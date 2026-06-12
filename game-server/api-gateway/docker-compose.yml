@@ -13,20 +13,5 @@ services:
     volumes:
       - barrowspire_api_gateway_pgdata:/var/lib/postgresql/data
 
-  test-db:
-    image: postgres:17
-    container_name: barrowspire_api_gateway_test_db
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: barrowspire_api_gateway_test_db
-    ports:
-      - "6214:5432"
-    volumes:
-      - barrowspire_api_gateway_test_pgdata:/var/lib/postgresql/data
-    # set the restart policy to "no" to prevent automatic restart outside test sessions
-    restart: "no"
-
 volumes:
   barrowspire_api_gateway_pgdata:
-  barrowspire_api_gateway_test_pgdata:

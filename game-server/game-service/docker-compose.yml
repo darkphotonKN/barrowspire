@@ -13,19 +13,5 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  test-db:
-    image: postgres:17
-    container_name: barrowspire_game_service_test_db
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: barrowspire_game_service_test_db
-    ports:
-      - "6117:5432"
-    volumes:
-      - test_pgdata:/var/lib/postgresql/data
-    restart: "no"
-
 volumes:
   pgdata:
-  test_pgdata:

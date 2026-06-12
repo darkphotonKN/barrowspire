@@ -15,4 +15,3 @@ services:
 
 volumes:
   barrowspire_example_service_pgdata:
-  barrowspire_example_service_test_pgdata:

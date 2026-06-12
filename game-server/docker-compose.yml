@@ -57,21 +57,6 @@ services:
     networks:
       - barrowspire-network
 
-  auth-service-test-db:
-    image: postgres:17
-    container_name: barrowspire_auth_service_test_db
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: barrowspire_auth_service_test_db
-    ports:
-      - "6216:5432"
-    volumes:
-      - barrowspire_auth_service_test_pgdata:/var/lib/postgresql/data
-    restart: "no"
-    networks:
-      - barrowspire-network
-
   # Game Service Database
   game-service-db:
     image: postgres:17
@@ -84,21 +69,6 @@ services:
       - "5143:5432"
     volumes:
       - barrowspire_game_service_pgdata:/var/lib/postgresql/data
-    networks:
-      - barrowspire-network
-
-  game-service-test-db:
-    image: postgres:17
-    container_name: barrowspire_game_service_test_db
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: barrowspire_game_service_test_db
-    ports:
-      - "6117:5432"
-    volumes:
-      - barrowspire_game_service_test_pgdata:/var/lib/postgresql/data
-    restart: "no"
     networks:
       - barrowspire-network
 
@@ -117,21 +87,6 @@ services:
     networks:
       - barrowspire-network
 
-  stats-service-test-db:
-    image: postgres:17
-    container_name: barrowspire_stats_service_test_db
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: barrowspire_stats_service_test_db
-    ports:
-      - "6223:5432"
-    volumes:
-      - barrowspire_stats_service_test_pgdata:/var/lib/postgresql/data
-    restart: "no"
-    networks:
-      - barrowspire-network
-
   # Items Service Database
   items-service-db:
     image: postgres:17
@@ -144,21 +99,6 @@ services:
       - "5217:5432"
     volumes:
       - barrowspire_items_service_pgdata:/var/lib/postgresql/data
-    networks:
-      - barrowspire-network
-
-  items-service-test-db:
-    image: postgres:17
-    container_name: barrowspire_items_service_test_db
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: barrowspire_items_service_test_db
-    ports:
-      - "6217:5432"
-    volumes:
-      - barrowspire_items_service_test_pgdata:/var/lib/postgresql/data
-    restart: "no"
     networks:
       - barrowspire-network
 
@@ -177,21 +117,6 @@ services:
     networks:
       - barrowspire-network
 
-  notification-service-test-db:
-    image: postgres:17
-    container_name: barrowspire_notification_service_test_db
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: barrowspire_notification_service_test_db
-    ports:
-      - "6214:5432"
-    volumes:
-      - barrowspire_notification_service_test_pgdata:/var/lib/postgresql/data
-    restart: "no"
-    networks:
-      - barrowspire-network
-
   # API Gateway Database
   api-gateway-db:
     image: postgres:17
@@ -204,21 +129,6 @@ services:
       - "5220:5432"
     volumes:
       - barrowspire_api_gateway_pgdata:/var/lib/postgresql/data
-    networks:
-      - barrowspire-network
-
-  api-gateway-test-db:
-    image: postgres:17
-    container_name: barrowspire_api_gateway_test_db
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: barrowspire_api_gateway_test_db
-    ports:
-      - "6220:5432"
-    volumes:
-      - barrowspire_api_gateway_test_pgdata:/var/lib/postgresql/data
-    restart: "no"
     networks:
       - barrowspire-network
 
@@ -237,21 +147,6 @@ services:
     networks:
       - barrowspire-network
 
-  example-service-test-db:
-    image: postgres:17
-    container_name: barrowspire_example_service_test_db
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: barrowspire_example_service_test_db
-    ports:
-      - "6290:5432"
-    volumes:
-      - barrowspire_example_service_test_pgdata:/var/lib/postgresql/data
-    restart: "no"
-    networks:
-      - barrowspire-network
-
 networks:
   barrowspire-network:
     name: barrowspire-network
@@ -260,24 +155,10 @@ volumes:
   barrowspire-consul-data:
   barrowspire-rabbitmq-data:
   redis_data:
-  # Auth Service volumes
   barrowspire_auth_service_pgdata:
-  barrowspire_auth_service_test_pgdata:
-  # Game Service volumes
   barrowspire_game_service_pgdata:
-  barrowspire_game_service_test_pgdata:
-  # Stats Service volumes
   barrowspire_stats_service_pgdata:
-  barrowspire_stats_service_test_pgdata:
-  # Items Service volumes
   barrowspire_items_service_pgdata:
-  barrowspire_items_service_test_pgdata:
-  # Notification Service volumes
   barrowspire_notification_service_pgdata:
-  barrowspire_notification_service_test_pgdata:
-  # API Gateway volumes
   barrowspire_api_gateway_pgdata:
-  barrowspire_api_gateway_test_pgdata:
-  # Example Service volumes
   barrowspire_example_service_pgdata:
-  barrowspire_example_service_test_pgdata:
