@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package game;
+
+option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/game";
+
+// Empty service for now - to be implemented
+service GameService {
+  // Add your RPC methods here
+}
+
+// Add your message definitions here

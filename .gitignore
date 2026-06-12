@@ -1,0 +1,271 @@
+
+# =============================================================================
+# Operating System Files
+# =============================================================================
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+
+# =============================================================================
+# Go Projects
+# =============================================================================
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.txt
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work.sum
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Air live reload
+tmp/
+.air.toml
+
+# Go module proxy cache
+GOPROXY
+GOSUMDB
+
+# Build outputs (only in bin/ directories or with specific suffixes)
+bin/
+*/bin/
+*-bin
+*_bin
+
+# =============================================================================
+# Node.js / React / Next.js Projects
+# =============================================================================
+
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Compiled binary addons
+build/Release
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+.env.test
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# parcel-bundler cache
+.cache
+.parcel-cache
+
+# Next.js build output
+.next/
+out/
+
+# React build output
+build/
+dist/
+
+# Nuxt.js build / generate output
+.nuxt
+
+# Gatsby files
+.cache/
+public/
+!game-client/public/
+game-client/public/*
+!game-client/public/audio/
+
+# Storybook build outputs
+.out
+.storybook-out
+
+# Temporary folders
+tmp/
+temp/
+
+# Logs
+logs
+*.log
+
+# =============================================================================
+# Database & Infrastructure
+# =============================================================================
+
+# PostgreSQL
+*.sql.bak
+*.dump
+*.backup
+
+# Redis
+dump.rdb
+
+# SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# MongoDB
+*.bson
+
+# =============================================================================
+# Security & Secrets
+# =============================================================================
+
+# Private keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# JWT secrets
+jwt-secret*
+secrets/
+.secrets/
+
+# AWS credentials
+.aws/
+
+# SSL certificates
+ssl/
+certs/
+
+# =============================================================================
+# Development Tools
+# =============================================================================
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Hot reload tools
+.air.toml
+nodemon.json
+
+# Testing
+test-results/
+jest-results/
+
+# Profiling
+*.prof
+*.pprof
+
+# Debug files
+debug
+*.debug
+
+# =============================================================================
+# Cloud & Deployment
+# =============================================================================
+
+# Vercel
+.vercel
+
+# Netlify
+.netlify
+
+# =============================================================================
+# Temporary Files
+# =============================================================================
+
+# Temporary directories
+tmp/
+temp/
+.tmp/
+
+# Backup files
+*.bak
+*.backup
+*.old
+*~
+
+# Swap files
+*.swp
+*.swo
+
+# =============================================================================
+# CLAUDE.md - Internal Development Guidelines
+# =============================================================================
+.claude/
+CLAUDE.md
+
+# Root-level docs and Postman collections
+/docs/
+/*.postman_collection.json
+
+.skills/
+*.md

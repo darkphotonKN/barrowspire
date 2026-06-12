@@ -1,0 +1,5 @@
+version: '3.9'
+
+# Databases moved to root docker-compose.yml
+# Redis service consolidated to root docker-compose.yml
+# Use: docker-compose -f ../docker-compose.yml up auth-service-db auth-service-test-db redis

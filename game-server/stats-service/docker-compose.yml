@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:17
+    container_name: barrowspire_stats_service_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_stats_service_db
+    ports:
+      - "5217:5432"
+    volumes:
+      - barrowspire_stats_service_pgdata:/var/lib/postgresql/data
+
+  test-db:
+    image: postgres:17
+    container_name: barrowspire_stats_service_test_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_stats_service_test_db
+    ports:
+      - "6217:5432"
+    volumes:
+      - barrowspire_stats_service_test_pgdata:/var/lib/postgresql/data
+    restart: "no"
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6493:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  barrowspire_stats_service_pgdata:
+  barrowspire_stats_service_test_pgdata:
+  redis_data:

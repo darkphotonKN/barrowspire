@@ -1,0 +1,90 @@
+package config
+
+import (
+	"log/slog"
+	"net"
+
+	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
+	"github.com/darkphotonKN/barrowspire-server/common/discovery"
+	commoncache "github.com/darkphotonKN/barrowspire-server/common/utils/cache"
+	"github.com/darkphotonKN/barrowspire-server/items-service/grpc/auth"
+	"github.com/darkphotonKN/barrowspire-server/items-service/internal/items"
+	"github.com/jmoiron/sqlx"
+	amqp "github.com/rabbitmq/amqp091-go"
+	"google.golang.org/grpc"
+)
+
+// SetupServices initializes all services and their dependencies
+func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, registry discovery.Registry) *grpc.Server {
+	// Create Auth Service client
+	authClient := auth.NewClient(registry)
+
+	// Create repository
+	repo := items.NewRepository(db)
+
+	// Create service with repository and AMQP channel
+	publishCh := commonbroker.NewAmqpPublisher(amqpChannel)
+	service := items.NewService(repo, db, publishCh)
+
+	// Create gRPC handler with service and auth client
+	handler := items.NewHandler(service, authClient)
+
+	// cache client
+	cache := commoncache.NewRedisCache(GetClient())
+
+	// Set up AMQP infrastructure
+	if err := items.SetupAMQPInfrastructure(amqpChannel); err != nil {
+		slog.Error("Failed to setup AMQP infrastructure", "error", err)
+	}
+
+	// Create AMQP consumer with service
+	consumer := items.NewConsumer(service, amqpChannel, cache)
+	// Start listening for AMQP events
+	consumer.Listen()
+
+	// Create gRPC server
+	grpcServer := grpc.NewServer()
+
+	// Register items service with gRPC server
+	pb.RegisterItemsServiceServer(grpcServer, handler)
+
+	slog.Info("Items service initialized successfully")
+
+	return grpcServer
+}
+
+// StartGRPCServer starts the gRPC server on the specified port
+func StartGRPCServer(grpcServer *grpc.Server, port string) error {
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		return err
+	}
+
+	slog.Info("Starting gRPC server", "port", port)
+
+	// This blocks until the server is stopped
+	if err := grpcServer.Serve(listener); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// InitializeAMQPConnection establishes connection to RabbitMQ
+func InitializeAMQPConnection(amqpURL string) (*amqp.Connection, *amqp.Channel, error) {
+	conn, err := amqp.Dial(amqpURL)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	channel, err := conn.Channel()
+	if err != nil {
+		conn.Close()
+		return nil, nil, err
+	}
+
+	slog.Info("Connected to RabbitMQ")
+
+	return conn, channel, nil
+}

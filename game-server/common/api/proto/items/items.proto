@@ -1,0 +1,370 @@
+syntax = "proto3";
+package items;
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/items";
+
+// ItemsService external API for items
+service ItemsService {
+  // general
+  rpc ListItemTemplates(google.protobuf.Empty) returns (ListItemTemplatesResponse);
+
+  // ItemType operations (for dropdown/select options)
+  rpc ListItemTypes(google.protobuf.Empty) returns (ListItemTypesResponse);
+
+  // ItemRarity operations (for dropdown/select options)
+  rpc ListItemRarities(google.protobuf.Empty) returns (ListItemRaritiesResponse);
+
+  // Weapon operations
+  rpc CreateWeapon(CreateWeaponRequest) returns (Weapon);
+  rpc GetWeaponWithTemplateByID(GetWeaponRequest) returns (WeaponDetail);
+  rpc ListWeaponsWithTemplate(google.protobuf.Empty) returns (ListWeaponsResponse);
+
+  // Armor operations
+  rpc ListArmorsWithTemplate(google.protobuf.Empty) returns (ListArmorsResponse);
+
+  // Consumable operations
+  rpc ListConsumablesWithTemplate(google.protobuf.Empty) returns (ListConsumablesResponse);
+
+  // ItemTemplate operations
+  rpc CreateItemTemplate(CreateItemTemplateRequest) returns (ItemTemplate);
+
+  // Complete item operations (creates both specific item + template)
+  rpc CreateCompleteWeapon(CreateCompleteWeaponRequest) returns (WeaponDetail);
+  rpc CreateCompleteArmor(CreateCompleteArmorRequest) returns (ArmorDetail);
+  rpc CreateCompleteConsumable(CreateCompleteConsumableRequest) returns (ConsumableDetail);
+
+  rpc GetLoadout(GetLoadoutRequest) returns (GetLoadoutResponse);
+  rpc GetLoadoutWithItems(GetLoadoutWithItemsRequest) returns (GetLoadoutWithItemsResponse);
+  rpc ListItemInstances(ListItemInstancesRequest) returns (ListItemInstancesResponse);
+  rpc UpdateLoadout(UpdateLoadoutRequest) returns (UpdateLoadoutResponse);
+}
+
+// ============ Layered Message Definitions ============
+
+// Layer 1: Basic Weapon (weapons table only - for create/simple queries)
+message Weapon {
+  string id = 1;
+  reserved 2, 5;
+  reserved "type_id", "durability";
+  string rarity_id = 3;
+  int32 attack_power = 4;
+  float critical_rate = 6;
+  string weapon_type = 7;
+  string description = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+// Layer 2: WeaponDetail (weapons + item_templates joined - for detailed queries)
+message WeaponDetail {
+  // Weapon specific fields (from weapons table)
+  string id = 1;
+  reserved 2, 5;
+  reserved "type_id", "durability";
+  string rarity_id = 3;
+  int32 attack_power = 4;
+  float critical_rate = 6;
+  string weapon_type = 7;
+  string description = 8;
+
+  // ItemTemplate fields (from item_templates table)
+  string item_template_id = 9;
+  string item_name = 10;
+  string item_code = 11;
+  string icon_url = 12;
+  reserved 13, 14;
+  reserved "is_tradeable", "is_droppable";
+  int32 required_level = 15;
+  int32 base_sell_price = 16;
+  int32 base_buy_price = 17;
+
+  google.protobuf.Timestamp created_at = 18;
+  google.protobuf.Timestamp updated_at = 19;
+}
+
+// ============ Request/Response Messages ============
+
+// ItemType (from item_types table - for dropdown options)
+message ItemType {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message ListItemTypesResponse {
+  repeated ItemType item_types = 1;
+}
+
+// ItemRarity (from item_rarities table - for dropdown options)
+message ItemRarity {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message ListItemRaritiesResponse {
+  repeated ItemRarity item_rarities = 1;
+}
+
+message CreateWeaponRequest {
+  reserved 1, 4;
+  reserved "type_id", "durability";
+  string rarity_id = 2;
+  int32 attack_power = 3;
+  float critical_rate = 5;
+  string weapon_type = 6;
+  string description = 7;
+}
+
+message GetWeaponRequest {
+  string id = 1;
+}
+
+message ListWeaponsResponse {
+  repeated WeaponDetail weapons = 1;
+}
+
+// ArmorDetail (armors + item_templates joined)
+message ArmorDetail {
+  // Armor fields
+  string id = 1;
+  reserved 2, 5;
+  reserved "type_id", "durability";
+  string rarity_id = 3;
+  int32 defense_rating = 4;
+  int32 magic_resistance = 6;
+  string armor_slot = 7;
+  string description = 8;
+
+  // ItemTemplate fields
+  string item_template_id = 9;
+  string item_name = 10;
+  string item_code = 11;
+  string icon_url = 12;
+  reserved 13, 14;
+  reserved "is_tradeable", "is_droppable";
+  int32 required_level = 15;
+  int32 base_sell_price = 16;
+  int32 base_buy_price = 17;
+
+  google.protobuf.Timestamp created_at = 18;
+  google.protobuf.Timestamp updated_at = 19;
+}
+
+message ListItemTemplatesResponse {
+  repeated ItemTemplate items = 1;
+}
+
+message ListArmorsResponse {
+  repeated ArmorDetail armors = 1;
+}
+
+// ConsumableDetail (consumables + item_templates joined)
+message ConsumableDetail {
+  // Consumable fields
+  string id = 1;
+  reserved 2;
+  reserved "type_id";
+  string rarity_id = 3;
+  int32 healing_amount = 4;
+  int32 mana_amount = 5;
+  int32 buff_duration = 6;
+  int32 max_stack_size = 7;
+  string description = 8;
+
+  // ItemTemplate fields
+  string item_template_id = 9;
+  string item_name = 10;
+  string item_code = 11;
+  string icon_url = 12;
+  reserved 13, 14;
+  reserved "is_tradeable", "is_droppable";
+  int32 required_level = 15;
+  int32 base_sell_price = 16;
+  int32 base_buy_price = 17;
+
+  google.protobuf.Timestamp created_at = 18;
+  google.protobuf.Timestamp updated_at = 19;
+}
+
+message ListConsumablesResponse {
+  repeated ConsumableDetail consumables = 1;
+}
+
+// ItemTemplate (unified aggregate: item_templates joined with weapons/armors/consumables/rarities)
+message ItemTemplate {
+  // base template
+  string id = 1;
+  string item_name = 2;
+  string rarity = 3;
+  string item_type = 4;
+  string icon_url = 5;
+  int32 required_level = 6;
+  int32 base_sell_price = 7;
+  int32 base_buy_price = 8;
+
+  // weapon
+  int32 attack_power = 9;
+  float critical_rate = 10;
+  string weapon_type = 11;
+
+  // armor
+  int32 defense_rating = 12;
+  int32 magic_resistance = 13;
+  string armor_slot = 14;
+
+  // consumable
+  int32 healing_amount = 15;
+  int32 mana_amount = 16;
+  int32 buff_duration = 17;
+  int32 max_stack_size = 18;
+
+  // coalesced
+  string description = 19;
+
+  // timestamps
+  google.protobuf.Timestamp created_at = 20;
+  google.protobuf.Timestamp updated_at = 21;
+}
+
+// CreateItemTemplateRequest for creating item templates
+message CreateItemTemplateRequest {
+  string user_id = 1;
+  string item_name = 2;
+  string rarity_id = 3;
+  string item_type = 4;       // 'weapon', 'armor', 'consumable'
+  string item_id = 5;         // references weapon/armor/consumable id
+  optional string icon_url = 6;
+  optional int32 required_level = 7;
+  optional int32 base_sell_price = 8;
+  optional int32 base_buy_price = 9;
+}
+
+// CreateCompleteWeaponRequest creates weapon + template in one transaction
+message CreateCompleteWeaponRequest {
+  string user_id = 1;
+  string item_name = 2;
+  optional string icon_url = 3;
+  optional int32 required_level = 4;
+  optional int32 base_sell_price = 5;
+  optional int32 base_buy_price = 6;
+  string rarity_id = 7;
+  int32 attack_power = 8;
+  float critical_rate = 9;
+  string weapon_type = 10;
+  string description = 11;
+}
+
+// CreateCompleteArmorRequest creates armor + template in one transaction
+message CreateCompleteArmorRequest {
+  string user_id = 1;
+  string item_name = 2;
+  optional string icon_url = 3;
+  optional int32 required_level = 4;
+  optional int32 base_sell_price = 5;
+  optional int32 base_buy_price = 6;
+  string rarity_id = 7;
+  int32 defense_rating = 8;
+  int32 magic_resistance = 9;
+  string armor_slot = 10;
+  string description = 11;
+}
+
+// CreateCompleteConsumableRequest creates consumable + template in one transaction
+message CreateCompleteConsumableRequest {
+  string user_id = 1;
+  string item_name = 2;
+  optional string icon_url = 3;
+  optional int32 required_level = 4;
+  optional int32 base_sell_price = 5;
+  optional int32 base_buy_price = 6;
+  string rarity_id = 7;
+  int32 healing_amount = 8;
+  int32 mana_amount = 9;
+  int32 buff_duration = 10;
+  int32 max_stack_size = 11;
+  string description = 12;
+}
+
+message GetLoadoutRequest {
+  string member_id= 1;
+}
+
+message GetLoadoutResponse {
+  string id = 1;
+  string memberId = 2;
+  string weaponId = 3;
+  string headId = 4;
+  string chestId = 5;
+  string glovesId = 6;
+  string legsId = 7;
+  string ring1Id = 8;
+  string ring2Id = 9;
+  string consumable1Id = 10;
+  string consumable2Id = 11;
+  string consumable3Id = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+message ListItemInstancesRequest {
+  string member_id = 1;
+}
+
+message ItemInstance {
+  string id = 1;
+  string template_id = 2;
+  string owner_member_id = 3;
+  string source = 4;
+  string item_type = 5;
+  string name = 6;
+  string rarity_id = 7;
+  int32 attack_power = 8;
+  float critical_rate = 9;
+  string weapon_type = 10;
+  int32 defense_rating = 11;
+  int32 magic_resistance = 12;
+  string armor_slot = 13;
+  int32 healing_amount = 14;
+  int32 mana_amount = 15;
+  int32 buff_duration = 16;
+  int32 buy_price = 17;
+  int32 sell_price = 18;
+  string description = 19;
+}
+
+message ListItemInstancesResponse {
+  repeated ItemInstance items = 1;
+}
+
+message GetLoadoutWithItemsRequest {
+  string member_id = 1;
+}
+
+message GetLoadoutWithItemsResponse {
+  ItemInstance weapon = 1;
+  ItemInstance head = 2;
+  ItemInstance chest = 3;
+  ItemInstance gloves = 4;
+  ItemInstance legs = 5;
+  ItemInstance ring_1 = 6;
+  ItemInstance ring_2 = 7;
+  ItemInstance consumable_1 = 8;
+  ItemInstance consumable_2 = 9;
+  ItemInstance consumable_3 = 10;
+}
+
+message UpdateLoadoutRequest {
+  string member_id = 1;
+  string slot = 2;
+  string item_instance_id = 3;
+}
+
+message UpdateLoadoutResponse {
+  bool success = 1;
+}

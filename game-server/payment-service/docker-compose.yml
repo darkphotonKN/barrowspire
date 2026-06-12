@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:17
+    container_name: barrowspire_payment_service_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_payment_service_db
+    ports:
+      - "5224:5432"
+    volumes:
+      - payment_db_data:/var/lib/postgresql/data
+    networks:
+      - barrowspire-network
+
+volumes:
+  payment_db_data:
+
+networks:
+  barrowspire-network:
+    external: true
+    name: barrowspire-network

@@ -1,0 +1,283 @@
+version: "3.9"
+services:
+  barrowspire-consul:
+    image: hashicorp/consul
+    container_name: barrowspire-consul
+    command: agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
+    ports:
+      - 8623:8500 # Changed from 8500 to avoid conflicts
+      - 8723:8600/udp # Changed from 8600 to avoid conflicts
+    volumes:
+      - barrowspire-consul-data:/consul/data
+    networks:
+      - barrowspire-network
+
+  barrowspire-rabbitmq:
+    image: "rabbitmq:3-management"
+    container_name: barrowspire-rabbitmq
+    ports:
+      - "15795:15672" # Changed from 15672 to avoid conflicts
+      - "5795:5672" # Changed from 5672 to avoid conflicts
+    environment:
+      - RABBITMQ_DEFAULT_USER=barrowspire
+      - RABBITMQ_DEFAULT_PASS=barrowspire
+    volumes:
+      - barrowspire-rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - barrowspire-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: barrowspire-redis
+    ports:
+      - "6492:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - barrowspire-network
+
+  # Auth Service Database
+  auth-service-db:
+    image: postgres:17
+    container_name: barrowspire_auth_service_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_auth_service_db
+    ports:
+      - "5216:5432"
+    volumes:
+      - barrowspire_auth_service_pgdata:/var/lib/postgresql/data
+    networks:
+      - barrowspire-network
+
+  auth-service-test-db:
+    image: postgres:17
+    container_name: barrowspire_auth_service_test_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_auth_service_test_db
+    ports:
+      - "6216:5432"
+    volumes:
+      - barrowspire_auth_service_test_pgdata:/var/lib/postgresql/data
+    restart: "no"
+    networks:
+      - barrowspire-network
+
+  # Game Service Database
+  game-service-db:
+    image: postgres:17
+    container_name: barrowspire_game_service_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_game_service_db
+    ports:
+      - "5143:5432"
+    volumes:
+      - barrowspire_game_service_pgdata:/var/lib/postgresql/data
+    networks:
+      - barrowspire-network
+
+  game-service-test-db:
+    image: postgres:17
+    container_name: barrowspire_game_service_test_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_game_service_test_db
+    ports:
+      - "6117:5432"
+    volumes:
+      - barrowspire_game_service_test_pgdata:/var/lib/postgresql/data
+    restart: "no"
+    networks:
+      - barrowspire-network
+
+  # Stats Service Database
+  stats-service-db:
+    image: postgres:17
+    container_name: barrowspire_stats_service_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_stats_service_db
+    ports:
+      - "5223:5432"
+    volumes:
+      - barrowspire_stats_service_pgdata:/var/lib/postgresql/data
+    networks:
+      - barrowspire-network
+
+  stats-service-test-db:
+    image: postgres:17
+    container_name: barrowspire_stats_service_test_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_stats_service_test_db
+    ports:
+      - "6223:5432"
+    volumes:
+      - barrowspire_stats_service_test_pgdata:/var/lib/postgresql/data
+    restart: "no"
+    networks:
+      - barrowspire-network
+
+  # Items Service Database
+  items-service-db:
+    image: postgres:17
+    container_name: barrowspire_items_service_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_items_service_db
+    ports:
+      - "5217:5432"
+    volumes:
+      - barrowspire_items_service_pgdata:/var/lib/postgresql/data
+    networks:
+      - barrowspire-network
+
+  items-service-test-db:
+    image: postgres:17
+    container_name: barrowspire_items_service_test_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_items_service_test_db
+    ports:
+      - "6217:5432"
+    volumes:
+      - barrowspire_items_service_test_pgdata:/var/lib/postgresql/data
+    restart: "no"
+    networks:
+      - barrowspire-network
+
+  # Notification Service Database
+  notification-service-db:
+    image: postgres:17
+    container_name: barrowspire_notification_service_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_notification_service_db
+    ports:
+      - "5214:5432"
+    volumes:
+      - barrowspire_notification_service_pgdata:/var/lib/postgresql/data
+    networks:
+      - barrowspire-network
+
+  notification-service-test-db:
+    image: postgres:17
+    container_name: barrowspire_notification_service_test_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_notification_service_test_db
+    ports:
+      - "6214:5432"
+    volumes:
+      - barrowspire_notification_service_test_pgdata:/var/lib/postgresql/data
+    restart: "no"
+    networks:
+      - barrowspire-network
+
+  # API Gateway Database
+  api-gateway-db:
+    image: postgres:17
+    container_name: barrowspire_api_gateway_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_api_gateway_db
+    ports:
+      - "5220:5432"
+    volumes:
+      - barrowspire_api_gateway_pgdata:/var/lib/postgresql/data
+    networks:
+      - barrowspire-network
+
+  api-gateway-test-db:
+    image: postgres:17
+    container_name: barrowspire_api_gateway_test_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_api_gateway_test_db
+    ports:
+      - "6220:5432"
+    volumes:
+      - barrowspire_api_gateway_test_pgdata:/var/lib/postgresql/data
+    restart: "no"
+    networks:
+      - barrowspire-network
+
+  # Example Service Database
+  example-service-db:
+    image: postgres:17
+    container_name: barrowspire_example_service_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_example_service_db
+    ports:
+      - "5290:5432"
+    volumes:
+      - barrowspire_example_service_pgdata:/var/lib/postgresql/data
+    networks:
+      - barrowspire-network
+
+  example-service-test-db:
+    image: postgres:17
+    container_name: barrowspire_example_service_test_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_example_service_test_db
+    ports:
+      - "6290:5432"
+    volumes:
+      - barrowspire_example_service_test_pgdata:/var/lib/postgresql/data
+    restart: "no"
+    networks:
+      - barrowspire-network
+
+networks:
+  barrowspire-network:
+    name: barrowspire-network
+
+volumes:
+  barrowspire-consul-data:
+  barrowspire-rabbitmq-data:
+  redis_data:
+  # Auth Service volumes
+  barrowspire_auth_service_pgdata:
+  barrowspire_auth_service_test_pgdata:
+  # Game Service volumes
+  barrowspire_game_service_pgdata:
+  barrowspire_game_service_test_pgdata:
+  # Stats Service volumes
+  barrowspire_stats_service_pgdata:
+  barrowspire_stats_service_test_pgdata:
+  # Items Service volumes
+  barrowspire_items_service_pgdata:
+  barrowspire_items_service_test_pgdata:
+  # Notification Service volumes
+  barrowspire_notification_service_pgdata:
+  barrowspire_notification_service_test_pgdata:
+  # API Gateway volumes
+  barrowspire_api_gateway_pgdata:
+  barrowspire_api_gateway_test_pgdata:
+  # Example Service volumes
+  barrowspire_example_service_pgdata:
+  barrowspire_example_service_test_pgdata:

@@ -1,0 +1,86 @@
+syntax = "proto3";
+package stats;
+import "google/protobuf/timestamp.proto";
+option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/stats";
+
+// StatsService external API for stats
+service StatsService {
+  // Read operations (for other services or client)
+  rpc GetPlayerMatchStats(GetPlayerMatchStatsRequest) returns (PlayerMatchStats);
+  rpc GetPlayerRankingStats(GetPlayerRankingStatsRequest) returns (PlayerRankingStats);
+  rpc GetMatchHistory(GetMatchHistoryRequest) returns (GetMatchHistoryResponse);
+  rpc GetLeaderboard(GetLeaderboardRequest) returns (GetLeaderboardResponse);
+}
+
+// ============ Read Operations ============
+
+message GetPlayerMatchStatsRequest {
+  string member_id = 1;
+}
+
+message PlayerMatchStats {
+  string id = 1;
+  string member_id = 2;
+  int32 games_played = 3;
+  int32 wins = 4;
+  int32 losses = 5;
+  int32 kills = 6;
+  int32 deaths = 7;
+  int32 times_placed_top_three = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message GetPlayerRankingStatsRequest {
+  string member_id = 1;
+}
+
+message PlayerRankingStats {
+  string id = 1;
+  string member_id = 2;
+  string username = 3;
+  int32 wins = 4;
+  int32 top_threes = 5;
+  string avatar_url = 6;
+  int32 rating = 7;
+  optional int32 rank_position = 8;
+  google.protobuf.Timestamp last_calculated_at = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+message GetMatchHistoryRequest {
+  string member_id = 1;
+  optional int32 limit = 2;
+  optional int32 offset = 3;
+}
+
+message GetMatchHistoryResponse {
+  repeated MatchHistory matches = 1;
+  int32 total_count = 2;
+}
+
+message MatchHistory {
+  string id = 1;
+  string session_id = 2;
+  string member_id = 3;
+  bool win = 4;
+  int32 final_position = 5;
+  int32 kills = 6;
+  int32 deaths = 7;
+  optional int32 rating_before = 8;
+  optional int32 rating_after = 9;
+  optional int32 rating_change = 10;
+  google.protobuf.Timestamp match_started_at = 11;
+  google.protobuf.Timestamp created_at = 12;
+}
+
+message GetLeaderboardRequest {
+  optional int32 limit = 1;
+  optional int32 offset = 2;
+}
+
+message GetLeaderboardResponse {
+  repeated PlayerRankingStats players = 1;
+  int32 total_count = 2;
+}

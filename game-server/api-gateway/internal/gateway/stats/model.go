@@ -1,0 +1,13 @@
+package stats
+
+import (
+	"context"
+
+	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/stats"
+)
+
+type StatsClient interface {
+	GetPlayerStats(ctx context.Context, req *pb.GetPlayerMatchStatsRequest) (*pb.PlayerMatchStats, error)
+
+	GetLeaderboard(ctx context.Context, req *pb.GetLeaderboardRequest) (*pb.GetLeaderboardResponse, error)
+}

@@ -1,0 +1,13 @@
+go 1.24.2
+
+use (
+	./api-gateway
+	./auth-service
+	./common
+	./example-service
+	./game-service
+	./payment-service
+	./stats-service
+	./items-service
+	./notification-service
+)

@@ -1,0 +1,38 @@
+# Grafana Tempo Configuration
+#
+# Tempo is the TRACE STORAGE backend.
+# It receives traces from the OTel Collector and stores them.
+# Grafana queries Tempo to display traces.
+#
+# Tempo is designed to be simple and cheap:
+# - Only needs object storage (or local disk for dev)
+# - No indexing (unlike Jaeger with Elasticsearch)
+# - Lookup by trace_id only
+
+# Grafana Tempo Configuration (single-node dev setup)
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: 1h
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /tmp/tempo/wal
+    local:
+      path: /tmp/tempo/blocks

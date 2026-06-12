@@ -1,0 +1,338 @@
+package gameserver
+
+import (
+	"fmt"
+	"log/slog"
+	"net/http"
+	"sync"
+
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
+	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
+	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/queue"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/serializer"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
+	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
+)
+
+/**
+* Represents the core game server, intializing the goroutines that
+* talk to each other and coordinate all game sessions and websocket
+* connections.
+**/
+
+type Server struct {
+	upgrader   websocket.Upgrader
+	serverChan chan types.ClientPackage
+
+	// NOTE: primary use for client messages to the message hub
+	// [player connection] to dynamic client payload
+	msgChan map[*websocket.Conn]chan interface{}
+
+	// active sessions
+	// [sessionId] to active sessions
+	sessions map[uuid.UUID]*game.Session
+
+	// online players
+	// [playerId] to player
+	players map[uuid.UUID]*types.Player
+
+	// websocket conn to player mapping
+	// [active connections] to player
+	connToPlayer map[*websocket.Conn]*types.Player
+
+	mu sync.RWMutex
+
+	queue QueueManager
+	// auth client for gRPC calls
+	authClient grpcauth.AuthClient
+
+	// message broker communication channel
+	eventEmitter game.EventEmitter
+	// item client for gRPC
+	itemsClient grpcitems.ItemsClient
+}
+
+type MessageSender interface {
+	BroadcastToPlayerList(players []*types.Player, msg types.Message) error
+}
+
+// QueueManager is the subset of queue operations the gameserver consumes.
+type QueueManager interface {
+	Start()
+	AddPlayer(player *types.Player) error
+	PlayerRemoveQueue(player *types.Player)
+	GetMatchedChan() chan []*types.Player
+	GetQueueStatusChan() chan queue.QueueStatus
+}
+
+func NewServer(authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient) *Server {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			// TODO: Allow all connections by default for simplicity; can add more logic here
+			return true
+		},
+	}
+
+	server := &Server{
+		upgrader: upgrader,
+
+		serverChan: make(chan types.ClientPackage, 10),
+		msgChan:    make(map[*websocket.Conn]chan interface{}, constants.MaxMsgChanBuffer),
+
+		sessions:     make(map[uuid.UUID]*game.Session, 10),
+		players:      make(map[uuid.UUID]*types.Player, 10),
+		connToPlayer: make(map[*websocket.Conn]*types.Player, 10),
+
+		queue:        queueService,
+		authClient:   authClient,
+		eventEmitter: eventEmitter,
+		itemsClient:  itemsClient,
+	}
+
+	// initialize message sender
+	newSender := messaging.NewMessageSender(server)
+
+	server.queue.Start()
+
+	// initialize message hub
+	messageHub := NewMessageHub(server, newSender)
+	go messageHub.Run()
+
+	return server
+}
+
+/**
+* exposes server chan for communication between server and client
+**/
+func (s *Server) GetServerChan() chan types.ClientPackage {
+	return s.serverChan
+}
+
+/**
+* maps a connected client to its player information
+**/
+func (s *Server) MapConnToPlayer(conn *websocket.Conn, player types.Player) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// check if there's an old connection with same player ID, if so clean it up
+	for oldConn, existingPlayer := range s.connToPlayer {
+		if existingPlayer.ID == player.ID && oldConn != conn {
+			slog.Info("Player reconnected, cleaning up old connection",
+				"player_id", player.ID,
+				"player_username", player.Username,
+			)
+			// close old msgChan
+			if ch, exists := s.msgChan[oldConn]; exists {
+				close(ch)
+				delete(s.msgChan, oldConn)
+			}
+			// remove old conn to player mapping
+			delete(s.connToPlayer, oldConn)
+			break
+		}
+	}
+
+	s.connToPlayer[conn] = &player
+}
+
+/**
+* grabs player information from connected client's websocket connection
+* information.
+**/
+
+func (s *Server) GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	player, exists := s.connToPlayer[conn]
+
+	return player, exists
+}
+
+/**
+* allows the creation of a new game session.
+**/
+func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
+	// create entity manager first so it can be shared
+	entityManager := ecs.NewEntityManager()
+	stateSerializer := serializer.NewStateSerializer(entityManager)
+
+	// create session with message sender
+	newGameSession := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient)
+
+	newGameSession.InitialMapObjects()
+	newGameSession.InitialSystems()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, player := range players {
+		// add player to session
+		newGameSession.AddPlayer(player.ID, player.Username)
+
+		connected := constants.Connected
+		// update player's SessionId
+		player.CurrentGameSessionId = newGameSession.ID
+		player.ConnectState = &connected
+
+		// also update player info in server's players map (if exists)
+		if existingPlayer, exists := s.players[player.ID]; exists {
+			existingPlayer.CurrentGameSessionId = newGameSession.ID
+			existingPlayer.ConnectState = &connected
+		}
+	}
+
+	s.sessions[newGameSession.ID] = newGameSession
+
+	// NOTE: keep this info level, important to save meta data DO NOT REMOVE
+	slog.Info("New game session initiated, id: %s, players: %d\n", newGameSession.ID, len(players))
+
+	return newGameSession
+}
+
+func (s *Server) CloseSession(sessionID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, exists := s.sessions[sessionID]
+
+	if !exists {
+		slog.Error("Attempted to remove a session that didnt exist",
+			"session_id", sessionID,
+		)
+		return fmt.Errorf("Attempted to remove a session that didnt exist")
+	}
+
+	// delete session
+	delete(s.sessions, sessionID)
+	return nil
+}
+
+/**
+* allows the retrieval of an existing session.
+**/
+func (s *Server) GetGameSession(id uuid.UUID) (*game.Session, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	session, exists := s.sessions[id]
+	return session, exists
+}
+
+/**
+* add player to queue (delegates to QueueSystem)
+**/
+func (s *Server) AddPlayer(player *types.Player) error {
+	err := s.queue.AddPlayer(player)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+/**
+* remove player from queue (delegates to QueueSystem)
+**/
+func (s *Server) RemovePlayerFromQueue(player *types.Player) {
+	s.queue.PlayerRemoveQueue(player)
+}
+
+/**
+* get matched channel for listening to matched players
+**/
+func (s *Server) GetMatchedChan() chan []*types.Player {
+	return s.queue.GetMatchedChan()
+}
+
+/**
+* get queue status channel for listening to queue updates
+**/
+func (s *Server) GetQueueStatusChan() chan queue.QueueStatus {
+	return s.queue.GetQueueStatusChan()
+}
+
+/**
+* get conn from player ID
+**/
+func (s *Server) GetConnFromPlayer(playerID uuid.UUID) (*websocket.Conn, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for conn, player := range s.connToPlayer {
+		if player.ID == playerID {
+			return conn, true
+		}
+	}
+	return nil, false
+}
+
+/**
+* --- Internal Message Sending (used by MessageSender) ---
+**/
+
+/**
+* PushMessageToChannelQueue
+* Allows the server to sequentially pipe multiple messages into a single channel for sequential writes back to the client due to gorilla websockets constraint of max one concurrent writer with conn.
+**/
+func (s *Server) PushMessageToChannelQueue(playerID uuid.UUID, msg interface{}) error {
+	conn, exists := s.GetConnFromPlayer(playerID)
+	if !exists {
+		return fmt.Errorf("player %s not found", playerID)
+	}
+
+	s.mu.RLock()
+	ch, ok := s.msgChan[conn]
+	s.mu.RUnlock()
+
+	if !ok {
+		return fmt.Errorf("message channel not found for player %s", playerID)
+	}
+
+	// non-blocking send to prevent slow clients from blocking
+	select {
+	case ch <- msg:
+		return nil
+	default:
+		return fmt.Errorf("message channel full for player %s", playerID)
+	}
+}
+
+func (s *Server) PushMessageToConn(conn *websocket.Conn, msg interface{}) error {
+	typeMsg, ok := msg.(types.Message)
+	if !ok {
+		return fmt.Errorf("invalid message type")
+	}
+	if conn == nil {
+		slog.Warn("nil connection, skipping send")
+		return nil
+	}
+	s.mu.RLock()
+	ch, ok := s.msgChan[conn]
+	s.mu.RUnlock()
+
+	if !ok {
+		slog.Warn("message channel not found for connection")
+		return nil
+	}
+
+	select {
+	case ch <- typeMsg:
+		return nil
+	default:
+		return fmt.Errorf("message channel full for connection")
+	}
+}
+
+/**
+* returns the auth client for gRPC calls
+**/
+func (s *Server) GetAuthClient() grpcauth.AuthClient {
+	return s.authClient
+}

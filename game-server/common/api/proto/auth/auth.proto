@@ -1,0 +1,184 @@
+// auth-service/proto/auth.proto
+syntax = "proto3";
+package auth;
+
+option go_package = "github.com/darkphotonKN/community-builds-microservice/auth-service/proto/auth";
+
+import "google/protobuf/timestamp.proto";
+
+// Auth service definition
+
+// used for Member related methods
+service AuthService {
+  // Login member
+  rpc LoginMember(LoginRequest) returns (LoginResponse) {}
+  // Get member by ID
+  rpc GetMember(GetMemberRequest) returns (Member) {}
+  // Create member (signup)
+  rpc CreateMember(CreateMemberRequest) returns (Member) {}
+  // Update member info
+  rpc UpdateMemberInfo(UpdateMemberInfoRequest) returns (Member) {}
+  // Update member password
+  rpc UpdateMemberPassword(UpdatePasswordRequest) returns (UpdatePasswordResponse) {}
+  // Validate token
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse) {}
+  // Set Stripe customer ID for a member
+  rpc SetStripeCustomerID(SetStripeCustomerIDRequest) returns (SetStripeCustomerIDResponse) {}
+  // Get Stripe customer ID for a member
+  rpc GetStripeCustomerID(GetStripeCustomerIDRequest) returns (GetStripeCustomerIDResponse) {}
+  // Update member subscription status
+  rpc UpdateSubscriptionStatus(UpdateSubscriptionStatusRequest) returns (UpdateSubscriptionStatusResponse) {}
+  // Check if email exists (for signup polling)
+  rpc CheckEmailExists(CheckEmailRequest) returns (CheckEmailResponse) {}
+}
+
+// used for Upload methods 
+service UploadService {
+    rpc RequestAvatarUpload(RequestAvatarUploadRequest) returns (RequestAvatarUploadResponse);
+    rpc ConfirmAvatarUpload(ConfirmAvatarUploadRequest) returns (ConfirmAvatarUploadResponse);
+}
+
+// Member message represents a user in the system
+message Member {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+  int32 status = 4;
+  float average_rating = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  string avatar_url = 8;
+  string role = 9;
+}
+
+// Login request
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+// Login response with tokens
+message LoginResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  int32 access_expires_in = 3;
+  int32 refresh_expires_in = 4;
+  Member member_info = 5;
+}
+
+// Get member request
+message GetMemberRequest {
+  string id = 1;
+}
+
+// Create member request
+message CreateMemberRequest {
+  string name = 1;
+  string email = 2;
+  string password = 3;
+}
+
+// Update member info request
+message UpdateMemberInfoRequest {
+  string id = 1;
+  string name = 2;
+  string status = 3;
+}
+
+// Update password request
+message UpdatePasswordRequest {
+  string id = 1;
+  string current_password = 2;
+  string new_password = 3;
+  string repeat_new_password = 4;
+}
+
+// Update password response
+message UpdatePasswordResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Validate token request
+message ValidateTokenRequest {
+  string token = 1;
+}
+
+// Validate token response
+message ValidateTokenResponse {
+  bool valid = 1;
+  string member_id = 2;
+}
+
+// Set Stripe customer ID request
+message SetStripeCustomerIDRequest {
+  string member_id = 1;
+  string stripe_customer_id = 2;
+}
+
+// Set Stripe customer ID response
+message SetStripeCustomerIDResponse {
+  bool success = 1;
+}
+
+// Get Stripe customer ID request
+message GetStripeCustomerIDRequest {
+  string member_id = 1;
+}
+
+// Get Stripe customer ID response
+message GetStripeCustomerIDResponse {
+  string stripe_customer_id = 1;
+}
+
+// Update subscription status request
+message UpdateSubscriptionStatusRequest {
+  string member_id = 1;
+  string product_id = 2;
+  string status = 3;
+}
+
+// Update subscription status response
+message UpdateSubscriptionStatusResponse {
+  bool success = 1;
+}
+
+// Check email exists request
+message CheckEmailRequest {
+  string email = 1;
+}
+
+// Check email exists response
+message CheckEmailResponse {
+  bool exists = 1;
+}
+
+// Request avatar upload request
+message RequestAvatarUploadRequest {
+  string member_id = 1;
+  string filename = 2;
+}
+
+// Request avatar upload response
+message RequestAvatarUploadResponse {
+  string upload_id = 1;
+  string presigned_url = 2;
+  string s3_key = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  int64 max_file_size = 5;
+  repeated string allowed_content_types = 6;
+}
+
+// Confirm avatar upload request
+message ConfirmAvatarUploadRequest {
+  string member_id = 1;
+  string upload_id = 2;
+}
+
+// Confirm avatar upload response
+message ConfirmAvatarUploadResponse {
+  bool success = 1;
+  string message = 2;
+  string avatar_url = 3;
+}
+
