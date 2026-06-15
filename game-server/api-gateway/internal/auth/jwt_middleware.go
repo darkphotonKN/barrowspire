@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -17,9 +18,7 @@ import (
 * traditional handler.
 **/
 func AuthMiddleware() gin.HandlerFunc {
-
 	return func(c *gin.Context) {
-
 		// gets token from header
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
@@ -35,6 +34,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		})
 
 		if err != nil || !token.Valid {
+			slog.Debug("Invalid or expired token.")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
 			c.Abort()
 			return
@@ -43,6 +43,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		// extract userId
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok || claims["sub"] == nil {
+			slog.Debug("Invalid token claim.")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
 			c.Abort()
 			return
@@ -53,10 +54,13 @@ func AuthMiddleware() gin.HandlerFunc {
 		// parse userId as UUID
 		userId, err := uuid.Parse(userIdStr)
 		if err != nil {
+			slog.Debug("Member ID was not correctly parsed as a uuid.")
 			c.JSON(http.StatusUnauthorized, gin.H{"statusCode": http.StatusUnauthorized, "error": "Member ID was not correctly parsed as a uuid."})
 			c.Abort()
 			return
 		}
+
+		slog.Debug("Authorization of token passed. Setting userId and userIdStr")
 
 		// store userId in the context for usage in the actual API handlers
 		c.Set("userId", userId)

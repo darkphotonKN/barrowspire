@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
@@ -52,8 +53,10 @@ func rejectWebSocket(c *gin.Context, reason string) {
 
 func WSAuthMiddleware(authClient grpcauth.AuthClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		slog.Debug("incoming request to connect to game")
 		token := c.Query("token")
 		if token == "" {
+			slog.Debug("token missing")
 			rejectWebSocket(c, "missing token")
 			return
 		}
@@ -62,17 +65,20 @@ func WSAuthMiddleware(authClient grpcauth.AuthClient) gin.HandlerFunc {
 			Token: token,
 		})
 		if err != nil {
+			slog.Debug("failed to validate token")
 			rejectWebSocket(c, "failed to validate token")
 			return
 		}
 
 		if !resp.Valid {
+			slog.Debug("invalid or expired token")
 			rejectWebSocket(c, "invalid or expired token")
 			return
 		}
 
 		userID, err := uuid.Parse(resp.MemberId)
 		if err != nil {
+			slog.Debug("invalid member id")
 			rejectWebSocket(c, "invalid member id")
 			return
 		}
@@ -80,6 +86,8 @@ func WSAuthMiddleware(authClient grpcauth.AuthClient) gin.HandlerFunc {
 		// store in context
 		c.Set("userId", userID)
 		c.Set("userIdStr", resp.MemberId)
+
+		slog.Debug("stored userId in gin context")
 
 		c.Next()
 	}
