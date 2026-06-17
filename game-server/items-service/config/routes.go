@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"log/slog"
 	"net"
 
@@ -16,7 +17,7 @@ import (
 )
 
 // SetupServices initializes all services and their dependencies
-func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, registry discovery.Registry) *grpc.Server {
+func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, registry discovery.Registry) *grpc.Server {
 	// Create Auth Service client
 	authClient := auth.NewClient(registry)
 
@@ -41,7 +42,7 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, registry discovery.Re
 	// Create AMQP consumer with service
 	consumer := items.NewConsumer(service, amqpChannel, cache)
 	// Start listening for AMQP events
-	consumer.Listen()
+	consumer.Listen(ctx)
 
 	// Create gRPC server
 	grpcServer := grpc.NewServer()

@@ -21,11 +21,11 @@ type Consumer struct {
 }
 
 type ConsumerService interface {
-	ProcessItemsExtracted(req *pb.ItemsExtractedEvent) error
+	ProcessItemsExtracted(ctx context.Context, req *pb.ItemsExtractedEvent) error
 }
 
-func (c *Consumer) Listen() {
-	go c.consumeItemsExtracted()
+func (c *Consumer) Listen(ctx context.Context) {
+	go c.consumeItemsExtracted(ctx)
 
 	slog.Info("Items consumer listening for events...")
 }
@@ -38,7 +38,7 @@ func NewConsumer(service ConsumerService, ch *amqp.Channel, cache commoncache.Ca
 	}
 }
 
-func (c *Consumer) consumeItemsExtracted() {
+func (c *Consumer) consumeItemsExtracted(ctx context.Context) {
 	msgs, err := c.channel.Consume(
 		commonconstants.ItemsGameItemsExtractedQueue,
 		"",
@@ -95,7 +95,7 @@ func (c *Consumer) consumeItemsExtracted() {
 			continue
 		}
 
-		err = c.service.ProcessItemsExtracted(&itemsExtracted)
+		err = c.service.ProcessItemsExtracted(ctx, &itemsExtracted)
 
 		if err != nil {
 			if errors.Is(err, commonconstants.ErrTransient) {

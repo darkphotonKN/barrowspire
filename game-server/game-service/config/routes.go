@@ -33,7 +33,7 @@ func SetupRouter(statsDB *sqlx.DB, registry discovery.Registry, ch *amqp.Channel
 
 	// CORS for development more specific for game service with WebSocket support
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3838"},
+		AllowOrigins:     []string{"http://localhost:3938"},
 		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
 		AllowHeaders:     []string{"Content-Type", "Authorization", "Upgrade", "Connection", "Sec-WebSocket-Key", "Sec-WebSocket-Version", "Sec-WebSocket-Extensions"},
 		AllowCredentials: true,
