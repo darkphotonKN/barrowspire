@@ -21,11 +21,12 @@ var (
 	// observability
 	environment       = commonhelpers.GetEnvString("ENVIRONMENT", "development")
 	collectorEndpoint = commonhelpers.GetEnvString("COLLECTOR_ENDPOINT", "localhost:4430")
-	
-	serviceName       = "notification"
-	grpcAddr          = commonhelpers.GetEnvString("GRPC_NOTIFICATION_ADDR", "7190")
-	consulAddr        = commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
-	serviceVersion    = commonhelpers.GetEnvString("SERVICE_VERSION", "1.0.0")
+	otelEnabled       = commonhelpers.GetEnvString("OTEL_ENABLED", "true") == "true"
+
+	serviceName    = "notification"
+	grpcAddr       = commonhelpers.GetEnvString("GRPC_NOTIFICATION_ADDR", "7190")
+	consulAddr     = commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
+	serviceVersion = commonhelpers.GetEnvString("SERVICE_VERSION", "1.0.0")
 
 	amqpUser     = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
 	amqpPassword = commonhelpers.GetEnvString("RABBITMQ_PASS", "guest")
@@ -50,6 +51,7 @@ func main() {
 		ServiceVersion:    serviceVersion,
 		Environment:       environment,
 		CollectorEndpoint: collectorEndpoint,
+		Enabled:           otelEnabled,
 	})
 	if err != nil {
 		log.Fatal(err)

@@ -51,7 +51,7 @@ export class LoadoutScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
 
     // Background
-    this.cameras.main.setBackgroundColor('#0a0a12');
+    this.cameras.main.setBackgroundColor('#0d0b0a');
 
     // Star field
     const stars = this.add.graphics();
@@ -66,45 +66,43 @@ export class LoadoutScene extends Phaser.Scene {
 
     // Subtle grid
     const grid = this.add.graphics();
-    grid.lineStyle(1, 0x00f0ff, 0.03);
+    grid.lineStyle(1, 0xe8a14d, 0.03);
     for (let x = 0; x <= width; x += 40) grid.lineBetween(x, 0, x, height);
     for (let y = 0; y <= height; y += 40) grid.lineBetween(0, y, width, y);
 
     // Title
     const title = this.add.text(width / 2, 30, 'LOADOUT', {
       fontSize: '24px',
-      color: '#00f0ff',
+      color: '#e8a14d',
       letterSpacing: 8,
       fontStyle: 'bold',
     });
     title.setOrigin(0.5);
-    title.setShadow(0, 0, '#00f0ff', 6, true, true);
-
     // Subtitle
     const subtitle = this.add.text(width / 2, 58, 'CONFIGURE YOUR GEAR BEFORE DEPLOYMENT', {
       fontSize: '10px',
-      color: '#556677',
+      color: '#8a7d5c',
       letterSpacing: 4,
     });
     subtitle.setOrigin(0.5);
 
     // Accent line
     const accent = this.add.graphics();
-    accent.lineStyle(1, 0x00f0ff, 0.2);
+    accent.lineStyle(1, 0xe8a14d, 0.2);
     accent.lineBetween(width * 0.15, 72, width * 0.85, 72);
 
     // Back button
     const backBtnX = 70;
     const backBtnY = 30;
     const backBg = this.add.graphics();
-    backBg.fillStyle(0x112233, 0.8);
+    backBg.fillStyle(0x14110c, 0.8);
     backBg.fillRoundedRect(backBtnX - 50, backBtnY - 14, 100, 28, 4);
-    backBg.lineStyle(1, 0xff00aa, 0.4);
+    backBg.lineStyle(1, 0x6f8f4a, 0.4);
     backBg.strokeRoundedRect(backBtnX - 50, backBtnY - 14, 100, 28, 4);
 
     const backText = this.add.text(backBtnX, backBtnY, 'BACK', {
       fontSize: '12px',
-      color: '#ff00aa',
+      color: '#6f8f4a',
       letterSpacing: 3,
     });
     backText.setOrigin(0.5);
@@ -115,14 +113,14 @@ export class LoadoutScene extends Phaser.Scene {
       backBg.clear();
       backBg.fillStyle(0x221133, 0.9);
       backBg.fillRoundedRect(backBtnX - 50, backBtnY - 14, 100, 28, 4);
-      backBg.lineStyle(1, 0xff00aa, 0.7);
+      backBg.lineStyle(1, 0x6f8f4a, 0.7);
       backBg.strokeRoundedRect(backBtnX - 50, backBtnY - 14, 100, 28, 4);
     });
     backHit.on('pointerout', () => {
       backBg.clear();
-      backBg.fillStyle(0x112233, 0.8);
+      backBg.fillStyle(0x14110c, 0.8);
       backBg.fillRoundedRect(backBtnX - 50, backBtnY - 14, 100, 28, 4);
-      backBg.lineStyle(1, 0xff00aa, 0.4);
+      backBg.lineStyle(1, 0x6f8f4a, 0.4);
       backBg.strokeRoundedRect(backBtnX - 50, backBtnY - 14, 100, 28, 4);
     });
     backHit.on('pointerdown', () => this.returnToMenu());
@@ -244,7 +242,7 @@ export class LoadoutScene extends Phaser.Scene {
 
     const text = this.add.text(width / 2, height / 2, 'UPDATING...', {
       fontSize: '16px',
-      color: '#00f0ff',
+      color: '#e8a14d',
       letterSpacing: 4,
     });
     text.setOrigin(0.5);

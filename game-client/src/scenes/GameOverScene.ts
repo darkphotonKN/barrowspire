@@ -9,22 +9,23 @@ export class GameOverScene extends Phaser.Scene {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
 
-    // Game Over text
-    const gameOverText = this.add.text(width / 2, height / 3, "GAME OVER", {
-      fontSize: "48px",
-      color: "#ff0000",
+    // Death text — grim, lore voice
+    const gameOverText = this.add.text(width / 2, height / 3, "FEW RETURN WHOLE", {
+      fontSize: "46px",
+      color: "#6e1f1f",
+      fontFamily: "Cinzel, Georgia, serif",
       fontStyle: "bold",
     });
     gameOverText.setOrigin(0.5);
 
-    // Score
+    // Spoils carried out of the barrow
     const scoreText = this.add.text(
       width / 2,
       height / 2,
-      `Final Score: ${data.score || 0}`,
+      `Spoils carried: ${data.score || 0}`,
       {
         fontSize: "24px",
-        color: "#ffffff",
+        color: "#cdbf9a",
       },
     );
     scoreText.setOrigin(0.5);
@@ -33,29 +34,29 @@ export class GameOverScene extends Phaser.Scene {
     const restartButton = this.add.text(
       width / 2,
       height * 0.65,
-      "PLAY AGAIN",
+      "DELVE AGAIN",
       {
         fontSize: "20px",
-        color: "#ffffff",
+        color: "#cdbf9a",
       },
     );
     restartButton.setOrigin(0.5);
     restartButton.setInteractive({ useHandCursor: true });
 
-    restartButton.on("pointerover", () => restartButton.setColor("#ffff00"));
-    restartButton.on("pointerout", () => restartButton.setColor("#ffffff"));
+    restartButton.on("pointerover", () => restartButton.setColor("#c9a14e"));
+    restartButton.on("pointerout", () => restartButton.setColor("#cdbf9a"));
     restartButton.on("pointerdown", () => this.scene.start("GameScene"));
 
     // Menu button
     const menuButton = this.add.text(width / 2, height * 0.75, "MAIN MENU", {
       fontSize: "20px",
-      color: "#ffffff",
+      color: "#cdbf9a",
     });
     menuButton.setOrigin(0.5);
     menuButton.setInteractive({ useHandCursor: true });
 
-    menuButton.on("pointerover", () => menuButton.setColor("#ffff00"));
-    menuButton.on("pointerout", () => menuButton.setColor("#ffffff"));
+    menuButton.on("pointerover", () => menuButton.setColor("#c9a14e"));
+    menuButton.on("pointerout", () => menuButton.setColor("#cdbf9a"));
     menuButton.on("pointerdown", () => this.scene.start("MainMenuScene"));
   }
 }

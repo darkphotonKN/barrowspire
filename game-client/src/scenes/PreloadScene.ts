@@ -37,10 +37,6 @@ export class PreloadScene extends Phaser.Scene {
       progressBox.destroy();
       loadingText.destroy();
     });
-
-    // Load audio
-    this.load.audio('menuTheme', '/audio/menu-theme.ogg');
-    this.load.audio('gameAmbient', '/audio/observing-the-star.ogg');
   }
 
   create(): void {

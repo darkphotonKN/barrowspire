@@ -83,7 +83,7 @@ export default function RegisterPage() {
     setError("");
 
     if (!name.trim()) {
-      setError("Please enter your callsign");
+      setError("Please enter your delver name");
       return;
     }
 
@@ -141,14 +141,14 @@ export default function RegisterPage() {
         {/* 標題 */}
         <div className="login-header">
           <h1 className="login-title">THE ERA OF BARROWSPIRE</h1>
-          <p className="login-subtitle">Operator Registration</p>
+          <p className="login-subtitle">Swear the Oath</p>
         </div>
 
         {/* 表單 */}
         <form onSubmit={handleSubmit} className="login-form">
           <div className="login-input-group">
             <label htmlFor="name" className="login-label">
-              Callsign
+              Delver Name
             </label>
             <input
               id="name"
@@ -156,7 +156,7 @@ export default function RegisterPage() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="login-input"
-              placeholder="Enter callsign..."
+              placeholder="Enter delver name..."
               autoComplete="name"
             />
           </div>
@@ -209,7 +209,7 @@ export default function RegisterPage() {
                 Provisioning Access...
               </span>
             ) : (
-              "Register Operator"
+              "Take the Oath"
             )}
           </button>
         </form>

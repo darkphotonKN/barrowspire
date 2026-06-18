@@ -1,14 +1,19 @@
 /*
-Open telemetry initialization and setup
-*
-* Every microservice needs the same OTel setup, so instead of copy-pasting,
-* we centralize it here. Please follow these patterns and use telemetry.Init() at startup.
-*
-* what it does
-* 1. Creates a "resource" - metadata about this service (name, version, env)
-* 2. Creates a "tracer provider" - the thing that creates traces
-* 3. Creates a "meter provider" - the thing that creates metrics
-* 4. Sets up "propagation" - how trace context travels between services
+Open telemetry initialization and setup.
+
+Every microservice needs the same OTel setup, so instead of copy-pasting,
+we centralize it here. Call telemetry.Init() at startup, defer shutdown.
+
+Design constraints:
+  - Telemetry must NEVER block the request path. Timeouts are aggressive
+    (3s for exports) so a degraded collector burns at most 3s per attempt.
+  - Telemetry must be killable. Set `OTEL_ENABLED=false` (or leave
+    `COLLECTOR_ENDPOINT` empty) and Init returns a no-op shutdown; no
+    exporters or providers are installed. Code that calls otel.Tracer(...)
+    or otel.Meter(...) gets the SDK's default noop providers, so callers
+    don't need to branch.
+  - Periodic reader fires every 30s (not 10s) — less log spam when the
+    collector is unhealthy in dev.
 */
 package telemetry
 
@@ -35,131 +40,99 @@ type Config struct {
 	ServiceVersion    string // e.g., "1.0.0" - useful for tracking deployments
 	Environment       string // e.g., "development", "staging", "production"
 	CollectorEndpoint string // e.g., "localhost:4430" - where the OTel Collector lives
+
+	// Enabled toggles the whole OTel setup. When false, Init returns a no-op
+	// shutdown function and installs nothing globally. Wire this from the
+	// OTEL_ENABLED env var so you can flip telemetry off in dev when the
+	// collector is unhealthy.
+	Enabled bool
 }
 
+// Timeouts kept short so a degraded collector never makes a request goroutine
+// wait. 3s is the sweet spot — long enough for a cold gRPC dial + handshake
+// on first export, short enough that a stuck collector isn't a long block.
+// Periodic reader fires every 30s, so the failure budget is bounded.
+const (
+	exportTimeout  = 3 * time.Second
+	metricInterval = 30 * time.Second
+)
+
+// noopShutdown is returned when telemetry is disabled.
+func noopShutdown(context.Context) error { return nil }
+
 // Init initializes OpenTelemetry and returns a shutdown function.
+// Always call the returned shutdown on service exit so pending data flushes.
 //
-// IMPORTANT: Call the shutdown function when your service stops!
-// This ensures all pending traces are flushed before exit.
-//
-// Usage:
-//
-//	shutdown, err := telemetry.Init(ctx, cfg)
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
-//	defer shutdown(ctx)
+// When Enabled=false (or CollectorEndpoint=""), Init is a no-op: no exporters
+// are created, no global providers are set, and the returned shutdown does
+// nothing. Code that calls otel.Tracer(...) / otel.Meter(...) gets the SDK's
+// default noop providers, so no branching is needed elsewhere.
 func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error, err error) {
-	// STEP 1: Create a Resource
-	// A Resource describes WHO is producing the telemetry.
-	// Think of it as metadata that gets attached to every trace and metric.
-	//
-	// When you look at traces in Grafana, you'll filter by service.name
-	// to find "show me all traces from stats-service"
-	//
+	if !cfg.Enabled || cfg.CollectorEndpoint == "" {
+		return noopShutdown, nil
+	}
+
+	// A Resource describes WHO is producing the telemetry — metadata attached
+	// to every trace and metric (filter by service.name in Grafana).
 	res := resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceName(cfg.ServiceName),
 		semconv.ServiceVersion(cfg.ServiceVersion),
 		semconv.DeploymentEnvironment(cfg.Environment),
 	)
-	if err != nil {
-		return nil, fmt.Errorf("creating resource: %w", err)
-	}
 
-	// STEP 2: Create the Trace Exporter
-	// The exporter is HOW traces leave your application.
-	// We're using OTLP (OpenTelemetry Protocol) over gRPC.
-	//
-	// OTLP is the standard protocol - it works with:
-	// - OpenTelemetry Collector (what we'll use)
-	// - Jaeger (directly)
-	// - Grafana Tempo (directly)
-	// - Most commercial APM tools
-	//
-	// The Collector then forwards to your actual storage (Tempo, Jaeger, etc.)
-	//
+	// --- traces ---
+
 	traceExporter, err := otlptracegrpc.New(ctx,
 		otlptracegrpc.WithEndpoint(cfg.CollectorEndpoint),
-		otlptracegrpc.WithInsecure(), // TODO: Use TLS in production!
-		otlptracegrpc.WithTimeout(5*time.Second),
+		otlptracegrpc.WithInsecure(), // TODO: TLS in prod
+		otlptracegrpc.WithTimeout(exportTimeout),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("creating trace exporter: %w", err)
+		return noopShutdown, fmt.Errorf("creating trace exporter: %w", err)
 	}
 
-	// STEP 3: Create the Tracer Provider
-	// The TracerProvider is the FACTORY that creates Tracers.
-	// You don't use it directly much - you just set it globally with otel.SetTracerProvider()
-	// Then anywhere in your code, otel.Tracer("name") returns a tracer.
-	//
-	// BatchSpanProcessor: Batches spans before sending (better performance)
-	// vs SimpleSpanProcessor: Sends immediately (good for debugging, bad for prod)
-	//
 	tracerProvider := trace.NewTracerProvider(
-		// WithBatcher: Collects spans and sends them in batches
-		// This is MUCH more efficient than sending each span immediately
 		trace.WithBatcher(traceExporter,
-			trace.WithBatchTimeout(5*time.Second), // Send batch every 5s or when full
+			trace.WithBatchTimeout(5*time.Second), // flush cadence, not per-export deadline
 		),
 		trace.WithResource(res),
-
-		// WithSampler: Controls WHICH traces to record
-		// AlwaysSample() = record everything (good for dev, expensive in prod)
-		// TraceIDRatioBased(0.1) = record 10% of traces (common in prod)
-		// ParentBased() = if parent was sampled, sample this too (preserves full traces)
-		trace.WithSampler(trace.AlwaysSample()), // We'll change this for prod later
+		trace.WithSampler(trace.AlwaysSample()),
 	)
-
-	// Set as the global tracer provider
-	// Now otel.Tracer("any-name") anywhere in your code will use this
 	otel.SetTracerProvider(tracerProvider)
 
-	// STEP 4: Set up Context Propagation
-	// THIS IS CRITICAL FOR DISTRIBUTED TRACING!
-	//
-	// When Service A calls Service B, how does B know it's part of A's trace?
-	// Answer: A injects trace context into the request (headers for HTTP, metadata for gRPC)
-	//         B extracts it and continues the same trace.
-	//
-	// TraceContext = W3C standard format (traceparent header)
-	// Baggage = key-value pairs that travel with the trace (like user_id)
-	//
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-		propagation.TraceContext{}, // The trace_id, span_id, flags
-		propagation.Baggage{},      // Optional: carry business data across services
+		propagation.TraceContext{},
+		propagation.Baggage{},
 	))
 
-	// Meter provider
+	// --- metrics ---
+
 	metricExporter, err := otlpmetricgrpc.New(ctx,
 		otlpmetricgrpc.WithEndpoint(cfg.CollectorEndpoint),
 		otlpmetricgrpc.WithInsecure(),
-		otlpmetricgrpc.WithTimeout(5*time.Second),
+		otlpmetricgrpc.WithTimeout(exportTimeout),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("creating metric exporter: %w", err)
+		// Tracer is already wired; tear it down before returning.
+		_ = tracerProvider.Shutdown(ctx)
+		return noopShutdown, fmt.Errorf("creating metric exporter: %w", err)
 	}
 
 	meterProvider := sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(metricExporter,
-				sdkmetric.WithInterval(10*time.Second),
+				sdkmetric.WithInterval(metricInterval),
 			),
 		),
 	)
 	otel.SetMeterProvider(meterProvider)
 
-	// STEP 5: Return Shutdown Function
-	// we always call this on application shutdown
-	// it flushes any pending traces so you don't lose data.
-	//
 	shutdown = func(ctx context.Context) error {
 		err1 := tracerProvider.Shutdown(ctx)
 		err2 := meterProvider.Shutdown(ctx)
-
 		return errors.Join(err1, err2)
 	}
-
 	return shutdown, nil
 }

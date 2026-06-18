@@ -172,7 +172,7 @@ export default function NotificationBell() {
             {notifications.length === 0 ? (
               <div className="notification-empty">
                 <div style={{ fontSize: '2rem', opacity: 0.3, marginBottom: '0.5rem' }}>🔔</div>
-                <p style={{ margin: 0, color: '#556677' }}>No notifications</p>
+                <p style={{ margin: 0, color: '#8a7d5c' }}>No notifications</p>
               </div>
             ) : (
               notifications.map((notification) => (
@@ -211,27 +211,27 @@ export default function NotificationBell() {
           width: 36px;
           height: 36px;
           background: transparent;
-          border: 1px solid rgba(0, 240, 255, 0.2);
+          border: 1px solid rgba(156, 123, 63, 0.2);
           border-radius: 6px;
-          color: rgba(0, 240, 255, 0.7);
+          color: rgba(156, 123, 63, 0.7);
           cursor: pointer;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .notification-bell-trigger:hover {
-          background: rgba(0, 240, 255, 0.05);
+          background: rgba(156, 123, 63, 0.05);
           border-color: var(--color-primary);
           color: var(--color-primary);
           box-shadow:
-            0 0 20px rgba(0, 240, 255, 0.2),
-            inset 0 0 20px rgba(0, 240, 255, 0.05);
+            0 0 20px rgba(156, 123, 63, 0.2),
+            inset 0 0 20px rgba(156, 123, 63, 0.05);
           transform: translateY(-1px);
         }
 
         .bell-icon {
           width: 18px;
           height: 18px;
-          filter: drop-shadow(0 0 4px rgba(0, 240, 255, 0.3));
+          filter: drop-shadow(0 0 4px rgba(156, 123, 63, 0.3));
         }
 
         .notification-count {
@@ -252,7 +252,7 @@ export default function NotificationBell() {
           letter-spacing: 0.03em;
           border: 1.5px solid var(--color-bg-dark);
           box-shadow:
-            0 0 12px rgba(0, 240, 255, 0.6),
+            0 0 12px rgba(156, 123, 63, 0.6),
             0 2px 8px rgba(0, 0, 0, 0.4);
           animation: neonPulse 2s ease-in-out infinite;
         }
@@ -260,12 +260,12 @@ export default function NotificationBell() {
         @keyframes neonPulse {
           0%, 100% {
             box-shadow:
-              0 0 12px rgba(0, 240, 255, 0.6),
+              0 0 12px rgba(156, 123, 63, 0.6),
               0 2px 8px rgba(0, 0, 0, 0.4);
           }
           50% {
             box-shadow:
-              0 0 20px rgba(0, 240, 255, 0.9),
+              0 0 20px rgba(156, 123, 63, 0.9),
               0 2px 12px rgba(0, 0, 0, 0.6);
           }
         }
@@ -278,12 +278,11 @@ export default function NotificationBell() {
           max-height: 480px;
           background: linear-gradient(145deg, rgba(10, 10, 20, 0.97) 0%, rgba(6, 6, 14, 0.97) 100%);
           backdrop-filter: blur(24px) saturate(180%);
-          border: 1px solid rgba(0, 240, 255, 0.2);
+          border: 1px solid rgba(156, 123, 63, 0.2);
           border-radius: 8px;
           box-shadow:
-            0 0 0 1px rgba(0, 240, 255, 0.1),
-            0 8px 32px rgba(0, 0, 0, 0.8),
-            0 0 60px rgba(0, 240, 255, 0.08);
+            0 0 0 1px rgba(156, 123, 63, 0.1),
+            0 8px 32px rgba(0, 0, 0, 0.8);
           animation: dropdownSlide 0.25s cubic-bezier(0.4, 0, 0.2, 1);
           overflow: hidden;
         }
@@ -308,7 +307,7 @@ export default function NotificationBell() {
           height: 1px;
           background: linear-gradient(90deg,
             transparent 0%,
-            rgba(0, 240, 255, 0.4) 50%,
+            rgba(156, 123, 63, 0.4) 50%,
             transparent 100%);
         }
 
@@ -317,8 +316,8 @@ export default function NotificationBell() {
           justify-content: space-between;
           align-items: center;
           padding: 0.875rem 1.125rem;
-          border-bottom: 1px solid rgba(0, 240, 255, 0.08);
-          background: rgba(0, 240, 255, 0.02);
+          border-bottom: 1px solid rgba(156, 123, 63, 0.08);
+          background: rgba(156, 123, 63, 0.02);
         }
 
         .notification-dropdown-header h3 {
@@ -329,13 +328,13 @@ export default function NotificationBell() {
           letter-spacing: 0.15em;
           text-transform: uppercase;
           margin: 0;
-          text-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
+          text-shadow: none;
         }
 
         .mark-read-btn {
           background: transparent;
-          border: 1px solid rgba(0, 240, 255, 0.15);
-          color: rgba(0, 240, 255, 0.6);
+          border: 1px solid rgba(156, 123, 63, 0.15);
+          color: rgba(156, 123, 63, 0.6);
           font-size: 0.65rem;
           font-weight: 600;
           cursor: pointer;
@@ -347,10 +346,10 @@ export default function NotificationBell() {
         }
 
         .mark-read-btn:hover {
-          background: rgba(0, 240, 255, 0.08);
+          background: rgba(156, 123, 63, 0.08);
           border-color: var(--color-primary);
           color: var(--color-primary);
-          box-shadow: 0 0 12px rgba(0, 240, 255, 0.15);
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
         }
 
         .notification-list {
@@ -368,15 +367,15 @@ export default function NotificationBell() {
 
         .notification-list::-webkit-scrollbar-thumb {
           background: linear-gradient(180deg,
-            rgba(0, 240, 255, 0.3) 0%,
-            rgba(0, 240, 255, 0.15) 100%);
+            rgba(156, 123, 63, 0.3) 0%,
+            rgba(156, 123, 63, 0.15) 100%);
           border-radius: 2px;
         }
 
         .notification-list::-webkit-scrollbar-thumb:hover {
           background: linear-gradient(180deg,
-            rgba(0, 240, 255, 0.5) 0%,
-            rgba(0, 240, 255, 0.25) 100%);
+            rgba(156, 123, 63, 0.5) 0%,
+            rgba(156, 123, 63, 0.25) 100%);
         }
 
         .notification-empty {
@@ -388,7 +387,7 @@ export default function NotificationBell() {
           display: flex;
           gap: 0.75rem;
           padding: 0.875rem 1.125rem;
-          border-bottom: 1px solid rgba(0, 240, 255, 0.04);
+          border-bottom: 1px solid rgba(156, 123, 63, 0.04);
           cursor: pointer;
           transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
           position: relative;
@@ -401,8 +400,8 @@ export default function NotificationBell() {
 
         .notification-item.unread {
           background: linear-gradient(90deg,
-            rgba(0, 240, 255, 0.04) 0%,
-            rgba(0, 240, 255, 0.02) 100%);
+            rgba(156, 123, 63, 0.04) 0%,
+            rgba(156, 123, 63, 0.02) 100%);
         }
 
         .notification-item.unread::before {
@@ -414,15 +413,15 @@ export default function NotificationBell() {
           width: 2px;
           background: linear-gradient(180deg,
             var(--color-primary) 0%,
-            rgba(0, 240, 255, 0.4) 100%);
-          box-shadow: 0 0 8px rgba(0, 240, 255, 0.6);
+            rgba(156, 123, 63, 0.4) 100%);
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
         }
 
         .notification-item:hover {
           background: linear-gradient(90deg,
-            rgba(0, 240, 255, 0.08) 0%,
-            rgba(0, 240, 255, 0.04) 100%);
-          border-color: rgba(0, 240, 255, 0.1);
+            rgba(156, 123, 63, 0.08) 0%,
+            rgba(156, 123, 63, 0.04) 100%);
+          border-color: rgba(156, 123, 63, 0.1);
         }
 
         .notification-icon {
@@ -433,10 +432,10 @@ export default function NotificationBell() {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: rgba(0, 240, 255, 0.06);
+          background: rgba(156, 123, 63, 0.06);
           border-radius: 6px;
-          border: 1px solid rgba(0, 240, 255, 0.15);
-          filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.2));
+          border: 1px solid rgba(156, 123, 63, 0.15);
+          filter: drop-shadow(0 0 6px rgba(156, 123, 63, 0.2));
         }
 
         .notification-content {
@@ -462,7 +461,7 @@ export default function NotificationBell() {
 
         .notification-time {
           font-size: 0.65rem;
-          color: rgba(0, 240, 255, 0.5);
+          color: rgba(156, 123, 63, 0.5);
           white-space: nowrap;
           flex-shrink: 0;
           letter-spacing: 0.05em;

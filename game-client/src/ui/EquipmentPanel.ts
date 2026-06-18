@@ -37,9 +37,9 @@ const MAX_VISIBLE_INV = 8;
 const PADDING = 16;
 
 // Colors
-const C_CYAN = 0x00f0ff;
-const C_BG = 0x0a0a12;
-const C_SLOT_EMPTY = 0x112233;
+const C_CYAN = 0xe8a14d;
+const C_BG = 0x0d0b0a;
+const C_SLOT_EMPTY = 0x14110c;
 const C_WEAPON = 0xff4466;
 const C_ARMOR = 0x44aaff;
 const C_CONSUMABLE = 0x44ff88;
@@ -195,7 +195,7 @@ export class EquipmentPanel {
     eqChildren.push(eqBg);
 
     const eqTitle = this.scene.add.text(0, -EQUIP_H / 2 + 16, 'EQUIPMENT', {
-      fontSize: '16px', color: '#00f0ff', letterSpacing: 5,
+      fontSize: '16px', color: '#e8a14d', letterSpacing: 5,
     });
     eqTitle.setOrigin(0.5);
     eqChildren.push(eqTitle);
@@ -211,7 +211,7 @@ export class EquipmentPanel {
       const slotY = slotsTop + layout.y;
 
       const label = this.scene.add.text(slotX, slotY + 2, layout.label, {
-        fontSize: '9px', color: '#00f0ff', letterSpacing: 2,
+        fontSize: '9px', color: '#e8a14d', letterSpacing: 2,
       });
       label.setOrigin(0.5, 0);
       eqChildren.push(label);
@@ -221,7 +221,7 @@ export class EquipmentPanel {
       this.slotGraphics.set(layout.slot, slotGfx);
 
       const slotText = this.scene.add.text(slotX, slotY + SLOT_BOX_H - 4, '—', {
-        fontSize: '11px', color: '#00f0ff',
+        fontSize: '11px', color: '#e8a14d',
       });
       slotText.setOrigin(0.5);
       eqChildren.push(slotText);
@@ -231,7 +231,7 @@ export class EquipmentPanel {
     }
 
     const eqHint = this.scene.add.text(0, EQUIP_H / 2 - 16, 'HOVER + E TO UNEQUIP', {
-      fontSize: '9px', color: '#00f0ff', letterSpacing: 2,
+      fontSize: '9px', color: '#e8a14d', letterSpacing: 2,
     });
     eqHint.setOrigin(0.5);
     eqChildren.push(eqHint);
@@ -250,13 +250,13 @@ export class EquipmentPanel {
     invChildren.push(invBg);
 
     const invTitle = this.scene.add.text(0, -INV_H / 2 + 16, 'INVENTORY', {
-      fontSize: '16px', color: '#00f0ff', letterSpacing: 5,
+      fontSize: '16px', color: '#e8a14d', letterSpacing: 5,
     });
     invTitle.setOrigin(0.5);
     invChildren.push(invTitle);
 
     const invHint = this.scene.add.text(0, INV_H / 2 - 16, 'HOVER + E TO EQUIP  //  I CLOSE', {
-      fontSize: '9px', color: '#00f0ff', letterSpacing: 2,
+      fontSize: '9px', color: '#e8a14d', letterSpacing: 2,
     });
     invHint.setOrigin(0.5);
     invChildren.push(invHint);
@@ -332,14 +332,14 @@ export class EquipmentPanel {
         gfx.lineStyle(1, color, 0.3);
         gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
         text.setText(item.name);
-        text.setColor('#ccdde8');
+        text.setColor('#cdbf9a');
       } else {
         gfx.fillStyle(C_SLOT_EMPTY, 0.3);
         gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
         gfx.lineStyle(1, C_CYAN, 0.06);
         gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
         text.setText('—');
-        text.setColor('#334455');
+        text.setColor('#5a5238');
       }
     }
   }
@@ -360,7 +360,7 @@ export class EquipmentPanel {
     const rowWidth = INV_W - PADDING * 2;
 
     if (this.inventory.length === 0) {
-      this.invEmptyText = this.scene.add.text(0, 0, '(Empty)', { fontSize: '13px', color: '#00f0ff' });
+      this.invEmptyText = this.scene.add.text(0, 0, '(Empty)', { fontSize: '13px', color: '#e8a14d' });
       this.invEmptyText.setOrigin(0.5);
       this.invContainer.add(this.invEmptyText);
       return;
@@ -376,7 +376,7 @@ export class EquipmentPanel {
 
       const rowBg = this.scene.add.graphics();
       const bgAlpha = i % 2 === 0 ? 0.25 : 0.15;
-      rowBg.fillStyle(0x112233, bgAlpha);
+      rowBg.fillStyle(0x14110c, bgAlpha);
       rowBg.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
       rowBg.lineStyle(1, C_CYAN, 0.06);
       rowBg.lineBetween(-rowWidth / 2 + 8, rowTop + INV_ROW_H, rowWidth / 2 - 8, rowTop + INV_ROW_H);
@@ -384,7 +384,7 @@ export class EquipmentPanel {
       this.invRowGraphics.push(rowBg);
 
       const label = this.scene.add.text(0, rowTop + INV_ROW_H / 2, this.formatItemLine(item), {
-        fontSize: '13px', color: '#ccdde8',
+        fontSize: '13px', color: '#cdbf9a',
       });
       label.setOrigin(0.5);
       this.invContainer.add(label);
@@ -399,7 +399,7 @@ export class EquipmentPanel {
     if (this.inventory.length > MAX_VISIBLE_INV) {
       const moreY = rowsTop + MAX_VISIBLE_INV * INV_ROW_H + 4;
       const moreText = this.scene.add.text(0, moreY, `+${this.inventory.length - MAX_VISIBLE_INV} more...`, {
-        fontSize: '11px', color: '#00f0ff',
+        fontSize: '11px', color: '#e8a14d',
       });
       moreText.setOrigin(0.5);
       this.invContainer.add(moreText);
@@ -610,14 +610,14 @@ export class EquipmentPanel {
       gfx.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
       gfx.lineStyle(1, C_CYAN, 0.2);
       gfx.strokeRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
-      text.setColor('#00f0ff');
+      text.setColor('#e8a14d');
     } else {
       const bgAlpha = index % 2 === 0 ? 0.25 : 0.15;
-      gfx.fillStyle(0x112233, bgAlpha);
+      gfx.fillStyle(0x14110c, bgAlpha);
       gfx.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
       gfx.lineStyle(1, C_CYAN, 0.06);
       gfx.lineBetween(-rowWidth / 2 + 8, rowTop + INV_ROW_H, rowWidth / 2 - 8, rowTop + INV_ROW_H);
-      text.setColor('#ccdde8');
+      text.setColor('#cdbf9a');
     }
   }
 
@@ -630,13 +630,13 @@ export class EquipmentPanel {
     const children: Phaser.GameObjects.GameObject[] = [];
     let curY = padding;
 
-    const name = this.scene.add.text(padding, curY, item.name, { fontSize: '14px', color: '#00f0ff', fontStyle: 'bold' });
+    const name = this.scene.add.text(padding, curY, item.name, { fontSize: '14px', color: '#e8a14d', fontStyle: 'bold' });
     children.push(name);
     curY += 20;
 
     const type = getItemType(item);
-    const typeColors: Record<string, string> = { weapon: '#ff4466', armor: '#44aaff', consumable: '#44ff88', unknown: '#556677' };
-    const typeText = this.scene.add.text(padding, curY, type.toUpperCase(), { fontSize: '10px', color: typeColors[type] || '#556677', letterSpacing: 2 });
+    const typeColors: Record<string, string> = { weapon: '#ff4466', armor: '#44aaff', consumable: '#44ff88', unknown: '#8a7d5c' };
+    const typeText = this.scene.add.text(padding, curY, type.toUpperCase(), { fontSize: '10px', color: typeColors[type] || '#8a7d5c', letterSpacing: 2 });
     children.push(typeText);
     curY += 18;
 
@@ -649,7 +649,7 @@ export class EquipmentPanel {
     if (item.description) {
       curY += 4;
       const desc = this.scene.add.text(padding, curY, item.description, {
-        fontSize: '11px', color: '#667788', wordWrap: { width: tooltipWidth - padding * 2 }, lineSpacing: 3,
+        fontSize: '11px', color: '#4a4a44', wordWrap: { width: tooltipWidth - padding * 2 }, lineSpacing: 3,
       });
       children.push(desc);
       curY += desc.height;
@@ -657,7 +657,7 @@ export class EquipmentPanel {
 
     const tooltipHeight = curY + padding;
     const bg = this.scene.add.graphics();
-    const borderColor = parseInt((typeColors[type] || '#00f0ff').slice(1), 16);
+    const borderColor = parseInt((typeColors[type] || '#e8a14d').slice(1), 16);
     bg.fillStyle(0x080810, 0.95);
     bg.fillRoundedRect(0, 0, tooltipWidth, tooltipHeight, 6);
     bg.lineStyle(1, borderColor, 0.4);
@@ -677,7 +677,7 @@ export class EquipmentPanel {
 
   private addStat(children: Phaser.GameObjects.GameObject[], padding: number, y: number, width: number, label: string, value: string, color: string): void {
     children.push(
-      this.scene.add.text(padding, y, label, { fontSize: '11px', color: '#00f0ff', letterSpacing: 2 }),
+      this.scene.add.text(padding, y, label, { fontSize: '11px', color: '#e8a14d', letterSpacing: 2 }),
       this.scene.add.text(width - padding, y, value, { fontSize: '12px', color }).setOrigin(1, 0),
     );
   }

@@ -46,7 +46,7 @@ export class GameStateLogger {
     );
 
     // Session info
-    console.log('%c📍 Session ID:', 'color: #ffd700; font-weight: bold', state.session_id);
+    console.log('%c📍 Session ID:', 'color: #c9a14e; font-weight: bold', state.session_id);
 
     // Current player info (highlighted)
     if (state.current_player) {
@@ -112,7 +112,7 @@ export class GameStateLogger {
   static logConnectionStatus(status: string, color: string = '#4ecca3'): void {
     console.log(
       `%c[WebSocket] ${status}`,
-      `color: ${color}; font-weight: bold; padding: 2px 6px; background: #1a1a2e; border-left: 3px solid ${color}`
+      `color: ${color}; font-weight: bold; padding: 2px 6px; background: #1a1410; border-left: 3px solid ${color}`
     );
   }
 

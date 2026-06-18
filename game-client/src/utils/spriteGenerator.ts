@@ -1,6 +1,11 @@
 /**
- * sprite generator for astronaut character
- * creates programmatic sprites for the game since we dont have image assets
+ * sprite generator for the hooded delver character
+ * creates programmatic sprites for the game since we dont have image assets.
+ *
+ * Reskin note: same sprite-sheet dimensions, frame layout (8 dir x 5 frames)
+ * and limited walk animation as before — only the *drawing* changed from a
+ * spacesuit astronaut to an inked, paper-cutout hooded delver to match the
+ * barrow-dark art direction. No gameplay/animation timing was altered.
  */
 
 export class AstronautSpriteGenerator {
@@ -30,126 +35,33 @@ export class AstronautSpriteGenerator {
 
     directions.forEach((dir, dirIndex) => {
       // generate idle frame
-      this.drawAstronaut(0, dirIndex, dir, 0);
+      this.drawDelver(0, dirIndex, dir, 0);
 
       // generate 4 walking frames
       for (let frame = 1; frame <= 4; frame++) {
-        this.drawAstronaut(frame, dirIndex, dir, frame);
+        this.drawDelver(frame, dirIndex, dir, frame);
       }
     });
 
     return this.canvas.toDataURL();
   }
 
-  private drawAstronaut(col: number, row: number, direction: string, animFrame: number) {
+  /**
+   * The player delver: a cloaked, hooded figure in deep umber with a sliver of
+   * warm torchlight at the hood. Inked outlines, flat fills — paper-cutout read.
+   */
+  private drawDelver(col: number, row: number, direction: string, animFrame: number) {
     const x = col * this.frameWidth + this.frameWidth / 2;
     const y = row * this.frameHeight + this.frameHeight / 2;
 
-    this.ctx.save();
-    this.ctx.translate(x, y);
-
-    // rotation based on direction
-    let rotation = 0;
-    switch(direction) {
-      case 'N': rotation = -Math.PI/2; break;
-      case 'NE': rotation = -Math.PI/4; break;
-      case 'E': rotation = 0; break;
-      case 'SE': rotation = Math.PI/4; break;
-      case 'S': rotation = Math.PI/2; break;
-      case 'SW': rotation = 3*Math.PI/4; break;
-      case 'W': rotation = Math.PI; break;
-      case 'NW': rotation = -3*Math.PI/4; break;
-    }
-
-    this.ctx.rotate(rotation);
-
-    // walking animation offset
-    const walkOffset = animFrame > 0 ? Math.sin(animFrame * Math.PI / 2) * 2 : 0;
-
-    // visor glass gradient
-    const visorGradient = this.ctx.createRadialGradient(0, -2, 0, 0, -2, 8);
-    visorGradient.addColorStop(0, 'rgba(100, 200, 255, 0.8)');
-    visorGradient.addColorStop(0.5, 'rgba(50, 150, 220, 0.6)');
-    visorGradient.addColorStop(1, 'rgba(20, 100, 180, 0.4)');
-
-    // body (spacesuit)
-    this.ctx.fillStyle = '#e8e8e8';
-    this.ctx.beginPath();
-    this.ctx.ellipse(0, 2 + walkOffset * 0.5, 10, 12, 0, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    // body details/lines
-    this.ctx.strokeStyle = '#b0b0b0';
-    this.ctx.lineWidth = 1;
-    this.ctx.beginPath();
-    this.ctx.moveTo(-6, 0);
-    this.ctx.lineTo(-6, 10);
-    this.ctx.moveTo(6, 0);
-    this.ctx.lineTo(6, 10);
-    this.ctx.stroke();
-
-    // backpack
-    this.ctx.fillStyle = '#606060';
-    this.ctx.fillRect(-12, -2, 4, 8);
-
-    // helmet
-    this.ctx.fillStyle = '#f0f0f0';
-    this.ctx.beginPath();
-    this.ctx.arc(0, -3 + walkOffset * 0.3, 9, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    // helmet outline
-    this.ctx.strokeStyle = '#c0c0c0';
-    this.ctx.lineWidth = 1.5;
-    this.ctx.stroke();
-
-    // visor
-    this.ctx.fillStyle = visorGradient;
-    this.ctx.beginPath();
-    this.ctx.arc(0, -2, 7, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    // visor reflection
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-    this.ctx.beginPath();
-    this.ctx.ellipse(2, -4, 3, 2, Math.PI / 4, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    // arms (with walking animation)
-    const armSwing = animFrame > 0 ? Math.sin(animFrame * Math.PI / 2) * 0.3 : 0;
-
-    this.ctx.strokeStyle = '#e8e8e8';
-    this.ctx.lineWidth = 3;
-    this.ctx.lineCap = 'round';
-
-    // left arm
-    this.ctx.beginPath();
-    this.ctx.moveTo(-8, 0);
-    this.ctx.lineTo(-10 - armSwing * 4, 6 + Math.abs(armSwing) * 2);
-    this.ctx.stroke();
-
-    // right arm
-    this.ctx.beginPath();
-    this.ctx.moveTo(8, 0);
-    this.ctx.lineTo(10 + armSwing * 4, 6 - Math.abs(armSwing) * 2);
-    this.ctx.stroke();
-
-    // legs (with walking animation)
-    const legSwing = animFrame > 0 ? Math.sin(animFrame * Math.PI) * 4 : 0;
-
-    // left leg
-    this.ctx.beginPath();
-    this.ctx.moveTo(-4, 10);
-    this.ctx.lineTo(-4 + legSwing, 14);
-    this.ctx.stroke();
-
-    // right leg
-    this.ctx.beginPath();
-    this.ctx.moveTo(4, 10);
-    this.ctx.lineTo(4 - legSwing, 14);
-    this.ctx.stroke();
-
-    this.ctx.restore();
+    this.drawCloakedFigure(x, y, direction, animFrame, {
+      cloak: '#241c14',     // deep umber cloak
+      cloakDark: '#1a130d',  // shadow side
+      ink: '#0d0b0a',        // inked outline
+      hoodShadow: '#080605', // black under the hood
+      glow: 'rgba(232, 161, 77, 0.85)',   // torch-amber face glint
+      glowSoft: 'rgba(232, 161, 77, 0.35)',
+    });
   }
 
   generateOtherPlayerSpriteSheet(): string {
@@ -165,109 +77,142 @@ export class AstronautSpriteGenerator {
     const directions = ['S', 'SW', 'W', 'NW', 'N', 'NE', 'E', 'SE'];
 
     directions.forEach((dir, dirIndex) => {
-      this.drawOtherAstronaut(0, dirIndex, dir, 0);
+      this.drawOtherDelver(0, dirIndex, dir, 0);
       for (let frame = 1; frame <= 4; frame++) {
-        this.drawOtherAstronaut(frame, dirIndex, dir, frame);
+        this.drawOtherDelver(frame, dirIndex, dir, frame);
       }
     });
 
     return this.canvas.toDataURL();
   }
 
-  private drawOtherAstronaut(col: number, row: number, direction: string, animFrame: number) {
+  /**
+   * Rival delver, drawn as a pale wight: ashen cloak, sickly necrotic-green
+   * eye-glow instead of the player's warm torchlight.
+   */
+  private drawOtherDelver(col: number, row: number, direction: string, animFrame: number) {
     const x = col * this.frameWidth + this.frameWidth / 2;
     const y = row * this.frameHeight + this.frameHeight / 2;
 
-    this.ctx.save();
-    this.ctx.translate(x, y);
+    this.drawCloakedFigure(x, y, direction, animFrame, {
+      cloak: '#3a3d42',     // cold ashen slate
+      cloakDark: '#2a2d31',
+      ink: '#15171a',
+      hoodShadow: '#0b0d0e',
+      glow: 'rgba(111, 143, 74, 0.9)',    // necrotic green
+      glowSoft: 'rgba(74, 107, 111, 0.4)',
+    });
+  }
 
+  /** Shared cloaked-figure draw. Same silhouette, only the palette differs. */
+  private drawCloakedFigure(
+    x: number,
+    y: number,
+    direction: string,
+    animFrame: number,
+    c: {
+      cloak: string;
+      cloakDark: string;
+      ink: string;
+      hoodShadow: string;
+      glow: string;
+      glowSoft: string;
+    },
+  ) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.translate(x, y);
+
+    // rotation based on direction (unchanged from original facing logic)
     let rotation = 0;
-    switch(direction) {
-      case 'N': rotation = -Math.PI/2; break;
-      case 'NE': rotation = -Math.PI/4; break;
+    switch (direction) {
+      case 'N': rotation = -Math.PI / 2; break;
+      case 'NE': rotation = -Math.PI / 4; break;
       case 'E': rotation = 0; break;
-      case 'SE': rotation = Math.PI/4; break;
-      case 'S': rotation = Math.PI/2; break;
-      case 'SW': rotation = 3*Math.PI/4; break;
+      case 'SE': rotation = Math.PI / 4; break;
+      case 'S': rotation = Math.PI / 2; break;
+      case 'SW': rotation = 3 * Math.PI / 4; break;
       case 'W': rotation = Math.PI; break;
-      case 'NW': rotation = -3*Math.PI/4; break;
+      case 'NW': rotation = -3 * Math.PI / 4; break;
     }
+    ctx.rotate(rotation);
 
-    this.ctx.rotate(rotation);
-
+    // limited walk bob (same maths as before — cheap puppet motion)
     const walkOffset = animFrame > 0 ? Math.sin(animFrame * Math.PI / 2) * 2 : 0;
-
-    // red tinted visor for other players
-    const visorGradient = this.ctx.createRadialGradient(0, -2, 0, 0, -2, 8);
-    visorGradient.addColorStop(0, 'rgba(255, 100, 100, 0.8)');
-    visorGradient.addColorStop(0.5, 'rgba(220, 50, 50, 0.6)');
-    visorGradient.addColorStop(1, 'rgba(180, 20, 20, 0.4)');
-
-    // body in darker shade
-    this.ctx.fillStyle = '#d0d0d0';
-    this.ctx.beginPath();
-    this.ctx.ellipse(0, 2 + walkOffset * 0.5, 10, 12, 0, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    this.ctx.strokeStyle = '#909090';
-    this.ctx.lineWidth = 1;
-    this.ctx.beginPath();
-    this.ctx.moveTo(-6, 0);
-    this.ctx.lineTo(-6, 10);
-    this.ctx.moveTo(6, 0);
-    this.ctx.lineTo(6, 10);
-    this.ctx.stroke();
-
-    this.ctx.fillStyle = '#505050';
-    this.ctx.fillRect(-12, -2, 4, 8);
-
-    this.ctx.fillStyle = '#e0e0e0';
-    this.ctx.beginPath();
-    this.ctx.arc(0, -3 + walkOffset * 0.3, 9, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    this.ctx.strokeStyle = '#a0a0a0';
-    this.ctx.lineWidth = 1.5;
-    this.ctx.stroke();
-
-    this.ctx.fillStyle = visorGradient;
-    this.ctx.beginPath();
-    this.ctx.arc(0, -2, 7, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    this.ctx.beginPath();
-    this.ctx.ellipse(2, -4, 3, 2, Math.PI / 4, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    const armSwing = animFrame > 0 ? Math.sin(animFrame * Math.PI / 2) * 0.3 : 0;
-
-    this.ctx.strokeStyle = '#d0d0d0';
-    this.ctx.lineWidth = 3;
-    this.ctx.lineCap = 'round';
-
-    this.ctx.beginPath();
-    this.ctx.moveTo(-8, 0);
-    this.ctx.lineTo(-10 - armSwing * 4, 6 + Math.abs(armSwing) * 2);
-    this.ctx.stroke();
-
-    this.ctx.beginPath();
-    this.ctx.moveTo(8, 0);
-    this.ctx.lineTo(10 + armSwing * 4, 6 - Math.abs(armSwing) * 2);
-    this.ctx.stroke();
-
     const legSwing = animFrame > 0 ? Math.sin(animFrame * Math.PI) * 4 : 0;
 
-    this.ctx.beginPath();
-    this.ctx.moveTo(-4, 10);
-    this.ctx.lineTo(-4 + legSwing, 14);
-    this.ctx.stroke();
+    // soft torch/eye glow under everything
+    const glowGrad = ctx.createRadialGradient(2, -2, 0, 2, -2, 11);
+    glowGrad.addColorStop(0, c.glowSoft);
+    glowGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath();
+    ctx.arc(2, -2, 11, 0, Math.PI * 2);
+    ctx.fill();
 
-    this.ctx.beginPath();
-    this.ctx.moveTo(4, 10);
-    this.ctx.lineTo(4 - legSwing, 14);
-    this.ctx.stroke();
+    // legs (cloak hem shadow), drawn first so the robe overlaps them
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-3, 9);
+    ctx.lineTo(-3 + legSwing, 14);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(3, 9);
+    ctx.lineTo(3 - legSwing, 14);
+    ctx.stroke();
 
-    this.ctx.restore();
+    // robe / cloak body — a tapered drape (wider at the hem)
+    ctx.fillStyle = c.cloak;
+    ctx.beginPath();
+    ctx.moveTo(-9, 11 + walkOffset * 0.3);   // hem left
+    ctx.quadraticCurveTo(-8, -2, -5, -6);     // up the left shoulder
+    ctx.lineTo(5, -6);                        // shoulders
+    ctx.quadraticCurveTo(8, -2, 9, 11 + walkOffset * 0.3); // down to hem right
+    ctx.closePath();
+    ctx.fill();
+
+    // shadow side of the cloak for a little form
+    ctx.fillStyle = c.cloakDark;
+    ctx.beginPath();
+    ctx.moveTo(0, -6);
+    ctx.quadraticCurveTo(7, -1, 9, 11 + walkOffset * 0.3);
+    ctx.lineTo(2, 11 + walkOffset * 0.3);
+    ctx.closePath();
+    ctx.fill();
+
+    // inked outline around the cloak
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-9, 11 + walkOffset * 0.3);
+    ctx.quadraticCurveTo(-8, -2, -5, -6);
+    ctx.lineTo(5, -6);
+    ctx.quadraticCurveTo(8, -2, 9, 11 + walkOffset * 0.3);
+    ctx.stroke();
+
+    // hood — a rounded cowl over the head
+    ctx.fillStyle = c.cloak;
+    ctx.beginPath();
+    ctx.arc(0, -5 + walkOffset * 0.3, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // black void of the face under the hood
+    ctx.fillStyle = c.hoodShadow;
+    ctx.beginPath();
+    ctx.ellipse(1, -4, 4.5, 5.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // a single warm/sickly glint where the eyes catch the light
+    ctx.fillStyle = c.glow;
+    ctx.beginPath();
+    ctx.arc(2, -4, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
   }
 }

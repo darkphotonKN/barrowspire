@@ -1,24 +1,24 @@
 import type { Metadata } from 'next';
-import { Orbitron, Space_Grotesk } from 'next/font/google';
+import { Cinzel, EB_Garamond } from 'next/font/google';
 import './globals.css';
 import Header from '@/components/Header';
 import AuthGuard from '@/components/AuthGuard';
 
-const orbitron = Orbitron({
+const cinzel = Cinzel({
   subsets: ['latin'],
-  variable: '--font-orbitron',
+  variable: '--font-cinzel',
   display: 'swap',
 });
 
-const spaceGrotesk = Space_Grotesk({
+const ebGaramond = EB_Garamond({
   subsets: ['latin'],
-  variable: '--font-space-grotesk',
+  variable: '--font-garamond',
   display: 'swap',
 });
 
 export const metadata: Metadata = {
-  title: 'THE ERA OF BARROWSPIRE // Extraction',
-  description: 'Drop into the void. Loot. Fight. Extract.',
+  title: 'The Era of Barrowspire',
+  description: 'Delve the barrow-deep. Few return whole.',
 };
 
 export default function RootLayout({
@@ -27,7 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${orbitron.variable} ${spaceGrotesk.variable}`}>
+    <html lang="en" className={`${cinzel.variable} ${ebGaramond.variable}`}>
       <body>
         <AuthGuard>
           <Header />

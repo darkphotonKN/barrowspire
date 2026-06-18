@@ -112,7 +112,7 @@ export default function ProfilePage() {
   };
 
   const getStatusLabel = (status: number) => {
-    return status === 1 ? "Operator" : status === 2 ? "Commander" : "Unknown";
+    return status === 1 ? "Delver" : status === 2 ? "Warden" : "Unknown";
   };
 
   return (
@@ -128,7 +128,7 @@ export default function ProfilePage() {
         >
           Back to Game
         </button>
-        <h1 className="profile-title">OPERATOR PROFILE</h1>
+        <h1 className="profile-title">DELVER PROFILE</h1>
       </div>
 
       {/* Profile Card */}

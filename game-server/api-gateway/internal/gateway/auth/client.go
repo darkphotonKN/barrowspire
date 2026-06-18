@@ -3,9 +3,12 @@ package auth
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 )
 
 const (
@@ -14,6 +17,8 @@ const (
 
 type Client struct {
 	registry discovery.Registry
+	mu       sync.Mutex
+	conn     *grpc.ClientConn
 }
 
 func NewClient(registry discovery.Registry) AuthClient {
@@ -22,13 +27,29 @@ func NewClient(registry discovery.Registry) AuthClient {
 	}
 }
 
-func (c *Client) CreateMember(ctx context.Context, req *pb.CreateMemberRequest) (*pb.Member, error) {
+// ensureConn lazily dials the service once and caches the connection for
+// reuse across calls (gRPC multiplexes over it). Opening a fresh conn per RPC
+// serialized badly and churned connections; see common/discovery/grpc.go.
+func (c *Client) ensureConn(ctx context.Context) (*grpc.ClientConn, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conn != nil && c.conn.GetState() != connectivity.Shutdown {
+		return c.conn, nil
+	}
 	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	if err != nil {
+		return nil, err
+	}
+	c.conn = conn
+	return conn, nil
+}
+
+func (c *Client) CreateMember(ctx context.Context, req *pb.CreateMemberRequest) (*pb.Member, error) {
+	conn, err := c.ensureConn(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to auth service: %w", err)
 	}
-	defer conn.Close()
 
 	client := pb.NewAuthServiceClient(conn)
 
@@ -37,12 +58,11 @@ func (c *Client) CreateMember(ctx context.Context, req *pb.CreateMemberRequest) 
 }
 
 func (c *Client) GetMember(ctx context.Context, req *pb.GetMemberRequest) (*pb.Member, error) {
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	conn, err := c.ensureConn(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to auth service: %w", err)
 	}
-	defer conn.Close()
 
 	client := pb.NewAuthServiceClient(conn)
 
@@ -51,12 +71,11 @@ func (c *Client) GetMember(ctx context.Context, req *pb.GetMemberRequest) (*pb.M
 }
 
 func (c *Client) LoginMember(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	conn, err := c.ensureConn(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to auth service: %w", err)
 	}
-	defer conn.Close()
 
 	client := pb.NewAuthServiceClient(conn)
 
@@ -65,12 +84,11 @@ func (c *Client) LoginMember(ctx context.Context, req *pb.LoginRequest) (*pb.Log
 }
 
 func (c *Client) UpdateMemberInfo(ctx context.Context, req *pb.UpdateMemberInfoRequest) (*pb.Member, error) {
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	conn, err := c.ensureConn(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to auth service: %w", err)
 	}
-	defer conn.Close()
 
 	client := pb.NewAuthServiceClient(conn)
 
@@ -79,12 +97,11 @@ func (c *Client) UpdateMemberInfo(ctx context.Context, req *pb.UpdateMemberInfoR
 }
 
 func (c *Client) UpdateMemberPassword(ctx context.Context, req *pb.UpdatePasswordRequest) (*pb.UpdatePasswordResponse, error) {
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	conn, err := c.ensureConn(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to auth service: %w", err)
 	}
-	defer conn.Close()
 
 	client := pb.NewAuthServiceClient(conn)
 
@@ -93,12 +110,11 @@ func (c *Client) UpdateMemberPassword(ctx context.Context, req *pb.UpdatePasswor
 }
 
 func (c *Client) ValidateToken(ctx context.Context, req *pb.ValidateTokenRequest) (*pb.ValidateTokenResponse, error) {
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	conn, err := c.ensureConn(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to auth service: %w", err)
 	}
-	defer conn.Close()
 
 	client := pb.NewAuthServiceClient(conn)
 
@@ -107,12 +123,11 @@ func (c *Client) ValidateToken(ctx context.Context, req *pb.ValidateTokenRequest
 }
 
 func (c *Client) RequestAvatarUpload(ctx context.Context, req *pb.RequestAvatarUploadRequest) (*pb.RequestAvatarUploadResponse, error) {
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	conn, err := c.ensureConn(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to auth service: %w", err)
 	}
-	defer conn.Close()
 
 	client := pb.NewUploadServiceClient(conn)
 
@@ -121,12 +136,11 @@ func (c *Client) RequestAvatarUpload(ctx context.Context, req *pb.RequestAvatarU
 }
 
 func (c *Client) ConfirmAvatarUpload(ctx context.Context, req *pb.ConfirmAvatarUploadRequest) (*pb.ConfirmAvatarUploadResponse, error) {
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	conn, err := c.ensureConn(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to auth service: %w", err)
 	}
-	defer conn.Close()
 
 	client := pb.NewUploadServiceClient(conn)
 
@@ -135,11 +149,10 @@ func (c *Client) ConfirmAvatarUpload(ctx context.Context, req *pb.ConfirmAvatarU
 }
 
 func (c *Client) CheckEmailExists(ctx context.Context, req *pb.CheckEmailRequest) (*pb.CheckEmailResponse, error) {
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	conn, err := c.ensureConn(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to auth service: %w", err)
 	}
-	defer conn.Close()
 
 	client := pb.NewAuthServiceClient(conn)
 	return client.CheckEmailExists(ctx, req)

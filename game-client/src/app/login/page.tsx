@@ -108,7 +108,7 @@ export default function LoginPage() {
         {/* 標題 */}
         <div className="login-header">
           <h1 className="login-title">THE ERA OF BARROWSPIRE</h1>
-          <p className="login-subtitle">Operator Authentication</p>
+          <p className="login-subtitle">Speak Your Name</p>
         </div>
 
         {/* 表單 */}
@@ -156,7 +156,7 @@ export default function LoginPage() {
                 Verifying...
               </span>
             ) : (
-              "Authenticate"
+              "Enter"
             )}
           </button>
         </form>

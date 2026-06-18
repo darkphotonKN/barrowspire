@@ -7,9 +7,9 @@ import Link from 'next/link';
 const PhaserGame = dynamic(() => import('@/components/PhaserGame'), {
   ssr: false,
   loading: () => (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#0a0a12] gap-4">
-      <p className="text-[#00f0ff] text-3xl font-orbitron font-bold tracking-[0.15em] uppercase" style={{ textShadow: '0 0 30px rgba(0,240,255,0.2)' }}>Initializing Uplink</p>
-      <p className="text-[#556677] text-sm tracking-[0.2em] uppercase">Preparing deployment zone...</p>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-[#0d0b0a] gap-4">
+      <p className="text-[#e8a14d] text-3xl font-display font-bold tracking-[0.15em] uppercase" style={{ }}>Lighting the Torch</p>
+      <p className="text-[#8a7d5c] text-sm tracking-[0.2em] uppercase">Preparing deployment zone...</p>
     </div>
   ),
 });
@@ -20,17 +20,17 @@ export default function GamePage() {
   if (!isAuthenticated) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-black">
-        <div className="text-center space-y-6 p-8 bg-gray-900/50 rounded-lg border border-cyan-500/30 backdrop-blur-sm">
-          <h1 className="text-4xl font-bold text-cyan-400 font-orbitron">
+        <div className="text-center space-y-6 p-8 bg-gray-900/50 rounded-lg border border-[#9c7b3f]/30 backdrop-blur-sm">
+          <h1 className="text-4xl font-bold text-[#e8a14d] font-display">
             Access Restricted
           </h1>
           <p className="text-gray-300 text-lg max-w-md">
-            You need to be signed in to play The Era of Barrowspire. Join the adventure by creating an account or signing in.
+            You need to be signed in to delve. Swear the oath, or return to the delve.
           </p>
           <div className="flex gap-4 justify-center pt-4">
             <Link
               href="/login"
-              className="px-6 py-3 bg-cyan-500/10 text-cyan-400 border border-cyan-500/50 rounded hover:bg-cyan-500/20 transition-colors"
+              className="px-6 py-3 bg-[#9c7b3f]/10 text-[#e8a14d] border border-[#9c7b3f]/50 rounded hover:bg-[#9c7b3f]/20 transition-colors"
             >
               Sign In
             </Link>

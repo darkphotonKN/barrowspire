@@ -44,8 +44,8 @@ export default function ParticleText() {
     // Resolve the CSS variable to get the actual loaded font family
     const fontFamily =
       getComputedStyle(document.documentElement)
-        .getPropertyValue('--font-orbitron')
-        .trim() || 'Orbitron';
+        .getPropertyValue('--font-cinzel')
+        .trim() || 'Cinzel';
 
     // Offscreen canvas to render text and sample pixels
     const offscreen = document.createElement('canvas');
@@ -58,7 +58,7 @@ export default function ParticleText() {
     const lineGap = fontSize * 0.15;
 
     offCtx.fillStyle = '#fff';
-    offCtx.font = `900 ${fontSize}px ${fontFamily}, Orbitron, sans-serif`;
+    offCtx.font = `900 ${fontSize}px ${fontFamily}, Cinzel, serif`;
     offCtx.textAlign = 'center';
     offCtx.textBaseline = 'middle';
     offCtx.fillText('THE ERA OF', w / 2, h / 2 - fontSize / 2 - lineGap);
@@ -69,7 +69,7 @@ export default function ParticleText() {
     const data = imageData.data;
     const particles: Particle[] = [];
     const gap = Math.max(3, Math.floor(Math.min(w, h) / 250));
-    const colors = ['#ffffff'];
+    const colors = ['#e8a14d', '#c9a14e', '#c2611f'];
 
     for (let y = 0; y < h; y += gap) {
       for (let x = 0; x < w; x += gap) {
@@ -121,7 +121,7 @@ export default function ParticleText() {
     for (const s of starsRef.current) {
       const opacity =
         s.baseOpacity + Math.sin(time * s.twinkleSpeed * 60 + s.twinkleOffset) * s.baseOpacity * 0.6;
-      ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+      ctx.fillStyle = `rgba(232, 161, 77, ${opacity})`;
       ctx.beginPath();
       ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
       ctx.fill();

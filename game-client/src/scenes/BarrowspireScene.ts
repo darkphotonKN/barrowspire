@@ -191,15 +191,15 @@ export class BarrowspireScene extends Phaser.Scene {
     const children: Phaser.GameObjects.GameObject[] = [];
 
     const bg = this.add.graphics();
-    bg.fillStyle(0x0a0a12, 0.92);
+    bg.fillStyle(0x0d0b0a, 0.92);
     bg.fillRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, 8);
-    bg.lineStyle(1, 0x00f0ff, 0.5);
+    bg.lineStyle(1, 0xe8a14d, 0.5);
     bg.strokeRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, 8);
     children.push(bg);
 
     const title = this.add.text(0, -panelH / 2 + 16, "CONTROLS", {
       fontSize: "16px",
-      color: "#00f0ff",
+      color: "#e8a14d",
       letterSpacing: 5,
     });
     title.setOrigin(0.5);
@@ -220,12 +220,12 @@ export class BarrowspireScene extends Phaser.Scene {
     for (const [key, action] of controls) {
       const keyText = this.add.text(-panelW / 2 + 20, curY, key, {
         fontSize: "11px",
-        color: "#00f0ff",
+        color: "#e8a14d",
         letterSpacing: 2,
       });
       const actionText = this.add.text(panelW / 2 - 20, curY, action, {
         fontSize: "11px",
-        color: "#556677",
+        color: "#8a7d5c",
       });
       actionText.setOrigin(1, 0);
       children.push(keyText, actionText);
@@ -234,7 +234,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     const hint = this.add.text(0, panelH / 2 - 16, "H to close", {
       fontSize: "10px",
-      color: "#334455",
+      color: "#5a5238",
     });
     hint.setOrigin(0.5);
     children.push(hint);
@@ -255,16 +255,16 @@ export class BarrowspireScene extends Phaser.Scene {
       cam.height / 2,
       cam.width,
       cam.height,
-      0x0a0a12,
+      0x0d0b0a,
       0.85,
     );
     // centered card
     const cardW = 460;
     const cardH = 280;
     const card = this.add.graphics();
-    card.fillStyle(0x0a0a12, 0.95);
+    card.fillStyle(0x0d0b0a, 0.95);
     card.fillRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 10);
-    card.lineStyle(1, 0x00f0ff, 0.5);
+    card.lineStyle(1, 0xe8a14d, 0.5);
     card.strokeRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 10);
 
     let titleStr: string;
@@ -272,22 +272,22 @@ export class BarrowspireScene extends Phaser.Scene {
 
     switch (result) {
       case "escaped":
-        titleStr = "VICTORY!";
-        subtitleStr = "OPERATOR EXTRACTED";
+        titleStr = "ESCAPED!";
+        subtitleStr = "YOU CARRIED IT OUT OF THE BARROW";
         break;
       case "survived":
-        titleStr = "VICTORY!";
-        subtitleStr = "LAST ONE STANDING";
+        titleStr = "YOU LIVE";
+        subtitleStr = "LAST DELVER STANDING";
         break;
       default: // "eliminated"
-        titleStr = `YOU PLACED #${position}`;
-        subtitleStr = "BETTER LUCK ON YOUR NEXT DEPLOY";
+        titleStr = `YOU FELL #${position}`;
+        subtitleStr = "THE BARROW KEEPS ITS DEAD";
         break;
     }
 
     const title = this.add.text(0, -60, titleStr, {
       fontSize: "44px",
-      color: "#00f0ff",
+      color: "#e8a14d",
       fontStyle: "bold",
       letterSpacing: 6,
     });
@@ -295,7 +295,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     const subtitle = this.add.text(0, 0, subtitleStr, {
       fontSize: "13px",
-      color: "#556677",
+      color: "#8a7d5c",
       letterSpacing: 3,
     });
     subtitle.setOrigin(0.5);
@@ -308,7 +308,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // RE-DEPLOY button (re-queue) — cyan fill
     const redeployBtn = this.add.graphics();
-    redeployBtn.fillStyle(0x00f0ff, 1);
+    redeployBtn.fillStyle(0xe8a14d, 1);
     redeployBtn.fillRoundedRect(
       -btnW / 2 - btnW / 2 - btnGap / 2,
       btnY - btnH / 2,
@@ -319,10 +319,10 @@ export class BarrowspireScene extends Phaser.Scene {
     const redeployText = this.add.text(
       -btnW / 2 - btnGap / 2,
       btnY,
-      "RE-DEPLOY",
+      "DELVE AGAIN",
       {
         fontSize: "14px",
-        color: "#0a0a12",
+        color: "#0d0b0a",
         fontStyle: "bold",
         letterSpacing: 3,
       },
@@ -338,7 +338,7 @@ export class BarrowspireScene extends Phaser.Scene {
       .setDepth(2001);
     redeployHit.on("pointerover", () => {
       redeployBtn.clear();
-      redeployBtn.fillStyle(0x33f5ff, 1);
+      redeployBtn.fillStyle(0xf2b866, 1);
       redeployBtn.fillRoundedRect(
         -btnW / 2 - btnW / 2 - btnGap / 2,
         btnY - btnH / 2,
@@ -349,7 +349,7 @@ export class BarrowspireScene extends Phaser.Scene {
     });
     redeployHit.on("pointerout", () => {
       redeployBtn.clear();
-      redeployBtn.fillStyle(0x00f0ff, 1);
+      redeployBtn.fillStyle(0xe8a14d, 1);
       redeployBtn.fillRoundedRect(
         -btnW / 2 - btnW / 2 - btnGap / 2,
         btnY - btnH / 2,
@@ -359,22 +359,21 @@ export class BarrowspireScene extends Phaser.Scene {
       );
     });
     redeployHit.on("pointerdown", () => {
-      this.sound.stopByKey("gameAmbient");
       socketManager.sendMessage(ActionType.Find_Game, { playerId: "1" });
       this.scene.start("MainMenuScene");
     });
 
     // RETURN TO BASE button — outlined
     const returnBtn = this.add.graphics();
-    returnBtn.lineStyle(1, 0x00f0ff, 0.6);
+    returnBtn.lineStyle(1, 0xe8a14d, 0.6);
     returnBtn.strokeRoundedRect(btnGap / 2, btnY - btnH / 2, btnW, btnH, 6);
     const returnText = this.add.text(
       btnGap / 2 + btnW / 2,
       btnY,
-      "RETURN TO BASE",
+      "WITHDRAW",
       {
         fontSize: "13px",
-        color: "#00f0ff",
+        color: "#e8a14d",
         letterSpacing: 2,
       },
     );
@@ -386,18 +385,17 @@ export class BarrowspireScene extends Phaser.Scene {
       .setDepth(2001);
     returnHit.on("pointerover", () => {
       returnBtn.clear();
-      returnBtn.fillStyle(0x00f0ff, 0.1);
+      returnBtn.fillStyle(0xe8a14d, 0.1);
       returnBtn.fillRoundedRect(btnGap / 2, btnY - btnH / 2, btnW, btnH, 6);
-      returnBtn.lineStyle(1, 0x00f0ff, 0.8);
+      returnBtn.lineStyle(1, 0xe8a14d, 0.8);
       returnBtn.strokeRoundedRect(btnGap / 2, btnY - btnH / 2, btnW, btnH, 6);
     });
     returnHit.on("pointerout", () => {
       returnBtn.clear();
-      returnBtn.lineStyle(1, 0x00f0ff, 0.6);
+      returnBtn.lineStyle(1, 0xe8a14d, 0.6);
       returnBtn.strokeRoundedRect(btnGap / 2, btnY - btnH / 2, btnW, btnH, 6);
     });
     returnHit.on("pointerdown", () => {
-      this.sound.stopByKey("gameAmbient");
       this.scene.start("MainMenuScene");
     });
 
@@ -423,10 +421,10 @@ export class BarrowspireScene extends Phaser.Scene {
 
   preload(): void {
     // create soldier textures (4 directions each) — same spacesuit colors for all
-    const suitBody = 0x8899aa;
-    const suitVisor = 0x00f0ff;
-    const suitHighlight = 0xbccdd8;
-    const suitDark = 0x667788;
+    const suitBody = 0x5a5a52;
+    const suitVisor = 0xe8a14d;
+    const suitHighlight = 0xd8c79a;
+    const suitDark = 0x4a4a44;
     this.createSoldierTextures(
       "player",
       suitBody,
@@ -727,7 +725,7 @@ export class BarrowspireScene extends Phaser.Scene {
     });
 
     // --- 敵人閃紅 ---
-    enemySprite.setTint(0xff0000);
+    enemySprite.setTint(0x6e1f1f);
     this.time.delayedCall(200, () => {
       enemySprite.clearTint();
     });
@@ -767,29 +765,29 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // 關閉的寶箱
     const closed = this.make.graphics({});
-    closed.fillStyle(0x8b4513, 1);
+    closed.fillStyle(0x5a4632, 1);
     closed.fillRect(0, 10, width, height - 10);
-    closed.fillStyle(0x654321, 1);
+    closed.fillStyle(0x3e2f22, 1);
     closed.fillRect(0, 0, width, 12);
-    closed.fillStyle(0xffd700, 1);
+    closed.fillStyle(0xc9a14e, 1);
     closed.fillRect(0, 10, width, 3);
     closed.fillRect(16, 6, 8, 10);
-    closed.lineStyle(2, 0x3d2314, 1);
+    closed.lineStyle(2, 0x241a12, 1);
     closed.strokeRect(0, 0, width, height);
     closed.generateTexture("chest_closed", width, height);
     closed.destroy();
 
     // 打開的寶箱
     const open = this.make.graphics({});
-    open.fillStyle(0x8b4513, 1);
+    open.fillStyle(0x5a4632, 1);
     open.fillRect(0, 16, width, height - 16);
-    open.fillStyle(0x654321, 1);
+    open.fillStyle(0x3e2f22, 1);
     open.fillRect(0, 0, width, 10);
-    open.fillStyle(0xffec8b, 1);
+    open.fillStyle(0xe8c98b, 1);
     open.fillRect(4, 18, width - 8, height - 22);
-    open.fillStyle(0xffd700, 1);
+    open.fillStyle(0xc9a14e, 1);
     open.fillRect(0, 16, width, 3);
-    open.lineStyle(2, 0x3d2314, 1);
+    open.lineStyle(2, 0x241a12, 1);
     open.strokeRect(0, 0, width, height);
     open.generateTexture("chest_open", width, height);
     open.destroy();
@@ -1028,7 +1026,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private createEscapeParticleTexture(): void {
     const g = this.add.graphics();
-    g.fillStyle(0x00f0ff, 1);
+    g.fillStyle(0xe8a14d, 1);
     g.fillCircle(4, 4, 4);
     g.generateTexture("escape_particle", 8, 8);
     g.destroy();
@@ -1042,7 +1040,7 @@ export class BarrowspireScene extends Phaser.Scene {
       lifespan: 800,
       quantity: 30,
       emitting: false,
-      tint: [0x00f0ff, 0x4ecca3, 0xffd700],
+      tint: [0xe8a14d, 0x4ecca3, 0xc9a14e],
     });
     emitter.setDepth(1000);
     emitter.explode(30);
@@ -1462,7 +1460,7 @@ export class BarrowspireScene extends Phaser.Scene {
     const popupHeight = 280;
 
     const bg = this.add.graphics();
-    bg.fillStyle(0x0a0a12, 0.9);
+    bg.fillStyle(0x0d0b0a, 0.9);
     bg.fillRoundedRect(
       -popupWidth / 2,
       -popupHeight / 2,
@@ -1470,7 +1468,7 @@ export class BarrowspireScene extends Phaser.Scene {
       popupHeight,
       8,
     );
-    bg.lineStyle(1, 0x00f0ff, 1);
+    bg.lineStyle(1, 0xe8a14d, 1);
     bg.strokeRoundedRect(
       -popupWidth / 2,
       -popupHeight / 2,
@@ -1479,17 +1477,17 @@ export class BarrowspireScene extends Phaser.Scene {
       8,
     );
 
-    const title = this.add.text(0, -popupHeight / 2 + 20, "CONTAINER", {
+    const title = this.add.text(0, -popupHeight / 2 + 20, "COFFER", {
       fontSize: "18px",
-      color: "#00f0ff",
+      color: "#e8a14d",
       letterSpacing: 6,
     });
     title.setOrigin(0.5);
 
     // Placeholder for empty/loading state
-    this.popupItemsText = this.add.text(0, 0, "Loading...", {
+    this.popupItemsText = this.add.text(0, 0, "Rummaging...", {
       fontSize: "14px",
-      color: "#556677",
+      color: "#8a7d5c",
       align: "center",
     });
     this.popupItemsText.setOrigin(0.5);
@@ -1500,7 +1498,7 @@ export class BarrowspireScene extends Phaser.Scene {
       "Q Close  //  F Take Item",
       {
         fontSize: "12px",
-        color: "#334455",
+        color: "#5a5238",
       },
     );
     hint.setOrigin(0.5);
@@ -1548,7 +1546,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     if (displayItems.length === 0) {
       if (this.popupItemsText) {
-        this.popupItemsText.setText("(Empty)");
+        this.popupItemsText.setText("(Picked clean)");
         this.popupItemsText.setVisible(true);
       }
     } else {
@@ -1636,7 +1634,7 @@ export class BarrowspireScene extends Phaser.Scene {
       // Text label centered in row
       const label = this.add.text(0, rowCenterY, this.formatItemLine(item), {
         fontSize: "13px",
-        color: "#ccdde8",
+        color: "#cdbf9a",
       });
       label.setOrigin(0.5);
       container.add(label);
@@ -1687,15 +1685,15 @@ export class BarrowspireScene extends Phaser.Scene {
   ): void {
     g.clear();
     if (hovered) {
-      g.fillStyle(0x00f0ff, 0.08);
+      g.fillStyle(0xe8a14d, 0.08);
       g.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, rowHeight, 4);
-      g.lineStyle(1, 0x00f0ff, 0.2);
+      g.lineStyle(1, 0xe8a14d, 0.2);
       g.strokeRoundedRect(-rowWidth / 2, rowTop, rowWidth, rowHeight, 4);
     } else {
       const bgAlpha = index % 2 === 0 ? 0.25 : 0.15;
-      g.fillStyle(0x112233, bgAlpha);
+      g.fillStyle(0x14110c, bgAlpha);
       g.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, rowHeight, 4);
-      g.lineStyle(1, 0x00f0ff, 0.06);
+      g.lineStyle(1, 0xe8a14d, 0.06);
       g.lineBetween(
         -rowWidth / 2 + 8,
         rowTop + rowHeight,
@@ -1715,7 +1713,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private applyRowHover(index: number): void {
     const row = this.itemRows[index];
-    row.label.setColor("#00f0ff");
+    row.label.setColor("#e8a14d");
     this.drawRowBg(
       row.rowBg,
       index,
@@ -1728,7 +1726,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private applyRowUnhover(index: number): void {
     const row = this.itemRows[index];
-    row.label.setColor("#ccdde8");
+    row.label.setColor("#cdbf9a");
     this.drawRowBg(
       row.rowBg,
       index,
@@ -1858,7 +1856,7 @@ export class BarrowspireScene extends Phaser.Scene {
         return { lines, typeLabel: "CONSUMABLE", typeColor };
       }
       default:
-        return { lines, typeLabel: "ITEM", typeColor: "#556677" };
+        return { lines, typeLabel: "ITEM", typeColor: "#8a7d5c" };
     }
   }
 
@@ -1879,7 +1877,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Item name
     const nameText = this.add.text(padding, curY, item.name, {
       fontSize: "15px",
-      color: "#00f0ff",
+      color: "#e8a14d",
       fontStyle: "bold",
     });
     children.push(nameText);
@@ -1896,7 +1894,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // Separator line
     const sep = this.add.graphics();
-    sep.lineStyle(1, 0x00f0ff, 0.15);
+    sep.lineStyle(1, 0xe8a14d, 0.15);
     sep.lineBetween(padding, curY, tooltipWidth - padding, curY);
     children.push(sep);
     curY += 10;
@@ -1905,7 +1903,7 @@ export class BarrowspireScene extends Phaser.Scene {
     for (const line of lines) {
       const labelText = this.add.text(padding, curY, line.label, {
         fontSize: "12px",
-        color: "#556677",
+        color: "#8a7d5c",
         letterSpacing: 2,
       });
       const valueText = this.add.text(
@@ -1926,13 +1924,13 @@ export class BarrowspireScene extends Phaser.Scene {
     if (item.description) {
       curY += 6;
       const descSep = this.add.graphics();
-      descSep.lineStyle(1, 0x00f0ff, 0.1);
+      descSep.lineStyle(1, 0xe8a14d, 0.1);
       descSep.lineBetween(padding, curY, tooltipWidth - padding, curY);
       children.push(descSep);
       curY += 8;
       const desc = this.add.text(padding, curY, item.description, {
         fontSize: "11px",
-        color: "#667788",
+        color: "#4a4a44",
         wordWrap: { width: tooltipWidth - padding * 2 },
         lineSpacing: 4,
       });
@@ -1949,7 +1947,7 @@ export class BarrowspireScene extends Phaser.Scene {
         `x${item.quantity}`,
         {
           fontSize: "11px",
-          color: "#556677",
+          color: "#8a7d5c",
         },
       );
       qtyText.setOrigin(1, 0);
@@ -1965,7 +1963,7 @@ export class BarrowspireScene extends Phaser.Scene {
     bg.fillRoundedRect(0, 0, tooltipWidth, tooltipHeight, 6);
     bg.lineStyle(
       1,
-      typeColor === "#556677" ? 0x00f0ff : parseInt(typeColor.slice(1), 16),
+      typeColor === "#8a7d5c" ? 0xe8a14d : parseInt(typeColor.slice(1), 16),
       0.4,
     );
     bg.strokeRoundedRect(0, 0, tooltipWidth, tooltipHeight, 6);
@@ -2163,14 +2161,14 @@ export class BarrowspireScene extends Phaser.Scene {
     this.playerLegs.setDepth(101);
     this.playerFacing = "down";
     this.walkPhase = 0;
-    this.drawLegs(this.playerLegs, x, y, "down", 0, false, 0x667788);
+    this.drawLegs(this.playerLegs, x, y, "down", 0, false, 0x4a4a44);
 
     // username label above player
     this.playerNameText = this.add.text(x, y - 35, username || "You", {
       fontSize: "11px",
-      fontFamily: "Orbitron, monospace",
-      color: "#00f0ff",
-      stroke: "#0a0a12",
+      fontFamily: "Cinzel, Georgia, serif",
+      color: "#e8a14d",
+      stroke: "#0d0b0a",
       strokeThickness: 3,
       align: "center",
     });
@@ -2266,7 +2264,7 @@ export class BarrowspireScene extends Phaser.Scene {
     cCtx.stroke();
 
     // center dot
-    cCtx.fillStyle = "#ff00aa";
+    cCtx.fillStyle = "#6f8f4a";
     cCtx.beginPath();
     cCtx.arc(cMid, cMid, 1.5, 0, Math.PI * 2);
     cCtx.fill();
@@ -2277,12 +2275,6 @@ export class BarrowspireScene extends Phaser.Scene {
   create(): void {
     // custom crosshair cursor
     this.setupCustomCursor();
-
-    // Game ambient music — stop menu theme, start game ambient
-    this.sound.stopByKey("menuTheme");
-    if (!this.sound.get("gameAmbient")?.isPlaying) {
-      this.sound.play("gameAmbient", { loop: true, volume: 0.25 });
-    }
 
     // Connect via SocketManager
     this.connectToServer();
@@ -2318,7 +2310,6 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // ESC 返回主選單
     this.input.keyboard?.on("keydown-ESC", () => {
-      this.sound.stopByKey("gameAmbient");
       this.scene.start("MainMenuScene");
     });
 
@@ -2422,6 +2413,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // 顯示座標 UI
     this.createUI();
+
+    // torch-lit barrow atmosphere — pure decoration, no game state
+    this.createAtmosphere();
 
     // 放開移動鍵時停止
     this.input.keyboard?.on("keyup", (event: KeyboardEvent) => {
@@ -2683,7 +2677,7 @@ export class BarrowspireScene extends Phaser.Scene {
           "down",
           0,
           false,
-          0x667788,
+          0x4a4a44,
         );
 
         // create name text (hidden until hover)
@@ -2693,9 +2687,9 @@ export class BarrowspireScene extends Phaser.Scene {
           playerData.username || "Unknown",
           {
             fontSize: "11px",
-            fontFamily: "Orbitron, monospace",
-            color: "#ff00aa",
-            stroke: "#0a0a12",
+            fontFamily: "Cinzel, Georgia, serif",
+            color: "#6f8f4a",
+            stroke: "#0d0b0a",
             strokeThickness: 3,
             align: "center",
           },
@@ -3640,8 +3634,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private createUI(): void {
     const posText = this.add.text(10, 10, "", {
       fontSize: "14px",
-      color: "#4ecca3",
-      backgroundColor: "#16213e",
+      color: "#cdbf9a",
+      backgroundColor: "#1a1410",
       padding: { x: 10, y: 5 },
     });
     posText.setScrollFactor(0);
@@ -3654,8 +3648,8 @@ export class BarrowspireScene extends Phaser.Scene {
       "Escaped: 0",
       {
         fontSize: "14px",
-        color: "#FFD700",
-        backgroundColor: "#16213e",
+        color: "#c9a14e",
+        backgroundColor: "#1a1410",
         padding: { x: 10, y: 5 },
       },
     );
@@ -3666,7 +3660,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // 每幀更新座標
     this.events.on("update", () => {
       if (!this.player) {
-        posText.setText("Waiting for server...");
+        posText.setText("Awaiting the deep...");
         return;
       }
       const status = this.currentBuilding ? `Indoor` : `Outdoor`;
@@ -3674,6 +3668,94 @@ export class BarrowspireScene extends Phaser.Scene {
         `X: ${Math.round(this.player.x)} Y: ${Math.round(this.player.y)} | ${status}`,
       );
     });
+  }
+
+  /**
+   * Torch-lit barrow atmosphere. Camera-fixed decorative overlays only — a warm
+   * torch pool, a pressing vignette, and a little drifting dust. Reads and
+   * mutates no game state; sits above the world (depth ~900) but beneath the
+   * HUD (depth 1000) and popups (depth 2000). Removing this method would change
+   * nothing about how the game plays.
+   */
+  private createAtmosphere(): void {
+    const cam = this.cameras.main;
+    const w = cam.width;
+    const h = cam.height;
+
+    // --- torch pool: warm radial glow around the (camera-centred) player ---
+    const torchKey = "atmoTorch";
+    if (!this.textures.exists(torchKey)) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 512;
+      canvas.height = 512;
+      const g = canvas.getContext("2d")!;
+      const grad = g.createRadialGradient(256, 256, 0, 256, 256, 256);
+      grad.addColorStop(0, "rgba(232, 161, 77, 0.22)");
+      grad.addColorStop(0.45, "rgba(194, 97, 31, 0.10)");
+      grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 512, 512);
+      this.textures.addCanvas(torchKey, canvas);
+    }
+    const torch = this.add.image(w / 2, h / 2, torchKey);
+    const torchSize = Math.max(w, h) * 1.5;
+    torch.setDisplaySize(torchSize, torchSize);
+    torch.setScrollFactor(0);
+    torch.setDepth(900);
+    torch.setBlendMode(Phaser.BlendModes.ADD);
+    // presentation-only torch flicker
+    this.tweens.add({
+      targets: torch,
+      alpha: { from: 0.82, to: 1 },
+      duration: 1500,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+
+    // --- vignette: darkness pressing in at the screen edges ---
+    const vigKey = `atmoVignette_${w}x${h}`;
+    if (!this.textures.exists(vigKey)) {
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const g = canvas.getContext("2d")!;
+      const grad = g.createRadialGradient(
+        w / 2, h / 2, Math.min(w, h) * 0.30,
+        w / 2, h / 2, Math.max(w, h) * 0.72,
+      );
+      grad.addColorStop(0, "rgba(8, 6, 5, 0)");
+      grad.addColorStop(0.7, "rgba(8, 6, 5, 0.55)");
+      grad.addColorStop(1, "rgba(5, 4, 3, 0.92)");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, w, h);
+      this.textures.addCanvas(vigKey, canvas);
+    }
+    const vignette = this.add.image(w / 2, h / 2, vigKey);
+    vignette.setScrollFactor(0);
+    vignette.setDepth(905);
+
+    // --- faint drifting dust ---
+    for (let i = 0; i < 18; i++) {
+      const dust = this.add.circle(
+        Phaser.Math.Between(0, w),
+        Phaser.Math.Between(0, h),
+        Math.random() < 0.2 ? 2 : 1,
+        0x8a7d5c,
+        Phaser.Math.FloatBetween(0.05, 0.16),
+      );
+      dust.setScrollFactor(0);
+      dust.setDepth(902);
+      this.tweens.add({
+        targets: dust,
+        y: dust.y - Phaser.Math.Between(20, 60),
+        x: dust.x + Phaser.Math.Between(-15, 15),
+        alpha: 0,
+        duration: Phaser.Math.Between(4000, 9000),
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      });
+    }
   }
 
   private showNotification(message: string, color: string): void {
@@ -3747,7 +3829,7 @@ export class BarrowspireScene extends Phaser.Scene {
       if (!this.escapedPlayers.has(state.current_player.id)) {
         this.showNotification(
           `${state.current_player.username} escaped successfully!`,
-          "#FFD700", // 金色
+          "#c9a14e", // 金色
         );
         this.escapedPlayers.add(state.current_player.id);
       }
@@ -3759,7 +3841,7 @@ export class BarrowspireScene extends Phaser.Scene {
         if (!this.escapedPlayers.has(player.id)) {
           this.showNotification(
             `${player.username} escaped successfully!`,
-            "#FFD700",
+            "#c9a14e",
           );
           this.escapedPlayers.add(player.id);
         }
@@ -3831,7 +3913,7 @@ export class BarrowspireScene extends Phaser.Scene {
         this.playerFacing,
         this.walkPhase,
         isMoving,
-        0x667788,
+        0x4a4a44,
       );
     }
 
@@ -3921,7 +4003,7 @@ export class BarrowspireScene extends Phaser.Scene {
             facing,
             phase,
             isMoving,
-            0x667788,
+            0x4a4a44,
           );
         }
 

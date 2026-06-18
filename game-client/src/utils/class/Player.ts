@@ -41,7 +41,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.die();
     } else {
       // 閃紅色表示受傷
-      this.setTint(0xff0000);
+      this.setTint(0x6e1f1f);
       this.scene.time.delayedCall(200, () => {
         this.clearTint();
       });

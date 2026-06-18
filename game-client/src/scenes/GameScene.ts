@@ -103,7 +103,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.existing(this.me);
 
     this.enemy = new Player(this, 200, 200, "dude", "dsfgsdarfgsd", "John"); // Assuming 'dude' texture can be used for enemy
-    this.enemy.setTint(0xff0000); // Make enemy red
+    this.enemy.setTint(0x6e1f1f); // Make enemy red
     this.enemy.setCollideWorldBounds(true);
     // 讓敵人只在可視範圍內顯示
     const enemyMask = new Phaser.Display.Masks.GeometryMask(

@@ -24,6 +24,7 @@ var (
 	// observability
 	environment       = commonhelpers.GetEnvString("ENVIRONMENT", "development")
 	collectorEndpoint = commonhelpers.GetEnvString("COLLECTOR_ENDPOINT", "localhost:4430")
+	otelEnabled       = commonhelpers.GetEnvString("OTEL_ENABLED", "true") == "true"
 
 	serviceName    = "items"
 	grpcAddr       = commonhelpers.GetEnvString("GRPC_ITEMS_ADDR", "7126")
@@ -53,6 +54,7 @@ func main() {
 		ServiceVersion:    serviceVersion,
 		Environment:       environment,
 		CollectorEndpoint: collectorEndpoint,
+		Enabled:           otelEnabled,
 	})
 	if err != nil {
 		log.Fatal(err)

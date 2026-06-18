@@ -3,9 +3,12 @@ package example
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/example"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 )
 
 /*
@@ -38,6 +41,8 @@ const (
 
 type Client struct {
 	registry discovery.Registry
+	mu       sync.Mutex
+	conn     *grpc.ClientConn
 }
 
 func NewClient(registry discovery.Registry) ExampleClient {
@@ -46,15 +51,31 @@ func NewClient(registry discovery.Registry) ExampleClient {
 	}
 }
 
+// ensureConn lazily dials the service once and caches the connection for
+// reuse across calls (gRPC multiplexes over it). Opening a fresh conn per RPC
+// serialized badly and churned connections; see common/discovery/grpc.go.
+func (c *Client) ensureConn(ctx context.Context) (*grpc.ClientConn, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conn != nil && c.conn.GetState() != connectivity.Shutdown {
+		return c.conn, nil
+	}
+	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	if err != nil {
+		return nil, err
+	}
+	c.conn = conn
+	return conn, nil
+}
+
 func (c *Client) CreateExample(ctx context.Context, req *pb.CreateExampleRequest) (*pb.Example, error) {
 	// connection instance created through service discovery first
 	// searches for the service registered as "orders"
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	conn, err := c.ensureConn(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to example service: %w", err)
 	}
-	defer conn.Close()
 
 	client := pb.NewExampleServiceClient(conn)
 
@@ -70,11 +91,10 @@ func (c *Client) CreateExample(ctx context.Context, req *pb.CreateExampleRequest
 
 func (c *Client) GetExample(ctx context.Context, req *pb.GetExampleRequest) (*pb.Example, error) {
 	// discovery
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	conn, err := c.ensureConn(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to example service: %w", err)
 	}
-	defer conn.Close()
 
 	// create client to interface with through service discovery connection
 	client := pb.NewExampleServiceClient(conn)

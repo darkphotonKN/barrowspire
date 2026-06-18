@@ -57,15 +57,15 @@ export const BUILDING_COLORS = {
     shrine: 0xdaa520,
   },
   WALL: {
-    house: 0x654321,
+    house: 0x3e2f22,
     tower: 0x505050,
     ruins: 0x3d4235,
     shrine: 0xb8860b,
   },
   ROOF: {
-    house: 0x8b4513,
+    house: 0x5a4632,
     tower: 0x404040,
     ruins: 0x2d3228,
-    shrine: 0xffd700,
+    shrine: 0xc9a14e,
   },
 } as const;

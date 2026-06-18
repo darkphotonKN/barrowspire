@@ -18,13 +18,13 @@ export default function PortalPage() {
       <ParticleText />
       <div className="splash-overlay">
         <p className="splash-subtitle">
-          NAVIGATE THE COSMOS. SURVIVE THE VOID.
+          One morning the folk looked up, and the Spire simply stood.
         </p>
         <button
           className="splash-enter-btn"
           onClick={() => router.push("/login")}
         >
-          ENTER THE VOID
+          ENTER THE BARROW
         </button>
       </div>
     </div>

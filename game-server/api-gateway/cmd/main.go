@@ -21,6 +21,7 @@ var (
 
 	// observability
 	collectorEndpoint = commonhelpers.GetEnvString("COLLECTOR_ENDPOINT", "localhost:4430")
+	otelEnabled       = commonhelpers.GetEnvString("OTEL_ENABLED", "true") == "true"
 	serviceVersion    = commonhelpers.GetEnvString("SERVICE_VERSION", "1.0.0")
 
 	serviceName = "api-gateway"
@@ -52,6 +53,7 @@ func main() {
 		ServiceVersion:    serviceVersion,
 		Environment:       environment,
 		CollectorEndpoint: collectorEndpoint,
+		Enabled:           otelEnabled,
 	})
 
 	if err != nil {
