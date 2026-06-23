@@ -17,7 +17,7 @@ const stripePromise = loadStripe(
 );
 
 const PLAN = {
-  name: "The Era of Barrowspire Pro",
+  name: "The Age of Barrowspire Pro",
   productId: "prod_TxVD6tpLpq1NFf",
   price: "$10.00",
   interval: "month",
@@ -234,7 +234,7 @@ export default function SubscriptionPage() {
           </div>
         ) : hasPermission ? (
           <div className="sub-inline-message sub-success">
-            You are subscribed to The Era of Barrowspire Pro!
+            You are subscribed to The Age of Barrowspire Pro!
           </div>
         ) : !clientSecret ? (
           <button

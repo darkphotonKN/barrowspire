@@ -61,7 +61,7 @@ export default function ParticleText() {
     offCtx.font = `900 ${fontSize}px ${fontFamily}, Cinzel, serif`;
     offCtx.textAlign = 'center';
     offCtx.textBaseline = 'middle';
-    offCtx.fillText('THE ERA OF', w / 2, h / 2 - fontSize / 2 - lineGap);
+    offCtx.fillText('THE AGE OF', w / 2, h / 2 - fontSize / 2 - lineGap);
     offCtx.fillText('BARROWSPIRE', w / 2, h / 2 + fontSize / 2 + lineGap);
 
     // Sample pixel data to find text positions

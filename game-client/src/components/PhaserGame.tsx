@@ -21,11 +21,13 @@ export default function PhaserGame() {
       height: 720,
       parent: containerRef.current,
       backgroundColor: "#1a1410",
-      // roundPixels: round sprite/text positions to integers to prevent
-      //   subpixel blur. Game-wide win with almost no downside.
+      // Crisp pixel art per docs/visual-bible.md: nearest-neighbour filtering,
+      // no smoothing, integer-aligned positions. Presentation only.
+      pixelArt: true,
       render: {
         roundPixels: true,
-        antialias: true,
+        antialias: false,
+        pixelArt: true,
       },
       physics: {
         default: "arcade",

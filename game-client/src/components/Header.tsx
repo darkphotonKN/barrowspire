@@ -20,7 +20,7 @@ export default function Header() {
       <div className="header-container">
         <div className="header-left">
           <Link href="/portal" className="header-logo">
-            <span className="logo-text">THE ERA OF</span>
+            <span className="logo-text">THE AGE OF</span>
             <span className="logo-accent">BARROWSPIRE</span>
             <span className="logo-beta">BETA</span>
           </Link>

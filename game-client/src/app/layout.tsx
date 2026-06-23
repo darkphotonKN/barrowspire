@@ -17,7 +17,7 @@ const ebGaramond = EB_Garamond({
 });
 
 export const metadata: Metadata = {
-  title: 'The Era of Barrowspire',
+  title: 'The Age of Barrowspire',
   description: 'Delve the barrow-deep. Few return whole.',
 };
 

@@ -37,6 +37,22 @@ interface Building {
   isOpen: boolean;
 }
 
+/** Limited barrow palette for the wizard-delver sprite (0x ints). */
+interface WizardPalette {
+  hat: number;
+  hatShade: number;
+  band: number;
+  robe: number;
+  robeShade: number;
+  robeLight: number;
+  face: number;
+  eye: number;
+  staff: number;
+  orb: number;
+  orbGlow: number;
+  ink: number;
+}
+
 export class BarrowspireScene extends Phaser.Scene {
   private player?: Phaser.Physics.Arcade.Sprite;
   private otherPlayers: Map<string, Phaser.Physics.Arcade.Sprite> = new Map();
@@ -420,25 +436,38 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // create soldier textures (4 directions each) — same spacesuit colors for all
-    const suitBody = 0x5a5a52;
-    const suitVisor = 0xe8a14d;
-    const suitHighlight = 0xd8c79a;
-    const suitDark = 0x4a4a44;
-    this.createSoldierTextures(
-      "player",
-      suitBody,
-      suitVisor,
-      suitHighlight,
-      suitDark,
-    );
-    this.createSoldierTextures(
-      "otherPlayer",
-      suitBody,
-      suitVisor,
-      suitHighlight,
-      suitDark,
-    );
+    // Player = torch-amber wizard-delver; rivals = necrotic wight-mages.
+    // Same 4-facing rig, only the palette differs. See docs/visual-bible.md.
+    const playerPalette: WizardPalette = {
+      hat: 0x241c14,
+      hatShade: 0x16100a,
+      band: 0x9c7b3f,
+      robe: 0x2a2118,
+      robeShade: 0x1a130d,
+      robeLight: 0x3a2c1d,
+      face: 0x080605,
+      eye: 0xe8a14d,
+      staff: 0x5a4632,
+      orb: 0xf2b866,
+      orbGlow: 0xe8a14d,
+      ink: 0x0d0b0a,
+    };
+    const rivalPalette: WizardPalette = {
+      hat: 0x24272b,
+      hatShade: 0x16181b,
+      band: 0x4a6b6f,
+      robe: 0x2d3136,
+      robeShade: 0x1c1f23,
+      robeLight: 0x3d4248,
+      face: 0x0b0d0e,
+      eye: 0x6f8f4a,
+      staff: 0x3a3d42,
+      orb: 0x8fb56a,
+      orbGlow: 0x6f8f4a,
+      ink: 0x15171a,
+    };
+    this.createSoldierTextures("player", playerPalette);
+    this.createSoldierTextures("otherPlayer", rivalPalette);
     this.createChestTextures();
     this.createEscapeDoorTextures();
     this.createSwitchTextures();
@@ -453,79 +482,70 @@ export class BarrowspireScene extends Phaser.Scene {
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext("2d")!;
+    ctx.imageSmoothingEnabled = false;
 
-    // dark rusty brown-green industrial wall
-    ctx.fillStyle = "#2e2a22";
+    // Dungeon stone wall: dark slate blocks set in deep mortar, torch-baked
+    // top light, moss and hairline cracks. Brick courses tile seamlessly at
+    // 128. Texture key kept as "hullMetal" so no scene code changes.
+    const brickW = 32;
+    const brickH = 16;
+
+    ctx.fillStyle = "#15110d"; // mortar
     ctx.fillRect(0, 0, size, size);
 
-    // heavy wall grain
-    for (let i = 0; i < 5000; i++) {
-      const x = Math.random() * size;
-      const y = Math.random() * size;
-      const brightness = 30 + Math.random() * 30;
-      const r = brightness + Math.random() * 8;
-      const g = brightness - 2 + Math.random() * 5;
-      const b = brightness - 8;
-      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.15 + Math.random() * 0.2})`;
-      ctx.fillRect(x, y, 1, 1);
-    }
+    const courses = size / brickH; // 8
+    for (let row = 0; row < courses; row++) {
+      const y = row * brickH;
+      const offset = row % 2 === 0 ? 0 : -brickW / 2; // running-bond courses
+      const lit = 1 - row / (courses * 1.6); // torch "above": top courses warmer
+      for (let x = offset; x < size; x += brickW) {
+        const v = 52 + Math.floor(Math.random() * 10);
+        const r = Math.round(v * (0.85 + 0.25 * lit));
+        const gg = Math.round((v + 2) * (0.85 + 0.22 * lit));
+        const b = Math.round((v + 6) * (0.82 + 0.2 * lit));
+        ctx.fillStyle = `rgb(${r}, ${gg}, ${b})`;
+        ctx.fillRect(x + 1, y + 1, brickW - 2, brickH - 2);
 
-    // rust streaks - vertical drips
-    for (let i = 0; i < 5; i++) {
-      const sx = Math.random() * size;
-      const sy = Math.random() * size * 0.3;
-      const len = 20 + Math.random() * 40;
-      ctx.strokeStyle = `rgba(60, 40, 25, ${0.1 + Math.random() * 0.12})`;
-      ctx.lineWidth = 1 + Math.random() * 2;
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(sx + (Math.random() - 0.5) * 5, sy + len);
-      ctx.stroke();
-    }
+        // lit top edge, shadowed bottom edge
+        ctx.fillStyle = `rgba(110, 110, 120, ${0.18 * lit + 0.05})`;
+        ctx.fillRect(x + 1, y + 1, brickW - 2, 2);
+        ctx.fillStyle = "rgba(8, 7, 6, 0.35)";
+        ctx.fillRect(x + 1, y + brickH - 3, brickW - 2, 2);
 
-    // horizontal wear lines - old paint
-    for (let i = 0; i < 40; i++) {
-      const y = Math.random() * size;
-      const len = 10 + Math.random() * 50;
-      const x = Math.random() * (size - len);
-      ctx.strokeStyle = `rgba(50, 45, 35, ${0.15 + Math.random() * 0.2})`;
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + len, y);
-      ctx.stroke();
-    }
+        // dithered grain (no gradients)
+        for (let i = 0; i < 26; i++) {
+          const gx = x + 1 + Math.floor(Math.random() * (brickW - 2));
+          const gy = y + 1 + Math.floor(Math.random() * (brickH - 2));
+          ctx.fillStyle =
+            Math.random() < 0.5
+              ? "rgba(10, 9, 8, 0.25)"
+              : `rgba(120, 122, 130, ${0.1 * lit + 0.04})`;
+          ctx.fillRect(gx, gy, 1, 1);
+        }
 
-    // scratches
-    for (let i = 0; i < 8; i++) {
-      const x1 = Math.random() * size;
-      const y1 = Math.random() * size;
-      const x2 = x1 + (Math.random() - 0.5) * 35;
-      const y2 = y1 + (Math.random() - 0.5) * 35;
-      ctx.strokeStyle = `rgba(55, 48, 38, ${0.15 + Math.random() * 0.15})`;
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
+        // moss creeping along a block bottom (arcane-deep green)
+        if (Math.random() < 0.18) {
+          ctx.fillStyle = "rgba(60, 90, 54, 0.5)";
+          const mw = 4 + Math.floor(Math.random() * 8);
+          ctx.fillRect(
+            x + 2 + Math.floor(Math.random() * (brickW - mw - 2)),
+            y + brickH - 4,
+            mw,
+            2,
+          );
+        }
+        // hairline crack within the block
+        if (Math.random() < 0.15) {
+          ctx.strokeStyle = "rgba(8, 7, 6, 0.5)";
+          ctx.lineWidth = 1;
+          const cxp = x + 4 + Math.random() * (brickW - 8);
+          ctx.beginPath();
+          ctx.moveTo(cxp, y + 2);
+          ctx.lineTo(cxp + (Math.random() - 0.5) * 6, y + brickH - 3);
+          ctx.stroke();
+        }
+      }
     }
-
-    // panel edge highlight
-    ctx.strokeStyle = "rgba(55, 48, 38, 0.6)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, size - 1);
-    ctx.lineTo(size - 1, size - 1);
-    ctx.lineTo(size - 1, 0);
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(15, 12, 8, 0.6)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(size - 1, 0);
-    ctx.moveTo(0, 0);
-    ctx.lineTo(0, size - 1);
-    ctx.stroke();
 
     this.textures.addCanvas("hullMetal", canvas);
   }
@@ -536,76 +556,67 @@ export class BarrowspireScene extends Phaser.Scene {
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext("2d")!;
+    ctx.imageSmoothingEnabled = false;
 
-    // base - worn concrete
-    ctx.fillStyle = "#6d6f62";
+    // Cracked flagstone floor: cold dark flags in deep mortar, bevelled so the
+    // torch catches the upper-left edge, with faint moss and dust. A 4×4 grid
+    // tiles seamlessly at 128. Texture key kept as "metalFloor".
+    const tile = 32;
+    ctx.fillStyle = "#0f0c0a"; // mortar / gaps
     ctx.fillRect(0, 0, size, size);
 
-    // concrete grain - uneven surface
-    for (let i = 0; i < 5000; i++) {
-      const x = Math.random() * size;
-      const y = Math.random() * size;
-      const brightness = 85 + Math.random() * 45;
-      const g = brightness - 3 + Math.random() * 6;
-      ctx.fillStyle = `rgba(${brightness}, ${g}, ${brightness - 8}, ${0.12 + Math.random() * 0.15})`;
-      ctx.fillRect(x, y, 1, 1);
-    }
+    for (let gy = 0; gy < size; gy += tile) {
+      for (let gx = 0; gx < size; gx += tile) {
+        const v = 40 + Math.floor(Math.random() * 10);
+        ctx.fillStyle = `rgb(${v}, ${v + 1}, ${v + 4})`;
+        ctx.fillRect(gx + 1, gy + 1, tile - 2, tile - 2);
 
-    // darker patches - wear from foot traffic
-    for (let i = 0; i < 6; i++) {
-      const sx = Math.random() * size;
-      const sy = Math.random() * size;
-      const w = 10 + Math.random() * 25;
-      const h = 3 + Math.random() * 8;
-      ctx.fillStyle = `rgba(55, 53, 48, ${0.06 + Math.random() * 0.06})`;
-      ctx.fillRect(sx, sy, w, h);
-    }
+        // bevel: lit top-left, shadowed bottom-right
+        ctx.fillStyle = "rgba(96, 98, 106, 0.16)";
+        ctx.fillRect(gx + 1, gy + 1, tile - 2, 2);
+        ctx.fillRect(gx + 1, gy + 1, 2, tile - 2);
+        ctx.fillStyle = "rgba(6, 5, 4, 0.4)";
+        ctx.fillRect(gx + 1, gy + tile - 3, tile - 2, 2);
+        ctx.fillRect(gx + tile - 3, gy + 1, 2, tile - 2);
 
-    // thin cracks
-    for (let i = 0; i < 3; i++) {
-      const x1 = Math.random() * size;
-      const y1 = Math.random() * size;
-      ctx.strokeStyle = `rgba(50, 48, 42, ${0.12 + Math.random() * 0.12})`;
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      for (let j = 0; j < 3; j++) {
-        const nx = x1 + (Math.random() - 0.5) * 50;
-        const ny = y1 + (Math.random() - 0.3) * 50;
-        ctx.lineTo(nx, ny);
+        // dithered grain
+        for (let i = 0; i < 60; i++) {
+          const px = gx + 2 + Math.floor(Math.random() * (tile - 4));
+          const py = gy + 2 + Math.floor(Math.random() * (tile - 4));
+          ctx.fillStyle =
+            Math.random() < 0.5
+              ? "rgba(8, 7, 6, 0.22)"
+              : "rgba(110, 112, 120, 0.06)";
+          ctx.fillRect(px, py, 1, 1);
+        }
+
+        // faint moss tucked in a corner
+        if (Math.random() < 0.22) {
+          ctx.fillStyle = "rgba(60, 90, 54, 0.3)";
+          ctx.fillRect(gx + 2, gy + tile - 6, 5, 4);
+        }
+        // short crack kept inside the flag so tiling stays seamless
+        if (Math.random() < 0.3) {
+          ctx.strokeStyle = "rgba(6, 5, 4, 0.5)";
+          ctx.lineWidth = 1;
+          let cxp = gx + 6 + Math.random() * (tile - 12);
+          let cyp = gy + 6 + Math.random() * (tile - 12);
+          ctx.beginPath();
+          ctx.moveTo(cxp, cyp);
+          for (let s = 0; s < 3; s++) {
+            cxp += (Math.random() - 0.5) * 8;
+            cyp += (Math.random() - 0.5) * 8;
+            ctx.lineTo(cxp, cyp);
+          }
+          ctx.stroke();
+        }
       }
-      ctx.stroke();
     }
-
-    // panel edge highlight (bottom & right)
-    ctx.strokeStyle = "rgba(95, 92, 80, 0.5)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, size - 1);
-    ctx.lineTo(size - 1, size - 1);
-    ctx.lineTo(size - 1, 0);
-    ctx.stroke();
-
-    // panel edge shadow (top & left)
-    ctx.strokeStyle = "rgba(45, 43, 38, 0.5)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(size - 1, 0);
-    ctx.moveTo(0, 0);
-    ctx.lineTo(0, size - 1);
-    ctx.stroke();
 
     this.textures.addCanvas("metalFloor", canvas);
   }
 
-  private createSoldierTextures(
-    prefix: string,
-    bodyColor: number,
-    visorColor: number,
-    highlightColor: number,
-    _darkColor: number,
-  ): void {
+  private createSoldierTextures(prefix: string, pal: WizardPalette): void {
     const facings: Array<"down" | "up" | "left" | "right"> = [
       "down",
       "up",
@@ -614,78 +625,144 @@ export class BarrowspireScene extends Phaser.Scene {
     ];
     for (const facing of facings) {
       const g = this.make.graphics({});
-      this.drawSoldierBody(
-        g,
-        30,
-        30,
-        facing,
-        bodyColor,
-        visorColor,
-        highlightColor,
-      );
+      this.drawWizard(g, facing, pal);
       g.generateTexture(this.facingTextureKey(prefix, facing), 60, 60);
       g.destroy();
     }
   }
 
-  private drawSoldierBody(
+  /**
+   * The player/rival sprite: a hooded wizard-delver — pointed wide-brim hat,
+   * flowing robe, and a staff with a glowing orb. Hand-placed pixel blocks on a
+   * 24×26 logical grid (2px cells), dark-outlined so the figure reads against
+   * the barrow dark. Same 60×60 frame and 4-facing rig as before — only the
+   * drawing changed. See docs/visual-bible.md.
+   */
+  private drawWizard(
     g: Phaser.GameObjects.Graphics,
-    cx: number,
-    cy: number,
     facing: "up" | "down" | "left" | "right",
-    bodyColor: number,
-    visorColor: number,
-    highlightColor: number,
+    pal: WizardPalette,
   ): void {
-    if (facing === "down" || facing === "up") {
-      // front/back view — wider silhouette
-      // shoulders
-      g.fillStyle(bodyColor, 1);
-      g.fillRoundedRect(cx - 15, cy - 6, 30, 21, 4);
-      // helmet
-      g.fillStyle(bodyColor, 1);
-      g.fillRoundedRect(cx - 9, cy - 21, 18, 18, 6);
-      // highlight on helmet
-      g.fillStyle(highlightColor, 0.4);
-      g.fillRoundedRect(cx - 6, cy - 18, 12, 9, 4);
+    const P = 2; // device px per logical pixel — chunky, readable
+    const W = 24;
+    const H = 26;
+    const ox = (60 - W * P) / 2; // centre the figure in the 60×60 frame
+    const oy = (60 - H * P) / 2;
 
-      if (facing === "down") {
-        // visor — two glowing dots
-        g.fillStyle(visorColor, 1);
-        g.fillCircle(cx - 5, cy - 10, 2.2);
-        g.fillCircle(cx + 5, cy - 10, 2.2);
-        // visor glow
-        g.fillStyle(visorColor, 0.3);
-        g.fillCircle(cx - 5, cy - 10, 4.5);
-        g.fillCircle(cx + 5, cy - 10, 4.5);
-      } else {
-        // back-plate detail
-        g.fillStyle(highlightColor, 0.2);
-        g.fillRoundedRect(cx - 6, cy - 15, 12, 6, 3);
-      }
-      // torso
-      g.fillStyle(bodyColor, 0.9);
-      g.fillRoundedRect(cx - 12, cy + 3, 24, 15, 3);
+    const grid: (number | null)[][] = Array.from({ length: H }, () =>
+      Array<number | null>(W).fill(null),
+    );
+    const soft: boolean[][] = Array.from({ length: H }, () =>
+      Array<boolean>(W).fill(false),
+    );
+    const set = (x: number, y: number, c: number, isSoft = false) => {
+      if (x < 0 || x >= W || y < 0 || y >= H) return;
+      grid[y][x] = c;
+      soft[y][x] = isSoft;
+    };
+    const bar = (y: number, x0: number, x1: number, c: number) => {
+      for (let x = x0; x <= x1; x++) set(x, y, c);
+    };
+
+    const back = facing === "up";
+    const left = facing === "left";
+    const right = facing === "right";
+    const side = left || right;
+    const lean = left ? -1 : right ? 1 : 0; // hat-tip lean on profiles
+
+    // staff + glowing orb (orb halo is soft → excluded from the hard outline)
+    const staffCol = left ? 3 : 20;
+    for (let y = 5; y <= 24; y++) set(staffCol, y, pal.staff);
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++)
+        set(staffCol + dx, 3 + dy, pal.orbGlow, true);
+    set(staffCol, 3, pal.orb, true);
+
+    // pointed hat cone
+    const cone: Array<[number, number]> = [
+      [12, 12],
+      [12, 13],
+      [11, 13],
+      [11, 14],
+      [10, 15],
+      [10, 15],
+      [9, 16],
+    ];
+    cone.forEach(([a, b], i) => {
+      bar(i, a + lean, b + lean, pal.hat);
+      const mid = Math.ceil((a + b) / 2) + lean;
+      for (let x = mid + 1; x <= b + lean; x++) set(x, i, pal.hatShade);
+    });
+    bar(7, 8, 17, pal.band); // hat band
+    bar(8, 6, 19, pal.hat); // wide brim
+    bar(9, 5, 20, pal.hat);
+    for (let x = 12; x <= 20; x++) set(x, 9, pal.hatShade); // brim underside
+
+    // head / face under the brim
+    if (back) {
+      bar(10, 9, 14, pal.hat);
+      bar(11, 9, 14, pal.hatShade);
+      bar(12, 10, 13, pal.hat);
     } else {
-      // side view — narrower profile
-      const dir = facing === "right" ? 1 : -1;
-      // body
-      g.fillStyle(bodyColor, 1);
-      g.fillRoundedRect(cx - 6, cy - 6, 12, 24, 4);
-      // helmet
-      g.fillStyle(bodyColor, 1);
-      g.fillRoundedRect(cx - 6, cy - 21, 15, 18, 6);
-      // highlight
-      g.fillStyle(highlightColor, 0.4);
-      g.fillRoundedRect(cx - 3, cy - 18, 9, 9, 4);
-      // shoulder bump
-      g.fillStyle(bodyColor, 1);
-      g.fillRoundedRect(cx - 7 + dir * 3, cy - 3, 15, 9, 3);
-      // single visor dot
-      g.fillStyle(visorColor, 1);
-      g.fillCircle(cx + dir * 5, cy - 12, 2.2);
-      g.fillStyle(visorColor, 0.3);
-      g.fillCircle(cx + dir * 5, cy - 12, 4.5);
+      bar(10, 9, 14, pal.face);
+      bar(11, 9, 14, pal.face);
+      bar(12, 10, 13, pal.face);
+      if (side) {
+        set(left ? 9 : 14, 11, pal.eye, true); // single eye toward facing
+      } else {
+        set(10, 11, pal.eye, true);
+        set(13, 11, pal.eye, true);
+      }
+    }
+
+    // robe: shoulders → hem (narrower in profile)
+    const robe: Array<[number, number]> = [
+      [8, 15],
+      [8, 16],
+      [7, 16],
+      [7, 17],
+      [6, 17],
+      [6, 18],
+      [6, 18],
+      [5, 18],
+      [5, 19],
+      [5, 19],
+      [4, 19],
+      [4, 19],
+      [4, 19],
+    ];
+    robe.forEach(([a, b], i) => {
+      const y = 13 + i;
+      const lo = side ? a + 2 : a;
+      const hi = side ? b - 2 : b;
+      bar(y, lo, hi, pal.robe);
+      const sh = Math.floor((lo + hi) / 2) + 1;
+      for (let x = sh; x <= hi; x++) set(x, y, pal.robeShade); // shadow side
+      if (i > 0 && i < 10) set(lo + 1, y, pal.robeLight); // lit seam
+    });
+
+    // derive a dark outline (soft/glow cells are not outline sources)
+    const ink: Array<[number, number]> = [];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (grid[y][x] !== null) continue;
+        const near =
+          (grid[y][x - 1] != null && !soft[y][x - 1]) ||
+          (grid[y][x + 1] != null && !soft[y][x + 1]) ||
+          (grid[y - 1]?.[x] != null && !soft[y - 1][x]) ||
+          (grid[y + 1]?.[x] != null && !soft[y + 1][x]);
+        if (near) ink.push([x, y]);
+      }
+    }
+    ink.forEach(([x, y]) => set(x, y, pal.ink));
+
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const c = grid[y][x];
+        if (c === null) continue;
+        g.fillStyle(c, soft[y][x] && c === pal.orbGlow ? 0.45 : 1);
+        g.fillRect(ox + x * P, oy + y * P, P, P);
+      }
     }
   }
 
@@ -802,12 +879,12 @@ export class BarrowspireScene extends Phaser.Scene {
     const locked = this.make.graphics({});
 
     // 外圈 - 灰色
-    locked.lineStyle(3, 0x666666, 0.8);
+    locked.lineStyle(3, 0x52555c, 0.8);
     locked.strokeCircle(centerX, centerY, 35);
     locked.strokeCircle(centerX, centerY, 30);
 
     // 內圈 - 灰色
-    locked.lineStyle(2, 0x888888, 0.7);
+    locked.lineStyle(2, 0x6a6d72, 0.7);
     locked.strokeCircle(centerX, centerY, 20);
 
     // 魔法陣符文 (6個點)
@@ -816,12 +893,12 @@ export class BarrowspireScene extends Phaser.Scene {
       const radius = 28;
       const x = centerX + Math.cos(angle) * radius;
       const y = centerY + Math.sin(angle) * radius;
-      locked.fillStyle(0x666666, 0.8);
+      locked.fillStyle(0x52555c, 0.8);
       locked.fillCircle(x, y, 3);
     }
 
     // 六芒星 (灰色)
-    locked.lineStyle(2, 0x777777, 0.6);
+    locked.lineStyle(2, 0x5a5d62, 0.6);
     for (let i = 0; i < 6; i++) {
       const angle1 = (i / 6) * Math.PI * 2 - Math.PI / 2;
       const angle2 = ((i + 2) / 6) * Math.PI * 2 - Math.PI / 2;
@@ -837,9 +914,9 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     // 中心鎖圖示 (灰色)
-    locked.fillStyle(0x555555, 1);
+    locked.fillStyle(0x5a4632, 1);
     locked.fillCircle(centerX, centerY, 8);
-    locked.fillStyle(0x333333, 1);
+    locked.fillStyle(0x2a2018, 1);
     locked.fillCircle(centerX, centerY, 5);
     locked.fillCircle(centerX, centerY + 2, 2);
 
@@ -850,17 +927,17 @@ export class BarrowspireScene extends Phaser.Scene {
     const unlocked = this.make.graphics({});
 
     // 外圈 - 綠色發光
-    unlocked.lineStyle(3, 0x44ff88, 0.9);
+    unlocked.lineStyle(3, 0x6f8f4a, 0.9);
     unlocked.strokeCircle(centerX, centerY, 35);
-    unlocked.lineStyle(2, 0x66ffaa, 0.7);
+    unlocked.lineStyle(2, 0x7fa05a, 0.7);
     unlocked.strokeCircle(centerX, centerY, 30);
 
     // 內圈 - 亮綠色
-    unlocked.lineStyle(2, 0x88ffcc, 0.8);
+    unlocked.lineStyle(2, 0x8fb56a, 0.8);
     unlocked.strokeCircle(centerX, centerY, 20);
 
     // 發光光暈
-    unlocked.fillStyle(0x44ff88, 0.15);
+    unlocked.fillStyle(0x6f8f4a, 0.15);
     unlocked.fillCircle(centerX, centerY, 35);
 
     // 魔法陣符文 (6個發光點)
@@ -870,14 +947,14 @@ export class BarrowspireScene extends Phaser.Scene {
       const x = centerX + Math.cos(angle) * radius;
       const y = centerY + Math.sin(angle) * radius;
       // 發光效果
-      unlocked.fillStyle(0x44ff88, 0.3);
+      unlocked.fillStyle(0x6f8f4a, 0.3);
       unlocked.fillCircle(x, y, 5);
-      unlocked.fillStyle(0x88ffcc, 1);
+      unlocked.fillStyle(0x8fb56a, 1);
       unlocked.fillCircle(x, y, 3);
     }
 
     // 六芒星 (綠色發光)
-    unlocked.lineStyle(2, 0x66ffaa, 0.7);
+    unlocked.lineStyle(2, 0x7fa05a, 0.7);
     for (let i = 0; i < 6; i++) {
       const angle1 = (i / 6) * Math.PI * 2 - Math.PI / 2;
       const angle2 = ((i + 2) / 6) * Math.PI * 2 - Math.PI / 2;
@@ -893,12 +970,12 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     // 中心圖示 - 解鎖符號 (亮綠色)
-    unlocked.fillStyle(0xaaffdd, 1);
+    unlocked.fillStyle(0xb8d08a, 1);
     unlocked.fillCircle(centerX, centerY, 8);
-    unlocked.fillStyle(0x44ff88, 1);
+    unlocked.fillStyle(0x6f8f4a, 1);
     unlocked.fillCircle(centerX, centerY, 6);
     // 向上箭頭
-    unlocked.fillStyle(0xffffff, 1);
+    unlocked.fillStyle(0xf2e3b8, 1);
     unlocked.fillTriangle(
       centerX,
       centerY - 4,
@@ -918,24 +995,24 @@ export class BarrowspireScene extends Phaser.Scene {
     for (let i = 0; i < 4; i++) {
       const alpha = 0.2 - i * 0.04;
       const radius = 38 + i * 3;
-      open.fillStyle(0x44ff88, alpha);
+      open.fillStyle(0x6f8f4a, alpha);
       open.fillCircle(centerX, centerY, radius);
     }
 
     // 外圈 - 強烈綠光
-    open.lineStyle(4, 0x44ff88, 1);
+    open.lineStyle(4, 0x6f8f4a, 1);
     open.strokeCircle(centerX, centerY, 35);
-    open.lineStyle(3, 0xaaffdd, 0.8);
+    open.lineStyle(3, 0xb8d08a, 0.8);
     open.strokeCircle(centerX, centerY, 30);
 
     // 內圈 - 亮綠色
-    open.lineStyle(3, 0xccffee, 0.9);
+    open.lineStyle(3, 0xcfe0aa, 0.9);
     open.strokeCircle(centerX, centerY, 20);
 
     // 傳送門中心 - 綠色帶透明
-    open.fillStyle(0x66ffaa, 0.4);
+    open.fillStyle(0x7fa05a, 0.4);
     open.fillCircle(centerX, centerY, 30);
-    open.fillStyle(0xaaffdd, 0.3);
+    open.fillStyle(0xb8d08a, 0.3);
     open.fillCircle(centerX, centerY, 20);
 
     // 魔法陣符文 (6個強烈發光點)
@@ -945,14 +1022,14 @@ export class BarrowspireScene extends Phaser.Scene {
       const x = centerX + Math.cos(angle) * radius;
       const y = centerY + Math.sin(angle) * radius;
       // 強烈發光
-      open.fillStyle(0x44ff88, 0.5);
+      open.fillStyle(0x6f8f4a, 0.5);
       open.fillCircle(x, y, 6);
-      open.fillStyle(0xffffff, 1);
+      open.fillStyle(0xf2e3b8, 1);
       open.fillCircle(x, y, 3);
     }
 
     // 旋轉的六芒星 (強烈綠光)
-    open.lineStyle(3, 0xaaffdd, 0.9);
+    open.lineStyle(3, 0xb8d08a, 0.9);
     for (let i = 0; i < 6; i++) {
       const angle1 = (i / 6) * Math.PI * 2 - Math.PI / 2;
       const angle2 = ((i + 2) / 6) * Math.PI * 2 - Math.PI / 2;
@@ -968,11 +1045,11 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     // 中心強烈發光
-    open.fillStyle(0xffffff, 0.9);
+    open.fillStyle(0xf2e3b8, 0.9);
     open.fillCircle(centerX, centerY, 10);
-    open.fillStyle(0xaaffdd, 0.7);
+    open.fillStyle(0xb8d08a, 0.7);
     open.fillCircle(centerX, centerY, 15);
-    open.fillStyle(0x44ff88, 0.4);
+    open.fillStyle(0x6f8f4a, 0.4);
     open.fillCircle(centerX, centerY, 20);
 
     // 粒子效果 (8個旋轉的光點)
@@ -981,7 +1058,7 @@ export class BarrowspireScene extends Phaser.Scene {
       const radius = 18;
       const x = centerX + Math.cos(angle) * radius;
       const y = centerY + Math.sin(angle) * radius;
-      open.fillStyle(0xffffff, 0.9);
+      open.fillStyle(0xf2e3b8, 0.9);
       open.fillCircle(x, y, 2);
     }
 
@@ -992,33 +1069,36 @@ export class BarrowspireScene extends Phaser.Scene {
   private createSwitchTextures(): void {
     const size = 30;
 
-    // 未激活的開關 (灰色按鈕)
+    // dormant rune-stone
     const inactive = this.make.graphics({});
-    // 底座
-    inactive.fillStyle(0x404040, 1);
+    inactive.fillStyle(0x2a2620, 1); // stone base
     inactive.fillRect(0, 0, size, size);
-    // 按鈕
-    inactive.fillStyle(0x808080, 1);
+    inactive.fillStyle(0x3a3d42, 1); // sunken disc
     inactive.fillCircle(size / 2, size / 2, size / 3);
-    // 邊框
-    inactive.lineStyle(2, 0x202020, 1);
+    inactive.lineStyle(2, 0x9c7b3f, 0.6); // brass ring
+    inactive.strokeCircle(size / 2, size / 2, size / 3);
+    inactive.fillStyle(0x4a6b6f, 0.5); // dim necrotic rune
+    inactive.fillCircle(size / 2, size / 2, size / 6);
+    inactive.lineStyle(2, 0x15110d, 1);
     inactive.strokeRect(0, 0, size, size);
     inactive.generateTexture("switch_inactive", size, size);
     inactive.destroy();
 
-    // 激活的開關 (綠色發光)
+    // lit rune-stone (arcane glow)
     const active = this.make.graphics({});
-    // 底座
-    active.fillStyle(0x404040, 1);
+    active.fillStyle(0x2a2620, 1);
     active.fillRect(0, 0, size, size);
-    // 按鈕發光效果
-    active.fillStyle(0x00ff00, 0.4);
-    active.fillCircle(size / 2, size / 2, size / 2.5);
-    // 按鈕
-    active.fillStyle(0x00ff00, 1);
+    active.fillStyle(0x6f8f4a, 0.35); // arcane glow halo
+    active.fillCircle(size / 2, size / 2, size / 2.4);
+    active.fillStyle(0x3a3d42, 1); // disc
     active.fillCircle(size / 2, size / 2, size / 3);
-    // 邊框
-    active.lineStyle(2, 0x00ff00, 1);
+    active.lineStyle(2, 0xc9a14e, 0.9); // brass ring
+    active.strokeCircle(size / 2, size / 2, size / 3);
+    active.fillStyle(0x6f8f4a, 1); // lit rune
+    active.fillCircle(size / 2, size / 2, size / 6);
+    active.fillStyle(0xe8a14d, 1); // amber core
+    active.fillCircle(size / 2, size / 2, size / 12);
+    active.lineStyle(2, 0x15110d, 1);
     active.strokeRect(0, 0, size, size);
     active.generateTexture("switch_active", size, size);
     active.destroy();
@@ -2189,87 +2269,126 @@ export class BarrowspireScene extends Phaser.Scene {
   private crosshairCursorCSS = "";
 
   private setupCustomCursor(): void {
-    // --- Default cursor: tech/Deus Ex style pointer ---
-    const dSize = 32;
+    // Pixel-art cursors, barrow palette. See docs/visual-bible.md: clean pixel
+    // art, nearest-neighbour (no smoothing), in-palette, dark-outlined so the
+    // art reads against the dark dungeon. No neon, no anti-aliased strokes.
+    const INK = "#1c1712"; // outline
+    const GLOVE = "#cdbf9a"; // vellum leather, lit side
+    const GLOVE_SHADE = "#8a7d5c"; // darkened vellum, shadow side
+    const BRASS = "#9c7b3f"; // wrist cuff band
+    const BRASS_HI = "#c9a14e"; // cuff studs / highlight
+    const OXBLOOD = "#6e1f1f"; // the kill-mark
+    const AMBER = "#e8a14d"; // torch-lit sights
+    const CELL = 2; // logical pixel = 2 screen px → chunky, readable pixels
+
+    // --- Default cursor: medieval gloved pointing hand ---
+    // 16×16 silhouette ('#' = solid glove). The dark outline and the shaded
+    // side are derived from the silhouette so authoring stays simple.
+    const HAND = [
+      "...##...........",
+      "...##...........",
+      "...##...........",
+      "...##...........",
+      "...##...........",
+      "...##...........",
+      "...###.##.##....",
+      "...##########...",
+      ".############...",
+      ".#############..",
+      ".#############..",
+      "..############..",
+      "..############..",
+      "..############..",
+      "..############..",
+      "..############..",
+    ];
+    const hGrid = HAND.length;
     const dc = document.createElement("canvas");
-    dc.width = dSize;
-    dc.height = dSize;
+    dc.width = hGrid * CELL;
+    dc.height = hGrid * CELL;
     const dCtx = dc.getContext("2d")!;
-
-    // angled pointer — top-left origin
-    dCtx.strokeStyle = "rgba(0, 240, 255, 0.9)";
-    dCtx.lineWidth = 1.5;
-    dCtx.fillStyle = "rgba(0, 240, 255, 0.12)";
-
-    // pointer triangle
-    dCtx.beginPath();
-    dCtx.moveTo(6, 4);
-    dCtx.lineTo(6, 22);
-    dCtx.lineTo(12, 17);
-    dCtx.lineTo(17, 24);
-    dCtx.lineTo(20, 22);
-    dCtx.lineTo(15, 15);
-    dCtx.lineTo(21, 13);
-    dCtx.closePath();
-    dCtx.fill();
-    dCtx.stroke();
-
-    // small corner brackets — top-left
-    dCtx.strokeStyle = "rgba(0, 240, 255, 0.4)";
-    dCtx.lineWidth = 1;
-    dCtx.beginPath();
-    dCtx.moveTo(2, 10);
-    dCtx.lineTo(2, 2);
-    dCtx.lineTo(10, 2);
-    dCtx.stroke();
-
-    this.defaultCursorCSS = `url(${dc.toDataURL()}) 6 4, default`;
+    dCtx.imageSmoothingEnabled = false;
+    const solid = (c: number, r: number) =>
+      r >= 0 && r < hGrid && c >= 0 && c < hGrid && HAND[r][c] === "#";
+    const hPx = (c: number, r: number, color: string) => {
+      dCtx.fillStyle = color;
+      dCtx.fillRect(c * CELL, r * CELL, CELL, CELL);
+    };
+    for (let r = 0; r < hGrid; r++) {
+      let maxC = -1; // rightmost solid cell → shadow side
+      for (let c = 0; c < hGrid; c++) if (solid(c, r)) maxC = c;
+      for (let c = 0; c < hGrid; c++) {
+        if (solid(c, r)) {
+          if (r >= 14) hPx(c, r, c % 2 === 0 ? BRASS : BRASS_HI); // wrist cuff
+          else if (c === maxC) hPx(c, r, GLOVE_SHADE);
+          else hPx(c, r, GLOVE);
+        } else if (
+          solid(c - 1, r) ||
+          solid(c + 1, r) ||
+          solid(c, r - 1) ||
+          solid(c, r + 1)
+        ) {
+          hPx(c, r, INK); // auto-outline
+        }
+      }
+    }
+    // hotspot = index fingertip (cols 3-4, top row)
+    this.defaultCursorCSS = `url(${dc.toDataURL()}) 7 0, default`;
     this.input.setDefaultCursor(this.defaultCursorCSS);
 
-    // --- Crosshair cursor: pink, for targeting other players ---
-    const cSize = 32;
-    const cMid = cSize / 2;
-    const cc = document.createElement("canvas");
-    cc.width = cSize;
-    cc.height = cSize;
-    const cCtx = cc.getContext("2d")!;
-
-    // outer ring glow
-    cCtx.strokeStyle = "rgba(255, 0, 170, 0.3)";
-    cCtx.lineWidth = 2;
-    cCtx.beginPath();
-    cCtx.arc(cMid, cMid, 10, 0, Math.PI * 2);
-    cCtx.stroke();
-
-    // crosshair lines
-    cCtx.strokeStyle = "rgba(255, 0, 170, 0.85)";
-    cCtx.lineWidth = 1.5;
-    const gap = 4;
-    const len = 6;
-    cCtx.beginPath();
-    cCtx.moveTo(cMid, cMid - gap - len);
-    cCtx.lineTo(cMid, cMid - gap);
-    cCtx.stroke();
-    cCtx.beginPath();
-    cCtx.moveTo(cMid, cMid + gap);
-    cCtx.lineTo(cMid, cMid + gap + len);
-    cCtx.stroke();
-    cCtx.beginPath();
-    cCtx.moveTo(cMid - gap - len, cMid);
-    cCtx.lineTo(cMid - gap, cMid);
-    cCtx.stroke();
-    cCtx.beginPath();
-    cCtx.moveTo(cMid + gap, cMid);
-    cCtx.lineTo(cMid + gap + len, cMid);
-    cCtx.stroke();
-
-    // center dot
-    cCtx.fillStyle = "#6f8f4a";
-    cCtx.beginPath();
-    cCtx.arc(cMid, cMid, 1.5, 0, Math.PI * 2);
-    cCtx.fill();
-
-    this.crosshairCursorCSS = `url(${cc.toDataURL()}) ${cMid} ${cMid}, crosshair`;
+    // --- Targeting cursor: medieval strike-mark (hovering an attackable rival) ---
+    // Oxblood centre pip + broken ring = the kill-mark; amber sight-ticks.
+    const RG = 15; // odd grid → a true centre cell at 7
+    const rc = document.createElement("canvas");
+    rc.width = RG * CELL;
+    rc.height = RG * CELL;
+    const cCtx = rc.getContext("2d")!;
+    cCtx.imageSmoothingEnabled = false;
+    const marks: Record<string, string> = {};
+    const mark = (cells: number[][], color: string) =>
+      cells.forEach(([c, r]) => (marks[`${c},${r}`] = color));
+    mark(
+      [
+        [7, 1],
+        [7, 2],
+        [7, 12],
+        [7, 13],
+        [1, 7],
+        [2, 7],
+        [12, 7],
+        [13, 7],
+      ],
+      AMBER,
+    );
+    mark(
+      [
+        [7, 7],
+        [2, 2],
+        [12, 2],
+        [2, 12],
+        [12, 12],
+      ],
+      OXBLOOD,
+    );
+    const isMark = (c: number, r: number) => marks[`${c},${r}`] !== undefined;
+    for (let r = 0; r < RG; r++) {
+      for (let c = 0; c < RG; c++) {
+        if (isMark(c, r)) {
+          cCtx.fillStyle = marks[`${c},${r}`];
+          cCtx.fillRect(c * CELL, r * CELL, CELL, CELL);
+        } else if (
+          isMark(c - 1, r) ||
+          isMark(c + 1, r) ||
+          isMark(c, r - 1) ||
+          isMark(c, r + 1)
+        ) {
+          cCtx.fillStyle = INK; // auto-outline for contrast on any background
+          cCtx.fillRect(c * CELL, r * CELL, CELL, CELL);
+        }
+      }
+    }
+    const rMid = (RG * CELL) / 2;
+    this.crosshairCursorCSS = `url(${rc.toDataURL()}) ${rMid} ${rMid}, crosshair`;
   }
 
   create(): void {

@@ -107,7 +107,7 @@ export default function LoginPage() {
       <div className="login-box">
         {/* 標題 */}
         <div className="login-header">
-          <h1 className="login-title">THE ERA OF BARROWSPIRE</h1>
+          <h1 className="login-title">THE AGE OF BARROWSPIRE</h1>
           <p className="login-subtitle">Speak Your Name</p>
         </div>
 

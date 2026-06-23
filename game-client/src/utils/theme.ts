@@ -1,5 +1,5 @@
 /**
- * The Era of Barrowspire — barrow-dark palette.
+ * The Age of Barrowspire — barrow-dark palette.
  *
  * Single source of truth for the gothic dungeon look. Torch-lit, barrow-deep,
  * grim: cold ambient darkness with warm torch pools as the only real light.

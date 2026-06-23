@@ -26,7 +26,7 @@ export default function Home() {
           className="relative text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold font-display text-[#e8a14d] mb-6"
           style={{ letterSpacing: '0.12em' }}
         >
-          THE ERA OF BARROWSPIRE
+          THE AGE OF BARROWSPIRE
         </h1>
         <p className="relative text-lg sm:text-xl text-[#4a4a44] max-w-xl leading-relaxed tracking-wide mb-12">
           Descend into the barrows beneath the Spire. Strip blade, mail, and draught from the long-dead. Cut down rival delvers -- or find the way back to the light.
@@ -68,12 +68,12 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── What is The Era of Barrowspire ── */}
+      {/* ── What is The Age of Barrowspire ── */}
       <section className="max-w-4xl mx-auto px-6 sm:px-12 py-28">
         <SectionLabel>About</SectionLabel>
-        <SectionTitle>What is The Era of Barrowspire?</SectionTitle>
+        <SectionTitle>What is The Age of Barrowspire?</SectionTitle>
         <p className="text-center text-[#4a4a44] max-w-2xl mx-auto leading-[1.9] text-base tracking-wide">
-          The Era of Barrowspire is a real-time multiplayer dungeon-delve. You descend as a delver into the barrows beneath the Spire, strip randomized spoils from the dead, fight rival delvers, and race back to the surface before the dark claims you. Every delve is different. Every choice may be your last. Server-authoritative, skill-based, and unforgiving.
+          The Age of Barrowspire is a real-time multiplayer dungeon-delve. You descend as a delver into the barrows beneath the Spire, strip randomized spoils from the dead, fight rival delvers, and race back to the surface before the dark claims you. Every delve is different. Every choice may be your last. Server-authoritative, skill-based, and unforgiving.
         </p>
       </section>
 
@@ -225,7 +225,7 @@ export default function Home() {
       <footer className="border-t border-[#e8a14d]/10 py-10 px-6 sm:px-12">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
           <span className="text-[11px] text-[#5a5238] tracking-[0.2em] uppercase">
-            v0.1 // The Barrow-Deep // The Era of Barrowspire
+            v0.1 // The Barrow-Deep // The Age of Barrowspire
           </span>
           <div className="flex gap-8">
             <Link href="/leaderboard" className="text-[11px] text-[#6f6647] hover:text-[#e8a14d] tracking-[0.15em] uppercase transition-colors">

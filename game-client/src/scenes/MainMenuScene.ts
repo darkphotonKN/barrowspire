@@ -98,7 +98,7 @@ export class MainMenuScene extends Phaser.Scene {
     accentLine.lineBetween(width * 0.2, height / 4 + 85, width * 0.8, height / 4 + 85);
 
     // Title
-    const title = this.add.text(width / 2, height / 4, "THE ERA OF BARROWSPIRE", {
+    const title = this.add.text(width / 2, height / 4, "THE AGE OF BARROWSPIRE", {
       fontSize: "48px",
       color: "#e8a14d",
       fontStyle: "bold",
