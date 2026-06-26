@@ -35,7 +35,7 @@ func ExecTx(ctx context.Context, db *sqlx.DB, fn func(tx *sqlx.Tx) error) (err e
 		}
 
 		if err != nil {
-			fmt.Printf("Error during transaction, rolling back: Error: %w\n", err)
+			fmt.Printf("Error during transaction, rolling back: Error: %v\n", err)
 			tx.Rollback()
 		}
 	}()

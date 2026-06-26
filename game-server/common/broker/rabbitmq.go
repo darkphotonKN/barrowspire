@@ -46,7 +46,7 @@ func DeclareExchange(ch *amqp.Channel, exchangeName, exchangeType string) error 
 	)
 
 	if err != nil {
-		log.Fatal("Failed to declare exchange: %v", exchangeName)
+		log.Fatalf("Failed to declare exchange: %v", exchangeName)
 		return err
 	}
 
