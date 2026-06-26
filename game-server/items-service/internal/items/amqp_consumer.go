@@ -74,7 +74,7 @@ func (c *Consumer) consumeItemsExtracted(ctx context.Context) {
 		// redis SETNX check if eventID has been processed before
 		// if ok it means SETNX worked, a new key was set and hence event was
 		// was never consumed before
-		key := fmt.Sprintf("items:dedup:%s", itemsExtracted.EventId)
+		key := fmt.Sprintf("dedup:items:%s", itemsExtracted.EventId)
 		_, ok, err := c.cache.AcquireLock(context.Background(), key, time.Hour*24)
 
 		if err != nil {
