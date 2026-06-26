@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"log/slog"
 
 	commonutils "github.com/darkphotonKN/barrowspire-server/common/utils"
@@ -20,6 +19,13 @@ func NewRepository(db *sqlx.DB) *repository {
 	return &repository{
 		DB: db,
 	}
+}
+
+// wrapDBErr is the repo boundary translation point: it delegates to the shared
+// WrapDBErr helper, which converts infrastructure errors into domain sentinels
+// and wraps anything else with the repo name + operation for context.
+func wrapDBErr(op string, err error) error {
+	return commonutils.WrapDBErr("stats repo", op, err)
 }
 
 /**
@@ -63,7 +69,7 @@ func (r *repository) UpsertPlayerMatchStats(ctx context.Context, params *UpdateS
 
 	if err != nil {
 		slog.Info("Errored when attempting to update player stats", "err", err)
-		return nil, err
+		return nil, wrapDBErr("upsert player match stats", err)
 	}
 
 	defer rows.Close()
@@ -74,7 +80,7 @@ func (r *repository) UpsertPlayerMatchStats(ctx context.Context, params *UpdateS
 		err = rows.StructScan(&updated)
 
 		if err != nil {
-			return nil, commonutils.AnalyzeDBErr(err)
+			return nil, wrapDBErr("upsert player match stats: scan", err)
 		}
 	}
 
@@ -107,7 +113,7 @@ func (r *repository) GetPlayerMatchStats(ctx context.Context, memberID uuid.UUID
 		}
 
 		slog.Info("Errored when attempting to getting player stats", "memberID", memberID, "error", err)
-		return nil, err
+		return nil, wrapDBErr("get player match stats", err)
 	}
 
 	return &playerMatchStats, nil
@@ -147,7 +153,7 @@ func (r *repository) UpsertPlayerRankingStats(ctx context.Context, stats *Update
 			"member_id", stats.MemberID,
 			"error", err,
 		)
-		return nil, commonutils.AnalyzeDBErr(err)
+		return nil, wrapDBErr("upsert player ranking stats", err)
 	}
 
 	defer rows.Close()
@@ -162,7 +168,7 @@ func (r *repository) UpsertPlayerRankingStats(ctx context.Context, stats *Update
 				"member_id", stats.MemberID,
 				"error", err,
 			)
-			return nil, commonutils.AnalyzeDBErr(err)
+			return nil, wrapDBErr("upsert player ranking stats: scan", err)
 		}
 
 	}
@@ -194,7 +200,7 @@ func (r *repository) GetPlayerRankings(ctx context.Context, params *GetPlayerRan
 	err := r.DB.SelectContext(ctx, &playerRankings, query, params.limit, params.offset)
 	if err != nil {
 		slog.Error("failed to get player rankings", "limit", params.limit, "offset", params.offset, "error", err)
-		return nil, commonutils.AnalyzeDBErr(err)
+		return nil, wrapDBErr("get player rankings", err)
 	}
 
 	slog.Info("successfully retrieved player rankings", "count", len(playerRankings), "limit", params.limit, "offset", params.offset)
@@ -227,7 +233,7 @@ func (r *repository) GetPlayerRankingStats(ctx context.Context, memberID uuid.UU
 		}
 
 		slog.Error("Error getting player ranking stats", "memberID", memberID, "error", err)
-		return nil, err
+		return nil, wrapDBErr("get player ranking stats", err)
 	}
 
 	return &playerRankingStats, nil
@@ -250,7 +256,7 @@ func (r *repository) CreateMatchHistory(ctx context.Context, history *MatchHisto
 
 	_, err := r.DB.NamedExecContext(ctx, query, history)
 	if err != nil {
-		return fmt.Errorf("failed to create match history: %w", err)
+		return wrapDBErr("create match history", err)
 	}
 
 	return nil
@@ -313,7 +319,7 @@ func (r *repository) UpsertPlayerMatchStatsTx(ctx context.Context, tx *sqlx.Tx, 
 
 	if err != nil {
 		slog.Info("Errored when attempting to update player stats", "err", err)
-		return nil, err
+		return nil, wrapDBErr("upsert player match stats in tx", err)
 	}
 
 	return &updated, nil
@@ -346,7 +352,7 @@ func (r *repository) GetPlayerMatchStatsTx(ctx context.Context, tx *sqlx.Tx, mem
 		}
 
 		slog.Info("Errored when attempting to getting player stats", "memberID", memberID, "error", err)
-		return nil, err
+		return nil, wrapDBErr("get player match stats in tx", err)
 	}
 
 	return &playerMatchStats, nil
@@ -390,7 +396,7 @@ func (r *repository) UpsertPlayerRankingStatsTx(ctx context.Context, tx *sqlx.Tx
 			"member_id", stats.MemberID,
 			"error", err,
 		)
-		return nil, commonutils.AnalyzeDBErr(err)
+		return nil, wrapDBErr("upsert player ranking stats in tx", err)
 	}
 
 	return &updated, nil
@@ -423,7 +429,7 @@ func (r *repository) GetPlayerRankingStatsTx(ctx context.Context, tx *sqlx.Tx, m
 		}
 
 		slog.Error("Error getting player ranking stats", "memberID", memberID, "error", err)
-		return nil, err
+		return nil, wrapDBErr("get player ranking stats in tx", err)
 	}
 
 	return &playerRankingStats, nil
@@ -446,7 +452,7 @@ func (r *repository) CreateMatchHistoryTx(ctx context.Context, tx *sqlx.Tx, hist
 
 	_, err := tx.NamedExecContext(ctx, query, history)
 	if err != nil {
-		return fmt.Errorf("failed to create match history: %w", err)
+		return wrapDBErr("create match history in tx", err)
 	}
 
 	return nil

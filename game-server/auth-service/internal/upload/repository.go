@@ -2,9 +2,9 @@ package upload
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
+	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
@@ -21,6 +21,13 @@ func NewRepository(db *sqlx.DB) *repository {
 	}
 }
 
+// wrapDBErr is the repo boundary translation point: it delegates to the shared
+// WrapDBErr helper, which converts infrastructure errors into domain sentinels
+// and wraps anything else with the repo name + operation for context.
+func wrapDBErr(op string, err error) error {
+	return commonhelpers.WrapDBErr("upload repo", op, err)
+}
+
 // CreateUpload creates a new upload record
 func (r *repository) CreateUpload(ctx context.Context, upload *AvatarUpload) error {
 	query := `
@@ -34,7 +41,7 @@ func (r *repository) CreateUpload(ctx context.Context, upload *AvatarUpload) err
 
 	_, err := r.db.NamedExecContext(ctx, query, upload)
 	if err != nil {
-		return fmt.Errorf("creating upload record: %w", err)
+		return wrapDBErr("create upload record", err)
 	}
 
 	return nil
@@ -52,10 +59,7 @@ func (r *repository) GetUploadByID(ctx context.Context, id uuid.UUID) (*AvatarUp
 
 	err := r.db.GetContext(ctx, &upload, query, id)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("upload not found: %w", err)
-		}
-		return nil, fmt.Errorf("retrieving upload: %w", err)
+		return nil, wrapDBErr("get upload by id", err)
 	}
 
 	return &upload, nil
@@ -70,7 +74,7 @@ func (r *repository) UpdateUploadStatus(ctx context.Context, id uuid.UUID, statu
 
 	result, err := r.db.ExecContext(ctx, query, id, status)
 	if err != nil {
-		return fmt.Errorf("updating upload status: %w", err)
+		return wrapDBErr("update upload status", err)
 	}
 
 	rows, err := result.RowsAffected()
@@ -94,7 +98,7 @@ func (r *repository) UpdateUploadStatusTx(ctx context.Context, tx *sqlx.Tx, id u
 
 	result, err := tx.ExecContext(ctx, query, id, status)
 	if err != nil {
-		return fmt.Errorf("updating upload status: %w", err)
+		return wrapDBErr("update upload status in tx", err)
 	}
 
 	rows, err := result.RowsAffected()
@@ -122,7 +126,7 @@ func (r *repository) GetPendingUploadsByMember(ctx context.Context, memberID uui
 
 	err := r.db.SelectContext(ctx, &uploads, query, memberID, StatusPending)
 	if err != nil {
-		return nil, fmt.Errorf("retrieving pending uploads: %w", err)
+		return nil, wrapDBErr("get pending uploads by member", err)
 	}
 
 	return uploads, nil

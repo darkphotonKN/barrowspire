@@ -3,7 +3,6 @@ package notification
 import (
 	"context"
 
-	commonutils "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
@@ -31,7 +30,7 @@ func (r *inboxRepository) MarkEventProcessed(ctx context.Context, tx *sqlx.Tx, e
 	`
 	result, err := tx.ExecContext(ctx, query, eventID, eventType)
 	if err != nil {
-		return false, commonutils.AnalyzeDBErr(err)
+		return false, wrapDBErr("mark event processed", err)
 	}
 
 	rows, err := result.RowsAffected()

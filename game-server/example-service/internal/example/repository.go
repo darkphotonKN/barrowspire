@@ -17,6 +17,13 @@ func NewRepository(db *sqlx.DB) Repository {
 	return &repository{db: db}
 }
 
+// wrapDBErr is the repo boundary translation point: it delegates to the shared
+// WrapDBErr helper, which converts infrastructure errors into domain sentinels
+// and wraps anything else with the repo name + operation for context.
+func wrapDBErr(op string, err error) error {
+	return commonhelpers.WrapDBErr("example repo", op, err)
+}
+
 func (r *repository) Create(example *ExampleCreate) (*Example, error) {
 	now := time.Now()
 	exampleModel := &Example{
@@ -41,7 +48,7 @@ func (r *repository) Create(example *ExampleCreate) (*Example, error) {
 	).StructScan(exampleModel)
 
 	if err != nil {
-		return nil, err
+		return nil, wrapDBErr("create example", err)
 	}
 
 	return exampleModel, nil
@@ -55,7 +62,7 @@ func (r *repository) GetByID(id uuid.UUID) (*Example, error) {
 	}
 
 	if err != nil {
-		return nil, commonhelpers.AnalyzeDBErr(err)
+		return nil, wrapDBErr("get example by id", err)
 	}
 
 	return &example, nil

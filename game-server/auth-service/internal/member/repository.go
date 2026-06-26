@@ -22,6 +22,13 @@ func NewRepository(db *sqlx.DB) *repository {
 	}
 }
 
+// wrapDBErr is the repo boundary translation point: it delegates to the shared
+// WrapDBErr helper, which converts infrastructure errors into domain sentinels
+// and wraps anything else with the repo name + operation for context.
+func wrapDBErr(op string, err error) error {
+	return commonhelpers.WrapDBErr("member repo", op, err)
+}
+
 func (r *repository) Create(ctx context.Context, name, email, password string) (uuid.UUID, error) {
 	ctx, span := repoTracer.Start(ctx, "repository.Create")
 	defer span.End()
@@ -34,7 +41,7 @@ func (r *repository) Create(ctx context.Context, name, email, password string) (
 	_, err := r.DB.Exec(query, memberId, name, email, password)
 	if err != nil {
 		slog.Error("Error creating member", "error", err)
-		return uuid.Nil, commonhelpers.AnalyzeDBErr(err)
+		return uuid.Nil, wrapDBErr("create member", err)
 	}
 
 	return memberId, nil
@@ -52,7 +59,7 @@ func (r *repository) CreateTx(ctx context.Context, tx *sqlx.Tx, name, email, pas
 	_, err := tx.ExecContext(ctx, query, memberId, name, email, password)
 	if err != nil {
 		slog.Error("Error creating member in tx", "error", err)
-		return uuid.Nil, commonhelpers.AnalyzeDBErr(err)
+		return uuid.Nil, wrapDBErr("create member in tx", err)
 	}
 
 	return memberId, nil
@@ -63,7 +70,7 @@ func (r *repository) UpdatePassword(ctx context.Context, params MemberUpdatePass
 
 	result, err := r.DB.NamedExec(query, params)
 	if err != nil {
-		return commonhelpers.AnalyzeDBErr(err)
+		return wrapDBErr("update password", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -89,7 +96,7 @@ func (r *repository) UpdateMemberInfo(ctx context.Context, id uuid.UUID, name, s
 
 	result, err := r.DB.NamedExec(query, params)
 	if err != nil {
-		return commonhelpers.AnalyzeDBErr(err)
+		return wrapDBErr("update member info", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -110,7 +117,7 @@ func (r *repository) GetByIdWithPassword(ctx context.Context, id uuid.UUID) (*mo
 	var member models.Member
 	err := r.DB.Get(&member, query, id)
 	if err != nil {
-		return nil, err
+		return nil, wrapDBErr("get member by id with password", err)
 	}
 
 	return &member, nil
@@ -122,7 +129,7 @@ func (r *repository) GetById(ctx context.Context, id uuid.UUID) (*models.Member,
 	var member models.Member
 	err := r.DB.Get(&member, query, id)
 	if err != nil {
-		return nil, err
+		return nil, wrapDBErr("get member by id", err)
 	}
 
 	// Remove password from the struct
@@ -137,7 +144,7 @@ func (r *repository) GetMemberByEmail(ctx context.Context, email string) (*model
 
 	err := r.DB.Get(&member, query, email)
 	if err != nil {
-		return nil, err
+		return nil, wrapDBErr("get member by email", err)
 	}
 
 	return &member, nil
@@ -163,7 +170,7 @@ func (r *repository) CreateDefaultMembers(ctx context.Context, members []CreateD
 	_, err := r.DB.NamedExec(query, members)
 
 	if err != nil {
-		return commonhelpers.AnalyzeDBErr(err)
+		return wrapDBErr("create default members", err)
 	}
 
 	return nil
@@ -181,7 +188,7 @@ func (r *repository) UpdateAvatarURL(ctx context.Context, memberID uuid.UUID, av
 	err := r.DB.GetContext(ctx, &member, query, memberID, avatarURL)
 
 	if err != nil {
-		return nil, commonhelpers.AnalyzeDBErr(err)
+		return nil, wrapDBErr("update avatar url", err)
 	}
 
 	return &member, nil
@@ -202,7 +209,7 @@ func (r *repository) UpdateAvatarURLTx(ctx context.Context, tx *sqlx.Tx, memberI
 	err := tx.GetContext(ctx, &member, query, memberID, avatarURL)
 
 	if err != nil {
-		return nil, commonhelpers.AnalyzeDBErr(err)
+		return nil, wrapDBErr("update avatar url in tx", err)
 	}
 
 	return &member, nil
@@ -213,7 +220,7 @@ func (r *repository) GetStripeCustomerID(ctx context.Context, memberID uuid.UUID
 	query := `SELECT stripe_customer_id FROM members WHERE id = $1`
 	err := r.DB.GetContext(ctx, &customerID, query, memberID)
 	if err != nil {
-		return "", commonhelpers.AnalyzeDBErr(err)
+		return "", wrapDBErr("get stripe customer id", err)
 	}
 	if customerID == nil {
 		return "", nil
@@ -225,7 +232,7 @@ func (r *repository) SetStripeCustomerID(ctx context.Context, memberID uuid.UUID
 	query := `UPDATE members SET stripe_customer_id = $2 WHERE id = $1`
 	_, err := r.DB.ExecContext(ctx, query, memberID, customerID)
 	if err != nil {
-		return commonhelpers.AnalyzeDBErr(err)
+		return wrapDBErr("set stripe customer id", err)
 	}
 	return nil
 }
@@ -234,7 +241,7 @@ func (r *repository) UpdateSubscriptionStatus(ctx context.Context, memberID uuid
 	query := `UPDATE members SET stripe_subscription_product_id = $2, stripe_subscription_status = $3, updated_at = NOW() WHERE id = $1`
 	_, err := r.DB.ExecContext(ctx, query, memberID, productID, status)
 	if err != nil {
-		return commonhelpers.AnalyzeDBErr(err)
+		return wrapDBErr("update subscription status", err)
 	}
 	return nil
 }

@@ -53,6 +53,25 @@ interface WizardPalette {
   ink: number;
 }
 
+/** Limited barrow palette for the knight-delver sprite (0x ints). */
+interface KnightPalette {
+  helm: number;
+  helmShade: number;
+  helmLight: number;
+  plate: number;
+  plateShade: number;
+  plateLight: number;
+  surcoat: number;
+  surcoatShade: number;
+  visor: number; // bright slit
+  visorGlow: number; // soft halo (rendered semi-transparent)
+  sword: number;
+  swordHilt: number;
+  shield: number;
+  shieldTrim: number;
+  ink: number;
+}
+
 export class BarrowspireScene extends Phaser.Scene {
   private player?: Phaser.Physics.Arcade.Sprite;
   private otherPlayers: Map<string, Phaser.Physics.Arcade.Sprite> = new Map();
@@ -466,7 +485,35 @@ export class BarrowspireScene extends Phaser.Scene {
       orbGlow: 0x6f8f4a,
       ink: 0x15171a,
     };
-    this.createSoldierTextures("player", playerPalette);
+    // Battered-plate knight: barrow steel, muted umber surcoat, brass trim, and
+    // a faint torch-amber visor slit as the readable accent in the dark. Same
+    // 60×60 frame / 4-facing rig as the wizard. See docs/visual-bible.md.
+    const knightPalette: KnightPalette = {
+      helm: 0x54585f,
+      helmShade: 0x3a3d42,
+      helmLight: 0x6f747c,
+      plate: 0x4a4e55,
+      plateShade: 0x33363b,
+      plateLight: 0x6a6f77,
+      surcoat: 0x4a3826,
+      surcoatShade: 0x33271a,
+      visor: 0xf2b866,
+      visorGlow: 0xe8a14d,
+      sword: 0x8a8f98,
+      swordHilt: 0x9c7b3f,
+      shield: 0x3e2f22,
+      shieldTrim: 0x9c7b3f,
+      ink: 0x0d0b0a,
+    };
+
+    // --- Character roster (future class-selection hook — NOT wired to any runtime
+    // logic). Parallel asset sets so a class system can later point at either:
+    //   knight → createKnightTextures(prefix, knightPalette)   ← current default
+    //   wizard → createSoldierTextures(prefix, playerPalette)  ← banked below
+    // To make the player a wizard again, swap the one default line back to
+    // `this.createSoldierTextures("player", playerPalette)`.
+    this.createKnightTextures("player", knightPalette); // default delver = knight
+    this.createSoldierTextures("wizard", playerPalette); // wizard banked & loadable under "wizard*" keys
     this.createSoldierTextures("otherPlayer", rivalPalette);
     this.createChestTextures();
     this.createEscapeDoorTextures();
@@ -761,6 +808,200 @@ export class BarrowspireScene extends Phaser.Scene {
         const c = grid[y][x];
         if (c === null) continue;
         g.fillStyle(c, soft[y][x] && c === pal.orbGlow ? 0.45 : 1);
+        g.fillRect(ox + x * P, oy + y * P, P, P);
+      }
+    }
+  }
+
+  private createKnightTextures(prefix: string, pal: KnightPalette): void {
+    const facings: Array<"down" | "up" | "left" | "right"> = [
+      "down",
+      "up",
+      "left",
+      "right",
+    ];
+    for (const facing of facings) {
+      const g = this.make.graphics({});
+      this.drawKnight(g, facing, pal);
+      g.generateTexture(this.facingTextureKey(prefix, facing), 60, 60);
+      g.destroy();
+    }
+  }
+
+  /**
+   * The knight-delver sprite: battered medieval plate, a great helm with a narrow
+   * glowing visor slit (the readable accent in the dark), a muted barrow-tone
+   * surcoat, a sword and a kite shield. Hand-placed pixel blocks on the SAME
+   * 24×26 logical grid (2px cells) and SAME 60×60 frame / 4-facing rig as the
+   * wizard — only the drawing differs, so no animation/config changes. Dark
+   * outline is derived so the figure reads against the barrow dark. See
+   * docs/visual-bible.md.
+   */
+  private drawKnight(
+    g: Phaser.GameObjects.Graphics,
+    facing: "up" | "down" | "left" | "right",
+    pal: KnightPalette,
+  ): void {
+    const P = 2; // device px per logical pixel — chunky, readable
+    const W = 24;
+    const H = 26;
+    const ox = (60 - W * P) / 2; // centre the figure in the 60×60 frame
+    const oy = (60 - H * P) / 2;
+
+    const grid: (number | null)[][] = Array.from({ length: H }, () =>
+      Array<number | null>(W).fill(null),
+    );
+    const soft: boolean[][] = Array.from({ length: H }, () =>
+      Array<boolean>(W).fill(false),
+    );
+    const set = (x: number, y: number, c: number, isSoft = false) => {
+      if (x < 0 || x >= W || y < 0 || y >= H) return;
+      grid[y][x] = c;
+      soft[y][x] = isSoft;
+    };
+    const bar = (y: number, x0: number, x1: number, c: number) => {
+      for (let x = x0; x <= x1; x++) set(x, y, c);
+    };
+
+    const back = facing === "up";
+    const left = facing === "left";
+    const right = facing === "right";
+    const side = left || right;
+    const lean = left ? -1 : right ? 1 : 0; // slight profile lean
+
+    // sword: a vertical blade on one side (mirrors the wizard's staff column).
+    const swordCol = left ? 3 : 20;
+    for (let y = 4; y <= 17; y++) set(swordCol, y, pal.sword);
+    set(swordCol, 3, pal.sword); // tip
+    set(swordCol + 1, 10, pal.swordHilt); // crossguard
+    set(swordCol - 1, 18, pal.swordHilt);
+    set(swordCol, 18, pal.swordHilt);
+    set(swordCol + 1, 18, pal.swordHilt);
+    set(swordCol, 19, pal.swordHilt); // grip
+    set(swordCol, 20, pal.swordHilt); // pommel
+
+    // great helm — bucket over the head (lean shifts it on profiles)
+    bar(5, 9 + lean, 14 + lean, pal.helm);
+    bar(6, 8 + lean, 15 + lean, pal.helm);
+    for (let y = 7; y <= 13; y++) bar(y, 8 + lean, 15 + lean, pal.helm);
+    // shaded right side + lit left edge for plate form
+    for (let y = 5; y <= 13; y++) {
+      for (let x = 12 + lean; x <= 15 + lean; x++)
+        if (grid[y]?.[x] != null) set(x, y, pal.helmShade);
+      set(8 + lean, y, pal.helmLight);
+    }
+    // small brass crest knob on top
+    if (!back) {
+      set(11 + lean, 3, pal.swordHilt);
+      set(12 + lean, 3, pal.swordHilt);
+      set(11 + lean, 4, pal.swordHilt);
+      set(12 + lean, 4, pal.swordHilt);
+    }
+
+    // visor slit — the readable glowing accent (soft so it stays out of the ink)
+    if (back) {
+      bar(10, 9, 14, pal.helmShade); // back of helm: shaded band, no slit
+      set(10, 8, pal.helmLight);
+      set(13, 8, pal.helmLight);
+    } else if (side) {
+      const sx = left ? 8 : 13;
+      set(sx + lean, 10, pal.visor, true);
+      set(sx + 1 + lean, 10, pal.visor, true);
+      set(sx + lean, 11, pal.visorGlow, true);
+    } else {
+      for (let x = 9; x <= 14; x++) set(x, 10, pal.visor, true);
+      set(9, 11, pal.visorGlow, true);
+      set(14, 11, pal.visorGlow, true);
+    }
+
+    // body: pauldrons → cuirass → faulds (narrower in profile)
+    const body: Array<[number, number, number]> = [
+      [13, 6, 17], // pauldrons
+      [14, 6, 17],
+      [15, 7, 16],
+      [16, 7, 16],
+      [17, 8, 15], // cuirass
+      [18, 8, 15],
+      [19, 8, 15],
+      [20, 8, 15], // faulds
+      [21, 9, 14],
+    ];
+    body.forEach(([y, a, b]) => {
+      const lo = side ? a + 2 : a;
+      const hi = side ? b - 2 : b;
+      bar(y, lo, hi, pal.plate);
+      const sh = Math.floor((lo + hi) / 2) + 1;
+      for (let x = sh; x <= hi; x++) set(x, y, pal.plateShade); // shadow side
+      set(lo, y, pal.plateLight); // lit edge
+    });
+
+    // surcoat / tabard down the front (front + profile), with a brass seam
+    if (!back) {
+      const cx0 = side ? (left ? 9 : 11) : 10;
+      const cx1 = side ? (left ? 12 : 14) : 13;
+      for (let y = 15; y <= 23; y++) {
+        bar(y, cx0, cx1, pal.surcoat);
+        for (let x = Math.floor((cx0 + cx1) / 2) + 1; x <= cx1; x++)
+          set(x, y, pal.surcoatShade);
+      }
+      const seam = side ? (left ? 10 : 12) : 11;
+      for (let y = 15; y <= 22; y++) set(seam, y, pal.swordHilt);
+    }
+
+    // greaves / boots flanking the surcoat
+    for (let y = 22; y <= 25; y++) {
+      set(side ? 10 : 9, y, pal.plate);
+      set(side ? 11 : 10, y, pal.plateShade);
+      if (!side) {
+        set(13, y, pal.plate);
+        set(14, y, pal.plateShade);
+      }
+    }
+
+    // kite shield held on the off-hand (front/back only; omitted in profile for
+    // a cleaner sword-forward silhouette)
+    if (!side) {
+      const kite: Array<[number, number]> = [
+        [11, 3],
+        [12, 3],
+        [13, 3],
+        [14, 3],
+        [15, 4],
+        [16, 4],
+        [17, 4],
+        [18, 4],
+        [19, 5],
+      ];
+      kite.forEach(([y, a]) => {
+        const b = y <= 14 ? 6 : y <= 17 ? 6 : 5;
+        bar(y, a, b, pal.shield);
+        set(a, y, pal.shieldTrim); // brass edge
+      });
+      set(6, 11, pal.shieldTrim);
+      set(5, 14, pal.visor, true); // faint amber boss
+      set(4, 14, pal.visorGlow, true);
+    }
+
+    // derive a dark outline (soft/glow cells are not outline sources)
+    const ink: Array<[number, number]> = [];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (grid[y][x] !== null) continue;
+        const near =
+          (grid[y][x - 1] != null && !soft[y][x - 1]) ||
+          (grid[y][x + 1] != null && !soft[y][x + 1]) ||
+          (grid[y - 1]?.[x] != null && !soft[y - 1][x]) ||
+          (grid[y + 1]?.[x] != null && !soft[y + 1][x]);
+        if (near) ink.push([x, y]);
+      }
+    }
+    ink.forEach(([x, y]) => set(x, y, pal.ink));
+
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const c = grid[y][x];
+        if (c === null) continue;
+        g.fillStyle(c, soft[y][x] && c === pal.visorGlow ? 0.45 : 1);
         g.fillRect(ox + x * P, oy + y * P, P, P);
       }
     }

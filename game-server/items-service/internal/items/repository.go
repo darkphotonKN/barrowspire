@@ -24,6 +24,13 @@ func NewRepository(db *sqlx.DB) *repository {
 	}
 }
 
+// wrapDBErr is the repo boundary translation point: it delegates to the shared
+// WrapDBErr helper, which converts infrastructure errors into domain sentinels
+// and wraps anything else with the repo name + operation for context.
+func wrapDBErr(op string, err error) error {
+	return commonhelpers.WrapDBErr("items repo", op, err)
+}
+
 func (r *repository) CreateItemType(ctx context.Context, itemType *ItemType) error {
 	itemType.ID = uuid.New()
 
@@ -36,7 +43,7 @@ func (r *repository) CreateItemType(ctx context.Context, itemType *ItemType) err
 
 	_, err := r.DB.NamedExecContext(ctx, query, itemType)
 	if err != nil {
-		return fmt.Errorf("failed to create item type: %w", err)
+		return wrapDBErr("create item type", err)
 	}
 
 	return nil
@@ -49,7 +56,7 @@ func (r *repository) GetItemTypeByID(ctx context.Context, id uuid.UUID) (*ItemTy
 
 	err := r.DB.GetContext(ctx, &itemType, query, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get item type: %w", err)
+		return nil, wrapDBErr("get item type", err)
 	}
 
 	return &itemType, nil
@@ -62,7 +69,7 @@ func (r *repository) GetItemTypeByCode(ctx context.Context, code string) (*ItemT
 
 	err := r.DB.GetContext(ctx, &itemType, query, code)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get item type by code: %w", err)
+		return nil, wrapDBErr("get item type by code", err)
 	}
 
 	return &itemType, nil
@@ -75,7 +82,7 @@ func (r *repository) ListItemTypes(ctx context.Context) ([]*ItemType, error) {
 
 	err := r.DB.SelectContext(ctx, &itemTypes, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list item types: %w", err)
+		return nil, wrapDBErr("list item types", err)
 	}
 
 	return itemTypes, nil
@@ -99,7 +106,7 @@ func (r *repository) CreateItemRarity(ctx context.Context, rarity *ItemRarity) e
 
 	_, err := r.DB.NamedExecContext(ctx, query, rarity)
 	if err != nil {
-		return fmt.Errorf("failed to create item rarity: %w", err)
+		return wrapDBErr("create item rarity", err)
 	}
 
 	return nil
@@ -112,7 +119,7 @@ func (r *repository) GetItemRarityByID(ctx context.Context, id uuid.UUID) (*Item
 
 	err := r.DB.GetContext(ctx, &rarity, query, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get item rarity: %w", err)
+		return nil, wrapDBErr("get item rarity", err)
 	}
 
 	return &rarity, nil
@@ -125,7 +132,7 @@ func (r *repository) GetItemRarityByCode(ctx context.Context, code string) (*Ite
 
 	err := r.DB.GetContext(ctx, &rarity, query, code)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get item rarity by code: %w", err)
+		return nil, wrapDBErr("get item rarity by code", err)
 	}
 
 	return &rarity, nil
@@ -138,7 +145,7 @@ func (r *repository) ListItemRarities(ctx context.Context) ([]*ItemRarity, error
 
 	err := r.DB.SelectContext(ctx, &rarities, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list item rarities: %w", err)
+		return nil, wrapDBErr("list item rarities", err)
 	}
 
 	return rarities, nil
@@ -163,7 +170,7 @@ func (r *repository) CreateWeapon(ctx context.Context, weapon *Weapon) error {
 
 	_, err := r.DB.NamedExecContext(ctx, query, weapon)
 	if err != nil {
-		return fmt.Errorf("failed to create weapon: %w", err)
+		return wrapDBErr("create weapon", err)
 	}
 
 	return nil
@@ -176,7 +183,7 @@ func (r *repository) GetWeaponByID(ctx context.Context, id uuid.UUID) (*Weapon, 
 
 	err := r.DB.GetContext(ctx, &weapon, query, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get weapon: %w", err)
+		return nil, wrapDBErr("get weapon", err)
 	}
 
 	return &weapon, nil
@@ -189,7 +196,7 @@ func (r *repository) ListWeapons(ctx context.Context) ([]*Weapon, error) {
 
 	err := r.DB.SelectContext(ctx, &weapons, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list weapons: %w", err)
+		return nil, wrapDBErr("list weapons", err)
 	}
 
 	return weapons, nil
@@ -213,7 +220,7 @@ func (r *repository) CreateArmor(ctx context.Context, armor *Armor) error {
 
 	_, err := r.DB.NamedExecContext(ctx, query, armor)
 	if err != nil {
-		return fmt.Errorf("failed to create armor: %w", err)
+		return wrapDBErr("create armor", err)
 	}
 
 	return nil
@@ -226,7 +233,7 @@ func (r *repository) GetArmorByID(ctx context.Context, id uuid.UUID) (*Armor, er
 
 	err := r.DB.GetContext(ctx, &armor, query, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get armor: %w", err)
+		return nil, wrapDBErr("get armor", err)
 	}
 
 	return &armor, nil
@@ -239,7 +246,7 @@ func (r *repository) ListArmors(ctx context.Context) ([]*Armor, error) {
 
 	err := r.DB.SelectContext(ctx, &armors, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list armors: %w", err)
+		return nil, wrapDBErr("list armors", err)
 	}
 
 	return armors, nil
@@ -263,7 +270,7 @@ func (r *repository) CreateConsumable(ctx context.Context, consumable *Consumabl
 
 	_, err := r.DB.NamedExecContext(ctx, query, consumable)
 	if err != nil {
-		return fmt.Errorf("failed to create consumable: %w", err)
+		return wrapDBErr("create consumable", err)
 	}
 
 	return nil
@@ -276,7 +283,7 @@ func (r *repository) GetConsumableByID(ctx context.Context, id uuid.UUID) (*Cons
 
 	err := r.DB.GetContext(ctx, &consumable, query, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get consumable: %w", err)
+		return nil, wrapDBErr("get consumable", err)
 	}
 
 	return &consumable, nil
@@ -289,7 +296,7 @@ func (r *repository) ListConsumables(ctx context.Context) ([]*Consumable, error)
 
 	err := r.DB.SelectContext(ctx, &consumables, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list consumables: %w", err)
+		return nil, wrapDBErr("list consumables", err)
 	}
 
 	return consumables, nil
@@ -313,7 +320,7 @@ func (r *repository) CreateItemTemplate(ctx context.Context, template *ItemTempl
 
 	_, err := r.DB.NamedExecContext(ctx, query, template)
 	if err != nil {
-		return fmt.Errorf("failed to create item template: %w", err)
+		return wrapDBErr("create item template", err)
 	}
 
 	return nil
@@ -331,7 +338,7 @@ func (r *repository) GetItemTemplateByID(ctx context.Context, id uuid.UUID) (*It
 
 	err := r.DB.GetContext(ctx, &template, query, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get item template: %w", err)
+		return nil, wrapDBErr("get item template", err)
 	}
 	slog.Info("Debug GetItemTemplateByID")
 	return &template, nil
@@ -347,7 +354,7 @@ func (r *repository) ListItemTemplates(ctx context.Context) ([]*ItemTemplate, er
 
 	err := r.DB.SelectContext(ctx, &templates, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list item templates: %w", err)
+		return nil, wrapDBErr("list item templates", err)
 	}
 
 	return templates, nil
@@ -402,7 +409,7 @@ LEFT JOIN item_rarities AS r
 	err := r.DB.SelectContext(ctx, &items, query)
 
 	if err != nil {
-		return nil, commonhelpers.AnalyzeDBErr(err)
+		return nil, wrapDBErr("list item template aggregates", err)
 	}
 
 	return items, nil
@@ -422,7 +429,7 @@ func (r *repository) GetWeaponWithTemplateByID(ctx context.Context, id uuid.UUID
 
 	err := r.DB.GetContext(ctx, &weapon, query, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get weapon with template: %w", err)
+		return nil, wrapDBErr("get weapon with template", err)
 	}
 
 	return &weapon, nil
@@ -446,7 +453,7 @@ func (r *repository) ListArmorsWithTemplate(ctx context.Context) ([]*ArmorWithTe
 
 	err := r.DB.SelectContext(ctx, &armors, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list armors with template: %w", err)
+		return nil, wrapDBErr("list armors with template", err)
 	}
 
 	return armors, nil
@@ -470,7 +477,7 @@ func (r *repository) ListConsumablesWithTemplate(ctx context.Context) ([]*Consum
 
 	err := r.DB.SelectContext(ctx, &consumables, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list consumables with template: %w", err)
+		return nil, wrapDBErr("list consumables with template", err)
 	}
 
 	return consumables, nil
@@ -494,7 +501,7 @@ func (r *repository) ListWeaponsWithTemplate(ctx context.Context) ([]*WeaponWith
 
 	err := r.DB.SelectContext(ctx, &weapons, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list weapons with template: %w", err)
+		return nil, wrapDBErr("list weapons with template", err)
 	}
 
 	return weapons, nil
@@ -518,7 +525,7 @@ func (r *repository) CreateWeaponTx(ctx context.Context, tx *sqlx.Tx, weapon *We
 
 	_, err := tx.NamedExecContext(ctx, query, weapon)
 	if err != nil {
-		return fmt.Errorf("failed to create weapon (tx): %w", err)
+		return wrapDBErr("create weapon (tx)", err)
 	}
 
 	return nil
@@ -538,7 +545,7 @@ func (r *repository) CreateArmorTx(ctx context.Context, tx *sqlx.Tx, armor *Armo
 
 	_, err := tx.NamedExecContext(ctx, query, armor)
 	if err != nil {
-		return fmt.Errorf("failed to create armor (tx): %w", err)
+		return wrapDBErr("create armor (tx)", err)
 	}
 
 	return nil
@@ -558,7 +565,7 @@ func (r *repository) CreateConsumableTx(ctx context.Context, tx *sqlx.Tx, consum
 
 	_, err := tx.NamedExecContext(ctx, query, consumable)
 	if err != nil {
-		return fmt.Errorf("failed to create consumable (tx): %w", err)
+		return wrapDBErr("create consumable (tx)", err)
 	}
 
 	return nil
@@ -578,7 +585,7 @@ func (r *repository) CreateItemTemplateTx(ctx context.Context, tx *sqlx.Tx, temp
 
 	_, err := tx.NamedExecContext(ctx, query, template)
 	if err != nil {
-		return fmt.Errorf("failed to create item template (tx): %w", err)
+		return wrapDBErr("create item template (tx)", err)
 	}
 
 	return nil
@@ -631,7 +638,7 @@ func (r *repository) UpsertItemInstanceTx(ctx context.Context, tx *sqlx.Tx, inst
 
 	_, err := tx.NamedExecContext(ctx, query, instance)
 	if err != nil {
-		return fmt.Errorf("failed to upsert item instance (tx): %w", err)
+		return wrapDBErr("upsert item instance (tx)", err)
 	}
 
 	return nil
@@ -661,7 +668,7 @@ func (r *repository) GetLoadout(ctx context.Context, req *GetLoadoutRequest) (*L
 		if err == sql.ErrNoRows {
 			return loadout, nil
 		}
-		return nil, fmt.Errorf("failed to get loadout: %w", err)
+		return nil, wrapDBErr("get loadout", err)
 	}
 
 	return loadout, nil
@@ -684,7 +691,7 @@ func (r *repository) GetItemInstanceByID(ctx context.Context, id uuid.UUID) (*It
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to get item instance: %w", err)
+		return nil, wrapDBErr("get item instance", err)
 	}
 
 	return item, nil
@@ -705,7 +712,7 @@ func (r *repository) ListItemInstances(ctx context.Context, req *ListItemInstanc
 
 	err := r.DB.SelectContext(ctx, &items, query, req.MemberId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list item instances: %w", err)
+		return nil, wrapDBErr("list item instances", err)
 	}
 
 	return items, nil
@@ -741,7 +748,7 @@ func (r *repository) UpsertLoadoutSlot(ctx context.Context, req *UpdateLoadoutRe
 
 	_, err := r.DB.ExecContext(ctx, query, req.MemberId, req.ItemInstanceId)
 	if err != nil {
-		return fmt.Errorf("failed to update loadout: %w", err)
+		return wrapDBErr("update loadout", err)
 	}
 
 	return nil
@@ -775,7 +782,7 @@ func (r *repository) UpsertLoadoutSlotTx(ctx context.Context, tx *sqlx.Tx, req *
 
 	_, err := tx.ExecContext(ctx, query, req.MemberId, req.ItemInstanceId)
 	if err != nil {
-		return fmt.Errorf("failed to update loadout (tx): %w", err)
+		return wrapDBErr("update loadout (tx)", err)
 	}
 
 	return nil
@@ -813,7 +820,7 @@ func (r *repository) UpsertPlayerLoadoutTx(ctx context.Context, tx *sqlx.Tx, req
 
 	_, err := tx.NamedExecContext(ctx, query, req)
 	if err != nil {
-		return fmt.Errorf("failed to upsert player loadout (tx): %w", err)
+		return wrapDBErr("upsert player loadout (tx)", err)
 	}
 
 	return nil
@@ -903,7 +910,7 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 
 	_, err := tx.ExecContext(ctx, b.String(), args...)
 	if err != nil {
-		return fmt.Errorf("failed to batch upsert item instances (tx): %w", err)
+		return wrapDBErr("batch upsert item instances (tx)", err)
 	}
 
 	return nil

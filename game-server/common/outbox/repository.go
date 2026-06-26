@@ -20,6 +20,13 @@ func NewRepo(db *sqlx.DB) *repo {
 	}
 }
 
+// wrapDBErr is the repo boundary translation point: it delegates to the shared
+// WrapDBErr helper, which converts infrastructure errors into domain sentinels
+// and wraps anything else with the repo name + operation for context.
+func wrapDBErr(op string, err error) error {
+	return commonhelpers.WrapDBErr("outbox repo", op, err)
+}
+
 const createOutboxQuery = `
 	INSERT INTO outbox(routing_key, exchange, payload)
 	VALUES(:routing_key, :exchange, :payload)
@@ -31,7 +38,7 @@ func (r *repo) CreateOutbox(ctx context.Context, params OutboxParams) error {
 	if err != nil {
 		slog.Error("Error occured when attempting to create outbox",
 			"err", err)
-		return commonhelpers.AnalyzeDBErr(err)
+		return wrapDBErr("create outbox", err)
 	}
 
 	return nil
@@ -43,7 +50,7 @@ func (r *repo) CreateOutboxTx(ctx context.Context, tx *sqlx.Tx, params OutboxPar
 	if err != nil {
 		slog.Error("Error occured when attempting to create outbox in tx",
 			"err", err)
-		return commonhelpers.AnalyzeDBErr(err)
+		return wrapDBErr("create outbox in tx", err)
 	}
 
 	return nil
@@ -61,7 +68,7 @@ func (r *repo) UpdateOutboxToPublished(ctx context.Context, id uuid.UUID) error 
 	if err != nil {
 		slog.Error("Error occured when attempting to update published on outbox item",
 			"err", err)
-		return commonhelpers.AnalyzeDBErr(err)
+		return wrapDBErr("update outbox to published", err)
 	}
 
 	rows, _ := results.RowsAffected()
@@ -98,7 +105,7 @@ func (r *repo) GetUnpublishedOutboxItems(ctx context.Context, limit *int) ([]*Ou
 	if err != nil {
 		slog.Error("Error occured when attempting to retrive from outbox table",
 			"err", err)
-		return nil, commonhelpers.AnalyzeDBErr(err)
+		return nil, wrapDBErr("get unpublished outbox items", err)
 	}
 
 	return outboxItem, nil

@@ -2,8 +2,8 @@ package payment
 
 import (
 	"context"
-	"fmt"
 
+	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
@@ -19,6 +19,13 @@ type repository struct {
 
 func NewRepository(db *sqlx.DB) Repository {
 	return &repository{db: db}
+}
+
+// wrapDBErr is the repo boundary translation point: it delegates to the shared
+// WrapDBErr helper, which converts infrastructure errors into domain sentinels
+// and wraps anything else with the repo name + operation for context.
+func wrapDBErr(op string, err error) error {
+	return commonhelpers.WrapDBErr("payment repo", op, err)
 }
 
 func (r *repository) UpsertSubscription(ctx context.Context, sub *Subscription) error {
@@ -42,7 +49,7 @@ func (r *repository) UpsertSubscription(ctx context.Context, sub *Subscription) 
 
 	_, err := r.db.NamedExecContext(ctx, query, sub)
 	if err != nil {
-		return fmt.Errorf("failed to upsert subscription: %w", err)
+		return wrapDBErr("upsert subscription", err)
 	}
 	return nil
 }
@@ -53,7 +60,7 @@ func (r *repository) GetSubscriptionsByUserID(ctx context.Context, userID uuid.U
 
 	err := r.db.SelectContext(ctx, &subs, query, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get subscriptions: %w", err)
+		return nil, wrapDBErr("get subscriptions by user id", err)
 	}
 	return subs, nil
 }

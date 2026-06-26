@@ -21,6 +21,13 @@ func NewRepository(db *sqlx.DB) *repository {
 	}
 }
 
+// wrapDBErr is the repo boundary translation point: it delegates to the shared
+// WrapDBErr helper, which converts infrastructure errors into domain sentinels
+// and wraps anything else with the repo name + operation for context.
+func wrapDBErr(op string, err error) error {
+	return commonutils.WrapDBErr("notification repo", op, err)
+}
+
 func (r *repository) Create(ctx context.Context, createNotification *CreateNotification) (*Notification, error) {
 	return insertNotification(ctx, r.db, createNotification)
 }
@@ -77,7 +84,7 @@ func insertNotification(ctx context.Context, q sqlxQuerier, createNotification *
 	).StructScan(notificationModel)
 
 	if err != nil {
-		return nil, commonutils.AnalyzeDBErr(err)
+		return nil, wrapDBErr("create notification", err)
 	}
 
 	// Convert DbNotification (with []byte Data) back to Notification (with map[string]any Data)
@@ -134,7 +141,7 @@ func (r *repository) GetByUserID(ctx context.Context, request *QueryNotification
 	err := r.db.SelectContext(ctx, &dbNotifications, query, params...)
 
 	if err != nil {
-		return nil, commonutils.AnalyzeDBErr(err)
+		return nil, wrapDBErr("get notifications by user id", err)
 	}
 
 	// Convert []DbNotification to []Notification (unmarshal []byte Data to map[string]any)
@@ -176,7 +183,7 @@ func (r *repository) Update(ctx context.Context, request *UpdateNotification) er
 	`
 	result, err := r.db.NamedExecContext(ctx, query, request)
 	if err != nil {
-		return commonutils.AnalyzeDBErr(err)
+		return wrapDBErr("update notification", err)
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
@@ -198,7 +205,7 @@ func (r *repository) MarkAllAsReadByUserID(ctx context.Context, userID uuid.UUID
       `
 	result, err := r.db.ExecContext(ctx, query, userID)
 	if err != nil {
-		return 0, commonutils.AnalyzeDBErr(err)
+		return 0, wrapDBErr("mark all as read by user id", err)
 	}
 
 	rows, err := result.RowsAffected()
