@@ -6,6 +6,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jmoiron/sqlx"
 
 	// Importing for side effects - Dont Remove
@@ -16,10 +19,6 @@ import (
 /**
 * Sets up the Database connection and provides its access as a singleton to
 * the entire application.
-*
-* NOTE: migrations are intentionally omitted for now — this service has no
-* domain tables yet. When the listing domain lands, wire in golang-migrate
-* here following example-service/config/db.go.
 **/
 func InitDB() *sqlx.DB {
 	// construct the db connection string
@@ -45,5 +44,33 @@ func InitDB() *sqlx.DB {
 
 	fmt.Printf("\nConnected to the database successfully.\n\n")
 
+	// Run migrations
+	if err := runMigrations(db); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	return db
+}
+
+func runMigrations(db *sqlx.DB) error {
+	driver, err := postgres.WithInstance(db.DB, &postgres.Config{})
+	if err != nil {
+		return fmt.Errorf("could not create migration driver: %v", err)
+	}
+
+	m, err := migrate.NewWithDatabaseInstance(
+		"file://migrations",
+		"postgres",
+		driver,
+	)
+	if err != nil {
+		return fmt.Errorf("could not create migration instance: %v", err)
+	}
+
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("could not run migrations: %v", err)
+	}
+
+	fmt.Printf("Successfully ran all migrations.\n\n")
+	return nil
 }

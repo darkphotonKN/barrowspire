@@ -10,6 +10,7 @@ import (
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commontypes "github.com/darkphotonKN/barrowspire-server/common/types"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,14 +25,28 @@ type mockRepo struct {
 	upsertPlayerRankingParams  *UpdatePlayerRankingsParams
 }
 
-func (m *mockRepo) GetPlayerMatchStats(ctx context.Context, memberID uuid.UUID) (*PlayerMatchStats, error) {
-	return m.getPlayerStatsReturn, m.getPlayerStatsErr
-}
-
-func (m *mockRepo) UpsertPlayerMatchStats(ctx context.Context, params *UpdateStatsParams) (*PlayerMatchStats, error) {
+func (m *mockRepo) UpsertPlayerMatchStatsTx(ctx context.Context, tx *sqlx.Tx, params *UpdateStatsParams) (*PlayerMatchStats, error) {
 	m.upsertCalled = true
 	m.upsertParams = params
 	return nil, m.upsertErr
+}
+
+func (m *mockRepo) UpsertPlayerRankingStatsTx(ctx context.Context, tx *sqlx.Tx, params *UpdatePlayerRankingsParams) (*PlayerRankingStats, error) {
+	m.upsertPlayerRankingsCalled = true
+	m.upsertPlayerRankingParams = params
+	return nil, m.upsertErr
+}
+
+func (m *mockRepo) CreateMatchHistoryTx(ctx context.Context, tx *sqlx.Tx, history *MatchHistory) error {
+	return nil
+}
+
+func (m *mockRepo) GetPlayerMatchStatsTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID) (*PlayerMatchStats, error) {
+	return m.getPlayerStatsReturn, m.getPlayerStatsErr
+}
+
+func (m *mockRepo) GetPlayerRankingStatsTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID) (*PlayerRankingStats, error) {
+	return nil, nil
 }
 
 func (m *mockRepo) UpsertPlayerRankingStats(ctx context.Context, params *UpdatePlayerRankingsParams) (*PlayerRankingStats, error) {
@@ -40,16 +55,7 @@ func (m *mockRepo) UpsertPlayerRankingStats(ctx context.Context, params *UpdateP
 	return nil, m.upsertErr
 }
 
-// NOTE: update mock methods if needed
-func (m *mockRepo) CreatePlayerRankingStats(ctx context.Context, stats *PlayerRankingStats) error {
-	return nil
-}
-
-func (m *mockRepo) CreateMatchHistory(ctx context.Context, history *MatchHistory) error {
-	return nil
-}
-
-func (m *mockRepo) GetPlayerRankingStats(ctx context.Context, memberID uuid.UUID) (*PlayerRankingStats, error) {
+func (m *mockRepo) GetPlayerRankings(ctx context.Context, params *GetPlayerRankings) ([]*PlayerRankingStats, error) {
 	return nil, nil
 }
 
@@ -73,7 +79,7 @@ func (p *TestPublisher) PublishWithContext(_ context.Context, exchange, key stri
 
 func TestUpdatePlayerStats_IncrementWin(t *testing.T) {
 	repo := &mockRepo{}
-	service := NewService(repo, &TestPublisher{})
+	service := NewService(repo, &TestPublisher{}, nil, nil)
 
 	playerStats := &pb.PlayerMatchResult{
 		MemberId:      uuid.MustParse("550e8400-e29b-41d4-a716-446655440001").String(),
@@ -85,7 +91,7 @@ func TestUpdatePlayerStats_IncrementWin(t *testing.T) {
 		Escape:        false,
 	}
 
-	err := service.updatePlayerStats(context.Background(), playerStats)
+	err := service.updatePlayerStats(context.Background(), nil, playerStats)
 	assert.NoError(t, err)
 
 	slog.Info("end of updatePlayerStats increment win test", "repo.upsertParams.Wins", repo.upsertParams.Wins)
