@@ -30,6 +30,8 @@ func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher) 
 }
 
 type Repository interface {
+	EventProcessedTx(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string) (bool, error)
+
 	// ItemType operations
 	CreateItemType(ctx context.Context, itemType *ItemType) error
 	GetItemTypeByID(ctx context.Context, id uuid.UUID) (*ItemType, error)
@@ -97,18 +99,28 @@ func (s *service) CreatePlayerLoadout(createPlayerLoadoutReq *PlayerLoadout) err
 	return nil
 }
 
-func (s *service) ProcessItemsExtracted(ctx context.Context, req *pb.ItemsExtractedEvent) error {
-	// transaction to wrap inventory upserts and player_loadout upserts
-	for _, playerItems := range req.PlayerItems {
-		// loop through each player
-		slog.Debug("single player iterated from req.PlayerItems",
-			"member_id", playerItems.MemberId,
-			"equipment", playerItems.Equipment,
-			"inventory", playerItems.Inventory,
-		)
+func (s *service) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, req *pb.ItemsExtractedEvent) error {
+	// 把tx拉到外層 目前的consumer一次傳所有player 所以同一個event要一起成功一起失敗 dlq才能處理
+	return commonutils.ExecTx(ctx, s.db, func(tx *sqlx.Tx) error {
+		// inbox
+		inserted, err := s.repo.EventProcessedTx(ctx, tx, eventID, commonconstants.ItemsExtracted)
+		if err != nil {
+			return err
+		}
+		if !inserted {
+			slog.Info("event dedup",
+				"event_id", eventID,
+			)
+			return commonconstants.ErrAlreadyProcessed
+		}
 
-		// only holds one connection a time, released when committed or rolled back
-		commonutils.ExecTx(ctx, s.db, func(tx *sqlx.Tx) error {
+		for _, playerItems := range req.PlayerItems {
+			// loop through each player
+			slog.Debug("single player iterated from req.PlayerItems",
+				"member_id", playerItems.MemberId,
+				"equipment", playerItems.Equipment,
+				"inventory", playerItems.Inventory,
+			)
 
 			// convert inventory and equipment into item instances
 			invItemInstances, err := s.MapProtoItemToItemInstances(playerItems.Inventory)
@@ -157,10 +169,10 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, req *pb.ItemsExtrac
 				)
 				return err
 			}
-			return nil
-		})
-	}
-	return nil
+		}
+
+		return nil
+	})
 }
 
 /**

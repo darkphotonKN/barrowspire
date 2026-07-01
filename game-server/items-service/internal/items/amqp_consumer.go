@@ -10,6 +10,7 @@ import (
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commoncache "github.com/darkphotonKN/barrowspire-server/common/utils/cache"
+	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"google.golang.org/protobuf/proto"
 )
@@ -21,7 +22,7 @@ type Consumer struct {
 }
 
 type ConsumerService interface {
-	ProcessItemsExtracted(ctx context.Context, req *pb.ItemsExtractedEvent) error
+	ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, req *pb.ItemsExtractedEvent) error
 }
 
 func (c *Consumer) Listen(ctx context.Context) {
@@ -74,12 +75,18 @@ func (c *Consumer) consumeItemsExtracted(ctx context.Context) {
 		// redis SETNX check if eventID has been processed before
 		// if ok it means SETNX worked, a new key was set and hence event was
 		// was never consumed before
-		key := fmt.Sprintf("dedup:items:%s", itemsExtracted.EventId)
-		_, ok, err := c.cache.AcquireLock(context.Background(), key, time.Hour*24)
+		eventID, err := uuid.Parse(itemsExtracted.EventId)
+		if err != nil {
+			slog.Error("invalid event id, discarding", "event_id", itemsExtracted.EventId, "err", err)
+			msg.Nack(false, false)
+			continue
+		}
+		key := fmt.Sprintf("dedup:items:%s", eventID)
+		lockID, ok, err := c.cache.AcquireLock(context.Background(), key, time.Hour*24)
 
 		if err != nil {
 			slog.Error("Redis dedup check failed",
-				"event_id", itemsExtracted.EventId,
+				"event_id", eventID,
 				"err", err,
 			)
 			msg.Nack(false, true) // retry when redis errored
@@ -95,9 +102,26 @@ func (c *Consumer) consumeItemsExtracted(ctx context.Context) {
 			continue
 		}
 
-		err = c.service.ProcessItemsExtracted(ctx, &itemsExtracted)
+		err = c.service.ProcessItemsExtracted(ctx, eventID, &itemsExtracted)
 
 		if err != nil {
+			// 重複的話就不刪除redis key , continue跳過這一輪
+			if errors.Is(err, commonconstants.ErrAlreadyProcessed) {
+				slog.Info("already processed",
+					"event_id", eventID,
+				)
+				// 成功 不再重試
+				msg.Ack(false)
+				continue
+			}
+			// err是tx內的錯誤 等於流程錯誤inbox也無法建立 所以同時刪除dedup key
+			if releaseErr := c.cache.ReleaseLock(context.Background(), key, lockID); releaseErr != nil {
+				slog.Warn("failed to release redis",
+					"event_id", eventID,
+					"err", releaseErr,
+				)
+			}
+
 			if errors.Is(err, commonconstants.ErrTransient) {
 				slog.Error("Items service could not process items extracted due to transient error. Requeuing message",
 					"err", err,
@@ -139,6 +163,10 @@ func SetupAMQPInfrastructure(channel *amqp.Channel) error {
 		return err
 	}
 
+	args := amqp.Table{
+		"x-dead-letter-exchange":    "dlx.items",       // 专属 DLX(要另外宣告)
+		"x-dead-letter-routing-key": "items.extracted", // dead letter用的 routing key
+	}
 	// declare the queue
 	_, err = channel.QueueDeclare(
 		commonconstants.ItemsGameItemsExtractedQueue, // queue name
@@ -146,7 +174,7 @@ func SetupAMQPInfrastructure(channel *amqp.Channel) error {
 		false, // delete when unused
 		false, // exclusive
 		false, // no-wait
-		nil,   // arguments
+		args,  // arguments dlq
 	)
 	if err != nil {
 		slog.Error("Failed to declare queue", "error", err)
