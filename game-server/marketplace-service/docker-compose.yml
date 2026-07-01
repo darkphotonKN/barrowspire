@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:17
+    container_name: barrowspire_marketplace_service_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_marketplace_service_db
+    ports:
+      - "5224:5432"
+    volumes:
+      - barrowspire_marketplace_service_pgdata:/var/lib/postgresql/data
+
+volumes:
+  barrowspire_marketplace_service_pgdata:

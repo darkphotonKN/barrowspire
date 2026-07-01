@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:17
+    container_name: barrowspire_wallet_service_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: barrowspire_wallet_service_db
+    ports:
+      - "5225:5432"
+    volumes:
+      - barrowspire_wallet_service_pgdata:/var/lib/postgresql/data
+
+volumes:
+  barrowspire_wallet_service_pgdata:

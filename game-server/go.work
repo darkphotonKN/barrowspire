@@ -10,4 +10,6 @@ use (
 	./stats-service
 	./items-service
 	./notification-service
+	./marketplace-service
+	./wallet-service
 )
