@@ -915,3 +915,26 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 
 	return nil
 }
+
+// inbox
+// 重複的event id 會不做事表示重複
+// ExecContext 可以帶入ctx 就可以在卡住時從外部取消
+func (r *repository) EventProcessedTx(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string) (bool, error) {
+	query := `
+		INSERT INTO processed_events (event_id, event_type)
+		VALUES ($1, $2)
+		ON CONFLICT (event_id) DO NOTHING
+	`
+	result, err := tx.ExecContext(ctx, query, eventID, eventType)
+
+	if err != nil {
+		return false, wrapDBErr("event processed", err)
+	}
+	// RowsAffected回傳影響的rows數量 所以正常會新增一筆inbox資料 所以回傳1 要是回傳0表示重複
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+
+	return rows == 1, nil
+}
