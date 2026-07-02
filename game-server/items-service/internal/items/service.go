@@ -345,8 +345,6 @@ func (s *service) ConvertSingleProtoItemtoItemInstance(protoItem *pb.Item) (*Ite
 	healingAmount := int(protoItem.HealingAmount)
 	manaAmount := int(protoItem.ManaAmount)
 	buffDuration := int(protoItem.BuffDuration)
-	buyPrice := int(protoItem.BuyPrice)
-	sellPrice := int(protoItem.SellPrice)
 	description := protoItem.Description
 
 	item := &ItemInstance{
@@ -362,8 +360,6 @@ func (s *service) ConvertSingleProtoItemtoItemInstance(protoItem *pb.Item) (*Ite
 		HealingAmount:   &healingAmount,
 		ManaAmount:      &manaAmount,
 		BuffDuration:    &buffDuration,
-		BuyPrice:        &buyPrice,
-		SellPrice:       &sellPrice,
 		Description:     &description,
 	}
 
@@ -576,16 +572,6 @@ func (s *service) CreateItemTemplate(ctx context.Context, req *CreateItemTemplat
 		requiredLevel = *req.RequiredLevel
 	}
 
-	baseSellPrice := 0
-	if req.BaseSellPrice != nil {
-		baseSellPrice = *req.BaseSellPrice
-	}
-
-	baseBuyPrice := 0
-	if req.BaseBuyPrice != nil {
-		baseBuyPrice = *req.BaseBuyPrice
-	}
-
 	template := &ItemTemplate{
 		ItemName:      req.ItemName,
 		RarityID:      req.RarityID,
@@ -593,8 +579,6 @@ func (s *service) CreateItemTemplate(ctx context.Context, req *CreateItemTemplat
 		ItemID:        req.ItemID,
 		IconURL:       req.IconURL,
 		RequiredLevel: requiredLevel,
-		BaseSellPrice: baseSellPrice,
-		BaseBuyPrice:  baseBuyPrice,
 	}
 
 	if err := s.repo.CreateItemTemplate(ctx, template); err != nil {
@@ -670,7 +654,7 @@ func (s *service) CreateCompleteWeapon(ctx context.Context, req *CreateCompleteW
 	var weapon Weapon
 	var template ItemTemplate
 
-	requiredLevel, baseSellPrice, baseBuyPrice := resolveTemplateDefaults(req.RequiredLevel, req.BaseSellPrice, req.BaseBuyPrice)
+	requiredLevel := resolveTemplateDefaults(req.RequiredLevel)
 
 	err := commonutils.ExecTx(ctx, s.db, func(tx *sqlx.Tx) error {
 		w := &Weapon{
@@ -692,8 +676,6 @@ func (s *service) CreateCompleteWeapon(ctx context.Context, req *CreateCompleteW
 			ItemID:        weapon.ID,
 			IconURL:       req.IconURL,
 			RequiredLevel: requiredLevel,
-			BaseSellPrice: baseSellPrice,
-			BaseBuyPrice:  baseBuyPrice,
 		}
 		if err := s.repo.CreateItemTemplateTx(ctx, tx, t); err != nil {
 			return err
@@ -723,8 +705,6 @@ func (s *service) CreateCompleteWeapon(ctx context.Context, req *CreateCompleteW
 		ItemName:       template.ItemName,
 		IconURL:        template.IconURL,
 		RequiredLevel:  template.RequiredLevel,
-		BaseSellPrice:  template.BaseSellPrice,
-		BaseBuyPrice:   template.BaseBuyPrice,
 	}, nil
 }
 
@@ -736,7 +716,7 @@ func (s *service) CreateCompleteArmor(ctx context.Context, req *CreateCompleteAr
 	var armor Armor
 	var template ItemTemplate
 
-	requiredLevel, baseSellPrice, baseBuyPrice := resolveTemplateDefaults(req.RequiredLevel, req.BaseSellPrice, req.BaseBuyPrice)
+	requiredLevel := resolveTemplateDefaults(req.RequiredLevel)
 
 	err := commonutils.ExecTx(ctx, s.db, func(tx *sqlx.Tx) error {
 		a := &Armor{
@@ -758,8 +738,6 @@ func (s *service) CreateCompleteArmor(ctx context.Context, req *CreateCompleteAr
 			ItemID:        armor.ID,
 			IconURL:       req.IconURL,
 			RequiredLevel: requiredLevel,
-			BaseSellPrice: baseSellPrice,
-			BaseBuyPrice:  baseBuyPrice,
 		}
 		if err := s.repo.CreateItemTemplateTx(ctx, tx, t); err != nil {
 			return err
@@ -789,8 +767,6 @@ func (s *service) CreateCompleteArmor(ctx context.Context, req *CreateCompleteAr
 		ItemName:        template.ItemName,
 		IconURL:         template.IconURL,
 		RequiredLevel:   template.RequiredLevel,
-		BaseSellPrice:   template.BaseSellPrice,
-		BaseBuyPrice:    template.BaseBuyPrice,
 	}, nil
 }
 
@@ -802,7 +778,7 @@ func (s *service) CreateCompleteConsumable(ctx context.Context, req *CreateCompl
 	var consumable Consumable
 	var template ItemTemplate
 
-	requiredLevel, baseSellPrice, baseBuyPrice := resolveTemplateDefaults(req.RequiredLevel, req.BaseSellPrice, req.BaseBuyPrice)
+	requiredLevel := resolveTemplateDefaults(req.RequiredLevel)
 
 	err := commonutils.ExecTx(ctx, s.db, func(tx *sqlx.Tx) error {
 		c := &Consumable{
@@ -825,8 +801,6 @@ func (s *service) CreateCompleteConsumable(ctx context.Context, req *CreateCompl
 			ItemID:        consumable.ID,
 			IconURL:       req.IconURL,
 			RequiredLevel: requiredLevel,
-			BaseSellPrice: baseSellPrice,
-			BaseBuyPrice:  baseBuyPrice,
 		}
 		if err := s.repo.CreateItemTemplateTx(ctx, tx, t); err != nil {
 			return err
@@ -857,26 +831,16 @@ func (s *service) CreateCompleteConsumable(ctx context.Context, req *CreateCompl
 		ItemName:       template.ItemName,
 		IconURL:        template.IconURL,
 		RequiredLevel:  template.RequiredLevel,
-		BaseSellPrice:  template.BaseSellPrice,
-		BaseBuyPrice:   template.BaseBuyPrice,
 	}, nil
 }
 
 // resolveTemplateDefaults applies defaults for optional template fields
-func resolveTemplateDefaults(reqLevel, sellPrice, buyPrice *int) (int, int, int) {
+func resolveTemplateDefaults(reqLevel *int) int {
 	requiredLevel := 1
 	if reqLevel != nil {
 		requiredLevel = *reqLevel
 	}
-	baseSellPrice := 0
-	if sellPrice != nil {
-		baseSellPrice = *sellPrice
-	}
-	baseBuyPrice := 0
-	if buyPrice != nil {
-		baseBuyPrice = *buyPrice
-	}
-	return requiredLevel, baseSellPrice, baseBuyPrice
+	return requiredLevel
 }
 
 // publishItemCreatedEvent sends an item creation event to RabbitMQ (fire-and-forget, outside tx)

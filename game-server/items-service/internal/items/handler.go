@@ -171,8 +171,6 @@ func (h *Handler) ListItemTemplates(ctx context.Context, _ *emptypb.Empty) (*pb.
 			ItemType:      item.ItemType,
 			IconUrl:       iconURL,
 			RequiredLevel: int32(item.RequiredLevel),
-			BaseSellPrice: int32(item.BaseSellPrice),
-			BaseBuyPrice:  int32(item.BaseBuyPrice),
 			CreatedAt:     timestamppb.New(item.CreatedAt),
 			UpdatedAt:     timestamppb.New(item.UpdatedAt),
 
@@ -293,8 +291,6 @@ func (h *Handler) GetWeaponWithTemplateByID(ctx context.Context, req *pb.GetWeap
 		ItemName:       weapon.ItemName,
 		IconUrl:        iconURL,
 		RequiredLevel:  int32(weapon.RequiredLevel),
-		BaseSellPrice:  int32(weapon.BaseSellPrice),
-		BaseBuyPrice:   int32(weapon.BaseBuyPrice),
 
 		CreatedAt: timestamppb.New(weapon.CreatedAt),
 		UpdatedAt: timestamppb.New(weapon.UpdatedAt),
@@ -344,8 +340,6 @@ func (h *Handler) ListWeaponsWithTemplate(ctx context.Context, _ *emptypb.Empty)
 			ItemName:       weapon.ItemName,
 			IconUrl:        iconURL,
 			RequiredLevel:  int32(weapon.RequiredLevel),
-			BaseSellPrice:  int32(weapon.BaseSellPrice),
-			BaseBuyPrice:   int32(weapon.BaseBuyPrice),
 
 			CreatedAt: timestamppb.New(weapon.CreatedAt),
 			UpdatedAt: timestamppb.New(weapon.UpdatedAt),
@@ -394,8 +388,6 @@ func (h *Handler) ListArmorsWithTemplate(ctx context.Context, _ *emptypb.Empty) 
 			ItemName:       armor.ItemName,
 			IconUrl:        iconURL,
 			RequiredLevel:  int32(armor.RequiredLevel),
-			BaseSellPrice:  int32(armor.BaseSellPrice),
-			BaseBuyPrice:   int32(armor.BaseBuyPrice),
 
 			CreatedAt: timestamppb.New(armor.CreatedAt),
 			UpdatedAt: timestamppb.New(armor.UpdatedAt),
@@ -447,8 +439,6 @@ func (h *Handler) ListConsumablesWithTemplate(ctx context.Context, _ *emptypb.Em
 			ItemName:       consumable.ItemName,
 			IconUrl:        iconURL,
 			RequiredLevel:  int32(consumable.RequiredLevel),
-			BaseSellPrice:  int32(consumable.BaseSellPrice),
-			BaseBuyPrice:   int32(consumable.BaseBuyPrice),
 
 			CreatedAt: timestamppb.New(consumable.CreatedAt),
 			UpdatedAt: timestamppb.New(consumable.UpdatedAt),
@@ -501,14 +491,6 @@ func (h *Handler) CreateItemTemplate(ctx context.Context, req *pb.CreateItemTemp
 		reqLevel := int(*req.RequiredLevel)
 		createReq.RequiredLevel = &reqLevel
 	}
-	if req.BaseSellPrice != nil {
-		sellPrice := int(*req.BaseSellPrice)
-		createReq.BaseSellPrice = &sellPrice
-	}
-	if req.BaseBuyPrice != nil {
-		buyPrice := int(*req.BaseBuyPrice)
-		createReq.BaseBuyPrice = &buyPrice
-	}
 
 	// Call service (will send RabbitMQ event)
 	template, err := h.service.CreateItemTemplate(ctx, createReq)
@@ -529,8 +511,6 @@ func (h *Handler) CreateItemTemplate(ctx context.Context, req *pb.CreateItemTemp
 		ItemType:      template.ItemType,
 		IconUrl:       iconURL,
 		RequiredLevel: int32(template.RequiredLevel),
-		BaseSellPrice: int32(template.BaseSellPrice),
-		BaseBuyPrice:  int32(template.BaseBuyPrice),
 		CreatedAt:     timestamppb.New(template.CreatedAt),
 		UpdatedAt:     timestamppb.New(template.UpdatedAt),
 	}, nil
@@ -572,14 +552,6 @@ func (h *Handler) CreateCompleteWeapon(ctx context.Context, req *pb.CreateComple
 		reqLevel := int(*req.RequiredLevel)
 		createReq.RequiredLevel = &reqLevel
 	}
-	if req.BaseSellPrice != nil {
-		sellPrice := int(*req.BaseSellPrice)
-		createReq.BaseSellPrice = &sellPrice
-	}
-	if req.BaseBuyPrice != nil {
-		buyPrice := int(*req.BaseBuyPrice)
-		createReq.BaseBuyPrice = &buyPrice
-	}
 
 	// Call service (will create weapon, create template, send RabbitMQ event)
 	weaponWithTemplate, err := h.service.CreateCompleteWeapon(ctx, createReq)
@@ -619,8 +591,6 @@ func (h *Handler) CreateCompleteWeapon(ctx context.Context, req *pb.CreateComple
 		ItemName:       weaponWithTemplate.ItemName,
 		IconUrl:        iconURL,
 		RequiredLevel:  int32(weaponWithTemplate.RequiredLevel),
-		BaseSellPrice:  int32(weaponWithTemplate.BaseSellPrice),
-		BaseBuyPrice:   int32(weaponWithTemplate.BaseBuyPrice),
 
 		CreatedAt: timestamppb.New(weaponWithTemplate.CreatedAt),
 		UpdatedAt: timestamppb.New(weaponWithTemplate.UpdatedAt),
@@ -662,14 +632,6 @@ func (h *Handler) CreateCompleteArmor(ctx context.Context, req *pb.CreateComplet
 		reqLevel := int(*req.RequiredLevel)
 		createReq.RequiredLevel = &reqLevel
 	}
-	if req.BaseSellPrice != nil {
-		sellPrice := int(*req.BaseSellPrice)
-		createReq.BaseSellPrice = &sellPrice
-	}
-	if req.BaseBuyPrice != nil {
-		buyPrice := int(*req.BaseBuyPrice)
-		createReq.BaseBuyPrice = &buyPrice
-	}
 
 	// Call service
 	armorWithTemplate, err := h.service.CreateCompleteArmor(ctx, createReq)
@@ -706,8 +668,6 @@ func (h *Handler) CreateCompleteArmor(ctx context.Context, req *pb.CreateComplet
 		ItemName:       armorWithTemplate.ItemName,
 		IconUrl:        iconURL,
 		RequiredLevel:  int32(armorWithTemplate.RequiredLevel),
-		BaseSellPrice:  int32(armorWithTemplate.BaseSellPrice),
-		BaseBuyPrice:   int32(armorWithTemplate.BaseBuyPrice),
 
 		CreatedAt: timestamppb.New(armorWithTemplate.CreatedAt),
 		UpdatedAt: timestamppb.New(armorWithTemplate.UpdatedAt),
@@ -751,14 +711,6 @@ func (h *Handler) CreateCompleteConsumable(ctx context.Context, req *pb.CreateCo
 		reqLevel := int(*req.RequiredLevel)
 		createReq.RequiredLevel = &reqLevel
 	}
-	if req.BaseSellPrice != nil {
-		sellPrice := int(*req.BaseSellPrice)
-		createReq.BaseSellPrice = &sellPrice
-	}
-	if req.BaseBuyPrice != nil {
-		buyPrice := int(*req.BaseBuyPrice)
-		createReq.BaseBuyPrice = &buyPrice
-	}
 
 	// Call service
 	consumableWithTemplate, err := h.service.CreateCompleteConsumable(ctx, createReq)
@@ -798,8 +750,6 @@ func (h *Handler) CreateCompleteConsumable(ctx context.Context, req *pb.CreateCo
 		ItemName:       consumableWithTemplate.ItemName,
 		IconUrl:        iconURL,
 		RequiredLevel:  int32(consumableWithTemplate.RequiredLevel),
-		BaseSellPrice:  int32(consumableWithTemplate.BaseSellPrice),
-		BaseBuyPrice:   int32(consumableWithTemplate.BaseBuyPrice),
 
 		CreatedAt: timestamppb.New(consumableWithTemplate.CreatedAt),
 		UpdatedAt: timestamppb.New(consumableWithTemplate.UpdatedAt),
@@ -949,12 +899,6 @@ func (h *Handler) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWit
 		if item.BuffDuration != nil {
 			pbItem.BuffDuration = int32(*item.BuffDuration)
 		}
-		if item.BuyPrice != nil {
-			pbItem.BuyPrice = int32(*item.BuyPrice)
-		}
-		if item.SellPrice != nil {
-			pbItem.SellPrice = int32(*item.SellPrice)
-		}
 		if item.Description != nil {
 			pbItem.Description = *item.Description
 		}
@@ -1027,12 +971,6 @@ func (h *Handler) ListItemInstances(ctx context.Context, req *pb.ListItemInstanc
 		}
 		if item.BuffDuration != nil {
 			pbItem.BuffDuration = int32(*item.BuffDuration)
-		}
-		if item.BuyPrice != nil {
-			pbItem.BuyPrice = int32(*item.BuyPrice)
-		}
-		if item.SellPrice != nil {
-			pbItem.SellPrice = int32(*item.SellPrice)
 		}
 		if item.Description != nil {
 			pbItem.Description = *item.Description

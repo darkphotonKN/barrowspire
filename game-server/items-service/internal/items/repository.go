@@ -312,10 +312,10 @@ func (r *repository) CreateItemTemplate(ctx context.Context, template *ItemTempl
 	query := `
 		INSERT INTO item_templates (
 			id, item_name, rarity_id, item_type, item_id,
-			icon_url, required_level, base_sell_price, base_buy_price
+			icon_url, required_level
 		) VALUES (
 			:id, :item_name, :rarity_id, :item_type, :item_id,
-			:icon_url, :required_level, :base_sell_price, :base_buy_price
+			:icon_url, :required_level
 		)`
 
 	_, err := r.DB.NamedExecContext(ctx, query, template)
@@ -348,7 +348,7 @@ func (r *repository) ListItemTemplates(ctx context.Context) ([]*ItemTemplate, er
 	var templates []*ItemTemplate
 
 	query := `SELECT id, item_name, rarity_id, item_type, item_id, icon_url,
-	           required_level, base_sell_price, base_buy_price,
+	           required_level,
 	           created_at, created_by, updated_at, updated_by
 	           FROM item_templates ORDER BY created_at DESC`
 
@@ -375,8 +375,6 @@ SELECT
     it.item_type,
     it.icon_url,
     it.required_level,
-    it.base_sell_price,
-    it.base_buy_price,
     r.rarity_name AS rarity,
     w.attack_power,
     w.critical_rate,
@@ -422,7 +420,7 @@ func (r *repository) GetWeaponWithTemplateByID(ctx context.Context, id uuid.UUID
 		SELECT w.id, w.rarity_id, w.attack_power,
 		       w.critical_rate, w.weapon_type, w.description, w.created_at, w.updated_at,
 		       t.id AS item_template_id, t.item_name, t.icon_url,
-		       t.required_level, t.base_sell_price, t.base_buy_price
+		       t.required_level
 		FROM weapons w
 		JOIN item_templates t ON t.item_id = w.id AND t.item_type = 'weapon'
 		WHERE w.id = $1`
@@ -446,7 +444,7 @@ func (r *repository) ListArmorsWithTemplate(ctx context.Context) ([]*ArmorWithTe
 		SELECT a.id, a.rarity_id, a.defense_rating,
 		       a.magic_resistance, a.armor_slot, a.description, a.created_at, a.updated_at,
 		       t.id AS item_template_id, t.item_name, t.icon_url,
-		       t.required_level, t.base_sell_price, t.base_buy_price
+		       t.required_level
 		FROM armors a
 		JOIN item_templates t ON t.item_id = a.id AND t.item_type = 'armor'
 		ORDER BY a.created_at DESC`
@@ -470,7 +468,7 @@ func (r *repository) ListConsumablesWithTemplate(ctx context.Context) ([]*Consum
 		SELECT c.id, c.rarity_id, c.healing_amount, c.mana_amount,
 		       c.buff_duration, c.max_stack_size, c.description, c.created_at, c.updated_at,
 		       t.id AS item_template_id, t.item_name, t.icon_url,
-		       t.required_level, t.base_sell_price, t.base_buy_price
+		       t.required_level
 		FROM consumables c
 		JOIN item_templates t ON t.item_id = c.id AND t.item_type = 'consumable'
 		ORDER BY c.created_at DESC`
@@ -494,7 +492,7 @@ func (r *repository) ListWeaponsWithTemplate(ctx context.Context) ([]*WeaponWith
 		SELECT w.id, w.rarity_id, w.attack_power,
 		       w.critical_rate, w.weapon_type, w.description, w.created_at, w.updated_at,
 		       t.id AS item_template_id, t.item_name, t.icon_url,
-		       t.required_level, t.base_sell_price, t.base_buy_price
+		       t.required_level
 		FROM weapons w
 		JOIN item_templates t ON t.item_id = w.id AND t.item_type = 'weapon'
 		ORDER BY w.created_at DESC`
@@ -577,10 +575,10 @@ func (r *repository) CreateItemTemplateTx(ctx context.Context, tx *sqlx.Tx, temp
 	query := `
 		INSERT INTO item_templates (
 			id, item_name, rarity_id, item_type, item_id,
-			icon_url, required_level, base_sell_price, base_buy_price
+			icon_url, required_level
 		) VALUES (
 			:id, :item_name, :rarity_id, :item_type, :item_id,
-			:icon_url, :required_level, :base_sell_price, :base_buy_price
+			:icon_url, :required_level
 		)`
 
 	_, err := tx.NamedExecContext(ctx, query, template)
@@ -603,7 +601,7 @@ func (r *repository) UpsertItemInstanceTx(ctx context.Context, tx *sqlx.Tx, inst
 			attack_power, critical_rate, weapon_type,
 			defense_rating, magic_resistance, armor_slot,
 			healing_amount, mana_amount, buff_duration,
-			durability, description, buy_price, sell_price,
+			durability, description,
 			created_by, updated_by
 		) VALUES (
 			:id, :template_id, :owner_member_id, :source,
@@ -611,7 +609,7 @@ func (r *repository) UpsertItemInstanceTx(ctx context.Context, tx *sqlx.Tx, inst
 			:attack_power, :critical_rate, :weapon_type,
 			:defense_rating, :magic_resistance, :armor_slot,
 			:healing_amount, :mana_amount, :buff_duration,
-			:durability, :description, :buy_price, :sell_price,
+			:durability, :description,
 			:created_by, :updated_by
 		)
 		ON CONFLICT (id) DO UPDATE SET
@@ -632,8 +630,6 @@ func (r *repository) UpsertItemInstanceTx(ctx context.Context, tx *sqlx.Tx, inst
 			buff_duration    = EXCLUDED.buff_duration,
 			durability       = EXCLUDED.durability,
 			description      = EXCLUDED.description,
-			buy_price        = EXCLUDED.buy_price,
-			sell_price       = EXCLUDED.sell_price,
 			updated_by       = EXCLUDED.updated_by`
 
 	_, err := tx.NamedExecContext(ctx, query, instance)
@@ -680,7 +676,7 @@ func (r *repository) GetItemInstanceByID(ctx context.Context, id uuid.UUID) (*It
 	query := `
 	 SELECT id, template_id, owner_member_id, source, item_type, name, rarity_id,
 	        attack_power, critical_rate, weapon_type, defense_rating, magic_resistance,
-	        armor_slot, healing_amount, mana_amount, buff_duration, buy_price, sell_price,
+	        armor_slot, healing_amount, mana_amount, buff_duration,
 	        description, acquired_at, created_at, updated_at
 	 FROM item_instances
 	 WHERE id = $1
@@ -703,7 +699,7 @@ func (r *repository) ListItemInstances(ctx context.Context, req *ListItemInstanc
 	query := `
 	 SELECT id, template_id, owner_member_id, source, item_type, name, rarity_id,
 	        attack_power, critical_rate, weapon_type, defense_rating, magic_resistance,
-	        armor_slot, healing_amount, mana_amount, buff_duration, buy_price, sell_price,
+	        armor_slot, healing_amount, mana_amount, buff_duration,
 	        description, acquired_at, created_at, updated_at
 	 FROM item_instances
 	 WHERE owner_member_id = $1
@@ -831,7 +827,7 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 		return nil
 	}
 
-	const colsPerRow = 20
+	const colsPerRow = 18
 
 	var b strings.Builder
 	b.WriteString(`
@@ -841,7 +837,7 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 			attack_power, critical_rate, weapon_type,
 			defense_rating, magic_resistance, armor_slot,
 			healing_amount, mana_amount, buff_duration,
-			durability, description, buy_price, sell_price
+			durability, description
 		) VALUES `)
 
 	args := make([]any, 0, len(items)*colsPerRow)
@@ -857,9 +853,9 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 
 		base := i * colsPerRow
 		fmt.Fprintf(&b,
-			"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+			"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
 			base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10,
-			base+11, base+12, base+13, base+14, base+15, base+16, base+17, base+18, base+19, base+20,
+			base+11, base+12, base+13, base+14, base+15, base+16, base+17, base+18,
 		)
 
 		args = append(args,
@@ -881,8 +877,6 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 			item.BuffDuration,
 			item.Durability,
 			item.Description,
-			item.BuyPrice,
-			item.SellPrice,
 		)
 	}
 
@@ -904,9 +898,7 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 			mana_amount      = EXCLUDED.mana_amount,
 			buff_duration    = EXCLUDED.buff_duration,
 			durability       = EXCLUDED.durability,
-			description      = EXCLUDED.description,
-			buy_price        = EXCLUDED.buy_price,
-			sell_price       = EXCLUDED.sell_price`)
+			description      = EXCLUDED.description`)
 
 	_, err := tx.ExecContext(ctx, b.String(), args...)
 	if err != nil {
