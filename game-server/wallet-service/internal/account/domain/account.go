@@ -17,7 +17,9 @@ type Account struct {
 	id        uuid.UUID
 	memberID  uuid.UUID
 	gold      int
+	holds     []*WalletHold
 	createdAt time.Time
+	updatedAt time.Time
 }
 
 func NewAccount(memberID uuid.UUID, gold int) (*Account, error) {
@@ -30,5 +32,6 @@ func NewAccount(memberID uuid.UUID, gold int) (*Account, error) {
 		memberID:  memberID,
 		gold:      gold,
 		createdAt: time.Now(),
+		updatedAt: time.Now(),
 	}, nil
 }
