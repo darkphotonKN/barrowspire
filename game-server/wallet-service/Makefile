@@ -38,6 +38,10 @@ migrate-down:
 migrate-status:
 	@migrate -path ./migrations -database "$(DB_STRING)" version
 
+migrate-fix:
+	@echo "Fixing dirty migration by setting version to $(version)..."
+	$(MIGRATE_COMMAND) force $(version)
+
 migrate-create:
 	@if [ -z "$(NAME)" ]; then \
 		echo "Usage: make migrate-create NAME=<migration_name>"; \
@@ -45,4 +49,4 @@ migrate-create:
 	fi; \
 	migrate create -ext sql -dir ./migrations -seq $(NAME)
 
-.PHONY: build run dev test test-unit migrate-up migrate-down migrate-status migrate-create
+.PHONY: build run dev test test-unit migrate-up migrate-down migrate-status migrate-fix migrate-create
