@@ -21,7 +21,7 @@ export default function PhaserGame() {
       height: 720,
       parent: containerRef.current,
       backgroundColor: "#1a1410",
-      // Crisp pixel art per docs/visual-bible.md: nearest-neighbour filtering,
+      // Crisp pixel art per docs/design-guideline.md: nearest-neighbour filtering,
       // no smoothing, integer-aligned positions. Presentation only.
       pixelArt: true,
       render: {

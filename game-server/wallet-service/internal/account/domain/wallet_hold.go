@@ -39,6 +39,8 @@ type WalletHold struct {
 
 // private, only account the aggregate root can access
 func newWalletHold(bidID uuid.UUID, accountID uuid.UUID, amount int) (*WalletHold, error) {
+
+	// invariants
 	if amount < 0 {
 		return nil, ErrInvalidAmount
 	}
@@ -57,4 +59,19 @@ func newWalletHold(bidID uuid.UUID, accountID uuid.UUID, amount int) (*WalletHol
 		createdAt: now,
 		updatedAt: now,
 	}, nil
+}
+
+type HoldReconstituteParams struct {
+	ID        uuid.UUID
+	AccountID uuid.UUID
+	BidID     uuid.UUID
+	Status    WalletHoldStatus
+	Amount    int
+	ExpiredAt time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (hold *WalletHold) Reconstitute() error {
+	return nil
 }

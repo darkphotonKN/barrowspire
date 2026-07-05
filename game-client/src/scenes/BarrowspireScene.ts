@@ -456,7 +456,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   preload(): void {
     // Player = torch-amber wizard-delver; rivals = necrotic wight-mages.
-    // Same 4-facing rig, only the palette differs. See docs/visual-bible.md.
+    // Same 4-facing rig, only the palette differs. See docs/design-guideline.md.
     const playerPalette: WizardPalette = {
       hat: 0x241c14,
       hatShade: 0x16100a,
@@ -487,7 +487,7 @@ export class BarrowspireScene extends Phaser.Scene {
     };
     // Battered-plate knight: barrow steel, muted umber surcoat, brass trim, and
     // a faint torch-amber visor slit as the readable accent in the dark. Same
-    // 60×60 frame / 4-facing rig as the wizard. See docs/visual-bible.md.
+    // 60×60 frame / 4-facing rig as the wizard. See docs/design-guideline.md.
     const knightPalette: KnightPalette = {
       helm: 0x54585f,
       helmShade: 0x3a3d42,
@@ -683,7 +683,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * flowing robe, and a staff with a glowing orb. Hand-placed pixel blocks on a
    * 24×26 logical grid (2px cells), dark-outlined so the figure reads against
    * the barrow dark. Same 60×60 frame and 4-facing rig as before — only the
-   * drawing changed. See docs/visual-bible.md.
+   * drawing changed. See docs/design-guideline.md.
    */
   private drawWizard(
     g: Phaser.GameObjects.Graphics,
@@ -835,7 +835,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * 24×26 logical grid (2px cells) and SAME 60×60 frame / 4-facing rig as the
    * wizard — only the drawing differs, so no animation/config changes. Dark
    * outline is derived so the figure reads against the barrow dark. See
-   * docs/visual-bible.md.
+   * docs/design-guideline.md.
    */
   private drawKnight(
     g: Phaser.GameObjects.Graphics,
@@ -2510,7 +2510,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private crosshairCursorCSS = "";
 
   private setupCustomCursor(): void {
-    // Pixel-art cursors, barrow palette. See docs/visual-bible.md: clean pixel
+    // Pixel-art cursors, barrow palette. See docs/design-guideline.md: clean pixel
     // art, nearest-neighbour (no smoothing), in-palette, dark-outlined so the
     // art reads against the dark dungeon. No neon, no anti-aliased strokes.
     const INK = "#1c1712"; // outline
