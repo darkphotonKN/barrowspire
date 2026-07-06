@@ -15,10 +15,10 @@ var (
 // --- State and Constants ---
 type WalletHoldStatus string
 
-var (
-	StatusCommited WalletHoldStatus = "status_commited"
-	StatusReserved WalletHoldStatus = "status_reserved"
-	StatusReleased WalletHoldStatus = "status_released"
+const (
+	StatusCommited WalletHoldStatus = "commited"
+	StatusReserved WalletHoldStatus = "reserved"
+	StatusReleased WalletHoldStatus = "released"
 )
 
 const (
@@ -38,14 +38,15 @@ type WalletHold struct {
 }
 
 // private, only account the aggregate root can access
-func newWalletHold(bidID uuid.UUID, accountID uuid.UUID, amount int) (*WalletHold, error) {
-
+func newWalletHold(bidID uuid.UUID, accountID uuid.UUID, amount int, now time.Time) (*WalletHold, error) {
 	// invariants
 	if amount < 0 {
 		return nil, ErrInvalidAmount
 	}
 
-	now := time.Now()
+	if bidID == uuid.Nil {
+		return nil, ErrInvalidUUID
+	}
 
 	return &WalletHold{
 		id:        uuid.New(),
@@ -70,8 +71,4 @@ type HoldReconstituteParams struct {
 	ExpiredAt time.Time
 	CreatedAt time.Time
 	UpdatedAt time.Time
-}
-
-func (hold *WalletHold) Reconstitute() error {
-	return nil
 }
