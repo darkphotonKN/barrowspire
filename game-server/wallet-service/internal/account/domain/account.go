@@ -22,6 +22,16 @@ type Account struct {
 	holds     []*WalletHold
 	createdAt time.Time
 	updatedAt time.Time
+
+	// version
+	// used for optimistic locking, important in all roots of DDD hexagonal
+	// architecture for preventing check, modify, then act races.
+	// retries will be costly due to a host of wasted work if there is high
+	// contention on a single resource as every time a race is caught with this
+	// version a retry is needed, and causes a retry storm. Prevent with
+	// standard race prevention mechanisms like row lock or isolation: serializable
+	// based on the situation
+	version int
 }
 
 func NewAccount(memberID uuid.UUID) (*Account, error) {
@@ -47,17 +57,8 @@ type ReconstituteParams struct {
 	UpdatedAt time.Time
 }
 
-func (account *Account) Reconstitute(params ReconstituteParams) (*Account, error) {
+func Reconstitute(params ReconstituteParams) (*Account, error) {
 	// check holds invariant checkout for all the holds passed in
-	totalGoldHeld := 0
-	for _, hold := range params.Holds {
-		totalGoldHeld += hold.Amount
-	}
-
-	if params.Gold-totalGoldHeld < 0 {
-		return nil, ErrHoldsExceedBalanace
-	}
-
 	holds := make([]*WalletHold, 0, len(params.Holds))
 
 	// reconstitute each hold
@@ -75,7 +76,7 @@ func (account *Account) Reconstitute(params ReconstituteParams) (*Account, error
 	}
 
 	// reconstitute core account from params and validated holds
-	reconstitutedAccount := Account{
+	account := Account{
 		id:        params.ID,
 		memberID:  params.MemberID,
 		holds:     holds,
@@ -84,14 +85,22 @@ func (account *Account) Reconstitute(params ReconstituteParams) (*Account, error
 		updatedAt: params.UpdatedAt,
 	}
 
-	return &reconstitutedAccount, nil
+	// run cross holds invariant validation
+	available := account.getAvailableGold()
+	if available < 0 {
+		return nil, ErrHoldsExceedBalanace
+	}
+
+	return &account, nil
 }
 
 // places hold through account aggregate root, birthing the WalletHold without exposing
 // the access externally.
-func (account *Account) PlaceHold(id uuid.UUID, amount int, bidId uuid.UUID, now time.Time) error {
-	// validate account still holds (reconstituted account - attempted hold)
-	if account.gold-amount < 0 {
+func (a *Account) PlaceHold(id uuid.UUID, amount int, bidId uuid.UUID, now time.Time) error {
+	// validate new amount of gold held checks out across holds and account's
+	availableGold := a.getAvailableGold()
+
+	if availableGold < amount {
 		return ErrHoldsExceedBalanace
 	}
 
@@ -99,11 +108,28 @@ func (account *Account) PlaceHold(id uuid.UUID, amount int, bidId uuid.UUID, now
 	newHold, err := newWalletHold(bidId, id, amount, now)
 
 	if err != nil {
-		// pass down domain sentinel error
+		// propogate down domain sentinel error
 		return err
 	}
 
-	account.holds = append(account.holds, newHold)
+	// update holds, placing it in memory, evolving aggregate
+	a.holds = append(a.holds, newHold)
 
 	return nil
+}
+
+// --- Helpers ---
+
+// validates total holds amount does not exceed available gold in account
+func (a *Account) getAvailableGold() int {
+	totalGoldHeld := 0
+	for _, hold := range a.holds {
+		// skip holds that shouldn't count
+		if hold.status != StatusReserved {
+			continue
+		}
+		totalGoldHeld += hold.amount
+	}
+
+	return a.gold - totalGoldHeld
 }
