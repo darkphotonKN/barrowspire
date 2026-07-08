@@ -1,6 +1,10 @@
-package domain
+package account
 
-import "github.com/google/uuid"
+import (
+	"context"
+
+	"github.com/google/uuid"
+)
 
 // PORT
 // determine what abstraction is needed for the aggregate of account
@@ -8,5 +12,6 @@ import "github.com/google/uuid"
 // the repository.go would implement the adapter, acutal concrete
 // implementation that satisfies this interface
 type Repository interface {
-	GetById(id uuid.UUID) (*Account, error)
+	FindById(ctx context.Context, id uuid.UUID) (*Account, error)
+	Insert(ctx context.Context, account *Account) error
 }

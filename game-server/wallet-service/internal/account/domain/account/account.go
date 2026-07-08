@@ -1,4 +1,4 @@
-package domain
+package account
 
 import (
 	"errors"
@@ -45,6 +45,7 @@ func NewAccount(memberID uuid.UUID) (*Account, error) {
 		gold:      0, // new accounts always start with 0 gold
 		createdAt: time.Now(),
 		updatedAt: time.Now(),
+		version:   0, // births with 0, all aggregate roots start with 0
 	}, nil
 }
 
@@ -53,6 +54,7 @@ type ReconstituteParams struct {
 	MemberID  uuid.UUID
 	Gold      int
 	Holds     []*HoldReconstituteParams
+	Version   int
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -83,6 +85,7 @@ func Reconstitute(params ReconstituteParams) (*Account, error) {
 		gold:      params.Gold,
 		createdAt: params.CreatedAt,
 		updatedAt: params.UpdatedAt,
+		version:   params.Version,
 	}
 
 	// run cross holds invariant validation
