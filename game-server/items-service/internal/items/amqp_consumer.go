@@ -65,7 +65,15 @@ func (c *Consumer) consumeItemsExtracted(ctx context.Context) {
 
 		if err := proto.Unmarshal(msg.Body, &itemsExtracted); err != nil {
 			slog.Error("Failed to parse items extracted event", "error", err)
-			msg.Nack(false, false) // dlq
+
+			// dlq
+			pubErr := c.PublishToDlq(ctx, msg, commonconstants.ValidationReason)
+			if pubErr != nil {
+				slog.Error("failed to publish to DLQ", "err", pubErr)
+				msg.Nack(false, true) // dlq失败的話就retry
+				continue
+			}
+			msg.Ack(false) // 成功DLQ,移除原queue
 			continue
 		}
 
@@ -78,7 +86,14 @@ func (c *Consumer) consumeItemsExtracted(ctx context.Context) {
 		eventID, err := uuid.Parse(itemsExtracted.EventId)
 		if err != nil {
 			slog.Error("invalid event id, discarding", "event_id", itemsExtracted.EventId, "err", err)
-			msg.Nack(false, false)
+			// dlq
+			pubErr := c.PublishToDlq(ctx, msg, commonconstants.InvalidEventIDReason)
+			if pubErr != nil {
+				slog.Error("failed to publish to DLQ", "err", pubErr)
+				msg.Nack(false, true) // dlq失败的話就retry
+				continue
+			}
+			msg.Ack(false) // 成功DLQ,移除原queue
 			continue
 		}
 		key := fmt.Sprintf("dedup:items:%s", eventID)
@@ -136,7 +151,14 @@ func (c *Consumer) consumeItemsExtracted(ctx context.Context) {
 				"err", err,
 			)
 
-			msg.Nack(false, false)
+			// dlq
+			pubErr := c.PublishToDlq(ctx, msg, commonconstants.ProcessingFailedReason)
+			if pubErr != nil {
+				slog.Error("failed to publish to DLQ", "err", pubErr)
+				msg.Nack(false, true) // dlq失败的話就retry
+				continue
+			}
+			msg.Ack(false) // 成功DLQ,移除原queue
 			continue
 		}
 
@@ -163,10 +185,24 @@ func SetupAMQPInfrastructure(channel *amqp.Channel) error {
 		return err
 	}
 
-	args := amqp.Table{
-		"x-dead-letter-exchange":    "dlx.items",       // 专属 DLX(要另外宣告)
-		"x-dead-letter-routing-key": "items.extracted", // dead letter用的 routing key
+	dlqErr := channel.ExchangeDeclare(
+		commonconstants.ItemDlxEventsExchange,
+		"direct",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+
+	if dlqErr != nil {
+		return dlqErr
 	}
+
+	// args := amqp.Table{
+	// 	"x-dead-letter-exchange":    "dlx.items",       // 专属 DLX(要另外宣告)
+	// 	"x-dead-letter-routing-key": "items.extracted", // dead letter用的 routing key
+	// }
 	// declare the queue
 	_, err = channel.QueueDeclare(
 		commonconstants.ItemsGameItemsExtractedQueue, // queue name
@@ -174,10 +210,17 @@ func SetupAMQPInfrastructure(channel *amqp.Channel) error {
 		false, // delete when unused
 		false, // exclusive
 		false, // no-wait
-		args,  // arguments dlq
+		nil,   // arguments dlq
 	)
 	if err != nil {
 		slog.Error("Failed to declare queue", "error", err)
+		return err
+	}
+
+	// dlq queue
+	_, err = channel.QueueDeclare(commonconstants.ItemsDlqQueue, true, false, false, false, nil)
+	if err != nil {
+		slog.Error("Failed to declare items.dlq", "error", err)
 		return err
 	}
 
@@ -199,5 +242,42 @@ func SetupAMQPInfrastructure(channel *amqp.Channel) error {
 		"queue", commonconstants.ItemsGameItemsExtractedQueue,
 	)
 
+	err = channel.QueueBind(
+		commonconstants.ItemsDlqQueue,
+		commonconstants.ItemDlq,
+		commonconstants.ItemDlxEventsExchange,
+		false,
+		nil,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	slog.Info("Items AMQP infrastructure setup complete",
+		"exchange", commonconstants.ItemDlxEventsExchange,
+		"queue", commonconstants.ItemsDlqQueue,
+	)
+
 	return nil
+}
+
+func (c *Consumer) PublishToDlq(ctx context.Context, msg amqp.Delivery, reason string) error {
+	return c.channel.PublishWithContext(ctx,
+		commonconstants.ItemDlxEventsExchange,
+		commonconstants.ItemDlq,
+		false, false,
+		amqp.Publishing{
+			ContentType:   "application/protobuf",
+			Body:          msg.Body,
+			CorrelationId: msg.CorrelationId,
+			DeliveryMode:  amqp.Persistent,
+			Timestamp:     time.Now(),
+			Headers: amqp.Table{
+				"x-original-exchange":    msg.Exchange,
+				"x-original-routing-key": msg.RoutingKey,
+				"x-failure-reason":       reason,
+				"x-failed-at":            time.Now().Format(time.RFC3339),
+			},
+		})
 }

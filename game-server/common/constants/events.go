@@ -18,11 +18,12 @@ Exchange         {service}.{domain}.{resource}.{action}     stats.game.match.end
 * {domain}.events
 **/
 const (
-	GameEventsExchange = "game.events"
-	AuthEventsExchange = "auth.events"
-	ItemEventsExchange = "item.events"
-	DlxEventsExchange  = "dlx.exchange"
-	RetryExchange      = "retry.exchange"
+	GameEventsExchange    = "game.events"
+	AuthEventsExchange    = "auth.events"
+	ItemEventsExchange    = "item.events"
+	ItemDlxEventsExchange = "item.dlx.exchange"
+	DlxEventsExchange     = "dlx.exchange"
+	RetryExchange         = "retry.exchange"
 )
 
 /**
@@ -47,6 +48,7 @@ const (
 
 	// Item Events
 	ItemCreated = "item.created"
+	ItemDlq     = "item.dlq"
 
 	//Notification Event
 	NotificationItemCreatedFailed    = "notification.item.created.failed"
@@ -66,6 +68,7 @@ const (
 	StatsGameMatchEndedQueue        = "stats.game.match.ended"
 	StatsAuthProfileUpdatedQueue    = "stats.auth.profile.updated"
 	ItemsGameItemsExtractedQueue    = "items.game.items.extracted"
+	ItemsDlqQueue                   = "items.dlq"
 	NotificationMemberSignedUpQueue = "notification.auth.member.signedup"
 	NotificationItemCreatedQueue    = "notification.item.created"
 	NotificationGameEndQueue        = "notification.game.match.ended"
