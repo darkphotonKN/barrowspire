@@ -85,8 +85,7 @@ func IsDuplicateError(err error) bool {
 
 /**
 * Helper function to determine if an error is from an attempt to insert without
-* following column constraints, using postgres integrity-constraint error codes:
-* 23514 check_violation, 23503 foreign_key_violation, 23502 not_null_violation.
+* following column constraints, using postgres integrity-constraint error codes.
 * (23505 unique_violation is handled separately by IsDuplicateError.)
 **/
 func IsConstraintViolation(err error) bool {
@@ -95,11 +94,16 @@ func IsConstraintViolation(err error) bool {
 	}
 
 	var pqErr *pq.Error
-	if errors.As(err, &pqErr) {
-		switch pqErr.Code {
-		case "23514", "23503", "23502":
-			return true
-		}
+	if !errors.As(err, &pqErr) {
+		return false
+	}
+
+	switch pqErr.Code {
+	case "23502", // not null violation
+		"23503", // foreign key violation
+		"23514", // check violation
+		"23P01": // exclusion violation
+		return true
 	}
 
 	return false
