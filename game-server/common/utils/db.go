@@ -2,6 +2,7 @@ package commonhelpers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
@@ -15,8 +16,8 @@ import (
 * Accepts a function that expects a transaction argument and helps wrap the function call
 * with the initiation, passing, and error checking of that transaction.
 **/
-func ExecTx(ctx context.Context, db *sqlx.DB, fn func(tx *sqlx.Tx) error) (err error) {
-	tx, txBeginErr := db.BeginTxx(ctx, nil)
+func ExecTx(ctx context.Context, db *sqlx.DB, opts *sql.TxOptions, fn func(tx *sqlx.Tx) error) (err error) {
+	tx, txBeginErr := db.BeginTxx(ctx, opts)
 
 	if txBeginErr != nil {
 		fmt.Printf("Error when attempting to start transaction: %v\n", txBeginErr)
