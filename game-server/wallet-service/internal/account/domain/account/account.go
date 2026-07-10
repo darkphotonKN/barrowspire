@@ -136,3 +136,41 @@ func (a *Account) getAvailableGold() int {
 
 	return a.gold - totalGoldHeld
 }
+
+// snapshot exposes fields for external use, with no path to write fields
+type AccountSnapshot struct {
+	ID          uuid.UUID
+	MemberID    uuid.UUID
+	Gold        int
+	Version     int
+	WalletHolds []WalletHoldSnapshot
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (a *Account) Snapshot() AccountSnapshot {
+	holds := make([]WalletHoldSnapshot, 0, len(a.holds))
+
+	for _, hold := range a.holds {
+		holds = append(holds, WalletHoldSnapshot{
+			ID:        hold.id,
+			AccountID: hold.accountID,
+			BidID:     hold.bidID,
+			Status:    hold.status,
+			Amount:    hold.amount,
+			ExpiredAt: hold.expiredAt,
+			CreatedAt: hold.createdAt,
+			UpdatedAt: hold.updatedAt,
+		})
+	}
+
+	return AccountSnapshot{
+		ID:          a.id,
+		MemberID:    a.memberID,
+		Gold:        a.gold,
+		Version:     a.version,
+		WalletHolds: holds,
+		CreatedAt:   a.createdAt,
+		UpdatedAt:   a.updatedAt,
+	}
+}

@@ -72,3 +72,14 @@ type HoldReconstituteParams struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
+
+type WalletHoldSnapshot struct {
+	ID        uuid.UUID
+	AccountID uuid.UUID
+	BidID     uuid.UUID
+	Status    WalletHoldStatus
+	Amount    int
+	ExpiredAt time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
