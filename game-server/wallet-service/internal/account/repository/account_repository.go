@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -34,18 +36,25 @@ type HoldsRow struct {
 	ID        uuid.UUID `db:"id"`
 	AccountID uuid.UUID `db:"account_id"`
 	BidID     uuid.UUID `db:"bid_id"`
-	Status    int       `db:"status"`
+	Status    string    `db:"status"`
 	Amount    int       `db:"amount"`
 	ExpiredAt time.Time `db:"expired_at"`
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
 }
 
-// FindById(ctx context.Context, id uuid.UUID) (*Account, error)
-func (r *AccountRepository) FindById(ctx context.Context, id uuid.UUID) (*account.Account, error) {
+// FindByID(ctx context.Context, id uuid.UUID) (*Account, error)
+func (r *AccountRepository) FindByID(ctx context.Context, id uuid.UUID) (*account.Account, error) {
+	var acc AccountRow
+	var holds []HoldsRow
 
-	// get single account
-	accountQuery := `
+	err := commonhelpers.ExecTx(ctx, r.db, &sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+		ReadOnly:  true,
+	}, func(tx *sqlx.Tx) error {
+
+		// get single account
+		accountQuery := `
 	SELECT 
 		id,
 		member_id,
@@ -57,17 +66,15 @@ func (r *AccountRepository) FindById(ctx context.Context, id uuid.UUID) (*accoun
 	WHERE id = $1
 	`
 
-	var account AccountRow
+		err := tx.GetContext(ctx, &acc, accountQuery, id)
 
-	err := r.db.GetContext(ctx, &account, accountQuery, id)
+		if err != nil {
+			return commonhelpers.WrapDBErr("account", "FindByID", err)
+		}
 
-	if err != nil {
-		return nil, commonhelpers.WrapDBErr("account", "FindById", err)
-	}
-
-	// grab all related holds
-	// get single account
-	holdsQuery := `
+		// grab all related holds
+		// get single account
+		holdsQuery := `
 	SELECT 
 		id,
 		account_id,
@@ -81,15 +88,51 @@ func (r *AccountRepository) FindById(ctx context.Context, id uuid.UUID) (*accoun
 	WHERE account_id = $1
 	`
 
-	var holds []HoldsRow
+		err = tx.SelectContext(ctx, &holds, holdsQuery, id)
 
-	err = r.db.SelectContext(ctx, holds, holdsQuery, id)
+		if err != nil {
+			return commonhelpers.WrapDBErr("account", "FindByID", err)
+		}
+
+		return nil
+	})
 
 	if err != nil {
-		return nil, commonhelpers.WrapDBErr("account", "FindById", err)
+		return nil, err
 	}
 
-	return nil, nil
+	// data successfully retrieved, construct and reconstitute
+
+	reconstitutedHolds := make([]*account.HoldReconstituteParams, 0, len(holds))
+
+	for _, hold := range holds {
+		reconstitutedHolds = append(reconstitutedHolds, &account.HoldReconstituteParams{
+			ID:        hold.ID,
+			AccountID: hold.AccountID,
+			BidID:     hold.BidID,
+			Status:    account.WalletHoldStatus(hold.Status),
+			Amount:    hold.Amount,
+			ExpiredAt: hold.ExpiredAt,
+			CreatedAt: hold.CreatedAt,
+			UpdatedAt: hold.UpdatedAt,
+		})
+	}
+
+	reconstitutedAcc, err := account.Reconstitute(account.ReconstituteParams{
+		ID:        acc.ID,
+		MemberID:  acc.MemberID,
+		Gold:      acc.Gold,
+		Version:   acc.Version,
+		Holds:     reconstitutedHolds,
+		CreatedAt: acc.CreatedAt,
+		UpdatedAt: acc.UpdatedAt,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("repo findById, reconstitute : %w", err)
+	}
+
+	return reconstitutedAcc, nil
 }
 
 func (r *AccountRepository) Insert(ctx context.Context, account *account.Account) error {

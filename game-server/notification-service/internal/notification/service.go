@@ -87,7 +87,7 @@ func (s *service) ProcessMemberSignedUp(ctx context.Context, payload *commoncons
 // runInTx opens a tx, records the event in the inbox, runs fn, and commits.
 // If the event was already processed, it returns ErrAlreadyProcessed without running fn.
 func (s *service) runInTx(ctx context.Context, eventID uuid.UUID, eventType string, fn func(tx *sqlx.Tx) error) (err error) {
-	return commonutils.ExecTx(ctx, s.db, func(tx *sqlx.Tx) error {
+	return commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
 		inserted, err := s.inboxRepo.MarkEventProcessed(ctx, tx, eventID, eventType)
 		if err != nil {
 			return fmt.Errorf("mark event processed: %w", err)

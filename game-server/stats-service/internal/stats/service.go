@@ -68,7 +68,7 @@ func (s *service) ProcessMatchCompleted(ctx context.Context, req *pb.MatchEndedE
 		// wrap transaction for business critical sync up between players match
 		// history and their personal stats
 
-		err := commonutils.ExecTx(ctx, s.db, func(tx *sqlx.Tx) error {
+		err := commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
 			// -- player stats --
 			err := s.updatePlayerStats(ctx, tx, playerResults)
 			if err != nil {

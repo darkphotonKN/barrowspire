@@ -108,7 +108,7 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, req *pb.ItemsExtrac
 		)
 
 		// only holds one connection a time, released when committed or rolled back
-		commonutils.ExecTx(ctx, s.db, func(tx *sqlx.Tx) error {
+		commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
 
 			// convert inventory and equipment into item instances
 			invItemInstances, err := s.MapProtoItemToItemInstances(playerItems.Inventory)
@@ -656,7 +656,7 @@ func (s *service) CreateCompleteWeapon(ctx context.Context, req *CreateCompleteW
 
 	requiredLevel := resolveTemplateDefaults(req.RequiredLevel)
 
-	err := commonutils.ExecTx(ctx, s.db, func(tx *sqlx.Tx) error {
+	err := commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
 		w := &Weapon{
 			RarityID:     req.RarityID,
 			AttackPower:  req.AttackPower,
@@ -718,7 +718,7 @@ func (s *service) CreateCompleteArmor(ctx context.Context, req *CreateCompleteAr
 
 	requiredLevel := resolveTemplateDefaults(req.RequiredLevel)
 
-	err := commonutils.ExecTx(ctx, s.db, func(tx *sqlx.Tx) error {
+	err := commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
 		a := &Armor{
 			RarityID:        req.RarityID,
 			DefenseRating:   req.DefenseRating,
@@ -780,7 +780,7 @@ func (s *service) CreateCompleteConsumable(ctx context.Context, req *CreateCompl
 
 	requiredLevel := resolveTemplateDefaults(req.RequiredLevel)
 
-	err := commonutils.ExecTx(ctx, s.db, func(tx *sqlx.Tx) error {
+	err := commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
 		c := &Consumable{
 			RarityID:      req.RarityID,
 			HealingAmount: req.HealingAmount,

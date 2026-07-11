@@ -205,7 +205,7 @@ func (s *service) ConfirmAvatarUpload(ctx context.Context, req *pb.ConfirmAvatar
 
 	var updatedMember *models.Member
 
-	err = commonutils.ExecTx(ctx, s.db, func(tx *sqlx.Tx) error {
+	err = commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
 		// Update member avatar URL
 		res, err := s.memberService.UpdateAvatarURLTx(ctx, tx, upload.MemberID, avatarURL)
 		if err != nil {
