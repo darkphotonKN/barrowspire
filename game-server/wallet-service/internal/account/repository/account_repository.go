@@ -173,8 +173,77 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 	return nil
 }
 
-type AccountChanges struct{}
+// using pointers to signify change
+// nil = no change
+type AccountChanges struct {
+	// account changes
+	gold *int
 
-func (r *AccountRepository) diffAccount(before, after account.AccountSnapshot) AccountChanges {
+	// holds that changed
+	holdsUpdated []*holdChanges
+
+	// holds added
+	newHolds []*HoldsRow
+}
+
+type holdChanges struct {
+	id        uuid.UUID // id to track which holds changed
+	status    *account.WalletHoldStatus
+	amount    *int
+	expiredAt *time.Time
+}
+
+func (r *AccountRepository) diffAccount(before, after *account.AccountSnapshot) *AccountChanges {
+	if before == nil || after == nil {
+		return nil
+	}
+
+	changes := &AccountChanges{}
+
+	// --- account differences ---
+	goldDiff := after.Gold - before.Gold
+	if goldDiff != 0 {
+		changes.gold = &goldDiff
+	}
+
+	// --- holds differences ---
+
+	// -- holds added --
+	newHolds := make([]*HoldsRow, 0)
+
+	// track seen holds in map, also for comparison to track differences and new additions in a single loop
+	seen := make(map[uuid.UUID]account.WalletHoldSnapshot)
+
+	for _, beforeHold := range before.WalletHolds {
+		// add all to map
+		seen[beforeHold.ID] = struct{}{}
+	}
+
+	for _, afterHold := range after.WalletHolds {
+		// any new ids are added
+		if _, ok := seen[afterHold.ID]; !ok {
+			newHolds = append(newHolds, &HoldsRow{
+				ID:        afterHold.ID,
+				BidID:     afterHold.BidID,
+				AccountID: afterHold.AccountID,
+				Status:    string(afterHold.Status),
+				Amount:    afterHold.Amount,
+				ExpiredAt: afterHold.ExpiredAt,
+				CreatedAt: afterHold.CreatedAt,
+				UpdatedAt: afterHold.UpdatedAt,
+			})
+
+			// matching, old
+		} else {
+
+			// -- holds updated --
+			var statusChange string
+
+			if afterHold.Status == "" {
+			}
+		}
+
+	}
+
 	return AccountChanges{}
 }
