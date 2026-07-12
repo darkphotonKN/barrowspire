@@ -177,7 +177,8 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 // nil = no change
 type AccountChanges struct {
 	// account changes
-	gold *int
+	gold            *int
+	expectedVersion *int
 
 	// holds that changed
 	holdsUpdated []*holdChanges
@@ -199,13 +200,13 @@ func (r *AccountRepository) diffAccount(before, after *account.AccountSnapshot) 
 	changes := &AccountChanges{}
 
 	// --- account differences ---
-	goldDiff := after.Gold - before.Gold
-	if goldDiff != 0 {
-		changes.gold = &goldDiff
+
+	// gold changed, update to new amount's gold
+	if before.Gold != after.Gold {
+		changes.gold = &after.Gold
 	}
 
 	// --- holds differences ---
-
 	newHolds := make([]*HoldsRow, 0)
 	updatedHolds := make([]*holdChanges, 0)
 
@@ -250,8 +251,9 @@ func (r *AccountRepository) diffAccount(before, after *account.AccountSnapshot) 
 	}
 
 	return &AccountChanges{
-		gold:         &goldDiff,
-		holdsUpdated: updatedHolds,
-		newHolds:     newHolds,
+		gold:            &goldDiff,
+		expectedVersion: &before.Version,
+		holdsUpdated:    updatedHolds,
+		newHolds:        newHolds,
 	}
 }
