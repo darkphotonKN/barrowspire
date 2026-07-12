@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commonutils "github.com/darkphotonKN/barrowspire-server/common/utils"
+	commoncache "github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"google.golang.org/protobuf/proto"
@@ -19,13 +21,15 @@ type service struct {
 	repo      Repository
 	db        *sqlx.DB
 	publishCh commonbroker.Publisher
+	cache     commoncache.Cache
 }
 
-func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher) *service {
+func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher, cache commoncache.Cache) *service {
 	return &service{
 		repo:      repo,
 		db:        db,
 		publishCh: publishCh,
+		cache:     cache,
 	}
 }
 
@@ -103,15 +107,15 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, 
 	// 把tx拉到外層 目前的consumer一次傳所有player 所以同一個event要一起成功一起失敗 dlq才能處理
 	return commonutils.ExecTx(ctx, s.db, func(tx *sqlx.Tx) error {
 		// inbox
-		inserted, err := s.repo.EventProcessedTx(ctx, tx, eventID, commonconstants.ItemsExtracted)
+		_, err := s.repo.EventProcessedTx(ctx, tx, eventID, commonconstants.ItemsExtracted)
 		if err != nil {
-			return err
-		}
-		if !inserted {
-			slog.Info("event dedup",
-				"event_id", eventID,
-			)
-			return commonconstants.ErrAlreadyProcessed
+			if errors.Is(err, commonconstants.ErrAlreadyProcessed) {
+				slog.Error("event already processed", "eventID", eventID, "err", err)
+				return err
+			} else {
+				slog.Error("check event processed", "eventID", eventID, "err", err)
+				return err
+			}
 		}
 
 		for _, playerItems := range req.PlayerItems {
@@ -955,4 +959,20 @@ func (h *service) ListItemInstances(ctx context.Context, req *ListItemInstancesR
 
 func (h *service) UpdateLoadout(ctx context.Context, req *UpdateLoadoutRequest) error {
 	return h.repo.UpsertLoadoutSlot(ctx, req)
+}
+
+func (h *service) CombineDedupKey(eventID uuid.UUID) string {
+	key := fmt.Sprintf("dedup:items:%s", eventID)
+	return key
+}
+
+func (h *service) SetDedupLock(key string) (lockID string, acquired bool, err error) {
+	lockID, ok, err := h.cache.AcquireLock(context.Background(), key, time.Hour*24)
+
+	return lockID, ok, err
+}
+
+func (h *service) ReleaseLock(ctx context.Context, key string, lockID string) error {
+	err := h.cache.ReleaseLock(ctx, key, lockID)
+	return err
 }

@@ -24,15 +24,15 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, 
 	// Create repository
 	repo := items.NewRepository(db)
 
+	// cache client
+	cache := commoncache.NewRedisCache(GetClient())
+
 	// Create service with repository and AMQP channel
 	publishCh := commonbroker.NewAmqpPublisher(amqpChannel)
-	service := items.NewService(repo, db, publishCh)
+	service := items.NewService(repo, db, publishCh, cache)
 
 	// Create gRPC handler with service and auth client
 	handler := items.NewHandler(service, authClient)
-
-	// cache client
-	cache := commoncache.NewRedisCache(GetClient())
 
 	// Set up AMQP infrastructure
 	if err := items.SetupAMQPInfrastructure(amqpChannel); err != nil {
@@ -40,7 +40,7 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, 
 	}
 
 	// Create AMQP consumer with service
-	consumer := items.NewConsumer(service, amqpChannel, cache)
+	consumer := items.NewConsumer(service, amqpChannel)
 	// Start listening for AMQP events
 	consumer.Listen(ctx)
 

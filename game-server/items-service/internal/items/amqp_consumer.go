@@ -3,13 +3,11 @@ package items
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
-	commoncache "github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"google.golang.org/protobuf/proto"
@@ -17,12 +15,14 @@ import (
 
 type Consumer struct {
 	service ConsumerService
-	cache   commoncache.Cache
 	channel *amqp.Channel
 }
 
 type ConsumerService interface {
 	ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, req *pb.ItemsExtractedEvent) error
+	SetDedupLock(key string) (string, bool, error)
+	CombineDedupKey(eventID uuid.UUID) string
+	ReleaseLock(ctx context.Context, key string, lockID string) error
 }
 
 func (c *Consumer) Listen(ctx context.Context) {
@@ -31,11 +31,10 @@ func (c *Consumer) Listen(ctx context.Context) {
 	slog.Info("Items consumer listening for events...")
 }
 
-func NewConsumer(service ConsumerService, ch *amqp.Channel, cache commoncache.Cache) *Consumer {
+func NewConsumer(service ConsumerService, ch *amqp.Channel) *Consumer {
 	return &Consumer{
 		service: service,
 		channel: ch,
-		cache:   cache,
 	}
 }
 
@@ -51,25 +50,25 @@ func (c *Consumer) consumeItemsExtracted(ctx context.Context) {
 	)
 
 	if err != nil {
-		slog.Error("Failed to register consumer", "error", err)
+		slog.ErrorContext(ctx, "Failed to register consumer", "error", err)
 		return
 	}
 
 	for msg := range msgs {
 		var itemsExtracted pb.ItemsExtractedEvent
-		slog.Debug("Raw message received",
+		slog.DebugContext(ctx, "Raw message received",
 			"body_length", len(msg.Body),
 			"content_type", msg.ContentType,
 			"body_preview", string(msg.Body[:min(100, len(msg.Body))]),
 		)
 
 		if err := proto.Unmarshal(msg.Body, &itemsExtracted); err != nil {
-			slog.Error("Failed to parse items extracted event", "error", err)
+			slog.ErrorContext(ctx, "Failed to parse items extracted event", "error", err)
 
 			// dlq
 			pubErr := c.PublishToDlq(ctx, msg, commonconstants.ValidationReason)
 			if pubErr != nil {
-				slog.Error("failed to publish to DLQ", "err", pubErr)
+				slog.ErrorContext(ctx, "failed to publish to DLQ", "err", pubErr)
 				msg.Nack(false, true) // dlq失败的話就retry
 				continue
 			}
@@ -85,32 +84,31 @@ func (c *Consumer) consumeItemsExtracted(ctx context.Context) {
 		// was never consumed before
 		eventID, err := uuid.Parse(itemsExtracted.EventId)
 		if err != nil {
-			slog.Error("invalid event id, discarding", "event_id", itemsExtracted.EventId, "err", err)
+			slog.ErrorContext(ctx, "invalid event id, discarding", "event_id", itemsExtracted.EventId, "err", err)
 			// dlq
 			pubErr := c.PublishToDlq(ctx, msg, commonconstants.InvalidEventIDReason)
 			if pubErr != nil {
-				slog.Error("failed to publish to DLQ", "err", pubErr)
+				slog.ErrorContext(ctx, "failed to publish to DLQ", "err", pubErr)
 				msg.Nack(false, true) // dlq失败的話就retry
 				continue
 			}
 			msg.Ack(false) // 成功DLQ,移除原queue
 			continue
 		}
-		key := fmt.Sprintf("dedup:items:%s", eventID)
-		lockID, ok, err := c.cache.AcquireLock(context.Background(), key, time.Hour*24)
+
+		key := c.service.CombineDedupKey(eventID)
+		lockID, ok, err := c.service.SetDedupLock(key)
 
 		if err != nil {
-			slog.Error("Redis dedup check failed",
+			slog.ErrorContext(ctx, "Redis dedup check failed",
 				"event_id", eventID,
 				"err", err,
 			)
-			msg.Nack(false, true) // retry when redis errored
-			continue
 		}
 
 		// skip if already processed
 		if !ok {
-			slog.Debug("Duplicate event, skipping",
+			slog.DebugContext(ctx, "Duplicate event, skipping",
 				"event_id", itemsExtracted.EventId,
 			)
 			msg.Ack(false)
@@ -122,7 +120,7 @@ func (c *Consumer) consumeItemsExtracted(ctx context.Context) {
 		if err != nil {
 			// 重複的話就不刪除redis key , continue跳過這一輪
 			if errors.Is(err, commonconstants.ErrAlreadyProcessed) {
-				slog.Info("already processed",
+				slog.InfoContext(ctx, "already processed",
 					"event_id", eventID,
 				)
 				// 成功 不再重試
@@ -130,15 +128,16 @@ func (c *Consumer) consumeItemsExtracted(ctx context.Context) {
 				continue
 			}
 			// err是tx內的錯誤 等於流程錯誤inbox也無法建立 所以同時刪除dedup key
-			if releaseErr := c.cache.ReleaseLock(context.Background(), key, lockID); releaseErr != nil {
-				slog.Warn("failed to release redis",
+			releaseErr := c.service.ReleaseLock(ctx, key, lockID)
+			if releaseErr != nil {
+				slog.WarnContext(ctx, "failed to release redis",
 					"event_id", eventID,
 					"err", releaseErr,
 				)
 			}
 
 			if errors.Is(err, commonconstants.ErrTransient) {
-				slog.Error("Items service could not process items extracted due to transient error. Requeuing message",
+				slog.ErrorContext(ctx, "Items service could not process items extracted due to transient error. Requeuing message",
 					"err", err,
 				)
 				// retry
@@ -146,7 +145,7 @@ func (c *Consumer) consumeItemsExtracted(ctx context.Context) {
 				continue
 			}
 
-			slog.Error("Items service could not process items extracted.",
+			slog.ErrorContext(ctx, "Items service could not process items extracted.",
 				"items_extracted", itemsExtracted,
 				"err", err,
 			)
@@ -154,14 +153,13 @@ func (c *Consumer) consumeItemsExtracted(ctx context.Context) {
 			// dlq
 			pubErr := c.PublishToDlq(ctx, msg, commonconstants.ProcessingFailedReason)
 			if pubErr != nil {
-				slog.Error("failed to publish to DLQ", "err", pubErr)
+				slog.ErrorContext(ctx, "failed to publish to DLQ", "err", pubErr)
 				msg.Nack(false, true) // dlq失败的話就retry
 				continue
 			}
 			msg.Ack(false) // 成功DLQ,移除原queue
 			continue
 		}
-
 		msg.Ack(false)
 	}
 }
@@ -263,7 +261,7 @@ func SetupAMQPInfrastructure(channel *amqp.Channel) error {
 }
 
 func (c *Consumer) PublishToDlq(ctx context.Context, msg amqp.Delivery, reason string) error {
-	return c.channel.PublishWithContext(ctx,
+	err := c.channel.PublishWithContext(ctx,
 		commonconstants.ItemDlxEventsExchange,
 		commonconstants.ItemDlq,
 		false, false,
@@ -280,4 +278,5 @@ func (c *Consumer) PublishToDlq(ctx context.Context, msg amqp.Delivery, reason s
 				"x-failed-at":            time.Now().Format(time.RFC3339),
 			},
 		})
+	return err
 }

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -933,8 +934,10 @@ func (r *repository) EventProcessedTx(ctx context.Context, tx *sqlx.Tx, eventID 
 	// RowsAffected回傳影響的rows數量 所以正常會新增一筆inbox資料 所以回傳1 要是回傳0表示重複
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to get rows affected: %w", err)
 	}
-
-	return rows == 1, nil
+	if rows == 0 {
+		return false, commonconstants.ErrAlreadyProcessed
+	}
+	return true, nil
 }
