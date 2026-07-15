@@ -466,6 +466,30 @@ func (s *Session) manageEndSession() {
 	}
 }
 
+var Classes = map[string]ClassConfig{
+	"warrior": {
+		Stats:  components.StatsComponent{Strength: 8, Agility: 4, Intelligence: 2, Vitality: 9},
+		Combat: components.CombatComponent{Attack: 12, Defense: 10, AttackSpeed: 1.0, AttackRange: 1},
+		Health: components.HealthComponent{CurrentHealth: 150, MaxHealth: 150},
+		Mana:   components.ManaComponent{CurrentMana: 50, MaxMana: 50},
+		Skills: []components.SkillComponent{{SkillName: "slash", Level: 1}},
+	},
+	"mage": {
+		Stats:  components.StatsComponent{Strength: 2, Agility: 3, Intelligence: 9, Vitality: 3},
+		Combat: components.CombatComponent{Attack: 15, Defense: 3, AttackSpeed: 0.8, AttackRange: 6},
+		Health: components.HealthComponent{CurrentHealth: 150, MaxHealth: 150},
+		Mana:   components.ManaComponent{CurrentMana: 150, MaxMana: 150},
+		Skills: []components.SkillComponent{{SkillName: "fireball", Level: 1}},
+	},
+	"archer": {
+		Stats:  components.StatsComponent{Strength: 4, Agility: 8, Intelligence: 3, Vitality: 5},
+		Combat: components.CombatComponent{Attack: 10, Defense: 5, AttackSpeed: 1.5, AttackRange: 8},
+		Health: components.HealthComponent{CurrentHealth: 150, MaxHealth: 150},
+		Mana:   components.ManaComponent{CurrentMana: 100, MaxMana: 100},
+		Skills: []components.SkillComponent{{SkillName: "power_shot", Level: 1}},
+	},
+}
+
 func (s *Session) AddPlayer(playerID uuid.UUID, username string) uuid.UUID {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -531,16 +555,13 @@ func (s *Session) AddPlayer(playerID uuid.UUID, username string) uuid.UUID {
 	}
 
 	PlayerConfig := PlayerConfig{
-		MemberID:      playerID,
-		Username:      username,
-		X:             constants.PlayerRadius + rand.Float64()*(constants.MapWidth-2*constants.PlayerRadius),
-		Y:             constants.PlayerRadius + rand.Float64()*(constants.MapHeight-2*constants.PlayerRadius),
-		SkillName:     "Basic Attack",
-		SkillLevel:    1,
-		CurrentHealth: 100,
-		MaxHealth:     100,
-		ItemName:      "Health Potion",
-		ItemQuantity:  3,
+		MemberID:     playerID,
+		Username:     username,
+		X:            constants.PlayerRadius + rand.Float64()*(constants.MapWidth-2*constants.PlayerRadius),
+		Y:            constants.PlayerRadius + rand.Float64()*(constants.MapHeight-2*constants.PlayerRadius),
+		Class:        Classes["mage"],
+		ItemName:     "Health Potion",
+		ItemQuantity: 3,
 
 		Vx: 0,
 		Vy: 0,
