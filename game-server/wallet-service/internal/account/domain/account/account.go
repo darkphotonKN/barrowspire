@@ -9,9 +9,10 @@ import (
 
 // --- Errors ---
 var (
-	ErrInvalidGold         = errors.New("invalid gold")
-	ErrInvalidUUID         = errors.New("invalid uuid")
-	ErrHoldsExceedBalanace = errors.New("holds exceed balace")
+	ErrInvalidGold            = errors.New("invalid gold")
+	ErrInvalidUUID            = errors.New("invalid uuid")
+	ErrHoldsExceedBalanace    = errors.New("holds exceed balace")
+	ErrConcurrentModification = errors.New("concurrent modification")
 )
 
 // --- Domain ---

@@ -165,10 +165,27 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 	after := acc.Snapshot()
 
 	// diff account
-	// NOTE: WIP
-	changes := r.diffAccount(before, after)
+	changes := r.diffAccount(&before, &after)
+	slog.Debug("checking account changes in save method", "changes", changes)
 
-	slog.Debug("checking changes in save method", "changes", changes)
+	wipQuery := `
+	UPDATE accounts
+	SET gold = $1, version = version + 1
+	WHERE id = $2 AND version = $3
+	`
+
+	// TODO: changes.gold could be nil
+	res, err := r.db.ExecContext(ctx, wipQuery, changes.gold, after.ID, changes.expectedVersion)
+
+	if err != nil {
+		return commonhelpers.WrapDBErr("account", "save", err)
+	}
+
+	n, _ := res.RowsAffected()
+
+	if n == 0 {
+		return account.ErrConcurrentModification
+	}
 
 	return nil
 }
@@ -211,16 +228,17 @@ func (r *AccountRepository) diffAccount(before, after *account.AccountSnapshot) 
 	updatedHolds := make([]*holdChanges, 0)
 
 	// track seen holds in map, also for comparison to track differences and new additions in a single loop
+	// algorithm pass through once with O(n) to build the map of seen, then pass through again to check off
 	seen := make(map[uuid.UUID]account.WalletHoldSnapshot)
 
 	for _, hold := range before.WalletHolds {
-		// add all to map
+		// add all to map as a checklist
 		seen[hold.ID] = hold
 	}
 
 	for _, afterHold := range after.WalletHolds {
 		// -- holds added --
-		// any new ids are added
+		// any new ids are added as NEW holds
 		if beforeHold, ok := seen[afterHold.ID]; !ok {
 			newHolds = append(newHolds, &HoldsRow{
 				ID:        afterHold.ID,
@@ -233,25 +251,31 @@ func (r *AccountRepository) diffAccount(before, after *account.AccountSnapshot) 
 				UpdatedAt: afterHold.UpdatedAt,
 			})
 
-			// matching, old
+			// matching / seen, are old holds, update them
 		} else {
 			// -- holds updated --
-			var statusChange account.WalletHoldStatus
+			isChanged := false
+			updatedHold := &holdChanges{
+				id: afterHold.ID,
+			}
+
 			if afterHold.Status != beforeHold.Status {
-				statusChange = afterHold.Status
+				updatedHold.status = &afterHold.Status
+				isChanged = true
+			}
+
+			if !isChanged {
+				continue
 			}
 
 			// track update changes
-			updatedHolds = append(updatedHolds, &holdChanges{
-				id:     afterHold.ID,
-				status: &statusChange,
-			})
+			updatedHolds = append(updatedHolds, updatedHold)
 		}
 
 	}
 
 	return &AccountChanges{
-		gold:            &goldDiff,
+		gold:            changes.gold,
 		expectedVersion: &before.Version,
 		holdsUpdated:    updatedHolds,
 		newHolds:        newHolds,
