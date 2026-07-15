@@ -8,6 +8,14 @@ import (
 	"github.com/google/uuid"
 )
 
+type ClassConfig struct {
+	Stats  components.StatsComponent
+	Combat components.CombatComponent
+	Health components.HealthComponent
+	Mana   components.ManaComponent
+	Skills []components.SkillComponent
+}
+
 type MatchConfig struct {
 	players []*ecs.Entity
 }
@@ -21,6 +29,7 @@ func CreateMatchProgressEntity(em *ecs.EntityManager) *ecs.Entity {
 
 type PlayerConfig struct {
 	MemberID      uuid.UUID
+	Class         ClassConfig
 	Username      string
 	X, Y          float64
 	SkillName     string
@@ -46,12 +55,18 @@ func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity 
 
 	entity.AddComponent(components.NewVelocityComponent(config.Vx, config.Vy, commonconstants.DefaultSpeed))
 
-	entity.AddComponent(components.NewHealthComponent(config.CurrentHealth, config.MaxHealth))
-	entity.AddComponent(components.NewSkillComponent(config.SkillName, config.SkillLevel))
+	entity.AddComponent(components.NewHealthComponent(config.Class.Health.CurrentHealth, config.Class.Health.MaxHealth))
+	entity.AddComponent(components.NewManaComponent(config.Class.Mana.CurrentMana, config.Class.Mana.MaxMana))
+
+	for _, skill := range config.Class.Skills {
+		entity.AddComponent(components.NewSkillComponent(skill.SkillName, skill.Level))
+	}
+
+	entity.AddComponent(components.NewCombatComponent(config.Class.Combat.Attack, config.Class.Combat.Defense, config.Class.Combat.AttackRange, config.Class.Combat.AttackSpeed))
 
 	entity.AddComponent(components.NewItemIDListComponent(config.ItemIDList))
 
-	entity.AddComponent(components.NewStatsComponent())
+	entity.AddComponent(components.NewStatsComponent(config.Class.Stats.Strength, config.Class.Stats.Agility, config.Class.Stats.Vitality, config.Class.Stats.Intelligence))
 
 	// initialize equipment with loadout
 	entity.AddComponent(components.NewEquipmentComponent(config.PlayerLoadout))
