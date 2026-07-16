@@ -12,6 +12,7 @@ import (
 // the repository.go would implement the adapter, acutal concrete
 // implementation that satisfies this interface
 type Repository interface {
-	FindById(ctx context.Context, id uuid.UUID) (*Account, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*Account, error)
 	Insert(ctx context.Context, account *Account) error
+	Save(ctx context.Context, acc *Account, before AccountSnapshot) error
 }

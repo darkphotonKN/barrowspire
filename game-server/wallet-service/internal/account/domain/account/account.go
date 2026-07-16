@@ -12,6 +12,7 @@ var (
 	ErrInvalidGold            = errors.New("invalid gold")
 	ErrInvalidUUID            = errors.New("invalid uuid")
 	ErrHoldsExceedBalanace    = errors.New("holds exceed balace")
+	ErrCorruptAccountState    = errors.New("corrupt account state")
 	ErrConcurrentModification = errors.New("concurrent modification")
 )
 
@@ -92,7 +93,7 @@ func Reconstitute(params ReconstituteParams) (*Account, error) {
 	// run cross holds invariant validation
 	available := account.getAvailableGold()
 	if available < 0 {
-		return nil, ErrHoldsExceedBalanace
+		return nil, ErrCorruptAccountState
 	}
 
 	return &account, nil

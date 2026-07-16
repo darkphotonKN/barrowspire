@@ -175,19 +175,26 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 	`
 
 	// TODO: changes.gold could be nil
-	res, err := r.db.ExecContext(ctx, wipQuery, changes.gold, after.ID, changes.expectedVersion)
+	return commonhelpers.ExecTx(ctx, r.db, &sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+	}, func(tx *sqlx.Tx) error {
+		// update account
+		res, err := tx.ExecContext(ctx, wipQuery, changes.gold, after.ID, changes.expectedVersion)
 
-	if err != nil {
-		return commonhelpers.WrapDBErr("account", "save", err)
-	}
+		if err != nil {
+			return commonhelpers.WrapDBErr("account", "save", err)
+		}
 
-	n, _ := res.RowsAffected()
+		n, _ := res.RowsAffected()
 
-	if n == 0 {
-		return account.ErrConcurrentModification
-	}
+		if n == 0 {
+			return account.ErrConcurrentModification
+		}
 
-	return nil
+		// TODO: update holds
+
+		return nil
+	})
 }
 
 // using pointers to signify change
