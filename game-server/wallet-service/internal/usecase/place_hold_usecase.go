@@ -26,31 +26,33 @@ type PlaceHoldCommand struct {
 	Gold     int
 }
 
-// TODO: add retry
 func (uc *PlaceHoldUC) Handle(ctx context.Context, cmd *PlaceHoldCommand) error {
+	// retry due to optimistic concurrency (OCC)
+	return withRetry(func() error {
+		// find account and all its holds, repo reconstitute's
+		acc, err := uc.repo.FindByID(ctx, cmd.ID)
 
-	// find account and all its holds, repo reconstitute's
-	acc, err := uc.repo.FindByID(ctx, cmd.ID)
+		if err != nil {
+			return fmt.Errorf("placehold usecase handle FindById cmd account id %s : %w", cmd.ID, err)
+		}
 
-	if err != nil {
-		return fmt.Errorf("placehold usecase handle FindById cmd account id %s : %w", cmd.ID, err)
-	}
+		// snapshot for version
+		before := acc.Snapshot()
 
-	// snapshot for version
-	before := acc.Snapshot()
+		// attempt to place hold
+		err = acc.PlaceHold(uuid.New(), cmd.Gold, cmd.BidID, time.Now())
 
-	// attempt to place hold
-	err = acc.PlaceHold(uuid.New(), cmd.Gold, cmd.BidID, time.Now())
+		if err != nil {
+			return fmt.Errorf("placehold usecase handle placing hold cmd account id %s : %w", cmd.ID, err)
+		}
 
-	if err != nil {
-		return fmt.Errorf("placehold usecase handle placing hold cmd account id %s : %w", cmd.ID, err)
-	}
+		err = uc.repo.Save(ctx, acc, before)
 
-	err = uc.repo.Save(ctx, acc, before)
+		if err != nil {
+			return fmt.Errorf("placehold usecase handle saving cmd account id %s : %w", cmd.ID, err)
+		}
 
-	if err != nil {
-		return fmt.Errorf("placehold usecase handle saving cmd account id %s : %w", cmd.ID, err)
-	}
-
-	return nil
+		// success
+		return nil
+	})
 }

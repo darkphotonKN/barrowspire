@@ -20,11 +20,13 @@ import (
 
 var ErrMaxRetries = errors.New("max retries")
 
+const (
+	maxRetries = 5
+)
+
 func withRetry(fn func() error) error {
-	// retry while error is a race
-	retry := true
-	attempts := 0
-	for retry {
+	// goal is to retry while error is a race
+	for attempts := 1; attempts <= maxRetries; attempts++ {
 		// attempt to run the optimistic process (attempt to write without locking)
 		err := fn()
 
@@ -41,15 +43,13 @@ func withRetry(fn func() error) error {
 		}
 
 		// raced, count attempt, jitter, delay and retry
-		attempts++
-		if attempts > 5 {
-			retry = false
+		if attempts == maxRetries {
+			return ErrMaxRetries
 		}
 
 		// delay next call
 		jitterTime := time.Duration(rand.Float64() * float64(time.Millisecond) * 5)
 		time.Sleep(jitterTime)
-
 	}
 
 	return ErrMaxRetries
