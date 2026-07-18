@@ -1,6 +1,9 @@
 package grpc
 
-import "github.com/darkphotonKN/barrowspire-server/wallet-service/internal/usecase"
+import (
+	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/query"
+	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/usecase"
+)
 
 // INBOUND Adapter
 // Satisfies the port of the usecase to pipe external grpc calls into the
@@ -8,6 +11,7 @@ import "github.com/darkphotonKN/barrowspire-server/wallet-service/internal/useca
 
 type Handler struct {
 	// read
+	getAccountQuery *query.GetAccountQuery
 
 	// write
 	createAccountUC *usecase.CreateAccountUC

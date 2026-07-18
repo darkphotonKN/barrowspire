@@ -196,6 +196,11 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 		}
 
 		// TODO: update holds
+		var newHoldsQuery string
+		for _, hold := range changes.newHolds {
+			slog.Debug("temp", newHoldsQuery, hold)
+
+		}
 
 		return nil
 	})
