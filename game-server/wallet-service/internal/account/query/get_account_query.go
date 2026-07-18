@@ -19,7 +19,7 @@ func NewGetAccountQuery(db *sqlx.DB) *GetAccountQuery {
 	}
 }
 
-func (q *GetAccountQuery) Execute(ctx context.Context, memberID uuid.UUID) (*dto.AccountDetailsDTO, error) {
+func (q *GetAccountQuery) Execute(ctx context.Context, memberID uuid.UUID) (*dto.AccountDetails, error) {
 	query := `
 	SELECT 
 		id,
@@ -30,7 +30,7 @@ func (q *GetAccountQuery) Execute(ctx context.Context, memberID uuid.UUID) (*dto
 	WHERE member_id = $1
 	`
 
-	var res dto.AccountDetailsDTO
+	var res dto.AccountDetails
 
 	err := q.db.GetContext(ctx, &res, query, memberID)
 
