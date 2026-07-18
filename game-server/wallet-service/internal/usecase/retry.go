@@ -37,7 +37,7 @@ func withRetry(fn func() error) error {
 
 		// if concurrent modification is caught, race was caught at write time.
 		// we retry, otherwise exit loop
-		if !errors.Is(err, account.ErrConcurrentModification) {
+		if !account.IsRetriable(err) {
 			// every other error, let the caller decide, unrelated to retry's job
 			return err
 		}

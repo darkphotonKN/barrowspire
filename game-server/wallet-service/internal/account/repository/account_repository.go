@@ -161,6 +161,10 @@ func (r *AccountRepository) Insert(ctx context.Context, account *account.Account
 }
 
 // Save updates the resource with any changes to the domain. Essentially an "update"
+// save must return the senintel ErrConcurrentModification to signify a
+// race error when attempting optimisitic updates
+// account/errors.go's isRetriable and usecase/retry.go's withRetry relies on this
+// to work
 func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, before account.AccountSnapshot) error {
 	after := acc.Snapshot()
 
