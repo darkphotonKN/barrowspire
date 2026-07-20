@@ -2,11 +2,16 @@ package grpc
 
 import (
 	"context"
+	"errors"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/domain/account"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/dto"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/usecase"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // INBOUND Adapter
@@ -50,4 +55,29 @@ func (h *Handler) GetAccount(ctx context.Context, req *pb.GetAccountRequest) (*p
 	}
 
 	return nil, nil
+}
+
+func mapError(err error) error {
+	switch {
+	case errors.Is(err, account.ErrConcurrentModification):
+
+		// OCC version mismatch. caller can retry with fresh state.
+		return status.Error(codes.Aborted, "aborted")
+	case errors.Is(err, commonconstants.ErrDuplicateResource):
+		return status.Error(codes.AlreadyExists, "already exists")
+	case errors.Is(err, commonconstants.ErrNotFound):
+		return status.Error(codes.NotFound, "not found")
+	// NOTE: retry worthy
+	case errors.Is(err, commonconstants.ErrTransient):
+		return status.Error(codes.Unavailable, "unavailable")
+	// request structurally valid, but account state doenst allow, or violates the
+	// system constraints like FK , null when supposed to be NOT NULL, etc
+	case errors.Is(err, commonconstants.ErrConstraintViolation) || errors.Is(err, account.ErrHoldsExceedBalanace):
+		return status.Error(codes.FailedPrecondition, "failed precondition")
+
+	case errors.Is(err, account.ErrInvalidAmount) || errors.Is(err, account.ErrInvalidGold):
+		return status.Error(codes.InvalidArgument, "invalid argument")
+	}
+
+	return nil
 }
