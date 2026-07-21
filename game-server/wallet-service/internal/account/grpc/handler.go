@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
@@ -50,17 +51,17 @@ func (h *Handler) GetAccount(ctx context.Context, req *pb.GetAccountRequest) (*p
 	res, err := h.accountReader.Execute(ctx, tempMemberID)
 
 	if err != nil {
-		// TODO: update to handle errors based on sentinel
-		return nil, err
+		return nil, mapError(ctx, err)
 	}
+
+	// TODO: map to pb
 
 	return nil, nil
 }
 
-func mapError(err error) error {
+func mapError(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, account.ErrConcurrentModification):
-
 		// OCC version mismatch. caller can retry with fresh state.
 		return status.Error(codes.Aborted, "aborted")
 	case errors.Is(err, commonconstants.ErrDuplicateResource):
@@ -70,14 +71,18 @@ func mapError(err error) error {
 	// NOTE: retry worthy
 	case errors.Is(err, commonconstants.ErrTransient):
 		return status.Error(codes.Unavailable, "unavailable")
-	// request structurally valid, but account state doenst allow, or violates the
+	// request structurally valid, but account state doesnt allow, or violates the
 	// system constraints like FK , null when supposed to be NOT NULL, etc
 	case errors.Is(err, commonconstants.ErrConstraintViolation) || errors.Is(err, account.ErrHoldsExceedBalanace):
 		return status.Error(codes.FailedPrecondition, "failed precondition")
 
 	case errors.Is(err, account.ErrInvalidAmount) || errors.Is(err, account.ErrInvalidGold):
 		return status.Error(codes.InvalidArgument, "invalid argument")
+
+	default:
+		// unexpected error
+		slog.ErrorContext(ctx, "unexpected error")
+		return status.Error(codes.Internal, "internal")
 	}
 
-	return nil
 }
