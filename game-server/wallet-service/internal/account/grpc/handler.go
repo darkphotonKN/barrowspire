@@ -71,13 +71,16 @@ func mapError(ctx context.Context, err error) error {
 		code = codes.Aborted
 		msg = "aborted"
 	case errors.Is(err, commonconstants.ErrDuplicateResource):
-		return status.Error(codes.AlreadyExists, "already exists")
+		code = codes.AlreadyExists
+		msg = "already exists"
 	case errors.Is(err, commonconstants.ErrNotFound):
-		return status.Error(codes.NotFound, "not found")
+		code = codes.NotFound
+		msg = "not found"
 	// NOTE: retry worthy error
 	// log level warn, worth noting rate
 	case errors.Is(err, commonconstants.ErrTransient):
-		return status.Error(codes.Unavailable, "unavailable")
+		code = codes.Unavailable
+		msg = "unavailable"
 	// request structurally valid, but account state doesnt allow, or violates the
 	// system constraints like FK, null when supposed to be NOT NULL, etc
 	case errors.Is(err, commonconstants.ErrConstraintViolation) || errors.Is(err, account.ErrHoldsExceedBalanace):
@@ -89,7 +92,8 @@ func mapError(ctx context.Context, err error) error {
 		logLevel = slog.LevelInfo
 
 	case errors.Is(err, account.ErrInvalidAmount) || errors.Is(err, account.ErrInvalidGold):
-		return status.Error(codes.InvalidArgument, "invalid argument")
+		code = codes.InvalidArgument
+		msg = "invalid argument"
 
 	default:
 		// unexpected, unhandled error
