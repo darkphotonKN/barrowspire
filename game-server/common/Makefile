@@ -9,6 +9,8 @@ gen:
 		api/proto/items/items.proto \
 		api/proto/payment/payment.proto \
 		api/proto/notification/notification.proto \
+		api/proto/character/character.proto \
 		api/proto/events/game.proto \
 		api/proto/events/auth.proto \
 		api/proto/events/item.proto \
+		

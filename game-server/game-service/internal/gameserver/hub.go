@@ -125,6 +125,13 @@ func (h *messageHub) Run() {
 					continue
 				}
 
+				// Get and validate class selection from payload
+				classVal, _ := clientPackage.Message.Payload["class"].(string)
+				if _, ok := game.Classes[classVal]; !ok {
+					classVal = "mage"
+				}
+				player.Class = classVal
+
 				// -- player already exists in an old game --
 				err := h.handlePlayerExistingGame(player, clientPackage)
 

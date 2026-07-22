@@ -12,4 +12,5 @@ use (
 	./notification-service
 	./marketplace-service
 	./wallet-service
+	./character-service
 )

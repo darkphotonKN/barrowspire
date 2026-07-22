@@ -30,6 +30,7 @@ func CreateMatchProgressEntity(em *ecs.EntityManager) *ecs.Entity {
 type PlayerConfig struct {
 	MemberID      uuid.UUID
 	Class         ClassConfig
+	ClassName     string
 	Username      string
 	X, Y          float64
 	SkillName     string
@@ -49,7 +50,7 @@ type PlayerConfig struct {
 func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity {
 	entity := em.CreateEntity()
 
-	entity.AddComponent(components.NewPlayerComponent(config.MemberID, config.Username, config.HasHit, config.AttackActive, config.Escape))
+	entity.AddComponent(components.NewPlayerComponent(config.MemberID, config.ClassName, config.Username, config.HasHit, config.AttackActive, config.Escape))
 
 	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
 

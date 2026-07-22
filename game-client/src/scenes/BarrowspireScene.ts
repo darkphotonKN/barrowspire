@@ -6,8 +6,10 @@
 import Phaser from "phaser";
 import { ActionType } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
+import { useGameStore } from "@/stores/gameStore";
 import {
   ClientGameState,
+  PlayerState,
   ContainerState,
   ItemState,
   EscapeDoorState,
@@ -72,6 +74,20 @@ interface KnightPalette {
   ink: number;
 }
 
+/** Limited barrow palette for the archer-delver sprite (0x ints). */
+interface ArcherPalette {
+  hood: number;
+  hoodShade: number;
+  leather: number;
+  leatherShade: number;
+  trim: number;
+  face: number;
+  eye: number;
+  bow: number;
+  string: number;
+  ink: number;
+}
+
 export class BarrowspireScene extends Phaser.Scene {
   private player?: Phaser.Physics.Arcade.Sprite;
   private otherPlayers: Map<string, Phaser.Physics.Arcade.Sprite> = new Map();
@@ -88,6 +104,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private otherPlayersFacing: Map<string, "up" | "down" | "left" | "right"> =
     new Map();
   private otherPlayersWalkPhase: Map<string, number> = new Map();
+  private playerTexturePrefix: string = "player_warrior";
+  private otherPlayersClass: Map<string, string> = new Map();
 
   // username labels
   private playerNameText?: Phaser.GameObjects.Text;
@@ -394,7 +412,8 @@ export class BarrowspireScene extends Phaser.Scene {
       );
     });
     redeployHit.on("pointerdown", () => {
-      socketManager.sendMessage(ActionType.Find_Game, { playerId: "1" });
+      const selectedClass = useGameStore.getState().selectedClass;
+      socketManager.sendMessage(ActionType.Find_Game, { playerId: "1", class: selectedClass });
       this.scene.start("MainMenuScene");
     });
 
@@ -455,8 +474,7 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // Player = torch-amber wizard-delver; rivals = necrotic wight-mages.
-    // Same 4-facing rig, only the palette differs. See docs/design-guideline.md.
+    // 1. Wizard (Mage) Palettes
     const playerPalette: WizardPalette = {
       hat: 0x241c14,
       hatShade: 0x16100a,
@@ -485,9 +503,8 @@ export class BarrowspireScene extends Phaser.Scene {
       orbGlow: 0x6f8f4a,
       ink: 0x15171a,
     };
-    // Battered-plate knight: barrow steel, muted umber surcoat, brass trim, and
-    // a faint torch-amber visor slit as the readable accent in the dark. Same
-    // 60×60 frame / 4-facing rig as the wizard. See docs/design-guideline.md.
+
+    // 2. Knight (Warrior) Palettes
     const knightPalette: KnightPalette = {
       helm: 0x54585f,
       helmShade: 0x3a3d42,
@@ -505,16 +522,65 @@ export class BarrowspireScene extends Phaser.Scene {
       shieldTrim: 0x9c7b3f,
       ink: 0x0d0b0a,
     };
+    const rivalKnightPalette: KnightPalette = {
+      helm: 0x3e4248,
+      helmShade: 0x292c30,
+      helmLight: 0x54585f,
+      plate: 0x2d3136,
+      plateShade: 0x1c1f23,
+      plateLight: 0x3d4248,
+      surcoat: 0x2b1c2b,
+      surcoatShade: 0x1b1c20,
+      visor: 0x5294e2,
+      visorGlow: 0x4ecca3,
+      sword: 0x5a5e65,
+      swordHilt: 0x4a4e55,
+      shield: 0x1b141c,
+      shieldTrim: 0x52555c,
+      ink: 0x0d0b0a,
+    };
 
-    // --- Character roster (future class-selection hook — NOT wired to any runtime
-    // logic). Parallel asset sets so a class system can later point at either:
-    //   knight → createKnightTextures(prefix, knightPalette)   ← current default
-    //   wizard → createSoldierTextures(prefix, playerPalette)  ← banked below
-    // To make the player a wizard again, swap the one default line back to
-    // `this.createSoldierTextures("player", playerPalette)`.
-    this.createKnightTextures("player", knightPalette); // default delver = knight
-    this.createSoldierTextures("wizard", playerPalette); // wizard banked & loadable under "wizard*" keys
+    // 3. Archer Palettes
+    const archerPalette: ArcherPalette = {
+      hood: 0x3c5a36,        // forest green
+      hoodShade: 0x243b20,   // darker forest green
+      leather: 0x6e4e37,     // brown leather jerkin
+      leatherShade: 0x4a3322,// dark brown leather
+      trim: 0xd4a373,        // brass/gold buckles
+      face: 0xdcbd9d,        // skin tone
+      eye: 0xe8a14d,         // eye highlight
+      bow: 0x8c6239,         // wood bow
+      string: 0xf2ebd9,      // cream bowstring
+      ink: 0x0d0b0a,
+    };
+    const rivalArcherPalette: ArcherPalette = {
+      hood: 0x252e27,        // dark forest green-black
+      hoodShade: 0x151c16,   // necrotic dark green
+      leather: 0x35312e,     // dark charcoal leather
+      leatherShade: 0x1a1918,// black leather
+      trim: 0x7d6b58,        // dull bronze
+      face: 0x323a30,        // necrotic skin tone
+      eye: 0x6f8f4a,         // glowing green eye
+      bow: 0x423830,         // dark wood
+      string: 0x8a929a,      // cold gray string
+      ink: 0x15171a,
+    };
+
+    // --- Build Fallbacks ---
+    this.createKnightTextures("player", knightPalette);
     this.createSoldierTextures("otherPlayer", rivalPalette);
+
+    // --- Build Class Sprites ---
+    // Local player class sprites
+    this.createKnightTextures("player_warrior", knightPalette);
+    this.createSoldierTextures("player_mage", playerPalette);
+    this.createArcherTextures("player_archer", archerPalette);
+
+    // Other players class sprites
+    this.createKnightTextures("other_warrior", rivalKnightPalette);
+    this.createSoldierTextures("other_mage", rivalPalette);
+    this.createArcherTextures("other_archer", rivalArcherPalette);
+
     this.createChestTextures();
     this.createEscapeDoorTextures();
     this.createSwitchTextures();
@@ -808,6 +874,236 @@ export class BarrowspireScene extends Phaser.Scene {
         const c = grid[y][x];
         if (c === null) continue;
         g.fillStyle(c, soft[y][x] && c === pal.orbGlow ? 0.45 : 1);
+        g.fillRect(ox + x * P, oy + y * P, P, P);
+      }
+    }
+  }
+
+  private createArcherTextures(prefix: string, pal: ArcherPalette): void {
+    const facings: Array<"down" | "up" | "left" | "right"> = [
+      "down",
+      "up",
+      "left",
+      "right",
+    ];
+    for (const facing of facings) {
+      const g = this.make.graphics({});
+      this.drawArcher(g, facing, pal);
+      g.generateTexture(this.facingTextureKey(prefix, facing), 60, 60);
+      g.destroy();
+    }
+  }
+
+  private drawArcher(
+    g: Phaser.GameObjects.Graphics,
+    facing: "up" | "down" | "left" | "right",
+    pal: ArcherPalette,
+  ): void {
+    const P = 2; // device px per logical pixel
+    const W = 24;
+    const H = 26;
+    const ox = (60 - W * P) / 2;
+    const oy = (60 - H * P) / 2;
+
+    const grid: (number | null)[][] = Array.from({ length: H }, () =>
+      Array<number | null>(W).fill(null),
+    );
+    const soft: boolean[][] = Array.from({ length: H }, () =>
+      Array<boolean>(W).fill(false),
+    );
+    const set = (x: number, y: number, c: number, isSoft = false) => {
+      if (x < 0 || x >= W || y < 0 || y >= H) return;
+      grid[y][x] = c;
+      soft[y][x] = isSoft;
+    };
+    const bar = (y: number, x0: number, x1: number, c: number) => {
+      for (let x = x0; x <= x1; x++) set(x, y, c);
+    };
+
+    const back = facing === "up";
+    const left = facing === "left";
+    const right = facing === "right";
+    const side = left || right;
+
+    // --- Draw Bow ---
+    if (left) {
+      // Arc
+      set(5, 7, pal.bow);
+      set(4, 8, pal.bow);
+      set(3, 9, pal.bow);
+      set(3, 10, pal.bow);
+      set(2, 11, pal.bow);
+      set(2, 12, pal.bow);
+      set(2, 13, pal.bow);
+      set(2, 14, pal.bow);
+      set(3, 15, pal.bow);
+      set(3, 16, pal.bow);
+      set(4, 17, pal.bow);
+      set(5, 18, pal.bow);
+      set(6, 19, pal.bow);
+      // Bowstring
+      for (let y = 7; y <= 19; y++) set(6, y, pal.string, true);
+    } else if (right) {
+      // Arc
+      set(18, 7, pal.bow);
+      set(19, 8, pal.bow);
+      set(20, 9, pal.bow);
+      set(20, 10, pal.bow);
+      set(21, 11, pal.bow);
+      set(21, 12, pal.bow);
+      set(21, 13, pal.bow);
+      set(21, 14, pal.bow);
+      set(20, 15, pal.bow);
+      set(20, 16, pal.bow);
+      set(19, 17, pal.bow);
+      set(18, 18, pal.bow);
+      set(17, 19, pal.bow);
+      // Bowstring
+      for (let y = 7; y <= 19; y++) set(17, y, pal.string, true);
+    } else if (facing === "down") {
+      // Held on left side
+      set(5, 8, pal.bow);
+      set(4, 9, pal.bow);
+      set(4, 10, pal.bow);
+      set(4, 11, pal.bow);
+      set(3, 12, pal.bow);
+      set(3, 13, pal.bow);
+      set(3, 14, pal.bow);
+      set(4, 15, pal.bow);
+      set(4, 16, pal.bow);
+      set(4, 17, pal.bow);
+      set(5, 18, pal.bow);
+      // Bowstring
+      for (let y = 8; y <= 18; y++) set(6, y, pal.string, true);
+    } else if (back) {
+      // Slung on back
+      for (let i = 0; i < 11; i++) {
+        set(7 + i, 8 + i, pal.bow);
+        set(8 + i, 7 + i, pal.string, true);
+      }
+    }
+
+    // --- Draw Hood (Head) ---
+    // Rounded hood cap y = 5 to 9
+    bar(5, 10, 13, pal.hood);
+    bar(6, 9, 14, pal.hood);
+    bar(7, 9, 14, pal.hood);
+    bar(8, 8, 15, pal.hood);
+    bar(9, 8, 15, pal.hood);
+    
+    // Add hood shadows/shading on right half
+    for (let y = 5; y <= 9; y++) {
+      const startX = 12;
+      const endX = y === 5 ? 13 : y === 6 ? 14 : y === 7 ? 14 : 15;
+      for (let x = startX; x <= endX; x++) set(x, y, pal.hoodShade);
+    }
+
+    // Face / Hood Opening (y = 10 to 12)
+    if (back) {
+      bar(10, 8, 15, pal.hoodShade);
+      bar(11, 9, 14, pal.hoodShade);
+      bar(12, 10, 13, pal.hoodShade);
+    } else if (left) {
+      // Face facing left
+      bar(10, 8, 10, pal.face);
+      bar(11, 8, 10, pal.face);
+      bar(12, 9, 10, pal.face);
+      set(8, 11, pal.eye, true); // Eye
+      // Hood backing
+      bar(10, 11, 14, pal.hood);
+      bar(11, 11, 13, pal.hoodShade);
+      bar(12, 11, 12, pal.hoodShade);
+    } else if (right) {
+      // Face facing right
+      bar(10, 13, 15, pal.face);
+      bar(11, 13, 15, pal.face);
+      bar(12, 13, 14, pal.face);
+      set(15, 11, pal.eye, true); // Eye
+      // Hood backing
+      bar(10, 9, 12, pal.hood);
+      bar(11, 10, 12, pal.hoodShade);
+      bar(12, 11, 12, pal.hoodShade);
+    } else {
+      // Facing down (front)
+      bar(10, 10, 13, pal.face);
+      bar(11, 10, 13, pal.face);
+      bar(12, 10, 13, pal.face);
+      set(10, 11, pal.eye, true);
+      set(13, 11, pal.eye, true);
+      // Hood wrap sides
+      bar(10, 8, 9, pal.hood);
+      bar(10, 14, 15, pal.hoodShade);
+      bar(11, 8, 9, pal.hood);
+      bar(11, 14, 14, pal.hoodShade);
+      bar(12, 9, 9, pal.hood);
+      bar(12, 14, 14, pal.hoodShade);
+    }
+
+    // --- Body / Leather Jerkin (y = 13 to 21) ---
+    const bodyWidths: Array<[number, number]> = [
+      [8, 15], // 13
+      [8, 15], // 14
+      [7, 16], // 15
+      [7, 16], // 16
+      [7, 16], // 17 (belt line)
+      [6, 17], // 18
+      [6, 17], // 19
+      [6, 17], // 20
+      [6, 17], // 21
+    ];
+
+    bodyWidths.forEach(([a, b], idx) => {
+      const y = 13 + idx;
+      const lo = side ? a + 1 : a;
+      const hi = side ? b - 1 : b;
+      
+      // Draw leather base
+      bar(y, lo, hi, pal.leather);
+      
+      // Shading on the right
+      const mid = Math.floor((lo + hi) / 2) + 1;
+      for (let x = mid; x <= hi; x++) set(x, y, pal.leatherShade);
+      
+      // Belt at y = 17
+      if (y === 17) {
+        bar(y, lo, hi, 0x14110c); // dark belt
+        set(Math.floor((lo + hi) / 2), y, pal.trim); // buckle
+      }
+    });
+
+    // --- Legs / Pants & Boots (y = 22 to 25) ---
+    // Pants (y = 22, 23)
+    bar(22, 8, 10, pal.hood);
+    bar(22, 13, 15, pal.hoodShade);
+    bar(23, 8, 9, pal.hood);
+    bar(23, 14, 15, pal.hoodShade);
+    // Boots (y = 24, 25)
+    bar(24, 8, 9, pal.leatherShade);
+    bar(24, 14, 15, pal.leatherShade);
+    bar(25, 7, 9, pal.leatherShade);
+    bar(25, 14, 16, pal.leatherShade);
+
+    // --- Dark Outline ---
+    const ink: Array<[number, number]> = [];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (grid[y][x] !== null) continue;
+        const near =
+          (grid[y][x - 1] != null && !soft[y][x - 1]) ||
+          (grid[y][x + 1] != null && !soft[y][x + 1]) ||
+          (grid[y - 1]?.[x] != null && !soft[y - 1][x]) ||
+          (grid[y + 1]?.[x] != null && !soft[y + 1][x]);
+        if (near) ink.push([x, y]);
+      }
+    }
+    ink.forEach(([x, y]) => set(x, y, pal.ink));
+
+    // Render grid to Phaser graphics object
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const c = grid[y][x];
+        if (c === null) continue;
+        g.fillStyle(c, 1);
         g.fillRect(ox + x * P, oy + y * P, P, P);
       }
     }
@@ -2469,8 +2765,9 @@ export class BarrowspireScene extends Phaser.Scene {
     return null;
   }
 
-  private createPlayer(x: number, y: number, username?: string): void {
-    this.player = this.physics.add.sprite(x, y, "playerDown");
+  private createPlayer(x: number, y: number, className?: string, username?: string): void {
+    this.playerTexturePrefix = "player_" + (className || "warrior");
+    this.player = this.physics.add.sprite(x, y, this.facingTextureKey(this.playerTexturePrefix, "down"));
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(100);
 
@@ -2889,7 +3186,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
       // 第一次收到位置，建立玩家
       if (!this.player) {
-        this.createPlayer(pos.x, pos.y, state.current_player.username);
+        this.createPlayer(pos.x, pos.y, state.current_player.class, state.current_player.username);
       }
 
       // 設定目標位置，在 update() 中平滑移動
@@ -2943,11 +3240,7 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   private updateOtherPlayers(
-    otherPlayersData: Array<{
-      id: string;
-      username: string;
-      position: { x: number; y: number };
-    }>,
+    otherPlayersData: PlayerState[],
   ): void {
     // Track which players are still in the game
     const activePlayerIds = new Set(otherPlayersData.map((p) => p.id));
@@ -2984,18 +3277,21 @@ export class BarrowspireScene extends Phaser.Scene {
     // Update or create other players
     otherPlayersData.forEach((playerData) => {
       let sprite = this.otherPlayers.get(playerData.id);
+      const cls = playerData.class || "warrior";
+      this.otherPlayersClass.set(playerData.id, cls);
 
       if (!sprite) {
         // Create new sprite for this player
         sprite = this.physics.add.sprite(
           playerData.position.x,
           playerData.position.y,
-          "otherPlayerDown",
+          this.facingTextureKey("other_" + cls, "down"),
         );
         sprite.setDepth(99);
 
-        // set circular physics body, offset for 60x60 texture
-        sprite.body.setCircle(20, 10, 10);
+        if (sprite.body) {
+          (sprite.body as Phaser.Physics.Arcade.Body).setCircle(20, 10, 10);
+        }
 
         // 點擊攻擊
         sprite.setInteractive();
@@ -4262,7 +4558,7 @@ export class BarrowspireScene extends Phaser.Scene {
         }
         if (newFacing !== this.playerFacing) {
           this.playerFacing = newFacing;
-          this.player.setTexture(this.facingTextureKey("player", newFacing));
+          this.player.setTexture(this.facingTextureKey(this.playerTexturePrefix, newFacing));
         }
         this.walkPhase += 0.3;
       }
@@ -4346,8 +4642,9 @@ export class BarrowspireScene extends Phaser.Scene {
             const prevFacing = this.otherPlayersFacing.get(playerId) || "down";
             if (newFacing !== prevFacing) {
               this.otherPlayersFacing.set(playerId, newFacing);
+              const cls = this.otherPlayersClass.get(playerId) || "warrior";
               sprite.setTexture(
-                this.facingTextureKey("otherPlayer", newFacing),
+                this.facingTextureKey("other_" + cls, newFacing),
               );
             }
             const phase = (this.otherPlayersWalkPhase.get(playerId) || 0) + 0.3;

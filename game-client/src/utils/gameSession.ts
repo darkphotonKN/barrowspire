@@ -82,7 +82,7 @@ class GameSessionManager {
     return {
       ...basePayload,
       ...actionData
-    } as ActionMap[T];
+    } as unknown as ActionMap[T];
   }
 
   /**
@@ -103,21 +103,21 @@ class GameSessionManager {
    * Create an attack payload
    */
   createAttackPayload(targetId: string): ActionMap['attack'] {
-    return this.createGamePayload<'attack'>({ target_id: targetId });
+    return this.createGamePayload<'attack'>({ enemy_entity_id: targetId });
   }
 
   /**
    * Create a pickup payload
    */
   createPickupPayload(itemId: string): ActionMap['pickup'] {
-    return this.createGamePayload<'pickup'>({ item_id: itemId });
+    return this.createGamePayload<'pickup'>({ itemId });
   }
 
   /**
    * Create a use item payload
    */
   createUsePayload(itemId: string, targetId?: string): ActionMap['use'] {
-    return this.createGamePayload<'use'>({ item_id: itemId, target_id: targetId });
+    return this.createGamePayload<'use'>({ itemId, targetId });
   }
 
   /**

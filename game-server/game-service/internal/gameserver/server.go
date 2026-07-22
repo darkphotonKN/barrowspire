@@ -174,7 +174,7 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 
 	for _, player := range players {
 		// add player to session
-		newGameSession.AddPlayer(player.ID, player.Username)
+		newGameSession.AddPlayer(player.ID, player.Username, player.Class)
 
 		connected := constants.Connected
 		// update player's SessionId

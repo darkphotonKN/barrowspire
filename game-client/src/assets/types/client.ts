@@ -2,6 +2,11 @@ export interface gameInfo {
   session_id: string;
   player_id: string;
 }
+
+export interface PlayerSessionPayload {
+  session_id: string;
+  player_id: string;
+}
 export interface MovePayload {
   vx: number;
   vy: number;
@@ -26,6 +31,7 @@ export interface ChatPayload {
 
 export interface FindGamePayload {
   playerId: string;
+  class: string;
 }
 
 export interface InteractPayload {

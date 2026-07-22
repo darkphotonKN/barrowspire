@@ -140,6 +140,7 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				ID:       player.MemberID,
 				EntityID: entity.ID,
 				Username: player.Username,
+				Class:    player.Class,
 				Position: &types.Position{
 					X: transform.X,
 					Y: transform.Y,

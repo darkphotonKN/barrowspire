@@ -1,5 +1,6 @@
 import { ActionType } from "@/assets/types/client";
 import { socketManager, ConnectionStatus } from "@/utils/class/SocketManager";
+import { useGameStore } from "@/stores/gameStore";
 import Phaser from "phaser";
 
 export class MainMenuScene extends Phaser.Scene {
@@ -19,6 +20,13 @@ export class MainMenuScene extends Phaser.Scene {
   private queuePeopleText?: Phaser.GameObjects.Text;
   private queueOverlay?: Phaser.GameObjects.Rectangle;
   private queuePopupContainer?: Phaser.GameObjects.Container;
+  private classButtons: {
+    key: string;
+    bg: Phaser.GameObjects.Graphics;
+    text: Phaser.GameObjects.Text;
+    descText: Phaser.GameObjects.Text;
+    hitArea: Phaser.GameObjects.Rectangle;
+  }[] = [];
 
   constructor() {
     super({ key: "MainMenuScene" });
@@ -138,7 +146,7 @@ export class MainMenuScene extends Phaser.Scene {
 
     // Button background (rounded rect via graphics)
     const btnX = width / 2;
-    const btnY = height / 2 + 50;
+    const btnY = height / 2 + 115;
     const btnW = 220;
     const btnH = 50;
 
@@ -234,7 +242,7 @@ export class MainMenuScene extends Phaser.Scene {
 
     // Manage Loadout button
     const loadoutBtnX = width / 2;
-    const loadoutBtnY = height / 2 + 115;
+    const loadoutBtnY = height / 2 + 175;
     const loadoutBtnW = 180;
     const loadoutBtnH = 36;
 
@@ -301,12 +309,145 @@ export class MainMenuScene extends Phaser.Scene {
       },
     );
     versionText.setOrigin(0.5);
+
+    // Create the Class Selector UI
+    this.createClassSelector();
+  }
+
+  private createClassSelector(): void {
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+
+    // Label "SELECT YOUR CLASS"
+    const labelY = height / 2 - 15;
+    const label = this.add.text(width / 2, labelY, "SELECT YOUR CLASS", {
+      fontSize: "12px",
+      color: "#8a7d5c",
+      letterSpacing: 4,
+    });
+    label.setOrigin(0.5);
+
+    const classes = [
+      { key: "warrior", label: "WARRIOR", desc: "High Health & Defense" },
+      { key: "mage", label: "MAGE", desc: "High Mana & Range" },
+      { key: "archer", label: "ARCHER", desc: "High Speed & Range" },
+    ];
+
+    const btnW = 150;
+    const btnH = 50;
+    const spacing = 16;
+    const totalW = (btnW * classes.length) + (spacing * (classes.length - 1));
+    const startX = (width - totalW) / 2 + (btnW / 2);
+    const buttonsY = labelY + 45;
+
+    classes.forEach((cls, idx) => {
+      const x = startX + idx * (btnW + spacing);
+
+      // Create graphics for button background/border
+      const bg = this.add.graphics();
+
+      // Create text for class name
+      const text = this.add.text(x, buttonsY - 10, cls.label, {
+        fontSize: "13px",
+        color: "#e8a14d",
+        fontStyle: "bold",
+        letterSpacing: 2,
+      });
+      text.setOrigin(0.5);
+
+      // Create subtext/description
+      const descText = this.add.text(x, buttonsY + 12, cls.desc, {
+        fontSize: "8px",
+        color: "#52555c",
+        letterSpacing: 1,
+      });
+      descText.setOrigin(0.5);
+
+      // Invisible hit area for clicks
+      const hitArea = this.add.rectangle(x, buttonsY, btnW, btnH, 0x000000, 0);
+      hitArea.setInteractive({ useHandCursor: true });
+
+      const btnObj = { key: cls.key, bg, text, descText, hitArea };
+      this.classButtons.push(btnObj);
+
+      // Hover / Out events
+      hitArea.on("pointerover", () => {
+        this.drawClassButton(btnObj, true);
+      });
+
+      hitArea.on("pointerout", () => {
+        this.drawClassButton(btnObj, false);
+      });
+
+      hitArea.on("pointerdown", () => {
+        useGameStore.getState().setSelectedClass(cls.key);
+        this.updateClassSelection();
+      });
+    });
+
+    // Draw initial state
+    this.updateClassSelection();
+  }
+
+  private drawClassButton(
+    btn: {
+      key: string;
+      bg: Phaser.GameObjects.Graphics;
+      text: Phaser.GameObjects.Text;
+      descText: Phaser.GameObjects.Text;
+      hitArea: Phaser.GameObjects.Rectangle;
+    },
+    isHovered: boolean
+  ): void {
+    const isSelected = useGameStore.getState().selectedClass === btn.key;
+    const bg = btn.bg;
+    const x = btn.hitArea.x;
+    const y = btn.hitArea.y;
+    const w = btn.hitArea.width;
+    const h = btn.hitArea.height;
+
+    bg.clear();
+
+    // Determine colors
+    let fillColor = 0x141210;
+    let strokeColor = 0x2a231b;
+    let strokeAlpha = 0.6;
+    let textColor = "#8a7d5c";
+    let descColor = "#52555c";
+
+    if (isSelected) {
+      fillColor = 0x241d17;
+      strokeColor = 0xe8a14d;
+      strokeAlpha = 0.9;
+      textColor = "#e8a14d";
+      descColor = "#8a7d5c";
+    } else if (isHovered) {
+      fillColor = 0x1c1712;
+      strokeColor = 0x8a7d5c;
+      strokeAlpha = 0.8;
+      textColor = "#e8a14d";
+      descColor = "#8a7d5c";
+    }
+
+    bg.fillStyle(fillColor, 1);
+    bg.fillRoundedRect(x - w / 2, y - h / 2, w, h, 4);
+    bg.lineStyle(1, strokeColor, strokeAlpha);
+    bg.strokeRoundedRect(x - w / 2, y - h / 2, w, h, 4);
+
+    btn.text.setColor(textColor);
+    btn.descText.setColor(descColor);
+  }
+
+  private updateClassSelection(): void {
+    this.classButtons.forEach((btn) => {
+      this.drawClassButton(btn, false);
+    });
   }
 
   private drawButton(fill: number, stroke: number, glowColor?: number): void {
     const width = this.cameras.main.width;
     const btnX = width / 2 - 110;
-    const btnY = this.cameras.main.height / 2 + 50 - 25;
+    const btnY = this.cameras.main.height / 2 + 115 - 25;
     const btnW = 220;
     const btnH = 50;
 
@@ -404,7 +545,8 @@ export class MainMenuScene extends Phaser.Scene {
 
     hitArea.on("pointerdown", () => {
       if (this.isConnected) {
-        socketManager.sendMessage(ActionType.Find_Game, { playerId: "1" });
+        const selectedClass = useGameStore.getState().selectedClass;
+        socketManager.sendMessage(ActionType.Find_Game, { playerId: "1", class: selectedClass });
         this.queuePopup();
       }
     });
@@ -420,6 +562,7 @@ export class MainMenuScene extends Phaser.Scene {
     if (this.glowTween) {
       this.glowTween.destroy();
     }
+    this.classButtons = [];
   }
 
   queuePopup() {
