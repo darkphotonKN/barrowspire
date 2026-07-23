@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // INBOUND Adapter
@@ -53,9 +54,16 @@ func (h *Handler) GetAccount(ctx context.Context, req *pb.GetAccountRequest) (*p
 		return nil, mapError(ctx, err)
 	}
 
-	// TODO: map to pb
+	proto := pb.GetAccountResponse{
+		Id:            res.ID.String(),
+		MemberId:      res.MemberID.String(),
+		Gold:          int64(res.Gold),
+		HeldGold:      int64(res.HeldGold),
+		AvailableGold: int64(res.AvailableGold),
+		CreatedAt:     timestamppb.New(res.CreatedAt),
+	}
 
-	return nil, nil
+	return &proto, nil
 }
 
 func mapError(ctx context.Context, err error) error {
@@ -102,6 +110,6 @@ func mapError(ctx context.Context, err error) error {
 		logLevel = slog.LevelError
 	}
 
-	slog.Log(ctx, logLevel, msg, "code", code)
+	slog.Log(ctx, logLevel, "rpc error", "err", err, "code", code.String())
 	return status.Error(code, msg)
 }

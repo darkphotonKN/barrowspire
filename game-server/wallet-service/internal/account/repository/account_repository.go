@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
@@ -170,20 +171,27 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 
 	// diff account
 	changes := r.diffAccount(&before, &after)
+
+	// not possible in practice, but guard for exceptions
+	if changes == nil {
+		return account.ErrCorruptAccountState
+	}
+
+	if changes.IsEmpty() {
+		return nil
+	}
+
 	slog.Debug("checking account changes in save method", "changes", changes)
 
-	wipQuery := `
+	accountQuery := `
 	UPDATE accounts
 	SET gold = $1, version = version + 1
 	WHERE id = $2 AND version = $3
 	`
 
-	// TODO: changes.gold could be nil
-	return commonhelpers.ExecTx(ctx, r.db, &sql.TxOptions{
-		Isolation: sql.LevelRepeatableRead,
-	}, func(tx *sqlx.Tx) error {
+	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
 		// update account
-		res, err := tx.ExecContext(ctx, wipQuery, changes.gold, after.ID, changes.expectedVersion)
+		res, err := tx.ExecContext(ctx, accountQuery, after.Gold, after.ID, changes.expectedVersion)
 
 		if err != nil {
 			return commonhelpers.WrapDBErr("account", "save", err)
@@ -195,14 +203,29 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 			return account.ErrConcurrentModification
 		}
 
-		// TODO: update holds
-		var newHoldsQuery string
-		for _, hold := range changes.newHolds {
-			slog.Debug("temp", newHoldsQuery, hold)
+		// new holds
+		newHoldsQuery := `
+		INSERT INTO wallet_holds (id, account_id, bid_id, status, amount, expired_at, created_at, updated_at)
+		VALUES (:id, :account_id, :bid_id, :status, :amount, :expired_at, :created_at, :updated_at)
+		`
+		res, err = tx.NamedExecContext(ctx, newHoldsQuery, changes.newHolds)
+		n, _ = res.RowsAffected()
 
+		if n == 0 {
+			return account.ErrConcurrentModification
 		}
 
-		return nil
+		// changed holds
+		changedHoldsQuery := `
+		UPDATE wallet_holds
+		SET status = $1, updated_at = $2
+		WHERE id = $3 AND account_id = $4
+		`
+
+		for _, changes := range changes.holdsUpdated {
+		}
+
+		return commonhelpers.WrapDBErr("account", "save", err)
 	})
 }
 
@@ -211,13 +234,17 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 type AccountChanges struct {
 	// account changes
 	gold            *int
-	expectedVersion *int
+	expectedVersion int
 
 	// holds that changed
 	holdsUpdated []*holdChanges
 
 	// holds added
 	newHolds []*HoldsRow
+}
+
+func (c *AccountChanges) IsEmpty() bool {
+	return c.gold == nil && len(c.holdsUpdated) == 0 && len(c.newHolds) == 0
 }
 
 type holdChanges struct {
@@ -290,10 +317,9 @@ func (r *AccountRepository) diffAccount(before, after *account.AccountSnapshot) 
 
 	}
 
-	return &AccountChanges{
-		gold:            changes.gold,
-		expectedVersion: &before.Version,
-		holdsUpdated:    updatedHolds,
-		newHolds:        newHolds,
-	}
+	changes.newHolds = newHolds
+	changes.holdsUpdated = updatedHolds
+	changes.expectedVersion = before.Version
+
+	return changes
 }
