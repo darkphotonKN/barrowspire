@@ -164,6 +164,9 @@ func (x *CreateCharacterRequest) GetClass() string {
 
 type CreateCharacterResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	ID            string                 `protobuf:"bytes,1,opt,name=ID,proto3" json:"ID,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Class         string                 `protobuf:"bytes,3,opt,name=class,proto3" json:"class,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -198,6 +201,27 @@ func (*CreateCharacterResponse) Descriptor() ([]byte, []int) {
 	return file_api_proto_character_character_proto_rawDescGZIP(), []int{3}
 }
 
+func (x *CreateCharacterResponse) GetID() string {
+	if x != nil {
+		return x.ID
+	}
+	return ""
+}
+
+func (x *CreateCharacterResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateCharacterResponse) GetClass() string {
+	if x != nil {
+		return x.Class
+	}
+	return ""
+}
+
 var File_api_proto_character_character_proto protoreflect.FileDescriptor
 
 const file_api_proto_character_character_proto_rawDesc = "" +
@@ -209,8 +233,11 @@ const file_api_proto_character_character_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"B\n" +
 	"\x16CreateCharacterRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
-	"\x05class\x18\x02 \x01(\tR\x05class\"\x19\n" +
-	"\x17CreateCharacterResponse2\xa0\x01\n" +
+	"\x05class\x18\x02 \x01(\tR\x05class\"S\n" +
+	"\x17CreateCharacterResponse\x12\x0e\n" +
+	"\x02ID\x18\x01 \x01(\tR\x02ID\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05class\x18\x03 \x01(\tR\x05class2\xa0\x01\n" +
 	"\x10CharacterService\x12:\n" +
 	"\x0eListCharacters\x12\x16.google.protobuf.Empty\x1a\x10.items.Character\x12P\n" +
 	"\x0fCreateCharacter\x12\x1d.items.CreateCharacterRequest\x1a\x1e.items.CreateCharacterResponseBCZAgithub.com/darkphotonKN/barrowspire-server/common/api/proto/itemsb\x06proto3"

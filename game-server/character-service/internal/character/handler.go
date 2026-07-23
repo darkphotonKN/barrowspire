@@ -4,7 +4,6 @@ import (
 	"golang.org/x/net/context"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/character"
-	"github.com/google/uuid"
 )
 
 type Handler struct {
@@ -13,25 +12,34 @@ type Handler struct {
 }
 
 type Service interface {
-	GetCharacter(ctx context.Context, id uuid.UUID) (*pb.Character, error)
+	CreateCharacter(ctx context.Context, req *Character) (*Character, error)
 }
 
 func NewHandler(service Service) *Handler {
 	return &Handler{service: service}
 }
 
-func (h *Handler) GetExample(ctx context.Context, req *pb.GetCharacterRequest) (*pb.Character, error) {
-	id, err := uuid.Parse(req.Id)
+func (h *Handler) CreateCharacter(ctx context.Context, req *pb.CreateCharacterRequest) (*pb.CreateCharacterResponse, error) {
+	// id, err := uuid.Parse(req.Id)
+
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	character := &Character{
+		Name:    req.Name,
+		ClassID: req.Class,
+	}
+	result, err := h.service.CreateCharacter(ctx, character)
 
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := h.service.GetCharacter(ctx, id)
-
-	if err != nil {
-		return nil, err
+	response := &pb.CreateCharacterResponse{
+		ID:    result.ID,
+		Class: result.ClassID,
+		Name:  result.Name,
 	}
-
-	return result, nil
+	return response, nil
 }

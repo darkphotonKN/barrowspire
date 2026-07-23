@@ -22,4 +22,8 @@ message CreateCharacterRequest {
   string class = 2;
 }
 
-message CreateCharacterResponse {}
+message CreateCharacterResponse {
+  string ID = 1;
+  string name = 2; 
+  string class = 3;
+}
