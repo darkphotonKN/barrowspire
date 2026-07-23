@@ -10,6 +10,8 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
+
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/character"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -154,5 +156,12 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	itemRoutes.PUT("/loadout", itemHandler.UpdateLoadoutHandler)
 	itemRoutes.GET("/instances", itemHandler.ListItemInstancesHandler)
 
+	// --- CHARACTERS MICROSERVICE ---
+
+	characterClient := character.NewClient(registry)
+	characterHandler := character.NewHandler(characterClient)
+
+	characterRoutes := api.Group("/character")
+	characterRoutes.POST("/", characterHandler.CreateCharacterHandler)
 	return router
 }
