@@ -24,7 +24,7 @@ func wrapDBErr(op string, err error) error {
 	return commonhelpers.WrapDBErr("character repo", op, err)
 }
 
-func (r *repository) Create(character *CharacterCreate) (*Character, error) {
+func (r *repository) CreateCharacter(character *Character) (*Character, error) {
 	now := time.Now()
 	characterModel := &Character{
 		ID:        uuid.New().String(),
@@ -43,12 +43,13 @@ func (r *repository) Create(character *CharacterCreate) (*Character, error) {
 		query,
 		characterModel.ID,
 		characterModel.Name,
+		characterModel.ClassID,
 		characterModel.CreatedAt,
 		characterModel.UpdatedAt,
 	).StructScan(characterModel)
 
 	if err != nil {
-		return nil, wrapDBErr("create character", err)
+		return nil, wrapDBErr("db create character", err)
 	}
 
 	return characterModel, nil
