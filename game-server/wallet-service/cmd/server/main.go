@@ -4,17 +4,22 @@ import (
 	"context"
 	"log"
 	"net"
+	"os"
 	"time"
 
+	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
+	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/config"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 var (
@@ -66,7 +71,21 @@ func main() {
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
 	// --- grpc ---
-	grpcServer := grpc.NewServer()
+
+	// -- middleware --
+	validate := commonauth.NewValidator([]byte(os.Getenv("JWT_SECRET")))
+
+	// -- server --
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			// TODO: add logger
+			commoninterceptor.Recovery(),
+			commonauth.Auth(validate),
+		),
+	)
+
+	pb.RegisterWalletServiceServer(grpcServer, svc.AccountHandler)
+	reflection.Register(grpcServer)
 
 	// create a network listener to this service
 	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
