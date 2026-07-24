@@ -186,13 +186,13 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 
 	accountQuery := `
 	UPDATE accounts
-	SET gold = $1, version = version + 1
-	WHERE id = $2 AND version = $3
+	SET gold = $1, version = version + 1, updated_at = $2
+	WHERE id = $3 AND version = $4
 	`
 
 	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
 		// -- update account --
-		res, err := tx.ExecContext(ctx, accountQuery, after.Gold, after.ID, changes.expectedVersion)
+		res, err := tx.ExecContext(ctx, accountQuery, after.Gold, after.UpdatedAt, after.ID, changes.expectedVersion)
 
 		if err != nil {
 			return commonhelpers.WrapDBErr("account", "save", err)
@@ -233,13 +233,10 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 		statuses := make([]string, 0, len(changes.holdsUpdated))
 		updatedAts := make([]time.Time, 0, len(changes.holdsUpdated))
 
-		// TODO: need to update to after.updatedAt determined inside domain
-		now := time.Now()
-
 		for _, hold := range changes.holdsUpdated {
 			ids = append(ids, hold.id.String())
 			statuses = append(statuses, string(*hold.status))
-			updatedAts = append(updatedAts, now)
+			updatedAts = append(updatedAts, hold.updatedAt)
 		}
 
 		changedHoldsQuery := `
@@ -281,8 +278,9 @@ func (c *AccountChanges) IsEmpty() bool {
 }
 
 type holdChanges struct {
-	id     uuid.UUID // id to track which holds changed
-	status *account.WalletHoldStatus
+	id        uuid.UUID // id to track which holds changed
+	status    *account.WalletHoldStatus
+	updatedAt time.Time
 }
 
 func (r *AccountRepository) diffAccount(before, after *account.AccountSnapshot) *AccountChanges {
@@ -336,6 +334,11 @@ func (r *AccountRepository) diffAccount(before, after *account.AccountSnapshot) 
 			}
 
 			if afterHold.Status != beforeHold.Status {
+				updatedHold.status = &afterHold.Status
+				isChanged = true
+			}
+
+			if afterHold.UpdatedAt != beforeHold.UpdatedAt {
 				updatedHold.status = &afterHold.Status
 				isChanged = true
 			}
