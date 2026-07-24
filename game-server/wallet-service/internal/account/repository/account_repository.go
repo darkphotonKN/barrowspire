@@ -12,6 +12,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/domain/account"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
 type AccountRepository struct {
@@ -190,43 +191,75 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 	`
 
 	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
-		// update account
+		// -- update account --
 		res, err := tx.ExecContext(ctx, accountQuery, after.Gold, after.ID, changes.expectedVersion)
 
 		if err != nil {
 			return commonhelpers.WrapDBErr("account", "save", err)
 		}
 
-		n, _ := res.RowsAffected()
+		n, err := res.RowsAffected()
 
+		if err != nil {
+			return fmt.Errorf("account save, rows affected: %w", err)
+		}
+
+		// race detected
 		if n == 0 {
 			return account.ErrConcurrentModification
 		}
 
-		// new holds
-		newHoldsQuery := `
+		// -- insert new holds --
+		if len(changes.newHolds) != 0 {
+			newHoldsQuery := `
 		INSERT INTO wallet_holds (id, account_id, bid_id, status, amount, expired_at, created_at, updated_at)
 		VALUES (:id, :account_id, :bid_id, :status, :amount, :expired_at, :created_at, :updated_at)
 		`
-		res, err = tx.NamedExecContext(ctx, newHoldsQuery, changes.newHolds)
-		n, _ = res.RowsAffected()
+			_, err = tx.NamedExecContext(ctx, newHoldsQuery, changes.newHolds)
 
-		if n == 0 {
-			return account.ErrConcurrentModification
+			if err != nil {
+				return commonhelpers.WrapDBErr("account", "save", err)
+			}
+
+		}
+		// -- update existing holds --
+
+		if len(changes.holdsUpdated) == 0 {
+			return nil
 		}
 
-		// changed holds
+		// create unnest required vertical slices
+		ids := make([]string, 0, len(changes.holdsUpdated))
+		statuses := make([]string, 0, len(changes.holdsUpdated))
+		updatedAts := make([]time.Time, 0, len(changes.holdsUpdated))
+
+		// TODO: need to update to after.updatedAt determined inside domain
+		now := time.Now()
+
+		for _, hold := range changes.holdsUpdated {
+			ids = append(ids, hold.id.String())
+			statuses = append(statuses, string(*hold.status))
+			updatedAts = append(updatedAts, now)
+		}
+
 		changedHoldsQuery := `
-		UPDATE wallet_holds
-		SET status = $1, updated_at = $2
-		WHERE id = $3 AND account_id = $4
+		UPDATE wallet_holds h
+		SET status = v.status,
+			updated_at = v.updated_at
+		FROM unnest($1::uuid[], $2::text[], $3::timestamptz[])
+		AS v(id, status, updated_at)
+		WHERE v.id = h.id
 		`
 
-		for _, changes := range changes.holdsUpdated {
+		_, err = tx.ExecContext(ctx, changedHoldsQuery, pq.Array(ids), pq.Array(statuses), pq.Array(updatedAts))
+
+		if err != nil {
+			return commonhelpers.WrapDBErr("account", "save", err)
 		}
 
-		return commonhelpers.WrapDBErr("account", "save", err)
+		return nil
 	})
+
 }
 
 // using pointers to signify change
