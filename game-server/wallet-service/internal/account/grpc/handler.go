@@ -17,7 +17,6 @@ import (
 )
 
 // INBOUND Adapter
-
 type Handler struct {
 	// grpc
 	pb.UnimplementedWalletServiceServer
@@ -27,15 +26,18 @@ type Handler struct {
 
 	// write
 	createAccountUC *usecase.CreateAccountUC
+	placeHoldUC     *usecase.PlaceHoldUC
 }
 
 type AccountReader interface {
 	Execute(ctx context.Context, memberID uuid.UUID) (*dto.AccountDetails, error)
 }
 
-func NewHandler(createAccountUC *usecase.CreateAccountUC, accountReader AccountReader) *Handler {
+func NewHandler(createAccountUC *usecase.CreateAccountUC, placeHoldUC *usecase.PlaceHoldUC, accountReader AccountReader) *Handler {
+
 	return &Handler{
 		createAccountUC: createAccountUC,
+		placeHoldUC:     placeHoldUC,
 		accountReader:   accountReader,
 	}
 }

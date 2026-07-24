@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"time"
@@ -16,6 +17,7 @@ import (
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/config"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account"
+	appConfig "github.com/darkphotonKN/barrowspire-server/wallet-service/internal/config"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
@@ -36,6 +38,11 @@ var (
 )
 
 func main() {
+	// --- logger ---
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+
 	// --- database setup ---
 
 	db := config.InitDB()
@@ -70,6 +77,9 @@ func main() {
 
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
+	// --- services setup ---
+	services := appConfig.NewServices(ctx, db)
+
 	// --- grpc ---
 
 	// -- middleware --
@@ -78,13 +88,12 @@ func main() {
 	// -- server --
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
-			// TODO: add logger
-			commoninterceptor.Recovery(),
+			commoninterceptor.Recovery(slog.Default()),
 			commonauth.Auth(validate),
 		),
 	)
 
-	pb.RegisterWalletServiceServer(grpcServer, svc.AccountHandler)
+	pb.RegisterWalletServiceServer(grpcServer, services.AccHandler)
 	reflection.Register(grpcServer)
 
 	// create a network listener to this service

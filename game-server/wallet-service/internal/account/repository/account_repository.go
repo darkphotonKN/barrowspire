@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
