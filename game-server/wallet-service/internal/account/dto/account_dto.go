@@ -11,10 +11,10 @@ import (
 // The shape should also be structured for the client, not match
 // the table and later re-mapped.
 type AccountDetails struct {
-	ID            uuid.UUID `db:"id"`
+	ID            uuid.UUID `db:"account_id"`
 	MemberID      uuid.UUID `db:"member_id"`
 	Gold          int       `db:"gold"`
 	HeldGold      int       `db:"held_gold"`
-	AvailableGold int       // calculated, not directly from sql query, no tags
+	AvailableGold int       `db:"available_gold"`
 	CreatedAt     time.Time `db:"created_at"`
 }
