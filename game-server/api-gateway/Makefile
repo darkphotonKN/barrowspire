@@ -13,6 +13,9 @@ build:
 run: build
 	@./bin/community-builds
 
+dev:
+	@air
+
 # Run tests with verbose output and coverage
 test:
 	@go test -v ./... -cover
@@ -61,7 +64,7 @@ migrate-create:
 	fi; \
 	migrate create -ext sql -dir migrations -seq $(NAME)
 
-.PHONY: run test migrate-up migrate-down migrate-status migrate-down-to migrate-reset migrate-create
+.PHONY: run dev test migrate-up migrate-down migrate-status migrate-down-to migrate-reset migrate-create
 
 
 

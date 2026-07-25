@@ -39,7 +39,7 @@ type HoldsRow struct {
 	BidID     uuid.UUID `db:"bid_id"`
 	Status    string    `db:"status"`
 	Amount    int       `db:"amount"`
-	ExpiredAt time.Time `db:"expired_at"`
+	ExpiredAt time.Time `db:"expiry_date"`
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
 }
@@ -82,10 +82,10 @@ func (r *AccountRepository) FindByID(ctx context.Context, id uuid.UUID) (*accoun
 		bid_id,
 		status,
 		amount,
-		expired_at,
-		created_at, 
+		expiry_date,
+		created_at,
 		updated_at
-	FROM wallet_holds 
+	FROM wallet_hold
 	WHERE account_id = $1
 	`
 
@@ -211,8 +211,8 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 		// -- insert new holds --
 		if len(changes.newHolds) != 0 {
 			newHoldsQuery := `
-		INSERT INTO wallet_holds (id, account_id, bid_id, status, amount, expired_at, created_at, updated_at)
-		VALUES (:id, :account_id, :bid_id, :status, :amount, :expired_at, :created_at, :updated_at)
+		INSERT INTO wallet_hold (id, account_id, bid_id, status, amount, expiry_date, created_at, updated_at)
+		VALUES (:id, :account_id, :bid_id, :status, :amount, :expiry_date, :created_at, :updated_at)
 		`
 			_, err = tx.NamedExecContext(ctx, newHoldsQuery, changes.newHolds)
 
@@ -239,7 +239,7 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 		}
 
 		changedHoldsQuery := `
-		UPDATE wallet_holds h
+		UPDATE wallet_hold h
 		SET status = v.status,
 			updated_at = v.updated_at
 		FROM unnest($1::uuid[], $2::text[], $3::timestamptz[])
