@@ -16,9 +16,9 @@ var (
 type WalletHoldStatus string
 
 const (
-	StatusCommited WalletHoldStatus = "commited"
-	StatusReserved WalletHoldStatus = "reserved"
-	StatusReleased WalletHoldStatus = "released"
+	StatusCommitted WalletHoldStatus = "COMMITTED"
+	StatusReserved  WalletHoldStatus = "RESERVED"
+	StatusReleased  WalletHoldStatus = "RELEASED"
 )
 
 const (
@@ -40,7 +40,7 @@ type WalletHold struct {
 // private, only account the aggregate root can access
 func newWalletHold(bidID uuid.UUID, accountID uuid.UUID, amount int, now time.Time) (*WalletHold, error) {
 	// invariants
-	if amount < 0 {
+	if amount <= 0 {
 		return nil, ErrInvalidAmount
 	}
 
