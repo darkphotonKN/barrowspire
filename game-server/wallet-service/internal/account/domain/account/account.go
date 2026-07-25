@@ -11,7 +11,7 @@ import (
 var (
 	ErrInvalidGold            = errors.New("invalid gold")
 	ErrInvalidUUID            = errors.New("invalid uuid")
-	ErrHoldsExceedBalanace    = errors.New("holds exceed balace")
+	ErrHoldsExceedBalance     = errors.New("holds exceed balace")
 	ErrCorruptAccountState    = errors.New("corrupt account state")
 	ErrConcurrentModification = errors.New("concurrent modification")
 )
@@ -106,7 +106,7 @@ func (a *Account) PlaceHold(id uuid.UUID, amount int, bidId uuid.UUID, now time.
 	availableGold := a.getAvailableGold()
 
 	if availableGold < amount {
-		return ErrHoldsExceedBalanace
+		return ErrHoldsExceedBalance
 	}
 
 	// attempt to birth wallethold, validates through invariants internally

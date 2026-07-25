@@ -13,6 +13,7 @@ func NewValidator(secret []byte) func(string) (uuid.UUID, error) {
 	return func(tokenStr string) (uuid.UUID, error) {
 		claims := jwt.RegisteredClaims{}
 		_, err := jwt.ParseWithClaims(tokenStr, &claims, func(t *jwt.Token) (any, error) {
+			// TODO: READ UP
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 			}
