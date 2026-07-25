@@ -268,4 +268,4 @@ CLAUDE.md
 /*.postman_collection.json
 
 .skills/
-*.md
+*.md.audit/reports/
