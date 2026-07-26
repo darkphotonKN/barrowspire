@@ -20,9 +20,10 @@ type Services struct {
 func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	accountRepo := accountrepo.NewAccountRepository(db)
 	placeHoldUC := usecase.NewPlaceHoldUC(accountRepo)
+	releaseHoldUC := usecase.NewReleaseHoldUC(accountRepo)
 	createAccUC := usecase.NewCreateAccountUC(accountRepo)
 	getAccQuery := accountquery.NewGetAccountQuery(db)
-	accHandler := accountgrpc.NewHandler(createAccUC, placeHoldUC, getAccQuery)
+	accHandler := accountgrpc.NewHandler(createAccUC, placeHoldUC, releaseHoldUC, getAccQuery)
 
 	return &Services{
 		AccHandler: accHandler,

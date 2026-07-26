@@ -28,17 +28,19 @@ type Handler struct {
 	// write
 	createAccountUC *usecase.CreateAccountUC
 	placeHoldUC     *usecase.PlaceHoldUC
+	releaseHoldUC   *usecase.ReleaseHoldUC
 }
 
 type AccountReader interface {
 	Execute(ctx context.Context, memberID uuid.UUID) (*dto.AccountDetails, error)
 }
 
-func NewHandler(createAccountUC *usecase.CreateAccountUC, placeHoldUC *usecase.PlaceHoldUC, accountReader AccountReader) *Handler {
+func NewHandler(createAccountUC *usecase.CreateAccountUC, placeHoldUC *usecase.PlaceHoldUC, releaseHoldUC *usecase.ReleaseHoldUC, accountReader AccountReader) *Handler {
 
 	return &Handler{
 		createAccountUC: createAccountUC,
 		placeHoldUC:     placeHoldUC,
+		releaseHoldUC:   releaseHoldUC,
 		accountReader:   accountReader,
 	}
 }
