@@ -25,7 +25,7 @@ func (q *GetAccountQuery) Execute(ctx context.Context, memberID uuid.UUID) (*dto
 
 	// LEFT JOIN so an account with no RESERVED holds still returns a row
 	// (held_gold 0, available_gold == gold) instead of no rows at all.
-	// The status filter lives in the ON clause for the same reason — in a WHERE
+	// The status filter lives in the ON clause for the same reason, in a WHERE
 	// it would discard the unmatched-account row the LEFT JOIN just preserved.
 	query := `
 	SELECT
@@ -33,13 +33,12 @@ func (q *GetAccountQuery) Execute(ctx context.Context, memberID uuid.UUID) (*dto
 		a.member_id as member_id,
 		a.gold as gold,
 		COALESCE(SUM(wh.amount), 0) as held_gold,
-		a.gold - COALESCE(SUM(wh.amount), 0) as available_gold,
-		a.created_at as created_at
+		a.gold - COALESCE(SUM(wh.amount), 0) as available_gold
 	FROM accounts as a
-	LEFT JOIN wallet_hold as wh
-		ON wh.account_id = a.id AND wh.status = 'RESERVED'
-	WHERE a.member_id = $1
-	GROUP BY a.id, a.member_id, a.gold, a.created_at
+	LEFT JOIN wallet_holds as wh
+	ON wh.account_id = a.id AND wh.status = 'RESERVED'
+	WHERE a.member_id = $1 
+	GROUP BY a.id, a.member_id, a.gold
 	`
 
 	var res dto.AccountDetails
