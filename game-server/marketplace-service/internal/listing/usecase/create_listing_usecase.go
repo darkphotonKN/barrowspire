@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/google/uuid"
@@ -24,14 +25,16 @@ func NewCreateListingUC(repo listing.Repository) *CreateListingUC {
 }
 
 // NOTE: named {Action}{Resource}Command because its an INBOUND application WRITE intent
-type CreateAccountCommand struct {
-	MemberID uuid.UUID
-	Name     string
+type CreateListingCommand struct {
+	SellerID   uuid.UUID
+	ItemID     uuid.UUID
+	StartPrice int
+	EndsAt     time.Time
 }
 
-func (uc *CreateListingUC) Handle(ctx context.Context, cmd CreateAccountCommand) (*listing.Listing, error) {
+func (uc *CreateListingUC) Handle(ctx context.Context, cmd CreateListingCommand) (*listing.Listing, error) {
 	// birth aggregate root
-	acc, err := listing.NewListing(cmd.MemberID, cmd.Name)
+	acc, err := listing.NewListing(cmd.SellerID, cmd.ItemID, cmd.StartPrice, cmd.EndsAt)
 
 	if err != nil {
 		// propgate error with usecase context

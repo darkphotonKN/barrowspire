@@ -19,20 +19,27 @@ func NewGetListingQuery(db *sqlx.DB) *GetListingQuery {
 	}
 }
 
-func (q *GetListingQuery) Execute(ctx context.Context, memberID uuid.UUID) (*dto.ListingDetails, error) {
+func (q *GetListingQuery) Execute(ctx context.Context, sellerID uuid.UUID) (*dto.ListingDetails, error) {
 	query := `
 	SELECT 
 		id,
-		member_id,
-		name,
-		created_at
+		seller_id,
+		buyer_id,
+		item_id,
+		start_price,
+		sold_price,
+		status,
+		ends_at,
+		version,
+		created_at,
+		updated_at
 	FROM listings
-	WHERE member_id = $1
+	WHERE seller_id = $1
 	`
 
 	var res dto.ListingDetails
 
-	err := q.db.GetContext(ctx, &res, query, memberID)
+	err := q.db.GetContext(ctx, &res, query, sellerID)
 
 	if err != nil {
 		return nil, commonhelpers.WrapDBErr("listings", "get listing query", err)
