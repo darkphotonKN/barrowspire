@@ -3,10 +3,10 @@ package config
 import (
 	"context"
 
-	accountgrpc "github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/grpc"
-	accountquery "github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/query"
-	accountrepo "github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/repository"
-	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/usecase"
+	listinggrpc "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/grpc"
+	listingquery "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/query"
+	listingrepo "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/repository"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -14,15 +14,15 @@ import (
 // server start once.
 
 type Services struct {
-	AccHandler *accountgrpc.Handler
+	AccHandler *listinggrpc.Handler
 }
 
 func NewServices(ctx context.Context, db *sqlx.DB) *Services {
-	accountRepo := accountrepo.NewAccountRepository(db)
-	placeHoldUC := usecase.NewPlaceHoldUC(accountRepo)
-	createAccUC := usecase.NewCreateAccountUC(accountRepo)
-	getAccQuery := accountquery.NewGetAccountQuery(db)
-	accHandler := accountgrpc.NewHandler(createAccUC, placeHoldUC, getAccQuery)
+	listingRepo := listingrepo.NewListingRepository(db)
+	// placeHoldUC := usecase.NewPlaceHoldUC(listingRepo)
+	createAccUC := usecase.NewCreateListingUC(listingRepo)
+	getAccQuery := listingquery.NewGetListingQuery(db)
+	accHandler := listinggrpc.NewHandler(createAccUC, getAccQuery)
 
 	return &Services{
 		AccHandler: accHandler,
