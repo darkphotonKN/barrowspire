@@ -45,6 +45,32 @@ func NewHandler(createAccountUC *usecase.CreateAccountUC, placeHoldUC *usecase.P
 
 // ========================= WRITE PATHS  =========================
 
+func (h *Handler) CreateAccount(ctx context.Context, req *pb.CreateAccountRequest) (*pb.CreateAccountResponse, error) {
+	memberId, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	acc, err := h.createAccountUC.Handle(ctx, usecase.CreateAccountCommand{
+		MemberID: memberId,
+	})
+
+	if err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	snapshot := acc.Snapshot()
+
+	accountPB := &pb.CreateAccountResponse{
+		Id:        snapshot.ID.String(),
+		MemberId:  memberId.String(),
+		Gold:      int64(snapshot.Gold),
+		CreatedAt: timestamppb.New(snapshot.CreatedAt),
+	}
+
+	return accountPB, nil
+}
+
 // ========================= READ PATHS  =========================
 
 func (h *Handler) GetAccount(ctx context.Context, req *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {

@@ -1,8 +1,8 @@
 # SPECIFICATION — api-gateway
 
 > ⚠️ **GENERATED DRAFT (spec-bootstrap).** Reverse-engineered from the code on
-> 2026-07-24 — it captures what the gateway *does*, not what was necessarily
-> *intended*. Correct it, don't trust it. Lines marked `> REVIEW:` are inferences or
+> 2026-07-24 — it captures what the gateway _does_, not what was necessarily
+> _intended_. Correct it, don't trust it. Lines marked `> REVIEW:` are inferences or
 > suspected accidents that a human must confirm. This is the "run zero" baseline; future
 > `/spec-audit` runs are cheap deltas against it.
 
@@ -31,6 +31,7 @@ RabbitMQ. It is **stateless** — it owns no persistence and no domain rules. �
 ## Responsibilities vs non-responsibilities
 
 **IS:** ✅
+
 - Gin router + route groups under the `/api` prefix (plus a bare `/webhook/stripe`).
 - Middleware suite: request logging, CORS, OpenTelemetry (otelgin) tracing, JWT auth.
 - Service discovery lifecycle: Consul register / health-check / deregister.
@@ -38,6 +39,7 @@ RabbitMQ. It is **stateless** — it owns no persistence and no domain rules. �
   returning the downstream response.
 
 **IS NOT:** (anything here found in-code is legacy — see [Legacy](#legacy--to-remove))
+
 - A database owner. No migrations, no schema, no direct SQL.
 - A holder of domain/business logic. Handlers marshal request → call downstream → map response.
 - A saga orchestrator or event processor beyond publishing the signup command.
@@ -45,6 +47,7 @@ RabbitMQ. It is **stateless** — it owns no persistence and no domain rules. �
 ## Setup & lifecycle (`cmd/main.go`)
 
 On startup, in order: ✅ DONE
+
 1. Load `.env` (autoloaded), configure structured logger by `ENVIRONMENT`.
 2. Init OpenTelemetry (`OTEL_ENABLED`, `COLLECTOR_ENDPOINT`, `SERVICE_VERSION`); deferred shutdown.
 3. Register with Consul (`CONSUL_ADDR`) under service name **`api-gateway`** at `localhost:<PORT>`;
@@ -58,6 +61,7 @@ On startup, in order: ✅ DONE
 ## Middleware suite
 
 Applied in `SetupRouter`, in order: ✅ DONE
+
 1. **Request logger** — prints method, path, host for every request.
    > REVIEW: this is a raw `fmt.Println` debug middleware, not structured `slog`. Likely
    > temporary; confirm whether it should stay / become slog.
@@ -70,12 +74,13 @@ Applied in `SetupRouter`, in order: ✅ DONE
 ## Auth model
 
 `AuthMiddleware` (applied to private groups): ✅ DONE
+
 - Requires `Authorization: Bearer <jwt>`; missing/malformed → `401`.
 - Parses & validates the token with `JWT_SECRET` (HMAC); invalid/expired → `401`.
 - Extracts the `sub` claim as a UUID member id; on success sets `userId` (UUID) and
   `userIdStr` (string) on the Gin context for downstream handlers/gRPC metadata.
-> REVIEW: signing method is not asserted inside the keyfunc (accepts whatever alg the token
-> declares as long as the secret verifies). Confirm this is acceptable / matches auth-service.
+  > REVIEW: signing method is not asserted inside the keyfunc (accepts whatever alg the token
+  > declares as long as the secret verifies). Confirm this is acceptable / matches auth-service.
 
 ## HTTP surface → downstream (routing contract)
 
@@ -83,29 +88,35 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
 (the Consul service name), via gRPC unless marked AMQP. ✅ DONE
 
 **example → `examples`**
+
 - `GET /api/example/:id`, `POST /api/example`
 
 **member → `auth`** (public + private)
-- Public: `POST /api/member/signup` *(AMQP, fire-and-forget → 202)*, `POST /api/member/signin`,
+
+- Public: `POST /api/member/signup` _(AMQP, fire-and-forget → 202)_, `POST /api/member/signin`,
   `GET /api/member/check-email`
 - Private (JWT): `GET /api/member`, `PATCH /api/member/update-password`,
   `PATCH /api/member/update-info`, `POST /api/member/avatar/upload-request`,
   `POST /api/member/avatar/confirm`
 
 **stats → `stats`**
+
 - `GET /api/stats/player/:playerId`, `GET /api/stats/leaderboard`
-> REVIEW: stats routes have no `AuthMiddleware` — public by design, or missing auth?
+  > REVIEW: stats routes have no `AuthMiddleware` — public by design, or missing auth?
 
 **notification → `notification`** (JWT)
+
 - `GET /api/notification/`, `PATCH /api/notification/:id/read`, `PATCH /api/notification/read-all`
 
 **payment → `payments`** (JWT, except webhook)
+
 - `POST /api/payment/customer`, `POST /api/payment/subscription/setup`,
   `POST /api/payment/subscribe`, `GET /api/payment/subscriptions/:customerId`,
   `GET /api/payment/subscription/permission`
 - `POST /webhook/stripe` — **no auth**, no `/api` prefix (Stripe posts directly).
 
 **items → `items`** (JWT)
+
 - Query: `GET /api/items/weapons`, `GET /api/items/types`, `GET /api/items/rarities`,
   `GET /api/items/instances`, `GET /api/items/loadout`, `PUT /api/items/loadout`
 - Creation: `POST /api/items/complete-weapon`, `/complete-armor`, `/complete-consumable`
@@ -140,12 +151,13 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
 Present in the tree but **out of scope** — the gateway is declared stateless and these
 duplicate concerns now owned by dedicated services. Listed so audits don't mistake them for
 gateway behavior. ⏳ (cleanup)
+
 - `migrations/` (38 files) + `schema.sql` — includes `create_members`, `base_items`, `items`,
   etc., i.e. tables now owned by auth-service / item-service. No code in the gateway reads them.
 - `internal/models/entities.go` — local entity models with no DB behind them.
 - `docker-compose.yml`, `.air.toml`, `bin/`, `tmp/` — tooling, not behavior.
-> REVIEW: confirm none of the above is still referenced before deletion, then remove so the
-> gateway's statelessness is structural, not just aspirational.
+  > REVIEW: confirm none of the above is still referenced before deletion, then remove so the
+  > gateway's statelessness is structural, not just aspirational.
 
 ## Assumptions & open questions
 
