@@ -11,12 +11,12 @@ import (
 // the repository.go would implement the adapter, acutal concrete
 // implementation that satisfies this interface
 type Repository interface {
-	FindByID(ctx context.Context, id uuid.UUID) (*Account, error)
-	Insert(ctx context.Context, account *Account) error
+	FindByID(ctx context.Context, id uuid.UUID) (*Listing, error)
+	Insert(ctx context.Context, account *Listing) error
 
 	// CONTRACT: save must return the senintel ErrConcurrentModification to signify a
 	// race error when attempting optimisitic updates
 	// account/errors.go's IsRetriable and usecase/retry.go's withRetry relies on this
 	// to work
-	Save(ctx context.Context, acc *Account, before AccountSnapshot) error
+	Save(ctx context.Context, acc *Listing, before ListingSnapshot) error
 }
