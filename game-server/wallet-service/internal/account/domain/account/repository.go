@@ -12,6 +12,7 @@ import (
 // implementation that satisfies this interface
 type Repository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*Account, error)
+	FindByMemberID(ctx context.Context, memberID uuid.UUID) (*Account, error)
 	Insert(ctx context.Context, account *Account) error
 
 	// CONTRACT: save must return the senintel ErrConcurrentModification to signify a

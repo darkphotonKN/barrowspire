@@ -71,6 +71,12 @@ func (h *Handler) CreateAccount(ctx context.Context, req *pb.CreateAccountReques
 	return accountPB, nil
 }
 
+func (h *Handler) PlaceHold(ctx context.Context, req *pb.PlaceHoldRequest) error {
+	h.placeHoldUC.Handle(ctx, &usecase.PlaceHoldCommand{})
+
+	return nil
+}
+
 // ========================= READ PATHS  =========================
 
 func (h *Handler) GetAccount(ctx context.Context, req *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {

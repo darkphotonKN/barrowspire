@@ -39,7 +39,7 @@ type HoldsRow struct {
 	BidID     uuid.UUID `db:"bid_id"`
 	Status    string    `db:"status"`
 	Amount    int       `db:"amount"`
-	ExpiredAt time.Time `db:"expiry_date"`
+	ExpiredAt time.Time `db:"expired_at"`
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
 }
@@ -82,10 +82,10 @@ func (r *AccountRepository) FindByID(ctx context.Context, id uuid.UUID) (*accoun
 		bid_id,
 		status,
 		amount,
-		expiry_date,
+		expired_at,
 		created_at,
 		updated_at
-	FROM wallet_hold
+	FROM wallet_holds
 	WHERE account_id = $1
 	`
 
@@ -131,6 +131,97 @@ func (r *AccountRepository) FindByID(ctx context.Context, id uuid.UUID) (*accoun
 
 	if err != nil {
 		return nil, fmt.Errorf("repo findById, reconstitute : %w", err)
+	}
+
+	return reconstitutedAcc, nil
+}
+
+func (r *AccountRepository) FindByMemberID(ctx context.Context, memberID uuid.UUID) (*account.Account, error) {
+	var acc AccountRow
+	var holds []HoldsRow
+
+	err := commonhelpers.ExecTx(ctx, r.db, &sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+		ReadOnly:  true,
+	}, func(tx *sqlx.Tx) error {
+
+		// get single account
+		accountQuery := `
+	SELECT 
+		id,
+		member_id,
+		gold,
+		version,
+		created_at,
+		updated_at
+	FROM accounts
+	WHERE member_id = $1
+	`
+
+		err := tx.GetContext(ctx, &acc, accountQuery, memberID)
+
+		if err != nil {
+			return commonhelpers.WrapDBErr("account", "FindByMemberID", err)
+		}
+
+		// grab all related holds
+		// get single account
+		holdsQuery := `
+	SELECT 
+		id,
+		account_id,
+		bid_id,
+		status,
+		amount,
+		expired_at,
+		created_at,
+		updated_at
+	FROM wallet_holds
+	WHERE account_id = $1
+	`
+
+		err = tx.SelectContext(ctx, &holds, holdsQuery, acc.ID)
+
+		if err != nil {
+			return commonhelpers.WrapDBErr("account", "FindByID", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// data successfully retrieved, construct and reconstitute
+
+	reconstitutedHolds := make([]*account.HoldReconstituteParams, 0, len(holds))
+
+	for _, hold := range holds {
+		reconstitutedHolds = append(reconstitutedHolds, &account.HoldReconstituteParams{
+			ID:        hold.ID,
+			AccountID: hold.AccountID,
+			BidID:     hold.BidID,
+			Status:    account.WalletHoldStatus(hold.Status),
+			Amount:    hold.Amount,
+			ExpiredAt: hold.ExpiredAt,
+			CreatedAt: hold.CreatedAt,
+			UpdatedAt: hold.UpdatedAt,
+		})
+	}
+
+	reconstitutedAcc, err := account.Reconstitute(account.ReconstituteParams{
+		ID:        acc.ID,
+		MemberID:  acc.MemberID,
+		Gold:      acc.Gold,
+		Version:   acc.Version,
+		Holds:     reconstitutedHolds,
+		CreatedAt: acc.CreatedAt,
+		UpdatedAt: acc.UpdatedAt,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("repo findByMemberID, reconstitute : %w", err)
 	}
 
 	return reconstitutedAcc, nil
@@ -211,8 +302,8 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 		// -- insert new holds --
 		if len(changes.newHolds) != 0 {
 			newHoldsQuery := `
-		INSERT INTO wallet_hold (id, account_id, bid_id, status, amount, expiry_date, created_at, updated_at)
-		VALUES (:id, :account_id, :bid_id, :status, :amount, :expiry_date, :created_at, :updated_at)
+		INSERT INTO wallet_holds (id, account_id, bid_id, status, amount, expired_at, created_at, updated_at)
+		VALUES (:id, :account_id, :bid_id, :status, :amount, :expired_at, :created_at, :updated_at)
 		`
 			_, err = tx.NamedExecContext(ctx, newHoldsQuery, changes.newHolds)
 
@@ -239,7 +330,7 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 		}
 
 		changedHoldsQuery := `
-		UPDATE wallet_hold h
+		UPDATE wallet_holds h
 		SET status = v.status,
 			updated_at = v.updated_at
 		FROM unnest($1::uuid[], $2::text[], $3::timestamptz[])
@@ -334,17 +425,16 @@ func (r *AccountRepository) diffAccount(before, after *account.AccountSnapshot) 
 
 			if afterHold.Status != beforeHold.Status {
 				updatedHold.status = &afterHold.Status
-				isChanged = true
-			}
 
-			if afterHold.UpdatedAt != beforeHold.UpdatedAt {
-				updatedHold.status = &afterHold.Status
 				isChanged = true
 			}
 
 			if !isChanged {
 				continue
 			}
+
+			// update updatedAt when fields change
+			updatedHold.updatedAt = afterHold.UpdatedAt
 
 			// track update changes
 			updatedHolds = append(updatedHolds, updatedHold)

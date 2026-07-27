@@ -12,6 +12,8 @@ service WalletService {
   rpc CreateAccount(CreateAccountRequest) returns (CreateAccountResponse) {}
   // Get a member's account balance snapshot.
   rpc GetAccount(GetAccountRequest) returns (GetAccountResponse) {}
+  // Reserve gold against a member's account for a bid.
+  rpc PlaceHold(PlaceHoldRequest) returns (PlaceHoldResponse) {}
 }
 
 // CreateAccount
@@ -42,3 +44,15 @@ message GetAccountResponse {
   int64  available_gold = 5;  // gold - held_gold, spendable now
   google.protobuf.Timestamp created_at = 6;
 }
+
+// PlaceHold
+// The account is resolved from the authenticated member in context server-side,
+// so the caller only supplies what it owns: the amount and the bid it is for.
+message PlaceHoldRequest {
+  int64  gold   = 1;  // amount to reserve
+  string bid_id = 2;  // bid the hold is placed against
+}
+
+// Empty by design: the hold either succeeds or the call fails with a status
+// code, nothing about it is useful to the caller yet.
+message PlaceHoldResponse {}

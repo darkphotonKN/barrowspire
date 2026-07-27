@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	WalletService_CreateAccount_FullMethodName = "/wallet.WalletService/CreateAccount"
 	WalletService_GetAccount_FullMethodName    = "/wallet.WalletService/GetAccount"
+	WalletService_PlaceHold_FullMethodName     = "/wallet.WalletService/PlaceHold"
 )
 
 // WalletServiceClient is the client API for WalletService service.
@@ -33,6 +34,8 @@ type WalletServiceClient interface {
 	CreateAccount(ctx context.Context, in *CreateAccountRequest, opts ...grpc.CallOption) (*CreateAccountResponse, error)
 	// Get a member's account balance snapshot.
 	GetAccount(ctx context.Context, in *GetAccountRequest, opts ...grpc.CallOption) (*GetAccountResponse, error)
+	// Reserve gold against a member's account for a bid.
+	PlaceHold(ctx context.Context, in *PlaceHoldRequest, opts ...grpc.CallOption) (*PlaceHoldResponse, error)
 }
 
 type walletServiceClient struct {
@@ -63,6 +66,16 @@ func (c *walletServiceClient) GetAccount(ctx context.Context, in *GetAccountRequ
 	return out, nil
 }
 
+func (c *walletServiceClient) PlaceHold(ctx context.Context, in *PlaceHoldRequest, opts ...grpc.CallOption) (*PlaceHoldResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PlaceHoldResponse)
+	err := c.cc.Invoke(ctx, WalletService_PlaceHold_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WalletServiceServer is the server API for WalletService service.
 // All implementations must embed UnimplementedWalletServiceServer
 // for forward compatibility.
@@ -73,6 +86,8 @@ type WalletServiceServer interface {
 	CreateAccount(context.Context, *CreateAccountRequest) (*CreateAccountResponse, error)
 	// Get a member's account balance snapshot.
 	GetAccount(context.Context, *GetAccountRequest) (*GetAccountResponse, error)
+	// Reserve gold against a member's account for a bid.
+	PlaceHold(context.Context, *PlaceHoldRequest) (*PlaceHoldResponse, error)
 	mustEmbedUnimplementedWalletServiceServer()
 }
 
@@ -88,6 +103,9 @@ func (UnimplementedWalletServiceServer) CreateAccount(context.Context, *CreateAc
 }
 func (UnimplementedWalletServiceServer) GetAccount(context.Context, *GetAccountRequest) (*GetAccountResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetAccount not implemented")
+}
+func (UnimplementedWalletServiceServer) PlaceHold(context.Context, *PlaceHoldRequest) (*PlaceHoldResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PlaceHold not implemented")
 }
 func (UnimplementedWalletServiceServer) mustEmbedUnimplementedWalletServiceServer() {}
 func (UnimplementedWalletServiceServer) testEmbeddedByValue()                       {}
@@ -146,6 +164,24 @@ func _WalletService_GetAccount_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WalletService_PlaceHold_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlaceHoldRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).PlaceHold(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WalletService_PlaceHold_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).PlaceHold(ctx, req.(*PlaceHoldRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WalletService_ServiceDesc is the grpc.ServiceDesc for WalletService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -160,6 +196,10 @@ var WalletService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetAccount",
 			Handler:    _WalletService_GetAccount_Handler,
+		},
+		{
+			MethodName: "PlaceHold",
+			Handler:    _WalletService_PlaceHold_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
