@@ -11,9 +11,11 @@ import (
 var (
 	ErrInvalidGold            = errors.New("invalid gold")
 	ErrInvalidUUID            = errors.New("invalid uuid")
+	ErrInvalidHoldState       = errors.New("invalid hold state")
 	ErrHoldsExceedBalance     = errors.New("holds exceed balace")
 	ErrCorruptAccountState    = errors.New("corrupt account state")
 	ErrConcurrentModification = errors.New("concurrent modification")
+	ErrHoldNotFound           = errors.New("hold Not Found")
 )
 
 // --- Domain ---
@@ -121,6 +123,29 @@ func (a *Account) PlaceHold(id uuid.UUID, amount int, bidId uuid.UUID, now time.
 	a.holds = append(a.holds, newHold)
 
 	return nil
+}
+
+// release old bid
+func (a *Account) ReleaseHold(bidId uuid.UUID, now time.Time) error {
+
+	for _, hold := range a.holds {
+		if hold.bidID != bidId {
+			continue
+		}
+		// 錯誤狀態
+		if hold.status == StatusCommitted {
+			return ErrInvalidHoldState
+		}
+		// 已經做過
+		if hold.status == StatusReleased {
+			return nil
+		}
+		hold.status = StatusReleased
+		hold.updatedAt = now
+		return nil
+	}
+	// 沒找到要回傳錯誤
+	return ErrHoldNotFound
 }
 
 // --- Helpers ---

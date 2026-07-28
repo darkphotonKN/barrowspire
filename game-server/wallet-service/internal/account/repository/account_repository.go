@@ -338,7 +338,7 @@ func (r *AccountRepository) diffAccount(before, after *account.AccountSnapshot) 
 			}
 
 			if afterHold.UpdatedAt != beforeHold.UpdatedAt {
-				updatedHold.status = &afterHold.Status
+				updatedHold.updatedAt = afterHold.UpdatedAt
 				isChanged = true
 			}
 
