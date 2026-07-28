@@ -35,10 +35,10 @@ func (uc *WithdrawGoldUC) Handle(ctx context.Context, cmd *WithdrawGoldCommand) 
 		// snapshot for version
 		before := acc.Snapshot()
 
-		// attempt to place hold
+		// attempt to withdraw gold
 		err = acc.Withdraw(cmd.Gold, time.Now())
 		if err != nil {
-			return fmt.Errorf("withdraw gold usecase handle placing hold cmd account id %s : %w", cmd.ID, err)
+			return fmt.Errorf("withdraw gold usecase handle withdrawing gold cmd account id %s : %w", cmd.ID, err)
 		}
 
 		err = uc.repo.Save(ctx, acc, before)
