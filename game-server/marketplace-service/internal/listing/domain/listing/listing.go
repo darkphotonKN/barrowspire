@@ -10,6 +10,11 @@ import (
 // --- Errors ---
 var (
 	ErrInvalidUUID            = errors.New("invalid uuid")
+	ErrInvalidListingState    = errors.New("Invalid state")
+	ErrInvalidEndTime         = errors.New("Invalid endtime")
+	ErrInvalidStartPrice      = errors.New("Invalid start price")
+	ErrInvalidSoldPrice       = errors.New("Invalid sold price")
+	ErrInvalidSoldTime        = errors.New("invalid sold time")
 	ErrCorruptListingState    = errors.New("corrupt listing state")
 	ErrConcurrentModification = errors.New("concurrent modification")
 )
@@ -17,9 +22,10 @@ var (
 type ListingStatus string
 
 const (
-	StatusActive    ListingStatus = "ACTIVE"
-	StatusWithdrawn ListingStatus = "WITHDRAWN"
-	StatusSold      ListingStatus = "SOLD"
+	StatusDraft    ListingStatus = "DRAFT"
+	StatusActive   ListingStatus = "ACTIVE"
+	StatusWithdraw ListingStatus = "WITHDRAW"
+	StatusSold     ListingStatus = "SOLD"
 )
 
 type Listing struct {
@@ -60,11 +66,18 @@ type ListingSnapshot struct {
 	Version    int
 }
 
-const listingDuration = time.Hour * 24
-
-func NewListing(sellerID, itemID uuid.UUID, startPrice int, endsAt time.Time) (*Listing, error) {
+func NewListing(sellerID, itemID uuid.UUID, startPrice int, now, endsAt time.Time) (*Listing, error) {
 	if sellerID == uuid.Nil {
 		return nil, ErrInvalidUUID
+	}
+	if itemID == uuid.Nil {
+		return nil, ErrInvalidUUID
+	}
+	if !endsAt.After(now) {
+		return nil, ErrInvalidEndTime
+	}
+	if startPrice <= 0 {
+		return nil, ErrInvalidStartPrice
 	}
 
 	return &Listing{
@@ -74,28 +87,68 @@ func NewListing(sellerID, itemID uuid.UUID, startPrice int, endsAt time.Time) (*
 		itemID:     itemID,
 		startPrice: startPrice,
 		soldPrice:  nil,
-		status:     StatusActive,
-		endsAt:     time.Now().Add(listingDuration),
-		createdAt:  time.Now(),
-		updatedAt:  time.Now(),
+		status:     StatusDraft,
+		endsAt:     endsAt,
+		createdAt:  now,
+		updatedAt:  now,
 		version:    0, // births with 0, all aggregate roots start with 0
 	}, nil
 }
 
-func (a *Listing) Snapshot() ListingSnapshot {
+func (l *Listing) Snapshot() ListingSnapshot {
 	return ListingSnapshot{
-		ID:         a.id,
-		SellerID:   a.sellerID,
-		BuyerID:    a.buyerID,
-		ItemID:     a.itemID,
-		StartPrice: a.startPrice,
-		SoldPrice:  a.soldPrice,
-		Status:     a.status,
-		EndsAt:     a.endsAt,
-		Version:    a.version,
-		CreatedAt:  a.createdAt,
-		UpdatedAt:  a.updatedAt,
+		ID:         l.id,
+		SellerID:   l.sellerID,
+		BuyerID:    l.buyerID,
+		ItemID:     l.itemID,
+		StartPrice: l.startPrice,
+		SoldPrice:  l.soldPrice,
+		Status:     l.status,
+		EndsAt:     l.endsAt,
+		Version:    l.version,
+		CreatedAt:  l.createdAt,
+		UpdatedAt:  l.updatedAt,
 	}
+}
+
+func (l *Listing) PublishListing(now time.Time) error {
+	if l.status != StatusDraft {
+		return ErrInvalidListingState
+	}
+	l.status = StatusActive
+	l.updatedAt = now
+
+	return nil
+}
+
+func (l *Listing) WithdrawListing(now time.Time) error {
+	if l.status != StatusActive {
+		return ErrInvalidListingState
+	}
+	l.status = StatusWithdraw
+	l.updatedAt = now
+
+	return nil
+}
+
+func (l *Listing) MarkSoldListing(now time.Time, buyerID uuid.UUID, soldPrice int) error {
+	if l.status != StatusActive {
+		return ErrInvalidListingState
+	}
+	if buyerID == uuid.Nil {
+		return ErrInvalidUUID
+	}
+	if soldPrice <= 0 || soldPrice < l.startPrice {
+		return ErrInvalidSoldPrice
+	}
+	if l.endsAt.After(now) {
+		return ErrInvalidSoldTime
+	}
+	l.buyerID = &buyerID
+	l.soldPrice = &soldPrice
+	l.status = StatusSold
+	l.updatedAt = now
+	return nil
 }
 
 type ReconstituteParams struct {
@@ -114,7 +167,7 @@ type ReconstituteParams struct {
 
 func Reconstitute(params ReconstituteParams) (*Listing, error) {
 	// reconstitute core account from params and validated holds
-	account := Listing{
+	listing := Listing{
 		id:         params.ID,
 		sellerID:   params.SellerID,
 		buyerID:    params.BuyerID,
@@ -128,5 +181,5 @@ func Reconstitute(params ReconstituteParams) (*Listing, error) {
 		version:    params.Version,
 	}
 
-	return &account, nil
+	return &listing, nil
 }
