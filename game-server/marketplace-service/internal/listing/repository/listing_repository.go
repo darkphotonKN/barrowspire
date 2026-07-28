@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log/slog"
 	"time"
 
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
@@ -141,25 +140,15 @@ func (r *ListingRepository) Insert(ctx context.Context, listing *listing.Listing
 func (r *ListingRepository) Save(ctx context.Context, l *listing.Listing, before listing.ListingSnapshot) error {
 	after := l.Snapshot()
 
-	// diff listing
-	changes := r.diffListing(&before, &after)
-
-	// not possible in practice, but guard for exceptions
-	if changes == nil {
-		return listing.ErrCorruptListingState
-	}
-
-	slog.Debug("checking listing changes in save method", "changes", changes)
-
 	listingQuery := `
-	UPDATE listings
-	SET version = version + 1, updated_at = $1
-	WHERE id = $2 AND version = $3
-	`
+			UPDATE listings
+			SET version = version + 1, status = $1, updated_at = $2, buyer_id = $3, sold_price = $4
+			WHERE id = $5 AND version = $6
+		`
 
 	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
 		// -- update listing --
-		res, err := tx.ExecContext(ctx, listingQuery, after.UpdatedAt, after.ID, changes.expectedVersion)
+		res, err := tx.ExecContext(ctx, listingQuery, after.Status, after.UpdatedAt, after.BuyerID, after.SoldPrice, after.ID, before.Version)
 
 		if err != nil {
 			return commonhelpers.WrapDBErr("listing", "save", err)
