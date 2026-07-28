@@ -29,24 +29,31 @@ type CreateListingCommand struct {
 	SellerID   uuid.UUID
 	ItemID     uuid.UUID
 	StartPrice int
+	Now        time.Time
 	EndsAt     time.Time
 }
 
 func (uc *CreateListingUC) Handle(ctx context.Context, cmd CreateListingCommand) (*listing.Listing, error) {
 	// birth aggregate root
-	acc, err := listing.NewListing(cmd.SellerID, cmd.ItemID, cmd.StartPrice, cmd.EndsAt)
+	listingDomain, err := listing.NewListing(cmd.SellerID, cmd.ItemID, cmd.StartPrice, cmd.Now, cmd.EndsAt)
 
 	if err != nil {
 		// propgate error with usecase context
 		return nil, fmt.Errorf("create listing usecase birthing new listing : %w", err)
 	}
 
-	err = uc.repo.Insert(ctx, acc)
+	err = listingDomain.Publish(cmd.Now)
+
+	if err != nil {
+		return nil, fmt.Errorf("create listing usecase publishing listing: %w", err)
+	}
+
+	err = uc.repo.Insert(ctx, listingDomain)
 
 	if err != nil {
 		// propgate error with usecase context
 		return nil, fmt.Errorf("writing repo usecase inserting new listing : %w", err)
 	}
 
-	return acc, nil
+	return listingDomain, nil
 }
