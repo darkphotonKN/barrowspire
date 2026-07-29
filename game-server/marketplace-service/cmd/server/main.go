@@ -73,7 +73,7 @@ func main() {
 	// --- grpc ---
 	grpcServer := grpc.NewServer()
 
-	pb.RegisterMarketplaceServiceServer(grpcServer, services.AccHandler)
+	pb.RegisterMarketplaceServiceServer(grpcServer, services.ListingHandler)
 	// create a network listener to this service
 	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
 	if err != nil {
