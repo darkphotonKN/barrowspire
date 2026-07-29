@@ -111,7 +111,7 @@ func (l *Listing) Snapshot() ListingSnapshot {
 	}
 }
 
-func (l *Listing) PublishListing(now time.Time) error {
+func (l *Listing) Publish(now time.Time) error {
 	if l.status != StatusDraft {
 		return ErrInvalidListingState
 	}
@@ -121,7 +121,7 @@ func (l *Listing) PublishListing(now time.Time) error {
 	return nil
 }
 
-func (l *Listing) WithdrawListing(now time.Time) error {
+func (l *Listing) Withdraw(now time.Time) error {
 	if l.status != StatusActive {
 		return ErrInvalidListingState
 	}
@@ -131,7 +131,7 @@ func (l *Listing) WithdrawListing(now time.Time) error {
 	return nil
 }
 
-func (l *Listing) MarkSoldListing(now time.Time, buyerID uuid.UUID, soldPrice int) error {
+func (l *Listing) MarkSold(now time.Time, buyerID uuid.UUID, soldPrice int) error {
 	if l.status != StatusActive {
 		return ErrInvalidListingState
 	}
