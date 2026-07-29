@@ -14,17 +14,17 @@ import (
 // server start once.
 
 type Services struct {
-	AccHandler *listinggrpc.Handler
+	ListingHandler *listinggrpc.Handler
 }
 
 func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	listingRepo := listingrepo.NewListingRepository(db)
 	// placeHoldUC := usecase.NewPlaceHoldUC(listingRepo)
 	createAccUC := usecase.NewCreateListingUC(listingRepo)
-	getAccQuery := listingquery.NewGetListingQuery(db)
-	accHandler := listinggrpc.NewHandler(createAccUC, getAccQuery)
+	getListingQuery := listingquery.NewGetListingQuery(db)
+	listingHandler := listinggrpc.NewHandler(createAccUC, getListingQuery)
 
 	return &Services{
-		AccHandler: accHandler,
+		ListingHandler: listingHandler,
 	}
 }

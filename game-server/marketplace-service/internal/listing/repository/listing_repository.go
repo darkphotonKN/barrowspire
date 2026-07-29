@@ -175,17 +175,3 @@ type ListingChanges struct {
 	status          *listing.ListingStatus
 	updatedAt       time.Time
 }
-
-func (r *ListingRepository) diffListing(before, after *listing.ListingSnapshot) *ListingChanges {
-	if before == nil || after == nil {
-		return nil
-	}
-
-	changes := &ListingChanges{}
-
-	// --- listing differences ---
-
-	changes.expectedVersion = before.Version
-
-	return changes
-}
