@@ -111,7 +111,6 @@ func (a *Account) PlaceHold(id uuid.UUID, amount int, bidId uuid.UUID, now time.
 
 	// attempt to birth wallethold, validates through invariants internally
 	newHold, err := newWalletHold(bidId, id, amount, now)
-
 	if err != nil {
 		// propogate down domain sentinel error
 		return err
@@ -120,6 +119,30 @@ func (a *Account) PlaceHold(id uuid.UUID, amount int, bidId uuid.UUID, now time.
 	// update holds, placing it in memory, evolving aggregate
 	a.holds = append(a.holds, newHold)
 
+	return nil
+}
+
+func (a *Account) Deposit(amount int, now time.Time) error {
+	if amount <= 0 {
+		return ErrInvalidGold
+	}
+	a.gold += amount
+	a.updatedAt = now
+	return nil
+}
+
+func (a *Account) Withdraw(amount int, now time.Time) error {
+	if amount <= 0 {
+		return ErrInvalidGold
+	}
+	availableGold := a.getAvailableGold()
+
+	if availableGold < amount {
+		return ErrHoldsExceedBalance
+	}
+
+	a.gold -= amount
+	a.updatedAt = now
 	return nil
 }
 
