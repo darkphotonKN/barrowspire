@@ -6,11 +6,13 @@ import (
 	"net"
 	"time"
 
+	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/config"
+	appConfig "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/config"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
@@ -65,9 +67,13 @@ func main() {
 
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
+	// --- services setup ---
+	services := appConfig.NewServices(ctx, db)
+
 	// --- grpc ---
 	grpcServer := grpc.NewServer()
 
+	pb.RegisterMarketplaceServiceServer(grpcServer, services.AccHandler)
 	// create a network listener to this service
 	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
 	if err != nil {
