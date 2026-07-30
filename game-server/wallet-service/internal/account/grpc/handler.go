@@ -3,8 +3,10 @@ package grpc
 import (
 	"context"
 	"errors"
+	"hash/maphash"
 	"log/slog"
 
+	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/member"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
@@ -71,10 +73,32 @@ func (h *Handler) CreateAccount(ctx context.Context, req *pb.CreateAccountReques
 	return accountPB, nil
 }
 
-func (h *Handler) PlaceHold(ctx context.Context, req *pb.PlaceHoldRequest) error {
-	h.placeHoldUC.Handle(ctx, &usecase.PlaceHoldCommand{})
+func (h *Handler) PlaceHold(ctx context.Context, req *pb.PlaceHoldRequest) (*pb.PlaceHoldResponse, error) {
 
-	return nil
+	memberID, ok := commonauth.MemberIDFromCtx(ctx)
+
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	bidID, err := uuid.Parse(req.BidId)
+
+	if err != nil {
+		slog.InfoContext(ctx, "bidId from req was unparseable as a uuid", "err", err)
+		return nil, status.Error(codes.InvalidArgument, "bidId from req was unparseable as a uuid")
+	}
+
+	err = h.placeHoldUC.Handle(ctx, &usecase.PlaceHoldCommand{
+		MemberID: memberID,
+		BidID:    bidID,
+		Gold:     int(req.Gold),
+	})
+
+	if err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return nil, nil
 }
 
 // ========================= READ PATHS  =========================

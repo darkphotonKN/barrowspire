@@ -32,7 +32,7 @@ func (uc *PlaceHoldUC) Handle(ctx context.Context, cmd *PlaceHoldCommand) error 
 		acc, err := uc.repo.FindByMemberID(ctx, cmd.MemberID)
 
 		if err != nil {
-			return fmt.Errorf("placehold usecase handle FindById cmd member id %s : %w", cmd.MemberID, err)
+			return fmt.Errorf("placehold usecase handle FindByMemberID cmd member id %s : %w", cmd.MemberID, err)
 		}
 
 		// snapshot for version

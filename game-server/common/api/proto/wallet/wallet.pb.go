@@ -310,7 +310,7 @@ func (x *PlaceHoldRequest) GetBidId() string {
 }
 
 // Empty by design: the hold either succeeds or the call fails with a status
-// code, nothing about it is useful to the caller yet.
+// code. The caller addresses the hold by the bid_id it already owns.
 type PlaceHoldResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields

@@ -14,6 +14,8 @@ var (
 	ErrHoldsExceedBalance     = errors.New("holds exceed balace")
 	ErrCorruptAccountState    = errors.New("corrupt account state")
 	ErrConcurrentModification = errors.New("concurrent modification")
+	ErrHoldNotFound           = errors.New("hold not found")
+	ErrInvalidHoldTransition  = errors.New("invalid hold transition")
 )
 
 // --- Domain ---
@@ -143,6 +145,33 @@ func (a *Account) Withdraw(amount int, now time.Time) error {
 
 	a.gold -= amount
 	a.updatedAt = now
+
+	return nil
+}
+
+// commits reserved gold, deducting from the account
+func (a *Account) CommitHold(bidID uuid.UUID, now time.Time) error {
+	// validate bidID exists for the holds under the account
+	var h *WalletHold
+	for _, hold := range a.holds {
+		if bidID == hold.bidID {
+			h = hold
+			break
+		}
+	}
+
+	if h == nil {
+		return ErrHoldNotFound
+	}
+
+	// transition to commit and update hold
+	if err := h.transitionTo(StatusCommitted, now); err != nil {
+		return err
+	}
+
+	// deduct gold from total
+	a.gold = a.gold - h.amount
+
 	return nil
 }
 
