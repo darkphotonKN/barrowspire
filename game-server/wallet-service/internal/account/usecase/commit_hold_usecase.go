@@ -9,22 +9,22 @@ import (
 	"github.com/google/uuid"
 )
 
-type CommitGoldUC struct {
+type CommitHoldUC struct {
 	repo account.Repository
 }
 
-func NewCommitGoldUC(repo account.Repository) *CommitGoldUC {
-	return &CommitGoldUC{
+func NewCommitHoldUC(repo account.Repository) *CommitHoldUC {
+	return &CommitHoldUC{
 		repo: repo,
 	}
 }
 
-type CommitGoldCommand struct {
+type CommitHoldCommand struct {
 	MemberID uuid.UUID
 	BidID    uuid.UUID
 }
 
-func (uc *CommitGoldUC) Handle(ctx context.Context, cmd *CommitGoldCommand) error {
+func (uc *CommitHoldUC) Handle(ctx context.Context, cmd *CommitHoldCommand) error {
 	return withRetry(func() error {
 		// reconstitute into account aggregate
 		acc, err := uc.repo.FindByMemberID(ctx, cmd.MemberID)
