@@ -3,10 +3,8 @@ package grpc
 import (
 	"context"
 	"errors"
-	"hash/maphash"
 	"log/slog"
 
-	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/member"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
