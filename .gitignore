@@ -258,14 +258,18 @@ temp/
 *.swo
 
 # =============================================================================
-# CLAUDE.md - Internal Development Guidelines
+# Claude workspace (machine-local only)
 # =============================================================================
+# .claude/ holds per-repo settings + the skills SYMLINK into the
+# ai-software-engineering SSOT — machine-local, never versioned here.
+# CLAUDE.md and docs/ are deliberately NOT ignored: the two-tier spec system
+# (SPECIFICATION.md → docs/specs/FS-NNNN), ADRs, and tracker config are
+# conventions that must live in git next to the artifacts they govern.
 .claude/
-CLAUDE.md
+.skills/
 
-# Root-level docs and Postman collections
-/docs/
+# Postman collections
 /*.postman_collection.json
 
-.skills/
-*.md.audit/reports/
+# spec-audit run reports (baselines + OPEN.md stay tracked)
+.audit/reports/

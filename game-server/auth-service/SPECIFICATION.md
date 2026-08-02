@@ -48,6 +48,44 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
   created_at, published_at`); `published_at IS NULL` = pending.
 - **player_profile** — level/xp row, FK to member (exists in schema; **not** exposed by any RPC here).
 
+## Capabilities
+
+<!-- Thin capability index. Format authority: /docs/specs/README.md — capability names only;
+     the full RPC contracts and their REVIEW notes live in the prose sections below. -->
+
+### Membership
+
+- [x] Create a member, with the signup event published via transactional outbox
+- [x] Log in and receive an access + refresh pair
+- [x] Read a member
+- [x] Update member info
+- [x] Update member password
+- [x] Check whether an email is taken
+
+### Tokens
+
+- [x] Validate a token and return its subject
+- [ ] Reject a refresh token presented as an access credential
+
+### Avatars
+
+- [x] Request a presigned avatar upload
+- [x] Confirm an avatar upload and publish `profile.updated`
+- [ ] Authorize confirmation against the requesting member
+
+### Billing linkage
+
+- [x] Read and write a member's Stripe customer id
+- [x] Update a member's subscription status
+
+### Player profile
+
+- [ ] Expose the `player_profile` level/xp row over RPC
+
+### Messaging
+
+- [x] Consume `member.create` from `auth.events` to create members
+
 ## gRPC — AuthService contract
 
 Consul name `auth`, gRPC port default **7116** (`GRPC_AUTH_ADDR`). Proto in

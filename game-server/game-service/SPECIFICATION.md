@@ -37,7 +37,63 @@ matchmaking); this service is the engine they feed. ✅
   > the `movementSystem/combatSystem/skillSystem` fields injected in `NewSession` — those
   > injected fields are dead. Harmless (systems are stateless) but inconsistent.
 
-## ✅ Done — session & matchmaking lifecycle
+## Capabilities
+
+<!-- Thin capability index. Format authority: /docs/specs/README.md — capability names only;
+     the as-built detail for each lives in the reference sections below. -->
+
+### Session & matchmaking lifecycle
+
+- [x] Matchmaking queue
+- [x] Start a game session on match
+- [x] Build the world for a session
+- [x] Tear down a session
+- [ ] Generic instance-allocation contract (warm pool or spawn)
+- [ ] Seed run modifiers onto a roster
+- [ ] Client handoff between hub and instance
+
+### ECS world
+
+- [x] Pure-data components
+- [x] Movement system with swept-AABB collision
+- [x] Interaction system for proximate openables
+- [x] Elimination system
+- [x] Rules system governing session end
+- [ ] Combat system
+- [ ] Skill system
+
+### Gameplay actions
+
+- [x] Server-authoritative player entities
+- [x] Continuous-velocity movement
+- [ ] Apply attack damage in a combat system rather than inline
+- [ ] Item pickup
+- [ ] Equip and unequip
+
+### Transport
+
+- [x] WebSocket message hub
+
+### Results
+
+- [x] Publish match-end events via transactional outbox
+
+### Persistent world (MMO-RPG refactor)
+
+- [ ] Persistent HUB world
+- [ ] Durable accounts and profile
+- [ ] Persistent inventory across runs
+- [ ] Progression persistence
+
+### Cross-context flows
+
+- [ ] Player-to-player trade saga
+- [ ] Gear escrow across the run lifecycle
+- [ ] Start-a-delve distributed coordination
+
+---
+
+## Reference — session & matchmaking lifecycle
 
 - **Matchmaking queue** ✅ — `queueService` ticks 1/s; emits on `MatchedChan` when
   `len(players) ≥ matchSize`. Entry via hub action `find_game` → `AddPlayer`.
@@ -51,7 +107,7 @@ matchmaking); this service is the engine they feed. ✅
 - **Teardown** ✅ — `endSession` (or last-player-leave) closes the session channels, waits on
   the WaitGroup, and calls `PublishMatchComplete`.
 
-## ✅ Done — ECS world
+## Reference — ECS world
 
 - **Components** (pure data) ✅ — Player, Transform, Velocity, Health (`IsEliminated`), Skill,
   Stats (Str/Agi/Int/Kills/Deaths…), Equipment (10 slots), Item, ItemIDList, Door, Wall,
@@ -71,7 +127,7 @@ matchmaking); this service is the engine they feed. ✅
   - **CombatSystem / SkillSystem** ⏳ — **empty stubs**; `DamageCalculator` (stats-based math)
     is **dead code**, never invoked.
 
-## ✅ Done — gameplay actions (with partials)
+## Reference — gameplay actions
 
 - **Players — server-authoritative** ✅ — `CreatePlayerEntity`; server owns transform/velocity/
   health; loadout fetched at join via gRPC from items-service.
@@ -87,7 +143,7 @@ matchmaking); this service is the engine they feed. ✅
   work. **Drop and use/consume do NOT** — `pickup`/`use_item`/`drop_item` action constants exist
   but are **unhandled**.
 
-## ✅ Done — WebSocket message-hub
+## Reference — WebSocket message-hub
 
 - **Connection lifecycle** ✅ — authenticate via gRPC auth → upgrade WS → per-conn **reader**
   goroutine (`ServeConnectedPlayer`) + per-conn **writer** goroutine (buffered channel, honoring
@@ -101,7 +157,7 @@ matchmaking); this service is the engine they feed. ✅
   per-tick personalized state broadcast (serialized once via a pooled buffer, then per-player
   formatted; non-blocking send that drops on a full queue).
 
-## ✅ Done — results reporting (was filed as PLANNED)
+## Reference — results reporting
 
 - **Match-end fan-out** ✅ — `PublishMatchComplete` ranks players and publishes two protobuf
   events, **`GameMatchEnded`** and **`ItemsExtracted`** (idempotent `EventId`), to the
@@ -110,7 +166,7 @@ matchmaking); this service is the engine they feed. ✅
   > and "Extraction REWARDS fan-out" are **already implemented**. `StartedAt`/`EndedAt` are both
   > `time.Now()` at end (no real start time; TODO in code).
 
-## ⏳ Planned / Not Started (intent carried over — MMO-RPG refactor)
+## Reference — MMO-RPG refactor intent
 
 See [`/docs/refactor_plan.md`](../../docs/refactor_plan.md) for sequencing.
 

@@ -28,6 +28,7 @@ type Handler struct {
 	// write
 	createAccountUC *usecase.CreateAccountUC
 	placeHoldUC     *usecase.PlaceHoldUC
+	commitHoldUC    *usecase.CommitHoldUC
 }
 
 type AccountReader interface {
@@ -35,7 +36,6 @@ type AccountReader interface {
 }
 
 func NewHandler(createAccountUC *usecase.CreateAccountUC, placeHoldUC *usecase.PlaceHoldUC, accountReader AccountReader) *Handler {
-
 	return &Handler{
 		createAccountUC: createAccountUC,
 		placeHoldUC:     placeHoldUC,
@@ -44,6 +44,31 @@ func NewHandler(createAccountUC *usecase.CreateAccountUC, placeHoldUC *usecase.P
 }
 
 // ========================= WRITE PATHS  =========================
+
+func (h *Handler) CommitHold(ctx context.Context, req *pb.CommitHoldRequest) (*pb.CommitHoldResponse, error) {
+	memberId, ok := commonauth.MemberIDFromCtx(ctx)
+
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "identity missing")
+	}
+
+	// validation for bidId
+	bidId, err := uuid.Parse(req.BidId)
+
+	if err != nil {
+		// client's fault, an info log only not error
+		slog.InfoContext(ctx, "Commit hold bid id corrupted", "bid_id", req.BidId, "err", err)
+		return nil, status.Error(codes.InvalidArgument, "bidId from req was unparseable as a uuid.")
+	}
+
+	err = h.commitHoldUC.Handle(ctx, &usecase.CommitHoldCommand{MemberID: memberId, BidID: bidId})
+
+	if err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return &pb.CommitHoldResponse{}, nil
+}
 
 func (h *Handler) CreateAccount(ctx context.Context, req *pb.CreateAccountRequest) (*pb.CreateAccountResponse, error) {
 	memberId, ok := commonauth.MemberIDFromCtx(ctx)
@@ -72,7 +97,6 @@ func (h *Handler) CreateAccount(ctx context.Context, req *pb.CreateAccountReques
 }
 
 func (h *Handler) PlaceHold(ctx context.Context, req *pb.PlaceHoldRequest) (*pb.PlaceHoldResponse, error) {
-
 	memberID, ok := commonauth.MemberIDFromCtx(ctx)
 
 	if !ok {

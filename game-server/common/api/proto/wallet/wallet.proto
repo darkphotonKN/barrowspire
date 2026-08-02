@@ -14,6 +14,8 @@ service WalletService {
   rpc GetAccount(GetAccountRequest) returns (GetAccountResponse) {}
   // Reserve gold against a member's account for a bid.
   rpc PlaceHold(PlaceHoldRequest) returns (PlaceHoldResponse) {}
+  // Settle a bid's reserved gold, spending it for good.
+  rpc CommitHold(CommitHoldRequest) returns (CommitHoldResponse) {}
 }
 
 // CreateAccount
@@ -56,3 +58,13 @@ message PlaceHoldRequest {
 // Empty by design: the hold either succeeds or the call fails with a status
 // code. The caller addresses the hold by the bid_id it already owns.
 message PlaceHoldResponse {}
+
+// CommitHold
+// The hold is addressed by its bid, the natural idempotency key; the member is
+// derived from the authenticated context server-side.
+message CommitHoldRequest {
+  string bid_id = 1;  // bid whose hold is being settled
+}
+
+// Empty by design, same rule as PlaceHoldResponse: success or a status code.
+message CommitHoldResponse {}
