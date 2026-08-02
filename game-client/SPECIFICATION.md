@@ -28,7 +28,45 @@ The player-facing client: account/auth, profile & avatar, subscription (Stripe),
 and the **Phaser escape-run** (queue → play → resolve). Server-authoritative; the client renders
 server state and sends intents. ✅
 
-## App surface (routes) ✅
+## Capabilities
+
+<!-- Thin capability index. Format authority: /docs/specs/README.md — capability names only;
+     the route table, flows, and client-side contracts live in the reference sections below. -->
+
+### Account
+
+- [x] Register an account
+- [x] Log in and persist the session
+- [x] Guard routes behind auth
+- [x] Upload and confirm an avatar
+- [ ] Refresh an expired access token
+
+### Escape run
+
+- [x] Queue for a match
+- [x] Enter a run when matched
+- [x] Move, attack, and interact
+- [x] Equip and unequip from the loadout
+- [x] Render authoritative server state each tick
+- [x] Reconnect into an in-progress run
+
+### Billing
+
+- [x] Subscribe
+- [x] Check subscription permission
+
+### Persistent world (refactor plan)
+
+- [ ] HUB world client
+- [ ] Hub ↔ instance handoff
+
+### Deployment
+
+- [ ] Externalize the WebSocket URL and remove hardcoded hosts
+
+---
+
+## Reference — app surface (routes)
 
 All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `Header`.
 
@@ -48,7 +86,7 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 > a hydration gate; per-page `isAuthenticated`; Phaser `BootScene` token check). No route is
 > server-protected.
 
-## Key flows ✅
+## Reference — key flows
 
 - **Register → Login:** signup → poll check-email until `exists` → `/login` → signin →
   `setAuth` → `/game`. (Matches the backend's async signup: gateway publishes signup over AMQP,
@@ -64,7 +102,7 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 - **Profile/avatar:** request presigned URL → `PUT` to S3 → confirm.
 - **Subscription:** `subscribe` → Stripe `confirmCardPayment` → poll `subscription/permission` (5s ×12).
 
-## Phaser integration ✅
+## Reference — Phaser integration
 
 - **Bridge:** `PhaserGame.tsx` creates `Phaser.Game` (1080×720, pixelArt, arcade zero-gravity).
   Registered scenes: **Boot, Preload, MainMenu, Loadout, Barrowspire**. Phaser reads auth from
@@ -74,14 +112,14 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 - **BarrowspireScene** (~4.4k lines) — the gameplay: renders players/walls/doors/containers/
   switches/escape-doors, movement, combat, chests, equipment, end overlay.
 
-## State model (Zustand) ✅
+## Reference — state model (Zustand)
 
 - **`authStore`** — `{accessToken, refreshToken, memberInfo, isAuthenticated}`; **persisted** to
   `localStorage["auth-storage"]`. `memberInfo = {id,name,email,status,average_rating,avatar_url?,…}`.
 - **`gameStore`** — `{sessionId}`, in-memory; set by SocketManager on `game_found`.
 > REVIEW: `refreshToken` is stored but **never used** — no refresh flow; 401/`4001` force re-login.
 
-## External API — REST (client-side contract) ✅
+## Reference — REST contract (client side)
 
 - **Base:** `NEXT_PUBLIC_API_URL` (default `http://localhost:7114` = **api-gateway**). Auth:
   `Authorization: Bearer <accessToken>` from localStorage; `401` → logout + `/login`.
@@ -94,7 +132,7 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 > `/api/items/loadout` returns **camelCase** ids; the code comments the hazard.
 > REVIEW: notification `created_at` is sometimes a string, sometimes `{seconds,nanos}` (proto).
 
-## External API — WebSocket (client-side contract) ✅
+## Reference — WebSocket contract (client side)
 
 - **Transport:** native `WebSocket`; URL **hardcoded** `ws://localhost:5668/game/ws`; auth via
   query `?token=<jwt>&name=<name>`; server close `4001` → clear auth + `/login`.
@@ -124,7 +162,7 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 > REVIEW: client expects `exit_door_unlocked` and an `interact {success,message}` reply; the
 > game-service spec didn't surface those outbound messages — verify the server actually emits them.
 
-## ⏳ Planned / Not Started (per refactor plan)
+## Reference — refactor-plan intent
 
 - **HUB world client** — shared social/staging space UI; none exists (only the escape-run world).
 - **Hub ↔ instance handoff** — background the hub WS, connect to the instance WS, return on

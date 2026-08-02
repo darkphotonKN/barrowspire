@@ -116,14 +116,20 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [`docs/schema/listings.md`](docs/schema/listings.md)
 - [`docs/schema/bids.md`](docs/schema/bids.md)
 
-## Status
+## Capabilities
 
-### ✅ Done
-- Service scaffolded, boots, wired into infra.
+### Listings & bids
 
-### ⏳ Planned / Not started
-- **Listing + Bid domain** (hexagonal).
-- **BidPlaced saga orchestration**.
-- **Buyout** (immediate self-settlement).
-- **Auction settlement** + timeouts (scheduled AuctionEnded + hourly reconciliation).
-- **All endpoints** above.
+- [ ] Listing domain
+- [ ] Bid domain
+- [ ] Buyout (immediate self-settlement)
+
+### Auction lifecycle
+
+- [ ] BidPlaced saga orchestration
+- [ ] Auction settlement
+- [ ] Auction timeouts and reconciliation
+
+### Surface
+
+- [ ] gRPC endpoints (none exposed yet)

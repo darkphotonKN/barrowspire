@@ -21,6 +21,35 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
   listed under [Legacy / to remove](#legacy--to-remove) rather than documented as behavior.
 - Downstream services are discovered by Consul service name; the gateway is a client to each.
 
+## Capabilities
+
+<!-- Thin capability index. Format authority: /docs/specs/README.md — capability names only;
+     the routing contract and middleware detail live in the prose sections below. -->
+
+### Edge
+
+- [x] Terminate client HTTP behind a single entry point
+- [x] Request logging middleware
+- [x] CORS middleware
+- [x] OpenTelemetry tracing middleware
+- [x] JWT authentication on private route groups
+- [x] Consul register / health-check / deregister lifecycle
+
+### Downstream routing
+
+- [x] Route member traffic to auth
+- [x] Route stats traffic to stats
+- [x] Route notification traffic to notification
+- [x] Route payment traffic to payments, plus the unauthenticated Stripe webhook
+- [x] Route item traffic to items
+- [x] Route example traffic to examples
+- [ ] Route game traffic to game-service
+
+### Integration patterns
+
+- [x] gRPC fan-out over Consul-discovered clients
+- [x] AMQP fire-and-forget publish for signup
+
 ## Purpose
 
 api-gateway is the **single HTTP entry point (edge)** for the platform. It terminates client

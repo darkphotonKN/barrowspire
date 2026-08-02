@@ -16,15 +16,7 @@ CREATE TABLE IF NOT EXISTS wallet_holds (
     UNIQUE (bid_id) -- natural idempotency key
 );
 
--- three indexes for three different purposes
 
--- A: sweeper, sweeps for expired holds to release by background job.
+-- sweeper, sweeps for expired holds to release by background job.
 -- query would be WHERE status='RESERVED' AND expired_at < now()
 CREATE INDEX idx_wallet_holds_sweep ON wallet_holds(expired_at) WHERE status = 'RESERVED';
-
--- B: look up specific bid or account to commit or release during the saga.
--- query would be WHERE bid_id = x or WHERE account_id = y AND bid_id = z
--- CREATE INDEX idx_wallet_holds_bid ON wallet_holds(bid_id);
--- NOT NEEDED ANYMORE, leaving comment for legacy reasons
-
--- C) Idempotency / uniqueness — "does a hold already exist for this bid?" so you don't double-reserve. This is enforced by the unique constraint which naturally has an index

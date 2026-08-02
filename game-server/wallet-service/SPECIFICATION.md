@@ -1,9 +1,12 @@
 # SPECIFICATION — wallet-service
 
-<!-- migrating to thin format: one line per capability, → FS-NNNN pointers -->
+<!-- Thin capability index + the reference prose beneath it.
+     Format authority: /docs/specs/README.md — capability lines are names only, no design
+     detail (that lives in the FS one hop away); sections are bounded contexts, never status;
+     status lives in the checkbox: [x] shipped, [ ] not. -->
 
 Living spec. Describes **behavior, entities, states, invariants, and contracts** — not
-code or file paths. Everything is marked ✅ DONE vs ⏳ PLANNED. Per-table detail lives in
+code or file paths. Per-table detail lives in
 [`docs/schema/`](docs/schema/). Cross-service architecture context: [`/docs/refactor_plan.md`](../../docs/refactor_plan.md).
 
 ## Purpose
@@ -113,38 +116,36 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [`docs/schema/accounts.md`](docs/schema/accounts.md)
 - [`docs/schema/wallet_hold.md`](docs/schema/wallet_hold.md)
 
-## Status
+## Capabilities
 
-### ✅ Done
+### Account
 
-- Service scaffolded, boots, and wired into infra (gRPC, AMQP, discovery). **Not** OTel and
-  **not** the outbox — neither is initialised in this service.
-- **Account aggregate** — birth (`NewAccount`), reconstitution (`Reconstitute`), the
-  balance/lifetime invariant, and `PlaceHold`. Holds are created only through the aggregate
-  root via a package-private constructor.
-- **AccountRepository** — `FindByID` (account + holds in one `REPEATABLE READ` read-only
-  transaction), `Insert`, and `Save`. `Save` diffs a before/after snapshot and writes the
-  account row plus new/changed holds in **one transaction**.
-- **Optimistic concurrency** — `version` guard, the `ErrConcurrentModification` contract, and
-  the `withRetry` helper (5 attempts, jittered).
-- **CreateAccount** and **PlaceHold** use cases.
-- **GetAccount** read query + gRPC handler, including the error → gRPC status mapping.
-- **Domain tests** pinning the hold-birth (`amount > 0`), lifetime (`Σ RESERVED ≤ gold`), and
-  born-RESERVED invariants, plus the `withRetry` boundary contract.
+- [x] Create an account
+- [x] Account aggregate with balance and lifetime invariants
+- [x] Optimistic concurrency on account writes
+- [x] Read an account's gold, held, and available balances
+- [ ] Credit gold to an account
 
-### ⏳ Planned / Not started
+### Holds
 
-- **Hold FSM transitions** — only `RESERVED` (birth) exists. There is no method to move a hold
-  to `COMMITTED` or `RELEASED` yet, so **ReleaseHold** / **CommitHold** / **Credit** are all
-  unimplemented.
-- **Wiring the write path** — `PlaceHold` is not reachable from either gRPC or AMQP.
-- **Transactional outbox** — no domain event is published on a hold state change.
-- **Expiry sweeper** — the `idx_wallet_hold_sweep` index exists for it, but no background job
-  reads it.
-- Full **saga participation** (end-to-end marketplace flows).
+- [x] Place a hold against an account
+- [ ] Release a hold
+- [ ] Commit a hold
+- [ ] Expire stale holds
+- [ ] List an account's individual holds
 
-### ⚠️ Known gaps
+### Saga participation
 
-- **Balance is never debited.** `CommitHold` does not exist, and no code path writes `gold`
-  after account creation — accounts are created with 0 gold and there is no Credit verb yet.
-  Consequently the `gold ≥ 0` invariant is stated but untested in practice.
+- [ ] Consume marketplace saga events to drive writes
+- [ ] Expose the write path (gRPC and AMQP)
+- [ ] Publish hold state changes via transactional outbox
+- [ ] End-to-end marketplace saga flows
+
+> **Known gap — balance is never debited.** `CommitHold` does not exist and no code path writes
+> `gold` after account creation, so accounts are created at 0 gold with no Credit verb. The
+> `gold ≥ 0` invariant is stated but untested in practice.
+
+> **Detail eviction note.** The implementation detail these lines used to carry (repository
+> transaction semantics, the `withRetry` contract, which domain tests pin which invariant) has
+> no `FS-NNNN` home yet — it survives in this file's prose sections above and in git history.
+> Run `/write-a-spec` when the hold FSM is next worked to give it one.
