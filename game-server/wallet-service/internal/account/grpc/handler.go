@@ -3,7 +3,6 @@ package grpc
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
@@ -190,7 +189,7 @@ func mapError(ctx context.Context, err error) error {
 	// NOTE: failed precondition
 	// request structurally valid, but account state doesnt allow, or violates the
 	// system constraints like FK, null when supposed to be NOT NULL, etc
-	// maps to http 400 (or 409 if our team decides on state errors == 409)
+	// maps to http 400 for google rpc recommended (or 409 if our team decides on state errors == 409)
 	case errors.Is(err, account.ErrHoldsExceedBalance):
 		code = codes.FailedPrecondition
 		msg = "insufficient available gold"
