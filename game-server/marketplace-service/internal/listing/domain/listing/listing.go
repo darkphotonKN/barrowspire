@@ -39,6 +39,7 @@ type Listing struct {
 	endsAt     time.Time
 	createdAt  time.Time
 	updatedAt  time.Time
+	bids       []*Bid
 
 	// version
 	// used for optimistic locking, important in all roots of DDD hexagonal
@@ -64,6 +65,7 @@ type ListingSnapshot struct {
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	Version    int
+	Bids       []BidSnapshot
 }
 
 func NewListing(sellerID, itemID uuid.UUID, startPrice int, now, endsAt time.Time) (*Listing, error) {
@@ -96,6 +98,23 @@ func NewListing(sellerID, itemID uuid.UUID, startPrice int, now, endsAt time.Tim
 }
 
 func (l *Listing) Snapshot() ListingSnapshot {
+	// copy field by field, not the slice — sharing the *Bid pointers would give
+	// callers a write path back into the aggregate
+	bids := make([]BidSnapshot, 0, len(l.bids))
+
+	for _, bid := range l.bids {
+		bids = append(bids, BidSnapshot{
+			ID:        bid.id,
+			ListingID: bid.listingID,
+			MemberID:  bid.memberID,
+			Type:      bid.bidType,
+			Amount:    bid.amount,
+			Status:    bid.status,
+			CreatedAt: bid.createdAt,
+			UpdatedAt: bid.updatedAt,
+		})
+	}
+
 	return ListingSnapshot{
 		ID:         l.id,
 		SellerID:   l.sellerID,
@@ -108,6 +127,7 @@ func (l *Listing) Snapshot() ListingSnapshot {
 		Version:    l.version,
 		CreatedAt:  l.createdAt,
 		UpdatedAt:  l.updatedAt,
+		Bids:       bids,
 	}
 }
 
@@ -163,6 +183,7 @@ type ReconstituteParams struct {
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	Version    int
+	Bids       []*BidReconstituteParams
 }
 
 func Reconstitute(params ReconstituteParams) (*Listing, error) {
