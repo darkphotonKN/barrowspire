@@ -17,6 +17,12 @@ var (
 	ErrInvalidSoldTime        = errors.New("invalid sold time")
 	ErrCorruptListingState    = errors.New("corrupt listing state")
 	ErrConcurrentModification = errors.New("concurrent modification")
+
+	ErrListingNotAcceptingBids = errors.New("listing not accepting bids")
+	ErrListingExpired          = errors.New("listing expired")
+	ErrBidTooLow               = errors.New("bid too low")
+	ErrBidNotFound             = errors.New("bid not found")
+	ErrNotBidOwner             = errors.New("not bid owner")
 )
 
 type ListingStatus string
@@ -171,6 +177,101 @@ func (l *Listing) MarkSold(now time.Time, buyerID uuid.UUID, soldPrice int) erro
 	return nil
 }
 
+func (l *Listing) PlaceBid(memberID uuid.UUID, amount int, now time.Time) error {
+	if l.status != StatusActive {
+		return ErrListingNotAcceptingBids
+	}
+
+	if !l.endsAt.After(now) {
+		return ErrListingExpired
+	}
+
+	winning := l.findWinningBid()
+
+	if winning == nil && amount < l.startPrice {
+		return ErrBidTooLow
+	}
+
+	if winning != nil && amount <= winning.amount {
+		return ErrBidTooLow
+	}
+
+	newBid, err := newBid(l.id, memberID, BidTypeBid, amount, now)
+	if err != nil {
+		return err
+	}
+
+	if winning != nil {
+		if err := winning.transitionTo(BidStatusOutbid, now); err != nil {
+			return err
+		}
+	}
+
+	l.bids = append(l.bids, newBid)
+	l.updatedAt = now
+
+	return nil
+}
+
+func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time) error {
+	if l.status != StatusActive {
+		return ErrListingNotAcceptingBids
+	}
+
+	bid := l.findBidByID(bidID)
+
+	if bid == nil {
+		return ErrBidNotFound
+	}
+
+	// a member may only withdraw their own bid
+	if bid.memberID != memberID {
+		return ErrNotBidOwner
+	}
+
+	// the FSM rejects anything already outbid, won or cancelled
+	if err := bid.transitionTo(BidStatusCancelled, now); err != nil {
+		return err
+	}
+
+	l.updatedAt = now
+
+	return nil
+}
+
+// --- Helpers ---
+func (l *Listing) findWinningBid() *Bid {
+	for _, bid := range l.bids {
+		if bid.status != BidStatusWinning {
+			continue
+		}
+		return bid
+	}
+
+	return nil
+}
+
+func (l *Listing) findBidByID(bidID uuid.UUID) *Bid {
+	for _, bid := range l.bids {
+		if bid.id != bidID {
+			continue
+		}
+		return bid
+	}
+
+	return nil
+}
+
+func (l *Listing) currentPrice() int {
+	winning := l.findWinningBid()
+
+	if winning == nil {
+		return l.startPrice
+	}
+
+	return winning.amount
+}
+
 type ReconstituteParams struct {
 	ID         uuid.UUID
 	SellerID   uuid.UUID
@@ -187,7 +288,22 @@ type ReconstituteParams struct {
 }
 
 func Reconstitute(params ReconstituteParams) (*Listing, error) {
-	// reconstitute core account from params and validated holds
+	bids := make([]*Bid, 0, len(params.Bids))
+
+	for _, bid := range params.Bids {
+		bids = append(bids, &Bid{
+			id:        bid.ID,
+			listingID: bid.ListingID,
+			memberID:  bid.MemberID,
+			bidType:   bid.Type,
+			amount:    bid.Amount,
+			status:    bid.Status,
+			createdAt: bid.CreatedAt,
+			updatedAt: bid.UpdatedAt,
+		})
+	}
+
+	// reconstitute core listing from params and its bids
 	listing := Listing{
 		id:         params.ID,
 		sellerID:   params.SellerID,
@@ -197,9 +313,22 @@ func Reconstitute(params ReconstituteParams) (*Listing, error) {
 		soldPrice:  params.SoldPrice,
 		status:     params.Status,
 		endsAt:     params.EndsAt,
+		bids:       bids,
 		createdAt:  params.CreatedAt,
 		updatedAt:  params.UpdatedAt,
 		version:    params.Version,
+	}
+
+	winners := 0
+	for _, bid := range listing.bids {
+		if bid.status != BidStatusWinning {
+			continue
+		}
+		winners++
+	}
+
+	if winners > 1 {
+		return nil, ErrCorruptListingState
 	}
 
 	return &listing, nil
