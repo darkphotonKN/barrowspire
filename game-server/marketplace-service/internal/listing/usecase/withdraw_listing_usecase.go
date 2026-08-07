@@ -31,7 +31,7 @@ type WithdrawListingCommand struct {
 }
 
 func (uc *WithdrawListingUC) Handle(ctx context.Context, cmd WithdrawListingCommand) error {
-	return withRetry(func() error {
+	return withRetry(ctx, func() error {
 		listingDomain, err := uc.repo.FindByID(ctx, cmd.ID)
 
 		if err != nil {

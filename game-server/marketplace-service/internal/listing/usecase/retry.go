@@ -1,7 +1,9 @@
 package usecase
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"time"
 
@@ -24,7 +26,7 @@ const (
 	maxRetries = 5
 )
 
-func withRetry(fn func() error) error {
+func withRetry(ctx context.Context, fn func() error) error {
 	// goal is to retry while error is a race
 	for attempts := 1; attempts <= maxRetries; attempts++ {
 		// attempt to run the optimistic process (attempt to write without locking)
@@ -42,14 +44,22 @@ func withRetry(fn func() error) error {
 			return err
 		}
 
-		// raced, count attempt, jitter, delay and retry
+		// raced, count attempt, jitter, delay and retry.
+		// wrap the loser rather than dropping it — the caller otherwise cannot
+		// tell which resource was contended, or that it was a race at all
 		if attempts == maxRetries {
-			return ErrMaxRetries
+			return fmt.Errorf("%w after %d attempts: %w", ErrMaxRetries, maxRetries, err)
 		}
 
-		// delay next call
+		// delay next call, but abandon the loop if the caller has already gone
+		// away — sleeping out the jitter for a cancelled request helps nobody
 		jitterTime := time.Duration(rand.Float64() * float64(time.Millisecond) * 5)
-		time.Sleep(jitterTime)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(jitterTime):
+		}
 	}
 
 	return ErrMaxRetries
