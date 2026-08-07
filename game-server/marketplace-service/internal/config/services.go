@@ -19,10 +19,11 @@ type Services struct {
 
 func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	listingRepo := listingrepo.NewListingRepository(db)
-	// placeHoldUC := usecase.NewPlaceHoldUC(listingRepo)
 	createAccUC := usecase.NewCreateListingUC(listingRepo)
+	placeBidUC := usecase.NewPlaceBidUC(listingRepo)
+	withdrawBidUC := usecase.NewWithdrawBidUC(listingRepo)
 	getListingQuery := listingquery.NewGetListingQuery(db)
-	listingHandler := listinggrpc.NewHandler(createAccUC, getListingQuery)
+	listingHandler := listinggrpc.NewHandler(createAccUC, placeBidUC, withdrawBidUC, getListingQuery)
 
 	return &Services{
 		ListingHandler: listingHandler,
