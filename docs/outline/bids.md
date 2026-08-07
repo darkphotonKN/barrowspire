@@ -23,8 +23,12 @@ marketplace 沒有權限直接動別人的餘額。這是整個功能的難點�
 
 ```
 階段一（已完成）  出價的規則和單一贏家不變式，全在 marketplace 內
-階段二（未開始）  出價連動 wallet 的錢，跨服務 saga
+                  含 gRPC 到 domain 的完整寫入路徑，見 §4
+階段二（未開始）  出價連動 wallet 的錢，跨服務 saga，見 §6
 ```
+
+**階段一做完的狀態是：出價會正確寫進 marketplace 自己的資料庫，但買家的錢一毛都沒凍。**
+這是刻意的中間狀態，不是遺漏。
 
 ---
 
@@ -64,10 +68,46 @@ WINNING ──→ OUTBID      被更高的出價擠掉
 三個終端狀態都是死路，FSM 白名單裡不為它們建 entry。輸家降級而不刪除，所以 `bids` 表
 本身就是完整的出價歷史。
 
-### 兩個刻意的取捨
+### 價格存在哪，新出價跟誰比
 
-**出價門檻的比較符號不對稱**：第一筆 `amount >= start_price`（等於底價可以），之後
-`amount > 現任 WINNING`（必須嚴格超過）。
+沒有「目前最高價」這種欄位。領先者就是 `bids` 表裡 `status = 'WINNING'` 的那一列，
+它的 `amount` 就是現在的價格。
+
+| 欄位 | 存什麼 |
+|---|---|
+| `bids.amount` | 每一筆出價的金額。**領先者的價格在這裡** |
+| `listings.start_price` | 底價。建立時設定，之後不動 |
+| `listings.sold_price` | 成交價。結算才填，拍賣進行中是 `NULL` |
+
+新出價進來時，`PlaceBid` 掃過 `l.bids` 找出領先者，再決定跟誰比：
+
+```
+沒人出過價  → 跟 start_price 比    amount >= start_price   等於底價可以
+已有領先者  → 跟他的 amount 比      amount >  現任 amount    等於不夠，必須超過
+```
+
+兩個符號不一樣。底價 100 時可以出剛好 100，但已經有人出 100 之後，再出 100 就不行，
+得出 101。
+
+比較過了才建立新 bid，然後在同一個方法裡把舊的領先者轉成 `OUTBID`。舊那筆不刪，
+`bids` 表因此就是完整的出價歷史。
+
+目前價格是算出來的，從不儲存：
+
+```go
+func (l *Listing) currentPrice() int {
+    winning := l.findWinningBid()
+    if winning == nil {
+        return l.startPrice   // 沒人出價，或領先者撤回了
+    }
+    return winning.amount
+}
+```
+
+領先者撤回時價格就自動掉回底價，不用另外寫更新邏輯。這個方法現在是 package-private，
+也還沒有讀取端在用，所以買家看不到喊到多少。見 §7 的缺口表。
+
+### 兩個刻意的取捨
 
 **撤回領先者不遞補亞軍**。拍賣直覺上第二名該補上，但一旦連動 wallet：亞軍的 hold 早在
 被擠掉時就釋放了，硬把他拉回領先位，這筆出價背後沒有錢。要遞補就得重新下一次 hold，
@@ -96,7 +136,7 @@ WINNING ──→ OUTBID      被更高的出價擠掉
 完全沒用，只有資料庫擋得住。輸的那個拿到 `ErrConcurrentModification`，重試。
 
 索引是 **partial** 的（`WHERE status = 'WINNING'`），所以降級成 `OUTBID` 或結算成 `WON`
-都會離開索引、把位子讓出來。這個細節在階段二會變成一個坑，見 §5。
+都會離開索引、把位子讓出來。這個細節在階段二會變成一個坑，見 §6。
 
 ### OCC 守的是 listing，不是 bid
 
@@ -112,7 +152,70 @@ WINNING ──→ OUTBID      被更高的出價擠掉
 
 ---
 
-## 4. 跨服務：誰負責什麼
+## 4. 請求路徑：從 gRPC 到資料庫
+
+domain 的 `PlaceBid` 早就寫好了，但一度從外面打不到。usecase、proto rpc、handler、DI
+接線四層全缺，它是只有測試呼叫得到的死碼。現在整條路通了。
+
+```
+gRPC PlaceBid / WithdrawBid
+    ↓  handler：解析 UUID、取呼叫者身分、mapError
+PlaceBidUC / WithdrawBidUC
+    ↓  withRetry：OCC 輸了就重來，最多 5 次
+    ↓    FindByID  → 載入 listing 和它所有的 bid
+    ↓    Snapshot  → OCC 基準線，必須在改動之前取
+    ↓    PlaceBid  → domain 套用規則、降級前任
+    ↓    Save      → diff 後寫入，同一交易
+listings + bids
+```
+
+每一層負責什麼：
+
+| 層 | 檔案 | 職責 |
+|---|---|---|
+| handler | `grpc/handler.go` | 解析請求、映射錯誤成 gRPC code。不含任何業務邏輯 |
+| usecase | `usecase/place_bid_usecase.go` | 協調 load-modify-save，包在 `withRetry` 裡 |
+| domain | `domain/listing/listing.go` | 全部的出價規則和不變式 |
+| repository | `repository/listing_repository.go` | diff 出新增和降級的 bid，一個交易寫完 |
+
+### 兩個容易寫錯的順序
+
+**`Snapshot()` 必須在 domain 方法之前取。** 它同時是 OCC 的 version 基準線和 `diffListing`
+的比較來源。取在後面的話 `before` 已經含新 bid，diff 算出空集合，`Save` 會回成功卻什麼都
+沒寫。有測試守著（`TestPlaceBidUCSnapshotsBeforeMutating`）。
+
+**`Save` 的 UPDATE 必須在 INSERT 之前**，跟 wallet-service 的 `Save` 相反。出價會同時產生
+一筆新的 `WINNING` 和一筆降級的 `OUTBID`，兩者 `listing_id` 相同，先 INSERT 就會撞上
+`idx_bids_single_winner`，因為舊王還沒降級。wallet 沒這問題，它的 unique 在 `bid_id` 上，
+每筆 hold 都不同。日後有人「照 wallet 對齊一下」把順序改回來，會在執行期炸。
+
+### 錯誤如何映射
+
+domain 一律回 sentinel，handler 的 `mapError` 用 `errors.Is` 分流：
+
+| sentinel | gRPC code |
+|---|---|
+| `ErrBidTooLow`、`ErrInvalidAmount` | `InvalidArgument` |
+| `ErrListingNotAcceptingBids`、`ErrListingExpired`、`ErrInvalidBidTransition` | `FailedPrecondition` |
+| `ErrBidNotFound` | `NotFound` |
+| `ErrNotBidOwner` | `PermissionDenied` |
+| `ErrMaxRetries`、`ErrConcurrentModification` | `Aborted` |
+
+`ErrNotBidOwner` 刻意回 `PermissionDenied` 而不是 `NotFound`。撤別人的 bid 是授權失敗，
+不是資源不存在。
+
+### 這一層還沒完成的兩件事
+
+**身分是假的。** 兩個 handler 都用 `tempMemberID := uuid.New()`，跟既有的 `CreateListing`
+一樣，等 auth interceptor 接上。**所以 `WithdrawBid` 的擁有權檢查實際上永遠不會通過** ——
+每次呼叫都是隨機身分，對不上 bid 的主人。domain 的守衛是對的，是上游還沒接。
+
+**回應是空的。** usecase 只回 `error`，沒回建立的 bid，所以 `PlaceBidResponse` 的
+`bid_id` / `status` / `current_price` 三個欄位都填不了。要填就得改 usecase 的簽名。
+
+---
+
+## 5. 跨服務：誰負責什麼
 
 出價要凍錢，錢不在 marketplace 手上。
 
@@ -146,7 +249,7 @@ marketplace 是唯一的 orchestrator，另外兩個都只回應事件。這個�
 
 ---
 
-## 5. 階段二：出價連動 wallet hold
+## 6. 階段二：出價連動 wallet hold
 
 TCC（Try-Confirm-Cancel）：
 
@@ -217,9 +320,18 @@ B: PENDING ──bid.initiated──→ hold B ok
 
 ---
 
-## 6. 現況與缺口
+## 7. 現況與缺口
 
-**已完成**：出價 / 撤回的完整規則、單一贏家不變式的兩道防線、bid 持久化與歷史保留。
+**已完成**：出價 / 撤回的完整規則、單一贏家不變式的兩道防線、bid 持久化與歷史保留，
+以及 gRPC → usecase → domain → repository 的完整寫入路徑（§4）。
+
+**已完成但還接不上**：
+
+| 項目 | 狀況 |
+|---|---|
+| 呼叫者身分 | handler 用 `uuid.New()` 假造，等 auth interceptor。**`WithdrawBid` 的擁有權檢查因此永遠不會通過** |
+| gRPC 回應內容 | `PlaceBidResponse` 的三個欄位都是空的，usecase 只回 `error` 不回 bid |
+| `MarkSoldListingUC` / `WithdrawListingUC` | 兩個 usecase 寫好了但從沒被建構，是死碼 |
 
 **缺口**（細節見 `SPECIFICATION.md` 和 issue）：
 
@@ -229,7 +341,7 @@ B: PENDING ──bid.initiated──→ hold B ok
 | wallet 缺 `ReleaseHold` | 沒有補償路徑，錢會永久凍結 |
 | `bids.status` 缺 `PENDING` / `FAILED` | saga 的中間狀態無處可存 |
 | `common/outbox` 未在 marketplace 接線 | 事件會遺失 |
-| PENDING 併發窗口未定案 | 見 §5 |
+| PENDING 併發窗口未定案 | 見 §6 |
 
 前四項是階段二的前置條件，沒做完 saga 無法正確運作。冪等性和 `ReleaseHold` 之中，
 `ReleaseHold` 更急 —— 前者造成尷尬，後者造成資損。
