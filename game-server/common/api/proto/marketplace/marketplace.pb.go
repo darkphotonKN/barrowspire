@@ -145,6 +145,236 @@ func (x *CreateListingResponse) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// PlaceBid
+// The bidder is derived from the authenticated context server-side, never
+// supplied by the caller — same rule as CreateListingRequest.
+type PlaceBidRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ListingId     string                 `protobuf:"bytes,1,opt,name=listing_id,json=listingId,proto3" json:"listing_id,omitempty"`
+	Amount        int64                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlaceBidRequest) Reset() {
+	*x = PlaceBidRequest{}
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlaceBidRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlaceBidRequest) ProtoMessage() {}
+
+func (x *PlaceBidRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlaceBidRequest.ProtoReflect.Descriptor instead.
+func (*PlaceBidRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PlaceBidRequest) GetListingId() string {
+	if x != nil {
+		return x.ListingId
+	}
+	return ""
+}
+
+func (x *PlaceBidRequest) GetAmount() int64 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
+}
+
+type PlaceBidResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BidId         string                 `protobuf:"bytes,1,opt,name=bid_id,json=bidId,proto3" json:"bid_id,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`                                  // WINNING on success
+	CurrentPrice  int64                  `protobuf:"varint,3,opt,name=current_price,json=currentPrice,proto3" json:"current_price,omitempty"` // what the listing now stands at
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlaceBidResponse) Reset() {
+	*x = PlaceBidResponse{}
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlaceBidResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlaceBidResponse) ProtoMessage() {}
+
+func (x *PlaceBidResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlaceBidResponse.ProtoReflect.Descriptor instead.
+func (*PlaceBidResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *PlaceBidResponse) GetBidId() string {
+	if x != nil {
+		return x.BidId
+	}
+	return ""
+}
+
+func (x *PlaceBidResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *PlaceBidResponse) GetCurrentPrice() int64 {
+	if x != nil {
+		return x.CurrentPrice
+	}
+	return 0
+}
+
+// WithdrawBid
+// Cancels a bid the caller placed. Ownership is enforced server-side; a bid
+// belonging to another member is rejected rather than silently ignored.
+type WithdrawBidRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ListingId     string                 `protobuf:"bytes,1,opt,name=listing_id,json=listingId,proto3" json:"listing_id,omitempty"`
+	BidId         string                 `protobuf:"bytes,2,opt,name=bid_id,json=bidId,proto3" json:"bid_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WithdrawBidRequest) Reset() {
+	*x = WithdrawBidRequest{}
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WithdrawBidRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WithdrawBidRequest) ProtoMessage() {}
+
+func (x *WithdrawBidRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WithdrawBidRequest.ProtoReflect.Descriptor instead.
+func (*WithdrawBidRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *WithdrawBidRequest) GetListingId() string {
+	if x != nil {
+		return x.ListingId
+	}
+	return ""
+}
+
+func (x *WithdrawBidRequest) GetBidId() string {
+	if x != nil {
+		return x.BidId
+	}
+	return ""
+}
+
+type WithdrawBidResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BidId         string                 `protobuf:"bytes,1,opt,name=bid_id,json=bidId,proto3" json:"bid_id,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`                                  // CANCELLED on success
+	CurrentPrice  int64                  `protobuf:"varint,3,opt,name=current_price,json=currentPrice,proto3" json:"current_price,omitempty"` // falls back to the reserve if the leader withdrew
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WithdrawBidResponse) Reset() {
+	*x = WithdrawBidResponse{}
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WithdrawBidResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WithdrawBidResponse) ProtoMessage() {}
+
+func (x *WithdrawBidResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WithdrawBidResponse.ProtoReflect.Descriptor instead.
+func (*WithdrawBidResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *WithdrawBidResponse) GetBidId() string {
+	if x != nil {
+		return x.BidId
+	}
+	return ""
+}
+
+func (x *WithdrawBidResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *WithdrawBidResponse) GetCurrentPrice() int64 {
+	if x != nil {
+		return x.CurrentPrice
+	}
+	return 0
+}
+
 var File_api_proto_marketplace_marketplace_proto protoreflect.FileDescriptor
 
 const file_api_proto_marketplace_marketplace_proto_rawDesc = "" +
@@ -158,9 +388,27 @@ const file_api_proto_marketplace_marketplace_proto_rawDesc = "" +
 	"\theld_gold\x18\x04 \x01(\x03R\bheldGold\x12%\n" +
 	"\x0eavailable_gold\x18\x05 \x01(\x03R\ravailableGold\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt2n\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"H\n" +
+	"\x0fPlaceBidRequest\x12\x1d\n" +
+	"\n" +
+	"listing_id\x18\x01 \x01(\tR\tlistingId\x12\x16\n" +
+	"\x06amount\x18\x02 \x01(\x03R\x06amount\"f\n" +
+	"\x10PlaceBidResponse\x12\x15\n" +
+	"\x06bid_id\x18\x01 \x01(\tR\x05bidId\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12#\n" +
+	"\rcurrent_price\x18\x03 \x01(\x03R\fcurrentPrice\"J\n" +
+	"\x12WithdrawBidRequest\x12\x1d\n" +
+	"\n" +
+	"listing_id\x18\x01 \x01(\tR\tlistingId\x12\x15\n" +
+	"\x06bid_id\x18\x02 \x01(\tR\x05bidId\"i\n" +
+	"\x13WithdrawBidResponse\x12\x15\n" +
+	"\x06bid_id\x18\x01 \x01(\tR\x05bidId\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12#\n" +
+	"\rcurrent_price\x18\x03 \x01(\x03R\fcurrentPrice2\x8d\x02\n" +
 	"\x12MarketplaceService\x12X\n" +
-	"\rCreateListing\x12!.marketplace.CreateListingRequest\x1a\".marketplace.CreateListingResponse\"\x00BIZGgithub.com/darkphotonKN/barrowspire-server/common/api/proto/marketplaceb\x06proto3"
+	"\rCreateListing\x12!.marketplace.CreateListingRequest\x1a\".marketplace.CreateListingResponse\"\x00\x12I\n" +
+	"\bPlaceBid\x12\x1c.marketplace.PlaceBidRequest\x1a\x1d.marketplace.PlaceBidResponse\"\x00\x12R\n" +
+	"\vWithdrawBid\x12\x1f.marketplace.WithdrawBidRequest\x1a .marketplace.WithdrawBidResponse\"\x00BIZGgithub.com/darkphotonKN/barrowspire-server/common/api/proto/marketplaceb\x06proto3"
 
 var (
 	file_api_proto_marketplace_marketplace_proto_rawDescOnce sync.Once
@@ -174,18 +422,26 @@ func file_api_proto_marketplace_marketplace_proto_rawDescGZIP() []byte {
 	return file_api_proto_marketplace_marketplace_proto_rawDescData
 }
 
-var file_api_proto_marketplace_marketplace_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_api_proto_marketplace_marketplace_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_api_proto_marketplace_marketplace_proto_goTypes = []any{
 	(*CreateListingRequest)(nil),  // 0: marketplace.CreateListingRequest
 	(*CreateListingResponse)(nil), // 1: marketplace.CreateListingResponse
-	(*timestamppb.Timestamp)(nil), // 2: google.protobuf.Timestamp
+	(*PlaceBidRequest)(nil),       // 2: marketplace.PlaceBidRequest
+	(*PlaceBidResponse)(nil),      // 3: marketplace.PlaceBidResponse
+	(*WithdrawBidRequest)(nil),    // 4: marketplace.WithdrawBidRequest
+	(*WithdrawBidResponse)(nil),   // 5: marketplace.WithdrawBidResponse
+	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
 }
 var file_api_proto_marketplace_marketplace_proto_depIdxs = []int32{
-	2, // 0: marketplace.CreateListingResponse.created_at:type_name -> google.protobuf.Timestamp
+	6, // 0: marketplace.CreateListingResponse.created_at:type_name -> google.protobuf.Timestamp
 	0, // 1: marketplace.MarketplaceService.CreateListing:input_type -> marketplace.CreateListingRequest
-	1, // 2: marketplace.MarketplaceService.CreateListing:output_type -> marketplace.CreateListingResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
+	2, // 2: marketplace.MarketplaceService.PlaceBid:input_type -> marketplace.PlaceBidRequest
+	4, // 3: marketplace.MarketplaceService.WithdrawBid:input_type -> marketplace.WithdrawBidRequest
+	1, // 4: marketplace.MarketplaceService.CreateListing:output_type -> marketplace.CreateListingResponse
+	3, // 5: marketplace.MarketplaceService.PlaceBid:output_type -> marketplace.PlaceBidResponse
+	5, // 6: marketplace.MarketplaceService.WithdrawBid:output_type -> marketplace.WithdrawBidResponse
+	4, // [4:7] is the sub-list for method output_type
+	1, // [1:4] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
 	1, // [1:1] is the sub-list for extension extendee
 	0, // [0:1] is the sub-list for field type_name
@@ -202,7 +458,7 @@ func file_api_proto_marketplace_marketplace_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_marketplace_marketplace_proto_rawDesc), len(file_api_proto_marketplace_marketplace_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

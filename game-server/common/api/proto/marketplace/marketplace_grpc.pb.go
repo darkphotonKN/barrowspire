@@ -20,16 +20,22 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	MarketplaceService_CreateListing_FullMethodName = "/marketplace.MarketplaceService/CreateListing"
+	MarketplaceService_PlaceBid_FullMethodName      = "/marketplace.MarketplaceService/PlaceBid"
+	MarketplaceService_WithdrawBid_FullMethodName   = "/marketplace.MarketplaceService/WithdrawBid"
 )
 
 // MarketplaceServiceClient is the client API for MarketplaceService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Wallet service definition for member gold accounts.
+// Marketplace service definition for listings and bids.
 type MarketplaceServiceClient interface {
-	// Get a member's account balance snapshot.
+	// Create a listing for an item the caller owns.
 	CreateListing(ctx context.Context, in *CreateListingRequest, opts ...grpc.CallOption) (*CreateListingResponse, error)
+	// Place a bid on an active listing, taking the lead from the current winner.
+	PlaceBid(ctx context.Context, in *PlaceBidRequest, opts ...grpc.CallOption) (*PlaceBidResponse, error)
+	// Cancel a bid the caller placed.
+	WithdrawBid(ctx context.Context, in *WithdrawBidRequest, opts ...grpc.CallOption) (*WithdrawBidResponse, error)
 }
 
 type marketplaceServiceClient struct {
@@ -50,14 +56,38 @@ func (c *marketplaceServiceClient) CreateListing(ctx context.Context, in *Create
 	return out, nil
 }
 
+func (c *marketplaceServiceClient) PlaceBid(ctx context.Context, in *PlaceBidRequest, opts ...grpc.CallOption) (*PlaceBidResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PlaceBidResponse)
+	err := c.cc.Invoke(ctx, MarketplaceService_PlaceBid_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *marketplaceServiceClient) WithdrawBid(ctx context.Context, in *WithdrawBidRequest, opts ...grpc.CallOption) (*WithdrawBidResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WithdrawBidResponse)
+	err := c.cc.Invoke(ctx, MarketplaceService_WithdrawBid_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MarketplaceServiceServer is the server API for MarketplaceService service.
 // All implementations must embed UnimplementedMarketplaceServiceServer
 // for forward compatibility.
 //
-// Wallet service definition for member gold accounts.
+// Marketplace service definition for listings and bids.
 type MarketplaceServiceServer interface {
-	// Get a member's account balance snapshot.
+	// Create a listing for an item the caller owns.
 	CreateListing(context.Context, *CreateListingRequest) (*CreateListingResponse, error)
+	// Place a bid on an active listing, taking the lead from the current winner.
+	PlaceBid(context.Context, *PlaceBidRequest) (*PlaceBidResponse, error)
+	// Cancel a bid the caller placed.
+	WithdrawBid(context.Context, *WithdrawBidRequest) (*WithdrawBidResponse, error)
 	mustEmbedUnimplementedMarketplaceServiceServer()
 }
 
@@ -70,6 +100,12 @@ type UnimplementedMarketplaceServiceServer struct{}
 
 func (UnimplementedMarketplaceServiceServer) CreateListing(context.Context, *CreateListingRequest) (*CreateListingResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateListing not implemented")
+}
+func (UnimplementedMarketplaceServiceServer) PlaceBid(context.Context, *PlaceBidRequest) (*PlaceBidResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PlaceBid not implemented")
+}
+func (UnimplementedMarketplaceServiceServer) WithdrawBid(context.Context, *WithdrawBidRequest) (*WithdrawBidResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method WithdrawBid not implemented")
 }
 func (UnimplementedMarketplaceServiceServer) mustEmbedUnimplementedMarketplaceServiceServer() {}
 func (UnimplementedMarketplaceServiceServer) testEmbeddedByValue()                            {}
@@ -110,6 +146,42 @@ func _MarketplaceService_CreateListing_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MarketplaceService_PlaceBid_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlaceBidRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MarketplaceServiceServer).PlaceBid(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MarketplaceService_PlaceBid_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MarketplaceServiceServer).PlaceBid(ctx, req.(*PlaceBidRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MarketplaceService_WithdrawBid_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WithdrawBidRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MarketplaceServiceServer).WithdrawBid(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MarketplaceService_WithdrawBid_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MarketplaceServiceServer).WithdrawBid(ctx, req.(*WithdrawBidRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MarketplaceService_ServiceDesc is the grpc.ServiceDesc for MarketplaceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -120,6 +192,14 @@ var MarketplaceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateListing",
 			Handler:    _MarketplaceService_CreateListing_Handler,
+		},
+		{
+			MethodName: "PlaceBid",
+			Handler:    _MarketplaceService_PlaceBid_Handler,
+		},
+		{
+			MethodName: "WithdrawBid",
+			Handler:    _MarketplaceService_WithdrawBid_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

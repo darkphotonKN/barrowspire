@@ -6,10 +6,16 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace";
 
-// Wallet service definition for member gold accounts.
+// Marketplace service definition for listings and bids.
 service MarketplaceService {
-  // Get a member's account balance snapshot.
+  // Create a listing for an item the caller owns.
   rpc CreateListing(CreateListingRequest) returns (CreateListingResponse) {}
+
+  // Place a bid on an active listing, taking the lead from the current winner.
+  rpc PlaceBid(PlaceBidRequest) returns (PlaceBidResponse) {}
+
+  // Cancel a bid the caller placed.
+  rpc WithdrawBid(WithdrawBidRequest) returns (WithdrawBidResponse) {}
 }
 
 // CreateListing
@@ -24,4 +30,32 @@ message CreateListingResponse {
   int64  held_gold      = 4;  // sum of RESERVED holds
   int64  available_gold = 5;  // gold - held_gold, spendable now
   google.protobuf.Timestamp created_at = 6;
+}
+
+// PlaceBid
+// The bidder is derived from the authenticated context server-side, never
+// supplied by the caller — same rule as CreateListingRequest.
+message PlaceBidRequest {
+  string listing_id = 1;
+  int64  amount     = 2;
+}
+
+message PlaceBidResponse {
+  string bid_id        = 1;
+  string status        = 2;  // WINNING on success
+  int64  current_price = 3;  // what the listing now stands at
+}
+
+// WithdrawBid
+// Cancels a bid the caller placed. Ownership is enforced server-side; a bid
+// belonging to another member is rejected rather than silently ignored.
+message WithdrawBidRequest {
+  string listing_id = 1;
+  string bid_id     = 2;
+}
+
+message WithdrawBidResponse {
+  string bid_id        = 1;
+  string status        = 2;  // CANCELLED on success
+  int64  current_price = 3;  // falls back to the reserve if the leader withdrew
 }
