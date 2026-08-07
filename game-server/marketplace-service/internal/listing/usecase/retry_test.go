@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -90,7 +91,7 @@ func TestWithRetry(t *testing.T) {
 				return result
 			}
 
-			err := withRetry(fn)
+			err := withRetry(context.Background(), fn)
 
 			assert.Equal(t, tt.wantCalls, calls, "number of attempts")
 
@@ -112,10 +113,41 @@ func TestWithRetry(t *testing.T) {
 func TestWithRetry_PreservesNonRetriableError(t *testing.T) {
 	sentinel := errors.New("insufficient funds")
 
-	err := withRetry(func() error {
+	err := withRetry(context.Background(), func() error {
 		return fmt.Errorf("place hold: %w", sentinel)
 	})
 
 	assert.ErrorIs(t, err, sentinel)
 	assert.NotErrorIs(t, err, ErrMaxRetries)
+}
+
+// TestWithRetry_ExhaustionWrapsTheRacingError pins that giving up still says
+// what was racing. Returning a bare ErrMaxRetries throws that away, leaving the
+// caller unable to tell an OCC loss from any other exhausted retry — and the
+// gRPC handler maps ErrConcurrentModification and ErrMaxRetries to the same
+// code precisely because it cannot currently distinguish them.
+func TestWithRetry_ExhaustionWrapsTheRacingError(t *testing.T) {
+	err := withRetry(context.Background(), func() error {
+		return fmt.Errorf("save listing: %w", listing.ErrConcurrentModification)
+	})
+
+	assert.ErrorIs(t, err, ErrMaxRetries, "still reports exhaustion")
+	assert.ErrorIs(t, err, listing.ErrConcurrentModification, "and still carries what was racing")
+}
+
+// TestWithRetry_StopsOnCancelledContext pins that a caller who has gone away
+// stops the loop. Without this the helper keeps burning attempts and sleeping
+// out its jitter on a request nobody is waiting for.
+func TestWithRetry_StopsOnCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	calls := 0
+	err := withRetry(ctx, func() error {
+		calls++
+		cancel() // the caller gives up while the first attempt is in flight
+		return listing.ErrConcurrentModification
+	})
+
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, 1, calls, "must not attempt again after cancellation")
 }

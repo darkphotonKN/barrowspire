@@ -329,6 +329,28 @@ func TestSnapshotDoesNotShareBidState(t *testing.T) {
 	assert.Equal(t, BidStatusWinning, l.Snapshot().Bids[0].Status)
 }
 
+// TestSnapshotDoesNotShareSettlementState is the scalar-pointer sibling of the
+// test above. BuyerID and SoldPrice are the only nilable fields on the snapshot,
+// so they are the only ones that can hand back a live *pointer into* the
+// aggregate rather than a copy of it. Handing out l.soldPrice directly lets a
+// caller rewrite the sale price through the snapshot.
+func TestSnapshotDoesNotShareSettlementState(t *testing.T) {
+	l := soldListing(t, 100, 250)
+
+	snap := l.Snapshot()
+	require.NotNil(t, snap.SoldPrice)
+	require.NotNil(t, snap.BuyerID)
+
+	originalBuyer := *snap.BuyerID
+
+	*snap.SoldPrice = 999
+	*snap.BuyerID = uuid.New()
+
+	after := l.Snapshot()
+	assert.Equal(t, 250, *after.SoldPrice, "writing through a snapshot pointer must not reach the aggregate")
+	assert.Equal(t, originalBuyer, *after.BuyerID)
+}
+
 // --- helpers ---
 
 // draftListing builds a listing in its freshly created state, before publish.
@@ -349,6 +371,19 @@ func activeListing(t *testing.T, startPrice int) *Listing {
 
 	l := draftListing(t, startPrice)
 	require.NoError(t, l.Publish(time.Now()))
+
+	return l
+}
+
+// soldListing builds a settled listing. MarkSold refuses to run before endsAt,
+// so the clock is pushed past the end of the auction rather than shortening it
+// at construction — NewListing rejects an endsAt that is not in the future.
+func soldListing(t *testing.T, startPrice, soldPrice int) *Listing {
+	t.Helper()
+
+	l := activeListing(t, startPrice)
+	afterEnd := time.Now().Add(2 * time.Hour)
+	require.NoError(t, l.MarkSold(afterEnd, uuid.New(), soldPrice))
 
 	return l
 }
