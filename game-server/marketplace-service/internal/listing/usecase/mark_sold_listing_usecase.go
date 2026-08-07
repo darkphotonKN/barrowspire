@@ -33,7 +33,7 @@ type MarkSoldListingCommand struct {
 }
 
 func (uc *MarkSoldListingUC) Handle(ctx context.Context, cmd MarkSoldListingCommand) error {
-	return withRetry(func() error {
+	return withRetry(ctx, func() error {
 		listingDomain, err := uc.repo.FindByID(ctx, cmd.ID)
 
 		if err != nil {

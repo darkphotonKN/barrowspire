@@ -121,13 +121,29 @@ func (l *Listing) Snapshot() ListingSnapshot {
 		})
 	}
 
+	// buyerID and soldPrice are the only nilable fields, so they are the only ones
+	// that would otherwise hand back a live pointer into the aggregate. Copy the
+	// pointee and point at the copy — nil stays nil, so "not settled yet" still
+	// reads the same to callers and to sqlx.
+	var buyerID *uuid.UUID
+	if l.buyerID != nil {
+		v := *l.buyerID
+		buyerID = &v
+	}
+
+	var soldPrice *int
+	if l.soldPrice != nil {
+		v := *l.soldPrice
+		soldPrice = &v
+	}
+
 	return ListingSnapshot{
 		ID:         l.id,
 		SellerID:   l.sellerID,
-		BuyerID:    l.buyerID,
+		BuyerID:    buyerID,
 		ItemID:     l.itemID,
 		StartPrice: l.startPrice,
-		SoldPrice:  l.soldPrice,
+		SoldPrice:  soldPrice,
 		Status:     l.status,
 		EndsAt:     l.endsAt,
 		Version:    l.version,
