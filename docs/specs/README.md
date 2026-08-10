@@ -36,12 +36,86 @@ FAT   - [ ] Welcome splash (logged-out only): light white / dark-purple landing
 **Every writer of thin lines obeys this:** `scope-it` (at lock), `write-a-spec` (the stub line
 it creates when none exists), `spec-bootstrap` (reverse-engineered lines).
 
+### Brownfield: the two-line retrofit rule
+
+The format above assumes greenfield — one capability, one work order, one checkbox. A
+**retrofit** breaks that assumption. Adding a contract, types, or governance to a capability
+that **already ships** produces two independent states, and one checkbox cannot carry both:
+
+- *does the capability exist for users?* — yes, already
+- *is the retrofit's work order done?* — no, not yet
+
+Write them as **two lines**:
+
+```
+- [x] Profile view and edit → FS-none                  (pre-existing behavior)
+- [ ] Typed (serialized) profile surface → FS-0002     (the retrofit's work)
+```
+
+The capability line being `[x]` does **not** check the retrofit line. The retrofit's checkbox
+flips only when its own acceptance criteria ship.
+
+**`FS-none` is a legal pointer.** It means *this behavior predates the spec system and has no
+work order* — not a gap to backfill, and **`spec-audit` must not flag it**. It is also what
+`spec-bootstrap` writes for capabilities it reverse-engineers from existing code.
+
+Keep both lines as long as they name genuinely different things (the capability vs. the
+property the retrofit added). Collapse to one only when the retrofit line would merely restate
+the capability.
+
+> This is the **common** case, not an edge case. Every repo adopting this system on an existing
+> codebase hits it immediately — via `spec-bootstrap` if not via a deliberate retrofit.
+
 ## Numbering & references
 
 - Files live here as `NNNN-short-slug.md` — zero-padded, sequential, allocated the same way as `docs/adr/`.
 - Reference them everywhere as `FS-NNNN` (in `SPECIFICATION.md` lines, issue bodies, PRs, commits).
 - A feature spec contains: **Summary, Requirements, User Stories, Acceptance Criteria, Edge States, Out of Scope**, plus a header linking back to its `SPECIFICATION.md` entry and any related ADRs — plus, for contract-touching features, an **API surface** section (endpoint table; field-level for new resources, endpoint-level shorthand for established patterns).
 - The thin line points; the FS elaborates. Never copy content between them.
+
+## The `API surface` section (tier-2, contract-touching features only)
+
+An FS that changes an HTTP or RPC surface carries an **API surface** section: the endpoint
+table that states the contract **at design time**, before any code generates it. Field-level
+for new resources; endpoint-level shorthand once the pattern is established.
+
+If the repo generates its contract from code (see `docs/agents/contract.md`), this section is
+what the generated document is checked *against* — it is the intent, not the output.
+
+### Error rows carry `status · code`
+
+An error row states **both** the HTTP status and the stable domain error code:
+
+| Case | Response |
+|---|---|
+| resource not found | `404 · NOT_FOUND` |
+| a domain rule refused it | `400 · <DOMAIN_SPECIFIC_CODE>` |
+| unknown body member | `422 · VALIDATION_FAILED` |
+
+Status is the **coarse routing signal** and keeps its RFC-defined meaning; the code is the
+**precise, client-switchable** one. Two failures that are both "the request was invalid" share
+a status and differ only by code — so a table listing status alone under-specifies the
+contract, and the client is left string-matching prose.
+
+### Request rows list WRITABLE fields only
+
+A request body is **not a resource**. Read-only fields (`id`, `createdAt`, `updatedAt`) never
+appear in a request row, and **identity never appears at all** — it comes from the verified
+token or transport metadata, never the body.
+
+Leaving them out is a **security property, not an omission**: it makes a class of
+mass-assignment bug unrepresentable rather than defended against.
+
+### 422 vs 400 is a split, not a preference
+
+| Layer | Question | Decided by | Status |
+|---|---|---|---|
+| **shape** | is this a well-formed request for this operation? | the boundary, from the type | **422** |
+| **domain** | is it allowed by the domain's rules? | the **owning** service | **400** + domain code |
+
+The edge never restates a downstream rule — one place per rule, so the two cannot drift. A
+client can then tell *"you sent garbage"* from *"you sent something valid that we refused"*,
+which a single 400 for everything cannot express. Choose by layer, never per endpoint.
 
 ## Lifecycle (`draft` → `work-order` → `shipped`)
 

@@ -31,6 +31,38 @@ Rules:
 - **One writer.** Only the detection step writes this file; everything else reads it.
 - **Labels are a closed set.** Skills use only the labels listed here; they never invent new ones.
 
+## `contract.md` — contract toolchain binding (only if the repo has a contract layer)
+
+Read by `develop` (its pre-flight contract check) and `code-review` (its spec axis, when the
+change touches an `§API surface`). Written **once**, by `setup`, when the repo opts into the
+contract layer. Absent means the repo has no governed contract surface — that is a legal state,
+not a missing file, and skills must degrade quietly rather than flag it.
+
+It exists because **the skills are generic and must not hardcode a toolchain.** `develop` says
+"regenerate the contract document and the client" without naming a command; this file is where
+a repo answers that. Exactly the role `tracker.md` plays for issue backends.
+
+It carries three kinds of value:
+
+| Kind | Examples | Why a skill needs it |
+|---|---|---|
+| **paths** | spec, generated-client dir, allowlist, lint ruleset, fixtures | to find and diff the artifacts |
+| **commands** | regen, client regen, lint, breaking, gates | to run the pre-flight without guessing |
+| **policy** | request strictness per plane, request-type rules | to judge a new operation without assuming a house style |
+
+Rules:
+
+- **One contract config per repo**, even in a monorepo — the contract layer governs one edge
+  surface plus, optionally, one service-to-service plane.
+- **Skills READ it; they never write it.** A skill that finds a stale value reports it.
+- **Pin tool versions here as well as in the build file.** A gate running `@latest` can turn red
+  on a day nobody touched the contract.
+- **State an unwired plane explicitly** rather than omitting it. An explicit gap is auditable; a
+  silent one reads as "governed".
+- **Policy carries its revisit trigger.** Strictness follows the deployment model — correct only
+  while the consumer ships in the same release. A rule recorded without its precondition gets
+  cargo-culted into a repo where it is wrong.
+
 ## Local → tracker migration
 
 `mode: local` stores issues as `{issues_dir}/I-NNNN-*.md` (frontmatter + body). Migrating to a real
