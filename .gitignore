@@ -273,3 +273,6 @@ temp/
 
 # spec-audit run reports (baselines + OPEN.md stay tracked)
 .audit/reports/
+
+# Pinned contract-gate tooling (version pinned in the Makefile, which IS tracked)
+.tools/

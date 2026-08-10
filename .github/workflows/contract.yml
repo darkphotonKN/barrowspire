@@ -1,0 +1,79 @@
+# Contract gates — plane 1 of the contract ADR.
+#
+# Copied to .github/workflows/contract.yml by `setup` when the repo opts into the contract
+# layer. Deliberately scoped to the contract gates ONLY: build/test CI is a separate
+# concern and is not bundled here.
+#
+# Every gate is a no-op-with-reason until game-server/api-gateway/openapi.yaml exists. It reports SKIPPED explicitly
+# rather than passing vacuously — a green check that means "nothing ran" is worse than no
+# check, because it is trusted.
+#
+# PLACEHOLDERS: game-server/api-gateway game-client/src/api/generated game-server/api-gateway/openapi.yaml game-server/.oasdiff-ignore
+#               game-server/.spectral.yaml
+
+name: contract
+
+on:
+  pull_request:
+    paths:
+      - "game-server/api-gateway/**"
+      - "game-client/src/api/generated/**"
+      - "game-server/.spectral.yaml"
+      - "game-server/.oasdiff-ignore"
+      - "contract-fixtures/**"
+      - ".github/workflows/contract.yml"
+  push:
+    branches: [main]
+
+jobs:
+  plane1:
+    name: plane 1 (HTTP contract)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # oasdiff diffs against the base branch's committed spec, so the gate needs
+          # history, not just the tip commit.
+          fetch-depth: 0
+
+      # — e.g. actions/setup-go with go-version-file, or setup-java, etc.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: game-server/api-gateway/go.mod
+          cache-dependency-path: game-server/api-gateway/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The regenerate step is only meaningful if the dependency graph is verifiable.
+      # Lockfiles MUST be committed for this to mean anything — a repo that gitignores
+      # them cannot make the reproducibility promise this gate assumes.
+      - name: verify module graph
+        working-directory: game-server/api-gateway
+        run: go mod verify
+
+      - name: regenerate spec and fail on diff
+        working-directory: game-server/api-gateway
+        run: make openapi-diff
+
+      - name: lint contract depth (spectral)
+        working-directory: game-server/api-gateway
+        run: make lint-contract
+
+      # Installs the PINNED oasdiff binary as a prerequisite; see the Makefile.
+      - name: breaking-change check (oasdiff)
+        working-directory: game-server/api-gateway
+        run: make openapi-breaking
+
+      # The generated client is the consumer's only import path for serialized endpoints.
+      # If regenerating it produces a diff, the committed client is stale.
+      - name: regenerate client and fail on diff
+        run: |
+          make -C game-server/api-gateway client
+          if ! git diff --quiet -- game-client/src/api/generated; then
+            echo "::error::generated client is stale — run 'make -C game-server/api-gateway client' and commit"
+            git diff --stat -- game-client/src/api/generated
+            exit 1
+          fi
+          echo "✅ generated client matches committed"

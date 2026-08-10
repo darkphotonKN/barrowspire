@@ -1,0 +1,70 @@
+# KNOWN-BAD spec for the Spectral ruleset fixture.
+#
+# This file is INTENTIONALLY NON-COMPLIANT. Linting it with /.spectral.yaml MUST fail
+# (rc=1). If it ever passes, the ruleset has silently stopped enforcing something —
+# which is the failure mode fixtures exist to catch (see README.md in this directory).
+#
+# It is repo-neutral: no real endpoint, never served, safe to copy into any repo.
+#
+# Violations planted here, one per custom rule in /.spectral.yaml:
+#   1. contract-error-responses-are-problem-json
+#        /widgets 404 uses application/json instead of application/problem+json
+#   2. contract-error-responses-carry-a-code
+#        /widgets 500 IS problem+json but its schema omits the `code` member
+#   3. contract-operation-documents-errors
+#        /gadgets documents only a 200 — no error response at all
+
+openapi: 3.1.0
+info:
+  title: Contract gate fixture (deliberately non-compliant)
+  version: 1.0.0
+paths:
+  /widgets:
+    get:
+      operationId: listWidgets
+      description: List widgets. Fixture operation — not a real endpoint.
+      responses:
+        "200":
+          description: The widgets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        # VIOLATION 1 — error response is not problem+json.
+        "404":
+          description: Not found.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        # VIOLATION 2 — problem+json, but the schema has no `code` member.
+        "500":
+          description: Internal error.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+  /gadgets:
+    get:
+      operationId: listGadgets
+      description: List gadgets. Fixture operation — not a real endpoint.
+      # VIOLATION 3 — happy path only, no 4xx/5xx documented.
+      responses:
+        "200":
+          description: The gadgets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string

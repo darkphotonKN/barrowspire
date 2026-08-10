@@ -1,0 +1,54 @@
+# oasdiff breaking-change ALLOWLIST — deliberate breaks only.
+#
+# Passed to `oasdiff breaking` via --err-ignore. Any breaking change NOT listed here fails
+# CI. Listing one is an explicit, reviewed act: a break must be CHOSEN, not discovered by a
+# client.
+#
+# ---------------------------------------------------------------------------
+# FORMAT — verified against oasdiff v1.28.0. Do not guess at this; the obvious
+# guess is wrong and fails silently.
+#
+# One line per (METHOD, PATH, MESSAGE) triple, all lowercased. oasdiff suppresses a
+# breaking change only when an ignore line contains ALL THREE of the method, the path,
+# and the change text.
+#
+#   A line carrying the printed message ALONE matches nothing. It does not error —
+#   it silently fails to suppress, and the gate stays red with no explanation.
+#
+# To derive a line, run the diff and read the two indented lines of the error:
+#
+#   error   [response-required-property-removed] at openapi.yaml
+#           in API GET /widgets/{id}                                      <- method + path
+#             removed the required property `displayName` from the ...    <- message
+#
+# Concatenate them and lowercase the result:
+#
+#   in api get /widgets/{id} removed the required property `displayname` from the ...
+#
+# A break affecting two operations needs TWO lines — one per operation.
+#
+# A WORKING EXAMPLE, exercised against real fixtures, lives at
+# contract-fixtures/oasdiff-allowlist.txt. Copy its shape, not oasdiff's output.
+#
+# EVERY ENTRY MUST CARRY: the FS or ADR that authorised the break, and why.
+# An entry with no reason is a bug, not an allowance.
+# ---------------------------------------------------------------------------
+#
+# ---------------------------------------------------------------------------
+# START EMPTY. Do not pre-populate.
+#
+# It is tempting to add the breaks you expect the first serialization to cause. Don't —
+# for two reasons:
+#
+#   1. An allowlist entry that matches nothing looks like coverage and silently rots.
+#      Add an entry only when a real diff has produced a real error message.
+#
+#   2. Under serialize-on-touch, the FIRST serialization's breaks are invisible to this
+#      gate anyway. oasdiff compares the schema document against its OWN previous
+#      revision; an endpoint's first serialization has none, and its breaks are relative
+#      to whatever described it before — a different document oasdiff never sees. Those
+#      are CROSS-DOCUMENT breaks and plane-1 detection is structurally blind to them.
+#
+# Expect `SKIPPED: no baseline` until the spec first lands on the base branch. That is
+# correct, not broken. The ratchet guards every revision AFTER that point.
+# ---------------------------------------------------------------------------

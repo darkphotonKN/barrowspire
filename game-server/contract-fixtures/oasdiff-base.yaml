@@ -1,0 +1,64 @@
+# BASELINE for the oasdiff breaking-change fixture.
+#
+# Deliberately minimal and repo-neutral — it describes no real endpoint and is never
+# served. Its only job is to be the "before" side of a known break.
+# Pairs with oasdiff-rev.yaml. See README.md in this directory.
+
+openapi: 3.1.0
+info:
+  title: Contract gate fixture
+  version: 1.0.0
+paths:
+  /widgets/{id}:
+    get:
+      operationId: getWidget
+      description: Fetch one widget. Fixture operation — not a real endpoint.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The widget.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Widget"
+        "404":
+          description: No such widget.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+components:
+  schemas:
+    Widget:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          description: Stable identifier.
+        displayName:
+          type: string
+          description: Human-readable label. REMOVED in oasdiff-rev.yaml — that is the break.
+      required:
+        - id
+        - displayName
+    Problem:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          description: Stable domain error code.
+        status:
+          type: integer
+          description: HTTP status code.
+        detail:
+          type: string
+          description: Explanation specific to this occurrence.
+      required:
+        - code

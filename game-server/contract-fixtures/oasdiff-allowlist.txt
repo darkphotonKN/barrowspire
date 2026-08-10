@@ -1,0 +1,31 @@
+# WORKED EXAMPLE of an oasdiff allowlist entry — and the fixture's expected-pass file.
+#
+# This file is the living proof of the format documented in /.oasdiff-ignore. If you are
+# writing your first allowlist entry, copy the shape below rather than the shape you
+# might guess from oasdiff's printed output.
+#
+# THE FORMAT, verified 2026-08-09 against oasdiff v1.28.0:
+#
+#   One line per (METHOD, PATH, MESSAGE) triple, all lowercased.
+#   oasdiff suppresses a breaking change only when an ignore line contains ALL THREE of
+#   the method, the path, and the change text. A line carrying the message alone
+#   matches nothing and silently fails to suppress.
+#
+# HOW TO DERIVE A LINE. Run the diff and read the two indented lines of the error:
+#
+#   error   [response-required-property-removed] at oasdiff-rev.yaml
+#           in API GET /widgets/{id}                                      <- method + path
+#             removed the required property `displayName` from the ...    <- message
+#
+# Concatenate them, lowercase the result, and drop the leading "error"/"at" framing:
+#
+#   in api get /widgets/{id} removed the required property `displayname` ...
+#
+# A break that affects two operations needs TWO lines — one per operation.
+#
+# EVERY REAL ENTRY MUST CARRY the FS or ADR that authorised the break, and why.
+# An entry with no reason is a bug, not an allowance.
+
+# --- fixture entry (authorised by: contract-fixtures/README.md — this is a test) -----
+# Suppresses the deliberate break between oasdiff-base.yaml and oasdiff-rev.yaml.
+in api get /widgets/{id} removed the required property `displayname` from the response with the `200` status
