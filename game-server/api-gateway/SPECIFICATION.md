@@ -34,6 +34,8 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] OpenTelemetry tracing middleware
 - [x] JWT authentication on private route groups
 - [x] Consul register / health-check / deregister lifecycle
+- [x] Error responses on every route → FS-none
+- [ ] Uniform, machine-readable error contract → FS-0001
 
 ### Downstream routing
 
