@@ -4,10 +4,10 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	"github.com/gin-gonic/gin"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type Handler struct {
@@ -21,39 +21,16 @@ func NewHandler(client ItemClient) *Handler {
 }
 
 func (h *Handler) CreateWeaponHandler(c *gin.Context) {
+	const op = "CreateWeaponHandler"
 	var req pb.CreateWeaponRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Invalid request body",
-			"error":      err.Error(),
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
 		return
 	}
 
 	weapon, err := h.client.CreateWeapon(c.Request.Context(), &req)
 	if err != nil {
-		st, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch st.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.AlreadyExists:
-			httpStatus = http.StatusConflict
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    st.Message(),
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -65,21 +42,10 @@ func (h *Handler) CreateWeaponHandler(c *gin.Context) {
 }
 
 func (h *Handler) ListWeaponsWithTemplateHandler(c *gin.Context) {
+	const op = "ListWeaponsWithTemplateHandler"
 	response, err := h.client.ListWeaponsWithTemplate(c.Request.Context())
 	if err != nil {
-		st, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"statusCode": http.StatusInternalServerError,
-			"message":    st.Message(),
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -93,12 +59,10 @@ func (h *Handler) ListWeaponsWithTemplateHandler(c *gin.Context) {
 // CreateItemTemplateHandler 創建物品模板
 // 重要：這個方法會觸發 RabbitMQ 事件，發送通知給管理員
 func (h *Handler) CreateItemTemplateHandler(c *gin.Context) {
+	const op = "CreateItemTemplateHandler"
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -116,11 +80,7 @@ func (h *Handler) CreateItemTemplateHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&httpReq); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Invalid request body",
-			"error":      err.Error(),
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
 		return
 	}
 
@@ -147,27 +107,7 @@ func (h *Handler) CreateItemTemplateHandler(c *gin.Context) {
 
 	template, err := h.client.CreateItemTemplate(c.Request.Context(), grpcReq)
 	if err != nil {
-		st, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch st.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.AlreadyExists:
-			httpStatus = http.StatusConflict
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    st.Message(),
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -180,13 +120,11 @@ func (h *Handler) CreateItemTemplateHandler(c *gin.Context) {
 
 // CreateCompleteWeaponHandler creates a complete weapon (weapon + template) in one request
 func (h *Handler) CreateCompleteWeaponHandler(c *gin.Context) {
+	const op = "CreateCompleteWeaponHandler"
 	// 1. Extract userId from JWT
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -211,11 +149,7 @@ func (h *Handler) CreateCompleteWeaponHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&httpReq); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Invalid request body",
-			"error":      err.Error(),
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
 		return
 	}
 
@@ -249,27 +183,7 @@ func (h *Handler) CreateCompleteWeaponHandler(c *gin.Context) {
 	// 4. Call items-service (will create weapon, create template, send RabbitMQ)
 	weaponDetail, err := h.client.CreateCompleteWeapon(c.Request.Context(), grpcReq)
 	if err != nil {
-		st, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch st.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.AlreadyExists:
-			httpStatus = http.StatusConflict
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    st.Message(),
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -283,13 +197,11 @@ func (h *Handler) CreateCompleteWeaponHandler(c *gin.Context) {
 
 // CreateCompleteArmorHandler creates a complete armor (armor + template) in one request
 func (h *Handler) CreateCompleteArmorHandler(c *gin.Context) {
+	const op = "CreateCompleteArmorHandler"
 	// 1. Extract userId from JWT
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -314,11 +226,7 @@ func (h *Handler) CreateCompleteArmorHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&httpReq); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Invalid request body",
-			"error":      err.Error(),
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
 		return
 	}
 
@@ -350,27 +258,7 @@ func (h *Handler) CreateCompleteArmorHandler(c *gin.Context) {
 	// 4. Call items-service
 	armorDetail, err := h.client.CreateCompleteArmor(c.Request.Context(), grpcReq)
 	if err != nil {
-		st, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch st.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.AlreadyExists:
-			httpStatus = http.StatusConflict
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    st.Message(),
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -384,13 +272,11 @@ func (h *Handler) CreateCompleteArmorHandler(c *gin.Context) {
 
 // CreateCompleteConsumableHandler creates a complete consumable (consumable + template) in one request
 func (h *Handler) CreateCompleteConsumableHandler(c *gin.Context) {
+	const op = "CreateCompleteConsumableHandler"
 	// 1. Extract userId from JWT
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -415,11 +301,7 @@ func (h *Handler) CreateCompleteConsumableHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&httpReq); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Invalid request body",
-			"error":      err.Error(),
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
 		return
 	}
 
@@ -452,27 +334,7 @@ func (h *Handler) CreateCompleteConsumableHandler(c *gin.Context) {
 	// 4. Call items-service
 	consumableDetail, err := h.client.CreateCompleteConsumable(c.Request.Context(), grpcReq)
 	if err != nil {
-		st, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch st.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.AlreadyExists:
-			httpStatus = http.StatusConflict
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    st.Message(),
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -486,22 +348,11 @@ func (h *Handler) CreateCompleteConsumableHandler(c *gin.Context) {
 
 // ListItemTypesHandler returns all item types for dropdown options
 func (h *Handler) ListItemTypesHandler(c *gin.Context) {
+	const op = "ListItemTypesHandler"
 	// Call items-service to get item types
 	itemTypes, err := h.client.ListItemTypes(c.Request.Context())
 	if err != nil {
-		st, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Failed to list item types",
-			})
-			return
-		}
-
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"statusCode": http.StatusInternalServerError,
-			"message":    st.Message(),
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -514,22 +365,11 @@ func (h *Handler) ListItemTypesHandler(c *gin.Context) {
 
 // ListItemRaritiesHandler returns all item rarities for dropdown options
 func (h *Handler) ListItemRaritiesHandler(c *gin.Context) {
+	const op = "ListItemRaritiesHandler"
 	// Call items-service to get item rarities
 	rarities, err := h.client.ListItemRarities(c.Request.Context())
 	if err != nil {
-		st, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Failed to list item rarities",
-			})
-			return
-		}
-
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"statusCode": http.StatusInternalServerError,
-			"message":    st.Message(),
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -542,12 +382,10 @@ func (h *Handler) ListItemRaritiesHandler(c *gin.Context) {
 
 // get loadout for player
 func (h *Handler) GetLoadoutHandler(c *gin.Context) {
+	const op = "GetLoadoutHandler"
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -557,10 +395,7 @@ func (h *Handler) GetLoadoutHandler(c *gin.Context) {
 	result, err := h.client.GetLoadout(c.Request.Context(), grpcReq)
 	if err != nil {
 		log.Printf("GetLoadout error: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"statusCode": http.StatusInternalServerError,
-			"message":    "Internal server error",
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -572,12 +407,10 @@ func (h *Handler) GetLoadoutHandler(c *gin.Context) {
 }
 
 func (h *Handler) ListItemInstancesHandler(c *gin.Context) {
+	const op = "ListItemInstancesHandler"
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -586,10 +419,7 @@ func (h *Handler) ListItemInstancesHandler(c *gin.Context) {
 	}
 	result, err := h.client.ListItemInstances(c.Request.Context(), grpcReq)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"statusCode": http.StatusInternalServerError,
-			"message":    "Internal server error",
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -601,12 +431,10 @@ func (h *Handler) ListItemInstancesHandler(c *gin.Context) {
 }
 
 func (h *Handler) UpdateLoadoutHandler(c *gin.Context) {
+	const op = "UpdateLoadoutHandler"
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -615,10 +443,7 @@ func (h *Handler) UpdateLoadoutHandler(c *gin.Context) {
 		ItemInstanceId string `json:"item_instance_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Invalid request body",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
 		return
 	}
 
@@ -631,10 +456,7 @@ func (h *Handler) UpdateLoadoutHandler(c *gin.Context) {
 	result, err := h.client.UpdateLoadout(c.Request.Context(), grpcReq)
 	if err != nil {
 		log.Printf("UpdateLoadout error: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"statusCode": http.StatusInternalServerError,
-			"message":    "Internal server error",
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 

@@ -1,6 +1,6 @@
 ---
 id: I-0003
-status: in-progress
+status: done
 implements: FS-0001
 blocked_by: [I-0001]
 labels: [ready-for-agent]

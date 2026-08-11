@@ -1,6 +1,6 @@
 ---
 id: I-0004
-status: open
+status: in-progress
 implements: FS-0001
 blocked_by: [I-0001]
 labels: [ready-for-agent]
