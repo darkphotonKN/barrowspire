@@ -39,3 +39,47 @@ var (
 	// and carries 422 instead (ADR-0001 §7).
 	ErrValidation = errors.New("validation failed")
 )
+
+// WithDetail attaches a client-safe, occurrence-specific message to err.
+//
+// This is the ONLY way occurrence-specific prose reaches a response body, and it
+// exists because the two obvious sources are both closed: downstream error text
+// is never client-safe (FS-0001 §Requirements 9), and the gateway may not restate
+// a downstream service's rule (ADR-0001 §6). What remains is a message the caller
+// authored about a failure it decided itself — a missing Authorization header, a
+// token it could not parse.
+//
+// CONTRACT FOR CALLERS: pass only strings you wrote as literals. Never pass
+// err.Error(), a downstream message, or anything interpolated from one. The
+// sentinel is still matched through the wrapper, so the resulting status and
+// errcode.Code are unchanged; only detail differs.
+//
+// detail is prose, not contract — clients display it and switch on code.
+func WithDetail(err error, detail string) error {
+	if err == nil {
+		return nil
+	}
+	return &detailedError{err: err, detail: detail}
+}
+
+// DetailOf returns the client-safe detail attached anywhere in err's chain, and
+// whether one was found. The outermost detail wins: a caller adding context
+// closer to the response is being more specific, not less.
+func DetailOf(err error) (string, bool) {
+	var d *detailedError
+	if errors.As(err, &d) {
+		return d.detail, true
+	}
+	return "", false
+}
+
+// detailedError carries a client-safe message alongside an error without
+// disturbing errors.Is matching against the sentinel underneath.
+type detailedError struct {
+	err    error
+	detail string
+}
+
+func (d *detailedError) Error() string { return d.detail + ": " + d.err.Error() }
+
+func (d *detailedError) Unwrap() error { return d.err }

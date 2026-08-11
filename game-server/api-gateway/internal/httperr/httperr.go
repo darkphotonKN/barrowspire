@@ -23,21 +23,21 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ContentType is the media type of every error response. RFC 9457 requires it,
+// contentType is the media type of every error response. RFC 9457 requires it,
 // and it is asserted in tests: the failure mode this guards against is silently
 // degrading to application/json, which no client would notice until it relied on
 // the distinction.
-const ContentType = "application/problem+json"
+const contentType = "application/problem+json"
 
-// FieldError is one entry in a Problem's Errors slice.
-type FieldError struct {
+// fieldError is one entry in a problemDetail's Errors slice.
+type fieldError struct {
 	Field   string `json:"field"`
 	Message string `json:"message"`
 }
 
-// Problem is an RFC 9457 problem detail. Member semantics are pinned by
+// problemDetail is an RFC 9457 problem detail. Member semantics are pinned by
 // FS-0001 §API surface.
-type Problem struct {
+type problemDetail struct {
 	// Type identifies the problem class. about:blank until real type URIs are
 	// minted; Code is the switch key in the meantime.
 	Type string `json:"type"`
@@ -52,7 +52,7 @@ type Problem struct {
 	Code errcode.Code `json:"code"`
 	// Errors carries field-level detail. Always present — empty rather than
 	// absent, so clients never null-check before iterating.
-	Errors []FieldError `json:"errors"`
+	Errors []fieldError `json:"errors"`
 }
 
 // Write maps err to a problem+json response and writes it to c.
@@ -65,6 +65,14 @@ type Problem struct {
 // middleware that rejects a request does not fall through to the handler.
 func Write(c *gin.Context, op string, err error) {
 	p := mapError(err)
+
+	// An authored detail (apperr.WithDetail) is the one occurrence-specific
+	// message safe to publish: the caller wrote it about a failure it decided
+	// itself. Title is deliberately left alone — it is the stable status
+	// summary, and collapsing the two would make detail redundant again.
+	if detail, ok := apperr.DetailOf(err); ok {
+		p.Detail = detail
+	}
 
 	// 5xx is ours to fix and pages someone; 4xx is the caller's mistake and
 	// must not. Same event, different audience.
@@ -86,7 +94,7 @@ func Write(c *gin.Context, op string, err error) {
 
 	// Rendered as raw data rather than via c.JSON, which hardcodes
 	// application/json and would defeat the media type above.
-	c.Render(p.Status, render.Data{ContentType: ContentType, Data: body})
+	c.Render(p.Status, render.Data{ContentType: contentType, Data: body})
 	c.Abort()
 }
 
@@ -95,57 +103,57 @@ func Write(c *gin.Context, op string, err error) {
 // Precedence: a gRPC status from downstream, then a local sentinel, then the
 // catch-all. The catch-all must exist so that a downstream code nobody has seen
 // yet degrades to a clean 500 rather than an empty status.
-func mapError(err error) Problem {
+func mapError(err error) problemDetail {
 	// codes.OK means FromError was handed something that is not a gRPC status
 	// at all (including nil), so it is not a decision — fall through and let the
 	// sentinels answer.
 	if st, ok := status.FromError(err); ok && st.Code() != codes.OK {
 		switch st.Code() {
 		case codes.InvalidArgument:
-			return problem(http.StatusBadRequest, errcode.ValidationFailed)
+			return newProblem(http.StatusBadRequest, errcode.ValidationFailed)
 		case codes.NotFound:
-			return problem(http.StatusNotFound, errcode.NotFound)
+			return newProblem(http.StatusNotFound, errcode.NotFound)
 		case codes.AlreadyExists:
-			return problem(http.StatusConflict, errcode.AlreadyExists)
+			return newProblem(http.StatusConflict, errcode.AlreadyExists)
 		case codes.Unauthenticated:
-			return problem(http.StatusUnauthorized, errcode.Unauthenticated)
+			return newProblem(http.StatusUnauthorized, errcode.Unauthenticated)
 		case codes.PermissionDenied:
-			return problem(http.StatusForbidden, errcode.Forbidden)
+			return newProblem(http.StatusForbidden, errcode.Forbidden)
 		default:
 			// Unavailable lands here with everything else unmapped. A downstream
 			// being down is our problem, not the caller's, so it is a 500 and
 			// never leaks the dial error.
-			return problem(http.StatusInternalServerError, errcode.Internal)
+			return newProblem(http.StatusInternalServerError, errcode.Internal)
 		}
 	}
 
 	switch {
 	case errors.Is(err, apperr.ErrNotFound):
-		return problem(http.StatusNotFound, errcode.NotFound)
+		return newProblem(http.StatusNotFound, errcode.NotFound)
 	case errors.Is(err, apperr.ErrAlreadyExists):
-		return problem(http.StatusConflict, errcode.AlreadyExists)
+		return newProblem(http.StatusConflict, errcode.AlreadyExists)
 	case errors.Is(err, apperr.ErrUnauthenticated):
-		return problem(http.StatusUnauthorized, errcode.Unauthenticated)
+		return newProblem(http.StatusUnauthorized, errcode.Unauthenticated)
 	case errors.Is(err, apperr.ErrForbidden):
-		return problem(http.StatusForbidden, errcode.Forbidden)
+		return newProblem(http.StatusForbidden, errcode.Forbidden)
 	case errors.Is(err, apperr.ErrValidation):
-		return problem(http.StatusBadRequest, errcode.ValidationFailed)
+		return newProblem(http.StatusBadRequest, errcode.ValidationFailed)
 	}
 
-	return problem(http.StatusInternalServerError, errcode.Internal)
+	return newProblem(http.StatusInternalServerError, errcode.Internal)
 }
 
-// problem builds a Problem with the members that follow mechanically from a
+// newProblem builds a problemDetail with the members that follow mechanically from a
 // status and a code. Detail defaults to the status text: downstream error
 // prose is never client-safe (FS-0001 §Requirements 9), so the default has to
 // be something that carries no information about internals.
-func problem(httpStatus int, code errcode.Code) Problem {
-	return Problem{
+func newProblem(httpStatus int, code errcode.Code) problemDetail {
+	return problemDetail{
 		Type:   "about:blank",
 		Title:  http.StatusText(httpStatus),
 		Status: httpStatus,
 		Detail: http.StatusText(httpStatus),
 		Code:   code,
-		Errors: []FieldError{},
+		Errors: []fieldError{},
 	}
 }

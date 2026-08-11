@@ -10,6 +10,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -21,9 +22,20 @@ import (
 * Sets up API prefix route and all routers.
 **/
 func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
-	router := gin.Default()
+	// gin.New(), not gin.Default(): Default() installs gin's stock Recovery,
+	// which writes a 500 with an EMPTY BODY and so is the one failure path that
+	// bypasses the error contract (FS-0001 §Edge States). Default() also installs
+	// gin.Logger(), which is re-attached below — dropping it silently was the
+	// second half of this trap.
+	router := gin.New()
 
 	// --- Middlewares ---
+
+	// Recovery FIRST. Middleware registered before it panics outside its scope,
+	// and a panic in CORS or tracing would produce the empty 500 all over again.
+	router.Use(httperr.Recovery())
+
+	router.Use(gin.Logger())
 
 	// NOTE: debugging middleware
 	router.Use(func(c *gin.Context) {

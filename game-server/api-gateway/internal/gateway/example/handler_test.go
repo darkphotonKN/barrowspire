@@ -2,18 +2,15 @@ package example_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/example"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/testsupport"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/example"
 	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -47,21 +44,6 @@ func newRouter(client example.ExampleClient) *gin.Engine {
 	g.GET("/:id", h.GetExample)
 	g.POST("", h.CreateExample)
 	return r
-}
-
-func do(r *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-	return w
-}
-
-func decode(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
-	t.Helper()
-	var body map[string]any
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	return body
 }
 
 // FS-0001 §Requirements 4, 7 — every error this package can produce now comes
@@ -104,12 +86,12 @@ func TestExampleHandler_ErrorPaths_ReturnProblemJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w := do(newRouter(&stubClient{err: tt.clientErr}), tt.method, tt.path, tt.body)
+			w := testsupport.Do(newRouter(&stubClient{err: tt.clientErr}), tt.method, tt.path, tt.body)
 
 			assert.Equal(t, tt.wantStatus, w.Code)
 			assert.Equal(t, "application/problem+json", w.Header().Get("Content-Type"))
 
-			body := decode(t, w)
+			body := testsupport.Decode(t, w)
 			assert.Equal(t, string(tt.wantCode), body["code"])
 			assert.Contains(t, body, "errors")
 		})
@@ -122,7 +104,7 @@ func TestExampleHandler_ErrorPaths_ReturnProblemJSON(t *testing.T) {
 func TestExampleHandler_GetExample_DoesNotLeakDownstreamError(t *testing.T) {
 	const leak = "dial tcp 10.0.0.4:50051: connect: connection refused"
 
-	w := do(newRouter(&stubClient{err: status.Error(codes.Unavailable, leak)}), http.MethodGet, "/example/abc", "")
+	w := testsupport.Do(newRouter(&stubClient{err: status.Error(codes.Unavailable, leak)}), http.MethodGet, "/example/abc", "")
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.NotContains(t, w.Body.String(), "10.0.0.4")
@@ -136,22 +118,31 @@ func TestExampleHandler_SuccessResponses_AreUnchanged(t *testing.T) {
 	client := &stubClient{example: &pb.Example{Id: "abc"}}
 
 	t.Run("create", func(t *testing.T) {
-		w := do(newRouter(client), http.MethodPost, "/example", `{}`)
+		w := testsupport.Do(newRouter(client), http.MethodPost, "/example", `{}`)
 
 		assert.Equal(t, http.StatusCreated, w.Code)
 		assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
 
-		body := decode(t, w)
+		body := testsupport.Decode(t, w)
 		assert.Equal(t, float64(http.StatusOK), body["statusCode"])
 		assert.Equal(t, "success", body["message"])
 		assert.Contains(t, body, "result")
 	})
 
 	t.Run("get", func(t *testing.T) {
-		w := do(newRouter(client), http.MethodGet, "/example/abc", "")
+		w := testsupport.Do(newRouter(client), http.MethodGet, "/example/abc", "")
 
+		// KNOWN DEFECT, deliberately preserved: a GET returns 201 Created, and
+		// the body's statusCode says 200 while the header says 201. Both predate
+		// FS-0001, which touches only the error half of every route
+		// (§Requirements 12), so changing it here would be scope creep in a slice
+		// whose whole claim is that success responses are untouched.
+		//
+		// This assertion pins current behavior; it is not an endorsement. Fixing
+		// it is a success-envelope change and belongs to whichever feature
+		// serializes this endpoint.
 		assert.Equal(t, http.StatusCreated, w.Code)
-		body := decode(t, w)
+		body := testsupport.Decode(t, w)
 		assert.Equal(t, float64(http.StatusOK), body["statusCode"])
 		assert.Equal(t, "success", body["message"])
 	})
