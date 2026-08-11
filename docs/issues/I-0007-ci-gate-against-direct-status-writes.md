@@ -30,6 +30,25 @@ Wire it alongside the existing contract gates rather than as a separate workflow
 already has `.github/workflows/contract.yml` and a `gates` target in
 `game-server/api-gateway/Makefile`.
 
+### Two more patterns the gate must reject
+
+Both were found by code review during slices 1–2, and both are rules that
+currently exist only as doc comments. An unenforced rule across 83 remaining
+hand-migrations is a rule that gets broken.
+
+**1. `httperr.Write` not followed by `return`.** `Write` aborts the middleware
+chain but does NOT stop the current function — Go has no such thing. A missing
+`return` means execution continues after the response is already on the wire, and
+whatever runs next operates on the state that just failed. This is the realistic
+trigger for the panic-after-response case fixed in `recovery.go`.
+
+**2. `apperr.WithDetail` with a non-literal second argument.** `WithDetail`
+publishes its string to the client. Its doc comment says "pass only strings you
+wrote as literals", because `WithDetail(err, err.Error())` or
+`WithDetail(err, st.Message())` reopens exactly the downstream-leak that
+§Requirements 9 exists to close. Reject any call whose second argument is not a
+string literal.
+
 ## Acceptance Criteria
 
 - [ ] The check greps `game-server/api-gateway` for direct 4xx/5xx writes outside the seam package

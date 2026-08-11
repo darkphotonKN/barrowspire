@@ -266,3 +266,29 @@ func TestRecovery_NoPanic_LeavesTheResponseAlone(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.JSONEq(t, `{"ok":true}`, w.Body.String())
 }
+
+// A handler can panic AFTER it has already responded — one forgotten `return`
+// after an error write is enough, and 83 error sites are still to be converted
+// by hand. c.JSON does not return a response, it sends one: the bytes are on the
+// wire and cannot be retracted, so recovery must not try to write a second body
+// on top. Doing so produced two concatenated JSON documents behind whatever
+// status was already sent, which reads to the client as a success.
+func TestRecovery_PanicAfterResponseSent_DoesNotAppendASecondBody(t *testing.T) {
+	router := gin.New()
+	router.Use(httperr.Recovery())
+	router.GET("/late", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"items": []string{"a"}})
+		panic("failed after responding")
+	})
+
+	w := httptest.NewRecorder()
+	require.NotPanics(t, func() {
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/late", nil))
+	})
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `{"items":["a"]}`, w.Body.String(),
+		"the already-sent response must be left exactly as it was")
+	assert.NotContains(t, w.Body.String(), "about:blank")
+	assert.NotContains(t, w.Body.String(), "INTERNAL_ERROR")
+}

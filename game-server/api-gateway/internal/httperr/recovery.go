@@ -45,9 +45,25 @@ func Recovery() gin.HandlerFunc {
 				"op", "Recovery",
 				"path", c.Request.URL.Path,
 				"method", c.Request.Method,
+				"responded", c.Writer.Written(),
 				"panic", r,
 				"stack", string(debug.Stack()),
 			)
+
+			// If the handler already responded, the bytes are on the wire and
+			// cannot be retracted: c.JSON SENDS a response, it does not return
+			// one, and the function keeps running afterwards. Writing here would
+			// append a second JSON document to the first and leave the original
+			// status in place — a 500 wearing a 200, which the client reads as
+			// success. The realistic trigger is a missing `return` after an error
+			// write, and 83 error sites are still to be converted by hand.
+			//
+			// Nothing can be reported to this client, so the log line above is the
+			// whole response to the failure.
+			if c.Writer.Written() {
+				c.Abort()
+				return
+			}
 
 			Write(c, "Recovery", fmt.Errorf("panic: %v", r))
 		}()
