@@ -38,7 +38,8 @@ func TestWrite_GRPCStatus_MapsToStatusCodeAndMediaType(t *testing.T) {
 		{"already exists", status.Error(codes.AlreadyExists, "taken"), http.StatusConflict, errcode.AlreadyExists},
 		{"unauthenticated", status.Error(codes.Unauthenticated, "no token"), http.StatusUnauthorized, errcode.Unauthenticated},
 		{"permission denied", status.Error(codes.PermissionDenied, "not yours"), http.StatusForbidden, errcode.Forbidden},
-		{"unavailable", status.Error(codes.Unavailable, "dial tcp: connection refused"), http.StatusInternalServerError, errcode.Internal},
+		{"unavailable", status.Error(codes.Unavailable, "dial tcp: connection refused"), http.StatusServiceUnavailable, errcode.ServiceUnavailable},
+		{"unmapped code", status.Error(codes.ResourceExhausted, "quota"), http.StatusInternalServerError, errcode.Internal},
 	}
 
 	for _, tt := range tests {

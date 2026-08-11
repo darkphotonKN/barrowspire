@@ -22,8 +22,10 @@ deletes one of the six duplicated `status.FromError` switches (FS-0001 §Require
 brings the count of collapsed duplicates to four.
 
 Notification paths are the most likely place for `Unavailable` to appear in practice (a
-downstream that is simply not up), so this slice is where the `500 · INTERNAL_ERROR` catch-all
-gets exercised against a real dial failure rather than a synthetic one.
+downstream that is simply not up), so this slice is where `503 · SERVICE_UNAVAILABLE` gets
+exercised against a real dial failure rather than a synthetic one. Note 503, not 500 — FS-0001
+§Requirements 5 was amended during I-0003, because a downstream outage is retryable and a 500
+tells clients to give up.
 
 Success responses (200/201/202) are **untouched** and must stay byte-identical.
 
@@ -33,7 +35,7 @@ Success responses (200/201/202) are **untouched** and must stay byte-identical.
 - [ ] `grep 'c.JSON(http.Status'` over both packages returns only success statuses
 - [ ] Both packages' `status.FromError` switches are deleted
 - [ ] Each migrated path has a test asserting **status + `code` + `Content-Type`**
-- [ ] A downstream-unreachable case returns `500 INTERNAL_ERROR` with a generic `detail`; the dial error is logged, never surfaced
+- [ ] A downstream-unreachable case returns `503 SERVICE_UNAVAILABLE` with a generic `detail`; the dial error is logged, never surfaced
 - [ ] Success responses byte-identical to before
 - [ ] Gateway test suite passes
 

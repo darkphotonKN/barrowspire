@@ -37,7 +37,15 @@ cannot honestly describe failures that the code decides in 90 places.
    a catch-all `INTERNAL_ERROR` / 500. Observed downstream codes and their mapping:
    `InvalidArgument`→`400 VALIDATION_FAILED`, `NotFound`→`404 NOT_FOUND`,
    `AlreadyExists`→`409 ALREADY_EXISTS`, `Unauthenticated`→`401 UNAUTHENTICATED`,
-   `Unavailable`→`500 INTERNAL_ERROR`, `PermissionDenied`→`403 FORBIDDEN`.
+   `Unavailable`→`503 SERVICE_UNAVAILABLE`, `PermissionDenied`→`403 FORBIDDEN`.
+
+   > **Amended 2026-08-12, during I-0003.** This line originally said
+   > `Unavailable`→`500 INTERNAL_ERROR`. That was generalised from the eight handlers that had
+   > no case for `Unavailable` at all — but `RequestAvatarUploadHandler` already mapped it to
+   > **503**, correctly, and migrating faithfully would have downgraded the one endpoint that
+   > got it right. 500 tells a client its request broke us and must not be retried; 503 says we
+   > are temporarily down and retry is correct. A downstream outage is the second kind.
+   > `SERVICE_UNAVAILABLE` is a seventh code; §Requirements 3 makes adding one non-breaking.
 6. The seam replaces the `status.FromError` switch currently **duplicated across six handler
    files** (`auth`, `item`, `stats`, `payment`, `notification`, `example`). The mapping logic is
    collected, not invented.
@@ -174,7 +182,8 @@ Media type: `application/problem+json` (not `application/json`).
 | downstream `AlreadyExists` | `409 · ALREADY_EXISTS` |
 | missing / invalid / expired JWT | `401 · UNAUTHENTICATED` |
 | downstream `PermissionDenied` | `403 · FORBIDDEN` |
-| downstream `Unavailable`, unmapped code, panic | `500 · INTERNAL_ERROR` |
+| downstream `Unavailable` (unreachable, breaker open) | `503 · SERVICE_UNAVAILABLE` |
+| unmapped code, panic, anything unrecognised | `500 · INTERNAL_ERROR` |
 
 **Unchanged:** every route path, method, request body, and success response. Success envelopes
 are explicitly out of scope.

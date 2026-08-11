@@ -119,10 +119,16 @@ func mapError(err error) problemDetail {
 			return newProblem(http.StatusUnauthorized, errcode.Unauthenticated)
 		case codes.PermissionDenied:
 			return newProblem(http.StatusForbidden, errcode.Forbidden)
+		case codes.Unavailable:
+			// 503, not 500. The request was fine and retrying is the correct
+			// client behavior; a 500 would tell every caller to give up on a
+			// failure that would have succeeded a second later. The dial error
+			// itself still never leaves the process.
+			return newProblem(http.StatusServiceUnavailable, errcode.ServiceUnavailable)
 		default:
-			// Unavailable lands here with everything else unmapped. A downstream
-			// being down is our problem, not the caller's, so it is a 500 and
-			// never leaks the dial error.
+			// Everything genuinely unrecognised. The catch-all must exist so a
+			// downstream code nobody has seen yet degrades cleanly rather than
+			// producing an empty status.
 			return newProblem(http.StatusInternalServerError, errcode.Internal)
 		}
 	}

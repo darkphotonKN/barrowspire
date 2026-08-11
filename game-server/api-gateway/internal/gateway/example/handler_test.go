@@ -80,7 +80,7 @@ func TestExampleHandler_ErrorPaths_ReturnProblemJSON(t *testing.T) {
 		{
 			name: "get with downstream unavailable", method: http.MethodGet, path: "/example/abc",
 			clientErr:  status.Error(codes.Unavailable, "dial tcp 10.0.0.4:50051: connect: connection refused"),
-			wantStatus: http.StatusInternalServerError, wantCode: errcode.Internal,
+			wantStatus: http.StatusServiceUnavailable, wantCode: errcode.ServiceUnavailable,
 		},
 	}
 
@@ -106,7 +106,9 @@ func TestExampleHandler_GetExample_DoesNotLeakDownstreamError(t *testing.T) {
 
 	w := testsupport.Do(newRouter(&stubClient{err: status.Error(codes.Unavailable, leak)}), http.MethodGet, "/example/abc", "")
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// 503 per FS-0001 §Requirements 5 as amended: a downstream that is down is a
+	// retryable condition, not a broken request.
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	assert.NotContains(t, w.Body.String(), "10.0.0.4")
 	assert.NotContains(t, w.Body.String(), "dial tcp")
 }

@@ -35,7 +35,8 @@ precedence, per FS-0001 §Requirements 5:
 | downstream `AlreadyExists` | `409 · ALREADY_EXISTS` |
 | downstream `Unauthenticated` | `401 · UNAUTHENTICATED` |
 | downstream `PermissionDenied` | `403 · FORBIDDEN` |
-| downstream `Unavailable`, unmapped code, anything else | `500 · INTERNAL_ERROR` |
+| downstream `Unavailable` | `503 · SERVICE_UNAVAILABLE` *(amended during I-0003)* |
+| unmapped code, anything else | `500 · INTERNAL_ERROR` |
 
 gRPC status first, then a local `apperr` sentinel, then the catch-all. The mapping is
 **collected from the six existing `status.FromError` switches, not invented** — read them first.
