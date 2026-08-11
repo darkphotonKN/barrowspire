@@ -151,6 +151,11 @@ Go workspace. Rooting them higher would make the Makefile's relative paths climb
 - **FS-0001 is a hard prerequisite, not a nicety.** The gateway has ~122 direct error-status
   writes, four error body shapes, and no error package at all. Clause 6's seam must exist
   before any endpoint can be serialized honestly.
+
+  > **Erratum 2026-08-11.** "~122" counted every `c.JSON(http.Status…)` write in the gateway
+  > (125), successes included. Error-status writes are **90**, across 8 files; `game-service`
+  > holds a further 8, out of FS-0001's scope. The four-body-shape and no-error-package claims
+  > hold, and the prerequisite argument is unaffected. Recount: FS-0001 §Summary.
 - **Huma v2 forces a dependency-floor bump.** The gateway is on `gin v1.11.0` and Go directive
   `1.24.2`; huma v2 requires **gin ≥ 1.12** and **Go ≥ 1.25**. That is a framework-version bump
   across every gin handler in the service, and it belongs in the first serialize-on-touch
