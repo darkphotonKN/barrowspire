@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package marketplace;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace";
+
+// Wallet service definition for member gold accounts.
+service MarketplaceService {
+  // Get a member's account balance snapshot.
+  rpc CreateListing(CreateListingRequest) returns (CreateListingResponse) {}
+}
+
+// CreateListing
+// Empty by design: the member identity is derived from the authenticated
+// context server-side, never supplied by the caller.
+message CreateListingRequest {}
+
+message CreateListingResponse {
+  string id             = 1;
+  string member_id      = 2;
+  int64  gold           = 3;  // total ledger balance
+  int64  held_gold      = 4;  // sum of RESERVED holds
+  int64  available_gold = 5;  // gold - held_gold, spendable now
+  google.protobuf.Timestamp created_at = 6;
+}
