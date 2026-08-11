@@ -74,6 +74,7 @@ func TestWrite_LocalSentinel_MapsToStatusAndCode(t *testing.T) {
 		{"unauthenticated", apperr.ErrUnauthenticated, http.StatusUnauthorized, errcode.Unauthenticated},
 		{"forbidden", apperr.ErrForbidden, http.StatusForbidden, errcode.Forbidden},
 		{"validation failed", apperr.ErrValidation, http.StatusBadRequest, errcode.ValidationFailed},
+		{"unavailable", apperr.ErrUnavailable, http.StatusServiceUnavailable, errcode.ServiceUnavailable},
 		{"wrapped sentinel", fmt.Errorf("loading member: %w", apperr.ErrNotFound), http.StatusNotFound, errcode.NotFound},
 		{"unrecognised error", errors.New("something went sideways"), http.StatusInternalServerError, errcode.Internal},
 	}

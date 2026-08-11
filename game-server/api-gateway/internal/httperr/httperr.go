@@ -144,6 +144,8 @@ func mapError(err error) problemDetail {
 		return newProblem(http.StatusForbidden, errcode.Forbidden)
 	case errors.Is(err, apperr.ErrValidation):
 		return newProblem(http.StatusBadRequest, errcode.ValidationFailed)
+	case errors.Is(err, apperr.ErrUnavailable):
+		return newProblem(http.StatusServiceUnavailable, errcode.ServiceUnavailable)
 	}
 
 	return newProblem(http.StatusInternalServerError, errcode.Internal)

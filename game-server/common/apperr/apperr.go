@@ -34,6 +34,13 @@ var (
 	// may you do, not who are you.
 	ErrForbidden = errors.New("forbidden")
 
+	// ErrUnavailable — a dependency this request needs is temporarily down: a
+	// broker, a cache, a service we could not dial. It is the RETRYABLE failure,
+	// and it exists separately from a generic internal error for that reason —
+	// it becomes 503, not 500, so clients back off and retry instead of giving
+	// up on a request that was fine. Do NOT use it for a bug in our own code.
+	ErrUnavailable = errors.New("temporarily unavailable")
+
 	// ErrValidation — the input itself is wrong. Domain validation, decided by
 	// the service that owns the rule; shape validation belongs at the boundary
 	// and carries 422 instead (ADR-0001 §7).

@@ -3,10 +3,11 @@ package auth
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
+	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -51,35 +52,33 @@ func (h *AmqpAuthClient) RpcCallNoWaitResponse(ctx context.Context, routingKey s
 
 // SignupHandler handles member signup via AMQP (fire-and-forget).
 func (h *AmqpAuthClient) SignupHandler(c *gin.Context) {
+	const op = "SignupHandler"
+
 	ctx := c.Request.Context()
 	ctx, span := amqpTracer.Start(ctx, "amqp.Signup")
 	defer span.End()
 
 	var req pb.CreateMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Error parsing payload as JSON",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
 		return
 	}
 
 	body, err := proto.Marshal(&req)
 	if err != nil {
-		slog.Error("Failed to marshal CreateMemberRequest", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"statusCode": http.StatusInternalServerError,
-			"message":    "Internal server error",
-		})
+		// Our own encoding failed, so this is a genuine internal fault and NOT
+		// retryable — it stays 500 rather than joining the broker case below.
+		httperr.Write(c, op, err)
 		return
 	}
 
 	if err := h.RpcCallNoWaitResponse(ctx, commonconstants.AuthMemberCreate, body); err != nil {
-		slog.Error("Failed to publish signup message", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"statusCode": http.StatusInternalServerError,
-			"message":    "Failed to process signup request",
-		})
+		// The broker is unreachable, which is the retryable kind of failure:
+		// the request was fine and would succeed once the broker is back. 503,
+		// not 500, per FS-0001 §Requirements 5 as amended.
+		httperr.Write(c, op, apperr.WithDetail(
+			fmt.Errorf("%w: publishing signup: %w", apperr.ErrUnavailable, err),
+			"Signup is temporarily unavailable"))
 		return
 	}
 
