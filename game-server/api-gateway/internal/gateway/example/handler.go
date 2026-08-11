@@ -1,12 +1,13 @@
 package example
 
 import (
+	"fmt"
 	"net/http"
 
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/example"
+	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	"github.com/gin-gonic/gin"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type Handler struct {
@@ -22,40 +23,16 @@ func NewHandler(client ExampleClient) *Handler {
 func (h *Handler) CreateExample(c *gin.Context) {
 	var request *pb.CreateExampleRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		// Wrapped rather than passed through: the bind error names Go types and
+		// offsets, which is diagnostic detail for us and noise (or worse) for a
+		// client. Wrapping keeps it in the log and out of the body.
+		httperr.Write(c, "CreateExample", fmt.Errorf("%w: %v", apperr.ErrValidation, err))
 		return
 	}
 
 	example, err := h.client.CreateExample(c.Request.Context(), request)
-
 	if err != nil {
-		status, ok := status.FromError(err)
-
-		if !ok {
-			// not a gRPC status error
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-
-			return
-		}
-
-		// map grpc error codes to http codes
-		httpStatus := http.StatusInternalServerError
-		switch status.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.Unauthenticated:
-			httpStatus = http.StatusUnauthorized
-		case codes.NotFound:
-			httpStatus = http.StatusNotFound
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    status.Message(),
-		})
+		httperr.Write(c, "CreateExample", err)
 		return
 	}
 
@@ -73,7 +50,7 @@ func (h *Handler) GetExample(c *gin.Context) {
 	// Call the service
 	example, err := h.client.GetExample(c.Request.Context(), grpcReq)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Write(c, "GetExample", err)
 		return
 	}
 

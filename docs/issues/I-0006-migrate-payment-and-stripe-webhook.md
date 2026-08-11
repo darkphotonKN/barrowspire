@@ -27,6 +27,18 @@ regression here is discovered by Stripe, not by a test.
 Success responses (200/201/202) are **untouched** and must stay byte-identical — this matters
 more here than anywhere else, because a 2xx is Stripe's "stop retrying" signal.
 
+### Status deltas are expected — record them per site
+
+The 24 old switches disagreed with each other: each handled only a subset of gRPC codes and fell
+through to 500 for the rest. Unifying them therefore **changes HTTP statuses**, not only body
+shape — FS-0001 §Summary's "nothing about what the gateway does changes" holds for the body and
+not for the status. Confirmed on `example` in I-0001, where an unhandled `AlreadyExists` moved
+500 → 409 and `GetExample` (which had no switch at all) gained the whole mapping.
+
+`payment` has **one** switch for 10 writes, so its unhandled codes will move the same way. Diff
+its current switch against §API surface before touching it, and treat any webhook path whose
+status moves as a blocker to raise, not a delta to accept.
+
 ## Acceptance Criteria
 
 - [ ] All 10 `payment` error writes go through the seam
