@@ -259,9 +259,33 @@ func TestItemHandler_MissingIdentity_Returns401(t *testing.T) {
 // FS-0001 §Requirements 12 — success responses are untouched.
 func TestItemHandler_SuccessResponses_AreUnchanged(t *testing.T) {
 	client := &stubItemClient{
-		weapons: &pb.ListWeaponsResponse{},
-		types:   &pb.ListItemTypesResponse{},
+		weapons:   &pb.ListWeaponsResponse{},
+		types:     &pb.ListItemTypesResponse{},
+		rarities:  &pb.ListItemRaritiesResponse{},
+		loadout:   &pb.GetLoadoutResponse{},
+		instances: &pb.ListItemInstancesResponse{},
 	}
+
+	t.Run("every success path keeps its status and envelope", func(t *testing.T) {
+		for _, tc := range []struct {
+			method, path string
+			wantStatus   int
+		}{
+			{http.MethodGet, "/items/weapons", http.StatusOK},
+			{http.MethodGet, "/items/types", http.StatusOK},
+			{http.MethodGet, "/items/rarities", http.StatusOK},
+			{http.MethodGet, "/items/loadout", http.StatusOK},
+			{http.MethodGet, "/items/instances", http.StatusOK},
+		} {
+			w := testsupport.Do(newRouter(client, testIdentity), tc.method, tc.path, "")
+
+			assert.Equal(t, tc.wantStatus, w.Code, tc.path)
+			assert.Contains(t, w.Header().Get("Content-Type"), "application/json", tc.path)
+			body := testsupport.Decode(t, w)
+			assert.Equal(t, float64(tc.wantStatus), body["statusCode"], tc.path)
+			assert.NotContains(t, body, "code", "a success must never carry a problem+json code")
+		}
+	})
 
 	t.Run("list weapons", func(t *testing.T) {
 		w := testsupport.Do(newRouter(client, testIdentity), http.MethodGet, "/items/weapons", "")

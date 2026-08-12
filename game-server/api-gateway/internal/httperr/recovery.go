@@ -65,7 +65,10 @@ func Recovery() gin.HandlerFunc {
 				return
 			}
 
-			Write(c, "Recovery", fmt.Errorf("panic: %v", r))
+			// emit, not Write: the log line above already carries this event with
+			// its stack, and Write would emit a second, thinner record of the same
+			// panic at the same level.
+			emit(c, mapError(fmt.Errorf("panic: %v", r)), "Recovery")
 		}()
 
 		c.Next()

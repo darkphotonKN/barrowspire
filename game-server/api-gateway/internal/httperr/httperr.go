@@ -64,6 +64,14 @@ type problemDetail struct {
 // Safe to call from middleware as well as handlers: it aborts the chain, so a
 // middleware that rejects a request does not fall through to the handler.
 func Write(c *gin.Context, op string, err error) {
+	if err == nil {
+		// Always a programming fault: something decided to report a failure and
+		// had none to report. It still gets a safe 500, but the log must not
+		// describe a failure that never happened.
+		slog.Error("httperr.Write called with a nil error", "op", op)
+		err = errors.New("nil error passed to httperr.Write")
+	}
+
 	p := mapError(err)
 
 	// An authored detail (apperr.WithDetail) is the one occurrence-specific
@@ -82,6 +90,13 @@ func Write(c *gin.Context, op string, err error) {
 		slog.Info("request rejected", "op", op, "status", p.Status, "code", p.Code, "error", err)
 	}
 
+	emit(c, p, op)
+}
+
+// emit writes an already-resolved problem detail. Split out from Write so a
+// caller that has ALREADY logged the event (recovery, which logs the stack too)
+// can emit the response without producing a second record of one failure.
+func emit(c *gin.Context, p problemDetail, op string) {
 	body, marshalErr := json.Marshal(p)
 	if marshalErr != nil {
 		// Problem is a fixed struct of JSON-safe types, so this is unreachable

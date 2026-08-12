@@ -1,10 +1,13 @@
 package httperr_test
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
@@ -293,4 +296,85 @@ func TestRecovery_PanicAfterResponseSent_DoesNotAppendASecondBody(t *testing.T) 
 		"the already-sent response must be left exactly as it was")
 	assert.NotContains(t, w.Body.String(), "about:blank")
 	assert.NotContains(t, w.Body.String(), "INTERNAL_ERROR")
+}
+
+// FS-0001 §Requirements 9 — the parser's own complaint must reach the log even
+// though it must not reach the client. Both halves are asserted: the cause is
+// recoverable from the returned error, and the authored detail is what ships.
+func TestBindError_KeepsTheCauseAndTellsTheTruth(t *testing.T) {
+	type body struct {
+		Name string `json:"name" binding:"required"`
+	}
+
+	t.Run("malformed json says so", func(t *testing.T) {
+		var target body
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":`))
+		req.Header.Set("Content-Type", "application/json")
+		c, w := testsupport.NewCtx()
+		c.Request = req
+
+		bindErr := c.ShouldBindJSON(&target)
+		require.Error(t, bindErr)
+
+		httperr.Write(c, "TestOperation", httperr.BindError(bindErr))
+
+		assert.Equal(t, "Request body is not valid JSON", testsupport.Decode(t, w)["detail"])
+	})
+
+	t.Run("missing required field does NOT say malformed json", func(t *testing.T) {
+		var target body
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		c, w := testsupport.NewCtx()
+		c.Request = req
+
+		bindErr := c.ShouldBindJSON(&target)
+		require.Error(t, bindErr)
+
+		wrapped := httperr.BindError(bindErr)
+
+		// The cause survives for the log...
+		assert.ErrorIs(t, wrapped, apperr.ErrValidation)
+		assert.ErrorContains(t, wrapped, "required", "the parser's own complaint must stay in the chain")
+
+		// ...and the client is told something true.
+		httperr.Write(c, "TestOperation", wrapped)
+		detail := testsupport.Decode(t, w)["detail"]
+		assert.Equal(t, "Required fields are missing or invalid", detail)
+		assert.NotContains(t, w.Body.String(), "Field validation", "the parser's text stays server-side")
+	})
+}
+
+// FS-0001 user story 12 — 5xx pages someone, 4xx does not. Implemented since
+// I-0001 and never asserted until now.
+func TestWrite_LogLevel_SplitsOnStatusClass(t *testing.T) {
+	var buf bytes.Buffer
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(original)
+
+	c, _ := testsupport.NewCtx()
+	httperr.Write(c, "ClientMistake", apperr.ErrValidation)
+	assert.Contains(t, buf.String(), "level=INFO", "a 4xx is the caller's mistake and must not page anyone")
+
+	buf.Reset()
+	c2, _ := testsupport.NewCtx()
+	httperr.Write(c2, "OurFault", errors.New("boom"))
+	assert.Contains(t, buf.String(), "level=ERROR", "a 5xx is ours")
+}
+
+// A nil error reaching the seam is always a programming bug. It still produces a
+// safe 500, but the log must say plainly that it was nil rather than describing
+// a failure that never happened.
+func TestWrite_NilError_IsReportedAsAProgrammingFault(t *testing.T) {
+	var buf bytes.Buffer
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(original)
+
+	c, w := testsupport.NewCtx()
+	httperr.Write(c, "TestOperation", nil)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, buf.String(), "nil error")
 }

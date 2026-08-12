@@ -35,7 +35,7 @@ func (h *Handler) CreateMemberAmqpHandler(c *gin.Context) {
 	var req pb.CreateMemberRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -60,7 +60,7 @@ func (h *Handler) CreateMemberHandler(c *gin.Context) {
 	var req pb.CreateMemberRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -109,7 +109,7 @@ func (h *Handler) LoginMemberHandler(c *gin.Context) {
 	var req pb.LoginRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 	span.AddEvent("before grpc call")
@@ -168,7 +168,7 @@ func (h *Handler) UpdatePasswordMemberHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -200,7 +200,7 @@ func (h *Handler) UpdateInfoMemberHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -225,7 +225,7 @@ func (h *Handler) ValidateTokenHandler(c *gin.Context) {
 	var req pb.ValidateTokenRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -260,7 +260,7 @@ func (h *Handler) RequestAvatarUploadHandler(c *gin.Context) {
 
 	var req RequestAvatarUploadRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -299,7 +299,7 @@ func (h *Handler) ConfirmAvatarUploadHandler(c *gin.Context) {
 
 	var req ConfirmAvatarUploadRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 

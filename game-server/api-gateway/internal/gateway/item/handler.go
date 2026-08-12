@@ -1,7 +1,6 @@
 package item
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
@@ -24,7 +23,7 @@ func (h *Handler) CreateWeaponHandler(c *gin.Context) {
 	const op = "CreateWeaponHandler"
 	var req pb.CreateWeaponRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -80,7 +79,7 @@ func (h *Handler) CreateItemTemplateHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&httpReq); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -149,7 +148,7 @@ func (h *Handler) CreateCompleteWeaponHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&httpReq); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -226,7 +225,7 @@ func (h *Handler) CreateCompleteArmorHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&httpReq); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -301,7 +300,7 @@ func (h *Handler) CreateCompleteConsumableHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&httpReq); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -394,7 +393,6 @@ func (h *Handler) GetLoadoutHandler(c *gin.Context) {
 	}
 	result, err := h.client.GetLoadout(c.Request.Context(), grpcReq)
 	if err != nil {
-		log.Printf("GetLoadout error: %v", err)
 		httperr.Write(c, op, err)
 		return
 	}
@@ -443,7 +441,7 @@ func (h *Handler) UpdateLoadoutHandler(c *gin.Context) {
 		ItemInstanceId string `json:"item_instance_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -452,10 +450,8 @@ func (h *Handler) UpdateLoadoutHandler(c *gin.Context) {
 		Slot:           body.Slot,
 		ItemInstanceId: body.ItemInstanceId,
 	}
-	log.Printf("UpdateLoadout request: member=%s slot=%s item=%s", grpcReq.MemberId, grpcReq.Slot, grpcReq.ItemInstanceId)
 	result, err := h.client.UpdateLoadout(c.Request.Context(), grpcReq)
 	if err != nil {
-		log.Printf("UpdateLoadout error: %v", err)
 		httperr.Write(c, op, err)
 		return
 	}

@@ -279,6 +279,19 @@ func TestAuthHandler_SuccessResponses_AreUnchanged(t *testing.T) {
 		checkEmail: &pb.CheckEmailResponse{Exists: true},
 	}
 
+	t.Run("no success path carries a problem code", func(t *testing.T) {
+		for _, tc := range []struct{ method, path string }{
+			{http.MethodGet, "/member/check-email?email=a@b.c"},
+			{http.MethodGet, "/member"},
+		} {
+			w := testsupport.Do(newRouter(client, testIdentity), tc.method, tc.path, "")
+
+			assert.Equal(t, http.StatusOK, w.Code, tc.path)
+			assert.Contains(t, w.Header().Get("Content-Type"), "application/json", tc.path)
+			assert.NotContains(t, testsupport.Decode(t, w), "code", tc.path)
+		}
+	})
+
 	t.Run("check email", func(t *testing.T) {
 		w := testsupport.Do(newRouter(client, testIdentity), http.MethodGet, "/member/check-email?email=a@b.c", "")
 

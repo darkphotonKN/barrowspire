@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -11,10 +12,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// op names this middleware in the seam's server-side logs. Every rejection here
+// opAuthMiddleware names this middleware in the seam's server-side logs. Every rejection here
 // is a 401 to the client, so the log line is the only place the four causes stay
 // distinguishable for an operator.
-const op = "AuthMiddleware"
+const opAuthMiddleware = "AuthMiddleware"
 
 /**
 * Authenticates JWT from headers for any requests wrapped in this middleware.
@@ -32,7 +33,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		// gets token from header
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated,
+			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,
 				"Authorization token not provided"))
 			return
 		}
@@ -47,7 +48,8 @@ func AuthMiddleware() gin.HandlerFunc {
 			// err is wrapped, not discarded: it names the actual parse failure
 			// (expired, bad signature, malformed) in the log while the client
 			// sees only the authored detail.
-			httperr.Write(c, op, apperr.WithDetail(errUnauthenticated(err),
+			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(
+				fmt.Errorf("%w: %w", apperr.ErrUnauthenticated, err),
 				"Invalid or expired token"))
 			return
 		}
@@ -55,7 +57,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		// extract userId
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok || claims["sub"] == nil {
-			httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated,
+			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,
 				"Invalid token claims"))
 			return
 		}
@@ -66,7 +68,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		// same 401 as any other unusable claim.
 		userIdStr, ok := claims["sub"].(string)
 		if !ok {
-			httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated,
+			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,
 				"Invalid token claims"))
 			return
 		}
@@ -74,7 +76,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		// parse userId as UUID
 		userId, err := uuid.Parse(userIdStr)
 		if err != nil {
-			httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated,
+			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,
 				"Member ID was not correctly parsed as a uuid."))
 			return
 		}
@@ -89,22 +91,3 @@ func AuthMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
-
-// errUnauthenticated keeps the underlying parse failure in the error chain for
-// logging while still matching apperr.ErrUnauthenticated for the status mapping.
-func errUnauthenticated(cause error) error {
-	if cause == nil {
-		return apperr.ErrUnauthenticated
-	}
-	return &authFailure{cause: cause}
-}
-
-type authFailure struct{ cause error }
-
-func (a *authFailure) Error() string { return "unauthenticated: " + a.cause.Error() }
-
-// Is reports a match against apperr.ErrUnauthenticated so the seam maps this to
-// 401 while Unwrap keeps the real cause reachable for logs and tests.
-func (a *authFailure) Is(target error) bool { return target == apperr.ErrUnauthenticated }
-
-func (a *authFailure) Unwrap() error { return a.cause }

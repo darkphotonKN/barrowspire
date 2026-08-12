@@ -60,7 +60,7 @@ func (h *AmqpAuthClient) SignupHandler(c *gin.Context) {
 
 	var req pb.CreateMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Request body is not valid JSON"))
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 

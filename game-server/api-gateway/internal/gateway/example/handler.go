@@ -1,12 +1,10 @@
 package example
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/example"
-	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,10 +21,10 @@ func NewHandler(client ExampleClient) *Handler {
 func (h *Handler) CreateExample(c *gin.Context) {
 	var request *pb.CreateExampleRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		// Wrapped rather than passed through: the bind error names Go types and
-		// offsets, which is diagnostic detail for us and noise (or worse) for a
-		// client. Wrapping keeps it in the log and out of the body.
-		httperr.Write(c, "CreateExample", fmt.Errorf("%w: %v", apperr.ErrValidation, err))
+		// BindError keeps the parser's own complaint in the chain for the log
+		// while giving the client an authored sentence that is true for the
+		// failure that actually happened.
+		httperr.Write(c, "CreateExample", httperr.BindError(err))
 		return
 	}
 

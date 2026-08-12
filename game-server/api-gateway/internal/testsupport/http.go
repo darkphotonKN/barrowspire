@@ -6,6 +6,11 @@
 // copies would drift, and the assertions they support are contract assertions —
 // the drift would be invisible until two packages disagreed about what the
 // contract is.
+// IMPORTING testing FROM A NON-_test FILE is deliberate and is the same thing
+// net/http/httptest does: helpers shared across several packages' tests cannot
+// live in a _test file, because _test files are not importable. The cost is that
+// a PRODUCTION import of this package would register testing's flags into the
+// binary — so nothing outside a _test file may import it. Nothing does.
 package testsupport
 
 import (
