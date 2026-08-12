@@ -3,10 +3,10 @@ package notification
 import (
 	"net/http"
 
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/notification"
+	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	"github.com/gin-gonic/gin"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type Handler struct {
@@ -20,13 +20,11 @@ func NewHandler(client NotificationClient) *Handler {
 }
 
 func (h *Handler) GetNotificationsByUserIDHandler(c *gin.Context) {
+	const op = "GetNotificationsByUserIDHandler"
 	// Get the user ID string from context (set by auth middleware)
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -39,27 +37,7 @@ func (h *Handler) GetNotificationsByUserIDHandler(c *gin.Context) {
 	// Call the notification service
 	response, err := h.client.GetNotification(c.Request.Context(), req)
 	if err != nil {
-		st, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch st.Code() {
-		case codes.NotFound:
-			httpStatus = http.StatusNotFound
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    st.Message(),
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -72,23 +50,18 @@ func (h *Handler) GetNotificationsByUserIDHandler(c *gin.Context) {
 }
 
 func (h *Handler) MarkNotificationAsReadHandler(c *gin.Context) {
+	const op = "MarkNotificationAsReadHandler"
 	// 從 URL 參數取得 notification ID
 	notificationID := c.Param("id")
 	if notificationID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Notification ID is required",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Notification ID is required"))
 		return
 	}
 
 	// 從 auth middleware 取得 user_id
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -101,27 +74,7 @@ func (h *Handler) MarkNotificationAsReadHandler(c *gin.Context) {
 	// 呼叫 notification service
 	response, err := h.client.MarkNotificationAsRead(c.Request.Context(), req)
 	if err != nil {
-		st, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch st.Code() {
-		case codes.NotFound:
-			httpStatus = http.StatusNotFound
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    st.Message(),
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -133,13 +86,11 @@ func (h *Handler) MarkNotificationAsReadHandler(c *gin.Context) {
 }
 
 func (h *Handler) MarkAllNotificationsAsReadHandler(c *gin.Context) {
+	const op = "MarkAllNotificationsAsReadHandler"
 	// 從 auth middleware 取得 user_id
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -151,25 +102,7 @@ func (h *Handler) MarkAllNotificationsAsReadHandler(c *gin.Context) {
 	// 呼叫 notification service
 	response, err := h.client.MarkAllNotificationsAsRead(c.Request.Context(), req)
 	if err != nil {
-		st, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch st.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    st.Message(),
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
