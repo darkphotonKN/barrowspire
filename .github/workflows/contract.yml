@@ -53,6 +53,20 @@ jobs:
         working-directory: game-server/api-gateway
         run: go mod verify
 
+      # FS-0001 I-0007. Deliberately ahead of the spec gates: it needs no
+      # generated artifact, so it can fail on a tree that has no openapi.yaml —
+      # which is every tree until the first endpoint is serialized. The gates
+      # below correctly SKIP until then; this one does not, and must not.
+      - name: error seam gates
+        working-directory: game-server
+        run: ./scripts/check-seam.sh
+
+      # The gate's own test. A check nobody has watched fail is configuration,
+      # not enforcement.
+      - name: error seam gates — selftest
+        working-directory: game-server
+        run: ./scripts/seam-gate-selftest.sh
+
       - name: regenerate spec and fail on diff
         working-directory: game-server/api-gateway
         run: make openapi-diff
