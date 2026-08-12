@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
+import { readApiError, userMessage } from "@/utils/apiError";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7114";
 
@@ -65,12 +66,22 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        setError(data.message || "Login failed");
+        // Switch on `code`, never on `detail` — detail is prose, not contract.
+        // An unrecognised code falls through to the server's detail (FS-0001).
+        const error = await readApiError(response);
+        setError(
+          userMessage(error, {
+            UNAUTHENTICATED: "Wrong email or password.",
+            VALIDATION_FAILED: "Please check your email and password.",
+            SERVICE_UNAVAILABLE:
+              "Sign-in is temporarily unavailable. Try again shortly.",
+          }),
+        );
         return;
       }
+
+      const data = await response.json();
 
       // Store auth data in zustand
       const result = data.result;

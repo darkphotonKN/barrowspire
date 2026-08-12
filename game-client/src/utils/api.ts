@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/stores/authStore";
+import { readApiError } from "@/utils/apiError";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7114";
 
@@ -59,19 +60,21 @@ class ApiClient {
       body: config.body ? JSON.stringify(config.body) : undefined,
     });
 
-    const data = await response.json();
-
-    if (response.status === 401) {
-      // Token expired or invalid → clear auth and bounce to /login.
-      handleUnauthorized();
-      throw new Error(data.message || "Unauthorized");
-    }
-
+    // Errors are RFC 9457 problem+json (FS-0001). readApiError throws nothing of
+    // its own — a body that is not a problem document still yields a usable
+    // ApiError, so the status is never lost behind a parse failure.
     if (!response.ok) {
-      throw new Error(data.message || `Request failed with status ${response.status}`);
+      const error = await readApiError(response);
+
+      if (response.status === 401) {
+        // Token expired or invalid → clear auth and bounce to /login.
+        handleUnauthorized();
+      }
+
+      throw error;
     }
 
-    return data;
+    return response.json();
   }
 
   // Get current member profile
