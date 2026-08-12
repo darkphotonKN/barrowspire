@@ -200,7 +200,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private lastGameState?: ClientGameState;
 
   // 狀態追蹤：避免重複通知（每秒 33 幀會重複收到相同狀態）
-  private previousEscapeDoorLocked: boolean | null = null;
   private previousEscapeDoorOpened: boolean | null = null;
   private previousSwitchActivated: boolean | null = null;
   private escapedPlayers: Set<string> = new Set();
@@ -1549,7 +1548,7 @@ export class BarrowspireScene extends Phaser.Scene {
       });
 
       let buildingIndex = 0;
-      houseGroups.forEach((houseWalls, houseId) => {
+      houseGroups.forEach((houseWalls, _houseId) => {
         // 算出這棟房子的 bounding box
         let minX = Infinity,
           minY = Infinity,
@@ -2946,6 +2945,9 @@ export class BarrowspireScene extends Phaser.Scene {
     otherPlayersData: Array<{
       id: string;
       username: string;
+      // Stored into otherPlayersEntityIds (Map<string, string>) and used to
+      // target attacks — the payload always carries it.
+      entity_id: string;
       position: { x: number; y: number };
     }>,
   ): void {
@@ -2994,8 +2996,10 @@ export class BarrowspireScene extends Phaser.Scene {
         );
         sprite.setDepth(99);
 
-        // set circular physics body, offset for 60x60 texture
-        sprite.body.setCircle(20, 10, 10);
+        // set circular physics body, offset for 60x60 texture.
+        // physics.add.sprite always attaches an Arcade body; the declared type is
+        // nullable only because a body can be removed later.
+        (sprite.body as Phaser.Physics.Arcade.Body).setCircle(20, 10, 10);
 
         // 點擊攻擊
         sprite.setInteractive();
@@ -3347,7 +3351,6 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // pipes / conduits along hull
     const pipeGraphics = this.add.graphics();
-    const pipeMax = outerMargin - 40;
     // top pipes
     pipeGraphics.lineStyle(4, 0x3a4556, 1);
     pipeGraphics.lineBetween(40, -25, hw - 40, -25);
@@ -3572,278 +3575,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.outsideObjects.push(lightGraphics);
   }
 
-  private createBuildings(): void {
-    // 建築配置
-    const buildingConfigs = [
-      { x: 200, y: 200, width: 200, height: 150, doorSide: "bottom" as const },
-    ];
-
-    buildingConfigs.forEach((config, index) => {
-      const building = this.createBuilding(
-        `building_${index}`,
-        config.x,
-        config.y,
-        config.width,
-        config.height,
-        config.doorSide,
-      );
-      this.buildings.push(building);
-    });
-  }
-
-  private createBuilding(
-    id: string,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    doorSide: "top" | "bottom" | "left" | "right",
-  ): Building {
-    const wallThickness = 12;
-    const doorWidth = 50;
-
-    // 艙室地板 - 金屬格紋
-    const floor = this.add.graphics();
-    floor.fillStyle(0x2a3040, 1);
-    floor.fillRect(x, y, width, height);
-    floor.lineStyle(1, 0x3d4556, 0.4);
-    for (let tx = x; tx < x + width; tx += 40) {
-      floor.lineBetween(tx, y, tx, y + height);
-    }
-    for (let ty = y; ty < y + height; ty += 40) {
-      floor.lineBetween(x, ty, x + width, ty);
-    }
-    floor.setDepth(1);
-
-    // 牆壁群組
-    const wallGroup = this.physics.add.staticGroup();
-    const wallGraphics = this.add.graphics();
-    wallGraphics.setDepth(50);
-
-    const createWall = (wx: number, wy: number, ww: number, wh: number) => {
-      // 艙壁 - 金屬質感
-      wallGraphics.fillStyle(0x4a5568, 1);
-      wallGraphics.fillRect(wx, wy, ww, wh);
-      wallGraphics.lineStyle(1, 0x6b7280, 0.6);
-      wallGraphics.strokeRect(wx, wy, ww, wh);
-
-      // 碰撞牆壁
-      const wallSprite = this.physics.add.staticSprite(
-        wx + ww / 2,
-        wy + wh / 2,
-        undefined as unknown as string,
-      );
-      wallSprite.body?.setSize(ww, wh);
-      wallSprite.setVisible(false);
-      wallGroup.add(wallSprite);
-    };
-
-    // 上牆
-    if (doorSide !== "top") {
-      createWall(x, y, width, wallThickness);
-    } else {
-      const sideWidth = (width - doorWidth) / 2;
-      createWall(x, y, sideWidth, wallThickness);
-      createWall(x + sideWidth + doorWidth, y, sideWidth, wallThickness);
-    }
-
-    // 下牆
-    if (doorSide !== "bottom") {
-      createWall(x, y + height - wallThickness, width, wallThickness);
-    } else {
-      const sideWidth = (width - doorWidth) / 2;
-      createWall(x, y + height - wallThickness, sideWidth, wallThickness);
-      createWall(
-        x + sideWidth + doorWidth,
-        y + height - wallThickness,
-        sideWidth,
-        wallThickness,
-      );
-    }
-
-    // 左牆
-    if (doorSide !== "left") {
-      createWall(x, y, wallThickness, height);
-    } else {
-      const sideHeight = (height - doorWidth) / 2;
-      createWall(x, y, wallThickness, sideHeight);
-      createWall(x, y + sideHeight + doorWidth, wallThickness, sideHeight);
-    }
-
-    // 右牆
-    if (doorSide !== "right") {
-      createWall(x + width - wallThickness, y, wallThickness, height);
-    } else {
-      const sideHeight = (height - doorWidth) / 2;
-      createWall(x + width - wallThickness, y, wallThickness, sideHeight);
-      createWall(
-        x + width - wallThickness,
-        y + sideHeight + doorWidth,
-        wallThickness,
-        sideHeight,
-      );
-    }
-
-    // 艙頂（遮蓋建築內部）
-    const roof = this.add.graphics();
-    roof.fillStyle(0x2d3748, 0.97);
-    roof.fillRect(x - 5, y - 5, width + 10, height + 10);
-    roof.lineStyle(2, 0x4a5568, 1);
-    roof.strokeRect(x - 5, y - 5, width + 10, height + 10);
-    roof.setDepth(200);
-
-    // 入口標示（在屋頂上方，標示門的位置）
-    const doorMarker = this.add.graphics();
-    doorMarker.setDepth(250); // 高於屋頂(200)
-
-    let doorX = 0;
-    let doorY = 0;
-    const arrowSize = 10;
-
-    // 計算門在屋頂上的位置
-    if (doorSide === "top") {
-      doorX = x + width / 2;
-      doorY = y - 5; // 屋頂邊緣
-    } else if (doorSide === "bottom") {
-      doorX = x + width / 2;
-      doorY = y + height + 5;
-    } else if (doorSide === "left") {
-      doorX = x - 5;
-      doorY = y + height / 2;
-    } else {
-      doorX = x + width + 5;
-      doorY = y + height / 2;
-    }
-
-    // 畫入口標示（青色箭頭指向門口）
-    doorMarker.fillStyle(0xffaa44, 1);
-
-    // 根據門的方向畫箭頭（從外面指向建築內部）
-    if (doorSide === "top") {
-      // 門在上方，箭頭指向下（進入建築）
-      doorMarker.fillTriangle(
-        doorX,
-        doorY + arrowSize,
-        doorX - arrowSize,
-        doorY - arrowSize,
-        doorX + arrowSize,
-        doorY - arrowSize,
-      );
-    } else if (doorSide === "bottom") {
-      // 門在下方，箭頭指向上（進入建築）
-      doorMarker.fillTriangle(
-        doorX,
-        doorY - arrowSize,
-        doorX - arrowSize,
-        doorY + arrowSize,
-        doorX + arrowSize,
-        doorY + arrowSize,
-      );
-    } else if (doorSide === "left") {
-      // 門在左方，箭頭指向右（進入建築）
-      doorMarker.fillTriangle(
-        doorX + arrowSize,
-        doorY,
-        doorX - arrowSize,
-        doorY - arrowSize,
-        doorX - arrowSize,
-        doorY + arrowSize,
-      );
-    } else {
-      // 門在右方，箭頭指向左（進入建築）
-      doorMarker.fillTriangle(
-        doorX - arrowSize,
-        doorY,
-        doorX + arrowSize,
-        doorY - arrowSize,
-        doorX + arrowSize,
-        doorY + arrowSize,
-      );
-    }
-
-    // 入口圓圈
-    doorMarker.lineStyle(3, 0xffaa44, 0.8);
-    doorMarker.strokeCircle(doorX, doorY, 18);
-
-    // 閃爍動畫
-    this.tweens.add({
-      targets: doorMarker,
-      alpha: 0.4,
-      duration: 800,
-      yoyo: true,
-      repeat: -1,
-      ease: "Sine.easeInOut",
-    });
-
-    // 儲存牆壁圖形為室外物件
-    this.outsideObjects.push(wallGraphics);
-    this.outsideObjects.push(roof);
-
-    // 創建門 (可開關的)
-    const door = this.add.graphics();
-    door.setDepth(51);
-
-    // 計算門的位置和大小
-    let doorRectX = 0;
-    let doorRectY = 0;
-    let doorRectW = 0;
-    let doorRectH = 0;
-
-    if (doorSide === "top") {
-      doorRectX = x + (width - doorWidth) / 2;
-      doorRectY = y;
-      doorRectW = doorWidth;
-      doorRectH = wallThickness;
-    } else if (doorSide === "bottom") {
-      doorRectX = x + (width - doorWidth) / 2;
-      doorRectY = y + height - wallThickness;
-      doorRectW = doorWidth;
-      doorRectH = wallThickness;
-    } else if (doorSide === "left") {
-      doorRectX = x;
-      doorRectY = y + (height - doorWidth) / 2;
-      doorRectW = wallThickness;
-      doorRectH = doorWidth;
-    } else {
-      doorRectX = x + width - wallThickness;
-      doorRectY = y + (height - doorWidth) / 2;
-      doorRectW = wallThickness;
-      doorRectH = doorWidth;
-    }
-
-    // 畫門 (金屬艙門)
-    door.fillStyle(0x5a6577, 1);
-    door.fillRect(doorRectX, doorRectY, doorRectW, doorRectH);
-    door.lineStyle(2, 0x6b7280, 1);
-    door.strokeRect(doorRectX, doorRectY, doorRectW, doorRectH);
-
-    // 創建門的碰撞體 (Rectangle)
-    const doorCollider = this.add.rectangle(
-      doorRectX + doorRectW / 2,
-      doorRectY + doorRectH / 2,
-      doorRectW,
-      doorRectH,
-    );
-    this.physics.add.existing(doorCollider, true); // true = static body
-    doorCollider.setVisible(false);
-
-    return {
-      id,
-      x,
-      y,
-      width,
-      height,
-      doorSide,
-      wallGroup,
-      roof,
-      floor,
-      doorMarker,
-      door,
-      doorCollider,
-      isOpen: false,
-    };
-  }
-
   private isPlayerInsideBuilding(building: Building): boolean {
     if (!this.player) return false;
     return (
@@ -3928,67 +3659,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.indoorMask.fillRect(-1000, by, bx + 1000, bh);
     // 右側區域
     this.indoorMask.fillRect(bx + bw, by, this.mapWidth + 1000, bh);
-  }
-
-  private toggleDoor(building: Building): void {
-    building.isOpen = !building.isOpen;
-
-    if (building.isOpen) {
-      // 開門：隱藏門並禁用碰撞
-      building.door.setVisible(false);
-      const body = building.doorCollider
-        .body as Phaser.Physics.Arcade.StaticBody;
-      if (body) {
-        body.enable = false;
-      }
-    } else {
-      // 關門：顯示門並啟用碰撞
-      building.door.setVisible(true);
-      const body = building.doorCollider
-        .body as Phaser.Physics.Arcade.StaticBody;
-      if (body) {
-        body.enable = true;
-      }
-    }
-  }
-
-  private getNearbyBuilding(): Building | null {
-    if (!this.player) return null;
-    const interactDistance = 60;
-
-    for (const building of this.buildings) {
-      // 計算門的中心位置
-      // const doorWidth = 50;
-      let doorCenterX = 0;
-      let doorCenterY = 0;
-
-      if (building.doorSide === "top") {
-        doorCenterX = building.x + building.width / 2;
-        doorCenterY = building.y;
-      } else if (building.doorSide === "bottom") {
-        doorCenterX = building.x + building.width / 2;
-        doorCenterY = building.y + building.height;
-      } else if (building.doorSide === "left") {
-        doorCenterX = building.x;
-        doorCenterY = building.y + building.height / 2;
-      } else {
-        doorCenterX = building.x + building.width;
-        doorCenterY = building.y + building.height / 2;
-      }
-
-      const distance = Phaser.Math.Distance.Between(
-        this.player.x,
-        this.player.y,
-        doorCenterX,
-        doorCenterY,
-      );
-
-      if (distance < interactDistance) {
-        return building;
-      }
-    }
-
-    return null;
   }
 
   private createUI(): void {
@@ -4174,9 +3844,6 @@ export class BarrowspireScene extends Phaser.Scene {
       this.showNotification("Escape door opened!", "#4ecca3");
     }
     this.previousEscapeDoorOpened = escapeDoor.is_open;
-
-    // 儲存逃生門鎖定狀態（用於未來可能的需求）
-    this.previousEscapeDoorLocked = escapeDoor.is_locked;
   }
 
   /**
@@ -4217,7 +3884,6 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     // 重置狀態追蹤
-    this.previousEscapeDoorLocked = null;
     this.previousEscapeDoorOpened = null;
     this.previousSwitchActivated = null;
     this.escapedPlayers.clear();

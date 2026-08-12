@@ -169,7 +169,12 @@ export default function NotificationBell() {
           </div>
 
           <div className="notification-list">
-            {notifications.length === 0 ? (
+            {isLoading && notifications.length === 0 ? (
+              <div className="notification-empty">
+                <div style={{ fontSize: '2rem', opacity: 0.3, marginBottom: '0.5rem' }}>🔔</div>
+                <p style={{ margin: 0, color: '#8a7d5c' }}>Loading…</p>
+              </div>
+            ) : notifications.length === 0 ? (
               <div className="notification-empty">
                 <div style={{ fontSize: '2rem', opacity: 0.3, marginBottom: '0.5rem' }}>🔔</div>
                 <p style={{ margin: 0, color: '#8a7d5c' }}>No notifications</p>

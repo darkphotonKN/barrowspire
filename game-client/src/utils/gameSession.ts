@@ -79,10 +79,14 @@ class GameSessionManager {
     actionData: Omit<ActionMap[T], keyof PlayerSessionPayload>
   ): ActionMap[T] {
     const basePayload = this.createBasePayload();
+    // TypeScript cannot prove that session fields + the remaining fields of a
+    // generic ActionMap[T] reconstitute ActionMap[T], because T is unresolved
+    // here. The merge is correct by construction; the double assertion is the
+    // documented escape for exactly this case.
     return {
       ...basePayload,
       ...actionData
-    } as ActionMap[T];
+    } as unknown as ActionMap[T];
   }
 
   /**
@@ -102,22 +106,25 @@ class GameSessionManager {
   /**
    * Create an attack payload
    */
-  createAttackPayload(targetId: string): ActionMap['attack'] {
-    return this.createGamePayload<'attack'>({ target_id: targetId });
+  createAttackPayload(enemyEntityId: string): ActionMap['attack'] {
+    // The server reads enemy_entity_id (game-service PlayerSectionAttackPayload).
+    // This sent target_id, which the server would have ignored — undetected
+    // because this whole module never compiled and has no callers.
+    return this.createGamePayload<'attack'>({ enemy_entity_id: enemyEntityId });
   }
 
   /**
    * Create a pickup payload
    */
   createPickupPayload(itemId: string): ActionMap['pickup'] {
-    return this.createGamePayload<'pickup'>({ item_id: itemId });
+    return this.createGamePayload<'pickup'>({ itemId });
   }
 
   /**
    * Create a use item payload
    */
   createUsePayload(itemId: string, targetId?: string): ActionMap['use'] {
-    return this.createGamePayload<'use'>({ item_id: itemId, target_id: targetId });
+    return this.createGamePayload<'use'>({ itemId, targetId });
   }
 
   /**

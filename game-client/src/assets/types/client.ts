@@ -1,7 +1,13 @@
-export interface gameInfo {
+/**
+ * The session identity every game action carries. GameSessionManager builds it
+ * once and merges it into each outgoing payload, so action payload types below
+ * describe only their own fields.
+ */
+export interface PlayerSessionPayload {
   session_id: string;
   player_id: string;
 }
+
 export interface MovePayload {
   vx: number;
   vy: number;
