@@ -29,15 +29,25 @@ import (
 // the distinction.
 const contentType = "application/problem+json"
 
-// fieldError is one entry in a problemDetail's Errors slice.
-type fieldError struct {
+// FieldError is one entry in a Problem's Errors slice.
+//
+// Exported so the Huma adapter can translate boundary validation failures into
+// the same member the seam publishes (FS-0002 §Requirements 8). Exporting the
+// SHAPE does not create a second writer: Write is still the only function that
+// puts an error on a gin response, and the seam gate still forbids direct
+// status writes elsewhere.
+type FieldError struct {
 	Field   string `json:"field"`
 	Message string `json:"message"`
 }
 
-// problemDetail is an RFC 9457 problem detail. Member semantics are pinned by
+// fieldError is retained as the internal alias so existing call sites read
+// unchanged.
+type fieldError = FieldError
+
+// Problem is an RFC 9457 problem detail. Member semantics are pinned by
 // FS-0001 §API surface.
-type problemDetail struct {
+type Problem struct {
 	// Type identifies the problem class. about:blank until real type URIs are
 	// minted; Code is the switch key in the meantime.
 	Type string `json:"type"`
@@ -96,7 +106,7 @@ func Write(c *gin.Context, op string, err error) {
 // emit writes an already-resolved problem detail. Split out from Write so a
 // caller that has ALREADY logged the event (recovery, which logs the stack too)
 // can emit the response without producing a second record of one failure.
-func emit(c *gin.Context, p problemDetail, op string) {
+func emit(c *gin.Context, p Problem, op string) {
 	body, marshalErr := json.Marshal(p)
 	if marshalErr != nil {
 		// Problem is a fixed struct of JSON-safe types, so this is unreachable
@@ -118,7 +128,7 @@ func emit(c *gin.Context, p problemDetail, op string) {
 // Precedence: a gRPC status from downstream, then a local sentinel, then the
 // catch-all. The catch-all must exist so that a downstream code nobody has seen
 // yet degrades to a clean 500 rather than an empty status.
-func mapError(err error) problemDetail {
+func mapError(err error) Problem {
 	// codes.OK means FromError was handed something that is not a gRPC status
 	// at all (including nil), so it is not a decision — fall through and let the
 	// sentinels answer.
@@ -166,12 +176,12 @@ func mapError(err error) problemDetail {
 	return newProblem(http.StatusInternalServerError, errcode.Internal)
 }
 
-// newProblem builds a problemDetail with the members that follow mechanically from a
+// newProblem builds a Problem with the members that follow mechanically from a
 // status and a code. Detail defaults to the status text: downstream error
 // prose is never client-safe (FS-0001 §Requirements 9), so the default has to
 // be something that carries no information about internals.
-func newProblem(httpStatus int, code errcode.Code) problemDetail {
-	return problemDetail{
+func newProblem(httpStatus int, code errcode.Code) Problem {
+	return Problem{
 		Type:   "about:blank",
 		Title:  http.StatusText(httpStatus),
 		Status: httpStatus,
@@ -179,4 +189,53 @@ func newProblem(httpStatus int, code errcode.Code) problemDetail {
 		Code:   code,
 		Errors: []fieldError{},
 	}
+}
+
+// CodeForStatus is the inverse of the seam's mapping: given an HTTP status
+// decided somewhere that has no error to map — Huma's typed boundary, which
+// rejects a request before any handler runs — it names the code that status
+// carries.
+//
+// It lives here, next to mapError, so the correspondence between status and
+// code has exactly one definition. Two tables would disagree eventually, and
+// the disagreement would be invisible until a client switched on the wrong one.
+func CodeForStatus(httpStatus int) errcode.Code {
+	switch httpStatus {
+	case http.StatusBadRequest, http.StatusUnprocessableEntity:
+		// 422 is shape (decided at the boundary from a type), 400 is domain
+		// (decided downstream). Both are "the request was not acceptable", and
+		// the status already distinguishes them — ADR-0001 §7.
+		return errcode.ValidationFailed
+	case http.StatusUnauthorized:
+		return errcode.Unauthenticated
+	case http.StatusForbidden:
+		return errcode.Forbidden
+	case http.StatusNotFound:
+		return errcode.NotFound
+	case http.StatusConflict:
+		return errcode.AlreadyExists
+	case http.StatusServiceUnavailable:
+		return errcode.ServiceUnavailable
+	default:
+		return errcode.Internal
+	}
+}
+
+// NewProblem builds the seam's problem body for a status decided outside it.
+//
+// The ONLY intended caller is the Huma adapter (internal/contract): Huma
+// rejects malformed requests before a handler runs, so there is no error for
+// Write to map, but the body must still be the one clients already parse.
+//
+// detail is published verbatim, so callers pass authored text only — the same
+// rule apperr.WithDetail carries. Empty detail falls back to the status text.
+func NewProblem(httpStatus int, detail string, fields []FieldError) Problem {
+	p := newProblem(httpStatus, CodeForStatus(httpStatus))
+	if detail != "" {
+		p.Detail = detail
+	}
+	if len(fields) > 0 {
+		p.Errors = fields
+	}
+	return p
 }
