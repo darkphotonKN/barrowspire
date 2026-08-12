@@ -50,6 +50,21 @@ wrote as literals", because `WithDetail(err, err.Error())` or
 §Requirements 9 exists to close. Reject any call whose second argument is not a
 string literal.
 
+### A third check, from a different failure
+
+**3. The `go` directive must not move without someone saying so.** A bare `go get` fetches the
+latest version of a dependency and raises the module's language version to whatever that
+version wants. During I-0005 this silently took `go.work` and `api-gateway/go.mod` from
+`1.24.2` to `1.25.0` and pulled five transitive upgrades, inside a commit about error
+handling — raising the toolchain floor for all eleven modules and reversing a decision made
+deliberately two slices earlier.
+
+Nothing failed. It was found by reading a diff, which is not a control.
+
+Fail the build when the `go` directive in `go.work` or any `go.mod` differs from a recorded
+value, so moving it becomes an explicit act. Cheap to implement and it catches a whole class:
+dependency drift arriving as a side effect of unrelated work.
+
 ## Acceptance Criteria
 
 - [ ] The check greps `game-server/api-gateway` for direct 4xx/5xx writes outside the seam package
