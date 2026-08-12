@@ -16,6 +16,7 @@ import (
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
+	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
@@ -129,8 +130,18 @@ func main() {
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
 	// --- grpc ---
+	// Recovery outermost so a panic below it still becomes a status rather than
+	// killing the process; Status innermost so it sees the handler's own error.
+	//
+	// Without Status this service returned bare Go errors, which cross the wire as
+	// codes.Unknown and land on the gateway's catch-all — a wrong password
+	// answering 500 INTERNAL_ERROR instead of 401 UNAUTHENTICATED.
 	grpcServer := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.ChainUnaryInterceptor(
+			commoninterceptor.Recovery(slog.Default()),
+			commoninterceptor.Status(slog.Default()),
+		),
 	)
 
 	// create a network listener to this service
