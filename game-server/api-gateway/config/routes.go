@@ -166,5 +166,10 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	itemRoutes.PUT("/loadout", itemHandler.UpdateLoadoutHandler)
 	itemRoutes.GET("/instances", itemHandler.ListItemInstancesHandler)
 
+	// An unrouted path is the one 4xx gin answers on its own — no handler runs, so
+	// the seam never sees it, and the client gets a bare text/plain 404 with no
+	// `code`. Registered last because NoRoute is the fallback for everything above.
+	router.NoRoute(httperr.NotFoundHandler())
+
 	return router
 }
