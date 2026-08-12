@@ -3,10 +3,9 @@ package example
 import (
 	"net/http"
 
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/example"
 	"github.com/gin-gonic/gin"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type Handler struct {
@@ -22,40 +21,16 @@ func NewHandler(client ExampleClient) *Handler {
 func (h *Handler) CreateExample(c *gin.Context) {
 	var request *pb.CreateExampleRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		// BindError keeps the parser's own complaint in the chain for the log
+		// while giving the client an authored sentence that is true for the
+		// failure that actually happened.
+		httperr.Write(c, "CreateExample", httperr.BindError(err))
 		return
 	}
 
 	example, err := h.client.CreateExample(c.Request.Context(), request)
-
 	if err != nil {
-		status, ok := status.FromError(err)
-
-		if !ok {
-			// not a gRPC status error
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-
-			return
-		}
-
-		// map grpc error codes to http codes
-		httpStatus := http.StatusInternalServerError
-		switch status.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.Unauthenticated:
-			httpStatus = http.StatusUnauthorized
-		case codes.NotFound:
-			httpStatus = http.StatusNotFound
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    status.Message(),
-		})
+		httperr.Write(c, "CreateExample", err)
 		return
 	}
 
@@ -73,7 +48,7 @@ func (h *Handler) GetExample(c *gin.Context) {
 	// Call the service
 	example, err := h.client.GetExample(c.Request.Context(), grpcReq)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Write(c, "GetExample", err)
 		return
 	}
 

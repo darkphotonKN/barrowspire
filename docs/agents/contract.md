@@ -59,12 +59,12 @@ errcode_pkg: game-server/common/errcode
 
 # --- PRECONDITION, NOT YET MET ---
 # ADR-0001 §6 requires HTTP error status to be decided in exactly ONE seam. That seam does
-# not exist yet: the gateway has ~122 direct c.JSON(http.Status4xx/5xx) writes across four
-# different body shapes, and no error package.
+# not exist yet: the gateway has 90 direct c.JSON(http.Status4xx/5xx) writes across 8 files and
+# four different body shapes, and no error package.
 #
 # Built by: FS-0001 (docs/specs/0001-uniform-error-contract.md).
 # Until it ships, the gates below are copied-but-inert and NO endpoint should be serialized —
-# a generated contract cannot honestly describe failures the code decides in 122 places.
+# a generated contract cannot honestly describe failures the code decides in 90 places.
 error_seam: NOT_YET_BUILT             # -> game-server/api-gateway (see FS-0001)
 
 # --- Transitional state ---

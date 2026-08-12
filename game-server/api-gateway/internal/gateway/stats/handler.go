@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/stats"
+	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	"github.com/gin-gonic/gin"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type Handler struct {
@@ -21,9 +21,10 @@ func NewHandler(client StatsClient) *Handler {
 }
 
 func (h *Handler) GetPlayerStats(c *gin.Context) {
+	const op = "GetPlayerStats"
 	playerID := c.Param("playerId")
 	if playerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "player ID is required"})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "player ID is required"))
 		return
 	}
 
@@ -32,20 +33,7 @@ func (h *Handler) GetPlayerStats(c *gin.Context) {
 	})
 
 	if err != nil {
-		if e, ok := status.FromError(err); ok {
-			switch e.Code() {
-			case codes.NotFound:
-				c.JSON(http.StatusNotFound, gin.H{"error": "player stats not found"})
-				return
-			case codes.InvalidArgument:
-				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid player ID"})
-				return
-			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-				return
-			}
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -53,19 +41,20 @@ func (h *Handler) GetPlayerStats(c *gin.Context) {
 }
 
 func (h *Handler) GetLeaderboard(c *gin.Context) {
+	const op = "GetLeaderboard"
 	limitStr := c.DefaultQuery("limit", "50")
 	offsetStr := c.DefaultQuery("offset", "0")
 
 	l, err := strconv.Atoi(limitStr)
 	if err != nil || l > 50 || l < 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 0 and 50."})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "limit must be between 0 and 50."))
 		return
 	}
 	limit := int32(l)
 
 	o, err := strconv.Atoi(offsetStr)
 	if err != nil || o < 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "offset must be 0 or greater."})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "offset must be 0 or greater."))
 		return
 	}
 	offset := int32(o)
@@ -76,20 +65,7 @@ func (h *Handler) GetLeaderboard(c *gin.Context) {
 	})
 
 	if err != nil {
-		if e, ok := status.FromError(err); ok {
-			switch e.Code() {
-			case codes.NotFound:
-				c.JSON(http.StatusNotFound, gin.H{"error": "player stats not found"})
-				return
-			case codes.InvalidArgument:
-				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid player ID"})
-				return
-			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-				return
-			}
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		httperr.Write(c, op, err)
 		return
 	}
 

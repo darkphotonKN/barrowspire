@@ -32,7 +32,6 @@ Thumbs.db
 /vendor/
 
 # Go module files (if not using vendoring)
-go.sum
 
 # Docker
 .dockerignore

@@ -1,15 +1,14 @@
 package auth
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
+	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type Handler struct {
@@ -29,39 +28,20 @@ type Signup struct {
 }
 
 func (h *Handler) CreateMemberAmqpHandler(c *gin.Context) {
+	const op = "CreateMemberAmqpHandler"
 	ctx := c.Request.Context()
 	ctx, span := tracer.Start(ctx, "service.CreateMember")
 	defer span.End()
 	var req pb.CreateMemberRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"statusCode": http.StatusBadRequest, "message": "Error parsing payload as JSON"})
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
 	_, err := h.client.CreateMember(ctx, &req)
 	if err != nil {
-		status, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch status.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.AlreadyExists:
-			httpStatus = http.StatusConflict
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    status.Message(),
-		})
+		httperr.Write(c, "CreateMemberAmqp", err)
 		return
 	}
 
@@ -73,39 +53,20 @@ func (h *Handler) CreateMemberAmqpHandler(c *gin.Context) {
 }
 
 func (h *Handler) CreateMemberHandler(c *gin.Context) {
+	const op = "CreateMemberHandler"
 	ctx := c.Request.Context()
 	ctx, span := tracer.Start(ctx, "service.CreateMember")
 	defer span.End()
 	var req pb.CreateMemberRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"statusCode": http.StatusBadRequest, "message": "Error parsing payload as JSON"})
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
 	member, err := h.client.CreateMember(ctx, &req)
 	if err != nil {
-		status, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch status.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.AlreadyExists:
-			httpStatus = http.StatusConflict
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    status.Message(),
-		})
+		httperr.Write(c, "CreateMember", err)
 		return
 	}
 
@@ -117,22 +78,17 @@ func (h *Handler) CreateMemberHandler(c *gin.Context) {
 }
 
 func (h *Handler) CheckEmailExistsHandler(c *gin.Context) {
+	const op = "CheckEmailExistsHandler"
 	email := c.Query("email")
 	if email == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Email query parameter is required",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Email query parameter is required"))
 		return
 	}
 
 	req := &pb.CheckEmailRequest{Email: email}
 	response, err := h.client.CheckEmailExists(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"statusCode": http.StatusInternalServerError,
-			"message":    "Internal server error",
-		})
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -145,6 +101,7 @@ func (h *Handler) CheckEmailExistsHandler(c *gin.Context) {
 var tracer = otel.Tracer("api-gateway")
 
 func (h *Handler) LoginMemberHandler(c *gin.Context) {
+	const op = "LoginMemberHandler"
 	ctx := c.Request.Context()
 	ctx, span := tracer.Start(ctx, "service.LoginMember")
 	defer span.End()
@@ -152,37 +109,14 @@ func (h *Handler) LoginMemberHandler(c *gin.Context) {
 	var req pb.LoginRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"statusCode": http.StatusBadRequest, "message": fmt.Sprintf("Error parsing payload as JSON: %s", err)})
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 	span.AddEvent("before grpc call")
 	response, err := h.client.LoginMember(ctx, &req)
 	span.AddEvent("after grpc call")
 	if err != nil {
-		status, ok := status.FromError(err)
-
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch status.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.Unauthenticated:
-			httpStatus = http.StatusUnauthorized
-		case codes.NotFound:
-			httpStatus = http.StatusNotFound
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    status.Message(),
-		})
+		httperr.Write(c, "LoginMember", err)
 		return
 	}
 
@@ -194,13 +128,11 @@ func (h *Handler) LoginMemberHandler(c *gin.Context) {
 }
 
 func (h *Handler) GetMemberByIdHandler(c *gin.Context) {
+	const op = "GetMemberByIdHandler"
 	// Get the user ID string from context (set by auth middleware)
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -213,27 +145,7 @@ func (h *Handler) GetMemberByIdHandler(c *gin.Context) {
 	member, err := h.client.GetMember(c.Request.Context(), req)
 
 	if err != nil {
-		status, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch status.Code() {
-		case codes.NotFound:
-			httpStatus = http.StatusNotFound
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    status.Message(),
-		})
+		httperr.Write(c, "GetMemberById", err)
 		return
 	}
 
@@ -245,20 +157,18 @@ func (h *Handler) GetMemberByIdHandler(c *gin.Context) {
 }
 
 func (h *Handler) UpdatePasswordMemberHandler(c *gin.Context) {
+	const op = "UpdatePasswordMemberHandler"
 	var req pb.UpdatePasswordRequest
 
 	// Get the user ID string from context (set by auth middleware)
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"statusCode": http.StatusBadRequest, "message": "Error parsing payload as JSON"})
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -267,29 +177,7 @@ func (h *Handler) UpdatePasswordMemberHandler(c *gin.Context) {
 
 	response, err := h.client.UpdateMemberPassword(c.Request.Context(), &req)
 	if err != nil {
-		status, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch status.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.NotFound:
-			httpStatus = http.StatusNotFound
-		case codes.Unauthenticated:
-			httpStatus = http.StatusUnauthorized
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    status.Message(),
-		})
+		httperr.Write(c, "UpdatePasswordMember", err)
 		return
 	}
 
@@ -301,20 +189,18 @@ func (h *Handler) UpdatePasswordMemberHandler(c *gin.Context) {
 }
 
 func (h *Handler) UpdateInfoMemberHandler(c *gin.Context) {
+	const op = "UpdateInfoMemberHandler"
 	var req pb.UpdateMemberInfoRequest
 
 	// Get the user ID string from context (set by auth middleware)
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"statusCode": http.StatusBadRequest, "message": "Error parsing payload as JSON"})
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -323,27 +209,7 @@ func (h *Handler) UpdateInfoMemberHandler(c *gin.Context) {
 
 	member, err := h.client.UpdateMemberInfo(c.Request.Context(), &req)
 	if err != nil {
-		status, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch status.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.NotFound:
-			httpStatus = http.StatusNotFound
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    status.Message(),
-		})
+		httperr.Write(c, "UpdateInfoMember", err)
 		return
 	}
 
@@ -355,36 +221,17 @@ func (h *Handler) UpdateInfoMemberHandler(c *gin.Context) {
 }
 
 func (h *Handler) ValidateTokenHandler(c *gin.Context) {
+	const op = "ValidateTokenHandler"
 	var req pb.ValidateTokenRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"statusCode": http.StatusBadRequest, "message": "Error parsing payload as JSON"})
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
 	response, err := h.client.ValidateToken(c.Request.Context(), &req)
 	if err != nil {
-		status, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch status.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.Unauthenticated:
-			httpStatus = http.StatusUnauthorized
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    status.Message(),
-		})
+		httperr.Write(c, "ValidateToken", err)
 		return
 	}
 
@@ -401,24 +248,19 @@ type RequestAvatarUploadRequest struct {
 }
 
 func (h *Handler) RequestAvatarUploadHandler(c *gin.Context) {
+	const op = "RequestAvatarUploadHandler"
 	slog.Debug("checking incoming avatar upload request", "request body", c.Request.Body)
 
 	// Get the user ID string from context (set by auth middleware)
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
 	var req RequestAvatarUploadRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Error parsing payload as JSON",
-		})
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -430,29 +272,7 @@ func (h *Handler) RequestAvatarUploadHandler(c *gin.Context) {
 
 	response, err := h.client.RequestAvatarUpload(c.Request.Context(), grpcReq)
 	if err != nil {
-		status, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch status.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.NotFound:
-			httpStatus = http.StatusNotFound
-		case codes.Unavailable:
-			httpStatus = http.StatusServiceUnavailable
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    status.Message(),
-		})
+		httperr.Write(c, "RequestAvatarUpload", err)
 		return
 	}
 
@@ -469,22 +289,17 @@ type ConfirmAvatarUploadRequest struct {
 }
 
 func (h *Handler) ConfirmAvatarUploadHandler(c *gin.Context) {
+	const op = "ConfirmAvatarUploadHandler"
 	// Get the user ID string from context (set by auth middleware)
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
 	var req ConfirmAvatarUploadRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Error parsing payload as JSON",
-		})
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -496,35 +311,15 @@ func (h *Handler) ConfirmAvatarUploadHandler(c *gin.Context) {
 
 	response, err := h.client.ConfirmAvatarUpload(c.Request.Context(), grpcReq)
 	if err != nil {
-		status, ok := status.FromError(err)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"statusCode": http.StatusInternalServerError,
-				"message":    "Internal server error",
-			})
-			return
-		}
-
-		httpStatus := http.StatusInternalServerError
-		switch status.Code() {
-		case codes.InvalidArgument:
-			httpStatus = http.StatusBadRequest
-		case codes.NotFound:
-			httpStatus = http.StatusNotFound
-		}
-
-		c.JSON(httpStatus, gin.H{
-			"statusCode": httpStatus,
-			"message":    status.Message(),
-		})
+		httperr.Write(c, "ConfirmAvatarUpload", err)
 		return
 	}
 
 	if !response.Success {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    response.Message,
-		})
+		// The downstream's own message is not client-safe (§Requirements 9), so it
+		// is logged and replaced. Precision that used to live in this string now
+		// belongs in a domain code — see §Edge States.
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Avatar upload could not be confirmed"))
 		return
 	}
 

@@ -1,29 +1,40 @@
 package auth
 
 import (
-	"log/slog"
-	"net/http"
+	"fmt"
 	"os"
 	"strings"
 
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
+	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
+
+// opAuthMiddleware names this middleware in the seam's server-side logs. Every rejection here
+// is a 401 to the client, so the log line is the only place the four causes stay
+// distinguishable for an operator.
+const opAuthMiddleware = "AuthMiddleware"
 
 /**
 * Authenticates JWT from headers for any requests wrapped in this middleware.
 *
 * Works by simply returning a fucntion that takes a gin context, just like any
 * traditional handler.
+*
+* Every rejection goes through httperr.Write (FS-0001 §Requirements 11), which
+* also aborts the chain — so there is no c.Abort() call here. The detail strings
+* are authored constants describing failures this middleware decided itself;
+* nothing from the token is ever echoed back.
 **/
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// gets token from header
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization token not provided"})
-			c.Abort()
+			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,
+				"Authorization token not provided"))
 			return
 		}
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
@@ -34,33 +45,41 @@ func AuthMiddleware() gin.HandlerFunc {
 		})
 
 		if err != nil || !token.Valid {
-			slog.Debug("Invalid or expired token.")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
-			c.Abort()
+			// err is wrapped, not discarded: it names the actual parse failure
+			// (expired, bad signature, malformed) in the log while the client
+			// sees only the authored detail.
+			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(
+				fmt.Errorf("%w: %w", apperr.ErrUnauthenticated, err),
+				"Invalid or expired token"))
 			return
 		}
 
 		// extract userId
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok || claims["sub"] == nil {
-			slog.Debug("Invalid token claim.")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
-			c.Abort()
+			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,
+				"Invalid token claims"))
 			return
 		}
 
-		userIdStr := claims["sub"].(string)
+		// sub is attacker-influenced and need not be a string. A bare type
+		// assertion here panics on a token carrying sub as a number, which is an
+		// unauthenticated caller crashing a request; comma-ok routes it to the
+		// same 401 as any other unusable claim.
+		userIdStr, ok := claims["sub"].(string)
+		if !ok {
+			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,
+				"Invalid token claims"))
+			return
+		}
 
 		// parse userId as UUID
 		userId, err := uuid.Parse(userIdStr)
 		if err != nil {
-			slog.Debug("Member ID was not correctly parsed as a uuid.")
-			c.JSON(http.StatusUnauthorized, gin.H{"statusCode": http.StatusUnauthorized, "error": "Member ID was not correctly parsed as a uuid."})
-			c.Abort()
+			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,
+				"Member ID was not correctly parsed as a uuid."))
 			return
 		}
-
-		slog.Debug("Authorization of token passed. Setting userId and userIdStr")
 
 		// store userId in the context for usage in the actual API handlers
 		c.Set("userId", userId)
