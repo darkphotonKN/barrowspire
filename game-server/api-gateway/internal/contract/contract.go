@@ -45,6 +45,10 @@ func New(router *gin.Engine) huma.API {
 	config.OpenAPIPath = OpenAPIPath
 	config.DocsPath = DocsPath
 
+	// Spectral requires every operation tag to be declared globally.
+	config.Info.Description = "HTTP surface of the barrowspire gateway. Errors are RFC 9457 problem+json carrying a stable `code`; clients switch on `code`, never on `detail`."
+	config.Tags = append(config.Tags, &huma.Tag{Name: "member", Description: "Member accounts, authentication, and profile"})
+
 	// Drop Huma's schema-link transformer.
 	//
 	// It injects a "$schema" member into every serialized response body. That is
@@ -151,4 +155,26 @@ func fieldsFrom(errs []error) []httperr.FieldError {
 		})
 	}
 	return fields
+}
+
+// SeamError converts an error returned by a typed handler into one Huma renders
+// through the seam.
+//
+// Huma decides a handler error's status from the VALUE: anything not
+// implementing huma.StatusError becomes a flat 500. So without this, every
+// mapping FS-0001 established stops applying the moment a route is serialized —
+// a not-found, an outage, and a validation failure all collapse into 500 with
+// no code. Nothing in the type system warns about it; a running gateway does.
+//
+// An error that already carries a status is left alone: Huma's own boundary
+// failures (422, and the 4xx it raises before a handler runs) have already been
+// through installSeamErrors.
+func SeamError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if _, ok := err.(huma.StatusError); ok {
+		return err
+	}
+	return seamError{Problem: httperr.AsProblem(err)}
 }

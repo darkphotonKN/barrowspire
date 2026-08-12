@@ -239,3 +239,21 @@ func NewProblem(httpStatus int, detail string, fields []FieldError) Problem {
 	}
 	return p
 }
+
+// AsProblem maps err through the seam's mapping and returns the resulting
+// Problem, including any authored detail.
+//
+// It exists for transports that decide status from a returned VALUE rather than
+// by writing the response themselves — Huma being the case in hand. Without it,
+// a typed handler returning a domain error gets Huma's default (500), and every
+// mapping FS-0001 established silently stops applying to serialized routes: a
+// not-found becomes 500, an outage becomes 500, a validation failure becomes
+// 500. Found by probing a running gateway; nothing in the type system says a
+// returned error is meant to carry a status.
+func AsProblem(err error) Problem {
+	p := mapError(err)
+	if detail, ok := apperr.DetailOf(err); ok {
+		p.Detail = detail
+	}
+	return p
+}
