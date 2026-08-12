@@ -36,6 +36,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] Consul register / health-check / deregister lifecycle
 - [x] Error responses on every route → FS-none
 - [ ] Uniform, machine-readable error contract → FS-0001
+- [ ] Gateway HTTP surface serialized → FS-0002
 
 ### Downstream routing
 
