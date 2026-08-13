@@ -221,7 +221,7 @@ openapi-breaking: $(OASDIFF)
 		echo "SKIPPED: no baseline spec on origin/main yet (first serialization)"; \
 	else \
 		$(OASDIFF) breaking /tmp/openapi.base.yaml $(OPENAPI_SPEC) \
-			--err-ignore $(OASDIFF_IGNORE) --fail-on ERR; \
+			--err-ignore $(OASDIFF_IGNORE) --fail-on WARN; \
 	fi
 
 # Every plane-1 gate, in the order CI runs them.
