@@ -73,6 +73,11 @@ func New(router *gin.Engine) huma.API {
 	// So: append a hook that runs after the defaults and wins.
 	config.CreateHooks = append(config.CreateHooks, func(c huma.Config) huma.Config {
 		c.Transformers = nil
+		// OnAddOperation is where the transformer ADDS $schema to each response
+		// schema — separately from emitting it. Leaving it on produces a spec
+		// that declares a member no response ever carries, which then shows up in
+		// the generated TypeScript as a phantom field.
+		c.OpenAPI.OnAddOperation = nil
 		return c
 	})
 

@@ -1,24 +1,17 @@
 "use client";
 
+import type { components } from "@/api/generated/schema";
+
+// Types come from the generated contract, not a hand-written guess. Every field
+// is optional because the gateway emits protobuf `omitempty` semantics.
+type PlayerRankingStats = components["schemas"]["PlayerRankingStats"];
+type LeaderboardResponse = components["schemas"]["Leaderboard"];
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiClient } from "@/utils/api";
 
-interface PlayerRankingStats {
-  id: string;
-  member_id: string;
-  username: string;
-  wins: number;
-  top_threes: number;
-  avatar_url: string;
-  rating: number;
-  rank_position?: number;
-}
 
-interface LeaderboardResponse {
-  players: PlayerRankingStats[];
-  total_count: number;
-}
 
 export default function LeaderboardPage() {
   const router = useRouter();

@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
-import { readApiError, userMessage } from "@/utils/apiError";
+import { fromProblem, userMessage } from "@/utils/apiError";
+import { publicClient } from "@/utils/api";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7114";
 
 const ParticleAnimation = () => {
   const [randomNumber, setRandomNumber] = useState(0);
@@ -58,20 +58,15 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/member/signin`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
+      const { data, error, response } = await publicClient.POST("/api/member/signin", {
+        body: { email, password },
       });
 
-      if (!response.ok) {
+      if (!response.ok || error) {
         // Switch on `code`, never on `detail` — detail is prose, not contract.
         // An unrecognised code falls through to the server's detail (FS-0001).
-        const error = await readApiError(response);
         setError(
-          userMessage(error, {
+          userMessage(fromProblem(response.status, error), {
             UNAUTHENTICATED: "Wrong email or password.",
             VALIDATION_FAILED: "Please check your email and password.",
             SERVICE_UNAVAILABLE:
@@ -81,10 +76,17 @@ export default function LoginPage() {
         return;
       }
 
-      const data = await response.json();
 
-      // Store auth data in zustand
-      const result = data.result;
+      // Store auth data in zustand.
+      //
+      // The generated contract marks every field optional (the gateway emits
+      // protobuf omitempty), so a sign-in that somehow returned 200 without
+      // tokens is caught here rather than storing undefined and failing later.
+      const result = data?.result;
+      if (!result?.access_token || !result.refresh_token || !result.member_info) {
+        setError("Sign-in succeeded but returned no session. Please try again.");
+        return;
+      }
       setAuth({
         accessToken: result.access_token,
         refreshToken: result.refresh_token,

@@ -173,8 +173,10 @@ export default function SubscriptionPage() {
     setSuccess("");
     setSubscribing(true);
     try {
-      const res = await apiClient.subscribe(PLAN.productId, memberInfo.email);
-      const secret = res.result?.client_secret || res.result?.clientSecret;
+      const res = await apiClient.subscribe(PLAN.productId, memberInfo.email ?? "");
+      // The gateway sends `client_secret`; this read `clientSecret` and was
+      // always undefined. Caught by the generated types (FS-0002).
+      const secret = res.result?.client_secret;
       if (!secret) {
         setError("No client secret returned from server");
         setSubscribing(false);

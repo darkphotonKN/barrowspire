@@ -187,7 +187,8 @@ export class LoadoutScene extends Phaser.Scene {
       const loadout = loadoutRes.result || {};
       const equippedIds = new Set<string>();
 
-      const findAndEquip = (id: string, slot: EquipmentSlot) => {
+      // id is optional: the loadout omits empty slots (protobuf omitempty).
+      const findAndEquip = (id: string | undefined, slot: EquipmentSlot) => {
         if (!id) return;
         const item = allItems.find(i => i.entity_id === id);
         if (item) {

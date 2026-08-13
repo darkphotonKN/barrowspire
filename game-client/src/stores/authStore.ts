@@ -1,16 +1,12 @@
+import type { components } from "@/api/generated/schema";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-interface MemberInfo {
-  id: string;
-  name: string;
-  email: string;
-  status: number;
-  average_rating: number;
-  avatar_url?: string;
-  created_at: string;
-  updated_at: string;
-}
+// Derived from the generated contract rather than hand-declared. The previous
+// hand-written version claimed created_at was a string; the gateway sends a
+// protobuf {seconds, nanos} object, and every field is optional. Caught by the
+// generated types during the FS-0002 client cutover.
+type MemberInfo = components["schemas"]["Member"];
 
 interface AuthState {
   accessToken: string | null;

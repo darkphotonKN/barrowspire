@@ -3,13 +3,6 @@ components:
     AcceptedEnvelope:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/AcceptedEnvelope.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -63,13 +56,6 @@ components:
     AvatarUploadEnvelope:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/AvatarUploadEnvelope.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -115,13 +101,6 @@ components:
     CheckEmailEnvelope:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/CheckEmailEnvelope.json
-          format: uri
-          readOnly: true
-          type: string
         exists:
           description: Whether an account already uses this email
           type: boolean
@@ -136,13 +115,6 @@ components:
     ConfirmAvatarEnvelope:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ConfirmAvatarEnvelope.json
-          format: uri
-          readOnly: true
-          type: string
         avatar_url:
           description: The stored avatar URL
           type: string
@@ -165,13 +137,6 @@ components:
     ConfirmAvatarUploadBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ConfirmAvatarUploadBody.json
-          format: uri
-          readOnly: true
-          type: string
         upload_id:
           description: The upload_id returned by the upload request
           type: string
@@ -224,13 +189,6 @@ components:
     CreateCompleteArmorBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/CreateCompleteArmorBody.json
-          format: uri
-          readOnly: true
-          type: string
         armor_slot:
           description: Armor slot
           type: string
@@ -287,13 +245,6 @@ components:
     CreateCompleteConsumableBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/CreateCompleteConsumableBody.json
-          format: uri
-          readOnly: true
-          type: string
         base_buy_price:
           description: Base buy price
           format: int32
@@ -350,13 +301,6 @@ components:
     CreateCompleteWeaponBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/CreateCompleteWeaponBody.json
-          format: uri
-          readOnly: true
-          type: string
         attack_power:
           description: Attack power
           format: int32
@@ -413,13 +357,6 @@ components:
     CreateCustomerBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/CreateCustomerBody.json
-          format: uri
-          readOnly: true
-          type: string
         email:
           description: Email to attach to the Stripe customer
           type: string
@@ -429,13 +366,6 @@ components:
     CreateItemTemplateBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/CreateItemTemplateBody.json
-          format: uri
-          readOnly: true
-          type: string
         base_buy_price:
           description: Base buy price
           format: int32
@@ -480,13 +410,6 @@ components:
     CreateWeaponBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/CreateWeaponBody.json
-          format: uri
-          readOnly: true
-          type: string
         attack_power:
           description: Attack power
           format: int32
@@ -694,13 +617,6 @@ components:
     Leaderboard:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/Leaderboard.json
-          format: uri
-          readOnly: true
-          type: string
         players:
           description: Ranked players
           items:
@@ -716,13 +632,6 @@ components:
     ListEnvelope:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ListEnvelope.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -760,13 +669,6 @@ components:
     LoginEnvelope:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/LoginEnvelope.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -839,13 +741,6 @@ components:
     MemberEnvelope:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/MemberEnvelope.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -899,13 +794,6 @@ components:
     PermissionEnvelope:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/PermissionEnvelope.json
-          format: uri
-          readOnly: true
-          type: string
         has_permission:
           description: Whether the member holds an active subscription
           type: boolean
@@ -924,13 +812,6 @@ components:
     PlayerMatchStats:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/PlayerMatchStats.json
-          format: uri
-          readOnly: true
-          type: string
         created_at:
           $ref: "#/components/schemas/Timestamp"
           description: Creation time
@@ -1012,13 +893,6 @@ components:
     ReadEnvelope:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ReadEnvelope.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Message chosen by notification-service
           type: string
@@ -1037,13 +911,6 @@ components:
     RequestAvatarUploadBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/RequestAvatarUploadBody.json
-          format: uri
-          readOnly: true
-          type: string
         filename:
           description: Name of the file to upload
           type: string
@@ -1051,13 +918,6 @@ components:
     ResultEnvelopeArmorDetail:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeArmorDetail.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1076,13 +936,6 @@ components:
     ResultEnvelopeConsumableDetail:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeConsumableDetail.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1101,13 +954,6 @@ components:
     ResultEnvelopeCustomerResult:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeCustomerResult.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1126,13 +972,6 @@ components:
     ResultEnvelopeGetLoadoutResponse:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeGetLoadoutResponse.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1151,13 +990,6 @@ components:
     ResultEnvelopeItemTemplate:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeItemTemplate.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1176,13 +1008,6 @@ components:
     ResultEnvelopeListItemInstancesResponse:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeListItemInstancesResponse.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1201,13 +1026,6 @@ components:
     ResultEnvelopeListItemRarity:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeListItemRarity.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1230,13 +1048,6 @@ components:
     ResultEnvelopeListItemType:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeListItemType.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1259,13 +1070,6 @@ components:
     ResultEnvelopeSubscribeResult:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeSubscribeResult.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1284,13 +1088,6 @@ components:
     ResultEnvelopeSubscriptionProductResult:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeSubscriptionProductResult.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1309,13 +1106,6 @@ components:
     ResultEnvelopeSubscriptionsResult:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeSubscriptionsResult.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1334,13 +1124,6 @@ components:
     ResultEnvelopeUpdateLoadoutResponse:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeUpdateLoadoutResponse.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1359,13 +1142,6 @@ components:
     ResultEnvelopeWeapon:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeWeapon.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1384,13 +1160,6 @@ components:
     ResultEnvelopeWeaponDetail:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ResultEnvelopeWeaponDetail.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
@@ -1409,13 +1178,6 @@ components:
     SeamError:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/SeamError.json
-          format: uri
-          readOnly: true
-          type: string
         code:
           type: string
         detail:
@@ -1444,13 +1206,6 @@ components:
     SetupSubscriptionBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/SetupSubscriptionBody.json
-          format: uri
-          readOnly: true
-          type: string
         description:
           description: Product description
           type: string
@@ -1465,13 +1220,6 @@ components:
     SigninBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/SigninBody.json
-          format: uri
-          readOnly: true
-          type: string
         email:
           description: Email address
           type: string
@@ -1482,13 +1230,6 @@ components:
     SignupBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/SignupBody.json
-          format: uri
-          readOnly: true
-          type: string
         email:
           description: Email address
           type: string
@@ -1502,13 +1243,6 @@ components:
     SubscribeBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/SubscribeBody.json
-          format: uri
-          readOnly: true
-          type: string
         email:
           description: Email for the Stripe customer
           type: string
@@ -1556,13 +1290,6 @@ components:
     SuccessEnvelope:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/SuccessEnvelope.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Message chosen by auth-service
           type: string
@@ -1593,13 +1320,6 @@ components:
     UpdateInfoBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/UpdateInfoBody.json
-          format: uri
-          readOnly: true
-          type: string
         name:
           description: New display name
           type: string
@@ -1610,13 +1330,6 @@ components:
     UpdateLoadoutBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/UpdateLoadoutBody.json
-          format: uri
-          readOnly: true
-          type: string
         item_instance_id:
           description: Item instance to equip; empty unequips
           type: string
@@ -1635,13 +1348,6 @@ components:
     UpdatePasswordBody:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/UpdatePasswordBody.json
-          format: uri
-          readOnly: true
-          type: string
         current_password:
           description: Current password
           type: string
@@ -1736,13 +1442,6 @@ components:
     WeaponsEnvelope:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/WeaponsEnvelope.json
-          format: uri
-          readOnly: true
-          type: string
         message:
           description: Human-readable summary
           type: string
