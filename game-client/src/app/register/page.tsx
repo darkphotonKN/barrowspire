@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { readApiError, userMessage } from "@/utils/apiError";
+import { fromProblem, userMessage } from "@/utils/apiError";
+import { publicClient } from "@/utils/api";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7114";
 
 const ParticleAnimation = () => {
   const [randomNumber, setRandomNumber] = useState(0);
@@ -54,12 +54,11 @@ export default function RegisterPage() {
       pollingRef.current = setInterval(async () => {
         attempts++;
         try {
-          const res = await fetch(
-            `${API_BASE_URL}/api/member/check-email?email=${encodeURIComponent(targetEmail)}`,
-          );
-          const data = await res.json();
+          const { data } = await publicClient.GET("/api/member/check-email", {
+            params: { query: { email: targetEmail } },
+          });
 
-          if (data.exists) {
+          if (data?.exists) {
             stopPolling();
             router.push("/login");
             return;
@@ -101,20 +100,15 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/member/signup`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name, email, password }),
+      const { error, response } = await publicClient.POST("/api/member/signup", {
+        body: { name, email, password },
       });
 
-      if (!response.ok) {
+      if (!response.ok || error) {
         // ALREADY_EXISTS is the code this form most needs to distinguish — it was
         // indistinguishable from a validation failure under the old shape.
-        const error = await readApiError(response);
         setError(
-          userMessage(error, {
+          userMessage(fromProblem(response.status, error), {
             ALREADY_EXISTS: "An account with that email already exists.",
             VALIDATION_FAILED: "Please check the details you entered.",
             SERVICE_UNAVAILABLE:

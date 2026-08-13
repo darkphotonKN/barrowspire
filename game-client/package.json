@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx}\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
+    "lint:fence": "./lint-fence.sh"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -18,6 +19,7 @@
     "@stripe/stripe-js": "^8.7.0",
     "@types/socket.io-client": "^3.0.0",
     "next": "^15.0.0",
+    "openapi-fetch": "^0.17.0",
     "phaser": "^3.80.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

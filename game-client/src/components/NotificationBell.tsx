@@ -1,21 +1,13 @@
 'use client';
 
+import type { components } from "@/api/generated/schema";
+
+type Notification = components["schemas"]["Notification"];
+
 import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/utils/api';
 import { useAuthStore } from '@/stores/authStore';
 
-interface Notification {
-  id: string;
-  user_id: string;
-  title: string;
-  message: string;
-  notification_type: 'game' | 'achievement' | 'system' | 'friend';
-  event_type: string;
-  read: boolean;
-  data: Record<string, any>;
-  created_at: string | { seconds: number; nanos: number };
-  updated_at: string | { seconds: number; nanos: number };
-}
 
 // SVG Bell Icon
 const BellIcon = ({ className }: { className?: string }) => (
@@ -112,7 +104,11 @@ export default function NotificationBell() {
     }
   };
 
-  const getTimeAgo = (timestamp: string | { seconds: number; nanos: number }) => {
+  const getTimeAgo = (
+    // seconds/nanos are optional: the gateway emits protobuf omitempty, and the
+    // generated contract says so. The body already guards with != null.
+    timestamp: string | { seconds?: number; nanos?: number },
+  ) => {
     const now = new Date();
     // Handle protobuf Timestamp format {seconds, nanos}
     let past: Date;
@@ -184,7 +180,7 @@ export default function NotificationBell() {
                 <div
                   key={notification.id}
                   className={`notification-item ${notification.read ? '' : 'unread'}`}
-                  onClick={() => !notification.read && handleMarkAsRead(notification.id)}
+                  onClick={() => !notification.read && notification.id && handleMarkAsRead(notification.id)}
                 >
                   <div className="notification-icon">
                     {getNotificationIcon(notification.notification_type)}
@@ -192,7 +188,7 @@ export default function NotificationBell() {
                   <div className="notification-content">
                     <div className="notification-header">
                       <span className="notification-title">{notification.title}</span>
-                      <span className="notification-time">{getTimeAgo(notification.created_at)}</span>
+                      <span className="notification-time">{notification.created_at ? getTimeAgo(notification.created_at) : ''}</span>
                     </div>
                     <p className="notification-message">{notification.message}</p>
                   </div>

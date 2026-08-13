@@ -1,5 +1,7 @@
 package auth
 
+import "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/wire"
+
 // Transport types for the serialized member surface (FS-0002 slice 1).
 //
 // These are TRANSCRIPTIONS, not designs. Every field name, type, and
@@ -19,24 +21,17 @@ package auth
 //   - every success response is wrapped in a `statusCode` + `message` envelope
 //     that duplicates the HTTP status.
 
-// Timestamp is protobuf's timestamp as encoding/json renders it. Not RFC 3339 —
-// that is what the wire carries today.
-type Timestamp struct {
-	Seconds int64 `json:"seconds,omitempty" doc:"Seconds since the Unix epoch"`
-	Nanos   int32 `json:"nanos,omitempty" doc:"Nanosecond offset within the second"`
-}
-
 // Member is a member as the gateway already publishes it.
 type Member struct {
-	ID            string     `json:"id,omitempty" doc:"Member id (UUID)"`
-	Name          string     `json:"name,omitempty" doc:"Display name"`
-	Email         string     `json:"email,omitempty" doc:"Email address"`
-	Status        int32      `json:"status,omitempty" doc:"Account status code as stored by auth-service"`
-	AverageRating float32    `json:"average_rating,omitempty" doc:"Average rating"`
-	CreatedAt     *Timestamp `json:"created_at,omitempty" doc:"Creation time"`
-	UpdatedAt     *Timestamp `json:"updated_at,omitempty" doc:"Last update time"`
-	AvatarURL     string     `json:"avatar_url,omitempty" doc:"Avatar URL, empty when unset"`
-	Role          string     `json:"role,omitempty" doc:"Member role"`
+	ID            string          `json:"id,omitempty" doc:"Member id (UUID)"`
+	Name          string          `json:"name,omitempty" doc:"Display name"`
+	Email         string          `json:"email,omitempty" doc:"Email address"`
+	Status        int32           `json:"status,omitempty" doc:"Account status code as stored by auth-service"`
+	AverageRating float32         `json:"average_rating,omitempty" doc:"Average rating"`
+	CreatedAt     *wire.Timestamp `json:"created_at,omitempty" doc:"Creation time"`
+	UpdatedAt     *wire.Timestamp `json:"updated_at,omitempty" doc:"Last update time"`
+	AvatarURL     string          `json:"avatar_url,omitempty" doc:"Avatar URL, empty when unset"`
+	Role          string          `json:"role,omitempty" doc:"Member role"`
 }
 
 // LoginResult is the `result` member of a successful sign-in.
@@ -50,15 +45,15 @@ type LoginResult struct {
 
 // AvatarUploadResult is the `result` member of an avatar upload request.
 type AvatarUploadResult struct {
-	UploadID            string   `json:"upload_id,omitempty" doc:"Correlates the request with its confirmation"`
-	PresignedURL        string   `json:"presigned_url,omitempty" doc:"S3 URL to PUT the file to"`
-	S3Key               string   `json:"s3_key,omitempty" doc:"Object key"`
+	UploadID     string `json:"upload_id,omitempty" doc:"Correlates the request with its confirmation"`
+	PresignedURL string `json:"presigned_url,omitempty" doc:"S3 URL to PUT the file to"`
+	S3Key        string `json:"s3_key,omitempty" doc:"Object key"`
 	// A Timestamp object, not a Unix integer — same {seconds, nanos} shape the
 	// rest of this surface uses. Assumed int64 while transcribing; the compiler
 	// disagreed, which is the argument for transport types over hand-checking.
-	ExpiresAt           *Timestamp `json:"expires_at,omitempty" doc:"Presigned URL expiry"`
-	MaxFileSize         int64      `json:"max_file_size,omitempty" doc:"Maximum accepted size in bytes"`
-	AllowedContentTypes []string   `json:"allowed_content_types,omitempty" doc:"Accepted content types"`
+	ExpiresAt           *wire.Timestamp `json:"expires_at,omitempty" doc:"Presigned URL expiry"`
+	MaxFileSize         int64           `json:"max_file_size,omitempty" doc:"Maximum accepted size in bytes"`
+	AllowedContentTypes []string        `json:"allowed_content_types,omitempty" doc:"Accepted content types"`
 }
 
 // ---------------------------------------------------------------------------

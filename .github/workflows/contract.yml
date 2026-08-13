@@ -82,6 +82,14 @@ jobs:
 
       # The generated client is the consumer's only import path for serialized endpoints.
       # If regenerating it produces a diff, the committed client is stale.
+      - name: lint fence — no hand-written fetch (selftest)
+        working-directory: game-client
+        run: npm ci && npm run lint:fence
+
+      - name: client typecheck
+        working-directory: game-client
+        run: npx tsc --noEmit
+
       - name: regenerate client and fail on diff
         run: |
           make -C game-server/api-gateway client

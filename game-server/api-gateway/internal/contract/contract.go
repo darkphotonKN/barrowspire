@@ -47,7 +47,13 @@ func New(router *gin.Engine) huma.API {
 
 	// Spectral requires every operation tag to be declared globally.
 	config.Info.Description = "HTTP surface of the barrowspire gateway. Errors are RFC 9457 problem+json carrying a stable `code`; clients switch on `code`, never on `detail`."
-	config.Tags = append(config.Tags, &huma.Tag{Name: "member", Description: "Member accounts, authentication, and profile"})
+	config.Tags = append(config.Tags,
+		&huma.Tag{Name: "member", Description: "Member accounts, authentication, and profile"},
+		&huma.Tag{Name: "items", Description: "Item templates, instances, and loadouts"},
+		&huma.Tag{Name: "notification", Description: "Member notifications"},
+		&huma.Tag{Name: "stats", Description: "Match statistics and the leaderboard (public)"},
+		&huma.Tag{Name: "payment", Description: "Stripe customers and subscriptions"},
+	)
 
 	// Drop Huma's schema-link transformer.
 	//
@@ -67,6 +73,11 @@ func New(router *gin.Engine) huma.API {
 	// So: append a hook that runs after the defaults and wins.
 	config.CreateHooks = append(config.CreateHooks, func(c huma.Config) huma.Config {
 		c.Transformers = nil
+		// OnAddOperation is where the transformer ADDS $schema to each response
+		// schema — separately from emitting it. Leaving it on produces a spec
+		// that declares a member no response ever carries, which then shows up in
+		// the generated TypeScript as a phantom field.
+		c.OpenAPI.OnAddOperation = nil
 		return c
 	})
 

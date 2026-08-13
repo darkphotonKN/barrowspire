@@ -1,18 +1,14 @@
 "use client";
 
+import type { components } from "@/api/generated/schema";
+
+type UploadResponse = components["schemas"]["AvatarUploadResult"];
+
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import { apiClient } from "@/utils/api";
 
-interface UploadResponse {
-  upload_id: string;
-  presigned_url: string;
-  s3_key: string;
-  expires_at: string;
-  max_file_size: number;
-  allowed_content_types: string[];
-}
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -72,6 +68,9 @@ export default function ProfilePage() {
       setUploadProgress(30);
 
       // Step 2: Upload to S3
+      if (!uploadData.presigned_url || !uploadData.upload_id) {
+        throw new Error("Upload could not be prepared");
+      }
       await apiClient.uploadToS3(uploadData.presigned_url, file);
       setUploadProgress(70);
 
@@ -103,7 +102,15 @@ export default function ProfilePage() {
     }
   };
 
-  const formatDate = (dateString: string) => {
+  // The contract says created_at is an optional protobuf {seconds, nanos}.
+  const formatDate = (
+    value: string | { seconds?: number; nanos?: number } | undefined,
+  ) => {
+    if (value === undefined) return "—";
+    const dateString =
+      typeof value === "object"
+        ? new Date(Number(value.seconds ?? 0) * 1000).toISOString()
+        : value;
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
       month: "long",
@@ -111,7 +118,8 @@ export default function ProfilePage() {
     });
   };
 
-  const getStatusLabel = (status: number) => {
+  const getStatusLabel = (status: number | undefined) => {
+    if (status === undefined) return "Unknown";
     return status === 1 ? "Delver" : status === 2 ? "Warden" : "Unknown";
   };
 

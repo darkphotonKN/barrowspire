@@ -1,6 +1,6 @@
 ---
 id: I-0013
-status: open
+status: done
 implements: FS-0002
 blocked_by: [I-0009, I-0010, I-0011, I-0012]
 labels: [ready-for-agent]
