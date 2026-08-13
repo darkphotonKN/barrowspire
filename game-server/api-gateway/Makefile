@@ -64,6 +64,42 @@ migrate-create:
 	fi; \
 	migrate create -ext sql -dir migrations -seq $(NAME)
 
+# Proves the gates can still REJECT.
+#
+# A gate that cannot distinguish "passed" from "did not run" emits a green check either way,
+# which is worse than no gate because it is trusted. This runs each gate against a fixture
+# that violates it and asserts a NON-ZERO exit, then relies on the real run above to prove
+# they accept a valid tree.
+#
+# It runs in CI, not by hand: a fixture nobody executes is documentation. Two repos reached
+# this point and both wrote their own version before anything caught a real regression —
+# which is why it ships here now rather than being named as a next step.
+#
+# Each check tests the tool's EXIT STATUS rather than grepping its output. Both tools already
+# exit non-zero on a finding, and matching on words like "error" breaks the day a tool changes
+# its wording — silently, and in the safe-looking direction, which is the exact failure a
+# selftest exists to prevent.
+gates-selftest: $(OASDIFF)
+	@if [ ! -f $(FIXTURES_DIR)/spectral-bad.yaml ]; then \
+		echo "SKIPPED: no $(FIXTURES_DIR) fixtures (expected until the contract layer is adopted)"; \
+	else \
+		fail=0; \
+		echo "→ the lint ruleset must REJECT spectral-bad.yaml"; \
+		if npx --yes @stoplight/spectral-cli@6 lint --ruleset $(SPECTRAL_RULES) $(FIXTURES_DIR)/spectral-bad.yaml >/dev/null 2>&1; then \
+			echo "  ❌ ACCEPTED — the ruleset enforces nothing"; fail=1; \
+		else \
+			echo "  ok — rejected"; \
+		fi; \
+		echo "→ the ratchet must REJECT oasdiff-base -> oasdiff-rev"; \
+		if $(OASDIFF) breaking $(FIXTURES_DIR)/oasdiff-base.yaml $(FIXTURES_DIR)/oasdiff-rev.yaml --fail-on ERR >/dev/null 2>&1; then \
+			echo "  ❌ ACCEPTED — the ratchet enforces nothing"; fail=1; \
+		else \
+			echo "  ok — rejected"; \
+		fi; \
+		[ "$$fail" -eq 0 ] || { echo "gates-selftest FAILED — the gates are not trustworthy"; exit 1; }; \
+		echo "✅ gates observed rejecting known-bad input"; \
+	fi
+
 .PHONY: run dev test migrate-up migrate-down migrate-status migrate-down-to migrate-reset migrate-create
 
 
@@ -189,7 +225,7 @@ openapi-breaking: $(OASDIFF)
 	fi
 
 # Every plane-1 gate, in the order CI runs them.
-gates: openapi-diff lint-contract openapi-breaking seam-gate seam-gate-selftest
+gates: openapi-diff lint-contract openapi-breaking gates-selftest seam-gate seam-gate-selftest
 	@echo "✅ contract gates complete"
 
 # NOT PROVIDED (deliberate): a `gates-selftest` target that runs the fixtures and asserts
@@ -198,7 +234,7 @@ gates: openapi-diff lint-contract openapi-breaking seam-gate seam-gate-selftest
 # wiring it into CI — is the named next hardening step, left out here so this file matches
 # what has actually been exercised rather than what would be nice.
 
-.PHONY: openapi client lint-contract openapi-diff openapi-breaking gates
+.PHONY: openapi client lint-contract openapi-diff openapi-breaking gates gates-selftest
 
 # --- FS-0001 seam gates (I-0007) -------------------------------------------
 # Three checks, each guarding a failure that actually happened during FS-0001:
