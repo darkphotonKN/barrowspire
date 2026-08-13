@@ -33,9 +33,10 @@ type MemberIDFunc func(ctx context.Context) (string, bool)
 // metadata, so cmd/openapi can build the document without dialing anything.
 func RegisterOperations(api huma.API, h *Handler, amqpClient *AmqpAuthClient,
 	memberID MemberIDFunc, protect func(huma.Context, func(huma.Context)),
-	errFor ErrorFunc,
+	errFor ErrorFunc, secured []map[string][]string,
 ) {
 	toStatusError = errFor
+	securedOp = secured
 
 	registerSignup(api, amqpClient)
 	registerSignin(api, h)
@@ -56,6 +57,10 @@ type ErrorFunc func(error) error
 // EVERY handler, so no individual return path can forget it — a forgotten one
 // would be a silent 500 carrying no code, which is precisely the failure this
 // whole feature exists to remove.
+// securedOp marks an operation as requiring the bearer scheme the contract
+// package declares. Set by RegisterOperations.
+var securedOp []map[string][]string
+
 var toStatusError ErrorFunc = func(err error) error { return err }
 
 // guard wraps a typed handler so its error goes through the seam.
@@ -211,6 +216,7 @@ func registerGetMember(api huma.API, h *Handler, memberID MemberIDFunc,
 		Description: "Returns the member identified by the bearer token. Identity never comes from the request.",
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusInternalServerError},
 		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
 		Method:      http.MethodGet,
 		Path:        "/api/member",
 		Summary:     "Get the signed-in member",
@@ -247,6 +253,7 @@ func registerUpdatePassword(api huma.API, h *Handler, memberID MemberIDFunc,
 		Description: "Changes the signed-in member's password. The current password is verified by auth-service.",
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError},
 		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
 		Method:      http.MethodPatch,
 		Path:        "/api/member/update-password",
 		Summary:     "Change the signed-in member's password",
@@ -289,6 +296,7 @@ func registerUpdateInfo(api huma.API, h *Handler, memberID MemberIDFunc,
 		Description: "Updates the signed-in member's display name and status, and returns the updated member.",
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError},
 		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
 		Method:      http.MethodPatch,
 		Path:        "/api/member/update-info",
 		Summary:     "Update the signed-in member's profile",
@@ -329,6 +337,7 @@ func registerRequestAvatarUpload(api huma.API, h *Handler, memberID MemberIDFunc
 		Description: "Returns a presigned S3 URL to PUT an avatar to, plus the constraints the upload must satisfy.",
 		Errors:      []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusInternalServerError},
 		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
 		Method:      http.MethodPost,
 		Path:        "/api/member/avatar/upload-request",
 		Summary:     "Get a presigned URL for an avatar upload",
@@ -375,6 +384,7 @@ func registerConfirmAvatarUpload(api huma.API, h *Handler, memberID MemberIDFunc
 		Description: "Confirms a previously requested avatar upload completed, and returns the stored avatar URL.",
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError},
 		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
 		Method:      http.MethodPost,
 		Path:        "/api/member/avatar/confirm",
 		Summary:     "Confirm an avatar upload completed",

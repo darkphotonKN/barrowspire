@@ -13,6 +13,10 @@ import (
 type MemberIDFunc func(ctx context.Context) (string, bool)
 type ErrorFunc func(error) error
 
+// securedOp marks an operation as requiring the bearer scheme the contract
+// package declares. Set by RegisterOperations.
+var securedOp []map[string][]string
+
 var toStatusError ErrorFunc = func(err error) error { return err }
 
 func guard[I, O any](fn func(context.Context, *I) (*O, error)) func(context.Context, *I) (*O, error) {
@@ -102,8 +106,10 @@ var errsAuthed = []int{http.StatusUnauthorized, http.StatusBadRequest, http.Stat
 // as failed live payments. It stays a legacy gin route (FS-0002 §Out of Scope).
 func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 	protect func(huma.Context, func(huma.Context)), errFor ErrorFunc,
+	secured []map[string][]string,
 ) {
 	toStatusError = errFor
+	securedOp = secured
 	mw := huma.Middlewares{protect}
 
 	type custIn struct{ Body CreateCustomerBody }
@@ -115,7 +121,7 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		OperationID: "create-payment-customer", Method: http.MethodPost,
 		Path: "/api/payment/customer", Summary: "Create a Stripe customer for the signed-in member",
 		Description: "Creates a Stripe customer bound to the caller's member id.",
-		Tags:        []string{"payment"}, Middlewares: mw, Errors: errsAuthed,
+		Tags:        []string{"payment"}, Middlewares: mw, Security: securedOp, Errors: errsAuthed,
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *custIn) (*custOut, error) {
 		id, ok := memberID(ctx)
@@ -144,7 +150,7 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		OperationID: "setup-subscription-product", Method: http.MethodPost,
 		Path: "/api/payment/subscription/setup", Summary: "Create a subscription product and price",
 		Description: "Sets up the Stripe product and price a subscription is sold against.",
-		Tags:        []string{"payment"}, Middlewares: mw, Errors: errsAuthed,
+		Tags:        []string{"payment"}, Middlewares: mw, Security: securedOp, Errors: errsAuthed,
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *setupIn) (*setupOut, error) {
 		res, err := h.client.SetupSubscription(ctx, &pb.SetupSubscriptionRequest{
@@ -170,7 +176,7 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		OperationID: "subscribe", Method: http.MethodPost,
 		Path: "/api/payment/subscribe", Summary: "Subscribe the signed-in member to a product",
 		Description: "Creates (or reuses) the Stripe customer, then subscribes them to the product.",
-		Tags:        []string{"payment"}, Middlewares: mw, Errors: errsAuthed,
+		Tags:        []string{"payment"}, Middlewares: mw, Security: securedOp, Errors: errsAuthed,
 	}, guard(func(ctx context.Context, in *subIn) (*subOut, error) {
 		id, ok := memberID(ctx)
 		if !ok {
@@ -207,7 +213,7 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		OperationID: "get-user-subscriptions", Method: http.MethodGet,
 		Path: "/api/payment/subscriptions/{customerId}", Summary: "List a customer's subscriptions",
 		Description: "Returns every subscription held by the given Stripe customer.",
-		Tags:        []string{"payment"}, Middlewares: mw, Errors: errsAuthed,
+		Tags:        []string{"payment"}, Middlewares: mw, Security: securedOp, Errors: errsAuthed,
 	}, guard(func(ctx context.Context, in *listIn) (*listOut, error) {
 		res, err := h.client.GetUserSubscriptions(ctx, &pb.GetUserSubscriptionsRequest{CustomerId: in.CustomerID})
 		if err != nil {
@@ -227,7 +233,7 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		OperationID: "check-subscription-permission", Method: http.MethodGet,
 		Path: "/api/payment/subscription/permission", Summary: "Check the member's subscription entitlement",
 		Description: "Polling endpoint: reports whether the signed-in member currently holds an active subscription.",
-		Tags:        []string{"payment"}, Middlewares: mw, Errors: errsAuthed,
+		Tags:        []string{"payment"}, Middlewares: mw, Security: securedOp, Errors: errsAuthed,
 	}, guard(func(ctx context.Context, _ *struct{}) (*permOut, error) {
 		id, ok := memberID(ctx)
 		if !ok {

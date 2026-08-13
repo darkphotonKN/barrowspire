@@ -13,6 +13,10 @@ import (
 type MemberIDFunc func(ctx context.Context) (string, bool)
 type ErrorFunc func(error) error
 
+// securedOp marks an operation as requiring the bearer scheme the contract
+// package declares. Set by RegisterOperations.
+var securedOp []map[string][]string
+
 var toStatusError ErrorFunc = func(err error) error { return err }
 
 // guard routes every handler's error through the seam; see the member group.
@@ -66,8 +70,10 @@ var errsAuthed = []int{http.StatusUnauthorized, http.StatusBadRequest, http.Stat
 // slice 3). All three routes are JWT-protected.
 func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 	protect func(huma.Context, func(huma.Context)), errFor ErrorFunc,
+	secured []map[string][]string,
 ) {
 	toStatusError = errFor
+	securedOp = secured
 	mw := huma.Middlewares{protect}
 
 	type listOut struct{ Body listEnvelope }
@@ -78,7 +84,7 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		Summary:     "List the signed-in member's notifications",
 		Description: "Returns the member's notifications and the total available.",
 		Tags:        []string{"notification"},
-		Middlewares: mw, Errors: errsAuthed,
+		Middlewares: mw, Security: securedOp, Errors: errsAuthed,
 	}, guard(func(ctx context.Context, _ *struct{}) (*listOut, error) {
 		id, ok := memberID(ctx)
 		if !ok {
@@ -109,7 +115,7 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		Summary:     "Mark one notification as read",
 		Description: "Marks a single notification belonging to the signed-in member as read.",
 		Tags:        []string{"notification"},
-		Middlewares: mw, Errors: errsAuthed,
+		Middlewares: mw, Security: securedOp, Errors: errsAuthed,
 	}, guard(func(ctx context.Context, in *readIn) (*readOut, error) {
 		// Transcribed: the legacy handler rejected an empty id itself.
 		if in.ID == "" {
@@ -138,7 +144,7 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		Summary:     "Mark every notification as read",
 		Description: "Marks all of the signed-in member's notifications as read.",
 		Tags:        []string{"notification"},
-		Middlewares: mw, Errors: errsAuthed,
+		Middlewares: mw, Security: securedOp, Errors: errsAuthed,
 	}, guard(func(ctx context.Context, _ *struct{}) (*allOut, error) {
 		id, ok := memberID(ctx)
 		if !ok {

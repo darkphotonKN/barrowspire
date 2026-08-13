@@ -225,7 +225,7 @@ openapi-breaking: $(OASDIFF)
 	fi
 
 # Every plane-1 gate, in the order CI runs them.
-gates: openapi-diff lint-contract openapi-breaking gates-selftest seam-gate seam-gate-selftest
+gates: openapi-diff lint-contract openapi-breaking gates-selftest contract-auth seam-gate seam-gate-selftest
 	@echo "✅ contract gates complete"
 
 # NOT PROVIDED (deliberate): a `gates-selftest` target that runs the fixtures and asserts
@@ -234,7 +234,12 @@ gates: openapi-diff lint-contract openapi-breaking gates-selftest seam-gate seam
 # wiring it into CI — is the named next hardening step, left out here so this file matches
 # what has actually been exercised rather than what would be nice.
 
-.PHONY: openapi client lint-contract openapi-diff openapi-breaking gates gates-selftest
+# Every operation that RUNS auth middleware must DECLARE it needs auth —
+# otherwise the contract calls it public and it then answers 401.
+contract-auth:
+	@cd .. && ./scripts/check-contract-auth.py
+
+.PHONY: openapi client lint-contract openapi-diff openapi-breaking gates gates-selftest contract-auth
 
 # --- FS-0001 seam gates (I-0007) -------------------------------------------
 # Three checks, each guarding a failure that actually happened during FS-0001:

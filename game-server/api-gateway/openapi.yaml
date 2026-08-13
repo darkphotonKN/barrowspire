@@ -1461,6 +1461,12 @@ components:
         - message
         - weapons
       type: object
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: "Access token from POST /api/member/signin, sent as `Authorization: Bearer <token>`."
+      scheme: bearer
+      type: http
 info:
   description: HTTP surface of the barrowspire gateway. Errors are RFC 9457 problem+json carrying a stable `code`; clients switch on `code`, never on `detail`.
   title: barrowspire gateway
@@ -1508,6 +1514,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Create armor and its template together
       tags:
         - items
@@ -1552,6 +1560,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Create a consumable and its template together
       tags:
         - items
@@ -1596,6 +1606,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Create a weapon and its template together
       tags:
         - items
@@ -1628,6 +1640,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: List the signed-in member's item instances
       tags:
         - items
@@ -1660,6 +1674,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Get the signed-in member's loadout
       tags:
         - items
@@ -1703,6 +1719,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Equip or unequip an item in a loadout slot
       tags:
         - items
@@ -1735,6 +1753,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: List item rarities
       tags:
         - items
@@ -1779,6 +1799,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Create an item template (legacy)
       tags:
         - items
@@ -1811,6 +1833,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: List item types
       tags:
         - items
@@ -1849,6 +1873,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Create a weapon (legacy)
       tags:
         - items
@@ -1881,6 +1907,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: List weapons with their template detail
       tags:
         - items
@@ -1913,6 +1941,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Get the signed-in member
       tags:
         - member
@@ -1957,6 +1987,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Confirm an avatar upload completed
       tags:
         - member
@@ -1995,6 +2027,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Get a presigned URL for an avatar upload
       tags:
         - member
@@ -2161,6 +2195,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Update the signed-in member's profile
       tags:
         - member
@@ -2205,6 +2241,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Change the signed-in member's password
       tags:
         - member
@@ -2243,6 +2281,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: List the signed-in member's notifications
       tags:
         - notification
@@ -2281,6 +2321,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Mark every notification as read
       tags:
         - notification
@@ -2327,6 +2369,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Mark one notification as read
       tags:
         - notification
@@ -2371,6 +2415,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Create a Stripe customer for the signed-in member
       tags:
         - payment
@@ -2415,6 +2461,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Subscribe the signed-in member to a product
       tags:
         - payment
@@ -2453,6 +2501,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Check the member's subscription entitlement
       tags:
         - payment
@@ -2497,6 +2547,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: Create a subscription product and price
       tags:
         - payment
@@ -2543,6 +2595,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Internal Server Error
+      security:
+        - bearerAuth: []
       summary: List a customer's subscriptions
       tags:
         - payment

@@ -47,11 +47,11 @@ type Deps struct {
 func RegisterOperations(api huma.API, deps Deps) {
 	protect := Protected(deps.AuthMiddleware)
 
-	authgw.RegisterOperations(api, deps.Auth, deps.AuthAMQP, MemberID, protect, SeamError)
-	itemgw.RegisterOperations(api, deps.Items, MemberID, protect, SeamError)
-	notifgw.RegisterOperations(api, deps.Notification, MemberID, protect, SeamError)
+	authgw.RegisterOperations(api, deps.Auth, deps.AuthAMQP, MemberID, protect, SeamError, Secured)
+	itemgw.RegisterOperations(api, deps.Items, MemberID, protect, SeamError, Secured)
+	notifgw.RegisterOperations(api, deps.Notification, MemberID, protect, SeamError, Secured)
 	statsgw.RegisterOperations(api, deps.Stats, SeamError)
-	paygw.RegisterOperations(api, deps.Payment, MemberID, protect, SeamError)
+	paygw.RegisterOperations(api, deps.Payment, MemberID, protect, SeamError, Secured)
 
 	// The Stripe webhook is deliberately NOT here — FS-0002 §Out of Scope.
 }

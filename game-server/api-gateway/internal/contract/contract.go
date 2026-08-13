@@ -31,6 +31,9 @@ const (
 	// records why, and the revisit trigger.
 	DocsPath = "/api/docs"
 
+	// BearerAuth names the security scheme protected operations reference.
+	BearerAuth = "bearerAuth"
+
 	title   = "barrowspire gateway"
 	version = "1.0.0"
 )
@@ -80,6 +83,25 @@ func New(router *gin.Engine) huma.API {
 		c.OpenAPI.OnAddOperation = nil
 		return c
 	})
+
+	// Declare HOW to authenticate, in the document itself.
+	//
+	// Without this the contract lists protected operations but never says they
+	// need a token — so the docs UI shows no padlock, its try-it console has
+	// nowhere to put credentials, and a generated client has no idea auth
+	// exists. The operations were visible but not usable, which is most of the
+	// value of having a browsable contract.
+	//
+	// Operations opt in via Security (see Protected); a scheme declared here and
+	// referenced nowhere would be equally useless.
+	config.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		BearerAuth: {
+			Type:         "http",
+			Scheme:       "bearer",
+			BearerFormat: "JWT",
+			Description:  "Access token from POST /api/member/signin, sent as `Authorization: Bearer <token>`.",
+		},
+	}
 
 	installSeamErrors()
 
@@ -167,6 +189,13 @@ func fieldsFrom(errs []error) []httperr.FieldError {
 	}
 	return fields
 }
+
+// Secured is the Security value every protected operation must carry.
+//
+// Kept next to Protected on purpose: an operation that runs the auth middleware
+// but omits this publishes a contract saying it is public, and then answers 401.
+// That is a document that lies, which is worse than no document.
+var Secured = []map[string][]string{{BearerAuth: {}}}
 
 // SeamError converts an error returned by a typed handler into one Huma renders
 // through the seam.

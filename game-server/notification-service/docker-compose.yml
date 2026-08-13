@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: barrowspire_notification_service_db
     ports:
-      - "5290:5432"
+      - "5214:5432"
     volumes:
       - barrowspire_notification_service_pgdata:/var/lib/postgresql/data
 
@@ -32,3 +32,10 @@ services:
 volumes:
   barrowspire_notification_service_pgdata:
   redis_data:
+
+# Declared external so this file joins the network the root aggregate creates,
+# rather than referencing an undefined one (which made the file unparseable).
+networks:
+  barrowspire-network:
+    external: true
+    name: barrowspire-network

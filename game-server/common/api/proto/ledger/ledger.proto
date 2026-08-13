@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package ledger;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/ledger";
+
+// Ledger service definition.
+//
+// SCAFFOLD: these two RPCs are the aggregate skeleton only — birth the root and
+// read it back — so the write path (use case) and the read path (query) both
+// have something to hang off. The real surface is defined when the ledger
+// domain is designed; nothing here should be read as the intended contract.
+service LedgerService {
+  // Create the ledger for a member.
+  rpc CreateLedger(CreateLedgerRequest) returns (CreateLedgerResponse) {}
+  // Get a member's ledger.
+  rpc GetLedger(GetLedgerRequest) returns (GetLedgerResponse) {}
+}
+
+// CreateLedger
+// Empty by design: the member identity is derived from the authenticated
+// context server-side, never supplied by the caller.
+message CreateLedgerRequest {}
+
+message CreateLedgerResponse {
+  string id        = 1;
+  string member_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+// GetLedger
+// Empty by design, same rule as CreateLedgerRequest.
+message GetLedgerRequest {}
+
+message GetLedgerResponse {
+  string id        = 1;
+  string member_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+}

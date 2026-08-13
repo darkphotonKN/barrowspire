@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: barrowspire_api_gateway_db
     ports:
-      - "5214:5432"
+      - "5220:5432"
     volumes:
       - barrowspire_api_gateway_pgdata:/var/lib/postgresql/data
 

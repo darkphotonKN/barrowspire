@@ -15,6 +15,10 @@ import (
 type MemberIDFunc func(ctx context.Context) (string, bool)
 type ErrorFunc func(error) error
 
+// securedOp marks an operation as requiring the bearer scheme the contract
+// package declares. Set by RegisterOperations.
+var securedOp []map[string][]string
+
 var toStatusError ErrorFunc = func(err error) error { return err }
 
 // guard routes a handler's error through the seam. Applied to EVERY handler so
@@ -136,8 +140,10 @@ var (
 // All eleven routes are JWT-protected, so every operation carries protect.
 func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 	protect func(huma.Context, func(huma.Context)), errFor ErrorFunc,
+	secured []map[string][]string,
 ) {
 	toStatusError = errFor
+	securedOp = secured
 	mw := huma.Middlewares{protect}
 
 	registerCreateWeapon(api, h, mw)
@@ -168,6 +174,7 @@ func registerCreateWeapon(api huma.API, h *Handler, mw huma.Middlewares) {
 		Description:   "Creates a weapon without its template. Superseded by create-complete-weapon; kept because removing an endpoint is a behavior change.",
 		Tags:          []string{"items"},
 		Middlewares:   mw,
+		Security:      securedOp,
 		Errors:        errsAuthed,
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
@@ -202,6 +209,7 @@ func registerListWeapons(api huma.API, h *Handler, mw huma.Middlewares) {
 		Description: "Returns every weapon joined with its item template.",
 		Tags:        []string{"items"},
 		Middlewares: mw,
+		Security:    securedOp,
 		Errors:      errsAuthed,
 	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
 		res, err := h.client.ListWeaponsWithTemplate(ctx)
@@ -233,6 +241,7 @@ func registerCreateItemTemplate(api huma.API, h *Handler, memberID MemberIDFunc,
 		Description:   "Creates a template only and notifies admins over RabbitMQ. Superseded by the complete-* endpoints.",
 		Tags:          []string{"items"},
 		Middlewares:   mw,
+		Security:      securedOp,
 		Errors:        errsAuthedDomain,
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
@@ -288,6 +297,7 @@ func registerCreateCompleteWeapon(api huma.API, h *Handler, memberID MemberIDFun
 		Description:   "Creates the weapon and its item template in one request and notifies admins.",
 		Tags:          []string{"items"},
 		Middlewares:   mw,
+		Security:      securedOp,
 		Errors:        errsAuthedDomain,
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
@@ -338,6 +348,7 @@ func registerCreateCompleteArmor(api huma.API, h *Handler, memberID MemberIDFunc
 		Description:   "Creates the armor and its item template in one request and notifies admins.",
 		Tags:          []string{"items"},
 		Middlewares:   mw,
+		Security:      securedOp,
 		Errors:        errsAuthedDomain,
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
@@ -388,6 +399,7 @@ func registerCreateCompleteConsumable(api huma.API, h *Handler, memberID MemberI
 		Description:   "Creates the consumable and its item template in one request and notifies admins.",
 		Tags:          []string{"items"},
 		Middlewares:   mw,
+		Security:      securedOp,
 		Errors:        errsAuthedDomain,
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
@@ -434,6 +446,7 @@ func registerListItemTypes(api huma.API, h *Handler, mw huma.Middlewares) {
 		Description: "Dropdown options for item creation forms.",
 		Tags:        []string{"items"},
 		Middlewares: mw,
+		Security:    securedOp,
 		Errors:      errsAuthed,
 	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
 		res, err := h.client.ListItemTypes(ctx)
@@ -461,6 +474,7 @@ func registerListItemRarities(api huma.API, h *Handler, mw huma.Middlewares) {
 		Description: "Dropdown options for item creation forms.",
 		Tags:        []string{"items"},
 		Middlewares: mw,
+		Security:    securedOp,
 		Errors:      errsAuthed,
 	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
 		res, err := h.client.ListItemRarities(ctx)
@@ -490,6 +504,7 @@ func registerGetLoadout(api huma.API, h *Handler, memberID MemberIDFunc, mw huma
 		Description: "Returns the equipped item in each loadout slot.",
 		Tags:        []string{"items"},
 		Middlewares: mw,
+		Security:    securedOp,
 		Errors:      errsAuthed,
 	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
 		id, ok := memberID(ctx)
@@ -523,6 +538,7 @@ func registerListItemInstances(api huma.API, h *Handler, memberID MemberIDFunc, 
 		Description: "The member's stash: every item instance they own.",
 		Tags:        []string{"items"},
 		Middlewares: mw,
+		Security:    securedOp,
 		Errors:      errsAuthed,
 	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
 		id, ok := memberID(ctx)
@@ -557,6 +573,7 @@ func registerUpdateLoadout(api huma.API, h *Handler, memberID MemberIDFunc, mw h
 		Description: "Sets the item instance in a slot. An empty item_instance_id unequips the slot.",
 		Tags:        []string{"items"},
 		Middlewares: mw,
+		Security:    securedOp,
 		Errors:      errsAuthedDomain,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
 		id, ok := memberID(ctx)
