@@ -16,13 +16,13 @@ fails if any of them drift apart.
 
 ## The five things, and what each is called
 
-| Thing | Where | Who writes it |
-|---|---|---|
-| **The design** | `docs/specs/FS-NNNN` → `§API surface` | **A human.** Prose and a table |
-| **The implementation** | `game-server/api-gateway/internal/gateway/<group>/typed.go`, `wire.go` | **A human or an agent.** Typed handlers |
-| **The API contract** | `game-server/api-gateway/openapi.yaml` | **A tool.** Never hand-edited |
-| **The generated client** | `game-client/src/api/generated/schema.d.ts` | **A tool.** Never hand-edited |
-| **The API docs** | `http://localhost:7114/api/docs` (live) | **Nobody.** Rendered from the contract |
+| Thing | Where | Produced by | Authored or derived |
+|---|---|---|---|
+| **The design** | `docs/specs/FS-NNNN` → `§API surface` | `/scope-it` → `/write-a-spec` | **authored** — a human ratifies it |
+| **The implementation** | `game-server/api-gateway/internal/gateway/<group>/typed.go`, `wire.go` | `/develop` | **authored** — a human or an agent |
+| **The API contract** | `game-server/api-gateway/openapi.yaml` | `make openapi` — codegen by huma | **derived** — never hand-edited |
+| **The generated client** | `game-client/src/api/generated/schema.d.ts` | `make client` — codegen by openapi-typescript | **derived** — never hand-edited |
+| **The API docs** | `http://localhost:7114/api/docs` | served live by huma | **derived** — no build step, no file |
 
 The words people usually conflate:
 
@@ -43,22 +43,32 @@ The words people usually conflate:
 
 ```mermaid
 flowchart TD
-    A["<b>1 · DESIGN</b><br/>FS-NNNN §API surface<br/><i>human writes, human ratifies</i>"]:::human
-    B["<b>2 · TYPES</b><br/>typed handler + request/response structs<br/><i>human or agent writes</i>"]:::human
-    C["<b>3 · CONTRACT</b><br/>game-server/api-gateway/openapi.yaml · OpenAPI 3.1<br/><i>huma v2.36.0 derives it — committed</i>"]:::tool
-    D["<b>4 · CLIENT</b><br/>game-client/src/api/generated/schema.d.ts<br/><i>openapi-typescript derives it — committed</i>"]:::tool
-    E["<b>5 · DOCS</b><br/>http://localhost:7114/api/docs<br/><i>rendered live from the contract</i>"]:::tool
-    F["<b>6 · CONSUME</b><br/>frontend imports the generated client<br/><i>a contract change breaks the BUILD</i>"]:::human
+    S(["/scope-it → /write-a-spec"]):::skill
+    A["1 · DESIGN — FS-NNNN §API surface"]:::human
+    B["2 · TYPES — typed.go + wire.go"]:::human
+    C["3 · CONTRACT — openapi.yaml · OpenAPI 3.1"]:::tool
+    D["4 · CLIENT — schema.d.ts"]:::tool
+    E["5 · DOCS — the browsable UI"]:::tool
+    F["6 · CONSUME — the frontend calls it"]:::human
 
-    A --> B --> C --> D --> F
-    C --> E
+    S --> A
+    A -->|"/develop · a human or agent writes Go"| B
+    B -->|"make openapi · CODEGEN by huma"| C
+    C -->|"make client · CODEGEN by openapi-typescript"| D
+    C -->|"served live · no build step"| E
+    D -->|"imported · a break fails the type check"| F
 
+    classDef skill fill:#3a2d4a,stroke:#a98bc4,stroke-width:2px,color:#efe8f5
     classDef human fill:#1f3a5f,stroke:#5b9bd5,stroke-width:2px,color:#e8f0fa
     classDef tool fill:#2d3b2d,stroke:#6a9,stroke-width:2px,color:#dfe
 ```
 
-**Blue is authored. Green is derived.** Nothing green is ever edited by hand — not by a person,
-not by an agent. CI regenerates it and fails on any difference.
+**Read the colours:** purple is a **skill you invoke**, blue is **authored by a person or an
+agent**, green is **produced by a tool**. The edge label is *what performs that step* — a skill,
+or a command that runs codegen.
+
+Nothing green is ever hand-edited, by a person or an agent. CI regenerates it and fails on any
+difference.
 
 ---
 
@@ -134,7 +144,7 @@ a fresh chance on every feature, across the whole surface, forever.
 
 This distinction matters when an AI agent works in the repo:
 
-- `game-server/api-gateway/openapi.yaml` is produced by **huma v2.36.0** reading your handler's Go types. It is
+- `game-server/api-gateway/openapi.yaml` is produced by **huma** reading your handler's Go types. It is
   deterministic. An agent that "writes some OpenAPI" has done the wrong thing.
 - `game-client/src/api/generated/schema.d.ts` is produced by **openapi-typescript** reading the contract document. Same rule.
 
