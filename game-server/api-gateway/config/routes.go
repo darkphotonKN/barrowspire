@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/auth"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/contract"
 	authService "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/auth"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/example"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/item"
@@ -78,23 +79,14 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	// Member Setup amqp
 	amqpAuthClient := authService.NewAmqpAuthClient(ch)
 
-	// Member Routes
-	memberRoutes := api.Group("/member")
-
-	// Public Routes
-	memberRoutes.POST("/signup", amqpAuthClient.SignupHandler)            // fire-and-forget via AMQP
-	memberRoutes.POST("/signin", authHandler.LoginMemberHandler)          // gRPC
-	memberRoutes.GET("/check-email", authHandler.CheckEmailExistsHandler) // signup polling
-
-	// Private Routes (still via gRPC)
-	memberRoutes.Use(auth.AuthMiddleware())
-	memberRoutes.GET("", authHandler.GetMemberByIdHandler)
-	memberRoutes.PATCH("/update-password", authHandler.UpdatePasswordMemberHandler)
-	memberRoutes.PATCH("/update-info", authHandler.UpdateInfoMemberHandler)
-
-	// Avatar Upload Routes (authenticated)
-	memberRoutes.POST("/avatar/upload-request", authHandler.RequestAvatarUploadHandler)
-	memberRoutes.POST("/avatar/confirm", authHandler.ConfirmAvatarUploadHandler)
+	// Member routes are SERIALIZED (FS-0002 slice 1). All eight are declared as
+	// typed operations in internal/gateway/auth/typed.go and mounted below via
+	// contract.RegisterOperations, so openapi.yaml describes them and the docs
+	// UI serves them.
+	//
+	// Their JWT middleware is attached per-operation rather than to a gin group:
+	// Huma registers on the engine, so a group middleware would never run for
+	// them. See contract.Protected.
 
 	// --- STATS MICROSERVICE ---
 
@@ -165,6 +157,22 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	itemRoutes.GET("/loadout", itemHandler.GetLoadoutHandler)
 	itemRoutes.PUT("/loadout", itemHandler.UpdateLoadoutHandler)
 	itemRoutes.GET("/instances", itemHandler.ListItemInstancesHandler)
+
+	// --- SERIALIZED CONTRACT (FS-0002) ---
+	//
+	// Mounted after every legacy route so it is obvious that Huma is added to
+	// this router rather than replacing it. Groups join RegisterOperations one
+	// slice at a time; everything not yet listed there is still legacy gin above.
+	contract.RegisterOperations(contract.New(router), contract.Deps{
+		Auth:           authHandler,
+		AuthAMQP:       amqpAuthClient,
+		AuthMiddleware: auth.AuthMiddleware(),
+	})
+
+	// An unrouted path is the one 4xx gin answers on its own — no handler runs, so
+	// the seam never sees it, and the client gets a bare text/plain 404 with no
+	// `code`. Registered last because NoRoute is the fallback for everything above.
+	router.NoRoute(httperr.NotFoundHandler())
 
 	return router
 }

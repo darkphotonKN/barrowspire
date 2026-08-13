@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { readApiError, userMessage } from "@/utils/apiError";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7114";
 
@@ -108,10 +109,18 @@ export default function RegisterPage() {
         body: JSON.stringify({ name, email, password }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        setError(data.message || "Registration failed");
+        // ALREADY_EXISTS is the code this form most needs to distinguish — it was
+        // indistinguishable from a validation failure under the old shape.
+        const error = await readApiError(response);
+        setError(
+          userMessage(error, {
+            ALREADY_EXISTS: "An account with that email already exists.",
+            VALIDATION_FAILED: "Please check the details you entered.",
+            SERVICE_UNAVAILABLE:
+              "Registration is temporarily unavailable. Try again shortly.",
+          }),
+        );
         return;
       }
 

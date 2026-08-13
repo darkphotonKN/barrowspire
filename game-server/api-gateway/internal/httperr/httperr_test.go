@@ -378,3 +378,24 @@ func TestWrite_NilError_IsReportedAsAProgrammingFault(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Contains(t, buf.String(), "nil error")
 }
+
+// A request to a path gin has no route for never reaches a handler, so it never
+// reaches the seam either — gin answers it itself with a bare text/plain 404.
+// That is the one remaining response the gateway emits that carries no `code`,
+// which makes the contract's "every 4xx/5xx is problem+json" claim false for the
+// single most common client mistake: a typo'd URL.
+func TestNotFoundHandler_UnroutedPath_IsProblemJSON(t *testing.T) {
+	router := gin.New()
+	router.NoRoute(httperr.NotFoundHandler())
+
+	w := testsupport.Do(router, http.MethodGet, "/api/definitely-not-a-route", "")
+
+	testsupport.AssertProblem(t, w, http.StatusNotFound, string(errcode.NotFound))
+}
+
+// A wrong verb on a known path is deliberately NOT handled here. gin's
+// HandleMethodNotAllowed defaults to false, so those requests already fall
+// through to NoRoute and answer 404 — which this handler now renders as
+// problem+json like everything else. Switching them to 405 would change the
+// status of live routes: a contract change to be designed in a spec, not a
+// repair to be slipped into a fix.

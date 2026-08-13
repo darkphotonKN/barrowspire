@@ -25,6 +25,8 @@ verifiable *before* then.
 | `spectral-bad.yaml` | a spec violating three custom rules at once | Spectral **rc=1**, 3 errors |
 | `oasdiff-base.yaml` + `oasdiff-rev.yaml` | a deliberate breaking change (required response property removed) | oasdiff **rc=1** |
 | `oasdiff-allowlist.txt` | worked example of a *correct* allowlist entry | same diff, **rc=0** |
+| `seam-violations/` | a direct error write **and** a `WithDetail` publishing `err.Error()` | `check-seam.sh` **rc=1**, both reported |
+| `toolchain-drift/` | a `go.work` whose directive moved away from the lock file | `check-seam.sh` **rc=1** |
 
 `oasdiff-allowlist.txt` does double duty: it is the fixture's expected-pass file **and** the
 reference for the entry format, which is easy to get wrong (see below).
@@ -68,8 +70,20 @@ pair. Optional hardening, deferred rather than forgotten:
 
 - a per-rule fixture suite, so a single rule silently breaking is caught (today, one fixture
   covering three rules can still pass on two of them if the third fires)
-- a `make gates-selftest` target running all of the above and asserting exit codes, wired
-  into CI so the fixtures are exercised on every run rather than by hand
+- extending `seam-gate-selftest` to cover the Spectral and oasdiff fixtures too. The seam
+  fixtures are now exercised on every CI run (`make seam-gate-selftest`); the three older ones
+  above are still run by hand, which is the gap that remains
 
 Until that target exists these are run manually — which means they verify the gates at
 adoption time, not continuously.
+
+## Why `seam-violations/` compiles-but-doesn't
+
+`contract-fixtures/` sits beside the modules listed in `go.work`, not inside one, so its `.go`
+files are never compiled — `go list ./contract-fixtures/...` refuses outright. That is what
+lets a fixture be a *realistic* violation rather than a string in a test: it reads like the
+handler it imitates, and no build ever touches it.
+
+The gate takes its scan root as an argument for exactly this reason. The same code path runs
+against the real tree and against the fixtures, so the selftest proves the gate that actually
+runs, not a copy of it.

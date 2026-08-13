@@ -4,10 +4,10 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/payment"
+	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	"github.com/gin-gonic/gin"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type Handler struct {
@@ -21,12 +21,10 @@ func NewHandler(client PaymentClient) *Handler {
 }
 
 func (h *Handler) CreateCustomerHandler(c *gin.Context) {
+	const op = "CreateCustomerHandler"
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -34,10 +32,7 @@ func (h *Handler) CreateCustomerHandler(c *gin.Context) {
 		Email string `json:"email" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Error parsing payload as JSON",
-		})
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -46,7 +41,7 @@ func (h *Handler) CreateCustomerHandler(c *gin.Context) {
 		Email:  req.Email,
 	})
 	if err != nil {
-		handleGrpcError(c, err)
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -58,18 +53,16 @@ func (h *Handler) CreateCustomerHandler(c *gin.Context) {
 }
 
 func (h *Handler) SetupSubscriptionHandler(c *gin.Context) {
+	const op = "SetupSubscriptionHandler"
 	var req pb.SetupSubscriptionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Error parsing payload as JSON",
-		})
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
 	resp, err := h.client.SetupSubscription(c.Request.Context(), &req)
 	if err != nil {
-		handleGrpcError(c, err)
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -81,12 +74,10 @@ func (h *Handler) SetupSubscriptionHandler(c *gin.Context) {
 }
 
 func (h *Handler) SubscribeHandler(c *gin.Context) {
+	const op = "SubscribeHandler"
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -95,10 +86,7 @@ func (h *Handler) SubscribeHandler(c *gin.Context) {
 		Email     string `json:"email" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Error parsing payload as JSON",
-		})
+		httperr.Write(c, op, httperr.BindError(err))
 		return
 	}
 
@@ -110,7 +98,7 @@ func (h *Handler) SubscribeHandler(c *gin.Context) {
 		Email:  req.Email,
 	})
 	if err != nil {
-		handleGrpcError(c, err)
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -120,7 +108,7 @@ func (h *Handler) SubscribeHandler(c *gin.Context) {
 		CustomerId: custResp.CustomerId,
 	})
 	if err != nil {
-		handleGrpcError(c, err)
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -132,12 +120,10 @@ func (h *Handler) SubscribeHandler(c *gin.Context) {
 }
 
 func (h *Handler) GetUserSubscriptionsHandler(c *gin.Context) {
+	const op = "GetUserSubscriptionsHandler"
 	customerID := c.Param("customerId")
 	if customerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Customer ID is required",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Customer ID is required"))
 		return
 	}
 
@@ -145,7 +131,7 @@ func (h *Handler) GetUserSubscriptionsHandler(c *gin.Context) {
 		CustomerId: customerID,
 	})
 	if err != nil {
-		handleGrpcError(c, err)
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -159,21 +145,16 @@ func (h *Handler) GetUserSubscriptionsHandler(c *gin.Context) {
 // WebhookHandler reads the raw Stripe webhook body and forwards it to payment-service.
 // Must NOT use ShouldBindJSON — Stripe signature is calculated from raw bytes.
 func (h *Handler) WebhookHandler(c *gin.Context) {
+	const op = "WebhookHandler"
 	payload, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Failed to read request body",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Failed to read request body"))
 		return
 	}
 
 	signature := c.GetHeader("Stripe-Signature")
 	if signature == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"statusCode": http.StatusBadRequest,
-			"message":    "Missing Stripe-Signature header",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Missing Stripe-Signature header"))
 		return
 	}
 
@@ -182,7 +163,7 @@ func (h *Handler) WebhookHandler(c *gin.Context) {
 		StripeSignature: signature,
 	})
 	if err != nil {
-		handleGrpcError(c, err)
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -194,12 +175,10 @@ func (h *Handler) WebhookHandler(c *gin.Context) {
 }
 
 func (h *Handler) CheckPermissionHandler(c *gin.Context) {
+	const op = "CheckPermissionHandler"
 	userIdStr, exists := c.Get("userIdStr")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"statusCode": http.StatusUnauthorized,
-			"message":    "User ID not found in context",
-		})
+		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
 		return
 	}
 
@@ -207,7 +186,7 @@ func (h *Handler) CheckPermissionHandler(c *gin.Context) {
 		UserId: userIdStr.(string),
 	})
 	if err != nil {
-		handleGrpcError(c, err)
+		httperr.Write(c, op, err)
 		return
 	}
 
@@ -215,31 +194,5 @@ func (h *Handler) CheckPermissionHandler(c *gin.Context) {
 		"statusCode":     http.StatusOK,
 		"message":        "Permission check successful",
 		"has_permission": resp.HasPermission,
-	})
-}
-
-func handleGrpcError(c *gin.Context, err error) {
-	st, ok := status.FromError(err)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"statusCode": http.StatusInternalServerError,
-			"message":    "Internal server error",
-		})
-		return
-	}
-
-	httpStatus := http.StatusInternalServerError
-	switch st.Code() {
-	case codes.InvalidArgument:
-		httpStatus = http.StatusBadRequest
-	case codes.NotFound:
-		httpStatus = http.StatusNotFound
-	case codes.Unavailable:
-		httpStatus = http.StatusServiceUnavailable
-	}
-
-	c.JSON(httpStatus, gin.H{
-		"statusCode": httpStatus,
-		"message":    st.Message(),
 	})
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import { apiClient } from "@/utils/api";
 import { loadStripe } from "@stripe/stripe-js";
@@ -139,7 +138,6 @@ function CheckoutForm({
 }
 
 export default function SubscriptionPage() {
-  const router = useRouter();
   const { memberInfo, isAuthenticated } = useAuthStore();
 
   const [subscribing, setSubscribing] = useState(false);

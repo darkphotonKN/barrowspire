@@ -182,7 +182,12 @@ func (s *service) CreateMember(ctx context.Context, req *pb.CreateMemberRequest)
 func (s *service) LoginMember(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
 	member, err := s.Repo.GetMemberByEmail(ctx, req.Email)
 	if err != nil {
-		return nil, fmt.Errorf("could not find member with provided email: %w", err)
+		// Deliberately NOT ErrNotFound. Propagating it makes "no such account"
+		// answer 404 while a wrong password answers 401 — which tells an attacker
+		// exactly which emails are registered. The two failures must be one
+		// failure to the caller. The real cause is logged, not returned.
+		slog.InfoContext(ctx, "login failed at member lookup", "error", err)
+		return nil, commonconstants.ErrUnauthorized
 	}
 
 	if err = bcrypt.CompareHashAndPassword([]byte(member.Password), []byte(req.Password)); err != nil {

@@ -189,7 +189,7 @@ openapi-breaking: $(OASDIFF)
 	fi
 
 # Every plane-1 gate, in the order CI runs them.
-gates: openapi-diff lint-contract openapi-breaking
+gates: openapi-diff lint-contract openapi-breaking seam-gate seam-gate-selftest
 	@echo "✅ contract gates complete"
 
 # NOT PROVIDED (deliberate): a `gates-selftest` target that runs the fixtures and asserts
@@ -199,3 +199,15 @@ gates: openapi-diff lint-contract openapi-breaking
 # what has actually been exercised rather than what would be nice.
 
 .PHONY: openapi client lint-contract openapi-diff openapi-breaking gates
+
+# --- FS-0001 seam gates (I-0007) -------------------------------------------
+# Three checks, each guarding a failure that actually happened during FS-0001:
+# a direct error write, a downstream message published to a client, and a `go`
+# directive that moved inside an unrelated commit.
+seam-gate:
+	@cd .. && ./scripts/check-seam.sh
+
+# Proves the gate above can still fail. Runs it against fixtures that violate
+# every rule and asserts rc=1, then against the real tree and asserts rc=0.
+seam-gate-selftest:
+	@cd .. && ./scripts/seam-gate-selftest.sh
