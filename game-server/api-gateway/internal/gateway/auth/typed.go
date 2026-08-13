@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/wire"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
@@ -45,7 +46,6 @@ func RegisterOperations(api huma.API, h *Handler, amqpClient *AmqpAuthClient,
 	registerRequestAvatarUpload(api, h, memberID, protect)
 	registerConfirmAvatarUpload(api, h, memberID, protect)
 }
-
 
 // ErrorFunc converts a handler's returned error into one the transport renders
 // through the seam. Injected rather than imported so this package stays free of
@@ -90,11 +90,11 @@ func registerSignup(api huma.API, amqpClient *AmqpAuthClient) {
 	}
 
 	huma.Register(api, huma.Operation{
-		OperationID:   "signup",
-		Errors:        []int{http.StatusUnprocessableEntity, http.StatusServiceUnavailable, http.StatusInternalServerError},
-		Method:        http.MethodPost,
-		Path:          "/api/member/signup",
-		Summary:       "Request a new member account",
+		OperationID: "signup",
+		Errors:      []int{http.StatusUnprocessableEntity, http.StatusServiceUnavailable, http.StatusInternalServerError},
+		Method:      http.MethodPost,
+		Path:        "/api/member/signup",
+		Summary:     "Request a new member account",
 		Description: "Publishes a signup command and returns immediately. The account is " +
 			"NOT created by the time this responds — poll check-email to observe it.",
 		Tags:          []string{"member"},
@@ -446,11 +446,11 @@ func loginResultFromProto(r *pb.LoginResponse) *LoginResult {
 // timestampFromProto preserves the {seconds, nanos} shape the wire already
 // carries. Converting to RFC 3339 here would be an improvement, and therefore a
 // behavior change this feature may not make (ADR-0002 §1).
-func timestampFromProto(ts *timestamppb.Timestamp) *Timestamp {
+func timestampFromProto(ts *timestamppb.Timestamp) *wire.Timestamp {
 	if ts == nil {
 		return nil
 	}
-	return &Timestamp{Seconds: ts.Seconds, Nanos: ts.Nanos}
+	return &wire.Timestamp{Seconds: ts.Seconds, Nanos: ts.Nanos}
 }
 
 // wrapUnavailable marks an error as the retryable kind so the seam maps it to

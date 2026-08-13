@@ -3,6 +3,8 @@ package item
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/wire"
 	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
@@ -37,7 +39,7 @@ func TestWireTypes_RoundTripProducesIdenticalBytes(t *testing.T) {
 				RequiredLevel: 3, BaseSellPrice: 10, BaseBuyPrice: 20,
 				CreatedAt: ts, UpdatedAt: ts,
 			},
-			conv: func(s any) (any, error) { return asWire[WeaponDetail](s) },
+			conv: func(s any) (any, error) { return wire.As[WeaponDetail](s) },
 		},
 		{
 			name: "ArmorDetail",
@@ -46,7 +48,7 @@ func TestWireTypes_RoundTripProducesIdenticalBytes(t *testing.T) {
 				ArmorSlot: "chest", Description: "sturdy", ItemName: "Plate",
 				CreatedAt: ts, UpdatedAt: ts,
 			},
-			conv: func(s any) (any, error) { return asWire[ArmorDetail](s) },
+			conv: func(s any) (any, error) { return wire.As[ArmorDetail](s) },
 		},
 		{
 			name: "ConsumableDetail",
@@ -55,7 +57,7 @@ func TestWireTypes_RoundTripProducesIdenticalBytes(t *testing.T) {
 				BuffDuration: 30, MaxStackSize: 99, Description: "bitter",
 				ItemName: "Potion", CreatedAt: ts, UpdatedAt: ts,
 			},
-			conv: func(s any) (any, error) { return asWire[ConsumableDetail](s) },
+			conv: func(s any) (any, error) { return wire.As[ConsumableDetail](s) },
 		},
 		{
 			name: "ItemTemplate",
@@ -66,7 +68,7 @@ func TestWireTypes_RoundTripProducesIdenticalBytes(t *testing.T) {
 				WeaponType: "sword", Description: "sharp",
 				CreatedAt: ts, UpdatedAt: ts,
 			},
-			conv: func(s any) (any, error) { return asWire[ItemTemplate](s) },
+			conv: func(s any) (any, error) { return wire.As[ItemTemplate](s) },
 		},
 		{
 			name: "Weapon",
@@ -74,17 +76,17 @@ func TestWireTypes_RoundTripProducesIdenticalBytes(t *testing.T) {
 				Id: "w-1", RarityId: "r-1", AttackPower: 42, CriticalRate: 1.5,
 				WeaponType: "axe", Description: "heavy", CreatedAt: ts, UpdatedAt: ts,
 			},
-			conv: func(s any) (any, error) { return asWire[Weapon](s) },
+			conv: func(s any) (any, error) { return wire.As[Weapon](s) },
 		},
 		{
 			name: "ItemType",
 			src:  &pb.ItemType{Id: "it-1", Name: "weapon"},
-			conv: func(s any) (any, error) { return asWire[ItemType](s) },
+			conv: func(s any) (any, error) { return wire.As[ItemType](s) },
 		},
 		{
 			name: "ItemRarity",
 			src:  &pb.ItemRarity{Id: "ir-1", Name: "rare"},
-			conv: func(s any) (any, error) { return asWire[ItemRarity](s) },
+			conv: func(s any) (any, error) { return wire.As[ItemRarity](s) },
 		},
 	}
 
@@ -109,7 +111,7 @@ func TestWireTypes_RoundTripProducesIdenticalBytes(t *testing.T) {
 // handlers put a proto slice on the wire, and encoding/json renders a nil slice
 // as null. Clients iterating it would break on null.
 func TestWireTypes_EmptySliceIsNotNull(t *testing.T) {
-	out, err := asWireSlice[ItemType](([]*pb.ItemType)(nil))
+	out, err := wire.AsSlice[ItemType](([]*pb.ItemType)(nil))
 	require.NoError(t, err)
 
 	raw, err := json.Marshal(out)

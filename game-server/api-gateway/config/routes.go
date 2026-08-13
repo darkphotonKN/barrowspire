@@ -134,29 +134,8 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	itemClient := item.NewClient(registry)
 	itemHandler := item.NewHandler(itemClient)
 
-	itemRoutes := api.Group("/items")
-	// Private Routes - require authentication
-	itemRoutes.Use(auth.AuthMiddleware())
-
-	// --- Legacy/Advanced APIs (creates weapon/armor/consumable separately) ---
-	itemRoutes.POST("/weapon", itemHandler.CreateWeaponHandler)
-	itemRoutes.POST("/template", itemHandler.CreateItemTemplateHandler) // Creates template only (sends notification)
-
-	// Complete item operations (creates both specific item + template, sends notification)
-	itemRoutes.POST("/complete-weapon", itemHandler.CreateCompleteWeaponHandler)
-	itemRoutes.POST("/complete-armor", itemHandler.CreateCompleteArmorHandler)
-	itemRoutes.POST("/complete-consumable", itemHandler.CreateCompleteConsumableHandler)
-
-	// --- Query APIs ---
-	itemRoutes.GET("/weapons", itemHandler.ListWeaponsWithTemplateHandler)
-
-	// --- Dropdown Options (for frontend forms) ---
-	itemRoutes.GET("/types", itemHandler.ListItemTypesHandler)
-	itemRoutes.GET("/rarities", itemHandler.ListItemRaritiesHandler)
-
-	itemRoutes.GET("/loadout", itemHandler.GetLoadoutHandler)
-	itemRoutes.PUT("/loadout", itemHandler.UpdateLoadoutHandler)
-	itemRoutes.GET("/instances", itemHandler.ListItemInstancesHandler)
+	// Item routes are SERIALIZED (FS-0002 slice 2). All eleven are typed
+	// operations in internal/gateway/item/typed.go, mounted below.
 
 	// --- SERIALIZED CONTRACT (FS-0002) ---
 	//
@@ -166,6 +145,7 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	contract.RegisterOperations(contract.New(router), contract.Deps{
 		Auth:           authHandler,
 		AuthAMQP:       amqpAuthClient,
+		Items:          itemHandler,
 		AuthMiddleware: auth.AuthMiddleware(),
 	})
 

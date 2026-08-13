@@ -16,6 +16,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/contract"
 	authgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/auth"
+	itemgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/item"
 	"github.com/gin-gonic/gin"
 )
 
@@ -27,6 +28,7 @@ func main() {
 	contract.RegisterOperations(api, contract.Deps{
 		Auth:     authgw.NewHandler(nil),
 		AuthAMQP: authgw.NewAmqpAuthClient(nil),
+		Items:    itemgw.NewHandler(nil),
 	})
 
 	spec, err := api.OpenAPI().YAML()

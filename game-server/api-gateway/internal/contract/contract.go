@@ -47,7 +47,10 @@ func New(router *gin.Engine) huma.API {
 
 	// Spectral requires every operation tag to be declared globally.
 	config.Info.Description = "HTTP surface of the barrowspire gateway. Errors are RFC 9457 problem+json carrying a stable `code`; clients switch on `code`, never on `detail`."
-	config.Tags = append(config.Tags, &huma.Tag{Name: "member", Description: "Member accounts, authentication, and profile"})
+	config.Tags = append(config.Tags,
+		&huma.Tag{Name: "member", Description: "Member accounts, authentication, and profile"},
+		&huma.Tag{Name: "items", Description: "Item templates, instances, and loadouts"},
+	)
 
 	// Drop Huma's schema-link transformer.
 	//
