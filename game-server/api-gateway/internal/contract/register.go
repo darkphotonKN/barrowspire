@@ -4,6 +4,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	authgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/auth"
 	itemgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/item"
+	notifgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
+	paygw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
+	statsgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
 	"github.com/gin-gonic/gin"
 )
 
@@ -13,9 +16,12 @@ import (
 // operation's types and metadata and never invokes a handler, so cmd/openapi
 // builds the document without dialing Consul, RabbitMQ, or anything else.
 type Deps struct {
-	Auth     *authgw.Handler
-	AuthAMQP *authgw.AmqpAuthClient
-	Items    *itemgw.Handler
+	Auth         *authgw.Handler
+	AuthAMQP     *authgw.AmqpAuthClient
+	Items        *itemgw.Handler
+	Notification *notifgw.Handler
+	Stats        *statsgw.Handler
+	Payment      *paygw.Handler
 
 	// AuthMiddleware is the gateway's existing gin JWT middleware. Protected
 	// operations run it per-operation; see Protected. Nil is legal and means
@@ -43,7 +49,9 @@ func RegisterOperations(api huma.API, deps Deps) {
 
 	authgw.RegisterOperations(api, deps.Auth, deps.AuthAMQP, MemberID, protect, SeamError)
 	itemgw.RegisterOperations(api, deps.Items, MemberID, protect, SeamError)
+	notifgw.RegisterOperations(api, deps.Notification, MemberID, protect, SeamError)
+	statsgw.RegisterOperations(api, deps.Stats, SeamError)
+	paygw.RegisterOperations(api, deps.Payment, MemberID, protect, SeamError)
 
-	// Remaining groups:
-	//   I-0011 notification + stats · I-0012 payment
+	// The Stripe webhook is deliberately NOT here — FS-0002 §Out of Scope.
 }

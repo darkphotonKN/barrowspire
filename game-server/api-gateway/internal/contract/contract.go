@@ -50,6 +50,9 @@ func New(router *gin.Engine) huma.API {
 	config.Tags = append(config.Tags,
 		&huma.Tag{Name: "member", Description: "Member accounts, authentication, and profile"},
 		&huma.Tag{Name: "items", Description: "Item templates, instances, and loadouts"},
+		&huma.Tag{Name: "notification", Description: "Member notifications"},
+		&huma.Tag{Name: "stats", Description: "Match statistics and the leaderboard (public)"},
+		&huma.Tag{Name: "payment", Description: "Stripe customers and subscriptions"},
 	)
 
 	// Drop Huma's schema-link transformer.

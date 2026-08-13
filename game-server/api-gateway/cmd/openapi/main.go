@@ -17,6 +17,9 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/contract"
 	authgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/auth"
 	itemgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/item"
+	notifgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
+	paygw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
+	statsgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,9 +29,12 @@ func main() {
 	// Nil downstream clients: registration never invokes a handler.
 	api := contract.New(gin.New())
 	contract.RegisterOperations(api, contract.Deps{
-		Auth:     authgw.NewHandler(nil),
-		AuthAMQP: authgw.NewAmqpAuthClient(nil),
-		Items:    itemgw.NewHandler(nil),
+		Auth:         authgw.NewHandler(nil),
+		AuthAMQP:     authgw.NewAmqpAuthClient(nil),
+		Items:        itemgw.NewHandler(nil),
+		Notification: notifgw.NewHandler(nil),
+		Stats:        statsgw.NewHandler(nil),
+		Payment:      paygw.NewHandler(nil),
 	})
 
 	spec, err := api.OpenAPI().YAML()
