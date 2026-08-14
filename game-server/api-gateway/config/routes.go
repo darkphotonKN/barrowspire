@@ -7,6 +7,7 @@ import (
 	authService "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/auth"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/example"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/item"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/listing"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
@@ -153,6 +154,16 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	itemRoutes.GET("/loadout", itemHandler.GetLoadoutHandler)
 	itemRoutes.PUT("/loadout", itemHandler.UpdateLoadoutHandler)
 	itemRoutes.GET("/instances", itemHandler.ListItemInstancesHandler)
+
+	// --- LISTING MICROSERVICE ---
+
+	listingClient := listing.NewClient(registry)
+	listingHandler := listing.NewHandler(listingClient)
+
+	listingRoutes := api.Group("/listing")
+	// Private Routes - require authentication
+	listingRoutes.Use(auth.AuthMiddleware())
+	listingRoutes.POST("", listingHandler.CreateListingHandler)
 
 	return router
 }

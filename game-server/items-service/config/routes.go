@@ -4,16 +4,21 @@ import (
 	"context"
 	"log/slog"
 	"net"
+	"os"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
+	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
+	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commoncache "github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/darkphotonKN/barrowspire-server/items-service/grpc/auth"
 	"github.com/darkphotonKN/barrowspire-server/items-service/internal/items"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 // SetupServices initializes all services and their dependencies
@@ -21,12 +26,16 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, 
 	// Create Auth Service client
 	authClient := auth.NewClient(registry)
 
+	// -- outbox --
+	outboxRepo := commonoutbox.NewRepo(db)
+	outboxService := commonoutbox.NewService(outboxRepo)
+
 	// Create repository
 	repo := items.NewRepository(db)
 
 	// Create service with repository and AMQP channel
 	publishCh := commonbroker.NewAmqpPublisher(amqpChannel)
-	service := items.NewService(repo, db, publishCh)
+	service := items.NewService(repo, db, publishCh, outboxService)
 
 	// Create gRPC handler with service and auth client
 	handler := items.NewHandler(service, authClient)
@@ -45,10 +54,16 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, 
 	consumer.Listen(ctx)
 
 	// Create gRPC server
-	grpcServer := grpc.NewServer()
+	validate := commonauth.NewValidator([]byte(os.Getenv("JWT_SECRET")))
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			commoninterceptor.Recovery(slog.Default()),
+			commonauth.Auth(validate),
+		),
+	)
 
-	// Register items service with gRPC server
 	pb.RegisterItemsServiceServer(grpcServer, handler)
+	reflection.Register(grpcServer)
 
 	slog.Info("Items service initialized successfully")
 

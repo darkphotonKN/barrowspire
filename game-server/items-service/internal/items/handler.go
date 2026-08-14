@@ -4,9 +4,11 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"time"
 
 	authpb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commontypes "github.com/darkphotonKN/barrowspire-server/common/constants/types"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/items-service/grpc/auth"
@@ -83,6 +85,11 @@ type Service interface {
 	GetLoadoutWithItems(ctx context.Context, req *GetLoadoutRequest) (*LoadoutWithItems, error)
 	ListItemInstances(ctx context.Context, req *ListItemInstancesRequest) ([]*ItemInstance, error)
 	UpdateLoadout(ctx context.Context, req *UpdateLoadoutRequest) error
+
+	// marketplace
+	ReserveItem(ctx context.Context, seller, itemID uuid.UUID, startPrice int64, endsAt time.Time) (*ItemInstance, error)
+	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
+	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
 }
 
 // checkAdminPermission checks if the user has admin permission
@@ -906,13 +913,13 @@ func (h *Handler) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWit
 	}
 
 	return &pb.GetLoadoutWithItemsResponse{
-		Weapon:      toProto(loadout.Weapon),
-		Head:        toProto(loadout.Head),
-		Chest:       toProto(loadout.Chest),
-		Gloves:      toProto(loadout.Gloves),
-		Legs:        toProto(loadout.Legs),
-		Ring_1:      toProto(loadout.Ring1),
-		Ring_2:      toProto(loadout.Ring2),
+		Weapon:       toProto(loadout.Weapon),
+		Head:         toProto(loadout.Head),
+		Chest:        toProto(loadout.Chest),
+		Gloves:       toProto(loadout.Gloves),
+		Legs:         toProto(loadout.Legs),
+		Ring_1:       toProto(loadout.Ring1),
+		Ring_2:       toProto(loadout.Ring2),
 		Consumable_1: toProto(loadout.Consumable1),
 		Consumable_2: toProto(loadout.Consumable2),
 		Consumable_3: toProto(loadout.Consumable3),
@@ -1012,4 +1019,106 @@ func (h *Handler) UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutReques
 	return &pb.UpdateLoadoutResponse{
 		Success: true,
 	}, nil
+}
+
+func int32Ptr(v *int) *int32 {
+	if v == nil {
+		return nil
+	}
+	i := int32(*v)
+	return &i
+}
+
+func (h *Handler) ReserveItem(ctx context.Context, req *pb.ReserveItemRequest) (*pb.ReserveItemResponse, error) {
+
+	// slog.Info("ReserveItem", "item id", req.ItemId)
+	sellerId, ok := commonauth.MemberIDFromCtx(ctx)
+	slog.Info("ReserveItem", "sellerid:", sellerId)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	itemID, err := uuid.Parse(req.ItemId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid item id")
+	}
+
+	item, err := h.service.ReserveItem(ctx, sellerId, itemID, req.StartPrice, req.EndsAt.AsTime())
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	var rarityIDStr *string
+	if item.RarityID != nil {
+		s := item.RarityID.String()
+		rarityIDStr = &s
+	}
+
+	return &pb.ReserveItemResponse{
+		Id:          item.ID.String(),
+		ItemType:    item.ItemType,
+		Name:        item.Name,
+		Description: item.Description,
+		Status:      item.Status,
+
+		RarityId: rarityIDStr,
+
+		// Weapon stats
+		AttackPower:  int32Ptr(item.AttackPower),
+		CriticalRate: item.CriticalRate,
+		WeaponType:   item.WeaponType,
+
+		// Armor stats
+		DefenseRating:   int32Ptr(item.DefenseRating),
+		MagicResistance: int32Ptr(item.MagicResistance),
+		ArmorSlot:       item.ArmorSlot,
+
+		// Consumable stats
+		HealingAmount: int32Ptr(item.HealingAmount),
+		ManaAmount:    int32Ptr(item.ManaAmount),
+		BuffDuration:  int32Ptr(item.BuffDuration),
+
+		Durability: int32Ptr(item.Durability),
+	}, nil
+}
+
+func (h *Handler) ListStaleReserved(ctx context.Context, req *pb.ListStaleReservedRequest) (*pb.ListStaleReservedResponse, error) {
+	sellerId, ok := commonauth.MemberIDFromCtx(ctx)
+	slog.Info("ReserveItem", "sellerid:", sellerId)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+	reserveBefore := req.ReservedBefore.AsTime()
+	res, err := h.service.ListStaleReserved(ctx, reserveBefore)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "list stale item failed")
+	}
+
+	itemIds := make([]string, 0, len(res))
+	for _, id := range res {
+		itemIds = append(itemIds, id.String())
+	}
+
+	response := &pb.ListStaleReservedResponse{
+		ItemIds: itemIds,
+	}
+	return response, nil
+}
+
+func (h *Handler) CancelReservation(ctx context.Context, req *pb.CancelReservationRequest) (*pb.CancelReservationResponse, error) {
+	sellerId, ok := commonauth.MemberIDFromCtx(ctx)
+	slog.Info("ReserveItem", "sellerid:", sellerId)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+	itemID, err := uuid.Parse(req.ItemId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "item id invalid")
+	}
+	_, err = h.service.CancelReservation(ctx, itemID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "list stale item failed")
+	}
+	response := &pb.CancelReservationResponse{}
+	return response, nil
 }

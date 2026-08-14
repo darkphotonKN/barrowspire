@@ -5,27 +5,33 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commonutils "github.com/darkphotonKN/barrowspire-server/common/utils"
+	"github.com/darkphotonKN/barrowspire-server/items-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type service struct {
-	repo      Repository
-	db        *sqlx.DB
-	publishCh commonbroker.Publisher
+	repo            Repository
+	db              *sqlx.DB
+	publishCh       commonbroker.Publisher
+	outboxPublisher commonoutbox.OutboxPublisher
 }
 
-func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher) *service {
+func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher, outboxPublisher commonoutbox.OutboxPublisher) *service {
 	return &service{
-		repo:      repo,
-		db:        db,
-		publishCh: publishCh,
+		repo:            repo,
+		db:              db,
+		publishCh:       publishCh,
+		outboxPublisher: outboxPublisher,
 	}
 }
 
@@ -87,6 +93,11 @@ type Repository interface {
 	UpsertPlayerLoadoutTx(ctx context.Context, tx *sqlx.Tx, req *UpsertPlayerLoadoutRequest) error
 	UpsertItemInstanceTx(ctx context.Context, tx *sqlx.Tx, instance *ItemInstance) error
 	BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, instances []*ItemInstance) error
+
+	// marketplace
+	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error)
+	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
+	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
 }
 
 func (s *service) CreateItemInstance(createItemInstanceReq *ItemInstance) (*ItemInstance, error) {
@@ -907,4 +918,157 @@ func (h *service) ListItemInstances(ctx context.Context, req *ListItemInstancesR
 
 func (h *service) UpdateLoadout(ctx context.Context, req *UpdateLoadoutRequest) error {
 	return h.repo.UpsertLoadoutSlot(ctx, req)
+}
+
+func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, startPrice int64, endsAt time.Time) (*ItemInstance, error) {
+	now := time.Now()
+	updateAt := now
+	reservedAt := now
+	var itemInstance *ItemInstance
+	err := commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
+		result, err := s.repo.ReserveItemTx(ctx, tx, sellerID, itemID, updateAt, reservedAt)
+		if err != nil {
+			return fmt.Errorf("Reserve item service: %w", err)
+		}
+		itemInstance = result
+
+		// outbox
+		err = s.PublishItemReservedComplete(ctx, tx, itemInstance, sellerID, startPrice, endsAt)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err != nil {
+		slog.Error("Failed to list item", "error", err)
+		return nil, err
+	}
+	return itemInstance, nil
+}
+
+func (s *service) PublishItemReservedComplete(ctx context.Context, tx *sqlx.Tx, data *ItemInstance, sellerID uuid.UUID, startPrice int64, endsAt time.Time) error {
+	slog.Debug("service publishItemReservedComplete")
+
+	// proto marshal
+	protoData, err := s.formattedItemInstanceData(data, sellerID, startPrice, endsAt)
+
+	if err != nil {
+		slog.Error("Error formatting item reserved event", "error", err)
+		return err
+	}
+
+	err = s.outboxPublisher.CreateOutboxTx(ctx, tx, commonoutbox.OutboxParams{
+		RoutingKey: commonconstants.ItemReserved,
+		Exchange:   commonconstants.ItemEventsExchange,
+		Payload:    protoData.ItemReservedEvent,
+	})
+
+	if err != nil {
+		slog.Error("List item Outbox error", "error", err)
+		return err
+	}
+
+	slog.Debug("Successfully created outbox item list event",
+		"event_name", commonconstants.ItemReserved,
+	)
+	return nil
+}
+
+/**
+* Formats item instance data.
+**/
+func (s *service) formattedItemInstanceData(itemInstance *ItemInstance, sellerID uuid.UUID, startPrice int64, endsAt time.Time) (*types.FormattedItemInstanceData, error) {
+
+	var rarityIDStr *string
+	if itemInstance.RarityID != nil {
+		s := itemInstance.RarityID.String()
+		rarityIDStr = &s
+	}
+
+	// format data for marshalling as protobuf
+	itemInstanceData := &pb.ItemInstance{
+		Id:            itemInstance.ID.String(),
+		TemplateId:    itemInstance.TemplateID.String(),
+		OwnerMemberId: itemInstance.OwnerMemberID.String(),
+		Source:        itemInstance.Source,
+		ItemType:      itemInstance.ItemType,
+		Name:          itemInstance.Name,
+		RarityId:      rarityIDStr,
+
+		// Weapon stats
+		AttackPower:  int32Ptr(itemInstance.AttackPower),
+		CriticalRate: itemInstance.CriticalRate,
+		WeaponType:   itemInstance.WeaponType,
+
+		// Armor stats
+		DefenseRating:   int32Ptr(itemInstance.DefenseRating),
+		MagicResistance: int32Ptr(itemInstance.MagicResistance),
+		ArmorSlot:       itemInstance.ArmorSlot,
+
+		// Consumable stats
+		HealingAmount: int32Ptr(itemInstance.HealingAmount),
+		ManaAmount:    int32Ptr(itemInstance.ManaAmount),
+		BuffDuration:  int32Ptr(itemInstance.BuffDuration),
+
+		Durability:  int32Ptr(itemInstance.Durability),
+		Description: itemInstance.Description,
+		Status:      itemInstance.Status,
+	}
+	// generate eventId for idemptotency deduplication
+	eventId := uuid.NewString()
+
+	itemReservedEvent := pb.ItemReservedEvent{
+		Id:           itemInstance.ID.String(),
+		EventId:      eventId,
+		SellerId:     sellerID.String(),
+		StartPrice:   startPrice,
+		EndsAt:       timestamppb.New(endsAt),
+		ItemInstance: itemInstanceData,
+	}
+
+	slog.Debug("itemReservedEvent in formattedItemInstanceData before marshalling into protobuf item_reserved_event",
+		"event_id", itemReservedEvent.EventId,
+		"item_id", itemReservedEvent.Id,
+		"item_name", itemReservedEvent.ItemInstance.Name,
+		"status", itemReservedEvent.ItemInstance.Status,
+	)
+
+	ItemReservedProtoData, itemReservedErr := proto.Marshal(&itemReservedEvent)
+
+	if itemReservedErr != nil {
+		slog.Error("could not marshal item listed event to itemListedEvent proto",
+			"id", itemInstance.ID,
+			"error", itemReservedErr,
+		)
+	}
+	data := &types.FormattedItemInstanceData{
+		ItemReservedEvent: ItemReservedProtoData,
+	}
+
+	return data, nil
+}
+
+func (s *service) ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error) {
+
+	itemIds, err := s.repo.ListStaleReserved(ctx, reserveBefore)
+	if err != nil {
+		slog.Error("ListStaleReserved service call repo failed:",
+			"error:", err,
+		)
+		return nil, err
+	}
+	return itemIds, nil
+}
+
+func (s *service) CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error) {
+
+	ok, err := s.repo.CancelReservation(ctx, itemID)
+	if err != nil {
+		slog.Error("CancelReservation service call repo failed:",
+			"error:", err,
+		)
+		return false, err
+	}
+	return ok, nil
 }

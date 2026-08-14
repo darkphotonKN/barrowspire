@@ -2,9 +2,12 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/google/uuid"
 )
@@ -33,27 +36,33 @@ type CreateListingCommand struct {
 	EndsAt     time.Time
 }
 
-func (uc *CreateListingUC) Handle(ctx context.Context, cmd CreateListingCommand) (*listing.Listing, error) {
+func (uc *CreateListingUC) Handle(ctx context.Context, cmd *CreateListingCommand) error {
+
 	// birth aggregate root
 	listingDomain, err := listing.NewListing(cmd.SellerID, cmd.ItemID, cmd.StartPrice, cmd.Now, cmd.EndsAt)
 
 	if err != nil {
 		// propgate error with usecase context
-		return nil, fmt.Errorf("create listing usecase birthing new listing : %w", err)
+		return fmt.Errorf("create listing usecase birthing new listing : %w", err)
 	}
 
 	err = listingDomain.Publish(cmd.Now)
 
 	if err != nil {
-		return nil, fmt.Errorf("create listing usecase publishing listing: %w", err)
+		return fmt.Errorf("create listing usecase publishing listing: %w", err)
 	}
 
 	err = uc.repo.Insert(ctx, listingDomain)
 
 	if err != nil {
+		if errors.Is(err, commonconstants.ErrDuplicateResource) {
+			slog.Info("listing already exists for item, skipping duplicate event",
+				"item_id", cmd.ItemID)
+			return fmt.Errorf("create listing usecase already exists for item: %w", err)
+		}
 		// propgate error with usecase context
-		return nil, fmt.Errorf("writing repo usecase inserting new listing : %w", err)
+		return fmt.Errorf("writing repo usecase inserting new listing : %w", err)
 	}
 
-	return listingDomain, nil
+	return nil
 }

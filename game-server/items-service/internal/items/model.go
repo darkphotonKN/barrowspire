@@ -161,10 +161,12 @@ type ItemInstance struct {
 	Durability *int `db:"durability" json:"durability"`
 
 	Description *string `db:"description" json:"description"`
+	Status      string  `db:"status" json:"status"`
 
 	AcquiredAt time.Time `db:"acquired_at" json:"acquired_at"`
 	CreatedAt  time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt  time.Time `db:"updated_at" json:"updated_at"`
+	ReservedAt time.Time `db:"reserved_at" json:"reserved_at"`
 }
 
 // PlayerLoadout mirrors the player_loadouts table — a member's currently

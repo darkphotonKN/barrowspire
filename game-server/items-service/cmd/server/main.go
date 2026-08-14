@@ -8,16 +8,17 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
+	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
+	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/items-service/config"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"google.golang.org/grpc"
 )
 
 var (
@@ -87,7 +88,8 @@ func main() {
 
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
-	grpcServer := grpc.NewServer()
+	// --- grpc ---
+	// grpcServer := grpc.NewServer()
 
 	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
 	if err != nil {
@@ -130,8 +132,21 @@ func main() {
 		ch.Close()
 	}()
 
+	// outbox
+	// --- outbox workers ---
+	outboxRepo := commonoutbox.NewRepo(db)
+	outboxServ := commonoutbox.NewService(outboxRepo)
+	publisher := commonbroker.NewAmqpPublisher(ch)
+	// TODO: update in prod
+	workcycyleTime := time.Minute * 1
+	outboxWorker := commonoutbox.NewOutboxWorker(workcycyleTime, 20, outboxServ, publisher)
+
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	go outboxWorker.Run(workerCtx)
 	// Use the new config setup to initialize all services
-	grpcServer = config.SetupServices(ctx, db, ch, registry)
+	grpcServer := config.SetupServices(ctx, db, ch, registry)
 
 	log.Printf("grpc Items Server started on PORT: %s\n", grpcAddr)
 

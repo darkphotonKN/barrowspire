@@ -45,7 +45,6 @@ func (uc *WithdrawListingUC) Handle(ctx context.Context, cmd WithdrawListingComm
 		if err != nil {
 			return fmt.Errorf("withdraw listing usecase update status: %w", err)
 		}
-
 		err = uc.repo.Save(ctx, listingDomain, before)
 
 		if err != nil {
