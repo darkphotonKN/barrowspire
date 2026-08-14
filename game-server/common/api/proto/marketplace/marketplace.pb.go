@@ -22,29 +22,36 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// CreateListing
-// Empty by design: the member identity is derived from the authenticated
-// context server-side, never supplied by the caller.
-type CreateListingRequest struct {
+type Listing struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SellerId      string                 `protobuf:"bytes,2,opt,name=seller_id,json=sellerId,proto3" json:"seller_id,omitempty"`
+	BuyerId       string                 `protobuf:"bytes,3,opt,name=buyer_id,json=buyerId,proto3" json:"buyer_id,omitempty"`
+	ItemId        string                 `protobuf:"bytes,4,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	StartPrice    int64                  `protobuf:"varint,5,opt,name=start_price,json=startPrice,proto3" json:"start_price,omitempty"`
+	SoldPrice     int64                  `protobuf:"varint,6,opt,name=soldPrice,proto3" json:"soldPrice,omitempty"`
+	Status        string                 `protobuf:"bytes,7,opt,name=status,proto3" json:"status,omitempty"`
+	EndsAt        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=ends_at,json=endsAt,proto3" json:"ends_at,omitempty"`
+	CreateAt      *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=create_at,json=createAt,proto3" json:"create_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *CreateListingRequest) Reset() {
-	*x = CreateListingRequest{}
+func (x *Listing) Reset() {
+	*x = Listing{}
 	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CreateListingRequest) String() string {
+func (x *Listing) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CreateListingRequest) ProtoMessage() {}
+func (*Listing) ProtoMessage() {}
 
-func (x *CreateListingRequest) ProtoReflect() protoreflect.Message {
+func (x *Listing) ProtoReflect() protoreflect.Message {
 	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -56,91 +63,240 @@ func (x *CreateListingRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CreateListingRequest.ProtoReflect.Descriptor instead.
-func (*CreateListingRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use Listing.ProtoReflect.Descriptor instead.
+func (*Listing) Descriptor() ([]byte, []int) {
 	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{0}
 }
 
-type CreateListingResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	MemberId      string                 `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
-	Gold          int64                  `protobuf:"varint,3,opt,name=gold,proto3" json:"gold,omitempty"`                                        // total ledger balance
-	HeldGold      int64                  `protobuf:"varint,4,opt,name=held_gold,json=heldGold,proto3" json:"held_gold,omitempty"`                // sum of RESERVED holds
-	AvailableGold int64                  `protobuf:"varint,5,opt,name=available_gold,json=availableGold,proto3" json:"available_gold,omitempty"` // gold - held_gold, spendable now
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateListingResponse) Reset() {
-	*x = CreateListingResponse{}
-	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateListingResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateListingResponse) ProtoMessage() {}
-
-func (x *CreateListingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateListingResponse.ProtoReflect.Descriptor instead.
-func (*CreateListingResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *CreateListingResponse) GetId() string {
+func (x *Listing) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
 }
 
-func (x *CreateListingResponse) GetMemberId() string {
+func (x *Listing) GetSellerId() string {
 	if x != nil {
-		return x.MemberId
+		return x.SellerId
 	}
 	return ""
 }
 
-func (x *CreateListingResponse) GetGold() int64 {
+func (x *Listing) GetBuyerId() string {
 	if x != nil {
-		return x.Gold
+		return x.BuyerId
+	}
+	return ""
+}
+
+func (x *Listing) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *Listing) GetStartPrice() int64 {
+	if x != nil {
+		return x.StartPrice
 	}
 	return 0
 }
 
-func (x *CreateListingResponse) GetHeldGold() int64 {
+func (x *Listing) GetSoldPrice() int64 {
 	if x != nil {
-		return x.HeldGold
+		return x.SoldPrice
 	}
 	return 0
 }
 
-func (x *CreateListingResponse) GetAvailableGold() int64 {
+func (x *Listing) GetStatus() string {
 	if x != nil {
-		return x.AvailableGold
+		return x.Status
+	}
+	return ""
+}
+
+func (x *Listing) GetEndsAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndsAt
+	}
+	return nil
+}
+
+func (x *Listing) GetCreateAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreateAt
+	}
+	return nil
+}
+
+func (x *Listing) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+// ListItem
+// Empty by design: the member identity is derived from the authenticated
+// context server-side, never supplied by the caller.
+type ListItemRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ItemId        string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	StartPrice    int64                  `protobuf:"varint,2,opt,name=start_price,json=startPrice,proto3" json:"start_price,omitempty"`
+	EndsAt        *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=ends_at,json=endsAt,proto3" json:"ends_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListItemRequest) Reset() {
+	*x = ListItemRequest{}
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListItemRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListItemRequest) ProtoMessage() {}
+
+func (x *ListItemRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListItemRequest.ProtoReflect.Descriptor instead.
+func (*ListItemRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ListItemRequest) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *ListItemRequest) GetStartPrice() int64 {
+	if x != nil {
+		return x.StartPrice
 	}
 	return 0
 }
 
-func (x *CreateListingResponse) GetCreatedAt() *timestamppb.Timestamp {
+func (x *ListItemRequest) GetEndsAt() *timestamppb.Timestamp {
 	if x != nil {
-		return x.CreatedAt
+		return x.EndsAt
+	}
+	return nil
+}
+
+type ListItemResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ItemId        string                 `protobuf:"bytes,2,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	StartPrice    int64                  `protobuf:"varint,3,opt,name=start_price,json=startPrice,proto3" json:"start_price,omitempty"`
+	SellerId      string                 `protobuf:"bytes,4,opt,name=seller_id,json=sellerId,proto3" json:"seller_id,omitempty"`
+	Status        string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	EndsAt        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=ends_at,json=endsAt,proto3" json:"ends_at,omitempty"`
+	CreateAt      *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=create_at,json=createAt,proto3" json:"create_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListItemResponse) Reset() {
+	*x = ListItemResponse{}
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListItemResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListItemResponse) ProtoMessage() {}
+
+func (x *ListItemResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListItemResponse.ProtoReflect.Descriptor instead.
+func (*ListItemResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ListItemResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ListItemResponse) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *ListItemResponse) GetStartPrice() int64 {
+	if x != nil {
+		return x.StartPrice
+	}
+	return 0
+}
+
+func (x *ListItemResponse) GetSellerId() string {
+	if x != nil {
+		return x.SellerId
+	}
+	return ""
+}
+
+func (x *ListItemResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ListItemResponse) GetEndsAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndsAt
+	}
+	return nil
+}
+
+func (x *ListItemResponse) GetCreateAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreateAt
+	}
+	return nil
+}
+
+func (x *ListItemResponse) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
 	}
 	return nil
 }
@@ -149,18 +305,40 @@ var File_api_proto_marketplace_marketplace_proto protoreflect.FileDescriptor
 
 const file_api_proto_marketplace_marketplace_proto_rawDesc = "" +
 	"\n" +
-	"'api/proto/marketplace/marketplace.proto\x12\vmarketplace\x1a\x1fgoogle/protobuf/timestamp.proto\"\x16\n" +
-	"\x14CreateListingRequest\"\xd7\x01\n" +
-	"\x15CreateListingResponse\x12\x0e\n" +
+	"'api/proto/marketplace/marketplace.proto\x12\vmarketplace\x1a\x1fgoogle/protobuf/timestamp.proto\"\xea\x02\n" +
+	"\aListing\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
-	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x12\n" +
-	"\x04gold\x18\x03 \x01(\x03R\x04gold\x12\x1b\n" +
-	"\theld_gold\x18\x04 \x01(\x03R\bheldGold\x12%\n" +
-	"\x0eavailable_gold\x18\x05 \x01(\x03R\ravailableGold\x129\n" +
+	"\tseller_id\x18\x02 \x01(\tR\bsellerId\x12\x19\n" +
+	"\bbuyer_id\x18\x03 \x01(\tR\abuyerId\x12\x17\n" +
+	"\aitem_id\x18\x04 \x01(\tR\x06itemId\x12\x1f\n" +
+	"\vstart_price\x18\x05 \x01(\x03R\n" +
+	"startPrice\x12\x1c\n" +
+	"\tsoldPrice\x18\x06 \x01(\x03R\tsoldPrice\x12\x16\n" +
+	"\x06status\x18\a \x01(\tR\x06status\x123\n" +
+	"\aends_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x06endsAt\x127\n" +
+	"\tcreate_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\bcreateAt\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt2n\n" +
-	"\x12MarketplaceService\x12X\n" +
-	"\rCreateListing\x12!.marketplace.CreateListingRequest\x1a\".marketplace.CreateListingResponse\"\x00BIZGgithub.com/darkphotonKN/barrowspire-server/common/api/proto/marketplaceb\x06proto3"
+	"updated_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x80\x01\n" +
+	"\x0fListItemRequest\x12\x17\n" +
+	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x1f\n" +
+	"\vstart_price\x18\x02 \x01(\x03R\n" +
+	"startPrice\x123\n" +
+	"\aends_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x06endsAt\"\xba\x02\n" +
+	"\x10ListItemResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\aitem_id\x18\x02 \x01(\tR\x06itemId\x12\x1f\n" +
+	"\vstart_price\x18\x03 \x01(\x03R\n" +
+	"startPrice\x12\x1b\n" +
+	"\tseller_id\x18\x04 \x01(\tR\bsellerId\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x123\n" +
+	"\aends_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x06endsAt\x127\n" +
+	"\tcreate_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\bcreateAt\x129\n" +
+	"\n" +
+	"updated_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt2_\n" +
+	"\x12MarketplaceService\x12I\n" +
+	"\bListItem\x12\x1c.marketplace.ListItemRequest\x1a\x1d.marketplace.ListItemResponse\"\x00BIZGgithub.com/darkphotonKN/barrowspire-server/common/api/proto/marketplaceb\x06proto3"
 
 var (
 	file_api_proto_marketplace_marketplace_proto_rawDescOnce sync.Once
@@ -174,21 +352,28 @@ func file_api_proto_marketplace_marketplace_proto_rawDescGZIP() []byte {
 	return file_api_proto_marketplace_marketplace_proto_rawDescData
 }
 
-var file_api_proto_marketplace_marketplace_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_api_proto_marketplace_marketplace_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_api_proto_marketplace_marketplace_proto_goTypes = []any{
-	(*CreateListingRequest)(nil),  // 0: marketplace.CreateListingRequest
-	(*CreateListingResponse)(nil), // 1: marketplace.CreateListingResponse
-	(*timestamppb.Timestamp)(nil), // 2: google.protobuf.Timestamp
+	(*Listing)(nil),               // 0: marketplace.Listing
+	(*ListItemRequest)(nil),       // 1: marketplace.ListItemRequest
+	(*ListItemResponse)(nil),      // 2: marketplace.ListItemResponse
+	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
 }
 var file_api_proto_marketplace_marketplace_proto_depIdxs = []int32{
-	2, // 0: marketplace.CreateListingResponse.created_at:type_name -> google.protobuf.Timestamp
-	0, // 1: marketplace.MarketplaceService.CreateListing:input_type -> marketplace.CreateListingRequest
-	1, // 2: marketplace.MarketplaceService.CreateListing:output_type -> marketplace.CreateListingResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3, // 0: marketplace.Listing.ends_at:type_name -> google.protobuf.Timestamp
+	3, // 1: marketplace.Listing.create_at:type_name -> google.protobuf.Timestamp
+	3, // 2: marketplace.Listing.updated_at:type_name -> google.protobuf.Timestamp
+	3, // 3: marketplace.ListItemRequest.ends_at:type_name -> google.protobuf.Timestamp
+	3, // 4: marketplace.ListItemResponse.ends_at:type_name -> google.protobuf.Timestamp
+	3, // 5: marketplace.ListItemResponse.create_at:type_name -> google.protobuf.Timestamp
+	3, // 6: marketplace.ListItemResponse.updated_at:type_name -> google.protobuf.Timestamp
+	1, // 7: marketplace.MarketplaceService.ListItem:input_type -> marketplace.ListItemRequest
+	2, // 8: marketplace.MarketplaceService.ListItem:output_type -> marketplace.ListItemResponse
+	8, // [8:9] is the sub-list for method output_type
+	7, // [7:8] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_marketplace_marketplace_proto_init() }
@@ -202,7 +387,7 @@ func file_api_proto_marketplace_marketplace_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_marketplace_marketplace_proto_rawDesc), len(file_api_proto_marketplace_marketplace_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

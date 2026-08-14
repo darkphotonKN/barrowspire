@@ -18,11 +18,12 @@ Exchange         {service}.{domain}.{resource}.{action}     stats.game.match.end
 * {domain}.events
 **/
 const (
-	GameEventsExchange = "game.events"
-	AuthEventsExchange = "auth.events"
-	ItemEventsExchange = "item.events"
-	DlxEventsExchange  = "dlx.exchange"
-	RetryExchange      = "retry.exchange"
+	GameEventsExchange           = "game.events"
+	AuthEventsExchange           = "auth.events"
+	ItemEventsExchange           = "item.events"
+	DlxEventsExchange            = "dlx.exchange"
+	RetryExchange                = "retry.exchange"
+	MarketplaceDlxEventsExchange = "marketplace.dlx.exchange"
 )
 
 /**
@@ -46,7 +47,8 @@ const (
 	ItemsExtracted = "items.extracted" // items extracted after match end
 
 	// Item Events
-	ItemCreated = "item.created"
+	ItemCreated  = "item.created"
+	ItemReserved = "item.reserved"
 
 	//Notification Event
 	NotificationItemCreatedFailed    = "notification.item.created.failed"
@@ -56,6 +58,9 @@ const (
 	// auth events
 	AuthMemberCreate = "member.create"
 	AuthMemberLogin  = "member.login"
+
+	// marketplace events
+	MarpetplaceItemReservedDlq = "marketplace.item.reserved.dql"
 )
 
 /**
