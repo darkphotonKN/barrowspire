@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/dto"
@@ -25,17 +27,17 @@ type Handler struct {
 	listingReader ListingReader
 
 	// write
-	createListingUC *usecase.CreateListingUC
+	reserveItemUC *usecase.ReserveItemUC
 }
 
 type ListingReader interface {
 	Execute(ctx context.Context, memberID uuid.UUID) (*dto.ListingDetails, error)
 }
 
-func NewHandler(createListingUC *usecase.CreateListingUC, listingReader ListingReader) *Handler {
+func NewHandler(reserveItemUC *usecase.ReserveItemUC, listingReader ListingReader) *Handler {
 	return &Handler{
-		createListingUC: createListingUC,
-		listingReader:   listingReader,
+		reserveItemUC: reserveItemUC,
+		listingReader: listingReader,
 	}
 }
 
@@ -43,19 +45,44 @@ func NewHandler(createListingUC *usecase.CreateListingUC, listingReader ListingR
 
 // ========================= READ PATHS  =========================
 
-func (h *Handler) CreateListing(ctx context.Context, req *pb.CreateListingRequest) (*pb.CreateListingResponse, error) {
-	// TODO: update to use interceptor
-	tempMemberID := uuid.New()
+func (h *Handler) ListItem(ctx context.Context, req *pb.ListItemRequest) (*pb.ListItemResponse, error) {
+	sellerId, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
 
-	_, err := h.listingReader.Execute(ctx, tempMemberID)
+	slog.Debug("ListItem", "sellerid:", sellerId)
+
+	itemID, err := uuid.Parse(req.ItemId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "Invalid item id")
+	}
+
+	now := time.Now()
+	err = h.reserveItemUC.Handle(ctx, &usecase.ReserveItemCommand{
+		SellerID:   sellerId,
+		StartPrice: int(req.StartPrice),
+		ItemID:     itemID,
+		EndsAt:     req.EndsAt.AsTime(),
+		Now:        now,
+	})
 
 	if err != nil {
 		return nil, mapError(ctx, err)
 	}
 
-	// TODO: map to pb
+	// snapshot := listing.Snapshot()
 
-	return nil, nil
+	listingPB := &pb.ListItemResponse{
+		// Id:         snapshot.ID.String(),
+		// SellerId:   snapshot.SellerID.String(),
+		// ItemId:     snapshot.ItemID.String(),
+		// StartPrice: int64(snapshot.StartPrice),
+		// Status:     string(snapshot.Status),
+		// EndsAt:     timestamppb.New(snapshot.EndsAt),
+	}
+
+	return listingPB, nil
 }
 
 func mapError(ctx context.Context, err error) error {
@@ -95,6 +122,25 @@ func mapError(ctx context.Context, err error) error {
 	// 	code = codes.InvalidArgument
 	// 	msg = "invalid argument"
 
+	case errors.Is(err, listing.ErrInvalidUUID) ||
+		errors.Is(err, listing.ErrInvalidEndTime) ||
+		errors.Is(err, listing.ErrInvalidStartPrice) ||
+		errors.Is(err, listing.ErrInvalidSoldPrice) ||
+		errors.Is(err, listing.ErrInvalidSoldTime):
+		code = codes.InvalidArgument
+		msg = "invalid argument"
+		logLevel = slog.LevelInfo
+
+	case errors.Is(err, listing.ErrInvalidListingState):
+		code = codes.FailedPrecondition
+		msg = "invalid listing state"
+		logLevel = slog.LevelInfo
+
+	case errors.Is(err, listing.ErrCorruptListingState):
+		code = codes.Internal
+		msg = "corrupt listing state"
+		logLevel = slog.LevelError
+
 	default:
 		// unexpected, unhandled error
 		code = codes.Internal
@@ -102,6 +148,6 @@ func mapError(ctx context.Context, err error) error {
 		logLevel = slog.LevelError
 	}
 
-	slog.Log(ctx, logLevel, msg, "code", code)
+	slog.Log(ctx, logLevel, msg, "code", code, "err", err)
 	return status.Error(code, msg)
 }
