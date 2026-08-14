@@ -67,6 +67,13 @@ jobs:
         working-directory: game-server
         run: ./scripts/seam-gate-selftest.sh
 
+      # Like the seam gate, needs no generated artifact. Catches two host-port
+      # failures that already happened: two services binding one port, and a
+      # per-service compose file drifting from the root aggregate.
+      - name: compose port clash gate
+        working-directory: game-server
+        run: ./scripts/check-compose-clashes.sh
+
       - name: regenerate spec and fail on diff
         working-directory: game-server/api-gateway
         run: make openapi-diff

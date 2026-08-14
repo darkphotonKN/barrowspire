@@ -96,12 +96,18 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	// Stats routes are SERIALIZED (FS-0002 slice 3) and remain PUBLIC — no
 	// AuthMiddleware, exactly as before. See internal/gateway/stats/typed.go.
 
-	// --- GAME SERVICE ---
-	// TODO: Add game service routes when implemented
-	// gameClient := game.NewClient(registry)
-	// gameHandler := game.NewHandler(gameClient)
-	// gameRoutes := api.Group("/game")
-	// gameRoutes.GET("/items", gameHandler.GetItemsHandler)
+	// --- GAME SERVICE: DELIBERATELY ABSENT ---
+	//
+	// There is no game route here and there should not be one. game-service owns
+	// its entire client surface — HTTP and WebSocket — and clients connect to it
+	// directly; in production an INFRASTRUCTURE gateway routes to it, not this
+	// application gateway (ADR-0004).
+	//
+	// This replaces a "TODO: add game service routes when implemented" block.
+	// That TODO was the only trace of the idea and it invited exactly the change
+	// the ADR rejects: proxying would make this edge stateful, amplify a 30Hz
+	// broadcast through the one component every other service depends on, and
+	// round-robin connections across pods that hold pinned world state.
 
 	// --- NOTIFICATION MICROSERVICE ---
 

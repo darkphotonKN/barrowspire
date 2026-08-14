@@ -46,7 +46,6 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] Route payment traffic to payments, plus the unauthenticated Stripe webhook
 - [x] Route item traffic to items
 - [x] Route example traffic to examples
-- [ ] Route game traffic to game-service
 
 ### Integration patterns
 
@@ -55,10 +54,15 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 
 ## Purpose
 
-api-gateway is the **single HTTP entry point (edge)** for the platform. It terminates client
-HTTP, runs a cross-cutting middleware suite (tracing, CORS, JWT auth), and **fans each route
-out to the owning downstream microservice** over gRPC (Consul-discovered) or, for one path,
-RabbitMQ. It is **stateless** — it owns no persistence and no domain rules. ✅ DONE
+api-gateway is the single entry point for **request/response platform traffic**. It terminates
+client HTTP, runs a cross-cutting middleware suite (tracing, CORS, JWT auth), and **fans each
+route out to the owning downstream microservice** over gRPC (Consul-discovered) or, for one
+path, RabbitMQ. It is **stateless** — it owns no persistence and no domain rules. ✅ DONE
+
+It is **not** the entry point for the realtime game surface. game-service owns its entire
+client surface and clients connect to it directly; the gateway holds no route to it, HTTP or
+WebSocket (ADR-0004). A game route added here would contradict an accepted decision — read it
+first.
 
 ## Responsibilities vs non-responsibilities
 
@@ -156,7 +160,8 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
   > REVIEW: labeled "Legacy/Advanced APIs" in code (create weapon/template separately). Candidate
   > for removal in favor of the `complete-*` endpoints.
 
-**game → (⏳ PLANNED)** — routes commented out in code; not wired.
+**game → (NOT ROUTED, and will not be)** — game-service owns its entire client surface and
+`game-client` connects to it directly on `:5668`. This is a decision, not a gap: ADR-0004.
 
 ## Downstream integration patterns
 
