@@ -9,7 +9,7 @@ package events
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	_ "google.golang.org/protobuf/types/known/timestamppb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -82,6 +82,281 @@ func (x *ItemCreatedEvent) GetItemType() string {
 	return ""
 }
 
+type ItemInstance struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	TemplateId    string                 `protobuf:"bytes,2,opt,name=template_id,json=templateId,proto3" json:"template_id,omitempty"`
+	OwnerMemberId string                 `protobuf:"bytes,3,opt,name=owner_member_id,json=ownerMemberId,proto3" json:"owner_member_id,omitempty"`
+	Source        string                 `protobuf:"bytes,4,opt,name=source,proto3" json:"source,omitempty"`
+	ItemType      string                 `protobuf:"bytes,5,opt,name=item_type,json=itemType,proto3" json:"item_type,omitempty"` // 'weapon' | 'armor' | 'consumable'
+	Name          string                 `protobuf:"bytes,6,opt,name=name,proto3" json:"name,omitempty"`
+	RarityId      *string                `protobuf:"bytes,7,opt,name=rarity_id,json=rarityId,proto3,oneof" json:"rarity_id,omitempty"` // UUID as string
+	// Weapon stats (null if not weapon)
+	AttackPower  *int32   `protobuf:"varint,8,opt,name=attack_power,json=attackPower,proto3,oneof" json:"attack_power,omitempty"`
+	CriticalRate *float64 `protobuf:"fixed64,9,opt,name=critical_rate,json=criticalRate,proto3,oneof" json:"critical_rate,omitempty"`
+	WeaponType   *string  `protobuf:"bytes,10,opt,name=weapon_type,json=weaponType,proto3,oneof" json:"weapon_type,omitempty"`
+	// Armor stats (null if not armor)
+	DefenseRating   *int32  `protobuf:"varint,11,opt,name=defense_rating,json=defenseRating,proto3,oneof" json:"defense_rating,omitempty"`
+	MagicResistance *int32  `protobuf:"varint,12,opt,name=magic_resistance,json=magicResistance,proto3,oneof" json:"magic_resistance,omitempty"`
+	ArmorSlot       *string `protobuf:"bytes,13,opt,name=armor_slot,json=armorSlot,proto3,oneof" json:"armor_slot,omitempty"` // 'head' | 'chest' | 'legs' | 'gloves'
+	// Consumable stats (null if not consumable)
+	HealingAmount *int32  `protobuf:"varint,14,opt,name=healing_amount,json=healingAmount,proto3,oneof" json:"healing_amount,omitempty"`
+	ManaAmount    *int32  `protobuf:"varint,15,opt,name=mana_amount,json=manaAmount,proto3,oneof" json:"mana_amount,omitempty"`
+	BuffDuration  *int32  `protobuf:"varint,16,opt,name=buff_duration,json=buffDuration,proto3,oneof" json:"buff_duration,omitempty"`
+	Durability    *int32  `protobuf:"varint,17,opt,name=durability,proto3,oneof" json:"durability,omitempty"`
+	Description   *string `protobuf:"bytes,18,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	Status        string  `protobuf:"bytes,19,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ItemInstance) Reset() {
+	*x = ItemInstance{}
+	mi := &file_api_proto_events_item_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ItemInstance) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ItemInstance) ProtoMessage() {}
+
+func (x *ItemInstance) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_events_item_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ItemInstance.ProtoReflect.Descriptor instead.
+func (*ItemInstance) Descriptor() ([]byte, []int) {
+	return file_api_proto_events_item_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ItemInstance) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ItemInstance) GetTemplateId() string {
+	if x != nil {
+		return x.TemplateId
+	}
+	return ""
+}
+
+func (x *ItemInstance) GetOwnerMemberId() string {
+	if x != nil {
+		return x.OwnerMemberId
+	}
+	return ""
+}
+
+func (x *ItemInstance) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *ItemInstance) GetItemType() string {
+	if x != nil {
+		return x.ItemType
+	}
+	return ""
+}
+
+func (x *ItemInstance) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ItemInstance) GetRarityId() string {
+	if x != nil && x.RarityId != nil {
+		return *x.RarityId
+	}
+	return ""
+}
+
+func (x *ItemInstance) GetAttackPower() int32 {
+	if x != nil && x.AttackPower != nil {
+		return *x.AttackPower
+	}
+	return 0
+}
+
+func (x *ItemInstance) GetCriticalRate() float64 {
+	if x != nil && x.CriticalRate != nil {
+		return *x.CriticalRate
+	}
+	return 0
+}
+
+func (x *ItemInstance) GetWeaponType() string {
+	if x != nil && x.WeaponType != nil {
+		return *x.WeaponType
+	}
+	return ""
+}
+
+func (x *ItemInstance) GetDefenseRating() int32 {
+	if x != nil && x.DefenseRating != nil {
+		return *x.DefenseRating
+	}
+	return 0
+}
+
+func (x *ItemInstance) GetMagicResistance() int32 {
+	if x != nil && x.MagicResistance != nil {
+		return *x.MagicResistance
+	}
+	return 0
+}
+
+func (x *ItemInstance) GetArmorSlot() string {
+	if x != nil && x.ArmorSlot != nil {
+		return *x.ArmorSlot
+	}
+	return ""
+}
+
+func (x *ItemInstance) GetHealingAmount() int32 {
+	if x != nil && x.HealingAmount != nil {
+		return *x.HealingAmount
+	}
+	return 0
+}
+
+func (x *ItemInstance) GetManaAmount() int32 {
+	if x != nil && x.ManaAmount != nil {
+		return *x.ManaAmount
+	}
+	return 0
+}
+
+func (x *ItemInstance) GetBuffDuration() int32 {
+	if x != nil && x.BuffDuration != nil {
+		return *x.BuffDuration
+	}
+	return 0
+}
+
+func (x *ItemInstance) GetDurability() int32 {
+	if x != nil && x.Durability != nil {
+		return *x.Durability
+	}
+	return 0
+}
+
+func (x *ItemInstance) GetDescription() string {
+	if x != nil && x.Description != nil {
+		return *x.Description
+	}
+	return ""
+}
+
+func (x *ItemInstance) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+type ItemReservedEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	EventId       string                 `protobuf:"bytes,2,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	SellerId      string                 `protobuf:"bytes,3,opt,name=seller_id,json=sellerId,proto3" json:"seller_id,omitempty"`
+	StartPrice    int64                  `protobuf:"varint,4,opt,name=start_price,json=startPrice,proto3" json:"start_price,omitempty"`
+	EndsAt        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=ends_at,json=endsAt,proto3" json:"ends_at,omitempty"`
+	ItemInstance  *ItemInstance          `protobuf:"bytes,6,opt,name=itemInstance,proto3" json:"itemInstance,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ItemReservedEvent) Reset() {
+	*x = ItemReservedEvent{}
+	mi := &file_api_proto_events_item_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ItemReservedEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ItemReservedEvent) ProtoMessage() {}
+
+func (x *ItemReservedEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_events_item_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ItemReservedEvent.ProtoReflect.Descriptor instead.
+func (*ItemReservedEvent) Descriptor() ([]byte, []int) {
+	return file_api_proto_events_item_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ItemReservedEvent) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ItemReservedEvent) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *ItemReservedEvent) GetSellerId() string {
+	if x != nil {
+		return x.SellerId
+	}
+	return ""
+}
+
+func (x *ItemReservedEvent) GetStartPrice() int64 {
+	if x != nil {
+		return x.StartPrice
+	}
+	return 0
+}
+
+func (x *ItemReservedEvent) GetEndsAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndsAt
+	}
+	return nil
+}
+
+func (x *ItemReservedEvent) GetItemInstance() *ItemInstance {
+	if x != nil {
+		return x.ItemInstance
+	}
+	return nil
+}
+
 var File_api_proto_events_item_proto protoreflect.FileDescriptor
 
 const file_api_proto_events_item_proto_rawDesc = "" +
@@ -90,7 +365,56 @@ const file_api_proto_events_item_proto_rawDesc = "" +
 	"\x10ItemCreatedEvent\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
-	"\titem_type\x18\x03 \x01(\tR\bitemTypeBDZBgithub.com/darkphotonKN/barrowspire-server/common/api/proto/eventsb\x06proto3"
+	"\titem_type\x18\x03 \x01(\tR\bitemType\"\xf6\x06\n" +
+	"\fItemInstance\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
+	"\vtemplate_id\x18\x02 \x01(\tR\n" +
+	"templateId\x12&\n" +
+	"\x0fowner_member_id\x18\x03 \x01(\tR\rownerMemberId\x12\x16\n" +
+	"\x06source\x18\x04 \x01(\tR\x06source\x12\x1b\n" +
+	"\titem_type\x18\x05 \x01(\tR\bitemType\x12\x12\n" +
+	"\x04name\x18\x06 \x01(\tR\x04name\x12 \n" +
+	"\trarity_id\x18\a \x01(\tH\x00R\brarityId\x88\x01\x01\x12&\n" +
+	"\fattack_power\x18\b \x01(\x05H\x01R\vattackPower\x88\x01\x01\x12(\n" +
+	"\rcritical_rate\x18\t \x01(\x01H\x02R\fcriticalRate\x88\x01\x01\x12$\n" +
+	"\vweapon_type\x18\n" +
+	" \x01(\tH\x03R\n" +
+	"weaponType\x88\x01\x01\x12*\n" +
+	"\x0edefense_rating\x18\v \x01(\x05H\x04R\rdefenseRating\x88\x01\x01\x12.\n" +
+	"\x10magic_resistance\x18\f \x01(\x05H\x05R\x0fmagicResistance\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"armor_slot\x18\r \x01(\tH\x06R\tarmorSlot\x88\x01\x01\x12*\n" +
+	"\x0ehealing_amount\x18\x0e \x01(\x05H\aR\rhealingAmount\x88\x01\x01\x12$\n" +
+	"\vmana_amount\x18\x0f \x01(\x05H\bR\n" +
+	"manaAmount\x88\x01\x01\x12(\n" +
+	"\rbuff_duration\x18\x10 \x01(\x05H\tR\fbuffDuration\x88\x01\x01\x12#\n" +
+	"\n" +
+	"durability\x18\x11 \x01(\x05H\n" +
+	"R\n" +
+	"durability\x88\x01\x01\x12%\n" +
+	"\vdescription\x18\x12 \x01(\tH\vR\vdescription\x88\x01\x01\x12\x16\n" +
+	"\x06status\x18\x13 \x01(\tR\x06statusB\f\n" +
+	"\n" +
+	"_rarity_idB\x0f\n" +
+	"\r_attack_powerB\x10\n" +
+	"\x0e_critical_rateB\x0e\n" +
+	"\f_weapon_typeB\x11\n" +
+	"\x0f_defense_ratingB\x13\n" +
+	"\x11_magic_resistanceB\r\n" +
+	"\v_armor_slotB\x11\n" +
+	"\x0f_healing_amountB\x0e\n" +
+	"\f_mana_amountB\x10\n" +
+	"\x0e_buff_durationB\r\n" +
+	"\v_durabilityB\x0e\n" +
+	"\f_description\"\xeb\x01\n" +
+	"\x11ItemReservedEvent\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
+	"\bevent_id\x18\x02 \x01(\tR\aeventId\x12\x1b\n" +
+	"\tseller_id\x18\x03 \x01(\tR\bsellerId\x12\x1f\n" +
+	"\vstart_price\x18\x04 \x01(\x03R\n" +
+	"startPrice\x123\n" +
+	"\aends_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x06endsAt\x128\n" +
+	"\fitemInstance\x18\x06 \x01(\v2\x14.events.ItemInstanceR\fitemInstanceBDZBgithub.com/darkphotonKN/barrowspire-server/common/api/proto/eventsb\x06proto3"
 
 var (
 	file_api_proto_events_item_proto_rawDescOnce sync.Once
@@ -104,16 +428,21 @@ func file_api_proto_events_item_proto_rawDescGZIP() []byte {
 	return file_api_proto_events_item_proto_rawDescData
 }
 
-var file_api_proto_events_item_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_api_proto_events_item_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_api_proto_events_item_proto_goTypes = []any{
-	(*ItemCreatedEvent)(nil), // 0: events.ItemCreatedEvent
+	(*ItemCreatedEvent)(nil),      // 0: events.ItemCreatedEvent
+	(*ItemInstance)(nil),          // 1: events.ItemInstance
+	(*ItemReservedEvent)(nil),     // 2: events.ItemReservedEvent
+	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
 }
 var file_api_proto_events_item_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	3, // 0: events.ItemReservedEvent.ends_at:type_name -> google.protobuf.Timestamp
+	1, // 1: events.ItemReservedEvent.itemInstance:type_name -> events.ItemInstance
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_events_item_proto_init() }
@@ -121,13 +450,14 @@ func file_api_proto_events_item_proto_init() {
 	if File_api_proto_events_item_proto != nil {
 		return
 	}
+	file_api_proto_events_item_proto_msgTypes[1].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_events_item_proto_rawDesc), len(file_api_proto_events_item_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

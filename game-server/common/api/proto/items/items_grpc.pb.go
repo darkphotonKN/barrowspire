@@ -36,6 +36,9 @@ const (
 	ItemsService_GetLoadoutWithItems_FullMethodName         = "/items.ItemsService/GetLoadoutWithItems"
 	ItemsService_ListItemInstances_FullMethodName           = "/items.ItemsService/ListItemInstances"
 	ItemsService_UpdateLoadout_FullMethodName               = "/items.ItemsService/UpdateLoadout"
+	ItemsService_ReserveItem_FullMethodName                 = "/items.ItemsService/ReserveItem"
+	ItemsService_ListStaleReserved_FullMethodName           = "/items.ItemsService/ListStaleReserved"
+	ItemsService_CancelReservation_FullMethodName           = "/items.ItemsService/CancelReservation"
 )
 
 // ItemsServiceClient is the client API for ItemsService service.
@@ -68,6 +71,10 @@ type ItemsServiceClient interface {
 	GetLoadoutWithItems(ctx context.Context, in *GetLoadoutWithItemsRequest, opts ...grpc.CallOption) (*GetLoadoutWithItemsResponse, error)
 	ListItemInstances(ctx context.Context, in *ListItemInstancesRequest, opts ...grpc.CallOption) (*ListItemInstancesResponse, error)
 	UpdateLoadout(ctx context.Context, in *UpdateLoadoutRequest, opts ...grpc.CallOption) (*UpdateLoadoutResponse, error)
+	// marketplace service - item service - listing
+	ReserveItem(ctx context.Context, in *ReserveItemRequest, opts ...grpc.CallOption) (*ReserveItemResponse, error)
+	ListStaleReserved(ctx context.Context, in *ListStaleReservedRequest, opts ...grpc.CallOption) (*ListStaleReservedResponse, error)
+	CancelReservation(ctx context.Context, in *CancelReservationRequest, opts ...grpc.CallOption) (*CancelReservationResponse, error)
 }
 
 type itemsServiceClient struct {
@@ -238,6 +245,36 @@ func (c *itemsServiceClient) UpdateLoadout(ctx context.Context, in *UpdateLoadou
 	return out, nil
 }
 
+func (c *itemsServiceClient) ReserveItem(ctx context.Context, in *ReserveItemRequest, opts ...grpc.CallOption) (*ReserveItemResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReserveItemResponse)
+	err := c.cc.Invoke(ctx, ItemsService_ReserveItem_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *itemsServiceClient) ListStaleReserved(ctx context.Context, in *ListStaleReservedRequest, opts ...grpc.CallOption) (*ListStaleReservedResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListStaleReservedResponse)
+	err := c.cc.Invoke(ctx, ItemsService_ListStaleReserved_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *itemsServiceClient) CancelReservation(ctx context.Context, in *CancelReservationRequest, opts ...grpc.CallOption) (*CancelReservationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelReservationResponse)
+	err := c.cc.Invoke(ctx, ItemsService_CancelReservation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ItemsServiceServer is the server API for ItemsService service.
 // All implementations must embed UnimplementedItemsServiceServer
 // for forward compatibility.
@@ -268,6 +305,10 @@ type ItemsServiceServer interface {
 	GetLoadoutWithItems(context.Context, *GetLoadoutWithItemsRequest) (*GetLoadoutWithItemsResponse, error)
 	ListItemInstances(context.Context, *ListItemInstancesRequest) (*ListItemInstancesResponse, error)
 	UpdateLoadout(context.Context, *UpdateLoadoutRequest) (*UpdateLoadoutResponse, error)
+	// marketplace service - item service - listing
+	ReserveItem(context.Context, *ReserveItemRequest) (*ReserveItemResponse, error)
+	ListStaleReserved(context.Context, *ListStaleReservedRequest) (*ListStaleReservedResponse, error)
+	CancelReservation(context.Context, *CancelReservationRequest) (*CancelReservationResponse, error)
 	mustEmbedUnimplementedItemsServiceServer()
 }
 
@@ -325,6 +366,15 @@ func (UnimplementedItemsServiceServer) ListItemInstances(context.Context, *ListI
 }
 func (UnimplementedItemsServiceServer) UpdateLoadout(context.Context, *UpdateLoadoutRequest) (*UpdateLoadoutResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateLoadout not implemented")
+}
+func (UnimplementedItemsServiceServer) ReserveItem(context.Context, *ReserveItemRequest) (*ReserveItemResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReserveItem not implemented")
+}
+func (UnimplementedItemsServiceServer) ListStaleReserved(context.Context, *ListStaleReservedRequest) (*ListStaleReservedResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListStaleReserved not implemented")
+}
+func (UnimplementedItemsServiceServer) CancelReservation(context.Context, *CancelReservationRequest) (*CancelReservationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelReservation not implemented")
 }
 func (UnimplementedItemsServiceServer) mustEmbedUnimplementedItemsServiceServer() {}
 func (UnimplementedItemsServiceServer) testEmbeddedByValue()                      {}
@@ -635,6 +685,60 @@ func _ItemsService_UpdateLoadout_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ItemsService_ReserveItem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReserveItemRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ItemsServiceServer).ReserveItem(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ItemsService_ReserveItem_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ItemsServiceServer).ReserveItem(ctx, req.(*ReserveItemRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ItemsService_ListStaleReserved_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListStaleReservedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ItemsServiceServer).ListStaleReserved(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ItemsService_ListStaleReserved_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ItemsServiceServer).ListStaleReserved(ctx, req.(*ListStaleReservedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ItemsService_CancelReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelReservationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ItemsServiceServer).CancelReservation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ItemsService_CancelReservation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ItemsServiceServer).CancelReservation(ctx, req.(*CancelReservationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ItemsService_ServiceDesc is the grpc.ServiceDesc for ItemsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -705,6 +809,18 @@ var ItemsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateLoadout",
 			Handler:    _ItemsService_UpdateLoadout_Handler,
+		},
+		{
+			MethodName: "ReserveItem",
+			Handler:    _ItemsService_ReserveItem_Handler,
+		},
+		{
+			MethodName: "ListStaleReserved",
+			Handler:    _ItemsService_ListStaleReserved_Handler,
+		},
+		{
+			MethodName: "CancelReservation",
+			Handler:    _ItemsService_CancelReservation_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

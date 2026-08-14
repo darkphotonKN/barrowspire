@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	MarketplaceService_CreateListing_FullMethodName = "/marketplace.MarketplaceService/CreateListing"
+	MarketplaceService_ListItem_FullMethodName = "/marketplace.MarketplaceService/ListItem"
 )
 
 // MarketplaceServiceClient is the client API for MarketplaceService service.
@@ -29,7 +29,7 @@ const (
 // Wallet service definition for member gold accounts.
 type MarketplaceServiceClient interface {
 	// Get a member's account balance snapshot.
-	CreateListing(ctx context.Context, in *CreateListingRequest, opts ...grpc.CallOption) (*CreateListingResponse, error)
+	ListItem(ctx context.Context, in *ListItemRequest, opts ...grpc.CallOption) (*ListItemResponse, error)
 }
 
 type marketplaceServiceClient struct {
@@ -40,10 +40,10 @@ func NewMarketplaceServiceClient(cc grpc.ClientConnInterface) MarketplaceService
 	return &marketplaceServiceClient{cc}
 }
 
-func (c *marketplaceServiceClient) CreateListing(ctx context.Context, in *CreateListingRequest, opts ...grpc.CallOption) (*CreateListingResponse, error) {
+func (c *marketplaceServiceClient) ListItem(ctx context.Context, in *ListItemRequest, opts ...grpc.CallOption) (*ListItemResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateListingResponse)
-	err := c.cc.Invoke(ctx, MarketplaceService_CreateListing_FullMethodName, in, out, cOpts...)
+	out := new(ListItemResponse)
+	err := c.cc.Invoke(ctx, MarketplaceService_ListItem_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (c *marketplaceServiceClient) CreateListing(ctx context.Context, in *Create
 // Wallet service definition for member gold accounts.
 type MarketplaceServiceServer interface {
 	// Get a member's account balance snapshot.
-	CreateListing(context.Context, *CreateListingRequest) (*CreateListingResponse, error)
+	ListItem(context.Context, *ListItemRequest) (*ListItemResponse, error)
 	mustEmbedUnimplementedMarketplaceServiceServer()
 }
 
@@ -68,8 +68,8 @@ type MarketplaceServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedMarketplaceServiceServer struct{}
 
-func (UnimplementedMarketplaceServiceServer) CreateListing(context.Context, *CreateListingRequest) (*CreateListingResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CreateListing not implemented")
+func (UnimplementedMarketplaceServiceServer) ListItem(context.Context, *ListItemRequest) (*ListItemResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListItem not implemented")
 }
 func (UnimplementedMarketplaceServiceServer) mustEmbedUnimplementedMarketplaceServiceServer() {}
 func (UnimplementedMarketplaceServiceServer) testEmbeddedByValue()                            {}
@@ -92,20 +92,20 @@ func RegisterMarketplaceServiceServer(s grpc.ServiceRegistrar, srv MarketplaceSe
 	s.RegisterService(&MarketplaceService_ServiceDesc, srv)
 }
 
-func _MarketplaceService_CreateListing_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateListingRequest)
+func _MarketplaceService_ListItem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListItemRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MarketplaceServiceServer).CreateListing(ctx, in)
+		return srv.(MarketplaceServiceServer).ListItem(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MarketplaceService_CreateListing_FullMethodName,
+		FullMethod: MarketplaceService_ListItem_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MarketplaceServiceServer).CreateListing(ctx, req.(*CreateListingRequest))
+		return srv.(MarketplaceServiceServer).ListItem(ctx, req.(*ListItemRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -118,8 +118,8 @@ var MarketplaceService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*MarketplaceServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "CreateListing",
-			Handler:    _MarketplaceService_CreateListing_Handler,
+			MethodName: "ListItem",
+			Handler:    _MarketplaceService_ListItem_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

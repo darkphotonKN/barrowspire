@@ -7,13 +7,12 @@
 package wallet
 
 import (
-	reflect "reflect"
-	sync "sync"
-	unsafe "unsafe"
-
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	reflect "reflect"
+	sync "sync"
+	unsafe "unsafe"
 )
 
 const (
@@ -260,7 +259,14 @@ var File_api_proto_wallet_wallet_proto protoreflect.FileDescriptor
 
 const file_api_proto_wallet_wallet_proto_rawDesc = "" +
 	"\n" +
-	"\x1dapi/proto/wallet/wallet.proto\x12\x06wallet\x1a\x1fgoogle/protobuf/timestamp.proto\"\x13\n" +
+	"\x1dapi/proto/wallet/wallet.proto\x12\x06wallet\x1a\x1fgoogle/protobuf/timestamp.proto\"\x16\n" +
+	"\x14CreateAccountRequest\"\x93\x01\n" +
+	"\x15CreateAccountResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x12\n" +
+	"\x04gold\x18\x03 \x01(\x03R\x04gold\x129\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x13\n" +
 	"\x11GetAccountRequest\"\xd4\x01\n" +
 	"\x12GetAccountResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
@@ -269,8 +275,9 @@ const file_api_proto_wallet_wallet_proto_rawDesc = "" +
 	"\theld_gold\x18\x04 \x01(\x03R\bheldGold\x12%\n" +
 	"\x0eavailable_gold\x18\x05 \x01(\x03R\ravailableGold\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt2V\n" +
-	"\rWalletService\x12E\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt2\xa6\x01\n" +
+	"\rWalletService\x12N\n" +
+	"\rCreateAccount\x12\x1c.wallet.CreateAccountRequest\x1a\x1d.wallet.CreateAccountResponse\"\x00\x12E\n" +
 	"\n" +
 	"GetAccount\x12\x19.wallet.GetAccountRequest\x1a\x1a.wallet.GetAccountResponse\"\x00BDZBgithub.com/darkphotonKN/barrowspire-server/common/api/proto/walletb\x06proto3"
 

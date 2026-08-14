@@ -38,6 +38,11 @@ service ItemsService {
   rpc GetLoadoutWithItems(GetLoadoutWithItemsRequest) returns (GetLoadoutWithItemsResponse);
   rpc ListItemInstances(ListItemInstancesRequest) returns (ListItemInstancesResponse);
   rpc UpdateLoadout(UpdateLoadoutRequest) returns (UpdateLoadoutResponse);
+
+  // marketplace service - item service - listing
+  rpc ReserveItem(ReserveItemRequest) returns (ReserveItemResponse);
+  rpc ListStaleReserved(ListStaleReservedRequest) returns (ListStaleReservedResponse);
+  rpc CancelReservation(CancelReservationRequest) returns (CancelReservationResponse);
 }
 
 // ============ Layered Message Definitions ============
@@ -368,3 +373,50 @@ message UpdateLoadoutRequest {
 message UpdateLoadoutResponse {
   bool success = 1;
 }
+
+
+message ReserveItemRequest {
+  string item_id = 1;
+  int64 start_price = 2; 
+  google.protobuf.Timestamp ends_at = 3; 
+}
+
+message ReserveItemResponse {
+  string id          = 1;
+  string template_id = 2;
+  string owner_member_id = 3;
+  string source     = 4;
+  string item_type = 5;              // 'weapon' | 'armor' | 'consumable'
+  string name = 6;
+  optional string rarity_id = 7;     // UUID as string
+
+  // Weapon stats (null if not weapon)
+  optional int32 attack_power = 8;
+  optional double critical_rate = 9;
+  optional string weapon_type = 10;
+
+  // Armor stats (null if not armor)
+  optional int32 defense_rating = 11;
+  optional int32 magic_resistance = 12;
+  optional string armor_slot = 13;   // 'head' | 'chest' | 'legs' | 'gloves'
+
+  // Consumable stats (null if not consumable)
+  optional int32 healing_amount = 14;
+  optional int32 mana_amount = 15;
+  optional int32 buff_duration = 16;
+
+  optional int32 durability = 17;
+  optional string description = 18;
+  string status = 19;
+}
+
+message ListStaleReservedRequest {
+  google.protobuf.Timestamp reservedBefore = 1;
+}
+message ListStaleReservedResponse {
+  repeated string item_ids = 1;
+}
+message CancelReservationRequest {
+  string item_id = 1;
+}
+message CancelReservationResponse {}
