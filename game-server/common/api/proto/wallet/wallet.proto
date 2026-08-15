@@ -16,6 +16,10 @@ service WalletService {
   rpc PlaceHold(PlaceHoldRequest) returns (PlaceHoldResponse) {}
   // Settle a bid's reserved gold, spending it for good.
   rpc CommitHold(CommitHoldRequest) returns (CommitHoldResponse) {}
+  // Add gold to a member's account.
+  rpc Deposit(DepositRequest) returns (DepositResponse) {}
+  // Remove gold from a member's account, up to what is not already held.
+  rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {}
 }
 
 // CreateAccount
@@ -68,3 +72,24 @@ message CommitHoldRequest {
 
 // Empty by design, same rule as PlaceHoldResponse: success or a status code.
 message CommitHoldResponse {}
+
+// Deposit
+// The account is resolved from the authenticated member in context, so the
+// caller supplies only the amount.
+message DepositRequest {
+  int64 gold = 1;  // amount to add, must be positive
+}
+
+// Empty by design, same rule as PlaceHoldResponse. Callers that need the new
+// balance read it back with GetAccount.
+message DepositResponse {}
+
+// Withdraw
+// Withdrawal is bounded by available gold, not total gold — reserved holds are
+// not spendable. Exceeding it fails with FailedPrecondition.
+message WithdrawRequest {
+  int64 gold = 1;  // amount to remove, must be positive
+}
+
+// Empty by design, same rule as DepositResponse.
+message WithdrawResponse {}
