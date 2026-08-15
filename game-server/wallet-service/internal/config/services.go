@@ -29,9 +29,20 @@ type Services struct {
 func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	accountRepo := accountrepo.NewAccountRepository(db)
 	placeHoldUC := usecase.NewPlaceHoldUC(accountRepo)
+	commitHoldUC := usecase.NewCommitHoldUC(accountRepo)
 	createAccUC := usecase.NewCreateAccountUC(accountRepo)
+	depositGoldUC := usecase.NewDepositGoldUC(accountRepo)
+	withdrawGoldUC := usecase.NewWithdrawGoldUC(accountRepo)
 	getAccQuery := accountquery.NewGetAccountQuery(db)
-	accHandler := accountgrpc.NewHandler(createAccUC, placeHoldUC, getAccQuery)
+
+	accHandler := accountgrpc.NewHandler(accountgrpc.Deps{
+		CreateAccountUC: createAccUC,
+		PlaceHoldUC:     placeHoldUC,
+		CommitHoldUC:    commitHoldUC,
+		DepositGoldUC:   depositGoldUC,
+		WithdrawGoldUC:  withdrawGoldUC,
+		AccountReader:   getAccQuery,
+	})
 
 	// The event-driven birth path. Separate from createAccUC on purpose: this
 	// one must write the account, its inbox row, and its outbox row in a single
