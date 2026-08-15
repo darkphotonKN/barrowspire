@@ -29,17 +29,36 @@ type Handler struct {
 	createAccountUC *usecase.CreateAccountUC
 	placeHoldUC     *usecase.PlaceHoldUC
 	commitHoldUC    *usecase.CommitHoldUC
+	depositGoldUC   *usecase.DepositGoldUC
+	withdrawGoldUC  *usecase.WithdrawGoldUC
 }
 
 type AccountReader interface {
 	Execute(ctx context.Context, memberID uuid.UUID) (*dto.AccountDetails, error)
 }
 
-func NewHandler(createAccountUC *usecase.CreateAccountUC, placeHoldUC *usecase.PlaceHoldUC, accountReader AccountReader) *Handler {
+// Deps names every dependency the handler needs. A struct rather than positional
+// parameters on purpose: CommitHold shipped panicking because its use case was
+// declared on Handler but silently omitted from the constructor's argument list,
+// and a positional call site gives no hint that something is missing. Named
+// fields make an omission visible at the call site instead of at runtime.
+type Deps struct {
+	CreateAccountUC *usecase.CreateAccountUC
+	PlaceHoldUC     *usecase.PlaceHoldUC
+	CommitHoldUC    *usecase.CommitHoldUC
+	DepositGoldUC   *usecase.DepositGoldUC
+	WithdrawGoldUC  *usecase.WithdrawGoldUC
+	AccountReader   AccountReader
+}
+
+func NewHandler(deps Deps) *Handler {
 	return &Handler{
-		createAccountUC: createAccountUC,
-		placeHoldUC:     placeHoldUC,
-		accountReader:   accountReader,
+		createAccountUC: deps.CreateAccountUC,
+		placeHoldUC:     deps.PlaceHoldUC,
+		commitHoldUC:    deps.CommitHoldUC,
+		depositGoldUC:   deps.DepositGoldUC,
+		withdrawGoldUC:  deps.WithdrawGoldUC,
+		accountReader:   deps.AccountReader,
 	}
 }
 
@@ -120,7 +139,45 @@ func (h *Handler) PlaceHold(ctx context.Context, req *pb.PlaceHoldRequest) (*pb.
 		return nil, mapError(ctx, err)
 	}
 
-	return nil, nil
+	return &pb.PlaceHoldResponse{}, nil
+}
+
+func (h *Handler) Deposit(ctx context.Context, req *pb.DepositRequest) (*pb.DepositResponse, error) {
+	memberID, ok := commonauth.MemberIDFromCtx(ctx)
+
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	err := h.depositGoldUC.Handle(ctx, &usecase.DepositGoldCommand{
+		MemberID: memberID,
+		Gold:     int(req.Gold),
+	})
+
+	if err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return &pb.DepositResponse{}, nil
+}
+
+func (h *Handler) Withdraw(ctx context.Context, req *pb.WithdrawRequest) (*pb.WithdrawResponse, error) {
+	memberID, ok := commonauth.MemberIDFromCtx(ctx)
+
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	err := h.withdrawGoldUC.Handle(ctx, &usecase.WithdrawGoldCommand{
+		MemberID: memberID,
+		Gold:     int(req.Gold),
+	})
+
+	if err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return &pb.WithdrawResponse{}, nil
 }
 
 // ========================= READ PATHS  =========================

@@ -20,9 +20,20 @@ type Services struct {
 func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	accountRepo := accountrepo.NewAccountRepository(db)
 	placeHoldUC := usecase.NewPlaceHoldUC(accountRepo)
+	commitHoldUC := usecase.NewCommitHoldUC(accountRepo)
 	createAccUC := usecase.NewCreateAccountUC(accountRepo)
+	depositGoldUC := usecase.NewDepositGoldUC(accountRepo)
+	withdrawGoldUC := usecase.NewWithdrawGoldUC(accountRepo)
 	getAccQuery := accountquery.NewGetAccountQuery(db)
-	accHandler := accountgrpc.NewHandler(createAccUC, placeHoldUC, getAccQuery)
+
+	accHandler := accountgrpc.NewHandler(accountgrpc.Deps{
+		CreateAccountUC: createAccUC,
+		PlaceHoldUC:     placeHoldUC,
+		CommitHoldUC:    commitHoldUC,
+		DepositGoldUC:   depositGoldUC,
+		WithdrawGoldUC:  withdrawGoldUC,
+		AccountReader:   getAccQuery,
+	})
 
 	return &Services{
 		AccHandler: accHandler,
