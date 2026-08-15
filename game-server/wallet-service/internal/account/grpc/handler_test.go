@@ -80,8 +80,11 @@ func authedCtx(t *testing.T, memberID uuid.UUID) context.Context {
 // newTestHandler wires a Handler with only the read dependency populated. The
 // write use cases are nil because GetAccount must never touch them; if that
 // changes, these tests panic loudly rather than passing quietly.
+//
+// The write-path tests below rely on the same property: a guard that returns
+// early never reaches its nil use case, so a passing case proves the guard fired.
 func newTestHandler(reader AccountReader) *Handler {
-	return NewHandler(nil, nil, reader)
+	return NewHandler(Deps{AccountReader: reader})
 }
 
 // TestGetAccount_RejectsUnauthenticatedRequest covers the guard that matters
@@ -352,4 +355,131 @@ func TestGetAccount_DoesNotLeakInternalDetails(t *testing.T) {
 	assert.Equal(t, "internal error", st.Message())
 	assert.NotContains(t, st.Message(), "accounts")
 	assert.NotContains(t, st.Message(), "wallet-db-1.internal")
+}
+
+// TestWritePathsRejectBadRequestsBeforeReachingTheUseCase covers every write RPC's
+// front door: the checks a handler performs before it touches its use case.
+//
+// These cases run against a handler whose write use cases are all nil, which is
+// deliberate — it means each case doubles as proof that the guard really does
+// return early. A handler that fell through to its use case would panic here
+// rather than fail an assertion.
+//
+// This is exactly how CommitHold shipped broken: its use case was never assigned
+// in NewHandler, so every authenticated call nil-dereferenced. Nothing caught it
+// because no test constructed a handler that reached that line.
+func TestWritePathsRejectBadRequestsBeforeReachingTheUseCase(t *testing.T) {
+	badUUID := "not-a-uuid"
+
+	tests := []struct {
+		name string
+		// call performs the RPC; authed decides whether an identity is present
+		call     func(h *Handler, ctx context.Context) (any, error)
+		authed   bool
+		wantCode codes.Code
+		wantMsg  string
+	}{
+		{
+			name: "CommitHold without an identity",
+			call: func(h *Handler, ctx context.Context) (any, error) {
+				return h.CommitHold(ctx, &pb.CommitHoldRequest{BidId: uuid.NewString()})
+			},
+			authed:   false,
+			wantCode: codes.Unauthenticated,
+			wantMsg:  "identity missing",
+		},
+		{
+			name: "CommitHold with an unparseable bid id",
+			call: func(h *Handler, ctx context.Context) (any, error) {
+				return h.CommitHold(ctx, &pb.CommitHoldRequest{BidId: badUUID})
+			},
+			authed:   true,
+			wantCode: codes.InvalidArgument,
+			wantMsg:  "bidId from req was unparseable as a uuid.",
+		},
+		{
+			name: "PlaceHold without an identity",
+			call: func(h *Handler, ctx context.Context) (any, error) {
+				return h.PlaceHold(ctx, &pb.PlaceHoldRequest{BidId: uuid.NewString(), Gold: 100})
+			},
+			authed:   false,
+			wantCode: codes.Unauthenticated,
+			wantMsg:  "missing identity",
+		},
+		{
+			name: "PlaceHold with an unparseable bid id",
+			call: func(h *Handler, ctx context.Context) (any, error) {
+				return h.PlaceHold(ctx, &pb.PlaceHoldRequest{BidId: badUUID, Gold: 100})
+			},
+			authed:   true,
+			wantCode: codes.InvalidArgument,
+			wantMsg:  "bidId from req was unparseable as a uuid",
+		},
+		{
+			name: "Deposit without an identity",
+			call: func(h *Handler, ctx context.Context) (any, error) {
+				return h.Deposit(ctx, &pb.DepositRequest{Gold: 100})
+			},
+			authed:   false,
+			wantCode: codes.Unauthenticated,
+			wantMsg:  "missing identity",
+		},
+		{
+			name: "Withdraw without an identity",
+			call: func(h *Handler, ctx context.Context) (any, error) {
+				return h.Withdraw(ctx, &pb.WithdrawRequest{Gold: 100})
+			},
+			authed:   false,
+			wantCode: codes.Unauthenticated,
+			wantMsg:  "missing identity",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newTestHandler(&stubReader{res: &dto.AccountDetails{}})
+
+			ctx := context.Background()
+			if tt.authed {
+				ctx = authedCtx(t, uuid.New())
+			}
+
+			res, err := tt.call(h, ctx)
+
+			assert.Nil(t, res, "no partial response alongside an error")
+
+			st, ok := status.FromError(err)
+			require.True(t, ok, "error should be a gRPC status")
+			assert.Equal(t, tt.wantCode, st.Code())
+			assert.Equal(t, tt.wantMsg, st.Message())
+		})
+	}
+}
+
+// TestEveryDeclaredUseCaseIsAssigned is the regression test for the defect this
+// file previously could not catch: CommitHold's use case was declared on Handler
+// but omitted from the constructor, so it stayed nil and every authenticated call
+// nil-dereferenced. go build and go vet both passed — a nil struct pointer is a
+// legal value, and only the dereference fails.
+//
+// Asserting on unexported fields is unusual, but the constructor's whole job is
+// to populate them, and the alternative is discovering an omission in production.
+func TestEveryDeclaredUseCaseIsAssigned(t *testing.T) {
+	reader := &stubReader{res: &dto.AccountDetails{}}
+
+	h := NewHandler(Deps{
+		CreateAccountUC: &usecase.CreateAccountUC{},
+		PlaceHoldUC:     &usecase.PlaceHoldUC{},
+		CommitHoldUC:    &usecase.CommitHoldUC{},
+		DepositGoldUC:   &usecase.DepositGoldUC{},
+		WithdrawGoldUC:  &usecase.WithdrawGoldUC{},
+		AccountReader:   reader,
+	})
+
+	assert.NotNil(t, h.createAccountUC, "createAccountUC")
+	assert.NotNil(t, h.placeHoldUC, "placeHoldUC")
+	assert.NotNil(t, h.commitHoldUC, "commitHoldUC")
+	assert.NotNil(t, h.depositGoldUC, "depositGoldUC")
+	assert.NotNil(t, h.withdrawGoldUC, "withdrawGoldUC")
+	assert.NotNil(t, h.accountReader, "accountReader")
 }
