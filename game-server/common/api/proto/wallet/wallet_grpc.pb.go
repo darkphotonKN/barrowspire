@@ -23,6 +23,8 @@ const (
 	WalletService_GetAccount_FullMethodName    = "/wallet.WalletService/GetAccount"
 	WalletService_PlaceHold_FullMethodName     = "/wallet.WalletService/PlaceHold"
 	WalletService_CommitHold_FullMethodName    = "/wallet.WalletService/CommitHold"
+	WalletService_Deposit_FullMethodName       = "/wallet.WalletService/Deposit"
+	WalletService_Withdraw_FullMethodName      = "/wallet.WalletService/Withdraw"
 )
 
 // WalletServiceClient is the client API for WalletService service.
@@ -39,6 +41,10 @@ type WalletServiceClient interface {
 	PlaceHold(ctx context.Context, in *PlaceHoldRequest, opts ...grpc.CallOption) (*PlaceHoldResponse, error)
 	// Settle a bid's reserved gold, spending it for good.
 	CommitHold(ctx context.Context, in *CommitHoldRequest, opts ...grpc.CallOption) (*CommitHoldResponse, error)
+	// Add gold to a member's account.
+	Deposit(ctx context.Context, in *DepositRequest, opts ...grpc.CallOption) (*DepositResponse, error)
+	// Remove gold from a member's account, up to what is not already held.
+	Withdraw(ctx context.Context, in *WithdrawRequest, opts ...grpc.CallOption) (*WithdrawResponse, error)
 }
 
 type walletServiceClient struct {
@@ -89,6 +95,26 @@ func (c *walletServiceClient) CommitHold(ctx context.Context, in *CommitHoldRequ
 	return out, nil
 }
 
+func (c *walletServiceClient) Deposit(ctx context.Context, in *DepositRequest, opts ...grpc.CallOption) (*DepositResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DepositResponse)
+	err := c.cc.Invoke(ctx, WalletService_Deposit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *walletServiceClient) Withdraw(ctx context.Context, in *WithdrawRequest, opts ...grpc.CallOption) (*WithdrawResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WithdrawResponse)
+	err := c.cc.Invoke(ctx, WalletService_Withdraw_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WalletServiceServer is the server API for WalletService service.
 // All implementations must embed UnimplementedWalletServiceServer
 // for forward compatibility.
@@ -103,6 +129,10 @@ type WalletServiceServer interface {
 	PlaceHold(context.Context, *PlaceHoldRequest) (*PlaceHoldResponse, error)
 	// Settle a bid's reserved gold, spending it for good.
 	CommitHold(context.Context, *CommitHoldRequest) (*CommitHoldResponse, error)
+	// Add gold to a member's account.
+	Deposit(context.Context, *DepositRequest) (*DepositResponse, error)
+	// Remove gold from a member's account, up to what is not already held.
+	Withdraw(context.Context, *WithdrawRequest) (*WithdrawResponse, error)
 	mustEmbedUnimplementedWalletServiceServer()
 }
 
@@ -124,6 +154,12 @@ func (UnimplementedWalletServiceServer) PlaceHold(context.Context, *PlaceHoldReq
 }
 func (UnimplementedWalletServiceServer) CommitHold(context.Context, *CommitHoldRequest) (*CommitHoldResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CommitHold not implemented")
+}
+func (UnimplementedWalletServiceServer) Deposit(context.Context, *DepositRequest) (*DepositResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Deposit not implemented")
+}
+func (UnimplementedWalletServiceServer) Withdraw(context.Context, *WithdrawRequest) (*WithdrawResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Withdraw not implemented")
 }
 func (UnimplementedWalletServiceServer) mustEmbedUnimplementedWalletServiceServer() {}
 func (UnimplementedWalletServiceServer) testEmbeddedByValue()                       {}
@@ -218,6 +254,42 @@ func _WalletService_CommitHold_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WalletService_Deposit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DepositRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).Deposit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WalletService_Deposit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).Deposit(ctx, req.(*DepositRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WalletService_Withdraw_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WithdrawRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).Withdraw(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WalletService_Withdraw_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).Withdraw(ctx, req.(*WithdrawRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WalletService_ServiceDesc is the grpc.ServiceDesc for WalletService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -240,6 +312,14 @@ var WalletService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CommitHold",
 			Handler:    _WalletService_CommitHold_Handler,
+		},
+		{
+			MethodName: "Deposit",
+			Handler:    _WalletService_Deposit_Handler,
+		},
+		{
+			MethodName: "Withdraw",
+			Handler:    _WalletService_Withdraw_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

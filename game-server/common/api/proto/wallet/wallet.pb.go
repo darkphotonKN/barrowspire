@@ -432,6 +432,175 @@ func (*CommitHoldResponse) Descriptor() ([]byte, []int) {
 	return file_api_proto_wallet_wallet_proto_rawDescGZIP(), []int{7}
 }
 
+// Deposit
+// The account is resolved from the authenticated member in context, so the
+// caller supplies only the amount.
+type DepositRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Gold          int64                  `protobuf:"varint,1,opt,name=gold,proto3" json:"gold,omitempty"` // amount to add, must be positive
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DepositRequest) Reset() {
+	*x = DepositRequest{}
+	mi := &file_api_proto_wallet_wallet_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DepositRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DepositRequest) ProtoMessage() {}
+
+func (x *DepositRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_wallet_wallet_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DepositRequest.ProtoReflect.Descriptor instead.
+func (*DepositRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_wallet_wallet_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *DepositRequest) GetGold() int64 {
+	if x != nil {
+		return x.Gold
+	}
+	return 0
+}
+
+// Empty by design, same rule as PlaceHoldResponse. Callers that need the new
+// balance read it back with GetAccount.
+type DepositResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DepositResponse) Reset() {
+	*x = DepositResponse{}
+	mi := &file_api_proto_wallet_wallet_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DepositResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DepositResponse) ProtoMessage() {}
+
+func (x *DepositResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_wallet_wallet_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DepositResponse.ProtoReflect.Descriptor instead.
+func (*DepositResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_wallet_wallet_proto_rawDescGZIP(), []int{9}
+}
+
+// Withdraw
+// Withdrawal is bounded by available gold, not total gold — reserved holds are
+// not spendable. Exceeding it fails with FailedPrecondition.
+type WithdrawRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Gold          int64                  `protobuf:"varint,1,opt,name=gold,proto3" json:"gold,omitempty"` // amount to remove, must be positive
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WithdrawRequest) Reset() {
+	*x = WithdrawRequest{}
+	mi := &file_api_proto_wallet_wallet_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WithdrawRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WithdrawRequest) ProtoMessage() {}
+
+func (x *WithdrawRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_wallet_wallet_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WithdrawRequest.ProtoReflect.Descriptor instead.
+func (*WithdrawRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_wallet_wallet_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *WithdrawRequest) GetGold() int64 {
+	if x != nil {
+		return x.Gold
+	}
+	return 0
+}
+
+// Empty by design, same rule as DepositResponse.
+type WithdrawResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WithdrawResponse) Reset() {
+	*x = WithdrawResponse{}
+	mi := &file_api_proto_wallet_wallet_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WithdrawResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WithdrawResponse) ProtoMessage() {}
+
+func (x *WithdrawResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_wallet_wallet_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WithdrawResponse.ProtoReflect.Descriptor instead.
+func (*WithdrawResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_wallet_wallet_proto_rawDescGZIP(), []int{11}
+}
+
 var File_api_proto_wallet_wallet_proto protoreflect.FileDescriptor
 
 const file_api_proto_wallet_wallet_proto_rawDesc = "" +
@@ -459,14 +628,22 @@ const file_api_proto_wallet_wallet_proto_rawDesc = "" +
 	"\x11PlaceHoldResponse\"*\n" +
 	"\x11CommitHoldRequest\x12\x15\n" +
 	"\x06bid_id\x18\x01 \x01(\tR\x05bidId\"\x14\n" +
-	"\x12CommitHoldResponse2\xb1\x02\n" +
+	"\x12CommitHoldResponse\"$\n" +
+	"\x0eDepositRequest\x12\x12\n" +
+	"\x04gold\x18\x01 \x01(\x03R\x04gold\"\x11\n" +
+	"\x0fDepositResponse\"%\n" +
+	"\x0fWithdrawRequest\x12\x12\n" +
+	"\x04gold\x18\x01 \x01(\x03R\x04gold\"\x12\n" +
+	"\x10WithdrawResponse2\xb0\x03\n" +
 	"\rWalletService\x12N\n" +
 	"\rCreateAccount\x12\x1c.wallet.CreateAccountRequest\x1a\x1d.wallet.CreateAccountResponse\"\x00\x12E\n" +
 	"\n" +
 	"GetAccount\x12\x19.wallet.GetAccountRequest\x1a\x1a.wallet.GetAccountResponse\"\x00\x12B\n" +
 	"\tPlaceHold\x12\x18.wallet.PlaceHoldRequest\x1a\x19.wallet.PlaceHoldResponse\"\x00\x12E\n" +
 	"\n" +
-	"CommitHold\x12\x19.wallet.CommitHoldRequest\x1a\x1a.wallet.CommitHoldResponse\"\x00BDZBgithub.com/darkphotonKN/barrowspire-server/common/api/proto/walletb\x06proto3"
+	"CommitHold\x12\x19.wallet.CommitHoldRequest\x1a\x1a.wallet.CommitHoldResponse\"\x00\x12<\n" +
+	"\aDeposit\x12\x16.wallet.DepositRequest\x1a\x17.wallet.DepositResponse\"\x00\x12?\n" +
+	"\bWithdraw\x12\x17.wallet.WithdrawRequest\x1a\x18.wallet.WithdrawResponse\"\x00BDZBgithub.com/darkphotonKN/barrowspire-server/common/api/proto/walletb\x06proto3"
 
 var (
 	file_api_proto_wallet_wallet_proto_rawDescOnce sync.Once
@@ -480,7 +657,7 @@ func file_api_proto_wallet_wallet_proto_rawDescGZIP() []byte {
 	return file_api_proto_wallet_wallet_proto_rawDescData
 }
 
-var file_api_proto_wallet_wallet_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_api_proto_wallet_wallet_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_api_proto_wallet_wallet_proto_goTypes = []any{
 	(*CreateAccountRequest)(nil),  // 0: wallet.CreateAccountRequest
 	(*CreateAccountResponse)(nil), // 1: wallet.CreateAccountResponse
@@ -490,24 +667,32 @@ var file_api_proto_wallet_wallet_proto_goTypes = []any{
 	(*PlaceHoldResponse)(nil),     // 5: wallet.PlaceHoldResponse
 	(*CommitHoldRequest)(nil),     // 6: wallet.CommitHoldRequest
 	(*CommitHoldResponse)(nil),    // 7: wallet.CommitHoldResponse
-	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
+	(*DepositRequest)(nil),        // 8: wallet.DepositRequest
+	(*DepositResponse)(nil),       // 9: wallet.DepositResponse
+	(*WithdrawRequest)(nil),       // 10: wallet.WithdrawRequest
+	(*WithdrawResponse)(nil),      // 11: wallet.WithdrawResponse
+	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
 }
 var file_api_proto_wallet_wallet_proto_depIdxs = []int32{
-	8, // 0: wallet.CreateAccountResponse.created_at:type_name -> google.protobuf.Timestamp
-	8, // 1: wallet.GetAccountResponse.created_at:type_name -> google.protobuf.Timestamp
-	0, // 2: wallet.WalletService.CreateAccount:input_type -> wallet.CreateAccountRequest
-	2, // 3: wallet.WalletService.GetAccount:input_type -> wallet.GetAccountRequest
-	4, // 4: wallet.WalletService.PlaceHold:input_type -> wallet.PlaceHoldRequest
-	6, // 5: wallet.WalletService.CommitHold:input_type -> wallet.CommitHoldRequest
-	1, // 6: wallet.WalletService.CreateAccount:output_type -> wallet.CreateAccountResponse
-	3, // 7: wallet.WalletService.GetAccount:output_type -> wallet.GetAccountResponse
-	5, // 8: wallet.WalletService.PlaceHold:output_type -> wallet.PlaceHoldResponse
-	7, // 9: wallet.WalletService.CommitHold:output_type -> wallet.CommitHoldResponse
-	6, // [6:10] is the sub-list for method output_type
-	2, // [2:6] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	12, // 0: wallet.CreateAccountResponse.created_at:type_name -> google.protobuf.Timestamp
+	12, // 1: wallet.GetAccountResponse.created_at:type_name -> google.protobuf.Timestamp
+	0,  // 2: wallet.WalletService.CreateAccount:input_type -> wallet.CreateAccountRequest
+	2,  // 3: wallet.WalletService.GetAccount:input_type -> wallet.GetAccountRequest
+	4,  // 4: wallet.WalletService.PlaceHold:input_type -> wallet.PlaceHoldRequest
+	6,  // 5: wallet.WalletService.CommitHold:input_type -> wallet.CommitHoldRequest
+	8,  // 6: wallet.WalletService.Deposit:input_type -> wallet.DepositRequest
+	10, // 7: wallet.WalletService.Withdraw:input_type -> wallet.WithdrawRequest
+	1,  // 8: wallet.WalletService.CreateAccount:output_type -> wallet.CreateAccountResponse
+	3,  // 9: wallet.WalletService.GetAccount:output_type -> wallet.GetAccountResponse
+	5,  // 10: wallet.WalletService.PlaceHold:output_type -> wallet.PlaceHoldResponse
+	7,  // 11: wallet.WalletService.CommitHold:output_type -> wallet.CommitHoldResponse
+	9,  // 12: wallet.WalletService.Deposit:output_type -> wallet.DepositResponse
+	11, // 13: wallet.WalletService.Withdraw:output_type -> wallet.WithdrawResponse
+	8,  // [8:14] is the sub-list for method output_type
+	2,  // [2:8] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_wallet_wallet_proto_init() }
@@ -521,7 +706,7 @@ func file_api_proto_wallet_wallet_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_wallet_wallet_proto_rawDesc), len(file_api_proto_wallet_wallet_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
