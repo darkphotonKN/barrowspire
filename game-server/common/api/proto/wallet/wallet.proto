@@ -33,21 +33,6 @@ message CreateAccountResponse {
   google.protobuf.Timestamp created_at = 4;
 }
 
-// CreateAccount
-// Empty by design, same rule as GetAccountRequest: the member identity is
-// derived from the authenticated context server-side, never supplied by the
-// caller.
-message CreateAccountRequest {}
-
-// Newly birthed accounts hold no gold and carry no holds, so only the
-// identity + birth facts are echoed back.
-message CreateAccountResponse {
-  string id        = 1;
-  string member_id = 2;
-  int64  gold      = 3;  // always 0 on creation, echoed for client convenience
-  google.protobuf.Timestamp created_at = 4;
-}
-
 // GetAccount
 // Empty by design: the member identity is derived from the authenticated
 // context server-side, never supplied by the caller.

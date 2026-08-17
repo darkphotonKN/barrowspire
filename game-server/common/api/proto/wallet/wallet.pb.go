@@ -452,11 +452,21 @@ const file_api_proto_wallet_wallet_proto_rawDesc = "" +
 	"\theld_gold\x18\x04 \x01(\x03R\bheldGold\x12%\n" +
 	"\x0eavailable_gold\x18\x05 \x01(\x03R\ravailableGold\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt2\xa6\x01\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"=\n" +
+	"\x10PlaceHoldRequest\x12\x12\n" +
+	"\x04gold\x18\x01 \x01(\x03R\x04gold\x12\x15\n" +
+	"\x06bid_id\x18\x02 \x01(\tR\x05bidId\"\x13\n" +
+	"\x11PlaceHoldResponse\"*\n" +
+	"\x11CommitHoldRequest\x12\x15\n" +
+	"\x06bid_id\x18\x01 \x01(\tR\x05bidId\"\x14\n" +
+	"\x12CommitHoldResponse2\xb1\x02\n" +
 	"\rWalletService\x12N\n" +
 	"\rCreateAccount\x12\x1c.wallet.CreateAccountRequest\x1a\x1d.wallet.CreateAccountResponse\"\x00\x12E\n" +
 	"\n" +
-	"GetAccount\x12\x19.wallet.GetAccountRequest\x1a\x1a.wallet.GetAccountResponse\"\x00BDZBgithub.com/darkphotonKN/barrowspire-server/common/api/proto/walletb\x06proto3"
+	"GetAccount\x12\x19.wallet.GetAccountRequest\x1a\x1a.wallet.GetAccountResponse\"\x00\x12B\n" +
+	"\tPlaceHold\x12\x18.wallet.PlaceHoldRequest\x1a\x19.wallet.PlaceHoldResponse\"\x00\x12E\n" +
+	"\n" +
+	"CommitHold\x12\x19.wallet.CommitHoldRequest\x1a\x1a.wallet.CommitHoldResponse\"\x00BDZBgithub.com/darkphotonKN/barrowspire-server/common/api/proto/walletb\x06proto3"
 
 var (
 	file_api_proto_wallet_wallet_proto_rawDescOnce sync.Once

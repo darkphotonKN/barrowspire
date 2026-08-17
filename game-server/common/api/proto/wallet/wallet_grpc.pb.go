@@ -8,7 +8,6 @@ package wallet
 
 import (
 	context "context"
-
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -121,10 +120,10 @@ func (UnimplementedWalletServiceServer) GetAccount(context.Context, *GetAccountR
 	return nil, status.Error(codes.Unimplemented, "method GetAccount not implemented")
 }
 func (UnimplementedWalletServiceServer) PlaceHold(context.Context, *PlaceHoldRequest) (*PlaceHoldResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method PlaceHold not implemented")
+	return nil, status.Error(codes.Unimplemented, "method PlaceHold not implemented")
 }
 func (UnimplementedWalletServiceServer) CommitHold(context.Context, *CommitHoldRequest) (*CommitHoldResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CommitHold not implemented")
+	return nil, status.Error(codes.Unimplemented, "method CommitHold not implemented")
 }
 func (UnimplementedWalletServiceServer) mustEmbedUnimplementedWalletServiceServer() {}
 func (UnimplementedWalletServiceServer) testEmbeddedByValue()                       {}
