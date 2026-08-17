@@ -163,5 +163,15 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	listingRoutes.Use(auth.AuthMiddleware())
 	listingRoutes.POST("", listingHandler.CreateListingHandler)
 
+	// --- LISTING MICROSERVICE ---
+
+	listingClient := listing.NewClient(registry)
+	listingHandler := listing.NewHandler(listingClient)
+
+	listingRoutes := api.Group("/listing")
+	// Private Routes - require authentication
+	listingRoutes.Use(auth.AuthMiddleware())
+	listingRoutes.POST("", listingHandler.CreateListingHandler)
+
 	return router
 }
