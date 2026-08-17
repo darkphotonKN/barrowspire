@@ -10,6 +10,7 @@ gen:
 		api/proto/payment/payment.proto \
 		api/proto/wallet/wallet.proto \
 		api/proto/ledger/ledger.proto \
+		api/proto/marketplace/marketplace.proto \
 		api/proto/notification/notification.proto \
 		api/proto/events/game.proto \
 		api/proto/events/auth.proto \
