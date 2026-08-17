@@ -312,6 +312,32 @@ func (s *Session) manageClientMessages() {
 					s.sender.SendMessageToPlayer(playerID, types.Message{})
 				}
 
+			case constants.ActionCastSkill:
+				slog.Debug("Action from client was cast_skill")
+				parsedPayload, err := msg.Message.ParsePayload()
+
+				if err != nil {
+					slog.Error("Failed to parse cast_skill payload", "error", err)
+					if playerIDStr, ok := msg.Message.Payload["player_id"].(string); ok {
+						if playerID, parseErr := uuid.Parse(playerIDStr); parseErr == nil {
+							s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse cast_skill request")
+						}
+					}
+					continue
+				}
+				skillPayload := parsedPayload.(types.PlayerCastSkillPayload)
+
+				playerID, err := uuid.Parse(skillPayload.PlayerID)
+				if err != nil {
+					slog.Error("Invalid PlayerID from session payload", "playerID", skillPayload.PlayerID, "error", err)
+					continue
+				}
+
+				err = s.handleCastSkill(playerID, skillPayload.SkillID, skillPayload.TargetX, skillPayload.TargetY)
+				if err != nil {
+					slog.Error("Failed to handle cast_skill", "error", err)
+				}
+
 			case constants.ActionEquip, constants.ActionUnequip:
 				slog.Debug("Before parsing action equip / unequip message payload",
 					"message_action", msg.Message.Action,
@@ -419,6 +445,10 @@ func (s *Session) manageGameLoop() {
 			movementSys := systems.MovementSystem{}
 			deltaTime := 1.0 / float64(constants.GameFrameRate)
 			movementSys.Update(deltaTime, entities)
+
+			// projectile
+			projectileSys := systems.NewProjectileSystem(s.EntityManager)
+			projectileSys.Update(deltaTime, entities)
 
 			// interaction
 			interactionSys := systems.InteractionSystem{}
@@ -1481,6 +1511,66 @@ func (s *Session) handleAttack(playerID uuid.UUID, enemyEntityID uuid.UUID) erro
 	player.AttackActive = true
 	player.AttackTargetEntityID = enemyEntityID
 	return nil
+}
+
+func (s *Session) handleCastSkill(playerID uuid.UUID, skillID string, targetX, targetY float64) error {
+	playerEntityID, ok := s.playerIDToEntitiesID[playerID]
+	if !ok {
+		return fmt.Errorf("Player %s not found", playerID)
+	}
+
+	playerEntity, ok := s.EntityManager.GetEntity(playerEntityID)
+	if !ok {
+		return fmt.Errorf("Player entity %s does not exist", playerID)
+	}
+
+	playerC, hasPlayer := playerEntity.GetComponent(ecs.ComponentTypePlayer)
+	if !hasPlayer {
+		return fmt.Errorf("Player component missing")
+	}
+	player := playerC.(*components.PlayerComponent)
+
+	// 1. Class Check: Only Mage can cast Fireball
+	if player.Class != "mage" && player.Class != "Mage" {
+		slog.Warn("Non-Mage player attempted to cast Fireball", "playerID", playerID, "class", player.Class)
+		return fmt.Errorf("Only Mage class can cast Fireball")
+	}
+
+	// 2. Mana Check: Fireball costs 15 MP
+	manaC, hasMana := playerEntity.GetComponent(ecs.ComponentTypeMana)
+	if hasMana {
+		mana := manaC.(*components.ManaComponent)
+		if mana.CurrentMana < 15 {
+			slog.Warn("Not enough Mana for Fireball", "playerID", playerID, "currentMana", mana.CurrentMana)
+			return fmt.Errorf("Not enough Mana to cast Fireball")
+		}
+		mana.CurrentMana -= 15
+	}
+
+	tc, hasTrans := playerEntity.GetComponent(ecs.ComponentTypeTransform)
+	if !hasTrans {
+		return fmt.Errorf("Player entity has no transform component")
+	}
+	transform := tc.(*components.TransformComponent)
+
+	switch skillID {
+	case "fireball":
+		CreateFireballEntity(s.EntityManager, FireballConfig{
+			OwnerEntityID: playerEntity.ID,
+			StartX:        transform.X,
+			StartY:        transform.Y,
+			TargetX:       targetX,
+			TargetY:       targetY,
+			Damage:        25,
+			Speed:         350.0,
+			MaxDistance:   500.0,
+			Radius:        12.0,
+		})
+		slog.Info("Mage cast Fireball", "playerID", playerID, "startX", transform.X, "startY", transform.Y, "targetX", targetX, "targetY", targetY)
+		return nil
+	default:
+		return fmt.Errorf("Unknown skill_id: %s", skillID)
+	}
 }
 
 const (

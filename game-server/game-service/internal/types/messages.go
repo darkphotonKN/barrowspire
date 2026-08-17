@@ -28,6 +28,13 @@ type ClientPackage struct {
 	Conn    *websocket.Conn
 }
 
+type ProjectileState struct {
+	EntityID       uuid.UUID `json:"entity_id"`
+	ProjectileType string    `json:"projectile_type"`
+	Position       Position  `json:"position"`
+	Velocity       Velocity  `json:"velocity"`
+}
+
 // represents entire game state that client receives
 type ClientGameState struct {
 	SessionID     uuid.UUID          `json:"session_id"`
@@ -40,6 +47,7 @@ type ClientGameState struct {
 	EscapeDoor    []*EscapeDoorState `json:"escape_doors"`
 	Equipment     *EquipmentState    `json:"equipment"`
 	Switch        []*SwitchState     `json:"switches"`
+	Projectiles   []*ProjectileState `json:"projectiles"`
 	EscapedCount  int                `json:"escaped_count"`
 }
 
@@ -53,6 +61,7 @@ type BackendGameState struct {
 	EscapeDoor   []*EscapeDoorState
 	Equipment    *EquipmentState
 	Switch       []*SwitchState
+	Projectiles  []*ProjectileState
 	EscapedCount int
 }
 
@@ -110,6 +119,25 @@ func (m *Message) ParsePayload() (interface{}, error) {
 		slog.Debug("payload of action equip / unequip", "payload", parsedPayload)
 
 		return parsedPayload, nil
+
+	case constants.ActionCastSkill:
+		skillID, _ := m.Payload["skill_id"].(string)
+		targetX, _ := m.Payload["target_x"].(float64)
+		targetY, _ := m.Payload["target_y"].(float64)
+
+		parsedPayload := PlayerCastSkillPayload{
+			PlayerSessionPayload: PlayerSessionPayload{
+				SessionID: m.Payload["session_id"].(string),
+				PlayerID:  m.Payload["player_id"].(string),
+			},
+			SkillID: skillID,
+			TargetX: targetX,
+			TargetY: targetY,
+		}
+
+		slog.Debug("payload of action cast_skill", "payload", parsedPayload)
+
+		return parsedPayload, nil
 	default:
 		return nil, fmt.Errorf("No matching actions.")
 	}
@@ -164,4 +192,11 @@ type PlayerSectionAttackPayload struct {
 type PlayerEquipPayload struct {
 	PlayerSessionPayload
 	ItemEntityID string `json:"item_entity_id"`
+}
+
+type PlayerCastSkillPayload struct {
+	PlayerSessionPayload
+	SkillID string  `json:"skill_id"`
+	TargetX float64 `json:"target_x"`
+	TargetY float64 `json:"target_y"`
 }

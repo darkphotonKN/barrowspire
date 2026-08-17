@@ -312,6 +312,11 @@ export class MainMenuScene extends Phaser.Scene {
 
     // Create the Class Selector UI
     this.createClassSelector();
+
+    // Register scene shutdown listener to clear socket callbacks
+    this.events.once("shutdown", () => {
+      this.shutdown();
+    });
   }
 
   private createClassSelector(): void {
@@ -445,6 +450,7 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private drawButton(fill: number, stroke: number, glowColor?: number): void {
+    if (!this.cameras || !this.cameras.main) return;
     const width = this.cameras.main.width;
     const btnX = width / 2 - 110;
     const btnY = this.cameras.main.height / 2 + 115 - 25;
@@ -468,11 +474,23 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private handleConnectionStatusChange(status: ConnectionStatus): void {
-    if (!this.buttonBg || !this.startButtonText || !this.connectionStatusText) {
+    if (
+      !this.sys ||
+      !this.sys.settings ||
+      !this.sys.settings.active ||
+      !this.buttonBg ||
+      !this.startButtonText ||
+      !this.connectionStatusText
+    ) {
       return;
     }
 
     const hitArea = (this as Record<string, unknown>)._hitArea as Phaser.GameObjects.Rectangle | undefined;
+    const safeDisableInteractive = (area?: Phaser.GameObjects.Rectangle) => {
+      if (area && area.scene && area.scene.sys && area.input) {
+        area.disableInteractive();
+      }
+    };
 
     switch (status) {
       case "connected":
@@ -491,7 +509,7 @@ export class MainMenuScene extends Phaser.Scene {
       case "connecting":
         this.isConnected = false;
         this.drawButton(0x2a231b, 0x8a7d5c);
-        if (hitArea) hitArea.disableInteractive();
+        safeDisableInteractive(hitArea);
         this.startButtonText.setText("OPENING THE WAY...");
         this.startButtonText.setColor("#8a7d5c");
         this.connectionStatusText.setColor("#c2611f");
@@ -503,7 +521,7 @@ export class MainMenuScene extends Phaser.Scene {
           this.dotAnimation.destroy();
         }
         this.drawButton(0x2e1414, 0x6e1f1f, 0x6e1f1f);
-        if (hitArea) hitArea.disableInteractive();
+        safeDisableInteractive(hitArea);
         this.startButtonText.setText("SEALED");
         this.startButtonText.setColor("#6e1f1f");
         this.connectionStatusText.setText("The way is sealed // Refresh to retry");
@@ -516,7 +534,7 @@ export class MainMenuScene extends Phaser.Scene {
           this.dotAnimation.destroy();
         }
         this.drawButton(0x1c1712, 0x8a7d5c);
-        if (hitArea) hitArea.disableInteractive();
+        safeDisableInteractive(hitArea);
         this.startButtonText.setText("LOST");
         this.startButtonText.setColor("#8a7d5c");
         this.connectionStatusText.setText("The torch gutters // Refresh to retry");

@@ -18,6 +18,7 @@ import {
   DoorState,
   EquippedItems,
   EquipmentState,
+  ProjectileState,
 } from "@/types/gameState";
 import { EquipmentPanel } from "@/ui/EquipmentPanel";
 import { GameStateLogger } from "@/utils/gameStateLogger";
@@ -214,6 +215,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private currentChestItems: ItemState[] = [];
   private chestLootedAtMap = new Map<string, number>(); // entityId → loot 時間戳
   private canAttack = true;
+  private canCastSkill = true;
+  private projectileSprites: Map<string, Phaser.GameObjects.Container> = new Map();
   private readonly PENDING_DURATION = 1000; // 1 秒內不比對剛拿的物品
   private lastGameState?: ClientGameState;
 
@@ -264,7 +267,8 @@ export class BarrowspireScene extends Phaser.Scene {
       ["F", "Take Item"],
       ["I", "Equipment"],
       ["Q", "Close Panel"],
-      ["CLICK", "Attack Enemy"],
+      ["LEFT CLICK", "Melee Attack"],
+      ["RIGHT CLICK", "Fireball (Skill)"],
       ["ESC", "Main Menu"],
       ["H", "Toggle Controls"],
     ];
@@ -3040,6 +3044,30 @@ export class BarrowspireScene extends Phaser.Scene {
     // Disable browser right-click menu for equipment panel context menus
     this.input.mouse?.disableContextMenu();
 
+    // 右鍵觸發：法師火球術技能 (Cast Fireball)
+    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      if (pointer.rightButtonDown() || pointer.button === 2) {
+        if (!this.player || !this.canCastSkill) return;
+
+        socketManager.sendMessage(ActionType.CastSkill, {
+          skill_id: "fireball",
+          target_x: pointer.worldX,
+          target_y: pointer.worldY,
+        });
+
+        this.playFireballCastEffect(
+          this.player.x,
+          this.player.y,
+          pointer.worldX,
+          pointer.worldY,
+        );
+        this.canCastSkill = false;
+        this.time.delayedCall(500, () => {
+          this.canCastSkill = true;
+        });
+      }
+    });
+
     // Initialize equipment panel
     this.equipmentPanel = new EquipmentPanel(this);
     this.equipmentPanel.onEquip = (item, slot) => {
@@ -3228,6 +3256,9 @@ export class BarrowspireScene extends Phaser.Scene {
     // Update switches from server
     this.updateSwitches(state.switches || []);
 
+    // Update projectiles from server (fireballs)
+    this.updateProjectiles(state.projectiles || []);
+
     // 檢測狀態變化並顯示通知（避免重複）
     this.checkEscapeDoorStateChanges(state);
     this.checkPlayerEscapedState(state);
@@ -3237,6 +3268,86 @@ export class BarrowspireScene extends Phaser.Scene {
       const count = state.escaped_count ?? 0;
       this.escapedCountText.setText(`Escaped: ${count}`);
     }
+  }
+
+  private updateProjectiles(projectiles: ProjectileState[]): void {
+    const activeIds = new Set<string>();
+
+    for (const p of projectiles) {
+      activeIds.add(p.entity_id);
+      let container = this.projectileSprites.get(p.entity_id);
+
+      if (!container) {
+        // Create Fireball container
+        container = this.add.container(p.position.x, p.position.y);
+        container.setDepth(150);
+
+        // Fireball visual layers: outer glow, core, inner highlight
+        const outerGlow = this.add.circle(0, 0, 14, 0xff4500, 0.45);
+        const innerCore = this.add.circle(0, 0, 8, 0xffa500, 0.9);
+        const centerBright = this.add.circle(0, 0, 4, 0xffffff, 1.0);
+
+        container.add([outerGlow, innerCore, centerBright]);
+
+        // Pulsing animation for fireball core
+        this.tweens.add({
+          targets: innerCore,
+          scale: 1.25,
+          duration: 150,
+          yoyo: true,
+          repeat: -1,
+        });
+
+        this.projectileSprites.set(p.entity_id, container);
+      } else {
+        container.setPosition(p.position.x, p.position.y);
+      }
+    }
+
+    // Remove inactive projectiles (hit target or max range)
+    for (const [id, container] of this.projectileSprites.entries()) {
+      if (!activeIds.has(id)) {
+        this.playFireballExplosion(container.x, container.y);
+        container.destroy();
+        this.projectileSprites.delete(id);
+      }
+    }
+  }
+
+  private playFireballCastEffect(
+    startX: number,
+    startY: number,
+    targetX: number,
+    targetY: number,
+  ): void {
+    const angle = Phaser.Math.Angle.Between(startX, startY, targetX, targetY);
+    const flash = this.add.circle(
+      startX + Math.cos(angle) * 15,
+      startY + Math.sin(angle) * 15,
+      12,
+      0xffa500,
+      0.8,
+    );
+    flash.setDepth(160);
+    this.tweens.add({
+      targets: flash,
+      scale: 1.8,
+      alpha: 0,
+      duration: 180,
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  private playFireballExplosion(x: number, y: number): void {
+    const burst = this.add.circle(x, y, 16, 0xff4500, 0.8);
+    burst.setDepth(160);
+    this.tweens.add({
+      targets: burst,
+      scale: 2.2,
+      alpha: 0,
+      duration: 250,
+      onComplete: () => burst.destroy(),
+    });
   }
 
   private updateOtherPlayers(

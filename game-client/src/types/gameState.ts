@@ -105,6 +105,13 @@ export interface WallState {
   height: number;
 }
 
+export interface ProjectileState {
+  entity_id: UUID;
+  projectile_type: string;
+  position: Position;
+  velocity: { vx: number; vy: number };
+}
+
 // Complete game state received from server
 export interface ClientGameState {
   session_id: UUID;
@@ -116,6 +123,7 @@ export interface ClientGameState {
   containers: ContainerState[];
   escape_doors: EscapeDoorState[]; // Escape doors with lock state
   switches: SwitchState[]; // Switches/buttons for puzzles
+  projectiles?: ProjectileState[]; // Active projectiles in session
   escaped_count: number; // Number of players who have escaped
 }
 
