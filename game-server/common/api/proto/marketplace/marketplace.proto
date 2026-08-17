@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package marketplace;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace";
+
+// Wallet service definition for member gold accounts.
+service MarketplaceService {
+  // Get a member's account balance snapshot.
+  rpc ListItem(ListItemRequest) returns (ListItemResponse) {}
+}
+
+message Listing {
+  string id = 1;
+  string seller_id = 2;
+  string buyer_id = 3;
+  string item_id = 4;
+  int64 start_price = 5;
+  int64 soldPrice = 6;
+  string status = 7;
+  google.protobuf.Timestamp ends_at = 8;
+  google.protobuf.Timestamp create_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+
+}
+// ListItem
+// Empty by design: the member identity is derived from the authenticated
+// context server-side, never supplied by the caller.
+message ListItemRequest {
+  string item_id = 1;
+  int64 start_price = 2;
+  google.protobuf.Timestamp ends_at = 3; 
+}
+
+message ListItemResponse {
+  string id             = 1;
+  string item_id = 2;
+  int64 start_price = 3;
+  string seller_id = 4;
+  string status = 5;
+  google.protobuf.Timestamp ends_at = 8;
+  google.protobuf.Timestamp create_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}

@@ -3,18 +3,27 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
+	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/config"
-	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing"
+	appConfig "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/config"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 var (
@@ -65,9 +74,34 @@ func main() {
 
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
-	// --- grpc ---
-	grpcServer := grpc.NewServer()
+	// --- message broker - rabbit mq ---
+	ch, close := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
 
+	// Declare the items events exchange
+	broker.DeclareExchange(ch, commonconstants.ItemEventsExchange, "topic")
+
+	defer func() {
+		close()
+		ch.Close()
+	}()
+
+	// --- services setup ---
+	services := appConfig.NewServices(ctx, db, registry, ch)
+
+	// --- grpc ---
+
+	// -- middleware --
+	validate := commonauth.NewValidator([]byte(os.Getenv("JWT_SECRET")))
+
+	// -- server --
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			commoninterceptor.Recovery(slog.Default()),
+			commonauth.Auth(validate),
+		),
+	)
+	pb.RegisterMarketplaceServiceServer(grpcServer, services.ListingHandler)
+	reflection.Register(grpcServer)
 	// create a network listener to this service
 	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
 	if err != nil {
@@ -77,27 +111,23 @@ func main() {
 	}
 	defer listener.Close()
 
-	// --- message broker - rabbit mq ---
-	ch, close := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	broker.DeclareExchange(ch, listing.ListingCreatedEvent, "fanout")
-
-	defer func() {
-		close()
-		ch.Close()
-	}()
-
-	// NOTE: the listing domain (model/repository/service/handler + proto) is
-	// intentionally left empty for now. This service only boots the server and
-	// its amqp consumer. Wire the domain + pb.RegisterMarketplaceServiceServer
-	// here later, following example-service.
-	consumer := listing.NewConsumer(ch)
-	// start goroutine and listen to events from message broker
-	consumer.Listen()
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	log.Printf("grpc Marketplace Server started on PORT: %s\n", grpcAddr)
 
-	if err := grpcServer.Serve(listener); err != nil {
-		log.Fatal("Can't connect to grpc server. Error:", err.Error())
-	}
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			log.Fatal("Can't connect to grpc server. Error:", err.Error())
+		}
+	}()
+
+	<-quit
+
+	cancel()                    // 通知所有worker停止
+	grpcServer.GracefulStop()   // gRPC處理完目前正在執行的請求關閉
+	time.Sleep(2 * time.Second) // 延遲一點時間再關閉
 }

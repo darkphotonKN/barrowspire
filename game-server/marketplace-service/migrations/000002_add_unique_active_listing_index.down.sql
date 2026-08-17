@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_one_active_listing_per_item;

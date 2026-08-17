@@ -8,6 +8,7 @@ import (
 	authService "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/auth"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/example"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/item"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/listing"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
@@ -151,6 +152,26 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	// the seam never sees it, and the client gets a bare text/plain 404 with no
 	// `code`. Registered last because NoRoute is the fallback for everything above.
 	router.NoRoute(httperr.NotFoundHandler())
+
+	// --- LISTING MICROSERVICE ---
+
+	listingClient := listing.NewClient(registry)
+	listingHandler := listing.NewHandler(listingClient)
+
+	listingRoutes := api.Group("/listing")
+	// Private Routes - require authentication
+	listingRoutes.Use(auth.AuthMiddleware())
+	listingRoutes.POST("", listingHandler.CreateListingHandler)
+
+	// --- LISTING MICROSERVICE ---
+
+	listingClient := listing.NewClient(registry)
+	listingHandler := listing.NewHandler(listingClient)
+
+	listingRoutes := api.Group("/listing")
+	// Private Routes - require authentication
+	listingRoutes.Use(auth.AuthMiddleware())
+	listingRoutes.POST("", listingHandler.CreateListingHandler)
 
 	return router
 }

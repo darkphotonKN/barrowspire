@@ -3,9 +3,11 @@ package items
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
@@ -13,6 +15,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
+
+var ErrItemNotReservable = errors.New("item not reservable")
 
 type repository struct {
 	DB *sqlx.DB
@@ -837,7 +841,7 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 			attack_power, critical_rate, weapon_type,
 			defense_rating, magic_resistance, armor_slot,
 			healing_amount, mana_amount, buff_duration,
-			durability, description
+			durability, description, status
 		) VALUES `)
 
 	args := make([]any, 0, len(items)*colsPerRow)
@@ -853,9 +857,9 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 
 		base := i * colsPerRow
 		fmt.Fprintf(&b,
-			"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+			"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
 			base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10,
-			base+11, base+12, base+13, base+14, base+15, base+16, base+17, base+18,
+			base+11, base+12, base+13, base+14, base+15, base+16, base+17, base+18, base+19,
 		)
 
 		args = append(args,
@@ -877,6 +881,7 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 			item.BuffDuration,
 			item.Durability,
 			item.Description,
+			item.Status,
 		)
 	}
 
@@ -898,7 +903,8 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 			mana_amount      = EXCLUDED.mana_amount,
 			buff_duration    = EXCLUDED.buff_duration,
 			durability       = EXCLUDED.durability,
-			description      = EXCLUDED.description`)
+			description      = EXCLUDED.description
+			status           = EXCLUDED.status `)
 
 	_, err := tx.ExecContext(ctx, b.String(), args...)
 	if err != nil {
@@ -906,4 +912,111 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 	}
 
 	return nil
+}
+
+func (r *repository) ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error) {
+	query := `
+		UPDATE item_instances
+		SET status = 'LISTED',
+			updated_at = :updated_at
+			reserved_at = :reserved_at
+		WHERE id = :id
+		AND owner_member_id = :owner_member_id
+		AND status = 'AVAILABLE'
+		RETURNING
+			id,
+			template_id,
+			owner_member_id,
+			source,
+			status,
+			item_type,
+			name,
+			rarity_id,
+			attack_power,
+			critical_rate,
+			weapon_type,
+			defense_rating,
+			magic_resistance,
+			armor_slot,
+			healing_amount,
+			mana_amount,
+			buff_duration,
+			durability,
+			description,
+			acquired_at,
+			created_at,
+			updated_at,
+			reserved_at
+	`
+
+	args := ItemInstance{
+		ID:            itemID,
+		OwnerMemberID: sellerID,
+		Status:        "LISTED",
+		UpdatedAt:     updatedAt,
+		ReservedAt:    reservedAt,
+	}
+
+	slog.Info("ReserveItem args ", "ItemInstance", args)
+	rows, err := tx.NamedQuery(query, args)
+	if err != nil {
+		return nil, fmt.Errorf("reserve item: %w", err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		slog.Info("ReserveItem args ", "no row", 0)
+		// 没有任何資料被更新：item 不存在  or 状态不是 AVAILABLE
+		return nil, ErrItemNotReservable
+	}
+
+	var item ItemInstance
+	slog.Info("db item", "item", item)
+	if err := rows.StructScan(&item); err != nil {
+		return nil, fmt.Errorf("reserve item scan: %w", err)
+	}
+	return &item, nil
+}
+
+func (r *repository) ListStaleReserved(ctx context.Context, reservedBefore time.Time) ([]*uuid.UUID, error) {
+	query := `
+		SELECT id
+		FROM item_instances
+		WHERE status = 'LISTED'
+		  AND reserved_at IS NOT NULL
+		  AND reserved_at < $1
+		ORDER BY reserved_at
+		LIMIT 100
+	`
+	var itemIDs []*uuid.UUID
+	if err := r.DB.SelectContext(ctx, &itemIDs, query, reservedBefore); err != nil {
+		return nil, commonhelpers.WrapDBErr("item_instances", "ListStaleReservedItems", err)
+	}
+
+	return itemIDs, nil
+}
+
+func (r *repository) CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error) {
+	updatedAt := time.Now()
+	query := `
+		UPDATE item_instances
+		SET status = 'AVAILABLE',
+			reserved_at = NULL,
+			updated_at = $1
+		WHERE id = $2
+		AND status = 'LISTED'
+	`
+
+	res, err := r.DB.ExecContext(ctx, query, updatedAt, itemID)
+	if err != nil {
+		return false, commonhelpers.WrapDBErr("item_instances", "CancelReservation", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("cancel reservation, rows affected: %w", err)
+	}
+
+	// false没更新到（不存在、或不是 LISTED）
+	return n > 0, nil
 }
