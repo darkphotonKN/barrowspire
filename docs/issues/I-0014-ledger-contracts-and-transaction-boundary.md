@@ -46,16 +46,24 @@ files. Includes `DROP TABLE ledgers` (§Req 17).
 
 ## The three open questions land here
 
-FS-0003 §Open questions are **unsettled**, and this is the slice that settles them. Each
-changes an artifact above; none may be silently defaulted.
+Two of FS-0003's three open questions are still unsettled, and this is the slice that settles
+them. Each changes an artifact above; neither may be silently defaulted. **OQ3 is closed** — see
+below, and do not reopen it.
 
 - **OQ1 — the unique index excludes `amount`.** A retry with a corrected amount currently
   no-ops as success. Changes the DDL and the error set (a `LEDGER_CONFLICT` sentinel, or not).
 - **OQ2 — nothing enforces `transaction_id` uniqueness.** The recommendation is a
   `ledger_transactions` table, which **changes the DDL, both interfaces, and the slice 4 struct**.
   Settle before slice 3 or 4 start, or they get rewritten.
-- **OQ3 — `reason` / `reference_type` are bare TEXT.** Changes the DDL (CHECKs) and the proto
-  (enums are already drawn; the DB side is the open half).
+  → **Already chosen in code:** `000001_create_ledger_transactions_and_entries.up.sql` implements
+  the two-table shape. What remains is recording it — FS §Data model still shows the old
+  single-table DDL. Bring the FS to match what was built.
+- **OQ3 — the legal set of `reason`. → SETTLED, do not reopen.**
+  `SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`, enforced by both the proto enum and the DB
+  `CHECK`. FS §Requirements 5a and §Open questions 3 carry it. Only `SETTLE_AUCTION` has a caller
+  today; the rest are forward-declared so that recording a deposit or withdrawal later needs
+  **no schema change**. Building those verbs stays out of scope — recording their effects never
+  was. (`reference_type` was removed from the feature entirely.)
 
 ## Acceptance Criteria
 

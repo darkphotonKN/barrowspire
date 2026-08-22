@@ -56,13 +56,16 @@ If that stands, the keyset predicate spans a join, and the repository read signa
 that legible rather than hiding a correlated subquery. **Settle OQ2 in I-0014 before finalising
 these signatures**, or this slice gets rewritten.
 
-## Also settle: the `reason` vocabulary
+## The `reason` vocabulary — SETTLED, do not reopen
 
-The proto declares `enum Reason { REASON_UNSPECIFIED = 0; SETTLEMENT = 1; }`. The migration's
-`CHECK` declares `('SETTLE_AUCTION', 'DEPOSIT', 'WITHDRAW', 'TRANSFER')`. They share no values,
-and two of the DDL's are explicitly out of scope in the FS. The read response echoes `reason`, so
-this cannot stay unresolved past this slice. It belongs to I-0014; flag it there if it is still
-open when you start.
+`SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`. The proto enum matches the migration's
+`CHECK`; FS-0003 §Requirements 5a and §Open questions 3 record it.
+
+Only `SETTLE_AUCTION` has a caller today. The other three are **forward-declared on purpose** —
+building the deposit/withdraw/transfer *verbs* is out of scope, but **recording their effects
+needs no ledger change**, which is why the set is closed now rather than grown later. The read
+response echoes `reason` as a plain string; it does not validate against the set (the write path
+already did).
 
 ## Acceptance Criteria
 

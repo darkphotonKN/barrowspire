@@ -49,6 +49,22 @@ paragraph above rules out.
 5. **A settlement of N bids produces exactly two rows**, independent of N. The 46 losing bids of
    a 47-bid auction release their holds and leave no trace here. The ledger records movement,
    not the auction.
+5a. **The `reason` vocabulary is forward-declared, and the ledger needs no change to record any
+   of it.** The legal set is `SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`, closed by a DB
+   `CHECK` and by the proto enum. Only `SETTLE_AUCTION` has a caller today.
+
+   The distinction that matters, and the one this spec previously blurred: **building the
+   deposit and withdraw verbs is out of scope; recording their effects is not.** A movement is a
+   movement. When wallet-service grows those verbs, they append here under their own `reason`
+   with **no schema change, no migration, and no new RPC** — which is the point of closing the
+   set now rather than after the fact.
+
+   The only constraint on them is the one every transaction has: **two legs that sum to zero**
+   (requirements 7–8). Gold entering or leaving the economy has no natural counterparty, so the
+   **caller** must supply an `account_id` for the other leg — a system or mint account. Because
+   the ledger never looks an account up (requirement 15), it records that id without knowing or
+   caring what it is. **Whose account that is, and whether it exists, is wallet-service's
+   question, not this service's.** The ledger is ready; the counter-account is what is missing.
 
 **Balance and sign**
 
@@ -331,7 +347,13 @@ service LedgerService {
 }
 
 enum Direction { DIRECTION_UNSPECIFIED = 0; DEBIT = 1; CREDIT = 2; }
-enum Reason    { REASON_UNSPECIFIED = 0; SETTLEMENT = 1; }
+enum Reason {
+  REASON_UNSPECIFIED = 0;
+  SETTLE_AUCTION     = 1;  // the winning bid pays; the only reason with a caller today
+  DEPOSIT            = 2;  // forward-declared — see requirement 5a
+  WITHDRAW           = 3;  // forward-declared — see requirement 5a
+  TRANSFER           = 4;  // forward-declared — see requirement 5a
+}
 ```
 
 ### Write path — `AppendLedgerTx` (gRPC only)
@@ -518,17 +540,23 @@ per `(transaction_id, currency)` at commit. That is the one place the database c
 service-layer bug in the invariant this service exists to protect.
 
 **3. Should the legal set of `reason` be closed at the schema level, in the type system, or
-both?**
+both? — SETTLED.**
 
-> Narrowed by amendment: this question originally covered `reference_type` as well, which has
-> since been removed from the feature entirely. Only `reason` remains open.
+> This question originally covered `reference_type` too, which has since been removed from the
+> feature entirely.
 
-*Recommendation:* both. The proto enum plus a Go value type is the real enforcement, because it
-sits where bad input actually arrives. A `CHECK` on `reason` is consistent with this schema's own
-precedent — `direction`
-already has one — at the cost of a migration per new reason, which must land before the code that
-emits it. In an append-only financial table that ordering constraint is arguably a feature: a new
-economic reason should be a deliberate, versioned event.
+**Answer: both, and the set is `SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`** — a proto
+enum and a DB `CHECK`, matching. Recorded in requirement 5a; the `CHECK` is already in
+`000001_create_ledger_transactions_and_entries.up.sql`.
+
+The set is **closed now and forward-declared**, rather than added one value at a time as callers
+appear. The cost of closing it early — a migration per new reason, landing before the code that
+emits it — is real, and in an append-only financial table it is a feature: a new economic reason
+becomes a deliberate, versioned event rather than a string someone typed. The benefit is that
+deposits, withdrawals, and transfers need **no ledger change at all** when their verbs get built.
+
+The proto enum and Go value type are the enforcement that matters, because they sit where bad
+input arrives. The `CHECK` is the backstop, consistent with `direction`'s existing precedent.
 
 ## Known gap — the write path is not durable yet
 
@@ -594,9 +622,15 @@ ADRs name them rather than resolving them.
 
 ## Out of Scope
 
-- **Deposits and withdrawals.** They need a system or mint account or conservation breaks. When
-  built, they are recorded — but not here.
-- **System / mint accounts.** The prerequisite for the above.
+- **The deposit, withdraw, and transfer *verbs*.** Building those operations is wallet-service's
+  work and is not in this feature. **Recording their effects is not out of scope** — their
+  `reason` values are already in the enum and the `CHECK`, and requirement 5a says they append
+  here with no schema change when their callers exist. The earlier wording of this bullet
+  conflated the verb with the record; they are different things and only the verb is excluded.
+- **System / mint accounts.** The counter-account a deposit or withdrawal needs on its other leg,
+  so the transaction sums to zero. **Its absence blocks the caller, not the ledger** — this
+  service records whatever balanced legs it is handed and never resolves an `account_id`
+  (requirement 15). Deciding who owns that account belongs to wallet-service.
 - **The settlement saga itself.** Its orchestration, its pivot, and its compensation steps live
   in marketplace-service and wallet-service. This feature only depends on the *ordering* the saga
   guarantees (requirement 2); it does not implement or specify it.
