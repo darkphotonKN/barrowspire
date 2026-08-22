@@ -72,9 +72,12 @@ paragraph above rules out.
    convention.
 7. **Legs sharing a `transaction_id` sum to zero**, treating `DEBIT` as negative and `CREDIT` as
    positive. Enforced in the service layer before the write, not by the database.
-8. **A transaction has at least two legs**, and **all its legs share one currency.** Sum-to-zero
-   across mixed currencies is meaningless; with `GOLD` the only currency today this is trivially
-   true, and it must stay enforced so it is still true when it stops being trivial.
+8. **A transaction has at least two legs**, and **is denominated in exactly one currency.**
+   Sum-to-zero across mixed currencies is meaningless. `currency` sits on the transaction, not
+   the leg, so this is **structural, not validated** — there is no per-leg value that could
+   disagree, and the violation is unrepresentable rather than merely rejected. With `GOLD` the
+   only currency today the rule is trivially satisfied; the shape is what keeps it true when it
+   stops being trivial.
 
 **Append-only**
 
@@ -92,8 +95,19 @@ paragraph above rules out.
     receive `OK` with an indication that nothing new was written. The error is removed rather
     than propagated, because at-least-once delivery makes duplicates the normal path rather than
     an exceptional one.
-13. Idempotency is enforced by a unique index, so two concurrent identical posts cannot both
-    write. The service layer never decides this by reading first and then writing.
+13. **Idempotency is enforced by the parent's primary key** — `ledger_transactions.transaction_id`
+    — and by nothing else. The append does `ON CONFLICT DO NOTHING` on the parent insert;
+    **0 rows affected means already recorded**, so the service returns success (requirement 12)
+    and skips the legs. Two concurrent identical posts cannot both write, because the PK
+    serialises them. The service layer never decides this by reading first and then writing.
+
+    **The caller's `transaction_id` derivation is a contract, not an implementation detail.**
+    A deterministic UUIDv5 over the economic event's identifying facts is only idempotent if
+    that derivation is **permanently stable**. Changing the namespace, the input fields, or their
+    order re-mints ids for events the ledger already holds, and every one of them appends a second
+    time — silently, as a valid new transaction. This is the one caller-side change that can
+    corrupt an append-only record with no error surfacing anywhere, so it is versioned and
+    reviewed like a schema change, not refactored.
 
 **Boundaries**
 
@@ -149,11 +163,16 @@ paragraph above rules out.
     an append-only table takes inserts underneath a reader, and offset paging silently skips or
     repeats rows when it does. This is the repo's first keyset pager; the existing leaderboard's
     limit/offset is deliberately not the precedent followed.
-24. **Identity and role come from the verified token, never from a parameter.** Zero-trust per
-    service: the gateway does not decide authorization on ledger-service's behalf, and
-    ledger-service does not trust a caller's claim about who it is. An `account_id` in the query
-    is *which account to look at*, never an assertion of *who is asking* — the same distinction
-    requirement 16 draws on the write path.
+24. **Identity, role, and the caller's own `account_id` come from the verified token, never from a
+    parameter.** Zero-trust per service: the gateway does not decide authorization on
+    ledger-service's behalf, and ledger-service does not trust a caller's claim about who it is.
+
+    **`account_id` now appears on both sides of that line, and the distinction is the whole
+    rule:** as a *token claim* it is **who is asking** and is trusted; as a *query parameter* it
+    is **which account to look at** and is never an assertion of identity. They are different
+    inputs that happen to share a name and a type — which is exactly why requirement 25 refuses
+    the parameter outright for a member rather than comparing it against the claim. The same
+    distinction requirement 16 draws on the write path.
 25. **A member sees only their own entries, and asking about another account is refused, not
     filtered.** `account_id` present with `role=member` returns `FORBIDDEN`. Silently narrowing
     it to an empty result would leave a working existence oracle for account ids; targeted
@@ -163,13 +182,27 @@ paragraph above rules out.
     involving someone else happened. Existence is the secret here, which is what earns the
     ambiguity — this is not the default posture for the platform, and requirement 25's refusal
     is deliberately the louder `403` because there the secret is nothing.
-27. **A member's own account is resolved from wallet-service, not from the ledger.** The gateway
-    resolves the caller to an `account_id` via `wallet.GetAccount` before calling ledger-service,
-    so requirement 15 holds: the ledger gains no account records, no member column, and no
-    lookup. **Both** operations need this for a member — `listEntries` to scope the query, and
-    `getTransaction` to evaluate requirement 26's "has no leg of theirs" — so both are two hops
-    for a member and one for an admin. A resolution failure is a `503`, not an empty result:
-    the ledger's answer is unknown, not empty.
+27. **A member's `account_id` arrives as a verified token claim.** There is no resolution step and
+    no call to wallet-service. The gateway extracts `account_id` from the token the same way it
+    extracts identity, and passes it down; both operations use it — `listEntries` to scope the
+    query, `getTransaction` to evaluate requirement 26's "has no leg of theirs". **One hop, for
+    members and admins alike.**
+
+    The claim exists **because of** requirement 15, not in spite of it. The ledger holds no
+    account records and must never look one up; putting the account on the token is what lets the
+    read path be account-scoped without the ledger learning what an account is. A synchronous
+    wallet lookup would have bought the same scoping at the cost of a round trip on every page,
+    plus a new failure mode on a read path that otherwise has none.
+
+    Signup creates the member and their account together, so the claim is **always present and
+    immutable** for a member. As with requirement 29's `role`, this feature builds the seam that
+    reads the claim; **minting it belongs to the auth feature.**
+
+    > **Accepted tradeoff: one account per member, per currency.** A singular `account_id` claim
+    > is only correct while a member has exactly one account. A second currency — or any second
+    > account — makes the claim ambiguous and forces either a claim carrying a set, or the wallet
+    > lookup this requirement just removed. **That is the trigger to revisit**, and it is the same
+    > trigger requirement 8's one-currency-per-transaction rule is waiting on.
 28. **`role=admin` with `account_id` scopes to that account; without it, the listing is
     unscoped.** The unscoped form is the reconciliation and incident path. It remains a paged
     listing of rows and never becomes an aggregate (requirement 20).
@@ -268,8 +301,8 @@ paragraph above rules out.
       once — proven by a test that appends a transaction mid-page and asserts no row is skipped
       or repeated
 - [ ] `next_cursor` is absent, not null, on the final page
-- [ ] A member paging without `account_id` sees only their own entries, resolved through
-      `wallet.GetAccount`
+- [ ] A member paging without `account_id` sees only their own entries, scoped by the
+      `account_id` token claim
 - [ ] A member supplying `account_id` receives `403 · FORBIDDEN`
 - [ ] A member requesting a transaction with no leg of theirs receives `404 · NOT_FOUND`, and the
       response is byte-identical to one for a transaction id that does not exist
@@ -288,9 +321,9 @@ paragraph above rules out.
   Today's index makes this a silent no-op success. See [Open questions](#open-questions).
 - **Two different economic events are given the same `transaction_id`** → **open question 2**.
   Nothing currently detects it, and sum-to-zero would silently break across the pair.
-- **A duplicate arrives while the original is still committing** → the unique index serialises
-  them; the loser sees a unique violation and translates it to the requirement 12 no-op, rather
-  than surfacing a conflict.
+- **A duplicate arrives while the original is still committing** → the parent's **primary key**
+  serialises them. The loser's `ON CONFLICT DO NOTHING` affects 0 rows and becomes the
+  requirement 12 no-op, rather than surfacing a conflict.
 - **The caller retries after the ledger committed but before the response arrived** → recorded
   once, second call is a no-op success. This is the case requirement 11's determinism exists for.
 - **wallet-service commits a balance change and the ledger append then fails** → the ledger is
@@ -309,9 +342,13 @@ paragraph above rules out.
   This is a reconciler finding, not a write-time error.
 - **`reason` carries a value the service does not know** → **open question 3**. Bare `TEXT`
   accepts it today.
-- **A member pages their history and holds no wallet account** → `wallet.GetAccount` has nothing
-  to resolve, so the listing is empty rather than an error. Having no account is a legitimate
-  state for a member who has never transacted.
+- **A member holds no account** → **no longer reachable.** Signup creates the member and their
+  account together, so the `account_id` claim is always present (requirement 27). Kept on record
+  rather than deleted: it becomes reachable again the moment a member can exist without an
+  account, or hold more than one — the same trigger as requirement 27's one-account tradeoff.
+- **A member's token carries no `account_id` claim** → `401 · UNAUTHENTICATED`. Fail closed: a
+  token missing a claim the contract requires is not a member with no history, it is a token this
+  service cannot authorize. Never degrade to an empty listing.
 - **A transaction is appended while a reader is mid-page** → the keyset cursor means the new row
   is simply not seen by that pass; no row is skipped or repeated, which is the failure offset
   paging would have (requirement 23).
@@ -366,6 +403,7 @@ metadata, never the body (requirement 16).
 | `transaction_id` | `string` (UUID) | Caller-minted, deterministic. The idempotency key. |
 | `reason` | `Reason` | Transaction-level. `UNSPECIFIED` is refused. |
 | `reference_id` | `string` (UUID) | Transaction-level. The originating event — today, wallet-service's `bid_id`. |
+| `currency` | `string` | Transaction-level. Optional; defaults to `GOLD`. |
 | `legs` | `repeated LedgerLeg` | Min 2. Leg-level facts only. Proto-side name; see the transport-type table under the read path for the HTTP-side names. |
 
 **`LedgerLeg`**
@@ -375,11 +413,15 @@ metadata, never the body (requirement 16).
 | `account_id` | `string` (UUID) | Soft reference to `wallet-service.accounts.id`. |
 | `direction` | `Direction` | Carries the sign. |
 | `amount` | `int64` | Strictly positive. |
-| `currency` | `string` | Optional; defaults to `GOLD`. Must match across legs. |
 
 > The split is deliberate and mirrors the schema: **transaction-level facts sit outside the
-> slice, leg-level facts inside.** `reason` and `reference_id` describe the event;
+> slice, leg-level facts inside.** `reason`, `reference_id`, and `currency` describe the event;
 > `account_id`, `direction`, and `amount` describe one side of it.
+>
+> **`currency` moved off the leg**, and that is what makes requirement 8's one-currency-per-
+> transaction rule **structural rather than validated**. With one field on the parent there is no
+> per-leg value to disagree, so "all legs share a currency" stops being a check that could be
+> forgotten and becomes a shape that cannot express the violation.
 
 **`AppendLedgerTxResponse`**
 
@@ -407,9 +449,10 @@ in `internal/ledger/grpc/handler.go`.
 
 ### Read path — `getTransaction` and `listEntries` (HTTP via the gateway)
 
-Paths are gateway HTTP. Each maps to one gRPC call into ledger-service, except `listEntries`
-for a member, which resolves the caller's account through `wallet.GetAccount` first
-(requirement 27). Payloads are bare — no envelope (requirement 31).
+Paths are gateway HTTP. **Each maps to exactly one gRPC call into ledger-service** — identity,
+role, and the caller's own `account_id` all arrive as verified token claims, so no operation
+makes a second downstream call to resolve anything (requirement 27). Payloads are bare — no
+envelope (requirement 31).
 
 | Op | Method + Path | Query/Params | Request body | Response | Errors |
 |---|---|---|---|---|---|
@@ -446,7 +489,8 @@ called three things across three layers.
 
 | Layer | Package | Type | Notes |
 |---|---|---|---|
-| persistence | `ledger-service/internal/ledger` | **`LedgerEntry`** | The row as stored. Matches `ledger_entries`. Owned by I-0017. **Never serialized** (requirement 31). |
+| persistence | `ledger-service/internal/ledger` | **`LedgerTransaction`** | The parent row as stored. Matches `ledger_transactions`. **Never serialized** (requirement 31). |
+| persistence | `ledger-service/internal/ledger` | **`LedgerEntry`** | The leg row as stored. Matches `ledger_entries`. Owned by I-0017. **Never serialized** (requirement 31). |
 | transport | `api-gateway/internal/gateway/ledger` | **`Entry`** | One flattened history row — the `entries[]` member. |
 | transport | same | **`EntryPage`** | The `listEntries` response: `entries[]` plus `next_cursor`. |
 | transport | same | **`Transaction`** | The `getTransaction` response, nesting `legs[]`. |
@@ -479,65 +523,113 @@ is deliberately indistinguishable from absence.
 
 ## Data model
 
+Two tables. **Transaction-level facts live on the parent; leg-level facts live on the child** —
+the same split the `AppendLedgerTx` request draws, so the schema and the contract agree instead
+of the schema denormalising every parent fact onto every leg.
+
 ```sql
+CREATE TABLE ledger_transactions (
+    -- caller-supplied and deterministic; the ledger never mints one, and there is
+    -- no DEFAULT here on purpose (requirement 11)
+    transaction_id UUID        PRIMARY KEY,
+    reason         TEXT        NOT NULL,
+    reference_id   UUID        NOT NULL,
+    currency       TEXT        NOT NULL DEFAULT 'GOLD',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT reason_valid   CHECK (reason IN ('SETTLE_AUCTION','DEPOSIT','WITHDRAW','TRANSFER')),
+    CONSTRAINT currency_valid CHECK (currency IN ('GOLD'))
+);
+
 CREATE TABLE ledger_entries (
-    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    transaction_id  UUID        NOT NULL,
-    account_id      UUID        NOT NULL,
-    direction       TEXT        NOT NULL,
-    amount          BIGINT      NOT NULL,
-    currency        TEXT        NOT NULL DEFAULT 'GOLD',
-    reason          TEXT        NOT NULL,
-    reference_id    UUID        NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id UUID        NOT NULL REFERENCES ledger_transactions(transaction_id),
+    account_id     UUID        NOT NULL,
+    direction      TEXT        NOT NULL,
+    amount         BIGINT      NOT NULL,
+    -- duplicated from the parent deliberately: it is what lets the history sort
+    -- and page without a join. See the note below.
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT amount_positive CHECK (amount > 0),
     CONSTRAINT direction_valid CHECK (direction IN ('DEBIT','CREDIT'))
 );
-CREATE INDEX ON ledger_entries (account_id, created_at DESC);
+
+-- "what moved in this window" — reconciliation scans by time
+CREATE INDEX ON ledger_transactions (created_at);
+-- "what did this bid produce" — tracing an event back to its record
+CREATE INDEX ON ledger_transactions (reference_id);
+-- the read path's primary index: scoped history, sorted and paged, no join
+CREATE INDEX ON ledger_entries (account_id, created_at, id);
+-- the unscoped admin listing, same sort key
+CREATE INDEX ON ledger_entries (created_at, id);
+-- the FK join, and "give me both legs of this transaction"
 CREATE INDEX ON ledger_entries (transaction_id);
-CREATE UNIQUE INDEX ON ledger_entries (reason, reference_id, account_id, direction);
 ```
 
+**`created_at` is duplicated onto the leg on purpose.** It is a transaction-level fact, so
+normalising it away would be the textbook call — and it would put a join inside the keyset
+predicate of every history page. The duplicate is written once by an append-only table that
+never updates, so the usual cost of denormalisation (two copies drifting) cannot occur here.
+This is what makes `(account_id, created_at, id)` serve the read path directly.
+
+**There are no unique constraints beyond the two primary keys, and that is deliberate.**
+`transaction_id` — the parent's PK, caller-supplied, no `DEFAULT` — is the *sole* idempotency
+guard (requirement 13, open question 1). Every richer natural key that was considered turned out
+to encode a domain rule that real operations break; see [Open questions](#open-questions) and
+[Rejected alternatives](#rejected-alternatives).
+
 The migration that creates this also **drops `ledgers`** (requirement 17). Per-column detail
-belongs in `game-server/ledger-service/docs/schema/ledger_entries.md`, replacing the existing
-`ledgers.md`.
+belongs in `game-server/ledger-service/docs/schema/`, replacing the existing `ledgers.md`.
 
 ## Open questions
 
-These were explicitly **not settled** during scoping. Each has a recommendation, and each is
-resolvable within one slice — but none should be silently defaulted during implementation.
+**All three are RESOLVED.** They are kept here, rewritten as decisions, because the reasoning is
+what stops them being reopened — and two of them were reopened once already. Nothing in this
+section is still a choice.
 
-**1. The unique index excludes `amount`. Is a corrected-amount retry a duplicate, or a bug we
-are making invisible?**
+**1. Is there a natural key for a transaction? — RESOLVED: no, and there must not be.**
 
-`(reason, reference_id, account_id, direction)` identifies the *fact*; `amount` is its *content*.
-A retry carrying a different amount is therefore not a duplicate — it is a **contradiction**, and
-today it silently no-ops as a success while the ledger keeps the first (possibly wrong) amount.
+Scoping assumed a four-column unique index, `(reason, reference_id, account_id, direction)`,
+identifying the *fact* while `amount` carried its *content*. The question was what to do about a
+retry carrying a corrected amount.
 
-*Recommendation:* keep the index as-is and make the no-op **conditional on agreement** — on
-conflict, read the existing legs and compare. Identical → no-op success (requirement 12).
-Different → hard error. Adding `amount` to the index is the wrong fix: it makes both rows
-insertable and breaks conservation. A ledger built to detect wrong flows must not silently absorb
-a contradictory restatement of a fact it already holds.
+**The answer is that the premise was wrong.** That index is not a uniqueness constraint, it is a
+**domain rule in disguise** — it asserts that one account can be debited at most once per
+reference for a given reason. Real operations break that assertion routinely:
 
-**2. Nothing enforces `transaction_id` uniqueness. Caller's problem by design, or a missing check?**
+- a **partial refund** against the same reference
+- a **second fee** on one settlement
+- an **admin adjustment** touching an account already involved
 
-Two idempotency keys currently coexist: `transaction_id` (caller-minted, deterministic) and the
-four-column unique index. If the first is deterministic it is a function of the second, so they
-are redundant — and redundancy with no consistency check is where question 1's bug hides.
+Each is legitimate, and each collides. A constraint that a correct operation violates is a bug
+that surfaces in production as a mysterious duplicate error.
 
-*Recommendation:* promote the transaction to its own row —
-`ledger_transactions (id PK, reason, reference_id, created_at, UNIQUE(reason, reference_id))`,
-with `ledger_entries.transaction_id` referencing it and
-`UNIQUE(transaction_id, account_id, direction)` on the legs. Two different transactions sharing
-an id then becomes a PK violation rather than an undetected corruption, question 1 gains a row to
-compare against, and the schema stops contradicting the `AppendLedgerTx` signature by
-denormalising transaction-level facts onto every leg.
+**Decision: `transaction_id` — the parent's primary key — is the sole idempotency guard.** The
+append does `ON CONFLICT DO NOTHING` on the parent insert; **0 rows affected means already
+recorded**, so the service returns success (requirement 12) and skips the legs entirely. One
+guard, at one place, enforced by the database.
 
-*Also worth deciding here:* requirement 7 puts sum-to-zero in the service layer. Postgres can
-enforce it directly with a `DEFERRABLE INITIALLY DEFERRED` constraint trigger summing signed legs
-per `(transaction_id, currency)` at commit. That is the one place the database can catch a
-service-layer bug in the invariant this service exists to protect.
+The corrected-amount case dissolves with the premise: a caller re-deriving the same
+`transaction_id` for a genuinely different movement is a caller bug, and requirement 13's
+stability rule is what prevents it.
+
+**2. Should the transaction be its own row? — RESOLVED: yes, two tables.**
+
+`ledger_transactions` parent, `ledger_entries` legs, per §Data model. Transaction-level facts
+stop being denormalised onto every leg, and the schema now matches the `AppendLedgerTx`
+signature instead of contradicting it.
+
+**But not the unique constraints the original recommendation proposed.** Neither
+`UNIQUE(reason, reference_id)` nor `UNIQUE(transaction_id, account_id, direction)` is created —
+both are the same mistake as question 1's index, one level up. The parent's PK is
+`transaction_id`, caller-supplied, **with no `DEFAULT`**, and it is the only uniqueness the
+schema asserts.
+
+*Noted but not adopted:* requirement 7 puts sum-to-zero in the service layer, and Postgres could
+enforce it with a `DEFERRABLE INITIALLY DEFERRED` constraint trigger summing signed legs per
+`(transaction_id, currency)` at commit. That remains the one place the database could catch a
+service-layer bug in this service's central invariant. Not built here.
+
+**3. Should the legal set of `reason` be closed at the schema level, in the type system, or
 
 **3. Should the legal set of `reason` be closed at the schema level, in the type system, or
 both? — SETTLED.**
@@ -619,6 +711,15 @@ ADRs name them rather than resolving them.
   read-modify-write for OCC to protect.
 - **Adding `amount` to the unique index** (as the fix for open question 1) — rejected: it makes
   both the wrong and the corrected leg insertable, which breaks conservation outright.
+- **The four-column unique index itself** — `(reason, reference_id, account_id, direction)`,
+  rejected once the question above was examined properly. It is not a uniqueness constraint but a
+  **domain rule wearing one's clothes**: it asserts an account can be debited at most once per
+  reference per reason. Partial refunds, a second fee on one settlement, and admin adjustments all
+  break that assertion legitimately, and each would surface as an unexplained duplicate error in
+  production. `transaction_id` alone carries idempotency (open question 1).
+- **`UNIQUE(reason, reference_id)` on the parent, and `UNIQUE(transaction_id, account_id,
+  direction)` on the legs** — the shape open question 2 originally recommended. Rejected for the
+  same reason one level up: both encode domain assertions that correct operations violate.
 
 ## Out of Scope
 
@@ -649,9 +750,13 @@ ADRs name them rather than resolving them.
   marks them `[ ]`). The ledger's caller does not exist yet; this feature builds the callee.
 - **An HTTP surface for the write path.** `AppendLedgerTx` stays gRPC service-to-service
   (requirement 19). The read path's HTTP surface is in scope; the write path's is not.
-- **Issuing the `role` claim.** This feature reads `role` from verified token metadata and scopes
-  by it (requirement 29). Minting the claim, and auth-service's contract for it, belong to a
-  separate feature.
+- **Issuing the `role` and `account_id` claims.** This feature reads both from verified token
+  metadata and scopes by them (requirements 27, 29). Minting them — auth-service's contract, the
+  signup flow that creates a member and their account together, and the token's shape — belongs to
+  a separate feature. This feature builds only the seam that consumes them.
+- **Resolving a member to more than one account.** Requirement 27's singular `account_id` claim
+  assumes one account per member per currency. Supporting a set of accounts, or a second currency,
+  is out of scope and is the named trigger to revisit both that requirement and requirement 8.
 - **Filtering `listEntries` by `reference_id`.** Worth noting the argument for it so it is not
   re-derived: with reversals gone, one settlement is one transaction, so today
   `getTransaction` already answers *"what happened to this bid"* once you have the id. A filter

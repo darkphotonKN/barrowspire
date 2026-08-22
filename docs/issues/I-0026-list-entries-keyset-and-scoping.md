@@ -33,10 +33,15 @@ transport-type table, in `api-gateway/internal/gateway/ledger`:
 **The keyset pager** (§Req 23) — over `(created_at, id)` **descending, newest first**. Direction
 is contract, not preference: it decides which way the cursor's comparison runs.
 
-> **`created_at` may not be on the row you are paging.** Under OQ2's two-table shape it is a
-> transaction-level fact on the parent, deliberately absent from `ledger_entries`. The predicate
-> then spans the join, and the index that serves it must actually be used — check the plan, do
-> not assume. If I-0014 settled OQ2 differently, follow that.
+> **`created_at` is on `ledger_entries`, and the predicate needs no join.** It is a
+> transaction-level fact **duplicated onto the leg deliberately** (FS-0003 §Data model), which is
+> exactly what lets `(account_id, created_at, id)` serve a scoped history page directly. The
+> normal objection to denormalising — two copies drifting — cannot happen in a table that never
+> updates.
+>
+> The unscoped admin listing uses `(created_at, id)` for the same reason. **Verify the planner
+> actually picks these indexes** rather than assuming it does; that is the acceptance criterion
+> below, not a nicety.
 
 `next_cursor` is **absent on the final page**, not present-and-null (§API surface). A client
 loops while the field is there.
@@ -47,7 +52,7 @@ loops while the field is there.
 
 | Caller | `account_id` param | Result |
 |---|---|---|
-| member | absent | own entries only, resolved via `wallet.GetAccount` |
+| member | absent | own entries only, scoped by the `account_id` token claim |
 | member | present | **`403 · FORBIDDEN`** — refused, never narrowed to empty |
 | admin | present | that account's entries |
 | admin | absent | unscoped — every entry, paged |
@@ -85,13 +90,14 @@ it needs no count — offset paging's total is the exact thing that would smuggl
 
 - I-0023 — the cursor encoding and the repository read signature
 - I-0024 — the gateway's ledger client
-- I-0025 — the `ledger` typed package, `guard`, `Protected`, and the `wallet.GetAccount` helper
+- I-0025 — the `ledger` typed package, `guard`, `Protected`, and the claim plumbing
 
 ## Spec Reference
 
 FS-0003 §API surface (the `listEntries` row, the `entries[]` table, `next_cursor`, the
 error-semantics table), §Requirements 20 (no aggregates), 23 (keyset, descending, offset
-refused), 25 (member refusal), 27 (wallet resolution), 28 (admin scoping). Governed by ADR-0005.
+refused), 25 (member refusal), 27 (`account_id` as a token claim), 28 (admin scoping). Governed
+by ADR-0005.
 
 ## TDD Approach
 

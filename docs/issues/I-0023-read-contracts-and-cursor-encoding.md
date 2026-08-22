@@ -46,15 +46,16 @@ Keyset over `(created_at, id)` descending (§Req 23). Decide and write down:
 > it later invalidates every cursor in flight, and there is no version negotiation on a query
 > param. Decide it deliberately now rather than discovering it in slice 13.
 
-## Where `created_at` lives, and why it matters here
+## Where `created_at` lives — SETTLED, and it shapes the read signature
 
-FS-0003 §Data model still shows the pre-OQ2 single-table DDL with `created_at` on the entry. The
-migration actually on disk implements OQ2's two-table shape, where **`created_at` is a
-transaction-level fact on the parent and deliberately absent from `ledger_entries`**.
+**`created_at` is on `ledger_entries`, duplicated from the parent on purpose** (FS-0003 §Data
+model). Normalising it away would be the textbook call and would put a join inside the keyset
+predicate of every history page. Because the table is append-only and never updates, the usual
+cost of duplication — two copies drifting — cannot occur.
 
-If that stands, the keyset predicate spans a join, and the repository read signature has to make
-that legible rather than hiding a correlated subquery. **Settle OQ2 in I-0014 before finalising
-these signatures**, or this slice gets rewritten.
+The consequence for this slice: **the read signatures page `ledger_entries` alone.** No join, no
+correlated subquery. `(account_id, created_at, id)` serves a scoped history; `(created_at, id)`
+serves the unscoped admin listing. The cursor encodes that sort key and nothing else.
 
 ## The `reason` vocabulary — SETTLED, do not reopen
 

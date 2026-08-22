@@ -24,7 +24,8 @@ One operation, every layer: `GET /api/ledger/transactions/{transaction_id}`.
 - **Gateway typed operation** — the `ledger` group's first Huma op.
 
 This slice also **creates the gateway's `ledger` typed package**, which slice 13 reuses: the
-`guard` wrapper, `Protected` + the identity bridge, and the `wallet.GetAccount` hop helper.
+`guard` wrapper, and `Protected` + the identity bridge, extended to carry the `account_id` and
+`role` claims through to the typed handler.
 Follow `internal/gateway/item/typed.go` for shape — but **not for envelopes**: §Req 31 says bare
 payloads, and the item group's `{statusCode, message, result}` is transcribed legacy (ADR-0002
 §1), not a convention to copy.
@@ -70,9 +71,10 @@ So: read `role` from metadata, and define the absent case explicitly — **no ro
 `member`**, never admin. Fail closed. Write it as a named decision in the code, not an implicit
 zero-value default, so the auth feature that lands the claim later can find it.
 
-§Req 27: a member needs their own `account_id` to evaluate "has a leg of theirs", so
-`getTransaction` is **two hops for a member** — `wallet.GetAccount` first, then ledger. A
-resolution failure is `503`, not an empty result: the answer is unknown, not empty.
+§Req 27: evaluating "has a leg of theirs" needs the member's own `account_id`, and that arrives
+as a **verified token claim** — there is no wallet lookup. So `getTransaction` is **one hop**,
+with no resolution failure mode to handle. A token missing the `account_id` claim is `401`,
+never an empty result: fail closed, same posture as the missing role claim above.
 
 ## Acceptance Criteria
 
@@ -82,7 +84,9 @@ resolution failure is `503`, not an empty result: the answer is unknown, not emp
 - [ ] That response is **byte-identical** to the response for a nonexistent id — asserted
       field-by-field including `detail`, not just on status
 - [ ] A request with no role claim is treated as `member`, never admin
-- [ ] Wallet resolution failure surfaces as `503 · SERVICE_UNAVAILABLE`, not an empty result
+- [ ] A token missing the `account_id` claim receives `401 · UNAUTHENTICATED`, never an empty
+      or unscoped result
+- [ ] The handler makes exactly one downstream call — no wallet lookup
 - [ ] The response body carries no `statusCode` / `message` / `result` envelope
 - [ ] The response carries no total, sum, or balance field
 - [ ] Error responses carry `Content-Type: application/problem+json` — asserted on the header
@@ -100,7 +104,7 @@ resolution failure is `503`, not an empty result: the answer is unknown, not emp
 
 FS-0003 §API surface (the `getTransaction` row, the `legs[]` table, the error-semantics table),
 §Requirements 21 (the split), 22 (nested), 24 (identity from token), 26 (the masking rule),
-27 (the wallet hop), 30 (problem+json, 503 not 500), 31 (bare payloads).
+27 (`account_id` as a token claim), 30 (problem+json, 503 not 500), 31 (bare payloads).
 
 ## TDD Approach
 
