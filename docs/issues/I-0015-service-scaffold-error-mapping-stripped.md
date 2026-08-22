@@ -22,6 +22,13 @@ Remove the scaffold this feature retires (§Req 17): the `Ledger` aggregate, its
 `Reconstitute` / `Save`, and `usecase/retry.go`'s `withRetry`. Append-only performs no
 read-modify-write, so OCC guards nothing (ADR-0007).
 
+**Do NOT remove `internal/ledger/amqp_consumer.go`** — it looks like scaffold and is not. It is
+the seat for the event-driven write path: wallet-service's deposit, withdraw, and transfer verbs
+will publish events this consumer appends from (§Req 5a, §Req 17). Its `ledger.created` routing
+key **is** a placeholder naming the retired aggregate's event — leave the file, leave the wiring,
+and expect the constant to be renamed by a later feature. Deleting it because the event it names
+is going away is the trap here.
+
 ## STRIP the error-mapping layer — read this before touching the handler
 
 `internal/ledger/grpc/handler.go` currently contains a **fully populated `mapError`** with seven
