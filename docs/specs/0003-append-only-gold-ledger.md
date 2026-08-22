@@ -317,10 +317,16 @@ paragraph above rules out.
 
 - **Legs sum to zero but there is only one leg** (`amount 0`) → refused by requirement 6's
   `amount > 0` before the sum is ever evaluated.
-- **A caller posts the same `transaction_id` with genuinely different legs** → **open question 1**.
-  Today's index makes this a silent no-op success. See [Open questions](#open-questions).
-- **Two different economic events are given the same `transaction_id`** → **open question 2**.
-  Nothing currently detects it, and sum-to-zero would silently break across the pair.
+- **A caller posts the same `transaction_id` with genuinely different legs** → recorded once, as
+  the first version; the second post is a no-op success (requirement 12). **The ledger cannot
+  detect this and does not try.** It is a caller defect — a non-deterministic derivation, or two
+  events colliding on one id — and requirement 13's stability rule is what prevents it. Detecting
+  it here would need a read-before-write that still races, for a case correct callers never
+  produce.
+- **Two different economic events are given the same `transaction_id`** → same case, same answer.
+  The second is dropped whole rather than corrupting the first. Under the rejected four-column
+  index this would have half-written and broken sum-to-zero across the pair; the parent PK makes
+  it an atomic no-op instead.
 - **A duplicate arrives while the original is still committing** → the parent's **primary key**
   serialises them. The loser's `ON CONFLICT DO NOTHING` affects 0 rows and becomes the
   requirement 12 no-op, rather than surfacing a conflict.
@@ -443,7 +449,7 @@ in `internal/ledger/grpc/handler.go`.
 | `reason` is `UNSPECIFIED` | `InvalidArgument · VALIDATION_FAILED` |
 | any UUID field is malformed | `InvalidArgument · VALIDATION_FAILED` |
 | transaction already recorded, identical | `OK` · `applied = false` |
-| transaction already recorded, contradictory | **open question 1** — recommended `FailedPrecondition · LEDGER_CONFLICT` |
+| transaction already recorded, contradictory | `OK` · `applied = false` — deliberately indistinguishable from the identical case (open question 1). No `LEDGER_CONFLICT` code exists. |
 | database unavailable | `Unavailable · TRANSIENT` |
 | anything else | `Internal · INTERNAL_ERROR` |
 
@@ -564,6 +570,12 @@ CREATE INDEX ON ledger_entries (created_at, id);
 -- the FK join, and "give me both legs of this transaction"
 CREATE INDEX ON ledger_entries (transaction_id);
 ```
+
+**The duplication is sound only because `now()` is transaction-scoped.** Postgres' `now()` is
+`transaction_timestamp()`, so the parent and every leg written in the same DB transaction get the
+**identical** value. `clock_timestamp()` would not, and the legs of one movement would then sort
+apart from each other and from their parent. This is load-bearing for requirement 23's keyset,
+and it is the kind of thing a well-meaning change breaks silently.
 
 **`created_at` is duplicated onto the leg on purpose.** It is a transaction-level fact, so
 normalising it away would be the textbook call — and it would put a join inside the keyset
