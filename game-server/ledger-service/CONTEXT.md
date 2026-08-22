@@ -100,3 +100,19 @@ Not a boundary between services, but the one place this context's own vocabulary
 The rule: **leg on the write path, entry on the read path and in storage.** If a name has to
 pick one and the context is ambiguous, prefer `entry` — it is the persisted noun and the one
 the schema uses.
+
+### The one name per layer
+
+Pinned in FS-0003 §API surface so no slice invents its own. Repeated here because this is where
+someone looks first:
+
+| Layer | Type | Reads as |
+|---|---|---|
+| persistence (ledger-service) | `LedgerEntry` | the row as stored; never serialized |
+| transport (gateway) | `Entry`, `EntryPage` | `ledger.Entry`, `ledger.EntryPage` |
+| transport (gateway) | `Transaction`, `Leg` | `ledger.Transaction`, `ledger.Leg` |
+| proto | `LedgerLeg` | the write path's leg message |
+
+The transport names carry no `Ledger` prefix on purpose: inside the `ledger` package it would
+stutter, and the visible difference between `Entry` and `LedgerEntry` is what stops a
+persistence struct from drifting onto the wire.
