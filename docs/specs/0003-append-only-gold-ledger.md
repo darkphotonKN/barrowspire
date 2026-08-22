@@ -344,7 +344,7 @@ metadata, never the body (requirement 16).
 | `transaction_id` | `string` (UUID) | Caller-minted, deterministic. The idempotency key. |
 | `reason` | `Reason` | Transaction-level. `UNSPECIFIED` is refused. |
 | `reference_id` | `string` (UUID) | Transaction-level. The originating event — today, wallet-service's `bid_id`. |
-| `legs` | `repeated LedgerLeg` | Min 2. Leg-level facts only. |
+| `legs` | `repeated LedgerLeg` | Min 2. Leg-level facts only. Proto-side name; see the transport-type table under the read path for the HTTP-side names. |
 
 **`LedgerLeg`**
 
@@ -418,6 +418,26 @@ for a member, which resolves the caller's account through `wallet.GetAccount` fi
 **`next_cursor`** — opaque keyset position over `(created_at, id)`. **Absent** on the final
 page, rather than present-and-null: absence is the end-of-pages signal, so a client loops while
 the field is there.
+
+**Transport type names.** Pinned here so no slice has to invent them, and so the same row is not
+called three things across three layers.
+
+| Layer | Package | Type | Notes |
+|---|---|---|---|
+| persistence | `ledger-service/internal/ledger` | **`LedgerEntry`** | The row as stored. Matches `ledger_entries`. Owned by I-0017. **Never serialized** (requirement 31). |
+| transport | `api-gateway/internal/gateway/ledger` | **`Entry`** | One flattened history row — the `entries[]` member. |
+| transport | same | **`EntryPage`** | The `listEntries` response: `entries[]` plus `next_cursor`. |
+| transport | same | **`Transaction`** | The `getTransaction` response, nesting `legs[]`. |
+| transport | same | **`Leg`** | One side of a transaction — the `legs[]` member. |
+
+> **The transport names are deliberately unprefixed.** In the gateway's `ledger` package they
+> read `ledger.Entry` and `ledger.Transaction`; prefixing them to `ledger.LedgerEntry` would
+> stutter, which the root CLAUDE.md's Go naming rule rules out. The unprefixed name is also what
+> keeps requirement 31 honest — a transport `Entry` and a persistence `LedgerEntry` are visibly
+> different types, so no one is tempted to pass one where the other belongs.
+>
+> `Transaction` here means the **economic event**, per `CONTEXT.md`. A database transaction is
+> always qualified.
 
 **Error semantics.** Which case is which; the meaning of each is in Requirements.
 
