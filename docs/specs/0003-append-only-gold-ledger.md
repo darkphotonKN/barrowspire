@@ -22,8 +22,9 @@ convenience would defeat the purpose of having two records.
 
 It also serves that "why" to the people who need to ask it. The **write path is gRPC
 service-to-service** — its caller is wallet-service, not a browser. The **read path is HTTP
-through the gateway**, because its consumers are support engineers, members, and incident
-responders. Reading the record is a listing of movements and never an aggregate, which is what
+through the gateway**, because its consumers are support engineers and incident responders —
+people, not services. **No player-facing UI is planned**; the member-scoped arm of the read path
+exists as an authorization rule, not as a screen. Reading the record is a listing of movements and never an aggregate, which is what
 keeps a read surface from quietly turning the ledger into the second source of truth the
 paragraph above rules out.
 
@@ -127,6 +128,13 @@ paragraph above rules out.
     `usecase/retry.go`'s `withRetry`, and the `CreateLedger`/`GetLedger` RPCs are **removed**.
     An append-only record performs no read-modify-write, so optimistic concurrency guards nothing;
     keeping it would imply a contention model this service does not have.
+
+    **`internal/ledger/amqp_consumer.go` is NOT removed.** It is the seat for the event-driven
+    write path: wallet-service's deposit, withdraw, and transfer verbs will publish events this
+    consumer appends from, under the reasons requirement 5a forward-declares. Its current
+    `ledger.created` routing key is a **placeholder** naming the retired aggregate's event and
+    will be renamed when a real event exists — the file survives the scaffold retirement even
+    though its constant does not. This is also the shape the Known gap's outbox would land on.
 18. `ledger.proto` is rewritten. Both existing RPCs are marked `SCAFFOLD` in the proto itself and
     have no callers, so their removal breaks nothing.
 
@@ -158,7 +166,7 @@ paragraph above rules out.
     the last row's sort key; the response carries `next_cursor`, absent on the final page.
     Direction is part of the contract, not a default: it decides which way the cursor's
     comparison runs, and reversing it later invalidates every cursor a client holds. Newest-first
-    is what the support and incident paths read for (user stories 13, 18), and it matches the
+    is what the support and incident paths read for (user stories 13, 17), and it matches the
     `(account_id, created_at DESC)` index. **Offset pagination is refused**, not merely unused —
     an append-only table takes inserts underneath a reader, and offset paging silently skips or
     repeats rows when it does. This is the repo's first keyset pager; the existing leaderboard's
@@ -259,15 +267,13 @@ paragraph above rules out.
     that I can show a player where their gold went and who received it.
 15. As **a support engineer**, I want paging to be stable while new movements are being appended,
     so that a history I am reading during an incident does not skip or repeat rows underneath me.
-16. As **a member**, I want to see my own gold history without asking support, so that routine
-    "what happened to my gold" questions never become a ticket.
-17. As **a member**, I want to be unable to look up another player's account, so that my
+16. As **a member**, I want to be unable to look up another player's account, so that my
     transaction history is not enumerable by anyone who guesses an id.
-18. As **an incident responder**, I want an unscoped listing of recent movements, so that I can
+17. As **an incident responder**, I want an unscoped listing of recent movements, so that I can
     see what the economy did in a window without a database session.
-19. As **a client developer**, I want errors to carry a stable `code`, so that I can branch on
+18. As **a client developer**, I want errors to carry a stable `code`, so that I can branch on
     the failure without string-matching prose that is allowed to change.
-20. As **a client developer**, I want the read contract generated from the handlers, so that the
+19. As **a client developer**, I want the read contract generated from the handlers, so that the
     TypeScript I call it with cannot drift from what the server accepts.
 
 ## Acceptance Criteria
@@ -317,10 +323,16 @@ paragraph above rules out.
 
 - **Legs sum to zero but there is only one leg** (`amount 0`) → refused by requirement 6's
   `amount > 0` before the sum is ever evaluated.
-- **A caller posts the same `transaction_id` with genuinely different legs** → **open question 1**.
-  Today's index makes this a silent no-op success. See [Open questions](#open-questions).
-- **Two different economic events are given the same `transaction_id`** → **open question 2**.
-  Nothing currently detects it, and sum-to-zero would silently break across the pair.
+- **A caller posts the same `transaction_id` with genuinely different legs** → recorded once, as
+  the first version; the second post is a no-op success (requirement 12). **The ledger cannot
+  detect this and does not try.** It is a caller defect — a non-deterministic derivation, or two
+  events colliding on one id — and requirement 13's stability rule is what prevents it. Detecting
+  it here would need a read-before-write that still races, for a case correct callers never
+  produce.
+- **Two different economic events are given the same `transaction_id`** → same case, same answer.
+  The second is dropped whole rather than corrupting the first. Under the rejected four-column
+  index this would have half-written and broken sum-to-zero across the pair; the parent PK makes
+  it an atomic no-op instead.
 - **A duplicate arrives while the original is still committing** → the parent's **primary key**
   serialises them. The loser's `ON CONFLICT DO NOTHING` affects 0 rows and becomes the
   requirement 12 no-op, rather than surfacing a conflict.
@@ -443,7 +455,7 @@ in `internal/ledger/grpc/handler.go`.
 | `reason` is `UNSPECIFIED` | `InvalidArgument · VALIDATION_FAILED` |
 | any UUID field is malformed | `InvalidArgument · VALIDATION_FAILED` |
 | transaction already recorded, identical | `OK` · `applied = false` |
-| transaction already recorded, contradictory | **open question 1** — recommended `FailedPrecondition · LEDGER_CONFLICT` |
+| transaction already recorded, contradictory | `OK` · `applied = false` — deliberately indistinguishable from the identical case (open question 1). No `LEDGER_CONFLICT` code exists. |
 | database unavailable | `Unavailable · TRANSIENT` |
 | anything else | `Internal · INTERNAL_ERROR` |
 
@@ -564,6 +576,12 @@ CREATE INDEX ON ledger_entries (created_at, id);
 -- the FK join, and "give me both legs of this transaction"
 CREATE INDEX ON ledger_entries (transaction_id);
 ```
+
+**The duplication is sound only because `now()` is transaction-scoped.** Postgres' `now()` is
+`transaction_timestamp()`, so the parent and every leg written in the same DB transaction get the
+**identical** value. `clock_timestamp()` would not, and the legs of one movement would then sort
+apart from each other and from their parent. This is load-bearing for requirement 23's keyset,
+and it is the kind of thing a well-meaning change breaks silently.
 
 **`created_at` is duplicated onto the leg on purpose.** It is a transaction-level fact, so
 normalising it away would be the textbook call — and it would put a join inside the keyset
@@ -750,6 +768,11 @@ ADRs name them rather than resolving them.
   marks them `[ ]`). The ledger's caller does not exist yet; this feature builds the callee.
 - **An HTTP surface for the write path.** `AppendLedgerTx` stays gRPC service-to-service
   (requirement 19). The read path's HTTP surface is in scope; the write path's is not.
+- **Any player-facing UI.** No `game-client` screen consumes this read path, and none is planned.
+  The generated TypeScript client still gains both operations — generation covers the whole
+  gateway surface (requirement 32) — it simply has no caller. Member-scoped reads exist so the
+  authorization model is complete and correct, not to serve a screen: requirements 25–27 are the
+  rule that a member reaching this API sees only their own rows, whoever eventually calls it.
 - **Issuing the `role` and `account_id` claims.** This feature reads both from verified token
   metadata and scopes by them (requirements 27, 29). Minting them — auth-service's contract, the
   signup flow that creates a member and their account together, and the token's shape — belongs to
