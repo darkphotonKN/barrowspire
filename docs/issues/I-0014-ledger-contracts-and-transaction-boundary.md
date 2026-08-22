@@ -18,7 +18,10 @@ slices 2–9 are written against.
 
 **1. Proto** (`common/api/proto/ledger/ledger.proto`) — per FS-0003 §API surface.
 `AppendLedgerTx` replaces `CreateLedger` and `GetLedger`; both are marked `SCAFFOLD` in the
-proto today and have no callers (§Req 18). Enums for `Direction`, `Reason`, `ReferenceType`.
+proto today and have no callers (§Req 18). Enums for **`Direction` and `Reason` only** —
+`ReferenceType` was cut from the feature entirely; `reference_id` carries the originating event
+unaided. Note `currency` sits on `AppendLedgerTxRequest`, **not** on `LedgerLeg`: one currency
+per transaction is structural rather than validated (§Req 8).
 Do not run generation here — that is slice 5.
 
 **2. Repository + service interfaces.** The repository exposes **insert and read only**. There
@@ -44,18 +47,31 @@ files. Includes `DROP TABLE ledgers` (§Req 17).
 `internal/ledger/domain/ledger/errors.go` and `commonconstants` are the starting point;
 `ErrConcurrentModification` goes away with OCC (§Req 17, ADR-0007).
 
-## The three open questions land here
+## The three open questions — ALL RESOLVED, do not reopen
 
-FS-0003 §Open questions are **unsettled**, and this is the slice that settles them. Each
-changes an artifact above; none may be silently defaulted.
+FS-0003 §Open questions now carries all three as decisions with their reasoning. This slice
+**implements** them; it does not revisit them.
 
-- **OQ1 — the unique index excludes `amount`.** A retry with a corrected amount currently
-  no-ops as success. Changes the DDL and the error set (a `LEDGER_CONFLICT` sentinel, or not).
-- **OQ2 — nothing enforces `transaction_id` uniqueness.** The recommendation is a
-  `ledger_transactions` table, which **changes the DDL, both interfaces, and the slice 4 struct**.
-  Settle before slice 3 or 4 start, or they get rewritten.
-- **OQ3 — `reason` / `reference_type` are bare TEXT.** Changes the DDL (CHECKs) and the proto
-  (enums are already drawn; the DB side is the open half).
+- **OQ1 — is there a natural key? → No, and there must not be.** The four-column unique index
+  `(reason, reference_id, account_id, direction)` is **rejected**: it is a domain rule wearing a
+  constraint's clothes, and partial refunds, a second fee on one settlement, and admin
+  adjustments all break it legitimately. **`transaction_id` — the parent PK — is the sole
+  idempotency guard.** `ON CONFLICT DO NOTHING` on the parent insert; 0 rows means already
+  recorded, return success, skip the legs. No `LEDGER_CONFLICT` sentinel is needed.
+- **OQ2 — two tables? → Yes**, `ledger_transactions` parent + `ledger_entries` legs, already
+  implemented in `000001_create_ledger_transactions_and_entries.up.sql`. **But none of the unique
+  constraints the old recommendation proposed** — not `UNIQUE(reason, reference_id)`, not
+  `UNIQUE(transaction_id, account_id, direction)`. Parent PK is `transaction_id`,
+  caller-supplied, **no `DEFAULT`**.
+- **OQ3 — the legal set of `reason`? → `SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`**,
+  enforced by proto enum, Go value type, and DB `CHECK`. Forward-declared: only `SETTLE_AUCTION`
+  has a caller, and recording the others later needs no schema change.
+
+**What this slice still owes the DDL:** FS-0003 §Data model is now the two-table shape and is the
+source of truth. Reconcile the migration on disk against it — the FS adds `created_at` to
+`ledger_entries` (duplicated from the parent deliberately, so the read path pages without a join)
+and specifies `(account_id, created_at, id)` and `(created_at, id)` as the read indexes. The
+migration currently has neither.
 
 ## Acceptance Criteria
 
@@ -65,7 +81,10 @@ changes an artifact above; none may be silently defaulted.
       `*sql.Tx` in any service-layer signature
 - [ ] Migration DDL decided, including `DROP TABLE ledgers`
 - [ ] Sentinel error set covers every row of FS-0003 §API surface's error table
-- [ ] All three open questions have a recorded answer, and FS-0003 is updated to match
+- [ ] The migration matches FS-0003 §Data model — `created_at` on `ledger_entries`, the
+      `(account_id, created_at, id)` and `(created_at, id)` indexes present
+- [ ] No unique constraint exists beyond the two primary keys
+- [ ] `currency` is on the transaction, not the leg
 - [ ] `go build ./...` succeeds (interfaces compile; no implementations required)
 
 ## Blocked By

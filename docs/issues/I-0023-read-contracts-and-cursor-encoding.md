@@ -46,23 +46,27 @@ Keyset over `(created_at, id)` descending (§Req 23). Decide and write down:
 > it later invalidates every cursor in flight, and there is no version negotiation on a query
 > param. Decide it deliberately now rather than discovering it in slice 13.
 
-## Where `created_at` lives, and why it matters here
+## Where `created_at` lives — SETTLED, and it shapes the read signature
 
-FS-0003 §Data model still shows the pre-OQ2 single-table DDL with `created_at` on the entry. The
-migration actually on disk implements OQ2's two-table shape, where **`created_at` is a
-transaction-level fact on the parent and deliberately absent from `ledger_entries`**.
+**`created_at` is on `ledger_entries`, duplicated from the parent on purpose** (FS-0003 §Data
+model). Normalising it away would be the textbook call and would put a join inside the keyset
+predicate of every history page. Because the table is append-only and never updates, the usual
+cost of duplication — two copies drifting — cannot occur.
 
-If that stands, the keyset predicate spans a join, and the repository read signature has to make
-that legible rather than hiding a correlated subquery. **Settle OQ2 in I-0014 before finalising
-these signatures**, or this slice gets rewritten.
+The consequence for this slice: **the read signatures page `ledger_entries` alone.** No join, no
+correlated subquery. `(account_id, created_at, id)` serves a scoped history; `(created_at, id)`
+serves the unscoped admin listing. The cursor encodes that sort key and nothing else.
 
-## Also settle: the `reason` vocabulary
+## The `reason` vocabulary — SETTLED, do not reopen
 
-The proto declares `enum Reason { REASON_UNSPECIFIED = 0; SETTLEMENT = 1; }`. The migration's
-`CHECK` declares `('SETTLE_AUCTION', 'DEPOSIT', 'WITHDRAW', 'TRANSFER')`. They share no values,
-and two of the DDL's are explicitly out of scope in the FS. The read response echoes `reason`, so
-this cannot stay unresolved past this slice. It belongs to I-0014; flag it there if it is still
-open when you start.
+`SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`. The proto enum matches the migration's
+`CHECK`; FS-0003 §Requirements 5a and §Open questions 3 record it.
+
+Only `SETTLE_AUCTION` has a caller today. The other three are **forward-declared on purpose** —
+building the deposit/withdraw/transfer *verbs* is out of scope, but **recording their effects
+needs no ledger change**, which is why the set is closed now rather than grown later. The read
+response echoes `reason` as a plain string; it does not validate against the set (the write path
+already did).
 
 ## Acceptance Criteria
 

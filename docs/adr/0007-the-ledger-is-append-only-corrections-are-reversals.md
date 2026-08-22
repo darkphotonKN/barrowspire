@@ -3,7 +3,12 @@
 Status: accepted
 Date: 2026-08-17
 Scope: `game-server/ledger-service`
-Realized by: FS-0003 §Requirements 2, 9–10, 17 (not yet implemented)
+Amended by: [ADR-0010](0010-the-ledger-is-appended-past-the-saga-pivot.md) — the "corrections are
+reversals" clause. The append-only clause below stands; the reversal mechanism does not. The
+ledger is now appended only past the settlement saga's pivot, so no recorded transaction is ever
+wrong and there is nothing to reverse. **The body below is left as written, and its reversal
+reasoning no longer describes the system.**
+Realized by: FS-0003 §Requirements 9–10, 17 (not yet implemented)
 
 ## Context
 
