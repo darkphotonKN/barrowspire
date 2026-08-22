@@ -46,6 +46,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] Route payment traffic to payments, plus the unauthenticated Stripe webhook
 - [x] Route item traffic to items
 - [x] Route example traffic to examples
+- [ ] Route ledger read traffic to ledger → FS-0003
 
 ### Integration patterns
 

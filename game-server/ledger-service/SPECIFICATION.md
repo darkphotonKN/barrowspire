@@ -28,3 +28,4 @@ Per-table detail lives in [`docs/schema/`](docs/schema/). Cross-service architec
 ## Capabilities
 
 - [ ] Append a balanced ledger transaction → FS-0003
+- [ ] Read the movement record → FS-0003
