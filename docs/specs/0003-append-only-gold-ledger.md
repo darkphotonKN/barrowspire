@@ -1,6 +1,6 @@
 # FS-0003: Append-only gold ledger
 
-> Status: work-order · SPECIFICATION.md: `game-server/ledger-service/SPECIFICATION.md` "## Capabilities" → "Append a balanced ledger transaction" and "Read the movement record"; `game-server/api-gateway/SPECIFICATION.md` "### Downstream routing" → "Route ledger read traffic to ledger" → this FS · Related ADRs: [ADR-0005](../adr/0005-wallet-owns-balance-ledger-is-a-reconciliation-record.md) (wallet owns balance), [ADR-0006](../adr/0006-only-balanced-movements-are-recorded.md) (only balanced movements recorded), [ADR-0007](../adr/0007-the-ledger-is-append-only-corrections-are-reversals.md) (append-only), [ADR-0008](../adr/0008-amounts-are-unsigned-direction-carries-the-sign.md) (unsigned amounts), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-owned idempotency)
+> Status: work-order · SPECIFICATION.md: `game-server/ledger-service/SPECIFICATION.md` "## Capabilities" → "Append a balanced ledger transaction" and "Read the movement record"; `game-server/api-gateway/SPECIFICATION.md` "### Downstream routing" → "Route ledger read traffic to ledger" → this FS · Related ADRs: [ADR-0005](../adr/0005-wallet-owns-balance-ledger-is-a-reconciliation-record.md) (wallet owns balance), [ADR-0006](../adr/0006-only-balanced-movements-are-recorded.md) (only balanced movements recorded), [ADR-0007](../adr/0007-the-ledger-is-append-only-corrections-are-reversals.md) (append-only), [ADR-0008](../adr/0008-amounts-are-unsigned-direction-carries-the-sign.md) (unsigned amounts), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-owned idempotency), [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md) (appended past the saga pivot; no reversals)
 
 ## Summary
 
@@ -568,15 +568,16 @@ suggestions** — a slice that contradicts one supersedes it or is wrong.
 | [ADR-0007](../adr/0007-the-ledger-is-append-only-corrections-are-reversals.md) | the record is append-only, and OCC is removed | 9–10, 17 — **its "corrections are reversals" clause is superseded**; see below |
 | [ADR-0008](../adr/0008-amounts-are-unsigned-direction-carries-the-sign.md) | `amount > 0` always; `direction` carries the sign | 6–7 |
 | [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) | the caller mints a deterministic `transaction_id`; duplicates are no-op successes | 11–13 |
+| [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md) | the ledger is appended only past the saga's pivot, so nothing recorded is ever wrong and no reversal exists | 2–3, 9 |
 
 Open questions 1 and 2 below are explicitly **left unsettled by ADR-0008 and ADR-0009** — both
 ADRs name them rather than resolving them.
 
-> **ADR-0007 is half-superseded by requirements 2–3.** Its append-only half stands and is
-> load-bearing. Its *"corrections are reversals"* half no longer applies: the settlement saga
-> appends only past its pivot, once the money is final, so no recorded transaction is ever wrong
-> and there is nothing to reverse. ADRs are immutable, so this is recorded here and needs a new
-> ADR to supersede it properly — see [Out of Scope](#out-of-scope).
+> **ADR-0007 is amended, not superseded, by [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md).**
+> Its append-only clause stands and is load-bearing. Its *"corrections are reversals"* clause is
+> replaced: the settlement saga appends only past its pivot, once the money is final, so no
+> recorded transaction is ever wrong and there is nothing to reverse. ADR-0007's body is
+> immutable and still describes the old mechanism; its header points at ADR-0010.
 
 ## Rejected alternatives
 
@@ -599,9 +600,10 @@ ADRs name them rather than resolving them.
 - **The settlement saga itself.** Its orchestration, its pivot, and its compensation steps live
   in marketplace-service and wallet-service. This feature only depends on the *ordering* the saga
   guarantees (requirement 2); it does not implement or specify it.
-- **A new ADR superseding ADR-0007's "corrections are reversals" clause.** Recommended, and
-  deliberately not done inline — ADRs are append-only and this feature is not the place to write
-  one. Run `/record-decision` on the pivot ordering.
+- **The saga's ordering guarantee.** [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md)
+  records the pivot decision this feature depends on, but ledger-service **cannot enforce it** —
+  nothing here can check that its caller is past the pivot. Verifying the ordering belongs to
+  whoever specifies the saga.
 - **Currencies beyond `GOLD`.** The multi-currency invariant (requirement 8) is enforced now so
   that adding one later is safe, but no second currency is introduced.
 - **Balance-derivation queries.** Permanently out of scope for this service, not merely deferred
