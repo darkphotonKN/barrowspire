@@ -33,7 +33,7 @@ func TestPlaceBidAmountInvariant(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			l := activeListing(t, tt.startPrice)
 
-			err := l.PlaceBid(uuid.New(), tt.amount, time.Now())
+			err := l.PlaceBid(uuid.New(), tt.amount, uuid.Nil, time.Now())
 
 			assert.ErrorIs(t, err, tt.wantErr)
 			assert.Empty(t, l.Snapshot().Bids, "a rejected bid must not be appended")
@@ -47,21 +47,16 @@ func TestPlaceBidAmountInvariant(t *testing.T) {
 // creates a bid on a different path.
 func TestNewBidRejectsNonPositiveAmount(t *testing.T) {
 	for _, amount := range []int{-1, 0} {
-		bid, err := newBid(uuid.New(), uuid.New(), BidTypeBid, amount, time.Now())
+		bid, err := newBid(uuid.New(), uuid.New(), BidTypeBid, amount, uuid.Nil, time.Now())
 
 		assert.ErrorIs(t, err, ErrInvalidAmount)
 		assert.Nil(t, bid)
 	}
 }
 
-// TestNewBidIsBornWinning pins the bid FSM's starting state — a new bid always
-// takes the lead, and PlaceBid demotes the previous leader in the same verb.
-func TestNewBidIsBornWinning(t *testing.T) {
-	bid, err := newBid(uuid.New(), uuid.New(), BidTypeBid, 100, time.Now())
-
-	require.NoError(t, err)
-	assert.Equal(t, BidStatusWinning, bid.status)
-}
+// NOTE: a bid is now born PENDING rather than WINNING — it leads nothing until
+// wallet confirms its hold. That starting state is pinned by
+// TestNewBidIsBornPending in bid_saga_test.go.
 
 // TestBidBelowCurrentPriceIsNotCreated is the headline requirement: a bid that
 // does not beat the current price must not exist at all. Returning an error
@@ -69,7 +64,7 @@ func TestNewBidIsBornWinning(t *testing.T) {
 // anything, so the assertion on the bid count matters as much as the error.
 func TestBidBelowCurrentPriceIsNotCreated(t *testing.T) {
 	l := activeListing(t, 100)
-	require.NoError(t, l.PlaceBid(uuid.New(), 150, time.Now()))
+	leadingBid(t, l, uuid.New(), 150, time.Now())
 
 	tests := []struct {
 		name   string
@@ -81,7 +76,7 @@ func TestBidBelowCurrentPriceIsNotCreated(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := l.PlaceBid(uuid.New(), tt.amount, time.Now())
+			err := l.PlaceBid(uuid.New(), tt.amount, uuid.Nil, time.Now())
 
 			assert.ErrorIs(t, err, ErrBidTooLow)
 			assert.Len(t, l.Snapshot().Bids, 1, "a rejected bid must not be created")
@@ -97,7 +92,7 @@ func TestFirstBidMustMeetStartPrice(t *testing.T) {
 	t.Run("below the start price is rejected", func(t *testing.T) {
 		l := activeListing(t, 100)
 
-		err := l.PlaceBid(uuid.New(), 99, time.Now())
+		err := l.PlaceBid(uuid.New(), 99, uuid.Nil, time.Now())
 
 		assert.ErrorIs(t, err, ErrBidTooLow)
 		assert.Empty(t, l.Snapshot().Bids)
@@ -106,7 +101,7 @@ func TestFirstBidMustMeetStartPrice(t *testing.T) {
 	t.Run("exactly the start price is accepted", func(t *testing.T) {
 		l := activeListing(t, 100)
 
-		require.NoError(t, l.PlaceBid(uuid.New(), 100, time.Now()))
+		require.NoError(t, l.PlaceBid(uuid.New(), 100, uuid.Nil, time.Now()))
 		assert.Len(t, l.Snapshot().Bids, 1)
 	})
 }
@@ -120,9 +115,9 @@ func TestSingleWinnerInvariant(t *testing.T) {
 	l := activeListing(t, 100)
 	now := time.Now()
 
-	require.NoError(t, l.PlaceBid(uuid.New(), 100, now))
-	require.NoError(t, l.PlaceBid(uuid.New(), 150, now))
-	require.NoError(t, l.PlaceBid(uuid.New(), 200, now))
+	leadingBid(t, l, uuid.New(), 100, now)
+	leadingBid(t, l, uuid.New(), 150, now)
+	leadingBid(t, l, uuid.New(), 200, now)
 
 	bids := l.Snapshot().Bids
 	require.Len(t, bids, 3, "outbid bids are kept as history, not removed")
@@ -170,7 +165,7 @@ func TestPlaceBidOnNonActiveListing(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			l := tt.setup(t)
 
-			err := l.PlaceBid(uuid.New(), 500, now)
+			err := l.PlaceBid(uuid.New(), 500, uuid.Nil, now)
 
 			assert.ErrorIs(t, err, ErrListingNotAcceptingBids)
 			assert.Empty(t, l.Snapshot().Bids)
@@ -184,7 +179,7 @@ func TestPlaceBidAfterEndsAt(t *testing.T) {
 	l := activeListing(t, 100)
 	endsAt := l.Snapshot().EndsAt
 
-	err := l.PlaceBid(uuid.New(), 500, endsAt)
+	err := l.PlaceBid(uuid.New(), 500, uuid.Nil, endsAt)
 
 	assert.ErrorIs(t, err, ErrListingExpired)
 	assert.Empty(t, l.Snapshot().Bids)
@@ -197,8 +192,7 @@ func TestWithdrawBidOwnershipGuard(t *testing.T) {
 	bidder := uuid.New()
 	now := time.Now()
 
-	require.NoError(t, l.PlaceBid(bidder, 150, now))
-	bidID := l.Snapshot().Bids[0].ID
+	bidID := leadingBid(t, l, bidder, 150, now)
 
 	err := l.WithdrawBid(bidID, uuid.New(), now)
 
@@ -223,8 +217,8 @@ func TestBidFSMRejectsIllegalTransition(t *testing.T) {
 	bidder := uuid.New()
 	now := time.Now()
 
-	require.NoError(t, l.PlaceBid(bidder, 150, now))
-	require.NoError(t, l.PlaceBid(uuid.New(), 200, now))
+	leadingBid(t, l, bidder, 150, now)
+	leadingBid(t, l, uuid.New(), 200, now)
 
 	// the first bid is now OUTBID — a terminal state
 	outbidID := l.Snapshot().Bids[0].ID
@@ -243,8 +237,8 @@ func TestWithdrawWinningBidLeavesNoLeader(t *testing.T) {
 	winner := uuid.New()
 	now := time.Now()
 
-	require.NoError(t, l.PlaceBid(uuid.New(), 150, now))
-	require.NoError(t, l.PlaceBid(winner, 200, now))
+	require.NoError(t, l.PlaceBid(uuid.New(), 150, uuid.Nil, now))
+	require.NoError(t, l.PlaceBid(winner, 200, uuid.Nil, now))
 
 	winningID := l.Snapshot().Bids[1].ID
 	require.NoError(t, l.WithdrawBid(winningID, winner, now))
@@ -319,7 +313,7 @@ func TestReconstituteAcceptsOneOrZeroWinners(t *testing.T) {
 // out values that cannot be written back through.
 func TestSnapshotDoesNotShareBidState(t *testing.T) {
 	l := activeListing(t, 100)
-	require.NoError(t, l.PlaceBid(uuid.New(), 150, time.Now()))
+	leadingBid(t, l, uuid.New(), 150, time.Now())
 
 	snap := l.Snapshot()
 	snap.Bids[0].Amount = 999
@@ -362,6 +356,22 @@ func draftListing(t *testing.T, startPrice int) *Listing {
 	require.NoError(t, err)
 
 	return l
+}
+
+// leadingBid places a bid and confirms it, standing in for the round trip through
+// wallet. Tests that care about the confirmed leader — the price bar, the
+// single-winner rule — use this rather than PlaceBid alone, which now leaves the
+// bid PENDING and leading nothing.
+func leadingBid(t *testing.T, l *Listing, member uuid.UUID, amount int, now time.Time) uuid.UUID {
+	t.Helper()
+
+	require.NoError(t, l.PlaceBid(member, amount, uuid.Nil, now))
+
+	bids := l.Snapshot().Bids
+	bidID := bids[len(bids)-1].ID
+	require.NoError(t, l.ConfirmBid(bidID, now))
+
+	return bidID
 }
 
 // activeListing builds a listing that is open for bidding. NewListing always
