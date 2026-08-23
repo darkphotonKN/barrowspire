@@ -244,6 +244,113 @@ func TestWithdrawnStateStillReconstitutes(t *testing.T) {
 	assert.Equal(t, 60, reloaded.Snapshot().Gold)
 }
 
+// TestCommitHoldSpendsTheReservedGold is the money test: CommitHold is the only
+// path in the aggregate that permanently removes gold from an account. It has to
+// do two things together — deduct the amount from the balance and move the hold
+// out of RESERVED — because available gold is derived as gold minus RESERVED
+// holds. Doing only one of them mis-states the balance: deducting without the
+// transition double-counts the spend, and transitioning without the deduction
+// hands the buyer their gold back for free.
+func TestCommitHoldSpendsTheReservedGold(t *testing.T) {
+	bidID := uuid.New()
+
+	acc := accountWithGold(t, 1000)
+	require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, time.Now()))
+
+	// before: the gold is still on the books, but 300 of it is spoken for
+	assert.Equal(t, 1000, acc.Snapshot().Gold)
+	assert.Equal(t, 700, acc.getAvailableGold(), "a reserved hold is not spendable")
+
+	require.NoError(t, acc.CommitHold(bidID, time.Now()))
+
+	snap := acc.Snapshot()
+	assert.Equal(t, 700, snap.Gold, "committing must actually spend the gold")
+	assert.Equal(t, StatusCommitted, snap.WalletHolds[0].Status)
+
+	// available is unchanged across the commit: the 300 left the balance and the
+	// hold left RESERVED in the same step, so the buyer neither gains nor loses
+	// spending power at settlement
+	assert.Equal(t, 700, acc.getAvailableGold())
+}
+
+// TestCommitHoldRejectsUnknownAndAlreadySettledHolds covers the guards around the
+// spend. The repeat case is the one that matters for the saga: settlement events
+// are delivered at-least-once, so a redelivered CommitHold is expected traffic,
+// not a client error — and today the FSM refuses it. That is recorded here as
+// current behaviour, not endorsed: making it idempotent is outstanding work.
+func TestCommitHoldRejectsUnknownAndAlreadySettledHolds(t *testing.T) {
+	tests := []struct {
+		name string
+		// commitTwice drives the same hold through CommitHold a second time
+		commitTwice bool
+		// useUnknownBid addresses a bid the account has no hold for
+		useUnknownBid bool
+		wantErr       error
+		wantGold      int
+	}{
+		{
+			name:          "a bid with no hold is rejected",
+			useUnknownBid: true,
+			wantErr:       ErrHoldNotFound,
+			wantGold:      1000,
+		},
+		{
+			name:        "an already committed hold cannot be committed again",
+			commitTwice: true,
+			wantErr:     ErrInvalidHoldTransition,
+			wantGold:    700, // the first commit stands; the second must not deduct again
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bidID := uuid.New()
+
+			acc := accountWithGold(t, 1000)
+			require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, time.Now()))
+
+			target := bidID
+			if tt.useUnknownBid {
+				target = uuid.New()
+			}
+
+			if tt.commitTwice {
+				require.NoError(t, acc.CommitHold(target, time.Now()))
+			}
+
+			err := acc.CommitHold(target, time.Now())
+
+			assert.ErrorIs(t, err, tt.wantErr)
+			assert.Equal(t, tt.wantGold, acc.Snapshot().Gold,
+				"a rejected commit must not move gold")
+		})
+	}
+}
+
+// TestCommitHoldOnlySettlesTheAddressedHold pins that the bid id actually selects
+// which hold is spent. An account can carry several concurrent holds — one per
+// bid — so a lookup that matched the wrong one, or the first one, would spend a
+// different bid's money.
+func TestCommitHoldOnlySettlesTheAddressedHold(t *testing.T) {
+	firstBid, secondBid := uuid.New(), uuid.New()
+
+	acc := accountWithGold(t, 1000)
+	require.NoError(t, acc.PlaceHold(uuid.New(), 100, firstBid, time.Now()))
+	require.NoError(t, acc.PlaceHold(uuid.New(), 250, secondBid, time.Now()))
+
+	require.NoError(t, acc.CommitHold(secondBid, time.Now()))
+
+	assert.Equal(t, 750, acc.Snapshot().Gold, "only the addressed hold's amount is spent")
+
+	byBid := map[uuid.UUID]WalletHoldStatus{}
+	for _, hold := range acc.Snapshot().WalletHolds {
+		byBid[hold.BidID] = hold.Status
+	}
+
+	assert.Equal(t, StatusCommitted, byBid[secondBid])
+	assert.Equal(t, StatusReserved, byBid[firstBid], "the untouched hold stays reserved")
+}
+
 // accountWithGold builds an account holding the given gold. NewAccount always
 // starts at 0, so gold is seeded through Reconstitute — the same path the
 // repository uses when loading from the database.
