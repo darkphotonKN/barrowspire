@@ -59,11 +59,20 @@ func (h *Handler) PlaceBid(ctx context.Context, req *pb.PlaceBidRequest) (*pb.Pl
 
 	tempMemberID := uuid.New()
 
+	// Optional: an absent or malformed key means "no key", which is uuid.Nil.
+	// Rejecting a bad one would fail a request the caller could still have
+	// served safely, just without replay protection.
+	idempotencyKey, err := uuid.Parse(req.GetIdempotencyKey())
+	if err != nil {
+		idempotencyKey = uuid.Nil
+	}
+
 	if err := h.placeBidUC.Handle(ctx, usecase.PlaceBidCommand{
-		ListingID: listingID,
-		MemberID:  tempMemberID,
-		Amount:    int(req.GetAmount()),
-		Now:       time.Now(),
+		ListingID:      listingID,
+		MemberID:       tempMemberID,
+		Amount:         int(req.GetAmount()),
+		IdempotencyKey: idempotencyKey,
+		Now:            time.Now(),
 	}); err != nil {
 		return nil, mapError(ctx, err)
 	}

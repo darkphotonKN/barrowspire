@@ -31,31 +31,24 @@ type PlaceBidCommand struct {
 	ListingID uuid.UUID
 	MemberID  uuid.UUID
 	Amount    int
-	Now       time.Time
+	// IdempotencyKey is uuid.Nil when the caller supplied none. A repeated
+	// placement carrying the same key is accepted as a replay rather than
+	// becoming a second bid.
+	IdempotencyKey uuid.UUID
+	Now            time.Time
 }
 
 func (uc *PlaceBidUC) Handle(ctx context.Context, cmd PlaceBidCommand) error {
-	// retry due to optimistic concurrency (OCC) — two bidders racing for the
-	// lead on the same listing is the expected case, not an exceptional one
-	return withRetry(ctx, func() error {
-		listingDomain, err := uc.repo.FindByID(ctx, cmd.ListingID)
-
-		if err != nil {
-			return fmt.Errorf("place bid usecase handle findByID listing id %v : %w", cmd.ListingID, err)
-		}
-
-		// snapshot BEFORE the domain mutates, this is the OCC version baseline
-		// and the diff source for which bids are new or demoted
-		before := listingDomain.Snapshot()
-
-		if err := listingDomain.PlaceBid(cmd.MemberID, cmd.Amount, cmd.Now); err != nil {
-			return fmt.Errorf("place bid usecase handle placing bid on listing id %v : %w", cmd.ListingID, err)
-		}
-
-		if err := uc.repo.Save(ctx, listingDomain, before); err != nil {
-			return fmt.Errorf("place bid usecase handle saving listing id %v : %w", cmd.ListingID, err)
-		}
-
-		return nil
+	// Modify holds a row lock across load-modify-save, so two bidders racing for
+	// the lead queue rather than collide. That replaces the previous OCC retry
+	// loop: there is no longer a window between reading the listing and writing
+	// it for another writer to slip into.
+	err := uc.repo.Modify(ctx, cmd.ListingID, func(l *listing.Listing) error {
+		return l.PlaceBid(cmd.MemberID, cmd.Amount, cmd.IdempotencyKey, cmd.Now)
 	})
+	if err != nil {
+		return fmt.Errorf("place bid usecase handle listing id %v : %w", cmd.ListingID, err)
+	}
+
+	return nil
 }

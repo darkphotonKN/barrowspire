@@ -23,10 +23,16 @@ const (
 type BidStatus string
 
 const (
+	// BidStatusPending is where every bid starts: placed, but with no gold held
+	// behind it yet. It leads nothing and wins nothing until wallet confirms.
+	BidStatusPending   BidStatus = "PENDING"
 	BidStatusWinning   BidStatus = "WINNING"
 	BidStatusOutbid    BidStatus = "OUTBID"
 	BidStatusWon       BidStatus = "WON"
 	BidStatusCancelled BidStatus = "CANCELLED"
+	// BidStatusFailed is terminal: wallet could not hold the gold, so this bid
+	// never took the lead.
+	BidStatusFailed BidStatus = "FAILED"
 )
 
 type Bid struct {
@@ -36,11 +42,14 @@ type Bid struct {
 	bidType   BidType
 	amount    int
 	status    BidStatus
-	createdAt time.Time
-	updatedAt time.Time
+	// idempotencyKey is uuid.Nil when the caller supplied none. Bids without a
+	// key are never deduplicated against one another.
+	idempotencyKey uuid.UUID
+	createdAt      time.Time
+	updatedAt      time.Time
 }
 
-func newBid(listingID uuid.UUID, memberID uuid.UUID, bidType BidType, amount int, now time.Time) (*Bid, error) {
+func newBid(listingID uuid.UUID, memberID uuid.UUID, bidType BidType, amount int, idempotencyKey uuid.UUID, now time.Time) (*Bid, error) {
 	// invariants
 	if amount <= 0 {
 		return nil, ErrInvalidAmount
@@ -56,30 +65,35 @@ func newBid(listingID uuid.UUID, memberID uuid.UUID, bidType BidType, amount int
 		memberID:  memberID,
 		bidType:   bidType,
 		amount:    amount,
-		status:    BidStatusWinning,
-		createdAt: now,
-		updatedAt: now,
+		// born PENDING, not WINNING: the gold behind this bid has not been held
+		// yet, so it cannot lead until ConfirmBid says wallet succeeded
+		status:         BidStatusPending,
+		idempotencyKey: idempotencyKey,
+		createdAt:      now,
+		updatedAt:      now,
 	}, nil
 }
 
 type BidReconstituteParams struct {
-	ID        uuid.UUID
-	ListingID uuid.UUID
-	MemberID  uuid.UUID
-	Type      BidType
-	Amount    int
-	Status    BidStatus
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID             uuid.UUID
+	ListingID      uuid.UUID
+	MemberID       uuid.UUID
+	Type           BidType
+	Amount         int
+	Status         BidStatus
+	IdempotencyKey uuid.UUID
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type BidSnapshot struct {
-	ID        uuid.UUID
-	ListingID uuid.UUID
-	MemberID  uuid.UUID
-	Type      BidType
-	Amount    int
-	Status    BidStatus
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID             uuid.UUID
+	ListingID      uuid.UUID
+	MemberID       uuid.UUID
+	Type           BidType
+	Amount         int
+	Status         BidStatus
+	IdempotencyKey uuid.UUID
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }

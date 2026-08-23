@@ -45,8 +45,11 @@ type BidRow struct {
 	Type      string    `db:"type"`
 	Amount    int       `db:"amount"`
 	Status    string    `db:"status"`
-	CreatedAt time.Time `db:"created_at"`
-	UpdatedAt time.Time `db:"updated_at"`
+	// nullable: bids written before the saga migration have no key, and callers
+	// are not required to supply one
+	IdempotencyKey *uuid.UUID `db:"idempotency_key"`
+	CreatedAt      time.Time  `db:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at"`
 }
 
 func (r *ListingRepository) FindByID(ctx context.Context, id uuid.UUID) (*listing.Listing, error) {
@@ -88,6 +91,7 @@ func (r *ListingRepository) FindByID(ctx context.Context, id uuid.UUID) (*listin
 			type,
 			amount,
 			status,
+			idempotency_key,
 			created_at,
 			updated_at
 		FROM bids
@@ -105,20 +109,32 @@ func (r *ListingRepository) FindByID(ctx context.Context, id uuid.UUID) (*listin
 		return nil, err
 	}
 
-	// data successfully retrieved, construct and reconstitute
+	return reconstitute(listingRow, bidRows)
+}
 
+// reconstitute rebuilds the aggregate from persisted rows. Shared by FindByID
+// and Modify so the two load paths cannot drift apart.
+func reconstitute(listingRow ListingRow, bidRows []BidRow) (*listing.Listing, error) {
 	reconstitutedBids := make([]*listing.BidReconstituteParams, 0, len(bidRows))
 
 	for _, bid := range bidRows {
+		// a NULL key means the bid was placed without one; uuid.Nil is how the
+		// domain spells that, and it never matches another bid's key
+		var idempotencyKey uuid.UUID
+		if bid.IdempotencyKey != nil {
+			idempotencyKey = *bid.IdempotencyKey
+		}
+
 		reconstitutedBids = append(reconstitutedBids, &listing.BidReconstituteParams{
-			ID:        bid.ID,
-			ListingID: bid.ListingID,
-			MemberID:  bid.MemberID,
-			Type:      listing.BidType(bid.Type),
-			Amount:    bid.Amount,
-			Status:    listing.BidStatus(bid.Status),
-			CreatedAt: bid.CreatedAt,
-			UpdatedAt: bid.UpdatedAt,
+			ID:             bid.ID,
+			ListingID:      bid.ListingID,
+			MemberID:       bid.MemberID,
+			Type:           listing.BidType(bid.Type),
+			Amount:         bid.Amount,
+			Status:         listing.BidStatus(bid.Status),
+			IdempotencyKey: idempotencyKey,
+			CreatedAt:      bid.CreatedAt,
+			UpdatedAt:      bid.UpdatedAt,
 		})
 	}
 
@@ -137,10 +153,99 @@ func (r *ListingRepository) FindByID(ctx context.Context, id uuid.UUID) (*listin
 		UpdatedAt:  listingRow.UpdatedAt,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("repo findById, reconstitute : %w", err)
+		return nil, fmt.Errorf("repo reconstitute: %w", err)
 	}
 
 	return reconstitutedListing, nil
+}
+
+// Modify runs a load-modify-save cycle for one listing inside a single
+// transaction, holding a row lock for its whole duration.
+//
+// This is what makes the lock meaningful. FindByID and Save each open their own
+// transaction, so a lock taken during the read is released long before the write
+// — leaving the window that OCC and withRetry exist to paper over. Here the
+// SELECT ... FOR UPDATE, the domain mutation and the write all sit in one
+// transaction, so concurrent bidders queue instead of racing and retrying.
+//
+// fn receives the reconstituted aggregate and mutates it in memory. It must not
+// perform I/O: it runs with the row locked, and anything slow there blocks every
+// other writer on that listing.
+func (r *ListingRepository) Modify(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
+	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
+		var listingRow ListingRow
+		var bidRows []BidRow
+
+		// FOR UPDATE on the listing row alone is enough: every write to this
+		// aggregate's bids goes through its listing, so serialising on the parent
+		// serialises the children too.
+		listingQuery := `
+		SELECT
+			id,
+			seller_id,
+			buyer_id,
+			item_id,
+			start_price,
+			sold_price,
+			status,
+			ends_at,
+			version,
+			created_at,
+			updated_at
+		FROM listings
+		WHERE id = $1
+		FOR UPDATE
+		`
+
+		if err := tx.GetContext(ctx, &listingRow, listingQuery, id); err != nil {
+			return commonhelpers.WrapDBErr("listing", "Modify", err)
+		}
+
+		bidsQuery := `
+		SELECT
+			id,
+			listing_id,
+			member_id,
+			type,
+			amount,
+			status,
+			idempotency_key,
+			created_at,
+			updated_at
+		FROM bids
+		WHERE listing_id = $1
+		`
+
+		if err := tx.SelectContext(ctx, &bidRows, bidsQuery, id); err != nil {
+			return commonhelpers.WrapDBErr("listing", "Modify", err)
+		}
+
+		listingDomain, err := reconstitute(listingRow, bidRows)
+		if err != nil {
+			return err
+		}
+
+		before := listingDomain.Snapshot()
+
+		if err := fn(listingDomain); err != nil {
+			return err
+		}
+
+		after := listingDomain.Snapshot()
+
+		changes := r.diffListing(&before, &after)
+		if changes == nil {
+			return listing.ErrCorruptListingState
+		}
+
+		// fn may legitimately be a no-op — an idempotent replay changes nothing,
+		// and writing anyway would bump the version for no reason
+		if changes.IsEmpty() {
+			return nil
+		}
+
+		return r.writeChanges(ctx, tx, &after, changes, false)
+	})
 }
 
 func (r *ListingRepository) Insert(ctx context.Context, listing *listing.Listing) error {
@@ -194,15 +299,43 @@ func (r *ListingRepository) Save(ctx context.Context, l *listing.Listing, before
 
 	slog.Debug("checking listing changes in save method", "changes", changes)
 
-	listingQuery := `
+	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
+		return r.writeChanges(ctx, tx, &after, changes, true)
+	})
+}
+
+// writeChanges persists a computed diff inside an existing transaction.
+//
+// checkVersion selects the concurrency strategy. Save passes true: it runs
+// outside any lock, so the UPDATE carries WHERE version = $expected and a zero
+// row count means another writer won the race. Modify passes false because it
+// already holds a row lock — the version still advances, but no writer can have
+// slipped in between the read and this write.
+//
+// The statement order is load-bearing and must not be rearranged: bid status
+// updates run BEFORE new bid inserts, because a placement demotes the previous
+// leader and inserts the new one. Inserting first collides with
+// idx_bids_single_winner while the old WINNING row is still current.
+func (r *ListingRepository) writeChanges(ctx context.Context, tx *sqlx.Tx, after *listing.ListingSnapshot, changes *ListingChanges, checkVersion bool) error {
+	{
+		listingQuery := `
 			UPDATE listings
 			SET version = version + 1, status = $1, updated_at = $2, buyer_id = $3, sold_price = $4
 			WHERE id = $5 AND version = $6
 		`
+		args := []any{after.Status, after.UpdatedAt, after.BuyerID, after.SoldPrice, after.ID, changes.expectedVersion}
 
-	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
+		if !checkVersion {
+			listingQuery = `
+			UPDATE listings
+			SET version = version + 1, status = $1, updated_at = $2, buyer_id = $3, sold_price = $4
+			WHERE id = $5
+		`
+			args = args[:5]
+		}
+
 		// -- update listing --
-		res, err := tx.ExecContext(ctx, listingQuery, after.Status, after.UpdatedAt, after.BuyerID, after.SoldPrice, after.ID, changes.expectedVersion)
+		res, err := tx.ExecContext(ctx, listingQuery, args...)
 		if err != nil {
 			return commonhelpers.WrapDBErr("listing", "save", err)
 		}
@@ -212,24 +345,26 @@ func (r *ListingRepository) Save(ctx context.Context, l *listing.Listing, before
 			return fmt.Errorf("listing save, rows affected: %w", err)
 		}
 
-		// race detected
+		// race detected — only meaningful when the version guard was applied;
+		// under a row lock a zero count would mean the row vanished
 		if n == 0 {
 			return listing.ErrConcurrentModification
 		}
+	}
 
-		if len(changes.bidsUpdated) != 0 {
-			// create unnest required vertical slices
-			ids := make([]string, 0, len(changes.bidsUpdated))
-			statuses := make([]string, 0, len(changes.bidsUpdated))
-			updatedAts := make([]time.Time, 0, len(changes.bidsUpdated))
+	if len(changes.bidsUpdated) != 0 {
+		// create unnest required vertical slices
+		ids := make([]string, 0, len(changes.bidsUpdated))
+		statuses := make([]string, 0, len(changes.bidsUpdated))
+		updatedAts := make([]time.Time, 0, len(changes.bidsUpdated))
 
-			for _, bid := range changes.bidsUpdated {
-				ids = append(ids, bid.id.String())
-				statuses = append(statuses, string(*bid.status))
-				updatedAts = append(updatedAts, bid.updatedAt)
-			}
+		for _, bid := range changes.bidsUpdated {
+			ids = append(ids, bid.id.String())
+			statuses = append(statuses, string(*bid.status))
+			updatedAts = append(updatedAts, bid.updatedAt)
+		}
 
-			changedBidsQuery := `
+		changedBidsQuery := `
 			UPDATE bids b
 			SET status = v.status,
 				updated_at = v.updated_at
@@ -238,27 +373,24 @@ func (r *ListingRepository) Save(ctx context.Context, l *listing.Listing, before
 			WHERE v.id = b.id
 			`
 
-			_, err = tx.ExecContext(ctx, changedBidsQuery, pq.Array(ids), pq.Array(statuses), pq.Array(updatedAts))
-			if err != nil {
-				return commonhelpers.WrapDBErr("listing", "save", err)
-			}
+		if _, err := tx.ExecContext(ctx, changedBidsQuery, pq.Array(ids), pq.Array(statuses), pq.Array(updatedAts)); err != nil {
+			return commonhelpers.WrapDBErr("listing", "save", err)
 		}
+	}
 
-		// -- insert new bids --
-		if len(changes.newBids) != 0 {
-			newBidsQuery := `
-			INSERT INTO bids (id, listing_id, member_id, type, amount, status, created_at, updated_at)
-			VALUES (:id, :listing_id, :member_id, :type, :amount, :status, :created_at, :updated_at)
+	// -- insert new bids --
+	if len(changes.newBids) != 0 {
+		newBidsQuery := `
+			INSERT INTO bids (id, listing_id, member_id, type, amount, status, idempotency_key, created_at, updated_at)
+			VALUES (:id, :listing_id, :member_id, :type, :amount, :status, :idempotency_key, :created_at, :updated_at)
 			`
 
-			_, err = tx.NamedExecContext(ctx, newBidsQuery, changes.newBids)
-			if err != nil {
-				return commonhelpers.WrapDBErr("listing", "save", err)
-			}
+		if _, err := tx.NamedExecContext(ctx, newBidsQuery, changes.newBids); err != nil {
+			return commonhelpers.WrapDBErr("listing", "save", err)
 		}
+	}
 
-		return nil
-	})
+	return nil
 }
 
 type ListingChanges struct {
