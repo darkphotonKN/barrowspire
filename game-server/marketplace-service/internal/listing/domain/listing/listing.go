@@ -110,14 +110,15 @@ func (l *Listing) Snapshot() ListingSnapshot {
 
 	for _, bid := range l.bids {
 		bids = append(bids, BidSnapshot{
-			ID:        bid.id,
-			ListingID: bid.listingID,
-			MemberID:  bid.memberID,
-			Type:      bid.bidType,
-			Amount:    bid.amount,
-			Status:    bid.status,
-			CreatedAt: bid.createdAt,
-			UpdatedAt: bid.updatedAt,
+			ID:             bid.id,
+			ListingID:      bid.listingID,
+			MemberID:       bid.memberID,
+			Type:           bid.bidType,
+			Amount:         bid.amount,
+			Status:         bid.status,
+			IdempotencyKey: bid.idempotencyKey,
+			CreatedAt:      bid.createdAt,
+			UpdatedAt:      bid.updatedAt,
 		})
 	}
 
@@ -193,7 +194,7 @@ func (l *Listing) MarkSold(now time.Time, buyerID uuid.UUID, soldPrice int) erro
 	return nil
 }
 
-func (l *Listing) PlaceBid(memberID uuid.UUID, amount int, now time.Time) error {
+func (l *Listing) PlaceBid(memberID uuid.UUID, amount int, idempotencyKey uuid.UUID, now time.Time) error {
 	if l.status != StatusActive {
 		return ErrListingNotAcceptingBids
 	}
@@ -202,28 +203,92 @@ func (l *Listing) PlaceBid(memberID uuid.UUID, amount int, now time.Time) error 
 		return ErrListingExpired
 	}
 
-	winning := l.findWinningBid()
+	// A replayed request must not become a second bid. Retries and broker
+	// redelivery both resend the same placement, and without this the member
+	// ends up outbidding themselves.
+	if idempotencyKey != uuid.Nil && l.findBidByIdempotencyKey(idempotencyKey) != nil {
+		return nil
+	}
 
-	if winning == nil && amount < l.startPrice {
+	// Compare against whoever is contending, not just the confirmed leader: a
+	// PENDING bid is not in idx_bids_single_winner, so two of them can coexist,
+	// and both would otherwise clear the bar against the same stale leader.
+	contender := l.findContendingBid()
+
+	if contender == nil && amount < l.startPrice {
 		return ErrBidTooLow
 	}
 
-	if winning != nil && amount <= winning.amount {
+	if contender != nil && amount <= contender.amount {
 		return ErrBidTooLow
 	}
 
-	newBid, err := newBid(l.id, memberID, BidTypeBid, amount, now)
+	newBid, err := newBid(l.id, memberID, BidTypeBid, amount, idempotencyKey, now)
 	if err != nil {
 		return err
 	}
 
-	if winning != nil {
-		if err := winning.transitionTo(BidStatusOutbid, now); err != nil {
+	// The incumbent is deliberately left alone. This bid holds no gold yet, so
+	// demoting the current leader now would cost the listing its rightful winner
+	// if the hold then fails. Demotion happens in ConfirmBid.
+	l.bids = append(l.bids, newBid)
+	l.updatedAt = now
+
+	return nil
+}
+
+// ConfirmBid promotes a bid once wallet reports its hold is in place, demoting
+// whoever was leading. This is the step that must not simply fail: the bidder's
+// gold is already frozen, so a bid left in PENDING is money held against a bid
+// that never leads.
+func (l *Listing) ConfirmBid(bidID uuid.UUID, now time.Time) error {
+	bid := l.findBidByID(bidID)
+
+	if bid == nil {
+		return ErrBidNotFound
+	}
+
+	// Hold-confirmation events arrive at-least-once, so a redelivery is expected
+	// traffic rather than an error — reporting one would make the saga compensate
+	// a step that actually succeeded.
+	if bid.status == BidStatusWinning {
+		return nil
+	}
+
+	incumbent := l.findWinningBid()
+
+	if err := bid.transitionTo(BidStatusWinning, now); err != nil {
+		return err
+	}
+
+	if incumbent != nil && incumbent.id != bid.id {
+		if err := incumbent.transitionTo(BidStatusOutbid, now); err != nil {
 			return err
 		}
 	}
 
-	l.bids = append(l.bids, newBid)
+	l.updatedAt = now
+
+	return nil
+}
+
+// FailBid marks a bid dead because wallet could not hold the gold. The incumbent
+// is untouched: a failed challenge changes nothing about who is winning.
+func (l *Listing) FailBid(bidID uuid.UUID, now time.Time) error {
+	bid := l.findBidByID(bidID)
+
+	if bid == nil {
+		return ErrBidNotFound
+	}
+
+	if bid.status == BidStatusFailed {
+		return nil
+	}
+
+	if err := bid.transitionTo(BidStatusFailed, now); err != nil {
+		return err
+	}
+
 	l.updatedAt = now
 
 	return nil
@@ -259,6 +324,35 @@ func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time
 func (l *Listing) findWinningBid() *Bid {
 	for _, bid := range l.bids {
 		if bid.status != BidStatusWinning {
+			continue
+		}
+		return bid
+	}
+
+	return nil
+}
+
+// findContendingBid returns whoever currently holds or is claiming the lead:
+// the confirmed WINNING bid, or a PENDING one still waiting on its hold. Used
+// for the price threshold, where an unconfirmed bid still sets the bar.
+func (l *Listing) findContendingBid() *Bid {
+	var contender *Bid
+
+	for _, bid := range l.bids {
+		if bid.status != BidStatusWinning && bid.status != BidStatusPending {
+			continue
+		}
+		if contender == nil || bid.amount > contender.amount {
+			contender = bid
+		}
+	}
+
+	return contender
+}
+
+func (l *Listing) findBidByIdempotencyKey(key uuid.UUID) *Bid {
+	for _, bid := range l.bids {
+		if bid.idempotencyKey != key {
 			continue
 		}
 		return bid
@@ -308,14 +402,15 @@ func Reconstitute(params ReconstituteParams) (*Listing, error) {
 
 	for _, bid := range params.Bids {
 		bids = append(bids, &Bid{
-			id:        bid.ID,
-			listingID: bid.ListingID,
-			memberID:  bid.MemberID,
-			bidType:   bid.Type,
-			amount:    bid.Amount,
-			status:    bid.Status,
-			createdAt: bid.CreatedAt,
-			updatedAt: bid.UpdatedAt,
+			id:             bid.ID,
+			listingID:      bid.ListingID,
+			memberID:       bid.MemberID,
+			bidType:        bid.Type,
+			amount:         bid.Amount,
+			status:         bid.Status,
+			idempotencyKey: bid.IdempotencyKey,
+			createdAt:      bid.CreatedAt,
+			updatedAt:      bid.UpdatedAt,
 		})
 	}
 
