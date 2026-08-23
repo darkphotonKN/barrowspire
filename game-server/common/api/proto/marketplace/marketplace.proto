@@ -38,6 +38,9 @@ message CreateListingResponse {
 message PlaceBidRequest {
   string listing_id = 1;
   int64  amount     = 2;
+  // Idempotency key for safe retries. Optional; when empty the bid is never
+  // deduplicated, so a retried request becomes a second bid.
+  string idempotency_key = 3;
 }
 
 message PlaceBidResponse {

@@ -149,11 +149,14 @@ func (x *CreateListingResponse) GetCreatedAt() *timestamppb.Timestamp {
 // The bidder is derived from the authenticated context server-side, never
 // supplied by the caller — same rule as CreateListingRequest.
 type PlaceBidRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ListingId     string                 `protobuf:"bytes,1,opt,name=listing_id,json=listingId,proto3" json:"listing_id,omitempty"`
-	Amount        int64                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ListingId string                 `protobuf:"bytes,1,opt,name=listing_id,json=listingId,proto3" json:"listing_id,omitempty"`
+	Amount    int64                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	// Idempotency key for safe retries. Optional; when empty the bid is never
+	// deduplicated, so a retried request becomes a second bid.
+	IdempotencyKey string `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *PlaceBidRequest) Reset() {
@@ -198,6 +201,13 @@ func (x *PlaceBidRequest) GetAmount() int64 {
 		return x.Amount
 	}
 	return 0
+}
+
+func (x *PlaceBidRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
 }
 
 type PlaceBidResponse struct {
@@ -388,11 +398,12 @@ const file_api_proto_marketplace_marketplace_proto_rawDesc = "" +
 	"\theld_gold\x18\x04 \x01(\x03R\bheldGold\x12%\n" +
 	"\x0eavailable_gold\x18\x05 \x01(\x03R\ravailableGold\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"H\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"q\n" +
 	"\x0fPlaceBidRequest\x12\x1d\n" +
 	"\n" +
 	"listing_id\x18\x01 \x01(\tR\tlistingId\x12\x16\n" +
-	"\x06amount\x18\x02 \x01(\x03R\x06amount\"f\n" +
+	"\x06amount\x18\x02 \x01(\x03R\x06amount\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"f\n" +
 	"\x10PlaceBidResponse\x12\x15\n" +
 	"\x06bid_id\x18\x01 \x01(\tR\x05bidId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12#\n" +
