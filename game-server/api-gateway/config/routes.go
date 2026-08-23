@@ -10,6 +10,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/wallet"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -153,6 +154,23 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	itemRoutes.GET("/loadout", itemHandler.GetLoadoutHandler)
 	itemRoutes.PUT("/loadout", itemHandler.UpdateLoadoutHandler)
 	itemRoutes.GET("/instances", itemHandler.ListItemInstancesHandler)
+
+	// --- WALLET MICROSERVICE ---
+
+	walletClient := wallet.NewClient(registry)
+	walletHandler := wallet.NewHandler(walletClient)
+
+	walletRoutes := api.Group("/wallet")
+	// Every wallet RPC derives the account from the authenticated member, so
+	// there are no public routes here.
+	walletRoutes.Use(auth.AuthMiddleware())
+	walletRoutes.POST("/account", walletHandler.CreateAccountHandler)
+	walletRoutes.GET("/account", walletHandler.GetAccountHandler)
+	walletRoutes.POST("/deposit", walletHandler.DepositHandler)
+	walletRoutes.POST("/withdraw", walletHandler.WithdrawHandler)
+
+	// NOTE: PlaceHold / CommitHold are intentionally not exposed. They are steps
+	// inside the bidding saga owned by marketplace-service, not user actions.
 
 	return router
 }
