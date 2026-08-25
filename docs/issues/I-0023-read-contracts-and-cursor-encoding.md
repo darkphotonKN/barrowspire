@@ -13,17 +13,26 @@ surface the read path is written against, and every slice after it is mechanical
 exist.
 
 > **Extends the FS-0003 chain post-amendment.** Slices 1–9 (I-0014 … I-0022) were cut before
-> FS-0003 gained its read path. They remain correct and untouched; this slice and the four after
-> it cover what the amendment added.
+> FS-0003 gained its read path; this slice and the four after it cover what the amendment added.
+>
+> **This slice also absorbed proto generation from I-0018.** ADR-0011 made the write path a
+> Temporal activity, so `AppendLedgerTx` left the proto entirely and I-0018 became the worker
+> slice. `ledger.proto` now contains read RPCs only — authored here, so generation belongs here
+> too.
 
 ## What to Build
 
 Three artifacts, no behavior.
 
-**1. Proto** (`common/api/proto/ledger/ledger.proto`) — add `GetTransaction` and `ListEntries`
-alongside `AppendLedgerTx`, per §API surface. Request and response messages, including the
-nested `legs[]` on the transaction response and the flattened entry row on the listing (§Req 22).
-Do not run generation here — that rides with the slice that needs it.
+**1. Proto** (`common/api/proto/ledger/ledger.proto`) — `GetTransaction` and `ListEntries` per
+§API surface. **These two are the entire service definition** — `AppendLedgerTx` is an activity
+and is not in the proto (ADR-0011), and `CreateLedger` / `GetLedger` are deleted (§Req 18).
+Request and response messages, including the nested `legs[]` on the transaction response and the
+flattened entry row on the listing (§Req 22).
+
+**Run generation here**, absorbed from I-0018: regenerate `ledger.pb.go` and `ledger_grpc.pb.go`.
+**Generated Go is never hand-edited** (root CLAUDE.md) — if the output is wrong, fix the `.proto`
+and regenerate. Registration and handler arms are I-0025's, not this slice's.
 
 **2. Repository read interfaces.** The read methods the append-only repository already promised
 by exposing "insert and read only" (I-0014) finally get their consumer. They read into
@@ -71,6 +80,9 @@ already did).
 ## Acceptance Criteria
 
 - [ ] `ledger.proto` carries `GetTransaction` and `ListEntries` with the shapes in §API surface
+- [ ] `ledger.proto` carries no `AppendLedgerTx`, `CreateLedger`, or `GetLedger`
+- [ ] `ledger.pb.go` and `ledger_grpc.pb.go` regenerate cleanly; `git diff` shows only
+      regeneration output, no hand edits
 - [ ] The transaction response nests `legs[]`; the listing response is flat (§Req 22)
 - [ ] No read method on any interface returns a total, sum, count, or balance (§Req 20)
 - [ ] The cursor's encoding is decided and written down, including the malformed-vs-empty split

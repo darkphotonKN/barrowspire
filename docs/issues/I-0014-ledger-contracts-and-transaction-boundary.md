@@ -6,6 +6,7 @@ blocked_by: []
 labels: []
 title: "FS-0003 slice 1: contracts — proto, interfaces, DDL, transaction-boundary pattern, sentinels"
 ---
+
 Implements FS-0003 §Requirements, §API surface, §Data model, §Open questions
 
 **Author: human** — do NOT hand this to `/develop`. This is the whole design surface;
@@ -16,20 +17,32 @@ everything downstream is mechanical once these shapes exist.
 Five artifacts, no behavior. Nothing here executes — this slice decides the shapes that
 slices 2–9 are written against.
 
-**1. Proto** (`common/api/proto/ledger/ledger.proto`) — per FS-0003 §API surface.
-`AppendLedgerTx` replaces `CreateLedger` and `GetLedger`; both are marked `SCAFFOLD` in the
-proto today and have no callers (§Req 18). Enums for **`Direction` and `Reason` only** —
-`ReferenceType` was cut from the feature entirely; `reference_id` carries the originating event
-unaided. Note `currency` sits on `AppendLedgerTxRequest`, **not** on `LedgerLeg`: one currency
-per transaction is structural rather than validated (§Req 8).
-Do not run generation here — that is slice 5.
+**1. The activity contract** — Go input/output types for `AppendLedgerTx`, per FS-0003
+§API surface. **These are not proto messages.** ADR-0011 made the write path a Temporal activity,
+so `AppendLedgerTx` is not an RPC and does not appear in `ledger.proto` at all — the proto
+carries read RPCs only, authored in I-0023.
+
+The field tables in §API surface survived the transport change intact and are still the spec:
+`transaction_id`, `reason`, `reference_id`, `currency`, `legs[]` on the input; `account_id`,
+`direction`, `amount` per leg. `currency` sits on the **transaction, not the leg** — one currency
+per transaction is structural rather than validated (§Req 8). `Direction` and `Reason` are Go
+value types; `ReferenceType` was cut from the feature entirely and `reference_id` carries the
+originating event unaided.
+
+> **These types are an ungated cross-service contract** (ADR-0011, accepted cost). Nothing fails
+> a PR that renames a field — no proto, no `buf`, no OpenAPI. The break surfaces at runtime as a
+> deserialization error inside a workflow already past its pivot. Name them as if there is no
+> safety net, because there is not one.
+
+`CreateLedger` and `GetLedger` are still deleted (§Req 18) — both are marked `SCAFFOLD` and have
+no callers. Do not run proto generation here.
 
 **2. Repository + service interfaces.** The repository exposes **insert and read only**. There
 is no update method and no delete method — enforced by absence, not convention (§Req 9,
 ADR-0007).
 
 **3. The transaction-boundary pattern — the load-bearing decision of this slice.**
-All legs of one `AppendLedgerTx` commit together or not at all (§Req 7–8), and the pattern for
+All legs of one `AppendLedgerTx` call commit together or not at all (§Req 7–8), and the pattern for
 composing that must be **expressed in the interface itself, without `*sql.Tx` leaking into the
 service-layer signature.** Slice 6 writes repository method bodies against whatever this
 interface says, so the pattern has to be legible from the signature alone.
@@ -41,9 +54,11 @@ interface says, so the pattern has to be legible from the signature alone.
 **4. Migration DDL** — per FS-0003 §Data model. Decide the statements; slice 3 writes the
 files. Includes `DROP TABLE ledgers` (§Req 17).
 
-**5. The sentinel error set.** The domain errors slice 8 maps to gRPC codes. FS-0003
-§API surface's error table is the target vocabulary — `UNBALANCED_TRANSACTION`,
-`VALIDATION_FAILED`, and the transient/internal cases. Existing sentinels in
+**5. The sentinel error set.** FS-0003 §API surface's error table is the target vocabulary —
+`UNBALANCED_TRANSACTION`, `VALIDATION_FAILED`, and the transient/internal cases. **The set now
+feeds two consumers, not one:** the write path classifies each sentinel retryable or
+non-retryable on the activity's retry policy (I-0018), and the read path maps its own errors to
+gRPC codes (I-0021). A sentinel that is neither classified nor mapped is a gap in one of them. Existing sentinels in
 `internal/ledger/domain/ledger/errors.go` and `commonconstants` are the starting point;
 `ErrConcurrentModification` goes away with OCC (§Req 17, ADR-0007).
 
@@ -75,12 +90,14 @@ migration currently has neither.
 
 ## Acceptance Criteria
 
-- [ ] `ledger.proto` carries `AppendLedgerTx` and no `CreateLedger` / `GetLedger`
+- [ ] The activity's input/output Go types match §API surface's field tables
+- [ ] `AppendLedgerTx` appears in no `.proto` file; `CreateLedger` / `GetLedger` are gone
 - [ ] Repository interface exposes no update and no delete method
 - [ ] The transaction-boundary pattern is readable from the interface signature alone, with no
       `*sql.Tx` in any service-layer signature
 - [ ] Migration DDL decided, including `DROP TABLE ledgers`
-- [ ] Sentinel error set covers every row of FS-0003 §API surface's error table
+- [ ] Sentinel error set covers every row of FS-0003 §API surface's error table, and each row is
+      marked retryable or non-retryable
 - [ ] The migration matches FS-0003 §Data model — `created_at` on `ledger_entries`, the
       `(account_id, created_at, id)` and `(created_at, id)` indexes present
 - [ ] No unique constraint exists beyond the two primary keys
@@ -95,7 +112,8 @@ None. This slice blocks all of I-0015 … I-0022.
 
 FS-0003 §Requirements 6–13 (invariants, idempotency), 15–16 (boundaries), 17–18 (scaffold
 retirement, proto rewrite), §API surface (the RPC and error table), §Data model (DDL),
-§Open questions (all three). Governed by ADR-0006, ADR-0007, ADR-0008, ADR-0009.
+§Open questions (all three). Governed by ADR-0006, ADR-0007, ADR-0008, ADR-0009, and
+**ADR-0011** (the write path is a Temporal activity, so artifact 1 is Go types, not proto).
 
 ## Notes
 

@@ -804,10 +804,12 @@ ADRs name them rather than resolving them.
 - **Any transport for the write path.** `AppendLedgerTx` is a Temporal activity (requirement 19,
   ADR-0011) — no HTTP route, and no gRPC RPC either. The read path's HTTP surface is in scope;
   the write path has no surface to put in scope.
-- **The settlement workflow, its worker topology, and its retry policies.** This feature ships the
-  activity and declares which of its errors are non-retryable; *scheduling* it, operating
-  ledger-service's worker, and the orchestrator's own workflow code belong to whoever specifies
-  the saga.
+- **The settlement workflow and its scheduling.** This feature ships the callee: ledger-service's
+  own worker, `AppendLedgerTx` registered on it as an activity, and a retry policy declaring which
+  of its errors are non-retryable. The workflow that *schedules* that activity, the orchestrator's
+  own worker, and the saga's compensation steps belong to whoever specifies the saga. The absence
+  of a caller does not block the callee — a registered activity is invocable and testable without
+  one.
 - **A schema gate for the activity's input/output types.** ADR-0011 accepts their being
   ungated as a known cost; a shared types package or contract tests are candidate mitigations
   and are not decided or built here.

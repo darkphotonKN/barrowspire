@@ -49,7 +49,7 @@ action here.
 
 ## Acceptance Criteria
 
-- [ ] Service builds, boots, registers with Consul, serves gRPC
+- [ ] Service builds, boots, registers with Consul, serves gRPC (for the read path)
 - [ ] Wiring shape matches `wallet-service/` (cmd, config, DI, Dockerfile, compose entry)
 - [ ] `Ledger` aggregate, `version`, `Reconstitute`, `Save`, and `withRetry` are gone
 - [ ] `mapError` exists, compiles, references the sentinel set, and contains **zero** case arms
@@ -62,8 +62,9 @@ I-0014 — the sentinel set must exist before the stub can reference it.
 
 ## Spec Reference
 
-FS-0003 §Requirements 17 (scaffold retirement), 19 (gRPC only — no gateway route, no
-`openapi.yaml`, no client generation). Governed by ADR-0007 (OCC removal).
+FS-0003 §Requirements 17 (scaffold retirement), 19 (the write path is a Temporal activity — no
+gateway route, no `openapi.yaml`, no client generation). Governed by ADR-0007 (OCC removal) and
+ADR-0011 (write path is an activity; the gRPC server this slice boots serves the read path).
 
 ## Notes
 

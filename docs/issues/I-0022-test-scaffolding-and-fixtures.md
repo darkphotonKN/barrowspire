@@ -21,7 +21,10 @@ slice **generalises that**, it does not replace it — read it first, and do not
 setup into a different shape for its own sake.
 
 - Database setup and teardown per test, migrations applied, isolation between tests.
-- A gRPC test client that can call `AppendLedgerTx` against a running handler.
+- A **Temporal activity test environment** that can invoke `AppendLedgerTx` against the
+  registered activity (ADR-0011 — there is no gRPC client on this path, and no RPC to call).
+  The SDK's activity test environment invokes it directly; a running orchestrator is not needed
+  and is out of scope.
 - Fixture builders for the shapes FS-0003 keeps exercising: a balanced two-leg `CommitHold`
   transaction, its `ReverseCommit` counterpart, and deliberately invalid variants (unbalanced,
   single-leg, zero amount, mixed currency) for refusal tests to consume.
@@ -40,7 +43,7 @@ that *asserts* an unbalanced transaction is refused belongs to I-0020.
 
 - [ ] A test can create a clean, migrated database and tear it down
 - [ ] Tests are isolated — one test's rows are invisible to the next
-- [ ] A test can call `AppendLedgerTx` through a real gRPC client
+- [ ] A test can invoke `AppendLedgerTx` through the activity test environment
 - [ ] Fixture builders exist for balanced, reversal, and each invalid variant listed above
 - [ ] A concurrency helper can issue two identical posts simultaneously
 - [ ] No test in this slice asserts domain behavior
@@ -48,7 +51,7 @@ that *asserts* an unbalanced transaction is refused belongs to I-0020.
 
 ## Blocked By
 
-I-0018 (a reachable RPC to call), I-0019 (a repository to persist through).
+I-0018 (a registered activity to invoke), I-0019 (a repository to persist through).
 
 ## Spec Reference
 

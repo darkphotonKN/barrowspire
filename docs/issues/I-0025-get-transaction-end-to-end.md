@@ -2,7 +2,7 @@
 id: I-0025
 status: open
 implements: FS-0003
-blocked_by: [I-0017, I-0018, I-0021, I-0023, I-0024]
+blocked_by: [I-0017, I-0021, I-0023, I-0024]
 labels: [blocked]
 title: "FS-0003 slice 12: getTransaction end-to-end — repo read, gRPC arm, Huma op, 404 masking"
 ---
@@ -19,7 +19,9 @@ One operation, every layer: `GET /api/ledger/transactions/{transaction_id}`.
 
 - **Repository** — read one transaction with all its legs, against I-0023's interface.
 - **Service** — assemble the response; enforce the visibility rule below.
-- **gRPC handler arm** — `GetTransaction`, wired into the registration I-0018 stood up.
+- **gRPC server registration and handler arm** — `RegisterLedgerServiceServer` against the read
+  service definition I-0023 generated, plus the `GetTransaction` arm. This slice stands the
+  registration up; it was I-0018's before ADR-0011 turned that slice into the Temporal worker.
 - **`mapError`** — add the read-path rows. I-0021 owns this function; extend it, do not fork it.
 - **Gateway typed operation** — the `ledger` group's first Huma op.
 
@@ -94,9 +96,8 @@ never an empty result: fail closed, same posture as the missing role claim above
 
 ## Blocked By
 
-- I-0023 — the proto messages and repository read interface
+- I-0023 — the proto messages, the generated Go, and the repository read interface
 - I-0024 — the gateway cannot dial ledger-service without it
-- I-0018 — generated proto and `RegisterLedgerServiceServer`
 - I-0017 — the scan targets the repository read fills
 - I-0021 — `mapError` must exist before this slice adds rows to it
 

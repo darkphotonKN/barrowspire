@@ -14,7 +14,8 @@ Implements FS-0003 §Requirements 1-8, §Edge States
 
 The domain logic. This is where a transaction becomes valid or is refused.
 
-**Leg construction** — build the legs of a transaction from an `AppendLedgerTx` request.
+**Leg construction** — build the legs of a transaction from an `AppendLedgerTx` activity input
+(ADR-0011 — the input type I-0014 defines, not a proto message).
 `CommitHold` is two legs, buyer `DEBIT` and seller `CREDIT` (§Req 1). `ReverseCommit` is a new
 transaction with its own `transaction_id` and the legs swapped — never a mutation of the
 original (§Req 2, ADR-0007). `PlaceHold` and `ReleaseHold` reach this service as nothing at all;
