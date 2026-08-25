@@ -1,6 +1,6 @@
 # FS-0003: Append-only gold ledger
 
-> Status: work-order · SPECIFICATION.md: `game-server/ledger-service/SPECIFICATION.md` "## Capabilities" → "Append a balanced ledger transaction" and "Read the movement record"; `game-server/api-gateway/SPECIFICATION.md` "### Downstream routing" → "Route ledger read traffic to ledger" → this FS · Related ADRs: [ADR-0005](../adr/0005-wallet-owns-balance-ledger-is-a-reconciliation-record.md) (wallet owns balance), [ADR-0006](../adr/0006-only-balanced-movements-are-recorded.md) (only balanced movements recorded), [ADR-0007](../adr/0007-the-ledger-is-append-only-corrections-are-reversals.md) (append-only), [ADR-0008](../adr/0008-amounts-are-unsigned-direction-carries-the-sign.md) (unsigned amounts), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-owned idempotency), [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md) (appended past the saga pivot; no reversals)
+> Status: work-order · SPECIFICATION.md: `game-server/ledger-service/SPECIFICATION.md` "## Capabilities" → "Append a balanced ledger transaction" and "Read the movement record"; `game-server/api-gateway/SPECIFICATION.md` "### Downstream routing" → "Route ledger read traffic to ledger" → this FS · Related ADRs: [ADR-0005](../adr/0005-wallet-owns-balance-ledger-is-a-reconciliation-record.md) (wallet owns balance), [ADR-0006](../adr/0006-only-balanced-movements-are-recorded.md) (only balanced movements recorded), [ADR-0007](../adr/0007-the-ledger-is-append-only-corrections-are-reversals.md) (append-only), [ADR-0008](../adr/0008-amounts-are-unsigned-direction-carries-the-sign.md) (unsigned amounts), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-owned idempotency), [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md) (appended past the saga pivot; no reversals), [ADR-0011](../adr/0011-settlement-write-path-is-a-temporal-activity-per-owning-service.md) (write path is a Temporal activity owned by ledger-service)
 
 ## Summary
 
@@ -20,8 +20,9 @@ wrong. It therefore never sums entries into an account total and never answers *
 balance"* — that question stays in wallet-service permanently, and moving it here for
 convenience would defeat the purpose of having two records.
 
-It also serves that "why" to the people who need to ask it. The **write path is gRPC
-service-to-service** — its caller is wallet-service, not a browser. The **read path is HTTP
+It also serves that "why" to the people who need to ask it. The **write path is a Temporal
+activity** executed in-process by ledger-service's own worker — its caller is the settlement
+workflow, not a browser, and not a gRPC client (ADR-0011). The **read path is HTTP
 through the gateway**, because its consumers are support engineers and incident responders —
 people, not services. **No player-facing UI is planned**; the member-scoped arm of the read path
 exists as an authorization rule, not as a screen. Reading the record is a listing of movements and never an aggregate, which is what
@@ -140,10 +141,21 @@ paragraph above rules out.
 
 **Transport**
 
-19. **The write path is gRPC only.** `AppendLedgerTx` is service-to-service: no gateway route,
-    no HTTP surface, no generated-client change. The **read path** added by requirements 20–32
-    is a separate surface and does carry HTTP, because its consumers are people rather than
-    services.
+19. **The write path is a Temporal activity, not an RPC.** `AppendLedgerTx` is registered in
+    ledger-service and executed **in-process by ledger-service's own worker, on ledger-service's
+    own task queue** (ADR-0011). The settlement workflow schedules it onto that queue; it does
+    not call ledger-service. There is **no gRPC hop, no gRPC RPC, no gateway route, no HTTP
+    surface, and no generated-client change** on this path.
+
+    Two properties follow, and they are the reason for the choice. **The task queue is a
+    bulkhead**: ledger's activity slots are its own, so a degraded ledger cannot starve the
+    hold-commit and debit activities that are past the pivot and must roll forward. And
+    **liveness is observed directly** — Temporal sees ledger-service's worker stop polling,
+    rather than the orchestrator inferring it from a connection error.
+
+    The **read path** added by requirements 20–32 is a separate surface and is **unchanged**: it
+    carries HTTP through the gateway and one gRPC call into ledger-service per operation, because
+    its consumers are people rather than workflows.
 
 **The read path**
 
@@ -376,18 +388,17 @@ paragraph above rules out.
 
 ## API surface
 
-Two surfaces, for two kinds of consumer. The **write path** is gRPC service-to-service and has
-no HTTP (requirement 19). The **read path** is HTTP through the gateway, because its consumers
-are people — and each HTTP operation maps to one gRPC call into ledger-service.
+Two surfaces, for two kinds of consumer. The **write path** is a Temporal activity and has no
+transport of its own at all — no HTTP, and no RPC (requirement 19, ADR-0011). The **read path**
+is HTTP through the gateway, because its consumers are people — and each HTTP operation maps to
+one gRPC call into ledger-service.
 
-`ledger.proto` is rewritten: `CreateLedger` and `GetLedger` are deleted (both are marked
-`SCAFFOLD` in the proto and have no callers), and three RPCs replace them.
+**Only the read path is in `ledger.proto`.** The proto is rewritten: `CreateLedger` and
+`GetLedger` are deleted (both are marked `SCAFFOLD` in the proto and have no callers), and two
+RPCs replace them — both of them reads.
 
 ```proto
 service LedgerService {
-  // Record a completed, balanced gold movement. Idempotent on transaction_id.
-  rpc AppendLedgerTx(AppendLedgerTxRequest) returns (AppendLedgerTxResponse) {}
-
   // Read one transaction with all of its legs.
   rpc GetTransaction(GetTransactionRequest) returns (GetTransactionResponse) {}
 
@@ -405,10 +416,17 @@ enum Reason {
 }
 ```
 
-### Write path — `AppendLedgerTx` (gRPC only)
+### Write path — `AppendLedgerTx` (Temporal activity)
 
-**`AppendLedgerTxRequest`** — writable fields only; caller identity comes from transport
-metadata, never the body (requirement 16).
+**The two tables below are the activity's input and output types, not proto messages.** They
+survived the move from gRPC intact — the same fields, the same constraints, the same
+transaction-level/leg-level split — because the shape of a balanced movement is a domain fact and
+does not depend on how the call arrives. What changed is what enforces them: a proto schema and
+`buf` gated these fields before, and **nothing gates them now** (ADR-0011's accepted cost). Go
+types in ledger-service are the only definition.
+
+**`AppendLedgerTxRequest`** — writable fields only; caller identity comes from the execution
+context, never the body (requirement 16).
 
 | Field | Type | Notes |
 |---|---|---|
@@ -443,21 +461,33 @@ metadata, never the body (requirement 16).
 | `applied` | `bool` | `true` = rows written; `false` = already recorded, no-op (requirement 12). |
 | `recorded_at` | `Timestamp` | The original write's time, not the retry's. |
 
-**Errors.** gRPC code plus the stable domain code, mapped through the existing `mapError` seam
-in `internal/ledger/grpc/handler.go`.
+**Errors.** **gRPC status codes do not apply on this path.** The activity returns a domain
+error, and Temporal's retry policy decides what happens next — so the classification that matters
+is no longer *which code* but *retryable or not*.
 
-| Case | Response |
-|---|---|
-| legs do not sum to zero | `InvalidArgument · UNBALANCED_TRANSACTION` |
-| fewer than two legs | `InvalidArgument · UNBALANCED_TRANSACTION` |
-| any leg has `amount <= 0` | `InvalidArgument · VALIDATION_FAILED` |
-| legs mix currencies | `InvalidArgument · VALIDATION_FAILED` |
-| `reason` is `UNSPECIFIED` | `InvalidArgument · VALIDATION_FAILED` |
-| any UUID field is malformed | `InvalidArgument · VALIDATION_FAILED` |
-| transaction already recorded, identical | `OK` · `applied = false` |
-| transaction already recorded, contradictory | `OK` · `applied = false` — deliberately indistinguishable from the identical case (open question 1). No `LEDGER_CONFLICT` code exists. |
-| database unavailable | `Unavailable · TRANSIENT` |
-| anything else | `Internal · INTERNAL_ERROR` |
+**The non-retryable set must be declared on the activity's retry policy** (ADR-0011). This is not
+a default that can be left implicit: a settlement saga past its pivot retries forward, so an
+undeclared non-retryable error **retries forever**, producing a workflow that never completes
+rather than one that fails loudly. Every row marked non-retryable below is a row that must appear
+in that declaration.
+
+| Case | Activity result | Retry |
+|---|---|---|
+| legs do not sum to zero | `ErrUnbalancedTransaction` · `UNBALANCED_TRANSACTION` | **non-retryable** |
+| fewer than two legs | `ErrInvalidLegCount` · `UNBALANCED_TRANSACTION` | **non-retryable** |
+| any leg has `amount <= 0` | `ErrInvalidLegAmount` · `VALIDATION_FAILED` | **non-retryable** |
+| a leg's `direction` is neither `DEBIT` nor `CREDIT` | `ErrInvalidDirection` · `VALIDATION_FAILED` | **non-retryable** |
+| `reason` is not a legal value | `VALIDATION_FAILED` | **non-retryable** |
+| any UUID field is malformed or nil | `ErrInvalidUUID` · `VALIDATION_FAILED` | **non-retryable** |
+| transaction already recorded, identical | success · `applied = false` | n/a — the retry that lands here has already succeeded |
+| transaction already recorded, contradictory | success · `applied = false` — deliberately indistinguishable from the identical case (open question 1). No `LEDGER_CONFLICT` code exists. | n/a |
+| database unavailable | `TRANSIENT` | **retryable** — the default, and the case the retry policy exists for |
+| anything else | `INTERNAL_ERROR` | **retryable** — an unclassified error is retried, which is why the non-retryable set must be explicit |
+
+> The domain codes (`UNBALANCED_TRANSACTION`, `VALIDATION_FAILED`, `TRANSIENT`,
+> `INTERNAL_ERROR`) are unchanged and still stable. Only their transport mapping is gone: there
+> is no `mapError` seam on the write path, because there is no gRPC handler to map into. The
+> read path's `mapError` in `internal/ledger/grpc/handler.go` is untouched.
 
 ### Read path — `getTransaction` and `listEntries` (HTTP via the gateway)
 
@@ -670,9 +700,9 @@ input arrives. The `CHECK` is the backstop, consistent with `direction`'s existi
 
 ## Known gap — the write path is not durable yet
 
-wallet-service and ledger-service have **separate databases**, so a synchronous `AppendLedgerTx`
-cannot join wallet's commit transaction. If wallet commits a balance change and the gRPC call
-then fails, the ledger is permanently missing an entry, and a future reconciler reports a
+wallet-service and ledger-service have **separate databases**, so appending the ledger cannot
+join wallet's commit transaction — that is true of an activity exactly as it was of an RPC. If
+wallet commits a balance change and the append then fails, the ledger is missing an entry, and a future reconciler reports a
 discrepancy with no underlying gold error — the exact failure this service exists to catch,
 manufactured by the service itself.
 
@@ -683,8 +713,12 @@ idempotently. At-least-once delivery is precisely *why* requirement 11's caller-
 deterministic `transaction_id` is the right call — duplicates stop being an edge case and become
 the normal path.
 
-This is recorded, not solved. The gRPC surface above is correct either way: an AMQP consumer
-would invoke the same use case. **Do not treat the ledger as durable until the outbox lands.**
+This is recorded, not solved. The surface above is correct either way, and **ADR-0011 has made
+that argument stronger rather than weaker**: the append is now reached through a Temporal
+activity, and an AMQP consumer would reach the *same use case* through a second door. Two
+non-gRPC entry points into one use case is the demonstration that the use case — not the
+transport — is where this feature's logic lives. A third door costs a handler, not a redesign.
+**Do not treat the ledger as durable until the outbox lands.**
 
 > **Requirement 2 narrows this gap considerably, and the narrowing should be checked rather than
 > assumed.** If the append is a roll-forward step of a saga that retries until it succeeds, the
@@ -707,6 +741,7 @@ suggestions** — a slice that contradicts one supersedes it or is wrong.
 | [ADR-0008](../adr/0008-amounts-are-unsigned-direction-carries-the-sign.md) | `amount > 0` always; `direction` carries the sign | 6–7 |
 | [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) | the caller mints a deterministic `transaction_id`; duplicates are no-op successes | 11–13 |
 | [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md) | the ledger is appended only past the saga's pivot, so nothing recorded is ever wrong and no reversal exists | 2–3, 9 |
+| [ADR-0011](../adr/0011-settlement-write-path-is-a-temporal-activity-per-owning-service.md) | the write path is a Temporal activity on ledger-service's own task queue, executed in-process; no gRPC hop | 19 |
 
 Open questions 1 and 2 below are explicitly **left unsettled by ADR-0008 and ADR-0009** — both
 ADRs name them rather than resolving them.
@@ -766,8 +801,16 @@ ADRs name them rather than resolving them.
 - **The transactional outbox in wallet-service.** See [Known gap](#known-gap--the-write-path-is-not-durable-yet).
 - **wallet-service's `CommitHold` / `Credit` verbs.** Both are unbuilt (`wallet-service/SPECIFICATION.md`
   marks them `[ ]`). The ledger's caller does not exist yet; this feature builds the callee.
-- **An HTTP surface for the write path.** `AppendLedgerTx` stays gRPC service-to-service
-  (requirement 19). The read path's HTTP surface is in scope; the write path's is not.
+- **Any transport for the write path.** `AppendLedgerTx` is a Temporal activity (requirement 19,
+  ADR-0011) — no HTTP route, and no gRPC RPC either. The read path's HTTP surface is in scope;
+  the write path has no surface to put in scope.
+- **The settlement workflow, its worker topology, and its retry policies.** This feature ships the
+  activity and declares which of its errors are non-retryable; *scheduling* it, operating
+  ledger-service's worker, and the orchestrator's own workflow code belong to whoever specifies
+  the saga.
+- **A schema gate for the activity's input/output types.** ADR-0011 accepts their being
+  ungated as a known cost; a shared types package or contract tests are candidate mitigations
+  and are not decided or built here.
 - **Any player-facing UI.** No `game-client` screen consumes this read path, and none is planned.
   The generated TypeScript client still gains both operations — generation covers the whole
   gateway surface (requirement 32) — it simply has no caller. Member-scoped reads exist so the
