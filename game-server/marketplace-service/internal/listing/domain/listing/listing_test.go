@@ -47,7 +47,7 @@ func TestPlaceBidAmountInvariant(t *testing.T) {
 // creates a bid on a different path.
 func TestNewBidRejectsNonPositiveAmount(t *testing.T) {
 	for _, amount := range []int{-1, 0} {
-		bid, err := newBid(uuid.New(), uuid.New(), BidTypeBid, amount, uuid.Nil, time.Now())
+		bid, err := newBid(uuid.New(), uuid.New(), uuid.New(), BidTypeBid, amount, uuid.Nil, time.Now())
 
 		assert.ErrorIs(t, err, ErrInvalidAmount)
 		assert.Nil(t, bid)

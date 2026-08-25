@@ -3,9 +3,11 @@ package usecase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -19,8 +21,11 @@ var errListingGone = errors.New("listing gone")
 // against a listing the test set up — the same contract, minus the transaction
 // and the row lock.
 type fakeRepo struct {
-	listing    *listing.Listing
-	modifyErr  error
+	listing   *listing.Listing
+	modifyErr error
+	// failTimes makes Modify fail its first N calls, so a test can prove the
+	// use case retries rather than abandoning a bid whose gold is already held.
+	failTimes  int
 	modifyCall int
 }
 
@@ -38,10 +43,35 @@ func (f *fakeRepo) Save(ctx context.Context, l *listing.Listing, before listing.
 
 func (f *fakeRepo) Modify(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
 	f.modifyCall++
+	if f.failTimes >= f.modifyCall {
+		// transient, the way a dropped connection would be — anything else is
+		// not retried, which is the point of the distinction
+		return fmt.Errorf("write failed: %w", commonconstants.ErrTransient)
+	}
 	if f.modifyErr != nil {
 		return f.modifyErr
 	}
 	return fn(f.listing)
+}
+
+// fakeWallet stands in for wallet-service. It records what it was asked to hold
+// so tests can prove the bid's own amount and member reach the hold, and can be
+// scripted to fail.
+type fakeWallet struct {
+	err   error
+	calls int
+
+	gotBidID    uuid.UUID
+	gotMemberID uuid.UUID
+	gotGold     int
+}
+
+func (f *fakeWallet) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int) error {
+	f.calls++
+	f.gotBidID = bidID
+	f.gotMemberID = memberID
+	f.gotGold = gold
+	return f.err
 }
 
 // activeListing builds a published listing ready to receive bids.
@@ -94,7 +124,7 @@ func TestPlaceBidUC(t *testing.T) {
 			l := activeListing(t, 100)
 			repo := &fakeRepo{listing: l, modifyErr: tt.modifyErr}
 
-			err := NewPlaceBidUC(repo).Handle(context.Background(), PlaceBidCommand{
+			err := NewPlaceBidUC(repo, &fakeWallet{}).Handle(context.Background(), PlaceBidCommand{
 				ListingID: uuid.New(),
 				MemberID:  uuid.New(),
 				Amount:    tt.amount,
@@ -114,13 +144,14 @@ func TestPlaceBidUC(t *testing.T) {
 	}
 }
 
-// TestPlaceBidUCStartsPending pins the saga's entry state at the use case
-// boundary: placement alone never takes the lead, because no gold is held yet.
-func TestPlaceBidUCStartsPending(t *testing.T) {
+// NOTE: placement and confirmation happen in one transaction on this path, so a
+// bid is never observed PENDING. TestPlaceBidHoldsGoldBeforeRecordingTheBid
+// covers the state a caller can actually see.
+func skippedTestPlaceBidUCStartsPending(t *testing.T) {
 	l := activeListing(t, 100)
 	repo := &fakeRepo{listing: l}
 
-	err := NewPlaceBidUC(repo).Handle(context.Background(), PlaceBidCommand{
+	err := NewPlaceBidUC(repo, &fakeWallet{}).Handle(context.Background(), PlaceBidCommand{
 		ListingID: uuid.New(),
 		MemberID:  uuid.New(),
 		Amount:    150,
@@ -128,7 +159,7 @@ func TestPlaceBidUCStartsPending(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, listing.BidStatusPending, l.Snapshot().Bids[0].Status)
+	assert.Equal(t, listing.BidStatusWinning, l.Snapshot().Bids[0].Status)
 }
 
 // TestPlaceBidUCForwardsTheIdempotencyKey guards the wiring that makes retries
@@ -137,7 +168,7 @@ func TestPlaceBidUCStartsPending(t *testing.T) {
 func TestPlaceBidUCForwardsTheIdempotencyKey(t *testing.T) {
 	l := activeListing(t, 100)
 	repo := &fakeRepo{listing: l}
-	uc := NewPlaceBidUC(repo)
+	uc := NewPlaceBidUC(repo, &fakeWallet{})
 	key := uuid.New()
 	member := uuid.New()
 
@@ -161,7 +192,7 @@ func TestConfirmBidUC(t *testing.T) {
 	l := activeListing(t, 100)
 	repo := &fakeRepo{listing: l}
 
-	require.NoError(t, NewPlaceBidUC(repo).Handle(context.Background(), PlaceBidCommand{
+	require.NoError(t, NewPlaceBidUC(repo, &fakeWallet{}).Handle(context.Background(), PlaceBidCommand{
 		ListingID: uuid.New(),
 		MemberID:  uuid.New(),
 		Amount:    150,
@@ -178,19 +209,18 @@ func TestConfirmBidUC(t *testing.T) {
 	assert.NoError(t, uc.Handle(context.Background(), cmd), "redelivery must not error")
 }
 
-// TestFailBidUC covers the compensating outcome: wallet could not hold the gold.
+// TestFailBidUC covers the compensating outcome: a bid whose hold could not be
+// placed is marked FAILED.
+//
+// The bid is built through the domain rather than through PlaceBidUC, because on
+// the synchronous path a placed bid is already WINNING — FailBid only ever runs
+// against a PENDING bid, which is the shape the event-driven flow produces.
 func TestFailBidUC(t *testing.T) {
 	l := activeListing(t, 100)
 	repo := &fakeRepo{listing: l}
 
-	require.NoError(t, NewPlaceBidUC(repo).Handle(context.Background(), PlaceBidCommand{
-		ListingID: uuid.New(),
-		MemberID:  uuid.New(),
-		Amount:    150,
-		Now:       time.Now(),
-	}))
-
-	bidID := l.Snapshot().Bids[0].ID
+	bidID := uuid.New()
+	require.NoError(t, l.PlaceBidWithID(bidID, uuid.New(), 150, uuid.Nil, time.Now()))
 
 	require.NoError(t, NewFailBidUC(repo).Handle(context.Background(), FailBidCommand{
 		ListingID: uuid.New(),
@@ -199,4 +229,73 @@ func TestFailBidUC(t *testing.T) {
 	}))
 
 	assert.Equal(t, listing.BidStatusFailed, l.Snapshot().Bids[0].Status)
+}
+
+// TestPlaceBidHoldsGoldBeforeRecordingTheBid pins the ordering that makes this
+// use case an orchestrator rather than a single write. The hold comes first: a
+// bid recorded before the gold is secured is a claim with nothing behind it, and
+// the listing would show a leader who may not be able to pay.
+func TestPlaceBidHoldsGoldBeforeRecordingTheBid(t *testing.T) {
+	l := activeListing(t, 100)
+	repo := &fakeRepo{listing: l}
+	wallet := &fakeWallet{}
+	member := uuid.New()
+
+	err := NewPlaceBidUC(repo, wallet).Handle(context.Background(), PlaceBidCommand{
+		ListingID: uuid.New(),
+		MemberID:  member,
+		Amount:    150,
+		Now:       time.Now(),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, wallet.calls, "gold must be held")
+	assert.Equal(t, member, wallet.gotMemberID)
+	assert.Equal(t, 150, wallet.gotGold, "the hold must match the bid")
+
+	bids := l.Snapshot().Bids
+	require.Len(t, bids, 1)
+	assert.Equal(t, bids[0].ID, wallet.gotBidID, "the hold must be keyed by this bid")
+	assert.Equal(t, listing.BidStatusWinning, bids[0].Status, "a held bid takes the lead immediately")
+}
+
+// TestPlaceBidRecordsNothingWhenTheHoldFails covers the cheap failure: the buyer
+// could not cover the bid, so nothing was reserved and nothing should be written.
+func TestPlaceBidRecordsNothingWhenTheHoldFails(t *testing.T) {
+	l := activeListing(t, 100)
+	repo := &fakeRepo{listing: l}
+	wallet := &fakeWallet{err: errors.New("insufficient available gold")}
+
+	err := NewPlaceBidUC(repo, wallet).Handle(context.Background(), PlaceBidCommand{
+		ListingID: uuid.New(),
+		MemberID:  uuid.New(),
+		Amount:    150,
+		Now:       time.Now(),
+	})
+
+	assert.Error(t, err)
+	assert.Zero(t, repo.modifyCall, "no hold means no bid")
+	assert.Empty(t, l.Snapshot().Bids)
+}
+
+// TestPlaceBidRetriesTheWriteAfterAHold is the reason the retry loop exists on
+// this path at all. Once PlaceHold succeeds the buyer's gold is frozen, so
+// giving up on a transient database failure would strand that gold behind a bid
+// that was never recorded — nobody would ever release it.
+func TestPlaceBidRetriesTheWriteAfterAHold(t *testing.T) {
+	l := activeListing(t, 100)
+	repo := &fakeRepo{listing: l, failTimes: 2}
+	wallet := &fakeWallet{}
+
+	err := NewPlaceBidUC(repo, wallet).Handle(context.Background(), PlaceBidCommand{
+		ListingID: uuid.New(),
+		MemberID:  uuid.New(),
+		Amount:    150,
+		Now:       time.Now(),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, repo.modifyCall, "the write is retried until it lands")
+	assert.Equal(t, 1, wallet.calls, "the gold is held once, not once per attempt")
+	assert.Len(t, l.Snapshot().Bids, 1)
 }

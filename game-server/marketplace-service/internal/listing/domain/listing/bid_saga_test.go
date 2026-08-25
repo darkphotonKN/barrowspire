@@ -13,7 +13,7 @@ import (
 // the lead the moment it is placed — the buyer's gold has not been held yet, so
 // a bid that led immediately would be a claim with no money behind it.
 func TestNewBidIsBornPending(t *testing.T) {
-	bid, err := newBid(uuid.New(), uuid.New(), BidTypeBid, 100, uuid.Nil, time.Now())
+	bid, err := newBid(uuid.New(), uuid.New(), uuid.New(), BidTypeBid, 100, uuid.Nil, time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, BidStatusPending, bid.status)
