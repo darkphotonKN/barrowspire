@@ -261,11 +261,15 @@ temp/
 # Claude workspace (machine-local only)
 # =============================================================================
 # .claude/ holds per-repo settings + the skills SYMLINK into the
-# ai-software-engineering SSOT — machine-local, never versioned here.
+# ai-software-engineering SSOT. Settings are machine-local and never versioned.
+# The skills symlink IS tracked, because `git worktree add` only materialises
+# tracked files: an ignored .claude/ means every new worktree silently has no
+# fleet at all. A directory exclusion cannot be negated from inside, hence /*.
 # CLAUDE.md and docs/ are deliberately NOT ignored: the two-tier spec system
 # (SPECIFICATION.md → docs/specs/FS-NNNN), ADRs, and tracker config are
 # conventions that must live in git next to the artifacts they govern.
-.claude/
+.claude/*
+!.claude/skills
 .skills/
 
 # Postman collections
