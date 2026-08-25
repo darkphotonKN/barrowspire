@@ -194,7 +194,25 @@ func (l *Listing) MarkSold(now time.Time, buyerID uuid.UUID, soldPrice int) erro
 	return nil
 }
 
+// PlaceBid records a bid under a freshly minted id. Callers that must know the
+// id before the bid exists — because another service keys work by it — use
+// PlaceBidWithID instead.
 func (l *Listing) PlaceBid(memberID uuid.UUID, amount int, idempotencyKey uuid.UUID, now time.Time) error {
+	return l.PlaceBidWithID(uuid.New(), memberID, amount, idempotencyKey, now)
+}
+
+// PlaceBidWithID records a bid under an id chosen by the caller.
+//
+// The id is an input because a bid is agreed with wallet-service before it is
+// written here: the gold is held against this id, so it has to exist before the
+// bid does. Supplying it also makes the write replay-safe — a retry reuses the
+// same id and is recognised rather than duplicated.
+func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int, idempotencyKey uuid.UUID, now time.Time) error {
+	// A retry after a partially applied write must not create a second bid.
+	if l.findBidByID(bidID) != nil {
+		return nil
+	}
+
 	if l.status != StatusActive {
 		return ErrListingNotAcceptingBids
 	}
@@ -223,7 +241,7 @@ func (l *Listing) PlaceBid(memberID uuid.UUID, amount int, idempotencyKey uuid.U
 		return ErrBidTooLow
 	}
 
-	newBid, err := newBid(l.id, memberID, BidTypeBid, amount, idempotencyKey, now)
+	newBid, err := newBid(bidID, l.id, memberID, BidTypeBid, amount, idempotencyKey, now)
 	if err != nil {
 		return err
 	}
@@ -235,6 +253,13 @@ func (l *Listing) PlaceBid(memberID uuid.UUID, amount int, idempotencyKey uuid.U
 	l.updatedAt = now
 
 	return nil
+}
+
+// HasBid reports whether this listing carries the given bid. Callers that mint a
+// bid id up front use it to tell a recorded bid from one that was deduplicated
+// away as a replay.
+func (l *Listing) HasBid(bidID uuid.UUID) bool {
+	return l.findBidByID(bidID) != nil
 }
 
 // ConfirmBid promotes a bid once wallet reports its hold is in place, demoting

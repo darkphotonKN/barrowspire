@@ -68,7 +68,7 @@ func main() {
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
 	// --- services setup ---
-	services := appConfig.NewServices(ctx, db)
+	services := appConfig.NewServices(ctx, db, registry)
 
 	// --- grpc ---
 	grpcServer := grpc.NewServer()

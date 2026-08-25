@@ -49,7 +49,7 @@ type Bid struct {
 	updatedAt      time.Time
 }
 
-func newBid(listingID uuid.UUID, memberID uuid.UUID, bidType BidType, amount int, idempotencyKey uuid.UUID, now time.Time) (*Bid, error) {
+func newBid(id uuid.UUID, listingID uuid.UUID, memberID uuid.UUID, bidType BidType, amount int, idempotencyKey uuid.UUID, now time.Time) (*Bid, error) {
 	// invariants
 	if amount <= 0 {
 		return nil, ErrInvalidAmount
@@ -59,8 +59,12 @@ func newBid(listingID uuid.UUID, memberID uuid.UUID, bidType BidType, amount int
 		return nil, ErrInvalidUUID
 	}
 
+	if id == uuid.Nil {
+		return nil, ErrInvalidUUID
+	}
+
 	return &Bid{
-		id:        uuid.New(),
+		id:        id,
 		listingID: listingID,
 		memberID:  memberID,
 		bidType:   bidType,
