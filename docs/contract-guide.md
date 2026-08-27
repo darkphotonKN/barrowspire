@@ -19,7 +19,7 @@ fails if any of them drift apart.
 | Thing | Where | Produced by | Authored or derived |
 |---|---|---|---|
 | **The design** | `docs/specs/FS-NNNN` → `§API surface` | `/scope-it` → `/write-a-spec` | **authored** — a human ratifies it |
-| **The implementation** | `game-server/api-gateway/internal/gateway/<group>/typed.go`, `wire.go` | `/develop` | **authored** — a human or an agent |
+| **The implementation** | `game-server/api-gateway/internal/gateway/<group>/typed.go` (+ `wire.go` in the groups that have one) | `/develop` | **authored** — a human or an agent |
 | **The API contract** | `game-server/api-gateway/openapi.yaml` | `make openapi` — codegen by huma | **derived** — never hand-edited |
 | **The generated client** | `game-client/src/api/generated/schema.d.ts` | `make client` — codegen by openapi-typescript | **derived** — never hand-edited |
 | **The API docs** | `http://localhost:7114/api/docs` | served live by huma | **derived** — no build step, no file |
@@ -36,6 +36,59 @@ The words people usually conflate:
 - **"The spec"** is ambiguous — in this repo it usually means the **feature spec** (`FS-NNNN`,
   the design), not the OpenAPI document. Say "the contract" or "the OpenAPI document" when you
   mean the generated file.
+
+---
+
+## Running it locally — and why the docs URL dies after a reboot
+
+**The docs UI is not a service.** It is served by the gateway process itself: huma mounts it at
+`/api/docs` on the same port the API listens on. There is no docs container, no build step, and
+no file on disk. If the gateway is not running, the URL is simply dead — which is exactly what
+happens after a machine restart, because the containers it depends on stopped with it.
+
+From `game-server/`:
+
+```bash
+docker compose up -d
+```
+
+That brings up consul, rabbitmq, redis, and one Postgres per service. The gateway will not boot
+without them. Then, from `game-server/api-gateway/`:
+
+```bash
+make run
+```
+
+Use `make dev` instead if you want hot reload (it runs `air`). Then open:
+
+```
+http://localhost:7114/api/docs
+```
+
+**What you're looking at.** Huma renders the page with **Stoplight Elements**, loaded from a CDN
+(`unpkg.com`). Two consequences worth knowing before you file a bug:
+
+- **You need internet for the docs page**, even though the API itself is entirely local. Offline,
+  you get a blank frame — the contract is fine, the renderer just never downloaded.
+- **The page is a renderer, not a source.** It reads `/api/openapi`, which huma derives from your
+  Go types on the fly. So the docs cannot disagree with the running server. If they disagree with
+  what you *expected*, your types are the thing that's wrong.
+
+`/api/docs` and `/api/openapi` are **deliberately public** — no auth. That was a decision, not an
+oversight; ADR-0002 §6 records why and names the trigger that would reverse it.
+
+**When it doesn't come up:**
+
+| Symptom | Cause |
+|---|---|
+| connection refused on 7114 | gateway isn't running — `make run` |
+| gateway exits on boot | containers are down — `docker compose up -d` first |
+| page loads blank / unstyled | no internet; Stoplight Elements couldn't fetch from the CDN |
+| docs load but an endpoint is missing | it was never registered with `huma.Register` — check the group's `typed.go` |
+
+Want the contract without a browser? `curl localhost:7114/api/openapi.yaml` — huma serves both
+`.yaml` and `.json` off that path. The committed copy at `game-server/api-gateway/openapi.yaml`
+should be byte-identical; if it isn't, `make openapi-diff` will say so.
 
 ---
 
@@ -159,8 +212,13 @@ wrong. The regenerate-and-diff gate exists to catch exactly that.
 
 1. Write the row in the feature spec's `§API surface` (design first — this is the part a human
    ratifies).
-2. Add the request/response structs to `game-server/api-gateway/internal/gateway/<group>/wire.go`.
-3. Add the operation in `game-server/api-gateway/internal/gateway/<group>/typed.go`.
+2. Add the request/response structs **next to the operation that uses them**. Two layouts are
+   both current, and you follow whichever the group already uses: `auth` and `item` keep types
+   in a separate `wire.go`; `notification`, `payment`, and `stats` declare them at the top of
+   `typed.go`. Do not introduce a `wire.go` into a group that hasn't got one.
+3. Register the operation with `huma.Register(api, huma.Operation{...})` in that group's
+   `typed.go`. The struct tags on your input/output types are what huma reads — they *are* the
+   contract, so a missing `doc:` tag is a lint failure, not a cosmetic one.
 4. Run `make openapi && make client`.
 5. Commit the handler **and** both generated files together.
 
@@ -176,7 +234,12 @@ That's it. No route registration, no schema authoring, no client hand-editing.
 | `make lint-contract` (Spectral) | operations with no description or no documented errors |
 | `make openapi-breaking` (oasdiff) | a breaking change, unless allowlisted deliberately |
 | client staleness check | a committed client that doesn't match the contract |
-| `make gates-selftest` | **itself, if the gates above have stopped enforcing** |
+| `make contract-auth` | an operation whose auth requirement doesn't match its declared security |
+| `make seam-gate` | a handler reaching past the error-mapping seam (FS-0001) |
+| `make gates-selftest` | **itself, if the contract gates above have stopped enforcing** |
+| `make seam-gate-selftest` | **itself, if the seam gate has stopped enforcing** |
+
+`make gates` runs all seven in order and is the one to run before pushing.
 
 The last one is the unusual one. A gate that cannot tell "passed" from "did not run" emits a
 green check either way, which is worse than no gate because it is trusted. So the gates are
