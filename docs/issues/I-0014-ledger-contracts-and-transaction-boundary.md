@@ -79,8 +79,10 @@ FS-0003 §Open questions now carries all three as decisions with their reasoning
   `UNIQUE(transaction_id, account_id, direction)`. Parent PK is `transaction_id`,
   caller-supplied, **no `DEFAULT`**.
 - **OQ3 — the legal set of `reason`? → `SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`**,
-  enforced by proto enum, Go value type, and DB `CHECK`. Forward-declared: only `SETTLE_AUCTION`
-  has a caller, and recording the others later needs no schema change.
+  enforced by a **string-backed Go value type** validated on the write path and by the DB
+  `CHECK`. **No proto enum** — `reason` crosses every wire as a plain `string` (§Req 5a,
+  §Open question 3). Forward-declared: only `SETTLE_AUCTION` has a caller, and recording the
+  others later needs no schema change.
 
 **What this slice still owes the DDL:** FS-0003 §Data model is now the two-table shape and is the
 source of truth. Reconcile the migration on disk against it — the FS adds `created_at` to

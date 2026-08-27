@@ -43,17 +43,27 @@ transaction by id with its legs, and a keyset page of entries. **Neither returns
 or a count** (§Req 20, ADR-0005) — the absence is enforced by there being no such method, the
 same way I-0014 enforced no-update and no-delete.
 
-**3. The cursor's encoding — the load-bearing decision of this slice.**
-Keyset over `(created_at, id)` descending (§Req 23). Decide and write down:
+**3. The cursor's encoding — DECIDED by [ADR-0012](../adr/0012-cursors-are-opaque-sort-keys-carrying-no-identity.md); implement it, do not redecide it.**
+Keyset over `(created_at, id)` descending (§Req 23). The ADR settles all three questions this
+slice used to carry:
 
-- what the cursor encodes, and in what form on the wire (it is declared `opaque` in §API surface,
-  which is a promise to clients, not a licence to leave it undecided here)
-- how a malformed one is distinguished from a well-formed one that decodes to nothing
-- whether the sort key travels in the repository signature or is reconstructed inside it
+- **base64url of `created_at|id`** — the sort key of the page's last row, on the wire. `opaque`
+  in §API surface stays a promise to clients, and the format stays out of that section
+  deliberately; it lives in the ADR because it is the thing clients are not told.
+- **The cursor carries the position and nothing else** — no `account_id`, no filter state, no
+  limit. This one is a security constraint, not a preference: a cursor comes back unvalidated, so
+  an account embedded in it would make *holding* a cursor the authority to read that account's
+  history, and §Req 24–27's masking would be walked around by replay rather than defeated. The
+  caller is resolved from the JWT on every page.
+- **Decoded at the adapter.** Ports and repository signatures take the decoded sort key as typed
+  values; an encoded cursor string never crosses into the port.
+- **Malformed → `422 · VALIDATION_FAILED`; past-the-end → empty page, `next_cursor` absent.** Never
+  a silent reset to page one.
 
-> **This is a one-way door.** A cursor's encoding is held by clients between requests. Changing
-> it later invalidates every cursor in flight, and there is no version negotiation on a query
-> param. Decide it deliberately now rather than discovering it in slice 13.
+> **This was a one-way door, which is why it is an ADR and not a line in this issue.** A cursor's
+> encoding is held by clients between requests and there is no version negotiation on a query
+> param. If implementing it surfaces a reason the decision is wrong, that is a new ADR superseding
+> ADR-0012 — not an edit here.
 
 ## Where `created_at` lives — SETTLED, and it shapes the read signature
 
@@ -68,14 +78,16 @@ serves the unscoped admin listing. The cursor encodes that sort key and nothing 
 
 ## The `reason` vocabulary — SETTLED, do not reopen
 
-`SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`. The proto enum matches the migration's
-`CHECK`; FS-0003 §Requirements 5a and §Open questions 3 record it.
+`SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`. **There is no `Reason` enum in the proto** —
+`reason` is a plain `string` on the wire, and the closed set is enforced on the write path and by
+the migration's `CHECK`. FS-0003 §Requirements 5a and §Open questions 3 record both the set and
+why the proto carries no third copy of it.
 
 Only `SETTLE_AUCTION` has a caller today. The other three are **forward-declared on purpose** —
 building the deposit/withdraw/transfer *verbs* is out of scope, but **recording their effects
 needs no ledger change**, which is why the set is closed now rather than grown later. The read
-response echoes `reason` as a plain string; it does not validate against the set (the write path
-already did).
+response echoes `reason` as stored; it does not validate against the set (the write path already
+did), and it does not fail on a value it has not heard of.
 
 ## Acceptance Criteria
 
@@ -85,9 +97,14 @@ already did).
       regeneration output, no hand edits
 - [ ] The transaction response nests `legs[]`; the listing response is flat (§Req 22)
 - [ ] No read method on any interface returns a total, sum, count, or balance (§Req 20)
-- [ ] The cursor's encoding is decided and written down, including the malformed-vs-empty split
+- [ ] The cursor is base64url of `created_at|id` and encodes nothing else — asserted, including
+      that no identity appears in it (ADR-0012)
+- [ ] Malformed cursor and past-the-end cursor are distinguished: `422` vs an empty page with
+      `next_cursor` absent
+- [ ] No port or repository signature takes an encoded cursor string
 - [ ] The keyset predicate's shape is readable from the repository signature alone
-- [ ] `reason`'s legal set agrees between the proto and the migration
+- [ ] `reason` is a plain `string` field in the proto — no `Reason` enum is declared, and the
+      legal set lives on the write path and in the migration's `CHECK`
 - [ ] `go build ./...` succeeds (interfaces compile; no implementations required)
 
 ## Blocked By
@@ -98,7 +115,8 @@ I-0014 — the transaction-boundary pattern and the repository interface it live
 
 FS-0003 §API surface (both read operations, the field tables, the error rows), §Requirements 20
 (no aggregates), 21 (the two-operation split), 22 (flattened vs nested), 23 (keyset, descending),
-31 (transport types never mirror internal models). Governed by ADR-0005.
+31 (transport types never mirror internal models). Governed by ADR-0005 and **ADR-0012**
+(the cursor's encoding, contents, and decode location).
 
 ## Notes
 

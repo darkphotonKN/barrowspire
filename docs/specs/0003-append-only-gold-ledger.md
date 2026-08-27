@@ -1,6 +1,6 @@
 # FS-0003: Append-only gold ledger
 
-> Status: work-order · SPECIFICATION.md: `game-server/ledger-service/SPECIFICATION.md` "## Capabilities" → "Append a balanced ledger transaction" and "Read the movement record"; `game-server/api-gateway/SPECIFICATION.md` "### Downstream routing" → "Route ledger read traffic to ledger" → this FS · Related ADRs: [ADR-0005](../adr/0005-wallet-owns-balance-ledger-is-a-reconciliation-record.md) (wallet owns balance), [ADR-0006](../adr/0006-only-balanced-movements-are-recorded.md) (only balanced movements recorded), [ADR-0007](../adr/0007-the-ledger-is-append-only-corrections-are-reversals.md) (append-only), [ADR-0008](../adr/0008-amounts-are-unsigned-direction-carries-the-sign.md) (unsigned amounts), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-owned idempotency), [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md) (appended past the saga pivot; no reversals), [ADR-0011](../adr/0011-settlement-write-path-is-a-temporal-activity-per-owning-service.md) (write path is a Temporal activity owned by ledger-service)
+> Status: work-order · SPECIFICATION.md: `game-server/ledger-service/SPECIFICATION.md` "## Capabilities" → "Append a balanced ledger transaction" and "Read the movement record"; `game-server/api-gateway/SPECIFICATION.md` "### Downstream routing" → "Route ledger read traffic to ledger" → this FS · Related ADRs: [ADR-0005](../adr/0005-wallet-owns-balance-ledger-is-a-reconciliation-record.md) (wallet owns balance), [ADR-0006](../adr/0006-only-balanced-movements-are-recorded.md) (only balanced movements recorded), [ADR-0007](../adr/0007-the-ledger-is-append-only-corrections-are-reversals.md) (append-only), [ADR-0008](../adr/0008-amounts-are-unsigned-direction-carries-the-sign.md) (unsigned amounts), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-owned idempotency), [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md) (appended past the saga pivot; no reversals), [ADR-0011](../adr/0011-settlement-write-path-is-a-temporal-activity-per-owning-service.md) (write path is a Temporal activity owned by ledger-service), [ADR-0012](../adr/0012-cursors-are-opaque-sort-keys-carrying-no-identity.md) (a cursor is a position, not a request)
 
 ## Summary
 
@@ -53,7 +53,8 @@ paragraph above rules out.
    not the auction.
 5a. **The `reason` vocabulary is forward-declared, and the ledger needs no change to record any
    of it.** The legal set is `SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`, closed by a DB
-   `CHECK` and by the proto enum. Only `SETTLE_AUCTION` has a caller today.
+   `CHECK` and by validation on the write path. **There is no proto enum** — `reason` crosses
+   every wire as a plain `string` (open question 3). Only `SETTLE_AUCTION` has a caller today.
 
    The distinction that matters, and the one this spec previously blurred: **building the
    deposit and withdraw verbs is out of scope; recording their effects is not.** A movement is a
@@ -364,8 +365,10 @@ paragraph above rules out.
 - **An entry references an `account_id` that does not exist in wallet-service** → accepted and
   recorded. There is no FK across service boundaries (requirement 15) and no synchronous check.
   This is a reconciler finding, not a write-time error.
-- **`reason` carries a value the service does not know** → **open question 3**. Bare `TEXT`
-  accepts it today.
+- **`reason` carries a value the service does not know** → refused by the write path's
+  validation before it reaches the database, and by the `reason_valid` `CHECK` if it ever did
+  (open question 3). On the **read** path an unknown value is echoed as stored, never rejected:
+  a row that exists is a movement that happened, and a reader is not the place to relitigate it.
 - **A member holds no account** → **no longer reachable.** Signup creates the member and their
   account together, so the `account_id` claim is always present (requirement 27). Kept on record
   rather than deleted: it becomes reachable again the moment a member can exist without an
@@ -380,6 +383,12 @@ paragraph above rules out.
   (requirement 9), so a cursor cannot dangle. An append-only table is the one place keyset
   paging has no stale-cursor case.
 - **`limit` is supplied as 0** → refused as out of range (`422`), not treated as "unlimited".
+- **A cursor points past the last row** → an **empty page with `next_cursor` absent**, not an
+  error and not a reset to page one. A valid position with nothing after it is a successful
+  empty result; silently restarting would hand a client that believes it is paging forward a
+  plausible page of wrong rows (ADR-0012).
+- **A cursor arrives that cannot be decoded** → `422 · VALIDATION_FAILED`, for the same reason:
+  the only two honest answers are the rows after that position or a refusal.
 - **An admin pages the unscoped listing** → allowed, and it is a firehose. It is still rows, never
   a total (requirement 20).
 - **A hold expires and is swept** → no entry, by requirement 4. Expiry is a release.
@@ -407,13 +416,10 @@ service LedgerService {
 }
 
 enum Direction { DIRECTION_UNSPECIFIED = 0; DEBIT = 1; CREDIT = 2; }
-enum Reason {
-  REASON_UNSPECIFIED = 0;
-  SETTLE_AUCTION     = 1;  // the winning bid pays; the only reason with a caller today
-  DEPOSIT            = 2;  // forward-declared — see requirement 5a
-  WITHDRAW           = 3;  // forward-declared — see requirement 5a
-  TRANSFER           = 4;  // forward-declared — see requirement 5a
-}
+
+// `reason` is a plain `string` on the wire. There is no `Reason` enum, on purpose:
+// see open question 3. The closed set is enforced on the write path and by the
+// migration's CHECK; the read path echoes what is stored.
 ```
 
 ### Write path — `AppendLedgerTx` (Temporal activity)
@@ -431,7 +437,7 @@ context, never the body (requirement 16).
 | Field | Type | Notes |
 |---|---|---|
 | `transaction_id` | `string` (UUID) | Caller-minted, deterministic. The idempotency key. |
-| `reason` | `Reason` | Transaction-level. `UNSPECIFIED` is refused. |
+| `reason` | `Reason` | Transaction-level. A string-backed Go value type, validated against the closed set; the empty string is refused. |
 | `reference_id` | `string` (UUID) | Transaction-level. The originating event — today, wallet-service's `bid_id`. |
 | `currency` | `string` | Transaction-level. Optional; defaults to `GOLD`. |
 | `legs` | `repeated LedgerLeg` | Min 2. Leg-level facts only. Proto-side name; see the transport-type table under the read path for the HTTP-side names. |
@@ -678,16 +684,29 @@ enforce it with a `DEFERRABLE INITIALLY DEFERRED` constraint trigger summing sig
 service-layer bug in this service's central invariant. Not built here.
 
 **3. Should the legal set of `reason` be closed at the schema level, in the type system, or
-
-**3. Should the legal set of `reason` be closed at the schema level, in the type system, or
 both? — SETTLED.**
 
 > This question originally covered `reference_type` too, which has since been removed from the
 > feature entirely.
 
-**Answer: both, and the set is `SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`** — a proto
-enum and a DB `CHECK`, matching. Recorded in requirement 5a; the `CHECK` is already in
+**Answer: both, and the set is `SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`** — a
+string-backed Go value type validated on the write path, and a DB `CHECK`, matching. Recorded in
+requirement 5a; the `CHECK` is already in
 `000001_create_ledger_transactions_and_entries.up.sql`.
+
+**`reason` is a `string` on every wire — there is no proto enum.** An earlier draft closed the
+set a third time, in the proto. That copy is removed:
+
+- It put the vocabulary in **three** places that must be migrated in lockstep, on a surface that
+  only ever *reads* the value. The proto's copy could not reject anything the write path had not
+  already rejected.
+- The read path echoes `reason` as stored. An enum cannot do that — the handler would have to map
+  the stored string onto an enum value, and a value the proto does not declare has none to map
+  to. It becomes the zero value, so a listing reports `REASON_UNSPECIFIED` for a row that plainly
+  says `TRANSFER` in the database. Requirement 5a's whole point is that new reasons record
+  without a ledger change; an enum on the read surface would take that back.
+- The field tables under §API surface already type `reason` as `string` on both read operations.
+  The proto enum was the outlier, not the rule.
 
 The set is **closed now and forward-declared**, rather than added one value at a time as callers
 appear. The cost of closing it early — a migration per new reason, landing before the code that
@@ -695,8 +714,9 @@ emits it — is real, and in an append-only financial table it is a feature: a n
 becomes a deliberate, versioned event rather than a string someone typed. The benefit is that
 deposits, withdrawals, and transfers need **no ledger change at all** when their verbs get built.
 
-The proto enum and Go value type are the enforcement that matters, because they sit where bad
-input arrives. The `CHECK` is the backstop, consistent with `direction`'s existing precedent.
+The Go value type and the write path's validation are the enforcement that matters, because they
+sit where bad input arrives. The `CHECK` is the backstop, consistent with `direction`'s existing
+precedent. Nothing on the read surface validates `reason` at all.
 
 ## Known gap — the write path is not durable yet
 
@@ -742,6 +762,7 @@ suggestions** — a slice that contradicts one supersedes it or is wrong.
 | [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) | the caller mints a deterministic `transaction_id`; duplicates are no-op successes | 11–13 |
 | [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md) | the ledger is appended only past the saga's pivot, so nothing recorded is ever wrong and no reversal exists | 2–3, 9 |
 | [ADR-0011](../adr/0011-settlement-write-path-is-a-temporal-activity-per-owning-service.md) | the write path is a Temporal activity on ledger-service's own task queue, executed in-process; no gRPC hop | 19 |
+| [ADR-0012](../adr/0012-cursors-are-opaque-sort-keys-carrying-no-identity.md) | a cursor encodes the sort key and nothing else — no identity, decoded at the adapter; scoping is re-read from the JWT on every page | 21, 23, 24–27 |
 
 Open questions 1 and 2 below are explicitly **left unsettled by ADR-0008 and ADR-0009** — both
 ADRs name them rather than resolving them.
@@ -778,7 +799,7 @@ ADRs name them rather than resolving them.
 
 - **The deposit, withdraw, and transfer *verbs*.** Building those operations is wallet-service's
   work and is not in this feature. **Recording their effects is not out of scope** — their
-  `reason` values are already in the enum and the `CHECK`, and requirement 5a says they append
+  `reason` values are already in the validated set and the `CHECK`, and requirement 5a says they append
   here with no schema change when their callers exist. The earlier wording of this bullet
   conflated the verb with the record; they are different things and only the verb is excluded.
 - **System / mint accounts.** The counter-account a deposit or withdrawal needs on its other leg,
