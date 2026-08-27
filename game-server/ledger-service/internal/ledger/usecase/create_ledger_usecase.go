@@ -25,12 +25,15 @@ func NewCreateLedgerUC(repo ledger.Repository) *CreateLedgerUC {
 
 // NOTE: named {Action}{Resource}Command because its an INBOUND application WRITE intent
 type CreateLedgerCommand struct {
-	MemberID uuid.UUID
+	TransactionID uuid.UUID
+	ReferenceID   uuid.UUID
+	Reason        string
+	Legs          []ledger.LegInput
 }
 
-func (uc *CreateLedgerUC) Handle(ctx context.Context, cmd CreateLedgerCommand) (*ledger.Ledger, error) {
+func (uc *CreateLedgerUC) Handle(ctx context.Context, cmd CreateLedgerCommand) (*ledger.Transaction, error) {
 	// birth aggregate root
-	l, err := ledger.NewLedger(cmd.MemberID)
+	l, err := ledger.NewTransaction(cmd.TransactionID, cmd.ReferenceID, ledger.TransactionReason(cmd.Reason), ledger.CurrencyGold, cmd.Legs)
 
 	if err != nil {
 		// propgate error with usecase context

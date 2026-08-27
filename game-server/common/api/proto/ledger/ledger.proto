@@ -3,39 +3,91 @@ syntax = "proto3";
 package ledger;
 
 import "google/protobuf/timestamp.proto";
+import "api/proto/shared/v1/pagination.proto";
 
 option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/ledger";
 
 // Ledger service definition.
 //
-// SCAFFOLD: these two RPCs are the aggregate skeleton only — birth the root and
-// read it back — so the write path (use case) and the read path (query) both
-// have something to hang off. The real surface is defined when the ledger
-// domain is designed; nothing here should be read as the intended contract.
+// Both RPCs are reads. There is no AppendLedgerTx here and there must not be:
+// per ADR-0011 the write path is a Temporal activity executed in-process by
+// this service's own worker, so recording a transaction never crosses a gRPC
+// boundary. Adding a write RPC would reintroduce the hop that decision removed.
 service LedgerService {
-  // Create the ledger for a member.
-  rpc CreateLedger(CreateLedgerRequest) returns (CreateLedgerResponse) {}
-  // Get a member's ledger.
-  rpc GetLedger(GetLedgerRequest) returns (GetLedgerResponse) {}
+  // Read one economic event and every leg that makes it balance.
+  rpc GetTransaction(GetTransactionRequest) returns (GetTransactionResponse) {}
+  // Page one account's entries, or the global feed for an admin.
+  rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse) {}
 }
 
-// CreateLedger
-// Empty by design: the member identity is derived from the authenticated
-// context server-side, never supplied by the caller.
-message CreateLedgerRequest {}
-
-message CreateLedgerResponse {
-  string id        = 1;
-  string member_id = 2;
-  google.protobuf.Timestamp created_at = 3;
+// GetTransaction
+// GET /api/ledger/transactions/:transaction_id
+//
+// The caller's account_id and role come from the JWT, never from the request —
+// a member may only read a transaction they are a party to, and the handler
+// masks the difference between "not yours" and "does not exist".
+message GetTransactionRequest {
+  string transaction_id = 1;
 }
 
-// GetLedger
-// Empty by design, same rule as CreateLedgerRequest.
-message GetLedgerRequest {}
+message GetTransactionResponse {
+  string transaction_id = 1;
+  string reference_id   = 2;
+  string reason         = 3;
+  string currency       = 4;
+  repeated Leg legs     = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
 
-message GetLedgerResponse {
-  string id        = 1;
-  string member_id = 2;
-  google.protobuf.Timestamp created_at = 3;
+// Leg is a leg as seen from inside its parent transaction: it carries no id,
+// no transaction_id, and no timestamp, because all three are facts of the
+// parent the reader already has. currency likewise sits on the transaction —
+// one currency per transaction is structural, since sum-to-zero across mixed
+// currencies is meaningless.
+//
+// Leg and Entry overlap and stay separate on purpose. They answer different
+// questions: Leg is a component of a balanced whole, Entry is a standalone row
+// in an account's history that must stand up without its parent alongside it.
+// Collapsing them would force one message to carry fields that are redundant
+// in one view and missing in the other.
+message Leg {
+  string account_id = 1;
+  int64  amount     = 2;
+  string direction  = 3;
+}
+
+// ListEntries
+// GET /api/ledger/entries?account_id={account_id?}&cursor={cursor}&limit={limit?}
+message ListEntriesRequest {
+  // Absent means "my own entries", resolved from the JWT.
+  //
+  // The optionality is load-bearing: presence is an admin-only request to read
+  // someone else's history, so a member who sets this field is refused rather
+  // than silently scoped back to themselves. proto3 `optional` is what makes
+  // "unset" distinguishable from "set to the empty string" on the wire — with
+  // a bare string the two collapse and that authorization signal is lost.
+  optional string account_id_target = 1;
+  string cursor = 2;
+  int32  limit  = 3;
+}
+
+message ListEntriesResponse {
+  repeated Entry entries = 1;
+  shared.v1.PageInfo pagination = 2;
+}
+
+// Entry is one row of an account's history, denormalized so the feed pages
+// without a join: reference_id, reason and currency are copied down from the
+// parent transaction, and created_at is duplicated onto the row so the keyset
+// cursor (created_at, id) orders entries directly.
+message Entry {
+  string id             = 1;
+  string transaction_id = 2;
+  string reference_id   = 3;
+  string reason         = 4;
+  string account_id     = 5;
+  string direction      = 6;
+  string currency       = 7;
+  int64  amount         = 8;
+  google.protobuf.Timestamp created_at = 9;
 }

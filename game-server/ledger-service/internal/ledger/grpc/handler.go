@@ -23,47 +23,27 @@ type Handler struct {
 	pb.UnimplementedLedgerServiceServer
 
 	// read
-	ledgerReader LedgerReader
-
-	// write
-	createLedgerUC *usecase.CreateLedgerUC
+	transactionReader TransactionReader
+	entriesReader     EntriesReader
 }
 
-type LedgerReader interface {
-	Execute(ctx context.Context, memberID uuid.UUID) (*dto.LedgerDetails, error)
+type TransactionReader interface {
+	Execute(ctx context.Context, transactionID uuid.UUID) (*dto.TransactionDetails, error)
 }
 
-func NewHandler(createLedgerUC *usecase.CreateLedgerUC, ledgerReader LedgerReader) *Handler {
+type EntriesReader interface {
+	Execute(ctx context.Context, accountIDTarget *uuid.UUID, cursor *string, limit int) (*dto.ListEntriesDetails, error)
+}
+
+func NewHandler(createLedgerUC *usecase.CreateLedgerUC, transactionReader TransactionReader, entriesReader EntriesReader) *Handler {
 	return &Handler{
-		createLedgerUC: createLedgerUC,
-		ledgerReader:   ledgerReader,
+		transactionReader: transactionReader,
+		entriesReader:     entriesReader,
 	}
 }
 
 // ========================= WRITE PATHS  =========================
-
-func (h *Handler) CreateLedger(ctx context.Context, req *pb.CreateLedgerRequest) (*pb.CreateLedgerResponse, error) {
-	memberID, ok := commonauth.MemberIDFromCtx(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing identity")
-	}
-
-	l, err := h.createLedgerUC.Handle(ctx, usecase.CreateLedgerCommand{
-		MemberID: memberID,
-	})
-
-	if err != nil {
-		return nil, mapError(ctx, err)
-	}
-
-	snapshot := l.Snapshot()
-
-	return &pb.CreateLedgerResponse{
-		Id:        snapshot.ID.String(),
-		MemberId:  snapshot.MemberID.String(),
-		CreatedAt: timestamppb.New(snapshot.CreatedAt),
-	}, nil
-}
+// nothing, for now
 
 // ========================= READ PATHS  =========================
 
