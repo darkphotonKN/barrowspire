@@ -7,6 +7,7 @@ import (
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/ledger"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	cursor "github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/domain/ledger"
 	"github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/dto"
 	"github.com/google/uuid"
@@ -29,7 +30,7 @@ type TransactionReader interface {
 }
 
 type EntriesReader interface {
-	Execute(ctx context.Context, accountIDTarget *uuid.UUID, cursor *string, limit int) (*dto.ListEntriesDetails, error)
+	Execute(ctx context.Context, accountIDTarget *uuid.UUID, cursor *cursor.Cursor, limit int) (*dto.ListEntriesDetails, error)
 }
 
 func NewHandler(transactionReader TransactionReader, entriesReader EntriesReader) *Handler {
