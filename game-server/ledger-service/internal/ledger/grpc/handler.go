@@ -6,15 +6,12 @@ import (
 	"log/slog"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/ledger"
-	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/domain/ledger"
 	"github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/dto"
-	"github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/usecase"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // INBOUND Adapter
@@ -35,7 +32,7 @@ type EntriesReader interface {
 	Execute(ctx context.Context, accountIDTarget *uuid.UUID, cursor *string, limit int) (*dto.ListEntriesDetails, error)
 }
 
-func NewHandler(createLedgerUC *usecase.CreateLedgerUC, transactionReader TransactionReader, entriesReader EntriesReader) *Handler {
+func NewHandler(transactionReader TransactionReader, entriesReader EntriesReader) *Handler {
 	return &Handler{
 		transactionReader: transactionReader,
 		entriesReader:     entriesReader,
@@ -47,27 +44,6 @@ func NewHandler(createLedgerUC *usecase.CreateLedgerUC, transactionReader Transa
 
 // ========================= READ PATHS  =========================
 
-func (h *Handler) GetLedger(ctx context.Context, req *pb.GetLedgerRequest) (*pb.GetLedgerResponse, error) {
-	// extract id from ctx passed from interceptor middleware
-	id, ok := commonauth.MemberIDFromCtx(ctx)
-
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing identity")
-	}
-
-	res, err := h.ledgerReader.Execute(ctx, id)
-
-	if err != nil {
-		return nil, mapError(ctx, err)
-	}
-
-	return &pb.GetLedgerResponse{
-		Id:        res.ID.String(),
-		MemberId:  res.MemberID.String(),
-		CreatedAt: timestamppb.New(res.CreatedAt),
-	}, nil
-}
-
 // translates domain / infrastructure sentinels into grpc status codes.
 // domain-specific cases get added here as the domain grows its own sentinels.
 func mapError(ctx context.Context, err error) error {
@@ -76,15 +52,6 @@ func mapError(ctx context.Context, err error) error {
 	logLevel := slog.LevelWarn
 
 	switch {
-
-	// NOTE:
-	// withRetry helper returns ErrMaxRetries, ErrConcurrentModification is internal
-	// but leaving ErrConcurrentModification here for defense
-	// maps to http 409 conflict due to OCC version mismatch. caller can retry with fresh state.
-	// retry can be immediate, only rejected due to race
-	case errors.Is(err, usecase.ErrMaxRetries) || errors.Is(err, ledger.ErrConcurrentModification):
-		code = codes.Aborted
-		msg = "conflict, retry request"
 
 	// NOTE: duplicate resource
 	// maps to 409 http code, conflict

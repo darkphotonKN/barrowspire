@@ -5,8 +5,6 @@ import (
 
 	ledgergrpc "github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/grpc"
 	ledgerquery "github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/query"
-	ledgerrepo "github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/repository"
-	"github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/usecase"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -18,10 +16,9 @@ type Services struct {
 }
 
 func NewServices(ctx context.Context, db *sqlx.DB) *Services {
-	ledgerRepo := ledgerrepo.NewLedgerRepository(db)
-	createLedgerUC := usecase.NewCreateLedgerUC(ledgerRepo)
-	getLedgerQuery := ledgerquery.NewGetLedgerQuery(db)
-	ledgerHandler := ledgergrpc.NewHandler(createLedgerUC, getLedgerQuery)
+	getTransactionQuery := ledgerquery.NewGetTransactionQuery(db)
+	listEntriesQuery := ledgerquery.NewListEntriesQuery(db)
+	ledgerHandler := ledgergrpc.NewHandler(getTransactionQuery, listEntriesQuery)
 
 	return &Services{
 		LedgerHandler: ledgerHandler,
