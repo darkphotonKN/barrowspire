@@ -15,3 +15,4 @@ gen:
 		api/proto/events/game.proto \
 		api/proto/events/auth.proto \
 		api/proto/events/item.proto \
+		api/proto/shared/v1/pagination.proto

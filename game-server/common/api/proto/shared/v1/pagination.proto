@@ -1,0 +1,13 @@
+syntax = "proto3";
+package shared.v1;
+option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/shared/v1;sharedv1";
+
+message PageRequest {
+  int32  limit  = 1;
+  string cursor = 2;
+}
+
+message PageInfo {
+  string next_cursor = 1;
+  int32  limit       = 2;
+}

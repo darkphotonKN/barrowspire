@@ -46,6 +46,14 @@ is contract, not preference: it decides which way the cursor's comparison runs.
 `next_cursor` is **absent on the final page**, not present-and-null (§API surface). A client
 loops while the field is there.
 
+**Scoping is re-read from the JWT on every page, never from the cursor** ([ADR-0012](../adr/0012-cursors-are-opaque-sort-keys-carrying-no-identity.md)).
+The cursor carries `created_at|id` and nothing else, so page two runs the same authorization
+check against the same source as page one. If paging ever appears to "remember" whose rows it was
+fetching, that memory is a hole: a cursor returns from the client unvalidated, and an account
+embedded in one would make possession of a cursor equal authority over that account's history.
+A cursor pointing past the last row is an **empty page with `next_cursor` absent** — a success,
+not an error, and never a reset to page one.
+
 `limit` defaults to 50, max 100. `limit=0` is out of range (`422`), not "unlimited".
 
 **The authorization matrix** (§Req 25, 27, 28):
@@ -77,6 +85,10 @@ it needs no count — offset paging's total is the exact thing that would smuggl
       proven by a test that appends a transaction mid-page and asserts no row skipped or repeated
 - [ ] `next_cursor` is absent, not null, on the final page
 - [ ] A malformed cursor returns `422 · VALIDATION_FAILED`
+- [ ] A cursor pointing past the last row returns an empty page with `next_cursor` absent —
+      not an error, not page one
+- [ ] A member replaying another member's cursor still gets only their own rows — asserted,
+      since this is what keeps the cursor from acting as a capability token (ADR-0012)
 - [ ] `limit=0` and `limit=101` are refused
 - [ ] Member without `account_id` sees only their own entries
 - [ ] Member with `account_id` receives `403 · FORBIDDEN`
@@ -97,7 +109,7 @@ it needs no count — offset paging's total is the exact thing that would smuggl
 FS-0003 §API surface (the `listEntries` row, the `entries[]` table, `next_cursor`, the
 error-semantics table), §Requirements 20 (no aggregates), 23 (keyset, descending, offset
 refused), 25 (member refusal), 27 (`account_id` as a token claim), 28 (admin scoping). Governed
-by ADR-0005.
+by ADR-0005 and **ADR-0012** (the cursor is a position, not a request).
 
 ## TDD Approach
 
