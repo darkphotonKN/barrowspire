@@ -168,12 +168,12 @@ export default function NotificationBell() {
             {isLoading && notifications.length === 0 ? (
               <div className="notification-empty">
                 <div style={{ fontSize: '2rem', opacity: 0.3, marginBottom: '0.5rem' }}>🔔</div>
-                <p style={{ margin: 0, color: '#8a7d5c' }}>Loading…</p>
+                <p style={{ margin: 0, color: 'var(--color-text-dim)' }}>Loading…</p>
               </div>
             ) : notifications.length === 0 ? (
               <div className="notification-empty">
                 <div style={{ fontSize: '2rem', opacity: 0.3, marginBottom: '0.5rem' }}>🔔</div>
-                <p style={{ margin: 0, color: '#8a7d5c' }}>No notifications</p>
+                <p style={{ margin: 0, color: 'var(--color-text-dim)' }}>No notifications</p>
               </div>
             ) : (
               notifications.map((notification) => (
@@ -245,8 +245,8 @@ export default function NotificationBell() {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: linear-gradient(135deg, var(--color-primary) 0%, #00d4e6 100%);
-          color: #000;
+          background: linear-gradient(135deg, var(--color-brass) 0%, var(--color-brass-bright) 100%);
+          color: var(--color-bg-dark);
           border-radius: 8px;
           font-size: 9px;
           font-weight: 800;
@@ -255,10 +255,10 @@ export default function NotificationBell() {
           box-shadow:
             0 0 12px rgba(156, 123, 63, 0.6),
             0 2px 8px rgba(0, 0, 0, 0.4);
-          animation: neonPulse 2s ease-in-out infinite;
+          animation: emberPulse 2s ease-in-out infinite;
         }
 
-        @keyframes neonPulse {
+        @keyframes emberPulse {
           0%, 100% {
             box-shadow:
               0 0 12px rgba(156, 123, 63, 0.6),

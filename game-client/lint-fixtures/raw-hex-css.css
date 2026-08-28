@@ -1,0 +1,5 @@
+/* FIXTURE — must be REJECTED by the CSS half of the token fence (ADR-0013).
+   A hex outside globals.css :root. Not imported by anything. */
+.some-view-class {
+  color: #cdbf9a;
+}

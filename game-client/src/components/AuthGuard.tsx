@@ -27,7 +27,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   if (!hasHydrated) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-black">
-        <div className="text-[#e8a14d]">Loading...</div>
+        <div className="text-vellum-dim">Lighting the torch…</div>
       </div>
     );
   }

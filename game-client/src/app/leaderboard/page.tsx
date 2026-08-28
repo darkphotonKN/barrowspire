@@ -82,7 +82,7 @@ export default function LeaderboardPage() {
           </div>
         ) : leaderboard.length === 0 ? (
           <div className="leaderboard-empty">
-            <p>No operators ranked yet</p>
+            <p>No delvers ranked yet</p>
           </div>
         ) : (
           <>
@@ -177,7 +177,7 @@ export default function LeaderboardPage() {
         .leaderboard-bg {
           position: fixed;
           inset: 0;
-          background: #0d0b0a;
+          background: var(--color-bg-dark);
           z-index: -1;
         }
 
@@ -200,7 +200,7 @@ export default function LeaderboardPage() {
         .leaderboard-back-btn {
           padding: 0.5rem 1rem;
           background: rgba(156, 123, 63, 0.05);
-          color: #8a7d5c;
+          color: var(--color-text-dim);
           border: 1px solid rgba(156, 123, 63, 0.15);
           border-radius: 6px;
           font-size: 0.85rem;
@@ -211,14 +211,14 @@ export default function LeaderboardPage() {
 
         .leaderboard-back-btn:hover {
           background: rgba(156, 123, 63, 0.1);
-          color: #e8a14d;
+          color: var(--color-brass-bright);
           border-color: rgba(156, 123, 63, 0.3);
         }
 
         .leaderboard-title {
           font-size: 2rem;
-          font-weight: 700;
-          color: #e8a14d;
+          font-weight: 400; /* Pirata One ships one weight; 700 fakes a bold. */
+          color: var(--color-primary);
           letter-spacing: 0.15em;
           text-shadow: none;
         }
@@ -241,7 +241,7 @@ export default function LeaderboardPage() {
           align-items: center;
           justify-content: center;
           min-height: 400px;
-          color: #8a7d5c;
+          color: var(--color-text-dim);
           gap: 1rem;
           letter-spacing: 0.05em;
         }
@@ -250,7 +250,7 @@ export default function LeaderboardPage() {
           width: 48px;
           height: 48px;
           border: 2px solid rgba(156, 123, 63, 0.1);
-          border-left-color: #e8a14d;
+          border-left-color: var(--color-brass-bright);
           border-radius: 50%;
           animation: spin 1s linear infinite;
         }
@@ -262,7 +262,7 @@ export default function LeaderboardPage() {
         .retry-btn {
           padding: 0.5rem 1.5rem;
           background: rgba(156, 123, 63, 0.1);
-          color: #e8a14d;
+          color: var(--color-brass-bright);
           border: 1px solid rgba(156, 123, 63, 0.2);
           border-radius: 6px;
           cursor: pointer;
@@ -289,7 +289,7 @@ export default function LeaderboardPage() {
           padding: 1rem;
           background: rgba(156, 123, 63, 0.03);
           border-radius: 6px;
-          color: #6f6647;
+          color: var(--color-text-muted);
           font-size: 0.75rem;
           font-weight: 600;
           text-transform: uppercase;
@@ -329,7 +329,7 @@ export default function LeaderboardPage() {
         .leaderboard-col {
           display: flex;
           align-items: center;
-          color: #889aaa;
+          color: var(--color-text-dim);
         }
 
         .rank-col {
@@ -344,17 +344,17 @@ export default function LeaderboardPage() {
         }
 
         .rank-1 {
-          color: #e8a14d;
+          color: var(--color-brass-bright);
           text-shadow: none;
         }
 
         .rank-2 {
-          color: #6f8f4a;
+          color: var(--color-accent);
           text-shadow: none;
         }
 
         .rank-3 {
-          color: #e8a14d;
+          color: var(--color-brass-bright);
         }
 
         .rank-badge {
@@ -367,19 +367,19 @@ export default function LeaderboardPage() {
         }
 
         .rank-badge-1 {
-          color: #e8a14d;
+          color: var(--color-brass-bright);
           background: rgba(156, 123, 63, 0.1);
           border: 1px solid rgba(156, 123, 63, 0.2);
         }
 
         .rank-badge-2 {
-          color: #6f8f4a;
+          color: var(--color-accent);
           background: rgba(111, 143, 74, 0.1);
           border: 1px solid rgba(111, 143, 74, 0.2);
         }
 
         .rank-badge-3 {
-          color: #8a7d5c;
+          color: var(--color-text-dim);
           background: rgba(85, 102, 119, 0.1);
           border: 1px solid rgba(85, 102, 119, 0.2);
         }
@@ -411,7 +411,7 @@ export default function LeaderboardPage() {
           display: flex;
           align-items: center;
           justify-content: center;
-          color: #8a7d5c;
+          color: var(--color-text-dim);
           font-weight: 600;
           font-size: 1rem;
           font-family: var(--font-heading);
@@ -419,7 +419,7 @@ export default function LeaderboardPage() {
 
         .player-name {
           font-weight: 500;
-          color: #cdbf9a;
+          color: var(--color-text);
           letter-spacing: 0.03em;
         }
 
@@ -441,7 +441,7 @@ export default function LeaderboardPage() {
         .pagination-btn {
           padding: 0.5rem 1rem;
           background: rgba(156, 123, 63, 0.05);
-          color: #8a7d5c;
+          color: var(--color-text-dim);
           border: 1px solid rgba(156, 123, 63, 0.1);
           border-radius: 6px;
           cursor: pointer;
@@ -453,7 +453,7 @@ export default function LeaderboardPage() {
 
         .pagination-btn:hover:not(:disabled) {
           background: rgba(156, 123, 63, 0.1);
-          color: #e8a14d;
+          color: var(--color-brass-bright);
           border-color: rgba(156, 123, 63, 0.2);
         }
 
@@ -463,7 +463,7 @@ export default function LeaderboardPage() {
         }
 
         .page-info {
-          color: #6f6647;
+          color: var(--color-text-muted);
           font-size: 0.85rem;
           letter-spacing: 0.1em;
           font-family: var(--font-heading);
@@ -477,7 +477,8 @@ export default function LeaderboardPage() {
           }
 
           .leaderboard-title {
-            font-size: 1.5rem;
+            /* 28px is the blackletter floor — do not go below it on mobile. */
+            font-size: 1.75rem;
           }
 
           .player-avatar {

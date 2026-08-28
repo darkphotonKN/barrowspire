@@ -3,6 +3,15 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { apiClient } from "@/utils/api";
+import { BARROW } from "@/utils/theme";
+
+// Stripe Elements renders in a cross-origin iframe, so it cannot read our CSS
+// custom properties — its appearance API needs literal values. Per ADR-0013
+// those literals still come from a definition site (theme.ts), never from a
+// hex typed at the call site. Brass at three opacities, for the input chrome.
+const BRASS_BORDER = "rgba(156, 123, 63, 0.3)";
+const BRASS_BORDER_STRONG = "rgba(156, 123, 63, 0.6)";
+const BRASS_RING = "rgba(156, 123, 63, 0.25)";
 import { loadStripe } from "@stripe/stripe-js";
 import {
   Elements,
@@ -104,11 +113,11 @@ function CheckoutForm({
             style: {
               base: {
                 fontSize: "16px",
-                color: "#e2e8f0",
-                "::placeholder": { color: "#64748b" },
-                iconColor: "#4ecca3",
+                color: BARROW.vellum,
+                "::placeholder": { color: BARROW.placeholder },
+                iconColor: BARROW.brass,
               },
-              invalid: { color: "#ef4444", iconColor: "#ef4444" },
+              invalid: { color: BARROW.oxbloodText, iconColor: BARROW.oxbloodText },
             },
           }}
         />
@@ -259,24 +268,24 @@ export default function SubscriptionPage() {
               appearance: {
                 theme: "night",
                 variables: {
-                  colorPrimary: "#4ecca3",
-                  colorBackground: "#0f0f23",
-                  colorText: "#e2e8f0",
-                  colorDanger: "#ef4444",
+                  colorPrimary: BARROW.brass,
+                  colorBackground: BARROW.umber,
+                  colorText: BARROW.vellum,
+                  colorDanger: BARROW.oxbloodText,
                   borderRadius: "8px",
                   fontFamily: "inherit",
                 },
                 rules: {
                   ".Input": {
-                    border: "1px solid rgba(78, 204, 163, 0.3)",
-                    backgroundColor: "rgba(15, 15, 35, 0.8)",
+                    border: `1px solid ${BRASS_BORDER}`,
+                    backgroundColor: BARROW.pitch,
                   },
                   ".Input:focus": {
-                    border: "1px solid rgba(78, 204, 163, 0.6)",
-                    boxShadow: "0 0 8px rgba(78, 204, 163, 0.2)",
+                    border: `1px solid ${BRASS_BORDER_STRONG}`,
+                    boxShadow: `0 0 0 2px ${BRASS_RING}`,
                   },
                   ".Label": {
-                    color: "#94a3b8",
+                    color: BARROW.vellumDark,
                   },
                 },
               },
