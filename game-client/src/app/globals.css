@@ -1,38 +1,292 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* v4 entry point. The v3-era `@tailwind base/components/utilities` triple
+   does NOT load v4's default theme, so --spacing was undefined and every
+   spacing/type-scale utility (px-10, mb-12, text-5xl...) silently generated
+   nothing. Classes applied; styles did not. */
+@import "tailwindcss";
+
+/* Tailwind v4 does not auto-load a v3-style config file. Without this the
+   token utilities (bg-primary, text-vellum, border-brass...) silently
+   generate nothing — classes apply, styles do not. */
+@config "../../tailwind.config.ts";
 
 :root {
-  --font-heading: var(--font-cinzel), 'Cinzel', 'Trajan Pro', Georgia, serif;
+  /* ── Typography ────────────────────────────────────────────────────────
+     Component code NEVER names a face. Bind here, reference by variable —
+     that indirection is what makes a display-face swap a two-file change.
+     Blackletter bound: >=28px AND only logo / hero / page h1. See
+     docs/design-guideline.md "Typography". */
+  --font-heading: var(--font-pirata), 'Pirata One', 'UnifrakturMaguntia', Georgia, serif;
   --font-body: var(--font-garamond), 'EB Garamond', Georgia, serif;
+
+  /* ── Palette ───────────────────────────────────────────────────────────
+     ADR-0013: this block and src/utils/theme.ts are the ONLY places a raw
+     hex may appear. Everything else refers. A new colour is a token in both
+     files first, then referenced. */
+
+  /* Torch — one per view: primary CTA, active nav, page h1, focal number. */
   --color-primary: #e8a14d;
+  --color-primary-bright: #f2b866;
+
   --color-accent: #6f8f4a;
   --color-danger: #6e1f1f;
-  --color-bg-dark: #0d0b0a;
-  --color-bg-darker: #070605;
-  --color-bg-card: rgba(20, 16, 12, 0.85);
+  /* Oxblood is a fill. On a dark ground it is unreadable as text, so error
+     COPY uses a lifted oxblood that still reads as the same family. */
+  --color-danger-text: #c96b5e;
+
+  /* Surfaces — warm umber/stone. Dark, never black: a base with no value
+     above the floor makes every accent read as emission. */
+  --color-bg-dark: #1c1613;
+  --color-bg-darker: #100c0a;
+  --color-bg-card: rgba(42, 33, 26, 0.88);
+  --color-bg-card-2: rgba(54, 43, 34, 0.92);
+  /* Opaque equivalents, for prefers-reduced-transparency. */
+  --color-bg-card-opaque: #241d17;
+  --color-bg-card-2-opaque: #2f2620;
+
+  /* Brass — structure, not fill. Borders, dividers, focus rings, glows. */
+  --color-brass: #9c7b3f;
+  --color-brass-bright: #c9a14e;
   --color-border: rgba(156, 123, 63, 0.15);
-  --color-text-muted: #6f6647;
-  --color-text-dim: #8a7d5c;
+  --color-border-strong: rgba(156, 123, 63, 0.35);
+
+  /* Text — measured against --color-bg-dark. Floor: 4.5:1 body/labels,
+     3:1 decorative/disabled. vellum 9.81 · dim 5.52 · muted 3.80. */
+  --color-text: #cdbf9a;
+  --color-text-dim: #9b8e6a;
+  --color-text-muted: #8d8362;
+  --color-text-placeholder: #6b6349;
+
+  /* Rarity — data, not emphasis. Exempt from one-torch, but ONLY on the
+     rarity badge, the card accent border, and a faint hover glow. */
+  --rarity-common: #a2946d;
+  --rarity-uncommon: #6f8f4a;
+  --rarity-rare: #688b8f;
+  --rarity-epic: #9c7b3f;
+  --rarity-legendary: #f2b866;
+
   --header-height: 64px;
+
+  /* ── Material layer ────────────────────────────────────────────────────
+     CSS only, no image assets. Material is finish, never structure —
+     every view must stay legible with all of this suppressed. */
+  --surface-gradient: linear-gradient(
+    160deg,
+    rgba(255, 245, 225, 0.045) 0%,
+    rgba(255, 245, 225, 0.012) 38%,
+    rgba(0, 0, 0, 0.14) 100%
+  );
+  --edge-carved: inset 0 1px 0 rgba(255, 240, 214, 0.07),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.45);
+  --edge-engraved: inset 0 1px 2px rgba(0, 0, 0, 0.55),
+    inset 0 -1px 0 rgba(255, 240, 214, 0.05);
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --shadow-float: 0 10px 40px rgba(0, 0, 0, 0.62);
+  --glow-brass: 0 0 18px rgba(156, 123, 63, 0.22);
+  --glow-torch: 0 0 22px rgba(232, 161, 77, 0.24);
+  --focus-ring: 0 0 0 2px rgba(156, 123, 63, 0.45);
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+
+/* Element-level rules live in @layer base so Tailwind utilities can still
+   override them. Unlayered CSS beats @layer utilities regardless of
+   specificity, so an unlayered `h1 { font-size }` would silently defeat
+   every text-* class on every heading. */
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    background: var(--color-bg-dark);
+    color: var(--color-text);
+    font-family: var(--font-body);
+    padding-top: var(--header-height);
+    position: relative;
+  }
+
+  /* Grain — a single low-opacity noise field, inline SVG feTurbulence. It
+     breaks the flatness of large dark fills, which is what makes a dark page
+     read as a surface rather than an absence. If you can see it as noise, it
+     is too strong. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Vignette — the world presses in at the borders of the light. */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(
+      ellipse at 50% 42%,
+      transparent 42%,
+      rgba(0, 0, 0, 0.3) 78%,
+      rgba(0, 0, 0, 0.55) 100%
+    );
+  }
+
+  /* Content sits above the material layer. */
+  body > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Blackletter is bound to h1 only. h2 and below take the body serif — the
+     display face is unreadable at those sizes. */
+  h1 {
+    font-family: var(--font-heading);
+    letter-spacing: 0.03em;
+    /* No font-size here: pages size their own h1 with text-* utilities, and
+       a base size would win against them. The >=28px blackletter floor is a
+       review rule, not something CSS can assert. */
+    line-height: 1.25;
+    color: var(--color-primary);
+  }
+
+  h2, h3, h4, h5, h6 {
+    font-family: var(--font-body);
+    letter-spacing: 0.05em;
+    color: var(--color-text);
+  }
 }
 
-body {
-  background: var(--color-bg-dark);
-  color: #fff;
-  font-family: var(--font-body);
-  padding-top: var(--header-height);
+/* ── Material primitives ──────────────────────────────────────────────────
+   The reusable vocabulary. Built once here; the view styles consume it. */
+
+/* A surface that reads as carved stone rather than a flat fill. */
+.surface {
+  background-color: var(--color-bg-card);
+  background-image: var(--surface-gradient);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card), var(--edge-carved);
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-heading);
-  letter-spacing: 0.05em;
+.surface-raised {
+  background-color: var(--color-bg-card-2);
+  background-image: var(--surface-gradient);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-float), var(--edge-carved);
+}
+
+/* A well cut INTO the material — inputs, sunken panels. */
+.surface-well {
+  background-color: var(--color-bg-darker);
+  box-shadow: var(--edge-engraved);
+}
+
+/* Ornament: a brass rule that fades at both ends, drawn not drawn-on. */
+.rule-brass {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--color-border-strong) 22%,
+    var(--color-border-strong) 78%,
+    transparent
+  );
+}
+
+/* Ornament: corner marks on a panel. Sparse — ornament reads as craft in
+   ones and twos, as clutter in fives. */
+.ornament-corners {
+  position: relative;
+}
+
+.ornament-corners::before,
+.ornament-corners::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  border-color: var(--color-border-strong);
+}
+
+.ornament-corners::before {
+  top: 6px;
+  left: 6px;
+  border-top: 1px solid;
+  border-left: 1px solid;
+}
+
+.ornament-corners::after {
+  bottom: 6px;
+  right: 6px;
+  border-bottom: 1px solid;
+  border-right: 1px solid;
+}
+
+/* Focus is brass, and it is never removed. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: 4px;
+}
+
+/* ── Degradation ──────────────────────────────────────────────────────────
+   Material is finish. Suppressing it must never change a layout. */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  body::before,
+  body::after {
+    display: none;
+  }
+
+  /* Translucent surfaces resolve to opaque ones that still read as
+     distinct layers — not a flat undifferentiated field. */
+  .surface,
+  .header-main,
+  .user-menu-dropdown,
+  .profile-card,
+  .login-card,
+  .sub-card {
+  background-image: var(--surface-gradient);
+  box-shadow: var(--shadow-card), var(--edge-carved);
+    backdrop-filter: none !important;
+    background-color: var(--color-bg-card-opaque) !important;
+  }
+
+  .surface-raised {
+    backdrop-filter: none !important;
+    background-color: var(--color-bg-card-2-opaque) !important;
+  }
+}
+
+@media (forced-colors: active) {
+  body::before,
+  body::after {
+    display: none;
+  }
+
+  .surface,
+  .surface-raised,
+  .surface-well {
+    background-image: none;
+    box-shadow: none;
+    border: 1px solid CanvasText;
+  }
 }
 
 /* Header Styles */
@@ -42,9 +296,11 @@ h1, h2, h3, h4, h5, h6 {
   left: 0;
   right: 0;
   height: var(--header-height);
-  background: rgba(13, 11, 10, 0.95);
+  background-color: var(--color-bg-card);
+  background-image: var(--surface-gradient);
   backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border-strong);
+  box-shadow: var(--edge-carved), 0 2px 18px rgba(0, 0, 0, 0.5);
   z-index: 1000;
   animation: slideDown 0.3s ease-out;
 }
@@ -82,19 +338,19 @@ h1, h2, h3, h4, h5, h6 {
   gap: 0.5rem;
   text-decoration: none;
   font-family: var(--font-heading);
-  font-size: 1.5rem;
-  font-weight: 900;
-  letter-spacing: 0.15em;
+  font-size: 1.75rem; /* 28px — the blackletter floor. Never lower this. */
+  font-weight: 400; /* Pirata One ships one weight; 900 fakes a bold. */
+  letter-spacing: 0.06em; /* Blackletter needs less tracking than a serif. */
   transition: all 0.3s ease;
 }
 
 .logo-text {
-  color: #fff;
+  color: var(--color-text);
   text-shadow: none;
 }
 
 .logo-accent {
-  color: var(--color-primary);
+  color: var(--color-brass-bright);
   text-shadow: none;
 }
 
@@ -107,7 +363,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .logo-beta {
-  font-family: var(--font-heading);
+  font-family: var(--font-body);
   font-size: 0.55rem;
   font-weight: 700;
   letter-spacing: 0.2em;
@@ -116,7 +372,7 @@ h1, h2, h3, h4, h5, h6 {
   align-self: center;
   margin-left: 0.35rem;
   padding: 0.2rem 0.4rem;
-  color: var(--color-accent);
+  color: var(--color-text);
   border: 1px solid rgba(111, 143, 74, 0.35);
   border-radius: 3px;
   background: rgba(111, 143, 74, 0.08);
@@ -163,7 +419,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .nav-link:hover {
-  color: #cdbf9a;
+  color: var(--color-text);
 }
 
 .nav-link:hover::after,
@@ -214,8 +470,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .btn-secondary:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--color-border-strong);
+  color: var(--color-brass-bright);
   background: rgba(156, 123, 63, 0.05);
 }
 
@@ -239,7 +495,7 @@ h1, h2, h3, h4, h5, h6 {
   background: rgba(156, 123, 63, 0.03);
   border: 1px solid rgba(156, 123, 63, 0.1);
   border-radius: 50px;
-  color: #fff;
+  color: var(--color-text);
   cursor: pointer;
   transition: all 0.3s ease;
 }
@@ -271,7 +527,7 @@ h1, h2, h3, h4, h5, h6 {
 .default-avatar {
   width: 20px;
   height: 20px;
-  color: var(--color-primary);
+  color: var(--color-text-dim);
 }
 
 .user-name {
@@ -279,7 +535,7 @@ h1, h2, h3, h4, h5, h6 {
   font-weight: 600;
   font-size: 0.85rem;
   letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--color-text);
 }
 
 .chevron {
@@ -291,6 +547,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .user-menu-dropdown {
+  background-image: var(--surface-gradient);
+  box-shadow: var(--shadow-float), var(--edge-carved);
   position: absolute;
   top: calc(100% + 0.5rem);
   right: 0;
@@ -326,10 +584,10 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .menu-user-name {
-  font-family: var(--font-heading);
+  font-family: var(--font-body);
   font-weight: 700;
   font-size: 1rem;
-  color: #fff;
+  color: var(--color-text);
   letter-spacing: 0.05em;
 }
 
@@ -356,7 +614,7 @@ h1, h2, h3, h4, h5, h6 {
   gap: 0.75rem;
   padding: 0.75rem 1rem;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--color-text-dim);
   text-decoration: none;
   font-size: 0.85rem;
   font-weight: 500;
@@ -371,7 +629,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .menu-item:hover {
   background: rgba(156, 123, 63, 0.06);
-  color: var(--color-primary);
+  color: var(--color-brass-bright);
   transform: translateX(4px);
 }
 
@@ -420,7 +678,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .treasure-hunt-title {
-  color: #cdbf9a;
+  color: var(--color-text);
   margin-bottom: 10px;
   font-size: 24px;
   font-weight: bold;
@@ -457,7 +715,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .treasure-hunt-control-group h3 {
-  color: var(--color-primary);
+  color: var(--color-text);
   margin-bottom: 4px;
   font-size: 12px;
 }
@@ -520,19 +778,20 @@ h1, h2, h3, h4, h5, h6 {
 
 .profile-back-btn:hover {
   background: rgba(156, 123, 63, 0.1);
-  color: var(--color-primary);
+  color: var(--color-brass-bright);
   border-color: rgba(156, 123, 63, 0.3);
 }
 
 .profile-title {
   font-size: 1.8rem;
   font-weight: 700;
-  color: var(--color-primary);
   letter-spacing: 0.1em;
   text-shadow: none;
 }
 
 .profile-card {
+  background-image: var(--surface-gradient);
+  box-shadow: var(--shadow-card), var(--edge-carved);
   position: relative;
   z-index: 2;
   max-width: 600px;
@@ -616,7 +875,7 @@ h1, h2, h3, h4, h5, h6 {
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
-  color: var(--color-primary);
+  color: var(--color-text);
   text-align: center;
   font-size: 0.85rem;
   letter-spacing: 0.05em;
@@ -632,14 +891,14 @@ h1, h2, h3, h4, h5, h6 {
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
-  color: var(--color-primary);
+  color: var(--color-text-dim);
 }
 
 .profile-spinner {
   width: 32px;
   height: 32px;
   border: 2px solid rgba(156, 123, 63, 0.15);
-  border-top: 2px solid var(--color-primary);
+  border-top: 2px solid var(--color-brass);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -656,7 +915,7 @@ h1, h2, h3, h4, h5, h6 {
 .profile-name {
   font-size: 1.8rem;
   font-weight: 600;
-  color: #e0e8f0;
+  color: var(--color-text);
   margin-bottom: 0.5rem;
   letter-spacing: 0.05em;
 }
@@ -692,7 +951,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .profile-detail-value {
-  color: #cdbf9a;
+  color: var(--color-text);
   font-weight: 500;
 }
 
@@ -715,13 +974,13 @@ h1, h2, h3, h4, h5, h6 {
 .profile-error {
   background: rgba(110, 31, 31, 0.08);
   border: 1px solid rgba(110, 31, 31, 0.2);
-  color: #ff6688;
+  color: var(--color-danger-text);
 }
 
 .profile-success {
   background: rgba(156, 123, 63, 0.06);
   border: 1px solid rgba(156, 123, 63, 0.2);
-  color: var(--color-primary);
+  color: var(--color-brass-bright);
 }
 
 @keyframes slideIn {
@@ -741,6 +1000,8 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   .profile-card {
+  background-image: var(--surface-gradient);
+  box-shadow: var(--shadow-card), var(--edge-carved);
     padding: 1.5rem;
   }
 
@@ -805,16 +1066,16 @@ h1, h2, h3, h4, h5, h6 {
 .splash-subtitle {
   font-family: var(--font-body);
   font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--color-text-dim);
   letter-spacing: 0.3em;
   text-align: center;
   white-space: nowrap;
 }
 
 .splash-enter-btn {
-  font-family: var(--font-heading);
+  font-family: var(--font-body);
   font-size: 1rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.25em;
   color: var(--color-primary);
   background: transparent;
@@ -844,7 +1105,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .splash-hint {
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.15);
+  color: var(--color-text-muted);
   letter-spacing: 0.1em;
   transition: opacity 1s ease;
 }
@@ -903,7 +1164,7 @@ h1, h2, h3, h4, h5, h6 {
   position: absolute;
   width: 2px;
   height: 2px;
-  background: var(--color-primary);
+  background: var(--color-brass);
   border-radius: 50%;
   opacity: 0;
   animation: particle-float 5s ease-in-out infinite;
@@ -967,7 +1228,6 @@ h1, h2, h3, h4, h5, h6 {
 .login-title {
   font-size: 32px;
   font-weight: bold;
-  color: var(--color-primary);
   letter-spacing: 6px;
   text-shadow: none;
   margin-bottom: 10px;
@@ -1000,12 +1260,13 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .login-input {
+  box-shadow: var(--edge-engraved);
   width: 100%;
   padding: 14px 16px;
   background: rgba(13, 11, 10, 0.8);
   border: 1px solid rgba(156, 123, 63, 0.1);
   border-radius: 6px;
-  color: #cdbf9a;
+  color: var(--color-text);
   font-size: 14px;
   outline: none;
   transition: all 0.3s ease;
@@ -1013,7 +1274,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .login-input::placeholder {
-  color: #5a5238;
+  color: var(--color-text-placeholder);
 }
 
 .login-input:focus {
@@ -1117,20 +1378,20 @@ h1, h2, h3, h4, h5, h6 {
 .login-footer {
   margin-top: 25px;
   text-align: center;
-  color: #5a5238;
+  color: var(--color-text-placeholder);
   font-size: 13px;
   letter-spacing: 0.03em;
 }
 
 .login-link {
-  color: var(--color-primary);
+  color: var(--color-brass-bright);
   text-decoration: none;
   font-weight: 500;
   transition: all 0.3s ease;
 }
 
 .login-link:hover {
-  color: #fff;
+  color: var(--color-text);
   text-shadow: none;
 }
 
@@ -1138,7 +1399,7 @@ h1, h2, h3, h4, h5, h6 {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  color: #1c1712;
+  color: var(--color-text-muted);
   font-size: 11px;
   letter-spacing: 2px;
 }
@@ -1203,18 +1464,19 @@ h1, h2, h3, h4, h5, h6 {
 
 .sub-back-btn:hover {
   background: rgba(156, 123, 63, 0.1);
-  color: var(--color-primary);
+  color: var(--color-brass-bright);
 }
 
 .sub-title {
   font-size: 1.8rem;
   font-weight: 700;
-  color: var(--color-primary);
   letter-spacing: 0.1em;
   text-shadow: none;
 }
 
 .sub-card {
+  background-image: var(--surface-gradient);
+  box-shadow: var(--shadow-card), var(--edge-carved);
   position: relative;
   z-index: 2;
   width: 100%;
@@ -1234,9 +1496,9 @@ h1, h2, h3, h4, h5, h6 {
 .sub-plan-badge {
   display: inline-block;
   padding: 0.3rem 1rem;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  background: linear-gradient(135deg, var(--color-brass), var(--color-brass-bright));
   color: var(--color-bg-dark);
-  font-family: var(--font-heading);
+  font-family: var(--font-body);
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.2em;
@@ -1247,7 +1509,7 @@ h1, h2, h3, h4, h5, h6 {
 .sub-plan-name {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #e0e8f0;
+  color: var(--color-text);
   letter-spacing: 0.05em;
 }
 
@@ -1258,7 +1520,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .sub-price-amount {
-  font-family: var(--font-heading);
+  font-family: var(--font-body);
   font-size: 2.5rem;
   font-weight: 900;
   color: var(--color-primary);
@@ -1285,7 +1547,7 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  color: #889aaa;
+  color: var(--color-text-dim);
   font-size: 0.9rem;
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
@@ -1297,7 +1559,7 @@ h1, h2, h3, h4, h5, h6 {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
-  color: var(--color-primary);
+  color: var(--color-brass);
 }
 
 .sub-btn-primary {
@@ -1357,13 +1619,13 @@ h1, h2, h3, h4, h5, h6 {
 .sub-error {
   background: rgba(110, 31, 31, 0.06);
   border: 1px solid rgba(110, 31, 31, 0.15);
-  color: #ff6688;
+  color: var(--color-danger-text);
 }
 
 .sub-success {
   background: rgba(156, 123, 63, 0.06);
   border: 1px solid rgba(156, 123, 63, 0.15);
-  color: var(--color-primary);
+  color: var(--color-brass-bright);
 }
 
 .sub-loading {
@@ -1400,6 +1662,8 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   .sub-card {
+  background-image: var(--surface-gradient);
+  box-shadow: var(--shadow-card), var(--edge-carved);
     padding: 1.5rem;
   }
 
@@ -1418,5 +1682,6 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
-/* Display font utility (gothic serif headings) */
+/* Blackletter display utility. Apply ONLY to the logo, the hero, or a page
+   h1, and never below 28px — see docs/design-guideline.md "Typography". */
 .font-display { font-family: var(--font-heading); }

@@ -9,10 +9,11 @@
  */
 
 export const BARROW = {
-  // Base dark — near-black charcoal / deep umber
-  charcoal: "#0d0b0a",
-  umber: "#1a1410",
-  pitch: "#070605",
+  // Base dark — warm umber/stone. Dark, never black: see the contrast
+  // floor in docs/design-guideline.md. Must match globals.css :root.
+  charcoal: "#1c1613",
+  umber: "#241d17",
+  pitch: "#100c0a",
 
   // Stone — cold slate
   slate: "#3a3d42",
@@ -30,14 +31,19 @@ export const BARROW = {
   // Arcane / Lich corruption — sickly green, necrotic blue-green
   arcane: "#6f8f4a",
   arcaneDeep: "#3c5a36",
-  necrotic: "#4a6b6f",
+  necrotic: "#688b8f",
 
   // Blood / danger — oxblood
   oxblood: "#6e1f1f",
+  /* Oxblood is a fill; on a dark ground it is unreadable AS text, so error
+     copy uses this lifted tone from the same family. */
+  oxbloodText: "#c96b5e",
 
-  // Parchment — UI surfaces
+  // Parchment — UI surfaces. vellumDark carries labels at 5.52:1 on charcoal.
   vellum: "#cdbf9a",
-  vellumDark: "#8a7d5c",
+  vellumDark: "#9b8e6a",
+  vellumFaint: "#8d8362",
+  placeholder: "#6b6349",
   ink: "#1c1712",
 
   // Brass / bronze accents
@@ -47,9 +53,9 @@ export const BARROW = {
 
 /** Phaser 0x integer forms of the same palette. */
 export const BARROW_HEX = {
-  charcoal: 0x0d0b0a,
-  umber: 0x1a1410,
-  pitch: 0x070605,
+  charcoal: 0x1c1613,
+  umber: 0x241d17,
+  pitch: 0x100c0a,
   slate: 0x3a3d42,
   slateLight: 0x52555c,
   barrowBrown: 0x5a4632,
@@ -59,10 +65,13 @@ export const BARROW_HEX = {
   ember: 0xc2611f,
   arcane: 0x6f8f4a,
   arcaneDeep: 0x3c5a36,
-  necrotic: 0x4a6b6f,
+  necrotic: 0x688b8f,
   oxblood: 0x6e1f1f,
+  oxbloodText: 0xc96b5e,
   vellum: 0xcdbf9a,
-  vellumDark: 0x8a7d5c,
+  vellumDark: 0x9b8e6a,
+  vellumFaint: 0x8d8362,
+  placeholder: 0x6b6349,
   ink: 0x1c1712,
   brass: 0x9c7b3f,
   brassBright: 0xc9a14e,
