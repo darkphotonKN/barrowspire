@@ -6,6 +6,14 @@
       {
         "selector": "CallExpression[callee.name='fetch']",
         "message": "Hand-written fetch is banned outside src/utils/api.ts (ADR-0001 §4). Use the generated client from '@/utils/api' so a contract change breaks the build rather than a user's session. WebSocket traffic is plane 2 and uses `new WebSocket`, which this rule does not match; the one legitimate raw fetch (the S3 presigned upload, which is not a gateway path) lives in api.ts and is exempted below."
+      },
+      {
+        "selector": "Literal[value=/#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\\b/]",
+        "message": "Raw hex colour is banned outside the two definition sites (ADR-0013). Colour is defined once in src/app/globals.css :root and src/utils/theme.ts, and referenced everywhere else: var(--color-*) in CSS/styled-jsx, BARROW/BARROW_HEX in TS. A new colour is a token in BOTH files first, then referenced. This covers inline style={{}} objects and third-party theme configs (Stripe Elements) too, which no CSS-only rule would reach."
+      },
+      {
+        "selector": "TemplateElement[value.raw=/#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\\b/]",
+        "message": "Raw hex colour is banned outside the two definition sites (ADR-0013) — including inside template literals and styled-jsx blocks. Use var(--color-*) or BARROW.*."
       }
     ]
   },
@@ -13,6 +21,21 @@
     {
       "files": ["src/utils/api.ts"],
       "rules": { "no-restricted-syntax": "off" }
+    },
+    {
+      "files": ["src/utils/theme.ts"],
+      "rules": { "no-restricted-syntax": "off" }
+    },
+    {
+      "files": [
+        "src/scenes/**",
+        "src/ui/**",
+        "src/game/**",
+        "src/utils/spriteGenerator.ts",
+        "src/utils/gameStateLogger.ts",
+        "src/utils/class/SocketManager.ts"
+      ],
+      "rules": { "no-restricted-syntax": ["error", { "selector": "CallExpression[callee.name='fetch']", "message": "Hand-written fetch is banned outside src/utils/api.ts (ADR-0001 section 4)." }] }
     }
   ]
 }
