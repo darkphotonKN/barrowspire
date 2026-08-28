@@ -84,9 +84,19 @@ paragraph above rules out.
 
 **Append-only**
 
-9. **No `UPDATE`, no `DELETE`, ever.** The repository exposes insert and read only — there is no
-   method to call, not merely a rule not to break. Nothing needs correcting, because
+9. **No `UPDATE`, no `DELETE`, ever.** The repository exposes **exactly one method, `Append`** —
+   there is no method to call, not merely a rule not to break. Nothing needs correcting, because
    requirement 2 only writes once the money is final.
+
+   **Reads do not hang off the repository, and that is what lets the interface carry one method.**
+   A repository provides access to aggregate roots. A flat entry row is not an aggregate and
+   enforces no invariant, so serving one from a repository method misuses the pattern's name. The
+   read path is served by **query objects** — `GetTransactionQuery` and `ListEntriesQuery` — which
+   hold `*sqlx.DB` directly, return DTOs, and bypass the domain entirely; their interfaces are
+   declared **consumer-side by the gRPC handler**, not in the domain package. This strengthens the
+   append-only argument rather than weakening it: an insert-only interface with a single method is
+   a harder statement than "insert and read". It also mirrors wallet-service, which has no read
+   port and is the reviewed reference implementation.
 10. `created_at` is set by the database (`DEFAULT now()`), never supplied by the caller.
 
 **Idempotency**
@@ -161,10 +171,11 @@ paragraph above rules out.
 **The read path**
 
 20. **The ledger answers "why", never "what".** Both read operations return rows. Neither
-    returns a total, a sum, or a balance field, and no repository method added for them
-    aggregates (ADR-0005, requirement 14). This is what makes a read path safe to add at all:
-    listing movements does not make the ledger a second source of truth, whereas summing them
-    would.
+    returns a total, a sum, or a balance field, and **no query object serving them aggregates**
+    (ADR-0005, requirement 14). The rule is enforced by absence on the read side exactly as
+    requirement 9 enforces it on the write side — there is no such method to call. This is what
+    makes a read path safe to add at all: listing movements does not make the ledger a second
+    source of truth, whereas summing them would.
 21. **Two operations, split by the shape of the question.** `getTransaction` answers *"what was
     this one movement"* — a single transaction with all its legs. `listEntries` answers *"what
     has happened to this account"* — a flat, time-ordered history. One operation serving both
@@ -240,7 +251,7 @@ paragraph above rules out.
 31. **Transport types are declared per operation, carry bare payloads, and never mirror internal
     models.** No `{statusCode, message, result}` envelope: that shape exists on the item and
     stats groups as transcribed legacy (ADR-0002 §1), not as a convention new resources adopt.
-    The `LedgerEntry` persistence struct, the repository's scan targets, and any domain value
+    The `LedgerEntry` persistence struct, the query objects' scan targets, and any domain value
     type stay out of the schema — a contract that exposes internal shapes turns every
     persistence refactor into a client-breaking change.
 32. **The contract is generated, never hand-written.** Typed handler signatures are the source;
@@ -304,7 +315,8 @@ paragraph above rules out.
 - [ ] A settlement that fails before the pivot leaves **zero** ledger rows
 - [ ] No RPC, service method, or repository method exists that reverses, corrects, or retracts a
       recorded transaction — verified by the interface, not by grep
-- [ ] The repository exposes no update or delete method — verified by its interface, not by grep
+- [ ] The repository interface declares exactly one method, `Append` — verified by reading the
+      interface, not by grep
 - [ ] A 47-bid settlement scenario produces exactly 2 rows
 - [ ] No RPC, query, or repository method returns an account balance or a sum over entries
 - [ ] The `ledgers` table, `Ledger` aggregate, OCC `version`, and `withRetry` are gone; the
@@ -319,7 +331,9 @@ paragraph above rules out.
 - [ ] Paging the full history with `limit` smaller than the row count visits every row exactly
       once — proven by a test that appends a transaction mid-page and asserts no row is skipped
       or repeated
-- [ ] `next_cursor` is absent, not null, on the final page
+- [ ] `next_cursor` is absent, not null, on the final page — and on the gRPC leg an exhausted
+      page carries an empty `PageInfo.next_cursor` that the gateway omits rather than emitting
+      as `""`
 - [ ] A member paging without `account_id` sees only their own entries, scoped by the
       `account_id` token claim
 - [ ] A member supplying `account_id` receives `403 · FORBIDDEN`
@@ -415,11 +429,13 @@ service LedgerService {
   rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse) {}
 }
 
-enum Direction { DIRECTION_UNSPECIFIED = 0; DEBIT = 1; CREDIT = 2; }
-
-// `reason` is a plain `string` on the wire. There is no `Reason` enum, on purpose:
-// see open question 3. The closed set is enforced on the write path and by the
-// migration's CHECK; the read path echoes what is stored.
+// `reason` and `direction` are both plain `string` on the wire. There is no
+// `Reason` enum and no `Direction` enum, on purpose: see open question 3. Both
+// closed sets are enforced on the write path — by string-backed Go value types —
+// and by the migration's CHECKs; the read path echoes what is stored. An enum
+// would force the handler to map a stored string onto a declared value, and a
+// value the proto does not declare becomes the zero value: UNSPECIFIED reported
+// for a row that plainly says CREDIT.
 ```
 
 ### Write path — `AppendLedgerTx` (Temporal activity)
@@ -428,26 +444,42 @@ enum Direction { DIRECTION_UNSPECIFIED = 0; DEBIT = 1; CREDIT = 2; }
 survived the move from gRPC intact — the same fields, the same constraints, the same
 transaction-level/leg-level split — because the shape of a balanced movement is a domain fact and
 does not depend on how the call arrives. What changed is what enforces them: a proto schema and
-`buf` gated these fields before, and **nothing gates them now** (ADR-0011's accepted cost). Go
-types in ledger-service are the only definition.
+`buf` gated these fields before, and **nothing gates them now** (ADR-0011's accepted cost). These
+Go types are the only definition.
+
+**They live in a shared package under `common/`, imported by both the calling service and
+ledger-service.** This was not a preference: the calling workflow must import the types to invoke
+the activity, and Go's `internal/` rule makes anything under `ledger-service/internal/`
+unimportable from another service. There is no layout in which these types live inside the
+service. The package is the ledger's **Published Language for the write path** — the sibling of
+`ledger.proto` for the read path, which is why it sits beside the proto rather than in a `utils`
+or `constants` bucket. **The activity's registered name is a constant in that same package**,
+referenced by both the registering service and the scheduling workflow, so a typo is a compile
+error rather than a runtime routing failure.
+
+None of that softens ADR-0011's accepted cost. A shared struct converts a field rename from a
+silent runtime deserialization failure into a compile error on both sides, which is worth having —
+but **nothing gates the contract**: no proto, no `buf`, no OpenAPI, no codegen. Deploy skew still
+carries the old shape on in-flight workflows. Name these types as if there is no safety net,
+because there is not one.
 
 **`AppendLedgerTxRequest`** — writable fields only; caller identity comes from the execution
 context, never the body (requirement 16).
 
 | Field | Type | Notes |
 |---|---|---|
-| `transaction_id` | `string` (UUID) | Caller-minted, deterministic. The idempotency key. |
-| `reason` | `Reason` | Transaction-level. A string-backed Go value type, validated against the closed set; the empty string is refused. |
-| `reference_id` | `string` (UUID) | Transaction-level. The originating event — today, wallet-service's `bid_id`. |
+| `transaction_id` | `uuid.UUID` | Caller-minted, deterministic. The idempotency key. |
+| `reason` | `string` | Transaction-level. Converted to the string-backed Go value type on entry and validated against the closed set there; the empty string is refused. |
+| `reference_id` | `uuid.UUID` | Transaction-level. The originating event — today, wallet-service's `bid_id`. |
 | `currency` | `string` | Transaction-level. Optional; defaults to `GOLD`. |
-| `legs` | `repeated LedgerLeg` | Min 2. Leg-level facts only. Proto-side name; see the transport-type table under the read path for the HTTP-side names. |
+| `legs` | `[]LedgerLeg` | Min 2. Leg-level facts only. See the transport-type table under the read path for the HTTP-side names. |
 
 **`LedgerLeg`**
 
 | Field | Type | Notes |
 |---|---|---|
-| `account_id` | `string` (UUID) | Soft reference to `wallet-service.accounts.id`. |
-| `direction` | `Direction` | Carries the sign. |
+| `account_id` | `uuid.UUID` | Soft reference to `wallet-service.accounts.id`. |
+| `direction` | `string` | Carries the sign. |
 | `amount` | `int64` | Strictly positive. |
 
 > The split is deliberate and mirrors the schema: **transaction-level facts sit outside the
@@ -459,13 +491,25 @@ context, never the body (requirement 16).
 > per-leg value to disagree, so "all legs share a currency" stops being a check that could be
 > forgotten and becomes a shape that cannot express the violation.
 
-**`AppendLedgerTxResponse`**
+**The id fields are `uuid.UUID`, not `string`, and that costs nothing on the wire.** `uuid.UUID`
+marshals to an identical JSON string via `MarshalText`, so the payload is byte-for-byte what a
+`string` field would produce — while a malformed id fails at unmarshal instead of travelling
+inward to fail somewhere less obvious. It reads as a transport-unfriendly choice and is not one.
+
+**`AppendLedgerTxResponse`** — one field, deliberately.
 
 | Field | Type | Notes |
 |---|---|---|
-| `transaction_id` | `string` (UUID) | Echoed. |
 | `applied` | `bool` | `true` = rows written; `false` = already recorded, no-op (requirement 12). |
-| `recorded_at` | `Timestamp` | The original write's time, not the retry's. |
+
+> **`transaction_id` and `recorded_at` were both cut.** Echoing `transaction_id` hands back a
+> value the caller minted itself (requirement 11) and already holds. `recorded_at` is the more
+> tempting of the two — the original write's time is genuinely useful to a caller retrying
+> mid-incident — but obtaining it means reading the parent row back after
+> `ON CONFLICT DO NOTHING`. The append path otherwise never reads, and carrying the timestamp out
+> would force the repository's single method to return more than a bool. That cost lands squarely
+> on the duplicate branch, which requirement 12 makes the normal path rather than the exceptional
+> one, and which exists to be cheap.
 
 **Errors.** **gRPC status codes do not apply on this path.** The activity returns a domain
 error, and Temporal's retry policy decides what happens next — so the classification that matters
@@ -507,6 +551,16 @@ envelope (requirement 31).
 | `getTransaction` | `GET /api/ledger/transactions/{transaction_id}` | path `transaction_id` (UUID) | — | `transaction_id`, `reason`, `reference_id`, `currency`, `created_at`, `legs[]` | `401 · UNAUTHENTICATED`<br>`404 · NOT_FOUND`<br>`422 · VALIDATION_FAILED`<br>`503 · SERVICE_UNAVAILABLE`<br>`500 · INTERNAL_ERROR` |
 | `listEntries` | `GET /api/ledger/entries` | `account_id` (UUID, optional, admin-only)<br>`limit` (int, default 50, max 100)<br>`cursor` (opaque, optional) | — | `entries[]`, `next_cursor` | `401 · UNAUTHENTICATED`<br>`403 · FORBIDDEN`<br>`422 · VALIDATION_FAILED`<br>`503 · SERVICE_UNAVAILABLE`<br>`500 · INTERNAL_ERROR` |
 
+**The `account_id` query parameter is `account_id_target` on the gRPC leg, and the rename is
+load-bearing.** At HTTP it stays `account_id`, matching requirements 24–28's prose. In
+`ListEntriesRequest` it is `optional string account_id_target` — named apart from the caller's own
+`account_id` claim so a handler holding both cannot confuse *whose history to read* with *who is
+asking* (requirement 24's whole distinction). **The `optional` keyword is what carries requirement
+25:** presence is an admin-only request to read someone else's history, so a member who sets the
+field is refused rather than silently scoped back to themselves — and proto3 needs `optional` to
+tell "unset" from "set to the empty string". With a bare `string` the two collapse and that
+authorization signal is lost on the wire.
+
 **`legs[]` member** (nested — requirement 22)
 
 | Field | Type | Notes |
@@ -519,6 +573,7 @@ envelope (requirement 31).
 
 | Field | Type | Notes |
 |---|---|---|
+| `id` | `string` (UUID) | Leg. The entry's own id — and the `id` half of the cursor's `(created_at, id)`, so it is the sort key's tiebreaker, not decoration. |
 | `transaction_id` | `string` (UUID) | Parent. Shared by every leg of the movement. |
 | `reference_id` | `string` (UUID) | Parent. The originating event — today, the winning bid. |
 | `reason` | `string` | Parent. |
@@ -532,13 +587,25 @@ envelope (requirement 31).
 page, rather than present-and-null: absence is the end-of-pages signal, so a client loops while
 the field is there.
 
-**Transport type names.** Pinned here so no slice has to invent them, and so the same row is not
-called three things across three layers.
+**On the gRPC leg it travels inside `shared.v1.PageInfo`** — the repo's shared pagination message,
+carrying `next_cursor` and the echoed `limit` — rather than as a bare field on
+`ListEntriesResponse`. proto3 gives a plain `string` no way to be absent, so **the empty string is
+the end-of-pages signal between the gateway and ledger-service**, and the gateway is what turns it
+into the absence the HTTP contract promises: an empty `next_cursor` is omitted from the response
+body, never emitted as `""` or `null`. The two representations are deliberate — the inner leg runs
+between our own services and can afford a sentinel value, the outer one is a public contract and
+cannot. `PageInfo`'s echoed `limit` stays on the inner leg; `EntryPage` carries `entries[]` and
+`next_cursor` and nothing else.
+
+**Transport type names.** Pinned here so no slice has to invent them, and so one row's shapes are
+named once rather than renamed at every layer.
 
 | Layer | Package | Type | Notes |
 |---|---|---|---|
 | persistence | `ledger-service/internal/ledger` | **`LedgerTransaction`** | The parent row as stored. Matches `ledger_transactions`. **Never serialized** (requirement 31). |
-| persistence | `ledger-service/internal/ledger` | **`LedgerEntry`** | The leg row as stored. Matches `ledger_entries`. Owned by I-0017. **Never serialized** (requirement 31). |
+| persistence | `ledger-service/internal/ledger` | **`LedgerEntry`** | The leg row **as stored** — it matches `ledger_entries` column for column, and is therefore *not* what the read path returns. Written by the append path; owned by I-0017. **Never serialized** (requirement 31). |
+| read model | `ledger-service/internal/ledger/dto` | **`TransactionDetails`** + **`LegDetail`** | What `GetTransactionQuery` returns — the transaction nesting its legs. **Never serialized** (requirement 31). |
+| read model | same | **`ListEntriesDetails`** + **`EntryDetail`** | What `ListEntriesQuery` returns. `EntryDetail` is requirement 22's flattened row: leg fields carrying their parent's `reference_id`, `reason`, `currency`, and `created_at`. **Never serialized** (requirement 31). |
 | transport | `api-gateway/internal/gateway/ledger` | **`Entry`** | One flattened history row — the `entries[]` member. |
 | transport | same | **`EntryPage`** | The `listEntries` response: `entries[]` plus `next_cursor`. |
 | transport | same | **`Transaction`** | The `getTransaction` response, nesting `legs[]`. |
@@ -552,6 +619,18 @@ called three things across three layers.
 >
 > `Transaction` here means the **economic event**, per `CONTEXT.md`. A database transaction is
 > always qualified.
+>
+> **One row, three shapes, deliberately.** `LedgerEntry` is what the append path stores;
+> `EntryDetail` is what a query object reads back; `Entry` is what the gateway serializes.
+> Requirement 31 is what keeps them apart — collapsing the middle one into either neighbour puts
+> a persistence shape on the wire or a transport concern inside a query.
+>
+> **Open, and not decided here:** `EntryDetail` carries `reference_id`, `reason`, and `currency`,
+> which live on `ledger_transactions` and not on `ledger_entries`. Requirement 23's keyset
+> predicate still runs on `ledger_entries` alone — that is what the `(account_id, created_at, id)`
+> index is for — but filling those three fields needs the parent. Whether that is a join across
+> the page's bounded row set or a second query is **I-0026's to settle**; it is not free either
+> way.
 
 **Error semantics.** Which case is which; the meaning of each is in Requirements.
 
@@ -831,9 +910,10 @@ ADRs name them rather than resolving them.
   own worker, and the saga's compensation steps belong to whoever specifies the saga. The absence
   of a caller does not block the callee — a registered activity is invocable and testable without
   one.
-- **A schema gate for the activity's input/output types.** ADR-0011 accepts their being
-  ungated as a known cost; a shared types package or contract tests are candidate mitigations
-  and are not decided or built here.
+- **A schema gate for the activity's input/output types.** ADR-0011 accepts their being ungated
+  as a known cost. The shared types package is decided and built (§API surface) but is **not a
+  gate** — it makes a rename a compile error, not a contract violation something can fail a PR on.
+  Contract tests remain a candidate mitigation and are not decided or built here.
 - **Any player-facing UI.** No `game-client` screen consumes this read path, and none is planned.
   The generated TypeScript client still gains both operations — generation covers the whole
   gateway surface (requirement 32) — it simply has no caller. Member-scoped reads exist so the
