@@ -186,7 +186,7 @@ export default function LoginPage() {
       </div>
 
       {/* 版本資訊 */}
-      <div className="login-version">v0.1 // SECTOR 7-G</div>
+      <div className="login-version">v0.1 // The Barrow-Deep</div>
     </main>
   );
 }

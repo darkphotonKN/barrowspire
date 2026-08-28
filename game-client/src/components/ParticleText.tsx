@@ -2,6 +2,16 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 
+import { BARROW } from '@/utils/theme';
+
+/** Ember tone, as an `r, g, b` triple for canvas rgba(). Derived from the
+ *  palette rather than restated — ADR-0013 applies to canvas too. */
+const EMBER_RGB = [
+  parseInt(BARROW.amber.slice(1, 3), 16),
+  parseInt(BARROW.amber.slice(3, 5), 16),
+  parseInt(BARROW.amber.slice(5, 7), 16),
+].join(', ');
+
 interface Particle {
   x: number;
   y: number;
@@ -13,19 +23,32 @@ interface Particle {
   vy: number;
 }
 
-interface Star {
+/**
+ * An ember mote — ash lifted off a torch, drifting up and burning out.
+ *
+ * This replaced a starfield: fixed points twinkling in place read as a night
+ * sky, which is the wrong world for a barrow-crawl. Motes drift and expire
+ * instead of blinking, which is the whole difference.
+ */
+interface Mote {
   x: number;
   y: number;
   size: number;
   baseOpacity: number;
-  twinkleSpeed: number;
-  twinkleOffset: number;
+  /** Upward drift, px/frame. Embers rise. */
+  vy: number;
+  /** Lateral sway amplitude. */
+  sway: number;
+  phase: number;
+  /** 0..1, advances each frame; the mote fades in and burns out over it. */
+  life: number;
+  lifeSpan: number;
 }
 
 export default function ParticleText() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<Particle[]>([]);
-  const starsRef = useRef<Star[]>([]);
+  const motesRef = useRef<Mote[]>([]);
   const mouseRef = useRef({ x: -9999, y: -9999 });
   const animationRef = useRef<number>(0);
 
@@ -57,7 +80,7 @@ export default function ParticleText() {
     const fontSize = Math.min(w / 6, 140);
     const lineGap = fontSize * 0.15;
 
-    offCtx.fillStyle = '#fff';
+    offCtx.fillStyle = BARROW.vellum;
     offCtx.font = `900 ${fontSize}px ${fontFamily}, Cinzel, serif`;
     offCtx.textAlign = 'center';
     offCtx.textBaseline = 'middle';
@@ -69,7 +92,7 @@ export default function ParticleText() {
     const data = imageData.data;
     const particles: Particle[] = [];
     const gap = Math.max(3, Math.floor(Math.min(w, h) / 250));
-    const colors = ['#e8a14d', '#c9a14e', '#c2611f'];
+    const colors = [BARROW.amber, BARROW.brassBright, BARROW.ember];
 
     for (let y = 0; y < h; y += gap) {
       for (let x = 0; x < w; x += gap) {
@@ -91,20 +114,24 @@ export default function ParticleText() {
 
     particlesRef.current = particles;
 
-    // Generate background stars
-    const starCount = Math.floor((w * h) / 8000);
-    const stars: Star[] = [];
-    for (let i = 0; i < starCount; i++) {
-      stars.push({
+    // Generate drifting embers. Sparser than the starfield it replaced —
+    // ash reads as atmosphere in ones and twos, as snow in hundreds.
+    const moteCount = Math.floor((w * h) / 22000);
+    const motes: Mote[] = [];
+    for (let i = 0; i < moteCount; i++) {
+      motes.push({
         x: Math.random() * w,
         y: Math.random() * h,
-        size: Math.random() * 1.8 + 0.2,
-        baseOpacity: Math.random() * 0.5 + 0.15,
-        twinkleSpeed: Math.random() * 0.02 + 0.005,
-        twinkleOffset: Math.random() * Math.PI * 2,
+        size: Math.random() * 1.6 + 0.3,
+        baseOpacity: Math.random() * 0.34 + 0.1,
+        vy: -(Math.random() * 0.22 + 0.06),
+        sway: Math.random() * 0.5 + 0.15,
+        phase: Math.random() * Math.PI * 2,
+        life: Math.random(),
+        lifeSpan: Math.random() * 420 + 260,
       });
     }
-    starsRef.current = stars;
+    motesRef.current = motes;
   }, []);
 
   const animate = useCallback(() => {
@@ -116,14 +143,27 @@ export default function ParticleText() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw stars with twinkle
+    // Drift the embers upward and burn them out. No twinkle: a mote that
+    // blinks in place is a star, and this is ash.
     const time = performance.now() * 0.001;
-    for (const s of starsRef.current) {
-      const opacity =
-        s.baseOpacity + Math.sin(time * s.twinkleSpeed * 60 + s.twinkleOffset) * s.baseOpacity * 0.6;
-      ctx.fillStyle = `rgba(232, 161, 77, ${opacity})`;
+    for (const m of motesRef.current) {
+      m.life += 1;
+      if (m.life > m.lifeSpan) {
+        m.life = 0;
+        m.x = Math.random() * canvas.width;
+        m.y = canvas.height + 8;
+      }
+      m.y += m.vy;
+      m.x += Math.sin(time * 0.6 + m.phase) * m.sway * 0.35;
+
+      // Fade in over the first fifth of life, burn out over the last half.
+      const t = m.life / m.lifeSpan;
+      const fade = t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.8;
+      const opacity = Math.max(0, m.baseOpacity * fade);
+
+      ctx.fillStyle = `rgba(${EMBER_RGB}, ${opacity})`;
       ctx.beginPath();
-      ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+      ctx.arc(m.x, m.y, m.size, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -170,8 +210,18 @@ export default function ParticleText() {
   useEffect(() => {
     let resizeTimer: ReturnType<typeof setTimeout>;
 
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
     const start = () => {
       initParticles();
+      if (reducedMotion) {
+        // Honour the preference: paint one settled frame, then stop. A CSS
+        // media query cannot reach requestAnimationFrame, so this is the
+        // only place the preference can be respected.
+        animate();
+        cancelAnimationFrame(animationRef.current);
+        return;
+      }
       animationRef.current = requestAnimationFrame(animate);
     };
 

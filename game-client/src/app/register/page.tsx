@@ -204,7 +204,7 @@ export default function RegisterPage() {
             {isLoading ? (
               <span className="login-loading">
                 <span className="login-spinner" />
-                Transmitting...
+                Taking the oath...
               </span>
             ) : isPolling ? (
               <span className="login-loading">
@@ -229,7 +229,7 @@ export default function RegisterPage() {
       </div>
 
       {/* 版本資訊 */}
-      <div className="login-version">v0.1 // SECTOR 7-G</div>
+      <div className="login-version">v0.1 // The Barrow-Deep</div>
     </main>
   );
 }
