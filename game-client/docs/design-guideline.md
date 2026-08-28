@@ -15,8 +15,8 @@ sections of `CLAUDE.md`) disagree on a visual decision, **this file wins.**
 > **Part I — Game Canvas & In-Game HUD (pixel art)**. For the **web / platform DOM UI**
 > (marketplace, profile, auth, leaderboard, subscription — React/Next/Tailwind, *not* pixel
 > art) jump to **[Part II — Web / Platform UI Design System](#part-ii--web--platform-ui-dom-design-system)**
-> at the end. The Part I "drop Cinzel" and "9-slice pixel border" rules apply to the game
-> canvas HUD **only**, not the web platform.
+> at the end. The Part I "9-slice pixel border" rule applies to the game canvas HUD **only**,
+> not the web platform. The "drop Cinzel" rule now applies to **both** — see Part II Typography.
 
 ---
 
@@ -156,8 +156,8 @@ profile, leaderboard, auth (login/register), subscription, portal, header/menus,
 web surface. This is **not pixel art**: unlike the in-game HUD (Part I), the platform UI uses
 modern web layout, smooth CSS, rounded corners, and blur. The medieval feel is carried by
 **type, color, brass detailing, and micro-ornament — not textures or 9-slice pixel frames.**
-(The Part I "drop Cinzel" and "9-slice pixel border" rules are game-canvas-HUD only; the web
-platform keeps **Cinzel + EB Garamond**.)
+(The Part I "9-slice pixel border" rule is game-canvas-HUD only. The "drop Cinzel" rule now
+applies here too: the web platform uses **Pirata One + EB Garamond** — see Typography.)
 
 **Direction:** *modern web design, medieval aesthetics.* Dark-first (torch-lit crypt), brass as
 structural accent, a single amber "torchlight" moment per view. Fast, scannable, keyboard- and
@@ -172,14 +172,16 @@ token here → add the CSS variable too).
 
 ## Principles
 
-1. **Dark, never black.** Base surfaces are charcoal/umber (`#0d0b0a` / `#1a1410`), not `#000`.
+1. **Dark, never black.** Base surfaces are warm umber/stone (`#1c1613` / `#100c0a`), not `#000`
+   and not near-black. A base with no value above the floor makes every accent read as emission,
+   which is how a palette that already said "no neon" produced neon anyway.
 2. **One torch per view.** Amber (`--color-primary` `#e8a14d`) marks the single most important
    thing — primary CTA, active nav, page `h1`, the price to notice. Overuse dilutes it.
 3. **Brass is structure, not fill.** Brass (`#9c7b3f`) lives in 1px hairline borders, dividers,
    focus rings, and hover glows — rarely a solid fill. Panels are dark; brass frames them.
 4. **Modern layout, medieval finish.** Grid/flex, responsive, generous spacing, real interaction
-   affordances. Medieval = Cinzel titles, uppercase spaced labels, vellum text, brass rules,
-   small carved/wax-seal badges. No skeuomorphic textures.
+   affordances. Medieval = blackletter display, uppercase spaced labels, vellum text, brass
+   rules, small carved/wax-seal badges, and the CSS material layer below. No image textures.
 5. **Motion communicates.** Entrance/hover/focus show *what changed*; ≤0.3s; honor
    `prefers-reduced-motion`. No decorative animation.
 
@@ -193,20 +195,84 @@ token here → add the CSS variable too).
 | Primary bright *(new)* | `--color-primary-bright` | `#f2b866` | hover/emphasis on amber; legendary rarity |
 | Accent (arcane green) | `--color-accent` | `#6f8f4a` | secondary highlight, subtitle, cancel/secondary |
 | Danger (oxblood) | `--color-danger` | `#6e1f1f` | errors, destructive, death |
-| Page bg | `--color-bg-dark` | `#0d0b0a` | body / page background |
-| Page bg (deepest) | `--color-bg-darker` | `#070605` | splash, dropdown base, wells |
-| Surface / card | `--color-bg-card` | `rgba(20,16,12,0.85)` | cards, panels, modals (with blur) |
-| Surface raised *(new)* | `--color-bg-card-2` | `rgba(28,23,17,0.9)` | hovered/elevated card, nested panel |
+| Page bg | `--color-bg-dark` | `#1c1613` | body / page background |
+| Page bg (deepest) | `--color-bg-darker` | `#100c0a` | splash, dropdown base, wells |
+| Surface / card | `--color-bg-card` | `rgba(42,33,26,0.88)` | cards, panels, modals (with blur) |
+| Surface raised *(new)* | `--color-bg-card-2` | `rgba(54,43,34,0.92)` | hovered/elevated card, nested panel |
 | Border (brass hairline) | `--color-border` | `rgba(156,123,63,0.15)` | default 1px borders/dividers |
 | Border strong *(new)* | `--color-border-strong` | `rgba(156,123,63,0.35)` | hover/focus/active border |
 | Text primary *(new)* | `--color-text` | `#cdbf9a` (vellum) | body text, item names, values |
-| Text muted | `--color-text-dim` | `#8a7d5c` | labels, secondary info |
-| Text dim | `--color-text-muted` | `#6f6647` | footnotes, hints, disabled |
+| Text muted | `--color-text-dim` | `#9b8e6a` | labels, secondary info |
+| Text dim | `--color-text-muted` | `#8d8362` | footnotes, hints, small labels |
 | Brass | (`theme.ts` `brass`/`brassBright`) | `#9c7b3f` / `#c9a14e` | borders, accents, glows |
 
 Add the *(new)* tokens to `globals.css` before building the marketplace — the palette already
 implies them (`theme.ts` `umber`, `vellum`, `amberBright`, `brass`). **`--color-text` (vellum)
-should also become the default body colour** — see Known Drift.
+is the default body colour** — pure white is off-palette and reads cold.
+
+### Contrast floor (the bases are chosen against it)
+
+**Body and label text ≥ 4.5:1. Decorative, hint and disabled text ≥ 3:1.** Measured against
+`--color-bg-dark` `#1c1613`:
+
+| Text token | Value | Ratio | Tier |
+|---|---|---|---|
+| `--color-text` (vellum) | `#cdbf9a` | 9.81:1 | body ✓ |
+| `--color-primary` (amber) | `#e8a14d` | 8.21:1 | body ✓ |
+| `--color-bg-dark` on amber fill | `#1c1613` | 8.21:1 | body ✓ |
+| `--color-text-dim` | `#9b8e6a` | 5.52:1 | body ✓ |
+| `--color-text-muted` | `#8d8362` | 4.73:1 | body ✓ |
+
+`--color-text-dim` and `--color-text-muted` were **lifted from `#8a7d5c` / `#6f6647`**, which
+measured 4.41:1 and 3.16:1 — both already failing their tier against the *old* `#0d0b0a` base,
+before any lift. The value range moves with the base; these are not independent choices.
+
+**Every text token clears 4.5:1**, including `--color-text-muted`. An earlier draft parked it in
+the 3:1 decorative tier, but measurement in the browser showed it carrying real body copy, hint
+lines and the version footer — those are labels, not decoration. The 3:1 tier is reserved for
+genuinely disabled controls, which are expressed with opacity rather than this token.
+
+The **rarity badge is small text** (11px uppercase), so the ramp is held to the 4.5:1 body floor
+too. Common and Rare were lifted for this reason; both failed at badge size otherwise.
+
+**Text on an amber fill is always `--color-bg-dark`, never white.**
+
+---
+
+## Accent vs structure — what carries what
+
+"One torch per view" says what amber is *for*. It never said what carries everything else, so
+amber became the entire accent system by default: **49 occurrences in `globals.css` against 4
+brass and 1 oxblood.** One saturated hue on a near-black ground, repeated everywhere, is neon
+regardless of what the token is called. This rule closes that gap.
+
+**Amber (`--color-primary`) is permitted on exactly four things, at most one instance each per
+view:**
+
+1. the **primary CTA**
+2. the **active nav item**
+3. the **page `h1`**
+4. the **single focal number** the view exists to show (a price, a rank, a balance)
+
+Plus the rarity exemption below. **Nothing else.** Not borders, not dividers, not labels, not
+hover states on secondary controls, not icons, not decorative rules.
+
+*One* clarification, because long pages hit it immediately: a **single CTA identity may repeat
+once at the foot of a long page** (the same button, the same words, the same action). That is one
+torch shown twice for reach, not two torches competing — two *different* amber CTAs in one view
+still breaks the rule.
+
+**What carries the rest — these are load-bearing, not decoration:**
+
+| Role | Colour | Used for |
+|---|---|---|
+| Structure | **brass** `#9c7b3f` / `--color-border` | borders, dividers, focus rings, hairlines, hover glows |
+| Text | **vellum** `--color-text` / `-dim` / `-muted` | all body, label and value text |
+| Surface | **stone / umber** `--color-bg-*` | pages, cards, panels, wells |
+| Secondary action | **arcane green** `--color-accent` | cancel, secondary, subtitle |
+| Danger | **oxblood** `--color-danger` | errors, destructive, death |
+
+A view that needs a second emphasis colour reaches for **brass**, never a second amber.
 
 ---
 
@@ -218,22 +284,57 @@ text label** (colorblind safety).
 
 | Rarity | CSS var | Value | Palette source |
 |---|---|---|---|
-| Common | `--rarity-common` | `#8a7d5c` | vellum-dark |
+| Common | `--rarity-common` | `#a2946d` | vellum-dark, lifted to clear 4.5:1 at badge size |
 | Uncommon | `--rarity-uncommon` | `#6f8f4a` | arcane green |
-| Rare | `--rarity-rare` | `#4a6b6f` | necrotic teal |
+| Rare | `--rarity-rare` | `#688b8f` | necrotic teal, lifted to clear 4.5:1 at badge size |
 | Epic | `--rarity-epic` | `#9c7b3f` | brass |
 | Legendary | `--rarity-legendary` | `#f2b866` | amber-bright |
 
 Make these the **canonical rarity colours**: align `items-service` `item_rarities.color_hex` to
 them (or map at the API) so server data and UI agree. Add the vars to `globals.css`.
 
+### The rarity ramp is exempt from one-torch-per-view
+
+`--rarity-legendary` is amber-bright, so a grid of legendary relics repeats amber across a view
+— which the one-torch rule otherwise forbids. Without this clause the two rules contradict each
+other and whoever implements the grid picks one at random. The exemption, and its reasoning:
+
+**Rarity colour is data, not emphasis.** It encodes a property of an item rather than directing
+attention to one thing, so it is not competing for the torch — it is a different channel that
+happens to share a hue. Repetition across a grid is correct behaviour for data, and would be
+wrong behaviour for emphasis.
+
+**The exemption is scoped, not general.** Rarity colours may appear only on:
+- the **rarity badge**
+- the **card accent border** (top or left edge)
+- a **faint hover glow** on the card
+
+They may **never** be used as a CTA, nav, heading, or link colour, and a rarity colour never
+becomes a card fill. Outside those three places, `--rarity-legendary` is amber like any other
+amber and the one-torch rule applies in full.
+
 ---
 
 ## Typography
 
-- **Display / headings:** Cinzel (`--font-heading`, `.font-display`) — weathered serif, wide
-  letter-spacing (`0.05em`+), often uppercase. **`h1` is amber, one per view.**
-- **Body / values:** EB Garamond (`--font-body`) — old-style serif, kept legible.
+- **Display:** **Pirata One** (`--font-heading`, `.font-display`) — blackletter. Cinzel is
+  dropped: a classical Roman serif reads *museum*, not *medieval*, and was a large part of why
+  the platform read modern. Pirata One over UnifrakturMaguntia deliberately — authentic Fraktur
+  is markedly harder to read, and blackletter legibility is the one user-facing risk here.
+- **Body / values / labels / nav / buttons / inputs:** EB Garamond (`--font-body`) — old-style
+  serif, genuinely legible. Unchanged; it was never the problem.
+
+**Blackletter bound — both conditions, not either.** Blackletter is permitted only at
+**≥ 28px** *and* only on these surfaces: **the logo, the hero, and the page `h1`.** Everything
+else uses `--font-body`, including `h2` and below, nav, labels, buttons, table cells, badges and
+footnotes. The size test alone is insufficient — `h2` tops out at 29px and would otherwise
+qualify; 28px is the line that cleanly separates `h1` (29–32) from `h2` (24–29).
+
+**`h1` is amber, one per view.**
+
+**The face is bound to `--font-heading`, and component code never names a face directly.** That
+indirection is deliberate: if blackletter does not hold up in practice, the recorded fallback is
+a warmer medieval serif (Grenze, MedievalSharp, IM Fell) and the swap is a two-file change.
 - **Labels / meta:** uppercase, letter-spacing `0.05–0.1em`, `--color-text-dim`. A signature.
 - **No emoji** in UI — use line icons or small carved/wax-seal badges.
 
@@ -275,6 +376,51 @@ Type scale (px, desktop; functional base ~14px). Prefer these steps:
 - **Motion:** micro `0.2s`, standard `0.3s ease`. Button/card hover `translateY(-2px)` + glow.
   Entrances: `slideIn` / `fadeInScale` (already in `globals.css`). Spinner = brass ring.
   Respect `prefers-reduced-motion: reduce`.
+
+---
+
+## Material & depth
+
+The half this document never specified, and the reason a palette that already forbade neon
+produced it anyway. **Medievalism comes from material and hue range, not from an accent colour.**
+Flat dark surfaces plus one saturated hue will read as a dark web app with a brand colour no
+matter how the hue is named; stone, parchment, leather and brass patina are what read as a world.
+
+**Everything here is CSS. No image assets** — no textures, no 9-slice frames, no background
+images. `public/` stays empty. That constraint is deliberate: the material layer must ship
+without waiting on art.
+
+### The five primitives
+
+1. **Grain.** A single low-opacity noise field over the page, via an inline SVG
+   `feTurbulence` `data:` URI. It breaks the flatness of large dark fills, which is what makes a
+   dark page read as a surface rather than an absence. Keep it *barely* visible — if you can see
+   the noise as noise, it is too strong.
+2. **Surface gradients.** Cards, panels, modals, header and dropdowns carry a shallow layered
+   gradient so they read as carved stone or parchment rather than a flat fill. Subtle: a surface
+   should look lit from somewhere, not shaded.
+3. **Carved edges.** Inset shadows — a light top edge and a dark bottom edge, or the inverse for
+   engraved — within the existing radius scale. This is what makes a panel read as cut *into*
+   or *out of* material rather than pasted on it.
+4. **Vignette.** The page edges darken. The world presses in at the borders of the light; this
+   is the single cheapest way to make a screen feel torch-lit.
+5. **Ornament.** Corner marks, brass rules, and dividers, drawn with borders and pseudo-elements.
+   Small and sparse — ornament reads as craft in ones and twos, and as clutter in fives.
+
+### Rules
+
+- **Material is finish, never structure.** With grain, gradients and vignette all suppressed,
+  every view must remain legible and correctly laid out. If suppressing the layer breaks a
+  layout, that layout was depending on decoration.
+- **It must degrade under user preference.** `prefers-reduced-transparency` resolves blurred
+  translucent surfaces to opaque ones that still read as distinct layers; `forced-colors` must
+  never leave text on an unreadable ground.
+- **Grain has a measurable cost.** A full-page noise overlay composited under several
+  `backdrop-filter: blur(20px)` surfaces is real compositing work. If it degrades scroll
+  performance at high-DPI or large viewports, scope the grain to surfaces rather than the page
+  — and say so, rather than shipping a quietly slower page.
+- **No glow may read as emission.** Warm brass/amber `box-shadow` at 0.1–0.4 opacity marks a
+  hover or focus state. A glow bright enough to look like a light source is neon by another name.
 
 ---
 
@@ -369,13 +515,16 @@ consistent grid & weight. Prefer small carved/wax-seal badges over emoji. **No e
 
 ## Known drift (fix toward this doc; do not extend)
 
-`globals.css` carries a few **off-palette, pre-barrow leftovers** — migrate them:
+`globals.css` carried **off-palette, pre-barrow leftovers**. FS-0004 migrates them; this list is
+kept as the record of what was wrong, not as outstanding work:
 - `body { color: #fff }` → **vellum `#cdbf9a`** (`--color-text`). Pure white is too cold.
 - Cold **bluish** text `#e0e8f0` (`.profile-name`, `.sub-plan-name`) and `#889aaa`
   (`.sub-feature-item`) → **vellum / vellum-dark**.
 - Pink error text `#ff6688` (`.profile-error`, `.sub-error`) → **oxblood** family.
-- New marketplace work uses tokens only — no raw hex; add a semantic token here + in
-  `globals.css` (and the rarity vars) first.
+- Neon purple `#bf5fff` in the landing rarity map, mint `#4ecca3` and `#0f0f23` in the Stripe
+  Elements appearance object, cyan `#00d4e6` in the notification bell gradient.
+- **Tokens only, no raw hex.** This is now ADR-0013 and is enforced by a lint fence, not by
+  attention. A new colour is a token in `globals.css` *and* `theme.ts` first, then referenced.
 
 ---
 
