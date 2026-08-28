@@ -27,18 +27,6 @@ var (
 	ErrInvalidCursor = errors.New("invalid cursor")
 )
 
-func NewCursor(id uuid.UUID, createdAt time.Time) (*Cursor, error) {
-	// helper validation to prevent headaches later
-	if id == uuid.Nil {
-		return nil, ErrInvalidUUID
-	}
-
-	return &Cursor{
-		ID:        id,
-		CreatedAt: createdAt,
-	}, nil
-}
-
 // encodes the cursor into base64
 // no pointer receiver as theres no mutation and cursor struct size is small
 func (c Cursor) Encode() string {
@@ -60,7 +48,7 @@ func Decode(cursorStr string) (*Cursor, error) {
 
 	cursorBuffer, err := base64.RawURLEncoding.DecodeString(cursorStr)
 	if err != nil {
-		return nil, err
+		return nil, ErrInvalidCursor
 	}
 
 	s := string(cursorBuffer)
