@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import Phaser from "phaser";
+import { BARROW } from "@/utils/theme";
 import { MainMenuScene } from "@/scenes/MainMenuScene";
 import { BarrowspireScene } from "@/scenes/BarrowspireScene";
 import { PreloadScene } from "@/scenes/PreloadScene";
@@ -20,7 +21,7 @@ export default function PhaserGame() {
       width: 1080,
       height: 720,
       parent: containerRef.current,
-      backgroundColor: "#1a1410",
+      backgroundColor: BARROW.umber,
       // Crisp pixel art per docs/design-guideline.md: nearest-neighbour filtering,
       // no smoothing, integer-aligned positions. Presentation only.
       pixelArt: true,

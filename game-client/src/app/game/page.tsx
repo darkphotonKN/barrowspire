@@ -7,9 +7,9 @@ import Link from 'next/link';
 const PhaserGame = dynamic(() => import('@/components/PhaserGame'), {
   ssr: false,
   loading: () => (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#0d0b0a] gap-4">
-      <p className="text-[#e8a14d] text-3xl font-display font-bold tracking-[0.15em] uppercase" style={{ }}>Lighting the Torch</p>
-      <p className="text-[#8a7d5c] text-sm tracking-[0.2em] uppercase">Preparing deployment zone...</p>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-bg-dark gap-4">
+      <p className="text-primary text-3xl font-display font-bold tracking-[0.15em] uppercase" style={{ }}>Lighting the Torch</p>
+      <p className="text-vellum-dim text-sm tracking-[0.2em] uppercase">Descending into the barrow...</p>
     </div>
   ),
 });
@@ -20,8 +20,8 @@ export default function GamePage() {
   if (!isAuthenticated) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-black">
-        <div className="text-center space-y-6 p-8 bg-gray-900/50 rounded-lg border border-[#9c7b3f]/30 backdrop-blur-sm">
-          <h1 className="text-4xl font-bold text-[#e8a14d] font-display">
+        <div className="text-center space-y-6 p-8 bg-card rounded-lg border border-brass/30 backdrop-blur-sm">
+          <h1 className="text-4xl font-bold text-primary font-display">
             Access Restricted
           </h1>
           <p className="text-gray-300 text-lg max-w-md">
@@ -30,7 +30,7 @@ export default function GamePage() {
           <div className="flex gap-4 justify-center pt-4">
             <Link
               href="/login"
-              className="px-6 py-3 bg-[#9c7b3f]/10 text-[#e8a14d] border border-[#9c7b3f]/50 rounded hover:bg-[#9c7b3f]/20 transition-colors"
+              className="px-6 py-3 bg-brass/10 text-primary border border-brass/50 rounded hover:bg-brass/20 transition-colors"
             >
               Sign In
             </Link>
