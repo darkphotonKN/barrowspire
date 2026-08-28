@@ -55,6 +55,11 @@ server state and sends intents. ✅
 - [x] Subscribe
 - [x] Check subscription permission
 
+### Presentation
+
+- [ ] Fantasy-medieval presentation on the web platform → FS-0004
+- [ ] Fantasy-medieval presentation in the game canvas → FS-0005
+
 ### Persistent world (refactor plan)
 
 - [ ] HUB world client
