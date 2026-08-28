@@ -1,19 +1,27 @@
 import type { Metadata } from 'next';
-import { Cinzel, EB_Garamond } from 'next/font/google';
+import { Pirata_One, EB_Garamond } from 'next/font/google';
 import './globals.css';
 import Header from '@/components/Header';
 import AuthGuard from '@/components/AuthGuard';
 
-const cinzel = Cinzel({
+// Display face. Blackletter, bound to --font-heading and used only at >=28px
+// on the logo, the hero, and the page h1 — see docs/design-guideline.md.
+// Pirata One over UnifrakturMaguntia deliberately: authentic Fraktur is
+// markedly harder to read, and legibility is the real risk with blackletter.
+const pirataOne = Pirata_One({
   subsets: ['latin'],
-  variable: '--font-cinzel',
+  weight: '400',
+  variable: '--font-pirata',
   display: 'swap',
+  fallback: ['Georgia', 'Times New Roman', 'serif'],
 });
 
+// The readable workhorse: body, labels, nav, buttons, inputs, tables.
 const ebGaramond = EB_Garamond({
   subsets: ['latin'],
   variable: '--font-garamond',
   display: 'swap',
+  fallback: ['Georgia', 'Times New Roman', 'serif'],
 });
 
 export const metadata: Metadata = {
@@ -27,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${cinzel.variable} ${ebGaramond.variable}`}>
+    <html lang="en" className={`${pirataOne.variable} ${ebGaramond.variable}`}>
       <body>
         <AuthGuard>
           <Header />
