@@ -48,6 +48,22 @@ sections of `CLAUDE.md`) disagree on a visual decision, **this file wins.**
 
 ---
 
+## Still pending on assets
+
+**FS-0005 does not discharge this section's asset-dependent rules.** The canvas reskin shipped
+palette, typography and lighting using the primitives already there — it produced no art. These
+rules remain **pending against a future asset FS**, and Part I should not be read as satisfied:
+
+- nearest-neighbour rendering (`pixelArt: true` / `roundPixels`)
+- shading via hand-placed clusters and dithering
+- selective dark outlining on sprites
+- 9-slice pixel borders on panels and menus
+- `image-rendering: pixelated` on pixel assets
+
+Everything else in Part I is live.
+
+---
+
 ## Perspective
 
 - Whatever projection the engine currently uses (top-down 3/4 or isometric) **stays
@@ -79,6 +95,36 @@ values are mirrored in code by `src/utils/theme.ts` — `BARROW` / `BARROW_HEX`.
 
 ---
 
+## Gameplay accent — colour is a readability channel
+
+Part II's **one torch per view** rule governs **emphasis on a web page**: amber means *look
+here*, and scarcity is what makes it work. **It does not govern the canvas**, and the two are not
+in conflict — they answer different questions.
+
+In gameplay, colour is a **readability channel, not emphasis**. A player who cannot find the door
+at a glance has a broken game, not a busy screen. Amber may therefore repeat as often as there
+are interactables on screen, and repetition is correct behaviour rather than dilution.
+
+| Channel | Colour | Means |
+|---|---|---|
+| **Interactable / actionable** | amber | the player can do something with this |
+| **Safe / friendly / restorative** | arcane green | pickups, allies, healing |
+| **Damage / danger / hostile** | oxblood | enemies, damage taken, hazards |
+| **Neutral HUD** | vellum | labels, counters, non-urgent information |
+| **Frame / chrome** | brass | panel borders, dividers, HUD structure |
+
+**The rule in its testable form: an amber thing the player cannot act on is a defect.** That is
+the check to apply, not a count. A health bar, a damage number and a score are not interactables
+and belong in their own channels; a door, a chest, a switch and an escape point are, and stay
+amber however many of them are on screen.
+
+**This is a rule about meaning, not a licence for volume.** The palette rules above still hold in
+full — no bright saturated primaries, no neon, low-key and desaturated overall, warm torch pools
+against cold dark. A screen where everything is amber has not followed this rule; it has failed
+the test above, because most of those things cannot be acted on.
+
+---
+
 ## In-Game Canvas / World Art
 
 - **Environment:** dark dungeon stone, cracked flagstone, mossy/wet walls, wooden doors
@@ -103,26 +149,72 @@ values are mirrored in code by `src/utils/theme.ts` — `BARROW` / `BARROW_HEX`.
 
 ## Lighting
 
+**With art (pending — see "Still pending on assets"):**
+
 - **Pixel-friendly approach:** bake shading into tiles/sprites first, then add a soft
   torch **glow** + **vignette** overlay on top.
 - The glow/vignette overlay **may be a separate soft (non-pixel) layer** so it does not
   smear the art.
 - **Keep all sprite/tile rendering crisp and nearest-neighbor** regardless of the overlay.
 
+**Without art (live today):** the overlay is the whole of the lighting, and it is two things.
+
+- A **static vignette** darkens the canvas edges. This does the atmospheric work — the world
+  pressing in around the light.
+- A **warm pool centred on the delver**, moving with them. This is the part that makes the scene
+  read as *carrying a torch* rather than merely as a dark screen. A vignette alone gives darkness
+  with no source; the pool is what implies one.
+- **Built once, depth-sorted above the world, repositioned per tick — never rebuilt.** The scene
+  redraws from a full-state broadcast every tick, and the overlay's shape never changes. Only its
+  position does.
+
+### The readability floor
+
+**The vignette may never make an entity at the canvas edge unreadable.** Enemies whose intended
+accent is *glowing eyes against dark* are the case that tests this, and the case most likely to
+fail — their whole design is low contrast against a dark ground, and the vignette is darkest
+exactly where a player first sees something enter the frame.
+
+**If atmosphere and readability conflict, the vignette yields.** Reduce its strength or its reach.
+An unreadable hostile is a bug; a slightly less moody screen is not.
+
 ---
 
 ## Typography — push fully medieval
 
-The current fonts read too modern. Target:
+**The canvas uses the same two faces as Part II: Pirata One for display, EB Garamond for
+everything else.** One client, one voice — and the canvas has no CSS, so it names them through a
+single font constant of its own rather than a custom property.
 
-- **Display / titles / menu headers:** a true **blackletter** — UnifrakturMaguntia or
-  UnifrakturCook (overtly medieval). Large text only, since blackletter is hard to read
-  small. Pirata One is a lighter alternative.
-- **In-game HUD / functional / body text:** a medieval **pixel/bitmap font** to match the
-  art — e.g. **Alagard** (free pixel fantasy font, ideal here) or a similar pixel serif.
-  This is the readable workhorse.
-- **Drop clean Roman serifs (e.g. Cinzel) as the primary** — too modern/classical for the
-  target. Keep one legible fallback in the stack.
+- **Display:** **Pirata One** (blackletter). Chosen over UnifrakturMaguntia deliberately:
+  authentic Fraktur is markedly harder to read, and legibility is the real risk with blackletter.
+- **HUD / functional / body text:** **EB Garamond**. The readable workhorse — HUD text is read
+  under pressure, and atmosphere must never cost a player information they need in a fight.
+- **Drop clean Roman serifs (e.g. Cinzel) as the primary** — too modern/classical for the target.
+  Keep one legible fallback in the stack.
+
+### Deviation from the pixel/bitmap font — recorded, not overlooked
+
+This section previously specified a medieval **pixel/bitmap font (Alagard)** for HUD and body.
+That is the right pairing *with pixel art*, and there is no pixel art yet: the canvas draws with
+vector primitives, and a bitmap font beside them reads as an accident rather than a choice.
+
+**Revisit when the asset FS lands.** Once tiles and sprites exist, Alagard becomes correct again
+and this deviation should be reversed. It is a consequence of sequencing, not a rejection.
+
+### The blackletter bound
+
+**Blackletter is permitted only at ≥28px, and only on these canvas surfaces:**
+
+- the **main-menu title**
+- the **end-of-run overlay heading**
+
+**Nothing else.** HUD, labels, counters, tooltips, buttons, item names and prompts all use the
+body serif. That leaves very little of the canvas eligible, which is intended — blackletter is
+hard to read small, and every remaining surface is text a player reads while under pressure.
+
+Where the bound and the message conflict — an end-of-run heading long enough to need shrinking —
+**the message wins** and the heading takes the body serif.
 
 ---
 

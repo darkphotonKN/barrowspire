@@ -43,7 +43,7 @@ must follow these rules:
 
 | Role | Value | Usage |
 |------|-------|-------|
-| **Primary** | `#e8a14d` (torch amber) | **One per view only** — primary CTA, active nav, page `h1`, the focal number |
+| **Primary** | `#e8a14d` (torch amber) | **DOM: one per view only** — primary CTA, active nav, page `h1`, the focal number. **Canvas: means *interactable*** and may repeat — see the guideline's gameplay accent rule |
 | **Accent** | `#6f8f4a` (arcane/lich green) | Secondary highlights, subtitles, corruption, cancel actions |
 | **Brass** | `#9c7b3f` / `#c9a14e` | **Structure** — borders, dividers, focus rings, hover glow |
 | **Background** | `#1c1613` (warm umber) / `#100c0a` (deepest) | Page backgrounds, body, wells |
@@ -56,9 +56,14 @@ must follow these rules:
 | **Text Muted** | `#9b8e6a` | Labels, secondary info, descriptions |
 | **Text Dim** | `#7d7355` | Footer text, hints, disabled states |
 
-**Amber is not the accent system.** It marks at most four things per view (CTA, active nav, `h1`,
-the focal number) plus the rarity-badge exemption. Brass carries structure, vellum carries text,
-stone carries surfaces. See the guideline's "Accent vs structure" section.
+**Amber is not the accent system — on the DOM.** There it marks at most four things per view
+(CTA, active nav, `h1`, the focal number) plus the rarity-badge exemption. Brass carries
+structure, vellum carries text, stone carries surfaces. See "Accent vs structure".
+
+**In the Phaser canvas the rule is different, deliberately.** Colour there is a readability
+channel, not emphasis: amber means *interactable*, arcane green *safe*, oxblood *damage*, vellum
+*neutral HUD*, brass *frame*. Amber repeats as often as there are interactables. The test is
+semantic — an amber thing the player cannot act on is a defect. See "Gameplay accent".
 
 **Tokens only — no raw hex** ([ADR-0013](../docs/adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md)).
 Colour is defined in exactly two places, `globals.css` `:root` and `theme.ts`, and referenced
