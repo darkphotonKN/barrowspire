@@ -1,21 +1,9 @@
 package account
 
 import (
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
-)
-
-// --- Errors ---
-var (
-	ErrInvalidGold            = errors.New("invalid gold")
-	ErrInvalidUUID            = errors.New("invalid uuid")
-	ErrHoldsExceedBalance     = errors.New("holds exceed balace")
-	ErrCorruptAccountState    = errors.New("corrupt account state")
-	ErrConcurrentModification = errors.New("concurrent modification")
-	ErrHoldNotFound           = errors.New("hold not found")
-	ErrInvalidHoldTransition  = errors.New("invalid hold transition")
 )
 
 // --- Domain ---

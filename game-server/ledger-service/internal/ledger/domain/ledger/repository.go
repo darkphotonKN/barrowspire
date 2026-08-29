@@ -11,5 +11,5 @@ import (
 // the repository/ledger_repository.go implements the adapter, actual concrete
 // implementation that satisfies this interface
 type Repository interface {
-	Append(ctx context.Context, inp commonledgeractivity.AppendLedgerTxInput) (commonledgeractivity.AppendLedgerTxOutput, error)
+	Append(ctx context.Context, tx *Transaction) (applied bool, error)
 }
