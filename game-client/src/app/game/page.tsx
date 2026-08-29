@@ -19,24 +19,24 @@ export default function GamePage() {
 
   if (!isAuthenticated) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black">
+      <main className="min-h-screen flex items-center justify-center bg-bg-dark">
         <div className="text-center space-y-6 p-8 bg-card rounded-lg border border-brass/30 backdrop-blur-sm">
           <h1 className="text-4xl font-bold text-primary font-display">
             Access Restricted
           </h1>
-          <p className="text-gray-300 text-lg max-w-md">
-            You need to be signed in to delve. Swear the oath, or return to the delve.
+          <p className="text-vellum-dim text-lg max-w-md">
+            The barrow admits no stranger. Speak your name, or take the oath.
           </p>
           <div className="flex gap-4 justify-center pt-4">
             <Link
               href="/login"
-              className="px-6 py-3 bg-brass/10 text-primary border border-brass/50 rounded hover:bg-brass/20 transition-colors"
+              className="px-6 py-3 bg-brass/10 text-vellum border border-brass/50 rounded hover:bg-brass/20 hover:text-vellum transition-colors"
             >
               Sign In
             </Link>
             <Link
               href="/register"
-              className="px-6 py-3 bg-purple-500 text-white rounded hover:bg-purple-600 transition-colors"
+              className="px-6 py-3 bg-primary text-bg-dark font-bold rounded hover:brightness-110 transition-all"
             >
               Create Account
             </Link>
@@ -47,7 +47,7 @@ export default function GamePage() {
   }
 
   return (
-    <main className="min-h-screen bg-black">
+    <main className="min-h-screen bg-bg-dark">
       <div className="flex flex-col items-center justify-center min-h-screen pb-4">
         <PhaserGame />
       </div>
