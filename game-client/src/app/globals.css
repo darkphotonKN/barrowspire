@@ -341,6 +341,7 @@
   font-size: 1.75rem; /* 28px — the blackletter floor. Never lower this. */
   font-weight: 400; /* Pirata One ships one weight; 900 fakes a bold. */
   letter-spacing: 0.06em; /* Blackletter needs less tracking than a serif. */
+  white-space: nowrap;
   transition: all 0.3s ease;
 }
 
@@ -392,6 +393,20 @@
   gap: 1rem;
 }
 
+/* Blackletter is far wider than the serif it replaced, so below this width the
+   wordmark cannot hold 28px without wrapping and shoving the nav off-screen.
+   The floor says blackletter may not go below 28px — so it stops being
+   blackletter rather than shrinking. Same override as the end-of-run heading:
+   when the bound and the message conflict, the message wins. */
+@media (max-width: 1080px) {
+  .header-logo {
+    font-family: var(--font-body);
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+  }
+}
+
 .nav-link {
   padding: 0.5rem 1rem;
   color: var(--color-text-dim);
@@ -439,6 +454,7 @@
 
 .btn-primary,
 .btn-secondary {
+  white-space: nowrap;
   padding: 0.6rem 1.5rem;
   border-radius: 6px;
   text-decoration: none;
