@@ -68,7 +68,7 @@ export default function ParticleText() {
     const fontFamily =
       getComputedStyle(document.documentElement)
         .getPropertyValue('--font-cinzel')
-        .trim() || 'Cinzel';
+        .trim() || 'Georgia';
 
     // Offscreen canvas to render text and sample pixels
     const offscreen = document.createElement('canvas');
@@ -81,7 +81,7 @@ export default function ParticleText() {
     const lineGap = fontSize * 0.15;
 
     offCtx.fillStyle = BARROW.vellum;
-    offCtx.font = `900 ${fontSize}px ${fontFamily}, Cinzel, serif`;
+    offCtx.font = `${fontSize}px ${fontFamily}, Georgia, serif`;
     offCtx.textAlign = 'center';
     offCtx.textBaseline = 'middle';
     offCtx.fillText('THE AGE OF', w / 2, h / 2 - fontSize / 2 - lineGap);
