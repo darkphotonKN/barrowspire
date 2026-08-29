@@ -1,6 +1,7 @@
 import { ActionType } from "@/assets/types/client";
 import { socketManager, ConnectionStatus } from "@/utils/class/SocketManager";
 import Phaser from "phaser";
+import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 
 export class MainMenuScene extends Phaser.Scene {
   private unsubscribeConnectionStatus?: () => void;
@@ -29,7 +30,7 @@ export class MainMenuScene extends Phaser.Scene {
     const height = this.cameras.main.height;
 
     // Barrow-dark background
-    this.cameras.main.setBackgroundColor("#0d0b0a");
+    this.cameras.main.setBackgroundColor(toCss(palette.ink));
 
     // The Spire — a black silhouette rising behind the title
     const spire = this.add.graphics();
@@ -39,7 +40,7 @@ export class MainMenuScene extends Phaser.Scene {
     const halfBase = 70;
     const halfMid = 26;
     // body of the spire
-    spire.fillStyle(0x080605, 1);
+    spire.fillStyle(palette.hoodShadow, 1);
     spire.beginPath();
     spire.moveTo(sx - halfBase, baseY);
     spire.lineTo(sx - halfMid, height * 0.42);
@@ -49,14 +50,14 @@ export class MainMenuScene extends Phaser.Scene {
     spire.closePath();
     spire.fillPath();
     // faint cold rim-light down the left edge
-    spire.lineStyle(2, 0x52555c, 0.18);
+    spire.lineStyle(2, palette.wallTop, 0.18);
     spire.beginPath();
     spire.moveTo(sx, spireTopY);
     spire.lineTo(sx - halfMid, height * 0.42);
     spire.lineTo(sx - halfBase, baseY);
     spire.strokePath();
     // a single torch ember partway up the Spire
-    spire.fillStyle(0xc2611f, 0.5);
+    spire.fillStyle(palette.ember, 0.5);
     spire.fillCircle(sx + 6, height * 0.5, 2);
 
     // Drifting dust & embers in the dark
@@ -69,14 +70,18 @@ export class MainMenuScene extends Phaser.Scene {
       const alpha = ember
         ? Phaser.Math.FloatBetween(0.25, 0.55)
         : Phaser.Math.FloatBetween(0.06, 0.22);
-      const color = ember ? 0xc2611f : Math.random() < 0.5 ? 0x8a7d5c : 0x52555c;
+      const color = ember
+        ? palette.ember
+        : Math.random() < 0.5
+          ? palette.hudLabel
+          : palette.wallTop;
       stars.fillStyle(color, alpha);
       stars.fillRect(x, y, size, size);
     }
 
     // Faint masonry grid overlay
     const grid = this.add.graphics();
-    grid.lineStyle(1, 0x5a4632, 0.05);
+    grid.lineStyle(1, palette.floor, 0.05);
     for (let x = 0; x <= width; x += 40) {
       grid.lineBetween(x, 0, x, height);
     }
@@ -86,7 +91,7 @@ export class MainMenuScene extends Phaser.Scene {
 
     // Scanline effect
     this.scanlineGraphics = this.add.graphics();
-    this.scanlineGraphics.fillStyle(0x000000, 0.03);
+    this.scanlineGraphics.fillStyle(palette.inkDeep, 0.03);
     for (let y = 0; y < height; y += 4) {
       this.scanlineGraphics.fillRect(0, y, width, 2);
     }
@@ -94,16 +99,29 @@ export class MainMenuScene extends Phaser.Scene {
 
     // Horizontal accent line under title area
     const accentLine = this.add.graphics();
-    accentLine.lineStyle(1, 0xe8a14d, 0.3);
-    accentLine.lineBetween(width * 0.2, height / 4 + 85, width * 0.8, height / 4 + 85);
+    accentLine.lineStyle(1, palette.frame, 0.3);
+    accentLine.lineBetween(
+      width * 0.2,
+      height / 4 + 85,
+      width * 0.8,
+      height / 4 + 85,
+    );
 
-    // Title
-    const title = this.add.text(width / 2, height / 4, "THE AGE OF BARROWSPIRE", {
-      fontSize: "48px",
-      color: "#e8a14d",
-      fontStyle: "bold",
-      letterSpacing: 12,
-    });
+    // Title — the one canvas surface blackletter is permitted on, at 48px,
+    // well above the 28px floor. See design-guideline.md "The blackletter bound".
+    // No fontStyle: bold — Pirata One ships a single weight and a synthesised
+    // bold wrecks blackletter letterforms.
+    const title = this.add.text(
+      width / 2,
+      height / 4,
+      "THE AGE OF BARROWSPIRE",
+      {
+        fontFamily: CANVAS_FONT.display,
+        fontSize: "48px",
+        color: toCss(palette.frameBright),
+        letterSpacing: 6,
+      },
+    );
     title.setOrigin(0.5);
     // Subtitle
     const subtitle = this.add.text(
@@ -111,8 +129,9 @@ export class MainMenuScene extends Phaser.Scene {
       height / 4 + 55,
       "DELVE THE BARROW-DEEP // FEW RETURN WHOLE",
       {
+        fontFamily: CANVAS_FONT.body,
         fontSize: "14px",
-        color: "#6f8f4a",
+        color: toCss(palette.safe),
         letterSpacing: 6,
       },
     );
@@ -124,8 +143,9 @@ export class MainMenuScene extends Phaser.Scene {
       height / 2 - 40,
       "Delve. Plunder. Escape.\nFew return whole.",
       {
+        fontFamily: CANVAS_FONT.body,
         fontSize: "15px",
-        color: "#8a7d5c",
+        color: toCss(palette.hudLabel),
         align: "center",
         lineSpacing: 6,
       },
@@ -143,27 +163,30 @@ export class MainMenuScene extends Phaser.Scene {
     const btnH = 50;
 
     this.buttonBg = this.add.graphics();
-    this.drawButton(0x2a231b, 0x8a7d5c);
+    this.drawButton(palette.hudPanel, palette.hudLabel);
 
     // Invisible hit area for interaction
-    const hitArea = this.add.rectangle(btnX, btnY, btnW, btnH, 0x000000, 0);
+    const hitArea = this.add.rectangle(
+      btnX,
+      btnY,
+      btnW,
+      btnH,
+      palette.inkDeep,
+      0,
+    );
     hitArea.setInteractive({ useHandCursor: true });
 
     // Store ref immediately — setupButtonInteraction needs it when
     // onConnectionStatusChange fires synchronously with "connected"
     (this as Record<string, unknown>)._hitArea = hitArea;
 
-    this.startButtonText = this.add.text(
-      btnX,
-      btnY,
-      "OPENING THE WAY...",
-      {
-        fontSize: "18px",
-        color: "#0d0b0a",
-        fontStyle: "bold",
-        letterSpacing: 3,
-      },
-    );
+    this.startButtonText = this.add.text(btnX, btnY, "OPENING THE WAY...", {
+      fontFamily: CANVAS_FONT.body,
+      fontSize: "18px",
+      color: toCss(palette.ink),
+      fontStyle: "bold",
+      letterSpacing: 3,
+    });
     this.startButtonText.setOrigin(0.5);
 
     // Connection status text — near bottom of screen
@@ -172,8 +195,9 @@ export class MainMenuScene extends Phaser.Scene {
       height - 40,
       "Lighting the torch...",
       {
+        fontFamily: CANVAS_FONT.body,
         fontSize: "12px",
-        color: "#c2611f",
+        color: toCss(palette.ember),
         letterSpacing: 2,
       },
     );
@@ -200,37 +224,45 @@ export class MainMenuScene extends Phaser.Scene {
     );
 
     // Reconnection listener
-    socketManager.on("reconnected", (payload: { session_id: string; username: string; message: string }) => {
-      console.log("Reconnected!", payload);
-      if (this.connectionStatusText) {
-        this.connectionStatusText.setText(`Torch relit // ${payload.username}`);
-        this.connectionStatusText.setColor("#e8a14d");
-      }
-    });
+    socketManager.on(
+      "reconnected",
+      (payload: { session_id: string; username: string; message: string }) => {
+        console.log("Reconnected!", payload);
+        if (this.connectionStatusText) {
+          this.connectionStatusText.setText(
+            `Torch relit // ${payload.username}`,
+          );
+          this.connectionStatusText.setColor(toCss(palette.frameBright));
+        }
+      },
+    );
 
     // Game found listener
-    socketManager.on("game_found", (payload: { session_id?: string; sessionID?: string }) => {
-      console.log("Game found! Payload:", payload);
+    socketManager.on(
+      "game_found",
+      (payload: { session_id?: string; sessionID?: string }) => {
+        console.log("Game found! Payload:", payload);
 
-      const sessionID = payload.session_id || payload.sessionID;
+        const sessionID = payload.session_id || payload.sessionID;
 
-      if (!sessionID) {
-        console.error("No session ID in game_found payload:", payload);
-        return;
-      }
+        if (!sessionID) {
+          console.error("No session ID in game_found payload:", payload);
+          return;
+        }
 
-      if (this.queuePopupActive && this.queueTitle && this.queuePeopleText) {
-        this.queueTitle.setText("THE DELVE IS SET");
-        this.queuePeopleText.setText("Descending...");
+        if (this.queuePopupActive && this.queueTitle && this.queuePeopleText) {
+          this.queueTitle.setText("THE DELVE IS SET");
+          this.queuePeopleText.setText("Descending...");
 
-        this.time.delayedCall(1500, () => {
-          this.closeQueuePopup();
+          this.time.delayedCall(1500, () => {
+            this.closeQueuePopup();
+            this.scene.start("BarrowspireScene", { sessionID });
+          });
+        } else {
           this.scene.start("BarrowspireScene", { sessionID });
-        });
-      } else {
-        this.scene.start("BarrowspireScene", { sessionID });
-      }
-    });
+        }
+      },
+    );
 
     // Manage Loadout button
     const loadoutBtnX = width / 2;
@@ -239,41 +271,90 @@ export class MainMenuScene extends Phaser.Scene {
     const loadoutBtnH = 36;
 
     this.loadoutBtnBg = this.add.graphics();
-    this.loadoutBtnBg.fillStyle(0x14110c, 0.8);
-    this.loadoutBtnBg.fillRoundedRect(loadoutBtnX - loadoutBtnW / 2, loadoutBtnY - loadoutBtnH / 2, loadoutBtnW, loadoutBtnH, 4);
-    this.loadoutBtnBg.lineStyle(1, 0xe8a14d, 0.3);
-    this.loadoutBtnBg.strokeRoundedRect(loadoutBtnX - loadoutBtnW / 2, loadoutBtnY - loadoutBtnH / 2, loadoutBtnW, loadoutBtnH, 4);
+    this.loadoutBtnBg.fillStyle(palette.hudPanelDeep, 0.8);
+    this.loadoutBtnBg.fillRoundedRect(
+      loadoutBtnX - loadoutBtnW / 2,
+      loadoutBtnY - loadoutBtnH / 2,
+      loadoutBtnW,
+      loadoutBtnH,
+      4,
+    );
+    this.loadoutBtnBg.lineStyle(1, palette.interactable, 0.3);
+    this.loadoutBtnBg.strokeRoundedRect(
+      loadoutBtnX - loadoutBtnW / 2,
+      loadoutBtnY - loadoutBtnH / 2,
+      loadoutBtnW,
+      loadoutBtnH,
+      4,
+    );
 
-    const loadoutText = this.add.text(loadoutBtnX, loadoutBtnY, 'PREPARE YOUR KIT', {
-      fontSize: '12px',
-      color: '#e8a14d',
-      letterSpacing: 3,
-    });
+    const loadoutText = this.add.text(
+      loadoutBtnX,
+      loadoutBtnY,
+      "PREPARE YOUR KIT",
+      {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "12px",
+        color: toCss(palette.frameBright),
+        letterSpacing: 3,
+      },
+    );
     loadoutText.setOrigin(0.5);
 
-    const loadoutHit = this.add.rectangle(loadoutBtnX, loadoutBtnY, loadoutBtnW, loadoutBtnH, 0x000000, 0);
+    const loadoutHit = this.add.rectangle(
+      loadoutBtnX,
+      loadoutBtnY,
+      loadoutBtnW,
+      loadoutBtnH,
+      palette.inkDeep,
+      0,
+    );
     loadoutHit.setInteractive({ useHandCursor: true });
 
-    loadoutHit.on('pointerover', () => {
+    loadoutHit.on("pointerover", () => {
       if (!this.loadoutBtnBg) return;
       this.loadoutBtnBg.clear();
-      this.loadoutBtnBg.fillStyle(0x241c14, 0.9);
-      this.loadoutBtnBg.fillRoundedRect(loadoutBtnX - loadoutBtnW / 2, loadoutBtnY - loadoutBtnH / 2, loadoutBtnW, loadoutBtnH, 4);
-      this.loadoutBtnBg.lineStyle(1, 0xe8a14d, 0.6);
-      this.loadoutBtnBg.strokeRoundedRect(loadoutBtnX - loadoutBtnW / 2, loadoutBtnY - loadoutBtnH / 2, loadoutBtnW, loadoutBtnH, 4);
+      this.loadoutBtnBg.fillStyle(palette.delverCloak, 0.9);
+      this.loadoutBtnBg.fillRoundedRect(
+        loadoutBtnX - loadoutBtnW / 2,
+        loadoutBtnY - loadoutBtnH / 2,
+        loadoutBtnW,
+        loadoutBtnH,
+        4,
+      );
+      this.loadoutBtnBg.lineStyle(1, palette.interactableBright, 0.6);
+      this.loadoutBtnBg.strokeRoundedRect(
+        loadoutBtnX - loadoutBtnW / 2,
+        loadoutBtnY - loadoutBtnH / 2,
+        loadoutBtnW,
+        loadoutBtnH,
+        4,
+      );
     });
 
-    loadoutHit.on('pointerout', () => {
+    loadoutHit.on("pointerout", () => {
       if (!this.loadoutBtnBg) return;
       this.loadoutBtnBg.clear();
-      this.loadoutBtnBg.fillStyle(0x14110c, 0.8);
-      this.loadoutBtnBg.fillRoundedRect(loadoutBtnX - loadoutBtnW / 2, loadoutBtnY - loadoutBtnH / 2, loadoutBtnW, loadoutBtnH, 4);
-      this.loadoutBtnBg.lineStyle(1, 0xe8a14d, 0.3);
-      this.loadoutBtnBg.strokeRoundedRect(loadoutBtnX - loadoutBtnW / 2, loadoutBtnY - loadoutBtnH / 2, loadoutBtnW, loadoutBtnH, 4);
+      this.loadoutBtnBg.fillStyle(palette.hudPanelDeep, 0.8);
+      this.loadoutBtnBg.fillRoundedRect(
+        loadoutBtnX - loadoutBtnW / 2,
+        loadoutBtnY - loadoutBtnH / 2,
+        loadoutBtnW,
+        loadoutBtnH,
+        4,
+      );
+      this.loadoutBtnBg.lineStyle(1, palette.interactable, 0.3);
+      this.loadoutBtnBg.strokeRoundedRect(
+        loadoutBtnX - loadoutBtnW / 2,
+        loadoutBtnY - loadoutBtnH / 2,
+        loadoutBtnW,
+        loadoutBtnH,
+        4,
+      );
     });
 
-    loadoutHit.on('pointerdown', () => {
-      this.scene.start('LoadoutScene');
+    loadoutHit.on("pointerdown", () => {
+      this.scene.start("LoadoutScene");
     });
 
     // Controls info
@@ -282,8 +363,9 @@ export class MainMenuScene extends Phaser.Scene {
       height - 60,
       "WASD Move  //  SPACE Strike  //  E Interact  //  F Plunder  //  I Pack",
       {
+        fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
-        color: "#5a5238",
+        color: toCss(palette.hudFaint),
         letterSpacing: 2,
       },
     );
@@ -295,8 +377,9 @@ export class MainMenuScene extends Phaser.Scene {
       height - 35,
       "v0.1 // THE BARROW-DEEP // FEW RETURN WHOLE",
       {
+        fontFamily: CANVAS_FONT.body,
         fontSize: "9px",
-        color: "#1c1712",
+        color: toCss(palette.ink),
         letterSpacing: 1,
       },
     );
@@ -313,7 +396,13 @@ export class MainMenuScene extends Phaser.Scene {
     if (this.buttonGlow && glowColor) {
       this.buttonGlow.clear();
       this.buttonGlow.fillStyle(glowColor, 0.15);
-      this.buttonGlow.fillRoundedRect(btnX - 4, btnY - 4, btnW + 8, btnH + 8, 10);
+      this.buttonGlow.fillRoundedRect(
+        btnX - 4,
+        btnY - 4,
+        btnW + 8,
+        btnH + 8,
+        10,
+      );
       this.buttonGlow.setAlpha(1);
     }
 
@@ -331,7 +420,9 @@ export class MainMenuScene extends Phaser.Scene {
       return;
     }
 
-    const hitArea = (this as Record<string, unknown>)._hitArea as Phaser.GameObjects.Rectangle | undefined;
+    const hitArea = (this as Record<string, unknown>)._hitArea as
+      | Phaser.GameObjects.Rectangle
+      | undefined;
 
     switch (status) {
       case "connected":
@@ -339,21 +430,25 @@ export class MainMenuScene extends Phaser.Scene {
         if (this.dotAnimation) {
           this.dotAnimation.destroy();
         }
-        this.drawButton(0xe8a14d, 0xe8a14d, 0xe8a14d);
+        this.drawButton(
+          palette.interactable,
+          palette.interactable,
+          palette.interactable,
+        );
         this.startButtonText.setText("DELVE");
-        this.startButtonText.setColor("#0d0b0a");
+        this.startButtonText.setColor(toCss(palette.ink));
         this.connectionStatusText.setText("The way is open");
-        this.connectionStatusText.setColor("#e8a14d");
+        this.connectionStatusText.setColor(toCss(palette.frameBright));
         this.setupButtonInteraction();
         break;
 
       case "connecting":
         this.isConnected = false;
-        this.drawButton(0x2a231b, 0x8a7d5c);
+        this.drawButton(palette.hudPanel, palette.hudLabel);
         if (hitArea) hitArea.disableInteractive();
         this.startButtonText.setText("OPENING THE WAY...");
-        this.startButtonText.setColor("#8a7d5c");
-        this.connectionStatusText.setColor("#c2611f");
+        this.startButtonText.setColor(toCss(palette.hudLabel));
+        this.connectionStatusText.setColor(toCss(palette.ember));
         break;
 
       case "error":
@@ -361,12 +456,14 @@ export class MainMenuScene extends Phaser.Scene {
         if (this.dotAnimation) {
           this.dotAnimation.destroy();
         }
-        this.drawButton(0x2e1414, 0x6e1f1f, 0x6e1f1f);
+        this.drawButton(palette.damage, palette.damage, palette.damage);
         if (hitArea) hitArea.disableInteractive();
         this.startButtonText.setText("SEALED");
-        this.startButtonText.setColor("#6e1f1f");
-        this.connectionStatusText.setText("The way is sealed // Refresh to retry");
-        this.connectionStatusText.setColor("#6e1f1f");
+        this.startButtonText.setColor(toCss(palette.damage));
+        this.connectionStatusText.setText(
+          "The way is sealed // Refresh to retry",
+        );
+        this.connectionStatusText.setColor(toCss(palette.damage));
         break;
 
       case "disconnected":
@@ -374,31 +471,43 @@ export class MainMenuScene extends Phaser.Scene {
         if (this.dotAnimation) {
           this.dotAnimation.destroy();
         }
-        this.drawButton(0x1c1712, 0x8a7d5c);
+        this.drawButton(palette.ink, palette.hudLabel);
         if (hitArea) hitArea.disableInteractive();
         this.startButtonText.setText("LOST");
-        this.startButtonText.setColor("#8a7d5c");
-        this.connectionStatusText.setText("The torch gutters // Refresh to retry");
-        this.connectionStatusText.setColor("#c2611f");
+        this.startButtonText.setColor(toCss(palette.hudLabel));
+        this.connectionStatusText.setText(
+          "The torch gutters // Refresh to retry",
+        );
+        this.connectionStatusText.setColor(toCss(palette.ember));
         break;
     }
   }
 
   private setupButtonInteraction(): void {
-    const hitArea = (this as Record<string, unknown>)._hitArea as Phaser.GameObjects.Rectangle | undefined;
+    const hitArea = (this as Record<string, unknown>)._hitArea as
+      | Phaser.GameObjects.Rectangle
+      | undefined;
     if (!hitArea) return;
 
     hitArea.setInteractive({ useHandCursor: true });
 
     hitArea.on("pointerover", () => {
       if (this.isConnected) {
-        this.drawButton(0xf2b866, 0xe8a14d, 0xe8a14d);
+        this.drawButton(
+          palette.interactableBright,
+          palette.interactable,
+          palette.interactable,
+        );
       }
     });
 
     hitArea.on("pointerout", () => {
       if (this.isConnected) {
-        this.drawButton(0xe8a14d, 0xe8a14d, 0xe8a14d);
+        this.drawButton(
+          palette.interactable,
+          palette.interactable,
+          palette.interactable,
+        );
       }
     });
 
@@ -433,7 +542,7 @@ export class MainMenuScene extends Phaser.Scene {
       height / 2,
       width,
       height,
-      0x000000,
+      palette.inkDeep,
       0.8,
     );
 
@@ -443,42 +552,45 @@ export class MainMenuScene extends Phaser.Scene {
     const popupW = 320;
     const popupH = 200;
     const bg = this.add.graphics();
-    bg.fillStyle(0x0d0b0a, 1);
+    bg.fillStyle(palette.ink, 1);
     bg.fillRoundedRect(-popupW / 2, -popupH / 2, popupW, popupH, 8);
-    bg.lineStyle(1, 0xe8a14d, 0.4);
+    bg.lineStyle(1, palette.frame, 0.4);
     bg.strokeRoundedRect(-popupW / 2, -popupH / 2, popupW, popupH, 8);
 
     this.queueTitle = this.add
       .text(0, -60, "GATHERING THE DELVE", {
+        fontFamily: CANVAS_FONT.body,
         fontSize: "18px",
-        color: "#e8a14d",
+        color: toCss(palette.frameBright),
         letterSpacing: 4,
       })
       .setOrigin(0.5);
 
     this.queuePeopleText = this.add
       .text(0, -15, "Delvers gathered: 0 / 2", {
+        fontFamily: CANVAS_FONT.body,
         fontSize: "14px",
-        color: "#8a7d5c",
+        color: toCss(palette.hudLabel),
       })
       .setOrigin(0.5);
 
     // Cancel button
     const cancelBg = this.add.graphics();
-    cancelBg.fillStyle(0x1c1210, 1);
+    cancelBg.fillStyle(palette.ink, 1);
     cancelBg.fillRoundedRect(-60, 35, 120, 36, 4);
-    cancelBg.lineStyle(1, 0x6f8f4a, 0.5);
+    cancelBg.lineStyle(1, palette.safe, 0.5);
     cancelBg.strokeRoundedRect(-60, 35, 120, 36, 4);
 
     const cancelText = this.add
       .text(0, 53, "CANCEL", {
+        fontFamily: CANVAS_FONT.body,
         fontSize: "13px",
-        color: "#6f8f4a",
+        color: toCss(palette.safe),
         letterSpacing: 3,
       })
       .setOrigin(0.5);
 
-    const cancelHit = this.add.rectangle(0, 53, 120, 36, 0x000000, 0);
+    const cancelHit = this.add.rectangle(0, 53, 120, 36, palette.inkDeep, 0);
     cancelHit.setInteractive({ useHandCursor: true });
 
     // Queue status listener
@@ -498,7 +610,14 @@ export class MainMenuScene extends Phaser.Scene {
       // TODO: send leave queue message to backend
     });
 
-    this.queuePopupContainer.add([bg, this.queueTitle, this.queuePeopleText, cancelBg, cancelText, cancelHit]);
+    this.queuePopupContainer.add([
+      bg,
+      this.queueTitle,
+      this.queuePeopleText,
+      cancelBg,
+      cancelText,
+      cancelHit,
+    ]);
   }
 
   private closeQueuePopup() {

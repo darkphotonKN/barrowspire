@@ -1,10 +1,11 @@
+import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import {
   ItemState,
   EquipmentSlot,
   EquippedItems,
   getItemType,
   getValidSlotsForItem,
-} from '@/types/gameState';
+} from "@/types/gameState";
 
 interface SlotLayout {
   slot: EquipmentSlot;
@@ -37,18 +38,18 @@ const MAX_VISIBLE_INV = 8;
 const PADDING = 16;
 
 // Colors
-const C_CYAN = 0xe8a14d;
-const C_BG = 0x0d0b0a;
-const C_SLOT_EMPTY = 0x14110c;
-const C_WEAPON = 0xff4466;
-const C_ARMOR = 0x44aaff;
-const C_CONSUMABLE = 0x44ff88;
-const C_RING = 0xdd88ff;
+const C_FRAME = palette.frame;
+const C_BG = palette.ink;
+const C_SLOT_EMPTY = palette.hudPanelDeep;
+const C_WEAPON = palette.damageBright;
+const C_ARMOR = palette.hostile;
+const C_CONSUMABLE = palette.safe;
+const C_RING = palette.frameBright;
 
 function getSlotColor(slot: EquipmentSlot): number {
-  if (slot === 'weapon') return C_WEAPON;
-  if (slot === 'ring_1' || slot === 'ring_2') return C_RING;
-  if (slot.startsWith('consumable')) return C_CONSUMABLE;
+  if (slot === "weapon") return C_WEAPON;
+  if (slot === "ring_1" || slot === "ring_2") return C_RING;
+  if (slot.startsWith("consumable")) return C_CONSUMABLE;
   return C_ARMOR;
 }
 
@@ -59,19 +60,19 @@ function getSlotColor(slot: EquipmentSlot): number {
 //   [CON 1]   [CON 2]   [CON 3]
 const SLOT_LAYOUT: SlotLayout[] = [
   // Row 1: weapon left, head center
-  { slot: 'weapon', label: 'WEAPON', x: -125, y: 0 },
-  { slot: 'head', label: 'HEAD', x: 0, y: 0 },
+  { slot: "weapon", label: "WEAPON", x: -125, y: 0 },
+  { slot: "head", label: "HEAD", x: 0, y: 0 },
   // Row 2: hands left (arms), body center, ring right
-  { slot: 'hands', label: 'HANDS', x: -125, y: 58 },
-  { slot: 'body', label: 'BODY', x: 0, y: 58 },
-  { slot: 'ring_1', label: 'RING 1', x: 125, y: 58 },
+  { slot: "hands", label: "HANDS", x: -125, y: 58 },
+  { slot: "body", label: "BODY", x: 0, y: 58 },
+  { slot: "ring_1", label: "RING 1", x: 125, y: 58 },
   // Row 3: feet center, ring right
-  { slot: 'feet', label: 'FEET', x: 0, y: 116 },
-  { slot: 'ring_2', label: 'RING 2', x: 125, y: 116 },
+  { slot: "feet", label: "FEET", x: 0, y: 116 },
+  { slot: "ring_2", label: "RING 2", x: 125, y: 116 },
   // Row 4: consumables across bottom
-  { slot: 'consumable_1', label: 'CONS 1', x: -125, y: 186 },
-  { slot: 'consumable_2', label: 'CONS 2', x: 0, y: 186 },
-  { slot: 'consumable_3', label: 'CONS 3', x: 125, y: 186 },
+  { slot: "consumable_1", label: "CONS 1", x: -125, y: 186 },
+  { slot: "consumable_2", label: "CONS 2", x: 0, y: 186 },
+  { slot: "consumable_3", label: "CONS 3", x: 125, y: 186 },
 ];
 
 export class EquipmentPanel {
@@ -81,15 +82,24 @@ export class EquipmentPanel {
   private visible = false;
 
   private equipped: EquippedItems = {
-    weapon: null, head: null, body: null, hands: null, feet: null,
-    ring_1: null, ring_2: null, consumable_1: null, consumable_2: null, consumable_3: null,
+    weapon: null,
+    head: null,
+    body: null,
+    hands: null,
+    feet: null,
+    ring_1: null,
+    ring_2: null,
+    consumable_1: null,
+    consumable_2: null,
+    consumable_3: null,
   };
   private inventory: ItemState[] = [];
 
   private slotHitAreas: SlotHitArea[] = [];
   private inventoryHitAreas: InventoryRowHitArea[] = [];
 
-  private slotGraphics: Map<EquipmentSlot, Phaser.GameObjects.Graphics> = new Map();
+  private slotGraphics: Map<EquipmentSlot, Phaser.GameObjects.Graphics> =
+    new Map();
   private slotTexts: Map<EquipmentSlot, Phaser.GameObjects.Text> = new Map();
 
   private invRowGraphics: Phaser.GameObjects.Graphics[] = [];
@@ -161,8 +171,16 @@ export class EquipmentPanel {
 
   private isEquipmentEquivalent(a: EquippedItems, b: EquippedItems): boolean {
     const slots: EquipmentSlot[] = [
-      'weapon', 'head', 'body', 'hands', 'feet',
-      'ring_1', 'ring_2', 'consumable_1', 'consumable_2', 'consumable_3',
+      "weapon",
+      "head",
+      "body",
+      "hands",
+      "feet",
+      "ring_1",
+      "ring_2",
+      "consumable_1",
+      "consumable_2",
+      "consumable_3",
     ];
     for (const slot of slots) {
       const aId = a[slot]?.entity_id ?? null;
@@ -190,12 +208,15 @@ export class EquipmentPanel {
     const eqBg = this.scene.add.graphics();
     eqBg.fillStyle(C_BG, 0.92);
     eqBg.fillRoundedRect(-EQUIP_W / 2, -EQUIP_H / 2, EQUIP_W, EQUIP_H, 8);
-    eqBg.lineStyle(1, C_CYAN, 0.5);
+    eqBg.lineStyle(1, C_FRAME, 0.5);
     eqBg.strokeRoundedRect(-EQUIP_W / 2, -EQUIP_H / 2, EQUIP_W, EQUIP_H, 8);
     eqChildren.push(eqBg);
 
-    const eqTitle = this.scene.add.text(0, -EQUIP_H / 2 + 16, 'EQUIPMENT', {
-      fontSize: '16px', color: '#e8a14d', letterSpacing: 5,
+    const eqTitle = this.scene.add.text(0, -EQUIP_H / 2 + 16, "EQUIPMENT", {
+      fontFamily: CANVAS_FONT.body,
+      fontSize: "16px",
+      color: toCss(palette.frameBright),
+      letterSpacing: 5,
     });
     eqTitle.setOrigin(0.5);
     eqChildren.push(eqTitle);
@@ -211,7 +232,10 @@ export class EquipmentPanel {
       const slotY = slotsTop + layout.y;
 
       const label = this.scene.add.text(slotX, slotY + 2, layout.label, {
-        fontSize: '9px', color: '#e8a14d', letterSpacing: 2,
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "9px",
+        color: toCss(palette.frameBright),
+        letterSpacing: 2,
       });
       label.setOrigin(0.5, 0);
       eqChildren.push(label);
@@ -220,19 +244,33 @@ export class EquipmentPanel {
       eqChildren.push(slotGfx);
       this.slotGraphics.set(layout.slot, slotGfx);
 
-      const slotText = this.scene.add.text(slotX, slotY + SLOT_BOX_H - 4, '—', {
-        fontSize: '11px', color: '#e8a14d',
+      const slotText = this.scene.add.text(slotX, slotY + SLOT_BOX_H - 4, "—", {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "11px",
+        color: toCss(palette.frameBright),
       });
       slotText.setOrigin(0.5);
       eqChildren.push(slotText);
       this.slotTexts.set(layout.slot, slotText);
 
-      this.slotHitAreas.push({ slot: layout.slot, rect: { x: 0, y: 0, w: SLOT_BOX_W, h: SLOT_BOX_H }, item: null });
+      this.slotHitAreas.push({
+        slot: layout.slot,
+        rect: { x: 0, y: 0, w: SLOT_BOX_W, h: SLOT_BOX_H },
+        item: null,
+      });
     }
 
-    const eqHint = this.scene.add.text(0, EQUIP_H / 2 - 16, 'HOVER + E TO UNEQUIP', {
-      fontSize: '9px', color: '#e8a14d', letterSpacing: 2,
-    });
+    const eqHint = this.scene.add.text(
+      0,
+      EQUIP_H / 2 - 16,
+      "HOVER + E TO UNEQUIP",
+      {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "9px",
+        color: toCss(palette.frameBright),
+        letterSpacing: 2,
+      },
+    );
     eqHint.setOrigin(0.5);
     eqChildren.push(eqHint);
 
@@ -245,19 +283,30 @@ export class EquipmentPanel {
     const invBg = this.scene.add.graphics();
     invBg.fillStyle(C_BG, 0.92);
     invBg.fillRoundedRect(-INV_W / 2, -INV_H / 2, INV_W, INV_H, 8);
-    invBg.lineStyle(1, C_CYAN, 0.5);
+    invBg.lineStyle(1, C_FRAME, 0.5);
     invBg.strokeRoundedRect(-INV_W / 2, -INV_H / 2, INV_W, INV_H, 8);
     invChildren.push(invBg);
 
-    const invTitle = this.scene.add.text(0, -INV_H / 2 + 16, 'INVENTORY', {
-      fontSize: '16px', color: '#e8a14d', letterSpacing: 5,
+    const invTitle = this.scene.add.text(0, -INV_H / 2 + 16, "INVENTORY", {
+      fontFamily: CANVAS_FONT.body,
+      fontSize: "16px",
+      color: toCss(palette.frameBright),
+      letterSpacing: 5,
     });
     invTitle.setOrigin(0.5);
     invChildren.push(invTitle);
 
-    const invHint = this.scene.add.text(0, INV_H / 2 - 16, 'HOVER + E TO EQUIP  //  I CLOSE', {
-      fontSize: '9px', color: '#e8a14d', letterSpacing: 2,
-    });
+    const invHint = this.scene.add.text(
+      0,
+      INV_H / 2 - 16,
+      "HOVER + E TO EQUIP  //  I CLOSE",
+      {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "9px",
+        color: toCss(palette.frameBright),
+        letterSpacing: 2,
+      },
+    );
     invHint.setOrigin(0.5);
     invChildren.push(invHint);
 
@@ -271,12 +320,16 @@ export class EquipmentPanel {
     this.rebuildInventoryRows();
 
     // Input
-    this.pointerMoveHandler = (p: Phaser.Input.Pointer) => this.handlePointerMove(p);
-    this.scene.input.on('pointermove', this.pointerMoveHandler);
+    this.pointerMoveHandler = (p: Phaser.Input.Pointer) =>
+      this.handlePointerMove(p);
+    this.scene.input.on("pointermove", this.pointerMoveHandler);
   }
 
   private cleanup(): void {
-    if (this.pointerMoveHandler) { this.scene.input.off('pointermove', this.pointerMoveHandler); this.pointerMoveHandler = undefined; }
+    if (this.pointerMoveHandler) {
+      this.scene.input.off("pointermove", this.pointerMoveHandler);
+      this.pointerMoveHandler = undefined;
+    }
     this.slotGraphics.clear();
     this.slotTexts.clear();
     this.invRowGraphics = [];
@@ -286,8 +339,14 @@ export class EquipmentPanel {
     this.inventoryHitAreas = [];
     this.hoveredSlot = undefined;
     this.hoveredInvIndex = -1;
-    if (this.equipContainer) { this.equipContainer.destroy(); this.equipContainer = undefined; }
-    if (this.invContainer) { this.invContainer.destroy(); this.invContainer = undefined; }
+    if (this.equipContainer) {
+      this.equipContainer.destroy();
+      this.equipContainer = undefined;
+    }
+    if (this.invContainer) {
+      this.invContainer.destroy();
+      this.invContainer = undefined;
+    }
   }
 
   // === HIT AREAS ===
@@ -317,7 +376,7 @@ export class EquipmentPanel {
       const item = this.equipped[layout.slot];
       const gfx = this.slotGraphics.get(layout.slot);
       const text = this.slotTexts.get(layout.slot);
-      const hitArea = this.slotHitAreas.find(h => h.slot === layout.slot);
+      const hitArea = this.slotHitAreas.find((h) => h.slot === layout.slot);
       if (hitArea) hitArea.item = item;
       if (!gfx || !text) continue;
 
@@ -332,14 +391,14 @@ export class EquipmentPanel {
         gfx.lineStyle(1, color, 0.3);
         gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
         text.setText(item.name);
-        text.setColor('#cdbf9a');
+        text.setColor(toCss(palette.hudText));
       } else {
         gfx.fillStyle(C_SLOT_EMPTY, 0.3);
         gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
-        gfx.lineStyle(1, C_CYAN, 0.06);
+        gfx.lineStyle(1, C_FRAME, 0.06);
         gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
-        text.setText('—');
-        text.setColor('#5a5238');
+        text.setText("—");
+        text.setColor(toCss(palette.hudFaint));
       }
     }
   }
@@ -351,7 +410,10 @@ export class EquipmentPanel {
 
     for (const g of this.invRowGraphics) g.destroy();
     for (const t of this.invRowTexts) t.destroy();
-    if (this.invEmptyText) { this.invEmptyText.destroy(); this.invEmptyText = undefined; }
+    if (this.invEmptyText) {
+      this.invEmptyText.destroy();
+      this.invEmptyText = undefined;
+    }
     this.invRowGraphics = [];
     this.invRowTexts = [];
     this.inventoryHitAreas = [];
@@ -360,7 +422,11 @@ export class EquipmentPanel {
     const rowWidth = INV_W - PADDING * 2;
 
     if (this.inventory.length === 0) {
-      this.invEmptyText = this.scene.add.text(0, 0, '(Empty)', { fontSize: '13px', color: '#e8a14d' });
+      this.invEmptyText = this.scene.add.text(0, 0, "(Empty)", {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "13px",
+        color: toCss(palette.frameBright),
+      });
       this.invEmptyText.setOrigin(0.5);
       this.invContainer.add(this.invEmptyText);
       return;
@@ -376,31 +442,55 @@ export class EquipmentPanel {
 
       const rowBg = this.scene.add.graphics();
       const bgAlpha = i % 2 === 0 ? 0.25 : 0.15;
-      rowBg.fillStyle(0x14110c, bgAlpha);
+      rowBg.fillStyle(palette.hudPanelDeep, bgAlpha);
       rowBg.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
-      rowBg.lineStyle(1, C_CYAN, 0.06);
-      rowBg.lineBetween(-rowWidth / 2 + 8, rowTop + INV_ROW_H, rowWidth / 2 - 8, rowTop + INV_ROW_H);
+      rowBg.lineStyle(1, C_FRAME, 0.06);
+      rowBg.lineBetween(
+        -rowWidth / 2 + 8,
+        rowTop + INV_ROW_H,
+        rowWidth / 2 - 8,
+        rowTop + INV_ROW_H,
+      );
       this.invContainer.add(rowBg);
       this.invRowGraphics.push(rowBg);
 
-      const label = this.scene.add.text(0, rowTop + INV_ROW_H / 2, this.formatItemLine(item), {
-        fontSize: '13px', color: '#cdbf9a',
-      });
+      const label = this.scene.add.text(
+        0,
+        rowTop + INV_ROW_H / 2,
+        this.formatItemLine(item),
+        {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: "13px",
+          color: toCss(palette.hudText),
+        },
+      );
       label.setOrigin(0.5);
       this.invContainer.add(label);
       this.invRowTexts.push(label);
 
       this.inventoryHitAreas.push({
-        rect: { x: cx - rowWidth / 2, y: cy + rowTop, w: rowWidth, h: INV_ROW_H },
+        rect: {
+          x: cx - rowWidth / 2,
+          y: cy + rowTop,
+          w: rowWidth,
+          h: INV_ROW_H,
+        },
         item,
       });
     }
 
     if (this.inventory.length > MAX_VISIBLE_INV) {
       const moreY = rowsTop + MAX_VISIBLE_INV * INV_ROW_H + 4;
-      const moreText = this.scene.add.text(0, moreY, `+${this.inventory.length - MAX_VISIBLE_INV} more...`, {
-        fontSize: '11px', color: '#e8a14d',
-      });
+      const moreText = this.scene.add.text(
+        0,
+        moreY,
+        `+${this.inventory.length - MAX_VISIBLE_INV} more...`,
+        {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: "11px",
+          color: toCss(palette.frameBright),
+        },
+      );
       moreText.setOrigin(0.5);
       this.invContainer.add(moreText);
       this.invRowTexts.push(moreText);
@@ -410,14 +500,22 @@ export class EquipmentPanel {
   private formatItemLine(item: ItemState): string {
     const type = getItemType(item);
     switch (type) {
-      case 'weapon': return item.attack_power ? `${item.name}  ATK ${item.attack_power}` : item.name;
-      case 'armor': return item.defense_rating ? `${item.name}  DEF ${item.defense_rating}` : item.name;
-      case 'consumable': {
-        if (item.healing_amount) return `${item.name}  +${item.healing_amount} HP`;
+      case "weapon":
+        return item.attack_power
+          ? `${item.name}  ATK ${item.attack_power}`
+          : item.name;
+      case "armor":
+        return item.defense_rating
+          ? `${item.name}  DEF ${item.defense_rating}`
+          : item.name;
+      case "consumable": {
+        if (item.healing_amount)
+          return `${item.name}  +${item.healing_amount} HP`;
         if (item.mana_amount) return `${item.name}  +${item.mana_amount} MP`;
         return item.name;
       }
-      default: return item.quantity > 1 ? `${item.name} x${item.quantity}` : item.name;
+      default:
+        return item.quantity > 1 ? `${item.name} x${item.quantity}` : item.name;
     }
   }
 
@@ -428,11 +526,17 @@ export class EquipmentPanel {
 
     let foundSlot: EquipmentSlot | undefined;
     for (const hit of this.slotHitAreas) {
-      if (this.pointInRect(pointer.x, pointer.y, hit.rect)) { foundSlot = hit.slot; break; }
+      if (this.pointInRect(pointer.x, pointer.y, hit.rect)) {
+        foundSlot = hit.slot;
+        break;
+      }
     }
 
     if (foundSlot !== this.hoveredSlot) {
-      if (this.hoveredSlot) { this.setSlotHover(this.hoveredSlot, false); this.hideTooltip(); }
+      if (this.hoveredSlot) {
+        this.setSlotHover(this.hoveredSlot, false);
+        this.hideTooltip();
+      }
       this.hoveredSlot = foundSlot;
       if (foundSlot) {
         this.setSlotHover(foundSlot, true);
@@ -446,16 +550,28 @@ export class EquipmentPanel {
     let foundInvIdx = -1;
     if (!foundSlot) {
       for (let i = 0; i < this.inventoryHitAreas.length; i++) {
-        if (this.pointInRect(pointer.x, pointer.y, this.inventoryHitAreas[i].rect)) { foundInvIdx = i; break; }
+        if (
+          this.pointInRect(pointer.x, pointer.y, this.inventoryHitAreas[i].rect)
+        ) {
+          foundInvIdx = i;
+          break;
+        }
       }
     }
 
     if (foundInvIdx !== this.hoveredInvIndex) {
-      if (this.hoveredInvIndex !== -1) { this.setInvRowHover(this.hoveredInvIndex, false); this.hideTooltip(); }
+      if (this.hoveredInvIndex !== -1) {
+        this.setInvRowHover(this.hoveredInvIndex, false);
+        this.hideTooltip();
+      }
       this.hoveredInvIndex = foundInvIdx;
       if (foundInvIdx !== -1) {
         this.setInvRowHover(foundInvIdx, true);
-        this.showTooltip(this.inventoryHitAreas[foundInvIdx].item, pointer.x, pointer.y);
+        this.showTooltip(
+          this.inventoryHitAreas[foundInvIdx].item,
+          pointer.x,
+          pointer.y,
+        );
       }
     } else if (foundInvIdx !== -1) {
       this.moveTooltip(pointer.x, pointer.y);
@@ -470,7 +586,7 @@ export class EquipmentPanel {
    * takes priority over an inventory row underneath it.
    */
   handleEquipKey(): void {
-    console.log('[EquipPanel] handleEquipKey called', {
+    console.log("[EquipPanel] handleEquipKey called", {
       visible: this.visible,
       hoveredSlot: this.hoveredSlot,
       hoveredInvIndex: this.hoveredInvIndex,
@@ -481,7 +597,10 @@ export class EquipmentPanel {
     // Unequip path: hovering an equipped slot.
     if (this.hoveredSlot) {
       const item = this.equipped[this.hoveredSlot];
-      console.log('[EquipPanel] unequip path', { slot: this.hoveredSlot, hasItem: !!item });
+      console.log("[EquipPanel] unequip path", {
+        slot: this.hoveredSlot,
+        hasItem: !!item,
+      });
       if (item) {
         this.unequipItem(item, this.hoveredSlot);
         return;
@@ -489,24 +608,38 @@ export class EquipmentPanel {
     }
 
     // Equip path: hovering an inventory row.
-    if (this.hoveredInvIndex >= 0 && this.hoveredInvIndex < this.inventoryHitAreas.length) {
+    if (
+      this.hoveredInvIndex >= 0 &&
+      this.hoveredInvIndex < this.inventoryHitAreas.length
+    ) {
       const item = this.inventoryHitAreas[this.hoveredInvIndex].item;
-      console.log('[EquipPanel] equip path', { index: this.hoveredInvIndex, item });
+      console.log("[EquipPanel] equip path", {
+        index: this.hoveredInvIndex,
+        item,
+      });
       this.equipHoveredItem(item);
     }
   }
 
   private equipHoveredItem(item: ItemState): void {
     const validSlots = getValidSlotsForItem(item);
-    console.log('[EquipPanel] equipHoveredItem', { item: item.name, type: getItemType(item), validSlots });
+    console.log("[EquipPanel] equipHoveredItem", {
+      item: item.name,
+      type: getItemType(item),
+      validSlots,
+    });
     if (validSlots.length === 0) return;
 
     // Consumables: auto-pick first empty consumable slot, or flash if all full.
-    if (getItemType(item) === 'consumable') {
-      const emptySlot = validSlots.find(slot => this.equipped[slot] === null);
+    if (getItemType(item) === "consumable") {
+      const emptySlot = validSlots.find((slot) => this.equipped[slot] === null);
       if (!emptySlot) {
         const cam = this.scene.cameras.main;
-        this.showFlashMessage('All consumable slots are full', cam.width / 2, cam.height / 2);
+        this.showFlashMessage(
+          "All consumable slots are full",
+          cam.width / 2,
+          cam.height / 2,
+        );
         return;
       }
       this.equipItem(item, emptySlot);
@@ -517,17 +650,24 @@ export class EquipmentPanel {
     this.equipItem(item, validSlots[0]);
   }
 
-  private showFlashMessage(message: string, screenX: number, screenY: number): void {
+  private showFlashMessage(
+    message: string,
+    screenX: number,
+    screenY: number,
+  ): void {
     const padding = 12;
     const text = this.scene.add.text(0, 0, message, {
-      fontSize: '12px', color: '#ff6688', letterSpacing: 1,
+      fontFamily: CANVAS_FONT.body,
+      fontSize: "12px",
+      color: toCss(palette.damageBright),
+      letterSpacing: 1,
     });
     const bg = this.scene.add.graphics();
     const w = text.width + padding * 2;
     const h = text.height + padding;
-    bg.fillStyle(0x080810, 0.95);
+    bg.fillStyle(palette.mapEdge, 0.95);
     bg.fillRoundedRect(0, 0, w, h, 6);
-    bg.lineStyle(1, 0xff6688, 0.5);
+    bg.lineStyle(1, palette.damageBright, 0.5);
     bg.strokeRoundedRect(0, 0, w, h, 6);
     text.setPosition(padding, padding / 2);
 
@@ -549,7 +689,9 @@ export class EquipmentPanel {
   private equipItem(item: ItemState, slot: EquipmentSlot): void {
     const existing = this.equipped[slot];
     if (existing) this.inventory.push(existing);
-    this.inventory = this.inventory.filter(i => i.entity_id !== item.entity_id);
+    this.inventory = this.inventory.filter(
+      (i) => i.entity_id !== item.entity_id,
+    );
     this.equipped[slot] = item;
     this.refreshSlots();
     this.rebuildInventoryRows();
@@ -568,7 +710,7 @@ export class EquipmentPanel {
 
   private setSlotHover(slot: EquipmentSlot, hovered: boolean): void {
     const gfx = this.slotGraphics.get(slot);
-    const layout = SLOT_LAYOUT.find(l => l.slot === slot);
+    const layout = SLOT_LAYOUT.find((l) => l.slot === slot);
     if (!gfx || !layout) return;
     const slotX = layout.x - SLOT_BOX_W / 2;
     const slotsTop = -EQUIP_H / 2 + 48;
@@ -577,7 +719,7 @@ export class EquipmentPanel {
 
     gfx.clear();
     if (hovered) {
-      const color = item ? getSlotColor(slot) : C_CYAN;
+      const color = item ? getSlotColor(slot) : C_FRAME;
       gfx.fillStyle(color, 0.15);
       gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
       gfx.lineStyle(1, color, 0.5);
@@ -591,7 +733,7 @@ export class EquipmentPanel {
     } else {
       gfx.fillStyle(C_SLOT_EMPTY, 0.3);
       gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
-      gfx.lineStyle(1, C_CYAN, 0.06);
+      gfx.lineStyle(1, C_FRAME, 0.06);
       gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
     }
   }
@@ -606,18 +748,23 @@ export class EquipmentPanel {
 
     gfx.clear();
     if (hovered) {
-      gfx.fillStyle(C_CYAN, 0.08);
+      gfx.fillStyle(C_FRAME, 0.08);
       gfx.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
-      gfx.lineStyle(1, C_CYAN, 0.2);
+      gfx.lineStyle(1, C_FRAME, 0.2);
       gfx.strokeRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
-      text.setColor('#e8a14d');
+      text.setColor(toCss(palette.frameBright));
     } else {
       const bgAlpha = index % 2 === 0 ? 0.25 : 0.15;
-      gfx.fillStyle(0x14110c, bgAlpha);
+      gfx.fillStyle(palette.hudPanelDeep, bgAlpha);
       gfx.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
-      gfx.lineStyle(1, C_CYAN, 0.06);
-      gfx.lineBetween(-rowWidth / 2 + 8, rowTop + INV_ROW_H, rowWidth / 2 - 8, rowTop + INV_ROW_H);
-      text.setColor('#cdbf9a');
+      gfx.lineStyle(1, C_FRAME, 0.06);
+      gfx.lineBetween(
+        -rowWidth / 2 + 8,
+        rowTop + INV_ROW_H,
+        rowWidth / 2 - 8,
+        rowTop + INV_ROW_H,
+      );
+      text.setColor(toCss(palette.hudText));
     }
   }
 
@@ -630,26 +777,100 @@ export class EquipmentPanel {
     const children: Phaser.GameObjects.GameObject[] = [];
     let curY = padding;
 
-    const name = this.scene.add.text(padding, curY, item.name, { fontSize: '14px', color: '#e8a14d', fontStyle: 'bold' });
+    const name = this.scene.add.text(padding, curY, item.name, {
+      fontFamily: CANVAS_FONT.body,
+      fontSize: "14px",
+      color: toCss(palette.frameBright),
+      fontStyle: "bold",
+    });
     children.push(name);
     curY += 20;
 
     const type = getItemType(item);
-    const typeColors: Record<string, string> = { weapon: '#ff4466', armor: '#44aaff', consumable: '#44ff88', unknown: '#8a7d5c' };
-    const typeText = this.scene.add.text(padding, curY, type.toUpperCase(), { fontSize: '10px', color: typeColors[type] || '#8a7d5c', letterSpacing: 2 });
+    const typeColors: Record<string, string> = {
+      weapon: toCss(palette.damageBright),
+      armor: toCss(palette.hostile),
+      consumable: toCss(palette.safe),
+      unknown: toCss(palette.hudLabel),
+    };
+    const typeText = this.scene.add.text(padding, curY, type.toUpperCase(), {
+      fontFamily: CANVAS_FONT.body,
+      fontSize: "10px",
+      color: typeColors[type] || toCss(palette.hudLabel),
+      letterSpacing: 2,
+    });
     children.push(typeText);
     curY += 18;
 
-    if (item.attack_power) { this.addStat(children, padding, curY, tooltipWidth, 'ATK', `${item.attack_power}`, '#ff4466'); curY += 18; }
-    if (item.critical_rate) { this.addStat(children, padding, curY, tooltipWidth, 'CRIT', `${Math.round(item.critical_rate)}%`, '#ffaa33'); curY += 18; }
-    if (item.defense_rating) { this.addStat(children, padding, curY, tooltipWidth, 'DEF', `${item.defense_rating}`, '#44aaff'); curY += 18; }
-    if (item.healing_amount) { this.addStat(children, padding, curY, tooltipWidth, 'HEAL', `+${item.healing_amount} HP`, '#44ff88'); curY += 18; }
-    if (item.mana_amount) { this.addStat(children, padding, curY, tooltipWidth, 'MANA', `+${item.mana_amount} MP`, '#aa88ff'); curY += 18; }
+    if (item.attack_power) {
+      this.addStat(
+        children,
+        padding,
+        curY,
+        tooltipWidth,
+        "ATK",
+        `${item.attack_power}`,
+        toCss(palette.damageBright),
+      );
+      curY += 18;
+    }
+    if (item.critical_rate) {
+      this.addStat(
+        children,
+        padding,
+        curY,
+        tooltipWidth,
+        "CRIT",
+        `${Math.round(item.critical_rate)}%`,
+        toCss(palette.torch),
+      );
+      curY += 18;
+    }
+    if (item.defense_rating) {
+      this.addStat(
+        children,
+        padding,
+        curY,
+        tooltipWidth,
+        "DEF",
+        `${item.defense_rating}`,
+        toCss(palette.hostile),
+      );
+      curY += 18;
+    }
+    if (item.healing_amount) {
+      this.addStat(
+        children,
+        padding,
+        curY,
+        tooltipWidth,
+        "HEAL",
+        `+${item.healing_amount} HP`,
+        toCss(palette.safe),
+      );
+      curY += 18;
+    }
+    if (item.mana_amount) {
+      this.addStat(
+        children,
+        padding,
+        curY,
+        tooltipWidth,
+        "MANA",
+        `+${item.mana_amount} MP`,
+        toCss(palette.frameBright),
+      );
+      curY += 18;
+    }
 
     if (item.description) {
       curY += 4;
       const desc = this.scene.add.text(padding, curY, item.description, {
-        fontSize: '11px', color: '#4a4a44', wordWrap: { width: tooltipWidth - padding * 2 }, lineSpacing: 3,
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "11px",
+        color: toCss(palette.hudLabel),
+        wordWrap: { width: tooltipWidth - padding * 2 },
+        lineSpacing: 3,
       });
       children.push(desc);
       curY += desc.height;
@@ -657,8 +878,11 @@ export class EquipmentPanel {
 
     const tooltipHeight = curY + padding;
     const bg = this.scene.add.graphics();
-    const borderColor = parseInt((typeColors[type] || '#e8a14d').slice(1), 16);
-    bg.fillStyle(0x080810, 0.95);
+    const borderColor = parseInt(
+      (typeColors[type] || toCss(palette.frameBright)).slice(1),
+      16,
+    );
+    bg.fillStyle(palette.mapEdge, 0.95);
     bg.fillRoundedRect(0, 0, tooltipWidth, tooltipHeight, 6);
     bg.lineStyle(1, borderColor, 0.4);
     bg.strokeRoundedRect(0, 0, tooltipWidth, tooltipHeight, 6);
@@ -675,10 +899,29 @@ export class EquipmentPanel {
     this.tooltip.setScrollFactor(0);
   }
 
-  private addStat(children: Phaser.GameObjects.GameObject[], padding: number, y: number, width: number, label: string, value: string, color: string): void {
+  private addStat(
+    children: Phaser.GameObjects.GameObject[],
+    padding: number,
+    y: number,
+    width: number,
+    label: string,
+    value: string,
+    color: string,
+  ): void {
     children.push(
-      this.scene.add.text(padding, y, label, { fontSize: '11px', color: '#e8a14d', letterSpacing: 2 }),
-      this.scene.add.text(width - padding, y, value, { fontSize: '12px', color }).setOrigin(1, 0),
+      this.scene.add.text(padding, y, label, {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "11px",
+        color: toCss(palette.frameBright),
+        letterSpacing: 2,
+      }),
+      this.scene.add
+        .text(width - padding, y, value, {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: "12px",
+          color,
+        })
+        .setOrigin(1, 0),
     );
   }
 
@@ -687,12 +930,24 @@ export class EquipmentPanel {
   }
 
   private hideTooltip(): void {
-    if (this.tooltip) { this.tooltip.destroy(); this.tooltip = undefined; }
+    if (this.tooltip) {
+      this.tooltip.destroy();
+      this.tooltip = undefined;
+    }
   }
 
   // === UTIL ===
 
-  private pointInRect(px: number, py: number, rect: { x: number; y: number; w: number; h: number }): boolean {
-    return px >= rect.x && px <= rect.x + rect.w && py >= rect.y && py <= rect.y + rect.h;
+  private pointInRect(
+    px: number,
+    py: number,
+    rect: { x: number; y: number; w: number; h: number },
+  ): boolean {
+    return (
+      px >= rect.x &&
+      px <= rect.x + rect.w &&
+      py >= rect.y &&
+      py <= rect.y + rect.h
+    );
   }
 }
