@@ -1,3 +1,4 @@
+import { palette, toCss } from "../canvasPalette";
 import { ActionMap, ClientMessage } from "@/assets/types/client";
 import { ClientGameState, isGameState } from "@/types/gameState";
 import { GameStateLogger } from "@/utils/gameStateLogger";
@@ -89,13 +90,13 @@ class SocketManager {
     this.socket.onopen = () => {
       console.log("WebSocket connected");
       this.setConnectionStatus("connected");
-      this.updateStatus("WebSocket Connected", "#4ecca3");
+      this.updateStatus("WebSocket Connected", toCss(palette.safe));
     };
 
     this.socket.onerror = (error) => {
       console.error("WebSocket error:", error);
       this.setConnectionStatus("error");
-      this.updateStatus("WebSocket Error", "#ff4444");
+      this.updateStatus("WebSocket Error", toCss(palette.damageBright));
     };
 
     this.socket.onclose = (event) => {
@@ -112,7 +113,7 @@ class SocketManager {
       }
 
       this.setConnectionStatus("disconnected");
-      this.updateStatus("WebSocket Disconnected", "#ffcc00");
+      this.updateStatus("WebSocket Disconnected", toCss(palette.hudLabel));
     };
 
     this.socket.onmessage = (event) => {
