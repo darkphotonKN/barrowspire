@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
+	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
@@ -11,7 +12,6 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/gameserver"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/queue"
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -31,13 +31,11 @@ func SetupRouter(statsDB *sqlx.DB, registry discovery.Registry, ch *amqp.Channel
 		c.Next()
 	})
 
-	// CORS for development more specific for game service with WebSocket support
-	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3938"},
-		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
-		AllowHeaders:     []string{"Content-Type", "Authorization", "Upgrade", "Connection", "Sec-WebSocket-Key", "Sec-WebSocket-Version", "Sec-WebSocket-Extensions"},
-		AllowCredentials: true,
-	}))
+	// CORS for the game service's client surface, including the WebSocket handshake
+	router.Use(GameCORS(
+		commonhelpers.GetEnvString("ENVIRONMENT", "development"),
+		AllowedOrigins(),
+	))
 
 	// base route
 	api := router.Group("/api")
