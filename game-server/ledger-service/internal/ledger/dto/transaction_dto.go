@@ -32,7 +32,7 @@ type EntryDetail struct {
 	Reason        string    `db:"reason"`
 	Currency      string    `db:"currency"`
 	AccountID     uuid.UUID `db:"account_id"`
-	Amount        string    `db:"amount"`
+	Amount        int64     `db:"amount"`
 	Direction     string    `db:"direction"`
 	CreatedAt     time.Time `db:"created_at"`
 }
