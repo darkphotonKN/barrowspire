@@ -513,8 +513,8 @@ func (s *Session) AddPlayer(playerID uuid.UUID, username string) uuid.UUID {
 	loadoutResult, err := s.itemsClient.GetLoadoutWithItems(context.Background(), grpcLoadoutRequest)
 
 	var loadout *components.EquipmentConfig
-	if err != nil {
-		slog.Error("Failed to get loadout", "error", err)
+	if err != nil || loadoutResult == nil {
+		slog.Error("Failed to get loadout, player spawns with no equipment.", "error", err)
 	} else {
 		loadout = &components.EquipmentConfig{
 			WeaponSlot:  addSlotItem(loadoutResult.Weapon),
@@ -2153,7 +2153,12 @@ func (s *Session) InitialMapObjects() {
 
 	ctx := context.Background()
 
-	s.InitializeItems(ctx)
+	// deliberately non-fatal: a session with no loot still runs
+	if err := s.InitializeItems(ctx); err != nil {
+		slog.Error("Session created without ground items.",
+			"error", err,
+		)
+	}
 }
 
 func (s *Session) InitializeItems(ctx context.Context) error {
@@ -2163,11 +2168,14 @@ func (s *Session) InitializeItems(ctx context.Context) error {
 		slog.Error("Error when attempting to get list of base armors for game creation.",
 			"error", err,
 		)
+		return fmt.Errorf("listing item templates: %w", err)
 	}
 
-	if data.Items == nil {
-		slog.Error("No items returned from ListItemTemplates")
-		return fmt.Errorf("No items returned from ListItemTemplates")
+	// An empty catalogue is a degraded state, not a failure: the map is still playable,
+	// it just has no loot on the ground. Seeding items must never stop a session starting.
+	if data == nil || len(data.Items) == 0 {
+		slog.Warn("No item templates available, session starts with no ground items.")
+		return nil
 	}
 
 	for _, item := range data.Items {
