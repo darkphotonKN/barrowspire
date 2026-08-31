@@ -569,6 +569,23 @@ export class BarrowspireScene extends Phaser.Scene {
       shieldTrim: 0x52555c,
       ink: 0x0d0b0a,
     };
+    const rivalKnightPalette: KnightPalette = {
+      helm: 0x3e4248,
+      helmShade: 0x292c30,
+      helmLight: 0x54585f,
+      plate: 0x2d3136,
+      plateShade: 0x1c1f23,
+      plateLight: 0x3d4248,
+      surcoat: 0x2b1c2b,
+      surcoatShade: 0x1b1c20,
+      visor: 0x5294e2,
+      visorGlow: 0x4ecca3,
+      sword: 0x5a5e65,
+      swordHilt: 0x4a4e55,
+      shield: 0x1b141c,
+      shieldTrim: 0x52555c,
+      ink: 0x0d0b0a,
+    };
 
     // 3. Archer Palettes
     const archerPalette: ArcherPalette = {
