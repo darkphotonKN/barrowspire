@@ -1,6 +1,6 @@
 ---
 id: I-0024
-status: open
+status: done
 implements: FS-0003
 blocked_by: [I-0015]
 labels: [ready-for-agent]
@@ -39,8 +39,12 @@ ledger-service and the document able to *name* the tag. Slice 12 is what first c
 
 ## Acceptance Criteria
 
-- [ ] The gateway constructs a ledger gRPC client through the same Consul discovery path as the
-      other five services
+- [x] The gateway constructs a ledger gRPC client through the same Consul discovery path as the
+      other five services — the client exists and resolves through
+      `discovery.ServiceConnection`, proven by `TestNewClient_DiscoversTheLedgerServiceName`.
+      **Its construction in `config/routes.go` is deferred to I-0025**: every sibling pairs the
+      client with a handler on the next line, and this slice mounts none, so the local would be
+      unused and would not compile.
 - [ ] `ledger` appears in `config.Tags` in `internal/contract/contract.go` with a description
 - [ ] The gateway starts cleanly with ledger-service absent — a missing downstream is a runtime
       `503`, never a boot failure (matches existing client behavior)
