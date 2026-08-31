@@ -3,7 +3,7 @@ id: I-0016
 status: open
 implements: FS-0003
 blocked_by: [I-0014]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-0003 slice 3: migration files — create ledger_entries, drop ledgers"
 ---
 Implements FS-0003 §Data model, §Requirements 6, 9-10, 17

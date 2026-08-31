@@ -22,41 +22,33 @@ type Cursor struct {
 }
 
 var (
-	ErrInvalidUUID     = errors.New("invalid uuid")
-	ErrInvalidDate     = errors.New("invalid date")
-	ErrMalformedCursor = errors.New("malformed cursor")
+	ErrInvalidUUID   = errors.New("invalid uuid")
+	ErrInvalidDate   = errors.New("invalid date")
+	ErrInvalidCursor = errors.New("invalid cursor")
 )
 
-func NewCursor(id uuid.UUID, createdAt time.Time) (*Cursor, error) {
-
-	// helper validation to prevent headaches later
-	if id == uuid.Nil {
-		return nil, ErrInvalidUUID
-	}
-
-	return &Cursor{
-		ID:        id,
-		CreatedAt: createdAt,
-	}, nil
-}
-
 // encodes the cursor into base64
-func (c *Cursor) Encode() string {
-	cursorBytes := []byte(c.StringForm())
+// no pointer receiver as theres no mutation and cursor struct size is small
+func (c Cursor) Encode() string {
+	cursorBytes := []byte(c.stringForm())
 	return base64.RawURLEncoding.EncodeToString(cursorBytes)
 }
 
 // helper to represent the cursor in string format
-func (c *Cursor) StringForm() string {
-	return c.ID.String() + "|" + c.CreatedAt.String()
+func (c Cursor) stringForm() string {
+	return c.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + c.ID.String()
 }
 
 // decodes a base64 cursor back to the cursor form
 func Decode(cursorStr string) (*Cursor, error) {
+	// validation to prevent errors
+	if cursorStr == "" {
+		return nil, nil
+	}
 
 	cursorBuffer, err := base64.RawURLEncoding.DecodeString(cursorStr)
 	if err != nil {
-		return nil, err
+		return nil, ErrInvalidCursor
 	}
 
 	s := string(cursorBuffer)
@@ -65,18 +57,19 @@ func Decode(cursorStr string) (*Cursor, error) {
 
 	// hard check length first
 	if len(parts) != 2 {
-		return nil, ErrMalformedCursor
+		return nil, ErrInvalidCursor
 	}
 
-	// validate and parse the first part back to uuid
-	id, err := uuid.Parse(parts[0])
-	if err != nil {
-		return nil, ErrInvalidUUID
-	}
-
-	date, err := time.Parse(time.RFC3339Nano, parts[1])
+	// validate and parse the first part back to time.Time
+	date, err := time.Parse(time.RFC3339Nano, parts[0])
 	if err != nil {
 		return nil, ErrInvalidDate
+	}
+
+	// validate and parse the second part back to uuid
+	id, err := uuid.Parse(parts[1])
+	if err != nil {
+		return nil, ErrInvalidUUID
 	}
 
 	return &Cursor{

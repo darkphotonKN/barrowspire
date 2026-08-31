@@ -3,7 +3,7 @@ id: I-0015
 status: open
 implements: FS-0003
 blocked_by: [I-0014]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-0003 slice 2: service scaffold — wiring, Docker, compose (error mapping STRIPPED)"
 ---
 Implements FS-0003 §Requirements 17, 19

@@ -1,10 +1,10 @@
 ---
 id: I-0023
-status: open
+status: done
 implements: FS-0003
 blocked_by: [I-0014]
-labels: [blocked]
-title: "FS-0003 slice 10: read contracts — proto RPCs, repository read interfaces, cursor encoding"
+labels: []
+title: "FS-0003 slice 10: read contracts — proto RPCs, query-object read interfaces, cursor encoding"
 ---
 Implements FS-0003 §API surface, §Requirements 20-23, 31
 
@@ -28,20 +28,52 @@ Three artifacts, no behavior.
 §API surface. **These two are the entire service definition** — `AppendLedgerTx` is an activity
 and is not in the proto (ADR-0011), and `CreateLedger` / `GetLedger` are deleted (§Req 18).
 Request and response messages, including the nested `legs[]` on the transaction response and the
-flattened entry row on the listing (§Req 22).
+flattened entry row on the listing (§Req 22). Three shapes §API surface now pins explicitly:
+
+- **`optional string account_id_target`** on `ListEntriesRequest` — named apart from the caller's
+  own `account_id` claim so the two cannot be confused, and `optional` because §Req 25 needs
+  "unset" distinguishable from "set to the empty string": presence is an admin-only request, so a
+  member who sets it is refused rather than scoped back to themselves. A bare `string` collapses
+  the two and loses that signal on the wire.
+- **`shared.v1.PageInfo pagination`** rather than a bare `next_cursor` field. proto3 gives a plain
+  `string` no way to be absent, so the **empty string is the end-of-pages signal on the gRPC leg**
+  and the gateway is what turns it into the absence the HTTP contract promises.
+- **`id` on `Entry`** — the entry's own id, and the `id` half of the cursor's `(created_at, id)`.
+  It is the sort key's tiebreaker, not decoration, so it cannot be dropped from the row.
 
 **Run generation here**, absorbed from I-0018: regenerate `ledger.pb.go` and `ledger_grpc.pb.go`.
 **Generated Go is never hand-edited** (root CLAUDE.md) — if the output is wrong, fix the `.proto`
 and regenerate. Registration and handler arms are I-0025's, not this slice's.
 
-**2. Repository read interfaces.** The read methods the append-only repository already promised
-by exposing "insert and read only" (I-0014) finally get their consumer. They read into
-**`LedgerEntry`**, the persistence struct I-0017 owns — the transport types (`Entry`,
-`EntryPage`, `Transaction`, `Leg`) are the gateway's and are named in FS-0003 §API surface's
-transport-type table. Keeping them distinct is §Req 31. Two reads: one
-transaction by id with its legs, and a keyset page of entries. **Neither returns a total, a sum,
-or a count** (§Req 20, ADR-0005) — the absence is enforced by there being no such method, the
-same way I-0014 enforced no-update and no-delete.
+**2. The read interfaces — query objects, not repository methods.** Reads do not hang off the
+repository: it carries exactly one method, `Append` (§Req 9, I-0014). A repository provides
+access to aggregate roots, and a flat entry row is not an aggregate and enforces no invariant, so
+serving one from a repository method misuses the pattern's name.
+
+The read path is served by **query objects** — `GetTransactionQuery` and `ListEntriesQuery` —
+which hold `*sqlx.DB` directly, return DTOs, and bypass the domain entirely, because no invariant
+is being enforced on a read. **Their interfaces are declared consumer-side by the gRPC handler**,
+not in the domain package: the handler states the two reads it needs, and the query objects
+satisfy them. Two reads: one transaction by id with its legs, and a keyset page of entries.
+**Neither returns a total, a sum, or a count** (§Req 20, ADR-0005) — the absence is enforced by
+there being no such method, the same way I-0014 enforces no-update, no-delete, and no-read.
+
+The DTOs are read models and stay distinct from the gateway's transport types (`Entry`,
+`EntryPage`, `Transaction`, `Leg`), which are named in FS-0003 §API surface's transport-type
+table. Keeping them distinct is §Req 31.
+
+**`LedgerEntry` is not what these queries return, and §API surface now says so.** It is the leg
+row *as stored*, matching `ledger_entries` column for column, written by the append path and owned
+by I-0017. The read path's shapes are the DTOs — `TransactionDetails` + `LegDetail` from
+`GetTransactionQuery`, `ListEntriesDetails` + `EntryDetail` from `ListEntriesQuery` — and
+`EntryDetail` is §Req 22's flattened row. One row, three shapes: stored, read back, serialized.
+
+> **Consequence this slice must not paper over.** `EntryDetail` carries `reference_id`, `reason`,
+> and `currency`, which live on `ledger_transactions`, not `ledger_entries`. The keyset predicate
+> still runs on `ledger_entries` alone — that is what the `(account_id, created_at, id)` index is
+> for — but filling those three fields needs the parent. Whether that is a join across the page's
+> bounded row set or a second query is **I-0026's call**; this slice only has to leave the
+> signature able to express either.
 
 **3. The cursor's encoding — DECIDED by [ADR-0012](../adr/0012-cursors-are-opaque-sort-keys-carrying-no-identity.md); implement it, do not redecide it.**
 Keyset over `(created_at, id)` descending (§Req 23). The ADR settles all three questions this
@@ -76,12 +108,19 @@ The consequence for this slice: **the read signatures page `ledger_entries` alon
 correlated subquery. `(account_id, created_at, id)` serves a scoped history; `(created_at, id)`
 serves the unscoped admin listing. The cursor encodes that sort key and nothing else.
 
-## The `reason` vocabulary — SETTLED, do not reopen
+## The `reason` and `direction` vocabularies — SETTLED, do not reopen
 
 `SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`. **There is no `Reason` enum in the proto** —
 `reason` is a plain `string` on the wire, and the closed set is enforced on the write path and by
 the migration's `CHECK`. FS-0003 §Requirements 5a and §Open questions 3 record both the set and
 why the proto carries no third copy of it.
+
+**`direction` is the same decision, and §API surface's proto block no longer declares an enum for
+it either.** `DEBIT` and `CREDIT` cross as plain `string`, enforced by the Go value type on the
+write path and by the migration's `direction_valid` `CHECK`. The reasoning is identical: the read
+path echoes what is stored, an enum forces the handler to map a stored string onto a declared
+value, and a value the proto does not declare becomes the zero value — reporting `UNSPECIFIED`
+for a row that plainly says `CREDIT`.
 
 Only `SETTLE_AUCTION` has a caller today. The other three are **forward-declared on purpose** —
 building the deposit/withdraw/transfer *verbs* is out of scope, but **recording their effects
@@ -96,15 +135,23 @@ did), and it does not fail on a value it has not heard of.
 - [ ] `ledger.pb.go` and `ledger_grpc.pb.go` regenerate cleanly; `git diff` shows only
       regeneration output, no hand edits
 - [ ] The transaction response nests `legs[]`; the listing response is flat (§Req 22)
+- [ ] `Entry` carries `id` — without it the cursor's `(created_at, id)` has no tiebreaker to read
+- [ ] `account_id_target` is declared `optional`, so "unset" and "empty string" are distinguishable
+      on the wire (§Req 25)
+- [ ] `ListEntriesResponse` paginates through `shared.v1.PageInfo`, and an exhausted page carries
+      an empty `next_cursor` rather than a field the proto cannot mark absent
 - [ ] No read method on any interface returns a total, sum, count, or balance (§Req 20)
+- [ ] No read hangs off the repository — the two read interfaces are declared by the gRPC handler
+      and satisfied by query objects that return DTOs
 - [ ] The cursor is base64url of `created_at|id` and encodes nothing else — asserted, including
       that no identity appears in it (ADR-0012)
 - [ ] Malformed cursor and past-the-end cursor are distinguished: `422` vs an empty page with
       `next_cursor` absent
 - [ ] No port or repository signature takes an encoded cursor string
 - [ ] The keyset predicate's shape is readable from the repository signature alone
-- [ ] `reason` is a plain `string` field in the proto — no `Reason` enum is declared, and the
-      legal set lives on the write path and in the migration's `CHECK`
+- [ ] `reason` and `direction` are plain `string` fields in the proto — neither a `Reason` enum
+      nor a `Direction` enum is declared, and both legal sets live on the write path and in the
+      migration's `CHECK`s
 - [ ] `go build ./...` succeeds (interfaces compile; no implementations required)
 
 ## Blocked By

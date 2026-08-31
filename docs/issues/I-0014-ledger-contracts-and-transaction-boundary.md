@@ -1,6 +1,6 @@
 ---
 id: I-0014
-status: open
+status: done
 implements: FS-0003
 blocked_by: []
 labels: []
@@ -25,21 +25,43 @@ carries read RPCs only, authored in I-0023.
 The field tables in §API surface survived the transport change intact and are still the spec:
 `transaction_id`, `reason`, `reference_id`, `currency`, `legs[]` on the input; `account_id`,
 `direction`, `amount` per leg. `currency` sits on the **transaction, not the leg** — one currency
-per transaction is structural rather than validated (§Req 8). `Direction` and `Reason` are Go
-value types; `ReferenceType` was cut from the feature entirely and `reference_id` carries the
-originating event unaided.
+per transaction is structural rather than validated (§Req 8). The ids are `uuid.UUID`, not
+`string`: identical on the wire via `MarshalText`, while a malformed id fails at unmarshal rather
+than travelling inward. `reason` and `direction` cross as plain `string` and are converted to
+their string-backed Go value types on entry, which is where the closed sets are enforced;
+`ReferenceType` was cut from the feature entirely and `reference_id` carries the originating
+event unaided. **The response is one field, `applied`** — `transaction_id` is caller-minted and
+already held, and `recorded_at` would cost a read-back after `ON CONFLICT DO NOTHING` on the one
+branch built to be cheap.
 
-> **These types are an ungated cross-service contract** (ADR-0011, accepted cost). Nothing fails
-> a PR that renames a field — no proto, no `buf`, no OpenAPI. The break surfaces at runtime as a
+**These types live in a shared package under `common/`**, imported by both the calling service
+and ledger-service. Not a preference: the calling workflow must import them to invoke the
+activity, and Go's `internal/` rule makes anything under `ledger-service/internal/` unimportable
+from another service. There is no layout in which they live inside the service. The package is
+the ledger's Published Language for the write path — the sibling of `ledger.proto` for the read
+path, which is why it sits beside the proto rather than in a `utils` or `constants` bucket.
+**The activity's registered name is a constant in that same package**, referenced by both the
+registering service and the scheduling workflow, so a typo is a compile error rather than a
+runtime routing failure.
+
+> **These types are an ungated cross-service contract** (ADR-0011, accepted cost). The shared
+> package turns a field rename into a compile error on both sides, which is worth having — but it
+> is **not a gate**: no proto, no `buf`, no OpenAPI, and nothing fails a PR. Deploy skew still
+> carries the old shape on in-flight workflows, where the break surfaces at runtime as a
 > deserialization error inside a workflow already past its pivot. Name them as if there is no
 > safety net, because there is not one.
 
 `CreateLedger` and `GetLedger` are still deleted (§Req 18) — both are marked `SCAFFOLD` and have
 no callers. Do not run proto generation here.
 
-**2. Repository + service interfaces.** The repository exposes **insert and read only**. There
-is no update method and no delete method — enforced by absence, not convention (§Req 9,
-ADR-0007).
+**2. The repository interface — one method.** The repository exposes **exactly one method,
+`Append`** (§Req 9, ADR-0007). No update, no delete, and **no read** — enforced by absence, not
+convention. A repository provides access to aggregate roots; a flat entry row is not an aggregate
+and enforces no invariant, so serving one from a repository method misuses the pattern's name.
+Reads are query objects and belong to I-0023: they hold `*sqlx.DB` directly, return DTOs, bypass
+the domain, and their interfaces are declared consumer-side by the gRPC handler. An insert-only
+interface carrying a single method is a harder statement than "insert and read", and it mirrors
+wallet-service — the reviewed reference implementation, which has no read port at all.
 
 **3. The transaction-boundary pattern — the load-bearing decision of this slice.**
 All legs of one `AppendLedgerTx` call commit together or not at all (§Req 7–8), and the pattern for
@@ -58,7 +80,12 @@ files. Includes `DROP TABLE ledgers` (§Req 17).
 `UNBALANCED_TRANSACTION`, `VALIDATION_FAILED`, and the transient/internal cases. **The set now
 feeds two consumers, not one:** the write path classifies each sentinel retryable or
 non-retryable on the activity's retry policy (I-0018), and the read path maps its own errors to
-gRPC codes (I-0021). A sentinel that is neither classified nor mapped is a gap in one of them. Existing sentinels in
+gRPC codes (I-0021). **The write-path classifier is `ledger.IsNonRetryable`, declared beside the
+sentinels in `domain/ledger/errors.go`** — negative form, because Temporal declares a
+non-retryable set and retries everything else, so the explicit case must be the one that stops a
+retry (`ledger-service/CONTEXT.md` §Structural vocabulary). It is **not** wallet-service's
+`IsRetriable` under a new spelling; the polarity is the point. A sentinel that is neither
+classified nor mapped is a gap in one of them. Existing sentinels in
 `internal/ledger/domain/ledger/errors.go` and `commonconstants` are the starting point;
 `ErrConcurrentModification` goes away with OCC (§Req 17, ADR-0007).
 
@@ -94,12 +121,18 @@ migration currently has neither.
 
 - [ ] The activity's input/output Go types match §API surface's field tables
 - [ ] `AppendLedgerTx` appears in no `.proto` file; `CreateLedger` / `GetLedger` are gone
-- [ ] Repository interface exposes no update and no delete method
+- [ ] The repository interface declares exactly one method, `Append` — no update, no delete, and
+      no read
+- [ ] The activity's input/output types and the registered-name constant live in a shared package
+      under `common/`, importable by a service that is not ledger-service
+- [ ] `AppendLedgerTxResponse` carries `applied` and nothing else
 - [ ] The transaction-boundary pattern is readable from the interface signature alone, with no
       `*sql.Tx` in any service-layer signature
 - [ ] Migration DDL decided, including `DROP TABLE ledgers`
 - [ ] Sentinel error set covers every row of FS-0003 §API surface's error table, and each row is
       marked retryable or non-retryable
+- [ ] The retryable/non-retryable classification is expressed as `ledger.IsNonRetryable` beside the
+      sentinels, so I-0018's retry policy has one place to read it from
 - [ ] The migration matches FS-0003 §Data model — `created_at` on `ledger_entries`, the
       `(account_id, created_at, id)` and `(created_at, id)` indexes present
 - [ ] No unique constraint exists beyond the two primary keys

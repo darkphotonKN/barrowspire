@@ -4,6 +4,7 @@ import (
 	"context"
 
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
+	"github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/dto"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -21,7 +22,7 @@ func NewListEntriesQuery(db *sqlx.DB) *ListEntriesQuery {
 	}
 }
 
-func (q *ListEntriesQuery) Execute(ctx context.Context, accountIDTarget *uuid.UUID, cursor *string, limit int) (*dto.ListEntriesDetails, error) {
+func (q *ListEntriesQuery) Execute(ctx context.Context, accountIDTarget *uuid.UUID, cursor *cursor.Cursor, limit int) (*dto.ListEntriesDetails, error) {
 
 	// TODO: WIP, leaving shell for now, satisfying interfaces and dto types first
 	query := `

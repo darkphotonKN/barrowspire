@@ -3,7 +3,7 @@ id: I-0017
 status: open
 implements: FS-0003
 blocked_by: [I-0014]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-0003 slice 4: LedgerEntry struct, sqlx tags, scan targets"
 ---
 Implements FS-0003 §Data model, §Requirements 6, 8, 15

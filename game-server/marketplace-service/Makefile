@@ -38,6 +38,10 @@ migrate-down:
 migrate-status:
 	@migrate -path ./migrations -database "$(DB_STRING)" version
 
+migrate-reset:
+	@migrate -path ./migrations -database "$(DB_STRING)" drop -f
+	@migrate -path ./migrations -database "$(DB_STRING)" up
+
 migrate-create:
 	@if [ -z "$(NAME)" ]; then \
 		echo "Usage: make migrate-create NAME=<migration_name>"; \
@@ -45,4 +49,4 @@ migrate-create:
 	fi; \
 	migrate create -ext sql -dir ./migrations -seq $(NAME)
 
-.PHONY: build run dev test test-unit migrate-up migrate-down migrate-status migrate-create
+.PHONY: build run dev test test-unit migrate-up migrate-down migrate-status migrate-reset migrate-create
