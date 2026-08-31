@@ -72,7 +72,7 @@ migrate-down-to:
 	migrate -path ./migrations -database "$(DB_STRING)" down $(VERSION)
 
 migrate-reset:
-	@migrate -path ./migrations -database "$(DB_STRING)" down
+	@migrate -path ./migrations -database "$(DB_STRING)" drop -f
 	@migrate -path ./migrations -database "$(DB_STRING)" up
 
 migrate-create:

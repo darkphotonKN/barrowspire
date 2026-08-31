@@ -54,7 +54,8 @@ migrate-fix:
 
 # drop ALL table
 migrate-reset:
-	@migrate -path migrations -database "$(DB_STRING)" drop
+	@migrate -path migrations -database "$(DB_STRING)" drop -f
+	@migrate -path migrations -database "$(DB_STRING)" up
 
 # Create new migration files
 migrate-create:

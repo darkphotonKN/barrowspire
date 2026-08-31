@@ -1,4 +1,4 @@
-.PHONY: dev build test migrate-up migrate-down migrate-create
+.PHONY: dev build test migrate-up migrate-down migrate-reset migrate-create
 
 dev:
 	@air
@@ -17,6 +17,10 @@ migrate-up:
 
 migrate-down:
 	@migrate -path ./migrations -database "postgres://user:password@localhost:5111/barrowspire_payment_service_db?sslmode=disable" down
+
+migrate-reset:
+	@migrate -path ./migrations -database "postgres://user:password@localhost:5111/barrowspire_payment_service_db?sslmode=disable" drop -f
+	@migrate -path ./migrations -database "postgres://user:password@localhost:5111/barrowspire_payment_service_db?sslmode=disable" up
 
 migrate-create:
 	migrate create -ext sql -dir ./migrations -seq $(NAME)
