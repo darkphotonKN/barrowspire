@@ -79,6 +79,30 @@ Conform to `CONTEXT.md`: delvers, the Spire, the barrow-deep.
 - [ ] The game renders and plays — walls, doors, containers, enemies and HUD all still legible
 - [ ] `npm run build`, `npm run lint` and `npm test` pass
 
+## Known remainder — the world surface was NOT recoloured
+
+Closed against its acceptance criteria, all of which were met literally. But the criteria counted
+**hex sites**, and the two functions that paint most of the frame do not use hex:
+
+- `createHullTexture` (walls) and `createMetalFloorTexture` (floor) build every fill from
+  computed `rgb()` templates and raw `rgba()` triplets — `rgb(${r}, ${gg}, ${b})`,
+  `rgba(110, 110, 120, …)`, `rgba(96, 98, 106, …)`.
+- The hex sweep could not see them, so **the stone is exactly as it was.** The `+6` on blue in the
+  walls and `+4` in the floor are what make it read cold.
+- Measured effect of the whole recolour: 84 distinct colours → 23. Real, but concentrated in HUD,
+  sprites, menu chrome and buttons — not the world.
+
+Two things this documents, beyond the bug:
+
+1. **`createHullTexture` was already a dungeon stone wall** — brick courses, mortar, moss, cracks —
+   from an earlier theming pass that left the sci-fi name. FS-0005's audit assumed the canvas was
+   unstyled; it was partly done already, which is why this pass reads as a small change.
+2. **This is the same blind spot recorded in I-0040** ("hex-free colour is still colour"). It was
+   identified as a class of defect and then not applied to the one surface that fills the screen.
+
+Deriving those procedural values from `palette.wall` / `palette.floor` is the honest remainder.
+Not scheduled — Kranti accepted the current state (2026-08-31).
+
 ## Blocked By
 
 I-0037 — consumes the palette module and the font constant.
