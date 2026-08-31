@@ -1,6 +1,6 @@
 ---
 id: I-0039
-status: open
+status: done
 implements: FS-0005
 blocked_by: [I-0038]
 labels: [blocked]
@@ -56,6 +56,11 @@ and say so in the PR. An unreadable hostile is a bug; a slightly less moody scre
 - [ ] `current_player === null` (escaped or died) resolves deliberately — fade or fall back to the
       static vignette, never track a stale position or throw
 - [ ] `npm run build`, `npm run lint` and `npm test` pass
+
+## Outcome
+
+Verified by Kranti in a running game (2026-08-31). The vignette's outer alpha stands at 0.86;
+readability and feel were accepted as-is, so no further concession was needed.
 
 ## Blocked By
 
