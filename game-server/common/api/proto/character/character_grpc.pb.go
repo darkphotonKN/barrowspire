@@ -20,7 +20,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CharacterService_ListCharacters_FullMethodName = "/items.CharacterService/ListCharacters"
+	CharacterService_ListCharacters_FullMethodName  = "/items.CharacterService/ListCharacters"
+	CharacterService_CreateCharacter_FullMethodName = "/items.CharacterService/CreateCharacter"
 )
 
 // CharacterServiceClient is the client API for CharacterService service.
@@ -29,6 +30,7 @@ const (
 type CharacterServiceClient interface {
 	// general
 	ListCharacters(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Character, error)
+	CreateCharacter(ctx context.Context, in *CreateCharacterRequest, opts ...grpc.CallOption) (*CreateCharacterResponse, error)
 }
 
 type characterServiceClient struct {
@@ -49,12 +51,23 @@ func (c *characterServiceClient) ListCharacters(ctx context.Context, in *emptypb
 	return out, nil
 }
 
+func (c *characterServiceClient) CreateCharacter(ctx context.Context, in *CreateCharacterRequest, opts ...grpc.CallOption) (*CreateCharacterResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateCharacterResponse)
+	err := c.cc.Invoke(ctx, CharacterService_CreateCharacter_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CharacterServiceServer is the server API for CharacterService service.
 // All implementations must embed UnimplementedCharacterServiceServer
 // for forward compatibility.
 type CharacterServiceServer interface {
 	// general
 	ListCharacters(context.Context, *emptypb.Empty) (*Character, error)
+	CreateCharacter(context.Context, *CreateCharacterRequest) (*CreateCharacterResponse, error)
 	mustEmbedUnimplementedCharacterServiceServer()
 }
 
@@ -67,6 +80,9 @@ type UnimplementedCharacterServiceServer struct{}
 
 func (UnimplementedCharacterServiceServer) ListCharacters(context.Context, *emptypb.Empty) (*Character, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListCharacters not implemented")
+}
+func (UnimplementedCharacterServiceServer) CreateCharacter(context.Context, *CreateCharacterRequest) (*CreateCharacterResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateCharacter not implemented")
 }
 func (UnimplementedCharacterServiceServer) mustEmbedUnimplementedCharacterServiceServer() {}
 func (UnimplementedCharacterServiceServer) testEmbeddedByValue()                          {}
@@ -107,6 +123,24 @@ func _CharacterService_ListCharacters_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CharacterService_CreateCharacter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateCharacterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CharacterServiceServer).CreateCharacter(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CharacterService_CreateCharacter_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CharacterServiceServer).CreateCharacter(ctx, req.(*CreateCharacterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CharacterService_ServiceDesc is the grpc.ServiceDesc for CharacterService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -117,6 +151,10 @@ var CharacterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListCharacters",
 			Handler:    _CharacterService_ListCharacters_Handler,
+		},
+		{
+			MethodName: "CreateCharacter",
+			Handler:    _CharacterService_CreateCharacter_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

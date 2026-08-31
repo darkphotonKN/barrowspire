@@ -110,6 +110,94 @@ func (x *GetCharacterRequest) GetId() string {
 	return ""
 }
 
+type CreateCharacterRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Class         string                 `protobuf:"bytes,2,opt,name=class,proto3" json:"class,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateCharacterRequest) Reset() {
+	*x = CreateCharacterRequest{}
+	mi := &file_api_proto_character_character_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCharacterRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCharacterRequest) ProtoMessage() {}
+
+func (x *CreateCharacterRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_character_character_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCharacterRequest.ProtoReflect.Descriptor instead.
+func (*CreateCharacterRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_character_character_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CreateCharacterRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateCharacterRequest) GetClass() string {
+	if x != nil {
+		return x.Class
+	}
+	return ""
+}
+
+type CreateCharacterResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateCharacterResponse) Reset() {
+	*x = CreateCharacterResponse{}
+	mi := &file_api_proto_character_character_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCharacterResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCharacterResponse) ProtoMessage() {}
+
+func (x *CreateCharacterResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_character_character_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCharacterResponse.ProtoReflect.Descriptor instead.
+func (*CreateCharacterResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_character_character_proto_rawDescGZIP(), []int{3}
+}
+
 var File_api_proto_character_character_proto protoreflect.FileDescriptor
 
 const file_api_proto_character_character_proto_rawDesc = "" +
@@ -118,9 +206,14 @@ const file_api_proto_character_character_proto_rawDesc = "" +
 	"\tCharacter\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"%\n" +
 	"\x13GetCharacterRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id2N\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"B\n" +
+	"\x16CreateCharacterRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05class\x18\x02 \x01(\tR\x05class\"\x19\n" +
+	"\x17CreateCharacterResponse2\xa0\x01\n" +
 	"\x10CharacterService\x12:\n" +
-	"\x0eListCharacters\x12\x16.google.protobuf.Empty\x1a\x10.items.CharacterBCZAgithub.com/darkphotonKN/barrowspire-server/common/api/proto/itemsb\x06proto3"
+	"\x0eListCharacters\x12\x16.google.protobuf.Empty\x1a\x10.items.Character\x12P\n" +
+	"\x0fCreateCharacter\x12\x1d.items.CreateCharacterRequest\x1a\x1e.items.CreateCharacterResponseBCZAgithub.com/darkphotonKN/barrowspire-server/common/api/proto/itemsb\x06proto3"
 
 var (
 	file_api_proto_character_character_proto_rawDescOnce sync.Once
@@ -134,17 +227,21 @@ func file_api_proto_character_character_proto_rawDescGZIP() []byte {
 	return file_api_proto_character_character_proto_rawDescData
 }
 
-var file_api_proto_character_character_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_api_proto_character_character_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_api_proto_character_character_proto_goTypes = []any{
-	(*Character)(nil),           // 0: items.Character
-	(*GetCharacterRequest)(nil), // 1: items.GetCharacterRequest
-	(*emptypb.Empty)(nil),       // 2: google.protobuf.Empty
+	(*Character)(nil),               // 0: items.Character
+	(*GetCharacterRequest)(nil),     // 1: items.GetCharacterRequest
+	(*CreateCharacterRequest)(nil),  // 2: items.CreateCharacterRequest
+	(*CreateCharacterResponse)(nil), // 3: items.CreateCharacterResponse
+	(*emptypb.Empty)(nil),           // 4: google.protobuf.Empty
 }
 var file_api_proto_character_character_proto_depIdxs = []int32{
-	2, // 0: items.CharacterService.ListCharacters:input_type -> google.protobuf.Empty
-	0, // 1: items.CharacterService.ListCharacters:output_type -> items.Character
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	4, // 0: items.CharacterService.ListCharacters:input_type -> google.protobuf.Empty
+	2, // 1: items.CharacterService.CreateCharacter:input_type -> items.CreateCharacterRequest
+	0, // 2: items.CharacterService.ListCharacters:output_type -> items.Character
+	3, // 3: items.CharacterService.CreateCharacter:output_type -> items.CreateCharacterResponse
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -161,7 +258,7 @@ func file_api_proto_character_character_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_character_character_proto_rawDesc), len(file_api_proto_character_character_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

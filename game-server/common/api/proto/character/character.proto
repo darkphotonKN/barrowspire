@@ -6,6 +6,7 @@ option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto
 service CharacterService {
   // general
   rpc ListCharacters(google.protobuf.Empty) returns (Character);
+  rpc CreateCharacter(CreateCharacterRequest) returns (CreateCharacterResponse);
 }
 
 message Character {
@@ -15,3 +16,10 @@ message Character {
 message GetCharacterRequest {
   string id = 1;
 }
+
+message CreateCharacterRequest {
+  string name = 1; 
+  string class = 2;
+}
+
+message CreateCharacterResponse {}
