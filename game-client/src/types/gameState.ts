@@ -21,6 +21,7 @@ export interface PlayerState {
   id: UUID; // Player's permanent user ID (from signup)
   entity_id: UUID; // Temporary entity ID in game session
   username: string;
+  class: string;
   position: Position;
   direction: PlayerDirection;
   inventory?: ItemState[]; // 玩家背包

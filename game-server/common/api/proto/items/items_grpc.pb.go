@@ -8,6 +8,7 @@ package items
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -366,15 +367,6 @@ func (UnimplementedItemsServiceServer) ListItemInstances(context.Context, *ListI
 }
 func (UnimplementedItemsServiceServer) UpdateLoadout(context.Context, *UpdateLoadoutRequest) (*UpdateLoadoutResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateLoadout not implemented")
-}
-func (UnimplementedItemsServiceServer) ReserveItem(context.Context, *ReserveItemRequest) (*ReserveItemResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ReserveItem not implemented")
-}
-func (UnimplementedItemsServiceServer) ListStaleReserved(context.Context, *ListStaleReservedRequest) (*ListStaleReservedResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListStaleReserved not implemented")
-}
-func (UnimplementedItemsServiceServer) CancelReservation(context.Context, *CancelReservationRequest) (*CancelReservationResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CancelReservation not implemented")
 }
 func (UnimplementedItemsServiceServer) mustEmbedUnimplementedItemsServiceServer() {}
 func (UnimplementedItemsServiceServer) testEmbeddedByValue()                      {}

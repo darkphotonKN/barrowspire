@@ -7,13 +7,14 @@
 package items
 
 import (
+	reflect "reflect"
+	sync "sync"
+	unsafe "unsafe"
+
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	reflect "reflect"
-	sync "sync"
-	unsafe "unsafe"
 )
 
 const (
@@ -3289,60 +3290,7 @@ const file_api_proto_items_items_proto_rawDesc = "" +
 	"\x04slot\x18\x02 \x01(\tR\x04slot\x12(\n" +
 	"\x10item_instance_id\x18\x03 \x01(\tR\x0eitemInstanceId\"1\n" +
 	"\x15UpdateLoadoutResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x83\x01\n" +
-	"\x12ReserveItemRequest\x12\x17\n" +
-	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x1f\n" +
-	"\vstart_price\x18\x02 \x01(\x03R\n" +
-	"startPrice\x123\n" +
-	"\aends_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x06endsAt\"\xfd\x06\n" +
-	"\x13ReserveItemResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
-	"\vtemplate_id\x18\x02 \x01(\tR\n" +
-	"templateId\x12&\n" +
-	"\x0fowner_member_id\x18\x03 \x01(\tR\rownerMemberId\x12\x16\n" +
-	"\x06source\x18\x04 \x01(\tR\x06source\x12\x1b\n" +
-	"\titem_type\x18\x05 \x01(\tR\bitemType\x12\x12\n" +
-	"\x04name\x18\x06 \x01(\tR\x04name\x12 \n" +
-	"\trarity_id\x18\a \x01(\tH\x00R\brarityId\x88\x01\x01\x12&\n" +
-	"\fattack_power\x18\b \x01(\x05H\x01R\vattackPower\x88\x01\x01\x12(\n" +
-	"\rcritical_rate\x18\t \x01(\x01H\x02R\fcriticalRate\x88\x01\x01\x12$\n" +
-	"\vweapon_type\x18\n" +
-	" \x01(\tH\x03R\n" +
-	"weaponType\x88\x01\x01\x12*\n" +
-	"\x0edefense_rating\x18\v \x01(\x05H\x04R\rdefenseRating\x88\x01\x01\x12.\n" +
-	"\x10magic_resistance\x18\f \x01(\x05H\x05R\x0fmagicResistance\x88\x01\x01\x12\"\n" +
-	"\n" +
-	"armor_slot\x18\r \x01(\tH\x06R\tarmorSlot\x88\x01\x01\x12*\n" +
-	"\x0ehealing_amount\x18\x0e \x01(\x05H\aR\rhealingAmount\x88\x01\x01\x12$\n" +
-	"\vmana_amount\x18\x0f \x01(\x05H\bR\n" +
-	"manaAmount\x88\x01\x01\x12(\n" +
-	"\rbuff_duration\x18\x10 \x01(\x05H\tR\fbuffDuration\x88\x01\x01\x12#\n" +
-	"\n" +
-	"durability\x18\x11 \x01(\x05H\n" +
-	"R\n" +
-	"durability\x88\x01\x01\x12%\n" +
-	"\vdescription\x18\x12 \x01(\tH\vR\vdescription\x88\x01\x01\x12\x16\n" +
-	"\x06status\x18\x13 \x01(\tR\x06statusB\f\n" +
-	"\n" +
-	"_rarity_idB\x0f\n" +
-	"\r_attack_powerB\x10\n" +
-	"\x0e_critical_rateB\x0e\n" +
-	"\f_weapon_typeB\x11\n" +
-	"\x0f_defense_ratingB\x13\n" +
-	"\x11_magic_resistanceB\r\n" +
-	"\v_armor_slotB\x11\n" +
-	"\x0f_healing_amountB\x0e\n" +
-	"\f_mana_amountB\x10\n" +
-	"\x0e_buff_durationB\r\n" +
-	"\v_durabilityB\x0e\n" +
-	"\f_description\"^\n" +
-	"\x18ListStaleReservedRequest\x12B\n" +
-	"\x0ereservedBefore\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x0ereservedBefore\"6\n" +
-	"\x19ListStaleReservedResponse\x12\x19\n" +
-	"\bitem_ids\x18\x01 \x03(\tR\aitemIds\"3\n" +
-	"\x18CancelReservationRequest\x12\x17\n" +
-	"\aitem_id\x18\x01 \x01(\tR\x06itemId\"\x1b\n" +
-	"\x19CancelReservationResponse2\xee\v\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess2\xf8\t\n" +
 	"\fItemsService\x12M\n" +
 	"\x11ListItemTemplates\x12\x16.google.protobuf.Empty\x1a .items.ListItemTemplatesResponse\x12E\n" +
 	"\rListItemTypes\x12\x16.google.protobuf.Empty\x1a\x1c.items.ListItemTypesResponse\x12K\n" +
@@ -3360,10 +3308,7 @@ const file_api_proto_items_items_proto_rawDesc = "" +
 	"GetLoadout\x12\x18.items.GetLoadoutRequest\x1a\x19.items.GetLoadoutResponse\x12\\\n" +
 	"\x13GetLoadoutWithItems\x12!.items.GetLoadoutWithItemsRequest\x1a\".items.GetLoadoutWithItemsResponse\x12V\n" +
 	"\x11ListItemInstances\x12\x1f.items.ListItemInstancesRequest\x1a .items.ListItemInstancesResponse\x12J\n" +
-	"\rUpdateLoadout\x12\x1b.items.UpdateLoadoutRequest\x1a\x1c.items.UpdateLoadoutResponse\x12D\n" +
-	"\vReserveItem\x12\x19.items.ReserveItemRequest\x1a\x1a.items.ReserveItemResponse\x12V\n" +
-	"\x11ListStaleReserved\x12\x1f.items.ListStaleReservedRequest\x1a .items.ListStaleReservedResponse\x12V\n" +
-	"\x11CancelReservation\x12\x1f.items.CancelReservationRequest\x1a .items.CancelReservationResponseBCZAgithub.com/darkphotonKN/barrowspire-server/common/api/proto/itemsb\x06proto3"
+	"\rUpdateLoadout\x12\x1b.items.UpdateLoadoutRequest\x1a\x1c.items.UpdateLoadoutResponseBCZAgithub.com/darkphotonKN/barrowspire-server/common/api/proto/itemsb\x06proto3"
 
 var (
 	file_api_proto_items_items_proto_rawDescOnce sync.Once

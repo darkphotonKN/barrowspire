@@ -12,12 +12,14 @@ type Player struct {
 	Username             string
 	CurrentGameSessionId uuid.UUID
 	ConnectState         *constants.ConnectState
+	Class                string
 }
 
 type PlayerState struct {
 	ID        uuid.UUID        `json:"id"`
 	EntityID  uuid.UUID        `json:"entity_id"`
 	Username  string           `json:"username"`
+	Class     string           `json:"class"`
 	Position  *Position        `json:"position"`
 	Direction *PlayerDirection `json:"direction"`
 	Inventory []*ItemState     `json:"inventory"`

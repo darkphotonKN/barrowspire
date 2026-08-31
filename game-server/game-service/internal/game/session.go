@@ -490,7 +490,7 @@ var Classes = map[string]ClassConfig{
 	},
 }
 
-func (s *Session) AddPlayer(playerID uuid.UUID, username string) uuid.UUID {
+func (s *Session) AddPlayer(playerID uuid.UUID, username string, className string) uuid.UUID {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -554,12 +554,19 @@ func (s *Session) AddPlayer(playerID uuid.UUID, username string) uuid.UUID {
 		}
 	}
 
+	classCfg, ok := Classes[className]
+	if !ok {
+		classCfg = Classes["mage"]
+		className = "mage"
+	}
+
 	PlayerConfig := PlayerConfig{
 		MemberID:     playerID,
 		Username:     username,
 		X:            constants.PlayerRadius + rand.Float64()*(constants.MapWidth-2*constants.PlayerRadius),
 		Y:            constants.PlayerRadius + rand.Float64()*(constants.MapHeight-2*constants.PlayerRadius),
-		Class:        Classes["mage"],
+		Class:        classCfg,
+		ClassName:    className,
 		ItemName:     "Health Potion",
 		ItemQuantity: 3,
 

@@ -32,6 +32,7 @@ export interface ChatPayload {
 
 export interface FindGamePayload {
   playerId: string;
+  class: string;
 }
 
 export interface InteractPayload {
