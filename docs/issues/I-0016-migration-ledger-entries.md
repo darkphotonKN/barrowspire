@@ -1,6 +1,6 @@
 ---
 id: I-0016
-status: open
+status: done
 implements: FS-0003
 blocked_by: [I-0014]
 labels: [ready-for-agent]
@@ -9,6 +9,11 @@ title: "FS-0003 slice 3: migration files — create ledger_entries, drop ledgers
 Implements FS-0003 §Data model, §Requirements 6, 9-10, 17
 
 **Author: agent**
+
+> **CLOSED — satisfied by I-0014, not by a separate slice.** I-0014 landed the DDL directly as
+> `migrations/000001_create_ledger_transactions_and_entries.{up,down}.sql` and deleted the
+> `000001_create_ledgers_table.*` pair it was going to supersede. The numbering below assumed
+> the old migration would survive alongside a new `000002_*`; it did not. No work remains.
 
 ## What to Build
 

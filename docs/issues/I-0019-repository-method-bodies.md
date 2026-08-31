@@ -8,7 +8,15 @@ title: "FS-0003 slice 6: repository method bodies — atomic multi-leg append, i
 ---
 Implements FS-0003 §Requirements 9-13, §Data model
 
-**Author: human** — do NOT hand this to `/develop`.
+**Author: agent**
+
+> **Reassigned from human to agent.** The banner was set before I-0014 landed. I-0014 has since
+> decided the DDL, the transaction-boundary pattern, and the sentinel set, and expressed all
+> three in the interface — and `ExecTx` has a working reference implementation in
+> `wallet-service`. What is left is writing bodies against a signature that already encodes every
+> decision, which is the mechanical work this workflow delegates. The ordering constraint below
+> still binds: the signature is the spec, and an awkward signature is a finding to raise, never
+> to work around.
 
 ## What to Build
 

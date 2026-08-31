@@ -3,7 +3,7 @@ id: I-0021
 status: open
 implements: FS-0003
 blocked_by: [I-0014, I-0015]
-labels: [blocked]
+labels: []
 title: "FS-0003 slice 8: read-path error mapping at the gRPC boundary — sentinels to status codes"
 ---
 Implements FS-0003 §API surface
@@ -33,6 +33,14 @@ read-path rows:
 | a member passes `account_id` on `listEntries` (admin-only param) | `PermissionDenied · FORBIDDEN` |
 | transaction id does not exist | `NotFound · NOT_FOUND` |
 | malformed UUID, bad `limit`, malformed cursor | `InvalidArgument · VALIDATION_FAILED` |
+
+> **The cursor row names sentinels from a different package — this is the easy 500.** Cursor
+> decoding lives in `common/utils/cursor` and returns `cursor.ErrInvalidCursor`,
+> `cursor.ErrInvalidDate`, and `cursor.ErrInvalidUUID`. That last one is **not** the same
+> sentinel as `ledger.ErrInvalidUUID`, which the retired scaffold's arm matched. An arm written
+> against only the ledger sentinels compiles, reads correctly, and drops every malformed cursor
+> into the `Internal` default — a `500` where the table says `422`. Match the `cursor` package's
+> sentinels explicitly, and assert each one in a test.
 | database unavailable | `Unavailable · TRANSIENT` |
 | anything else | `Internal · INTERNAL_ERROR` |
 

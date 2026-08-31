@@ -2,7 +2,7 @@
 id: I-0026
 status: open
 implements: FS-0003
-blocked_by: [I-0023, I-0024, I-0025]
+blocked_by: [I-0024, I-0025, I-0042]
 labels: [blocked]
 title: "FS-0003 slice 13: listEntries end-to-end — keyset pager, account scoping, authz matrix"
 ---
@@ -15,7 +15,12 @@ predicate and the authorization matrix.
 
 ## What to Build
 
-`GET /api/ledger/entries` — every layer, reusing the gateway scaffolding I-0025 created.
+`GET /api/ledger/entries` — the gateway surface, reusing the scaffolding I-0025 created.
+
+> **Narrowed: the flattened keyset query, the index proof, and the `ListEntries` gRPC arm moved
+> to I-0042.** Sort order and cursor encoding were already fixed by I-0023 and ADR-0012, which
+> makes the SQL mechanical. What remains here is the authorization matrix, the cursor decode at
+> the adapter, and the transport types — the parts that are decisions.
 
 **Transport types — names are decided, do not invent.** Per FS-0003 §API surface's
 transport-type table, in `api-gateway/internal/gateway/ledger`:
@@ -30,8 +35,10 @@ transport-type table, in `api-gateway/internal/gateway/ledger`:
 **The flattened row** (§Req 22) — leg fields joined with their parent's, per §API surface's
 `entries[]` table. Built by the query, not by re-nesting and flattening in Go.
 
-**The keyset pager** (§Req 23) — over `(created_at, id)` **descending, newest first**. Direction
-is contract, not preference: it decides which way the cursor's comparison runs.
+**The keyset pager** (§Req 23) is built in I-0042, over `(created_at, id)` **descending, newest
+first**. Direction is contract, not preference: it decides which way the cursor's comparison
+runs — and therefore which way *this* slice's adapter decodes into. What belongs here is the
+decode, not the predicate.
 
 > **`created_at` is on `ledger_entries`, and the predicate needs no join.** It is a
 > transaction-level fact **duplicated onto the leg deliberately** (FS-0003 §Data model), which is
@@ -100,9 +107,10 @@ it needs no count — offset paging's total is the exact thing that would smuggl
 
 ## Blocked By
 
-- I-0023 — the cursor encoding and the repository read signature
 - I-0024 — the gateway's ledger client
 - I-0025 — the `ledger` typed package, `guard`, `Protected`, and the claim plumbing
+- I-0042 — the flattened keyset query and the `ListEntries` gRPC arm this operation calls
+  (which in turn carries I-0023's cursor encoding and read signature)
 
 ## Spec Reference
 
