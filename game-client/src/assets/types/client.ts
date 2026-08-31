@@ -31,8 +31,12 @@ export interface ChatPayload {
 }
 
 export interface FindGamePayload {
-  playerId: string;
-  class: string;
+  playerId?: string;
+  class?: string;
+  className?: string;
+  characterName?: string;
+  username?: string;
+  cancel?: boolean;
 }
 
 export interface InteractPayload {

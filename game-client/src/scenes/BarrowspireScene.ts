@@ -106,6 +106,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // leg graphics for walking animation
   private playerLegs?: Phaser.GameObjects.Graphics;
+  private playerHpMpGraphics?: Phaser.GameObjects.Graphics;
+  private otherPlayersHpMpGraphics: Map<string, Phaser.GameObjects.Graphics> = new Map();
   /** The warm pool the delver carries. Built once; only ever repositioned. */
   private torchPool?: Phaser.GameObjects.Image;
   private otherPlayersLegs: Map<string, Phaser.GameObjects.Graphics> =
@@ -123,6 +125,10 @@ export class BarrowspireScene extends Phaser.Scene {
   private otherPlayersNameTexts: Map<string, Phaser.GameObjects.Text> =
     new Map();
   private hoveredPlayerId?: string; // survives game state rerenders
+
+  // HP change tracking for damage flash
+  private otherPlayersPrevHp: Map<string, number> = new Map();
+  private prevLocalPlayerHp?: number;
 
   // Controls
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -439,8 +445,17 @@ export class BarrowspireScene extends Phaser.Scene {
       );
     });
     redeployHit.on("pointerdown", () => {
-      const selectedClass = useGameStore.getState().selectedClass;
-      socketManager.sendMessage(ActionType.Find_Game, { playerId: "1", class: selectedClass });
+      const activeChar = useGameStore.getState().getActiveCharacter();
+      const chosenClass = (activeChar?.className || useGameStore.getState().selectedClass || "warrior").toLowerCase();
+      const chosenName = activeChar?.name || useGameStore.getState().selectedCharacterName || "Hero";
+
+      socketManager.sendMessage(ActionType.Find_Game, {
+        playerId: "1",
+        class: chosenClass,
+        className: chosenClass,
+        characterName: chosenName,
+        username: chosenName,
+      });
       this.scene.start("MainMenuScene");
     });
 
@@ -551,23 +566,6 @@ export class BarrowspireScene extends Phaser.Scene {
       shield: palette.ground,
       shieldTrim: palette.frame,
       ink: palette.ink,
-    };
-    const rivalKnightPalette: KnightPalette = {
-      helm: 0x3e4248,
-      helmShade: 0x292c30,
-      helmLight: 0x54585f,
-      plate: 0x2d3136,
-      plateShade: 0x1c1f23,
-      plateLight: 0x3d4248,
-      surcoat: 0x2b1c2b,
-      surcoatShade: 0x1b1c20,
-      visor: 0x5294e2,
-      visorGlow: 0x4ecca3,
-      sword: 0x5a5e65,
-      swordHilt: 0x4a4e55,
-      shield: 0x1b141c,
-      shieldTrim: 0x52555c,
-      ink: 0x0d0b0a,
     };
     const rivalKnightPalette: KnightPalette = {
       helm: 0x3e4248,
@@ -2825,7 +2823,11 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   private createPlayer(x: number, y: number, className?: string, username?: string): void {
-    this.playerTexturePrefix = "player_" + (className || "warrior");
+    const activeChar = useGameStore.getState().getActiveCharacter();
+    const effectiveClass = (activeChar?.className || className || useGameStore.getState().selectedClass || "warrior").toLowerCase();
+    const displayName = activeChar?.name || username || useGameStore.getState().selectedCharacterName || "Hero";
+
+    this.playerTexturePrefix = "player_" + effectiveClass;
     this.player = this.physics.add.sprite(x, y, this.facingTextureKey(this.playerTexturePrefix, "down"));
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(100);
@@ -2841,7 +2843,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.drawLegs(this.playerLegs, x, y, "down", 0, false, palette.hudLabel);
 
     // username label above player
-    this.playerNameText = this.add.text(x, y - 35, username || "You", {
+    this.playerNameText = this.add.text(x, y - 35, displayName, {
       fontSize: "11px",
       fontFamily: CANVAS_FONT.body,
       color: toCss(palette.frameBright),
@@ -3100,25 +3102,85 @@ export class BarrowspireScene extends Phaser.Scene {
     // Disable browser right-click menu for equipment panel context menus
     this.input.mouse?.disableContextMenu();
 
-    // 右鍵觸發：法師火球術技能 (Cast Fireball)
+    // 技能攻擊控制 (Left-Click Primary Attack 0 MP // Right-Click Special Skill 10 MP)
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      if (pointer.rightButtonDown() || pointer.button === 2) {
-        if (!this.player || !this.canCastSkill) return;
+      if (!this.player || !this.canCastSkill) return;
+      if (this.equipmentPanel?.isVisible()) return;
 
-        socketManager.sendMessage(ActionType.CastSkill, {
-          skill_id: "fireball",
-          target_x: pointer.worldX,
-          target_y: pointer.worldY,
-        });
+      const activeChar = useGameStore.getState().getActiveCharacter();
+      const currentClass = (activeChar?.className || useGameStore.getState().selectedClass || "warrior").toLowerCase();
 
-        this.playFireballCastEffect(
-          this.player.x,
-          this.player.y,
-          pointer.worldX,
-          pointer.worldY,
-        );
+      // 左鍵發射一般攻擊 (0 MP)
+      if (pointer.leftButtonDown() || pointer.button === 0) {
+        if (currentClass === "warrior") {
+          // 不管滑鼠在哪裡，通通觸發揮劍劈斬動畫！
+          this.playWarriorSlashEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+
+          // 計算角度與將打擊目標限制在距離 2 (64px) 以內
+          const dist = Phaser.Math.Distance.Between(
+            this.player.x,
+            this.player.y,
+            pointer.worldX,
+            pointer.worldY
+          );
+          const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+          const effectiveDist = Math.min(dist, 64);
+          const hitX = this.player.x + Math.cos(angle) * effectiveDist;
+          const hitY = this.player.y + Math.sin(angle) * effectiveDist;
+
+          socketManager.sendMessage(ActionType.CastSkill, {
+            skill_id: "slash",
+            target_x: hitX,
+            target_y: hitY,
+          });
+        } else if (currentClass === "archer") {
+          socketManager.sendMessage(ActionType.CastSkill, {
+            skill_id: "arrow",
+            target_x: pointer.worldX,
+            target_y: pointer.worldY,
+          });
+          this.playArrowShootEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+        } else {
+          socketManager.sendMessage(ActionType.CastSkill, {
+            skill_id: "fireball",
+            target_x: pointer.worldX,
+            target_y: pointer.worldY,
+          });
+          this.playFireballCastEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+        }
+
         this.canCastSkill = false;
-        this.time.delayedCall(500, () => {
+        this.time.delayedCall(250, () => {
+          this.canCastSkill = true;
+        });
+      }
+      // 右鍵觸發職業專屬 10 MP 技能
+      else if (pointer.rightButtonDown() || pointer.button === 2) {
+        if (currentClass === "warrior") {
+          socketManager.sendMessage(ActionType.CastSkill, {
+            skill_id: "dash",
+            target_x: pointer.worldX,
+            target_y: pointer.worldY,
+          });
+          this.playWarriorDashEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+        } else if (currentClass === "mage") {
+          socketManager.sendMessage(ActionType.CastSkill, {
+            skill_id: "triple_fireball",
+            target_x: pointer.worldX,
+            target_y: pointer.worldY,
+          });
+          this.playFireballCastEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+        } else if (currentClass === "archer") {
+          socketManager.sendMessage(ActionType.CastSkill, {
+            skill_id: "triple_arrow",
+            target_x: pointer.worldX,
+            target_y: pointer.worldY,
+          });
+          this.playArrowShootEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+        }
+
+        this.canCastSkill = false;
+        this.time.delayedCall(400, () => {
           this.canCastSkill = true;
         });
       }
@@ -3286,6 +3348,32 @@ export class BarrowspireScene extends Phaser.Scene {
       if (state.current_player.equipment) {
         this.syncEquipment(state.current_player.equipment);
       }
+
+      // 同步玩家頭頂 HP/MP 狀態條
+      if (!this.playerHpMpGraphics) {
+        this.playerHpMpGraphics = this.add.graphics();
+        this.playerHpMpGraphics.setDepth(103);
+      }
+      const curHp = state.current_player.current_health ?? (state.current_player.class === "warrior" ? 150 : 100);
+      const maxHp = state.current_player.max_health ?? (state.current_player.class === "warrior" ? 150 : 100);
+      const curMp = state.current_player.current_mana ?? 100;
+      const maxMp = state.current_player.max_mana ?? 100;
+      // 本身受傷變紅閃爍提示
+      if (this.prevLocalPlayerHp !== undefined && curHp < this.prevLocalPlayerHp) {
+        if (this.player) {
+          this.player.setTint(palette.damage);
+          this.time.delayedCall(200, () => {
+            if (this.player && this.player.active) {
+              this.player.clearTint();
+            }
+          });
+        }
+      }
+      this.prevLocalPlayerHp = curHp;
+
+      if (this.player && this.playerHpMpGraphics) {
+        this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, this.player.y, curHp, maxHp, curMp, maxMp);
+      }
     } else {
       // current_player is null — player has escaped
       if (this.player && this.player.visible) {
@@ -3336,36 +3424,61 @@ export class BarrowspireScene extends Phaser.Scene {
       let container = this.projectileSprites.get(p.entity_id);
 
       if (!container) {
-        // Create Fireball container
         container = this.add.container(p.position.x, p.position.y);
         container.setDepth(150);
 
-        // Fireball visual layers: outer glow, core, inner highlight
-        const outerGlow = this.add.circle(0, 0, 14, 0xff4500, 0.45);
-        const innerCore = this.add.circle(0, 0, 8, 0xffa500, 0.9);
-        const centerBright = this.add.circle(0, 0, 4, 0xffffff, 1.0);
+        const isArrow = p.projectile_type === "arrow";
 
-        container.add([outerGlow, innerCore, centerBright]);
+        if (isArrow) {
+          // Arrow pixel graphics: wood shaft, metallic arrowhead, cream fletching
+          const arrowG = this.add.graphics();
+          arrowG.fillStyle(0x8c6239, 1); // Shaft
+          arrowG.fillRect(-10, -1.5, 18, 3);
+          arrowG.fillStyle(0xd4d7dc, 1); // Metallic Tip
+          arrowG.fillTriangle(8, -4, 18, 0, 8, 4);
+          arrowG.fillStyle(0xf2ebd9, 1); // Feather Fletching
+          arrowG.fillTriangle(-10, -3.5, -4, 0, -10, 3.5);
 
-        // Pulsing animation for fireball core
-        this.tweens.add({
-          targets: innerCore,
-          scale: 1.25,
-          duration: 150,
-          yoyo: true,
-          repeat: -1,
-        });
+          container.add(arrowG);
+          (container as any).isArrowType = true;
+        } else {
+          // Fireball visual layers: outer glow, core, inner highlight
+          const outerGlow = this.add.circle(0, 0, 14, 0xff4500, 0.45);
+          const innerCore = this.add.circle(0, 0, 8, 0xffa500, 0.9);
+          const centerBright = this.add.circle(0, 0, 4, 0xffffff, 1.0);
+
+          container.add([outerGlow, innerCore, centerBright]);
+
+          // Pulsing animation for fireball core
+          this.tweens.add({
+            targets: innerCore,
+            scale: 1.25,
+            duration: 150,
+            yoyo: true,
+            repeat: -1,
+          });
+        }
 
         this.projectileSprites.set(p.entity_id, container);
       } else {
         container.setPosition(p.position.x, p.position.y);
+      }
+
+      // Rotate arrow to velocity angle
+      if (p.velocity && (p.velocity.vx !== 0 || p.velocity.vy !== 0)) {
+        const angle = Math.atan2(p.velocity.vy, p.velocity.vx);
+        container.setRotation(angle);
       }
     }
 
     // Remove inactive projectiles (hit target or max range)
     for (const [id, container] of this.projectileSprites.entries()) {
       if (!activeIds.has(id)) {
-        this.playFireballExplosion(container.x, container.y);
+        if ((container as any).isArrowType) {
+          this.playArrowHitEffect(container.x, container.y);
+        } else {
+          this.playFireballExplosion(container.x, container.y);
+        }
         container.destroy();
         this.projectileSprites.delete(id);
       }
@@ -3408,6 +3521,179 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
+  private playArrowShootEffect(
+    startX: number,
+    startY: number,
+    targetX: number,
+    targetY: number,
+  ): void {
+    const angle = Phaser.Math.Angle.Between(startX, startY, targetX, targetY);
+    const muzzleX = startX + Math.cos(angle) * 16;
+    const muzzleY = startY + Math.sin(angle) * 16;
+
+    // Bow string release puff
+    const puff = this.add.circle(muzzleX, muzzleY, 6, 0xd4a373, 0.7);
+    puff.setDepth(160);
+    this.tweens.add({
+      targets: puff,
+      scale: 1.6,
+      alpha: 0,
+      duration: 140,
+      onComplete: () => puff.destroy(),
+    });
+
+    // Arrow streak spark
+    const streak = this.add.graphics();
+    streak.lineStyle(2, 0xffffff, 0.8);
+    streak.lineBetween(
+      muzzleX,
+      muzzleY,
+      muzzleX + Math.cos(angle) * 20,
+      muzzleY + Math.sin(angle) * 20,
+    );
+    streak.setDepth(160);
+    this.tweens.add({
+      targets: streak,
+      alpha: 0,
+      duration: 100,
+      onComplete: () => streak.destroy(),
+    });
+  }
+
+  private playArrowHitEffect(x: number, y: number): void {
+    // Wood & metal chip spark particles
+    for (let i = 0; i < 4; i++) {
+      const chip = this.add.rectangle(
+        x + Phaser.Math.Between(-4, 4),
+        y + Phaser.Math.Between(-4, 4),
+        3,
+        3,
+        i % 2 === 0 ? 0xd4a373 : 0xffffff,
+        0.9,
+      );
+      chip.setDepth(160);
+
+      const vx = Phaser.Math.FloatBetween(-40, 40);
+      const vy = Phaser.Math.FloatBetween(-40, 40);
+
+      this.tweens.add({
+        targets: chip,
+        x: chip.x + vx,
+        y: chip.y + vy,
+        alpha: 0,
+        duration: 160,
+        onComplete: () => chip.destroy(),
+      });
+    }
+  }
+
+  private playWarriorDashEffect(
+    startX: number,
+    startY: number,
+    targetX: number,
+    targetY: number,
+  ): void {
+    const angle = Phaser.Math.Angle.Between(startX, startY, targetX, targetY);
+
+    // Dust cloud at origin
+    for (let i = 0; i < 5; i++) {
+      const p = this.add.circle(
+        startX + Phaser.Math.Between(-8, 8),
+        startY + Phaser.Math.Between(-8, 8),
+        Phaser.Math.Between(4, 8),
+        0x8a929a,
+        0.6
+      );
+      p.setDepth(140);
+      this.tweens.add({
+        targets: p,
+        scale: 1.8,
+        alpha: 0,
+        duration: 250,
+        onComplete: () => p.destroy(),
+      });
+    }
+
+    // Afterimage streak lines along dash path
+    const streakGraphics = this.add.graphics();
+    streakGraphics.lineStyle(4, palette.torchCore, 0.7);
+    streakGraphics.lineBetween(
+      startX,
+      startY,
+      startX + Math.cos(angle) * 160,
+      startY + Math.sin(angle) * 160
+    );
+    streakGraphics.setDepth(145);
+    this.tweens.add({
+      targets: streakGraphics,
+      alpha: 0,
+      duration: 200,
+      onComplete: () => streakGraphics.destroy(),
+    });
+  }
+
+  private playWarriorSlashEffect(
+    startX: number,
+    startY: number,
+    targetX: number,
+    targetY: number
+  ): void {
+    const slash = this.add.graphics();
+    slash.setDepth(150);
+
+    const angle = Phaser.Math.Angle.Between(startX, startY, targetX, targetY);
+    const radius = 35;
+
+    slash.lineStyle(3, palette.hudText, 1);
+    slash.beginPath();
+    slash.arc(startX, startY, radius, angle - 0.8, angle + 0.8, false);
+    slash.strokePath();
+
+    this.tweens.add({
+      targets: slash,
+      alpha: 0,
+      duration: 300,
+      ease: "Power2",
+      onComplete: () => slash.destroy(),
+    });
+  }
+
+  private drawOverheadHpMpBar(
+    g: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    curHp: number,
+    maxHp: number,
+    curMp: number,
+    maxMp: number
+  ): void {
+    g.clear();
+
+    const barW = 38;
+    const hpH = 4;
+    const mpH = 3;
+    const startX = Math.round(x - barW / 2);
+    const startY = Math.round(y - 40);
+
+    // Charcoal Border Frame
+    g.fillStyle(0x0c0a08, 0.9);
+    g.fillRect(startX - 1, startY - 1, barW + 2, hpH + mpH + 3);
+    g.lineStyle(1, 0x3d3126, 0.9);
+    g.strokeRect(startX - 1, startY - 1, barW + 2, hpH + mpH + 3);
+
+    // HP Bar Fill (Crimson Red)
+    const hpRatio = Math.max(0, Math.min(1, curHp / Math.max(1, maxHp)));
+    const hpFillW = Math.round(barW * hpRatio);
+    g.fillStyle(0xd93838, 1);
+    g.fillRect(startX, startY, hpFillW, hpH);
+
+    // MP Bar Fill (Arcane Blue)
+    const mpRatio = Math.max(0, Math.min(1, curMp / Math.max(1, maxMp)));
+    const mpFillW = Math.round(barW * mpRatio);
+    g.fillStyle(0x2980b9, 1);
+    g.fillRect(startX, startY + hpH + 1, mpFillW, mpH);
+  }
+
   private updateOtherPlayers(
     otherPlayersData: PlayerState[],
   ): void {
@@ -3436,6 +3722,12 @@ export class BarrowspireScene extends Phaser.Scene {
         if (nameText) {
           nameText.destroy();
           this.otherPlayersNameTexts.delete(playerId);
+        }
+        // remove hp/mp bar
+        const hpMpG = this.otherPlayersHpMpGraphics.get(playerId);
+        if (hpMpG) {
+          hpMpG.destroy();
+          this.otherPlayersHpMpGraphics.delete(playerId);
         }
         if (this.hoveredPlayerId === playerId) {
           this.hoveredPlayerId = undefined;
@@ -3543,6 +3835,27 @@ export class BarrowspireScene extends Phaser.Scene {
         x: playerData.position.x,
         y: playerData.position.y,
       });
+
+      // 其他玩家受傷變紅閃爍提示
+      const prevHp = this.otherPlayersPrevHp.get(playerData.id);
+      const curHp = playerData.current_health;
+      if (prevHp !== undefined && curHp !== undefined && curHp < prevHp) {
+        sprite.setTint(palette.damage);
+        this.time.delayedCall(200, () => {
+          if (sprite && sprite.active) {
+            sprite.clearTint();
+          }
+        });
+      }
+      if (curHp !== undefined) {
+        this.otherPlayersPrevHp.set(playerData.id, curHp);
+      }
+
+      // 其他玩家不顯示頭頂 HP/MP 狀態條（僅個人可見）
+      let hpMpG = this.otherPlayersHpMpGraphics.get(playerData.id);
+      if (hpMpG) {
+        hpMpG.clear();
+      }
     });
   }
 
@@ -4463,9 +4776,17 @@ export class BarrowspireScene extends Phaser.Scene {
       );
     }
 
-    // update player name position
+    // update player name position and overhead HP/MP bar
     if (this.player && this.playerNameText) {
       this.playerNameText.setPosition(this.player.x, this.player.y - 35);
+    }
+    if (this.player && this.playerHpMpGraphics && this.lastGameState?.current_player) {
+      const p = this.lastGameState.current_player;
+      const curHp = p.current_health ?? (p.class === "warrior" ? 150 : 100);
+      const maxHp = p.max_health ?? (p.class === "warrior" ? 150 : 100);
+      const curMp = p.current_mana ?? 100;
+      const maxMp = p.max_mana ?? 100;
+      this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, this.player.y, curHp, maxHp, curMp, maxMp);
     }
 
     // send websocket message for movement
@@ -4559,6 +4880,12 @@ export class BarrowspireScene extends Phaser.Scene {
         if (nameText) {
           nameText.setPosition(sprite.x, sprite.y - 35);
           nameText.setVisible(this.hoveredPlayerId === playerId);
+        }
+
+        // update overhead HP/MP bar position (clear for other players)
+        const hpMpG = this.otherPlayersHpMpGraphics.get(playerId);
+        if (hpMpG) {
+          hpMpG.clear();
         }
       }
     });

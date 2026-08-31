@@ -87,7 +87,7 @@ func TestSessionAddPlayer(t *testing.T) {
 	playerID := uuid.New()
 	username := "TestPlayer"
 
-	entityID := session.AddPlayer(playerID, username)
+	entityID := session.AddPlayer(playerID, username, "warrior")
 
 	assert.NotEqual(t, uuid.Nil, entityID, "Should return valid entity ID")
 
@@ -121,8 +121,8 @@ func TestSessionAddMultiplePlayers(t *testing.T) {
 	player1ID := uuid.New()
 	player2ID := uuid.New()
 
-	entity1ID := session.AddPlayer(player1ID, "Player1")
-	entity2ID := session.AddPlayer(player2ID, "Player2")
+	entity1ID := session.AddPlayer(player1ID, "Player1", "warrior")
+	entity2ID := session.AddPlayer(player2ID, "Player2", "mage")
 
 	assert.NotEqual(t, entity1ID, entity2ID, "Entity IDs should be unique")
 	assert.Equal(t, 2, len(session.playerIDToEntitiesID), "Should have 2 players")

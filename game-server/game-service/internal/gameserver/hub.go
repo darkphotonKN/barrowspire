@@ -128,6 +128,9 @@ func (h *messageHub) Run() {
 
 				// Get and validate class selection from payload
 				classVal, _ := clientPackage.Message.Payload["class"].(string)
+				if classVal == "" {
+					classVal, _ = clientPackage.Message.Payload["className"].(string)
+				}
 				if _, ok := game.Classes[classVal]; !ok {
 					classVal = "mage"
 				}
@@ -138,7 +141,7 @@ func (h *messageHub) Run() {
 
 				// no error, so player exists, skip queue
 				if err == nil {
-					slog.Debug("player exists alreayd, skipping queue",
+					slog.Debug("player exists already, skipping queue",
 						"player_id", player.ID,
 						"player_username", player.Username,
 					)
@@ -150,8 +153,6 @@ func (h *messageHub) Run() {
 				if err != nil {
 					queueErr := err.Error()
 					message := "Error occured when attempting to queue player"
-
-					// broadcast error back to client attempting to queue
 
 					if errors.Is(err, game.ErrPlayerAlreadyInQueue) {
 						message = "Player attempted to queue twice."
@@ -183,21 +184,11 @@ func (h *messageHub) Run() {
 			case constants.ActionLeaveQueue:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
 				if !exists {
-					h.sender.SendMessageToPlayer(player.ID, types.Message{
-						Action: clientPackage.Message.Action,
-						Payload: map[string]interface{}{
-							"message":   "Player not found for connection",
-							"player_id": player.ID.String(),
-						},
-					})
-					slog.Error("Player not found for connection",
-						"player_id", player.ID,
-					)
+					slog.Error("Player not found for connection on leave_queue")
 					continue
 				}
 
-				// h.sessionManager.RemovePlayerFromQueue(player)
-				slog.Debug("Player leaving game",
+				slog.Debug("Player leaving game queue",
 					"player_id", player.ID,
 				)
 

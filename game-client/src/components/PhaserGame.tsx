@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from "react";
 import Phaser from "phaser";
 import { BARROW } from "@/utils/theme";
 import { MainMenuScene } from "@/scenes/MainMenuScene";
+import { CharacterCreationScene } from "@/scenes/CharacterCreationScene";
 import { BarrowspireScene } from "@/scenes/BarrowspireScene";
 import { PreloadScene } from "@/scenes/PreloadScene";
 import { BootScene } from "@/scenes/BootScene";
@@ -37,7 +38,7 @@ export default function PhaserGame() {
           debug: false,
         },
       },
-      scene: [BootScene, PreloadScene, MainMenuScene, LoadoutScene, BarrowspireScene],
+      scene: [BootScene, PreloadScene, MainMenuScene, CharacterCreationScene, LoadoutScene, BarrowspireScene],
     };
 
     gameRef.current = new Phaser.Game(config);

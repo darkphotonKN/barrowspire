@@ -136,6 +136,20 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 					inventory = append(inventory, itemState)
 				}
 			}
+			curHP, maxHP := 100, 100
+			if healthC, ok := entity.GetComponent(ecs.ComponentTypeHealth); ok {
+				h := healthC.(*components.HealthComponent)
+				curHP = h.CurrentHealth
+				maxHP = h.MaxHealth
+			}
+
+			curMP, maxMP := 100, 100
+			if manaC, ok := entity.GetComponent(ecs.ComponentTypeMana); ok {
+				m := manaC.(*components.ManaComponent)
+				curMP = m.CurrentMana
+				maxMP = m.MaxMana
+			}
+
 			playerState := &types.PlayerState{
 				ID:       player.MemberID,
 				EntityID: entity.ID,
@@ -150,9 +164,13 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 					VY:    velocity.VY,
 					Speed: velocity.Speed,
 				},
-				Inventory: inventory,
-				Equipment: equipmentState,
-				Escape:    player.Escape,
+				Inventory:     inventory,
+				Equipment:     equipmentState,
+				Escape:        player.Escape,
+				CurrentHealth: curHP,
+				MaxHealth:     maxHP,
+				CurrentMana:   curMP,
+				MaxMana:       maxMP,
 			}
 
 			// Check if this is the recipient player

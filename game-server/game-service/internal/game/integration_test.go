@@ -62,7 +62,7 @@ func TestSession_GameLoopAppliesMovement_Integration(t *testing.T) {
 
 	player1ID := uuid.New()
 	username := "Player1"
-	playerEntityID := session.AddPlayer(player1ID, username)
+	playerEntityID := session.AddPlayer(player1ID, username, "warrior")
 
 	// check player initial position
 	playerEntity, ok := session.EntityManager.GetEntity(playerEntityID)

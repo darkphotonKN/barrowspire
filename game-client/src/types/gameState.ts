@@ -27,6 +27,10 @@ export interface PlayerState {
   inventory?: ItemState[]; // 玩家背包
   equipment?: EquipmentState; // 玩家已裝備的 loadout
   escape: boolean;
+  current_health?: number;
+  max_health?: number;
+  current_mana?: number;
+  max_mana?: number;
 }
 
 // Player equipment state from server (matches Go types.EquipmentState JSON tags).

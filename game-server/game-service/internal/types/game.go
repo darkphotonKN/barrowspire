@@ -16,15 +16,19 @@ type Player struct {
 }
 
 type PlayerState struct {
-	ID        uuid.UUID        `json:"id"`
-	EntityID  uuid.UUID        `json:"entity_id"`
-	Username  string           `json:"username"`
-	Class     string           `json:"class"`
-	Position  *Position        `json:"position"`
-	Direction *PlayerDirection `json:"direction"`
-	Inventory []*ItemState     `json:"inventory"`
-	Equipment *EquipmentState  `json:"equipment"`
-	Escape    bool             `json:"escape"`
+	ID            uuid.UUID        `json:"id"`
+	EntityID      uuid.UUID        `json:"entity_id"`
+	Username      string           `json:"username"`
+	Class         string           `json:"class"`
+	Position      *Position        `json:"position"`
+	Direction     *PlayerDirection `json:"direction"`
+	Inventory     []*ItemState     `json:"inventory"`
+	Equipment     *EquipmentState  `json:"equipment"`
+	Escape        bool             `json:"escape"`
+	CurrentHealth int              `json:"current_health"`
+	MaxHealth     int              `json:"max_health"`
+	CurrentMana   int              `json:"current_mana"`
+	MaxMana       int              `json:"max_mana"`
 }
 
 type EquipmentState struct {
