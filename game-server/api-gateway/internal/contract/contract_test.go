@@ -132,3 +132,22 @@ func TestMount_LeavesLegacyGinRoutesAlone(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "legacy", w.Body.String())
 }
+
+// Spectral fails an operation whose tag is not declared globally, and it fails
+// at generation time rather than at review. A group whose tag is missing here
+// cannot mount a single typed operation, so this asserts the declaration for
+// every group that has one — the list is the gate, not documentation.
+func TestTags_EveryRouteGroupIsDeclaredGlobally(t *testing.T) {
+	api := contract.New(gin.New())
+
+	declared := make(map[string]string, len(api.OpenAPI().Tags))
+	for _, tag := range api.OpenAPI().Tags {
+		declared[tag.Name] = tag.Description
+	}
+
+	for _, name := range []string{"member", "items", "notification", "stats", "payment", "ledger"} {
+		desc, ok := declared[name]
+		assert.True(t, ok, "tag %q is not declared globally — Spectral will reject any operation carrying it", name)
+		assert.NotEmpty(t, desc, "tag %q is declared with no description", name)
+	}
+}
