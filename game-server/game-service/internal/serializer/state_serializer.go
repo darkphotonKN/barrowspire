@@ -247,6 +247,32 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			backendState.Switch = append(backendState.Switch, switchState)
 		}
 
+		// -- Projectiles --
+		projComp, isProj := entity.GetComponent(ecs.ComponentTypeProjectile)
+		if isProj {
+			tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform)
+			vc, hasVelocity := entity.GetComponent(ecs.ComponentTypeVelocity)
+			if hasTransform && hasVelocity {
+				transform := tc.(*components.TransformComponent)
+				velocity := vc.(*components.VelocityComponent)
+				projComponent := projComp.(*components.ProjectileComponent)
+
+				projState := &types.ProjectileState{
+					EntityID:       entity.ID,
+					ProjectileType: projComponent.ProjectileType,
+					Position: types.Position{
+						X: transform.X,
+						Y: transform.Y,
+					},
+					Velocity: types.Velocity{
+						Vx: velocity.VX,
+						Vy: velocity.VY,
+					},
+				}
+				backendState.Projectiles = append(backendState.Projectiles, projState)
+			}
+		}
+
 		// -- Containers --
 		containerComp, isContainer := entity.GetComponent(ecs.ComponentTypeContainer)
 		if isContainer {
@@ -350,6 +376,7 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		EscapeDoor:    backendState.EscapeDoor,
 		Equipment:     backendState.Equipment,
 		Switch:        backendState.Switch,
+		Projectiles:   backendState.Projectiles,
 		EscapedCount:  backendState.EscapedCount,
 	}
 
@@ -366,6 +393,7 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.Containers = state.Containers[:0]
 	state.EscapeDoor = state.EscapeDoor[:0]
 	state.Switch = state.Switch[:0]
+	state.Projectiles = state.Projectiles[:0]
 	state.SessionID = uuid.Nil
 	state.EscapedCount = 0
 }

@@ -52,6 +52,7 @@ const (
 	ComponentTypeEscapeDoor ComponentType = "EscapeDoor"
 	ComponentTypeLockable   ComponentType = "Lockable"
 	ComponentTypeSwitch     ComponentType = "Switch"
+	ComponentTypeProjectile ComponentType = "Projectile"
 )
 
 type Entity struct {

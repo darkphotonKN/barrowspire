@@ -60,11 +60,12 @@ func (h *messageHub) Run() {
 
 			// handle message based on action
 			var gameActions map[constants.Action]bool = map[constants.Action]bool{
-				constants.ActionMove:     true,
-				constants.ActionAttack:   true,
-				constants.ActionInteract: true,
-				constants.ActionEquip:    true,
-				constants.ActionUnequip:  true,
+				constants.ActionMove:      true,
+				constants.ActionAttack:    true,
+				constants.ActionInteract:  true,
+				constants.ActionEquip:     true,
+				constants.ActionUnequip:   true,
+				constants.ActionCastSkill: true,
 			}
 
 			messageAction := constants.Action(clientPackage.Message.Action)

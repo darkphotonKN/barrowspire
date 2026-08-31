@@ -45,6 +45,11 @@ type Position struct {
 	Y float64 `json:"y"`
 }
 
+type Velocity struct {
+	Vx float64 `json:"vx"`
+	Vy float64 `json:"vy"`
+}
+
 type PlayerDirection struct {
 	VX    float64 `json:"vx"`
 	VY    float64 `json:"vy"`

@@ -1,6 +1,8 @@
 package game
 
 import (
+	"math"
+
 	commonconstants "github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
@@ -182,4 +184,42 @@ func CreateSwitchEntity(em *ecs.EntityManager, config SwitchConfig) *ecs.Entity 
 	entity.AddComponent(components.NewInteractableComponent(commonconstants.DefaultInteractableRange))
 	return entity
 
+}
+
+type FireballConfig struct {
+	OwnerEntityID    uuid.UUID
+	StartX, StartY   float64
+	TargetX, TargetY float64
+	Damage           int
+	Speed            float64
+	MaxDistance      float64
+	Radius           float64
+}
+
+func CreateFireballEntity(em *ecs.EntityManager, config FireballConfig) *ecs.Entity {
+	dx := config.TargetX - config.StartX
+	dy := config.TargetY - config.StartY
+	dist := math.Hypot(dx, dy)
+
+	vx := 0.0
+	vy := 0.0
+	if dist > 0 {
+		vx = (dx / dist) * config.Speed
+		vy = (dy / dist) * config.Speed
+	} else {
+		vx = config.Speed
+	}
+
+	entity := em.CreateEntity()
+	entity.AddComponent(components.NewTransformComponent(config.StartX, config.StartY))
+	entity.AddComponent(components.NewVelocityComponent(vx, vy, config.Speed))
+	entity.AddComponent(components.NewProjectileComponent(
+		config.OwnerEntityID,
+		config.Damage,
+		config.Speed,
+		config.MaxDistance,
+		config.Radius,
+		"fireball",
+	))
+	return entity
 }

@@ -395,6 +395,11 @@ export class MainMenuScene extends Phaser.Scene {
 
     // Create the Class Selector UI
     this.createClassSelector();
+
+    // Register scene shutdown listener to clear socket callbacks
+    this.events.once("shutdown", () => {
+      this.shutdown();
+    });
   }
 
   private createClassSelector(): void {
@@ -528,6 +533,7 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private drawButton(fill: number, stroke: number, glowColor?: number): void {
+    if (!this.cameras || !this.cameras.main) return;
     const width = this.cameras.main.width;
     const btnX = width / 2 - 110;
     const btnY = this.cameras.main.height / 2 + 115 - 25;
@@ -557,13 +563,25 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private handleConnectionStatusChange(status: ConnectionStatus): void {
-    if (!this.buttonBg || !this.startButtonText || !this.connectionStatusText) {
+    if (
+      !this.sys ||
+      !this.sys.settings ||
+      !this.sys.settings.active ||
+      !this.buttonBg ||
+      !this.startButtonText ||
+      !this.connectionStatusText
+    ) {
       return;
     }
 
     const hitArea = (this as Record<string, unknown>)._hitArea as
       | Phaser.GameObjects.Rectangle
       | undefined;
+    const safeDisableInteractive = (area?: Phaser.GameObjects.Rectangle) => {
+      if (area && area.scene && area.scene.sys && area.input) {
+        area.disableInteractive();
+      }
+    };
 
     switch (status) {
       case "connected":
@@ -587,6 +605,7 @@ export class MainMenuScene extends Phaser.Scene {
         this.isConnected = false;
         this.drawButton(palette.hudPanel, palette.hudLabel);
         if (hitArea) hitArea.disableInteractive();
+        safeDisableInteractive(hitArea);
         this.startButtonText.setText("OPENING THE WAY...");
         this.startButtonText.setColor(toCss(palette.hudLabel));
         this.connectionStatusText.setColor(toCss(palette.ember));
@@ -599,6 +618,7 @@ export class MainMenuScene extends Phaser.Scene {
         }
         this.drawButton(palette.damage, palette.damage, palette.damage);
         if (hitArea) hitArea.disableInteractive();
+        safeDisableInteractive(hitArea);
         this.startButtonText.setText("SEALED");
         this.startButtonText.setColor(toCss(palette.damage));
         this.connectionStatusText.setText(
@@ -614,6 +634,7 @@ export class MainMenuScene extends Phaser.Scene {
         }
         this.drawButton(palette.ink, palette.hudLabel);
         if (hitArea) hitArea.disableInteractive();
+        safeDisableInteractive(hitArea);
         this.startButtonText.setText("LOST");
         this.startButtonText.setColor(toCss(palette.hudLabel));
         this.connectionStatusText.setText(
