@@ -3116,7 +3116,7 @@ export class BarrowspireScene extends Phaser.Scene {
           // 不管滑鼠在哪裡，通通觸發揮劍劈斬動畫！
           this.playWarriorSlashEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
 
-          // 計算角度與將打擊目標限制在距離 2 (64px) 以內
+          // 計算角度與將打擊目標限制在距離 50px 以內
           const dist = Phaser.Math.Distance.Between(
             this.player.x,
             this.player.y,
@@ -3124,7 +3124,7 @@ export class BarrowspireScene extends Phaser.Scene {
             pointer.worldY
           );
           const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
-          const effectiveDist = Math.min(dist, 64);
+          const effectiveDist = Math.min(dist, 50);
           const hitX = this.player.x + Math.cos(angle) * effectiveDist;
           const hitY = this.player.y + Math.sin(angle) * effectiveDist;
 

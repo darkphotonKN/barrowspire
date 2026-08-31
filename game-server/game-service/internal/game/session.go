@@ -1674,11 +1674,61 @@ func (s *Session) handleCastSkill(playerID uuid.UUID, skillID string, targetX, t
 			"arrow",
 		))
 		slog.Info("Archer shot Arrow", "playerID", playerID, "startX", transform.X, "startY", transform.Y, "targetX", targetX, "targetY", targetY)
+	case "slash", "melee_slash", "strike":
+		baseAngle := math.Atan2(targetY-transform.Y, targetX-transform.X)
+		meleeRange := 50.0
+		halfConeAngle := 1.05 // ~60 degrees (120 deg cone arc)
+
+		normalizeAngle := func(angle float64) float64 {
+			for angle > math.Pi {
+				angle -= 2 * math.Pi
+			}
+			for angle < -math.Pi {
+				angle += 2 * math.Pi
+			}
+			return angle
+		}
+
+		for _, entity := range s.EntityManager.GetAllEntities() {
+			if entity.ID == playerEntity.ID {
+				continue // Skip self
+			}
+
+			tc, hasTrans := entity.GetComponent(ecs.ComponentTypeTransform)
+			hc, hasHealth := entity.GetComponent(ecs.ComponentTypeHealth)
+			if !hasTrans || !hasHealth {
+				continue
+			}
+
+			_, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
+
+			enemyTrans := tc.(*components.TransformComponent)
+			health := hc.(*components.HealthComponent)
+
+			dx := enemyTrans.X - transform.X
+			dy := enemyTrans.Y - transform.Y
+			dist := math.Hypot(dx, dy)
+
+			if dist <= meleeRange {
+				targetAngle := math.Atan2(dy, dx)
+				angleDiff := math.Abs(normalizeAngle(targetAngle - baseAngle))
+				if angleDiff <= halfConeAngle {
+					health.CurrentHealth -= 25
+					if isPlayer {
+						slog.Info("Slash hit player in cone!", "entityID", entity.ID, "remainingHP", health.CurrentHealth)
+					} else {
+						slog.Info("Slash hit enemy in cone!", "entityID", entity.ID, "remainingHP", health.CurrentHealth)
+					}
+				}
+			}
+		}
 		return nil
 
 	default:
 		return fmt.Errorf("Unknown skill_id: %s", skillID)
 	}
+
+	return nil
 }
 
 const (
