@@ -14,13 +14,8 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
-<<<<<<< HEAD
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 
-=======
-
-	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/character"
->>>>>>> 1a999bdf10f04bc826924c8e7ba7d38e05878a37
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
