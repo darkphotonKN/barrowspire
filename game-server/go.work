@@ -13,4 +13,5 @@ use (
 	./marketplace-service
 	./wallet-service
 	./ledger-service
+	./character-service
 )

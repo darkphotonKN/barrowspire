@@ -9,10 +9,18 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/example"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/item"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/listing"
+
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/character"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
+<<<<<<< HEAD
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
+
+=======
+
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/character"
+>>>>>>> 1a999bdf10f04bc826924c8e7ba7d38e05878a37
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -163,15 +171,12 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	listingRoutes.Use(auth.AuthMiddleware())
 	listingRoutes.POST("", listingHandler.CreateListingHandler)
 
-	// --- LISTING MICROSERVICE ---
+	// --- CHARACTERS MICROSERVICE ---
 
-	listingClient := listing.NewClient(registry)
-	listingHandler := listing.NewHandler(listingClient)
+	characterClient := character.NewClient(registry)
+	characterHandler := character.NewHandler(characterClient)
 
-	listingRoutes := api.Group("/listing")
-	// Private Routes - require authentication
-	listingRoutes.Use(auth.AuthMiddleware())
-	listingRoutes.POST("", listingHandler.CreateListingHandler)
-
+	characterRoutes := api.Group("/character")
+	characterRoutes.POST("/", characterHandler.CreateCharacterHandler)
 	return router
 }

@@ -106,11 +106,8 @@ class GameSessionManager {
   /**
    * Create an attack payload
    */
-  createAttackPayload(enemyEntityId: string): ActionMap['attack'] {
-    // The server reads enemy_entity_id (game-service PlayerSectionAttackPayload).
-    // This sent target_id, which the server would have ignored — undetected
-    // because this whole module never compiled and has no callers.
-    return this.createGamePayload<'attack'>({ enemy_entity_id: enemyEntityId });
+  createAttackPayload(targetId: string): ActionMap['attack'] {
+    return this.createGamePayload<'attack'>({ enemy_entity_id: targetId });
   }
 
   /**

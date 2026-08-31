@@ -21,11 +21,16 @@ export interface PlayerState {
   id: UUID; // Player's permanent user ID (from signup)
   entity_id: UUID; // Temporary entity ID in game session
   username: string;
+  class: string;
   position: Position;
   direction: PlayerDirection;
   inventory?: ItemState[]; // 玩家背包
   equipment?: EquipmentState; // 玩家已裝備的 loadout
   escape: boolean;
+  current_health?: number;
+  max_health?: number;
+  current_mana?: number;
+  max_mana?: number;
 }
 
 // Player equipment state from server (matches Go types.EquipmentState JSON tags).
@@ -104,6 +109,13 @@ export interface WallState {
   height: number;
 }
 
+export interface ProjectileState {
+  entity_id: UUID;
+  projectile_type: string;
+  position: Position;
+  velocity: { vx: number; vy: number };
+}
+
 // Complete game state received from server
 export interface ClientGameState {
   session_id: UUID;
@@ -115,6 +127,7 @@ export interface ClientGameState {
   containers: ContainerState[];
   escape_doors: EscapeDoorState[]; // Escape doors with lock state
   switches: SwitchState[]; // Switches/buttons for puzzles
+  projectiles?: ProjectileState[]; // Active projectiles in session
   escaped_count: number; // Number of players who have escaped
 }
 

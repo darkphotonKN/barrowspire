@@ -19,6 +19,7 @@ const (
 	ActionDropItem Action = "drop_item"
 	ActionEquip    Action = "equip"
 	ActionUnequip  Action = "unequip"
+	ActionCastSkill Action = "cast_skill"
 	ActionChat     Action = "chat"
 
 	// system actions

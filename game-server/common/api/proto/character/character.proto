@@ -1,0 +1,29 @@
+syntax = "proto3";
+package items;
+import "google/protobuf/empty.proto";
+option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/items";
+
+service CharacterService {
+  // general
+  rpc ListCharacters(google.protobuf.Empty) returns (Character);
+  rpc CreateCharacter(CreateCharacterRequest) returns (CreateCharacterResponse);
+}
+
+message Character {
+  string id = 1;
+}
+
+message GetCharacterRequest {
+  string id = 1;
+}
+
+message CreateCharacterRequest {
+  string name = 1; 
+  string class = 2;
+}
+
+message CreateCharacterResponse {
+  string ID = 1;
+  string name = 2; 
+  string class = 3;
+}

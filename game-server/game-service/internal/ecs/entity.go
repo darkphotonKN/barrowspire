@@ -32,12 +32,14 @@ const (
 	ComponentTypeVelocity  ComponentType = "Velocity"
 
 	ComponentTypeHealth ComponentType = "Health"
+	ComponentTypeMana   ComponentType = "Mana"
 	ComponentTypeAttack ComponentType = "Attack"
 	ComponentTypeBuff   ComponentType = "Buff"
 	ComponentTypeDebuff ComponentType = "Debuff"
 	ComponentTypeSkill  ComponentType = "Skill"
 
 	ComponentTypeStats      ComponentType = "Stats"
+	ComponentTypeCombat     ComponentType = "Combat"
 	ComponentTypeLevel      ComponentType = "Level"
 	ComponentTypeExperience ComponentType = "Experience"
 	ComponentTypeInventory  ComponentType = "Inventory"
@@ -50,6 +52,7 @@ const (
 	ComponentTypeEscapeDoor ComponentType = "EscapeDoor"
 	ComponentTypeLockable   ComponentType = "Lockable"
 	ComponentTypeSwitch     ComponentType = "Switch"
+	ComponentTypeProjectile ComponentType = "Projectile"
 )
 
 type Entity struct {

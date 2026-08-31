@@ -312,6 +312,32 @@ func (s *Session) manageClientMessages() {
 					s.sender.SendMessageToPlayer(playerID, types.Message{})
 				}
 
+			case constants.ActionCastSkill:
+				slog.Debug("Action from client was cast_skill")
+				parsedPayload, err := msg.Message.ParsePayload()
+
+				if err != nil {
+					slog.Error("Failed to parse cast_skill payload", "error", err)
+					if playerIDStr, ok := msg.Message.Payload["player_id"].(string); ok {
+						if playerID, parseErr := uuid.Parse(playerIDStr); parseErr == nil {
+							s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse cast_skill request")
+						}
+					}
+					continue
+				}
+				skillPayload := parsedPayload.(types.PlayerCastSkillPayload)
+
+				playerID, err := uuid.Parse(skillPayload.PlayerID)
+				if err != nil {
+					slog.Error("Invalid PlayerID from session payload", "playerID", skillPayload.PlayerID, "error", err)
+					continue
+				}
+
+				err = s.handleCastSkill(playerID, skillPayload.SkillID, skillPayload.TargetX, skillPayload.TargetY)
+				if err != nil {
+					slog.Error("Failed to handle cast_skill", "error", err)
+				}
+
 			case constants.ActionEquip, constants.ActionUnequip:
 				slog.Debug("Before parsing action equip / unequip message payload",
 					"message_action", msg.Message.Action,
@@ -420,6 +446,10 @@ func (s *Session) manageGameLoop() {
 			deltaTime := 1.0 / float64(constants.GameFrameRate)
 			movementSys.Update(deltaTime, entities)
 
+			// projectile
+			projectileSys := systems.NewProjectileSystem(s.EntityManager)
+			projectileSys.Update(deltaTime, entities)
+
 			// interaction
 			interactionSys := systems.InteractionSystem{}
 			interactionSys.Update(entities)
@@ -466,7 +496,31 @@ func (s *Session) manageEndSession() {
 	}
 }
 
-func (s *Session) AddPlayer(playerID uuid.UUID, username string) uuid.UUID {
+var Classes = map[string]ClassConfig{
+	"warrior": {
+		Stats:  components.StatsComponent{Strength: 8, Agility: 4, Intelligence: 2, Vitality: 9},
+		Combat: components.CombatComponent{Attack: 12, Defense: 10, AttackSpeed: 1.0, AttackRange: 1},
+		Health: components.HealthComponent{CurrentHealth: 150, MaxHealth: 150},
+		Mana:   components.ManaComponent{CurrentMana: 50, MaxMana: 50},
+		Skills: []components.SkillComponent{{SkillName: "slash", Level: 1}},
+	},
+	"mage": {
+		Stats:  components.StatsComponent{Strength: 2, Agility: 3, Intelligence: 9, Vitality: 3},
+		Combat: components.CombatComponent{Attack: 15, Defense: 3, AttackSpeed: 0.8, AttackRange: 6},
+		Health: components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
+		Mana:   components.ManaComponent{CurrentMana: 150, MaxMana: 150},
+		Skills: []components.SkillComponent{{SkillName: "fireball", Level: 1}},
+	},
+	"archer": {
+		Stats:  components.StatsComponent{Strength: 4, Agility: 8, Intelligence: 3, Vitality: 5},
+		Combat: components.CombatComponent{Attack: 10, Defense: 5, AttackSpeed: 1.5, AttackRange: 8},
+		Health: components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
+		Mana:   components.ManaComponent{CurrentMana: 100, MaxMana: 100},
+		Skills: []components.SkillComponent{{SkillName: "power_shot", Level: 1}},
+	},
+}
+
+func (s *Session) AddPlayer(playerID uuid.UUID, username string, className string) uuid.UUID {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -507,40 +561,46 @@ func (s *Session) AddPlayer(playerID uuid.UUID, username string) uuid.UUID {
 		return &id
 	}
 
-	grpcLoadoutRequest := &pbitems.GetLoadoutWithItemsRequest{
-		MemberId: playerID.String(),
-	}
-	loadoutResult, err := s.itemsClient.GetLoadoutWithItems(context.Background(), grpcLoadoutRequest)
-
 	var loadout *components.EquipmentConfig
-	if err != nil || loadoutResult == nil {
-		slog.Error("Failed to get loadout, player spawns with no equipment.", "error", err)
-	} else {
-		loadout = &components.EquipmentConfig{
-			WeaponSlot:  addSlotItem(loadoutResult.Weapon),
-			HeadSlot:    addSlotItem(loadoutResult.Head),
-			ChestSlot:   addSlotItem(loadoutResult.Chest),
-			GlovesSlot:  addSlotItem(loadoutResult.Gloves),
-			LegsSlot:    addSlotItem(loadoutResult.Legs),
-			Ring1Slot:   addSlotItem(loadoutResult.Ring_1),
-			Ring2Slot:   addSlotItem(loadoutResult.Ring_2),
-			Consumable1: addSlotItem(loadoutResult.Consumable_1),
-			Consumable2: addSlotItem(loadoutResult.Consumable_2),
-			Consumable3: addSlotItem(loadoutResult.Consumable_3),
+	if s.itemsClient != nil {
+		grpcLoadoutRequest := &pbitems.GetLoadoutWithItemsRequest{
+			MemberId: playerID.String(),
+		}
+		loadoutResult, err := s.itemsClient.GetLoadoutWithItems(context.Background(), grpcLoadoutRequest)
+
+		if err != nil || loadoutResult == nil {
+			slog.Error("Failed to get loadout, player spawns with no equipment.", "error", err)
+		} else {
+			loadout = &components.EquipmentConfig{
+				WeaponSlot:  addSlotItem(loadoutResult.Weapon),
+				HeadSlot:    addSlotItem(loadoutResult.Head),
+				ChestSlot:   addSlotItem(loadoutResult.Chest),
+				GlovesSlot:  addSlotItem(loadoutResult.Gloves),
+				LegsSlot:    addSlotItem(loadoutResult.Legs),
+				Ring1Slot:   addSlotItem(loadoutResult.Ring_1),
+				Ring2Slot:   addSlotItem(loadoutResult.Ring_2),
+				Consumable1: addSlotItem(loadoutResult.Consumable_1),
+				Consumable2: addSlotItem(loadoutResult.Consumable_2),
+				Consumable3: addSlotItem(loadoutResult.Consumable_3),
+			}
 		}
 	}
 
+	classCfg, ok := Classes[className]
+	if !ok {
+		classCfg = Classes["mage"]
+		className = "mage"
+	}
+
 	PlayerConfig := PlayerConfig{
-		MemberID:      playerID,
-		Username:      username,
-		X:             constants.PlayerRadius + rand.Float64()*(constants.MapWidth-2*constants.PlayerRadius),
-		Y:             constants.PlayerRadius + rand.Float64()*(constants.MapHeight-2*constants.PlayerRadius),
-		SkillName:     "Basic Attack",
-		SkillLevel:    1,
-		CurrentHealth: 100,
-		MaxHealth:     100,
-		ItemName:      "Health Potion",
-		ItemQuantity:  3,
+		MemberID:     playerID,
+		Username:     username,
+		X:            constants.PlayerRadius + rand.Float64()*(constants.MapWidth-2*constants.PlayerRadius),
+		Y:            constants.PlayerRadius + rand.Float64()*(constants.MapHeight-2*constants.PlayerRadius),
+		Class:        classCfg,
+		ClassName:    className,
+		ItemName:     "Health Potion",
+		ItemQuantity: 3,
 
 		Vx: 0,
 		Vy: 0,
@@ -1453,6 +1513,172 @@ func (s *Session) handleAttack(playerID uuid.UUID, enemyEntityID uuid.UUID) erro
 	player.AttackActive = true
 	player.AttackTargetEntityID = enemyEntityID
 	return nil
+}
+
+func (s *Session) handleCastSkill(playerID uuid.UUID, skillID string, targetX, targetY float64) error {
+	playerEntityID, ok := s.playerIDToEntitiesID[playerID]
+	if !ok {
+		return fmt.Errorf("Player %s not found", playerID)
+	}
+
+	playerEntity, ok := s.EntityManager.GetEntity(playerEntityID)
+	if !ok {
+		return fmt.Errorf("Player entity %s does not exist", playerID)
+	}
+
+	playerC, hasPlayer := playerEntity.GetComponent(ecs.ComponentTypePlayer)
+	if !hasPlayer {
+		return fmt.Errorf("Player component missing")
+	}
+	player := playerC.(*components.PlayerComponent)
+
+	// 1. Skill Execution (0 MP cost for default skills)
+	_ = player
+
+	tc, hasTrans := playerEntity.GetComponent(ecs.ComponentTypeTransform)
+	if !hasTrans {
+		return fmt.Errorf("Player entity has no transform component")
+	}
+	transform := tc.(*components.TransformComponent)
+
+	switch skillID {
+	case "dash", "sprint":
+		// Warrior Dash: 10 MP
+		manaC, hasMana := playerEntity.GetComponent(ecs.ComponentTypeMana)
+		if hasMana {
+			mana := manaC.(*components.ManaComponent)
+			if mana.CurrentMana < 10 {
+				return fmt.Errorf("Not enough Mana for Dash (requires 10 MP)")
+			}
+			mana.CurrentMana -= 10
+		}
+
+		dx := targetX - transform.X
+		dy := targetY - transform.Y
+		dist := math.Hypot(dx, dy)
+		dashDist := 180.0
+		if dist > 0 {
+			transform.X += (dx / dist) * dashDist
+			transform.Y += (dy / dist) * dashDist
+		} else {
+			transform.X += dashDist
+		}
+		slog.Info("Warrior used Dash", "playerID", playerID, "newX", transform.X, "newY", transform.Y)
+		return nil
+
+	case "triple_fireball", "multishot_fireball":
+		// Mage Triple Fireball: 10 MP
+		manaC, hasMana := playerEntity.GetComponent(ecs.ComponentTypeMana)
+		if hasMana {
+			mana := manaC.(*components.ManaComponent)
+			if mana.CurrentMana < 10 {
+				return fmt.Errorf("Not enough Mana for Triple Fireball (requires 10 MP)")
+			}
+			mana.CurrentMana -= 10
+		}
+
+		baseAngle := math.Atan2(targetY-transform.Y, targetX-transform.X)
+		spreadAngles := []float64{baseAngle - 0.26, baseAngle, baseAngle + 0.26}
+
+		for _, angle := range spreadAngles {
+			tX := transform.X + math.Cos(angle)*400.0
+			tY := transform.Y + math.Sin(angle)*400.0
+			CreateFireballEntity(s.EntityManager, FireballConfig{
+				OwnerEntityID: playerEntity.ID,
+				StartX:        transform.X,
+				StartY:        transform.Y,
+				TargetX:       tX,
+				TargetY:       tY,
+				Damage:        22,
+				Speed:         360.0,
+				MaxDistance:   500.0,
+				Radius:        12.0,
+			})
+		}
+		slog.Info("Mage cast Triple Fireball", "playerID", playerID)
+		return nil
+
+	case "triple_arrow", "multishot_arrow":
+		// Archer Triple Arrow: 10 MP
+		manaC, hasMana := playerEntity.GetComponent(ecs.ComponentTypeMana)
+		if hasMana {
+			mana := manaC.(*components.ManaComponent)
+			if mana.CurrentMana < 10 {
+				return fmt.Errorf("Not enough Mana for Triple Arrow (requires 10 MP)")
+			}
+			mana.CurrentMana -= 10
+		}
+
+		baseAngle := math.Atan2(targetY-transform.Y, targetX-transform.X)
+		spreadAngles := []float64{baseAngle - 0.22, baseAngle, baseAngle + 0.22}
+		speed := 480.0
+
+		for _, angle := range spreadAngles {
+			vx := math.Cos(angle) * speed
+			vy := math.Sin(angle) * speed
+
+			arrowEntity := s.EntityManager.CreateEntity()
+			arrowEntity.AddComponent(components.NewTransformComponent(transform.X, transform.Y))
+			arrowEntity.AddComponent(components.NewVelocityComponent(vx, vy, speed))
+			arrowEntity.AddComponent(components.NewProjectileComponent(
+				playerEntity.ID,
+				18,
+				speed,
+				550.0,
+				8.0,
+				"arrow",
+			))
+		}
+		slog.Info("Archer shot Triple Arrow", "playerID", playerID)
+		return nil
+
+	case "fireball":
+		CreateFireballEntity(s.EntityManager, FireballConfig{
+			OwnerEntityID: playerEntity.ID,
+			StartX:        transform.X,
+			StartY:        transform.Y,
+			TargetX:       targetX,
+			TargetY:       targetY,
+			Damage:        25,
+			Speed:         350.0,
+			MaxDistance:   500.0,
+			Radius:        12.0,
+		})
+		slog.Info("Mage cast Fireball", "playerID", playerID, "startX", transform.X, "startY", transform.Y, "targetX", targetX, "targetY", targetY)
+		return nil
+
+	case "arrow", "power_shot", "shoot":
+		dx := targetX - transform.X
+		dy := targetY - transform.Y
+		dist := math.Hypot(dx, dy)
+
+		vx := 0.0
+		vy := 0.0
+		speed := 480.0
+		if dist > 0 {
+			vx = (dx / dist) * speed
+			vy = (dy / dist) * speed
+		} else {
+			vx = speed
+		}
+
+		arrowEntity := s.EntityManager.CreateEntity()
+		arrowEntity.AddComponent(components.NewTransformComponent(transform.X, transform.Y))
+		arrowEntity.AddComponent(components.NewVelocityComponent(vx, vy, speed))
+		arrowEntity.AddComponent(components.NewProjectileComponent(
+			playerEntity.ID,
+			20,
+			speed,
+			550.0,
+			8.0,
+			"arrow",
+		))
+		slog.Info("Archer shot Arrow", "playerID", playerID, "startX", transform.X, "startY", transform.Y, "targetX", targetX, "targetY", targetY)
+		return nil
+
+	default:
+		return fmt.Errorf("Unknown skill_id: %s", skillID)
+	}
 }
 
 const (

@@ -35,6 +35,8 @@ const (
 	// example
 	ExampleCreatedEvent = "example.created"
 
+	CharacterCreatedEvent = "character.created"
+
 	// Member Events
 	MemberSignedUpEvent = "member.signedup"       // when user creates account
 	MemberSignedInEvent = "member.signedin"       // when user signs into their account

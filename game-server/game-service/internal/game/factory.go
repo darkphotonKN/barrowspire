@@ -1,12 +1,22 @@
 package game
 
 import (
+	"math"
+
 	commonconstants "github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 )
+
+type ClassConfig struct {
+	Stats  components.StatsComponent
+	Combat components.CombatComponent
+	Health components.HealthComponent
+	Mana   components.ManaComponent
+	Skills []components.SkillComponent
+}
 
 type MatchConfig struct {
 	players []*ecs.Entity
@@ -21,6 +31,8 @@ func CreateMatchProgressEntity(em *ecs.EntityManager) *ecs.Entity {
 
 type PlayerConfig struct {
 	MemberID      uuid.UUID
+	Class         ClassConfig
+	ClassName     string
 	Username      string
 	X, Y          float64
 	SkillName     string
@@ -40,18 +52,24 @@ type PlayerConfig struct {
 func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity {
 	entity := em.CreateEntity()
 
-	entity.AddComponent(components.NewPlayerComponent(config.MemberID, config.Username, config.HasHit, config.AttackActive, config.Escape))
+	entity.AddComponent(components.NewPlayerComponent(config.MemberID, config.ClassName, config.Username, config.HasHit, config.AttackActive, config.Escape))
 
 	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
 
 	entity.AddComponent(components.NewVelocityComponent(config.Vx, config.Vy, commonconstants.DefaultSpeed))
 
-	entity.AddComponent(components.NewHealthComponent(config.CurrentHealth, config.MaxHealth))
-	entity.AddComponent(components.NewSkillComponent(config.SkillName, config.SkillLevel))
+	entity.AddComponent(components.NewHealthComponent(config.Class.Health.CurrentHealth, config.Class.Health.MaxHealth))
+	entity.AddComponent(components.NewManaComponent(config.Class.Mana.CurrentMana, config.Class.Mana.MaxMana))
+
+	for _, skill := range config.Class.Skills {
+		entity.AddComponent(components.NewSkillComponent(skill.SkillName, skill.Level))
+	}
+
+	entity.AddComponent(components.NewCombatComponent(config.Class.Combat.Attack, config.Class.Combat.Defense, config.Class.Combat.AttackRange, config.Class.Combat.AttackSpeed))
 
 	entity.AddComponent(components.NewItemIDListComponent(config.ItemIDList))
 
-	entity.AddComponent(components.NewStatsComponent())
+	entity.AddComponent(components.NewStatsComponent(config.Class.Stats.Strength, config.Class.Stats.Agility, config.Class.Stats.Vitality, config.Class.Stats.Intelligence))
 
 	// initialize equipment with loadout
 	entity.AddComponent(components.NewEquipmentComponent(config.PlayerLoadout))
@@ -166,4 +184,42 @@ func CreateSwitchEntity(em *ecs.EntityManager, config SwitchConfig) *ecs.Entity 
 	entity.AddComponent(components.NewInteractableComponent(commonconstants.DefaultInteractableRange))
 	return entity
 
+}
+
+type FireballConfig struct {
+	OwnerEntityID    uuid.UUID
+	StartX, StartY   float64
+	TargetX, TargetY float64
+	Damage           int
+	Speed            float64
+	MaxDistance      float64
+	Radius           float64
+}
+
+func CreateFireballEntity(em *ecs.EntityManager, config FireballConfig) *ecs.Entity {
+	dx := config.TargetX - config.StartX
+	dy := config.TargetY - config.StartY
+	dist := math.Hypot(dx, dy)
+
+	vx := 0.0
+	vy := 0.0
+	if dist > 0 {
+		vx = (dx / dist) * config.Speed
+		vy = (dy / dist) * config.Speed
+	} else {
+		vx = config.Speed
+	}
+
+	entity := em.CreateEntity()
+	entity.AddComponent(components.NewTransformComponent(config.StartX, config.StartY))
+	entity.AddComponent(components.NewVelocityComponent(vx, vy, config.Speed))
+	entity.AddComponent(components.NewProjectileComponent(
+		config.OwnerEntityID,
+		config.Damage,
+		config.Speed,
+		config.MaxDistance,
+		config.Radius,
+		"fireball",
+	))
+	return entity
 }

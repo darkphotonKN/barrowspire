@@ -12,7 +12,9 @@ gen:
 		api/proto/ledger/ledger.proto \
 		api/proto/marketplace/marketplace.proto \
 		api/proto/notification/notification.proto \
+		api/proto/character/character.proto \
 		api/proto/events/game.proto \
 		api/proto/events/auth.proto \
 		api/proto/events/item.proto \
 		api/proto/shared/v1/pagination.proto
+		

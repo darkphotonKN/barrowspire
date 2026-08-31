@@ -6,8 +6,10 @@
 import Phaser from "phaser";
 import { ActionType } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
+import { useGameStore } from "@/stores/gameStore";
 import {
   ClientGameState,
+  PlayerState,
   ContainerState,
   ItemState,
   EscapeDoorState,
@@ -16,6 +18,7 @@ import {
   DoorState,
   EquippedItems,
   EquipmentState,
+  ProjectileState,
 } from "@/types/gameState";
 import { EquipmentPanel } from "@/ui/EquipmentPanel";
 import { GameStateLogger } from "@/utils/gameStateLogger";
@@ -80,6 +83,20 @@ interface KnightPalette {
   ink: number;
 }
 
+/** Limited barrow palette for the archer-delver sprite (0x ints). */
+interface ArcherPalette {
+  hood: number;
+  hoodShade: number;
+  leather: number;
+  leatherShade: number;
+  trim: number;
+  face: number;
+  eye: number;
+  bow: number;
+  string: number;
+  ink: number;
+}
+
 export class BarrowspireScene extends Phaser.Scene {
   private player?: Phaser.Physics.Arcade.Sprite;
   private otherPlayers: Map<string, Phaser.Physics.Arcade.Sprite> = new Map();
@@ -89,6 +106,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // leg graphics for walking animation
   private playerLegs?: Phaser.GameObjects.Graphics;
+  private playerHpMpGraphics?: Phaser.GameObjects.Graphics;
+  private otherPlayersHpMpGraphics: Map<string, Phaser.GameObjects.Graphics> = new Map();
   /** The warm pool the delver carries. Built once; only ever repositioned. */
   private torchPool?: Phaser.GameObjects.Image;
   private otherPlayersLegs: Map<string, Phaser.GameObjects.Graphics> =
@@ -98,12 +117,18 @@ export class BarrowspireScene extends Phaser.Scene {
   private otherPlayersFacing: Map<string, "up" | "down" | "left" | "right"> =
     new Map();
   private otherPlayersWalkPhase: Map<string, number> = new Map();
+  private playerTexturePrefix: string = "player_warrior";
+  private otherPlayersClass: Map<string, string> = new Map();
 
   // username labels
   private playerNameText?: Phaser.GameObjects.Text;
   private otherPlayersNameTexts: Map<string, Phaser.GameObjects.Text> =
     new Map();
   private hoveredPlayerId?: string; // survives game state rerenders
+
+  // HP change tracking for damage flash
+  private otherPlayersPrevHp: Map<string, number> = new Map();
+  private prevLocalPlayerHp?: number;
 
   // Controls
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -206,6 +231,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private currentChestItems: ItemState[] = [];
   private chestLootedAtMap = new Map<string, number>(); // entityId → loot 時間戳
   private canAttack = true;
+  private canCastSkill = true;
+  private projectileSprites: Map<string, Phaser.GameObjects.Container> = new Map();
   private readonly PENDING_DURATION = 1000; // 1 秒內不比對剛拿的物品
   private lastGameState?: ClientGameState;
 
@@ -256,7 +283,8 @@ export class BarrowspireScene extends Phaser.Scene {
       ["F", "Take Item"],
       ["I", "Equipment"],
       ["Q", "Close Panel"],
-      ["CLICK", "Attack Enemy"],
+      ["LEFT CLICK", "Melee Attack"],
+      ["RIGHT CLICK", "Fireball (Skill)"],
       ["ESC", "Main Menu"],
       ["H", "Toggle Controls"],
     ];
@@ -417,7 +445,17 @@ export class BarrowspireScene extends Phaser.Scene {
       );
     });
     redeployHit.on("pointerdown", () => {
-      socketManager.sendMessage(ActionType.Find_Game, { playerId: "1" });
+      const activeChar = useGameStore.getState().getActiveCharacter();
+      const chosenClass = (activeChar?.className || useGameStore.getState().selectedClass || "warrior").toLowerCase();
+      const chosenName = activeChar?.name || useGameStore.getState().selectedCharacterName || "Hero";
+
+      socketManager.sendMessage(ActionType.Find_Game, {
+        playerId: "1",
+        class: chosenClass,
+        className: chosenClass,
+        characterName: chosenName,
+        username: chosenName,
+      });
       this.scene.start("MainMenuScene");
     });
 
@@ -481,8 +519,7 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // Player = torch-amber wizard-delver; rivals = necrotic wight-mages.
-    // Same 4-facing rig, only the palette differs. See docs/design-guideline.md.
+    // 1. Wizard (Mage) Palettes
     const playerPalette: WizardPalette = {
       hat: palette.delverCloak,
       hatShade: shade(palette.delverCloak, 0.45),
@@ -511,9 +548,8 @@ export class BarrowspireScene extends Phaser.Scene {
       orbGlow: palette.safe,
       ink: palette.inkDeep,
     };
-    // Battered-plate knight: barrow steel, muted umber surcoat, brass trim, and
-    // a faint torch-amber visor slit as the readable accent in the dark. Same
-    // 60×60 frame / 4-facing rig as the wizard. See docs/design-guideline.md.
+
+    // 2. Knight (Warrior) Palettes
     const knightPalette: KnightPalette = {
       helm: palette.wallTop,
       helmShade: palette.wall,
@@ -531,16 +567,65 @@ export class BarrowspireScene extends Phaser.Scene {
       shieldTrim: palette.frame,
       ink: palette.ink,
     };
+    const rivalKnightPalette: KnightPalette = {
+      helm: 0x3e4248,
+      helmShade: 0x292c30,
+      helmLight: 0x54585f,
+      plate: 0x2d3136,
+      plateShade: 0x1c1f23,
+      plateLight: 0x3d4248,
+      surcoat: 0x2b1c2b,
+      surcoatShade: 0x1b1c20,
+      visor: 0x5294e2,
+      visorGlow: 0x4ecca3,
+      sword: 0x5a5e65,
+      swordHilt: 0x4a4e55,
+      shield: 0x1b141c,
+      shieldTrim: 0x52555c,
+      ink: 0x0d0b0a,
+    };
 
-    // --- Character roster (future class-selection hook — NOT wired to any runtime
-    // logic). Parallel asset sets so a class system can later point at either:
-    //   knight → createKnightTextures(prefix, knightPalette)   ← current default
-    //   wizard → createSoldierTextures(prefix, playerPalette)  ← banked below
-    // To make the player a wizard again, swap the one default line back to
-    // `this.createSoldierTextures("player", playerPalette)`.
-    this.createKnightTextures("player", knightPalette); // default delver = knight
-    this.createSoldierTextures("wizard", playerPalette); // wizard banked & loadable under "wizard*" keys
+    // 3. Archer Palettes
+    const archerPalette: ArcherPalette = {
+      hood: 0x3c5a36,        // forest green
+      hoodShade: 0x243b20,   // darker forest green
+      leather: 0x6e4e37,     // brown leather jerkin
+      leatherShade: 0x4a3322,// dark brown leather
+      trim: 0xd4a373,        // brass/gold buckles
+      face: 0xdcbd9d,        // skin tone
+      eye: 0xe8a14d,         // eye highlight
+      bow: 0x8c6239,         // wood bow
+      string: 0xf2ebd9,      // cream bowstring
+      ink: 0x0d0b0a,
+    };
+    const rivalArcherPalette: ArcherPalette = {
+      hood: 0x252e27,        // dark forest green-black
+      hoodShade: 0x151c16,   // necrotic dark green
+      leather: 0x35312e,     // dark charcoal leather
+      leatherShade: 0x1a1918,// black leather
+      trim: 0x7d6b58,        // dull bronze
+      face: 0x323a30,        // necrotic skin tone
+      eye: 0x6f8f4a,         // glowing green eye
+      bow: 0x423830,         // dark wood
+      string: 0x8a929a,      // cold gray string
+      ink: 0x15171a,
+    };
+
+    // --- Build Fallbacks ---
+    this.createKnightTextures("player", knightPalette);
     this.createSoldierTextures("otherPlayer", rivalPalette);
+
+    // --- Build Class Sprites ---
+    // Local player class sprites
+    this.createKnightTextures("player_warrior", knightPalette);
+    this.createSoldierTextures("player_mage", playerPalette);
+    this.createArcherTextures("player_archer", archerPalette);
+
+    // Other players class sprites
+    this.createKnightTextures("other_warrior", rivalKnightPalette);
+    this.createSoldierTextures("other_mage", rivalPalette);
+    this.createArcherTextures("other_archer", rivalArcherPalette);
+
     this.createChestTextures();
     this.createEscapeDoorTextures();
     this.createSwitchTextures();
@@ -834,6 +919,236 @@ export class BarrowspireScene extends Phaser.Scene {
         const c = grid[y][x];
         if (c === null) continue;
         g.fillStyle(c, soft[y][x] && c === pal.orbGlow ? 0.45 : 1);
+        g.fillRect(ox + x * P, oy + y * P, P, P);
+      }
+    }
+  }
+
+  private createArcherTextures(prefix: string, pal: ArcherPalette): void {
+    const facings: Array<"down" | "up" | "left" | "right"> = [
+      "down",
+      "up",
+      "left",
+      "right",
+    ];
+    for (const facing of facings) {
+      const g = this.make.graphics({});
+      this.drawArcher(g, facing, pal);
+      g.generateTexture(this.facingTextureKey(prefix, facing), 60, 60);
+      g.destroy();
+    }
+  }
+
+  private drawArcher(
+    g: Phaser.GameObjects.Graphics,
+    facing: "up" | "down" | "left" | "right",
+    pal: ArcherPalette,
+  ): void {
+    const P = 2; // device px per logical pixel
+    const W = 24;
+    const H = 26;
+    const ox = (60 - W * P) / 2;
+    const oy = (60 - H * P) / 2;
+
+    const grid: (number | null)[][] = Array.from({ length: H }, () =>
+      Array<number | null>(W).fill(null),
+    );
+    const soft: boolean[][] = Array.from({ length: H }, () =>
+      Array<boolean>(W).fill(false),
+    );
+    const set = (x: number, y: number, c: number, isSoft = false) => {
+      if (x < 0 || x >= W || y < 0 || y >= H) return;
+      grid[y][x] = c;
+      soft[y][x] = isSoft;
+    };
+    const bar = (y: number, x0: number, x1: number, c: number) => {
+      for (let x = x0; x <= x1; x++) set(x, y, c);
+    };
+
+    const back = facing === "up";
+    const left = facing === "left";
+    const right = facing === "right";
+    const side = left || right;
+
+    // --- Draw Bow ---
+    if (left) {
+      // Arc
+      set(5, 7, pal.bow);
+      set(4, 8, pal.bow);
+      set(3, 9, pal.bow);
+      set(3, 10, pal.bow);
+      set(2, 11, pal.bow);
+      set(2, 12, pal.bow);
+      set(2, 13, pal.bow);
+      set(2, 14, pal.bow);
+      set(3, 15, pal.bow);
+      set(3, 16, pal.bow);
+      set(4, 17, pal.bow);
+      set(5, 18, pal.bow);
+      set(6, 19, pal.bow);
+      // Bowstring
+      for (let y = 7; y <= 19; y++) set(6, y, pal.string, true);
+    } else if (right) {
+      // Arc
+      set(18, 7, pal.bow);
+      set(19, 8, pal.bow);
+      set(20, 9, pal.bow);
+      set(20, 10, pal.bow);
+      set(21, 11, pal.bow);
+      set(21, 12, pal.bow);
+      set(21, 13, pal.bow);
+      set(21, 14, pal.bow);
+      set(20, 15, pal.bow);
+      set(20, 16, pal.bow);
+      set(19, 17, pal.bow);
+      set(18, 18, pal.bow);
+      set(17, 19, pal.bow);
+      // Bowstring
+      for (let y = 7; y <= 19; y++) set(17, y, pal.string, true);
+    } else if (facing === "down") {
+      // Held on left side
+      set(5, 8, pal.bow);
+      set(4, 9, pal.bow);
+      set(4, 10, pal.bow);
+      set(4, 11, pal.bow);
+      set(3, 12, pal.bow);
+      set(3, 13, pal.bow);
+      set(3, 14, pal.bow);
+      set(4, 15, pal.bow);
+      set(4, 16, pal.bow);
+      set(4, 17, pal.bow);
+      set(5, 18, pal.bow);
+      // Bowstring
+      for (let y = 8; y <= 18; y++) set(6, y, pal.string, true);
+    } else if (back) {
+      // Slung on back
+      for (let i = 0; i < 11; i++) {
+        set(7 + i, 8 + i, pal.bow);
+        set(8 + i, 7 + i, pal.string, true);
+      }
+    }
+
+    // --- Draw Hood (Head) ---
+    // Rounded hood cap y = 5 to 9
+    bar(5, 10, 13, pal.hood);
+    bar(6, 9, 14, pal.hood);
+    bar(7, 9, 14, pal.hood);
+    bar(8, 8, 15, pal.hood);
+    bar(9, 8, 15, pal.hood);
+    
+    // Add hood shadows/shading on right half
+    for (let y = 5; y <= 9; y++) {
+      const startX = 12;
+      const endX = y === 5 ? 13 : y === 6 ? 14 : y === 7 ? 14 : 15;
+      for (let x = startX; x <= endX; x++) set(x, y, pal.hoodShade);
+    }
+
+    // Face / Hood Opening (y = 10 to 12)
+    if (back) {
+      bar(10, 8, 15, pal.hoodShade);
+      bar(11, 9, 14, pal.hoodShade);
+      bar(12, 10, 13, pal.hoodShade);
+    } else if (left) {
+      // Face facing left
+      bar(10, 8, 10, pal.face);
+      bar(11, 8, 10, pal.face);
+      bar(12, 9, 10, pal.face);
+      set(8, 11, pal.eye, true); // Eye
+      // Hood backing
+      bar(10, 11, 14, pal.hood);
+      bar(11, 11, 13, pal.hoodShade);
+      bar(12, 11, 12, pal.hoodShade);
+    } else if (right) {
+      // Face facing right
+      bar(10, 13, 15, pal.face);
+      bar(11, 13, 15, pal.face);
+      bar(12, 13, 14, pal.face);
+      set(15, 11, pal.eye, true); // Eye
+      // Hood backing
+      bar(10, 9, 12, pal.hood);
+      bar(11, 10, 12, pal.hoodShade);
+      bar(12, 11, 12, pal.hoodShade);
+    } else {
+      // Facing down (front)
+      bar(10, 10, 13, pal.face);
+      bar(11, 10, 13, pal.face);
+      bar(12, 10, 13, pal.face);
+      set(10, 11, pal.eye, true);
+      set(13, 11, pal.eye, true);
+      // Hood wrap sides
+      bar(10, 8, 9, pal.hood);
+      bar(10, 14, 15, pal.hoodShade);
+      bar(11, 8, 9, pal.hood);
+      bar(11, 14, 14, pal.hoodShade);
+      bar(12, 9, 9, pal.hood);
+      bar(12, 14, 14, pal.hoodShade);
+    }
+
+    // --- Body / Leather Jerkin (y = 13 to 21) ---
+    const bodyWidths: Array<[number, number]> = [
+      [8, 15], // 13
+      [8, 15], // 14
+      [7, 16], // 15
+      [7, 16], // 16
+      [7, 16], // 17 (belt line)
+      [6, 17], // 18
+      [6, 17], // 19
+      [6, 17], // 20
+      [6, 17], // 21
+    ];
+
+    bodyWidths.forEach(([a, b], idx) => {
+      const y = 13 + idx;
+      const lo = side ? a + 1 : a;
+      const hi = side ? b - 1 : b;
+      
+      // Draw leather base
+      bar(y, lo, hi, pal.leather);
+      
+      // Shading on the right
+      const mid = Math.floor((lo + hi) / 2) + 1;
+      for (let x = mid; x <= hi; x++) set(x, y, pal.leatherShade);
+      
+      // Belt at y = 17
+      if (y === 17) {
+        bar(y, lo, hi, 0x14110c); // dark belt
+        set(Math.floor((lo + hi) / 2), y, pal.trim); // buckle
+      }
+    });
+
+    // --- Legs / Pants & Boots (y = 22 to 25) ---
+    // Pants (y = 22, 23)
+    bar(22, 8, 10, pal.hood);
+    bar(22, 13, 15, pal.hoodShade);
+    bar(23, 8, 9, pal.hood);
+    bar(23, 14, 15, pal.hoodShade);
+    // Boots (y = 24, 25)
+    bar(24, 8, 9, pal.leatherShade);
+    bar(24, 14, 15, pal.leatherShade);
+    bar(25, 7, 9, pal.leatherShade);
+    bar(25, 14, 16, pal.leatherShade);
+
+    // --- Dark Outline ---
+    const ink: Array<[number, number]> = [];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (grid[y][x] !== null) continue;
+        const near =
+          (grid[y][x - 1] != null && !soft[y][x - 1]) ||
+          (grid[y][x + 1] != null && !soft[y][x + 1]) ||
+          (grid[y - 1]?.[x] != null && !soft[y - 1][x]) ||
+          (grid[y + 1]?.[x] != null && !soft[y + 1][x]);
+        if (near) ink.push([x, y]);
+      }
+    }
+    ink.forEach(([x, y]) => set(x, y, pal.ink));
+
+    // Render grid to Phaser graphics object
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const c = grid[y][x];
+        if (c === null) continue;
+        g.fillStyle(c, 1);
         g.fillRect(ox + x * P, oy + y * P, P, P);
       }
     }
@@ -2507,8 +2822,13 @@ export class BarrowspireScene extends Phaser.Scene {
     return null;
   }
 
-  private createPlayer(x: number, y: number, username?: string): void {
-    this.player = this.physics.add.sprite(x, y, "playerDown");
+  private createPlayer(x: number, y: number, className?: string, username?: string): void {
+    const activeChar = useGameStore.getState().getActiveCharacter();
+    const effectiveClass = (activeChar?.className || className || useGameStore.getState().selectedClass || "warrior").toLowerCase();
+    const displayName = activeChar?.name || username || useGameStore.getState().selectedCharacterName || "Hero";
+
+    this.playerTexturePrefix = "player_" + effectiveClass;
+    this.player = this.physics.add.sprite(x, y, this.facingTextureKey(this.playerTexturePrefix, "down"));
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(100);
 
@@ -2523,7 +2843,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.drawLegs(this.playerLegs, x, y, "down", 0, false, palette.hudLabel);
 
     // username label above player
-    this.playerNameText = this.add.text(x, y - 35, username || "You", {
+    this.playerNameText = this.add.text(x, y - 35, displayName, {
       fontSize: "11px",
       fontFamily: CANVAS_FONT.body,
       color: toCss(palette.frameBright),
@@ -2782,6 +3102,90 @@ export class BarrowspireScene extends Phaser.Scene {
     // Disable browser right-click menu for equipment panel context menus
     this.input.mouse?.disableContextMenu();
 
+    // 技能攻擊控制 (Left-Click Primary Attack 0 MP // Right-Click Special Skill 10 MP)
+    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      if (!this.player || !this.canCastSkill) return;
+      if (this.equipmentPanel?.isVisible()) return;
+
+      const activeChar = useGameStore.getState().getActiveCharacter();
+      const currentClass = (activeChar?.className || useGameStore.getState().selectedClass || "warrior").toLowerCase();
+
+      // 左鍵發射一般攻擊 (0 MP)
+      if (pointer.leftButtonDown() || pointer.button === 0) {
+        if (currentClass === "warrior") {
+          // 不管滑鼠在哪裡，通通觸發揮劍劈斬動畫！
+          this.playWarriorSlashEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+
+          // 計算角度與將打擊目標限制在距離 2 (64px) 以內
+          const dist = Phaser.Math.Distance.Between(
+            this.player.x,
+            this.player.y,
+            pointer.worldX,
+            pointer.worldY
+          );
+          const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+          const effectiveDist = Math.min(dist, 64);
+          const hitX = this.player.x + Math.cos(angle) * effectiveDist;
+          const hitY = this.player.y + Math.sin(angle) * effectiveDist;
+
+          socketManager.sendMessage(ActionType.CastSkill, {
+            skill_id: "slash",
+            target_x: hitX,
+            target_y: hitY,
+          });
+        } else if (currentClass === "archer") {
+          socketManager.sendMessage(ActionType.CastSkill, {
+            skill_id: "arrow",
+            target_x: pointer.worldX,
+            target_y: pointer.worldY,
+          });
+          this.playArrowShootEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+        } else {
+          socketManager.sendMessage(ActionType.CastSkill, {
+            skill_id: "fireball",
+            target_x: pointer.worldX,
+            target_y: pointer.worldY,
+          });
+          this.playFireballCastEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+        }
+
+        this.canCastSkill = false;
+        this.time.delayedCall(250, () => {
+          this.canCastSkill = true;
+        });
+      }
+      // 右鍵觸發職業專屬 10 MP 技能
+      else if (pointer.rightButtonDown() || pointer.button === 2) {
+        if (currentClass === "warrior") {
+          socketManager.sendMessage(ActionType.CastSkill, {
+            skill_id: "dash",
+            target_x: pointer.worldX,
+            target_y: pointer.worldY,
+          });
+          this.playWarriorDashEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+        } else if (currentClass === "mage") {
+          socketManager.sendMessage(ActionType.CastSkill, {
+            skill_id: "triple_fireball",
+            target_x: pointer.worldX,
+            target_y: pointer.worldY,
+          });
+          this.playFireballCastEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+        } else if (currentClass === "archer") {
+          socketManager.sendMessage(ActionType.CastSkill, {
+            skill_id: "triple_arrow",
+            target_x: pointer.worldX,
+            target_y: pointer.worldY,
+          });
+          this.playArrowShootEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+        }
+
+        this.canCastSkill = false;
+        this.time.delayedCall(400, () => {
+          this.canCastSkill = true;
+        });
+      }
+    });
+
     // Initialize equipment panel
     this.equipmentPanel = new EquipmentPanel(this);
     this.equipmentPanel.onEquip = (item, slot) => {
@@ -2930,7 +3334,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
       // 第一次收到位置，建立玩家
       if (!this.player) {
-        this.createPlayer(pos.x, pos.y, state.current_player.username);
+        this.createPlayer(pos.x, pos.y, state.current_player.class, state.current_player.username);
       }
 
       // 設定目標位置，在 update() 中平滑移動
@@ -2943,6 +3347,32 @@ export class BarrowspireScene extends Phaser.Scene {
       // 同步玩家裝備
       if (state.current_player.equipment) {
         this.syncEquipment(state.current_player.equipment);
+      }
+
+      // 同步玩家頭頂 HP/MP 狀態條
+      if (!this.playerHpMpGraphics) {
+        this.playerHpMpGraphics = this.add.graphics();
+        this.playerHpMpGraphics.setDepth(103);
+      }
+      const curHp = state.current_player.current_health ?? (state.current_player.class === "warrior" ? 150 : 100);
+      const maxHp = state.current_player.max_health ?? (state.current_player.class === "warrior" ? 150 : 100);
+      const curMp = state.current_player.current_mana ?? 100;
+      const maxMp = state.current_player.max_mana ?? 100;
+      // 本身受傷變紅閃爍提示
+      if (this.prevLocalPlayerHp !== undefined && curHp < this.prevLocalPlayerHp) {
+        if (this.player) {
+          this.player.setTint(palette.damage);
+          this.time.delayedCall(200, () => {
+            if (this.player && this.player.active) {
+              this.player.clearTint();
+            }
+          });
+        }
+      }
+      this.prevLocalPlayerHp = curHp;
+
+      if (this.player && this.playerHpMpGraphics) {
+        this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, this.player.y, curHp, maxHp, curMp, maxMp);
       }
     } else {
       // current_player is null — player has escaped
@@ -2972,6 +3402,9 @@ export class BarrowspireScene extends Phaser.Scene {
     // Update switches from server
     this.updateSwitches(state.switches || []);
 
+    // Update projectiles from server (fireballs)
+    this.updateProjectiles(state.projectiles || []);
+
     // 檢測狀態變化並顯示通知（避免重複）
     this.checkEscapeDoorStateChanges(state);
     this.checkPlayerEscapedState(state);
@@ -2983,15 +3416,286 @@ export class BarrowspireScene extends Phaser.Scene {
     }
   }
 
+  private updateProjectiles(projectiles: ProjectileState[]): void {
+    const activeIds = new Set<string>();
+
+    for (const p of projectiles) {
+      activeIds.add(p.entity_id);
+      let container = this.projectileSprites.get(p.entity_id);
+
+      if (!container) {
+        container = this.add.container(p.position.x, p.position.y);
+        container.setDepth(150);
+
+        const isArrow = p.projectile_type === "arrow";
+
+        if (isArrow) {
+          // Arrow pixel graphics: wood shaft, metallic arrowhead, cream fletching
+          const arrowG = this.add.graphics();
+          arrowG.fillStyle(0x8c6239, 1); // Shaft
+          arrowG.fillRect(-10, -1.5, 18, 3);
+          arrowG.fillStyle(0xd4d7dc, 1); // Metallic Tip
+          arrowG.fillTriangle(8, -4, 18, 0, 8, 4);
+          arrowG.fillStyle(0xf2ebd9, 1); // Feather Fletching
+          arrowG.fillTriangle(-10, -3.5, -4, 0, -10, 3.5);
+
+          container.add(arrowG);
+          (container as any).isArrowType = true;
+        } else {
+          // Fireball visual layers: outer glow, core, inner highlight
+          const outerGlow = this.add.circle(0, 0, 14, 0xff4500, 0.45);
+          const innerCore = this.add.circle(0, 0, 8, 0xffa500, 0.9);
+          const centerBright = this.add.circle(0, 0, 4, 0xffffff, 1.0);
+
+          container.add([outerGlow, innerCore, centerBright]);
+
+          // Pulsing animation for fireball core
+          this.tweens.add({
+            targets: innerCore,
+            scale: 1.25,
+            duration: 150,
+            yoyo: true,
+            repeat: -1,
+          });
+        }
+
+        this.projectileSprites.set(p.entity_id, container);
+      } else {
+        container.setPosition(p.position.x, p.position.y);
+      }
+
+      // Rotate arrow to velocity angle
+      if (p.velocity && (p.velocity.vx !== 0 || p.velocity.vy !== 0)) {
+        const angle = Math.atan2(p.velocity.vy, p.velocity.vx);
+        container.setRotation(angle);
+      }
+    }
+
+    // Remove inactive projectiles (hit target or max range)
+    for (const [id, container] of this.projectileSprites.entries()) {
+      if (!activeIds.has(id)) {
+        if ((container as any).isArrowType) {
+          this.playArrowHitEffect(container.x, container.y);
+        } else {
+          this.playFireballExplosion(container.x, container.y);
+        }
+        container.destroy();
+        this.projectileSprites.delete(id);
+      }
+    }
+  }
+
+  private playFireballCastEffect(
+    startX: number,
+    startY: number,
+    targetX: number,
+    targetY: number,
+  ): void {
+    const angle = Phaser.Math.Angle.Between(startX, startY, targetX, targetY);
+    const flash = this.add.circle(
+      startX + Math.cos(angle) * 15,
+      startY + Math.sin(angle) * 15,
+      12,
+      0xffa500,
+      0.8,
+    );
+    flash.setDepth(160);
+    this.tweens.add({
+      targets: flash,
+      scale: 1.8,
+      alpha: 0,
+      duration: 180,
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  private playFireballExplosion(x: number, y: number): void {
+    const burst = this.add.circle(x, y, 16, 0xff4500, 0.8);
+    burst.setDepth(160);
+    this.tweens.add({
+      targets: burst,
+      scale: 2.2,
+      alpha: 0,
+      duration: 250,
+      onComplete: () => burst.destroy(),
+    });
+  }
+
+  private playArrowShootEffect(
+    startX: number,
+    startY: number,
+    targetX: number,
+    targetY: number,
+  ): void {
+    const angle = Phaser.Math.Angle.Between(startX, startY, targetX, targetY);
+    const muzzleX = startX + Math.cos(angle) * 16;
+    const muzzleY = startY + Math.sin(angle) * 16;
+
+    // Bow string release puff
+    const puff = this.add.circle(muzzleX, muzzleY, 6, 0xd4a373, 0.7);
+    puff.setDepth(160);
+    this.tweens.add({
+      targets: puff,
+      scale: 1.6,
+      alpha: 0,
+      duration: 140,
+      onComplete: () => puff.destroy(),
+    });
+
+    // Arrow streak spark
+    const streak = this.add.graphics();
+    streak.lineStyle(2, 0xffffff, 0.8);
+    streak.lineBetween(
+      muzzleX,
+      muzzleY,
+      muzzleX + Math.cos(angle) * 20,
+      muzzleY + Math.sin(angle) * 20,
+    );
+    streak.setDepth(160);
+    this.tweens.add({
+      targets: streak,
+      alpha: 0,
+      duration: 100,
+      onComplete: () => streak.destroy(),
+    });
+  }
+
+  private playArrowHitEffect(x: number, y: number): void {
+    // Wood & metal chip spark particles
+    for (let i = 0; i < 4; i++) {
+      const chip = this.add.rectangle(
+        x + Phaser.Math.Between(-4, 4),
+        y + Phaser.Math.Between(-4, 4),
+        3,
+        3,
+        i % 2 === 0 ? 0xd4a373 : 0xffffff,
+        0.9,
+      );
+      chip.setDepth(160);
+
+      const vx = Phaser.Math.FloatBetween(-40, 40);
+      const vy = Phaser.Math.FloatBetween(-40, 40);
+
+      this.tweens.add({
+        targets: chip,
+        x: chip.x + vx,
+        y: chip.y + vy,
+        alpha: 0,
+        duration: 160,
+        onComplete: () => chip.destroy(),
+      });
+    }
+  }
+
+  private playWarriorDashEffect(
+    startX: number,
+    startY: number,
+    targetX: number,
+    targetY: number,
+  ): void {
+    const angle = Phaser.Math.Angle.Between(startX, startY, targetX, targetY);
+
+    // Dust cloud at origin
+    for (let i = 0; i < 5; i++) {
+      const p = this.add.circle(
+        startX + Phaser.Math.Between(-8, 8),
+        startY + Phaser.Math.Between(-8, 8),
+        Phaser.Math.Between(4, 8),
+        0x8a929a,
+        0.6
+      );
+      p.setDepth(140);
+      this.tweens.add({
+        targets: p,
+        scale: 1.8,
+        alpha: 0,
+        duration: 250,
+        onComplete: () => p.destroy(),
+      });
+    }
+
+    // Afterimage streak lines along dash path
+    const streakGraphics = this.add.graphics();
+    streakGraphics.lineStyle(4, palette.torchCore, 0.7);
+    streakGraphics.lineBetween(
+      startX,
+      startY,
+      startX + Math.cos(angle) * 160,
+      startY + Math.sin(angle) * 160
+    );
+    streakGraphics.setDepth(145);
+    this.tweens.add({
+      targets: streakGraphics,
+      alpha: 0,
+      duration: 200,
+      onComplete: () => streakGraphics.destroy(),
+    });
+  }
+
+  private playWarriorSlashEffect(
+    startX: number,
+    startY: number,
+    targetX: number,
+    targetY: number
+  ): void {
+    const slash = this.add.graphics();
+    slash.setDepth(150);
+
+    const angle = Phaser.Math.Angle.Between(startX, startY, targetX, targetY);
+    const radius = 35;
+
+    slash.lineStyle(3, palette.hudText, 1);
+    slash.beginPath();
+    slash.arc(startX, startY, radius, angle - 0.8, angle + 0.8, false);
+    slash.strokePath();
+
+    this.tweens.add({
+      targets: slash,
+      alpha: 0,
+      duration: 300,
+      ease: "Power2",
+      onComplete: () => slash.destroy(),
+    });
+  }
+
+  private drawOverheadHpMpBar(
+    g: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    curHp: number,
+    maxHp: number,
+    curMp: number,
+    maxMp: number
+  ): void {
+    g.clear();
+
+    const barW = 38;
+    const hpH = 4;
+    const mpH = 3;
+    const startX = Math.round(x - barW / 2);
+    const startY = Math.round(y - 40);
+
+    // Charcoal Border Frame
+    g.fillStyle(0x0c0a08, 0.9);
+    g.fillRect(startX - 1, startY - 1, barW + 2, hpH + mpH + 3);
+    g.lineStyle(1, 0x3d3126, 0.9);
+    g.strokeRect(startX - 1, startY - 1, barW + 2, hpH + mpH + 3);
+
+    // HP Bar Fill (Crimson Red)
+    const hpRatio = Math.max(0, Math.min(1, curHp / Math.max(1, maxHp)));
+    const hpFillW = Math.round(barW * hpRatio);
+    g.fillStyle(0xd93838, 1);
+    g.fillRect(startX, startY, hpFillW, hpH);
+
+    // MP Bar Fill (Arcane Blue)
+    const mpRatio = Math.max(0, Math.min(1, curMp / Math.max(1, maxMp)));
+    const mpFillW = Math.round(barW * mpRatio);
+    g.fillStyle(0x2980b9, 1);
+    g.fillRect(startX, startY + hpH + 1, mpFillW, mpH);
+  }
+
   private updateOtherPlayers(
-    otherPlayersData: Array<{
-      id: string;
-      username: string;
-      // Stored into otherPlayersEntityIds (Map<string, string>) and used to
-      // target attacks — the payload always carries it.
-      entity_id: string;
-      position: { x: number; y: number };
-    }>,
+    otherPlayersData: PlayerState[],
   ): void {
     // Track which players are still in the game
     const activePlayerIds = new Set(otherPlayersData.map((p) => p.id));
@@ -3019,6 +3723,12 @@ export class BarrowspireScene extends Phaser.Scene {
           nameText.destroy();
           this.otherPlayersNameTexts.delete(playerId);
         }
+        // remove hp/mp bar
+        const hpMpG = this.otherPlayersHpMpGraphics.get(playerId);
+        if (hpMpG) {
+          hpMpG.destroy();
+          this.otherPlayersHpMpGraphics.delete(playerId);
+        }
         if (this.hoveredPlayerId === playerId) {
           this.hoveredPlayerId = undefined;
         }
@@ -3028,20 +3738,21 @@ export class BarrowspireScene extends Phaser.Scene {
     // Update or create other players
     otherPlayersData.forEach((playerData) => {
       let sprite = this.otherPlayers.get(playerData.id);
+      const cls = playerData.class || "warrior";
+      this.otherPlayersClass.set(playerData.id, cls);
 
       if (!sprite) {
         // Create new sprite for this player
         sprite = this.physics.add.sprite(
           playerData.position.x,
           playerData.position.y,
-          "otherPlayerDown",
+          this.facingTextureKey("other_" + cls, "down"),
         );
         sprite.setDepth(99);
 
-        // set circular physics body, offset for 60x60 texture.
-        // physics.add.sprite always attaches an Arcade body; the declared type is
-        // nullable only because a body can be removed later.
-        (sprite.body as Phaser.Physics.Arcade.Body).setCircle(20, 10, 10);
+        if (sprite.body) {
+          (sprite.body as Phaser.Physics.Arcade.Body).setCircle(20, 10, 10);
+        }
 
         // 點擊攻擊
         sprite.setInteractive();
@@ -3124,6 +3835,27 @@ export class BarrowspireScene extends Phaser.Scene {
         x: playerData.position.x,
         y: playerData.position.y,
       });
+
+      // 其他玩家受傷變紅閃爍提示
+      const prevHp = this.otherPlayersPrevHp.get(playerData.id);
+      const curHp = playerData.current_health;
+      if (prevHp !== undefined && curHp !== undefined && curHp < prevHp) {
+        sprite.setTint(palette.damage);
+        this.time.delayedCall(200, () => {
+          if (sprite && sprite.active) {
+            sprite.clearTint();
+          }
+        });
+      }
+      if (curHp !== undefined) {
+        this.otherPlayersPrevHp.set(playerData.id, curHp);
+      }
+
+      // 其他玩家不顯示頭頂 HP/MP 狀態條（僅個人可見）
+      let hpMpG = this.otherPlayersHpMpGraphics.get(playerData.id);
+      if (hpMpG) {
+        hpMpG.clear();
+      }
     });
   }
 
@@ -4029,7 +4761,7 @@ export class BarrowspireScene extends Phaser.Scene {
         }
         if (newFacing !== this.playerFacing) {
           this.playerFacing = newFacing;
-          this.player.setTexture(this.facingTextureKey("player", newFacing));
+          this.player.setTexture(this.facingTextureKey(this.playerTexturePrefix, newFacing));
         }
         this.walkPhase += 0.3;
       }
@@ -4044,9 +4776,17 @@ export class BarrowspireScene extends Phaser.Scene {
       );
     }
 
-    // update player name position
+    // update player name position and overhead HP/MP bar
     if (this.player && this.playerNameText) {
       this.playerNameText.setPosition(this.player.x, this.player.y - 35);
+    }
+    if (this.player && this.playerHpMpGraphics && this.lastGameState?.current_player) {
+      const p = this.lastGameState.current_player;
+      const curHp = p.current_health ?? (p.class === "warrior" ? 150 : 100);
+      const maxHp = p.max_health ?? (p.class === "warrior" ? 150 : 100);
+      const curMp = p.current_mana ?? 100;
+      const maxMp = p.max_mana ?? 100;
+      this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, this.player.y, curHp, maxHp, curMp, maxMp);
     }
 
     // send websocket message for movement
@@ -4113,8 +4853,9 @@ export class BarrowspireScene extends Phaser.Scene {
             const prevFacing = this.otherPlayersFacing.get(playerId) || "down";
             if (newFacing !== prevFacing) {
               this.otherPlayersFacing.set(playerId, newFacing);
+              const cls = this.otherPlayersClass.get(playerId) || "warrior";
               sprite.setTexture(
-                this.facingTextureKey("otherPlayer", newFacing),
+                this.facingTextureKey("other_" + cls, newFacing),
               );
             }
             const phase = (this.otherPlayersWalkPhase.get(playerId) || 0) + 0.3;
@@ -4139,6 +4880,12 @@ export class BarrowspireScene extends Phaser.Scene {
         if (nameText) {
           nameText.setPosition(sprite.x, sprite.y - 35);
           nameText.setVisible(this.hoveredPlayerId === playerId);
+        }
+
+        // update overhead HP/MP bar position (clear for other players)
+        const hpMpG = this.otherPlayersHpMpGraphics.get(playerId);
+        if (hpMpG) {
+          hpMpG.clear();
         }
       }
     });

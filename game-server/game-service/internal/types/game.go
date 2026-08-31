@@ -12,17 +12,23 @@ type Player struct {
 	Username             string
 	CurrentGameSessionId uuid.UUID
 	ConnectState         *constants.ConnectState
+	Class                string
 }
 
 type PlayerState struct {
-	ID        uuid.UUID        `json:"id"`
-	EntityID  uuid.UUID        `json:"entity_id"`
-	Username  string           `json:"username"`
-	Position  *Position        `json:"position"`
-	Direction *PlayerDirection `json:"direction"`
-	Inventory []*ItemState     `json:"inventory"`
-	Equipment *EquipmentState  `json:"equipment"`
-	Escape    bool             `json:"escape"`
+	ID            uuid.UUID        `json:"id"`
+	EntityID      uuid.UUID        `json:"entity_id"`
+	Username      string           `json:"username"`
+	Class         string           `json:"class"`
+	Position      *Position        `json:"position"`
+	Direction     *PlayerDirection `json:"direction"`
+	Inventory     []*ItemState     `json:"inventory"`
+	Equipment     *EquipmentState  `json:"equipment"`
+	Escape        bool             `json:"escape"`
+	CurrentHealth int              `json:"current_health"`
+	MaxHealth     int              `json:"max_health"`
+	CurrentMana   int              `json:"current_mana"`
+	MaxMana       int              `json:"max_mana"`
 }
 
 type EquipmentState struct {
@@ -41,6 +47,11 @@ type EquipmentState struct {
 type Position struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
+}
+
+type Velocity struct {
+	Vx float64 `json:"vx"`
+	Vy float64 `json:"vy"`
 }
 
 type PlayerDirection struct {

@@ -39,6 +39,11 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 			doorEntities[entity.ID] = entity
 		}
 
+		// Projectiles are moved and processed by ProjectileSystem
+		if entity.HasComponent(ecs.ComponentTypeProjectile) {
+			continue
+		}
+
 		if hasTransform && hasVelocity {
 			// type assertion
 			transform := transformComp.(*components.TransformComponent)
@@ -186,38 +191,40 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 			newX, newY = depenetrate(newX, newY, doorTransform.X, doorTransform.Y, door.Width, door.Height)
 		}
 
-		playerC, _ := targetEntity.GetComponent(ecs.ComponentTypePlayer)
-		player := playerC.(*components.PlayerComponent)
+		playerC, hasPlayer := targetEntity.GetComponent(ecs.ComponentTypePlayer)
+		if hasPlayer {
+			player := playerC.(*components.PlayerComponent)
 
-		// tick down cooldown
-		if player.AttackCooldown > 0 {
-			player.AttackCooldown -= deltaTime
-		}
+			// tick down cooldown
+			if player.AttackCooldown > 0 {
+				player.AttackCooldown -= deltaTime
+			}
 
-		// attack
-		if player.AttackActive && player.AttackCooldown <= 0 && player.AttackTargetEntityID != uuid.Nil {
-			if enemyEntity, ok := entityByID[player.AttackTargetEntityID]; ok {
-				enemyTransformC, hasTransform := enemyEntity.GetComponent(ecs.ComponentTypeTransform)
-				if hasTransform {
-					enemyTransform := enemyTransformC.(*components.TransformComponent)
-					dx := newX - enemyTransform.X
-					dy := newY - enemyTransform.Y
-					distance := math.Hypot(dx, dy)
+			// attack
+			if player.AttackActive && player.AttackCooldown <= 0 && player.AttackTargetEntityID != uuid.Nil {
+				if enemyEntity, ok := entityByID[player.AttackTargetEntityID]; ok {
+					enemyTransformC, hasTransform := enemyEntity.GetComponent(ecs.ComponentTypeTransform)
+					if hasTransform {
+						enemyTransform := enemyTransformC.(*components.TransformComponent)
+						dx := newX - enemyTransform.X
+						dy := newY - enemyTransform.Y
+						distance := math.Hypot(dx, dy)
 
-					attackRange := float64(60)
-					if distance <= attackRange {
-						enemyHealthC, hasHealth := enemyEntity.GetComponent(ecs.ComponentTypeHealth)
-						if hasHealth {
-							enemyHealth := enemyHealthC.(*components.HealthComponent)
-							enemyHealth.CurrentHealth -= 10
+						attackRange := float64(60)
+						if distance <= attackRange {
+							enemyHealthC, hasHealth := enemyEntity.GetComponent(ecs.ComponentTypeHealth)
+							if hasHealth {
+								enemyHealth := enemyHealthC.(*components.HealthComponent)
+								enemyHealth.CurrentHealth -= 10
+							}
 						}
 					}
 				}
+				player.HasHit = false
+				player.AttackActive = false
+				player.AttackTargetEntityID = uuid.Nil
+				player.AttackCooldown = 0.5
 			}
-			player.HasHit = false
-			player.AttackActive = false
-			player.AttackTargetEntityID = uuid.Nil
-			player.AttackCooldown = 0.5
 		}
 
 		// clamp position to map boundaries

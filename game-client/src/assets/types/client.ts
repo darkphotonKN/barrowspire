@@ -31,7 +31,12 @@ export interface ChatPayload {
 }
 
 export interface FindGamePayload {
-  playerId: string;
+  playerId?: string;
+  class?: string;
+  className?: string;
+  characterName?: string;
+  username?: string;
+  cancel?: boolean;
 }
 
 export interface InteractPayload {
@@ -46,6 +51,12 @@ export interface UnequipPayload {
   item_entity_id: string;
 }
 
+export interface CastSkillPayload {
+  skill_id: string;
+  target_x: number;
+  target_y: number;
+}
+
 // ====== 動作類型對應 Payload ======
 
 export interface ActionMap {
@@ -58,6 +69,7 @@ export interface ActionMap {
   interact: InteractPayload;
   equip: EquipPayload;
   unequip: UnequipPayload;
+  cast_skill: CastSkillPayload;
 }
 
 export const ActionType = {
@@ -70,6 +82,7 @@ export const ActionType = {
   Interact: "interact",
   Equip: "equip",
   Unequip: "unequip",
+  CastSkill: "cast_skill",
 } as const;
 
 export type ActionType = (typeof ActionType)[keyof typeof ActionType];
@@ -89,4 +102,5 @@ export type ClientAction =
   | { action: "attack"; payload: AttackPayload; seq: number }
   | { action: "pickup"; payload: PickupPayload; seq: number }
   | { action: "use"; payload: UsePayload; seq: number }
-  | { action: "chat"; payload: ChatPayload; seq: number };
+  | { action: "chat"; payload: ChatPayload; seq: number }
+  | { action: "cast_skill"; payload: CastSkillPayload; seq: number };
