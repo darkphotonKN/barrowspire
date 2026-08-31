@@ -66,12 +66,13 @@ wallet-service's on purpose — an append-only context has no read-modify-write 
 - **Driven port** — an interface the domain declares for infrastructure. **Exactly one exists:** `domain/ledger.Repository`. The read path has none, deliberately — it has no invariant to protect and nothing to substitute.
 - **Published Language** — `common/api/activity/ledger` and `common/api/proto/ledger`. What other services import. **Domain types never cross this line;** the adapter translates.
 - **Snapshot** — the only way data leaves the domain package, because its fields are private.
+- **Non-retryable** — an error the activity must fail on rather than retry. **`ledger.IsNonRetryable` in `domain/ledger/errors.go` is the single source of truth**, and the activity's retry policy is built from it (ADR-0011; FS-0003 §API surface's write-path error table is the set it must cover). Stated in the **negative on purpose**, and spelled to match this document's own term exactly: Temporal declares a *non-retryable set* and retries everything else, so the classification that has to be explicit is the one that stops a retry. A positive predicate would name the default and leave the dangerous case implicit — and the dangerous case here is a settlement saga past its pivot retrying a validation failure forever. **An error the predicate does not recognise is retryable**, which is why the sentinel list it closes over is the thing to keep exhaustive.
 
 ## Retired vocabulary — do not reintroduce
 
-These appear in git history, in stale comments, and in the scaffold still being torn down. An
-agent that finds one and tries to be helpful will reintroduce a decision that was made and
-reversed. Each is dead for a stated reason.
+These appear in git history, in stale comments, in the scaffold still being torn down, and in
+sibling services that made a different call. An agent that finds one and tries to be helpful
+will reintroduce a decision that was made and reversed. Each is dead for a stated reason.
 
 | Retired | Why it is gone |
 |---|---|
@@ -82,6 +83,8 @@ reversed. Each is dead for a stated reason.
 | `SETTLE_AUCTION_REVERSAL`, `ReverseCommit` | The pivot moved to `CommitHold`, so reversal is unreachable (ADR-0010). |
 | `AppendLedgerTx` **as an RPC** | It is a Temporal activity and appears in no `.proto` (ADR-0011). The *name* is live; the *transport* is not. |
 | Unique constraints beyond the two PKs | `transaction_id` is the sole idempotency guard (§Open question 1). |
+| `IsPermanent`, "permanent error" | Considered while building the classifier, dropped. **"Permanent" is already this context's word for a row that can never be corrected** — ADR-0010: *"an incorrect row is now permanent"*. Reusing it for retry classification makes one word mean two unrelated things within a paragraph of each other. `IsNonRetryable` says only what it means. |
+| `IsRetriable` | wallet-service's and marketplace-service's spelling, in the positive. **Not a name to converge on here** — ledger classifies in the negative because Temporal declares a *non-retryable* set (ADR-0011), so flipping the polarity for cross-service consistency inverts what the retry policy consumes. Both spellings are correct in their own context. |
 
 ## Boundaries
 

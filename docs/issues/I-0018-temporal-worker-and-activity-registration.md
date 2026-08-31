@@ -3,7 +3,7 @@ id: I-0018
 status: open
 implements: FS-0003
 blocked_by: [I-0014]
-labels: [blocked]
+labels: []
 title: "FS-0003 slice 5: Temporal worker, task queue, activity registration, retry policy"
 ---
 Implements FS-0003 §Requirements 16, 19, §API surface
@@ -54,6 +54,15 @@ every row marked **non-retryable** there must appear here:
 | transient / database unavailable | retryable — the default, and what the policy exists for |
 | anything unclassified | retryable — hence the set above must be exhaustive |
 
+**The classification is a predicate, not a literal list in the policy.** `ledger.IsNonRetryable`
+in `domain/ledger/errors.go` is the single source of truth (`ledger-service/CONTEXT.md`
+§Structural vocabulary); the retry policy is built from it, so a sentinel added to the domain
+without a decision here is a compile-time visit to one file rather than a silent inheritance of
+the retryable default. **Named in the negative deliberately** — Temporal declares a
+non-retryable set and retries the rest, so the predicate names the case that stops a retry.
+wallet-service's and marketplace-service's `IsRetriable` is the opposite polarity and is not the
+name to reuse here.
+
 **Identity comes from the execution context, never the activity input** (§Req 16). The trap
 survives the transport change intact: the retired scaffold took its subject from
 `commonauth.MemberIDFromCtx` because it was a member-facing RPC. The `account_id`s in the payload
@@ -85,6 +94,8 @@ case owning the logic — not a reason to build both now.
 - [ ] The activity calls into the service layer; no gRPC client is constructed on this path
 - [ ] `AppendLedgerTx` appears in no `.proto` file and no gRPC registration
 - [ ] A retry policy is attached, with the non-retryable set above declared explicitly
+- [ ] The set is derived from `ledger.IsNonRetryable`, not re-listed independently of it — one
+      place to add a sentinel, not two that can disagree
 - [ ] A test proves a non-retryable sentinel fails the activity **once** rather than retrying
 - [ ] A test proves a transient error **is** retried
 - [ ] No `MemberIDFromCtx` anywhere in the `AppendLedgerTx` path

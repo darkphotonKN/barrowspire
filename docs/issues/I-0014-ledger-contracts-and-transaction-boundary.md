@@ -1,6 +1,6 @@
 ---
 id: I-0014
-status: open
+status: done
 implements: FS-0003
 blocked_by: []
 labels: []
@@ -80,7 +80,12 @@ files. Includes `DROP TABLE ledgers` (§Req 17).
 `UNBALANCED_TRANSACTION`, `VALIDATION_FAILED`, and the transient/internal cases. **The set now
 feeds two consumers, not one:** the write path classifies each sentinel retryable or
 non-retryable on the activity's retry policy (I-0018), and the read path maps its own errors to
-gRPC codes (I-0021). A sentinel that is neither classified nor mapped is a gap in one of them. Existing sentinels in
+gRPC codes (I-0021). **The write-path classifier is `ledger.IsNonRetryable`, declared beside the
+sentinels in `domain/ledger/errors.go`** — negative form, because Temporal declares a
+non-retryable set and retries everything else, so the explicit case must be the one that stops a
+retry (`ledger-service/CONTEXT.md` §Structural vocabulary). It is **not** wallet-service's
+`IsRetriable` under a new spelling; the polarity is the point. A sentinel that is neither
+classified nor mapped is a gap in one of them. Existing sentinels in
 `internal/ledger/domain/ledger/errors.go` and `commonconstants` are the starting point;
 `ErrConcurrentModification` goes away with OCC (§Req 17, ADR-0007).
 
@@ -126,6 +131,8 @@ migration currently has neither.
 - [ ] Migration DDL decided, including `DROP TABLE ledgers`
 - [ ] Sentinel error set covers every row of FS-0003 §API surface's error table, and each row is
       marked retryable or non-retryable
+- [ ] The retryable/non-retryable classification is expressed as `ledger.IsNonRetryable` beside the
+      sentinels, so I-0018's retry policy has one place to read it from
 - [ ] The migration matches FS-0003 §Data model — `created_at` on `ledger_entries`, the
       `(account_id, created_at, id)` and `(created_at, id)` indexes present
 - [ ] No unique constraint exists beyond the two primary keys

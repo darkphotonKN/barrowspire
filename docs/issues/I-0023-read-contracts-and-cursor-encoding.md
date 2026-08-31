@@ -1,9 +1,9 @@
 ---
 id: I-0023
-status: open
+status: done
 implements: FS-0003
 blocked_by: [I-0014]
-labels: [blocked]
+labels: []
 title: "FS-0003 slice 10: read contracts — proto RPCs, query-object read interfaces, cursor encoding"
 ---
 Implements FS-0003 §API surface, §Requirements 20-23, 31
