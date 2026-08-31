@@ -115,10 +115,11 @@ func main() {
 		ch.Close()
 	}()
 
-	// NOTE: the ledger domain is scaffolding only — the aggregate carries identity
-	// and its OCC version, nothing more, and the consumer only logs what it
-	// receives. Design the domain first, then grow the verbs, the events, and the
-	// RPCs off this wiring.
+	// NOTE: this consumer is the seat for the event-driven write path — wallet's
+	// deposit, withdraw and transfer verbs will publish events it appends from
+	// (FS-0003 §Req 17). It survives the scaffold retirement even though its
+	// LedgerCreatedEvent routing key does not: that constant names the retired
+	// Ledger aggregate's event and gets renamed once a real event exists.
 	consumer := ledger.NewConsumer(ch)
 	// start goroutine and listen to events from message broker
 	consumer.Listen()

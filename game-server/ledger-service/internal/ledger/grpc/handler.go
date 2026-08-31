@@ -2,13 +2,10 @@ package grpc
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/ledger"
-	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	cursor "github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
-	"github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/domain/ledger"
 	"github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/dto"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -45,48 +42,30 @@ func NewHandler(transactionReader TransactionReader, entriesReader EntriesReader
 
 // ========================= READ PATHS  =========================
 
-// translates domain / infrastructure sentinels into grpc status codes.
-// domain-specific cases get added here as the domain grows its own sentinels.
+// mapError translates domain and infrastructure sentinels into gRPC status
+// codes for the READ path. After ADR-0011 the only gRPC on this service is
+// GetTransaction and ListEntries; the write path is a Temporal activity whose
+// errors are classified by retry policy (ledger.IsNonRetryable), never here.
+//
+// It is deliberately EMPTY. Every caller currently falls through to Internal.
+//
+// TODO(I-0021): fill the read-path mappings. The sentinel set to cover spans
+// two packages, and that is the trap — domain/ledger/errors.go supplies
+// ErrInvalidUUID, and common/utils/cursor supplies cursor.ErrInvalidCursor,
+// cursor.ErrInvalidDate and cursor.ErrInvalidUUID, which is a DIFFERENT
+// sentinel from the ledger one despite the identical name. An arm matching
+// only the ledger sentinels compiles, reads correctly, and drops every
+// malformed cursor into Internal below — a 500 where FS-0003 §API surface says
+// 422. Also needed: NotFound (masked, never Forbidden — see I-0025),
+// PermissionDenied, Unauthenticated, Unavailable.
+//
+//nolint:unused // no handler arm calls this until I-0041; I-0021 fills it.
 func mapError(ctx context.Context, err error) error {
-	var code codes.Code
-	var msg string
-	logLevel := slog.LevelWarn
+	// No mappings. I-0021 owns this function; a pre-filled arm here would
+	// silently pre-empt a decision that slice is meant to make.
+	code := codes.Internal
+	msg := "internal error"
 
-	switch {
-
-	// NOTE: duplicate resource
-	// maps to 409 http code, conflict
-	case errors.Is(err, commonconstants.ErrDuplicateResource):
-		code = codes.AlreadyExists
-		msg = "already exists"
-
-	// NOTE: not found
-	// maps to http code 404 not found
-	case errors.Is(err, commonconstants.ErrNotFound):
-		code = codes.NotFound
-		msg = "ledger not found"
-
-	// NOTE: transient error
-	// maps to http code 503 temporarily unavailable, client worth retrying shortly
-	// retry worthy error, but might need to wait for availability
-	case errors.Is(err, commonconstants.ErrTransient):
-		code = codes.Unavailable
-		msg = "temporarily unavailable, retry shortly"
-
-	// NOTE: invalid argument
-	// maps to http 400 bad request
-	case errors.Is(err, ledger.ErrInvalidUUID):
-		code = codes.InvalidArgument
-		msg = "invalid argument"
-
-	default:
-		// NOTE: internal, unexpected / unhandled error
-		// do not leak internals here (sql errors), keep it generic.
-		code = codes.Internal
-		msg = "internal error"
-		logLevel = slog.LevelError
-	}
-
-	slog.Log(ctx, logLevel, "rpc error", "err", err, "code", code.String())
+	slog.Log(ctx, slog.LevelError, "rpc error", "err", err, "code", code.String())
 	return status.Error(code, msg)
 }

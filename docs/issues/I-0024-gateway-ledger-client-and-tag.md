@@ -3,7 +3,7 @@ id: I-0024
 status: open
 implements: FS-0003
 blocked_by: [I-0015]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-0003 slice 11: gateway → ledger gRPC client, Consul discovery, ledger tag"
 ---
 Implements FS-0003 §Requirements 32
