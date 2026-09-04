@@ -27,31 +27,6 @@ type Signup struct {
 	Password string `json:"password"`
 }
 
-func (h *Handler) CreateMemberAmqpHandler(c *gin.Context) {
-	const op = "CreateMemberAmqpHandler"
-	ctx := c.Request.Context()
-	ctx, span := tracer.Start(ctx, "service.CreateMember")
-	defer span.End()
-	var req pb.CreateMemberRequest
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		httperr.Write(c, op, httperr.BindError(err))
-		return
-	}
-
-	_, err := h.client.CreateMember(ctx, &req)
-	if err != nil {
-		httperr.Write(c, "CreateMemberAmqp", err)
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{
-		"statusCode": http.StatusCreated,
-		"message":    "Successfully created user",
-		// "result":     member,
-	})
-}
-
 func (h *Handler) CreateMemberHandler(c *gin.Context) {
 	const op = "CreateMemberHandler"
 	ctx := c.Request.Context()

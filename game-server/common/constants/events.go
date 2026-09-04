@@ -58,7 +58,6 @@ const (
 	NotificationGameEndFailed        = "notification.game.end.failed"
 
 	// auth events
-	AuthMemberCreate = "member.create"
 	AuthMemberLogin  = "member.login"
 
 	// marketplace events
@@ -77,7 +76,6 @@ const (
 	NotificationItemCreatedQueue    = "notification.item.created"
 	NotificationGameEndQueue        = "notification.game.match.ended"
 	NotificationDlqQueue            = "notification.dlq"
-	AuthSignupQueue                 = "auth.signup"
 )
 
 /**

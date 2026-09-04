@@ -318,8 +318,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Request a new member account
-         * @description Publishes a signup command and returns immediately. The account is NOT created by the time this responds — poll check-email to observe it.
+         * Create a new member account
+         * @description Creates the member and returns it. The account exists by the time this responds. An email already in use answers 409.
          */
         post: operations["signup"];
         delete?: never;
@@ -572,15 +572,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        AcceptedEnvelope: {
-            /** @description Human-readable summary */
-            message: string;
-            /**
-             * Format: int64
-             * @description Duplicates the HTTP status
-             */
-            statusCode: number;
-        };
         ArmorDetail: {
             armor_slot?: string;
             /** Format: int32 */
@@ -2392,13 +2383,22 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Accepted */
-            202: {
+            /** @description Created */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AcceptedEnvelope"];
+                    "application/json": components["schemas"]["MemberEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
                 };
             };
             /** @description Unprocessable Entity */

@@ -108,11 +108,6 @@ type ConfirmAvatarUploadBody struct {
 // client cutover, not something a wrap may do silently.
 // ---------------------------------------------------------------------------
 
-type acceptedEnvelope struct {
-	StatusCode int    `json:"statusCode" doc:"Duplicates the HTTP status"`
-	Message    string `json:"message" doc:"Human-readable summary"`
-}
-
 type memberEnvelope struct {
 	StatusCode int     `json:"statusCode" doc:"Duplicates the HTTP status"`
 	Message    string  `json:"message" doc:"Human-readable summary"`

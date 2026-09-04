@@ -2,15 +2,12 @@ package auth
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/wire"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
-	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -31,14 +28,14 @@ type MemberIDFunc func(ctx context.Context) (string, bool)
 //
 // h and amqpClient may hold nil clients: registration records types and
 // metadata, so cmd/openapi can build the document without dialing anything.
-func RegisterOperations(api huma.API, h *Handler, amqpClient *AmqpAuthClient,
+func RegisterOperations(api huma.API, h *Handler,
 	memberID MemberIDFunc, protect func(huma.Context, func(huma.Context)),
 	errFor ErrorFunc, secured []map[string][]string,
 ) {
 	toStatusError = errFor
 	securedOp = secured
 
-	registerSignup(api, amqpClient)
+	registerSignup(api, h)
 	registerSignin(api, h)
 	registerCheckEmail(api, h)
 	registerGetMember(api, h, memberID, protect)
@@ -85,53 +82,43 @@ func unauthenticated() error {
 // Public operations
 // ---------------------------------------------------------------------------
 
-func registerSignup(api huma.API, amqpClient *AmqpAuthClient) {
+func registerSignup(api huma.API, h *Handler) {
 	type input struct {
 		Body SignupBody
 	}
-	type output struct {
-		Status int
-		Body   acceptedEnvelope
-	}
+	type output struct{ Body memberEnvelope }
 
 	huma.Register(api, huma.Operation{
 		OperationID: "signup",
-		Errors:      []int{http.StatusUnprocessableEntity, http.StatusServiceUnavailable, http.StatusInternalServerError},
-		Method:      http.MethodPost,
-		Path:        "/api/member/signup",
-		Summary:     "Request a new member account",
-		Description: "Publishes a signup command and returns immediately. The account is " +
-			"NOT created by the time this responds — poll check-email to observe it.",
+		Errors: []int{http.StatusConflict, http.StatusUnprocessableEntity,
+			http.StatusServiceUnavailable, http.StatusInternalServerError},
+		Method:  http.MethodPost,
+		Path:    "/api/member/signup",
+		Summary: "Create a new member account",
+		Description: "Creates the member and returns it. The account exists by the time " +
+			"this responds. An email already in use answers 409.",
 		Tags:          []string{"member"},
-		DefaultStatus: http.StatusAccepted,
+		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		req := &pb.CreateMemberRequest{
+		// The error path needs no translation here. auth-service maps the
+		// unique-email violation to ErrDuplicateResource, the interceptor maps
+		// that to codes.AlreadyExists, and httperr maps that to 409. Every hop
+		// already exists and is tested; signup simply could not reach it while
+		// it answered before the database was touched.
+		member, err := h.client.CreateMember(ctx, &pb.CreateMemberRequest{
 			Name:     in.Body.Name,
 			Email:    in.Body.Email,
 			Password: in.Body.Password,
-		}
-
-		body, err := proto.Marshal(req)
+		})
 		if err != nil {
-			// Our own encoding failed: a genuine internal fault, NOT retryable,
-			// so it stays 500 rather than joining the broker case below.
 			return nil, err
 		}
 
-		if err := amqpClient.RpcCallNoWaitResponse(ctx, commonconstants.AuthMemberCreate, body); err != nil {
-			// The broker is unreachable — the request was fine and would succeed
-			// once it is back. 503, not 500 (FS-0001 §Requirements 5 as amended).
-			return nil, apperr.WithDetail(
-				wrapUnavailable(err), "Signup is temporarily unavailable")
-		}
-
-		return &output{
-			Status: http.StatusAccepted,
-			Body: acceptedEnvelope{
-				StatusCode: http.StatusAccepted,
-				Message:    "Signup request accepted",
-			},
-		}, nil
+		return &output{Body: memberEnvelope{
+			StatusCode: http.StatusCreated,
+			Message:    "Successfully created user",
+			Result:     memberFromProto(member),
+		}}, nil
 	}))
 }
 
@@ -461,10 +448,4 @@ func timestampFromProto(ts *timestamppb.Timestamp) *wire.Timestamp {
 		return nil
 	}
 	return &wire.Timestamp{Seconds: ts.Seconds, Nanos: ts.Nanos}
-}
-
-// wrapUnavailable marks an error as the retryable kind so the seam maps it to
-// 503 rather than 500.
-func wrapUnavailable(err error) error {
-	return fmt.Errorf("%w: publishing signup: %w", apperr.ErrUnavailable, err)
 }

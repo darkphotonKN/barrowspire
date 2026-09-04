@@ -52,3 +52,19 @@
 # Expect `SKIPPED: no baseline` until the spec first lands on the base branch. That is
 # correct, not broken. The ratchet guards every revision AFTER that point.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# FS-0007 (I-0041) — signup became synchronous.
+#
+# WHY: signup published a member.create command over the broker and answered 202
+# before the database was touched, so a duplicate email could never be reported —
+# the unique-constraint violation happened inside a consumer that acked and
+# discarded it. The client polled check-email for 15 seconds and then reported
+# slowness. Signup now calls CreateMember over gRPC and answers 201 with the
+# member, which makes the already-built 409 ALREADY_EXISTS path reachable.
+#
+# Dropping 202 is the deliberate break FS-0007 §API surface authorises. The 201
+# and the 409 are additions and are NOT breaking, so they need no entry.
+#
+# Line copied verbatim from `make openapi-breaking` output, lowercased.
+in api post /api/member/signup removed the success response with the status `202`

@@ -81,7 +81,6 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	authHandler := authService.NewHandler(authClient)
 
 	// Member Setup amqp
-	amqpAuthClient := authService.NewAmqpAuthClient(ch)
 
 	// Member routes are SERIALIZED (FS-0002 slice 1). All eight are declared as
 	// typed operations in internal/gateway/auth/typed.go and mounted below via
@@ -143,7 +142,6 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	// slice at a time; everything not yet listed there is still legacy gin above.
 	contract.RegisterOperations(contract.New(router), contract.Deps{
 		Auth:           authHandler,
-		AuthAMQP:       amqpAuthClient,
 		Items:          itemHandler,
 		Notification:   notificationHandler,
 		Stats:          statsHandler,

@@ -17,7 +17,6 @@ import (
 // builds the document without dialing Consul, RabbitMQ, or anything else.
 type Deps struct {
 	Auth         *authgw.Handler
-	AuthAMQP     *authgw.AmqpAuthClient
 	Items        *itemgw.Handler
 	Notification *notifgw.Handler
 	Stats        *statsgw.Handler
@@ -47,7 +46,7 @@ type Deps struct {
 func RegisterOperations(api huma.API, deps Deps) {
 	protect := Protected(deps.AuthMiddleware)
 
-	authgw.RegisterOperations(api, deps.Auth, deps.AuthAMQP, MemberID, protect, SeamError, Secured)
+	authgw.RegisterOperations(api, deps.Auth, MemberID, protect, SeamError, Secured)
 	itemgw.RegisterOperations(api, deps.Items, MemberID, protect, SeamError, Secured)
 	notifgw.RegisterOperations(api, deps.Notification, MemberID, protect, SeamError, Secured)
 	statsgw.RegisterOperations(api, deps.Stats, SeamError)

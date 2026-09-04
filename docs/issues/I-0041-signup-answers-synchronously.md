@@ -1,6 +1,6 @@
 ---
 id: I-0041
-status: open
+status: done
 implements: FS-0007
 blocked_by: []
 labels: [ready-for-agent]

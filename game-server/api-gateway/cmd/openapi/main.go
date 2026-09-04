@@ -30,7 +30,6 @@ func main() {
 	api := contract.New(gin.New())
 	contract.RegisterOperations(api, contract.Deps{
 		Auth:         authgw.NewHandler(nil),
-		AuthAMQP:     authgw.NewAmqpAuthClient(nil),
 		Items:        itemgw.NewHandler(nil),
 		Notification: notifgw.NewHandler(nil),
 		Stats:        statsgw.NewHandler(nil),
