@@ -125,6 +125,8 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [x] Optimistic concurrency on account writes
 - [x] Read an account's gold, held, and available balances
 - [ ] Credit gold to an account
+- [ ] Create a member's account on signup → FS-0006
+- [ ] Publish account creation for downstream consumers → FS-0006
 
 ### Holds
 

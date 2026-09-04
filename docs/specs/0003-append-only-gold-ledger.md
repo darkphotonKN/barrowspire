@@ -206,7 +206,7 @@ paragraph above rules out.
     the parameter outright for a member rather than comparing it against the claim. The same
     distinction requirement 16 draws on the write path.
 25. **A member sees only their own entries, and asking about another account is refused, not
-    filtered.** `account_id` present with `role=member` returns `FORBIDDEN`. Silently narrowing
+    filtered.** `account_id` present with `role=player` returns `FORBIDDEN`. Silently narrowing
     it to an empty result would leave a working existence oracle for account ids; targeted
     search is an administrative capability.
 26. **A transaction a member has no leg in is `404`, not `403`.** A transaction id is shared by
@@ -241,8 +241,15 @@ paragraph above rules out.
 29. **The role arrives on the request; minting it is another feature's problem.** This feature
     builds the seam — the boundary reads `role` from verified token metadata and scopes the query
     by it. It does not define how the claim is issued, and takes no position on the claim's
-    shape beyond `member | admin`. The admin semantics above are specified here so that whoever
+    shape beyond `player | admin`. The admin semantics above are specified here so that whoever
     lands the auth work has a defined target.
+
+    > **Amended by [FS-0006](0006-account-and-role-token-claims.md).** The placeholder pair was
+    > `member | admin`; the auth work landed on **`player | admin`**, because `player` is the
+    > value already live in `members.role`, `commontypes.Role`, items-service's `stringToRole`,
+    > the gateway auth response, and the generated client — and because `member` is this repo's
+    > entity noun for the person, not a role they hold. See
+    > [`auth-service/CONTEXT.md`](../../game-server/auth-service/CONTEXT.md).
 30. **Errors are RFC 9457 problem+json carrying a stable `code`**, emitted through the gateway's
     existing seam rather than a new one. A ledger-service outage surfaces as
     `503 · SERVICE_UNAVAILABLE`, never `500` — the request was valid and retry is correct, and
@@ -637,8 +644,8 @@ named once rather than renamed at every layer.
 | Case | Response |
 |---|---|
 | no token, or token invalid | `401 · UNAUTHENTICATED` |
-| `role=member` supplied `account_id` | `403 · FORBIDDEN` (requirement 25) |
-| `role=member` requested a transaction with no leg on their account | `404 · NOT_FOUND` (requirement 26) |
+| `role=player` supplied `account_id` | `403 · FORBIDDEN` (requirement 25) |
+| `role=player` requested a transaction with no leg on their account | `404 · NOT_FOUND` (requirement 26) |
 | `transaction_id` unknown | `404 · NOT_FOUND` |
 | malformed UUID, `limit` out of range, or undecodable `cursor` | `422 · VALIDATION_FAILED` |
 | ledger-service unreachable | `503 · SERVICE_UNAVAILABLE` (requirement 30) |

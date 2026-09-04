@@ -61,11 +61,13 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 - [x] Update member info
 - [x] Update member password
 - [x] Check whether an email is taken
+- [ ] Single member-creation path → FS-0007
 
 ### Tokens
 
 - [x] Validate a token and return its subject
 - [ ] Reject a refresh token presented as an access credential
+- [ ] Mint account and role claims into the access token → FS-0006
 
 ### Avatars
 
@@ -81,6 +83,10 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 ### Player profile
 
 - [ ] Expose the `player_profile` level/xp row over RPC
+
+### Accounts
+
+- [ ] Record a member's wallet account id → FS-0006
 
 ### Messaging
 
