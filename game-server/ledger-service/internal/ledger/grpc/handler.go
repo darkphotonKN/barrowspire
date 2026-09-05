@@ -2,10 +2,13 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/ledger"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	cursor "github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
+	"github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/domain/ledger"
 	"github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/dto"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -46,26 +49,34 @@ func NewHandler(transactionReader TransactionReader, entriesReader EntriesReader
 // codes for the READ path. After ADR-0011 the only gRPC on this service is
 // GetTransaction and ListEntries; the write path is a Temporal activity whose
 // errors are classified by retry policy (ledger.IsNonRetryable), never here.
-//
-// It is deliberately EMPTY. Every caller currently falls through to Internal.
-//
-// TODO(I-0021): fill the read-path mappings. The sentinel set to cover spans
-// two packages, and that is the trap — domain/ledger/errors.go supplies
-// ErrInvalidUUID, and common/utils/cursor supplies cursor.ErrInvalidCursor,
-// cursor.ErrInvalidDate and cursor.ErrInvalidUUID, which is a DIFFERENT
-// sentinel from the ledger one despite the identical name. An arm matching
-// only the ledger sentinels compiles, reads correctly, and drops every
-// malformed cursor into Internal below — a 500 where FS-0003 §API surface says
-// 422. Also needed: NotFound (masked, never Forbidden — see I-0025),
-// PermissionDenied, Unauthenticated, Unavailable.
-//
-//nolint:unused // no handler arm calls this until I-0041; I-0021 fills it.
 func mapError(ctx context.Context, err error) error {
-	// No mappings. I-0021 owns this function; a pre-filled arm here would
-	// silently pre-empt a decision that slice is meant to make.
 	code := codes.Internal
 	msg := "internal error"
+	logLevel := slog.LevelWarn
 
-	slog.Log(ctx, slog.LevelError, "rpc error", "err", err, "code", code.String())
+	switch {
+	case errors.Is(err, commonconstants.ErrTransient):
+		code = codes.Unavailable
+		msg = "retry later"
+
+	case errors.Is(err, cursor.ErrInvalidDate) || errors.Is(err, cursor.ErrInvalidCursor) || errors.Is(err, cursor.ErrInvalidUUID):
+		code = codes.InvalidArgument
+		msg = "malformed cursor"
+
+	case errors.Is(err, commonconstants.ErrNotFound):
+		code = codes.NotFound // client gets not found, but log below logs the full detail in "err"
+		// must stay generic for masking
+		msg = "not found"
+
+	case errors.Is(err, ledger.ErrInvalidUUID):
+		code = codes.InvalidArgument
+		msg = "malformed id"
+
+	default:
+		// unhandled and unexpected errors, keep log for tracing
+		logLevel = slog.LevelError
+	}
+
+	slog.Log(ctx, logLevel, "rpc error", "err", err, "code", code.String())
 	return status.Error(code, msg)
 }
