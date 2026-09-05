@@ -38,7 +38,6 @@ func RegisterOperations(api huma.API, h *Handler,
 
 	registerSignup(api, h)
 	registerSignin(api, h)
-	registerCheckEmail(api, h)
 	registerGetMember(api, h, memberID, protect)
 	registerUpdatePassword(api, h, memberID, protect)
 	registerUpdateInfo(api, h, memberID, protect)
@@ -158,45 +157,6 @@ func registerSignin(api huma.API, h *Handler) {
 		}}, nil
 	}))
 }
-
-func registerCheckEmail(api huma.API, h *Handler) {
-	type input struct {
-		Email string `query:"email" doc:"Email address to check"`
-	}
-	type output struct{ Body checkEmailEnvelope }
-
-	huma.Register(api, huma.Operation{
-		OperationID: "check-email-exists",
-		Errors:      []int{http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError},
-		Method:      http.MethodGet,
-		Path:        "/api/member/check-email",
-		Summary:     "Check whether an email is already registered",
-		Description: "Signup's polling companion: signup returns 202 without creating the " +
-			"account, and this reports when it exists.",
-		Tags: []string{"member"},
-	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		// Transcribed: the legacy handler rejected an empty query itself rather
-		// than declaring the parameter required, so this is a 400 with an
-		// authored detail — NOT a 422 from the boundary.
-		if in.Email == "" {
-			return nil, apperr.WithDetail(apperr.ErrValidation, "Email query parameter is required")
-		}
-
-		res, err := h.client.CheckEmailExists(ctx, &pb.CheckEmailRequest{Email: in.Email})
-		if err != nil {
-			return nil, err
-		}
-
-		return &output{Body: checkEmailEnvelope{
-			StatusCode: http.StatusOK,
-			Exists:     res.Exists,
-		}}, nil
-	}))
-}
-
-// ---------------------------------------------------------------------------
-// Protected operations
-// ---------------------------------------------------------------------------
 
 func registerGetMember(api huma.API, h *Handler, memberID MemberIDFunc,
 	protect func(huma.Context, func(huma.Context)),

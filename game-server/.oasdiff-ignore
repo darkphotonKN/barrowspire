@@ -68,3 +68,25 @@
 #
 # Line copied verbatim from `make openapi-breaking` output, lowercased.
 in api post /api/member/signup removed the success response with the status `202`
+
+# ---------------------------------------------------------------------------
+# FS-0007 (I-0042) — check-email removed.
+#
+# WHY: GET /api/member/check-email existed for exactly one reason — signup used
+# to answer 202 without creating the account, so the register page polled this
+# endpoint once a second, up to fifteen times, to learn when the member showed
+# up. I-0041 made signup synchronous and answer 409 ALREADY_EXISTS directly, so
+# the poll was deleted and this endpoint lost its only caller and its stated
+# purpose in the same change.
+#
+# Removed WITHOUT a deprecation window deliberately: the only consumer is this
+# repo's own generated client, cut over in the same commit, and the endpoint's
+# behaviour is actively misleading to build on — CheckEmailExists reports
+# Exists:false on ANY error, so during a database outage it reports every email
+# as available. Deprecating it would have meant advertising that for a release.
+#
+# auth-service's gRPC CheckEmailExists is NOT removed; it is recorded as
+# callerless in that service's SPECIFICATION.md. Only the HTTP exposure goes.
+#
+# Line copied verbatim from `make openapi-breaking` output, lowercased.
+in api get /api/member/check-email api path removed without deprecation

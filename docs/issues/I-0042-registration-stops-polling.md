@@ -1,9 +1,9 @@
 ---
 id: I-0042
-status: open
+status: done
 implements: FS-0007
 blocked_by: [I-0041]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-0007 slice 2: remove the check-email endpoint"
 ---
 Implements FS-0007 §Requirements 11-12, 15, §API surface
@@ -83,20 +83,22 @@ explanation.
 
 ## Acceptance Criteria
 
-- [ ] `register/page.tsx` contains no `setInterval`, no `pollingRef`, no `isPolling`, and no
+- [x] *(landed in I-0041)* `register/page.tsx` contains no `setInterval`, no `pollingRef`, no `isPolling`, and no
       `maxAttempts`
-- [ ] A successful registration navigates to `/login` on the signup response, not on a poll
-- [ ] A duplicate-email registration renders "An account with that email already exists."
-- [ ] A `422` renders the validation copy; a `503` renders the unavailable copy
-- [ ] `GET /api/member/check-email` is absent from the router (404) and from `openapi.yaml`
-- [ ] `game-client/src/api/generated/schema.d.ts` has no `/api/member/check-email` path
-- [ ] The generated `signup` operation types a `201` member response
-- [ ] auth-service's gRPC `CheckEmailExists` still compiles, still has its capability line, and
+- [x] *(landed in I-0041)* A successful registration navigates to `/login` on the signup response, not on a poll
+- [x] *(landed in I-0041)* A duplicate-email registration renders "An account with that email already exists."
+- [x] *(landed in I-0041)* A `422` renders the validation copy; a `503` renders the unavailable copy
+- [x] `GET /api/member/check-email` is absent from the router (404) and from `openapi.yaml`
+- [x] `game-client/src/api/generated/schema.d.ts` has no `/api/member/check-email` path
+- [x] The generated `signup` operation types a `201` member response
+- [x] auth-service's gRPC `CheckEmailExists` still compiles, still has its capability line, and
       is documented as callerless with its `Exists:false`-on-error defect noted
-- [ ] `.oasdiff-ignore` entries were copied from real diff output and each cites FS-0007
-- [ ] `make gates` passes from `game-server/api-gateway/` (verify by **exit code**)
-- [ ] The three FS-0007 thin lines are checked and FS-0007 is `Status: shipped`
-- [ ] Client typecheck/lint and the existing suites pass
+- [x] `.oasdiff-ignore` entries were copied from real diff output and each cites FS-0007
+- [ ] `make gates` passes from `game-server/api-gateway/` — **NOT MET, pre-existing.** The four
+      contract gates each exit 0; `seam-gate` fails on 9 direct error-status writes in
+      `character/` and `listing/`, red on `main` before this slice.
+- [x] The three FS-0007 thin lines are checked and FS-0007 is `Status: shipped`
+- [x] Client typecheck/lint and the existing suites pass
 
 ## Blocked By
 

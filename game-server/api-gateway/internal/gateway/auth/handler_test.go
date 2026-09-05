@@ -32,7 +32,6 @@ type stubAuthClient struct {
 	validateToken  *pb.ValidateTokenResponse
 	requestAvatar  *pb.RequestAvatarUploadResponse
 	confirmAvatar  *pb.ConfirmAvatarUploadResponse
-	checkEmail     *pb.CheckEmailResponse
 }
 
 func (s *stubAuthClient) CreateMember(context.Context, *pb.CreateMemberRequest) (*pb.Member, error) {
@@ -67,10 +66,6 @@ func (s *stubAuthClient) ConfirmAvatarUpload(context.Context, *pb.ConfirmAvatarU
 	return s.confirmAvatar, s.err
 }
 
-func (s *stubAuthClient) CheckEmailExists(context.Context, *pb.CheckEmailRequest) (*pb.CheckEmailResponse, error) {
-	return s.checkEmail, s.err
-}
-
 // newRouter mounts the auth routes the way config/routes.go does. The identity
 // middleware is stubbed rather than real: these tests are about error
 // translation, and I-0002 already covers the JWT paths.
@@ -81,7 +76,6 @@ func newRouter(client gwauth.AuthClient, identity string) *gin.Engine {
 	public := r.Group("/member")
 	public.POST("/signup", h.CreateMemberHandler)
 	public.POST("/signin", h.LoginMemberHandler)
-	public.GET("/check-email", h.CheckEmailExistsHandler)
 	public.POST("/validate-token", h.ValidateTokenHandler)
 
 	private := r.Group("/member")
@@ -144,18 +138,6 @@ func TestAuthHandler_DownstreamFailures_ResolveThroughTheSeam(t *testing.T) {
 			name: "signin for unknown member", method: http.MethodPost, path: "/member/signin", body: `{}`,
 			clientErr:  status.Error(codes.NotFound, "no such member"),
 			wantStatus: http.StatusNotFound, wantCode: errcode.NotFound,
-		},
-		{
-			// CHANGED: CheckEmailExists had NO switch at all — every failure was 500.
-			name: "check-email rejected", method: http.MethodGet, path: "/member/check-email?email=a@b.c",
-			clientErr:  status.Error(codes.InvalidArgument, "malformed email"),
-			wantStatus: http.StatusBadRequest, wantCode: errcode.ValidationFailed,
-		},
-		{
-			// CHANGED: was 500 for the same reason.
-			name: "check-email while downstream is down", method: http.MethodGet, path: "/member/check-email?email=a@b.c",
-			clientErr:  status.Error(codes.Unavailable, "dial tcp 10.0.0.7:50051: connect: connection refused"),
-			wantStatus: http.StatusServiceUnavailable, wantCode: errcode.ServiceUnavailable,
 		},
 		{
 			name: "get member not found", method: http.MethodGet, path: "/member",
@@ -275,13 +257,11 @@ func TestAuthHandler_MissingIdentity_Returns401(t *testing.T) {
 // FS-0001 §Requirements 12 — success responses are untouched by this feature.
 func TestAuthHandler_SuccessResponses_AreUnchanged(t *testing.T) {
 	client := &stubAuthClient{
-		member:     &pb.Member{Id: testIdentity},
-		checkEmail: &pb.CheckEmailResponse{Exists: true},
+		member: &pb.Member{Id: testIdentity},
 	}
 
 	t.Run("no success path carries a problem code", func(t *testing.T) {
 		for _, tc := range []struct{ method, path string }{
-			{http.MethodGet, "/member/check-email?email=a@b.c"},
 			{http.MethodGet, "/member"},
 		} {
 			w := testsupport.Do(newRouter(client, testIdentity), tc.method, tc.path, "")
@@ -290,17 +270,6 @@ func TestAuthHandler_SuccessResponses_AreUnchanged(t *testing.T) {
 			assert.Contains(t, w.Header().Get("Content-Type"), "application/json", tc.path)
 			assert.NotContains(t, testsupport.Decode(t, w), "code", tc.path)
 		}
-	})
-
-	t.Run("check email", func(t *testing.T) {
-		w := testsupport.Do(newRouter(client, testIdentity), http.MethodGet, "/member/check-email?email=a@b.c", "")
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
-
-		body := testsupport.Decode(t, w)
-		assert.Equal(t, float64(http.StatusOK), body["statusCode"])
-		assert.Equal(t, true, body["exists"])
 	})
 
 	t.Run("get member", func(t *testing.T) {

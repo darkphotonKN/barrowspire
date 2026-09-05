@@ -52,27 +52,6 @@ func (h *Handler) CreateMemberHandler(c *gin.Context) {
 	})
 }
 
-func (h *Handler) CheckEmailExistsHandler(c *gin.Context) {
-	const op = "CheckEmailExistsHandler"
-	email := c.Query("email")
-	if email == "" {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrValidation, "Email query parameter is required"))
-		return
-	}
-
-	req := &pb.CheckEmailRequest{Email: email}
-	response, err := h.client.CheckEmailExists(c.Request.Context(), req)
-	if err != nil {
-		httperr.Write(c, op, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"statusCode": http.StatusOK,
-		"exists":     response.Exists,
-	})
-}
-
 var tracer = otel.Tracer("api-gateway")
 
 func (h *Handler) LoginMemberHandler(c *gin.Context) {

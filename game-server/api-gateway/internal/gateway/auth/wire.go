@@ -126,11 +126,6 @@ type avatarUploadEnvelope struct {
 	Result     *AvatarUploadResult `json:"result" doc:"Presigned upload details"`
 }
 
-type checkEmailEnvelope struct {
-	StatusCode int  `json:"statusCode" doc:"Duplicates the HTTP status"`
-	Exists     bool `json:"exists" doc:"Whether an account already uses this email"`
-}
-
 type successEnvelope struct {
 	StatusCode int    `json:"statusCode" doc:"Duplicates the HTTP status"`
 	Message    string `json:"message" doc:"Message chosen by auth-service"`

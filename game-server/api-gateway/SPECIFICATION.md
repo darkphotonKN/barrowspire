@@ -51,7 +51,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 ### Integration patterns
 
 - [x] gRPC fan-out over Consul-discovered clients
-- [ ] Synchronous signup → FS-0007
+- [x] Synchronous signup → FS-0007
 
 ## Purpose
 

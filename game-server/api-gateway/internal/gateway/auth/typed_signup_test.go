@@ -152,3 +152,21 @@ func TestSignup_MalformedBody_Returns422(t *testing.T) {
 
 	testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
 }
+
+// FS-0007 §Requirements 11, §API surface. check-email existed for one reason:
+// signup answered 202 without creating the account, so the client polled this
+// endpoint to learn when it appeared. I-0041 made signup synchronous and the
+// poll went with it, leaving an endpoint whose only caller and whose stated
+// purpose are both gone.
+//
+// Asserted through the mounted router rather than by grepping the source: a
+// route can survive a deleted handler if a stale registration is left behind,
+// and that is exactly the residue this check is for.
+func TestCheckEmail_IsRemovedFromTheSurface(t *testing.T) {
+	r := newTypedRouter(&stubAuthClient{})
+
+	w := testsupport.Do(r, http.MethodGet, "/api/member/check-email?email=a@b.c", "")
+
+	assert.Equal(t, http.StatusNotFound, w.Code,
+		"check-email must not be routable once FS-0007 removes it")
+}

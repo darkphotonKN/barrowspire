@@ -36,7 +36,7 @@ server state and sends intents. ✅
 ### Account
 
 - [x] Register an account
-- [ ] Register without polling → FS-0007
+- [x] Register without polling → FS-0007
 - [x] Log in and persist the session
 - [x] Guard routes behind auth
 - [x] Upload and confirm an avatar

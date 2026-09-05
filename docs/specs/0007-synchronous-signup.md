@@ -1,6 +1,6 @@
 # FS-0007: Synchronous signup
 
-> Status: work-order · SPECIFICATION.md: `game-server/api-gateway/SPECIFICATION.md` "### Integration patterns" → "Synchronous signup"; `game-server/auth-service/SPECIFICATION.md` "### Membership" → "Single member-creation path"; `game-client/SPECIFICATION.md` "### Account" → "Register without polling" → this FS · Related ADRs: [ADR-0001](../adr/0001-contract-layer.md) (contract layer) · Sibling: [FS-0006](0006-account-and-role-token-claims.md) (token claims — sequenced after this) · Vocabulary: [`auth-service/CONTEXT.md`](../../game-server/auth-service/CONTEXT.md)
+> Status: shipped · SPECIFICATION.md: `game-server/api-gateway/SPECIFICATION.md` "### Integration patterns" → "Synchronous signup"; `game-server/auth-service/SPECIFICATION.md` "### Membership" → "Single member-creation path"; `game-client/SPECIFICATION.md` "### Account" → "Register without polling" → this FS · Related ADRs: [ADR-0001](../adr/0001-contract-layer.md) (contract layer) · Sibling: [FS-0006](0006-account-and-role-token-claims.md) (token claims — sequenced after this) · Vocabulary: [`auth-service/CONTEXT.md`](../../game-server/auth-service/CONTEXT.md)
 
 ## Summary
 

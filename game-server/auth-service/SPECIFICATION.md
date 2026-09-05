@@ -61,7 +61,7 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 - [x] Update member info
 - [x] Update member password
 - [x] Check whether an email is taken
-- [ ] Single member-creation path → FS-0007
+- [x] Single member-creation path → FS-0007
 
 ### Tokens
 
@@ -114,8 +114,16 @@ Consul name `auth`, gRPC port default **7116** (`GRPC_AUTH_ADDR`). Proto in
   > REVIEW: does **not** check `tokenType`, so a 7-day **refresh** token is accepted as a valid
   > access credential.
 - **CheckEmailExists** (`{Email}` → `{Exists}`) — true if member found.
+  > **CALLERLESS since FS-0007.** Its only consumer was the gateway's
+  > `GET /api/member/check-email`, which existed to let the register page poll for an account
+  > that signup had not yet created. Signup is synchronous now and answers `409 · ALREADY_EXISTS`
+  > directly, so both the poll and the HTTP endpoint are gone. The RPC is deliberately kept
+  > rather than deleted — removing it from a published contract is its own decision — but
+  > nothing calls it.
   > REVIEW: returns `Exists:false` on **any** error (incl. DB outage) → a failure reports every
-  > email as available.
+  > email as available. **This is why it must not simply be re-exposed**: an outage would report
+  > every email as available, and a signup form built on that would invite users to take an
+  > address that is already taken.
 - **SetStripeCustomerID / GetStripeCustomerID / UpdateSubscriptionStatus** — read/write the
   Stripe columns on the member record (used by payment-service linkage).
 

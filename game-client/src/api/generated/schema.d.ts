@@ -268,26 +268,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/member/check-email": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check whether an email is already registered
-         * @description Signup's polling companion: signup returns 202 without creating the account, and this reports when it exists.
-         */
-        get: operations["check-email-exists"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/member/signin": {
         parameters: {
             query?: never;
@@ -621,15 +601,6 @@ export interface components {
             s3_key?: string;
             /** @description Correlates the request with its confirmation */
             upload_id?: string;
-        };
-        CheckEmailEnvelope: {
-            /** @description Whether an account already uses this email */
-            exists: boolean;
-            /**
-             * Format: int64
-             * @description Duplicates the HTTP status
-             */
-            statusCode: number;
         };
         ConfirmAvatarEnvelope: {
             /** @description The stored avatar URL */
@@ -2233,56 +2204,6 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-        };
-    };
-    "check-email-exists": {
-        parameters: {
-            query?: {
-                /** @description Email address to check */
-                email?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CheckEmailEnvelope"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -193,9 +193,11 @@ export const apiClient = new ApiClient();
 /**
  * Unauthenticated typed client, for the pre-auth pages.
  *
- * Sign-in, sign-up and the check-email poll run before a token exists, so they
- * must not go through the auth middleware. They still go through the GENERATED
- * client: "no hand-written fetch against a serialized path" (ADR-0001 §4) has no
- * pre-auth exemption.
+ * Sign-in and sign-up run before a token exists, so they must not go through the
+ * auth middleware. They still go through the GENERATED client: "no hand-written
+ * fetch against a serialized path" (ADR-0001 §4) has no pre-auth exemption.
+ *
+ * There is no third pre-auth call: FS-0007 made signup synchronous, which removed
+ * the check-email poll and then the endpoint itself.
  */
 export const publicClient = createClient<paths>({ baseUrl: API_BASE_URL });
