@@ -51,7 +51,6 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 ### Integration patterns
 
 - [x] gRPC fan-out over Consul-discovered clients
-- [x] AMQP fire-and-forget publish for signup
 - [ ] Synchronous signup → FS-0007
 
 ## Purpose

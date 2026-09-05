@@ -140,3 +140,15 @@ func TestSignup_DownstreamReturnsNoMember_Returns500(t *testing.T) {
 
 	testsupport.AssertProblem(t, w, http.StatusInternalServerError, string(errcode.Internal))
 }
+
+// FS-0007 §Requirements 4, §API surface. The 422 is the boundary's, not
+// auth-service's: plane-1 request validation is strict (docs/agents/contract.md),
+// so an unknown member is rejected at the edge and never reaches the RPC.
+func TestSignup_MalformedBody_Returns422(t *testing.T) {
+	r := newTypedRouter(&stubAuthClient{member: &pb.Member{Id: "unused"}})
+
+	w := testsupport.Do(r, http.MethodPost, "/api/member/signup",
+		`{"name":"Delver","email":"delver@barrowspire.test","password":"hunter2","nope":1}`)
+
+	testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
+}

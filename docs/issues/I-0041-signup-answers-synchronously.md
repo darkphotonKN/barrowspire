@@ -111,35 +111,40 @@ Leave the three `- [ ] … → FS-0007` lines unchecked; they flip when FS-0007 
 
 ## Acceptance Criteria
 
-- [ ] `POST /api/member/signup` with a valid, unused email returns `201` and a member body with
+- [x] `POST /api/member/signup` with a valid, unused email returns `201` and a member body with
       an `id` and a blank password
-- [ ] The member row is readable from auth-service immediately after that response returns
-- [ ] A duplicate email returns `409` with code `ALREADY_EXISTS`
-- [ ] A malformed body returns `422 · VALIDATION_FAILED`
-- [ ] auth-service unreachable returns `503 · SERVICE_UNAVAILABLE`, **not** `500`, on **both**
+- [x] The member row is readable from auth-service immediately after that response returns
+- [x] A duplicate email returns `409` with code `ALREADY_EXISTS`
+- [x] A malformed body returns `422 · VALIDATION_FAILED`
+- [x] auth-service unreachable returns `503 · SERVICE_UNAVAILABLE`, **not** `500`, on **both**
       failure paths: the RPC failing on an open connection, and the service being deregistered
       so `ensureConn` fails. The second is the likelier one and a stubbed client cannot reach it.
-- [ ] The route's `Errors` declaration lists `409, 422, 503, 500`
-- [ ] The operation description no longer claims the account is not yet created
-- [ ] A successful signup writes exactly one `member.signedup` outbox row
-- [ ] Signup returns no token
-- [ ] `grep -rn "AuthMemberCreate\|member\.create" game-server/ --include="*.go"` returns nothing
-- [ ] `game-server/api-gateway/internal/gateway/character/amqp_client.go` no longer publishes a
+- [x] The route's `Errors` declaration lists `409, 422, 503, 500`
+- [x] The operation description no longer claims the account is not yet created
+- [ ] A successful signup writes exactly one `member.signedup` outbox row — **NOT PROVEN.** The
+      outbox write lives in auth-service's untouched `CreateMember`, and this slice removed its
+      only other caller, so it holds by construction. No test demonstrates it.
+- [x] Signup returns no token
+- [x] `grep -rn "AuthMemberCreate\|member\.create" game-server/ --include="*.go"` returns nothing
+- [x] `game-server/api-gateway/internal/gateway/character/amqp_client.go` no longer publishes a
       member-creation command
-- [ ] auth-service's AMQP consumer has no `member.create` binding and does not create members
-- [ ] notification-service still receives `member.signedup` unchanged
-- [ ] The 201 body is the member itself — no `statusCode`, no `result` nesting
-- [ ] A nil member from auth-service answers `500`, not a panic or an empty `201`
-- [ ] `register/page.tsx` reads `data` directly and contains no `setInterval`/`pollingRef`
-- [ ] A duplicate-email registration renders "An account with that email already exists."
-- [ ] `tsc --noEmit` passes on the client
-- [ ] `openapi.yaml` + `game-client/src/api/generated/` regenerated, not hand-edited, committed
+- [x] auth-service's AMQP consumer has no `member.create` binding and does not create members
+- [x] notification-service still receives `member.signedup` unchanged
+- [x] The 201 body is the member itself — no `statusCode`, no `result` nesting
+- [x] A nil member from auth-service answers `500`, not a panic or an empty `201`
+- [x] `register/page.tsx` reads `data` directly and contains no `setInterval`/`pollingRef`
+- [x] A duplicate-email registration renders "An account with that email already exists."
+- [x] `tsc --noEmit` passes on the client
+- [x] `openapi.yaml` + `game-client/src/api/generated/` regenerated, not hand-edited, committed
       with the handler
-- [ ] `.oasdiff-ignore` entries were copied from real diff output and each cites FS-0007
-- [ ] `make gates` passes from `game-server/api-gateway/` (verify by **exit code**, not by
-      reading output)
-- [ ] `- [x] AMQP fire-and-forget publish for signup` removed from the api-gateway spec
-- [ ] `go build ./...` and the existing suites pass
+- [x] `.oasdiff-ignore` entries were copied from real diff output and each cites FS-0007
+- [ ] `make gates` passes from `game-server/api-gateway/` — **NOT MET, pre-existing.**
+      `openapi-diff`, `lint-contract`, `openapi-breaking` and `contract-auth` each exit 0.
+      `seam-gate` fails on 9 direct error-status writes in `internal/gateway/character/handler.go`
+      and `internal/gateway/listing/handler.go` — unserialized legacy handlers this slice never
+      touched, red on `main` before it.
+- [x] `- [x] AMQP fire-and-forget publish for signup` removed from the api-gateway spec
+- [x] `go build ./...` and the existing suites pass
 
 ## Blocked By
 
