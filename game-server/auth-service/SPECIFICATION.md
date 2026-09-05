@@ -61,7 +61,7 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 - [x] Update member info
 - [x] Update member password
 - [x] Check whether an email is taken
-- [ ] Single member-creation path → FS-0007
+- [x] Single member-creation path → FS-0007
 
 ### Tokens
 

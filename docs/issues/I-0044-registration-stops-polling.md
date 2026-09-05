@@ -1,8 +1,8 @@
 ---
-id: I-0042
+id: I-0044
 status: done
 implements: FS-0007
-blocked_by: [I-0041]
+blocked_by: [I-0043]
 labels: [ready-for-agent]
 title: "FS-0007 slice 2: remove the check-email endpoint"
 ---
@@ -10,11 +10,17 @@ Implements FS-0007 §Requirements 11-12, 15, §API surface
 
 **Author: agent**
 
+> **Renumbered I-0042 → I-0044.** These ids were allocated against a stale base whose highest
+> issue was I-0040; rebasing onto `main` brought in the ledger read slices, which already held
+> I-0041 and I-0042. Commits landed before the collision was spotted still say "I-0042" —
+> `Implements FS-NNNN` is the durable anchor, not the issue id (`docs/issues/README.md`).
+
+
 ## What to Build
 
 Remove the endpoint that existed only to serve the register page's polling loop.
 
-> **Scope reduced.** I-0041 dropped the response envelope, which made the polling loop
+> **Scope reduced.** I-0043 dropped the response envelope, which made the polling loop
 > incoherent — the created member now arrives in the signup response — so the client cutover
 > (requirements 13-14) landed there instead. `register/page.tsx` already has no poll and no
 > caller of `check-email`. **What remains is the endpoint removal and its regeneration.**
@@ -35,7 +41,7 @@ Delete the polling machinery entirely: `startPolling`, `stopPolling`, `pollingRe
 
 **The error branches the form already declares start working rather than being unreachable.**
 `ALREADY_EXISTS`, `VALIDATION_FAILED`, and `SERVICE_UNAVAILABLE` are already written into that
-call site — I-0041 made `409` reachable, so *"An account with that email already exists."*
+call site — I-0043 made `409` reachable, so *"An account with that email already exists."*
 renders for the first time. This is the bug FS-0007 exists to fix: today a duplicate email
 polls for fifteen seconds and reports slowness.
 
@@ -69,7 +75,7 @@ make openapi && make client
 ```
 
 `make openapi-breaking` **will fail** — removing an operation is an unambiguous break. Add
-`.oasdiff-ignore` entries the same way I-0041 did: run the diff, read the two indented lines,
+`.oasdiff-ignore` entries the same way I-0043 did: run the diff, read the two indented lines,
 concatenate method + path + message, lowercase, one line per triple, each citing **FS-0007**
 and the reason. A guessed line silently fails to suppress and leaves the gate red with no
 explanation.
@@ -86,11 +92,11 @@ lands on `main`.
 
 ## Acceptance Criteria
 
-- [x] *(landed in I-0041)* `register/page.tsx` contains no `setInterval`, no `pollingRef`, no `isPolling`, and no
+- [x] *(landed in I-0043)* `register/page.tsx` contains no `setInterval`, no `pollingRef`, no `isPolling`, and no
       `maxAttempts`
-- [x] *(landed in I-0041)* A successful registration navigates to `/login` on the signup response, not on a poll
-- [x] *(landed in I-0041)* A duplicate-email registration renders "An account with that email already exists."
-- [x] *(landed in I-0041)* A `422` renders the validation copy; a `503` renders the unavailable copy
+- [x] *(landed in I-0043)* A successful registration navigates to `/login` on the signup response, not on a poll
+- [x] *(landed in I-0043)* A duplicate-email registration renders "An account with that email already exists."
+- [x] *(landed in I-0043)* A `422` renders the validation copy; a `503` renders the unavailable copy
 - [x] `GET /api/member/check-email` is absent from the router (404) and from `openapi.yaml`
 - [x] `game-client/src/api/generated/schema.d.ts` has no `/api/member/check-email` path
 - [x] The generated `signup` operation types a `201` member response
@@ -105,7 +111,7 @@ lands on `main`.
 
 ## Blocked By
 
-I-0041 — the client needs the regenerated `201` signup operation, and `check-email` cannot be
+I-0043 — the client needs the regenerated `201` signup operation, and `check-email` cannot be
 removed while a polling client still calls it.
 
 ## Spec Reference

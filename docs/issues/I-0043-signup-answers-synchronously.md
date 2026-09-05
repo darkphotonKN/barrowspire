@@ -1,5 +1,5 @@
 ---
-id: I-0041
+id: I-0043
 status: done
 implements: FS-0007
 blocked_by: []
@@ -10,6 +10,12 @@ Implements FS-0007 §Requirements 1–10, §API surface, §Edge States
 
 **Author: agent**
 
+> **Renumbered I-0041 → I-0043.** These ids were allocated against a stale base whose highest
+> issue was I-0040; rebasing onto `main` brought in the ledger read slices, which already held
+> I-0041 and I-0042. Commits landed before the collision was spotted still say "I-0041" —
+> `Implements FS-NNNN` is the durable anchor, not the issue id (`docs/issues/README.md`).
+
+
 ## What to Build
 
 Turn `POST /api/member/signup` from a fire-and-forget broker command into an ordinary
@@ -19,7 +25,7 @@ synchronous gRPC call, and delete the command path it leaves behind.
 > is the contract, and it declares the bare member), which made the register page's polling loop
 > incoherent: the created member now arrives in the signup response, so polling to discover
 > whether it exists is nonsense. The client cutover therefore moved into this slice.
-> **I-0042 is reduced to removing `check-email` and regenerating.** `check-email` is NOT removed
+> **I-0044 is reduced to removing `check-email` and regenerating.** `check-email` is NOT removed
 > here.
 
 ### 1. Repoint the typed route
@@ -107,7 +113,7 @@ raw output.
 
 Remove `- [x] AMQP fire-and-forget publish for signup` from
 `game-server/api-gateway/SPECIFICATION.md` § Integration patterns. It stops being true here.
-Leave the three `- [ ] … → FS-0007` lines unchecked; they flip when FS-0007 ships (I-0042).
+Leave the three `- [ ] … → FS-0007` lines unchecked; they flip when FS-0007 ships (I-0044).
 
 ## Acceptance Criteria
 

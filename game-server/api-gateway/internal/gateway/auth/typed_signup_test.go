@@ -155,7 +155,7 @@ func TestSignup_MalformedBody_Returns422(t *testing.T) {
 
 // FS-0007 §Requirements 11, §API surface. check-email existed for one reason:
 // signup answered 202 without creating the account, so the client polled this
-// endpoint to learn when it appeared. I-0041 made signup synchronous and the
+// endpoint to learn when it appeared. I-0043 made signup synchronous and the
 // poll went with it, leaving an endpoint whose only caller and whose stated
 // purpose are both gone.
 //
