@@ -6,10 +6,11 @@ blocked_by: [I-0021, I-0024, I-0041]
 labels: [blocked]
 title: "FS-0003 slice 12: getTransaction end-to-end — repo read, gRPC arm, Huma op, 404 masking"
 ---
+
 Implements FS-0003 §API surface, §Requirements 21-22, 24, 26-27, 30
 
 **Author: human** — do NOT hand this to `/develop`. The masking rule below is a security
-property that is easy to implement *almost* correctly and hard to catch in review.
+property that is easy to implement _almost_ correctly and hard to catch in review.
 
 > **Extends the FS-0003 chain post-amendment.** First slice to deliver a complete read operation.
 
@@ -57,7 +58,7 @@ member that a specific movement involving someone else occurred. That is the sec
 
 **The trap:** it is natural to write `if !found { 404 } else if !authorized { 403 }` and then
 "fix" it by changing the 403 to a 404 — which leaves a timing and code-path difference, and
-usually a different `detail` string. Decide the shape so that *not-found* and *not-yours* converge
+usually a different `detail` string. Decide the shape so that _not-found_ and _not-yours_ converge
 before a response is constructed, not after.
 
 Log the real reason server-side. The seam already does this (`slog` with the true `code`), so
