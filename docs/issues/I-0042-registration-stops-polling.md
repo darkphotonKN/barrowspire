@@ -76,10 +76,13 @@ explanation.
 
 ### 4. Close out FS-0007
 
-- Check the three thin lines: `game-server/api-gateway/SPECIFICATION.md` "Synchronous signup",
-  `game-server/auth-service/SPECIFICATION.md` "Single member-creation path",
-  `game-client/SPECIFICATION.md` "Register without polling".
-- Flip `docs/specs/0007-synchronous-signup.md` to `Status: shipped`.
+**Not this slice's writes.** `docs/specs/README.md` fixes one writer per document state:
+`spec-update` flips `Status: shipped` **alongside** the three thin-line checkboxes, and it does
+so **on merge**, not when the code is written. Flipping them from here would have the record
+claim shipped for work still sitting on an unmerged branch.
+
+So: leave the checkboxes `[ ]` and FS-0007 at `work-order`, and run `/spec-update` once this
+lands on `main`.
 
 ## Acceptance Criteria
 
@@ -97,7 +100,7 @@ explanation.
 - [ ] `make gates` passes from `game-server/api-gateway/` — **NOT MET, pre-existing.** The four
       contract gates each exit 0; `seam-gate` fails on 9 direct error-status writes in
       `character/` and `listing/`, red on `main` before this slice.
-- [x] The three FS-0007 thin lines are checked and FS-0007 is `Status: shipped`
+- [ ] The three FS-0007 thin lines are checked and FS-0007 is `Status: shipped` — **deferred to `/spec-update` on merge**, per one-writer-per-state in `docs/specs/README.md`. Not a gap in the work; the code is complete.
 - [x] Client typecheck/lint and the existing suites pass
 
 ## Blocked By

@@ -36,7 +36,7 @@ server state and sends intents. ✅
 ### Account
 
 - [x] Register an account
-- [x] Register without polling → FS-0007
+- [ ] Register without polling → FS-0007
 - [x] Log in and persist the session
 - [x] Guard routes behind auth
 - [x] Upload and confirm an avatar
@@ -80,7 +80,7 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 |---|---|---|
 | `/` | Marketing landing; CTA depends on `isAuthenticated` | public |
 | `/login` | `POST /api/member/signin` → store auth → `/game` (or `?redirect=`) | public |
-| `/register` | `POST /api/member/signup`, then **poll** `GET /api/member/check-email` (1s ×15) → `/login` | public |
+| `/register` | `POST /api/member/signup` → `/login` | public |
 | `/portal` | Presentational splash → `/login` | public |
 | `/game` | Auth-gated in-component; dynamically imports `PhaserGame` (`ssr:false`) | client-gated |
 | `/profile` | Show member; 3-step avatar upload | client-gated |
@@ -94,9 +94,9 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 
 ## Reference — key flows
 
-- **Register → Login:** signup → poll check-email until `exists` → `/login` → signin →
-  `setAuth` → `/game`. (Matches the backend's async signup: gateway publishes signup over AMQP,
-  auth-service creates the member, so the client polls until it exists.)
+- **Register → Login:** signup → `/login` → signin → `setAuth` → `/game`. Signup is
+  synchronous: it answers `201` with the member, so the page navigates on the response and a
+  duplicate email surfaces as `409 · ALREADY_EXISTS` rather than as a poll that times out.
 - **Queue → play:** `/game` mounts Phaser (Boot→Preload→MainMenu). BootScene opens the WS.
   MainMenu "Delve" sends `find_game`, shows a queue popup on `queue_status`, and on `game_found`
   starts `BarrowspireScene`.
@@ -130,7 +130,7 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 - **Base:** `NEXT_PUBLIC_API_URL` (default `http://localhost:7114` = **api-gateway**). Auth:
   `Authorization: Bearer <accessToken>` from localStorage; `401` → logout + `/login`.
 - Endpoints called: `POST /api/member/{signin,signup}`, `GET /api/member`,
-  `GET /api/member/check-email`, `POST /api/member/avatar/{upload-request,confirm}`,
+  `POST /api/member/avatar/{upload-request,confirm}`,
   `POST /api/payment/subscribe`, `GET /api/payment/subscription/permission`,
   `GET /api/stats/leaderboard`, `GET /api/notification/` + `PATCH /:id/read` + `/read-all`,
   `GET /api/items/{loadout,instances}` + `PUT /api/items/loadout`.

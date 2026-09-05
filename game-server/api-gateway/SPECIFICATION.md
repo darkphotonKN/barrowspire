@@ -51,7 +51,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 ### Integration patterns
 
 - [x] gRPC fan-out over Consul-discovered clients
-- [x] Synchronous signup → FS-0007
+- [ ] Synchronous signup → FS-0007
 
 ## Purpose
 
@@ -130,8 +130,8 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
 
 **member → `auth`** (public + private)
 
-- Public: `POST /api/member/signup` _(AMQP, fire-and-forget → 202)_, `POST /api/member/signin`,
-  `GET /api/member/check-email`
+- Public: `POST /api/member/signup` _(gRPC, synchronous → 201 with the member)_,
+  `POST /api/member/signin`
 - Private (JWT): `GET /api/member`, `PATCH /api/member/update-password`,
   `PATCH /api/member/update-info`, `POST /api/member/avatar/upload-request`,
   `POST /api/member/avatar/confirm`
@@ -170,12 +170,15 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
   `discovery.ServiceConnection(ctx, "<consul-name>", registry)`, caches the `*grpc.ClientConn`
   (re-dials only if `Shutdown`), and calls the generated `pb.New<Svc>Client(conn)`. Consul
   names in use: `examples`, `auth`, `items`, `notification`, `stats`, `payments`.
-- **AMQP fire-and-forget** ✅ — signup only: JSON body → `proto.Marshal` → publish to
-  `AuthEventsExchange` with routing key `AuthMemberCreate` and a correlation id; responds
-  `202 Accepted` without waiting for a reply.
-  > REVIEW: the helper is named `RpcCallNoWaitResponse` and generates a `CorrelationId`/implies
-  > ReplyTo semantics, but never consumes a reply. Intentional fire-and-forget, or a half-built
-  > request/reply?
+> **The gateway no longer publishes to the broker at all.** AMQP fire-and-forget existed for
+> signup alone — JSON body → `proto.Marshal` → publish to `AuthEventsExchange` with routing key
+> `AuthMemberCreate`, answering `202` without waiting for a reply. FS-0007 replaced it with a
+> synchronous gRPC call, and the routing key, both publishers, and auth-service's consumer are
+> gone. gRPC via Consul is now the gateway's only downstream integration pattern.
+>
+> REVIEW: `cmd/main.go` still dials RabbitMQ and `SetupRouter` still takes a `*amqp.Channel`
+> nothing reads, so the gateway keeps requiring `RABBITMQ_*` for a dependency it no longer uses.
+> Finish the removal or record why the connection is retained.
 
 ## Constraints / invariants (observed)
 
@@ -201,6 +204,5 @@ gateway behavior. ⏳ (cleanup)
 
 - Are `stats` routes intentionally unauthenticated?
 - Should the `fmt.Println` debug middleware and the `*`-origin CORS be replaced before prod?
-- Is the signup AMQP path meant to stay fire-and-forget, or evolve into request/reply?
 - Which item creation endpoints are the supported contract vs. legacy admin/seed tools?
 - Should the health-check loop tolerate transient Consul failures instead of `log.Fatal`?
