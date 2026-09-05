@@ -15,9 +15,12 @@ Implements FS-0007 §Requirements 1–10, §API surface, §Edge States
 Turn `POST /api/member/signup` from a fire-and-forget broker command into an ordinary
 synchronous gRPC call, and delete the command path it leaves behind.
 
-**The client is deliberately NOT touched in this slice.** After it lands, `register/page.tsx`
-still polls `check-email` — its first poll simply succeeds immediately, so registration keeps
-working. Removing the poll is I-0042. Do not remove `check-email` here.
+> **Scope amended during review.** The response envelope was dropped (the FS §API surface row
+> is the contract, and it declares the bare member), which made the register page's polling loop
+> incoherent: the created member now arrives in the signup response, so polling to discover
+> whether it exists is nonsense. The client cutover therefore moved into this slice.
+> **I-0042 is reduced to removing `check-email` and regenerating.** `check-email` is NOT removed
+> here.
 
 ### 1. Repoint the typed route
 
@@ -25,8 +28,11 @@ working. Removing the poll is I-0042. Do not remove `check-email` here.
 
 - Call `h.client.CreateMember(ctx, &pb.CreateMemberRequest{...})` instead of
   `amqpClient.RpcCallNoWaitResponse(ctx, commonconstants.AuthMemberCreate, body)`.
-- Response becomes **`201` + the member body** (password blank). The `acceptedEnvelope`
-  `{statusCode, message}` shape and `DefaultStatus: http.StatusAccepted` both go.
+- Response becomes **`201` + the bare member body**. The `acceptedEnvelope` shape and
+  `DefaultStatus: http.StatusAccepted` both go, and so does the `{statusCode, message, result}`
+  envelope: FS-0007 §Requirements 2 makes signup the first operation on this surface to shed it.
+  Guard the nil member — the response type is a value, so an unguarded dereference panics the
+  request rather than failing it.
 - `Errors:` becomes `409, 422, 503, 500` — add `http.StatusConflict`.
 - Rewrite `Description`. It currently states the opposite of the new behavior: *"Publishes a
   signup command and returns immediately. The account is NOT created by the time this
@@ -110,7 +116,9 @@ Leave the three `- [ ] … → FS-0007` lines unchecked; they flip when FS-0007 
 - [ ] The member row is readable from auth-service immediately after that response returns
 - [ ] A duplicate email returns `409` with code `ALREADY_EXISTS`
 - [ ] A malformed body returns `422 · VALIDATION_FAILED`
-- [ ] auth-service unreachable returns `503 · SERVICE_UNAVAILABLE`, **not** `500`
+- [ ] auth-service unreachable returns `503 · SERVICE_UNAVAILABLE`, **not** `500`, on **both**
+      failure paths: the RPC failing on an open connection, and the service being deregistered
+      so `ensureConn` fails. The second is the likelier one and a stubbed client cannot reach it.
 - [ ] The route's `Errors` declaration lists `409, 422, 503, 500`
 - [ ] The operation description no longer claims the account is not yet created
 - [ ] A successful signup writes exactly one `member.signedup` outbox row
@@ -120,7 +128,11 @@ Leave the three `- [ ] … → FS-0007` lines unchecked; they flip when FS-0007 
       member-creation command
 - [ ] auth-service's AMQP consumer has no `member.create` binding and does not create members
 - [ ] notification-service still receives `member.signedup` unchanged
-- [ ] `register/page.tsx` is **unmodified** and registration still completes end to end
+- [ ] The 201 body is the member itself — no `statusCode`, no `result` nesting
+- [ ] A nil member from auth-service answers `500`, not a panic or an empty `201`
+- [ ] `register/page.tsx` reads `data` directly and contains no `setInterval`/`pollingRef`
+- [ ] A duplicate-email registration renders "An account with that email already exists."
+- [ ] `tsc --noEmit` passes on the client
 - [ ] `openapi.yaml` + `game-client/src/api/generated/` regenerated, not hand-edited, committed
       with the handler
 - [ ] `.oasdiff-ignore` entries were copied from real diff output and each cites FS-0007

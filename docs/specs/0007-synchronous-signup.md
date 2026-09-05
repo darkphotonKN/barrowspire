@@ -28,6 +28,13 @@ This feature makes signup a straight gRPC call from gateway to auth-service, ret
    (`internal/gateway/auth/client.go`); the typed route is repointed at it.
 2. **Success is `201 Created` with the member body**, password blanked, matching what
    `CreateMember` already returns. The `202`/`acceptedEnvelope` shape is removed.
+
+   **The body is the member itself, not an envelope.** Signup is the first operation on this
+   surface to shed the `{statusCode, message, result}` wrapper that `wire.go` transcribed from
+   the legacy handlers. That wrapper duplicates the HTTP status and adds a nesting level for
+   nothing; ADR-0001 §11 assigns its removal to a client cutover, which is exactly what this
+   feature is. Every other member operation keeps its envelope until its own cutover, so the
+   surface is deliberately mixed in the meantime.
 3. **A duplicate email returns `409 · ALREADY_EXISTS`.** No new mapping is required:
    auth-service's repository already translates the constraint to `ErrDuplicateResource`, the
    interceptor already maps that to `codes.AlreadyExists`, and the gateway already maps that to
@@ -177,7 +184,8 @@ This feature makes signup a straight gRPC call from gateway to auth-service, ret
 |---|---|
 | Email already registered | `409 · ALREADY_EXISTS`. The path already exists in `httperr` and is tested; this feature only makes it reachable. |
 | Two identical signups race | One wins with `201`; the other loses on the unique constraint and gets `409`. The database is the arbiter, as it already is. |
-| auth-service down | `503 · SERVICE_UNAVAILABLE`. Signup was valid and retry is correct — never `500`. |
+| auth-service down — RPC fails on an open connection | `503 · SERVICE_UNAVAILABLE` via the `codes.Unavailable` mapping. |
+| auth-service down — deregistered, so no healthy instance | `503 · SERVICE_UNAVAILABLE`. **The likelier path, and the one that needs explicit work:** `discovery.ServiceConnection` returns a plain error carrying no gRPC status, so nothing in the seam's `errors.Is` chain matches it and it falls through to `500` unless the gateway client marks it `apperr.ErrUnavailable`. Both paths must be tested; a stubbed client can only reach the first. |
 | Database down inside auth-service | Surfaces as `503` through the existing interceptor mapping. Previously this was acked and lost. |
 | RabbitMQ down | **Signup is unaffected** — it no longer touches the broker. `member.signedup` still commits to the outbox and is published when the broker returns. |
 | Outbox worker stalled after a successful signup | Signup succeeded and the member exists; only downstream consumers (notification, and wallet under FS-0006) are delayed. Pre-existing outbox behavior, unchanged. |
@@ -189,11 +197,11 @@ This feature makes signup a straight gRPC call from gateway to auth-service, ret
 
 | Op | Method + Path | Query/Params | Request body | Response | Errors |
 |----|---------------|--------------|--------------|----------|--------|
-| `signup` | `POST /api/member/signup` | — | `name` (string, required)<br>`email` (string, required)<br>`password` (string, required) | **`201`** · member (`id`, `name`, `email`, `status`, `role`, `avatar_url`, `created_at`; password blank) | `409 · ALREADY_EXISTS`<br>`422 · VALIDATION_FAILED`<br>`503 · SERVICE_UNAVAILABLE`<br>`500 · INTERNAL_ERROR` |
+| `signup` | `POST /api/member/signup` | — | `name` (string, required)<br>`email` (string, required)<br>`password` (string, required) | **`201`** · the member, unwrapped (`id`, `name`, `email`, `status`, `role`, `average_rating`, `avatar_url`, `created_at`, `updated_at`; no password field exists on the transport type). **No `statusCode`/`message`/`result` envelope** — see requirement 2. | `409 · ALREADY_EXISTS`<br>`422 · VALIDATION_FAILED`<br>`503 · SERVICE_UNAVAILABLE`<br>`500 · INTERNAL_ERROR` |
 | `check-email-exists` | ~~`GET /api/member/check-email`~~ | — | — | **REMOVED** | — |
 
 **Changes from today:** `signup` was `202` with `{statusCode, message}` and declared
-`422, 503, 500`. It becomes `201` with the member and adds `409`. `check-email-exists` is
+`422, 503, 500`. It becomes `201` with the **unwrapped** member and adds `409`. `check-email-exists` is
 deleted outright. Both are breaking changes to a serialized surface and require the regenerate
 in requirement 15.
 

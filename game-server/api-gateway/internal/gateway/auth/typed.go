@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -86,7 +87,7 @@ func registerSignup(api huma.API, h *Handler) {
 	type input struct {
 		Body SignupBody
 	}
-	type output struct{ Body memberEnvelope }
+	type output struct{ Body Member }
 
 	huma.Register(api, huma.Operation{
 		OperationID: "signup",
@@ -114,11 +115,15 @@ func registerSignup(api huma.API, h *Handler) {
 			return nil, err
 		}
 
-		return &output{Body: memberEnvelope{
-			StatusCode: http.StatusCreated,
-			Message:    "Successfully created user",
-			Result:     memberFromProto(member),
-		}}, nil
+		created := memberFromProto(member)
+		if created == nil {
+			// A nil member with a nil error is a downstream contract violation,
+			// not a 201 with an empty body. Caught here because the response
+			// type is a value: dereferencing nil would panic the request.
+			return nil, fmt.Errorf("auth-service returned no member")
+		}
+
+		return &output{Body: *created}, nil
 	}))
 }
 

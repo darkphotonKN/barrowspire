@@ -2117,7 +2117,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MemberEnvelope"
+                $ref: "#/components/schemas/Member"
           description: Created
         "409":
           content:

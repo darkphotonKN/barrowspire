@@ -4,19 +4,21 @@ status: open
 implements: FS-0007
 blocked_by: [I-0041]
 labels: [blocked]
-title: "FS-0007 slice 2: registration stops polling — client cutover, then check-email removed"
+title: "FS-0007 slice 2: remove the check-email endpoint"
 ---
-Implements FS-0007 §Requirements 11–15, §API surface
+Implements FS-0007 §Requirements 11-12, 15, §API surface
 
 **Author: agent**
 
 ## What to Build
 
-Delete the polling loop from the register page, then remove the endpoint that existed only to
-serve it.
+Remove the endpoint that existed only to serve the register page's polling loop.
 
-**Order matters inside this slice.** The client change lands first; `check-email` is removed
-only after nothing calls it. Reversing this breaks registration for the window in between.
+> **Scope reduced.** I-0041 dropped the response envelope, which made the polling loop
+> incoherent — the created member now arrives in the signup response — so the client cutover
+> (requirements 13-14) landed there instead. `register/page.tsx` already has no poll and no
+> caller of `check-email`. **What remains is the endpoint removal and its regeneration.**
+> Confirm the client really has no caller left before deleting.
 
 ### 1. Client cutover
 

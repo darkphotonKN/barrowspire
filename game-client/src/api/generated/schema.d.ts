@@ -2389,7 +2389,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MemberEnvelope"];
+                    "application/json": components["schemas"]["Member"];
                 };
             };
             /** @description Conflict */

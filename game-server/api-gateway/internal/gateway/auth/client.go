@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
+	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
@@ -48,7 +49,13 @@ func (c *Client) CreateMember(ctx context.Context, req *pb.CreateMemberRequest) 
 	conn, err := c.ensureConn(ctx)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to auth service: %w", err)
+		// Marked retryable, NOT wrapped bare. discovery.ServiceConnection
+		// returns a plain error when auth-service has no healthy instance —
+		// carrying no gRPC status — so without ErrUnavailable the seam falls
+		// through every errors.Is branch to 500. A deregistered auth-service is
+		// the likeliest way signup fails, and FS-0007 §Edge States requires it
+		// to answer 503: the request was valid and retrying is correct.
+		return nil, fmt.Errorf("%w: connecting to auth service: %w", apperr.ErrUnavailable, err)
 	}
 
 	client := pb.NewAuthServiceClient(conn)
