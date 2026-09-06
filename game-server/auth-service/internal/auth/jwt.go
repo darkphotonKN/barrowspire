@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/models"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -16,12 +17,31 @@ import (
 func GenerateJWT(user models.Member, tokenType commonconstants.TokenType, expiration time.Duration) (string, error) {
 	JWTSecret := []byte(os.Getenv("JWT_SECRET"))
 
-	// Define the custom claims for the token
-	claims := jwt.MapClaims{
-		"sub":       user.ID.String(),
-		"exp":       time.Now().Add(expiration).Unix(),
-		"iat":       time.Now().Unix(),
-		"tokenType": tokenType,
+	now := time.Now()
+
+	claims := commonauth.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   user.ID.String(),
+			ExpiresAt: jwt.NewNumericDate(now.Add(expiration)),
+			IssuedAt:  jwt.NewNumericDate(now),
+		},
+		TokenType: string(tokenType),
+	}
+
+	// Authorization claims ride the ACCESS token only. A refresh token is a
+	// credential for re-minting, not for authorization: keeping role and
+	// account off it forces any future redemption endpoint to re-read the
+	// member rather than copying a week-old copy forward.
+	if tokenType == commonconstants.Access {
+		// Verbatim. The minter does not validate, normalise, or default the
+		// role — a value outside {player, admin} is minted as-is and the
+		// boundary decides what to do with it.
+		claims.Role = user.Role
+
+		// Nil omits the key entirely rather than emitting "". The member may
+		// simply not have a wallet account yet; consumers fail closed on an
+		// absent claim, and an empty string is not absent.
+		claims.AccountID = user.AccountID
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

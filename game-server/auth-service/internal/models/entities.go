@@ -9,17 +9,23 @@ import (
 // shared entities
 
 type Member struct {
-	ID            uuid.UUID `db:"id" json:"id"`
-	Email         string    `db:"email" json:"email"`
-	Name          string    `db:"name" json:"name"`
-	Password      string    `db:"password" json:"password,omitempty"`
-	Status        string    `db:"status" json:"status"`
-	Role          string    `db:"role" json:"role"`
-	AverageRating float64   `db:"average_rating"`
-	AvatarURL        *string `db:"avatar_url" json:"avatar_url,omitempty"`
-	StripeCustomerID            *string `db:"stripe_customer_id" json:"stripe_customer_id,omitempty"`
-	StripeSubscriptionProductID *string `db:"stripe_subscription_product_id" json:"stripe_subscription_product_id,omitempty"`
-	StripeSubscriptionStatus    string  `db:"stripe_subscription_status" json:"stripe_subscription_status"`
-	CreatedAt                   time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt                   time.Time `db:"updated_at" json:"updated_at"`
+	ID       uuid.UUID `db:"id" json:"id"`
+	Email    string    `db:"email" json:"email"`
+	Name     string    `db:"name" json:"name"`
+	Password string    `db:"password" json:"password,omitempty"`
+	Status   string    `db:"status" json:"status"`
+	Role     string    `db:"role" json:"role"`
+	// AccountID is a CACHE of wallet.accounts.id, not a source of truth, and is
+	// nullable because it is populated eventually by the account.created consumer
+	// (ADR-0014). A pointer rather than uuid.UUID: uuid.Nil is a value, and
+	// collapsing NULL onto it reintroduces the exact ambiguity the omitted claim
+	// exists to avoid.
+	AccountID                   *uuid.UUID `db:"account_id" json:"account_id,omitempty"`
+	AverageRating               float64    `db:"average_rating"`
+	AvatarURL                   *string    `db:"avatar_url" json:"avatar_url,omitempty"`
+	StripeCustomerID            *string    `db:"stripe_customer_id" json:"stripe_customer_id,omitempty"`
+	StripeSubscriptionProductID *string    `db:"stripe_subscription_product_id" json:"stripe_subscription_product_id,omitempty"`
+	StripeSubscriptionStatus    string     `db:"stripe_subscription_status" json:"stripe_subscription_status"`
+	CreatedAt                   time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt                   time.Time  `db:"updated_at" json:"updated_at"`
 }

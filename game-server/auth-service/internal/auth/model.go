@@ -21,4 +21,3 @@ type AuthCreate struct {
 type AuthUpdate struct {
 	Name string `json:"name" validate:"required"`
 }
-
