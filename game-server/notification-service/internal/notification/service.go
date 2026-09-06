@@ -20,6 +20,13 @@ type Repository interface {
 	MarkAllAsReadByUserID(ctx context.Context, userID uuid.UUID) (int64, error)
 }
 
+// InboxRepository is the consumer-side idempotency record this service needs,
+// implemented by common/inbox. Declared here because the service is what
+// consumes it; the storage behind it is this service's own processed_events.
+type InboxRepository interface {
+	MarkEventProcessed(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string) (bool, error)
+}
+
 type service struct {
 	db        *sqlx.DB
 	repo      Repository
