@@ -5,6 +5,7 @@ import (
 	"net"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/notification"
+	"github.com/darkphotonKN/barrowspire-server/common/inbox"
 	"github.com/darkphotonKN/barrowspire-server/notification-service/internal/notification"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -15,7 +16,7 @@ import (
 func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel) *grpc.Server {
 	// Create repositories
 	repo := notification.NewRepository(db)
-	inboxRepo := notification.NewInboxRepository(db)
+	inboxRepo := inbox.NewRepo()
 
 	// Create service with repositories and DB handle (for tx-wrapped inbox pattern)
 	service := notification.NewService(db, repo, inboxRepo)
