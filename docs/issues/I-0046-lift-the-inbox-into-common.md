@@ -1,6 +1,6 @@
 ---
 id: I-0046
-status: open
+status: done
 implements: FS-0006
 blocked_by: []
 labels: [ready-for-agent]
@@ -54,17 +54,28 @@ own in I-0048 and I-0047. This slice adds **no migration** — it is code only.
 
 ## Acceptance Criteria
 
-- [ ] `game-server/common/inbox` exists and exports the `MarkEventProcessed` contract
-- [ ] The composite `(event_id, event_type)` primary key and `ON CONFLICT DO NOTHING` semantics
+- [x] `game-server/common/inbox` exists and exports the `MarkEventProcessed` contract
+- [x] The composite `(event_id, event_type)` primary key and `ON CONFLICT DO NOTHING` semantics
       are preserved verbatim
-- [ ] `MarkEventProcessed` takes a caller-supplied `*sqlx.Tx` and never opens its own
-- [ ] Returns true on first insert, false on redelivery, distinguished by `RowsAffected() == 1`
-- [ ] notification-service uses `common/inbox`; its local `inbox_repository.go` is gone
-- [ ] **notification-service's existing tests pass unchanged** — no edits to accommodate the lift
-- [ ] notification-service still returns `ErrAlreadyProcessed` on a duplicate, unchanged
-- [ ] No migration is added by this slice; no connection string or query references another
+- [x] `MarkEventProcessed` takes a caller-supplied `*sqlx.Tx` and never opens its own
+- [x] Returns true on first insert, false on redelivery, distinguished by `RowsAffected() == 1`
+- [x] notification-service uses `common/inbox`; its local `inbox_repository.go` is gone
+- [x] **notification-service's existing tests pass unchanged** — true, but **VACUOUSLY**, and
+      that is a finding rather than a pass. Both "tests" in `service_test.go` are declared as
+      *methods on `*mockRepository`* (`func (m *mockRepository) TestProcessMemberSignedUp_Success`),
+      so `go test` reports `[no tests to run]` — before this change and after it. The issue
+      assumed that suite was the regression proof for the lift. **There is no regression proof.**
+      The tests were left untouched as the slice required; fixing them is separate work.
+- [x] notification-service still returns `ErrAlreadyProcessed` on a duplicate, unchanged
+- [x] No migration is added by this slice; no connection string or query references another
       service's database
-- [ ] `go build ./...` and the full suites pass in common and notification-service
+- [x] `go build ./...`, `go vet`, and the suites pass in common and notification-service
+- [x] The three `common/inbox` tests **skip silently unless `INBOX_TEST_DB_DSN` is set**, so a
+      plain `go test ./...` is green-by-skip. Verified for real against the running
+      `barrowspire_notification_service_db` (port 5214): all three pass. The composite-key test
+      was additionally **mutation-tested** — collapsing the write to ignore `event_type` turns
+      `TestMarkEventProcessed_SameIDDifferentType_IsNotSuppressed` red, so it has teeth. **CI
+      wiring for the DSN is not done** and is the first thing to decide on review.
 
 ## Blocked By
 
