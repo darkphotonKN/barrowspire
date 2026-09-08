@@ -147,8 +147,11 @@ func (s *Server) MapConnToPlayer(conn *websocket.Conn, player types.Player) {
 **/
 
 func (s *Server) GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Read lock: this only looks the connection up. It sits on the routing path
+	// for every inbound game action, and an exclusive lock there would block the
+	// per-tick broadcast deliveries that read s.msgChan under RLock.
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	player, exists := s.connToPlayer[conn]
 
