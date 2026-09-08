@@ -67,7 +67,7 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 
 - [x] Validate a token and return its subject
 - [ ] Reject a refresh token presented as an access credential
-- [ ] Mint account and role claims into the access token → FS-0006
+- [x] Mint account and role claims into the access token → FS-0006
 
 ### Avatars
 
@@ -86,7 +86,7 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 
 ### Accounts
 
-- [ ] Record a member's wallet account id → FS-0006
+- [x] Record a member's wallet account id → FS-0006
 
 ### Messaging
 
