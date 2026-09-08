@@ -108,18 +108,21 @@ func (h *messageHub) Run() {
 				session, err := h.resolveGameSession(clientPackage.Conn)
 
 				if err != nil {
-					slog.Error("Could not route game action",
+					// Detail stays server-side. The client no longer supplies a
+					// session id and must not be handed one back in an error
+					// (FS-0008 §Requirements 16).
+					slog.Warn("Could not route game action",
 						"action", clientPackage.Message.Action,
 						"error", err,
 					)
 
-					errMsg := err.Error()
+					clientErr := "You are not in a game session"
 					h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
 						Action: clientPackage.Message.Action,
 						Payload: map[string]interface{}{
-							"message": errMsg,
+							"message": clientErr,
 						},
-						Error: &errMsg,
+						Error: &clientErr,
 					})
 					continue
 				}

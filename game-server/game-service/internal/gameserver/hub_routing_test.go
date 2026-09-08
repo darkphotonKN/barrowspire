@@ -2,6 +2,7 @@ package gameserver
 
 import (
 	"testing"
+	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
@@ -54,36 +55,6 @@ func TestResolveGameSession_UsesServerHeldState(t *testing.T) {
 		assert.Same(t, want, got)
 	})
 
-	t.Run("ignores a foreign session id in the payload", func(t *testing.T) {
-		hub, server := newRoutingTestHub(t)
-
-		ownID, foreignID := uuid.New(), uuid.New()
-		own := registerSession(server, ownID)
-		registerSession(server, foreignID)
-
-		conn := &websocket.Conn{}
-		player := &types.Player{ID: uuid.New(), Username: "Delver", CurrentGameSessionId: ownID}
-		registerTestConn(server, conn, player)
-
-		// The payload names someone else's world. Routing does not read it.
-		message := types.Message{
-			Action: string(constants.ActionMove),
-			Payload: map[string]interface{}{
-				"player_id":  player.ID.String(),
-				"session_id": foreignID.String(),
-				"vx":         1.0,
-				"vy":         0.0,
-			},
-		}
-
-		got, err := hub.resolveGameSession(conn)
-
-		require.NoError(t, err)
-		assert.Same(t, own, got, "a client must not be able to address another world")
-		assert.Equal(t, foreignID.String(), message.Payload["session_id"],
-			"payload untouched; it simply has no bearing on routing")
-	})
-
 	t.Run("rejects a connection with no registered player", func(t *testing.T) {
 		hub, _ := newRoutingTestHub(t)
 
@@ -118,4 +89,57 @@ func TestResolveGameSession_UsesServerHeldState(t *testing.T) {
 		assert.Nil(t, got)
 		assert.ErrorIs(t, err, errSessionNotFound)
 	})
+}
+
+// The headline guarantee, driven through the live hub loop rather than asserted
+// off the method in isolation: a crafted payload naming someone else's world is
+// delivered to the sender's own. FS-0008 §Requirements 16.
+func TestHubRun_ForeignSessionIDInPayload_RoutesToOwnSession(t *testing.T) {
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+
+	ownID, foreignID := uuid.New(), uuid.New()
+	own := registerRoutableSession(server, ownID)
+	foreign := registerRoutableSession(server, foreignID)
+
+	conn := &websocket.Conn{}
+	player := &types.Player{ID: uuid.New(), Username: "Delver", CurrentGameSessionId: ownID}
+	registerTestConn(server, conn, player)
+
+	// NewServer already started the hub over this channel.
+	server.serverChan <- types.ClientPackage{
+		Conn: conn,
+		Message: types.Message{
+			Action: string(constants.ActionMove),
+			Payload: map[string]interface{}{
+				"player_id":  player.ID.String(),
+				"session_id": foreignID.String(), // a world this player is not in
+				"vx":         1.0,
+				"vy":         0.0,
+			},
+		},
+	}
+
+	select {
+	case delivered := <-own.MessageCh:
+		assert.Equal(t, string(constants.ActionMove), delivered.Message.Action)
+	case <-foreign.MessageCh:
+		t.Fatal("message reached the world named in the payload; the client set its own route")
+	case <-time.After(2 * time.Second):
+		t.Fatal("message was never routed")
+	}
+}
+
+// registerRoutableSession is registerSession plus a live MessageCh, so the hub
+// can actually deliver into it.
+func registerRoutableSession(s *Server, id uuid.UUID) *game.Session {
+	session := &game.Session{
+		ID:        id,
+		MessageCh: make(chan types.ClientPackage, 10),
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions[id] = session
+
+	return session
 }
