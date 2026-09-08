@@ -22,14 +22,15 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-type repo struct{}
+// Repo is exported so consumers can name the value NewRepo returns.
+type Repo struct{}
 
 // NewRepo builds the inbox repository. It takes no database handle on purpose:
 // the inbox only ever writes inside the caller's transaction, next to the side
 // effect it is guarding, and a connection of its own would be a route around
 // that.
-func NewRepo() *repo {
-	return &repo{}
+func NewRepo() *Repo {
+	return &Repo{}
 }
 
 // wrapDBErr is the repo boundary translation point: it delegates to the shared
@@ -48,7 +49,7 @@ const markEventProcessedQuery = `
 // MarkEventProcessed inserts a row into processed_events.
 // Returns true if the row was inserted (new event), false if it already existed (duplicate).
 // Must run inside the same tx as the business side effect.
-func (r *repo) MarkEventProcessed(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string) (bool, error) {
+func (r *Repo) MarkEventProcessed(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string) (bool, error) {
 	result, err := tx.ExecContext(ctx, markEventProcessedQuery, eventID, eventType)
 	if err != nil {
 		return false, wrapDBErr("mark event processed", err)

@@ -48,6 +48,22 @@ func walletDB(t *testing.T) *sqlx.DB {
 	return db
 }
 
+// cleanupMember removes every row a test creates.
+//
+// Not hygiene — correctness. An orphan outbox row has published_at NULL, which
+// is exactly what the outbox worker drains, so leftover test rows are published
+// as REAL account.created events the next time this service starts. auth then
+// finds no matching member and, by design, requeues forever. Test data would
+// poison a queue.
+func cleanupMember(t *testing.T, db *sqlx.DB, memberID uuid.UUID, eventID uuid.UUID) {
+	t.Helper()
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM outbox WHERE convert_from(payload, 'UTF8') LIKE '%' || $1::text || '%'`, memberID)
+		db.Exec(`DELETE FROM accounts WHERE member_id = $1`, memberID)
+		db.Exec(`DELETE FROM processed_events WHERE event_id = $1`, eventID)
+	})
+}
+
 func newUC(t *testing.T, db *sqlx.DB) *usecase.CreateAccountOnSignupUC {
 	t.Helper()
 	return usecase.NewCreateAccountOnSignupUC(
@@ -81,6 +97,7 @@ func TestCreateAccountOnSignup_FirstDelivery_CreatesAccountAndQueuesEvent(t *tes
 	db := walletDB(t)
 	uc := newUC(t, db)
 	memberID, eventID := uuid.New(), uuid.New()
+	cleanupMember(t, db, memberID, eventID)
 
 	require.NoError(t, uc.Handle(context.Background(), usecase.CreateAccountOnSignupCommand{
 		EventID: eventID, MemberID: memberID,
@@ -121,6 +138,7 @@ func TestCreateAccountOnSignup_Redelivery_IsANoOp(t *testing.T) {
 	db := walletDB(t)
 	uc := newUC(t, db)
 	memberID, eventID := uuid.New(), uuid.New()
+	cleanupMember(t, db, memberID, eventID)
 	cmd := usecase.CreateAccountOnSignupCommand{EventID: eventID, MemberID: memberID}
 
 	require.NoError(t, uc.Handle(context.Background(), cmd))
@@ -137,7 +155,8 @@ func TestCreateAccountOnSignup_Redelivery_IsANoOp(t *testing.T) {
 // independent writes would satisfy every check above and fail this one.
 func TestCreateAccountOnSignup_OutboxWriteFails_LeavesNoAccount(t *testing.T) {
 	db := walletDB(t)
-	memberID := uuid.New()
+	memberID, eventID := uuid.New(), uuid.New()
+	cleanupMember(t, db, memberID, eventID)
 
 	uc := usecase.NewCreateAccountOnSignupUC(
 		db,
@@ -147,7 +166,7 @@ func TestCreateAccountOnSignup_OutboxWriteFails_LeavesNoAccount(t *testing.T) {
 	)
 
 	err := uc.Handle(context.Background(), usecase.CreateAccountOnSignupCommand{
-		EventID: uuid.New(), MemberID: memberID,
+		EventID: eventID, MemberID: memberID,
 	})
 
 	require.Error(t, err)

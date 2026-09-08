@@ -60,6 +60,18 @@ func seedMember(t *testing.T, db *sqlx.DB) uuid.UUID {
 	return id
 }
 
+// newEventID mints an event id and clears its inbox row afterwards.
+//
+// processed_events is keyed on the EVENT, not the member, so those rows outlive
+// the member and accumulate silently on every run. Deleting by id is exact;
+// a time-window heuristic missed the tests that never seed a member.
+func newEventID(t *testing.T, db *sqlx.DB) uuid.UUID {
+	t.Helper()
+	id := uuid.New()
+	t.Cleanup(func() { db.Exec(`DELETE FROM processed_events WHERE event_id = $1`, id) })
+	return id
+}
+
 func accountIDOf(t *testing.T, db *sqlx.DB, memberID uuid.UUID) *uuid.UUID {
 	t.Helper()
 	var got *uuid.UUID
@@ -78,7 +90,7 @@ func TestRecordAccount_FirstDelivery_SetsTheColumn(t *testing.T) {
 	memberID, accountID := seedMember(t, db), uuid.New()
 
 	require.NoError(t, newRecorder(t, db).Record(context.Background(), member.RecordAccountCommand{
-		EventID: uuid.New(), MemberID: memberID, AccountID: accountID,
+		EventID: newEventID(t, db), MemberID: memberID, AccountID: accountID,
 	}))
 
 	got := accountIDOf(t, db, memberID)
@@ -91,7 +103,7 @@ func TestRecordAccount_FirstDelivery_SetsTheColumn(t *testing.T) {
 func TestRecordAccount_Redelivery_LeavesTheColumnUnchanged(t *testing.T) {
 	db := authDB(t)
 	memberID, accountID := seedMember(t, db), uuid.New()
-	cmd := member.RecordAccountCommand{EventID: uuid.New(), MemberID: memberID, AccountID: accountID}
+	cmd := member.RecordAccountCommand{EventID: newEventID(t, db), MemberID: memberID, AccountID: accountID}
 	rec := newRecorder(t, db)
 
 	require.NoError(t, rec.Record(context.Background(), cmd))
@@ -115,11 +127,11 @@ func TestRecordAccount_DuplicateAccountID_IsRefused(t *testing.T) {
 	rec := newRecorder(t, db)
 
 	require.NoError(t, rec.Record(context.Background(), member.RecordAccountCommand{
-		EventID: uuid.New(), MemberID: first, AccountID: accountID,
+		EventID: newEventID(t, db), MemberID: first, AccountID: accountID,
 	}))
 
 	err := rec.Record(context.Background(), member.RecordAccountCommand{
-		EventID: uuid.New(), MemberID: second, AccountID: accountID,
+		EventID: newEventID(t, db), MemberID: second, AccountID: accountID,
 	})
 
 	require.Error(t, err, "a second member may not take an account already held")
@@ -133,7 +145,7 @@ func TestRecordAccount_UnknownMember_IsAnError(t *testing.T) {
 	db := authDB(t)
 
 	err := newRecorder(t, db).Record(context.Background(), member.RecordAccountCommand{
-		EventID: uuid.New(), MemberID: uuid.New(), AccountID: uuid.New(),
+		EventID: newEventID(t, db), MemberID: uuid.New(), AccountID: uuid.New(),
 	})
 
 	assert.Error(t, err, "an account.created for a member that does not exist must not pass silently")
@@ -167,7 +179,7 @@ func TestRecordAccount_ThenMint_ProducesATokenCarryingTheClaim(t *testing.T) {
 	// The loop's last hop.
 	require.NoError(t, member.NewAccountRecorder(db, repo, commoninbox.NewRepo()).
 		Record(context.Background(), member.RecordAccountCommand{
-			EventID: uuid.New(), MemberID: memberID, AccountID: accountID,
+			EventID: newEventID(t, db), MemberID: memberID, AccountID: accountID,
 		}))
 
 	// After: the very next mint carries it.
