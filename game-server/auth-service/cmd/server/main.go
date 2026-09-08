@@ -16,6 +16,7 @@ import (
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
+	commoninbox "github.com/darkphotonKN/barrowspire-server/common/inbox"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
@@ -195,6 +196,17 @@ func main() {
 	// not wrap it in another goroutine, that would cancel the context as
 	// soon as the wrapper returned and kill the worker.
 	go outboxWorker.Run(workerCtx)
+
+	// --- account.created consumer (FS-0006) ---
+	// The last hop of the loop: wallet announces a new gold account, auth caches
+	// its id onto the member, and the next login mints it as a claim. Nothing
+	// else writes members.account_id.
+	accountRecorder := member.NewAccountRecorder(db, memberRepo, commoninbox.NewRepo())
+	accountConsumer := member.NewConsumer(ch, accountRecorder)
+	if err := accountConsumer.SetupConsumer(); err != nil {
+		log.Fatalf("Failed to set up account.created consumer: %v", err)
+	}
+	accountConsumer.Listen()
 
 	// --- upload service setup ---
 	if s3Client != nil {

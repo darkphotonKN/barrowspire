@@ -215,6 +215,31 @@ func (r *repository) UpdateAvatarURLTx(ctx context.Context, tx *sqlx.Tx, memberI
 	return &member, nil
 }
 
+// SetAccountIDTx caches wallet's account id onto the member, inside a
+// transaction the CALLER owns — the same transaction that records the event as
+// processed, so a redelivery cannot write twice and a failure leaves neither.
+//
+// RETURNING is load-bearing: an UPDATE that matches no row is not an error in
+// SQL, and this must fail loudly. auth produced the signup that started the
+// loop, so a member row that is not there is a genuine inconsistency rather
+// than a race (FS-0006 §Edge States).
+//
+// The UNIQUE constraint on account_id is likewise allowed to surface. A second
+// member taking an account another already holds is a consumer bug, and two
+// members quietly sharing one account's history is the outcome worth wedging a
+// queue to avoid.
+func (r *repository) SetAccountIDTx(ctx context.Context, tx *sqlx.Tx, memberID, accountID uuid.UUID) error {
+	var member models.Member
+
+	query := `UPDATE members SET account_id = $2 WHERE id = $1 RETURNING *`
+
+	if err := tx.GetContext(ctx, &member, query, memberID, accountID); err != nil {
+		return wrapDBErr("set account id in tx", err)
+	}
+
+	return nil
+}
+
 func (r *repository) GetStripeCustomerID(ctx context.Context, memberID uuid.UUID) (string, error) {
 	var customerID *string
 	query := `SELECT stripe_customer_id FROM members WHERE id = $1`

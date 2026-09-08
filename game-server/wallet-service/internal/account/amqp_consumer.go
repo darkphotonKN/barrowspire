@@ -34,10 +34,20 @@ func NewConsumer(ch *amqp.Channel, handler signupHandler) *Consumer {
 
 // SetupConsumer declares wallet's own queue and binds it to AUTH's exchange.
 //
-// The exchange belongs to the producer; the queue belongs to the consumer. That
-// is why this declares no exchange: auth-service owns auth.events, and a
-// consumer that redeclares a producer's exchange will fight it over the type.
+// It declares auth.events too, with identical parameters. AMQP declares are
+// idempotent when they match, and binding to an exchange that does not exist
+// yet fails with a 404 — so without this, booting wallet before auth is a fatal
+// startup error rather than a wait. notification-service does the same for the
+// exchanges it consumes.
 func (c *Consumer) SetupConsumer() error {
+	if err := c.channel.ExchangeDeclare(
+		commonconstants.AuthEventsExchange,
+		"topic", true, false, false, false, nil,
+	); err != nil {
+		slog.Error("Failed to declare auth events exchange", "error", err)
+		return err
+	}
+
 	if _, err := c.channel.QueueDeclare(
 		commonconstants.WalletMemberSignedUpQueue,
 		true,  // durable

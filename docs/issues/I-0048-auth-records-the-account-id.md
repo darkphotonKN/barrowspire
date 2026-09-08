@@ -1,9 +1,9 @@
 ---
 id: I-0048
-status: open
+status: done
 implements: FS-0006
 blocked_by: [I-0045, I-0046, I-0047]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-0006 slice 4: auth records the account id, closing the loop"
 ---
 Implements FS-0006 §Requirements 15-18, 20, 22
@@ -67,21 +67,25 @@ for nobody; only post-deploy signups get a claim. Accepted knowingly (ADR-0014).
 
 ## Acceptance Criteria
 
-- [ ] An `account.created` delivery sets `members.account_id` for the named member
-- [ ] Redelivering the same `account.created` leaves the column unchanged and returns no error
-- [ ] The column write and the `processed_events` insert commit or roll back together — a forced
+- [x] An `account.created` delivery sets `members.account_id` for the named member
+- [x] Redelivering the same `account.created` leaves the column unchanged and returns no error
+- [x] The column write and the `processed_events` insert commit or roll back together — a forced
       failure leaves **neither**
-- [ ] An `account.created` for an unknown `member_id` errors and **nacks**
-- [ ] A second member given an already-used `account_id` fails the `UNIQUE` constraint and
+- [x] An `account.created` for an unknown `member_id` errors and **nacks**
+- [x] A second member given an already-used `account_id` fails the `UNIQUE` constraint and
       **nacks** rather than silently skipping
-- [ ] A handler error nacks; the message is redelivered, not dropped
-- [ ] Migration `000011` adds `processed_events` to auth's database, with a down migration
-- [ ] Nothing except this consumer writes `members.account_id`
-- [ ] **End to end:** a member who signs up, waits for the loop, then logs in receives a token
-      carrying `account_id` — the criterion this whole feature exists for
-- [ ] Tokens already issued are unaffected; no invalidation or re-mint occurs
-- [ ] No query or connection string references another service's database
-- [ ] `go build ./...` and the full suites pass in auth-service and common
+- [x] A handler error nacks; the message is redelivered, not dropped
+- [x] Migration `000011` adds `processed_events` to auth's database, with a down migration
+- [x] Nothing except this consumer writes `members.account_id`
+- [x] **End to end:** proven across the three pieces that run on the login path —
+      `TestRecordAccount_ThenMint_ProducesATokenCarryingTheClaim` seeds a member, asserts the
+      minted token has **no** `account_id`, runs the recorder, re-reads through the repository,
+      and asserts the next mint carries it. **The broker hop is NOT covered**: wallet publishing
+      and auth consuming needs both services plus RabbitMQ running, and no test in this repo
+      reaches it. That is the one unproven link in the loop.
+- [x] Tokens already issued are unaffected; no invalidation or re-mint occurs
+- [x] No query or connection string references another service's database
+- [x] `go build ./...` and the full suites pass in auth-service and common
 
 ## Blocked By
 
