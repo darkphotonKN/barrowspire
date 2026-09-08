@@ -227,22 +227,40 @@ func (r *AccountRepository) FindByMemberID(ctx context.Context, memberID uuid.UU
 	return reconstitutedAcc, nil
 }
 
-func (r *AccountRepository) Insert(ctx context.Context, account *account.Account) error {
-	snapshot := account.Snapshot()
-
-	query := `
+// insertAccountQuery is shared by Insert and InsertTx so the two cannot drift
+// into writing different columns.
+const insertAccountQuery = `
 	INSERT INTO accounts (id, member_id, gold, version, created_at, updated_at)
 	VALUES(:id, :member_id, :gold, :version, :created_at, :updated_at)
 	`
 
-	_, err := r.db.NamedExecContext(ctx, query, map[string]interface{}{
+func insertArgs(acc *account.Account) map[string]interface{} {
+	snapshot := acc.Snapshot()
+	return map[string]interface{}{
 		"id":         snapshot.ID,
 		"member_id":  snapshot.MemberID,
 		"gold":       snapshot.Gold,
 		"version":    snapshot.Version,
 		"created_at": snapshot.CreatedAt,
 		"updated_at": snapshot.UpdatedAt,
-	})
+	}
+}
+
+// InsertTx is Insert inside a transaction the CALLER owns.
+//
+// It exists because an account born from a signup event must commit together
+// with the outbox row announcing it: an account that exists unannounced is
+// invisible to auth-service forever, and an announcement without an account is
+// a lie downstream will act on (FS-0006 §Req 12).
+func (r *AccountRepository) InsertTx(ctx context.Context, tx *sqlx.Tx, acc *account.Account) error {
+	if _, err := tx.NamedExecContext(ctx, insertAccountQuery, insertArgs(acc)); err != nil {
+		return commonhelpers.WrapDBErr("account", "insert tx", err)
+	}
+	return nil
+}
+
+func (r *AccountRepository) Insert(ctx context.Context, account *account.Account) error {
+	_, err := r.db.NamedExecContext(ctx, insertAccountQuery, insertArgs(account))
 
 	if err != nil {
 		// propogate context and sentinel errors if they match with helper

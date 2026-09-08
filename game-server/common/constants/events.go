@@ -21,6 +21,7 @@ const (
 	GameEventsExchange           = "game.events"
 	AuthEventsExchange           = "auth.events"
 	ItemEventsExchange           = "item.events"
+	WalletEventsExchange         = "wallet.events"
 	DlxEventsExchange            = "dlx.exchange"
 	RetryExchange                = "retry.exchange"
 	MarketplaceDlxEventsExchange = "marketplace.dlx.exchange"
@@ -48,6 +49,9 @@ const (
 	GameMatchEnded = "match.ended"     // match ended
 	ItemsExtracted = "items.extracted" // items extracted after match end
 
+	// Wallet Events
+	AccountCreatedEvent = "account.created" // when a member's gold account is born
+
 	// Item Events
 	ItemCreated  = "item.created"
 	ItemReserved = "item.reserved"
@@ -58,7 +62,7 @@ const (
 	NotificationGameEndFailed        = "notification.game.end.failed"
 
 	// auth events
-	AuthMemberLogin  = "member.login"
+	AuthMemberLogin = "member.login"
 
 	// marketplace events
 	MarpetplaceItemReservedDlq = "marketplace.item.reserved.dql"
@@ -76,6 +80,7 @@ const (
 	NotificationItemCreatedQueue    = "notification.item.created"
 	NotificationGameEndQueue        = "notification.game.match.ended"
 	NotificationDlqQueue            = "notification.dlq"
+	WalletMemberSignedUpQueue       = "wallet.auth.member.signedup"
 )
 
 /**
@@ -96,6 +101,24 @@ type MemberSignedUpEventPayload struct {
 	Name       string `json:"name"`
 	Email      string `json:"email"`
 	SignedUpAt string `json:"signedUpAt"`
+}
+
+/**
+* AccountCreatedEventPayload
+*
+* Published by wallet-service on WalletEventsExchange.
+* Consumed by:
+* - auth-service (caches AccountID onto members.account_id)
+*
+* EventID is the CONSUMER'S DEDUPE KEY and is generated here, in the payload.
+* It is deliberately NOT the outbox row's id: that id identifies a row in the
+* producer's table, the worker ships only Payload, and a key the consumer
+* cannot see is no key at all (FS-0006 §Req 14).
+**/
+type AccountCreatedEventPayload struct {
+	EventID   string `json:"eventId"`
+	AccountID string `json:"accountId"`
+	MemberID  string `json:"memberId"`
 }
 
 /**

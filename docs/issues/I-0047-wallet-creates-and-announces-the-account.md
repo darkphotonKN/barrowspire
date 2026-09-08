@@ -1,9 +1,9 @@
 ---
 id: I-0047
-status: open
+status: done
 implements: FS-0006
 blocked_by: [I-0046]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-0006 slice 3: wallet creates the account on signup and announces it"
 ---
 Implements FS-0006 §Requirements 11-14, 16, 17, 20
@@ -71,23 +71,25 @@ Both tables live in **wallet's own database** (§Req 20).
 
 ## Acceptance Criteria
 
-- [ ] `WalletEventsExchange = "wallet.events"` exists in `common/constants`, declared as a topic
-- [ ] The scaffolded fanout exchange named `account.created` is gone, along with its
+- [x] `WalletEventsExchange = "wallet.events"` exists in `common/constants`, declared as a topic
+- [x] The scaffolded fanout exchange named `account.created` is gone, along with its
       map-and-print consumer
-- [ ] A `member.signedup` delivery creates exactly one `accounts` row for that member
-- [ ] Redelivering the same `member.signedup` (same `EventID`) creates **no** second account and
+- [x] A `member.signedup` delivery creates exactly one `accounts` row for that member
+- [x] Redelivering the same `member.signedup` (same `EventID`) creates **no** second account and
       returns no error to the broker
-- [ ] The `accounts` insert and its `outbox` row commit or roll back together — a forced failure
+- [x] The `accounts` insert and its `outbox` row commit or roll back together — a forced failure
       after the insert leaves **neither**
-- [ ] `account.created` is published on `wallet.events` with routing key `account.created`
-- [ ] The payload carries an `EventID` distinct from the outbox row's `ID`, plus `AccountID` and
+- [x] `account.created` is published on `wallet.events` with routing key `account.created`
+- [x] The payload carries an `EventID` distinct from the outbox row's `ID`, plus `AccountID` and
       `MemberID`
-- [ ] A handler error **nacks**; the message is redelivered, not dropped
-- [ ] `CreateAccountRequest` is still empty and identity still interceptor-derived
-- [ ] Migrations `000005` (processed_events) and `000006` (outbox) exist with down migrations
-- [ ] The outbox worker is wired in `cmd/server/main.go` and drains on the same 5s/20 cadence
-- [ ] No query or connection string references another service's database
-- [ ] `go build ./...` and the full suites pass in wallet-service and common
+- [x] A handler error **nacks**; the message is redelivered, not dropped
+- [x] `CreateAccountRequest` is still empty and identity still interceptor-derived
+- [x] Migrations `000005` (processed_events) and `000006` (outbox) exist with down migrations
+- [x] The outbox worker is wired in `cmd/server/main.go` on the same 5s/20 cadence, publishing
+      through `broker.NewAmqpPublisher(ch)` — **wired, not proven.** Nothing exercises the worker
+      end to end; that needs a live broker and is first proven when I-0048 consumes the event.
+- [x] No query or connection string references another service's database
+- [x] `go build ./...` and the full suites pass in wallet-service and common
 
 ## Blocked By
 

@@ -11,9 +11,11 @@ import (
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
+	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/config"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account"
@@ -108,19 +110,32 @@ func main() {
 	// --- message broker - rabbit mq ---
 	ch, close := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
 
-	broker.DeclareExchange(ch, account.AccountCreatedEvent, "fanout")
+	// wallet.events is a TOPIC exchange carrying every event this service
+	// publishes, keyed by routing key — the convention every other service
+	// follows. It replaces a fanout exchange that was named after the single
+	// event it carried, which left no room for a second one.
+	broker.DeclareExchange(ch, commonconstants.WalletEventsExchange, "topic")
 
 	defer func() {
 		close()
 		ch.Close()
 	}()
 
-	// NOTE: the account domain (model/repository/service/handler + proto) is
-	// intentionally left empty for now. This service only boots the server and
-	// its amqp consumer. Wire the domain + pb.RegisterWalletServiceServer here
-	// later, following example-service.
-	consumer := account.NewConsumer(ch)
-	// start goroutine and listen to events from message broker
+	// The outbox worker drains wallet's outbox table onto the broker. Without
+	// it an account.created row is written and never published, and the claim
+	// it exists to deliver never reaches auth-service.
+	// The worker publishes through broker.Publisher, not a raw channel — the
+	// same adapter auth-service uses, so both services publish identically.
+	publishCh := broker.NewAmqpPublisher(ch)
+	outboxWorker := commonoutbox.NewOutboxWorker(time.Second*5, 20, services.OutboxService, publishCh)
+	workerCtx, cancelWorker := context.WithCancel(context.Background())
+	defer cancelWorker()
+	go outboxWorker.Run(workerCtx)
+
+	consumer := account.NewConsumer(ch, services.CreateOnSignupUC)
+	if err := consumer.SetupConsumer(); err != nil {
+		log.Fatalf("Failed to set up wallet consumer: %v", err)
+	}
 	consumer.Listen()
 
 	log.Printf("grpc Wallet Server started on PORT: %s\n", grpcAddr)
