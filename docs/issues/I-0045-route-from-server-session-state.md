@@ -1,6 +1,6 @@
 ---
 id: I-0045
-status: in-progress
+status: done
 implements: FS-0008
 blocked_by: []
 labels: [ready-for-agent]
@@ -71,20 +71,20 @@ built, rather than leaving it to commit messages.
 
 ## Acceptance Criteria
 
-- [ ] No inbound client message carries `session_id`.
-- [ ] `grep session_id internal/types/messages.go` returns nothing inside `ParsePayload`.
-- [ ] A `move` message with no `session_id` in the payload does not panic the server.
-- [ ] A `move` message carrying a *foreign* session's id is routed to the sender's own session
+- [x] No inbound client message carries `session_id`.
+- [x] `grep session_id internal/types/messages.go` returns nothing inside `ParsePayload`.
+- [x] A `move` message with no `session_id` in the payload does not panic the server.
+- [x] A `move` message carrying a *foreign* session's id is routed to the sender's own session
       regardless of the value — proven **through the live hub loop**, not by asserting on
       `resolveGameSession` alone, and the test verified to go red when routing reads the payload.
-- [ ] Move, attack, interact, equip/unequip and cast_skill all still work in a run.
-- [ ] Every field read in `ParsePayload` uses the comma-ok form; no bare type assertion remains.
-- [ ] A payload missing `player_id`, `vx`, `vy`, `entity_id`, `enemy_entity_id` or
+- [x] Move, attack, interact, equip/unequip and cast_skill all still work in a run.
+- [x] Every field read in `ParsePayload` uses the comma-ok form; no bare type assertion remains.
+- [x] A payload missing `player_id`, `vx`, `vy`, `entity_id`, `enemy_entity_id` or
       `item_entity_id` returns an error rather than panicking.
-- [ ] Routing errors carry no session id or username to the client; detail stays in the log.
-- [ ] `internal/gameserver` compiles and its tests pass.
-- [ ] `GetPlayerFromConn` holds a read lock.
-- [ ] **Revised:** no *new* test failures and no *new* lint findings versus the branch point.
+- [x] Routing errors carry no session id or username to the client; detail stays in the log.
+- [x] `internal/gameserver` compiles and its tests pass.
+- [x] `GetPlayerFromConn` holds a read lock.
+- [x] **Revised:** no *new* test failures and no *new* lint findings versus the branch point.
       The original wording — `go test ./...` passes and `golangci-lint run` is clean — is not
       reachable by any single slice: `internal/game`'s
       `TestSession_GameLoopAppliesMovement_Integration` and `cmd/server`'s `log.Printf %w` vet
