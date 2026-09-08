@@ -37,6 +37,13 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   the refactor plan); prefer **run** for the world and **instance** only for the allocation unit.
 - **Session** — the code-level struct owning a world and its loop (`internal/game`). One session
   per world, so a session is now either a hub session or a run session.
+  - **`GameSession` in code means exactly this** — `GetGameSession`, `resolveGameSession`,
+    `Player.CurrentGameSessionId`. The "Game" is inert: this service holds no other kind of
+    session, and these names predate the hub. They cover **both** world types, so
+    `GetGameSession` returning the hub is correct, not a bug, and there is no separate hub
+    lookup to go looking for. Renaming was considered during FS-0008 and declined: it touches
+    30 sites across four packages to delete a neutral word, and the churn would land on top of
+    the hub work in `git blame`.
 - **Delve** — the *player-facing* word for entering a run, owned by
   [`game-client/docs/design-guideline.md`](../../game-client/docs/design-guideline.md). Server
   code says **run**; UI copy says **delve**. Do not mix them in one layer.
