@@ -50,7 +50,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Tear down a session
 - [ ] Generic instance-allocation contract (warm pool or spawn)
 - [ ] Seed run modifiers onto a roster
-- [ ] Client handoff between hub and instance
+- [ ] Switch a player between hub and run → FS-0008
 
 ### ECS world
 
@@ -70,9 +70,18 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Item pickup
 - [ ] Equip and unequip
 
+### Hub world
+
+- [ ] Shared hub world → FS-0008
+- [ ] Hub is a safe zone → FS-0008
+- [ ] Wandering NPCs with dialogue → FS-0008
+- [ ] Hub occupancy cap → FS-0008
+
 ### Transport
 
 - [x] WebSocket message hub
+- [ ] World identity in the state protocol → FS-0008
+- [ ] Route client messages from server-held session state → FS-0008
 
 ### Results
 
@@ -80,7 +89,6 @@ matchmaking); this service is the engine they feed. ✅
 
 ### Persistent world (MMO-RPG refactor)
 
-- [ ] Persistent HUB world
 - [ ] Durable accounts and profile
 - [ ] Persistent inventory across runs
 - [ ] Progression persistence

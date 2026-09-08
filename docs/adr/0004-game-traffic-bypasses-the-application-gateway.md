@@ -1,6 +1,9 @@
 # ADR-0004 — Game traffic bypasses the application gateway; game-service owns its client surface
 
 Status: accepted
+Amended by: [ADR-0015](0015-hub-and-runs-share-one-process-and-one-connection.md) — clause 3
+(matchmaking hands the client the allocated pod's address), suspended while `game-service` runs
+as a single replica under a 50-player cap. The rest of this ADR stands unchanged.
 Date: 2026-08-14
 Scope: `game-server/game-service`, `game-server/api-gateway`
 Realized by: the absence of a game route in `api-gateway/config/routes.go`, and

@@ -61,10 +61,12 @@ server state and sends intents. ✅
 - [ ] Fantasy-medieval presentation on the web platform → FS-0004
 - [ ] Fantasy-medieval presentation in the game canvas → FS-0005
 
-### Persistent world (refactor plan)
+### Hub
 
-- [ ] HUB world client
-- [ ] Hub ↔ instance handoff
+- [ ] Hub scene → FS-0008
+- [ ] Move between hub and run → FS-0008
+- [ ] Delve entry from the hub → FS-0008
+- [ ] Loadout access from the hub → FS-0008
 
 ### Deployment
 
