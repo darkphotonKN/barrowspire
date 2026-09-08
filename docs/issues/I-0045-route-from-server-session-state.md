@@ -34,15 +34,63 @@ Behaviour-preserving: a player in a run sends the same actions and gets the same
 lands first so the hub is built on the corrected shape rather than on one already known to be
 wrong.
 
+### Scope added after the issue was written
+
+Agreed in-session and recorded here so the acceptance criteria below cover what was actually
+built, rather than leaving it to commit messages.
+
+- **Harden every field in `ParsePayload`, not only `session_id`.** The other reads —
+  `player_id`, `vx`, `vy`, `entity_id`, `enemy_entity_id`, `item_entity_id` — are bare
+  assertions too and panic identically. Two reasons to include them: the five `session_id`
+  assertions sit in the same struct literals, so the work touches those lines anyway; and
+  removing the old `GetSessionID()` gate lets malformed payloads reach the parser *sooner*, so
+  fixing five and leaving six would widen the exposure it was meant to close.
+
+  Severity established while implementing: `ParsePayload` runs in the session's message loop,
+  which has **no `recover()`** — the only one (`handler.go:295`) guards the writer goroutine.
+  An unrecovered panic in any goroutine takes the whole process down, so one malformed message
+  from any authenticated player kills every concurrent world. Under
+  [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) that is the hub
+  and all runs at once.
+
+  Skill fields (`skill_id`, `target_x`, `target_y`) stay optional, as they already were.
+
+- **Repair the `internal/gameserver` test package.** Found broken at HEAD: three mocks had
+  drifted from their interfaces (`mockQueueService` missing `AddPlayer`, `MockEventEmitter`
+  returning an `error` the interface does not declare, `MockItemsClient` missing three methods),
+  so it had not compiled in some time. Once it did, `TestQueueFindGameFlow` failed because its
+  mock queue never matched anyone. Both repaired — otherwise this slice cannot be proven at all.
+
+- **Fix `server.go:194`.** `slog.Info` called with printf verbs, already recorded as a known
+  divergence in the service spec. `go test` runs vet, so it blocked the whole package.
+
+- **Read-lock `GetPlayerFromConn` (`server.go:150`).** It takes an exclusive `Lock` to read one
+  map entry, and this slice puts it on the routing path for every inbound game action. While
+  held it blocks the per-tick broadcast deliveries that read `s.msgChan` under `RLock`
+  (`server.go:290, 316`). All four callers only read.
+
 ## Acceptance Criteria
 
 - [ ] No inbound client message carries `session_id`.
 - [ ] `grep session_id internal/types/messages.go` returns nothing inside `ParsePayload`.
 - [ ] A `move` message with no `session_id` in the payload does not panic the server.
 - [ ] A `move` message carrying a *foreign* session's id is routed to the sender's own session
-      regardless of the value.
+      regardless of the value — proven **through the live hub loop**, not by asserting on
+      `resolveGameSession` alone, and the test verified to go red when routing reads the payload.
 - [ ] Move, attack, interact, equip/unequip and cast_skill all still work in a run.
-- [ ] `go test ./...` passes and `golangci-lint run` is clean.
+- [ ] Every field read in `ParsePayload` uses the comma-ok form; no bare type assertion remains.
+- [ ] A payload missing `player_id`, `vx`, `vy`, `entity_id`, `enemy_entity_id` or
+      `item_entity_id` returns an error rather than panicking.
+- [ ] Routing errors carry no session id or username to the client; detail stays in the log.
+- [ ] `internal/gameserver` compiles and its tests pass.
+- [ ] `GetPlayerFromConn` holds a read lock.
+- [ ] **Revised:** no *new* test failures and no *new* lint findings versus the branch point.
+      The original wording — `go test ./...` passes and `golangci-lint run` is clean — is not
+      reachable by any single slice: `internal/game`'s
+      `TestSession_GameLoopAppliesMovement_Integration` and `cmd/server`'s `log.Printf %w` vet
+      failure are both red at HEAD, and `golangci-lint` reports 50 findings across the service
+      with no `.golangci.yml` to define the set. Cleaning those is its own work, not this
+      slice's. Measured: lint 10 → 10 on the touched packages.
 
 ## Blocked By
 
