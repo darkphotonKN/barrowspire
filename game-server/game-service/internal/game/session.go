@@ -367,7 +367,7 @@ func (s *Session) manageClientMessages() {
 				slog.Debug("ParsedPayload of item to equip / unequip",
 					"action", msg.Message.Action,
 					"player_id", playerEquipPayload.PlayerID,
-					"session_id", playerEquipPayload.SessionID,
+					"session_id", s.ID,
 					"item_entity_id", playerEquipPayload.ItemEntityID,
 				)
 

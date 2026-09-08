@@ -38,6 +38,36 @@ type SessionManager interface {
 	GetQueueStatusChan() chan queue.QueueStatus
 }
 
+// Routing failures. The world a message belongs to is server-held state, so
+// every one of these means the server's own record is missing or stale — never
+// that the client said something wrong.
+var (
+	errPlayerNotFound     = errors.New("no player registered for this connection")
+	errPlayerNotInSession = errors.New("player is not in a game session")
+	errSessionNotFound    = errors.New("game session no longer exists")
+)
+
+// resolveGameSession answers which world a connection's messages belong to,
+// from the server's own record of the player. It deliberately takes no payload:
+// a client cannot address a world it is not in (FS-0008 §Requirements 16).
+func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*game.Session, error) {
+	player, exists := h.sessionManager.GetPlayerFromConn(conn)
+	if !exists {
+		return nil, errPlayerNotFound
+	}
+
+	if player.CurrentGameSessionId == uuid.Nil {
+		return nil, fmt.Errorf("%w: %s", errPlayerNotInSession, player.Username)
+	}
+
+	session, exists := h.sessionManager.GetGameSession(player.CurrentGameSessionId)
+	if !exists {
+		return nil, fmt.Errorf("%w: %s", errSessionNotFound, player.CurrentGameSessionId)
+	}
+
+	return session, nil
+}
+
 func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender) *messageHub {
 	return &messageHub{
 		sessionManager: sessionManager,
@@ -75,34 +105,22 @@ func (h *messageHub) Run() {
 			// will be propogated from the message hub to corresponding server.
 
 			if gameActions[messageAction] {
-				sessionID, err := clientPackage.Message.GetSessionID()
-
-				slog.Debug("debug sessionID clientPackage GetSessionID", "sessionID", sessionID)
+				session, err := h.resolveGameSession(clientPackage.Conn)
 
 				if err != nil {
-					err := "invalid or missing session ID in payload"
+					slog.Error("Could not route game action",
+						"action", clientPackage.Message.Action,
+						"error", err,
+					)
+
+					errMsg := err.Error()
 					h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
 						Action: clientPackage.Message.Action,
 						Payload: map[string]interface{}{
-							"message": "Invalid or missing session ID in payload",
+							"message": errMsg,
 						},
-						Error: &err,
+						Error: &errMsg,
 					})
-					continue
-				}
-
-				session, exists := h.sessionManager.GetGameSession(sessionID)
-
-				if !exists {
-					err := "Game session not found"
-					h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
-						Action: clientPackage.Message.Action,
-						Payload: map[string]interface{}{
-							"message": fmt.Sprintf("Game session not found for session ID: %s", sessionID),
-						},
-						Error: &err,
-					})
-					slog.Error("Game doesn't exist for this player", "message", clientPackage.Message)
 					continue
 				}
 

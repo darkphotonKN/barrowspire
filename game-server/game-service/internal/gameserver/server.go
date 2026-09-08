@@ -191,7 +191,7 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 	s.sessions[newGameSession.ID] = newGameSession
 
 	// NOTE: keep this info level, important to save meta data DO NOT REMOVE
-	slog.Info("New game session initiated, id: %s, players: %d\n", newGameSession.ID, len(players))
+	slog.Info("New game session initiated", "session_id", newGameSession.ID, "players", len(players))
 
 	return newGameSession
 }

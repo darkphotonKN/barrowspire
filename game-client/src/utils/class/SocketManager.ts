@@ -172,13 +172,12 @@ class SocketManager {
     payload: ActionMap[T],
   ): void {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      // Auto-inject session_id and player_id
-      const sessionId = useGameStore.getState().sessionId;
+      // Auto-inject player_id. The world a message belongs to is NOT sent —
+      // the server routes on its own record of the player (FS-0008 §Requirements 16).
       const playerId = useAuthStore.getState().memberInfo?.id;
 
       const enrichedPayload = {
         ...payload,
-        session_id: sessionId,
         player_id: playerId,
       };
 

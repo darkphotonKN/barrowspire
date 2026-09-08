@@ -1,6 +1,7 @@
 package types
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -65,16 +66,64 @@ type BackendGameState struct {
 	EscapedCount int
 }
 
+// ErrInvalidPayload marks a client payload that cannot be parsed. The payload
+// arrives as map[string]interface{} straight off the socket, so every field read
+// is a type assertion on client-controlled data.
+var ErrInvalidPayload = errors.New("invalid payload")
+
+// requireString reads a required string field. It never panics: a missing key
+// yields a nil interface, and the single-value assertion form would take the
+// process down with it.
+func (m *Message) requireString(key string) (string, error) {
+	value, ok := m.Payload[key].(string)
+	if !ok {
+		return "", fmt.Errorf("field %q is missing or not a string: %w", key, ErrInvalidPayload)
+	}
+	return value, nil
+}
+
+// requireFloat reads a required number field. JSON numbers decode to float64.
+func (m *Message) requireFloat(key string) (float64, error) {
+	value, ok := m.Payload[key].(float64)
+	if !ok {
+		return 0, fmt.Errorf("field %q is missing or not a number: %w", key, ErrInvalidPayload)
+	}
+	return value, nil
+}
+
 func (m *Message) ParsePayload() (interface{}, error) {
-	switch constants.Action(m.Action) {
+	action := constants.Action(m.Action)
+
+	// Every in-game action identifies its sender. Which world the message belongs
+	// to is NOT read from the payload — the server routes on the player's own
+	// CurrentGameSessionId (FS-0008 §Requirements 16).
+	var playerID string
+	var err error
+
+	switch action {
+	case constants.ActionMove, constants.ActionInteract, constants.ActionAttack,
+		constants.ActionEquip, constants.ActionUnequip, constants.ActionCastSkill:
+		playerID, err = m.requireString("player_id")
+		if err != nil {
+			return nil, fmt.Errorf("parsing %s payload: %w", action, err)
+		}
+	}
+
+	switch action {
 	case constants.ActionMove:
+		vx, err := m.requireFloat("vx")
+		if err != nil {
+			return nil, fmt.Errorf("parsing move payload: %w", err)
+		}
+		vy, err := m.requireFloat("vy")
+		if err != nil {
+			return nil, fmt.Errorf("parsing move payload: %w", err)
+		}
+
 		parsedPayload := PlayerSessionMovePayload{
-			PlayerSessionPayload: PlayerSessionPayload{
-				SessionID: m.Payload["session_id"].(string),
-				PlayerID:  m.Payload["player_id"].(string),
-			},
-			Vx: m.Payload["vx"].(float64),
-			Vy: m.Payload["vy"].(float64),
+			PlayerSessionPayload: PlayerSessionPayload{PlayerID: playerID},
+			Vx:                   vx,
+			Vy:                   vy,
 		}
 
 		slog.Debug("payload of action move", "payload", parsedPayload)
@@ -82,12 +131,14 @@ func (m *Message) ParsePayload() (interface{}, error) {
 		return parsedPayload, nil
 
 	case constants.ActionInteract:
+		entityID, err := m.requireString("entity_id")
+		if err != nil {
+			return nil, fmt.Errorf("parsing interact payload: %w", err)
+		}
+
 		parsedPayload := PlayerSessionInteractPayload{
-			PlayerSessionPayload: PlayerSessionPayload{
-				SessionID: m.Payload["session_id"].(string),
-				PlayerID:  m.Payload["player_id"].(string),
-			},
-			EntityID: m.Payload["entity_id"].(string),
+			PlayerSessionPayload: PlayerSessionPayload{PlayerID: playerID},
+			EntityID:             entityID,
 		}
 
 		slog.Debug("payload of action interact", "payload", parsedPayload)
@@ -95,12 +146,14 @@ func (m *Message) ParsePayload() (interface{}, error) {
 		return parsedPayload, nil
 
 	case constants.ActionAttack:
+		enemyEntityID, err := m.requireString("enemy_entity_id")
+		if err != nil {
+			return nil, fmt.Errorf("parsing attack payload: %w", err)
+		}
+
 		parsedPayload := PlayerSectionAttackPayload{
-			PlayerSessionPayload: PlayerSessionPayload{
-				SessionID: m.Payload["session_id"].(string),
-				PlayerID:  m.Payload["player_id"].(string),
-			},
-			EnemyEntityID: m.Payload["enemy_entity_id"].(string),
+			PlayerSessionPayload: PlayerSessionPayload{PlayerID: playerID},
+			EnemyEntityID:        enemyEntityID,
 		}
 
 		slog.Debug("payload of action attack", "payload", parsedPayload)
@@ -108,12 +161,14 @@ func (m *Message) ParsePayload() (interface{}, error) {
 		return parsedPayload, nil
 
 	case constants.ActionEquip, constants.ActionUnequip:
+		itemEntityID, err := m.requireString("item_entity_id")
+		if err != nil {
+			return nil, fmt.Errorf("parsing equip / unequip payload: %w", err)
+		}
+
 		parsedPayload := PlayerEquipPayload{
-			PlayerSessionPayload: PlayerSessionPayload{
-				SessionID: m.Payload["session_id"].(string),
-				PlayerID:  m.Payload["player_id"].(string),
-			},
-			ItemEntityID: m.Payload["item_entity_id"].(string),
+			PlayerSessionPayload: PlayerSessionPayload{PlayerID: playerID},
+			ItemEntityID:         itemEntityID,
 		}
 
 		slog.Debug("payload of action equip / unequip", "payload", parsedPayload)
@@ -121,56 +176,32 @@ func (m *Message) ParsePayload() (interface{}, error) {
 		return parsedPayload, nil
 
 	case constants.ActionCastSkill:
+		// Skill fields stay optional, as they were before: SkillSystem is a stub
+		// and nothing consumes them yet.
 		skillID, _ := m.Payload["skill_id"].(string)
 		targetX, _ := m.Payload["target_x"].(float64)
 		targetY, _ := m.Payload["target_y"].(float64)
 
 		parsedPayload := PlayerCastSkillPayload{
-			PlayerSessionPayload: PlayerSessionPayload{
-				SessionID: m.Payload["session_id"].(string),
-				PlayerID:  m.Payload["player_id"].(string),
-			},
-			SkillID: skillID,
-			TargetX: targetX,
-			TargetY: targetY,
+			PlayerSessionPayload: PlayerSessionPayload{PlayerID: playerID},
+			SkillID:              skillID,
+			TargetX:              targetX,
+			TargetY:              targetY,
 		}
 
 		slog.Debug("payload of action cast_skill", "payload", parsedPayload)
 
 		return parsedPayload, nil
 	default:
-		return nil, fmt.Errorf("No matching actions.")
+		return nil, fmt.Errorf("no matching action %q: %w", m.Action, ErrInvalidPayload)
 	}
-
-}
-
-/**
-* helper to extract sessionID.
-**/
-func (m *Message) GetSessionID() (uuid.UUID, error) {
-	sessionIDStr, ok := m.Payload["session_id"].(string)
-
-	if !ok {
-		slog.Debug("SessionID does not exist in the payload")
-		return uuid.Nil, fmt.Errorf("SessionID does not exist in the payload.")
-	}
-
-	sessionID, err := uuid.Parse(sessionIDStr)
-
-	if err != nil {
-		slog.Debug("SessionID in payload is not a UUID")
-		return uuid.Nil, fmt.Errorf("SessionID in payload is not a UUID.")
-	}
-
-	return sessionID, nil
 }
 
 /**
 * Payloads for players in ongoing games
 **/
 type PlayerSessionPayload struct {
-	SessionID string `json:"session_id"`
-	PlayerID  string `json:"player_id"`
+	PlayerID string `json:"player_id"`
 }
 
 type PlayerSessionMovePayload struct {

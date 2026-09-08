@@ -50,9 +50,7 @@ func (m *MockAuthClient) ValidateToken(ctx context.Context, req *pb.ValidateToke
 // MockEventEmitter for testing
 type MockEventEmitter struct{}
 
-func (m *MockEventEmitter) PublishMatchComplete(ctx context.Context, data *types.RawMatchState) error {
-	return nil
-}
+func (m *MockEventEmitter) PublishMatchComplete(ctx context.Context, data *types.RawMatchState) {}
 
 // MockItemsClient for testing
 type MockItemsClient struct{}
@@ -104,6 +102,18 @@ func (m *MockItemsClient) ListConsumablesWithTemplate(ctx context.Context) (*ite
 	}, nil
 }
 
+func (m *MockItemsClient) GetLoadout(ctx context.Context, req *itemspb.GetLoadoutRequest) (*itemspb.GetLoadoutResponse, error) {
+	return &itemspb.GetLoadoutResponse{}, nil
+}
+
+func (m *MockItemsClient) GetLoadoutWithItems(ctx context.Context, req *itemspb.GetLoadoutWithItemsRequest) (*itemspb.GetLoadoutWithItemsResponse, error) {
+	return &itemspb.GetLoadoutWithItemsResponse{}, nil
+}
+
+func (m *MockItemsClient) ListItemInstances(ctx context.Context, req *itemspb.ListItemInstancesRequest) (*itemspb.ListItemInstancesResponse, error) {
+	return &itemspb.ListItemInstancesResponse{}, nil
+}
+
 func (m *MockItemsClient) ListItemTemplates(ctx context.Context) (*itemspb.ListItemTemplatesResponse, error) {
 	return &itemspb.ListItemTemplatesResponse{
 		Items: []*itemspb.ItemTemplate{},
@@ -111,6 +121,7 @@ func (m *MockItemsClient) ListItemTemplates(ctx context.Context) (*itemspb.ListI
 }
 
 type mockQueueService struct {
+	mu              sync.Mutex
 	players         []*types.Player
 	matchedChan     chan []*types.Player
 	statusChan      chan queue.QueueStatus
@@ -131,8 +142,28 @@ func (m *mockQueueService) PlayerJoinQueue(*types.Player) {}
 func (m *mockQueueService) GetQueueStatusChan() chan queue.QueueStatus {
 	return m.QueueStatusChan
 }
-func (m *mockQueueService) AddPlayerChan(player *types.Player) {
 
+// AddPlayer accumulates players and emits a match once matchSize have queued,
+// mirroring what the real queue service does on its ticker.
+func (m *mockQueueService) AddPlayer(player *types.Player) error {
+	const matchSize = 2
+
+	m.mu.Lock()
+	m.players = append(m.players, player)
+
+	if len(m.players) < matchSize {
+		m.mu.Unlock()
+		return nil
+	}
+
+	matched := m.players[:matchSize]
+	m.players = m.players[matchSize:]
+	m.mu.Unlock()
+
+	// matchedChan is unbuffered and the server reads it from its own loop.
+	go func() { m.matchedChan <- matched }()
+
+	return nil
 }
 
 func (m *mockQueueService) PlayerRemoveQueue(player *types.Player) {}
