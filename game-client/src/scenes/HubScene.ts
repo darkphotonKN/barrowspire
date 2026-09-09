@@ -3,6 +3,15 @@ import { ActionType } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { ClientGameState, PlayerState } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
+import { ensureCharacterTextures } from "@/utils/characterTextures";
+
+/** Falls back to the warrior when a class is missing or unrecognised. */
+function textureFor(playerClass: string | undefined): string {
+  const known = ["warrior", "mage", "archer"];
+  const cls = (playerClass ?? "").toLowerCase();
+
+  return `preview_${known.includes(cls) ? cls : "warrior"}_down`;
+}
 
 const HUB_WIDTH = 2000;
 const HUB_HEIGHT = 1000;
@@ -35,6 +44,8 @@ export class HubScene extends Phaser.Scene {
   create(): void {
     this.cameras.main.setBounds(0, 0, HUB_WIDTH, HUB_HEIGHT);
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
+
+    ensureCharacterTextures(this);
 
     this.drawGround();
     this.bindInput();
@@ -138,9 +149,10 @@ export class HubScene extends Phaser.Scene {
       return;
     }
 
-    const body = this.add.graphics();
-    body.fillStyle(isSelf ? BARROW_HEX.amber : BARROW_HEX.vellumDark, 1);
-    body.fillCircle(0, 0, PLAYER_RADIUS);
+    // The same sprites the character-select screen previews, so the delver a
+    // player picked is the delver they see.
+    const body = this.add.sprite(0, 0, textureFor(player.class));
+    if (!isSelf) body.setTint(BARROW_HEX.vellumDark);
 
     const name = this.add
       .text(0, -PLAYER_RADIUS - 14, player.username, {

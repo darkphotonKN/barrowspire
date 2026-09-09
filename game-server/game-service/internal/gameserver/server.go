@@ -147,7 +147,7 @@ func (s *Server) createHubSession() *game.Session {
 * takes it by value — so it is a different object from the one in s.players, and
 * both have to be told. CreateGameSession does the same thing for the same reason.
 **/
-func (s *Server) JoinHub(conn *websocket.Conn) (*game.Session, error) {
+func (s *Server) JoinHub(conn *websocket.Conn, character types.Character) (*game.Session, error) {
 	hub, exists := s.HubSession()
 	if !exists {
 		return nil, errHubMissing
@@ -158,17 +158,26 @@ func (s *Server) JoinHub(conn *websocket.Conn) (*game.Session, error) {
 		return nil, errPlayerNotFound
 	}
 
-	hub.AddPlayer(player.ID, player.Username, player.Class)
+	username := player.Username
+	if character.Name != "" {
+		username = character.Name
+	}
+
+	hub.AddPlayer(player.ID, username, character.Class)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	connected := constants.Connected
 
+	player.Class = character.Class
+	player.Username = username
 	player.CurrentGameSessionId = hub.ID
 	player.ConnectState = &connected
 
 	if stored, exists := s.players[player.ID]; exists {
+		stored.Class = character.Class
+		stored.Username = username
 		stored.CurrentGameSessionId = hub.ID
 		stored.ConnectState = &connected
 	}

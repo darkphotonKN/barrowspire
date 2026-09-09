@@ -34,7 +34,7 @@ type SessionManager interface {
 	GetServerChan() chan types.ClientPackage
 	AddPlayer(*types.Player) error
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
-	JoinHub(conn *websocket.Conn) (*game.Session, error)
+	JoinHub(conn *websocket.Conn, character types.Character) (*game.Session, error)
 	GetMatchedChan() chan []*types.Player
 	GetQueueStatusChan() chan queue.QueueStatus
 }
@@ -48,6 +48,25 @@ var (
 	errSessionNotFound    = errors.New("game session no longer exists")
 	errHubMissing         = errors.New("hub world does not exist")
 )
+
+// characterFromPayload reads the character a client is entering with, falling
+// back the same way find_game does when the class is missing or unknown.
+func characterFromPayload(payload map[string]interface{}) types.Character {
+	class, _ := payload["class"].(string)
+	if class == "" {
+		class, _ = payload["className"].(string)
+	}
+	if _, known := game.Classes[class]; !known {
+		class = "mage"
+	}
+
+	name, _ := payload["characterName"].(string)
+	if name == "" {
+		name, _ = payload["username"].(string)
+	}
+
+	return types.Character{Class: class, Name: name}
+}
 
 // worldEnteredMessage tells a client which world it is now in. Every transition
 // uses this one message, so the client has a single place to switch scenes.
@@ -153,7 +172,13 @@ func (h *messageHub) Run() {
 
 			// NOTE: a player who has picked a character asks to enter the hub
 			case constants.ActionEnterHub:
-				hub, err := h.sessionManager.JoinHub(clientPackage.Conn)
+				// The chosen character comes with the request, the same way it
+				// does for find_game: the server has no memory of a selection
+				// made in the menu.
+				hub, err := h.sessionManager.JoinHub(
+					clientPackage.Conn,
+					characterFromPayload(clientPackage.Message.Payload),
+				)
 
 				if err != nil {
 					slog.Warn("Could not place player in the hub", "error", err)

@@ -812,7 +812,14 @@ export class MainMenuScene extends Phaser.Scene {
 
     // Pressing start leads to the hub, not to a queue. Delving is started from
     // inside the hub by talking to an NPC (I-0050). FS-0008 §Requirements 34.
-    socketManager.sendMessage(ActionType.EnterHub, {});
+    const chosenClass = (activeChar.className || "warrior").toLowerCase();
+
+    socketManager.sendMessage(ActionType.EnterHub, {
+      class: chosenClass,
+      className: chosenClass,
+      characterName: activeChar.name,
+      username: activeChar.name,
+    });
   }
 
   private handleConnectionStatusChange(

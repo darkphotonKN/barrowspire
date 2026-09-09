@@ -61,10 +61,15 @@ export interface CastSkillPayload {
 
 /**
  * Asking to enter the hub. Connecting opens the socket; entering is a separate
- * step taken after a character is chosen, so this payload carries nothing of
- * its own.
+ * step taken after a character is chosen, and the chosen character travels with
+ * the request — the server keeps no memory of a menu selection.
  */
-export type EnterHubPayload = Record<string, never>;
+export interface EnterHubPayload {
+  class: string;
+  className: string;
+  characterName: string;
+  username: string;
+}
 
 export interface ActionMap {
   enter_hub: EnterHubPayload;

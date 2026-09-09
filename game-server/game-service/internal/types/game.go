@@ -265,3 +265,10 @@ type ItemInstance struct {
 	CreatedAt       time.Time  `db:"created_at"`
 	UpdatedAt       time.Time  `db:"updated_at"`
 }
+
+// Character is the delver a player enters a world as: the selection they made
+// in the menu, which the server does not remember between requests.
+type Character struct {
+	Class string
+	Name  string
+}

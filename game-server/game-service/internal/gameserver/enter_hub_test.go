@@ -46,7 +46,13 @@ func TestEnterHub_PlacesThePlayerAndTellsThem(t *testing.T) {
 
 	server.serverChan <- types.ClientPackage{
 		Conn:    conn,
-		Message: types.Message{Action: string(constants.ActionEnterHub)},
+		Message: types.Message{
+			Action: string(constants.ActionEnterHub),
+			Payload: map[string]interface{}{
+				"class":         "archer",
+				"characterName": "Wren",
+			},
+		},
 	}
 
 	msg := awaitAction(t, msgCh, constants.ActionWorldEntered)
@@ -64,5 +70,14 @@ func TestEnterHub_PlacesThePlayerAndTellsThem(t *testing.T) {
 
 	t.Run("and has an entity in the hub world", func(t *testing.T) {
 		assert.True(t, hub.HasPlayer(player.ID))
+	})
+
+	t.Run("entered as the character that was chosen", func(t *testing.T) {
+		stored, ok := server.GetPlayerFromConn(conn)
+		require.True(t, ok)
+
+		assert.Equal(t, "archer", stored.Class,
+			"the menu's selection has to travel with the request; the server remembers nothing")
+		assert.Equal(t, "Wren", stored.Username)
 	})
 }
