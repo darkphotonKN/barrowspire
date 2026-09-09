@@ -108,3 +108,35 @@ func TestFindGame_FromTheHub_Queues(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond,
 		"a delver who asked to descend was never queued")
 }
+
+// The whole loop, from the hub side: two delvers ask the Spirewarden to descend
+// and end up in one run together, out of the hub.
+// FS-0008 §Requirements 26, 28, §Edge States (Concurrent).
+func TestTwoDelversDescend_MatchIntoOneRun(t *testing.T) {
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	hub, _ := server.HubSession()
+
+	for _, name := range []string{"Wren", "Kaelen"} {
+		conn := &websocket.Conn{}
+		player := &types.Player{ID: uuid.New(), Username: name}
+		registerTestConn(server, conn, player)
+		_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: name})
+		require.NoError(t, err)
+
+		server.serverChan <- types.ClientPackage{
+			Conn: conn,
+			Message: types.Message{
+				Action:  string(constants.ActionFindGame),
+				Payload: map[string]interface{}{"class": "mage"},
+			},
+		}
+	}
+
+	require.Eventually(t, func() bool {
+		server.mu.RLock()
+		defer server.mu.RUnlock()
+		return len(server.sessions) == 2 // the hub, plus one run
+	}, 3*time.Second, 20*time.Millisecond, "the two delvers never got a run")
+
+	assert.Empty(t, hub.GetPlayerIDs(), "both left the hub to descend")
+}

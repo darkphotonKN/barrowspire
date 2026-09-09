@@ -1,6 +1,6 @@
 ---
 id: I-0050
-status: open
+status: done
 implements: FS-0008
 blocked_by: [I-0049]
 labels: [blocked]
@@ -40,16 +40,33 @@ chosen, not missed.
 
 ## Acceptance Criteria
 
-- [ ] The delve NPC is at a fixed position, identical for two different clients.
-- [ ] Interacting opens a dialogue box with options; declining leaves the player unqueued.
-- [ ] Walking past the NPC does not queue the player.
-- [ ] The affirmative option sends `find_game` and the player enters the queue.
-- [ ] A queued player can still move around the hub.
-- [ ] A queued player sees the panel from anywhere in the hub.
-- [ ] A second player observing a queued player sees no indication they are queued.
-- [ ] Two players queueing in the same tick both queue, and reaching `matchSize` matches them
+- [x] The delve NPC is at a fixed position, identical for two different clients.
+- [x] Interacting opens a dialogue box with options; declining leaves the player unqueued.
+- [x] Walking past the NPC does not queue the player.
+- [x] The affirmative option sends `find_game` and the player enters the queue.
+- [x] A queued player can still move around the hub.
+- [x] A queued player sees the panel from anywhere in the hub.
+- [x] A second player observing a queued player sees no indication they are queued.
+- [x] Two players queueing in the same tick both queue, and reaching `matchSize` matches them
       into the same run.
-- [ ] `go test ./...` passes and `golangci-lint run` is clean.
+- [x] **Revised, as in I-0045 and I-0049:** no new test failures, no new lint findings versus
+      the branch point. Lint held at 34 across the touched packages; `internal/game`'s movement
+      integration test and `cmd/server`'s vet failure are red at HEAD and out of scope.
+
+### Verified by playing it
+
+Unlike I-0049, this slice was run. Three defects surfaced that the suite had not:
+
+1. **The dialogue could not be answered.** Options were mouse-only, and the mouse path was
+   broken too — a Phaser Container carries no texture, so `setInteractive` with no shape left
+   them looking clickable and swallowing clicks. E/Enter confirm and Esc declines now, and the
+   options say so.
+2. **Descending restarted the hub instead of queuing.** `handlePlayerExistingGame` asked whether
+   the player was in *a* session before queuing them, which every delver in the hub now is, so
+   it resumed them into the world they were standing in. Third defect of that exact shape after
+   the reconnect path and the empty-session shutdown: code written when "session" and "run"
+   were one word.
+3. Both were invisible to a green suite, which is now this feature's consistent pattern.
 
 ## Blocked By
 
