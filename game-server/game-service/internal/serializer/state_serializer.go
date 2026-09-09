@@ -266,6 +266,24 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			backendState.Switch = append(backendState.Switch, switchState)
 		}
 
+		// -- NPCs --
+		npcComp, isNPC := entity.GetComponent(ecs.ComponentTypeNPC)
+		if isNPC {
+			tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform)
+			if !hasTransform {
+				continue
+			}
+			transform := tc.(*components.TransformComponent)
+			npc := npcComp.(*components.NPCComponent)
+
+			backendState.NPCs = append(backendState.NPCs, &types.NPCState{
+				EntityID: entity.ID,
+				Name:     npc.Name,
+				Function: string(npc.Function),
+				Position: &types.Position{X: transform.X, Y: transform.Y},
+			})
+		}
+
 		// -- Projectiles --
 		projComp, isProj := entity.GetComponent(ecs.ComponentTypeProjectile)
 		if isProj {
@@ -396,6 +414,7 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		EscapeDoor:    backendState.EscapeDoor,
 		Equipment:     backendState.Equipment,
 		Switch:        backendState.Switch,
+		NPCs:          backendState.NPCs,
 		Projectiles:   backendState.Projectiles,
 		EscapedCount:  backendState.EscapedCount,
 	}
@@ -413,6 +432,7 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.Containers = state.Containers[:0]
 	state.EscapeDoor = state.EscapeDoor[:0]
 	state.Switch = state.Switch[:0]
+	state.NPCs = state.NPCs[:0]
 	state.Projectiles = state.Projectiles[:0]
 	state.SessionID = uuid.Nil
 	state.EscapedCount = 0

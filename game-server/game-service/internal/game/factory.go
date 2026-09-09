@@ -223,3 +223,15 @@ func CreateFireballEntity(em *ecs.EntityManager, config FireballConfig) *ecs.Ent
 	))
 	return entity
 }
+
+// CreateFunctionNPCEntity places an NPC who opens something.
+//
+// They never move, so they carry no velocity: only who they are, where they
+// stand, and how close a delver must be to talk.
+func CreateFunctionNPCEntity(em *ecs.EntityManager, npc hubNPC) *ecs.Entity {
+	entity := em.CreateEntity()
+	entity.AddComponent(components.NewNPCComponent(npc.Name, npc.Function))
+	entity.AddComponent(components.NewTransformComponent(npc.X, npc.Y))
+	entity.AddComponent(components.NewInteractableComponent(commonconstants.NPCInteractRange))
+	return entity
+}

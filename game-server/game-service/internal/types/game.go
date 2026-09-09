@@ -190,6 +190,15 @@ type EscapeDoorState struct {
 	IsLocked bool      `json:"is_locked"`
 }
 
+// NPCState is one of the hub's residents as the client sees them. Function is
+// empty for an ambient NPC, who opens nothing.
+type NPCState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Name     string    `json:"name"`
+	Function string    `json:"function"`
+	Position *Position `json:"position"`
+}
+
 type SwitchState struct {
 	EntityID    uuid.UUID `json:"entity_id"`
 	Position    *Position `json:"position"`

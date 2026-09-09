@@ -63,6 +63,9 @@ const HubMapHeight float64 = 1000
 const HubSpawnX float64 = 1000
 const HubSpawnY float64 = 800
 
+// How close a delver must stand to talk to an NPC.
+const NPCInteractRange float64 = 80
+
 const MapWidth float64 = 1440
 const MapHeight float64 = 960
 const PlayerRadius float64 = 20

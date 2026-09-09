@@ -61,6 +61,7 @@ type ClientGameState struct {
 	EscapeDoor    []*EscapeDoorState `json:"escape_doors"`
 	Equipment     *EquipmentState    `json:"equipment"`
 	Switch        []*SwitchState     `json:"switches"`
+	NPCs          []*NPCState        `json:"npcs"`
 	Projectiles   []*ProjectileState `json:"projectiles"`
 	EscapedCount  int                `json:"escaped_count"`
 }
@@ -76,6 +77,7 @@ type BackendGameState struct {
 	EscapeDoor   []*EscapeDoorState
 	Equipment    *EquipmentState
 	Switch       []*SwitchState
+	NPCs         []*NPCState
 	Projectiles  []*ProjectileState
 	EscapedCount int
 }

@@ -130,9 +130,9 @@ func (s *Server) createHubSession() *game.Session {
 	entityManager := ecs.NewEntityManager()
 	stateSerializer := serializer.NewStateSerializer(entityManager)
 
-	// No map objects: a run's boundary is the MovementSystem clamp, not wall
-	// entities, and the hub works the same way. Buildings arrive in I-0047.
 	hub := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient, game.HubBounds())
+
+	hub.InitialHubMapObjects()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
