@@ -44,6 +44,31 @@ const WALK_STEP = 0.3;
 const NPC_TALK_RANGE = 80;
 
 /**
+ * What each function NPC offers, and what accepting it does.
+ *
+ * The dialogue itself is one shape — a line and two options — so adding an NPC
+ * is adding a row here, not another branch in the scene. An NPC missing from this
+ * table opens nothing, which is what an ambient resident is.
+ */
+const NPC_OFFERS: Record<
+  string,
+  { line: string; accepts: string; declines: string; accept: (scene: HubScene) => void }
+> = {
+  delve: {
+    line: "I keep the way into the Spire. Few return whole,\nand fewer return twice. Still set on descending?",
+    accepts: "Descend",
+    declines: "Not yet",
+    accept: (scene) => scene.joinQueue(),
+  },
+  storekeeper: {
+    line: "Steel rusts, and the barrow keeps what it takes.\nSee to your gear before you go down.",
+    accepts: "Open pack",
+    declines: "Later",
+    accept: (scene) => scene.openLoadout(),
+  },
+};
+
+/**
  * One delver as the scene sees them.
  *
  * The pieces are kept together because they live and die together: a delver who
@@ -354,7 +379,8 @@ export class HubScene extends Phaser.Scene {
    * memory of what was said. FS-0008 §Requirements 24, §Out of Scope.
    */
   private openDialogue(npc: NPCState): void {
-    if (npc.function !== "delve") return;
+    const offer = NPC_OFFERS[npc.function];
+    if (!offer) return;
 
     const { width, height } = this.cameras.main;
     const panel = this.add.graphics();
@@ -372,7 +398,7 @@ export class HubScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const line = this.add
-      .text(0, -18, "I keep the way into the Spire. Few return whole,\nand fewer return twice. Still set on descending?", {
+      .text(0, -18, offer.line, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "14px",
         color: toCss(BARROW_HEX.vellum),
@@ -383,14 +409,18 @@ export class HubScene extends Phaser.Scene {
 
     const confirm = () => {
       this.closeDialogue();
-      this.joinQueue();
+      offer.accept(this);
     };
     const dismiss = () => this.closeDialogue();
 
     this.dialogueChoices = { confirm, dismiss };
 
-    const descend = this.dialogueOption(-90, 48, "Descend  [E]", BARROW_HEX.amber, confirm);
-    const notYet = this.dialogueOption(90, 48, "Not yet  [Esc]", BARROW_HEX.arcane, dismiss);
+    const descend = this.dialogueOption(
+      -90, 48, `${offer.accepts}  [E]`, BARROW_HEX.amber, confirm,
+    );
+    const notYet = this.dialogueOption(
+      90, 48, `${offer.declines}  [Esc]`, BARROW_HEX.arcane, dismiss,
+    );
 
     this.dialogue = this.add
       .container(width / 2, height / 2, [panel, speaker, line, descend, notYet])
@@ -437,8 +467,14 @@ export class HubScene extends Phaser.Scene {
     this.dialogueChoices = undefined;
   }
 
+  /** The loadout is a screen, not a world: the delver stays in the hub while it
+   * is open, standing where they were. */
+  openLoadout(): void {
+    this.scene.start("LoadoutScene");
+  }
+
   /** Joining is the delver's decision; the queue itself is unchanged. */
-  private joinQueue(): void {
+  joinQueue(): void {
     const character = useGameStore.getState().getActiveCharacter();
     const chosenClass = (character?.className ?? "warrior").toLowerCase();
 

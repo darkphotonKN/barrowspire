@@ -14,7 +14,6 @@ export class MainMenuScene extends Phaser.Scene {
   private connectionStatusText?: Phaser.GameObjects.Text;
   private isConnected: boolean = false;
   private scanlineGraphics?: Phaser.GameObjects.Graphics;
-  private loadoutBtnBg?: Phaser.GameObjects.Graphics;
   private queuePopupActive: boolean = false;
   private queueTitle?: Phaser.GameObjects.Text;
   private queuePeopleText?: Phaser.GameObjects.Text;
@@ -185,58 +184,11 @@ export class MainMenuScene extends Phaser.Scene {
 
     this.drawButton(0x141210, 0x2a231b);
 
-    // Manage Loadout button (body font)
-    const loadoutBtnX = titleX;
-    const loadoutBtnY = height / 2 + 130;
-    const loadoutBtnW = 180;
-    const loadoutBtnH = 36;
+    // The loadout moved into the hub: the Quartermaster keeps it now, and gearing
+    // up happens where the delver is rather than back in a menu.
+    // FS-0008 §Requirements 30.
 
-    this.loadoutBtnBg = this.add.graphics();
-    this.loadoutBtnBg.fillStyle(palette.hudPanelDeep, 0.8);
-    this.loadoutBtnBg.fillRoundedRect(
-      loadoutBtnX - loadoutBtnW / 2,
-      loadoutBtnY - loadoutBtnH / 2,
-      loadoutBtnW,
-      loadoutBtnH,
-      4,
-    );
-    this.loadoutBtnBg.lineStyle(1, palette.interactable, 0.3);
-    this.loadoutBtnBg.strokeRoundedRect(
-      loadoutBtnX - loadoutBtnW / 2,
-      loadoutBtnY - loadoutBtnH / 2,
-      loadoutBtnW,
-      loadoutBtnH,
-      4,
-    );
-
-    const loadoutText = this.add.text(
-      loadoutBtnX,
-      loadoutBtnY,
-      "PREPARE YOUR KIT",
-      {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "12px",
-        color: toCss(palette.frameBright),
-        letterSpacing: 3,
-      },
-    );
-    loadoutText.setOrigin(0.5);
-
-    const loadoutHit = this.add.rectangle(
-      loadoutBtnX,
-      loadoutBtnY,
-      loadoutBtnW,
-      loadoutBtnH,
-      palette.inkDeep,
-      0,
-    );
-    loadoutHit.setInteractive({ useHandCursor: true });
-
-    loadoutHit.on("pointerdown", () => {
-      this.scene.start("LoadoutScene");
-    });
-
-    // Connection Status indicator (positioned below PREPARE YOUR KIT button)
+    // Connection Status indicator
     this.connectionStatusText = this.add.text(
       titleX,
       height / 2 + 185,

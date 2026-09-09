@@ -310,7 +310,7 @@ export class LoadoutScene extends Phaser.Scene {
       this.equipmentPanel.destroy();
       this.equipmentPanel = undefined;
     }
-    this.scene.start("MainMenuScene");
+    this.scene.start("HubScene");
   }
 
   shutdown(): void {

@@ -26,6 +26,12 @@ var hubNPCs = []hubNPC{
 		X:        constants.HubSpawnX + 140,
 		Y:        constants.HubSpawnY - 120,
 	},
+	{
+		Name:     "Quartermaster",
+		Function: components.NPCFunctionStorekeeper,
+		X:        constants.HubSpawnX - 140,
+		Y:        constants.HubSpawnY - 120,
+	},
 }
 
 /**

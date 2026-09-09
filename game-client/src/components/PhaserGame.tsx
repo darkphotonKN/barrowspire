@@ -52,7 +52,15 @@ export default function PhaserGame() {
     // and the scene follows. One handler at the Phaser bridge rather than one
     // per scene, so no scene has to know what comes after it.
     // FS-0008 §Requirements 15, 36.
-    const WORLD_SCENES = ["MainMenuScene", "HubScene", "BarrowspireScene"];
+    // Everything a world transition replaces. LoadoutScene is here because it is a
+    // screen the delver opens while standing in the hub: a match found with it open
+    // would otherwise leave it sitting on top of the run.
+    const WORLD_SCENES = [
+      "MainMenuScene",
+      "HubScene",
+      "LoadoutScene",
+      "BarrowspireScene",
+    ];
 
     const enterWorld = (payload: WorldEnteredPayload) => {
       const target =
