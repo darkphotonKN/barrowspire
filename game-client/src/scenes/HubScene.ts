@@ -5,12 +5,28 @@ import { ClientGameState, PlayerState } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
 import { ensureCharacterTextures } from "@/utils/characterTextures";
 
+type Facing = "up" | "down" | "left" | "right";
+
 /** Falls back to the warrior when a class is missing or unrecognised. */
-function textureFor(playerClass: string | undefined): string {
+function textureFor(playerClass: string | undefined, facing: Facing): string {
   const known = ["warrior", "mage", "archer"];
   const cls = (playerClass ?? "").toLowerCase();
 
-  return `preview_${known.includes(cls) ? cls : "warrior"}_down`;
+  return `preview_${known.includes(cls) ? cls : "warrior"}_${facing}`;
+}
+
+/**
+ * Which way a delver is looking, from the dominant axis of their velocity —
+ * the same rule the run scene uses, so a delver turns the same way in both
+ * worlds. Standing still keeps the last facing rather than snapping to a
+ * default.
+ */
+function facingFrom(vx: number, vy: number, current: Facing): Facing {
+  if (vx === 0 && vy === 0) return current;
+
+  if (Math.abs(vy) >= Math.abs(vx)) return vy < 0 ? "up" : "down";
+
+  return vx < 0 ? "left" : "right";
 }
 
 const HUB_WIDTH = 2000;
@@ -18,6 +34,9 @@ const HUB_HEIGHT = 1000;
 const PLAYER_RADIUS = 20;
 /** How hard sprites chase the server's position each frame. Matches the run scene. */
 const POSITION_LERP = 0.3;
+/** Stride advance per server tick, and how far a delver rises mid-step. */
+const WALK_STEP = 0.3;
+const WALK_BOB = 2;
 
 /**
  * The hub: the shared world delvers occupy between runs.
@@ -36,6 +55,9 @@ export class HubScene extends Phaser.Scene {
   private delvers = new Map<string, Phaser.GameObjects.Container>();
   /** Where the server last said each delver is. Sprites ease toward these. */
   private targets = new Map<string, { x: number; y: number }>();
+  /** Per-delver view state: which way they face and how far through a stride. */
+  private facings = new Map<string, Facing>();
+  private walkPhases = new Map<string, number>();
   private selfEntityID: string | null = null;
 
   private unsubscribeState?: () => void;
@@ -62,6 +84,8 @@ export class HubScene extends Phaser.Scene {
       this.unsubscribeState?.();
       this.delvers.clear();
       this.targets.clear();
+      this.facings.clear();
+      this.walkPhases.clear();
     });
   }
 
@@ -83,7 +107,9 @@ export class HubScene extends Phaser.Scene {
       if (!target) continue;
 
       sprite.x = Phaser.Math.Linear(sprite.x, target.x, POSITION_LERP);
-      sprite.y = Phaser.Math.Linear(sprite.y, target.y, POSITION_LERP);
+
+      const bob = Math.sin(this.walkPhases.get(entityID) ?? 0) * WALK_BOB;
+      sprite.y = Phaser.Math.Linear(sprite.y, target.y + bob, POSITION_LERP);
     }
   }
 
@@ -161,8 +187,37 @@ export class HubScene extends Phaser.Scene {
         sprite.destroy();
         this.delvers.delete(entityID);
         this.targets.delete(entityID);
+        this.facings.delete(entityID);
+        this.walkPhases.delete(entityID);
       }
     }
+  }
+
+  /**
+   * Turns a delver to face where they are going, and advances their stride.
+   *
+   * There are no walk frames — characterTextures generates one static image per
+   * class per facing — so movement reads as a slight bob rather than steps. Real
+   * legs would mean lifting drawLegs out of BarrowspireScene.
+   */
+  private updateAppearance(player: PlayerState): void {
+    const delver = this.delvers.get(player.entity_id);
+    if (!delver) return;
+
+    const { vx, vy } = player.direction ?? { vx: 0, vy: 0 };
+    const moving = vx !== 0 || vy !== 0;
+
+    const previous = this.facings.get(player.entity_id) ?? "down";
+    const facing = facingFrom(vx, vy, previous);
+
+    if (facing !== previous) {
+      this.facings.set(player.entity_id, facing);
+      const body = delver.getByName("body") as Phaser.GameObjects.Sprite | null;
+      body?.setTexture(textureFor(player.class, facing));
+    }
+
+    const phase = moving ? (this.walkPhases.get(player.entity_id) ?? 0) + WALK_STEP : 0;
+    this.walkPhases.set(player.entity_id, phase);
   }
 
   private placeDelver(player: PlayerState, isSelf: boolean): void {
@@ -171,6 +226,8 @@ export class HubScene extends Phaser.Scene {
       y: player.position.y,
     });
 
+    this.updateAppearance(player);
+
     // Existing delvers ease toward the target in update(); only a delver seen
     // for the first time is placed outright, so it does not slide in from the
     // origin.
@@ -178,7 +235,8 @@ export class HubScene extends Phaser.Scene {
 
     // The same sprites the character-select screen previews, so the delver a
     // player picked is the delver they see.
-    const body = this.add.sprite(0, 0, textureFor(player.class));
+    const body = this.add.sprite(0, 0, textureFor(player.class, "down"));
+    body.setName("body");
     if (!isSelf) body.setTint(BARROW_HEX.vellumDark);
 
     const name = this.add
