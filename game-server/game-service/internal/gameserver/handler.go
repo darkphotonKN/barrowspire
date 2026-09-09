@@ -132,19 +132,40 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 				},
 			}
 
-			// important! send game_found message to let frontend enter game
-			slog.Info("Sending game_found message after reconnection")
-			msgChan <- types.Message{
-				Action: "game_found",
-				Payload: map[string]interface{}{
-					"session_id": player.CurrentGameSessionId.String(),
-				},
-			}
+			s.announceCurrentWorld(msgChan, player)
 		}
 	}
 
 	// handle connection messages
 	go s.ServeConnectedPlayer(conn)
+}
+
+/**
+* Tells a returning player which world they are in, so the client can put them
+* back where they were.
+*
+* This used to send game_found unconditionally, which was true while a run was
+* the only world anyone could be in. It stopped being true with the hub: a
+* refresh sent everyone standing in the hub into the run scene, carrying the
+* hub's own id. The world-identity message already answers exactly this
+* question, so reconnection is simply another moment that asks it.
+**/
+func (s *Server) announceCurrentWorld(msgChan chan interface{}, player *types.Player) {
+	session, exists := s.GetGameSession(player.CurrentGameSessionId)
+	if !exists {
+		slog.Warn("Reconnecting player points at a world that is gone",
+			"username", player.Username,
+			"session_id", player.CurrentGameSessionId,
+		)
+		return
+	}
+
+	slog.Info("Announcing world to reconnecting player",
+		"username", player.Username,
+		"world_type", session.WorldType(),
+	)
+
+	msgChan <- worldEnteredMessage(session)
 }
 
 /**
