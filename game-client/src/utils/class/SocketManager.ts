@@ -1,5 +1,9 @@
 import { palette, toCss } from "../canvasPalette";
-import { ActionMap, ClientMessage } from "@/assets/types/client";
+import {
+  ActionMap,
+  ClientMessage,
+  WorldEnteredPayload,
+} from "@/assets/types/client";
 import { ClientGameState, isGameState } from "@/types/gameState";
 import { GameStateLogger } from "@/utils/gameStateLogger";
 import { useGameStore } from "@/stores/gameStore";
@@ -136,6 +140,11 @@ class SocketManager {
         // Check if it's a game state update
         if (isGameState(data)) {
           this.handleGameStateUpdate(data);
+        } else if (data.action === "world_entered") {
+          // The ONE place the client learns which world it is in. Never infer
+          // it from the shape of a state broadcast. FS-0008 §Requirements 36.
+          this.handleWorldEntered(data.payload as WorldEnteredPayload);
+          this.listeners.get(data.action)?.(data.payload);
         } else if (data.action === "game_found") {
           // Store session_id when game is found
           const sessionId = data.payload?.session_id;
@@ -158,6 +167,21 @@ class SocketManager {
         GameStateLogger.logError("Failed to parse WebSocket message", e);
       }
     };
+  }
+
+  /**
+   * Records the world the server has placed us in. Scenes listen for
+   * "world_entered" to switch; this keeps the store the single source of truth
+   * for which world that is.
+   */
+  private handleWorldEntered(payload: WorldEnteredPayload): void {
+    if (!payload?.session_id || !payload?.world_type) {
+      console.error("world_entered missing session_id or world_type:", payload);
+      return;
+    }
+
+    useGameStore.getState().setWorld(payload.session_id, payload.world_type);
+    console.log(`Entered ${payload.world_type}:`, payload.session_id);
   }
 
   private updateStatus(status: string, color: string): void {

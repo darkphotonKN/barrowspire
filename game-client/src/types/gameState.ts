@@ -119,6 +119,8 @@ export interface ProjectileState {
 // Complete game state received from server
 export interface ClientGameState {
   session_id: UUID;
+  /** Which kind of world this state came from. Mirrors types.WorldType. */
+  world_type?: "hub" | "run";
   current_player: PlayerState | null; // This client's player state
   other_players: PlayerState[]; // Other players in session
   items: string[]; // TODO: Update when items are structured

@@ -8,6 +8,7 @@ import { CharacterCreationScene } from "@/scenes/CharacterCreationScene";
 import { BarrowspireScene } from "@/scenes/BarrowspireScene";
 import { PreloadScene } from "@/scenes/PreloadScene";
 import { BootScene } from "@/scenes/BootScene";
+import { HubScene } from "@/scenes/HubScene";
 import { LoadoutScene } from "@/scenes/LoadoutScene";
 
 export default function PhaserGame() {
@@ -38,7 +39,7 @@ export default function PhaserGame() {
           debug: false,
         },
       },
-      scene: [BootScene, PreloadScene, MainMenuScene, CharacterCreationScene, LoadoutScene, BarrowspireScene],
+      scene: [BootScene, PreloadScene, MainMenuScene, CharacterCreationScene, LoadoutScene, HubScene, BarrowspireScene],
     };
 
     gameRef.current = new Phaser.Game(config);

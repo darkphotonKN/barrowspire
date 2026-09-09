@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { ClassKey } from "@/data/classLore";
+import { WorldType } from "@/assets/types/client";
 
 export interface CharacterSave {
   id: string;
@@ -52,13 +53,16 @@ function saveSlotsToStorage(slots: (CharacterSave | null)[], activeIndex: number
 }
 
 interface GameState {
+  /** The world the player is currently in, or null before entering one. */
   sessionId: string | null;
+  worldType: WorldType | null;
   selectedClass: ClassKey;
   selectedCharacterName: string;
   activeSlotIndex: number;
   slots: (CharacterSave | null)[];
   
   setSessionId: (id: string | null) => void;
+  setWorld: (id: string, worldType: WorldType) => void;
   setSelectedClass: (cls: ClassKey) => void;
   setSelectedCharacterName: (name: string) => void;
   setActiveSlotIndex: (index: number) => void;
@@ -74,12 +78,14 @@ export const useGameStore = create<GameState>()((set, get) => {
 
   return {
     sessionId: null,
+    worldType: null,
     selectedClass: activeChar ? activeChar.className : "warrior",
     selectedCharacterName: activeChar ? activeChar.name : "Kaelen",
     activeSlotIndex: initialActive < initialSlots.length ? initialActive : 0,
     slots: initialSlots,
 
     setSessionId: (id) => set({ sessionId: id }),
+    setWorld: (id, worldType) => set({ sessionId: id, worldType }),
     setSelectedClass: (cls) => set({ selectedClass: cls }),
     setSelectedCharacterName: (name) => set({ selectedCharacterName: name }),
 

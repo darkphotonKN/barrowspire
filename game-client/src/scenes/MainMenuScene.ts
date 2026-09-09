@@ -269,6 +269,18 @@ export class MainMenuScene extends Phaser.Scene {
       },
     );
 
+    // The single transition: the server says which world we are in, and the
+    // client goes there. Never inferred from a state broadcast.
+    // FS-0008 §Requirements 15, 36.
+    socketManager.on(
+      "world_entered",
+      (payload: { world_type?: string }) => {
+        if (payload?.world_type === "hub") {
+          this.scene.start("HubScene");
+        }
+      },
+    );
+
     socketManager.on(
       "game_found",
       (payload: { session_id?: string; sessionID?: string }) => {
@@ -798,18 +810,9 @@ export class MainMenuScene extends Phaser.Scene {
       return;
     }
 
-    // Open matchmaking queue popup modal immediately
-    this.showQueuePopup(1);
-
-    const chosenClass = (activeChar.className || "warrior").toLowerCase();
-    const chosenName = activeChar.name;
-
-    socketManager.sendMessage(ActionType.Find_Game, {
-      class: chosenClass,
-      className: chosenClass,
-      characterName: chosenName,
-      username: chosenName,
-    });
+    // Pressing start leads to the hub, not to a queue. Delving is started from
+    // inside the hub by talking to an NPC (I-0050). FS-0008 §Requirements 34.
+    socketManager.sendMessage(ActionType.EnterHub, {});
   }
 
   private handleConnectionStatusChange(

@@ -59,7 +59,15 @@ export interface CastSkillPayload {
 
 // ====== 動作類型對應 Payload ======
 
+/**
+ * Asking to enter the hub. Connecting opens the socket; entering is a separate
+ * step taken after a character is chosen, so this payload carries nothing of
+ * its own.
+ */
+export type EnterHubPayload = Record<string, never>;
+
 export interface ActionMap {
+  enter_hub: EnterHubPayload;
   move: MovePayload;
   attack: AttackPayload;
   pickup: PickupPayload;
@@ -73,6 +81,7 @@ export interface ActionMap {
 }
 
 export const ActionType = {
+  EnterHub: "enter_hub",
   Move: "move",
   Attack: "attack",
   Pickup: "pickup",
@@ -104,3 +113,26 @@ export type ClientAction =
   | { action: "use"; payload: UsePayload; seq: number }
   | { action: "chat"; payload: ChatPayload; seq: number }
   | { action: "cast_skill"; payload: CastSkillPayload; seq: number };
+
+// ====== Server → Client ======
+
+/**
+ * Which kind of world a session runs. Mirrors types.WorldType on the server.
+ */
+export const WorldType = {
+  Hub: "hub",
+  Run: "run",
+} as const;
+
+export type WorldType = (typeof WorldType)[keyof typeof WorldType];
+
+/**
+ * The one message that tells the client which world it is now in. It arrives on
+ * every transition — into the hub, into a run, and back — so the client has a
+ * single place to switch scenes rather than inferring the world from the shape
+ * of a state broadcast.
+ */
+export interface WorldEnteredPayload {
+  session_id: string;
+  world_type: WorldType;
+}
