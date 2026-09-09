@@ -45,6 +45,22 @@ const PLAYER_RADIUS = 20;
 const POSITION_LERP = 0.3;
 /** Stride advance per server tick, matching the run scene. */
 const WALK_STEP = 0.3;
+/**
+ * Scenery, at fixed points like everything else in the hub. None of it blocks —
+ * see drawScenery — so it lives here rather than in the world.
+ */
+const HEARTH: [number, number] = [1000, 640];
+const TREES: [number, number][] = [
+  [430, 300], [500, 360], [1420, 260], [1500, 330], [1470, 205],
+  [180, 820], [260, 880], [1780, 640], [1840, 720], [560, 900],
+  [700, 760], [1180, 880],
+];
+const GRASS: [number, number][] = [
+  [560, 520], [640, 700], [820, 480], [880, 820], [1120, 500],
+  [1240, 700], [1320, 560], [760, 600], [980, 880], [1400, 780],
+  [300, 620], [1660, 500], [520, 780], [1080, 300], [900, 660],
+];
+
 /** How close a delver stands to talk. Matches the server's NPCInteractRange. */
 const NPC_TALK_RANGE = 80;
 
@@ -111,6 +127,8 @@ export class HubScene extends Phaser.Scene {
 
   /** Drawn once: the hub's buildings are fixed and never change. */
   private structures?: Phaser.GameObjects.Graphics;
+  /** The fire's flicker, so it reads as burning rather than painted. */
+  private hearth?: Phaser.GameObjects.Graphics;
   /** The hub's residents, keyed by entity id. They do not move in this slice. */
   private npcs = new Map<string, { state: NPCState; sprite: Phaser.GameObjects.Container }>();
   /** Whose dialogue is open, if any, and what its options do. */
@@ -137,6 +155,7 @@ export class HubScene extends Phaser.Scene {
     ensureCharacterTextures(this);
 
     this.drawGround();
+    this.drawScenery();
     this.bindInput();
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) =>
@@ -157,6 +176,9 @@ export class HubScene extends Phaser.Scene {
       this.views.clear();
       this.npcs.clear();
       this.closeDialogue();
+      // the scene clock stops with the scene, so the flicker goes with it
+      this.hearth = undefined;
+      this.structures = undefined;
     });
   }
 
@@ -247,6 +269,67 @@ export class HubScene extends Phaser.Scene {
     ground.lineStyle(4, BARROW_HEX.brass, 0.4);
     ground.strokeRect(0, 0, HUB_WIDTH, HUB_HEIGHT);
     ground.setDepth(0);
+  }
+
+  /**
+   * Trees, grass and a fire.
+   *
+   * All client-side and none of it blocks: anything a delver can walk into is a
+   * building, and buildings are server entities so that collision and shape come
+   * from one source. Scenery has no such obligation, so it costs the broadcast
+   * nothing.
+   *
+   * The fire is ember, not amber. On the canvas amber means *interactable*, and
+   * a delver cannot do anything with this one — an amber thing you cannot act on
+   * is a defect (docs/design-guideline.md).
+   */
+  private drawScenery(): void {
+    const scenery = this.add.graphics();
+    scenery.setDepth(2);
+
+    for (const [x, y] of GRASS) {
+      scenery.fillStyle(BARROW_HEX.arcaneDeep, 0.5);
+      scenery.fillRect(x, y, 3, 7);
+      scenery.fillRect(x + 5, y - 3, 3, 10);
+      scenery.fillRect(x + 10, y + 1, 3, 6);
+    }
+
+    for (const [x, y] of TREES) {
+      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
+      scenery.fillRect(x - 5, y, 10, 26);
+
+      scenery.fillStyle(BARROW_HEX.arcaneDeep, 1);
+      scenery.fillCircle(x, y - 6, 26);
+      scenery.fillStyle(BARROW_HEX.arcane, 0.55);
+      scenery.fillCircle(x - 7, y - 12, 14);
+    }
+
+    // the fire ring, which does not move
+    scenery.fillStyle(BARROW_HEX.slate, 1);
+    scenery.fillCircle(HEARTH[0], HEARTH[1], 26);
+    scenery.fillStyle(BARROW_HEX.pitch, 1);
+    scenery.fillCircle(HEARTH[0], HEARTH[1], 19);
+    scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
+    scenery.fillRect(HEARTH[0] - 16, HEARTH[1] - 3, 32, 6);
+    scenery.fillRect(HEARTH[0] - 3, HEARTH[1] - 16, 6, 32);
+
+    this.hearth = this.add.graphics().setDepth(3);
+    this.time.addEvent({ delay: 90, loop: true, callback: () => this.flicker() });
+  }
+
+  /** Redraws the flame at a slightly different size each beat. */
+  private flicker(): void {
+    const fire = this.hearth;
+    if (!fire?.scene) return;
+
+    const [x, y] = HEARTH;
+    const sway = Math.random() * 5;
+
+    fire.clear();
+    fire.fillStyle(BARROW_HEX.ember, 0.85);
+    fire.fillCircle(x, y - 6 - sway * 0.4, 11 + sway * 0.5);
+    fire.fillStyle(BARROW_HEX.amberBright, 0.7);
+    fire.fillCircle(x, y - 9 - sway * 0.6, 6 + sway * 0.3);
   }
 
   private bindInput(): void {
