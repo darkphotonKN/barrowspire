@@ -35,6 +35,10 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Run** — a short-lived world built for one match, resolved and torn down. The original
   escape-run game loop. Also called an **instance** where allocation is the subject (ADR-0004,
   the refactor plan); prefer **run** for the world and **instance** only for the allocation unit.
+  - Discussion in Chinese calls this 塔 ("the tower"). That is conversational shorthand only:
+    it names no layer of the system, so it appears in neither code nor UI copy. **run** is the
+    server's word and **delve** is the player's; 塔 is neither, and translating it into either
+    one of them is a mistake.
 - **Session** — the code-level struct owning a world and its loop (`internal/game`). One session
   per world, so a session is now either a hub session or a run session.
   - **`GameSession` in code means exactly this** — `GetGameSession`, `resolveGameSession`,
