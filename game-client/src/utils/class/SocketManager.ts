@@ -145,15 +145,6 @@ class SocketManager {
           // it from the shape of a state broadcast. FS-0008 §Requirements 36.
           this.handleWorldEntered(data.payload as WorldEnteredPayload);
           this.listeners.get(data.action)?.(data.payload);
-        } else if (data.action === "game_found") {
-          // Store session_id when game is found
-          const sessionId = data.payload?.session_id;
-          if (sessionId) {
-            useGameStore.getState().setSessionId(sessionId);
-            console.log("Game found, session_id:", sessionId);
-          }
-          // Also notify listeners
-          this.listeners.get(data.action)?.(data.payload);
         } else if (data.action && this.listeners.has(data.action)) {
           // Handle action-based messages
           console.log("Received action message:", data.action);

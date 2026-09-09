@@ -46,10 +46,16 @@ func createMockSender() *messaging.MessageSender {
 }
 
 // mock session closer for testing
-type mockSessionCloser struct{}
+type mockSessionCloser struct {
+	returnedToHub []uuid.UUID
+}
 
 func (m *mockSessionCloser) CloseSession(_ uuid.UUID) error {
 	return nil
+}
+
+func (m *mockSessionCloser) ReturnPlayersToHub(sessionID uuid.UUID) {
+	m.returnedToHub = append(m.returnedToHub, sessionID)
 }
 
 // TestSessionCreation tests that a session initializes correctly with players

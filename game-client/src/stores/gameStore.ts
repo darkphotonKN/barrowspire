@@ -61,7 +61,7 @@ interface GameState {
   activeSlotIndex: number;
   slots: (CharacterSave | null)[];
   
-  setSessionId: (id: string | null) => void;
+  /** Set together: the world's id is meaningless without knowing its kind. */
   setWorld: (id: string, worldType: WorldType) => void;
   setSelectedClass: (cls: ClassKey) => void;
   setSelectedCharacterName: (name: string) => void;
@@ -84,7 +84,6 @@ export const useGameStore = create<GameState>()((set, get) => {
     activeSlotIndex: initialActive < initialSlots.length ? initialActive : 0,
     slots: initialSlots,
 
-    setSessionId: (id) => set({ sessionId: id }),
     setWorld: (id, worldType) => set({ sessionId: id, worldType }),
     setSelectedClass: (cls) => set({ selectedClass: cls }),
     setSelectedCharacterName: (name) => set({ selectedCharacterName: name }),

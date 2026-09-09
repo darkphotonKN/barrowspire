@@ -40,6 +40,10 @@ type Server struct {
 	// the hub world. One per process, built at startup, outlives every run.
 	hubSessionID uuid.UUID
 
+	// for messages the server itself originates, such as telling a returning
+	// player which world they are now in
+	sender *messaging.MessageSender
+
 	// online players
 	// [playerId] to player
 	players map[uuid.UUID]*types.Player
@@ -99,6 +103,7 @@ func NewServer(authClient grpcauth.AuthClient, queueService QueueManager, eventE
 
 	// initialize message sender
 	newSender := messaging.NewMessageSender(server)
+	server.sender = newSender
 
 	server.queue.Start()
 
@@ -192,6 +197,84 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.Character) (*game
 }
 
 /**
+* Records which world a player is in, across every copy of them.
+*
+* MapConnToPlayer stores the player by value, so connToPlayer holds a different
+* object from players — and connToPlayer is the one routing reads. Writing only
+* one leaves messages delivered to a world the player is not in.
+**/
+func (s *Server) setCurrentWorld(player *types.Player, worldID uuid.UUID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	connected := constants.Connected
+
+	player.CurrentGameSessionId = worldID
+	player.ConnectState = &connected
+
+	if stored, exists := s.players[player.ID]; exists {
+		stored.CurrentGameSessionId = worldID
+		stored.ConnectState = &connected
+	}
+
+	for _, connPlayer := range s.connToPlayer {
+		if connPlayer.ID == player.ID {
+			connPlayer.CurrentGameSessionId = worldID
+			connPlayer.ConnectState = &connected
+		}
+	}
+}
+
+/**
+* playerByID finds a connected player.
+**/
+func (s *Server) playerByID(playerID uuid.UUID) (*types.Player, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	player, exists := s.players[playerID]
+
+	return player, exists
+}
+
+/**
+* Brings a finished run's players home.
+*
+* Called as the run resolves, before its world is torn down: they were in a
+* world that is about to stop existing, and leaving them pointed at it would
+* strand them somewhere unroutable. Escape and death land in the same place —
+* the hub's fixed spawn — because arriving is arriving.
+**/
+func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
+	hub, exists := s.HubSession()
+	if !exists {
+		slog.Error("A run ended with no hub to return to", "run_id", runID)
+		return
+	}
+
+	run, exists := s.GetGameSession(runID)
+	if !exists {
+		return
+	}
+
+	for _, playerID := range run.GetPlayerIDs() {
+		player, exists := s.playerByID(playerID)
+		if !exists {
+			continue
+		}
+
+		run.RemovePlayer(playerID.String())
+		hub.AddPlayer(player.ID, player.Username, player.Class)
+		s.setCurrentWorld(player, hub.ID)
+
+		if err := s.sender.SendMessageToPlayer(playerID, worldEnteredMessage(hub)); err != nil {
+			slog.Warn("Could not tell a returning player they are home",
+				"player_id", playerID, "error", err)
+		}
+	}
+}
+
+/**
 * The hub world, which every connected player returns to between runs.
 **/
 func (s *Server) HubSession() (*game.Session, bool) {
@@ -268,6 +351,15 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 
 	newGameSession.InitialMapObjects()
 	newGameSession.InitialSystems()
+
+	// Leaving the hub is part of arriving in the run: a player occupies one world
+	// at a time, and the hub is never torn down, so anything left behind there
+	// stays visible and broadcasting (FS-0008 §Requirements 23).
+	if hub, exists := s.HubSession(); exists {
+		for _, player := range players {
+			hub.RemovePlayer(player.ID.String())
+		}
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

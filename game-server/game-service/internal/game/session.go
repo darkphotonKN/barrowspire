@@ -82,7 +82,12 @@ type Session struct {
 	objectOccupiedPlaceAreas []PlaceArea
 }
 
+// SessionCloser is what a session needs from its host as it ends: somewhere for
+// its players to go, and removal from the registry. Both belong to end of life,
+// and the order matters — a player moved after the world is gone has nowhere to
+// be moved from.
 type SessionCloser interface {
+	ReturnPlayersToHub(sessionID uuid.UUID)
 	CloseSession(sessionID uuid.UUID) error
 }
 
@@ -2077,6 +2082,12 @@ func (s *Session) endSession() {
 
 	// notify each player of their final position before tearing channels down
 	s.notifyPlayersOfGameEnd()
+
+	// send everyone home while this world still exists to move them out of.
+	// The hub is not one of these: it has no end.
+	if s.worldType == types.WorldTypeRun {
+		s.sessionCloser.ReturnPlayersToHub(s.ID)
+	}
 
 	// remove session from server
 	s.sessionCloser.CloseSession(s.ID)

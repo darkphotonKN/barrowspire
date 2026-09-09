@@ -269,31 +269,6 @@ export class MainMenuScene extends Phaser.Scene {
       },
     );
 
-    socketManager.on(
-      "game_found",
-      (payload: { session_id?: string; sessionID?: string }) => {
-        console.log("Game found! Payload:", payload);
-        const sessionID = payload.session_id || payload.sessionID;
-
-        if (!sessionID) {
-          console.error("No session ID in game_found payload:", payload);
-          return;
-        }
-
-        if (this.queuePopupActive && this.queueTitle && this.queuePeopleText) {
-          this.queueTitle.setText("THE DELVE IS SET");
-          this.queuePeopleText.setText("Descending...");
-
-          this.time.delayedCall(1500, () => {
-            this.closeQueuePopup();
-            this.scene.start("BarrowspireScene", { sessionID });
-          });
-        } else {
-          this.scene.start("BarrowspireScene", { sessionID });
-        }
-      },
-    );
-
     // Controls info (body font)
     const controlsText = this.add.text(
       width / 2,

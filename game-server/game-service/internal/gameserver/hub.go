@@ -300,13 +300,9 @@ func (h *messageHub) Run() {
 			for i, player := range matchedPlayers {
 				playerIDs[i] = player.ID
 			}
-			h.sender.BroadcastToPlayerList(playerIDs,
-				types.Message{
-					Action: "game_found",
-					Payload: map[string]any{
-						"session_id": session.ID.String(),
-					},
-				})
+			// game_found was this message under an older name, from when a run
+			// was the only world anyone could enter. FS-0008 §Requirements 15.
+			h.sender.BroadcastToPlayerList(playerIDs, worldEnteredMessage(session))
 
 		case status := <-h.sessionManager.GetQueueStatusChan():
 			fmt.Printf("Queue status update: %d/%d\n", status.Current, status.Total)
@@ -347,16 +343,11 @@ func (h *messageHub) handlePlayerExistingGame(player *types.Player, clientPackag
 		// game found, tells frontend to resume, player should be already receiving game state at this point
 		slog.Debug("Resuamble session found", "sessionId", session.ID)
 
-		slog.Info("Player already in session, sending game_found",
+		slog.Info("Player already in session, sending world_entered",
 			"player_id", player.ID,
 			"current_game_session_id", player.CurrentGameSessionId)
 
-		h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
-			Action: "game_found",
-			Payload: map[string]any{
-				"session_id": player.CurrentGameSessionId.String(),
-			},
-		})
+		h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(session))
 
 		// return no error if player exists in a game
 		return nil
