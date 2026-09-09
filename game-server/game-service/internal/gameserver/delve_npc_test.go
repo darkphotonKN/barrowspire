@@ -2,10 +2,14 @@ package gameserver
 
 import (
 	"testing"
+	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
+	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -71,4 +75,36 @@ func positionOfNPC(t *testing.T, entities []*ecs.Entity) [2]float64 {
 	}
 	t.Fatal("no NPC in the world")
 	return [2]float64{}
+}
+
+// Standing in the hub is not being in a game. The resume check predates the hub
+// and asked only whether the player was in *a* session — which everyone now is,
+// so asking to delve resumed them into the hub they were already standing in and
+// never queued them. FS-0008 §Requirements 26.
+func TestFindGame_FromTheHub_Queues(t *testing.T) {
+	queue := NewMockQueueService()
+	server := NewServer(&MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{})
+	hub, _ := server.HubSession()
+
+	conn := &websocket.Conn{}
+	player := &types.Player{ID: uuid.New(), Username: "Wren"}
+	registerTestConn(server, conn, player)
+	_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: "Wren"})
+	require.NoError(t, err)
+	require.Equal(t, hub.ID, player.CurrentGameSessionId)
+
+	server.serverChan <- types.ClientPackage{
+		Conn: conn,
+		Message: types.Message{
+			Action:  string(constants.ActionFindGame),
+			Payload: map[string]interface{}{"class": "mage"},
+		},
+	}
+
+	require.Eventually(t, func() bool {
+		queue.mu.Lock()
+		defer queue.mu.Unlock()
+		return len(queue.players) == 1
+	}, 2*time.Second, 20*time.Millisecond,
+		"a delver who asked to descend was never queued")
 }

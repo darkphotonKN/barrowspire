@@ -333,6 +333,15 @@ func (h *messageHub) handlePlayerExistingGame(player *types.Player, clientPackag
 		// find the session with their current game sessionId
 		session, exists := h.sessionManager.GetGameSession(player.CurrentGameSessionId)
 
+		// Standing in the hub is not being in a game. This check predates the hub,
+		// when the only session anyone could be in was a run, so every delver now
+		// looked like they had one in progress — and asking to descend resumed them
+		// into the world they were already standing in instead of queuing them.
+		if exists && session.WorldType() == types.WorldTypeHub {
+			slog.Debug("Player is in the hub, which is not a game to resume", "player_id", player.ID)
+			return commonconstants.ErrGameDoesntExist
+		}
+
 		if !exists {
 			slog.Error("When attempting to resume game for player detected that game session doesn't exist anymore", "playerId", player.ID, "sessionId", player.CurrentGameSessionId)
 			// clear the non-existing session
