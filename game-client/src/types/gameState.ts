@@ -117,6 +117,14 @@ export interface ProjectileState {
 }
 
 // Complete game state received from server
+/** One of the hub's residents. `function` is empty for an ambient NPC. */
+export interface NPCState {
+  entity_id: UUID;
+  name: string;
+  function: "" | "delve" | "storekeeper";
+  position: Position;
+}
+
 export interface ClientGameState {
   session_id: UUID;
   /** Which kind of world this state came from. Mirrors types.WorldType. */
@@ -129,6 +137,7 @@ export interface ClientGameState {
   containers: ContainerState[];
   escape_doors: EscapeDoorState[]; // Escape doors with lock state
   switches: SwitchState[]; // Switches/buttons for puzzles
+  npcs?: NPCState[]; // The hub's residents; absent in a run
   projectiles?: ProjectileState[]; // Active projectiles in session
   escaped_count: number; // Number of players who have escaped
 }

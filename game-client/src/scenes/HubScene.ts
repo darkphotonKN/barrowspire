@@ -1,7 +1,9 @@
 import Phaser from "phaser";
 import { ActionType } from "@/assets/types/client";
+import { useGameStore } from "@/stores/gameStore";
+import { CANVAS_FONT, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
-import { ClientGameState, PlayerState } from "@/types/gameState";
+import { ClientGameState, NPCState, PlayerState } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
 import {
   ensureCharacterTextures,
@@ -38,6 +40,8 @@ const PLAYER_RADIUS = 20;
 const POSITION_LERP = 0.3;
 /** Stride advance per server tick, matching the run scene. */
 const WALK_STEP = 0.3;
+/** How close a delver stands to talk. Matches the server's NPCInteractRange. */
+const NPC_TALK_RANGE = 80;
 
 /**
  * One delver as the scene sees them.
@@ -75,6 +79,15 @@ export class HubScene extends Phaser.Scene {
   private views = new Map<string, DelverView>();
   private selfEntityID: string | null = null;
 
+  /** The hub's residents, keyed by entity id. They do not move in this slice. */
+  private npcs = new Map<string, { state: NPCState; sprite: Phaser.GameObjects.Container }>();
+  /** Whose dialogue is open, if any. */
+  private dialogue?: Phaser.GameObjects.Container;
+  private interactKey?: Phaser.Input.Keyboard.Key;
+  /** Shown while queued, wherever the delver walks. */
+  private queuePanel?: Phaser.GameObjects.Text;
+  private unsubscribeQueue?: () => void;
+
   private unsubscribeState?: () => void;
   private lastSent = { vx: 0, vy: 0 };
 
@@ -95,15 +108,54 @@ export class HubScene extends Phaser.Scene {
       this.renderState(state),
     );
 
+    // Queue progress follows the delver rather than pinning them to a popup:
+    // they keep walking while they wait, so the panel has to be visible from
+    // anywhere. FS-0008 §Requirements 25, 27.
+    socketManager.on("queue_status", (payload: { current?: number; total?: number }) =>
+      this.showQueueProgress(payload?.current ?? 0, payload?.total ?? 0),
+    );
+    this.unsubscribeQueue = () => socketManager.off("queue_status");
+
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.unsubscribeState?.();
+      this.unsubscribeQueue?.();
       this.views.clear();
+      this.npcs.clear();
+      this.closeDialogue();
     });
   }
 
   update(): void {
     this.sendMovementIntent();
     this.easeTowardServerPositions();
+    this.offerConversation();
+  }
+
+  /**
+   * Opens a dialogue when the delver is standing close enough and presses to
+   * talk. Walking past never does anything: joining the queue takes a choice,
+   * not a collision. FS-0008 §Requirements 24.
+   */
+  private offerConversation(): void {
+    if (!this.interactKey || this.dialogue) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.interactKey)) return;
+
+    const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
+    if (!self) return;
+
+    for (const { state, sprite } of this.npcs.values()) {
+      const distance = Phaser.Math.Distance.Between(
+        self.sprite.x,
+        self.sprite.y,
+        sprite.x,
+        sprite.y,
+      );
+
+      if (distance <= NPC_TALK_RANGE) {
+        this.openDialogue(state);
+        return;
+      }
+    }
   }
 
   /**
@@ -153,6 +205,7 @@ export class HubScene extends Phaser.Scene {
     if (!keyboard) return;
 
     this.cursors = keyboard.createCursorKeys();
+    this.interactKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.wasd = {
       up: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
       down: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
@@ -197,6 +250,8 @@ export class HubScene extends Phaser.Scene {
       }
     }
 
+    this.renderNPCs(state.npcs ?? []);
+
     for (const other of state.other_players ?? []) {
       this.placeDelver(other, false);
       present.add(other.entity_id);
@@ -230,6 +285,139 @@ export class HubScene extends Phaser.Scene {
     view.facing = facing;
     const body = view.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
     body?.setTexture(textureFor(player.class, facing));
+  }
+
+  private showQueueProgress(current: number, total: number): void {
+    const text = `Gathering the delve  ${current}/${total}`;
+
+    if (this.queuePanel) {
+      this.queuePanel.setText(text);
+      return;
+    }
+
+    this.queuePanel = this.add
+      .text(24, this.cameras.main.height - 44, text, {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "14px",
+        color: toCss(BARROW_HEX.amber),
+        backgroundColor: toCss(BARROW_HEX.charcoal),
+        padding: { x: 12, y: 8 },
+      })
+      .setScrollFactor(0)
+      .setDepth(1000);
+  }
+
+  /** Draws the hub's residents. They stand still, so this runs once each. */
+  private renderNPCs(npcs: NPCState[]): void {
+    for (const npc of npcs) {
+      if (this.npcs.has(npc.entity_id)) continue;
+
+      const body = this.add.sprite(0, 0, textureFor("warrior", "down"));
+      body.setTint(BARROW_HEX.brassBright);
+
+      const name = this.add
+        .text(0, -PLAYER_RADIUS - 14, npc.name, {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: "12px",
+          color: toCss(BARROW_HEX.brassBright),
+        })
+        .setOrigin(0.5);
+
+      const sprite = this.add.container(npc.position.x, npc.position.y, [body, name]);
+      sprite.setDepth(10);
+
+      this.npcs.set(npc.entity_id, { state: npc, sprite });
+    }
+  }
+
+  /**
+   * A line of who they are, and a choice. Not a dialogue tree: no branching, no
+   * memory of what was said. FS-0008 §Requirements 24, §Out of Scope.
+   */
+  private openDialogue(npc: NPCState): void {
+    if (npc.function !== "delve") return;
+
+    const { width, height } = this.cameras.main;
+    const panel = this.add.graphics();
+    panel.fillStyle(BARROW_HEX.charcoal, 0.96);
+    panel.fillRect(-300, -90, 600, 180);
+    panel.lineStyle(1, BARROW_HEX.brass, 0.5);
+    panel.strokeRect(-300, -90, 600, 180);
+
+    const speaker = this.add
+      .text(0, -60, npc.name, {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "16px",
+        color: toCss(BARROW_HEX.brassBright),
+      })
+      .setOrigin(0.5);
+
+    const line = this.add
+      .text(0, -18, "I keep the way into the Spire. Few return whole,\nand fewer return twice. Still set on descending?", {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "14px",
+        color: toCss(BARROW_HEX.vellum),
+        align: "center",
+        lineSpacing: 6,
+      })
+      .setOrigin(0.5);
+
+    const descend = this.dialogueOption(-90, 48, "Descend", BARROW_HEX.amber, () => {
+      this.closeDialogue();
+      this.joinQueue();
+    });
+
+    const notYet = this.dialogueOption(90, 48, "Not yet", BARROW_HEX.arcane, () =>
+      this.closeDialogue(),
+    );
+
+    this.dialogue = this.add
+      .container(width / 2, height / 2, [panel, speaker, line, descend, notYet])
+      .setScrollFactor(0)
+      .setDepth(2000);
+  }
+
+  private dialogueOption(
+    x: number,
+    y: number,
+    label: string,
+    colour: number,
+    onPick: () => void,
+  ): Phaser.GameObjects.Container {
+    const text = this.add
+      .text(0, 0, label, {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "15px",
+        color: toCss(colour),
+      })
+      .setOrigin(0.5);
+
+    const option = this.add.container(x, y, [text]);
+    option.setSize(160, 34);
+    option.setInteractive({ useHandCursor: true });
+    option.on("pointerup", onPick);
+    option.on("pointerover", () => text.setColor(toCss(BARROW_HEX.vellum)));
+    option.on("pointerout", () => text.setColor(toCss(colour)));
+
+    return option;
+  }
+
+  private closeDialogue(): void {
+    this.dialogue?.destroy();
+    this.dialogue = undefined;
+  }
+
+  /** Joining is the delver's decision; the queue itself is unchanged. */
+  private joinQueue(): void {
+    const character = useGameStore.getState().getActiveCharacter();
+    const chosenClass = (character?.className ?? "warrior").toLowerCase();
+
+    socketManager.sendMessage(ActionType.Find_Game, {
+      class: chosenClass,
+      className: chosenClass,
+      characterName: character?.name ?? "",
+      username: character?.name ?? "",
+    });
   }
 
   private placeDelver(player: PlayerState, isSelf: boolean): void {
