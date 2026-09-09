@@ -67,3 +67,64 @@ func TestRunEnds_ReturnsPlayersToTheHub(t *testing.T) {
 			"%s still points at the run that ended", player.Username)
 	}
 }
+
+// The connection is the thing that must not break. ADR-0015 chose one socket for
+// the whole session over refactor_plan's two-connection handoff precisely so that
+// nothing can fail between worlds — so the switch has to be observably internal.
+// FS-0008 §Requirements 20.
+func TestWorldSwitch_KeepsTheSameConnection(t *testing.T) {
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+
+	wren, wrenConn := enterHub(t, server, "Wren")
+	kaelen, kaelenConn := enterHub(t, server, "Kaelen")
+
+	// The writer channel is the observable proxy for the socket itself: tearing a
+	// connection down and standing a new one up replaces it. A handoff would.
+	before := map[*websocket.Conn]chan interface{}{}
+	for _, conn := range []*websocket.Conn{wrenConn, kaelenConn} {
+		server.mu.RLock()
+		before[conn] = server.msgChan[conn]
+		server.mu.RUnlock()
+	}
+
+	run := server.CreateGameSession([]*types.Player{wren, kaelen})
+	server.ReturnPlayersToHub(run.ID)
+
+	for conn, original := range before {
+		server.mu.RLock()
+		current, stillRegistered := server.msgChan[conn]
+		_, playerStillMapped := server.connToPlayer[conn]
+		server.mu.RUnlock()
+
+		require.True(t, stillRegistered, "the connection was torn down during the round trip")
+		require.True(t, playerStillMapped, "the connection lost its player during the round trip")
+		assert.Equal(t, original, current,
+			"the writer channel was replaced, so this was a handoff and not a world switch")
+	}
+}
+
+// Being in a run means being absent from the hub, not merely marked as away:
+// the hub broadcasts what it holds, so anyone still held is still seen.
+// FS-0008 §Requirements 23.
+func TestDelvingPlayer_IsAbsentFromTheHubBroadcast(t *testing.T) {
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	hub, _ := server.HubSession()
+
+	wren, _ := enterHub(t, server, "Wren")
+	kaelen, _ := enterHub(t, server, "Kaelen")
+	watcher, _ := enterHub(t, server, "Watcher")
+
+	require.ElementsMatch(t, []uuid.UUID{wren.ID, kaelen.ID, watcher.ID}, hub.GetPlayerIDs())
+
+	run := server.CreateGameSession([]*types.Player{wren, kaelen})
+
+	assert.ElementsMatch(t, []uuid.UUID{watcher.ID}, hub.GetPlayerIDs(),
+		"the hub should broadcast only the delver who stayed behind")
+	assert.ElementsMatch(t, []uuid.UUID{wren.ID, kaelen.ID}, run.GetPlayerIDs())
+
+	server.ReturnPlayersToHub(run.ID)
+
+	assert.ElementsMatch(t, []uuid.UUID{wren.ID, kaelen.ID, watcher.ID}, hub.GetPlayerIDs(),
+		"and everyone again once the run resolves")
+	assert.Empty(t, run.GetPlayerIDs(), "the finished run holds nobody")
+}

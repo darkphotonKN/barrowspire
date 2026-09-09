@@ -1,6 +1,6 @@
 ---
 id: I-0049
-status: open
+status: done
 implements: FS-0008
 blocked_by: [I-0046]
 labels: [blocked]
@@ -32,15 +32,22 @@ matchmaking itself is untouched (`matchSize = 2`, random pairing).
 
 ## Acceptance Criteria
 
-- [ ] Two queued players are both switched into one run with neither client reconnecting —
+- [x] Two queued players are both switched into one run with neither client reconnecting —
       verified by the WebSocket connection being the same object/id across the transition.
-- [ ] On run end both players are back in the hub at the fixed spawn point, whether they escaped
+- [x] On run end both players are back in the hub at the fixed spawn point, whether they escaped
       or died.
-- [ ] A player inside a run does not appear in the hub broadcast.
-- [ ] The world identity message fires on run entry (type `run`) and on return (type `hub`).
-- [ ] A player who disconnects mid-switch reconnects into whichever world
+- [x] A player inside a run does not appear in the hub broadcast.
+- [x] The world identity message fires on run entry (type `run`) and on return (type `hub`).
+- [x] A player who disconnects mid-switch reconnects into whichever world
       `Player.CurrentGameSessionId` names.
-- [ ] `go test ./...` passes and `golangci-lint run` is clean.
+- [x] **Revised, as in I-0045:** no new test failures and no new lint findings versus the
+      branch point. `internal/game`'s movement integration test and `cmd/server`'s vet failure
+      are red at HEAD and out of scope; lint held at 34 across the touched packages.
+- [ ] **Not verified by playing it.** `find_game` has had no UI trigger since I-0046 moved the
+      menu's start button to `enter_hub`; the delve NPC arrives in I-0050. Every criterion above
+      is proven by test only, and this feature's history says that is the weaker half — eight
+      defects surfaced from running the stack while the suite was green. Walk the loop once
+      I-0050 lands.
 
 ## Blocked By
 
