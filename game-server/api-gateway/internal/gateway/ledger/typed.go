@@ -25,21 +25,6 @@ type Claims struct {
 type MemberIDFunc func(ctx context.Context) (string, bool)
 type ClaimsFunc func(ctx context.Context) (Claims, bool)
 
-// TODO: this group needs two claims no other group reads — the caller's own
-// account_id (§Req 27) and role (§Req 29). Decide the bridge's shape.
-
-//
-// Constraints, not answers:
-//   - identity, role and account_id come from the verified token, never a
-//     parameter (§Req 24), so none of them can be an input struct field
-//   - no JWT in this system carries a role claim today, so the absent case is
-//     the ONLY case that runs. "No role claim means member" is a named decision
-//     that lives in exactly one place, never an implicit zero value, so the auth
-//     feature that lands the claim later can find it
-//   - a token missing account_id is 401, not an empty result
-//   - whatever this is, internal/contract/register.go has to construct and pass
-//     it, so the shape appears in two files
-
 // ErrorFunc converts a handler's returned error into one the transport renders
 // through the seam. Injected rather than imported so this package stays free of
 // internal/contract.
@@ -50,7 +35,7 @@ type ErrorFunc func(error) error
 var securedOp []map[string][]string
 
 // toStatusError is set once by RegisterOperations. It is applied by guard to
-// EVERY handler, so no individual return path can forget it — a forgotten one
+// EVERY handler, so no individual return path can forget it, a forgotten one
 // would be a silent 500 carrying no code.
 var toStatusError ErrorFunc = func(err error) error { return err }
 
@@ -58,7 +43,7 @@ var toStatusError ErrorFunc = func(err error) error { return err }
 //
 // getTransaction carries no 403 deliberately: its only authorization failure is
 // §Req 26's, which is masked as a 404. listEntries carries one, because §Req 25
-// refuses a member's account_id loudly — there the secret is nothing.
+// refuses a member's account_id loudly, there the secret is nothing.
 var (
 	errsGetTransaction = []int{
 		http.StatusUnauthorized,
@@ -76,25 +61,16 @@ var (
 	}
 )
 
-// RegisterOperations declares the serialized ledger read surface (FS-0003).
-//
-// Both operations are reads. There is no write operation and there must not be:
-// the write path is a Temporal activity executed in-process by ledger-service's
-// own worker (ADR-0011), so it has no RPC to reach and no route to expose.
-//
-// h may hold a nil client: registration records types and metadata, so
-// cmd/openapi builds the document without dialing Consul.
 func RegisterOperations(api huma.API, h *Handler,
-	// TODO: the claims params. Whatever the bridge above turns out to be.
+	claims ClaimsFunc,
 	protect func(huma.Context, func(huma.Context)),
 	errFor ErrorFunc, secured []map[string][]string,
 ) {
 	toStatusError = errFor
 	securedOp = secured
 
-	// TODO: forward the claims to both.
-	registerGetTransaction(api, h, protect)
-	registerListEntries(api, h, protect)
+	registerGetTransaction(api, h, claims, protect)
+	registerListEntries(api, h, claims, protect)
 }
 
 // guard wraps a typed handler so its error goes through the seam.
@@ -131,7 +107,7 @@ func unauthenticated() error {
 // The trap: `if !found {404} else if !authorized {403}` and then "fixing" the
 // 403 to a 404 leaves a code-path and detail difference. Decide the shape so
 // not-found and not-yours converge BEFORE a response is constructed.
-func registerGetTransaction(api huma.API, h *Handler,
+func registerGetTransaction(api huma.API, h *Handler, claims ClaimsFunc,
 	protect func(huma.Context, func(huma.Context)),
 ) {
 	type input struct {
@@ -172,12 +148,13 @@ func registerGetTransaction(api huma.API, h *Handler,
 	}))
 }
 
-// TODO: GET /api/ledger/entries
-func registerListEntries(api huma.API, h *Handler,
+func registerListEntries(api huma.API, h *Handler, claims ClaimsFunc,
 	protect func(huma.Context, func(huma.Context)),
 ) {
-
 	type input struct {
+		Cursor    string  `query:"cursor" doc:"opaque position, do not construct."`
+		Limit     int     `query:"limit" default:"50" minimum:"1" maximum:"100"`
+		AccountID *string `query:"account_id" format:"uuid" doc:"admin only"`
 	}
 
 }
