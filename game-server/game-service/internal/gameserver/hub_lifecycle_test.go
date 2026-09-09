@@ -76,3 +76,25 @@ func TestHubMembership(t *testing.T) {
 		assert.Equal(t, hub.ID, stillThere.ID)
 	})
 }
+
+// Being in a world is a fact, not an instruction to build another body. The
+// guard belongs to the world rather than to whoever is asking, so a route added
+// later cannot forget it — JoinHub remembered and ReturnPlayersToHub did not.
+// FS-0008 §Requirements 1.
+func TestAddPlayer_IsIdempotentWhoeverAsks(t *testing.T) {
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	hub, _ := server.HubSession()
+
+	conn := &websocket.Conn{}
+	player := &types.Player{ID: uuid.New(), Username: "Wren"}
+	registerTestConn(server, conn, player)
+
+	_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: "Wren"})
+	require.NoError(t, err)
+
+	// any other route into the same world, asking again
+	hub.AddPlayer(player.ID, player.Username, player.Class)
+
+	assert.Equal(t, 1, entityCountFor(hub.EntityManager.GetAllEntities(), player.ID),
+		"asking twice gave the delver two bodies")
+}

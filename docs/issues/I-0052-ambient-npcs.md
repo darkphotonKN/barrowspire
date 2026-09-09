@@ -50,6 +50,20 @@ per-player formats per tick.
 - [ ] Function NPCs remain at fixed positions and are not affected.
 - [ ] `go test ./...` passes and `golangci-lint run` is clean.
 
+### Waiting for you in HubScene
+
+`renderNPCs` builds each NPC once and skips anything it has already seen:
+
+```ts
+if (this.npcs.has(npc.entity_id)) continue;
+```
+
+Correct for the function NPCs I-0050 added, who stand still. **Wrong the moment an
+NPC moves** — an ambient resident would freeze at wherever they first appeared, and
+nothing would report it, because the broadcast keeps arriving and the scene keeps
+ignoring it. The delvers alongside them already ease toward a target every frame;
+the residents need the same treatment.
+
 ## Blocked By
 
 I-0046 — the hub world and its broadcast must exist.

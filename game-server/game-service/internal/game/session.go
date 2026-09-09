@@ -556,6 +556,15 @@ func (s *Session) AddPlayer(playerID uuid.UUID, username string, className strin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Already here: there is nothing to build. The guard lives with the world
+	// rather than with whoever is asking, because overwriting the mapping while
+	// leaving the old entity in place gives one delver two bodies — invisible in
+	// a run, which discards the whole world, and permanent in the hub, which
+	// never does.
+	if existing, alreadyHere := s.playerIDToEntitiesID[playerID]; alreadyHere {
+		return existing
+	}
+
 	spawnX, spawnY := s.spawnPoint()
 
 	// convert proto ItemInstance to types.ItemConfig
