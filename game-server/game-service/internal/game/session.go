@@ -2,6 +2,7 @@ package game
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -754,6 +755,28 @@ func (s *Session) spawnPoint() (x, y float64) {
 
 	return constants.PlayerRadius + rand.Float64()*(s.mapWidth-2*constants.PlayerRadius),
 		constants.PlayerRadius + rand.Float64()*(s.mapHeight-2*constants.PlayerRadius)
+}
+
+// ErrSafeZone is returned when a world refuses combat.
+var ErrSafeZone = errors.New("this world is a safe zone")
+
+// combatAllowed refuses to arm an attack in a world that does not permit one.
+//
+// The refusal sits here rather than in the systems because this is the only place
+// an attack is armed: damage is applied inside MovementSystem, which the hub runs
+// exactly as a run does, and it fires on PlayerComponent.AttackActive — set in
+// handleAttack and nowhere else. Turning the action away is also more honest than
+// accepting it and ignoring the flag afterwards.
+//
+// Skills are refused on the same footing. SkillSystem is an empty stub today, so
+// nothing would happen either way; the guard is here so that whoever fills it in
+// does not have to remember the hub exists. FS-0008 §Requirements 6.
+func (s *Session) combatAllowed() error {
+	if s.worldType == types.WorldTypeHub {
+		return fmt.Errorf("%w: %s", ErrSafeZone, s.ID)
+	}
+
+	return nil
 }
 
 // HasPlayer reports whether this world holds an entity for the player.
@@ -1560,6 +1583,10 @@ func (s *Session) handlePlayerEscape(playerID uuid.UUID) {
 }
 
 func (s *Session) handleAttack(playerID uuid.UUID, enemyEntityID uuid.UUID) error {
+	if err := s.combatAllowed(); err != nil {
+		return err
+	}
+
 	playerEntityID, ok := s.playerIDToEntitiesID[playerID]
 	if !ok {
 		return fmt.Errorf("Player %s not found", playerID)
@@ -1592,6 +1619,10 @@ func (s *Session) handleAttack(playerID uuid.UUID, enemyEntityID uuid.UUID) erro
 }
 
 func (s *Session) handleCastSkill(playerID uuid.UUID, skillID string, targetX, targetY float64) error {
+	if err := s.combatAllowed(); err != nil {
+		return err
+	}
+
 	playerEntityID, ok := s.playerIDToEntitiesID[playerID]
 	if !ok {
 		return fmt.Errorf("Player %s not found", playerID)

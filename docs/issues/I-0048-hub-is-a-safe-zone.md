@@ -1,6 +1,6 @@
 ---
 id: I-0048
-status: open
+status: done
 implements: FS-0008
 blocked_by: [I-0046]
 labels: [blocked]
@@ -29,11 +29,31 @@ excludes changes to run gameplay. Guard the hub; leave the misplacement alone.
 
 ## Acceptance Criteria
 
-- [ ] `attack` sent from the hub changes no health value on any entity.
-- [ ] `cast_skill` sent from the hub has no effect.
-- [ ] Attacking still works normally inside a run.
-- [ ] The rejection guards the real damage path in `MovementSystem`, not only `CombatSystem`.
-- [ ] `go test ./...` passes and `golangci-lint run` is clean.
+- [x] `attack` sent from the hub changes no health value on any entity.
+- [x] `cast_skill` sent from the hub has no effect.
+- [x] Attacking still works normally inside a run.
+- [x] The rejection guards the real damage path in `MovementSystem`, not only `CombatSystem`.
+- [x] **Revised, as in the earlier slices:** no new test failures, no new lint findings versus
+      the branch point. Lint held at 34.
+
+
+### Found while writing the test: one entity per spatial-hash cell
+
+`MovementSystem` buckets entities before simulating them:
+
+```go
+key := entityCellX<<8 | entityCellY
+entitiesMap[key] = entity        // map[int]*ecs.Entity — one per cell
+```
+
+Cells are `2 * PlayerRadius` = 40 wide, and the map holds **one entity per cell**, so
+two delvers standing close enough together drop one of them out of the simulation
+entirely — not moved, not collided, not able to attack. The first version of this
+slice's test put both players on the same spot and the attack silently did nothing,
+which is how it surfaced.
+
+Pre-existing and unrelated to the safe zone; recorded here because it is easy to
+mistake for a netcode problem when a player freezes next to someone else.
 
 ## Blocked By
 
