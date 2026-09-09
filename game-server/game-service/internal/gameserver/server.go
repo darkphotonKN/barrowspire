@@ -125,8 +125,9 @@ func (s *Server) createHubSession() *game.Session {
 	entityManager := ecs.NewEntityManager()
 	stateSerializer := serializer.NewStateSerializer(entityManager)
 
-	hub := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient)
-	hub.InitialHubMapObjects()
+	// No map objects: a run's boundary is the MovementSystem clamp, not wall
+	// entities, and the hub works the same way. Buildings arrive in I-0047.
+	hub := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient, game.HubBounds())
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -212,7 +213,7 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 	stateSerializer := serializer.NewStateSerializer(entityManager)
 
 	// create session with message sender
-	newGameSession := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient)
+	newGameSession := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient, game.RunBounds())
 
 	newGameSession.InitialMapObjects()
 	newGameSession.InitialSystems()

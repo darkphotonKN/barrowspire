@@ -49,7 +49,6 @@ const DefautMaxSessionPlayers = 2
 // 1080x720 viewport, so it scrolls. FS-0008 §Requirements 3.
 const HubMapWidth float64 = 2000
 const HubMapHeight float64 = 1000
-const HubWallThickness float64 = 40
 
 // The fixed point every player enters and returns to. FS-0008 §Requirements 22.
 const HubSpawnX float64 = 1000

@@ -59,7 +59,7 @@ func TestSessionCreation(t *testing.T) {
 	em := ecs.NewEntityManager()
 	stateSerializer := serializer.NewStateSerializer(em)
 	mockEmitter := &mockEventEmitter{}
-	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, nil)
+	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, nil, RunBounds())
 
 	// verify session initialized
 	require.NotNil(t, session, "Session should not be nil")
@@ -81,7 +81,7 @@ func TestSessionAddPlayer(t *testing.T) {
 	em := ecs.NewEntityManager()
 	stateSerializer := serializer.NewStateSerializer(em)
 	mockEmitter := &mockEventEmitter{}
-	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, nil)
+	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, nil, RunBounds())
 	defer session.Shutdown()
 
 	playerID := uuid.New()
@@ -115,7 +115,7 @@ func TestSessionAddMultiplePlayers(t *testing.T) {
 	em := ecs.NewEntityManager()
 	stateSerializer := serializer.NewStateSerializer(em)
 	mockEmitter := &mockEventEmitter{}
-	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, nil)
+	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, nil, RunBounds())
 	defer session.Shutdown()
 
 	player1ID := uuid.New()
@@ -362,7 +362,7 @@ func TestSession_InitializeItems_CreateItemEntities(t *testing.T) {
 			mockEmitter := &mockEventEmitter{}
 			mockClient := mockItemsClient{}
 
-			session := NewSession(&mockSessionCloser{}, sender, &mockStateSerializer{}, em, mockEmitter, &mockClient)
+			session := NewSession(&mockSessionCloser{}, sender, &mockStateSerializer{}, em, mockEmitter, &mockClient, RunBounds())
 
 			session.TestMessageSpy = make(chan types.Message, 1)
 
@@ -619,7 +619,7 @@ func TestSession_GenerateItems_CreateItemEntities(t *testing.T) {
 			mockEmitter := &mockEventEmitter{}
 			mockClient := mockItemsClient{}
 
-			session := NewSession(&mockSessionCloser{}, sender, &mockStateSerializer{}, em, mockEmitter, &mockClient)
+			session := NewSession(&mockSessionCloser{}, sender, &mockStateSerializer{}, em, mockEmitter, &mockClient, RunBounds())
 
 			session.TestMessageSpy = make(chan types.Message, 1)
 
@@ -783,7 +783,7 @@ func TestSession_GenerateItems_CreateAndSerialize(t *testing.T) {
 	mockEmitter := &mockEventEmitter{}
 	mockClient := mockItemsClient{}
 
-	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, &mockClient)
+	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, &mockClient, RunBounds())
 	session.TestMessageSpy = make(chan types.Message, 1)
 	defer session.Shutdown()
 

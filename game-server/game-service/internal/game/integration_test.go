@@ -58,7 +58,7 @@ func TestSession_GameLoopAppliesMovement_Integration(t *testing.T) {
 	em := ecs.NewEntityManager()
 	stateSerializer := serializer.NewStateSerializer(em)
 	mockEmitter := &mockEventEmitter{}
-	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, nil)
+	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, nil, RunBounds())
 
 	player1ID := uuid.New()
 	username := "Player1"

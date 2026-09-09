@@ -102,7 +102,25 @@ type StateSerializer interface {
 	FormatStateToClientState(backendState *types.BackendGameState, playerID uuid.UUID) *types.ClientGameState
 }
 
-func NewSession(sessionCloser SessionCloser, sender *messaging.MessageSender, serializer StateSerializer, em *ecs.EntityManager, eventEmitter EventEmitter, itemsClient grpcitems.ItemsClient) *Session {
+// WorldBounds is a world's extent. It is fixed when the world is built, not a
+// property of the systems that run inside it: a run's map and the hub are
+// different sizes and both use the same MovementSystem.
+type WorldBounds struct {
+	Width, Height float64
+}
+
+// RunBounds is the map an escape run is built on.
+func RunBounds() WorldBounds {
+	return WorldBounds{Width: constants.MapWidth, Height: constants.MapHeight}
+}
+
+// HubBounds is the hub world, larger than a run's map and larger than the
+// client viewport, so it scrolls. FS-0008 §Requirements 3.
+func HubBounds() WorldBounds {
+	return WorldBounds{Width: constants.HubMapWidth, Height: constants.HubMapHeight}
+}
+
+func NewSession(sessionCloser SessionCloser, sender *messaging.MessageSender, serializer StateSerializer, em *ecs.EntityManager, eventEmitter EventEmitter, itemsClient grpcitems.ItemsClient, bounds WorldBounds) *Session {
 	sessionId := uuid.New()
 
 	s := &Session{
@@ -119,8 +137,8 @@ func NewSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		stopChan:       make(chan struct{}),
 		isRunning:      false,
 
-		mapWidth:  constants.MapWidth,
-		mapHeight: constants.MapHeight,
+		mapWidth:  bounds.Width,
+		mapHeight: bounds.Height,
 
 		playerInteractedCache:    make(map[uuid.UUID]bool, constants.DefautMaxSessionPlayers),
 		containerInteractedCache: make(map[uuid.UUID]bool),
@@ -2412,8 +2430,8 @@ func (s *Session) InitialMapObjects() {
 		s.CreateBuilding(buildConfig)
 	}
 	// add EscapeDoor
-	exitDoorX := constants.ContainerWidthRadius + rand.Float64()*(constants.MapWidth-2*constants.ContainerWidthRadius)
-	exitDoorY := constants.ContainerHeightRadius + rand.Float64()*(constants.MapHeight-2*constants.ContainerHeightRadius)
+	exitDoorX := constants.ContainerWidthRadius + rand.Float64()*(s.mapWidth-2*constants.ContainerWidthRadius)
+	exitDoorY := constants.ContainerHeightRadius + rand.Float64()*(s.mapHeight-2*constants.ContainerHeightRadius)
 	exitDoor := CreateEscapeDoorEntity(s.EntityManager, EscapeConfig{
 		X: exitDoorX,
 		Y: exitDoorY,
@@ -2421,8 +2439,8 @@ func (s *Session) InitialMapObjects() {
 	s.exitDoorEntityID = exitDoor.ID
 
 	// add Switch
-	switchX := constants.ContainerWidthRadius + rand.Float64()*(constants.MapWidth-2*constants.ContainerWidthRadius)
-	switchY := constants.ContainerHeightRadius + rand.Float64()*(constants.MapHeight-2*constants.ContainerHeightRadius)
+	switchX := constants.ContainerWidthRadius + rand.Float64()*(s.mapWidth-2*constants.ContainerWidthRadius)
+	switchY := constants.ContainerHeightRadius + rand.Float64()*(s.mapHeight-2*constants.ContainerHeightRadius)
 	switchEntity := CreateSwitchEntity(s.EntityManager, SwitchConfig{
 		X:        switchX,
 		Y:        switchY,

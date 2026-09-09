@@ -13,7 +13,7 @@ func (s *SwitchComponent) Type() ecs.ComponentType {
 
 func NewSwitchComponent(switchID int) *SwitchComponent {
 	return &SwitchComponent{
-		SwitchID: switchID,
+		SwitchID:    switchID,
 		IsActivated: false,
 	}
 }
