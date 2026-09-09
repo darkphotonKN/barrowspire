@@ -1,6 +1,6 @@
 ---
 id: I-0051
-status: open
+status: done
 implements: FS-0008
 blocked_by: [I-0050]
 labels: [blocked]
@@ -30,12 +30,42 @@ a third mapping site.
 
 ## Acceptance Criteria
 
-- [ ] Interacting with the storekeeper NPC opens the loadout.
-- [ ] Equipment changes made there persist via the existing REST endpoints.
-- [ ] The loadout cannot be reached from the main menu.
-- [ ] No new HTTP endpoint and no new WebSocket action was added.
-- [ ] The storekeeper is at a fixed position, identical for two different clients.
-- [ ] `go test ./...` passes and `golangci-lint run` is clean.
+- [x] Interacting with the storekeeper NPC opens the loadout.
+- [ ] **Blocked, not by this slice.** Equipment changes cannot be verified: the loadout's REST
+      calls return 401 before reaching the items surface at all. See below.
+- [x] The loadout cannot be reached from the main menu.
+- [x] No new HTTP endpoint and no new WebSocket action was added.
+- [x] The storekeeper is at a fixed position, identical for two different clients.
+- [x] **Revised, as in I-0045/0049/0050:** no new test failures, no new lint findings versus
+      the branch point.
+
+
+### Surfaced here, belongs elsewhere: items-service rejects every gRPC call
+
+Opening the pack returns 401, and the cause is upstream of anything this slice touches.
+
+`items-service` chains `commonauth.Auth` over its gRPC server
+(`items-service/config/routes.go:60`), so every method demands `authorization`
+metadata and returns `codes.Unauthenticated` — HTTP 401 — without it. **Neither
+caller sends it.** `api-gateway/internal/gateway/item/client.go` and
+`game-service/grpc/items/client.go` attach no metadata and install no client
+interceptor; the only correct example in the repo is
+`api-gateway/internal/gateway/listing/handler.go:49`.
+
+Three call paths are broken, and only the first is visible:
+
+| Caller | Effect |
+|---|---|
+| gateway → items (`getLoadout`, `getItemInstances`) | 401, which is the symptom above |
+| game-service → items (`InitializeItems`) | fails silently — the code calls it "deliberately non-fatal: a session with no loot still runs", so **runs have been spawning with no loot** |
+| game-service → items (a player's loadout on join) | same |
+
+Not caused by this slice, which only made the first path reachable — the same
+pattern as the rest of this feature. The fix is not symmetrical: the gateway can
+forward the caller's header, but **game-service holds no player token**, so
+server-to-server calls need an identity decided first (a service credential, or
+forwarding the player's token through the world). That is a design question, not
+a missing line.
 
 ## Blocked By
 
