@@ -321,7 +321,8 @@ func TestQueueFindGameFlow(t *testing.T) {
 	sessionCount := len(server.sessions)
 	server.mu.RUnlock()
 
-	expectedSessions := playerCount / 2
+	// runs, plus the hub world the server builds at startup
+	expectedSessions := playerCount/2 + 1
 	assert.Equal(t, expectedSessions, sessionCount)
 	fmt.Println("total games created", expectedSessions)
 }

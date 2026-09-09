@@ -35,6 +35,9 @@ type Session struct {
 	stopChan  chan struct{}
 	isRunning bool
 
+	// this world's extent. Runs use a run map; the hub is its own size.
+	mapWidth, mapHeight float64
+
 	// caching
 
 	// [playerID] - interacted
@@ -115,6 +118,9 @@ func NewSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		skillSystem:    systems.NewSkillSystem(),
 		stopChan:       make(chan struct{}),
 		isRunning:      false,
+
+		mapWidth:  constants.MapWidth,
+		mapHeight: constants.MapHeight,
 
 		playerInteractedCache:    make(map[uuid.UUID]bool, constants.DefautMaxSessionPlayers),
 		containerInteractedCache: make(map[uuid.UUID]bool),
@@ -442,7 +448,7 @@ func (s *Session) manageGameLoop() {
 			entities := s.EntityManager.GetAllEntities()
 
 			// movement
-			movementSys := systems.MovementSystem{}
+			movementSys := systems.MovementSystem{MapWidth: s.mapWidth, MapHeight: s.mapHeight}
 			deltaTime := 1.0 / float64(constants.GameFrameRate)
 			movementSys.Update(deltaTime, entities)
 

@@ -9,10 +9,19 @@ import (
 	"github.com/google/uuid"
 )
 
-type MovementSystem struct{}
+// MovementSystem integrates velocity into position, resolves collision and keeps
+// entities inside the world. Bounds belong to the world, not to the system: a run's
+// map and the hub are different sizes.
+type MovementSystem struct {
+	MapWidth, MapHeight float64
+}
 
+// NewMovementSystem returns a system bounded to a run's map.
 func NewMovementSystem() *MovementSystem {
-	return &MovementSystem{}
+	return &MovementSystem{
+		MapWidth:  constants.MapWidth,
+		MapHeight: constants.MapHeight,
+	}
 }
 
 // NOTE: this runs every game tick
@@ -227,18 +236,20 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 			}
 		}
 
-		// clamp position to map boundaries
+		// clamp position to this world's boundaries
+		mapWidth, mapHeight := s.bounds()
+
 		if newX < constants.PlayerRadius {
 			newX = constants.PlayerRadius
 		}
-		if newX > constants.MapWidth-constants.PlayerRadius {
-			newX = constants.MapWidth - constants.PlayerRadius
+		if newX > mapWidth-constants.PlayerRadius {
+			newX = mapWidth - constants.PlayerRadius
 		}
 		if newY < constants.PlayerRadius {
 			newY = constants.PlayerRadius
 		}
-		if newY > constants.MapHeight-constants.PlayerRadius {
-			newY = constants.MapHeight - constants.PlayerRadius
+		if newY > mapHeight-constants.PlayerRadius {
+			newY = mapHeight - constants.PlayerRadius
 		}
 		// update position based on velocity
 		transform.X = newX
@@ -399,4 +410,19 @@ func depenetrate(playerX, playerY, wallX, wallY, wallW, wallH float64) (float64,
 	}
 
 	return playerX + pushX, playerY + pushY
+}
+
+// bounds falls back to a run's map so a zero-value MovementSystem — which the
+// tick loop builds fresh every frame — never clamps everyone to the origin.
+func (s *MovementSystem) bounds() (width, height float64) {
+	width, height = s.MapWidth, s.MapHeight
+
+	if width == 0 {
+		width = constants.MapWidth
+	}
+	if height == 0 {
+		height = constants.MapHeight
+	}
+
+	return width, height
 }

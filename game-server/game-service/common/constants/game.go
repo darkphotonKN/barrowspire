@@ -11,16 +11,16 @@ const (
 	ActionLeaveGame  Action = "leave_game"
 
 	// active game actions
-	ActionMove     Action = "move"
-	ActionInteract Action = "interact"
-	ActionAttack   Action = "attack"
-	ActionPickup   Action = "pickup"
-	ActionUseItem  Action = "use_item"
-	ActionDropItem Action = "drop_item"
-	ActionEquip    Action = "equip"
-	ActionUnequip  Action = "unequip"
+	ActionMove      Action = "move"
+	ActionInteract  Action = "interact"
+	ActionAttack    Action = "attack"
+	ActionPickup    Action = "pickup"
+	ActionUseItem   Action = "use_item"
+	ActionDropItem  Action = "drop_item"
+	ActionEquip     Action = "equip"
+	ActionUnequip   Action = "unequip"
 	ActionCastSkill Action = "cast_skill"
-	ActionChat     Action = "chat"
+	ActionChat      Action = "chat"
 
 	// system actions
 	ActionError   Action = "error"
@@ -45,6 +45,16 @@ const DefaultInteractableRange float64 = 60
 const DefautMaxSessionPlayers = 2
 
 // map setting
+// The hub world is its own size, larger than a run's map and larger than the
+// 1080x720 viewport, so it scrolls. FS-0008 §Requirements 3.
+const HubMapWidth float64 = 2000
+const HubMapHeight float64 = 1000
+const HubWallThickness float64 = 40
+
+// The fixed point every player enters and returns to. FS-0008 §Requirements 22.
+const HubSpawnX float64 = 1000
+const HubSpawnY float64 = 800
+
 const MapWidth float64 = 1440
 const MapHeight float64 = 960
 const PlayerRadius float64 = 20

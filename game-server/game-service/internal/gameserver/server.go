@@ -37,6 +37,9 @@ type Server struct {
 	// [sessionId] to active sessions
 	sessions map[uuid.UUID]*game.Session
 
+	// the hub world. One per process, built at startup, outlives every run.
+	hubSessionID uuid.UUID
+
 	// online players
 	// [playerId] to player
 	players map[uuid.UUID]*types.Player
@@ -103,7 +106,49 @@ func NewServer(authClient grpcauth.AuthClient, queueService QueueManager, eventE
 	messageHub := NewMessageHub(server, newSender)
 	go messageHub.Run()
 
+	server.createHubSession()
+
 	return server
+}
+
+/**
+* Builds the one hub world. It is created before anyone connects and lives for
+* the whole process, unlike a run, which is built per match and torn down.
+*
+* Note what is deliberately NOT called: InitialSystems(), which creates the
+* MatchProgress entity. RulesSystem ends a session once activePlayers <= 1 — a
+* condition the hub trips constantly — but it returns early when no MatchProgress
+* exists. Skipping that call is what makes the hub immune, with no change to the
+* system itself. FS-0008 §Requirements 1.
+**/
+func (s *Server) createHubSession() *game.Session {
+	entityManager := ecs.NewEntityManager()
+	stateSerializer := serializer.NewStateSerializer(entityManager)
+
+	hub := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient)
+	hub.InitialHubMapObjects()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.sessions[hub.ID] = hub
+	s.hubSessionID = hub.ID
+
+	slog.Info("Hub world initiated", "session_id", hub.ID)
+
+	return hub
+}
+
+/**
+* The hub world, which every connected player returns to between runs.
+**/
+func (s *Server) HubSession() (*game.Session, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	hub, exists := s.sessions[s.hubSessionID]
+
+	return hub, exists
 }
 
 /**
