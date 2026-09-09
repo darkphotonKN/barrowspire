@@ -541,9 +541,14 @@ func (s *Server) cleanUpPlayerFromSession(player *types.Player) {
 	// remove player from session
 	playerSession.RemovePlayer(player.ID.String())
 
-	// The hub is not a run: it exists before anyone arrives and outlives
-	// everyone leaving, so an empty one is not a finished one.
+	// The hub is not a run, in two ways. It exists before anyone arrives and
+	// outlives everyone leaving, so an empty one is not a finished one. And
+	// dropping out of it is simply leaving — there is nothing in progress to
+	// resume, so the player forgets the world and walks back in from the menu
+	// like anyone else, rather than being resumed into a world they no longer
+	// occupy (FS-0008 §Edge States).
 	if playerSession.WorldType() == types.WorldTypeHub {
+		s.forgetCurrentWorld(player)
 		return
 	}
 
@@ -563,5 +568,30 @@ func (s *Server) cleanUpPlayerFromSession(player *types.Player) {
 		slog.Info("Session shut down and removed", "session_id", playerSession.ID)
 	} else {
 		slog.Info("Session still has remaining players", "session_id", playerSession.ID, "remaining", len(remainingPlayers))
+	}
+}
+
+/**
+* Clears a player's record of which world they are in.
+*
+* Both copies, because MapConnToPlayer stores the player by value: the entry in
+* connToPlayer is a different object from the one in players, and routing reads
+* the former. Leaving one set would leave messages being delivered to a world
+* the player has no body in.
+**/
+func (s *Server) forgetCurrentWorld(player *types.Player) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	player.CurrentGameSessionId = uuid.Nil
+
+	if stored, exists := s.players[player.ID]; exists {
+		stored.CurrentGameSessionId = uuid.Nil
+	}
+
+	for _, connPlayer := range s.connToPlayer {
+		if connPlayer.ID == player.ID {
+			connPlayer.CurrentGameSessionId = uuid.Nil
+		}
 	}
 }

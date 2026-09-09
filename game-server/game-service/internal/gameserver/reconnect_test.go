@@ -43,3 +43,29 @@ func TestReconnect_AnnouncesTheWorldTheyAreActuallyIn(t *testing.T) {
 	assert.Equal(t, string(types.WorldTypeHub), worldEntered.Payload["world_type"])
 	assert.Equal(t, hub.ID.String(), worldEntered.Payload["session_id"])
 }
+
+// Dropping out of the hub is leaving it. There is no reconnect window and
+// nothing to resume: the player returns to the menu and walks back in, the same
+// as anyone arriving. A run is different and keeps its window.
+// FS-0008 §Edge States (Disconnect).
+func TestDisconnect_LeavingTheHubIsFinal(t *testing.T) {
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	hub, _ := server.HubSession()
+
+	conn := &websocket.Conn{}
+	player := &types.Player{ID: uuid.New(), Username: "Wren"}
+	registerTestConn(server, conn, player)
+	_, err := server.JoinHub(conn, types.Character{Class: "archer", Name: "Wren"})
+	require.NoError(t, err)
+
+	server.cleanUpPlayerFromSession(player)
+
+	assert.False(t, hub.HasPlayer(player.ID), "they are out of the world")
+	assert.Equal(t, uuid.Nil, player.CurrentGameSessionId,
+		"and no longer point at it, so nothing tries to resume them into a world they left")
+
+	stored, ok := server.GetPlayerFromConn(conn)
+	require.True(t, ok)
+	assert.Equal(t, uuid.Nil, stored.CurrentGameSessionId,
+		"the connection's copy has to be cleared too, or routing still thinks they are in the hub")
+}
