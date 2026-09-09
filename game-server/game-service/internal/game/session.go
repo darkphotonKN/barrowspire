@@ -35,7 +35,8 @@ type Session struct {
 	stopChan  chan struct{}
 	isRunning bool
 
-	// this world's extent. Runs use a run map; the hub is its own size.
+	// this world's identity: which kind it is and how big.
+	worldType           types.WorldType
 	mapWidth, mapHeight float64
 
 	// caching
@@ -98,7 +99,7 @@ type EventEmitter interface {
 
 type StateSerializer interface {
 	PutBackendState(backendState *types.BackendGameState)
-	SerializeBackendState(ctx context.Context, sessionID uuid.UUID, entities []*ecs.Entity) (*types.BackendGameState, error)
+	SerializeBackendState(ctx context.Context, sessionID uuid.UUID, worldType types.WorldType, entities []*ecs.Entity) (*types.BackendGameState, error)
 	FormatStateToClientState(backendState *types.BackendGameState, playerID uuid.UUID) *types.ClientGameState
 }
 
@@ -106,18 +107,19 @@ type StateSerializer interface {
 // property of the systems that run inside it: a run's map and the hub are
 // different sizes and both use the same MovementSystem.
 type WorldBounds struct {
+	Type          types.WorldType
 	Width, Height float64
 }
 
 // RunBounds is the map an escape run is built on.
 func RunBounds() WorldBounds {
-	return WorldBounds{Width: constants.MapWidth, Height: constants.MapHeight}
+	return WorldBounds{Type: types.WorldTypeRun, Width: constants.MapWidth, Height: constants.MapHeight}
 }
 
 // HubBounds is the hub world, larger than a run's map and larger than the
 // client viewport, so it scrolls. FS-0008 §Requirements 3.
 func HubBounds() WorldBounds {
-	return WorldBounds{Width: constants.HubMapWidth, Height: constants.HubMapHeight}
+	return WorldBounds{Type: types.WorldTypeHub, Width: constants.HubMapWidth, Height: constants.HubMapHeight}
 }
 
 func NewSession(sessionCloser SessionCloser, sender *messaging.MessageSender, serializer StateSerializer, em *ecs.EntityManager, eventEmitter EventEmitter, itemsClient grpcitems.ItemsClient, bounds WorldBounds) *Session {
@@ -137,6 +139,7 @@ func NewSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		stopChan:       make(chan struct{}),
 		isRunning:      false,
 
+		worldType: bounds.Type,
 		mapWidth:  bounds.Width,
 		mapHeight: bounds.Height,
 
@@ -773,7 +776,7 @@ func (s *Session) GetPlayerIDs() []uuid.UUID {
 **/
 func (s *Session) broadcastFullState(entities []*ecs.Entity) error {
 	ctx := context.Background()
-	backendState, err := s.stateSerializer.SerializeBackendState(ctx, s.ID, entities)
+	backendState, err := s.stateSerializer.SerializeBackendState(ctx, s.ID, s.worldType, entities)
 	if err != nil {
 		slog.Error("Failed to serialize state", "error", err)
 		return err

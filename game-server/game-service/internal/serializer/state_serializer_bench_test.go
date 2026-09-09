@@ -291,7 +291,7 @@ func BenchmarkSerializeBackendState_NoPool(b *testing.B) {
 	sessionID := uuid.New()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := serializer.SerializeBackendState(ctx, sessionID, entities)
+		_, err := serializer.SerializeBackendState(ctx, sessionID, types.WorldTypeRun, entities)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -308,7 +308,7 @@ func BenchmarkSerializeBackendState_WithPool(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		state, err := serializer.SerializeBackendState(ctx, sessionID, entities)
+		state, err := serializer.SerializeBackendState(ctx, sessionID, types.WorldTypeRun, entities)
 		if err != nil {
 			b.Fatal(err)
 		}

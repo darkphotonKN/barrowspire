@@ -36,9 +36,22 @@ type ProjectileState struct {
 	Velocity       Velocity  `json:"velocity"`
 }
 
+// WorldType names which kind of world a session runs. The client is told which
+// one it is in; it never infers it from the shape of a broadcast.
+// Vocabulary: game-service/CONTEXT.md.
+type WorldType string
+
+const (
+	// WorldTypeHub is the shared, long-lived world players occupy between runs.
+	WorldTypeHub WorldType = "hub"
+	// WorldTypeRun is a short-lived world built for one match.
+	WorldTypeRun WorldType = "run"
+)
+
 // represents entire game state that client receives
 type ClientGameState struct {
 	SessionID     uuid.UUID          `json:"session_id"`
+	WorldType     WorldType          `json:"world_type"`
 	CurrentPlayer *PlayerState       `json:"current_player"` // The recipient's player state
 	OtherPlayers  []*PlayerState     `json:"other_players"`  // All other players
 	Items         []uuid.UUID        `json:"items"`          // TODO: update with item entity converted into struct format
@@ -54,6 +67,7 @@ type ClientGameState struct {
 
 type BackendGameState struct {
 	SessionID    uuid.UUID
+	WorldType    WorldType
 	Players      map[uuid.UUID]*PlayerState
 	Items        []uuid.UUID
 	Doors        []*DoorState

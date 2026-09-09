@@ -35,10 +35,11 @@ func NewStateSerializer(em *ecs.EntityManager) *StateSerializer {
 	}}
 }
 
-func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID uuid.UUID, entities []*ecs.Entity) (*types.BackendGameState, error) {
+func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID uuid.UUID, worldType types.WorldType, entities []*ecs.Entity) (*types.BackendGameState, error) {
 	backendState := s.backendStatePool.Get().(*types.BackendGameState)
 	s.RestBackendStatePool(backendState)
 	backendState.SessionID = sessionID
+	backendState.WorldType = worldType
 
 	for _, entity := range entities {
 		// --- Player ---
@@ -385,6 +386,7 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 
 	state := &types.ClientGameState{
 		SessionID:     backendState.SessionID,
+		WorldType:     backendState.WorldType,
 		Items:         backendState.Items,
 		Doors:         backendState.Doors,
 		Walls:         backendState.Walls,

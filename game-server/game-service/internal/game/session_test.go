@@ -731,7 +731,7 @@ type mockStateSerializer struct {
 func (s *mockStateSerializer) PutBackendState(state *types.BackendGameState) {
 }
 
-func (s *mockStateSerializer) SerializeBackendState(ctx context.Context, sessionID uuid.UUID, entities []*ecs.Entity) (*types.BackendGameState, error) {
+func (s *mockStateSerializer) SerializeBackendState(ctx context.Context, sessionID uuid.UUID, worldType types.WorldType, entities []*ecs.Entity) (*types.BackendGameState, error) {
 	return nil, nil
 }
 
