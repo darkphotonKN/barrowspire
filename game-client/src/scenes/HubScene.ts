@@ -16,6 +16,8 @@ function textureFor(playerClass: string | undefined): string {
 const HUB_WIDTH = 2000;
 const HUB_HEIGHT = 1000;
 const PLAYER_RADIUS = 20;
+/** How hard sprites chase the server's position each frame. Matches the run scene. */
+const POSITION_LERP = 0.3;
 
 /**
  * The hub: the shared world delvers occupy between runs.
@@ -32,6 +34,8 @@ export class HubScene extends Phaser.Scene {
 
   /** One sprite per player entity, keyed by entity id. */
   private delvers = new Map<string, Phaser.GameObjects.Container>();
+  /** Where the server last said each delver is. Sprites ease toward these. */
+  private targets = new Map<string, { x: number; y: number }>();
   private selfEntityID: string | null = null;
 
   private unsubscribeState?: () => void;
@@ -57,11 +61,30 @@ export class HubScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.unsubscribeState?.();
       this.delvers.clear();
+      this.targets.clear();
     });
   }
 
   update(): void {
     this.sendMovementIntent();
+    this.easeTowardServerPositions();
+  }
+
+  /**
+   * The server ticks at 30Hz and the screen redraws at 60. Applying broadcast
+   * positions directly makes every delver — including your own — teleport twice
+   * per three frames, which reads as juddering, and the camera chasing a target
+   * that jumps is worse still. So sprites ease toward the last known position
+   * instead, the same way the run scene does.
+   */
+  private easeTowardServerPositions(): void {
+    for (const [entityID, sprite] of this.delvers) {
+      const target = this.targets.get(entityID);
+      if (!target) continue;
+
+      sprite.x = Phaser.Math.Linear(sprite.x, target.x, POSITION_LERP);
+      sprite.y = Phaser.Math.Linear(sprite.y, target.y, POSITION_LERP);
+    }
   }
 
   /**
@@ -137,17 +160,21 @@ export class HubScene extends Phaser.Scene {
       if (!present.has(entityID)) {
         sprite.destroy();
         this.delvers.delete(entityID);
+        this.targets.delete(entityID);
       }
     }
   }
 
   private placeDelver(player: PlayerState, isSelf: boolean): void {
-    const existing = this.delvers.get(player.entity_id);
+    this.targets.set(player.entity_id, {
+      x: player.position.x,
+      y: player.position.y,
+    });
 
-    if (existing) {
-      existing.setPosition(player.position.x, player.position.y);
-      return;
-    }
+    // Existing delvers ease toward the target in update(); only a delver seen
+    // for the first time is placed outright, so it does not slide in from the
+    // origin.
+    if (this.delvers.has(player.entity_id)) return;
 
     // The same sprites the character-select screen previews, so the delver a
     // player picked is the delver they see.

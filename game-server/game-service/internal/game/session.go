@@ -551,6 +551,8 @@ func (s *Session) AddPlayer(playerID uuid.UUID, username string, className strin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	spawnX, spawnY := s.spawnPoint()
+
 	// convert proto ItemInstance to types.ItemConfig
 	protoToItemConfig := func(item *pbitems.ItemInstance) types.ItemConfig {
 		templateID, _ := uuid.Parse(item.TemplateId)
@@ -622,8 +624,8 @@ func (s *Session) AddPlayer(playerID uuid.UUID, username string, className strin
 	PlayerConfig := PlayerConfig{
 		MemberID:     playerID,
 		Username:     username,
-		X:            constants.PlayerRadius + rand.Float64()*(constants.MapWidth-2*constants.PlayerRadius),
-		Y:            constants.PlayerRadius + rand.Float64()*(constants.MapHeight-2*constants.PlayerRadius),
+		X:            spawnX,
+		Y:            spawnY,
 		Class:        classCfg,
 		ClassName:    className,
 		ItemName:     "Health Potion",
@@ -720,6 +722,21 @@ func (s *Session) AddBuilding(bx, by, bw, bh, wallThickness, doorWidth float64) 
 	doorX := bx + doorOffset
 	doorY := by + bh - wallThickness
 	s.AddDoor(doorX, doorY, doorWidth, wallThickness)
+}
+
+// spawnPoint is where an arriving player is placed.
+//
+// The hub has a front door: everyone enters and returns to the same place, so
+// the world has somewhere to gather (FS-0008 §Requirements 22). A run scatters
+// arrivals instead, across its own map — not a hardcoded one, so a world of any
+// size places players inside itself.
+func (s *Session) spawnPoint() (x, y float64) {
+	if s.worldType == types.WorldTypeHub {
+		return constants.HubSpawnX, constants.HubSpawnY
+	}
+
+	return constants.PlayerRadius + rand.Float64()*(s.mapWidth-2*constants.PlayerRadius),
+		constants.PlayerRadius + rand.Float64()*(s.mapHeight-2*constants.PlayerRadius)
 }
 
 // HasPlayer reports whether this world holds an entity for the player.
