@@ -40,6 +40,25 @@ const POSITION_LERP = 0.3;
 const WALK_STEP = 0.3;
 
 /**
+ * One delver as the scene sees them.
+ *
+ * The pieces are kept together because they live and die together: a delver who
+ * leaves takes their sprite, their legs and their stride with them, and keeping
+ * that as one entry means removal cannot half-happen.
+ */
+interface DelverView {
+  /** Sprite and name label. */
+  sprite: Phaser.GameObjects.Container;
+  /** Drawn separately so the legs sit in world space beneath the body. */
+  legs: Phaser.GameObjects.Graphics;
+  /** Where the server last said they are; the sprite eases toward it. */
+  target: { x: number; y: number };
+  facing: Facing;
+  walkPhase: number;
+  moving: boolean;
+}
+
+/**
  * The hub: the shared world delvers occupy between runs.
  *
  * Server-authoritative like a run — this renders broadcast state and sends
@@ -52,16 +71,8 @@ export class HubScene extends Phaser.Scene {
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key>;
 
-  /** One sprite per player entity, keyed by entity id. */
-  private delvers = new Map<string, Phaser.GameObjects.Container>();
-  /** Where the server last said each delver is. Sprites ease toward these. */
-  private targets = new Map<string, { x: number; y: number }>();
-  /** Per-delver view state: which way they face and how far through a stride. */
-  private facings = new Map<string, Facing>();
-  private walkPhases = new Map<string, number>();
-  private moving = new Set<string>();
-  /** Legs live outside the delver container so they draw in world space. */
-  private legs = new Map<string, Phaser.GameObjects.Graphics>();
+  /** Everything the scene knows about one delver, keyed by entity id. */
+  private views = new Map<string, DelverView>();
   private selfEntityID: string | null = null;
 
   private unsubscribeState?: () => void;
@@ -86,12 +97,7 @@ export class HubScene extends Phaser.Scene {
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.unsubscribeState?.();
-      this.delvers.clear();
-      this.legs.clear();
-      this.targets.clear();
-      this.facings.clear();
-      this.walkPhases.clear();
-      this.moving.clear();
+      this.views.clear();
     });
   }
 
@@ -108,27 +114,23 @@ export class HubScene extends Phaser.Scene {
    * instead, the same way the run scene does.
    */
   private easeTowardServerPositions(): void {
-    for (const [entityID, sprite] of this.delvers) {
-      const target = this.targets.get(entityID);
-      if (!target) continue;
+    for (const view of this.views.values()) {
+      const { sprite, target } = view;
 
       sprite.x = Phaser.Math.Linear(sprite.x, target.x, POSITION_LERP);
       sprite.y = Phaser.Math.Linear(sprite.y, target.y, POSITION_LERP);
 
       // Legs are drawn in world space, so they follow the eased sprite rather
       // than the raw server position.
-      const legs = this.legs.get(entityID);
-      if (legs) {
-        drawDelverLegs(
-          legs,
-          sprite.x,
-          sprite.y,
-          this.facings.get(entityID) ?? "down",
-          this.walkPhases.get(entityID) ?? 0,
-          this.moving.has(entityID),
-          BARROW_HEX.ink,
-        );
-      }
+      drawDelverLegs(
+        view.legs,
+        sprite.x,
+        sprite.y,
+        view.facing,
+        view.walkPhase,
+        view.moving,
+        BARROW_HEX.ink,
+      );
     }
   }
 
@@ -190,8 +192,8 @@ export class HubScene extends Phaser.Scene {
 
       if (this.selfEntityID !== state.current_player.entity_id) {
         this.selfEntityID = state.current_player.entity_id;
-        const self = this.delvers.get(this.selfEntityID);
-        if (self) this.cameras.main.startFollow(self, true, 0.1, 0.1);
+        const self = this.views.get(this.selfEntityID);
+        if (self) this.cameras.main.startFollow(self.sprite, true, 0.1, 0.1);
       }
     }
 
@@ -201,18 +203,12 @@ export class HubScene extends Phaser.Scene {
     }
 
     // anyone who left the hub since the last tick
-    for (const [entityID, sprite] of this.delvers) {
-      if (!present.has(entityID)) {
-        sprite.destroy();
-        this.legs.get(entityID)?.destroy();
+    for (const [entityID, view] of this.views) {
+      if (present.has(entityID)) continue;
 
-        this.delvers.delete(entityID);
-        this.legs.delete(entityID);
-        this.targets.delete(entityID);
-        this.facings.delete(entityID);
-        this.walkPhases.delete(entityID);
-        this.moving.delete(entityID);
-      }
+      view.sprite.destroy();
+      view.legs.destroy();
+      this.views.delete(entityID);
     }
   }
 
@@ -222,41 +218,31 @@ export class HubScene extends Phaser.Scene {
    * The character textures have no walk frames — one static image per class per
    * facing — so the stride is animated by drawing legs, the same as in a run.
    */
-  private updateAppearance(player: PlayerState): void {
-    const delver = this.delvers.get(player.entity_id);
-    if (!delver) return;
-
+  private updateAppearance(view: DelverView, player: PlayerState): void {
     const { vx, vy } = player.direction ?? { vx: 0, vy: 0 };
-    const moving = vx !== 0 || vy !== 0;
 
-    const previous = this.facings.get(player.entity_id) ?? "down";
-    const facing = facingFrom(vx, vy, previous);
+    view.moving = vx !== 0 || vy !== 0;
+    view.walkPhase = view.moving ? view.walkPhase + WALK_STEP : 0;
 
-    if (facing !== previous) {
-      this.facings.set(player.entity_id, facing);
-      const body = delver.getByName("body") as Phaser.GameObjects.Sprite | null;
-      body?.setTexture(textureFor(player.class, facing));
-    }
+    const facing = facingFrom(vx, vy, view.facing);
+    if (facing === view.facing) return;
 
-    const phase = moving ? (this.walkPhases.get(player.entity_id) ?? 0) + WALK_STEP : 0;
-    this.walkPhases.set(player.entity_id, phase);
-
-    if (moving) this.moving.add(player.entity_id);
-    else this.moving.delete(player.entity_id);
+    view.facing = facing;
+    const body = view.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+    body?.setTexture(textureFor(player.class, facing));
   }
 
   private placeDelver(player: PlayerState, isSelf: boolean): void {
-    this.targets.set(player.entity_id, {
-      x: player.position.x,
-      y: player.position.y,
-    });
-
-    this.updateAppearance(player);
+    const existing = this.views.get(player.entity_id);
 
     // Existing delvers ease toward the target in update(); only a delver seen
     // for the first time is placed outright, so it does not slide in from the
     // origin.
-    if (this.delvers.has(player.entity_id)) return;
+    if (existing) {
+      existing.target = { x: player.position.x, y: player.position.y };
+      this.updateAppearance(existing, player);
+      return;
+    }
 
     // The same sprites the character-select screen previews, so the delver a
     // player picked is the delver they see.
@@ -272,17 +258,23 @@ export class HubScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const delver = this.add.container(player.position.x, player.position.y, [
+    const sprite = this.add.container(player.position.x, player.position.y, [
       body,
       name,
     ]);
-    delver.setDepth(10);
+    sprite.setDepth(10);
 
     // Beneath the body, so a stride reads as legs under a cloak.
     const legs = this.add.graphics();
     legs.setDepth(9);
 
-    this.delvers.set(player.entity_id, delver);
-    this.legs.set(player.entity_id, legs);
+    this.views.set(player.entity_id, {
+      sprite,
+      legs,
+      target: { x: player.position.x, y: player.position.y },
+      facing: "down",
+      walkPhase: 0,
+      moving: false,
+    });
   }
 }
