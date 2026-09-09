@@ -45,7 +45,7 @@ func TestEnterHub_PlacesThePlayerAndTellsThem(t *testing.T) {
 		"a connected player who has not entered is in no world")
 
 	server.serverChan <- types.ClientPackage{
-		Conn:    conn,
+		Conn: conn,
 		Message: types.Message{
 			Action: string(constants.ActionEnterHub),
 			Payload: map[string]interface{}{

@@ -163,7 +163,13 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.Character) (*game
 		username = character.Name
 	}
 
-	hub.AddPlayer(player.ID, username, character.Class)
+	// Already in the world: there is nothing to build. Without this the old
+	// entity is orphaned rather than replaced — harmless in a run, which throws
+	// the whole world away, but the hub is never torn down and would accumulate
+	// a ghost per entry.
+	if !hub.HasPlayer(player.ID) {
+		hub.AddPlayer(player.ID, username, character.Class)
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -520,6 +520,12 @@ func (s *Server) cleanUpPlayerFromSession(player *types.Player) {
 	// remove player from session
 	playerSession.RemovePlayer(player.ID.String())
 
+	// The hub is not a run: it exists before anyone arrives and outlives
+	// everyone leaving, so an empty one is not a finished one.
+	if playerSession.WorldType() == types.WorldTypeHub {
+		return
+	}
+
 	// check if session still has players
 	remainingPlayers := playerSession.GetPlayerIDs()
 	if len(remainingPlayers) == 0 {

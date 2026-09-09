@@ -657,7 +657,10 @@ func (s *Session) RemovePlayer(userID string) {
 		slog.Error("RemovePlayer: Invalid userID", "userID", userID, "error", err)
 		return
 	}
-	entityID, exists := s.playerEntityIDToPlayerID[playerID]
+	// playerIDToEntitiesID is the one keyed by player; playerEntityIDToPlayerID
+	// goes the other way. Reading the wrong one here meant this always missed
+	// and returned, so nobody was ever removed from a world.
+	entityID, exists := s.playerIDToEntitiesID[playerID]
 	if !exists {
 		slog.Warn("RemovePlayer: playerID not found in session", "playerID", playerID)
 		return
