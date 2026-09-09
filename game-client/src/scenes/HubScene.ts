@@ -81,8 +81,11 @@ export class HubScene extends Phaser.Scene {
 
   /** The hub's residents, keyed by entity id. They do not move in this slice. */
   private npcs = new Map<string, { state: NPCState; sprite: Phaser.GameObjects.Container }>();
-  /** Whose dialogue is open, if any. */
+  /** Whose dialogue is open, if any, and what its options do. */
   private dialogue?: Phaser.GameObjects.Container;
+  private dialogueChoices?: { confirm: () => void; dismiss: () => void };
+  private confirmKey?: Phaser.Input.Keyboard.Key;
+  private dismissKey?: Phaser.Input.Keyboard.Key;
   private interactKey?: Phaser.Input.Keyboard.Key;
   /** Shown while queued, wherever the delver walks. */
   private queuePanel?: Phaser.GameObjects.Text;
@@ -137,7 +140,21 @@ export class HubScene extends Phaser.Scene {
    * not a collision. FS-0008 §Requirements 24.
    */
   private offerConversation(): void {
-    if (!this.interactKey || this.dialogue) return;
+    if (!this.interactKey) return;
+
+    // While a dialogue is open the same key answers it, so a delver never has to
+    // reach for the mouse to finish what the keyboard started.
+    if (this.dialogue) {
+      const talk = Phaser.Input.Keyboard.JustDown(this.interactKey);
+      const confirm = this.confirmKey && Phaser.Input.Keyboard.JustDown(this.confirmKey);
+      const dismiss = this.dismissKey && Phaser.Input.Keyboard.JustDown(this.dismissKey);
+
+      if (talk || confirm) this.dialogueChoices?.confirm();
+      else if (dismiss) this.dialogueChoices?.dismiss();
+
+      return;
+    }
+
     if (!Phaser.Input.Keyboard.JustDown(this.interactKey)) return;
 
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
@@ -206,6 +223,8 @@ export class HubScene extends Phaser.Scene {
 
     this.cursors = keyboard.createCursorKeys();
     this.interactKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+    this.confirmKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+    this.dismissKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.wasd = {
       up: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
       down: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
@@ -362,14 +381,16 @@ export class HubScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const descend = this.dialogueOption(-90, 48, "Descend", BARROW_HEX.amber, () => {
+    const confirm = () => {
       this.closeDialogue();
       this.joinQueue();
-    });
+    };
+    const dismiss = () => this.closeDialogue();
 
-    const notYet = this.dialogueOption(90, 48, "Not yet", BARROW_HEX.arcane, () =>
-      this.closeDialogue(),
-    );
+    this.dialogueChoices = { confirm, dismiss };
+
+    const descend = this.dialogueOption(-90, 48, "Descend  [E]", BARROW_HEX.amber, confirm);
+    const notYet = this.dialogueOption(90, 48, "Not yet  [Esc]", BARROW_HEX.arcane, dismiss);
 
     this.dialogue = this.add
       .container(width / 2, height / 2, [panel, speaker, line, descend, notYet])
@@ -393,8 +414,16 @@ export class HubScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const option = this.add.container(x, y, [text]);
+    // A Container has no texture, so it has no hit area to infer: without an
+    // explicit shape here the option looks clickable and is not.
     option.setSize(160, 34);
-    option.setInteractive({ useHandCursor: true });
+    option.setInteractive(
+      new Phaser.Geom.Rectangle(-80, -17, 160, 34),
+      Phaser.Geom.Rectangle.Contains,
+    );
+    this.input.setDefaultCursor("default");
+    option.on("pointerover", () => this.input.setDefaultCursor("pointer"));
+    option.on("pointerout", () => this.input.setDefaultCursor("default"));
     option.on("pointerup", onPick);
     option.on("pointerover", () => text.setColor(toCss(BARROW_HEX.vellum)));
     option.on("pointerout", () => text.setColor(toCss(colour)));
@@ -405,6 +434,7 @@ export class HubScene extends Phaser.Scene {
   private closeDialogue(): void {
     this.dialogue?.destroy();
     this.dialogue = undefined;
+    this.dialogueChoices = undefined;
   }
 
   /** Joining is the delver's decision; the queue itself is unchanged. */
