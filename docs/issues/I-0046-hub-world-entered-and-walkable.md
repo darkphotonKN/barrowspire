@@ -1,6 +1,6 @@
 ---
 id: I-0046
-status: in-progress
+status: done
 implements: FS-0008
 blocked_by: [I-0045]
 labels: [blocked]
@@ -91,16 +91,43 @@ blast radius grows here. Worth its own issue.
 
 ## Acceptance Criteria
 
-- [ ] Starting from the main menu lands the player in the hub, not in a queue.
-- [ ] Two clients logged in as different players see each other move in real time.
-- [ ] The map is 2000×1000; the camera follows the player and the map scrolls.
-- [ ] Walking into a boundary wall stops the player; the map cannot be left.
-- [ ] The world identity message arrives on hub entry and carries type `hub`.
-- [ ] The client's scene switch happens in one place, keyed on that message.
-- [ ] The hub broadcast carries no items, containers, doors, switches or escape doors.
-- [ ] `Player.CurrentGameSessionId` is non-nil for a connected player before the first broadcast.
-- [ ] Nothing about the hub reaches the database.
-- [ ] `go test ./...` passes and `golangci-lint run` is clean.
+- [x] Starting from the main menu lands the player in the hub, not in a queue.
+- [x] Two clients logged in as different players see each other move in real time.
+- [x] The map is 2000×1000; the camera follows the player and the map scrolls.
+- [x] Walking into a boundary wall stops the player; the map cannot be left.
+- [x] The world identity message arrives on hub entry and carries type `hub`.
+- [x] The client's scene switch happens in one place, keyed on that message.
+- [x] The hub broadcast carries no items, containers, doors, switches or escape doors.
+- [x] `Player.CurrentGameSessionId` is non-nil for a connected player before the first broadcast.
+- [x] Nothing about the hub reaches the database.
+- [x] `go test ./...` passes and `golangci-lint run` is clean.
+
+### Found by playing it, not by the tests
+
+The suite was green on every unit before any of these surfaced. Recorded because
+the pattern matters more than the list: each one is a seam between parts that were
+individually correct.
+
+1. **The chosen character never arrived.** enter_hub did not read class or name
+   from its payload the way find_game does, so everyone entered as an empty class.
+2. **Delvers were circles.** characterTextures already generated the sprites the
+   character-select screen previews; the scene simply had not been wired to them.
+3. **Arrivals scattered.** HubSpawnX/Y were declared and used nowhere, and AddPlayer
+   scattered players across a run's map size rather than the world's own.
+4. **Movement juddered.** Broadcast positions were applied directly, so sprites
+   teleported at 30Hz under a 60fps redraw. The run scene had always eased toward
+   them; the hub now does too.
+5. **Entering twice gave you two bodies**, and three times gave three. A run hid
+   this because its cleanup is discarding the whole world.
+6. **Leaving never worked at all** — RemovePlayer read the entity-keyed map with a
+   player id, so it always missed and returned. Predates the hub; invisible until
+   a world stopped being thrown away.
+7. **Fixing that would have destroyed the hub** when its last player left, because
+   an empty session is shut down. An empty hub is not a finished hub.
+8. **Refreshing dropped you into the run scene.** Reconnection sent game_found
+   unconditionally, true while a run was the only world. It now announces the world
+   the player is actually in — and leaving the hub is final, so a refresh there
+   returns to the menu to walk back in.
 
 ## Blocked By
 
