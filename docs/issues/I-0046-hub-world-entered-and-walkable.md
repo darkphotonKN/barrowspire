@@ -1,6 +1,6 @@
 ---
 id: I-0046
-status: open
+status: in-progress
 implements: FS-0008
 blocked_by: [I-0045]
 labels: [blocked]

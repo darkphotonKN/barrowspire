@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { ActionType } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { ClientGameState, PlayerState } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
@@ -33,7 +34,6 @@ export class HubScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBounds(0, 0, HUB_WIDTH, HUB_HEIGHT);
-    this.physics?.world?.setBounds(0, 0, HUB_WIDTH, HUB_HEIGHT);
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
 
     this.drawGround();
@@ -97,7 +97,7 @@ export class HubScene extends Phaser.Scene {
     if (vx === this.lastSent.vx && vy === this.lastSent.vy) return;
 
     this.lastSent = { vx, vy };
-    socketManager.sendMessage("move", { vx, vy });
+    socketManager.sendMessage(ActionType.Move, { vx, vy });
   }
 
   private renderState(state: ClientGameState): void {
