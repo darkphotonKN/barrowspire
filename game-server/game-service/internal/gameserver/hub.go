@@ -34,6 +34,7 @@ type SessionManager interface {
 	GetServerChan() chan types.ClientPackage
 	AddPlayer(*types.Player) error
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
+	JoinHub(conn *websocket.Conn) (*game.Session, error)
 	GetMatchedChan() chan []*types.Player
 	GetQueueStatusChan() chan queue.QueueStatus
 }
@@ -45,7 +46,21 @@ var (
 	errPlayerNotFound     = errors.New("no player registered for this connection")
 	errPlayerNotInSession = errors.New("player is not in a game session")
 	errSessionNotFound    = errors.New("game session no longer exists")
+	errHubMissing         = errors.New("hub world does not exist")
 )
+
+// worldEnteredMessage tells a client which world it is now in. Every transition
+// uses this one message, so the client has a single place to switch scenes.
+// FS-0008 §Requirements 15.
+func worldEnteredMessage(session *game.Session) types.Message {
+	return types.Message{
+		Action: string(constants.ActionWorldEntered),
+		Payload: map[string]interface{}{
+			"session_id": session.ID.String(),
+			"world_type": string(session.WorldType()),
+		},
+	}
+}
 
 // resolveGameSession answers which world a connection's messages belong to,
 // from the server's own record of the player. It deliberately takes no payload:
@@ -135,6 +150,24 @@ func (h *messageHub) Run() {
 			// --- MENU RELATED ACTIONS ---
 			// These actions will be actions for before game initialization happens.
 			switch messageAction {
+
+			// NOTE: a player who has picked a character asks to enter the hub
+			case constants.ActionEnterHub:
+				hub, err := h.sessionManager.JoinHub(clientPackage.Conn)
+
+				if err != nil {
+					slog.Warn("Could not place player in the hub", "error", err)
+
+					clientErr := "Could not enter"
+					h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
+						Action:  clientPackage.Message.Action,
+						Payload: map[string]interface{}{"message": clientErr},
+						Error:   &clientErr,
+					})
+					continue
+				}
+
+				h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(hub))
 
 			// NOTE: queues a player for a game
 			case constants.ActionFindGame:

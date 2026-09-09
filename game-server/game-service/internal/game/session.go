@@ -722,6 +722,21 @@ func (s *Session) AddBuilding(bx, by, bw, bh, wallThickness, doorWidth float64) 
 	s.AddDoor(doorX, doorY, doorWidth, wallThickness)
 }
 
+// HasPlayer reports whether this world holds an entity for the player.
+func (s *Session) HasPlayer(playerID uuid.UUID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	_, exists := s.playerIDToEntitiesID[playerID]
+
+	return exists
+}
+
+// WorldType is the kind of world this session runs.
+func (s *Session) WorldType() types.WorldType {
+	return s.worldType
+}
+
 func (s *Session) AddEscape(x, y float64) uuid.UUID {
 	s.mu.Lock()
 	defer s.mu.Unlock()

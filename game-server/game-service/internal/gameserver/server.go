@@ -141,6 +141,42 @@ func (s *Server) createHubSession() *game.Session {
 }
 
 /**
+* Places a connected player into the hub world and records that they are in it.
+*
+* Note the two writes. connToPlayer holds a *copy* of the player — MapConnToPlayer
+* takes it by value — so it is a different object from the one in s.players, and
+* both have to be told. CreateGameSession does the same thing for the same reason.
+**/
+func (s *Server) JoinHub(conn *websocket.Conn) (*game.Session, error) {
+	hub, exists := s.HubSession()
+	if !exists {
+		return nil, errHubMissing
+	}
+
+	player, exists := s.GetPlayerFromConn(conn)
+	if !exists {
+		return nil, errPlayerNotFound
+	}
+
+	hub.AddPlayer(player.ID, player.Username, player.Class)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	connected := constants.Connected
+
+	player.CurrentGameSessionId = hub.ID
+	player.ConnectState = &connected
+
+	if stored, exists := s.players[player.ID]; exists {
+		stored.CurrentGameSessionId = hub.ID
+		stored.ConnectState = &connected
+	}
+
+	return hub, nil
+}
+
+/**
 * The hub world, which every connected player returns to between runs.
 **/
 func (s *Server) HubSession() (*game.Session, bool) {

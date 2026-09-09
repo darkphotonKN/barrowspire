@@ -10,6 +10,10 @@ const (
 	ActionLeaveQueue Action = "leave_queue"
 	ActionLeaveGame  Action = "leave_game"
 
+	// ActionEnterHub is how a player asks to enter the hub, after picking a
+	// character. Connecting opens the socket; entering is a separate step.
+	ActionEnterHub Action = "enter_hub"
+
 	// active game actions
 	ActionMove      Action = "move"
 	ActionInteract  Action = "interact"
@@ -26,6 +30,11 @@ const (
 	ActionError   Action = "error"
 	ActionSuccess Action = "success"
 	ActionEndGame Action = "end_game"
+
+	// ActionWorldEntered tells a client which world it is now in. One message
+	// for every transition — into the hub, into a run, and back again — so the
+	// client has a single place to switch scenes. FS-0008 §Requirements 15.
+	ActionWorldEntered Action = "world_entered"
 )
 
 const (
