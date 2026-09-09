@@ -3,6 +3,8 @@ package game
 import (
 	"log/slog"
 
+	"github.com/google/uuid"
+
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 )
@@ -34,6 +36,35 @@ var hubNPCs = []hubNPC{
 	},
 }
 
+// hubBuilding is one structure's footprint in the hub.
+//
+// Exteriors only: four walls and no door. A delver cannot go inside one, so
+// there is nothing to open and no interior to build (FS-0008 §Out of Scope).
+type hubBuilding struct {
+	X, Y, W, H float64
+}
+
+// The hub's buildings, laid out by hand.
+//
+// Fixed, not scattered: a run randomises its map because every run is new, but
+// the hub is somewhere a delver returns to, and "left of the Quartermaster" has
+// to mean the same thing tomorrow. The middle of the map is left open — that is
+// where delvers arrive, where both function NPCs stand, and where the residents
+// of I-0052 need room to wander without wedging in a corner.
+var hubBuildings = []hubBuilding{
+	// the north row, behind the NPCs
+	{X: 620, Y: 180, W: 300, H: 200},
+	{X: 1080, Y: 180, W: 260, H: 200},
+	// the west side
+	{X: 240, Y: 460, W: 220, H: 260},
+	// the east side, leaving the walk south of the spawn clear
+	{X: 1560, Y: 420, W: 240, H: 300},
+	// the south-east corner
+	{X: 1500, Y: 800, W: 300, H: 140},
+}
+
+const hubWallThickness = 20
+
 /**
 * Places the hub's fixed residents.
 *
@@ -48,5 +79,33 @@ func (s *Session) InitialHubMapObjects() {
 		CreateFunctionNPCEntity(s.EntityManager, npc)
 	}
 
-	slog.Info("Hub map built", "session_id", s.ID, "npcs", len(hubNPCs))
+	for _, building := range hubBuildings {
+		s.addHubBuilding(building)
+	}
+
+	slog.Info("Hub map built",
+		"session_id", s.ID,
+		"npcs", len(hubNPCs),
+		"buildings", len(hubBuildings),
+	)
+}
+
+// addHubBuilding walls a footprint in on all four sides.
+//
+// Deliberately not AddBuilding, which cuts a gap in the south wall and hangs a
+// door in it: a run's buildings are meant to be entered and looted, and the
+// hub's are scenery.
+func (s *Session) addHubBuilding(building hubBuilding) {
+	houseID := uuid.New()
+
+	walls := []WallConfig{
+		{X: building.X, Y: building.Y, Width: building.W, Height: hubWallThickness},
+		{X: building.X, Y: building.Y + building.H - hubWallThickness, Width: building.W, Height: hubWallThickness},
+		{X: building.X, Y: building.Y, Width: hubWallThickness, Height: building.H},
+		{X: building.X + building.W - hubWallThickness, Y: building.Y, Width: hubWallThickness, Height: building.H},
+	}
+
+	for _, wall := range walls {
+		CreateWallEntity(s.EntityManager, wall, houseID)
+	}
 }

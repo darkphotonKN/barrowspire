@@ -2666,8 +2666,8 @@ func (s *Session) CreateBuilding(buildConfig Building) {
 	buildingH := buildConfig.H + buildingPadding*2
 	for i := 0; i < 100; i++ {
 		placeArea := PlaceArea{
-			X: rand.Float64() * (constants.MapWidth - buildingW),
-			Y: rand.Float64() * (constants.MapHeight - buildingH),
+			X: rand.Float64() * (s.mapWidth - buildingW),
+			Y: rand.Float64() * (s.mapHeight - buildingH),
 			W: buildingW,
 			H: buildingH,
 		}

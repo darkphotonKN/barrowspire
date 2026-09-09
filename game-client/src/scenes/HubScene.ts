@@ -3,7 +3,12 @@ import { ActionType } from "@/assets/types/client";
 import { useGameStore } from "@/stores/gameStore";
 import { CANVAS_FONT, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
-import { ClientGameState, NPCState, PlayerState } from "@/types/gameState";
+import {
+  ClientGameState,
+  NPCState,
+  PlayerState,
+  WallState,
+} from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
 import {
   ensureCharacterTextures,
@@ -104,6 +109,8 @@ export class HubScene extends Phaser.Scene {
   private views = new Map<string, DelverView>();
   private selfEntityID: string | null = null;
 
+  /** Drawn once: the hub's buildings are fixed and never change. */
+  private structures?: Phaser.GameObjects.Graphics;
   /** The hub's residents, keyed by entity id. They do not move in this slice. */
   private npcs = new Map<string, { state: NPCState; sprite: Phaser.GameObjects.Container }>();
   /** Whose dialogue is open, if any, and what its options do. */
@@ -294,6 +301,7 @@ export class HubScene extends Phaser.Scene {
       }
     }
 
+    this.renderStructures(state.walls ?? []);
     this.renderNPCs(state.npcs ?? []);
 
     for (const other of state.other_players ?? []) {
@@ -349,6 +357,30 @@ export class HubScene extends Phaser.Scene {
       })
       .setScrollFactor(0)
       .setDepth(1000);
+  }
+
+  /**
+   * Draws the hub's buildings.
+   *
+   * They are server entities, so the collision a delver feels and the shape they
+   * see come from one source — an invisible wall is worse than no wall. Fixed,
+   * so this runs once rather than every tick.
+   */
+  private renderStructures(walls: WallState[]): void {
+    if (this.structures || walls.length === 0) return;
+
+    const stone = this.add.graphics();
+    stone.setDepth(5);
+
+    for (const wall of walls) {
+      stone.fillStyle(BARROW_HEX.barrowDeep, 1);
+      stone.fillRect(wall.position.x, wall.position.y, wall.width, wall.height);
+
+      stone.lineStyle(2, BARROW_HEX.barrowBrown, 0.8);
+      stone.strokeRect(wall.position.x, wall.position.y, wall.width, wall.height);
+    }
+
+    this.structures = stone;
   }
 
   /** Draws the hub's residents. They stand still, so this runs once each. */

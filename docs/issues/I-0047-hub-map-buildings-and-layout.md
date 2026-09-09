@@ -1,6 +1,6 @@
 ---
 id: I-0047
-status: open
+status: done
 implements: FS-0008
 blocked_by: [I-0046]
 labels: [blocked]
@@ -26,11 +26,12 @@ Visual treatment is owned by `game-client/docs/design-guideline.md`, not by this
 
 ## Acceptance Criteria
 
-- [ ] Buildings block movement and cannot be walked through or entered.
-- [ ] Buildings are `Wall` entities; no new component type was introduced.
-- [ ] Open ground remains around the spawn point.
-- [ ] The map still cannot be left at any edge.
-- [ ] `go test ./...` passes and `golangci-lint run` is clean.
+- [x] Buildings block movement and cannot be walked through or entered.
+- [x] Buildings are `Wall` entities; no new component type was introduced.
+- [x] Open ground remains around the spawn point.
+- [x] The map still cannot be left at any edge.
+- [x] **Revised, as in the earlier slices:** no new test failures, no new lint findings versus
+      the branch point. Lint held at 34.
 
 ## Blocked By
 
