@@ -6,6 +6,7 @@
 import Phaser from "phaser";
 import { ActionType } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
+import { drawDelverLegs } from "@/utils/characterTextures";
 import { useGameStore } from "@/stores/gameStore";
 import {
   ClientGameState,
@@ -1399,23 +1400,7 @@ export class BarrowspireScene extends Phaser.Scene {
     isMoving: boolean,
     darkColor: number,
   ): void {
-    graphics.clear();
-
-    const legWidth = 6;
-    const legHeight = 9;
-    const swing = isMoving ? Math.sin(walkPhase) * 4.5 : 0;
-
-    graphics.fillStyle(darkColor, 1);
-
-    if (facing === "down" || facing === "up") {
-      // two legs side by side, offset vertically when walking
-      graphics.fillRect(x - 7, y + 18 + swing, legWidth, legHeight);
-      graphics.fillRect(x + 1, y + 18 - swing, legWidth, legHeight);
-    } else {
-      // side view — legs overlap, offset horizontally when walking
-      graphics.fillRect(x - 3 + swing, y + 18, legWidth, legHeight);
-      graphics.fillRect(x - 3 - swing, y + 18, legWidth, legHeight);
-    }
+    drawDelverLegs(graphics, x, y, facing, walkPhase, isMoving, darkColor);
   }
 
   private createChestTextures(): void {

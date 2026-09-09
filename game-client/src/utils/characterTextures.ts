@@ -470,3 +470,42 @@ export function ensureCharacterTextures(scene: Phaser.Scene): void {
     }
   }
 }
+
+export type Facing = "up" | "down" | "left" | "right";
+
+/**
+ * Draws a delver's legs beneath their sprite, swinging while they walk.
+ *
+ * The character textures are one static image per class per facing, so walking
+ * is animated by drawing the legs rather than by cycling frames. Shared so a
+ * delver strides the same way in every world.
+ *
+ * Clears and redraws the graphics each call; the caller owns its depth.
+ */
+export function drawDelverLegs(
+  graphics: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  facing: Facing,
+  walkPhase: number,
+  isMoving: boolean,
+  darkColor: number,
+): void {
+  graphics.clear();
+
+  const legWidth = 6;
+  const legHeight = 9;
+  const swing = isMoving ? Math.sin(walkPhase) * 4.5 : 0;
+
+  graphics.fillStyle(darkColor, 1);
+
+  if (facing === "down" || facing === "up") {
+    // two legs side by side, offset vertically when walking
+    graphics.fillRect(x - 7, y + 18 + swing, legWidth, legHeight);
+    graphics.fillRect(x + 1, y + 18 - swing, legWidth, legHeight);
+  } else {
+    // side view — legs overlap, offset horizontally when walking
+    graphics.fillRect(x - 3 + swing, y + 18, legWidth, legHeight);
+    graphics.fillRect(x - 3 - swing, y + 18, legWidth, legHeight);
+  }
+}
