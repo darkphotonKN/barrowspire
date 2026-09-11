@@ -84,7 +84,13 @@ const RESIDENT_LINES = [
 
 const NPC_OFFERS: Record<
   string,
-  { line: string; accepts: string; declines: string; accept: (scene: HubScene) => void }
+  {
+    line: string;
+    accepts: string;
+    /** Omitted when there is nothing to decline — a resident, say. */
+    declines?: string;
+    accept: (scene: HubScene) => void;
+  }
 > = {
   delve: {
     line: "I keep the way into the Spire. Few return whole,\nand fewer return twice. Still set on descending?",
@@ -543,8 +549,10 @@ export class HubScene extends Phaser.Scene {
         [...npc.entity_id].reduce((sum, c) => sum + c.charCodeAt(0), 0) %
           RESIDENT_LINES.length
       ],
-      accepts: "Nod",
-      declines: "Say nothing",
+      // A resident has nothing to offer, so they offer no choice. Two options
+      // that both close the box is a decision the delver does not have.
+      accepts: "Leave",
+      declines: undefined,
       accept: () => {},
     };
 
@@ -581,15 +589,15 @@ export class HubScene extends Phaser.Scene {
 
     this.dialogueChoices = { confirm, dismiss };
 
-    const descend = this.dialogueOption(
-      -90, 48, `${offer.accepts}  [E]`, BARROW_HEX.amber, confirm,
-    );
-    const notYet = this.dialogueOption(
-      90, 48, `${offer.declines}  [Esc]`, BARROW_HEX.arcane, dismiss,
-    );
+    const choices: Phaser.GameObjects.GameObject[] = offer.declines
+      ? [
+          this.dialogueOption(-90, 48, `${offer.accepts}  [E]`, BARROW_HEX.amber, confirm),
+          this.dialogueOption(90, 48, `${offer.declines}  [Esc]`, BARROW_HEX.arcane, dismiss),
+        ]
+      : [this.dialogueOption(0, 48, `${offer.accepts}  [E]`, BARROW_HEX.amber, confirm)];
 
     this.dialogue = this.add
-      .container(width / 2, height / 2, [panel, speaker, line, descend, notYet])
+      .container(width / 2, height / 2, [panel, speaker, line, ...choices])
       .setScrollFactor(0)
       .setDepth(2000);
   }
