@@ -235,3 +235,27 @@ func CreateFunctionNPCEntity(em *ecs.EntityManager, npc hubNPC) *ecs.Entity {
 	entity.AddComponent(components.NewInteractableComponent(commonconstants.NPCInteractRange))
 	return entity
 }
+
+// CreateResidentEntity places an ambient NPC who wanders their quarter.
+//
+// They carry a velocity, unlike a function NPC, because WanderSystem steers them
+// and MovementSystem moves them — the same path a delver travels, so collision
+// has one implementation rather than two. They carry no Player component: the
+// rules, elimination and broadcast paths all key off that, and a resident is not
+// a delver.
+func CreateResidentEntity(em *ecs.EntityManager, resident hubResident) *ecs.Entity {
+	region := resident.Region
+
+	entity := em.CreateEntity()
+	npc := components.NewNPCComponent(resident.Name, components.NPCFunctionNone)
+	npc.Wander = &region
+	entity.AddComponent(npc)
+	entity.AddComponent(components.NewTransformComponent(
+		region.X+region.W/2,
+		region.Y+region.H/2,
+	))
+	entity.AddComponent(components.NewVelocityComponent(0, 0, commonconstants.NPCWanderSpeed))
+	entity.AddComponent(components.NewInteractableComponent(commonconstants.NPCInteractRange))
+
+	return entity
+}

@@ -19,11 +19,32 @@ const (
 	NPCFunctionStorekeeper NPCFunction = "storekeeper"
 )
 
+// WanderRegion is the patch of the hub a resident keeps to.
+//
+// Confining them is what keeps a hub legible: residents belong to a quarter, so
+// a delver can say "by the fire" and be understood, and nobody drifts across the
+// whole map over an afternoon.
+type WanderRegion struct {
+	X, Y, W, H float64
+
+	// Where they are currently headed, and how long they stand once they arrive.
+	DestinationX, DestinationY float64
+	HasDestination             bool
+	PauseRemaining             float64
+
+	// How long they have failed to get closer. Random walk against hard
+	// collision corners a resident permanently without this.
+	StalledFor     float64
+	LastDistanceSq float64
+}
+
 type NPCComponent struct {
 	// Shown above them, so a delver can tell who they are talking to.
 	Name string
 	// What talking to them opens, if anything.
 	Function NPCFunction
+	// Set for a resident; nil for a function NPC, who stands still.
+	Wander *WanderRegion
 }
 
 func (n *NPCComponent) Type() ecs.ComponentType {

@@ -67,8 +67,10 @@ func TestHub_HoldsItsFunctionNPCs(t *testing.T) {
 	_ = constants.HubSpawnX
 }
 
-// npcPositions maps each NPC's function to where they stand. Keyed by function
-// rather than indexed, because entity iteration order is not guaranteed.
+// npcPositions maps each *function* NPC to where they stand. Keyed by function
+// rather than indexed, because entity iteration order is not guaranteed — and
+// residents are skipped, since they share the empty function and are supposed to
+// be somewhere different every time you look.
 func npcPositions(entities []*ecs.Entity) map[components.NPCFunction][2]float64 {
 	positions := map[components.NPCFunction][2]float64{}
 
@@ -80,8 +82,13 @@ func npcPositions(entities []*ecs.Entity) map[components.NPCFunction][2]float64 
 			continue
 		}
 
+		npc := npcComp.(*components.NPCComponent)
+		if npc.Function == components.NPCFunctionNone {
+			continue
+		}
+
 		transform := transformComp.(*components.TransformComponent)
-		positions[npcComp.(*components.NPCComponent).Function] = [2]float64{transform.X, transform.Y}
+		positions[npc.Function] = [2]float64{transform.X, transform.Y}
 	}
 
 	return positions

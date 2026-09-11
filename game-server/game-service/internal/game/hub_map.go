@@ -65,6 +65,25 @@ var hubBuildings = []hubBuilding{
 
 const hubWallThickness = 20
 
+// hubResident is an ambient NPC and the quarter they keep to.
+//
+// Kept few on purpose: the hub is the only world doing N per-player formats per
+// tick, so every resident is paid for by everyone standing in it.
+type hubResident struct {
+	Name   string
+	Region components.WanderRegion
+}
+
+// Their quarters sit in the open ground the buildings leave, and away from the
+// spawn and the two function NPCs so nobody has to walk through a crowd to reach
+// the Spirewarden.
+var hubResidents = []hubResident{
+	{Name: "Cottar", Region: components.WanderRegion{X: 560, Y: 560, W: 260, H: 200}},
+	{Name: "Herbwife", Region: components.WanderRegion{X: 1120, Y: 540, W: 260, H: 220}},
+	{Name: "Woodcutter", Region: components.WanderRegion{X: 700, Y: 820, W: 300, H: 140}},
+	{Name: "Bellringer", Region: components.WanderRegion{X: 1180, Y: 820, W: 280, H: 140}},
+}
+
 /**
 * Places the hub's fixed residents.
 *
@@ -83,10 +102,15 @@ func (s *Session) InitialHubMapObjects() {
 		s.addHubBuilding(building)
 	}
 
+	for _, resident := range hubResidents {
+		CreateResidentEntity(s.EntityManager, resident)
+	}
+
 	slog.Info("Hub map built",
 		"session_id", s.ID,
 		"npcs", len(hubNPCs),
 		"buildings", len(hubBuildings),
+		"residents", len(hubResidents),
 	)
 }
 

@@ -474,9 +474,16 @@ func (s *Session) manageGameLoop() {
 
 			entities := s.EntityManager.GetAllEntities()
 
+			deltaTime := 1.0 / float64(constants.GameFrameRate)
+
+			// residents amble; a run has none, so this is the hub's alone
+			if s.worldType == types.WorldTypeHub {
+				wanderSys := systems.NewWanderSystem()
+				wanderSys.Update(deltaTime, entities)
+			}
+
 			// movement
 			movementSys := systems.MovementSystem{MapWidth: s.mapWidth, MapHeight: s.mapHeight}
-			deltaTime := 1.0 / float64(constants.GameFrameRate)
 			movementSys.Update(deltaTime, entities)
 
 			// projectile

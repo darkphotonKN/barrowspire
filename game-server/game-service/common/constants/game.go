@@ -63,6 +63,14 @@ const HubMapHeight float64 = 1000
 const HubSpawnX float64 = 1000
 const HubSpawnY float64 = 800
 
+// How fast a resident ambles, and how long they stand once they arrive.
+const NPCWanderSpeed float64 = 60
+const NPCPauseSeconds float64 = 1.6
+
+// How long a resident may fail to close on its destination before giving up on
+// it. Without this a random walk wedges permanently in a corner.
+const NPCStallSeconds float64 = 1.2
+
 // How close a delver must stand to talk to an NPC.
 const NPCInteractRange float64 = 80
 
