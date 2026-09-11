@@ -7,6 +7,7 @@ import Phaser from "phaser";
 import { ActionType } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { drawDelverLegs } from "@/utils/characterTextures";
+import { createAtmosphere as buildAtmosphere } from "@/utils/atmosphere";
 import { useGameStore } from "@/stores/gameStore";
 import {
   ClientGameState,
@@ -26,7 +27,6 @@ import { GameStateLogger } from "@/utils/gameStateLogger";
 import {
   CANVAS_FONT,
   palette,
-  rgba,
   shade,
   tint,
   toCss,
@@ -4479,92 +4479,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Re-entering the scene on reconnect must not stack a second overlay.
     if (this.torchPool?.scene) return;
 
-    const cam = this.cameras.main;
-    const w = cam.width;
-    const h = cam.height;
-
-    // --- torch pool: warm radial glow around the (camera-centred) player ---
-    const torchKey = "atmoTorch";
-    if (!this.textures.exists(torchKey)) {
-      const canvas = document.createElement("canvas");
-      canvas.width = 512;
-      canvas.height = 512;
-      const g = canvas.getContext("2d")!;
-      const grad = g.createRadialGradient(256, 256, 0, 256, 256, 256);
-      grad.addColorStop(0, rgba(palette.torch, 0.22));
-      grad.addColorStop(0.45, rgba(palette.ember, 0.1));
-      grad.addColorStop(1, rgba(palette.inkDeep, 0));
-      g.fillStyle = grad;
-      g.fillRect(0, 0, 512, 512);
-      this.textures.addCanvas(torchKey, canvas);
-    }
-    const torch = this.add.image(w / 2, h / 2, torchKey);
-    const torchSize = Math.max(w, h) * 1.5;
-    torch.setDisplaySize(torchSize, torchSize);
-    torch.setScrollFactor(0);
-    torch.setDepth(900);
-    torch.setBlendMode(Phaser.BlendModes.ADD);
-    this.torchPool = torch;
-    // presentation-only torch flicker
-    this.tweens.add({
-      targets: torch,
-      alpha: { from: 0.82, to: 1 },
-      duration: 1500,
-      yoyo: true,
-      repeat: -1,
-      ease: "Sine.easeInOut",
-    });
-
-    // --- vignette: darkness pressing in at the screen edges ---
-    const vigKey = `atmoVignette_${w}x${h}`;
-    if (!this.textures.exists(vigKey)) {
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const g = canvas.getContext("2d")!;
-      const grad = g.createRadialGradient(
-        w / 2,
-        h / 2,
-        Math.min(w, h) * 0.3,
-        w / 2,
-        h / 2,
-        Math.max(w, h) * 0.72,
-      );
-      // Readability floor: an entity at the canvas edge must stay legible, and
-      // rivals are read by their eyes against dark ground. If play shows this
-      // hiding them, THIS is the number that yields — not the enemy accent.
-      grad.addColorStop(0, rgba(palette.inkDeep, 0));
-      grad.addColorStop(0.7, rgba(palette.inkDeep, 0.5));
-      grad.addColorStop(1, rgba(palette.inkDeep, 0.86));
-      g.fillStyle = grad;
-      g.fillRect(0, 0, w, h);
-      this.textures.addCanvas(vigKey, canvas);
-    }
-    const vignette = this.add.image(w / 2, h / 2, vigKey);
-    vignette.setScrollFactor(0);
-    vignette.setDepth(905);
-
-    // --- faint drifting dust ---
-    for (let i = 0; i < 18; i++) {
-      const dust = this.add.circle(
-        Phaser.Math.Between(0, w),
-        Phaser.Math.Between(0, h),
-        Math.random() < 0.2 ? 2 : 1,
-        palette.hudLabel,
-        Phaser.Math.FloatBetween(0.05, 0.16),
-      );
-      dust.setScrollFactor(0);
-      dust.setDepth(902);
-      this.tweens.add({
-        targets: dust,
-        y: dust.y - Phaser.Math.Between(20, 60),
-        x: dust.x + Phaser.Math.Between(-15, 15),
-        alpha: 0,
-        duration: Phaser.Math.Between(4000, 9000),
-        repeat: -1,
-        ease: "Sine.easeInOut",
-      });
-    }
+    this.torchPool = buildAtmosphere(this).torch;
   }
 
   private showNotification(message: string, color: string): void {

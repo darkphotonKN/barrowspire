@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { createAtmosphere } from "@/utils/atmosphere";
 import { ActionType } from "@/assets/types/client";
 import { useGameStore } from "@/stores/gameStore";
 import { CANVAS_FONT, toCss } from "@/utils/canvasPalette";
@@ -173,6 +174,8 @@ export class HubScene extends Phaser.Scene {
   private interactKey?: Phaser.Input.Keyboard.Key;
   /** Shown while queued, wherever the delver walks. */
   private queuePanel?: Phaser.GameObjects.Text;
+  /** The warm pool the delver carries. Camera-fixed, so positioned in screen space. */
+  private torchPool?: Phaser.GameObjects.Image;
   private unsubscribeQueue?: () => void;
 
   private unsubscribeState?: () => void;
@@ -191,6 +194,10 @@ export class HubScene extends Phaser.Scene {
     this.drawGround();
     this.drawScenery();
     this.bindInput();
+
+    // Dark, never flat: the hub is lit the same way a run is.
+    // docs/design-guideline.md — heavy vignette plus a warm torch pool.
+    this.torchPool = createAtmosphere(this).torch;
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) =>
       this.renderState(state),
@@ -213,6 +220,7 @@ export class HubScene extends Phaser.Scene {
       // the scene clock stops with the scene, so the flicker goes with it
       this.hearth = undefined;
       this.structures = undefined;
+      this.torchPool = undefined;
     });
   }
 
@@ -220,6 +228,27 @@ export class HubScene extends Phaser.Scene {
     this.sendMovementIntent();
     this.easeTowardServerPositions();
     this.offerConversation();
+    this.carryTheTorch();
+  }
+
+  /**
+   * Keeps the pool on the delver rather than on the camera.
+   *
+   * The overlay is camera-fixed, so it is positioned in SCREEN space: the
+   * delver's world position minus the camera scroll. That matters because the
+   * camera lerps and is clamped by setBounds, so its centre is not the delver's
+   * position while they are moving or standing at a map edge — the two moments a
+   * torch sitting at the centre reads as "the screen is dim" rather than "I am
+   * carrying a light".
+   */
+  private carryTheTorch(): void {
+    const torch = this.torchPool;
+    const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
+
+    if (!torch?.scene || !self) return;
+
+    const cam = this.cameras.main;
+    torch.setPosition(self.sprite.x - cam.scrollX, self.sprite.y - cam.scrollY);
   }
 
   /**
