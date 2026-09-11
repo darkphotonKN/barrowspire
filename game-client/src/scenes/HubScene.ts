@@ -52,6 +52,25 @@ const WALK_STEP = 0.3;
  * see drawScenery — so it lives here rather than in the world.
  */
 const HEARTH: [number, number] = [1000, 640];
+/** A well, a market stall, two carts and some crates, all at fixed spots. */
+const WELL: [number, number] = [820, 460];
+const STALL: [number, number] = [1260, 420];
+const CARTS: [number, number][] = [[540, 430], [1420, 900]];
+const CRATES: [number, number][] = [
+  [1300, 470], [1330, 500], [880, 900], [910, 872], [520, 760],
+];
+/** Fence runs: [x, y, length, horizontal]. */
+const FENCES: [number, number, number, boolean][] = [
+  [300, 760, 220, true],
+  [1620, 300, 180, true],
+  [700, 940, 260, true],
+];
+/** Trodden ground, joining the spawn to the people worth walking to. */
+const PATHS: [number, number, number, number][] = [
+  [940, 500, 130, 320],
+  [700, 660, 360, 70],
+  [1000, 660, 380, 70],
+];
 const TREES: [number, number][] = [
   [430, 300], [500, 360], [1420, 260], [1500, 330], [1470, 205],
   [180, 820], [260, 880], [1900, 600], [1900, 780], [560, 900],
@@ -146,6 +165,8 @@ export class HubScene extends Phaser.Scene {
 
   /** Drawn once: the hub's buildings are fixed and never change. */
   private structures?: Phaser.GameObjects.Graphics;
+  /** Drawn once, after the buildings arrive so it can avoid them. */
+  private scenery?: Phaser.GameObjects.Graphics;
   /** The fire's flicker, so it reads as burning rather than painted. */
   private hearth?: Phaser.GameObjects.Graphics;
   /**
@@ -192,7 +213,6 @@ export class HubScene extends Phaser.Scene {
     ensureCharacterTextures(this);
 
     this.drawGround();
-    this.drawScenery();
     this.bindInput();
 
     // Dark, never flat: the hub is lit the same way a run is.
@@ -220,6 +240,7 @@ export class HubScene extends Phaser.Scene {
       // the scene clock stops with the scene, so the flicker goes with it
       this.hearth = undefined;
       this.structures = undefined;
+      this.scenery = undefined;
       this.torchPool = undefined;
     });
   }
@@ -351,11 +372,33 @@ export class HubScene extends Phaser.Scene {
    * a delver cannot do anything with this one — an amber thing you cannot act on
    * is a defect (docs/design-guideline.md).
    */
-  private drawScenery(): void {
+  private drawScenery(walls: WallState[]): void {
+    if (this.scenery || walls.length === 0) return;
+
+    // Buildings are server entities and scenery is not, so the two are separate
+    // lists of fixed coordinates with nothing but a person comparing them. A
+    // tree grew inside a wall twice before this; now the scene simply declines
+    // to draw anything standing in one.
+    const blocked = (x: number, y: number, radius: number) =>
+      walls.some(
+        (wall) =>
+          x + radius >= wall.position.x &&
+          x - radius <= wall.position.x + wall.width &&
+          y + radius >= wall.position.y &&
+          y - radius <= wall.position.y + wall.height,
+      );
+
     const scenery = this.add.graphics();
     scenery.setDepth(2);
 
+    // trodden paths, under everything else
+    for (const [x, y, w, h] of PATHS) {
+      scenery.fillStyle(BARROW_HEX.barrowBrown, 0.22);
+      scenery.fillRect(x, y, w, h);
+    }
+
     for (const [x, y] of GRASS) {
+      if (blocked(x, y, 10)) continue;
       scenery.fillStyle(BARROW_HEX.arcaneDeep, 0.5);
       scenery.fillRect(x, y, 3, 7);
       scenery.fillRect(x + 5, y - 3, 3, 10);
@@ -363,6 +406,7 @@ export class HubScene extends Phaser.Scene {
     }
 
     for (const [x, y] of TREES) {
+      if (blocked(x, y - 6, 30)) continue;
       scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
       scenery.fillRect(x - 5, y, 10, 26);
 
@@ -370,6 +414,78 @@ export class HubScene extends Phaser.Scene {
       scenery.fillCircle(x, y - 6, 26);
       scenery.fillStyle(BARROW_HEX.arcane, 0.55);
       scenery.fillCircle(x - 7, y - 12, 14);
+    }
+
+    for (const [x, y, length, horizontal] of FENCES) {
+      if (blocked(x, y, 20)) continue;
+      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
+
+      const posts = Math.floor(length / 36);
+      for (let i = 0; i <= posts; i++) {
+        const px = horizontal ? x + i * 36 : x;
+        const py = horizontal ? y : y + i * 36;
+        scenery.fillRect(px, py - 16, 5, 22);
+      }
+
+      // the rails between them
+      scenery.fillStyle(BARROW_HEX.barrowBrown, 1);
+      if (horizontal) {
+        scenery.fillRect(x, y - 12, length, 3);
+        scenery.fillRect(x, y - 4, length, 3);
+      }
+    }
+
+    for (const [x, y] of CRATES) {
+      if (blocked(x, y, 14)) continue;
+      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
+      scenery.fillRect(x - 11, y - 11, 22, 22);
+      scenery.lineStyle(2, BARROW_HEX.barrowBrown, 0.9);
+      scenery.strokeRect(x - 11, y - 11, 22, 22);
+      scenery.lineBetween(x - 11, y - 11, x + 11, y + 11);
+    }
+
+    for (const [x, y] of CARTS) {
+      if (blocked(x, y, 26)) continue;
+      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
+      scenery.fillRect(x - 24, y - 10, 48, 20);
+      scenery.fillStyle(BARROW_HEX.barrowBrown, 1);
+      scenery.fillRect(x - 24, y - 14, 48, 5);
+      // wheels
+      scenery.fillStyle(BARROW_HEX.pitch, 1);
+      scenery.fillCircle(x - 14, y + 11, 7);
+      scenery.fillCircle(x + 14, y + 11, 7);
+      scenery.fillStyle(BARROW_HEX.barrowBrown, 1);
+      scenery.fillCircle(x - 14, y + 11, 3);
+      scenery.fillCircle(x + 14, y + 11, 3);
+      // the shaft
+      scenery.fillRect(x + 22, y - 2, 20, 4);
+    }
+
+    if (!blocked(WELL[0], WELL[1], 22)) {
+      const [wx, wy] = WELL;
+      scenery.fillStyle(BARROW_HEX.slate, 1);
+      scenery.fillCircle(wx, wy, 20);
+      scenery.fillStyle(BARROW_HEX.pitch, 1);
+      scenery.fillCircle(wx, wy, 13);
+      // posts and a roof over it
+      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
+      scenery.fillRect(wx - 20, wy - 34, 5, 30);
+      scenery.fillRect(wx + 15, wy - 34, 5, 30);
+      scenery.fillStyle(BARROW_HEX.barrowBrown, 1);
+      scenery.fillRect(wx - 26, wy - 40, 52, 8);
+    }
+
+    if (!blocked(STALL[0], STALL[1], 34)) {
+      const [sx, sy] = STALL;
+      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
+      scenery.fillRect(sx - 32, sy - 6, 64, 14);
+      scenery.fillRect(sx - 30, sy - 30, 4, 26);
+      scenery.fillRect(sx + 26, sy - 30, 4, 26);
+      // an awning, the one place a little colour is honest
+      scenery.fillStyle(BARROW_HEX.oxblood, 0.85);
+      scenery.fillRect(sx - 36, sy - 36, 72, 9);
+      scenery.fillStyle(BARROW_HEX.vellumFaint, 0.5);
+      scenery.fillRect(sx - 36, sy - 30, 72, 3);
     }
 
     // the fire ring, which does not move
@@ -381,6 +497,7 @@ export class HubScene extends Phaser.Scene {
     scenery.fillRect(HEARTH[0] - 16, HEARTH[1] - 3, 32, 6);
     scenery.fillRect(HEARTH[0] - 3, HEARTH[1] - 16, 6, 32);
 
+    this.scenery = scenery;
     this.hearth = this.add.graphics().setDepth(3);
     this.time.addEvent({ delay: 90, loop: true, callback: () => this.flicker() });
   }
@@ -453,6 +570,8 @@ export class HubScene extends Phaser.Scene {
     }
 
     this.renderStructures(state.walls ?? []);
+    // Scenery waits for the buildings so it can refuse to stand inside one.
+    this.drawScenery(state.walls ?? []);
     this.renderNPCs(state.npcs ?? []);
 
     for (const other of state.other_players ?? []) {
