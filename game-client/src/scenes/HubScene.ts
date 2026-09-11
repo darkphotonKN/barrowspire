@@ -18,6 +18,35 @@ import {
   type Facing,
 } from "@/utils/characterTextures";
 
+/**
+ * Reassembles each building from the walls that belong to it.
+ *
+ * Every wall carries the id of the building it is part of, so the footprint is
+ * the bounding box of its group — no second list of coordinates to drift out of
+ * step with the server's.
+ */
+function footprintsFrom(
+  walls: WallState[],
+): { x: number; y: number; w: number; h: number }[] {
+  const byBuilding = new Map<string, WallState[]>();
+
+  for (const wall of walls) {
+    if (!wall.house_id) continue;
+    const group = byBuilding.get(wall.house_id) ?? [];
+    group.push(wall);
+    byBuilding.set(wall.house_id, group);
+  }
+
+  return [...byBuilding.values()].map((group) => {
+    const x = Math.min(...group.map((w) => w.position.x));
+    const y = Math.min(...group.map((w) => w.position.y));
+    const right = Math.max(...group.map((w) => w.position.x + w.width));
+    const bottom = Math.max(...group.map((w) => w.position.y + w.height));
+
+    return { x, y, w: right - x, h: bottom - y };
+  });
+}
+
 /** Falls back to the warrior when a class is missing or unrecognised. */
 function textureFor(playerClass: string | undefined, facing: Facing): string {
   const known = ["warrior", "mage", "archer"];
@@ -693,7 +722,75 @@ export class HubScene extends Phaser.Scene {
       stone.strokeRect(wall.position.x, wall.position.y, wall.width, wall.height);
     }
 
+    // Walls carry the building they belong to, so the footprints can be
+    // reassembled here rather than being a second list to keep in step with the
+    // server's.
+    const roofs = this.add.graphics();
+    roofs.setDepth(6); // over the walls, under anyone standing in front of them
+
+    for (const footprint of footprintsFrom(walls)) {
+      this.roofOver(roofs, footprint);
+    }
+
+    // One flag covers both: the walls and their roofs are drawn together.
     this.structures = stone;
+  }
+
+  /**
+   * Puts a roof on a footprint.
+   *
+   * Seen from above, a pitched roof is two slopes meeting at a ridge, so it is
+   * drawn as two shaded halves either side of a line — lit on the side the torch
+   * pool falls from — with the eaves overhanging the walls they sit on.
+   */
+  private roofOver(
+    g: Phaser.GameObjects.Graphics,
+    { x, y, w, h }: { x: number; y: number; w: number; h: number },
+  ): void {
+    const eave = 10;
+    const left = x - eave;
+    const top = y - eave;
+    const width = w + eave * 2;
+    const height = h + eave * 2;
+
+    // the ridge runs along the longer side
+    const alongX = width >= height;
+    const ridge = alongX ? top + height / 2 : left + width / 2;
+
+    g.fillStyle(BARROW_HEX.barrowBrown, 1);
+    g.fillRect(left, top, width, height);
+
+    // the far slope, in shadow
+    g.fillStyle(BARROW_HEX.pitch, 0.28);
+    if (alongX) {
+      g.fillRect(left, ridge, width, height / 2);
+    } else {
+      g.fillRect(ridge, top, width / 2, height);
+    }
+
+    // thatch: courses running with the pitch, not across it
+    g.lineStyle(1, BARROW_HEX.pitch, 0.2);
+    const step = 7;
+    if (alongX) {
+      for (let ly = top + step; ly < top + height; ly += step) {
+        g.lineBetween(left, ly, left + width, ly);
+      }
+    } else {
+      for (let lx = left + step; lx < left + width; lx += step) {
+        g.lineBetween(lx, top, lx, top + height);
+      }
+    }
+
+    // the ridge beam, and the eave line all round
+    g.lineStyle(3, BARROW_HEX.barrowDeep, 1);
+    if (alongX) {
+      g.lineBetween(left, ridge, left + width, ridge);
+    } else {
+      g.lineBetween(ridge, top, ridge, top + height);
+    }
+
+    g.lineStyle(2, BARROW_HEX.barrowDeep, 0.9);
+    g.strokeRect(left, top, width, height);
   }
 
   /** Draws the hub's residents. They stand still, so this runs once each. */
