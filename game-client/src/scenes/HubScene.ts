@@ -398,22 +398,65 @@ export class HubScene extends Phaser.Scene {
     }
 
     for (const [x, y] of GRASS) {
-      if (blocked(x, y, 10)) continue;
-      scenery.fillStyle(BARROW_HEX.arcaneDeep, 0.5);
-      scenery.fillRect(x, y, 3, 7);
-      scenery.fillRect(x + 5, y - 3, 3, 10);
-      scenery.fillRect(x + 10, y + 1, 3, 6);
+      if (blocked(x, y, 22)) continue;
+
+      // A tuft, not three strokes: blades of varied height leaning slightly
+      // apart, with a darker back rank so it reads as depth rather than a comb.
+      const blades: [number, number, number, number][] = [
+        [-14, 0, 4, 11], [-8, -3, 4, 16], [-2, -5, 5, 19],
+        [4, -2, 4, 15], [10, 1, 4, 10], [15, -1, 3, 12],
+      ];
+
+      scenery.fillStyle(BARROW_HEX.arcaneDeep, 0.55);
+      for (const [dx, dy, w, h] of blades) {
+        scenery.fillRect(x + dx, y + dy, w, h);
+      }
+
+      // the front rank, lighter, shorter, offset
+      scenery.fillStyle(BARROW_HEX.arcane, 0.4);
+      for (const [dx, dy, w, h] of blades) {
+        scenery.fillRect(x + dx + 2, y + dy + 4, w - 1, h - 5);
+      }
     }
 
     for (const [x, y] of TREES) {
-      if (blocked(x, y - 6, 30)) continue;
-      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
-      scenery.fillRect(x - 5, y, 10, 26);
+      if (blocked(x, y - 10, 46)) continue;
 
+      // roots flaring into the ground, so the trunk sits in the earth rather
+      // than on top of it
+      scenery.fillStyle(BARROW_HEX.pitch, 0.35);
+      scenery.fillEllipse(x, y + 34, 44, 12);
+
+      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
+      scenery.fillRect(x - 8, y, 16, 34);
+      scenery.fillRect(x - 13, y + 26, 26, 8);
+      // the shaded side of the bark
+      scenery.fillStyle(BARROW_HEX.pitch, 0.4);
+      scenery.fillRect(x + 2, y, 6, 34);
+      // two boughs leaving the trunk
+      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
+      scenery.fillRect(x - 18, y - 2, 12, 5);
+      scenery.fillRect(x + 7, y - 8, 12, 5);
+
+      // the crown, built from overlapping masses rather than one disc
       scenery.fillStyle(BARROW_HEX.arcaneDeep, 1);
-      scenery.fillCircle(x, y - 6, 26);
-      scenery.fillStyle(BARROW_HEX.arcane, 0.55);
-      scenery.fillCircle(x - 7, y - 12, 14);
+      scenery.fillCircle(x, y - 14, 32);
+      scenery.fillCircle(x - 22, y - 4, 22);
+      scenery.fillCircle(x + 21, y - 7, 21);
+      scenery.fillCircle(x - 6, y - 36, 22);
+      scenery.fillCircle(x + 14, y - 30, 18);
+
+      // light catching the upper left, the way the torch pool falls
+      scenery.fillStyle(BARROW_HEX.arcane, 0.45);
+      scenery.fillCircle(x - 12, y - 26, 16);
+      scenery.fillCircle(x - 2, y - 38, 10);
+      scenery.fillStyle(BARROW_HEX.arcane, 0.25);
+      scenery.fillCircle(x + 10, y - 18, 12);
+
+      // a few gaps, so the mass is not solid
+      scenery.fillStyle(BARROW_HEX.pitch, 0.3);
+      scenery.fillCircle(x + 6, y - 6, 6);
+      scenery.fillCircle(x - 18, y - 18, 5);
     }
 
     for (const [x, y, length, horizontal] of FENCES) {
