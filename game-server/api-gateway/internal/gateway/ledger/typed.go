@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/ledger"
 )
@@ -54,6 +55,9 @@ var (
 	}
 	errsListEntries = []int{
 		http.StatusUnauthorized,
+		// forbidden included, because this is a strictly admin feature that if any
+		// other role access should provide a 403, and will not reveal anything as
+		// its not a specific targetted ID thats revealed.
 		http.StatusForbidden,
 		http.StatusUnprocessableEntity,
 		http.StatusServiceUnavailable,
@@ -151,10 +155,70 @@ func registerGetTransaction(api huma.API, h *Handler, claims ClaimsFunc,
 func registerListEntries(api huma.API, h *Handler, claims ClaimsFunc,
 	protect func(huma.Context, func(huma.Context)),
 ) {
+
 	type input struct {
-		Cursor    string  `query:"cursor" doc:"opaque position, do not construct."`
-		Limit     int     `query:"limit" default:"50" minimum:"1" maximum:"100"`
-		AccountID *string `query:"account_id" format:"uuid" doc:"admin only"`
+		Cursor          string  `query:"cursor" doc:"opaque position, do not construct."`
+		Limit           int     `query:"limit" default:"50" minimum:"1" maximum:"100"`
+		AccountIDTarget *string `query:"account_id" format:"uuid" doc:"admin only"`
 	}
 
+	type output struct {
+		Body EntryPage
+	}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-entries",
+		Description: "Page a flat, time-ordered history of ledger entries, newest first. " +
+			"Omitting account_id returns the caller's own entries. Supplying it is an " +
+			"admin-only request to read another account's history.",
+		Errors:      errsListEntries,
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodGet,
+		Path:        "/api/ledger/entries",
+		Summary:     "Page ledger entries",
+		Tags:        []string{"ledger"},
+	},
+		guard(func(ctx context.Context, in *input) (*output, error) {
+			c, ok := claims(ctx)
+
+			// no claims, directly return unauthenticated
+			if !ok {
+				return nil, unauthenticated()
+			}
+
+			// --- validate required claims are present for intended query ---
+			isAdmin := commonauth.Role(c.Role) == commonauth.RoleAdmin
+
+			// -- account id target --
+			// only check if target actually exists in the param
+			if in.AccountIDTarget != nil {
+				if !isAdmin {
+					return nil, apperr.WithDetail(apperr.ErrForbidden, "Resource restricted to admins.")
+				}
+
+				// -- account id for members --
+				// account id required if not targetting a specific account, otherwise you need to be an admin
+			} else if c.AccountID == "" && !isAdmin {
+				return nil, unauthenticated()
+			}
+
+			res, err := h.client.ListEntries(ctx, &pb.ListEntriesRequest{
+				AccountIdTarget: in.AccountIDTarget,
+				Cursor:          in.Cursor,
+				Limit:           int32(in.Limit),
+			})
+
+			if err != nil {
+				return nil, err
+			}
+
+			resBody := entryPageFromProto(res)
+
+			if resBody == nil {
+				return nil, fmt.Errorf("ledger-service returned no entries")
+			}
+
+			return &output{Body: *resBody}, nil
+		}))
 }
