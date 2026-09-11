@@ -3085,7 +3085,6 @@ export class BarrowspireScene extends Phaser.Scene {
     });
 
     // Disable browser right-click menu for equipment panel context menus
-    this.input.mouse?.disableContextMenu();
 
     // 技能攻擊控制 (Left-Click Primary Attack 0 MP // Right-Click Special Skill 10 MP)
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {

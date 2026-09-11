@@ -11,6 +11,11 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Game-wide, not per-scene: right-clicking the canvas is a game input, and
+    // every scene that remembered to disable the browser menu for itself was one
+    // more that could forget. Set once, here, at the way in.
+    this.input.mouse?.disableContextMenu();
+
     // 直接從 localStorage 讀取 auth 資料
     let token = "";
     let name = "Guest";

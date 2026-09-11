@@ -190,7 +190,6 @@ export class LoadoutScene extends Phaser.Scene {
     this.loadData();
 
     // Disable default right-click context menu
-    this.input.mouse?.disableContextMenu();
   }
 
   private async loadData(): Promise<void> {
