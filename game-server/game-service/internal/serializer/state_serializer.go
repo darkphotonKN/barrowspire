@@ -277,10 +277,11 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			npc := npcComp.(*components.NPCComponent)
 
 			backendState.NPCs = append(backendState.NPCs, &types.NPCState{
-				EntityID: entity.ID,
-				Name:     npc.Name,
-				Function: string(npc.Function),
-				Position: &types.Position{X: transform.X, Y: transform.Y},
+				EntityID:   entity.ID,
+				Name:       npc.Name,
+				Function:   string(npc.Function),
+				Appearance: npc.Appearance,
+				Position:   &types.Position{X: transform.X, Y: transform.Y},
 			})
 		}
 

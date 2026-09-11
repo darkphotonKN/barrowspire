@@ -249,6 +249,7 @@ func CreateResidentEntity(em *ecs.EntityManager, resident hubResident) *ecs.Enti
 	entity := em.CreateEntity()
 	npc := components.NewNPCComponent(resident.Name, components.NPCFunctionNone)
 	npc.Wander = &region
+	npc.Appearance = resident.Appearance
 	entity.AddComponent(npc)
 	entity.AddComponent(components.NewTransformComponent(
 		region.X+region.W/2,

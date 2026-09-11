@@ -122,6 +122,8 @@ export interface NPCState {
   entity_id: UUID;
   name: string;
   function: "" | "delve" | "storekeeper";
+  /** How they look, e.g. "green_skirt". Empty for a function NPC. */
+  appearance?: string;
   position: Position;
 }
 

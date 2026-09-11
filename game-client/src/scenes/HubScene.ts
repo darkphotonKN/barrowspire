@@ -12,6 +12,7 @@ import {
 import { BARROW_HEX } from "@/utils/theme";
 import {
   ensureCharacterTextures,
+  ensureVillagerTexture,
   drawDelverLegs,
   type Facing,
 } from "@/utils/characterTextures";
@@ -159,6 +160,9 @@ export class HubScene extends Phaser.Scene {
       state: NPCState;
       sprite: Phaser.GameObjects.Container;
       target: { x: number; y: number };
+      facing: Facing;
+      /** Set for residents, who turn; function NPCs keep their one texture. */
+      texture?: string;
     }
   >();
   /** Whose dialogue is open, if any, and what its options do. */
@@ -507,17 +511,38 @@ export class HubScene extends Phaser.Scene {
       const existing = this.npcs.get(npc.entity_id);
 
       if (existing) {
+        // A resident faces the way they are walking, worked out from where the
+        // server has moved them since the last tick.
+        const facing = facingFrom(
+          npc.position.x - existing.target.x,
+          npc.position.y - existing.target.y,
+          existing.facing,
+        );
+
         existing.target = { x: npc.position.x, y: npc.position.y };
+
+        if (facing !== existing.facing && existing.texture) {
+          existing.facing = facing;
+          const body = existing.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+          body?.setTexture(`${existing.texture}_${facing}`);
+        }
+
         continue;
       }
 
-      // Brass marks the NPCs worth crossing the hub for; residents are plainer,
-      // so a delver can tell at a glance who is worth walking to.
+      // Residents are ordinary folk and are drawn as such; the two function NPCs
+      // keep the delver silhouette, tinted brass so it is legible at a glance
+      // which of them is worth crossing the hub for.
       const isFunction = npc.function !== "";
-      const tone = isFunction ? BARROW_HEX.brassBright : BARROW_HEX.vellumFaint;
+      const tone = isFunction ? BARROW_HEX.brassBright : BARROW_HEX.vellum;
+      const texture = isFunction
+        ? undefined
+        : ensureVillagerTexture(this, npc.appearance ?? "green_trousers");
 
-      const body = this.add.sprite(0, 0, textureFor("warrior", "down"));
-      body.setTint(tone);
+      const body = texture
+        ? this.add.sprite(0, 0, `${texture}_down`)
+        : this.add.sprite(0, 0, textureFor("warrior", "down")).setTint(tone);
+      body.setName("body");
 
       const name = this.add
         .text(0, -PLAYER_RADIUS - 14, npc.name, {
@@ -534,6 +559,8 @@ export class HubScene extends Phaser.Scene {
         state: npc,
         sprite,
         target: { x: npc.position.x, y: npc.position.y },
+        facing: "down",
+        texture,
       });
     }
   }

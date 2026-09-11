@@ -45,6 +45,10 @@ type NPCComponent struct {
 	Function NPCFunction
 	// Set for a resident; nil for a function NPC, who stands still.
 	Wander *WanderRegion
+	// How they look, e.g. "green_skirt". Authored in the hub's map data so a
+	// resident looks the same to everyone and after a restart. Empty means the
+	// client picks something sensible.
+	Appearance string
 }
 
 func (n *NPCComponent) Type() ecs.ComponentType {

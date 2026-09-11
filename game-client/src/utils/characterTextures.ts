@@ -1,6 +1,8 @@
 import Phaser from "phaser";
 import { palette } from "@/utils/canvasPalette";
 
+export type Facing = "up" | "down" | "left" | "right";
+
 interface KnightPalette {
   helm: number;
   helmShade: number;
@@ -92,6 +94,202 @@ const ARCHER_PALETTE: ArcherPalette = {
   string: 0xf2ebd9,
   ink: 0x0d0b0a,
 };
+
+interface VillagerPalette {
+  hair: number;
+  hairShade: number;
+  skin: number;
+  skinShade: number;
+  eye: number;
+  cloth: number;
+  clothShade: number;
+  clothLight: number;
+  trim: number;
+  ink: number;
+}
+
+/**
+ * The hub's residents: four of them, so four palettes.
+ *
+ * Muted and earthy on purpose. The canvas uses colour as a readability channel —
+ * amber means interactable, brass means a frame — so villagers wear the greens,
+ * browns and faded blues that signal nothing at all. A resident who caught the
+ * eye would be lying about being worth crossing the hub for.
+ */
+const VILLAGER_PALETTES: Record<string, VillagerPalette> = {
+  green: {
+    hair: 0x4a3826, hairShade: 0x33261a, skin: 0xb08968, skinShade: 0x8a6a50,
+    eye: 0x1c1712, cloth: 0x5a6b42, clothShade: 0x404d2f, clothLight: 0x6e8052,
+    trim: 0x7a6440, ink: 0x1c1712,
+  },
+  rust: {
+    hair: 0x6b4a2a, hairShade: 0x4c341d, skin: 0xc09a78, skinShade: 0x94745a,
+    eye: 0x1c1712, cloth: 0x7a4a33, clothShade: 0x5a3524, clothLight: 0x8f5b40,
+    trim: 0x5a4632, ink: 0x1c1712,
+  },
+  slate: {
+    hair: 0x2e2a26, hairShade: 0x1f1c19, skin: 0xa87f5f, skinShade: 0x82624a,
+    eye: 0x1c1712, cloth: 0x4a5560, clothShade: 0x343d46, clothLight: 0x5c6a76,
+    trim: 0x6b6349, ink: 0x1c1712,
+  },
+  flax: {
+    hair: 0x8a7442, hairShade: 0x64542f, skin: 0xc2a180, skinShade: 0x977c60,
+    eye: 0x1c1712, cloth: 0x8a7a52, clothShade: 0x665a3c, clothLight: 0x9e8c62,
+    trim: 0x5a4632, ink: 0x1c1712,
+  },
+};
+
+/**
+ * Draws one of the hub's residents.
+ *
+ * Ordinary folk: no helm, no staff, no bow. `skirt` widens the garment from the
+ * waist down instead of splitting it into legs, which at this scale is the whole
+ * of the difference — twenty-six pixels tall leaves no room for anything subtler.
+ */
+export function drawVillager(
+  g: Phaser.GameObjects.Graphics,
+  facing: Facing,
+  pal: VillagerPalette,
+  skirt: boolean,
+): void {
+  const P = 2;
+  const W = 24;
+  const H = 26;
+  const ox = (60 - W * P) / 2;
+  const oy = (60 - H * P) / 2;
+
+  const grid: (number | null)[][] = Array.from({ length: H }, () =>
+    Array<number | null>(W).fill(null),
+  );
+  const set = (x: number, y: number, c: number) => {
+    if (x < 0 || x >= W || y < 0 || y >= H) return;
+    grid[y][x] = c;
+  };
+  const bar = (y: number, x0: number, x1: number, c: number) => {
+    for (let x = x0; x <= x1; x++) set(x, y, c);
+  };
+
+  const back = facing === "up";
+  const left = facing === "left";
+  const right = facing === "right";
+  const side = left || right;
+  const lean = left ? -1 : right ? 1 : 0;
+  const cx = 11 + lean;
+
+  // hair, and the head under it
+  bar(2, cx - 3, cx + 3, pal.hair);
+  bar(3, cx - 4, cx + 4, pal.hair);
+  for (let y = 4; y <= 6; y++) bar(y, cx - 4, cx + 4, pal.skin);
+  bar(4, cx - 4, cx + 4, pal.hair);
+  if (skirt) {
+    // longer hair falls past the jaw
+    for (let y = 5; y <= 8; y++) {
+      set(cx - 4, y, pal.hair);
+      set(cx + 4, y, pal.hair);
+    }
+  }
+  bar(7, cx - 3, cx + 3, pal.skin);
+  for (let y = 4; y <= 7; y++) set(cx + 4, y, pal.skinShade);
+
+  if (!back) {
+    if (side) {
+      set(cx + (right ? 2 : -2), 5, pal.eye);
+    } else {
+      set(cx - 2, 5, pal.eye);
+      set(cx + 2, 5, pal.eye);
+    }
+  }
+
+  // shoulders and body
+  bar(8, cx - 4, cx + 4, pal.cloth);
+  for (let y = 9; y <= 14; y++) {
+    bar(y, cx - 4, cx + 4, pal.cloth);
+    set(cx + 4, y, pal.clothShade);
+    set(cx - 4, y, pal.clothLight);
+  }
+
+  // a belt, or an apron tie
+  bar(13, cx - 4, cx + 4, pal.trim);
+
+  // arms
+  for (let y = 9; y <= 13; y++) {
+    set(cx - 5, y, pal.cloth);
+    set(cx + 5, y, pal.clothShade);
+  }
+  set(cx - 5, 14, pal.skin);
+  set(cx + 5, 14, pal.skinShade);
+
+  if (skirt) {
+    // the garment widens to the hem
+    for (let y = 15; y <= 22; y++) {
+      const w = 4 + Math.floor((y - 14) / 2);
+      bar(y, cx - w, cx + w, pal.cloth);
+      for (let x = cx + 1; x <= cx + w; x++) set(x, y, pal.clothShade);
+      set(cx - w, y, pal.clothLight);
+    }
+    bar(23, cx - 7, cx + 7, pal.clothShade);
+    // feet peep out
+    set(cx - 3, 24, pal.hairShade);
+    set(cx + 2, 24, pal.hairShade);
+  } else {
+    for (let y = 15; y <= 18; y++) bar(y, cx - 4, cx + 4, pal.cloth);
+    // trousers
+    for (let y = 19; y <= 23; y++) {
+      bar(y, cx - 4, cx - 1, pal.trim);
+      bar(y, cx + 1, cx + 4, pal.trim);
+    }
+    bar(24, cx - 4, cx - 1, pal.hairShade);
+    bar(24, cx + 1, cx + 4, pal.hairShade);
+  }
+
+  // outline
+  const ink: Array<[number, number]> = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (grid[y][x] !== null) continue;
+      const near =
+        grid[y][x - 1] != null ||
+        grid[y][x + 1] != null ||
+        grid[y - 1]?.[x] != null ||
+        grid[y + 1]?.[x] != null;
+      if (near) ink.push([x, y]);
+    }
+  }
+  ink.forEach(([x, y]) => set(x, y, pal.ink));
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const c = grid[y][x];
+      if (c === null) continue;
+      g.fillStyle(c, 1);
+      g.fillRect(ox + x * P, oy + y * P, P, P);
+    }
+  }
+}
+
+/**
+ * An appearance is "<palette>_<build>", e.g. "green_skirt" — authored in the
+ * hub's map data so a resident looks the same to everyone and after a restart,
+ * rather than being hashed out of an entity id that changes.
+ */
+export function ensureVillagerTexture(scene: Phaser.Scene, appearance: string): string {
+  const [tone, build] = appearance.split("_");
+  const pal = VILLAGER_PALETTES[tone] ?? VILLAGER_PALETTES.green;
+  const skirt = build === "skirt";
+
+  const facings: Facing[] = ["down", "up", "left", "right"];
+  for (const facing of facings) {
+    const key = `villager_${tone}_${build}_${facing}`;
+    if (scene.textures.exists(key) && scene.textures.get(key).key !== "__MISSING") continue;
+
+    const g = scene.make.graphics({});
+    drawVillager(g, facing, pal, skirt);
+    g.generateTexture(key, 60, 60);
+    g.destroy();
+  }
+
+  return `villager_${tone}_${build}`;
+}
 
 export function drawKnight(
   g: Phaser.GameObjects.Graphics,
@@ -470,8 +668,6 @@ export function ensureCharacterTextures(scene: Phaser.Scene): void {
     }
   }
 }
-
-export type Facing = "up" | "down" | "left" | "right";
 
 /**
  * Draws a delver's legs beneath their sprite, swinging while they walk.

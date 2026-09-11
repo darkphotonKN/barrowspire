@@ -70,18 +70,19 @@ const hubWallThickness = 20
 // Kept few on purpose: the hub is the only world doing N per-player formats per
 // tick, so every resident is paid for by everyone standing in it.
 type hubResident struct {
-	Name   string
-	Region components.WanderRegion
+	Name       string
+	Appearance string
+	Region     components.WanderRegion
 }
 
 // Their quarters sit in the open ground the buildings leave, and away from the
 // spawn and the two function NPCs so nobody has to walk through a crowd to reach
 // the Spirewarden.
 var hubResidents = []hubResident{
-	{Name: "Cottar", Region: components.WanderRegion{X: 560, Y: 560, W: 260, H: 200}},
-	{Name: "Herbwife", Region: components.WanderRegion{X: 1120, Y: 540, W: 260, H: 220}},
-	{Name: "Woodcutter", Region: components.WanderRegion{X: 700, Y: 820, W: 300, H: 140}},
-	{Name: "Bellringer", Region: components.WanderRegion{X: 1180, Y: 820, W: 280, H: 140}},
+	{Name: "Cottar", Appearance: "rust_trousers", Region: components.WanderRegion{X: 560, Y: 560, W: 260, H: 200}},
+	{Name: "Herbwife", Appearance: "green_skirt", Region: components.WanderRegion{X: 1120, Y: 540, W: 260, H: 220}},
+	{Name: "Woodcutter", Appearance: "slate_trousers", Region: components.WanderRegion{X: 700, Y: 820, W: 300, H: 140}},
+	{Name: "Bellringer", Appearance: "flax_skirt", Region: components.WanderRegion{X: 1180, Y: 820, W: 280, H: 140}},
 }
 
 /**

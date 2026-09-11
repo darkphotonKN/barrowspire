@@ -196,7 +196,9 @@ type NPCState struct {
 	EntityID uuid.UUID `json:"entity_id"`
 	Name     string    `json:"name"`
 	Function string    `json:"function"`
-	Position *Position `json:"position"`
+	// How they look; empty for a function NPC.
+	Appearance string    `json:"appearance"`
+	Position   *Position `json:"position"`
 }
 
 type SwitchState struct {
