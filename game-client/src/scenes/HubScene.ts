@@ -81,9 +81,15 @@ const WALK_STEP = 0.3;
  * see drawScenery — so it lives here rather than in the world.
  */
 const HEARTH: [number, number] = [1000, 640];
-/** A well, a market stall, two carts and some crates, all at fixed spots. */
+/** How far a roof overhangs the walls it rests on. */
+const ROOF_EAVE = 10;
+/** A well, market stalls, two carts and some crates, all at fixed spots. */
 const WELL: [number, number] = [820, 460];
-const STALL: [number, number] = [1260, 420];
+const STALLS: [number, number][] = [
+  [1240, 560],
+  [700, 500],
+  [1340, 900],
+];
 const CARTS: [number, number][] = [[540, 430], [1420, 900]];
 const CRATES: [number, number][] = [
   [1300, 470], [1330, 500], [880, 900], [910, 872], [520, 760],
@@ -408,13 +414,16 @@ export class HubScene extends Phaser.Scene {
     // lists of fixed coordinates with nothing but a person comparing them. A
     // tree grew inside a wall twice before this; now the scene simply declines
     // to draw anything standing in one.
+    // Buildings are wider than their walls: the roof overhangs by ROOF_EAVE on
+    // every side, and a prop clearing the wall by five pixels still ends up
+    // sliced by the eave. The guard clears what a building *looks* like.
     const blocked = (x: number, y: number, radius: number) =>
       walls.some(
         (wall) =>
-          x + radius >= wall.position.x &&
-          x - radius <= wall.position.x + wall.width &&
-          y + radius >= wall.position.y &&
-          y - radius <= wall.position.y + wall.height,
+          x + radius >= wall.position.x - ROOF_EAVE &&
+          x - radius <= wall.position.x + wall.width + ROOF_EAVE &&
+          y + radius >= wall.position.y - ROOF_EAVE &&
+          y - radius <= wall.position.y + wall.height + ROOF_EAVE,
       );
 
     const scenery = this.add.graphics();
@@ -547,18 +556,29 @@ export class HubScene extends Phaser.Scene {
       scenery.fillRect(wx - 26, wy - 40, 52, 8);
     }
 
-    if (!blocked(STALL[0], STALL[1], 34)) {
-      const [sx, sy] = STALL;
+    // The awnings are the one place a little colour is honest — a market is
+    // meant to catch the eye — so they alternate rather than all matching.
+    const awnings = [BARROW_HEX.oxblood, BARROW_HEX.arcaneDeep, BARROW_HEX.barrowBrown];
+
+    STALLS.forEach(([sx, sy], i) => {
+      if (blocked(sx, sy, 40)) return;
+
       scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
       scenery.fillRect(sx - 32, sy - 6, 64, 14);
       scenery.fillRect(sx - 30, sy - 30, 4, 26);
       scenery.fillRect(sx + 26, sy - 30, 4, 26);
-      // an awning, the one place a little colour is honest
-      scenery.fillStyle(BARROW_HEX.oxblood, 0.85);
+
+      // goods on the counter
+      scenery.fillStyle(BARROW_HEX.vellumFaint, 0.7);
+      scenery.fillRect(sx - 24, sy - 12, 9, 7);
+      scenery.fillRect(sx - 6, sy - 11, 7, 6);
+      scenery.fillRect(sx + 12, sy - 13, 10, 8);
+
+      scenery.fillStyle(awnings[i % awnings.length], 0.85);
       scenery.fillRect(sx - 36, sy - 36, 72, 9);
       scenery.fillStyle(BARROW_HEX.vellumFaint, 0.5);
       scenery.fillRect(sx - 36, sy - 30, 72, 3);
-    }
+    });
 
     // the fire ring, which does not move
     scenery.fillStyle(BARROW_HEX.slate, 1);
@@ -747,7 +767,7 @@ export class HubScene extends Phaser.Scene {
     g: Phaser.GameObjects.Graphics,
     { x, y, w, h }: { x: number; y: number; w: number; h: number },
   ): void {
-    const eave = 10;
+    const eave = ROOF_EAVE;
     const left = x - eave;
     const top = y - eave;
     const width = w + eave * 2;
