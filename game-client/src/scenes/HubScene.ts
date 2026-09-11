@@ -71,6 +71,17 @@ const NPC_TALK_RANGE = 80;
  * is adding a row here, not another branch in the scene. An NPC missing from this
  * table opens nothing, which is what an ambient resident is.
  */
+/**
+ * What a resident says when spoken to. They open nothing — the point is that a
+ * delver never has to wonder whether an NPC is broken.
+ */
+const RESIDENT_LINES = [
+  "The Spire took my brother's whole company.\nWe do not speak of it.",
+  "Torches burn shorter down there. Mind that.",
+  "You have the look of one who is going anyway.",
+  "Quiet season. Fewer coming back to spend.",
+];
+
 const NPC_OFFERS: Record<
   string,
   { line: string; accepts: string; declines: string; accept: (scene: HubScene) => void }
@@ -129,8 +140,21 @@ export class HubScene extends Phaser.Scene {
   private structures?: Phaser.GameObjects.Graphics;
   /** The fire's flicker, so it reads as burning rather than painted. */
   private hearth?: Phaser.GameObjects.Graphics;
-  /** The hub's residents, keyed by entity id. They do not move in this slice. */
-  private npcs = new Map<string, { state: NPCState; sprite: Phaser.GameObjects.Container }>();
+  /**
+   * The hub's residents and its function NPCs, keyed by entity id.
+   *
+   * Residents walk, so each keeps a target the sprite eases toward — the same
+   * treatment delvers get. Function NPCs never move, so their target simply
+   * never changes.
+   */
+  private npcs = new Map<
+    string,
+    {
+      state: NPCState;
+      sprite: Phaser.GameObjects.Container;
+      target: { x: number; y: number };
+    }
+  >();
   /** Whose dialogue is open, if any, and what its options do. */
   private dialogue?: Phaser.GameObjects.Container;
   private dialogueChoices?: { confirm: () => void; dismiss: () => void };
@@ -237,6 +261,11 @@ export class HubScene extends Phaser.Scene {
    * instead, the same way the run scene does.
    */
   private easeTowardServerPositions(): void {
+    for (const { sprite, target } of this.npcs.values()) {
+      sprite.x = Phaser.Math.Linear(sprite.x, target.x, POSITION_LERP);
+      sprite.y = Phaser.Math.Linear(sprite.y, target.y, POSITION_LERP);
+    }
+
     for (const view of this.views.values()) {
       const { sprite, target } = view;
 
@@ -469,23 +498,37 @@ export class HubScene extends Phaser.Scene {
   /** Draws the hub's residents. They stand still, so this runs once each. */
   private renderNPCs(npcs: NPCState[]): void {
     for (const npc of npcs) {
-      if (this.npcs.has(npc.entity_id)) continue;
+      const existing = this.npcs.get(npc.entity_id);
+
+      if (existing) {
+        existing.target = { x: npc.position.x, y: npc.position.y };
+        continue;
+      }
+
+      // Brass marks the NPCs worth crossing the hub for; residents are plainer,
+      // so a delver can tell at a glance who is worth walking to.
+      const isFunction = npc.function !== "";
+      const tone = isFunction ? BARROW_HEX.brassBright : BARROW_HEX.vellumFaint;
 
       const body = this.add.sprite(0, 0, textureFor("warrior", "down"));
-      body.setTint(BARROW_HEX.brassBright);
+      body.setTint(tone);
 
       const name = this.add
         .text(0, -PLAYER_RADIUS - 14, npc.name, {
           fontFamily: CANVAS_FONT.body,
           fontSize: "12px",
-          color: toCss(BARROW_HEX.brassBright),
+          color: toCss(tone),
         })
         .setOrigin(0.5);
 
       const sprite = this.add.container(npc.position.x, npc.position.y, [body, name]);
       sprite.setDepth(10);
 
-      this.npcs.set(npc.entity_id, { state: npc, sprite });
+      this.npcs.set(npc.entity_id, {
+        state: npc,
+        sprite,
+        target: { x: npc.position.x, y: npc.position.y },
+      });
     }
   }
 
@@ -494,8 +537,16 @@ export class HubScene extends Phaser.Scene {
    * memory of what was said. FS-0008 §Requirements 24, §Out of Scope.
    */
   private openDialogue(npc: NPCState): void {
-    const offer = NPC_OFFERS[npc.function];
-    if (!offer) return;
+    const offer = NPC_OFFERS[npc.function] ?? {
+      line: RESIDENT_LINES[
+        // stable per resident, so they do not change their mind each time
+        [...npc.entity_id].reduce((sum, c) => sum + c.charCodeAt(0), 0) %
+          RESIDENT_LINES.length
+      ],
+      accepts: "Nod",
+      declines: "Say nothing",
+      accept: () => {},
+    };
 
     const { width, height } = this.cameras.main;
     const panel = this.add.graphics();

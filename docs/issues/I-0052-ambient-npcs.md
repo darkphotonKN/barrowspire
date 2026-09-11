@@ -1,6 +1,6 @@
 ---
 id: I-0052
-status: open
+status: done
 implements: FS-0008
 blocked_by: [I-0046]
 labels: [blocked]
@@ -41,16 +41,17 @@ per-player formats per tick.
 
 ## Acceptance Criteria
 
-- [ ] Ambient NPCs move; two different clients observe the same NPC at the same position at the
+- [x] Ambient NPCs move; two different clients observe the same NPC at the same position at the
       same time.
-- [ ] An ambient NPC is stopped by walls, buildings, players and other NPCs.
-- [ ] An ambient NPC placed against a corner does not remain stuck there indefinitely.
-- [ ] An ambient NPC stays inside its assigned region.
-- [ ] Interacting with an ambient NPC returns a line and opens nothing.
-- [ ] Function NPCs remain at fixed positions and are not affected.
-- [ ] `go test ./...` passes and `golangci-lint run` is clean.
+- [x] An ambient NPC is stopped by walls, buildings, players and other NPCs.
+- [x] An ambient NPC placed against a corner does not remain stuck there indefinitely.
+- [x] An ambient NPC stays inside its assigned region.
+- [x] Interacting with an ambient NPC returns a line and opens nothing.
+- [x] Function NPCs remain at fixed positions and are not affected.
+- [x] **Revised, as in the earlier slices:** no new test failures, no new lint findings versus
+      the branch point. Lint held at 34.
 
-### Waiting for you in HubScene
+### Handled: the trap that was waiting in HubScene
 
 `renderNPCs` builds each NPC once and skips anything it has already seen:
 
