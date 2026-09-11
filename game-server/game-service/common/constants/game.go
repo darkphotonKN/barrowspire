@@ -63,6 +63,13 @@ const HubMapHeight float64 = 1000
 const HubSpawnX float64 = 1000
 const HubSpawnY float64 = 800
 
+// How many delvers the hub holds at once.
+//
+// This is the door check, and distinct from the 50-player concurrency ceiling
+// ADR-0015 rests on: raising that reopens an ADR, raising this does not
+// (game-service/CONTEXT.md).
+const HubOccupancyCap int = 40
+
 // How fast a resident ambles, and how long they stand once they arrive.
 const NPCWanderSpeed float64 = 60
 const NPCPauseSeconds float64 = 1.6

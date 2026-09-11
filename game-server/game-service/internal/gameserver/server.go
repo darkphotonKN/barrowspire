@@ -168,23 +168,28 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.Character) (*game
 		username = character.Name
 	}
 
-	hub.AddPlayer(player.ID, username, character.Class)
-
+	// The door check and the admission happen under one lock. Checking for room
+	// and then taking it as two steps lets two delvers reaching for the last
+	// place both see it free, and the cap ends up quietly one over.
+	//
+	// Someone already inside is not arriving, so they are not counted against
+	// the cap and cannot be shut out of a hub they are standing in.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if !hub.HasPlayer(player.ID) && len(hub.GetPlayerIDs()) >= constants.HubOccupancyCap {
+		return nil, errHubFull
+	}
+
+	hub.AddPlayer(player.ID, username, character.Class)
+
 	connected := constants.Connected
 
-	player.Class = character.Class
-	player.Username = username
-	player.CurrentGameSessionId = hub.ID
-	player.ConnectState = &connected
-
-	if stored, exists := s.players[player.ID]; exists {
-		stored.Class = character.Class
-		stored.Username = username
-		stored.CurrentGameSessionId = hub.ID
-		stored.ConnectState = &connected
+	for _, record := range s.everyRecordOf(player) {
+		record.Class = character.Class
+		record.Username = username
+		record.CurrentGameSessionId = hub.ID
+		record.ConnectState = &connected
 	}
 
 	return hub, nil
@@ -203,20 +208,35 @@ func (s *Server) setCurrentWorld(player *types.Player, worldID uuid.UUID) {
 
 	connected := constants.Connected
 
-	player.CurrentGameSessionId = worldID
-	player.ConnectState = &connected
+	for _, record := range s.everyRecordOf(player) {
+		record.CurrentGameSessionId = worldID
+		record.ConnectState = &connected
+	}
+}
 
-	if stored, exists := s.players[player.ID]; exists {
-		stored.CurrentGameSessionId = worldID
-		stored.ConnectState = &connected
+/**
+* Collects every copy of a player the server holds.
+*
+* MapConnToPlayer stores the player by value, so connToPlayer holds a different
+* object from players — and connToPlayer is the one routing reads. Writing to one
+* and not the others leaves messages delivered to a world the player is not in.
+*
+* Callers must already hold the write lock.
+**/
+func (s *Server) everyRecordOf(player *types.Player) []*types.Player {
+	records := []*types.Player{player}
+
+	if stored, exists := s.players[player.ID]; exists && stored != player {
+		records = append(records, stored)
 	}
 
 	for _, connPlayer := range s.connToPlayer {
-		if connPlayer.ID == player.ID {
-			connPlayer.CurrentGameSessionId = worldID
-			connPlayer.ConnectState = &connected
+		if connPlayer.ID == player.ID && connPlayer != player {
+			records = append(records, connPlayer)
 		}
 	}
+
+	return records
 }
 
 /**

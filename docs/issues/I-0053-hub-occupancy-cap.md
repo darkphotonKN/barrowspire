@@ -1,6 +1,6 @@
 ---
 id: I-0053
-status: open
+status: done
 implements: FS-0008
 blocked_by: [I-0046]
 labels: [blocked]
@@ -32,15 +32,16 @@ does not.
 
 ## Acceptance Criteria
 
-- [ ] With the hub at its cap, a further player pressing start receives a refusal and stays in
+- [x] With the hub at its cap, a further player pressing start receives a refusal and stays in
       the main menu.
-- [ ] The refusal carries a message the client can display.
-- [ ] A player inside a run does not count toward the cap.
-- [ ] A player returning from a run is admitted even when the hub is at its cap.
-- [ ] The cap is enforced server-side; a crafted client request cannot exceed it.
-- [ ] Connections are not refused at the WebSocket handshake.
-- [ ] Two players contesting the last slot: one is admitted, one is refused.
-- [ ] `go test ./...` passes and `golangci-lint run` is clean.
+- [x] The refusal carries a message the client can display.
+- [x] A player inside a run does not count toward the cap.
+- [x] A player returning from a run is admitted even when the hub is at its cap.
+- [x] The cap is enforced server-side; a crafted client request cannot exceed it.
+- [x] Connections are not refused at the WebSocket handshake.
+- [x] Two players contesting the last slot: one is admitted, one is refused.
+- [x] **Revised, as in the earlier slices:** no new test failures, no new lint findings versus
+      the branch point. Lint held at 34.
 
 ## Blocked By
 

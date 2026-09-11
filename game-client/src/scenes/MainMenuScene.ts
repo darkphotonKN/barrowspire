@@ -14,6 +14,7 @@ export class MainMenuScene extends Phaser.Scene {
   private connectionStatusText?: Phaser.GameObjects.Text;
   private isConnected: boolean = false;
   private scanlineGraphics?: Phaser.GameObjects.Graphics;
+  private refusalText?: Phaser.GameObjects.Text;
   private queuePopupActive: boolean = false;
   private queueTitle?: Phaser.GameObjects.Text;
   private queuePeopleText?: Phaser.GameObjects.Text;
@@ -211,6 +212,12 @@ export class MainMenuScene extends Phaser.Scene {
     this.unsubscribeConnectionStatus = socketManager.onConnectionStatusChange(handleStatus);
 
     // Queue Notification Listeners
+    socketManager.setOnMessageError((info) => {
+      if (info.action === ActionType.EnterHub) {
+        this.showRefusal(info.message ?? "The way in is barred.");
+      }
+    });
+
     socketManager.on(
       ActionType.Find_Game,
       (payload: { in_queue?: boolean; queue_length?: number; max_players?: number }) => {
@@ -795,6 +802,36 @@ export class MainMenuScene extends Phaser.Scene {
       this.buttonBg.lineStyle(2, stroke, 0.9);
       this.buttonBg.strokeRoundedRect(btnX, btnY, btnW, btnH, 4);
     }
+  }
+
+  /**
+   * Shows why the way in was refused.
+   *
+   * A refusal the delver cannot see is a button that does nothing: pressing
+   * start and having the menu sit there is the worst reading of a full hub.
+   * FS-0008 §Requirements 32.
+   */
+  private showRefusal(message: string): void {
+    this.refusalText?.destroy();
+
+    const { width, height } = this.cameras.main;
+
+    this.refusalText = this.add
+      .text(width / 2, height / 2 + 150, message, {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "14px",
+        color: toCss(palette.damageBright),
+        backgroundColor: toCss(palette.inkDeep),
+        padding: { x: 16, y: 10 },
+        align: "center",
+      })
+      .setOrigin(0.5)
+      .setDepth(200);
+
+    this.time.delayedCall(5000, () => {
+      this.refusalText?.destroy();
+      this.refusalText = undefined;
+    });
   }
 
   private showQueuePopup(queueLength: number, maxPlayers: number = 2): void {

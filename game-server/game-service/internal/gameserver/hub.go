@@ -47,6 +47,7 @@ var (
 	errPlayerNotInSession = errors.New("player is not in a game session")
 	errSessionNotFound    = errors.New("game session no longer exists")
 	errHubMissing         = errors.New("hub world does not exist")
+	errHubFull            = errors.New("the hub is full")
 )
 
 // characterFromPayload reads the character a client is entering with, falling
@@ -183,7 +184,14 @@ func (h *messageHub) Run() {
 				if err != nil {
 					slog.Warn("Could not place player in the hub", "error", err)
 
+					// A full hub is a thing the delver can act on — wait and try
+					// again — so it says so. Everything else stays vague: the
+					// detail is in the log, not in a stranger's client.
 					clientErr := "Could not enter"
+					if errors.Is(err, errHubFull) {
+						clientErr = "The hub is full. Try again shortly."
+					}
+
 					h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
 						Action:  clientPackage.Message.Action,
 						Payload: map[string]interface{}{"message": clientErr},
