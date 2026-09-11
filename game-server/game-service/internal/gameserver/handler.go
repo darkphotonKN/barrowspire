@@ -583,15 +583,7 @@ func (s *Server) forgetCurrentWorld(player *types.Player) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	player.CurrentGameSessionId = uuid.Nil
-
-	if stored, exists := s.players[player.ID]; exists {
-		stored.CurrentGameSessionId = uuid.Nil
-	}
-
-	for _, connPlayer := range s.connToPlayer {
-		if connPlayer.ID == player.ID {
-			connPlayer.CurrentGameSessionId = uuid.Nil
-		}
+	for _, record := range s.everyRecordOf(player) {
+		record.CurrentGameSessionId = uuid.Nil
 	}
 }

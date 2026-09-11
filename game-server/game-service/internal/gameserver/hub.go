@@ -47,7 +47,6 @@ var (
 	errPlayerNotInSession = errors.New("player is not in a game session")
 	errSessionNotFound    = errors.New("game session no longer exists")
 	errHubMissing         = errors.New("hub world does not exist")
-	errHubFull            = errors.New("the hub is full")
 )
 
 // characterFromPayload reads the character a client is entering with, falling
@@ -188,7 +187,7 @@ func (h *messageHub) Run() {
 					// again — so it says so. Everything else stays vague: the
 					// detail is in the log, not in a stranger's client.
 					clientErr := "Could not enter"
-					if errors.Is(err, errHubFull) {
+					if errors.Is(err, game.ErrWorldFull) {
 						clientErr = "The hub is full. Try again shortly."
 					}
 

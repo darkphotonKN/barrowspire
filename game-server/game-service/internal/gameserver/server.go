@@ -168,20 +168,16 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.Character) (*game
 		username = character.Name
 	}
 
-	// The door check and the admission happen under one lock. Checking for room
-	// and then taking it as two steps lets two delvers reaching for the last
-	// place both see it free, and the cap ends up quietly one over.
-	//
-	// Someone already inside is not arriving, so they are not counted against
-	// the cap and cannot be shut out of a hub they are standing in.
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !hub.HasPlayer(player.ID) && len(hub.GetPlayerIDs()) >= constants.HubOccupancyCap {
-		return nil, errHubFull
+	// The world decides whether it has room, under its own lock. Counting from
+	// out here would mean holding the server's lock over data the session owns —
+	// which serialises JoinHub against itself and nothing else, so the next path
+	// into the hub would sidestep the cap without noticing.
+	if err := hub.Admit(player.ID, username, character.Class); err != nil {
+		return nil, err
 	}
 
-	hub.AddPlayer(player.ID, username, character.Class)
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	connected := constants.Connected
 
@@ -378,19 +374,15 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	connected := constants.Connected
+
 	for _, player := range players {
 		// add player to session
 		newGameSession.AddPlayer(player.ID, player.Username, player.Class)
 
-		connected := constants.Connected
-		// update player's SessionId
-		player.CurrentGameSessionId = newGameSession.ID
-		player.ConnectState = &connected
-
-		// also update player info in server's players map (if exists)
-		if existingPlayer, exists := s.players[player.ID]; exists {
-			existingPlayer.CurrentGameSessionId = newGameSession.ID
-			existingPlayer.ConnectState = &connected
+		for _, record := range s.everyRecordOf(player) {
+			record.CurrentGameSessionId = newGameSession.ID
+			record.ConnectState = &connected
 		}
 	}
 

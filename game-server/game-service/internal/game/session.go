@@ -564,6 +564,14 @@ func (s *Session) AddPlayer(playerID uuid.UUID, username string, className strin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	return s.addPlayerLocked(playerID, username, className)
+}
+
+// addPlayerLocked is AddPlayer's body. Callers hold the world's lock, so that
+// deciding whether to admit someone and admitting them cannot be split by
+// another goroutine slipping between the two.
+func (s *Session) addPlayerLocked(playerID uuid.UUID, username string, className string) uuid.UUID {
+
 	// Already here: there is nothing to build. The guard lives with the world
 	// rather than with whoever is asking, because overwriting the mapping while
 	// leaving the old entity in place gives one delver two bodies — invisible in
@@ -762,6 +770,37 @@ func (s *Session) spawnPoint() (x, y float64) {
 
 	return constants.PlayerRadius + rand.Float64()*(s.mapWidth-2*constants.PlayerRadius),
 		constants.PlayerRadius + rand.Float64()*(s.mapHeight-2*constants.PlayerRadius)
+}
+
+// ErrWorldFull is returned when a world will hold no more.
+var ErrWorldFull = errors.New("this world is full")
+
+/**
+* Admits a player, if the world has room for them.
+*
+* The capacity check and the admission happen under the world's own lock, in one
+* step. Checking for room and then taking it separately lets a crowd reaching for
+* the last place each see it free — and putting that check in a caller means the
+* next caller has to remember it, which is how the no-double-body guard came to
+* be missing from ReturnPlayersToHub.
+*
+* Only the hub has a door policy. A run's roster is matchmaking's decision, and
+* a player coming home from one is not arriving, so ReturnPlayersToHub adds them
+* directly rather than asking.
+**/
+func (s *Session) Admit(playerID uuid.UUID, username, className string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, alreadyHere := s.playerIDToEntitiesID[playerID]; !alreadyHere {
+		if s.worldType == types.WorldTypeHub && len(s.playerIDToEntitiesID) >= constants.HubOccupancyCap {
+			return fmt.Errorf("%w: %s", ErrWorldFull, s.ID)
+		}
+	}
+
+	s.addPlayerLocked(playerID, username, className)
+
+	return nil
 }
 
 // ErrSafeZone is returned when a world refuses combat.
