@@ -1,6 +1,6 @@
 ---
 id: I-0025
-status: open
+status: in-progress
 implements: FS-0003
 blocked_by: [I-0021, I-0024, I-0041]
 labels: [blocked]
@@ -113,3 +113,29 @@ FS-0003 §API surface (the `getTransaction` row, the `legs[]` table, the error-s
 - RED: request a transaction as a member with no leg in it; assert the response is
   indistinguishable from the nonexistent-id response
 - GREEN: converge both paths before response construction
+
+## Remaining — polish, plus one real blocker
+
+Gateway surface is in place: the `ledger` typed package, both ops registered, `guard`, the
+admin-only `account_id` targeting rule, and proto→transport mapping. Builds clean, `go vet`
+clean, `go test ./api-gateway/...` green.
+
+Two things stand between this and done:
+
+1. **`make openapi` panics, so the contract cannot be regenerated.** huma v2.36.0:
+   `pointers are not supported for form/header/path/query parameters`. The offending field is
+   `AccountIDTarget *string` on `listEntries`' input. The pointer is not incidental — it is how
+   "unset" is told apart from "set to empty", which §Req 25 needs so a member who *supplies*
+   `account_id` is refused rather than silently scoped back to themselves. It is the same
+   distinction the proto spells `optional`. huma cannot express it as a query param, so the
+   presence check has to move somewhere huma allows. **Design call, not a typo.** Until it is
+   made, `openapi.yaml` stays stale and the contract gates stay red.
+
+2. **`identity.EmbedClaims` has no caller, so both ops always 401.** `identity.ExtractClaims`
+   reads `claimKey` string keys; nothing writes them. `contract.Protected` populates its own
+   unexported `memberIDKey`, a different type in a different package, and stops at `member_id` —
+   it never carries `account_id` or `role`. Until the bridge writes what the extractor reads,
+   `ExtractClaims` returns `false` on every request and both handlers take the unauthenticated
+   branch. The issue's own brief calls for extending `Protected` + the identity bridge to carry
+   `account_id` and `role`; that extension is the missing half.
+

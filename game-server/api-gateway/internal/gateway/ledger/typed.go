@@ -6,25 +6,12 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/identity"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/ledger"
 )
-
-type Claims struct {
-	MemberID  string
-	AccountID string
-	Role      string
-}
-
-// MemberIDFunc reads the authenticated caller's id out of a typed handler's
-// context.
-
-// Passed in rather than imported so this package does not depend on
-// internal/contract. The gateway wires contract.MemberID here.
-type MemberIDFunc func(ctx context.Context) (string, bool)
-type ClaimsFunc func(ctx context.Context) (Claims, bool)
 
 // ErrorFunc converts a handler's returned error into one the transport renders
 // through the seam. Injected rather than imported so this package stays free of
@@ -66,15 +53,14 @@ var (
 )
 
 func RegisterOperations(api huma.API, h *Handler,
-	claims ClaimsFunc,
 	protect func(huma.Context, func(huma.Context)),
 	errFor ErrorFunc, secured []map[string][]string,
 ) {
 	toStatusError = errFor
 	securedOp = secured
 
-	registerGetTransaction(api, h, claims, protect)
-	registerListEntries(api, h, claims, protect)
+	registerGetTransaction(api, h, protect)
+	registerListEntries(api, h, protect)
 }
 
 // guard wraps a typed handler so its error goes through the seam.
@@ -98,12 +84,14 @@ func unauthenticated() error {
 	return apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated")
 }
 
+func forbidden() error {
+	return apperr.WithDetail(apperr.ErrForbidden, "Resource restricted to admins.")
+}
+
 // ---------------------------------------------------------------------------
 // Operations
 // ---------------------------------------------------------------------------
 
-// TODO: GET /api/ledger/transactions/{transaction_id}
-//
 // The masking rule is why this slice is human-authored. §Req 26: a member
 // requesting a transaction they have no leg in gets 404, byte-identical to the
 // response for an id that does not exist — same status, same code, same detail.
@@ -111,7 +99,7 @@ func unauthenticated() error {
 // The trap: `if !found {404} else if !authorized {403}` and then "fixing" the
 // 403 to a 404 leaves a code-path and detail difference. Decide the shape so
 // not-found and not-yours converge BEFORE a response is constructed.
-func registerGetTransaction(api huma.API, h *Handler, claims ClaimsFunc,
+func registerGetTransaction(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)),
 ) {
 	type input struct {
@@ -134,6 +122,18 @@ func registerGetTransaction(api huma.API, h *Handler, claims ClaimsFunc,
 		Summary:     "Get a member's transaction.",
 		Tags:        []string{"ledger"},
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		c, ok := identity.ExtractClaims(ctx)
+
+		// no claims, directly return unauthenticated
+		if !ok {
+			return nil, unauthenticated()
+		}
+
+		// not admin but account_id is missing
+		if commonauth.Role(c.Role) != commonauth.RoleAdmin && c.AccountID == "" {
+			return nil, unauthenticated()
+		}
+
 		res, err := h.client.GetTransaction(ctx, &pb.GetTransactionRequest{
 			TransactionId: in.TransactionID,
 		})
@@ -152,7 +152,7 @@ func registerGetTransaction(api huma.API, h *Handler, claims ClaimsFunc,
 	}))
 }
 
-func registerListEntries(api huma.API, h *Handler, claims ClaimsFunc,
+func registerListEntries(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)),
 ) {
 
@@ -180,7 +180,7 @@ func registerListEntries(api huma.API, h *Handler, claims ClaimsFunc,
 		Tags:        []string{"ledger"},
 	},
 		guard(func(ctx context.Context, in *input) (*output, error) {
-			c, ok := claims(ctx)
+			c, ok := identity.ExtractClaims(ctx)
 
 			// no claims, directly return unauthenticated
 			if !ok {
@@ -194,7 +194,7 @@ func registerListEntries(api huma.API, h *Handler, claims ClaimsFunc,
 			// only check if target actually exists in the param
 			if in.AccountIDTarget != nil {
 				if !isAdmin {
-					return nil, apperr.WithDetail(apperr.ErrForbidden, "Resource restricted to admins.")
+					return nil, forbidden()
 				}
 
 				// -- account id for members --

@@ -6,8 +6,8 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/auth"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/contract"
 	authService "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/auth"
-	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/example"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/item"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/ledger"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/listing"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/character"
@@ -64,15 +64,6 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	/***************
 	* MICROSERVICES
 	***************/
-
-	// --- EXAMPLE MICROSERVICE ---
-
-	exampleClient := example.NewClient(registry)
-	exampleHandler := example.NewHandler(exampleClient)
-
-	exampleRoutes := api.Group("/example")
-	exampleRoutes.GET("/:id", exampleHandler.GetExample)
-	exampleRoutes.POST("", exampleHandler.CreateExample)
 
 	// --- AUTH & MEMBERS MICROSERVICE ---
 
@@ -132,6 +123,10 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	itemClient := item.NewClient(registry)
 	itemHandler := item.NewHandler(itemClient)
 
+	//   --- LEDGER MICROSERVICE ---
+
+	ledgerClient := ledger.NewClient(registry)
+	ledgerHandler := ledger.NewHandler(ledgerClient)
 	// Item routes are SERIALIZED (FS-0002 slice 2). All eleven are typed
 	// operations in internal/gateway/item/typed.go, mounted below.
 
@@ -146,6 +141,7 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 		Notification:   notificationHandler,
 		Stats:          statsHandler,
 		Payment:        paymentHandler,
+		Ledger:         ledgerHandler,
 		AuthMiddleware: auth.AuthMiddleware(),
 	})
 

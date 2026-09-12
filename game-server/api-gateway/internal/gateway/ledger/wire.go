@@ -76,10 +76,11 @@ func entryPageFromProto(res *pb.ListEntriesResponse) *EntryPage {
 
 	for _, entry := range res.Entries {
 		newEntry := Entry{
-			ID:        entry.Id,
-			AccountID: entry.AccountId,
-			Amount:    entry.Amount,
-			Direction: entry.Direction,
+			TransactionID: entry.TransactionId,
+			ID:            entry.Id,
+			AccountID:     entry.AccountId,
+			Amount:        entry.Amount,
+			Direction:     entry.Direction,
 		}
 
 		if entry.CreatedAt != nil {
@@ -89,8 +90,13 @@ func entryPageFromProto(res *pb.ListEntriesResponse) *EntryPage {
 		entries = append(entries, newEntry)
 	}
 
+	var next *string
+	if res.Pagination != nil && res.Pagination.NextCursor != "" {
+		next = &res.Pagination.NextCursor
+	}
+
 	return &EntryPage{
 		Entries:    entries,
-		NextCursor: &res.Pagination.NextCursor,
+		NextCursor: next,
 	}
 }
