@@ -20,6 +20,21 @@ type Leg struct {
 	Direction string `json:"direction"`
 }
 
+type EntryPage struct {
+	Entries []Entry `json:"entries"`
+	// nillable, nil means no next page
+	NextCursor *string `json:"next_cursor"`
+}
+
+type Entry struct {
+	ID            string    `json:"id"`
+	TransactionID string    `json:"transaction_id"`
+	AccountID     string    `json:"account_id"`
+	Amount        int64     `json:"amount"`
+	Direction     string    `json:"direction"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 // mappers
 func transactionFromProto(res *pb.GetTransactionResponse) *Transaction {
 	if res == nil {
@@ -49,4 +64,39 @@ func transactionFromProto(res *pb.GetTransactionResponse) *Transaction {
 	}
 
 	return transaction
+}
+
+func entryPageFromProto(res *pb.ListEntriesResponse) *EntryPage {
+	// nil dereference guard
+	if res == nil {
+		return nil
+	}
+
+	entries := make([]Entry, 0, len(res.Entries))
+
+	for _, entry := range res.Entries {
+		newEntry := Entry{
+			TransactionID: entry.TransactionId,
+			ID:            entry.Id,
+			AccountID:     entry.AccountId,
+			Amount:        entry.Amount,
+			Direction:     entry.Direction,
+		}
+
+		if entry.CreatedAt != nil {
+			newEntry.CreatedAt = entry.CreatedAt.AsTime()
+		}
+
+		entries = append(entries, newEntry)
+	}
+
+	var next *string
+	if res.Pagination != nil && res.Pagination.NextCursor != "" {
+		next = &res.Pagination.NextCursor
+	}
+
+	return &EntryPage{
+		Entries:    entries,
+		NextCursor: next,
+	}
 }

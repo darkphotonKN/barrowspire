@@ -4,6 +4,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	authgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/auth"
 	itemgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/item"
+	ledgergw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/ledger"
 	notifgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
 	paygw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
 	statsgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
@@ -21,6 +22,7 @@ type Deps struct {
 	Notification *notifgw.Handler
 	Stats        *statsgw.Handler
 	Payment      *paygw.Handler
+	Ledger       *ledgergw.Handler
 
 	// AuthMiddleware is the gateway's existing gin JWT middleware. Protected
 	// operations run it per-operation; see Protected. Nil is legal and means
@@ -51,6 +53,5 @@ func RegisterOperations(api huma.API, deps Deps) {
 	notifgw.RegisterOperations(api, deps.Notification, MemberID, protect, SeamError, Secured)
 	statsgw.RegisterOperations(api, deps.Stats, SeamError)
 	paygw.RegisterOperations(api, deps.Payment, MemberID, protect, SeamError, Secured)
-
-	// The Stripe webhook is deliberately NOT here — FS-0002 §Out of Scope.
+	ledgergw.RegisterOperations(api, deps.Ledger, protect, SeamError, Secured)
 }
