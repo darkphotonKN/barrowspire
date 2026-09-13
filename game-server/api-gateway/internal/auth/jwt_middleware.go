@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/identity"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -86,6 +87,25 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// store string version for cleaner transfer to external microservices via grpc
 		c.Set("userIdStr", userIdStr)
+
+		role, ok := claims["role"].(string)
+		if !ok {
+			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,
+				"Invalid token claims"))
+			return
+		}
+
+		accountId, _ := claims["account_id"].(string)
+
+		// add member_id,  account_id and role to context for calls downstream to extract
+		ctx := c.Request.Context()
+		ctx = identity.EmbedClaims(ctx, identity.Claims{
+			MemberID:  userIdStr,
+			AccountID: accountId,
+			Role:      role,
+		})
+
+		c.Request = c.Request.WithContext(ctx)
 
 		// passdown the flow to next handler
 		c.Next()
