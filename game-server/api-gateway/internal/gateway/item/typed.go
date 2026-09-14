@@ -8,11 +8,11 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/wire"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 )
 
-// MemberIDFunc and ErrorFunc are injected rather than imported so this package
-// stays free of internal/contract. Same shape as the member group.
-type MemberIDFunc func(ctx context.Context) (string, bool)
+// ErrorFunc is injected rather than imported so this package stays free of
+// internal/contract. Same shape as the member group.
 type ErrorFunc func(error) error
 
 // securedOp marks an operation as requiring the bearer scheme the contract
@@ -138,7 +138,7 @@ var (
 
 // RegisterOperations declares the serialized items surface (FS-0002 slice 2).
 // All eleven routes are JWT-protected, so every operation carries protect.
-func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
+func RegisterOperations(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)), errFor ErrorFunc,
 	secured []map[string][]string,
 ) {
@@ -148,15 +148,15 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 
 	registerCreateWeapon(api, h, mw)
 	registerListWeapons(api, h, mw)
-	registerCreateItemTemplate(api, h, memberID, mw)
-	registerCreateCompleteWeapon(api, h, memberID, mw)
-	registerCreateCompleteArmor(api, h, memberID, mw)
-	registerCreateCompleteConsumable(api, h, memberID, mw)
+	registerCreateItemTemplate(api, h, mw)
+	registerCreateCompleteWeapon(api, h, mw)
+	registerCreateCompleteArmor(api, h, mw)
+	registerCreateCompleteConsumable(api, h, mw)
 	registerListItemTypes(api, h, mw)
 	registerListItemRarities(api, h, mw)
-	registerGetLoadout(api, h, memberID, mw)
-	registerListItemInstances(api, h, memberID, mw)
-	registerUpdateLoadout(api, h, memberID, mw)
+	registerGetLoadout(api, h, mw)
+	registerListItemInstances(api, h, mw)
+	registerUpdateLoadout(api, h, mw)
 }
 
 func registerCreateWeapon(api huma.API, h *Handler, mw huma.Middlewares) {
@@ -226,7 +226,7 @@ func registerListWeapons(api huma.API, h *Handler, mw huma.Middlewares) {
 	}))
 }
 
-func registerCreateItemTemplate(api huma.API, h *Handler, memberID MemberIDFunc, mw huma.Middlewares) {
+func registerCreateItemTemplate(api huma.API, h *Handler, mw huma.Middlewares) {
 	type input struct{ Body CreateItemTemplateBody }
 	type output struct {
 		Status int
@@ -245,10 +245,11 @@ func registerCreateItemTemplate(api huma.API, h *Handler, memberID MemberIDFunc,
 		Errors:        errsAuthedDomain,
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 
 		req := &pb.CreateItemTemplateRequest{
 			UserId:   id,
@@ -282,7 +283,7 @@ func registerCreateItemTemplate(api huma.API, h *Handler, memberID MemberIDFunc,
 	}))
 }
 
-func registerCreateCompleteWeapon(api huma.API, h *Handler, memberID MemberIDFunc, mw huma.Middlewares) {
+func registerCreateCompleteWeapon(api huma.API, h *Handler, mw huma.Middlewares) {
 	type input struct{ Body CreateCompleteWeaponBody }
 	type output struct {
 		Status int
@@ -301,10 +302,11 @@ func registerCreateCompleteWeapon(api huma.API, h *Handler, memberID MemberIDFun
 		Errors:        errsAuthedDomain,
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 		// NOTE (pioneer log): item_code, type_id and durability are REQUIRED by
 		// this request body and are then discarded — the proto has no such
 		// fields, and the legacy handler never forwarded them either. Kept
@@ -333,7 +335,7 @@ func registerCreateCompleteWeapon(api huma.API, h *Handler, memberID MemberIDFun
 	}))
 }
 
-func registerCreateCompleteArmor(api huma.API, h *Handler, memberID MemberIDFunc, mw huma.Middlewares) {
+func registerCreateCompleteArmor(api huma.API, h *Handler, mw huma.Middlewares) {
 	type input struct{ Body CreateCompleteArmorBody }
 	type output struct {
 		Status int
@@ -352,10 +354,11 @@ func registerCreateCompleteArmor(api huma.API, h *Handler, memberID MemberIDFunc
 		Errors:        errsAuthedDomain,
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 		// NOTE (pioneer log): item_code, type_id and durability are REQUIRED by
 		// this request body and are then discarded — the proto has no such
 		// fields, and the legacy handler never forwarded them either. Kept
@@ -384,7 +387,7 @@ func registerCreateCompleteArmor(api huma.API, h *Handler, memberID MemberIDFunc
 	}))
 }
 
-func registerCreateCompleteConsumable(api huma.API, h *Handler, memberID MemberIDFunc, mw huma.Middlewares) {
+func registerCreateCompleteConsumable(api huma.API, h *Handler, mw huma.Middlewares) {
 	type input struct{ Body CreateCompleteConsumableBody }
 	type output struct {
 		Status int
@@ -403,10 +406,11 @@ func registerCreateCompleteConsumable(api huma.API, h *Handler, memberID MemberI
 		Errors:        errsAuthedDomain,
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 		// NOTE (pioneer log): item_code, type_id and durability are REQUIRED by
 		// this request body and are then discarded — the proto has no such
 		// fields, and the legacy handler never forwarded them either. Kept
@@ -491,7 +495,7 @@ func registerListItemRarities(api huma.API, h *Handler, mw huma.Middlewares) {
 	}))
 }
 
-func registerGetLoadout(api huma.API, h *Handler, memberID MemberIDFunc, mw huma.Middlewares) {
+func registerGetLoadout(api huma.API, h *Handler, mw huma.Middlewares) {
 	type output struct {
 		Body resultEnvelope[*GetLoadoutResponse]
 	}
@@ -507,10 +511,11 @@ func registerGetLoadout(api huma.API, h *Handler, memberID MemberIDFunc, mw huma
 		Security:    securedOp,
 		Errors:      errsAuthed,
 	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 		res, err := h.client.GetLoadout(ctx, &pb.GetLoadoutRequest{MemberId: id})
 		if err != nil {
 			return nil, err
@@ -525,7 +530,7 @@ func registerGetLoadout(api huma.API, h *Handler, memberID MemberIDFunc, mw huma
 	}))
 }
 
-func registerListItemInstances(api huma.API, h *Handler, memberID MemberIDFunc, mw huma.Middlewares) {
+func registerListItemInstances(api huma.API, h *Handler, mw huma.Middlewares) {
 	type output struct {
 		Body resultEnvelope[*ListItemInstancesResponse]
 	}
@@ -541,10 +546,11 @@ func registerListItemInstances(api huma.API, h *Handler, memberID MemberIDFunc, 
 		Security:    securedOp,
 		Errors:      errsAuthed,
 	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 		res, err := h.client.ListItemInstances(ctx, &pb.ListItemInstancesRequest{MemberId: id})
 		if err != nil {
 			return nil, err
@@ -559,7 +565,7 @@ func registerListItemInstances(api huma.API, h *Handler, memberID MemberIDFunc, 
 	}))
 }
 
-func registerUpdateLoadout(api huma.API, h *Handler, memberID MemberIDFunc, mw huma.Middlewares) {
+func registerUpdateLoadout(api huma.API, h *Handler, mw huma.Middlewares) {
 	type input struct{ Body UpdateLoadoutBody }
 	type output struct {
 		Body resultEnvelope[*UpdateLoadoutResponse]
@@ -576,10 +582,11 @@ func registerUpdateLoadout(api huma.API, h *Handler, memberID MemberIDFunc, mw h
 		Security:    securedOp,
 		Errors:      errsAuthedDomain,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 		res, err := h.client.UpdateLoadout(ctx, &pb.UpdateLoadoutRequest{
 			MemberId: id, Slot: in.Body.Slot, ItemInstanceId: in.Body.ItemInstanceID,
 		})

@@ -9,16 +9,9 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/wire"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
-
-// MemberIDFunc reads the authenticated caller's id out of a typed handler's
-// context.
-//
-// Passed in rather than imported so this package does not depend on
-// internal/contract, which already depends on internal/httperr alongside this
-// package's own use of it. The gateway wires contract.MemberID here.
-type MemberIDFunc func(ctx context.Context) (string, bool)
 
 // RegisterOperations declares the serialized member surface (FS-0002 slice 1).
 //
@@ -30,7 +23,7 @@ type MemberIDFunc func(ctx context.Context) (string, bool)
 // h and amqpClient may hold nil clients: registration records types and
 // metadata, so cmd/openapi can build the document without dialing anything.
 func RegisterOperations(api huma.API, h *Handler,
-	memberID MemberIDFunc, protect func(huma.Context, func(huma.Context)),
+	protect func(huma.Context, func(huma.Context)),
 	errFor ErrorFunc, secured []map[string][]string,
 ) {
 	toStatusError = errFor
@@ -38,11 +31,11 @@ func RegisterOperations(api huma.API, h *Handler,
 
 	registerSignup(api, h)
 	registerSignin(api, h)
-	registerGetMember(api, h, memberID, protect)
-	registerUpdatePassword(api, h, memberID, protect)
-	registerUpdateInfo(api, h, memberID, protect)
-	registerRequestAvatarUpload(api, h, memberID, protect)
-	registerConfirmAvatarUpload(api, h, memberID, protect)
+	registerGetMember(api, h, protect)
+	registerUpdatePassword(api, h, protect)
+	registerUpdateInfo(api, h, protect)
+	registerRequestAvatarUpload(api, h, protect)
+	registerConfirmAvatarUpload(api, h, protect)
 }
 
 // ErrorFunc converts a handler's returned error into one the transport renders
@@ -158,7 +151,7 @@ func registerSignin(api huma.API, h *Handler) {
 	}))
 }
 
-func registerGetMember(api huma.API, h *Handler, memberID MemberIDFunc,
+func registerGetMember(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)),
 ) {
 	type output struct{ Body memberEnvelope }
@@ -174,10 +167,11 @@ func registerGetMember(api huma.API, h *Handler, memberID MemberIDFunc,
 		Summary:     "Get the signed-in member",
 		Tags:        []string{"member"},
 	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 
 		member, err := h.client.GetMember(ctx, &pb.GetMemberRequest{Id: id})
 		if err != nil {
@@ -192,7 +186,7 @@ func registerGetMember(api huma.API, h *Handler, memberID MemberIDFunc,
 	}))
 }
 
-func registerUpdatePassword(api huma.API, h *Handler, memberID MemberIDFunc,
+func registerUpdatePassword(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)),
 ) {
 	type input struct {
@@ -211,10 +205,11 @@ func registerUpdatePassword(api huma.API, h *Handler, memberID MemberIDFunc,
 		Summary:     "Change the signed-in member's password",
 		Tags:        []string{"member"},
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 
 		// Identity comes from the token, never the body (ADR-0001 §5).
 		res, err := h.client.UpdateMemberPassword(ctx, &pb.UpdatePasswordRequest{
@@ -235,7 +230,7 @@ func registerUpdatePassword(api huma.API, h *Handler, memberID MemberIDFunc,
 	}))
 }
 
-func registerUpdateInfo(api huma.API, h *Handler, memberID MemberIDFunc,
+func registerUpdateInfo(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)),
 ) {
 	type input struct {
@@ -254,10 +249,11 @@ func registerUpdateInfo(api huma.API, h *Handler, memberID MemberIDFunc,
 		Summary:     "Update the signed-in member's profile",
 		Tags:        []string{"member"},
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 
 		member, err := h.client.UpdateMemberInfo(ctx, &pb.UpdateMemberInfoRequest{
 			Id:     id,
@@ -276,7 +272,7 @@ func registerUpdateInfo(api huma.API, h *Handler, memberID MemberIDFunc,
 	}))
 }
 
-func registerRequestAvatarUpload(api huma.API, h *Handler, memberID MemberIDFunc,
+func registerRequestAvatarUpload(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)),
 ) {
 	type input struct {
@@ -295,10 +291,11 @@ func registerRequestAvatarUpload(api huma.API, h *Handler, memberID MemberIDFunc
 		Summary:     "Get a presigned URL for an avatar upload",
 		Tags:        []string{"member"},
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 
 		res, err := h.client.RequestAvatarUpload(ctx, &pb.RequestAvatarUploadRequest{
 			MemberId: id,
@@ -323,7 +320,7 @@ func registerRequestAvatarUpload(api huma.API, h *Handler, memberID MemberIDFunc
 	}))
 }
 
-func registerConfirmAvatarUpload(api huma.API, h *Handler, memberID MemberIDFunc,
+func registerConfirmAvatarUpload(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)),
 ) {
 	type input struct {
@@ -342,10 +339,11 @@ func registerConfirmAvatarUpload(api huma.API, h *Handler, memberID MemberIDFunc
 		Summary:     "Confirm an avatar upload completed",
 		Tags:        []string{"member"},
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 
 		res, err := h.client.ConfirmAvatarUpload(ctx, &pb.ConfirmAvatarUploadRequest{
 			MemberId: id,

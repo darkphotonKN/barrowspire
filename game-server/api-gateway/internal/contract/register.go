@@ -48,10 +48,10 @@ type Deps struct {
 func RegisterOperations(api huma.API, deps Deps) {
 	protect := Protected(deps.AuthMiddleware)
 
-	authgw.RegisterOperations(api, deps.Auth, MemberID, protect, SeamError, Secured)
-	itemgw.RegisterOperations(api, deps.Items, MemberID, protect, SeamError, Secured)
-	notifgw.RegisterOperations(api, deps.Notification, MemberID, protect, SeamError, Secured)
+	authgw.RegisterOperations(api, deps.Auth, protect, SeamError, Secured)
+	itemgw.RegisterOperations(api, deps.Items, protect, SeamError, Secured)
+	notifgw.RegisterOperations(api, deps.Notification, protect, SeamError, Secured)
 	statsgw.RegisterOperations(api, deps.Stats, SeamError)
-	paygw.RegisterOperations(api, deps.Payment, MemberID, protect, SeamError, Secured)
+	paygw.RegisterOperations(api, deps.Payment, protect, SeamError, Secured)
 	ledgergw.RegisterOperations(api, deps.Ledger, protect, SeamError, Secured)
 }

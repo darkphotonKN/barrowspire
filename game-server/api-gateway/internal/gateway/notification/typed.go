@@ -8,9 +8,9 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/wire"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/notification"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 )
 
-type MemberIDFunc func(ctx context.Context) (string, bool)
 type ErrorFunc func(error) error
 
 // securedOp marks an operation as requiring the bearer scheme the contract
@@ -68,7 +68,7 @@ var errsAuthed = []int{http.StatusUnauthorized, http.StatusBadRequest, http.Stat
 
 // RegisterOperations declares the serialized notification surface (FS-0002
 // slice 3). All three routes are JWT-protected.
-func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
+func RegisterOperations(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)), errFor ErrorFunc,
 	secured []map[string][]string,
 ) {
@@ -86,10 +86,11 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		Tags:        []string{"notification"},
 		Middlewares: mw, Security: securedOp, Errors: errsAuthed,
 	}, guard(func(ctx context.Context, _ *struct{}) (*listOut, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 		res, err := h.client.GetNotification(ctx, &pb.NotificationRequest{UserId: id})
 		if err != nil {
 			return nil, err
@@ -121,10 +122,11 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		if in.ID == "" {
 			return nil, apperr.WithDetail(apperr.ErrValidation, "Notification ID is required")
 		}
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 		res, err := h.client.MarkNotificationAsRead(ctx, &pb.MarkNotificationAsReadRequest{
 			NotificationId: in.ID, UserId: id,
 		})
@@ -146,10 +148,11 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		Tags:        []string{"notification"},
 		Middlewares: mw, Security: securedOp, Errors: errsAuthed,
 	}, guard(func(ctx context.Context, _ *struct{}) (*allOut, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 		res, err := h.client.MarkAllNotificationsAsRead(ctx, &pb.MarkAllNotificationsAsReadRequest{UserId: id})
 		if err != nil {
 			return nil, err

@@ -8,9 +8,9 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/wire"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/payment"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 )
 
-type MemberIDFunc func(ctx context.Context) (string, bool)
 type ErrorFunc func(error) error
 
 // securedOp marks an operation as requiring the bearer scheme the contract
@@ -104,7 +104,7 @@ var errsAuthed = []int{http.StatusUnauthorized, http.StatusBadRequest, http.Stat
 //
 // Serializing it would break signature verification in a way that surfaces only
 // as failed live payments. It stays a legacy gin route (FS-0002 §Out of Scope).
-func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
+func RegisterOperations(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)), errFor ErrorFunc,
 	secured []map[string][]string,
 ) {
@@ -124,10 +124,11 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		Tags:        []string{"payment"}, Middlewares: mw, Security: securedOp, Errors: errsAuthed,
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *custIn) (*custOut, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 		res, err := h.client.CreateCustomer(ctx, &pb.CreateCustomerRequest{UserId: id, Email: in.Body.Email})
 		if err != nil {
 			return nil, err
@@ -178,10 +179,11 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		Description: "Creates (or reuses) the Stripe customer, then subscribes them to the product.",
 		Tags:        []string{"payment"}, Middlewares: mw, Security: securedOp, Errors: errsAuthed,
 	}, guard(func(ctx context.Context, in *subIn) (*subOut, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 		// Two downstream calls, transcribed in order: the customer is created
 		// first and its id feeds the subscribe call.
 		cust, err := h.client.CreateCustomer(ctx, &pb.CreateCustomerRequest{UserId: id, Email: in.Body.Email})
@@ -235,10 +237,11 @@ func RegisterOperations(api huma.API, h *Handler, memberID MemberIDFunc,
 		Description: "Polling endpoint: reports whether the signed-in member currently holds an active subscription.",
 		Tags:        []string{"payment"}, Middlewares: mw, Security: securedOp, Errors: errsAuthed,
 	}, guard(func(ctx context.Context, _ *struct{}) (*permOut, error) {
-		id, ok := memberID(ctx)
+		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
+		id := caller.MemberID.String()
 		res, err := h.client.CheckPermission(ctx, &pb.CheckPermissionRequest{UserId: id})
 		if err != nil {
 			return nil, err

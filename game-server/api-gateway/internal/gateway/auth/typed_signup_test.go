@@ -26,7 +26,7 @@ func newTypedRouter(client gwauth.AuthClient) *gin.Engine {
 	h := gwauth.NewHandler(client)
 	gwauth.RegisterOperations(
 		api, h,
-		contract.MemberID, contract.Protected(nil), contract.SeamError, contract.Secured,
+		contract.Protected(nil), contract.SeamError, contract.Secured,
 	)
 	return r
 }
