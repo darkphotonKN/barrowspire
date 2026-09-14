@@ -148,7 +148,9 @@ func TestAuthMiddleware_DoesNotEchoTheToken(t *testing.T) {
 // the regression most worth pinning.
 //
 // The fixture carries role and account_id because a real access token does:
-// FS-0006 mints both. A sub-only token is not the happy path any more.
+// FS-0006 mints both, and FS-0003 §Requirement 29 makes a token without a role
+// unauthorizable rather than a caller to default. A sub-only token is not the
+// happy path any more.
 func TestAuthMiddleware_ValidToken_PassesAndSetsIdentity(t *testing.T) {
 	id := uuid.New()
 	accountID := uuid.New()

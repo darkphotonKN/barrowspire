@@ -7,7 +7,7 @@ labels: [blocked]
 title: "FS-0003 slice 12: getTransaction end-to-end — repo read, gRPC arm, Huma op, 404 masking"
 ---
 
-Implements FS-0003 §API surface, §Requirements 21-22, 24, 26-27, 30
+Implements FS-0003 §API surface, §Requirements 21-22, 24, 26-27, 29-30
 
 **Author: human** — do NOT hand this to `/develop`. The masking rule below is a security
 property that is easy to implement _almost_ correctly and hard to catch in review.
@@ -64,15 +64,23 @@ before a response is constructed, not after.
 Log the real reason server-side. The seam already does this (`slog` with the true `code`), so
 masking on the wire costs no diagnosability.
 
-## Identity, and the role that does not exist yet
+## Identity, and the role that now arrives
 
-§Req 24: identity and role come from the verified token, never a parameter. §Req 29: this feature
-builds the **seam** that reads `role` from transport metadata; **issuing the claim is another
-feature's problem**, and no JWT in this system carries one today.
+§Req 24: identity and role come from the verified token, never a parameter. §Req 29 has been
+amended since this slice was cut: [FS-0006](../specs/0006-account-and-role-token-claims.md)
+shipped, so **every access token carries a `role` claim** minted off `members.role`.
 
-So: read `role` from metadata, and define the absent case explicitly — **no role claim means
-`member`**, never admin. Fail closed. Write it as a named decision in the code, not an implicit
-zero-value default, so the auth feature that lands the claim later can find it.
+So the absent case is **not** this slice's to absorb. `AuthMiddleware` refuses claims carrying no
+string `role` with `401 · UNAUTHENTICATED` before any handler runs — the earlier reading here,
+"no role claim means `member`", is **withdrawn**. A named member-default silently promotes an
+unauthorizable token into an authorized one and makes a minting regression look like ordinary
+member traffic. Do not reintroduce it as an implicit zero-value default either: the middleware
+must reject, not fall through.
+
+Past the middleware the claim is present, so scoping in the typed handler is a **comparison for
+`admin`** — only the exact value is admin. A value outside `player | admin` is a *different* case
+from absence: the minter passes `members.role` through verbatim and the column has no `CHECK`, so
+an unrecognised value reaches the handler and is **non-admin, not an error**.
 
 §Req 27: evaluating "has a leg of theirs" needs the member's own `account_id`, and that arrives
 as a **verified token claim** — there is no wallet lookup. So `getTransaction` is **one hop**,
@@ -86,7 +94,10 @@ never an empty result: fail closed, same posture as the missing role claim above
 - [ ] A member requesting a transaction with no leg of theirs receives `404 · NOT_FOUND`
 - [ ] That response is **byte-identical** to the response for a nonexistent id — asserted
       field-by-field including `detail`, not just on status
-- [ ] A request with no role claim is treated as `member`, never admin
+- [ ] A token whose claims carry no `role` receives `401 · UNAUTHENTICATED` from
+      `AuthMiddleware`, never a fall-through to `member` scoping
+- [ ] A token carrying a `role` outside `player | admin` is treated as non-admin and is **not**
+      an error
 - [ ] A token missing the `account_id` claim receives `401 · UNAUTHENTICATED`, never an empty
       or unscoped result
 - [ ] The handler makes exactly one downstream call — no wallet lookup
@@ -106,7 +117,8 @@ never an empty result: fail closed, same posture as the missing role claim above
 
 FS-0003 §API surface (the `getTransaction` row, the `legs[]` table, the error-semantics table),
 §Requirements 21 (the split), 22 (nested), 24 (identity from token), 26 (the masking rule),
-27 (`account_id` as a token claim), 30 (problem+json, 503 not 500), 31 (bare payloads).
+27 (`account_id` as a token claim), 29 (`role` is always present; absence is a `401` at the
+middleware), 30 (problem+json, 503 not 500), 31 (bare payloads).
 
 ## TDD Approach
 
