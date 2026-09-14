@@ -66,10 +66,10 @@ func (s *stubAuthClient) ConfirmAvatarUpload(context.Context, *pb.ConfirmAvatarU
 	return s.confirmAvatar, s.err
 }
 
-// newRouter mounts the auth routes the way config/routes.go does. The identity
-// middleware is stubbed rather than real: these tests are about error
-// translation, and I-0002 already covers the JWT paths.
-func newRouter(client gwauth.AuthClient, identity string) *gin.Engine {
+// newRouter mounts the public auth routes the way config/routes.go does. The
+// member-scoped routes are typed operations now and read the caller from
+// commonauth; see typed.go.
+func newRouter(client gwauth.AuthClient) *gin.Engine {
 	r := gin.New()
 	h := gwauth.NewHandler(client)
 
@@ -78,23 +78,8 @@ func newRouter(client gwauth.AuthClient, identity string) *gin.Engine {
 	public.POST("/signin", h.LoginMemberHandler)
 	public.POST("/validate-token", h.ValidateTokenHandler)
 
-	private := r.Group("/member")
-	private.Use(func(c *gin.Context) {
-		if identity != "" {
-			c.Set("userIdStr", identity)
-		}
-		c.Next()
-	})
-	private.GET("", h.GetMemberByIdHandler)
-	private.PATCH("/update-password", h.UpdatePasswordMemberHandler)
-	private.PATCH("/update-info", h.UpdateInfoMemberHandler)
-	private.POST("/avatar/upload-request", h.RequestAvatarUploadHandler)
-	private.POST("/avatar/confirm", h.ConfirmAvatarUploadHandler)
-
 	return r
 }
-
-const testIdentity = "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
 
 // FS-0001 §Requirements 4, 5, 7 — every downstream failure in this package now
 // resolves through the one seam, in problem+json, with the code the client
@@ -140,48 +125,15 @@ func TestAuthHandler_DownstreamFailures_ResolveThroughTheSeam(t *testing.T) {
 			wantStatus: http.StatusNotFound, wantCode: errcode.NotFound,
 		},
 		{
-			name: "get member not found", method: http.MethodGet, path: "/member",
-			clientErr:  status.Error(codes.NotFound, "no such member"),
-			wantStatus: http.StatusNotFound, wantCode: errcode.NotFound,
-		},
-		{
-			// CHANGED: GetMember's switch had no PermissionDenied case.
-			name: "get member forbidden", method: http.MethodGet, path: "/member",
-			clientErr:  status.Error(codes.PermissionDenied, "not your member"),
-			wantStatus: http.StatusForbidden, wantCode: errcode.Forbidden,
-		},
-		{
-			name: "update password unauthorized", method: http.MethodPatch, path: "/member/update-password", body: `{}`,
-			clientErr:  status.Error(codes.Unauthenticated, "wrong current password"),
-			wantStatus: http.StatusUnauthorized, wantCode: errcode.Unauthenticated,
-		},
-		{
-			name: "update info rejected", method: http.MethodPatch, path: "/member/update-info", body: `{}`,
-			clientErr:  status.Error(codes.InvalidArgument, "display name too long"),
-			wantStatus: http.StatusBadRequest, wantCode: errcode.ValidationFailed,
-		},
-		{
 			name: "validate token rejected", method: http.MethodPost, path: "/member/validate-token", body: `{}`,
 			clientErr:  status.Error(codes.Unauthenticated, "expired"),
 			wantStatus: http.StatusUnauthorized, wantCode: errcode.Unauthenticated,
-		},
-		{
-			// PRESERVED: this handler already mapped Unavailable to 503 by hand.
-			// FS-0001 §Requirements 5 was amended so the migration keeps it.
-			name: "avatar upload while downstream is down", method: http.MethodPost, path: "/member/avatar/upload-request", body: `{"filename":"a.png"}`,
-			clientErr:  status.Error(codes.Unavailable, "storage unreachable"),
-			wantStatus: http.StatusServiceUnavailable, wantCode: errcode.ServiceUnavailable,
-		},
-		{
-			name: "avatar confirm not found", method: http.MethodPost, path: "/member/avatar/confirm", body: `{"upload_id":"u1"}`,
-			clientErr:  status.Error(codes.NotFound, "no such upload"),
-			wantStatus: http.StatusNotFound, wantCode: errcode.NotFound,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := newRouter(&stubAuthClient{err: tt.clientErr}, testIdentity)
+			r := newRouter(&stubAuthClient{err: tt.clientErr})
 
 			w := testsupport.Do(r, tt.method, tt.path, tt.body)
 
@@ -195,7 +147,7 @@ func TestAuthHandler_DownstreamFailures_ResolveThroughTheSeam(t *testing.T) {
 func TestAuthHandler_DownstreamMessages_NeverReachTheClient(t *testing.T) {
 	const leak = "pq: duplicate key value violates unique constraint members_email_key"
 
-	r := newRouter(&stubAuthClient{err: status.Error(codes.AlreadyExists, leak)}, testIdentity)
+	r := newRouter(&stubAuthClient{err: status.Error(codes.AlreadyExists, leak)})
 
 	w := testsupport.Do(r, http.MethodPost, "/member/signup", `{}`)
 
@@ -207,7 +159,7 @@ func TestAuthHandler_DownstreamMessages_NeverReachTheClient(t *testing.T) {
 // FS-0001 §Requirements 9 — LoginMemberHandler was the worst of them: it
 // formatted the raw bind error into the message with fmt.Sprintf.
 func TestAuthHandler_Signin_DoesNotEchoTheBindError(t *testing.T) {
-	r := newRouter(&stubAuthClient{}, testIdentity)
+	r := newRouter(&stubAuthClient{})
 
 	w := testsupport.Do(r, http.MethodPost, "/member/signin", `{"email":`)
 
@@ -222,64 +174,14 @@ func TestAuthHandler_Signin_DoesNotEchoTheBindError(t *testing.T) {
 func TestAuthHandler_MalformedBodies_Return400WithAuthoredDetail(t *testing.T) {
 	for _, path := range []string{
 		"/member/signup",
-		"/member/update-password",
-		"/member/update-info",
 		"/member/validate-token",
 	} {
 		t.Run(path, func(t *testing.T) {
-			r := newRouter(&stubAuthClient{}, testIdentity)
+			r := newRouter(&stubAuthClient{})
 
 			w := testsupport.Do(r, http.MethodPost, path, `{"broken":`)
-
-			// PATCH routes reject POST with 404 before the handler runs; retry
-			// with the right verb rather than asserting on a routing artifact.
-			if w.Code == http.StatusNotFound {
-				w = testsupport.Do(r, http.MethodPatch, path, `{"broken":`)
-			}
 
 			testsupport.AssertProblem(t, w, http.StatusBadRequest, string(errcode.ValidationFailed))
 		})
 	}
-}
-
-// FS-0001 §Requirements 11 — the identity these handlers read is set by the JWT
-// middleware. Its absence means the middleware did not run, which is a wiring
-// fault rather than a caller mistake; the status stays 401 as it is today
-// (§Requirements 12), but it now carries a code.
-func TestAuthHandler_MissingIdentity_Returns401(t *testing.T) {
-	r := newRouter(&stubAuthClient{}, "")
-
-	w := testsupport.Do(r, http.MethodGet, "/member", "")
-
-	testsupport.AssertProblem(t, w, http.StatusUnauthorized, string(errcode.Unauthenticated))
-}
-
-// FS-0001 §Requirements 12 — success responses are untouched by this feature.
-func TestAuthHandler_SuccessResponses_AreUnchanged(t *testing.T) {
-	client := &stubAuthClient{
-		member: &pb.Member{Id: testIdentity},
-	}
-
-	t.Run("no success path carries a problem code", func(t *testing.T) {
-		for _, tc := range []struct{ method, path string }{
-			{http.MethodGet, "/member"},
-		} {
-			w := testsupport.Do(newRouter(client, testIdentity), tc.method, tc.path, "")
-
-			assert.Equal(t, http.StatusOK, w.Code, tc.path)
-			assert.Contains(t, w.Header().Get("Content-Type"), "application/json", tc.path)
-			assert.NotContains(t, testsupport.Decode(t, w), "code", tc.path)
-		}
-	})
-
-	t.Run("get member", func(t *testing.T) {
-		w := testsupport.Do(newRouter(client, testIdentity), http.MethodGet, "/member", "")
-
-		assert.Equal(t, http.StatusOK, w.Code)
-
-		body := testsupport.Decode(t, w)
-		assert.Equal(t, float64(http.StatusOK), body["statusCode"])
-		assert.Equal(t, "Successfully retrieved member", body["message"])
-		assert.Contains(t, body, "result")
-	})
 }

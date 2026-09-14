@@ -20,38 +20,6 @@ func NewHandler(client PaymentClient) *Handler {
 	}
 }
 
-func (h *Handler) CreateCustomerHandler(c *gin.Context) {
-	const op = "CreateCustomerHandler"
-	userIdStr, exists := c.Get("userIdStr")
-	if !exists {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
-		return
-	}
-
-	var req struct {
-		Email string `json:"email" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		httperr.Write(c, op, httperr.BindError(err))
-		return
-	}
-
-	resp, err := h.client.CreateCustomer(c.Request.Context(), &pb.CreateCustomerRequest{
-		UserId: userIdStr.(string),
-		Email:  req.Email,
-	})
-	if err != nil {
-		httperr.Write(c, op, err)
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{
-		"statusCode": http.StatusCreated,
-		"message":    "Successfully created customer",
-		"result":     resp,
-	})
-}
-
 func (h *Handler) SetupSubscriptionHandler(c *gin.Context) {
 	const op = "SetupSubscriptionHandler"
 	var req pb.SetupSubscriptionRequest
@@ -69,52 +37,6 @@ func (h *Handler) SetupSubscriptionHandler(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"statusCode": http.StatusCreated,
 		"message":    "Successfully setup subscription product",
-		"result":     resp,
-	})
-}
-
-func (h *Handler) SubscribeHandler(c *gin.Context) {
-	const op = "SubscribeHandler"
-	userIdStr, exists := c.Get("userIdStr")
-	if !exists {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
-		return
-	}
-
-	var req struct {
-		ProductID string `json:"product_id" binding:"required"`
-		Email     string `json:"email" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		httperr.Write(c, op, httperr.BindError(err))
-		return
-	}
-
-	ctx := c.Request.Context()
-
-	// Step 1: Auto-create Stripe customer
-	custResp, err := h.client.CreateCustomer(ctx, &pb.CreateCustomerRequest{
-		UserId: userIdStr.(string),
-		Email:  req.Email,
-	})
-	if err != nil {
-		httperr.Write(c, op, err)
-		return
-	}
-
-	// Step 2: Subscribe with the customer ID
-	resp, err := h.client.Subscribe(ctx, &pb.SubscribeRequest{
-		ProductId:  req.ProductID,
-		CustomerId: custResp.CustomerId,
-	})
-	if err != nil {
-		httperr.Write(c, op, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"statusCode": http.StatusOK,
-		"message":    "Successfully subscribed",
 		"result":     resp,
 	})
 }
@@ -171,28 +93,5 @@ func (h *Handler) WebhookHandler(c *gin.Context) {
 		"statusCode": http.StatusOK,
 		"message":    "Webhook processed",
 		"result":     resp,
-	})
-}
-
-func (h *Handler) CheckPermissionHandler(c *gin.Context) {
-	const op = "CheckPermissionHandler"
-	userIdStr, exists := c.Get("userIdStr")
-	if !exists {
-		httperr.Write(c, op, apperr.WithDetail(apperr.ErrUnauthenticated, "Not authenticated"))
-		return
-	}
-
-	resp, err := h.client.CheckPermission(c.Request.Context(), &pb.CheckPermissionRequest{
-		UserId: userIdStr.(string),
-	})
-	if err != nil {
-		httperr.Write(c, op, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"statusCode":     http.StatusOK,
-		"message":        "Permission check successful",
-		"has_permission": resp.HasPermission,
 	})
 }

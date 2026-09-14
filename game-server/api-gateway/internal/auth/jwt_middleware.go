@@ -82,12 +82,6 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// store userId in the context for usage in the actual API handlers
-		c.Set("userId", userId)
-
-		// store string version for cleaner transfer to external microservices via grpc
-		c.Set("userIdStr", userIdStr)
-
 		role, ok := claims["role"].(string)
 		if !ok || role == "" {
 			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,

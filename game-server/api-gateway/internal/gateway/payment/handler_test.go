@@ -55,24 +55,16 @@ func (s *stubPaymentClient) CheckPermission(context.Context, *pb.CheckPermission
 	return s.permission, s.err
 }
 
-const testIdentity = "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
-
-func newRouter(client payment.PaymentClient, identity string) *gin.Engine {
+// newRouter mounts the payment gin routes that read no caller identity. The
+// member-scoped ones are typed operations now and read the caller from
+// commonauth; see typed.go.
+func newRouter(client payment.PaymentClient) *gin.Engine {
 	r := gin.New()
 	h := payment.NewHandler(client)
 
 	g := r.Group("/payment")
-	g.Use(func(c *gin.Context) {
-		if identity != "" {
-			c.Set("userIdStr", identity)
-		}
-		c.Next()
-	})
-	g.POST("/customer", h.CreateCustomerHandler)
 	g.POST("/subscription/setup", h.SetupSubscriptionHandler)
-	g.POST("/subscribe", h.SubscribeHandler)
 	g.GET("/subscriptions/:customerId", h.GetUserSubscriptionsHandler)
-	g.GET("/subscription/permission", h.CheckPermissionHandler)
 
 	// Mounted at the root, outside the auth group, exactly as routes.go does.
 	r.POST("/webhook/stripe", h.WebhookHandler)
@@ -126,7 +118,7 @@ func TestWebhook_StatusParity_WithStripe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := newRouter(&stubPaymentClient{err: tt.clientErr}, "")
+			r := newRouter(&stubPaymentClient{err: tt.clientErr})
 
 			// The signature header is REQUIRED for these cases to mean anything:
 			// without it the handler's own guard answers 400 and the downstream
@@ -148,7 +140,7 @@ func TestWebhook_StatusParity_WithStripe(t *testing.T) {
 // client-safe and survives. Stripe surfaces these strings in its dashboard when
 // a delivery fails, which is the only place anyone debugging a webhook looks.
 func TestWebhook_LocalGuards_KeepTheirWording(t *testing.T) {
-	r := newRouter(&stubPaymentClient{}, "")
+	r := newRouter(&stubPaymentClient{})
 
 	w := testsupport.Do(r, http.MethodPost, "/webhook/stripe", `{"id":"evt_1"}`)
 
@@ -157,7 +149,7 @@ func TestWebhook_LocalGuards_KeepTheirWording(t *testing.T) {
 }
 
 func TestWebhook_WithSignature_ReachesDownstream(t *testing.T) {
-	r := newRouter(&stubPaymentClient{webhook: &pb.ProcessWebhookResponse{}}, "")
+	r := newRouter(&stubPaymentClient{webhook: &pb.ProcessWebhookResponse{}})
 
 	w := testsupport.DoWithHeaders(r, http.MethodPost, "/webhook/stripe", `{"id":"evt_1"}`,
 		map[string]string{"Stripe-Signature": "t=1,v1=abc"})
@@ -178,28 +170,6 @@ func TestPaymentHandler_DownstreamFailures_ResolveThroughTheSeam(t *testing.T) {
 		wantCode   errcode.Code
 	}{
 		{
-			name: "create customer rejected", method: http.MethodPost, path: "/payment/customer", body: `{"email":"a@b.c"}`,
-			clientErr:  status.Error(codes.InvalidArgument, "bad email"),
-			wantStatus: http.StatusBadRequest, wantCode: errcode.ValidationFailed,
-		},
-		{
-			// CHANGED: the default arm sent this to 500.
-			name: "customer already exists", method: http.MethodPost, path: "/payment/customer", body: `{"email":"a@b.c"}`,
-			clientErr:  status.Error(codes.AlreadyExists, "customer exists"),
-			wantStatus: http.StatusConflict, wantCode: errcode.AlreadyExists,
-		},
-		{
-			name: "subscribe while payment-service is down", method: http.MethodPost, path: "/payment/subscribe", body: `{"product_id":"p1","email":"a@b.c"}`,
-			clientErr:  status.Error(codes.Unavailable, "payment-service unreachable"),
-			wantStatus: http.StatusServiceUnavailable, wantCode: errcode.ServiceUnavailable,
-		},
-		{
-			// CHANGED: was 500.
-			name: "permission check forbidden", method: http.MethodGet, path: "/payment/subscription/permission",
-			clientErr:  status.Error(codes.PermissionDenied, "no plan"),
-			wantStatus: http.StatusForbidden, wantCode: errcode.Forbidden,
-		},
-		{
 			name: "subscriptions not found", method: http.MethodGet, path: "/payment/subscriptions/cus_1",
 			clientErr:  status.Error(codes.NotFound, "no subscriptions"),
 			wantStatus: http.StatusNotFound, wantCode: errcode.NotFound,
@@ -208,7 +178,7 @@ func TestPaymentHandler_DownstreamFailures_ResolveThroughTheSeam(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := newRouter(&stubPaymentClient{err: tt.clientErr}, testIdentity)
+			r := newRouter(&stubPaymentClient{err: tt.clientErr})
 
 			w := testsupport.Do(r, tt.method, tt.path, tt.body)
 
@@ -222,7 +192,7 @@ func TestPaymentHandler_DownstreamFailures_ResolveThroughTheSeam(t *testing.T) {
 func TestPaymentHandler_DownstreamMessages_NeverReachTheClient(t *testing.T) {
 	const leak = "stripe: No such customer: 'cus_QXaBcDeFgHiJkL'"
 
-	r := newRouter(&stubPaymentClient{err: status.Error(codes.NotFound, leak)}, testIdentity)
+	r := newRouter(&stubPaymentClient{err: status.Error(codes.NotFound, leak)})
 
 	w := testsupport.Do(r, http.MethodGet, "/payment/subscriptions/cus_1", "")
 
@@ -230,23 +200,9 @@ func TestPaymentHandler_DownstreamMessages_NeverReachTheClient(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "stripe:")
 }
 
-func TestPaymentHandler_MissingIdentity_Returns401(t *testing.T) {
-	for _, tc := range []struct{ method, path, body string }{
-		{http.MethodPost, "/payment/customer", `{"email":"a@b.c"}`},
-		{http.MethodPost, "/payment/subscribe", `{"product_id":"p1","email":"a@b.c"}`},
-		{http.MethodGet, "/payment/subscription/permission", ""},
-	} {
-		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
-			w := testsupport.Do(newRouter(&stubPaymentClient{}, ""), tc.method, tc.path, tc.body)
-
-			testsupport.AssertProblem(t, w, http.StatusUnauthorized, string(errcode.Unauthenticated))
-		})
-	}
-}
-
 // The gateway owns this rule, so its wording survives.
 func TestPaymentHandler_MissingCustomerID_KeepsItsWording(t *testing.T) {
-	r := newRouter(&stubPaymentClient{}, testIdentity)
+	r := newRouter(&stubPaymentClient{})
 
 	// An empty path segment does not match the route, so the guard is reached
 	// via a blank param rather than a missing one.
@@ -255,32 +211,4 @@ func TestPaymentHandler_MissingCustomerID_KeepsItsWording(t *testing.T) {
 	if w.Code == http.StatusBadRequest {
 		assert.Equal(t, string(errcode.ValidationFailed), testsupport.Decode(t, w)["code"])
 	}
-}
-
-// FS-0001 §Requirements 12.
-func TestPaymentHandler_SuccessResponses_AreUnchanged(t *testing.T) {
-	client := &stubPaymentClient{
-		customer:      &pb.CreateCustomerResponse{CustomerId: "cus_1"},
-		subscribe:     &pb.SubscribeResponse{},
-		subscriptions: &pb.GetUserSubscriptionsResponse{},
-		permission:    &pb.CheckPermissionResponse{HasPermission: true},
-	}
-
-	t.Run("create customer stays 201", func(t *testing.T) {
-		w := testsupport.Do(newRouter(client, testIdentity), http.MethodPost, "/payment/customer", `{"email":"a@b.c"}`)
-
-		assert.Equal(t, http.StatusCreated, w.Code)
-		body := testsupport.Decode(t, w)
-		assert.Equal(t, float64(http.StatusCreated), body["statusCode"])
-		assert.NotContains(t, body, "code")
-	})
-
-	t.Run("permission check stays 200 with its shape", func(t *testing.T) {
-		w := testsupport.Do(newRouter(client, testIdentity), http.MethodGet, "/payment/subscription/permission", "")
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		body := testsupport.Decode(t, w)
-		assert.Equal(t, true, body["has_permission"])
-		assert.NotContains(t, body, "code")
-	})
 }

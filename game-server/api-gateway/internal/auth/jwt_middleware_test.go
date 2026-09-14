@@ -158,8 +158,6 @@ func TestAuthMiddleware_ValidToken_PassesAndSetsIdentity(t *testing.T) {
 		"account_id": accountID.String(),
 	}, testSecret)
 
-	var gotUserID any
-	var gotUserIDStr any
 	var gotIdentity commonauth.Identity
 	var gotIdentityOK bool
 	handlerRan := false
@@ -168,8 +166,6 @@ func TestAuthMiddleware_ValidToken_PassesAndSetsIdentity(t *testing.T) {
 	r.Use(auth.AuthMiddleware())
 	r.GET("/protected", func(c *gin.Context) {
 		handlerRan = true
-		gotUserID, _ = c.Get("userId")
-		gotUserIDStr, _ = c.Get("userIdStr")
 		gotIdentity, gotIdentityOK = commonauth.IdentityFromCtx(c.Request.Context())
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
@@ -178,8 +174,6 @@ func TestAuthMiddleware_ValidToken_PassesAndSetsIdentity(t *testing.T) {
 
 	require.True(t, handlerRan, "a valid token must reach the handler")
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, id, gotUserID)
-	assert.Equal(t, id.String(), gotUserIDStr)
 
 	require.True(t, gotIdentityOK, "the middleware must embed an identity the downstream extractor can read")
 	assert.Equal(t, commonauth.Identity{
