@@ -35,7 +35,8 @@ Also cover: `next_cursor` **absent, not null**, on the final page; a full walk o
 | member | present | `403 · FORBIDDEN` |
 | admin | present | that account |
 | admin | absent | unscoped |
-| no role claim | absent | treated as member |
+| no role claim | absent | `401 · UNAUTHENTICATED` at `AuthMiddleware` |
+| role outside `player \| admin` | absent | own entries only — non-admin, not an error |
 
 Plus I-0025's masking assertion: a member reading a transaction with no leg of theirs gets a
 response **byte-identical** to the nonexistent-id response. Assert field-by-field including
@@ -64,7 +65,8 @@ Assert no read response, method, or header carries a total, sum, or count (§Req
 - [ ] Full-walk test visits every row exactly once at `limit` < N
 - [ ] `next_cursor` absent on the final page
 - [ ] Malformed cursor returns `422 · VALIDATION_FAILED`
-- [ ] Authorization matrix covered case-per-row, including the absent-role-claim case
+- [ ] Authorization matrix covered case-per-row, including the absent-role-claim `401` and the
+      unrecognised-role non-admin case — the two are asserted separately, not collapsed
 - [ ] Masking test asserts byte-identical responses field-by-field
 - [ ] `Content-Type: application/problem+json` asserted on the header for at least one error per
       status class
@@ -80,4 +82,5 @@ Assert no read response, method, or header carries a total, sum, or count (§Req
 ## Spec Reference
 
 FS-0003 §Acceptance Criteria (the read-path criteria added by the amendment), §Requirements 20,
-23, 25-28, 30. Traps: `docs/agents/contract-patterns.md` §2.
+23, 25-28, 29 (absent `role` is a `401`; an unrecognised one is non-admin), 30. Traps:
+`docs/agents/contract-patterns.md` §2.

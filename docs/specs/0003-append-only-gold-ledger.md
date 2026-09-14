@@ -227,8 +227,8 @@ paragraph above rules out.
     plus a new failure mode on a read path that otherwise has none.
 
     Signup creates the member and their account together, so the claim is **always present and
-    immutable** for a member. As with requirement 29's `role`, this feature builds the seam that
-    reads the claim; **minting it belongs to the auth feature.**
+    immutable** for a member. As with requirement 29's `role`, this feature builds only the seam
+    that reads the claim; **minting it landed in [FS-0006](0006-account-and-role-token-claims.md).**
 
     > **Accepted tradeoff: one account per member, per currency.** A singular `account_id` claim
     > is only correct while a member has exactly one account. A second currency — or any second
@@ -238,14 +238,30 @@ paragraph above rules out.
 28. **`role=admin` with `account_id` scopes to that account; without it, the listing is
     unscoped.** The unscoped form is the reconciliation and incident path. It remains a paged
     listing of rows and never becomes an aggregate (requirement 20).
-29. **The role arrives on the request; minting it is another feature's problem.** This feature
-    builds the seam — the boundary reads `role` from verified token metadata and scopes the query
-    by it. It does not define how the claim is issued, and takes no position on the claim's
-    shape beyond `player | admin`. The admin semantics above are specified here so that whoever
-    lands the auth work has a defined target.
+29. **`role` arrives as a verified claim on every access token, and a request carrying none is
+    refused at the boundary.** [FS-0006](0006-account-and-role-token-claims.md) mints `role` off
+    `members.role`, whose column `DEFAULT` is `player`, so every access token carries the claim.
+    The gateway's `AuthMiddleware` enforces that rather than assuming it: claims without a string
+    `role` are `401 · UNAUTHENTICATED` before any handler runs — the same fail-closed posture
+    requirement 27 takes on `account_id`. **Every protected route is therefore reached with a
+    role in hand**, and the read path has no role-less caller to accommodate.
 
-    > **Amended by [FS-0006](0006-account-and-role-token-claims.md).** The placeholder pair was
-    > `member | admin`; the auth work landed on **`player | admin`**, because `player` is the
+    **There is no default role.** An earlier reading of this requirement had the boundary resolve
+    an absent claim to `player` and carry on. That is withdrawn: a named default silently
+    promotes an unauthorizable token into an authorized-as-member one, and it turns a minting
+    regression into ordinary-looking member traffic instead of a loud refusal. Absence is a
+    broken token, not a modest caller.
+
+    Past the middleware the claim is present and scoping is a **comparison against `admin`**
+    (requirements 25, 28): only the exact value `admin` is admin. A value *outside*
+    `player | admin` is a different case from absence — the minter passes `members.role` through
+    verbatim and the column carries no `CHECK` (FS-0006 edge states), so an unrecognised value
+    reaches the boundary and is treated as **non-admin, not an error**. The closed set is the
+    contract; comparing for `admin` rather than against `player` is what keeps a drifted column
+    from widening it.
+
+    > **Vocabulary amended by [FS-0006](0006-account-and-role-token-claims.md).** The placeholder
+    > pair was `member | admin`; the auth work landed on **`player | admin`**, because `player` is the
     > value already live in `members.role`, `commontypes.Role`, items-service's `stringToRole`,
     > the gateway auth response, and the generated client — and because `member` is this repo's
     > entity noun for the person, not a role they hold. See
@@ -397,6 +413,14 @@ paragraph above rules out.
 - **A member's token carries no `account_id` claim** → `401 · UNAUTHENTICATED`. Fail closed: a
   token missing a claim the contract requires is not a member with no history, it is a token this
   service cannot authorize. Never degrade to an empty listing.
+- **A token carries no `role` claim** → `401 · UNAUTHENTICATED`, refused by `AuthMiddleware`
+  before either handler runs (requirement 29). Same reasoning as the row above, and deliberately
+  *not* a resolution to `player`: every access token FS-0006 mints carries the claim, so its
+  absence is a token this service cannot authorize.
+- **A token carries a `role` outside `player | admin`** → **not** an error. It passes the
+  middleware — the claim is present — and is non-admin at the scoping comparison, so the caller
+  is treated as a member (requirement 29). Distinct from absence on purpose: the value is
+  unrecognised, not missing.
 - **A transaction is appended while a reader is mid-page** → the keyset cursor means the new row
   is simply not seen by that pass; no row is skipped or repeated, which is the failure offset
   paging would have (requirement 23).
@@ -644,6 +668,7 @@ named once rather than renamed at every layer.
 | Case | Response |
 |---|---|
 | no token, or token invalid | `401 · UNAUTHENTICATED` |
+| token carries no `role` claim | `401 · UNAUTHENTICATED` (requirement 29) |
 | `role=player` supplied `account_id` | `403 · FORBIDDEN` (requirement 25) |
 | `role=player` requested a transaction with no leg on their account | `404 · NOT_FOUND` (requirement 26) |
 | `transaction_id` unknown | `404 · NOT_FOUND` |
@@ -927,9 +952,11 @@ ADRs name them rather than resolving them.
   authorization model is complete and correct, not to serve a screen: requirements 25–27 are the
   rule that a member reaching this API sees only their own rows, whoever eventually calls it.
 - **Issuing the `role` and `account_id` claims.** This feature reads both from verified token
-  metadata and scopes by them (requirements 27, 29). Minting them — auth-service's contract, the
-  signup flow that creates a member and their account together, and the token's shape — belongs to
-  a separate feature. This feature builds only the seam that consumes them.
+  metadata, refuses a token missing either, and scopes by them (requirements 27, 29). Minting
+  them — auth-service's contract, the signup flow that creates a member and their account
+  together, and the token's shape — belonged to a separate feature and **shipped as
+  [FS-0006](0006-account-and-role-token-claims.md)**. This feature builds only the seam that
+  consumes them.
 - **Resolving a member to more than one account.** Requirement 27's singular `account_id` claim
   assumes one account per member per currency. Supporting a set of accounts, or a second currency,
   is out of scope and is the named trigger to revisit both that requirement and requirement 8.

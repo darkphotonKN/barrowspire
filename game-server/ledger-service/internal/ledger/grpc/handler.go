@@ -6,6 +6,8 @@ import (
 	"log/slog"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/ledger"
+	"github.com/darkphotonKN/barrowspire-server/common/auth"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	cursor "github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/darkphotonKN/barrowspire-server/ledger-service/internal/ledger/domain/ledger"
@@ -29,8 +31,14 @@ type TransactionReader interface {
 	Execute(ctx context.Context, transactionID uuid.UUID) (*dto.TransactionDetails, error)
 }
 
+// represents a caller to a request
+type Caller struct {
+	accountID uuid.UUID
+	role      auth.Role
+}
+
 type EntriesReader interface {
-	Execute(ctx context.Context, accountIDTarget *uuid.UUID, cursor *cursor.Cursor, limit int) (*dto.ListEntriesDetails, error)
+	Execute(ctx context.Context, caller Caller, accountIDTarget *uuid.UUID, cursor *cursor.Cursor, limit int) (*dto.ListEntriesDetails, error)
 }
 
 func NewHandler(transactionReader TransactionReader, entriesReader EntriesReader) *Handler {
@@ -44,6 +52,13 @@ func NewHandler(transactionReader TransactionReader, entriesReader EntriesReader
 // nothing, for now
 
 // ========================= READ PATHS  =========================
+func (h *Handler) ListEntries(ctx context.Context, req *pb.ListEntriesRequest) ( *pb.ListEntriesResponse, error) {
+
+	// validates and passes caller, query houses the logic that determines whos gets what
+	accountIDUUID := ctx.
+
+	return nil, nil
+}
 
 // mapError translates domain and infrastructure sentinels into gRPC status
 // codes for the READ path. After ADR-0011 the only gRPC on this service is

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/auth"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/identity"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/testsupport"
-	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -63,12 +63,6 @@ func TestAuthMiddleware_RejectionPaths_Return401ProblemJSON(t *testing.T) {
 	noSub := signedToken(t, jwt.MapClaims{"foo": "bar"}, testSecret)
 	badUUID := signedToken(t, jwt.MapClaims{"sub": "not-a-uuid"}, testSecret)
 	noRole := signedToken(t, jwt.MapClaims{"sub": uuid.NewString()}, testSecret)
-	badAccountID := signedToken(t, jwt.MapClaims{
-		"sub": uuid.NewString(), "role": "player", "account_id": "not-a-uuid",
-	}, testSecret)
-	numericAccountID := signedToken(t, jwt.MapClaims{
-		"sub": uuid.NewString(), "role": "player", "account_id": 12345,
-	}, testSecret)
 
 	tests := []struct {
 		name    string
@@ -84,9 +78,6 @@ func TestAuthMiddleware_RejectionPaths_Return401ProblemJSON(t *testing.T) {
 		// FS-0003 §Requirement 29: every access token carries a role, so a token
 		// without one is unauthorizable — never a fall-through to member scoping.
 		{name: "claims without role", headers: bearer(noRole)},
-		// Absent account_id is normal (ADR-0014); present-but-broken is not.
-		{name: "account_id is not a uuid", headers: bearer(badAccountID)},
-		{name: "account_id is not a string", headers: bearer(numericAccountID)},
 	}
 
 	for _, tt := range tests {
@@ -146,22 +137,23 @@ func TestAuthMiddleware_DoesNotEchoTheToken(t *testing.T) {
 // A valid token must still pass, with the context values later handlers depend
 // on. The rewrite touches every branch of this middleware, so the happy path is
 // the regression most worth pinning.
-//
 // The fixture carries role and account_id because a real access token does:
-// FS-0006 mints both. A sub-only token is not the happy path any more.
+// FS-0006 mints both, and FS-0003 §Requirement 29 makes a token without a role
+// unauthorizable rather than a caller to default. A sub-only token is not the
+// happy path any more.
 func TestAuthMiddleware_ValidToken_PassesAndSetsIdentity(t *testing.T) {
 	id := uuid.New()
-	accountID := uuid.New()
+	accountID := uuid.NewString()
 	token := signedToken(t, jwt.MapClaims{
 		"sub":        id.String(),
 		"role":       "player",
-		"account_id": accountID.String(),
+		"account_id": accountID,
 	}, testSecret)
 
 	var gotUserID any
 	var gotUserIDStr any
-	var gotIdentity commonauth.Identity
-	var gotIdentityOK bool
+	var gotClaims identity.Claims
+	var gotClaimsOK bool
 	handlerRan := false
 
 	r := gin.New()
@@ -170,7 +162,7 @@ func TestAuthMiddleware_ValidToken_PassesAndSetsIdentity(t *testing.T) {
 		handlerRan = true
 		gotUserID, _ = c.Get("userId")
 		gotUserIDStr, _ = c.Get("userIdStr")
-		gotIdentity, gotIdentityOK = commonauth.IdentityFromCtx(c.Request.Context())
+		gotClaims, gotClaimsOK = identity.ExtractClaims(c.Request.Context())
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
@@ -181,36 +173,12 @@ func TestAuthMiddleware_ValidToken_PassesAndSetsIdentity(t *testing.T) {
 	assert.Equal(t, id, gotUserID)
 	assert.Equal(t, id.String(), gotUserIDStr)
 
-	require.True(t, gotIdentityOK, "the middleware must embed an identity the downstream extractor can read")
-	assert.Equal(t, commonauth.Identity{
-		MemberID:  id,
-		AccountID: &accountID,
-		Role:      commonauth.RolePlayer,
-	}, gotIdentity)
-}
-
-// ADR-0014: a member whose account has not landed yet still authenticates. The
-// middleware must not reject; it embeds nil so the operation that needs an
-// account is the one that fails closed.
-func TestAuthMiddleware_TokenWithoutAccountID_PassesWithNilAccount(t *testing.T) {
-	token := signedToken(t, jwt.MapClaims{"sub": uuid.NewString(), "role": "player"}, testSecret)
-
-	var gotIdentity commonauth.Identity
-	handlerRan := false
-
-	r := gin.New()
-	r.Use(auth.AuthMiddleware())
-	r.GET("/protected", func(c *gin.Context) {
-		handlerRan = true
-		gotIdentity, _ = commonauth.IdentityFromCtx(c.Request.Context())
-		c.JSON(http.StatusOK, gin.H{"ok": true})
-	})
-
-	w := testsupport.DoWithHeaders(r, http.MethodGet, "/protected", "", bearer(token))
-
-	require.True(t, handlerRan)
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Nil(t, gotIdentity.AccountID)
+	require.True(t, gotClaimsOK, "the middleware must embed claims the downstream extractor can read")
+	assert.Equal(t, identity.Claims{
+		MemberID:  id.String(),
+		AccountID: accountID,
+		Role:      "player",
+	}, gotClaims)
 }
 
 // Regression: `sub` is attacker-influenced and need not be a string. The
