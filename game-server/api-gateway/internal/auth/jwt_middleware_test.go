@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/auth"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/identity"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/testsupport"
 	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	"github.com/gin-gonic/gin"
@@ -61,6 +62,7 @@ func TestAuthMiddleware_RejectionPaths_Return401ProblemJSON(t *testing.T) {
 	wrongSecret := signedToken(t, jwt.MapClaims{"sub": uuid.NewString()}, "not-the-secret")
 	noSub := signedToken(t, jwt.MapClaims{"foo": "bar"}, testSecret)
 	badUUID := signedToken(t, jwt.MapClaims{"sub": "not-a-uuid"}, testSecret)
+	noRole := signedToken(t, jwt.MapClaims{"sub": uuid.NewString()}, testSecret)
 
 	tests := []struct {
 		name    string
@@ -73,6 +75,9 @@ func TestAuthMiddleware_RejectionPaths_Return401ProblemJSON(t *testing.T) {
 		{name: "signed with the wrong secret", headers: bearer(wrongSecret)},
 		{name: "claims without sub", headers: bearer(noSub)},
 		{name: "sub is not a uuid", headers: bearer(badUUID)},
+		// FS-0003 §Requirement 29: every access token carries a role, so a token
+		// without one is unauthorizable — never a fall-through to member scoping.
+		{name: "claims without role", headers: bearer(noRole)},
 	}
 
 	for _, tt := range tests {
@@ -132,12 +137,23 @@ func TestAuthMiddleware_DoesNotEchoTheToken(t *testing.T) {
 // A valid token must still pass, with the context values later handlers depend
 // on. The rewrite touches every branch of this middleware, so the happy path is
 // the regression most worth pinning.
+// The fixture carries role and account_id because a real access token does:
+// FS-0006 mints both, and FS-0003 §Requirement 29 makes a token without a role
+// unauthorizable rather than a caller to default. A sub-only token is not the
+// happy path any more.
 func TestAuthMiddleware_ValidToken_PassesAndSetsIdentity(t *testing.T) {
 	id := uuid.New()
-	token := signedToken(t, jwt.MapClaims{"sub": id.String()}, testSecret)
+	accountID := uuid.NewString()
+	token := signedToken(t, jwt.MapClaims{
+		"sub":        id.String(),
+		"role":       "player",
+		"account_id": accountID,
+	}, testSecret)
 
 	var gotUserID any
 	var gotUserIDStr any
+	var gotClaims identity.Claims
+	var gotClaimsOK bool
 	handlerRan := false
 
 	r := gin.New()
@@ -146,6 +162,7 @@ func TestAuthMiddleware_ValidToken_PassesAndSetsIdentity(t *testing.T) {
 		handlerRan = true
 		gotUserID, _ = c.Get("userId")
 		gotUserIDStr, _ = c.Get("userIdStr")
+		gotClaims, gotClaimsOK = identity.ExtractClaims(c.Request.Context())
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
@@ -155,6 +172,13 @@ func TestAuthMiddleware_ValidToken_PassesAndSetsIdentity(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, id, gotUserID)
 	assert.Equal(t, id.String(), gotUserIDStr)
+
+	require.True(t, gotClaimsOK, "the middleware must embed claims the downstream extractor can read")
+	assert.Equal(t, identity.Claims{
+		MemberID:  id.String(),
+		AccountID: accountID,
+		Role:      "player",
+	}, gotClaims)
 }
 
 // Regression: `sub` is attacker-influenced and need not be a string. The
