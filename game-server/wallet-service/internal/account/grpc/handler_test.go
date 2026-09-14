@@ -43,17 +43,15 @@ func (s *stubReader) Execute(ctx context.Context, memberID uuid.UUID) (*dto.Acco
 // authedCtx builds the context a request actually arrives with, by driving the
 // real auth interceptor rather than faking its context key.
 //
-// The key type in commonauth is unexported and there is no exported
-// ContextWithMemberID helper, so this is the only way to construct an
-// authenticated context from outside that package. See the testability note in
-// the accompanying summary.
+// commonauth.EmbedIdentity could build this directly, but going through the
+// interceptor also proves the interceptor is what puts the identity there.
 func authedCtx(t *testing.T, memberID uuid.UUID) context.Context {
 	t.Helper()
 
 	var captured context.Context
 
-	interceptor := commonauth.Auth(func(token string) (uuid.UUID, error) {
-		return memberID, nil
+	interceptor := commonauth.Auth(func(token string) (commonauth.Identity, error) {
+		return commonauth.Identity{MemberID: memberID, Role: commonauth.RolePlayer}, nil
 	})
 
 	incoming := metadata.NewIncomingContext(

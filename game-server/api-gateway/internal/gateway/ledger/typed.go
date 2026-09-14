@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/identity"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 
@@ -122,7 +121,7 @@ func registerGetTransaction(api huma.API, h *Handler,
 		Summary:     "Get a member's transaction.",
 		Tags:        []string{"ledger"},
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		c, ok := identity.ExtractClaims(ctx)
+		c, ok := commonauth.IdentityFromCtx(ctx)
 
 		// no claims, directly return unauthenticated
 		if !ok {
@@ -130,7 +129,7 @@ func registerGetTransaction(api huma.API, h *Handler,
 		}
 
 		// not admin but account_id is missing
-		if commonauth.Role(c.Role) != commonauth.RoleAdmin && c.AccountID == "" {
+		if c.Role != commonauth.RoleAdmin && c.AccountID == nil {
 			return nil, unauthenticated()
 		}
 
@@ -180,7 +179,7 @@ func registerListEntries(api huma.API, h *Handler,
 		Tags:        []string{"ledger"},
 	},
 		guard(func(ctx context.Context, in *input) (*output, error) {
-			c, ok := identity.ExtractClaims(ctx)
+			c, ok := commonauth.IdentityFromCtx(ctx)
 
 			// no claims, directly return unauthenticated
 			if !ok {
@@ -188,7 +187,7 @@ func registerListEntries(api huma.API, h *Handler,
 			}
 
 			// --- validate required claims are present for intended query ---
-			isAdmin := commonauth.Role(c.Role) == commonauth.RoleAdmin
+			isAdmin := c.Role == commonauth.RoleAdmin
 
 			// -- account id target --
 			// only check if target actually exists in the param
@@ -199,7 +198,7 @@ func registerListEntries(api huma.API, h *Handler,
 
 				// -- account id for members --
 				// account id required if not targetting a specific account, otherwise you need to be an admin
-			} else if c.AccountID == "" && !isAdmin {
+			} else if c.AccountID == nil && !isAdmin {
 				return nil, unauthenticated()
 			}
 

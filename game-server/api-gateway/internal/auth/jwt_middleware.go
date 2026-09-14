@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
-	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/identity"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -89,20 +89,32 @@ func AuthMiddleware() gin.HandlerFunc {
 		c.Set("userIdStr", userIdStr)
 
 		role, ok := claims["role"].(string)
-		if !ok {
+		if !ok || role == "" {
 			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,
 				"Invalid token claims"))
 			return
 		}
 
-		accountId, _ := claims["account_id"].(string)
+		// account_id is populated eventually (ADR-0014), so an ABSENT key is a
+		// normal token and yields nil. A key that is present but not a uuid is a
+		// broken token, and gets the same 401 as any other unusable claim.
+		var accountID *uuid.UUID
+		if raw, present := claims["account_id"]; present {
+			s, _ := raw.(string)
+			parsed, err := uuid.Parse(s)
+			if err != nil {
+				httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,
+					"Invalid token claims"))
+				return
+			}
+			accountID = &parsed
+		}
 
-		// add member_id,  account_id and role to context for calls downstream to extract
-		ctx := c.Request.Context()
-		ctx = identity.EmbedClaims(ctx, identity.Claims{
-			MemberID:  userIdStr,
-			AccountID: accountId,
-			Role:      role,
+		// add member_id, account_id and role to context for calls downstream to extract
+		ctx := commonauth.EmbedIdentity(c.Request.Context(), commonauth.Identity{
+			MemberID:  userId,
+			AccountID: accountID,
+			Role:      commonauth.Role(role),
 		})
 
 		c.Request = c.Request.WithContext(ctx)

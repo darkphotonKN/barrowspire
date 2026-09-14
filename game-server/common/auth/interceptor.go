@@ -11,13 +11,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type memberIDKey struct{}
-
 var publicMethods = map[string]bool{
 	"/grpc.health.v1.Health/Check": true,
 }
 
-func Auth(validate func(token string) (uuid.UUID, error)) grpc.UnaryServerInterceptor {
+func Auth(validate func(token string) (Identity, error)) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req any,
@@ -44,20 +42,19 @@ func Auth(validate func(token string) (uuid.UUID, error)) grpc.UnaryServerInterc
 			return nil, status.Error(codes.Unauthenticated, "malformed authorization")
 		}
 
-		memberID, err := validate(token)
+		id, err := validate(token)
 		if err != nil {
 			return nil, status.Error(codes.Unauthenticated, "invalid token")
 		}
 
-		// context.WithValue injects context into the flow
-		return handler(context.WithValue(ctx, memberIDKey{}, memberID), req)
+		// member id, account id and role all ride the context into the handler
+		return handler(EmbedIdentity(ctx, id), req)
 	}
 }
 
-// extract member id from context
-// we use a struct here to prevent clashes from strings from other packages,
-// incase an interceptor used something like "memberID"
+// MemberIDFromCtx is a shorthand for handlers that only need the member.
+// It reads the same embedded Identity — there is one context key, not two.
 func MemberIDFromCtx(ctx context.Context) (uuid.UUID, bool) {
-	id, ok := ctx.Value(memberIDKey{}).(uuid.UUID)
-	return id, ok
+	id, ok := IdentityFromCtx(ctx)
+	return id.MemberID, ok
 }
