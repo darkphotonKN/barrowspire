@@ -7,8 +7,8 @@ import (
 )
 
 // Identity is who an authenticated request is acting as, as read from a
-// verified access token. It is the ONE shape every entry point embeds — the
-// gateway's HTTP middleware and every service's gRPC interceptor — so a handler
+// verified access token. It is the ONE shape every entry point embeds, the
+// gateway's HTTP middleware and every service's gRPC interceptor, so a handler
 // reads the caller the same way whichever transport it sits behind.
 //
 // Distinct from Claims: Claims is the wire shape of a token, Identity is what a
@@ -25,7 +25,7 @@ type Identity struct {
 }
 
 // identityKey is an unexported struct type, so no other package can construct
-// it — a key collision with some other "member_id" string is impossible.
+// it, a key collision with some other "member_id" string is impossible.
 type identityKey struct{}
 
 // EmbedIdentity returns a child context carrying id. Called by an entry point
