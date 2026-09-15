@@ -22,7 +22,8 @@ type LegDetail struct {
 }
 
 type ListEntriesDetails struct {
-	Entries []EntryDetail
+	Entries    []EntryDetail
+	NextCursor string
 }
 
 type EntryDetail struct {

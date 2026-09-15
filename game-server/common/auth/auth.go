@@ -11,7 +11,7 @@ import (
 // NewValidator returns the token-validation func the gRPC auth interceptor needs.
 // Keeping JWT parsing here means internal/interceptor stays pure metadata plumbing.
 //
-// It parses into Claims — the same struct auth-service mints with — so a claim
+// It parses into Claims, the same struct auth-service mints with, so a claim
 // the minter adds cannot silently go unread here.
 func NewValidator(secret []byte) func(string) (Identity, error) {
 	return func(tokenStr string) (Identity, error) {
