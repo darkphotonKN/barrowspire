@@ -47,43 +47,69 @@ func (q *ListEntriesQuery) Execute(ctx context.Context, caller *commonauth.Ident
 
 	args := make([]any, 0)
 
-	if !isAdmin {
-		query += `WHERE account_id=$1 AND (created_at, id) < ($2, $3) 
-							ORDER BY created_at LIMIT $4
+	if !isAdmin || accountIDTarget != nil {
+		account := caller.AccountID
+
+		// only target account if admin
+		if isAdmin {
+			account = accountIDTarget
+		}
+		if c == nil {
+			query += `
+							WHERE account_id=$1
+							ORDER BY created_at DESC, id DESC 
+							LIMIT $2
+			`
+			args = append(args, account, limit+1)
+		} else {
+			query += `
+							WHERE account_id=$1 AND (created_at, id) < ($2, $3) 
+							ORDER BY created_at DESC, id DESC 
+							LIMIT $4
 		`
-		args = append(args, caller.AccountID.String(), c.CreatedAt.String(), c.ID.String(), limit+1)
-	} else if accountIDTarget != nil {
-		query += `WHERE account_id=$1 AND (created_at, id) < ($2, $3)
-							ORDER BY created_at LIMIT $4
-		`
-		args = append(args, accountIDTarget.String(), c.CreatedAt.String(), c.ID.String(), limit+1)
-	} else {
-		query += `
-		WHERE (created_at, id) < ($1, $2)
-		ORDER BY created_at LIMIT $3
-		`
-		args = append(args, c.CreatedAt.String(), c.ID.String(), limit+1)
+			args = append(args, account, c.CreatedAt, c.ID, limit+1)
+		}
 	}
 
-	var res dto.ListEntriesDetails
+	if isAdmin && accountIDTarget == nil {
+		if c == nil {
+			query += `
+		ORDER BY created_at DESC, id DESC
+		LIMIT $1
+		`
+			args = append(args, limit+1)
+		} else {
+			query += `
+		WHERE (created_at, id) < ($1, $2)
+		ORDER BY created_at DESC, id DESC
+		LIMIT $3
+		`
+			args = append(args, c.CreatedAt, c.ID, limit+1)
+		}
 
-	err := q.db.SelectContext(ctx, &res, query)
+	}
+	var entries []dto.EntryDetail
+
+	err := q.db.SelectContext(ctx, &entries, query, args...)
+
+	if err != nil {
+		return nil, commonhelpers.WrapDBErr("ledgers", "list entries details query", err)
+	}
 
 	// detect and build cursor
 
-	// check if next cursor exists
-	if len(res.Entries) == limit+1 {
-		nextEntry := res.Entries[limit]
+	// check if next cursor exists by checking if the length returned
+	// is greater
+	var res dto.ListEntriesDetails
+	res.Entries = entries
+	if len(entries) > limit {
+		nextEntry := entries[limit-1]
 
 		// update with cursor
 		res.NextCursor = cursor.Cursor{ID: nextEntry.ID, CreatedAt: nextEntry.CreatedAt}.Encode()
 
 		// trim to show original limit
-		res.Entries = res.Entries[:limit]
-	}
-
-	if err != nil {
-		return nil, commonhelpers.WrapDBErr("ledgers", "list entries details query", err)
+		res.Entries = entries[:limit]
 	}
 
 	return &res, nil
