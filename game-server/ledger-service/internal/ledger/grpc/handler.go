@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/ledger"
+	pbpagination "github.com/darkphotonKN/barrowspire-server/common/api/proto/shared/v1"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
@@ -98,12 +99,18 @@ func (h *Handler) ListEntries(ctx context.Context, req *pb.ListEntriesRequest) (
 			Direction:     entry.Direction,
 			CreatedAt:     timestamppb.New(entry.CreatedAt),
 		})
-
 	}
 
-	return &pb.ListEntriesResponse{
+	protoRes := &pb.ListEntriesResponse{
 		Entries: protoEntries,
-	}, nil
+	}
+
+	if res.NextCursor != "" {
+		protoRes.Pagination = &pbpagination.PageInfo{
+			NextCursor: res.NextCursor,
+		}
+	}
+	return protoRes, nil
 }
 
 // mapError translates domain and infrastructure sentinels into gRPC status

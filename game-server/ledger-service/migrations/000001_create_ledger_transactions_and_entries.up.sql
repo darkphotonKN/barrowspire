@@ -1,5 +1,13 @@
 CREATE TABLE IF NOT EXISTS ledger_transactions (
+ CREATE TABLE IF NOT EXISTS ledger_transactions (
     -- caller-minted and deterministic; the ledger never mints one
+    transaction_id UUID PRIMARY KEY NOT NULL,
+    reason TEXT NOT NULL CHECK (reason IN ('SETTLE_AUCTION', 'DEPOSIT', 'WITHDRAW', 'TRANSFER')),
+    reference_id UUID NOT NULL, -- soft reference to the originating event (e.g. a bid's id)
+    currency TEXT NOT NULL DEFAULT 'GOLD' CHECK (currency IN ('GOLD')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+   -- caller-minted and deterministic; the ledger never mints one
     transaction_id UUID PRIMARY KEY NOT NULL,
     reason TEXT NOT NULL CHECK (reason IN ('SETTLE_AUCTION', 'DEPOSIT', 'WITHDRAW', 'TRANSFER')),
     reference_id UUID NOT NULL, -- soft reference to the originating event (e.g. a bid's id)

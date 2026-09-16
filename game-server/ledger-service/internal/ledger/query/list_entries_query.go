@@ -30,6 +30,10 @@ func (q *ListEntriesQuery) Execute(ctx context.Context, caller *commonauth.Ident
 	// determine what type of query
 	isAdmin := caller.Role == commonauth.RoleAdmin
 
+	if !isAdmin && caller.AccountID == nil {
+		return nil, fmt.Errorf("list entries query member has no account_id : %w", apperr.ErrUnauthenticated)
+	}
+
 	// reject unauthorized combinations
 	if !isAdmin && accountIDTarget != nil {
 		return nil, fmt.Errorf("list entries query accountIDTarget present when not admin : %w", apperr.ErrForbidden)
@@ -38,12 +42,23 @@ func (q *ListEntriesQuery) Execute(ctx context.Context, caller *commonauth.Ident
 	// the remaining decisions are just calling for everyone's entries if admin and no target,
 	// single target if admin and target provided, else return the own account's entries
 	query := `SELECT
-		id,
-		transaction_id,
-		direction,
-		amount,
-		created_at
-	FROM ledger_entries`
+		le.id as id,
+		le.transaction_id as transaction_id,
+		le.account_id as account_id,
+		le.direction as direction,
+		le.amount as amount,
+		lt.reason as reason,
+		lt.reference_id as reference_id,
+		lt.currency as currency,
+		le.created_at as created_at
+	FROM ledger_entries as le`
+
+	// JOIN
+	query += `
+	JOIN ledger_transactions as lt
+	ON lt.transaction_id = le.transaction_id
+
+	`
 
 	args := make([]any, 0)
 
@@ -56,15 +71,15 @@ func (q *ListEntriesQuery) Execute(ctx context.Context, caller *commonauth.Ident
 		}
 		if c == nil {
 			query += `
-							WHERE account_id=$1
-							ORDER BY created_at DESC, id DESC 
+							WHERE le.account_id=$1
+							ORDER BY le.created_at DESC, le.id DESC 
 							LIMIT $2
 			`
 			args = append(args, account, limit+1)
 		} else {
 			query += `
-							WHERE account_id=$1 AND (created_at, id) < ($2, $3) 
-							ORDER BY created_at DESC, id DESC 
+							WHERE le.account_id=$1 AND (le.created_at, le.id) < ($2, $3) 
+							ORDER BY le.created_at DESC, le.id DESC 
 							LIMIT $4
 		`
 			args = append(args, account, c.CreatedAt, c.ID, limit+1)
@@ -74,20 +89,20 @@ func (q *ListEntriesQuery) Execute(ctx context.Context, caller *commonauth.Ident
 	if isAdmin && accountIDTarget == nil {
 		if c == nil {
 			query += `
-		ORDER BY created_at DESC, id DESC
+		ORDER BY le.created_at DESC, le.id DESC
 		LIMIT $1
 		`
 			args = append(args, limit+1)
 		} else {
 			query += `
-		WHERE (created_at, id) < ($1, $2)
-		ORDER BY created_at DESC, id DESC
+		WHERE (le.created_at, le.id) < ($1, $2)
+		ORDER BY le.created_at DESC, le.id DESC
 		LIMIT $3
 		`
 			args = append(args, c.CreatedAt, c.ID, limit+1)
 		}
-
 	}
+
 	var entries []dto.EntryDetail
 
 	err := q.db.SelectContext(ctx, &entries, query, args...)
@@ -112,5 +127,5 @@ func (q *ListEntriesQuery) Execute(ctx context.Context, caller *commonauth.Ident
 		res.Entries = entries[:limit]
 	}
 
-	return &res, nil
+	return &res, nil // determine what type of query
 }
