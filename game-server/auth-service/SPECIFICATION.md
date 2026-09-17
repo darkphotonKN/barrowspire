@@ -61,13 +61,13 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 - [x] Update member info
 - [x] Update member password
 - [x] Check whether an email is taken
-- [x] Single member-creation path → FS-0007
+- [x] Single member-creation path → FS-83TJK
 
 ### Tokens
 
 - [x] Validate a token and return its subject
 - [ ] Reject a refresh token presented as an access credential
-- [x] Mint account and role claims into the access token → FS-0006
+- [x] Mint account and role claims into the access token → FS-9KW9F
 
 ### Avatars
 
@@ -86,7 +86,7 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 
 ### Accounts
 
-- [x] Record a member's wallet account id → FS-0006
+- [x] Record a member's wallet account id → FS-9KW9F
 
 ### Messaging
 
@@ -114,7 +114,7 @@ Consul name `auth`, gRPC port default **7116** (`GRPC_AUTH_ADDR`). Proto in
   > REVIEW: does **not** check `tokenType`, so a 7-day **refresh** token is accepted as a valid
   > access credential.
 - **CheckEmailExists** (`{Email}` → `{Exists}`) — true if member found.
-  > **CALLERLESS since FS-0007.** Its only consumer was the gateway's
+  > **CALLERLESS since FS-83TJK.** Its only consumer was the gateway's
   > `GET /api/member/check-email`, which existed to let the register page poll for an account
   > that signup had not yet created. Signup is synchronous now and answers `409 · ALREADY_EXISTS`
   > directly, so both the poll and the HTTP endpoint are gone. The RPC is deliberately kept

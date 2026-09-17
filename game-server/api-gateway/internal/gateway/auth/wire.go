@@ -2,7 +2,7 @@ package auth
 
 import "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/wire"
 
-// Transport types for the serialized member surface (FS-0002 slice 1).
+// Transport types for the serialized member surface (FS-NTPW2 slice 1).
 //
 // These are TRANSCRIPTIONS, not designs. Every field name, type, and
 // `omitempty` here mirrors what the endpoint already puts on the wire, because

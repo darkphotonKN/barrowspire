@@ -1,5 +1,5 @@
 /**
- * The client half of the gateway's error contract (FS-0001).
+ * The client half of the gateway's error contract (FS-22WKC).
  *
  * The gateway returns RFC 9457 `application/problem+json` on every 4xx/5xx. The
  * member that matters is `code`: a stable SCREAMING_SNAKE domain code that client

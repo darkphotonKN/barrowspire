@@ -188,7 +188,7 @@ interface DelverView {
  * intents, never simulating. The map is larger than the viewport, so the camera
  * follows the player.
  *
- * Bare in this slice: buildings arrive with I-0047, NPCs with I-0050 and I-0052.
+ * Bare in this slice: buildings arrive with I-29KSH-3, NPCs with I-29KSH-6 and I-29KSH-8.
  */
 export class HubScene extends Phaser.Scene {
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -260,7 +260,7 @@ export class HubScene extends Phaser.Scene {
 
     // Queue progress follows the delver rather than pinning them to a popup:
     // they keep walking while they wait, so the panel has to be visible from
-    // anywhere. FS-0008 §Requirements 25, 27.
+    // anywhere. FS-29KSH §Requirements 25, 27.
     socketManager.on("queue_status", (payload: { current?: number; total?: number }) =>
       this.showQueueProgress(payload?.current ?? 0, payload?.total ?? 0),
     );
@@ -310,7 +310,7 @@ export class HubScene extends Phaser.Scene {
   /**
    * Opens a dialogue when the delver is standing close enough and presses to
    * talk. Walking past never does anything: joining the queue takes a choice,
-   * not a collision. FS-0008 §Requirements 24.
+   * not a collision. FS-29KSH §Requirements 24.
    */
   private offerConversation(): void {
     if (!this.interactKey) return;
@@ -875,7 +875,7 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * A line of who they are, and a choice. Not a dialogue tree: no branching, no
-   * memory of what was said. FS-0008 §Requirements 24, §Out of Scope.
+   * memory of what was said. FS-29KSH §Requirements 24, §Out of Scope.
    */
   private openDialogue(npc: NPCState): void {
     const offer = NPC_OFFERS[npc.function] ?? {

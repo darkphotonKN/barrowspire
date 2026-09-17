@@ -5,11 +5,11 @@ Date: 2026-09-08
 Scope: `game-server/game-service`, `game-client`
 Amends: [ADR-0004](0004-game-traffic-bypasses-the-application-gateway.md) §3 (Decision clause 3 —
 matchmaking hands the client the allocated pod's address)
-Realized by: [FS-0008](../specs/0008-hub-world-and-delve-entry.md) (hub world and delve entry)
+Realized by: [FS-29KSH](../specs/29KSH-hub-world-and-delve-entry.md) (hub world and delve entry)
 
 ## Context
 
-FS-0008 introduces a second world type: a shared, persistent **hub** that players enter
+FS-29KSH introduces a second world type: a shared, persistent **hub** that players enter
 before delving, with the existing escape run reached by talking to an NPC there. That raises a
 question the codebase has never had to answer, because it has only ever had one world type:
 **when a player moves between worlds, does the client reconnect?**
@@ -46,7 +46,7 @@ players two at a time (`config/routes.go:48`, `NewQueueService(2)`).
 
 ### The force that decides it
 
-**A concurrency ceiling of 50 players was set as part of FS-0008.** At that ceiling the whole
+**A concurrency ceiling of 50 players was set as part of FS-29KSH.** At that ceiling the whole
 system is 25 runs plus one hub — 26 ECS worlds at 30 Hz — inside one process. That is not a
 close call; it holds with room.
 

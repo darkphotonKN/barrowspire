@@ -251,7 +251,7 @@ func insertArgs(acc *account.Account) map[string]interface{} {
 // It exists because an account born from a signup event must commit together
 // with the outbox row announcing it: an account that exists unannounced is
 // invisible to auth-service forever, and an announcement without an account is
-// a lie downstream will act on (FS-0006 §Req 12).
+// a lie downstream will act on (FS-9KW9F §Req 12).
 func (r *AccountRepository) InsertTx(ctx context.Context, tx *sqlx.Tx, acc *account.Account) error {
 	if _, err := tx.NamedExecContext(ctx, insertAccountQuery, insertArgs(acc)); err != nil {
 		return commonhelpers.WrapDBErr("account", "insert tx", err)

@@ -57,7 +57,7 @@ client.use(authMiddleware);
 
 /**
  * Turns openapi-fetch's `{ data, error }` result into the throwing shape the app
- * already expects, and preserves the FS-0001 contract: errors arrive as
+ * already expects, and preserves the FS-22WKC contract: errors arrive as
  * ApiError carrying `code`.
  *
  * `error` here is the parsed problem+json body, so it goes through the same
@@ -197,7 +197,7 @@ export const apiClient = new ApiClient();
  * auth middleware. They still go through the GENERATED client: "no hand-written
  * fetch against a serialized path" (ADR-0001 §4) has no pre-auth exemption.
  *
- * There is no third pre-auth call: FS-0007 made signup synchronous, which removed
+ * There is no third pre-auth call: FS-83TJK made signup synchronous, which removed
  * the check-email poll and then the endpoint itself.
  */
 export const publicClient = createClient<paths>({ baseUrl: API_BASE_URL });

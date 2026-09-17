@@ -1,7 +1,7 @@
 // Package testsupport holds the HTTP test scaffolding shared by the gateway's
 // package tests.
 //
-// It exists because FS-0001 migrates six handler packages to the error seam, and
+// It exists because FS-22WKC migrates six handler packages to the error seam, and
 // each one needs the same three helpers to assert a problem+json response. Six
 // copies would drift, and the assertions they support are contract assertions —
 // the drift would be invisible until two packages disagreed about what the

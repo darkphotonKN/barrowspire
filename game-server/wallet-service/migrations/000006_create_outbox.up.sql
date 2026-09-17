@@ -1,4 +1,4 @@
--- FS-0006 §Requirements 12, 20. wallet's own outbox, so an account insert and
+-- FS-9KW9F §Requirements 12, 20. wallet's own outbox, so an account insert and
 -- the account.created announcing it commit or roll back together.
 --
 -- Same shape as auth-service's 000009_create_outbox: common/outbox's repository

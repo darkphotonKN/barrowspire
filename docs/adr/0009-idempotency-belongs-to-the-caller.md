@@ -3,7 +3,7 @@
 Status: accepted
 Date: 2026-08-17
 Scope: `game-server/ledger-service`, `game-server/wallet-service`
-Realized by: FS-0003 §Requirements 11–13 and the `AppendLedgerTx` contract (not yet implemented)
+Realized by: FS-F9R7Q §Requirements 11–13 and the `AppendLedgerTx` contract (not yet implemented)
 
 ## Context
 
@@ -30,7 +30,7 @@ is expected traffic — and the natural handling is always "treat it as success,
 creates opportunities to get it wrong. The error is better removed than propagated.
 
 > Recorded without adversarial review in this repo. The decision arrived pre-formed from an
-> external design discussion and was locked directly during FS-0003 scoping.
+> external design discussion and was locked directly during FS-F9R7Q scoping.
 
 ## Decision
 
@@ -48,15 +48,15 @@ The ledger never mints one.**
 - **Retries are safe by construction.** No caller needs compensation logic, and no caller needs
   to handle a duplicate error path.
 - **The transactional outbox pattern works with no extra dedup machinery** on either side. This
-  is the intended write path (see FS-0003 §Known gap) and this decision is what makes it viable.
+  is the intended write path (see FS-F9R7Q §Known gap) and this decision is what makes it viable.
 - **Cost: correctness depends on caller determinism, unverifiably.** This is the load-bearing
   risk of the decision. A caller generating a per-attempt UUID silently double-records gold
   movements, and the reconciler is what would eventually catch it.
 - **Cost: a duplicate carrying different content is currently invisible.** The unique index keys
   on `(reason, reference_id, account_id, direction)` and excludes `amount`, so a retry with a
   corrected amount no-ops as success while the ledger keeps the original value. **This ADR does
-  not settle that** — it is FS-0003 open question 1, whose recommendation is to make the no-op
+  not settle that** — it is FS-F9R7Q open question 1, whose recommendation is to make the no-op
   conditional on the existing legs agreeing, and to raise a hard conflict when they do not.
 - **Nothing enforces `transaction_id` uniqueness itself**, so two genuinely different transactions
-  sharing an id would break sum-to-zero across the pair undetected. Also unsettled — FS-0003 open
+  sharing an id would break sum-to-zero across the pair undetected. Also unsettled — FS-F9R7Q open
   question 2.

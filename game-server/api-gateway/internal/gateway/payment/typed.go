@@ -93,7 +93,7 @@ type permissionEnvelope struct {
 
 var errsAuthed = []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError}
 
-// RegisterOperations declares the serialized payment surface (FS-0002 slice 4).
+// RegisterOperations declares the serialized payment surface (FS-NTPW2 slice 4).
 //
 // POST /webhook/stripe is NOT here and must never be. Three independent reasons,
 // any one sufficient:
@@ -103,7 +103,7 @@ var errsAuthed = []int{http.StatusUnauthorized, http.StatusBadRequest, http.Stat
 //   - it carries no /api prefix and is registered directly on the router.
 //
 // Serializing it would break signature verification in a way that surfaces only
-// as failed live payments. It stays a legacy gin route (FS-0002 §Out of Scope).
+// as failed live payments. It stays a legacy gin route (FS-NTPW2 §Out of Scope).
 func RegisterOperations(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)), errFor ErrorFunc,
 	secured []map[string][]string,

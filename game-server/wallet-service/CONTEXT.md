@@ -5,10 +5,10 @@ Ubiquitous language for the **wallet-service** bounded context: the **economy co
 > **The full domain glossary currently lives in
 > [`SPECIFICATION.md` § Domain Terms](SPECIFICATION.md#domain-terms)** — Account, Gold, Hold,
 > Available, `bid_id`, `version` — alongside the aggregate and invariant prose. It predates
-> this file. Terms below are the ones FS-0006 coined or sharpened, plus the boundaries they
+> this file. Terms below are the ones FS-9KW9F coined or sharpened, plus the boundaries they
 > made necessary; the spec's glossary should migrate here when wallet is next worked.
 
-Sources: [FS-0006](../../docs/specs/0006-account-and-role-token-claims.md),
+Sources: [FS-9KW9F](../../docs/specs/9KW9F-account-and-role-token-claims.md),
 [ADR-0014](../../docs/adr/0014-account-id-claim-is-eventually-consistent-and-fails-closed.md),
 [ADR-0005](../../docs/adr/0005-wallet-owns-balance-ledger-is-a-reconciliation-record.md).
 
@@ -50,9 +50,9 @@ not an oversight.
 
 **`player` is not a wallet term.** Roles (`player` | `admin`) belong to auth-service. Wallet
 authorizes on identity, not on role, and has no administrative read path of its own — the
-role-scoped listing lives in ledger-service (FS-0003 §Req 28).
+role-scoped listing lives in ledger-service (FS-F9R7Q §Req 28).
 
 **`account` means something different in ledger-service.** There, `account_id` is a *soft
-reference* to this table that the ledger never resolves and holds no record of (FS-0003 §Req
+reference* to this table that the ledger never resolves and holds no record of (FS-F9R7Q §Req
 15). Here it is an aggregate with a balance and invariants. Same identifier, two contexts, and
 ledger-service deliberately knows nothing about this one.

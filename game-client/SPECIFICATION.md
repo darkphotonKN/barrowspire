@@ -36,7 +36,7 @@ server state and sends intents. ✅
 ### Account
 
 - [x] Register an account
-- [x] Register without polling → FS-0007
+- [x] Register without polling → FS-83TJK
 - [x] Log in and persist the session
 - [x] Guard routes behind auth
 - [x] Upload and confirm an avatar
@@ -58,15 +58,15 @@ server state and sends intents. ✅
 
 ### Presentation
 
-- [ ] Fantasy-medieval presentation on the web platform → FS-0004
-- [ ] Fantasy-medieval presentation in the game canvas → FS-0005
+- [ ] Fantasy-medieval presentation on the web platform → FS-SWMNW
+- [ ] Fantasy-medieval presentation in the game canvas → FS-W6BP1
 
 ### Hub
 
-- [ ] Hub scene → FS-0008
-- [ ] Move between hub and run → FS-0008
-- [ ] Delve entry from the hub → FS-0008
-- [ ] Loadout access from the hub → FS-0008
+- [ ] Hub scene → FS-29KSH
+- [ ] Move between hub and run → FS-29KSH
+- [ ] Delve entry from the hub → FS-29KSH
+- [ ] Loadout access from the hub → FS-29KSH
 
 ### Deployment
 

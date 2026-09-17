@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-// FS-0001 §Requirements 5 — the mapping table, asserted on status, code, AND
+// FS-22WKC §Requirements 5 — the mapping table, asserted on status, code, AND
 // Content-Type. Asserting on status and body alone would let the media type
 // silently degrade to application/json (§Requirements 7).
 func TestWrite_GRPCStatus_MapsToStatusCodeAndMediaType(t *testing.T) {
@@ -61,7 +61,7 @@ func TestWrite_GRPCStatus_MapsToStatusCodeAndMediaType(t *testing.T) {
 	}
 }
 
-// FS-0001 §Requirements 5 (precedence) and §Edge States — an error that never
+// FS-22WKC §Requirements 5 (precedence) and §Edge States — an error that never
 // crossed a gRPC boundary still has to resolve to a real status. Without
 // sentinel matching every local failure collapses to 500, which is how a
 // not-found becomes an incident page.
@@ -95,7 +95,7 @@ func TestWrite_LocalSentinel_MapsToStatusAndCode(t *testing.T) {
 	}
 }
 
-// FS-0001 §Requirements 9 — the leak this feature exists to close. The old code
+// FS-22WKC §Requirements 9 — the leak this feature exists to close. The old code
 // interpolated status.Message() straight into the response; a downstream message
 // can name a table, a service, or a constraint.
 func TestWrite_DownstreamMessage_NeverReachesTheClient(t *testing.T) {
@@ -110,7 +110,7 @@ func TestWrite_DownstreamMessage_NeverReachesTheClient(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, w.Code)
 }
 
-// FS-0001 §Requirements 8 — always present, so the client never null-checks.
+// FS-22WKC §Requirements 8 — always present, so the client never null-checks.
 // A nil slice marshals to null, which is the bug this guards.
 func TestWrite_Errors_IsPresentAndEmpty_NotNull(t *testing.T) {
 	c, w := testsupport.NewCtx()
@@ -124,7 +124,7 @@ func TestWrite_Errors_IsPresentAndEmpty_NotNull(t *testing.T) {
 	assert.NotNil(t, errs, "errors must be [] rather than null")
 }
 
-// FS-0001 §API surface — every member is pinned, so absence is a contract break
+// FS-22WKC §API surface — every member is pinned, so absence is a contract break
 // even when the value is empty.
 func TestWrite_Body_CarriesEveryPinnedMember(t *testing.T) {
 	c, w := testsupport.NewCtx()
@@ -138,7 +138,7 @@ func TestWrite_Body_CarriesEveryPinnedMember(t *testing.T) {
 	assert.Equal(t, "about:blank", body["type"])
 }
 
-// FS-0001 §Edge States — an error with an empty message must not produce an
+// FS-22WKC §Edge States — an error with an empty message must not produce an
 // empty detail. Falling back to status text keeps the body readable.
 func TestWrite_EmptyErrorMessage_DetailFallsBackToStatusText(t *testing.T) {
 	c, w := testsupport.NewCtx()
@@ -148,7 +148,7 @@ func TestWrite_EmptyErrorMessage_DetailFallsBackToStatusText(t *testing.T) {
 	assert.Equal(t, "Not Found", testsupport.Decode(t, w)["detail"])
 }
 
-// FS-0001 §Requirements 11 + §Edge States — I-0002 puts the seam in middleware,
+// FS-22WKC §Requirements 11 + §Edge States — I-22WKC-2 puts the seam in middleware,
 // where it must stop the chain rather than let the handler run on top of an
 // already-written error body. Proven here, one slice before anything depends
 // on it.
@@ -173,7 +173,7 @@ func TestWrite_FromMiddleware_AbortsBeforeTheHandlerRuns(t *testing.T) {
 	assert.Equal(t, string(errcode.Unauthenticated), testsupport.Decode(t, w)["code"])
 }
 
-// FS-0001 §API surface — detail is specified as "occurrence-specific", but a
+// FS-22WKC §API surface — detail is specified as "occurrence-specific", but a
 // gateway may not echo downstream prose (§Requirements 9) nor restate a
 // downstream rule (ADR-0001 §6). Both constraints leave one safe source: a
 // message the gateway itself authored about a failure it decided. Without this,
@@ -219,7 +219,7 @@ func TestWrite_AuthoredDetail_NeverFallsBackToWireMessage(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "members table")
 }
 
-// FS-0001 §Edge States — "panic in a handler". gin.Default()'s stock Recovery
+// FS-22WKC §Edge States — "panic in a handler". gin.Default()'s stock Recovery
 // writes a 500 with NO body at all, so panics bypassed the contract entirely:
 // a client got a status and nothing to switch on.
 func TestRecovery_PanicInHandler_Returns500ProblemJSON(t *testing.T) {
@@ -298,7 +298,7 @@ func TestRecovery_PanicAfterResponseSent_DoesNotAppendASecondBody(t *testing.T) 
 	assert.NotContains(t, w.Body.String(), "INTERNAL_ERROR")
 }
 
-// FS-0001 §Requirements 9 — the parser's own complaint must reach the log even
+// FS-22WKC §Requirements 9 — the parser's own complaint must reach the log even
 // though it must not reach the client. Both halves are asserted: the cause is
 // recoverable from the returned error, and the authored detail is what ships.
 func TestBindError_KeepsTheCauseAndTellsTheTruth(t *testing.T) {
@@ -345,8 +345,8 @@ func TestBindError_KeepsTheCauseAndTellsTheTruth(t *testing.T) {
 	})
 }
 
-// FS-0001 user story 12 — 5xx pages someone, 4xx does not. Implemented since
-// I-0001 and never asserted until now.
+// FS-22WKC user story 12 — 5xx pages someone, 4xx does not. Implemented since
+// I-22WKC-1 and never asserted until now.
 func TestWrite_LogLevel_SplitsOnStatusClass(t *testing.T) {
 	var buf bytes.Buffer
 	original := slog.Default()

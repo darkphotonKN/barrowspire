@@ -142,7 +142,7 @@ class SocketManager {
           this.handleGameStateUpdate(data);
         } else if (data.action === "world_entered") {
           // The ONE place the client learns which world it is in. Never infer
-          // it from the shape of a state broadcast. FS-0008 §Requirements 36.
+          // it from the shape of a state broadcast. FS-29KSH §Requirements 36.
           this.handleWorldEntered(data.payload as WorldEnteredPayload);
           this.listeners.get(data.action)?.(data.payload);
         } else if (data.action && this.listeners.has(data.action)) {
@@ -188,7 +188,7 @@ class SocketManager {
   ): void {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       // Auto-inject player_id. The world a message belongs to is NOT sent —
-      // the server routes on its own record of the player (FS-0008 §Requirements 16).
+      // the server routes on its own record of the player (FS-29KSH §Requirements 16).
       const playerId = useAuthStore.getState().memberInfo?.id;
 
       const enrichedPayload = {

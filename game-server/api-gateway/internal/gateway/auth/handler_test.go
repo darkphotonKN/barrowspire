@@ -81,7 +81,7 @@ func newRouter(client gwauth.AuthClient) *gin.Engine {
 	return r
 }
 
-// FS-0001 §Requirements 4, 5, 7 — every downstream failure in this package now
+// FS-22WKC §Requirements 4, 5, 7 — every downstream failure in this package now
 // resolves through the one seam, in problem+json, with the code the client
 // switches on.
 //
@@ -142,7 +142,7 @@ func TestAuthHandler_DownstreamFailures_ResolveThroughTheSeam(t *testing.T) {
 	}
 }
 
-// FS-0001 §Requirements 9 — every one of these handlers interpolated
+// FS-22WKC §Requirements 9 — every one of these handlers interpolated
 // status.Message() straight into the response body.
 func TestAuthHandler_DownstreamMessages_NeverReachTheClient(t *testing.T) {
 	const leak = "pq: duplicate key value violates unique constraint members_email_key"
@@ -156,7 +156,7 @@ func TestAuthHandler_DownstreamMessages_NeverReachTheClient(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "pq:")
 }
 
-// FS-0001 §Requirements 9 — LoginMemberHandler was the worst of them: it
+// FS-22WKC §Requirements 9 — LoginMemberHandler was the worst of them: it
 // formatted the raw bind error into the message with fmt.Sprintf.
 func TestAuthHandler_Signin_DoesNotEchoTheBindError(t *testing.T) {
 	r := newRouter(&stubAuthClient{})

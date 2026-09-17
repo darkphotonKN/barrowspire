@@ -6,7 +6,7 @@
 //
 // It exists because that decision used to live in 24 hand-copied switches across
 // six handler files, which disagreed with each other about what a given gRPC code
-// meant. See docs/specs/0001-uniform-error-contract.md and ADR-0001 §6.
+// meant. See docs/specs/22WKC-uniform-error-contract.md and ADR-0001 §6.
 package httperr
 
 import (
@@ -32,7 +32,7 @@ const contentType = "application/problem+json"
 // FieldError is one entry in a Problem's Errors slice.
 //
 // Exported so the Huma adapter can translate boundary validation failures into
-// the same member the seam publishes (FS-0002 §Requirements 8). Exporting the
+// the same member the seam publishes (FS-NTPW2 §Requirements 8). Exporting the
 // SHAPE does not create a second writer: Write is still the only function that
 // puts an error on a gin response, and the seam gate still forbids direct
 // status writes elsewhere.
@@ -46,7 +46,7 @@ type FieldError struct {
 type fieldError = FieldError
 
 // Problem is an RFC 9457 problem detail. Member semantics are pinned by
-// FS-0001 §API surface.
+// FS-22WKC §API surface.
 type Problem struct {
 	// Type identifies the problem class. about:blank until real type URIs are
 	// minted; Code is the switch key in the meantime.
@@ -178,7 +178,7 @@ func mapError(err error) Problem {
 
 // newProblem builds a Problem with the members that follow mechanically from a
 // status and a code. Detail defaults to the status text: downstream error
-// prose is never client-safe (FS-0001 §Requirements 9), so the default has to
+// prose is never client-safe (FS-22WKC §Requirements 9), so the default has to
 // be something that carries no information about internals.
 func newProblem(httpStatus int, code errcode.Code) Problem {
 	return Problem{
@@ -246,7 +246,7 @@ func NewProblem(httpStatus int, detail string, fields []FieldError) Problem {
 // It exists for transports that decide status from a returned VALUE rather than
 // by writing the response themselves — Huma being the case in hand. Without it,
 // a typed handler returning a domain error gets Huma's default (500), and every
-// mapping FS-0001 established silently stops applying to serialized routes: a
+// mapping FS-22WKC established silently stops applying to serialized routes: a
 // not-found becomes 500, an outage becomes 500, a validation failure becomes
 // 500. Found by probing a running gateway; nothing in the type system says a
 // returned error is meant to carry a status.

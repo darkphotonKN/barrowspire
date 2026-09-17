@@ -124,7 +124,7 @@ func NewServer(authClient grpcauth.AuthClient, queueService QueueManager, eventE
 * MatchProgress entity. RulesSystem ends a session once activePlayers <= 1 — a
 * condition the hub trips constantly — but it returns early when no MatchProgress
 * exists. Skipping that call is what makes the hub immune, with no change to the
-* system itself. FS-0008 §Requirements 1.
+* system itself. FS-29KSH §Requirements 1.
 **/
 func (s *Server) createHubSession() *game.Session {
 	entityManager := ecs.NewEntityManager()
@@ -364,7 +364,7 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 
 	// Leaving the hub is part of arriving in the run: a player occupies one world
 	// at a time, and the hub is never torn down, so anything left behind there
-	// stays visible and broadcasting (FS-0008 §Requirements 23).
+	// stays visible and broadcasting (FS-29KSH §Requirements 23).
 	if hub, exists := s.HubSession(); exists {
 		for _, player := range players {
 			hub.RemovePlayer(player.ID.String())

@@ -112,7 +112,7 @@ func (m *Message) ParsePayload() (interface{}, error) {
 
 	// Every in-game action identifies its sender. Which world the message belongs
 	// to is NOT read from the payload — the server routes on the player's own
-	// CurrentGameSessionId (FS-0008 §Requirements 16).
+	// CurrentGameSessionId (FS-29KSH §Requirements 16).
 	var playerID string
 	var err error
 

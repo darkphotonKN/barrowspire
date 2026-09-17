@@ -5,7 +5,7 @@ Date: 2026-08-23
 Scope: `game-server/ledger-service`, `game-server/marketplace-service`, `game-server/wallet-service`
 Amends: [ADR-0007](0007-the-ledger-is-append-only-corrections-are-reversals.md) — replaces its
 "corrections are reversals" clause; its append-only clause stands
-Realized by: FS-0003 §Requirements 2–3, 9 (not yet implemented)
+Realized by: FS-F9R7Q §Requirements 2–3, 9 (not yet implemented)
 
 ## Context
 
@@ -62,7 +62,7 @@ reversals" clause is replaced: there are no corrections to make.
   delivery is the normal path rather than an edge case. This is ADR-0009's caller-minted
   deterministic `transaction_id` earning its keep, and the two decisions now depend on each
   other.
-- **The durability gap narrows.** FS-0003's known gap — wallet commits, the append is lost, and
+- **The durability gap narrows.** FS-F9R7Q's known gap — wallet commits, the append is lost, and
   a reconciler reports a discrepancy with no underlying gold error — mostly closes, because the
   orchestrator re-drives the step. What remains is the window between the money moving and the
   retry landing, during which a reconciler run would report a false discrepancy. **Whether that

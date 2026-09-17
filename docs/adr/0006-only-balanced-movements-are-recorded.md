@@ -3,7 +3,7 @@
 Status: accepted
 Date: 2026-08-17
 Scope: `game-server/ledger-service`
-Realized by: FS-0003 §Requirements 1–5, 7–8 (not yet implemented)
+Realized by: FS-F9R7Q §Requirements 1–5, 7–8 (not yet implemented)
 
 ## Context
 
@@ -34,7 +34,7 @@ in-game counterparty either — which is why they are deferred rather than forgo
 blocked on the same system-account decision.
 
 > Recorded without adversarial review in this repo. The decision arrived pre-formed from an
-> external design discussion and was locked directly during FS-0003 scoping.
+> external design discussion and was locked directly during FS-F9R7Q scoping.
 
 ## Decision
 

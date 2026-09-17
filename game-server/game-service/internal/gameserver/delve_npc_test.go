@@ -27,7 +27,7 @@ func npcsIn(entities []*ecs.Entity) []*components.NPCComponent {
 
 // A function NPC is how anything in the hub is reached. They stand still, so
 // their placement is map data — a delver has to be able to tell someone where to
-// stand. FS-0008 §Requirements 9, 29.
+// stand. FS-29KSH §Requirements 9, 29.
 func TestHub_HoldsItsFunctionNPCs(t *testing.T) {
 	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
@@ -97,7 +97,7 @@ func npcPositions(entities []*ecs.Entity) map[components.NPCFunction][2]float64 
 // Standing in the hub is not being in a game. The resume check predates the hub
 // and asked only whether the player was in *a* session — which everyone now is,
 // so asking to delve resumed them into the hub they were already standing in and
-// never queued them. FS-0008 §Requirements 26.
+// never queued them. FS-29KSH §Requirements 26.
 func TestFindGame_FromTheHub_Queues(t *testing.T) {
 	queue := NewMockQueueService()
 	server := NewServer(&MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{})
@@ -128,7 +128,7 @@ func TestFindGame_FromTheHub_Queues(t *testing.T) {
 
 // The whole loop, from the hub side: two delvers ask the Spirewarden to descend
 // and end up in one run together, out of the hub.
-// FS-0008 §Requirements 26, 28, §Edge States (Concurrent).
+// FS-29KSH §Requirements 26, 28, §Edge States (Concurrent).
 func TestTwoDelversDescend_MatchIntoOneRun(t *testing.T) {
 	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()

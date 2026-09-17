@@ -84,7 +84,7 @@ func newRecorder(t *testing.T, db *sqlx.DB) *member.AccountRecorder {
 	return member.NewAccountRecorder(db, member.NewRepository(db), commoninbox.NewRepo())
 }
 
-// FS-0006 §Requirements 15. The loop's last hop.
+// FS-9KW9F §Requirements 15. The loop's last hop.
 func TestRecordAccount_FirstDelivery_SetsTheColumn(t *testing.T) {
 	db := authDB(t)
 	memberID, accountID := seedMember(t, db), uuid.New()
@@ -98,7 +98,7 @@ func TestRecordAccount_FirstDelivery_SetsTheColumn(t *testing.T) {
 	assert.Equal(t, accountID, *got)
 }
 
-// FS-0006 §Requirements 16, §Edge States. A redelivery changes nothing and
+// FS-9KW9F §Requirements 16, §Edge States. A redelivery changes nothing and
 // reports already-processed so the consumer can ack it.
 func TestRecordAccount_Redelivery_LeavesTheColumnUnchanged(t *testing.T) {
 	db := authDB(t)
@@ -115,7 +115,7 @@ func TestRecordAccount_Redelivery_LeavesTheColumnUnchanged(t *testing.T) {
 	assert.Equal(t, accountID, *got, "the column is untouched by a redelivery")
 }
 
-// FS-0006 §Requirements 9, §Edge States: "the message wedges deliberately".
+// FS-9KW9F §Requirements 9, §Edge States: "the message wedges deliberately".
 // Two members sharing one account would mean two people reading one account's
 // history. The UNIQUE constraint refuses it and the error must PROPAGATE — the
 // tempting fix of swallowing it converts a detectable consumer bug into silent
@@ -138,7 +138,7 @@ func TestRecordAccount_DuplicateAccountID_IsRefused(t *testing.T) {
 	assert.Nil(t, accountIDOf(t, db, second), "and the second member keeps NULL")
 }
 
-// FS-0006 §Edge States. auth produced the signup that started the loop, so the
+// FS-9KW9F §Edge States. auth produced the signup that started the loop, so the
 // member necessarily preceded the event: a missing row is a real inconsistency,
 // not a race, and must not be silently acked away.
 func TestRecordAccount_UnknownMember_IsAnError(t *testing.T) {
@@ -151,7 +151,7 @@ func TestRecordAccount_UnknownMember_IsAnError(t *testing.T) {
 	assert.Error(t, err, "an account.created for a member that does not exist must not pass silently")
 }
 
-// FS-0006 §Requirements 15, 18, and the acceptance criterion the entire feature
+// FS-9KW9F §Requirements 15, 18, and the acceptance criterion the entire feature
 // exists for: after the loop completes, the member's next token carries the claim.
 //
 // Composes the three pieces that actually run on the login path — the recorder
@@ -190,7 +190,7 @@ func TestRecordAccount_ThenMint_ProducesATokenCarryingTheClaim(t *testing.T) {
 	tokenAfter, err := auth.GenerateJWT(*after, commonconstants.Access, time.Hour)
 	require.NoError(t, err)
 	assert.Equal(t, accountID.String(), decodeClaims(t, tokenAfter)["account_id"],
-		"the claim FS-0003's ledger read path has been waiting for")
+		"the claim FS-F9R7Q's ledger read path has been waiting for")
 }
 
 func decodeClaims(t *testing.T, tokenStr string) jwt.MapClaims {

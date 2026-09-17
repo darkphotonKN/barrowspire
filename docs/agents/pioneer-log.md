@@ -15,7 +15,7 @@ deliberately left alone*, which is the only honest way to run a transcription.
 
 ---
 
-## Behavior-change candidates (FS-0002 retrofit)
+## Behavior-change candidates (FS-NTPW2 retrofit)
 
 ### 1. `complete-*` endpoints require three fields they discard
 
@@ -50,7 +50,7 @@ convert by hand. `game-client` already carries the conversion in two places.
 
 `statusCode` and `message` wrap nearly every payload, restating information already in the
 response line. Removing the envelope is the deliberate shape break ADR-0001 §11 assigns to a
-client cutover — it was not taken here because FS-0002 promised byte-compatibility.
+client cutover — it was not taken here because FS-NTPW2 promised byte-compatibility.
 
 ### 6. Inconsistent field-naming inside one message
 
@@ -64,7 +64,7 @@ It answers 202 and publishes to AMQP; the client learns the account exists by po
 
 ### 8. auth-service returns bare Go errors on paths other than login
 
-Fixed for `LoginMember` during FS-0001. Other methods still return `fmt.Errorf` values that
+Fixed for `LoginMember` during FS-22WKC. Other methods still return `fmt.Errorf` values that
 cross gRPC as `codes.Unknown` and land on the gateway's 500 catch-all. The
 `common/interceptor.Status` interceptor now maps sentinels, so the remaining work is returning
 sentinels rather than bare errors.

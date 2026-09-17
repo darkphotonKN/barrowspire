@@ -4,12 +4,12 @@ Status: accepted
 Date: 2026-08-25
 Scope: `game-server/ledger-service` — and, as the repo's first keyset pager, the shape every
 subsequent one follows unless an ADR says otherwise
-Realized by: FS-0003 §Requirements 23, §API surface (`listEntries`), §Edge States — implemented
-by I-0023 (the encoding) and I-0026 (the pager)
+Realized by: FS-F9R7Q §Requirements 23, §API surface (`listEntries`), §Edge States — implemented
+by I-F9R7Q-10 (the encoding) and I-F9R7Q-13 (the pager)
 
 ## Context
 
-FS-0003 §Requirement 23 settled that entry paging is keyset over `(created_at, id)` descending
+FS-F9R7Q §Requirement 23 settled that entry paging is keyset over `(created_at, id)` descending
 and that the cursor is **opaque** to clients. Opaque is a promise about who may *read* a cursor.
 It decides nothing about what a cursor *contains*, where it is decoded, or what happens when one
 arrives that cannot be. Those three were left open, and two of them are one-way doors.

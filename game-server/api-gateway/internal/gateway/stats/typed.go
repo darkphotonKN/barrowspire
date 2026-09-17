@@ -69,7 +69,7 @@ type Leaderboard struct {
 // game-client's leaderboard silently.
 var errsPublic = []int{http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusInternalServerError}
 
-// RegisterOperations declares the serialized stats surface (FS-0002 slice 3).
+// RegisterOperations declares the serialized stats surface (FS-NTPW2 slice 3).
 // No protect: these routes are public today.
 func RegisterOperations(api huma.API, h *Handler, errFor ErrorFunc) {
 	toStatusError = errFor

@@ -66,7 +66,7 @@ func worldWithTwoDelvers(t *testing.T, bounds WorldBounds) (*Session, uuid.UUID,
 // The guard has to sit on the path damage actually travels: it is inlined in
 // MovementSystem (movement.go:227, a hardcoded 10), not in CombatSystem, which is
 // an empty stub — and the hub runs the same MovementSystem a run does.
-// FS-0008 §Requirements 6.
+// FS-29KSH §Requirements 6.
 func TestAttack_LandsInARunAndNotInTheHub(t *testing.T) {
 	tests := []struct {
 		name       string

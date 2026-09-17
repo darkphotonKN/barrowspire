@@ -235,7 +235,7 @@ That's it. No route registration, no schema authoring, no client hand-editing.
 | `make openapi-breaking` (oasdiff) | a breaking change, unless allowlisted deliberately |
 | client staleness check | a committed client that doesn't match the contract |
 | `make contract-auth` | an operation whose auth requirement doesn't match its declared security |
-| `make seam-gate` | a handler reaching past the error-mapping seam (FS-0001) |
+| `make seam-gate` | a handler reaching past the error-mapping seam (FS-22WKC) |
 | `make gates-selftest` | **itself, if the contract gates above have stopped enforcing** |
 | `make seam-gate-selftest` | **itself, if the seam gate has stopped enforcing** |
 

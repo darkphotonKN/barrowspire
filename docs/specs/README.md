@@ -6,7 +6,7 @@ Tier-2 detailed specs for our **two-tier spec system**.
 
 - **Tier 1 — `SPECIFICATION.md`** (thin, living, always-loaded): the current truth of what the system does. One line per capability, grouped by bounded context, each with a status checkbox and a pointer to its feature spec, e.g.
   `- [x] Drag-reorder in tree view → FS-0042`
-  Hard budget ~200–300 lines. When a section bloats past budget, that signals a bounded context wants its own file — the spec does not grow. (In a multi-service repo, specs are per-service under `<service>/SPECIFICATION.md`; the feature specs in this folder are the shared, globally-numbered work orders.)
+  Hard budget ~200–300 lines. When a section bloats past budget, that signals a bounded context wants its own file — the spec does not grow. (In a multi-service repo, specs are per-service under `<service>/SPECIFICATION.md`; the feature specs in this folder are the shared, globally-identified work orders.)
 - **Tier 2 — feature specs (this folder)** (deep, write-once, loaded only when working that feature).
 
 ## Thin line format (tier-1 authority)
@@ -68,8 +68,14 @@ the capability.
 
 ## Numbering & references
 
-- Files live here as `NNNN-short-slug.md` — zero-padded, sequential, allocated the same way as `docs/adr/`.
-- Reference them everywhere as `FS-NNNN` (in `SPECIFICATION.md` lines, issue bodies, PRs, commits).
+- Files live here as `<TOKEN>-short-slug.md`, referenced everywhere as `FS-<TOKEN>` (in `SPECIFICATION.md` lines, issue bodies, PRs, commits). Resolve an id with `docs/specs/<TOKEN>-*`.
+- **The token is 5 random characters** from Crockford's uppercase alphabet `0123456789ABCDEFGHJKMNPQRSTVWXYZ` (no I, L, O, U), containing **at least one letter**. Random, not sequential, so two people drafting specs on separate branches never mint the same id.
+- **The shell draws the token, never the model** — a model cannot produce real randomness, and the collision odds assume it. Draw, then redraw if `docs/specs/<TOKEN>-*` already exists:
+  ```bash
+  until t=$(LC_ALL=C tr -dc '0-9A-HJKMNP-TV-Z' </dev/urandom | head -c5); [[ $t =~ [A-Z] ]] && [ -z "$(find docs/specs -name "$t-*")" ]; do :; done; echo "$t"
+  ```
+- Existing `NNNN-` ids (`FS-0007`) remain legal and resolve the same way; never mint a new one. `FS-NNNN` and `FS-0042` in docs and skills are placeholders for any id.
+- ADRs stay sequential (`docs/adr/README.md`); the two id spaces are unrelated.
 - A feature spec contains: **Summary, Requirements, User Stories, Acceptance Criteria, Edge States, Out of Scope**, plus a header linking back to its `SPECIFICATION.md` entry and any related ADRs — plus, for contract-touching features, an **API surface** section (endpoint table; field-level for new resources, endpoint-level shorthand for established patterns).
 - The thin line points; the FS elaborates. Never copy content between them.
 

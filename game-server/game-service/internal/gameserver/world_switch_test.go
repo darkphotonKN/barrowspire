@@ -25,7 +25,7 @@ func enterHub(t *testing.T, server *Server, name string) (*types.Player, *websoc
 }
 
 // A player is in one world at a time. Matching moves them; it does not copy them.
-// FS-0008 §Requirements 20-21, 23.
+// FS-29KSH §Requirements 20-21, 23.
 func TestCreateGameSession_MovesPlayersOutOfTheHub(t *testing.T) {
 	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
@@ -48,7 +48,7 @@ func TestCreateGameSession_MovesPlayersOutOfTheHub(t *testing.T) {
 
 // A run ends and everyone comes home. Escape and death land in the same place;
 // the world they were in no longer exists, so leaving them pointed at it would
-// strand them. FS-0008 §Requirements 22.
+// strand them. FS-29KSH §Requirements 22.
 func TestRunEnds_ReturnsPlayersToTheHub(t *testing.T) {
 	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
@@ -71,7 +71,7 @@ func TestRunEnds_ReturnsPlayersToTheHub(t *testing.T) {
 // The connection is the thing that must not break. ADR-0015 chose one socket for
 // the whole session over refactor_plan's two-connection handoff precisely so that
 // nothing can fail between worlds — so the switch has to be observably internal.
-// FS-0008 §Requirements 20.
+// FS-29KSH §Requirements 20.
 func TestWorldSwitch_KeepsTheSameConnection(t *testing.T) {
 	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 
@@ -105,7 +105,7 @@ func TestWorldSwitch_KeepsTheSameConnection(t *testing.T) {
 
 // Being in a run means being absent from the hub, not merely marked as away:
 // the hub broadcasts what it holds, so anyone still held is still seen.
-// FS-0008 §Requirements 23.
+// FS-29KSH §Requirements 23.
 func TestDelvingPlayer_IsAbsentFromTheHubBroadcast(t *testing.T) {
 	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()

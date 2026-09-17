@@ -3,7 +3,7 @@
 Status: accepted
 Date: 2026-08-17
 Scope: `game-server/ledger-service`
-Realized by: FS-0003 §Requirements 6–7, the `amount_positive` and `direction_valid` CHECK
+Realized by: FS-F9R7Q §Requirements 6–7, the `amount_positive` and `direction_valid` CHECK
 constraints on `ledger_entries` (not yet implemented)
 
 ## Context
@@ -33,7 +33,7 @@ they are what the accounting model actually says. A minus sign is an encoding of
 and storing the encoding instead of the term makes every reader translate.
 
 > Recorded without adversarial review in this repo. The decision arrived pre-formed from an
-> external design discussion and was locked directly during FS-0003 scoping.
+> external design discussion and was locked directly during FS-F9R7Q scoping.
 
 ## Decision
 
@@ -50,11 +50,11 @@ and storing the encoding instead of the term makes every reader translate.
   insert time, which matters more than usual here because entries are immutable once written.
 - **Rows read the way the domain speaks.** `DEBIT 500` needs no translation; `-500` does.
 - **Cost: sum-to-zero is no longer a plain `SUM()`.** It requires a `CASE` over `direction`, and
-  FS-0003 places that check in the service layer, so **the database does not currently enforce
-  the invariant at all**. FS-0003 open question 2 raises a `DEFERRABLE INITIALLY DEFERRED`
+  FS-F9R7Q places that check in the service layer, so **the database does not currently enforce
+  the invariant at all**. FS-F9R7Q open question 2 raises a `DEFERRABLE INITIALLY DEFERRED`
   constraint trigger as the way to get it back; that remains unsettled and this ADR does not
   settle it.
 - **Cost: two columns instead of one**, and every query that reasons about net movement carries
   the `CASE`.
 - **`direction` is a closed set enforced by a `CHECK`.** Whether `reason` and `reference_type`
-  get the same treatment is open — see FS-0003 open question 3.
+  get the same treatment is open — see FS-F9R7Q open question 3.

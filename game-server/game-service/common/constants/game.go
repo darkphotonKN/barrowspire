@@ -33,7 +33,7 @@ const (
 
 	// ActionWorldEntered tells a client which world it is now in. One message
 	// for every transition — into the hub, into a run, and back again — so the
-	// client has a single place to switch scenes. FS-0008 §Requirements 15.
+	// client has a single place to switch scenes. FS-29KSH §Requirements 15.
 	ActionWorldEntered Action = "world_entered"
 )
 
@@ -55,11 +55,11 @@ const DefautMaxSessionPlayers = 2
 
 // map setting
 // The hub world is its own size, larger than a run's map and larger than the
-// 1080x720 viewport, so it scrolls. FS-0008 §Requirements 3.
+// 1080x720 viewport, so it scrolls. FS-29KSH §Requirements 3.
 const HubMapWidth float64 = 2000
 const HubMapHeight float64 = 1000
 
-// The fixed point every player enters and returns to. FS-0008 §Requirements 22.
+// The fixed point every player enters and returns to. FS-29KSH §Requirements 22.
 const HubSpawnX float64 = 1000
 const HubSpawnY float64 = 800
 

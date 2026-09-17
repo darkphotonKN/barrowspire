@@ -17,7 +17,7 @@ ambiguity, deliberately tolerated, so it is written down rather than left to bit
 They have nothing to do with each other. A player is *in* the HUB; a message goes *through* the
 message hub.
 
-This collision is not theoretical — it derailed a round of FS-0008's scoping, where "do the HUB
+This collision is not theoretical — it derailed a round of FS-29KSH's scoping, where "do the HUB
 and the tower share the same hub?" was asked about the world and answered about the dispatcher.
 **When either could be meant, write the full term**: "the HUB world" or "the message hub", never
 a bare "the hub". Renaming the dispatcher was considered and not taken.
@@ -45,7 +45,7 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
     `Player.CurrentGameSessionId`. The "Game" is inert: this service holds no other kind of
     session, and these names predate the hub. They cover **both** world types, so
     `GetGameSession` returning the hub is correct, not a bug, and there is no separate hub
-    lookup to go looking for. Renaming was considered during FS-0008 and declined: it touches
+    lookup to go looking for. Renaming was considered during FS-29KSH and declined: it touches
     30 sites across four packages to delete a neutral word, and the churn would land on top of
     the hub work in `git blame`.
 - **Delve** — the *player-facing* word for entering a run, owned by

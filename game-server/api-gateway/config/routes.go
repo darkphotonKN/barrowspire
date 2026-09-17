@@ -29,7 +29,7 @@ import (
 func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	// gin.New(), not gin.Default(): Default() installs gin's stock Recovery,
 	// which writes a 500 with an EMPTY BODY and so is the one failure path that
-	// bypasses the error contract (FS-0001 §Edge States). Default() also installs
+	// bypasses the error contract (FS-22WKC §Edge States). Default() also installs
 	// gin.Logger(), which is re-attached below — dropping it silently was the
 	// second half of this trap.
 	router := gin.New()
@@ -73,7 +73,7 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 
 	// Member Setup amqp
 
-	// Member routes are SERIALIZED (FS-0002 slice 1). All eight are declared as
+	// Member routes are SERIALIZED (FS-NTPW2 slice 1). All eight are declared as
 	// typed operations in internal/gateway/auth/typed.go and mounted below via
 	// contract.RegisterOperations, so openapi.yaml describes them and the docs
 	// UI serves them.
@@ -87,7 +87,7 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	statsClient := stats.NewClient(registry)
 	statsHandler := stats.NewHandler(statsClient)
 
-	// Stats routes are SERIALIZED (FS-0002 slice 3) and remain PUBLIC — no
+	// Stats routes are SERIALIZED (FS-NTPW2 slice 3) and remain PUBLIC — no
 	// AuthMiddleware, exactly as before. See internal/gateway/stats/typed.go.
 
 	// --- GAME SERVICE: DELIBERATELY ABSENT ---
@@ -107,13 +107,13 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 
 	notificationClient := notification.NewClient(registry)
 	notificationHandler := notification.NewHandler(notificationClient)
-	// Notification routes are SERIALIZED (FS-0002 slice 3).
+	// Notification routes are SERIALIZED (FS-NTPW2 slice 3).
 	// --- PAYMENT MICROSERVICE ---
 
 	paymentClient := payment.NewClient(registry)
 	paymentHandler := payment.NewHandler(paymentClient)
 
-	// Payment routes are SERIALIZED (FS-0002 slice 4) — EXCEPT the webhook below.
+	// Payment routes are SERIALIZED (FS-NTPW2 slice 4) — EXCEPT the webhook below.
 
 	// Stripe Webhook (no auth - Stripe sends POST directly)
 	router.POST("/webhook/stripe", paymentHandler.WebhookHandler)
@@ -127,10 +127,10 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 
 	ledgerClient := ledger.NewClient(registry)
 	ledgerHandler := ledger.NewHandler(ledgerClient)
-	// Item routes are SERIALIZED (FS-0002 slice 2). All eleven are typed
+	// Item routes are SERIALIZED (FS-NTPW2 slice 2). All eleven are typed
 	// operations in internal/gateway/item/typed.go, mounted below.
 
-	// --- SERIALIZED CONTRACT (FS-0002) ---
+	// --- SERIALIZED CONTRACT (FS-NTPW2) ---
 	//
 	// Mounted after every legacy route so it is obvious that Huma is added to
 	// this router rather than replacing it. Groups join RegisterOperations one

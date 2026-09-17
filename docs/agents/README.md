@@ -63,13 +63,14 @@ Rules:
   while the consumer ships in the same release. A rule recorded without its precondition gets
   cargo-culted into a repo where it is wrong.
 
-## Local → tracker migration
+## Local mode, and migrating out of it
 
-`mode: local` stores issues as `{issues_dir}/I-NNNN-*.md` (frontmatter + body). Migrating to a real
-tracker is intentionally trivial: iterate `{issues_dir}/I-*.md` with `status != done`, publish each via
-the target backend's create call (carry over title / body / labels / blocked_by), write the new ref back
-into the local file's frontmatter as `migrated_to: #N`, then flip `mode` in `tracker.md`.
+`mode: local` stores issues as `{issues_dir}/I-*.md` (frontmatter + body). **That file format and
+the step-by-step migration procedure are defined by `docs/issues/README.md`** — the authority for the
+local representation, living next to the issues it governs. This README defines the backend-neutral
+schema (the configs in *this* directory); it does not restate the local format.
 
-`Implements FS-NNNN` anchors need **no** rewriting — issue IDs (`#N`, `I-NNNN`) are backend-local and may
-change in a migration; the FS reference is the durable anchor. Anything that must survive a migration
-references the FS, not the issue.
+The one rule that belongs here, because it is what makes the backends interchangeable at all:
+`Implements FS-NNNN` anchors need **no** rewriting on migration. Issue IDs (`#N`, `I-…`) are
+backend-local and may change; the FS reference is the durable anchor. Anything that must survive a
+tracker migration references the FS, not the issue.

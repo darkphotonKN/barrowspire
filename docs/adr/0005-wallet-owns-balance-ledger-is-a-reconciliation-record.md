@@ -3,7 +3,7 @@
 Status: accepted
 Date: 2026-08-17
 Scope: `game-server/ledger-service`, `game-server/wallet-service`
-Realized by: FS-0003 §Requirements 14 — the absence of any balance RPC, query, or
+Realized by: FS-F9R7Q §Requirements 14 — the absence of any balance RPC, query, or
 sum-over-entries in ledger-service (not yet implemented)
 
 ## Context
@@ -31,7 +31,7 @@ read and grows forever. It is worth stating but should not carry the decision �
 snapshots could solve it. The independence argument is the one that holds.
 
 > Recorded without adversarial review in this repo. The decision arrived pre-formed from an
-> external design discussion and was locked directly during FS-0003 scoping.
+> external design discussion and was locked directly during FS-F9R7Q scoping.
 
 ## Decision
 
@@ -51,7 +51,7 @@ The ledger answers *"why is this number what it is"*. It never answers *"what is
   scale.
 - **A reconciler becomes possible and necessary.** Comparing the two records is now the only way
   to use the ledger against wallet — which is the intended design, and is out of scope for
-  FS-0003.
+  FS-F9R7Q.
 - **Cost: "balance as of time T" has no cheap answer.** Anyone needing it must build snapshotting
   or go through the reconciler. Accepted.
 - **Cost: this pressure will recur**, probably from whoever is mid-incident and wants a second

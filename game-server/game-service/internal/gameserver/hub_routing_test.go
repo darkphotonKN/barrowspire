@@ -37,7 +37,7 @@ func registerSession(s *Server, id uuid.UUID) *game.Session {
 }
 
 // The server knows which world a player is in; it must never take the client's
-// word for it. FS-0008 §Requirements 16.
+// word for it. FS-29KSH §Requirements 16.
 func TestResolveGameSession_UsesServerHeldState(t *testing.T) {
 	t.Run("resolves the session the player is recorded in", func(t *testing.T) {
 		hub, server := newRoutingTestHub(t)
@@ -93,7 +93,7 @@ func TestResolveGameSession_UsesServerHeldState(t *testing.T) {
 
 // The headline guarantee, driven through the live hub loop rather than asserted
 // off the method in isolation: a crafted payload naming someone else's world is
-// delivered to the sender's own. FS-0008 §Requirements 16.
+// delivered to the sender's own. FS-29KSH §Requirements 16.
 func TestHubRun_ForeignSessionIDInPayload_RoutesToOwnSession(t *testing.T) {
 	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 

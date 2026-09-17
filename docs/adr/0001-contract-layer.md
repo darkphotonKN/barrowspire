@@ -4,7 +4,7 @@ Status: accepted
 Date: 2026-08-11
 Scope: root — governs `game-server/api-gateway`, `game-client`, and the `game-server/common/api/proto` plane
 Realized by: no single FS — adopted per **serialize-on-touch** (slice ⓪ of the first
-feature that touches each endpoint's surface). Its blocking precondition is **FS-0001**
+feature that touches each endpoint's surface). Its blocking precondition is **FS-22WKC**
 (uniform, machine-readable error contract).
 
 ## Context
@@ -85,7 +85,7 @@ to whoever should own it.
    on `code`, **never** on `detail` — `detail` is prose and explicitly not contract.
 
    **HTTP error status is decided in exactly one seam.** No handler writes an error status
-   directly. This clause is what **FS-0001** builds, and it is a hard precondition for clause 2:
+   directly. This clause is what **FS-22WKC** builds, and it is a hard precondition for clause 2:
    without one error-mapping boundary, the generated contract cannot describe its own failures.
 
 7. **Validation is two layers with two statuses.** *Shape* — is this a well-formed request for
@@ -148,14 +148,14 @@ Go workspace. Rooting them higher would make the Makefile's relative paths climb
 
 **Costs / follow-ups:**
 
-- **FS-0001 is a hard prerequisite, not a nicety.** The gateway has ~122 direct error-status
+- **FS-22WKC is a hard prerequisite, not a nicety.** The gateway has ~122 direct error-status
   writes, four error body shapes, and no error package at all. Clause 6's seam must exist
   before any endpoint can be serialized honestly.
 
   > **Erratum 2026-08-11.** "~122" counted every `c.JSON(http.Status…)` write in the gateway
   > (125), successes included. Error-status writes are **90**, across 8 files; `game-service`
-  > holds a further 8, out of FS-0001's scope. The four-body-shape and no-error-package claims
-  > hold, and the prerequisite argument is unaffected. Recount: FS-0001 §Summary.
+  > holds a further 8, out of FS-22WKC's scope. The four-body-shape and no-error-package claims
+  > hold, and the prerequisite argument is unaffected. Recount: FS-22WKC §Summary.
 - **Huma v2 forces a dependency-floor bump.** The gateway is on `gin v1.11.0` and Go directive
   `1.24.2`; huma v2 requires **gin ≥ 1.12** and **Go ≥ 1.25**. That is a framework-version bump
   across every gin handler in the service, and it belongs in the first serialize-on-touch
@@ -163,7 +163,7 @@ Go workspace. Rooting them higher would make the Makefile's relative paths climb
   `go mod graph | grep huma` before slice ⓪.
 - **The error body format changes** for wrapped endpoints — a known, deliberate break.
   `game-client` reads `.error` and `.message` across ~15 files; both key names disappear.
-  Handled inside FS-0001 rather than left to discovery.
+  Handled inside FS-22WKC rather than left to discovery.
 - **Generated artifacts are committed**, so PR diffs get larger. Accepted: that diff is exactly
   what makes the contract reviewable.
 - **A transitional period** where serialized and legacy endpoints coexist. Track it with a

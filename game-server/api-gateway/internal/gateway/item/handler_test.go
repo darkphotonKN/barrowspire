@@ -90,7 +90,7 @@ func newRouter(client item.ItemClient) *gin.Engine {
 	return r
 }
 
-// FS-0001 §Requirements 4, 5, 7. This package's five switches handled only
+// FS-22WKC §Requirements 4, 5, 7. This package's five switches handled only
 // InvalidArgument and AlreadyExists; three more sites called FromError and threw
 // the result away; three handlers had no mapping at all. Every code other than
 // those two therefore returned 500 here, and these cases are the record of what
@@ -152,7 +152,7 @@ func TestItemHandler_DownstreamFailures_ResolveThroughTheSeam(t *testing.T) {
 	}
 }
 
-// FS-0001 §Requirements 9 — downstream prose never crosses the boundary.
+// FS-22WKC §Requirements 9 — downstream prose never crosses the boundary.
 func TestItemHandler_DownstreamMessages_NeverReachTheClient(t *testing.T) {
 	const leak = "pq: insert or update on table \"item_instances\" violates foreign key constraint"
 
@@ -164,7 +164,7 @@ func TestItemHandler_DownstreamMessages_NeverReachTheClient(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "pq:")
 }
 
-// FS-0001 §Requirements 12 — success responses are untouched.
+// FS-22WKC §Requirements 12 — success responses are untouched.
 func TestItemHandler_SuccessResponses_AreUnchanged(t *testing.T) {
 	client := &stubItemClient{
 		weapons:  &pb.ListWeaponsResponse{},

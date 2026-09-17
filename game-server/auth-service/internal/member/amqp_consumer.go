@@ -127,7 +127,7 @@ func (c *Consumer) handleAccountCreated(msg amqp.Delivery) {
 		// Requeued, and for the two deliberate wedges — an unknown member, or an
 		// account id another member already holds — it will keep coming back.
 		// That is the point: both are consumer bugs, and silence is worse than a
-		// stuck queue (FS-0006 §Edge States).
+		// stuck queue (FS-9KW9F §Edge States).
 		slog.Error("Failed to record wallet account, requeueing",
 			"member_id", memberID, "account_id", accountID, "error", err)
 		msg.Nack(false, true)

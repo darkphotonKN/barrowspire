@@ -50,7 +50,7 @@ func bearer(token string) map[string]string {
 	return map[string]string{"Authorization": "Bearer " + token}
 }
 
-// FS-0001 §Requirements 11 and §Edge States — all four rejection paths emit
+// FS-22WKC §Requirements 11 and §Edge States — all four rejection paths emit
 // 401 UNAUTHENTICATED in problem+json. The middleware aborts before any handler
 // runs, so these never touch the seam through a handler.
 func TestAuthMiddleware_RejectionPaths_Return401ProblemJSON(t *testing.T) {
@@ -81,7 +81,7 @@ func TestAuthMiddleware_RejectionPaths_Return401ProblemJSON(t *testing.T) {
 		{name: "signed with the wrong secret", headers: bearer(wrongSecret)},
 		{name: "claims without sub", headers: bearer(noSub)},
 		{name: "sub is not a uuid", headers: bearer(badUUID)},
-		// FS-0003 §Requirement 29: every access token carries a role, so a token
+		// FS-F9R7Q §Requirement 29: every access token carries a role, so a token
 		// without one is unauthorizable — never a fall-through to member scoping.
 		{name: "claims without role", headers: bearer(noRole)},
 		// Absent account_id is normal (ADR-0014); present-but-broken is not.
@@ -102,7 +102,7 @@ func TestAuthMiddleware_RejectionPaths_Return401ProblemJSON(t *testing.T) {
 	}
 }
 
-// FS-0001 §API surface — detail is occurrence-specific. Four rejections that all
+// FS-22WKC §API surface — detail is occurrence-specific. Four rejections that all
 // mean "401" must remain tellable apart, or the client loses the ability to
 // refresh on expiry rather than bounce the user to a login screen.
 func TestAuthMiddleware_RejectionDetails_AreDistinguishable(t *testing.T) {
@@ -130,7 +130,7 @@ func TestAuthMiddleware_RejectionDetails_AreDistinguishable(t *testing.T) {
 	}
 }
 
-// FS-0001 §Requirements 9 — the middleware owns these failures, so its own
+// FS-22WKC §Requirements 9 — the middleware owns these failures, so its own
 // prose is publishable, but nothing about the token itself may be echoed back.
 func TestAuthMiddleware_DoesNotEchoTheToken(t *testing.T) {
 	const secretish = "eyJhbGciOiJIUzI1NiJ9.SUPERSECRETPAYLOAD.sig"
@@ -148,7 +148,7 @@ func TestAuthMiddleware_DoesNotEchoTheToken(t *testing.T) {
 // the regression most worth pinning.
 //
 // The fixture carries role and account_id because a real access token does:
-// FS-0006 mints both, and FS-0003 §Requirement 29 makes a token without a role
+// FS-9KW9F mints both, and FS-F9R7Q §Requirement 29 makes a token without a role
 // unauthorizable rather than a caller to default. A sub-only token is not the
 // happy path any more.
 func TestAuthMiddleware_ValidToken_PassesAndSetsIdentity(t *testing.T) {

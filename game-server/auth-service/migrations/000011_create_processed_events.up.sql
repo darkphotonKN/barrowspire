@@ -1,4 +1,4 @@
--- FS-0006 §Requirements 16, 20-21. auth-service's inbox: which events it has
+-- FS-9KW9F §Requirements 16, 20-21. auth-service's inbox: which events it has
 -- already acted on, so a redelivery is recognised rather than applied twice.
 --
 -- The CODE is shared (common/inbox); the STORAGE is not. This table lives in

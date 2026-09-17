@@ -66,7 +66,7 @@ type readEnvelope struct {
 
 var errsAuthed = []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError}
 
-// RegisterOperations declares the serialized notification surface (FS-0002
+// RegisterOperations declares the serialized notification surface (FS-NTPW2
 // slice 3). All three routes are JWT-protected.
 func RegisterOperations(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)), errFor ErrorFunc,

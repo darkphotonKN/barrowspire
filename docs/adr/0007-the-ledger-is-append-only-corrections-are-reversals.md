@@ -8,7 +8,7 @@ reversals" clause. The append-only clause below stands; the reversal mechanism d
 ledger is now appended only past the settlement saga's pivot, so no recorded transaction is ever
 wrong and there is nothing to reverse. **The body below is left as written, and its reversal
 reasoning no longer describes the system.**
-Realized by: FS-0003 §Requirements 9–10, 17 (not yet implemented)
+Realized by: FS-F9R7Q §Requirements 9–10, 17 (not yet implemented)
 
 ## Context
 
@@ -36,7 +36,7 @@ plus `usecase/retry.go`'s `withRetry` to handle lost updates. With nothing ever 
 guards nothing and the retry loop has no race to retry.
 
 > Recorded without adversarial review in this repo. The decision arrived pre-formed from an
-> external design discussion and was locked directly during FS-0003 scoping.
+> external design discussion and was locked directly during FS-F9R7Q scoping.
 
 ## Decision
 

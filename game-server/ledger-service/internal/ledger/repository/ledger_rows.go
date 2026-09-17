@@ -16,7 +16,7 @@ import (
 // table CHECKs after. That is why reason, currency and direction are plain
 // strings: a value type on a row would imply the row validates something, and
 // it does not. The domain's string-backed value types (ledger.TransactionReason,
-// ledger.CurrencyType, ledger.Direction) convert at the edge, per FS-0003
+// ledger.CurrencyType, ledger.Direction) convert at the edge, per FS-F9R7Q
 // §Open question 3.
 
 // LedgerTransaction is one row of ledger_transactions: the economic event that

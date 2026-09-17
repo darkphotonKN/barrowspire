@@ -117,7 +117,7 @@ func main() {
 
 	// NOTE: this consumer is the seat for the event-driven write path — wallet's
 	// deposit, withdraw and transfer verbs will publish events it appends from
-	// (FS-0003 §Req 17). It survives the scaffold retirement even though its
+	// (FS-F9R7Q §Req 17). It survives the scaffold retirement even though its
 	// LedgerCreatedEvent routing key does not: that constant names the retired
 	// Ledger aggregate's event and gets renamed once a real event exists.
 	consumer := ledger.NewConsumer(ch)

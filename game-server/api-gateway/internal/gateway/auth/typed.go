@@ -13,12 +13,12 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// RegisterOperations declares the serialized member surface (FS-0002 slice 1).
+// RegisterOperations declares the serialized member surface (FS-NTPW2 slice 1).
 //
 // Every operation below is a TRANSCRIPTION of the gin handler it replaces:
 // same path, same method, same status, same response members. Where the legacy
 // handler and this one differ, the difference is one of the two changes
-// FS-0002 §Requirements 10-11 permits, and nothing else.
+// FS-NTPW2 §Requirements 10-11 permits, and nothing else.
 //
 // h and amqpClient may hold nil clients: registration records types and
 // metadata, so cmd/openapi can build the document without dialing anything.
@@ -356,7 +356,7 @@ func registerConfirmAvatarUpload(api huma.API, h *Handler,
 		if !res.Success {
 			// Transcribed from the legacy handler: a non-success reply becomes a
 			// 400, and the downstream's own message is replaced because it is not
-			// client-safe (FS-0001 §Requirements 9).
+			// client-safe (FS-22WKC §Requirements 9).
 			return nil, apperr.WithDetail(apperr.ErrValidation, "Avatar upload could not be confirmed")
 		}
 

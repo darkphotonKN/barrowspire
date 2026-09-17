@@ -5,7 +5,7 @@ context**. Terms below mean exactly this *inside auth-service*. Two of them — 
 `account` — also exist elsewhere in the repo and mean something different there. That
 divergence is deliberate; see [Boundaries](#boundaries).
 
-Sources: [FS-0006](../../docs/specs/0006-account-and-role-token-claims.md),
+Sources: [FS-9KW9F](../../docs/specs/9KW9F-account-and-role-token-claims.md),
 [ADR-0014](../../docs/adr/0014-account-id-claim-is-eventually-consistent-and-fails-closed.md),
 and this service's [`SPECIFICATION.md`](SPECIFICATION.md).
 
@@ -24,7 +24,7 @@ and this service's [`SPECIFICATION.md`](SPECIFICATION.md).
   *has* the `player` role.
 - **admin** — the role value for a Member with administrative authority. In the ledger read
   path this is what earns the unscoped listing and the right to name another account
-  (FS-0003 §Req 28).
+  (FS-F9R7Q §Req 28).
 
 ### Tokens
 
@@ -32,7 +32,7 @@ and this service's [`SPECIFICATION.md`](SPECIFICATION.md).
   exactly one implementation, and keeping it that way is a standing constraint.
 - **Claim** — a verified assertion carried inside a signed token. Verified means *the signature
   covers it*, not *someone asserted it* — which is why a claim is trusted and a request
-  parameter of the same name is not (FS-0003 §Req 24).
+  parameter of the same name is not (FS-F9R7Q §Req 24).
 - **Access token** — the short-lived (60 min) credential that carries authorization claims:
   `sub`, `role`, and, when known, `account_id`.
 - **Refresh token** — the long-lived (7 day) credential used only to re-mint an access token.
@@ -48,7 +48,7 @@ and this service's [`SPECIFICATION.md`](SPECIFICATION.md).
 - **`members.account_id`** — a **copy** of `wallet.accounts.id`, nullable, populated
   asynchronously. Never the source of truth, never written by anything but the
   `account.created` consumer.
-- **Eventually present** — the honest property of the account id claim, replacing FS-0003
+- **Eventually present** — the honest property of the account id claim, replacing FS-F9R7Q
   §Req 27's assumed "always present and immutable". A Member exists, and can authenticate,
   before their copy is filled.
 - **Fails closed** — the rule governing every consumer of the claim: absence is a refusal, not
@@ -67,7 +67,7 @@ no relationship. game-client holds both at once and translates; see
 
 **Do not name the role value `member`.** `Member` is already this context's entity noun, so a
 role called `member` would make "the member's role is member" a sentence someone has to parse.
-This is why FS-0003 §Req 29's placeholder `member | admin` is being amended to `player | admin`
+This is why FS-F9R7Q §Req 29's placeholder `member | admin` is being amended to `player | admin`
 rather than the column being renamed — and `player` is additionally the value already live in
 `commontypes.Role`, `items-service`'s `stringToRole`, the gateway's auth response, and the
 generated client schema.

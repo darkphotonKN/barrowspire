@@ -64,7 +64,7 @@ export default function LoginPage() {
 
       if (!response.ok || error) {
         // Switch on `code`, never on `detail` — detail is prose, not contract.
-        // An unrecognised code falls through to the server's detail (FS-0001).
+        // An unrecognised code falls through to the server's detail (FS-22WKC).
         setError(
           userMessage(fromProblem(response.status, error), {
             UNAUTHENTICATED: "Wrong email or password.",
