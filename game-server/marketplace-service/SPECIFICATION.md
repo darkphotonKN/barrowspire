@@ -127,7 +127,7 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 ### Auction lifecycle
 
 - [ ] BidPlaced saga orchestration
-- [ ] Auction settlement
+- [ ] Auction settlement → FS-NXP1W
 - [ ] Auction timeouts and reconciliation
 
 ### Surface

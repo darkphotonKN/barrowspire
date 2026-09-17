@@ -142,6 +142,7 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [ ] Expose the write path (gRPC and AMQP)
 - [ ] Publish hold state changes via transactional outbox
 - [ ] End-to-end marketplace saga flows
+- [ ] Settlement saga activities → FS-NXP1W
 
 > **Known gap — balance is never debited.** `CommitHold` does not exist and no code path writes
 > `gold` after account creation, so accounts are created at 0 gold with no Credit verb. The

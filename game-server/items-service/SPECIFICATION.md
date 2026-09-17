@@ -7,3 +7,7 @@
      Deep feature specs live in the root docs/specs/ as FS-NNNN. -->
 
 ## items-service
+
+## Marketplace settlement
+
+- [ ] Settlement saga activities → FS-NXP1W
