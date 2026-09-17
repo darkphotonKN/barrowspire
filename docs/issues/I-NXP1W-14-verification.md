@@ -1,10 +1,10 @@
 ---
-id: I-NXP1W-9
+id: I-NXP1W-14
 status: open
 implements: FS-NXP1W
-blocked_by: [I-NXP1W-6, I-NXP1W-8]
+blocked_by: [I-NXP1W-6, I-NXP1W-8, I-NXP1W-9, I-NXP1W-11, I-NXP1W-12, I-NXP1W-13]
 labels: [blocked]
-title: "FS-NXP1W slice 9: verification — end-to-end auction test and break-it tests"
+title: "FS-NXP1W slice 14: verification — end-to-end auction test and break-it tests"
 ---
 Implements FS-NXP1W §Requirements 39–40
 
@@ -22,8 +22,8 @@ Implements FS-NXP1W §Requirements 39–40
 
 ## Scope fence
 
-Tests only. If a test exposes a behavior bug, report it against slices 3–8 instead of fixing it
-here. Crash-point tables are already committed by slices 5, 6 and 8.
+Tests only. If a test exposes a behavior bug, report it against the owning slice instead of fixing
+it here. Crash-point tables are already committed by each arm.
 
 ## Acceptance Criteria
 
@@ -34,7 +34,7 @@ here. Crash-point tables are already committed by slices 5, 6 and 8.
 
 ## Blocked By
 
-I-NXP1W-6, I-NXP1W-8
+I-NXP1W-6, I-NXP1W-8, I-NXP1W-9, I-NXP1W-11, I-NXP1W-12, I-NXP1W-13 (every arm done).
 
 ## Spec Reference
 

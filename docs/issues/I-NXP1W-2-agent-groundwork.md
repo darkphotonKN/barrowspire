@@ -23,7 +23,7 @@ Mechanical cleanup before the arms start. **Check first; do only what is missing
 ## Scope fence
 
 No activity implementations, use cases, migrations or workflow code. Those belong to the arms
-(slices 3–8), which check for and add their own schema as they go.
+(slices 3–13), which check for and add their own schema as they go.
 
 ## Acceptance Criteria
 
