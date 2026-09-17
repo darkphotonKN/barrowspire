@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# check-seam.sh — the three gates FS-0001 I-0007 asks for.
+# check-seam.sh — the three gates FS-22WKC I-22WKC-7 asks for.
 #
 #   1. no direct 4xx/5xx status writes outside the seam package
 #   2. no apperr.WithDetail carrying a downstream message to the client
 #   3. no unrecorded change to the `go` directive
 #
 # Every one of these exists because the failure it prevents ALREADY HAPPENED once
-# during FS-0001 and was found by reading a diff. Reading diffs is not a control.
+# during FS-22WKC and was found by reading a diff. Reading diffs is not a control.
 #
 # Usage:
 #   check-seam.sh [SCAN_ROOT] [WORKSPACE_ROOT]
@@ -30,9 +30,9 @@ fail() {
 }
 
 # ---------------------------------------------------------------------------
-# 1. Direct error-status writes (FS-0001 §Requirements 13)
+# 1. Direct error-status writes (FS-22WKC §Requirements 13)
 #
-# 90 of these existed before FS-0001, so git history is full of examples to copy
+# 90 of these existed before FS-22WKC, so git history is full of examples to copy
 # from and review depends on a reviewer noticing a one-line c.JSON.
 # ---------------------------------------------------------------------------
 echo "→ checking for direct 4xx/5xx writes outside ${SEAM_PKG}"
@@ -54,7 +54,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 2. Downstream prose reaching the client (FS-0001 §Requirements 9)
+# 2. Downstream prose reaching the client (FS-22WKC §Requirements 9)
 #
 # apperr.WithDetail publishes its string. Passing err.Error() or st.Message()
 # reopens the exact leak this feature closed — an internal address, a table
@@ -82,7 +82,7 @@ fi
 # 3. Unrecorded toolchain movement
 #
 # A bare `go get` raises the module's language version to whatever the fetched
-# dependency wants. During I-0005 that silently took the workspace from 1.24.2
+# dependency wants. During I-22WKC-5 that silently took the workspace from 1.24.2
 # to 1.25.0 inside a commit about error handling, raising the floor for all
 # eleven modules. Nothing failed; the suite was green.
 # ---------------------------------------------------------------------------

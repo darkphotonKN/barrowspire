@@ -1,6 +1,6 @@
 # FS-0002T: Member signup and sign-in
 
-> Status: example · SPECIFICATION.md: none — nothing points here, by design · Related ADRs: [`docs/adr/0001-contract-layer.md`](../adr/0001-contract-layer.md) (the contract layer), [`FS-0001`](0001-uniform-error-contract.md) (the error half of every route)
+> Status: example · SPECIFICATION.md: none — nothing points here, by design · Related ADRs: [`docs/adr/0001-contract-layer.md`](../adr/0001-contract-layer.md) (the contract layer), [`FS-22WKC`](22WKC-uniform-error-contract.md) (the error half of every route)
 
 ---
 
@@ -12,7 +12,7 @@
 > sign-in had come through `/scope-it` → `/write-a-spec` as their own capability — so the
 > journey from a ratified `§API surface` table to a typed handler to a generated contract can
 > be shown at three-endpoint scale. The real work is
-> [FS-0002](0002-gateway-surface-serialized.md), which covers 29 endpoints in one batch and
+> [FS-NTPW2](NTPW2-gateway-surface-serialized.md), which covers 29 endpoints in one batch and
 > deliberately writes **no** per-endpoint table. That table is the thing worth teaching, so this
 > file writes it.
 >
@@ -62,7 +62,7 @@ none of them can require one.
    `409`.
 4. When the broker is unreachable, the response is `503 · SERVICE_UNAVAILABLE`, never `500`.
    The request was well-formed and would succeed once the broker returns; a `500` would tell
-   every client to give up on a retryable request (FS-0001 §Requirements 5 as amended).
+   every client to give up on a retryable request (FS-22WKC §Requirements 5 as amended).
 
 **Observing the account**
 
@@ -141,7 +141,7 @@ Three operations, all in the `member` group, all **public** — no `Authorizatio
 bearer scheme in the contract. Field-level tables, because this is a new resource surface.
 
 Error bodies are RFC 9457 `application/problem+json` as pinned by
-[FS-0001 §API surface](0001-uniform-error-contract.md) and are not restated per endpoint; only
+[FS-22WKC §API surface](22WKC-uniform-error-contract.md) and are not restated per endpoint; only
 the `status · code` rows each operation declares are listed.
 
 ### 1 · `POST /api/member/signup` — request a new member account
@@ -399,7 +399,7 @@ rather than that they were written.
    `SeamError.code` is typed `string` with no enum. The vocabulary lives in
    `game-server/common/errcode/errcode.go` and reaches the frontend by a human reading it. That
    is the honest boundary between the **shallow** contract (shape, statuses, one line of prose
-   per operation) and the **deep** one (this FS, FS-0001's tables, ADR-0001, and the stability
+   per operation) and the **deep** one (this FS, FS-22WKC's tables, ADR-0001, and the stability
    rules in `errcode.go`'s doc comment).
 
 3. *`register/page.tsx` handles `ALREADY_EXISTS` on signup. Can that ever fire?* — No.

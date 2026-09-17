@@ -59,7 +59,7 @@ export default function RegisterPage() {
 
       if (!response.ok || error) {
         // Switch on `code`, never on `detail` — detail is prose, not contract.
-        // An unrecognised code falls through to the server's detail (FS-0001).
+        // An unrecognised code falls through to the server's detail (FS-22WKC).
         //
         // ALREADY_EXISTS finally arrives: signup used to answer 202 before the
         // database was touched, so a duplicate email surfaced as a fifteen-second

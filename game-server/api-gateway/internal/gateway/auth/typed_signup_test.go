@@ -31,12 +31,12 @@ func newTypedRouter(client gwauth.AuthClient) *gin.Engine {
 	return r
 }
 
-// FS-0007 §Requirements 1-2, §API surface. Signup published a command and
+// FS-83TJK §Requirements 1-2, §API surface. Signup published a command and
 // answered 202 before the member existed. It now calls CreateMember and answers
 // only once the member is durably created, so a 201 is a statement about the
 // database rather than about a queue.
 //
-// The body is the member itself, NOT an envelope: FS-0007 §API surface declares
+// The body is the member itself, NOT an envelope: FS-83TJK §API surface declares
 // the response as the member's own fields, and signup is the first operation on
 // this surface to shed the statusCode/message wrapper.
 func TestSignup_ValidBody_Returns201WithMember(t *testing.T) {
@@ -65,7 +65,7 @@ func TestSignup_ValidBody_Returns201WithMember(t *testing.T) {
 	assert.NotContains(t, body, "access_token")
 }
 
-// FS-0007 §Requirements 3, §Edge States. The 409 path is fully built —
+// FS-83TJK §Requirements 3, §Edge States. The 409 path is fully built —
 // auth-service maps the unique-email violation to ErrDuplicateResource, the
 // interceptor to codes.AlreadyExists, and httperr to 409 — but signup could
 // never reach it while it answered before touching the database. The client has
@@ -81,7 +81,7 @@ func TestSignup_DuplicateEmail_Returns409(t *testing.T) {
 	testsupport.AssertProblem(t, w, http.StatusConflict, string(errcode.AlreadyExists))
 }
 
-// FS-0007 §Edge States: auth-service down answers 503, never 500.
+// FS-83TJK §Edge States: auth-service down answers 503, never 500.
 //
 // This case covers the RPC failing on an established connection.
 // TestSignup_AuthServiceNotDiscoverable_Returns503 covers the other, likelier
@@ -109,7 +109,7 @@ func (emptyRegistry) Discover(context.Context, string) ([]string, error) {
 	return nil, nil
 }
 
-// FS-0007 §Edge States, through the REAL client rather than a stub.
+// FS-83TJK §Edge States, through the REAL client rather than a stub.
 //
 // This is the case a stubbed AuthClient structurally cannot reach. When
 // auth-service has deregistered, the failure happens in ensureConn ->
@@ -141,7 +141,7 @@ func TestSignup_DownstreamReturnsNoMember_Returns500(t *testing.T) {
 	testsupport.AssertProblem(t, w, http.StatusInternalServerError, string(errcode.Internal))
 }
 
-// FS-0007 §Requirements 4, §API surface. The 422 is the boundary's, not
+// FS-83TJK §Requirements 4, §API surface. The 422 is the boundary's, not
 // auth-service's: plane-1 request validation is strict (docs/agents/contract.md),
 // so an unknown member is rejected at the edge and never reaches the RPC.
 func TestSignup_MalformedBody_Returns422(t *testing.T) {
@@ -153,9 +153,9 @@ func TestSignup_MalformedBody_Returns422(t *testing.T) {
 	testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
 }
 
-// FS-0007 §Requirements 11, §API surface. check-email existed for one reason:
+// FS-83TJK §Requirements 11, §API surface. check-email existed for one reason:
 // signup answered 202 without creating the account, so the client polled this
-// endpoint to learn when it appeared. I-0043 made signup synchronous and the
+// endpoint to learn when it appeared. I-83TJK-1 made signup synchronous and the
 // poll went with it, leaving an endpoint whose only caller and whose stated
 // purpose are both gone.
 //
@@ -168,5 +168,5 @@ func TestCheckEmail_IsRemovedFromTheSurface(t *testing.T) {
 	w := testsupport.Do(r, http.MethodGet, "/api/member/check-email?email=a@b.c", "")
 
 	assert.Equal(t, http.StatusNotFound, w.Code,
-		"check-email must not be routable once FS-0007 removes it")
+		"check-email must not be routable once FS-83TJK removes it")
 }

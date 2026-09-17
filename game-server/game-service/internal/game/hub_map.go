@@ -39,7 +39,7 @@ var hubNPCs = []hubNPC{
 // hubBuilding is one structure's footprint in the hub.
 //
 // Exteriors only: four walls and no door. A delver cannot go inside one, so
-// there is nothing to open and no interior to build (FS-0008 §Out of Scope).
+// there is nothing to open and no interior to build (FS-29KSH §Out of Scope).
 type hubBuilding struct {
 	X, Y, W, H float64
 }
@@ -50,7 +50,7 @@ type hubBuilding struct {
 // the hub is somewhere a delver returns to, and "left of the Quartermaster" has
 // to mean the same thing tomorrow. The middle of the map is left open — that is
 // where delvers arrive, where both function NPCs stand, and where the residents
-// of I-0052 need room to wander without wedging in a corner.
+// of I-29KSH-8 need room to wander without wedging in a corner.
 var hubBuildings = []hubBuilding{
 	// the north row, behind the NPCs
 	{X: 620, Y: 180, W: 300, H: 200},
@@ -92,7 +92,7 @@ var hubResidents = []hubResident{
 * switches, an escape door and a seeded item pool; the hub has none of those, and
 * those entity kinds simply never exist here rather than being filtered out
 * downstream. There are no boundary walls either — a world's edge is the
-* MovementSystem clamp, the same as in a run. FS-0008 §Requirements 7, 9.
+* MovementSystem clamp, the same as in a run. FS-29KSH §Requirements 7, 9.
 **/
 func (s *Session) InitialHubMapObjects() {
 	for _, npc := range hubNPCs {

@@ -4,14 +4,14 @@
 //
 // The code is shared; the storage is not. Every consuming service ships its own
 // processed_events table in its own database and no service reads another's
-// (FS-0006 §Req 20). The table this package writes to is:
+// (FS-9KW9F §Req 20). The table this package writes to is:
 //
 //	processed_events(event_id UUID, event_type TEXT, processed_at TIMESTAMPTZ,
 //	                 PRIMARY KEY (event_id, event_type))
 //
 // Keying on (event_id, event_type) rather than event_id alone is deliberate: it
 // lets one service consume two event types that could share an id without one
-// masking the other (FS-0006 §Req 21).
+// masking the other (FS-9KW9F §Req 21).
 package inbox
 
 import (

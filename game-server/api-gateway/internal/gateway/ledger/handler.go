@@ -5,8 +5,8 @@ package ledger
 //
 // There are no gin methods here and there must not be. Every other group in
 // this gateway carries legacy gin handlers alongside its typed operations
-// because those groups predate FS-0002; the ledger read path is serialized from
-// birth (FS-0003 §Requirements 32), so its only surface is the typed one.
+// because those groups predate FS-NTPW2; the ledger read path is serialized from
+// birth (FS-F9R7Q §Requirements 32), so its only surface is the typed one.
 //
 // The client may be nil: registration records types and metadata without
 // invoking a handler, which is what lets cmd/openapi build the document

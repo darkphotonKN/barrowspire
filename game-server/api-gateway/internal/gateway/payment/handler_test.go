@@ -72,11 +72,11 @@ func newRouter(client payment.PaymentClient) *gin.Engine {
 	return r
 }
 
-// STRIPE STATUS PARITY (FS-0001 §Requirements 11, I-0006).
+// STRIPE STATUS PARITY (FS-22WKC §Requirements 11, I-22WKC-6).
 //
 // This package already had a shared handleGrpcError, so it is the one package
 // that mapped consistently — and it already sent Unavailable to 503, which is
-// why FS-0001 §Requirements 5 was amended rather than followed.
+// why FS-22WKC §Requirements 5 was amended rather than followed.
 //
 // Three codes DO move, all of them from the old default arm. Every one moves
 // non-2xx to non-2xx, and Stripe's retry behavior keys on 2xx-vs-not, so its
@@ -158,7 +158,7 @@ func TestWebhook_WithSignature_ReachesDownstream(t *testing.T) {
 	assert.Equal(t, float64(http.StatusOK), testsupport.Decode(t, w)["statusCode"])
 }
 
-// FS-0001 §Requirements 4, 5, 7 for the authenticated surface.
+// FS-22WKC §Requirements 4, 5, 7 for the authenticated surface.
 func TestPaymentHandler_DownstreamFailures_ResolveThroughTheSeam(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -187,7 +187,7 @@ func TestPaymentHandler_DownstreamFailures_ResolveThroughTheSeam(t *testing.T) {
 	}
 }
 
-// FS-0001 §Requirements 9 — payment messages are the most sensitive in the
+// FS-22WKC §Requirements 9 — payment messages are the most sensitive in the
 // gateway: a downstream failure here can name a Stripe customer or a price id.
 func TestPaymentHandler_DownstreamMessages_NeverReachTheClient(t *testing.T) {
 	const leak = "stripe: No such customer: 'cus_QXaBcDeFgHiJkL'"

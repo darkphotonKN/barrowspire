@@ -53,7 +53,7 @@ jobs:
         working-directory: game-server/api-gateway
         run: go mod verify
 
-      # FS-0001 I-0007. Deliberately ahead of the spec gates: it needs no
+      # FS-22WKC I-22WKC-7. Deliberately ahead of the spec gates: it needs no
       # generated artifact, so it can fail on a tree that has no openapi.yaml —
       # which is every tree until the first endpoint is serialized. The gates
       # below correctly SKIP until then; this one does not, and must not.

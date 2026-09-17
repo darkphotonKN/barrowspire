@@ -62,10 +62,10 @@ errcode_pkg: game-server/common/errcode
 # not exist yet: the gateway has 90 direct c.JSON(http.Status4xx/5xx) writes across 8 files and
 # four different body shapes, and no error package.
 #
-# Built by: FS-0001 (docs/specs/0001-uniform-error-contract.md).
+# Built by: FS-22WKC (docs/specs/22WKC-uniform-error-contract.md).
 # Until it ships, the gates below are copied-but-inert and NO endpoint should be serialized —
 # a generated contract cannot honestly describe failures the code decides in 90 places.
-error_seam: NOT_YET_BUILT             # -> game-server/api-gateway (see FS-0001)
+error_seam: NOT_YET_BUILT             # -> game-server/api-gateway (see FS-22WKC)
 
 # --- Transitional state ---
 # There is no legacy documentation surface to retire: this repo had no API spec of any kind

@@ -2,9 +2,9 @@
 #
 # verify-error-contract.sh — exercise each error class against a RUNNING gateway.
 #
-# FS-0001 changes the error body on all 33 routes, and there is no openapi.yaml in
+# FS-22WKC changes the error body on all 33 routes, and there is no openapi.yaml in
 # this repo yet, so oasdiff has nothing to diff against: the break is structurally
-# invisible to the breaking-change gate (I-0008, ADR-0001 "known blind spot").
+# invisible to the breaking-change gate (I-22WKC-8, ADR-0001 "known blind spot").
 # Manual before/after verification is the only verification available.
 #
 # Usage:
@@ -37,7 +37,7 @@ probe() {
 	printf '%-26s %-7s %-34s %s\n' "${label}" "${status:-—}" "${ctype:-—}" "${code:-<none>}"
 }
 
-# ── the classes FS-0001 §API surface pins ──────────────────────────────────────
+# ── the classes FS-22WKC §API surface pins ──────────────────────────────────────
 
 # 401 · UNAUTHENTICATED — no Authorization header
 probe "no token" "${BASE}/api/member"

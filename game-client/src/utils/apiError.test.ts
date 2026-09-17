@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { ApiError, fromProblem, readApiError, userMessage } from "./apiError";
 
-// A problem+json body exactly as the gateway seam emits it (FS-0001 §API surface).
+// A problem+json body exactly as the gateway seam emits it (FS-22WKC §API surface).
 function problem(overrides: Record<string, unknown> = {}) {
   return {
     type: "about:blank",
@@ -74,7 +74,7 @@ describe("errors[]", () => {
     expect(err.errors[0].field).toBe("email");
   });
 
-  // FS-0001 §API surface: errors[] is always present. Callers iterate it without a
+  // FS-22WKC §API surface: errors[] is always present. Callers iterate it without a
   // null check, so it must be an array for every input this parser can meet.
   it.each([null, undefined, {}, { errors: null }, { errors: "nope" }])(
     "is always an array (body: %s)",

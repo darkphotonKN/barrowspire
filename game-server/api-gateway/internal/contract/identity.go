@@ -30,7 +30,7 @@ const opProtected = "Protected"
 // There is no identity to copy across. The middleware embeds the caller on the
 // request's context.Context, and a typed handler's ctx is that same request
 // context — humagin reads it live — so the handler reaches the caller with
-// commonauth.IdentityFromCtx. One source of "who is calling" (FS-0002
+// commonauth.IdentityFromCtx. One source of "who is calling" (FS-NTPW2
 // §Requirements 3), and it is the middleware.
 func Protected(mw gin.HandlerFunc) func(huma.Context, func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {

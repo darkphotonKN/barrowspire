@@ -114,7 +114,7 @@ type MemberSignedUpEventPayload struct {
 * EventID is the CONSUMER'S DEDUPE KEY and is generated here, in the payload.
 * It is deliberately NOT the outbox row's id: that id identifies a row in the
 * producer's table, the worker ships only Payload, and a key the consumer
-* cannot see is no key at all (FS-0006 §Req 14).
+* cannot see is no key at all (FS-9KW9F §Req 14).
 **/
 type AccountCreatedEventPayload struct {
 	EventID   string `json:"eventId"`

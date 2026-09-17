@@ -26,7 +26,7 @@ var securedOp []map[string][]string
 // would be a silent 500 carrying no code.
 var toStatusError ErrorFunc = func(err error) error { return err }
 
-// Error sets, per operation, from FS-0003 §API surface's error-semantics table.
+// Error sets, per operation, from FS-F9R7Q §API surface's error-semantics table.
 //
 // getTransaction carries no 403 deliberately: its only authorization failure is
 // §Req 26's, which is masked as a 404. listEntries carries one, because §Req 25

@@ -2,7 +2,7 @@ package item
 
 import "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/wire"
 
-// Transport types for the serialized items surface (FS-0002 slice 2).
+// Transport types for the serialized items surface (FS-NTPW2 slice 2).
 //
 // Field names, Go types and json tags are transcribed mechanically from
 // common/api/proto/items/items.pb.go rather than retyped. Hand-copying a proto

@@ -44,7 +44,7 @@ func run(em *ecs.EntityManager, ticks int) {
 
 // A resident walks. Not far, and not out of the quarter they belong to, but
 // enough that the hub reads as inhabited rather than staged.
-// FS-0008 §Requirements 10.
+// FS-29KSH §Requirements 10.
 func TestWanderSystem_ResidentsMoveWithinTheirRegion(t *testing.T) {
 	em := ecs.NewEntityManager()
 	region := components.WanderRegion{X: 600, Y: 600, W: 240, H: 200}
@@ -65,7 +65,7 @@ func TestWanderSystem_ResidentsMoveWithinTheirRegion(t *testing.T) {
 
 // A random walk against hard collision corners a resident permanently. Walled in
 // on two sides and given a destination it cannot reach, one has to give up and
-// pick somewhere else. FS-0008 §Requirements 12.
+// pick somewhere else. FS-29KSH §Requirements 12.
 func TestWanderSystem_ResidentsEscapeACorner(t *testing.T) {
 	em := ecs.NewEntityManager()
 	region := components.WanderRegion{X: 600, Y: 600, W: 240, H: 200}

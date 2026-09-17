@@ -50,7 +50,7 @@ sections of `CLAUDE.md`) disagree on a visual decision, **this file wins.**
 
 ## Still pending on assets
 
-**FS-0005 does not discharge this section's asset-dependent rules.** The canvas reskin shipped
+**FS-W6BP1 does not discharge this section's asset-dependent rules.** The canvas reskin shipped
 palette, typography and lighting using the primitives already there — it produced no art. These
 rules remain **pending against a future asset FS**, and Part I should not be read as satisfied:
 
@@ -607,7 +607,7 @@ consistent grid & weight. Prefer small carved/wax-seal badges over emoji. **No e
 
 ## Known drift (fix toward this doc; do not extend)
 
-`globals.css` carried **off-palette, pre-barrow leftovers**. FS-0004 migrates them; this list is
+`globals.css` carried **off-palette, pre-barrow leftovers**. FS-SWMNW migrates them; this list is
 kept as the record of what was wrong, not as outstanding work:
 - `body { color: #fff }` → **vellum `#cdbf9a`** (`--color-text`). Pure white is too cold.
 - Cold **bluish** text `#e0e8f0` (`.profile-name`, `.sub-plan-name`) and `#889aaa`

@@ -18,9 +18,10 @@ A compound statement — "does X, via Y" — splits: **X** to the spec, **Y** to
 
 ## Numbering & format
 
-- Files are `NNNN-short-slug.md` — zero-padded, sequential, allocated the same way as
-  `docs/specs/`. **ADR and FS numbers are independent sequences**; ADR-0004 has nothing to do
-  with FS-0004.
+- Files are `NNNN-short-slug.md` — zero-padded, sequential: the next number after the highest
+  in this folder. ADRs stay sequential because supersession reads in order. **ADR numbers and
+  FS ids are unrelated** — FS ids are random tokens (`docs/specs/README.md`), and an old
+  `FS-0004` has nothing to do with ADR-0004.
 - Reference them as `ADR-NNNN` — from feature specs (`Related ADRs:` in the FS header), from
   issue bodies (`Implements ADR-NNNN` for ADR-mandated infrastructure), and from code comments
   where a non-obvious constraint is being honored.

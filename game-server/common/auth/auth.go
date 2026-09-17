@@ -34,7 +34,7 @@ func NewValidator(secret []byte) func(string) (Identity, error) {
 			return Identity{}, fmt.Errorf("parse sub: %w", err)
 		}
 
-		// FS-0003 §Requirement 29: every access token carries a role, so a token
+		// FS-F9R7Q §Requirement 29: every access token carries a role, so a token
 		// without one is unauthorizable. This also refuses refresh tokens, which
 		// are minted without a role.
 		if claims.Role == "" {

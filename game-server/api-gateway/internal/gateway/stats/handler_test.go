@@ -47,7 +47,7 @@ func newRouter(client stats.StatsClient) *gin.Engine {
 	return r
 }
 
-// FS-0001 §Requirements 4, 5, 7. This package used a fourth body shape — a bare
+// FS-22WKC §Requirements 4, 5, 7. This package used a fourth body shape — a bare
 // {"error": "..."} with no envelope — and its default arm sent Unavailable to
 // 500. That last one is the change worth watching: the leaderboard is the
 // endpoint most likely to be hit while stats-service is restarting.
@@ -128,7 +128,7 @@ func TestStatsHandler_GatewayOwnedValidation_KeepsItsWording(t *testing.T) {
 	}
 }
 
-// FS-0001 §Requirements 9.
+// FS-22WKC §Requirements 9.
 func TestStatsHandler_DownstreamMessages_NeverReachTheClient(t *testing.T) {
 	const leak = "pq: relation \"player_match_stats\" does not exist"
 
@@ -138,7 +138,7 @@ func TestStatsHandler_DownstreamMessages_NeverReachTheClient(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "pq:")
 }
 
-// FS-0001 §Requirements 12 — this package returns the raw proto on success,
+// FS-22WKC §Requirements 12 — this package returns the raw proto on success,
 // with no envelope. That shape is untouched.
 func TestStatsHandler_SuccessResponses_AreUnchanged(t *testing.T) {
 	client := &stubStatsClient{

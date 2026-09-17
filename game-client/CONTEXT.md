@@ -29,7 +29,7 @@ translation belongs to the surface that renders words.
   wide: a delver is a delver in the hub, inside a run, and on the leaderboard, whether or not
   they have ever descended. Maps to `Member` (REST/auth) and `player` (WS). Replaces **operator**
   everywhere it appears — that word is sci-fi residue from the pre-fork game and is being removed
-  by FS-0004/FS-0005, not kept as a synonym.
+  by FS-SWMNW/FS-W6BP1, not kept as a synonym.
 - **Delve** — both the act of entering a run (*"Delve"*, the primary CTA, replacing "Play") and
   the run itself (*"your last delve"*). The player-facing name for what
   [`SPECIFICATION.md`](SPECIFICATION.md) calls an **escape run** and the WS protocol calls a

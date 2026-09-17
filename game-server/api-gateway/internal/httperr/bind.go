@@ -21,7 +21,7 @@ import (
 //
 // It also keeps the CAUSE in the chain. The parser's own message names the
 // offending character or the missing fields; that detail is not client-safe, but
-// it is exactly what an operator needs, and FS-0001 §Requirements 9 puts it in
+// it is exactly what an operator needs, and FS-22WKC §Requirements 9 puts it in
 // the log rather than nowhere. Passing only an authored sentence would make the
 // seam log a tautology: "the error is the message I chose to display".
 func BindError(err error) error {

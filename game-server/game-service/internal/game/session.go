@@ -123,7 +123,7 @@ func RunBounds() WorldBounds {
 }
 
 // HubBounds is the hub world, larger than a run's map and larger than the
-// client viewport, so it scrolls. FS-0008 §Requirements 3.
+// client viewport, so it scrolls. FS-29KSH §Requirements 3.
 func HubBounds() WorldBounds {
 	return WorldBounds{Type: types.WorldTypeHub, Width: constants.HubMapWidth, Height: constants.HubMapHeight}
 }
@@ -760,7 +760,7 @@ func (s *Session) AddBuilding(bx, by, bw, bh, wallThickness, doorWidth float64) 
 // spawnPoint is where an arriving player is placed.
 //
 // The hub has a front door: everyone enters and returns to the same place, so
-// the world has somewhere to gather (FS-0008 §Requirements 22). A run scatters
+// the world has somewhere to gather (FS-29KSH §Requirements 22). A run scatters
 // arrivals instead, across its own map — not a hardcoded one, so a world of any
 // size places players inside itself.
 func (s *Session) spawnPoint() (x, y float64) {
@@ -816,7 +816,7 @@ var ErrSafeZone = errors.New("this world is a safe zone")
 //
 // Skills are refused on the same footing. SkillSystem is an empty stub today, so
 // nothing would happen either way; the guard is here so that whoever fills it in
-// does not have to remember the hub exists. FS-0008 §Requirements 6.
+// does not have to remember the hub exists. FS-29KSH §Requirements 6.
 func (s *Session) combatAllowed() error {
 	if s.worldType == types.WorldTypeHub {
 		return fmt.Errorf("%w: %s", ErrSafeZone, s.ID)

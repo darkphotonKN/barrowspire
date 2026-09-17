@@ -187,7 +187,7 @@ export class MainMenuScene extends Phaser.Scene {
 
     // The loadout moved into the hub: the Quartermaster keeps it now, and gearing
     // up happens where the delver is rather than back in a menu.
-    // FS-0008 §Requirements 30.
+    // FS-29KSH §Requirements 30.
 
     // Connection Status indicator
     this.connectionStatusText = this.add.text(
@@ -733,7 +733,7 @@ export class MainMenuScene extends Phaser.Scene {
     }
 
     // Pressing start leads to the hub, not to a queue. Delving is started from
-    // inside the hub by talking to an NPC (I-0050). FS-0008 §Requirements 34.
+    // inside the hub by talking to an NPC (I-29KSH-6). FS-29KSH §Requirements 34.
     const chosenClass = (activeChar.className || "warrior").toLowerCase();
 
     socketManager.sendMessage(ActionType.EnterHub, {
@@ -809,7 +809,7 @@ export class MainMenuScene extends Phaser.Scene {
    *
    * A refusal the delver cannot see is a button that does nothing: pressing
    * start and having the menu sit there is the worst reading of a full hub.
-   * FS-0008 §Requirements 32.
+   * FS-29KSH §Requirements 32.
    */
   private showRefusal(message: string): void {
     this.refusalText?.destroy();

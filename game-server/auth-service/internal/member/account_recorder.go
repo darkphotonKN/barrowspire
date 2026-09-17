@@ -24,7 +24,7 @@ type inboxMarker interface {
 // AccountRecorder caches a member's wallet account id onto their row in
 // reaction to account.created.
 //
-// It is the last hop of the loop FS-0006 builds, and the ONLY writer of
+// It is the last hop of the loop FS-9KW9F builds, and the ONLY writer of
 // members.account_id (§Req 10). The column is a cache of wallet.accounts.id,
 // never a source of truth: no RPC sets it, no signup path sets it, and no admin
 // surface edits it. Anything that did would be writing a value it does not own.

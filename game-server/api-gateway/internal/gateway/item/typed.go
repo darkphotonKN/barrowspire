@@ -136,7 +136,7 @@ var (
 	errsAuthedDomain = []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError}
 )
 
-// RegisterOperations declares the serialized items surface (FS-0002 slice 2).
+// RegisterOperations declares the serialized items surface (FS-NTPW2 slice 2).
 // All eleven routes are JWT-protected, so every operation carries protect.
 func RegisterOperations(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)), errFor ErrorFunc,

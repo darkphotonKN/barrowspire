@@ -13,7 +13,7 @@ import (
 
 // A page refresh is a reconnection, and it must put the player back where they
 // actually were. Telling every returning player they found a game sent anyone
-// standing in the hub into the run scene. FS-0008 §Requirements 15.
+// standing in the hub into the run scene. FS-29KSH §Requirements 15.
 func TestReconnect_AnnouncesTheWorldTheyAreActuallyIn(t *testing.T) {
 	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
@@ -47,7 +47,7 @@ func TestReconnect_AnnouncesTheWorldTheyAreActuallyIn(t *testing.T) {
 // Dropping out of the hub is leaving it. There is no reconnect window and
 // nothing to resume: the player returns to the menu and walks back in, the same
 // as anyone arriving. A run is different and keeps its window.
-// FS-0008 §Edge States (Disconnect).
+// FS-29KSH §Edge States (Disconnect).
 func TestDisconnect_LeavingTheHubIsFinal(t *testing.T) {
 	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()

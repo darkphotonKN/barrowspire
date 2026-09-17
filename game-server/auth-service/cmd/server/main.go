@@ -197,7 +197,7 @@ func main() {
 	// soon as the wrapper returned and kill the worker.
 	go outboxWorker.Run(workerCtx)
 
-	// --- account.created consumer (FS-0006) ---
+	// --- account.created consumer (FS-9KW9F) ---
 	// The last hop of the loop: wallet announces a new gold account, auth caches
 	// its id onto the member, and the next login mints it as a claim. Nothing
 	// else writes members.account_id.

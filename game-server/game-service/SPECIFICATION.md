@@ -50,7 +50,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Tear down a session
 - [ ] Generic instance-allocation contract (warm pool or spawn)
 - [ ] Seed run modifiers onto a roster
-- [ ] Switch a player between hub and run → FS-0008
+- [ ] Switch a player between hub and run → FS-29KSH
 
 ### ECS world
 
@@ -72,16 +72,16 @@ matchmaking); this service is the engine they feed. ✅
 
 ### Hub world
 
-- [ ] Shared hub world → FS-0008
-- [ ] Hub is a safe zone → FS-0008
-- [ ] Wandering NPCs with dialogue → FS-0008
-- [ ] Hub occupancy cap → FS-0008
+- [ ] Shared hub world → FS-29KSH
+- [ ] Hub is a safe zone → FS-29KSH
+- [ ] Wandering NPCs with dialogue → FS-29KSH
+- [ ] Hub occupancy cap → FS-29KSH
 
 ### Transport
 
 - [x] WebSocket message hub
-- [ ] World identity in the state protocol → FS-0008
-- [ ] Route client messages from server-held session state → FS-0008
+- [ ] World identity in the state protocol → FS-29KSH
+- [ ] Route client messages from server-held session state → FS-29KSH
 
 ### Results
 

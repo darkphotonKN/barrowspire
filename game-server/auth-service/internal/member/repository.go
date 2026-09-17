@@ -222,7 +222,7 @@ func (r *repository) UpdateAvatarURLTx(ctx context.Context, tx *sqlx.Tx, memberI
 // RETURNING is load-bearing: an UPDATE that matches no row is not an error in
 // SQL, and this must fail loudly. auth produced the signup that started the
 // loop, so a member row that is not there is a genuine inconsistency rather
-// than a race (FS-0006 §Edge States).
+// than a race (FS-9KW9F §Edge States).
 //
 // The UNIQUE constraint on account_id is likewise allowed to surface. A second
 // member taking an account another already holds is a consumer bug, and two

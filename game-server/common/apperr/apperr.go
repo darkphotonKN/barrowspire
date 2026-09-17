@@ -8,7 +8,7 @@
 // It lives in common/ rather than in the gateway so that the ten downstream
 // services can adopt it without a move. They do not use it yet — they return
 // opaque gRPC errors and the gateway maps those instead. That is deliberate
-// scope (FS-0001 §Out of Scope), not an omission.
+// scope (FS-22WKC §Out of Scope), not an omission.
 //
 // STABILITY: these are matched with errors.Is across module boundaries. Removing
 // or repurposing one changes behavior in every caller that wraps it, so treat the
@@ -51,7 +51,7 @@ var (
 //
 // This is the ONLY way occurrence-specific prose reaches a response body, and it
 // exists because the two obvious sources are both closed: downstream error text
-// is never client-safe (FS-0001 §Requirements 9), and the gateway may not restate
+// is never client-safe (FS-22WKC §Requirements 9), and the gateway may not restate
 // a downstream service's rule (ADR-0001 §6). What remains is a message the caller
 // authored about a failure it decided itself — a missing Authorization header, a
 // token it could not parse.

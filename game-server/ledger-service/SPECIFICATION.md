@@ -19,7 +19,7 @@ signed amounts sum to zero.
 
 **Scaffold status.** The service boots, registers with Consul, serves gRPC, connects to the
 broker, and owns its database. Its current `Ledger` aggregate (per-member root with an OCC
-version) predates the domain design and is **retired by FS-0003** — an append-only record
+version) predates the domain design and is **retired by FS-F9R7Q** — an append-only record
 performs no read-modify-write, so optimistic concurrency has nothing to protect.
 
 Per-table detail lives in [`docs/schema/`](docs/schema/). Cross-service architecture context:
@@ -27,5 +27,5 @@ Per-table detail lives in [`docs/schema/`](docs/schema/). Cross-service architec
 
 ## Capabilities
 
-- [ ] Append a balanced ledger transaction → FS-0003
-- [ ] Read the movement record → FS-0003
+- [ ] Append a balanced ledger transaction → FS-F9R7Q
+- [ ] Read the movement record → FS-F9R7Q

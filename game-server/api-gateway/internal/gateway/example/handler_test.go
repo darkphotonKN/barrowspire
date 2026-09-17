@@ -46,7 +46,7 @@ func newRouter(client example.ExampleClient) *gin.Engine {
 	return r
 }
 
-// FS-0001 §Requirements 4, 7 — every error this package can produce now comes
+// FS-22WKC §Requirements 4, 7 — every error this package can produce now comes
 // out of the seam, in problem+json, with a code.
 func TestExampleHandler_ErrorPaths_ReturnProblemJSON(t *testing.T) {
 	tests := []struct {
@@ -98,7 +98,7 @@ func TestExampleHandler_ErrorPaths_ReturnProblemJSON(t *testing.T) {
 	}
 }
 
-// FS-0001 §Requirements 9 — GetExample used to return err.Error() verbatim,
+// FS-22WKC §Requirements 9 — GetExample used to return err.Error() verbatim,
 // which on an unreachable downstream meant handing the client an internal
 // address and port.
 func TestExampleHandler_GetExample_DoesNotLeakDownstreamError(t *testing.T) {
@@ -106,14 +106,14 @@ func TestExampleHandler_GetExample_DoesNotLeakDownstreamError(t *testing.T) {
 
 	w := testsupport.Do(newRouter(&stubClient{err: status.Error(codes.Unavailable, leak)}), http.MethodGet, "/example/abc", "")
 
-	// 503 per FS-0001 §Requirements 5 as amended: a downstream that is down is a
+	// 503 per FS-22WKC §Requirements 5 as amended: a downstream that is down is a
 	// retryable condition, not a broken request.
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	assert.NotContains(t, w.Body.String(), "10.0.0.4")
 	assert.NotContains(t, w.Body.String(), "dial tcp")
 }
 
-// FS-0001 §Requirements 12 — success responses are untouched by this feature.
+// FS-22WKC §Requirements 12 — success responses are untouched by this feature.
 // Asserted on the exact body, because "untouched" is the claim every migration
 // slice makes and none of them can prove without this.
 func TestExampleHandler_SuccessResponses_AreUnchanged(t *testing.T) {
@@ -136,7 +136,7 @@ func TestExampleHandler_SuccessResponses_AreUnchanged(t *testing.T) {
 
 		// KNOWN DEFECT, deliberately preserved: a GET returns 201 Created, and
 		// the body's statusCode says 200 while the header says 201. Both predate
-		// FS-0001, which touches only the error half of every route
+		// FS-22WKC, which touches only the error half of every route
 		// (§Requirements 12), so changing it here would be scope creep in a slice
 		// whose whole claim is that success responses are untouched.
 		//

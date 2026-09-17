@@ -184,7 +184,7 @@ export default function SubscriptionPage() {
     try {
       const res = await apiClient.subscribe(PLAN.productId, memberInfo.email ?? "");
       // The gateway sends `client_secret`; this read `clientSecret` and was
-      // always undefined. Caught by the generated types (FS-0002).
+      // always undefined. Caught by the generated types (FS-NTPW2).
       const secret = res.result?.client_secret;
       if (!secret) {
         setError("No client secret returned from server");

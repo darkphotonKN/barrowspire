@@ -6,7 +6,7 @@ Terms below mean exactly this *inside ledger-service*. Several of them — `acco
 `balance` — also exist in wallet-service and mean something different there. That divergence is
 deliberate; see [Boundaries](#boundaries) for which context owns what.
 
-Sources: [FS-0003](../../docs/specs/0003-append-only-gold-ledger.md), ADR-0005 … ADR-0012.
+Sources: [FS-F9R7Q](../../docs/specs/F9R7Q-append-only-gold-ledger.md), ADR-0005 … ADR-0012.
 
 ## Terms
 
@@ -47,7 +47,7 @@ Sources: [FS-0003](../../docs/specs/0003-append-only-gold-ledger.md), ADR-0005 �
 ### The read path
 
 - **Reconciliation record** — what this service *is*: the independent second record that makes a discrepancy detectable. Its value comes from never being the record anyone reads in normal operation.
-- **Reconciler** — the future consumer that compares ledger to wallet. Out of scope for FS-0003; the reason this service exists.
+- **Reconciler** — the future consumer that compares ledger to wallet. Out of scope for FS-F9R7Q; the reason this service exists.
 - **Sort key** — the `(created_at, id)` pair a page resumes from. **What a cursor encodes, and all it encodes** (ADR-0012).
 - **Cursor** — the opaque wire form of a sort key: base64url of `created_at|id`. Not an offset and not a page number. **Opaque is a promise to clients, not a mechanism** — it carries no identity and no filter state, so possessing one grants no authority and scoping is re-read from the token on every page.
 - **Role** — `member` or `admin`, taken from the verified token. Scopes a read; never supplied as a parameter. *Not yet issued by auth-service — a named prerequisite, not a current capability.*
@@ -66,7 +66,7 @@ wallet-service's on purpose — an append-only context has no read-modify-write 
 - **Driven port** — an interface the domain declares for infrastructure. **Exactly one exists:** `domain/ledger.Repository`. The read path has none, deliberately — it has no invariant to protect and nothing to substitute.
 - **Published Language** — `common/api/activity/ledger` and `common/api/proto/ledger`. What other services import. **Domain types never cross this line;** the adapter translates.
 - **Snapshot** — the only way data leaves the domain package, because its fields are private.
-- **Non-retryable** — an error the activity must fail on rather than retry. **`ledger.IsNonRetryable` in `domain/ledger/errors.go` is the single source of truth**, and the activity's retry policy is built from it (ADR-0011; FS-0003 §API surface's write-path error table is the set it must cover). Stated in the **negative on purpose**, and spelled to match this document's own term exactly: Temporal declares a *non-retryable set* and retries everything else, so the classification that has to be explicit is the one that stops a retry. A positive predicate would name the default and leave the dangerous case implicit — and the dangerous case here is a settlement saga past its pivot retrying a validation failure forever. **An error the predicate does not recognise is retryable**, which is why the sentinel list it closes over is the thing to keep exhaustive.
+- **Non-retryable** — an error the activity must fail on rather than retry. **`ledger.IsNonRetryable` in `domain/ledger/errors.go` is the single source of truth**, and the activity's retry policy is built from it (ADR-0011; FS-F9R7Q §API surface's write-path error table is the set it must cover). Stated in the **negative on purpose**, and spelled to match this document's own term exactly: Temporal declares a *non-retryable set* and retries everything else, so the classification that has to be explicit is the one that stops a retry. A positive predicate would name the default and leave the dangerous case implicit — and the dangerous case here is a settlement saga past its pivot retrying a validation failure forever. **An error the predicate does not recognise is retryable**, which is why the sentinel list it closes over is the thing to keep exhaustive.
 
 ## Retired vocabulary — do not reintroduce
 
@@ -136,7 +136,7 @@ produces wrong code, and the two meanings sit adjacent in the same code path:
 
 **Always qualify the second — say "DB transaction", always.** Unqualified `transaction` means the
 economic event. A variable named `tx` holding a `*sql.Tx` in code that also handles ledger
-transactions is how this gets confusing — and per FS-0003's transaction-boundary rule, `*sql.Tx`
+transactions is how this gets confusing — and per FS-F9R7Q's transaction-boundary rule, `*sql.Tx`
 never appears in a use-case signature anyway.
 
 ### `leg` vs `entry` — related, not interchangeable
@@ -152,7 +152,7 @@ otherwise silently drops `reason`, `reference_id`, and `currency`.
 
 ### The one name per layer
 
-Pinned in FS-0003 §API surface so no slice invents its own. Repeated here because this is where
+Pinned in FS-F9R7Q §API surface so no slice invents its own. Repeated here because this is where
 someone looks first:
 
 | Layer | Package | Type | Reads as |

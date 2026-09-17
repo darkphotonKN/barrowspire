@@ -8,7 +8,7 @@
 //   - the identity bridge, so a typed handler reads the same caller id that
 //     AuthMiddleware put on the gin context.
 //
-// Huma is ADDED to the gateway, not substituted for it (FS-0002 §Requirements
+// Huma is ADDED to the gateway, not substituted for it (FS-NTPW2 §Requirements
 // 1-2). The gin engine, its middleware order, and every unserialized route
 // continue to work; Huma owns only the paths it registers.
 package contract
@@ -63,7 +63,7 @@ func New(router *gin.Engine) huma.API {
 	//
 	// It injects a "$schema" member into every serialized response body. That is
 	// a useful convenience in a greenfield API and a defect in a retrofit: this
-	// feature promises byte-compatible responses (FS-0002 §Requirements 16), and
+	// feature promises byte-compatible responses (FS-NTPW2 §Requirements 16), and
 	// a transformer that adds a member to EVERY body — success responses
 	// included, not just errors — breaks that promise on all 29 routes at once.
 	//
@@ -123,7 +123,7 @@ func (e seamError) Error() string  { return e.Detail }
 
 // ContentType is Huma's negotiation hook. Without it Huma serves the error as
 // application/json and the media type silently degrades — the exact failure
-// FS-0001 §Requirements 7 calls out, and one that no client notices until it
+// FS-22WKC §Requirements 7 calls out, and one that no client notices until it
 // relies on the distinction.
 func (e seamError) ContentType(ct string) string {
 	if ct == "application/json" {
@@ -138,7 +138,7 @@ func (e seamError) ContentType(ct string) string {
 // Huma ships its own RFC 9457 implementation. Left alone, the gateway would
 // publish two problem+json dialects that differ in `code` — the member clients
 // switch on — and the difference would only appear on the error path, which is
-// the path nobody exercises before shipping (FS-0002 §Requirements 8).
+// the path nobody exercises before shipping (FS-NTPW2 §Requirements 8).
 //
 // huma.NewError is a package-level var by design; this is the documented
 // extension point, not a workaround.
@@ -152,7 +152,7 @@ func installSeamErrors() {
 //
 // 5xx never carries the message. A 5xx message originates from something that
 // broke — a dial failure naming an internal host and port, a driver error
-// naming a column — and FS-0001 §Requirements 9 closed exactly that leak. The
+// naming a column — and FS-22WKC §Requirements 9 closed exactly that leak. The
 // status text is used instead, and the real message is already logged by the
 // seam or the recovery middleware.
 //
@@ -203,7 +203,7 @@ var Secured = []map[string][]string{{BearerAuth: {}}}
 //
 // Huma decides a handler error's status from the VALUE: anything not
 // implementing huma.StatusError becomes a flat 500. So without this, every
-// mapping FS-0001 established stops applying the moment a route is serialized —
+// mapping FS-22WKC established stops applying the moment a route is serialized —
 // a not-found, an outage, and a validation failure all collapse into 500 with
 // no code. Nothing in the type system warns about it; a running gateway does.
 //

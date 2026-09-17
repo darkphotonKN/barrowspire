@@ -44,7 +44,7 @@ type Deps struct {
 // operation to one of them — producing a spec that is confidently wrong, which
 // is worse than no spec because CI would still be green.
 //
-// Groups land here one slice at a time (FS-0002 slices 1-4).
+// Groups land here one slice at a time (FS-NTPW2 slices 1-4).
 func RegisterOperations(api huma.API, deps Deps) {
 	protect := Protected(deps.AuthMiddleware)
 

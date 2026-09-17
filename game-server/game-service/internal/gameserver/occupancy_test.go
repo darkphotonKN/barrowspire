@@ -27,7 +27,7 @@ func fillHub(t *testing.T, server *Server, n int) {
 }
 
 // JoinHub hands the decision to the world and passes its refusal back, so a
-// client hears "full" rather than silence. FS-0008 §Requirements 31-32.
+// client hears "full" rather than silence. FS-29KSH §Requirements 31-32.
 func TestJoinHub_PassesTheWorldsRefusalOn(t *testing.T) {
 	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
@@ -48,7 +48,7 @@ func TestJoinHub_PassesTheWorldsRefusalOn(t *testing.T) {
 
 // Coming home is not arriving. A delver who left the hub to descend already had
 // a place; refusing them at the door on the way back would strand them in a run
-// that no longer exists. FS-0008 §Requirements 33.
+// that no longer exists. FS-29KSH §Requirements 33.
 func TestReturnPlayersToHub_IsNotGatedByTheCap(t *testing.T) {
 	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()

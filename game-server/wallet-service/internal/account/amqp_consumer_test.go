@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// FS-0006 §Requirements 17. The consumer this replaced auto-acked, so a failed
+// FS-9KW9F §Requirements 17. The consumer this replaced auto-acked, so a failed
 // account creation was discarded silently and the member never got an account.
 // Nothing about that was visible in a test, which is the point of pulling the
 // decision out of the delivery.

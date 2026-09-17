@@ -546,7 +546,7 @@ func (s *Server) cleanUpPlayerFromSession(player *types.Player) {
 	// dropping out of it is simply leaving — there is nothing in progress to
 	// resume, so the player forgets the world and walks back in from the menu
 	// like anyone else, rather than being resumed into a world they no longer
-	// occupy (FS-0008 §Edge States).
+	// occupy (FS-29KSH §Edge States).
 	if playerSession.WorldType() == types.WorldTypeHub {
 		s.forgetCurrentWorld(player)
 		return

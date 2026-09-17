@@ -70,7 +70,7 @@ func characterFromPayload(payload map[string]interface{}) types.Character {
 
 // worldEnteredMessage tells a client which world it is now in. Every transition
 // uses this one message, so the client has a single place to switch scenes.
-// FS-0008 §Requirements 15.
+// FS-29KSH §Requirements 15.
 func worldEnteredMessage(session *game.Session) types.Message {
 	return types.Message{
 		Action: string(constants.ActionWorldEntered),
@@ -83,7 +83,7 @@ func worldEnteredMessage(session *game.Session) types.Message {
 
 // resolveGameSession answers which world a connection's messages belong to,
 // from the server's own record of the player. It deliberately takes no payload:
-// a client cannot address a world it is not in (FS-0008 §Requirements 16).
+// a client cannot address a world it is not in (FS-29KSH §Requirements 16).
 func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*game.Session, error) {
 	player, exists := h.sessionManager.GetPlayerFromConn(conn)
 	if !exists {
@@ -144,7 +144,7 @@ func (h *messageHub) Run() {
 				if err != nil {
 					// Detail stays server-side. The client no longer supplies a
 					// session id and must not be handed one back in an error
-					// (FS-0008 §Requirements 16).
+					// (FS-29KSH §Requirements 16).
 					slog.Warn("Could not route game action",
 						"action", clientPackage.Message.Action,
 						"error", err,
@@ -308,7 +308,7 @@ func (h *messageHub) Run() {
 				playerIDs[i] = player.ID
 			}
 			// game_found was this message under an older name, from when a run
-			// was the only world anyone could enter. FS-0008 §Requirements 15.
+			// was the only world anyone could enter. FS-29KSH §Requirements 15.
 			h.sender.BroadcastToPlayerList(playerIDs, worldEnteredMessage(session))
 
 		case status := <-h.sessionManager.GetQueueStatusChan():

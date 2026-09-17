@@ -91,7 +91,7 @@ func (uc *CreateAccountOnSignupUC) Handle(ctx context.Context, cmd CreateAccount
 		// A NEW event id, not the inbound one. This is a different event on a
 		// different exchange with a different consumer, and reusing the signup's
 		// id would make auth-service's inbox and wallet's inbox collide on a key
-		// that means two unrelated things (FS-0006 §Req 14).
+		// that means two unrelated things (FS-9KW9F §Req 14).
 		payload, err := json.Marshal(commonconstants.AccountCreatedEventPayload{
 			EventID:   uuid.NewString(),
 			AccountID: snapshot.ID.String(),

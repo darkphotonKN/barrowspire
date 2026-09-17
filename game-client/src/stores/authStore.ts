@@ -5,7 +5,7 @@ import { persist } from "zustand/middleware";
 // Derived from the generated contract rather than hand-declared. The previous
 // hand-written version claimed created_at was a string; the gateway sends a
 // protobuf {seconds, nanos} object, and every field is optional. Caught by the
-// generated types during the FS-0002 client cutover.
+// generated types during the FS-NTPW2 client cutover.
 type MemberInfo = components["schemas"]["Member"];
 
 interface AuthState {

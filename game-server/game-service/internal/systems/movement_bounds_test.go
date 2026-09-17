@@ -34,7 +34,7 @@ func walkFarRight(t *testing.T, sys MovementSystem, startX, startY float64) floa
 }
 
 // The hub is 2000 wide; a run's map is 1440. Boundaries belong to the world, not
-// to the system. FS-0008 §Requirements 3, 5.
+// to the system. FS-29KSH §Requirements 3, 5.
 func TestMovementSystem_ClampsToTheWorldsOwnBounds(t *testing.T) {
 	t.Run("a run keeps the default bounds", func(t *testing.T) {
 		endX := walkFarRight(t, *NewMovementSystem(), 100, 500)

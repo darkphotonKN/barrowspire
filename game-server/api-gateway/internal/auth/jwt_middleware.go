@@ -24,7 +24,7 @@ const opAuthMiddleware = "AuthMiddleware"
 * Works by simply returning a fucntion that takes a gin context, just like any
 * traditional handler.
 *
-* Every rejection goes through httperr.Write (FS-0001 §Requirements 11), which
+* Every rejection goes through httperr.Write (FS-22WKC §Requirements 11), which
 * also aborts the chain — so there is no c.Abort() call here. The detail strings
 * are authored constants describing failures this middleware decided itself;
 * nothing from the token is ever echoed back.

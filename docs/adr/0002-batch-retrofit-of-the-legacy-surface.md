@@ -4,7 +4,7 @@ Status: accepted
 Date: 2026-08-13
 Scope: `game-server/api-gateway` — amends [ADR-0001](0001-contract-layer.md) §9 for the
 migration period only
-Realized by: FS-0002 (gateway surface serialized)
+Realized by: FS-NTPW2 (gateway surface serialized)
 
 ## Context
 
@@ -18,7 +18,7 @@ Two things have changed since.
 **The precondition it was hedging against is now met.** ADR-0001 named one hard prerequisite:
 a single error-mapping seam. Without it, each wrapped endpoint had to invent its own error
 translation, so wrapping was genuinely per-endpoint design work — exactly the kind of cost
-worth deferring. FS-0001 built that seam and migrated all 90 error writes to it. With the seam
+worth deferring. FS-22WKC built that seam and migrated all 90 error writes to it. With the seam
 shipped, wrapping an endpoint is no longer design; it is **transcription** of behavior that is
 already uniform at its only interesting boundary.
 
@@ -42,7 +42,7 @@ while the cost of deferring — an unenforced contract layer — accrues every d
   document. A partial spec invites the belief that it is complete.
 - **Amend ADR-0001 in place.** Rejected on principle: ADRs are immutable. A changed decision
   gets a new ADR that names what it supersedes.
-- **Fold the decision into FS-0002 as a note.** Rejected: this is a constraint, not a
+- **Fold the decision into FS-NTPW2 as a note.** Rejected: this is a constraint, not a
   capability. Burying it in a feature spec means the next reader of ADR-0001 §9 finds a rule
   the repo no longer follows and no record of why.
 
@@ -69,12 +69,12 @@ migration and for this service only.
 4. **Verification is per-group before/after, recorded.** The oasdiff ratchet cannot see a
    first serialization (ADR-0001's stated blind spot), so each group ships with a recorded
    request/response comparison. Responses must be byte-compatible. Error bodies are the sole
-   exception — they changed deliberately in FS-0001, which has already shipped.
+   exception — they changed deliberately in FS-22WKC, which has already shipped.
 
-5. **§9 returns to force once the retrofit merges.** After FS-0002, every new or changed
+5. **§9 returns to force once the retrofit merges.** After FS-NTPW2, every new or changed
    endpoint follows the normal chain: FS §API surface → typed handler → derived spec →
    generated client → gates. There is no second batch; anything left unserialized after this
-   feature is unserialized on purpose and named in FS-0002's Out of Scope.
+   feature is unserialized on purpose and named in FS-NTPW2's Out of Scope.
 
 6. **The interactive docs UI is served on a public route.** Chosen deliberately: the surface it
    documents is a game client's API, the value of a browsable contract is highest when it needs

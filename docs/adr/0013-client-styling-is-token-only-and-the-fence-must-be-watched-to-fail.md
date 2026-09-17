@@ -4,7 +4,7 @@ Status: accepted
 Date: 2026-08-28
 Scope: `game-client` — both the DOM styling layer (`src/app/globals.css`, components) and the
 Phaser layer (`src/scenes/**`), which are two forms of one palette
-Realized by: FS-0004 (web platform reskin), FS-0005 (game canvas reskin)
+Realized by: FS-SWMNW (web platform reskin), FS-W6BP1 (game canvas reskin)
 
 ## Context
 
@@ -45,7 +45,7 @@ The alternative on the table was to record the token-only constraint and skip th
 rejected on the evidence above: the constraint has effectively existed in prose since the
 guideline was written, and prose is what produced the current state.
 
-> Recorded without adversarial review. This decision was reached during the FS-0004/FS-0005
+> Recorded without adversarial review. This decision was reached during the FS-SWMNW/FS-W6BP1
 > scoping session, where it converged on the first recommendation with no pushback.
 
 ## Decision
@@ -66,7 +66,7 @@ are defined.**
 - **The rule is enforced by a lint check, and the check is proven with the existing
   `lint-fence.sh` pattern** — asserted to reject a fixture that violates it *and* to accept the
   real tree. An unproven gate does not count as enforcement under this ADR.
-- **The fence lands with FS-0004/FS-0005, not before.** The tree currently violates the rule in
+- **The fence lands with FS-SWMNW/FS-W6BP1, not before.** The tree currently violates the rule in
   ~85 places. Enforcement is the closing act of the reskin, when the tree can actually go green;
   a gate introduced against a red tree gets an allowlist, and an allowlist is how a fence becomes
   decoration.
@@ -78,7 +78,7 @@ are defined.**
   rejects a literal", which is the difference between a rule that depends on attention and one
   that does not.
 - A palette change becomes a change to two files instead of a search-and-replace across a 4.4k-
-  line scene and a 1.4k-line stylesheet. The base-surface lift decided in FS-0004 is the
+  line scene and a 1.4k-line stylesheet. The base-surface lift decided in FS-SWMNW is the
   immediate beneficiary; every future one is too.
 - The DOM and Phaser palettes are structurally forced to stay in sync, because both sides are
   reduced to lookups against tables that a human maintains side by side.
@@ -100,7 +100,7 @@ are defined.**
   across the scenes. That migration is the reskin itself, so the cost is absorbed rather than
   additional, but it does mean the fence cannot precede the work it is meant to protect.
 - **Cost: raw `0x` lookups are token-compliant and still unreadable.** `BARROW_HEX.slate` passes
-  the fence whether or not slate is the right colour for a door. FS-0005 raises, without
+  the fence whether or not slate is the right colour for a door. FS-W6BP1 raises, without
   settling, whether a semantic layer (`palette.wall`, `palette.door`) should sit over the ramp.
   The fence does not answer that question and may create false confidence that it has.
 - **Cost: one more gate to keep honest.** A fence that is itself never exercised regresses to the

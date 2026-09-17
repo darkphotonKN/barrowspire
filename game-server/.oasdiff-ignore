@@ -54,7 +54,7 @@
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# FS-0007 (I-0041) — signup became synchronous.
+# FS-83TJK (I-F9R7Q-16) — signup became synchronous.
 #
 # WHY: signup published a member.create command over the broker and answered 202
 # before the database was touched, so a duplicate email could never be reported —
@@ -63,19 +63,19 @@
 # slowness. Signup now calls CreateMember over gRPC and answers 201 with the
 # member, which makes the already-built 409 ALREADY_EXISTS path reachable.
 #
-# Dropping 202 is the deliberate break FS-0007 §API surface authorises. The 201
+# Dropping 202 is the deliberate break FS-83TJK §API surface authorises. The 201
 # and the 409 are additions and are NOT breaking, so they need no entry.
 #
 # Line copied verbatim from `make openapi-breaking` output, lowercased.
 in api post /api/member/signup removed the success response with the status `202`
 
 # ---------------------------------------------------------------------------
-# FS-0007 (I-0042) — check-email removed.
+# FS-83TJK (I-F9R7Q-17) — check-email removed.
 #
 # WHY: GET /api/member/check-email existed for exactly one reason — signup used
 # to answer 202 without creating the account, so the register page polled this
 # endpoint once a second, up to fifteen times, to learn when the member showed
-# up. I-0041 made signup synchronous and answer 409 ALREADY_EXISTS directly, so
+# up. I-F9R7Q-16 made signup synchronous and answer 409 ALREADY_EXISTS directly, so
 # the poll was deleted and this endpoint lost its only caller and its stated
 # purpose in the same change.
 #

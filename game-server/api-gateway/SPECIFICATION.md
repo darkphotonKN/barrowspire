@@ -35,8 +35,8 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] JWT authentication on private route groups
 - [x] Consul register / health-check / deregister lifecycle
 - [x] Error responses on every route → FS-none
-- [x] Uniform, machine-readable error contract → FS-0001
-- [x] Gateway HTTP surface serialized → FS-0002
+- [x] Uniform, machine-readable error contract → FS-22WKC
+- [x] Gateway HTTP surface serialized → FS-NTPW2
 
 ### Downstream routing
 
@@ -46,12 +46,12 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] Route payment traffic to payments, plus the unauthenticated Stripe webhook
 - [x] Route item traffic to items
 - [x] Route example traffic to examples
-- [ ] Route ledger read traffic to ledger → FS-0003
+- [ ] Route ledger read traffic to ledger → FS-F9R7Q
 
 ### Integration patterns
 
 - [x] gRPC fan-out over Consul-discovered clients
-- [x] Synchronous signup → FS-0007
+- [x] Synchronous signup → FS-83TJK
 
 ## Purpose
 
@@ -172,7 +172,7 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
   names in use: `examples`, `auth`, `items`, `notification`, `stats`, `payments`.
 > **The gateway no longer publishes to the broker at all.** AMQP fire-and-forget existed for
 > signup alone — JSON body → `proto.Marshal` → publish to `AuthEventsExchange` with routing key
-> `AuthMemberCreate`, answering `202` without waiting for a reply. FS-0007 replaced it with a
+> `AuthMemberCreate`, answering `202` without waiting for a reply. FS-83TJK replaced it with a
 > synchronous gRPC call, and the routing key, both publishers, and auth-service's consumer are
 > gone. gRPC via Consul is now the gateway's only downstream integration pattern.
 >

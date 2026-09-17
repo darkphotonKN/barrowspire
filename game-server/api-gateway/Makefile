@@ -242,8 +242,8 @@ contract-auth:
 
 .PHONY: openapi client lint-contract openapi-diff openapi-breaking gates gates-selftest contract-auth
 
-# --- FS-0001 seam gates (I-0007) -------------------------------------------
-# Three checks, each guarding a failure that actually happened during FS-0001:
+# --- FS-22WKC seam gates (I-22WKC-7) -------------------------------------------
+# Three checks, each guarding a failure that actually happened during FS-22WKC:
 # a direct error write, a downstream message published to a client, and a `go`
 # directive that moved inside an unrelated commit.
 seam-gate:

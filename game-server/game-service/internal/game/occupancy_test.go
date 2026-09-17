@@ -19,7 +19,7 @@ func hubSession(t *testing.T) *Session {
 
 // A world knows how full it is. Asking it to admit someone is the moment to
 // decide, because that is the only moment its membership cannot change
-// underneath the decision. FS-0008 §Requirements 31, 33.
+// underneath the decision. FS-29KSH §Requirements 31, 33.
 func TestAdmit_RefusesBeyondCapacity(t *testing.T) {
 	session := hubSession(t)
 

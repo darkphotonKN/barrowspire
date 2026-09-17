@@ -5,7 +5,7 @@ Date: 2026-08-25
 Scope: `game-server/marketplace-service`, `game-server/wallet-service`, `game-server/ledger-service`
 Builds on: [ADR-0010](0010-the-ledger-is-appended-past-the-saga-pivot.md) — supplies the mechanism
 for the roll-forward ordering that ADR deliberately left to the saga
-Realized by: FS-0003 §Requirements 19, §API surface, §Known gap — **the FS is not yet updated and
+Realized by: FS-F9R7Q §Requirements 19, §API surface, §Known gap — **the FS is not yet updated and
 still describes a gRPC write path**
 
 ## Context
@@ -15,7 +15,7 @@ past the pivot, once every money step has succeeded. It named Temporal as the ex
 orchestrator and then explicitly declined to decide anything about it — *"what this ADR depends
 on is the ordering guarantee, not the tool that provides it."*
 
-That left the actual topology open, and FS-0003 filled the gap with the obvious answer:
+That left the actual topology open, and FS-F9R7Q filled the gap with the obvious answer:
 `AppendLedgerTx` as a gRPC service-to-service call, with the orchestrator's workflow calling each
 participant in turn. Marketplace is the orchestrator; wallet and ledger are participants.
 
@@ -48,7 +48,7 @@ gRPC call from marketplace. Wallet's commit and debit are activities in wallet-s
 **There is no gRPC hop on the settlement write path.**
 
 **Read paths are untouched.** HTTP → gateway → gRPC stands exactly as ADR-0001's contract layer
-and FS-0003's read surface describe it. This decision governs the write path only, and the
+and FS-F9R7Q's read surface describe it. This decision governs the write path only, and the
 asymmetry is the point: reads are request/response for a waiting human, writes are steps in a
 durable workflow.
 
@@ -76,7 +76,7 @@ call.
 - **One fewer hop, and one fewer thing to be wrong.** The activity runs in the process that owns
   the data. No client construction, no Consul lookup, no gRPC status to translate back into a
   workflow decision on the write path.
-- **The `AppendLedgerTx` RPC loses its caller.** FS-0003 specifies it as gRPC service-to-service
+- **The `AppendLedgerTx` RPC loses its caller.** FS-F9R7Q specifies it as gRPC service-to-service
   with wallet-service as the caller. Under this decision the append is an activity and that RPC
   has no caller — the FS's write-path transport, requirement 19, and parts of its API surface are
   now wrong and must be reconciled. That reconciliation is the next step, not this ADR's job.

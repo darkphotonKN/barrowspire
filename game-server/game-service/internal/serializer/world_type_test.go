@@ -13,7 +13,7 @@ import (
 )
 
 // The client is told which world it is in rather than inferring it from the
-// shape of the broadcast. FS-0008 §Requirements 18.
+// shape of the broadcast. FS-29KSH §Requirements 18.
 func TestFormatStateToClientState_CarriesTheWorldType(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -42,9 +42,9 @@ func TestFormatStateToClientState_CarriesTheWorldType(t *testing.T) {
 }
 
 // A delver cannot talk to someone they cannot see. The hub's residents ride in
-// the broadcast alongside players — the ambient ones in I-0052 will move, so one
+// the broadcast alongside players — the ambient ones in I-29KSH-8 will move, so one
 // list covers both rather than a static delivery plus a moving one.
-// FS-0008 §Requirements 9.
+// FS-29KSH §Requirements 9.
 func TestSerializeBackendState_CarriesNPCs(t *testing.T) {
 	em := ecs.NewEntityManager()
 

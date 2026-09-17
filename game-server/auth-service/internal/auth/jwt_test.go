@@ -32,7 +32,7 @@ func decode(t *testing.T, tokenStr string) jwt.MapClaims {
 	return claims
 }
 
-// FS-0006 §Requirements 1-2. The role is read off the models.Member the minter
+// FS-9KW9F §Requirements 1-2. The role is read off the models.Member the minter
 // already receives, so this costs no query and no new I/O.
 func TestGenerateJWT_AccessToken_CarriesRole(t *testing.T) {
 	t.Setenv("JWT_SECRET", testSecret)
@@ -49,7 +49,7 @@ func TestGenerateJWT_AccessToken_CarriesRole(t *testing.T) {
 	}
 }
 
-// FS-0006 §Requirements 3. Present only when the member actually has one.
+// FS-9KW9F §Requirements 3. Present only when the member actually has one.
 func TestGenerateJWT_AccessToken_CarriesAccountIDWhenKnown(t *testing.T) {
 	t.Setenv("JWT_SECRET", testSecret)
 
@@ -62,7 +62,7 @@ func TestGenerateJWT_AccessToken_CarriesAccountIDWhenKnown(t *testing.T) {
 	assert.Equal(t, accountID.String(), decode(t, token)["account_id"])
 }
 
-// FS-0006 §Requirements 4, §Edge States. The claim is ABSENT, not empty.
+// FS-9KW9F §Requirements 4, §Edge States. The claim is ABSENT, not empty.
 //
 // This is the assertion the whole design turns on. A member without a wallet
 // account is the normal case — nothing populates the column until the
@@ -83,7 +83,7 @@ func TestGenerateJWT_AccessToken_OmitsAccountIDWhenUnknown(t *testing.T) {
 		"account_id must be absent from the claim map, not present-and-empty")
 }
 
-// FS-0006 §Requirements 5. Refresh tokens carry no authorization claims, so a
+// FS-9KW9F §Requirements 5. Refresh tokens carry no authorization claims, so a
 // future redemption endpoint is forced to re-read the member rather than
 // trusting a seven-day-old role.
 func TestGenerateJWT_RefreshToken_CarriesNoAuthorizationClaims(t *testing.T) {
@@ -102,7 +102,7 @@ func TestGenerateJWT_RefreshToken_CarriesNoAuthorizationClaims(t *testing.T) {
 	assert.False(t, hasAccount, "a refresh token must not carry account_id")
 }
 
-// FS-0006 §Requirements 5, and the acceptance criterion that the refresh claim
+// FS-9KW9F §Requirements 5, and the acceptance criterion that the refresh claim
 // map is byte-identical to today's. Asserted as an exact key set: adding a claim
 // to the refresh token later should fail HERE, loudly, rather than quietly
 // widening a long-lived credential.
@@ -122,7 +122,7 @@ func TestGenerateJWT_RefreshToken_ClaimKeysAreExactlyTheOriginalFour(t *testing.
 	assert.ElementsMatch(t, []string{"sub", "exp", "iat", "tokenType"}, keys)
 }
 
-// FS-0006 §Requirements: sub, exp, iat and tokenType are unchanged in name,
+// FS-9KW9F §Requirements: sub, exp, iat and tokenType are unchanged in name,
 // type, and value semantics. Moving from a jwt.MapClaims literal to a typed
 // struct is exactly the kind of change that can silently rename a key or turn a
 // numeric date into a string.

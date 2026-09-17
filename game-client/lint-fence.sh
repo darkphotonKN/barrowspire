@@ -63,8 +63,8 @@ echo "  ok — tree passes"
 
 echo
 echo "→ scope of the token fence (ADR-0013)"
-# The perimeter must be stated, not assumed. FS-0004 cleaned the DOM surface;
-# the Phaser canvas layer is FS-0005 and is NOT yet inside the fence. Printing
+# The perimeter must be stated, not assumed. FS-SWMNW cleaned the DOM surface;
+# the Phaser canvas layer is FS-W6BP1 and is NOT yet inside the fence. Printing
 # the gap is the difference between "scoped" and "quietly exempted" — a green
 # check here means the DOM surface is clean, not that the tree is.
 uncovered=$(grep -rlE "0x[0-9a-fA-F]{6}|#[0-9a-fA-F]{6}" \
@@ -72,7 +72,7 @@ uncovered=$(grep -rlE "0x[0-9a-fA-F]{6}|#[0-9a-fA-F]{6}" \
 	src/utils/gameStateLogger.ts src/utils/class/SocketManager.ts 2>/dev/null | sort -u)
 n=$(printf '%s\n' "${uncovered}" | grep -c . || true)
 echo "  covered:   src/app, src/components, and every other .ts/.tsx — 0 violations"
-echo "  NOT yet covered: ${n} files in the Phaser canvas layer (FS-0005 widens the fence)"
+echo "  NOT yet covered: ${n} files in the Phaser canvas layer (FS-W6BP1 widens the fence)"
 printf '%s\n' "${uncovered}" | sed 's/^/    · /'
 
 echo

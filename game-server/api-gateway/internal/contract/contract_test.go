@@ -59,7 +59,7 @@ func keys(m map[string]any) []string {
 	return out
 }
 
-// FS-0002 §Requirements 8. Huma ships its own RFC 9457 error format. If it is
+// FS-NTPW2 §Requirements 8. Huma ships its own RFC 9457 error format. If it is
 // left in place, the gateway ends up with two problem+json dialects that differ
 // in exactly the member clients switch on — and the difference only shows up on
 // the error path, which is the path nobody exercises before shipping.
@@ -78,8 +78,8 @@ func TestError_ShapeIsIdenticalToTheSeam(t *testing.T) {
 	assert.Equal(t, seamBody["status"], humaBody["status"])
 }
 
-// FS-0002 §Requirements 10. 422 is new: ADR-0001 §7 reserves it for shape
-// failures at a typed boundary, and FS-0001 recorded that it "does not appear
+// FS-NTPW2 §Requirements 10. 422 is new: ADR-0001 §7 reserves it for shape
+// failures at a typed boundary, and FS-22WKC recorded that it "does not appear
 // until Huma is mounted". It must still carry a code the client can switch on.
 func TestError_UnprocessableEntity_CarriesValidationCode(t *testing.T) {
 	body := failing(t, func() error { return huma.Error422UnprocessableEntity("bad shape") })
@@ -88,7 +88,7 @@ func TestError_UnprocessableEntity_CarriesValidationCode(t *testing.T) {
 	assert.Equal(t, string(errcode.ValidationFailed), body["code"])
 }
 
-// FS-0001 §Requirements 8 — errors[] is always present so clients never
+// FS-22WKC §Requirements 8 — errors[] is always present so clients never
 // null-check before iterating. Huma omits its detail list when empty.
 func TestError_ErrorsMemberIsAlwaysAnArray(t *testing.T) {
 	body := failing(t, func() error { return huma.Error500InternalServerError("no field detail here") })
@@ -98,7 +98,7 @@ func TestError_ErrorsMemberIsAlwaysAnArray(t *testing.T) {
 	assert.Empty(t, errs)
 }
 
-// FS-0001 §Requirements 9 — no downstream or internal text reaches the client.
+// FS-22WKC §Requirements 9 — no downstream or internal text reaches the client.
 // Huma puts the handler's message straight into its response by default.
 func TestError_InternalMessage_NeverReachesTheClient(t *testing.T) {
 	body := failing(t, func() error {
@@ -120,7 +120,7 @@ func TestDocs_AreServedPublicly(t *testing.T) {
 	assert.Equal(t, http.StatusOK, testsupport.Do(r, http.MethodGet, contract.OpenAPIPath+".yaml", "").Code)
 }
 
-// FS-0002 §Requirements 1-2: Huma is added to the gateway, not substituted for
+// FS-NTPW2 §Requirements 1-2: Huma is added to the gateway, not substituted for
 // it. A legacy gin route registered on the same engine keeps working.
 func TestMount_LeavesLegacyGinRoutesAlone(t *testing.T) {
 	r := gin.New()

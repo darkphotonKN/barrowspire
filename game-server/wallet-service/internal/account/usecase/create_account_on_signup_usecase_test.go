@@ -92,7 +92,7 @@ func countOutbox(t *testing.T, db *sqlx.DB, memberID uuid.UUID) int {
 	return n
 }
 
-// FS-0006 §Requirements 11, 12, 14.
+// FS-9KW9F §Requirements 11, 12, 14.
 func TestCreateAccountOnSignup_FirstDelivery_CreatesAccountAndQueuesEvent(t *testing.T) {
 	db := walletDB(t)
 	uc := newUC(t, db)
@@ -132,7 +132,7 @@ func TestCreateAccountOnSignup_FirstDelivery_CreatesAccountAndQueuesEvent(t *tes
 	assert.NotEqual(t, eventID.String(), ev.EventID)
 }
 
-// FS-0006 §Requirements 16, §Edge States. Redelivery is a no-op, not a second
+// FS-9KW9F §Requirements 16, §Edge States. Redelivery is a no-op, not a second
 // account and not an error the broker has to interpret.
 func TestCreateAccountOnSignup_Redelivery_IsANoOp(t *testing.T) {
 	db := walletDB(t)
@@ -150,7 +150,7 @@ func TestCreateAccountOnSignup_Redelivery_IsANoOp(t *testing.T) {
 	assert.Equal(t, 1, countOutbox(t, db, memberID), "still exactly one queued event")
 }
 
-// FS-0006 §Requirements 12, §Edge States: "a forced failure after the insert
+// FS-9KW9F §Requirements 12, §Edge States: "a forced failure after the insert
 // leaves neither". This is the assertion a happy-path test cannot make — two
 // independent writes would satisfy every check above and fail this one.
 func TestCreateAccountOnSignup_OutboxWriteFails_LeavesNoAccount(t *testing.T) {

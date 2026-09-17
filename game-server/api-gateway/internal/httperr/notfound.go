@@ -10,7 +10,7 @@ import (
 // Every other error in the gateway reaches the seam because a handler put it
 // there. An unrouted path has no handler by definition, so gin answers it
 // itself — with a bare `text/plain` 404 carrying no `code`. That left the one
-// hole in FS-0001's claim that every 4xx/5xx is problem+json, and it sat on the
+// hole in FS-22WKC's claim that every 4xx/5xx is problem+json, and it sat on the
 // single most common client mistake there is: a typo'd URL.
 //
 // Wire it with router.NoRoute(httperr.NotFoundHandler()).

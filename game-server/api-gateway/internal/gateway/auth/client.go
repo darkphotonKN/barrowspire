@@ -53,7 +53,7 @@ func (c *Client) CreateMember(ctx context.Context, req *pb.CreateMemberRequest) 
 		// returns a plain error when auth-service has no healthy instance —
 		// carrying no gRPC status — so without ErrUnavailable the seam falls
 		// through every errors.Is branch to 500. A deregistered auth-service is
-		// the likeliest way signup fails, and FS-0007 §Edge States requires it
+		// the likeliest way signup fails, and FS-83TJK §Edge States requires it
 		// to answer 503: the request was valid and retrying is correct.
 		return nil, fmt.Errorf("%w: connecting to auth service: %w", apperr.ErrUnavailable, err)
 	}

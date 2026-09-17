@@ -1,4 +1,4 @@
--- FS-0006 §Requirements 9. A CACHE of wallet.accounts.id, never a source of truth.
+-- FS-9KW9F §Requirements 9. A CACHE of wallet.accounts.id, never a source of truth.
 --
 -- NULL is the whole design, not a concession: the value is populated eventually
 -- by the account.created consumer, so "not known yet" is a normal, long-lived
@@ -16,4 +16,4 @@
 ALTER TABLE members ADD COLUMN account_id UUID NULL UNIQUE;
 
 COMMENT ON COLUMN members.account_id IS
-  'Cache of wallet.accounts.id, populated asynchronously by the account.created consumer. NULL means not known yet; consumers fail closed. See FS-0006 and ADR-0014.';
+  'Cache of wallet.accounts.id, populated asynchronously by the account.created consumer. NULL means not known yet; consumers fail closed. See FS-9KW9F and ADR-0014.';

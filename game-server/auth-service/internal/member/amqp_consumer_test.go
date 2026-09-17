@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// FS-0006 §Requirements 17, §Edge States. The two deliberate wedges — an
+// FS-9KW9F §Requirements 17, §Edge States. The two deliberate wedges — an
 // unknown member, and an account id another member already holds — must reach
 // nackRequeue rather than being acked away. Both are consumer bugs, and a
 // silently acked one leaves a member without the claim forever with nothing

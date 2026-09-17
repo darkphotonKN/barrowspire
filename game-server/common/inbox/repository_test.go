@@ -20,7 +20,7 @@ import (
 const dsnEnv = "INBOX_TEST_DB_DSN"
 
 // The shape common/inbox contracts for. Every consuming service ships this as
-// its own migration, in its own database (FS-0006 §Req 20); the test states it
+// its own migration, in its own database (FS-9KW9F §Req 20); the test states it
 // here because the package under test is code without storage.
 const processedEventsDDL = `
 CREATE TABLE processed_events (
