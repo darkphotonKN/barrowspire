@@ -132,21 +132,6 @@ services:
     networks:
       - barrowspire-network
 
-  # Example Service Database
-  example-service-db:
-    image: postgres:17
-    container_name: barrowspire_example_service_db
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: barrowspire_example_service_db
-    ports:
-      - "5290:5432"
-    volumes:
-      - barrowspire_example_service_pgdata:/var/lib/postgresql/data
-    networks:
-      - barrowspire-network
-
   # Marketplace Service Database
   marketplace-service-db:
     image: postgres:17
@@ -218,7 +203,6 @@ volumes:
   barrowspire_items_service_pgdata:
   barrowspire_notification_service_pgdata:
   barrowspire_api_gateway_pgdata:
-  barrowspire_example_service_pgdata:
   barrowspire_marketplace_service_pgdata:
   barrowspire_wallet_service_pgdata:
   barrowspire_ledger_service_pgdata:

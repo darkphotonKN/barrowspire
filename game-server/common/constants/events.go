@@ -33,9 +33,6 @@ const (
 * {resource}.{action}
 **/
 const (
-	// example
-	ExampleCreatedEvent = "example.created"
-
 	CharacterCreatedEvent = "character.created"
 
 	// Member Events

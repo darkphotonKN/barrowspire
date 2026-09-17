@@ -37,7 +37,7 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	// NOTE: the listing domain (model/repository/service/handler + proto) is
 	// intentionally left empty for now. This service only boots the server and
 	// its amqp consumer. Wire the domain + pb.RegisterMarketplaceServiceServer
-	// here later, following example-service.
+	// here later.
 	createListingUC := usecase.NewCreateListingUC(listingRepo)
 	consumer := listing.NewConsumer(ch, createListingUC)
 

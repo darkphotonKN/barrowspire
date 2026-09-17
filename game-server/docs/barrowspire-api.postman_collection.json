@@ -680,53 +680,6 @@
       ]
     },
     {
-      "name": "Example Service",
-      "item": [
-        {
-          "name": "Get Example",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/example/:id",
-              "host": ["{{base_url}}"],
-              "path": ["api", "example", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "123",
-                  "description": "Example ID"
-                }
-              ]
-            },
-            "description": "Get example by ID"
-          }
-        },
-        {
-          "name": "Create Example",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Example Item\",\n  \"description\": \"This is an example\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/example",
-              "host": ["{{base_url}}"],
-              "path": ["api", "example"]
-            },
-            "description": "Create a new example"
-          }
-        }
-      ]
-    },
-    {
       "name": "Webhooks",
       "item": [
         {

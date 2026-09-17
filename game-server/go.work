@@ -4,7 +4,6 @@ use (
 	./api-gateway
 	./auth-service
 	./common
-	./example-service
 	./game-service
 	./payment-service
 	./stats-service

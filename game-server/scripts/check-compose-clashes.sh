@@ -9,10 +9,10 @@
 #
 # Both exist because the failure they prevent ALREADY HAPPENED:
 #   - payment-service and marketplace-service both bound 5224 with different DBs
-#   - api-gateway/stats-service/example-service had drifted away from the ports
-#     the running root aggregate actually uses (5214 vs 5220, 5217 vs 5223,
-#     5223 vs 5290), so `docker compose up` in a service dir collided with the
-#     already-running stack
+#   - api-gateway/stats-service had drifted away from the ports
+#     the running root aggregate actually uses (5214 vs 5220, 5217 vs 5223),
+#     so `docker compose up` in a service dir collided with the already-running
+#     stack
 #
 # NOT covered here (deliberately): cross-repo collisions with fireplace/ and
 # cosmic-void/, which share directory names and therefore compose project names.

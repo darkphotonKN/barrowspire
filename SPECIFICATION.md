@@ -23,7 +23,6 @@ member. Shared code (`game-server/common`, `game-server/observability`, `game-se
 | payment-service      | `game-server/payment-service`      | gRPC (Consul `payments`, Stripe)        | [SPEC](game-server/payment-service/SPECIFICATION.md) ⏳                                          | [CONTEXT](game-server/payment-service/CONTEXT.md)      |
 | stats-service        | `game-server/stats-service`        | gRPC (Consul `stats`)                   | [SPEC](game-server/stats-service/SPECIFICATION.md) ⏳                                            | [CONTEXT](game-server/stats-service/CONTEXT.md)        |
 | notification-service | `game-server/notification-service` | gRPC (Consul `notification`)            | [SPEC](game-server/notification-service/SPECIFICATION.md) ⏳                                     | [CONTEXT](game-server/notification-service/CONTEXT.md) |
-| example-service      | `game-server/example-service`      | gRPC (reference scaffold)               | [SPEC](game-server/example-service/SPECIFICATION.md) ⏳                                          | [CONTEXT](game-server/example-service/CONTEXT.md)      |
 | game-client          | `game-client`                      | Next.js FE (hand-rolled REST/WS client) | [SPEC](game-client/SPECIFICATION.md) · [CLAUDE](game-client/CLAUDE.md)                           | [CONTEXT](game-client/CONTEXT.md)                      |
 
 ⏳ = spec is a skeleton (structure only); run `/spec-bootstrap <member>` to fill capability lines

@@ -27,7 +27,7 @@ func (c *consumer) Listen() {
 func (c *consumer) charactrCreatedEventListener() {
 	queueName := fmt.Sprintf("character.%s", commonconstants.CharacterCreatedEvent)
 
-	// declare our unique queue that listens and waits for ExampleCreatedEvent to be published from example service
+	// declare our unique queue that listens and waits for CharacterCreatedEvent to be published
 	queue, err := c.publishCh.QueueDeclare(queueName, true, false, false, false, nil)
 
 	if err != nil {
