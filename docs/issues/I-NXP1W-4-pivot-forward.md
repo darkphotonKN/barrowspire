@@ -2,13 +2,13 @@
 id: I-NXP1W-4
 status: open
 implements: FS-NXP1W
-blocked_by: [I-NXP1W-3]
-labels: [blocked]
+blocked_by: []
+labels: []
 title: "FS-NXP1W slice 4: pivot arm forward — 1a SetWinningBid, 1b CommitHold"
 ---
 Implements FS-NXP1W §Requirements 19, 21, 27–28
 
-**Author: human** (Kranti)
+**Author: human** (Nick)
 
 ## What to Build
 
@@ -38,7 +38,10 @@ handling is slice 6.
 
 ## Blocked By
 
-I-NXP1W-3 (the workflow shell and 0a's winner output).
+None. Starts in parallel with slices 1 and 3: build and test the use cases, then wrap them as
+activities and test them with the Temporal SDK's activity test environment. Scheduling them from
+the workflow, after 0a's winner output, happens once I-NXP1W-3 lands. That's integration, not a
+blocker.
 
 ## Spec Reference
 

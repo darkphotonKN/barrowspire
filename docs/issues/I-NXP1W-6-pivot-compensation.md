@@ -2,13 +2,13 @@
 id: I-NXP1W-6
 status: open
 implements: FS-NXP1W
-blocked_by: [I-NXP1W-4, I-NXP1W-5]
+blocked_by: [I-NXP1W-4]
 labels: [blocked]
 title: "FS-NXP1W slice 6: pivot arm compensation — retry policy, classification, rollback of 1a/1b"
 ---
 Implements FS-NXP1W §Requirements 9, 12, 15, 36–38
 
-**Author: human** (Kranti)
+**Author: human** (Nick)
 
 ## What to Build
 
@@ -36,7 +36,8 @@ What happens when 1a or 1b fails. This is the last point where rollback is allow
 
 ## Blocked By
 
-I-NXP1W-4 (the forward steps), I-NXP1W-5 (the rollback wiring).
+I-NXP1W-4 (the forward steps). The classification and rollback actions don't wait on
+I-NXP1W-5; plugging them into its rollback wiring happens once it lands.
 
 ## Spec Reference
 
