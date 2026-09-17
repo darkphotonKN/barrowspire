@@ -96,6 +96,7 @@ func (h *Handler) ListEntries(ctx context.Context, req *pb.ListEntriesRequest) (
 			AccountId:     entry.AccountID.String(),
 			Reason:        entry.Reason,
 			Amount:        entry.Amount,
+			Currency:      entry.Currency,
 			Direction:     entry.Direction,
 			CreatedAt:     timestamppb.New(entry.CreatedAt),
 		})
