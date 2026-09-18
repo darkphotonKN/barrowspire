@@ -41,8 +41,10 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	createListingUC := usecase.NewCreateListingUC(listingRepo)
 	consumer := listing.NewConsumer(ch, createListingUC)
 
-	worker := worker.NewReconcileWorker()
-	worker.Run(ctx)
+	reconcileWorker := worker.NewReconcileWorker(reconcileReservationsUC)
+	// Run loops on a ticker and never returns, so it has to be its own
+	// goroutine — called inline it would block NewServices forever.
+	go reconcileWorker.Run(ctx)
 	// start goroutine and listen to events from message broker
 	consumer.Listen(ctx)
 
