@@ -1,0 +1,18 @@
+{
+  "transaction_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "reason": "AUCTION_SETTLEMENT",
+  "currency": "GOLD",
+  "reference_id": "11111111-1111-4111-8111-111111111111",
+  "legs": [
+    {
+      "account_id": "66666666-6666-4666-8666-666666666666",
+      "amount": 250,
+      "direction": "DEBIT"
+    },
+    {
+      "account_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "amount": 250,
+      "direction": "CREDIT"
+    }
+  ]
+}
