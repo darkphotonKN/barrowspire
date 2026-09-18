@@ -1,0 +1,96 @@
+# Temporal server configuration for local development.
+#
+# This file exists because temporalio/server ships no config template: its
+# entrypoint is a bare `temporal-server start`, and the DB/POSTGRES_SEEDS style
+# environment variables only worked on the retired temporalio/auto-setup image,
+# which Temporal stopped publishing after 1.29.7. Config is authored and mounted
+# instead — the same thing a real deployment does, just with a shorter file.
+#
+# Single node: all four services run in one process, so membership broadcasts to
+# loopback while the gRPC listeners bind to 0.0.0.0 for the rest of the compose
+# network to reach.
+
+log:
+  stdout: true
+  level: info
+
+persistence:
+  # Fixed for the life of the cluster. Changing it later means a new cluster and
+  # losing every history in the old one.
+  numHistoryShards: 4
+  defaultStore: default
+  visibilityStore: visibility
+  datastores:
+    default:
+      sql:
+        pluginName: "postgres12"
+        databaseName: "temporal"
+        connectAddr: "temporal-db:5432"
+        connectProtocol: "tcp"
+        user: "temporal"
+        password: "temporal"
+        maxConns: 20
+        maxIdleConns: 20
+        maxConnLifetime: "1h"
+    visibility:
+      sql:
+        pluginName: "postgres12"
+        databaseName: "temporal_visibility"
+        connectAddr: "temporal-db:5432"
+        connectProtocol: "tcp"
+        user: "temporal"
+        password: "temporal"
+        maxConns: 10
+        maxIdleConns: 10
+        maxConnLifetime: "1h"
+
+global:
+  membership:
+    maxJoinDuration: 30s
+    broadcastAddress: "127.0.0.1"
+  pprof:
+    port: 7936
+  metrics:
+    prometheus:
+      timerType: histogram
+      listenAddress: "0.0.0.0:8000"
+
+services:
+  frontend:
+    rpc:
+      grpcPort: 7233
+      membershipPort: 6933
+      bindOnIP: "0.0.0.0"
+      httpPort: 7243
+  history:
+    rpc:
+      grpcPort: 7234
+      membershipPort: 6934
+      bindOnIP: "0.0.0.0"
+  matching:
+    rpc:
+      grpcPort: 7235
+      membershipPort: 6935
+      bindOnIP: "0.0.0.0"
+  worker:
+    rpc:
+      grpcPort: 7239
+      membershipPort: 6939
+      bindOnIP: "0.0.0.0"
+
+clusterMetadata:
+  enableGlobalNamespace: false
+  failoverVersionIncrement: 10
+  masterClusterName: "active"
+  currentClusterName: "active"
+  clusterInformation:
+    active:
+      enabled: true
+      initialFailoverVersion: 1
+      rpcName: "frontend"
+      rpcAddress: "127.0.0.1:7233"
+      httpAddress: "127.0.0.1:7243"
+
+dynamicConfigClient:
+  filepath: "/etc/temporal/dynamicconfig/development.yaml"
+  pollInterval: "60s"

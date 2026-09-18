@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
@@ -14,11 +18,15 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
+	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
+	"github.com/darkphotonKN/barrowspire-server/common/temporal/smoke"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/items-service/config"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	sdklog "go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/worker"
 )
 
 var (
@@ -148,9 +156,52 @@ func main() {
 	// Use the new config setup to initialize all services
 	grpcServer := config.SetupServices(ctx, db, ch, registry)
 
+	// --- temporal worker ---
+	// Items owns the data behind its settlement steps, so its activities run in
+	// this process on the `items` task queue (ADR-0011). Separate queues mean
+	// separate activity slot pools: a degraded items cannot starve the steps
+	// past the saga's pivot.
+	temporalLogger := sdklog.NewStructuredLogger(slog.Default())
+
+	temporalCfg, err := bstemporal.LoadConfig(bstemporal.QueueItems)
+	if err != nil {
+		log.Fatalf("Failed to load temporal config: %s", err)
+	}
+
+	temporalClient, err := bstemporal.Dial(ctx, temporalCfg, temporalLogger)
+	if err != nil {
+		log.Fatalf("Failed to connect to temporal: %s", err)
+	}
+	defer temporalClient.Close()
+
+	temporalRunner, err := bstemporal.NewRunner(temporalClient, temporalCfg, temporalLogger, worker.Options{},
+		smoke.RegisterActivity,
+	)
+	if err != nil {
+		log.Fatalf("Failed to build temporal worker: %s", err)
+	}
+	defer temporalRunner.Stop()
+
+	if err := temporalRunner.Start(); err != nil {
+		log.Fatalf("Failed to start temporal worker: %s", err)
+	}
+
 	log.Printf("grpc Items Server started on PORT: %s\n", grpcAddr)
 
-	if err := grpcServer.Serve(listener); err != nil {
-		log.Fatal("Can't connect to grpc server. Error:", err.Error())
-	}
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			log.Fatal("Can't connect to grpc server. Error:", err.Error())
+		}
+	}()
+
+	// Blocking on a signal instead of on Serve is what gives the deferred worker
+	// shutdown a chance to run at all. Killed with the process, a worker leaves
+	// its pollers registered until Temporal times them out, and its in-flight
+	// activities wait out their StartToCloseTimeout before being retried.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down...")
+	grpcServer.GracefulStop()
 }

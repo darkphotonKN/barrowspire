@@ -17,11 +17,15 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
+	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
+	"github.com/darkphotonKN/barrowspire-server/common/temporal/smoke"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/config"
 	appConfig "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/config"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
+	sdklog "go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/worker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -87,6 +91,39 @@ func main() {
 
 	// --- services setup ---
 	services := appConfig.NewServices(ctx, db, registry, ch)
+
+	// --- temporal worker ---
+	// Marketplace is the settlement saga's orchestrator (ADR-0011): it is the only
+	// service that hosts workflows, and it also runs activities for the steps it
+	// owns. Both register on the `marketplace` task queue.
+	temporalLogger := sdklog.NewStructuredLogger(slog.Default())
+
+	temporalCfg, err := bstemporal.LoadConfig(bstemporal.QueueMarketplace)
+	if err != nil {
+		log.Fatalf("Failed to load temporal config: %s", err)
+	}
+
+	temporalClient, err := bstemporal.Dial(ctx, temporalCfg, temporalLogger)
+	if err != nil {
+		log.Fatalf("Failed to connect to temporal: %s", err)
+	}
+	defer temporalClient.Close()
+
+	temporalRunner, err := bstemporal.NewRunner(temporalClient, temporalCfg, temporalLogger, worker.Options{},
+		smoke.RegisterWorkflow,
+		smoke.RegisterActivity,
+	)
+	if err != nil {
+		log.Fatalf("Failed to build temporal worker: %s", err)
+	}
+	// Registered after db.Close() above, so it drains ahead of the pool: an
+	// activity killed mid-transaction is rescheduled, not lost, and the symptom
+	// is unexplained retries after every restart.
+	defer temporalRunner.Stop()
+
+	if err := temporalRunner.Start(); err != nil {
+		log.Fatalf("Failed to start temporal worker: %s", err)
+	}
 
 	// --- grpc ---
 

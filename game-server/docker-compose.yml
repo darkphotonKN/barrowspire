@@ -189,6 +189,148 @@ services:
     networks:
       - barrowspire-network
 
+  # ---------------------------------------------------------------------------
+  # Temporal — durable execution for the settlement saga (ADR-0011).
+  #
+  # Built from temporalio/server + temporalio/admin-tools, NOT temporalio/auto-setup:
+  # that image stopped being published after 1.29.7. The cost is that schema
+  # creation is an explicit init container instead of implicit on boot, and that
+  # the server config is an authored file (./temporal/config) rather than env
+  # vars rendered from a template — which is also what a real deployment does.
+  #
+  # Ports follow the repo's offset convention:
+  #   5233 -> Temporal's Postgres
+  #   7233 -> Temporal frontend (gRPC)
+  #   8233 -> Temporal UI
+  # ---------------------------------------------------------------------------
+
+  # Temporal's own Postgres. Deliberately NOT a database inside a service's
+  # instance: Temporal runs its own migrations on its own cadence, and sharing
+  # means a Temporal schema upgrade can take a service DB down with it.
+  temporal-db:
+    image: postgres:17
+    container_name: barrowspire_temporal_db
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_DB: postgres
+    ports:
+      - "5233:5432"
+    volumes:
+      - barrowspire_temporal_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - barrowspire-network
+
+  # One-shot: create the two databases and install/upgrade their schemas.
+  # Runs to completion, then exits. Everything downstream gates on that exit.
+  # Idempotent — safe to re-run on every `up`.
+  temporal-setup:
+    image: temporalio/admin-tools:${TEMPORAL_VERSION:-1.32.0}
+    container_name: barrowspire_temporal_setup
+    depends_on:
+      temporal-db:
+        condition: service_healthy
+    # The image is busybox-based: /bin/bash does not exist.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        SQL="temporal-sql-tool --plugin postgres12 --ep temporal-db -p 5432 -u temporal --pw temporal"
+
+        echo "==> creating databases"
+        $${SQL} --db temporal create-database || true
+        $${SQL} --db temporal_visibility create-database || true
+
+        echo "==> main schema"
+        $${SQL} --db temporal setup-schema -v 0.0
+        $${SQL} --db temporal update-schema \
+          -d /etc/temporal/schema/postgresql/v12/temporal/versioned
+
+        echo "==> visibility schema"
+        $${SQL} --db temporal_visibility setup-schema -v 0.0
+        $${SQL} --db temporal_visibility update-schema \
+          -d /etc/temporal/schema/postgresql/v12/visibility/versioned
+
+        echo "==> schema ready"
+    networks:
+      - barrowspire-network
+
+  # The server itself. numHistoryShards lives in ./temporal/config/development.yaml
+  # and is fixed for the life of the cluster.
+  temporal:
+    image: temporalio/server:${TEMPORAL_VERSION:-1.32.0}
+    container_name: barrowspire_temporal
+    depends_on:
+      temporal-setup:
+        condition: service_completed_successfully
+    environment:
+      TEMPORAL_ROOT: /etc/temporal
+      TEMPORAL_CONFIG_DIR: config
+      TEMPORAL_ENVIRONMENT: development
+    volumes:
+      - ./temporal/config:/etc/temporal/config:ro
+      - ./temporal/dynamicconfig:/etc/temporal/dynamicconfig:ro
+    ports:
+      - "7233:7233"
+    healthcheck:
+      # The server image carries temporal-server only, not the temporal CLI, so
+      # the check is a plain TCP probe of the frontend's own port.
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 7233"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - barrowspire-network
+
+  # One-shot: create the barrowspire namespace.
+  # Retention is set at creation and is awkward to change later — 7 days, not
+  # the 1-day minimum, because reading last week's histories is the point.
+  temporal-namespace:
+    image: temporalio/admin-tools:${TEMPORAL_VERSION:-1.32.0}
+    container_name: barrowspire_temporal_namespace
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        until temporal operator cluster health >/dev/null 2>&1; do
+          echo "waiting for frontend..."; sleep 2
+        done
+        if temporal operator namespace describe --namespace barrowspire >/dev/null 2>&1; then
+          echo "namespace barrowspire already exists"
+        else
+          temporal operator namespace create --namespace barrowspire --retention 7d
+          echo "namespace barrowspire created"
+        fi
+    networks:
+      - barrowspire-network
+
+  temporal-ui:
+    image: temporalio/ui:${TEMPORAL_UI_VERSION:-2.34.0}
+    container_name: barrowspire_temporal_ui
+    depends_on:
+      temporal:
+        condition: service_started
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_UI_PORT: 8080
+      TEMPORAL_DEFAULT_NAMESPACE: barrowspire
+    ports:
+      # The UI's container port stays 8080; only the host mapping moves.
+      - "8233:8080"
+    networks:
+      - barrowspire-network
+
 networks:
   barrowspire-network:
     name: barrowspire-network
@@ -207,3 +349,4 @@ volumes:
   barrowspire_wallet_service_pgdata:
   barrowspire_ledger_service_pgdata:
   barrowspire_character_service_pgdata:
+  barrowspire_temporal_pgdata:

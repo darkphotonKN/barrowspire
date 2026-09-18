@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
@@ -16,12 +18,16 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
+	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
+	"github.com/darkphotonKN/barrowspire-server/common/temporal/smoke"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/config"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account"
 	appConfig "github.com/darkphotonKN/barrowspire-server/wallet-service/internal/config"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
+	sdklog "go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/worker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -138,9 +144,52 @@ func main() {
 	}
 	consumer.Listen()
 
+	// --- temporal worker ---
+	// Wallet owns the data behind its settlement steps, so its activities run in
+	// this process on the `wallet` task queue (ADR-0011). Separate queues mean
+	// separate activity slot pools: a degraded wallet cannot starve the steps
+	// past the saga's pivot.
+	temporalLogger := sdklog.NewStructuredLogger(slog.Default())
+
+	temporalCfg, err := bstemporal.LoadConfig(bstemporal.QueueWallet)
+	if err != nil {
+		log.Fatalf("Failed to load temporal config: %s", err)
+	}
+
+	temporalClient, err := bstemporal.Dial(ctx, temporalCfg, temporalLogger)
+	if err != nil {
+		log.Fatalf("Failed to connect to temporal: %s", err)
+	}
+	defer temporalClient.Close()
+
+	temporalRunner, err := bstemporal.NewRunner(temporalClient, temporalCfg, temporalLogger, worker.Options{},
+		smoke.RegisterActivity,
+	)
+	if err != nil {
+		log.Fatalf("Failed to build temporal worker: %s", err)
+	}
+	defer temporalRunner.Stop()
+
+	if err := temporalRunner.Start(); err != nil {
+		log.Fatalf("Failed to start temporal worker: %s", err)
+	}
+
 	log.Printf("grpc Wallet Server started on PORT: %s\n", grpcAddr)
 
-	if err := grpcServer.Serve(listener); err != nil {
-		log.Fatal("Can't connect to grpc server. Error:", err.Error())
-	}
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			log.Fatal("Can't connect to grpc server. Error:", err.Error())
+		}
+	}()
+
+	// Blocking on a signal instead of on Serve is what gives the deferred worker
+	// shutdown a chance to run at all. Killed with the process, a worker leaves
+	// its pollers registered until Temporal times them out, and its in-flight
+	// activities wait out their StartToCloseTimeout before being retried.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down...")
+	grpcServer.GracefulStop()
 }

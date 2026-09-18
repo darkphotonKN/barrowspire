@@ -1,0 +1,4 @@
+# Dynamic config overrides, re-read every pollInterval without a restart.
+# Empty is the correct default: the settlement saga's tuning (ADR-0018's backoff
+# cap, re-park timer) lives in the workflow's retry policies, not here.
+{}
