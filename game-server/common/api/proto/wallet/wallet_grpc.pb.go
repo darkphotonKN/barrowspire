@@ -125,6 +125,9 @@ func (UnimplementedWalletServiceServer) PlaceHold(context.Context, *PlaceHoldReq
 func (UnimplementedWalletServiceServer) CommitHold(context.Context, *CommitHoldRequest) (*CommitHoldResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CommitHold not implemented")
 }
+func (UnimplementedWalletServiceServer) CommitHold(context.Context, *CommitHoldRequest) (*CommitHoldResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CommitHold not implemented")
+}
 func (UnimplementedWalletServiceServer) mustEmbedUnimplementedWalletServiceServer() {}
 func (UnimplementedWalletServiceServer) testEmbeddedByValue()                       {}
 
