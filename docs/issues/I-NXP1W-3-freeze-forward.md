@@ -6,6 +6,7 @@ blocked_by: [I-NXP1W-1]
 labels: [blocked]
 title: "FS-NXP1W slice 3: freeze arm forward — triggers, workflow shell, 0a FreezeListing, 0b FreezeItem"
 ---
+
 Implements FS-NXP1W §Requirements 1–8, 20–22, 25–26, 34
 
 **Author: human** (Kranti)

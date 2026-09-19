@@ -14,10 +14,10 @@ deleted — and nothing ever needs to be, because the ledger is written only onc
 saga is past its pivot and the money is final.
 
 The ledger is a **reconciliation record, not the source of truth for balance.**
-`wallet-service.accounts.gold` owns balance. The ledger exists to answer *"why is this number
-what it is"*, and to make it possible to detect when the flows that produced that number were
-wrong. It therefore never sums entries into an account total and never answers *"what is the
-balance"* — that question stays in wallet-service permanently, and moving it here for
+`wallet-service.accounts.gold` owns balance. The ledger exists to answer _"why is this number
+what it is"_, and to make it possible to detect when the flows that produced that number were
+wrong. It therefore never sums entries into an account total and never answers _"what is the
+balance"_ — that question stays in wallet-service permanently, and moving it here for
 convenience would defeat the purpose of having two records.
 
 It also serves that "why" to the people who need to ask it. The **write path is a Temporal
@@ -45,13 +45,13 @@ paragraph above rules out.
    (compensated before the pivot) or is recorded once, correct, after the money is final. The
    ledger therefore has no correction mechanism — not because corrections are forbidden, but
    because the write is ordered so that nothing correctable ever gets written.
-4. **Holds produce no entry.** A hold is an *intention*, not a movement: no counter-account
+4. **Holds produce no entry.** A hold is an _intention_, not a movement: no counter-account
    exists for gold that might leave, so a hold entry would have nothing to balance against.
    Releasing one is equally invisible — gold was parked and unparked.
 5. **A settlement of N bids produces exactly two rows**, independent of N. The 46 losing bids of
    a 47-bid auction release their holds and leave no trace here. The ledger records movement,
    not the auction.
-5a. **The `reason` vocabulary is forward-declared, and the ledger needs no change to record any
+   5a. **The `reason` vocabulary is forward-declared, and the ledger needs no change to record any
    of it.** The legal set is `SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`, closed by a DB
    `CHECK` and by validation on the write path. **There is no proto enum** — `reason` crosses
    every wire as a plain `string` (open question 3). Only `SETTLE_AUCTION` has a caller today.
@@ -97,6 +97,7 @@ paragraph above rules out.
    append-only argument rather than weakening it: an insert-only interface with a single method is
    a harder statement than "insert and read". It also mirrors wallet-service, which has no read
    port and is the reviewed reference implementation.
+
 10. `created_at` is set by the database (`DEFAULT now()`), never supplied by the caller.
 
 **Idempotency**
@@ -131,7 +132,7 @@ paragraph above rules out.
     (rather than `member_id`) is what makes the future reconciler a straight join.
 16. **Caller identity is not in the request body.** `AppendLedgerTx` is service-to-service, so
     the authenticated caller comes from transport metadata. The `account_id`s in the payload are
-    *data about whose gold moved*, not an assertion of who is calling — the distinction matters
+    _data about whose gold moved_, not an assertion of who is calling — the distinction matters
     because the retired scaffold took its subject from `MemberIDFromCtx`, and this RPC must not.
 
 **Retiring the scaffold**
@@ -147,6 +148,7 @@ paragraph above rules out.
     `ledger.created` routing key is a **placeholder** naming the retired aggregate's event and
     will be renamed when a real event exists — the file survives the scaffold retirement even
     though its constant does not. This is also the shape the Known gap's outbox would land on.
+
 18. `ledger.proto` is rewritten. Both existing RPCs are marked `SCAFFOLD` in the proto itself and
     have no callers, so their removal breaks nothing.
 
@@ -176,16 +178,16 @@ paragraph above rules out.
     requirement 9 enforces it on the write side — there is no such method to call. This is what
     makes a read path safe to add at all: listing movements does not make the ledger a second
     source of truth, whereas summing them would.
-21. **Two operations, split by the shape of the question.** `getTransaction` answers *"what was
-    this one movement"* — a single transaction with all its legs. `listEntries` answers *"what
-    has happened to this account"* — a flat, time-ordered history. One operation serving both
+21. **Two operations, split by the shape of the question.** `getTransaction` answers _"what was
+    this one movement"_ — a single transaction with all its legs. `listEntries` answers _"what
+    has happened to this account"_ — a flat, time-ordered history. One operation serving both
     would force either a nested shape nobody can page through or a flat shape that repeats
     parent facts for no reader.
 22. **An entry row is flattened; a transaction response stays nested.** `listEntries` returns
     leg fields joined with their parent's transaction fields in one row, because a history view
     is read per-leg and re-nesting it client-side to display it is wasted work. `getTransaction`
     keeps `legs[]` nested, because seeing both sides balance is the entire point of that
-    operation. (Naming follows `CONTEXT.md`: *leg* on the write path, *entry* on the read path.)
+    operation. (Naming follows `CONTEXT.md`: _leg_ on the write path, _entry_ on the read path.)
 23. **Pagination is keyset, over `(created_at, id)` descending — newest first.** A cursor encodes
     the last row's sort key; the response carries `next_cursor`, absent on the final page.
     Direction is part of the contract, not a default: it decides which way the cursor's
@@ -200,11 +202,12 @@ paragraph above rules out.
     ledger-service's behalf, and ledger-service does not trust a caller's claim about who it is.
 
     **`account_id` now appears on both sides of that line, and the distinction is the whole
-    rule:** as a *token claim* it is **who is asking** and is trusted; as a *query parameter* it
+    rule:** as a _token claim_ it is **who is asking** and is trusted; as a _query parameter_ it
     is **which account to look at** and is never an assertion of identity. They are different
     inputs that happen to share a name and a type — which is exactly why requirement 25 refuses
     the parameter outright for a member rather than comparing it against the claim. The same
     distinction requirement 16 draws on the write path.
+
 25. **A member sees only their own entries, and asking about another account is refused, not
     filtered.** `account_id` present with `role=player` returns `FORBIDDEN`. Silently narrowing
     it to an empty result would leave a working existence oracle for account ids; targeted
@@ -235,6 +238,7 @@ paragraph above rules out.
     > account — makes the claim ambiguous and forces either a claim carrying a set, or the wallet
     > lookup this requirement just removed. **That is the trigger to revisit**, and it is the same
     > trigger requirement 8's one-currency-per-transaction rule is waiting on.
+
 28. **`role=admin` with `account_id` scopes to that account; without it, the listing is
     unscoped.** The unscoped form is the reconciliation and incident path. It remains a paged
     listing of rows and never becomes an aggregate (requirement 20).
@@ -253,7 +257,7 @@ paragraph above rules out.
     broken token, not a modest caller.
 
     Past the middleware the claim is present and scoping is a **comparison against `admin`**
-    (requirements 25, 28): only the exact value `admin` is admin. A value *outside*
+    (requirements 25, 28): only the exact value `admin` is admin. A value _outside_
     `player | admin` is a different case from absence — the minter passes `members.role` through
     verbatim and the column carries no `CHECK` (FS-9KW9F edge states), so an unrecognised value
     reaches the boundary and is treated as **non-admin, not an error**. The closed set is the
@@ -266,6 +270,7 @@ paragraph above rules out.
     > the gateway auth response, and the generated client — and because `member` is this repo's
     > entity noun for the person, not a role they hold. See
     > [`auth-service/CONTEXT.md`](../../game-server/auth-service/CONTEXT.md).
+
 30. **Errors are RFC 9457 problem+json carrying a stable `code`**, emitted through the gateway's
     existing seam rather than a new one. A ledger-service outage surfaces as
     `503 · SERVICE_UNAVAILABLE`, never `500` — the request was valid and retry is correct, and
@@ -415,7 +420,7 @@ paragraph above rules out.
   service cannot authorize. Never degrade to an empty listing.
 - **A token carries no `role` claim** → `401 · UNAUTHENTICATED`, refused by `AuthMiddleware`
   before either handler runs (requirement 29). Same reasoning as the row above, and deliberately
-  *not* a resolution to `player`: every access token FS-9KW9F mints carries the claim, so its
+  _not_ a resolution to `player`: every access token FS-9KW9F mints carries the claim, so its
   absence is a token this service cannot authorize.
 - **A token carries a `role` outside `player | admin`** → **not** an error. It passes the
   middleware — the claim is present — and is non-admin at the scoping comparison, so the caller
@@ -497,21 +502,21 @@ because there is not one.
 **`AppendLedgerTxRequest`** — writable fields only; caller identity comes from the execution
 context, never the body (requirement 16).
 
-| Field | Type | Notes |
-|---|---|---|
-| `transaction_id` | `uuid.UUID` | Caller-minted, deterministic. The idempotency key. |
-| `reason` | `string` | Transaction-level. Converted to the string-backed Go value type on entry and validated against the closed set there; the empty string is refused. |
-| `reference_id` | `uuid.UUID` | Transaction-level. The originating event — today, wallet-service's `bid_id`. |
-| `currency` | `string` | Transaction-level. Optional; defaults to `GOLD`. |
-| `legs` | `[]LedgerLeg` | Min 2. Leg-level facts only. See the transport-type table under the read path for the HTTP-side names. |
+| Field            | Type          | Notes                                                                                                                                             |
+| ---------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `transaction_id` | `uuid.UUID`   | Caller-minted, deterministic. The idempotency key.                                                                                                |
+| `reason`         | `string`      | Transaction-level. Converted to the string-backed Go value type on entry and validated against the closed set there; the empty string is refused. |
+| `reference_id`   | `uuid.UUID`   | Transaction-level. The originating event — today, wallet-service's `bid_id`.                                                                      |
+| `currency`       | `string`      | Transaction-level. Optional; defaults to `GOLD`.                                                                                                  |
+| `legs`           | `[]LedgerLeg` | Min 2. Leg-level facts only. See the transport-type table under the read path for the HTTP-side names.                                            |
 
 **`LedgerLeg`**
 
-| Field | Type | Notes |
-|---|---|---|
+| Field        | Type        | Notes                                           |
+| ------------ | ----------- | ----------------------------------------------- |
 | `account_id` | `uuid.UUID` | Soft reference to `wallet-service.accounts.id`. |
-| `direction` | `string` | Carries the sign. |
-| `amount` | `int64` | Strictly positive. |
+| `direction`  | `string`    | Carries the sign.                               |
+| `amount`     | `int64`     | Strictly positive.                              |
 
 > The split is deliberate and mirrors the schema: **transaction-level facts sit outside the
 > slice, leg-level facts inside.** `reason`, `reference_id`, and `currency` describe the event;
@@ -529,8 +534,8 @@ inward to fail somewhere less obvious. It reads as a transport-unfriendly choice
 
 **`AppendLedgerTxResponse`** — one field, deliberately.
 
-| Field | Type | Notes |
-|---|---|---|
+| Field     | Type   | Notes                                                                      |
+| --------- | ------ | -------------------------------------------------------------------------- |
 | `applied` | `bool` | `true` = rows written; `false` = already recorded, no-op (requirement 12). |
 
 > **`transaction_id` and `recorded_at` were both cut.** Echoing `transaction_id` hands back a
@@ -544,7 +549,7 @@ inward to fail somewhere less obvious. It reads as a transport-unfriendly choice
 
 **Errors.** **gRPC status codes do not apply on this path.** The activity returns a domain
 error, and Temporal's retry policy decides what happens next — so the classification that matters
-is no longer *which code* but *retryable or not*.
+is no longer _which code_ but _retryable or not_.
 
 **The non-retryable set must be declared on the activity's retry policy** (ADR-0011). This is not
 a default that can be left implicit: a settlement saga past its pivot retries forward, so an
@@ -552,18 +557,18 @@ undeclared non-retryable error **retries forever**, producing a workflow that ne
 rather than one that fails loudly. Every row marked non-retryable below is a row that must appear
 in that declaration.
 
-| Case | Activity result | Retry |
-|---|---|---|
-| legs do not sum to zero | `ErrUnbalancedTransaction` · `UNBALANCED_TRANSACTION` | **non-retryable** |
-| fewer than two legs | `ErrInvalidLegCount` · `UNBALANCED_TRANSACTION` | **non-retryable** |
-| any leg has `amount <= 0` | `ErrInvalidLegAmount` · `VALIDATION_FAILED` | **non-retryable** |
-| a leg's `direction` is neither `DEBIT` nor `CREDIT` | `ErrInvalidDirection` · `VALIDATION_FAILED` | **non-retryable** |
-| `reason` is not a legal value | `VALIDATION_FAILED` | **non-retryable** |
-| any UUID field is malformed or nil | `ErrInvalidUUID` · `VALIDATION_FAILED` | **non-retryable** |
-| transaction already recorded, identical | success · `applied = false` | n/a — the retry that lands here has already succeeded |
-| transaction already recorded, contradictory | success · `applied = false` — deliberately indistinguishable from the identical case (open question 1). No `LEDGER_CONFLICT` code exists. | n/a |
-| database unavailable | `TRANSIENT` | **retryable** — the default, and the case the retry policy exists for |
-| anything else | `INTERNAL_ERROR` | **retryable** — an unclassified error is retried, which is why the non-retryable set must be explicit |
+| Case                                                | Activity result                                                                                                                           | Retry                                                                                                 |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| legs do not sum to zero                             | `ErrUnbalancedTransaction` · `UNBALANCED_TRANSACTION`                                                                                     | **non-retryable**                                                                                     |
+| fewer than two legs                                 | `ErrInvalidLegCount` · `UNBALANCED_TRANSACTION`                                                                                           | **non-retryable**                                                                                     |
+| any leg has `amount <= 0`                           | `ErrInvalidLegAmount` · `VALIDATION_FAILED`                                                                                               | **non-retryable**                                                                                     |
+| a leg's `direction` is neither `DEBIT` nor `CREDIT` | `ErrInvalidDirection` · `VALIDATION_FAILED`                                                                                               | **non-retryable**                                                                                     |
+| `reason` is not a legal value                       | `VALIDATION_FAILED`                                                                                                                       | **non-retryable**                                                                                     |
+| any UUID field is malformed or nil                  | `ErrInvalidUUID` · `VALIDATION_FAILED`                                                                                                    | **non-retryable**                                                                                     |
+| transaction already recorded, identical             | success · `applied = false`                                                                                                               | n/a — the retry that lands here has already succeeded                                                 |
+| transaction already recorded, contradictory         | success · `applied = false` — deliberately indistinguishable from the identical case (open question 1). No `LEDGER_CONFLICT` code exists. | n/a                                                                                                   |
+| database unavailable                                | `TRANSIENT`                                                                                                                               | **retryable** — the default, and the case the retry policy exists for                                 |
+| anything else                                       | `INTERNAL_ERROR`                                                                                                                          | **retryable** — an unclassified error is retried, which is why the non-retryable set must be explicit |
 
 > The domain codes (`UNBALANCED_TRANSACTION`, `VALIDATION_FAILED`, `TRANSIENT`,
 > `INTERNAL_ERROR`) are unchanged and still stable. Only their transport mapping is gone: there
@@ -577,16 +582,16 @@ role, and the caller's own `account_id` all arrive as verified token claims, so 
 makes a second downstream call to resolve anything (requirement 27). Payloads are bare — no
 envelope (requirement 31).
 
-| Op | Method + Path | Query/Params | Request body | Response | Errors |
-|---|---|---|---|---|---|
-| `getTransaction` | `GET /api/ledger/transactions/{transaction_id}` | path `transaction_id` (UUID) | — | `transaction_id`, `reason`, `reference_id`, `currency`, `created_at`, `legs[]` | `401 · UNAUTHENTICATED`<br>`404 · NOT_FOUND`<br>`422 · VALIDATION_FAILED`<br>`503 · SERVICE_UNAVAILABLE`<br>`500 · INTERNAL_ERROR` |
-| `listEntries` | `GET /api/ledger/entries` | `account_id` (UUID, optional, admin-only)<br>`limit` (int, default 50, max 100)<br>`cursor` (opaque, optional) | — | `entries[]`, `next_cursor` | `401 · UNAUTHENTICATED`<br>`403 · FORBIDDEN`<br>`422 · VALIDATION_FAILED`<br>`503 · SERVICE_UNAVAILABLE`<br>`500 · INTERNAL_ERROR` |
+| Op               | Method + Path                                   | Query/Params                                                                                                   | Request body | Response                                                                       | Errors                                                                                                                             |
+| ---------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `getTransaction` | `GET /api/ledger/transactions/{transaction_id}` | path `transaction_id` (UUID)                                                                                   | —            | `transaction_id`, `reason`, `reference_id`, `currency`, `created_at`, `legs[]` | `401 · UNAUTHENTICATED`<br>`404 · NOT_FOUND`<br>`422 · VALIDATION_FAILED`<br>`503 · SERVICE_UNAVAILABLE`<br>`500 · INTERNAL_ERROR` |
+| `listEntries`    | `GET /api/ledger/entries`                       | `account_id` (UUID, optional, admin-only)<br>`limit` (int, default 50, max 100)<br>`cursor` (opaque, optional) | —            | `entries[]`, `next_cursor`                                                     | `401 · UNAUTHENTICATED`<br>`403 · FORBIDDEN`<br>`422 · VALIDATION_FAILED`<br>`503 · SERVICE_UNAVAILABLE`<br>`500 · INTERNAL_ERROR` |
 
 **The `account_id` query parameter is `account_id_target` on the gRPC leg, and the rename is
 load-bearing.** At HTTP it stays `account_id`, matching requirements 24–28's prose. In
 `ListEntriesRequest` it is `optional string account_id_target` — named apart from the caller's own
-`account_id` claim so a handler holding both cannot confuse *whose history to read* with *who is
-asking* (requirement 24's whole distinction). **The `optional` keyword is what carries requirement
+`account_id` claim so a handler holding both cannot confuse _whose history to read_ with _who is
+asking_ (requirement 24's whole distinction). **The `optional` keyword is what carries requirement
 25:** presence is an admin-only request to read someone else's history, so a member who sets the
 field is refused rather than silently scoped back to themselves — and proto3 needs `optional` to
 tell "unset" from "set to the empty string". With a bare `string` the two collapse and that
@@ -594,25 +599,25 @@ authorization signal is lost on the wire.
 
 **`legs[]` member** (nested — requirement 22)
 
-| Field | Type | Notes |
-|---|---|---|
-| `account_id` | `string` (UUID) | |
-| `direction` | `string` | `DEBIT` or `CREDIT`. |
-| `amount` | `int64` | Always positive; `direction` carries the sign. |
+| Field        | Type            | Notes                                          |
+| ------------ | --------------- | ---------------------------------------------- |
+| `account_id` | `string` (UUID) |                                                |
+| `direction`  | `string`        | `DEBIT` or `CREDIT`.                           |
+| `amount`     | `int64`         | Always positive; `direction` carries the sign. |
 
 **`entries[]` member** — flattened: leg fields joined with their parent's (requirement 22)
 
-| Field | Type | Notes |
-|---|---|---|
-| `id` | `string` (UUID) | Leg. The entry's own id — and the `id` half of the cursor's `(created_at, id)`, so it is the sort key's tiebreaker, not decoration. |
-| `transaction_id` | `string` (UUID) | Parent. Shared by every leg of the movement. |
-| `reference_id` | `string` (UUID) | Parent. The originating event — today, the winning bid. |
-| `reason` | `string` | Parent. |
-| `currency` | `string` | Parent. |
-| `created_at` | `string` (RFC 3339) | Parent. Half of the sort key. |
-| `account_id` | `string` (UUID) | Leg. |
-| `direction` | `string` | Leg. |
-| `amount` | `int64` | Leg. |
+| Field            | Type                | Notes                                                                                                                               |
+| ---------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `id`             | `string` (UUID)     | Leg. The entry's own id — and the `id` half of the cursor's `(created_at, id)`, so it is the sort key's tiebreaker, not decoration. |
+| `transaction_id` | `string` (UUID)     | Parent. Shared by every leg of the movement.                                                                                        |
+| `reference_id`   | `string` (UUID)     | Parent. The originating event — today, the winning bid.                                                                             |
+| `reason`         | `string`            | Parent.                                                                                                                             |
+| `currency`       | `string`            | Parent.                                                                                                                             |
+| `created_at`     | `string` (RFC 3339) | Parent. Half of the sort key.                                                                                                       |
+| `account_id`     | `string` (UUID)     | Leg.                                                                                                                                |
+| `direction`      | `string`            | Leg.                                                                                                                                |
+| `amount`         | `int64`             | Leg.                                                                                                                                |
 
 **`next_cursor`** — opaque keyset position over `(created_at, id)`. **Absent** on the final
 page, rather than present-and-null: absence is the end-of-pages signal, so a client loops while
@@ -631,16 +636,16 @@ cannot. `PageInfo`'s echoed `limit` stays on the inner leg; `EntryPage` carries 
 **Transport type names.** Pinned here so no slice has to invent them, and so one row's shapes are
 named once rather than renamed at every layer.
 
-| Layer | Package | Type | Notes |
-|---|---|---|---|
-| persistence | `ledger-service/internal/ledger` | **`LedgerTransaction`** | The parent row as stored. Matches `ledger_transactions`. **Never serialized** (requirement 31). |
-| persistence | `ledger-service/internal/ledger` | **`LedgerEntry`** | The leg row **as stored** — it matches `ledger_entries` column for column, and is therefore *not* what the read path returns. Written by the append path; owned by I-F9R7Q-4. **Never serialized** (requirement 31). |
-| read model | `ledger-service/internal/ledger/dto` | **`TransactionDetails`** + **`LegDetail`** | What `GetTransactionQuery` returns — the transaction nesting its legs. **Never serialized** (requirement 31). |
-| read model | same | **`ListEntriesDetails`** + **`EntryDetail`** | What `ListEntriesQuery` returns. `EntryDetail` is requirement 22's flattened row: leg fields carrying their parent's `reference_id`, `reason`, `currency`, and `created_at`. **Never serialized** (requirement 31). |
-| transport | `api-gateway/internal/gateway/ledger` | **`Entry`** | One flattened history row — the `entries[]` member. |
-| transport | same | **`EntryPage`** | The `listEntries` response: `entries[]` plus `next_cursor`. |
-| transport | same | **`Transaction`** | The `getTransaction` response, nesting `legs[]`. |
-| transport | same | **`Leg`** | One side of a transaction — the `legs[]` member. |
+| Layer       | Package                               | Type                                         | Notes                                                                                                                                                                                                                |
+| ----------- | ------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| persistence | `ledger-service/internal/ledger`      | **`LedgerTransaction`**                      | The parent row as stored. Matches `ledger_transactions`. **Never serialized** (requirement 31).                                                                                                                      |
+| persistence | `ledger-service/internal/ledger`      | **`LedgerEntry`**                            | The leg row **as stored** — it matches `ledger_entries` column for column, and is therefore _not_ what the read path returns. Written by the append path; owned by I-F9R7Q-4. **Never serialized** (requirement 31). |
+| read model  | `ledger-service/internal/ledger/dto`  | **`TransactionDetails`** + **`LegDetail`**   | What `GetTransactionQuery` returns — the transaction nesting its legs. **Never serialized** (requirement 31).                                                                                                        |
+| read model  | same                                  | **`ListEntriesDetails`** + **`EntryDetail`** | What `ListEntriesQuery` returns. `EntryDetail` is requirement 22's flattened row: leg fields carrying their parent's `reference_id`, `reason`, `currency`, and `created_at`. **Never serialized** (requirement 31).  |
+| transport   | `api-gateway/internal/gateway/ledger` | **`Entry`**                                  | One flattened history row — the `entries[]` member.                                                                                                                                                                  |
+| transport   | same                                  | **`EntryPage`**                              | The `listEntries` response: `entries[]` plus `next_cursor`.                                                                                                                                                          |
+| transport   | same                                  | **`Transaction`**                            | The `getTransaction` response, nesting `legs[]`.                                                                                                                                                                     |
+| transport   | same                                  | **`Leg`**                                    | One side of a transaction — the `legs[]` member.                                                                                                                                                                     |
 
 > **The transport names are deliberately unprefixed.** In the gateway's `ledger` package they
 > read `ledger.Entry` and `ledger.Transaction`; prefixing them to `ledger.LedgerEntry` would
@@ -665,16 +670,16 @@ named once rather than renamed at every layer.
 
 **Error semantics.** Which case is which; the meaning of each is in Requirements.
 
-| Case | Response |
-|---|---|
-| no token, or token invalid | `401 · UNAUTHENTICATED` |
-| token carries no `role` claim | `401 · UNAUTHENTICATED` (requirement 29) |
-| `role=player` supplied `account_id` | `403 · FORBIDDEN` (requirement 25) |
-| `role=player` requested a transaction with no leg on their account | `404 · NOT_FOUND` (requirement 26) |
-| `transaction_id` unknown | `404 · NOT_FOUND` |
-| malformed UUID, `limit` out of range, or undecodable `cursor` | `422 · VALIDATION_FAILED` |
-| ledger-service unreachable | `503 · SERVICE_UNAVAILABLE` (requirement 30) |
-| anything else | `500 · INTERNAL_ERROR` |
+| Case                                                               | Response                                     |
+| ------------------------------------------------------------------ | -------------------------------------------- |
+| no token, or token invalid                                         | `401 · UNAUTHENTICATED`                      |
+| token carries no `role` claim                                      | `401 · UNAUTHENTICATED` (requirement 29)     |
+| `role=player` supplied `account_id`                                | `403 · FORBIDDEN` (requirement 25)           |
+| `role=player` requested a transaction with no leg on their account | `404 · NOT_FOUND` (requirement 26)           |
+| `transaction_id` unknown                                           | `404 · NOT_FOUND`                            |
+| malformed UUID, `limit` out of range, or undecodable `cursor`      | `422 · VALIDATION_FAILED`                    |
+| ledger-service unreachable                                         | `503 · SERVICE_UNAVAILABLE` (requirement 30) |
+| anything else                                                      | `500 · INTERNAL_ERROR`                       |
 
 Every code above already exists in `common/errcode`; this feature adds none. `getTransaction`
 carries no `403` row **on purpose** — its only authorization failure is requirement 26's, which
@@ -737,7 +742,7 @@ never updates, so the usual cost of denormalisation (two copies drifting) cannot
 This is what makes `(account_id, created_at, id)` serve the read path directly.
 
 **There are no unique constraints beyond the two primary keys, and that is deliberate.**
-`transaction_id` — the parent's PK, caller-supplied, no `DEFAULT` — is the *sole* idempotency
+`transaction_id` — the parent's PK, caller-supplied, no `DEFAULT` — is the _sole_ idempotency
 guard (requirement 13, open question 1). Every richer natural key that was considered turned out
 to encode a domain rule that real operations break; see [Open questions](#open-questions) and
 [Rejected alternatives](#rejected-alternatives).
@@ -754,7 +759,7 @@ section is still a choice.
 **1. Is there a natural key for a transaction? — RESOLVED: no, and there must not be.**
 
 Scoping assumed a four-column unique index, `(reason, reference_id, account_id, direction)`,
-identifying the *fact* while `amount` carried its *content*. The question was what to do about a
+identifying the _fact_ while `amount` carried its _content_. The question was what to do about a
 retry carrying a corrected amount.
 
 **The answer is that the premise was wrong.** That index is not a uniqueness constraint, it is a
@@ -789,7 +794,7 @@ both are the same mistake as question 1's index, one level up. The parent's PK i
 `transaction_id`, caller-supplied, **with no `DEFAULT`**, and it is the only uniqueness the
 schema asserts.
 
-*Noted but not adopted:* requirement 7 puts sum-to-zero in the service layer, and Postgres could
+_Noted but not adopted:_ requirement 7 puts sum-to-zero in the service layer, and Postgres could
 enforce it with a `DEFERRABLE INITIALLY DEFERRED` constraint trigger summing signed legs per
 `(transaction_id, currency)` at commit. That remains the one place the database could catch a
 service-layer bug in this service's central invariant. Not built here.
@@ -809,7 +814,7 @@ requirement 5a; the `CHECK` is already in
 set a third time, in the proto. That copy is removed:
 
 - It put the vocabulary in **three** places that must be migrated in lockstep, on a surface that
-  only ever *reads* the value. The proto's copy could not reject anything the write path had not
+  only ever _reads_ the value. The proto's copy could not reject anything the write path had not
   already rejected.
 - The read path echoes `reason` as stored. An enum cannot do that — the handler would have to map
   the stored string onto an enum value, and a value the proto does not declare has none to map
@@ -840,13 +845,13 @@ manufactured by the service itself.
 The shape that closes it is the **transactional outbox wallet-service already has planned**
 (`wallet-service/SPECIFICATION.md` → "Reliability"): wallet writes the balance change and an
 outbox row in one transaction, a relay publishes, and the ledger consumes and appends
-idempotently. At-least-once delivery is precisely *why* requirement 11's caller-minted
+idempotently. At-least-once delivery is precisely _why_ requirement 11's caller-minted
 deterministic `transaction_id` is the right call — duplicates stop being an edge case and become
 the normal path.
 
 This is recorded, not solved. The surface above is correct either way, and **ADR-0011 has made
 that argument stronger rather than weaker**: the append is now reached through a Temporal
-activity, and an AMQP consumer would reach the *same use case* through a second door. Two
+activity, and an AMQP consumer would reach the _same use case_ through a second door. Two
 non-gRPC entry points into one use case is the demonstration that the use case — not the
 transport — is where this feature's logic lives. A third door costs a handler, not a redesign.
 **Do not treat the ledger as durable until the outbox lands.**
@@ -864,22 +869,22 @@ transport — is where this feature's logic lives. A third door costs a handler,
 The constraints behind this feature are recorded as ADRs. They are **constraints, not
 suggestions** — a slice that contradicts one supersedes it or is wrong.
 
-| ADR | Holds that… | Requirements it governs |
-|---|---|---|
-| [ADR-0005](../adr/0005-wallet-owns-balance-ledger-is-a-reconciliation-record.md) | wallet-service owns balance; the ledger never answers "what is the balance" | 14, 15, 20, 27, 28 |
-| [ADR-0006](../adr/0006-only-balanced-movements-are-recorded.md) | only balanced movements are recorded; holds produce no entries | 1–5, 7–8 |
-| [ADR-0007](../adr/0007-the-ledger-is-append-only-corrections-are-reversals.md) | the record is append-only, and OCC is removed | 9–10, 17 — **its "corrections are reversals" clause is superseded**; see below |
-| [ADR-0008](../adr/0008-amounts-are-unsigned-direction-carries-the-sign.md) | `amount > 0` always; `direction` carries the sign | 6–7 |
-| [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) | the caller mints a deterministic `transaction_id`; duplicates are no-op successes | 11–13 |
-| [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md) | the ledger is appended only past the saga's pivot, so nothing recorded is ever wrong and no reversal exists | 2–3, 9 |
-| [ADR-0011](../adr/0011-settlement-write-path-is-a-temporal-activity-per-owning-service.md) | the write path is a Temporal activity on ledger-service's own task queue, executed in-process; no gRPC hop | 19 |
-| [ADR-0012](../adr/0012-cursors-are-opaque-sort-keys-carrying-no-identity.md) | a cursor encodes the sort key and nothing else — no identity, decoded at the adapter; scoping is re-read from the JWT on every page | 21, 23, 24–27 |
+| ADR                                                                                        | Holds that…                                                                                                                         | Requirements it governs                                                        |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| [ADR-0005](../adr/0005-wallet-owns-balance-ledger-is-a-reconciliation-record.md)           | wallet-service owns balance; the ledger never answers "what is the balance"                                                         | 14, 15, 20, 27, 28                                                             |
+| [ADR-0006](../adr/0006-only-balanced-movements-are-recorded.md)                            | only balanced movements are recorded; holds produce no entries                                                                      | 1–5, 7–8                                                                       |
+| [ADR-0007](../adr/0007-the-ledger-is-append-only-corrections-are-reversals.md)             | the record is append-only, and OCC is removed                                                                                       | 9–10, 17 — **its "corrections are reversals" clause is superseded**; see below |
+| [ADR-0008](../adr/0008-amounts-are-unsigned-direction-carries-the-sign.md)                 | `amount > 0` always; `direction` carries the sign                                                                                   | 6–7                                                                            |
+| [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md)                               | the caller mints a deterministic `transaction_id`; duplicates are no-op successes                                                   | 11–13                                                                          |
+| [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md)                      | the ledger is appended only past the saga's pivot, so nothing recorded is ever wrong and no reversal exists                         | 2–3, 9                                                                         |
+| [ADR-0011](../adr/0011-settlement-write-path-is-a-temporal-activity-per-owning-service.md) | the write path is a Temporal activity on ledger-service's own task queue, executed in-process; no gRPC hop                          | 19                                                                             |
+| [ADR-0012](../adr/0012-cursors-are-opaque-sort-keys-carrying-no-identity.md)               | a cursor encodes the sort key and nothing else — no identity, decoded at the adapter; scoping is re-read from the JWT on every page | 21, 23, 24–27                                                                  |
 
 Open questions 1 and 2 below are explicitly **left unsettled by ADR-0008 and ADR-0009** — both
 ADRs name them rather than resolving them.
 
 > **ADR-0007 is amended, not superseded, by [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md).**
-> Its append-only clause stands and is load-bearing. Its *"corrections are reversals"* clause is
+> Its append-only clause stands and is load-bearing. Its _"corrections are reversals"_ clause is
 > replaced: the settlement saga appends only past its pivot, once the money is final, so no
 > recorded transaction is ever wrong and there is nothing to reverse. ADR-0007's body is
 > immutable and still describes the old mechanism; its header points at ADR-0010.
@@ -903,12 +908,12 @@ ADRs name them rather than resolving them.
   break that assertion legitimately, and each would surface as an unexplained duplicate error in
   production. `transaction_id` alone carries idempotency (open question 1).
 - **`UNIQUE(reason, reference_id)` on the parent, and `UNIQUE(transaction_id, account_id,
-  direction)` on the legs** — the shape open question 2 originally recommended. Rejected for the
+direction)` on the legs** — the shape open question 2 originally recommended. Rejected for the
   same reason one level up: both encode domain assertions that correct operations violate.
 
 ## Out of Scope
 
-- **The deposit, withdraw, and transfer *verbs*.** Building those operations is wallet-service's
+- **The deposit, withdraw, and transfer _verbs_.** Building those operations is wallet-service's
   work and is not in this feature. **Recording their effects is not out of scope** — their
   `reason` values are already in the validated set and the `CHECK`, and requirement 5a says they append
   here with no schema change when their callers exist. The earlier wording of this bullet
@@ -918,7 +923,7 @@ ADRs name them rather than resolving them.
   service records whatever balanced legs it is handed and never resolves an `account_id`
   (requirement 15). Deciding who owns that account belongs to wallet-service.
 - **The settlement saga itself.** Its orchestration, its pivot, and its compensation steps live
-  in marketplace-service and wallet-service. This feature only depends on the *ordering* the saga
+  in marketplace-service and wallet-service. This feature only depends on the _ordering_ the saga
   guarantees (requirement 2); it does not implement or specify it.
 - **The saga's ordering guarantee.** [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md)
   records the pivot decision this feature depends on, but ledger-service **cannot enforce it** —
@@ -938,7 +943,7 @@ ADRs name them rather than resolving them.
   the write path has no surface to put in scope.
 - **The settlement workflow and its scheduling.** This feature ships the callee: ledger-service's
   own worker, `AppendLedgerTx` registered on it as an activity, and a retry policy declaring which
-  of its errors are non-retryable. The workflow that *schedules* that activity, the orchestrator's
+  of its errors are non-retryable. The workflow that _schedules_ that activity, the orchestrator's
   own worker, and the saga's compensation steps belong to whoever specifies the saga. The absence
   of a caller does not block the callee — a registered activity is invocable and testable without
   one.
@@ -962,7 +967,7 @@ ADRs name them rather than resolving them.
   is out of scope and is the named trigger to revisit both that requirement and requirement 8.
 - **Filtering `listEntries` by `reference_id`.** Worth noting the argument for it so it is not
   re-derived: with reversals gone, one settlement is one transaction, so today
-  `getTransaction` already answers *"what happened to this bid"* once you have the id. A filter
+  `getTransaction` already answers _"what happened to this bid"_ once you have the id. A filter
   earns its keep only when one `reference_id` can produce several transactions — which is not
   true now and may become true if a future reason ever splits a settlement. Left out; an optional
   query param is non-breaking to add later.
