@@ -158,18 +158,9 @@ func (h *Handler) CreateListing(ctx context.Context, req *pb.CreateListingReques
 		return nil, mapError(ctx, err)
 	}
 
-	// snapshot := listing.Snapshot()
+	// TODO: map to pb
 
-	listingPB := &pb.ListItemResponse{
-		// Id:         snapshot.ID.String(),
-		// SellerId:   snapshot.SellerID.String(),
-		// ItemId:     snapshot.ItemID.String(),
-		// StartPrice: int64(snapshot.StartPrice),
-		// Status:     string(snapshot.Status),
-		// EndsAt:     timestamppb.New(snapshot.EndsAt),
-	}
-
-	return listingPB, nil
+	return nil, nil
 }
 
 func mapError(ctx context.Context, err error) error {

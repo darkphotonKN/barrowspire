@@ -185,5 +185,22 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	// NOTE: PlaceHold / CommitHold are intentionally not exposed. They are steps
 	// inside the bidding saga owned by marketplace-service, not user actions.
 
+	// --- WALLET MICROSERVICE ---
+
+	walletClient := wallet.NewClient(registry)
+	walletHandler := wallet.NewHandler(walletClient)
+
+	walletRoutes := api.Group("/wallet")
+	// Every wallet RPC derives the account from the authenticated member, so
+	// there are no public routes here.
+	walletRoutes.Use(auth.AuthMiddleware())
+	walletRoutes.POST("/account", walletHandler.CreateAccountHandler)
+	walletRoutes.GET("/account", walletHandler.GetAccountHandler)
+	walletRoutes.POST("/deposit", walletHandler.DepositHandler)
+	walletRoutes.POST("/withdraw", walletHandler.WithdrawHandler)
+
+	// NOTE: PlaceHold / CommitHold are intentionally not exposed. They are steps
+	// inside the bidding saga owned by marketplace-service, not user actions.
+
 	return router
 }
