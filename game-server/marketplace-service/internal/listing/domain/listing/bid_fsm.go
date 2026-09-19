@@ -5,6 +5,7 @@ import "time"
 var validBidTransitions = map[BidStatus]map[BidStatus]struct{}{
 	BidStatusPending: {
 		BidStatusWinning:   {}, // wallet held the gold, this bid takes the lead
+		BidStatusOutbid:    {}, // wallet held the gold, but a higher bid took the lead first
 		BidStatusFailed:    {}, // wallet could not hold the gold
 		BidStatusCancelled: {}, // the bidder withdrew before the hold landed
 	},

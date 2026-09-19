@@ -263,7 +263,8 @@ func (l *Listing) HasBid(bidID uuid.UUID) bool {
 }
 
 // ConfirmBid promotes a bid once wallet reports its hold is in place, demoting
-// whoever was leading. This is the step that must not simply fail: the bidder's
+// whoever was leading — unless a higher bid confirmed first, in which case this
+// one is marked OUTBID instead. This is the step that must not simply fail: the bidder's
 // gold is already frozen, so a bid left in PENDING is money held against a bid
 // that never leads.
 func (l *Listing) ConfirmBid(bidID uuid.UUID, now time.Time) error {
@@ -275,12 +276,35 @@ func (l *Listing) ConfirmBid(bidID uuid.UUID, now time.Time) error {
 
 	// Hold-confirmation events arrive at-least-once, so a redelivery is expected
 	// traffic rather than an error — reporting one would make the saga compensate
-	// a step that actually succeeded.
-	if bid.status == BidStatusWinning {
+	// a step that actually succeeded. OUTBID counts too: the first delivery either
+	// found the bid outranked, or promoted it before a higher bid took over.
+	if bid.status == BidStatusWinning || bid.status == BidStatusOutbid {
 		return nil
 	}
 
+	// The checks PlaceBid made were true when the bid was placed, not now. Holds
+	// resolve outside the listing lock and in any order, so both are made again
+	// against the state this confirmation actually sees.
+
+	// Settlement fixes the winner when it freezes the listing; a late
+	// confirmation must not swap the leader out from under it.
+	if l.status != StatusActive {
+		return ErrListingNotAcceptingBids
+	}
+
 	incumbent := l.findWinningBid()
+
+	// A higher bid confirmed first. This one loses rather than failing: its gold
+	// is held, and as OUTBID it is released with the other losers at settlement.
+	if incumbent != nil && incumbent.id != bid.id && bid.amount <= incumbent.amount {
+		if err := bid.transitionTo(BidStatusOutbid, now); err != nil {
+			return err
+		}
+
+		l.updatedAt = now
+
+		return nil
+	}
 
 	if err := bid.transitionTo(BidStatusWinning, now); err != nil {
 		return err

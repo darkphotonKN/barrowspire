@@ -97,6 +97,52 @@ func TestConfirmBid(t *testing.T) {
 
 		assert.ErrorIs(t, l.ConfirmBid(uuid.New(), time.Now()), ErrBidNotFound)
 	})
+
+	// Placement order guarantees rising amounts, confirmation order does not:
+	// holds come back whenever wallet answers. The lower bid's confirmation can
+	// land after the higher one already leads, and must not take the lead back.
+	t.Run("a bid outranked while its hold was pending does not take the lead", func(t *testing.T) {
+		l := activeListing(t, 100)
+
+		require.NoError(t, l.PlaceBid(uuid.New(), 150, uuid.Nil, time.Now()))
+		require.NoError(t, l.PlaceBid(uuid.New(), 200, uuid.Nil, time.Now()))
+		lower := l.Snapshot().Bids[0].ID
+		higher := l.Snapshot().Bids[1].ID
+
+		// the higher bid's hold comes back first
+		require.NoError(t, l.ConfirmBid(higher, time.Now()))
+		require.NoError(t, l.ConfirmBid(lower, time.Now()), "a late confirmation is expected traffic, not an error")
+
+		bids := l.Snapshot().Bids
+		assert.Equal(t, BidStatusOutbid, bids[0].Status, "the outranked bid loses, so settlement releases its hold")
+		assert.Equal(t, BidStatusWinning, bids[1].Status)
+		assert.Equal(t, 200, l.currentPrice())
+
+		assert.NoError(t, l.ConfirmBid(lower, time.Now()), "redelivering an outranked bid's confirmation must not error")
+		assert.Equal(t, BidStatusOutbid, l.Snapshot().Bids[0].Status)
+	})
+
+	// Once a listing stops taking bids its leader is fixed — settlement selects
+	// the winner as it freezes the listing. A confirmation arriving after that
+	// must not swap the leader out from under it.
+	t.Run("a listing that stopped accepting bids keeps its leader", func(t *testing.T) {
+		l := activeListing(t, 100)
+
+		require.NoError(t, l.PlaceBid(uuid.New(), 150, uuid.Nil, time.Now()))
+		leader := l.Snapshot().Bids[0].ID
+		require.NoError(t, l.ConfirmBid(leader, time.Now()))
+
+		require.NoError(t, l.PlaceBid(uuid.New(), 200, uuid.Nil, time.Now()))
+		late := l.Snapshot().Bids[1].ID
+
+		require.NoError(t, l.Withdraw(time.Now()))
+
+		assert.ErrorIs(t, l.ConfirmBid(late, time.Now()), ErrListingNotAcceptingBids)
+
+		bids := l.Snapshot().Bids
+		assert.Equal(t, BidStatusWinning, bids[0].Status)
+		assert.Equal(t, BidStatusPending, bids[1].Status)
+	})
 }
 
 // TestFailBid covers the other branch: wallet could not hold the gold, so the
