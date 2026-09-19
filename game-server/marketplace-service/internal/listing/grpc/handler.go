@@ -60,7 +60,10 @@ func (h *Handler) PlaceBid(ctx context.Context, req *pb.PlaceBidRequest) (*pb.Pl
 		return nil, status.Error(codes.InvalidArgument, "invalid listing id")
 	}
 
-	tempMemberID := uuid.New()
+	memberID, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
 
 	// Optional: an absent or malformed key means "no key", which is uuid.Nil.
 	// Rejecting a bad one would fail a request the caller could still have
@@ -72,7 +75,7 @@ func (h *Handler) PlaceBid(ctx context.Context, req *pb.PlaceBidRequest) (*pb.Pl
 
 	if err := h.placeBidUC.Handle(ctx, usecase.PlaceBidCommand{
 		ListingID:      listingID,
-		MemberID:       tempMemberID,
+		MemberID:       memberID,
 		Amount:         int(req.GetAmount()),
 		IdempotencyKey: idempotencyKey,
 		Now:            time.Now(),
@@ -94,12 +97,17 @@ func (h *Handler) WithdrawBid(ctx context.Context, req *pb.WithdrawBidRequest) (
 		return nil, status.Error(codes.InvalidArgument, "invalid bid id")
 	}
 
-	tempMemberID := uuid.New()
+	// the domain's ownership check compares against this, so it must be the
+	// authenticated caller and never anything taken from the request
+	memberID, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
 
 	if err := h.withdrawBidUC.Handle(ctx, usecase.WithdrawBidCommand{
 		ListingID: listingID,
 		BidID:     bidID,
-		MemberID:  tempMemberID,
+		MemberID:  memberID,
 		Now:       time.Now(),
 	}); err != nil {
 		return nil, mapError(ctx, err)
