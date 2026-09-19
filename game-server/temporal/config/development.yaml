@@ -4,7 +4,7 @@
 # entrypoint is a bare `temporal-server start`, and the DB/POSTGRES_SEEDS style
 # environment variables only worked on the retired temporalio/auto-setup image,
 # which Temporal stopped publishing after 1.29.7. Config is authored and mounted
-# instead — the same thing a real deployment does, just with a shorter file.
+# instead, the same thing a real deployment does, just with a shorter file.
 #
 # Single node: all four services run in one process, so membership broadcasts to
 # loopback while the gRPC listeners bind to 0.0.0.0 for the rest of the compose
