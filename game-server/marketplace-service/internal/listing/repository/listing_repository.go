@@ -447,15 +447,24 @@ func (r *ListingRepository) diffListing(before, after *listing.ListingSnapshot) 
 
 	for _, afterBid := range after.Bids {
 		if beforeBid, ok := seen[afterBid.ID]; !ok {
+			// uuid.Nil means "no key" and must be stored as NULL: stored as the
+			// zero UUID, every keyless bid would collide on idx_bids_idempotency_key
+			var idempotencyKey *uuid.UUID
+			if afterBid.IdempotencyKey != uuid.Nil {
+				key := afterBid.IdempotencyKey
+				idempotencyKey = &key
+			}
+
 			newBids = append(newBids, &BidRow{
-				ID:        afterBid.ID,
-				ListingID: afterBid.ListingID,
-				MemberID:  afterBid.MemberID,
-				Type:      string(afterBid.Type),
-				Amount:    afterBid.Amount,
-				Status:    string(afterBid.Status),
-				CreatedAt: afterBid.CreatedAt,
-				UpdatedAt: afterBid.UpdatedAt,
+				ID:             afterBid.ID,
+				ListingID:      afterBid.ListingID,
+				MemberID:       afterBid.MemberID,
+				Type:           string(afterBid.Type),
+				Amount:         afterBid.Amount,
+				Status:         string(afterBid.Status),
+				IdempotencyKey: idempotencyKey,
+				CreatedAt:      afterBid.CreatedAt,
+				UpdatedAt:      afterBid.UpdatedAt,
 			})
 		} else {
 			if afterBid.Status == beforeBid.Status {

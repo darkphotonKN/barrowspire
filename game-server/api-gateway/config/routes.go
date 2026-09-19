@@ -128,6 +128,14 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 
 	ledgerClient := ledger.NewClient(registry)
 	ledgerHandler := ledger.NewHandler(ledgerClient)
+
+	// --- LISTING MICROSERVICE ---
+
+	// Created up here because its bid operations are typed and mounted by
+	// RegisterOperations below; its legacy create route is still gin, further down.
+	listingClient := listing.NewClient(registry)
+	listingHandler := listing.NewHandler(listingClient)
+
 	// Item routes are SERIALIZED (FS-NTPW2 slice 2). All eleven are typed
 	// operations in internal/gateway/item/typed.go, mounted below.
 
@@ -143,6 +151,7 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 		Stats:          statsHandler,
 		Payment:        paymentHandler,
 		Ledger:         ledgerHandler,
+		Listing:        listingHandler,
 		AuthMiddleware: auth.AuthMiddleware(),
 	})
 
@@ -151,10 +160,7 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	// `code`. Registered last because NoRoute is the fallback for everything above.
 	router.NoRoute(httperr.NotFoundHandler())
 
-	// --- LISTING MICROSERVICE ---
-
-	listingClient := listing.NewClient(registry)
-	listingHandler := listing.NewHandler(listingClient)
+	// --- LISTING MICROSERVICE (legacy gin; client and handler created above) ---
 
 	listingRoutes := api.Group("/listing")
 	// Private Routes - require authentication

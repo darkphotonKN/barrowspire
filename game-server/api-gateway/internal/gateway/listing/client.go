@@ -53,3 +53,12 @@ func (c *Client) ListItem(ctx context.Context, req *pb.ListItemRequest) (*pb.Lis
 	listing, err := client.ListItem(ctx, req)
 	return listing, err
 }
+
+func (c *Client) PlaceBid(ctx context.Context, req *pb.PlaceBidRequest) (*pb.PlaceBidResponse, error) {
+	conn, err := c.ensureConn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
+	}
+
+	return pb.NewMarketplaceServiceClient(conn).PlaceBid(ctx, req)
+}
