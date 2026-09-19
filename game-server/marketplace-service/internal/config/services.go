@@ -28,8 +28,11 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	grpcClient := itemreserver.NewClient(registry)
 	itemReserver := itemreserver.NewItemReserver(grpcClient)
 	reserveItemUC := usecase.NewReserveItemUC(itemReserver)
+	createAccUC := usecase.NewCreateListingUC(listingRepo)
+	placeBidUC := usecase.NewPlaceBidUC(listingRepo)
+	withdrawBidUC := usecase.NewWithdrawBidUC(listingRepo)
 	getListingQuery := listingquery.NewGetListingQuery(db)
-	listingHandler := listinggrpc.NewHandler(reserveItemUC, getListingQuery)
+	listingHandler := listinggrpc.NewHandler(reserveItemUC, createAccUC, placeBidUC, withdrawBidUC, getListingQuery)
 
 	hasActiveListingQuery := listingquery.NewHasActiveListingQuery(db)
 	reconcileReservationsUC := usecase.NewReconcileReservationsUC(hasActiveListingQuery, itemReserver)

@@ -27,21 +27,77 @@ type Handler struct {
 	listingReader ListingReader
 
 	// write
-	reserveItemUC *usecase.ReserveItemUC
+	reserveItemUC   *usecase.ReserveItemUC
+	createListingUC *usecase.CreateListingUC
+	placeBidUC      *usecase.PlaceBidUC
+	withdrawBidUC   *usecase.WithdrawBidUC
 }
 
 type ListingReader interface {
 	Execute(ctx context.Context, memberID uuid.UUID) (*dto.ListingDetails, error)
 }
 
-func NewHandler(reserveItemUC *usecase.ReserveItemUC, listingReader ListingReader) *Handler {
+func NewHandler(
+	reserveItemUC *usecase.ReserveItemUC,
+	createListingUC *usecase.CreateListingUC,
+	placeBidUC *usecase.PlaceBidUC,
+	withdrawBidUC *usecase.WithdrawBidUC,
+	listingReader ListingReader) *Handler {
 	return &Handler{
-		reserveItemUC: reserveItemUC,
-		listingReader: listingReader,
+		reserveItemUC:   reserveItemUC,
+		createListingUC: createListingUC,
+		placeBidUC:      placeBidUC,
+		withdrawBidUC:   withdrawBidUC,
+		listingReader:   listingReader,
 	}
 }
 
 // ========================= WRITE PATHS  =========================
+
+func (h *Handler) PlaceBid(ctx context.Context, req *pb.PlaceBidRequest) (*pb.PlaceBidResponse, error) {
+	listingID, err := uuid.Parse(req.GetListingId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid listing id")
+	}
+
+	tempMemberID := uuid.New()
+
+	if err := h.placeBidUC.Handle(ctx, usecase.PlaceBidCommand{
+		ListingID: listingID,
+		MemberID:  tempMemberID,
+		Amount:    int(req.GetAmount()),
+		Now:       time.Now(),
+	}); err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return &pb.PlaceBidResponse{}, nil
+}
+
+func (h *Handler) WithdrawBid(ctx context.Context, req *pb.WithdrawBidRequest) (*pb.WithdrawBidResponse, error) {
+	listingID, err := uuid.Parse(req.GetListingId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid listing id")
+	}
+
+	bidID, err := uuid.Parse(req.GetBidId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid bid id")
+	}
+
+	tempMemberID := uuid.New()
+
+	if err := h.withdrawBidUC.Handle(ctx, usecase.WithdrawBidCommand{
+		ListingID: listingID,
+		BidID:     bidID,
+		MemberID:  tempMemberID,
+		Now:       time.Now(),
+	}); err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return &pb.WithdrawBidResponse{}, nil
+}
 
 // ========================= READ PATHS  =========================
 
@@ -67,6 +123,28 @@ func (h *Handler) ListItem(ctx context.Context, req *pb.ListItemRequest) (*pb.Li
 		Now:        now,
 	})
 
+	if err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	// snapshot := listing.Snapshot()
+
+	listingPB := &pb.ListItemResponse{
+		// Id:         snapshot.ID.String(),
+		// SellerId:   snapshot.SellerID.String(),
+		// ItemId:     snapshot.ItemID.String(),
+		// StartPrice: int64(snapshot.StartPrice),
+		// Status:     string(snapshot.Status),
+		// EndsAt:     timestamppb.New(snapshot.EndsAt),
+	}
+
+	return listingPB, nil
+}
+
+func (h *Handler) CreateListing(ctx context.Context, req *pb.CreateListingRequest) (*pb.CreateListingResponse, error) {
+	tempMemberID := uuid.New()
+
+	_, err := h.listingReader.Execute(ctx, tempMemberID)
 	if err != nil {
 		return nil, mapError(ctx, err)
 	}
@@ -118,9 +196,26 @@ func mapError(ctx context.Context, err error) error {
 		// if a bug is reported and we need to trace it
 		logLevel = slog.LevelInfo
 
-	// case errors.Is(err, listing.ErrInvalidAmount) || errors.Is(err, listing.ErrInvalidGold):
-	// 	code = codes.InvalidArgument
-	// 	msg = "invalid argument"
+	// the caller sent a structurally valid request carrying a nonsensical value
+	case errors.Is(err, listing.ErrInvalidAmount) || errors.Is(err, listing.ErrBidTooLow):
+		code = codes.InvalidArgument
+		msg = "invalid argument"
+		logLevel = slog.LevelInfo
+
+	case errors.Is(err, listing.ErrListingNotAcceptingBids) ||
+		errors.Is(err, listing.ErrListingExpired) ||
+		errors.Is(err, listing.ErrInvalidBidTransition):
+		code = codes.FailedPrecondition
+		msg = "failed precondition"
+		logLevel = slog.LevelInfo
+
+	case errors.Is(err, listing.ErrBidNotFound):
+		code = codes.NotFound
+		msg = "not found"
+
+	case errors.Is(err, listing.ErrNotBidOwner):
+		code = codes.PermissionDenied
+		msg = "permission denied"
 
 	case errors.Is(err, listing.ErrInvalidUUID) ||
 		errors.Is(err, listing.ErrInvalidEndTime) ||
