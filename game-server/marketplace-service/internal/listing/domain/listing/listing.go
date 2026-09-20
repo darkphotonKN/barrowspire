@@ -1,37 +1,20 @@
 package listing
 
 import (
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-// --- Errors ---
-var (
-	ErrInvalidUUID            = errors.New("invalid uuid")
-	ErrInvalidListingState    = errors.New("Invalid state")
-	ErrInvalidEndTime         = errors.New("Invalid endtime")
-	ErrInvalidStartPrice      = errors.New("Invalid start price")
-	ErrInvalidSoldPrice       = errors.New("Invalid sold price")
-	ErrInvalidSoldTime        = errors.New("invalid sold time")
-	ErrCorruptListingState    = errors.New("corrupt listing state")
-	ErrConcurrentModification = errors.New("concurrent modification")
-
-	ErrListingNotAcceptingBids = errors.New("listing not accepting bids")
-	ErrListingExpired          = errors.New("listing expired")
-	ErrBidTooLow               = errors.New("bid too low")
-	ErrBidNotFound             = errors.New("bid not found")
-	ErrNotBidOwner             = errors.New("not bid owner")
-)
-
 type ListingStatus string
 
 const (
-	StatusDraft    ListingStatus = "DRAFT"
-	StatusActive   ListingStatus = "ACTIVE"
-	StatusWithdraw ListingStatus = "WITHDRAW"
-	StatusSold     ListingStatus = "SOLD"
+	StatusDraft             ListingStatus = "DRAFT"
+	StatusListed            ListingStatus = "LISTED"
+	StatusCancelled         ListingStatus = "WITHDRAW"
+	StatusPendingSettlement ListingStatus = "PENDING_SETTLEMENT"
+	StatusExpired           ListingStatus = "STATUS_EXPIRED"
+	StatusSold              ListingStatus = "SOLD"
 )
 
 type Listing struct {
@@ -158,24 +141,24 @@ func (l *Listing) Publish(now time.Time) error {
 	if l.status != StatusDraft {
 		return ErrInvalidListingState
 	}
-	l.status = StatusActive
+	l.status = StatusListed
 	l.updatedAt = now
 
 	return nil
 }
 
-func (l *Listing) Withdraw(now time.Time) error {
-	if l.status != StatusActive {
+func (l *Listing) Cancel(now time.Time) error {
+	if l.status != StatusListed {
 		return ErrInvalidListingState
 	}
-	l.status = StatusWithdraw
+	l.status = StatusCancelled
 	l.updatedAt = now
 
 	return nil
 }
 
 func (l *Listing) MarkSold(now time.Time, buyerID uuid.UUID, soldPrice int) error {
-	if l.status != StatusActive {
+	if l.status != StatusListed {
 		return ErrInvalidListingState
 	}
 	if buyerID == uuid.Nil {
@@ -213,7 +196,7 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 		return nil
 	}
 
-	if l.status != StatusActive {
+	if l.status != StatusListed {
 		return ErrListingNotAcceptingBids
 	}
 
@@ -288,7 +271,7 @@ func (l *Listing) ConfirmBid(bidID uuid.UUID, now time.Time) error {
 
 	// Settlement fixes the winner when it freezes the listing; a late
 	// confirmation must not swap the leader out from under it.
-	if l.status != StatusActive {
+	if l.status != StatusListed {
 		return ErrListingNotAcceptingBids
 	}
 
@@ -344,7 +327,7 @@ func (l *Listing) FailBid(bidID uuid.UUID, now time.Time) error {
 }
 
 func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time) error {
-	if l.status != StatusActive {
+	if l.status != StatusListed {
 		return ErrListingNotAcceptingBids
 	}
 
@@ -429,6 +412,33 @@ func (l *Listing) currentPrice() int {
 	}
 
 	return winning.amount
+}
+
+func (l *Listing) Freeze() error {
+	// evolve with fsm
+	err := l.transitionTo(StatusPendingSettlement, time.Now())
+
+	if err != nil {
+		// propagate sentinel down
+		return err
+	}
+
+	return nil
+}
+
+func (l *Listing) FindWinningBid() (*Bid, error) {
+	// no bids, no op
+	if len(l.bids) == 0 {
+		return nil, nil
+	}
+
+	for _, bid := range l.bids {
+		if bid.status == BidStatusWinning {
+			return bid, nil
+		}
+	}
+
+	return nil, ErrCorruptListingState
 }
 
 type ReconstituteParams struct {
