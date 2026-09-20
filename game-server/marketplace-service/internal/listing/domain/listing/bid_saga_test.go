@@ -135,7 +135,7 @@ func TestConfirmBid(t *testing.T) {
 		require.NoError(t, l.PlaceBid(uuid.New(), 200, uuid.Nil, time.Now()))
 		late := l.Snapshot().Bids[1].ID
 
-		require.NoError(t, l.Withdraw(time.Now()))
+		require.NoError(t, l.Cancel(time.Now()))
 
 		assert.ErrorIs(t, l.ConfirmBid(late, time.Now()), ErrListingNotAcceptingBids)
 

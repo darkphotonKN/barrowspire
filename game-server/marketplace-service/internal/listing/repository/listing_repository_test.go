@@ -21,7 +21,7 @@ func placeBidDiff(t *testing.T, idempotencyKey uuid.UUID) *BidRow {
 		SellerID:   uuid.New(),
 		ItemID:     uuid.New(),
 		StartPrice: 100,
-		Status:     listing.StatusActive,
+		Status:     listing.StatusListed,
 		EndsAt:     now.Add(time.Hour),
 		CreatedAt:  now,
 		UpdatedAt:  now,

@@ -155,7 +155,7 @@ func TestPlaceBidOnNonActiveListing(t *testing.T) {
 			name: "withdrawn listing is closed",
 			setup: func(t *testing.T) *Listing {
 				l := activeListing(t, 100)
-				require.NoError(t, l.Withdraw(now))
+				require.NoError(t, l.Cancel(now))
 				return l
 			},
 		},
@@ -406,7 +406,7 @@ func reconstituteParams(listingID uuid.UUID, now time.Time, bids []*BidReconstit
 		SellerID:   uuid.New(),
 		ItemID:     uuid.New(),
 		StartPrice: 100,
-		Status:     StatusActive,
+		Status:     StatusListed,
 		EndsAt:     now.Add(time.Hour),
 		CreatedAt:  now,
 		UpdatedAt:  now,

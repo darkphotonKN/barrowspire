@@ -24,8 +24,6 @@ var (
 	ErrNotBidOwner             = errors.New("not bid owner")
 )
 
-// checks if error matches the predefined sentinel to determine if its retriable
-// single source of truth for checking for retriable
 // IsRetriable reports whether an error is worth another attempt.
 //
 // Losing an optimistic-concurrency race is the obvious case. Transient

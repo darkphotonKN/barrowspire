@@ -40,7 +40,7 @@ func (uc *WithdrawListingUC) Handle(ctx context.Context, cmd WithdrawListingComm
 
 		before := listingDomain.Snapshot()
 
-		err = listingDomain.Withdraw(cmd.Now)
+		err = listingDomain.Cancel(cmd.Now)
 
 		if err != nil {
 			return fmt.Errorf("withdraw listing usecase update status: %w", err)
