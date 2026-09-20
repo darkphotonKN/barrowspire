@@ -1,31 +1,20 @@
 package listing
 
 import (
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-// --- Errors ---
-var (
-	ErrInvalidUUID            = errors.New("invalid uuid")
-	ErrInvalidListingState    = errors.New("Invalid state")
-	ErrInvalidEndTime         = errors.New("Invalid endtime")
-	ErrInvalidStartPrice      = errors.New("Invalid start price")
-	ErrInvalidSoldPrice       = errors.New("Invalid sold price")
-	ErrInvalidSoldTime        = errors.New("invalid sold time")
-	ErrCorruptListingState    = errors.New("corrupt listing state")
-	ErrConcurrentModification = errors.New("concurrent modification")
-)
-
 type ListingStatus string
 
 const (
-	StatusDraft    ListingStatus = "DRAFT"
-	StatusActive   ListingStatus = "ACTIVE"
-	StatusWithdraw ListingStatus = "WITHDRAW"
-	StatusSold     ListingStatus = "SOLD"
+	StatusDraft             ListingStatus = "DRAFT"
+	StatusListed            ListingStatus = "LISTED"
+	StatusCancelled         ListingStatus = "WITHDRAW"
+	StatusPendingSettlement ListingStatus = "PENDING_SETTLEMENT"
+	StatusExpired           ListingStatus = "STATUS_EXPIRED"
+	StatusSold              ListingStatus = "SOLD"
 )
 
 type Listing struct {
@@ -115,24 +104,24 @@ func (l *Listing) Publish(now time.Time) error {
 	if l.status != StatusDraft {
 		return ErrInvalidListingState
 	}
-	l.status = StatusActive
+	l.status = StatusListed
 	l.updatedAt = now
 
 	return nil
 }
 
-func (l *Listing) Withdraw(now time.Time) error {
-	if l.status != StatusActive {
+func (l *Listing) Cancel(now time.Time) error {
+	if l.status != StatusListed {
 		return ErrInvalidListingState
 	}
-	l.status = StatusWithdraw
+	l.status = StatusCancelled
 	l.updatedAt = now
 
 	return nil
 }
 
 func (l *Listing) MarkSold(now time.Time, buyerID uuid.UUID, soldPrice int) error {
-	if l.status != StatusActive {
+	if l.status != StatusListed {
 		return ErrInvalidListingState
 	}
 	if buyerID == uuid.Nil {
@@ -149,6 +138,22 @@ func (l *Listing) MarkSold(now time.Time, buyerID uuid.UUID, soldPrice int) erro
 	l.status = StatusSold
 	l.updatedAt = now
 	return nil
+}
+
+func (l *Listing) Freeze() error {
+	// evolve with fsm
+	err := l.transitionTo(StatusPendingSettlement, time.Now())
+
+	if err != nil {
+		// propagate sentinel down
+		return err
+	}
+
+	return nil
+}
+
+func (l *Listing) FindWinningBid() {
+
 }
 
 type ReconstituteParams struct {

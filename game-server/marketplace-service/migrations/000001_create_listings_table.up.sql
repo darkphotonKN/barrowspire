@@ -30,7 +30,7 @@ CREATE INDEX idx_listings_sold_price ON listings(status, sold_price, id);
 CREATE INDEX idx_listings_seller_id ON listings(seller_id, created_at);
 
 -- prevent duplicates from being listed
-CREATE UNIQUE INDEX listings(item_id) WHERE status = 'LISTED';
+CREATE UNIQUE INDEX idx_one_active_listing_per_item ON listings(item_id) WHERE status = 'LISTED';
 -- for detail pages narrowing on one particular item, no presort needed as only one (or no) match possible
 -- un needed cuz of the above, and ONLY needed for listed anyway which can ONLY be copvered by unique index above
 -- CREATE INDEX idx_listings_sold_price ON listings(item_id) 
