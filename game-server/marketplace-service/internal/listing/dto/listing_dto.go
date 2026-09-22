@@ -23,3 +23,17 @@ type ListingDetails struct {
 	CreatedAt  time.Time             `db:"created_at"`
 	UpdatedAt  time.Time             `db:"updated_at"`
 }
+
+// for freeze listing step of settlement saga
+type FreezeListingDto struct {
+	ListingID uuid.UUID
+	ItemID    uuid.UUID
+	SellerID  uuid.UUID
+	Winner    *FreezeWinner
+}
+
+type FreezeWinner struct {
+	WinnerBidID    uuid.UUID
+	WinnerMemberID uuid.UUID
+	Amount         int
+}

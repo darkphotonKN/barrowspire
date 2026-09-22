@@ -92,17 +92,7 @@ func (l *Listing) Snapshot() ListingSnapshot {
 	bids := make([]BidSnapshot, 0, len(l.bids))
 
 	for _, bid := range l.bids {
-		bids = append(bids, BidSnapshot{
-			ID:             bid.id,
-			ListingID:      bid.listingID,
-			MemberID:       bid.memberID,
-			Type:           bid.bidType,
-			Amount:         bid.amount,
-			Status:         bid.status,
-			IdempotencyKey: bid.idempotencyKey,
-			CreatedAt:      bid.createdAt,
-			UpdatedAt:      bid.updatedAt,
-		})
+		bids = append(bids, bid.Snapshot())
 	}
 
 	// buyerID and soldPrice are the only nilable fields, so they are the only ones
@@ -246,7 +236,7 @@ func (l *Listing) HasBid(bidID uuid.UUID) bool {
 }
 
 // ConfirmBid promotes a bid once wallet reports its hold is in place, demoting
-// whoever was leading — unless a higher bid confirmed first, in which case this
+// whoever was leading, unless a higher bid confirmed first, in which case this
 // one is marked OUTBID instead. This is the step that must not simply fail: the bidder's
 // gold is already frozen, so a bid left in PENDING is money held against a bid
 // that never leads.
@@ -258,7 +248,7 @@ func (l *Listing) ConfirmBid(bidID uuid.UUID, now time.Time) error {
 	}
 
 	// Hold-confirmation events arrive at-least-once, so a redelivery is expected
-	// traffic rather than an error — reporting one would make the saga compensate
+	// traffic rather than an error, reporting one would make the saga compensate
 	// a step that actually succeeded. OUTBID counts too: the first delivery either
 	// found the bid outranked, or promoted it before a higher bid took over.
 	if bid.status == BidStatusWinning || bid.status == BidStatusOutbid {
@@ -414,9 +404,9 @@ func (l *Listing) currentPrice() int {
 	return winning.amount
 }
 
-func (l *Listing) Freeze() error {
+func (l *Listing) Freeze(now time.Time) error {
 	// evolve with fsm
-	err := l.transitionTo(StatusPendingSettlement, time.Now())
+	err := l.transitionTo(StatusPendingSettlement, now)
 
 	if err != nil {
 		// propagate sentinel down

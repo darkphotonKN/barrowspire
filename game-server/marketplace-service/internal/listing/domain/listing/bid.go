@@ -101,3 +101,19 @@ type BidSnapshot struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
+
+// Snapshot exposes the bid's fields with no path to write them. Every field is
+// a value type, so the copy shares nothing with the aggregate.
+func (b *Bid) Snapshot() BidSnapshot {
+	return BidSnapshot{
+		ID:             b.id,
+		ListingID:      b.listingID,
+		MemberID:       b.memberID,
+		Type:           b.bidType,
+		Amount:         b.amount,
+		Status:         b.status,
+		IdempotencyKey: b.idempotencyKey,
+		CreatedAt:      b.createdAt,
+		UpdatedAt:      b.updatedAt,
+	}
+}
