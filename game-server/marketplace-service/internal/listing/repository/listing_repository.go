@@ -309,7 +309,7 @@ func (r *ListingRepository) Save(ctx context.Context, l *listing.Listing, before
 // checkVersion selects the concurrency strategy. Save passes true: it runs
 // outside any lock, so the UPDATE carries WHERE version = $expected and a zero
 // row count means another writer won the race. Modify passes false because it
-// already holds a row lock — the version still advances, but no writer can have
+// already holds a row lock, version still advances, but no writer can have
 // slipped in between the read and this write.
 //
 // The statement order is load-bearing and must not be rearranged: bid status
@@ -484,4 +484,107 @@ func (r *ListingRepository) diffListing(before, after *listing.ListingSnapshot) 
 	changes.expectedVersion = before.Version
 
 	return changes
+}
+
+// Update loads the listing under a row lock, runs updateFn against the
+// reconstituted aggregate, and persists whatever it changed, all in one
+// transaction.
+//
+// The lock is held for the whole closure, so updateFn must not make network
+// calls or do anything else slow: every other writer on this listing queues
+// behind it.
+//
+// An updateFn that changes nothing writes nothing and returns nil. That is the
+// already-applied case, a settlement retry catching up, an error.
+func (r *ListingRepository) Update(ctx context.Context, id uuid.UUID, updateFn func(l *listing.Listing) error) error {
+	// nil options: Read Committed is enough here, the row lock does the
+	// serialising.
+	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
+		// Bound the wait on a contended listing to 3 seconds longest for this row lock
+		// LOCAL scopes it to this
+		// transaction, so it can't leak onto the pooled connection.
+		if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '3s'`); err != nil {
+			return commonhelpers.WrapDBErr("listing", "Update", err)
+		}
+
+		var listingRow ListingRow
+		var bidRows []BidRow
+
+		// FOR UPDATE on the listing row alone is enough: every write to this
+		// aggregate's bids goes through its listing, so serialising on the parent
+		// serialises the children too.
+		listingQuery := `
+		SELECT
+			id,
+			seller_id,
+			buyer_id,
+			item_id,
+			start_price,
+			sold_price,
+			status,
+			ends_at,
+			version,
+			created_at,
+			updated_at
+		FROM listings
+		WHERE id = $1
+		FOR UPDATE
+		`
+
+		if err := tx.GetContext(ctx, &listingRow, listingQuery, id); err != nil {
+			return commonhelpers.WrapDBErr("listing", "Update", err)
+		}
+
+		// The bids need no lock of their own: every writer passes through the
+		// listing lock above before it can touch them.
+		bidsQuery := `
+		SELECT
+			id,
+			listing_id,
+			member_id,
+			type,
+			amount,
+			status,
+			idempotency_key,
+			created_at,
+			updated_at
+		FROM bids
+		WHERE listing_id = $1
+		`
+
+		if err := tx.SelectContext(ctx, &bidRows, bidsQuery, id); err != nil {
+			return commonhelpers.WrapDBErr("listing", "Update", err)
+		}
+
+		listingDomain, err := reconstitute(listingRow, bidRows)
+		if err != nil {
+			return err
+		}
+
+		before := listingDomain.Snapshot()
+
+		// Returned unwrapped, so a caller's errors.Is against the domain
+		// sentinels still matches. Returning here rolls the transaction back.
+		if err := updateFn(listingDomain); err != nil {
+			return err
+		}
+
+		after := listingDomain.Snapshot()
+
+		changes := r.diffListing(&before, &after)
+
+		// not possible in practice, but guard for exceptions
+		if changes == nil {
+			return listing.ErrCorruptListingState
+		}
+
+		if changes.IsEmpty() {
+			return nil
+		}
+
+		// false: no WHERE version = ... predicate. The row lock already
+		// serialised this transaction, so nobody can have slipped in between the
+		// read and this write. The version still bumps.
+		return r.writeChanges(ctx, tx, &after, changes, false)
+	})
 }

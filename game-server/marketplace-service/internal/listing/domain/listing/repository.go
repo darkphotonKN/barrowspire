@@ -14,6 +14,13 @@ type Repository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*Listing, error)
 	Insert(ctx context.Context, account *Listing) error
 
+	// for settlement step 0a, requiring a row lock due to contention to prevent
+	// retry storms.
+	// NOTE: remember vernons transactional consistency boundary
+	// and the decision here that means we cant reudce the aggregate size cuz bids
+	// need to contend with the winner under listing and so naturally belongs here
+	Update(ctx context.Context, id uuid.UUID, updateFn func(l *Listing) error) error
+
 	// CONTRACT: save must return the senintel ErrConcurrentModification to signify a
 	// race error when attempting optimisitic updates
 	// account/errors.go's IsRetriable and usecase/retry.go's withRetry relies on this

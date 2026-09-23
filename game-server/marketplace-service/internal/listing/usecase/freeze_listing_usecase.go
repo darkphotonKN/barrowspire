@@ -19,48 +19,43 @@ type FreezelistingCommand struct {
 }
 
 func (uc *FreezeListingUC) Handle(ctx context.Context, cmd FreezelistingCommand) (*dto.FreezeListingDto, error) {
+	var before listing.ListingSnapshot
+	var winningBid *listing.Bid
 
-	// load + reconstitute listing from repo method
-	l, err := uc.repo.FindByID(ctx, cmd.ListingID)
+	err := uc.repo.Update(ctx, cmd.ListingID, func(l *listing.Listing) error {
+		before = l.Snapshot()
 
-	if err != nil {
-		return nil, fmt.Errorf("freeze listing usecase repo.FindByID : %w", err)
-	}
+		// signifies not a retry, freeze and start flow
+		if before.Status != listing.StatusPendingSettlement {
+			// call aggregate verb to attempt to freeze, via FSM to validate status
+			// shift is in the correct order
+			err := l.Freeze(time.Now())
 
-	before := l.Snapshot()
+			if err != nil {
+				return fmt.Errorf("freeze listing usecase Freeze : %w", err)
+			}
+		}
 
-	// signifies not a retry, freeze and start flow
-	if before.Status != listing.StatusPendingSettlement {
-		// call aggregate verb to attempt to freeze, via FSM to validate status
-		// shift is in the correct order
-		err = l.Freeze(time.Now())
+		// find winner
+		bid, err := l.FindWinningBid()
+		winningBid = bid
 
 		if err != nil {
-			return nil, fmt.Errorf("freeze listing usecase Freeze : %w", err)
+			return fmt.Errorf("freeze listing usecase FindWinningBid : %w", err)
 		}
-	}
 
-	// find winner
-	bid, err := l.FindWinningBid()
+		return nil
+	})
 
+	// transaction failed, error would be wrapped already just propogate
 	if err != nil {
-		return nil, fmt.Errorf("freeze listing usecase Freeze : %w", err)
-	}
-
-	// save to persist, contended object but no race protection needed
-	// like OCC as we're using an fused conditional atomic query
-	// HOWEVER - since its DDD and we reconstituted above, theres a
-	// "check" from the load and then a time gap then act.
-	err = uc.repo.Save(ctx, l, before)
-
-	if err != nil {
-		return nil, fmt.Errorf("freeze listing usecase Save : %w", err)
+		return nil, err
 	}
 
 	// legit case where no bids exist either naturally or cuz of a race of bid expiring or
 	// withdrawn (cancelled) right around auction ending and yet before
 	// 0a of settlement saga to freeze the bids
-	if bid == nil {
+	if winningBid == nil {
 		return &dto.FreezeListingDto{
 			ListingID: before.ID,
 			ItemID:    before.ItemID,
@@ -69,7 +64,7 @@ func (uc *FreezeListingUC) Handle(ctx context.Context, cmd FreezelistingCommand)
 		}, nil
 	}
 
-	bidSnapshot := bid.Snapshot()
+	bidSnapshot := winningBid.Snapshot()
 
 	return &dto.FreezeListingDto{
 		ListingID: before.ID,
@@ -80,5 +75,5 @@ func (uc *FreezeListingUC) Handle(ctx context.Context, cmd FreezelistingCommand)
 			WinnerMemberID: bidSnapshot.MemberID,
 			Amount:         bidSnapshot.Amount,
 		},
-	}, nil // load + reconstitute listing from repo method
+	}, nil
 }
