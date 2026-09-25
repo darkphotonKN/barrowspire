@@ -39,7 +39,18 @@ const (
 	// Added during I-22WKC-3: RequestAvatarUploadHandler already mapped gRPC
 	// Unavailable to 503 by hand, and FS-22WKC's original table would have
 	// downgraded it. The spec was amended rather than the handler.
+
 	ServiceUnavailable Code = "SERVICE_UNAVAILABLE"
+	// PreconditionFailed is 400 with a valid request: the resource's own state
+	// refuses it. A bid on an ended listing, a hold exceeding available gold.
+	// Distinct from VALIDATION_FAILED, which means the request itself was wrong,
+	// the client fixes one by changing the payload, the other by re-reading state.
+	PreconditionFailed Code = "PRECONDITION_FAILED"
+
+	// Conflict is 409 from optimistic-locking contention. The request was
+	// evaluated against a version that has since moved. Re-read and retry;
+	// never replay the same payload blindly.
+	Conflict Code = "CONFLICT"
 
 	// --- Domain-specific ------------------------------------------------------
 	// Add codes here as real failures need to be distinguished. The usual trigger:
