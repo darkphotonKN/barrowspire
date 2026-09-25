@@ -39,17 +39,27 @@ const (
 	// Added during I-22WKC-3: RequestAvatarUploadHandler already mapped gRPC
 	// Unavailable to 503 by hand, and FS-22WKC's original table would have
 	// downgraded it. The spec was amended rather than the handler.
-
 	ServiceUnavailable Code = "SERVICE_UNAVAILABLE"
-	// PreconditionFailed is 400 with a valid request: the resource's own state
-	// refuses it. A bid on an ended listing, a hold exceeding available gold.
-	// Distinct from VALIDATION_FAILED, which means the request itself was wrong,
-	// the client fixes one by changing the payload, the other by re-reading state.
-	PreconditionFailed Code = "PRECONDITION_FAILED"
 
-	// Conflict is 409 from optimistic-locking contention. The request was
-	// evaluated against a version that has since moved. Re-read and retry;
-	// never replay the same payload blindly.
+	// FailedPrecondition is 400 with a valid request: the resource's own state
+	// refuses it. An FSM transition that is not allowed from the current state,
+	// a bid on an ended listing. Distinct from VALIDATION_FAILED, which means the
+	// request itself was wrong: the client fixes one by changing the payload, the
+	// other by re-reading state.
+	//
+	// Named after gRPC's canonical FAILED_PRECONDITION rather than HTTP's
+	// "Precondition Failed" so nobody reads it as 412, which is about
+	// conditional-request headers and is not what this is.
+	//
+	// Added for FS-0YXG6 (Marketplace HTTP surface).
+	FailedPrecondition Code = "FAILED_PRECONDITION"
+
+	// Conflict is 409 from optimistic-locking contention that outlasted the
+	// server's own retries. The server already re-read and re-evaluated the
+	// request internally, so retrying is safe: every rule is checked again
+	// against fresh state. A retried write must reuse its Idempotency-Key.
+	//
+	// Added for FS-0YXG6 (Marketplace HTTP surface).
 	Conflict Code = "CONFLICT"
 
 	// --- Domain-specific ------------------------------------------------------

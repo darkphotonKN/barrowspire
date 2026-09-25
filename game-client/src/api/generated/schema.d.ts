@@ -208,6 +208,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ledger/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Page ledger entries
+         * @description Page a flat, time-ordered history of ledger entries, newest first. Omitting account_id returns the caller's own entries. Supplying it is an admin-only request to read another account's history.
+         */
+        get: operations["list-entries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ledger/transactions/{transaction_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a member's transaction.
+         * @description Get details of a specific transaction by its transaction id.
+         */
+        get: operations["get-transaction"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/marketplace/listings/{listing_id}/bids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Place a bid on a listing
+         * @description Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request.
+         */
+        post: operations["place-bid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/member": {
         parameters: {
             query?: never;
@@ -842,6 +902,20 @@ export interface components {
             /** @description Stripe customer id */
             customer_id?: string;
         };
+        Entry: {
+            account_id: string;
+            /** Format: int64 */
+            amount: number;
+            /** Format: date-time */
+            created_at: string;
+            direction: string;
+            id: string;
+            transaction_id: string;
+        };
+        EntryPage: {
+            entries: components["schemas"]["Entry"][] | null;
+            next_cursor: string | null;
+        };
         FieldError: {
             field: string;
             message: string;
@@ -948,6 +1022,12 @@ export interface components {
              * @description Total ranked players
              */
             total_count?: number;
+        };
+        Leg: {
+            account_id: string;
+            /** Format: int64 */
+            amount: number;
+            direction: string;
         };
         ListEnvelope: {
             /** @description Human-readable summary */
@@ -1068,6 +1148,13 @@ export interface components {
              * @description Duplicates the HTTP status
              */
             statusCode: number;
+        };
+        PlaceBidBody: {
+            /**
+             * Format: int64
+             * @description Gold offered. The first bid must meet the listing's start price; every later one must exceed the current leading bid.
+             */
+            amount: number;
         };
         PlayerMatchStats: {
             /** @description Creation time */
@@ -1394,6 +1481,15 @@ export interface components {
              * @description Seconds since the Unix epoch
              */
             seconds?: number;
+        };
+        Transaction: {
+            /** Format: date-time */
+            created_at: string;
+            currency: string;
+            legs: components["schemas"]["Leg"][] | null;
+            reason: string;
+            reference_id: string;
+            transaction_id: string;
         };
         UpdateInfoBody: {
             /** @description New display name */
@@ -2064,6 +2160,234 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "list-entries": {
+        parameters: {
+            query?: {
+                /** @description opaque position, do not construct. */
+                cursor?: string;
+                limit?: number;
+                /** @description admin only */
+                account_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntryPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "get-transaction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transaction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transaction"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "place-bid": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated per bid and reused on every retry of it, so a retried bid is recognised instead of placed twice. Optional. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaceBidBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

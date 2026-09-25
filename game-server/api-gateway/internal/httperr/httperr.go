@@ -151,7 +151,7 @@ func mapError(err error) Problem {
 			// itself still never leaves the process.
 			return newProblem(http.StatusServiceUnavailable, errcode.ServiceUnavailable)
 		case codes.FailedPrecondition:
-			return newProblem(http.StatusBadRequest, errcode.PreconditionFailed)
+			return newProblem(http.StatusBadRequest, errcode.FailedPrecondition)
 		case codes.Aborted:
 			return newProblem(http.StatusConflict, errcode.Conflict)
 		default:
