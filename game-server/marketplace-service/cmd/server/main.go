@@ -22,6 +22,7 @@ import (
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/config"
 	appConfig "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/config"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/settlement"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	sdklog "go.temporal.io/sdk/log"
@@ -104,15 +105,24 @@ func main() {
 	}
 
 	temporalClient, err := bstemporal.Dial(ctx, temporalCfg, temporalLogger)
+
 	if err != nil {
 		log.Fatalf("Failed to connect to temporal: %s", err)
 	}
 	defer temporalClient.Close()
 
 	temporalRunner, err := bstemporal.NewRunner(temporalClient, temporalCfg, temporalLogger, worker.Options{},
+		// testing
 		smoke.RegisterWorkflow,
 		smoke.RegisterActivity,
+
+		// settlement saga 0a: freeze listing
+		services.ListingActivity.Register,
+
+		// the workflow
+		settlement.Register,
 	)
+
 	if err != nil {
 		log.Fatalf("Failed to build temporal worker: %s", err)
 	}

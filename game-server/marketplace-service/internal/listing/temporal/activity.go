@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 
+	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/worker"
+
 	"go.temporal.io/sdk/temporal"
 
 	commonactivity "github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
@@ -76,4 +79,13 @@ func (a *Activity) classifyFreezeErr(err error) error {
 	default:
 		return err // plain error, Temporal retries
 	}
+}
+
+// Register wires this adapter's activities onto a worker. The name comes from
+// the shared contract, never from the Go method name: the workflow schedules by
+// string, so a rename here would silently stop matching.
+func (a *Activity) Register(w worker.Worker) {
+	w.RegisterActivityWithOptions(a.FreezeListing, activity.RegisterOptions{
+		Name: commonactivity.FreezeListingActivityName,
+	})
 }

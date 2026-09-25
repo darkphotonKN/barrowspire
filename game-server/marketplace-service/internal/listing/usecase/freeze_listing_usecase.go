@@ -18,6 +18,12 @@ type FreezelistingCommand struct {
 	ListingID uuid.UUID
 }
 
+func NewFreezeListingUC(repo listing.Repository) *FreezeListingUC {
+	return &FreezeListingUC{
+		repo: repo,
+	}
+}
+
 func (uc *FreezeListingUC) Handle(ctx context.Context, cmd FreezelistingCommand) (*dto.FreezeListingDto, error) {
 	var before listing.ListingSnapshot
 	var winningBid *listing.Bid

@@ -156,9 +156,9 @@ func registerListEntries(api huma.API, h *Handler,
 ) {
 
 	type input struct {
-		Cursor          string  `query:"cursor" doc:"opaque position, do not construct."`
-		Limit           int     `query:"limit" default:"50" minimum:"1" maximum:"100"`
-		AccountIDTarget *string `query:"account_id" format:"uuid" doc:"admin only"`
+		Cursor          string `query:"cursor" doc:"opaque position, do not construct."`
+		Limit           int    `query:"limit" default:"50" minimum:"1" maximum:"100"`
+		AccountIDTarget string `query:"account_id" format:"uuid" doc:"admin only"`
 	}
 
 	type output struct {
@@ -191,11 +191,14 @@ func registerListEntries(api huma.API, h *Handler,
 
 			// -- account id target --
 			// only check if target actually exists in the param
-			if in.AccountIDTarget != nil {
+			var accountIDTarget *string
+			if in.AccountIDTarget != "" {
 				if !isAdmin {
 					return nil, forbidden()
 				}
 
+				// update the pointer once auth validation passes
+				accountIDTarget = &in.AccountIDTarget
 				// -- account id for members --
 				// account id required if not targetting a specific account, otherwise you need to be an admin
 			} else if c.AccountID == nil && !isAdmin {
@@ -203,7 +206,7 @@ func registerListEntries(api huma.API, h *Handler,
 			}
 
 			res, err := h.client.ListEntries(ctx, &pb.ListEntriesRequest{
-				AccountIdTarget: in.AccountIDTarget,
+				AccountIdTarget: accountIDTarget,
 				Cursor:          in.Cursor,
 				Limit:           int32(in.Limit),
 			})
