@@ -379,6 +379,27 @@ components:
         - item_type
         - item_id
       type: object
+    CreateListingBody:
+      additionalProperties: false
+      properties:
+        endsAt:
+          description: When the auction closes. Must be in the future.
+          format: date-time
+          type: string
+        itemId:
+          description: The item to list. It must be in the seller's stash and not already listed.
+          format: uuid
+          type: string
+        startPrice:
+          description: Gold the first bid must meet.
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - itemId
+        - startPrice
+        - endsAt
+      type: object
     CreateWeaponBody:
       additionalProperties: false
       properties:
@@ -406,6 +427,48 @@ components:
         customer_id:
           description: Stripe customer id
           type: string
+      type: object
+    Entry:
+      additionalProperties: false
+      properties:
+        account_id:
+          type: string
+        amount:
+          format: int64
+          type: integer
+        created_at:
+          format: date-time
+          type: string
+        direction:
+          type: string
+        id:
+          type: string
+        transaction_id:
+          type: string
+      required:
+        - id
+        - transaction_id
+        - account_id
+        - amount
+        - direction
+        - created_at
+      type: object
+    EntryPage:
+      additionalProperties: false
+      properties:
+        entries:
+          items:
+            $ref: "#/components/schemas/Entry"
+          type:
+            - array
+            - "null"
+        next_cursor:
+          type:
+            - string
+            - "null"
+      required:
+        - entries
+        - next_cursor
       type: object
     FieldError:
       additionalProperties: false
@@ -601,6 +664,21 @@ components:
           format: int32
           type: integer
       type: object
+    Leg:
+      additionalProperties: false
+      properties:
+        account_id:
+          type: string
+        amount:
+          format: int64
+          type: integer
+        direction:
+          type: string
+      required:
+        - account_id
+        - amount
+        - direction
+      type: object
     ListEnvelope:
       additionalProperties: false
       properties:
@@ -637,6 +715,64 @@ components:
           type:
             - array
             - "null"
+      type: object
+    Listing:
+      additionalProperties: false
+      properties:
+        buyerId:
+          description: Present once sold.
+          format: uuid
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        endsAt:
+          format: date-time
+          type: string
+        id:
+          format: uuid
+          type: string
+        itemId:
+          format: uuid
+          type: string
+        sellerId:
+          format: uuid
+          type: string
+        soldPrice:
+          description: Present once sold.
+          format: int64
+          type: integer
+        startPrice:
+          format: int64
+          type: integer
+        status:
+          description: Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED.
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - itemId
+        - sellerId
+        - startPrice
+        - status
+        - endsAt
+        - createdAt
+        - updatedAt
+      type: object
+    ListingPage:
+      additionalProperties: false
+      properties:
+        listings:
+          items:
+            $ref: "#/components/schemas/Listing"
+          type: array
+        nextCursor:
+          description: Pass back as cursor for the next page. Absent on the last page.
+          type: string
+      required:
+        - listings
       type: object
     LoginEnvelope:
       additionalProperties: false
@@ -780,6 +916,17 @@ components:
         - statusCode
         - message
         - has_permission
+      type: object
+    PlaceBidBody:
+      additionalProperties: false
+      properties:
+        amount:
+          description: Gold offered. The first bid must meet the listing's start price; every later one must exceed the current leading bid.
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - amount
       type: object
     PlayerMatchStats:
       additionalProperties: false
@@ -1288,6 +1435,34 @@ components:
           description: Seconds since the Unix epoch
           format: int64
           type: integer
+      type: object
+    Transaction:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        currency:
+          type: string
+        legs:
+          items:
+            $ref: "#/components/schemas/Leg"
+          type:
+            - array
+            - "null"
+        reason:
+          type: string
+        reference_id:
+          type: string
+        transaction_id:
+          type: string
+      required:
+        - transaction_id
+        - reference_id
+        - reason
+        - currency
+        - legs
+        - created_at
       type: object
     UpdateInfoBody:
       additionalProperties: false
@@ -1884,6 +2059,388 @@ paths:
       summary: List weapons with their template detail
       tags:
         - items
+  /api/ledger/entries:
+    get:
+      description: Page a flat, time-ordered history of ledger entries, newest first. Omitting account_id returns the caller's own entries. Supplying it is an admin-only request to read another account's history.
+      operationId: list-entries
+      parameters:
+        - description: opaque position, do not construct.
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: opaque position, do not construct.
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: admin only
+          explode: false
+          in: query
+          name: account_id
+          schema:
+            description: admin only
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntryPage"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Forbidden
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Page ledger entries
+      tags:
+        - ledger
+  /api/ledger/transactions/{transaction_id}:
+    get:
+      description: Get details of a specific transaction by its transaction id.
+      operationId: get-transaction
+      parameters:
+        - in: path
+          name: transaction_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Get a member's transaction.
+      tags:
+        - ledger
+  /api/marketplace/listings:
+    post:
+      description: "Lists an item from the signed-in member's stash for auction. The listing is not created by this request: marketplace reserves the item, and the listing appears once the reservation is confirmed. The seller is taken from the token, never the request."
+      operationId: create-listing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateListingBody"
+        required: true
+      responses:
+        "202":
+          description: Accepted
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: List an item for auction
+      tags:
+        - marketplace
+  /api/marketplace/listings/mine:
+    get:
+      description: "Pages the signed-in member's own listings, newest first. Every listing's sellerId is the caller: the seller is taken from the token; there is no parameter for reading another member's listings."
+      operationId: list-my-listings
+      parameters:
+        - description: Opaque position from a previous page's nextCursor. Do not construct.
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque position from a previous page's nextCursor. Do not construct.
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListingPage"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Page my listings
+      tags:
+        - marketplace
+  /api/marketplace/listings/{listing_id}/bids:
+    post:
+      description: Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request.
+      operationId: place-bid
+      parameters:
+        - in: path
+          name: listing_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - description: Client-generated per bid and reused on every retry of it, so a retried bid is recognised instead of placed twice. Optional.
+          in: header
+          name: Idempotency-Key
+          schema:
+            description: Client-generated per bid and reused on every retry of it, so a retried bid is recognised instead of placed twice. Optional.
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaceBidBody"
+        required: true
+      responses:
+        "201":
+          description: Created
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Place a bid on a listing
+      tags:
+        - marketplace
+  /api/marketplace/listings/{listing_id}/bids/{bid_id}:
+    delete:
+      description: Withdraws a bid the signed-in member placed. A bid belonging to another member is refused, never silently ignored.
+      operationId: withdraw-bid
+      parameters:
+        - in: path
+          name: listing_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: path
+          name: bid_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Withdraw a bid
+      tags:
+        - marketplace
   /api/member:
     get:
       description: Returns the member identified by the bearer token. Identity never comes from the request.
@@ -2654,3 +3211,5 @@ tags:
     name: payment
   - description: The movement record — read-only; balances belong to wallet
     name: ledger
+  - description: Listings and bids
+    name: marketplace

@@ -14,6 +14,7 @@ var (
 	ErrForbidden            = errors.New("you do not have permission to access this resource")
 	ErrUnauthorized         = errors.New("incorrect credentials entered during when attempting to authenticate")
 	ErrTransient            = errors.New("transient error")
+	ErrInsufficientGold     = errors.New("insufficient available gold")
 	ErrUUIDCouldNotBeParsed = errors.New("uuid could not be parsed")
 
 	// game

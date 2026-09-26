@@ -131,8 +131,8 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 
 	// --- LISTING MICROSERVICE ---
 
-	// Created up here because its bid operations are typed and mounted by
-	// RegisterOperations below; its legacy create route is still gin, further down.
+	// Listing routes are SERIALIZED (FS-0YXG6). Every one is a typed operation
+	// in internal/gateway/listing/typed.go, mounted below.
 	listingClient := listing.NewClient(registry)
 	listingHandler := listing.NewHandler(listingClient)
 
@@ -159,13 +159,6 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	// the seam never sees it, and the client gets a bare text/plain 404 with no
 	// `code`. Registered last because NoRoute is the fallback for everything above.
 	router.NoRoute(httperr.NotFoundHandler())
-
-	// --- LISTING MICROSERVICE (legacy gin; client and handler created above) ---
-
-	listingRoutes := api.Group("/listing")
-	// Private Routes - require authentication
-	listingRoutes.Use(auth.AuthMiddleware())
-	listingRoutes.POST("", listingHandler.CreateListingHandler)
 
 	// --- CHARACTERS MICROSERVICE ---
 

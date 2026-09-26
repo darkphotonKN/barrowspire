@@ -150,6 +150,10 @@ func mapError(err error) Problem {
 			// failure that would have succeeded a second later. The dial error
 			// itself still never leaves the process.
 			return newProblem(http.StatusServiceUnavailable, errcode.ServiceUnavailable)
+		case codes.FailedPrecondition:
+			return newProblem(http.StatusBadRequest, errcode.FailedPrecondition)
+		case codes.Aborted:
+			return newProblem(http.StatusConflict, errcode.Conflict)
 		default:
 			// Everything genuinely unrecognised. The catch-all must exist so a
 			// downstream code nobody has seen yet degrades cleanly rather than

@@ -62,3 +62,21 @@ func (c *Client) PlaceBid(ctx context.Context, req *pb.PlaceBidRequest) (*pb.Pla
 
 	return pb.NewMarketplaceServiceClient(conn).PlaceBid(ctx, req)
 }
+
+func (c *Client) WithdrawBid(ctx context.Context, req *pb.WithdrawBidRequest) (*pb.WithdrawBidResponse, error) {
+	conn, err := c.ensureConn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
+	}
+
+	return pb.NewMarketplaceServiceClient(conn).WithdrawBid(ctx, req)
+}
+
+func (c *Client) ListMyListings(ctx context.Context, req *pb.ListMyListingsRequest) (*pb.ListMyListingsResponse, error) {
+	conn, err := c.ensureConn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
+	}
+
+	return pb.NewMarketplaceServiceClient(conn).ListMyListings(ctx, req)
+}
