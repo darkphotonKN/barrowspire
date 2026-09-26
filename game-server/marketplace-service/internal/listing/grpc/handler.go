@@ -203,7 +203,8 @@ func mapError(ctx context.Context, err error) error {
 
 	case errors.Is(err, listing.ErrListingNotAcceptingBids) ||
 		errors.Is(err, listing.ErrListingExpired) ||
-		errors.Is(err, listing.ErrInvalidBidTransition):
+		errors.Is(err, listing.ErrInvalidBidTransition) ||
+		errors.Is(err, commonconstants.ErrInsufficientGold):
 		code = codes.FailedPrecondition
 		msg = "failed precondition"
 		logLevel = slog.LevelInfo

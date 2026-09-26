@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -37,7 +38,7 @@ func (c *Client) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold 
 
 	conn, err := discovery.ServiceConnection(outCtx, serviceName, c.registry)
 	if err != nil {
-		return fmt.Errorf("failed to connect to wallet service: %w", err)
+		return fmt.Errorf("wallet place hold for bid %v: connect: %w: %w", bidID, commonconstants.ErrTransient, err)
 	}
 	defer conn.Close()
 
@@ -46,7 +47,14 @@ func (c *Client) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold 
 		Gold:  int64(gold),
 	})
 	if err != nil {
-		return fmt.Errorf("wallet place hold for bid %v: %w", bidID, err)
+		switch status.Code(err) {
+		case codes.FailedPrecondition:
+			return fmt.Errorf("wallet place hold for bid %v: %w: %w", bidID, commonconstants.ErrInsufficientGold, err)
+		case codes.Unavailable, codes.DeadlineExceeded:
+			return fmt.Errorf("wallet place hold for bid %v: %w: %w", bidID, commonconstants.ErrTransient, err)
+		default:
+			return fmt.Errorf("wallet place hold for bid %v: %w", bidID, err)
+		}
 	}
 
 	return nil
