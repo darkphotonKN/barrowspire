@@ -5,8 +5,10 @@ import (
 	"testing"
 	"time"
 
+	itemspb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/adapter/itemreserver"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	"github.com/google/uuid"
@@ -16,6 +18,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // fakeRepo keeps one listing in memory. Modify, FindByID and Save all act on
@@ -39,6 +42,10 @@ func (r *fakeRepo) Save(ctx context.Context, l *listing.Listing, before listing.
 }
 
 func (r *fakeRepo) Modify(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
+	return fn(r.l)
+}
+
+func (r *fakeRepo) Update(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
 	return fn(r.l)
 }
 
@@ -203,5 +210,45 @@ func winningBid(bidID, memberID uuid.UUID) *listing.BidReconstituteParams {
 		Status:    listing.BidStatusWinning,
 		CreatedAt: now,
 		UpdatedAt: now,
+	}
+}
+
+// fakeItemsClient answers every ReserveItem with the configured status code,
+// standing in for items-service behind the real item reserver adapter.
+type fakeItemsClient struct {
+	itemreserver.ItemReserverClient
+	code codes.Code
+}
+
+func (c *fakeItemsClient) ReserveItem(ctx context.Context, req *itemspb.ReserveItemRequest) (*itemspb.ReserveItemResponse, error) {
+	return nil, status.Error(c.code, "items says no")
+}
+
+// An items-service that cannot answer is retryable; only a code marketplace
+// does not recognise is a server error.
+func TestListItem_ItemsRefusal_KeepsItsMeaning(t *testing.T) {
+	tests := []struct {
+		name      string
+		itemsCode codes.Code
+		wantCode  codes.Code
+	}{
+		{"items unavailable", codes.Unavailable, codes.Unavailable},
+		{"items deadline exceeded", codes.DeadlineExceeded, codes.Unavailable},
+		{"unrecognised code", codes.DataLoss, codes.Internal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reserver := itemreserver.NewItemReserver(&fakeItemsClient{code: tt.itemsCode})
+			h := NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil)
+
+			_, err := h.ListItem(authedCtx(t, uuid.New()), &pb.ListItemRequest{
+				ItemId:     uuid.New().String(),
+				StartPrice: 100,
+				EndsAt:     timestamppb.New(time.Now().Add(24 * time.Hour)),
+			})
+
+			assert.Equal(t, tt.wantCode, status.Code(err))
+		})
 	}
 }
