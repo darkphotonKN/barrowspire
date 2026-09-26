@@ -194,15 +194,6 @@ func mapError(ctx context.Context, err error) error {
 	case errors.Is(err, commonconstants.ErrTransient):
 		code = codes.Unavailable
 		msg = "unavailable"
-	// request structurally valid, but listing state doesnt allow, or violates the
-	// system constraints like FK, null when supposed to be NOT NULL, etc
-	case errors.Is(err, commonconstants.ErrConstraintViolation):
-		msg = "failed precondition"
-		code = codes.FailedPrecondition
-
-		// expected error, normal operations, but for tracking where things went wrong
-		// if a bug is reported and we need to trace it
-		logLevel = slog.LevelInfo
 
 	// the caller sent a structurally valid request carrying a nonsensical value
 	case errors.Is(err, listing.ErrInvalidAmount) || errors.Is(err, listing.ErrBidTooLow):
