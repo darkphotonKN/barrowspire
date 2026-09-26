@@ -95,21 +95,6 @@ Both reduce to the **same compensation primitive: release the hold.**
 - Seller proceeds = winning amount − a **marketplace fee (default 5%)**, framed as a
   **tunable gold sink (economic policy)**, not revenue.
 
-## API Surface
-
-All **write** endpoints require an **`Idempotency-Key` header**. (Cancel is naturally
-idempotent and needs no key.)
-
-| Method & path | Behavior | Result |
-| ------------- | -------- | ------ |
-| `POST /marketplace/listings` | create a listing | 201 |
-| `POST /marketplace/listings/:id/bids` | place a bid; payload carries `type=BID\|BUYOUT` | 201 |
-| `POST /marketplace/listings/:id/bids/:bid_id/cancel` | cancel a bid (release hold) | 200 |
-| `POST /marketplace/listings/:id/cancel` | cancel a listing | 200 |
-| `GET /members/:id/bids` | a member's bids | `[]Bid` |
-| `GET /members/:id/listings` | a member's listings | `[]Listing` |
-| `GET /marketplace/listings?term=&max_price=&sort=` | search; returns listings with **price + time-left** (not raw items) | `[]Listing` |
-
 ## Data Model
 
 Per-table detail (fields, keys, states, constraints, references) lives in `docs/schema/`:
@@ -132,4 +117,7 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 
 ### Surface
 
-- [ ] gRPC endpoints (none exposed yet)
+- [x] List an item (gRPC) → FS-none
+- [x] Place a bid (gRPC) → FS-none
+- [x] Withdraw a bid (gRPC) → FS-none
+- [ ] Read a member's own listings → FS-0YXG6
