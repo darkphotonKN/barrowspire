@@ -379,6 +379,27 @@ components:
         - item_type
         - item_id
       type: object
+    CreateListingBody:
+      additionalProperties: false
+      properties:
+        endsAt:
+          description: When the auction closes. Must be in the future.
+          format: date-time
+          type: string
+        itemId:
+          description: The item to list. It must be in the seller's stash and not already listed.
+          format: uuid
+          type: string
+        startPrice:
+          description: Gold the first bid must meet.
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - itemId
+        - startPrice
+        - endsAt
+      type: object
     CreateWeaponBody:
       additionalProperties: false
       properties:
@@ -2104,6 +2125,54 @@ paths:
       summary: Get a member's transaction.
       tags:
         - ledger
+  /api/marketplace/listings:
+    post:
+      description: "Lists an item from the signed-in member's stash for auction. The listing is not created by this request: marketplace reserves the item, and the listing appears once the reservation is confirmed. The seller is taken from the token, never the request."
+      operationId: create-listing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateListingBody"
+        required: true
+      responses:
+        "202":
+          description: Accepted
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: List an item for auction
+      tags:
+        - marketplace
   /api/marketplace/listings/{listing_id}/bids:
     post:
       description: Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request.
@@ -2176,6 +2245,79 @@ paths:
       security:
         - bearerAuth: []
       summary: Place a bid on a listing
+      tags:
+        - marketplace
+  /api/marketplace/listings/{listing_id}/bids/{bid_id}:
+    delete:
+      description: Withdraws a bid the signed-in member placed. A bid belonging to another member is refused, never silently ignored.
+      operationId: withdraw-bid
+      parameters:
+        - in: path
+          name: listing_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: path
+          name: bid_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Withdraw a bid
       tags:
         - marketplace
   /api/member:
