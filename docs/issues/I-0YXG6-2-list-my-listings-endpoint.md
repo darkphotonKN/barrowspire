@@ -1,6 +1,6 @@
 ---
 id: I-0YXG6-2
-status: open
+status: done
 implements: FS-0YXG6
 blocked_by: [I-0YXG6-1]
 labels: [ready-for-agent]

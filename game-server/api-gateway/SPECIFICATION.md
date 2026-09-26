@@ -52,7 +52,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 
 - [x] Create a listing → FS-none
 - [x] Place a bid on a listing → FS-none
-- [ ] Typed marketplace surface → FS-0YXG6
+- [x] Typed marketplace surface → FS-0YXG6
 
 ### Integration patterns
 

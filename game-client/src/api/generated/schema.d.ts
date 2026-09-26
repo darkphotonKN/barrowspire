@@ -268,6 +268,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/marketplace/listings/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Page my listings
+         * @description Pages the signed-in member's own listings, newest first. Every listing's sellerId is the caller: the seller is taken from the token; there is no parameter for reading another member's listings.
+         */
+        get: operations["list-my-listings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/marketplace/listings/{listing_id}/bids": {
         parameters: {
             query?: never;
@@ -1104,6 +1124,39 @@ export interface components {
         };
         ListItemInstancesResponse: {
             items?: components["schemas"]["ItemInstance"][] | null;
+        };
+        Listing: {
+            /**
+             * Format: uuid
+             * @description Present once sold.
+             */
+            buyerId?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            itemId: string;
+            /** Format: uuid */
+            sellerId: string;
+            /**
+             * Format: int64
+             * @description Present once sold.
+             */
+            soldPrice?: number;
+            /** Format: int64 */
+            startPrice: number;
+            /** @description Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED. */
+            status: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ListingPage: {
+            listings: components["schemas"]["Listing"][];
+            /** @description Pass back as cursor for the next page. Absent on the last page. */
+            nextCursor?: string;
         };
         LoginEnvelope: {
             /** @description Human-readable summary */
@@ -2383,6 +2436,75 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "list-my-listings": {
+        parameters: {
+            query?: {
+                /** @description Opaque position from a previous page's nextCursor. Do not construct. */
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingPage"];
+                };
             };
             /** @description Bad Request */
             400: {

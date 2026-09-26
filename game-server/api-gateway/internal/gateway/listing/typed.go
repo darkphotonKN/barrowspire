@@ -36,6 +36,7 @@ func RegisterOperations(api huma.API, h *Handler,
 	registerCreateListing(api, h, protect)
 	registerPlaceBid(api, h, protect)
 	registerWithdrawBid(api, h, protect)
+	registerListMyListings(api, h, protect)
 }
 
 // guard wraps a typed handler so its error goes through the seam.
@@ -203,5 +204,56 @@ func registerWithdrawBid(api huma.API, h *Handler,
 		}
 
 		return &output{}, nil
+	}))
+}
+
+func registerListMyListings(api huma.API, h *Handler,
+	protect func(huma.Context, func(huma.Context)),
+) {
+	type input struct {
+		// Opaque to the gateway: only marketplace can tell a malformed one, and
+		// its refusal comes back through the seam.
+		Cursor string `query:"cursor" doc:"Opaque position from a previous page's nextCursor. Do not construct."`
+		Limit  int    `query:"limit" default:"50" minimum:"1" maximum:"100"`
+
+		// Read only to forward downstream: marketplace takes the seller from this
+		// token. Hidden because the bearer scheme documents it.
+		Authorization string `header:"Authorization" hidden:"true"`
+	}
+
+	type output struct{ Body ListingPage }
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-my-listings",
+		Description: "Pages the signed-in member's own listings, newest first. Every listing's sellerId is the caller: the seller is " +
+			"taken from the token; there is no parameter for reading another member's listings.",
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+			http.StatusServiceUnavailable,
+		},
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodGet,
+		Path:        "/api/marketplace/listings/mine",
+		Summary:     "Page my listings",
+		Tags:        []string{"marketplace"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		res, err := h.client.ListMyListings(withBearer(ctx, in.Authorization), &pb.ListMyListingsRequest{
+			Cursor: in.Cursor,
+			Limit:  int32(in.Limit),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		page, err := listingPageFromProto(res)
+		if err != nil {
+			return nil, err
+		}
+
+		return &output{Body: page}, nil
 	}))
 }

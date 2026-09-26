@@ -1,6 +1,6 @@
 # FS-0YXG6: Marketplace HTTP surface
 
-> Status: work-order · SPECIFICATION.md: `game-server/api-gateway/SPECIFICATION.md` "### Marketplace" → "Typed marketplace surface"; `game-server/marketplace-service/SPECIFICATION.md` "### Surface" → "Read a member's own listings" → this FS · Related ADRs: [ADR-0002](../adr/0002-batch-retrofit-of-the-legacy-surface.md) §5 (new gateway operations are typed), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-minted idempotency) · Related FS: [FS-22WKC](22WKC-uniform-error-contract.md) (the error seam this surface answers through), [FS-NTPW2](NTPW2-gateway-surface-serialized.md) (the serialization pattern)
+> Status: shipped · SPECIFICATION.md: `game-server/api-gateway/SPECIFICATION.md` "### Marketplace" → "Typed marketplace surface"; `game-server/marketplace-service/SPECIFICATION.md` "### Surface" → "Read a member's own listings" → this FS · Related ADRs: [ADR-0002](../adr/0002-batch-retrofit-of-the-legacy-surface.md) §5 (new gateway operations are typed), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-minted idempotency) · Related FS: [FS-22WKC](22WKC-uniform-error-contract.md) (the error seam this surface answers through), [FS-NTPW2](NTPW2-gateway-surface-serialized.md) (the serialization pattern)
 
 > **Reconciliation FS.** Most of this surface was built by hand before any spec existed: the typed
 > place-bid operation, the legacy gin create-listing route, and marketplace's `ListItem`,

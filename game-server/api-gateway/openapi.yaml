@@ -716,6 +716,64 @@ components:
             - array
             - "null"
       type: object
+    Listing:
+      additionalProperties: false
+      properties:
+        buyerId:
+          description: Present once sold.
+          format: uuid
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        endsAt:
+          format: date-time
+          type: string
+        id:
+          format: uuid
+          type: string
+        itemId:
+          format: uuid
+          type: string
+        sellerId:
+          format: uuid
+          type: string
+        soldPrice:
+          description: Present once sold.
+          format: int64
+          type: integer
+        startPrice:
+          format: int64
+          type: integer
+        status:
+          description: Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED.
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - itemId
+        - sellerId
+        - startPrice
+        - status
+        - endsAt
+        - createdAt
+        - updatedAt
+      type: object
+    ListingPage:
+      additionalProperties: false
+      properties:
+        listings:
+          items:
+            $ref: "#/components/schemas/Listing"
+          type: array
+        nextCursor:
+          description: Pass back as cursor for the next page. Absent on the last page.
+          type: string
+      required:
+        - listings
+      type: object
     LoginEnvelope:
       additionalProperties: false
       properties:
@@ -2171,6 +2229,69 @@ paths:
       security:
         - bearerAuth: []
       summary: List an item for auction
+      tags:
+        - marketplace
+  /api/marketplace/listings/mine:
+    get:
+      description: "Pages the signed-in member's own listings, newest first. Every listing's sellerId is the caller: the seller is taken from the token; there is no parameter for reading another member's listings."
+      operationId: list-my-listings
+      parameters:
+        - description: Opaque position from a previous page's nextCursor. Do not construct.
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque position from a previous page's nextCursor. Do not construct.
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListingPage"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Page my listings
       tags:
         - marketplace
   /api/marketplace/listings/{listing_id}/bids:
