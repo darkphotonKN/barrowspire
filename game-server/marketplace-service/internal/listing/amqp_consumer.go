@@ -11,6 +11,7 @@ import (
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 
 	"github.com/google/uuid"
@@ -25,12 +26,18 @@ import (
 const ListingCreatedEvent = "listing.created"
 const ItemReservedEvent = "Item.Reserved"
 
-type consumer struct {
-	publishCh       *amqp.Channel
-	createListingUC *usecase.CreateListingUC
+// listingCreator is what the ItemReserved consumer needs from the create-listing
+// usecase: turn one reservation into a listing.
+type listingCreator interface {
+	Handle(ctx context.Context, cmd *usecase.CreateListingCommand) error
 }
 
-func NewConsumer(ch *amqp.Channel, createListingUC *usecase.CreateListingUC) *consumer {
+type consumer struct {
+	publishCh       *amqp.Channel
+	createListingUC listingCreator
+}
+
+func NewConsumer(ch *amqp.Channel, createListingUC listingCreator) *consumer {
 	return &consumer{publishCh: ch, createListingUC: createListingUC}
 }
 
@@ -83,8 +90,46 @@ func (c *consumer) listingCreatedEventListener() {
 	}()
 }
 
+// itemReservedDlqQueue parks ItemReserved events that can never become a listing.
+const itemReservedDlqQueue = "marketplace.item.reserved.dlq"
+
+// setupItemReservedDLQ declares the dead-letter exchange the ItemReserved queue
+// points at, and a queue bound to it. Without these, RabbitMQ silently drops a
+// dead-lettered message. Every declaration is idempotent.
+func setupItemReservedDLQ(ch *amqp.Channel) error {
+	if err := ch.ExchangeDeclare(
+		commonconstants.MarketplaceDlxEventsExchange,
+		"topic", true, false, false, false, nil,
+	); err != nil {
+		return fmt.Errorf("declare dlx exchange: %w", err)
+	}
+
+	if _, err := ch.QueueDeclare(
+		itemReservedDlqQueue,
+		true, false, false, false, nil,
+	); err != nil {
+		return fmt.Errorf("declare dlq: %w", err)
+	}
+
+	if err := ch.QueueBind(
+		itemReservedDlqQueue,
+		commonconstants.MarpetplaceItemReservedDlq,
+		commonconstants.MarketplaceDlxEventsExchange,
+		false, nil,
+	); err != nil {
+		return fmt.Errorf("bind dlq: %w", err)
+	}
+
+	return nil
+}
+
 func (c *consumer) itemReservedEventEventListener(ctx context.Context) error {
 	queueName := fmt.Sprintf("items.%s", ItemReservedEvent)
+
+	// the dead-letter target must exist before the queue that routes to it
+	if err := setupItemReservedDLQ(c.publishCh); err != nil {
+		return fmt.Errorf("setup item reserved dlq: %w", err)
+	}
 
 	// dlq config
 	config := amqp.Table{
@@ -178,8 +223,24 @@ func (c *consumer) itemReservedConsumerLoop(ctx context.Context, msgs <-chan amq
 					msg.Ack(false)
 					continue
 				}
-				slog.Error("amqp create listing failed", "error", err)
-				msg.Nack(false, true) // retry
+				if isPermanentRefusal(err) {
+					// can never become a listing: dead-letter rather than redeliver forever
+					slog.Error("amqp create listing refused, dead-lettering",
+						"event_id", event.EventId,
+						"item_id", event.Id,
+						"error", err)
+					if nackErr := msg.Nack(false, false); nackErr != nil {
+						slog.Error("amqp nack failed", "event_id", event.EventId, "error", nackErr)
+					}
+					continue
+				}
+				slog.Error("amqp create listing failed, requeueing",
+					"event_id", event.EventId,
+					"item_id", event.Id,
+					"error", err)
+				if nackErr := msg.Nack(false, true); nackErr != nil {
+					slog.Error("amqp nack failed", "event_id", event.EventId, "error", nackErr)
+				}
 				continue
 			}
 			slog.Info("received item reserved",
@@ -189,4 +250,16 @@ func (c *consumer) itemReservedConsumerLoop(ctx context.Context, msgs <-chan amq
 			msg.Ack(false)
 		}
 	}
+}
+
+// isPermanentRefusal reports whether a create-listing failure can never succeed
+// on redelivery: the listing refused the event's terms, or the row breaks a
+// schema constraint. Anything else (transient, concurrent modification, or an
+// unclassified failure) is left to the requeue path.
+func isPermanentRefusal(err error) bool {
+	return errors.Is(err, listing.ErrInvalidUUID) ||
+		errors.Is(err, listing.ErrInvalidEndTime) ||
+		errors.Is(err, listing.ErrInvalidStartPrice) ||
+		errors.Is(err, listing.ErrInvalidListingState) ||
+		errors.Is(err, commonconstants.ErrConstraintViolation)
 }

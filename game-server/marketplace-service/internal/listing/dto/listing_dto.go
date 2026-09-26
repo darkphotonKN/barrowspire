@@ -24,6 +24,13 @@ type ListingDetails struct {
 	UpdatedAt  time.Time             `db:"updated_at"`
 }
 
+// ListingsPage is one page of a seller's listings, newest first. NextCursor is
+// empty on the last page.
+type ListingsPage struct {
+	Listings   []ListingDetails
+	NextCursor string
+}
+
 // for freeze listing step of settlement saga
 type FreezeListingDto struct {
 	ListingID uuid.UUID

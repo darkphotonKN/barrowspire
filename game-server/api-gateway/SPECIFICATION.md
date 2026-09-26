@@ -48,6 +48,12 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] Route example traffic to examples
 - [ ] Route ledger read traffic to ledger → FS-F9R7Q
 
+### Marketplace
+
+- [x] Create a listing → FS-none
+- [x] Place a bid on a listing → FS-none
+- [x] Typed marketplace surface → FS-0YXG6
+
 ### Integration patterns
 
 - [x] gRPC fan-out over Consul-discovered clients

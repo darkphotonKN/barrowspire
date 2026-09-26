@@ -42,6 +42,8 @@ func TestWrite_GRPCStatus_MapsToStatusCodeAndMediaType(t *testing.T) {
 		{"unauthenticated", status.Error(codes.Unauthenticated, "no token"), http.StatusUnauthorized, errcode.Unauthenticated},
 		{"permission denied", status.Error(codes.PermissionDenied, "not yours"), http.StatusForbidden, errcode.Forbidden},
 		{"unavailable", status.Error(codes.Unavailable, "dial tcp: connection refused"), http.StatusServiceUnavailable, errcode.ServiceUnavailable},
+		{"failed precondition", status.Error(codes.FailedPrecondition, "listing expired"), http.StatusBadRequest, errcode.FailedPrecondition},
+		{"aborted", status.Error(codes.Aborted, "aborted"), http.StatusConflict, errcode.Conflict},
 		{"unmapped code", status.Error(codes.ResourceExhausted, "quota"), http.StatusInternalServerError, errcode.Internal},
 	}
 

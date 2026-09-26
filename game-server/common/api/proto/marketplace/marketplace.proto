@@ -3,15 +3,16 @@ syntax = "proto3";
 package marketplace;
 
 import "google/protobuf/timestamp.proto";
+import "api/proto/shared/v1/pagination.proto";
 
 option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace";
 
 // Marketplace service definition for listings and bids.
 service MarketplaceService {
-  // Get a member's account balance snapshot.
+  // List one of the caller's items for sale at the given start price and end time.
   rpc ListItem(ListItemRequest) returns (ListItemResponse) {}
-  // Create a listing for an item the caller owns.
-  rpc CreateListing(CreateListingRequest) returns (CreateListingResponse) {}
+  // The caller's own listings, newest first, paged by cursor.
+  rpc ListMyListings(ListMyListingsRequest) returns (ListMyListingsResponse) {}
 
   // Place a bid on an active listing, taking the lead from the current winner.
   rpc PlaceBid(PlaceBidRequest) returns (PlaceBidResponse) {}
@@ -20,18 +21,19 @@ service MarketplaceService {
   rpc WithdrawBid(WithdrawBidRequest) returns (WithdrawBidResponse) {}
 }
 
+// A listing as its seller sees it. The optimistic-locking version is internal
+// and deliberately absent.
 message Listing {
   string id = 1;
   string seller_id = 2;
-  string buyer_id = 3;
+  optional string buyer_id = 3;   // present once sold
   string item_id = 4;
   int64 start_price = 5;
-  int64 soldPrice = 6;
+  optional int64 sold_price = 6;  // present once sold
   string status = 7;
   google.protobuf.Timestamp ends_at = 8;
-  google.protobuf.Timestamp create_at = 9;
+  google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;
-
 }
 // ListItem
 // Empty by design: the member identity is derived from the authenticated
@@ -54,23 +56,22 @@ message ListItemResponse {
 }
 
 
-// CreateListing
-// Empty by design: the member identity is derived from the authenticated
-// context server-side, never supplied by the caller.
-message CreateListingRequest {}
+// ListMyListings
+// The seller is derived from the authenticated context server-side, never
+// supplied by the caller, so there is no field for choosing another member.
+message ListMyListingsRequest {
+  string cursor = 1;  // opaque; empty for the first page
+  int32  limit  = 2;
+}
 
-message CreateListingResponse {
-  string id             = 1;
-  string member_id      = 2;
-  int64  gold           = 3;  // total ledger balance
-  int64  held_gold      = 4;  // sum of RESERVED holds
-  int64  available_gold = 5;  // gold - held_gold, spendable now
-  google.protobuf.Timestamp created_at = 6;
+message ListMyListingsResponse {
+  repeated Listing listings = 1;
+  shared.v1.PageInfo pagination = 2;  // absent on the last page
 }
 
 // PlaceBid
 // The bidder is derived from the authenticated context server-side, never
-// supplied by the caller — same rule as CreateListingRequest.
+// supplied by the caller — same rule as ListMyListingsRequest.
 message PlaceBidRequest {
   string listing_id = 1;
   int64  amount     = 2;

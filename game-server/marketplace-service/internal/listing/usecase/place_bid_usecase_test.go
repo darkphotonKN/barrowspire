@@ -41,6 +41,10 @@ func (f *fakeRepo) Save(ctx context.Context, l *listing.Listing, before listing.
 	return errors.New("Save must not be used on a locked write path")
 }
 
+func (f *fakeRepo) Update(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
+	return errors.New("Update must not be used on a bid path")
+}
+
 func (f *fakeRepo) Modify(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
 	f.modifyCall++
 	if f.failTimes >= f.modifyCall {

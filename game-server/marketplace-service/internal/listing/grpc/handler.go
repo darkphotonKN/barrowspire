@@ -7,14 +7,17 @@ import (
 	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
+	pbpagination "github.com/darkphotonKN/barrowspire-server/common/api/proto/shared/v1"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	commoncursor "github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/dto"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // INBOUND Adapter
@@ -24,7 +27,7 @@ type Handler struct {
 	pb.UnimplementedMarketplaceServiceServer
 
 	// read
-	listingReader ListingReader
+	myListingsReader MyListingsReader
 
 	// write
 	reserveItemUC   *usecase.ReserveItemUC
@@ -33,8 +36,10 @@ type Handler struct {
 	withdrawBidUC   *usecase.WithdrawBidUC
 }
 
-type ListingReader interface {
-	Execute(ctx context.Context, memberID uuid.UUID) (*dto.ListingDetails, error)
+// MyListingsReader reads one page of a seller's listings, newest first. A nil
+// cursor is the first page.
+type MyListingsReader interface {
+	Execute(ctx context.Context, sellerID uuid.UUID, c *commoncursor.Cursor, limit int) (*dto.ListingsPage, error)
 }
 
 func NewHandler(
@@ -42,13 +47,13 @@ func NewHandler(
 	createListingUC *usecase.CreateListingUC,
 	placeBidUC *usecase.PlaceBidUC,
 	withdrawBidUC *usecase.WithdrawBidUC,
-	listingReader ListingReader) *Handler {
+	myListingsReader MyListingsReader) *Handler {
 	return &Handler{
-		reserveItemUC:   reserveItemUC,
-		createListingUC: createListingUC,
-		placeBidUC:      placeBidUC,
-		withdrawBidUC:   withdrawBidUC,
-		listingReader:   listingReader,
+		reserveItemUC:    reserveItemUC,
+		createListingUC:  createListingUC,
+		placeBidUC:       placeBidUC,
+		withdrawBidUC:    withdrawBidUC,
+		myListingsReader: myListingsReader,
 	}
 }
 
@@ -158,17 +163,64 @@ func (h *Handler) ListItem(ctx context.Context, req *pb.ListItemRequest) (*pb.Li
 	return listingPB, nil
 }
 
-func (h *Handler) CreateListing(ctx context.Context, req *pb.CreateListingRequest) (*pb.CreateListingResponse, error) {
-	tempMemberID := uuid.New()
+func (h *Handler) ListMyListings(ctx context.Context, req *pb.ListMyListingsRequest) (*pb.ListMyListingsResponse, error) {
+	// the seller is always the caller; the request has no field to choose another
+	sellerID, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
 
-	_, err := h.listingReader.Execute(ctx, tempMemberID)
+	// answered here rather than through mapError, the same way this handler
+	// answers a malformed path id: it is a transport-shape failure, not a
+	// domain sentinel
+	cursor, err := commoncursor.Decode(req.GetCursor())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "malformed cursor")
+	}
+
+	page, err := h.myListingsReader.Execute(ctx, sellerID, cursor, int(req.GetLimit()))
 	if err != nil {
 		return nil, mapError(ctx, err)
 	}
 
-	// TODO: map to pb
+	listings := make([]*pb.Listing, 0, len(page.Listings))
+	for _, l := range page.Listings {
+		listings = append(listings, toProtoListing(l))
+	}
 
-	return nil, nil
+	res := &pb.ListMyListingsResponse{Listings: listings}
+	if page.NextCursor != "" {
+		res.Pagination = &pbpagination.PageInfo{NextCursor: page.NextCursor}
+	}
+
+	return res, nil
+}
+
+// toProtoListing maps the read model to the wire. The optimistic-locking
+// version is internal and never leaves the service.
+func toProtoListing(l dto.ListingDetails) *pb.Listing {
+	out := &pb.Listing{
+		Id:         l.ID.String(),
+		SellerId:   l.SellerID.String(),
+		ItemId:     l.ItemID.String(),
+		StartPrice: int64(l.StartPrice),
+		Status:     string(l.Status),
+		EndsAt:     timestamppb.New(l.EndsAt),
+		CreatedAt:  timestamppb.New(l.CreatedAt),
+		UpdatedAt:  timestamppb.New(l.UpdatedAt),
+	}
+
+	if l.BuyerID != nil {
+		buyerID := l.BuyerID.String()
+		out.BuyerId = &buyerID
+	}
+
+	if l.SoldPrice != nil {
+		soldPrice := int64(*l.SoldPrice)
+		out.SoldPrice = &soldPrice
+	}
+
+	return out
 }
 
 func mapError(ctx context.Context, err error) error {
@@ -194,15 +246,6 @@ func mapError(ctx context.Context, err error) error {
 	case errors.Is(err, commonconstants.ErrTransient):
 		code = codes.Unavailable
 		msg = "unavailable"
-	// request structurally valid, but listing state doesnt allow, or violates the
-	// system constraints like FK, null when supposed to be NOT NULL, etc
-	case errors.Is(err, commonconstants.ErrConstraintViolation):
-		msg = "failed precondition"
-		code = codes.FailedPrecondition
-
-		// expected error, normal operations, but for tracking where things went wrong
-		// if a bug is reported and we need to trace it
-		logLevel = slog.LevelInfo
 
 	// the caller sent a structurally valid request carrying a nonsensical value
 	case errors.Is(err, listing.ErrInvalidAmount) || errors.Is(err, listing.ErrBidTooLow):
@@ -212,7 +255,8 @@ func mapError(ctx context.Context, err error) error {
 
 	case errors.Is(err, listing.ErrListingNotAcceptingBids) ||
 		errors.Is(err, listing.ErrListingExpired) ||
-		errors.Is(err, listing.ErrInvalidBidTransition):
+		errors.Is(err, listing.ErrInvalidBidTransition) ||
+		errors.Is(err, commonconstants.ErrInsufficientGold):
 		code = codes.FailedPrecondition
 		msg = "failed precondition"
 		logLevel = slog.LevelInfo

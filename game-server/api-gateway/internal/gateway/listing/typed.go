@@ -7,11 +7,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// Serialized marketplace operations. The legacy gin CreateListingHandler in
-// handler.go predates the contract layer; everything added since is typed here
-// (ADR-0002 §5).
+// Serialized marketplace operations. Every marketplace route is typed here
+// (ADR-0002 §5); none remains on gin.
 
 // ErrorFunc converts a handler's returned error into one the transport renders
 // through the seam. Injected rather than imported so this package stays free of
@@ -33,7 +33,10 @@ func RegisterOperations(api huma.API, h *Handler,
 	toStatusError = errFor
 	securedOp = secured
 
+	registerCreateListing(api, h, protect)
 	registerPlaceBid(api, h, protect)
+	registerWithdrawBid(api, h, protect)
+	registerListMyListings(api, h, protect)
 }
 
 // guard wraps a typed handler so its error goes through the seam.
@@ -55,6 +58,52 @@ func withBearer(ctx context.Context, authorization string) context.Context {
 		return ctx
 	}
 	return metadata.AppendToOutgoingContext(ctx, "authorization", authorization)
+}
+
+func registerCreateListing(api huma.API, h *Handler,
+	protect func(huma.Context, func(huma.Context)),
+) {
+	type input struct {
+		// Read only to forward downstream. Hidden because the bearer scheme on
+		// the operation already documents it.
+		Authorization string `header:"Authorization" hidden:"true"`
+
+		Body CreateListingBody
+	}
+
+	type output struct{}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "create-listing",
+		Description: "Lists an item from the signed-in member's stash for auction. The listing is not " +
+			"created by this request: marketplace reserves the item, and the listing appears once the " +
+			"reservation is confirmed. The seller is taken from the token, never the request.",
+		DefaultStatus: http.StatusAccepted,
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+			http.StatusServiceUnavailable,
+		},
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodPost,
+		Path:        "/api/marketplace/listings",
+		Summary:     "List an item for auction",
+		Tags:        []string{"marketplace"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		_, err := h.client.ListItem(withBearer(ctx, in.Authorization), &pb.ListItemRequest{
+			ItemId:     in.Body.ItemID,
+			StartPrice: in.Body.StartPrice,
+			EndsAt:     timestamppb.New(in.Body.EndsAt),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return &output{}, nil
+	}))
 }
 
 func registerPlaceBid(api huma.API, h *Handler,
@@ -85,6 +134,7 @@ func registerPlaceBid(api huma.API, h *Handler,
 			http.StatusBadRequest,
 			http.StatusUnauthorized,
 			http.StatusNotFound,
+			http.StatusConflict,
 			http.StatusUnprocessableEntity,
 			http.StatusInternalServerError,
 			http.StatusServiceUnavailable,
@@ -106,5 +156,104 @@ func registerPlaceBid(api huma.API, h *Handler,
 		}
 
 		return &output{}, nil
+	}))
+}
+
+func registerWithdrawBid(api huma.API, h *Handler,
+	protect func(huma.Context, func(huma.Context)),
+) {
+	type input struct {
+		ListingID string `path:"listing_id" format:"uuid"`
+		BidID     string `path:"bid_id" format:"uuid"`
+
+		// Read only to forward downstream: marketplace checks the bid belongs to
+		// the member in this token. Hidden because the bearer scheme documents it.
+		Authorization string `header:"Authorization" hidden:"true"`
+	}
+
+	type output struct{}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "withdraw-bid",
+		Description: "Withdraws a bid the signed-in member placed. A bid " +
+			"belonging to another member is refused, never silently ignored.",
+		DefaultStatus: http.StatusNoContent,
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusNotFound,
+			http.StatusConflict,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+			http.StatusServiceUnavailable,
+		},
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodDelete,
+		Path:        "/api/marketplace/listings/{listing_id}/bids/{bid_id}",
+		Summary:     "Withdraw a bid",
+		Tags:        []string{"marketplace"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		_, err := h.client.WithdrawBid(withBearer(ctx, in.Authorization), &pb.WithdrawBidRequest{
+			ListingId: in.ListingID,
+			BidId:     in.BidID,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return &output{}, nil
+	}))
+}
+
+func registerListMyListings(api huma.API, h *Handler,
+	protect func(huma.Context, func(huma.Context)),
+) {
+	type input struct {
+		// Opaque to the gateway: only marketplace can tell a malformed one, and
+		// its refusal comes back through the seam.
+		Cursor string `query:"cursor" doc:"Opaque position from a previous page's nextCursor. Do not construct."`
+		Limit  int    `query:"limit" default:"50" minimum:"1" maximum:"100"`
+
+		// Read only to forward downstream: marketplace takes the seller from this
+		// token. Hidden because the bearer scheme documents it.
+		Authorization string `header:"Authorization" hidden:"true"`
+	}
+
+	type output struct{ Body ListingPage }
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-my-listings",
+		Description: "Pages the signed-in member's own listings, newest first. Every listing's sellerId is the caller: the seller is " +
+			"taken from the token; there is no parameter for reading another member's listings.",
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+			http.StatusServiceUnavailable,
+		},
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodGet,
+		Path:        "/api/marketplace/listings/mine",
+		Summary:     "Page my listings",
+		Tags:        []string{"marketplace"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		res, err := h.client.ListMyListings(withBearer(ctx, in.Authorization), &pb.ListMyListingsRequest{
+			Cursor: in.Cursor,
+			Limit:  int32(in.Limit),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		page, err := listingPageFromProto(res)
+		if err != nil {
+			return nil, err
+		}
+
+		return &output{Body: page}, nil
 	}))
 }

@@ -214,7 +214,6 @@ func mapError(ctx context.Context, err error) error {
 	logLevel := slog.LevelWarn
 
 	switch {
-
 	// NOTE:
 	// withRetry helper returns ErrMaxRetries, ErrConcurrentModification is internal
 	// but leaving ErrConcurrentModification here for defense
