@@ -81,7 +81,7 @@ func insertListing(t *testing.T, db *sqlx.DB, sellerID uuid.UUID, createdAt time
 	id := uuid.New()
 	_, err := db.Exec(`
 		INSERT INTO listings (id, seller_id, item_id, start_price, status, ends_at, created_at, updated_at)
-		VALUES ($1, $2, $3, 100, 'LISTED', $4, $5, $5)`,
+		VALUES ($1, $2, $3, 100, 'ACTIVE', $4, $5, $5)`,
 		id, sellerID, uuid.New(), createdAt.Add(24*time.Hour), createdAt)
 	require.NoError(t, err)
 

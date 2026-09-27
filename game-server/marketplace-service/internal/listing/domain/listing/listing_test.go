@@ -135,9 +135,8 @@ func TestSingleWinnerInvariant(t *testing.T) {
 	assert.Equal(t, BidStatusOutbid, bids[1].Status)
 }
 
-// TestPlaceBidOnNonActiveListing pins that bidding is only open between publish
-// and settlement. A draft listing is not public yet, and a withdrawn or sold
-// one is closed for good.
+// TestPlaceBidOnNonActiveListing pins that bidding closes for good once the
+// listing leaves ACTIVE: a withdrawn or sold one never reopens.
 func TestPlaceBidOnNonActiveListing(t *testing.T) {
 	now := time.Now()
 
@@ -145,12 +144,6 @@ func TestPlaceBidOnNonActiveListing(t *testing.T) {
 		name  string
 		setup func(t *testing.T) *Listing
 	}{
-		{
-			name: "draft listing is not public yet",
-			setup: func(t *testing.T) *Listing {
-				return draftListing(t, 100)
-			},
-		},
 		{
 			name: "withdrawn listing is closed",
 			setup: func(t *testing.T) *Listing {
@@ -347,8 +340,9 @@ func TestSnapshotDoesNotShareSettlementState(t *testing.T) {
 
 // --- helpers ---
 
-// draftListing builds a listing in its freshly created state, before publish.
-func draftListing(t *testing.T, startPrice int) *Listing {
+// activeListing builds a listing that is open for bidding — which is simply a
+// freshly created one: NewListing is born ACTIVE.
+func activeListing(t *testing.T, startPrice int) *Listing {
 	t.Helper()
 
 	now := time.Now()
@@ -374,17 +368,6 @@ func leadingBid(t *testing.T, l *Listing, member uuid.UUID, amount int, now time
 	return bidID
 }
 
-// activeListing builds a listing that is open for bidding. NewListing always
-// starts at DRAFT, so it is published here — the same path CreateListing takes.
-func activeListing(t *testing.T, startPrice int) *Listing {
-	t.Helper()
-
-	l := draftListing(t, startPrice)
-	require.NoError(t, l.Publish(time.Now()))
-
-	return l
-}
-
 // soldListing builds a settled listing. MarkSold refuses to run before endsAt,
 // so the clock is pushed past the end of the auction rather than shortening it
 // at construction — NewListing rejects an endsAt that is not in the future.
@@ -406,7 +389,7 @@ func reconstituteParams(listingID uuid.UUID, now time.Time, bids []*BidReconstit
 		SellerID:   uuid.New(),
 		ItemID:     uuid.New(),
 		StartPrice: 100,
-		Status:     StatusListed,
+		Status:     StatusActive,
 		EndsAt:     now.Add(time.Hour),
 		CreatedAt:  now,
 		UpdatedAt:  now,

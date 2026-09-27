@@ -93,7 +93,6 @@ func activeListing(t *testing.T, startPrice int) *listing.Listing {
 	now := time.Now()
 	l, err := listing.NewListing(uuid.New(), uuid.New(), startPrice, now, now.Add(time.Hour))
 	require.NoError(t, err)
-	require.NoError(t, l.Publish(now))
 
 	return l
 }

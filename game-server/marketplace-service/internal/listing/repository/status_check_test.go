@@ -27,7 +27,7 @@ func TestListingStatusConstantsAreAdmittedByTheCheckConstraint(t *testing.T) {
 	// every status the domain can assign, including the ones only settlement
 	// reaches
 	for _, s := range []listing.ListingStatus{
-		listing.StatusListed,
+		listing.StatusActive,
 		listing.StatusCancelled,
 		listing.StatusPendingSettlement,
 		listing.StatusExpired,

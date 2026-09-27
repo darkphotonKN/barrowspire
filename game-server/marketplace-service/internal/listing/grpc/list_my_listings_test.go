@@ -113,7 +113,7 @@ func TestListMyListingsMapsEveryListingField(t *testing.T) {
 		SellerID:   caller,
 		ItemID:     uuid.New(),
 		StartPrice: 100,
-		Status:     listing.StatusListed,
+		Status:     listing.StatusActive,
 		EndsAt:     created.Add(48 * time.Hour),
 		CreatedAt:  created.Add(-time.Hour),
 		UpdatedAt:  created.Add(-time.Hour),

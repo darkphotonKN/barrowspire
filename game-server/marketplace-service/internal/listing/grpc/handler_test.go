@@ -99,7 +99,7 @@ func activeListing(t *testing.T, bids ...*listing.BidReconstituteParams) *listin
 		SellerID:   uuid.New(),
 		ItemID:     uuid.New(),
 		StartPrice: 100,
-		Status:     listing.StatusListed,
+		Status:     listing.StatusActive,
 		EndsAt:     now.Add(time.Hour),
 		CreatedAt:  now,
 		UpdatedAt:  now,

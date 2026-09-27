@@ -22,7 +22,7 @@ func (q *HasActiveListingQuery) HasActiveListing(ctx context.Context, itemID uui
 	query := `
 	SELECT EXISTS(
 		SELECT 1 FROM listings
-		WHERE item_id = $1 AND status IN ('ACTIVE', 'DRAFT')
+		WHERE item_id = $1 AND status = 'ACTIVE'
 	)
 `
 	var exists bool

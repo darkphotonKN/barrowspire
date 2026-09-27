@@ -46,12 +46,6 @@ func (uc *CreateListingUC) Handle(ctx context.Context, cmd *CreateListingCommand
 		return fmt.Errorf("create listing usecase birthing new listing : %w", err)
 	}
 
-	err = listingDomain.Publish(cmd.Now)
-
-	if err != nil {
-		return fmt.Errorf("create listing usecase publishing listing: %w", err)
-	}
-
 	err = uc.repo.Insert(ctx, listingDomain)
 
 	if err != nil {

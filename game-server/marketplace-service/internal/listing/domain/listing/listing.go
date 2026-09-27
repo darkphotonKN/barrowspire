@@ -9,8 +9,10 @@ import (
 type ListingStatus string
 
 const (
-	StatusDraft             ListingStatus = "DRAFT"
-	StatusListed            ListingStatus = "LISTED"
+	// StatusActive is where a listing is born: on sale and accepting bids. The
+	// item side calls its own equivalent LISTED (items-service owns that value),
+	// so the listing keeps ACTIVE to stay unambiguous — ADR-0016, ADR-0017.
+	StatusActive            ListingStatus = "ACTIVE"
 	StatusCancelled         ListingStatus = "CANCELLED"
 	StatusPendingSettlement ListingStatus = "PENDING_SETTLEMENT"
 	StatusExpired           ListingStatus = "EXPIRED"
@@ -78,7 +80,7 @@ func NewListing(sellerID, itemID uuid.UUID, startPrice int, now, endsAt time.Tim
 		itemID:     itemID,
 		startPrice: startPrice,
 		soldPrice:  nil,
-		status:     StatusDraft,
+		status:     StatusActive,
 		endsAt:     endsAt,
 		createdAt:  now,
 		updatedAt:  now,
@@ -127,18 +129,8 @@ func (l *Listing) Snapshot() ListingSnapshot {
 	}
 }
 
-func (l *Listing) Publish(now time.Time) error {
-	if l.status != StatusDraft {
-		return ErrInvalidListingState
-	}
-	l.status = StatusListed
-	l.updatedAt = now
-
-	return nil
-}
-
 func (l *Listing) Cancel(now time.Time) error {
-	if l.status != StatusListed {
+	if l.status != StatusActive {
 		return ErrInvalidListingState
 	}
 	l.status = StatusCancelled
@@ -148,7 +140,7 @@ func (l *Listing) Cancel(now time.Time) error {
 }
 
 func (l *Listing) MarkSold(now time.Time, buyerID uuid.UUID, soldPrice int) error {
-	if l.status != StatusListed {
+	if l.status != StatusActive {
 		return ErrInvalidListingState
 	}
 	if buyerID == uuid.Nil {
@@ -186,7 +178,7 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 		return nil
 	}
 
-	if l.status != StatusListed {
+	if l.status != StatusActive {
 		return ErrListingNotAcceptingBids
 	}
 
@@ -265,7 +257,7 @@ func (l *Listing) ConfirmBid(bidID uuid.UUID, now time.Time) error {
 
 	// Settlement fixes the winner when it freezes the listing; a late
 	// confirmation must not swap the leader out from under it.
-	if l.status != StatusListed {
+	if l.status != StatusActive {
 		return ErrListingNotAcceptingBids
 	}
 
@@ -348,7 +340,7 @@ func (l *Listing) SetWinningBid(bidID uuid.UUID, now time.Time) error {
 }
 
 func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time) error {
-	if l.status != StatusListed {
+	if l.status != StatusActive {
 		return ErrListingNotAcceptingBids
 	}
 
@@ -400,7 +392,7 @@ func (l *Listing) AcceptsBidAt(now time.Time) error {
 // rather than reading the status themselves, so how "no longer open" is
 // represented stays a detail of this function.
 func (l *Listing) acceptingBidChanges() error {
-	if l.status != StatusListed {
+	if l.status != StatusActive {
 		return ErrListingNotAcceptingBids
 	}
 

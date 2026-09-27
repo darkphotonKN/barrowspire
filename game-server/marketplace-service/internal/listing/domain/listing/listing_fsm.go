@@ -3,7 +3,7 @@ package listing
 import "time"
 
 var allowedTransitions = map[ListingStatus]map[ListingStatus]struct{}{
-	StatusListed: {
+	StatusActive: {
 		StatusCancelled:         struct{}{},
 		StatusPendingSettlement: struct{}{},
 		StatusExpired:           struct{}{},
