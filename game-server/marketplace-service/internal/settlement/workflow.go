@@ -1,10 +1,7 @@
 package settlement
 
 import (
-	"time"
-
 	"github.com/google/uuid"
-	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 
@@ -29,17 +26,7 @@ type Input struct {
 
 // For FS NXP1W the Settlement Saga
 func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListingOutput, error) {
-	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		TaskQueue:              bstemporal.QueueMarketplace.String(),
-		StartToCloseTimeout:    30 * time.Second,
-		ScheduleToCloseTimeout: 30 * time.Minute,
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    time.Second,
-			BackoffCoefficient: 2.0,
-			MaximumInterval:    time.Minute,
-			MaximumAttempts:    0,
-		},
-	})
+	ctx = workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueMarketplace))
 
 	var frozen marketplaceactivity.FreezeListingOutput
 	err := workflow.ExecuteActivity(ctx,
