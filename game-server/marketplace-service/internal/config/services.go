@@ -58,8 +58,8 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 
 	freezeListingUC := usecase.NewFreezeListingUC(listingRepo)
 	setWinningBidUC := usecase.NewSetWinningBidUC(listingRepo)
-	setWinBidFailedUC := usecase.NewSetWinBidFailedUC(listingRepo)
-	activities := listingactivity.NewActivities(freezeListingUC, setWinningBidUC, setWinBidFailedUC)
+	loseAllBidsUC := usecase.NewLoseAllBidsUC(listingRepo)
+	activities := listingactivity.NewActivities(freezeListingUC, setWinningBidUC, loseAllBidsUC)
 
 	return &Services{
 		ListingHandler:          listingHandler,

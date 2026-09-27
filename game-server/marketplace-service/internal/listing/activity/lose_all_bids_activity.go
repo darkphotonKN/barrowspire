@@ -5,26 +5,22 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
-	"github.com/google/uuid"
 )
 
-type SetWinBidFailedInput struct {
-	ListingID uuid.UUID
-	BuyerID   uuid.UUID
-	SoldPrice int
-	Now       time.Time
-}
-
-func (a *Activities) SetWinFailedBid(ctx context.Context, input SetWinBidFailedInput) error {
-	err := a.setWinBidFailed.Handle(ctx, usecase.SetWinBidFailedCommand{
-		ID:        input.ListingID,
-		BuyerID:   input.BuyerID,
-		SoldPrice: input.SoldPrice,
-		Now:       input.Now,
+// LoseAllBids is marketplace's share of the pre-pivot rollback (FS-NXP1W §Req 12).
+//
+// Deliberately unclassified, unlike the forward steps: a rollback action is retried
+// without a cap and has nothing to fall back to, so there is no such thing as a
+// non-retryable failure here. Every failure is returned plain and tried again.
+func (a *Activities) LoseAllBids(ctx context.Context, in marketplaceactivity.LoseAllBidsInput) error {
+	err := a.loseAllBids.Handle(ctx, usecase.LoseAllBidsCommand{
+		ListingID: in.ListingID,
+		Now:       time.Now(),
 	})
 	if err != nil {
-		return fmt.Errorf("set win bid activity listing id %v: %w", input.ListingID, err)
+		return fmt.Errorf("lose all bids activity listing id %v: %w", in.ListingID, err)
 	}
 
 	return nil

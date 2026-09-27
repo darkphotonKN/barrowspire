@@ -9,52 +9,37 @@ import (
 	"github.com/google/uuid"
 )
 
-// Usecase
-// Coordinator of the domain, incoming requests, and outbound calls like
-// repository and external services.
-// Recommended to keep our structure with thin slices of functionality in each usecase
-
-type SetWinBidFailedUC struct {
+// LoseAllBidsUC is marketplace's share of the pre-pivot rollback (FS-NXP1W §Req 12):
+// every bid still in contention on the listing becomes LOST, including one step 1a
+// already moved to WON.
+//
+// It runs under Modify's row lock, so the bids are read and rewritten with no
+// writer able to move one in between. No withRetry: a rollback action is retried
+// without a cap by the workflow (§Req 12, 36), and nesting a second loop would hide
+// how many attempts it really took.
+type LoseAllBidsUC struct {
 	repo listing.Repository
 }
 
-func NewSetWinBidFailedUC(repo listing.Repository) *SetWinBidFailedUC {
-	return &SetWinBidFailedUC{
+func NewLoseAllBidsUC(repo listing.Repository) *LoseAllBidsUC {
+	return &LoseAllBidsUC{
 		repo: repo,
 	}
 }
 
 // NOTE: named {Action}{Resource}Command because its an INBOUND application WRITE intent
-type SetWinBidFailedCommand struct {
-	ID        uuid.UUID
-	BuyerID   uuid.UUID
-	SoldPrice int
+type LoseAllBidsCommand struct {
+	ListingID uuid.UUID
 	Now       time.Time
 }
 
-func (uc *SetWinBidFailedUC) Handle(ctx context.Context, cmd SetWinBidFailedCommand) error {
-	return withRetry(ctx, func() error {
-		listingDomain, err := uc.repo.FindByID(ctx, cmd.ID)
-
-		if err != nil {
-			return fmt.Errorf("SetWinBid listing usecase handle findByID listing id %v : %w", cmd.ID, err)
-		}
-
-		before := listingDomain.Snapshot()
-
-		err = listingDomain.MarkSold(cmd.Now, cmd.BuyerID, cmd.SoldPrice)
-
-		if err != nil {
-			return fmt.Errorf("SetWinBid listing usecase update listing: %w", err)
-		}
-
-		err = uc.repo.Save(ctx, listingDomain, before)
-
-		if err != nil {
-			// propgate error with usecase context
-			return fmt.Errorf("writing repo usecase inserting new listing : %w", err)
-		}
-
-		return nil
+func (uc *LoseAllBidsUC) Handle(ctx context.Context, cmd LoseAllBidsCommand) error {
+	err := uc.repo.Modify(ctx, cmd.ListingID, func(l *listing.Listing) error {
+		return l.LoseAllBids(cmd.Now)
 	})
+	if err != nil {
+		return fmt.Errorf("lose all bids usecase handle listing id %v : %w", cmd.ListingID, err)
+	}
+
+	return nil
 }

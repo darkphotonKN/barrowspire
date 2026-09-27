@@ -327,6 +327,41 @@ func (l *Listing) SetWinningBid(bidID uuid.UUID, now time.Time) error {
 	return nil
 }
 
+// LoseAllBids is marketplace's share of the pre-pivot rollback (FS-NXP1W §Req 12):
+// every bid still in contention becomes LOST, including one step 1a already moved
+// to WON.
+//
+// Bids that already reached a terminal status of their own are left alone —
+// CANCELLED means the bidder withdrew, FAILED means their gold was never held, and
+// rewriting either as LOST would claim they lost a contest they had left. Already
+// LOST is skipped too, which is what makes this idempotent: the rollback is retried
+// without a cap (§Req 12), so it has to survive re-running.
+func (l *Listing) LoseAllBids(now time.Time) error {
+	changed := false
+
+	for _, bid := range l.bids {
+		if bid.status == BidStatusLost {
+			continue
+		}
+
+		if !canBidTransition(bid.status, BidStatusLost) {
+			continue
+		}
+
+		if err := bid.transitionTo(BidStatusLost, now); err != nil {
+			return err
+		}
+
+		changed = true
+	}
+
+	if changed {
+		l.updatedAt = now
+	}
+
+	return nil
+}
+
 func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time) error {
 	if err := l.acceptingBidChanges(); err != nil {
 		return err
