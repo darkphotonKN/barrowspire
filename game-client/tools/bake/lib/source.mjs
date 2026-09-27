@@ -24,6 +24,14 @@ function transpile(relPath, rewrite = (s) => s) {
 /** BARROW as a browser-loadable ES module. */
 export const themeModule = () => transpile("src/utils/theme.ts");
 
+/** Imports BARROW in Node (the review contact sheet's colours). */
+export async function loadTheme() {
+  const dir = join(CLIENT_ROOT, "node_modules", ".cache", "barrowspire-bake");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "theme.mjs"), themeModule());
+  return import(pathToFileURL(join(dir, "theme.mjs")).href);
+}
+
 /** Imports the client's manifest validator. */
 export async function loadManifestValidator() {
   const dir = join(CLIENT_ROOT, "node_modules", ".cache", "barrowspire-bake");

@@ -1,13 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { validateManifest } from "./manifest";
+import { DIRECTION_ORDER, directionIndex, validateManifest } from "./manifest";
 
 /** A minimal manifest that satisfies every rule. Each case below breaks one. */
 function fixture() {
   return {
     version: 1,
     tile: { width: 64, height: 32 },
+    facings: ["e", "se", "s", "sw", "w", "nw", "n", "ne"],
     atlases: {
       "props-0": {
         image: "props-0.png",
@@ -165,9 +166,43 @@ describe("validateManifest", () => {
     }, /version/);
   });
 
+  it("rejects a manifest that does not record its direction order", () => {
+    rejects((m) => {
+      delete (m as Partial<Fixture>).facings;
+    }, /facings/);
+  });
+
+  it("rejects a direction order other than the one the client reads", () => {
+    rejects((m) => {
+      m.facings = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
+    }, /facings/);
+  });
+
   it("rejects something that is not a manifest at all", () => {
     const result = validateManifest("<html>404</html>");
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("direction order", () => {
+  it("is the world compass, clockwise from east, as Facing8 names it", () => {
+    expect(DIRECTION_ORDER).toEqual([
+      "e",
+      "se",
+      "s",
+      "sw",
+      "w",
+      "nw",
+      "n",
+      "ne",
+    ]);
+  });
+
+  it("maps a facing to its frame list index", () => {
+    expect(directionIndex("e")).toBe(0);
+    expect(directionIndex("se")).toBe(1);
+    expect(directionIndex("n")).toBe(6);
+    expect(directionIndex("ne")).toBe(7);
   });
 });
 
@@ -211,5 +246,55 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       "wall_back_window_y",
     ])
       expect(baked.sheets[name].light).toBeDefined();
+  });
+
+  it("records the direction order its 8-way sheets were baked in", () => {
+    expect(baked.facings).toEqual([...DIRECTION_ORDER]);
+  });
+
+  describe("characters and creatures (FS-2325V §E)", () => {
+    const CAST = [
+      "char_knight_base",
+      "char_archer_base",
+      "char_wizard_base",
+      "creature_ghoul_base",
+      "creature_troll_base",
+    ];
+
+    it.each(CAST)("%s has 8-way idle, walk, attack and death", (name) => {
+      const sheet = baked.sheets[name];
+      expect(sheet, name).toBeDefined();
+      expect(sheet.directions).toBe(8);
+      expect(Object.keys(sheet.animations)).toEqual([
+        "idle",
+        "walk",
+        "attack",
+        "death",
+      ]);
+      for (const anim of Object.values(sheet.animations) as {
+        frames: unknown[][];
+      }[]) {
+        expect(anim.frames).toHaveLength(8);
+        expect(anim.frames[0].length).toBeGreaterThan(1);
+      }
+    });
+
+    it.each(CAST)(
+      "%s is authored in code, under the project's licence",
+      (name) => {
+        const sheet = baked.sheets[name];
+        expect(sheet.source).toMatch(/^authored: tools\/bake\/page\//);
+        expect(sheet.licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it("loops idle and walk, and plays attack and death once", () => {
+      for (const name of CAST) {
+        const a = baked.sheets[name].animations;
+        expect([a.idle.loop, a.walk.loop, a.attack.loop, a.death.loop]).toEqual(
+          [true, true, false, false],
+        );
+      }
+    });
   });
 });

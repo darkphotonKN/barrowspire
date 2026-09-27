@@ -41,4 +41,21 @@ describe("packAtlases", () => {
       expect(p.height).toBeLessThanOrEqual(MAX_SIZE);
     }
   });
+
+  it("widens a page for a sheet too tall to fit at the default width, rather than fail", () => {
+    // a character: 224 frames of 222x197 is 25 rows at 2048 wide, taller than 4096
+    const sheets = [sheet("troll", "creatures", 222, 197, 224), sheet("ghoul", "creatures", 128, 129, 224)];
+    const pages = packAtlases(sheets);
+    for (const p of pages) {
+      expect(p.width).toBeLessThanOrEqual(MAX_SIZE);
+      expect(p.height).toBeLessThanOrEqual(MAX_SIZE);
+    }
+    const troll = pages.flatMap((p) => p.placements.troll ?? []);
+    expect(troll).toHaveLength(224);
+    const page = pages.find((p) => p.placements.troll);
+    for (const o of troll) {
+      expect(o.x + 222).toBeLessThanOrEqual(page.width);
+      expect(o.y + 197).toBeLessThanOrEqual(page.height);
+    }
+  });
 });

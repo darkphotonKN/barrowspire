@@ -5,6 +5,7 @@ import { PLACEHOLDER_TEXTURE } from "./library";
 const manifest = {
   version: 1,
   tile: { width: 64, height: 32 },
+  facings: ["e", "se", "s", "sw", "w", "nw", "n", "ne"],
   atlases: {
     "props-0": {
       image: "props-0.png",

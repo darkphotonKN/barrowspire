@@ -38,7 +38,8 @@ const paeth = (a, b, c) => {
 };
 
 /** Filters every row with each of the five PNG filters and keeps the smallest by sum |byte|. */
-function filterRows(rgba, width, height) {
+function filterRows(rgba, width, height, fast) {
+  if (fast) return upRows(rgba, width, height);
   const stride = width * 4;
   const out = Buffer.alloc((stride + 1) * height);
   const cand = Array.from({ length: 5 }, () => Buffer.alloc(stride));
@@ -71,7 +72,21 @@ function filterRows(rgba, width, height) {
   return out;
 }
 
-export function encodePng(width, height, rgba) {
+/** Every row with the Up filter: much faster, for large review images that ship nowhere. */
+function upRows(rgba, width, height) {
+  const stride = width * 4;
+  const out = Buffer.alloc((stride + 1) * height);
+  for (let y = 0; y < height; y++) {
+    const o = y * (stride + 1);
+    out[o] = 2;
+    const r = y * stride;
+    for (let i = 0; i < stride; i++) out[o + 1 + i] = (rgba[r + i] - (y > 0 ? rgba[r - stride + i] : 0)) & 0xff;
+  }
+  return out;
+}
+
+/** `fast` (review images) trades size for speed; baked art always uses the default. */
+export function encodePng(width, height, rgba, { fast = false } = {}) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
@@ -80,7 +95,7 @@ export function encodePng(width, height, rgba) {
   ihdr[10] = 0; // compression
   ihdr[11] = 0; // filter
   ihdr[12] = 0; // interlace
-  const idat = deflateSync(filterRows(rgba, width, height), { level: 9, memLevel: 9 });
+  const idat = deflateSync(filterRows(rgba, width, height, fast), fast ? { level: 6 } : { level: 9, memLevel: 9 });
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk("IHDR", ihdr),

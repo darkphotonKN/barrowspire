@@ -1,6 +1,7 @@
 // Atlas packing. Each sheet is kept together as one block (a grid of its frames), and blocks
 // are shelf-packed per group, tallest first, ties by name, so the layout depends only on the
-// catalogue, never on timing. A group that overflows MAX_SIZE spills onto a second page.
+// catalogue, never on timing. A group that overflows MAX_SIZE spills onto a second page. A
+// block too tall for a page at PAGE_WIDTH is laid out wider instead.
 
 export const MAX_SIZE = 4096;
 const PAGE_WIDTH = 2048;
@@ -30,8 +31,13 @@ function packGroup(group, sheets) {
     if (s.frameWidth + 2 * PAD > MAX_SIZE || s.frameHeight + 2 * PAD > MAX_SIZE)
       throw new Error(`pack: ${s.name} frame ${s.frameWidth}x${s.frameHeight} exceeds ${MAX_SIZE}`);
     const width = Math.max(PAGE_WIDTH, s.frameWidth + 2 * PAD);
-    const cols = Math.max(1, Math.min(s.frameCount, Math.floor((width - PAD) / sx)));
+    let cols = Math.max(1, Math.min(s.frameCount, Math.floor((width - PAD) / sx)));
+    // a sheet too tall for a page at the default width (a character's 200-odd frames) widens,
+    // up to MAX_SIZE, rather than fail
+    const maxRows = Math.floor((MAX_SIZE - PAD) / sy);
+    if (Math.ceil(s.frameCount / cols) > maxRows) cols = Math.min(Math.floor((MAX_SIZE - PAD) / sx), Math.ceil(s.frameCount / maxRows));
     const rows = Math.ceil(s.frameCount / cols);
+    if (rows * sy + PAD > MAX_SIZE) throw new Error(`pack: ${s.name} (${s.frameCount} frames) cannot fit one ${MAX_SIZE}² page`);
     return { sheet: s, cols, w: cols * sx, h: rows * sy, sx, sy };
   });
   blocks.sort((a, b) => b.h - a.h || (a.sheet.name < b.sheet.name ? -1 : 1));

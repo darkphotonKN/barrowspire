@@ -25,7 +25,10 @@ export interface ArtLogger {
 export interface FrameQuery {
   /** Animation, state or variant set. Defaults to the sheet's first. */
   animation?: string;
-  /** 0 for single-direction sheets; 0..7 clockwise from screen-east for 8-way sheets. */
+  /**
+   * 0 for single-direction sheets; for 8-way sheets the index in `DIRECTION_ORDER`
+   * (`directionIndex(facing)`, manifest.ts).
+   */
   direction?: number;
   /** Frame within the animation. Wraps, so a hash can pick a variant directly. */
   index?: number;

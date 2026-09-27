@@ -24,6 +24,7 @@ import { brazier, lampPost, table, chair, barrel, BRAZIER_FLAME, LAMP_GLASS } fr
 import { door, escapeDoor, lever, chest } from "./models/interactables.js";
 import { ICONS } from "./models/items.js";
 import { groundTile, transitionTile } from "./ground.js";
+import { CAST } from "./characters/cast.js";
 
 export const LICENCE = "Barrowspire original work (procedural, no third-party assets)";
 const src = (file, fn) => `procedural: tools/bake/page/${file}#${fn}`;
@@ -226,10 +227,25 @@ function iconSheets() {
   }));
 }
 
+/**
+ * Characters and creatures (FS-2325V §E), authored in code on the shared rig (ADR-0021): each is
+ * one 8-direction sheet with idle, walk, attack and death (characters/clips.js ANIMATIONS).
+ */
+function characterSheets() {
+  return CAST.map((c) => ({
+    name: c.sheet,
+    group: c.group,
+    kind: "character",
+    build: c.build,
+    source: `authored: tools/bake/page/characters/cast.js#${c.fn}`,
+  }));
+}
+
 export const CATALOGUE = [
   ...groundSheets(),
   ...natureSheets(),
   ...architectureSheets(),
   ...propSheets(),
   ...iconSheets(),
+  ...characterSheets(),
 ].map((s) => ({ licence: LICENCE, ...s }));

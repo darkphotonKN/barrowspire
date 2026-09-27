@@ -2,8 +2,13 @@
 // The build-time bake (ADR-0020 §5, FS-2325V §B): renders the 3D models in tools/bake/page/
 // through the isometric camera and writes public/art/<group>-<n>.png atlases + manifest.json.
 //
-//   npm run bake              bake and write public/art/
+//   npm run bake              bake and write public/art/, plus the character review contact
+//                             sheets in tools/bake/review/ (gitignored; lib/contact.mjs)
 //   npm run bake -- --check   bake, write nothing, exit 1 if the output would change
+//
+// Characters and creatures (FS-2325V §E, ADR-0021) are authored in page/characters/: one
+// skinned rig, hand-keyed clips, baked in the 8 facings of page/facing.js, whose order the
+// manifest records as `facings`.
 //
 // Determinism. A re-bake with unchanged inputs must produce no git diff (FS-2325V §B.3):
 //  - all randomness is seeded (page/noise.js); nothing calls Math.random();
@@ -25,7 +30,8 @@ import { chromium } from "playwright-core";
 import { encodePng } from "./lib/png.mjs";
 import { packAtlases } from "./lib/pack.mjs";
 import { startServer } from "./lib/server.mjs";
-import { CLIENT_ROOT, loadManifestValidator } from "./lib/source.mjs";
+import { CLIENT_ROOT, loadManifestValidator, loadTheme } from "./lib/source.mjs";
+import { labelTexts, writeReview } from "./lib/contact.mjs";
 
 const OUT_DIR = join(CLIENT_ROOT, "public", "art");
 const MANIFEST = join(OUT_DIR, "manifest.json");
@@ -83,7 +89,13 @@ async function bakeAll() {
       sheets.push(sheet);
     }
     if (errors.length) throw new Error(`bake: page errors\n  ${errors.join("\n  ")}`);
-    return { tile: init.tile, sheets };
+    // review labels for the contact sheet, rendered while the page is up
+    const cast = sheets.filter((x) => x.directions === 8);
+    const labels = new Map();
+    if (!CHECK && cast.length)
+      for (const l of await page.evaluate((t) => window.bakeLabels(t), labelTexts(cast, init.facings)))
+        labels.set(l.text, { w: l.w, h: l.h, px: Buffer.from(l.rgba, "base64") });
+    return { tile: init.tile, facings: init.facings, sheets, labels };
   } finally {
     await browser.close();
     server.close();
@@ -91,8 +103,9 @@ async function bakeAll() {
 }
 
 /** Packs frames into atlas pages and builds the manifest and each page's RGBA. */
-function assemble({ tile, sheets }) {
-  const frameList = (s) => Object.values(s.animations).flatMap((a) => a.frames[0]);
+function assemble({ tile, facings, sheets }) {
+  // Every frame of a sheet in manifest order: animation, then direction, then frame.
+  const frameList = (s) => Object.values(s.animations).flatMap((a) => a.frames.flat());
   const pages = packAtlases(
     sheets.map((s) => ({ name: s.name, group: s.group, frameWidth: s.frameWidth, frameHeight: s.frameHeight, frameCount: frameList(s).length })),
   );
@@ -126,7 +139,7 @@ function assemble({ tile, sheets }) {
     let k = 0;
     const animations = {};
     for (const [anim, a] of Object.entries(s.animations))
-      animations[anim] = { fps: a.fps, loop: a.loop, frames: [a.frames[0].map(() => spots[k++])] };
+      animations[anim] = { fps: a.fps, loop: a.loop, frames: a.frames.map((dir) => dir.map(() => spots[k++])) };
     manifestSheets[s.name] = {
       atlas: key,
       frameWidth: s.frameWidth,
@@ -139,13 +152,14 @@ function assemble({ tile, sheets }) {
       licence: s.licence,
     };
   }
-  return { manifest: { version: 1, tile, atlases, sheets: manifestSheets }, images };
+  return { manifest: { version: 1, tile, facings, atlases, sheets: manifestSheets }, images };
 }
 
 async function main() {
   const { validateManifest } = await loadManifestValidator();
   const t0 = Date.now();
-  const { manifest, images } = assemble(await bakeAll());
+  const baked = await bakeAll();
+  const { manifest, images } = assemble(baked);
 
   const result = validateManifest(manifest);
   if (!result.ok) throw new Error(`bake: the manifest fails the client's validator\n  ${result.errors.join("\n  ")}`);
@@ -178,6 +192,14 @@ async function main() {
       `public/art ${(bytes / 1024).toFixed(0)} KiB · ${((Date.now() - t0) / 1000).toFixed(1)}s`,
   );
   for (const a of Object.values(manifest.atlases)) console.log(`  ${a.image.padEnd(20)} ${a.width}×${a.height}  ${a.sha256.slice(0, 12)}`);
+
+  if (!CHECK) {
+    const cast = baked.sheets.filter((x) => x.directions === 8);
+    if (cast.length) {
+      const files = writeReview({ sheets: cast, facings: manifest.facings, labels: baked.labels, manifest, theme: (await loadTheme()).BARROW });
+      console.log(`bake: review contact sheets (not committed):\n  ${files.join("\n  ")}`);
+    }
+  }
 
   const drift = [...changed, ...stale.map((f) => `${f} (stale)`), ...(manifestChanged ? ["manifest.json"] : [])];
   if (CHECK && drift.length) {

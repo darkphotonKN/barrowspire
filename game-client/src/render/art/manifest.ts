@@ -12,17 +12,43 @@
  *   sheet has the sheet's `frameWidth` x `frameHeight`, whatever animation it belongs to.
  * - A state (door locked/open) or a variant (grass a/b/c) is an animation of one frame per
  *   variant at 0 fps; a moving animation (walk) has several frames at its fps.
- * - Directions, when 8, run clockwise on screen from east: E, SE, S, SW, W, NW, N, NE.
+ * - Directions, when 8, follow {@link DIRECTION_ORDER}, which the manifest also records as
+ *   `facings` so the file says what its frame lists mean. The names are the world compass of
+ *   `Facing8` (`src/render/iso/facing.ts`): `n` is world -y, `e` is world +x, and `se` faces the
+ *   viewer. Use {@link directionIndex} to turn a facing into a frame-list index.
  * - A light's `offset` is in screen px from the anchor, `radius` in screen px, and `color` names
  *   a `BARROW` token (ADR-0013); no colour value is ever written into the manifest.
  */
 
+import type { Facing8 } from "@/render/iso/facing";
 import { BARROW } from "@/utils/theme";
 
 export const MANIFEST_VERSION = 1;
 export const MAX_ATLAS_SIZE = 4096;
 
 export type BarrowToken = keyof typeof BARROW;
+
+/**
+ * The order of an 8-way sheet's frame lists: `frames[i]` faces `DIRECTION_ORDER[i]`. World
+ * compass, clockwise from east as seen from above the map (world y down); the projection keeps
+ * it clockwise on screen. The bake turns each model to these facings in this order
+ * (`tools/bake/page/facing.js`, tested against this list).
+ */
+export const DIRECTION_ORDER: readonly Facing8[] = [
+  "e",
+  "se",
+  "s",
+  "sw",
+  "w",
+  "nw",
+  "n",
+  "ne",
+];
+
+/** The frame-list index of a facing on an 8-way sheet. */
+export function directionIndex(facing: Facing8): number {
+  return DIRECTION_ORDER.indexOf(facing);
+}
 
 export interface ArtFramePosition {
   x: number;
@@ -67,6 +93,8 @@ export interface ArtAtlas {
 export interface ArtManifest {
   version: typeof MANIFEST_VERSION;
   tile: { width: number; height: number };
+  /** The direction order of every 8-way sheet: always {@link DIRECTION_ORDER}. */
+  facings: Facing8[];
   atlases: Record<string, ArtAtlas>;
   sheets: Record<string, ArtSheet>;
 }
@@ -108,6 +136,14 @@ export function validateManifest(input: unknown): ManifestResult {
     !isPositiveInt(tile.height)
   )
     errors.push("manifest: tile needs a positive integer width and height");
+
+  const facings = input.facings;
+  if (
+    !Array.isArray(facings) ||
+    facings.length !== DIRECTION_ORDER.length ||
+    facings.some((f, i) => f !== DIRECTION_ORDER[i])
+  )
+    errors.push(`manifest: facings must be [${DIRECTION_ORDER.join(", ")}]`);
 
   const atlases = isObject(input.atlases) ? input.atlases : null;
   if (!atlases) errors.push("manifest: atlases must be an object");

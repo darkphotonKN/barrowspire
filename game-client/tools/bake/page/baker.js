@@ -214,13 +214,84 @@ export function createBaker() {
     return px;
   }
 
+  /**
+   * Bakes one posed model from several facings (FS-2325V §E): `poses` are functions that pose the
+   * model in place, `yaws` the y rotations that turn it to each facing. Every frame shares one
+   * frame size and anchor (the footprint origin), so a sheet swaps frames without jitter.
+   * Returns frames[pose][yaw].
+   */
+  function bakeCharacter(root, poses, yaws, { pad = 0.06 } = {}) {
+    prep(root);
+    scene.add(root);
+    // pass 1: bounds over every pose and facing, from the skinned vertices themselves
+    const b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+    let reach = 1;
+    const w = new THREE.Vector3();
+    for (const apply of poses) {
+      root.rotation.y = 0;
+      apply();
+      root.updateMatrixWorld(true);
+      const pts = [];
+      root.traverse((o) => {
+        if (!o.isMesh || !o.visible) return;
+        const pos = o.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i += 2) {
+          if (o.isSkinnedMesh) o.getVertexPosition(i, w);
+          else w.fromBufferAttribute(pos, i);
+          w.applyMatrix4(o.matrixWorld);
+          pts.push(w.x, Math.max(0, w.y), w.z);
+        }
+      });
+      for (const yaw of yaws) {
+        const c = Math.cos(yaw);
+        const s = Math.sin(yaw);
+        for (let i = 0; i < pts.length; i += 3) {
+          const p = [pts[i] * c + pts[i + 2] * s, pts[i + 1], -pts[i] * s + pts[i + 2] * c];
+          reach = Math.max(reach, Math.hypot(p[0], p[2]) * 2 + p[1] + 1);
+          for (const q of [p, shadowOf(p)]) {
+            const [vx, vy] = toView(q);
+            if (vx < b.minX) b.minX = vx;
+            if (vx > b.maxX) b.maxX = vx;
+            if (vy < b.minY) b.minY = vy;
+            if (vy > b.maxY) b.maxY = vy;
+          }
+        }
+      }
+    }
+    const ax = Math.ceil((-b.minX + pad) * K1);
+    const ay = Math.ceil((b.maxY + pad) * K1);
+    const w1 = ax + Math.ceil((b.maxX + pad) * K1);
+    const h1 = ay + Math.ceil((-b.minY + pad) * K1);
+    camera.left = -ax / K1;
+    camera.right = camera.left + w1 / K1;
+    camera.top = ay / K1;
+    camera.bottom = camera.top - h1 / K1;
+    camera.updateProjectionMatrix();
+    setShadowBox(reach);
+    catcher.visible = true;
+
+    // pass 2: render every pose from every facing
+    const frames = poses.map((apply) => {
+      root.rotation.y = 0;
+      apply();
+      return yaws.map((yaw) => {
+        root.rotation.y = yaw;
+        root.updateMatrixWorld(true);
+        return capture(w1, h1);
+      });
+    });
+    scene.remove(root);
+    disposeGeometry(root);
+    return { frames, frameWidth: w1, frameHeight: h1, anchorPx: [ax, ay] };
+  }
+
   function info() {
     const gl = renderer.getContext();
     const ext = gl.getExtension("WEBGL_debug_renderer_info");
     return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
   }
 
-  return { bakeProps, bakeIcon, screenOffset, info };
+  return { bakeProps, bakeIcon, bakeCharacter, screenOffset, info };
 }
 
 function disposeGeometry(obj) {
