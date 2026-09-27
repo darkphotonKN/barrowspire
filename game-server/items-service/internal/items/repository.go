@@ -903,7 +903,7 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 			mana_amount      = EXCLUDED.mana_amount,
 			buff_duration    = EXCLUDED.buff_duration,
 			durability       = EXCLUDED.durability,
-			description      = EXCLUDED.description
+			description      = EXCLUDED.description,
 			status           = EXCLUDED.status `)
 
 	_, err := tx.ExecContext(ctx, b.String(), args...)

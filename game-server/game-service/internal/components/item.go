@@ -34,6 +34,9 @@ type ItemComponent struct {
 	// InstanceID is the item_instances.id this component was hydrated from.
 	// nil for world items (chests / in-match drops) that have no DB row yet.
 	InstanceID *uuid.UUID
+
+	// RarityID is the item_rarities.id rolled for (or stored on) this item; empty = none.
+	RarityID string
 }
 
 func (i *ItemComponent) Type() ecs.ComponentType {

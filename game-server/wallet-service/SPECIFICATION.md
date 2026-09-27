@@ -128,6 +128,11 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [x] Create a member's account on signup → FS-9KW9F
 - [x] Publish account creation for downstream consumers → FS-9KW9F
 
+> **Known gap (observed 2026-09-27, undiagnosed) — signup does not create the account.** Five
+> fresh signups never reached the `wallet.auth.member.signedup` consumer (it was listening), so no
+> account and no `account_id` claim. `scripts/seed-dev.sh` works around it with
+> `POST /api/wallet/account`. Next step: `/diagnose` auth-service's `member.signedup` publish path.
+
 ### Holds
 
 - [x] Place a hold against an account

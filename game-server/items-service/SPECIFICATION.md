@@ -8,6 +8,10 @@
 
 ## items-service
 
+## Catalogue
+
+- [ ] Fantasy base-item catalogue and rarity tiers → FS-F8T3H
+
 ## Marketplace settlement
 
 - [ ] Settlement saga activities → FS-NXP1W

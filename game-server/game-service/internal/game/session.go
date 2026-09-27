@@ -62,6 +62,7 @@ type Session struct {
 	// item pool (session level, items are removed once assigned to a container)
 	itemPool            types.ItemPool
 	itemPoolInitialized bool
+	lootRarities        []lootRarity // empty: drops are unscaled with no rarity id (NULL)
 
 	// dependency injections
 	sessionCloser   SessionCloser
@@ -607,6 +608,7 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, username string, className
 			BuyPrice:        int(item.BuyPrice),
 			SellPrice:       int(item.SellPrice),
 			Description:     item.Description,
+			RarityID:        item.RarityId,
 		}
 	}
 
@@ -1944,94 +1946,35 @@ func (s *Session) generateItems() ([]uuid.UUID, error) {
 	}
 
 	newItemEntityIDs := make([]uuid.UUID, 0, numberOfArmor+numberOfWeapons+numberOfConsumables)
-
-	// pull from item pool based on the number of random items
-	if numberOfWeapons != 0 {
-		for i := 0; i < numberOfWeapons; i++ {
-			// find weapon
-			itemConfig, err := s.findSingleItemBase(types.ItemTypeWeapon)
-			if err != nil {
-				return nil, err
-			}
-
-			slog.Info("item config beore addItem during itemGeneration call",
-				"item_type", types.ItemTypeWeapon,
-				"item_config", itemConfig,
-			)
-
-			// create entity
-			id := s.AddItem(*itemConfig)
-			newItemEntityIDs = append(newItemEntityIDs, id)
-		}
-	}
-
-	if numberOfArmor != 0 {
-		for i := numberOfWeapons; i < numberOfArmor; i++ {
-			itemConfig, err := s.findSingleItemBase(types.ItemTypeArmor)
-			if err != nil {
-				return nil, err
-			}
-
-			slog.Info("item config beore addItem during itemGeneration call",
-				"item_type", types.ItemTypeArmor,
-				"item_config", itemConfig,
-			)
-
-			// create entity
-			id := s.AddItem(*itemConfig)
-			newItemEntityIDs = append(newItemEntityIDs, id)
-		}
-	}
-
-	if numberOfConsumables != 0 {
-		for i := numberOfWeapons + numberOfArmor; i < numberOfConsumables; i++ {
-			itemConfig, err := s.findSingleItemBase(types.ItemTypeConsumable)
-			if err != nil {
-				return nil, err
-			}
-
-			slog.Info("item config beore addItem during itemGeneration call",
-				"item_type", types.ItemTypeConsumable,
-				"item_config", itemConfig,
-			)
-
-			// create entity
-			id := s.AddItem(*itemConfig)
-			newItemEntityIDs = append(newItemEntityIDs, id)
-		}
-	}
+	newItemEntityIDs = append(newItemEntityIDs, s.dropLoot(types.ItemTypeWeapon, s.itemPool.Weapons, numberOfWeapons)...)
+	newItemEntityIDs = append(newItemEntityIDs, s.dropLoot(types.ItemTypeArmor, s.itemPool.Armor, numberOfArmor)...)
+	newItemEntityIDs = append(newItemEntityIDs, s.dropLoot(types.ItemTypeConsumable, s.itemPool.Consumables, numberOfConsumables)...)
 
 	return newItemEntityIDs, nil
 }
 
-func (s *Session) findSingleItemBase(itemType types.ItemType) (*types.ItemConfig, error) {
-	slog.Info("findSingleBaseItem check all itemPool contents before finding item",
-		"armor_count", len(s.itemPool.Armor),
-		"weapon_count", len(s.itemPool.Weapons),
-		"consumable_count", len(s.itemPool.Consumables),
-	)
-	switch itemType {
-	case types.ItemTypeWeapon:
-		randCount := utils.GenRandomBetween(0, len(s.itemPool.Weapons)-1)
-		item := *s.itemPool.Weapons[randCount]
-		return &item, nil
-	case types.ItemTypeArmor:
-		randCount := utils.GenRandomBetween(0, len(s.itemPool.Armor)-1)
-		slog.Info("randomCount rolled for Armor",
-			"randCount", randCount,
-		)
-		item := *s.itemPool.Armor[randCount]
-		return &item, nil
-	case types.ItemTypeConsumable:
-		randCount := utils.GenRandomBetween(0, len(s.itemPool.Consumables)-1)
-		item := *s.itemPool.Consumables[randCount]
-		slog.Info("randomCount rolled for Consumable",
-			"randCount", randCount,
-		)
-		return &item, nil
-	default:
-		return nil, fmt.Errorf("No items matched.")
+/**
+* dropLoot creates n rarity-rolled item entities from a random pick of pool.
+* An empty pool is skipped so the other item types still drop.
+**/
+func (s *Session) dropLoot(itemType types.ItemType, pool []*types.ItemConfig, n int) []uuid.UUID {
+	if n == 0 {
+		return nil
 	}
+	if len(pool) == 0 {
+		slog.Warn("No templates for item type, skipping its drops.",
+			"item_type", itemType,
+			"skipped", n,
+		)
+		return nil
+	}
+
+	ids := make([]uuid.UUID, 0, n)
+	for range n {
+		item := rollLoot(sharedLootRand{}, *pool[rand.IntN(len(pool))], s.lootRarities)
+		ids = append(ids, s.AddItem(item))
+	}
+	return ids
 }
 
 /**
@@ -2264,6 +2207,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 							SellPrice:       item.SellPrice,
 							Description:     item.Description,
 							InstanceID:      item.InstanceID,
+							RarityID:        item.RarityID,
 						}
 					}
 				}
@@ -2287,6 +2231,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 							SellPrice:       item.SellPrice,
 							Description:     item.Description,
 							InstanceID:      item.InstanceID,
+							RarityID:        item.RarityID,
 						}
 					}
 				}
@@ -2310,6 +2255,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 							SellPrice:       item.SellPrice,
 							Description:     item.Description,
 							InstanceID:      item.InstanceID,
+							RarityID:        item.RarityID,
 						}
 					}
 				}
@@ -2333,6 +2279,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 							SellPrice:       item.SellPrice,
 							Description:     item.Description,
 							InstanceID:      item.InstanceID,
+							RarityID:        item.RarityID,
 						}
 					}
 				}
@@ -2356,6 +2303,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 							SellPrice:       item.SellPrice,
 							Description:     item.Description,
 							InstanceID:      item.InstanceID,
+							RarityID:        item.RarityID,
 						}
 					}
 				}
@@ -2379,6 +2327,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 							SellPrice:       item.SellPrice,
 							Description:     item.Description,
 							InstanceID:      item.InstanceID,
+							RarityID:        item.RarityID,
 						}
 					}
 				}
@@ -2402,6 +2351,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 							SellPrice:       item.SellPrice,
 							Description:     item.Description,
 							InstanceID:      item.InstanceID,
+							RarityID:        item.RarityID,
 						}
 					}
 				}
@@ -2425,6 +2375,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 							SellPrice:       item.SellPrice,
 							Description:     item.Description,
 							InstanceID:      item.InstanceID,
+							RarityID:        item.RarityID,
 						}
 					}
 				}
@@ -2448,6 +2399,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 							SellPrice:       item.SellPrice,
 							Description:     item.Description,
 							InstanceID:      item.InstanceID,
+							RarityID:        item.RarityID,
 						}
 					}
 				}
@@ -2471,6 +2423,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 							SellPrice:       item.SellPrice,
 							Description:     item.Description,
 							InstanceID:      item.InstanceID,
+							RarityID:        item.RarityID,
 						}
 					}
 				}
@@ -2504,6 +2457,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 						SellPrice:       item.SellPrice,
 						Description:     item.Description,
 						InstanceID:      item.InstanceID,
+						RarityID:        item.RarityID,
 					})
 				}
 
@@ -2648,7 +2602,7 @@ func (s *Session) InitializeItems(ctx context.Context) error {
 				ArmorSlot:       types.ArmorSlot(item.ArmorSlot),
 			}
 
-			s.itemPool.Weapons = append(s.itemPool.Weapons, &newItemConfig)
+			s.itemPool.Armor = append(s.itemPool.Armor, &newItemConfig)
 			s.itemPool.Count++
 
 		case types.ItemTypeWeapon:
@@ -2665,7 +2619,7 @@ func (s *Session) InitializeItems(ctx context.Context) error {
 				CriticalRate: float64(item.CriticalRate),
 			}
 
-			s.itemPool.Armor = append(s.itemPool.Armor, &newItemConfig)
+			s.itemPool.Weapons = append(s.itemPool.Weapons, &newItemConfig)
 			s.itemPool.Count++
 
 		case types.ItemTypeConsumable:
@@ -2699,7 +2653,29 @@ func (s *Session) InitializeItems(ctx context.Context) error {
 
 	}
 
+	s.lootRarities = s.loadLootRarities(ctx)
+
 	return nil
+}
+
+/**
+* loadLootRarities fetches the rarity tiers drops roll against. Failure is not
+* fatal: with no rarities, drops keep base stats and carry no rarity id.
+**/
+func (s *Session) loadLootRarities(ctx context.Context) []lootRarity {
+	resp, err := s.itemsClient.ListItemRarities(ctx)
+	if err != nil || resp == nil || len(resp.ItemRarities) == 0 {
+		slog.Warn("No item rarities available, drops are unscaled with no rarity.",
+			"error", err,
+		)
+		return nil
+	}
+
+	rarities := make([]lootRarity, 0, len(resp.ItemRarities))
+	for _, r := range resp.ItemRarities {
+		rarities = append(rarities, lootRarity{ID: r.Id, Code: r.RarityCode, DropRate: r.DropRateMultiplier})
+	}
+	return rarities
 }
 
 func (s *Session) IsAreaOccupied(placeArea PlaceArea) bool {

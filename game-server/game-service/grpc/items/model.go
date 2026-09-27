@@ -10,6 +10,9 @@ import (
 type ItemsClient interface {
 	ListItemTemplates(ctx context.Context) (*pb.ListItemTemplatesResponse, error)
 
+	// ListItemRarities lists the rarity tiers loot rolls against
+	ListItemRarities(ctx context.Context) (*pb.ListItemRaritiesResponse, error)
+
 	// CreateWeapon creates a new weapon
 	CreateWeapon(ctx context.Context, req *pb.CreateWeaponRequest) (*pb.Weapon, error)
 

@@ -9,6 +9,7 @@ import (
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
+	"google.golang.org/grpc/metadata"
 )
 
 // ErrorFunc is injected rather than imported so this package stays free of
@@ -136,6 +137,20 @@ var (
 	errsAuthedDomain = []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError}
 )
 
+// items-service authenticates every RPC from the caller's token (common/auth
+// Auth interceptor), so each operation reads the Authorization header only to
+// forward it. Hidden because the bearer scheme on the operation documents it.
+type bearerInput struct {
+	Authorization string `header:"Authorization" hidden:"true"`
+}
+
+func withBearer(ctx context.Context, authorization string) context.Context {
+	if authorization == "" {
+		return ctx
+	}
+	return metadata.AppendToOutgoingContext(ctx, "authorization", authorization)
+}
+
 // RegisterOperations declares the serialized items surface (FS-NTPW2 slice 2).
 // All eleven routes are JWT-protected, so every operation carries protect.
 func RegisterOperations(api huma.API, h *Handler,
@@ -160,7 +175,10 @@ func RegisterOperations(api huma.API, h *Handler,
 }
 
 func registerCreateWeapon(api huma.API, h *Handler, mw huma.Middlewares) {
-	type input struct{ Body CreateWeaponBody }
+	type input struct {
+		Authorization string `header:"Authorization" hidden:"true"`
+		Body          CreateWeaponBody
+	}
 	type output struct {
 		Status int
 		Body   resultEnvelope[*Weapon]
@@ -178,7 +196,7 @@ func registerCreateWeapon(api huma.API, h *Handler, mw huma.Middlewares) {
 		Errors:        errsAuthed,
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		res, err := h.client.CreateWeapon(ctx, &pb.CreateWeaponRequest{
+		res, err := h.client.CreateWeapon(withBearer(ctx, in.Authorization), &pb.CreateWeaponRequest{
 			RarityId:     in.Body.RarityID,
 			AttackPower:  in.Body.AttackPower,
 			CriticalRate: in.Body.CriticalRate,
@@ -211,8 +229,8 @@ func registerListWeapons(api huma.API, h *Handler, mw huma.Middlewares) {
 		Middlewares: mw,
 		Security:    securedOp,
 		Errors:      errsAuthed,
-	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
-		res, err := h.client.ListWeaponsWithTemplate(ctx)
+	}, guard(func(ctx context.Context, in *bearerInput) (*output, error) {
+		res, err := h.client.ListWeaponsWithTemplate(withBearer(ctx, in.Authorization))
 		if err != nil {
 			return nil, err
 		}
@@ -227,7 +245,10 @@ func registerListWeapons(api huma.API, h *Handler, mw huma.Middlewares) {
 }
 
 func registerCreateItemTemplate(api huma.API, h *Handler, mw huma.Middlewares) {
-	type input struct{ Body CreateItemTemplateBody }
+	type input struct {
+		Authorization string `header:"Authorization" hidden:"true"`
+		Body          CreateItemTemplateBody
+	}
 	type output struct {
 		Status int
 		Body   resultEnvelope[*ItemTemplate]
@@ -267,7 +288,7 @@ func registerCreateItemTemplate(api huma.API, h *Handler, mw huma.Middlewares) {
 		req.BaseSellPrice = in.Body.BaseSellPrice
 		req.BaseBuyPrice = in.Body.BaseBuyPrice
 
-		res, err := h.client.CreateItemTemplate(ctx, req)
+		res, err := h.client.CreateItemTemplate(withBearer(ctx, in.Authorization), req)
 		if err != nil {
 			return nil, err
 		}
@@ -284,7 +305,10 @@ func registerCreateItemTemplate(api huma.API, h *Handler, mw huma.Middlewares) {
 }
 
 func registerCreateCompleteWeapon(api huma.API, h *Handler, mw huma.Middlewares) {
-	type input struct{ Body CreateCompleteWeaponBody }
+	type input struct {
+		Authorization string `header:"Authorization" hidden:"true"`
+		Body          CreateCompleteWeaponBody
+	}
 	type output struct {
 		Status int
 		Body   resultEnvelope[*WeaponDetail]
@@ -312,7 +336,7 @@ func registerCreateCompleteWeapon(api huma.API, h *Handler, mw huma.Middlewares)
 		// fields, and the legacy handler never forwarded them either. Kept
 		// required because dropping a required field is a behavior change
 		// (ADR-0002 §1). A candidate for its own FS.
-		res, err := h.client.CreateCompleteWeapon(ctx, &pb.CreateCompleteWeaponRequest{
+		res, err := h.client.CreateCompleteWeapon(withBearer(ctx, in.Authorization), &pb.CreateCompleteWeaponRequest{
 			UserId: id, ItemName: in.Body.ItemName,
 			IconUrl: in.Body.IconURL, RequiredLevel: in.Body.RequiredLevel,
 			BaseSellPrice: in.Body.BaseSellPrice, BaseBuyPrice: in.Body.BaseBuyPrice,
@@ -336,7 +360,10 @@ func registerCreateCompleteWeapon(api huma.API, h *Handler, mw huma.Middlewares)
 }
 
 func registerCreateCompleteArmor(api huma.API, h *Handler, mw huma.Middlewares) {
-	type input struct{ Body CreateCompleteArmorBody }
+	type input struct {
+		Authorization string `header:"Authorization" hidden:"true"`
+		Body          CreateCompleteArmorBody
+	}
 	type output struct {
 		Status int
 		Body   resultEnvelope[*ArmorDetail]
@@ -364,7 +391,7 @@ func registerCreateCompleteArmor(api huma.API, h *Handler, mw huma.Middlewares) 
 		// fields, and the legacy handler never forwarded them either. Kept
 		// required because dropping a required field is a behavior change
 		// (ADR-0002 §1). A candidate for its own FS.
-		res, err := h.client.CreateCompleteArmor(ctx, &pb.CreateCompleteArmorRequest{
+		res, err := h.client.CreateCompleteArmor(withBearer(ctx, in.Authorization), &pb.CreateCompleteArmorRequest{
 			UserId: id, ItemName: in.Body.ItemName,
 			IconUrl: in.Body.IconURL, RequiredLevel: in.Body.RequiredLevel,
 			BaseSellPrice: in.Body.BaseSellPrice, BaseBuyPrice: in.Body.BaseBuyPrice,
@@ -388,7 +415,10 @@ func registerCreateCompleteArmor(api huma.API, h *Handler, mw huma.Middlewares) 
 }
 
 func registerCreateCompleteConsumable(api huma.API, h *Handler, mw huma.Middlewares) {
-	type input struct{ Body CreateCompleteConsumableBody }
+	type input struct {
+		Authorization string `header:"Authorization" hidden:"true"`
+		Body          CreateCompleteConsumableBody
+	}
 	type output struct {
 		Status int
 		Body   resultEnvelope[*ConsumableDetail]
@@ -416,7 +446,7 @@ func registerCreateCompleteConsumable(api huma.API, h *Handler, mw huma.Middlewa
 		// fields, and the legacy handler never forwarded them either. Kept
 		// required because dropping a required field is a behavior change
 		// (ADR-0002 §1). A candidate for its own FS.
-		res, err := h.client.CreateCompleteConsumable(ctx, &pb.CreateCompleteConsumableRequest{
+		res, err := h.client.CreateCompleteConsumable(withBearer(ctx, in.Authorization), &pb.CreateCompleteConsumableRequest{
 			UserId: id, ItemName: in.Body.ItemName,
 			IconUrl: in.Body.IconURL, RequiredLevel: in.Body.RequiredLevel,
 			BaseSellPrice: in.Body.BaseSellPrice, BaseBuyPrice: in.Body.BaseBuyPrice,
@@ -452,8 +482,8 @@ func registerListItemTypes(api huma.API, h *Handler, mw huma.Middlewares) {
 		Middlewares: mw,
 		Security:    securedOp,
 		Errors:      errsAuthed,
-	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
-		res, err := h.client.ListItemTypes(ctx)
+	}, guard(func(ctx context.Context, in *bearerInput) (*output, error) {
+		res, err := h.client.ListItemTypes(withBearer(ctx, in.Authorization))
 		if err != nil {
 			return nil, err
 		}
@@ -480,8 +510,8 @@ func registerListItemRarities(api huma.API, h *Handler, mw huma.Middlewares) {
 		Middlewares: mw,
 		Security:    securedOp,
 		Errors:      errsAuthed,
-	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
-		res, err := h.client.ListItemRarities(ctx)
+	}, guard(func(ctx context.Context, in *bearerInput) (*output, error) {
+		res, err := h.client.ListItemRarities(withBearer(ctx, in.Authorization))
 		if err != nil {
 			return nil, err
 		}
@@ -510,13 +540,13 @@ func registerGetLoadout(api huma.API, h *Handler, mw huma.Middlewares) {
 		Middlewares: mw,
 		Security:    securedOp,
 		Errors:      errsAuthed,
-	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
+	}, guard(func(ctx context.Context, in *bearerInput) (*output, error) {
 		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
 		id := caller.MemberID.String()
-		res, err := h.client.GetLoadout(ctx, &pb.GetLoadoutRequest{MemberId: id})
+		res, err := h.client.GetLoadout(withBearer(ctx, in.Authorization), &pb.GetLoadoutRequest{MemberId: id})
 		if err != nil {
 			return nil, err
 		}
@@ -545,13 +575,13 @@ func registerListItemInstances(api huma.API, h *Handler, mw huma.Middlewares) {
 		Middlewares: mw,
 		Security:    securedOp,
 		Errors:      errsAuthed,
-	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
+	}, guard(func(ctx context.Context, in *bearerInput) (*output, error) {
 		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
 		id := caller.MemberID.String()
-		res, err := h.client.ListItemInstances(ctx, &pb.ListItemInstancesRequest{MemberId: id})
+		res, err := h.client.ListItemInstances(withBearer(ctx, in.Authorization), &pb.ListItemInstancesRequest{MemberId: id})
 		if err != nil {
 			return nil, err
 		}
@@ -566,7 +596,10 @@ func registerListItemInstances(api huma.API, h *Handler, mw huma.Middlewares) {
 }
 
 func registerUpdateLoadout(api huma.API, h *Handler, mw huma.Middlewares) {
-	type input struct{ Body UpdateLoadoutBody }
+	type input struct {
+		Authorization string `header:"Authorization" hidden:"true"`
+		Body          UpdateLoadoutBody
+	}
 	type output struct {
 		Body resultEnvelope[*UpdateLoadoutResponse]
 	}
@@ -587,7 +620,7 @@ func registerUpdateLoadout(api huma.API, h *Handler, mw huma.Middlewares) {
 			return nil, unauthenticated()
 		}
 		id := caller.MemberID.String()
-		res, err := h.client.UpdateLoadout(ctx, &pb.UpdateLoadoutRequest{
+		res, err := h.client.UpdateLoadout(withBearer(ctx, in.Authorization), &pb.UpdateLoadoutRequest{
 			MemberId: id, Slot: in.Body.Slot, ItemInstanceId: in.Body.ItemInstanceID,
 		})
 		if err != nil {
