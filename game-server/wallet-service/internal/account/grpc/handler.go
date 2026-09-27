@@ -26,14 +26,34 @@ type Handler struct {
 	accountReader AccountReader
 
 	// write
-	createAccountUC *usecase.CreateAccountUC
-	placeHoldUC     *usecase.PlaceHoldUC
-	depositGoldUC   *usecase.DepositGoldUC
-	withdrawGoldUC  *usecase.WithdrawGoldUC
+	createAccountUC AccountCreator
+	placeHoldUC     HoldPlacer
+	depositGoldUC   GoldDepositor
+	withdrawGoldUC  GoldWithdrawer
 }
+
+// The handler declares what it needs from each use case rather than naming the
+// concrete type, so the seam it depends on is the call it actually makes. Each
+// interface is one method wide because the handler uses one method.
 
 type AccountReader interface {
 	Execute(ctx context.Context, memberID uuid.UUID) (*dto.AccountDetails, error)
+}
+
+type AccountCreator interface {
+	Handle(ctx context.Context, cmd usecase.CreateAccountCommand) (*account.Account, error)
+}
+
+type HoldPlacer interface {
+	Handle(ctx context.Context, cmd *usecase.PlaceHoldCommand) error
+}
+
+type GoldDepositor interface {
+	Handle(ctx context.Context, cmd *usecase.DepositGoldCommand) error
+}
+
+type GoldWithdrawer interface {
+	Handle(ctx context.Context, cmd *usecase.WithdrawGoldCommand) error
 }
 
 // Deps names every dependency the handler needs. A struct rather than positional
@@ -42,10 +62,10 @@ type AccountReader interface {
 // and a positional call site gives no hint that something is missing. Named
 // fields make an omission visible at the call site instead of at runtime.
 type Deps struct {
-	CreateAccountUC *usecase.CreateAccountUC
-	PlaceHoldUC     *usecase.PlaceHoldUC
-	DepositGoldUC   *usecase.DepositGoldUC
-	WithdrawGoldUC  *usecase.WithdrawGoldUC
+	CreateAccountUC AccountCreator
+	PlaceHoldUC     HoldPlacer
+	DepositGoldUC   GoldDepositor
+	WithdrawGoldUC  GoldWithdrawer
 	AccountReader   AccountReader
 }
 
