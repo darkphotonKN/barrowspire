@@ -7,10 +7,10 @@ import { fbm, rng, smoothstep, vnoise } from "../noise.js";
 import { color, cssRgb, grey, mix, shade } from "../palette.js";
 import { canvasTexture, materials, mkCanvas, pixelTexture, TONE } from "../materials.js";
 import { part } from "./util.js";
+import { ROOF_RISE, WALL_BACK, WALL_FRONT } from "../dimensions.js";
 
-/** Full-height (back) and cut-away (front) wall heights, in world units (tile edges). */
-export const WALL_BACK = 3.6;
-export const WALL_FRONT = 1.1;
+/** Wall and roof heights live in ../dimensions.js, which the client's parity test reads. */
+export { ROOF_RISE, WALL_BACK, WALL_FRONT };
 /** Wall thickness and the overlap that hides the seam between neighbouring pieces. */
 const THICK = 0.18;
 const LENGTH = 1.024;
@@ -231,8 +231,6 @@ export function post(H) {
 // ROOF_RISE higher than the last, capped by ridge pieces. A slope piece's origin is the centre of
 // its footprint at its LOW edge's height; the scene lifts row k by k·ROOF_RISE (screen:
 // k·ROOF_RISE·VPX px). `facing` names the downhill side in world terms: s = +y, e = +x.
-
-export const ROOF_RISE = 0.7;
 const ROOF_THICK = 0.09;
 
 let SHINGLE = null;

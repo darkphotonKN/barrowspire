@@ -136,6 +136,9 @@ export class LightMap {
     const view = cam.worldView;
     this.carriedAlpha = this.carrying ? 1 : this.carriedAlpha * CARRY_FADE;
 
+    // The fill inherits whatever GL blend the last draw of the previous frame left
+    // bound (see forceNormalBlend), so it is forced before the fill as well as after.
+    this.forceNormalBlend();
     // One stamp at a time, not a beginDraw/endDraw batch: a batched stamp's
     // transparent corners overwrite the pools under it (seen as hard rectangles in
     // the light). There are a few dozen sources at most, and only those in view.
@@ -144,17 +147,23 @@ export class LightMap {
     for (const s of lit) this.stamp(s, view, timeMs, 1);
     if (this.carriedAlpha > 0.01)
       this.stamp(this.carried, view, timeMs, this.carriedAlpha);
-    // Phaser leaves the ADD blend of the last stamp bound while its own state says
-    // NORMAL, and the camera's background fill then draws additively (seen: the
-    // map edge rendered as the game's clear colour plus pitch). Force it back.
+    this.forceNormalBlend();
+
+    this.placeHalos(lit, timeMs);
+  }
+
+  /**
+   * Phaser can leave a blend bound on the GL context while its own state says NORMAL: after
+   * an ADD stamp, the camera's background fill then draws additively (seen: the map edge
+   * rendered as the game's clear colour plus pitch). Forcing NORMAL rebinds it either way.
+   */
+  private forceNormalBlend(): void {
     const renderer = this.scene.sys.renderer;
     if (renderer.type === Phaser.WEBGL)
       (renderer as Phaser.Renderer.WebGL.WebGLRenderer).setBlendMode(
         Phaser.BlendModes.NORMAL,
         true,
       );
-
-    this.placeHalos(lit, timeMs);
   }
 
   private stamp(

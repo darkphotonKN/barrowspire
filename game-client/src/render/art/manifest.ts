@@ -17,7 +17,10 @@
  *   `Facing8` (`src/render/iso/facing.ts`): `n` is world -y, `e` is world +x, and `se` faces the
  *   viewer. Use {@link directionIndex} to turn a facing into a frame-list index.
  * - A light's `offset` is in screen px from the anchor, `radius` in screen px, and `color` names
- *   a `BARROW` token (ADR-0013); no colour value is ever written into the manifest.
+ *   a `BARROW` token (ADR-0013); no authored colour value is ever written into the manifest.
+ * - A ground sheet's `mean` is the one colour the manifest carries, and it is measured, not
+ *   authored: the bake's average of the sheet's pixels, so lighting can judge readability
+ *   against the floor as drawn (FS-2325V §C.9).
  */
 
 import type { Facing8 } from "@/render/iso/facing";
@@ -70,6 +73,13 @@ export interface ArtLight {
   flicker: number;
 }
 
+/** An sRGB colour, 0..255 per channel. */
+export interface ArtRgb {
+  r: number;
+  g: number;
+  b: number;
+}
+
 export interface ArtSheet {
   atlas: string;
   frameWidth: number;
@@ -78,6 +88,11 @@ export interface ArtSheet {
   directions: 1 | 8;
   animations: Record<string, ArtAnimation>;
   light?: ArtLight;
+  /**
+   * Ground sheets only: the alpha-weighted mean of every frame's pixels, in sRGB, measured by
+   * the bake. Data about the art, not a palette colour.
+   */
+  mean?: ArtRgb;
   source: string;
   licence: string;
 }
@@ -114,6 +129,10 @@ const isNonNegativeInt = (v: unknown): v is number =>
 const isFinite = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
 const isFraction = (v: unknown): v is number => isFinite(v) && v >= 0 && v <= 1;
+const isChannel = (v: unknown): v is number =>
+  isNonNegativeInt(v) && (v as number) <= 255;
+const isRgb = (v: unknown): v is ArtRgb =>
+  isObject(v) && isChannel(v.r) && isChannel(v.g) && isChannel(v.b);
 const isText = (v: unknown): v is string =>
   typeof v === "string" && v.trim().length > 0;
 
@@ -212,6 +231,8 @@ function checkSheet(
       checkAnimation(`${at} animation ${anim}`, value, sheet, atlas, errors);
 
   if (sheet.light !== undefined) checkLight(`${at} light`, sheet.light, errors);
+  if (sheet.mean !== undefined && !isRgb(sheet.mean))
+    errors.push(`${at}: mean must be {r, g, b} integers within 0..255`);
 
   if (!isText(sheet.source)) errors.push(`${at}: source must be recorded`);
   if (!isText(sheet.licence)) errors.push(`${at}: licence must be recorded`);

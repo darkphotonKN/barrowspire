@@ -5561,6 +5561,11 @@
           ]
         }
       },
+      "mean": {
+        "r": 71,
+        "g": 69,
+        "b": 66
+      },
       "source": "procedural: tools/bake/page/ground.js#cobble",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
@@ -5598,6 +5603,11 @@
             ]
           ]
         }
+      },
+      "mean": {
+        "r": 77,
+        "g": 64,
+        "b": 49
       },
       "source": "procedural: tools/bake/page/ground.js#dirt",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
@@ -5637,6 +5647,11 @@
           ]
         }
       },
+      "mean": {
+        "r": 81,
+        "g": 78,
+        "b": 74
+      },
       "source": "procedural: tools/bake/page/ground.js#flagstone",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
@@ -5674,6 +5689,11 @@
             ]
           ]
         }
+      },
+      "mean": {
+        "r": 81,
+        "g": 83,
+        "b": 53
       },
       "source": "procedural: tools/bake/page/ground.js#grass",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
@@ -5785,6 +5805,11 @@
           ]
         }
       },
+      "mean": {
+        "r": 76,
+        "g": 77,
+        "b": 56
+      },
       "source": "procedural: tools/bake/page/ground.js#transitionTile(grass, cobble)",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
@@ -5894,6 +5919,11 @@
             ]
           ]
         }
+      },
+      "mean": {
+        "r": 78,
+        "g": 76,
+        "b": 51
       },
       "source": "procedural: tools/bake/page/ground.js#transitionTile(grass, dirt)",
       "licence": "Barrowspire original work (procedural, no third-party assets)"

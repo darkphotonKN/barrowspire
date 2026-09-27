@@ -28,6 +28,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { chromium } from "playwright-core";
 import { encodePng } from "./lib/png.mjs";
+import { meanColour } from "./lib/mean.mjs";
 import { packAtlases } from "./lib/pack.mjs";
 import { startServer } from "./lib/server.mjs";
 import { CLIENT_ROOT, loadManifestValidator, loadTheme } from "./lib/source.mjs";
@@ -140,6 +141,8 @@ function assemble({ tile, facings, sheets }) {
     const animations = {};
     for (const [anim, a] of Object.entries(s.animations))
       animations[anim] = { fps: a.fps, loop: a.loop, frames: a.frames.map((dir) => dir.map(() => spots[k++])) };
+    // the ground's measured colour, which lighting's readability floor is judged against
+    const mean = s.group === "ground" ? meanColour(frameList(s).map((b64) => Buffer.from(b64, "base64"))) : undefined;
     manifestSheets[s.name] = {
       atlas: key,
       frameWidth: s.frameWidth,
@@ -148,6 +151,7 @@ function assemble({ tile, facings, sheets }) {
       directions: s.directions,
       animations,
       ...(s.light ? { light: s.light } : {}),
+      ...(mean ? { mean } : {}),
       source: s.source,
       licence: s.licence,
     };

@@ -49,6 +49,19 @@ function fixture() {
         source: "procedural: tools/bake/page/models/interactables.js#door",
         licence: "Barrowspire-original",
       },
+      ground_dirt: {
+        atlas: "props-0",
+        frameWidth: 64,
+        frameHeight: 32,
+        anchor: { x: 0.5, y: 0.5 },
+        directions: 1,
+        animations: {
+          variants: { fps: 0, loop: false, frames: [[{ x: 0, y: 70 }]] },
+        },
+        mean: { r: 74, g: 58, b: 41 },
+        source: "procedural: tools/bake/page/ground.js#dirt",
+        licence: "Barrowspire-original",
+      },
     },
   };
 }
@@ -115,6 +128,30 @@ describe("validateManifest", () => {
     rejects((m) => {
       m.sheets.door.animations.open.frames = [[{ x: 230, y: 0 }]];
     }, /door.*open.*outside atlas/);
+  });
+
+  it("accepts a sheet without a mean colour: only ground sheets carry one", () => {
+    const m = fixture();
+    expect(m.sheets.door).not.toHaveProperty("mean");
+    expect(validateManifest(m).ok).toBe(true);
+  });
+
+  it("rejects a mean colour channel outside 0..255", () => {
+    rejects((m) => {
+      m.sheets.ground_dirt.mean.g = 256;
+    }, /ground_dirt.*mean/);
+  });
+
+  it("rejects a mean colour channel that is not an integer", () => {
+    rejects((m) => {
+      m.sheets.ground_dirt.mean.r = 12.5;
+    }, /ground_dirt.*mean/);
+  });
+
+  it("rejects a mean colour missing a channel", () => {
+    rejects((m) => {
+      delete (m.sheets.ground_dirt.mean as { b?: number }).b;
+    }, /ground_dirt.*mean/);
   });
 
   it("rejects a sheet that names an unknown atlas", () => {
@@ -232,6 +269,20 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     }
     expect(states("switch")).toEqual(["inactive", "active"]);
     expect(states("chest")).toEqual(["closed", "open"]);
+  });
+
+  it("records the measured mean colour of every ground sheet, for lighting (FS-2325V §C.9)", () => {
+    const ground = Object.keys(baked.sheets).filter((n) =>
+      n.startsWith("ground_"),
+    );
+    expect(ground).toContain("ground_dirt");
+    expect(ground).toContain("ground_grass");
+    for (const name of ground)
+      expect(baked.sheets[name].mean, name).toEqual({
+        r: expect.any(Number),
+        g: expect.any(Number),
+        b: expect.any(Number),
+      });
   });
 
   it("has a generic fallback icon", () => {
