@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 /** Phaser's scene events are an eventemitter3 emitter: `once(event, fn, context)`. */
 interface Emitter {
   emit(event: string): boolean;
+  listenerCount(event: string): number;
 }
 
 // Only the scene's lifecycle is under test: a Phaser stand-in with the scene events it uses,
@@ -14,7 +15,7 @@ vi.mock("phaser", async () => {
     constructor(_config: unknown) {}
   }
   return {
-    default: { Scene, Scenes: { Events: { SHUTDOWN: "shutdown" } } },
+    default: { Scene, Scenes: { Events: { SHUTDOWN: "shutdown", DESTROY: "destroy" } } },
   };
 });
 
@@ -76,5 +77,25 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
     run.serverBuildingsCreated = true;
     run.events.emit("shutdown");
     expect(run.serverBuildingsCreated).toBe(false);
+  });
+
+  it("should also let go when the game is torn down mid-run, without a stop", () => {
+    const { run, broadcasts } = startedRun();
+    run.events.emit("destroy");
+    (socketManager as unknown as { handleGameStateUpdate(s: unknown): void }).handleGameStateUpdate(
+      { current_player: null },
+    );
+    expect(broadcasts).not.toHaveBeenCalled();
+    expect(run.walls.size).toBe(0);
+  });
+
+  it("should not pile up teardown listeners across restarts", () => {
+    const { scene, run } = startedRun();
+    for (let i = 0; i < 3; i++) {
+      run.events.emit("shutdown");
+      scene.init();
+    }
+    expect(run.events.listenerCount("shutdown")).toBe(1);
+    expect(run.events.listenerCount("destroy")).toBe(1);
   });
 });

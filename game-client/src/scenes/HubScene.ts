@@ -322,7 +322,10 @@ export class HubScene extends Phaser.Scene {
     );
     this.unsubscribeQueue = () => socketManager.off("queue_status");
 
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+    // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
+    const release = () => {
+      this.events.off(Phaser.Scenes.Events.SHUTDOWN, release);
+      this.events.off(Phaser.Scenes.Events.DESTROY, release);
       this.unsubscribeState?.();
       this.unsubscribeQueue?.();
       this.views.clear();
@@ -336,7 +339,9 @@ export class HubScene extends Phaser.Scene {
       this.groundLayer = undefined;
       this.roofs = [];
       this.insideRoof = undefined;
-    });
+    };
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, release);
+    this.events.once(Phaser.Scenes.Events.DESTROY, release);
   }
 
   update(time: number, delta: number): void {

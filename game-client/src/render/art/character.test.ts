@@ -134,12 +134,13 @@ describe("CharacterMotion", () => {
     });
   });
 
-  it("should not restart an attack already swinging", () => {
+  it("should restart the swing on a new attack, toward the new aim", () => {
     const motion = new CharacterMotion("se", 500);
     motion.attack(1000, { x: 0, y: -40 });
     motion.attack(1300, { x: 40, y: 0 });
-    expect(motion.step({ x: 0, y: 0 }, 1300, FRAME, false).facing).toBe("n");
-    expect(motion.step({ x: 0, y: 0 }, 1500, FRAME, false).animation).toBe("idle");
+    expect(motion.step({ x: 0, y: 0 }, 1300, FRAME, false).facing).toBe("e");
+    expect(motion.step({ x: 0, y: 0 }, 1500, FRAME, false).animation).toBe("attack");
+    expect(motion.step({ x: 0, y: 0 }, 1800, FRAME, false).animation).toBe("idle");
   });
 
   it("should die facing where it fell, whatever it was doing", () => {
@@ -214,6 +215,21 @@ describe("CharacterAnimator", () => {
     anim.show(sprite, { animation: "walk", facing: "e", direction: 0, timeScale: 1 });
     sprite.at(5);
     anim.show(sprite, { animation: "attack", facing: "e", direction: 0, timeScale: 1 });
+    expect(sprite.plays[1]).toEqual({ key: "char_knight_base/attack/0", startFrame: 0 });
+  });
+
+  it("should replay a second attack from its first frame, even in the same direction", () => {
+    const sprite = fakeSprite();
+    const anim = new CharacterAnimator(art(), "warrior");
+    const swing = { animation: "attack", facing: "e", direction: 0, timeScale: 1 } as const;
+    anim.attack(0);
+    anim.show(sprite, swing);
+    sprite.at(4);
+    anim.show(sprite, swing);
+    expect(sprite.plays).toHaveLength(1);
+    anim.attack(300);
+    anim.show(sprite, swing);
+    expect(sprite.plays).toHaveLength(2);
     expect(sprite.plays[1]).toEqual({ key: "char_knight_base/attack/0", startFrame: 0 });
   });
 

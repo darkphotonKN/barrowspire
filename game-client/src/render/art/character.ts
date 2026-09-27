@@ -64,11 +64,11 @@ export class CharacterMotion {
   ) {}
 
   /**
-   * Starts the attack clip, facing `aim` (a world vector toward the target) when given. Ignored
-   * while one is already playing, so a held click does not restart the swing every cooldown.
+   * Starts the attack clip, facing `aim` (a world vector toward the target) when given. A new
+   * attack restarts the window: skill cooldowns are shorter than the clip, and every cast the
+   * server receives should show a swing.
    */
   attack(now: number, aim?: Point): void {
-    if (now < this.attackEnds) return;
     this.attackEnds = now + this.attackMs;
     this.aim = aim && (aim.x !== 0 || aim.y !== 0) ? { ...aim } : undefined;
   }
@@ -105,6 +105,8 @@ export class CharacterAnimator {
   /** False when the sheet is missing or its atlas failed: the scene keeps its placeholder. */
   readonly baked: boolean;
   private readonly motion: CharacterMotion;
+  /** Set by {@link attack}: the next attack frame replays from the start, even on the same key. */
+  private swingPending = false;
 
   constructor(
     private readonly art: ArtLibrary,
@@ -136,6 +138,7 @@ export class CharacterAnimator {
 
   attack(now: number, aim?: Point): void {
     this.motion.attack(now, aim);
+    this.swingPending = true;
   }
 
   step(pos: Point, now: number, deltaMs: number, dead: boolean): AnimationChoice {
@@ -158,7 +161,7 @@ export class CharacterAnimator {
 
   /**
    * Plays the chosen clip. The same clip carries on (a finished attack or death holds its last
-   * frame rather than replaying); a looping clip turning to a new facing keeps its place in the
+   * frame rather than replaying) unless a new attack was started; a looping clip turning to a new facing keeps its place in the
    * cycle, so a stride does not restart at every turn.
    */
   show(sprite: AnimatedSprite, choice: AnimationChoice): void {
@@ -166,7 +169,10 @@ export class CharacterAnimator {
     if (!key) return;
     const anims = sprite.anims;
     const current = anims.currentAnim;
-    if (current?.key !== key) {
+    if (choice.animation === "attack" && this.swingPending) {
+      this.swingPending = false;
+      sprite.play({ key, startFrame: 0 });
+    } else if (current?.key !== key) {
       const startFrame =
         current && this.loops(choice.animation) && animationOf(current.key) === choice.animation
           ? Math.max(0, current.frames.indexOf(anims.currentFrame))

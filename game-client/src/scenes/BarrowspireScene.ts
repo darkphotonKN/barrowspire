@@ -327,7 +327,9 @@ export class BarrowspireScene extends Phaser.Scene {
    * same code path (FS-2325V "Edge States": reconnect mid-run).
    */
   init(): void {
+    // DESTROY too: tearing the game down mid-run (the page unmounts) skips SHUTDOWN.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.resetRun, this);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.resetRun, this);
   }
 
   /**
@@ -337,6 +339,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * or touch sprites that no longer exist.
    */
   private resetRun(): void {
+    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.resetRun, this);
+    this.events.off(Phaser.Scenes.Events.DESTROY, this.resetRun, this);
     this.gameStateUnsubscribe?.();
     this.gameStateUnsubscribe = undefined;
     this.connectionStatusUnsubscribe?.();
