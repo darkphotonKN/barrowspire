@@ -1,6 +1,6 @@
 ---
 id: I-NXP1W-6
-status: in-progress
+status: done
 implements: FS-NXP1W
 blocked_by: [I-NXP1W-4]
 labels: []

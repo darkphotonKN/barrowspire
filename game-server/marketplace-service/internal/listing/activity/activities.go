@@ -2,7 +2,6 @@ package activity
 
 import (
 	"context"
-	"errors"
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/dto"
@@ -51,19 +50,4 @@ func (a *Activities) Register(r activityRegistry) {
 	r.RegisterActivityWithOptions(a.FreezeListing, activity.RegisterOptions{Name: marketplaceactivity.FreezeListingActivityName})
 	r.RegisterActivityWithOptions(a.SetWinningBid, activity.RegisterOptions{Name: marketplaceactivity.SetWinningBidActivityName})
 	r.RegisterActivityWithOptions(a.LoseAllBids, activity.RegisterOptions{Name: marketplaceactivity.LoseAllBidsActivityName})
-}
-
-// isAnyOf reports whether err matches any sentinel in set. Each activity declares
-// its own non-retryable set (§Req 9, ADR-0011) and its own error type; this is only
-// the matching, which is identical for all of them. errors.Is, so a sentinel wrapped
-// on the way up — by a use case, or by the retry loop reporting exhaustion — is
-// still recognised.
-func isAnyOf(err error, set []error) bool {
-	for _, target := range set {
-		if errors.Is(err, target) {
-			return true
-		}
-	}
-
-	return false
 }
