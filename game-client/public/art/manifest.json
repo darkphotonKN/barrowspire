@@ -1,0 +1,2237 @@
+{
+  "version": 1,
+  "tile": {
+    "width": 64,
+    "height": 32
+  },
+  "atlases": {
+    "architecture-0": {
+      "image": "architecture-0.png",
+      "width": 2040,
+      "height": 440,
+      "sha256": "d082baf0e484c138f1a16405ed30d6f26461b25e259604895ecbbfc71cf7def1"
+    },
+    "ground-0": {
+      "image": "ground-0.png",
+      "width": 1588,
+      "height": 72,
+      "sha256": "4ea5e5353d1aad01287e5c737125248f53ac7baa89fdd2a781f6a2858ebed335"
+    },
+    "icons-0": {
+      "image": "icons-0.png",
+      "width": 1128,
+      "height": 72,
+      "sha256": "7106798d13411e494e59a2e3fdf1c26d935b31b89a049815e8af552263ada772"
+    },
+    "nature-0": {
+      "image": "nature-0.png",
+      "width": 1648,
+      "height": 244,
+      "sha256": "c67a45f320be3aa82615a8c1cfcc308672f37fd983f3b3f6afee7ef63a310fd0"
+    },
+    "props-0": {
+      "image": "props-0.png",
+      "width": 2016,
+      "height": 324,
+      "sha256": "de60f1c5e911c05199f5c60e04b239b1aaa81df9c048b96eb3b68b1458270de1"
+    }
+  },
+  "sheets": {
+    "barrel": {
+      "atlas": "props-0",
+      "frameWidth": 81,
+      "frameHeight": 81,
+      "anchor": {
+        "x": 0.35802469135802467,
+        "y": 0.7901234567901234
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 727,
+                "y": 209
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/props.js#barrel",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "brazier": {
+      "atlas": "props-0",
+      "frameWidth": 99,
+      "frameHeight": 93,
+      "anchor": {
+        "x": 0.35353535353535354,
+        "y": 0.7741935483870968
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 266,
+                "y": 209
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": 0,
+          "y": -58
+        },
+        "radius": 300,
+        "color": "amber",
+        "flicker": 0.7
+      },
+      "source": "procedural: tools/bake/page/models/props.js#brazier",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "bush": {
+      "atlas": "nature-0",
+      "frameWidth": 96,
+      "frameHeight": 67,
+      "anchor": {
+        "x": 0.4479166666666667,
+        "y": 0.6865671641791045
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1048,
+                "y": 2
+              },
+              {
+                "x": 1146,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#bush",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chair": {
+      "atlas": "props-0",
+      "frameWidth": 88,
+      "frameHeight": 92,
+      "anchor": {
+        "x": 0.3181818181818182,
+        "y": 0.8152173913043478
+      },
+      "directions": 1,
+      "animations": {
+        "s": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 367,
+                "y": 209
+              }
+            ]
+          ]
+        },
+        "e": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 457,
+                "y": 209
+              }
+            ]
+          ]
+        },
+        "n": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 547,
+                "y": 209
+              }
+            ]
+          ]
+        },
+        "w": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 637,
+                "y": 209
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/props.js#chair",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chest": {
+      "atlas": "props-0",
+      "frameWidth": 130,
+      "frameHeight": 110,
+      "anchor": {
+        "x": 0.3230769230769231,
+        "y": 0.7818181818181819
+      },
+      "directions": 1,
+      "animations": {
+        "closed": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 209
+              }
+            ]
+          ]
+        },
+        "open": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 134,
+                "y": 209
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/interactables.js#chest",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "decal_grass_tuft": {
+      "atlas": "nature-0",
+      "frameWidth": 31,
+      "frameHeight": 30,
+      "anchor": {
+        "x": 0.41935483870967744,
+        "y": 0.7333333333333333
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1445,
+                "y": 2
+              },
+              {
+                "x": 1478,
+                "y": 2
+              },
+              {
+                "x": 1511,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#grassTuft",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "decal_pebbles": {
+      "atlas": "nature-0",
+      "frameWidth": 32,
+      "frameHeight": 18,
+      "anchor": {
+        "x": 0.53125,
+        "y": 0.5555555555555556
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1544,
+                "y": 2
+              },
+              {
+                "x": 1578,
+                "y": 2
+              },
+              {
+                "x": 1612,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#pebbles",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "door_x": {
+      "atlas": "props-0",
+      "frameWidth": 131,
+      "frameHeight": 136,
+      "anchor": {
+        "x": 0.33587786259541985,
+        "y": 0.875
+      },
+      "directions": 1,
+      "animations": {
+        "locked": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1450,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "unlocked": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1583,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "open": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1716,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/interactables.js#door",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "door_y": {
+      "atlas": "props-0",
+      "frameWidth": 115,
+      "frameHeight": 144,
+      "anchor": {
+        "x": 0.24347826086956523,
+        "y": 0.8263888888888888
+      },
+      "directions": 1,
+      "animations": {
+        "locked": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1099,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "unlocked": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1216,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "open": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1333,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/interactables.js#door",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "escape_door_x": {
+      "atlas": "props-0",
+      "frameWidth": 163,
+      "frameHeight": 205,
+      "anchor": {
+        "x": 0.26993865030674846,
+        "y": 0.8780487804878049
+      },
+      "directions": 1,
+      "animations": {
+        "locked": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "unlocked": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 167,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "open": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 332,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/interactables.js#escapeDoor",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "escape_door_y": {
+      "atlas": "props-0",
+      "frameWidth": 163,
+      "frameHeight": 205,
+      "anchor": {
+        "x": 0.26993865030674846,
+        "y": 0.8780487804878049
+      },
+      "directions": 1,
+      "animations": {
+        "locked": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 497,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "unlocked": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 662,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "open": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 827,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/interactables.js#escapeDoor",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "ground_cobble": {
+      "atlas": "ground-0",
+      "frameWidth": 64,
+      "frameHeight": 32,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              },
+              {
+                "x": 68,
+                "y": 2
+              },
+              {
+                "x": 134,
+                "y": 2
+              },
+              {
+                "x": 200,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/ground.js#cobble",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "ground_dirt": {
+      "atlas": "ground-0",
+      "frameWidth": 64,
+      "frameHeight": 32,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 266,
+                "y": 2
+              },
+              {
+                "x": 332,
+                "y": 2
+              },
+              {
+                "x": 398,
+                "y": 2
+              },
+              {
+                "x": 464,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/ground.js#dirt",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "ground_flagstone": {
+      "atlas": "ground-0",
+      "frameWidth": 64,
+      "frameHeight": 32,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 530,
+                "y": 2
+              },
+              {
+                "x": 596,
+                "y": 2
+              },
+              {
+                "x": 662,
+                "y": 2
+              },
+              {
+                "x": 728,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/ground.js#flagstone",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "ground_grass": {
+      "atlas": "ground-0",
+      "frameWidth": 64,
+      "frameHeight": 32,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 794,
+                "y": 2
+              },
+              {
+                "x": 860,
+                "y": 2
+              },
+              {
+                "x": 926,
+                "y": 2
+              },
+              {
+                "x": 992,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/ground.js#grass",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "ground_grass_cobble": {
+      "atlas": "ground-0",
+      "frameWidth": 64,
+      "frameHeight": 32,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "n": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1058,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "e": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1124,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "s": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1190,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "w": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1256,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "ne": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1322,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "se": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1388,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "sw": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1454,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "nw": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1520,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/ground.js#transitionTile(grass, cobble)",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "ground_grass_dirt": {
+      "atlas": "ground-0",
+      "frameWidth": 64,
+      "frameHeight": 32,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "n": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 36
+              }
+            ]
+          ]
+        },
+        "e": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 68,
+                "y": 36
+              }
+            ]
+          ]
+        },
+        "s": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 134,
+                "y": 36
+              }
+            ]
+          ]
+        },
+        "w": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 200,
+                "y": 36
+              }
+            ]
+          ]
+        },
+        "ne": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 266,
+                "y": 36
+              }
+            ]
+          ]
+        },
+        "se": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 332,
+                "y": 36
+              }
+            ]
+          ]
+        },
+        "sw": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 398,
+                "y": 36
+              }
+            ]
+          ]
+        },
+        "nw": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 464,
+                "y": 36
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/ground.js#transitionTile(grass, dirt)",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_bow": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#bow",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_coins": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 68,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#coins",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_cuirass": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 134,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#cuirass",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_dagger": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 200,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#dagger",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_gauntlets": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 266,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#gauntlets",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_gem": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 332,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#gem",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_generic": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 398,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#generic",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_greaves": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 464,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#greaves",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_helm": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 530,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#helm",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_potion_health": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 596,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#potion_health",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_potion_mana": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 662,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#potion_mana",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_ring": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 728,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#ring",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_scroll": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 794,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#scroll",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_skull": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 860,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#skull",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_staff": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 926,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#staff",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_sword": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 992,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#sword",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_vial_tonic": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1058,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#vial_tonic",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "lamp_post": {
+      "atlas": "props-0",
+      "frameWidth": 105,
+      "frameHeight": 154,
+      "anchor": {
+        "x": 0.14285714285714285,
+        "y": 0.9285714285714286
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 992,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": 0,
+          "y": -123
+        },
+        "radius": 220,
+        "color": "amberBright",
+        "flicker": 0.15
+      },
+      "source": "procedural: tools/bake/page/models/props.js#lampPost",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "post_back": {
+      "atlas": "architecture-0",
+      "frameWidth": 117,
+      "frameHeight": 171,
+      "anchor": {
+        "x": 0.13675213675213677,
+        "y": 0.935672514619883
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 278,
+                "y": 181
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#post",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "post_front": {
+      "atlas": "architecture-0",
+      "frameWidth": 61,
+      "frameHeight": 73,
+      "anchor": {
+        "x": 0.26229508196721313,
+        "y": 0.8493150684931506
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 360
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#post",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "rock": {
+      "atlas": "nature-0",
+      "frameWidth": 65,
+      "frameHeight": 53,
+      "anchor": {
+        "x": 0.4461538461538462,
+        "y": 0.5660377358490566
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1244,
+                "y": 2
+              },
+              {
+                "x": 1311,
+                "y": 2
+              },
+              {
+                "x": 1378,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#rock",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "roof_ridge": {
+      "atlas": "architecture-0",
+      "frameWidth": 56,
+      "frameHeight": 40,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.6
+      },
+      "directions": 1,
+      "animations": {
+        "x": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 65,
+                "y": 360
+              }
+            ]
+          ]
+        },
+        "y": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 123,
+                "y": 360
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#roofRidge",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "roof_slope": {
+      "atlas": "architecture-0",
+      "frameWidth": 80,
+      "frameHeight": 75,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.7066666666666667
+      },
+      "directions": 1,
+      "animations": {
+        "s": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1709,
+                "y": 181
+              }
+            ]
+          ]
+        },
+        "e": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1791,
+                "y": 181
+              }
+            ]
+          ]
+        },
+        "n": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1873,
+                "y": 181
+              }
+            ]
+          ]
+        },
+        "w": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1955,
+                "y": 181
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#roofSlope",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "switch": {
+      "atlas": "props-0",
+      "frameWidth": 64,
+      "frameHeight": 58,
+      "anchor": {
+        "x": 0.40625,
+        "y": 0.7241379310344828
+      },
+      "directions": 1,
+      "animations": {
+        "inactive": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 810,
+                "y": 209
+              }
+            ]
+          ]
+        },
+        "active": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 876,
+                "y": 209
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/interactables.js#lever",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "table": {
+      "atlas": "props-0",
+      "frameWidth": 160,
+      "frameHeight": 119,
+      "anchor": {
+        "x": 0.41875,
+        "y": 0.6890756302521008
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1849,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/props.js#table",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "tree_oak": {
+      "atlas": "nature-0",
+      "frameWidth": 224,
+      "frameHeight": 212,
+      "anchor": {
+        "x": 0.40625,
+        "y": 0.8066037735849056
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 396,
+                "y": 2
+              },
+              {
+                "x": 622,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#oak",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "tree_oak_autumn": {
+      "atlas": "nature-0",
+      "frameWidth": 198,
+      "frameHeight": 204,
+      "anchor": {
+        "x": 0.37373737373737376,
+        "y": 0.8284313725490197
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 848,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#oak",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "tree_pine": {
+      "atlas": "nature-0",
+      "frameWidth": 195,
+      "frameHeight": 236,
+      "anchor": {
+        "x": 0.3487179487179487,
+        "y": 0.8347457627118644
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              },
+              {
+                "x": 199,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#pine",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_back_brace_x": {
+      "atlas": "architecture-0",
+      "frameWidth": 136,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.19117647058823528,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              },
+              {
+                "x": 140,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_back_brace_y": {
+      "atlas": "architecture-0",
+      "frameWidth": 136,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.19117647058823528,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 278,
+                "y": 2
+              },
+              {
+                "x": 416,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_back_plain_x": {
+      "atlas": "architecture-0",
+      "frameWidth": 136,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.19117647058823528,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 554,
+                "y": 2
+              },
+              {
+                "x": 692,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_back_plain_y": {
+      "atlas": "architecture-0",
+      "frameWidth": 136,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.19117647058823528,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 830,
+                "y": 2
+              },
+              {
+                "x": 968,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_back_torch_x": {
+      "atlas": "architecture-0",
+      "frameWidth": 136,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.19117647058823528,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1106,
+                "y": 2
+              },
+              {
+                "x": 1244,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": -10,
+          "y": -95
+        },
+        "radius": 220,
+        "color": "amber",
+        "flicker": 0.6
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_back_torch_y": {
+      "atlas": "architecture-0",
+      "frameWidth": 136,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.19117647058823528,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1382,
+                "y": 2
+              },
+              {
+                "x": 1520,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": 10,
+          "y": -95
+        },
+        "radius": 220,
+        "color": "amber",
+        "flicker": 0.6
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_back_window_x": {
+      "atlas": "architecture-0",
+      "frameWidth": 136,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.19117647058823528,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1658,
+                "y": 2
+              },
+              {
+                "x": 1796,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": -3,
+          "y": -83
+        },
+        "radius": 140,
+        "color": "amberBright",
+        "flicker": 0.1
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_back_window_y": {
+      "atlas": "architecture-0",
+      "frameWidth": 136,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.19117647058823528,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 181
+              },
+              {
+                "x": 140,
+                "y": 181
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": 3,
+          "y": -83
+        },
+        "radius": 140,
+        "color": "amberBright",
+        "flicker": 0.1
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_front_brace_x": {
+      "atlas": "architecture-0",
+      "frameWidth": 80,
+      "frameHeight": 79,
+      "anchor": {
+        "x": 0.325,
+        "y": 0.7974683544303798
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 725,
+                "y": 181
+              },
+              {
+                "x": 807,
+                "y": 181
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_front_brace_y": {
+      "atlas": "architecture-0",
+      "frameWidth": 80,
+      "frameHeight": 79,
+      "anchor": {
+        "x": 0.325,
+        "y": 0.7974683544303798
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 889,
+                "y": 181
+              },
+              {
+                "x": 971,
+                "y": 181
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_front_plain_x": {
+      "atlas": "architecture-0",
+      "frameWidth": 80,
+      "frameHeight": 79,
+      "anchor": {
+        "x": 0.325,
+        "y": 0.7974683544303798
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1053,
+                "y": 181
+              },
+              {
+                "x": 1135,
+                "y": 181
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_front_plain_y": {
+      "atlas": "architecture-0",
+      "frameWidth": 80,
+      "frameHeight": 79,
+      "anchor": {
+        "x": 0.325,
+        "y": 0.7974683544303798
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1217,
+                "y": 181
+              },
+              {
+                "x": 1299,
+                "y": 181
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_front_torch_x": {
+      "atlas": "architecture-0",
+      "frameWidth": 80,
+      "frameHeight": 82,
+      "anchor": {
+        "x": 0.325,
+        "y": 0.8048780487804879
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 397,
+                "y": 181
+              },
+              {
+                "x": 479,
+                "y": 181
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": 0,
+          "y": -56
+        },
+        "radius": 160,
+        "color": "amber",
+        "flicker": 0.6
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_front_torch_y": {
+      "atlas": "architecture-0",
+      "frameWidth": 80,
+      "frameHeight": 82,
+      "anchor": {
+        "x": 0.325,
+        "y": 0.8048780487804879
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 561,
+                "y": 181
+              },
+              {
+                "x": 643,
+                "y": 181
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": 0,
+          "y": -56
+        },
+        "radius": 160,
+        "color": "amber",
+        "flicker": 0.6
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_front_window_x": {
+      "atlas": "architecture-0",
+      "frameWidth": 80,
+      "frameHeight": 79,
+      "anchor": {
+        "x": 0.325,
+        "y": 0.7974683544303798
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1381,
+                "y": 181
+              },
+              {
+                "x": 1463,
+                "y": 181
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": -3,
+          "y": -30
+        },
+        "radius": 90,
+        "color": "amberBright",
+        "flicker": 0.1
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_front_window_y": {
+      "atlas": "architecture-0",
+      "frameWidth": 80,
+      "frameHeight": 79,
+      "anchor": {
+        "x": 0.325,
+        "y": 0.7974683544303798
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1545,
+                "y": 181
+              },
+              {
+                "x": 1627,
+                "y": 181
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": 3,
+          "y": -30
+        },
+        "radius": 90,
+        "color": "amberBright",
+        "flicker": 0.1
+      },
+      "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    }
+  }
+}

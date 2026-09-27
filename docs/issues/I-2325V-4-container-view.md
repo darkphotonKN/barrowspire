@@ -3,7 +3,7 @@ id: I-2325V-4
 status: open
 implements: FS-2325V
 blocked_by: [I-2325V-2]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-2325V slice 4: satchel container view replacing the chest item-row UI"
 ---
 Implements FS-2325V §D
