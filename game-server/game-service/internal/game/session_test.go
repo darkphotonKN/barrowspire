@@ -853,3 +853,50 @@ func TestSession_GenerateItems_CreateAndSerialize(t *testing.T) {
 func TestSession_HandleEquip(t *testing.T) {
 	t.Skip("TODO: equip handler test table not yet populated")
 }
+
+// Door range is measured from the delver to the middle of the doorway. A door is
+// stored by its top-left corner, and measuring to that corner made the far end of
+// a doorway unreachable: a delver standing in front of it was refused as too far.
+func TestHandleInteract_DoorRangeFromDoorwayCentre(t *testing.T) {
+	// A 50-wide, 20-thick door in a house's bottom wall: corner (100, 200),
+	// doorway centre (125, 210). The delver stands outside, below it.
+	const doorX, doorY, doorW, doorH = 100.0, 200.0, 50.0, 20.0
+
+	tests := []struct {
+		name               string
+		playerX, playerY   float64
+		expectedOutOfRange bool
+	}{
+		{name: "in front of the middle of the doorway", playerX: 125, playerY: 250, expectedOutOfRange: false},
+		{name: "in front of the near end of the doorway", playerX: 85, playerY: 250, expectedOutOfRange: false},
+		{name: "in front of the far end of the doorway", playerX: 165, playerY: 250, expectedOutOfRange: false},
+		{name: "well back from the doorway", playerX: 125, playerY: 300, expectedOutOfRange: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			session := NewSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em), em, &mockEventEmitter{}, nil, RunBounds())
+			defer session.Shutdown()
+
+			playerID := uuid.New()
+			playerEntityID := session.AddPlayer(playerID, "Delver", "warrior")
+			playerEntity, ok := em.GetEntity(playerEntityID)
+			require.True(t, ok)
+			transformComp, ok := playerEntity.GetComponent(ecs.ComponentTypeTransform)
+			require.True(t, ok)
+			transform := transformComp.(*components.TransformComponent)
+			transform.X, transform.Y = tt.playerX, tt.playerY
+
+			doorID := session.AddDoor(doorX, doorY, doorW, doorH)
+
+			err := session.handleInteract(playerID, doorID)
+
+			if tt.expectedOutOfRange {
+				assert.ErrorIs(t, err, ErrOutOfRange)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
