@@ -178,14 +178,6 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 		return nil
 	}
 
-	if l.status != StatusActive {
-		return ErrListingNotAcceptingBids
-	}
-
-	if !l.endsAt.After(now) {
-		return ErrListingExpired
-	}
-
 	if err := l.AcceptsBidAt(now); err != nil {
 		return err
 	}
@@ -257,10 +249,6 @@ func (l *Listing) ConfirmBid(bidID uuid.UUID, now time.Time) error {
 
 	// Settlement fixes the winner when it freezes the listing; a late
 	// confirmation must not swap the leader out from under it.
-	if l.status != StatusActive {
-		return ErrListingNotAcceptingBids
-	}
-
 	if err := l.acceptingBidChanges(); err != nil {
 		return err
 	}
@@ -340,10 +328,6 @@ func (l *Listing) SetWinningBid(bidID uuid.UUID, now time.Time) error {
 }
 
 func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time) error {
-	if l.status != StatusActive {
-		return ErrListingNotAcceptingBids
-	}
-
 	if err := l.acceptingBidChanges(); err != nil {
 		return err
 	}
@@ -398,6 +382,7 @@ func (l *Listing) acceptingBidChanges() error {
 
 	return nil
 }
+
 func (l *Listing) findWinningBid() *Bid {
 	for _, bid := range l.bids {
 		if bid.status != BidStatusWinning {

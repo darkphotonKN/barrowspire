@@ -155,24 +155,6 @@ func TestPlaceBidUC(t *testing.T) {
 	}
 }
 
-// NOTE: placement and confirmation happen in one transaction on this path, so a
-// bid is never observed PENDING. TestPlaceBidHoldsGoldBeforeRecordingTheBid
-// covers the state a caller can actually see.
-func skippedTestPlaceBidUCStartsPending(t *testing.T) {
-	l := activeListing(t, 100)
-	repo := &fakeRepo{listing: l}
-
-	err := NewPlaceBidUC(repo, &fakeWallet{}).Handle(context.Background(), PlaceBidCommand{
-		ListingID: uuid.New(),
-		MemberID:  uuid.New(),
-		Amount:    150,
-		Now:       time.Now(),
-	})
-
-	require.NoError(t, err)
-	assert.Equal(t, listing.BidStatusWinning, l.Snapshot().Bids[0].Status)
-}
-
 // TestPlaceBidUCForwardsTheIdempotencyKey guards the wiring that makes retries
 // safe. Dropping the key here compiles and passes every other test, but silently
 // turns a replayed request into a member bidding against themselves.
