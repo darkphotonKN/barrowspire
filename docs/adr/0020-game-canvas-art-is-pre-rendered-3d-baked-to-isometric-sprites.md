@@ -4,7 +4,8 @@ Status: accepted
 Date: 2026-09-27
 Scope: `game-client` in-game canvas (Phaser scenes, sprites, tiles, lighting). Not the web/platform DOM UI. Not `game-server`.
 Builds on: [ADR-0013](0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (token-only colour), which stands unchanged
-Realized by: (FS pending)
+Realized by: FS-2325V
+Amended by: ADR-0021 — Decision 6 (characters are authored in code, not sourced)
 
 ## Context
 

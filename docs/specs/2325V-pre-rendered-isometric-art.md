@@ -1,6 +1,6 @@
 # FS-2325V: Pre-rendered isometric art in the game canvas
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Presentation" → "Isometric projection of the game world", "Pre-rendered world and prop art", "Pre-rendered character and creature art", "Light-map lighting with placed light sources", "Container-open presentation" → this FS · Related ADRs: [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (medium, projection, bake, boundary), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (token-only colour) · Art SSOT: [`game-client/docs/design-guideline.md`](../../game-client/docs/design-guideline.md) Part I · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) "Rendering terms" · Builds on: [FS-W6BP1](W6BP1-game-canvas-fantasy-reskin.md) (palette, type, overlay lighting)
+> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Presentation" → "Isometric projection of the game world", "Pre-rendered world and prop art", "Pre-rendered character and creature art", "Light-map lighting with placed light sources", "Container-open presentation" → this FS · Related ADRs: [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (medium, projection, bake, boundary), [ADR-0021](../adr/0021-characters-are-authored-in-code-not-sourced.md) (characters authored in code; §E revised 2026-09-27), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (token-only colour) · Art SSOT: [`game-client/docs/design-guideline.md`](../../game-client/docs/design-guideline.md) Part I · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) "Rendering terms" · Builds on: [FS-W6BP1](W6BP1-game-canvas-fantasy-reskin.md) (palette, type, overlay lighting)
 
 > Scoped `--from-thread` with every visual/3D decision delegated by the owner. The decisions below
 > converged without adversarial review **(not challenged)**. The cost of error is bounded: client
@@ -19,7 +19,8 @@ does today.
 
 A throwaway spike proved the pipeline end to end: ground, hall interior, trees, lighting,
 satchel, and a walk cycle all reached the target. The one weak point was characters built from
-primitives, which is why characters come from real rigged models (§E).
+rigid primitives. Characters are still authored in code, never sourced (ADR-0021), but on a
+skinned rig with shaped anatomy, generated materials and hand-keyed clips (§E).
 
 ## Requirements
 
@@ -159,9 +160,16 @@ primitives, which is why characters come from real rigged models (§E).
 
 ### §E. Characters and creatures (line: "Pre-rendered character and creature art")
 
-1. Characters and creatures are baked from **real rigged models** (Mixamo FBX, loaded directly
-   via three's FBXLoader; GLB also accepted). The owner downloads them. Per model, the manifest
-   records source and licence. Raw models are never committed (§B.7).
+1. Characters and creatures are **authored in code in the bake tool** (ADR-0021). No
+   third-party model or animation is used.
+   - One shared humanoid skeleton (`Bone` / `SkinnedMesh`); creature variants change proportions
+     and add bones (tail, jaw, hunch).
+   - Smooth skinned bodies built from shaped geometry, so joints bend without seams. Not stacked
+     rigid primitives.
+   - Procedurally generated textures and normal maps (mail, plate, leather, wool, rust, grime);
+     colours from `BARROW`.
+   - Hand-keyed clips on the shared rig. Cloth, hair and tails get spring-lagged secondary motion.
+   - Manifest source/licence reads "authored: <bake module>" and the project's own licence.
 2. **Each class and creature gets:**
    - 8 directions;
    - idle and walk animations;
@@ -175,6 +183,9 @@ primitives, which is why characters come from real rigged models (§E).
 5. Characters stand on their footprint anchor, and their baked shadow falls screen-right,
    consistent with props.
 6. Sheet naming leaves room for equipment layers later; layering itself is out of scope.
+7. **Owner review gate.** The bake emits a contact sheet: every class and creature × 8
+   directions × each animation, at game scale. Scenes switch to character sheets only after the
+   owner approves it.
 
 ## User Stories
 
@@ -202,10 +213,10 @@ primitives, which is why characters come from real rigged models (§E).
 22. As a developer, I want scenes to read frame geometry from the manifest, so that re-baking art never needs code edits.
 23. As a developer, I want the bake to be deterministic, so that a re-bake doesn't churn unchanged PNGs in git.
 24. As a developer, I want art changes to show up as committed PNG diffs, so that they can be reviewed and reverted.
-25. As a developer, I want raw licensed models kept out of git, so that the repo never redistributes them.
+25. As the owner, I want every character built for Barrowspire rather than taken from a stock library, so that the game looks like nothing else.
 26. As a reviewer, I want any diff that touches `game-server/` or changes a message to fail review, so that the boundary holds.
 27. As the owner, I want the design guideline to describe the new medium before art lands, so that the SSOT and the code never disagree.
-28. As an agent picking up character work, I want a manifest entry per model with source and licence, so that provenance is never lost.
+28. As the owner, I want a contact sheet of every character at game scale before it goes in, so that I judge the art the way players will see it.
 
 ## Acceptance Criteria
 
@@ -226,7 +237,7 @@ primitives, which is why characters come from real rigged models (§E).
 - [ ] Occluding trees and props fade and restore.
 - [ ] The light-map shows manifest-declared sources plus the delver pool; the hub and run ambients differ; an edge-of-canvas hostile remains readable in the run's darkest ambient.
 - [ ] The container view opens and closes on the old triggers, animates the flap, and clicking an icon sends the same message as the old row (message captured and compared).
-- [ ] Each class and creature has 8-dir idle, walk, attack and death sheets baked from rigged models with recorded licence; scenes play them from existing state.
+- [ ] Each class and creature has 8-dir idle, walk, attack and death sheets, authored in code on the shared skinned rig with no third-party model; the owner has approved the contact sheet; scenes play them from existing state.
 - [ ] `npm run lint`, `npm run lint:fence` and `npm test` pass; the hex fence stays green.
 
 ## Edge States
