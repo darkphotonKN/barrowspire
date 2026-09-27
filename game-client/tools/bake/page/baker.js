@@ -274,6 +274,8 @@ export function createBaker() {
     const frames = poses.map((apply) => {
       root.rotation.y = 0;
       apply();
+      // a pose may dress the rig in another palette (a hub resident's variant): light it alike
+      prep(root);
       return yaws.map((yaw) => {
         root.rotation.y = yaw;
         root.updateMatrixWorld(true);

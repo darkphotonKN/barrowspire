@@ -7,7 +7,7 @@
  * the eased world position it just drew, and whether the character is dead; attacks arrive as
  * {@link CharacterAnimator.attack} from the effect trigger the scene already fires.
  *
- *   const anim = new CharacterAnimator(art, player.class);
+ *   const anim = new CharacterAnimator(art, player.class);   // or a look: { sheet, variant }
  *   if (anim.baked) anim.dress(sprite);
  *   ...
  *   const choice = anim.step(pos, time, delta, dead);
@@ -32,6 +32,15 @@ import {
 const SPEED_SMOOTHING_MS = 100;
 /** An attack window when there is no sheet to time it by: the placeholder turns for this long. */
 const PLACEHOLDER_ATTACK_MS = 400;
+
+/**
+ * A sheet to draw a character from directly, rather than by class: a hub resident or function
+ * NPC (`hubFolk.ts`). `variant` names a palette the sheet carries as `<clip>_<variant>` clips.
+ */
+export interface CharacterLook {
+  sheet: string;
+  variant?: string;
+}
 
 /** The slice of a Phaser sprite {@link CharacterAnimator} drives. */
 export interface AnimatedSprite {
@@ -108,14 +117,19 @@ export class CharacterAnimator {
   /** Set by {@link attack}: the next attack frame replays from the start, even on the same key. */
   private swingPending = false;
 
+  private readonly variant?: string;
+
+  /** `who` is a server class (`characterSheet`), or the {@link CharacterLook} to draw. */
   constructor(
     private readonly art: ArtLibrary,
-    playerClass: string | undefined,
+    who: string | undefined | CharacterLook,
     facing: Facing8 = "se",
   ) {
-    this.sheet = characterSheet(playerClass);
+    const look = typeof who === "object" ? who : { sheet: characterSheet(who) };
+    this.sheet = look.sheet;
+    this.variant = look.variant;
     const attack = art.sheet(this.sheet)?.animations.attack;
-    this.baked = art.animationKey(this.sheet, "idle") !== undefined;
+    this.baked = art.animationKey(this.sheet, this.clip("idle")) !== undefined;
     this.motion = new CharacterMotion(
       facing,
       attack && attack.fps > 0
@@ -151,7 +165,7 @@ export class CharacterAnimator {
    */
   dress(sprite: AnimatedSprite): void {
     const frame = this.art.resolve(this.sheet, {
-      animation: "idle",
+      animation: this.clip("idle"),
       direction: directionIndex(this.motion.facing),
     });
     if (frame.placeholder) sprite.setTexture(frame.texture);
@@ -165,7 +179,8 @@ export class CharacterAnimator {
    * cycle, so a stride does not restart at every turn.
    */
   show(sprite: AnimatedSprite, choice: AnimationChoice): void {
-    const key = this.art.animationKey(this.sheet, choice.animation, choice.direction);
+    const clip = this.clip(choice.animation);
+    const key = this.art.animationKey(this.sheet, clip, choice.direction);
     if (!key) return;
     const anims = sprite.anims;
     const current = anims.currentAnim;
@@ -174,7 +189,7 @@ export class CharacterAnimator {
       sprite.play({ key, startFrame: 0 });
     } else if (current?.key !== key) {
       const startFrame =
-        current && this.loops(choice.animation) && animationOf(current.key) === choice.animation
+        current && this.loops(clip) && animationOf(current.key) === clip
           ? Math.max(0, current.frames.indexOf(anims.currentFrame))
           : 0;
       sprite.play({ key, startFrame });
@@ -182,10 +197,14 @@ export class CharacterAnimator {
     anims.timeScale = choice.timeScale;
   }
 
-  private loops(animation: CharacterAnimation): boolean {
-    return this.art.sheet(this.sheet)?.animations[animation]?.loop ?? false;
+  private loops(clip: string): boolean {
+    return this.art.sheet(this.sheet)?.animations[clip]?.loop ?? false;
   }
 
+  /** The manifest animation a clip plays under this look's palette variant. */
+  private clip(animation: CharacterAnimation): string {
+    return this.variant ? `${animation}_${this.variant}` : animation;
+  }
 }
 
 /** `sheet/animation/direction` (library.ts `animationName`) → `animation`. */

@@ -33,6 +33,7 @@ import {
 import { preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
+import { folkLook } from "@/render/art/hubFolk";
 import { AMBIENT, LightMap } from "@/render/lighting";
 import { MARKER_DEPTH, markerBase } from "@/render/markers";
 import {
@@ -66,7 +67,6 @@ const HUB_WIDTH = 2000;
 const HUB_HEIGHT = 1000;
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = 64;
-const PLAYER_RADIUS = 20;
 /**
  * Screen px from a delver's marker base (`markerBase`: a baked head, or the preview's frame top)
  * to the middle of their name label: a 60 px preview centred on the footprint keeps its label at
@@ -207,6 +207,25 @@ interface DelverView {
   anim: CharacterAnimator;
 }
 
+/** One of the hub's residents or function NPCs, as drawn. */
+interface NPCView {
+  state: NPCState;
+  sprite: Phaser.GameObjects.Container;
+  /** A marker above the lighting (FS-2325V §C.9), placed over the head each frame. */
+  name: Phaser.GameObjects.Text;
+  target: Point;
+  /** Eased world position, as for delvers. */
+  pos: Point;
+  facing: Facing8;
+  /**
+   * Their baked sheet (FS-2325V §G), played like a delver's. When it is not `baked`, the
+   * placeholder textures below stand in.
+   */
+  anim: CharacterAnimator;
+  /** The placeholder villager texture, which turns by swapping facings; unset otherwise. */
+  texture?: string;
+}
+
 /**
  * The hub: the shared world delvers occupy between runs.
  *
@@ -237,19 +256,7 @@ export class HubScene extends Phaser.Scene {
    * treatment delvers get. Function NPCs never move, so their target simply
    * never changes.
    */
-  private npcs = new Map<
-    string,
-    {
-      state: NPCState;
-      sprite: Phaser.GameObjects.Container;
-      target: Point;
-      /** Eased world position, as for delvers. */
-      pos: Point;
-      facing: Facing8;
-      /** Set for residents, who turn; function NPCs keep their one texture. */
-      texture?: string;
-    }
-  >();
+  private npcs = new Map<string, NPCView>();
   /** Whose dialogue is open, if any, and what its options do. */
   private dialogue?: Phaser.GameObjects.Container;
   private dialogueChoices?: { confirm: () => void; dismiss: () => void };
@@ -430,6 +437,10 @@ export class HubScene extends Phaser.Scene {
     for (const npc of this.npcs.values()) {
       easeToward(npc.pos, npc.target);
       standAt(npc.sprite, npc.pos, 1);
+      // folk idle and walk on their own legs, read off the position just drawn
+      const body = npc.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+      if (npc.anim.baked && body) npc.anim.show(body, npc.anim.step(npc.pos, time, delta, false));
+      this.placeMarker(npc.sprite, npc.name, npc.anim.crown);
     }
 
     for (const view of this.views.values()) {
@@ -997,67 +1008,79 @@ export class HubScene extends Phaser.Scene {
     g.strokeRect(left, top, width, height);
   }
 
-  /** Draws the hub's residents. They stand still, so this runs once each. */
+  /** Draws the hub's residents and function NPCs, once each; update() moves them after. */
   private renderNPCs(npcs: NPCState[]): void {
     for (const npc of npcs) {
       const existing = this.npcs.get(npc.entity_id);
 
       if (existing) {
-        // A resident faces the way they are walking, worked out from where the
-        // server has moved them since the last tick (world positions).
-        const facing = facingFrom(
-          npc.position.x - existing.target.x,
-          npc.position.y - existing.target.y,
-          existing.facing,
-        );
-
         existing.target = { x: npc.position.x, y: npc.position.y };
-
-        if (facing !== existing.facing && existing.texture) {
-          existing.facing = facing;
-          const body = existing.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
-          body?.setTexture(`${existing.texture}_${nearestScreenFacing(facing)}`);
-        }
-
+        if (!existing.anim.baked) this.turnPlaceholderNPC(existing);
         continue;
       }
 
-      // Residents are ordinary folk and are drawn as such; the two function NPCs
-      // keep the delver silhouette, tinted brass so it is legible at a glance
-      // which of them is worth crossing the hub for.
+      // Everyone is a baked character on the delvers' rig (FS-2325V §G): residents in their
+      // build and palette, function NPCs as themselves, whose role reads from the silhouette.
+      // Only with no sheet at all do the placeholders stand in: a villager texture, or the
+      // delver silhouette tinted brass.
       const isFunction = npc.function !== "";
-      const tone = isFunction ? BARROW_HEX.brassBright : BARROW_HEX.vellum;
-      const texture = isFunction
-        ? undefined
-        : ensureVillagerTexture(this, npc.appearance ?? "green_trousers");
+      const tone = isFunction ? BARROW_HEX.brassBright : palette.markerHub;
+      const anim = new CharacterAnimator(this.art, folkLook(npc, this.art));
+      const texture =
+        anim.baked || isFunction
+          ? undefined
+          : ensureVillagerTexture(this, npc.appearance ?? "green_trousers");
 
       const body = texture
         ? this.add.sprite(0, 0, `${texture}_down`)
-        : this.add.sprite(0, 0, textureFor("warrior", "down")).setTint(tone);
+        : this.add.sprite(0, 0, textureFor("warrior", "down"));
+      if (anim.baked) anim.dress(body);
+      else if (isFunction) body.setTint(tone);
       body.setName("body");
 
+      // brass for the two worth crossing the hub for, vellum for the folk
       const name = this.add
-        .text(0, -PLAYER_RADIUS - 14, npc.name, {
+        .text(0, 0, npc.name, {
           fontFamily: CANVAS_FONT.body,
           fontSize: "12px",
           color: toCss(tone),
         })
-        .setOrigin(0.5);
+        .setOrigin(0.5)
+        .setDepth(MARKER_DEPTH.name);
 
       const pos = { x: npc.position.x, y: npc.position.y };
-      const sprite = this.add.container(0, 0, [body, name]);
+      const sprite = this.add.container(0, 0, [body]);
       standAt(sprite, pos, 1);
+      this.placeMarker(sprite, name, anim.crown);
 
       this.npcs.set(npc.entity_id, {
         state: npc,
         sprite,
+        name,
         target: { ...pos },
         pos,
         // faces the viewer, which the "down" texture shows
         facing: "se",
+        anim,
         texture,
       });
     }
+  }
+
+  /**
+   * A placeholder villager faces the way they are walking, worked out from where the server
+   * has moved them since the last tick (world positions).
+   */
+  private turnPlaceholderNPC(npc: NPCView): void {
+    const facing = facingFrom(
+      npc.target.x - npc.pos.x,
+      npc.target.y - npc.pos.y,
+      npc.facing,
+    );
+    if (facing === npc.facing || !npc.texture) return;
+    npc.facing = facing;
+    const body = npc.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+    body?.setTexture(`${npc.texture}_${nearestScreenFacing(facing)}`);
   }
 
   /**
@@ -1184,18 +1207,27 @@ export class HubScene extends Phaser.Scene {
 
   /** A delver's name plate over their head ({@link markerBase}); the hub has no corpses. */
   private placeName(view: DelverView): void {
-    const body = view.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+    this.placeMarker(view.sprite, view.name, view.anim.crown);
+  }
+
+  /** A name plate over whoever stands in `sprite`: a baked head (`crown`), or the frame's top. */
+  private placeMarker(
+    sprite: Phaser.GameObjects.Container,
+    name: Phaser.GameObjects.Text,
+    crown: number | undefined,
+  ): void {
+    const body = sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
     if (!body) return;
     const base = markerBase(
       {
-        y: view.sprite.y + body.y,
+        y: sprite.y + body.y,
         displayOriginY: body.displayOriginY,
         scaleY: body.scaleY,
       },
-      view.anim.crown,
+      crown,
       false,
     );
-    view.name.setPosition(view.sprite.x + body.x, (base ?? view.sprite.y) - NAME_GAP);
+    name.setPosition(sprite.x + body.x, (base ?? sprite.y) - NAME_GAP);
   }
 
   private placeDelver(player: PlayerState, isSelf: boolean): void {

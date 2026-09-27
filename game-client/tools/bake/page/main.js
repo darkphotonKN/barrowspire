@@ -100,32 +100,43 @@ window.bakeSheet = (name) => {
  * Frame lists come back in FACINGS order, which the manifest records.
  */
 function bakeCharacterSheet(sheet) {
-  const { rig, style } = sheet.build();
-  const clips = clipsFor(style);
+  const { rig, style, variants = [{ name: null, dress: () => {} }] } = sheet.build();
+  const specs = sheet.animations ?? ANIMATIONS;
+  const clips = clipsFor(style, specs);
   const poses = [];
   const animations = {};
-  for (const [anim, spec] of Object.entries(ANIMATIONS)) {
+  const springs = {};
+  for (const [anim, spec] of Object.entries(specs)) {
     const frames = clips[anim];
     if (frames.length !== spec.frames) throw new Error(`bake: ${sheet.name} ${anim} has ${frames.length} frames, not ${spec.frames}`);
-    const springs = simulateSprings(rig, frames, {
+    springs[anim] = simulateSprings(rig, frames, {
       ...spec,
       speed: anim === "walk" ? (style.speed ?? 1) : 0,
       settle: anim === "death",
       calm: anim === "attack" ? 0.25 : 1,
     });
-    animations[anim] = { fps: spec.fps, loop: spec.loop, frames: FACINGS.map(() => []) };
-    frames.forEach((p, i) =>
-      poses.push({
-        anim,
-        i,
-        apply: () => {
-          applyPose(rig, p, springs[i]);
-          groundPose(rig);
-          for (const hook of rig.hooks ?? []) hook(rig, p);
-        },
-      }),
-    );
   }
+  // A palette variant (a hub resident's) re-dresses the same rig and poses: its clips follow the
+  // first palette's as `<anim>_<palette>` (src/render/art/hubFolk.ts reads them so).
+  variants.forEach((variant, v) => {
+    for (const [anim, spec] of Object.entries(specs)) {
+      const frames = clips[anim];
+      const name = v === 0 ? anim : `${anim}_${variant.name}`;
+      animations[name] = { fps: spec.fps, loop: spec.loop, frames: FACINGS.map(() => []) };
+      frames.forEach((p, i) =>
+        poses.push({
+          anim: name,
+          i,
+          apply: () => {
+            variant.dress();
+            applyPose(rig, p, springs[anim][i]);
+            groundPose(rig);
+            for (const hook of rig.hooks ?? []) hook(rig, p);
+          },
+        }),
+      );
+    }
+  });
   const out = baker.bakeCharacter(
     rig.root,
     poses.map((p) => p.apply),

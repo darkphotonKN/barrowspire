@@ -8,7 +8,7 @@
 
 import * as THREE from "three";
 import { attach, jointAt as J, mount, rigidTube } from "./rig.js";
-import { mkCanvas } from "../materials.js";
+import { materials, mkCanvas } from "../materials.js";
 import { cssRgb, mix, shade } from "../palette.js";
 
 
@@ -438,4 +438,88 @@ export function wizardHat(rig, mat, bandMat) {
   attach(rig, "head", tip, mat, [0, hy + 0.265, hz - 0.075], { rx: -1.05 });
   const band = new THREE.CylinderGeometry(0.067 * H, 0.069 * H, 0.016 * H, 24, 1, true);
   attach(rig, "head", band, bandMat, [0, hy + 0.086, hz - 0.013], { rx: -0.22 });
+}
+
+// --- hub folk (FS-2325V §G) ----------------------------------------------------------------
+
+/**
+ * A warden's lantern-pole, held upright: a tall ash shaft ending in an iron crook, the lantern
+ * hanging from its tip ahead of the bearer. The glass glows amber: the warden is someone to
+ * talk to (the interactable channel).
+ */
+export function lanternPole(rig, M, F) {
+  const H = rig.H;
+  const g = new THREE.Group();
+  const top = 0.44 * H;
+  g.add(placed(rod(0.011 * H, 0.009 * H, top + 0.5 * H, 8), M.woodDark, 0, 0, (top - 0.5 * H) / 2));
+  // grip wrap
+  g.add(new THREE.Mesh(rod(0.013 * H, 0.013 * H, 0.06 * H, 8), F.leatherDark));
+  // the crook: iron, curling forward (grip -y is ahead of the bearer when the pole stands)
+  const crook = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0, top - 0.02 * H),
+    new THREE.Vector3(0, -0.02 * H, top + 0.06 * H),
+    new THREE.Vector3(0, -0.09 * H, top + 0.09 * H),
+    new THREE.Vector3(0, -0.15 * H, top + 0.06 * H),
+    new THREE.Vector3(0, -0.16 * H, top + 0.02 * H),
+  ]);
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(crook, 20, 0.0065 * H, 6, false), F.blackIron));
+  // the lantern: a pyramid cap, four iron posts around lit glass, a base plate
+  const lx = 0;
+  const ly = -0.16 * H;
+  const lz = top - 0.06 * H;
+  const s = 0.034 * H;
+  const h = 0.07 * H;
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(s * 1.5, s * 1.5, h * 0.8), M.glass);
+  glass.position.set(lx, ly, lz);
+  glass.userData.noShadow = true;
+  g.add(glass);
+  for (const [sx, sy] of [
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+  ])
+    g.add(placed(new THREE.BoxGeometry(0.004 * H, 0.004 * H, h), F.blackIron, lx + sx * s * 0.8, ly + sy * s * 0.8, lz));
+  const capGeo = new THREE.ConeGeometry(s * 1.35, 0.03 * H, 4);
+  capGeo.rotateX(Math.PI / 2);
+  capGeo.rotateZ(Math.PI / 4);
+  g.add(placed(capGeo, F.blackIron, lx, ly, lz + h / 2 + 0.014 * H));
+  g.add(placed(new THREE.BoxGeometry(s * 1.8, s * 1.8, 0.006 * H), F.blackIron, lx, ly, lz - h / 2));
+  return g;
+}
+
+/**
+ * A thick ledger bound in dark leather with brass corners, carried upright against the body.
+ * Built in the bind pose's frame of the forearm that carries it: thickness across the arm (x),
+ * width along it (y), height out of its front (z), which the raised forearm turns upward.
+ */
+export function ledger(rig, M, F) {
+  const H = rig.H;
+  const g = new THREE.Group();
+  const t = 0.032 * H;
+  const w = 0.09 * H;
+  const l = 0.12 * H;
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(t, w, l), F.leatherDark));
+  // the page block, showing on the three edges away from the spine
+  g.add(placed(new THREE.BoxGeometry(t * 0.72, w * 0.95, l * 0.94), materials().vellum, 0, 0.004 * H, 0));
+  for (const sy of [-1, 1])
+    for (const sz of [-1, 1])
+      g.add(placed(new THREE.BoxGeometry(t * 1.08, 0.013 * H, 0.013 * H), M.brass, 0, sy * (w / 2 - 0.004 * H), sz * (l / 2 - 0.004 * H)));
+  return g;
+}
+
+/** A ring of iron keys hanging at the hip. */
+export function keyRing(rig, F, side = "L") {
+  const H = rig.H;
+  const [, hy] = J(rig, "hips");
+  const sx = side === "L" ? 1 : -1;
+  const g = mount(rig, "hips", [sx * 0.1 * rig.p.hipW, hy - 0.03, 0.02]);
+  g.add(placed(new THREE.TorusGeometry(0.014 * H, 0.0025 * H, 5, 12), F.blackIron, 0, 0, 0, 0, Math.PI / 2, 0));
+  for (let i = 0; i < 3; i++) {
+    const a = -0.5 + i * 0.5;
+    const key = placed(new THREE.BoxGeometry(0.004 * H, 0.04 * H, 0.008 * H), F.blackIron, 0, -0.024 * H, 0, 0, 0, a);
+    key.position.x = Math.sin(a) * 0.012 * H;
+    g.add(key);
+  }
+  return g;
 }

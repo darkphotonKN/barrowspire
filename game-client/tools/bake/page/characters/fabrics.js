@@ -281,7 +281,43 @@ export const GEAR = {
   trollBelly: mix("arcaneDeep", "vellumFaint", 0.35),
   rag: mix("barrowBrown", "slate", 0.45),
   fur: mix("barrowBrown", "barrowDeep", 0.55),
+  // hub folk (FS-2325V §G): undyed and plant-dyed homespun, nothing heraldic
+  // undyed linen, warmed toward rose: a khaki sleeve reads as grave-rot skin at 1x
+  shirt: mix(mix("vellum", "barrowBrown", 0.4), "oxbloodText", 0.18),
+  wardWool: mix("charcoal", "necrotic", 0.2),
+  felt: mix("barrowDeep", "slate", 0.5),
+  apron: mix("barrowBrown", "brass", 0.4),
+  hairGrey: mix("slateLight", "vellumDark", 0.45),
 };
+
+/**
+ * A hub resident's palette (FS-2325V §G.2): the name is the first half of the server's
+ * `appearance` ("rust" in "rust_trousers"). `cloth` is the main garment (tunic, kirtle), `under`
+ * the second (trousers, shawl), `hair` the hair. Earthy, muted dyes; none of them a delver's
+ * heraldic red or a channel colour at full strength.
+ */
+export const FOLK_PALETTES = {
+  rust: { cloth: mix("ember", "barrowBrown", 0.55), under: mix("barrowDeep", "slate", 0.35), hair: mix("barrowBrown", "barrowDeep", 0.25) },
+  slate: { cloth: mix("slate", "necrotic", 0.3), under: mix("barrowBrown", "barrowDeep", 0.45), hair: mix("pitch", "barrowDeep", 0.45) },
+  green: { cloth: mix("arcaneDeep", "barrowBrown", 0.4), under: mix("barrowBrown", "barrowDeep", 0.5), hair: mix("ember", "barrowDeep", 0.6) },
+  flax: { cloth: mix("vellumDark", "slate", 0.45), under: mix("barrowDeep", "arcaneDeep", 0.3), hair: mix("vellumDark", "brass", 0.4) },
+};
+
+const FOLK_SETS = {};
+
+/** One resident palette's materials, painted once per bake and seeded by its place in the list. */
+export function folkFabrics(name) {
+  if (FOLK_SETS[name]) return FOLK_SETS[name];
+  const tones = FOLK_PALETTES[name];
+  if (!tones) throw new Error(`fabrics: no folk palette "${name}"`);
+  const seed = 101 + Object.keys(FOLK_PALETTES).indexOf(name) * 10;
+  const D = THREE.DoubleSide;
+  return (FOLK_SETS[name] = {
+    cloth: mat(wool(tones.cloth, { seed, dirt: 0.4 }), { side: D }),
+    under: mat(wool(tones.under, { seed: seed + 1, dirt: 0.45 }), { side: D }),
+    hair: mat(hair(tones.hair, { seed: seed + 2 }), { rough: 0.85 }),
+  });
+}
 
 let SET = null;
 
@@ -316,6 +352,11 @@ export function fabrics() {
     trollBelly: mat(hide(GEAR.trollBelly, { seed: 39 }), { rough: 0.65 }),
     rag: mat(rag(GEAR.rag), { side: D }),
     fur: mat(hair(GEAR.fur, { seed: 41 }), { side: D }),
+    shirt: mat(linen(GEAR.shirt, { seed: 43, dirt: 0.35 })),
+    wardWool: mat(wool(GEAR.wardWool, { seed: 45, dirt: 0.5 }), { side: D }),
+    felt: mat(wool(GEAR.felt, { seed: 47, dirt: 0.3 }), { side: D }),
+    apron: mat(leather(GEAR.apron, { seed: 49, dirt: 0.5 }), { rough: 0.75, side: D }),
+    hairGrey: mat(hair(GEAR.hairGrey, { seed: 51 }), { rough: 0.9 }),
   };
   return SET;
 }

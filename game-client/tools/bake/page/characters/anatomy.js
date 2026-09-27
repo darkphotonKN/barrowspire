@@ -472,3 +472,56 @@ export function belt(rig, mat, buckleMat, o = {}) {
   attach(rig, "hips", new THREE.BoxGeometry(0.032 * H, 0.03 * H, 0.012 * H), buckleMat, [0, y, rz + 0.002]);
   if (o.pouch) attach(rig, "hips", new THREE.BoxGeometry(0.04 * H, 0.05 * H, 0.03 * H), mat, [rx * 0.8, y - 0.035, rz * 0.45], { ry: 0.9 });
 }
+
+/**
+ * Hair over a bare head (FS-2325V §G): a cap over the crown with the hairline above the brow,
+ * and the back of the head down to the nape. `long` lets it fall to the collar; `bun` gathers it
+ * at the back. Returns the meshes, so a palette can recolour them.
+ */
+export function hair(rig, mat, o = {}) {
+  const H = rig.H;
+  const [, hy, hz] = J(rig, "head");
+  const r = rig.p.headR;
+  const at = [0, hy + 0.058, hz - 0.004];
+  const scale = { sx: 0.99 * r * H, sy: 1.08 * r * H, sz: 1.06 * r * H };
+  const out = [];
+  // the crown, tipped back so the hairline sits above the brow and low at the nape
+  out.push(attach(rig, "head", new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.4), mat, at, { ...scale, rx: -0.28 }));
+  // the back and sides, open over the face
+  const fall = o.long ? 0.62 : 0.4;
+  out.push(
+    attach(rig, "head", new THREE.SphereGeometry(1, 20, 10, Math.PI / 2 + 1.15, Math.PI * 2 - 2.3, Math.PI * 0.25, Math.PI * fall), mat, at, scale),
+  );
+  if (o.bun) out.push(attach(rig, "head", ellipsoid(r * 0.5 * H, r * 0.46 * H, r * 0.44 * H, 12), mat, [0, hy + 0.078, hz - r * 1.02]));
+  return out;
+}
+
+/** A soft felt cap with a short brim, worn over the crown. */
+export function cap(rig, mat) {
+  const H = rig.H;
+  const [, hy, hz] = J(rig, "head");
+  const r = rig.p.headR;
+  attach(rig, "head", ellipsoid(r * 1.04 * H, r * 0.62 * H, r * 1.1 * H, 18), mat, [0, hy + 0.09, hz - 0.01], { rx: -0.12 });
+  const band = new THREE.CylinderGeometry(1, 1.02, 1, 22, 1, true);
+  attach(rig, "head", band, mat, [0, hy + 0.078, hz - 0.004], { sx: r * 0.99 * H, sy: r * 0.4 * H, sz: r * 1.05 * H, rx: -0.12 });
+  const brim = new THREE.CylinderGeometry(r * 0.72 * H, r * 0.72 * H, 0.008 * H, 16, 1, false, -Math.PI / 2, Math.PI);
+  attach(rig, "head", brim, mat, [0, hy + 0.072, hz + r * 0.62], { rx: 0.1, sz: 0.8 });
+}
+
+/** A shawl over the shoulders, riding the chest. Returns the mesh, for a palette to recolour. */
+export function shawl(rig, mat) {
+  const [, ny] = J(rig, "neck");
+  const sw = rig.p.shoulderW;
+  const td = rig.p.torsoD;
+  const geo = rigidTube(
+    rig.H,
+    [
+      { p: [0, ny + 0.012, -0.004], r: [0.046, 0.045] },
+      { p: [0, ny - 0.02, -0.004], r: [0.116 * sw, 0.086 * td] },
+      { p: [0, ny - 0.065, 0.0], r: [0.142 * sw, 0.1 * td] },
+      { p: [0, ny - 0.1, -0.004], r: [0.152 * sw, 0.106 * td] },
+    ],
+    { segs: 24, steps: 4, caps: false },
+  );
+  return attach(rig, "chest", geo, mat, [0, 0, 0]);
+}

@@ -44,6 +44,23 @@ function manifest(): ArtManifest {
         source: "authored: tools/bake/page/characters/cast.js#knight",
         licence: "Barrowspire-original",
       },
+      // a hub resident's build: its first palette plain, a second as a variant
+      folk_resident_trousers: {
+        atlas: "characters-0",
+        frameWidth: 90,
+        frameHeight: 110,
+        anchor: { x: 0.4, y: 0.8 },
+        directions: 8,
+        animations: {
+          idle: clip(4, true, 4),
+          walk: clip(10, true, 8),
+          idle_slate: clip(4, true, 4),
+          walk_slate: clip(10, true, 8),
+        },
+        crown: 70,
+        source: "authored: tools/bake/page/characters/folk.js#resident",
+        licence: "Barrowspire-original",
+      },
     },
   };
 }
@@ -238,5 +255,53 @@ describe("CharacterAnimator", () => {
     anim.attack(0);
     expect(anim.step({ x: 0, y: 0 }, 499, FRAME, false).animation).toBe("attack");
     expect(anim.step({ x: 0, y: 0 }, 500, FRAME, false).animation).toBe("idle");
+  });
+
+  describe("drawing a look rather than a class (hub folk, FS-2325V §G)", () => {
+    const slate = { sheet: "folk_resident_trousers", variant: "slate" };
+
+    it("should be baked when the look's sheet is in the manifest", () => {
+      expect(new CharacterAnimator(art(), slate).baked).toBe(true);
+      expect(new CharacterAnimator(art(), { sheet: "folk_nobody" }).baked).toBe(false);
+    });
+
+    it("should dress the sprite in the variant's idle", () => {
+      const sprite = fakeSprite();
+      new CharacterAnimator(art(), slate, "s").dress(sprite);
+      expect(sprite.frame).toBe("folk_resident_trousers/idle_slate/2/0");
+      expect(sprite.origin).toEqual({ x: 0.4, y: 0.8 });
+    });
+
+    it("should play the variant's clips, and the plain ones without a variant", () => {
+      const sprite = fakeSprite();
+      new CharacterAnimator(art(), slate).show(sprite, {
+        animation: "walk",
+        facing: "e",
+        direction: 0,
+        timeScale: 1,
+      });
+      new CharacterAnimator(art(), { sheet: "folk_resident_trousers" }).show(sprite, {
+        animation: "idle",
+        facing: "e",
+        direction: 0,
+        timeScale: 1,
+      });
+      expect(sprite.plays.map((p) => p.key)).toEqual([
+        "folk_resident_trousers/walk_slate/0",
+        "folk_resident_trousers/idle/0",
+      ]);
+    });
+
+    it("should keep a variant's stride in the cycle when it turns", () => {
+      const sprite = fakeSprite();
+      const anim = new CharacterAnimator(art(), slate);
+      anim.show(sprite, { animation: "walk", facing: "e", direction: 0, timeScale: 1 });
+      sprite.at(5);
+      anim.show(sprite, { animation: "walk", facing: "se", direction: 1, timeScale: 1 });
+      expect(sprite.plays[1]).toEqual({
+        key: "folk_resident_trousers/walk_slate/1",
+        startFrame: 5,
+      });
+    });
   });
 });

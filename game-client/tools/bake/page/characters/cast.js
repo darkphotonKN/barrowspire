@@ -218,7 +218,7 @@ export function wizard() {
   return { rig, style };
 }
 
-/** A skull on the head bone, its jaw on the jaw bone, ember light in the sockets. */
+/** A skull on the head bone, its jaw on the jaw bone, hostile red light in the sockets. */
 function skull(rig, boneMat, M) {
   const H = rig.H;
   const [, hy, hz] = J(rig, "head");
@@ -227,7 +227,7 @@ function skull(rig, boneMat, M) {
   attach(rig, "head", ellipsoid(r * 0.78 * H, r * 0.45 * H, r * 0.7 * H, 14), boneMat, [0, hy + 0.028, hz + 0.022]);
   for (const sx of [-1, 1]) {
     attach(rig, "head", ellipsoid(r * 0.3 * H, r * 0.26 * H, r * 0.2 * H, 10), materials().black, [sx * r * 0.36, hy + 0.052, hz + r * 0.86]);
-    attach(rig, "head", ellipsoid(r * 0.24 * H, r * 0.2 * H, r * 0.1 * H, 8), M.ember, [sx * r * 0.36, hy + 0.052, hz + r * 0.97], { noShadow: true });
+    attach(rig, "head", ellipsoid(r * 0.24 * H, r * 0.2 * H, r * 0.1 * H, 8), M.hostileEye, [sx * r * 0.36, hy + 0.052, hz + r * 0.97], { noShadow: true });
   }
   const [, jy, jz] = J(rig, "jaw");
   attach(rig, "jaw", ellipsoid(r * 0.62 * H, r * 0.26 * H, r * 0.62 * H, 12), boneMat, [0, jy - 0.012, jz + 0.012]);
@@ -287,7 +287,7 @@ export function ghoul() {
   return { rig, style };
 }
 
-/** A troll's head: a low skull, heavy brow, long ears, tusked jaw and small ember eyes. */
+/** A troll's head: a low skull, heavy brow, long ears, tusked jaw and small hostile-red eyes. */
 function trollHead(rig, mat, F, M) {
   const H = rig.H;
   const [, hy, hz] = J(rig, "head");
@@ -298,7 +298,7 @@ function trollHead(rig, mat, F, M) {
   for (const sx of [-1, 1]) {
     const ear = new THREE.ConeGeometry(r * 0.28 * H, r * 1.3 * H, 6);
     attach(rig, "head", ear, mat, [sx * r * 1.05, hy + 0.055, hz - 0.004], { rz: -sx * 1.25, rx: -0.3 });
-    attach(rig, "head", ellipsoid(r * 0.2 * H, r * 0.13 * H, r * 0.07 * H, 8), M.ember, [sx * r * 0.42, hy + 0.047, hz + r * 0.95], { noShadow: true });
+    attach(rig, "head", ellipsoid(r * 0.26 * H, r * 0.17 * H, r * 0.08 * H, 8), M.hostileEye, [sx * r * 0.42, hy + 0.047, hz + r * 0.96], { noShadow: true });
   }
   const [, jy, jz] = J(rig, "jaw");
   attach(rig, "jaw", ellipsoid(r * 0.95 * H, r * 0.42 * H, r * 0.95 * H, 14), mat, [0, jy - 0.012, jz + 0.01]);

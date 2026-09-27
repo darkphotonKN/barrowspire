@@ -20,6 +20,15 @@ export const ANIMATIONS = {
   death: { frames: 7, fps: 9, loop: false },
 };
 
+/**
+ * Hub folk (FS-2325V §G.1) only idle and walk: they never fight or fall. Their idle is a shorter
+ * loop, the breath of someone standing about, which keeps their sheets small.
+ */
+export const FOLK_ANIMATIONS = {
+  idle: { frames: 4, fps: 3, loop: true },
+  walk: ANIMATIONS.walk,
+};
+
 // --- pose algebra --------------------------------------------------------------------------
 
 const ZERO = [0, 0, 0];
@@ -292,14 +301,15 @@ export function deathClip(style) {
   return frames.map((p, i) => add(p, style.deathExtra?.(i)));
 }
 
-/** Every animation's key poses for a style, keyed by manifest animation name. */
-export function clipsFor(style) {
-  return {
-    idle: idleCycle(style, ANIMATIONS.idle.frames),
-    walk: walkCycle(style),
-    attack: ATTACKS[style.attack]().map((p) => add(p, style.attackExtra)),
-    death: deathClip(style),
+/** Each animation in `specs`, as key poses for a style, keyed by manifest animation name. */
+export function clipsFor(style, specs = ANIMATIONS) {
+  const make = {
+    idle: () => idleCycle(style, specs.idle.frames),
+    walk: () => walkCycle(style),
+    attack: () => ATTACKS[style.attack]().map((p) => add(p, style.attackExtra)),
+    death: () => deathClip(style),
   };
+  return Object.fromEntries(Object.keys(specs).map((anim) => [anim, make[anim]()]));
 }
 
 // --- applying a pose -----------------------------------------------------------------------

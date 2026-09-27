@@ -3,7 +3,7 @@
 
 import * as THREE from "three";
 import { fbm, smoothstep, vnoise } from "./noise.js";
-import { color, cssRgb, grey, mix, shade } from "./palette.js";
+import { color, cssRgb, grey, mix, normalized, shade } from "./palette.js";
 
 export const mkCanvas = (w, h) => {
   const c = document.createElement("canvas");
@@ -157,6 +157,9 @@ export function materials() {
     flame: glow("amberBright", 3),
     coal: glow("ember", 2.2),
     ember: glow(shade("ember", 1.25), 4),
+    // a hostile's eyes (guideline "Enemy design language"): ember red from the oxblood family,
+    // the damage / hostile channel; never amber, which means interactable
+    hostileEye: glow(normalized(mix("oxblood", "ember", 0.15)), 1.6),
     arcane: glow("arcane", 3),
     glass: glow("amberBright", 1.8),
   };

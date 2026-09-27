@@ -25,6 +25,7 @@ import { door, escapeDoor, lever, chest } from "./models/interactables.js";
 import { ICONS } from "./models/items.js";
 import { groundTile, transitionTile } from "./ground.js";
 import { CAST } from "./characters/cast.js";
+import { FOLK } from "./characters/folk.js";
 
 export const LICENCE = "Barrowspire original work (procedural, no third-party assets)";
 const src = (file, fn) => `procedural: tools/bake/page/${file}#${fn}`;
@@ -241,6 +242,21 @@ function characterSheets() {
   }));
 }
 
+/**
+ * The hub's folk (FS-2325V §G), on the same rig: residents and function NPCs, idle and walk only
+ * (characters/folk.js), each resident build carrying its palettes as variants.
+ */
+function folkSheets() {
+  return FOLK.map((c) => ({
+    name: c.sheet,
+    group: c.group,
+    kind: "character",
+    build: c.build,
+    animations: c.animations,
+    source: `authored: tools/bake/page/characters/folk.js#${c.fn}`,
+  }));
+}
+
 export const CATALOGUE = [
   ...groundSheets(),
   ...natureSheets(),
@@ -248,4 +264,5 @@ export const CATALOGUE = [
   ...propSheets(),
   ...iconSheets(),
   ...characterSheets(),
+  ...folkSheets(),
 ].map((s) => ({ licence: LICENCE, ...s }));
