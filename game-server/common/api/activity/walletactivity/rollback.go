@@ -14,9 +14,15 @@ import "github.com/google/uuid"
 // this package's; rename it here while nothing schedules it yet.
 const ReleaseAllHoldsActivityName = "ReleaseAllHolds"
 
-// ReleaseAllHoldsInput takes the listing rather than a bid list: a rollback runs
-// when the workflow's own view of the bids may be exactly what went wrong, so
-// wallet sweeps its own records instead of trusting a list.
+// ReleaseAllHoldsInput names the bids whose holds to release, the same shape as
+// ReleaseLosingHoldsInput: the set is one the workflow decided, not one wallet
+// re-derives.
+//
+// It cannot be otherwise. wallet_holds carries bid_id as a soft reference and has no
+// listing dimension at all — wallet does not know what a listing is — so there is no
+// query by which wallet could sweep "every hold on the listing". ListingID rides
+// along for logging and for the idempotency of the step, not as a lookup key.
 type ReleaseAllHoldsInput struct {
-	ListingID uuid.UUID `json:"listing_id"`
+	ListingID uuid.UUID   `json:"listing_id"`
+	BidIDs    []uuid.UUID `json:"bid_ids"`
 }

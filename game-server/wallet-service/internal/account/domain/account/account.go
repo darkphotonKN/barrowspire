@@ -144,14 +144,7 @@ func (a *Account) Withdraw(amount int, now time.Time) error {
 // expectedAmount is the caller's figure, used only as a cross-check. Returns the
 // amount actually committed.
 func (a *Account) CommitHold(bidID uuid.UUID, expectedAmount int, now time.Time) (int, error) {
-	// validate bidID exists for the holds under the account
-	var h *WalletHold
-	for _, hold := range a.holds {
-		if bidID == hold.bidID {
-			h = hold
-			break
-		}
-	}
+	h := a.findHoldByBidID(bidID)
 
 	if h == nil {
 		return 0, ErrHoldNotFound
@@ -195,7 +188,49 @@ func (a *Account) CommitHold(bidID uuid.UUID, expectedAmount int, now time.Time)
 	return h.amount, nil
 }
 
+// ReleaseHold is wallet's share of the pre-pivot rollback (FS-NXP1W §Req 12): the
+// hold for bidID moves RESERVED -> RELEASED and the gold it was fencing off becomes
+// available again. No gold moves — availability is derived from the RESERVED holds,
+// so dropping out of RESERVED is the whole effect.
+//
+// A hold already RELEASED is success: the rollback is retried without a cap, so it
+// has to survive re-running. A COMMITTED hold is refused by the FSM, and that
+// refusal is load-bearing — past the pivot the gold is spent and there is no
+// ReverseCommit to undo it with (ADR-0017, §Req 15).
+func (a *Account) ReleaseHold(bidID uuid.UUID, now time.Time) error {
+	h := a.findHoldByBidID(bidID)
+
+	if h == nil {
+		return ErrHoldNotFound
+	}
+
+	// the rollback's own retry catching up
+	if h.status == StatusReleased {
+		return nil
+	}
+
+	if err := h.transitionTo(StatusReleased, now); err != nil {
+		return err
+	}
+
+	a.updatedAt = now
+
+	return nil
+}
+
 // --- Helpers ---
+
+// findHoldByBidID resolves a hold by the bid it was placed against, the only key
+// settlement carries. bid_id is UNIQUE, so at most one hold can match.
+func (a *Account) findHoldByBidID(bidID uuid.UUID) *WalletHold {
+	for _, hold := range a.holds {
+		if hold.bidID == bidID {
+			return hold
+		}
+	}
+
+	return nil
+}
 
 // validates total holds amount does not exceed available gold in account
 func (a *Account) getAvailableGold() int {

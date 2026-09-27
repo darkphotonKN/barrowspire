@@ -509,3 +509,58 @@ func TestPlaceHold_Expiry(t *testing.T) {
 func holdExpiry() time.Time {
 	return time.Now().Add(time.Hour)
 }
+
+// Wallet's share of the pre-pivot rollback (FS-NXP1W §Req 12): a RESERVED hold goes
+// back, and the gold it was fencing off becomes available again. No debit and no
+// credit — a release frees a reservation, it never moves gold.
+func TestReleaseHold_ReservedHold_FreesTheGold(t *testing.T) {
+	bidID := uuid.New()
+	acc := accountWithGold(t, 1000)
+	require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, holdExpiry(), time.Now()))
+
+	require.NoError(t, acc.ReleaseHold(bidID, time.Now()))
+
+	snap := acc.Snapshot()
+	assert.Equal(t, 1000, snap.Gold, "releasing a hold moves no gold")
+	require.Len(t, snap.WalletHolds, 1)
+	assert.Equal(t, StatusReleased, snap.WalletHolds[0].Status)
+}
+
+// The rollback is retried without a cap (§Req 12), so releasing twice must be the
+// same as releasing once.
+func TestReleaseHold_AlreadyReleased_Succeeds(t *testing.T) {
+	bidID := uuid.New()
+	acc := accountWithGold(t, 1000)
+	require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, holdExpiry(), time.Now()))
+	require.NoError(t, acc.ReleaseHold(bidID, time.Now()))
+
+	require.NoError(t, acc.ReleaseHold(bidID, time.Now()))
+
+	assert.Equal(t, StatusReleased, acc.Snapshot().WalletHolds[0].Status)
+}
+
+// Past the pivot the gold is spent, and ADR-0017 / §Req 15 deliberately leave no way
+// to put it back. A rollback reaching a COMMITTED hold means the saga tried to undo
+// the pivot, so it must be refused rather than quietly freeing spent gold.
+func TestReleaseHold_CommittedHold_IsRefused(t *testing.T) {
+	bidID := uuid.New()
+	acc := accountWithGold(t, 1000)
+	require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, holdExpiry(), time.Now()))
+	_, err := acc.CommitHold(bidID, 300, time.Now())
+	require.NoError(t, err)
+
+	err = acc.ReleaseHold(bidID, time.Now())
+
+	require.ErrorIs(t, err, ErrInvalidHoldTransition)
+	snap := acc.Snapshot()
+	assert.Equal(t, StatusCommitted, snap.WalletHolds[0].Status)
+	assert.Equal(t, 700, snap.Gold, "the committed gold stays spent")
+}
+
+func TestReleaseHold_UnknownBid_ReturnsNotFound(t *testing.T) {
+	acc := accountWithGold(t, 1000)
+
+	err := acc.ReleaseHold(uuid.New(), time.Now())
+
+	assert.ErrorIs(t, err, ErrHoldNotFound)
+}

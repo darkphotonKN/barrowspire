@@ -56,5 +56,9 @@ func TestCreditSellerOutput_MatchesGolden(t *testing.T) {
 func TestReleaseAllHoldsInput_MatchesGolden(t *testing.T) {
 	activitytest.Golden(t, "release_all_holds_input.json", walletactivity.ReleaseAllHoldsInput{
 		ListingID: uuid.MustParse("11111111-1111-4111-8111-111111111111"),
+		BidIDs: []uuid.UUID{
+			uuid.MustParse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+			uuid.MustParse("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
+		},
 	})
 }
