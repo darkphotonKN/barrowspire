@@ -2,6 +2,7 @@ package activity
 
 import (
 	"context"
+	"errors"
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/dto"
@@ -12,9 +13,9 @@ import (
 // Activities are the settlement steps marketplace owns (ADR-0011): each runs in
 // this process, on the `marketplace` task queue, as a wrapper over a use case.
 type Activities struct {
-	freezeListing   FreezeListing
-	setWinningBid   SetWinningBid
-	setWinBidFailed SetWinBidFailed
+	freezeListing FreezeListing
+	setWinningBid SetWinningBid
+	loseAllBids   LoseAllBids
 }
 
 type FreezeListing interface {
@@ -25,15 +26,15 @@ type SetWinningBid interface {
 	Handle(ctx context.Context, cmd usecase.SetWinningBidCommand) error
 }
 
-type SetWinBidFailed interface {
-	Handle(ctx context.Context, cmd usecase.SetWinBidFailedCommand) error
+type LoseAllBids interface {
+	Handle(ctx context.Context, cmd usecase.LoseAllBidsCommand) error
 }
 
-func NewActivities(freezeListing FreezeListing, setWinningBid SetWinningBid, setWinBidFailed SetWinBidFailed) *Activities {
+func NewActivities(freezeListing FreezeListing, setWinningBid SetWinningBid, loseAllBids LoseAllBids) *Activities {
 	return &Activities{
-		freezeListing:   freezeListing,
-		setWinningBid:   setWinningBid,
-		setWinBidFailed: setWinBidFailed,
+		freezeListing: freezeListing,
+		setWinningBid: setWinningBid,
+		loseAllBids:   loseAllBids,
 	}
 }
 
@@ -49,4 +50,20 @@ type activityRegistry interface {
 func (a *Activities) Register(r activityRegistry) {
 	r.RegisterActivityWithOptions(a.FreezeListing, activity.RegisterOptions{Name: marketplaceactivity.FreezeListingActivityName})
 	r.RegisterActivityWithOptions(a.SetWinningBid, activity.RegisterOptions{Name: marketplaceactivity.SetWinningBidActivityName})
+	r.RegisterActivityWithOptions(a.LoseAllBids, activity.RegisterOptions{Name: marketplaceactivity.LoseAllBidsActivityName})
+}
+
+// isAnyOf reports whether err matches any sentinel in set. Each activity declares
+// its own non-retryable set (§Req 9, ADR-0011) and its own error type; this is only
+// the matching, which is identical for all of them. errors.Is, so a sentinel wrapped
+// on the way up — by a use case, or by the retry loop reporting exhaustion — is
+// still recognised.
+func isAnyOf(err error, set []error) bool {
+	for _, target := range set {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+
+	return false
 }

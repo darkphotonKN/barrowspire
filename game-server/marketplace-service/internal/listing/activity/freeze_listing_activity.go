@@ -2,7 +2,6 @@ package activity
 
 import (
 	"context"
-	"errors"
 
 	"go.temporal.io/sdk/temporal"
 
@@ -51,17 +50,24 @@ func (a *Activities) FreezeListing(ctx context.Context, inp commonactivity.Freez
 
 const freezeListingImpossible = "FreezeListingImpossible"
 
+// freezeListingNonRetryable is 0a's non-retryable set (§Req 9, ADR-0011).
+var freezeListingNonRetryable = []error{
+	// the listing is not ACTIVE: withdrawn, already settled, or racing another
+	// outcome. Freezing it is not something a retry brings back
+	listing.ErrInvalidListingState,
+	listing.ErrCorruptListingState,
+	// no listing to freeze
+	commonerr.ErrNotFound,
+}
+
 func classifyFreezeErr(err error) error {
-	switch {
-	case errors.Is(err, listing.ErrInvalidListingState),
-		errors.Is(err, listing.ErrCorruptListingState),
-		errors.Is(err, commonerr.ErrNotFound):
+	if isAnyOf(err, freezeListingNonRetryable) {
 		return temporal.NewNonRetryableApplicationError(
 			err.Error(),             // message
 			freezeListingImpossible, // type, the workflow matches on this in slice 5
 			err,                     // cause
 		)
-	default:
-		return err // plain error, Temporal retries
 	}
+
+	return err // plain error, Temporal retries
 }
