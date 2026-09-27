@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { ActionType } from "@/assets/types/client";
 import { useGameStore } from "@/stores/gameStore";
-import { CANVAS_FONT, shade, toCss } from "@/utils/canvasPalette";
+import { CANVAS_FONT, palette, shade, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
 import {
   ClientGameState,
@@ -33,7 +33,8 @@ import {
 import { preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
-import { LightMap, ambientFor } from "@/render/lighting";
+import { AMBIENT, LightMap } from "@/render/lighting";
+import { MARKER_DEPTH, markerBase } from "@/render/markers";
 import {
   GroundLayer,
   Occluders,
@@ -67,8 +68,9 @@ const HUB_HEIGHT = 1000;
 const CAMERA_MARGIN = 64;
 const PLAYER_RADIUS = 20;
 /**
- * Screen px from the top of a delver's frame to the middle of their name label: a 60 px preview
- * centred on the footprint keeps its label at -34, where it always was.
+ * Screen px from a delver's marker base (`markerBase`: a baked head, or the preview's frame top)
+ * to the middle of their name label: a 60 px preview centred on the footprint keeps its label at
+ * -34, where it always was.
  */
 const NAME_GAP = 4;
 /** How hard sprites chase the server's position each frame. Matches the run scene. */
@@ -181,8 +183,13 @@ const NPC_OFFERS: Record<
  * that as one entry means removal cannot half-happen.
  */
 interface DelverView {
-  /** Sprite and name label, drawn at the projection of `pos`. */
+  /** The body, drawn at the projection of `pos`. */
   sprite: Phaser.GameObjects.Container;
+  /**
+   * Name plate: a marker, drawn above the light-map and vignette (FS-2325V §C.9), so it is
+   * placed over the head each frame rather than riding in the depth-sorted container.
+   */
+  name: Phaser.GameObjects.Text;
   /** Drawn separately so the legs sit beneath the body. */
   legs: Phaser.GameObjects.Graphics;
   /** Where the server last said they are (world position). */
@@ -300,7 +307,7 @@ export class HubScene extends Phaser.Scene {
 
     // Lit like a run, in warm dusk rather than barrow dark (FS-2325V §C.8): the
     // light-map with the delver's torch, then the vignette and dust above it.
-    this.lightMap = new LightMap(this, ambientFor("hub", this.cameras.main));
+    this.lightMap = new LightMap(this, AMBIENT.hub);
     createAtmosphere(this);
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) =>
@@ -425,6 +432,7 @@ export class HubScene extends Phaser.Scene {
 
       easeToward(pos, target);
       standAt(sprite, pos, 1);
+      this.placeName(view);
 
       // A baked sheet walks and idles on its own legs, read off the position just
       // drawn; the hub has no attacks and no deaths.
@@ -818,6 +826,7 @@ export class HubScene extends Phaser.Scene {
       if (present.has(entityID)) continue;
 
       view.sprite.destroy();
+      view.name.destroy();
       view.legs.destroy();
       this.views.delete(entityID);
     }
@@ -1168,6 +1177,22 @@ export class HubScene extends Phaser.Scene {
     });
   }
 
+  /** A delver's name plate over their head ({@link markerBase}); the hub has no corpses. */
+  private placeName(view: DelverView): void {
+    const body = view.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+    if (!body) return;
+    const base = markerBase(
+      {
+        y: view.sprite.y + body.y,
+        displayOriginY: body.displayOriginY,
+        scaleY: body.scaleY,
+      },
+      view.anim.crown,
+      false,
+    );
+    view.name.setPosition(view.sprite.x + body.x, (base ?? view.sprite.y) - NAME_GAP);
+  }
+
   private placeDelver(player: PlayerState, isSelf: boolean): void {
     const existing = this.views.get(player.entity_id);
 
@@ -1192,26 +1217,28 @@ export class HubScene extends Phaser.Scene {
     if (anim.baked) anim.dress(body);
     else if (!isSelf) body.setTint(BARROW_HEX.vellumDark);
 
-    // over the frame's top: a 60 px preview centred on the footprint puts it where it
-    // always was, a tall sheet stood on its feet puts it over the head
+    // a marker above the lighting, placed by placeName: a 60 px preview keeps it where it
+    // always was, a baked sheet puts it just over the head
     const name = this.add
-      .text(0, -body.displayOriginY - NAME_GAP, player.username, {
+      .text(0, 0, player.username, {
         fontFamily: "var(--font-body), serif",
         fontSize: "12px",
-        color: "#cdbf9a",
+        color: toCss(palette.markerHub),
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setDepth(MARKER_DEPTH.name);
 
     const pos = { x: player.position.x, y: player.position.y };
-    const sprite = this.add.container(0, 0, [body, name]);
+    const sprite = this.add.container(0, 0, [body]);
     standAt(sprite, pos, 1);
 
     // Beneath the body, so a stride reads as legs under a cloak.
     const legs = this.add.graphics();
     legs.setDepth(worldDepth(pos.x, pos.y, 0));
 
-    this.views.set(player.entity_id, {
+    const view: DelverView = {
       sprite,
+      name,
       legs,
       target: { ...pos },
       pos,
@@ -1220,6 +1247,8 @@ export class HubScene extends Phaser.Scene {
       walkPhase: 0,
       moving: false,
       anim,
-    });
+    };
+    this.placeName(view);
+    this.views.set(player.entity_id, view);
   }
 }

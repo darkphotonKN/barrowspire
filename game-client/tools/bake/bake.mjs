@@ -29,6 +29,7 @@ import { join } from "node:path";
 import { chromium } from "playwright-core";
 import { encodePng } from "./lib/png.mjs";
 import { meanColour } from "./lib/mean.mjs";
+import { crownHeight } from "./lib/crown.mjs";
 import { packAtlases } from "./lib/pack.mjs";
 import { startServer } from "./lib/server.mjs";
 import { CLIENT_ROOT, loadManifestValidator, loadTheme } from "./lib/source.mjs";
@@ -143,6 +144,14 @@ function assemble({ tile, facings, sheets }) {
       animations[anim] = { fps: a.fps, loop: a.loop, frames: a.frames.map((dir) => dir.map(() => spots[k++])) };
     // the ground's measured colour, which lighting's readability floor is judged against
     const mean = s.group === "ground" ? meanColour(frameList(s).map((b64) => Buffer.from(b64, "base64"))) : undefined;
+    // a standing sheet's head height over every facing's idle, where name plates and HP bars sit
+    const crown = s.animations.idle
+      ? crownHeight(
+          s.animations.idle.frames.flat().map((b64) => Buffer.from(b64, "base64")),
+          s.frameWidth,
+          Math.round(s.anchor.y * s.frameHeight),
+        )
+      : undefined;
     manifestSheets[s.name] = {
       atlas: key,
       frameWidth: s.frameWidth,
@@ -152,6 +161,7 @@ function assemble({ tile, facings, sheets }) {
       animations,
       ...(s.light ? { light: s.light } : {}),
       ...(mean ? { mean } : {}),
+      ...(crown ? { crown } : {}),
       source: s.source,
       licence: s.licence,
     };

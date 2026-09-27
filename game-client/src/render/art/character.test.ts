@@ -40,6 +40,7 @@ function manifest(): ArtManifest {
           attack: clip(12, false, 6), // 500 ms
           death: clip(9, false, 7),
         },
+        crown: 83,
         source: "authored: tools/bake/page/characters/cast.js#knight",
         licence: "Barrowspire-original",
       },
@@ -159,6 +160,16 @@ describe("CharacterAnimator", () => {
     expect(new CharacterAnimator(art(), "warrior").baked).toBe(true);
     expect(new CharacterAnimator(art(), "mage").baked).toBe(false);
     expect(new CharacterAnimator(ArtLibrary.empty(quiet), "warrior").baked).toBe(false);
+  });
+
+  it("should know its head height from the sheet, and have none without one", () => {
+    expect(new CharacterAnimator(art(), "warrior").crown).toBe(83);
+    expect(new CharacterAnimator(art(), "mage").crown).toBeUndefined();
+    const bare = manifest();
+    delete bare.sheets.char_knight_base.crown;
+    expect(
+      new CharacterAnimator(new ArtLibrary(bare, quiet), "warrior").crown,
+    ).toBeUndefined();
   });
 
   it("should stand the sprite on its footprint by the sheet's anchor", () => {

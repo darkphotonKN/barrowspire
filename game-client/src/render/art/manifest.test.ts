@@ -154,6 +154,34 @@ describe("validateManifest", () => {
     }, /ground_dirt.*mean/);
   });
 
+  describe("a sheet's crown (head height, FS-2325V §C.9)", () => {
+    // the door fixture: 70 px frame, anchor at 0.9, so the anchor sits 63 px down the frame
+    const withCrown = (crown: unknown) => (m: Fixture) => {
+      (m.sheets.door as { crown?: unknown }).crown = crown;
+    };
+
+    it("accepts a sheet without one: only characters and creatures carry it", () => {
+      expect(fixture().sheets.door).not.toHaveProperty("crown");
+      expect(validateManifest(fixture()).ok).toBe(true);
+    });
+
+    it("accepts a whole number of px up to the frame top above the anchor", () => {
+      for (const crown of [1, 40, 63]) {
+        const m = fixture();
+        withCrown(crown)(m);
+        expect(validateManifest(m).ok, String(crown)).toBe(true);
+      }
+    });
+
+    it.each([0, -4, 12.5, "40"])("rejects a crown of %s", (crown) => {
+      rejects(withCrown(crown), /door.*crown/);
+    });
+
+    it("rejects a crown above the frame's top", () => {
+      rejects(withCrown(64), /door.*crown/);
+    });
+  });
+
   it("rejects a sheet that names an unknown atlas", () => {
     rejects((m) => {
       m.sheets.door.atlas = "missing-0";
@@ -338,6 +366,28 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         expect(sheet.licence).toBe(baked.sheets.brazier.licence);
       },
     );
+
+    it.each(CAST)(
+      "%s records its head height, below the padded frame's top (FS-2325V §C.9)",
+      (name) => {
+        const sheet = baked.sheets[name];
+        const anchorPx = sheet.anchor.y * sheet.frameHeight;
+        expect(Number.isInteger(sheet.crown), name).toBe(true);
+        // a head, not a stub: at least a tile tall
+        expect(sheet.crown).toBeGreaterThan(baked.tile.height);
+        // frames are padded for attack and death poses, so the idle head sits below the top
+        expect(sheet.crown).toBeLessThan(anchorPx);
+      },
+    );
+
+    it("records a crown only on sheets that stand and idle", () => {
+      for (const [name, sheet] of Object.entries(baked.sheets) as [
+        string,
+        { crown?: number; animations: Record<string, unknown> },
+      ][])
+        if (sheet.crown !== undefined)
+          expect(sheet.animations, name).toHaveProperty("idle");
+    });
 
     it("loops idle and walk, and plays attack and death once", () => {
       for (const name of CAST) {

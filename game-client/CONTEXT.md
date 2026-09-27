@@ -71,7 +71,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Bake**: the build-time step that renders 3D models through the isometric camera into 2D sprite
   sheets. "Bake" always means build time, never in-browser at load.
 - **Sprite manifest**: `public/art/manifest.json`, the bake's index. It records, per sheet: frame
-  size, anchor, directions, frame counts, fps, declared light source, and asset source/licence.
+  size, anchor, directions, frame counts, fps, declared light source, asset source/licence, and
+  two measured values: a ground sheet's mean colour and a standing sheet's head height (`crown`).
   The client learns about art only through it.
 - **Light source**: a point that lights the light-map (torch, brazier, window, lantern, the
   delver's torch pool). It is declared per prop type in the sprite manifest, or attached to the
@@ -79,6 +80,10 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Light-map**: the camera-fixed layer that multiplies the lit world: filled each frame with the
   world's **ambient** (fixed per world type), plus an additive pool per light source in view.
   Built once and restamped, never rebuilt (`src/render/lighting/`).
+- **Marker**: an overlay a character is read by — a name plate, the HP bar, a creature's glowing
+  eyes. Markers draw above the light-map and vignette and carry the readability floor, so the
+  world may stay dark (`src/render/markers/`). A marker is not the thing it marks: a corpse shows
+  none.
 - **Wall piece**: one tile of a server wall as drawn. A server wall rect is cut into wall pieces
   along its centreline, each sorted by its own footprint, with a **post** at each end. "Back"
   pieces stand full height (north and west sides); "front" pieces are the low cut-away.

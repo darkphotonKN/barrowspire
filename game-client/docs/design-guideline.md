@@ -205,10 +205,17 @@ exactly where a player first sees something enter the frame.
 **If atmosphere and readability conflict, the vignette yields.** Reduce its strength or its reach.
 An unreadable hostile is a bug; a slightly less moody screen is not.
 
-**The light-map's ambient yields first** (FS-2325V §C.9). Each world's ambient is lifted toward
-full light until a hostile's glowing eyes at the canvas edge keep at least a third of the
-contrast against the ground that the vignette alone leaves them (`src/render/lighting/`, tested).
-The run's dark barrow is lifted by this rule; the hub's warm dusk already passes.
+**Markers carry readability, above the lighting** (FS-2325V §C.9). Hostile markers — the rival
+name plate and HP bar, and a creature's glowing eyes once creatures render — draw above the
+light-map and the vignette (and below the HUD), so darkness never dims them. Each keeps **at
+least 3:1** contrast against the darkest lit ground at the canvas edge: ambient × the baked
+ground's mean colour × the vignette there (`src/render/markers/`, tested against a fixed 3:1).
+Marker colours are palette tokens like any other.
+
+**The world may stay dark.** Ambient is never lifted for readability: the hub keeps its warm
+dusk and the run its dark barrow. Lifting cannot work anyway — any multiply darkening lowers
+contrast, and against the baked ground even full light under the vignette reaches only about
+1.8:1. Ultima Online solves it the same way, with overlays that ignore lighting.
 
 ---
 

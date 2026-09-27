@@ -1225,6 +1225,7 @@
           ]
         }
       },
+      "crown": 76,
       "source": "authored: tools/bake/page/characters/cast.js#archer",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
@@ -2223,6 +2224,7 @@
           ]
         }
       },
+      "crown": 83,
       "source": "authored: tools/bake/page/characters/cast.js#knight",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
@@ -3221,6 +3223,7 @@
           ]
         }
       },
+      "crown": 97,
       "source": "authored: tools/bake/page/characters/cast.js#wizard",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
@@ -4257,6 +4260,7 @@
           ]
         }
       },
+      "crown": 72,
       "source": "authored: tools/bake/page/characters/cast.js#ghoul",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
@@ -5255,6 +5259,7 @@
           ]
         }
       },
+      "crown": 95,
       "source": "authored: tools/bake/page/characters/cast.js#troll",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },

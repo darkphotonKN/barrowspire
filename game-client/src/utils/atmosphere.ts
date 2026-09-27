@@ -1,6 +1,8 @@
 import Phaser from "phaser";
 import { palette, rgba } from "@/utils/canvasPalette";
 import {
+  DUST_DEPTH,
+  VIGNETTE_DEPTH,
   VIGNETTE_INNER,
   VIGNETTE_OUTER,
   VIGNETTE_STOPS,
@@ -19,10 +21,6 @@ import {
  * here reads or writes game state, and suppressing all of it must leave a world
  * still playable.
  */
-
-/** Depths: above the world and its light-map, below the HUD at 1000. */
-const DUST_DEPTH = 902;
-const VIGNETTE_DEPTH = 905;
 
 const DUST_MOTES = 18;
 
@@ -45,9 +43,9 @@ function addVignette(scene: Phaser.Scene, w: number, h: number): void {
       w / 2, h / 2, Math.min(w, h) * VIGNETTE_INNER,
       w / 2, h / 2, Math.max(w, h) * VIGNETTE_OUTER,
     );
-    // Readability floor: an entity at the canvas edge must stay legible. The
-    // light-map's ambient is lifted against these numbers (FS-2325V §C.9); if play
-    // shows the vignette itself hiding anyone, THESE are the numbers that yield.
+    // Readability floor (FS-2325V §C.9): hostile markers draw above this layer and
+    // are tested against the ground it leaves at the canvas edge, so the edge may
+    // stay dark. If play shows the vignette hiding anyone, THESE numbers yield.
     for (const [at, alpha] of VIGNETTE_STOPS) grad.addColorStop(at, rgba(palette.inkDeep, alpha));
     g.fillStyle = grad;
     g.fillRect(0, 0, w, h);

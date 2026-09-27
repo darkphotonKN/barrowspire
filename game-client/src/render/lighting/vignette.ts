@@ -4,6 +4,13 @@
  * floor can measure what the vignette does at the canvas edge without drawing it.
  */
 
+/**
+ * Depths of the atmosphere (`src/utils/atmosphere.ts`): above the world and its light-map, below
+ * the hostile markers (`src/render/markers/`) and the HUD at 1000.
+ */
+export const DUST_DEPTH = 902;
+export const VIGNETTE_DEPTH = 905;
+
 /** Where the darkening starts and ends, as fractions of the canvas's shorter and longer side. */
 export const VIGNETTE_INNER = 0.3;
 export const VIGNETTE_OUTER = 0.72;

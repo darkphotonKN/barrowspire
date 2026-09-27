@@ -19,8 +19,11 @@
  * - A light's `offset` is in screen px from the anchor, `radius` in screen px, and `color` names
  *   a `BARROW` token (ADR-0013); no authored colour value is ever written into the manifest.
  * - A ground sheet's `mean` is the one colour the manifest carries, and it is measured, not
- *   authored: the bake's average of the sheet's pixels, so lighting can judge readability
+ *   authored: the bake's average of the sheet's pixels, so the readability floor is judged
  *   against the floor as drawn (FS-2325V §C.9).
+ * - A standing sheet's `crown` is measured too: screen px from the anchor up to the top of its
+ *   opaque idle silhouette, the tallest across facings, so name plates and HP bars sit over the
+ *   head rather than over the frame, which is padded for attack and death poses.
  */
 
 import type { Facing8 } from "@/render/iso/facing";
@@ -93,6 +96,11 @@ export interface ArtSheet {
    * the bake. Data about the art, not a palette colour.
    */
   mean?: ArtRgb;
+  /**
+   * Sheets with an idle animation (characters, creatures): screen px from the anchor up to the
+   * top of the opaque idle silhouette, the tallest across facings, measured by the bake.
+   */
+  crown?: number;
   source: string;
   licence: string;
 }
@@ -233,9 +241,23 @@ function checkSheet(
   if (sheet.light !== undefined) checkLight(`${at} light`, sheet.light, errors);
   if (sheet.mean !== undefined && !isRgb(sheet.mean))
     errors.push(`${at}: mean must be {r, g, b} integers within 0..255`);
+  if (sheet.crown !== undefined) checkCrown(at, sheet, errors);
 
   if (!isText(sheet.source)) errors.push(`${at}: source must be recorded`);
   if (!isText(sheet.licence)) errors.push(`${at}: licence must be recorded`);
+}
+
+/** A crown is a whole number of px, above the anchor and no higher than the frame's top. */
+function checkCrown(at: string, sheet: Json, errors: string[]) {
+  const { crown, anchor, frameHeight } = sheet;
+  const anchorPx =
+    isObject(anchor) && isFraction(anchor.y) && isPositiveInt(frameHeight)
+      ? Math.round(anchor.y * frameHeight)
+      : Infinity;
+  if (!isPositiveInt(crown) || crown > anchorPx)
+    errors.push(
+      `${at}: crown must be a whole number of px between the anchor and the frame's top`,
+    );
 }
 
 function checkAnimation(

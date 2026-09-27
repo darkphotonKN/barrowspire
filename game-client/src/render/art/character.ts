@@ -126,6 +126,14 @@ export class CharacterAnimator {
     return this.motion.facing;
   }
 
+  /**
+   * The sheet's head height, px above the anchor (manifest `crown`), where name plates and HP
+   * bars sit; undefined when there is no baked sheet, or it records none.
+   */
+  get crown(): number | undefined {
+    return this.baked ? this.art.sheet(this.sheet)?.crown : undefined;
+  }
+
   attack(now: number, aim?: Point): void {
     this.motion.attack(now, aim);
   }

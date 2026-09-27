@@ -36,7 +36,7 @@ const CARRY_FADE = 0.92;
 
 /**
  * A white radial falloff: a pool stamp takes its colour from the tint. Drawn once per game.
- * The white is the multiply identity (see `FULL_LIGHT`), not a palette colour.
+ * The white is the multiply identity (full light leaves the art as baked), not a palette colour.
  */
 function ensureFalloff(
   scene: Phaser.Scene,

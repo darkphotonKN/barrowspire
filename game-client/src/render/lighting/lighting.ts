@@ -3,25 +3,22 @@
  *
  * The light-map multiplies the lit world by a layer filled with the world's ambient, plus an
  * additive pool per light source. Here: what a light source is, which ones are in view, how each
- * flickers on its own clock, what ambient each world gets, and the readability floor that lifts
- * that ambient when it would hide a hostile at the canvas edge. `LightMap.ts` draws it.
+ * flickers on its own clock, what ambient each world gets, and what the light-map and vignette
+ * leave of the ground at the canvas edge. `LightMap.ts` draws it.
+ *
+ * The readability floor is not met here. Ambient is never lifted for it: hostile markers draw
+ * above the light-map and vignette (`src/render/markers/`), and are tested against
+ * {@link litEdgeGround}.
  *
  * Light is presentation only (CONTEXT.md "Light source"): it never changes what anyone can see
  * or hit.
  */
 
 import type { Point, Rect } from "@/render/iso";
-import type { ArtLight } from "@/render/art/manifest";
+import type { ArtLight, ArtRgb } from "@/render/art/manifest";
 import type { WorldKind } from "@/render/world/ground";
 import { palette } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
-import { edgeVignetteAlpha } from "./vignette";
-
-/**
- * Full light: the multiply identity, which leaves the baked art exactly as baked. Not a palette
- * colour (nothing is drawn in it); it is what "no darkening" means to a multiply layer.
- */
-export const FULL_LIGHT = 0xffffff;
 
 export interface LightSource {
   /** Screen-space position in the camera's world (a projected point, before scroll). */
@@ -142,78 +139,32 @@ export function contrastRatio(a: number, b: number): number {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-// ── Ambient and the readability floor ─────────────────────────────────────
+// ── Ambient, and the ground it leaves at the edge ─────────────────────────
 
-/** Warm dusk in the hub, dark barrow in a run (FS-2325V §C.8), before the floor lifts either. */
-export const BASE_AMBIENT: Record<WorldKind, number> = {
+/**
+ * Warm dusk in the hub, dark barrow in a run (FS-2325V §C.8). Fixed: the world may stay dark,
+ * because hostile markers carry readability above the light-map (§C.9).
+ */
+export const AMBIENT: Record<WorldKind, number> = {
   hub: mix(BARROW_HEX.barrowBrown, BARROW_HEX.amberBright, 0.55),
   run: mix(BARROW_HEX.slate, BARROW_HEX.necrotic, 0.4),
 };
 
-/** What a hostile is read by: its glowing eyes (guideline "Characters / Enemies"). */
-const HOSTILE_ACCENT = palette.rivalGlow;
-/** What it is read against: the barrow ground it walks on. */
-const GROUND = palette.ground;
-
-/** A colour as it reaches the eye: multiplied by the ambient, then under the vignette's dark. */
-function litUnderVignette(
-  color: number,
+/**
+ * A baked ground colour as it reaches the eye: multiplied by the ambient, then under the
+ * vignette's dark at `vignette` alpha (FS-2325V §C.9: ambient × baked ground mean × vignette).
+ * Both are sRGB operations, so lighting a sheet's mean equals the mean of its lit pixels.
+ */
+export function litEdgeGround(
+  mean: ArtRgb,
   ambient: number,
   vignette: number,
 ): number {
-  const c = channels(color);
   const a = channels(ambient);
   const dark = channels(palette.inkDeep);
   return pack(
-    c.map((v, i) => ((v * a[i]) / 255) * (1 - vignette) + dark[i] * vignette),
+    [mean.r, mean.g, mean.b].map(
+      (v, i) => ((v * a[i]) / 255) * (1 - vignette) + dark[i] * vignette,
+    ),
   );
-}
-
-/** The hostile's accent against the ground, at the canvas edge, under this ambient. */
-export function edgeContrast(ambient: number, vignette: number): number {
-  return contrastRatio(
-    litUnderVignette(HOSTILE_ACCENT, ambient, vignette),
-    litUnderVignette(GROUND, ambient, vignette),
-  );
-}
-
-/**
- * The share of an edge hostile's contrast the light-map must leave standing, measured against the
- * vignette alone (the readability the pre-art canvas shipped with). FS-2325V §C.9 names no number;
- * an absolute floor such as WCAG's 3:1 is out of reach at the edge even with no light-map (the
- * vignette alone leaves about 2:1), so the floor is relative: darkness may take at most two thirds
- * of what the vignette leaves.
- */
-export const READABILITY_SHARE = 1 / 3;
-
-/** Whether a hostile at the canvas edge stays readable under this ambient. */
-export function edgeReadable(ambient: number, vignette: number): boolean {
-  const baseline = edgeContrast(FULL_LIGHT, vignette) - 1;
-  return (
-    edgeContrast(ambient, vignette) - 1 >= READABILITY_SHARE * baseline - 1e-9
-  );
-}
-
-/** Step by which a failing ambient is lifted toward full light. */
-const LIFT_STEP = 0.02;
-
-/** The ambient, lifted toward full light just far enough to pass `readable` (§C.9: ambient lifts). */
-export function liftAmbient(
-  ambient: number,
-  readable: (ambient: number) => boolean,
-): number {
-  for (let t = 0; t < 1; t += LIFT_STEP) {
-    const lifted = mix(ambient, FULL_LIGHT, t);
-    if (readable(lifted)) return lifted;
-  }
-  return FULL_LIGHT;
-}
-
-/** The ambient a world is lit by on a canvas of this size, floor applied. */
-export function ambientFor(
-  kind: WorldKind,
-  canvas: { width: number; height: number },
-): number {
-  const vignette = edgeVignetteAlpha(canvas.width, canvas.height);
-  return liftAmbient(BASE_AMBIENT[kind], (a) => edgeReadable(a, vignette));
 }

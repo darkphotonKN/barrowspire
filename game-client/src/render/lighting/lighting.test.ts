@@ -1,18 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { BARROW_HEX } from "@/utils/theme";
 import {
-  BASE_AMBIENT,
-  ambientFor,
+  AMBIENT,
   contrastRatio,
   cullInto,
-  edgeContrast,
-  edgeReadable,
   flickerAt,
-  liftAmbient,
+  litEdgeGround,
   sourceFromManifest,
   type LightSource,
 } from "./lighting";
-import { edgeVignetteAlpha } from "./vignette";
 
 const source = (x: number, y: number, radius = 100): LightSource => ({
   x,
@@ -96,44 +92,56 @@ describe("contrastRatio", () => {
 });
 
 describe("ambient per world (FS-2325V §C.8, §C.9)", () => {
-  const canvas = { width: 1080, height: 720 };
+  const mix = (a: number, b: number, t: number) =>
+    [16, 8, 0].reduce((c, shift) => {
+      const x = (a >> shift) & 0xff;
+      const y = (b >> shift) & 0xff;
+      return c | (Math.round(x + (y - x) * t) << shift);
+    }, 0);
 
   it("should light the hub warmer than a run", () => {
-    const hub = ambientFor("hub", canvas);
-    const run = ambientFor("run", canvas);
-    expect(hub).not.toBe(run);
+    expect(AMBIENT.hub).not.toBe(AMBIENT.run);
     const warmth = (c: number) => ((c >> 16) & 0xff) - (c & 0xff);
-    expect(warmth(hub)).toBeGreaterThan(warmth(run));
+    expect(warmth(AMBIENT.hub)).toBeGreaterThan(warmth(AMBIENT.run));
   });
 
-  it("should keep an edge-of-canvas hostile readable in the run's darkest ambient", () => {
-    const vignette = edgeVignetteAlpha(canvas.width, canvas.height);
-    expect(edgeReadable(ambientFor("run", canvas), vignette)).toBe(true);
-    expect(edgeReadable(ambientFor("hub", canvas), vignette)).toBe(true);
+  it("should leave the run at its dark-barrow base: ambient is never lifted for readability", () => {
+    // slate cooled toward necrotic; markers carry readability above the light-map instead
+    expect(AMBIENT.run).toBe(mix(BARROW_HEX.slate, BARROW_HEX.necrotic, 0.4));
   });
 
-  it("should lift an ambient too dark to read by, and no further than it must", () => {
-    const vignette = edgeVignetteAlpha(canvas.width, canvas.height);
-    const dark = BARROW_HEX.pitch;
-    expect(edgeReadable(dark, vignette)).toBe(false);
-    const lifted = liftAmbient(dark, (a) => edgeReadable(a, vignette));
-    expect(edgeReadable(lifted, vignette)).toBe(true);
-    expect(edgeContrast(lifted, vignette)).toBeLessThan(
-      edgeContrast(0xffffff, vignette),
+  it("should leave the hub at its warm-dusk base", () => {
+    expect(AMBIENT.hub).toBe(
+      mix(BARROW_HEX.barrowBrown, BARROW_HEX.amberBright, 0.55),
     );
   });
+});
 
-  it("should not touch an ambient that already reads", () => {
-    const vignette = edgeVignetteAlpha(canvas.width, canvas.height);
-    expect(liftAmbient(0xffffff, (a) => edgeReadable(a, vignette))).toBe(
-      0xffffff,
-    );
+describe("litEdgeGround", () => {
+  const dirt = { r: 77, g: 64, b: 49 };
+  const rgb = (c: number) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
+  const white = (1 << 24) - 1; // the multiply identity
+
+  it("should leave the ground as baked under full light and no vignette", () => {
+    expect(rgb(litEdgeGround(dirt, white, 0))).toEqual([77, 64, 49]);
   });
 
-  it("should never light the run brighter than its base unless the floor forces it", () => {
-    const run = ambientFor("run", canvas);
-    const lum = (c: number) =>
-      ((c >> 16) & 0xff) + ((c >> 8) & 0xff) + (c & 0xff);
-    expect(lum(run)).toBeGreaterThanOrEqual(lum(BASE_AMBIENT.run));
+  it("should multiply the ground by the ambient", () => {
+    const half = (128 << 16) | (128 << 8) | 128;
+    expect(rgb(litEdgeGround(dirt, half, 0))).toEqual([39, 32, 25]);
+  });
+
+  it("should give the vignette's dark where the vignette is opaque", () => {
+    expect(litEdgeGround(dirt, white, 1)).toBe(BARROW_HEX.pitch);
+  });
+
+  it("should only ever darken: a darker ambient or a deeper vignette never lightens the ground", () => {
+    const lum = (c: number) => rgb(c).reduce((a, b) => a + b, 0);
+    expect(lum(litEdgeGround(dirt, AMBIENT.run, 0.4))).toBeLessThan(
+      lum(litEdgeGround(dirt, AMBIENT.hub, 0.4)),
+    );
+    expect(lum(litEdgeGround(dirt, AMBIENT.run, 0.5))).toBeLessThan(
+      lum(litEdgeGround(dirt, AMBIENT.run, 0.2)),
+    );
   });
 });

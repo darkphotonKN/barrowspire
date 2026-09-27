@@ -53,7 +53,8 @@ import {
 import { artSprite, preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
-import { LightMap, ambientFor } from "@/render/lighting";
+import { AMBIENT, LightMap } from "@/render/lighting";
+import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
 import {
   BAKE,
   GroundLayer,
@@ -66,27 +67,22 @@ import {
   worldSeed,
 } from "@/render/world";
 
-/**
- * Depths above the world band (FS-2325V §A.3): world objects sort by footprint from
- * `WORLD_DEPTH` (see `worldDepth`), effects draw at 140–160, and these over both.
- */
-const NAME_DEPTH = 180;
-const HP_BAR_DEPTH = 181;
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = 160;
 /** A delver's footprint, in world px: the server's `PlayerRadius`. */
 const PLAYER_FOOTPRINT_RADIUS = 20;
-/** Screen px between the top of a delver's frame and their name label, and their HP bar. */
+/**
+ * Screen px above a delver's marker base (`markerBase`: a baked head, or a placeholder's frame
+ * top) to their name label, and to their HP bar. Markers draw above the light-map and vignette
+ * (FS-2325V §C.9).
+ */
 const NAME_GAP = 5;
 const HP_BAR_GAP = 10;
-
 /**
- * The screen y of the top of a delver's frame. The name and HP bar sit a fixed gap above it, so
- * they clear a 60 px placeholder centred on the footprint and a tall baked sheet stood on its
- * anchor alike.
+ * On a baked sheet the delver's own name clears their HP bar, which spans the 11 px over the
+ * base. A placeholder keeps {@link NAME_GAP}, exactly where it always was.
  */
-const crownY = (sprite: { y: number; displayOriginY: number; scaleY: number }) =>
-  sprite.y - sprite.displayOriginY * sprite.scaleY;
+const NAME_OVER_BAR_GAP = HP_BAR_GAP + 2;
 
 /** Health the server already sends, run out: a delver's death clip plays on it. */
 const isDead = (player?: { current_health?: number } | null) =>
@@ -2379,16 +2375,17 @@ export class BarrowspireScene extends Phaser.Scene {
       this.drawLegs(this.playerLegs, at.x, at.y, this.playerFacing, 0, false, palette.hudLabel);
 
     // username label above player
-    this.playerNameText = this.add.text(at.x, crownY(this.player) - NAME_GAP, displayName, {
+    const base = markerBase(this.player, this.playerAnim.crown, false) ?? at.y;
+    this.playerNameText = this.add.text(at.x, base - this.ownNameGap(), displayName, {
       fontSize: "11px",
       fontFamily: CANVAS_FONT.body,
-      color: toCss(palette.frameBright),
-      stroke: toCss(palette.ink),
+      color: toCss(palette.markerSelf),
+      stroke: toCss(palette.markerStroke),
       strokeThickness: 3,
       align: "center",
     });
     this.playerNameText.setOrigin(0.5, 1);
-    this.playerNameText.setDepth(NAME_DEPTH);
+    this.playerNameText.setDepth(MARKER_DEPTH.name);
 
     // 玩家與所有建築牆壁/門碰撞
     this.buildings.forEach((building) => {
@@ -2907,7 +2904,7 @@ export class BarrowspireScene extends Phaser.Scene {
       // 同步玩家頭頂 HP/MP 狀態條
       if (!this.playerHpMpGraphics) {
         this.playerHpMpGraphics = this.add.graphics();
-        this.playerHpMpGraphics.setDepth(HP_BAR_DEPTH);
+        this.playerHpMpGraphics.setDepth(MARKER_DEPTH.bar);
       }
       const curHp = state.current_player.current_health ?? (state.current_player.class === "warrior" ? 150 : 100);
       const maxHp = state.current_player.max_health ?? (state.current_player.class === "warrior" ? 150 : 100);
@@ -2927,7 +2924,7 @@ export class BarrowspireScene extends Phaser.Scene {
       this.prevLocalPlayerHp = curHp;
 
       if (this.player && this.playerHpMpGraphics) {
-        this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, crownY(this.player), curHp, maxHp, curMp, maxMp);
+        this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, this.ownMarkerBase(), curHp, maxHp, curMp, maxMp);
       }
     } else {
       // current_player is null — player has escaped
@@ -3227,17 +3224,32 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
-  /** `top` is the screen y of the delver's frame top ({@link crownY}); the bar sits above it. */
+  /**
+   * Where the delver's own markers stack from this frame ({@link markerBase}), or null over
+   * their baked corpse.
+   */
+  private ownMarkerBase(): number | null {
+    if (!this.player) return null;
+    return markerBase(this.player, this.playerAnim?.crown, isDead(this.lastGameState?.current_player));
+  }
+
+  /** How far over the marker base the delver's own name sits: clear of the HP bar when baked. */
+  private ownNameGap(): number {
+    return this.playerAnim?.crown === undefined ? NAME_GAP : NAME_OVER_BAR_GAP;
+  }
+
+  /** `top` is the delver's marker base ({@link markerBase}); the bar sits above it. Null: none. */
   private drawOverheadHpMpBar(
     g: Phaser.GameObjects.Graphics,
     x: number,
-    top: number,
+    top: number | null,
     curHp: number,
     maxHp: number,
     curMp: number,
     maxMp: number
   ): void {
     g.clear();
+    if (top === null) return;
 
     const barW = 38;
     const hpH = 4;
@@ -3245,22 +3257,22 @@ export class BarrowspireScene extends Phaser.Scene {
     const startX = Math.round(x - barW / 2);
     const startY = Math.round(top - HP_BAR_GAP);
 
-    // Charcoal Border Frame
-    g.fillStyle(0x0c0a08, 0.9);
+    // Pitch backing with a barrow rim
+    g.fillStyle(MARKER_BAR.backing, 0.9);
     g.fillRect(startX - 1, startY - 1, barW + 2, hpH + mpH + 3);
-    g.lineStyle(1, 0x3d3126, 0.9);
+    g.lineStyle(1, MARKER_BAR.rim, 0.9);
     g.strokeRect(startX - 1, startY - 1, barW + 2, hpH + mpH + 3);
 
-    // HP Bar Fill (Crimson Red)
+    // HP fill: oxblood's lifted tone, which holds 3:1 at the canvas edge (FS-2325V §C.9)
     const hpRatio = Math.max(0, Math.min(1, curHp / Math.max(1, maxHp)));
     const hpFillW = Math.round(barW * hpRatio);
-    g.fillStyle(0xd93838, 1);
+    g.fillStyle(MARKER_BAR.hp, 1);
     g.fillRect(startX, startY, hpFillW, hpH);
 
-    // MP Bar Fill (Arcane Blue)
+    // MP fill: necrotic blue-green
     const mpRatio = Math.max(0, Math.min(1, curMp / Math.max(1, maxMp)));
     const mpFillW = Math.round(barW * mpRatio);
-    g.fillStyle(0x2980b9, 1);
+    g.fillStyle(MARKER_BAR.mp, 1);
     g.fillRect(startX, startY + hpH + 1, mpFillW, mpH);
   }
 
@@ -3375,19 +3387,19 @@ export class BarrowspireScene extends Phaser.Scene {
         // create name text (hidden until hover)
         const nameText = this.add.text(
           sprite.x,
-          crownY(sprite) - NAME_GAP,
+          (markerBase(sprite, anim.crown, false) ?? sprite.y) - NAME_GAP,
           playerData.username || "Unknown",
           {
             fontSize: "11px",
             fontFamily: CANVAS_FONT.body,
-            color: toCss(palette.safe),
-            stroke: toCss(palette.ink),
+            color: toCss(palette.markerRival),
+            stroke: toCss(palette.markerStroke),
             strokeThickness: 3,
             align: "center",
           },
         );
         nameText.setOrigin(0.5, 1);
-        nameText.setDepth(NAME_DEPTH);
+        nameText.setDepth(MARKER_DEPTH.name);
         nameText.setVisible(false);
         this.otherPlayersNameTexts.set(playerData.id, nameText);
 
@@ -3667,7 +3679,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * game state, and removing it changes nothing about how the game plays.
    */
   private createAtmosphere(): void {
-    this.lightMap = new LightMap(this, ambientFor("run", this.cameras.main));
+    this.lightMap = new LightMap(this, AMBIENT.run);
     buildAtmosphere(this);
   }
 
@@ -3843,9 +3855,11 @@ export class BarrowspireScene extends Phaser.Scene {
       );
     }
 
-    // update player name position and overhead HP/MP bar
+    // update player name position and overhead HP/MP bar; none over a baked corpse
+    const ownBase = this.ownMarkerBase();
     if (this.player && this.playerNameText) {
-      this.playerNameText.setPosition(this.player.x, crownY(this.player) - NAME_GAP);
+      if (ownBase !== null) this.playerNameText.setPosition(this.player.x, ownBase - this.ownNameGap());
+      this.playerNameText.setVisible(this.player.visible && ownBase !== null);
     }
     if (this.player && this.playerHpMpGraphics && this.lastGameState?.current_player) {
       const p = this.lastGameState.current_player;
@@ -3853,7 +3867,7 @@ export class BarrowspireScene extends Phaser.Scene {
       const maxHp = p.max_health ?? (p.class === "warrior" ? 150 : 100);
       const curMp = p.current_mana ?? 100;
       const maxMp = p.max_mana ?? 100;
-      this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, crownY(this.player), curHp, maxHp, curMp, maxMp);
+      this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, ownBase, curHp, maxHp, curMp, maxMp);
     }
 
     // send websocket message for movement
@@ -3917,10 +3931,8 @@ export class BarrowspireScene extends Phaser.Scene {
         // A rival on a baked sheet walks, idles and dies in it, off the position just
         // drawn. Their attacks are not known to this client, so they never swing.
         const anim = this.otherPlayersAnim.get(playerId);
-        if (anim?.baked) {
-          const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
-          anim.show(sprite, anim.step(pos, time, delta, dead));
-        }
+        const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
+        if (anim?.baked) anim.show(sprite, anim.step(pos, time, delta, dead));
 
         // update facing and legs for other players: the placeholder rig
         const legs = this.otherPlayersLegs.get(playerId);
@@ -3956,11 +3968,12 @@ export class BarrowspireScene extends Phaser.Scene {
           );
         }
 
-        // update name text position and hover visibility
+        // update name text position and hover visibility; none over a baked corpse
         const nameText = this.otherPlayersNameTexts.get(playerId);
         if (nameText) {
-          nameText.setPosition(sprite.x, crownY(sprite) - NAME_GAP);
-          nameText.setVisible(this.hoveredPlayerId === playerId);
+          const base = markerBase(sprite, anim?.crown, dead);
+          if (base !== null) nameText.setPosition(sprite.x, base - NAME_GAP);
+          nameText.setVisible(this.hoveredPlayerId === playerId && base !== null);
         }
 
         // update overhead HP/MP bar position (clear for other players)
