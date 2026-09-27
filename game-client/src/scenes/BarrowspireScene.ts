@@ -31,6 +31,33 @@ import {
   tint,
   toCss,
 } from "@/utils/canvasPalette";
+import {
+  WALL_HEIGHT,
+  addUprightBlock,
+  addWorldPlane,
+  facingFrom,
+  nearestScreenFacing,
+  outsideConvex,
+  projectRect,
+  projectedBounds,
+  raise,
+  screenToWorld,
+  standAt,
+  worldDepth,
+  worldToScreen,
+  type Facing8,
+  type Point,
+  type WorldPlane,
+} from "@/render/iso";
+
+/**
+ * Depths above the world band (FS-2325V §A.3): world objects sort by footprint from
+ * `WORLD_DEPTH` (see `worldDepth`), effects draw at 140–160, and these over both.
+ */
+const NAME_DEPTH = 180;
+const HP_BAR_DEPTH = 181;
+/** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
+const CAMERA_MARGIN = 160;
 
 interface Building {
   id: string;
@@ -99,8 +126,17 @@ interface ArcherPalette {
 }
 
 export class BarrowspireScene extends Phaser.Scene {
+  /** The local delver's sprite, drawn at the projection of `playerPos`. */
   private player?: Phaser.Physics.Arcade.Sprite;
+  /**
+   * The local delver's world position as rendered (eased toward the server's).
+   * Every gameplay calculation uses this, never `player.x/y`, which are screen
+   * coordinates. CONTEXT.md "World position".
+   */
+  private playerPos?: Point;
   private otherPlayers: Map<string, Phaser.Physics.Arcade.Sprite> = new Map();
+  /** Eased world positions of other delvers; their sprites sit at the projection. */
+  private otherPlayersPos: Map<string, Point> = new Map();
   private otherPlayersEntityIds: Map<string, string> = new Map(); // player_id → entity_id
   private otherPlayersTargets: Map<string, { x: number; y: number }> =
     new Map();
@@ -113,10 +149,10 @@ export class BarrowspireScene extends Phaser.Scene {
   private torchPool?: Phaser.GameObjects.Image;
   private otherPlayersLegs: Map<string, Phaser.GameObjects.Graphics> =
     new Map();
-  private playerFacing: "up" | "down" | "left" | "right" = "down";
+  /** One of eight world directions (FS-2325V §A.6); "se" faces the viewer. */
+  private playerFacing: Facing8 = "se";
   private walkPhase = 0;
-  private otherPlayersFacing: Map<string, "up" | "down" | "left" | "right"> =
-    new Map();
+  private otherPlayersFacing: Map<string, Facing8> = new Map();
   private otherPlayersWalkPhase: Map<string, number> = new Map();
   private playerTexturePrefix: string = "player_warrior";
   private otherPlayersClass: Map<string, string> = new Map();
@@ -160,34 +196,41 @@ export class BarrowspireScene extends Phaser.Scene {
   private outsideObjects: Phaser.GameObjects.GameObject[] = [];
   private indoorMask!: Phaser.GameObjects.Graphics;
 
-  // 寶箱 (從後端同步)
+  // 寶箱 (從後端同步) — `pos` is the world position; the sprite is drawn at its projection
   private chests: Map<
     string,
-    { sprite: Phaser.GameObjects.Sprite; entityId: string }
+    { sprite: Phaser.GameObjects.Sprite; entityId: string; pos: Point }
   > = new Map();
 
   // 逃脫門 (從後端同步)
   private escapeDoors: Map<
     string,
-    { sprite: Phaser.GameObjects.Sprite; entityId: string }
+    { sprite: Phaser.GameObjects.Sprite; entityId: string; pos: Point }
   > = new Map();
 
   // 開關/按鈕 (從後端同步)
   private switches: Map<
     string,
-    { sprite: Phaser.GameObjects.Sprite; entityId: string }
+    { sprite: Phaser.GameObjects.Sprite; entityId: string; pos: Point }
   > = new Map();
 
-  // 牆壁 (從後端同步)
+  // 牆壁 (從後端同步) — one placeholder block per wall, cut into sorted pieces
   private walls: Map<
     string,
-    { graphics: Phaser.GameObjects.Graphics; entityId: string }
+    { pieces: Phaser.GameObjects.Graphics[]; entityId: string }
   > = new Map();
 
-  // 門 (從後端同步)
+  // 門 (從後端同步) — the slab lies on its own lifted plane, in world coordinates;
+  // `pos` is the closed door's centre, the point interaction is measured from
   private serverDoors: Map<
     string,
-    { rect: Phaser.GameObjects.Rectangle; entityId: string; isOpen: boolean }
+    {
+      rect: Phaser.GameObjects.Rectangle;
+      plane: WorldPlane;
+      entityId: string;
+      isOpen: boolean;
+      pos: Point;
+    }
   > = new Map();
   private serverBuildingsCreated = false;
 
@@ -233,7 +276,12 @@ export class BarrowspireScene extends Phaser.Scene {
   private chestLootedAtMap = new Map<string, number>(); // entityId → loot 時間戳
   private canAttack = true;
   private canCastSkill = true;
-  private projectileSprites: Map<string, Phaser.GameObjects.Container> = new Map();
+  private projectileSprites: Map<
+    string,
+    { container: Phaser.GameObjects.Container; pos: Point; isArrow: boolean }
+  > = new Map();
+  /** The map floor, a world-coordinate plane; house floors are added to it. */
+  private groundPlane?: WorldPlane;
   private readonly PENDING_DURATION = 1000; // 1 秒內不比對剛拿的物品
   private lastGameState?: ClientGameState;
 
@@ -631,82 +679,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.createEscapeDoorTextures();
     this.createSwitchTextures();
     this.createMetalFloorTexture();
-    this.createHullTexture();
     this.createEscapeParticleTexture();
-  }
-
-  private createHullTexture(): void {
-    const size = 128;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d")!;
-    ctx.imageSmoothingEnabled = false;
-
-    // Dungeon stone wall: dark slate blocks set in deep mortar, torch-baked
-    // top light, moss and hairline cracks. Brick courses tile seamlessly at
-    // 128. Texture key kept as "hullMetal" so no scene code changes.
-    const brickW = 32;
-    const brickH = 16;
-
-    ctx.fillStyle = toCss(palette.inkDeep); // mortar
-    ctx.fillRect(0, 0, size, size);
-
-    const courses = size / brickH; // 8
-    for (let row = 0; row < courses; row++) {
-      const y = row * brickH;
-      const offset = row % 2 === 0 ? 0 : -brickW / 2; // running-bond courses
-      const lit = 1 - row / (courses * 1.6); // torch "above": top courses warmer
-      for (let x = offset; x < size; x += brickW) {
-        const v = 52 + Math.floor(Math.random() * 10);
-        const r = Math.round(v * (0.85 + 0.25 * lit));
-        const gg = Math.round((v + 2) * (0.85 + 0.22 * lit));
-        const b = Math.round((v + 6) * (0.82 + 0.2 * lit));
-        ctx.fillStyle = `rgb(${r}, ${gg}, ${b})`;
-        ctx.fillRect(x + 1, y + 1, brickW - 2, brickH - 2);
-
-        // lit top edge, shadowed bottom edge
-        ctx.fillStyle = `rgba(110, 110, 120, ${0.18 * lit + 0.05})`;
-        ctx.fillRect(x + 1, y + 1, brickW - 2, 2);
-        ctx.fillStyle = "rgba(8, 7, 6, 0.35)";
-        ctx.fillRect(x + 1, y + brickH - 3, brickW - 2, 2);
-
-        // dithered grain (no gradients)
-        for (let i = 0; i < 26; i++) {
-          const gx = x + 1 + Math.floor(Math.random() * (brickW - 2));
-          const gy = y + 1 + Math.floor(Math.random() * (brickH - 2));
-          ctx.fillStyle =
-            Math.random() < 0.5
-              ? "rgba(10, 9, 8, 0.25)"
-              : `rgba(120, 122, 130, ${0.1 * lit + 0.04})`;
-          ctx.fillRect(gx, gy, 1, 1);
-        }
-
-        // moss creeping along a block bottom (arcane-deep green)
-        if (Math.random() < 0.18) {
-          ctx.fillStyle = "rgba(60, 90, 54, 0.5)";
-          const mw = 4 + Math.floor(Math.random() * 8);
-          ctx.fillRect(
-            x + 2 + Math.floor(Math.random() * (brickW - mw - 2)),
-            y + brickH - 4,
-            mw,
-            2,
-          );
-        }
-        // hairline crack within the block
-        if (Math.random() < 0.15) {
-          ctx.strokeStyle = "rgba(8, 7, 6, 0.5)";
-          ctx.lineWidth = 1;
-          const cxp = x + 4 + Math.random() * (brickW - 8);
-          ctx.beginPath();
-          ctx.moveTo(cxp, y + 2);
-          ctx.lineTo(cxp + (Math.random() - 0.5) * 6, y + brickH - 3);
-          ctx.stroke();
-        }
-      }
-    }
-
-    this.textures.addCanvas("hullMetal", canvas);
   }
 
   private createMetalFloorTexture(): void {
@@ -1391,16 +1364,25 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Legs under a delver drawn at screen `(x, y)`. The placeholder rig has four
+   * facings, so an 8-way facing shows as the nearest of them until §E sheets land.
+   */
   private drawLegs(
     graphics: Phaser.GameObjects.Graphics,
     x: number,
     y: number,
-    facing: "up" | "down" | "left" | "right",
+    facing: Facing8,
     walkPhase: number,
     isMoving: boolean,
     darkColor: number,
   ): void {
-    drawDelverLegs(graphics, x, y, facing, walkPhase, isMoving, darkColor);
+    drawDelverLegs(graphics, x, y, nearestScreenFacing(facing), walkPhase, isMoving, darkColor);
+  }
+
+  /** The texture key for a class prefix and an 8-way facing (nearest placeholder facing). */
+  private facingTexture(prefix: string, facing: Facing8): string {
+    return this.facingTextureKey(prefix, nearestScreenFacing(facing));
   }
 
   private createChestTextures(): void {
@@ -1679,8 +1661,10 @@ export class BarrowspireScene extends Phaser.Scene {
     g.destroy();
   }
 
+  /** Burst at a world position. */
   private playEscapeParticles(x: number, y: number): void {
-    const emitter = this.add.particles(x, y, "escape_particle", {
+    const at = worldToScreen(x, y);
+    const emitter = this.add.particles(at.x, at.y, "escape_particle", {
       speed: { min: 60, max: 180 },
       scale: { start: 1, end: 0 },
       alpha: { start: 1, end: 0 },
@@ -1711,23 +1695,24 @@ export class BarrowspireScene extends Phaser.Scene {
     containers.forEach((container) => {
       let chest = this.chests.get(container.entity_id);
 
+      const pos = { x: container.position.x, y: container.position.y };
       if (!chest) {
         // 新增寶箱
         const sprite = this.add.sprite(
-          container.position.x,
-          container.position.y,
+          0,
+          0,
           container.is_open ? "chest_open" : "chest_closed",
         );
-        sprite.setDepth(50);
-        chest = { sprite, entityId: container.entity_id };
+        chest = { sprite, entityId: container.entity_id, pos };
         this.chests.set(container.entity_id, chest);
       } else {
         // 更新寶箱狀態
         chest.sprite.setTexture(
           container.is_open ? "chest_open" : "chest_closed",
         );
-        chest.sprite.setPosition(container.position.x, container.position.y);
+        chest.pos = pos;
       }
+      standAt(chest.sprite, pos);
 
       // 如果是打開的寶箱，更新跳窗內容
       if (
@@ -1764,13 +1749,12 @@ export class BarrowspireScene extends Phaser.Scene {
         }
 
         // 新增逃脫門
-        const sprite = this.add.sprite(
-          door.position.x,
-          door.position.y,
-          texture,
-        );
-        sprite.setDepth(55); // 比寶箱稍高一點
-        escapeDoor = { sprite, entityId: door.entity_id };
+        const sprite = this.add.sprite(0, 0, texture);
+        escapeDoor = {
+          sprite,
+          entityId: door.entity_id,
+          pos: { x: door.position.x, y: door.position.y },
+        };
         this.escapeDoors.set(door.entity_id, escapeDoor);
       } else {
         // 更新逃脫門狀態
@@ -1781,8 +1765,9 @@ export class BarrowspireScene extends Phaser.Scene {
           texture = "escape_door_unlocked";
         }
         escapeDoor.sprite.setTexture(texture);
-        escapeDoor.sprite.setPosition(door.position.x, door.position.y);
+        escapeDoor.pos = { x: door.position.x, y: door.position.y };
       }
+      standAt(escapeDoor.sprite, escapeDoor.pos);
     });
   }
 
@@ -1804,23 +1789,24 @@ export class BarrowspireScene extends Phaser.Scene {
       if (!switchObj) {
         // 新增開關
         const sprite = this.add.sprite(
-          switchState.position.x,
-          switchState.position.y,
+          0,
+          0,
           switchState.is_activated ? "switch_active" : "switch_inactive",
         );
-        sprite.setDepth(50);
-        switchObj = { sprite, entityId: switchState.entity_id };
+        switchObj = {
+          sprite,
+          entityId: switchState.entity_id,
+          pos: { x: switchState.position.x, y: switchState.position.y },
+        };
         this.switches.set(switchState.entity_id, switchObj);
       } else {
         // 更新開關狀態
         switchObj.sprite.setTexture(
           switchState.is_activated ? "switch_active" : "switch_inactive",
         );
-        switchObj.sprite.setPosition(
-          switchState.position.x,
-          switchState.position.y,
-        );
+        switchObj.pos = { x: switchState.position.x, y: switchState.position.y };
       }
+      standAt(switchObj.sprite, switchObj.pos);
     });
   }
 
@@ -1830,35 +1816,30 @@ export class BarrowspireScene extends Phaser.Scene {
     // 移除不存在的牆壁
     this.walls.forEach((wall, entityId) => {
       if (!activeEntityIds.has(entityId)) {
-        wall.graphics.destroy();
+        wall.pieces.forEach((piece) => piece.destroy());
         this.walls.delete(entityId);
       }
     });
 
-    // 新增或更新牆壁
+    // 新增或更新牆壁 — placeholder upright blocks on the projection, one-tile pieces
+    // each sorted by footprint, until baked wall art lands (FS-2325V §C.2)
     walls.forEach((wallState) => {
-      let wall = this.walls.get(wallState.entity_id);
+      if (this.walls.has(wallState.entity_id)) return;
 
-      if (!wall) {
-        const graphics = this.add.graphics();
-        graphics.fillStyle(palette.wall, 1);
-        graphics.fillRect(
-          wallState.position.x,
-          wallState.position.y,
-          wallState.width,
-          wallState.height,
-        );
-        graphics.lineStyle(1, palette.wallLight, 0.6);
-        graphics.strokeRect(
-          wallState.position.x,
-          wallState.position.y,
-          wallState.width,
-          wallState.height,
-        );
-        graphics.setDepth(50);
-        wall = { graphics, entityId: wallState.entity_id };
-        this.walls.set(wallState.entity_id, wall);
-      }
+      const pieces = addUprightBlock(
+        this,
+        wallState.position.x,
+        wallState.position.y,
+        wallState.width,
+        wallState.height,
+        {
+          top: palette.wall,
+          south: palette.wallShade,
+          east: shade(palette.wall, 0.5),
+          edge: { width: 1, color: palette.wallLight, alpha: 0.6 },
+        },
+      );
+      this.walls.set(wallState.entity_id, { pieces, entityId: wallState.entity_id });
     });
 
     // 從牆壁反推建築範圍，按 house_id 分組建立屋頂 + 地板（只做一次）
@@ -1891,7 +1872,7 @@ export class BarrowspireScene extends Phaser.Scene {
         const bw = maxX - minX;
         const bh = maxY - minY;
 
-        // 地板
+        // 地板 — lies on the ground plane, drawn in world coordinates
         const floor = this.add.graphics();
         floor.fillStyle(palette.wallShade, 1);
         floor.fillRect(minX, minY, bw, bh);
@@ -1902,21 +1883,25 @@ export class BarrowspireScene extends Phaser.Scene {
         for (let ty = minY; ty < maxY; ty += 40) {
           floor.lineBetween(minX, ty, maxX, ty);
         }
-        floor.setDepth(1);
+        this.groundPlane?.surface.add(floor);
 
-        // 屋頂
+        // 屋頂 — on a plane lifted to the wall tops, sorted by the house's centre:
+        // over a delver behind the house, under one in front of it
+        const roofPlane = addWorldPlane(this, WALL_HEIGHT);
+        roofPlane.root.setDepth(worldDepth(minX + bw / 2, minY + bh / 2));
         const roof = this.add.graphics();
         roof.fillStyle(palette.wallShade, 0.97);
         roof.fillRect(minX - 5, minY - 5, bw + 10, bh + 10);
         roof.lineStyle(2, palette.wall, 1);
         roof.strokeRect(minX - 5, minY - 5, bw + 10, bh + 10);
-        roof.setDepth(200);
+        roofPlane.surface.add(roof);
 
-        // 入口標示（門在下方）
+        // 入口標示（門在下方）— a screen-space marker at the entrance's projection
         const doorMarker = this.add.graphics();
         doorMarker.setDepth(250);
-        const doorX = minX + bw / 2;
-        const doorY = maxY + 5;
+        const entrance = worldToScreen(minX + bw / 2, maxY + 5);
+        const doorX = entrance.x;
+        const doorY = entrance.y;
         const arrowSize = 10;
         doorMarker.fillStyle(palette.torch, 1);
         doorMarker.fillTriangle(
@@ -1973,7 +1958,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // 移除不存在的門
     this.serverDoors.forEach((door, entityId) => {
       if (!activeEntityIds.has(entityId)) {
-        door.rect.destroy();
+        door.plane.root.destroy();
         this.serverDoors.delete(entityId);
       }
     });
@@ -1983,6 +1968,15 @@ export class BarrowspireScene extends Phaser.Scene {
       let door = this.serverDoors.get(doorState.entity_id);
 
       if (!door) {
+        // The slab keeps its world-coordinate rectangle and hinge rotation; the
+        // plane it lies on (lifted to the wall tops) carries the projection.
+        const plane = addWorldPlane(this, WALL_HEIGHT);
+        const pos = {
+          x: doorState.position.x + doorState.width / 2,
+          y: doorState.position.y + doorState.height / 2,
+        };
+        plane.root.setDepth(worldDepth(pos.x, pos.y));
+
         const rect = this.add.rectangle(
           doorState.position.x,
           doorState.position.y + doorState.height / 2,
@@ -1992,9 +1986,9 @@ export class BarrowspireScene extends Phaser.Scene {
         );
         rect.setOrigin(0, 0.5);
         rect.setStrokeStyle(2, palette.wallLight);
-        rect.setDepth(51);
+        plane.surface.add(rect);
 
-        door = { rect, entityId: doorState.entity_id, isOpen: false };
+        door = { rect, plane, entityId: doorState.entity_id, isOpen: false, pos };
         this.serverDoors.set(doorState.entity_id, door);
 
         if (doorState.is_open) {
@@ -2016,16 +2010,13 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   private getNearbyDoor(): { entityId: string } | null {
-    if (!this.player) return null;
+    const me = this.playerPos;
+    if (!this.player || !me) return null;
     const interactDistance = 60;
 
+    // world positions: the delver's and the closed door's centre
     for (const [entityId, door] of this.serverDoors) {
-      const distance = Phaser.Math.Distance.Between(
-        this.player.x,
-        this.player.y,
-        door.rect.x + door.rect.width / 2,
-        door.rect.y,
-      );
+      const distance = Phaser.Math.Distance.Between(me.x, me.y, door.pos.x, door.pos.y);
       if (distance < interactDistance) {
         return { entityId };
       }
@@ -2078,17 +2069,13 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   private checkChestDistance(): void {
-    if (!this.player || !this.openedChestEntityId || !this.isPopupOpen) return;
+    const me = this.playerPos;
+    if (!this.player || !me || !this.openedChestEntityId || !this.isPopupOpen) return;
 
     const chest = this.chests.get(this.openedChestEntityId);
     if (!chest) return;
 
-    const distance = Phaser.Math.Distance.Between(
-      this.player.x,
-      this.player.y,
-      chest.sprite.x,
-      chest.sprite.y,
-    );
+    const distance = Phaser.Math.Distance.Between(me.x, me.y, chest.pos.x, chest.pos.y);
 
     const interactDistance = 60;
     if (distance > interactDistance) {
@@ -2754,16 +2741,12 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   private getNearbyChest(): { entityId: string } | null {
-    if (!this.player) return null;
+    const me = this.playerPos;
+    if (!this.player || !me) return null;
     const interactDistance = 60;
 
     for (const [entityId, chest] of this.chests) {
-      const distance = Phaser.Math.Distance.Between(
-        this.player.x,
-        this.player.y,
-        chest.sprite.x,
-        chest.sprite.y,
-      );
+      const distance = Phaser.Math.Distance.Between(me.x, me.y, chest.pos.x, chest.pos.y);
       if (distance < interactDistance) {
         return { entityId };
       }
@@ -2772,16 +2755,12 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   private getNearbySwitch(): { entityId: string } | null {
-    if (!this.player) return null;
+    const me = this.playerPos;
+    if (!this.player || !me) return null;
     const interactDistance = 60;
 
     for (const [entityId, switchObj] of this.switches) {
-      const distance = Phaser.Math.Distance.Between(
-        this.player.x,
-        this.player.y,
-        switchObj.sprite.x,
-        switchObj.sprite.y,
-      );
+      const distance = Phaser.Math.Distance.Between(me.x, me.y, switchObj.pos.x, switchObj.pos.y);
       if (distance < interactDistance) {
         return { entityId };
       }
@@ -2790,16 +2769,12 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   private getNearbyEscapeDoor(): { entityId: string } | null {
-    if (!this.player) return null;
+    const me = this.playerPos;
+    if (!this.player || !me) return null;
     const interactDistance = 60;
 
     for (const [entityId, escapeDoor] of this.escapeDoors) {
-      const distance = Phaser.Math.Distance.Between(
-        this.player.x,
-        this.player.y,
-        escapeDoor.sprite.x,
-        escapeDoor.sprite.y,
-      );
+      const distance = Phaser.Math.Distance.Between(me.x, me.y, escapeDoor.pos.x, escapeDoor.pos.y);
       if (distance < interactDistance) {
         return { entityId };
       }
@@ -2813,22 +2788,25 @@ export class BarrowspireScene extends Phaser.Scene {
     const displayName = activeChar?.name || username || useGameStore.getState().selectedCharacterName || "Hero";
 
     this.playerTexturePrefix = "player_" + effectiveClass;
-    this.player = this.physics.add.sprite(x, y, this.facingTextureKey(this.playerTexturePrefix, "down"));
-    this.player.setCollideWorldBounds(true);
-    this.player.setDepth(100);
+    this.playerPos = { x, y };
+    this.playerFacing = "se";
+    this.walkPhase = 0;
+    this.player = this.physics.add.sprite(0, 0, this.facingTexture(this.playerTexturePrefix, this.playerFacing));
+    // No world-bounds clamp: the sprite lives in screen space (the projection),
+    // and the server is authoritative for where a delver may stand.
+    standAt(this.player, this.playerPos, 1);
+    const at = worldToScreen(x, y);
 
     // set circular physics body to match backend collision (radius 20), offset for 60x60 texture
     this.player.body?.setCircle(20, 10, 10);
 
     // create legs overlay that will follow player
     this.playerLegs = this.add.graphics();
-    this.playerLegs.setDepth(101);
-    this.playerFacing = "down";
-    this.walkPhase = 0;
-    this.drawLegs(this.playerLegs, x, y, "down", 0, false, palette.hudLabel);
+    this.playerLegs.setDepth(worldDepth(x, y, 2));
+    this.drawLegs(this.playerLegs, at.x, at.y, this.playerFacing, 0, false, palette.hudLabel);
 
     // username label above player
-    this.playerNameText = this.add.text(x, y - 35, displayName, {
+    this.playerNameText = this.add.text(at.x, at.y - 35, displayName, {
       fontSize: "11px",
       fontFamily: CANVAS_FONT.body,
       color: toCss(palette.frameBright),
@@ -2837,7 +2815,7 @@ export class BarrowspireScene extends Phaser.Scene {
       align: "center",
     });
     this.playerNameText.setOrigin(0.5, 1);
-    this.playerNameText.setDepth(102);
+    this.playerNameText.setDepth(NAME_DEPTH);
 
     // 玩家與所有建築牆壁/門碰撞
     this.buildings.forEach((building) => {
@@ -2983,25 +2961,20 @@ export class BarrowspireScene extends Phaser.Scene {
     // Connect via SocketManager
     this.connectToServer();
 
-    // setup world boundaries
-    this.physics.world.setBounds(0, 0, this.mapWidth, this.mapHeight);
+    // The camera and the (vestigial, collision-free) physics world live in
+    // projected space: the map is a diamond, clamped by its bounding box plus a
+    // margin of dark. FS-2325V §A.3, §A.7.
+    const bounds = projectedBounds(this.mapWidth, this.mapHeight, CAMERA_MARGIN);
+    this.physics.world.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    this.cameras.main.setBackgroundColor(palette.mapEdge);
 
-    // create map background with cosmic theme
+    // the map floor, as a diamond on the projection
     this.createMapBackground();
 
     // buildings are now created from server wall data in updateWalls()
 
     // 寶箱由後端同步，不在這裡創建
-
-    // 設置相機邊界（擴大讓玩家能看到船外太空）
-    const outerMargin = 200;
-    const spaceMargin = 150; // extra space beyond hull visible at edges
-    this.cameras.main.setBounds(
-      -outerMargin - spaceMargin,
-      -outerMargin - spaceMargin,
-      this.mapWidth + (outerMargin + spaceMargin) * 2,
-      this.mapHeight + (outerMargin + spaceMargin) * 2,
-    );
 
     // 輸入控制
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -3088,29 +3061,34 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // 技能攻擊控制 (Left-Click Primary Attack 0 MP // Right-Click Special Skill 10 MP)
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      if (!this.player || !this.canCastSkill) return;
+      if (!this.player || !this.playerPos || !this.canCastSkill) return;
       if (this.equipmentPanel?.isVisible()) return;
 
       const activeChar = useGameStore.getState().getActiveCharacter();
       const currentClass = (activeChar?.className || useGameStore.getState().selectedClass || "warrior").toLowerCase();
 
+      // The pointer is over the projection; the server wants the world point under
+      // it. `target` and `me` are world positions (FS-2325V §0.2, §A.5).
+      const target = screenToWorld(pointer.worldX, pointer.worldY);
+      const me = this.playerPos;
+
       // 左鍵發射一般攻擊 (0 MP)
       if (pointer.leftButtonDown() || pointer.button === 0) {
         if (currentClass === "warrior") {
           // 不管滑鼠在哪裡，通通觸發揮劍劈斬動畫！
-          this.playWarriorSlashEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+          this.playWarriorSlashEffect(me.x, me.y, target.x, target.y);
 
           // 計算角度與將打擊目標限制在距離 50px 以內
           const dist = Phaser.Math.Distance.Between(
-            this.player.x,
-            this.player.y,
-            pointer.worldX,
-            pointer.worldY
+            me.x,
+            me.y,
+            target.x,
+            target.y
           );
-          const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+          const angle = Phaser.Math.Angle.Between(me.x, me.y, target.x, target.y);
           const effectiveDist = Math.min(dist, 50);
-          const hitX = this.player.x + Math.cos(angle) * effectiveDist;
-          const hitY = this.player.y + Math.sin(angle) * effectiveDist;
+          const hitX = me.x + Math.cos(angle) * effectiveDist;
+          const hitY = me.y + Math.sin(angle) * effectiveDist;
 
           socketManager.sendMessage(ActionType.CastSkill, {
             skill_id: "slash",
@@ -3120,17 +3098,17 @@ export class BarrowspireScene extends Phaser.Scene {
         } else if (currentClass === "archer") {
           socketManager.sendMessage(ActionType.CastSkill, {
             skill_id: "arrow",
-            target_x: pointer.worldX,
-            target_y: pointer.worldY,
+            target_x: target.x,
+            target_y: target.y,
           });
-          this.playArrowShootEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+          this.playArrowShootEffect(me.x, me.y, target.x, target.y);
         } else {
           socketManager.sendMessage(ActionType.CastSkill, {
             skill_id: "fireball",
-            target_x: pointer.worldX,
-            target_y: pointer.worldY,
+            target_x: target.x,
+            target_y: target.y,
           });
-          this.playFireballCastEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+          this.playFireballCastEffect(me.x, me.y, target.x, target.y);
         }
 
         this.canCastSkill = false;
@@ -3143,24 +3121,24 @@ export class BarrowspireScene extends Phaser.Scene {
         if (currentClass === "warrior") {
           socketManager.sendMessage(ActionType.CastSkill, {
             skill_id: "dash",
-            target_x: pointer.worldX,
-            target_y: pointer.worldY,
+            target_x: target.x,
+            target_y: target.y,
           });
-          this.playWarriorDashEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+          this.playWarriorDashEffect(me.x, me.y, target.x, target.y);
         } else if (currentClass === "mage") {
           socketManager.sendMessage(ActionType.CastSkill, {
             skill_id: "triple_fireball",
-            target_x: pointer.worldX,
-            target_y: pointer.worldY,
+            target_x: target.x,
+            target_y: target.y,
           });
-          this.playFireballCastEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+          this.playFireballCastEffect(me.x, me.y, target.x, target.y);
         } else if (currentClass === "archer") {
           socketManager.sendMessage(ActionType.CastSkill, {
             skill_id: "triple_arrow",
-            target_x: pointer.worldX,
-            target_y: pointer.worldY,
+            target_x: target.x,
+            target_y: target.y,
           });
-          this.playArrowShootEffect(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+          this.playArrowShootEffect(me.x, me.y, target.x, target.y);
         }
 
         this.canCastSkill = false;
@@ -3336,7 +3314,7 @@ export class BarrowspireScene extends Phaser.Scene {
       // 同步玩家頭頂 HP/MP 狀態條
       if (!this.playerHpMpGraphics) {
         this.playerHpMpGraphics = this.add.graphics();
-        this.playerHpMpGraphics.setDepth(103);
+        this.playerHpMpGraphics.setDepth(HP_BAR_DEPTH);
       }
       const curHp = state.current_player.current_health ?? (state.current_player.class === "warrior" ? 150 : 100);
       const maxHp = state.current_player.max_health ?? (state.current_player.class === "warrior" ? 150 : 100);
@@ -3360,8 +3338,8 @@ export class BarrowspireScene extends Phaser.Scene {
       }
     } else {
       // current_player is null — player has escaped
-      if (this.player && this.player.visible) {
-        this.playEscapeParticles(this.player.x, this.player.y);
+      if (this.player && this.playerPos && this.player.visible) {
+        this.playEscapeParticles(this.playerPos.x, this.playerPos.y);
         this.player.setVisible(false);
         this.playerLegs?.setVisible(false);
         this.playerNameText?.setVisible(false);
@@ -3405,12 +3383,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
     for (const p of projectiles) {
       activeIds.add(p.entity_id);
-      let container = this.projectileSprites.get(p.entity_id);
+      const pos = { x: p.position.x, y: p.position.y };
+      let entry = this.projectileSprites.get(p.entity_id);
 
-      if (!container) {
-        container = this.add.container(p.position.x, p.position.y);
-        container.setDepth(150);
-
+      if (!entry) {
+        const container = this.add.container(0, 0);
         const isArrow = p.projectile_type === "arrow";
 
         if (isArrow) {
@@ -3424,7 +3401,6 @@ export class BarrowspireScene extends Phaser.Scene {
           arrowG.fillTriangle(-10, -3.5, -4, 0, -10, 3.5);
 
           container.add(arrowG);
-          (container as any).isArrowType = true;
         } else {
           // Fireball visual layers: outer glow, core, inner highlight
           const outerGlow = this.add.circle(0, 0, 14, 0xff4500, 0.45);
@@ -3443,27 +3419,29 @@ export class BarrowspireScene extends Phaser.Scene {
           });
         }
 
-        this.projectileSprites.set(p.entity_id, container);
-      } else {
-        container.setPosition(p.position.x, p.position.y);
+        entry = { container, pos, isArrow };
+        this.projectileSprites.set(p.entity_id, entry);
       }
+      entry.pos = pos;
+      // flying at chest height, over whatever stands on the same footprint
+      standAt(entry.container, pos, 5);
 
-      // Rotate arrow to velocity angle
+      // Rotate arrow to velocity angle — the velocity as drawn on the projection
       if (p.velocity && (p.velocity.vx !== 0 || p.velocity.vy !== 0)) {
-        const angle = Math.atan2(p.velocity.vy, p.velocity.vx);
-        container.setRotation(angle);
+        const heading = worldToScreen(p.velocity.vx, p.velocity.vy);
+        entry.container.setRotation(Math.atan2(heading.y, heading.x));
       }
     }
 
     // Remove inactive projectiles (hit target or max range)
-    for (const [id, container] of this.projectileSprites.entries()) {
+    for (const [id, entry] of this.projectileSprites.entries()) {
       if (!activeIds.has(id)) {
-        if ((container as any).isArrowType) {
-          this.playArrowHitEffect(container.x, container.y);
+        if (entry.isArrow) {
+          this.playArrowHitEffect(entry.pos.x, entry.pos.y);
         } else {
-          this.playFireballExplosion(container.x, container.y);
+          this.playFireballExplosion(entry.pos.x, entry.pos.y);
         }
-        container.destroy();
+        entry.container.destroy();
         this.projectileSprites.delete(id);
       }
     }
@@ -3475,10 +3453,13 @@ export class BarrowspireScene extends Phaser.Scene {
     targetX: number,
     targetY: number,
   ): void {
-    const angle = Phaser.Math.Angle.Between(startX, startY, targetX, targetY);
+    // world positions in; the effect is drawn on the projection
+    const start = worldToScreen(startX, startY);
+    const aim = worldToScreen(targetX, targetY);
+    const angle = Phaser.Math.Angle.Between(start.x, start.y, aim.x, aim.y);
     const flash = this.add.circle(
-      startX + Math.cos(angle) * 15,
-      startY + Math.sin(angle) * 15,
+      start.x + Math.cos(angle) * 15,
+      start.y + Math.sin(angle) * 15,
       12,
       0xffa500,
       0.8,
@@ -3493,7 +3474,8 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
-  private playFireballExplosion(x: number, y: number): void {
+  private playFireballExplosion(worldX: number, worldY: number): void {
+    const { x, y } = worldToScreen(worldX, worldY);
     const burst = this.add.circle(x, y, 16, 0xff4500, 0.8);
     burst.setDepth(160);
     this.tweens.add({
@@ -3511,9 +3493,12 @@ export class BarrowspireScene extends Phaser.Scene {
     targetX: number,
     targetY: number,
   ): void {
-    const angle = Phaser.Math.Angle.Between(startX, startY, targetX, targetY);
-    const muzzleX = startX + Math.cos(angle) * 16;
-    const muzzleY = startY + Math.sin(angle) * 16;
+    // world positions in; the effect is drawn on the projection
+    const start = worldToScreen(startX, startY);
+    const aim = worldToScreen(targetX, targetY);
+    const angle = Phaser.Math.Angle.Between(start.x, start.y, aim.x, aim.y);
+    const muzzleX = start.x + Math.cos(angle) * 16;
+    const muzzleY = start.y + Math.sin(angle) * 16;
 
     // Bow string release puff
     const puff = this.add.circle(muzzleX, muzzleY, 6, 0xd4a373, 0.7);
@@ -3544,7 +3529,8 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
-  private playArrowHitEffect(x: number, y: number): void {
+  private playArrowHitEffect(worldX: number, worldY: number): void {
+    const { x, y } = worldToScreen(worldX, worldY);
     // Wood & metal chip spark particles
     for (let i = 0; i < 4; i++) {
       const chip = this.add.rectangle(
@@ -3577,13 +3563,16 @@ export class BarrowspireScene extends Phaser.Scene {
     targetX: number,
     targetY: number,
   ): void {
-    const angle = Phaser.Math.Angle.Between(startX, startY, targetX, targetY);
+    // world positions in; the effect is drawn on the projection
+    const start = worldToScreen(startX, startY);
+    const aim = worldToScreen(targetX, targetY);
+    const angle = Phaser.Math.Angle.Between(start.x, start.y, aim.x, aim.y);
 
     // Dust cloud at origin
     for (let i = 0; i < 5; i++) {
       const p = this.add.circle(
-        startX + Phaser.Math.Between(-8, 8),
-        startY + Phaser.Math.Between(-8, 8),
+        start.x + Phaser.Math.Between(-8, 8),
+        start.y + Phaser.Math.Between(-8, 8),
         Phaser.Math.Between(4, 8),
         0x8a929a,
         0.6
@@ -3602,10 +3591,10 @@ export class BarrowspireScene extends Phaser.Scene {
     const streakGraphics = this.add.graphics();
     streakGraphics.lineStyle(4, palette.torchCore, 0.7);
     streakGraphics.lineBetween(
-      startX,
-      startY,
-      startX + Math.cos(angle) * 160,
-      startY + Math.sin(angle) * 160
+      start.x,
+      start.y,
+      start.x + Math.cos(angle) * 160,
+      start.y + Math.sin(angle) * 160
     );
     streakGraphics.setDepth(145);
     this.tweens.add({
@@ -3622,15 +3611,18 @@ export class BarrowspireScene extends Phaser.Scene {
     targetX: number,
     targetY: number
   ): void {
+    // world positions in; the effect is drawn on the projection
+    const start = worldToScreen(startX, startY);
+    const aim = worldToScreen(targetX, targetY);
     const slash = this.add.graphics();
     slash.setDepth(150);
 
-    const angle = Phaser.Math.Angle.Between(startX, startY, targetX, targetY);
+    const angle = Phaser.Math.Angle.Between(start.x, start.y, aim.x, aim.y);
     const radius = 35;
 
     slash.lineStyle(3, palette.hudText, 1);
     slash.beginPath();
-    slash.arc(startX, startY, radius, angle - 0.8, angle + 0.8, false);
+    slash.arc(start.x, start.y, radius, angle - 0.8, angle + 0.8, false);
     slash.strokePath();
 
     this.tweens.add({
@@ -3687,10 +3679,12 @@ export class BarrowspireScene extends Phaser.Scene {
     // Remove players who left
     this.otherPlayers.forEach((sprite, playerId) => {
       if (!activePlayerIds.has(playerId)) {
-        this.playEscapeParticles(sprite.x, sprite.y);
+        const leftFrom = this.otherPlayersPos.get(playerId);
+        if (leftFrom) this.playEscapeParticles(leftFrom.x, leftFrom.y);
         sprite.destroy();
         this.otherPlayers.delete(playerId);
         this.otherPlayersTargets.delete(playerId);
+        this.otherPlayersPos.delete(playerId);
 
         // remove legs too
         const legs = this.otherPlayersLegs.get(playerId);
@@ -3726,13 +3720,11 @@ export class BarrowspireScene extends Phaser.Scene {
       this.otherPlayersClass.set(playerData.id, cls);
 
       if (!sprite) {
-        // Create new sprite for this player
-        sprite = this.physics.add.sprite(
-          playerData.position.x,
-          playerData.position.y,
-          this.facingTextureKey("other_" + cls, "down"),
-        );
-        sprite.setDepth(99);
+        // Create new sprite for this player, at the projection of their position
+        const pos = { x: playerData.position.x, y: playerData.position.y };
+        this.otherPlayersPos.set(playerData.id, pos);
+        sprite = this.physics.add.sprite(0, 0, this.facingTexture("other_" + cls, "se"));
+        standAt(sprite, pos, 1);
 
         if (sprite.body) {
           (sprite.body as Phaser.Physics.Arcade.Body).setCircle(20, 10, 10);
@@ -3741,13 +3733,11 @@ export class BarrowspireScene extends Phaser.Scene {
         // 點擊攻擊
         sprite.setInteractive();
         sprite.on("pointerdown", () => {
-          if (!this.canAttack || !this.player) return;
-          const distance = Phaser.Math.Distance.Between(
-            this.player.x,
-            this.player.y,
-            sprite!.x,
-            sprite!.y,
-          );
+          const me = this.playerPos;
+          const them = this.otherPlayersPos.get(playerData.id);
+          if (!this.canAttack || !this.player || !me || !them) return;
+          // world positions, never the sprites' screen positions
+          const distance = Phaser.Math.Distance.Between(me.x, me.y, them.x, them.y);
           if (distance > 60) return;
           const entityId = this.otherPlayersEntityIds.get(playerData.id);
           if (entityId) {
@@ -3767,24 +3757,16 @@ export class BarrowspireScene extends Phaser.Scene {
 
         // create legs for this other player
         const legs = this.add.graphics();
-        legs.setDepth(100);
+        legs.setDepth(worldDepth(pos.x, pos.y, 2));
         this.otherPlayersLegs.set(playerData.id, legs);
-        this.otherPlayersFacing.set(playerData.id, "down");
+        this.otherPlayersFacing.set(playerData.id, "se");
         this.otherPlayersWalkPhase.set(playerData.id, 0);
-        this.drawLegs(
-          legs,
-          playerData.position.x,
-          playerData.position.y,
-          "down",
-          0,
-          false,
-          palette.hudLabel,
-        );
+        this.drawLegs(legs, sprite.x, sprite.y, "se", 0, false, palette.hudLabel);
 
         // create name text (hidden until hover)
         const nameText = this.add.text(
-          playerData.position.x,
-          playerData.position.y - 35,
+          sprite.x,
+          sprite.y - 35,
           playerData.username || "Unknown",
           {
             fontSize: "11px",
@@ -3796,7 +3778,7 @@ export class BarrowspireScene extends Phaser.Scene {
           },
         );
         nameText.setOrigin(0.5, 1);
-        nameText.setDepth(102);
+        nameText.setDepth(NAME_DEPTH);
         nameText.setVisible(false);
         this.otherPlayersNameTexts.set(playerData.id, nameText);
 
@@ -3843,415 +3825,14 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * The map floor. The map is a diamond on the projection: its floor keeps its
+   * world-coordinate drawing on a plane that carries the projection, and the
+   * corners beyond the diamond are the camera's dark background (FS-2325V §A.7).
+   * The old out-of-map hull decoration is gone with the corners it filled.
+   */
   private createMapBackground(): void {
     const graphics = this.add.graphics();
-    const outerMargin = 200;
-
-    // === deep space beyond the ship hull ===
-    const spaceMargin = 150;
-    const spaceOuter = outerMargin + spaceMargin; // camera limit
-
-    // dark space backdrop — only the ring beyond the hull
-    const spaceBg = this.add.graphics();
-    spaceBg.fillStyle(palette.mapEdge, 1);
-    // fill the full camera area, then the hull area will be drawn on top at depth -1
-    spaceBg.fillRect(
-      -spaceOuter,
-      -spaceOuter,
-      this.mapWidth + spaceOuter * 2,
-      this.mapHeight + spaceOuter * 2,
-    );
-    spaceBg.setDepth(-3);
-
-    // scatter stars only in the space region beyond the hull
-    for (let i = 0; i < 150; i++) {
-      const star = this.add.graphics();
-      const size = Phaser.Math.FloatBetween(0.4, 2);
-      const color =
-        i < 90
-          ? palette.hudText
-          : i < 120
-            ? palette.hudText
-            : palette.torchCore;
-      star.fillStyle(color, Phaser.Math.FloatBetween(0.4, 1));
-      star.fillCircle(0, 0, size);
-      star.setPosition(
-        Phaser.Math.Between(-spaceOuter, this.mapWidth + spaceOuter),
-        Phaser.Math.Between(-spaceOuter, this.mapHeight + spaceOuter),
-      );
-      star.setScrollFactor(Phaser.Math.FloatBetween(0.3, 0.5));
-      star.setDepth(-2);
-
-      if (i % 4 === 0) {
-        this.tweens.add({
-          targets: star,
-          alpha: 0.1,
-          duration: Phaser.Math.Between(1000, 3000),
-          ease: "Sine.easeInOut",
-          yoyo: true,
-          repeat: -1,
-          delay: Phaser.Math.Between(0, 2000),
-        });
-      }
-    }
-
-    // === outer hull structure (fills entire outer area) ===
-    const hw2 = this.mapWidth;
-    const hh2 = this.mapHeight;
-
-    // hull plating with metal texture
-    // top
-    const hullTop = this.add.tileSprite(
-      -outerMargin,
-      -outerMargin,
-      hw2 + outerMargin * 2,
-      outerMargin,
-      "hullMetal",
-    );
-    hullTop.setOrigin(0, 0);
-    hullTop.setDepth(-1);
-    // bottom
-    const hullBottom = this.add.tileSprite(
-      -outerMargin,
-      hh2,
-      hw2 + outerMargin * 2,
-      outerMargin,
-      "hullMetal",
-    );
-    hullBottom.setOrigin(0, 0);
-    hullBottom.setDepth(-1);
-    // left
-    const hullLeft = this.add.tileSprite(
-      -outerMargin,
-      0,
-      outerMargin,
-      hh2,
-      "hullMetal",
-    );
-    hullLeft.setOrigin(0, 0);
-    hullLeft.setDepth(-1);
-    // right
-    const hullRight = this.add.tileSprite(
-      hw2,
-      0,
-      outerMargin,
-      hh2,
-      "hullMetal",
-    );
-    hullRight.setOrigin(0, 0);
-    hullRight.setDepth(-1);
-    // corners
-    const hullTopLeft = this.add.tileSprite(
-      -outerMargin,
-      -outerMargin,
-      outerMargin,
-      outerMargin,
-      "hullMetal",
-    );
-    hullTopLeft.setOrigin(0, 0);
-    hullTopLeft.setDepth(-1);
-    const hullTopRight = this.add.tileSprite(
-      hw2,
-      -outerMargin,
-      outerMargin,
-      outerMargin,
-      "hullMetal",
-    );
-    hullTopRight.setOrigin(0, 0);
-    hullTopRight.setDepth(-1);
-    const hullBottomLeft = this.add.tileSprite(
-      -outerMargin,
-      hh2,
-      outerMargin,
-      outerMargin,
-      "hullMetal",
-    );
-    hullBottomLeft.setOrigin(0, 0);
-    hullBottomLeft.setDepth(-1);
-    const hullBottomRight = this.add.tileSprite(
-      hw2,
-      hh2,
-      outerMargin,
-      outerMargin,
-      "hullMetal",
-    );
-    hullBottomRight.setOrigin(0, 0);
-    hullBottomRight.setDepth(-1);
-
-    // === viewports (windows to see space) ===
-    const viewportGraphics = this.add.graphics();
-
-    const viewports = [
-      // top windows
-      { x: 120, y: -outerMargin + 20, w: 140, h: 80 },
-      { x: 450, y: -outerMargin + 15, w: 160, h: 90 },
-      { x: 800, y: -outerMargin + 25, w: 130, h: 75 },
-      // bottom windows
-      { x: 170, y: hh2 + outerMargin - 100, w: 150, h: 80 },
-      { x: 550, y: hh2 + outerMargin - 95, w: 140, h: 80 },
-      { x: 900, y: hh2 + outerMargin - 105, w: 120, h: 75 },
-      // left windows
-      { x: -outerMargin + 20, y: 120, w: 80, h: 120 },
-      { x: -outerMargin + 15, y: 420, w: 85, h: 130 },
-      // right windows
-      { x: hw2 + outerMargin - 100, y: 170, w: 80, h: 120 },
-      { x: hw2 + outerMargin - 105, y: 500, w: 85, h: 125 },
-    ];
-
-    viewports.forEach((vp) => {
-      // space visible through viewport
-      viewportGraphics.fillStyle(palette.mapEdge, 1);
-      viewportGraphics.fillRoundedRect(vp.x, vp.y, vp.w, vp.h, 6);
-      // window frame
-      viewportGraphics.lineStyle(3, palette.wallShade, 1);
-      viewportGraphics.strokeRoundedRect(vp.x, vp.y, vp.w, vp.h, 6);
-      viewportGraphics.lineStyle(1, palette.wall, 1);
-      viewportGraphics.strokeRoundedRect(
-        vp.x + 3,
-        vp.y + 3,
-        vp.w - 6,
-        vp.h - 6,
-        4,
-      );
-    });
-
-    // parallax stars in viewports
-    viewports.forEach((vp) => {
-      for (let i = 0; i < 8; i++) {
-        const star = this.add.graphics();
-        const size = Phaser.Math.FloatBetween(0.5, 2);
-        const color = i < 5 ? palette.hudText : palette.hudText;
-        star.fillStyle(color, Phaser.Math.FloatBetween(0.6, 1));
-        star.fillCircle(0, 0, size);
-        const sx = Phaser.Math.Between(vp.x + 10, vp.x + vp.w - 10);
-        const sy = Phaser.Math.Between(vp.y + 10, vp.y + vp.h - 10);
-        star.setPosition(sx, sy);
-        star.setScrollFactor(Phaser.Math.FloatBetween(0.85, 0.95));
-        star.setDepth(0);
-
-        if (i < 3) {
-          this.tweens.add({
-            targets: star,
-            alpha: 0.1,
-            duration: Phaser.Math.Between(800, 2000),
-            ease: "Sine.easeInOut",
-            yoyo: true,
-            repeat: -1,
-            delay: Phaser.Math.Between(0, 1500),
-          });
-        }
-      }
-    });
-
-    viewportGraphics.setDepth(0);
-
-    // === spaceship hull exterior ===
-    const hullGraphics = this.add.graphics();
-    const hw = this.mapWidth;
-    const hh = this.mapHeight;
-    const hullPad = 8;
-
-    // outer hull shell - thick border around the ship
-    hullGraphics.lineStyle(10, palette.wallShade, 1);
-    hullGraphics.strokeRoundedRect(
-      -hullPad,
-      -hullPad,
-      hw + hullPad * 2,
-      hh + hullPad * 2,
-      12,
-    );
-    hullGraphics.lineStyle(3, palette.wall, 1);
-    hullGraphics.strokeRoundedRect(
-      -hullPad - 5,
-      -hullPad - 5,
-      hw + hullPad * 2 + 10,
-      hh + hullPad * 2 + 10,
-      16,
-    );
-    hullGraphics.lineStyle(1, palette.wallLight, 1);
-    hullGraphics.strokeRoundedRect(
-      -hullPad - 8,
-      -hullPad - 8,
-      hw + hullPad * 2 + 16,
-      hh + hullPad * 2 + 16,
-      18,
-    );
-
-    // ventilation grilles (top)
-    const ventGraphics = this.add.graphics();
-    const ventPositions = [
-      { x: 150, y: -60, w: 80, h: 35, horizontal: true },
-      { x: 450, y: -55, w: 60, h: 30, horizontal: true },
-      { x: 800, y: -65, w: 70, h: 35, horizontal: true },
-      // bottom
-      { x: 250, y: hh + 25, w: 80, h: 35, horizontal: true },
-      { x: 650, y: hh + 30, w: 60, h: 30, horizontal: true },
-      // left
-      { x: -70, y: 200, w: 35, h: 60, horizontal: false },
-      { x: -60, y: 500, w: 30, h: 70, horizontal: false },
-      // right (away from engines)
-      { x: hw + 25, y: 100, w: 35, h: 50, horizontal: false },
-    ];
-    ventPositions.forEach((v) => {
-      // vent frame
-      ventGraphics.fillStyle(palette.wallShade, 1);
-      ventGraphics.fillRect(v.x, v.y, v.w, v.h);
-      ventGraphics.lineStyle(1, palette.wallShade, 1);
-      ventGraphics.strokeRect(v.x, v.y, v.w, v.h);
-      // grille slats
-      ventGraphics.lineStyle(1, palette.wallShade, 1);
-      if (v.horizontal) {
-        for (let ly = v.y + 5; ly < v.y + v.h - 2; ly += 5) {
-          ventGraphics.lineBetween(v.x + 3, ly, v.x + v.w - 3, ly);
-        }
-      } else {
-        for (let lx = v.x + 5; lx < v.x + v.w - 2; lx += 5) {
-          ventGraphics.lineBetween(lx, v.y + 3, lx, v.y + v.h - 3);
-        }
-      }
-    });
-    ventGraphics.setDepth(0);
-
-    // pipes / conduits along hull
-    const pipeGraphics = this.add.graphics();
-    // top pipes
-    pipeGraphics.lineStyle(4, palette.wallShade, 1);
-    pipeGraphics.lineBetween(40, -25, hw - 40, -25);
-    pipeGraphics.lineStyle(2, palette.wall, 1);
-    pipeGraphics.lineBetween(40, -30, hw - 40, -30);
-    // bottom pipes
-    pipeGraphics.lineStyle(4, palette.wallShade, 1);
-    pipeGraphics.lineBetween(40, hh + 25, hw - 40, hh + 25);
-    pipeGraphics.lineStyle(2, palette.wall, 1);
-    pipeGraphics.lineBetween(40, hh + 30, hw - 40, hh + 30);
-    // left pipes
-    pipeGraphics.lineStyle(4, palette.wallShade, 1);
-    pipeGraphics.lineBetween(-25, 40, -25, hh - 40);
-    pipeGraphics.lineStyle(2, palette.wall, 1);
-    pipeGraphics.lineBetween(-30, 40, -30, hh - 40);
-    // right pipes
-    pipeGraphics.lineStyle(4, palette.wallShade, 1);
-    pipeGraphics.lineBetween(hw + 25, 40, hw + 25, hh - 40);
-    pipeGraphics.lineStyle(2, palette.wall, 1);
-    pipeGraphics.lineBetween(hw + 30, 40, hw + 30, hh - 40);
-    pipeGraphics.setDepth(0);
-
-    // engines (right side - 3 engines)
-    const engineGraphics = this.add.graphics();
-    const engineX = hw + outerMargin - 20;
-    const enginePositions = [hh * 0.2, hh * 0.5, hh * 0.8];
-
-    enginePositions.forEach((ey) => {
-      // engine housing
-      engineGraphics.fillStyle(palette.wallShade, 1);
-      engineGraphics.fillRoundedRect(hw + 10, ey - 30, outerMargin - 25, 60, 6);
-      engineGraphics.lineStyle(2, palette.wall, 1);
-      engineGraphics.strokeRoundedRect(
-        hw + 10,
-        ey - 30,
-        outerMargin - 25,
-        60,
-        6,
-      );
-      // inner detail
-      engineGraphics.fillStyle(palette.wallShade, 1);
-      engineGraphics.fillRoundedRect(hw + 20, ey - 20, outerMargin - 45, 40, 4);
-      engineGraphics.lineStyle(1, palette.wallLight, 1);
-      engineGraphics.strokeRoundedRect(
-        hw + 20,
-        ey - 20,
-        outerMargin - 45,
-        40,
-        4,
-      );
-      // exhaust glow layers
-      engineGraphics.fillStyle(palette.hostile, 1);
-      engineGraphics.fillCircle(engineX, ey, 45);
-      engineGraphics.fillStyle(palette.hostile, 1);
-      engineGraphics.fillCircle(engineX, ey, 28);
-      engineGraphics.fillStyle(palette.torch, 1);
-      engineGraphics.fillCircle(engineX, ey, 15);
-      engineGraphics.fillStyle(palette.hudText, 1);
-      engineGraphics.fillCircle(engineX, ey, 6);
-    });
-    engineGraphics.setDepth(0);
-
-    // engine glow pulse
-    this.tweens.add({
-      targets: engineGraphics,
-      alpha: 0.5,
-      duration: 1500,
-      ease: "Sine.easeInOut",
-      yoyo: true,
-      repeat: -1,
-    });
-
-    // corner structural beams
-    const beamGraphics = this.add.graphics();
-    // top-left
-    beamGraphics.lineStyle(5, palette.wallShade, 1);
-    beamGraphics.lineBetween(-outerMargin + 10, -outerMargin + 10, -5, -5);
-    beamGraphics.lineStyle(3, palette.wall, 1);
-    beamGraphics.lineBetween(-outerMargin + 15, -outerMargin + 5, 0, -10);
-    // top-right
-    beamGraphics.lineStyle(5, palette.wallShade, 1);
-    beamGraphics.lineBetween(
-      hw + outerMargin - 10,
-      -outerMargin + 10,
-      hw + 5,
-      -5,
-    );
-    beamGraphics.lineStyle(3, palette.wall, 1);
-    beamGraphics.lineBetween(hw + outerMargin - 15, -outerMargin + 5, hw, -10);
-    // bottom-left
-    beamGraphics.lineStyle(5, palette.wallShade, 1);
-    beamGraphics.lineBetween(
-      -outerMargin + 10,
-      hh + outerMargin - 10,
-      -5,
-      hh + 5,
-    );
-    beamGraphics.lineStyle(3, palette.wall, 1);
-    beamGraphics.lineBetween(
-      -outerMargin + 15,
-      hh + outerMargin - 5,
-      0,
-      hh + 10,
-    );
-    // bottom-right
-    beamGraphics.lineStyle(5, palette.wallShade, 1);
-    beamGraphics.lineBetween(
-      hw + outerMargin - 10,
-      hh + outerMargin - 10,
-      hw + 5,
-      hh + 5,
-    );
-    beamGraphics.lineStyle(3, palette.wall, 1);
-    beamGraphics.lineBetween(
-      hw + outerMargin - 15,
-      hh + outerMargin - 5,
-      hw,
-      hh + 10,
-    );
-    beamGraphics.setDepth(0);
-
-    // hull warning stripes at corners
-    const stripeGraphics = this.add.graphics();
-    const corners = [
-      { x: -outerMargin + 15, y: -outerMargin + 15 },
-      { x: hw + outerMargin - 45, y: -outerMargin + 15 },
-      { x: -outerMargin + 15, y: hh + outerMargin - 45 },
-      { x: hw + outerMargin - 45, y: hh + outerMargin - 45 },
-    ];
-    corners.forEach((c) => {
-      for (let i = 0; i < 3; i++) {
-        stripeGraphics.fillStyle(palette.ember, 1);
-        stripeGraphics.fillRect(c.x + i * 10, c.y, 5, 30);
-      }
-    });
-    stripeGraphics.setDepth(0);
-
-    hullGraphics.setDepth(0);
 
     // spaceship floor - tiled metal texture
     const floorTile = this.add.tileSprite(
@@ -4262,7 +3843,6 @@ export class BarrowspireScene extends Phaser.Scene {
       "metalFloor",
     );
     floorTile.setOrigin(0, 0);
-    floorTile.setDepth(-1);
 
     // viewport windows - see space outside
     const windowPositions = [
@@ -4295,7 +3875,6 @@ export class BarrowspireScene extends Phaser.Scene {
         windowGraphics.fillCircle(sx, sy, 1);
       }
     });
-    windowGraphics.setDepth(-1);
 
     // ambient hull lights along edges
     const lightGraphics = this.add.graphics();
@@ -4311,7 +3890,6 @@ export class BarrowspireScene extends Phaser.Scene {
       lightGraphics.fillStyle(palette.torch, 0.4);
       lightGraphics.fillCircle(x, this.mapHeight - 15, 3);
     }
-    lightGraphics.setDepth(-1);
 
     // pulsing light animation
     this.tweens.add({
@@ -4332,7 +3910,10 @@ export class BarrowspireScene extends Phaser.Scene {
     graphics.lineStyle(1, palette.torch, 0.15);
     graphics.strokeRect(6, 6, this.mapWidth - 12, this.mapHeight - 12);
 
-    graphics.setDepth(-1);
+    const plane = addWorldPlane(this);
+    plane.root.setDepth(-1);
+    plane.surface.add([floorTile, windowGraphics, lightGraphics, graphics]);
+    this.groundPlane = plane;
 
     // save as outdoor objects
     this.outsideObjects.push(graphics);
@@ -4342,12 +3923,14 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   private isPlayerInsideBuilding(building: Building): boolean {
-    if (!this.player) return false;
+    const me = this.playerPos;
+    if (!this.player || !me) return false;
+    // the same inside test as ever, on the world position (FS-2325V edge states)
     return (
-      this.player.x >= building.x &&
-      this.player.x <= building.x + building.width &&
-      this.player.y >= building.y &&
-      this.player.y <= building.y + building.height
+      me.x >= building.x &&
+      me.x <= building.x + building.width &&
+      me.y >= building.y &&
+      me.y <= building.y + building.height
     );
   }
 
@@ -4403,28 +3986,27 @@ export class BarrowspireScene extends Phaser.Scene {
   private updateIndoorMask(building: Building): void {
     this.indoorMask.clear();
 
-    // 用黑色填充整個地圖，但挖空建築內部區域
+    // 用黑色填充整個地圖，但挖空建築內部區域 — on the projection the house is its
+    // floor diamond plus its walls standing WALL_HEIGHT above it, so the hole is
+    // that hexagon and everything outside it is filled.
     const padding = 5;
-    const bx = building.x - padding;
-    const by = building.y - padding;
-    const bw = building.width + padding * 2;
-    const bh = building.height + padding * 2;
+    const floor = projectRect(
+      building.x - padding,
+      building.y - padding,
+      building.width + padding * 2,
+      building.height + padding * 2,
+    );
+    const [, right, bottom, left] = floor;
+    const [topUp, rightUp, , leftUp] = raise(floor, WALL_HEIGHT);
+    const house = [topUp, rightUp, right, bottom, left, leftUp];
+
+    // far enough to cover the whole camera range around any house on the map
+    const reach = (this.mapWidth + this.mapHeight) * 2;
 
     this.indoorMask.fillStyle(palette.inkDeep, 1);
-
-    // 上方區域
-    this.indoorMask.fillRect(-1000, -1000, this.mapWidth + 2000, by + 1000);
-    // 下方區域
-    this.indoorMask.fillRect(
-      -1000,
-      by + bh,
-      this.mapWidth + 2000,
-      this.mapHeight + 1000,
-    );
-    // 左側區域
-    this.indoorMask.fillRect(-1000, by, bx + 1000, bh);
-    // 右側區域
-    this.indoorMask.fillRect(bx + bw, by, this.mapWidth + 1000, bh);
+    for (const quad of outsideConvex(house, reach)) {
+      this.indoorMask.fillPoints(quad, true);
+    }
   }
 
   private createUI(): void {
@@ -4462,9 +4044,8 @@ export class BarrowspireScene extends Phaser.Scene {
         return;
       }
       const status = this.currentBuilding ? `Indoor` : `Outdoor`;
-      posText.setText(
-        `X: ${Math.round(this.player.x)} Y: ${Math.round(this.player.y)} | ${status}`,
-      );
+      const pos = this.playerPos ?? { x: 0, y: 0 };
+      posText.setText(`X: ${Math.round(pos.x)} Y: ${Math.round(pos.y)} | ${status}`);
     });
   }
 
@@ -4651,16 +4232,12 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.player && this.playerLegs) {
       const isMoving = vx !== 0 || vy !== 0;
       if (isMoving) {
-        // determine facing from dominant axis
-        let newFacing: "up" | "down" | "left" | "right";
-        if (Math.abs(vy) >= Math.abs(vx)) {
-          newFacing = vy < 0 ? "up" : "down";
-        } else {
-          newFacing = vx < 0 ? "left" : "right";
-        }
+        // 8-way facing from the world velocity the delver is asking for; the
+        // input itself is sent unchanged below (ADR-0020 §4)
+        const newFacing = facingFrom(vx, vy, this.playerFacing);
         if (newFacing !== this.playerFacing) {
           this.playerFacing = newFacing;
-          this.player.setTexture(this.facingTextureKey(this.playerTexturePrefix, newFacing));
+          this.player.setTexture(this.facingTexture(this.playerTexturePrefix, newFacing));
         }
         this.walkPhase += 0.3;
       }
@@ -4699,17 +4276,20 @@ export class BarrowspireScene extends Phaser.Scene {
     // 平滑移動到目標位置 (lerp)
     const lerpFactor = 0.3; // 0-1，越大越快到達目標
 
-    if (this.player && this.targetPosition) {
-      this.player.x = Phaser.Math.Linear(
-        this.player.x,
+    // eased in world space, then drawn at the projection
+    if (this.player && this.playerPos && this.targetPosition) {
+      this.playerPos.x = Phaser.Math.Linear(
+        this.playerPos.x,
         this.targetPosition.x,
         lerpFactor,
       );
-      this.player.y = Phaser.Math.Linear(
-        this.player.y,
+      this.playerPos.y = Phaser.Math.Linear(
+        this.playerPos.y,
         this.targetPosition.y,
         lerpFactor,
       );
+      standAt(this.player, this.playerPos, 1);
+      this.playerLegs?.setDepth(worldDepth(this.playerPos.x, this.playerPos.y, 2));
     }
 
     this.updateOtherPlayersSmooth();
@@ -4727,12 +4307,15 @@ export class BarrowspireScene extends Phaser.Scene {
     const lerpFactor = 0.3;
     this.otherPlayers.forEach((sprite, playerId) => {
       const target = this.otherPlayersTargets.get(playerId);
-      if (target) {
-        const prevX = sprite.x;
-        const prevY = sprite.y;
+      const pos = this.otherPlayersPos.get(playerId);
+      if (target && pos) {
+        const prevX = pos.x;
+        const prevY = pos.y;
 
-        sprite.x = Phaser.Math.Linear(sprite.x, target.x, lerpFactor);
-        sprite.y = Phaser.Math.Linear(sprite.y, target.y, lerpFactor);
+        // eased in world space, then drawn at the projection
+        pos.x = Phaser.Math.Linear(pos.x, target.x, lerpFactor);
+        pos.y = Phaser.Math.Linear(pos.y, target.y, lerpFactor);
+        standAt(sprite, pos, 1);
 
         // update facing and legs for other players
         const legs = this.otherPlayersLegs.get(playerId);
@@ -4741,27 +4324,21 @@ export class BarrowspireScene extends Phaser.Scene {
           const deltaY = target.y - prevY;
           const length = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
           const isMoving = length > 0.5;
+          legs.setDepth(worldDepth(pos.x, pos.y, 2));
 
           if (isMoving) {
-            let newFacing: "up" | "down" | "left" | "right";
-            if (Math.abs(deltaY) >= Math.abs(deltaX)) {
-              newFacing = deltaY < 0 ? "up" : "down";
-            } else {
-              newFacing = deltaX < 0 ? "left" : "right";
-            }
-            const prevFacing = this.otherPlayersFacing.get(playerId) || "down";
+            const prevFacing = this.otherPlayersFacing.get(playerId) || "se";
+            const newFacing = facingFrom(deltaX, deltaY, prevFacing);
             if (newFacing !== prevFacing) {
               this.otherPlayersFacing.set(playerId, newFacing);
               const cls = this.otherPlayersClass.get(playerId) || "warrior";
-              sprite.setTexture(
-                this.facingTextureKey("other_" + cls, newFacing),
-              );
+              sprite.setTexture(this.facingTexture("other_" + cls, newFacing));
             }
             const phase = (this.otherPlayersWalkPhase.get(playerId) || 0) + 0.3;
             this.otherPlayersWalkPhase.set(playerId, phase);
           }
 
-          const facing = this.otherPlayersFacing.get(playerId) || "down";
+          const facing = this.otherPlayersFacing.get(playerId) || "se";
           const phase = this.otherPlayersWalkPhase.get(playerId) || 0;
           this.drawLegs(
             legs,

@@ -3,7 +3,7 @@ id: I-2325V-3
 status: open
 implements: FS-2325V
 blocked_by: [I-2325V-1, I-2325V-2]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-2325V slice 3: world art, occlusion and light-map in hub and run"
 ---
 Implements FS-2325V §C

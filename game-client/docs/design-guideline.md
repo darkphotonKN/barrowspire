@@ -12,11 +12,10 @@ sections of `CLAUDE.md`) disagree on a visual decision, **this file wins.**
 > this design guideline.
 
 > **Two mediums, two parts.** Everything in this document down to the Part II divider is
-> **Part I — Game Canvas & In-Game HUD (pixel art)**. For the **web / platform DOM UI**
-> (marketplace, profile, auth, leaderboard, subscription — React/Next/Tailwind, *not* pixel
-> art) jump to **[Part II — Web / Platform UI Design System](#part-ii--web--platform-ui-dom-design-system)**
-> at the end. The Part I "9-slice pixel border" rule applies to the game canvas HUD **only**,
-> not the web platform. The "drop Cinzel" rule now applies to **both** — see Part II Typography.
+> **Part I — Game Canvas & In-Game HUD (pre-rendered isometric art)**. For the **web / platform
+> DOM UI** (marketplace, profile, auth, leaderboard, subscription — React/Next/Tailwind)
+> jump to **[Part II — Web / Platform UI Design System](#part-ii--web--platform-ui-dom-design-system)**
+> at the end. The "drop Cinzel" rule applies to **both** — see Part II Typography.
 
 ---
 
@@ -32,42 +31,54 @@ sections of `CLAUDE.md`) disagree on a visual decision, **this file wins.**
 
 ---
 
-## Art Technique — Pixel Art (the chosen medium)
+## Art Technique — Pre-rendered 3D (the chosen medium)
 
-- **Clean pixel art:** chunky, readable pixels — mid-resolution. Not micro 8-bit, not
-  hi-res painterly.
-- **Nearest-neighbor only.** No anti-aliasing, smoothing, or blur on game art.
-  - Phaser: `pixelArt: true` / `roundPixels`.
-  - DOM: `image-rendering: pixelated` on pixel assets.
-  - These are render-config flags only (presentation), and are allowed.
-- **Shading via hand-placed clusters and dithering**, not gradient filters.
-- **Selective dark outlining** on sprites so they read against dark backgrounds.
-- **Preserve the existing rig:** keep current sprite/tile dimensions, frame counts, and
-  directions. Restyle the art *within* them. Do **not** change tile grid size or
-  projection/camera — that is layout/logic, out of scope for art.
+[ADR-0020](../../docs/adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md)
+chose the medium; [FS-2325V](../../docs/specs/2325V-pre-rendered-isometric-art.md) builds it.
+The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torches burn.
 
----
-
-## Still pending on assets
-
-**FS-W6BP1 does not discharge this section's asset-dependent rules.** The canvas reskin shipped
-palette, typography and lighting using the primitives already there — it produced no art. These
-rules remain **pending against a future asset FS**, and Part I should not be read as satisfied:
-
-- nearest-neighbour rendering (`pixelArt: true` / `roundPixels`)
-- shading via hand-placed clusters and dithering
-- selective dark outlining on sprites
-- 9-slice pixel borders on panels and menus
-- `image-rendering: pixelated` on pixel assets
-
-Everything else in Part I is live.
+- **Everything that stands up is modelled in 3D and baked at build time** into 2D sprite
+  sheets: walls, trees, props, interactables, characters, creatures, and the item icons in the
+  container view. Phaser draws only those 2D sprites. Nothing is rendered in 3D at runtime, and
+  three.js never ships to players.
+- **Realistic light, soft shadow, texture grit.** Sprites carry their shading from the bake
+  (tone-mapped, environment-lit, a warm key light from screen-left, baked contact shadows that
+  fall screen-right). They look lit *before* any overlay is applied.
+- **Linear filtering.** Baked sprites are drawn smoothed, at 1x from a 2x render. The pixel-art
+  rules (nearest-neighbour, dithering, hand-placed clusters, pixel-grid outlines,
+  `image-rendering: pixelated`) no longer apply to the canvas.
+- **Readable silhouettes over detail.** At game scale a delver is roughly one tile wide and a face
+  is a handful of pixels. What makes a thing read is its silhouette, its material and its motion.
+- **Bake colours come from `BARROW`** (`src/utils/theme.ts`), so art and UI stay one ramp
+  ([ADR-0013](../../docs/adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md)).
+  Baked PNG pixels are asset data and outside the hex fence.
+- **The sprite manifest is the only way the client learns about art** (`public/art/manifest.json`:
+  frame size, anchor, directions, frame counts, fps, declared light source, provenance). Scenes
+  never hard-code frame geometry.
+- **Until a sheet exists, placeholders stand in.** A scene draws today's placeholder graphics on
+  the projection, and falls back to them per entity if a sheet is missing.
 
 ---
 
 ## Perspective
 
-- Whatever projection the engine currently uses (top-down 3/4 or isometric) **stays
-  as-is**. The pixel style applies within it. **Do not re-project the world.**
+- **A fixed 2:1 isometric camera.** The tile is a 64x32 px diamond. The bake camera is
+  orthographic at 30° elevation and 45° azimuth, so baked sprites sit on the grid exactly.
+- **The world stays flat; the projection is presentation.** The server's `x, y` (the *world
+  position*) is the single source of truth. The client projects it with `worldToScreen` only to
+  place things on screen, and uses `screenToWorld` only to turn a pointer into a world target
+  (`src/render/iso/`). Every gameplay calculation (distance, range, proximity, bounds) uses world
+  positions. A distance measured between two sprites is a defect.
+- **Input keeps its world meaning.** A movement key sends the same world-space intent it always
+  did, so "up" walks a diagonal on screen, as it does in UO.
+- **Draw order is by footprint** (`x + y` of the ground an object stands on), not by sprite
+  bounds. Clicks hit-test the footprint too.
+- **Eight facings.** Characters face one of eight world directions, taken from the velocity the
+  client already renders.
+- **Occlusion is cut-away, then fade.** House fronts (south and east sides) are low cut-away
+  walls. A tree or tall prop in front of the delver fades to about 40% while it overlaps them.
+- **Outside the map is dark.** The corners of the screen beyond the projected diamond are a dark
+  fill, never a void or a stray background.
 
 ---
 
@@ -127,37 +138,50 @@ the test above, because most of those things cannot be acted on.
 
 ## In-Game Canvas / World Art
 
-- **Environment:** dark dungeon stone, cracked flagstone, mossy/wet walls, wooden doors
-  with iron banding, barrow earth, bone piles, rubble, cobwebs.
-  - Tiles must tile seamlessly.
+- **Environment:** dark dungeon stone, cracked flagstone, mossy/wet walls, half-timbered houses
+  with leaded windows, wooden doors with iron banding, barrow earth, bone piles, rubble, cobwebs.
+  - Ground is diamond tiles that tile seamlessly, chosen deterministically per world tile so
+    every client sees the same ground.
   - Clear floor/wall distinction.
-- **Props:** wall torches and braziers (2–4 frame flicker), chests, broken pillars,
-  hanging chains. Keep prop animation limited.
+- **Props:** wall torches and braziers (flickering light), chests, broken pillars, hanging
+  chains, lamp posts, furniture, trees. Interactables have one baked frame per state (door
+  locked/unlocked/open, switch inactive/active, chest closed/open).
 - The world reads as a **torch-lit crypt:** pooled warm light, deep shadow, with shading
-  baked into the tiles so it looks lit *before* any overlay is applied.
+  baked into the art so it looks lit *before* any light-map is applied.
 
 ---
 
 ## Characters / Enemies
 
-- **Delver (player):** cloaked/armored figure with a lantern or torch; strong silhouette;
-  limited walk/idle frames matching the existing rig.
-- **Enemies (restyle whatever exists):** barrow/undead themes — skeletons, wraiths,
-  revenants. Dark palette; **glowing eyes as the readable accent.**
+- **Authored in code, never sourced**
+  ([ADR-0021](../../docs/adr/0021-characters-are-authored-in-code-not-sourced.md)). Characters and
+  creatures are modelled, skinned, textured and hand-animated inside the bake tool on one shared
+  humanoid rig. No stock model or animation is used; the art is Barrowspire's own.
+- **Fidelity bar: Ultima Online.** Believable proportions, readable silhouettes, textured gear.
+  Not photoreal, and not blocky cartoon mannequins.
+- **Each gets 8 directions** and idle, walk, attack and death animations, baked from that rig.
+  Creature variants change proportions and add bones (tail, jaw, hunch).
+- **Delver (player):** cloaked/armored figure with a lantern or torch; strong silhouette. The
+  class reads at a glance: knight, archer, wizard.
+- **Enemies:** barrow/undead themes — skeletons, wraiths, revenants. Dark palette; **glowing
+  eyes as the readable accent.**
+- **The owner approves a contact sheet** (every class and creature x 8 directions x each
+  animation, at game scale) before scenes switch to character sheets.
 
 ---
 
 ## Lighting
 
-**With art (pending — see "Still pending on assets"):**
+**With art (FS-2325V §C):**
 
-- **Pixel-friendly approach:** bake shading into tiles/sprites first, then add a soft
-  torch **glow** + **vignette** overlay on top.
-- The glow/vignette overlay **may be a separate soft (non-pixel) layer** so it does not
-  smear the art.
-- **Keep all sprite/tile rendering crisp and nearest-neighbor** regardless of the overlay.
+- **Shading is baked into the sprites first**, then a **light-map** lights the scene: a
+  camera-fixed multiply layer filled with the world's ambient, with additive radial pools for
+  each light source in view (torch sconce, brazier, lit window, lamp post, the delver's own
+  torch). Sources flicker on their own clocks.
+- **Ambient is fixed per world:** warm dusk in the hub, dark barrow in a run.
+- The static vignette stays, above the light-map and below the HUD.
 
-**Without art (live today):** the overlay is the whole of the lighting, and it is two things.
+**Before art (live today):** the overlay is the whole of the lighting, and it is two things.
 
 - A **static vignette** darkens the canvas edges. This does the atmospheric work — the world
   pressing in around the light.
@@ -166,7 +190,7 @@ the test above, because most of those things cannot be acted on.
   with no source; the pool is what implies one.
 - **Built once, depth-sorted above the world, repositioned per tick — never rebuilt.** The scene
   redraws from a full-state broadcast every tick, and the overlay's shape never changes. Only its
-  position does.
+  position does. The light-map follows the same rule.
 
 ### The readability floor
 
@@ -193,14 +217,10 @@ single font constant of its own rather than a custom property.
 - **Drop clean Roman serifs (e.g. Cinzel) as the primary** — too modern/classical for the target.
   Keep one legible fallback in the stack.
 
-### Deviation from the pixel/bitmap font — recorded, not overlooked
+### No bitmap font
 
-This section previously specified a medieval **pixel/bitmap font (Alagard)** for HUD and body.
-That is the right pairing *with pixel art*, and there is no pixel art yet: the canvas draws with
-vector primitives, and a bitmap font beside them reads as an accident rather than a choice.
-
-**Revisit when the asset FS lands.** Once tiles and sprites exist, Alagard becomes correct again
-and this deviation should be reversed. It is a consequence of sequencing, not a rejection.
+The canvas has no pixel art, so it has no pixel/bitmap font. Pirata One and EB Garamond are the
+final faces for the canvas, not a stand-in awaiting one.
 
 ### The blackletter bound
 
@@ -218,25 +238,24 @@ Where the bound and the message conflict — an end-of-run heading long enough t
 
 ---
 
-## UI Chrome (align to pixel art)
+## UI Chrome (align to the pre-rendered world)
 
-- **Panels / menus:** pixel-art parchment and carved-stone frames using **9-slice pixel
-  borders** — not smooth CSS gradients or rounded rectangles. Use `image-rendering:
-  pixelated` on UI sprite assets.
-- **Buttons:** beveled stone / wax-seal feel in pixel style; brass accents; pixel hover
-  states.
-- **Icons:** pixel iconography on a consistent grid.
+- **Panels / menus:** dark vellum and carved-stone panels with 1px brass borders, in the
+  palette above. Smooth fills and soft edges match the linearly filtered world; no pixel-grid
+  frames.
+- **World-object UI can be baked art.** The container view is a leather satchel whose flap lifts
+  and whose item icons drop in (FS-2325V §D). Item icons are baked, with a generic fallback.
+- **Buttons:** beveled stone / wax-seal feel; brass accents; brass hover glow.
 - **Copy voice:** grim, terse. Players = **delvers**; enemy realm = the **Spire** / **Lich
   Lord**; "Play" → "Delve"; death → "Few return whole."
-  - (Captured here for consistency; actual string swaps happen in the reskin pass.)
 
 ---
 
 ## Out of Scope (do not change as "art")
 
-- Tile grid size, world projection, and camera — these are layout/logic.
-- Backend, Go, ECS, networking, schemas, or game logic.
-- The existing animation rig's frame counts and directions — restyle within them.
+- Backend, Go, ECS, networking, schemas, or game logic. The projection may never change what
+  the client sends: every WS action and payload keeps its shape and meaning.
+- World positions themselves. Art moves where things are *drawn*, never where they *are*.
 
 ---
 ---
