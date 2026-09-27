@@ -194,6 +194,38 @@ skinned rig with shaped anatomy, generated materials and hand-keyed clips (§E).
    directions × each animation, at game scale. Scenes switch to character sheets only after the
    owner approves it.
 
+### §F. Menus show the baked cast (added 2026-09-28; line: "Pre-rendered character and creature art")
+
+1. Every character shown in a canvas menu comes from the baked class sheets that walk in the
+   world:
+   - the main-menu roster and hero display (`MainMenuScene`);
+   - class selection in character creation (`CharacterCreationScene`);
+   - the loadout (`LoadoutScene`).
+
+   The `preview_*` pixel textures and their generators leave those scenes.
+2. Menus present the character large and alive: the idle clip, slowly turning through the 8
+   facings (a turntable). The selected class plays its attack once on selection. The same class
+   → sheet mapping as §E is used, so what is picked is exactly what walks.
+3. Scale: shown at 1x–1.5x of the baked frame, linearly filtered, standing on a lit plinth or
+   ground patch with its baked shadow. Never upscaled past 1.5x.
+4. Menu chrome follows the rewritten guideline: carved-stone and vellum panels with 1px brass
+   borders, smooth fills, no pixel-grid frames, Pirata One only within the blackletter bound.
+5. No menu flow, button, REST call or WS message changes. Presentation only.
+
+### §G. Hub folk are baked (added 2026-09-28; line: "Pre-rendered character and creature art")
+
+1. Hub residents (today drawn by `ensureVillagerTexture` from an `appearance` of
+   `"<palette>_<build>"`) and the function NPCs (today a brass-tinted warrior) become baked
+   characters on the shared rig (ADR-0021), with 8 directions, idle and walk.
+2. Villagers: one sheet per build in use, with palette variants covering every `appearance`
+   value the hub sends. An unknown value falls back to a default villager, never to pixel art.
+3. Function NPCs get their own authored characters, distinct from delver classes and villagers,
+   whose role reads from the silhouette (e.g. a quartermaster's apron and ledger, a delve-warden
+   in grave-watch mail). Their name plates stay markers (§C.9).
+4. Baked creature eyes are re-tinted into the hostile channel (the guideline's *Enemy design
+   language*): ember red from the oxblood family, never amber.
+5. The same contact-sheet approval as §E applies before the hub switches over.
+
 ## User Stories
 
 1. As a delver, I want the world drawn from a fixed isometric camera, so that Barrowspire feels like the classic CRPG it is meant to be.

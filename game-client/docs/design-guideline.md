@@ -164,9 +164,46 @@ the test above, because most of those things cannot be acted on.
 - **Delver (player):** cloaked/armored figure with a lantern or torch; strong silhouette. The
   class reads at a glance: knight, archer, wizard.
 - **Enemies:** barrow/undead themes — skeletons, wraiths, revenants. Dark palette; **glowing
-  eyes as the readable accent.**
+  eyes as the readable accent.** Full rules under *Enemy design language* below.
+- **Hub folk and menus use the same cast.** Villagers, function NPCs, and every character shown
+  in a menu (the roster, character creation, the loadout) come from baked sheets on the same
+  rig as the delvers, never from a separate illustration or the old pixel generators. What a
+  player picks in a menu is exactly what walks in the world.
 - **The owner approves a contact sheet** (every class and creature x 8 directions x each
   animation, at game scale) before scenes switch to character sheets.
+
+
+### Enemy design language
+
+Every hostile is built to be told apart from a delver in one glance, even at the canvas edge in
+the run's dark ambient. These rules apply to every creature added from now on, and the ghoul and
+troll already baked are the reference pair.
+
+- **Undead and barrow-born only.** Skeletons, ghouls, wraiths, revenants, barrow-trolls,
+  grave-hounds. Things that were buried, or that live where the buried are. No demons, no
+  sci-fi, no cartoon monsters.
+- **Silhouette breaks the human line.** A delver stands upright and symmetrical. A hostile never
+  does: it is hunched, too thin, too long in the arm, asymmetric (one arm heavier, a broken
+  jaw), or wears rags that trail. Test at 1x: with the colour removed, the outline alone must say
+  "not a delver".
+- **Size is a threat tier.** Fodder is 0.85–1.0x delver height. A brute is 1.3–1.5x and wider.
+  A boss is at least 1.8x. The tier reads before any name plate does.
+- **Materials are grave materials.** Bone, grave-rot skin, bog hide, rust, rotted linen, rag,
+  corroded bronze. Take colours from the cold, desaturated end of `BARROW` (charcoal, slate,
+  necrotic, barrowBrown, bone). Never bright, never clean metal, never a delver's heraldic red.
+- **Eyes are the accent, and they are in the hostile channel.** Glowing eyes use an ember red
+  from the oxblood family (the *damage / hostile* channel above). Never amber, which means
+  *interactable*, and never arcane green, which means *safe*. Eyes are the one emissive part of a
+  hostile. They are marker material (FS-2325V §C.9): drawn above the light-map, so darkness never
+  dims them.
+- **Motion tells intent.** Fodder moves jerkily and low. Brutes move heavily and slowly. Every
+  attack has a readable wind-up, a pull-back or a raised arm, held long enough to see before it
+  lands. An attack that cannot be read before it hits is unfair, not scary.
+- **Deaths are final and distinct from a delver's fall.** Undead collapse: bones scatter, a
+  wraith unravels, a brute topples with weight. No gore and no blood spray. The barrow keeps its
+  dead quietly.
+- **Same pipeline as everyone.** Built on the shared rig in the bake tool (ADR-0021), with 8
+  directions and idle, walk, attack and death, on the same contact-sheet approval as delvers.
 
 ---
 
