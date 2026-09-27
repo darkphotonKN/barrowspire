@@ -299,6 +299,14 @@ func TestGetAccount_MapsReadErrorsToStatusCodes(t *testing.T) {
 			wantMsg:  "invalid argument",
 		},
 		{
+			// the caller sent an expiry already in the past — its request is
+			// wrong, not wallet; left in the default arm it reads as Internal
+			name:     "a hold expiry that is not in the future",
+			readErr:  account.ErrInvalidHoldExpiry,
+			wantCode: codes.InvalidArgument,
+			wantMsg:  "invalid argument",
+		},
+		{
 			name:     "unrecognised error is internal",
 			readErr:  errors.New("dial tcp 10.0.0.4:5432: connection refused"),
 			wantCode: codes.Internal,
@@ -378,24 +386,6 @@ func TestWritePathsRejectBadRequestsBeforeReachingTheUseCase(t *testing.T) {
 		wantMsg  string
 	}{
 		{
-			name: "CommitHold without an identity",
-			call: func(h *Handler, ctx context.Context) (any, error) {
-				return h.CommitHold(ctx, &pb.CommitHoldRequest{BidId: uuid.NewString()})
-			},
-			authed:   false,
-			wantCode: codes.Unauthenticated,
-			wantMsg:  "identity missing",
-		},
-		{
-			name: "CommitHold with an unparseable bid id",
-			call: func(h *Handler, ctx context.Context) (any, error) {
-				return h.CommitHold(ctx, &pb.CommitHoldRequest{BidId: badUUID})
-			},
-			authed:   true,
-			wantCode: codes.InvalidArgument,
-			wantMsg:  "bidId from req was unparseable as a uuid.",
-		},
-		{
 			name: "PlaceHold without an identity",
 			call: func(h *Handler, ctx context.Context) (any, error) {
 				return h.PlaceHold(ctx, &pb.PlaceHoldRequest{BidId: uuid.NewString(), Gold: 100})
@@ -412,6 +402,18 @@ func TestWritePathsRejectBadRequestsBeforeReachingTheUseCase(t *testing.T) {
 			authed:   true,
 			wantCode: codes.InvalidArgument,
 			wantMsg:  "bidId from req was unparseable as a uuid",
+		},
+		{
+			// FS-NXP1W §Req 19: the expiry is the caller's to set. Without one a
+			// hold would have to invent it, which is exactly what let the sweeper
+			// race settlement.
+			name: "PlaceHold without an expiry",
+			call: func(h *Handler, ctx context.Context) (any, error) {
+				return h.PlaceHold(ctx, &pb.PlaceHoldRequest{BidId: uuid.NewString(), Gold: 100})
+			},
+			authed:   true,
+			wantCode: codes.InvalidArgument,
+			wantMsg:  "expires_at is required",
 		},
 		{
 			name: "Deposit without an identity",
@@ -468,7 +470,6 @@ func TestEveryDeclaredUseCaseIsAssigned(t *testing.T) {
 	h := NewHandler(Deps{
 		CreateAccountUC: &usecase.CreateAccountUC{},
 		PlaceHoldUC:     &usecase.PlaceHoldUC{},
-		CommitHoldUC:    &usecase.CommitHoldUC{},
 		DepositGoldUC:   &usecase.DepositGoldUC{},
 		WithdrawGoldUC:  &usecase.WithdrawGoldUC{},
 		AccountReader:   reader,
@@ -476,7 +477,6 @@ func TestEveryDeclaredUseCaseIsAssigned(t *testing.T) {
 
 	assert.NotNil(t, h.createAccountUC, "createAccountUC")
 	assert.NotNil(t, h.placeHoldUC, "placeHoldUC")
-	assert.NotNil(t, h.commitHoldUC, "commitHoldUC")
 	assert.NotNil(t, h.depositGoldUC, "depositGoldUC")
 	assert.NotNil(t, h.withdrawGoldUC, "withdrawGoldUC")
 	assert.NotNil(t, h.accountReader, "accountReader")

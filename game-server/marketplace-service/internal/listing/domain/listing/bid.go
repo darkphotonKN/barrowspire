@@ -25,10 +25,14 @@ type BidStatus string
 const (
 	// BidStatusPending is where every bid starts: placed, but with no gold held
 	// behind it yet. It leads nothing and wins nothing until wallet confirms.
-	BidStatusPending   BidStatus = "PENDING"
-	BidStatusWinning   BidStatus = "WINNING"
-	BidStatusOutbid    BidStatus = "OUTBID"
-	BidStatusWon       BidStatus = "WON"
+	BidStatusPending BidStatus = "PENDING"
+	BidStatusWinning BidStatus = "WINNING"
+	BidStatusOutbid  BidStatus = "OUTBID"
+	BidStatusWon     BidStatus = "WON"
+	// BidStatusLost is settlement's terminal status for every bid that did not
+	// win (FS-NXP1W §Req 21). No transition reaches it yet: those arrive with the
+	// settlement slices that need them.
+	BidStatusLost      BidStatus = "LOST"
 	BidStatusCancelled BidStatus = "CANCELLED"
 	// BidStatusFailed is terminal: wallet could not hold the gold, so this bid
 	// never took the lead.

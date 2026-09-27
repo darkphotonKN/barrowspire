@@ -56,7 +56,7 @@ type fakeWallet struct {
 	gotMemberID uuid.UUID
 }
 
-func (w *fakeWallet) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int) error {
+func (w *fakeWallet) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int, expiresAt time.Time) error {
 	w.calls++
 	w.gotMemberID = memberID
 	return nil

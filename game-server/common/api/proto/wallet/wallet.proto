@@ -14,8 +14,6 @@ service WalletService {
   rpc GetAccount(GetAccountRequest) returns (GetAccountResponse) {}
   // Reserve gold against a member's account for a bid.
   rpc PlaceHold(PlaceHoldRequest) returns (PlaceHoldResponse) {}
-  // Settle a bid's reserved gold, spending it for good.
-  rpc CommitHold(CommitHoldRequest) returns (CommitHoldResponse) {}
   // Add gold to a member's account.
   rpc Deposit(DepositRequest) returns (DepositResponse) {}
   // Remove gold from a member's account, up to what is not already held.
@@ -57,21 +55,14 @@ message GetAccountResponse {
 message PlaceHoldRequest {
   int64  gold   = 1;  // amount to reserve
   string bid_id = 2;  // bid the hold is placed against
+  // When the hold lapses: the listing's expiry plus settlement grace, chosen by
+  // the caller (FS-NXP1W Req 19). Required — wallet never derives it.
+  google.protobuf.Timestamp expires_at = 3;
 }
 
 // Empty by design: the hold either succeeds or the call fails with a status
 // code. The caller addresses the hold by the bid_id it already owns.
 message PlaceHoldResponse {}
-
-// CommitHold
-// The hold is addressed by its bid, the natural idempotency key; the member is
-// derived from the authenticated context server-side.
-message CommitHoldRequest {
-  string bid_id = 1;  // bid whose hold is being settled
-}
-
-// Empty by design, same rule as PlaceHoldResponse: success or a status code.
-message CommitHoldResponse {}
 
 // Deposit
 // The account is resolved from the authenticated member in context, so the

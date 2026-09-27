@@ -91,7 +91,7 @@ func Reconstitute(params ReconstituteParams) (*Account, error) {
 
 // places hold through account aggregate root, birthing the WalletHold without exposing
 // the access externally.
-func (a *Account) PlaceHold(id uuid.UUID, amount int, bidId uuid.UUID, now time.Time) error {
+func (a *Account) PlaceHold(id uuid.UUID, amount int, bidId uuid.UUID, expiresAt time.Time, now time.Time) error {
 	// validate new amount of gold held checks out across holds and account's
 	availableGold := a.getAvailableGold()
 
@@ -100,7 +100,9 @@ func (a *Account) PlaceHold(id uuid.UUID, amount int, bidId uuid.UUID, now time.
 	}
 
 	// attempt to birth wallethold, validates through invariants internally
-	newHold, err := newWalletHold(bidId, id, amount, now)
+	// id is the hold's own; the account is this aggregate. Passing id as the
+	// account once stamped every hold with a random account_id
+	newHold, err := newWalletHold(id, bidId, a.id, amount, expiresAt, now)
 	if err != nil {
 		// propogate down domain sentinel error
 		return err
@@ -137,8 +139,11 @@ func (a *Account) Withdraw(amount int, now time.Time) error {
 	return nil
 }
 
-// commits reserved gold, deducting from the account
-func (a *Account) CommitHold(bidID uuid.UUID, now time.Time) error {
+// CommitHold is settlement's pivot (FS-NXP1W §Req 28): the hold for bidID moves
+// RESERVED -> COMMITTED and the account is debited by the hold's own amount.
+// expectedAmount is the caller's figure, used only as a cross-check. Returns the
+// amount actually committed.
+func (a *Account) CommitHold(bidID uuid.UUID, expectedAmount int, now time.Time) (int, error) {
 	// validate bidID exists for the holds under the account
 	var h *WalletHold
 	for _, hold := range a.holds {
@@ -149,18 +154,45 @@ func (a *Account) CommitHold(bidID uuid.UUID, now time.Time) error {
 	}
 
 	if h == nil {
-		return ErrHoldNotFound
+		return 0, ErrHoldNotFound
+	}
+
+	// checked before the already-applied shortcut, so a retry carrying a
+	// different figure is refused too rather than quietly reported as success
+	if h.amount != expectedAmount {
+		return 0, ErrHoldAmountMismatch
+	}
+
+	// already applied: the activity's own retry catching up. Same output, and
+	// no second debit
+	if h.status == StatusCommitted {
+		return h.amount, nil
+	}
+
+	// after the shortcut on purpose: a hold committed in time is still applied
+	// however late its retry arrives, but a reserved one past expiry no longer
+	// protects the gold
+	if now.After(h.expiredAt) {
+		return 0, ErrHoldExpired
+	}
+
+	// unreachable while holds are correct — Reconstitute refuses an account whose
+	// holds exceed its gold — so reaching it means an invariant already broke.
+	// Checked before the transition so the hold is left untouched.
+	if a.gold < h.amount {
+		return 0, ErrInsufficientGold
 	}
 
 	// transition to commit and update hold
 	if err := h.transitionTo(StatusCommitted, now); err != nil {
-		return err
+		return 0, err
 	}
 
 	// deduct gold from total
 	a.gold = a.gold - h.amount
+	a.updatedAt = now
 
-	return nil
+	return h.amount, nil
 }
 
 // --- Helpers ---

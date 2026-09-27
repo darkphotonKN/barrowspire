@@ -136,6 +136,26 @@ func (r *AccountRepository) FindByID(ctx context.Context, id uuid.UUID) (*accoun
 	return reconstitutedAcc, nil
 }
 
+// FindByBidID resolves a hold's bid to its account, then loads that account
+// whole. The two reads need no shared transaction: bid_id is UNIQUE and a hold
+// never changes accounts, so the mapping cannot move between them, and any
+// concurrent change to the account itself is caught by Save's version check.
+func (r *AccountRepository) FindByBidID(ctx context.Context, bidID uuid.UUID) (*account.Account, error) {
+	var accountID uuid.UUID
+
+	query := `
+	SELECT account_id
+	FROM wallet_holds
+	WHERE bid_id = $1
+	`
+
+	if err := r.db.GetContext(ctx, &accountID, query, bidID); err != nil {
+		return nil, commonhelpers.WrapDBErr("account", "FindByBidID", err)
+	}
+
+	return r.FindByID(ctx, accountID)
+}
+
 func (r *AccountRepository) FindByMemberID(ctx context.Context, memberID uuid.UUID) (*account.Account, error) {
 	var acc AccountRow
 	var holds []HoldsRow

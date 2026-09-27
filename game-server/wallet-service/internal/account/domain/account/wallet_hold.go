@@ -21,10 +21,6 @@ const (
 	StatusReleased  WalletHoldStatus = "RELEASED"
 )
 
-const (
-	holdDuration time.Duration = time.Hour * 1
-)
-
 // --- Domain ---
 type WalletHold struct {
 	id        uuid.UUID
@@ -38,7 +34,7 @@ type WalletHold struct {
 }
 
 // private, only account the aggregate root can access
-func newWalletHold(bidID uuid.UUID, accountID uuid.UUID, amount int, now time.Time) (*WalletHold, error) {
+func newWalletHold(id uuid.UUID, bidID uuid.UUID, accountID uuid.UUID, amount int, expiresAt time.Time, now time.Time) (*WalletHold, error) {
 	// invariants
 	if amount <= 0 {
 		return nil, ErrInvalidAmount
@@ -48,15 +44,21 @@ func newWalletHold(bidID uuid.UUID, accountID uuid.UUID, amount int, now time.Ti
 		return nil, ErrInvalidUUID
 	}
 
+	// a hold that is already expired protects nothing: the sweeper may release
+	// it before settlement can commit it
+	if !expiresAt.After(now) {
+		return nil, ErrInvalidHoldExpiry
+	}
+
 	return &WalletHold{
-		id:        uuid.New(),
+		id:        id,
 		accountID: accountID,
 		bidID:     bidID,
 		// initialize with status reserved, always
 		status: StatusReserved,
 		amount: amount,
-		// fixed value of 1 hour for the hold
-		expiredAt: now.Add(holdDuration),
+		// the caller's: listing expiry plus settlement grace (FS-NXP1W §Req 19)
+		expiredAt: expiresAt,
 		createdAt: now,
 		updatedAt: now,
 	}, nil

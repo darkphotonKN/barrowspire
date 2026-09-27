@@ -27,7 +27,7 @@ func TestPlaceHoldAmountInvariant(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			acc := accountWithGold(t, 100)
 
-			err := acc.PlaceHold(uuid.New(), tt.amount, uuid.New(), time.Now())
+			err := acc.PlaceHold(uuid.New(), tt.amount, uuid.New(), holdExpiry(), time.Now())
 
 			if tt.wantErr != nil {
 				assert.ErrorIs(t, err, tt.wantErr)
@@ -47,23 +47,23 @@ func TestPlaceHoldLifetimeInvariant(t *testing.T) {
 	t.Run("hold equal to the full balance is allowed", func(t *testing.T) {
 		acc := accountWithGold(t, 100)
 
-		require.NoError(t, acc.PlaceHold(uuid.New(), 100, uuid.New(), time.Now()))
+		require.NoError(t, acc.PlaceHold(uuid.New(), 100, uuid.New(), holdExpiry(), time.Now()))
 	})
 
 	t.Run("hold exceeding the balance is rejected", func(t *testing.T) {
 		acc := accountWithGold(t, 100)
 
-		err := acc.PlaceHold(uuid.New(), 101, uuid.New(), time.Now())
+		err := acc.PlaceHold(uuid.New(), 101, uuid.New(), holdExpiry(), time.Now())
 
 		assert.ErrorIs(t, err, ErrHoldsExceedBalance)
 	})
 
 	t.Run("holds accumulate against available gold", func(t *testing.T) {
 		acc := accountWithGold(t, 100)
-		require.NoError(t, acc.PlaceHold(uuid.New(), 60, uuid.New(), time.Now()))
+		require.NoError(t, acc.PlaceHold(uuid.New(), 60, uuid.New(), holdExpiry(), time.Now()))
 
 		// 60 already reserved, so only 40 remains available
-		err := acc.PlaceHold(uuid.New(), 41, uuid.New(), time.Now())
+		err := acc.PlaceHold(uuid.New(), 41, uuid.New(), holdExpiry(), time.Now())
 
 		assert.ErrorIs(t, err, ErrHoldsExceedBalance)
 		assert.Len(t, acc.Snapshot().WalletHolds, 1, "the rejected hold must not be appended")
@@ -74,7 +74,7 @@ func TestPlaceHoldLifetimeInvariant(t *testing.T) {
 func TestNewHoldIsBornReserved(t *testing.T) {
 	acc := accountWithGold(t, 100)
 
-	require.NoError(t, acc.PlaceHold(uuid.New(), 10, uuid.New(), time.Now()))
+	require.NoError(t, acc.PlaceHold(uuid.New(), 10, uuid.New(), holdExpiry(), time.Now()))
 
 	holds := acc.Snapshot().WalletHolds
 	require.Len(t, holds, 1)
@@ -171,7 +171,7 @@ func TestWithdrawAmountInvariant(t *testing.T) {
 // test below for what that failure actually looks like.
 func TestWithdrawRespectsHolds(t *testing.T) {
 	acc := accountWithGold(t, 100)
-	require.NoError(t, acc.PlaceHold(uuid.New(), 60, uuid.New(), time.Now()))
+	require.NoError(t, acc.PlaceHold(uuid.New(), 60, uuid.New(), holdExpiry(), time.Now()))
 
 	// 60 is reserved, so only 40 is available — 41 must be refused even
 	// though the raw balance of 100 would comfortably cover it.
@@ -187,7 +187,7 @@ func TestWithdrawRespectsHolds(t *testing.T) {
 func TestWithdrawAvailableBoundary(t *testing.T) {
 	t.Run("withdrawing exactly the available gold is allowed", func(t *testing.T) {
 		acc := accountWithGold(t, 100)
-		require.NoError(t, acc.PlaceHold(uuid.New(), 60, uuid.New(), time.Now()))
+		require.NoError(t, acc.PlaceHold(uuid.New(), 60, uuid.New(), holdExpiry(), time.Now()))
 
 		require.NoError(t, acc.Withdraw(40, time.Now()))
 		assert.Equal(t, 60, acc.Snapshot().Gold)
@@ -209,7 +209,7 @@ func TestWithdrawAvailableBoundary(t *testing.T) {
 // repository takes on the next FindByID.
 func TestWithdrawnStateStillReconstitutes(t *testing.T) {
 	acc := accountWithGold(t, 100)
-	require.NoError(t, acc.PlaceHold(uuid.New(), 60, uuid.New(), time.Now()))
+	require.NoError(t, acc.PlaceHold(uuid.New(), 60, uuid.New(), holdExpiry(), time.Now()))
 	require.NoError(t, acc.Withdraw(40, time.Now()))
 
 	snap := acc.Snapshot()
@@ -255,13 +255,14 @@ func TestCommitHoldSpendsTheReservedGold(t *testing.T) {
 	bidID := uuid.New()
 
 	acc := accountWithGold(t, 1000)
-	require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, time.Now()))
+	require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, holdExpiry(), time.Now()))
 
 	// before: the gold is still on the books, but 300 of it is spoken for
 	assert.Equal(t, 1000, acc.Snapshot().Gold)
 	assert.Equal(t, 700, acc.getAvailableGold(), "a reserved hold is not spendable")
 
-	require.NoError(t, acc.CommitHold(bidID, time.Now()))
+	_, err := acc.CommitHold(bidID, 300, time.Now())
+	require.NoError(t, err)
 
 	snap := acc.Snapshot()
 	assert.Equal(t, 700, snap.Gold, "committing must actually spend the gold")
@@ -273,16 +274,11 @@ func TestCommitHoldSpendsTheReservedGold(t *testing.T) {
 	assert.Equal(t, 700, acc.getAvailableGold())
 }
 
-// TestCommitHoldRejectsUnknownAndAlreadySettledHolds covers the guards around the
-// spend. The repeat case is the one that matters for the saga: settlement events
-// are delivered at-least-once, so a redelivered CommitHold is expected traffic,
-// not a client error — and today the FSM refuses it. That is recorded here as
-// current behaviour, not endorsed: making it idempotent is outstanding work.
-func TestCommitHoldRejectsUnknownAndAlreadySettledHolds(t *testing.T) {
+// TestCommitHoldRejectsUnknownHolds covers the guard around the spend: a bid
+// the account holds nothing for is refused and moves no gold.
+func TestCommitHoldRejectsUnknownHolds(t *testing.T) {
 	tests := []struct {
 		name string
-		// commitTwice drives the same hold through CommitHold a second time
-		commitTwice bool
 		// useUnknownBid addresses a bid the account has no hold for
 		useUnknownBid bool
 		wantErr       error
@@ -294,12 +290,6 @@ func TestCommitHoldRejectsUnknownAndAlreadySettledHolds(t *testing.T) {
 			wantErr:       ErrHoldNotFound,
 			wantGold:      1000,
 		},
-		{
-			name:        "an already committed hold cannot be committed again",
-			commitTwice: true,
-			wantErr:     ErrInvalidHoldTransition,
-			wantGold:    700, // the first commit stands; the second must not deduct again
-		},
 	}
 
 	for _, tt := range tests {
@@ -307,18 +297,14 @@ func TestCommitHoldRejectsUnknownAndAlreadySettledHolds(t *testing.T) {
 			bidID := uuid.New()
 
 			acc := accountWithGold(t, 1000)
-			require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, time.Now()))
+			require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, holdExpiry(), time.Now()))
 
 			target := bidID
 			if tt.useUnknownBid {
 				target = uuid.New()
 			}
 
-			if tt.commitTwice {
-				require.NoError(t, acc.CommitHold(target, time.Now()))
-			}
-
-			err := acc.CommitHold(target, time.Now())
+			_, err := acc.CommitHold(target, 300, time.Now())
 
 			assert.ErrorIs(t, err, tt.wantErr)
 			assert.Equal(t, tt.wantGold, acc.Snapshot().Gold,
@@ -335,10 +321,11 @@ func TestCommitHoldOnlySettlesTheAddressedHold(t *testing.T) {
 	firstBid, secondBid := uuid.New(), uuid.New()
 
 	acc := accountWithGold(t, 1000)
-	require.NoError(t, acc.PlaceHold(uuid.New(), 100, firstBid, time.Now()))
-	require.NoError(t, acc.PlaceHold(uuid.New(), 250, secondBid, time.Now()))
+	require.NoError(t, acc.PlaceHold(uuid.New(), 100, firstBid, holdExpiry(), time.Now()))
+	require.NoError(t, acc.PlaceHold(uuid.New(), 250, secondBid, holdExpiry(), time.Now()))
 
-	require.NoError(t, acc.CommitHold(secondBid, time.Now()))
+	_, err := acc.CommitHold(secondBid, 250, time.Now())
+	require.NoError(t, err)
 
 	assert.Equal(t, 750, acc.Snapshot().Gold, "only the addressed hold's amount is spent")
 
@@ -368,4 +355,157 @@ func accountWithGold(t *testing.T, gold int) *Account {
 	require.NoError(t, err)
 
 	return acc
+}
+
+// Settlement retries its activities, so a CommitHold that already landed is its
+// own retry catching up (FS-NXP1W §Req 28): success, the same amount, no gold
+// moved. Refusing it would make the saga fail a pivot that actually happened.
+func TestCommitHold_AlreadyCommitted_ReturnsSameAmountWithoutMovingGold(t *testing.T) {
+	bidID := uuid.New()
+	acc := accountWithGold(t, 1000)
+	require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, holdExpiry(), time.Now()))
+	_, err := acc.CommitHold(bidID, 300, time.Now())
+	require.NoError(t, err)
+
+	amount, err := acc.CommitHold(bidID, 300, time.Now())
+
+	require.NoError(t, err)
+	assert.Equal(t, 300, amount)
+	assert.Equal(t, 700, acc.Snapshot().Gold, "the retry must not debit a second time")
+}
+
+// The debit is always the hold's own amount; the caller's figure is only a
+// cross-check. A disagreement means one side's record is wrong, so it is refused
+// loudly rather than reconciled by trusting either number (FS-NXP1W §Req 28).
+func TestCommitHold_AmountMismatch_IsRefusedWithoutMovingGold(t *testing.T) {
+	bidID := uuid.New()
+	acc := accountWithGold(t, 1000)
+	require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, holdExpiry(), time.Now()))
+
+	_, err := acc.CommitHold(bidID, 250, time.Now())
+
+	assert.ErrorIs(t, err, ErrHoldAmountMismatch)
+	snap := acc.Snapshot()
+	assert.Equal(t, 1000, snap.Gold)
+	assert.Equal(t, StatusReserved, snap.WalletHolds[0].Status)
+}
+
+// Past its expiry a hold no longer protects the gold — the sweeper may release
+// it at any moment — so committing it would spend money the buyer may already
+// have back (FS-NXP1W §Req 28). A hold committed before it expired is still
+// already applied, however late the retry arrives.
+func TestCommitHold_Expiry(t *testing.T) {
+	placedAt := time.Now()
+	afterExpiry := placedAt.Add(time.Hour + time.Minute)
+
+	t.Run("an expired reserved hold is refused without moving gold", func(t *testing.T) {
+		bidID := uuid.New()
+		acc := accountWithGold(t, 1000)
+		require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, placedAt.Add(time.Hour), placedAt))
+
+		_, err := acc.CommitHold(bidID, 300, afterExpiry)
+
+		assert.ErrorIs(t, err, ErrHoldExpired)
+		snap := acc.Snapshot()
+		assert.Equal(t, 1000, snap.Gold)
+		assert.Equal(t, StatusReserved, snap.WalletHolds[0].Status)
+	})
+
+	t.Run("a hold committed in time stays already applied after expiry", func(t *testing.T) {
+		bidID := uuid.New()
+		acc := accountWithGold(t, 1000)
+		require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, placedAt.Add(time.Hour), placedAt))
+		_, err := acc.CommitHold(bidID, 300, placedAt)
+		require.NoError(t, err)
+
+		amount, err := acc.CommitHold(bidID, 300, afterExpiry)
+
+		require.NoError(t, err)
+		assert.Equal(t, 300, amount)
+		assert.Equal(t, 700, acc.Snapshot().Gold)
+	})
+}
+
+// The debit guard is a last line of defence. Reconstitute already refuses an
+// account whose reserved holds exceed its gold, so this state is built by hand
+// to stand for "an invariant already broke somewhere". Reaching the guard must
+// abort the pivot rather than drive the balance negative (FS-NXP1W §Req 28).
+func TestCommitHold_GoldBelowTheHold_AbortsWithoutDebiting(t *testing.T) {
+	bidID := uuid.New()
+	now := time.Now()
+	acc := &Account{
+		id:   uuid.New(),
+		gold: 100,
+		holds: []*WalletHold{{
+			id:        uuid.New(),
+			bidID:     bidID,
+			status:    StatusReserved,
+			amount:    300,
+			expiredAt: now.Add(time.Hour),
+		}},
+	}
+
+	_, err := acc.CommitHold(bidID, 300, now)
+
+	assert.ErrorIs(t, err, ErrInsufficientGold)
+	assert.Equal(t, 100, acc.Snapshot().Gold, "the balance must never go negative")
+	assert.Equal(t, StatusReserved, acc.Snapshot().WalletHolds[0].Status)
+}
+
+// Like Deposit and Withdraw, a commit changes the balance, so it stamps the
+// account — Save writes updated_at from the snapshot.
+func TestCommitHold_StampsTheAccount(t *testing.T) {
+	bidID := uuid.New()
+	acc := accountWithGold(t, 1000)
+	require.NoError(t, acc.PlaceHold(uuid.New(), 300, bidID, holdExpiry(), time.Now()))
+	committedAt := time.Now().Add(time.Minute)
+
+	_, err := acc.CommitHold(bidID, 300, committedAt)
+
+	require.NoError(t, err)
+	assert.Equal(t, committedAt, acc.Snapshot().UpdatedAt)
+}
+
+// wallet_holds.account_id references accounts(id), and FindByBidID resolves a
+// bid to its account through it. A hold stamped with anything but its own
+// account's id fails that foreign key on insert and can never be found again.
+func TestPlaceHold_HoldBelongsToItsAccount(t *testing.T) {
+	acc := accountWithGold(t, 1000)
+
+	require.NoError(t, acc.PlaceHold(uuid.New(), 300, uuid.New(), holdExpiry(), time.Now()))
+
+	snap := acc.Snapshot()
+	assert.Equal(t, snap.ID, snap.WalletHolds[0].AccountID)
+}
+
+// The hold's expiry is the caller's — listing expiry plus settlement grace — not
+// a fixed hour from now. Derived here it would bear no relation to when the
+// auction settles, and the sweeper could release a hold settlement is about to
+// commit (FS-NXP1W §Req 19).
+func TestPlaceHold_Expiry(t *testing.T) {
+	now := time.Now()
+
+	t.Run("the hold stores the expiry it was given", func(t *testing.T) {
+		acc := accountWithGold(t, 1000)
+		expiresAt := now.Add(26 * time.Hour)
+
+		require.NoError(t, acc.PlaceHold(uuid.New(), 300, uuid.New(), expiresAt, now))
+
+		assert.Equal(t, expiresAt, acc.Snapshot().WalletHolds[0].ExpiredAt)
+	})
+
+	t.Run("an expiry that is not in the future is refused", func(t *testing.T) {
+		acc := accountWithGold(t, 1000)
+
+		err := acc.PlaceHold(uuid.New(), 300, uuid.New(), now, now)
+
+		assert.ErrorIs(t, err, ErrInvalidHoldExpiry)
+		assert.Empty(t, acc.Snapshot().WalletHolds, "no hold may be placed")
+	})
+}
+
+// holdExpiry is a hold expiry comfortably in the future, for tests where when
+// the hold lapses is beside the point.
+func holdExpiry() time.Time {
+	return time.Now().Add(time.Hour)
 }

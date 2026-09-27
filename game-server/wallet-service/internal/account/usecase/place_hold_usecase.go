@@ -23,6 +23,9 @@ type PlaceHoldCommand struct {
 	MemberID uuid.UUID
 	BidID    uuid.UUID
 	Gold     int
+	// ExpiresAt is set by the caller — listing expiry plus settlement grace —
+	// never derived here (FS-NXP1W §Req 19)
+	ExpiresAt time.Time
 }
 
 func (uc *PlaceHoldUC) Handle(ctx context.Context, cmd *PlaceHoldCommand) error {
@@ -39,7 +42,7 @@ func (uc *PlaceHoldUC) Handle(ctx context.Context, cmd *PlaceHoldCommand) error 
 		before := acc.Snapshot()
 
 		// attempt to place hold
-		err = acc.PlaceHold(uuid.New(), cmd.Gold, cmd.BidID, time.Now())
+		err = acc.PlaceHold(uuid.New(), cmd.Gold, cmd.BidID, cmd.ExpiresAt, time.Now())
 
 		if err != nil {
 			return fmt.Errorf("placehold usecase handle placing hold cmd account id %s member id %s: %w", before.ID, cmd.MemberID, err)

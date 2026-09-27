@@ -5,6 +5,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing"
+	listingactivity "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/activity"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/adapter/itemreserver"
 	listinggrpc "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/grpc"
 	listingquery "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/query"
@@ -23,6 +24,9 @@ type Services struct {
 	ListingHandler          *listinggrpc.Handler
 	ListingActivity         *listingtemporal.Activity
 	ReconcileReservationsUC *usecase.ReconcileReservationsUC
+	// Activities are the settlement steps marketplace owns, registered on its
+	// Temporal worker in main.
+	Activities *listingactivity.Activities
 }
 
 func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, ch *amqp.Channel) *Services {
@@ -58,9 +62,14 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	// start goroutine and listen to events from message broker
 	consumer.Listen(ctx)
 
+	setWinningBidUC := usecase.NewSetWinningBidUC(listingRepo)
+	setWinBidFailedUC := usecase.NewSetWinBidFailedUC(listingRepo)
+	activities := listingactivity.NewActivities(setWinningBidUC, setWinBidFailedUC)
+
 	return &Services{
 		ListingHandler:          listingHandler,
 		ListingActivity:         freezeListingActivity,
 		ReconcileReservationsUC: reconcileReservationsUC,
+		Activities:              activities,
 	}
 }

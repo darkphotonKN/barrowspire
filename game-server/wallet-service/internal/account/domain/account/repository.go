@@ -13,6 +13,9 @@ import (
 type Repository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*Account, error)
 	FindByMemberID(ctx context.Context, memberID uuid.UUID) (*Account, error)
+	// FindByBidID loads the account holding the hold for bidID. Settlement has no
+	// member to look up by: a hold's bid is the only key it carries.
+	FindByBidID(ctx context.Context, bidID uuid.UUID) (*Account, error)
 	Insert(ctx context.Context, account *Account) error
 
 	// CONTRACT: save must return the senintel ErrConcurrentModification to signify a

@@ -121,6 +121,7 @@ func main() {
 
 		// the workflow
 		settlement.Register,
+		func(w worker.Worker) { services.Activities.Register(w) },
 	)
 
 	if err != nil {

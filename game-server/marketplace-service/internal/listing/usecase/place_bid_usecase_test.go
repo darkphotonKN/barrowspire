@@ -22,6 +22,7 @@ var errListingGone = errors.New("listing gone")
 // and the row lock.
 type fakeRepo struct {
 	listing   *listing.Listing
+	findErr   error
 	modifyErr error
 	// failTimes makes Modify fail its first N calls, so a test can prove the
 	// use case retries rather than abandoning a bid whose gold is already held.
@@ -29,8 +30,13 @@ type fakeRepo struct {
 	modifyCall int
 }
 
+// FindByID is a read: PlaceBid uses it only to learn when the listing ends, to
+// set the hold's expiry. Writes are still refused below — they go through Modify.
 func (f *fakeRepo) FindByID(ctx context.Context, id uuid.UUID) (*listing.Listing, error) {
-	return nil, errors.New("FindByID must not be used on a locked write path")
+	if f.findErr != nil {
+		return nil, f.findErr
+	}
+	return f.listing, nil
 }
 
 func (f *fakeRepo) Insert(ctx context.Context, l *listing.Listing) error {
@@ -65,16 +71,18 @@ type fakeWallet struct {
 	err   error
 	calls int
 
-	gotBidID    uuid.UUID
-	gotMemberID uuid.UUID
-	gotGold     int
+	gotBidID     uuid.UUID
+	gotMemberID  uuid.UUID
+	gotGold      int
+	gotExpiresAt time.Time
 }
 
-func (f *fakeWallet) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int) error {
+func (f *fakeWallet) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int, expiresAt time.Time) error {
 	f.calls++
 	f.gotBidID = bidID
 	f.gotMemberID = memberID
 	f.gotGold = gold
+	f.gotExpiresAt = expiresAt
 	return f.err
 }
 
@@ -302,4 +310,57 @@ func TestPlaceBidRetriesTheWriteAfterAHold(t *testing.T) {
 	assert.Equal(t, 3, repo.modifyCall, "the write is retried until it lands")
 	assert.Equal(t, 1, wallet.calls, "the gold is held once, not once per attempt")
 	assert.Len(t, l.Snapshot().Bids, 1)
+}
+
+// The hold must outlive settlement, not an arbitrary hour: it lapses at the
+// listing's end plus settlement grace (FS-NXP1W §Req 19), so the sweeper cannot
+// release it while settlement is still working towards the commit.
+func TestPlaceBidUC_HoldExpiresAtListingEndPlusGrace(t *testing.T) {
+	l := activeListing(t, 100)
+	wallet := &fakeWallet{}
+
+	err := NewPlaceBidUC(&fakeRepo{listing: l}, wallet).Handle(context.Background(), PlaceBidCommand{
+		ListingID: l.Snapshot().ID,
+		MemberID:  uuid.New(),
+		Amount:    150,
+		Now:       time.Now(),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, l.Snapshot().EndsAt.Add(settlementGrace), wallet.gotExpiresAt)
+}
+
+// Reading the listing's end time now comes before the hold, so a listing that
+// cannot be read — missing, or the read failed — stops the bid before any gold
+// is frozen for it.
+func TestPlaceBidUC_UnreadableListing_HoldsNoGold(t *testing.T) {
+	wallet := &fakeWallet{}
+
+	err := NewPlaceBidUC(&fakeRepo{findErr: errors.New("listing not found")}, wallet).Handle(context.Background(), PlaceBidCommand{
+		ListingID: uuid.New(),
+		MemberID:  uuid.New(),
+		Amount:    150,
+		Now:       time.Now(),
+	})
+
+	assert.Error(t, err)
+	assert.Zero(t, wallet.calls)
+}
+
+// A listing past its end can never take this bid, so no gold may be held for
+// it: the hold would be stranded the moment Modify refused the bid. Asked of the
+// aggregate before the hold — the same rule Modify applies again under the lock.
+func TestPlaceBidUC_ExpiredListing_HoldsNoGold(t *testing.T) {
+	l := activeListing(t, 100) // ends an hour from now
+	wallet := &fakeWallet{}
+
+	err := NewPlaceBidUC(&fakeRepo{listing: l}, wallet).Handle(context.Background(), PlaceBidCommand{
+		ListingID: l.Snapshot().ID,
+		MemberID:  uuid.New(),
+		Amount:    150,
+		Now:       time.Now().Add(2 * time.Hour),
+	})
+
+	assert.ErrorIs(t, err, listing.ErrListingExpired)
+	assert.Zero(t, wallet.calls, "no gold may be held for a bid that cannot land")
 }

@@ -11,6 +11,10 @@ var (
 	ErrConcurrentModification = errors.New("concurrent modification")
 	ErrHoldNotFound           = errors.New("hold not found")
 	ErrInvalidHoldTransition  = errors.New("invalid hold transition")
+	ErrHoldAmountMismatch     = errors.New("hold amount does not match the expected amount")
+	ErrHoldExpired            = errors.New("hold expired")
+	ErrInsufficientGold       = errors.New("gold below the hold being committed")
+	ErrInvalidHoldExpiry      = errors.New("hold expiry must be in the future")
 )
 
 // checks if error matches the predefined sentinel to determine if its retriable

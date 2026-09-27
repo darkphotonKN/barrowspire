@@ -22,7 +22,6 @@ const (
 	WalletService_CreateAccount_FullMethodName = "/wallet.WalletService/CreateAccount"
 	WalletService_GetAccount_FullMethodName    = "/wallet.WalletService/GetAccount"
 	WalletService_PlaceHold_FullMethodName     = "/wallet.WalletService/PlaceHold"
-	WalletService_CommitHold_FullMethodName    = "/wallet.WalletService/CommitHold"
 	WalletService_Deposit_FullMethodName       = "/wallet.WalletService/Deposit"
 	WalletService_Withdraw_FullMethodName      = "/wallet.WalletService/Withdraw"
 )
@@ -39,8 +38,6 @@ type WalletServiceClient interface {
 	GetAccount(ctx context.Context, in *GetAccountRequest, opts ...grpc.CallOption) (*GetAccountResponse, error)
 	// Reserve gold against a member's account for a bid.
 	PlaceHold(ctx context.Context, in *PlaceHoldRequest, opts ...grpc.CallOption) (*PlaceHoldResponse, error)
-	// Settle a bid's reserved gold, spending it for good.
-	CommitHold(ctx context.Context, in *CommitHoldRequest, opts ...grpc.CallOption) (*CommitHoldResponse, error)
 	// Add gold to a member's account.
 	Deposit(ctx context.Context, in *DepositRequest, opts ...grpc.CallOption) (*DepositResponse, error)
 	// Remove gold from a member's account, up to what is not already held.
@@ -85,16 +82,6 @@ func (c *walletServiceClient) PlaceHold(ctx context.Context, in *PlaceHoldReques
 	return out, nil
 }
 
-func (c *walletServiceClient) CommitHold(ctx context.Context, in *CommitHoldRequest, opts ...grpc.CallOption) (*CommitHoldResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CommitHoldResponse)
-	err := c.cc.Invoke(ctx, WalletService_CommitHold_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *walletServiceClient) Deposit(ctx context.Context, in *DepositRequest, opts ...grpc.CallOption) (*DepositResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DepositResponse)
@@ -127,8 +114,6 @@ type WalletServiceServer interface {
 	GetAccount(context.Context, *GetAccountRequest) (*GetAccountResponse, error)
 	// Reserve gold against a member's account for a bid.
 	PlaceHold(context.Context, *PlaceHoldRequest) (*PlaceHoldResponse, error)
-	// Settle a bid's reserved gold, spending it for good.
-	CommitHold(context.Context, *CommitHoldRequest) (*CommitHoldResponse, error)
 	// Add gold to a member's account.
 	Deposit(context.Context, *DepositRequest) (*DepositResponse, error)
 	// Remove gold from a member's account, up to what is not already held.
@@ -151,9 +136,6 @@ func (UnimplementedWalletServiceServer) GetAccount(context.Context, *GetAccountR
 }
 func (UnimplementedWalletServiceServer) PlaceHold(context.Context, *PlaceHoldRequest) (*PlaceHoldResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PlaceHold not implemented")
-}
-func (UnimplementedWalletServiceServer) CommitHold(context.Context, *CommitHoldRequest) (*CommitHoldResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CommitHold not implemented")
 }
 func (UnimplementedWalletServiceServer) Deposit(context.Context, *DepositRequest) (*DepositResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Deposit not implemented")
@@ -236,24 +218,6 @@ func _WalletService_PlaceHold_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _WalletService_CommitHold_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CommitHoldRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WalletServiceServer).CommitHold(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: WalletService_CommitHold_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WalletServiceServer).CommitHold(ctx, req.(*CommitHoldRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _WalletService_Deposit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DepositRequest)
 	if err := dec(in); err != nil {
@@ -308,10 +272,6 @@ var WalletService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PlaceHold",
 			Handler:    _WalletService_PlaceHold_Handler,
-		},
-		{
-			MethodName: "CommitHold",
-			Handler:    _WalletService_CommitHold_Handler,
 		},
 		{
 			MethodName: "Deposit",

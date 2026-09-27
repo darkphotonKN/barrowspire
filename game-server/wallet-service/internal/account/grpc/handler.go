@@ -28,7 +28,6 @@ type Handler struct {
 	// write
 	createAccountUC *usecase.CreateAccountUC
 	placeHoldUC     *usecase.PlaceHoldUC
-	commitHoldUC    *usecase.CommitHoldUC
 	depositGoldUC   *usecase.DepositGoldUC
 	withdrawGoldUC  *usecase.WithdrawGoldUC
 }
@@ -45,7 +44,6 @@ type AccountReader interface {
 type Deps struct {
 	CreateAccountUC *usecase.CreateAccountUC
 	PlaceHoldUC     *usecase.PlaceHoldUC
-	CommitHoldUC    *usecase.CommitHoldUC
 	DepositGoldUC   *usecase.DepositGoldUC
 	WithdrawGoldUC  *usecase.WithdrawGoldUC
 	AccountReader   AccountReader
@@ -55,7 +53,6 @@ func NewHandler(deps Deps) *Handler {
 	return &Handler{
 		createAccountUC: deps.CreateAccountUC,
 		placeHoldUC:     deps.PlaceHoldUC,
-		commitHoldUC:    deps.CommitHoldUC,
 		depositGoldUC:   deps.DepositGoldUC,
 		withdrawGoldUC:  deps.WithdrawGoldUC,
 		accountReader:   deps.AccountReader,
@@ -63,31 +60,6 @@ func NewHandler(deps Deps) *Handler {
 }
 
 // ========================= WRITE PATHS  =========================
-
-func (h *Handler) CommitHold(ctx context.Context, req *pb.CommitHoldRequest) (*pb.CommitHoldResponse, error) {
-	memberId, ok := commonauth.MemberIDFromCtx(ctx)
-
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "identity missing")
-	}
-
-	// validation for bidId
-	bidId, err := uuid.Parse(req.BidId)
-
-	if err != nil {
-		// client's fault, an info log only not error
-		slog.InfoContext(ctx, "Commit hold bid id corrupted", "bid_id", req.BidId, "err", err)
-		return nil, status.Error(codes.InvalidArgument, "bidId from req was unparseable as a uuid.")
-	}
-
-	err = h.commitHoldUC.Handle(ctx, &usecase.CommitHoldCommand{MemberID: memberId, BidID: bidId})
-
-	if err != nil {
-		return nil, mapError(ctx, err)
-	}
-
-	return &pb.CommitHoldResponse{}, nil
-}
 
 func (h *Handler) CreateAccount(ctx context.Context, req *pb.CreateAccountRequest) (*pb.CreateAccountResponse, error) {
 	memberId, ok := commonauth.MemberIDFromCtx(ctx)
@@ -129,10 +101,16 @@ func (h *Handler) PlaceHold(ctx context.Context, req *pb.PlaceHoldRequest) (*pb.
 		return nil, status.Error(codes.InvalidArgument, "bidId from req was unparseable as a uuid")
 	}
 
+	// required: wallet never derives a hold's expiry (FS-NXP1W §Req 19)
+	if req.GetExpiresAt() == nil {
+		return nil, status.Error(codes.InvalidArgument, "expires_at is required")
+	}
+
 	err = h.placeHoldUC.Handle(ctx, &usecase.PlaceHoldCommand{
-		MemberID: memberID,
-		BidID:    bidID,
-		Gold:     int(req.Gold),
+		MemberID:  memberID,
+		BidID:     bidID,
+		Gold:      int(req.Gold),
+		ExpiresAt: req.GetExpiresAt().AsTime(),
 	})
 
 	if err != nil {
@@ -256,7 +234,9 @@ func mapError(ctx context.Context, err error) error {
 
 	// NOTE: invalid argument
 	// maps to http 400 bad request
-	case errors.Is(err, account.ErrInvalidAmount) || errors.Is(err, account.ErrInvalidGold):
+	case errors.Is(err, account.ErrInvalidAmount) ||
+		errors.Is(err, account.ErrInvalidGold) ||
+		errors.Is(err, account.ErrInvalidHoldExpiry):
 		code = codes.InvalidArgument
 		msg = "invalid argument"
 

@@ -11,9 +11,9 @@ type ListingStatus string
 const (
 	StatusDraft             ListingStatus = "DRAFT"
 	StatusListed            ListingStatus = "LISTED"
-	StatusCancelled         ListingStatus = "WITHDRAW"
+	StatusCancelled         ListingStatus = "CANCELLED"
 	StatusPendingSettlement ListingStatus = "PENDING_SETTLEMENT"
-	StatusExpired           ListingStatus = "STATUS_EXPIRED"
+	StatusExpired           ListingStatus = "EXPIRED"
 	StatusSold              ListingStatus = "SOLD"
 )
 
@@ -194,6 +194,10 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 		return ErrListingExpired
 	}
 
+	if err := l.AcceptsBidAt(now); err != nil {
+		return err
+	}
+
 	// A replayed request must not become a second bid. Retries and broker
 	// redelivery both resend the same placement, and without this the member
 	// ends up outbidding themselves.
@@ -265,6 +269,10 @@ func (l *Listing) ConfirmBid(bidID uuid.UUID, now time.Time) error {
 		return ErrListingNotAcceptingBids
 	}
 
+	if err := l.acceptingBidChanges(); err != nil {
+		return err
+	}
+
 	incumbent := l.findWinningBid()
 
 	// A higher bid confirmed first. This one loses rather than failing: its gold
@@ -316,9 +324,36 @@ func (l *Listing) FailBid(bidID uuid.UUID, now time.Time) error {
 	return nil
 }
 
+// SetWinningBid is settlement step 1a (FS-NXP1W §Req 27): the winner selected at
+// freeze moves WINNING -> WON, the last change before the pivot spends its gold.
+func (l *Listing) SetWinningBid(bidID uuid.UUID, now time.Time) error {
+	bid := l.findBidByID(bidID)
+
+	if bid == nil {
+		return ErrBidNotFound
+	}
+
+	// a retried activity catching up with its own earlier success
+	if bid.status == BidStatusWon {
+		return nil
+	}
+
+	if err := bid.transitionTo(BidStatusWon, now); err != nil {
+		return err
+	}
+
+	l.updatedAt = now
+
+	return nil
+}
+
 func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time) error {
 	if l.status != StatusListed {
 		return ErrListingNotAcceptingBids
+	}
+
+	if err := l.acceptingBidChanges(); err != nil {
+		return err
 	}
 
 	bid := l.findBidByID(bidID)
@@ -342,7 +377,35 @@ func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time
 	return nil
 }
 
+// AcceptsBidAt reports whether a new bid could be placed at now: the listing is
+// open and not yet past its end. PlaceBidWithID applies it under the lock; a
+// caller about to do something costly for a bid — holding its gold — asks it
+// first rather than restating the rule.
+func (l *Listing) AcceptsBidAt(now time.Time) error {
+	if err := l.acceptingBidChanges(); err != nil {
+		return err
+	}
+
+	if !l.endsAt.After(now) {
+		return ErrListingExpired
+	}
+
+	return nil
+}
+
 // --- Helpers ---
+
+// acceptingBidChanges is the one place that decides whether bids on this
+// listing may still change — placed, confirmed or withdrawn. Methods ask it
+// rather than reading the status themselves, so how "no longer open" is
+// represented stays a detail of this function.
+func (l *Listing) acceptingBidChanges() error {
+	if l.status != StatusListed {
+		return ErrListingNotAcceptingBids
+	}
+
+	return nil
+}
 func (l *Listing) findWinningBid() *Bid {
 	for _, bid := range l.bids {
 		if bid.status != BidStatusWinning {

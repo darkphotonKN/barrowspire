@@ -33,7 +33,7 @@ type SetWinBidFailedCommand struct {
 }
 
 func (uc *SetWinBidFailedUC) Handle(ctx context.Context, cmd SetWinBidFailedCommand) error {
-	return withRetry(func() error {
+	return withRetry(ctx, func() error {
 		listingDomain, err := uc.repo.FindByID(ctx, cmd.ID)
 
 		if err != nil {

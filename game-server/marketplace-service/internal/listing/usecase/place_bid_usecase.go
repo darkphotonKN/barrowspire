@@ -10,8 +10,14 @@ import (
 )
 
 type WalletService interface {
-	PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int) error
+	PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int, expiresAt time.Time) error
 }
+
+// settlementGrace is how long a hold outlives its listing. It must comfortably
+// exceed settlement's retry cap (FS-NXP1W §Req 11: 30m), or the hold sweeper can
+// release a hold settlement is still retrying towards committing. Tuning, not
+// contract.
+const settlementGrace = 2 * time.Hour
 
 type PlaceBidUC struct {
 	repo   listing.Repository
@@ -34,12 +40,25 @@ type PlaceBidCommand struct {
 }
 
 func (uc *PlaceBidUC) Handle(ctx context.Context, cmd PlaceBidCommand) error {
+	// read-only, outside the lock: to set when the hold lapses, and to refuse a
+	// bid that certainly cannot land before any gold is held for it. Advisory
+	// only — the listing can change before the lock is taken, so the bidding rules
+	// are still decided under Modify below.
+	current, err := uc.repo.FindByID(ctx, cmd.ListingID)
+	if err != nil {
+		return fmt.Errorf("place bid usecase handle reading listing %v : %w", cmd.ListingID, err)
+	}
+	if err := current.AcceptsBidAt(cmd.Now); err != nil {
+		return fmt.Errorf("place bid usecase handle listing %v : %w", cmd.ListingID, err)
+	}
+	expiresAt := current.Snapshot().EndsAt.Add(settlementGrace)
+
 	bidID := uuid.New()
-	if err := uc.wallet.PlaceHold(ctx, cmd.MemberID, bidID, cmd.Amount); err != nil {
+	if err := uc.wallet.PlaceHold(ctx, cmd.MemberID, bidID, cmd.Amount, expiresAt); err != nil {
 		return fmt.Errorf("place bid usecase handle placing hold for bid %v : %w", bidID, err)
 	}
 
-	err := withRetry(ctx, func() error {
+	err = withRetry(ctx, func() error {
 		return uc.repo.Modify(ctx, cmd.ListingID, func(l *listing.Listing) error {
 			if err := l.PlaceBidWithID(bidID, cmd.MemberID, cmd.Amount, cmd.IdempotencyKey, cmd.Now); err != nil {
 				return err

@@ -5,6 +5,7 @@ import (
 
 	commoninbox "github.com/darkphotonKN/barrowspire-server/common/inbox"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
+	accountactivity "github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/activity"
 	accountgrpc "github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/grpc"
 	accountquery "github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/query"
 	accountrepo "github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/repository"
@@ -24,12 +25,15 @@ type Services struct {
 	AccHandler       *accountgrpc.Handler
 	CreateOnSignupUC *usecase.CreateAccountOnSignupUC
 	OutboxService    commonoutbox.OutboxRetriever
+	// Activities are the settlement steps wallet owns, registered on its
+	// Temporal worker in main. CommitHold is reachable only this way (FS-NXP1W
+	// §Req 7): never through gRPC.
+	Activities *accountactivity.Activities
 }
 
 func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	accountRepo := accountrepo.NewAccountRepository(db)
 	placeHoldUC := usecase.NewPlaceHoldUC(accountRepo)
-	commitHoldUC := usecase.NewCommitHoldUC(accountRepo)
 	createAccUC := usecase.NewCreateAccountUC(accountRepo)
 	depositGoldUC := usecase.NewDepositGoldUC(accountRepo)
 	withdrawGoldUC := usecase.NewWithdrawGoldUC(accountRepo)
@@ -38,7 +42,6 @@ func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	accHandler := accountgrpc.NewHandler(accountgrpc.Deps{
 		CreateAccountUC: createAccUC,
 		PlaceHoldUC:     placeHoldUC,
-		CommitHoldUC:    commitHoldUC,
 		DepositGoldUC:   depositGoldUC,
 		WithdrawGoldUC:  withdrawGoldUC,
 		AccountReader:   getAccQuery,
@@ -52,9 +55,13 @@ func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 		db, accountRepo, commoninbox.NewRepo(), outboxService,
 	)
 
+	commitHoldUC := usecase.NewCommitHoldUC(accountRepo)
+	activities := accountactivity.NewActivities(commitHoldUC)
+
 	return &Services{
 		AccHandler:       accHandler,
 		CreateOnSignupUC: createOnSignupUC,
 		OutboxService:    outboxService,
+		Activities:       activities,
 	}
 }

@@ -53,3 +53,18 @@ I-NXP1W-1. The bids table (Kiki's work) must exist for winner selection.
 
 FS-NXP1W §Requirements 1–5 (trigger and identity), 6–8 (sequence, thin wrappers, zero bids),
 20–22 (statuses), 25–26 (0a, 0b), 34 (reconciler). User stories 1–3, 9–10, 17–18, 21, 24. ADR-0016.
+
+## Carried from I-NXP1W-4's review
+
+1a `SetWinningBid` (landed in I-NXP1W-4) moves the winner to `WON` but does not check the
+listing, because `PENDING_SETTLEMENT` does not exist yet. Until it does, a PENDING bid whose
+hold confirms after 1a would be promoted to `WINNING` beside the `WON` bid — `ConfirmBid`
+only sees an `ACTIVE` listing and looks for a `WINNING` leader.
+
+Close it where the state lives, not with a `WON` check in every bid method:
+
+- 0a moves the listing to `PENDING_SETTLEMENT`. `ConfirmBid`, `WithdrawBid` and `PlaceBid`
+  already ask the aggregate's single `acceptingBidChanges()` rule, so they refuse it with no
+  further change.
+- `SetWinningBid` refuses a listing that is still `ACTIVE`, so `WON` can only exist on a
+  frozen listing.

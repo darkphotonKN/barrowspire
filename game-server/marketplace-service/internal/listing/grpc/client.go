@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -30,7 +32,7 @@ func NewClient(registry discovery.Registry) *Client {
 // PlaceHold reserves the caller's gold against bidID. wallet resolves whose
 // account to hold from the token, not from memberID, so the caller's
 // authorization header is forwarded as-is.
-func (c *Client) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int) error {
+func (c *Client) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int, expiresAt time.Time) error {
 	outCtx, err := forwardAuthorization(ctx)
 	if err != nil {
 		return fmt.Errorf("wallet place hold for bid %v: %w", bidID, err)
@@ -43,8 +45,9 @@ func (c *Client) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold 
 	defer conn.Close()
 
 	_, err = pb.NewWalletServiceClient(conn).PlaceHold(outCtx, &pb.PlaceHoldRequest{
-		BidId: bidID.String(),
-		Gold:  int64(gold),
+		BidId:     bidID.String(),
+		Gold:      int64(gold),
+		ExpiresAt: timestamppb.New(expiresAt),
 	})
 	if err != nil {
 		switch status.Code(err) {

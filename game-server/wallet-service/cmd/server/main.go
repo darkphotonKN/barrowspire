@@ -164,6 +164,7 @@ func main() {
 
 	temporalRunner, err := bstemporal.NewRunner(temporalClient, temporalCfg, temporalLogger, worker.Options{},
 		smoke.RegisterActivity,
+		func(w worker.Worker) { services.Activities.Register(w) },
 	)
 	if err != nil {
 		log.Fatalf("Failed to build temporal worker: %s", err)

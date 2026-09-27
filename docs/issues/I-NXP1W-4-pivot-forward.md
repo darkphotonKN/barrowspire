@@ -1,6 +1,6 @@
 ---
 id: I-NXP1W-4
-status: open
+status: done
 implements: FS-NXP1W
 blocked_by: []
 labels: []
@@ -30,11 +30,11 @@ handling is slice 6.
 
 ## Acceptance Criteria
 
-- [ ] SetWinningBid is a conditional write; re-running it is success
-- [ ] CommitHold debits by the hold's amount and commits the hold in one OCC save
-- [ ] CommitHold on a `COMMITTED` hold returns success with the same output and moves no gold
-- [ ] `PlaceHold` stores the explicitly passed expiry
-- [ ] Use cases tested without Temporal; `make test` green
+- [x] SetWinningBid is a conditional write; re-running it is success
+- [x] CommitHold debits by the hold's amount and commits the hold in one OCC save
+- [x] CommitHold on a `COMMITTED` hold returns success with the same output and moves no gold
+- [x] `PlaceHold` stores the explicitly passed expiry
+- [x] Use cases tested without Temporal; `make test` green
 
 ## Blocked By
 
