@@ -49,6 +49,20 @@ import {
   type Point,
   type WorldPlane,
 } from "@/render/iso";
+import { artSprite, preloadArt, registerArt } from "@/render/art/phaser";
+import type { ArtLibrary } from "@/render/art/library";
+import { LightMap, ambientFor } from "@/render/lighting";
+import {
+  BAKE,
+  GroundLayer,
+  Occluders,
+  addRoof,
+  addWalls,
+  footprintHitArea,
+  housesFrom,
+  showState,
+  worldSeed,
+} from "@/render/world";
 
 /**
  * Depths above the world band (FS-2325V §A.3): world objects sort by footprint from
@@ -58,6 +72,8 @@ const NAME_DEPTH = 180;
 const HP_BAR_DEPTH = 181;
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = 160;
+/** A delver's footprint, in world px: the server's `PlayerRadius`. */
+const PLAYER_FOOTPRINT_RADIUS = 20;
 
 interface Building {
   id: string;
@@ -67,8 +83,8 @@ interface Building {
   height: number;
   doorSide: "top" | "bottom" | "left" | "right";
   wallGroup: Phaser.Physics.Arcade.StaticGroup;
-  roof: Phaser.GameObjects.Graphics;
-  floor: Phaser.GameObjects.Graphics;
+  /** Baked roof pieces, or the placeholder roof: hidden together while the delver is inside. */
+  roof: { setVisible(visible: boolean): unknown }[];
   doorMarker: Phaser.GameObjects.Graphics;
   // Door properties
   door: Phaser.GameObjects.Graphics;
@@ -146,7 +162,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private playerHpMpGraphics?: Phaser.GameObjects.Graphics;
   private otherPlayersHpMpGraphics: Map<string, Phaser.GameObjects.Graphics> = new Map();
   /** The warm pool the delver carries. Built once; only ever repositioned. */
-  private torchPool?: Phaser.GameObjects.Image;
   private otherPlayersLegs: Map<string, Phaser.GameObjects.Graphics> =
     new Map();
   /** One of eight world directions (FS-2325V §A.6); "se" faces the viewer. */
@@ -214,19 +229,21 @@ export class BarrowspireScene extends Phaser.Scene {
     { sprite: Phaser.GameObjects.Sprite; entityId: string; pos: Point }
   > = new Map();
 
-  // 牆壁 (從後端同步) — one placeholder block per wall, cut into sorted pieces
+  // 牆壁 (從後端同步) — baked wall pieces and posts (FS-2325V §C.2), or the
+  // placeholder blocks without a manifest; either way, one-tile pieces sorted by footprint
   private walls: Map<
     string,
-    { pieces: Phaser.GameObjects.Graphics[]; entityId: string }
+    { pieces: Phaser.GameObjects.GameObject[]; entityId: string }
   > = new Map();
 
-  // 門 (從後端同步) — the slab lies on its own lifted plane, in world coordinates;
-  // `pos` is the closed door's centre, the point interaction is measured from
+  // 門 (從後端同步) — the baked door showing its state's frame (FS-2325V §C.4); without a
+  // manifest, the placeholder slab on its own lifted plane. `pos` is the closed door's
+  // centre, the point interaction is measured from
   private serverDoors: Map<
     string,
     {
-      rect: Phaser.GameObjects.Rectangle;
-      plane: WorldPlane;
+      sprite?: Phaser.GameObjects.Sprite;
+      slab?: { rect: Phaser.GameObjects.Rectangle; plane: WorldPlane };
       entityId: string;
       isOpen: boolean;
       pos: Point;
@@ -282,6 +299,15 @@ export class BarrowspireScene extends Phaser.Scene {
   > = new Map();
   /** The map floor, a world-coordinate plane; house floors are added to it. */
   private groundPlane?: WorldPlane;
+  /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
+  private art!: ArtLibrary;
+  /** Baked ground, when the manifest has it; otherwise `groundPlane` is the placeholder floor. */
+  private groundLayer?: GroundLayer;
+  /** FS-2325V §C.7: replaces the overlay torch pool. */
+  private lightMap?: LightMap;
+  private occluders = new Occluders();
+  /** How far above the floor a house's walls reach on screen, for the indoor mask's hole. */
+  private wallTop = WALL_HEIGHT;
   private readonly PENDING_DURATION = 1000; // 1 秒內不比對剛拿的物品
   private lastGameState?: ClientGameState;
 
@@ -680,6 +706,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.createSwitchTextures();
     this.createMetalFloorTexture();
     this.createEscapeParticleTexture();
+
+    // baked world and prop art (FS-2325V §B.6); the textures above stay as placeholders
+    preloadArt(this);
   }
 
   private createMetalFloorTexture(): void {
@@ -1698,18 +1727,13 @@ export class BarrowspireScene extends Phaser.Scene {
       const pos = { x: container.position.x, y: container.position.y };
       if (!chest) {
         // 新增寶箱
-        const sprite = this.add.sprite(
-          0,
-          0,
-          container.is_open ? "chest_open" : "chest_closed",
-        );
+        const sprite = this.add.sprite(0, 0, "chest_closed");
+        this.showContainerFrame(sprite, container.is_open);
         chest = { sprite, entityId: container.entity_id, pos };
         this.chests.set(container.entity_id, chest);
       } else {
         // 更新寶箱狀態
-        chest.sprite.setTexture(
-          container.is_open ? "chest_open" : "chest_closed",
-        );
+        this.showContainerFrame(chest.sprite, container.is_open);
         chest.pos = pos;
       }
       standAt(chest.sprite, pos);
@@ -1735,39 +1759,26 @@ export class BarrowspireScene extends Phaser.Scene {
       }
     });
 
-    // 新增或更新逃脫門
+    // 新增或更新逃脫門 — the baked frame for its state (FS-2325V §C.4)
     escapeDoors.forEach((door) => {
       let escapeDoor = this.escapeDoors.get(door.entity_id);
+      const created = !escapeDoor;
+      const pos = { x: door.position.x, y: door.position.y };
 
       if (!escapeDoor) {
-        // 根據狀態選擇 texture
-        let texture = "escape_door_locked";
-        if (door.is_open) {
-          texture = "escape_door_open";
-        } else if (!door.is_locked) {
-          texture = "escape_door_unlocked";
-        }
-
         // 新增逃脫門
-        const sprite = this.add.sprite(0, 0, texture);
-        escapeDoor = {
-          sprite,
-          entityId: door.entity_id,
-          pos: { x: door.position.x, y: door.position.y },
-        };
+        const sprite = this.add.sprite(0, 0, "escape_door_locked");
+        escapeDoor = { sprite, entityId: door.entity_id, pos };
         this.escapeDoors.set(door.entity_id, escapeDoor);
       } else {
-        // 更新逃脫門狀態
-        let texture = "escape_door_locked";
-        if (door.is_open) {
-          texture = "escape_door_open";
-        } else if (!door.is_locked) {
-          texture = "escape_door_unlocked";
-        }
-        escapeDoor.sprite.setTexture(texture);
-        escapeDoor.pos = { x: door.position.x, y: door.position.y };
+        escapeDoor.pos = pos;
       }
+      // 更新逃脫門狀態: locked, unlocked, open, as the server says
+      const state = door.is_open ? "open" : door.is_locked ? "locked" : "unlocked";
+      showState(escapeDoor.sprite, this.art, "escape_door_x", state, `escape_door_${state}`);
       standAt(escapeDoor.sprite, escapeDoor.pos);
+      // a tall arch: it fades while it stands over the delver (FS-2325V §C.5)
+      if (created) this.occluders.add([escapeDoor.sprite]);
     });
   }
 
@@ -1782,32 +1793,30 @@ export class BarrowspireScene extends Phaser.Scene {
       }
     });
 
-    // 新增或更新開關
+    // 新增或更新開關 — the baked frame for its state (FS-2325V §C.4)
     switches.forEach((switchState) => {
       let switchObj = this.switches.get(switchState.entity_id);
+      const pos = { x: switchState.position.x, y: switchState.position.y };
 
       if (!switchObj) {
         // 新增開關
-        const sprite = this.add.sprite(
-          0,
-          0,
-          switchState.is_activated ? "switch_active" : "switch_inactive",
-        );
-        switchObj = {
-          sprite,
-          entityId: switchState.entity_id,
-          pos: { x: switchState.position.x, y: switchState.position.y },
-        };
+        const sprite = this.add.sprite(0, 0, "switch_inactive");
+        switchObj = { sprite, entityId: switchState.entity_id, pos };
         this.switches.set(switchState.entity_id, switchObj);
       } else {
-        // 更新開關狀態
-        switchObj.sprite.setTexture(
-          switchState.is_activated ? "switch_active" : "switch_inactive",
-        );
-        switchObj.pos = { x: switchState.position.x, y: switchState.position.y };
+        switchObj.pos = pos;
       }
+      // 更新開關狀態
+      const state = switchState.is_activated ? "active" : "inactive";
+      showState(switchObj.sprite, this.art, "switch", state, `switch_${state}`);
       standAt(switchObj.sprite, switchObj.pos);
     });
+  }
+
+  /** A coffer's baked frame for its server state, or the placeholder texture. */
+  private showContainerFrame(sprite: Phaser.GameObjects.Sprite, isOpen: boolean): void {
+    const state = isOpen ? "open" : "closed";
+    showState(sprite, this.art, "chest", state, `chest_${state}`);
   }
 
   private updateWalls(walls: WallState[]): void {
@@ -1821,24 +1830,44 @@ export class BarrowspireScene extends Phaser.Scene {
       }
     });
 
-    // 新增或更新牆壁 — placeholder upright blocks on the projection, one-tile pieces
-    // each sorted by footprint, until baked wall art lands (FS-2325V §C.2)
-    walls.forEach((wallState) => {
-      if (this.walls.has(wallState.entity_id)) return;
-
-      const pieces = addUprightBlock(
-        this,
-        wallState.position.x,
-        wallState.position.y,
-        wallState.width,
-        wallState.height,
-        {
-          top: palette.wall,
-          south: palette.wallShade,
-          east: shade(palette.wall, 0.5),
-          edge: { width: 1, color: palette.wallLight, alpha: 0.6 },
-        },
-      );
+    // 新增或更新牆壁 — baked pieces when the art is there (FS-2325V §C.2)
+    const fresh = walls.filter((w) => !this.walls.has(w.entity_id));
+    const baked = fresh.length > 0 ? addWalls(this, this.art, fresh, worldSeed("run")) : null;
+    if (baked) {
+      this.wallTop = BAKE.WALL_BACK * BAKE.VPX;
+      this.occluders.add(baked.tall);
+      // a back wall's sconce or window lights the ground either way, but its flame
+      // is only in sight while its house's roof is off (the delver is inside)
+      const houseOf = new Map(housesFrom(walls).map((h) => [h.id, h]));
+      const wallHouse = new Map(walls.map((w) => [w.entity_id, w.house_id]));
+      baked.lights.forEach(({ source, wallId, underRoof }) => {
+        const house = houseOf.get(wallHouse.get(wallId) ?? "");
+        this.lightMap?.add(
+          source,
+          underRoof && house
+            ? () => this.currentBuilding?.x === house.x && this.currentBuilding?.y === house.y
+            : undefined,
+        );
+      });
+    }
+    fresh.forEach((wallState) => {
+      const pieces: Phaser.GameObjects.GameObject[] =
+        baked?.byWall.get(wallState.entity_id) ??
+        (baked
+          ? []
+          : addUprightBlock(
+              this,
+              wallState.position.x,
+              wallState.position.y,
+              wallState.width,
+              wallState.height,
+              {
+                top: palette.wall,
+                south: palette.wallShade,
+                east: shade(palette.wall, 0.5),
+                edge: { width: 1, color: palette.wallLight, alpha: 0.6 },
+              },
+            ));
       this.walls.set(wallState.entity_id, { pieces, entityId: wallState.entity_id });
     });
 
@@ -1846,55 +1875,35 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!this.serverBuildingsCreated && walls.length > 0) {
       this.serverBuildingsCreated = true;
 
-      // 按 house_id 分組
-      const houseGroups = new Map<string, WallState[]>();
-      walls.forEach((w) => {
-        if (!w.house_id) return;
-        const group = houseGroups.get(w.house_id) || [];
-        group.push(w);
-        houseGroups.set(w.house_id, group);
-      });
+      const houses = housesFrom(walls);
+      // flagstone under each house, painted into the baked ground (FS-2325V §C.1)
+      this.groundLayer?.paint(houses);
 
-      let buildingIndex = 0;
-      houseGroups.forEach((houseWalls, _houseId) => {
-        // 算出這棟房子的 bounding box
-        let minX = Infinity,
-          minY = Infinity,
-          maxX = -Infinity,
-          maxY = -Infinity;
-        houseWalls.forEach((w) => {
-          minX = Math.min(minX, w.position.x);
-          minY = Math.min(minY, w.position.y);
-          maxX = Math.max(maxX, w.position.x + w.width);
-          maxY = Math.max(maxY, w.position.y + w.height);
-        });
+      houses.forEach((house, buildingIndex) => {
+        const { x: minX, y: minY, width: bw, height: bh } = house;
+        const maxY = minY + bh;
 
-        const bw = maxX - minX;
-        const bh = maxY - minY;
-
-        // 地板 — lies on the ground plane, drawn in world coordinates
-        const floor = this.add.graphics();
-        floor.fillStyle(palette.wallShade, 1);
-        floor.fillRect(minX, minY, bw, bh);
-        floor.lineStyle(1, palette.wallShade, 0.4);
-        for (let tx = minX; tx < maxX; tx += 40) {
-          floor.lineBetween(tx, minY, tx, maxY);
+        // 地板 — only the placeholder floor needs one; baked ground has flagstone
+        if (!this.groundLayer) {
+          const floor = this.add.graphics();
+          floor.fillStyle(palette.wallShade, 1);
+          floor.fillRect(minX, minY, bw, bh);
+          floor.lineStyle(1, palette.wallShade, 0.4);
+          for (let tx = minX; tx < minX + bw; tx += 40) {
+            floor.lineBetween(tx, minY, tx, maxY);
+          }
+          for (let ty = minY; ty < maxY; ty += 40) {
+            floor.lineBetween(minX, ty, minX + bw, ty);
+          }
+          this.groundPlane?.surface.add(floor);
         }
-        for (let ty = minY; ty < maxY; ty += 40) {
-          floor.lineBetween(minX, ty, maxX, ty);
-        }
-        this.groundPlane?.surface.add(floor);
 
-        // 屋頂 — on a plane lifted to the wall tops, sorted by the house's centre:
-        // over a delver behind the house, under one in front of it
-        const roofPlane = addWorldPlane(this, WALL_HEIGHT);
-        roofPlane.root.setDepth(worldDepth(minX + bw / 2, minY + bh / 2));
-        const roof = this.add.graphics();
-        roof.fillStyle(palette.wallShade, 0.97);
-        roof.fillRect(minX - 5, minY - 5, bw + 10, bh + 10);
-        roof.lineStyle(2, palette.wall, 1);
-        roof.strokeRect(minX - 5, minY - 5, bw + 10, bh + 10);
-        roofPlane.surface.add(roof);
+        // 屋頂 — baked slope and ridge pieces, each sorted by its own footprint
+        // (FS-2325V §C.3); without art, the placeholder roof on a lifted plane
+        const roof = addRoof(this, this.art, house) ?? [this.placeholderRoof(house)];
+        this.occluders.add(
+          roof.filter((r): r is Phaser.GameObjects.Sprite => r instanceof Phaser.GameObjects.Sprite),
+        );
 
         // 入口標示（門在下方）— a screen-space marker at the entrance's projection
         const doorMarker = this.add.graphics();
@@ -1923,8 +1932,6 @@ export class BarrowspireScene extends Phaser.Scene {
           ease: "Sine.easeInOut",
         });
 
-        this.outsideObjects.push(roof);
-
         const wallGroup = this.physics.add.staticGroup();
         const door = this.add.graphics();
         door.setDepth(51);
@@ -1940,16 +1947,34 @@ export class BarrowspireScene extends Phaser.Scene {
           doorSide: "bottom",
           wallGroup,
           roof,
-          floor,
           doorMarker,
           door,
           doorCollider,
           isOpen: true,
         };
         this.buildings.push(building);
-        buildingIndex++;
       });
     }
+  }
+
+  /** The pre-art roof: a flat slab on a plane lifted to the wall tops. */
+  private placeholderRoof(house: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }): Phaser.GameObjects.Container {
+    const { x, y, width, height } = house;
+    // sorted by the house's centre: over a delver behind the house, under one in front
+    const roofPlane = addWorldPlane(this, WALL_HEIGHT);
+    roofPlane.root.setDepth(worldDepth(x + width / 2, y + height / 2));
+    const roof = this.add.graphics();
+    roof.fillStyle(palette.wallShade, 0.97);
+    roof.fillRect(x - 5, y - 5, width + 10, height + 10);
+    roof.lineStyle(2, palette.wall, 1);
+    roof.strokeRect(x - 5, y - 5, width + 10, height + 10);
+    roofPlane.surface.add(roof);
+    return roofPlane.root;
   }
 
   private updateDoors(doors: DoorState[]): void {
@@ -1958,7 +1983,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // 移除不存在的門
     this.serverDoors.forEach((door, entityId) => {
       if (!activeEntityIds.has(entityId)) {
-        door.plane.root.destroy();
+        door.sprite?.destroy();
+        door.slab?.plane.root.destroy();
         this.serverDoors.delete(entityId);
       }
     });
@@ -1966,47 +1992,63 @@ export class BarrowspireScene extends Phaser.Scene {
     // 新增或更新門
     doors.forEach((doorState) => {
       let door = this.serverDoors.get(doorState.entity_id);
+      // DoorState carries only is_open, so a shut door shows its unlocked frame: the
+      // baked "locked" frame has no server state to drive it (FS-2325V §0, §C.4).
+      const sheet = doorState.width >= doorState.height ? "door_x" : "door_y";
+      const frame = doorState.is_open ? "open" : "unlocked";
 
       if (!door) {
-        // The slab keeps its world-coordinate rectangle and hinge rotation; the
-        // plane it lies on (lifted to the wall tops) carries the projection.
-        const plane = addWorldPlane(this, WALL_HEIGHT);
         const pos = {
           x: doorState.position.x + doorState.width / 2,
           y: doorState.position.y + doorState.height / 2,
         };
-        plane.root.setDepth(worldDepth(pos.x, pos.y));
-
-        const rect = this.add.rectangle(
-          doorState.position.x,
-          doorState.position.y + doorState.height / 2,
-          doorState.width,
-          doorState.height,
-          palette.wallLight,
-        );
-        rect.setOrigin(0, 0.5);
-        rect.setStrokeStyle(2, palette.wallLight);
-        plane.surface.add(rect);
-
-        door = { rect, plane, entityId: doorState.entity_id, isOpen: false, pos };
-        this.serverDoors.set(doorState.entity_id, door);
-
-        if (doorState.is_open) {
-          door.isOpen = true;
-          rect.setRotation(Math.PI / 2);
+        door = { entityId: doorState.entity_id, isOpen: doorState.is_open, pos };
+        if (this.art.available) {
+          const at = worldToScreen(pos.x, pos.y);
+          door.sprite = artSprite(this, this.art, at.x, at.y, sheet, { animation: frame });
+          // sorted like the wall it stands in: by the back corner of its footprint
+          door.sprite.setDepth(worldDepth(doorState.position.x, doorState.position.y, 1));
+          this.occluders.add([door.sprite]);
+        } else {
+          door.slab = this.placeholderDoor(doorState, pos);
         }
+        this.serverDoors.set(doorState.entity_id, door);
       } else if (door.isOpen !== doorState.is_open) {
         door.isOpen = doorState.is_open;
-        const targetRotation = doorState.is_open ? Math.PI / 2 : 0;
-
-        this.tweens.add({
-          targets: door.rect,
-          rotation: targetRotation,
-          duration: 300,
-          ease: "Power2",
-        });
+        if (door.sprite) showState(door.sprite, this.art, sheet, frame);
+        if (door.slab)
+          this.tweens.add({
+            targets: door.slab.rect,
+            rotation: doorState.is_open ? Math.PI / 2 : 0,
+            duration: 300,
+            ease: "Power2",
+          });
       }
     });
+  }
+
+  /**
+   * The pre-art door: a slab keeping its world-coordinate rectangle and hinge
+   * rotation, on a plane (lifted to the wall tops) that carries the projection.
+   */
+  private placeholderDoor(
+    doorState: DoorState,
+    pos: Point,
+  ): { rect: Phaser.GameObjects.Rectangle; plane: WorldPlane } {
+    const plane = addWorldPlane(this, WALL_HEIGHT);
+    plane.root.setDepth(worldDepth(pos.x, pos.y));
+    const rect = this.add.rectangle(
+      doorState.position.x,
+      doorState.position.y + doorState.height / 2,
+      doorState.width,
+      doorState.height,
+      palette.wallLight,
+    );
+    rect.setOrigin(0, 0.5);
+    rect.setStrokeStyle(2, palette.wallLight);
+    if (doorState.is_open) rect.setRotation(Math.PI / 2);
+    plane.surface.add(rect);
+    return { rect, plane };
   }
 
   private getNearbyDoor(): { entityId: string } | null {
@@ -2969,8 +3011,20 @@ export class BarrowspireScene extends Phaser.Scene {
     this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
     this.cameras.main.setBackgroundColor(palette.mapEdge);
 
-    // the map floor, as a diamond on the projection
-    this.createMapBackground();
+    // Baked art, or placeholders for whatever is missing (FS-2325V "Edge States").
+    this.art = registerArt(this);
+    this.occluders = new Occluders();
+
+    // the map floor, as a diamond on the projection: baked ground tiles when the
+    // manifest has them, the placeholder floor otherwise (FS-2325V §C.1)
+    this.groundLayer = GroundLayer.available(this.art, "run")
+      ? new GroundLayer(this, this.art, {
+          width: this.mapWidth,
+          height: this.mapHeight,
+          kind: "run",
+        })
+      : undefined;
+    if (!this.groundLayer) this.createMapBackground();
 
     // buildings are now created from server wall data in updateWalls()
 
@@ -3730,8 +3784,16 @@ export class BarrowspireScene extends Phaser.Scene {
           (sprite.body as Phaser.Physics.Arcade.Body).setCircle(20, 10, 10);
         }
 
-        // 點擊攻擊
-        sprite.setInteractive();
+        // 點擊攻擊 — hit-tested on the ground they stand on, not their sprite's
+        // bounds (FS-2325V §C.6): the server's collision radius around their
+        // world position
+        sprite.setInteractive({
+          hitArea: {},
+          hitAreaCallback: footprintHitArea(
+            () => this.otherPlayersPos.get(playerData.id) ?? pos,
+            PLAYER_FOOTPRINT_RADIUS,
+          ),
+        });
         sprite.on("pointerdown", () => {
           const me = this.playerPos;
           const them = this.otherPlayersPos.get(playerData.id);
@@ -3959,7 +4021,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private enterBuilding(building: Building): void {
     // 隱藏當前建築屋頂和入口標示
-    building.roof.setVisible(false);
+    building.roof.forEach((part) => part.setVisible(false));
     building.doorMarker.setVisible(false);
 
     // 隱藏所有入口標示
@@ -3975,7 +4037,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private exitBuilding(): void {
     // 顯示所有屋頂和入口標示
     this.buildings.forEach((b) => {
-      b.roof.setVisible(true);
+      b.roof.forEach((part) => part.setVisible(true));
       b.doorMarker.setVisible(true);
     });
 
@@ -3987,7 +4049,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.indoorMask.clear();
 
     // 用黑色填充整個地圖，但挖空建築內部區域 — on the projection the house is its
-    // floor diamond plus its walls standing WALL_HEIGHT above it, so the hole is
+    // floor diamond plus its walls standing `wallTop` above it, so the hole is
     // that hexagon and everything outside it is filled.
     const padding = 5;
     const floor = projectRect(
@@ -3997,7 +4059,7 @@ export class BarrowspireScene extends Phaser.Scene {
       building.height + padding * 2,
     );
     const [, right, bottom, left] = floor;
-    const [topUp, rightUp, , leftUp] = raise(floor, WALL_HEIGHT);
+    const [topUp, rightUp, , leftUp] = raise(floor, this.wallTop);
     const house = [topUp, rightUp, right, bottom, left, leftUp];
 
     // far enough to cover the whole camera range around any house on the map
@@ -4050,17 +4112,14 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Torch-lit barrow atmosphere. Camera-fixed decorative overlays only — a warm
-   * torch pool, a pressing vignette, and a little drifting dust. Reads and
-   * mutates no game state; sits above the world (depth ~900) but beneath the
-   * HUD (depth 1000) and popups (depth 2000). Removing this method would change
-   * nothing about how the game plays.
+   * The run's lighting (FS-2325V §C.7–§C.10): the light-map, lit by the barrow's
+   * dark ambient, every declared light source in view and the delver's torch; the
+   * static vignette and dust above it. Presentation only: it reads and writes no
+   * game state, and removing it changes nothing about how the game plays.
    */
   private createAtmosphere(): void {
-    // Re-entering the scene on reconnect must not stack a second overlay.
-    if (this.torchPool?.scene) return;
-
-    this.torchPool = buildAtmosphere(this).torch;
+    this.lightMap = new LightMap(this, ambientFor("run", this.cameras.main));
+    buildAtmosphere(this);
   }
 
   private showNotification(message: string, color: string): void {
@@ -4172,36 +4231,19 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Keep the torch pool on the delver.
-   *
-   * The pool is camera-locked (`setScrollFactor(0)`), so it is positioned in
-   * SCREEN space: the delver's world position minus the camera scroll. That
-   * matters because the camera lerps at 0.1 and is clamped by `setBounds`, so
-   * its centre is not the delver's position while moving or at a map edge —
-   * the two cases where a torch that sits at the camera centre most obviously
-   * reads as "the screen is dim" rather than "I am carrying a light".
-   *
-   * Reposition only. The overlay is built once in `createAtmosphere()`; this
-   * runs every tick, and allocating here would mean per-frame garbage at 60Hz
-   * for a layer whose shape never changes.
+   * Restamp the light-map and ease the occluders, once per frame. The delver's
+   * torch rides on the delver's drawn position; once they have escaped or died
+   * there is no light to carry, and the pool fades out.
    */
-  private updateTorchPool(): void {
-    const torch = this.torchPool;
-    if (!torch?.scene) return;
-
-    // The delver has escaped or died: there is no light to carry. Fade to the
-    // static vignette rather than tracking a stale position.
-    if (!this.player || !this.player.visible) {
-      if (torch.alpha > 0.01) torch.setAlpha(torch.alpha * 0.92);
-      return;
-    }
-
-    const cam = this.cameras.main;
-    torch.setPosition(this.player.x - cam.scrollX, this.player.y - cam.scrollY);
+  private updateLighting(time: number, delta: number): void {
+    const self = this.player?.visible ? this.player : undefined;
+    this.lightMap?.carry(self ? { x: self.x, y: self.y } : null);
+    this.lightMap?.update(time);
+    this.occluders.update(self ? { bounds: self.getBounds(), depth: self.depth } : null, delta);
   }
 
-  update(): void {
-    this.updateTorchPool();
+  update(time: number, delta: number): void {
+    this.updateLighting(time, delta);
 
     // skip all input/movement if player has escaped
     if (this.player && !this.player.visible) {

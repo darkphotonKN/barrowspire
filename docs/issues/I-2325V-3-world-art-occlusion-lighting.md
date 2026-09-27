@@ -1,6 +1,6 @@
 ---
 id: I-2325V-3
-status: open
+status: done
 implements: FS-2325V
 blocked_by: [I-2325V-1, I-2325V-2]
 labels: [ready-for-agent]

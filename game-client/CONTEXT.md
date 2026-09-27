@@ -76,6 +76,14 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Light source**: a point that lights the light-map (torch, brazier, window, lantern, the
   delver's torch pool). It is declared per prop type in the sprite manifest, or attached to the
   delver. Purely visual: it has no effect on what anyone can see or hit.
+- **Light-map**: the camera-fixed layer that multiplies the lit world: filled each frame with the
+  world's **ambient** (fixed per world type), plus an additive pool per light source in view.
+  Built once and restamped, never rebuilt (`src/render/lighting/`).
+- **Wall piece**: one tile of a server wall as drawn. A server wall rect is cut into wall pieces
+  along its centreline, each sorted by its own footprint, with a **post** at each end. "Back"
+  pieces stand full height (north and west sides); "front" pieces are the low cut-away.
+- **Occluder**: a tall drawn thing (tree, lamp post, back wall piece, roof piece, door, arch) that
+  fades while its sprite overlaps the delver's and its footprint sorts nearer the viewer.
 - **Container view**: the on-screen satchel/coffer panel showing a container's contents. Not the
   same thing as a **container**, which is the WS entity in `containers[]`. Opening the view is
   presentation; clicking an item in it sends exactly the message the item row always sent.

@@ -30,35 +30,21 @@ import {
   type Facing8,
   type Point,
 } from "@/render/iso";
-
-/**
- * Reassembles each building from the walls that belong to it.
- *
- * Every wall carries the id of the building it is part of, so the footprint is
- * the bounding box of its group — no second list of coordinates to drift out of
- * step with the server's.
- */
-function footprintsFrom(
-  walls: WallState[],
-): { x: number; y: number; w: number; h: number }[] {
-  const byBuilding = new Map<string, WallState[]>();
-
-  for (const wall of walls) {
-    if (!wall.house_id) continue;
-    const group = byBuilding.get(wall.house_id) ?? [];
-    group.push(wall);
-    byBuilding.set(wall.house_id, group);
-  }
-
-  return [...byBuilding.values()].map((group) => {
-    const x = Math.min(...group.map((w) => w.position.x));
-    const y = Math.min(...group.map((w) => w.position.y));
-    const right = Math.max(...group.map((w) => w.position.x + w.width));
-    const bottom = Math.max(...group.map((w) => w.position.y + w.height));
-
-    return { x, y, w: right - x, h: bottom - y };
-  });
-}
+import { preloadArt, registerArt } from "@/render/art/phaser";
+import type { ArtLibrary } from "@/render/art/library";
+import { LightMap, ambientFor } from "@/render/lighting";
+import {
+  GroundLayer,
+  Occluders,
+  addProp,
+  addRoof,
+  addWalls,
+  housesFrom,
+  insideHouse,
+  tileHash,
+  worldSeed,
+  type House,
+} from "@/render/world";
 
 /** Falls back to the warrior when a class is missing or unrecognised. */
 function textureFor(playerClass: string | undefined, facing: Facing): string {
@@ -107,6 +93,13 @@ const FENCES: [number, number, number, boolean][] = [
   [1620, 300, 180, true],
   [700, 940, 260, true],
 ];
+/** Lamp posts along the paths: the hub's lit places after dusk (FS-2325V §C.7). */
+const LAMP_POSTS: [number, number][] = [
+  [930, 490],
+  [1090, 490],
+  [690, 650],
+  [1390, 650],
+];
 /** Trodden ground, joining the spawn to the people worth walking to. */
 const PATHS: [number, number, number, number][] = [
   [940, 500, 130, 320],
@@ -123,6 +116,11 @@ const GRASS: [number, number][] = [
   [1240, 700], [1320, 560], [760, 600], [980, 880], [1400, 780],
   [160, 600], [1880, 480], [520, 780], [1000, 300], [900, 660],
 ];
+
+/** The baked trees the hub's tree spots choose between, by a hash of the spot. */
+const TREE_SHEETS = ["tree_oak", "tree_pine", "tree_oak_autumn"];
+/** Seeds the hub's scenery variant picks, so every client plants the same trees. */
+const SCENERY_SEED = 0x5343_4e31;
 
 /** How close a delver stands to talk. Matches the server's NPCInteractRange. */
 const NPC_TALK_RANGE = 80;
@@ -242,8 +240,16 @@ export class HubScene extends Phaser.Scene {
   private interactKey?: Phaser.Input.Keyboard.Key;
   /** Shown while queued, wherever the delver walks. */
   private queuePanel?: Phaser.GameObjects.Text;
-  /** The warm pool the delver carries. Camera-fixed, so positioned in screen space. */
-  private torchPool?: Phaser.GameObjects.Image;
+  /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
+  private art!: ArtLibrary;
+  /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
+  private groundLayer?: GroundLayer;
+  /** FS-2325V §C.7: carries the delver's torch, replacing the overlay pool. */
+  private lightMap?: LightMap;
+  private occluders = new Occluders();
+  /** Each house's roof, hidden while the delver stands inside it (FS-2325V §C.3). */
+  private roofs: { house: House; parts: { setVisible(visible: boolean): unknown }[] }[] = [];
+  private insideRoof?: House;
   private unsubscribeQueue?: () => void;
 
   private unsubscribeState?: () => void;
@@ -251,6 +257,11 @@ export class HubScene extends Phaser.Scene {
 
   constructor() {
     super({ key: "HubScene" });
+  }
+
+  preload(): void {
+    // baked world and prop art (FS-2325V §B.6)
+    preloadArt(this);
   }
 
   create(): void {
@@ -261,13 +272,25 @@ export class HubScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
 
     ensureCharacterTextures(this);
+    this.art = registerArt(this);
+    this.occluders = new Occluders();
 
-    this.drawGround();
+    // Baked ground with dirt paths when the manifest has it (FS-2325V §C.1).
+    this.groundLayer = GroundLayer.available(this.art, "hub")
+      ? new GroundLayer(this, this.art, {
+          width: HUB_WIDTH,
+          height: HUB_HEIGHT,
+          kind: "hub",
+          paths: PATHS.map(([x, y, width, height]) => ({ x, y, width, height })),
+        })
+      : undefined;
+    if (!this.groundLayer) this.drawGround();
     this.bindInput();
 
-    // Dark, never flat: the hub is lit the same way a run is.
-    // docs/design-guideline.md — heavy vignette plus a warm torch pool.
-    this.torchPool = createAtmosphere(this).torch;
+    // Lit like a run, in warm dusk rather than barrow dark (FS-2325V §C.8): the
+    // light-map with the delver's torch, then the vignette and dust above it.
+    this.lightMap = new LightMap(this, ambientFor("hub", this.cameras.main));
+    createAtmosphere(this);
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) =>
       this.renderState(state),
@@ -291,35 +314,48 @@ export class HubScene extends Phaser.Scene {
       this.hearth = undefined;
       this.structuresDrawn = false;
       this.scenery = undefined;
-      this.torchPool = undefined;
+      this.lightMap = undefined;
+      this.groundLayer = undefined;
+      this.roofs = [];
+      this.insideRoof = undefined;
     });
   }
 
-  update(): void {
+  update(time: number, delta: number): void {
     this.sendMovementIntent();
     this.easeTowardServerPositions();
     this.offerConversation();
-    this.carryTheTorch();
+    this.hideRoofOverhead();
+    this.carryTheTorch(time, delta);
   }
 
   /**
-   * Keeps the pool on the delver rather than on the camera.
-   *
-   * The overlay is camera-fixed, so it is positioned in SCREEN space: the
-   * delver's world position minus the camera scroll. That matters because the
-   * camera lerps and is clamped by setBounds, so its centre is not the delver's
-   * position while they are moving or standing at a map edge — the two moments a
-   * torch sitting at the centre reads as "the screen is dim" rather than "I am
-   * carrying a light".
+   * Restamps the light-map with the delver's torch on the delver's drawn
+   * position, and eases whatever stands over them (FS-2325V §C.5, §C.7).
    */
-  private carryTheTorch(): void {
-    const torch = this.torchPool;
+  private carryTheTorch(time: number, delta: number): void {
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
+    const body = self?.sprite.getByName("body") as Phaser.GameObjects.Sprite | null | undefined;
 
-    if (!torch?.scene || !self) return;
+    this.lightMap?.carry(self ? { x: self.sprite.x, y: self.sprite.y } : null);
+    this.lightMap?.update(time);
+    this.occluders.update(
+      self && body ? { bounds: body.getBounds(), depth: self.sprite.depth } : null,
+      delta,
+    );
+  }
 
-    const cam = this.cameras.main;
-    torch.setPosition(self.sprite.x - cam.scrollX, self.sprite.y - cam.scrollY);
+  /**
+   * The roof of the house the delver stands in hides, and returns when they
+   * leave: the run's inside test, on world positions (FS-2325V §C.3). The hub's
+   * houses have no door today, so this waits for one that does.
+   */
+  private hideRoofOverhead(): void {
+    const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
+    const inside = self ? this.roofs.find((r) => insideHouse(self.pos, r.house)) : undefined;
+    if (inside?.house === this.insideRoof) return;
+    this.roofs.forEach((r) => r.parts.forEach((p) => p.setVisible(r !== inside)));
+    this.insideRoof = inside?.house;
   }
 
   /**
@@ -414,7 +450,11 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * Trees, grass and a fire.
+   * Trees, grass and a fire, and the lamp posts that light the paths.
+   *
+   * Baked props where the manifest has them (FS-2325V §C.1, §C.5, §C.7): trees,
+   * bushes, barrels, a brazier on the hearth and lamp posts, the brazier and the
+   * lamps declaring their light. The rest keep their placeholder drawing.
    *
    * All client-side and none of it blocks: anything a delver can walk into is a
    * building, and buildings are server entities so that collision and shape come
@@ -444,18 +484,35 @@ export class HubScene extends Phaser.Scene {
           y - radius <= wall.position.y + wall.height + ROOF_EAVE,
       );
 
-    // trodden paths lie on the ground, under everything else
+    // trodden paths lie on the ground, under everything else; baked ground lays
+    // them as dirt tiles already
     const ground = addWorldPlane(this);
     ground.root.setDepth(2);
     const scenery = this.add.graphics();
     ground.surface.add(scenery);
-    for (const [x, y, w, h] of PATHS) {
+    for (const [x, y, w, h] of this.groundLayer ? [] : PATHS) {
       scenery.fillStyle(BARROW_HEX.barrowBrown, 0.22);
       scenery.fillRect(x, y, w, h);
     }
 
+    const baked = this.art.available;
+    /** A baked prop on a footprint; tall ones fade over the delver, lit ones light. */
+    const place = (sheet: string, at: Point, index: number, tall: boolean) => {
+      const { sprite, light } = addProp(this, this.art, sheet, at, { index });
+      if (tall) this.occluders.add([sprite]);
+      if (light) this.lightMap?.add(light);
+    };
+
+    for (const [x, y] of LAMP_POSTS) {
+      if (baked && !blocked(x, y, 12)) place("lamp_post", { x, y }, 0, true);
+    }
+
     for (const [x, y] of GRASS) {
       if (blocked(x, y, 22)) continue;
+      if (baked) {
+        place("bush", { x, y }, tileHash(x, y, SCENERY_SEED), false);
+        continue;
+      }
 
       // A tuft, not three strokes: blades of varied height leaning slightly
       // apart, with a darker back rank so it reads as depth rather than a comb.
@@ -479,6 +536,11 @@ export class HubScene extends Phaser.Scene {
 
     for (const [x, y] of TREES) {
       if (blocked(x, y - 10, 46)) continue;
+      if (baked) {
+        const pick = tileHash(x, y, SCENERY_SEED);
+        place(TREE_SHEETS[pick % TREE_SHEETS.length], { x, y: y + 34 }, pick >>> 4, true);
+        continue;
+      }
       const prop = this.propAt(x, y + 34);
 
       // roots flaring into the ground, so the trunk sits in the earth rather
@@ -547,6 +609,10 @@ export class HubScene extends Phaser.Scene {
 
     for (const [x, y] of CRATES) {
       if (blocked(x, y, 14)) continue;
+      if (baked) {
+        place("barrel", { x, y }, 0, false);
+        continue;
+      }
       const prop = this.propAt(x, y);
       prop.fillStyle(BARROW_HEX.barrowDeep, 1);
       prop.fillRect(x - 11, y - 11, 22, 22);
@@ -613,6 +679,15 @@ export class HubScene extends Phaser.Scene {
       stall.fillRect(sx - 36, sy - 30, 72, 3);
     });
 
+    this.scenery = scenery;
+
+    // The hearth: a baked brazier whose flame is a light source, or without art
+    // the fire ring with a flickering ember flame.
+    if (baked) {
+      place("brazier", { x: HEARTH[0], y: HEARTH[1] }, 0, true);
+      return;
+    }
+
     // the fire ring, which does not move
     const ring = this.propAt(HEARTH[0], HEARTH[1]);
     ring.fillStyle(BARROW_HEX.slate, 1);
@@ -623,7 +698,6 @@ export class HubScene extends Phaser.Scene {
     ring.fillRect(HEARTH[0] - 16, HEARTH[1] - 3, 32, 6);
     ring.fillRect(HEARTH[0] - 3, HEARTH[1] - 16, 6, 32);
 
-    this.scenery = scenery;
     // the flame stands in the ring, drawn just above it
     this.hearth = this.propAt(HEARTH[0], HEARTH[1], 1);
     this.time.addEvent({ delay: 90, loop: true, callback: () => this.flicker() });
@@ -781,33 +855,54 @@ export class HubScene extends Phaser.Scene {
   private renderStructures(walls: WallState[]): void {
     if (this.structuresDrawn || walls.length === 0) return;
 
-    // Placeholder upright blocks, one-tile pieces each sorted by footprint, until
-    // baked wall art lands (FS-2325V §C.2).
-    for (const wall of walls) {
-      addUprightBlock(this, wall.position.x, wall.position.y, wall.width, wall.height, {
-        top: BARROW_HEX.barrowDeep,
-        south: shade(BARROW_HEX.barrowDeep, 0.3),
-        east: shade(BARROW_HEX.barrowDeep, 0.5),
-        edge: { width: 2, color: BARROW_HEX.barrowBrown, alpha: 0.8 },
+    // Baked wall pieces and corner posts (FS-2325V §C.2); without a manifest,
+    // placeholder upright blocks, one-tile pieces each sorted by footprint.
+    const houses = housesFrom(walls);
+    const baked = addWalls(this, this.art, walls, worldSeed("hub"));
+    if (baked) {
+      this.occluders.add(baked.tall);
+      // a back wall's flame is in sight only while its house's roof is off
+      const houseOf = new Map(walls.map((w) => [w.entity_id, houses.find((h) => h.id === w.house_id)]));
+      baked.lights.forEach(({ source, wallId, underRoof }) => {
+        const house = houseOf.get(wallId);
+        this.lightMap?.add(source, underRoof && house ? () => this.insideRoof === house : undefined);
       });
+    } else {
+      for (const wall of walls) {
+        addUprightBlock(this, wall.position.x, wall.position.y, wall.width, wall.height, {
+          top: BARROW_HEX.barrowDeep,
+          south: shade(BARROW_HEX.barrowDeep, 0.3),
+          east: shade(BARROW_HEX.barrowDeep, 0.5),
+          edge: { width: 2, color: BARROW_HEX.barrowBrown, alpha: 0.8 },
+        });
+      }
     }
 
     // Walls carry the building they belong to, so the footprints can be
     // reassembled here rather than being a second list to keep in step with the
-    // server's. Each roof lies on a plane lifted to the wall tops, sorted by the
-    // centre of its footprint: over a delver behind the house, under one in front.
-    for (const footprint of footprintsFrom(walls)) {
-      const roofPlane = addWorldPlane(this, WALL_HEIGHT);
-      roofPlane.root.setDepth(
-        worldDepth(footprint.x + footprint.w / 2, footprint.y + footprint.h / 2),
-      );
-      const roof = this.add.graphics();
-      roofPlane.surface.add(roof);
-      this.roofOver(roof, footprint);
+    // server's. Flagstone goes under each, and a roof on top: baked slope and
+    // ridge pieces sorted by their own footprints (FS-2325V §C.3), or without art
+    // a placeholder roof on a plane lifted to the wall tops.
+    this.groundLayer?.paint(houses);
+    for (const house of houses) {
+      const roof = addRoof(this, this.art, house);
+      if (roof) this.occluders.add(roof);
+      this.roofs.push({ house, parts: roof ?? [this.placeholderRoof(house)] });
     }
 
     // One flag covers both: the walls and their roofs are drawn together.
     this.structuresDrawn = true;
+  }
+
+  /** The pre-art roof: two shaded slopes on a plane lifted to the wall tops. */
+  private placeholderRoof(house: House): Phaser.GameObjects.Container {
+    const roofPlane = addWorldPlane(this, WALL_HEIGHT);
+    // sorted by the centre of its footprint: over a delver behind the house, under one in front
+    roofPlane.root.setDepth(worldDepth(house.x + house.width / 2, house.y + house.height / 2));
+    const roof = this.add.graphics();
+    roofPlane.surface.add(roof);
+    this.roofOver(roof, { x: house.x, y: house.y, w: house.width, h: house.height });
+    return roofPlane.root;
   }
 
   /**

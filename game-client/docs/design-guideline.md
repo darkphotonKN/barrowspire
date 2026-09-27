@@ -172,7 +172,7 @@ the test above, because most of those things cannot be acted on.
 
 ## Lighting
 
-**With art (FS-2325V §C):**
+**With art (FS-2325V §C, live in hub and run):**
 
 - **Shading is baked into the sprites first**, then a **light-map** lights the scene: a
   camera-fixed multiply layer filled with the world's ambient, with additive radial pools for
@@ -180,8 +180,11 @@ the test above, because most of those things cannot be acted on.
   torch). Sources flicker on their own clocks.
 - **Ambient is fixed per world:** warm dusk in the hub, dark barrow in a run.
 - The static vignette stays, above the light-map and below the HUD.
+- Flame halos draw just above the light-map, so a flame reads as the source of its own pool. A
+  flame under a roof lights the ground around it but shows no halo until the roof is off.
 
-**Before art (live today):** the overlay is the whole of the lighting, and it is two things.
+**Before art (superseded):** the overlay was the whole of the lighting, and it was two things.
+The delver's pool is now a light source on the light-map; the vignette is unchanged.
 
 - A **static vignette** darkens the canvas edges. This does the atmospheric work — the world
   pressing in around the light.
@@ -201,6 +204,11 @@ exactly where a player first sees something enter the frame.
 
 **If atmosphere and readability conflict, the vignette yields.** Reduce its strength or its reach.
 An unreadable hostile is a bug; a slightly less moody screen is not.
+
+**The light-map's ambient yields first** (FS-2325V §C.9). Each world's ambient is lifted toward
+full light until a hostile's glowing eyes at the canvas edge keep at least a third of the
+contrast against the ground that the vignette alone leaves them (`src/render/lighting/`, tested).
+The run's dark barrow is lifted by this rule; the hub's warm dusk already passes.
 
 ---
 
