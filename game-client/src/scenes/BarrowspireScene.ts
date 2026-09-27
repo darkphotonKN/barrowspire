@@ -23,6 +23,7 @@ import {
   ProjectileState,
 } from "@/types/gameState";
 import { EquipmentPanel } from "@/ui/EquipmentPanel";
+import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
 import { GameStateLogger } from "@/utils/gameStateLogger";
 import {
   CANVAS_FONT,
@@ -251,11 +252,8 @@ export class BarrowspireScene extends Phaser.Scene {
   > = new Map();
   private serverBuildingsCreated = false;
 
-  // 寶箱跳窗
-  private chestPopup?: Phaser.GameObjects.Container;
-  private isPopupOpen = false;
-  private openedChestEntityId?: string;
-  private popupItemsText?: Phaser.GameObjects.Text;
+  // 寶箱跳窗: the satchel a coffer opens into (FS-2325V §D)
+  private containerView!: ContainerView;
 
   // 道具欄 + 裝備面板
   private equipmentPanel?: EquipmentPanel;
@@ -273,24 +271,6 @@ export class BarrowspireScene extends Phaser.Scene {
   };
   private inventoryItems: ItemState[] = [];
 
-  // Item row grid system (manual hit testing — Phaser input is broken with scrollFactor 0)
-  private itemRows: {
-    screenRect: { x: number; y: number; w: number; h: number };
-    item: ItemState;
-    label: Phaser.GameObjects.Text;
-    rowBg: Phaser.GameObjects.Graphics;
-    source: "chest";
-  }[] = [];
-  private hoveredRowIndex = -1;
-  private hoveredItemEntityId?: string; // Survives row rebuilds
-  private lastPointerX = 0;
-  private lastPointerY = 0;
-  private itemTooltip?: Phaser.GameObjects.Container;
-  private chestItemFingerprint = "";
-
-  // 當前寶箱的物品（用於 F 鍵取得）
-  private currentChestItems: ItemState[] = [];
-  private chestLootedAtMap = new Map<string, number>(); // entityId → loot 時間戳
   private canAttack = true;
   private canCastSkill = true;
   private projectileSprites: Map<
@@ -1741,9 +1721,9 @@ export class BarrowspireScene extends Phaser.Scene {
       // 如果是打開的寶箱，更新跳窗內容
       if (
         container.is_open &&
-        this.openedChestEntityId === container.entity_id
+        this.containerView.entityId === container.entity_id
       ) {
-        this.updatePopupItems(container.items, container.entity_id);
+        this.containerView.setItems(container.items);
       }
     });
   }
@@ -2073,13 +2053,11 @@ export class BarrowspireScene extends Phaser.Scene {
     });
 
     // 如果是關閉跳窗
-    if (this.isPopupOpen && this.openedChestEntityId === entityId) {
-      this.hideChestPopup();
-      this.openedChestEntityId = undefined;
+    if (this.containerView.entityId === entityId) {
+      this.containerView.close();
     } else {
       // 開啟跳窗
-      this.openedChestEntityId = entityId;
-      this.showChestPopup();
+      this.containerView.open(entityId);
 
       // If container already has items from server state, populate immediately
       const gameState = this.lastGameState;
@@ -2088,7 +2066,7 @@ export class BarrowspireScene extends Phaser.Scene {
           (c) => c.entity_id === entityId,
         );
         if (container && container.is_open && container.items?.length > 0) {
-          this.updatePopupItems(container.items, entityId);
+          this.containerView.setItems(container.items);
         }
       }
     }
@@ -2112,139 +2090,23 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private checkChestDistance(): void {
     const me = this.playerPos;
-    if (!this.player || !me || !this.openedChestEntityId || !this.isPopupOpen) return;
+    const openFor = this.containerView.entityId;
+    if (!this.player || !me || !openFor) return;
 
-    const chest = this.chests.get(this.openedChestEntityId);
-    if (!chest) return;
+    // the coffer vanished from the server's state: nothing left to show
+    const chest = this.chests.get(openFor);
+    if (!chest) {
+      this.containerView.close();
+      return;
+    }
 
     const distance = Phaser.Math.Distance.Between(me.x, me.y, chest.pos.x, chest.pos.y);
 
     const interactDistance = 60;
     if (distance > interactDistance) {
       // Just close popup locally, let backend state control chest visual
-      this.hideChestPopup();
-      this.openedChestEntityId = undefined;
+      this.containerView.close();
     }
-  }
-
-  private showChestPopup(): void {
-    if (this.isPopupOpen) return;
-
-    const centerX = this.cameras.main.width / 2;
-    const centerY = this.cameras.main.height / 2;
-    const popupWidth = 320;
-    const popupHeight = 280;
-
-    const bg = this.add.graphics();
-    bg.fillStyle(palette.ink, 0.9);
-    bg.fillRoundedRect(
-      -popupWidth / 2,
-      -popupHeight / 2,
-      popupWidth,
-      popupHeight,
-      8,
-    );
-    bg.lineStyle(1, palette.frame, 1);
-    bg.strokeRoundedRect(
-      -popupWidth / 2,
-      -popupHeight / 2,
-      popupWidth,
-      popupHeight,
-      8,
-    );
-
-    const title = this.add.text(0, -popupHeight / 2 + 20, "COFFER", {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "18px",
-      color: toCss(palette.frameBright),
-      letterSpacing: 6,
-    });
-    title.setOrigin(0.5);
-
-    // Placeholder for empty/loading state
-    this.popupItemsText = this.add.text(0, 0, "Rummaging...", {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "14px",
-      color: toCss(palette.hudLabel),
-      align: "center",
-    });
-    this.popupItemsText.setOrigin(0.5);
-
-    const hint = this.add.text(
-      0,
-      popupHeight / 2 - 25,
-      "Q Close  //  F Take Item",
-      {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "12px",
-        color: toCss(palette.hudFaint),
-      },
-    );
-    hint.setOrigin(0.5);
-
-    this.chestPopup = this.add.container(centerX, centerY, [
-      bg,
-      title,
-      this.popupItemsText,
-      hint,
-    ]);
-    this.chestPopup.setDepth(1000);
-    this.chestPopup.setScrollFactor(0);
-
-    this.isPopupOpen = true;
-  }
-
-  private updatePopupItems(items: ItemState[], entityId?: string): void {
-    if (!this.chestPopup) return;
-
-    const chestId = entityId || this.openedChestEntityId;
-    if (!chestId) return;
-
-    const now = Date.now();
-
-    // Filter out items that are still pending pickup (sent interact, awaiting server confirmation)
-    const displayItems = items.filter((item) => {
-      const lootedAt = this.chestLootedAtMap.get(item.entity_id);
-      if (lootedAt && now - lootedAt < this.PENDING_DURATION) {
-        return false;
-      }
-      if (lootedAt) {
-        this.chestLootedAtMap.delete(item.entity_id);
-      }
-      return true;
-    });
-
-    this.currentChestItems = displayItems.map((item) => ({ ...item }));
-
-    // Skip rebuild if items haven't changed (prevents hover flicker from game loop)
-    const fingerprint = displayItems.map((i) => i.entity_id).join(",");
-    if (fingerprint === this.chestItemFingerprint) return;
-    this.chestItemFingerprint = fingerprint;
-
-    this.clearItemRows("chest");
-
-    if (displayItems.length === 0) {
-      if (this.popupItemsText) {
-        this.popupItemsText.setText("(Picked clean)");
-        this.popupItemsText.setVisible(true);
-      }
-    } else {
-      if (this.popupItemsText) this.popupItemsText.setVisible(false);
-      this.createItemRows(displayItems, this.chestPopup, -50, "chest");
-    }
-  }
-
-  private hideChestPopup(): void {
-    this.clearItemRows("chest");
-    this.chestItemFingerprint = "";
-    if (this.chestPopup) {
-      this.chestPopup.destroy();
-      this.chestPopup = undefined;
-    }
-    this.popupItemsText = undefined;
-    this.isPopupOpen = false;
-    this.currentChestItems = [];
-    // 不清除 chestLootedAtMap，讓後端確認時自動清除
   }
 
   // === 道具欄功能 ===
@@ -2255,431 +2117,6 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.equipmentPanel.isVisible()) {
       this.equipmentPanel.updateInventory(this.inventoryItems);
       this.equipmentPanel.updateEquipment(this.equippedItems);
-    }
-  }
-
-  // === Item row grid system with manual hit testing ===
-
-  private clearItemRows(source: "chest" | "all"): void {
-    this.hideItemTooltip();
-    this.hoveredRowIndex = -1;
-    const remaining: typeof this.itemRows = [];
-    for (const row of this.itemRows) {
-      if (source === "all" || row.source === source) {
-        row.label.destroy();
-        row.rowBg.destroy();
-      } else {
-        remaining.push(row);
-      }
-    }
-    this.itemRows = remaining;
-  }
-
-  private formatItemLine(item: ItemState): string {
-    const tag = this.getItemStatTag(item);
-    return tag ? `${item.name}  ${tag}` : `${item.name} x${item.quantity}`;
-  }
-
-  private getItemStatTag(item: ItemState): string {
-    if (item.attack_power) return `ATK ${item.attack_power}`;
-    if (item.defense_rating) return `DEF ${item.defense_rating}`;
-    if (item.healing_amount) return `+${item.healing_amount} HP`;
-    if (item.mana_amount) return `+${item.mana_amount} MP`;
-    return "";
-  }
-
-  private createItemRows(
-    items: ItemState[],
-    container: Phaser.GameObjects.Container,
-    startY: number,
-    source: "chest",
-  ): void {
-    const rowHeight = 28;
-    const popupWidth = 320;
-    const rowWidth = popupWidth - 16;
-    const containerX = container.x;
-    const containerY = container.y;
-
-    items.forEach((item, i) => {
-      // localY = top edge of row in container-local coords
-      const rowTop = startY + i * rowHeight;
-      const rowCenterY = rowTop + rowHeight / 2;
-
-      // Row background inside container
-      const rowBg = this.add.graphics();
-      this.drawRowBg(rowBg, i, rowWidth, rowHeight, rowTop, false);
-      container.add(rowBg);
-
-      // Text label centered in row
-      const label = this.add.text(0, rowCenterY, this.formatItemLine(item), {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "13px",
-        color: toCss(palette.hudText),
-      });
-      label.setOrigin(0.5);
-      container.add(label);
-
-      // Screen-space rect for manual hit testing
-      const screenRect = {
-        x: containerX - rowWidth / 2,
-        y: containerY + rowTop,
-        w: rowWidth,
-        h: rowHeight,
-      };
-
-      this.itemRows.push({ screenRect, item, label, rowBg, source });
-    });
-
-    // If we had a hovered item before rebuild, restore hover state
-    if (this.hoveredItemEntityId) {
-      this.restoreHoverState();
-    }
-  }
-
-  /** Restore hover after rows are rebuilt (e.g. item was looted from chest, triggering rebuild) */
-  private restoreHoverState(): void {
-    for (let i = 0; i < this.itemRows.length; i++) {
-      if (this.itemRows[i].item.entity_id === this.hoveredItemEntityId) {
-        this.hoveredRowIndex = i;
-        this.applyRowHover(i);
-        this.showItemTooltip(
-          this.itemRows[i].item,
-          this.lastPointerX,
-          this.lastPointerY,
-        );
-        return;
-      }
-    }
-    // Item no longer exists (was looted etc.)
-    this.hoveredItemEntityId = undefined;
-    this.hoveredRowIndex = -1;
-  }
-
-  private drawRowBg(
-    g: Phaser.GameObjects.Graphics,
-    index: number,
-    rowWidth: number,
-    rowHeight: number,
-    rowTop: number,
-    hovered: boolean,
-  ): void {
-    g.clear();
-    if (hovered) {
-      g.fillStyle(palette.frame, 0.08);
-      g.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, rowHeight, 4);
-      g.lineStyle(1, palette.frame, 0.2);
-      g.strokeRoundedRect(-rowWidth / 2, rowTop, rowWidth, rowHeight, 4);
-    } else {
-      const bgAlpha = index % 2 === 0 ? 0.25 : 0.15;
-      g.fillStyle(palette.hudPanelDeep, bgAlpha);
-      g.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, rowHeight, 4);
-      g.lineStyle(1, palette.frame, 0.06);
-      g.lineBetween(
-        -rowWidth / 2 + 8,
-        rowTop + rowHeight,
-        rowWidth / 2 - 8,
-        rowTop + rowHeight,
-      );
-    }
-  }
-
-  private getRowLocalTop(row: (typeof this.itemRows)[0]): number {
-    return row.screenRect.y - (this.chestPopup?.y ?? 0);
-  }
-
-  private getRowWidth(_row: (typeof this.itemRows)[0]): number {
-    return 320 - 16;
-  }
-
-  private applyRowHover(index: number): void {
-    const row = this.itemRows[index];
-    row.label.setColor(toCss(palette.frameBright));
-    this.drawRowBg(
-      row.rowBg,
-      index,
-      this.getRowWidth(row),
-      row.screenRect.h,
-      this.getRowLocalTop(row),
-      true,
-    );
-  }
-
-  private applyRowUnhover(index: number): void {
-    const row = this.itemRows[index];
-    row.label.setColor(toCss(palette.hudText));
-    this.drawRowBg(
-      row.rowBg,
-      index,
-      this.getRowWidth(row),
-      row.screenRect.h,
-      this.getRowLocalTop(row),
-      false,
-    );
-  }
-
-  private handleItemRowHover(pointerX: number, pointerY: number): void {
-    this.lastPointerX = pointerX;
-    this.lastPointerY = pointerY;
-
-    let foundIndex = -1;
-    for (let i = 0; i < this.itemRows.length; i++) {
-      const { screenRect } = this.itemRows[i];
-      if (
-        pointerX >= screenRect.x &&
-        pointerX <= screenRect.x + screenRect.w &&
-        pointerY >= screenRect.y &&
-        pointerY <= screenRect.y + screenRect.h
-      ) {
-        foundIndex = i;
-        break;
-      }
-    }
-
-    if (foundIndex === this.hoveredRowIndex) {
-      // Same row — just move tooltip
-      if (foundIndex !== -1) {
-        this.moveItemTooltip(pointerX, pointerY);
-      }
-      return;
-    }
-
-    // Unhover previous
-    if (
-      this.hoveredRowIndex !== -1 &&
-      this.hoveredRowIndex < this.itemRows.length
-    ) {
-      this.applyRowUnhover(this.hoveredRowIndex);
-      this.hideItemTooltip();
-    }
-
-    this.hoveredRowIndex = foundIndex;
-    this.hoveredItemEntityId =
-      foundIndex !== -1 ? this.itemRows[foundIndex].item.entity_id : undefined;
-
-    // Hover new
-    if (foundIndex !== -1) {
-      this.applyRowHover(foundIndex);
-      this.showItemTooltip(this.itemRows[foundIndex].item, pointerX, pointerY);
-    }
-  }
-
-  private getItemType(
-    item: ItemState,
-  ): "weapon" | "armor" | "consumable" | "unknown" {
-    if (item.attack_power || item.weapon_type) return "weapon";
-    if (item.defense_rating || item.armor_slot) return "armor";
-    if (item.healing_amount || item.mana_amount) return "consumable";
-    return "unknown";
-  }
-
-  private buildTooltipContent(item: ItemState): {
-    lines: { label: string; value: string; color: string }[];
-    typeLabel: string;
-    typeColor: string;
-  } {
-    const type = this.getItemType(item);
-    const lines: { label: string; value: string; color: string }[] = [];
-
-    switch (type) {
-      case "weapon": {
-        const typeColor = toCss(palette.damageBright);
-        if (item.weapon_type)
-          lines.push({
-            label: "TYPE",
-            value: item.weapon_type.toUpperCase(),
-            color: toCss(palette.hudLabel),
-          });
-        if (item.attack_power)
-          lines.push({
-            label: "ATK",
-            value: `${item.attack_power}`,
-            color: typeColor,
-          });
-        if (item.critical_rate)
-          lines.push({
-            label: "CRIT",
-            value: `${Math.round(item.critical_rate)}%`,
-            color: toCss(palette.torch),
-          });
-        return { lines, typeLabel: "WEAPON", typeColor };
-      }
-      case "armor": {
-        const typeColor = toCss(palette.hostile);
-        if (item.armor_slot)
-          lines.push({
-            label: "SLOT",
-            value: item.armor_slot.toUpperCase(),
-            color: toCss(palette.hudLabel),
-          });
-        if (item.defense_rating)
-          lines.push({
-            label: "DEF",
-            value: `${item.defense_rating}`,
-            color: typeColor,
-          });
-        return { lines, typeLabel: "ARMOR", typeColor };
-      }
-      case "consumable": {
-        const typeColor = toCss(palette.safe);
-        if (item.healing_amount)
-          lines.push({
-            label: "HEAL",
-            value: `+${item.healing_amount} HP`,
-            color: typeColor,
-          });
-        if (item.mana_amount)
-          lines.push({
-            label: "MANA",
-            value: `+${item.mana_amount} MP`,
-            color: toCss(palette.frameBright),
-          });
-        return { lines, typeLabel: "CONSUMABLE", typeColor };
-      }
-      default:
-        return { lines, typeLabel: "ITEM", typeColor: toCss(palette.hudLabel) };
-    }
-  }
-
-  private showItemTooltip(
-    item: ItemState,
-    screenX: number,
-    screenY: number,
-  ): void {
-    this.hideItemTooltip();
-
-    const { lines, typeLabel, typeColor } = this.buildTooltipContent(item);
-    const padding = 14;
-    const tooltipWidth = 220;
-
-    const children: Phaser.GameObjects.GameObject[] = [];
-    let curY = padding;
-
-    // Item name
-    const nameText = this.add.text(padding, curY, item.name, {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "15px",
-      color: toCss(palette.frameBright),
-      fontStyle: "bold",
-    });
-    children.push(nameText);
-    curY += 22;
-
-    // Type badge
-    const typeText = this.add.text(padding, curY, typeLabel, {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "10px",
-      color: typeColor,
-      letterSpacing: 3,
-    });
-    children.push(typeText);
-    curY += 20;
-
-    // Separator line
-    const sep = this.add.graphics();
-    sep.lineStyle(1, palette.frame, 0.15);
-    sep.lineBetween(padding, curY, tooltipWidth - padding, curY);
-    children.push(sep);
-    curY += 10;
-
-    // Stat rows
-    for (const line of lines) {
-      const labelText = this.add.text(padding, curY, line.label, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "12px",
-        color: toCss(palette.hudLabel),
-        letterSpacing: 2,
-      });
-      const valueText = this.add.text(
-        tooltipWidth - padding,
-        curY,
-        line.value,
-        {
-          fontFamily: CANVAS_FONT.body,
-          fontSize: "13px",
-          color: line.color,
-        },
-      );
-      valueText.setOrigin(1, 0);
-      children.push(labelText, valueText);
-      curY += 20;
-    }
-
-    // Description
-    if (item.description) {
-      curY += 6;
-      const descSep = this.add.graphics();
-      descSep.lineStyle(1, palette.frame, 0.1);
-      descSep.lineBetween(padding, curY, tooltipWidth - padding, curY);
-      children.push(descSep);
-      curY += 8;
-      const desc = this.add.text(padding, curY, item.description, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "11px",
-        color: toCss(palette.hudLabel),
-        wordWrap: { width: tooltipWidth - padding * 2 },
-        lineSpacing: 4,
-      });
-      children.push(desc);
-      curY += desc.height;
-    }
-
-    // Quantity (if >1)
-    if (item.quantity > 1) {
-      curY += 6;
-      const qtyText = this.add.text(
-        tooltipWidth - padding,
-        curY,
-        `x${item.quantity}`,
-        {
-          fontFamily: CANVAS_FONT.body,
-          fontSize: "11px",
-          color: toCss(palette.hudLabel),
-        },
-      );
-      qtyText.setOrigin(1, 0);
-      children.push(qtyText);
-      curY += 16;
-    }
-
-    const tooltipHeight = curY + padding;
-
-    // Background (drawn first, inserted at index 0)
-    const bg = this.add.graphics();
-    bg.fillStyle(palette.mapEdge, 0.95);
-    bg.fillRoundedRect(0, 0, tooltipWidth, tooltipHeight, 6);
-    bg.lineStyle(
-      1,
-      typeColor === toCss(palette.hudLabel)
-        ? palette.frameBright
-        : parseInt(typeColor.slice(1), 16),
-      0.4,
-    );
-    bg.strokeRoundedRect(0, 0, tooltipWidth, tooltipHeight, 6);
-    children.unshift(bg);
-
-    this.itemTooltip = this.add.container(screenX + 14, screenY - 10, children);
-    this.itemTooltip.setDepth(2000);
-    this.itemTooltip.setScrollFactor(0);
-
-    // Keep tooltip on screen
-    const cam = this.cameras.main;
-    if (screenX + 14 + tooltipWidth > cam.width) {
-      this.itemTooltip.setX(screenX - tooltipWidth - 8);
-    }
-    if (screenY - 10 + tooltipHeight > cam.height) {
-      this.itemTooltip.setY(screenY - tooltipHeight - 8);
-    }
-  }
-
-  private moveItemTooltip(screenX: number, screenY: number): void {
-    if (!this.itemTooltip) return;
-    this.itemTooltip.setPosition(screenX + 14, screenY - 10);
-  }
-
-  private hideItemTooltip(): void {
-    if (this.itemTooltip) {
-      this.itemTooltip.destroy();
-      this.itemTooltip = undefined;
     }
   }
 
@@ -2747,35 +2184,18 @@ export class BarrowspireScene extends Phaser.Scene {
     }
   }
 
-  private pickupSingleItemFromChest(): void {
-    if (
-      !this.isPopupOpen ||
-      this.currentChestItems.length === 0 ||
-      !this.openedChestEntityId
-    ) {
-      return;
-    }
+  /**
+   * An item taken from the open satchel (icon click or F): the view has already hidden it and
+   * marked its loot pending; tell the server, and hold it in the inventory optimistically.
+   */
+  private lootChestItem(item: ItemState): void {
+    const { action, payload } = lootMessage(item);
+    socketManager.sendMessage(action, payload);
 
-    const item = this.currentChestItems[0];
-
-    socketManager.sendMessage(ActionType.Interact, {
-      entity_id: item.entity_id,
-    });
-
-    // Optimistic update: remove from chest, add to inventory
-    this.currentChestItems = this.currentChestItems.filter(
-      (i) => i.entity_id !== item.entity_id,
-    );
-
-    const now = Date.now();
     this.inventoryItems.push({
       ...item,
-      lootedAt: now,
+      lootedAt: Date.now(),
     });
-
-    this.chestLootedAtMap.set(item.entity_id, now);
-
-    this.updatePopupItems(this.currentChestItems);
 
     if (this.equipmentPanel?.isVisible()) {
       this.equipmentPanel.updateInventory(this.inventoryItems);
@@ -3014,6 +2434,12 @@ export class BarrowspireScene extends Phaser.Scene {
     // Baked art, or placeholders for whatever is missing (FS-2325V "Edge States").
     this.art = registerArt(this);
     this.occluders = new Occluders();
+    this.containerView = new ContainerView(
+      this,
+      this.art,
+      { onLoot: (item) => this.lootChestItem(item) },
+      new ContainerContents(this.PENDING_DURATION),
+    );
 
     // the map floor, as a diamond on the projection: baked ground tiles when the
     // manifest has them, the placeholder floor otherwise (FS-2325V §C.1)
@@ -3086,7 +2512,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // F 鍵從寶箱取得道具
     this.input.keyboard?.on("keydown-F", () => {
-      this.pickupSingleItemFromChest();
+      this.containerView.lootFirst();
     });
 
     // Q 鍵關閉任何打開的彈窗
@@ -3095,10 +2521,7 @@ export class BarrowspireScene extends Phaser.Scene {
         this.equipmentPanel.hide();
         return;
       }
-      if (this.isPopupOpen) {
-        this.hideChestPopup();
-        this.openedChestEntityId = undefined;
-      }
+      this.containerView.close();
     });
 
     // H 鍵顯示/隱藏操作說明
@@ -3106,15 +2529,17 @@ export class BarrowspireScene extends Phaser.Scene {
       this.toggleControlsPanel();
     });
 
-    // Scene-level pointer tracking for item row hover (bypasses broken Phaser scrollFactor input)
+    // Scene-level pointer tracking for satchel hover (bypasses broken Phaser scrollFactor input)
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
-      this.handleItemRowHover(pointer.x, pointer.y);
+      this.containerView.pointerMove(pointer.x, pointer.y);
     });
 
     // Disable browser right-click menu for equipment panel context menus
 
     // 技能攻擊控制 (Left-Click Primary Attack 0 MP // Right-Click Special Skill 10 MP)
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
+      if (this.containerView.pointerDown(pointer.x, pointer.y, pointer.button === 0)) return;
       if (!this.player || !this.playerPos || !this.canCastSkill) return;
       if (this.equipmentPanel?.isVisible()) return;
 
@@ -4340,7 +3765,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.checkBuildingStatus();
 
     // 檢查寶箱距離，太遠自動關閉（只有跳窗開啟時才檢查）
-    if (this.isPopupOpen) {
+    if (this.containerView.isOpen) {
       this.checkChestDistance();
     }
   }
