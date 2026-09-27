@@ -1,6 +1,7 @@
 package listing
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -327,29 +328,36 @@ func (l *Listing) SetWinningBid(bidID uuid.UUID, now time.Time) error {
 	return nil
 }
 
+// bidsLeftAsTheyAre are the statuses LoseAllBids deliberately does not rewrite.
+//
+// CANCELLED means the bidder withdrew and FAILED means their gold was never held:
+// calling either LOST would claim they lost a contest they had already left. LOST
+// itself is here because the rollback is retried without a cap (§Req 12), so
+// re-running it has to be a no-op.
+//
+// Listed by name rather than inferred from the FSM on purpose. Anything NOT named
+// here is expected to have an edge to LOST, and if it does not, LoseAllBids fails
+// loudly instead of quietly leaving that bid behind — which is what a status added
+// later without a rollback decision would otherwise do.
+var bidsLeftAsTheyAre = map[BidStatus]struct{}{
+	BidStatusCancelled: {},
+	BidStatusFailed:    {},
+	BidStatusLost:      {},
+}
+
 // LoseAllBids is marketplace's share of the pre-pivot rollback (FS-NXP1W §Req 12):
 // every bid still in contention becomes LOST, including one step 1a already moved
 // to WON.
-//
-// Bids that already reached a terminal status of their own are left alone —
-// CANCELLED means the bidder withdrew, FAILED means their gold was never held, and
-// rewriting either as LOST would claim they lost a contest they had left. Already
-// LOST is skipped too, which is what makes this idempotent: the rollback is retried
-// without a cap (§Req 12), so it has to survive re-running.
 func (l *Listing) LoseAllBids(now time.Time) error {
 	changed := false
 
 	for _, bid := range l.bids {
-		if bid.status == BidStatusLost {
-			continue
-		}
-
-		if !canBidTransition(bid.status, BidStatusLost) {
+		if _, leaveIt := bidsLeftAsTheyAre[bid.status]; leaveIt {
 			continue
 		}
 
 		if err := bid.transitionTo(BidStatusLost, now); err != nil {
-			return err
+			return fmt.Errorf("lose all bids, bid %v in %v: %w", bid.id, bid.status, err)
 		}
 
 		changed = true

@@ -56,10 +56,11 @@ state needs machinery that does not exist yet, so it is deferred rather than fak
 | listing `SETTLEMENT_FAILED` | no such `ListingStatus` and no CHECK value | I-NXP1W-3 / -7 |
 | item `AVAILABLE` with the seller | 0b FreezeItem does not exist | I-NXP1W-3 |
 | one `settlement_exceptions` row | table does not exist | I-NXP1W-7 |
+| **Req 37** rollback wired for 0a, 0b, 1a, 1b | not wired: the workflow still runs 0a alone | I-NXP1W-5 |
 
-The rollback is also not yet *scheduled*: the workflow still runs 0a alone, and wiring the
-actions into a rollback path is I-NXP1W-5. `UncappedOptions` is the policy they will be
-scheduled under, and it is tested, but nothing calls it yet — wired, unproven until 5 lands.
+Req 37 is inside this issue's anchor and is deliberately not met: wiring the actions into a
+rollback path is I-NXP1W-5. `UncappedOptions` is the policy they will be scheduled under and it
+is tested, but nothing references it yet — declared, not wired.
 
 `SetWinBidFailed` was a pre-written shell whose body was a copy of `MarkSoldListingUC`. Its
 body is now the failure flow it was meant for, and it is named for what it does:

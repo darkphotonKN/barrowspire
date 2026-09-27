@@ -113,6 +113,11 @@ func TestLoseAllBids_IsIdempotentAndLeavesTerminalBidsAlone(t *testing.T) {
 	failed := lastBidID(t, l)
 	require.NoError(t, l.FailBid(failed, now))
 
+	withdrawer := uuid.New()
+	require.NoError(t, l.PlaceBid(withdrawer, 170, uuid.Nil, now))
+	cancelled := lastBidID(t, l)
+	require.NoError(t, l.WithdrawBid(cancelled, withdrawer, now))
+
 	require.NoError(t, l.LoseAllBids(now))
 	first := statusByBidID(t, l)
 
@@ -123,6 +128,7 @@ func TestLoseAllBids_IsIdempotentAndLeavesTerminalBidsAlone(t *testing.T) {
 	assert.Equal(t, first, second, "a re-run changes nothing")
 	assert.Equal(t, BidStatusLost, second[contender])
 	assert.Equal(t, BidStatusFailed, second[failed], "a bid whose gold was never held is not a loser")
+	assert.Equal(t, BidStatusCancelled, second[cancelled], "a bidder who withdrew did not lose")
 }
 
 func lastBidID(t *testing.T, l *Listing) uuid.UUID {
