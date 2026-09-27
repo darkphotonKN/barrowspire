@@ -52,6 +52,7 @@ import {
 } from "@/render/iso";
 import { artSprite, preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
+import { CharacterAnimator } from "@/render/art/character";
 import { LightMap, ambientFor } from "@/render/lighting";
 import {
   BAKE,
@@ -75,6 +76,21 @@ const HP_BAR_DEPTH = 181;
 const CAMERA_MARGIN = 160;
 /** A delver's footprint, in world px: the server's `PlayerRadius`. */
 const PLAYER_FOOTPRINT_RADIUS = 20;
+/** Screen px between the top of a delver's frame and their name label, and their HP bar. */
+const NAME_GAP = 5;
+const HP_BAR_GAP = 10;
+
+/**
+ * The screen y of the top of a delver's frame. The name and HP bar sit a fixed gap above it, so
+ * they clear a 60 px placeholder centred on the footprint and a tall baked sheet stood on its
+ * anchor alike.
+ */
+const crownY = (sprite: { y: number; displayOriginY: number; scaleY: number }) =>
+  sprite.y - sprite.displayOriginY * sprite.scaleY;
+
+/** Health the server already sends, run out: a delver's death clip plays on it. */
+const isDead = (player?: { current_health?: number } | null) =>
+  player?.current_health !== undefined && player.current_health <= 0;
 
 interface Building {
   id: string;
@@ -172,6 +188,12 @@ export class BarrowspireScene extends Phaser.Scene {
   private otherPlayersWalkPhase: Map<string, number> = new Map();
   private playerTexturePrefix: string = "player_warrior";
   private otherPlayersClass: Map<string, string> = new Map();
+  /**
+   * Each delver's baked character sheet (FS-2325V §E.4). When a sheet is not `baked` the delver
+   * keeps its placeholder texture, facing swaps and drawn legs above.
+   */
+  private playerAnim?: CharacterAnimator;
+  private otherPlayersAnim: Map<string, CharacterAnimator> = new Map();
 
   // username labels
   private playerNameText?: Phaser.GameObjects.Text;
@@ -200,6 +222,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // Game state
   private gameStateUnsubscribe?: () => void;
+  private connectionStatusUnsubscribe?: () => void;
   private targetPosition: { x: number; y: number } | null = null;
 
   // 地圖大小
@@ -299,6 +322,87 @@ export class BarrowspireScene extends Phaser.Scene {
 
   constructor() {
     super({ key: "BarrowspireScene" });
+  }
+
+  /**
+   * Phaser reuses this instance when the scene restarts (a reconnect mid-run is a
+   * `world_entered` for the run the delver is already in), so everything a run
+   * builds is forgotten when it stops, and the next start rebuilds it through the
+   * same code path (FS-2325V "Edge States": reconnect mid-run).
+   */
+  init(): void {
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.resetRun, this);
+  }
+
+  /**
+   * Drops every subscription and every reference to the stopped run's world. Phaser
+   * has already destroyed the game objects; what is left here are the maps and flags
+   * that would otherwise make the next start skip building walls, roofs and delvers,
+   * or touch sprites that no longer exist.
+   */
+  private resetRun(): void {
+    this.gameStateUnsubscribe?.();
+    this.gameStateUnsubscribe = undefined;
+    this.connectionStatusUnsubscribe?.();
+    this.connectionStatusUnsubscribe = undefined;
+    socketManager.off("exit_door_unlocked");
+    socketManager.off("interact");
+    socketManager.off("end_game");
+
+    this.player = undefined;
+    this.playerPos = undefined;
+    this.playerLegs = undefined;
+    this.playerHpMpGraphics = undefined;
+    this.playerNameText = undefined;
+    this.playerAnim = undefined;
+    this.playerFacing = "se";
+    this.walkPhase = 0;
+    this.prevLocalPlayerHp = undefined;
+    this.targetPosition = null;
+
+    this.otherPlayers.clear();
+    this.otherPlayersPos.clear();
+    this.otherPlayersEntityIds.clear();
+    this.otherPlayersTargets.clear();
+    this.otherPlayersHpMpGraphics.clear();
+    this.otherPlayersLegs.clear();
+    this.otherPlayersFacing.clear();
+    this.otherPlayersWalkPhase.clear();
+    this.otherPlayersClass.clear();
+    this.otherPlayersAnim.clear();
+    this.otherPlayersNameTexts.clear();
+    this.otherPlayersPrevHp.clear();
+    this.hoveredPlayerId = undefined;
+
+    this.buildings = [];
+    this.currentBuilding = null;
+    this.outsideObjects = [];
+    this.chests.clear();
+    this.escapeDoors.clear();
+    this.switches.clear();
+    this.walls.clear();
+    this.serverDoors.clear();
+    this.serverBuildingsCreated = false;
+    this.projectileSprites.clear();
+    this.groundPlane = undefined;
+    this.groundLayer = undefined;
+    this.lightMap = undefined;
+    this.wallTop = WALL_HEIGHT;
+
+    this.controlsPanel = undefined;
+    this.gameEndOverlay = undefined;
+    this.equipmentPanel = undefined;
+    this.escapedCountText = undefined;
+    this.equippedItems = Object.fromEntries(
+      Object.keys(this.equippedItems).map((slot) => [slot, null]),
+    ) as unknown as EquippedItems;
+    this.inventoryItems = [];
+    this.canAttack = true;
+    this.canCastSkill = true;
+    this.lastGameState = undefined;
+    this.previousEscapeDoorOpened = null;
+    this.previousSwitchActivated = null;
+    this.escapedPlayers.clear();
   }
 
   private toggleControlsPanel(): void {
@@ -692,6 +796,8 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   private createMetalFloorTexture(): void {
+    // textures belong to the game, not the scene: a restarted run already has it
+    if (this.textures.exists("metalFloor")) return;
     const size = 128;
     const canvas = document.createElement("canvas");
     canvas.width = size;
@@ -2259,16 +2365,21 @@ export class BarrowspireScene extends Phaser.Scene {
     standAt(this.player, this.playerPos, 1);
     const at = worldToScreen(x, y);
 
+    // The class's baked sheet, stood on its footprint by the sheet's anchor
+    // (FS-2325V §E.5); the placeholder texture only when the sheet is missing.
+    this.playerAnim = new CharacterAnimator(this.art, effectiveClass, this.playerFacing);
+    if (this.playerAnim.baked) this.playerAnim.dress(this.player);
     // set circular physics body to match backend collision (radius 20), offset for 60x60 texture
-    this.player.body?.setCircle(20, 10, 10);
+    else this.player.body?.setCircle(20, 10, 10);
 
-    // create legs overlay that will follow player
+    // create legs overlay that will follow player; a baked sheet walks on its own legs
     this.playerLegs = this.add.graphics();
     this.playerLegs.setDepth(worldDepth(x, y, 2));
-    this.drawLegs(this.playerLegs, at.x, at.y, this.playerFacing, 0, false, palette.hudLabel);
+    if (!this.playerAnim.baked)
+      this.drawLegs(this.playerLegs, at.x, at.y, this.playerFacing, 0, false, palette.hudLabel);
 
     // username label above player
-    this.playerNameText = this.add.text(at.x, at.y - 35, displayName, {
+    this.playerNameText = this.add.text(at.x, crownY(this.player) - NAME_GAP, displayName, {
       fontSize: "11px",
       fontFamily: CANVAS_FONT.body,
       color: toCss(palette.frameBright),
@@ -2589,6 +2700,8 @@ export class BarrowspireScene extends Phaser.Scene {
           });
           this.playFireballCastEffect(me.x, me.y, target.x, target.y);
         }
+        // the class attack clip rides the same trigger as the effect (FS-2325V §E.4)
+        this.playerAnim?.attack(this.time.now, { x: target.x - me.x, y: target.y - me.y });
 
         this.canCastSkill = false;
         this.time.delayedCall(250, () => {
@@ -2619,6 +2732,7 @@ export class BarrowspireScene extends Phaser.Scene {
           });
           this.playArrowShootEffect(me.x, me.y, target.x, target.y);
         }
+        this.playerAnim?.attack(this.time.now, { x: target.x - me.x, y: target.y - me.y });
 
         this.canCastSkill = false;
         this.time.delayedCall(400, () => {
@@ -2704,7 +2818,7 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     // Subscribe to connection status changes
-    socketManager.onConnectionStatusChange((status) => {
+    this.connectionStatusUnsubscribe = socketManager.onConnectionStatusChange((status) => {
       switch (status) {
         case "connected":
           GameStateLogger.logConnectionStatus(
@@ -2813,7 +2927,7 @@ export class BarrowspireScene extends Phaser.Scene {
       this.prevLocalPlayerHp = curHp;
 
       if (this.player && this.playerHpMpGraphics) {
-        this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, this.player.y, curHp, maxHp, curMp, maxMp);
+        this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, crownY(this.player), curHp, maxHp, curMp, maxMp);
       }
     } else {
       // current_player is null — player has escaped
@@ -3113,10 +3227,11 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
+  /** `top` is the screen y of the delver's frame top ({@link crownY}); the bar sits above it. */
   private drawOverheadHpMpBar(
     g: Phaser.GameObjects.Graphics,
     x: number,
-    y: number,
+    top: number,
     curHp: number,
     maxHp: number,
     curMp: number,
@@ -3128,7 +3243,7 @@ export class BarrowspireScene extends Phaser.Scene {
     const hpH = 4;
     const mpH = 3;
     const startX = Math.round(x - barW / 2);
-    const startY = Math.round(y - 40);
+    const startY = Math.round(top - HP_BAR_GAP);
 
     // Charcoal Border Frame
     g.fillStyle(0x0c0a08, 0.9);
@@ -3173,6 +3288,7 @@ export class BarrowspireScene extends Phaser.Scene {
         }
         this.otherPlayersFacing.delete(playerId);
         this.otherPlayersWalkPhase.delete(playerId);
+        this.otherPlayersAnim.delete(playerId);
 
         // remove name text
         const nameText = this.otherPlayersNameTexts.get(playerId);
@@ -3205,7 +3321,12 @@ export class BarrowspireScene extends Phaser.Scene {
         sprite = this.physics.add.sprite(0, 0, this.facingTexture("other_" + cls, "se"));
         standAt(sprite, pos, 1);
 
-        if (sprite.body) {
+        // Rivals wear their class's sheet, untinted: the name plate tells them apart
+        // (FS-2325V §E.3). The placeholder rival texture only when the sheet is missing.
+        const anim = new CharacterAnimator(this.art, cls);
+        this.otherPlayersAnim.set(playerData.id, anim);
+        if (anim.baked) anim.dress(sprite);
+        else if (sprite.body) {
           (sprite.body as Phaser.Physics.Arcade.Body).setCircle(20, 10, 10);
         }
 
@@ -3232,6 +3353,7 @@ export class BarrowspireScene extends Phaser.Scene {
               enemy_entity_id: entityId,
             });
             this.playAttackEffect(sprite!);
+            this.playerAnim?.attack(this.time.now, { x: them.x - me.x, y: them.y - me.y });
             this.canAttack = false;
             this.time.delayedCall(500, () => {
               this.canAttack = true;
@@ -3248,12 +3370,12 @@ export class BarrowspireScene extends Phaser.Scene {
         this.otherPlayersLegs.set(playerData.id, legs);
         this.otherPlayersFacing.set(playerData.id, "se");
         this.otherPlayersWalkPhase.set(playerData.id, 0);
-        this.drawLegs(legs, sprite.x, sprite.y, "se", 0, false, palette.hudLabel);
+        if (!anim.baked) this.drawLegs(legs, sprite.x, sprite.y, "se", 0, false, palette.hudLabel);
 
         // create name text (hidden until hover)
         const nameText = this.add.text(
           sprite.x,
-          sprite.y - 35,
+          crownY(sprite) - NAME_GAP,
           playerData.username || "Unknown",
           {
             fontSize: "11px",
@@ -3524,8 +3646,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.escapedCountText.setScrollFactor(0);
     this.escapedCountText.setDepth(1000);
 
-    // 每幀更新座標
-    this.events.on("update", () => {
+    // 每幀更新座標 — scene events outlive a shutdown, so the listener goes with it
+    const showPosition = () => {
       if (!this.player) {
         posText.setText("Awaiting the deep...");
         return;
@@ -3533,7 +3655,9 @@ export class BarrowspireScene extends Phaser.Scene {
       const status = this.currentBuilding ? `Indoor` : `Outdoor`;
       const pos = this.playerPos ?? { x: 0, y: 0 };
       posText.setText(`X: ${Math.round(pos.x)} Y: ${Math.round(pos.y)} | ${status}`);
-    });
+    };
+    this.events.on("update", showPosition);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off("update", showPosition));
   }
 
   /**
@@ -3673,7 +3797,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // skip all input/movement if player has escaped
     if (this.player && !this.player.visible) {
       // still update other players smoothly
-      this.updateOtherPlayersSmooth();
+      this.updateOtherPlayersSmooth(time, delta);
       return;
     }
 
@@ -3695,8 +3819,8 @@ export class BarrowspireScene extends Phaser.Scene {
       vy = 1;
     }
 
-    // update player facing and legs
-    if (this.player && this.playerLegs) {
+    // update player facing and legs: the placeholder rig (a baked sheet plays below)
+    if (this.player && this.playerLegs && !this.playerAnim?.baked) {
       const isMoving = vx !== 0 || vy !== 0;
       if (isMoving) {
         // 8-way facing from the world velocity the delver is asking for; the
@@ -3721,7 +3845,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // update player name position and overhead HP/MP bar
     if (this.player && this.playerNameText) {
-      this.playerNameText.setPosition(this.player.x, this.player.y - 35);
+      this.playerNameText.setPosition(this.player.x, crownY(this.player) - NAME_GAP);
     }
     if (this.player && this.playerHpMpGraphics && this.lastGameState?.current_player) {
       const p = this.lastGameState.current_player;
@@ -3729,7 +3853,7 @@ export class BarrowspireScene extends Phaser.Scene {
       const maxHp = p.max_health ?? (p.class === "warrior" ? 150 : 100);
       const curMp = p.current_mana ?? 100;
       const maxMp = p.max_mana ?? 100;
-      this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, this.player.y, curHp, maxHp, curMp, maxMp);
+      this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, crownY(this.player), curHp, maxHp, curMp, maxMp);
     }
 
     // send websocket message for movement
@@ -3759,7 +3883,13 @@ export class BarrowspireScene extends Phaser.Scene {
       this.playerLegs?.setDepth(worldDepth(this.playerPos.x, this.playerPos.y, 2));
     }
 
-    this.updateOtherPlayersSmooth();
+    // the baked sheet plays what the delver is doing, read off the position just drawn
+    if (this.player && this.playerPos && this.playerAnim?.baked) {
+      const dead = isDead(this.lastGameState?.current_player);
+      this.playerAnim.show(this.player, this.playerAnim.step(this.playerPos, time, delta, dead));
+    }
+
+    this.updateOtherPlayersSmooth(time, delta);
 
     // 檢查是否進入/離開建築
     this.checkBuildingStatus();
@@ -3770,7 +3900,7 @@ export class BarrowspireScene extends Phaser.Scene {
     }
   }
 
-  private updateOtherPlayersSmooth(): void {
+  private updateOtherPlayersSmooth(time: number, delta: number): void {
     const lerpFactor = 0.3;
     this.otherPlayers.forEach((sprite, playerId) => {
       const target = this.otherPlayersTargets.get(playerId);
@@ -3784,9 +3914,17 @@ export class BarrowspireScene extends Phaser.Scene {
         pos.y = Phaser.Math.Linear(pos.y, target.y, lerpFactor);
         standAt(sprite, pos, 1);
 
-        // update facing and legs for other players
+        // A rival on a baked sheet walks, idles and dies in it, off the position just
+        // drawn. Their attacks are not known to this client, so they never swing.
+        const anim = this.otherPlayersAnim.get(playerId);
+        if (anim?.baked) {
+          const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
+          anim.show(sprite, anim.step(pos, time, delta, dead));
+        }
+
+        // update facing and legs for other players: the placeholder rig
         const legs = this.otherPlayersLegs.get(playerId);
-        if (legs) {
+        if (legs && !anim?.baked) {
           const deltaX = target.x - prevX;
           const deltaY = target.y - prevY;
           const length = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
@@ -3821,7 +3959,7 @@ export class BarrowspireScene extends Phaser.Scene {
         // update name text position and hover visibility
         const nameText = this.otherPlayersNameTexts.get(playerId);
         if (nameText) {
-          nameText.setPosition(sprite.x, sprite.y - 35);
+          nameText.setPosition(sprite.x, crownY(sprite) - NAME_GAP);
           nameText.setVisible(this.hoveredPlayerId === playerId);
         }
 

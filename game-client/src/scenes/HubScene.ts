@@ -32,6 +32,7 @@ import {
 } from "@/render/iso";
 import { preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
+import { CharacterAnimator } from "@/render/art/character";
 import { LightMap, ambientFor } from "@/render/lighting";
 import {
   GroundLayer,
@@ -65,6 +66,11 @@ const HUB_HEIGHT = 1000;
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = 64;
 const PLAYER_RADIUS = 20;
+/**
+ * Screen px from the top of a delver's frame to the middle of their name label: a 60 px preview
+ * centred on the footprint keeps its label at -34, where it always was.
+ */
+const NAME_GAP = 4;
 /** How hard sprites chase the server's position each frame. Matches the run scene. */
 const POSITION_LERP = 0.3;
 /** Stride advance per server tick, matching the run scene. */
@@ -187,6 +193,11 @@ interface DelverView {
   facing: Facing8;
   walkPhase: number;
   moving: boolean;
+  /**
+   * The class's baked sheet (FS-2325V §E.4). When it is not `baked`, the placeholder texture,
+   * facing swaps and drawn legs above stand in.
+   */
+  anim: CharacterAnimator;
 }
 
 /**
@@ -323,7 +334,7 @@ export class HubScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     this.sendMovementIntent();
-    this.easeTowardServerPositions();
+    this.easeTowardServerPositions(time, delta);
     this.offerConversation();
     this.hideRoofOverhead();
     this.carryTheTorch(time, delta);
@@ -402,7 +413,7 @@ export class HubScene extends Phaser.Scene {
    * that jumps is worse still. So sprites ease toward the last known position
    * instead, the same way the run scene does.
    */
-  private easeTowardServerPositions(): void {
+  private easeTowardServerPositions(time: number, delta: number): void {
     // Easing happens in world space; the projection is applied only to draw.
     for (const npc of this.npcs.values()) {
       easeToward(npc.pos, npc.target);
@@ -414,6 +425,14 @@ export class HubScene extends Phaser.Scene {
 
       easeToward(pos, target);
       standAt(sprite, pos, 1);
+
+      // A baked sheet walks and idles on its own legs, read off the position just
+      // drawn; the hub has no attacks and no deaths.
+      if (view.anim.baked) {
+        const body = sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+        if (body) view.anim.show(body, view.anim.step(pos, time, delta, false));
+        continue;
+      }
 
       // Legs follow the eased sprite rather than the raw server position, and
       // sit just beneath the body on the same footprint.
@@ -811,6 +830,8 @@ export class HubScene extends Phaser.Scene {
    * facing — so the stride is animated by drawing legs, the same as in a run.
    */
   private updateAppearance(view: DelverView, player: PlayerState): void {
+    // a baked sheet is turned and strided each frame instead (easeTowardServerPositions)
+    if (view.anim.baked) return;
     const { vx, vy } = player.direction ?? { vx: 0, vy: 0 };
 
     view.moving = vx !== 0 || vy !== 0;
@@ -1163,10 +1184,18 @@ export class HubScene extends Phaser.Scene {
     // player picked is the delver they see.
     const body = this.add.sprite(0, 0, textureFor(player.class, "down"));
     body.setName("body");
-    if (!isSelf) body.setTint(BARROW_HEX.vellumDark);
 
+    // The class's baked sheet, stood on its footprint by the sheet's anchor
+    // (FS-2325V §E.5), others untinted as rivals are in a run (§E.3); the preview
+    // texture, others dimmed, only when the sheet is missing.
+    const anim = new CharacterAnimator(this.art, player.class);
+    if (anim.baked) anim.dress(body);
+    else if (!isSelf) body.setTint(BARROW_HEX.vellumDark);
+
+    // over the frame's top: a 60 px preview centred on the footprint puts it where it
+    // always was, a tall sheet stood on its feet puts it over the head
     const name = this.add
-      .text(0, -PLAYER_RADIUS - 14, player.username, {
+      .text(0, -body.displayOriginY - NAME_GAP, player.username, {
         fontFamily: "var(--font-body), serif",
         fontSize: "12px",
         color: "#cdbf9a",
@@ -1190,6 +1219,7 @@ export class HubScene extends Phaser.Scene {
       facing: "se",
       walkPhase: 0,
       moving: false,
+      anim,
     });
   }
 }
