@@ -3,6 +3,22 @@ import { EquipmentPanel } from "@/ui/EquipmentPanel";
 import { ItemState, EquippedItems, EquipmentSlot } from "@/types/gameState";
 import { apiClient } from "@/utils/api";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
+import { useGameStore } from "@/stores/gameStore";
+import { CLASS_LORE, type ClassKey } from "@/data/classLore";
+import { registerArt } from "@/render/art/phaser";
+import { MenuFigure, preloadMenuArt } from "@/render/art/menuFigure";
+import {
+  buttonTextColor,
+  drawBackdrop,
+  drawButton,
+  drawRule,
+  sharpenText,
+  type ButtonState,
+} from "@/ui/menuChrome";
+
+/** The delver beside the equipment panel: its baked sheet at 1x, in the left margin. */
+const HERO_X = 80;
+const HERO_FEET_Y = 420;
 
 // Map client-side EquipmentSlot UI names → backend canonical slot names.
 // Client uses body/hands/feet (visual body regions), backend uses
@@ -45,44 +61,20 @@ export class LoadoutScene extends Phaser.Scene {
     super({ key: "LoadoutScene" });
   }
 
+  preload(): void {
+    preloadMenuArt(this);
+  }
+
   create(): void {
-    // Make all text created in this scene sharp on high-DPI displays.
-    // Canvas is 1080x720 but Retina renders at 2x — text normally gets
-    // hardware-upscaled and blurs. setResolution tells Phaser to rasterize
-    // text at devicePixelRatio internally, then display at logical size.
-    const origAddText = this.add.text.bind(this.add);
-    this.add.text = ((
-      x: number,
-      y: number,
-      text: string | string[],
-      style?: Phaser.Types.GameObjects.Text.TextStyle,
-    ) => {
-      const t = origAddText(x, y, text, style);
-      t.setResolution(window.devicePixelRatio || 1);
-      return t;
-    }) as typeof this.add.text;
+    // Text rasterised at the display's pixel ratio, so it stays sharp under linear filtering.
+    sharpenText(this);
 
-    const { width, height } = this.cameras.main;
+    const { width } = this.cameras.main;
 
-    // Background
-    this.cameras.main.setBackgroundColor(toCss(palette.ink));
+    // Charcoal with drifting dust and embers; no pixel grid.
+    drawBackdrop(this, 80);
 
-    // Star field
-    const stars = this.add.graphics();
-    for (let i = 0; i < 80; i++) {
-      const x = Phaser.Math.Between(0, width);
-      const y = Phaser.Math.Between(0, height);
-      const size = Math.random() < 0.1 ? 2 : 1;
-      const alpha = Phaser.Math.FloatBetween(0.1, 0.4);
-      stars.fillStyle(palette.hudText, alpha);
-      stars.fillRect(x, y, size, size);
-    }
-
-    // Subtle grid
-    const grid = this.add.graphics();
-    grid.lineStyle(1, palette.frame, 0.03);
-    for (let x = 0; x <= width; x += 40) grid.lineBetween(x, 0, x, height);
-    for (let y = 0; y <= height; y += 40) grid.lineBetween(0, y, width, y);
+    this.createHero();
 
     // Title
     const title = this.add.text(width / 2, 30, "LOADOUT", {
@@ -109,25 +101,31 @@ export class LoadoutScene extends Phaser.Scene {
 
     // Accent line
     const accent = this.add.graphics();
-    accent.lineStyle(1, palette.frame, 0.2);
-    accent.lineBetween(width * 0.15, 72, width * 0.85, 72);
+    drawRule(accent, width * 0.15, width * 0.85, 72, 0.3);
 
     // Back button
     const backBtnX = 70;
     const backBtnY = 30;
     const backBg = this.add.graphics();
-    backBg.fillStyle(palette.hudPanelDeep, 0.8);
-    backBg.fillRoundedRect(backBtnX - 50, backBtnY - 14, 100, 28, 4);
-    backBg.lineStyle(1, palette.safe, 0.4);
-    backBg.strokeRoundedRect(backBtnX - 50, backBtnY - 14, 100, 28, 4);
-
     const backText = this.add.text(backBtnX, backBtnY, "BACK", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "12px",
-      color: toCss(palette.safe),
       letterSpacing: 3,
     });
     backText.setOrigin(0.5);
+    const drawBack = (state: ButtonState) => {
+      drawButton(
+        backBg,
+        backBtnX - 50,
+        backBtnY - 14,
+        100,
+        28,
+        "cancel",
+        state,
+      );
+      backText.setColor(toCss(buttonTextColor("cancel", state)));
+    };
+    drawBack("idle");
 
     const backHit = this.add.rectangle(
       backBtnX,
@@ -138,20 +136,8 @@ export class LoadoutScene extends Phaser.Scene {
       0,
     );
     backHit.setInteractive({ useHandCursor: true });
-    backHit.on("pointerover", () => {
-      backBg.clear();
-      backBg.fillStyle(palette.mapEdge, 0.9);
-      backBg.fillRoundedRect(backBtnX - 50, backBtnY - 14, 100, 28, 4);
-      backBg.lineStyle(1, palette.safe, 0.7);
-      backBg.strokeRoundedRect(backBtnX - 50, backBtnY - 14, 100, 28, 4);
-    });
-    backHit.on("pointerout", () => {
-      backBg.clear();
-      backBg.fillStyle(palette.hudPanelDeep, 0.8);
-      backBg.fillRoundedRect(backBtnX - 50, backBtnY - 14, 100, 28, 4);
-      backBg.lineStyle(1, palette.safe, 0.4);
-      backBg.strokeRoundedRect(backBtnX - 50, backBtnY - 14, 100, 28, 4);
-    });
+    backHit.on("pointerover", () => drawBack("hover"));
+    backHit.on("pointerout", () => drawBack("idle"));
     backHit.on("pointerdown", () => this.returnToMenu());
 
     // ESC to return
@@ -190,6 +176,42 @@ export class LoadoutScene extends Phaser.Scene {
     this.loadData();
 
     // Disable default right-click context menu
+  }
+
+  /**
+   * The delver being geared, as its class's baked sheet on a lit plinth, turning (FS-2325V §F.1):
+   * the same sheet that walks in the hub and the run. Falls back to the placeholder with no art.
+   */
+  private createHero(): void {
+    const active = useGameStore.getState().getActiveCharacter();
+    const cls = (active?.className || "warrior").toLowerCase();
+    new MenuFigure(this, registerArt(this), HERO_X, HERO_FEET_Y, cls);
+
+    const lore = CLASS_LORE[cls as ClassKey];
+    const label = active?.name
+      ? active.name.toUpperCase()
+      : (lore?.name ?? cls.toUpperCase());
+    const name = this.add
+      .text(HERO_X, HERO_FEET_Y + 52, label, {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "12px",
+        color: toCss(palette.frameBright),
+        letterSpacing: 2,
+        align: "center",
+        wordWrap: { width: 140 },
+      })
+      .setOrigin(0.5, 0);
+    if (lore)
+      this.add
+        .text(HERO_X, name.y + name.height + 4, lore.title, {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: "9px",
+          color: toCss(palette.hudLabel),
+          letterSpacing: 2,
+          align: "center",
+          wordWrap: { width: 140 },
+        })
+        .setOrigin(0.5, 0);
   }
 
   private async loadData(): Promise<void> {
