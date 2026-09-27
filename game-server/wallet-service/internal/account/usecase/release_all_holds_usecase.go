@@ -2,9 +2,11 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/domain/account"
 	"github.com/google/uuid"
 )
@@ -16,6 +18,10 @@ import (
 // different bidders, so each is a separate account loaded and saved under its own
 // optimistic-concurrency check. A bid whose hold is already released is skipped by
 // the domain, which is what lets the whole step be re-run.
+//
+// A bid with no hold at all is also nothing to release, not a failure — see
+// releaseOne. That distinction is load-bearing: this step is retried without a cap,
+// so an error it can never get past does not fail the rollback, it wedges it.
 type ReleaseAllHoldsUC struct {
 	repo account.Repository
 }
@@ -47,6 +53,16 @@ func (uc *ReleaseAllHoldsUC) releaseOne(ctx context.Context, bidID uuid.UUID, no
 	// retry due to optimistic concurrency (OCC)
 	return withRetry(ctx, func() error {
 		acc, err := uc.repo.FindByBidID(ctx, bidID)
+
+		// No hold for this bid, so there is nothing to give back. A bid whose gold
+		// was never held is ordinary input here: the rollback releases every bid on
+		// the listing, and a FAILED bid is one wallet refused to hold for in the
+		// first place. Treating it as an error would be unrecoverable rather than
+		// merely wrong — the step retries without a deadline, so it would never
+		// finish, and the bidders who DO have gold reserved would never get it back.
+		if errors.Is(err, commonconstants.ErrNotFound) {
+			return nil
+		}
 
 		if err != nil {
 			return fmt.Errorf("FindByBidID: %w", err)

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/domain/account"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/usecase"
 	"github.com/google/uuid"
@@ -33,7 +34,9 @@ func (f *multiAccountRepo) FindByBidID(ctx context.Context, bidID uuid.UUID) (*a
 
 	acc, ok := f.byBid[bidID]
 	if !ok {
-		return nil, errors.New("no account for bid")
+		// what the real repository returns: WrapDBErr maps sql.ErrNoRows from the
+		// wallet_holds lookup onto this sentinel
+		return nil, commonconstants.ErrNotFound
 	}
 
 	return acc, nil
@@ -110,4 +113,28 @@ func TestReleaseAllHoldsUC_FailureNamesTheBidItStoppedOn(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), bidID.String())
+}
+
+// A bid whose gold was never held has no wallet_holds row at all — FailBidUC exists
+// for exactly that outcome. The rollback releases every bid on the listing, so such a
+// bid is ordinary input, not corruption.
+//
+// This is the case that makes the step's uncapped retry dangerous rather than safe: a
+// lookup that can never succeed, retried without a deadline, wedges the rollback
+// forever and leaves the other bidders' gold reserved — the outcome uncapped retry was
+// chosen to prevent.
+func TestReleaseAllHoldsUC_BidWithNoHold_IsNothingToRelease(t *testing.T) {
+	held, neverHeld := uuid.New(), uuid.New()
+	repo := &multiAccountRepo{byBid: map[uuid.UUID]*account.Account{
+		held: accountHolding(t, held),
+	}}
+
+	err := usecase.NewReleaseAllHoldsUC(repo).Handle(context.Background(), &usecase.ReleaseAllHoldsCommand{
+		BidIDs: []uuid.UUID{held, neverHeld},
+		Now:    time.Now(),
+	})
+
+	require.NoError(t, err, "the rollback must complete, not retry a lookup that can never succeed")
+	assert.Equal(t, account.StatusReleased, repo.byBid[held].Snapshot().WalletHolds[0].Status,
+		"the holds that do exist still go back")
 }
