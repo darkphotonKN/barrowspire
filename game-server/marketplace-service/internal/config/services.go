@@ -10,7 +10,6 @@ import (
 	listinggrpc "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/grpc"
 	listingquery "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/query"
 	listingrepo "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/repository"
-	listingtemporal "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/temporal"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/worker"
 	"github.com/jmoiron/sqlx"
@@ -22,7 +21,6 @@ import (
 
 type Services struct {
 	ListingHandler          *listinggrpc.Handler
-	ListingActivity         *listingtemporal.Activity
 	ReconcileReservationsUC *usecase.ReconcileReservationsUC
 	// Activities are the settlement steps marketplace owns, registered on its
 	// Temporal worker in main.
@@ -44,10 +42,6 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	hasActiveListingQuery := listingquery.NewHasActiveListingQuery(db)
 	reconcileReservationsUC := usecase.NewReconcileReservationsUC(hasActiveListingQuery, itemReserver)
 
-	// activity
-	freezeListingUC := usecase.NewFreezeListingUC(listingRepo)
-	freezeListingActivity := listingtemporal.NewActivity(freezeListingUC)
-
 	// NOTE: the listing domain (model/repository/service/handler + proto) is
 	// intentionally left empty for now. This service only boots the server and
 	// its amqp consumer. Wire the domain + pb.RegisterMarketplaceServiceServer
@@ -62,13 +56,13 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	// start goroutine and listen to events from message broker
 	consumer.Listen(ctx)
 
+	freezeListingUC := usecase.NewFreezeListingUC(listingRepo)
 	setWinningBidUC := usecase.NewSetWinningBidUC(listingRepo)
 	setWinBidFailedUC := usecase.NewSetWinBidFailedUC(listingRepo)
-	activities := listingactivity.NewActivities(setWinningBidUC, setWinBidFailedUC)
+	activities := listingactivity.NewActivities(freezeListingUC, setWinningBidUC, setWinBidFailedUC)
 
 	return &Services{
 		ListingHandler:          listingHandler,
-		ListingActivity:         freezeListingActivity,
 		ReconcileReservationsUC: reconcileReservationsUC,
 		Activities:              activities,
 	}

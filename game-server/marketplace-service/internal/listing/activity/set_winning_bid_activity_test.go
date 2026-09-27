@@ -26,11 +26,13 @@ func (s *stubSetWinningBid) Handle(ctx context.Context, cmd usecase.SetWinningBi
 }
 
 // newEnv registers the activities exactly as the worker does, so the tests
-// schedule 1a by its contract name rather than by a Go function reference.
+// schedule 1a by its contract name rather than by a Go function reference. The
+// steps this test does not exercise are left nil: reaching one would be a
+// registration bug, and a nil panic says so louder than a stub returning nil.
 func newEnv(uc SetWinningBid) *testsuite.TestActivityEnvironment {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestActivityEnvironment()
-	NewActivities(uc, nil).Register(env)
+	NewActivities(nil, uc, nil).Register(env)
 	return env
 }
 

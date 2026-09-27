@@ -1,44 +1,29 @@
-package temporal
+package activity
 
 import (
 	"context"
 	"errors"
-
-	"go.temporal.io/sdk/activity"
-	"go.temporal.io/sdk/worker"
 
 	"go.temporal.io/sdk/temporal"
 
 	commonactivity "github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	commonerr "github.com/darkphotonKN/barrowspire-server/common/apperr"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
-	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/dto"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 )
 
-// INBOUND ADAPTER for temporal
-type Activity struct {
-	freezeListingWriter FreezeListingWriter
-}
-
-func NewActivity(freezeListingWriter FreezeListingWriter) *Activity {
-	return &Activity{
-		freezeListingWriter: freezeListingWriter,
-	}
-}
-
-type FreezeListingWriter interface {
-	Handle(ctx context.Context, cmd usecase.FreezelistingCommand) (*dto.FreezeListingDto, error)
-}
-
-func (a *Activity) FreezeListing(ctx context.Context, inp commonactivity.FreezeListingInput) (commonactivity.FreezeListingOutput, error) {
+// FreezeListing is settlement step 0a: the listing stops accepting bids and the
+// winner is selected in the same transaction. Unlike the steps after it, this one
+// classifies its own failures, because the workflow branches on the outcome —
+// no bids is a legitimate ending, not an error.
+func (a *Activities) FreezeListing(ctx context.Context, inp commonactivity.FreezeListingInput) (commonactivity.FreezeListingOutput, error) {
 	// call freeze listing uc to attempt to freeze listing
-	res, err := a.freezeListingWriter.Handle(ctx, usecase.FreezelistingCommand{
+	res, err := a.freezeListing.Handle(ctx, usecase.FreezelistingCommand{
 		ListingID: inp.ListingID,
 	})
 
 	if err != nil {
-		return commonactivity.FreezeListingOutput{}, a.classifyFreezeErr(err)
+		return commonactivity.FreezeListingOutput{}, classifyFreezeErr(err)
 	}
 
 	out := commonactivity.FreezeListingOutput{
@@ -66,7 +51,7 @@ func (a *Activity) FreezeListing(ctx context.Context, inp commonactivity.FreezeL
 
 const freezeListingImpossible = "FreezeListingImpossible"
 
-func (a *Activity) classifyFreezeErr(err error) error {
+func classifyFreezeErr(err error) error {
 	switch {
 	case errors.Is(err, listing.ErrInvalidListingState),
 		errors.Is(err, listing.ErrCorruptListingState),
@@ -79,13 +64,4 @@ func (a *Activity) classifyFreezeErr(err error) error {
 	default:
 		return err // plain error, Temporal retries
 	}
-}
-
-// Register wires this adapter's activities onto a worker. The name comes from
-// the shared contract, never from the Go method name: the workflow schedules by
-// string, so a rename here would silently stop matching.
-func (a *Activity) Register(w worker.Worker) {
-	w.RegisterActivityWithOptions(a.FreezeListing, activity.RegisterOptions{
-		Name: commonactivity.FreezeListingActivityName,
-	})
 }

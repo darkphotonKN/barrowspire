@@ -116,10 +116,7 @@ func main() {
 		smoke.RegisterWorkflow,
 		smoke.RegisterActivity,
 
-		// settlement saga 0a: freeze listing
-		services.ListingActivity.Register,
-
-		// the workflow
+		// the workflow and every settlement activity marketplace owns
 		settlement.Register,
 		func(w worker.Worker) { services.Activities.Register(w) },
 	)
