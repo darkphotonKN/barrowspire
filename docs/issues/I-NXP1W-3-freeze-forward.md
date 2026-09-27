@@ -68,3 +68,18 @@ Close it where the state lives, not with a `WON` check in every bid method:
   further change.
 - `SetWinningBid` refuses a listing that is still `ACTIVE`, so `WON` can only exist on a
   frozen listing.
+
+## Carried from the listing-status audit
+
+The listing statuses were reconciled with the specs ahead of this slice: on-sale is now `ACTIVE`
+(it was `LISTED`, which is the item's word — ADR-0017), `DRAFT` is gone, and `CANCELLED` /
+`EXPIRED` no longer violate the CHECK. Migration 000005. Two things that audit found are this
+slice's to close:
+
+- **`SETTLEMENT_FAILED` exists nowhere yet** — not in `ListingStatus`, not in the CHECK. Req 20
+  wants it; add it with the rollback that writes it (here or I-NXP1W-7), not before.
+- **The listing FSM is mostly bypassed.** `Cancel()` and `MarkSold()` assign `l.status` directly;
+  only `FreezeListing` goes through `transitionTo`. So `listing_fsm.go`'s table is not the
+  authority it looks like — 0a is the first step that actually relies on it, which makes this the
+  slice that has to decide whether every mutator routes through it. Related: that `transitionTo`
+  returns `ErrInvalidHoldTransition`, a sentinel copied from wallet.

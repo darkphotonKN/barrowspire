@@ -37,3 +37,18 @@ I-NXP1W-4 (the pivot), I-NXP1W-7 (the helper).
 
 FS-NXP1W §Requirements 9, 13, 33 (step 6), 38; Edge States: MarkSold finds a
 non-PENDING_SETTLEMENT listing.
+
+## Carried from the listing-status audit
+
+`MarkSold()` and the FSM currently contradict each other, so the rework above is not just
+find-then-save → conditional write:
+
+- `MarkSold()` guards on `status == ACTIVE` (it was `LISTED` before migration 000005) and then
+  assigns `SOLD` directly, bypassing `transitionTo`.
+- `listing_fsm.go`'s table allows `PENDING_SETTLEMENT → SOLD` and does **not** allow
+  `ACTIVE → SOLD`.
+
+Req 33 wants the FSM's version: `PENDING_SETTLEMENT → SOLD`. So the guard is the part that is
+wrong, and going through `transitionTo` would have caught it. `MarkSold` also still requires
+`endsAt` to have passed and re-validates `soldPrice` — decide which of those settlement still
+owns once the winning bid is the source of the price.
