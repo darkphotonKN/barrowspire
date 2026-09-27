@@ -110,6 +110,10 @@ func (m *MockItemsClient) GetLoadoutWithItems(ctx context.Context, req *itemspb.
 	return &itemspb.GetLoadoutWithItemsResponse{}, nil
 }
 
+func (m *MockItemsClient) ListItemRarities(ctx context.Context) (*itemspb.ListItemRaritiesResponse, error) {
+	return nil, nil
+}
+
 func (m *MockItemsClient) ListItemInstances(ctx context.Context, req *itemspb.ListItemInstancesRequest) (*itemspb.ListItemInstancesResponse, error) {
 	return &itemspb.ListItemInstancesResponse{}, nil
 }

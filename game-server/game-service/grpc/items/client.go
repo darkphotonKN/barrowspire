@@ -39,6 +39,17 @@ func (c *Client) ListItemTemplates(ctx context.Context) (*pb.ListItemTemplatesRe
 	return items, err
 }
 
+// ListItemRarities lists the rarity tiers loot rolls against
+func (c *Client) ListItemRarities(ctx context.Context) (*pb.ListItemRaritiesResponse, error) {
+	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to items service: %w", err)
+	}
+	defer conn.Close()
+
+	return pb.NewItemsServiceClient(conn).ListItemRarities(ctx, &emptypb.Empty{})
+}
+
 // CreateWeapon creates a new weapon
 func (c *Client) CreateWeapon(ctx context.Context, req *pb.CreateWeaponRequest) (*pb.Weapon, error) {
 	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)

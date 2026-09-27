@@ -271,3 +271,21 @@ func TestPublishMatchComplete_DataStructure(t *testing.T) {
 	// check no error occured
 	assert.NoError(t, err)
 }
+
+func TestExtractedItemToPb_CarriesRarityID(t *testing.T) {
+	stored := uuid.New()
+	tests := []struct {
+		name string
+		item types.ExtractedItem
+		want string
+	}{
+		{"rolled drop", types.ExtractedItem{RarityID: "r-rare"}, "r-rare"},
+		{"loadout item keeps stored rarity", types.ExtractedItem{InstanceID: &stored, RarityID: "r-fabled"}, "r-fabled"},
+		{"no rarity stays empty", types.ExtractedItem{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, extractedItemToPb(&tt.item).RarityId)
+		})
+	}
+}

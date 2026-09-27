@@ -82,5 +82,9 @@ message Item {
   // (chests/drops) so the items-service consumer creates a new row; populated
   // for items brought in via loadout so the consumer upserts the existing row.
   string instance_id = 16;
+
+  // item_rarities.id rolled for this item (or kept from its stored row for
+  // loadout items). Empty means no rarity: the consumer writes NULL.
+  string rarity_id = 17;
 }
 
