@@ -43,7 +43,7 @@ func (uc *CommitHoldUC) Handle(ctx context.Context, cmd *CommitHoldCommand) (*Co
 	var res *CommitHoldResult
 
 	// retry due to optimistic concurrency (OCC)
-	err := withRetry(func() error {
+	err := withRetry(ctx, func() error {
 		// reconstitute into account aggregate
 		acc, err := uc.repo.FindByBidID(ctx, cmd.BidID)
 

@@ -30,7 +30,7 @@ type PlaceHoldCommand struct {
 
 func (uc *PlaceHoldUC) Handle(ctx context.Context, cmd *PlaceHoldCommand) error {
 	// retry due to optimistic concurrency (OCC)
-	return withRetry(func() error {
+	return withRetry(ctx, func() error {
 		// find account and all its holds, repo reconstitute's
 		acc, err := uc.repo.FindByMemberID(ctx, cmd.MemberID)
 

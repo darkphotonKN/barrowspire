@@ -29,7 +29,7 @@ type DepositGoldCommand struct {
 }
 
 func (uc *DepositGoldUC) Handle(ctx context.Context, cmd *DepositGoldCommand) error {
-	return withRetry(func() error {
+	return withRetry(ctx, func() error {
 		acc, err := uc.repo.FindByMemberID(ctx, cmd.MemberID)
 		if err != nil {
 			return fmt.Errorf("deposit gold usecase handle FindByMemberID cmd member id %s : %w", cmd.MemberID, err)

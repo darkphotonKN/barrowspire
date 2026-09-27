@@ -27,7 +27,7 @@ type WithdrawGoldCommand struct {
 }
 
 func (uc *WithdrawGoldUC) Handle(ctx context.Context, cmd *WithdrawGoldCommand) error {
-	return withRetry(func() error {
+	return withRetry(ctx, func() error {
 		// find account and all its holds, repo reconstitute's
 		acc, err := uc.repo.FindByMemberID(ctx, cmd.MemberID)
 		if err != nil {
