@@ -137,8 +137,15 @@ skinned rig with shaped anatomy, generated materials and hand-keyed clips (§E).
    - The light-map is built once and only repositioned or restamped per tick; it is never
      rebuilt from scratch.
 8. **Ambient is fixed per world type**: warm dusk in the hub, dark barrow in the run.
-9. **The readability floor binds.** A hostile at the canvas edge stays readable; if ambient and
-   readability conflict, ambient lifts.
+9. **The readability floor binds, and markers carry it** (revised 2026-09-28).
+   - Hostile markers are drawn **above** the light-map and vignette, so darkness never dims them:
+     the rival name plate and HP bar, and a creature's glowing eyes once creatures render.
+   - Each marker keeps ≥ 3:1 contrast against the darkest lit ground at the canvas edge
+     (ambient × baked ground mean × vignette).
+   - The world itself may then stay dark. Ambient is not lifted for readability.
+   - Why: lifting ambient cannot work. Against the baked ground, even full light under the
+     vignette reaches only ≈1.8:1, because any multiply darkening lowers contrast. UO solves this
+     the same way, with overlays that ignore lighting.
 10. The static vignette from FS-W6BP1 stays, drawn above the light-map and below the HUD.
 11. Both HubScene and BarrowspireScene use §C.
 
@@ -235,7 +242,7 @@ skinned rig with shaped anatomy, generated materials and hand-keyed clips (§E).
 - [ ] Walls render as pieces with cut-away fronts; roofs hide while the delver is inside and return on exit.
 - [ ] Door, escape door, switch and container frames track server state.
 - [ ] Occluding trees and props fade and restore.
-- [ ] The light-map shows manifest-declared sources plus the delver pool; the hub and run ambients differ; an edge-of-canvas hostile remains readable in the run's darkest ambient.
+- [ ] The light-map shows manifest-declared sources plus the delver pool; the hub and run ambients differ; hostile markers (name plate, HP bar) render above the light-map and keep ≥ 3:1 against the darkest lit edge ground, asserted against a fixed number.
 - [ ] The container view opens and closes on the old triggers, animates the flap, and clicking an icon sends the same message as the old row (message captured and compared).
 - [ ] Each class and creature has 8-dir idle, walk, attack and death sheets, authored in code on the shared skinned rig with no third-party model; the owner has approved the contact sheet; scenes play them from existing state.
 - [ ] `npm run lint`, `npm run lint:fence` and `npm test` pass; the hex fence stays green.
