@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
+import { preloadMenuArt } from "@/render/art/menuFigure";
 
 /**
  * The first frame a delver ever sees. It used to be a white bar on a grey box
@@ -77,6 +78,10 @@ export class PreloadScene extends Phaser.Scene {
       loadingText.destroy();
       flavourText.destroy();
     });
+
+    // The baked art, behind the torch bar: the main menu shows the cast straight after this
+    // (FS-2325V §F), and every later scene finds it already loaded.
+    preloadMenuArt(this);
   }
 
   create(): void {

@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { ActionType } from "@/assets/types/client";
 import { useGameStore } from "@/stores/gameStore";
-import { CANVAS_FONT, toCss } from "@/utils/canvasPalette";
+import { CANVAS_FONT, palette, shade, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
 import {
   ClientGameState,
@@ -17,35 +17,37 @@ import {
   drawDelverLegs,
   type Facing,
 } from "@/utils/characterTextures";
-
-/**
- * Reassembles each building from the walls that belong to it.
- *
- * Every wall carries the id of the building it is part of, so the footprint is
- * the bounding box of its group — no second list of coordinates to drift out of
- * step with the server's.
- */
-function footprintsFrom(
-  walls: WallState[],
-): { x: number; y: number; w: number; h: number }[] {
-  const byBuilding = new Map<string, WallState[]>();
-
-  for (const wall of walls) {
-    if (!wall.house_id) continue;
-    const group = byBuilding.get(wall.house_id) ?? [];
-    group.push(wall);
-    byBuilding.set(wall.house_id, group);
-  }
-
-  return [...byBuilding.values()].map((group) => {
-    const x = Math.min(...group.map((w) => w.position.x));
-    const y = Math.min(...group.map((w) => w.position.y));
-    const right = Math.max(...group.map((w) => w.position.x + w.width));
-    const bottom = Math.max(...group.map((w) => w.position.y + w.height));
-
-    return { x, y, w: right - x, h: bottom - y };
-  });
-}
+import {
+  WALL_HEIGHT,
+  addUprightBlock,
+  addWorldPlane,
+  facingFrom,
+  nearestScreenFacing,
+  projectedBounds,
+  standAt,
+  worldDepth,
+  worldToScreen,
+  type Facing8,
+  type Point,
+} from "@/render/iso";
+import { preloadArt, registerArt } from "@/render/art/phaser";
+import type { ArtLibrary } from "@/render/art/library";
+import { CharacterAnimator } from "@/render/art/character";
+import { folkLook } from "@/render/art/hubFolk";
+import { AMBIENT, LightMap } from "@/render/lighting";
+import { MARKER_DEPTH, markerBase } from "@/render/markers";
+import {
+  GroundLayer,
+  Occluders,
+  addProp,
+  addRoof,
+  addWalls,
+  housesFrom,
+  insideHouse,
+  tileHash,
+  worldSeed,
+  type House,
+} from "@/render/world";
 
 /** Falls back to the warrior when a class is missing or unrecognised. */
 function textureFor(playerClass: string | undefined, facing: Facing): string {
@@ -55,23 +57,22 @@ function textureFor(playerClass: string | undefined, facing: Facing): string {
   return `preview_${known.includes(cls) ? cls : "warrior"}_${facing}`;
 }
 
-/**
- * Which way a delver is looking, from the dominant axis of their velocity —
- * the same rule the run scene uses, so a delver turns the same way in both
- * worlds. Standing still keeps the last facing rather than snapping to a
- * default.
- */
-function facingFrom(vx: number, vy: number, current: Facing): Facing {
-  if (vx === 0 && vy === 0) return current;
-
-  if (Math.abs(vy) >= Math.abs(vx)) return vy < 0 ? "up" : "down";
-
-  return vx < 0 ? "left" : "right";
+/** Moves a world position a step toward its target. */
+function easeToward(pos: Point, target: Point): void {
+  pos.x = Phaser.Math.Linear(pos.x, target.x, POSITION_LERP);
+  pos.y = Phaser.Math.Linear(pos.y, target.y, POSITION_LERP);
 }
 
 const HUB_WIDTH = 2000;
 const HUB_HEIGHT = 1000;
-const PLAYER_RADIUS = 20;
+/** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
+const CAMERA_MARGIN = 64;
+/**
+ * Screen px from a delver's marker base (`markerBase`: a baked head, or the preview's frame top)
+ * to the middle of their name label: a 60 px preview centred on the footprint keeps its label at
+ * -34, where it always was.
+ */
+const NAME_GAP = 4;
 /** How hard sprites chase the server's position each frame. Matches the run scene. */
 const POSITION_LERP = 0.3;
 /** Stride advance per server tick, matching the run scene. */
@@ -100,6 +101,13 @@ const FENCES: [number, number, number, boolean][] = [
   [1620, 300, 180, true],
   [700, 940, 260, true],
 ];
+/** Lamp posts along the paths: the hub's lit places after dusk (FS-2325V §C.7). */
+const LAMP_POSTS: [number, number][] = [
+  [930, 490],
+  [1090, 490],
+  [690, 650],
+  [1390, 650],
+];
 /** Trodden ground, joining the spawn to the people worth walking to. */
 const PATHS: [number, number, number, number][] = [
   [940, 500, 130, 320],
@@ -116,6 +124,11 @@ const GRASS: [number, number][] = [
   [1240, 700], [1320, 560], [760, 600], [980, 880], [1400, 780],
   [160, 600], [1880, 480], [520, 780], [1000, 300], [900, 660],
 ];
+
+/** The baked trees the hub's tree spots choose between, by a hash of the spot. */
+const TREE_SHEETS = ["tree_oak", "tree_pine", "tree_oak_autumn"];
+/** Seeds the hub's scenery variant picks, so every client plants the same trees. */
+const SCENERY_SEED = 0x5343_4e31;
 
 /** How close a delver stands to talk. Matches the server's NPCInteractRange. */
 const NPC_TALK_RANGE = 80;
@@ -170,15 +183,47 @@ const NPC_OFFERS: Record<
  * that as one entry means removal cannot half-happen.
  */
 interface DelverView {
-  /** Sprite and name label. */
+  /** The body, drawn at the projection of `pos`. */
   sprite: Phaser.GameObjects.Container;
-  /** Drawn separately so the legs sit in world space beneath the body. */
+  /**
+   * Name plate: a marker, drawn above the light-map and vignette (FS-2325V §C.9), so it is
+   * placed over the head each frame rather than riding in the depth-sorted container.
+   */
+  name: Phaser.GameObjects.Text;
+  /** Drawn separately so the legs sit beneath the body. */
   legs: Phaser.GameObjects.Graphics;
-  /** Where the server last said they are; the sprite eases toward it. */
-  target: { x: number; y: number };
-  facing: Facing;
+  /** Where the server last said they are (world position). */
+  target: Point;
+  /** The eased world position the sprite is drawn at; eases toward `target`. */
+  pos: Point;
+  /** One of eight world directions (FS-2325V §A.6). */
+  facing: Facing8;
   walkPhase: number;
   moving: boolean;
+  /**
+   * The class's baked sheet (FS-2325V §E.4). When it is not `baked`, the placeholder texture,
+   * facing swaps and drawn legs above stand in.
+   */
+  anim: CharacterAnimator;
+}
+
+/** One of the hub's residents or function NPCs, as drawn. */
+interface NPCView {
+  state: NPCState;
+  sprite: Phaser.GameObjects.Container;
+  /** A marker above the lighting (FS-2325V §C.9), placed over the head each frame. */
+  name: Phaser.GameObjects.Text;
+  target: Point;
+  /** Eased world position, as for delvers. */
+  pos: Point;
+  facing: Facing8;
+  /**
+   * Their baked sheet (FS-2325V §G), played like a delver's. When it is not `baked`, the
+   * placeholder textures below stand in.
+   */
+  anim: CharacterAnimator;
+  /** The placeholder villager texture, which turns by swapping facings; unset otherwise. */
+  texture?: string;
 }
 
 /**
@@ -199,7 +244,7 @@ export class HubScene extends Phaser.Scene {
   private selfEntityID: string | null = null;
 
   /** Drawn once: the hub's buildings are fixed and never change. */
-  private structures?: Phaser.GameObjects.Graphics;
+  private structuresDrawn = false;
   /** Drawn once, after the buildings arrive so it can avoid them. */
   private scenery?: Phaser.GameObjects.Graphics;
   /** The fire's flicker, so it reads as burning rather than painted. */
@@ -211,17 +256,7 @@ export class HubScene extends Phaser.Scene {
    * treatment delvers get. Function NPCs never move, so their target simply
    * never changes.
    */
-  private npcs = new Map<
-    string,
-    {
-      state: NPCState;
-      sprite: Phaser.GameObjects.Container;
-      target: { x: number; y: number };
-      facing: Facing;
-      /** Set for residents, who turn; function NPCs keep their one texture. */
-      texture?: string;
-    }
-  >();
+  private npcs = new Map<string, NPCView>();
   /** Whose dialogue is open, if any, and what its options do. */
   private dialogue?: Phaser.GameObjects.Container;
   private dialogueChoices?: { confirm: () => void; dismiss: () => void };
@@ -230,8 +265,16 @@ export class HubScene extends Phaser.Scene {
   private interactKey?: Phaser.Input.Keyboard.Key;
   /** Shown while queued, wherever the delver walks. */
   private queuePanel?: Phaser.GameObjects.Text;
-  /** The warm pool the delver carries. Camera-fixed, so positioned in screen space. */
-  private torchPool?: Phaser.GameObjects.Image;
+  /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
+  private art!: ArtLibrary;
+  /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
+  private groundLayer?: GroundLayer;
+  /** FS-2325V §C.7: carries the delver's torch, replacing the overlay pool. */
+  private lightMap?: LightMap;
+  private occluders = new Occluders();
+  /** Each house's roof, hidden while the delver stands inside it (FS-2325V §C.3). */
+  private roofs: { house: House; parts: { setVisible(visible: boolean): unknown }[] }[] = [];
+  private insideRoof?: House;
   private unsubscribeQueue?: () => void;
 
   private unsubscribeState?: () => void;
@@ -241,18 +284,38 @@ export class HubScene extends Phaser.Scene {
     super({ key: "HubScene" });
   }
 
+  preload(): void {
+    // baked world and prop art (FS-2325V §B.6)
+    preloadArt(this);
+  }
+
   create(): void {
-    this.cameras.main.setBounds(0, 0, HUB_WIDTH, HUB_HEIGHT);
+    // Clamped in projected space: the camera sees the diamond, and the dark beyond
+    // its corners is the background colour. FS-2325V §A.3, §A.7.
+    const bounds = projectedBounds(HUB_WIDTH, HUB_HEIGHT, CAMERA_MARGIN);
+    this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
 
     ensureCharacterTextures(this);
+    this.art = registerArt(this);
+    this.occluders = new Occluders();
 
-    this.drawGround();
+    // Baked ground with dirt paths when the manifest has it (FS-2325V §C.1).
+    this.groundLayer = GroundLayer.available(this.art, "hub")
+      ? new GroundLayer(this, this.art, {
+          width: HUB_WIDTH,
+          height: HUB_HEIGHT,
+          kind: "hub",
+          paths: PATHS.map(([x, y, width, height]) => ({ x, y, width, height })),
+        })
+      : undefined;
+    if (!this.groundLayer) this.drawGround();
     this.bindInput();
 
-    // Dark, never flat: the hub is lit the same way a run is.
-    // docs/design-guideline.md — heavy vignette plus a warm torch pool.
-    this.torchPool = createAtmosphere(this).torch;
+    // Lit like a run, in warm dusk rather than barrow dark (FS-2325V §C.8): the
+    // light-map with the delver's torch, then the vignette and dust above it.
+    this.lightMap = new LightMap(this, AMBIENT.hub);
+    createAtmosphere(this);
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) =>
       this.renderState(state),
@@ -266,7 +329,10 @@ export class HubScene extends Phaser.Scene {
     );
     this.unsubscribeQueue = () => socketManager.off("queue_status");
 
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+    // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
+    const release = () => {
+      this.events.off(Phaser.Scenes.Events.SHUTDOWN, release);
+      this.events.off(Phaser.Scenes.Events.DESTROY, release);
       this.unsubscribeState?.();
       this.unsubscribeQueue?.();
       this.views.clear();
@@ -274,37 +340,52 @@ export class HubScene extends Phaser.Scene {
       this.closeDialogue();
       // the scene clock stops with the scene, so the flicker goes with it
       this.hearth = undefined;
-      this.structures = undefined;
+      this.structuresDrawn = false;
       this.scenery = undefined;
-      this.torchPool = undefined;
-    });
+      this.lightMap = undefined;
+      this.groundLayer = undefined;
+      this.roofs = [];
+      this.insideRoof = undefined;
+    };
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, release);
+    this.events.once(Phaser.Scenes.Events.DESTROY, release);
   }
 
-  update(): void {
+  update(time: number, delta: number): void {
     this.sendMovementIntent();
-    this.easeTowardServerPositions();
+    this.easeTowardServerPositions(time, delta);
     this.offerConversation();
-    this.carryTheTorch();
+    this.hideRoofOverhead();
+    this.carryTheTorch(time, delta);
   }
 
   /**
-   * Keeps the pool on the delver rather than on the camera.
-   *
-   * The overlay is camera-fixed, so it is positioned in SCREEN space: the
-   * delver's world position minus the camera scroll. That matters because the
-   * camera lerps and is clamped by setBounds, so its centre is not the delver's
-   * position while they are moving or standing at a map edge — the two moments a
-   * torch sitting at the centre reads as "the screen is dim" rather than "I am
-   * carrying a light".
+   * Restamps the light-map with the delver's torch on the delver's drawn
+   * position, and eases whatever stands over them (FS-2325V §C.5, §C.7).
    */
-  private carryTheTorch(): void {
-    const torch = this.torchPool;
+  private carryTheTorch(time: number, delta: number): void {
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
+    const body = self?.sprite.getByName("body") as Phaser.GameObjects.Sprite | null | undefined;
 
-    if (!torch?.scene || !self) return;
+    this.lightMap?.carry(self ? { x: self.sprite.x, y: self.sprite.y } : null);
+    this.lightMap?.update(time);
+    this.occluders.update(
+      self && body ? { bounds: body.getBounds(), depth: self.sprite.depth } : null,
+      delta,
+    );
+  }
 
-    const cam = this.cameras.main;
-    torch.setPosition(self.sprite.x - cam.scrollX, self.sprite.y - cam.scrollY);
+  /**
+   * The roof of the house the delver stands in hides, and returns when they
+   * leave: the run's inside test, on world positions (FS-2325V §C.3). The hub's
+   * houses have no door today, so this waits for one that does.
+   */
+  private hideRoofOverhead(): void {
+    const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
+    const inside = self ? this.roofs.find((r) => insideHouse(self.pos, r.house)) : undefined;
+    if (inside?.house === this.insideRoof) return;
+    this.roofs.forEach((r) => r.parts.forEach((p) => p.setVisible(r !== inside)));
+    this.insideRoof = inside?.house;
   }
 
   /**
@@ -333,13 +414,9 @@ export class HubScene extends Phaser.Scene {
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
     if (!self) return;
 
-    for (const { state, sprite } of this.npcs.values()) {
-      const distance = Phaser.Math.Distance.Between(
-        self.sprite.x,
-        self.sprite.y,
-        sprite.x,
-        sprite.y,
-      );
+    // World positions, never sprite positions: the sprites sit on the projection.
+    for (const { state, pos } of this.npcs.values()) {
+      const distance = Phaser.Math.Distance.Between(self.pos.x, self.pos.y, pos.x, pos.y);
 
       if (distance <= NPC_TALK_RANGE) {
         this.openDialogue(state);
@@ -355,25 +432,40 @@ export class HubScene extends Phaser.Scene {
    * that jumps is worse still. So sprites ease toward the last known position
    * instead, the same way the run scene does.
    */
-  private easeTowardServerPositions(): void {
-    for (const { sprite, target } of this.npcs.values()) {
-      sprite.x = Phaser.Math.Linear(sprite.x, target.x, POSITION_LERP);
-      sprite.y = Phaser.Math.Linear(sprite.y, target.y, POSITION_LERP);
+  private easeTowardServerPositions(time: number, delta: number): void {
+    // Easing happens in world space; the projection is applied only to draw.
+    for (const npc of this.npcs.values()) {
+      easeToward(npc.pos, npc.target);
+      standAt(npc.sprite, npc.pos, 1);
+      // folk idle and walk on their own legs, read off the position just drawn
+      const body = npc.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+      if (npc.anim.baked && body) npc.anim.show(body, npc.anim.step(npc.pos, time, delta, false));
+      this.placeMarker(npc.sprite, npc.name, npc.anim.crown);
     }
 
     for (const view of this.views.values()) {
-      const { sprite, target } = view;
+      const { sprite, pos, target } = view;
 
-      sprite.x = Phaser.Math.Linear(sprite.x, target.x, POSITION_LERP);
-      sprite.y = Phaser.Math.Linear(sprite.y, target.y, POSITION_LERP);
+      easeToward(pos, target);
+      standAt(sprite, pos, 1);
+      this.placeName(view);
 
-      // Legs are drawn in world space, so they follow the eased sprite rather
-      // than the raw server position.
+      // A baked sheet walks and idles on its own legs, read off the position just
+      // drawn; the hub has no attacks and no deaths.
+      if (view.anim.baked) {
+        const body = sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+        if (body) view.anim.show(body, view.anim.step(pos, time, delta, false));
+        continue;
+      }
+
+      // Legs follow the eased sprite rather than the raw server position, and
+      // sit just beneath the body on the same footprint.
+      view.legs.setDepth(worldDepth(pos.x, pos.y, 0));
       drawDelverLegs(
         view.legs,
         sprite.x,
         sprite.y,
-        view.facing,
+        nearestScreenFacing(view.facing),
         view.walkPhase,
         view.moving,
         BARROW_HEX.ink,
@@ -386,17 +478,26 @@ export class HubScene extends Phaser.Scene {
    * clamps movement to the world's bounds, so there are no wall entities here.
    */
   private drawGround(): void {
+    // Drawn in world coordinates on a plane that carries the projection, so the
+    // map is the diamond and the camera background fills the corners around it.
+    const plane = addWorldPlane(this);
+    plane.root.setDepth(0);
+
     const ground = this.add.graphics();
     ground.fillStyle(BARROW_HEX.charcoal, 1);
     ground.fillRect(0, 0, HUB_WIDTH, HUB_HEIGHT);
 
     ground.lineStyle(4, BARROW_HEX.brass, 0.4);
     ground.strokeRect(0, 0, HUB_WIDTH, HUB_HEIGHT);
-    ground.setDepth(0);
+    plane.surface.add(ground);
   }
 
   /**
-   * Trees, grass and a fire.
+   * Trees, grass and a fire, and the lamp posts that light the paths.
+   *
+   * Baked props where the manifest has them (FS-2325V §C.1, §C.5, §C.7): trees,
+   * bushes, barrels, a brazier on the hearth and lamp posts, the brazier and the
+   * lamps declaring their light. The rest keep their placeholder drawing.
    *
    * All client-side and none of it blocks: anything a delver can walk into is a
    * building, and buildings are server entities so that collision and shape come
@@ -426,17 +527,35 @@ export class HubScene extends Phaser.Scene {
           y - radius <= wall.position.y + wall.height + ROOF_EAVE,
       );
 
+    // trodden paths lie on the ground, under everything else; baked ground lays
+    // them as dirt tiles already
+    const ground = addWorldPlane(this);
+    ground.root.setDepth(2);
     const scenery = this.add.graphics();
-    scenery.setDepth(2);
-
-    // trodden paths, under everything else
-    for (const [x, y, w, h] of PATHS) {
+    ground.surface.add(scenery);
+    for (const [x, y, w, h] of this.groundLayer ? [] : PATHS) {
       scenery.fillStyle(BARROW_HEX.barrowBrown, 0.22);
       scenery.fillRect(x, y, w, h);
     }
 
+    const baked = this.art.available;
+    /** A baked prop on a footprint; tall ones fade over the delver, lit ones light. */
+    const place = (sheet: string, at: Point, index: number, tall: boolean) => {
+      const { sprite, light } = addProp(this, this.art, sheet, at, { index });
+      if (tall) this.occluders.add([sprite]);
+      if (light) this.lightMap?.add(light);
+    };
+
+    for (const [x, y] of LAMP_POSTS) {
+      if (baked && !blocked(x, y, 12)) place("lamp_post", { x, y }, 0, true);
+    }
+
     for (const [x, y] of GRASS) {
       if (blocked(x, y, 22)) continue;
+      if (baked) {
+        place("bush", { x, y }, tileHash(x, y, SCENERY_SEED), false);
+        continue;
+      }
 
       // A tuft, not three strokes: blades of varied height leaning slightly
       // apart, with a darker back rank so it reads as depth rather than a comb.
@@ -445,115 +564,137 @@ export class HubScene extends Phaser.Scene {
         [4, -2, 4, 15], [10, 1, 4, 10], [15, -1, 3, 12],
       ];
 
-      scenery.fillStyle(BARROW_HEX.arcaneDeep, 0.55);
+      const tuft = this.propAt(x, y);
+      tuft.fillStyle(BARROW_HEX.arcaneDeep, 0.55);
       for (const [dx, dy, w, h] of blades) {
-        scenery.fillRect(x + dx, y + dy, w, h);
+        tuft.fillRect(x + dx, y + dy, w, h);
       }
 
       // the front rank, lighter, shorter, offset
-      scenery.fillStyle(BARROW_HEX.arcane, 0.4);
+      tuft.fillStyle(BARROW_HEX.arcane, 0.4);
       for (const [dx, dy, w, h] of blades) {
-        scenery.fillRect(x + dx + 2, y + dy + 4, w - 1, h - 5);
+        tuft.fillRect(x + dx + 2, y + dy + 4, w - 1, h - 5);
       }
     }
 
     for (const [x, y] of TREES) {
       if (blocked(x, y - 10, 46)) continue;
+      if (baked) {
+        const pick = tileHash(x, y, SCENERY_SEED);
+        place(TREE_SHEETS[pick % TREE_SHEETS.length], { x, y: y + 34 }, pick >>> 4, true);
+        continue;
+      }
+      const prop = this.propAt(x, y + 34);
 
       // roots flaring into the ground, so the trunk sits in the earth rather
       // than on top of it
-      scenery.fillStyle(BARROW_HEX.pitch, 0.35);
-      scenery.fillEllipse(x, y + 34, 44, 12);
+      prop.fillStyle(BARROW_HEX.pitch, 0.35);
+      prop.fillEllipse(x, y + 34, 44, 12);
 
-      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
-      scenery.fillRect(x - 8, y, 16, 34);
-      scenery.fillRect(x - 13, y + 26, 26, 8);
+      prop.fillStyle(BARROW_HEX.barrowDeep, 1);
+      prop.fillRect(x - 8, y, 16, 34);
+      prop.fillRect(x - 13, y + 26, 26, 8);
       // the shaded side of the bark
-      scenery.fillStyle(BARROW_HEX.pitch, 0.4);
-      scenery.fillRect(x + 2, y, 6, 34);
+      prop.fillStyle(BARROW_HEX.pitch, 0.4);
+      prop.fillRect(x + 2, y, 6, 34);
       // two boughs leaving the trunk
-      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
-      scenery.fillRect(x - 18, y - 2, 12, 5);
-      scenery.fillRect(x + 7, y - 8, 12, 5);
+      prop.fillStyle(BARROW_HEX.barrowDeep, 1);
+      prop.fillRect(x - 18, y - 2, 12, 5);
+      prop.fillRect(x + 7, y - 8, 12, 5);
 
       // the crown, built from overlapping masses rather than one disc
-      scenery.fillStyle(BARROW_HEX.arcaneDeep, 1);
-      scenery.fillCircle(x, y - 14, 32);
-      scenery.fillCircle(x - 22, y - 4, 22);
-      scenery.fillCircle(x + 21, y - 7, 21);
-      scenery.fillCircle(x - 6, y - 36, 22);
-      scenery.fillCircle(x + 14, y - 30, 18);
+      prop.fillStyle(BARROW_HEX.arcaneDeep, 1);
+      prop.fillCircle(x, y - 14, 32);
+      prop.fillCircle(x - 22, y - 4, 22);
+      prop.fillCircle(x + 21, y - 7, 21);
+      prop.fillCircle(x - 6, y - 36, 22);
+      prop.fillCircle(x + 14, y - 30, 18);
 
       // light catching the upper left, the way the torch pool falls
-      scenery.fillStyle(BARROW_HEX.arcane, 0.45);
-      scenery.fillCircle(x - 12, y - 26, 16);
-      scenery.fillCircle(x - 2, y - 38, 10);
-      scenery.fillStyle(BARROW_HEX.arcane, 0.25);
-      scenery.fillCircle(x + 10, y - 18, 12);
+      prop.fillStyle(BARROW_HEX.arcane, 0.45);
+      prop.fillCircle(x - 12, y - 26, 16);
+      prop.fillCircle(x - 2, y - 38, 10);
+      prop.fillStyle(BARROW_HEX.arcane, 0.25);
+      prop.fillCircle(x + 10, y - 18, 12);
 
       // a few gaps, so the mass is not solid
-      scenery.fillStyle(BARROW_HEX.pitch, 0.3);
-      scenery.fillCircle(x + 6, y - 6, 6);
-      scenery.fillCircle(x - 18, y - 18, 5);
+      prop.fillStyle(BARROW_HEX.pitch, 0.3);
+      prop.fillCircle(x + 6, y - 6, 6);
+      prop.fillCircle(x - 18, y - 18, 5);
     }
 
     for (const [x, y, length, horizontal] of FENCES) {
       if (blocked(x, y, 20)) continue;
-      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
+
+      // A fence runs along a world axis, which is a diagonal on screen, so each
+      // post is projected on its own and the rails join the projected ends.
+      const end = horizontal ? worldToScreen(x + length, y) : worldToScreen(x, y + length);
+      const start = worldToScreen(x, y);
+      const fence = this.add.graphics();
+      fence.setDepth(
+        worldDepth(horizontal ? x + length / 2 : x, horizontal ? y : y + length / 2),
+      );
+      fence.fillStyle(BARROW_HEX.barrowDeep, 1);
 
       const posts = Math.floor(length / 36);
       for (let i = 0; i <= posts; i++) {
-        const px = horizontal ? x + i * 36 : x;
-        const py = horizontal ? y : y + i * 36;
-        scenery.fillRect(px, py - 16, 5, 22);
+        const post = worldToScreen(horizontal ? x + i * 36 : x, horizontal ? y : y + i * 36);
+        fence.fillRect(post.x, post.y - 16, 5, 22);
       }
 
       // the rails between them
-      scenery.fillStyle(BARROW_HEX.barrowBrown, 1);
       if (horizontal) {
-        scenery.fillRect(x, y - 12, length, 3);
-        scenery.fillRect(x, y - 4, length, 3);
+        fence.lineStyle(3, BARROW_HEX.barrowBrown, 1);
+        fence.lineBetween(start.x, start.y - 11, end.x, end.y - 11);
+        fence.lineBetween(start.x, start.y - 3, end.x, end.y - 3);
       }
     }
 
     for (const [x, y] of CRATES) {
       if (blocked(x, y, 14)) continue;
-      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
-      scenery.fillRect(x - 11, y - 11, 22, 22);
-      scenery.lineStyle(2, BARROW_HEX.barrowBrown, 0.9);
-      scenery.strokeRect(x - 11, y - 11, 22, 22);
-      scenery.lineBetween(x - 11, y - 11, x + 11, y + 11);
+      if (baked) {
+        place("barrel", { x, y }, 0, false);
+        continue;
+      }
+      const prop = this.propAt(x, y);
+      prop.fillStyle(BARROW_HEX.barrowDeep, 1);
+      prop.fillRect(x - 11, y - 11, 22, 22);
+      prop.lineStyle(2, BARROW_HEX.barrowBrown, 0.9);
+      prop.strokeRect(x - 11, y - 11, 22, 22);
+      prop.lineBetween(x - 11, y - 11, x + 11, y + 11);
     }
 
     for (const [x, y] of CARTS) {
       if (blocked(x, y, 26)) continue;
-      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
-      scenery.fillRect(x - 24, y - 10, 48, 20);
-      scenery.fillStyle(BARROW_HEX.barrowBrown, 1);
-      scenery.fillRect(x - 24, y - 14, 48, 5);
+      const prop = this.propAt(x, y + 11);
+      prop.fillStyle(BARROW_HEX.barrowDeep, 1);
+      prop.fillRect(x - 24, y - 10, 48, 20);
+      prop.fillStyle(BARROW_HEX.barrowBrown, 1);
+      prop.fillRect(x - 24, y - 14, 48, 5);
       // wheels
-      scenery.fillStyle(BARROW_HEX.pitch, 1);
-      scenery.fillCircle(x - 14, y + 11, 7);
-      scenery.fillCircle(x + 14, y + 11, 7);
-      scenery.fillStyle(BARROW_HEX.barrowBrown, 1);
-      scenery.fillCircle(x - 14, y + 11, 3);
-      scenery.fillCircle(x + 14, y + 11, 3);
+      prop.fillStyle(BARROW_HEX.pitch, 1);
+      prop.fillCircle(x - 14, y + 11, 7);
+      prop.fillCircle(x + 14, y + 11, 7);
+      prop.fillStyle(BARROW_HEX.barrowBrown, 1);
+      prop.fillCircle(x - 14, y + 11, 3);
+      prop.fillCircle(x + 14, y + 11, 3);
       // the shaft
-      scenery.fillRect(x + 22, y - 2, 20, 4);
+      prop.fillRect(x + 22, y - 2, 20, 4);
     }
 
     if (!blocked(WELL[0], WELL[1], 22)) {
       const [wx, wy] = WELL;
-      scenery.fillStyle(BARROW_HEX.slate, 1);
-      scenery.fillCircle(wx, wy, 20);
-      scenery.fillStyle(BARROW_HEX.pitch, 1);
-      scenery.fillCircle(wx, wy, 13);
+      const well = this.propAt(wx, wy);
+      well.fillStyle(BARROW_HEX.slate, 1);
+      well.fillCircle(wx, wy, 20);
+      well.fillStyle(BARROW_HEX.pitch, 1);
+      well.fillCircle(wx, wy, 13);
       // posts and a roof over it
-      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
-      scenery.fillRect(wx - 20, wy - 34, 5, 30);
-      scenery.fillRect(wx + 15, wy - 34, 5, 30);
-      scenery.fillStyle(BARROW_HEX.barrowBrown, 1);
-      scenery.fillRect(wx - 26, wy - 40, 52, 8);
+      well.fillStyle(BARROW_HEX.barrowDeep, 1);
+      well.fillRect(wx - 20, wy - 34, 5, 30);
+      well.fillRect(wx + 15, wy - 34, 5, 30);
+      well.fillStyle(BARROW_HEX.barrowBrown, 1);
+      well.fillRect(wx - 26, wy - 40, 52, 8);
     }
 
     // The awnings are the one place a little colour is honest — a market is
@@ -562,36 +703,61 @@ export class HubScene extends Phaser.Scene {
 
     STALLS.forEach(([sx, sy], i) => {
       if (blocked(sx, sy, 40)) return;
+      const stall = this.propAt(sx, sy + 8);
 
-      scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
-      scenery.fillRect(sx - 32, sy - 6, 64, 14);
-      scenery.fillRect(sx - 30, sy - 30, 4, 26);
-      scenery.fillRect(sx + 26, sy - 30, 4, 26);
+      stall.fillStyle(BARROW_HEX.barrowDeep, 1);
+      stall.fillRect(sx - 32, sy - 6, 64, 14);
+      stall.fillRect(sx - 30, sy - 30, 4, 26);
+      stall.fillRect(sx + 26, sy - 30, 4, 26);
 
       // goods on the counter
-      scenery.fillStyle(BARROW_HEX.vellumFaint, 0.7);
-      scenery.fillRect(sx - 24, sy - 12, 9, 7);
-      scenery.fillRect(sx - 6, sy - 11, 7, 6);
-      scenery.fillRect(sx + 12, sy - 13, 10, 8);
+      stall.fillStyle(BARROW_HEX.vellumFaint, 0.7);
+      stall.fillRect(sx - 24, sy - 12, 9, 7);
+      stall.fillRect(sx - 6, sy - 11, 7, 6);
+      stall.fillRect(sx + 12, sy - 13, 10, 8);
 
-      scenery.fillStyle(awnings[i % awnings.length], 0.85);
-      scenery.fillRect(sx - 36, sy - 36, 72, 9);
-      scenery.fillStyle(BARROW_HEX.vellumFaint, 0.5);
-      scenery.fillRect(sx - 36, sy - 30, 72, 3);
+      stall.fillStyle(awnings[i % awnings.length], 0.85);
+      stall.fillRect(sx - 36, sy - 36, 72, 9);
+      stall.fillStyle(BARROW_HEX.vellumFaint, 0.5);
+      stall.fillRect(sx - 36, sy - 30, 72, 3);
     });
 
-    // the fire ring, which does not move
-    scenery.fillStyle(BARROW_HEX.slate, 1);
-    scenery.fillCircle(HEARTH[0], HEARTH[1], 26);
-    scenery.fillStyle(BARROW_HEX.pitch, 1);
-    scenery.fillCircle(HEARTH[0], HEARTH[1], 19);
-    scenery.fillStyle(BARROW_HEX.barrowDeep, 1);
-    scenery.fillRect(HEARTH[0] - 16, HEARTH[1] - 3, 32, 6);
-    scenery.fillRect(HEARTH[0] - 3, HEARTH[1] - 16, 6, 32);
-
     this.scenery = scenery;
-    this.hearth = this.add.graphics().setDepth(3);
+
+    // The hearth: a baked brazier whose flame is a light source, or without art
+    // the fire ring with a flickering ember flame.
+    if (baked) {
+      place("brazier", { x: HEARTH[0], y: HEARTH[1] }, 0, true);
+      return;
+    }
+
+    // the fire ring, which does not move
+    const ring = this.propAt(HEARTH[0], HEARTH[1]);
+    ring.fillStyle(BARROW_HEX.slate, 1);
+    ring.fillCircle(HEARTH[0], HEARTH[1], 26);
+    ring.fillStyle(BARROW_HEX.pitch, 1);
+    ring.fillCircle(HEARTH[0], HEARTH[1], 19);
+    ring.fillStyle(BARROW_HEX.barrowDeep, 1);
+    ring.fillRect(HEARTH[0] - 16, HEARTH[1] - 3, 32, 6);
+    ring.fillRect(HEARTH[0] - 3, HEARTH[1] - 16, 6, 32);
+
+    // the flame stands in the ring, drawn just above it
+    this.hearth = this.propAt(HEARTH[0], HEARTH[1], 1);
     this.time.addEvent({ delay: 90, loop: true, callback: () => this.flicker() });
+  }
+
+  /**
+   * A graphics for one upright prop whose art is written in absolute world-offset
+   * style. The art point `(x, footY)`, where the prop meets the ground, lands on
+   * that footprint's projection, and the rest of the art keeps its screen offsets
+   * around it, unskewed. Sorted by the same footprint.
+   */
+  private propAt(x: number, footY: number, layer = 0): Phaser.GameObjects.Graphics {
+    const s = worldToScreen(x, footY);
+    const g = this.add.graphics();
+    g.setPosition(s.x - x, s.y - footY);
+    g.setDepth(worldDepth(x, footY, layer));
+    return g;
   }
 
   /** Redraws the flame at a slightly different size each beat. */
@@ -676,6 +842,7 @@ export class HubScene extends Phaser.Scene {
       if (present.has(entityID)) continue;
 
       view.sprite.destroy();
+      view.name.destroy();
       view.legs.destroy();
       this.views.delete(entityID);
     }
@@ -688,17 +855,20 @@ export class HubScene extends Phaser.Scene {
    * facing — so the stride is animated by drawing legs, the same as in a run.
    */
   private updateAppearance(view: DelverView, player: PlayerState): void {
+    // a baked sheet is turned and strided each frame instead (easeTowardServerPositions)
+    if (view.anim.baked) return;
     const { vx, vy } = player.direction ?? { vx: 0, vy: 0 };
 
     view.moving = vx !== 0 || vy !== 0;
     view.walkPhase = view.moving ? view.walkPhase + WALK_STEP : 0;
 
+    // Eight world directions; the placeholder textures show the nearest of their four.
     const facing = facingFrom(vx, vy, view.facing);
     if (facing === view.facing) return;
 
     view.facing = facing;
     const body = view.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
-    body?.setTexture(textureFor(player.class, facing));
+    body?.setTexture(textureFor(player.class, nearestScreenFacing(facing)));
   }
 
   private showQueueProgress(current: number, total: number): void {
@@ -729,31 +899,56 @@ export class HubScene extends Phaser.Scene {
    * so this runs once rather than every tick.
    */
   private renderStructures(walls: WallState[]): void {
-    if (this.structures || walls.length === 0) return;
+    if (this.structuresDrawn || walls.length === 0) return;
 
-    const stone = this.add.graphics();
-    stone.setDepth(5);
-
-    for (const wall of walls) {
-      stone.fillStyle(BARROW_HEX.barrowDeep, 1);
-      stone.fillRect(wall.position.x, wall.position.y, wall.width, wall.height);
-
-      stone.lineStyle(2, BARROW_HEX.barrowBrown, 0.8);
-      stone.strokeRect(wall.position.x, wall.position.y, wall.width, wall.height);
+    // Baked wall pieces and corner posts (FS-2325V §C.2); without a manifest,
+    // placeholder upright blocks, one-tile pieces each sorted by footprint.
+    const houses = housesFrom(walls);
+    const baked = addWalls(this, this.art, walls, worldSeed("hub"));
+    if (baked) {
+      this.occluders.add(baked.tall);
+      // a back wall's flame is in sight only while its house's roof is off
+      const houseOf = new Map(walls.map((w) => [w.entity_id, houses.find((h) => h.id === w.house_id)]));
+      baked.lights.forEach(({ source, wallId, underRoof }) => {
+        const house = houseOf.get(wallId);
+        this.lightMap?.add(source, underRoof && house ? () => this.insideRoof === house : undefined);
+      });
+    } else {
+      for (const wall of walls) {
+        addUprightBlock(this, wall.position.x, wall.position.y, wall.width, wall.height, {
+          top: BARROW_HEX.barrowDeep,
+          south: shade(BARROW_HEX.barrowDeep, 0.3),
+          east: shade(BARROW_HEX.barrowDeep, 0.5),
+          edge: { width: 2, color: BARROW_HEX.barrowBrown, alpha: 0.8 },
+        });
+      }
     }
 
     // Walls carry the building they belong to, so the footprints can be
     // reassembled here rather than being a second list to keep in step with the
-    // server's.
-    const roofs = this.add.graphics();
-    roofs.setDepth(6); // over the walls, under anyone standing in front of them
-
-    for (const footprint of footprintsFrom(walls)) {
-      this.roofOver(roofs, footprint);
+    // server's. Flagstone goes under each, and a roof on top: baked slope and
+    // ridge pieces sorted by their own footprints (FS-2325V §C.3), or without art
+    // a placeholder roof on a plane lifted to the wall tops.
+    this.groundLayer?.paint(houses);
+    for (const house of houses) {
+      const roof = addRoof(this, this.art, house);
+      if (roof) this.occluders.add(roof);
+      this.roofs.push({ house, parts: roof ?? [this.placeholderRoof(house)] });
     }
 
     // One flag covers both: the walls and their roofs are drawn together.
-    this.structures = stone;
+    this.structuresDrawn = true;
+  }
+
+  /** The pre-art roof: two shaded slopes on a plane lifted to the wall tops. */
+  private placeholderRoof(house: House): Phaser.GameObjects.Container {
+    const roofPlane = addWorldPlane(this, WALL_HEIGHT);
+    // sorted by the centre of its footprint: over a delver behind the house, under one in front
+    roofPlane.root.setDepth(worldDepth(house.x + house.width / 2, house.y + house.height / 2));
+    const roof = this.add.graphics();
+    roofPlane.surface.add(roof);
+    this.roofOver(roof, { x: house.x, y: house.y, w: house.width, h: house.height });
+    return roofPlane.root;
   }
 
   /**
@@ -813,64 +1008,79 @@ export class HubScene extends Phaser.Scene {
     g.strokeRect(left, top, width, height);
   }
 
-  /** Draws the hub's residents. They stand still, so this runs once each. */
+  /** Draws the hub's residents and function NPCs, once each; update() moves them after. */
   private renderNPCs(npcs: NPCState[]): void {
     for (const npc of npcs) {
       const existing = this.npcs.get(npc.entity_id);
 
       if (existing) {
-        // A resident faces the way they are walking, worked out from where the
-        // server has moved them since the last tick.
-        const facing = facingFrom(
-          npc.position.x - existing.target.x,
-          npc.position.y - existing.target.y,
-          existing.facing,
-        );
-
         existing.target = { x: npc.position.x, y: npc.position.y };
-
-        if (facing !== existing.facing && existing.texture) {
-          existing.facing = facing;
-          const body = existing.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
-          body?.setTexture(`${existing.texture}_${facing}`);
-        }
-
+        if (!existing.anim.baked) this.turnPlaceholderNPC(existing);
         continue;
       }
 
-      // Residents are ordinary folk and are drawn as such; the two function NPCs
-      // keep the delver silhouette, tinted brass so it is legible at a glance
-      // which of them is worth crossing the hub for.
+      // Everyone is a baked character on the delvers' rig (FS-2325V §G): residents in their
+      // build and palette, function NPCs as themselves, whose role reads from the silhouette.
+      // Only with no sheet at all do the placeholders stand in: a villager texture, or the
+      // delver silhouette tinted brass.
       const isFunction = npc.function !== "";
-      const tone = isFunction ? BARROW_HEX.brassBright : BARROW_HEX.vellum;
-      const texture = isFunction
-        ? undefined
-        : ensureVillagerTexture(this, npc.appearance ?? "green_trousers");
+      const tone = isFunction ? BARROW_HEX.brassBright : palette.markerHub;
+      const anim = new CharacterAnimator(this.art, folkLook(npc, this.art));
+      const texture =
+        anim.baked || isFunction
+          ? undefined
+          : ensureVillagerTexture(this, npc.appearance ?? "green_trousers");
 
       const body = texture
         ? this.add.sprite(0, 0, `${texture}_down`)
-        : this.add.sprite(0, 0, textureFor("warrior", "down")).setTint(tone);
+        : this.add.sprite(0, 0, textureFor("warrior", "down"));
+      if (anim.baked) anim.dress(body);
+      else if (isFunction) body.setTint(tone);
       body.setName("body");
 
+      // brass for the two worth crossing the hub for, vellum for the folk
       const name = this.add
-        .text(0, -PLAYER_RADIUS - 14, npc.name, {
+        .text(0, 0, npc.name, {
           fontFamily: CANVAS_FONT.body,
           fontSize: "12px",
           color: toCss(tone),
         })
-        .setOrigin(0.5);
+        .setOrigin(0.5)
+        .setDepth(MARKER_DEPTH.name);
 
-      const sprite = this.add.container(npc.position.x, npc.position.y, [body, name]);
-      sprite.setDepth(10);
+      const pos = { x: npc.position.x, y: npc.position.y };
+      const sprite = this.add.container(0, 0, [body]);
+      standAt(sprite, pos, 1);
+      this.placeMarker(sprite, name, anim.crown);
 
       this.npcs.set(npc.entity_id, {
         state: npc,
         sprite,
-        target: { x: npc.position.x, y: npc.position.y },
-        facing: "down",
+        name,
+        target: { ...pos },
+        pos,
+        // faces the viewer, which the "down" texture shows
+        facing: "se",
+        anim,
         texture,
       });
     }
+  }
+
+  /**
+   * A placeholder villager faces the way they are walking, worked out from where the server
+   * has moved them since the last tick (world positions).
+   */
+  private turnPlaceholderNPC(npc: NPCView): void {
+    const facing = facingFrom(
+      npc.target.x - npc.pos.x,
+      npc.target.y - npc.pos.y,
+      npc.facing,
+    );
+    if (facing === npc.facing || !npc.texture) return;
+    npc.facing = facing;
+    const body = npc.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+    body?.setTexture(`${npc.texture}_${nearestScreenFacing(facing)}`);
   }
 
   /**
@@ -995,6 +1205,31 @@ export class HubScene extends Phaser.Scene {
     });
   }
 
+  /** A delver's name plate over their head ({@link markerBase}); the hub has no corpses. */
+  private placeName(view: DelverView): void {
+    this.placeMarker(view.sprite, view.name, view.anim.crown);
+  }
+
+  /** A name plate over whoever stands in `sprite`: a baked head (`crown`), or the frame's top. */
+  private placeMarker(
+    sprite: Phaser.GameObjects.Container,
+    name: Phaser.GameObjects.Text,
+    crown: number | undefined,
+  ): void {
+    const body = sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+    if (!body) return;
+    const base = markerBase(
+      {
+        y: sprite.y + body.y,
+        displayOriginY: body.displayOriginY,
+        scaleY: body.scaleY,
+      },
+      crown,
+      false,
+    );
+    name.setPosition(sprite.x + body.x, (base ?? sprite.y) - NAME_GAP);
+  }
+
   private placeDelver(player: PlayerState, isSelf: boolean): void {
     const existing = this.views.get(player.entity_id);
 
@@ -1011,33 +1246,46 @@ export class HubScene extends Phaser.Scene {
     // player picked is the delver they see.
     const body = this.add.sprite(0, 0, textureFor(player.class, "down"));
     body.setName("body");
-    if (!isSelf) body.setTint(BARROW_HEX.vellumDark);
 
+    // The class's baked sheet, stood on its footprint by the sheet's anchor
+    // (FS-2325V §E.5), others untinted as rivals are in a run (§E.3); the preview
+    // texture, others dimmed, only when the sheet is missing.
+    const anim = new CharacterAnimator(this.art, player.class);
+    if (anim.baked) anim.dress(body);
+    else if (!isSelf) body.setTint(BARROW_HEX.vellumDark);
+
+    // a marker above the lighting, placed by placeName: a 60 px preview keeps it where it
+    // always was, a baked sheet puts it just over the head
     const name = this.add
-      .text(0, -PLAYER_RADIUS - 14, player.username, {
+      .text(0, 0, player.username, {
         fontFamily: "var(--font-body), serif",
         fontSize: "12px",
-        color: "#cdbf9a",
+        color: toCss(palette.markerHub),
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setDepth(MARKER_DEPTH.name);
 
-    const sprite = this.add.container(player.position.x, player.position.y, [
-      body,
-      name,
-    ]);
-    sprite.setDepth(10);
+    const pos = { x: player.position.x, y: player.position.y };
+    const sprite = this.add.container(0, 0, [body]);
+    standAt(sprite, pos, 1);
 
     // Beneath the body, so a stride reads as legs under a cloak.
     const legs = this.add.graphics();
-    legs.setDepth(9);
+    legs.setDepth(worldDepth(pos.x, pos.y, 0));
 
-    this.views.set(player.entity_id, {
+    const view: DelverView = {
       sprite,
+      name,
       legs,
-      target: { x: player.position.x, y: player.position.y },
-      facing: "down",
+      target: { ...pos },
+      pos,
+      // faces the viewer, which the "down" texture shows
+      facing: "se",
       walkPhase: 0,
       moving: false,
-    });
+      anim,
+    };
+    this.placeName(view);
+    this.views.set(player.entity_id, view);
   }
 }

@@ -26,13 +26,14 @@ export default function PhaserGame() {
       height: 720,
       parent: containerRef.current,
       backgroundColor: BARROW.umber,
-      // Crisp pixel art per docs/design-guideline.md: nearest-neighbour filtering,
-      // no smoothing, integer-aligned positions. Presentation only.
-      pixelArt: true,
+      // Baked art is drawn smoothed (docs/design-guideline.md "Linear filtering",
+      // FS-2325V §C): linear filtering, at 1x from a 2x render. Positions stay
+      // integer-aligned so a still frame is crisp and a moving one does not shimmer.
+      pixelArt: false,
       render: {
         roundPixels: true,
-        antialias: false,
-        pixelArt: true,
+        antialias: true,
+        pixelArt: false,
       },
       physics: {
         default: "arcade",

@@ -60,6 +60,11 @@ server state and sends intents. ✅
 
 - [ ] Fantasy-medieval presentation on the web platform → FS-SWMNW
 - [ ] Fantasy-medieval presentation in the game canvas → FS-W6BP1
+- [x] Isometric projection of the game world → FS-2325V
+- [x] Pre-rendered world and prop art → FS-2325V
+- [x] Pre-rendered character and creature art → FS-2325V
+- [x] Light-map lighting with placed light sources → FS-2325V
+- [x] Container-open presentation → FS-2325V
 
 ### Hub
 

@@ -4,16 +4,34 @@ import { useGameStore, CharacterSave } from "@/stores/gameStore";
 import Phaser from "phaser";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { CLASS_LORE } from "@/data/classLore";
-import { ensureCharacterTextures } from "@/utils/characterTextures";
+import { registerArt } from "@/render/art/phaser";
+import type { ArtLibrary } from "@/render/art/library";
+import { MenuFigure, preloadMenuArt } from "@/render/art/menuFigure";
+import {
+  buttonTextColor,
+  drawBackdrop,
+  drawButton,
+  drawPanel,
+  drawRule,
+  addTorchPool,
+  sharpenText,
+  type ButtonState,
+} from "@/ui/menuChrome";
+
+/** The hero on the main-menu plinth, of the baked frame (FS-2325V §F.3). */
+const HERO_SCALE = 1.3;
+/** A roster card's head-and-shoulders window. */
+const PORTRAIT = { width: 44, height: 56 };
 
 export class MainMenuScene extends Phaser.Scene {
   private unsubscribeConnectionStatus?: () => void;
   private buttonBg?: Phaser.GameObjects.Graphics;
-  private buttonGlow?: Phaser.GameObjects.Graphics;
   private startButtonText?: Phaser.GameObjects.Text;
   private connectionStatusText?: Phaser.GameObjects.Text;
   private isConnected: boolean = false;
-  private scanlineGraphics?: Phaser.GameObjects.Graphics;
+  private art?: ArtLibrary;
+  private centerFigure?: MenuFigure;
+  private centerFigureClass?: string;
   private refusalText?: Phaser.GameObjects.Text;
   private queuePopupActive: boolean = false;
   private queueTitle?: Phaser.GameObjects.Text;
@@ -25,7 +43,9 @@ export class MainMenuScene extends Phaser.Scene {
     index: number;
     slotIndex: number;
     bg: Phaser.GameObjects.Graphics;
-    avatarSprite?: Phaser.GameObjects.Sprite;
+    avatar?: MenuFigure;
+    avatarClass?: string;
+    glow?: Phaser.GameObjects.Image;
     nameText: Phaser.GameObjects.Text;
     classText: Phaser.GameObjects.Text;
     hitArea: Phaser.GameObjects.Rectangle;
@@ -46,12 +66,15 @@ export class MainMenuScene extends Phaser.Scene {
     super({ key: "MainMenuScene" });
   }
 
+  preload(): void {
+    preloadMenuArt(this);
+  }
+
   create(): void {
+    sharpenText(this);
+    this.art = registerArt(this);
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
-
-    // Barrow-dark background
-    this.cameras.main.setBackgroundColor(toCss(palette.ink));
 
     // The Spire — a black silhouette rising behind the title (Perfectly Centered)
     const spire = this.add.graphics();
@@ -70,7 +93,7 @@ export class MainMenuScene extends Phaser.Scene {
     spire.closePath();
     spire.fillPath();
 
-    spire.lineStyle(2, palette.wallTop, 0.18);
+    spire.lineStyle(1, palette.wallTop, 0.22);
     spire.beginPath();
     spire.moveTo(sx, spireTopY);
     spire.lineTo(sx - halfMid, height * 0.42);
@@ -78,43 +101,10 @@ export class MainMenuScene extends Phaser.Scene {
     spire.strokePath();
 
     spire.fillStyle(palette.ember, 0.5);
-    spire.fillCircle(sx + 6, height * 0.5, 2);
+    spire.fillCircle(sx + 6, height * 0.555, 2);
 
-    // Drifting dust & embers
-    const stars = this.add.graphics();
-    for (let i = 0; i < 120; i++) {
-      const x = Phaser.Math.Between(0, width);
-      const y = Phaser.Math.Between(0, height);
-      const ember = Math.random() < 0.12;
-      const size = ember ? 2 : 1;
-      const alpha = ember
-        ? Phaser.Math.FloatBetween(0.25, 0.55)
-        : Phaser.Math.FloatBetween(0.06, 0.22);
-      const color = ember
-        ? palette.ember
-        : Math.random() < 0.5
-          ? palette.hudLabel
-          : palette.wallTop;
-      stars.fillStyle(color, alpha);
-      stars.fillRect(x, y, size, size);
-    }
-
-    // Faint masonry grid overlay
-    const grid = this.add.graphics();
-    grid.lineStyle(1, palette.floor, 0.05);
-    for (let x = 0; x <= width; x += 40) {
-      grid.lineBetween(x, 0, x, height);
-    }
-    for (let y = 0; y <= height; y += 40) {
-      grid.lineBetween(0, y, width, y);
-    }
-
-    // Scanline effect
-    this.scanlineGraphics = this.add.graphics();
-    this.scanlineGraphics.fillStyle(0x000000, 0.04);
-    for (let y = 0; y < height; y += 4) {
-      this.scanlineGraphics.fillRect(0, y, width, 2);
-    }
+    // Drifting dust and embers: soft motes on the charcoal, no pixel grid or scanlines.
+    drawBackdrop(this, 120);
 
     // Main Title (Blackletter display font >= 28px)
     const titleX = width / 2;
@@ -141,8 +131,7 @@ export class MainMenuScene extends Phaser.Scene {
     );
     subText.setOrigin(0.5);
 
-    // Primary Start Game Button (body font)
-    this.buttonGlow = this.add.graphics();
+    // Primary Start Game Button (body font): beveled stone, amber because it can be pressed.
     this.buttonBg = this.add.graphics();
 
     const btnY = height / 2 + 55;
@@ -157,24 +146,14 @@ export class MainMenuScene extends Phaser.Scene {
     });
     this.startButtonText.setOrigin(0.5);
 
-    const hitArea = this.add.rectangle(titleX, btnY + btnH / 2, btnW, btnH, 0x000000, 0);
+    const hitArea = this.add.rectangle(titleX, btnY + btnH / 2, btnW, btnH, palette.inkDeep, 0);
 
     hitArea.on("pointerover", () => {
-      if (this.isConnected) {
-        this.drawButton(0x2e241c, palette.interactableBright, palette.torchCore);
-        if (this.startButtonText) {
-          this.startButtonText.setColor(toCss(palette.frameBright));
-        }
-      }
+      if (this.isConnected) this.drawDelveButton("hover");
     });
 
     hitArea.on("pointerout", () => {
-      if (this.isConnected) {
-        this.drawButton(0x1c1712, palette.frame, palette.ember);
-        if (this.startButtonText) {
-          this.startButtonText.setColor(toCss(palette.frame));
-        }
-      }
+      if (this.isConnected) this.drawDelveButton("idle");
     });
 
     hitArea.on("pointerdown", () => {
@@ -183,7 +162,7 @@ export class MainMenuScene extends Phaser.Scene {
       }
     });
 
-    this.drawButton(0x141210, 0x2a231b);
+    this.drawDelveButton("disabled");
 
     // The loadout moved into the hub: the Quartermaster keeps it now, and gearing
     // up happens where the delver is rather than back in a menu.
@@ -277,6 +256,7 @@ export class MainMenuScene extends Phaser.Scene {
     const panelY = 100;
 
     if (this.sidebarContainer) {
+      // Portraits live in the cards container and go with it (MenuFigure stops on destroy).
       this.sidebarContainer.destroy();
     }
     this.sidebarContainer = this.add.container(0, 0);
@@ -289,10 +269,7 @@ export class MainMenuScene extends Phaser.Scene {
 
     // Sidebar Background Panel
     const sidebarBg = this.add.graphics();
-    sidebarBg.fillStyle(0x0e0c0a, 0.85);
-    sidebarBg.fillRoundedRect(panelX, panelY, panelW, panelH, 6);
-    sidebarBg.lineStyle(1, palette.wallTop, 0.4);
-    sidebarBg.strokeRoundedRect(panelX, panelY, panelW, panelH, 6);
+    drawPanel(sidebarBg, panelX, panelY, panelW, panelH);
     sidebarBg.setInteractive(new Phaser.Geom.Rectangle(panelX, panelY, panelW, panelH), Phaser.Geom.Rectangle.Contains);
     this.sidebarContainer.add(sidebarBg);
 
@@ -308,8 +285,7 @@ export class MainMenuScene extends Phaser.Scene {
 
     // Divider Line
     const div = this.add.graphics();
-    div.lineStyle(1, palette.ember, 0.5);
-    div.lineBetween(panelX + 16, panelY + 40, panelX + panelW - 16, panelY + 40);
+    drawRule(div, panelX + 16, panelX + panelW - 16, panelY + 40);
     this.sidebarContainer.add(div);
 
     // Viewport Geometry Mask for scrolling
@@ -319,7 +295,7 @@ export class MainMenuScene extends Phaser.Scene {
     const maskX = panelX + 8;
 
     const maskShape = this.make.graphics({});
-    maskShape.fillStyle(0xffffff);
+    maskShape.fillStyle(palette.hudText); // any opaque fill: a geometry mask reads shape, not colour
     maskShape.fillRect(maskX, maskY, maskW, maskH);
     const mask = maskShape.createGeometryMask();
 
@@ -337,8 +313,6 @@ export class MainMenuScene extends Phaser.Scene {
 
     this.heroSidebarCards = [];
 
-    ensureCharacterTextures(this);
-
     for (let i = 0; i < numSlots; i++) {
       const slotItem = createdSlots[i];
       const slotIdx = slotItem.index;
@@ -347,33 +321,39 @@ export class MainMenuScene extends Phaser.Scene {
 
       const bg = this.add.graphics();
 
-      const avatarSprite = this.add.sprite(panelX + 32, y + 34, "preview_warrior_down");
-      avatarSprite.setScale(0.85);
-      avatarSprite.setVisible(false);
+      // The class's own baked sheet, head and shoulders, set by refreshHeroSidebar.
+      const cls = (slotItem.char.className || "warrior").toLowerCase();
+      const avatar = this.art
+        ? new MenuFigure(this, this.art, panelX + 36, y + 6, cls, { portrait: PORTRAIT })
+        : undefined;
 
-      const nameText = this.add.text(panelX + 54, y + 14, "", {
+      const glow = addTorchPool(this, panelX + 36, y + cardH / 2 + 4, 76, 64, 0.55);
+
+      const nameText = this.add.text(panelX + 64, y + 14, "", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "13px",
-        color: "#ffffff",
+        color: toCss(palette.hudText),
       });
 
-      const classText = this.add.text(panelX + 54, y + 40, "", {
+      const classText = this.add.text(panelX + 64, y + 40, "", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "10px",
         color: toCss(palette.hudLabel),
       });
 
-      const hitArea = this.add.rectangle(centerX, y + cardH / 2, cardW, cardH, 0x000000, 0);
+      const hitArea = this.add.rectangle(centerX, y + cardH / 2, cardW, cardH, palette.inkDeep, 0);
       hitArea.setInteractive({ useHandCursor: true });
 
-      // Delete icon
-      const deleteText = this.add.text(panelX + panelW - 28, y + 24, "🗑️", {
-        fontSize: "11px",
+      // Delete mark: a plain serif cross, not an emoji.
+      const deleteText = this.add.text(panelX + panelW - 28, y + 24, "\u00d7", {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "16px",
+        color: toCss(palette.hudLabel),
       });
       deleteText.setOrigin(0.5);
       deleteText.setVisible(false);
 
-      const deleteHit = this.add.rectangle(panelX + panelW - 28, y + 24, 22, 22, 0x000000, 0);
+      const deleteHit = this.add.rectangle(panelX + panelW - 28, y + 24, 22, 22, palette.inkDeep, 0);
       deleteHit.setVisible(false);
 
       const cardObj = {
@@ -381,7 +361,9 @@ export class MainMenuScene extends Phaser.Scene {
         slotIndex: slotIdx,
         cardH,
         bg,
-        avatarSprite,
+        avatar,
+        avatarClass: cls,
+        glow,
         nameText,
         classText,
         hitArea,
@@ -389,7 +371,9 @@ export class MainMenuScene extends Phaser.Scene {
         deleteHit,
       };
 
-      this.sidebarCardsContainer.add([bg, avatarSprite, nameText, classText, hitArea, deleteText, deleteHit]);
+      this.sidebarCardsContainer.add([bg, glow]);
+      if (avatar) this.sidebarCardsContainer.add(avatar.container);
+      this.sidebarCardsContainer.add([nameText, classText, hitArea, deleteText, deleteHit]);
       this.heroSidebarCards.push(cardObj);
 
       hitArea.on("pointerup", (pointer: Phaser.Input.Pointer) => {
@@ -397,6 +381,8 @@ export class MainMenuScene extends Phaser.Scene {
         if (dist < 8) {
           useGameStore.getState().setActiveSlotIndex(slotIdx);
           this.refreshHeroSidebar();
+          // Picking a hero plays its attack once on the plinth (FS-2325V §F.2).
+          this.centerFigure?.flourish();
         }
       });
     }
@@ -466,21 +452,28 @@ export class MainMenuScene extends Phaser.Scene {
     const createBtnX = panelX + panelW / 2;
 
     const createBtnBg = this.add.graphics();
-    createBtnBg.fillStyle(0x221a14, 0.95);
-    createBtnBg.fillRect(createBtnX - createBtnW / 2, createBtnY - createBtnH / 2, createBtnW, createBtnH);
-    createBtnBg.lineStyle(1, palette.torchCore, 0.8);
-    createBtnBg.strokeRect(createBtnX - createBtnW / 2, createBtnY - createBtnH / 2, createBtnW, createBtnH);
-
     const createBtnText = this.add.text(createBtnX, createBtnY, "+ CREATE HERO", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "11px",
-      color: toCss(palette.frameBright),
       letterSpacing: 2,
     });
     createBtnText.setOrigin(0.5);
+    const drawCreateBtn = (state: ButtonState) => {
+      drawButton(
+        createBtnBg,
+        createBtnX - createBtnW / 2,
+        createBtnY - createBtnH / 2,
+        createBtnW,
+        createBtnH,
+        "primary",
+        state,
+      );
+      createBtnText.setColor(toCss(buttonTextColor("primary", state)));
+    };
+    drawCreateBtn("idle");
 
     const createBtnHit = this.add
-      .rectangle(createBtnX, createBtnY, createBtnW, createBtnH, 0x000000, 0)
+      .rectangle(createBtnX, createBtnY, createBtnW, createBtnH, palette.inkDeep, 0)
       .setInteractive({ useHandCursor: true });
 
     createBtnHit.on("pointerdown", () => {
@@ -490,21 +483,8 @@ export class MainMenuScene extends Phaser.Scene {
       this.scene.start("CharacterCreationScene", { slotIndex: targetSlot });
     });
 
-    createBtnHit.on("pointerover", () => {
-      createBtnBg.clear();
-      createBtnBg.fillStyle(palette.ember, 0.95);
-      createBtnBg.fillRect(createBtnX - createBtnW / 2, createBtnY - createBtnH / 2, createBtnW, createBtnH);
-      createBtnBg.lineStyle(1, 0xffffff, 1);
-      createBtnBg.strokeRect(createBtnX - createBtnW / 2, createBtnY - createBtnH / 2, createBtnW, createBtnH);
-    });
-
-    createBtnHit.on("pointerout", () => {
-      createBtnBg.clear();
-      createBtnBg.fillStyle(0x221a14, 0.95);
-      createBtnBg.fillRect(createBtnX - createBtnW / 2, createBtnY - createBtnH / 2, createBtnW, createBtnH);
-      createBtnBg.lineStyle(1, palette.torchCore, 0.8);
-      createBtnBg.strokeRect(createBtnX - createBtnW / 2, createBtnY - createBtnH / 2, createBtnW, createBtnH);
-    });
+    createBtnHit.on("pointerover", () => drawCreateBtn("hover"));
+    createBtnHit.on("pointerout", () => drawCreateBtn("idle"));
 
     this.sidebarContainer.add([createBtnBg, createBtnText, createBtnHit]);
     this.updateSidebarScrollPosition(maskY, maskH, panelX + panelW - 6, totalHeight);
@@ -522,21 +502,20 @@ export class MainMenuScene extends Phaser.Scene {
 
       if (maxScroll > 0) {
         // Draw Scroll Track
-        this.sidebarScrollbarGraphics.fillStyle(0x1a1410, 0.6);
+        this.sidebarScrollbarGraphics.fillStyle(palette.inkDeep, 0.6);
         this.sidebarScrollbarGraphics.fillRect(trackX - 2, maskY, 4, maskH);
 
         // Draw Scroll Thumb
         const thumbH = Math.max(24, Math.floor((maskH / totalHeight) * maskH));
         const thumbY = maskY + (this.sidebarScrollY / maxScroll) * (maskH - thumbH);
 
-        this.sidebarScrollbarGraphics.fillStyle(palette.torchCore, 0.9);
+        this.sidebarScrollbarGraphics.fillStyle(palette.frame, 0.8);
         this.sidebarScrollbarGraphics.fillRoundedRect(trackX - 2, thumbY, 4, thumbH, 2);
       }
     }
   }
 
   private refreshCenterHeroShowcase(): void {
-    ensureCharacterTextures(this);
     const store = useGameStore.getState();
     const activeChar = store.getActiveCharacter();
     const width = this.cameras.main.width;
@@ -544,6 +523,8 @@ export class MainMenuScene extends Phaser.Scene {
 
     const centerX = width / 2;
     const centerY = height / 2 - 95;
+    /** Where the hero's feet stand on the plinth. */
+    const feetY = centerY + 26;
 
     if (this.centerHeroContainer) {
       this.centerHeroContainer.destroy();
@@ -557,78 +538,65 @@ export class MainMenuScene extends Phaser.Scene {
       const cls = (activeChar.className || "warrior").toLowerCase() as keyof typeof CLASS_LORE;
       const lore = CLASS_LORE[cls];
 
-      // Pedestal Platform & Torch Glow
-      const pedestal = this.add.graphics();
-      // Drop Shadow
-      pedestal.fillStyle(0x000000, 0.45);
-      pedestal.fillEllipse(0, 26, 90, 24);
-      // Stone Platform
-      pedestal.fillStyle(0x1c1712, 0.85);
-      pedestal.fillEllipse(0, 20, 78, 18);
-      // Torch Gold Rim
-      pedestal.lineStyle(2, palette.torchCore, 0.85);
-      pedestal.strokeEllipse(0, 20, 78, 18);
+      // The hero is the class's own baked sheet on a lit plinth, turning (FS-2325V §F.1-F.3).
+      // It outlives this container, so a refresh does not restart its turn.
+      if (!this.centerFigure && this.art) {
+        this.centerFigure = new MenuFigure(this, this.art, centerX, feetY, cls, {
+          scale: HERO_SCALE,
+        });
+        this.centerFigure.container.setDepth(14);
+      } else if (this.centerFigure && this.centerFigureClass !== cls) {
+        this.centerFigure.setClass(cls, false);
+      }
+      this.centerFigureClass = cls;
 
-      // Pixel Art Hero Sprite
-      const textureKey = `preview_${cls}_down`;
-      const heroSprite = this.add.sprite(0, -10, textureKey);
-      heroSprite.setScale(2.0);
-
-      // Gentle floating animation
-      this.tweens.add({
-        targets: heroSprite,
-        y: -16,
-        duration: 1500,
-        yoyo: true,
-        repeat: -1,
-        ease: "Sine.easeInOut",
-      });
-
-      // Hero Name Text (moved down 20px)
-      const nameText = this.add.text(0, 60, activeChar.name.toUpperCase(), {
+      // Below the plinth's foot.
+      const nameText = this.add.text(0, 86, activeChar.name.toUpperCase(), {
         fontFamily: CANVAS_FONT.body,
         fontSize: "16px",
         color: toCss(palette.frameBright),
         fontStyle: "bold",
-        stroke: "#000000",
+        stroke: toCss(palette.inkDeep),
         strokeThickness: 3,
       });
       nameText.setOrigin(0.5);
 
-      // Hero Class Badge Text (moved down 20px)
       const classTitle = lore ? `${lore.title} • LV.${activeChar.level}` : `${cls.toUpperCase()} LV.${activeChar.level}`;
-      const classText = this.add.text(0, 80, classTitle, {
+      const classText = this.add.text(0, 106, classTitle, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
-        color: toCss(palette.torchCore),
+        color: toCss(palette.hudLabel),
         letterSpacing: 2,
       });
       classText.setOrigin(0.5);
 
-      this.centerHeroContainer.add([pedestal, heroSprite, nameText, classText]);
+      this.centerHeroContainer.add([nameText, classText]);
     } else {
-      // Empty pedestal prompt
+      this.centerFigure?.destroy();
+      this.centerFigure = undefined;
+      this.centerFigureClass = undefined;
+
+      // An empty plinth: a pool of torchlight and a brass ring, waiting for a hero.
+      const glow = addTorchPool(this, 0, 26, 200, 100, 0.8);
       const pedestal = this.add.graphics();
-      pedestal.fillStyle(0x000000, 0.3);
-      pedestal.fillEllipse(0, 26, 80, 20);
-      pedestal.lineStyle(1, palette.hudLabel, 0.4);
-      pedestal.strokeEllipse(0, 26, 80, 20);
+      pedestal.lineStyle(1, palette.frame, 0.45);
+      pedestal.strokeEllipse(0, 26, 90, 45);
 
       const emptyText = this.add.text(0, 0, "+ CREATE HERO", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "13px",
-        color: toCss(palette.hudLabel),
+        color: toCss(palette.interactable),
         letterSpacing: 2,
       });
       emptyText.setOrigin(0.5);
 
-      const hit = this.add.rectangle(0, 0, 140, 80, 0x000000, 0);
+      const hit = this.add.rectangle(0, 0, 140, 80, palette.inkDeep, 0);
       hit.setInteractive({ useHandCursor: true });
       hit.on("pointerdown", () => {
         this.scene.start("CharacterCreationScene", { slotIndex: 0 });
       });
 
-      this.centerHeroContainer.add([pedestal, emptyText, hit]);
+      this.centerHeroContainer.add([glow, pedestal, emptyText, hit]);
     }
   }
 
@@ -678,16 +646,14 @@ export class MainMenuScene extends Phaser.Scene {
       card.bg.clear();
 
       const cls = (char.className || "warrior").toLowerCase();
-      const texKey = `preview_${cls}_down`;
-
-      if (card.avatarSprite) {
-        card.avatarSprite.setTexture(texKey);
-        card.avatarSprite.setPosition(panelX + 32, y + 34);
-        card.avatarSprite.setVisible(true);
+      if (card.avatar) {
+        if (card.avatarClass !== cls) card.avatar.setClass(cls, false);
+        card.avatarClass = cls;
+        card.avatar.container.setPosition(panelX + 36, y + 6);
       }
 
-      card.nameText.setText(char.name).setPosition(panelX + 54, y + 14).setVisible(true);
-      card.classText.setText(`${char.className.toUpperCase()} • LV.${char.level}`).setPosition(panelX + 54, y + 40).setVisible(true);
+      card.nameText.setText(char.name).setPosition(panelX + 64, y + 14).setVisible(true);
+      card.classText.setText(`${char.className.toUpperCase()} • LV.${char.level}`).setPosition(panelX + 64, y + 40).setVisible(true);
 
       if (card.deleteBtn && card.deleteHit) {
         card.deleteBtn.setVisible(true);
@@ -703,19 +669,12 @@ export class MainMenuScene extends Phaser.Scene {
         });
       }
 
-      if (isSelected) {
-        card.bg.fillStyle(0x2a1e16, 0.95);
-        card.bg.fillRect(x, y, cardW, cardH);
-        card.bg.lineStyle(2, palette.torchCore, 1);
-        card.bg.strokeRect(x, y, cardW, cardH);
-        card.bg.fillStyle(palette.ember, 1);
-        card.bg.fillRect(x, y, 4, cardH);
-      } else {
-        card.bg.fillStyle(palette.ground, 0.4);
-        card.bg.fillRect(x, y, cardW, cardH);
-        card.bg.lineStyle(1, palette.wallTop, 0.3);
-        card.bg.strokeRect(x, y, cardW, cardH);
-      }
+      drawPanel(card.bg, x, y, cardW, cardH, {
+        raised: isSelected,
+        alpha: isSelected ? 0.95 : 0.6,
+      });
+      // Every portrait stands in a little torchlight; the chosen hero's burns brighter.
+      card.glow?.setPosition(panelX + 36, y + cardH / 2 + 4).setAlpha(isSelected ? 1 : 0.55);
     });
 
     this.updateSidebarScrollPosition(maskY, maskH, panelX + panelW - 6, totalHeight);
@@ -756,29 +715,26 @@ export class MainMenuScene extends Phaser.Scene {
       if (status === "connected") {
         hitArea.setInteractive({ useHandCursor: true });
         this.startButtonText.setText("DELVE");
-        this.startButtonText.setColor(toCss(palette.frame));
         this.connectionStatusText.setText("The way is open // Server connected");
         this.connectionStatusText.setColor(toCss(palette.hudLabel));
-        this.drawButton(0x1c1712, palette.frame, palette.ember);
+        this.drawDelveButton("idle");
       } else if (status === "connecting") {
         hitArea.disableInteractive();
         this.startButtonText.setText("CONNECTING...");
-        this.startButtonText.setColor(toCss(palette.hudFaint));
         this.connectionStatusText.setText("Kindling torch // Connecting to game server...");
         this.connectionStatusText.setColor(toCss(palette.torchCore));
-        this.drawButton(0x141210, palette.torchCore);
+        this.drawDelveButton("disabled");
       } else {
         hitArea.disableInteractive();
         this.startButtonText.setText("LOST");
-        this.startButtonText.setColor(toCss(palette.hudFaint));
         this.connectionStatusText.setText("The torch gutters // Connection lost");
-        this.connectionStatusText.setColor("#e74c3c");
-        this.drawButton(0x141210, 0x2a231b);
+        this.connectionStatusText.setColor(toCss(palette.damageBright));
+        this.drawDelveButton("disabled");
       }
     }
   }
 
-  private drawButton(fill: number, stroke: number, glowColor?: number): void {
+  private drawDelveButton(state: ButtonState): void {
     if (!this.cameras || !this.cameras.main) return;
     const width = this.cameras.main.width;
     const titleX = width / 2;
@@ -787,21 +743,8 @@ export class MainMenuScene extends Phaser.Scene {
     const btnW = 220;
     const btnH = 50;
 
-    if (this.buttonGlow && glowColor) {
-      this.buttonGlow.clear();
-      this.buttonGlow.fillStyle(glowColor, 0.15);
-      this.buttonGlow.fillRoundedRect(btnX - 4, btnY - 4, btnW + 8, btnH + 8, 6);
-    } else if (this.buttonGlow) {
-      this.buttonGlow.clear();
-    }
-
-    if (this.buttonBg) {
-      this.buttonBg.clear();
-      this.buttonBg.fillStyle(fill, 1);
-      this.buttonBg.fillRoundedRect(btnX, btnY, btnW, btnH, 4);
-      this.buttonBg.lineStyle(2, stroke, 0.9);
-      this.buttonBg.strokeRoundedRect(btnX, btnY, btnW, btnH, 4);
-    }
+    if (this.buttonBg) drawButton(this.buttonBg, btnX, btnY, btnW, btnH, "primary", state);
+    this.startButtonText?.setColor(toCss(buttonTextColor("primary", state)));
   }
 
   /**
@@ -851,7 +794,7 @@ export class MainMenuScene extends Phaser.Scene {
       height / 2,
       width,
       height,
-      0x000000,
+      palette.inkDeep,
       0.7
     );
     this.queueOverlay.setDepth(100);
@@ -862,10 +805,7 @@ export class MainMenuScene extends Phaser.Scene {
     const boxW = 320;
     const boxH = 160;
     const boxBg = this.add.graphics();
-    boxBg.fillStyle(palette.inkDeep, 0.95);
-    boxBg.fillRoundedRect(-boxW / 2, -boxH / 2, boxW, boxH, 8);
-    boxBg.lineStyle(2, palette.interactableBright, 0.8);
-    boxBg.strokeRoundedRect(-boxW / 2, -boxH / 2, boxW, boxH, 8);
+    drawPanel(boxBg, -boxW / 2, -boxH / 2, boxW, boxH, { alpha: 0.97 });
 
     this.queueTitle = this.add.text(0, -40, "GATHERING THE DELVE", {
       fontFamily: CANVAS_FONT.body,
@@ -889,7 +829,7 @@ export class MainMenuScene extends Phaser.Scene {
     const cancelBtn = this.add.text(0, 45, "[ LEAVE QUEUE ]", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "12px",
-      color: toCss(palette.interactable),
+      color: toCss(buttonTextColor("cancel", "idle")),
     });
     cancelBtn.setOrigin(0.5);
     cancelBtn.setInteractive({ useHandCursor: true });
@@ -924,6 +864,11 @@ export class MainMenuScene extends Phaser.Scene {
       this.centerHeroContainer.destroy();
       this.centerHeroContainer = undefined;
     }
+    // The scene instance outlives this visit; its figures do not.
+    this.centerFigure?.destroy();
+    this.centerFigure = undefined;
+    this.centerFigureClass = undefined;
+    this.heroSidebarCards = [];
     if (this.sidebarContainer) {
       this.sidebarContainer.destroy();
       this.sidebarContainer = undefined;

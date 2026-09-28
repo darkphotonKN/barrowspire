@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
-    "lint:fence": "./lint-fence.sh"
+    "lint:fence": "./lint-fence.sh",
+    "bake": "node tools/bake/bake.mjs"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -36,9 +37,12 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.0.0",
     "eslint-config-prettier": "^10.1.8",
+    "eventemitter3": "^5.0.4",
+    "playwright-core": "1.61.1",
     "postcss": "^8.5.6",
     "prettier": "^3.6.2",
     "tailwindcss": "^4.1.17",
+    "three": "0.160.0",
     "typescript": "^5.3.3",
     "vitest": "^1.6.1"
   }

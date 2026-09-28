@@ -146,6 +146,9 @@ public/
 !game-client/public/
 game-client/public/*
 !game-client/public/audio/
+# Baked art IS committed (ADR-0020 §5); the licensed models it is baked from are NOT (FS-2325V §B.7).
+!game-client/public/art/
+game-client/tools/bake/sources/
 
 # Storybook build outputs
 .out

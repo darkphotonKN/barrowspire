@@ -129,6 +129,33 @@ export const palette = {
   rivalGlow: BARROW_HEX.arcane,
   rivalGlowSoft: BARROW_HEX.necrotic,
   hoodShadow: shade(BARROW_HEX.pitch, 0.45),
+
+  // -- Markers (FS-2325V §C.9): name plates and the HP bar. They draw above
+  //    the light-map and the vignette, so they carry readability while the
+  //    world stays dark, and each keeps >= 3:1 against the darkest lit ground
+  //    at the canvas edge (tested in src/render/markers/). Oxblood fails that
+  //    as a bar fill, so HP takes its lifted text tone.
+  markerSelf: BARROW_HEX.brassBright,
+  markerRival: BARROW_HEX.arcane,
+  markerHub: BARROW_HEX.vellum,
+  markerStroke: BARROW_HEX.charcoal,
+  markerBarBacking: BARROW_HEX.pitch,
+  markerBarRim: BARROW_HEX.barrowDeep,
+  markerHp: BARROW_HEX.oxbloodText,
+  markerMp: BARROW_HEX.necrotic,
+
+  // -- The satchel (container view, FS-2325V §D). Tanned leather sits between
+  //    barrow brown and brass; the flap is the darker, oilier hide; vellum
+  //    thread for the stitching, bright brass for rivets and the buckle.
+  satchel: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.brass, 0.6), 0.2),
+  satchelFlap: mix(BARROW_HEX.barrowBrown, BARROW_HEX.brass, 0.35),
+  satchelLip: mix(BARROW_HEX.barrowDeep, BARROW_HEX.brass, 0.3),
+  satchelStrap: shade(BARROW_HEX.barrowDeep, 0.15),
+  satchelBurn: shade(BARROW_HEX.barrowDeep, 0.55),
+  satchelStitch: BARROW_HEX.vellum,
+  satchelRivet: BARROW_HEX.brassBright,
+  /** Multiplied over the flap once it lifts: the underside is the unlit side. */
+  satchelUnderside: shade(BARROW_HEX.vellumDark, 0.35),
 } as const;
 
 // ── Typography ────────────────────────────────────────────────────────────

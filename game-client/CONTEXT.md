@@ -48,6 +48,51 @@ translation belongs to the surface that renders words.
 - **Gold** — the in-game currency, in copy and in code alike (wallet-service and ledger-service
   both use it). One of the few words that needs no translation.
 
+## Rendering terms (canvas presentation, [ADR-0020](../docs/adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) / FS-2325V)
+
+These are engineering words, not lore. They name how the canvas draws the world, and like the lore
+layer they **stop at the pixel**: none of them appears on the wire or in game rules.
+
+- **World position**: an entity's `x, y` as the server sends it. Flat, top-down, authoritative.
+  **Every** gameplay calculation in the client uses world positions: distance, range, proximity,
+  bounds. Unqualified "position" in client code means this.
+- **Screen position**: where a sprite is drawn, obtained only through the projection. It is never
+  used for a gameplay calculation, and a distance measured between two sprites is a defect. The
+  classic mistake is `Distance.Between(spriteA, spriteB)`.
+- **Projection**: the pair `worldToScreen` / `screenToWorld` that maps world positions onto the
+  2:1 isometric diamond and back. `screenToWorld` exists only to turn a pointer into a world
+  target. The projection is presentation; changing it can never change game behaviour.
+- **Tile**: the unit of the isometric diamond (64×32 px on screen). A world span of
+  `WORLD_PX_PER_TILE` server pixels projects onto one tile. There is no tile grid on the server;
+  "tile" is a drawing unit, never a game unit.
+- **Footprint**: the patch of ground an object occupies in world space. Draw order sorts by
+  footprint (`x + y`) and clicks hit-test against it. A sprite's pixel bounds are taller than its
+  footprint and are used for neither.
+- **Bake**: the build-time step that renders 3D models through the isometric camera into 2D sprite
+  sheets. "Bake" always means build time, never in-browser at load.
+- **Sprite manifest**: `public/art/manifest.json`, the bake's index. It records, per sheet: frame
+  size, anchor, directions, frame counts, fps, declared light source, asset source/licence, and
+  two measured values: a ground sheet's mean colour and a standing sheet's head height (`crown`).
+  The client learns about art only through it.
+- **Light source**: a point that lights the light-map (torch, brazier, window, lantern, the
+  delver's torch pool). It is declared per prop type in the sprite manifest, or attached to the
+  delver. Purely visual: it has no effect on what anyone can see or hit.
+- **Light-map**: the camera-fixed layer that multiplies the lit world: filled each frame with the
+  world's **ambient** (fixed per world type), plus an additive pool per light source in view.
+  Built once and restamped, never rebuilt (`src/render/lighting/`).
+- **Marker**: an overlay a character is read by — a name plate, the HP bar, a creature's glowing
+  eyes. Markers draw above the light-map and vignette and carry the readability floor, so the
+  world may stay dark (`src/render/markers/`). A marker is not the thing it marks: a corpse shows
+  none.
+- **Wall piece**: one tile of a server wall as drawn. A server wall rect is cut into wall pieces
+  along its centreline, each sorted by its own footprint, with a **post** at each end. "Back"
+  pieces stand full height (north and west sides); "front" pieces are the low cut-away.
+- **Occluder**: a tall drawn thing (tree, lamp post, back wall piece, roof piece, door, arch) that
+  fades while its sprite overlaps the delver's and its footprint sorts nearer the viewer.
+- **Container view**: the on-screen satchel/coffer panel showing a container's contents. Not the
+  same thing as a **container**, which is the WS entity in `containers[]`. Opening the view is
+  presentation; clicking an item in it sends exactly the message the item row always sent.
+
 ## Mapping table
 
 | Screen says | REST / auth | WS protocol | SPECIFICATION.md |

@@ -1044,8 +1044,18 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		}
 
 		doorTransform := doorTransformComponent.(*components.TransformComponent)
+		doorX, doorY := doorTransform.X, doorTransform.Y
+
+		// a door is stored by its top-left corner; range is measured to the middle
+		// of the doorway, or the far end of a wide door is out of reach from in front of it
+		if doorComponent, hasDoor := targetEntity.GetComponent(ecs.ComponentTypeDoor); hasDoor {
+			door := doorComponent.(*components.DoorComponent)
+			doorX += door.Width / 2
+			doorY += door.Height / 2
+		}
+
 		// validate is within distance from player
-		isWithinDistance := s.calcWithinDistance(playerTransform.X, playerTransform.Y, doorTransform.X, doorTransform.Y)
+		isWithinDistance := s.calcWithinDistance(playerTransform.X, playerTransform.Y, doorX, doorY)
 
 		if !isWithinDistance {
 			slog.Debug("Door entity out of range for interaction", "targetID", targetEntityID, "playerID", playerID)
