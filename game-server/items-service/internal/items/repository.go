@@ -903,7 +903,7 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 			mana_amount      = EXCLUDED.mana_amount,
 			buff_duration    = EXCLUDED.buff_duration,
 			durability       = EXCLUDED.durability,
-			description      = EXCLUDED.description
+			description      = EXCLUDED.description,
 			status           = EXCLUDED.status `)
 
 	_, err := tx.ExecContext(ctx, b.String(), args...)
@@ -918,7 +918,7 @@ func (r *repository) ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, i
 	query := `
 		UPDATE item_instances
 		SET status = 'LISTED',
-			updated_at = :updated_at
+			updated_at = :updated_at,
 			reserved_at = :reserved_at
 		WHERE id = :id
 		AND owner_member_id = :owner_member_id

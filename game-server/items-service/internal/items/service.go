@@ -358,10 +358,23 @@ func (s *service) ConvertSingleProtoItemtoItemInstance(protoItem *pb.Item) (*Ite
 	buffDuration := int(protoItem.BuffDuration)
 	description := protoItem.Description
 
+	// empty rarity_id = no rarity (NULL); a malformed one keeps the item, NULL rarity
+	var rarityID *uuid.UUID
+	if protoItem.RarityId != "" {
+		if parsed, err := uuid.Parse(protoItem.RarityId); err == nil {
+			rarityID = &parsed
+		} else {
+			slog.Warn("malformed rarity_id on extracted item, storing NULL rarity",
+				"rarity_id", protoItem.RarityId,
+			)
+		}
+	}
+
 	item := &ItemInstance{
 		ID:              itemId,
 		ItemType:        protoItem.ItemType,
 		Name:            protoItem.Name,
+		RarityID:        rarityID,
 		AttackPower:     &attackPower,
 		CriticalRate:    &criticalRate,
 		WeaponType:      &weaponType,

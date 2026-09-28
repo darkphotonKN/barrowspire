@@ -148,6 +148,7 @@ type ExtractedItem struct {
 	Description string
 
 	InstanceID *uuid.UUID
+	RarityID   string // item_rarities.id; empty = none
 }
 
 type ExtractedEquipment struct {
@@ -233,6 +234,7 @@ type ItemConfig struct {
 	Description     string
 
 	InstanceID *uuid.UUID
+	RarityID   string // item_rarities.id; empty = none
 }
 
 type ItemType string

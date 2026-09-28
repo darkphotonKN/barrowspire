@@ -805,11 +805,13 @@ func (h *Handler) ListItemRarities(ctx context.Context, req *emptypb.Empty) (*pb
 	pbRarities := make([]*pb.ItemRarity, 0, len(rarities))
 	for _, rarity := range rarities {
 		pbRarities = append(pbRarities, &pb.ItemRarity{
-			Id:          rarity.ID.String(),
-			Name:        rarity.RarityName,
-			Description: "", // ItemRarity doesn't have a description field in DB
-			CreatedAt:   timestamppb.New(rarity.CreatedAt),
-			UpdatedAt:   timestamppb.New(rarity.UpdatedAt),
+			Id:                 rarity.ID.String(),
+			Name:               rarity.RarityName,
+			Description:        "", // ItemRarity doesn't have a description field in DB
+			CreatedAt:          timestamppb.New(rarity.CreatedAt),
+			UpdatedAt:          timestamppb.New(rarity.UpdatedAt),
+			RarityCode:         rarity.RarityCode,
+			DropRateMultiplier: rarity.DropRateMultiplier,
 		})
 	}
 

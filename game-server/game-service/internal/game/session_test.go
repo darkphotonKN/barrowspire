@@ -690,6 +690,12 @@ func TestSession_GenerateItems_CreateItemEntities(t *testing.T) {
 
 type mockItemsClient struct {
 	mock.Mock
+	rarities    *pb.ListItemRaritiesResponse
+	raritiesErr error
+}
+
+func (c *mockItemsClient) ListItemRarities(ctx context.Context) (*pb.ListItemRaritiesResponse, error) {
+	return c.rarities, c.raritiesErr
 }
 
 func (c *mockItemsClient) CreateWeapon(ctx context.Context, req *pb.CreateWeaponRequest) (*pb.Weapon, error) {

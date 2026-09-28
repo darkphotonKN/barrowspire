@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -28,49 +29,67 @@ type stubItemClient struct {
 	weapons   *pb.ListWeaponsResponse
 	loadout   *pb.GetLoadoutResponse
 	instances *pb.ListItemInstancesResponse
+
+	gotAuth []string // outgoing authorization metadata of the last call
 }
 
-func (s *stubItemClient) ListItemTypes(context.Context) (*pb.ListItemTypesResponse, error) {
+func (s *stubItemClient) recordAuth(ctx context.Context) {
+	md, _ := metadata.FromOutgoingContext(ctx)
+	s.gotAuth = md.Get("authorization")
+}
+
+func (s *stubItemClient) ListItemTypes(ctx context.Context) (*pb.ListItemTypesResponse, error) {
+	s.recordAuth(ctx)
 	return s.types, s.err
 }
 
-func (s *stubItemClient) ListItemRarities(context.Context) (*pb.ListItemRaritiesResponse, error) {
+func (s *stubItemClient) ListItemRarities(ctx context.Context) (*pb.ListItemRaritiesResponse, error) {
+	s.recordAuth(ctx)
 	return s.rarities, s.err
 }
 
-func (s *stubItemClient) CreateWeapon(context.Context, *pb.CreateWeaponRequest) (*pb.Weapon, error) {
+func (s *stubItemClient) CreateWeapon(ctx context.Context, _ *pb.CreateWeaponRequest) (*pb.Weapon, error) {
+	s.recordAuth(ctx)
 	return nil, s.err
 }
 
-func (s *stubItemClient) ListWeaponsWithTemplate(context.Context) (*pb.ListWeaponsResponse, error) {
+func (s *stubItemClient) ListWeaponsWithTemplate(ctx context.Context) (*pb.ListWeaponsResponse, error) {
+	s.recordAuth(ctx)
 	return s.weapons, s.err
 }
 
-func (s *stubItemClient) CreateItemTemplate(context.Context, *pb.CreateItemTemplateRequest) (*pb.ItemTemplate, error) {
+func (s *stubItemClient) CreateItemTemplate(ctx context.Context, _ *pb.CreateItemTemplateRequest) (*pb.ItemTemplate, error) {
+	s.recordAuth(ctx)
 	return nil, s.err
 }
 
-func (s *stubItemClient) CreateCompleteWeapon(context.Context, *pb.CreateCompleteWeaponRequest) (*pb.WeaponDetail, error) {
+func (s *stubItemClient) CreateCompleteWeapon(ctx context.Context, _ *pb.CreateCompleteWeaponRequest) (*pb.WeaponDetail, error) {
+	s.recordAuth(ctx)
 	return nil, s.err
 }
 
-func (s *stubItemClient) CreateCompleteArmor(context.Context, *pb.CreateCompleteArmorRequest) (*pb.ArmorDetail, error) {
+func (s *stubItemClient) CreateCompleteArmor(ctx context.Context, _ *pb.CreateCompleteArmorRequest) (*pb.ArmorDetail, error) {
+	s.recordAuth(ctx)
 	return nil, s.err
 }
 
-func (s *stubItemClient) CreateCompleteConsumable(context.Context, *pb.CreateCompleteConsumableRequest) (*pb.ConsumableDetail, error) {
+func (s *stubItemClient) CreateCompleteConsumable(ctx context.Context, _ *pb.CreateCompleteConsumableRequest) (*pb.ConsumableDetail, error) {
+	s.recordAuth(ctx)
 	return nil, s.err
 }
 
-func (s *stubItemClient) GetLoadout(context.Context, *pb.GetLoadoutRequest) (*pb.GetLoadoutResponse, error) {
+func (s *stubItemClient) GetLoadout(ctx context.Context, _ *pb.GetLoadoutRequest) (*pb.GetLoadoutResponse, error) {
+	s.recordAuth(ctx)
 	return s.loadout, s.err
 }
 
-func (s *stubItemClient) ListItemInstances(context.Context, *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error) {
+func (s *stubItemClient) ListItemInstances(ctx context.Context, _ *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error) {
+	s.recordAuth(ctx)
 	return s.instances, s.err
 }
 
-func (s *stubItemClient) UpdateLoadout(context.Context, *pb.UpdateLoadoutRequest) (*pb.UpdateLoadoutResponse, error) {
+func (s *stubItemClient) UpdateLoadout(ctx context.Context, _ *pb.UpdateLoadoutRequest) (*pb.UpdateLoadoutResponse, error) {
+	s.recordAuth(ctx)
 	return nil, s.err
 }
 

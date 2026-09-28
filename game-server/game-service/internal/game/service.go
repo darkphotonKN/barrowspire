@@ -211,6 +211,7 @@ func extractedItemToPb(item *types.ExtractedItem) *pb.Item {
 	}
 	return &pb.Item{
 		InstanceId:      instanceIDToString(item.InstanceID),
+		RarityId:        item.RarityID,
 		TemplateId:      item.TemplateID.String(),
 		ItemType:        item.ItemType,
 		Name:            item.Name,
