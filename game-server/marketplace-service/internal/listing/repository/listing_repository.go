@@ -173,6 +173,13 @@ func reconstitute(listingRow ListingRow, bidRows []BidRow) (*listing.Listing, er
 // other writer on that listing.
 func (r *ListingRepository) Modify(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
 	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
+		// Bound the wait on a contended listing to 3 seconds longest for this row lock
+		// LOCAL scopes it to this
+		// transaction, so it can't leak onto the pooled connection.
+		if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '3s'`); err != nil {
+			return commonhelpers.WrapDBErr("listing", "Modify", err)
+		}
+
 		var listingRow ListingRow
 		var bidRows []BidRow
 

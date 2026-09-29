@@ -58,6 +58,16 @@ func (uc *PlaceBidUC) Handle(ctx context.Context, cmd PlaceBidCommand) error {
 		return fmt.Errorf("place bid usecase handle placing hold for bid %v : %w", bidID, err)
 	}
 
+	// NOT an OCC loop, despite the name: Modify writes under a row lock with no
+	// version predicate, so ErrConcurrentModification cannot come back from it.
+	// What this retries is the other half of IsRetriable — ErrTransient, meaning a
+	// deadlock or a connection blip, which FOR UPDATE makes possible and which the
+	// buyer should not have to re-bid over.
+	//
+	// A lock_timeout is deliberately NOT retried here: it arrives as
+	// ErrLockUnavailable, which IsRetriable does not match, so contention fails
+	// fast instead of rejoining the queue. That is the whole point of taking a row
+	// lock rather than an optimistic one.
 	err = withRetry(ctx, func() error {
 		return uc.repo.Modify(ctx, cmd.ListingID, func(l *listing.Listing) error {
 			if err := l.PlaceBidWithID(bidID, cmd.MemberID, cmd.Amount, cmd.IdempotencyKey, cmd.Now); err != nil {

@@ -241,6 +241,19 @@ func mapError(ctx context.Context, err error) error {
 	case errors.Is(err, commonconstants.ErrNotFound):
 		code = codes.NotFound
 		msg = "not found"
+	// A row lock that timed out: somebody else is writing this listing right now.
+	// Aborted rather than Unavailable, because the gateway turns Unavailable into a
+	// 503 and gRPC clients commonly retry it on their own — which would rebuild the
+	// retry storm the row lock was taken to avoid. Aborted becomes a 409, the same
+	// answer an OCC conflict gets, and leaves the decision to re-bid with the caller.
+	//
+	// Info, not Warn: contention on a popular listing is what success looks like
+	// under load, and logging it as a fault buries the faults that are real.
+	case errors.Is(err, commonconstants.ErrLockUnavailable):
+		code = codes.Aborted
+		msg = "listing busy, try again"
+		logLevel = slog.LevelInfo
+
 	// NOTE: retry worthy error
 	// log level warn, worth noting rate
 	case errors.Is(err, commonconstants.ErrTransient):
