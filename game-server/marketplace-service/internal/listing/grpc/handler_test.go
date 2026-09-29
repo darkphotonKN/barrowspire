@@ -2,12 +2,14 @@ package grpc
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	itemspb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/adapter/itemreserver"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
@@ -21,7 +23,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// fakeRepo keeps one listing in memory. Modify, FindByID and Save all act on
+// fakeRepo keeps one listing in memory. Update, FindByID and Save all act on
 // it, which is enough for the handler tests to observe what the use cases did.
 type fakeRepo struct {
 	l *listing.Listing
@@ -39,10 +41,6 @@ func (r *fakeRepo) Insert(ctx context.Context, l *listing.Listing) error {
 func (r *fakeRepo) Save(ctx context.Context, l *listing.Listing, before listing.ListingSnapshot) error {
 	r.l = l
 	return nil
-}
-
-func (r *fakeRepo) Modify(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
-	return fn(r.l)
 }
 
 func (r *fakeRepo) Update(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
@@ -251,4 +249,31 @@ func TestListItem_ItemsRefusal_KeepsItsMeaning(t *testing.T) {
 			assert.Equal(t, tt.wantCode, status.Code(err))
 		})
 	}
+}
+
+// A contended listing must not look like a broken server. mapError decides two
+// things that matter here: the code the gateway turns into an HTTP status, and the
+// level this shows up at in the logs.
+//
+// Aborted, not Unavailable: the gateway maps Unavailable to 503 and many gRPC
+// clients retry it automatically, which would put back the retry storm the row lock
+// was chosen to avoid. Aborted maps to 409, the same answer an OCC conflict already
+// gets, and says "somebody else got there first" rather than "the service is down".
+func TestMapError_LockTimeout_IsAbortedNotUnavailable(t *testing.T) {
+	err := mapError(context.Background(),
+		fmt.Errorf("place bid: %w", commonconstants.ErrLockUnavailable))
+
+	assert.Equal(t, codes.Aborted, status.Code(err))
+	assert.NotEqual(t, codes.Unavailable, status.Code(err),
+		"a busy listing is not a dead service")
+	assert.NotEqual(t, codes.Internal, status.Code(err),
+		"contention is expected under load, not a bug")
+}
+
+// The infrastructure failures keep their own answer: a real outage still reads as one.
+func TestMapError_TransientStaysUnavailable(t *testing.T) {
+	err := mapError(context.Background(),
+		fmt.Errorf("place bid: %w", commonconstants.ErrTransient))
+
+	assert.Equal(t, codes.Unavailable, status.Code(err))
 }

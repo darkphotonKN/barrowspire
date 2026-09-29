@@ -25,7 +25,7 @@ func listingWithLeader(t *testing.T) (*listing.Listing, uuid.UUID) {
 }
 
 // fakeRepo refuses FindByID and Save, so passing here also proves 1a took the
-// row-locked Modify path rather than an unlocked read-then-write.
+// row-locked Update path rather than an unlocked read-then-write.
 func TestSetWinningBidUC_WinningBid_IsMarkedWonUnderTheLock(t *testing.T) {
 	l, bidID := listingWithLeader(t)
 	repo := &fakeRepo{listing: l}
@@ -37,7 +37,7 @@ func TestSetWinningBidUC_WinningBid_IsMarkedWonUnderTheLock(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, 1, repo.modifyCall)
+	assert.Equal(t, 1, repo.updateCall)
 	assert.Equal(t, listing.BidStatusWon, l.Snapshot().Bids[0].Status)
 }
 
