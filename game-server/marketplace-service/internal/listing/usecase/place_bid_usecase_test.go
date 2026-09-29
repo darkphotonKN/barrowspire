@@ -3,11 +3,9 @@ package usecase
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
-	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -21,12 +19,9 @@ var errListingGone = errors.New("listing gone")
 // against a listing the test set up — the same contract, minus the transaction
 // and the row lock.
 type fakeRepo struct {
-	listing   *listing.Listing
-	findErr   error
-	updateErr error
-	// failTimes makes Update fail its first N calls, so a test can prove the
-	// use case retries rather than abandoning a bid whose gold is already held.
-	failTimes  int
+	listing    *listing.Listing
+	findErr    error
+	updateErr  error
 	updateCall int
 }
 
@@ -49,11 +44,6 @@ func (f *fakeRepo) Save(ctx context.Context, l *listing.Listing, before listing.
 
 func (f *fakeRepo) Update(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
 	f.updateCall++
-	if f.failTimes >= f.updateCall {
-		// transient, the way a dropped connection would be — anything else is
-		// not retried, which is the point of the distinction
-		return fmt.Errorf("write failed: %w", commonconstants.ErrTransient)
-	}
 	if f.updateErr != nil {
 		return f.updateErr
 	}
@@ -71,6 +61,16 @@ type fakeWallet struct {
 	gotMemberID  uuid.UUID
 	gotGold      int
 	gotExpiresAt time.Time
+
+	releaseErr       error
+	releaseCalls     int
+	gotReleasedBidID uuid.UUID
+}
+
+func (f *fakeWallet) ReleaseHold(ctx context.Context, bidID uuid.UUID) error {
+	f.releaseCalls++
+	f.gotReleasedBidID = bidID
+	return f.releaseErr
 }
 
 func (f *fakeWallet) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int, expiresAt time.Time) error {
@@ -267,13 +267,13 @@ func TestPlaceBidRecordsNothingWhenTheHoldFails(t *testing.T) {
 	assert.Empty(t, l.Snapshot().Bids)
 }
 
-// TestPlaceBidRetriesTheWriteAfterAHold is the reason the retry loop exists on
-// this path at all. Once PlaceHold succeeds the buyer's gold is frozen, so
-// giving up on a transient database failure would strand that gold behind a bid
-// that was never recorded — nobody would ever release it.
-func TestPlaceBidRetriesTheWriteAfterAHold(t *testing.T) {
+// Once PlaceHold succeeds the bidder's gold is frozen, so a write that then fails
+// leaves it frozen behind a bid nobody recorded. Nothing in settlement will ever
+// release it either: settlement works from the listing's bids, and this one is not
+// there. So the use case that reserved the gold is the one that has to give it back.
+func TestPlaceBidReleasesTheHoldWhenTheWriteFails(t *testing.T) {
 	l := activeListing(t, 100)
-	repo := &fakeRepo{listing: l, failTimes: 2}
+	repo := &fakeRepo{listing: l, updateErr: errListingGone}
 	wallet := &fakeWallet{}
 
 	err := NewPlaceBidUC(repo, wallet).Handle(context.Background(), PlaceBidCommand{
@@ -283,10 +283,32 @@ func TestPlaceBidRetriesTheWriteAfterAHold(t *testing.T) {
 		Now:       time.Now(),
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, 3, repo.updateCall, "the write is retried until it lands")
-	assert.Equal(t, 1, wallet.calls, "the gold is held once, not once per attempt")
-	assert.Len(t, l.Snapshot().Bids, 1)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errListingGone, "the caller still learns why the bid failed")
+	assert.Equal(t, 1, wallet.calls, "the gold was held")
+	assert.Equal(t, 1, wallet.releaseCalls, "and given straight back")
+	assert.Equal(t, wallet.gotBidID, wallet.gotReleasedBidID, "the hold released is the one placed")
+	assert.Empty(t, l.Snapshot().Bids, "no bid was recorded")
+}
+
+// The compensation is best effort: it runs on a bidder's request path, so it gets one
+// attempt and the reconciler sweeps up what it misses. What it must not do is replace
+// the real failure — a caller told "release failed" learns nothing about why their bid
+// did not land.
+func TestPlaceBidCompensationFailure_StillReportsTheOriginalError(t *testing.T) {
+	l := activeListing(t, 100)
+	repo := &fakeRepo{listing: l, updateErr: errListingGone}
+	wallet := &fakeWallet{releaseErr: errors.New("wallet unreachable")}
+
+	err := NewPlaceBidUC(repo, wallet).Handle(context.Background(), PlaceBidCommand{
+		ListingID: uuid.New(),
+		MemberID:  uuid.New(),
+		Amount:    150,
+		Now:       time.Now(),
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errListingGone, "the write failure is what the bidder needs to hear")
 }
 
 // The hold must outlive settlement, not an arbitrary hour: it lapses at the

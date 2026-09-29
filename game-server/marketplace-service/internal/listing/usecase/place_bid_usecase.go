@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
@@ -11,6 +12,10 @@ import (
 
 type WalletService interface {
 	PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int, expiresAt time.Time) error
+	// ReleaseHold compensates a PlaceHold whose bid never got recorded. Idempotent,
+	// and a bid that never had a hold is nothing to give back rather than an error,
+	// so the caller may call it without knowing whether the hold landed.
+	ReleaseHold(ctx context.Context, bidID uuid.UUID) error
 }
 
 // settlementGrace is how long a hold outlives its listing. It must comfortably
@@ -58,31 +63,43 @@ func (uc *PlaceBidUC) Handle(ctx context.Context, cmd PlaceBidCommand) error {
 		return fmt.Errorf("place bid usecase handle placing hold for bid %v : %w", bidID, err)
 	}
 
-	// NOT an OCC loop, despite the name: Update writes under a row lock with no
-	// version predicate, so ErrConcurrentModification cannot come back from it.
-	// What this retries is the other half of IsRetriable — ErrTransient, meaning a
-	// deadlock or a connection blip, which FOR UPDATE makes possible and which the
-	// buyer should not have to re-bid over.
-	//
-	// A lock_timeout is deliberately NOT retried here: it arrives as
-	// ErrLockUnavailable, which IsRetriable does not match, so contention fails
-	// fast instead of rejoining the queue. That is the whole point of taking a row
-	// lock rather than an optimistic one.
-	err = withRetry(ctx, func() error {
-		return uc.repo.Update(ctx, cmd.ListingID, func(l *listing.Listing) error {
-			if err := l.PlaceBidWithID(bidID, cmd.MemberID, cmd.Amount, cmd.IdempotencyKey, cmd.Now); err != nil {
-				return err
-			}
+	// So every failure is final for this request, including a lock_timeout, which
+	// arrives as ErrLockUnavailable and becomes a 409 telling the bidder the listing
+	// is busy. The bidder pressing the button again is the retry, with a human as the
+	// backoff — and the hold released below means that costs them nothing.
+	err = uc.repo.Update(ctx, cmd.ListingID, func(l *listing.Listing) error {
+		if err := l.PlaceBidWithID(bidID, cmd.MemberID, cmd.Amount, cmd.IdempotencyKey, cmd.Now); err != nil {
+			return err
+		}
 
-			if !l.HasBid(bidID) {
-				return nil
-			}
+		if !l.HasBid(bidID) {
+			return nil
+		}
 
-			return l.ConfirmBid(bidID, cmd.Now)
-		})
+		return l.ConfirmBid(bidID, cmd.Now)
 	})
 	if err != nil {
-		return fmt.Errorf("place bid usecase handle recording bid %v, hold is stranded : %w", bidID, err)
+		// The gold is frozen behind a bid that does not exist, and no settlement step
+		// will ever free it: settlement works from the listing's bids, and this one is
+		// not among them. So the use case that reserved it gives it back.
+		//
+		// Best effort, one attempt. This runs while a bidder waits for a response, so
+		// it must not turn one failure into a slow one — the reconciler sweeps up
+		// whatever this misses, comparing wallet's stale reservations against the bids
+		// actually recorded.
+		//
+		// Known window: if Update's COMMIT itself failed ambiguously, the bid may have
+		// landed after all and this releases gold that is backing a real bid. Closing
+		// it would need the bid and the hold to commit together, which is not available
+		// across two services.
+		if releaseErr := uc.wallet.ReleaseHold(ctx, bidID); releaseErr != nil {
+			// deliberately not returned: the bidder needs to hear why their bid failed,
+			// not why the cleanup did
+			slog.ErrorContext(ctx, "bid write failed and releasing its hold failed too, hold is stranded until reconciled",
+				"bid_id", bidID, "listing_id", cmd.ListingID, "release_err", releaseErr, "err", err)
+		}
+
+		return fmt.Errorf("place bid usecase handle recording bid %v : %w", bidID, err)
 	}
 
 	return nil

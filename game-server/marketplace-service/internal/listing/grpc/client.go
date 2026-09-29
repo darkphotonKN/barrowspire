@@ -80,3 +80,30 @@ func forwardAuthorization(ctx context.Context) (context.Context, error) {
 
 	return metadata.AppendToOutgoingContext(ctx, "authorization", vals[0]), nil
 }
+
+// ReleaseHold gives back the gold reserved for a bid that was never recorded.
+//
+// No authorization forwarding, unlike PlaceHold. This is marketplace compensating
+// for its own failed write, not a member acting on their account — and by the time
+// it runs the caller's request may already be unwinding, so depending on a token
+// still being in context would make cleanup fail exactly when it is needed.
+func (c *Client) ReleaseHold(ctx context.Context, bidID uuid.UUID) error {
+	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	if err != nil {
+		return fmt.Errorf("wallet release hold for bid %v: connect: %w: %w", bidID, commonconstants.ErrTransient, err)
+	}
+	defer conn.Close()
+
+	if _, err := pb.NewWalletServiceClient(conn).ReleaseHold(ctx, &pb.ReleaseHoldRequest{
+		BidId: bidID.String(),
+	}); err != nil {
+		switch status.Code(err) {
+		case codes.Unavailable, codes.DeadlineExceeded:
+			return fmt.Errorf("wallet release hold for bid %v: %w: %w", bidID, commonconstants.ErrTransient, err)
+		default:
+			return fmt.Errorf("wallet release hold for bid %v: %w", bidID, err)
+		}
+	}
+
+	return nil
+}
