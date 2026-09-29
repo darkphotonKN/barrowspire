@@ -18,6 +18,12 @@ type WalletService interface {
 	ReleaseHold(ctx context.Context, bidID uuid.UUID) error
 }
 
+// compensationTimeout bounds the release that follows a failed bid write. Short,
+// because a bidder may still be waiting for the response: one healthy round trip is
+// milliseconds, and anything slower is better left to the reconciler than spent
+// holding the reply.
+const compensationTimeout = 5 * time.Second
+
 // settlementGrace is how long a hold outlives its listing. It must comfortably
 // exceed settlement's retry cap (FS-NXP1W §Req 11: 30m), or the hold sweeper can
 // release a hold settlement is still retrying towards committing. Tuning, not
@@ -92,7 +98,16 @@ func (uc *PlaceBidUC) Handle(ctx context.Context, cmd PlaceBidCommand) error {
 		// landed after all and this releases gold that is backing a real bid. Closing
 		// it would need the bid and the hold to commit together, which is not available
 		// across two services.
-		if releaseErr := uc.wallet.ReleaseHold(ctx, bidID); releaseErr != nil {
+		// The cleanup outlives the request that triggered it. A cancelled context is
+		// one of the likeliest reasons the write failed — the bidder closed the tab,
+		// or the deadline passed — and compensating on that same context would send
+		// the release already dead, stranding the gold in precisely the case this
+		// exists for. WithoutCancel keeps the request's values, including the
+		// metadata a downstream call needs, and drops only its cancellation.
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), compensationTimeout)
+		defer cancel()
+
+		if releaseErr := uc.wallet.ReleaseHold(releaseCtx, bidID); releaseErr != nil {
 			// deliberately not returned: the bidder needs to hear why their bid failed,
 			// not why the cleanup did
 			slog.ErrorContext(ctx, "bid write failed and releasing its hold failed too, hold is stranded until reconciled",

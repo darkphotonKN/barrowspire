@@ -65,11 +65,13 @@ type fakeWallet struct {
 	releaseErr       error
 	releaseCalls     int
 	gotReleasedBidID uuid.UUID
+	gotReleaseCtxErr error
 }
 
 func (f *fakeWallet) ReleaseHold(ctx context.Context, bidID uuid.UUID) error {
 	f.releaseCalls++
 	f.gotReleasedBidID = bidID
+	f.gotReleaseCtxErr = ctx.Err()
 	return f.releaseErr
 }
 
@@ -362,4 +364,32 @@ func TestPlaceBidUC_ExpiredListing_HoldsNoGold(t *testing.T) {
 
 	assert.ErrorIs(t, err, listing.ErrListingExpired)
 	assert.Zero(t, wallet.calls, "no gold may be held for a bid that cannot land")
+}
+
+// A cancelled request is one of the likeliest reasons the write failed at all — the
+// bidder closed the tab, or the deadline passed. Compensating on that same context
+// means the release is dead before it is sent, so the hold would be stranded in
+// exactly the case the compensation exists for.
+//
+// The cleanup outlives the request that triggered it: it carries the request's
+// values but not its cancellation, under a deadline of its own.
+func TestPlaceBidCompensatesEvenWhenTheRequestIsCancelled(t *testing.T) {
+	l := activeListing(t, 100)
+	repo := &fakeRepo{listing: l, updateErr: context.Canceled}
+	wallet := &fakeWallet{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the bidder is already gone
+
+	err := NewPlaceBidUC(repo, wallet).Handle(ctx, PlaceBidCommand{
+		ListingID: uuid.New(),
+		MemberID:  uuid.New(),
+		Amount:    150,
+		Now:       time.Now(),
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, 1, wallet.releaseCalls, "the gold still goes back")
+	assert.NoError(t, wallet.gotReleaseCtxErr,
+		"the release must not inherit the cancellation that killed the write")
 }
