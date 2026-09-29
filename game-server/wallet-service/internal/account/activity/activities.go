@@ -11,8 +11,9 @@ import (
 // Activities are the settlement steps wallet owns (ADR-0011): each runs in this
 // process, on the `wallet` task queue, as a thin wrapper over a use case.
 type Activities struct {
-	commitHold      CommitHold
-	releaseAllHolds ReleaseAllHolds
+	commitHold         CommitHold
+	releaseAllHolds    ReleaseAllHolds
+	releaseLosingHolds ReleaseLosingHolds
 }
 
 type CommitHold interface {
@@ -23,10 +24,15 @@ type ReleaseAllHolds interface {
 	Handle(ctx context.Context, cmd *usecase.ReleaseAllHoldsCommand) error
 }
 
-func NewActivities(commitHold CommitHold, releaseAllHolds ReleaseAllHolds) *Activities {
+type ReleaseLosingHolds interface {
+	Handle(ctx context.Context, cmd *usecase.ReleaseLosingHoldsCommand) (int, error)
+}
+
+func NewActivities(commitHold CommitHold, releaseAllHolds ReleaseAllHolds, releaseLosingHolds ReleaseLosingHolds) *Activities {
 	return &Activities{
-		commitHold:      commitHold,
-		releaseAllHolds: releaseAllHolds,
+		commitHold:         commitHold,
+		releaseAllHolds:    releaseAllHolds,
+		releaseLosingHolds: releaseLosingHolds,
 	}
 }
 
@@ -42,4 +48,5 @@ type activityRegistry interface {
 func (a *Activities) Register(r activityRegistry) {
 	r.RegisterActivityWithOptions(a.CommitHold, activity.RegisterOptions{Name: walletactivity.CommitHoldActivityName})
 	r.RegisterActivityWithOptions(a.ReleaseAllHolds, activity.RegisterOptions{Name: walletactivity.ReleaseAllHoldsActivityName})
+	r.RegisterActivityWithOptions(a.ReleaseLosingHolds, activity.RegisterOptions{Name: walletactivity.ReleaseLosingHoldsActivityName})
 }

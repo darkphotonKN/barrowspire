@@ -2,7 +2,6 @@ package activity
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -65,14 +64,12 @@ var commitHoldNonRetryable = []error{
 func classifyCommitHoldErr(bidID uuid.UUID, err error) error {
 	wrapped := fmt.Errorf("commit hold activity bid id %v: %w", bidID, err)
 
-	for _, impossible := range commitHoldNonRetryable {
-		if errors.Is(err, impossible) {
-			return temporal.NewNonRetryableApplicationError(
-				wrapped.Error(),      // message
-				commitHoldImpossible, // type, the workflow matches on this
-				err,                  // cause
-			)
-		}
+	if isAnyOf(err, commitHoldNonRetryable) {
+		return temporal.NewNonRetryableApplicationError(
+			wrapped.Error(),      // message
+			commitHoldImpossible, // type, the workflow matches on this
+			err,                  // cause
+		)
 	}
 
 	return wrapped // plain error, Temporal retries
