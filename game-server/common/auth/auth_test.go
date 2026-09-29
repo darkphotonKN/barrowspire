@@ -2,6 +2,7 @@ package auth_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
@@ -153,4 +154,66 @@ func TestIdentityFromCtx_UnauthenticatedContext(t *testing.T) {
 
 	_, ok = commonauth.MemberIDFromCtx(context.Background())
 	assert.False(t, ok)
+}
+
+// The two wallet methods a service calls on its own behalf carry no member token,
+// because there is no member: one compensates for a failed write, the other runs on
+// a background ticker. They have to reach their handler without metadata at all.
+//
+// Pinned as a pair with the negative case below, so this cannot quietly become
+// "the interceptor stopped checking anything".
+func TestAuth_ServiceCalledMethods_SkipTheTokenCheck(t *testing.T) {
+	for _, method := range []string{
+		"/wallet.WalletService/ReleaseHold",
+		"/wallet.WalletService/ListStaleReservedHolds",
+	} {
+		t.Run(method, func(t *testing.T) {
+			reached := false
+
+			_, err := commonauth.Auth(rejectEveryToken)(
+				context.Background(), // no metadata, as a background worker has none
+				nil,
+				&grpc.UnaryServerInfo{FullMethod: method},
+				func(ctx context.Context, req any) (any, error) {
+					reached = true
+					return nil, nil
+				},
+			)
+
+			require.NoError(t, err)
+			assert.True(t, reached, "the handler must run without a token")
+		})
+	}
+}
+
+// The gate still rejects: whitelisting is per method, so wallet's other methods are
+// untouched, and a missing token on one of them is still Unauthenticated.
+func TestAuth_WhitelistIsPerMethod(t *testing.T) {
+	for _, method := range []string{
+		"/wallet.WalletService/PlaceHold",
+		"/wallet.WalletService/Withdraw",
+		"/marketplace.MarketplaceService/PlaceBid",
+	} {
+		t.Run(method, func(t *testing.T) {
+			reached := false
+
+			_, err := commonauth.Auth(rejectEveryToken)(
+				context.Background(),
+				nil,
+				&grpc.UnaryServerInfo{FullMethod: method},
+				func(ctx context.Context, req any) (any, error) {
+					reached = true
+					return nil, nil
+				},
+			)
+
+			require.Error(t, err)
+			assert.Equal(t, codes.Unauthenticated, status.Code(err))
+			assert.False(t, reached, "the handler must not run")
+		})
+	}
+}
+
+func rejectEveryToken(string) (commonauth.Identity, error) {
+	return commonauth.Identity{}, errors.New("no token should have been validated")
 }

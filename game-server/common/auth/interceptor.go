@@ -11,8 +11,24 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// publicMethods skip the token check. Fully qualified, so an entry only ever
+// matches the one service that declares that method.
+//
+// The wallet entries are not "public" in the sense the name suggests — they are
+// methods with no user identity to check. Their caller is a service compensating
+// for its own failed write, or a background reconciler with no request behind it at
+// all, so there is no member token to forward and no member whose account the call
+// belongs to. Both act on a bid id the caller already holds.
+//
+// What protects them today is the network: wallet's gRPC listener binds to
+// localhost, so reaching them means already being inside the host. REMOVE THESE
+// ENTRIES once Identity can express a service caller and services can present their
+// own credential — that is the check these two actually want.
 var publicMethods = map[string]bool{
 	"/grpc.health.v1.Health/Check": true,
+
+	"/wallet.WalletService/ReleaseHold":            true,
+	"/wallet.WalletService/ListStaleReservedHolds": true,
 }
 
 func Auth(validate func(token string) (Identity, error)) grpc.UnaryServerInterceptor {
