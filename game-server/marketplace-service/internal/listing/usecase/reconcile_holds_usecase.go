@@ -20,11 +20,12 @@ import (
 // is measured in milliseconds.
 const reconcileHoldGrace = 10 * time.Minute
 
-// BidReader answers the question wallet cannot: does this bid exist? A hold carries
-// the bid id it was reserved for, but that id is marketplace's claim about what the
-// gold was for, not proof that anything was recorded.
+// BidReader answers the question wallet cannot: is anyone still accounting for the
+// gold this hold is reserving? A hold carries the bid id it was reserved for, but
+// that id is marketplace's claim about what the gold was for, not proof that anything
+// was recorded — and not proof that the bid still wants it.
 type BidReader interface {
-	HasBid(ctx context.Context, bidID uuid.UUID) (bool, error)
+	HasBidHoldingGold(ctx context.Context, bidID uuid.UUID) (bool, error)
 }
 
 // HoldReconciler is wallet's half: report what is still reserved, and give back what
@@ -62,7 +63,7 @@ func (uc *ReconcileHoldsUC) Handle(ctx context.Context) error {
 	}
 
 	for _, bidID := range stale {
-		exists, err := uc.bids.HasBid(ctx, bidID)
+		claimed, err := uc.bids.HasBidHoldingGold(ctx, bidID)
 		if err != nil {
 			// never release on a failed lookup: not knowing whether the bid exists is
 			// not the same as knowing it does not
@@ -70,7 +71,7 @@ func (uc *ReconcileHoldsUC) Handle(ctx context.Context) error {
 			continue
 		}
 
-		if exists {
+		if claimed {
 			continue
 		}
 

@@ -2,7 +2,6 @@ package grpc
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -51,12 +50,14 @@ func (r *fakeRepo) Update(ctx context.Context, id uuid.UUID, fn func(*listing.Li
 // fakeWallet records who the hold was placed for, so a test can prove the
 // handler passed the authenticated caller rather than an invented member.
 type fakeWallet struct {
-	calls       int
-	gotMemberID uuid.UUID
+	calls        int
+	releaseCalls int
+	gotMemberID  uuid.UUID
 }
 
 func (w *fakeWallet) ReleaseHold(ctx context.Context, bidID uuid.UUID) error {
-	return errors.New("ReleaseHold is only reached when the bid write fails, which these tests do not do")
+	w.releaseCalls++
+	return nil
 }
 
 func (w *fakeWallet) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int, expiresAt time.Time) error {
@@ -118,7 +119,7 @@ func newTestHandler(repo *fakeRepo, wallet *fakeWallet) *Handler {
 		nil,
 		nil,
 		usecase.NewPlaceBidUC(repo, wallet),
-		usecase.NewWithdrawBidUC(repo),
+		usecase.NewWithdrawBidUC(repo, wallet),
 		nil,
 	)
 }

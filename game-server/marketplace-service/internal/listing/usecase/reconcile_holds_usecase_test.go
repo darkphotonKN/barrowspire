@@ -35,7 +35,7 @@ type fakeBidReader struct {
 	err   error
 }
 
-func (f *fakeBidReader) HasBid(ctx context.Context, bidID uuid.UUID) (bool, error) {
+func (f *fakeBidReader) HasBidHoldingGold(ctx context.Context, bidID uuid.UUID) (bool, error) {
 	if f.err != nil {
 		return false, f.err
 	}
@@ -94,4 +94,23 @@ func TestReconcileHoldsUC_BidLookupFails_SkipsThatOneAndContinues(t *testing.T) 
 	require.NoError(t, NewReconcileHoldsUC(bids, wallet).Handle(context.Background()))
 
 	assert.Empty(t, wallet.released, "a hold is never released on a failed lookup")
+}
+
+// A withdrawn bid is the case neither the reconciler nor settlement used to cover.
+// WithdrawBid releases the hold itself, but that release can fail — and a CANCELLED
+// bid is in no settlement set, because it left the auction. So the reconciler has to
+// treat it as it treats a bid that was never written: the gold belongs to nobody.
+//
+// The distinction the query draws is not "does a row exist" but "is anyone still
+// accounting for this gold".
+func TestReconcileHoldsUC_CancelledBid_IsTreatedAsUnclaimed(t *testing.T) {
+	withdrawn := uuid.New()
+	wallet := &fakeHoldReconciler{stale: []uuid.UUID{withdrawn}}
+	// the query reports false for a cancelled bid: the row exists, but no path will
+	// ever release its hold
+	bids := &fakeBidReader{known: map[uuid.UUID]bool{}}
+
+	require.NoError(t, NewReconcileHoldsUC(bids, wallet).Handle(context.Background()))
+
+	assert.Equal(t, []uuid.UUID{withdrawn}, wallet.released)
 }

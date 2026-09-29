@@ -18,20 +18,35 @@ func NewHasBidQuery(db *sqlx.DB) *HasBidQuery {
 	}
 }
 
-// HasBid reports whether a bid was ever recorded under this id.
+// HasBidHoldingGold reports whether any path is still accounting for the gold a hold
+// is reserving for this bid.
 //
-// Any status counts, including the terminal ones. The question is not "is this bid
-// still in play" but "did marketplace ever write it" — a CANCELLED or LOST bid was
-// written, so its hold belongs to settlement's release steps, not to the reconciler.
-// Treating a terminal bid as absent would have the reconciler release gold that
-// settlement is still accounting for.
-func (q *HasBidQuery) HasBid(ctx context.Context, bidID uuid.UUID) (bool, error) {
-	query := `SELECT EXISTS(SELECT 1 FROM bids WHERE id = $1)`
+// Not "does a row exist". The reconciler's question is whether the reservation still
+// belongs to somebody, and two statuses answer no even though the bid was written:
+//
+//   - CANCELLED: the bidder withdrew and left the auction, so no settlement set
+//     contains it. WithdrawBid releases the hold itself, but that release can fail,
+//     and nothing else would ever send another.
+//   - FAILED: wallet refused to hold the gold, so there is no reservation to claim —
+//     harmless either way, and listed so the rule reads as one rule.
+//
+// Every other status is still somebody's: WINNING and PENDING are live, OUTBID and
+// LOST are settlement's to release, WON is the pivot's to commit. Reporting one of
+// those as unclaimed would have the reconciler release gold settlement is mid-flight
+// on.
+func (q *HasBidQuery) HasBidHoldingGold(ctx context.Context, bidID uuid.UUID) (bool, error) {
+	query := `
+	SELECT EXISTS(
+		SELECT 1 FROM bids
+		WHERE id = $1
+		  AND status NOT IN ('CANCELLED', 'FAILED')
+	)
+	`
 
-	var exists bool
-	if err := q.db.GetContext(ctx, &exists, query, bidID); err != nil {
-		return false, commonhelpers.WrapDBErr("bids", "HasBid", err)
+	var claimed bool
+	if err := q.db.GetContext(ctx, &claimed, query, bidID); err != nil {
+		return false, commonhelpers.WrapDBErr("bids", "HasBidHoldingGold", err)
 	}
 
-	return exists, nil
+	return claimed, nil
 }

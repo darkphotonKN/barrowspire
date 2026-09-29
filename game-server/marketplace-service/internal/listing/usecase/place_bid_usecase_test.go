@@ -22,6 +22,7 @@ type fakeRepo struct {
 	listing    *listing.Listing
 	findErr    error
 	updateErr  error
+	saveErr    error
 	updateCall int
 }
 
@@ -38,8 +39,9 @@ func (f *fakeRepo) Insert(ctx context.Context, l *listing.Listing) error {
 	return errors.New("Insert must not be called on a bid path")
 }
 
+// Save is the OCC path, which the withdraw use cases still take.
 func (f *fakeRepo) Save(ctx context.Context, l *listing.Listing, before listing.ListingSnapshot) error {
-	return errors.New("Save must not be used on a locked write path")
+	return f.saveErr
 }
 
 func (f *fakeRepo) Update(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
