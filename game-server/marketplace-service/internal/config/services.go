@@ -49,6 +49,13 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	createListingUC := usecase.NewCreateListingUC(listingRepo)
 	consumer := listing.NewConsumer(ch, createListingUC)
 
+	hasBidQuery := listingquery.NewHasBidQuery(db)
+	reconcileHoldsUC := usecase.NewReconcileHoldsUC(hasBidQuery, walletClient)
+	reconcileHoldsWorker := worker.NewReconcileHoldsWorker(reconcileHoldsUC)
+	// same reason as the reservation worker below: Run loops on a ticker and never
+	// returns, so it has to be its own goroutine
+	go reconcileHoldsWorker.Run(ctx)
+
 	reconcileWorker := worker.NewReconcileWorker(reconcileReservationsUC)
 	// Run loops on a ticker and never returns, so it has to be its own
 	// goroutine, called inline it would block NewServices forever.

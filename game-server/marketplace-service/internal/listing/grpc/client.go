@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
@@ -106,4 +107,41 @@ func (c *Client) ReleaseHold(ctx context.Context, bidID uuid.UUID) error {
 	}
 
 	return nil
+}
+
+// ListStaleReservedHolds asks wallet which reservations have outlived the write that
+// should have followed them. wallet reports; this service decides which were never
+// claimed, because only it can tell.
+func (c *Client) ListStaleReservedHolds(ctx context.Context, createdBefore time.Time) ([]uuid.UUID, error) {
+	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	if err != nil {
+		return nil, fmt.Errorf("wallet list stale reserved holds: connect: %w: %w", commonconstants.ErrTransient, err)
+	}
+	defer conn.Close()
+
+	res, err := pb.NewWalletServiceClient(conn).ListStaleReservedHolds(ctx, &pb.ListStaleReservedHoldsRequest{
+		ReservedBefore: timestamppb.New(createdBefore),
+	})
+	if err != nil {
+		switch status.Code(err) {
+		case codes.Unavailable, codes.DeadlineExceeded:
+			return nil, fmt.Errorf("wallet list stale reserved holds: %w: %w", commonconstants.ErrTransient, err)
+		default:
+			return nil, fmt.Errorf("wallet list stale reserved holds: %w", err)
+		}
+	}
+
+	bidIDs := make([]uuid.UUID, 0, len(res.BidIds))
+	for _, raw := range res.BidIds {
+		bidID, err := uuid.Parse(raw)
+		if err != nil {
+			// one unparseable id must not sink the batch; it would also be an id this
+			// service never minted, so there is nothing here to reconcile
+			slog.ErrorContext(ctx, "wallet returned an unparseable bid id", "bid_id", raw, "err", err)
+			continue
+		}
+		bidIDs = append(bidIDs, bidID)
+	}
+
+	return bidIDs, nil
 }
