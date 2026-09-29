@@ -12,7 +12,7 @@ import (
 // SetWinningBidUC is settlement step 1a (FS-NXP1W §Req 27): the winner 0a
 // selected moves WINNING -> WON.
 //
-// It runs under Modify's row lock, so the bid's status is checked and changed
+// It runs under Update's row lock, so the bid's status is checked and changed
 // with no writer able to move it in between — the condition is the bid FSM,
 // applied inside the lock. No withRetry: the activity wrapping this is retried by
 // Temporal under its own capped policy, and nesting a second loop would hide how
@@ -35,7 +35,7 @@ type SetWinningBidCommand struct {
 }
 
 func (uc *SetWinningBidUC) Handle(ctx context.Context, cmd SetWinningBidCommand) error {
-	err := uc.repo.Modify(ctx, cmd.ListingID, func(l *listing.Listing) error {
+	err := uc.repo.Update(ctx, cmd.ListingID, func(l *listing.Listing) error {
 		return l.SetWinningBid(cmd.BidID, cmd.Now)
 	})
 	if err != nil {

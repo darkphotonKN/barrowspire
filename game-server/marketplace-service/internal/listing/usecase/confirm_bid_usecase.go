@@ -14,7 +14,7 @@ import (
 //
 // This is the step that must not be allowed to simply fail. By the time it runs
 // the gold is already frozen, so a bid abandoned in PENDING means a buyer whose
-// money is held against a bid that never leads. Modify's row lock means the only
+// money is held against a bid that never leads. Update's row lock means the only
 // way to lose here is a genuine database failure, which the caller retries — it
 // cannot lose a race.
 type ConfirmBidUC struct {
@@ -34,7 +34,7 @@ type ConfirmBidCommand struct {
 }
 
 func (uc *ConfirmBidUC) Handle(ctx context.Context, cmd ConfirmBidCommand) error {
-	err := uc.repo.Modify(ctx, cmd.ListingID, func(l *listing.Listing) error {
+	err := uc.repo.Update(ctx, cmd.ListingID, func(l *listing.Listing) error {
 		return l.ConfirmBid(cmd.BidID, cmd.Now)
 	})
 	if err != nil {
@@ -63,7 +63,7 @@ type FailBidCommand struct {
 }
 
 func (uc *FailBidUC) Handle(ctx context.Context, cmd FailBidCommand) error {
-	err := uc.repo.Modify(ctx, cmd.ListingID, func(l *listing.Listing) error {
+	err := uc.repo.Update(ctx, cmd.ListingID, func(l *listing.Listing) error {
 		return l.FailBid(cmd.BidID, cmd.Now)
 	})
 	if err != nil {

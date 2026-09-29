@@ -23,7 +23,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// fakeRepo keeps one listing in memory. Modify, FindByID and Save all act on
+// fakeRepo keeps one listing in memory. Update, FindByID and Save all act on
 // it, which is enough for the handler tests to observe what the use cases did.
 type fakeRepo struct {
 	l *listing.Listing
@@ -41,10 +41,6 @@ func (r *fakeRepo) Insert(ctx context.Context, l *listing.Listing) error {
 func (r *fakeRepo) Save(ctx context.Context, l *listing.Listing, before listing.ListingSnapshot) error {
 	r.l = l
 	return nil
-}
-
-func (r *fakeRepo) Modify(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
-	return fn(r.l)
 }
 
 func (r *fakeRepo) Update(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {

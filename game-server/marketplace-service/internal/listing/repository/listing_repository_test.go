@@ -11,7 +11,7 @@ import (
 )
 
 // placeBidDiff places one bid on a fresh ACTIVE listing and returns the row
-// diffListing would INSERT for it — exactly what Save and Modify write.
+// diffListing would INSERT for it — exactly what Save and Update write.
 func placeBidDiff(t *testing.T, idempotencyKey uuid.UUID) *BidRow {
 	t.Helper()
 

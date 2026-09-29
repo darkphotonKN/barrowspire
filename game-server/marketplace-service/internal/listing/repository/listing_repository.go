@@ -113,7 +113,7 @@ func (r *ListingRepository) FindByID(ctx context.Context, id uuid.UUID) (*listin
 }
 
 // reconstitute rebuilds the aggregate from persisted rows. Shared by FindByID
-// and Modify so the two load paths cannot drift apart.
+// and Update so the two load paths cannot drift apart.
 func reconstitute(listingRow ListingRow, bidRows []BidRow) (*listing.Listing, error) {
 	reconstitutedBids := make([]*listing.BidReconstituteParams, 0, len(bidRows))
 
@@ -157,102 +157,6 @@ func reconstitute(listingRow ListingRow, bidRows []BidRow) (*listing.Listing, er
 	}
 
 	return reconstitutedListing, nil
-}
-
-// Modify runs a load-modify-save cycle for one listing inside a single
-// transaction, holding a row lock for its whole duration.
-//
-// This is what makes the lock meaningful. FindByID and Save each open their own
-// transaction, so a lock taken during the read is released long before the write
-// — leaving the window that OCC and withRetry exist to paper over. Here the
-// SELECT ... FOR UPDATE, the domain mutation and the write all sit in one
-// transaction, so concurrent bidders queue instead of racing and retrying.
-//
-// fn receives the reconstituted aggregate and mutates it in memory. It must not
-// perform I/O: it runs with the row locked, and anything slow there blocks every
-// other writer on that listing.
-func (r *ListingRepository) Modify(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
-	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
-		// Bound the wait on a contended listing to 3 seconds longest for this row lock
-		// LOCAL scopes it to this
-		// transaction, so it can't leak onto the pooled connection.
-		if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '3s'`); err != nil {
-			return commonhelpers.WrapDBErr("listing", "Modify", err)
-		}
-
-		var listingRow ListingRow
-		var bidRows []BidRow
-
-		// FOR UPDATE on the listing row alone is enough: every write to this
-		// aggregate's bids goes through its listing, so serialising on the parent
-		// serialises the children too.
-		listingQuery := `
-		SELECT
-			id,
-			seller_id,
-			buyer_id,
-			item_id,
-			start_price,
-			sold_price,
-			status,
-			ends_at,
-			version,
-			created_at,
-			updated_at
-		FROM listings
-		WHERE id = $1
-		FOR UPDATE
-		`
-
-		if err := tx.GetContext(ctx, &listingRow, listingQuery, id); err != nil {
-			return commonhelpers.WrapDBErr("listing", "Modify", err)
-		}
-
-		bidsQuery := `
-		SELECT
-			id,
-			listing_id,
-			member_id,
-			type,
-			amount,
-			status,
-			idempotency_key,
-			created_at,
-			updated_at
-		FROM bids
-		WHERE listing_id = $1
-		`
-
-		if err := tx.SelectContext(ctx, &bidRows, bidsQuery, id); err != nil {
-			return commonhelpers.WrapDBErr("listing", "Modify", err)
-		}
-
-		listingDomain, err := reconstitute(listingRow, bidRows)
-		if err != nil {
-			return err
-		}
-
-		before := listingDomain.Snapshot()
-
-		if err := fn(listingDomain); err != nil {
-			return err
-		}
-
-		after := listingDomain.Snapshot()
-
-		changes := r.diffListing(&before, &after)
-		if changes == nil {
-			return listing.ErrCorruptListingState
-		}
-
-		// fn may legitimately be a no-op — an idempotent replay changes nothing,
-		// and writing anyway would bump the version for no reason
-		if changes.IsEmpty() {
-			return nil
-		}
-
-		return r.writeChanges(ctx, tx, &after, changes, false)
-	})
 }
 
 func (r *ListingRepository) Insert(ctx context.Context, listing *listing.Listing) error {
@@ -315,7 +219,7 @@ func (r *ListingRepository) Save(ctx context.Context, l *listing.Listing, before
 //
 // checkVersion selects the concurrency strategy. Save passes true: it runs
 // outside any lock, so the UPDATE carries WHERE version = $expected and a zero
-// row count means another writer won the race. Modify passes false because it
+// row count means another writer won the race. Update passes false because it
 // already holds a row lock, version still advances, but no writer can have
 // slipped in between the read and this write.
 //
@@ -497,12 +401,19 @@ func (r *ListingRepository) diffListing(before, after *listing.ListingSnapshot) 
 // reconstituted aggregate, and persists whatever it changed, all in one
 // transaction.
 //
-// The lock is held for the whole closure, so updateFn must not make network
-// calls or do anything else slow: every other writer on this listing queues
-// behind it.
+// One transaction is what makes the lock meaningful. FindByID and Save each open
+// their own, so a lock taken during the read is released long before the write —
+// leaving exactly the window that optimistic concurrency and a retry loop exist to
+// paper over. Here the SELECT ... FOR UPDATE, the domain mutation and the write all
+// sit together, so concurrent bidders queue instead of racing and retrying.
+//
+// CONTRACT: the lock is held for the whole closure, so updateFn must not make
+// network calls or do anything else slow — every other writer on this listing
+// queues behind it. This is why PlaceBid reserves the bidder's gold BEFORE calling
+// here rather than inside the closure.
 //
 // An updateFn that changes nothing writes nothing and returns nil. That is the
-// already-applied case, a settlement retry catching up, an error.
+// already-applied case, a settlement retry catching up, not an error.
 func (r *ListingRepository) Update(ctx context.Context, id uuid.UUID, updateFn func(l *listing.Listing) error) error {
 	// nil options: Read Committed is enough here, the row lock does the
 	// serialising.
