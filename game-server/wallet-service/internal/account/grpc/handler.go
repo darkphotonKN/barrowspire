@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
@@ -23,11 +24,13 @@ type Handler struct {
 	pb.UnimplementedWalletServiceServer
 
 	// read
-	accountReader AccountReader
+	accountReader    AccountReader
+	staleHoldsReader StaleHoldsReader
 
 	// write
 	createAccountUC AccountCreator
 	placeHoldUC     HoldPlacer
+	releaseHoldUC   HoldReleaser
 	depositGoldUC   GoldDepositor
 	withdrawGoldUC  GoldWithdrawer
 }
@@ -40,12 +43,22 @@ type AccountReader interface {
 	Execute(ctx context.Context, memberID uuid.UUID) (*dto.AccountDetails, error)
 }
 
+// StaleHoldsReader lists reservations that outlived the write meant to follow them.
+// A read: wallet reports, the caller that minted the bid ids decides.
+type StaleHoldsReader interface {
+	Execute(ctx context.Context, createdBefore time.Time, limit int) ([]uuid.UUID, error)
+}
+
 type AccountCreator interface {
 	Handle(ctx context.Context, cmd usecase.CreateAccountCommand) (*account.Account, error)
 }
 
 type HoldPlacer interface {
 	Handle(ctx context.Context, cmd *usecase.PlaceHoldCommand) error
+}
+
+type HoldReleaser interface {
+	Handle(ctx context.Context, cmd *usecase.ReleaseHoldCommand) error
 }
 
 type GoldDepositor interface {
@@ -62,20 +75,24 @@ type GoldWithdrawer interface {
 // and a positional call site gives no hint that something is missing. Named
 // fields make an omission visible at the call site instead of at runtime.
 type Deps struct {
-	CreateAccountUC AccountCreator
-	PlaceHoldUC     HoldPlacer
-	DepositGoldUC   GoldDepositor
-	WithdrawGoldUC  GoldWithdrawer
-	AccountReader   AccountReader
+	CreateAccountUC  AccountCreator
+	PlaceHoldUC      HoldPlacer
+	ReleaseHoldUC    HoldReleaser
+	DepositGoldUC    GoldDepositor
+	WithdrawGoldUC   GoldWithdrawer
+	AccountReader    AccountReader
+	StaleHoldsReader StaleHoldsReader
 }
 
 func NewHandler(deps Deps) *Handler {
 	return &Handler{
-		createAccountUC: deps.CreateAccountUC,
-		placeHoldUC:     deps.PlaceHoldUC,
-		depositGoldUC:   deps.DepositGoldUC,
-		withdrawGoldUC:  deps.WithdrawGoldUC,
-		accountReader:   deps.AccountReader,
+		createAccountUC:  deps.CreateAccountUC,
+		placeHoldUC:      deps.PlaceHoldUC,
+		releaseHoldUC:    deps.ReleaseHoldUC,
+		depositGoldUC:    deps.DepositGoldUC,
+		withdrawGoldUC:   deps.WithdrawGoldUC,
+		accountReader:    deps.AccountReader,
+		staleHoldsReader: deps.StaleHoldsReader,
 	}
 }
 
@@ -138,6 +155,55 @@ func (h *Handler) PlaceHold(ctx context.Context, req *pb.PlaceHoldRequest) (*pb.
 	}
 
 	return &pb.PlaceHoldResponse{}, nil
+}
+
+// ReleaseHold gives back a reservation whose bid was never recorded.
+//
+// No identity check, unlike PlaceHold: the caller is a service compensating for its
+// own failed write, not a member acting on their own account, and the bid it names
+// is one it minted. The hold's bid_id is the whole authorisation — a caller can only
+// release a hold it knows the id of, and that id came from it in the first place.
+func (h *Handler) ReleaseHold(ctx context.Context, req *pb.ReleaseHoldRequest) (*pb.ReleaseHoldResponse, error) {
+	bidID, err := uuid.Parse(req.BidId)
+
+	if err != nil {
+		slog.InfoContext(ctx, "bidId from req was unparseable as a uuid", "err", err)
+		return nil, status.Error(codes.InvalidArgument, "bidId from req was unparseable as a uuid")
+	}
+
+	if err := h.releaseHoldUC.Handle(ctx, &usecase.ReleaseHoldCommand{
+		BidID: bidID,
+		Now:   time.Now(),
+	}); err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return &pb.ReleaseHoldResponse{}, nil
+}
+
+// ListStaleReservedHolds reports reservations still held after the point their bid
+// should have been recorded. It judges nothing: wallet has no bid or listing concept,
+// so it cannot tell an orphan from a hold whose auction is simply still running. The
+// caller compares these ids against its own records and decides.
+func (h *Handler) ListStaleReservedHolds(ctx context.Context, req *pb.ListStaleReservedHoldsRequest) (*pb.ListStaleReservedHoldsResponse, error) {
+	if req.GetReservedBefore() == nil {
+		// without a cutoff this would return holds placed moments ago, whose bids may
+		// still be mid-write — and releasing those is the failure this whole path exists
+		// to avoid
+		return nil, status.Error(codes.InvalidArgument, "reserved_before is required")
+	}
+
+	bidIDs, err := h.staleHoldsReader.Execute(ctx, req.GetReservedBefore().AsTime(), int(req.GetLimit()))
+	if err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	ids := make([]string, 0, len(bidIDs))
+	for _, bidID := range bidIDs {
+		ids = append(ids, bidID.String())
+	}
+
+	return &pb.ListStaleReservedHoldsResponse{BidIds: ids}, nil
 }
 
 func (h *Handler) Deposit(ctx context.Context, req *pb.DepositRequest) (*pb.DepositResponse, error) {

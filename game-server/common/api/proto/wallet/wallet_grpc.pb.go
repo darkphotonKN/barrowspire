@@ -19,11 +19,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	WalletService_CreateAccount_FullMethodName = "/wallet.WalletService/CreateAccount"
-	WalletService_GetAccount_FullMethodName    = "/wallet.WalletService/GetAccount"
-	WalletService_PlaceHold_FullMethodName     = "/wallet.WalletService/PlaceHold"
-	WalletService_Deposit_FullMethodName       = "/wallet.WalletService/Deposit"
-	WalletService_Withdraw_FullMethodName      = "/wallet.WalletService/Withdraw"
+	WalletService_CreateAccount_FullMethodName          = "/wallet.WalletService/CreateAccount"
+	WalletService_GetAccount_FullMethodName             = "/wallet.WalletService/GetAccount"
+	WalletService_PlaceHold_FullMethodName              = "/wallet.WalletService/PlaceHold"
+	WalletService_ReleaseHold_FullMethodName            = "/wallet.WalletService/ReleaseHold"
+	WalletService_ListStaleReservedHolds_FullMethodName = "/wallet.WalletService/ListStaleReservedHolds"
+	WalletService_Deposit_FullMethodName                = "/wallet.WalletService/Deposit"
+	WalletService_Withdraw_FullMethodName               = "/wallet.WalletService/Withdraw"
 )
 
 // WalletServiceClient is the client API for WalletService service.
@@ -38,6 +40,10 @@ type WalletServiceClient interface {
 	GetAccount(ctx context.Context, in *GetAccountRequest, opts ...grpc.CallOption) (*GetAccountResponse, error)
 	// Reserve gold against a member's account for a bid.
 	PlaceHold(ctx context.Context, in *PlaceHoldRequest, opts ...grpc.CallOption) (*PlaceHoldResponse, error)
+	// Give back a single reservation whose bid never landed.
+	ReleaseHold(ctx context.Context, in *ReleaseHoldRequest, opts ...grpc.CallOption) (*ReleaseHoldResponse, error)
+	// List reservations old enough that their bid should have been written by now.
+	ListStaleReservedHolds(ctx context.Context, in *ListStaleReservedHoldsRequest, opts ...grpc.CallOption) (*ListStaleReservedHoldsResponse, error)
 	// Add gold to a member's account.
 	Deposit(ctx context.Context, in *DepositRequest, opts ...grpc.CallOption) (*DepositResponse, error)
 	// Remove gold from a member's account, up to what is not already held.
@@ -82,6 +88,26 @@ func (c *walletServiceClient) PlaceHold(ctx context.Context, in *PlaceHoldReques
 	return out, nil
 }
 
+func (c *walletServiceClient) ReleaseHold(ctx context.Context, in *ReleaseHoldRequest, opts ...grpc.CallOption) (*ReleaseHoldResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReleaseHoldResponse)
+	err := c.cc.Invoke(ctx, WalletService_ReleaseHold_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *walletServiceClient) ListStaleReservedHolds(ctx context.Context, in *ListStaleReservedHoldsRequest, opts ...grpc.CallOption) (*ListStaleReservedHoldsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListStaleReservedHoldsResponse)
+	err := c.cc.Invoke(ctx, WalletService_ListStaleReservedHolds_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *walletServiceClient) Deposit(ctx context.Context, in *DepositRequest, opts ...grpc.CallOption) (*DepositResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DepositResponse)
@@ -114,6 +140,10 @@ type WalletServiceServer interface {
 	GetAccount(context.Context, *GetAccountRequest) (*GetAccountResponse, error)
 	// Reserve gold against a member's account for a bid.
 	PlaceHold(context.Context, *PlaceHoldRequest) (*PlaceHoldResponse, error)
+	// Give back a single reservation whose bid never landed.
+	ReleaseHold(context.Context, *ReleaseHoldRequest) (*ReleaseHoldResponse, error)
+	// List reservations old enough that their bid should have been written by now.
+	ListStaleReservedHolds(context.Context, *ListStaleReservedHoldsRequest) (*ListStaleReservedHoldsResponse, error)
 	// Add gold to a member's account.
 	Deposit(context.Context, *DepositRequest) (*DepositResponse, error)
 	// Remove gold from a member's account, up to what is not already held.
@@ -136,6 +166,12 @@ func (UnimplementedWalletServiceServer) GetAccount(context.Context, *GetAccountR
 }
 func (UnimplementedWalletServiceServer) PlaceHold(context.Context, *PlaceHoldRequest) (*PlaceHoldResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PlaceHold not implemented")
+}
+func (UnimplementedWalletServiceServer) ReleaseHold(context.Context, *ReleaseHoldRequest) (*ReleaseHoldResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReleaseHold not implemented")
+}
+func (UnimplementedWalletServiceServer) ListStaleReservedHolds(context.Context, *ListStaleReservedHoldsRequest) (*ListStaleReservedHoldsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListStaleReservedHolds not implemented")
 }
 func (UnimplementedWalletServiceServer) Deposit(context.Context, *DepositRequest) (*DepositResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Deposit not implemented")
@@ -218,6 +254,42 @@ func _WalletService_PlaceHold_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WalletService_ReleaseHold_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReleaseHoldRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).ReleaseHold(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WalletService_ReleaseHold_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).ReleaseHold(ctx, req.(*ReleaseHoldRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WalletService_ListStaleReservedHolds_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListStaleReservedHoldsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).ListStaleReservedHolds(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WalletService_ListStaleReservedHolds_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).ListStaleReservedHolds(ctx, req.(*ListStaleReservedHoldsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _WalletService_Deposit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DepositRequest)
 	if err := dec(in); err != nil {
@@ -272,6 +344,14 @@ var WalletService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PlaceHold",
 			Handler:    _WalletService_PlaceHold_Handler,
+		},
+		{
+			MethodName: "ReleaseHold",
+			Handler:    _WalletService_ReleaseHold_Handler,
+		},
+		{
+			MethodName: "ListStaleReservedHolds",
+			Handler:    _WalletService_ListStaleReservedHolds_Handler,
 		},
 		{
 			MethodName: "Deposit",
