@@ -9,6 +9,7 @@ import (
 	notifgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
 	paygw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
 	statsgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
+	walletgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/wallet"
 	"github.com/gin-gonic/gin"
 )
 
@@ -25,6 +26,7 @@ type Deps struct {
 	Payment      *paygw.Handler
 	Ledger       *ledgergw.Handler
 	Listing      *listinggw.Handler
+	Wallet       *walletgw.Handler
 
 	// AuthMiddleware is the gateway's existing gin JWT middleware. Protected
 	// operations run it per-operation; see Protected. Nil is legal and means
@@ -57,4 +59,5 @@ func RegisterOperations(api huma.API, deps Deps) {
 	paygw.RegisterOperations(api, deps.Payment, protect, SeamError, Secured)
 	ledgergw.RegisterOperations(api, deps.Ledger, protect, SeamError, Secured)
 	listinggw.RegisterOperations(api, deps.Listing, protect, SeamError, Secured)
+	walletgw.RegisterOperations(api, deps.Wallet, protect, SeamError, Secured)
 }

@@ -90,6 +90,9 @@ type Service interface {
 	ReserveItem(ctx context.Context, seller, itemID uuid.UUID, startPrice int64, endsAt time.Time) (*ItemInstance, error)
 	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
 	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
+
+	// public item facts, for listing pages
+	GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error)
 }
 
 // checkAdminPermission checks if the user has admin permission
@@ -953,6 +956,7 @@ func (h *Handler) ListItemInstances(ctx context.Context, req *pb.ListItemInstanc
 			ItemType:      item.ItemType,
 			Name:          item.Name,
 			RarityId:      commonhelpers.UuidPtrToString(item.RarityID),
+			Status:        item.Status,
 		}
 		if item.AttackPower != nil {
 			pbItem.AttackPower = int32(*item.AttackPower)
@@ -1123,4 +1127,63 @@ func (h *Handler) CancelReservation(ctx context.Context, req *pb.CancelReservati
 	}
 	response := &pb.CancelReservationResponse{}
 	return response, nil
+}
+
+// maxSummaryIDs bounds one GetItemSummaries call: a listing page is at most 100
+// rows, so a caller never needs more.
+const maxSummaryIDs = 100
+
+// GetItemSummaries answers what anyone may see of the named instances. Public
+// (see publicMethods in common/auth): it reads no caller and returns no owner.
+// Unknown ids are omitted, not an error.
+func (h *Handler) GetItemSummaries(ctx context.Context, req *pb.GetItemSummariesRequest) (*pb.GetItemSummariesResponse, error) {
+	if len(req.GetIds()) > maxSummaryIDs {
+		return nil, status.Errorf(codes.InvalidArgument, "at most %d ids", maxSummaryIDs)
+	}
+	if len(req.GetIds()) == 0 {
+		return &pb.GetItemSummariesResponse{}, nil
+	}
+
+	ids := make([]uuid.UUID, 0, len(req.GetIds()))
+	for _, raw := range req.GetIds() {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid item id")
+		}
+		ids = append(ids, id)
+	}
+
+	summaries, err := h.service.GetItemSummaries(ctx, ids)
+	if err != nil {
+		slog.ErrorContext(ctx, "get item summaries failed", "error", err)
+		return nil, status.Error(codes.Internal, "get item summaries failed")
+	}
+
+	out := make([]*pb.ItemSummary, 0, len(summaries))
+	for _, s := range summaries {
+		out = append(out, toProtoItemSummary(s))
+	}
+
+	return &pb.GetItemSummariesResponse{Summaries: out}, nil
+}
+
+// toProtoItemSummary keeps absence as absence: a stat the item type lacks is
+// left unset on the wire rather than sent as zero.
+func toProtoItemSummary(s *ItemSummary) *pb.ItemSummary {
+	return &pb.ItemSummary{
+		Id:              s.ID.String(),
+		Name:            s.Name,
+		Description:     s.Description,
+		ItemType:        s.ItemType,
+		Rarity:          s.Rarity,
+		WeaponType:      s.WeaponType,
+		ArmorSlot:       s.ArmorSlot,
+		AttackPower:     int32Ptr(s.AttackPower),
+		CriticalRate:    s.CriticalRate,
+		DefenseRating:   int32Ptr(s.DefenseRating),
+		MagicResistance: int32Ptr(s.MagicResistance),
+		HealingAmount:   int32Ptr(s.HealingAmount),
+		ManaAmount:      int32Ptr(s.ManaAmount),
+		BuffDuration:    int32Ptr(s.BuffDuration),
+	}
 }

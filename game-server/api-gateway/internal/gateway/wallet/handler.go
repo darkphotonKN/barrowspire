@@ -37,16 +37,6 @@ func (h *Handler) CreateAccountHandler(c *gin.Context) {
 	c.JSON(http.StatusCreated, res)
 }
 
-func (h *Handler) GetAccountHandler(c *gin.Context) {
-	res, err := h.client.GetAccount(h.ctx(c), &pb.GetAccountRequest{})
-	if err != nil {
-		respondWithGRPCError(c, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, res)
-}
-
 func (h *Handler) DepositHandler(c *gin.Context) {
 	var req goldRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

@@ -24,11 +24,24 @@ import (
 // localhost, so reaching them means already being inside the host. REMOVE THESE
 // ENTRIES once Identity can express a service caller and services can present their
 // own credential — that is the check these two actually want.
+//
+// The marketplace reads below are the opposite case: genuinely public, and meant
+// to stay that way. They back the Bazaar page a signed-out visitor browses
+// (FS-8EGFA §Requirements 6, 10), so there is no token to ask for, and they reveal
+// nothing that belongs to a member — auctions everyone is meant to see, and
+// item summaries that carry no owner, no source and no price. They take no caller
+// and read nothing by caller, so no check is being skipped. Not a stopgap: do not
+// "fix" these with a service credential. Every other marketplace and items method
+// still needs a token (auth_test pins that).
 var publicMethods = map[string]bool{
 	"/grpc.health.v1.Health/Check": true,
 
 	"/wallet.WalletService/ReleaseHold":            true,
 	"/wallet.WalletService/ListStaleReservedHolds": true,
+
+	"/marketplace.MarketplaceService/BrowseListings": true,
+	"/marketplace.MarketplaceService/GetListing":     true,
+	"/items.ItemsService/GetItemSummaries":           true,
 }
 
 func Auth(validate func(token string) (Identity, error)) grpc.UnaryServerInterceptor {

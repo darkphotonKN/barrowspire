@@ -22,6 +22,7 @@ import (
 	notifgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
 	paygw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
 	statsgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
+	walletgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/wallet"
 	"github.com/gin-gonic/gin"
 )
 
@@ -37,7 +38,8 @@ func main() {
 		Stats:        statsgw.NewHandler(nil),
 		Payment:      paygw.NewHandler(nil),
 		Ledger:       ledgergw.NewHandler(nil),
-		Listing:      listinggw.NewHandler(nil),
+		Listing:      listinggw.NewHandler(nil, nil),
+		Wallet:       walletgw.NewHandler(nil),
 	})
 
 	spec, err := api.OpenAPI().YAML()

@@ -43,6 +43,9 @@ service ItemsService {
   rpc ReserveItem(ReserveItemRequest) returns (ReserveItemResponse);
   rpc ListStaleReserved(ListStaleReservedRequest) returns (ListStaleReservedResponse);
   rpc CancelReservation(CancelReservationRequest) returns (CancelReservationResponse);
+
+  // Public display facts for item instances, by id. Unknown ids are omitted.
+  rpc GetItemSummaries(GetItemSummariesRequest) returns (GetItemSummariesResponse);
 }
 
 // ============ Layered Message Definitions ============
@@ -343,6 +346,8 @@ message ItemInstance {
   int32 buy_price = 17;
   int32 sell_price = 18;
   string description = 19;
+  // Lifecycle status: AVAILABLE, LISTED or IN_ESCROW (FS-8EGFA).
+  string status = 20;
 }
 
 message ListItemInstancesResponse {
@@ -422,3 +427,32 @@ message CancelReservationRequest {
   string item_id = 1;
 }
 message CancelReservationResponse {}
+
+// GetItemSummaries
+// What anyone may see of an item instance: no owner, no source, no price.
+message GetItemSummariesRequest {
+  repeated string ids = 1;  // at most 100
+}
+
+message ItemSummary {
+  string id = 1;                  // the instance id
+  string name = 2;
+  optional string description = 3;
+  string item_type = 4;           // 'weapon' | 'armor' | 'consumable'
+  string rarity = 5;              // the rarity code: normal, uncommon, rare, runed, fabled
+  optional string weapon_type = 6;
+  optional string armor_slot = 7;
+
+  // stats, present when the item type has them
+  optional int32 attack_power = 8;
+  optional double critical_rate = 9;
+  optional int32 defense_rating = 10;
+  optional int32 magic_resistance = 11;
+  optional int32 healing_amount = 12;
+  optional int32 mana_amount = 13;
+  optional int32 buff_duration = 14;
+}
+
+message GetItemSummariesResponse {
+  repeated ItemSummary summaries = 1;
+}

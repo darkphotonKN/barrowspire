@@ -21,6 +21,8 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	MarketplaceService_ListItem_FullMethodName       = "/marketplace.MarketplaceService/ListItem"
 	MarketplaceService_ListMyListings_FullMethodName = "/marketplace.MarketplaceService/ListMyListings"
+	MarketplaceService_BrowseListings_FullMethodName = "/marketplace.MarketplaceService/BrowseListings"
+	MarketplaceService_GetListing_FullMethodName     = "/marketplace.MarketplaceService/GetListing"
 	MarketplaceService_PlaceBid_FullMethodName       = "/marketplace.MarketplaceService/PlaceBid"
 	MarketplaceService_WithdrawBid_FullMethodName    = "/marketplace.MarketplaceService/WithdrawBid"
 )
@@ -35,6 +37,12 @@ type MarketplaceServiceClient interface {
 	ListItem(ctx context.Context, in *ListItemRequest, opts ...grpc.CallOption) (*ListItemResponse, error)
 	// The caller's own listings, newest first, paged by cursor.
 	ListMyListings(ctx context.Context, in *ListMyListingsRequest, opts ...grpc.CallOption) (*ListMyListingsResponse, error)
+	// Every seller's live auctions (ACTIVE, not yet ended), soonest-ending first,
+	// paged by cursor. Public: needs no caller.
+	BrowseListings(ctx context.Context, in *BrowseListingsRequest, opts ...grpc.CallOption) (*BrowseListingsResponse, error)
+	// One listing in any status, with its price facts. Public: needs no caller.
+	// An unknown id is NotFound.
+	GetListing(ctx context.Context, in *GetListingRequest, opts ...grpc.CallOption) (*GetListingResponse, error)
 	// Place a bid on an active listing, taking the lead from the current winner.
 	PlaceBid(ctx context.Context, in *PlaceBidRequest, opts ...grpc.CallOption) (*PlaceBidResponse, error)
 	// Cancel a bid the caller placed.
@@ -63,6 +71,26 @@ func (c *marketplaceServiceClient) ListMyListings(ctx context.Context, in *ListM
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListMyListingsResponse)
 	err := c.cc.Invoke(ctx, MarketplaceService_ListMyListings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *marketplaceServiceClient) BrowseListings(ctx context.Context, in *BrowseListingsRequest, opts ...grpc.CallOption) (*BrowseListingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BrowseListingsResponse)
+	err := c.cc.Invoke(ctx, MarketplaceService_BrowseListings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *marketplaceServiceClient) GetListing(ctx context.Context, in *GetListingRequest, opts ...grpc.CallOption) (*GetListingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetListingResponse)
+	err := c.cc.Invoke(ctx, MarketplaceService_GetListing_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +127,12 @@ type MarketplaceServiceServer interface {
 	ListItem(context.Context, *ListItemRequest) (*ListItemResponse, error)
 	// The caller's own listings, newest first, paged by cursor.
 	ListMyListings(context.Context, *ListMyListingsRequest) (*ListMyListingsResponse, error)
+	// Every seller's live auctions (ACTIVE, not yet ended), soonest-ending first,
+	// paged by cursor. Public: needs no caller.
+	BrowseListings(context.Context, *BrowseListingsRequest) (*BrowseListingsResponse, error)
+	// One listing in any status, with its price facts. Public: needs no caller.
+	// An unknown id is NotFound.
+	GetListing(context.Context, *GetListingRequest) (*GetListingResponse, error)
 	// Place a bid on an active listing, taking the lead from the current winner.
 	PlaceBid(context.Context, *PlaceBidRequest) (*PlaceBidResponse, error)
 	// Cancel a bid the caller placed.
@@ -118,6 +152,12 @@ func (UnimplementedMarketplaceServiceServer) ListItem(context.Context, *ListItem
 }
 func (UnimplementedMarketplaceServiceServer) ListMyListings(context.Context, *ListMyListingsRequest) (*ListMyListingsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListMyListings not implemented")
+}
+func (UnimplementedMarketplaceServiceServer) BrowseListings(context.Context, *BrowseListingsRequest) (*BrowseListingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BrowseListings not implemented")
+}
+func (UnimplementedMarketplaceServiceServer) GetListing(context.Context, *GetListingRequest) (*GetListingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetListing not implemented")
 }
 func (UnimplementedMarketplaceServiceServer) PlaceBid(context.Context, *PlaceBidRequest) (*PlaceBidResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PlaceBid not implemented")
@@ -182,6 +222,42 @@ func _MarketplaceService_ListMyListings_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MarketplaceService_BrowseListings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BrowseListingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MarketplaceServiceServer).BrowseListings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MarketplaceService_BrowseListings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MarketplaceServiceServer).BrowseListings(ctx, req.(*BrowseListingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MarketplaceService_GetListing_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetListingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MarketplaceServiceServer).GetListing(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MarketplaceService_GetListing_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MarketplaceServiceServer).GetListing(ctx, req.(*GetListingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _MarketplaceService_PlaceBid_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PlaceBidRequest)
 	if err := dec(in); err != nil {
@@ -232,6 +308,14 @@ var MarketplaceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListMyListings",
 			Handler:    _MarketplaceService_ListMyListings_Handler,
+		},
+		{
+			MethodName: "BrowseListings",
+			Handler:    _MarketplaceService_BrowseListings_Handler,
+		},
+		{
+			MethodName: "GetListing",
+			Handler:    _MarketplaceService_GetListing_Handler,
 		},
 		{
 			MethodName: "PlaceBid",

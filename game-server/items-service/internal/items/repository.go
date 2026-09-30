@@ -12,6 +12,7 @@ import (
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -704,7 +705,7 @@ func (r *repository) ListItemInstances(ctx context.Context, req *ListItemInstanc
 	 SELECT id, template_id, owner_member_id, source, item_type, name, rarity_id,
 	        attack_power, critical_rate, weapon_type, defense_rating, magic_resistance,
 	        armor_slot, healing_amount, mana_amount, buff_duration,
-	        description, acquired_at, created_at, updated_at
+	        description, status, acquired_at, created_at, updated_at
 	 FROM item_instances
 	 WHERE owner_member_id = $1
 	 ORDER BY created_at DESC
@@ -1019,4 +1020,41 @@ func (r *repository) CancelReservation(ctx context.Context, itemID uuid.UUID) (b
 
 	// false没更新到（不存在、或不是 LISTED）
 	return n > 0, nil
+}
+
+// GetItemSummaries reads the public facts of the given instances. An id with no
+// instance is simply absent from the result.
+func (r *repository) GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error) {
+	return selectItemSummaries(ctx, r.DB, ids)
+}
+
+// selectItemSummaries takes any querier so the round-trip test can run it inside
+// a transaction it rolls back.
+//
+// The column list is the whole privacy rule: owner_member_id, source and
+// reserved_at are never selected, so they cannot leak through a later mapping.
+func selectItemSummaries(ctx context.Context, q sqlx.QueryerContext, ids []uuid.UUID) ([]*ItemSummary, error) {
+	idStrings := make([]string, 0, len(ids))
+	for _, id := range ids {
+		idStrings = append(idStrings, id.String())
+	}
+
+	query := `
+	 SELECT ii.id, ii.name, ii.description, ii.item_type,
+	        COALESCE(r.rarity_code, '') AS rarity,
+	        ii.weapon_type, ii.armor_slot,
+	        ii.attack_power, ii.critical_rate,
+	        ii.defense_rating, ii.magic_resistance,
+	        ii.healing_amount, ii.mana_amount, ii.buff_duration
+	 FROM item_instances AS ii
+	 LEFT JOIN item_rarities AS r ON r.id = ii.rarity_id
+	 WHERE ii.id = ANY($1::uuid[])
+	`
+
+	summaries := []*ItemSummary{}
+	if err := sqlx.SelectContext(ctx, q, &summaries, query, pq.Array(idStrings)); err != nil {
+		return nil, wrapDBErr("get item summaries", err)
+	}
+
+	return summaries, nil
 }

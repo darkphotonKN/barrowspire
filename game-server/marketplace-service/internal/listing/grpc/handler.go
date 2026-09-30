@@ -28,6 +28,8 @@ type Handler struct {
 
 	// read
 	myListingsReader MyListingsReader
+	browseReader     BrowseListingsReader
+	listingReader    ListingReader
 
 	// write
 	reserveItemUC   *usecase.ReserveItemUC
@@ -42,18 +44,34 @@ type MyListingsReader interface {
 	Execute(ctx context.Context, sellerID uuid.UUID, c *commoncursor.Cursor, limit int) (*dto.ListingsPage, error)
 }
 
+// BrowseListingsReader reads one page of every seller's live auctions,
+// soonest-ending first. A nil cursor is the first page.
+type BrowseListingsReader interface {
+	Execute(ctx context.Context, c *commoncursor.EndsAt, limit int) (*dto.ListingsPage, error)
+}
+
+// ListingReader reads one listing in any status. An unknown id is
+// commonconstants.ErrNotFound.
+type ListingReader interface {
+	Execute(ctx context.Context, listingID uuid.UUID) (*dto.ListingDetails, error)
+}
+
 func NewHandler(
 	reserveItemUC *usecase.ReserveItemUC,
 	createListingUC *usecase.CreateListingUC,
 	placeBidUC *usecase.PlaceBidUC,
 	withdrawBidUC *usecase.WithdrawBidUC,
-	myListingsReader MyListingsReader) *Handler {
+	myListingsReader MyListingsReader,
+	browseReader BrowseListingsReader,
+	listingReader ListingReader) *Handler {
 	return &Handler{
 		reserveItemUC:    reserveItemUC,
 		createListingUC:  createListingUC,
 		placeBidUC:       placeBidUC,
 		withdrawBidUC:    withdrawBidUC,
 		myListingsReader: myListingsReader,
+		browseReader:     browseReader,
+		listingReader:    listingReader,
 	}
 }
 
@@ -183,9 +201,10 @@ func (h *Handler) ListMyListings(ctx context.Context, req *pb.ListMyListingsRequ
 		return nil, mapError(ctx, err)
 	}
 
+	now := time.Now()
 	listings := make([]*pb.Listing, 0, len(page.Listings))
 	for _, l := range page.Listings {
-		listings = append(listings, toProtoListing(l))
+		listings = append(listings, toProtoListing(l, now))
 	}
 
 	res := &pb.ListMyListingsResponse{Listings: listings}
@@ -196,9 +215,56 @@ func (h *Handler) ListMyListings(ctx context.Context, req *pb.ListMyListingsRequ
 	return res, nil
 }
 
+// BrowseListings pages every seller's live auctions. Public (see publicMethods
+// in common/auth): it reads no caller, so the page is the same for everyone.
+func (h *Handler) BrowseListings(ctx context.Context, req *pb.BrowseListingsRequest) (*pb.BrowseListingsResponse, error) {
+	// a transport-shape failure, answered here like ListMyListings answers one
+	cursor, err := commoncursor.DecodeEndsAt(req.GetCursor())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "malformed cursor")
+	}
+
+	page, err := h.browseReader.Execute(ctx, cursor, int(req.GetLimit()))
+	if err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	now := time.Now()
+	listings := make([]*pb.Listing, 0, len(page.Listings))
+	for _, l := range page.Listings {
+		listings = append(listings, toProtoListing(l, now))
+	}
+
+	res := &pb.BrowseListingsResponse{Listings: listings}
+	if page.NextCursor != "" {
+		res.Pagination = &pbpagination.PageInfo{NextCursor: page.NextCursor}
+	}
+
+	return res, nil
+}
+
+// GetListing reads one listing in any status. Public (see publicMethods in
+// common/auth): it reads no caller, so every visitor sees the same listing.
+func (h *Handler) GetListing(ctx context.Context, req *pb.GetListingRequest) (*pb.GetListingResponse, error) {
+	listingID, err := uuid.Parse(req.GetListingId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid listing id")
+	}
+
+	l, err := h.listingReader.Execute(ctx, listingID)
+	if err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return &pb.GetListingResponse{Listing: toProtoListing(*l, time.Now())}, nil
+}
+
 // toProtoListing maps the read model to the wire. The optimistic-locking
 // version is internal and never leaves the service.
-func toProtoListing(l dto.ListingDetails) *pb.Listing {
+//
+// The price facts are only as complete as the read that built l: a read that
+// did not select them maps a zero bid count and the start price as the minimum.
+func toProtoListing(l dto.ListingDetails, now time.Time) *pb.Listing {
 	out := &pb.Listing{
 		Id:         l.ID.String(),
 		SellerId:   l.SellerID.String(),
@@ -208,6 +274,14 @@ func toProtoListing(l dto.ListingDetails) *pb.Listing {
 		EndsAt:     timestamppb.New(l.EndsAt),
 		CreatedAt:  timestamppb.New(l.CreatedAt),
 		UpdatedAt:  timestamppb.New(l.UpdatedAt),
+		MinimumBid: int64(l.MinimumBid()),
+		BidCount:   int32(l.BidCount),
+		Ended:      l.EndedAt(now),
+	}
+
+	if l.CurrentPrice != nil {
+		currentPrice := int64(*l.CurrentPrice)
+		out.CurrentPrice = &currentPrice
 	}
 
 	if l.BuyerID != nil {

@@ -2,11 +2,16 @@ package listing
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	itempb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -37,6 +42,8 @@ func RegisterOperations(api huma.API, h *Handler,
 	registerPlaceBid(api, h, protect)
 	registerWithdrawBid(api, h, protect)
 	registerListMyListings(api, h, protect)
+	registerBrowseListings(api, h)
+	registerGetListing(api, h)
 }
 
 // guard wraps a typed handler so its error goes through the seam.
@@ -225,8 +232,9 @@ func registerListMyListings(api huma.API, h *Handler,
 
 	huma.Register(api, huma.Operation{
 		OperationID: "list-my-listings",
-		Description: "Pages the signed-in member's own listings, newest first. Every listing's sellerId is the caller: the seller is " +
-			"taken from the token; there is no parameter for reading another member's listings.",
+		Description: "Pages the signed-in member's own listings in any status, newest first, each with its item embedded. " +
+			"Every listing's sellerId is the caller: the seller is taken from the token; there is no parameter for reading " +
+			"another member's listings. If the items lookup fails the whole request fails.",
 		Errors: []int{
 			http.StatusBadRequest,
 			http.StatusUnauthorized,
@@ -249,11 +257,173 @@ func registerListMyListings(api huma.API, h *Handler,
 			return nil, err
 		}
 
-		page, err := listingPageFromProto(res)
+		page, err := listingPageFromProto(res.GetListings(), res.GetPagination())
 		if err != nil {
+			return nil, err
+		}
+
+		if err := h.embedItems(ctx, page.Listings); err != nil {
 			return nil, err
 		}
 
 		return &output{Body: page}, nil
 	}))
+}
+
+func registerBrowseListings(api huma.API, h *Handler) {
+	type input struct {
+		// Opaque to the gateway: only marketplace can tell a malformed one, and
+		// its refusal comes back through the seam.
+		Cursor string `query:"cursor" doc:"Opaque position from a previous page's nextCursor. Do not construct."`
+		Limit  int    `query:"limit" default:"50" minimum:"1" maximum:"100"`
+	}
+
+	type output struct{ Body ListingPage }
+
+	// Public: no protect middleware and no Security. The page is for visitors
+	// who are not signed in, and it carries nothing that belongs to a member.
+	huma.Register(api, huma.Operation{
+		OperationID: "browse-listings",
+		Description: "Pages every seller's live auctions — active and not yet ended — soonest-ending first, each with " +
+			"its item embedded. Public: no token is needed. If the items lookup fails the whole request fails; a " +
+			"page is never returned without its items.",
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+			http.StatusServiceUnavailable,
+		},
+		Method:  http.MethodGet,
+		Path:    "/api/marketplace/listings",
+		Summary: "Browse live auctions",
+		Tags:    []string{"marketplace"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		res, err := h.client.BrowseListings(ctx, &pb.BrowseListingsRequest{
+			Cursor: in.Cursor,
+			Limit:  int32(in.Limit),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		page, err := listingPageFromProto(res.GetListings(), res.GetPagination())
+		if err != nil {
+			return nil, err
+		}
+
+		if err := h.embedItems(ctx, page.Listings); err != nil {
+			return nil, err
+		}
+
+		return &output{Body: page}, nil
+	}))
+}
+
+func registerGetListing(api huma.API, h *Handler) {
+	type input struct {
+		ListingID string `path:"listing_id" format:"uuid"`
+	}
+
+	type output struct{ Body Listing }
+
+	// Public, like browse-listings: no protect middleware and no Security.
+	huma.Register(api, huma.Operation{
+		OperationID: "get-listing",
+		Description: "Reads one listing in any status, with its item embedded. An active listing past endsAt answers " +
+			"ended: true. Public: no token is needed. If the items lookup fails the request fails.",
+		Errors: []int{
+			http.StatusNotFound,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+			http.StatusServiceUnavailable,
+		},
+		Method:  http.MethodGet,
+		Path:    "/api/marketplace/listings/{listing_id}",
+		Summary: "Get a listing",
+		Tags:    []string{"marketplace"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		res, err := h.client.GetListing(ctx, &pb.GetListingRequest{ListingId: in.ListingID})
+		if err != nil {
+			return nil, err
+		}
+
+		listing, err := listingFromProto(res.GetListing())
+		if err != nil {
+			return nil, err
+		}
+
+		// one listing is a page of one to the join
+		one := []Listing{listing}
+		if err := h.embedItems(ctx, one); err != nil {
+			return nil, err
+		}
+
+		return &output{Body: one[0]}, nil
+	}))
+}
+
+// embedItems joins each listing's item summary onto it, with one items call for
+// the whole page. An id items does not know leaves that listing's item absent.
+//
+// Any failure of the call fails the request (FS-8EGFA §Requirements 16): a page
+// of listings without their items must not pass for a good one. The failure is
+// re-coded rather than passed through, because items' own code would describe
+// the wrong thing to the client — an Unauthenticated from items would read as
+// "your session ended" and sign a visitor out. Unreachable is 503, so the client
+// retries; anything else is 500. See joinFailure for the exact mapping.
+func (h *Handler) embedItems(ctx context.Context, listings []Listing) error {
+	if len(listings) == 0 {
+		return nil
+	}
+
+	ids := make([]string, 0, len(listings))
+	for _, l := range listings {
+		ids = append(ids, l.ItemID)
+	}
+
+	res, err := h.items.GetItemSummaries(ctx, &itempb.GetItemSummariesRequest{Ids: ids})
+	if err != nil {
+		return joinFailure(ctx, err)
+	}
+
+	byID := make(map[string]*itempb.ItemSummary, len(res.GetSummaries()))
+	for _, s := range res.GetSummaries() {
+		byID[s.GetId()] = s
+	}
+
+	for i := range listings {
+		if s, ok := byID[listings[i].ItemID]; ok {
+			listings[i].Item = itemSummaryFromProto(s)
+		}
+	}
+
+	return nil
+}
+
+// joinFailure re-codes a failed items call for the client (FS-8EGFA
+// §Requirements 16).
+//
+//   - Canceled: the caller went away. Passed through as Canceled and logged at
+//     INFO — nobody is listening for the answer and nothing of ours broke, so it
+//     must not page anyone.
+//   - DeadlineExceeded: items was too slow. 503, like an outage, so the client
+//     retries rather than giving up.
+//   - Unavailable, or no gRPC status at all (a dial failure): 503.
+//   - Everything else, auth codes included: 500. An items Unauthenticated must
+//     never reach the client as 401, which would sign a public visitor out.
+func joinFailure(ctx context.Context, err error) error {
+	if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
+		slog.InfoContext(ctx, "listing item join abandoned: caller canceled", "error", err)
+		return status.Error(codes.Canceled, "request canceled")
+	}
+
+	slog.ErrorContext(ctx, "listing item join failed", "error", err)
+
+	// not a gRPC status at all is a dial failure (or a bare context deadline):
+	// either way items did not answer in time
+	st, isStatus := status.FromError(err)
+	if !isStatus || st.Code() == codes.Unavailable || st.Code() == codes.DeadlineExceeded {
+		return status.Error(codes.Unavailable, "items unavailable")
+	}
+	return status.Error(codes.Internal, "items lookup failed")
 }

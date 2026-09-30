@@ -13,6 +13,12 @@ service MarketplaceService {
   rpc ListItem(ListItemRequest) returns (ListItemResponse) {}
   // The caller's own listings, newest first, paged by cursor.
   rpc ListMyListings(ListMyListingsRequest) returns (ListMyListingsResponse) {}
+  // Every seller's live auctions (ACTIVE, not yet ended), soonest-ending first,
+  // paged by cursor. Public: needs no caller.
+  rpc BrowseListings(BrowseListingsRequest) returns (BrowseListingsResponse) {}
+  // One listing in any status, with its price facts. Public: needs no caller.
+  // An unknown id is NotFound.
+  rpc GetListing(GetListingRequest) returns (GetListingResponse) {}
 
   // Place a bid on an active listing, taking the lead from the current winner.
   rpc PlaceBid(PlaceBidRequest) returns (PlaceBidResponse) {}
@@ -34,6 +40,12 @@ message Listing {
   google.protobuf.Timestamp ends_at = 8;
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;
+
+  // Price facts, derived from the bids at read time.
+  optional int64 current_price = 11;  // the leading bid; absent when nobody leads
+  int64 minimum_bid = 12;             // the least amount a bid would be accepted at now
+  int32 bid_count = 13;               // bids in WINNING, PENDING or OUTBID
+  bool ended = 14;                    // ACTIVE but past ends_at, not yet settled
 }
 // ListItem
 // Empty by design: the member identity is derived from the authenticated
@@ -67,6 +79,28 @@ message ListMyListingsRequest {
 message ListMyListingsResponse {
   repeated Listing listings = 1;
   shared.v1.PageInfo pagination = 2;  // absent on the last page
+}
+
+// BrowseListings
+// Carries no caller: the page is the same for every visitor.
+message BrowseListingsRequest {
+  string cursor = 1;  // opaque; empty for the first page
+  int32  limit  = 2;
+}
+
+message BrowseListingsResponse {
+  repeated Listing listings = 1;
+  shared.v1.PageInfo pagination = 2;  // absent on the last page
+}
+
+// GetListing
+// Carries no caller: any visitor may read any listing.
+message GetListingRequest {
+  string listing_id = 1;
+}
+
+message GetListingResponse {
+  Listing listing = 1;
 }
 
 // PlaceBid

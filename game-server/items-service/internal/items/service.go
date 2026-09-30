@@ -98,6 +98,9 @@ type Repository interface {
 	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error)
 	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
 	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
+
+	// public item facts, for listing pages
+	GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error)
 }
 
 func (s *service) CreateItemInstance(createItemInstanceReq *ItemInstance) (*ItemInstance, error) {
@@ -1084,4 +1087,15 @@ func (s *service) CancelReservation(ctx context.Context, itemID uuid.UUID) (bool
 		return false, err
 	}
 	return ok, nil
+}
+
+// GetItemSummaries answers the public facts of the given instances; an unknown
+// id is omitted rather than an error, since a listing page asks for whatever
+// its listings name.
+func (s *service) GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error) {
+	summaries, err := s.repo.GetItemSummaries(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("get item summaries: %w", err)
+	}
+	return summaries, nil
 }

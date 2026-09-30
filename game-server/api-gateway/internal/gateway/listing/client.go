@@ -80,3 +80,21 @@ func (c *Client) ListMyListings(ctx context.Context, req *pb.ListMyListingsReque
 
 	return pb.NewMarketplaceServiceClient(conn).ListMyListings(ctx, req)
 }
+
+func (c *Client) BrowseListings(ctx context.Context, req *pb.BrowseListingsRequest) (*pb.BrowseListingsResponse, error) {
+	conn, err := c.ensureConn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
+	}
+
+	return pb.NewMarketplaceServiceClient(conn).BrowseListings(ctx, req)
+}
+
+func (c *Client) GetListing(ctx context.Context, req *pb.GetListingRequest) (*pb.GetListingResponse, error) {
+	conn, err := c.ensureConn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
+	}
+
+	return pb.NewMarketplaceServiceClient(conn).GetListing(ctx, req)
+}

@@ -37,7 +37,9 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	placeBidUC := usecase.NewPlaceBidUC(listingRepo, walletClient)
 	withdrawBidUC := usecase.NewWithdrawBidUC(listingRepo, walletClient)
 	listMyListingsQuery := listingquery.NewListMyListingsQuery(db)
-	listingHandler := listinggrpc.NewHandler(reserveItemUC, createAccUC, placeBidUC, withdrawBidUC, listMyListingsQuery)
+	browseListingsQuery := listingquery.NewBrowseListingsQuery(db)
+	getListingQuery := listingquery.NewGetListingQuery(db)
+	listingHandler := listinggrpc.NewHandler(reserveItemUC, createAccUC, placeBidUC, withdrawBidUC, listMyListingsQuery, browseListingsQuery, getListingQuery)
 
 	hasActiveListingQuery := listingquery.NewHasActiveListingQuery(db)
 	reconcileReservationsUC := usecase.NewReconcileReservationsUC(hasActiveListingQuery, itemReserver)

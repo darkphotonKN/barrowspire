@@ -140,6 +140,7 @@ type ItemInstance struct {
 	BuyPrice        int32   `json:"buy_price,omitempty"`
 	SellPrice       int32   `json:"sell_price,omitempty"`
 	Description     string  `json:"description,omitempty"`
+	Status          string  `json:"status,omitempty" enum:"AVAILABLE,LISTED,IN_ESCROW" doc:"Lifecycle status; only AVAILABLE relics can be listed"`
 }
 
 type GetLoadoutResponse struct {
