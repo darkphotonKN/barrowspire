@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ItemState } from "@/types/gameState";
 import { ActionType } from "@/assets/types/client";
+import { iconSheet, itemIcon } from "@/render/art/itemIcons";
 import {
   ContainerContents,
   SATCHEL_INTERIOR,
-  iconSheet,
   itemAt,
   itemDetail,
-  itemIcon,
   lootMessage,
   satchelLayout,
 } from "./ContainerView";
