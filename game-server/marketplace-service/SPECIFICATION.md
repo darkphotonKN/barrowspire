@@ -121,3 +121,4 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [x] Place a bid (gRPC) → FS-none
 - [x] Withdraw a bid (gRPC) → FS-none
 - [x] Read a member's own listings → FS-0YXG6
+- [ ] Browse active listings → FS-8EGFA

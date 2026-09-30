@@ -73,6 +73,13 @@ server state and sends intents. ✅
 - [ ] Delve entry from the hub → FS-29KSH
 - [ ] Loadout access from the hub → FS-29KSH
 
+### Marketplace
+
+- [ ] Browse marketplace listings → FS-8EGFA
+- [ ] List an owned item for auction → FS-8EGFA
+- [ ] Bid on a listing → FS-8EGFA
+- [ ] Filter to my own listings → FS-8EGFA
+
 ### Deployment
 
 - [ ] Externalize the WebSocket URL and remove hardcoded hosts
