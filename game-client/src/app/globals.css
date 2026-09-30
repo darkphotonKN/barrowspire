@@ -1701,3 +1701,55 @@
 /* Blackletter display utility. Apply ONLY to the logo, the hero, or a page
    h1, and never below 28px — see docs/design-guideline.md "Typography". */
 .font-display { font-family: var(--font-heading); }
+
+/* ── The Bazaar listing table (FS-8EGFA; design guideline Part II "Listing table") ──
+   Rarity colour appears only on the badge, this accent edge and the faint hover glow. Each
+   row carries its tier's token as --row-rarity. */
+.bazaar-row {
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.bazaar-row:hover {
+  background-color: var(--color-bg-card-2);
+  box-shadow: inset 0 0 24px color-mix(in srgb, var(--row-rarity) 10%, transparent);
+}
+
+.bazaar-row-edge {
+  box-shadow: inset 3px 0 0 var(--row-rarity);
+}
+
+/* Skeleton rows: a faint brass sweep, never bright gray. Dropped under reduced motion. */
+.bazaar-skeleton {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-brass) 10%, transparent);
+}
+
+.bazaar-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-brass) 22%, transparent),
+    transparent
+  );
+  animation: bazaar-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes bazaar-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bazaar-skeleton::after {
+    animation: none;
+    display: none;
+  }
+}

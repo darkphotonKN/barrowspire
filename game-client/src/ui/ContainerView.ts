@@ -5,13 +5,15 @@
  * the scene's old triggers, and taking an item sends exactly the message the item UI sent,
  * under the same optimistic `lootedAt` pending guard (CONTEXT.md "Container view").
  *
- * The rules (icon mapping, pending loots, where icons sit, what a point hits) are Phaser-free
- * and tested without a canvas; `ContainerView` at the bottom is the Phaser side.
+ * The rules (pending loots, where icons sit, what a point hits) are Phaser-free and tested
+ * without a canvas; `ContainerView` at the bottom is the Phaser side. The icon mapping is in
+ * `@/render/art/itemIcons`.
  */
 
 import type Phaser from "phaser";
 import { ActionType, type InteractPayload } from "@/assets/types/client";
 import { artSprite } from "@/render/art/phaser";
+import { iconSheet, itemIcon } from "@/render/art/itemIcons";
 import type { ArtLibrary } from "@/render/art/library";
 import type { ItemState } from "@/types/gameState";
 import { CANVAS_FONT, palette, rgba, toCss } from "@/utils/canvasPalette";
@@ -25,85 +27,10 @@ import {
   ensureSatchelTextures,
 } from "./satchel";
 
-// ── Item icons ────────────────────────────────────────────────────────────
+// ── Item detail ───────────────────────────────────────────────────────────
 
-/** The categories item icons are baked under (`icon_<name>` in the sprite manifest). */
-export const ITEM_ICONS = [
-  "sword",
-  "dagger",
-  "bow",
-  "staff",
-  "helm",
-  "cuirass",
-  "gauntlets",
-  "greaves",
-  "potion_health",
-  "potion_mana",
-  "vial_tonic",
-  "ring",
-  "coins",
-  "gem",
-  "scroll",
-  "skull",
-  "generic",
-] as const;
-export type ItemIcon = (typeof ITEM_ICONS)[number];
-
-export const iconSheet = (icon: ItemIcon) => `icon_${icon}`;
-
-const WEAPON_ICONS: Record<string, ItemIcon> = {
-  sword: "sword",
-  blade: "sword",
-  dagger: "dagger",
-  knife: "dagger",
-  bow: "bow",
-  crossbow: "bow",
-  staff: "staff",
-  wand: "staff",
-};
-
-const ARMOR_ICONS: Record<string, ItemIcon> = {
-  head: "helm",
-  chest: "cuirass",
-  body: "cuirass",
-  gloves: "gauntlets",
-  hands: "gauntlets",
-  legs: "greaves",
-  feet: "greaves",
-  ring: "ring",
-  ring_1: "ring",
-  ring_2: "ring",
-};
-
-/** Words in an item's name that pick an icon when its stats do not. First match wins. */
-const NAME_ICONS: [RegExp, ItemIcon][] = [
-  [/\b(ring|signet|band)\b/i, "ring"],
-  [/\bscroll\b/i, "scroll"],
-  [/\b(gold|coins?)\b/i, "coins"],
-  [/\b(gem|jewel|glass)\b/i, "gem"],
-  [/\bskull\b/i, "skull"],
-  [/\b(sword|blade)\b/i, "sword"],
-  [/\b(dagger|knife)\b/i, "dagger"],
-  [/\bbow\b/i, "bow"],
-  [/\b(staff|wand)\b/i, "staff"],
-];
-
-/**
- * The icon an item is drawn with: its weapon type or armour slot when one is baked, then its
- * restorative stats, then its name. Anything else is `generic` (FS-2325V §D.4).
- */
-export function itemIcon(item: ItemState): ItemIcon {
-  const weapon =
-    item.weapon_type && WEAPON_ICONS[item.weapon_type.toLowerCase()];
-  if (weapon) return weapon;
-  const armor = item.armor_slot && ARMOR_ICONS[item.armor_slot.toLowerCase()];
-  if (armor) return armor;
-  if (item.healing_amount && item.mana_amount) return "vial_tonic";
-  if (item.healing_amount) return "potion_health";
-  if (item.mana_amount) return "potion_mana";
-  if (item.weapon_type || item.armor_slot) return "generic";
-  return NAME_ICONS.find(([word]) => word.test(item.name))?.[1] ?? "generic";
-}
+// Which icon an item is drawn with lives in `@/render/art/itemIcons`, Phaser-free and shared
+// with the Bazaar page (FS-8EGFA req 32), so both surfaces draw an item alike.
 
 /** The stat line under an item's name: what the old item row printed beside it. */
 export function itemDetail(item: ItemState): string {

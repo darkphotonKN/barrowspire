@@ -441,17 +441,22 @@ A view that needs a second emphasis colour reaches for **brass**, never a second
 
 ## Rarity ramp (marketplace)
 
-Items carry a rarity. Express it on the **card accent border, the rarity badge, and a faint
-hover glow** — never as a full card fill (keeps the grid calm). **Always pair color with the
-text label** (colorblind safety).
+Items carry a rarity. Express it on the **accent edge (a card's, or a listing row's), the rarity
+badge, and a faint hover glow** — never as a full card or row fill (keeps the grid and the table
+calm). **Always pair color with the text label** (colorblind safety).
 
-| Rarity | CSS var | Value | Palette source |
-|---|---|---|---|
-| Common | `--rarity-common` | `#a2946d` | vellum-dark, lifted to clear 4.5:1 at badge size |
-| Uncommon | `--rarity-uncommon` | `#6f8f4a` | arcane green |
-| Rare | `--rarity-rare` | `#688b8f` | necrotic teal, lifted to clear 4.5:1 at badge size |
-| Epic | `--rarity-epic` | `#9c7b3f` | brass |
-| Legendary | `--rarity-legendary` | `#f2b866` | amber-bright |
+| Rarity | Server tier (label) | CSS var | Value | Palette source |
+|---|---|---|---|---|
+| Common | Normal | `--rarity-common` | `#a2946d` | vellum-dark, lifted to clear 4.5:1 at badge size |
+| Uncommon | Uncommon | `--rarity-uncommon` | `#6f8f4a` | arcane green |
+| Rare | Rare | `--rarity-rare` | `#688b8f` | necrotic teal, lifted to clear 4.5:1 at badge size |
+| Epic | Runed | `--rarity-epic` | `#9c7b3f` | brass |
+| Legendary | Fabled | `--rarity-legendary` | `#f2b866` | amber-bright |
+
+The server names its five tiers (items-service `CONTEXT.md` "Rarity tier"); the badge shows the
+**server tier as its label** in the token's colour, matched by name in one place
+(`src/marketplace/rarity.ts`) and drawn by one component (`RarityBadge`). A tier the client does not
+know renders as Common, labelled with its raw name — never hidden, never guessed.
 
 Make these the **canonical rarity colours**: align `items-service` `item_rarities.color_hex` to
 them (or map at the API) so server data and UI agree. Add the vars to `globals.css`.
@@ -469,8 +474,8 @@ wrong behaviour for emphasis.
 
 **The exemption is scoped, not general.** Rarity colours may appear only on:
 - the **rarity badge**
-- the **card accent border** (top or left edge)
-- a **faint hover glow** on the card
+- the **accent edge**: a card's top or left border, or a listing row's left edge
+- a **faint hover glow** on that card or row
 
 They may **never** be used as a CTA, nav, heading, or link colour, and a rarity colour never
 becomes a card fill. Outside those three places, `--rarity-legendary` is amber like any other
@@ -605,35 +610,59 @@ ring, vellum text, placeholder `#5a5238`, radius 6. Label above: uppercase, `tex
 **Cards & panels** — `bg-card`, 1px brass border, radius `8–12`, `backdrop-blur`, card shadow,
 `2rem` padding. Interactive cards: hover raises border + faint glow + `translateY(-2px)`.
 
-**Item card (marketplace — primary primitive)**
+**Item card (marketplace — the List-a-relic item picker)**
 - Layout (approved direction): thumb/icon · **rarity badge** (top-right) · **item name** (vellum,
   lead size) · thin brass divider · **stat row** (attack / crit / defense, each a line icon — not
-  emoji) · **price** (amber number + coin glyph `⟡`) · **Acquire** CTA (primary; full-width on
-  compact cards).
+  emoji). No price: the picker chooses a relic to list, it does not sell one.
 - **Rarity** = top/left accent border in the rarity color + the badge + a faint rarity glow on
   hover. Card body stays dark charcoal (no rarity fill).
 - Sizing: min width `~220–260px`, internal `gap-2/gap-3`, radius 8.
 - States: default (border `0.15`) · hover (border-strong + lift + rarity glow) · focus-visible
-  (brass ring) · owned/disabled (reduced opacity + "Owned" badge replacing price).
+  (brass ring) · owned/disabled (reduced opacity + "Owned" badge on the card).
 
-**Item grid** — responsive `grid` `auto-fill minmax(220px, 1fr)`, gap `1rem–1.25rem`; collapses
-to 1–2 cols ≤640px.
+**Item grid** — the **List-a-relic item picker** (the delver's own relics, one to choose) keeps
+the card grid: responsive `grid` `auto-fill minmax(220px, 1fr)`, gap `1rem–1.25rem`; collapses
+to 1–2 cols ≤640px. A relic already listed or in escrow is the owned/disabled card state, with a
+"Listed" or "In escrow" badge on the card.
 
 **Filter / toolbar bar** — search input (left) · **filter chips** (rarity/type/slot) as pills
-(brass border; active = amber or the rarity color) · **sort** dropdown (right). Sticky under the
-header when long.
+(brass border; active = brass-bright for every chip, rarity included — a rarity chip names its
+tier by label, never by rarity color; never amber, which the view's CTA already holds) · **sort** dropdown (right), or the column headers where the view
+is the listing table. Sticky under the header when long.
 
 **Badges & pills** — small, uppercase, letter-spacing, radius `3–4`. Rarity badge uses the rarity
 color (text or hairline on a dark chip). Status badges (New/Owned/Sold) share the shape.
 
-**Price display** — amber number (tabular), muted currency/coin glyph. Prominent but singular per
-card (the "one torch").
+**Price display** — tabular number, muted currency/coin glyph. **Vellum** wherever prices repeat
+(the listing table); **amber** only as the view's focal price in the item detail modal (the "one
+torch").
 
-**Tabs / segmented control** — underline-on-active (amber, like `.nav-link`) or brass-outlined
-segments; active = amber text.
+**Tabs / segmented control** — underline-on-active or brass-outlined segments; active =
+**brass-bright** text and underline, never amber (the view's primary CTA already holds the torch;
+the All / Mine toggle is a segmented control).
 
-**List / table view (alt layout)** — rows on `bg-card`, brass divider between, hover raises row
-bg; right-aligned price + CTA.
+**Listing table (marketplace — the listing browser)** — the Bazaar browses listings as a
+**table**, not a card grid: a buyer compares many relics on a few facts (price, time left,
+rarity), and columns line those facts up where a grid scatters them.
+- **Rows** on `bg-card`, a brass hairline between them; hover raises the row to `bg-card-2`. A
+  row is one listing and activates (click, Enter) to open the item detail modal.
+- **Columns:** Item (icon · name · rarity badge) · Type or slot · Current price · Bids · Time
+  left · Action. Price, bids and time left are right-aligned, tabular figures. The action cell
+  holds the row's CTA, or plain text ("Your listing", "Sign in to bid").
+- **Sort** from the column headers — price, time left, rarity — with the active column and its
+  direction shown (a Heroicons chevron plus `aria-sort`), never by colour alone. Default: time
+  left, ascending.
+- **Filter chips** above the table, per the toolbar bar below: the five rarity tiers and item type,
+  every active chip brass-bright — a rarity chip carries its tier by label, not colour.
+- **Accent edge:** a 2–3px left edge in the row's rarity colour; the only rarity colour on the
+  row besides the badge and the faint hover glow.
+- **Price** in the table is **vellum** with the muted `⟡` glyph — no amber anywhere in a row, so
+  a column of prices does not become a column of torches. The price turns amber only in the
+  detail modal, where it is the view's focal number.
+- **Loading:** skeleton rows at row height, brass shimmer. **Empty:** the muted copy and one
+  action, in the table's place.
+- Keyboard: rows are focusable in order with a visible brass focus ring; headers are buttons.
+  Targets ≥40px. Below 640px the lesser columns (type, bids) drop, never the price or time left.
 
 **Modal / item detail** — `bg-card` (or `bg-darker`), brass border, `blur(20px)`, deep shadow,
 radius `10–12`, `fadeInScale` entrance; close top-right; trap focus; `Esc` closes.
