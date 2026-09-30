@@ -16,7 +16,6 @@ var (
 	ErrInvalidSoldTime         = errors.New("invalid sold time")
 	ErrCorruptListingState     = errors.New("corrupt listing state")
 	ErrConcurrentModification  = errors.New("concurrent modification")
-	ErrInvalidHoldTransition   = errors.New("invalid hold transition")
 	ErrListingNotAcceptingBids = errors.New("listing not accepting bids")
 	ErrBidNotFound             = errors.New("bid not found")
 	ErrListingExpired          = errors.New("listing expired")
