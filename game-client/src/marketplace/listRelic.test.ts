@@ -64,6 +64,7 @@ describe("instanceStatus", () => {
     ["AVAILABLE", "AVAILABLE"],
     ["LISTED", "LISTED"],
     ["IN_ESCROW", "IN_ESCROW"],
+    ["PENDING_SETTLEMENT", "PENDING_SETTLEMENT"],
     ["listed", "LISTED"],
   ] as const)("should read %s as %s", (status, want) => {
     expect(instanceStatus(status)).toBe(want);

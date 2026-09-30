@@ -154,7 +154,7 @@ func main() {
 
 	go outboxWorker.Run(workerCtx)
 	// Use the new config setup to initialize all services
-	grpcServer := config.SetupServices(ctx, db, ch, registry)
+	grpcServer, freezeItemActivity := config.SetupServices(ctx, db, ch, registry)
 
 	// --- temporal worker ---
 	// Items owns the data behind its settlement steps, so its activities run in
@@ -176,6 +176,8 @@ func main() {
 
 	temporalRunner, err := bstemporal.NewRunner(temporalClient, temporalCfg, temporalLogger, worker.Options{},
 		smoke.RegisterActivity,
+
+		freezeItemActivity.Register,
 	)
 	if err != nil {
 		log.Fatalf("Failed to build temporal worker: %s", err)

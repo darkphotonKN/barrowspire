@@ -22,7 +22,7 @@ import (
 )
 
 // SetupServices initializes all services and their dependencies
-func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, registry discovery.Registry) *grpc.Server {
+func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, registry discovery.Registry) (*grpc.Server, *items.ItemsActivity) {
 	// Create Auth Service client
 	authClient := auth.NewClient(registry)
 
@@ -36,6 +36,9 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, 
 	// Create service with repository and AMQP channel
 	publishCh := commonbroker.NewAmqpPublisher(amqpChannel)
 	service := items.NewService(repo, db, publishCh, outboxService)
+
+	// instantiate activity
+	freezeItemActivity := items.NewItemsActivity(service)
 
 	// Create gRPC handler with service and auth client
 	handler := items.NewHandler(service, authClient)
@@ -67,7 +70,7 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, 
 
 	slog.Info("Items service initialized successfully")
 
-	return grpcServer
+	return grpcServer, freezeItemActivity
 }
 
 // StartGRPCServer starts the gRPC server on the specified port

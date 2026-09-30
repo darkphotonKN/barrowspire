@@ -55,7 +55,12 @@ export function parseStartPrice(text: string): number | null {
 
 // ── Picker ──────────────────────────────────────────────────────────────────
 
-export type InstanceStatus = "AVAILABLE" | "LISTED" | "IN_ESCROW" | "UNKNOWN";
+export type InstanceStatus =
+  | "AVAILABLE"
+  | "LISTED"
+  | "IN_ESCROW"
+  | "PENDING_SETTLEMENT"
+  | "UNKNOWN";
 
 /**
  * An instance's status. The generated type marks `status` optional, though the server always
@@ -66,7 +71,10 @@ export type InstanceStatus = "AVAILABLE" | "LISTED" | "IN_ESCROW" | "UNKNOWN";
 export function instanceStatus(status: string | undefined): InstanceStatus {
   if (status === undefined) return "AVAILABLE";
   const upper = status.toUpperCase();
-  return upper === "AVAILABLE" || upper === "LISTED" || upper === "IN_ESCROW"
+  return upper === "AVAILABLE" ||
+    upper === "LISTED" ||
+    upper === "IN_ESCROW" ||
+    upper === "PENDING_SETTLEMENT"
     ? upper
     : "UNKNOWN";
 }
@@ -75,6 +83,7 @@ const TAGS: Record<InstanceStatus, string | undefined> = {
   AVAILABLE: undefined,
   LISTED: "Listed",
   IN_ESCROW: "In escrow",
+  PENDING_SETTLEMENT: "Settling",
   UNKNOWN: "Unavailable",
 };
 

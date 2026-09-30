@@ -499,19 +499,15 @@ func (l *Listing) Freeze(now time.Time) error {
 	return nil
 }
 
+// FindWinningBid returns the confirmed leader, or nil when there is none.
+//
+// No leader is a legitimate ending, not corruption: every bid may have been
+// withdrawn (CANCELLED), refused by wallet (FAILED) or still waiting on its hold
+// (PENDING). Even OUTBID bids with no leader are reachable, because a WINNING
+// bidder may withdraw and nothing promotes the runner-up. Two WINNING bids is
+// the real corruption, and Reconstitute already refuses to load that listing.
 func (l *Listing) FindWinningBid() (*Bid, error) {
-	// no bids, no op
-	if len(l.bids) == 0 {
-		return nil, nil
-	}
-
-	for _, bid := range l.bids {
-		if bid.status == BidStatusWinning {
-			return bid, nil
-		}
-	}
-
-	return nil, ErrCorruptListingState
+	return l.findWinningBid(), nil
 }
 
 type ReconstituteParams struct {

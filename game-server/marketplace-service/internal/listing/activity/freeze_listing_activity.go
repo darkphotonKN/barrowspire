@@ -13,7 +13,7 @@ import (
 
 // FreezeListing is settlement step 0a: the listing stops accepting bids and the
 // winner is selected in the same transaction. Unlike the steps after it, this one
-// classifies its own failures, because the workflow branches on the outcome —
+// classifies its own failures, because the workflow branches on the outcome
 // no bids is a legitimate ending, not an error.
 func (a *Activities) FreezeListing(ctx context.Context, inp commonactivity.FreezeListingInput) (commonactivity.FreezeListingOutput, error) {
 	// call freeze listing uc to attempt to freeze listing
@@ -35,7 +35,6 @@ func (a *Activities) FreezeListing(ctx context.Context, inp commonactivity.Freez
 	if res.Winner == nil {
 		out.Outcome = commonactivity.OutcomeNoBids
 
-		// return value type, temporal convention
 		return out, nil
 	}
 

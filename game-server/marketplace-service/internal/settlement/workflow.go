@@ -28,6 +28,7 @@ type Input struct {
 func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListingOutput, error) {
 	ctx = workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueMarketplace))
 
+	// declare our own variables, temporal makes them durable because of event history
 	var frozen marketplaceactivity.FreezeListingOutput
 	err := workflow.ExecuteActivity(ctx,
 		marketplaceactivity.FreezeListingActivityName,

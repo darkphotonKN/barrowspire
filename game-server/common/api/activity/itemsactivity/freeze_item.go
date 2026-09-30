@@ -22,3 +22,6 @@ type FreezeItemInput struct {
 	ItemID   uuid.UUID `json:"item_id"`
 	SellerID uuid.UUID `json:"seller_id"`
 }
+
+type FreezeItemOutput struct {
+}

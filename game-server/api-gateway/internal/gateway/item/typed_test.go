@@ -32,6 +32,7 @@ func TestListItemInstances_CarriesStatus(t *testing.T) {
 		{Id: "a", Name: "Blade", Status: "AVAILABLE"},
 		{Id: "b", Name: "Shield", Status: "LISTED"},
 		{Id: "c", Name: "Ring", Status: "IN_ESCROW"},
+		{Id: "d", Name: "Helm", Status: "PENDING_SETTLEMENT"},
 	}}}
 	w := testsupport.Do(newTypedRouter(client), http.MethodGet, "/api/items/instances", "")
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -43,7 +44,7 @@ func TestListItemInstances_CarriesStatus(t *testing.T) {
 		m := it.(map[string]any)
 		got[m["id"].(string)] = m["status"]
 	}
-	assert.Equal(t, map[string]any{"a": "AVAILABLE", "b": "LISTED", "c": "IN_ESCROW"}, got)
+	assert.Equal(t, map[string]any{"a": "AVAILABLE", "b": "LISTED", "c": "IN_ESCROW", "d": "PENDING_SETTLEMENT"}, got)
 }
 
 // items-service authenticates every RPC from the authorization metadata

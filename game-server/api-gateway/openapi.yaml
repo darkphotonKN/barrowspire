@@ -565,6 +565,7 @@ components:
             - AVAILABLE
             - LISTED
             - IN_ESCROW
+            - PENDING_SETTLEMENT
           type: string
         template_id:
           type: string

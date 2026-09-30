@@ -1088,7 +1088,7 @@ export interface components {
              * @description Lifecycle status; only AVAILABLE relics can be listed
              * @enum {string}
              */
-            status?: "AVAILABLE" | "LISTED" | "IN_ESCROW";
+            status?: "AVAILABLE" | "LISTED" | "IN_ESCROW" | "PENDING_SETTLEMENT";
             template_id?: string;
             weapon_type?: string;
         };
