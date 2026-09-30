@@ -1,6 +1,6 @@
 ---
 id: I-8EGFA-9
-status: open
+status: done
 implements: FS-8EGFA
 blocked_by: [I-8EGFA-1, I-8EGFA-5, I-8EGFA-7]
 labels: [ready-for-agent]

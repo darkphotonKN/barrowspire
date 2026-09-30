@@ -1,6 +1,6 @@
 # FS-8EGFA: Marketplace web page
 
-> Status: work-order · SPECIFICATION.md:
+> Status: shipped · SPECIFICATION.md:
 > - `game-client/SPECIFICATION.md` "### Marketplace" → all four lines
 > - `game-server/api-gateway/SPECIFICATION.md` "### Marketplace" → "Public listing browse and read"
 > - `game-server/api-gateway/SPECIFICATION.md` "### Downstream routing" → "Typed wallet balance read"

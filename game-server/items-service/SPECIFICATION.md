@@ -14,8 +14,8 @@
 
 ## Inventory
 
-- [ ] Listing status on owned instances → FS-8EGFA
-- [ ] Item summaries by id → FS-8EGFA
+- [x] Listing status on owned instances → FS-8EGFA
+- [x] Item summaries by id → FS-8EGFA
 
 ## Marketplace settlement
 
