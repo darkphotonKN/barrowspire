@@ -45,6 +45,10 @@ var (
 )
 
 func main() {
+	// --- root context ---
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	// --- database setup ---
 
 	db := config.InitDB()
@@ -58,7 +62,6 @@ func main() {
 		log.Fatal("Failed to create Consul registry")
 	}
 
-	ctx := context.Background()
 	instanceID := discovery.GenerateInstanceID(serviceName)
 
 	// -- discovery --
@@ -145,8 +148,10 @@ func main() {
 			commonauth.Auth(validate),
 		),
 	)
+
 	pb.RegisterMarketplaceServiceServer(grpcServer, services.ListingHandler)
 	reflection.Register(grpcServer)
+
 	// create a network listener to this service
 	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
 	if err != nil {
@@ -156,12 +161,6 @@ func main() {
 	}
 	defer listener.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
 	log.Printf("grpc Marketplace Server started on PORT: %s\n", grpcAddr)
 
 	go func() {
@@ -170,9 +169,9 @@ func main() {
 		}
 	}()
 
-	<-quit
+	<-ctx.Done() // blocks until sigint / sigterm
+	stop()
 
-	cancel()                    // 通知所有worker停止
-	grpcServer.GracefulStop()   // gRPC處理完目前正在執行的請求關閉
-	time.Sleep(2 * time.Second) // 延遲一點時間再關閉
+	log.Println("Shutting down server")
+	grpcServer.GracefulStop() // gRPC處理完目前正在執行的請求關閉
 }

@@ -402,13 +402,13 @@ func (r *ListingRepository) diffListing(before, after *listing.ListingSnapshot) 
 // transaction.
 //
 // One transaction is what makes the lock meaningful. FindByID and Save each open
-// their own, so a lock taken during the read is released long before the write —
+// their own, so a lock taken during the read is released long before the write,
 // leaving exactly the window that optimistic concurrency and a retry loop exist to
 // paper over. Here the SELECT ... FOR UPDATE, the domain mutation and the write all
 // sit together, so concurrent bidders queue instead of racing and retrying.
 //
 // CONTRACT: the lock is held for the whole closure, so updateFn must not make
-// network calls or do anything else slow — every other writer on this listing
+// network calls or do anything else slow every other writer on this listing
 // queues behind it. This is why PlaceBid reserves the bidder's gold BEFORE calling
 // here rather than inside the closure.
 //

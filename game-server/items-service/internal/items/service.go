@@ -98,6 +98,7 @@ type Repository interface {
 	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error)
 	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
 	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
+	FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) (bool, error)
 }
 
 func (s *service) CreateItemInstance(createItemInstanceReq *ItemInstance) (*ItemInstance, error) {
@@ -1084,4 +1085,20 @@ func (s *service) CancelReservation(ctx context.Context, itemID uuid.UUID) (bool
 		return false, err
 	}
 	return ok, nil
+}
+
+// FreezeItem is settlement step 0b. Frozen, or already frozen for this seller, is
+// success; anything else is ErrItemNotFreezable, which the settlement treats as
+// final rather than retrying.
+func (s *service) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) error {
+	frozen, err := s.repo.FreezeItem(ctx, itemID, sellerID)
+	if err != nil {
+		return fmt.Errorf("freeze item %v: %w", itemID, err)
+	}
+
+	if !frozen {
+		return fmt.Errorf("freeze item %v for seller %v: %w", itemID, sellerID, ErrItemNotFreezable)
+	}
+
+	return nil
 }

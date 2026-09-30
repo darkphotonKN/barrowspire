@@ -18,6 +18,10 @@ import (
 
 var ErrItemNotReservable = errors.New("item not reservable")
 
+// ErrItemNotFreezable is settlement step 0b's semantic impossibility: the item is
+// no longer the seller's, or no longer on sale. Retrying cannot change either.
+var ErrItemNotFreezable = errors.New("item not freezable")
+
 type repository struct {
 	DB *sqlx.DB
 }
@@ -1019,4 +1023,55 @@ func (r *repository) CancelReservation(ctx context.Context, itemID uuid.UUID) (b
 
 	// false没更新到（不存在、或不是 LISTED）
 	return n > 0, nil
+}
+
+// FreezeItem is settlement step 0b (FS-NXP1W Req 26): LISTED -> PENDING_SETTLEMENT,
+// conditional on the seller still owning the item. It reports false when the item
+// is neither freezable nor already frozen for this seller; the caller decides what
+// that means.
+//
+// Only the LISTED row is written, so a retry on an already-frozen item changes
+// nothing (updated_at is trigger-stamped on any UPDATE, even a no-op one). The
+// already-frozen check is a separate statement on purpose: it takes a fresh
+// snapshot after the write, so an overlapping attempt that froze the item first
+// has committed by then and is seen, where a snapshot shared with the write would
+// miss it.
+func (r *repository) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) (bool, error) {
+	freeze := `
+		UPDATE item_instances
+		SET status = 'PENDING_SETTLEMENT'
+		WHERE id = $1
+		AND owner_member_id = $2
+		AND status = 'LISTED'
+	`
+
+	res, err := r.DB.ExecContext(ctx, freeze, itemID, sellerID)
+	if err != nil {
+		return false, wrapDBErr("freeze item", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("freeze item, rows affected: %w", err)
+	}
+	if n > 0 {
+		return true, nil
+	}
+
+	alreadyFrozen := `
+		SELECT EXISTS (
+			SELECT 1
+			FROM item_instances
+			WHERE id = $1
+			AND owner_member_id = $2
+			AND status = 'PENDING_SETTLEMENT'
+		)
+	`
+
+	var frozen bool
+	if err := r.DB.GetContext(ctx, &frozen, alreadyFrozen, itemID, sellerID); err != nil {
+		return false, wrapDBErr("freeze item, already frozen check", err)
+	}
+
+	return frozen, nil
 }
