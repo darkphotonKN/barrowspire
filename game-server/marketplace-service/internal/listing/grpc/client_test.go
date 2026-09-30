@@ -159,7 +159,7 @@ func TestPlaceBid_WalletRefusal_KeepsItsMeaning(t *testing.T) {
 			if !tt.noWallet {
 				registry = startFakeWallet(t, tt.walletCode)
 			}
-			h := NewHandler(nil, nil, usecase.NewPlaceBidUC(repo, NewClient(registry)), nil, nil)
+			h := NewHandler(nil, nil, usecase.NewPlaceBidUC(repo, NewClient(registry)), nil, nil, nil, nil)
 
 			_, err := h.PlaceBid(authedCtx(t, uuid.New()), &marketplacepb.PlaceBidRequest{
 				ListingId: l.Snapshot().ID.String(),

@@ -41,9 +41,36 @@ type stubListingClient struct {
 	gotListReq  *pb.ListItemRequest
 	gotWithdraw *pb.WithdrawBidRequest
 	gotMine     *pb.ListMyListingsRequest
+	gotBrowse   *pb.BrowseListingsRequest
+	gotGet      *pb.GetListingRequest
 	gotAuth     []string
 
-	mine *pb.ListMyListingsResponse
+	mine   *pb.ListMyListingsResponse
+	browse *pb.BrowseListingsResponse
+	one    *pb.Listing
+}
+
+func (s *stubListingClient) GetListing(ctx context.Context, req *pb.GetListingRequest) (*pb.GetListingResponse, error) {
+	s.calls++
+	s.gotGet = req
+	s.recordAuth(ctx)
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &pb.GetListingResponse{Listing: s.one}, nil
+}
+
+func (s *stubListingClient) BrowseListings(ctx context.Context, req *pb.BrowseListingsRequest) (*pb.BrowseListingsResponse, error) {
+	s.calls++
+	s.gotBrowse = req
+	s.recordAuth(ctx)
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.browse == nil {
+		return &pb.BrowseListingsResponse{}, nil
+	}
+	return s.browse, nil
 }
 
 func (s *stubListingClient) ListItem(ctx context.Context, req *pb.ListItemRequest) (*pb.ListItemResponse, error) {
@@ -95,9 +122,13 @@ func embedding(id commonauth.Identity) gin.HandlerFunc {
 }
 
 func newRouter(client listing.ListingClient) *gin.Engine {
+	return newRouterWithItems(client, &stubItemSummaries{})
+}
+
+func newRouterWithItems(client listing.ListingClient, items listing.ItemSummaries) *gin.Engine {
 	r := gin.New()
 	api := contract.New(r)
-	listing.RegisterOperations(api, listing.NewHandler(client),
+	listing.RegisterOperations(api, listing.NewHandler(client, items),
 		contract.Protected(embedding(commonauth.Identity{MemberID: uuid.New(), Role: commonauth.RolePlayer})),
 		contract.SeamError, contract.Secured)
 	return r
@@ -370,6 +401,8 @@ func TestListMyListings_AnswersThePageInTheDocumentedShape(t *testing.T) {
 		EndsAt:     timestamppb.New(time.Date(2026, 12, 1, 18, 0, 0, 0, time.UTC)),
 		CreatedAt:  timestamppb.New(time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)),
 		UpdatedAt:  timestamppb.New(time.Date(2026, 12, 1, 18, 5, 0, 0, time.UTC)),
+		MinimumBid: 176,
+		BidCount:   3,
 	}
 	active := &pb.Listing{
 		Id:         "55555555-5555-5555-5555-555555555555",
@@ -380,6 +413,7 @@ func TestListMyListings_AnswersThePageInTheDocumentedShape(t *testing.T) {
 		EndsAt:     timestamppb.New(time.Date(2026, 12, 2, 18, 0, 0, 0, time.UTC)),
 		CreatedAt:  timestamppb.New(time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)),
 		UpdatedAt:  timestamppb.New(time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)),
+		MinimumBid: 250,
 	}
 	client := &stubListingClient{mine: &pb.ListMyListingsResponse{
 		Listings:   []*pb.Listing{sold, active},
@@ -401,7 +435,10 @@ func TestListMyListings_AnswersThePageInTheDocumentedShape(t *testing.T) {
 				"status": "SOLD",
 				"endsAt": "2026-12-01T18:00:00Z",
 				"createdAt": "2026-11-01T09:00:00Z",
-				"updatedAt": "2026-12-01T18:05:00Z"
+				"updatedAt": "2026-12-01T18:05:00Z",
+				"minimumBid": 176,
+				"bidCount": 3,
+				"ended": false
 			},
 			{
 				"id": "55555555-5555-5555-5555-555555555555",
@@ -411,7 +448,10 @@ func TestListMyListings_AnswersThePageInTheDocumentedShape(t *testing.T) {
 				"status": "ACTIVE",
 				"endsAt": "2026-12-02T18:00:00Z",
 				"createdAt": "2026-10-01T09:00:00Z",
-				"updatedAt": "2026-10-01T09:00:00Z"
+				"updatedAt": "2026-10-01T09:00:00Z",
+				"minimumBid": 250,
+				"bidCount": 0,
+				"ended": false
 			}
 		],
 		"nextCursor": "next-page"

@@ -25,6 +25,27 @@ func newTypedRouter(client item.ItemClient) *gin.Engine {
 	return r
 }
 
+// The stash tells a delver which relics can be listed: every instance carries
+// its snake_case `status` (FS-8EGFA §API surface).
+func TestListItemInstances_CarriesStatus(t *testing.T) {
+	client := &stubItemClient{instances: &pb.ListItemInstancesResponse{Items: []*pb.ItemInstance{
+		{Id: "a", Name: "Blade", Status: "AVAILABLE"},
+		{Id: "b", Name: "Shield", Status: "LISTED"},
+		{Id: "c", Name: "Ring", Status: "IN_ESCROW"},
+	}}}
+	w := testsupport.Do(newTypedRouter(client), http.MethodGet, "/api/items/instances", "")
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	body := testsupport.Decode(t, w)
+	items := body["result"].(map[string]any)["items"].([]any)
+	got := map[string]any{}
+	for _, it := range items {
+		m := it.(map[string]any)
+		got[m["id"].(string)] = m["status"]
+	}
+	assert.Equal(t, map[string]any{"a": "AVAILABLE", "b": "LISTED", "c": "IN_ESCROW"}, got)
+}
+
 // items-service authenticates every RPC from the authorization metadata
 // (common/auth.Auth), so each operation must forward the caller's token.
 func TestItemOperations_ForwardTheCallersToken(t *testing.T) {

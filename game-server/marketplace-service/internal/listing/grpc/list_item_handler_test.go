@@ -31,7 +31,7 @@ func (f *fakeItemReserver) ReserveItem(ctx context.Context, itemID uuid.UUID, st
 }
 
 func newListItemHandler(reserver *fakeItemReserver) *Handler {
-	return NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil)
+	return NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil, nil, nil)
 }
 
 func TestListItemSendsTheSellersTermsToTheReservation(t *testing.T) {
