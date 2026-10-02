@@ -25,8 +25,8 @@ for these steps is slice 5.
   output.
 - **0b FreezeItem** (items): `LISTED → PENDING_SETTLEMENT` conditional on status and owner = seller.
   Re-running on an already-frozen item owned by the seller is success.
-- **Zero bids:** 0a returns `NO_BIDS`, and the workflow ends with the listing `EXPIRED` and the item
-  back to `AVAILABLE`. No wallet, ledger or bid steps run.
+- **Zero bids:** 0a returns `NO_BIDS` and the workflow branches off. The no-bids arm itself (NB1
+  ReturnItem, NB2 ExpireListing) is I-NXP1W-15.
 - **Stale-reservation reconciler:** treats an item whose listing is `PENDING_SETTLEMENT` as live.
 
 Each activity is a thin wrapper over a plain use case (Req 7). No gRPC calls on the saga path.
@@ -41,7 +41,7 @@ placeBid's post-lock status re-check (Req 25) lives in the bids work. Confirm it
 - [ ] The expiry poller ignores every non-ACTIVE status, including `SETTLEMENT_FAILED`
 - [ ] AcceptBid settles at the current WINNING bid; no bid ID reaches the workflow
 - [ ] 0a and 0b are conditional writes; re-running either after success returns the same output and changes nothing
-- [ ] A listing with no bids ends `EXPIRED` with its item `AVAILABLE`
+- [ ] 0a returns `NO_BIDS` for a listing with no bids, and the workflow skips 0b (the arm itself is I-NXP1W-15)
 - [ ] The reconciler does not cancel the reservation of an item whose listing is `PENDING_SETTLEMENT`
 - [ ] Use cases tested without Temporal; `make test` green
 

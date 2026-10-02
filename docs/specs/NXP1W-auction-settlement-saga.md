@@ -58,9 +58,10 @@ issues); the `bids` table (Kiki's bids work); ledger-service's `AppendLedgerTx` 
    caller could also invoke. Temporal-specific code (options, error classification into
    application errors, heartbeats) stays in the wrapper. No saga step makes a gRPC call.
    `CommitHold`, `ReleaseHold` and `CreditSeller` are not added as gRPC RPCs.
-8. **Zero bids:** when 0a finds no WINNING bid, the workflow short-circuits. The listing becomes
-   `EXPIRED` and the item returns from `LISTED` to `AVAILABLE`; no wallet, ledger or bid steps
-   run. This is a normal outcome, not an exception.
+8. **Zero bids:** when 0a finds no WINNING bid, the workflow short-circuits into the no-bids arm:
+   **NB1** `ReturnItem` (items) then **NB2** `ExpireListing` (marketplace), in that order (Req 34a,
+   34b). The item goes from `LISTED` back to `AVAILABLE` and the listing becomes `EXPIRED`. No
+   0b–6, wallet, ledger or bid steps run. This is a normal outcome, not an exception.
 
 ### Failure handling (ADR-0017, ADR-0018)
 
@@ -116,6 +117,8 @@ issues); the `bids` table (Kiki's bids work); ledger-service's `AppendLedgerTx` 
     | `TransferItem` | itemId, buyer memberId | — |
     | `AppendLedgerTx` | existing `ledgeractivity.AppendLedgerTxInput` | existing output |
     | `MarkSold` | listingId | — |
+    | `ReturnItem` (NB1) | listingId | — |
+    | `ExpireListing` (NB2) | listingId | — |
     | `RaiseSettlementException` | listingId, workflowId, step, reason | exceptionId |
     | rollback activities (Req 12) | listingId / itemId / bidIds as needed | — |
 
@@ -137,6 +140,18 @@ issues); the `bids` table (Kiki's bids work); ledger-service's `AppendLedgerTx` 
 23. wallet has a `processed_events` dedup table keyed on **(workflow ID, activity name)**.
 24. marketplace has a `settlement_exceptions` table: listing_id, workflow_id, step, reason, status
     (open / resolved), created_at, resolved_at nullable, published_at nullable.
+24a. `item_instances.listing_id` records which listing an item is reserved for. Status alone cannot
+    tell an old listing from a new one after a relist (see Edge States, "Item relisted before a
+    release retry ran"). items-service mints the ID when it reserves the item
+    (`AVAILABLE → LISTED`) and carries it on `ItemReserved`. The listing is born with that ID
+    instead of minting its own.
+    - Every item write that acts for a listing checks `listing_id = <that listing>` as well as the
+      status. That covers NB1 ReturnItem (Req 34a), the rollback release (Req 12), 0b
+      FreezeItem, 4 TransferItem and the reconciler's `CancelReservation` (Req 34).
+    - Any write that makes the item `AVAILABLE` also clears `listing_id`. The next reservation
+      mints a new one.
+    - A write that changes zero rows because the ID no longer matches was either already applied
+      or superseded by a relist. It returns success and changes nothing.
 
 ### Activities
 
@@ -181,6 +196,16 @@ concurrency). Never read-then-act.
 34. **Stale-reservation reconciler.** Marketplace's reconciler (`ListStaleReserved` →
     `CancelReservation`) treats an item whose listing is `PENDING_SETTLEMENT` as live and never
     cancels its reservation.
+34a. **NB1 ReturnItem** (no-bids arm, items). `UPDATE item_instances SET status = 'AVAILABLE',
+    listing_id = NULL WHERE status = 'LISTED' AND listing_id = :listing_id`. Clearing
+    `listing_id` is what keeps a retry from un-listing a relisted item (Req 24a).
+    - Already applied: zero rows changed. Either this step already ran, or the seller has since
+      relisted the item under a new listing ID. Either way it returns success.
+34b. **NB2 ExpireListing** (no-bids arm, marketplace). `UPDATE listings SET status = 'EXPIRED'
+    WHERE id = :listing_id AND status = 'PENDING_SETTLEMENT'`. It runs after NB1 succeeds.
+    - Already applied: the listing is `EXPIRED`.
+    - Zero rows with any other status is an invariant breach. It escalates and parks (Req 13),
+      the same as MarkSold, and never overwrites.
 
 ### Workflow assembly
 
@@ -250,7 +275,8 @@ concurrency). Never read-then-act.
 - [ ] Starting `settlement-{listingId}` twice (any mix of expiry, AcceptBid, buyout) runs one settlement; the second start returns success to its caller.
 - [ ] The expiry poller starts settlement for ACTIVE past-expiry listings and ignores every other status, including `SETTLEMENT_FAILED`.
 - [ ] AcceptBid settles at the current WINNING bid; no bid ID reaches the workflow.
-- [ ] A listing with no bids ends `EXPIRED` with its item `AVAILABLE`, and no wallet or ledger activity runs.
+- [ ] A listing with no bids runs NB1 ReturnItem and then NB2 ExpireListing, and ends `EXPIRED` with its item `AVAILABLE` and `listing_id` NULL. No wallet or ledger activity runs.
+- [ ] NB2 on an `EXPIRED` listing is success. On any other non-`PENDING_SETTLEMENT` status it escalates and parks.
 - [ ] A happy-path settlement ends with: listing `SOLD`; winner `WON`, others `LOST`; winning hold `COMMITTED` and buyer debited by the hold's amount; losing holds `RELEASED`; seller credited once; item owned by the buyer and `AVAILABLE`; exactly two ledger rows under `uuidv5(ns, "settlement:"+listingId)`.
 - [ ] Re-executing any activity after it succeeded returns success with the same output and changes nothing.
 - [ ] `CommitHold` on a `RELEASED` or expired hold is non-retryable; on a `COMMITTED` hold it is success; a caller amount different from the hold's amount is non-retryable.
@@ -264,6 +290,8 @@ concurrency). Never read-then-act.
 - [ ] `PlaceHold` stores the explicitly passed expiry.
 - [ ] `processed_events` rejects a second credit for the same (workflow ID, activity name).
 - [ ] The stale-reservation reconciler does not cancel the reservation of an item whose listing is `PENDING_SETTLEMENT`.
+- [ ] A release retried after the seller relisted the item returns success, and the new listing's item stays `LISTED` (Req 24a).
+- [ ] A listing's ID equals the `listing_id` that items-service minted on reserve. Any write that makes the item `AVAILABLE` clears it.
 - [ ] A crash-point table covering every step is committed, and each crash point resolves to already-applied-and-continue or roll back.
 - [ ] Killing a participant worker mid-activity does not change the final state.
 - [ ] The e2e auction test passes across all four services.
@@ -273,7 +301,10 @@ concurrency). Never read-then-act.
 
 - **Expiry and AcceptBid race:** both start `settlement-{listingId}`; the second is rejected as a duplicate and returns success. One settlement.
 - **Bid placed during freeze:** placeBid acquires the listing row lock after 0a commits, re-checks status, sees `PENDING_SETTLEMENT` and rejects. A bid that committed before 0a is included in winner selection.
-- **Zero bids:** short-circuit to `EXPIRED` + item `AVAILABLE` (Req 8).
+- **Zero bids:** short-circuit to NB1 ReturnItem (item `AVAILABLE`), then NB2 ExpireListing (listing `EXPIRED`) (Req 8).
+- **Crash after NB1 commits, before the workflow records it:** the retry changes zero rows and returns success, then NB2 runs.
+- **Items down during NB1:** NB1 hits its cap, escalates and parks. NB2 has not run, so the listing stays `PENDING_SETTLEMENT` until NB1 succeeds.
+- **Item relisted before a release retry ran:** the release commits, but the activity's completion is lost. Before Temporal retries, the seller relists the item, which is `AVAILABLE` again, under a new listing ID. The retry's old listing ID matches nothing, so it returns success and the new listing's item stays `LISTED` (Req 24a).
 - **Listing withdrawn before 0a runs:** 0a sees a non-ACTIVE status → semantic impossibility. Whether a withdrawn listing then moves to `SETTLEMENT_FAILED` or keeps its withdrawn status is governed by the future ListingWithdraw saga; until then the rollback must not overwrite a terminal status that another flow set.
 - **Crash after 0a commits, before the activity completes:** the retry sees `PENDING_SETTLEMENT` → already applied, same output.
 - **Item owner changed or item unfrozen before 0b:** non-retryable → rollback to `SETTLEMENT_FAILED`.

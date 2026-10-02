@@ -99,6 +99,7 @@ type Repository interface {
 	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
 	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
 	FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) (bool, error)
+	ReturnItem(ctx context.Context, id, listingID uuid.UUID) error
 }
 
 func (s *service) CreateItemInstance(createItemInstanceReq *ItemInstance) (*ItemInstance, error) {
@@ -1101,4 +1102,8 @@ func (s *service) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) er
 	}
 
 	return nil
+}
+
+func (s *service) ReturnItem(ctx context.Context, id, listingID uuid.UUID) error {
+	return s.repo.ReturnItem(ctx, id, listingID)
 }

@@ -5,6 +5,7 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 
+	"github.com/darkphotonKN/barrowspire-server/common/api/activity/itemsactivity"
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
 )
@@ -30,10 +31,28 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 
 	// declare our own variables, temporal makes them durable because of event history
 	var frozen marketplaceactivity.FreezeListingOutput
+
+	// Step 0a
 	err := workflow.ExecuteActivity(ctx,
 		marketplaceactivity.FreezeListingActivityName,
 		marketplaceactivity.FreezeListingInput{ListingID: in.ListingID},
 	).Get(ctx, &frozen)
+	if err != nil {
+		return marketplaceactivity.FreezeListingOutput{}, err
+	}
+
+	if frozen.Outcome == marketplaceactivity.OutcomeNoBids {
+		// TODO: replaced by expire listing + return items arm
+		return frozen, nil
+	}
+
+	// Step 0b
+	itemCtx := workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueItems))
+
+	err = workflow.ExecuteActivity(itemCtx,
+		itemsactivity.FreezeItemActivityName,
+		itemsactivity.FreezeItemInput{ItemID: frozen.ItemID, SellerID: frozen.SellerID},
+	).Get(itemCtx, nil)
 	if err != nil {
 		return marketplaceactivity.FreezeListingOutput{}, err
 	}
