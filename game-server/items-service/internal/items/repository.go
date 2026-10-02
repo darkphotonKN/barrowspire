@@ -1113,3 +1113,38 @@ func (r *repository) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID)
 
 	return frozen, nil
 }
+
+// NB1
+func (r *repository) ReturnItem(ctx context.Context, id, listingID uuid.UUID) error {
+	query := `
+		UPDATE item_instances 
+		SET
+			status = 'AVAILABLE',
+			listing_id = NULL
+		WHERE
+		id = :id AND listing_id = :listing_id AND status = 'LISTED'
+	`
+
+	mappedArgs := map[string]interface{}{
+		"id":         id,
+		"listing_id": listingID,
+	}
+	res, err := r.DB.NamedExecContext(ctx, query, mappedArgs)
+
+	if err != nil {
+		return commonhelpers.WrapDBErr("items repo", "return item", err)
+	}
+
+	rows, err := res.RowsAffected()
+
+	if err != nil {
+		return fmt.Errorf("return item, rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		// no error, no op, already succeeded
+		return nil
+	}
+
+	return nil
+}

@@ -102,6 +102,7 @@ type Repository interface {
 
 	// public item facts, for listing pages
 	GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error)
+	ReturnItem(ctx context.Context, id, listingID uuid.UUID) error
 }
 
 func (s *service) CreateItemInstance(createItemInstanceReq *ItemInstance) (*ItemInstance, error) {
@@ -1115,4 +1116,8 @@ func (s *service) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) er
 	}
 
 	return nil
+}
+
+func (s *service) ReturnItem(ctx context.Context, id, listingID uuid.UUID) error {
+	return s.repo.ReturnItem(ctx, id, listingID)
 }
