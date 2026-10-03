@@ -1115,6 +1115,11 @@ func (r *repository) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID)
 }
 
 // NB1
+var (
+	ErrItemCorrupted = errors.New("item corrupted")
+	ErrNoItemFound   = errors.New("item not found")
+)
+
 func (r *repository) ReturnItem(ctx context.Context, id, listingID uuid.UUID) error {
 	query := `
 		UPDATE item_instances 
@@ -1138,13 +1143,44 @@ func (r *repository) ReturnItem(ctx context.Context, id, listingID uuid.UUID) er
 	rows, err := res.RowsAffected()
 
 	if err != nil {
-		return fmt.Errorf("return item, rows affected: %w", err)
+		return fmt.Errorf("ReturnItem, rows affected: %w", err)
 	}
 
-	if rows == 0 {
-		// no error, no op, already succeeded
+	// rows affected either 0 or 1, whether or not something was updated
+
+	if rows == 1 {
+		// updated successfully
 		return nil
 	}
 
-	return nil
+	// rows == 0 case
+	// we need to query again for enough granularity of differentiating between different edge cases
+	// grab the item in general
+	query = `
+		SELECT 
+			listing_id
+		FROM item_instances 
+		WHERE id = $1
+		`
+
+	var item struct {
+		ListingID *uuid.UUID `db:"listing_id"`
+	}
+	err = r.DB.GetContext(ctx, &item, query, id)
+
+	switch {
+	// item not found case, no item at all, so should fail
+	case errors.Is(err, sql.ErrNoRows):
+		return ErrNoItemFound
+
+	// generic error, use helper
+	case err != nil:
+		return commonhelpers.WrapDBErr("items repo", "return item", err)
+
+	// check for the corrupt case of item is still the same but status has changed already
+	case item.ListingID != nil && *item.ListingID == listingID:
+		return ErrItemCorrupted
+	default:
+		return nil
+	}
 }

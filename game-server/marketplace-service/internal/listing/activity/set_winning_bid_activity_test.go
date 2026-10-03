@@ -36,7 +36,7 @@ func (s *stubSetWinningBid) Handle(ctx context.Context, cmd usecase.SetWinningBi
 func newEnv(uc SetWinningBid) *testsuite.TestActivityEnvironment {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestActivityEnvironment()
-	NewActivities(nil, uc, nil).Register(env)
+	NewActivities(nil, uc, nil, nil).Register(env)
 	return env
 }
 

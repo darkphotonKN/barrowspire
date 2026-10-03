@@ -56,7 +56,7 @@ func classifyFreezeErr(err error) error {
 		)
 	}
 
-	// retry safely
+	// can retry safely
 	return err
 }
 

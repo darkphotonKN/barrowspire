@@ -49,4 +49,6 @@ message ItemReservedEvent {
   int64 start_price = 4; 
   google.protobuf.Timestamp ends_at = 5; 
   ItemInstance itemInstance = 6;
+  // FS-NXP1W Req 24a: minted by items-service at reserve; the listing is born with it.
+  string listing_id = 7;
 }

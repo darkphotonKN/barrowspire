@@ -32,7 +32,7 @@ func (s *stubLoseAllBids) Handle(ctx context.Context, cmd usecase.LoseAllBidsCom
 func newRollbackEnv(uc LoseAllBids) *testsuite.TestActivityEnvironment {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestActivityEnvironment()
-	NewActivities(nil, nil, uc).Register(env)
+	NewActivities(nil, nil, uc, nil).Register(env)
 	return env
 }
 

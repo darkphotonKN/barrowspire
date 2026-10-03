@@ -499,6 +499,25 @@ func (l *Listing) Freeze(now time.Time) error {
 	return nil
 }
 
+// Expire is settlement step NB2 (FS-NXP1W §Req 34b): a frozen listing that
+// nobody won ends EXPIRED. Any other status is an invariant breach, refused and
+// left as it was.
+//
+// Checked explicitly rather than left to the FSM: ACTIVE -> EXPIRED is a legal
+// edge for a listing that lapses outside settlement, but NB2 only ever runs on a
+// listing 0a already froze, so an ACTIVE one here means something else moved it.
+func (l *Listing) Expire(now time.Time) error {
+	switch l.status {
+	case StatusExpired:
+		// a retried activity catching up with its own earlier success
+		return nil
+	case StatusPendingSettlement:
+		return l.transitionTo(StatusExpired, now)
+	default:
+		return ErrInvalidListingState
+	}
+}
+
 // FindWinningBid returns the confirmed leader, or nil when there is none.
 //
 // No leader is a legitimate ending, not corruption: every bid may have been

@@ -65,3 +65,9 @@ func TestLoseAllBidsInput_MatchesGolden(t *testing.T) {
 		ListingID: uuid.MustParse("11111111-1111-4111-8111-111111111111"),
 	})
 }
+
+func TestExpireListingInput_MatchesGolden(t *testing.T) {
+	activitytest.Golden(t, "expire_listing_input.json", marketplaceactivity.ExpireListingInput{
+		ListingID: uuid.MustParse("11111111-1111-4111-8111-111111111111"),
+	})
+}
