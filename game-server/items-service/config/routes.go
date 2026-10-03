@@ -21,8 +21,13 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
+type Activities struct {
+	FreezeItemActivity *items.FreezeItemsActivity
+	ReturnItemActivity *items.ReturnItemActivity
+}
+
 // SetupServices initializes all services and their dependencies
-func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, registry discovery.Registry) (*grpc.Server, *items.ItemsActivity) {
+func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, registry discovery.Registry) (*grpc.Server, *Activities) {
 	// Create Auth Service client
 	authClient := auth.NewClient(registry)
 
@@ -39,6 +44,7 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, 
 
 	// instantiate activity
 	freezeItemActivity := items.NewItemsActivity(service)
+	returnItemActivity := items.NewReturnItemsActivity(service)
 
 	// Create gRPC handler with service and auth client
 	handler := items.NewHandler(service, authClient)
@@ -70,7 +76,10 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, 
 
 	slog.Info("Items service initialized successfully")
 
-	return grpcServer, freezeItemActivity
+	return grpcServer, &Activities{
+		FreezeItemActivity: freezeItemActivity,
+		ReturnItemActivity: returnItemActivity,
+	}
 }
 
 // StartGRPCServer starts the gRPC server on the specified port

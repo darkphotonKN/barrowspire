@@ -112,7 +112,7 @@ func TestMinimumBidMatchesWhatTheAggregateAccepts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			agg, err := listing.NewListing(uuid.New(), uuid.New(), start, now, now.Add(time.Hour))
+			agg, err := listing.NewListing(uuid.New(), uuid.New(), uuid.New(), start, now, now.Add(time.Hour))
 			require.NoError(t, err)
 			tt.build(t, agg)
 

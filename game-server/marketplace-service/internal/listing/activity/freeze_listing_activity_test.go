@@ -36,7 +36,7 @@ func (s *stubFreezeListing) Handle(ctx context.Context, cmd usecase.Freezelistin
 func newFreezeEnv(uc FreezeListing) *testsuite.TestActivityEnvironment {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestActivityEnvironment()
-	NewActivities(uc, nil, nil).Register(env)
+	NewActivities(uc, nil, nil, nil).Register(env)
 	return env
 }
 

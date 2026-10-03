@@ -60,7 +60,13 @@ type ListingSnapshot struct {
 	Bids       []BidSnapshot
 }
 
-func NewListing(sellerID, itemID uuid.UUID, startPrice int, now, endsAt time.Time) (*Listing, error) {
+// NewListing births a listing under id, the listing_id items-service minted when
+// it reserved the item. The listing never mints its own: the item records that ID
+// so later item writes can tell this listing from a relist (FS-NXP1W Req 24a).
+func NewListing(id, sellerID, itemID uuid.UUID, startPrice int, now, endsAt time.Time) (*Listing, error) {
+	if id == uuid.Nil {
+		return nil, ErrInvalidUUID
+	}
 	if sellerID == uuid.Nil {
 		return nil, ErrInvalidUUID
 	}
@@ -75,7 +81,7 @@ func NewListing(sellerID, itemID uuid.UUID, startPrice int, now, endsAt time.Tim
 	}
 
 	return &Listing{
-		id:         uuid.New(),
+		id:         id,
 		sellerID:   sellerID,
 		buyerID:    nil,
 		itemID:     itemID,
@@ -497,6 +503,25 @@ func (l *Listing) Freeze(now time.Time) error {
 	}
 
 	return nil
+}
+
+// Expire is settlement step NB2 (FS-NXP1W §Req 34b): a frozen listing that
+// nobody won ends EXPIRED. Any other status is an invariant breach, refused and
+// left as it was.
+//
+// Checked explicitly rather than left to the FSM: ACTIVE -> EXPIRED is a legal
+// edge for a listing that lapses outside settlement, but NB2 only ever runs on a
+// listing 0a already froze, so an ACTIVE one here means something else moved it.
+func (l *Listing) Expire(now time.Time) error {
+	switch l.status {
+	case StatusExpired:
+		// a retried activity catching up with its own earlier success
+		return nil
+	case StatusPendingSettlement:
+		return l.transitionTo(StatusExpired, now)
+	default:
+		return ErrInvalidListingState
+	}
 }
 
 // FindWinningBid returns the confirmed leader, or nil when there is none.

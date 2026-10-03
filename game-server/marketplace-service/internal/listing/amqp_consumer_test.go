@@ -66,22 +66,92 @@ func (s stubCreator) Handle(ctx context.Context, cmd *usecase.CreateListingComma
 	return s.err
 }
 
+// recordingCreator captures the command it was handed and succeeds.
+type recordingCreator struct {
+	called bool
+	cmd    *usecase.CreateListingCommand
+}
+
+func (r *recordingCreator) Handle(ctx context.Context, cmd *usecase.CreateListingCommand) error {
+	r.called = true
+	r.cmd = cmd
+	return nil
+}
+
 // refusingRepo is never reached: the domain refuses before any write.
 type refusingRepo struct{ listing.Repository }
 
-func itemReservedBody(t *testing.T, endsAt time.Time, startPrice int64) []byte {
-	t.Helper()
-	body, err := proto.Marshal(&pb.ItemReservedEvent{
+func validItemReservedEvent(endsAt time.Time, startPrice int64) *pb.ItemReservedEvent {
+	return &pb.ItemReservedEvent{
 		EventId:    uuid.NewString(),
 		Id:         uuid.NewString(),
 		SellerId:   uuid.NewString(),
+		ListingId:  uuid.NewString(),
 		StartPrice: startPrice,
 		EndsAt:     timestamppb.New(endsAt),
-	})
+	}
+}
+
+func marshalEvent(t *testing.T, event *pb.ItemReservedEvent) []byte {
+	t.Helper()
+	body, err := proto.Marshal(event)
 	if err != nil {
 		t.Fatalf("marshal event: %v", err)
 	}
 	return body
+}
+
+func itemReservedBody(t *testing.T, endsAt time.Time, startPrice int64) []byte {
+	t.Helper()
+	return marshalEvent(t, validItemReservedEvent(endsAt, startPrice))
+}
+
+// The listing is created under the ID items-service minted on reserve, not one
+// of the marketplace's own (FS-NXP1W Req 24a).
+func TestItemReservedConsumer_CreatesListingWithEventListingID(t *testing.T) {
+	event := validItemReservedEvent(time.Now().Add(time.Hour), 100)
+	creator := &recordingCreator{}
+
+	got := deliver(t, creator, marshalEvent(t, event))
+
+	if got != (outcome{acked: true}) {
+		t.Fatalf("got %+v, want acked", got)
+	}
+	if creator.cmd == nil {
+		t.Fatal("usecase was never called")
+	}
+	if creator.cmd.ListingID.String() != event.ListingId {
+		t.Fatalf("listing ID = %s, want %s", creator.cmd.ListingID, event.ListingId)
+	}
+}
+
+// Without a usable listing_id the event can never become a listing, so it is
+// dead-lettered before the usecase is reached.
+func TestItemReservedConsumer_MissingOrMalformedListingIDIsDeadLettered(t *testing.T) {
+	tests := []struct {
+		name      string
+		listingID string
+	}{
+		{"missing listing_id", ""},
+		{"malformed listing_id", "not-a-uuid"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event := validItemReservedEvent(time.Now().Add(time.Hour), 100)
+			event.ListingId = tt.listingID
+			creator := &recordingCreator{}
+
+			got := deliver(t, creator, marshalEvent(t, event))
+
+			want := outcome{nacked: true, requeue: false}
+			if got != want {
+				t.Fatalf("got %+v, want %+v", got, want)
+			}
+			if creator.called {
+				t.Fatal("usecase must not be reached without a valid listing_id")
+			}
+		})
+	}
 }
 
 // deliver runs one delivery through the consumer loop and returns the answer

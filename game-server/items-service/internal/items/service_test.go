@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestConvertSingleProtoItemtoItemInstance_RarityID(t *testing.T) {
@@ -77,5 +79,25 @@ func TestServiceFreezeItem(t *testing.T) {
 				t.Fatalf("transient failure must not read as ErrItemNotFreezable: %v", err)
 			}
 		})
+	}
+}
+
+// The listing is born with the ID minted at reserve, so ItemReserved must carry
+// it (FS-NXP1W Req 24a).
+func TestFormattedItemInstanceData_CarriesListingID(t *testing.T) {
+	listingID := uuid.New()
+	item := &ItemInstance{ID: uuid.New(), TemplateID: uuid.New(), OwnerMemberID: uuid.New(), Status: "LISTED", ListingID: &listingID}
+
+	data, err := (&service{}).formattedItemInstanceData(item, item.OwnerMemberID, 100, time.Now())
+	if err != nil {
+		t.Fatalf("format: %v", err)
+	}
+
+	var evt pb.ItemReservedEvent
+	if err := proto.Unmarshal(data.ItemReservedEvent, &evt); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if evt.ListingId != listingID.String() {
+		t.Errorf("ListingId = %q, want %q", evt.ListingId, listingID.String())
 	}
 }

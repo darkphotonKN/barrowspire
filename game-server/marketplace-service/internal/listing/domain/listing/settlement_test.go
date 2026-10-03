@@ -180,6 +180,35 @@ func TestFreeze(t *testing.T) {
 	}
 }
 
+// Settlement step NB2 (FS-NXP1W §Req 34b): a frozen listing nobody bid on ends
+// EXPIRED. A retry catching up with its own success is not an error; any other
+// status is an invariant breach and is left as it was, never overwritten.
+func TestExpire(t *testing.T) {
+	tests := []struct {
+		name    string
+		from    ListingStatus
+		wantErr error
+		want    ListingStatus
+	}{
+		{"pending settlement is expired", StatusPendingSettlement, nil, StatusExpired},
+		{"already expired is applied", StatusExpired, nil, StatusExpired},
+		{"active is refused", StatusActive, ErrInvalidListingState, StatusActive},
+		{"sold is refused", StatusSold, ErrInvalidListingState, StatusSold},
+		{"cancelled is refused", StatusCancelled, ErrInvalidListingState, StatusCancelled},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := listingWithBids(t, tt.from)
+
+			err := l.Expire(time.Now())
+
+			assert.ErrorIs(t, err, tt.wantErr)
+			assert.Equal(t, tt.want, l.Snapshot().Status)
+		})
+	}
+}
+
 // 0a reads the winner off the frozen listing. Only a WINNING bid is a winner;
 // a listing whose bids all dropped out is a legitimate no-winner ending, not
 // corruption.

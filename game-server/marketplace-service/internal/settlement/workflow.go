@@ -25,34 +25,57 @@ type Input struct {
 	Trigger   TriggerKind `json:"trigger"`
 }
 
-// For FS NXP1W the Settlement Saga
+// FS NXP1W Settlement Saga
 func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListingOutput, error) {
-	ctx = workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueMarketplace))
+	marketPlaceCtx := workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueMarketplace))
 
 	// declare our own variables, temporal makes them durable because of event history
 	var frozen marketplaceactivity.FreezeListingOutput
 
 	// Step 0a
-	err := workflow.ExecuteActivity(ctx,
+	err := workflow.ExecuteActivity(marketPlaceCtx,
 		marketplaceactivity.FreezeListingActivityName,
 		marketplaceactivity.FreezeListingInput{ListingID: in.ListingID},
-	).Get(ctx, &frozen)
+	).Get(marketPlaceCtx, &frozen)
 	if err != nil {
 		return marketplaceactivity.FreezeListingOutput{}, err
 	}
 
 	if frozen.Outcome == marketplaceactivity.OutcomeNoBids {
-		// TODO: replaced by expire listing + return items arm
+		returnItemsCtx := workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueItems))
+
+		// Step NB1
+		err := workflow.ExecuteActivity(returnItemsCtx,
+			itemsactivity.ReturnItemActivityName,
+			itemsactivity.ReturnItemInput{ItemID: frozen.ItemID, ListingID: frozen.ListingID},
+		).Get(returnItemsCtx, nil)
+		if err != nil {
+			return marketplaceactivity.FreezeListingOutput{}, err
+		}
+
+		expireListingCtx := workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueMarketplace))
+
+		// Step NB22, only once NB1 has returned the item (§Req 34b)
+		// TODO(I-NXP1W-7): an impossible NB2 escalates and parks rather than failing the run
+		err = workflow.ExecuteActivity(expireListingCtx,
+			marketplaceactivity.ExpireListingActivityName,
+			marketplaceactivity.ExpireListingInput{ListingID: frozen.ListingID},
+		).Get(expireListingCtx, nil)
+		if err != nil {
+			return marketplaceactivity.FreezeListingOutput{}, err
+		}
+
+		// TODO: update to a workflow specific response wrapper later
 		return frozen, nil
 	}
 
 	// Step 0b
-	itemCtx := workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueItems))
+	freezeItemCtx := workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueItems))
 
-	err = workflow.ExecuteActivity(itemCtx,
+	err = workflow.ExecuteActivity(freezeItemCtx,
 		itemsactivity.FreezeItemActivityName,
 		itemsactivity.FreezeItemInput{ItemID: frozen.ItemID, SellerID: frozen.SellerID},
-	).Get(itemCtx, nil)
+	).Get(freezeItemCtx, nil)
 	if err != nil {
 		return marketplaceactivity.FreezeListingOutput{}, err
 	}

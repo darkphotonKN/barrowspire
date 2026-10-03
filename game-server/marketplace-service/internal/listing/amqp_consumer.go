@@ -209,7 +209,18 @@ func (c *consumer) itemReservedConsumerLoop(ctx context.Context, msgs <-chan amq
 				msg.Nack(false, false)
 				continue
 			}
+			// the listing is born with the ID items-service minted on reserve;
+			// without it the event can never become a listing
+			listingID, err := uuid.Parse(event.ListingId)
+			if err != nil {
+				slog.Warn("amqp invalid listingID, dead-lettering", "event_id", event.EventId)
+				if nackErr := msg.Nack(false, false); nackErr != nil {
+					slog.Error("amqp nack failed", "event_id", event.EventId, "error", nackErr)
+				}
+				continue
+			}
 			cmd := &usecase.CreateListingCommand{
+				ListingID:  listingID,
 				SellerID:   sellerID,
 				ItemID:     itemInstanceID,
 				StartPrice: int(event.StartPrice),

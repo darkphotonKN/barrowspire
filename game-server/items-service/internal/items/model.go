@@ -163,6 +163,10 @@ type ItemInstance struct {
 	Description *string `db:"description" json:"description"`
 	Status      string  `db:"status" json:"status"`
 
+	// ListingID is the listing the item is reserved for (FS-NXP1W Req 24a);
+	// NULL unless the item is LISTED or further along a settlement.
+	ListingID *uuid.UUID `db:"listing_id" json:"listing_id"`
+
 	AcquiredAt time.Time `db:"acquired_at" json:"acquired_at"`
 	CreatedAt  time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt  time.Time `db:"updated_at" json:"updated_at"`

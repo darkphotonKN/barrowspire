@@ -2,6 +2,7 @@ package items
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -203,5 +204,83 @@ func TestListItemInstances_ReturnsStatus(t *testing.T) {
 		if got[id] != status {
 			t.Errorf("instance %s status = %q, want %q", id, got[id], status)
 		}
+	}
+}
+
+// Opt-in like TestFreezeItem. ReserveItemTx is AVAILABLE -> LISTED and stamps the
+// listing ID the service minted (FS-NXP1W Req 24a); a refused reserve leaves the
+// row's listing_id untouched.
+func TestReserveItemTx_SetsListingID(t *testing.T) {
+	dsn := os.Getenv("ITEMS_TEST_DSN")
+	if dsn == "" {
+		t.Skip("ITEMS_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	db, err := sqlx.Connect("postgres", dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+
+	seller, stranger := uuid.New(), uuid.New()
+	earlier := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name          string
+		status        string
+		owner         uuid.UUID
+		wantReserved  bool
+		wantStatus    string
+		wantListingID bool
+	}{
+		{name: "available item owned by seller is listed with the minted id", status: "AVAILABLE", owner: seller, wantReserved: true, wantStatus: "LISTED", wantListingID: true},
+		{name: "already listed item is refused and keeps no new id", status: "LISTED", owner: seller, wantStatus: "LISTED"},
+		{name: "available item owned by someone else is refused", status: "AVAILABLE", owner: stranger, wantStatus: "AVAILABLE"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			itemID, listingID := uuid.New(), uuid.New()
+			seedItemInstance(t, ctx, db, itemID, tt.owner, tt.status, earlier)
+
+			tx, err := db.BeginTxx(ctx, nil)
+			if err != nil {
+				t.Fatalf("begin: %v", err)
+			}
+			now := time.Now()
+			item, err := NewRepository(db).ReserveItemTx(ctx, tx, seller, itemID, listingID, now, now)
+			if tt.wantReserved {
+				if err != nil {
+					tx.Rollback()
+					t.Fatalf("reserve: %v", err)
+				}
+				if item.ListingID == nil || *item.ListingID != listingID {
+					t.Errorf("returned ListingID = %v, want %v", item.ListingID, listingID)
+				}
+			} else if !errors.Is(err, ErrItemNotReservable) {
+				tx.Rollback()
+				t.Fatalf("err = %v, want ErrItemNotReservable", err)
+			}
+			if err := tx.Commit(); err != nil {
+				t.Fatalf("commit: %v", err)
+			}
+
+			var row struct {
+				Status    string     `db:"status"`
+				ListingID *uuid.UUID `db:"listing_id"`
+			}
+			if err := db.GetContext(ctx, &row, `SELECT status, listing_id FROM item_instances WHERE id = $1`, itemID); err != nil {
+				t.Fatalf("read back: %v", err)
+			}
+			if row.Status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", row.Status, tt.wantStatus)
+			}
+			switch {
+			case tt.wantListingID && (row.ListingID == nil || *row.ListingID != listingID):
+				t.Errorf("listing_id = %v, want %v", row.ListingID, listingID)
+			case !tt.wantListingID && row.ListingID != nil:
+				t.Errorf("listing_id = %v, want NULL", *row.ListingID)
+			}
+		})
 	}
 }
