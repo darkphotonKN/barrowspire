@@ -11,7 +11,7 @@ import (
 	"go.temporal.io/sdk/worker"
 )
 
-type ItemsActivity struct {
+type FreezeItemsActivity struct {
 	service ItemsFreezer
 }
 
@@ -19,13 +19,13 @@ type ItemsFreezer interface {
 	FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) error
 }
 
-func NewItemsActivity(itemFreezer ItemsFreezer) *ItemsActivity {
-	return &ItemsActivity{
+func NewItemsActivity(itemFreezer ItemsFreezer) *FreezeItemsActivity {
+	return &FreezeItemsActivity{
 		service: itemFreezer,
 	}
 }
 
-func (a *ItemsActivity) FreezeItemActivity(ctx context.Context, inp commonactivity.FreezeItemInput) (commonactivity.FreezeItemOutput, error) {
+func (a *FreezeItemsActivity) FreezeItemActivity(ctx context.Context, inp commonactivity.FreezeItemInput) (commonactivity.FreezeItemOutput, error) {
 
 	err := a.service.FreezeItem(ctx, inp.ItemID, inp.SellerID)
 
@@ -36,7 +36,7 @@ func (a *ItemsActivity) FreezeItemActivity(ctx context.Context, inp commonactivi
 	return commonactivity.FreezeItemOutput{}, nil
 }
 
-func (a *ItemsActivity) Register(w worker.Worker) {
+func (a *FreezeItemsActivity) Register(w worker.Worker) {
 	w.RegisterActivityWithOptions(a.FreezeItemActivity, activity.RegisterOptions{
 		Name: commonactivity.FreezeItemActivityName,
 	})

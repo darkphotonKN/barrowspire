@@ -919,10 +919,11 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 	return nil
 }
 
-func (r *repository) ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error) {
+func (r *repository) ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error) {
 	query := `
 		UPDATE item_instances
 		SET status = 'LISTED',
+			listing_id = :listing_id,
 			updated_at = :updated_at,
 			reserved_at = :reserved_at
 		WHERE id = :id
@@ -951,13 +952,15 @@ func (r *repository) ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, i
 			acquired_at,
 			created_at,
 			updated_at,
-			reserved_at
+			reserved_at,
+			listing_id
 	`
 
 	args := ItemInstance{
 		ID:            itemID,
 		OwnerMemberID: sellerID,
 		Status:        "LISTED",
+		ListingID:     &listingID,
 		UpdatedAt:     updatedAt,
 		ReservedAt:    reservedAt,
 	}

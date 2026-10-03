@@ -95,7 +95,7 @@ type Repository interface {
 	BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, instances []*ItemInstance) error
 
 	// marketplace
-	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error)
+	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error)
 	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
 	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
 	FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) (bool, error)
@@ -942,9 +942,12 @@ func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, s
 	now := time.Now()
 	updateAt := now
 	reservedAt := now
+	// the listing is born with this ID: it rides ItemReserved to marketplace and
+	// fences every later write for this listing (FS-NXP1W Req 24a)
+	listingID := uuid.New()
 	var itemInstance *ItemInstance
 	err := commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
-		result, err := s.repo.ReserveItemTx(ctx, tx, sellerID, itemID, updateAt, reservedAt)
+		result, err := s.repo.ReserveItemTx(ctx, tx, sellerID, itemID, listingID, updateAt, reservedAt)
 		if err != nil {
 			return fmt.Errorf("Reserve item service: %w", err)
 		}
@@ -1036,6 +1039,11 @@ func (s *service) formattedItemInstanceData(itemInstance *ItemInstance, sellerID
 	// generate eventId for idemptotency deduplication
 	eventId := uuid.NewString()
 
+	var listingIDStr string
+	if itemInstance.ListingID != nil {
+		listingIDStr = itemInstance.ListingID.String()
+	}
+
 	itemReservedEvent := pb.ItemReservedEvent{
 		Id:           itemInstance.ID.String(),
 		EventId:      eventId,
@@ -1043,11 +1051,13 @@ func (s *service) formattedItemInstanceData(itemInstance *ItemInstance, sellerID
 		StartPrice:   startPrice,
 		EndsAt:       timestamppb.New(endsAt),
 		ItemInstance: itemInstanceData,
+		ListingId:    listingIDStr,
 	}
 
 	slog.Debug("itemReservedEvent in formattedItemInstanceData before marshalling into protobuf item_reserved_event",
 		"event_id", itemReservedEvent.EventId,
 		"item_id", itemReservedEvent.Id,
+		"listing_id", itemReservedEvent.ListingId,
 		"item_name", itemReservedEvent.ItemInstance.Name,
 		"status", itemReservedEvent.ItemInstance.Status,
 	)

@@ -32,10 +32,10 @@ That needs `listing_id` on the item:
 
 ## Acceptance Criteria
 
-- [ ] Reserve sets `listing_id`, and the new listing's ID equals it
+- [x] Reserve sets `listing_id`, and the new listing's ID equals it
 - [ ] A no-bids settlement ends with the listing `EXPIRED` and the item `AVAILABLE` with `listing_id` NULL; no wallet or ledger activity runs
 - [ ] Retrying NB1 after the seller relisted the item returns success, and the new listing's item stays `LISTED`
-- [ ] Re-running NB2 on an `EXPIRED` listing is success
+- [x] Re-running NB2 on an `EXPIRED` listing is success
 - [ ] Use cases tested without Temporal; `make test` green
 
 ## Blocked By

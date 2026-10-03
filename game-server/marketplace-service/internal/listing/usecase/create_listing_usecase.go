@@ -29,6 +29,8 @@ func NewCreateListingUC(repo listing.Repository) *CreateListingUC {
 
 // NOTE: named {Action}{Resource}Command because its an INBOUND application WRITE intent
 type CreateListingCommand struct {
+	// ListingID is the ID items-service minted on reserve; the listing is born with it.
+	ListingID  uuid.UUID
 	SellerID   uuid.UUID
 	ItemID     uuid.UUID
 	StartPrice int
@@ -39,7 +41,7 @@ type CreateListingCommand struct {
 func (uc *CreateListingUC) Handle(ctx context.Context, cmd *CreateListingCommand) error {
 
 	// birth aggregate root
-	listingDomain, err := listing.NewListing(cmd.SellerID, cmd.ItemID, cmd.StartPrice, cmd.Now, cmd.EndsAt)
+	listingDomain, err := listing.NewListing(cmd.ListingID, cmd.SellerID, cmd.ItemID, cmd.StartPrice, cmd.Now, cmd.EndsAt)
 
 	if err != nil {
 		// propgate error with usecase context

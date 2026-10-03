@@ -60,7 +60,13 @@ type ListingSnapshot struct {
 	Bids       []BidSnapshot
 }
 
-func NewListing(sellerID, itemID uuid.UUID, startPrice int, now, endsAt time.Time) (*Listing, error) {
+// NewListing births a listing under id, the listing_id items-service minted when
+// it reserved the item. The listing never mints its own: the item records that ID
+// so later item writes can tell this listing from a relist (FS-NXP1W Req 24a).
+func NewListing(id, sellerID, itemID uuid.UUID, startPrice int, now, endsAt time.Time) (*Listing, error) {
+	if id == uuid.Nil {
+		return nil, ErrInvalidUUID
+	}
 	if sellerID == uuid.Nil {
 		return nil, ErrInvalidUUID
 	}
@@ -75,7 +81,7 @@ func NewListing(sellerID, itemID uuid.UUID, startPrice int, now, endsAt time.Tim
 	}
 
 	return &Listing{
-		id:         uuid.New(),
+		id:         id,
 		sellerID:   sellerID,
 		buyerID:    nil,
 		itemID:     itemID,
