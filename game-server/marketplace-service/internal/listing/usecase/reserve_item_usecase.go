@@ -12,7 +12,7 @@ import (
 
 // adapter interface
 type ItemReserver interface {
-	ReserveItem(ctx context.Context, itemID uuid.UUID, startPrice int, endsAt time.Time) (*pb.ReserveItemResponse, error)
+	ReserveItem(ctx context.Context, itemID uuid.UUID, startPrice int, buyoutPrice *int, endsAt time.Time) (*pb.ReserveItemResponse, error)
 }
 
 // Usecase
@@ -35,8 +35,10 @@ type ReserveItemCommand struct {
 	SellerID   uuid.UUID
 	ItemID     uuid.UUID
 	StartPrice int
-	Now        time.Time
-	EndsAt     time.Time
+	// BuyoutPrice is optional; nil lists a plain auction.
+	BuyoutPrice *int
+	Now         time.Time
+	EndsAt      time.Time
 }
 
 func (uc *ReserveItemUC) Handle(ctx context.Context, cmd *ReserveItemCommand) error {
@@ -45,12 +47,12 @@ func (uc *ReserveItemUC) Handle(ctx context.Context, cmd *ReserveItemCommand) er
 	// that can never exist. The draft is discarded: it only runs the aggregate's
 	// own birth rules, so no rule is restated in this usecase. Its ID is a
 	// placeholder: the real one is minted by items-service on reserve.
-	if _, err := listing.NewListing(uuid.New(), cmd.SellerID, cmd.ItemID, cmd.StartPrice, cmd.Now, cmd.EndsAt); err != nil {
+	if _, err := listing.NewListing(uuid.New(), cmd.SellerID, cmd.ItemID, cmd.StartPrice, cmd.BuyoutPrice, cmd.Now, cmd.EndsAt); err != nil {
 		return fmt.Errorf("reserve item usecase validating listing terms: %w", err)
 	}
 
 	// check item and set item status listed
-	_, err := uc.itemReserver.ReserveItem(ctx, cmd.ItemID, cmd.StartPrice, cmd.EndsAt)
+	_, err := uc.itemReserver.ReserveItem(ctx, cmd.ItemID, cmd.StartPrice, cmd.BuyoutPrice, cmd.EndsAt)
 
 	if err != nil {
 		return fmt.Errorf("reserve item %s: %w", cmd.ItemID, err)

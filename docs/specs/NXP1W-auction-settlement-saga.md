@@ -1,6 +1,6 @@
 # FS-NXP1W: Auction settlement saga
 
-> Status: work-order · SPECIFICATION.md: `game-server/marketplace-service/SPECIFICATION.md` "### Auction lifecycle" → "Auction settlement"; `game-server/wallet-service/SPECIFICATION.md` "### Saga participation" → "Settlement saga activities"; `game-server/items-service/SPECIFICATION.md` "## Marketplace settlement" → "Settlement saga activities" → this FS · Related ADRs: [ADR-0005](../adr/0005-wallet-owns-balance-ledger-is-a-reconciliation-record.md) (wallet owns balance), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-minted idempotency), [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md) (pivot; ledger appended after it), [ADR-0011](../adr/0011-settlement-write-path-is-a-temporal-activity-per-owning-service.md) (activities per owning service), [ADR-0016](../adr/0016-settlement-starts-from-an-expiry-poller-one-workflow-per-listing.md) (trigger + workflow identity), [ADR-0017](../adr/0017-item-transfer-rolls-forward-the-pivot-stays-at-commit-hold.md) (item transfer rolls forward), [ADR-0018](../adr/0018-settlement-failures-are-classified-by-kind-and-park-rather-than-fail.md) (failure classification, escalate-and-park), [ADR-0019](../adr/0019-activity-payloads-are-json-structs-in-per-owner-packages.md) (activity payload encoding)
+> Status: work-order · SPECIFICATION.md: `game-server/marketplace-service/SPECIFICATION.md` "### Auction lifecycle" → "Auction settlement"; `game-server/wallet-service/SPECIFICATION.md` "### Saga participation" → "Settlement saga activities"; `game-server/items-service/SPECIFICATION.md` "## Marketplace settlement" → "Settlement saga activities"; `game-server/api-gateway/SPECIFICATION.md` "### Marketplace" → "Accept the leading bid", "Buy out a listing" → this FS · Related ADRs: [ADR-0005](../adr/0005-wallet-owns-balance-ledger-is-a-reconciliation-record.md) (wallet owns balance), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-minted idempotency), [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md) (pivot; ledger appended after it), [ADR-0011](../adr/0011-settlement-write-path-is-a-temporal-activity-per-owning-service.md) (activities per owning service), [ADR-0016](../adr/0016-settlement-starts-from-an-expiry-poller-one-workflow-per-listing.md) (trigger + workflow identity), [ADR-0017](../adr/0017-item-transfer-rolls-forward-the-pivot-stays-at-commit-hold.md) (item transfer rolls forward), [ADR-0018](../adr/0018-settlement-failures-are-classified-by-kind-and-park-rather-than-fail.md) (failure classification, escalate-and-park), [ADR-0019](../adr/0019-activity-payloads-are-json-structs-in-per-owner-packages.md) (activity payload encoding)
 
 > Terms follow `game-server/marketplace-service/CONTEXT.md` §Settlement. All decisions were
 > recorded without adversarial review (the user declined challenge-me).
@@ -238,6 +238,25 @@ concurrency). Never read-then-act.
     `SOLD`, `SETTLEMENT_FAILED`, `EXPIRED` drawn and `REVERSED` removed; escalate-and-park drawn. Seller
     credit placement is confirmed as intended escrow (a short window between pivot and CreditSeller).
 
+### HTTP entry points
+
+42. **accept-bid** is the HTTP entry point for the AcceptBid trigger (Req 3). Only the listing's
+    seller may call it, identified by the token and never by the request. It is refused when the
+    listing is not `ACTIVE`, is past its end, or has no `WINNING` bid. Otherwise it starts
+    `settlement-{listingId}` with trigger `ACCEPT_BID` and answers once the start is accepted; the
+    sale completes asynchronously. It carries no bid ID.
+43. **buyout** is the HTTP entry point for the Buyout trigger (Req 4). Any signed-in member except the
+    listing's seller may call it, identified by the token. The listing must be `ACTIVE`, not past its
+    end, and carry a buyout price; the caller's amount must equal that price. It places a
+    BUYOUT-type bid for the caller, which holds the buyer's gold like any bid and takes the lead, and
+    only once that bid is `WINNING` starts `settlement-{listingId}` with trigger `BUYOUT`. Step 0a then
+    selects it as the winner the same way as for every trigger (Req 5).
+    - Depends on a listing buyout price, which no listing has yet. Setting it at listing creation
+      is a prerequisite of this endpoint.
+44. Both endpoints treat "settlement already started" as success (Req 5): a call that loses a race to
+    another trigger, or repeats one that already started, answers as if it had started settlement
+    itself. A buyout repeated with the same `Idempotency-Key` does not place a second bid.
+
 ## User Stories
 
 1. As a seller, I want my auction to settle automatically when it expires, so that I get paid without doing anything.
@@ -296,6 +315,8 @@ concurrency). Never read-then-act.
 - [ ] Killing a participant worker mid-activity does not change the final state.
 - [ ] The e2e auction test passes across all four services.
 - [ ] The design diagram reflects Req 41.
+- [ ] `POST /api/marketplace/listings/{listing_id}/accept` from the seller of an `ACTIVE` listing with a `WINNING` bid answers `202` and starts settlement with trigger `ACCEPT_BID`; a non-seller gets `403 · FORBIDDEN` and nothing starts (Req 42, 44).
+- [ ] `POST /api/marketplace/listings/{listing_id}/buyout` from a non-seller at the buyout price answers `202`, leaves a `WINNING` BUYOUT bid and starts settlement with trigger `BUYOUT`; a repeat with the same `Idempotency-Key` places no second bid (Req 43, 44).
 
 ## Edge States
 
@@ -322,11 +343,22 @@ concurrency). Never read-then-act.
 - **Marketplace worker down:** no workflow tasks progress; on restart the workflow resumes from history. Participant activities already completed are not re-run.
 - **Workflow code deployed while settlements are open:** short-lived runs make this rare; any change that alters the command sequence must use Temporal versioning.
 
+## API surface
+
+Both operations are bearer-secured; the caller's identity comes from the token and never appears in
+a request. `accept-bid` is transcribed from the built operation (`api-gateway/internal/gateway/listing/typed.go`).
+`buyout` is design: it is not built yet, and this row is its specification.
+
+| Op | Method + Path | Query/Params | Request body | Response | Errors |
+|----|---------------|--------------|--------------|----------|--------|
+| `accept-bid` | `POST /api/marketplace/listings/{listing_id}/accept` | `listing_id` path, uuid | none | `202`, empty | `401 · UNAUTHENTICATED` no or bad token; `403 · FORBIDDEN` caller is not the seller; `404 · NOT_FOUND` unknown listing; `400 · FAILED_PRECONDITION` listing not `ACTIVE`, past its end, or no `WINNING` bid; `409 · CONFLICT` listing busy; `422 · VALIDATION_FAILED` malformed `listing_id`; `500 · INTERNAL_ERROR` settlement could not be started; `503 · SERVICE_UNAVAILABLE` marketplace unreachable |
+| `buyout` | `POST /api/marketplace/listings/{listing_id}/buyout` | `listing_id` path, uuid; `Idempotency-Key` header, uuid, optional (same rule as place-bid) | `amount` integer ≥ 1, required: the gold paid, which must equal the listing's buyout price | `202`, empty | `401 · UNAUTHENTICATED` no or bad token; `403 · FORBIDDEN` caller is the seller; `404 · NOT_FOUND` unknown listing; `400 · VALIDATION_FAILED` amount differs from the buyout price; `400 · FAILED_PRECONDITION` listing not `ACTIVE`, past its end, has no buyout price, or the buyer lacks the gold; `409 · CONFLICT` listing busy; `422 · VALIDATION_FAILED` malformed `listing_id`, `Idempotency-Key` or body; `500 · INTERNAL_ERROR`; `503 · SERVICE_UNAVAILABLE` marketplace or wallet unreachable |
+
 ## Out of Scope
 
 - Temporal infrastructure: compose services, smoke test, `common/temporal`, per-service worker bootstrap, walking skeleton. ADR-0011-anchored, tracked as `I-ADR0011-n` issues.
 - ledger-service internals and the `AppendLedgerTx` activity implementation (FS-F9R7Q, I-F9R7Q-5).
-- The `bids` table and bid placement, AcceptBid's HTTP endpoint, deposit/withdraw (Kiki's work); this FS only defines what AcceptBid triggers.
+- The `bids` table and bid placement, deposit/withdraw (Kiki's work); this FS only defines what AcceptBid triggers.
 - BidPlaced saga; ListingWithdraw saga (with live bids, an open product decision).
 - SYSTEM account design.
 - Funding reconciler sweeper (hold with no bid past grace); hold-expiry sweeper implementation.

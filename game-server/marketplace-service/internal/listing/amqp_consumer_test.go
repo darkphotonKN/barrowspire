@@ -271,3 +271,48 @@ func TestItemReservedConsumer_ClassifiesUsecaseFailures(t *testing.T) {
 		})
 	}
 }
+
+// The seller's buyout reaches the listing's birth; an event without the field
+// (published before FS-9XKS6) births a plain auction, never a buyout of 0.
+func TestItemReservedConsumer_CarriesBuyoutPrice(t *testing.T) {
+	buyout := int64(900)
+
+	tests := []struct {
+		name   string
+		buyout *int64
+		want   *int
+	}{
+		{"set", &buyout, func() *int { v := 900; return &v }()},
+		{"absent", nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event := validItemReservedEvent(time.Now().Add(time.Hour), 100)
+			event.BuyoutPrice = tt.buyout
+			creator := &recordingCreator{}
+
+			got := deliver(t, creator, marshalEvent(t, event))
+
+			if got != (outcome{acked: true}) {
+				t.Fatalf("got %+v, want acked", got)
+			}
+			if (creator.cmd.BuyoutPrice == nil) != (tt.want == nil) ||
+				(tt.want != nil && *creator.cmd.BuyoutPrice != *tt.want) {
+				t.Fatalf("buyout = %v, want %v", creator.cmd.BuyoutPrice, tt.want)
+			}
+		})
+	}
+}
+
+// A buyout the listing refuses can never become a listing on redelivery.
+func TestItemReservedConsumer_RefusedBuyoutIsDeadLettered(t *testing.T) {
+	event := validItemReservedEvent(time.Now().Add(time.Hour), 100)
+	buyout := int64(100)
+	event.BuyoutPrice = &buyout
+
+	got := deliver(t, usecase.NewCreateListingUC(refusingRepo{}), marshalEvent(t, event))
+
+	if want := (outcome{nacked: true, requeue: false}); got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}

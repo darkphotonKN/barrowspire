@@ -40,7 +40,7 @@ func (r *fakeBrowseReader) Execute(ctx context.Context, c *commoncursor.EndsAt, 
 }
 
 func newBrowseHandler(reader *fakeBrowseReader) *Handler {
-	return NewHandler(nil, nil, nil, nil, nil, reader, nil)
+	return NewHandler(nil, nil, nil, nil, nil, reader, nil, nil, nil)
 }
 
 // Browse is public: a visitor with no identity on the context is served.

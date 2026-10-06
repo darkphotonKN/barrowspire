@@ -32,6 +32,7 @@ func (q *GetListingQuery) Execute(ctx context.Context, listingID uuid.UUID) (*dt
 		l.buyer_id,
 		l.item_id,
 		l.start_price,
+		l.buyout_price,
 		l.sold_price,
 		l.status,
 		l.ends_at,

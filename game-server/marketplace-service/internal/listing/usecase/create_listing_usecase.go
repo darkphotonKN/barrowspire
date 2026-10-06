@@ -34,14 +34,16 @@ type CreateListingCommand struct {
 	SellerID   uuid.UUID
 	ItemID     uuid.UUID
 	StartPrice int
-	Now        time.Time
-	EndsAt     time.Time
+	// BuyoutPrice is optional; nil births a plain auction.
+	BuyoutPrice *int
+	Now         time.Time
+	EndsAt      time.Time
 }
 
 func (uc *CreateListingUC) Handle(ctx context.Context, cmd *CreateListingCommand) error {
 
 	// birth aggregate root
-	listingDomain, err := listing.NewListing(cmd.ListingID, cmd.SellerID, cmd.ItemID, cmd.StartPrice, cmd.Now, cmd.EndsAt)
+	listingDomain, err := listing.NewListing(cmd.ListingID, cmd.SellerID, cmd.ItemID, cmd.StartPrice, cmd.BuyoutPrice, cmd.Now, cmd.EndsAt)
 
 	if err != nil {
 		// propgate error with usecase context

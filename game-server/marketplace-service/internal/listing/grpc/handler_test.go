@@ -123,6 +123,8 @@ func newTestHandler(repo *fakeRepo, wallet *fakeWallet) *Handler {
 		nil,
 		nil,
 		nil,
+		nil,
+		nil,
 	)
 }
 
@@ -246,7 +248,7 @@ func TestListItem_ItemsRefusal_KeepsItsMeaning(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reserver := itemreserver.NewItemReserver(&fakeItemsClient{code: tt.itemsCode})
-			h := NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil, nil, nil)
+			h := NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil, nil, nil, nil, nil)
 
 			_, err := h.ListItem(authedCtx(t, uuid.New()), &pb.ListItemRequest{
 				ItemId:     uuid.New().String(),
@@ -284,4 +286,24 @@ func TestMapError_TransientStaysUnavailable(t *testing.T) {
 		fmt.Errorf("place bid: %w", commonconstants.ErrTransient))
 
 	assert.Equal(t, codes.Unavailable, status.Code(err))
+}
+
+// A bid at the buyout price is refused like a bid too low, and the gold held
+// for it is given back (FS-9XKS6 Req 4, 10).
+func TestPlaceBid_AtBuyoutPriceIsInvalidArgumentAndReleasesTheHold(t *testing.T) {
+	now := time.Now()
+	buyout := 500
+	l, err := listing.NewListing(uuid.New(), uuid.New(), uuid.New(), 100, &buyout, now, now.Add(time.Hour))
+	require.NoError(t, err)
+	repo := &fakeRepo{l: l}
+	wallet := &fakeWallet{}
+
+	_, err = newTestHandler(repo, wallet).PlaceBid(authedCtx(t, uuid.New()), &pb.PlaceBidRequest{
+		ListingId: l.Snapshot().ID.String(),
+		Amount:    500,
+	})
+
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Empty(t, repo.l.Snapshot().Bids)
+	assert.Equal(t, 1, wallet.releaseCalls)
 }

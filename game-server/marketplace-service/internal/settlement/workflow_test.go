@@ -7,6 +7,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/itemsactivity"
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,7 +66,7 @@ func TestWorkflow_FreezesTheListingOnTheMarketplaceQueue(t *testing.T) {
 		return frozen, nil
 	})
 
-	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: TriggerExpiry})
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerExpiry})
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
@@ -85,7 +86,7 @@ func TestWorkflow_FreezeFailure_FailsTheWorkflow(t *testing.T) {
 		return marketplaceactivity.FreezeListingOutput{}, temporal.NewNonRetryableApplicationError("listing not active", "FreezeListingImpossible", nil)
 	})
 
-	env.ExecuteWorkflow(Workflow, Input{ListingID: uuid.New(), Trigger: TriggerExpiry})
+	env.ExecuteWorkflow(Workflow, Input{ListingID: uuid.New(), Trigger: usecase.TriggerExpiry})
 
 	require.True(t, env.IsWorkflowCompleted())
 	assert.Error(t, env.GetWorkflowError())
@@ -104,7 +105,7 @@ func TestWorkflow_NoBids_ReturnsTheItemThenExpiresTheListing(t *testing.T) {
 		}, nil
 	})
 
-	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: TriggerExpiry})
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerExpiry})
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
@@ -121,7 +122,7 @@ func TestWorkflow_NoBids_ExpireImpossible_FailsTheWorkflow(t *testing.T) {
 	})
 	arm.expireErr = temporal.NewNonRetryableApplicationError("listing sold", "ExpireListingImpossible", nil)
 
-	env.ExecuteWorkflow(Workflow, Input{ListingID: uuid.New(), Trigger: TriggerExpiry})
+	env.ExecuteWorkflow(Workflow, Input{ListingID: uuid.New(), Trigger: usecase.TriggerExpiry})
 
 	require.True(t, env.IsWorkflowCompleted())
 	assert.Error(t, env.GetWorkflowError())

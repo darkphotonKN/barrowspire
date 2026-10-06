@@ -25,17 +25,18 @@ func NewListingRepository(db *sqlx.DB) *ListingRepository {
 }
 
 type ListingRow struct {
-	ID         uuid.UUID             `db:"id"`
-	SellerID   uuid.UUID             `db:"seller_id"`
-	BuyerID    *uuid.UUID            `db:"buyer_id"`
-	ItemID     uuid.UUID             `db:"item_id"`
-	StartPrice int                   `db:"start_price"`
-	SoldPrice  *int                  `db:"sold_price"`
-	Status     listing.ListingStatus `db:"status"`
-	EndsAt     time.Time             `db:"ends_at"`
-	CreatedAt  time.Time             `db:"created_at"`
-	UpdatedAt  time.Time             `db:"updated_at"`
-	Version    int                   `db:"version"`
+	ID          uuid.UUID             `db:"id"`
+	SellerID    uuid.UUID             `db:"seller_id"`
+	BuyerID     *uuid.UUID            `db:"buyer_id"`
+	ItemID      uuid.UUID             `db:"item_id"`
+	StartPrice  int                   `db:"start_price"`
+	BuyoutPrice *int                  `db:"buyout_price"`
+	SoldPrice   *int                  `db:"sold_price"`
+	Status      listing.ListingStatus `db:"status"`
+	EndsAt      time.Time             `db:"ends_at"`
+	CreatedAt   time.Time             `db:"created_at"`
+	UpdatedAt   time.Time             `db:"updated_at"`
+	Version     int                   `db:"version"`
 }
 
 type BidRow struct {
@@ -68,6 +69,7 @@ func (r *ListingRepository) FindByID(ctx context.Context, id uuid.UUID) (*listin
 			buyer_id,
 			item_id,
 			start_price,
+			buyout_price,
 			sold_price,
 			status,
 			ends_at,
@@ -139,18 +141,19 @@ func reconstitute(listingRow ListingRow, bidRows []BidRow) (*listing.Listing, er
 	}
 
 	reconstitutedListing, err := listing.Reconstitute(listing.ReconstituteParams{
-		ID:         listingRow.ID,
-		SellerID:   listingRow.SellerID,
-		BuyerID:    listingRow.BuyerID,
-		ItemID:     listingRow.ItemID,
-		StartPrice: listingRow.StartPrice,
-		SoldPrice:  listingRow.SoldPrice,
-		Status:     listingRow.Status,
-		EndsAt:     listingRow.EndsAt,
-		Version:    listingRow.Version,
-		Bids:       reconstitutedBids,
-		CreatedAt:  listingRow.CreatedAt,
-		UpdatedAt:  listingRow.UpdatedAt,
+		ID:          listingRow.ID,
+		SellerID:    listingRow.SellerID,
+		BuyerID:     listingRow.BuyerID,
+		ItemID:      listingRow.ItemID,
+		StartPrice:  listingRow.StartPrice,
+		BuyoutPrice: listingRow.BuyoutPrice,
+		SoldPrice:   listingRow.SoldPrice,
+		Status:      listingRow.Status,
+		EndsAt:      listingRow.EndsAt,
+		Version:     listingRow.Version,
+		Bids:        reconstitutedBids,
+		CreatedAt:   listingRow.CreatedAt,
+		UpdatedAt:   listingRow.UpdatedAt,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("repo reconstitute: %w", err)
@@ -163,22 +166,23 @@ func (r *ListingRepository) Insert(ctx context.Context, listing *listing.Listing
 	snapshot := listing.Snapshot()
 
 	query := `
-	INSERT INTO listings (id, seller_id, buyer_id, item_id, start_price, sold_price, status, version, ends_at, created_at, updated_at)
-	VALUES(:id, :seller_id, :buyer_id, :item_id, :start_price, :sold_price, :status, :version, :ends_at, :created_at, :updated_at)
+	INSERT INTO listings (id, seller_id, buyer_id, item_id, start_price, buyout_price, sold_price, status, version, ends_at, created_at, updated_at)
+	VALUES(:id, :seller_id, :buyer_id, :item_id, :start_price, :buyout_price, :sold_price, :status, :version, :ends_at, :created_at, :updated_at)
 	`
 
 	_, err := r.db.NamedExecContext(ctx, query, map[string]interface{}{
-		"id":          snapshot.ID,
-		"seller_id":   snapshot.SellerID,
-		"buyer_id":    snapshot.BuyerID,
-		"item_id":     snapshot.ItemID,
-		"start_price": snapshot.StartPrice,
-		"sold_price":  snapshot.SoldPrice,
-		"status":      snapshot.Status,
-		"version":     snapshot.Version,
-		"ends_at":     snapshot.EndsAt,
-		"created_at":  snapshot.CreatedAt,
-		"updated_at":  snapshot.UpdatedAt,
+		"id":           snapshot.ID,
+		"seller_id":    snapshot.SellerID,
+		"buyer_id":     snapshot.BuyerID,
+		"item_id":      snapshot.ItemID,
+		"start_price":  snapshot.StartPrice,
+		"buyout_price": snapshot.BuyoutPrice,
+		"sold_price":   snapshot.SoldPrice,
+		"status":       snapshot.Status,
+		"version":      snapshot.Version,
+		"ends_at":      snapshot.EndsAt,
+		"created_at":   snapshot.CreatedAt,
+		"updated_at":   snapshot.UpdatedAt,
 	})
 	if err != nil {
 		// propogate context and sentinel errors if they match with helper
@@ -438,6 +442,7 @@ func (r *ListingRepository) Update(ctx context.Context, id uuid.UUID, updateFn f
 			buyer_id,
 			item_id,
 			start_price,
+			buyout_price,
 			sold_price,
 			status,
 			ends_at,

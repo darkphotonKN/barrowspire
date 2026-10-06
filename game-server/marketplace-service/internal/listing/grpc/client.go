@@ -54,6 +54,10 @@ func (c *Client) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold 
 		switch status.Code(err) {
 		case codes.FailedPrecondition:
 			return fmt.Errorf("wallet place hold for bid %v: %w: %w", bidID, commonconstants.ErrInsufficientGold, err)
+		// the bid ID already has a hold that is not a live replay of this one
+		// (released, committed, or another amount): nothing backs this bid
+		case codes.AlreadyExists:
+			return fmt.Errorf("wallet place hold for bid %v: %w: %w", bidID, commonconstants.ErrDuplicateResource, err)
 		case codes.Unavailable, codes.DeadlineExceeded:
 			return fmt.Errorf("wallet place hold for bid %v: %w: %w", bidID, commonconstants.ErrTransient, err)
 		default:

@@ -25,6 +25,8 @@ const (
 	MarketplaceService_GetListing_FullMethodName     = "/marketplace.MarketplaceService/GetListing"
 	MarketplaceService_PlaceBid_FullMethodName       = "/marketplace.MarketplaceService/PlaceBid"
 	MarketplaceService_WithdrawBid_FullMethodName    = "/marketplace.MarketplaceService/WithdrawBid"
+	MarketplaceService_AcceptBid_FullMethodName      = "/marketplace.MarketplaceService/AcceptBid"
+	MarketplaceService_Buyout_FullMethodName         = "/marketplace.MarketplaceService/Buyout"
 )
 
 // MarketplaceServiceClient is the client API for MarketplaceService service.
@@ -47,6 +49,13 @@ type MarketplaceServiceClient interface {
 	PlaceBid(ctx context.Context, in *PlaceBidRequest, opts ...grpc.CallOption) (*PlaceBidResponse, error)
 	// Cancel a bid the caller placed.
 	WithdrawBid(ctx context.Context, in *WithdrawBidRequest, opts ...grpc.CallOption) (*WithdrawBidResponse, error)
+	// The seller ends their auction early at its current WINNING bid. Starts
+	// settlement and returns; the sale completes asynchronously.
+	AcceptBid(ctx context.Context, in *AcceptBidRequest, opts ...grpc.CallOption) (*AcceptBidResponse, error)
+	// Buyout buys the listing outright at its buyout price and starts
+	// settlement; the sale completes asynchronously (FS-NXP1W Req 4). The buyer
+	// is the authenticated caller.
+	Buyout(ctx context.Context, in *BuyoutRequest, opts ...grpc.CallOption) (*BuyoutResponse, error)
 }
 
 type marketplaceServiceClient struct {
@@ -117,6 +126,26 @@ func (c *marketplaceServiceClient) WithdrawBid(ctx context.Context, in *Withdraw
 	return out, nil
 }
 
+func (c *marketplaceServiceClient) AcceptBid(ctx context.Context, in *AcceptBidRequest, opts ...grpc.CallOption) (*AcceptBidResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AcceptBidResponse)
+	err := c.cc.Invoke(ctx, MarketplaceService_AcceptBid_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *marketplaceServiceClient) Buyout(ctx context.Context, in *BuyoutRequest, opts ...grpc.CallOption) (*BuyoutResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BuyoutResponse)
+	err := c.cc.Invoke(ctx, MarketplaceService_Buyout_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MarketplaceServiceServer is the server API for MarketplaceService service.
 // All implementations must embed UnimplementedMarketplaceServiceServer
 // for forward compatibility.
@@ -137,6 +166,13 @@ type MarketplaceServiceServer interface {
 	PlaceBid(context.Context, *PlaceBidRequest) (*PlaceBidResponse, error)
 	// Cancel a bid the caller placed.
 	WithdrawBid(context.Context, *WithdrawBidRequest) (*WithdrawBidResponse, error)
+	// The seller ends their auction early at its current WINNING bid. Starts
+	// settlement and returns; the sale completes asynchronously.
+	AcceptBid(context.Context, *AcceptBidRequest) (*AcceptBidResponse, error)
+	// Buyout buys the listing outright at its buyout price and starts
+	// settlement; the sale completes asynchronously (FS-NXP1W Req 4). The buyer
+	// is the authenticated caller.
+	Buyout(context.Context, *BuyoutRequest) (*BuyoutResponse, error)
 	mustEmbedUnimplementedMarketplaceServiceServer()
 }
 
@@ -164,6 +200,12 @@ func (UnimplementedMarketplaceServiceServer) PlaceBid(context.Context, *PlaceBid
 }
 func (UnimplementedMarketplaceServiceServer) WithdrawBid(context.Context, *WithdrawBidRequest) (*WithdrawBidResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method WithdrawBid not implemented")
+}
+func (UnimplementedMarketplaceServiceServer) AcceptBid(context.Context, *AcceptBidRequest) (*AcceptBidResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AcceptBid not implemented")
+}
+func (UnimplementedMarketplaceServiceServer) Buyout(context.Context, *BuyoutRequest) (*BuyoutResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Buyout not implemented")
 }
 func (UnimplementedMarketplaceServiceServer) mustEmbedUnimplementedMarketplaceServiceServer() {}
 func (UnimplementedMarketplaceServiceServer) testEmbeddedByValue()                            {}
@@ -294,6 +336,42 @@ func _MarketplaceService_WithdrawBid_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MarketplaceService_AcceptBid_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AcceptBidRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MarketplaceServiceServer).AcceptBid(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MarketplaceService_AcceptBid_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MarketplaceServiceServer).AcceptBid(ctx, req.(*AcceptBidRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MarketplaceService_Buyout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BuyoutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MarketplaceServiceServer).Buyout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MarketplaceService_Buyout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MarketplaceServiceServer).Buyout(ctx, req.(*BuyoutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MarketplaceService_ServiceDesc is the grpc.ServiceDesc for MarketplaceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -324,6 +402,14 @@ var MarketplaceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WithdrawBid",
 			Handler:    _MarketplaceService_WithdrawBid_Handler,
+		},
+		{
+			MethodName: "AcceptBid",
+			Handler:    _MarketplaceService_AcceptBid_Handler,
+		},
+		{
+			MethodName: "Buyout",
+			Handler:    _MarketplaceService_Buyout_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

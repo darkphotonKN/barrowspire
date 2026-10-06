@@ -382,6 +382,11 @@ components:
     CreateListingBody:
       additionalProperties: false
       properties:
+        buyoutPrice:
+          description: Gold that buys the item outright and ends the auction. Optional; when set it must be above startPrice.
+          format: int64
+          minimum: 1
+          type: integer
         endsAt:
           description: When the auction closes. Must be in the future.
           format: date-time
@@ -784,6 +789,10 @@ components:
           description: Present once sold.
           format: uuid
           type: string
+        buyoutPrice:
+          description: Gold that buys the item outright. Absent when the seller set none.
+          format: int64
+          type: integer
         createdAt:
           format: date-time
           type: string
@@ -1000,7 +1009,7 @@ components:
       additionalProperties: false
       properties:
         amount:
-          description: Gold offered. The first bid must meet the listing's start price; every later one must exceed the current leading bid.
+          description: Gold offered. The first bid must meet the listing's start price; every later one must exceed the current leading bid. On a listing with a buyoutPrice every bid must stay below it.
           format: int64
           minimum: 1
           type: integer
@@ -2490,6 +2499,73 @@ paths:
                 $ref: "#/components/schemas/SeamError"
           description: Service Unavailable
       summary: Get a listing
+      tags:
+        - marketplace
+  /api/marketplace/listings/{listing_id}/accept:
+    post:
+      description: "Ends the signed-in seller's auction early at its current leading bid. There is no bid to choose: whichever bid leads is the one accepted. Answers once settlement has started; the sale completes asynchronously. Refused when the caller is not the seller, the auction is closed, or nobody leads."
+      operationId: accept-bid
+      parameters:
+        - in: path
+          name: listing_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "202":
+          description: Accepted
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Accept the leading bid
       tags:
         - marketplace
   /api/marketplace/listings/{listing_id}/bids:

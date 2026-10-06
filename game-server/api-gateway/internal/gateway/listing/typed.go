@@ -41,6 +41,7 @@ func RegisterOperations(api huma.API, h *Handler,
 	registerCreateListing(api, h, protect)
 	registerPlaceBid(api, h, protect)
 	registerWithdrawBid(api, h, protect)
+	registerAcceptBid(api, h, protect)
 	registerListMyListings(api, h, protect)
 	registerBrowseListings(api, h)
 	registerGetListing(api, h)
@@ -101,9 +102,10 @@ func registerCreateListing(api huma.API, h *Handler,
 		Tags:        []string{"marketplace"},
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
 		_, err := h.client.ListItem(withBearer(ctx, in.Authorization), &pb.ListItemRequest{
-			ItemId:     in.Body.ItemID,
-			StartPrice: in.Body.StartPrice,
-			EndsAt:     timestamppb.New(in.Body.EndsAt),
+			ItemId:      in.Body.ItemID,
+			StartPrice:  in.Body.StartPrice,
+			BuyoutPrice: in.Body.BuyoutPrice,
+			EndsAt:      timestamppb.New(in.Body.EndsAt),
 		})
 		if err != nil {
 			return nil, err
@@ -205,6 +207,54 @@ func registerWithdrawBid(api huma.API, h *Handler,
 		_, err := h.client.WithdrawBid(withBearer(ctx, in.Authorization), &pb.WithdrawBidRequest{
 			ListingId: in.ListingID,
 			BidId:     in.BidID,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return &output{}, nil
+	}))
+}
+
+func registerAcceptBid(api huma.API, h *Handler,
+	protect func(huma.Context, func(huma.Context)),
+) {
+	type input struct {
+		ListingID string `path:"listing_id" format:"uuid"`
+
+		// Read only to forward downstream: marketplace checks the listing is the
+		// seller's in this token. Hidden because the bearer scheme documents it.
+		Authorization string `header:"Authorization" hidden:"true"`
+	}
+
+	type output struct{}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "accept-bid",
+		Description: "Ends the signed-in seller's auction early at its current leading bid. " +
+			"There is no bid to choose: whichever bid leads is the one accepted. " +
+			"Answers once settlement has started; the sale completes asynchronously. " +
+			"Refused when the caller is not the seller, the auction is closed, or nobody leads.",
+		DefaultStatus: http.StatusAccepted,
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusNotFound,
+			http.StatusConflict,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+			http.StatusServiceUnavailable,
+		},
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodPost,
+		Path:        "/api/marketplace/listings/{listing_id}/accept",
+		Summary:     "Accept the leading bid",
+		Tags:        []string{"marketplace"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		_, err := h.client.AcceptBid(withBearer(ctx, in.Authorization), &pb.AcceptBidRequest{
+			ListingId: in.ListingID,
 		})
 		if err != nil {
 			return nil, err

@@ -272,3 +272,46 @@ func listingWithBids(t *testing.T, status ListingStatus, bidStatuses ...BidStatu
 
 	return l
 }
+
+// AcceptBid (FS-NXP1W §Req 3): only the seller may end their auction early, only
+// while it still takes bids, and only at a current WINNING bid. Read-only: the
+// listing is never changed here; 0a does that under the row lock.
+func TestCanAcceptBid(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  ListingStatus
+		bids    []BidStatus
+		asOther bool
+		late    bool
+		wantErr error
+	}{
+		{"seller with a winning bid", StatusActive, []BidStatus{BidStatusOutbid, BidStatusWinning}, false, false, nil},
+		{"not the seller", StatusActive, []BidStatus{BidStatusWinning}, true, false, ErrNotSeller},
+		{"not the seller learns nothing of state", StatusSold, nil, true, false, ErrNotSeller},
+		{"already settling", StatusPendingSettlement, []BidStatus{BidStatusWinning}, false, false, ErrListingNotAcceptingBids},
+		{"past its end", StatusActive, []BidStatus{BidStatusWinning}, false, true, ErrListingExpired},
+		{"no bids", StatusActive, nil, false, false, ErrNoBidToAccept},
+		{"only a pending bid", StatusActive, []BidStatus{BidStatusPending}, false, false, ErrNoBidToAccept},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := listingWithBids(t, tt.status, tt.bids...)
+			before := l.Snapshot()
+
+			member := before.SellerID
+			if tt.asOther {
+				member = uuid.New()
+			}
+			now := time.Now()
+			if tt.late {
+				now = before.EndsAt
+			}
+
+			err := l.CanAcceptBid(member, now)
+
+			assert.ErrorIs(t, err, tt.wantErr)
+			assert.Equal(t, before, l.Snapshot(), "CanAcceptBid must not change the listing")
+		})
+	}
+}

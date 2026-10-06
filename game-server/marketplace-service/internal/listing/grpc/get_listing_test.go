@@ -34,7 +34,7 @@ func (r *fakeListingReader) Execute(ctx context.Context, listingID uuid.UUID) (*
 }
 
 func newGetListingHandler(reader *fakeListingReader) *Handler {
-	return NewHandler(nil, nil, nil, nil, nil, nil, reader)
+	return NewHandler(nil, nil, nil, nil, nil, nil, reader, nil, nil)
 }
 
 // Get-one is public: a visitor with no identity on the context is served, and
@@ -86,6 +86,37 @@ func TestGetListingSendsReadFailuresThroughMapError(t *testing.T) {
 			_, err := newGetListingHandler(reader).GetListing(context.Background(), &pb.GetListingRequest{ListingId: uuid.NewString()})
 
 			assert.Equal(t, tt.want, status.Code(err))
+		})
+	}
+}
+
+// The buyout price reaches the wire when set and stays absent, never 0, when
+// not (FS-9XKS6 Req 9).
+func TestGetListing_CarriesTheBuyoutPrice(t *testing.T) {
+	buyout := 500
+
+	tests := []struct {
+		name   string
+		buyout *int
+	}{
+		{"set", &buyout},
+		{"none", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := dto.ListingDetails{
+				ID: uuid.New(), SellerID: uuid.New(), ItemID: uuid.New(),
+				StartPrice: 50, BuyoutPrice: tt.buyout, Status: listing.StatusActive, EndsAt: time.Now().Add(time.Hour),
+			}
+
+			res, err := newGetListingHandler(&fakeListingReader{listing: &l}).GetListing(context.Background(), &pb.GetListingRequest{ListingId: l.ID.String()})
+
+			require.NoError(t, err)
+			if tt.buyout == nil {
+				assert.Nil(t, res.GetListing().BuyoutPrice)
+				return
+			}
+			assert.Equal(t, int64(500), res.GetListing().GetBuyoutPrice())
 		})
 	}
 }

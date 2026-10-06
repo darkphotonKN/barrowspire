@@ -938,7 +938,9 @@ func (h *service) UpdateLoadout(ctx context.Context, req *UpdateLoadoutRequest) 
 	return h.repo.UpsertLoadoutSlot(ctx, req)
 }
 
-func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, startPrice int64, endsAt time.Time) (*ItemInstance, error) {
+// buyoutPrice is marketplace's term, not items': it is forwarded onto the event
+// unread, nil when the seller set none (FS-9XKS6).
+func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, startPrice int64, buyoutPrice *int64, endsAt time.Time) (*ItemInstance, error) {
 	now := time.Now()
 	updateAt := now
 	reservedAt := now
@@ -954,7 +956,7 @@ func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, s
 		itemInstance = result
 
 		// outbox
-		err = s.PublishItemReservedComplete(ctx, tx, itemInstance, sellerID, startPrice, endsAt)
+		err = s.PublishItemReservedComplete(ctx, tx, itemInstance, sellerID, startPrice, buyoutPrice, endsAt)
 		if err != nil {
 			return err
 		}
@@ -968,11 +970,11 @@ func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, s
 	return itemInstance, nil
 }
 
-func (s *service) PublishItemReservedComplete(ctx context.Context, tx *sqlx.Tx, data *ItemInstance, sellerID uuid.UUID, startPrice int64, endsAt time.Time) error {
+func (s *service) PublishItemReservedComplete(ctx context.Context, tx *sqlx.Tx, data *ItemInstance, sellerID uuid.UUID, startPrice int64, buyoutPrice *int64, endsAt time.Time) error {
 	slog.Debug("service publishItemReservedComplete")
 
 	// proto marshal
-	protoData, err := s.formattedItemInstanceData(data, sellerID, startPrice, endsAt)
+	protoData, err := s.formattedItemInstanceData(data, sellerID, startPrice, buyoutPrice, endsAt)
 
 	if err != nil {
 		slog.Error("Error formatting item reserved event", "error", err)
@@ -999,7 +1001,7 @@ func (s *service) PublishItemReservedComplete(ctx context.Context, tx *sqlx.Tx, 
 /**
 * Formats item instance data.
 **/
-func (s *service) formattedItemInstanceData(itemInstance *ItemInstance, sellerID uuid.UUID, startPrice int64, endsAt time.Time) (*types.FormattedItemInstanceData, error) {
+func (s *service) formattedItemInstanceData(itemInstance *ItemInstance, sellerID uuid.UUID, startPrice int64, buyoutPrice *int64, endsAt time.Time) (*types.FormattedItemInstanceData, error) {
 
 	var rarityIDStr *string
 	if itemInstance.RarityID != nil {
@@ -1049,6 +1051,7 @@ func (s *service) formattedItemInstanceData(itemInstance *ItemInstance, sellerID
 		EventId:      eventId,
 		SellerId:     sellerID.String(),
 		StartPrice:   startPrice,
+		BuyoutPrice:  buyoutPrice,
 		EndsAt:       timestamppb.New(endsAt),
 		ItemInstance: itemInstanceData,
 		ListingId:    listingIDStr,
