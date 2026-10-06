@@ -32,7 +32,7 @@ func (s *stubReleaseLosingHolds) Handle(ctx context.Context, cmd *usecase.Releas
 func newTailEnv(uc ReleaseLosingHolds) *testsuite.TestActivityEnvironment {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestActivityEnvironment()
-	NewActivities(nil, nil, uc).Register(env)
+	NewActivities(nil, nil, uc, nil).Register(env)
 	return env
 }
 

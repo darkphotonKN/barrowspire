@@ -32,7 +32,7 @@ func (s *stubReleaseAllHolds) Handle(ctx context.Context, cmd *usecase.ReleaseAl
 func newRollbackEnv(uc ReleaseAllHolds) *testsuite.TestActivityEnvironment {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestActivityEnvironment()
-	NewActivities(nil, uc, nil).Register(env)
+	NewActivities(nil, uc, nil, nil).Register(env)
 	return env
 }
 

@@ -296,6 +296,18 @@ func (r *AccountRepository) Insert(ctx context.Context, account *account.Account
 // account/errors.go's isRetriable and usecase/retry.go's withRetry relies on this
 // to work
 func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, before account.AccountSnapshot) error {
+	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
+		return r.SaveTx(ctx, tx, acc, before)
+	})
+}
+
+// SaveTx is Save inside a transaction the CALLER owns, under the same
+// ErrConcurrentModification contract.
+//
+// It exists because a seller's credit must commit together with the dedup row
+// that makes it exactly-once: a credit without its row is paid again on retry,
+// and a row without its credit is a seller never paid (FS-NXP1W §Req 30).
+func (r *AccountRepository) SaveTx(ctx context.Context, tx *sqlx.Tx, acc *account.Account, before account.AccountSnapshot) error {
 	after := acc.Snapshot()
 
 	// diff account
@@ -318,72 +330,70 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 	WHERE id = $3 AND version = $4
 	`
 
-	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
-		// -- update account --
-		res, err := tx.ExecContext(ctx, accountQuery, after.Gold, after.UpdatedAt, after.ID, changes.expectedVersion)
+	// -- update account --
+	res, err := tx.ExecContext(ctx, accountQuery, after.Gold, after.UpdatedAt, after.ID, changes.expectedVersion)
+
+	if err != nil {
+		return commonhelpers.WrapDBErr("account", "save", err)
+	}
+
+	n, err := res.RowsAffected()
+
+	if err != nil {
+		return fmt.Errorf("account save, rows affected: %w", err)
+	}
+
+	// race detected
+	if n == 0 {
+		return account.ErrConcurrentModification
+	}
+
+	// -- insert new holds --
+	if len(changes.newHolds) != 0 {
+		newHoldsQuery := `
+	INSERT INTO wallet_holds (id, account_id, bid_id, status, amount, expired_at, created_at, updated_at)
+	VALUES (:id, :account_id, :bid_id, :status, :amount, :expired_at, :created_at, :updated_at)
+	`
+		_, err = tx.NamedExecContext(ctx, newHoldsQuery, changes.newHolds)
 
 		if err != nil {
 			return commonhelpers.WrapDBErr("account", "save", err)
 		}
 
-		n, err := res.RowsAffected()
+	}
+	// -- update existing holds --
 
-		if err != nil {
-			return fmt.Errorf("account save, rows affected: %w", err)
-		}
-
-		// race detected
-		if n == 0 {
-			return account.ErrConcurrentModification
-		}
-
-		// -- insert new holds --
-		if len(changes.newHolds) != 0 {
-			newHoldsQuery := `
-		INSERT INTO wallet_holds (id, account_id, bid_id, status, amount, expired_at, created_at, updated_at)
-		VALUES (:id, :account_id, :bid_id, :status, :amount, :expired_at, :created_at, :updated_at)
-		`
-			_, err = tx.NamedExecContext(ctx, newHoldsQuery, changes.newHolds)
-
-			if err != nil {
-				return commonhelpers.WrapDBErr("account", "save", err)
-			}
-
-		}
-		// -- update existing holds --
-
-		if len(changes.holdsUpdated) == 0 {
-			return nil
-		}
-
-		// create unnest required vertical slices
-		ids := make([]string, 0, len(changes.holdsUpdated))
-		statuses := make([]string, 0, len(changes.holdsUpdated))
-		updatedAts := make([]time.Time, 0, len(changes.holdsUpdated))
-
-		for _, hold := range changes.holdsUpdated {
-			ids = append(ids, hold.id.String())
-			statuses = append(statuses, string(*hold.status))
-			updatedAts = append(updatedAts, hold.updatedAt)
-		}
-
-		changedHoldsQuery := `
-		UPDATE wallet_holds h
-		SET status = v.status,
-			updated_at = v.updated_at
-		FROM unnest($1::uuid[], $2::text[], $3::timestamptz[])
-		AS v(id, status, updated_at)
-		WHERE v.id = h.id
-		`
-
-		_, err = tx.ExecContext(ctx, changedHoldsQuery, pq.Array(ids), pq.Array(statuses), pq.Array(updatedAts))
-
-		if err != nil {
-			return commonhelpers.WrapDBErr("account", "save", err)
-		}
-
+	if len(changes.holdsUpdated) == 0 {
 		return nil
-	})
+	}
+
+	// create unnest required vertical slices
+	ids := make([]string, 0, len(changes.holdsUpdated))
+	statuses := make([]string, 0, len(changes.holdsUpdated))
+	updatedAts := make([]time.Time, 0, len(changes.holdsUpdated))
+
+	for _, hold := range changes.holdsUpdated {
+		ids = append(ids, hold.id.String())
+		statuses = append(statuses, string(*hold.status))
+		updatedAts = append(updatedAts, hold.updatedAt)
+	}
+
+	changedHoldsQuery := `
+	UPDATE wallet_holds h
+	SET status = v.status,
+		updated_at = v.updated_at
+	FROM unnest($1::uuid[], $2::text[], $3::timestamptz[])
+	AS v(id, status, updated_at)
+	WHERE v.id = h.id
+	`
+
+	_, err = tx.ExecContext(ctx, changedHoldsQuery, pq.Array(ids), pq.Array(statuses), pq.Array(updatedAts))
+
+	if err != nil {
+		return commonhelpers.WrapDBErr("account", "save", err)
+	}
+
+	return nil
 
 }
 
