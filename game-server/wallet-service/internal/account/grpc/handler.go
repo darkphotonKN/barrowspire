@@ -289,7 +289,8 @@ func mapError(ctx context.Context, err error) error {
 
 	// NOTE: duplicate resource
 	// maps to 409 http code, conflict
-	case errors.Is(err, commonconstants.ErrDuplicateResource):
+	case errors.Is(err, commonconstants.ErrDuplicateResource) ||
+		errors.Is(err, account.ErrBidAlreadyHeld):
 		code = codes.AlreadyExists
 		msg = "already exists"
 
