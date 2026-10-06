@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 // interfaces.
 
 type sellerAccounts interface {
-	FindByMemberID(ctx context.Context, memberID uuid.UUID) (*account.Account, error)
+	FindByMemberIDTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID) (*account.Account, error)
 	SaveTx(ctx context.Context, tx *sqlx.Tx, acc *account.Account, before account.AccountSnapshot) error
 }
 
@@ -48,9 +49,18 @@ type CreditSellerCommand struct {
 	Now            time.Time
 }
 
+// ErrMissingIdempotencyKey refuses a credit with no key. Accepting one would have
+// every keyless settlement share a single dedup row: the first seller paid, every
+// later one reported as already applied and never paid.
+var ErrMissingIdempotencyKey = errors.New("credit seller requires an idempotency key")
+
 // Handle returns the seller's account ID, and the same ID on a re-run, already
 // applied or not (§Req 9).
 func (uc *CreditSellerUC) Handle(ctx context.Context, cmd *CreditSellerCommand) (uuid.UUID, error) {
+	if cmd.IdempotencyKey == "" {
+		return uuid.Nil, fmt.Errorf("credit seller uc handle seller %s: %w", cmd.SellerID, ErrMissingIdempotencyKey)
+	}
+
 	var accountID uuid.UUID
 
 	err := withRetry(ctx, func() error {
@@ -60,7 +70,8 @@ func (uc *CreditSellerUC) Handle(ctx context.Context, cmd *CreditSellerCommand) 
 				return fmt.Errorf("marking %s processed: %w", cmd.IdempotencyKey, err)
 			}
 
-			acc, err := uc.accounts.FindByMemberID(ctx, cmd.SellerID)
+			// read on the transaction's own connection: one credit, one connection
+			acc, err := uc.accounts.FindByMemberIDTx(ctx, tx, cmd.SellerID)
 			if err != nil {
 				return fmt.Errorf("finding seller %s: %w", cmd.SellerID, err)
 			}

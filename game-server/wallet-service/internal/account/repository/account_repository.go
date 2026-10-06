@@ -157,16 +157,36 @@ func (r *AccountRepository) FindByBidID(ctx context.Context, bidID uuid.UUID) (*
 }
 
 func (r *AccountRepository) FindByMemberID(ctx context.Context, memberID uuid.UUID) (*account.Account, error) {
-	var acc AccountRow
-	var holds []HoldsRow
+	var acc *account.Account
 
 	err := commonhelpers.ExecTx(ctx, r.db, &sql.TxOptions{
 		Isolation: sql.LevelRepeatableRead,
 		ReadOnly:  true,
 	}, func(tx *sqlx.Tx) error {
+		var err error
+		acc, err = r.FindByMemberIDTx(ctx, tx, memberID)
+		return err
+	})
 
-		// get single account
-		accountQuery := `
+	if err != nil {
+		return nil, err
+	}
+
+	return acc, nil
+}
+
+// FindByMemberIDTx is FindByMemberID inside a transaction the CALLER owns.
+//
+// It exists so a write that already holds a transaction reads on that same
+// connection. Reading through r.db instead would hold one connection while
+// waiting for a second, and enough concurrent callers would exhaust the pool
+// with every one of them waiting on another.
+func (r *AccountRepository) FindByMemberIDTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID) (*account.Account, error) {
+	var acc AccountRow
+	var holds []HoldsRow
+
+	// get single account
+	accountQuery := `
 	SELECT 
 		id,
 		member_id,
@@ -178,15 +198,14 @@ func (r *AccountRepository) FindByMemberID(ctx context.Context, memberID uuid.UU
 	WHERE member_id = $1
 	`
 
-		err := tx.GetContext(ctx, &acc, accountQuery, memberID)
+	err := tx.GetContext(ctx, &acc, accountQuery, memberID)
 
-		if err != nil {
-			return commonhelpers.WrapDBErr("account", "FindByMemberID", err)
-		}
+	if err != nil {
+		return nil, commonhelpers.WrapDBErr("account", "FindByMemberID", err)
+	}
 
-		// grab all related holds
-		// get single account
-		holdsQuery := `
+	// grab all related holds
+	holdsQuery := `
 	SELECT 
 		id,
 		account_id,
@@ -200,17 +219,10 @@ func (r *AccountRepository) FindByMemberID(ctx context.Context, memberID uuid.UU
 	WHERE account_id = $1
 	`
 
-		err = tx.SelectContext(ctx, &holds, holdsQuery, acc.ID)
-
-		if err != nil {
-			return commonhelpers.WrapDBErr("account", "FindByID", err)
-		}
-
-		return nil
-	})
+	err = tx.SelectContext(ctx, &holds, holdsQuery, acc.ID)
 
 	if err != nil {
-		return nil, err
+		return nil, commonhelpers.WrapDBErr("account", "FindByMemberID", err)
 	}
 
 	// data successfully retrieved, construct and reconstitute

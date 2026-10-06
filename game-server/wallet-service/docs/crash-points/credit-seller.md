@@ -10,7 +10,8 @@ One transaction (`CreditSellerUC.Handle`):
 
 1. `INSERT INTO processed_activities (idempotency_key) … ON CONFLICT DO NOTHING`. The key is
    caller-minted: workflow ID + activity name (ADR-0009).
-2. Load the seller's account by member ID.
+2. Load the seller's account by member ID, on the same transaction, so one credit holds one
+   connection (`TestCreditSellerUC_HoldsOneConnection_CompletesOnAPoolOfOne`).
 3. If step 1 inserted nothing: already applied, so answer with the seller's account ID.
 4. Otherwise `Deposit(amount)` and `SaveTx` under optimistic concurrency.
 5. Commit.
@@ -30,7 +31,7 @@ exactly-once.
 | 6 | After the workflow records completion, before its next command (marketplace worker dies) | row + credit; the result is in history | replay reads the output from history and does not re-run the activity | already applied → continue | Temporal's guarantee; nothing in wallet to test |
 | 7 | A second attempt starts while the first is still inside its transaction (a timed-out attempt that is still alive) | first attempt's uncommitted row | the second insert blocks on the primary key. If the first commits, the second sees the conflict and answers already applied. If the first rolls back, the second claims the key and credits | exactly one credit | `TestCreditSellerUC_ConcurrentAttempts_CreditOnce` |
 | 8 | Wallet stays down for the whole retry window (Edge States, "wallet down after the pivot") | nothing | retried under the default tail policy; when the cap is exhausted, the workflow escalates and parks | parked, resumed later as #1 | classification: `TestCreditSellerActivity_Classification` keeps outage errors retryable. **Parking is unproven until slice 7 (I-NXP1W-7) lands.** |
-| 9 | Seller has no account, or the amount is non-positive | nothing: the transaction rolls back, row included | does not retry. The error is non-retryable `CreditSellerImpossible`, an invariant breach that escalates and parks (§Req 13) | parked for an operator | `TestCreditSellerUC_SellerHasNoAccount_IsNotFoundAndLeavesNoDedupRow`, `TestCreditSellerActivity_Classification` |
+| 9 | Seller has no account, the amount is non-positive, or the idempotency key is empty | nothing: the transaction rolls back, row included (an empty key is refused before the transaction opens) | does not retry. The error is non-retryable `CreditSellerImpossible`, an invariant breach that escalates and parks (§Req 13) | parked for an operator | `TestCreditSellerUC_SellerHasNoAccount_IsNotFoundAndLeavesNoDedupRow`, `TestCreditSellerUC_EmptyIdempotencyKey_IsRefusedAndCreditsNothing`, `TestCreditSellerActivity_Classification` |
 
 ## What is deliberately not stored
 

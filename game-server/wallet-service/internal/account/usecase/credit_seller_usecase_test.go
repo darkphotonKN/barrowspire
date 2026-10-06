@@ -188,3 +188,39 @@ func TestCreditSellerUC_SellerHasNoAccount_IsNotFoundAndLeavesNoDedupRow(t *test
 	require.NoError(t, db.Get(&rows, `SELECT COUNT(*) FROM processed_activities WHERE idempotency_key = $1`, key))
 	assert.Zero(t, rows)
 }
+
+// An empty key is a workflow bug, and an expensive one to accept: every settlement
+// carrying it would share one dedup row, so the first would be credited and every
+// later seller silently reported as already paid. Refused before any write.
+func TestCreditSellerUC_EmptyIdempotencyKey_IsRefusedAndCreditsNothing(t *testing.T) {
+	db := walletDB(t)
+	seller := seedSeller(t, db, "").Snapshot()
+
+	_, err := newCreditSellerUC(db).Handle(context.Background(), &usecase.CreditSellerCommand{
+		SellerID: seller.MemberID, Amount: 250, IdempotencyKey: "", Now: time.Now(),
+	})
+
+	assert.ErrorIs(t, err, usecase.ErrMissingIdempotencyKey)
+	assert.Zero(t, goldOf(t, db, seller.MemberID))
+}
+
+// One credit must need one connection. A read outside the transaction holds the
+// transaction's connection while waiting for a second, so enough concurrent credits
+// would exhaust the pool with every caller waiting on another — a deadlock that only
+// the activity's timeout breaks. A pool of one makes that visible as a hang.
+func TestCreditSellerUC_HoldsOneConnection_CompletesOnAPoolOfOne(t *testing.T) {
+	db := walletDB(t)
+	key := settlementKey()
+	seller := seedSeller(t, db, key).Snapshot()
+
+	db.SetMaxOpenConns(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	_, err := newCreditSellerUC(db).Handle(ctx, &usecase.CreditSellerCommand{
+		SellerID: seller.MemberID, Amount: 250, IdempotencyKey: key, Now: time.Now(),
+	})
+
+	require.NoError(t, err, "the credit must not wait on a second connection")
+	assert.Equal(t, 250, goldOf(t, db, seller.MemberID))
+}

@@ -47,6 +47,9 @@ var creditSellerNonRetryable = []error{
 	commonconstants.ErrNotFound,
 	// a non-positive amount: the workflow computed the settlement wrong
 	account.ErrInvalidGold,
+	// no idempotency key: the workflow minted none, and crediting without one
+	// would let keyless settlements mask each other in the dedup table
+	usecase.ErrMissingIdempotencyKey,
 }
 
 func classifyCreditSellerErr(sellerID uuid.UUID, err error) error {

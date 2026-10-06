@@ -71,6 +71,7 @@ func TestCreditSellerActivity_Classification(t *testing.T) {
 	}{
 		{"the seller has no account", commonconstants.ErrNotFound, true},
 		{"a non-positive settlement amount", account.ErrInvalidGold, true},
+		{"no idempotency key", usecase.ErrMissingIdempotencyKey, true},
 		{"wallet is down", errors.New("dial tcp: connection refused"), false},
 		{"a transient database error", commonconstants.ErrTransient, false},
 		{"lost the row version every time", fmt.Errorf("%w: %w", usecase.ErrMaxRetries, account.ErrConcurrentModification), false},
