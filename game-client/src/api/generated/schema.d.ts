@@ -312,6 +312,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/marketplace/listings/{listing_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept the leading bid
+         * @description Ends the signed-in seller's auction early at its current leading bid. There is no bid to choose: whichever bid leads is the one accepted. Answers once settlement has started; the sale completes asynchronously. Refused when the caller is not the seller, the auction is closed, or nobody leads.
+         */
+        post: operations["accept-bid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/marketplace/listings/{listing_id}/bids": {
         parameters: {
             query?: never;
@@ -986,6 +1006,11 @@ export interface components {
         };
         CreateListingBody: {
             /**
+             * Format: int64
+             * @description Gold that buys the item outright and ends the auction. Optional; when set it must be above startPrice.
+             */
+            buyoutPrice?: number;
+            /**
              * Format: date-time
              * @description When the auction closes. Must be in the future.
              */
@@ -1214,6 +1239,11 @@ export interface components {
              * @description Present once sold.
              */
             buyerId?: string;
+            /**
+             * Format: int64
+             * @description Gold that buys the item outright. Absent when the seller set none.
+             */
+            buyoutPrice?: number;
             /** Format: date-time */
             createdAt: string;
             /**
@@ -1359,7 +1389,7 @@ export interface components {
         PlaceBidBody: {
             /**
              * Format: int64
-             * @description Gold offered. The first bid must meet the listing's start price; every later one must exceed the current leading bid.
+             * @description Gold offered. The first bid must meet the listing's start price; every later one must exceed the current leading bid. On a listing with a buyoutPrice every bid must stay below it.
              */
             amount: number;
         };
@@ -2749,6 +2779,98 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "accept-bid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

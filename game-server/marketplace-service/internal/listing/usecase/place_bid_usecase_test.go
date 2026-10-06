@@ -91,7 +91,7 @@ func activeListing(t *testing.T, startPrice int) *listing.Listing {
 	t.Helper()
 
 	now := time.Now()
-	l, err := listing.NewListing(uuid.New(), uuid.New(), uuid.New(), startPrice, now, now.Add(time.Hour))
+	l, err := listing.NewListing(uuid.New(), uuid.New(), uuid.New(), startPrice, nil, now, now.Add(time.Hour))
 	require.NoError(t, err)
 
 	return l

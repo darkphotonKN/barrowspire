@@ -36,6 +36,18 @@ type Handler struct {
 	createListingUC *usecase.CreateListingUC
 	placeBidUC      *usecase.PlaceBidUC
 	withdrawBidUC   *usecase.WithdrawBidUC
+	acceptBid       AcceptBid
+	buyout          Buyout
+}
+
+// AcceptBid starts settlement for a listing its seller is ending early.
+type AcceptBid interface {
+	Handle(ctx context.Context, cmd usecase.AcceptBidCommand) error
+}
+
+// Buyout records a buyout and starts settlement for it.
+type Buyout interface {
+	Handle(ctx context.Context, cmd usecase.BuyoutCommand) error
 }
 
 // MyListingsReader reads one page of a seller's listings, newest first. A nil
@@ -63,7 +75,9 @@ func NewHandler(
 	withdrawBidUC *usecase.WithdrawBidUC,
 	myListingsReader MyListingsReader,
 	browseReader BrowseListingsReader,
-	listingReader ListingReader) *Handler {
+	listingReader ListingReader,
+	acceptBid AcceptBid,
+	buyout Buyout) *Handler {
 	return &Handler{
 		reserveItemUC:    reserveItemUC,
 		createListingUC:  createListingUC,
@@ -72,6 +86,8 @@ func NewHandler(
 		myListingsReader: myListingsReader,
 		browseReader:     browseReader,
 		listingReader:    listingReader,
+		acceptBid:        acceptBid,
+		buyout:           buyout,
 	}
 }
 
@@ -139,6 +155,59 @@ func (h *Handler) WithdrawBid(ctx context.Context, req *pb.WithdrawBidRequest) (
 	return &pb.WithdrawBidResponse{}, nil
 }
 
+// AcceptBid lets a seller end their auction early at its current WINNING bid
+// (FS-NXP1W §Req 3). It only starts settlement; the sale completes on its own.
+func (h *Handler) AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.AcceptBidResponse, error) {
+	listingID, err := uuid.Parse(req.GetListingId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid listing id")
+	}
+
+	// the domain's seller check compares against this, so it must be the
+	// authenticated caller and never anything taken from the request
+	memberID, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	if err := h.acceptBid.Handle(ctx, usecase.AcceptBidCommand{
+		ListingID: listingID,
+		MemberID:  memberID,
+		Now:       time.Now(),
+	}); err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return &pb.AcceptBidResponse{}, nil
+}
+
+// Buyout buys a listing outright at its buyout price and starts settlement
+// (FS-NXP1W §Req 4). It returns once the buyout is recorded; the sale completes
+// on its own.
+func (h *Handler) Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.BuyoutResponse, error) {
+	listingID, err := uuid.Parse(req.GetListingId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid listing id")
+	}
+
+	// the buyer is who the gold is held from and who the domain refuses if they
+	// are the seller, so it is only ever the authenticated caller
+	memberID, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	if err := h.buyout.Handle(ctx, usecase.BuyoutCommand{
+		ListingID: listingID,
+		MemberID:  memberID,
+		Now:       time.Now(),
+	}); err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return &pb.BuyoutResponse{}, nil
+}
+
 // ========================= READ PATHS  =========================
 
 func (h *Handler) ListItem(ctx context.Context, req *pb.ListItemRequest) (*pb.ListItemResponse, error) {
@@ -156,11 +225,12 @@ func (h *Handler) ListItem(ctx context.Context, req *pb.ListItemRequest) (*pb.Li
 
 	now := time.Now()
 	err = h.reserveItemUC.Handle(ctx, &usecase.ReserveItemCommand{
-		SellerID:   sellerId,
-		StartPrice: int(req.StartPrice),
-		ItemID:     itemID,
-		EndsAt:     req.EndsAt.AsTime(),
-		Now:        now,
+		SellerID:    sellerId,
+		StartPrice:  int(req.StartPrice),
+		BuyoutPrice: optionalInt(req.BuyoutPrice),
+		ItemID:      itemID,
+		EndsAt:      req.EndsAt.AsTime(),
+		Now:         now,
 	})
 
 	if err != nil {
@@ -266,17 +336,18 @@ func (h *Handler) GetListing(ctx context.Context, req *pb.GetListingRequest) (*p
 // did not select them maps a zero bid count and the start price as the minimum.
 func toProtoListing(l dto.ListingDetails, now time.Time) *pb.Listing {
 	out := &pb.Listing{
-		Id:         l.ID.String(),
-		SellerId:   l.SellerID.String(),
-		ItemId:     l.ItemID.String(),
-		StartPrice: int64(l.StartPrice),
-		Status:     string(l.Status),
-		EndsAt:     timestamppb.New(l.EndsAt),
-		CreatedAt:  timestamppb.New(l.CreatedAt),
-		UpdatedAt:  timestamppb.New(l.UpdatedAt),
-		MinimumBid: int64(l.MinimumBid()),
-		BidCount:   int32(l.BidCount),
-		Ended:      l.EndedAt(now),
+		Id:          l.ID.String(),
+		SellerId:    l.SellerID.String(),
+		ItemId:      l.ItemID.String(),
+		StartPrice:  int64(l.StartPrice),
+		BuyoutPrice: optionalInt64(l.BuyoutPrice),
+		Status:      string(l.Status),
+		EndsAt:      timestamppb.New(l.EndsAt),
+		CreatedAt:   timestamppb.New(l.CreatedAt),
+		UpdatedAt:   timestamppb.New(l.UpdatedAt),
+		MinimumBid:  int64(l.MinimumBid()),
+		BidCount:    int32(l.BidCount),
+		Ended:       l.EndedAt(now),
 	}
 
 	if l.CurrentPrice != nil {
@@ -335,7 +406,9 @@ func mapError(ctx context.Context, err error) error {
 		msg = "unavailable"
 
 	// the caller sent a structurally valid request carrying a nonsensical value
-	case errors.Is(err, listing.ErrInvalidAmount) || errors.Is(err, listing.ErrBidTooLow):
+	case errors.Is(err, listing.ErrInvalidAmount) ||
+		errors.Is(err, listing.ErrBidTooLow) ||
+		errors.Is(err, listing.ErrBidAtOrAboveBuyout):
 		code = codes.InvalidArgument
 		msg = "invalid argument"
 		logLevel = slog.LevelInfo
@@ -343,6 +416,8 @@ func mapError(ctx context.Context, err error) error {
 	case errors.Is(err, listing.ErrListingNotAcceptingBids) ||
 		errors.Is(err, listing.ErrListingExpired) ||
 		errors.Is(err, listing.ErrInvalidBidTransition) ||
+		errors.Is(err, listing.ErrNoBidToAccept) ||
+		errors.Is(err, listing.ErrNoBuyoutPrice) ||
 		errors.Is(err, commonconstants.ErrInsufficientGold):
 		code = codes.FailedPrecondition
 		msg = "failed precondition"
@@ -352,13 +427,16 @@ func mapError(ctx context.Context, err error) error {
 		code = codes.NotFound
 		msg = "not found"
 
-	case errors.Is(err, listing.ErrNotBidOwner):
+	case errors.Is(err, listing.ErrNotBidOwner) ||
+		errors.Is(err, listing.ErrNotSeller) ||
+		errors.Is(err, listing.ErrSellerCannotBuyout):
 		code = codes.PermissionDenied
 		msg = "permission denied"
 
 	case errors.Is(err, listing.ErrInvalidUUID) ||
 		errors.Is(err, listing.ErrInvalidEndTime) ||
 		errors.Is(err, listing.ErrInvalidStartPrice) ||
+		errors.Is(err, listing.ErrInvalidBuyoutPrice) ||
 		errors.Is(err, listing.ErrInvalidSoldPrice) ||
 		errors.Is(err, listing.ErrInvalidSoldTime):
 		code = codes.InvalidArgument
@@ -384,4 +462,23 @@ func mapError(ctx context.Context, err error) error {
 
 	slog.Log(ctx, logLevel, msg, "code", code, "err", err)
 	return status.Error(code, msg)
+}
+
+// optionalInt narrows an optional proto int64 to the domain's *int, keeping
+// absent as nil rather than collapsing it to 0.
+func optionalInt(v *int64) *int {
+	if v == nil {
+		return nil
+	}
+	n := int(*v)
+	return &n
+}
+
+// optionalInt64 is optionalInt's inverse, for responses.
+func optionalInt64(v *int) *int64 {
+	if v == nil {
+		return nil
+	}
+	n := int64(*v)
+	return &n
 }

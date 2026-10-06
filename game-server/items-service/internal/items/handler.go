@@ -87,7 +87,7 @@ type Service interface {
 	UpdateLoadout(ctx context.Context, req *UpdateLoadoutRequest) error
 
 	// marketplace
-	ReserveItem(ctx context.Context, seller, itemID uuid.UUID, startPrice int64, endsAt time.Time) (*ItemInstance, error)
+	ReserveItem(ctx context.Context, seller, itemID uuid.UUID, startPrice int64, buyoutPrice *int64, endsAt time.Time) (*ItemInstance, error)
 	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
 	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
 
@@ -1049,7 +1049,7 @@ func (h *Handler) ReserveItem(ctx context.Context, req *pb.ReserveItemRequest) (
 		return nil, status.Error(codes.InvalidArgument, "invalid item id")
 	}
 
-	item, err := h.service.ReserveItem(ctx, sellerId, itemID, req.StartPrice, req.EndsAt.AsTime())
+	item, err := h.service.ReserveItem(ctx, sellerId, itemID, req.StartPrice, req.BuyoutPrice, req.EndsAt.AsTime())
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}

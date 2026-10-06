@@ -108,6 +108,7 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [ ] Listing domain
 - [ ] Bid domain
 - [ ] Buyout (immediate self-settlement)
+- [ ] Listing buyout price → FS-9XKS6
 
 ### Auction lifecycle
 

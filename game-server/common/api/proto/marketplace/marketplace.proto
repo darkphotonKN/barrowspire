@@ -25,6 +25,15 @@ service MarketplaceService {
 
   // Cancel a bid the caller placed.
   rpc WithdrawBid(WithdrawBidRequest) returns (WithdrawBidResponse) {}
+
+  // The seller ends their auction early at its current WINNING bid. Starts
+  // settlement and returns; the sale completes asynchronously.
+  rpc AcceptBid(AcceptBidRequest) returns (AcceptBidResponse) {}
+
+  // Buyout buys the listing outright at its buyout price and starts
+  // settlement; the sale completes asynchronously (FS-NXP1W Req 4). The buyer
+  // is the authenticated caller.
+  rpc Buyout(BuyoutRequest) returns (BuyoutResponse) {}
 }
 
 // A listing as its seller sees it. The optimistic-locking version is internal
@@ -46,6 +55,8 @@ message Listing {
   int64 minimum_bid = 12;             // the least amount a bid would be accepted at now
   int32 bid_count = 13;               // bids in WINNING, PENDING or OUTBID
   bool ended = 14;                    // ACTIVE but past ends_at, not yet settled
+
+  optional int64 buyout_price = 15;   // absent when the seller set none (FS-9XKS6)
 }
 // ListItem
 // Empty by design: the member identity is derived from the authenticated
@@ -54,6 +65,8 @@ message ListItemRequest {
   string item_id = 1;
   int64 start_price = 2;
   google.protobuf.Timestamp ends_at = 3; 
+  // optional: absent lists a plain auction (FS-9XKS6)
+  optional int64 buyout_price = 4;
 }
 
 message ListItemResponse {
@@ -133,3 +146,19 @@ message WithdrawBidResponse {
   string status        = 2;  // CANCELLED on success
   int64  current_price = 3;  // falls back to the reserve if the leader withdrew
 }
+
+// AcceptBid
+// The seller is derived from the authenticated context server-side, never
+// supplied by the caller. No bid ID: whichever bid is WINNING is the one
+// accepted, chosen by settlement itself.
+message AcceptBidRequest {
+  string listing_id = 1;
+}
+
+message AcceptBidResponse {}
+
+message BuyoutRequest {
+  string listing_id = 1;
+}
+
+message BuyoutResponse {}

@@ -14,6 +14,7 @@ type ListingClient interface {
 	ListItem(ctx context.Context, req *pb.ListItemRequest) (*pb.ListItemResponse, error)
 	PlaceBid(ctx context.Context, req *pb.PlaceBidRequest) (*pb.PlaceBidResponse, error)
 	WithdrawBid(ctx context.Context, req *pb.WithdrawBidRequest) (*pb.WithdrawBidResponse, error)
+	AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.AcceptBidResponse, error)
 	ListMyListings(ctx context.Context, req *pb.ListMyListingsRequest) (*pb.ListMyListingsResponse, error)
 	BrowseListings(ctx context.Context, req *pb.BrowseListingsRequest) (*pb.BrowseListingsResponse, error)
 	GetListing(ctx context.Context, req *pb.GetListingRequest) (*pb.GetListingResponse, error)
@@ -31,30 +32,33 @@ type ItemSummaries interface {
 // Only shape is checked here; whether the end time is in the future is
 // marketplace's rule and comes back through the seam.
 type CreateListingBody struct {
-	ItemID     string    `json:"itemId" format:"uuid" doc:"The item to list. It must be in the seller's stash and not already listed."`
-	StartPrice int64     `json:"startPrice" minimum:"1" doc:"Gold the first bid must meet."`
-	EndsAt     time.Time `json:"endsAt" doc:"When the auction closes. Must be in the future."`
+	ItemID     string `json:"itemId" format:"uuid" doc:"The item to list. It must be in the seller's stash and not already listed."`
+	StartPrice int64  `json:"startPrice" minimum:"1" doc:"Gold the first bid must meet."`
+	// optional; that it clears the start price is marketplace's rule
+	BuyoutPrice *int64    `json:"buyoutPrice,omitempty" minimum:"1" doc:"Gold that buys the item outright and ends the auction. Optional; when set it must be above startPrice."`
+	EndsAt      time.Time `json:"endsAt" doc:"When the auction closes. Must be in the future."`
 }
 
 // PlaceBidBody is the wire shape of a bid. The listing comes from the path and
 // the bidder from the token, so the amount is all the caller supplies.
 type PlaceBidBody struct {
-	Amount int64 `json:"amount" minimum:"1" doc:"Gold offered. The first bid must meet the listing's start price; every later one must exceed the current leading bid."`
+	Amount int64 `json:"amount" minimum:"1" doc:"Gold offered. The first bid must meet the listing's start price; every later one must exceed the current leading bid. On a listing with a buyoutPrice every bid must stay below it."`
 }
 
 // Listing is a listing as its seller sees it. The optimistic-locking version is
 // internal to marketplace and has no field here.
 type Listing struct {
-	ID         string    `json:"id" format:"uuid"`
-	ItemID     string    `json:"itemId" format:"uuid"`
-	SellerID   string    `json:"sellerId" format:"uuid"`
-	BuyerID    *string   `json:"buyerId,omitempty" format:"uuid" doc:"Present once sold."`
-	StartPrice int64     `json:"startPrice"`
-	SoldPrice  *int64    `json:"soldPrice,omitempty" doc:"Present once sold."`
-	Status     string    `json:"status" doc:"Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED."`
-	EndsAt     time.Time `json:"endsAt"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
+	ID          string    `json:"id" format:"uuid"`
+	ItemID      string    `json:"itemId" format:"uuid"`
+	SellerID    string    `json:"sellerId" format:"uuid"`
+	BuyerID     *string   `json:"buyerId,omitempty" format:"uuid" doc:"Present once sold."`
+	StartPrice  int64     `json:"startPrice"`
+	BuyoutPrice *int64    `json:"buyoutPrice,omitempty" doc:"Gold that buys the item outright. Absent when the seller set none."`
+	SoldPrice   *int64    `json:"soldPrice,omitempty" doc:"Present once sold."`
+	Status      string    `json:"status" doc:"Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED."`
+	EndsAt      time.Time `json:"endsAt"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 
 	// Price facts. Marketplace computes all three; nothing here restates the
 	// increment rule.
@@ -120,16 +124,17 @@ func listingFromProto(l *pb.Listing) (Listing, error) {
 	}
 
 	return Listing{
-		ID:         l.GetId(),
-		ItemID:     l.GetItemId(),
-		SellerID:   l.GetSellerId(),
-		BuyerID:    l.BuyerId,
-		StartPrice: l.GetStartPrice(),
-		SoldPrice:  l.SoldPrice,
-		Status:     l.GetStatus(),
-		EndsAt:     l.GetEndsAt().AsTime(),
-		CreatedAt:  l.GetCreatedAt().AsTime(),
-		UpdatedAt:  l.GetUpdatedAt().AsTime(),
+		ID:          l.GetId(),
+		ItemID:      l.GetItemId(),
+		SellerID:    l.GetSellerId(),
+		BuyerID:     l.BuyerId,
+		StartPrice:  l.GetStartPrice(),
+		BuyoutPrice: l.BuyoutPrice,
+		SoldPrice:   l.SoldPrice,
+		Status:      l.GetStatus(),
+		EndsAt:      l.GetEndsAt().AsTime(),
+		CreatedAt:   l.GetCreatedAt().AsTime(),
+		UpdatedAt:   l.GetUpdatedAt().AsTime(),
 
 		CurrentPrice: l.CurrentPrice,
 		MinimumBid:   l.GetMinimumBid(),

@@ -8,21 +8,14 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/itemsactivity"
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 )
 
 const WorkflowName = "SettleAuction"
 
-type TriggerKind string
-
-const (
-	TriggerExpiry    TriggerKind = "EXPIRY"
-	TriggerAcceptBid TriggerKind = "ACCEPT_BID"
-	TriggerBuyout    TriggerKind = "BUYOUT"
-)
-
 type Input struct {
-	ListingID uuid.UUID   `json:"listing_id"`
-	Trigger   TriggerKind `json:"trigger"`
+	ListingID uuid.UUID           `json:"listing_id"`
+	Trigger   usecase.TriggerKind `json:"trigger"`
 }
 
 // FS NXP1W Settlement Saga
@@ -55,7 +48,7 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 
 		expireListingCtx := workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueMarketplace))
 
-		// Step NB22, only once NB1 has returned the item (§Req 34b)
+		// Step NB2, only once NB1 has returned the item (§Req 34b)
 		// TODO(I-NXP1W-7): an impossible NB2 escalates and parks rather than failing the run
 		err = workflow.ExecuteActivity(expireListingCtx,
 			marketplaceactivity.ExpireListingActivityName,

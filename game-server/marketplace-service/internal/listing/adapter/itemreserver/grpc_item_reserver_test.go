@@ -32,7 +32,7 @@ func TestReserveItemRequestCarriesTheListingTerms(t *testing.T) {
 		metadata.New(map[string]string{"authorization": "Bearer test-token"}),
 	)
 
-	_, err := NewItemReserver(client).ReserveItem(ctx, itemID, 150, endsAt)
+	_, err := NewItemReserver(client).ReserveItem(ctx, itemID, 150, nil, endsAt)
 
 	require.NoError(t, err)
 	require.NotNil(t, client.gotReserve)
@@ -40,4 +40,20 @@ func TestReserveItemRequestCarriesTheListingTerms(t *testing.T) {
 	assert.Equal(t, int64(150), client.gotReserve.GetStartPrice())
 	require.NotNil(t, client.gotReserve.GetEndsAt(), "ends_at must be sent, or the event carries 1970-01-01")
 	assert.True(t, endsAt.Equal(client.gotReserve.GetEndsAt().AsTime()))
+	assert.Nil(t, client.gotReserve.BuyoutPrice, "no buyout must stay absent, not become 0")
+}
+
+func TestReserveItemRequestCarriesTheBuyoutPrice(t *testing.T) {
+	client := &fakeClient{}
+	ctx := metadata.NewIncomingContext(
+		context.Background(),
+		metadata.New(map[string]string{"authorization": "Bearer test-token"}),
+	)
+	buyout := 900
+
+	_, err := NewItemReserver(client).ReserveItem(ctx, uuid.New(), 150, &buyout, time.Now().Add(time.Hour))
+
+	require.NoError(t, err)
+	require.NotNil(t, client.gotReserve.BuyoutPrice)
+	assert.Equal(t, int64(900), client.gotReserve.GetBuyoutPrice())
 }

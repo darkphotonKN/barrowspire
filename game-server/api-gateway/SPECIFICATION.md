@@ -56,6 +56,9 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] Place a bid on a listing → FS-none
 - [x] Typed marketplace surface → FS-0YXG6
 - [x] Public listing browse and read → FS-8EGFA
+- [ ] Accept the leading bid → FS-NXP1W
+- [ ] Buy out a listing → FS-NXP1W
+- [ ] Buyout price on listings → FS-9XKS6
 
 ### Integration patterns
 

@@ -88,7 +88,7 @@ func TestFormattedItemInstanceData_CarriesListingID(t *testing.T) {
 	listingID := uuid.New()
 	item := &ItemInstance{ID: uuid.New(), TemplateID: uuid.New(), OwnerMemberID: uuid.New(), Status: "LISTED", ListingID: &listingID}
 
-	data, err := (&service{}).formattedItemInstanceData(item, item.OwnerMemberID, 100, time.Now())
+	data, err := (&service{}).formattedItemInstanceData(item, item.OwnerMemberID, 100, nil, time.Now())
 	if err != nil {
 		t.Fatalf("format: %v", err)
 	}
@@ -99,5 +99,40 @@ func TestFormattedItemInstanceData_CarriesListingID(t *testing.T) {
 	}
 	if evt.ListingId != listingID.String() {
 		t.Errorf("ListingId = %q, want %q", evt.ListingId, listingID.String())
+	}
+}
+
+// items-service forwards marketplace's buyout unread: present stays present,
+// absent stays absent rather than becoming 0 (FS-9XKS6 Req 6).
+func TestFormattedItemInstanceData_ForwardsBuyoutPrice(t *testing.T) {
+	buyout := int64(900)
+
+	tests := []struct {
+		name   string
+		buyout *int64
+	}{
+		{"set", &buyout},
+		{"absent", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			item := &ItemInstance{ID: uuid.New(), TemplateID: uuid.New(), OwnerMemberID: uuid.New(), Status: "LISTED"}
+
+			data, err := (&service{}).formattedItemInstanceData(item, item.OwnerMemberID, 100, tt.buyout, time.Now())
+			if err != nil {
+				t.Fatalf("format: %v", err)
+			}
+
+			var evt pb.ItemReservedEvent
+			if err := proto.Unmarshal(data.ItemReservedEvent, &evt); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if (evt.BuyoutPrice == nil) != (tt.buyout == nil) {
+				t.Fatalf("BuyoutPrice presence = %v, want %v", evt.BuyoutPrice != nil, tt.buyout != nil)
+			}
+			if tt.buyout != nil && evt.GetBuyoutPrice() != *tt.buyout {
+				t.Errorf("BuyoutPrice = %d, want %d", evt.GetBuyoutPrice(), *tt.buyout)
+			}
+		})
 	}
 }

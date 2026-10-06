@@ -43,6 +43,7 @@ func (q *BrowseListingsQuery) Execute(ctx context.Context, c *cursor.EndsAt, lim
 		l.buyer_id,
 		l.item_id,
 		l.start_price,
+		l.buyout_price,
 		l.sold_price,
 		l.status,
 		l.ends_at,

@@ -12,8 +12,10 @@ import (
 	listingrepo "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/repository"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/worker"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/settlement"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.temporal.io/sdk/client"
 )
 
 // sets up all services and their dependency injections at
@@ -27,7 +29,7 @@ type Services struct {
 	Activities *listingactivity.Activities
 }
 
-func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, ch *amqp.Channel) *Services {
+func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, ch *amqp.Channel, temporalClient client.Client) *Services {
 	listingRepo := listingrepo.NewListingRepository(db)
 	grpcClient := itemreserver.NewClient(registry)
 	itemReserver := itemreserver.NewItemReserver(grpcClient)
@@ -39,7 +41,13 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	listMyListingsQuery := listingquery.NewListMyListingsQuery(db)
 	browseListingsQuery := listingquery.NewBrowseListingsQuery(db)
 	getListingQuery := listingquery.NewGetListingQuery(db)
-	listingHandler := listinggrpc.NewHandler(reserveItemUC, createAccUC, placeBidUC, withdrawBidUC, listMyListingsQuery, browseListingsQuery, getListingQuery)
+
+	// settlement saga
+	settlementStarter := settlement.NewStarter(temporalClient)
+	acceptBidUC := usecase.NewAcceptBidUsecase(listingRepo, settlementStarter)
+	buyoutUC := usecase.NewBuyoutUC(listingRepo, walletClient, settlementStarter)
+
+	listingHandler := listinggrpc.NewHandler(reserveItemUC, createAccUC, placeBidUC, withdrawBidUC, listMyListingsQuery, browseListingsQuery, getListingQuery, acceptBidUC, buyoutUC)
 
 	hasActiveListingQuery := listingquery.NewHasActiveListingQuery(db)
 	reconcileReservationsUC := usecase.NewReconcileReservationsUC(hasActiveListingQuery, itemReserver)

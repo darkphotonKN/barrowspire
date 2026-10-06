@@ -224,8 +224,10 @@ func (c *consumer) itemReservedConsumerLoop(ctx context.Context, msgs <-chan amq
 				SellerID:   sellerID,
 				ItemID:     itemInstanceID,
 				StartPrice: int(event.StartPrice),
-				Now:        time.Now(),
-				EndsAt:     event.EndsAt.AsTime(),
+				// absent on events published before FS-9XKS6, which is a plain auction
+				BuyoutPrice: buyoutPriceOf(&event),
+				Now:         time.Now(),
+				EndsAt:      event.EndsAt.AsTime(),
 			}
 			err = c.createListingUC.Handle(ctx, cmd)
 
@@ -271,6 +273,17 @@ func isPermanentRefusal(err error) bool {
 	return errors.Is(err, listing.ErrInvalidUUID) ||
 		errors.Is(err, listing.ErrInvalidEndTime) ||
 		errors.Is(err, listing.ErrInvalidStartPrice) ||
+		errors.Is(err, listing.ErrInvalidBuyoutPrice) ||
 		errors.Is(err, listing.ErrInvalidListingState) ||
 		errors.Is(err, commonconstants.ErrConstraintViolation)
+}
+
+// buyoutPriceOf reads the event's optional buyout. Presence matters: an absent
+// field is no buyout, never a buyout of 0.
+func buyoutPriceOf(event *pb.ItemReservedEvent) *int {
+	if event.BuyoutPrice == nil {
+		return nil
+	}
+	v := int(event.GetBuyoutPrice())
+	return &v
 }

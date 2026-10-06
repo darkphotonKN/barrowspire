@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"net"
 	"testing"
+	"time"
 
 	marketplacepb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
 	walletpb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	"github.com/google/uuid"
 
@@ -159,7 +161,7 @@ func TestPlaceBid_WalletRefusal_KeepsItsMeaning(t *testing.T) {
 			if !tt.noWallet {
 				registry = startFakeWallet(t, tt.walletCode)
 			}
-			h := NewHandler(nil, nil, usecase.NewPlaceBidUC(repo, NewClient(registry)), nil, nil, nil, nil)
+			h := NewHandler(nil, nil, usecase.NewPlaceBidUC(repo, NewClient(registry)), nil, nil, nil, nil, nil, nil)
 
 			_, err := h.PlaceBid(authedCtx(t, uuid.New()), &marketplacepb.PlaceBidRequest{
 				ListingId: l.Snapshot().ID.String(),
@@ -171,4 +173,14 @@ func TestPlaceBid_WalletRefusal_KeepsItsMeaning(t *testing.T) {
 			assert.Empty(t, repo.l.Snapshot().Bids, "a refused hold records no bid")
 		})
 	}
+}
+
+// wallet allows one hold per bid ID. Its AlreadyExists must reach the use case
+// as a duplicate, so Buyout's deterministic retry can recognise its own hold.
+func TestPlaceHold_AlreadyExistsIsADuplicate(t *testing.T) {
+	registry := startFakeWallet(t, codes.AlreadyExists)
+
+	err := NewClient(registry).PlaceHold(authedCtx(t, uuid.New()), uuid.New(), uuid.New(), 500, time.Now().Add(time.Hour))
+
+	assert.ErrorIs(t, err, commonconstants.ErrDuplicateResource)
 }

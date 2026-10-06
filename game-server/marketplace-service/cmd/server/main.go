@@ -93,10 +93,7 @@ func main() {
 		ch.Close()
 	}()
 
-	// --- services setup ---
-	services := appConfig.NewServices(ctx, db, registry, ch)
-
-	// --- temporal worker ---
+	// --- temporal worker: initiate ---
 	// Marketplace is the settlement saga's orchestrator (ADR-0011): it is the only
 	// service that hosts workflows, and it also runs activities for the steps it
 	// owns. Both register on the `marketplace` task queue.
@@ -114,6 +111,11 @@ func main() {
 	}
 	defer temporalClient.Close()
 
+	// --- services setup ---
+	services := appConfig.NewServices(ctx, db, registry, ch, temporalClient)
+
+	// --- temporal worker: initiate ---
+	// run temporal worker after with service initiated activities
 	temporalRunner, err := bstemporal.NewRunner(temporalClient, temporalCfg, temporalLogger, worker.Options{},
 		// testing
 		smoke.RegisterWorkflow,

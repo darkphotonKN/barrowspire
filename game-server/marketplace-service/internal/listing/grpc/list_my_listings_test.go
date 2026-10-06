@@ -44,7 +44,7 @@ func (r *fakeMyListingsReader) Execute(ctx context.Context, sellerID uuid.UUID, 
 }
 
 func newReadHandler(reader *fakeMyListingsReader) *Handler {
-	return NewHandler(nil, nil, nil, nil, reader, nil, nil)
+	return NewHandler(nil, nil, nil, nil, reader, nil, nil, nil, nil)
 }
 
 func TestListMyListingsReadsTheCallersOwnListings(t *testing.T) {
