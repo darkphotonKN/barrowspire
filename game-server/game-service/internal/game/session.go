@@ -84,9 +84,12 @@ type Session struct {
 	objectOccupiedPlaceAreas []PlaceArea
 }
 
+// pub / sub manager for transporting event state between instances of sessions
+//
+
 // SessionCloser is what a session needs from its host as it ends: somewhere for
 // its players to go, and removal from the registry. Both belong to end of life,
-// and the order matters — a player moved after the world is gone has nowhere to
+// and the order matters, a player moved after the world is gone has nowhere to
 // be moved from.
 type SessionCloser interface {
 	ReturnPlayersToHub(sessionID uuid.UUID)
@@ -570,14 +573,14 @@ func (s *Session) AddPlayer(playerID uuid.UUID, username string, className strin
 
 // addPlayerLocked is AddPlayer's body. Callers hold the world's lock, so that
 // deciding whether to admit someone and admitting them cannot be split by
-// another goroutine slipping between the two.
+// another goroutine slipping between the two
 func (s *Session) addPlayerLocked(playerID uuid.UUID, username string, className string) uuid.UUID {
 
 	// Already here: there is nothing to build. The guard lives with the world
 	// rather than with whoever is asking, because overwriting the mapping while
-	// leaving the old entity in place gives one delver two bodies — invisible in
+	// leaving the old entity in place gives one delver two bodies, invisible in
 	// a run, which discards the whole world, and permanent in the hub, which
-	// never does.
+	// never does
 	if existing, alreadyHere := s.playerIDToEntitiesID[playerID]; alreadyHere {
 		return existing
 	}
@@ -763,7 +766,7 @@ func (s *Session) AddBuilding(bx, by, bw, bh, wallThickness, doorWidth float64) 
 //
 // The hub has a front door: everyone enters and returns to the same place, so
 // the world has somewhere to gather (FS-29KSH §Requirements 22). A run scatters
-// arrivals instead, across its own map — not a hardcoded one, so a world of any
+// arrivals instead, across its own map, not a hardcoded one, so a world of any
 // size places players inside itself.
 func (s *Session) spawnPoint() (x, y float64) {
 	if s.worldType == types.WorldTypeHub {

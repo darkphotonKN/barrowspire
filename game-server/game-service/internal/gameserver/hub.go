@@ -183,9 +183,9 @@ func (h *messageHub) Run() {
 				if err != nil {
 					slog.Warn("Could not place player in the hub", "error", err)
 
-					// A full hub is a thing the delver can act on — wait and try
-					// again — so it says so. Everything else stays vague: the
-					// detail is in the log, not in a stranger's client.
+					// A full hub is a thing the delver can act on, wait and try
+					// again, so it says so. Everything else stays vague: the
+					// detail is in the log, not in a strangers client
 					clientErr := "Could not enter"
 					if errors.Is(err, game.ErrWorldFull) {
 						clientErr = "The hub is full. Try again shortly."
@@ -242,6 +242,8 @@ func (h *messageHub) Run() {
 
 					if errors.Is(err, game.ErrPlayerAlreadyInQueue) {
 						message = "Player attempted to queue twice."
+						// TODO: send error
+						continue
 					}
 
 					h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
