@@ -11,6 +11,8 @@ import {
   WallState,
 } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
+import { ProgressHud } from "@/ui/ProgressHud";
+import { progressOf } from "@/ui/progress";
 import {
   ensureCharacterTextures,
   ensureVillagerTexture,
@@ -75,6 +77,8 @@ const CAMERA_MARGIN = 64;
 const NAME_GAP = 4;
 /** How hard sprites chase the server's position each frame. Matches the run scene. */
 const POSITION_LERP = 0.3;
+/** Screen px from the top-left corner to the level and experience bar. */
+const HUD_INSET = 16;
 /** Stride advance per server tick, matching the run scene. */
 const WALK_STEP = 0.3;
 /**
@@ -265,6 +269,11 @@ export class HubScene extends Phaser.Scene {
   private interactKey?: Phaser.Input.Keyboard.Key;
   /** Shown while queued, wherever the delver walks. */
   private queuePanel?: Phaser.GameObjects.Text;
+  /**
+   * The delver's level and experience bar (FS-BDA7X req 42), top-left, clear of the queue panel
+   * at the bottom. Made with the first state that carries a level.
+   */
+  private progressHud?: ProgressHud;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
   private art!: ArtLibrary;
   /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
@@ -344,6 +353,7 @@ export class HubScene extends Phaser.Scene {
       this.scenery = undefined;
       this.lightMap = undefined;
       this.groundLayer = undefined;
+      this.progressHud = undefined;
       this.roofs = [];
       this.insideRoof = undefined;
     };
@@ -819,6 +829,12 @@ export class HubScene extends Phaser.Scene {
     if (state.current_player) {
       this.placeDelver(state.current_player, true);
       present.add(state.current_player.entity_id);
+
+      const progress = progressOf(state.current_player);
+      if (progress) {
+        this.progressHud ??= new ProgressHud(this, HUD_INSET, HUD_INSET);
+        this.progressHud.show(progress);
+      }
 
       if (this.selfEntityID !== state.current_player.entity_id) {
         this.selfEntityID = state.current_player.entity_id;

@@ -49,6 +49,10 @@ export const BARROW = {
   // Brass / bronze accents
   brass: "#9c7b3f",
   brassBright: "#c9a14e",
+
+  // Rarity: the one tier colour no other role owns (the rest of the ramp is arcane, necrotic,
+  // brass and amber-bright). Must match globals.css --rarity-common.
+  rarityCommon: "#a2946d",
 } as const;
 
 /** Phaser 0x integer forms of the same palette. */
@@ -75,4 +79,5 @@ export const BARROW_HEX = {
   ink: 0x1c1712,
   brass: 0x9c7b3f,
   brassBright: 0xc9a14e,
+  rarityCommon: 0xa2946d,
 } as const;

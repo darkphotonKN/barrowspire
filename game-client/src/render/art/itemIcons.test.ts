@@ -17,6 +17,8 @@ describe("itemIcon over the two wire shapes", () => {
     ],
     ["a helm", { armor_slot: "head" }, { armorSlot: "head" }, "helm"],
     ["a ring slot", { armor_slot: "ring_2" }, { armorSlot: "ring_2" }, "ring"],
+    // FS-4R9M9 R60: a ring is its own item type, with no slot or ring-like word in its name.
+    ["a ring by type", { item_type: "ring" }, { itemType: "Ring" }, "ring"],
     [
       "a health potion",
       { healing_amount: 50 },

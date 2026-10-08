@@ -117,6 +117,17 @@ export class LightMap {
     if (haloWhen) this.haloWhen.set(source, haloWhen);
   }
 
+  /**
+   * Forget every fixed source and hide its halo: the walls that held them are gone with their
+   * floor (FS-F6F88 req 33). The delver's carried torch is not a fixed source and stays.
+   */
+  clear(): void {
+    this.sources.length = 0;
+    this.visible.length = 0;
+    this.haloWhen.clear();
+    for (const halo of this.halos) halo.setVisible(false);
+  }
+
   setAmbient(ambient: number): void {
     this.ambient = ambient;
   }

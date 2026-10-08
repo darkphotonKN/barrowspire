@@ -260,6 +260,16 @@ export class Occluders {
     }
   }
 
+  /** How many occluders are held. */
+  get size(): number {
+    return this.items.length;
+  }
+
+  /** Let go of every occluder: the floor they stood on has been torn down (FS-F6F88 req 33). */
+  clear(): void {
+    this.items.length = 0;
+  }
+
   /** Eases each occluder toward faded or restored; `subject` is the delver, or null if gone. */
   update(subject: { bounds: Rect; depth: number } | null, dtMs: number): void {
     for (const { sprite, bounds } of this.items) {

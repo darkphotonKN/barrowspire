@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { palette, toCss, CANVAS_FONT } from "@/utils/canvasPalette";
 import { CLASS_LORE, ClassKey } from "@/data/classLore";
 import { useGameStore } from "@/stores/gameStore";
+import { creationRefusal } from "@/characters/entry";
 import { registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
 import { MenuFigure, preloadMenuArt } from "@/render/art/menuFigure";
@@ -46,7 +47,10 @@ export class CharacterCreationScene extends Phaser.Scene {
 
   private nameText?: Phaser.GameObjects.Text;
   private nameInputBg?: Phaser.GameObjects.Graphics;
-  private targetSlotIndex: number = 0;
+  /** Why the last creation was refused (a taken name, the ledger out of reach). */
+  private refusalText?: Phaser.GameObjects.Text;
+  /** A creation is on its way to the server; a second press waits for it. */
+  private creating = false;
   private panelContentX: number = 582;
   private panelContentY: number = 125;
 
@@ -54,12 +58,8 @@ export class CharacterCreationScene extends Phaser.Scene {
     super({ key: "CharacterCreationScene" });
   }
 
-  init(data: { slotIndex?: number }): void {
-    if (typeof data?.slotIndex === "number") {
-      this.targetSlotIndex = data.slotIndex;
-    } else {
-      this.targetSlotIndex = useGameStore.getState().activeSlotIndex;
-    }
+  init(): void {
+    this.creating = false;
     this.selectedClassKey = "warrior";
     this.characterName = this.getRandomNameForClass("warrior");
   }
@@ -87,7 +87,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, 68, `SLOT #${this.targetSlotIndex + 1} — FORGE YOUR HERO`, {
+      .text(width / 2, 68, "FORGE YOUR HERO", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "12px",
         color: toCss(palette.hudLabel),
@@ -109,6 +109,16 @@ export class CharacterCreationScene extends Phaser.Scene {
 
     // 5. Create Footer Action Buttons (Confirm / Back)
     this.createActionButtons();
+
+    // Between the name and the buttons: why a creation was refused.
+    this.refusalText = this.add
+      .text(width / 2, 588, "", {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "13px",
+        color: toCss(palette.damageBright),
+        align: "center",
+      })
+      .setOrigin(0.5);
 
     // Initial Refresh: the default class stands ready; only a pick plays the attack.
     this.updateClassSelection(this.selectedClassKey, false);
@@ -470,16 +480,26 @@ export class CharacterCreationScene extends Phaser.Scene {
     hit.on("pointerout", () => draw("idle"));
   }
 
-  private handleConfirmCreation(): void {
+  /**
+   * The hero is made on the server (FS-BDA7X req 39); the menu is only reached once it exists.
+   * A refusal (a taken name, the ledger out of reach) keeps the delver here to try again.
+   */
+  private async handleConfirmCreation(): Promise<void> {
     if (!this.characterName || this.characterName.trim().length === 0) {
       alert("Please enter a valid hero name.");
       return;
     }
+    if (this.creating) return;
+    this.creating = true;
+    this.refusalText?.setText("");
 
-    useGameStore
-      .getState()
-      .createCharacter(this.targetSlotIndex, this.characterName, this.selectedClassKey);
-
-    this.scene.start("MainMenuScene");
+    try {
+      await useGameStore.getState().createCharacter(this.characterName, this.selectedClassKey);
+    } catch (err) {
+      this.creating = false;
+      if (this.sys.settings.active) this.refusalText?.setText(creationRefusal(err));
+      return;
+    }
+    if (this.sys.settings.active) this.scene.start("MainMenuScene");
   }
 }

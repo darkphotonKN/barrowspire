@@ -168,6 +168,31 @@ class ApiClient {
     return unwrap(await client.PATCH("/api/notification/read-all", {}));
   }
 
+  // The signed-in member's live characters, oldest first (FS-BDA7X req 39). Never null.
+  async listCharacters() {
+    return unwrap(await client.GET("/api/characters", {})).characters;
+  }
+
+  // A new character at level 1 (FS-BDA7X req 39). 409 ALREADY_EXISTS when the name is taken in
+  // any case; 400 VALIDATION_FAILED for a bad name or class.
+  async createCharacter(name: string, className: string) {
+    return unwrap(
+      await client.POST("/api/characters", {
+        body: { name, class: className },
+      }),
+    );
+  }
+
+  // Deletes one of the member's characters (FS-BDA7X req 39). 204 with no body. The id must be a
+  // server id: a client-minted `char_…` id answers 422.
+  async deleteCharacter(characterId: string): Promise<void> {
+    unwrap(
+      await client.DELETE("/api/characters/{characterId}", {
+        params: { path: { characterId } },
+      }),
+    );
+  }
+
   // Get player loadout
   async getLoadout() {
     return unwrap(await client.GET("/api/items/loadout", {}));
@@ -176,6 +201,11 @@ class ApiClient {
   // Get player item instances (warehouse/stash)
   async getItemInstances() {
     return unwrap(await client.GET("/api/items/instances", {}));
+  }
+
+  // The rarity tiers by id, so an item instance's rarity_id can be named (FS-4R9M9 R59)
+  async getItemRarities() {
+    return unwrap(await client.GET("/api/items/rarities", {}));
   }
 
   // Update loadout slot

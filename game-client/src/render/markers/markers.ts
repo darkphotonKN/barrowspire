@@ -23,8 +23,10 @@ export const MARKER_DEPTH = { name: 950, bar: 951 } as const;
 /** Every ink a marker is read by, each held to the readability floor (tested). */
 export const MARKER_INKS = {
   "own name": palette.markerSelf,
-  "rival name": palette.markerRival,
+  "ally name": palette.markerAlly,
   "hub name": palette.markerHub,
+  "monster name": palette.markerHostile,
+  "elite prefix": palette.markerElite,
   "HP fill": palette.markerHp,
   "MP fill": palette.markerMp,
 } as const;

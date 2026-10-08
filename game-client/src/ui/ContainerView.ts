@@ -15,8 +15,10 @@ import { ActionType, type InteractPayload } from "@/assets/types/client";
 import { artSprite } from "@/render/art/phaser";
 import { iconSheet, itemIcon } from "@/render/art/itemIcons";
 import type { ArtLibrary } from "@/render/art/library";
-import type { ItemState } from "@/types/gameState";
+import { getItemType, type ItemState } from "@/types/gameState";
+import { itemView } from "@/items/itemView";
 import { CANVAS_FONT, palette, rgba, toCss } from "@/utils/canvasPalette";
+import { buildItemTip, type ItemTip } from "./itemTip";
 import {
   BODY_H,
   BODY_W,
@@ -30,15 +32,15 @@ import {
 // ── Item detail ───────────────────────────────────────────────────────────
 
 // Which icon an item is drawn with lives in `@/render/art/itemIcons`, Phaser-free and shared
-// with the Bazaar page (FS-8EGFA req 32), so both surfaces draw an item alike.
+// with the Bazaar page (FS-8EGFA req 32), so both surfaces draw an item alike. What its hover
+// tip says lives in `@/items/itemView`, shared with the equipment panel (FS-4R9M9 R59).
 
-/** The stat line under an item's name: what the old item row printed beside it. */
-export function itemDetail(item: ItemState): string {
-  if (item.attack_power) return `ATK ${item.attack_power}`;
-  if (item.defense_rating) return `DEF ${item.defense_rating}`;
-  if (item.healing_amount) return `+${item.healing_amount} HP`;
-  if (item.mana_amount) return `+${item.mana_amount} MP`;
-  return item.quantity > 1 ? `x${item.quantity}` : "";
+/**
+ * The icon an item in the satchel is drawn with. The run's world state names no item type, so
+ * it is read from the stats, and a ring gets the ring icon (FS-4R9M9 R60).
+ */
+export function satchelIcon(item: ItemState): string {
+  return iconSheet(itemIcon({ ...item, item_type: getItemType(item) }));
 }
 
 // ── Looting ───────────────────────────────────────────────────────────────
@@ -252,6 +254,8 @@ export interface ContainerViewOptions {
   onLoot(item: ItemState): void;
   /** Wall-clock ms for the pending window. The scene's inventory uses `Date.now` too. */
   now?: () => number;
+  /** The delver's level, to mark "Requires level N" when above it (FS-BDA7X req 45). */
+  characterLevel?: () => number | undefined;
 }
 
 interface Icon {
@@ -270,10 +274,8 @@ export class ContainerView {
   private readonly root: Phaser.GameObjects.Container;
   private readonly flap: Phaser.GameObjects.Image;
   private readonly status: Phaser.GameObjects.Text;
-  private readonly tip: Phaser.GameObjects.Container;
-  private readonly tipName: Phaser.GameObjects.Text;
-  private readonly tipDetail: Phaser.GameObjects.Text;
-  private readonly tipBg: Phaser.GameObjects.Graphics;
+  /** The hovered item's tip, built for that item and destroyed when the hover ends. */
+  private tip?: ItemTip;
   private readonly now: () => number;
   private icons = new Map<string, Icon>();
   private openFor?: string;
@@ -311,31 +313,7 @@ export class ContainerView {
       .setOrigin(0.5, 0)
       .setShadow(0, 1, rgba(palette.inkDeep, 0.9), 2);
 
-    this.tipBg = scene.add.graphics();
-    this.tipName = scene.add.text(0, 0, "", {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "15px",
-      color: toCss(palette.frameBright),
-    });
-    this.tipDetail = scene.add.text(0, 0, "", {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "12px",
-      color: toCss(palette.hudLabel),
-    });
-    this.tip = scene.add.container(0, 0, [
-      this.tipBg,
-      this.tipName,
-      this.tipDetail,
-    ]);
-    this.tip.setVisible(false);
-
-    this.root = scene.add.container(0, 0, [
-      body,
-      this.flap,
-      this.status,
-      hint,
-      this.tip,
-    ]);
+    this.root = scene.add.container(0, 0, [body, this.flap, this.status, hint]);
     this.root
       .setDepth(CONTAINER_VIEW_DEPTH)
       .setScrollFactor(0)
@@ -485,7 +463,7 @@ export class ContainerView {
         this.art,
         slot.x,
         slot.y,
-        iconSheet(itemIcon(item)),
+        satchelIcon(item),
       );
       sprite.setOrigin(0.5);
       const base = this.baseScale(sprite, layout.icon);
@@ -538,10 +516,12 @@ export class ContainerView {
     if (!item || !icon) return;
     this.hovered = item.entity_id;
     icon.sprite.setScale(icon.base * 1.1);
+    const reach = icon.sprite.displayHeight / 2 + 6;
     this.showTip(
       item,
       icon.sprite.x,
-      icon.sprite.y - (icon.sprite.displayHeight / 2 + 6),
+      icon.sprite.y - reach,
+      icon.sprite.y + reach,
     );
   }
 
@@ -549,35 +529,34 @@ export class ContainerView {
     const icon = this.hovered && this.icons.get(this.hovered);
     if (icon) icon.sprite.setScale(icon.base);
     this.hovered = undefined;
-    this.tip.setVisible(false);
+    this.tip?.container.destroy();
+    this.tip = undefined;
   }
 
-  /** The hovered item's name, with its stat line beneath (§D.3). */
-  private showTip(item: ItemState, x: number, bottom: number): void {
-    const pad = 7;
-    const detail = itemDetail(item);
-    this.tipName.setText(item.name).setPosition(pad, pad);
-    this.tipDetail
-      .setText(detail)
-      .setPosition(pad, pad + this.tipName.height)
-      .setVisible(detail !== "");
-    const w =
-      Math.max(this.tipName.width, detail ? this.tipDetail.width : 0) + pad * 2;
-    const h =
-      this.tipName.height + (detail ? this.tipDetail.height : 0) + pad * 2;
-    this.tipBg
-      .clear()
-      .fillStyle(palette.inkDeep, 0.9)
-      .fillRoundedRect(0, 0, w, h, 6)
-      .lineStyle(1, palette.frame, 0.5)
-      .strokeRoundedRect(0, 0, w, h, 6);
-    const half = BODY_W / 2;
-    this.tip.setPosition(
-      Math.min(Math.max(x - w / 2, -half), half - w),
-      bottom - h,
+  /**
+   * The hovered item's tip above its icon, or below it where it would not fit (§D.3): every line the item views share (FS-4R9M9
+   * R59), its requirement marked when above the delver's level (FS-BDA7X req 45).
+   */
+  private showTip(
+    item: ItemState,
+    x: number,
+    above: number,
+    below: number,
+  ): void {
+    this.tip?.container.destroy();
+    const tip = buildItemTip(
+      this.scene,
+      itemView(item, this.options.characterLevel?.()),
     );
-    this.root.bringToTop(this.tip);
-    this.tip.setVisible(true);
+    const half = BODY_W / 2;
+    // Above the icon, unless a long tip (a unique's effect and lore) would leave the screen.
+    const screenTop = this.root.y + (above - tip.height) * this.root.scaleY;
+    tip.container.setPosition(
+      Math.min(Math.max(x - tip.width / 2, -half), half - tip.width),
+      screenTop >= 4 ? above - tip.height : below,
+    );
+    this.root.add(tip.container);
+    this.tip = tip;
   }
 
   private showStatus(): void {

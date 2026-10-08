@@ -6,9 +6,9 @@ import {
   ContainerContents,
   SATCHEL_INTERIOR,
   itemAt,
-  itemDetail,
   lootMessage,
   satchelLayout,
+  satchelIcon,
 } from "./ContainerView";
 
 const item = (fields: Partial<ItemState> & { name: string }): ItemState => ({
@@ -331,26 +331,26 @@ describe("itemAt", () => {
   });
 });
 
-describe("itemDetail", () => {
-  it.each([
-    [
-      "a weapon",
-      item({ name: "Iron Sword", attack_power: 10, critical_rate: 5 }),
-      "ATK 10",
-    ],
-    ["armour", item({ name: "Wooden Helm", defense_rating: 15 }), "DEF 15"],
-    [
-      "a health potion",
-      item({ name: "Health Potion", healing_amount: 50 }),
-      "+50 HP",
-    ],
-    ["a mana potion", item({ name: "Mana Potion", mana_amount: 40 }), "+40 MP"],
-    ["a stack", item({ name: "Grave-gold", quantity: 37 }), "x37"],
-    ["a single plain relic", item({ name: "Wight Skull" }), ""],
-  ])(
-    "should give %s the stat line the item row showed",
-    (_label, it_, detail) => {
-      expect(itemDetail(it_)).toBe(detail);
-    },
-  );
+describe("satchelIcon", () => {
+  it("should draw a ring with the ring icon though the run names no item type (FS-4R9M9 R60)", () => {
+    expect(
+      satchelIcon(
+        item({
+          name: "Lantern of the Drowned",
+          affixes: [{ stat: "intelligence", tier: 0, value: 3 }],
+        }),
+      ),
+    ).toBe(iconSheet("ring"));
+  });
+
+  it("should draw any other item with its own icon", () => {
+    expect(
+      satchelIcon(
+        item({ name: "Iron Sword", weapon_type: "sword", attack_power: 10 }),
+      ),
+    ).toBe(iconSheet("sword"));
+    expect(
+      satchelIcon(item({ name: "Health Potion", healing_amount: 50 })),
+    ).toBe(iconSheet("potion_health"));
+  });
 });
