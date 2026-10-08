@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+	"os/signal"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
@@ -50,10 +53,16 @@ var (
 )
 
 func main() {
+	// --- root context ---
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// --- pod identity ---
+	pod := config.LoadPod(gamePort)
+	slog.Info("Pod identity", "pod_id", pod.ID, "pod_addr", pod.Addr, "pod_id_generated", pod.Generated)
+
 	// --- database setup ---
 	statsDB := config.InitStatsServiceDB()
-
-	ctx := context.Background()
 
 	// --- pprof ---
 
@@ -168,7 +177,7 @@ func main() {
 	log.Printf("grpc Game Server started on PORT: %s\n", grpcAddr)
 
 	// routes setup
-	routes := config.SetupRouter(statsDB, registry, ch, cacheService)
+	routes := config.SetupRouter(ctx, statsDB, registry, ch, cacheService, pod)
 
 	fmt.Printf("Server listening on port %s.\n", gamePort)
 
@@ -184,4 +193,11 @@ func main() {
 	if err := grpcServer.Serve(listener); err != nil {
 		log.Fatal("Can't connect to grpc server. Error:", err.Error())
 	}
+
+	// blocks until sigint or sigterm
+	<-ctx.Done()
+	stop()
+
+	log.Println("Shutting down server")
+	grpcServer.GracefulStop()
 }

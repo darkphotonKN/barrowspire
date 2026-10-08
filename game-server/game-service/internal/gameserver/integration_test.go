@@ -140,16 +140,15 @@ func NewMockQueueService() *mockQueueService {
 		QueueStatusChan: make(chan matchmaker.QueueStatus),
 	}
 }
-func (m *mockQueueService) JoinQueue()                    {}
-func (m *mockQueueService) PlayerJoinQueue(*types.Player) {}
+func (m *mockQueueService) JoinQueue() {}
 
 func (m *mockQueueService) GetQueueStatusChan() chan matchmaker.QueueStatus {
 	return m.QueueStatusChan
 }
 
-// AddPlayer accumulates players and emits a match once matchSize have queued,
+// PlayerJoinQueue accumulates players and emits a match once matchSize have queued,
 // mirroring what the real queue service does on its ticker.
-func (m *mockQueueService) AddPlayer(player *types.Player) error {
+func (m *mockQueueService) PlayerJoinQueue(_ context.Context, player *types.Player) error {
 	const matchSize = 2
 
 	m.mu.Lock()
@@ -170,8 +169,8 @@ func (m *mockQueueService) AddPlayer(player *types.Player) error {
 	return nil
 }
 
-func (m *mockQueueService) PlayerRemoveQueue(player *types.Player) {}
-func (m *mockQueueService) MatchQueue()                            {}
+func (m *mockQueueService) PlayerRemoveQueue(context.Context, *types.Player) error { return nil }
+func (m *mockQueueService) MatchQueue()                                            {}
 func (m *mockQueueService) Start() {
 	// no need to really start during testing
 }
@@ -268,7 +267,7 @@ func TestQueueFindGameFlow(t *testing.T) {
 	mockQueue := NewMockQueueService()
 	mockEventEmitter := &MockEventEmitter{}
 	mockItemsClient := &MockItemsClient{}
-	server := NewServer(mockAuthClient, mockQueue, mockEventEmitter, mockItemsClient)
+	server := NewServer(context.Background(), mockAuthClient, mockQueue, mockEventEmitter, mockItemsClient)
 
 	playerCount := 10
 	var wg sync.WaitGroup
@@ -442,7 +441,7 @@ func TestSenderToBroadcastToPlayerList(t *testing.T) {
 			mockQueue := NewMockQueueService()
 			mockEventEmitter := &MockEventEmitter{}
 			mockItemsClient := &MockItemsClient{}
-			server := NewServer(authClient, mockQueue, mockEventEmitter, mockItemsClient)
+			server := NewServer(context.Background(), authClient, mockQueue, mockEventEmitter, mockItemsClient)
 			playerIDs := tc.setupPlayers(server)
 
 			newSender := messaging.NewMessageSender(server)

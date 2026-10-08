@@ -1,6 +1,7 @@
 package gameserver
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -29,7 +30,7 @@ func npcsIn(entities []*ecs.Entity) []*components.NPCComponent {
 // their placement is map data — a delver has to be able to tell someone where to
 // stand. FS-29KSH §Requirements 9, 29.
 func TestHub_HoldsItsFunctionNPCs(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
 
 	npcs := npcsIn(hub.EntityManager.GetAllEntities())
@@ -44,7 +45,7 @@ func TestHub_HoldsItsFunctionNPCs(t *testing.T) {
 	assert.Contains(t, byFunction, components.NPCFunctionStorekeeper, "no one to gear you up")
 
 	t.Run("and stands where the map put them", func(t *testing.T) {
-		second := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+		second := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 		otherHub, _ := second.HubSession()
 
 		assert.Equal(t,
@@ -100,7 +101,7 @@ func npcPositions(entities []*ecs.Entity) map[components.NPCFunction][2]float64 
 // never queued them. FS-29KSH §Requirements 26.
 func TestFindGame_FromTheHub_Queues(t *testing.T) {
 	queue := NewMockQueueService()
-	server := NewServer(&MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
@@ -130,7 +131,7 @@ func TestFindGame_FromTheHub_Queues(t *testing.T) {
 // and end up in one run together, out of the hub.
 // FS-29KSH §Requirements 26, 28, §Edge States (Concurrent).
 func TestTwoDelversDescend_MatchIntoOneRun(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
 
 	for _, name := range []string{"Wren", "Kaelen"} {

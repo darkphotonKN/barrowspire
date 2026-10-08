@@ -1,6 +1,7 @@
 package gameserver
 
 import (
+	"context"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
@@ -29,7 +30,7 @@ func fillHub(t *testing.T, server *Server, n int) {
 // JoinHub hands the decision to the world and passes its refusal back, so a
 // client hears "full" rather than silence. FS-29KSH §Requirements 31-32.
 func TestJoinHub_PassesTheWorldsRefusalOn(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
 
 	fillHub(t, server, constants.HubOccupancyCap)
@@ -50,7 +51,7 @@ func TestJoinHub_PassesTheWorldsRefusalOn(t *testing.T) {
 // a place; refusing them at the door on the way back would strand them in a run
 // that no longer exists. FS-29KSH §Requirements 33.
 func TestReturnPlayersToHub_IsNotGatedByTheCap(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}

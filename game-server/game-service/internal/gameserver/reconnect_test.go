@@ -1,6 +1,7 @@
 package gameserver
 
 import (
+	"context"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
@@ -15,7 +16,7 @@ import (
 // actually were. Telling every returning player they found a game sent anyone
 // standing in the hub into the run scene. FS-29KSH §Requirements 15.
 func TestReconnect_AnnouncesTheWorldTheyAreActuallyIn(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
@@ -49,7 +50,7 @@ func TestReconnect_AnnouncesTheWorldTheyAreActuallyIn(t *testing.T) {
 // as anyone arriving. A run is different and keeps its window.
 // FS-29KSH §Edge States (Disconnect).
 func TestDisconnect_LeavingTheHubIsFinal(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}

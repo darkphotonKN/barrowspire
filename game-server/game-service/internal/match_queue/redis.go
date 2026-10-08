@@ -2,6 +2,7 @@ package matchqueue
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
@@ -131,6 +132,24 @@ var matchmakeScript = redis.NewScript(`
 // checks every tick if there is enough players for a game, removes them from
 // list (queue) and player:pod hash
 func (r *Redis) Matchmake(ctx context.Context, matchCriteria matchmaker.MatchCriteria) ([]matchmaker.MatchedPlayer, error) {
+	raw, err := matchmakeScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, matchCriteria.MatchSize).Text()
 
-	return nil, nil
+	if err != nil {
+		return nil, fmt.Errorf("MatchQueue Matchmake redis script : %w", err)
+	}
+
+	var matchedPlayers []matchmaker.MatchedPlayer
+
+	err = json.Unmarshal([]byte(raw), &matchedPlayers)
+
+	if err != nil {
+		return nil, fmt.Errorf("MatchQueue Matchmake json unmarshal : %w", err)
+	}
+
+	// no err, empty slice, no results yet return no error
+	if len(raw) == 0 {
+		return nil, nil
+	}
+
+	return matchedPlayers, nil
 }

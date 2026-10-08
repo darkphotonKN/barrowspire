@@ -1,6 +1,7 @@
 package gameserver
 
 import (
+	"context"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
@@ -40,7 +41,7 @@ func positionOf(t *testing.T, entities []*ecs.Entity, playerID uuid.UUID) (x, y 
 // Everyone enters and returns at the same place, so the hub has a front door
 // rather than scattering arrivals. FS-29KSH §Requirements 22.
 func TestJoinHub_SpawnsAtTheFixedPoint(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
 
 	for _, name := range []string{"Wren", "Kaelen"} {
