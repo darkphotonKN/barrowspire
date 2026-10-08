@@ -94,6 +94,7 @@ func lootTemplates(withConsumables bool) *pb.ListItemTemplatesResponse {
 func pbRarities() *pb.ListItemRaritiesResponse {
 	return &pb.ListItemRaritiesResponse{ItemRarities: []*pb.ItemRarity{
 		{Id: "r-normal", RarityCode: "normal", DropRateMultiplier: 1.00},
+		{Id: "r-runed", RarityCode: "runed", DropRateMultiplier: 0.02},
 		{Id: "r-fabled", RarityCode: "fabled", DropRateMultiplier: 0.01},
 	}}
 }
@@ -103,6 +104,7 @@ func lootSession(t *testing.T, templates *pb.ListItemTemplatesResponse, rarities
 	client := &mockItemsClient{rarities: rarities, raritiesErr: raritiesErr}
 	client.On("ListItemTemplates", mock.Anything).Return(templates, nil)
 	s := &Session{itemsClient: client, EntityManager: ecs.NewEntityManager()}
+	s.loadRaritiesAtBuild()
 	require.NoError(t, s.InitializeItems(context.Background()))
 	return s
 }
@@ -123,7 +125,7 @@ func itemsByID(s *Session, ids []uuid.UUID) []*components.ItemComponent {
 func TestInitializeItems_FilesEachTypeIntoItsOwnPool(t *testing.T) {
 	s := lootSession(t, lootTemplates(true), pbRarities(), nil)
 
-	pools := map[types.ItemType][]*types.ItemConfig{
+	pools := map[types.ItemType][]lootTemplate{
 		types.ItemTypeWeapon:     s.itemPool.Weapons,
 		types.ItemTypeArmor:      s.itemPool.Armor,
 		types.ItemTypeConsumable: s.itemPool.Consumables,
@@ -133,23 +135,22 @@ func TestInitializeItems_FilesEachTypeIntoItsOwnPool(t *testing.T) {
 	assert.Len(t, s.itemPool.Consumables, 1)
 	for itemType, pool := range pools {
 		for _, item := range pool {
-			assert.Equal(t, itemType, item.ItemType)
-			assert.Empty(t, item.RarityID, "template rarity is a name, not an id")
+			assert.Equal(t, itemType, item.Config.ItemType)
+			assert.Empty(t, item.Config.RarityID, "template rarity is a name, not an id")
 		}
 	}
-	assert.Len(t, s.lootRarities, 2)
 }
 
 func TestDropLoot_DropsExactlyTheRequestedCount(t *testing.T) {
 	s := lootSession(t, lootTemplates(true), pbRarities(), nil)
 
-	ids := s.dropLoot(types.ItemTypeArmor, s.itemPool.Armor, 3)
+	ids := s.dropLoot(types.ItemTypeArmor, s.itemPool.Armor, 3, lootDrop{ItemLevel: 1})
 
 	items := itemsByID(s, ids)
 	assert.Len(t, items, 3)
 	for _, item := range items {
 		assert.Equal(t, types.ItemTypeArmor, item.ItemType)
-		assert.Contains(t, []string{"r-normal", "r-fabled"}, item.RarityID)
+		assert.Contains(t, []string{"r-normal", "r-runed", "r-fabled"}, item.RarityID)
 	}
 }
 
@@ -157,7 +158,7 @@ func TestDropLoot_EmptyPool_SkipsWithoutPanic(t *testing.T) {
 	s := lootSession(t, lootTemplates(false), pbRarities(), nil)
 
 	require.NotPanics(t, func() {
-		assert.Empty(t, s.dropLoot(types.ItemTypeConsumable, s.itemPool.Consumables, 2))
+		assert.Empty(t, s.dropLoot(types.ItemTypeConsumable, s.itemPool.Consumables, 2, lootDrop{ItemLevel: 1}))
 	})
 }
 
@@ -199,10 +200,10 @@ func TestGenerateItems_RaritiesUnavailable_DropsUnscaledBaseItems(t *testing.T) 
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := lootSession(t, lootTemplates(true), tc.rarities, tc.err)
-			base := map[string]*types.ItemConfig{}
-			for _, pool := range [][]*types.ItemConfig{s.itemPool.Weapons, s.itemPool.Armor, s.itemPool.Consumables} {
+			base := map[string]types.ItemConfig{}
+			for _, pool := range [][]lootTemplate{s.itemPool.Weapons, s.itemPool.Armor, s.itemPool.Consumables} {
 				for _, item := range pool {
-					base[item.Name] = item
+					base[item.Config.Name] = item.Config
 				}
 			}
 
@@ -222,4 +223,28 @@ func TestGenerateItems_RaritiesUnavailable_DropsUnscaledBaseItems(t *testing.T) 
 			}
 		})
 	}
+}
+
+// Items rolled in the run carry their derived required level: at item level 1
+// only tier I affixes roll, so gear keeps its template's requirement, and a
+// consumable always requires 1. FS-BDA7X §Requirements 30, FS-4R9M9 §Requirements 15, 23.
+func TestGenerateItems_RolledLoot_CarriesItsDerivedRequiredLevel(t *testing.T) {
+	templates := &pb.ListItemTemplatesResponse{Items: []*pb.ItemTemplate{
+		{Id: uuid.NewString(), ItemName: "Longsword", Rarity: templateRarity, ItemType: "weapon", AttackPower: 6, WeaponType: "sword", RequiredLevel: 7},
+		{Id: uuid.NewString(), ItemName: "Bone Helm", Rarity: templateRarity, ItemType: "armor", DefenseRating: 1, ArmorSlot: "head", RequiredLevel: 4},
+		{Id: uuid.NewString(), ItemName: "Lesser Heal Potion", Rarity: templateRarity, ItemType: "consumable", HealingAmount: 10, RequiredLevel: 2},
+	}}
+	want := map[types.ItemType]int{types.ItemTypeWeapon: 7, types.ItemTypeArmor: 4, types.ItemTypeConsumable: 1}
+	s := lootSession(t, templates, pbRarities(), nil)
+
+	seen := map[types.ItemType]bool{}
+	for range 100 {
+		ids, err := s.generateItems()
+		require.NoError(t, err)
+		for _, item := range itemsByID(s, ids) {
+			assert.Equal(t, want[item.ItemType], item.RequiredLevel, item.Name)
+			seen[item.ItemType] = true
+		}
+	}
+	assert.Len(t, seen, 3, "every item type dropped at least once")
 }

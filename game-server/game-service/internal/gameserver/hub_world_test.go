@@ -11,7 +11,7 @@ import (
 // The hub is a world type, not a run: it exists before anyone connects and
 // outlives every run. FS-29KSH §Requirements 1.
 func TestNewServer_BuildsTheHubWorld(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 
 	t.Run("exactly one session exists with nobody connected", func(t *testing.T) {
 		server.mu.RLock()

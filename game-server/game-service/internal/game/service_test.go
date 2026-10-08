@@ -130,7 +130,7 @@ func TestFormatMatchData(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := svc.formatMatchData(sessionID, startedAt, endedAt, tc.players)
+			got, err := svc.formatMatchData(sessionID, startedAt, endedAt, tc.players, nil)
 			assert.NoError(t, err)
 			assert.NotNil(t, got)
 

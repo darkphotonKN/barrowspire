@@ -18,7 +18,9 @@ func walkFarRight(t *testing.T, sys MovementSystem, startX, startY float64) floa
 
 	em := ecs.NewEntityManager()
 	entity := em.CreateEntity()
-	entity.AddComponent(components.NewPlayerComponent(uuid.New(), "mage", "Delver", false, false, false))
+	entity.AddComponent(components.NewPlayerComponent(uuid.New(), "mage", "Delver", false))
+	// a living delver: one out of play does not move (FS-77AB6 §Requirements 17)
+	entity.AddComponent(components.NewHealthComponent(100, 100))
 	entity.AddComponent(components.NewTransformComponent(startX, startY))
 	entity.AddComponent(components.NewVelocityComponent(1, 0, constants.DefaultSpeed))
 

@@ -192,7 +192,7 @@ func (m *mockQueueService) GetMatchedChan() chan []*types.Player {
 // 	mockQueue := NewMockQueueService()
 // 	mockEventEmitter := &MockEventEmitter{}
 // 	mockItemsClient := &MockItemsClient{}
-// 	server := NewServer(mockAuthClient, mockQueue, mockEventEmitter, mockItemsClient)
+// 	server := NewServer(mockAuthClient, mockQueue, mockEventEmitter, mockItemsClient, newFakeCharacters())
 //
 // 	// create test players
 // 	player1 := &types.Player{
@@ -268,7 +268,7 @@ func TestQueueFindGameFlow(t *testing.T) {
 	mockQueue := NewMockQueueService()
 	mockEventEmitter := &MockEventEmitter{}
 	mockItemsClient := &MockItemsClient{}
-	server := NewServer(mockAuthClient, mockQueue, mockEventEmitter, mockItemsClient)
+	server := NewServer(mockAuthClient, mockQueue, mockEventEmitter, mockItemsClient, newFakeCharacters())
 
 	playerCount := 10
 	var wg sync.WaitGroup
@@ -280,7 +280,7 @@ func TestQueueFindGameFlow(t *testing.T) {
 			defer wg.Done()
 
 			fakeConn := &websocket.Conn{}
-			player := &types.Player{ID: uuid.New(), Username: fmt.Sprintf("Player%d", idx)}
+			player := &types.Player{ID: uuid.New(), Username: fmt.Sprintf("Player%d", idx), Character: types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: fmt.Sprintf("Player%d", idx), Level: 1}}
 			msgCh := registerTestConn(server, fakeConn, player)
 
 			server.serverChan <- types.ClientPackage{
@@ -442,7 +442,7 @@ func TestSenderToBroadcastToPlayerList(t *testing.T) {
 			mockQueue := NewMockQueueService()
 			mockEventEmitter := &MockEventEmitter{}
 			mockItemsClient := &MockItemsClient{}
-			server := NewServer(authClient, mockQueue, mockEventEmitter, mockItemsClient)
+			server := NewServer(authClient, mockQueue, mockEventEmitter, mockItemsClient, newFakeCharacters())
 			playerIDs := tc.setupPlayers(server)
 
 			newSender := messaging.NewMessageSender(server)

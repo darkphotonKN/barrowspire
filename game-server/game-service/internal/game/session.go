@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"math/rand/v2"
+	"slices"
 	"sync"
 	"time"
 
@@ -31,10 +32,12 @@ type Session struct {
 	playerIDToEntitiesID     map[uuid.UUID]uuid.UUID
 	playerEntityIDToPlayerID map[uuid.UUID]uuid.UUID
 	mu                       sync.RWMutex
-	wg                       sync.WaitGroup
 
 	stopChan  chan struct{}
 	isRunning bool
+	// closed latches once Shutdown has closed the world's channels. The tick
+	// reads it before signalling, so nothing sends on a closed channel.
+	closed bool
 
 	// this world's identity: which kind it is and how big.
 	worldType           types.WorldType
@@ -48,9 +51,8 @@ type Session struct {
 	// [entityID] - interacted
 	containerInteractedCache map[uuid.UUID]bool
 
-	// elimination tracking
-	eliminationCh chan *types.Player
-	// [memberID] finish position
+	// elimination tracking: [memberID] the order they fell in, recorded by the
+	// tick that eliminated them
 	eliminations map[uuid.UUID]int
 
 	// end session signal
@@ -60,7 +62,7 @@ type Session struct {
 	TestMessageSpy chan types.Message
 
 	// item pool (session level, items are removed once assigned to a container)
-	itemPool            types.ItemPool
+	itemPool            lootPool
 	itemPoolInitialized bool
 	lootRarities        []lootRarity // empty: drops are unscaled with no rarity id (NULL)
 
@@ -71,9 +73,21 @@ type Session struct {
 	eventEmitter    EventEmitter
 	itemsClient     grpcitems.ItemsClient
 
-	movementSystem *systems.MovementSystem
-	combatSystem   *systems.CombatSystem
-	skillSystem    *systems.SkillSystem
+	// whether delvers damage delvers here; fixed at world build (FS-77AB6 §12)
+	playerDamage systems.PlayerDamage
+
+	movementSystem     *systems.MovementSystem
+	combatSystem       *systems.CombatSystem
+	monsterAISystem    *systems.MonsterAISystem
+	monsterDeathSystem *systems.MonsterDeathSystem
+	skillSystem        *systems.SkillSystem
+
+	// told of every kill record, in order, on the tick that made it
+	killConsumers []KillConsumer
+
+	// what each member's character has earned in this run, off the entities so
+	// the removed are still reported (FS-BDA7X §Requirements 23)
+	runExperience *RunExperience
 
 	// escape
 	switchEntityIDs  []uuid.UUID
@@ -82,6 +96,19 @@ type Session struct {
 
 	// objects occpied areas, check if placing objects at the same position
 	objectOccupiedPlaceAreas []PlaceArea
+
+	// client actions waiting for the tick: the message goroutine queues them and
+	// the tick applies them, in arrival order, at the start of step. Nothing a
+	// client sends touches the world from beside the tick (I-77AB6-11).
+	intentsMu sync.Mutex
+	intents   []func()
+
+	// floor changes asked for and not yet applied, by the stairs each was
+	// climbed from; the loop applies them between ticks (FS-F6F88 §Requirements 16)
+	ascentRequests map[uuid.UUID]bool
+
+	// what each floor's monsters are rolled from (FS-77AB6 §Requirements 22)
+	spawnRand populationRand
 }
 
 // pub / sub manager for transporting event state between instances of sessions
@@ -91,7 +118,12 @@ type Session struct {
 // its players to go, and removal from the registry. Both belong to end of life,
 // and the order matters, a player moved after the world is gone has nowhere to
 // be moved from.
+//
+// ApplyRunProgress hands over what the run did to each member's character in
+// play, before anyone is sent home, so the HUB seats them at the run's result
+// without waiting for character-service. FS-BDA7X §Requirements 24.
 type SessionCloser interface {
+	ApplyRunProgress(progress []types.RunProgress)
 	ReturnPlayersToHub(sessionID uuid.UUID)
 	CloseSession(sessionID uuid.UUID) error
 }
@@ -133,7 +165,19 @@ func HubBounds() WorldBounds {
 }
 
 func NewSession(sessionCloser SessionCloser, sender *messaging.MessageSender, serializer StateSerializer, em *ecs.EntityManager, eventEmitter EventEmitter, itemsClient grpcitems.ItemsClient, bounds WorldBounds) *Session {
+	s := newSession(sessionCloser, sender, serializer, em, eventEmitter, itemsClient, bounds)
+
+	go s.Start()
+
+	return s
+}
+
+// newSession builds a world without starting its loops, so a test can step its
+// tick by hand.
+func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, serializer StateSerializer, em *ecs.EntityManager, eventEmitter EventEmitter, itemsClient grpcitems.ItemsClient, bounds WorldBounds) *Session {
 	sessionId := uuid.New()
+	playerDamage := systems.PlayerDamage(constants.RunPlayerDamage)
+	runExperience := NewRunExperience()
 
 	s := &Session{
 		ID:            sessionId,
@@ -143,11 +187,16 @@ func NewSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		playerEntityIDToPlayerID: make(map[uuid.UUID]uuid.UUID, constants.DefautMaxSessionPlayers),
 		MessageCh:                make(chan types.ClientPackage, 100),
 
-		movementSystem: systems.NewMovementSystem(),
-		combatSystem:   systems.NewCombatSystem(),
-		skillSystem:    systems.NewSkillSystem(),
-		stopChan:       make(chan struct{}),
-		isRunning:      false,
+		playerDamage:       playerDamage,
+		movementSystem:     systems.NewMovementSystem(),
+		combatSystem:       systems.NewCombatSystem(em, rand.Float64, playerDamage, UniqueEffects),
+		monsterAISystem:    systems.NewMonsterAISystem(rand.Float64),
+		monsterDeathSystem: systems.NewMonsterDeathSystem(em, MonsterCorpseLifetime),
+		skillSystem:        systems.NewSkillSystem(),
+		killConsumers:      []KillConsumer{NewKillLog(slog.Default()), NewKillExperience(em, runExperience)},
+		runExperience:      runExperience,
+		stopChan:           make(chan struct{}),
+		isRunning:          false,
 
 		worldType: bounds.Type,
 		mapWidth:  bounds.Width,
@@ -156,21 +205,49 @@ func NewSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		playerInteractedCache:    make(map[uuid.UUID]bool, constants.DefautMaxSessionPlayers),
 		containerInteractedCache: make(map[uuid.UUID]bool),
 
-		eliminationCh: make(chan *types.Player),
-		eliminations:  make(map[uuid.UUID]int),
+		eliminations: make(map[uuid.UUID]int),
 
-		endSessionCh: make(chan bool),
+		// one slot: the end is latched, so the tick sends at most once and
+		// never blocks on it
+		endSessionCh: make(chan bool, 1),
 
 		sessionCloser:   sessionCloser,
 		sender:          sender,
 		stateSerializer: serializer,
 		eventEmitter:    eventEmitter,
 		itemsClient:     itemsClient,
-	}
 
-	go s.Start()
+		// the same goroutine-safe global source loot rolls with
+		spawnRand: sharedLootRand{},
+	}
+	s.SubscribeKills(newMonsterDrops(s, sharedLootRand{}))
+	s.SubscribeKills(newUniqueEffects(em))
+
+	s.loadRaritiesAtBuild()
 
 	return s
+}
+
+// rarityLoadTimeout bounds the one rarity load a world makes as it is built.
+const rarityLoadTimeout = 3 * time.Second
+
+// loadoutLoadTimeout bounds the loadout fetch made as a delver is seated, under
+// the world's lock. I-77AB6-12.
+const loadoutLoadTimeout = 3 * time.Second
+
+/**
+* loadRaritiesAtBuild loads the rarities a world labels loadouts and rolls drops
+* with, once, before its loop can start: the tick reads lootRarities unlocked,
+* so nothing writes it after. Unavailable, the world keeps none for its whole
+* life and drops are unscaled (FS-4R9M9 §Requirements 22).
+**/
+func (s *Session) loadRaritiesAtBuild() {
+	if s.itemsClient == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), rarityLoadTimeout)
+	defer cancel()
+	s.lootRarities = s.loadLootRarities(ctx)
 }
 
 /**
@@ -192,9 +269,6 @@ func (s *Session) Start() {
 
 	// game loop processing
 	go s.manageGameLoop()
-
-	// eliminations processing
-	go s.manageEliminations()
 
 	// end game processing
 	go s.manageEndSession()
@@ -263,7 +337,11 @@ func (s *Session) manageClientMessages() {
 					// Cannot send error to player since we don't have valid playerID
 					continue
 				}
-				s.handleMove(playerID, movePayload.Vx, movePayload.Vy)
+				s.queueIntent(func() {
+					if err := s.handleMove(playerID, movePayload.Vx, movePayload.Vy); err != nil {
+						slog.Debug("Move refused", "player_id", playerID, "error", err)
+					}
+				})
 
 			case constants.ActionInteract:
 				slog.Debug("Action from client was interact")
@@ -298,15 +376,15 @@ func (s *Session) manageClientMessages() {
 					continue
 				}
 
-				err = s.handleInteract(playerID, entityIDUUID)
-
-				if err != nil {
-					slog.Error("handleInteract failed to process on entity.",
-						"player_id", playerID,
-						"entity_id", entityIDUUID,
-						"error", err)
-					s.sender.SendMessageToPlayer(playerID, types.Message{})
-				}
+				s.queueIntent(func() {
+					if err := s.handleInteract(playerID, entityIDUUID); err != nil {
+						slog.Error("handleInteract failed to process on entity.",
+							"player_id", playerID,
+							"entity_id", entityIDUUID,
+							"error", err)
+						s.sender.SendMessageToPlayer(playerID, types.Message{})
+					}
+				})
 
 			case constants.ActionAttack:
 				slog.Debug("Action from client was attack")
@@ -343,11 +421,11 @@ func (s *Session) manageClientMessages() {
 					continue
 				}
 
-				err = s.handleAttack(playerID, enemyEntityID)
-
-				if err != nil {
-					s.sender.SendMessageToPlayer(playerID, types.Message{})
-				}
+				s.queueIntent(func() {
+					if err := s.handleAttack(playerID, enemyEntityID); err != nil {
+						s.sender.SendMessageToPlayer(playerID, types.Message{})
+					}
+				})
 
 			case constants.ActionCastSkill:
 				slog.Debug("Action from client was cast_skill")
@@ -370,10 +448,11 @@ func (s *Session) manageClientMessages() {
 					continue
 				}
 
-				err = s.handleCastSkill(playerID, skillPayload.SkillID, skillPayload.TargetX, skillPayload.TargetY)
-				if err != nil {
-					slog.Error("Failed to handle cast_skill", "error", err)
-				}
+				s.queueIntent(func() {
+					if err := s.handleCastSkill(playerID, skillPayload.SkillID, skillPayload.TargetX, skillPayload.TargetY); err != nil {
+						slog.Error("Failed to handle cast_skill", "error", err)
+					}
+				})
 
 			case constants.ActionEquip, constants.ActionUnequip:
 				slog.Debug("Before parsing action equip / unequip message payload",
@@ -420,23 +499,37 @@ func (s *Session) manageClientMessages() {
 					continue
 				}
 
-				playerEnittyID, ok := s.playerIDToEntitiesID[playerID]
+				action := constants.Action(msg.Message.Action)
+				s.queueIntent(func() {
+					s.mu.RLock()
+					playerEntityID, ok := s.playerIDToEntitiesID[playerID]
+					s.mu.RUnlock()
 
-				if !ok {
-					slog.Error("respective playerEntityID couldnt be found for playerID", "player_entity_id", playerEnittyID)
-					continue
-				}
+					if !ok {
+						slog.Error("respective playerEntityID couldnt be found for playerID", "player_id", playerID)
+						return
+					}
 
-				err = s.handleEquip(constants.Action(msg.Message.Action), playerEnittyID, itemEntityID)
+					err := s.handleEquip(action, playerEntityID, itemEntityID)
 
-				if err != nil {
-					slog.Error("Couldnt complete updating player equipment with handleEquip or handleUnquip actions.",
-						"action", msg.Message.Action,
-						"player_id", playerEquipPayload.PlayerID,
-						"item_entity_id", playerEquipPayload.ItemEntityID,
-						"error", err,
-					)
-				}
+					// the player has been told; refusing an over-level item is not a fault
+					if errors.Is(err, ErrBelowRequiredLevel) {
+						slog.Debug("Equip refused below the item's required level.",
+							"player_id", playerID,
+							"item_entity_id", itemEntityID,
+						)
+						return
+					}
+
+					if err != nil {
+						slog.Error("Couldnt complete updating player equipment with handleEquip or handleUnquip actions.",
+							"action", action,
+							"player_id", playerID,
+							"item_entity_id", itemEntityID,
+							"error", err,
+						)
+					}
+				})
 
 			}
 
@@ -476,35 +569,12 @@ func (s *Session) manageGameLoop() {
 			}
 			// TEST: END test block
 
+			// between ticks: a floor change lands before the tick reads the world
+			s.applyRequestedFloorChange()
+
 			entities := s.EntityManager.GetAllEntities()
 
-			deltaTime := 1.0 / float64(constants.GameFrameRate)
-
-			// residents amble; a run has none, so this is the hub's alone
-			if s.worldType == types.WorldTypeHub {
-				wanderSys := systems.NewWanderSystem()
-				wanderSys.Update(deltaTime, entities)
-			}
-
-			// movement
-			movementSys := systems.MovementSystem{MapWidth: s.mapWidth, MapHeight: s.mapHeight}
-			movementSys.Update(deltaTime, entities)
-
-			// projectile
-			projectileSys := systems.NewProjectileSystem(s.EntityManager)
-			projectileSys.Update(deltaTime, entities)
-
-			// interaction
-			interactionSys := systems.InteractionSystem{}
-			interactionSys.Update(entities)
-
-			// elimination
-			eliminationSys := systems.EliminationSystem{}
-			eliminationSys.Update(deltaTime, entities, s.ID, s.eliminationCh)
-
-			// rules
-			rulesSys := systems.RulesSystem{}
-			rulesSys.Update(deltaTime, entities, s.endSessionCh)
+			s.step(1.0/float64(constants.GameFrameRate), entities)
 
 			// broadcast state update to all players
 			err := s.broadcastFullState(entities)
@@ -528,6 +598,141 @@ func (s *Session) manageGameLoop() {
 	}
 }
 
+// step advances the simulation one tick. Damage happens in exactly one place on
+// it: the CombatSystem, fed by the projectile impacts detected just before it.
+//
+// It must not be called holding s.mu: the client actions it applies first, and
+// the end rule, take the lock themselves.
+func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
+	// what clients asked for since the last tick lands before anything reads
+	// the world, on this goroutine alone
+	s.applyIntents()
+
+	// gear: what each delver wears counts from this tick, in every world
+	systems.NewGearSystem(s.EntityManager, GearCaps, UniqueEffects, Attributes).Update(deltaTime, entities)
+
+	// residents amble; a run has none, so this is the hub's alone
+	if s.worldType == types.WorldTypeHub {
+		wanderSys := systems.NewWanderSystem()
+		wanderSys.Update(deltaTime, entities)
+	}
+
+	// monster AI steers the monsters before anything moves; a run's alone, the
+	// hub holds no monsters (FS-77AB6 §Requirements 27)
+	if s.worldType == types.WorldTypeRun {
+		s.monsterAISystem.Update(deltaTime, entities)
+	}
+
+	// movement
+	movementSys := systems.MovementSystem{MapWidth: s.mapWidth, MapHeight: s.mapHeight}
+	movementSys.Update(deltaTime, entities)
+
+	// projectile
+	projectileSys := systems.NewProjectileSystem(s.EntityManager, s.playerDamage)
+	impacts := projectileSys.Update(deltaTime, entities)
+
+	// combat
+	kills := s.combatSystem.Update(deltaTime, entities, impacts)
+
+	// monster death: the slain lie dead from this tick; a run's alone, the hub
+	// holds no monsters
+	if s.worldType == types.WorldTypeRun {
+		s.monsterDeathSystem.Update(deltaTime, entities)
+		s.publishKills(kills)
+	}
+
+	// interaction
+	interactionSys := systems.InteractionSystem{}
+	interactionSys.Update(entities)
+
+	// elimination
+	eliminationSys := systems.EliminationSystem{}
+	s.recordEliminations(eliminationSys.Update(deltaTime, entities, s.ID))
+
+	// rules
+	s.applyEndRule(deltaTime, entities)
+}
+
+// queueIntent hands a client action to the tick, which applies it at the start
+// of its next step. Safe from any goroutine.
+//
+// The action runs exactly as the handler would have run from the message
+// goroutine, replies and refusals included, only on the tick: so what a client
+// is told is unchanged, and it is told once the action has been applied.
+func (s *Session) queueIntent(apply func()) {
+	s.intentsMu.Lock()
+	defer s.intentsMu.Unlock()
+
+	s.intents = append(s.intents, apply)
+}
+
+// applyIntents applies every client action queued since the last tick, in the
+// order they arrived. A world already shut down applies none: its players are
+// on their way out of it, and a reply now would reach them somewhere else.
+func (s *Session) applyIntents() {
+	s.intentsMu.Lock()
+	intents := s.intents
+	s.intents = nil
+	s.intentsMu.Unlock()
+
+	if len(intents) == 0 {
+		return
+	}
+
+	s.mu.RLock()
+	closed := s.closed
+	s.mu.RUnlock()
+	if closed {
+		return
+	}
+
+	for _, apply := range intents {
+		apply()
+	}
+}
+
+// applyEndRule runs the co-op end rule unless the world has been shut down.
+// Disconnect cleanup shuts a run down without the rules, closing endSessionCh,
+// and a tick already in flight must not then send on it: the panic would take
+// every world in the process with it (ADR-0015). Shutdown closes under the
+// write lock, so holding the read lock across the send keeps the two apart; the
+// send cannot block, since the end is latched and the channel has room for it.
+func (s *Session) applyEndRule(deltaTime float64, entities []*ecs.Entity) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.closed {
+		return
+	}
+
+	rulesSys := systems.RulesSystem{}
+	rulesSys.Update(deltaTime, entities, s.endSessionCh)
+}
+
+// KillConsumer is an in-process reader of a run's kill records (FS-77AB6
+// §Requirements 29): experience (FS-BDA7X) and drops (FS-4R9M9) subscribe here.
+// Each record reaches each consumer exactly once, synchronously, on the tick that
+// made it and on the run's own loop, so a consumer may read and change the world
+// without locking. It must not block.
+type KillConsumer interface {
+	ConsumeKill(record systems.KillRecord)
+}
+
+// SubscribeKills adds a consumer of this run's kill records. Subscribe while
+// building the session, before its loop starts: the tick reads the list unlocked.
+func (s *Session) SubscribeKills(consumer KillConsumer) {
+	s.killConsumers = append(s.killConsumers, consumer)
+}
+
+// publishKills hands this tick's kill records to every consumer, in order.
+func (s *Session) publishKills(kills []systems.KillRecord) {
+	for _, record := range kills {
+		for _, consumer := range s.killConsumers {
+			consumer.ConsumeKill(record)
+		}
+	}
+}
+
 /**
 * Tracks end game status sent over by the rules system.
 **/
@@ -547,6 +752,7 @@ var Classes = map[string]ClassConfig{
 		Health: components.HealthComponent{CurrentHealth: 150, MaxHealth: 150},
 		Mana:   components.ManaComponent{CurrentMana: 50, MaxMana: 50},
 		Skills: []components.SkillComponent{{SkillName: "slash", Level: 1}},
+		Growth: ClassGrowth{Strength: 2, Vitality: 2, MaxHealth: 12, MaxMana: 2},
 	},
 	"mage": {
 		Stats:  components.StatsComponent{Strength: 2, Agility: 3, Intelligence: 9, Vitality: 3},
@@ -554,6 +760,7 @@ var Classes = map[string]ClassConfig{
 		Health: components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
 		Mana:   components.ManaComponent{CurrentMana: 150, MaxMana: 150},
 		Skills: []components.SkillComponent{{SkillName: "fireball", Level: 1}},
+		Growth: ClassGrowth{Intelligence: 3, MaxHealth: 6, MaxMana: 10},
 	},
 	"archer": {
 		Stats:  components.StatsComponent{Strength: 4, Agility: 8, Intelligence: 3, Vitality: 5},
@@ -561,20 +768,22 @@ var Classes = map[string]ClassConfig{
 		Health: components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
 		Mana:   components.ManaComponent{CurrentMana: 100, MaxMana: 100},
 		Skills: []components.SkillComponent{{SkillName: "power_shot", Level: 1}},
+		Growth: ClassGrowth{Agility: 3, MaxHealth: 8, MaxMana: 5},
 	},
 }
 
-func (s *Session) AddPlayer(playerID uuid.UUID, username string, className string) uuid.UUID {
+// AddPlayer seats the member's character in play in this world, at its level.
+func (s *Session) AddPlayer(playerID uuid.UUID, character types.CharacterInPlay) uuid.UUID {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.addPlayerLocked(playerID, username, className)
+	return s.addPlayerLocked(playerID, character)
 }
 
 // addPlayerLocked is AddPlayer's body. Callers hold the world's lock, so that
 // deciding whether to admit someone and admitting them cannot be split by
 // another goroutine slipping between the two
-func (s *Session) addPlayerLocked(playerID uuid.UUID, username string, className string) uuid.UUID {
+func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterInPlay) uuid.UUID {
 
 	// Already here: there is nothing to build. The guard lives with the world
 	// rather than with whoever is asking, because overwriting the mapping while
@@ -587,41 +796,30 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, username string, className
 
 	spawnX, spawnY := s.spawnPoint()
 
-	// convert proto ItemInstance to types.ItemConfig
-	protoToItemConfig := func(item *pbitems.ItemInstance) types.ItemConfig {
-		templateID, _ := uuid.Parse(item.TemplateId)
-		var instanceID *uuid.UUID
-		if id, err := uuid.Parse(item.Id); err == nil && id != uuid.Nil {
-			instanceID = &id
-		}
-		return types.ItemConfig{
-			TemplateID:      templateID,
-			InstanceID:      instanceID,
-			ItemType:        types.ItemType(item.ItemType),
-			Name:            item.Name,
-			AttackPower:     int(item.AttackPower),
-			CriticalRate:    float64(item.CriticalRate),
-			WeaponType:      item.WeaponType,
-			DefenseRating:   int(item.DefenseRating),
-			MagicResistance: int(item.MagicResistance),
-			ArmorSlot:       types.ArmorSlot(item.ArmorSlot),
-			HealingAmount:   int(item.HealingAmount),
-			ManaAmount:      int(item.ManaAmount),
-			BuffDuration:    int(item.BuffDuration),
-			BuyPrice:        int(item.BuyPrice),
-			SellPrice:       int(item.SellPrice),
-			Description:     item.Description,
-			RarityID:        item.RarityId,
-		}
+	className := character.Class
+	classCfg, ok := Classes[className]
+	if !ok {
+		classCfg = Classes["mage"]
+		className = "mage"
 	}
+	level := seatLevel(character.Level)
 
-	// add item entity and return its UUID pointer
+	// Seating is the loadout's level gate: an item above the character's level
+	// is brought in and carried, not worn. FS-BDA7X §Requirements 31.
+	carried := []uuid.UUID{}
+
+	// add item entity and return its UUID pointer, or nil when it is carried instead
+	rarities := s.lootRarities
 	addSlotItem := func(item *pbitems.ItemInstance) *uuid.UUID {
 		if item == nil {
 			return nil
 		}
-		config := protoToItemConfig(item)
+		config := loadoutItemConfig(item, rarities)
 		id := s.AddItemWithUnLocked(config)
+		if !canWear(config.RequiredLevel, level) {
+			carried = append(carried, id)
+			return nil
+		}
 		return &id
 	}
 
@@ -630,9 +828,16 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, username string, className
 		grpcLoadoutRequest := &pbitems.GetLoadoutWithItemsRequest{
 			MemberId: playerID.String(),
 		}
-		loadoutResult, err := s.itemsClient.GetLoadoutWithItems(context.Background(), grpcLoadoutRequest)
+		// the fetch runs under the world's lock: a hanging items service must
+		// never hold it, so past the deadline the delver is seated without a loadout
+		ctx, cancel := context.WithTimeout(context.Background(), loadoutLoadTimeout)
+		loadoutResult, err := s.itemsClient.GetLoadoutWithItems(ctx, grpcLoadoutRequest)
+		cancel()
 
-		if err != nil || loadoutResult == nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			slog.Warn("Loadout fetch timed out, player spawns with no equipment.",
+				"member_id", playerID, "timeout", loadoutLoadTimeout, "error", err)
+		} else if err != nil || loadoutResult == nil {
 			slog.Error("Failed to get loadout, player spawns with no equipment.", "error", err)
 		} else {
 			loadout = &components.EquipmentConfig{
@@ -650,18 +855,15 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, username string, className
 		}
 	}
 
-	classCfg, ok := Classes[className]
-	if !ok {
-		classCfg = Classes["mage"]
-		className = "mage"
-	}
-
 	PlayerConfig := PlayerConfig{
 		MemberID:     playerID,
-		Username:     username,
+		CharacterID:  character.ID,
+		Level:        level,
+		Experience:   character.Experience,
+		Username:     character.Name,
 		X:            spawnX,
 		Y:            spawnY,
-		Class:        classCfg,
+		Class:        classAtLevel(classCfg, level),
 		ClassName:    className,
 		ItemName:     "Health Potion",
 		ItemQuantity: 3,
@@ -669,7 +871,7 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, username string, className
 		Vx: 0,
 		Vy: 0,
 
-		ItemIDList:    []uuid.UUID{},
+		ItemIDList:    carried,
 		Escape:        false,
 		PlayerLoadout: loadout,
 	}
@@ -692,6 +894,11 @@ func (s *Session) RemovePlayer(userID string) {
 		slog.Error("RemovePlayer: Invalid userID", "userID", userID, "error", err)
 		return
 	}
+	s.removePlayerLocked(playerID)
+}
+
+// removePlayerLocked is RemovePlayer's body. Callers hold the world's lock.
+func (s *Session) removePlayerLocked(playerID uuid.UUID) {
 	// playerIDToEntitiesID is the one keyed by player; playerEntityIDToPlayerID
 	// goes the other way. Reading the wrong one here meant this always missed
 	// and returned, so nobody was ever removed from a world.
@@ -793,9 +1000,18 @@ var ErrWorldFull = errors.New("this world is full")
 * a player coming home from one is not arriving, so ReturnPlayersToHub adds them
 * directly rather than asking.
 **/
-func (s *Session) Admit(playerID uuid.UUID, username, className string) error {
+func (s *Session) Admit(playerID uuid.UUID, character types.CharacterInPlay) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if seated, alreadyHere := s.seatedCharacterLocked(playerID); alreadyHere && seated != character.ID {
+		// Another character: the HUB re-seats the member as it, a run keeps
+		// the one it was entered with (FS-BDA7X §Requirements 5, 7)
+		if s.worldType != types.WorldTypeHub {
+			return fmt.Errorf("%w: %s", ErrCharacterSwitchMidRun, s.ID)
+		}
+		s.removePlayerLocked(playerID)
+	}
 
 	if _, alreadyHere := s.playerIDToEntitiesID[playerID]; !alreadyHere {
 		if s.worldType == types.WorldTypeHub && len(s.playerIDToEntitiesID) >= constants.HubOccupancyCap {
@@ -803,25 +1019,42 @@ func (s *Session) Admit(playerID uuid.UUID, username, className string) error {
 		}
 	}
 
-	s.addPlayerLocked(playerID, username, className)
+	s.addPlayerLocked(playerID, character)
 
 	return nil
+}
+
+// seatedCharacterLocked is the id of the character the member's body here was
+// seated as, and whether they have a body here at all. Callers hold the lock.
+func (s *Session) seatedCharacterLocked(playerID uuid.UUID) (uuid.UUID, bool) {
+	entityID, exists := s.playerIDToEntitiesID[playerID]
+	if !exists {
+		return uuid.Nil, false
+	}
+
+	entity, exists := s.EntityManager.GetEntity(entityID)
+	if !exists {
+		return uuid.Nil, true
+	}
+	pc, ok := entity.GetComponent(ecs.ComponentTypePlayer)
+	if !ok {
+		return uuid.Nil, true
+	}
+
+	return pc.(*components.PlayerComponent).CharacterID, true
 }
 
 // ErrSafeZone is returned when a world refuses combat.
 var ErrSafeZone = errors.New("this world is a safe zone")
 
-// combatAllowed refuses to arm an attack in a world that does not permit one.
+// combatAllowed refuses to record an attack intent in a world that does not
+// permit one.
 //
 // The refusal sits here rather than in the systems because this is the only place
-// an attack is armed: damage is applied inside MovementSystem, which the hub runs
-// exactly as a run does, and it fires on PlayerComponent.AttackActive — set in
-// handleAttack and nowhere else. Turning the action away is also more honest than
-// accepting it and ignoring the flag afterwards.
-//
-// Skills are refused on the same footing. SkillSystem is an empty stub today, so
-// nothing would happen either way; the guard is here so that whoever fills it in
-// does not have to remember the hub exists. FS-29KSH §Requirements 6.
+// an attack is armed: the CombatSystem, which the hub ticks exactly as a run
+// does, resolves only the intents handleAttack and handleCastSkill record.
+// Turning the action away is also more honest than accepting it and ignoring the
+// intent afterwards. FS-29KSH §Requirements 6.
 func (s *Session) combatAllowed() error {
 	if s.worldType == types.WorldTypeHub {
 		return fmt.Errorf("%w: %s", ErrSafeZone, s.ID)
@@ -865,18 +1098,17 @@ func (s *Session) Shutdown() {
 		return
 	}
 
+	// a second Shutdown is a no-op: endSession is reachable from the rules and
+	// from the last delver's disconnect cleanup (FS-QG1HR D5)
+	s.isRunning = false
+	s.closed = true
+
 	// clean up channels
 	close(s.stopChan)
 	close(s.MessageCh)
-	close(s.eliminationCh)
 	close(s.endSessionCh)
 
 	s.mu.Unlock()
-
-	// NOTE: wait for all dependencies of channels to clean up before exiting
-	// most importantly for eliminationCh to finish as we need the eliminations to
-	// be complete before calculating raw match state after a game session ends
-	s.wg.Wait()
 }
 
 /**
@@ -930,6 +1162,10 @@ func (s *Session) broadcastFullState(entities []*ecs.Entity) error {
 * by the client.
 **/
 func (s *Session) handleMove(playerID uuid.UUID, vx, vy float64) error {
+	if err := s.delverInPlay(playerID); err != nil {
+		return fmt.Errorf("move: %w", err)
+	}
+
 	s.mu.RLock()
 	// get specific player entity
 	playerEntityID, ok := s.playerIDToEntitiesID[playerID]
@@ -967,6 +1203,10 @@ func (s *Session) handleMove(playerID uuid.UUID, vx, vy float64) error {
 * handles player interacting with x object with target entity id.
 **/
 func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) error {
+	if err := s.delverInPlay(playerID); err != nil {
+		return fmt.Errorf("interact: %w", err)
+	}
+
 	targetEntity, hasEntity := s.EntityManager.GetEntity(targetEntityID)
 
 	slog.Debug("Entity being interacted on in handleInteract.",
@@ -993,14 +1233,25 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	// release lock after act
 	s.mu.Unlock()
 
+	// the stairs keep no cooldown: one climb is guaranteed by the floor change
+	// request, and a refusal must never lock the way up
+	_, isStairs := targetEntity.GetComponent(ecs.ComponentTypeStairs)
+	if isStairs {
+		defer func() {
+			s.mu.Lock()
+			delete(s.containerInteractedCache, targetEntityID)
+			s.mu.Unlock()
+		}()
+	}
+
 	// get that entity's type and decide on the effect
 	_, isDoorEntity := targetEntity.GetComponent(ecs.ComponentTypeDoor)
 	_, isContainerEntity := targetEntity.GetComponent(ecs.ComponentTypeContainer)
-	itemComp, isItemEntity := targetEntity.GetComponent(ecs.ComponentTypeItem)
+	_, isItemEntity := targetEntity.GetComponent(ecs.ComponentTypeItem)
 	switchComp, isSwitch := targetEntity.GetComponent(ecs.ComponentTypeSwitch)
 	_, isEscapeDoor := targetEntity.GetComponent(ecs.ComponentTypeEscapeDoor)
 
-	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity {
+	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs {
 		slog.Debug("Entity type did not match any interactable entity", "targetEntityID", targetEntityID)
 		return fmt.Errorf("entity type did not match any interactable entity")
 	}
@@ -1008,7 +1259,9 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	// --- player entity ---
 
 	// establish player's position
+	s.mu.RLock()
 	playerEntityID := s.playerIDToEntitiesID[playerID]
+	s.mu.RUnlock()
 
 	// exit early if cached
 	_, exists = s.playerInteractedCache[playerEntityID]
@@ -1034,6 +1287,12 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	}
 
 	playerTransform := playerTransformComponent.(*components.TransformComponent)
+
+	// --- stairs entity ---
+
+	if isStairs {
+		return s.climbStairs(playerID, playerTransform, targetEntity)
+	}
 
 	// --- door entity ---
 
@@ -1192,85 +1451,11 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	// --- item entity ---
 	// when directly acting to an item
 	if isItemEntity {
-		slog.Debug("target entity is item entity",
-			"entity_id", targetEntityID,
-		)
-		// lock to prevent races
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		targetItem, ok := itemComp.(*components.ItemComponent)
-
-		if !ok {
-			return fmt.Errorf("Error when asserting component to item.")
+		err := s.pickUpItem(playerEntity, playerTransform, targetEntityID)
+		if errors.Is(err, ErrOutOfRange) {
+			s.sendErrorToPlayer(playerID, string(constants.ActionInteract), "too far away to interact")
 		}
-
-		slog.Debug("Entity interacting with is an item entity.")
-
-		// add item to player. playerEntity already validated during transformComp extraction
-		playerItemIDListComp, exists := playerEntity.GetComponent(ecs.ComponentTypeItemIDList)
-
-		if !exists {
-			return fmt.Errorf("ItemIDList component doesnt exist in player's entity.")
-		}
-
-		playerItemIDList, ok := playerItemIDListComp.(*components.ItemIDListComponent)
-
-		if !ok {
-			return fmt.Errorf("ItemIDList component could not be asserted into its conerete type.")
-		}
-
-		// for edge cases
-		for _, itemID := range playerItemIDList.ItemIDs {
-			if itemID == targetItem.TemplateID {
-				return fmt.Errorf("Item duplicate, attempting to add item that already exists into player's inventory.")
-			}
-		}
-
-		// add to player item list
-		playerItemIDList.ItemIDs = append(playerItemIDList.ItemIDs, targetEntityID)
-
-		// TEST: for debugging
-		slog.Debug("Retrieved player inventory list. Adding item.",
-			"player_item_list", playerItemIDList,
-			"target_item_name", targetItem.Name,
-		)
-		// TEST: end debugging
-
-		// find the respecitive container and remove it from the container
-		for _, entity := range s.EntityManager.GetAllEntities() {
-			isContainer := entity.HasComponent(ecs.ComponentTypeContainer)
-			if !isContainer {
-				continue
-			}
-
-			containerItemIDListComp, exists := entity.GetComponent(ecs.ComponentTypeItemIDList)
-			if !exists {
-				slog.Warn("Couldnt find itemIDList component in container when attempting to remove item from container entity",
-					"container_id", entity.ID,
-				)
-				continue
-			}
-
-			containerItemIDList, ok := containerItemIDListComp.(*components.ItemIDListComponent)
-			if !ok {
-				return fmt.Errorf("Failed to assert container item id list type when attempting to removing item from container entity")
-			}
-
-			updatedList := make([]uuid.UUID, 0, len(containerItemIDList.ItemIDs)-1)
-
-			for _, itemID := range containerItemIDList.ItemIDs {
-				if itemID == targetEntityID {
-					continue
-				}
-				updatedList = append(updatedList, itemID)
-			}
-
-			containerItemIDList.ItemIDs = updatedList
-			break
-		}
-
-		// unlocks here too
-		return nil
+		return err
 	}
 
 	// Check if the switch is on so we can open the emergency exit
@@ -1301,7 +1486,11 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		switchComponent.IsActivated = true
 		slog.Info("Switch activated!", "playerID", playerID)
 
-		exitDoor, exists := s.EntityManager.GetEntity(s.exitDoorEntityID)
+		s.mu.RLock()
+		exitDoorEntityID := s.exitDoorEntityID
+		s.mu.RUnlock()
+
+		exitDoor, exists := s.EntityManager.GetEntity(exitDoorEntityID)
 		if exists {
 			lockableComp, hasLockable := exitDoor.GetComponent(ecs.ComponentTypeLockable)
 			if hasLockable {
@@ -1405,6 +1594,142 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	return nil
 }
 
+/**
+* climbStairs takes the party up a floor when every living, non-escaped delver
+* stands within the stairs' interact range (FS-F6F88 §Requirements 17–22).
+*
+* The gather check is made at the moment of interaction: the dead and the
+* escaped never count, and a delver mid-reconnect still has an entity, so still
+* counts until the reconnection timeout removes it. A gathered party asks for
+* the climb; the loop applies it between ticks.
+**/
+func (s *Session) climbStairs(playerID uuid.UUID, playerTransform *components.TransformComponent, stairs *ecs.Entity) error {
+	tc, hasTransform := stairs.GetComponent(ecs.ComponentTypeTransform)
+	if !hasTransform {
+		return fmt.Errorf("stairs %s have no transform: %w", stairs.ID, ErrComponentNotFound)
+	}
+	at := tc.(*components.TransformComponent)
+
+	if !s.calcWithinDistance(playerTransform.X, playerTransform.Y, at.X, at.Y) {
+		slog.Debug("Stairs out of range for interaction", "targetID", stairs.ID, "playerID", playerID)
+		s.sendErrorToPlayer(playerID, string(constants.ActionInteract), "too far away to interact")
+		return ErrOutOfRange
+	}
+
+	missing := s.delversAwayFrom(at.X, at.Y)
+	if missing > 0 {
+		slog.Debug("Climb refused: party not gathered", "playerID", playerID, "missing", missing)
+		s.sendRefusalToPlayer(playerID, string(constants.ActionInteract), "the party has not gathered at the stairs",
+			"party_not_gathered", map[string]interface{}{"missing": missing})
+		return fmt.Errorf("climb stairs %s, %d delvers missing: %w", stairs.ID, missing, ErrPartyNotGathered)
+	}
+
+	slog.Info("Party gathered at the stairs, climbing", "sessionID", s.ID, "playerID", playerID)
+	s.requestFloorChange(stairs.ID)
+
+	return nil
+}
+
+// delversAwayFrom counts the living, non-escaped delvers out of interact range
+// of a point.
+func (s *Session) delversAwayFrom(x, y float64) int {
+	away := 0
+	for _, entity := range s.EntityManager.GetAllEntities() {
+		if !systems.InPlay(entity) {
+			continue
+		}
+
+		tc, ok := entity.GetComponent(ecs.ComponentTypeTransform)
+		if !ok {
+			continue
+		}
+		at := tc.(*components.TransformComponent)
+		if !s.calcWithinDistance(at.X, at.Y, x, y) {
+			away++
+		}
+	}
+	return away
+}
+
+// pickUpItem moves an item out of the container holding it and into the
+// delver's satchel, in one step on the tick. Only an item lying in an open
+// container (a chest or a drop pile) within reach is taken: one carried or worn
+// by any delver, or lying in no container, is in no container's list, so it is
+// refused and nothing moves; every item has one owner (FS-4R9M9 R49). A refused
+// pickup gives the item back to interaction, so it can be taken once in reach.
+// I-77AB6-12.
+func (s *Session) pickUpItem(playerEntity *ecs.Entity, at *components.TransformComponent, itemID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.moveItemToSatchel(playerEntity, at, itemID); err != nil {
+		delete(s.containerInteractedCache, itemID)
+		return err
+	}
+	return nil
+}
+
+// moveItemToSatchel is pickUpItem's body. Callers hold the world's lock.
+func (s *Session) moveItemToSatchel(playerEntity *ecs.Entity, at *components.TransformComponent, itemID uuid.UUID) error {
+	satchelComp, ok := playerEntity.GetComponent(ecs.ComponentTypeItemIDList)
+	if !ok {
+		return fmt.Errorf("pick up item %s: satchel: %w", itemID, ErrComponentNotFound)
+	}
+	satchel, ok := satchelComp.(*components.ItemIDListComponent)
+	if !ok {
+		return fmt.Errorf("pick up item %s: satchel: %w", itemID, ErrComponentCouldNotBeAsserted)
+	}
+
+	container, held, index := containerHolding(s.EntityManager, itemID)
+	if container == nil {
+		return fmt.Errorf("pick up item %s: %w", itemID, ErrItemNotInContainer)
+	}
+
+	openableComp, ok := container.GetComponent(ecs.ComponentTypeOpenable)
+	if !ok || !openableComp.(*components.OpenableComponent).IsOpen {
+		return fmt.Errorf("pick up item %s: %w", itemID, ErrContainerClosed)
+	}
+
+	transformComp, ok := container.GetComponent(ecs.ComponentTypeTransform)
+	if !ok {
+		return fmt.Errorf("pick up item %s: container transform: %w", itemID, ErrComponentNotFound)
+	}
+	where := transformComp.(*components.TransformComponent)
+	if !s.calcWithinDistance(at.X, at.Y, where.X, where.Y) {
+		return fmt.Errorf("pick up item %s: %w", itemID, ErrOutOfRange)
+	}
+
+	held.ItemIDs = slices.Delete(slices.Clone(held.ItemIDs), index, index+1)
+	satchel.ItemIDs = append(satchel.ItemIDs, itemID)
+	return nil
+}
+
+// containerHolding is the container whose item list holds the item, that list,
+// and the item's place in it; a nil container when no container holds it.
+func containerHolding(em *ecs.EntityManager, itemID uuid.UUID) (*ecs.Entity, *components.ItemIDListComponent, int) {
+	for _, entity := range em.GetAllEntities() {
+		if !entity.HasComponent(ecs.ComponentTypeContainer) {
+			continue
+		}
+		listComp, ok := entity.GetComponent(ecs.ComponentTypeItemIDList)
+		if !ok {
+			continue
+		}
+		list, ok := listComp.(*components.ItemIDListComponent)
+		if !ok {
+			continue
+		}
+		if index := slices.Index(list.ItemIDs, itemID); index >= 0 {
+			return entity, list, index
+		}
+	}
+	return nil, nil, -1
+}
+
+// handleEquip puts an item the delver carries on, or takes one they wear off,
+// over the one slot list (systems.EquipmentSlots). Only the delver's own satchel
+// is equipped from and only their own slots unequipped from, for every slot:
+// anything else is refused and nothing moves. It runs on the tick (queueIntent).
 func (s *Session) handleEquip(action constants.Action, playerEntityID uuid.UUID, itemEntityID uuid.UUID) error {
 
 	// --- state retrieval and validation ---
@@ -1502,105 +1827,90 @@ func (s *Session) handleEquip(action constants.Action, playerEntityID uuid.UUID,
 		return ErrComponentCouldNotBeAsserted
 	}
 
-	// --- update equipment flow ---
+	// --- unequip: only what the delver wears comes off ---
+	worn := wornSlotOf(equipment, itemEntityID)
 
-	switch types.ItemType(item.ItemType) {
-
-	// -- weapon --
-	case types.ItemTypeWeapon:
-		// decide equip / unequip
-		if action == constants.ActionUnequip {
-			// add it back to list of items in inventory
-			itemIDList.ItemIDs = append(itemIDList.ItemIDs, itemEntityID)
-			equipment.WeaponSlot = nil
-		} else {
-			// for weapon just direct update
-			equipment.WeaponSlot = &itemEntityID
-
-			newItemIDlist := s.removeItem(itemIDList.ItemIDs, itemEntityID)
-
-			itemIDList.ItemIDs = newItemIDlist
+	if action == constants.ActionUnequip {
+		if worn == nil {
+			return fmt.Errorf("unequip %s: %w", itemEntityID, ErrItemNotWorn)
 		}
-
+		*worn.Holder(equipment) = nil
+		itemIDList.ItemIDs = append(itemIDList.ItemIDs, itemEntityID)
 		return nil
-
-	// -- armor --
-	case types.ItemTypeArmor:
-		// check for specific armor slots
-		switch types.ArmorSlot(item.ArmorSlot) {
-
-		case types.ArmorSlotHead:
-			if action == constants.ActionUnequip {
-				itemIDList.ItemIDs = append(itemIDList.ItemIDs, itemEntityID)
-				equipment.HeadSlot = nil
-			} else {
-				equipment.HeadSlot = &itemEntityID
-				itemIDList.ItemIDs = s.removeItem(itemIDList.ItemIDs, itemEntityID)
-			}
-			return nil
-
-		case types.ArmorSlotChest:
-			if action == constants.ActionUnequip {
-				itemIDList.ItemIDs = append(itemIDList.ItemIDs, itemEntityID)
-				equipment.ChestSlot = nil
-			} else {
-				equipment.ChestSlot = &itemEntityID
-				itemIDList.ItemIDs = s.removeItem(itemIDList.ItemIDs, itemEntityID)
-			}
-			return nil
-
-		case types.ArmorSlotGloves:
-			if action == constants.ActionUnequip {
-				itemIDList.ItemIDs = append(itemIDList.ItemIDs, itemEntityID)
-				equipment.GlovesSlot = nil
-			} else {
-				equipment.GlovesSlot = &itemEntityID
-				itemIDList.ItemIDs = s.removeItem(itemIDList.ItemIDs, itemEntityID)
-			}
-			return nil
-
-		case types.ArmorSlotLegs:
-			if action == constants.ActionUnequip {
-				itemIDList.ItemIDs = append(itemIDList.ItemIDs, itemEntityID)
-				equipment.LegsSlot = nil
-			} else {
-				equipment.LegsSlot = &itemEntityID
-				itemIDList.ItemIDs = s.removeItem(itemIDList.ItemIDs, itemEntityID)
-			}
-			return nil
-		}
-
-	case types.ItemTypeConsumable:
-		if action == constants.ActionUnequip {
-			// find which consumable slot holds this item and clear it
-			if equipment.Consumable1 != nil && *equipment.Consumable1 == itemEntityID {
-				equipment.Consumable1 = nil
-			} else if equipment.Consumable2 != nil && *equipment.Consumable2 == itemEntityID {
-				equipment.Consumable2 = nil
-			} else if equipment.Consumable3 != nil && *equipment.Consumable3 == itemEntityID {
-				equipment.Consumable3 = nil
-			}
-			itemIDList.ItemIDs = append(itemIDList.ItemIDs, itemEntityID)
-		} else {
-			// find first empty slot
-			if equipment.Consumable1 == nil {
-				equipment.Consumable1 = &itemEntityID
-			} else if equipment.Consumable2 == nil {
-				equipment.Consumable2 = &itemEntityID
-			} else if equipment.Consumable3 == nil {
-				equipment.Consumable3 = &itemEntityID
-			} else {
-				return fmt.Errorf("All consumable slots full")
-			}
-			itemIDList.ItemIDs = s.removeItem(itemIDList.ItemIDs, itemEntityID)
-		}
 	}
+
+	// --- equip: only what the delver carries goes on ---
+
+	// already worn: worn twice its affixes would count twice
+	if worn != nil {
+		return nil
+	}
+
+	// an id from a drop pile or another delver's satchel is never worn: it would
+	// leave the run twice
+	if !slices.Contains(itemIDList.ItemIDs, itemEntityID) {
+		return fmt.Errorf("equip %s: %w", itemEntityID, ErrItemNotCarried)
+	}
+
+	slots := systems.SlotsFor(types.ItemType(item.ItemType), types.ArmorSlot(item.ArmorSlot))
+	if len(slots) == 0 {
+		return fmt.Errorf("equip %s of type %q: %w", itemEntityID, item.ItemType, ErrItemNotEquippable)
+	}
+
+	// -- level requirement: equip only, unequip is never gated (FS-BDA7X R32) --
+	level := 1
+	if sc, ok := playerEntity.GetComponent(ecs.ComponentTypeStats); ok {
+		level = sc.(*components.StatsComponent).Level
+	}
+	if !canWear(item.RequiredLevel, level) {
+		s.mu.RLock()
+		playerID := s.playerEntityIDToPlayerID[playerEntityID]
+		s.mu.RUnlock()
+		s.sendErrorToPlayer(playerID, string(action), requiredLevelMessage(item.RequiredLevel))
+		return fmt.Errorf("equip %s at level %d: %w", itemEntityID, level, ErrBelowRequiredLevel)
+	}
+
+	// the first empty slot the item fits; with all of them full, the first is
+	// replaced and what it held goes back to the satchel (FS-4R9M9 R42).
+	// Consumables are never swapped out.
+	target := firstEmptySlot(equipment, slots)
+	if target == nil && types.ItemType(item.ItemType) == types.ItemTypeConsumable {
+		return fmt.Errorf("All consumable slots full")
+	}
+	itemIDList.ItemIDs = removeItem(itemIDList.ItemIDs, itemEntityID)
+	if target == nil {
+		target = &slots[0]
+		itemIDList.ItemIDs = append(itemIDList.ItemIDs, **target.Holder(equipment))
+	}
+	*target.Holder(equipment) = &itemEntityID
 
 	return nil
 }
 
-func (s *Session) removeItem(items []uuid.UUID, targetItemID uuid.UUID) []uuid.UUID {
-	result := make([]uuid.UUID, 0, len(items)-1)
+// wornSlotOf is the slot the item is worn in, nil when it is not worn.
+func wornSlotOf(equipment *components.EquipmentComponent, itemID uuid.UUID) *systems.EquipmentSlot {
+	for _, slot := range systems.EquipmentSlots {
+		if held := *slot.Holder(equipment); held != nil && *held == itemID {
+			return &slot
+		}
+	}
+	return nil
+}
+
+// firstEmptySlot is the first of the slots holding nothing, nil when all are full.
+func firstEmptySlot(equipment *components.EquipmentComponent, slots []systems.EquipmentSlot) *systems.EquipmentSlot {
+	for _, slot := range slots {
+		if *slot.Holder(equipment) == nil {
+			return &slot
+		}
+	}
+	return nil
+}
+
+// removeItem is the list without the item; a list that never held it comes back
+// as it was.
+func removeItem(items []uuid.UUID, targetItemID uuid.UUID) []uuid.UUID {
+	result := make([]uuid.UUID, 0, len(items))
 
 	for _, itemID := range items {
 		if itemID == targetItemID {
@@ -1639,262 +1949,100 @@ func (s *Session) handlePlayerEscape(playerID uuid.UUID) {
 	}
 	player := playerComp.(*components.PlayerComponent)
 	player.Escape = true
+
+	// out of play from here: their moves are refused, so stop them now
+	// (FS-77AB6 §Requirements 17)
+	if vc, ok := playerEntity.GetComponent(ecs.ComponentTypeVelocity); ok {
+		velocity := vc.(*components.VelocityComponent)
+		velocity.VX, velocity.VY = 0, 0
+	}
 	slog.Info("Player escaped!", "playerID", playerID, "username", player.Username)
 
 }
 
+// handleAttack validates a targeted attack and records it as an intent. Nothing
+// is resolved here: range, cooldown and damage belong to the CombatSystem on the
+// next tick. FS-77AB6 §Requirements 2.
 func (s *Session) handleAttack(playerID uuid.UUID, enemyEntityID uuid.UUID) error {
 	if err := s.combatAllowed(); err != nil {
 		return err
 	}
-
-	playerEntityID, ok := s.playerIDToEntitiesID[playerID]
-	if !ok {
-		return fmt.Errorf("Player %s not found", playerID)
+	if err := s.delverInPlay(playerID); err != nil {
+		return fmt.Errorf("attack: %w", err)
 	}
 
-	playerEntity, ok := s.EntityManager.GetEntity(playerEntityID)
-	if !ok {
-		return fmt.Errorf("Player %s is not exists", playerID)
-	}
-	// enemyEntity, ok := s.EntityManager.GetEntity(enemyEntityID)
-	// if !ok {
-	// 	slog.Error("Enemy entity does not exist", "enemyEntityID", enemyEntityID)
-	// 	return fmt.Errorf("entity %s is not exists", enemyEntityID)
-	// }
-	// 確認目標存在
-	_, enemyExists := s.EntityManager.GetEntity(enemyEntityID)
-	if !enemyExists {
-		return fmt.Errorf("Enemy entity %s does not exist", enemyEntityID)
+	if _, enemyExists := s.EntityManager.GetEntity(enemyEntityID); !enemyExists {
+		return fmt.Errorf("attack: target %s: %w", enemyEntityID, ErrEntityNotFound)
 	}
 
-	playerC, hasPlayer := playerEntity.GetComponent(ecs.ComponentTypePlayer)
-	if !hasPlayer {
-		return fmt.Errorf("Player does not have player component")
-	}
-	player := playerC.(*components.PlayerComponent)
-	player.HasHit = true
-	player.AttackActive = true
-	player.AttackTargetEntityID = enemyEntityID
-	return nil
+	return s.recordAttackIntent(playerID, components.AttackIntent{
+		Kind:           components.AttackTargeted,
+		TargetEntityID: enemyEntityID,
+	})
 }
 
+// handleCastSkill validates a skill request and records it as an intent. Mana,
+// cooldown, projectiles and damage are the CombatSystem's, on the next tick.
 func (s *Session) handleCastSkill(playerID uuid.UUID, skillID string, targetX, targetY float64) error {
 	if err := s.combatAllowed(); err != nil {
 		return err
 	}
+	if err := s.delverInPlay(playerID); err != nil {
+		return fmt.Errorf("cast_skill: %w", err)
+	}
 
-	playerEntityID, ok := s.playerIDToEntitiesID[playerID]
+	kind, ok := systems.SkillAttackKind(skillID)
 	if !ok {
-		return fmt.Errorf("Player %s not found", playerID)
+		return fmt.Errorf("cast_skill %q: %w", skillID, ErrUnknownSkill)
+	}
+
+	return s.recordAttackIntent(playerID, components.AttackIntent{
+		Kind:    kind,
+		TargetX: targetX,
+		TargetY: targetY,
+	})
+}
+
+// delverInPlay refuses an action from a delver who has died or escaped. They
+// stay in the world, receiving state, until the run ends, but they no longer
+// act in it (FS-77AB6 §Requirements 17). A player with no body here is left to
+// the handler's own lookup to report.
+func (s *Session) delverInPlay(playerID uuid.UUID) error {
+	s.mu.RLock()
+	playerEntityID, ok := s.playerIDToEntitiesID[playerID]
+	s.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+
+	playerEntity, ok := s.EntityManager.GetEntity(playerEntityID)
+	if !ok || systems.InPlay(playerEntity) {
+		return nil
+	}
+
+	return fmt.Errorf("player %s: %w", playerID, ErrDelverOutOfPlay)
+}
+
+func (s *Session) recordAttackIntent(playerID uuid.UUID, intent components.AttackIntent) error {
+	s.mu.RLock()
+	playerEntityID, ok := s.playerIDToEntitiesID[playerID]
+	s.mu.RUnlock()
+
+	if !ok {
+		return fmt.Errorf("record attack intent: player %s: %w", playerID, ErrEntityNotFound)
 	}
 
 	playerEntity, ok := s.EntityManager.GetEntity(playerEntityID)
 	if !ok {
-		return fmt.Errorf("Player entity %s does not exist", playerID)
+		return fmt.Errorf("record attack intent: player entity %s: %w", playerEntityID, ErrEntityNotFound)
 	}
 
-	playerC, hasPlayer := playerEntity.GetComponent(ecs.ComponentTypePlayer)
-	if !hasPlayer {
-		return fmt.Errorf("Player component missing")
+	ic, ok := playerEntity.GetComponent(ecs.ComponentTypeAttackIntent)
+	if !ok {
+		return fmt.Errorf("record attack intent: player entity %s has no attack intents: %w", playerEntityID, ErrComponentNotFound)
 	}
-	player := playerC.(*components.PlayerComponent)
-
-	// 1. Skill Execution (0 MP cost for default skills)
-	_ = player
-
-	tc, hasTrans := playerEntity.GetComponent(ecs.ComponentTypeTransform)
-	if !hasTrans {
-		return fmt.Errorf("Player entity has no transform component")
-	}
-	transform := tc.(*components.TransformComponent)
-
-	switch skillID {
-	case "dash", "sprint":
-		// Warrior Dash: 10 MP
-		manaC, hasMana := playerEntity.GetComponent(ecs.ComponentTypeMana)
-		if hasMana {
-			mana := manaC.(*components.ManaComponent)
-			if mana.CurrentMana < 10 {
-				return fmt.Errorf("Not enough Mana for Dash (requires 10 MP)")
-			}
-			mana.CurrentMana -= 10
-		}
-
-		dx := targetX - transform.X
-		dy := targetY - transform.Y
-		dist := math.Hypot(dx, dy)
-		dashDist := 180.0
-		if dist > 0 {
-			transform.X += (dx / dist) * dashDist
-			transform.Y += (dy / dist) * dashDist
-		} else {
-			transform.X += dashDist
-		}
-		slog.Info("Warrior used Dash", "playerID", playerID, "newX", transform.X, "newY", transform.Y)
-		return nil
-
-	case "triple_fireball", "multishot_fireball":
-		// Mage Triple Fireball: 10 MP
-		manaC, hasMana := playerEntity.GetComponent(ecs.ComponentTypeMana)
-		if hasMana {
-			mana := manaC.(*components.ManaComponent)
-			if mana.CurrentMana < 10 {
-				return fmt.Errorf("Not enough Mana for Triple Fireball (requires 10 MP)")
-			}
-			mana.CurrentMana -= 10
-		}
-
-		baseAngle := math.Atan2(targetY-transform.Y, targetX-transform.X)
-		spreadAngles := []float64{baseAngle - 0.26, baseAngle, baseAngle + 0.26}
-
-		for _, angle := range spreadAngles {
-			tX := transform.X + math.Cos(angle)*400.0
-			tY := transform.Y + math.Sin(angle)*400.0
-			CreateFireballEntity(s.EntityManager, FireballConfig{
-				OwnerEntityID: playerEntity.ID,
-				StartX:        transform.X,
-				StartY:        transform.Y,
-				TargetX:       tX,
-				TargetY:       tY,
-				Damage:        22,
-				Speed:         360.0,
-				MaxDistance:   500.0,
-				Radius:        12.0,
-			})
-		}
-		slog.Info("Mage cast Triple Fireball", "playerID", playerID)
-		return nil
-
-	case "triple_arrow", "multishot_arrow":
-		// Archer Triple Arrow: 10 MP
-		manaC, hasMana := playerEntity.GetComponent(ecs.ComponentTypeMana)
-		if hasMana {
-			mana := manaC.(*components.ManaComponent)
-			if mana.CurrentMana < 10 {
-				return fmt.Errorf("Not enough Mana for Triple Arrow (requires 10 MP)")
-			}
-			mana.CurrentMana -= 10
-		}
-
-		baseAngle := math.Atan2(targetY-transform.Y, targetX-transform.X)
-		spreadAngles := []float64{baseAngle - 0.22, baseAngle, baseAngle + 0.22}
-		speed := 480.0
-
-		for _, angle := range spreadAngles {
-			vx := math.Cos(angle) * speed
-			vy := math.Sin(angle) * speed
-
-			arrowEntity := s.EntityManager.CreateEntity()
-			arrowEntity.AddComponent(components.NewTransformComponent(transform.X, transform.Y))
-			arrowEntity.AddComponent(components.NewVelocityComponent(vx, vy, speed))
-			arrowEntity.AddComponent(components.NewProjectileComponent(
-				playerEntity.ID,
-				18,
-				speed,
-				550.0,
-				8.0,
-				"arrow",
-			))
-		}
-		slog.Info("Archer shot Triple Arrow", "playerID", playerID)
-		return nil
-
-	case "fireball":
-		CreateFireballEntity(s.EntityManager, FireballConfig{
-			OwnerEntityID: playerEntity.ID,
-			StartX:        transform.X,
-			StartY:        transform.Y,
-			TargetX:       targetX,
-			TargetY:       targetY,
-			Damage:        25,
-			Speed:         350.0,
-			MaxDistance:   500.0,
-			Radius:        12.0,
-		})
-		slog.Info("Mage cast Fireball", "playerID", playerID, "startX", transform.X, "startY", transform.Y, "targetX", targetX, "targetY", targetY)
-		return nil
-
-	case "arrow", "power_shot", "shoot":
-		dx := targetX - transform.X
-		dy := targetY - transform.Y
-		dist := math.Hypot(dx, dy)
-
-		vx := 0.0
-		vy := 0.0
-		speed := 480.0
-		if dist > 0 {
-			vx = (dx / dist) * speed
-			vy = (dy / dist) * speed
-		} else {
-			vx = speed
-		}
-
-		arrowEntity := s.EntityManager.CreateEntity()
-		arrowEntity.AddComponent(components.NewTransformComponent(transform.X, transform.Y))
-		arrowEntity.AddComponent(components.NewVelocityComponent(vx, vy, speed))
-		arrowEntity.AddComponent(components.NewProjectileComponent(
-			playerEntity.ID,
-			20,
-			speed,
-			550.0,
-			8.0,
-			"arrow",
-		))
-		slog.Info("Archer shot Arrow", "playerID", playerID, "startX", transform.X, "startY", transform.Y, "targetX", targetX, "targetY", targetY)
-	case "slash", "melee_slash", "strike":
-		baseAngle := math.Atan2(targetY-transform.Y, targetX-transform.X)
-		meleeRange := 50.0
-		halfConeAngle := 1.05 // ~60 degrees (120 deg cone arc)
-
-		normalizeAngle := func(angle float64) float64 {
-			for angle > math.Pi {
-				angle -= 2 * math.Pi
-			}
-			for angle < -math.Pi {
-				angle += 2 * math.Pi
-			}
-			return angle
-		}
-
-		for _, entity := range s.EntityManager.GetAllEntities() {
-			if entity.ID == playerEntity.ID {
-				continue // Skip self
-			}
-
-			tc, hasTrans := entity.GetComponent(ecs.ComponentTypeTransform)
-			hc, hasHealth := entity.GetComponent(ecs.ComponentTypeHealth)
-			if !hasTrans || !hasHealth {
-				continue
-			}
-
-			_, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
-
-			enemyTrans := tc.(*components.TransformComponent)
-			health := hc.(*components.HealthComponent)
-
-			dx := enemyTrans.X - transform.X
-			dy := enemyTrans.Y - transform.Y
-			dist := math.Hypot(dx, dy)
-
-			if dist <= meleeRange {
-				targetAngle := math.Atan2(dy, dx)
-				angleDiff := math.Abs(normalizeAngle(targetAngle - baseAngle))
-				if angleDiff <= halfConeAngle {
-					health.CurrentHealth -= 25
-					if isPlayer {
-						slog.Info("Slash hit player in cone!", "entityID", entity.ID, "remainingHP", health.CurrentHealth)
-					} else {
-						slog.Info("Slash hit enemy in cone!", "entityID", entity.ID, "remainingHP", health.CurrentHealth)
-					}
-				}
-			}
-		}
-		return nil
-
-	default:
-		return fmt.Errorf("Unknown skill_id: %s", skillID)
-	}
+	intents := ic.(*components.AttackIntentComponent)
+	intents.Pending = append(intents.Pending, intent)
 
 	return nil
 }
@@ -1954,40 +2102,18 @@ func (s *Session) generateItems() ([]uuid.UUID, error) {
 	}
 
 	// validate item pool correctly generated items
-	if s.itemPool.Count <= 0 {
+	if s.itemPool.count() <= 0 {
 		return nil, fmt.Errorf("Item pool was empty.")
 	}
 
+	// chests never drop rings (FS-4R9M9 §Requirements 47)
+	drop := s.chestDrop()
 	newItemEntityIDs := make([]uuid.UUID, 0, numberOfArmor+numberOfWeapons+numberOfConsumables)
-	newItemEntityIDs = append(newItemEntityIDs, s.dropLoot(types.ItemTypeWeapon, s.itemPool.Weapons, numberOfWeapons)...)
-	newItemEntityIDs = append(newItemEntityIDs, s.dropLoot(types.ItemTypeArmor, s.itemPool.Armor, numberOfArmor)...)
-	newItemEntityIDs = append(newItemEntityIDs, s.dropLoot(types.ItemTypeConsumable, s.itemPool.Consumables, numberOfConsumables)...)
+	newItemEntityIDs = append(newItemEntityIDs, s.dropLoot(types.ItemTypeWeapon, s.itemPool.Weapons, numberOfWeapons, drop)...)
+	newItemEntityIDs = append(newItemEntityIDs, s.dropLoot(types.ItemTypeArmor, s.itemPool.Armor, numberOfArmor, drop)...)
+	newItemEntityIDs = append(newItemEntityIDs, s.dropLoot(types.ItemTypeConsumable, s.itemPool.Consumables, numberOfConsumables, drop)...)
 
 	return newItemEntityIDs, nil
-}
-
-/**
-* dropLoot creates n rarity-rolled item entities from a random pick of pool.
-* An empty pool is skipped so the other item types still drop.
-**/
-func (s *Session) dropLoot(itemType types.ItemType, pool []*types.ItemConfig, n int) []uuid.UUID {
-	if n == 0 {
-		return nil
-	}
-	if len(pool) == 0 {
-		slog.Warn("No templates for item type, skipping its drops.",
-			"item_type", itemType,
-			"skipped", n,
-		)
-		return nil
-	}
-
-	ids := make([]uuid.UUID, 0, n)
-	for range n {
-		item := rollLoot(sharedLootRand{}, *pool[rand.IntN(len(pool))], s.lootRarities)
-		ids = append(ids, s.AddItem(item))
-	}
-	return ids
 }
 
 /**
@@ -2002,6 +2128,23 @@ func (s *Session) sendErrorToPlayer(playerID uuid.UUID, action string, userMessa
 			"message": userMessage,
 		},
 	})
+}
+
+/**
+* sendRefusalToPlayer is the error reply with a machine-readable reason and its
+* details beside the message, so the client can write its own copy.
+**/
+func (s *Session) sendRefusalToPlayer(playerID uuid.UUID, action, userMessage, reason string, details map[string]interface{}) {
+	payload := map[string]interface{}{
+		"success": false,
+		"message": userMessage,
+		"reason":  reason,
+	}
+	for key, value := range details {
+		payload[key] = value
+	}
+
+	s.sender.SendMessageToPlayer(playerID, types.Message{Action: action, Payload: payload})
 }
 
 /**
@@ -2039,23 +2182,28 @@ func (s *Session) AddItemWithUnLocked(itemConfig types.ItemConfig) uuid.UUID {
 	return entity.ID
 }
 
-/**
-* Manages eliminations outside primary game loop to claculate end game results.
-**/
-func (s *Session) manageEliminations() {
-	s.wg.Add(1)
-	defer s.wg.Done()
+// recordEliminations records the delvers eliminated on this tick, in the order
+// they fell. A world already shut down records nothing: its results have been
+// read, or are being read, by endSession.
+func (s *Session) recordEliminations(eliminated []types.Player) {
+	if len(eliminated) == 0 {
+		return
+	}
 
-	for player := range s.eliminationCh {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return
+	}
+
+	for _, player := range eliminated {
 		slog.Debug("Player eliminated",
 			"ID", player.ID,
 			"Username", player.Username,
 			"SessionID", player.CurrentGameSessionId)
 
-		// store in elimination for processing
-		s.mu.Lock()
 		s.eliminations[player.ID] = len(s.eliminations)
-		s.mu.Unlock()
 	}
 }
 
@@ -2125,9 +2273,19 @@ func (s *Session) endSession() {
 	// notify each player of their final position before tearing channels down
 	s.notifyPlayersOfGameEnd()
 
-	// send everyone home while this world still exists to move them out of.
-	// The hub is not one of these: it has no end.
+	// snapshot what every delver wears and carries while they are still in the
+	// world: going home removes their entities (FS-4R9M9 R49, I-4R9M9-15)
+	rawMatchState := s.getRawMatchState()
+
+	// what each character earned, read alongside the snapshot for the same
+	// reason (FS-BDA7X §Requirements 22–23)
+	rawMatchState.Progress = s.runProgress()
+
+	// send everyone home while this world still exists to move them out of,
+	// their progress kept first so the HUB seats them at the run's result
+	// (FS-BDA7X §Requirements 24). The hub is not one of these: it has no end.
 	if s.worldType == types.WorldTypeRun {
+		s.sessionCloser.ApplyRunProgress(rawMatchState.Progress)
 		s.sessionCloser.ReturnPlayersToHub(s.ID)
 	}
 
@@ -2137,9 +2295,55 @@ func (s *Session) endSession() {
 	// clean up
 	s.Shutdown()
 
-	// grab raw data for publishing end game stats
-	rawMatchState := s.getRawMatchState()
+	// eliminations are recorded on the tick, and no longer once Shutdown has
+	// closed the world, so the order read after it is final
+	s.mu.RLock()
+	rawMatchState.EliminationOrder = s.eliminations
+	s.mu.RUnlock()
 	s.eventEmitter.PublishMatchComplete(context.Background(), rawMatchState)
+}
+
+// runProgress is what the run did to every member's character in play: each
+// seated member as their body stands now, and each member who earned experience
+// and was removed before the end by that alone. FS-BDA7X §Requirements 22–24.
+func (s *Session) runProgress() []types.RunProgress {
+	byMember := make(map[uuid.UUID]types.RunProgress)
+	for _, gain := range s.runExperience.Gains() {
+		byMember[gain.MemberID] = types.RunProgress{
+			MemberID:    gain.MemberID,
+			CharacterID: gain.CharacterID,
+			Gained:      int64(gain.Amount),
+		}
+	}
+
+	s.mu.RLock()
+	for memberID, entityID := range s.playerIDToEntitiesID {
+		entity, exists := s.EntityManager.GetEntity(entityID)
+		if !exists {
+			continue
+		}
+		pc, hasPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
+		sc, hasStats := entity.GetComponent(ecs.ComponentTypeStats)
+		if !hasPlayer || !hasStats {
+			continue
+		}
+		stats := sc.(*components.StatsComponent)
+
+		progress := byMember[memberID]
+		progress.MemberID = memberID
+		progress.CharacterID = pc.(*components.PlayerComponent).CharacterID
+		progress.Seated = true
+		progress.Level = stats.Level
+		progress.Experience = int64(stats.Experience)
+		byMember[memberID] = progress
+	}
+	s.mu.RUnlock()
+
+	progress := make([]types.RunProgress, 0, len(byMember))
+	for _, p := range byMember {
+		progress = append(progress, p)
+	}
+	return progress
 }
 
 /**
@@ -2201,245 +2405,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 			extractedEquipment := types.ExtractedEquipment{}
 
 			if equipmentOk {
-				if equipment.WeaponSlot != nil {
-					if item, ok := itemsMap[*equipment.WeaponSlot]; ok {
-						extractedEquipment.WeaponSlot = &types.ExtractedItem{
-							TemplateID:      item.TemplateID,
-							ItemType:        string(item.ItemType),
-							Name:            item.Name,
-							AttackPower:     item.AttackPower,
-							CriticalRate:    item.CriticalRate,
-							WeaponType:      item.WeaponType,
-							DefenseRating:   item.DefenseRating,
-							MagicResistance: item.MagicResistance,
-							ArmorSlot:       string(item.ArmorSlot),
-							HealingAmount:   item.HealingAmount,
-							ManaAmount:      item.ManaAmount,
-							BuffDuration:    item.BuffDuration,
-							BuyPrice:        item.BuyPrice,
-							SellPrice:       item.SellPrice,
-							Description:     item.Description,
-							InstanceID:      item.InstanceID,
-							RarityID:        item.RarityID,
-						}
-					}
-				}
-
-				if equipment.HeadSlot != nil {
-					if item, ok := itemsMap[*equipment.HeadSlot]; ok {
-						extractedEquipment.HeadSlot = &types.ExtractedItem{
-							TemplateID:      item.TemplateID,
-							ItemType:        string(item.ItemType),
-							Name:            item.Name,
-							AttackPower:     item.AttackPower,
-							CriticalRate:    item.CriticalRate,
-							WeaponType:      item.WeaponType,
-							DefenseRating:   item.DefenseRating,
-							MagicResistance: item.MagicResistance,
-							ArmorSlot:       string(item.ArmorSlot),
-							HealingAmount:   item.HealingAmount,
-							ManaAmount:      item.ManaAmount,
-							BuffDuration:    item.BuffDuration,
-							BuyPrice:        item.BuyPrice,
-							SellPrice:       item.SellPrice,
-							Description:     item.Description,
-							InstanceID:      item.InstanceID,
-							RarityID:        item.RarityID,
-						}
-					}
-				}
-
-				if equipment.ChestSlot != nil {
-					if item, ok := itemsMap[*equipment.ChestSlot]; ok {
-						extractedEquipment.ChestSlot = &types.ExtractedItem{
-							TemplateID:      item.TemplateID,
-							ItemType:        string(item.ItemType),
-							Name:            item.Name,
-							AttackPower:     item.AttackPower,
-							CriticalRate:    item.CriticalRate,
-							WeaponType:      item.WeaponType,
-							DefenseRating:   item.DefenseRating,
-							MagicResistance: item.MagicResistance,
-							ArmorSlot:       string(item.ArmorSlot),
-							HealingAmount:   item.HealingAmount,
-							ManaAmount:      item.ManaAmount,
-							BuffDuration:    item.BuffDuration,
-							BuyPrice:        item.BuyPrice,
-							SellPrice:       item.SellPrice,
-							Description:     item.Description,
-							InstanceID:      item.InstanceID,
-							RarityID:        item.RarityID,
-						}
-					}
-				}
-
-				if equipment.GlovesSlot != nil {
-					if item, ok := itemsMap[*equipment.GlovesSlot]; ok {
-						extractedEquipment.GlovesSlot = &types.ExtractedItem{
-							TemplateID:      item.TemplateID,
-							ItemType:        string(item.ItemType),
-							Name:            item.Name,
-							AttackPower:     item.AttackPower,
-							CriticalRate:    item.CriticalRate,
-							WeaponType:      item.WeaponType,
-							DefenseRating:   item.DefenseRating,
-							MagicResistance: item.MagicResistance,
-							ArmorSlot:       string(item.ArmorSlot),
-							HealingAmount:   item.HealingAmount,
-							ManaAmount:      item.ManaAmount,
-							BuffDuration:    item.BuffDuration,
-							BuyPrice:        item.BuyPrice,
-							SellPrice:       item.SellPrice,
-							Description:     item.Description,
-							InstanceID:      item.InstanceID,
-							RarityID:        item.RarityID,
-						}
-					}
-				}
-
-				if equipment.LegsSlot != nil {
-					if item, ok := itemsMap[*equipment.LegsSlot]; ok {
-						extractedEquipment.LegsSlot = &types.ExtractedItem{
-							TemplateID:      item.TemplateID,
-							ItemType:        string(item.ItemType),
-							Name:            item.Name,
-							AttackPower:     item.AttackPower,
-							CriticalRate:    item.CriticalRate,
-							WeaponType:      item.WeaponType,
-							DefenseRating:   item.DefenseRating,
-							MagicResistance: item.MagicResistance,
-							ArmorSlot:       string(item.ArmorSlot),
-							HealingAmount:   item.HealingAmount,
-							ManaAmount:      item.ManaAmount,
-							BuffDuration:    item.BuffDuration,
-							BuyPrice:        item.BuyPrice,
-							SellPrice:       item.SellPrice,
-							Description:     item.Description,
-							InstanceID:      item.InstanceID,
-							RarityID:        item.RarityID,
-						}
-					}
-				}
-
-				if equipment.Ring1Slot != nil {
-					if item, ok := itemsMap[*equipment.Ring1Slot]; ok {
-						extractedEquipment.Ring1Slot = &types.ExtractedItem{
-							TemplateID:      item.TemplateID,
-							ItemType:        string(item.ItemType),
-							Name:            item.Name,
-							AttackPower:     item.AttackPower,
-							CriticalRate:    item.CriticalRate,
-							WeaponType:      item.WeaponType,
-							DefenseRating:   item.DefenseRating,
-							MagicResistance: item.MagicResistance,
-							ArmorSlot:       string(item.ArmorSlot),
-							HealingAmount:   item.HealingAmount,
-							ManaAmount:      item.ManaAmount,
-							BuffDuration:    item.BuffDuration,
-							BuyPrice:        item.BuyPrice,
-							SellPrice:       item.SellPrice,
-							Description:     item.Description,
-							InstanceID:      item.InstanceID,
-							RarityID:        item.RarityID,
-						}
-					}
-				}
-
-				if equipment.Ring2Slot != nil {
-					if item, ok := itemsMap[*equipment.Ring2Slot]; ok {
-						extractedEquipment.Ring2Slot = &types.ExtractedItem{
-							TemplateID:      item.TemplateID,
-							ItemType:        string(item.ItemType),
-							Name:            item.Name,
-							AttackPower:     item.AttackPower,
-							CriticalRate:    item.CriticalRate,
-							WeaponType:      item.WeaponType,
-							DefenseRating:   item.DefenseRating,
-							MagicResistance: item.MagicResistance,
-							ArmorSlot:       string(item.ArmorSlot),
-							HealingAmount:   item.HealingAmount,
-							ManaAmount:      item.ManaAmount,
-							BuffDuration:    item.BuffDuration,
-							BuyPrice:        item.BuyPrice,
-							SellPrice:       item.SellPrice,
-							Description:     item.Description,
-							InstanceID:      item.InstanceID,
-							RarityID:        item.RarityID,
-						}
-					}
-				}
-
-				if equipment.Consumable1 != nil {
-					if item, ok := itemsMap[*equipment.Consumable1]; ok {
-						extractedEquipment.Consumable1 = &types.ExtractedItem{
-							TemplateID:      item.TemplateID,
-							ItemType:        string(item.ItemType),
-							Name:            item.Name,
-							AttackPower:     item.AttackPower,
-							CriticalRate:    item.CriticalRate,
-							WeaponType:      item.WeaponType,
-							DefenseRating:   item.DefenseRating,
-							MagicResistance: item.MagicResistance,
-							ArmorSlot:       string(item.ArmorSlot),
-							HealingAmount:   item.HealingAmount,
-							ManaAmount:      item.ManaAmount,
-							BuffDuration:    item.BuffDuration,
-							BuyPrice:        item.BuyPrice,
-							SellPrice:       item.SellPrice,
-							Description:     item.Description,
-							InstanceID:      item.InstanceID,
-							RarityID:        item.RarityID,
-						}
-					}
-				}
-
-				if equipment.Consumable2 != nil {
-					if item, ok := itemsMap[*equipment.Consumable2]; ok {
-						extractedEquipment.Consumable2 = &types.ExtractedItem{
-							TemplateID:      item.TemplateID,
-							ItemType:        string(item.ItemType),
-							Name:            item.Name,
-							AttackPower:     item.AttackPower,
-							CriticalRate:    item.CriticalRate,
-							WeaponType:      item.WeaponType,
-							DefenseRating:   item.DefenseRating,
-							MagicResistance: item.MagicResistance,
-							ArmorSlot:       string(item.ArmorSlot),
-							HealingAmount:   item.HealingAmount,
-							ManaAmount:      item.ManaAmount,
-							BuffDuration:    item.BuffDuration,
-							BuyPrice:        item.BuyPrice,
-							SellPrice:       item.SellPrice,
-							Description:     item.Description,
-							InstanceID:      item.InstanceID,
-							RarityID:        item.RarityID,
-						}
-					}
-				}
-
-				if equipment.Consumable3 != nil {
-					if item, ok := itemsMap[*equipment.Consumable3]; ok {
-						extractedEquipment.Consumable3 = &types.ExtractedItem{
-							TemplateID:      item.TemplateID,
-							ItemType:        string(item.ItemType),
-							Name:            item.Name,
-							AttackPower:     item.AttackPower,
-							CriticalRate:    item.CriticalRate,
-							WeaponType:      item.WeaponType,
-							DefenseRating:   item.DefenseRating,
-							MagicResistance: item.MagicResistance,
-							ArmorSlot:       string(item.ArmorSlot),
-							HealingAmount:   item.HealingAmount,
-							ManaAmount:      item.ManaAmount,
-							BuffDuration:    item.BuffDuration,
-							BuyPrice:        item.BuyPrice,
-							SellPrice:       item.SellPrice,
-							Description:     item.Description,
-							InstanceID:      item.InstanceID,
-							RarityID:        item.RarityID,
-						}
-					}
-				}
+				extractedEquipment = extractedEquipmentOf(itemsMap, equipment)
 			}
 
 			// -- inventory items --
@@ -2453,25 +2419,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 						continue
 					}
 
-					inventory = append(inventory, &types.ExtractedItem{
-						TemplateID:      item.TemplateID,
-						ItemType:        string(item.ItemType),
-						Name:            item.Name,
-						AttackPower:     item.AttackPower,
-						CriticalRate:    item.CriticalRate,
-						WeaponType:      item.WeaponType,
-						DefenseRating:   item.DefenseRating,
-						MagicResistance: item.MagicResistance,
-						ArmorSlot:       string(item.ArmorSlot),
-						HealingAmount:   item.HealingAmount,
-						ManaAmount:      item.ManaAmount,
-						BuffDuration:    item.BuffDuration,
-						BuyPrice:        item.BuyPrice,
-						SellPrice:       item.SellPrice,
-						Description:     item.Description,
-						InstanceID:      item.InstanceID,
-						RarityID:        item.RarityID,
-					})
+					inventory = append(inventory, extractedItemFrom(item))
 				}
 
 			}
@@ -2519,7 +2467,44 @@ type Building struct {
 	W, H float64
 }
 
+// firstFloor is the floor every run begins on.
+const firstFloor = 1
+
+/**
+* InitialMapObjects loads what a run keeps for its whole life, then builds its
+* first floor.
+*
+* The item catalogue is session-scoped: loaded once here and reused on every
+* floor, as the rarity list loaded at build is, so a floor change never calls
+* the items service (FS-F6F88 §Requirements 14).
+**/
 func (s *Session) InitialMapObjects() {
+	// deliberately non-fatal: a session with no loot still runs
+	if err := s.InitializeItems(context.Background()); err != nil {
+		slog.Error("Session created without ground items.",
+			"error", err,
+		)
+	}
+
+	s.buildFloor(firstFloor)
+}
+
+/**
+* buildFloor is the floor build step: the one place a floor is made, for the
+* first floor and every one after it (FS-F6F88 §Requirements 8). It lays out the
+* run map, buildings, a chest, a locked escape door and the switch that unlocks
+* it, on empty ground, then populates it with monsters levelled to its depth.
+*
+* depth is the floor being built. The roster must already stand on the floor:
+* its monsters are levelled to the party and kept clear of every delver
+* (FS-77AB6 §Requirements 22). A floor built with nobody on it stays empty.
+**/
+func (s *Session) buildFloor(depth int) {
+	slog.Debug("Building floor", "sessionID", s.ID, "depth", depth)
+
+	// a floor is placed on empty ground: nothing from an earlier floor occupies it
+	s.objectOccupiedPlaceAreas = nil
+
 	s.CreateContainer()
 
 	buildingConfigs := map[BuildingType]Building{
@@ -2538,7 +2523,6 @@ func (s *Session) InitialMapObjects() {
 		X: exitDoorX,
 		Y: exitDoorY,
 	})
-	s.exitDoorEntityID = exitDoor.ID
 
 	// add Switch
 	switchX := constants.ContainerWidthRadius + rand.Float64()*(s.mapWidth-2*constants.ContainerWidthRadius)
@@ -2549,18 +2533,190 @@ func (s *Session) InitialMapObjects() {
 		SwitchID: 1,
 	})
 
+	// the switch handler reads these from the message goroutine
+	s.mu.Lock()
+	s.exitDoorEntityID = exitDoor.ID
 	s.switchEntityIDs = []uuid.UUID{switchEntity.ID}
+	s.mu.Unlock()
 
-	// --- Create Items ---
+	// the escape door and switch are not placed through the occupied-area
+	// check, but what comes after them must keep clear of them
+	s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas,
+		centredArea(exitDoorX, exitDoorY, constants.ContainerWidthRadius, constants.ContainerHeightRadius),
+		centredArea(switchX, switchY, constants.ContainerWidthRadius, constants.ContainerHeightRadius),
+	)
 
-	ctx := context.Background()
-
-	// deliberately non-fatal: a session with no loot still runs
-	if err := s.InitializeItems(ctx); err != nil {
-		slog.Error("Session created without ground items.",
-			"error", err,
-		)
+	// every floor but the top has a way up; placed before the monsters, so they
+	// keep clear of it
+	if depth < constants.RunFloorCount {
+		s.CreateStairs()
 	}
+
+	s.populateMonsters(depth, depth == constants.RunFloorCount)
+}
+
+// centredArea is the area of half-width rw and half-height rh centred on (x, y).
+func centredArea(x, y, rw, rh float64) PlaceArea {
+	return PlaceArea{X: x - rw, Y: y - rh, W: 2 * rw, H: 2 * rh}
+}
+
+// requestFloorChange asks for the run to move up a floor by the stairs given. It
+// is safe from any goroutine; the change itself waits for the loop, between
+// ticks. Asking again before the loop applies it is still one floor change.
+func (s *Session) requestFloorChange(viaStairs uuid.UUID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.ascentRequests == nil {
+		s.ascentRequests = make(map[uuid.UUID]bool)
+	}
+	s.ascentRequests[viaStairs] = true
+}
+
+// applyRequestedFloorChange regenerates the floor if a change was asked for by
+// stairs that still stand. Called by the loop between ticks, never during one.
+//
+// A request names its stairs so that one made against a floor the party has
+// already left (a delver who passed the gather check just before a climb and
+// asked just after it) finds its stairs cleared, and is dropped rather than
+// becoming a second climb (FS-F6F88 §Requirements 21).
+func (s *Session) applyRequestedFloorChange() {
+	s.mu.Lock()
+	requests := s.ascentRequests
+	s.ascentRequests = nil
+	s.mu.Unlock()
+
+	for stairsID := range requests {
+		stairs, stands := s.EntityManager.GetEntity(stairsID)
+		if !stands || !stairs.HasComponent(ecs.ComponentTypeStairs) {
+			slog.Debug("Floor change dropped: its stairs are gone", "sessionID", s.ID, "stairsID", stairsID)
+			continue
+		}
+
+		if err := s.regenerateFloor(); err != nil {
+			slog.Error("Floor change refused", "sessionID", s.ID, "error", err)
+		}
+		return
+	}
+}
+
+/**
+* regenerateFloor moves the run up one floor, in place: same session, same ECS
+* world (FS-F6F88 §Requirements 9–16).
+*
+* It clears every floor entity, raises the floor depth and runs the floor build
+* step again for the new depth. A floor entity is defined by exclusion: anything
+* that is not a delver, not an item a delver wears or carries, and not the
+* run-level entity.
+*
+* It must run between ticks, on the goroutine that ticks the world, so that no
+* broadcast ever holds entities from two floors (§16).
+**/
+func (s *Session) regenerateFloor() error {
+	entities := s.EntityManager.GetAllEntities()
+
+	floor, ok := systems.CurrentFloor(entities)
+	if !ok {
+		return fmt.Errorf("regenerate floor in session %s: %w", s.ID, ErrNoFloors)
+	}
+	if floor.Depth >= floor.Count {
+		return fmt.Errorf("regenerate floor %d of %d in session %s: %w", floor.Depth, floor.Count, s.ID, ErrTopFloor)
+	}
+
+	keep := persistentEntityIDs(entities)
+	for _, entity := range entities {
+		if !keep[entity.ID] {
+			s.EntityManager.RemoveEntity(entity.ID)
+		}
+	}
+
+	// the interaction rate limits were about the old floor's objects. A pending
+	// release goroutine deleting from the fresh map is harmless.
+	s.mu.Lock()
+	s.playerInteractedCache = make(map[uuid.UUID]bool, constants.DefautMaxSessionPlayers)
+	s.containerInteractedCache = make(map[uuid.UUID]bool)
+	s.mu.Unlock()
+
+	floor.Depth++
+
+	// the party stands on the new floor before it is built, so its monsters
+	// spawn clear of them
+	s.settlePartyOnNewFloor(entities)
+
+	s.buildFloor(floor.Depth)
+
+	return nil
+}
+
+/**
+* settlePartyOnNewFloor sets living, non-escaped delvers down on the new floor at
+* a fresh spawn point, standing still. The dead stay on the floor they fell on:
+* their record persists, their body is no longer present. The escaped are already
+* gone. No delver keeps an attack aimed at the old floor (FS-F6F88 §13, §15).
+**/
+func (s *Session) settlePartyOnNewFloor(entities []*ecs.Entity) {
+	for _, entity := range entities {
+		pc, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
+		if !isPlayer {
+			continue
+		}
+		player := pc.(*components.PlayerComponent)
+
+		if ic, ok := entity.GetComponent(ecs.ComponentTypeAttackIntent); ok {
+			ic.(*components.AttackIntentComponent).Pending = nil
+		}
+
+		if player.Escape {
+			continue
+		}
+
+		if vc, ok := entity.GetComponent(ecs.ComponentTypeVelocity); ok {
+			velocity := vc.(*components.VelocityComponent)
+			velocity.VX, velocity.VY = 0, 0
+		}
+
+		if hc, ok := entity.GetComponent(ecs.ComponentTypeHealth); ok && hc.(*components.HealthComponent).IsEliminated {
+			player.LeftBehind = true
+			continue
+		}
+
+		if tc, ok := entity.GetComponent(ecs.ComponentTypeTransform); ok {
+			transform := tc.(*components.TransformComponent)
+			transform.X, transform.Y = s.spawnPoint()
+		}
+	}
+}
+
+// persistentEntityIDs is what survives a floor change: every delver, every item
+// a delver's equipment or satchel references, and the run-level entity.
+func persistentEntityIDs(entities []*ecs.Entity) map[uuid.UUID]bool {
+	keep := make(map[uuid.UUID]bool)
+
+	for _, entity := range entities {
+		if entity.HasComponent(ecs.ComponentTypeMatchProgress) || entity.HasComponent(ecs.ComponentTypeFloor) {
+			keep[entity.ID] = true
+			continue
+		}
+
+		if !entity.HasComponent(ecs.ComponentTypePlayer) {
+			continue
+		}
+		keep[entity.ID] = true
+
+		if ec, ok := entity.GetComponent(ecs.ComponentTypeEquipment); ok {
+			for _, itemID := range systems.WornIDs(ec.(*components.EquipmentComponent)) {
+				keep[itemID] = true
+			}
+		}
+
+		if lc, ok := entity.GetComponent(ecs.ComponentTypeItemIDList); ok {
+			for _, itemID := range lc.(*components.ItemIDListComponent).ItemIDs {
+				keep[itemID] = true
+			}
+		}
+	}
+
+	return keep
 }
 
 func (s *Session) InitializeItems(ctx context.Context) error {
@@ -2580,93 +2736,14 @@ func (s *Session) InitializeItems(ctx context.Context) error {
 		return nil
 	}
 
-	for _, item := range data.Items {
-		templateId, err := uuid.Parse(item.Id)
-
-		if err != nil {
-			slog.Error("Error when attempting to parse template id as uuid during game creation.",
-				"error", err,
-				"armor.ItemId", item.Id,
-			)
-			return err
-		}
-
-		itemType := types.ItemType(item.ItemType)
-
-		var newItemConfig types.ItemConfig
-
-		slog.Info("Creating item",
-			"itemType", itemType,
-			"item", item,
+	pool, err := buildLootPool(data.Items)
+	if err != nil {
+		slog.Error("Error when attempting to build the loot pool during game creation.",
+			"error", err,
 		)
-
-		switch itemType {
-		case types.ItemTypeArmor:
-			newItemConfig = types.ItemConfig{
-				TemplateID:  templateId,
-				ItemType:    itemType,
-				Name:        item.ItemName,
-				Description: item.Description,
-				BuyPrice:    int(item.BaseBuyPrice),
-				SellPrice:   int(item.BaseSellPrice),
-
-				DefenseRating:   int(item.DefenseRating),
-				MagicResistance: int(item.MagicResistance),
-				ArmorSlot:       types.ArmorSlot(item.ArmorSlot),
-			}
-
-			s.itemPool.Armor = append(s.itemPool.Armor, &newItemConfig)
-			s.itemPool.Count++
-
-		case types.ItemTypeWeapon:
-			newItemConfig = types.ItemConfig{
-				TemplateID:  templateId,
-				ItemType:    itemType,
-				Name:        item.ItemName,
-				Description: item.Description,
-				BuyPrice:    int(item.BaseBuyPrice),
-				SellPrice:   int(item.BaseSellPrice),
-
-				WeaponType:   item.WeaponType,
-				AttackPower:  int(item.AttackPower),
-				CriticalRate: float64(item.CriticalRate),
-			}
-
-			s.itemPool.Weapons = append(s.itemPool.Weapons, &newItemConfig)
-			s.itemPool.Count++
-
-		case types.ItemTypeConsumable:
-			newItemConfig = types.ItemConfig{
-				TemplateID:  templateId,
-				ItemType:    itemType,
-				Name:        item.ItemName,
-				Description: item.Description,
-				BuyPrice:    int(item.BaseBuyPrice),
-				SellPrice:   int(item.BaseSellPrice),
-
-				HealingAmount: int(item.HealingAmount),
-				ManaAmount:    int(item.ManaAmount),
-				BuffDuration:  int(item.BuffDuration),
-			}
-
-			// add to sessions internal state
-			s.itemPool.Consumables = append(s.itemPool.Consumables, &newItemConfig)
-			s.itemPool.Count++
-
-		default:
-			slog.Error("No valid item types match the ItemType that was read from the data",
-				"item.ItemType", item.ItemType,
-			)
-			return fmt.Errorf("No valid item types match the ItemType that was read from the data")
-		}
-
-		slog.Info("Created item",
-			"current_itemPool", s.itemPool,
-		)
-
+		return fmt.Errorf("building loot pool: %w", err)
 	}
-
-	s.lootRarities = s.loadLootRarities(ctx)
+	s.itemPool = pool
 
 	return nil
 }
@@ -2724,6 +2801,52 @@ func (s *Session) CreateContainer() {
 		}
 	}
 
+}
+
+// stairsPlacementAttempts is how many random spots the stairs try before the
+// placement falls back to scanning the floor.
+const stairsPlacementAttempts = 100
+
+/**
+* CreateStairs places the floor's stairs up through the occupied-area check.
+*
+* Unlike the chest, the stairs may not silently fail to place: a floor without
+* them strands the party (FS-F6F88 §Requirements 7). Random spots come first, as
+* for every other map object; if those run out, the floor is scanned in a grid
+* for the first free spot; if the floor is full, they go in its middle.
+**/
+func (s *Session) CreateStairs() {
+	// the footprint plus the same 10px padding a chest keeps
+	const padding = 10.0
+	w := 2*constants.StairsWidthRadius + 2*padding
+	h := 2*constants.StairsHeightRadius + 2*padding
+
+	place := func(area PlaceArea) {
+		CreateStairsEntity(s.EntityManager, StairsConfig{X: area.X + area.W/2, Y: area.Y + area.H/2})
+		s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas, area)
+	}
+
+	for range stairsPlacementAttempts {
+		area := PlaceArea{X: rand.Float64() * (s.mapWidth - w), Y: rand.Float64() * (s.mapHeight - h), W: w, H: h}
+		if !s.IsAreaOccupied(area) {
+			place(area)
+			return
+		}
+	}
+
+	for y := 0.0; y+h <= s.mapHeight; y += h / 2 {
+		for x := 0.0; x+w <= s.mapWidth; x += w / 2 {
+			area := PlaceArea{X: x, Y: y, W: w, H: h}
+			if !s.IsAreaOccupied(area) {
+				slog.Warn("Stairs placed by scan: random placement exhausted", "sessionID", s.ID)
+				place(area)
+				return
+			}
+		}
+	}
+
+	slog.Error("Stairs forced into the middle of the floor: no free spot", "sessionID", s.ID)
+	place(PlaceArea{X: (s.mapWidth - w) / 2, Y: (s.mapHeight - h) / 2, W: w, H: h})
 }
 
 func (s *Session) CreateBuilding(buildConfig Building) {

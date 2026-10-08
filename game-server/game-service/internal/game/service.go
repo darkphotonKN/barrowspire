@@ -30,7 +30,7 @@ func (s *service) PublishMatchComplete(ctx context.Context, data *types.RawMatch
 	rankedPlayers := s.rankPlayers(data.Players, data.EliminationOrder)
 
 	// proto marshal
-	protoData, err := s.formatMatchData(data.SessionID, data.StartedAt, data.EndedAt, rankedPlayers)
+	protoData, err := s.formatMatchData(data.SessionID, data.StartedAt, data.EndedAt, rankedPlayers, data.Progress)
 
 	if err != nil {
 		slog.Error("Error formatting game match end event", "error", err)
@@ -69,7 +69,7 @@ func (s *service) PublishMatchComplete(ctx context.Context, data *types.RawMatch
 /**
 * Formats from raw game state to match end state.
 **/
-func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, endedAt time.Time, players []types.RankedPlayerState) (*types.FormattedMatchData, error) {
+func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, endedAt time.Time, players []types.RankedPlayerState, progress []types.RunProgress) (*types.FormattedMatchData, error) {
 
 	// format data for marshalling as protobuf
 	playerMatchRes := make([]*pb.PlayerMatchResult, len(players))
@@ -85,6 +85,7 @@ func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, ende
 			Escape:        player.Escape,
 		}
 	}
+	playerMatchRes = withRunProgress(playerMatchRes, progress)
 
 	matchEndedEvent := pb.MatchEndedEvent{
 		SessionId:      string(sessionID.String()),
@@ -162,6 +163,28 @@ func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, ende
 	return data, nil
 }
 
+// withRunProgress puts each character's run experience on its member's result,
+// and adds a result for a member removed before the end, who has no ranking but
+// earned experience all the same. FS-BDA7X §Requirements 22–23.
+func withRunProgress(results []*pb.PlayerMatchResult, progress []types.RunProgress) []*pb.PlayerMatchResult {
+	byMember := make(map[string]*pb.PlayerMatchResult, len(results))
+	for _, result := range results {
+		byMember[result.MemberId] = result
+	}
+
+	for _, p := range progress {
+		result, ranked := byMember[p.MemberID.String()]
+		if !ranked {
+			result = &pb.PlayerMatchResult{MemberId: p.MemberID.String()}
+			results = append(results, result)
+		}
+		result.CharacterId = p.CharacterID.String()
+		result.ExperienceGained = p.Gained
+	}
+
+	return results
+}
+
 /**
 * Ranks players with a final position plus determine and mark winner.
 **/
@@ -186,6 +209,9 @@ func (s *service) rankPlayers(players []types.RawPlayerState, eliminationOrder m
 			Kills:    player.Kills,
 			Deaths:   player.Deaths,
 			Escape:   player.Escape,
+			// what the delver brings out; dropping it here lost every extraction
+			Equipment: player.Equipment,
+			Inventory: player.Inventory,
 		}
 
 		// determining final positions
@@ -227,7 +253,21 @@ func extractedItemToPb(item *types.ExtractedItem) *pb.Item {
 		BuyPrice:        int32(item.BuyPrice),
 		SellPrice:       int32(item.SellPrice),
 		Description:     item.Description,
+		ItemLevel:       int32(item.ItemLevel),
+		RequiredLevel:   int32(item.RequiredLevel),
+		Affixes:         extractedAffixesToPb(item.Affixes),
 	}
+}
+
+func extractedAffixesToPb(affixes []types.Affix) []*pb.ItemAffix {
+	if len(affixes) == 0 {
+		return nil
+	}
+	out := make([]*pb.ItemAffix, 0, len(affixes))
+	for _, a := range affixes {
+		out = append(out, &pb.ItemAffix{Stat: a.Stat, Tier: int32(a.Tier), Value: int32(a.Value)})
+	}
+	return out
 }
 
 // instanceIDToString returns the canonical UUID string for a known instance

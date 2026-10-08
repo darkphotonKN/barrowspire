@@ -8,6 +8,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
+	grpccharacter "github.com/darkphotonKN/barrowspire-server/game-service/grpc/character"
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/gameserver"
@@ -43,6 +44,7 @@ func SetupRouter(statsDB *sqlx.DB, registry discovery.Registry, ch *amqp.Channel
 	// --- AUTH CLIENT ---
 	authClient := grpcauth.NewClient(registry)
 	itemsClient := grpcitems.NewClient(registry)
+	characterClient := grpccharacter.NewClient(registry)
 
 	// --- GAME SERVER SETUP ---
 	matchmaker := matchmaker.NewMatchmaker(2)
@@ -52,7 +54,7 @@ func SetupRouter(statsDB *sqlx.DB, registry discovery.Registry, ch *amqp.Channel
 	outboxService := commonoutbox.NewService(outboxRepo)
 
 	gameService := game.NewService(outboxService)
-	server := gameserver.NewServer(authClient, matchmaker, gameService, itemsClient)
+	server := gameserver.NewServer(authClient, matchmaker, gameService, itemsClient, characterClient)
 
 	// -- routes --
 	router.GET("/game/ws", auth.WSAuthMiddleware(authClient), server.HandleWebSocketConnection)

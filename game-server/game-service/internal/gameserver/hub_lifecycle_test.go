@@ -27,7 +27,7 @@ func entityCountFor(entities []*ecs.Entity, playerID uuid.UUID) int {
 // the life of the process. A run hid both of these behind its teardown.
 func TestHubMembership(t *testing.T) {
 	t.Run("entering twice does not duplicate the delver", func(t *testing.T) {
-		server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+		server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 		hub, _ := server.HubSession()
 
 		conn := &websocket.Conn{}
@@ -35,7 +35,7 @@ func TestHubMembership(t *testing.T) {
 		registerTestConn(server, conn, player)
 
 		for range 3 {
-			_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: "Wren"})
+			_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Wren"})
 			require.NoError(t, err)
 		}
 
@@ -44,13 +44,13 @@ func TestHubMembership(t *testing.T) {
 	})
 
 	t.Run("disconnecting leaves the hub", func(t *testing.T) {
-		server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+		server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 		hub, _ := server.HubSession()
 
 		conn := &websocket.Conn{}
 		player := &types.Player{ID: uuid.New(), Username: "Wren"}
 		registerTestConn(server, conn, player)
-		_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: "Wren"})
+		_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Wren"})
 		require.NoError(t, err)
 
 		server.cleanUpPlayerFromSession(player)
@@ -60,13 +60,13 @@ func TestHubMembership(t *testing.T) {
 	})
 
 	t.Run("the hub outlives its last delver", func(t *testing.T) {
-		server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+		server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 		hub, _ := server.HubSession()
 
 		conn := &websocket.Conn{}
 		player := &types.Player{ID: uuid.New(), Username: "Wren"}
 		registerTestConn(server, conn, player)
-		_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: "Wren"})
+		_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Wren"})
 		require.NoError(t, err)
 
 		server.cleanUpPlayerFromSession(player)
@@ -82,18 +82,18 @@ func TestHubMembership(t *testing.T) {
 // later cannot forget it — JoinHub remembered and ReturnPlayersToHub did not.
 // FS-29KSH §Requirements 1.
 func TestAddPlayer_IsIdempotentWhoeverAsks(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
 	player := &types.Player{ID: uuid.New(), Username: "Wren"}
 	registerTestConn(server, conn, player)
 
-	_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: "Wren"})
+	_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Wren"})
 	require.NoError(t, err)
 
 	// any other route into the same world, asking again
-	hub.AddPlayer(player.ID, player.Username, player.Class)
+	hub.AddPlayer(player.ID, player.Character)
 
 	assert.Equal(t, 1, entityCountFor(hub.EntityManager.GetAllEntities(), player.ID),
 		"asking twice gave the delver two bodies")

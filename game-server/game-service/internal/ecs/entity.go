@@ -17,6 +17,7 @@ type ComponentType string
 
 const (
 	ComponentTypeMatchProgress ComponentType = "Entity"
+	ComponentTypeFloor         ComponentType = "Floor"
 
 	ComponentTypePlayer ComponentType = "Player"
 	ComponentTypeNPC    ComponentType = "NPC"
@@ -52,7 +53,16 @@ const (
 	ComponentTypeEscapeDoor ComponentType = "EscapeDoor"
 	ComponentTypeLockable   ComponentType = "Lockable"
 	ComponentTypeSwitch     ComponentType = "Switch"
+	ComponentTypeStairs     ComponentType = "Stairs"
 	ComponentTypeProjectile ComponentType = "Projectile"
+
+	ComponentTypeAttackIntent ComponentType = "AttackIntent"
+	ComponentTypeCooldown     ComponentType = "Cooldown"
+
+	ComponentTypeGearBonus ComponentType = "GearBonus"
+	ComponentTypeFrenzy    ComponentType = "Frenzy"
+
+	ComponentTypeBurningTrail ComponentType = "BurningTrail"
 )
 
 type Entity struct {

@@ -2,6 +2,7 @@ package serializer
 
 import (
 	"context"
+	"github.com/darkphotonKN/barrowspire-server/common/progression"
 	"sync"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -24,12 +25,15 @@ func NewStateSerializer(em *ecs.EntityManager) *StateSerializer {
 		New: func() interface{} {
 			return &types.BackendGameState{
 				Players:    make(map[uuid.UUID]*types.PlayerState),
+				LeftBehind: make(map[uuid.UUID]*types.PlayerState),
 				Items:      make([]uuid.UUID, 0),
 				Doors:      make([]*types.DoorState, 0),
 				Walls:      make([]*types.WallState, 0),
 				Containers: make([]*types.ContainerState, 0),
 				EscapeDoor: make([]*types.EscapeDoorState, 0),
 				Switch:     make([]*types.SwitchState, 0),
+				Stairs:     make([]*types.StairsState, 0),
+				Monsters:   make([]*types.MonsterState, 0),
 			}
 		},
 	}}
@@ -42,6 +46,13 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 	backendState.WorldType = worldType
 
 	for _, entity := range entities {
+		// --- Floor (run-level entity; a hub has none) ---
+		if fc, hasFloor := entity.GetComponent(ecs.ComponentTypeFloor); hasFloor {
+			floor := fc.(*components.FloorComponent)
+			backendState.Floor = floor.Depth
+			backendState.FloorCount = floor.Count
+		}
+
 		// --- Player ---
 		pc, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
 
@@ -95,20 +106,9 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 					}
 					item := itemC.(*components.ItemComponent)
 
-					loadouts[key] = &types.ItemState{
-						ItemID:        item.TemplateID,
-						EntityID:      *loadoutID,
-						Name:          item.Name,
-						Quantity:      1, // ItemComponent 無此欄位，依需求 hardcode
-						AttackPower:   int32(item.AttackPower),
-						CriticalRate:  float32(item.CriticalRate),
-						WeaponType:    item.WeaponType,
-						DefenseRating: int32(item.DefenseRating),
-						ArmorSlot:     item.ArmorSlot,
-						HealingAmount: int32(item.HealingAmount),
-						ManaAmount:    int32(item.ManaAmount),
-						Description:   item.Description,
-					}
+					itemState := s.getItemState(item.TemplateID, *loadoutID, item)
+					itemState.Quantity = 1
+					loadouts[key] = itemState
 
 				}
 				equipmentState = &types.EquipmentState{
@@ -151,6 +151,12 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				maxMP = m.MaxMana
 			}
 
+			level, experience := 1, int64(0)
+			if statsC, ok := entity.GetComponent(ecs.ComponentTypeStats); ok {
+				stats := statsC.(*components.StatsComponent)
+				level, experience = max(stats.Level, 1), int64(stats.Experience)
+			}
+
 			playerState := &types.PlayerState{
 				ID:       player.MemberID,
 				EntityID: entity.ID,
@@ -172,10 +178,21 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				MaxHealth:     maxHP,
 				CurrentMana:   curMP,
 				MaxMana:       maxMP,
+				Level:         level,
+				Experience:    experience,
+				LevelFloor:    progression.LevelFloor(int32(level)),
+			}
+			if next, ok := progression.NextLevelAt(int32(level)); ok {
+				playerState.NextLevelAt = &next
 			}
 
-			// Check if this is the recipient player
-			backendState.Players[player.MemberID] = playerState
+			// a dead delver left on an earlier floor is not on this one, so only
+			// they see themselves (FS-F6F88 §Requirements 15)
+			if player.LeftBehind {
+				backendState.LeftBehind[player.MemberID] = playerState
+			} else {
+				backendState.Players[player.MemberID] = playerState
+			}
 		}
 
 		// --- Interactables ---
@@ -266,6 +283,24 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			backendState.Switch = append(backendState.Switch, switchState)
 		}
 
+		// -- Stairs (a run's, below the top floor) --
+		if entity.HasComponent(ecs.ComponentTypeStairs) {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				transform := tc.(*components.TransformComponent)
+				backendState.Stairs = append(backendState.Stairs, &types.StairsState{
+					EntityID: entity.ID,
+					Position: &types.Position{X: transform.X, Y: transform.Y},
+				})
+			}
+			continue
+		}
+
+		// -- Monsters (a run's; the hub never holds one) --
+		if mc, isMonster := entity.GetComponent(ecs.ComponentTypeEnemy); isMonster {
+			backendState.Monsters = append(backendState.Monsters, monsterState(entity, mc.(*components.MonsterComponent)))
+			continue
+		}
+
 		// -- NPCs --
 		npcComp, isNPC := entity.GetComponent(ecs.ComponentTypeNPC)
 		if isNPC {
@@ -282,6 +317,18 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				Function:   string(npc.Function),
 				Appearance: npc.Appearance,
 				Position:   &types.Position{X: transform.X, Y: transform.Y},
+			})
+		}
+
+		// -- Burning trails (a run's; the hub never lays one) --
+		if tc, isTrail := entity.GetComponent(ecs.ComponentTypeBurningTrail); isTrail {
+			trail := tc.(*components.BurningTrailComponent)
+			backendState.Trails = append(backendState.Trails, &types.TrailState{
+				EntityID:  entity.ID,
+				From:      types.Position{X: trail.FromX, Y: trail.FromY},
+				To:        types.Position{X: trail.ToX, Y: trail.ToY},
+				HalfWidth: trail.HalfWidth,
+				Remaining: trail.Remaining,
 			})
 		}
 
@@ -344,9 +391,15 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				}
 			}
 
+			kind := container.Kind
+			if kind == "" {
+				kind = components.ContainerKindChest
+			}
+
 			containerState := &types.ContainerState{
 				ContainerID: container.ContainerID,
 				EntityID:    entity.ID,
+				Kind:        string(kind),
 				Position: &types.Position{
 					X: transform.X,
 					Y: transform.Y,
@@ -403,6 +456,11 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		}
 	}
 
+	currentPlayer, present := backendState.Players[playerID]
+	if !present {
+		currentPlayer = backendState.LeftBehind[playerID]
+	}
+
 	state := &types.ClientGameState{
 		SessionID:     backendState.SessionID,
 		WorldType:     backendState.WorldType,
@@ -410,7 +468,7 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		Doors:         backendState.Doors,
 		Walls:         backendState.Walls,
 		Containers:    backendState.Containers,
-		CurrentPlayer: backendState.Players[playerID],
+		CurrentPlayer: currentPlayer,
 		OtherPlayers:  otherPlayers,
 		EscapeDoor:    backendState.EscapeDoor,
 		Equipment:     backendState.Equipment,
@@ -418,6 +476,20 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		NPCs:          backendState.NPCs,
 		Projectiles:   backendState.Projectiles,
 		EscapedCount:  backendState.EscapedCount,
+		Floor:         backendState.Floor,
+		FloorCount:    backendState.FloorCount,
+		Monsters:      backendState.Monsters,
+		Trails:        backendState.Trails,
+	}
+
+	// a run always says where its stairs are, even when there are none; the
+	// slice header is copied, so the pooled backend state's reset cannot reach it
+	if backendState.WorldType == types.WorldTypeRun {
+		stairs := backendState.Stairs
+		if stairs == nil {
+			stairs = []*types.StairsState{}
+		}
+		state.Stairs = &stairs
 	}
 
 	return state
@@ -426,6 +498,9 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	for k := range state.Players {
 		delete(state.Players, k)
+	}
+	for k := range state.LeftBehind {
+		delete(state.LeftBehind, k)
 	}
 	state.Items = state.Items[:0]
 	state.Doors = state.Doors[:0]
@@ -437,6 +512,42 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.Projectiles = state.Projectiles[:0]
 	state.SessionID = uuid.Nil
 	state.EscapedCount = 0
+	state.Floor = 0
+	state.FloorCount = 0
+	state.Stairs = state.Stairs[:0]
+	state.Monsters = state.Monsters[:0]
+	state.Trails = state.Trails[:0]
+}
+
+// monsterState is a monster as the client draws it. One at no health lies dead,
+// whatever it was last doing.
+func monsterState(entity *ecs.Entity, monster *components.MonsterComponent) *types.MonsterState {
+	state := &types.MonsterState{
+		EntityID:  entity.ID,
+		Archetype: string(monster.Archetype),
+		Name:      monster.Name,
+		Level:     monster.Level,
+		Elite:     monster.Elite,
+		Boss:      monster.Boss,
+		Facing:    types.Position{X: monster.FacingX, Y: monster.FacingY},
+		Action:    string(monster.Action),
+	}
+
+	if tc, ok := entity.GetComponent(ecs.ComponentTypeTransform); ok {
+		transform := tc.(*components.TransformComponent)
+		state.Position = types.Position{X: transform.X, Y: transform.Y}
+	}
+
+	if hc, ok := entity.GetComponent(ecs.ComponentTypeHealth); ok {
+		health := hc.(*components.HealthComponent)
+		state.CurrentHealth = health.CurrentHealth
+		state.MaxHealth = health.MaxHealth
+		if health.CurrentHealth <= 0 {
+			state.Action = string(components.MonsterActionDead)
+		}
+	}
+
+	return state
 }
 
 func (s *StateSerializer) PutBackendState(state *types.BackendGameState) {
@@ -444,39 +555,28 @@ func (s *StateSerializer) PutBackendState(state *types.BackendGameState) {
 }
 
 // grab the item
+// getItemState is an item as the client is shown it, whatever its type: its
+// stats (zero ones are left off the wire), the level it requires and its roll.
+// FS-BDA7X §Requirements 30, FS-4R9M9 §Requirements 54.
 func (s *StateSerializer) getItemState(itemID uuid.UUID, entityID uuid.UUID, item *components.ItemComponent) *types.ItemState {
-
-	switch item.ItemType {
-	case types.ItemTypeWeapon:
-		return &types.ItemState{
-			ItemID:       itemID,
-			EntityID:     entityID,
-			Name:         item.Name,
-			AttackPower:  int32(item.AttackPower),
-			CriticalRate: float32(item.CriticalRate),
-			Description:  item.Description,
-		}
-
-	case types.ItemTypeArmor:
-		return &types.ItemState{
-			ItemID:        itemID,
-			EntityID:      entityID,
-			Name:          item.Name,
-			Description:   item.Description,
-			DefenseRating: int32(item.DefenseRating),
-			ArmorSlot:     item.ArmorSlot,
-		}
-
-	case types.ItemTypeConsumable:
-		return &types.ItemState{
-			ItemID:        itemID,
-			EntityID:      entityID,
-			Name:          item.Name,
-			Description:   item.Description,
-			HealingAmount: int32(item.HealingAmount),
-			ManaAmount:    int32(item.ManaAmount),
-		}
+	return &types.ItemState{
+		ItemID:          itemID,
+		EntityID:        entityID,
+		Name:            item.Name,
+		ItemType:        item.ItemType,
+		AttackPower:     int32(item.AttackPower),
+		CriticalRate:    float32(item.CriticalRate),
+		WeaponType:      item.WeaponType,
+		DefenseRating:   int32(item.DefenseRating),
+		MagicResistance: int32(item.MagicResistance),
+		ArmorSlot:       item.ArmorSlot,
+		HealingAmount:   int32(item.HealingAmount),
+		ManaAmount:      int32(item.ManaAmount),
+		Description:     item.Description,
+		RequiredLevel:   item.RequiredLevel,
+		Rarity:          item.RarityCode,
+		ItemLevel:       item.ItemLevel,
+		Affixes:         item.Affixes,
+		UniqueEffect:    item.UniqueEffectText,
 	}
-
-	return nil
 }

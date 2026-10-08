@@ -29,7 +29,7 @@ func npcsIn(entities []*ecs.Entity) []*components.NPCComponent {
 // their placement is map data — a delver has to be able to tell someone where to
 // stand. FS-29KSH §Requirements 9, 29.
 func TestHub_HoldsItsFunctionNPCs(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub, _ := server.HubSession()
 
 	npcs := npcsIn(hub.EntityManager.GetAllEntities())
@@ -44,7 +44,7 @@ func TestHub_HoldsItsFunctionNPCs(t *testing.T) {
 	assert.Contains(t, byFunction, components.NPCFunctionStorekeeper, "no one to gear you up")
 
 	t.Run("and stands where the map put them", func(t *testing.T) {
-		second := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+		second := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 		otherHub, _ := second.HubSession()
 
 		assert.Equal(t,
@@ -100,13 +100,13 @@ func npcPositions(entities []*ecs.Entity) map[components.NPCFunction][2]float64 
 // never queued them. FS-29KSH §Requirements 26.
 func TestFindGame_FromTheHub_Queues(t *testing.T) {
 	queue := NewMockQueueService()
-	server := NewServer(&MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(&MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
 	player := &types.Player{ID: uuid.New(), Username: "Wren"}
 	registerTestConn(server, conn, player)
-	_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: "Wren"})
+	_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Wren"})
 	require.NoError(t, err)
 	require.Equal(t, hub.ID, player.CurrentGameSessionId)
 
@@ -130,14 +130,14 @@ func TestFindGame_FromTheHub_Queues(t *testing.T) {
 // and end up in one run together, out of the hub.
 // FS-29KSH §Requirements 26, 28, §Edge States (Concurrent).
 func TestTwoDelversDescend_MatchIntoOneRun(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub, _ := server.HubSession()
 
 	for _, name := range []string{"Wren", "Kaelen"} {
 		conn := &websocket.Conn{}
 		player := &types.Player{ID: uuid.New(), Username: name}
 		registerTestConn(server, conn, player)
-		_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: name})
+		_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: name})
 		require.NoError(t, err)
 
 		server.serverChan <- types.ClientPackage{

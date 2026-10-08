@@ -31,13 +31,9 @@ func setupTestEntities(b *testing.B, playerCount, itemsPerPlayer, containerCount
 
 		// 2. 添加 PlayerComponent（玩家核心數據）
 		playerComp := &components.PlayerComponent{
-			MemberID:             uuid.New(),
-			Username:             fmt.Sprintf("TestPlayer_%d", i),
-			HasHit:               false,
-			AttackActive:         false,
-			AttackCooldown:       0.0,
-			AttackTargetEntityID: uuid.Nil,
-			Escape:               false,
+			MemberID: uuid.New(),
+			Username: fmt.Sprintf("TestPlayer_%d", i),
+			Escape:   false,
 		}
 		playerEntity.AddComponent(playerComp)
 

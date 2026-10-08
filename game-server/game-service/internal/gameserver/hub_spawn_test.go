@@ -40,7 +40,7 @@ func positionOf(t *testing.T, entities []*ecs.Entity, playerID uuid.UUID) (x, y 
 // Everyone enters and returns at the same place, so the hub has a front door
 // rather than scattering arrivals. FS-29KSH §Requirements 22.
 func TestJoinHub_SpawnsAtTheFixedPoint(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub, _ := server.HubSession()
 
 	for _, name := range []string{"Wren", "Kaelen"} {
@@ -48,7 +48,7 @@ func TestJoinHub_SpawnsAtTheFixedPoint(t *testing.T) {
 		player := &types.Player{ID: uuid.New(), Username: name}
 		registerTestConn(server, conn, player)
 
-		_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: name})
+		_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: name})
 		require.NoError(t, err)
 
 		x, y := positionOf(t, hub.EntityManager.GetAllEntities(), player.ID)

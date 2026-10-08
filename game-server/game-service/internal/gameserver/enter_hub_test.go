@@ -33,13 +33,15 @@ func awaitAction(t *testing.T, msgCh chan interface{}, action constants.Action) 
 // Connecting is not entering. A player picks a character first, and only then
 // asks to enter the hub. FS-29KSH §Requirements 15, 19.
 func TestEnterHub_PlacesThePlayerAndTellsThem(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	characters := newFakeCharacters()
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters)
 	hub, exists := server.HubSession()
 	require.True(t, exists)
 
 	conn := &websocket.Conn{}
-	player := &types.Player{ID: uuid.New(), Username: "Delver", Class: "mage"}
+	player := &types.Player{ID: uuid.New(), Username: "Delver"}
 	msgCh := registerTestConn(server, conn, player)
+	wren := characters.give(player.ID, "archer", "Wren", 1, 0)
 
 	require.Equal(t, uuid.Nil, player.CurrentGameSessionId,
 		"a connected player who has not entered is in no world")
@@ -49,8 +51,7 @@ func TestEnterHub_PlacesThePlayerAndTellsThem(t *testing.T) {
 		Message: types.Message{
 			Action: string(constants.ActionEnterHub),
 			Payload: map[string]interface{}{
-				"class":         "archer",
-				"characterName": "Wren",
+				"characterId": wren.ID.String(),
 			},
 		},
 	}
@@ -76,8 +77,7 @@ func TestEnterHub_PlacesThePlayerAndTellsThem(t *testing.T) {
 		stored, ok := server.GetPlayerFromConn(conn)
 		require.True(t, ok)
 
-		assert.Equal(t, "archer", stored.Class,
-			"the menu's selection has to travel with the request; the server remembers nothing")
-		assert.Equal(t, "Wren", stored.Username)
+		assert.Equal(t, wren, stored.Character,
+			"the character the request named, as character-service has it")
 	})
 }

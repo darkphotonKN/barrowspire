@@ -1,8 +1,6 @@
 package game
 
 import (
-	"math"
-
 	commonconstants "github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
@@ -16,21 +14,37 @@ type ClassConfig struct {
 	Health components.HealthComponent
 	Mana   components.ManaComponent
 	Skills []components.SkillComponent
+	// Growth is what each level past the first adds. FS-BDA7X §Requirements 19.
+	Growth ClassGrowth
+}
+
+// ClassGrowth is a class's per-level gain. Level growth touches only these six
+// values; whatever is derived from attributes follows from them.
+// FS-BDA7X §Requirements 19.
+type ClassGrowth struct {
+	Strength, Agility, Intelligence, Vitality int
+	MaxHealth, MaxMana                        int
 }
 
 type MatchConfig struct {
 	players []*ecs.Entity
 }
 
+// CreateMatchProgressEntity makes the run-level entity: match progress and the
+// floor the run is on. It outlives every floor change. FS-F6F88 §Requirements 3.
 func CreateMatchProgressEntity(em *ecs.EntityManager) *ecs.Entity {
 	entity := em.CreateEntity()
-	entity.AddComponent(components.NewMatchProgressComponent(commonconstants.DefautMaxSessionPlayers))
+	entity.AddComponent(components.NewMatchProgressComponent())
+	entity.AddComponent(components.NewFloorComponent(firstFloor, commonconstants.RunFloorCount))
 
 	return entity
 }
 
 type PlayerConfig struct {
 	MemberID      uuid.UUID
+	CharacterID   uuid.UUID
+	Level         int
+	Experience    int64
 	Class         ClassConfig
 	ClassName     string
 	Username      string
@@ -43,8 +57,6 @@ type PlayerConfig struct {
 	ItemQuantity  int
 	Vx, Vy        float64
 	ItemIDList    []uuid.UUID
-	AttackActive  bool
-	HasHit        bool
 	Escape        bool
 	PlayerLoadout *components.EquipmentConfig
 }
@@ -52,7 +64,9 @@ type PlayerConfig struct {
 func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity {
 	entity := em.CreateEntity()
 
-	entity.AddComponent(components.NewPlayerComponent(config.MemberID, config.ClassName, config.Username, config.HasHit, config.AttackActive, config.Escape))
+	player := components.NewPlayerComponent(config.MemberID, config.ClassName, config.Username, config.Escape)
+	player.CharacterID = config.CharacterID
+	entity.AddComponent(player)
 
 	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
 
@@ -69,10 +83,17 @@ func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity 
 
 	entity.AddComponent(components.NewItemIDListComponent(config.ItemIDList))
 
-	entity.AddComponent(components.NewStatsComponent(config.Class.Stats.Strength, config.Class.Stats.Agility, config.Class.Stats.Vitality, config.Class.Stats.Intelligence))
+	stats := components.NewStatsComponent(config.Class.Stats.Strength, config.Class.Stats.Agility, config.Class.Stats.Vitality, config.Class.Stats.Intelligence)
+	stats.Level = max(config.Level, 1)
+	stats.Experience = int(config.Experience)
+	entity.AddComponent(stats)
 
 	// initialize equipment with loadout
 	entity.AddComponent(components.NewEquipmentComponent(config.PlayerLoadout))
+
+	// attacks are requested here and resolved by the CombatSystem on the tick
+	entity.AddComponent(components.NewAttackIntentComponent())
+	entity.AddComponent(components.NewCooldownComponent())
 
 	return entity
 }
@@ -101,6 +122,20 @@ func CreateContainerEntity(em *ecs.EntityManager, config ContainerConfig, itemID
 	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
 	entity.AddComponent(components.NewOpenableComponent(false)) // default false
 	entity.AddComponent(components.NewItemIDListComponent(itemIDList))
+
+	return entity
+}
+
+// CreateDropPileEntity places a drop pile: a container that is already open and
+// already opened, so it never rolls items of its own, holding a slain monster's
+// drops. It is taken from like an opened chest, and a floor change clears it
+// like any floor entity. FS-4R9M9 §Requirements 46.
+func CreateDropPileEntity(em *ecs.EntityManager, x, y float64, itemIDs []uuid.UUID) *ecs.Entity {
+	entity := em.CreateEntity()
+	entity.AddComponent(&components.ContainerComponent{ContainerID: uuid.New(), Kind: components.ContainerKindDropPile})
+	entity.AddComponent(components.NewTransformComponent(x, y))
+	entity.AddComponent(&components.OpenableComponent{IsOpen: true, HasBeenOpened: true})
+	entity.AddComponent(components.NewItemIDListComponent(itemIDs))
 
 	return entity
 }
@@ -153,6 +188,12 @@ func CreateItemEntity(em *ecs.EntityManager, itemconfig types.ItemConfig) *ecs.E
 	itemComp.Description = itemconfig.Description
 	itemComp.InstanceID = itemconfig.InstanceID
 	itemComp.RarityID = itemconfig.RarityID
+	itemComp.RequiredLevel = itemconfig.RequiredLevel
+	itemComp.RarityCode = itemconfig.RarityCode
+	itemComp.ItemLevel = itemconfig.ItemLevel
+	itemComp.Affixes = itemconfig.Affixes
+	itemComp.UniqueEffectCode = itemconfig.UniqueEffectCode
+	itemComp.UniqueEffectText = itemconfig.UniqueEffectText
 
 	entity.AddComponent(itemComp)
 
@@ -187,41 +228,17 @@ func CreateSwitchEntity(em *ecs.EntityManager, config SwitchConfig) *ecs.Entity 
 
 }
 
-type FireballConfig struct {
-	OwnerEntityID    uuid.UUID
-	StartX, StartY   float64
-	TargetX, TargetY float64
-	Damage           int
-	Speed            float64
-	MaxDistance      float64
-	Radius           float64
+type StairsConfig struct {
+	X, Y float64
 }
 
-func CreateFireballEntity(em *ecs.EntityManager, config FireballConfig) *ecs.Entity {
-	dx := config.TargetX - config.StartX
-	dy := config.TargetY - config.StartY
-	dist := math.Hypot(dx, dy)
-
-	vx := 0.0
-	vy := 0.0
-	if dist > 0 {
-		vx = (dx / dist) * config.Speed
-		vy = (dy / dist) * config.Speed
-	} else {
-		vx = config.Speed
-	}
-
+// CreateStairsEntity places the way up. It is a floor entity: it carries no
+// Player component, so a floor change clears it with the rest of the floor.
+func CreateStairsEntity(em *ecs.EntityManager, config StairsConfig) *ecs.Entity {
 	entity := em.CreateEntity()
-	entity.AddComponent(components.NewTransformComponent(config.StartX, config.StartY))
-	entity.AddComponent(components.NewVelocityComponent(vx, vy, config.Speed))
-	entity.AddComponent(components.NewProjectileComponent(
-		config.OwnerEntityID,
-		config.Damage,
-		config.Speed,
-		config.MaxDistance,
-		config.Radius,
-		"fireball",
-	))
+	entity.AddComponent(components.NewStairsComponent())
+	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
+	entity.AddComponent(components.NewInteractableComponent(commonconstants.DefaultInteractableRange))
 	return entity
 }
 
@@ -258,6 +275,73 @@ func CreateResidentEntity(em *ecs.EntityManager, resident hubResident) *ecs.Enti
 	))
 	entity.AddComponent(components.NewVelocityComponent(0, 0, commonconstants.NPCWanderSpeed))
 	entity.AddComponent(components.NewInteractableComponent(commonconstants.NPCInteractRange))
+
+	return entity
+}
+
+// MonsterConfig is one monster to place: what it is and where it stands.
+type MonsterConfig struct {
+	Archetype components.MonsterArchetype
+	Level     int
+	Elite     bool
+	Boss      bool
+	// Name is the display name, elite prefix included; empty means the
+	// archetype's own name.
+	Name string
+	X, Y float64
+}
+
+// CreateMonsterEntity spawns a monster from its archetype's sheet at its level.
+//
+// It carries a velocity, standing still, so MovementSystem collides delvers
+// with it and moves it as the MonsterAISystem steers it. It carries an attack
+// intent, where its strikes wait for the CombatSystem. It carries Health and
+// Combat, so the CombatSystem can hit it and mitigate the hit. It carries no
+// Player component: a floor change clears every entity that is not a delver, and
+// the rules and elimination paths count delvers by that tag alone.
+func CreateMonsterEntity(em *ecs.EntityManager, config MonsterConfig) *ecs.Entity {
+	sheet := monsterSheets[config.Archetype]
+	stats := sheet.statsAt(config.Level)
+	if config.Elite {
+		stats = stats.elite()
+	}
+
+	name := config.Name
+	if name == "" {
+		name = sheet.Name
+	}
+
+	entity := em.CreateEntity()
+	entity.AddComponent(&components.MonsterComponent{
+		Archetype:      config.Archetype,
+		Level:          config.Level,
+		Elite:          config.Elite,
+		Boss:           config.Boss,
+		Name:           name,
+		HomeX:          config.X,
+		HomeY:          config.Y,
+		Action:         components.MonsterActionIdle,
+		FacingX:        0,
+		FacingY:        1, // towards the viewer until it has somewhere to look
+		AttackInterval: sheet.AttackInterval,
+		WindUp:         sheet.WindUp,
+		AttackRange:    sheet.AttackRange,
+		AggroRadius:    sheet.AggroRadius,
+		LeashRadius:    sheet.LeashRadius,
+	})
+	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
+	entity.AddComponent(components.NewVelocityComponent(0, 0, sheet.MoveSpeed))
+	entity.AddComponent(components.NewHealthComponent(stats.HP, stats.HP))
+
+	// damage and mitigation at its level; its reach and timings, in px and
+	// seconds, are on the monster component, not in Combat's delver units
+	entity.AddComponent(&components.CombatComponent{
+		Attack:          stats.Damage,
+		Defense:         stats.Defense,
+		MagicResistance: stats.MagicResistance,
+	})
+	// where the MonsterAISystem hands its strikes to the CombatSystem
+	entity.AddComponent(components.NewAttackIntentComponent())
 
 	return entity
 }

@@ -15,13 +15,13 @@ import (
 // actually were. Telling every returning player they found a game sent anyone
 // standing in the hub into the run scene. FS-29KSH §Requirements 15.
 func TestReconnect_AnnouncesTheWorldTheyAreActuallyIn(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
 	player := &types.Player{ID: uuid.New(), Username: "Wren"}
 	registerTestConn(server, conn, player)
-	_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: "Wren"})
+	_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Wren"})
 	require.NoError(t, err)
 
 	msgChan := make(chan interface{}, 8)
@@ -49,13 +49,13 @@ func TestReconnect_AnnouncesTheWorldTheyAreActuallyIn(t *testing.T) {
 // as anyone arriving. A run is different and keeps its window.
 // FS-29KSH §Edge States (Disconnect).
 func TestDisconnect_LeavingTheHubIsFinal(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
 	player := &types.Player{ID: uuid.New(), Username: "Wren"}
 	registerTestConn(server, conn, player)
-	_, err := server.JoinHub(conn, types.Character{Class: "archer", Name: "Wren"})
+	_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "archer", Name: "Wren"})
 	require.NoError(t, err)
 
 	server.cleanUpPlayerFromSession(player)

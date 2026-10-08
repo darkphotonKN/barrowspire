@@ -1,6 +1,7 @@
 package game
 
 import (
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
@@ -28,10 +29,10 @@ func healthOf(t *testing.T, s *Session, playerID uuid.UUID) int {
 	return comp.(*components.HealthComponent).CurrentHealth
 }
 
-// tick runs the movement system once, which is where damage is actually applied.
+// tick steps the world's simulation once: the CombatSystem on it is where damage
+// is applied.
 func tick(s *Session) {
-	movementSys := systems.MovementSystem{MapWidth: s.mapWidth, MapHeight: s.mapHeight}
-	movementSys.Update(1.0/float64(constants.GameFrameRate), s.EntityManager.GetAllEntities())
+	s.step(1.0/float64(constants.GameFrameRate), s.EntityManager.GetAllEntities())
 }
 
 // worldWithTwoDelvers stands two players next to each other, close enough to hit.
@@ -39,11 +40,12 @@ func worldWithTwoDelvers(t *testing.T, bounds WorldBounds) (*Session, uuid.UUID,
 	t.Helper()
 
 	em := ecs.NewEntityManager()
-	session := NewSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, nil, bounds)
+	// not started: the test is the only thing ticking this world
+	session := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, nil, bounds)
 
 	attacker, target := uuid.New(), uuid.New()
-	session.AddPlayer(attacker, "Wren", "warrior")
-	session.AddPlayer(target, "Kaelen", "warrior")
+	session.AddPlayer(attacker, types.CharacterInPlay{Name: "Wren", Class: "warrior"})
+	session.AddPlayer(target, types.CharacterInPlay{Name: "Kaelen", Class: "warrior"})
 
 	// AddPlayer scatters a run's arrivals, so place them: within the 60 attack
 	// range, but in different spatial-hash cells. MovementSystem buckets by
@@ -57,15 +59,16 @@ func worldWithTwoDelvers(t *testing.T, bounds WorldBounds) (*Session, uuid.UUID,
 		transform := comp.(*components.TransformComponent)
 		transform.X, transform.Y = at[0], at[1]
 	}
+	// seated: the first tick's gear pass brings each to full, Vitality included
+	tick(session)
 
 	return session, attacker, target
 }
 
 // The hub is somewhere a delver can stand and think. Combat belongs to a run.
 //
-// The guard has to sit on the path damage actually travels: it is inlined in
-// MovementSystem (movement.go:227, a hardcoded 10), not in CombatSystem, which is
-// an empty stub — and the hub runs the same MovementSystem a run does.
+// The guard has to sit where an attack is armed: the handler records the intent
+// the CombatSystem resolves, and the hub ticks the same CombatSystem a run does.
 // FS-29KSH §Requirements 6.
 func TestAttack_LandsInARunAndNotInTheHub(t *testing.T) {
 	tests := []struct {
@@ -80,6 +83,9 @@ func TestAttack_LandsInARunAndNotInTheHub(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			session, attacker, target := worldWithTwoDelvers(t, tt.bounds)
+			// delvers are the only targets here: with player damage on, only the
+			// safe zone can stop the hit
+			switchPlayerDamage(session, systems.PlayerDamageOn)
 			before := healthOf(t, session, target)
 
 			targetEntityID := session.playerIDToEntitiesID[target]

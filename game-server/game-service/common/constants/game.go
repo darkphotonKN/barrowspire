@@ -53,6 +53,10 @@ const DefaultSpeed float64 = 200
 const DefaultInteractableRange float64 = 60
 const DefautMaxSessionPlayers = 2
 
+// RunPlayerDamage is whether delvers can damage each other in a run. Off: runs
+// are co-op. A world-build setting, never client-sent. FS-77AB6 §Requirements 12.
+const RunPlayerDamage = false
+
 // map setting
 // The hub world is its own size, larger than a run's map and larger than the
 // 1080x720 viewport, so it scrolls. FS-29KSH §Requirements 3.
@@ -81,11 +85,27 @@ const NPCStallSeconds float64 = 1.2
 // How close a delver must stand to talk to an NPC.
 const NPCInteractRange float64 = 80
 
+// How far from its spawn point a monster with no target wanders, in px, and how
+// long it stands between destinations and may fail to close on one before
+// giving it up. Starting values. FS-77AB6 §Requirements 26.
+const MonsterHomeRadius float64 = 150
+const MonsterPauseSeconds float64 = 1.6
+const MonsterStallSeconds float64 = 1.2
+
+// How many floors a run climbs. Floor 1 is where it starts; this one is the top.
+// One server constant, not per run. FS-F6F88 §Requirements 1.
+const RunFloorCount int = 3
+
 const MapWidth float64 = 1440
 const MapHeight float64 = 960
 const PlayerRadius float64 = 20
 const ContainerWidthRadius float64 = 20
 const ContainerHeightRadius float64 = 16
+
+// The stairs' footprint, centred on their position: what placement keeps clear
+// of the floor's other objects. FS-F6F88 §Requirements 7.
+const StairsWidthRadius float64 = 24
+const StairsHeightRadius float64 = 24
 const InitialPlayerX float64 = 720
 const InitialPlayerY float64 = 480
 
