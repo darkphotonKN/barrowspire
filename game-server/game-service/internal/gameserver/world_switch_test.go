@@ -1,6 +1,7 @@
 package gameserver
 
 import (
+	"context"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -27,7 +28,7 @@ func enterHub(t *testing.T, server *Server, name string) (*types.Player, *websoc
 // A player is in one world at a time. Matching moves them; it does not copy them.
 // FS-29KSH §Requirements 20-21, 23.
 func TestCreateGameSession_MovesPlayersOutOfTheHub(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
 
 	wren, _ := enterHub(t, server, "Wren")
@@ -50,7 +51,7 @@ func TestCreateGameSession_MovesPlayersOutOfTheHub(t *testing.T) {
 // the world they were in no longer exists, so leaving them pointed at it would
 // strand them. FS-29KSH §Requirements 22.
 func TestRunEnds_ReturnsPlayersToTheHub(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
 
 	wren, _ := enterHub(t, server, "Wren")
@@ -73,7 +74,7 @@ func TestRunEnds_ReturnsPlayersToTheHub(t *testing.T) {
 // nothing can fail between worlds — so the switch has to be observably internal.
 // FS-29KSH §Requirements 20.
 func TestWorldSwitch_KeepsTheSameConnection(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 
 	wren, wrenConn := enterHub(t, server, "Wren")
 	kaelen, kaelenConn := enterHub(t, server, "Kaelen")
@@ -107,7 +108,7 @@ func TestWorldSwitch_KeepsTheSameConnection(t *testing.T) {
 // the hub broadcasts what it holds, so anyone still held is still seen.
 // FS-29KSH §Requirements 23.
 func TestDelvingPlayer_IsAbsentFromTheHubBroadcast(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, _ := server.HubSession()
 
 	wren, _ := enterHub(t, server, "Wren")

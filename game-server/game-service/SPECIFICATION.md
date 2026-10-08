@@ -20,13 +20,13 @@ Legend: ✅ DONE (built & code-verified) · ⚠️ PARTIAL · ⏳ PLANNED / NOT 
 game-service is the authoritative, short-lived **escape-run engine**: an **ECS world + a
 WebSocket message-hub**, real-time **coordination, not a domain model**. A party is matched,
 an isolated world is built, the run ticks to resolution, results are published, the world is
-torn down. DDD belongs to the *surrounding* contexts (profile, inventory, economy,
+torn down. DDD belongs to the _surrounding_ contexts (profile, inventory, economy,
 matchmaking); this service is the engine they feed. ✅
 
 ## Architecture (as built)
 
 - **Single process, multiple concurrent sessions.** One `Server` holds `sessions map[uuid →
-  *Session]`; each session owns its **own `ecs.EntityManager` and goroutines**, fully isolated
+*Session]`; each session owns its **own `ecs.EntityManager` and goroutines**, fully isolated
   (no shared mutable state). ✅
 - **Fully in-memory per run.** No game-state persistence; the world is discarded on teardown. ✅
 - **Fixed-timestep tick:** `manageGameLoop`, ticker at `GameFrameRate = 30` Hz. Each tick runs
@@ -152,7 +152,7 @@ matchmaking); this service is the engine they feed. ✅
   MovementSystem** (hardcoded 10 dmg, range 60, 0.5s cooldown).
   > REVIEW: combat logic is misplaced in MovementSystem; `CombatSystem`/`SkillSystem` stubs and
   > `DamageCalculator` are unused. Stats never affect damage.
-- **Items** ⚠️ PARTIAL — item *entities* exist; **pickup** (`interact`) and **equip/unequip**
+- **Items** ⚠️ PARTIAL — item _entities_ exist; **pickup** (`interact`) and **equip/unequip**
   work. **Drop and use/consume do NOT** — `pickup`/`use_item`/`drop_item` action constants exist
   but are **unhandled**.
 
@@ -184,35 +184,40 @@ matchmaking); this service is the engine they feed. ✅
 See [`/docs/refactor_plan.md`](../../docs/refactor_plan.md) for sequencing.
 
 ### World & sim
+
 - **Persistent HUB world** — shared social/staging space; light sim (position sync, chat,
-  presence, grouping). Distinct world type from escape runs. *(None exists — only the run world.)*
+  presence, grouping). Distinct world type from escape runs. _(None exists — only the run world.)_
 - **Multi-instance allocation contract** — ⚠️ partially present: multiple isolated sessions
   already coexist in-process, but there is **no generic allocation abstraction / instance-id
   contract / warm pool** — world creation is hardwired in `CreateGameSession`.
 
 ### Matchmaking / session lifecycle
+
 - **Allocation contract** — generic matchmaking ↔ instance allocation interface (warm pool or spawn).
 - **Roster + modifiers seeding** — roster seeding exists; **run modifiers do not**.
 - **Client handoff lifecycle** — background the hub WS, connect clients to the instance WS,
-  return to hub on resolve. *(No hub world, so no handoff yet.)*
+  return to hub on resolve. _(No hub world, so no handoff yet.)_
 - **Results reporting** — ✅ done (see above); keep here only for the hub-return leg.
 
 ### Persistent player state (NEW vs. the stateless escape game)
+
 - **Durable accounts / profile** (DB-backed) — not in this service.
 - **Persistent inventory** carried across runs — loadout is read via gRPC per run, not persisted here.
 - **Progression** (levels/skills/unlocks) persisted — not present.
 
 ### Cross-context business flows (DDD services + sagas)
+
 - **Player-to-player TRADE** (atomic two-party swap saga). ⏳
 - **GEAR ESCROW across the run lifecycle** (checkout on delve → instance authoritative →
   return/forfeit on extract/death/crash; flagship saga with crash-recovery compensation). ⏳
 - **START-A-DELVE** distributed coordination (matchmaking → allocation → handoff). ⏳
 - **Economy / wallet, market** bounded contexts. ⏳
-  *(Extraction REWARDS fan-out — moved to ✅ Done above.)*
+  _(Extraction REWARDS fan-out — moved to ✅ Done above.)_
 
 ## Known divergences & suspected bugs (REVIEW before trusting)
 
 Code-certain unless noted:
+
 - **Loot types inverted** — armor configs appended to `itemPool.Weapons` and vice-versa; the
   lookup then returns the wrong category. Players get armor where weapons are expected.
 - **Item-count loop bounds wrong** — `generateItems` compares a running offset against a count

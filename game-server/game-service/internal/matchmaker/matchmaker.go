@@ -7,12 +7,17 @@ import (
 	"time"
 
 	"errors"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
+
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 )
 
 var (
-	ErrPlayerAlreadyQueued = errors.New("player already queued")
+	ErrPlayerAlreadyQueued       = errors.New("player already queued")
+	ErrRetryMaxAttemptsExhausted = errors.New("retry max attempts exhausted")
+)
+
+const (
+	timeoutTime = time.Second * 5
 )
 
 /**
@@ -24,8 +29,10 @@ type matchmaker struct {
 	matchSize       int
 	MatchedChan     chan []*types.Player // legacy
 	QueueStatusChan chan QueueStatus
+	matchQueue      MatchQueue
 
-	matchQueue MatchQueue
+	// this replica's pod id, recorded against every player it queues
+	podID string
 
 	mu      sync.Mutex
 	players []*types.Player
@@ -38,9 +45,10 @@ type QueueStatus struct {
 	Total   int
 }
 
-func NewMatchmaker(matchSize int) *matchmaker {
+func NewMatchmaker(matchSize int, podID string) *matchmaker {
 	return &matchmaker{
 		matchSize:       matchSize,
+		podID:           podID,
 		MatchedChan:     make(chan []*types.Player),
 		QueueStatusChan: make(chan QueueStatus),
 		players:         make([]*types.Player, 0, matchSize),
@@ -59,108 +67,104 @@ type MatchCriteria struct {
 }
 
 type MatchedPlayer struct {
-	PlayerID string
-	Pod      string
+	ID  string `json:"id"`
+	Pod string `json:"pod"`
 }
 
 // Start launches queue listening
-func (q *matchmaker) Start() {
-	go q.MatchQueue()
+func (q *matchmaker) Start(ctx context.Context) {
+	go q.MatchQueue(ctx)
 	slog.Info("Queue service started, waiting for players to join...")
 }
 
-// AddPlayer adds player to matchmaking queue (via channel)
-func (q *matchmaker) AddPlayer(player *types.Player) error {
-	err := q.PlayerJoinQueue(player)
-
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // matchQueue checks queue once per second
-func (q *matchmaker) MatchQueue() {
-	ticker := time.NewTicker(1 * time.Second)
+func (q *matchmaker) MatchQueue(ctx context.Context) {
+	// add timeout for external state taking too long
+	queueCtx, queueCtxCanc := context.WithTimeout(ctx, timeoutTime)
+	defer queueCtxCanc()
+
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		// send value from chan once per second
+		// parent ctx gets cancelled
+		case <-ctx.Done():
+			return
+
 		case <-ticker.C:
-			{
-				q.mu.Lock()
+			matchedPlayers, err := q.matchQueue.Matchmake(queueCtx, MatchCriteria{MatchSize: 2})
 
-				// players enough
-				if len(q.players) >= q.matchSize {
-					matched := make([]*types.Player, q.matchSize)
-					copy(matched, q.players[:q.matchSize])
-					q.players = q.players[q.matchSize:]
+			if err != nil {
+				// log exception errors to track what happened
+				slog.Error("MatchQueue matchmake tick exception", "err", err)
+				continue
+			}
 
-					q.mu.Unlock()
-
-					slog.Debug("Match found.")
-					q.MatchedChan <- matched
-					continue
-				}
-				// player not enough
-				if len(q.players) > 0 {
-					players := make([]*types.Player, len(q.players))
-					copy(players, q.players)
-
-					q.mu.Unlock()
-
-					slog.Debug("Waiting",
-						"total_players", len(players),
-						"match_size", q.matchSize,
-					)
-
-					go func() {
-						q.QueueStatusChan <- QueueStatus{
-							Players: players,
-							Current: len(players),
-							Total:   q.matchSize,
-						}
-					}()
-					continue
-				}
-
-				q.mu.Unlock()
+			// no results yet
+			if matchedPlayers == nil {
+				continue
 			}
 		}
 	}
 }
 
 // handlePlayerJoinQueue handles logic for player joining queue
-func (q *matchmaker) PlayerJoinQueue(player *types.Player) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
+func (q *matchmaker) PlayerJoinQueue(ctx context.Context, player *types.Player) error {
+	// add timeout for external state taking too long
+	queueCtx, queueCtxCanc := context.WithTimeout(ctx, timeoutTime)
+	defer queueCtxCanc()
 
-	for _, p := range q.players {
-		if p.ID == player.ID {
-			slog.Error("player already exists", "player_id", player.ID)
-			return game.ErrPlayerAlreadyInQueue
+	retries := 0
+	maxRetries := 5
+	for retries >= maxRetries {
+		err := q.matchQueue.QueuePlayer(queueCtx, player.ID.String(), q.podID)
+		if err != nil {
+			// no retry
+			if errors.Is(err, ErrPlayerAlreadyQueued) {
+				slog.Info("player already queued but requeue was attempted", "err", err)
+				return err
+			}
+
+			slog.Warn("player met exceptional error when attempting to queue, requeueing", "err", err)
+
+			// exception, retry in 1 second
+			time.Sleep(time.Second)
+			retries++
+			continue
 		}
+		return nil
 	}
-	q.players = append(q.players, player)
-	slog.Debug("Player joined queue.",
-		"player_username", player.Username,
-	)
-	return nil
+
+	// tried all 5 times, log error and pass down
+	slog.Error("max attempts exhausted trying to requeue player", "player_id", player.ID, "pod_id", q.podID)
+	return ErrRetryMaxAttemptsExhausted
 }
 
-// TODO: disconnect remove player
-func (q *matchmaker) PlayerRemoveQueue(player *types.Player) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
+func (q *matchmaker) PlayerRemoveQueue(ctx context.Context, player *types.Player) error {
+	// add timeout for external state taking too long
+	queueCtx, queueCtxCanc := context.WithTimeout(ctx, timeoutTime)
+	defer queueCtxCanc()
 
-	for i, p := range q.players {
-		if p.ID == player.ID {
-			q.players = append(q.players[:i], q.players[i+1:]...)
-			return
+	retries := 0
+	maxRetries := 5
+	for retries >= maxRetries {
+		err := q.matchQueue.DequeuePlayer(queueCtx, player.ID.String())
+
+		if err != nil {
+			slog.Warn("met exceptional error when attempting to dequeue, requeueing", "err", err)
+
+			// exception, retry in 1 second
+			time.Sleep(time.Second)
+			retries++
+			continue
 		}
+		return nil
 	}
+
+	// tried all 5 times, log error and pass down
+	slog.Error("max attempts exhausted trying to retry dequeue player", "player_id", player.ID, "pod_id", q.podID)
+	return ErrRetryMaxAttemptsExhausted
 }
 
 func (q *matchmaker) GetMatchedChan() chan []*types.Player {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
@@ -22,7 +23,7 @@ import (
 /**
 * Sets up API prefix route and all routers.
 **/
-func SetupRouter(statsDB *sqlx.DB, registry discovery.Registry, ch *amqp.Channel, cacheService cache.Cache) *gin.Engine {
+func SetupRouter(ctx context.Context, statsDB *sqlx.DB, registry discovery.Registry, ch *amqp.Channel, cacheService cache.Cache, pod Pod) *gin.Engine {
 	router := gin.Default()
 
 	// NOTE: debugging middleware
@@ -45,14 +46,14 @@ func SetupRouter(statsDB *sqlx.DB, registry discovery.Registry, ch *amqp.Channel
 	itemsClient := grpcitems.NewClient(registry)
 
 	// --- GAME SERVER SETUP ---
-	matchmaker := matchmaker.NewMatchmaker(2)
+	matchmaker := matchmaker.NewMatchmaker(2, pod.ID)
 
 	// -- outbox --
 	outboxRepo := commonoutbox.NewRepo(statsDB)
 	outboxService := commonoutbox.NewService(outboxRepo)
 
 	gameService := game.NewService(outboxService)
-	server := gameserver.NewServer(authClient, matchmaker, gameService, itemsClient)
+	server := gameserver.NewServer(ctx, authClient, matchmaker, gameService, itemsClient)
 
 	// -- routes --
 	router.GET("/game/ws", auth.WSAuthMiddleware(authClient), server.HandleWebSocketConnection)

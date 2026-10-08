@@ -457,7 +457,7 @@ func (s *Server) cleanUpPlayerCompletely(playerID uuid.UUID) {
 	slog.Info("Completely cleaning up player", "username", player.Username)
 
 	// 從 queue 移除
-	s.queue.PlayerRemoveQueue(player)
+	s.queue.PlayerRemoveQueue(s.ctx, player)
 
 	// 從 session 移除
 	s.cleanUpPlayerFromSession(player)
@@ -481,14 +481,14 @@ func (s *Server) cleanUpClient(conn *websocket.Conn) {
 	if exists {
 		slog.Info("Cleaning up client", "username", player.Username)
 		// 從 queue 中移除玩家
-		s.queue.PlayerRemoveQueue(player)
+		s.queue.PlayerRemoveQueue(s.ctx, player)
 		return
 	}
 
 	slog.Info("Cleaning up client", "username", player.Username, "player_id", player.ID)
 
 	// 從 queue 中移除玩家
-	s.queue.PlayerRemoveQueue(player)
+	s.queue.PlayerRemoveQueue(s.ctx, player)
 
 	// 關閉並刪除 msgChan
 	if ch, exists := s.msgChan[conn]; exists {

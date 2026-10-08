@@ -1,6 +1,7 @@
 package gameserver
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -33,7 +34,7 @@ func awaitAction(t *testing.T, msgCh chan interface{}, action constants.Action) 
 // Connecting is not entering. A player picks a character first, and only then
 // asks to enter the hub. FS-29KSH §Requirements 15, 19.
 func TestEnterHub_PlacesThePlayerAndTellsThem(t *testing.T) {
-	server := NewServer(&MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
 	hub, exists := server.HubSession()
 	require.True(t, exists)
 

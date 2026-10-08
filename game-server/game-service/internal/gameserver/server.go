@@ -1,6 +1,7 @@
 package gameserver
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 type Server struct {
 	upgrader   websocket.Upgrader
 	serverChan chan types.ClientPackage
+	ctx        context.Context
 
 	// NOTE: primary use for client messages to the message hub
 	// [player connection] to dynamic client payload
@@ -55,6 +57,7 @@ type Server struct {
 	mu sync.RWMutex
 
 	queue QueueManager
+
 	// auth client for gRPC calls
 	authClient grpcauth.AuthClient
 
@@ -71,13 +74,13 @@ type MessageSender interface {
 // QueueManager is the subset of queue operations the gameserver consumes.
 type QueueManager interface {
 	Start()
-	AddPlayer(player *types.Player) error
-	PlayerRemoveQueue(player *types.Player)
+	PlayerJoinQueue(ctx context.Context, player *types.Player) error
+	PlayerRemoveQueue(ctx context.Context, player *types.Player) error
 	GetMatchedChan() chan []*types.Player
 	GetQueueStatusChan() chan matchmaker.QueueStatus
 }
 
-func NewServer(authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient) *Server {
+func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient) *Server {
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			// TODO: Allow all connections by default for simplicity; can add more logic here
@@ -86,6 +89,7 @@ func NewServer(authClient grpcauth.AuthClient, queueService QueueManager, eventE
 	}
 
 	server := &Server{
+		ctx:      ctx,
 		upgrader: upgrader,
 
 		serverChan: make(chan types.ClientPackage, 10),
@@ -427,7 +431,7 @@ func (s *Server) GetGameSession(id uuid.UUID) (*game.Session, bool) {
 * add player to queue (delegates to QueueSystem)
 **/
 func (s *Server) AddPlayer(player *types.Player) error {
-	err := s.queue.AddPlayer(player)
+	err := s.queue.PlayerJoinQueue(s.ctx, player)
 
 	if err != nil {
 		return err
@@ -440,7 +444,7 @@ func (s *Server) AddPlayer(player *types.Player) error {
 * remove player from queue (delegates to QueueSystem)
 **/
 func (s *Server) RemovePlayerFromQueue(player *types.Player) {
-	s.queue.PlayerRemoveQueue(player)
+	s.queue.PlayerRemoveQueue(s.ctx, player)
 }
 
 /**
