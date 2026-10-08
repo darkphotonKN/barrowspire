@@ -19,7 +19,12 @@ import {
   type ArtLogger,
   type FrameQuery,
 } from "./library";
-import { validateManifest, type ArtManifest } from "./manifest";
+import {
+  animationAtlas,
+  sheetAtlases,
+  validateManifest,
+  type ArtManifest,
+} from "./manifest";
 
 export const MANIFEST_KEY = "art:manifest";
 export const DEFAULT_ART_URL = "/art/";
@@ -123,10 +128,11 @@ function registerFrames(
   loaded: ReadonlySet<string>,
 ) {
   for (const [name, sheet] of Object.entries(manifest.sheets)) {
-    if (!loaded.has(sheet.atlas)) continue;
-    const textureKey = atlasTextureKey(sheet.atlas);
-    const texture = scene.textures.get(textureKey);
+    if (!sheetAtlases(sheet).every((a) => loaded.has(a))) continue;
     for (const [animation, anim] of Object.entries(sheet.animations)) {
+      // an oversized sheet's animation may sit on another page (FS-Q14EV §B.7)
+      const textureKey = atlasTextureKey(animationAtlas(sheet, anim));
+      const texture = scene.textures.get(textureKey);
       anim.frames.forEach((frames, direction) => {
         const names = frames.map((pos, index) => {
           const frame = frameName(name, animation, direction, index);

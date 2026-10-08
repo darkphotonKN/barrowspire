@@ -35,6 +35,10 @@ import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { folkLook } from "@/render/art/hubFolk";
 import { AMBIENT, LightMap } from "@/render/lighting";
+import { cursorCss, cursorSource } from "@/render/cursors";
+// the effects module has no barrel: its runtime and smoke are imported by path
+import { EffectsRuntime } from "@/render/effects/runtime";
+import { ChimneySmoke } from "@/render/effects/smoke";
 import { MARKER_DEPTH, markerBase } from "@/render/markers";
 import {
   GroundLayer,
@@ -48,6 +52,21 @@ import {
   worldSeed,
   type House,
 } from "@/render/world";
+import {
+  HUB_CARTS,
+  HUB_CRATES,
+  HUB_DRESSING,
+  HUB_FENCES,
+  HUB_HEARTH,
+  HUB_PATHS,
+  HUB_STALLS,
+  HUB_WASHING_LINE,
+  HUB_WELL,
+  fenceSegments,
+  type PropSpot,
+} from "@/render/world/hubKeepOut";
+import { planChimney } from "@/render/world/roofs";
+import { trimCrop } from "@/render/world/walls";
 
 /** Falls back to the warrior when a class is missing or unrecognised. */
 function textureFor(playerClass: string | undefined, facing: Facing): string {
@@ -81,26 +100,15 @@ const WALK_STEP = 0.3;
  * Scenery, at fixed points like everything else in the hub. None of it blocks —
  * see drawScenery — so it lives here rather than in the world.
  */
-const HEARTH: [number, number] = [1000, 640];
+const HEARTH = HUB_HEARTH;
 /** How far a roof overhangs the walls it rests on. */
 const ROOF_EAVE = 10;
-/** A well, market stalls, two carts and some crates, all at fixed spots. */
-const WELL: [number, number] = [820, 460];
-const STALLS: [number, number][] = [
-  [1240, 560],
-  [700, 500],
-  [1340, 900],
-];
-const CARTS: [number, number][] = [[540, 430], [1420, 900]];
-const CRATES: [number, number][] = [
-  [1300, 470], [1330, 500], [880, 900], [910, 872], [520, 760],
-];
-/** Fence runs: [x, y, length, horizontal]. */
-const FENCES: [number, number, number, boolean][] = [
-  [300, 760, 220, true],
-  [1620, 300, 180, true],
-  [700, 940, 260, true],
-];
+/** A chimney over the roof piece it stands on (layer 2), on the same footprint. */
+const CHIMNEY_LAYER = 3;
+/*
+ * The well, market stalls, carts, crates, fences and the new dressing stand at the fixed spots in
+ * render/world/hubKeepOut.ts, every one clear of the walking ground (FS-KYPQ9 §A.3–§A.5).
+ */
 /** Lamp posts along the paths: the hub's lit places after dusk (FS-2325V §C.7). */
 const LAMP_POSTS: [number, number][] = [
   [930, 490],
@@ -109,11 +117,7 @@ const LAMP_POSTS: [number, number][] = [
   [1390, 650],
 ];
 /** Trodden ground, joining the spawn to the people worth walking to. */
-const PATHS: [number, number, number, number][] = [
-  [940, 500, 130, 320],
-  [700, 660, 360, 70],
-  [1000, 660, 380, 70],
-];
+const PATHS = HUB_PATHS;
 const TREES: [number, number][] = [
   [430, 300], [500, 360], [1420, 260], [1500, 330], [1470, 205],
   [180, 820], [260, 880], [1900, 600], [1900, 780], [560, 900],
@@ -271,9 +275,18 @@ export class HubScene extends Phaser.Scene {
   private groundLayer?: GroundLayer;
   /** FS-2325V §C.7: carries the delver's torch, replacing the overlay pool. */
   private lightMap?: LightMap;
+  /** World effects over the baked fx sheets (FS-KYPQ9 §B): the chimneys' smoke. */
+  private fx?: EffectsRuntime;
   private occluders = new Occluders();
-  /** Each house's roof, hidden while the delver stands inside it (FS-2325V §C.3). */
-  private roofs: { house: House; parts: { setVisible(visible: boolean): unknown }[] }[] = [];
+  /**
+   * Each house's roof, hidden while the delver stands inside it (FS-2325V §C.3). `baked` is
+   * false for the placeholder roof drawn without roof art, which carries no chimney.
+   */
+  private roofs: {
+    house: House;
+    baked: boolean;
+    parts: { setVisible(visible: boolean): unknown }[];
+  }[] = [];
   private insideRoof?: House;
   private unsubscribeQueue?: () => void;
 
@@ -299,6 +312,11 @@ export class HubScene extends Phaser.Scene {
     ensureCharacterTextures(this);
     this.art = registerArt(this);
     this.occluders = new Occluders();
+    // The run's gauntlet, so hub and run share one pointer (FS-KYPQ9 §H.3); the browser's
+    // `default` without its sheet. Nothing hostile here, so no strike-mark.
+    this.input.setDefaultCursor(
+      cursorCss("cursor_gauntlet", "default", cursorSource(this.art, this.textures)),
+    );
 
     // Baked ground with dirt paths when the manifest has it (FS-2325V §C.1).
     this.groundLayer = GroundLayer.available(this.art, "hub")
@@ -314,8 +332,11 @@ export class HubScene extends Phaser.Scene {
 
     // Lit like a run, in warm dusk rather than barrow dark (FS-2325V §C.8): the
     // light-map with the delver's torch, then the vignette and dust above it.
-    this.lightMap = new LightMap(this, AMBIENT.hub);
+    const lightMap = new LightMap(this, AMBIENT.hub);
+    this.lightMap = lightMap;
     createAtmosphere(this);
+    // under the light-map like everything in the world (FS-KYPQ9 §A.6, §B.8)
+    this.fx = new EffectsRuntime(this, this.art, lightMap);
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) =>
       this.renderState(state),
@@ -338,6 +359,9 @@ export class HubScene extends Phaser.Scene {
       this.views.clear();
       this.npcs.clear();
       this.closeDialogue();
+      // the chimneys' smoke, puffs still burning out too: none outlives this scene instance
+      this.fx?.clearAll();
+      this.fx = undefined;
       // the scene clock stops with the scene, so the flicker goes with it
       this.hearth = undefined;
       this.structuresDrawn = false;
@@ -346,6 +370,8 @@ export class HubScene extends Phaser.Scene {
       this.groundLayer = undefined;
       this.roofs = [];
       this.insideRoof = undefined;
+      // the gauntlet is the hub's and the run's; the menus the hub hands over to keep the browser's
+      this.input.setDefaultCursor("");
     };
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, release);
     this.events.once(Phaser.Scenes.Events.DESTROY, release);
@@ -493,11 +519,15 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * Trees, grass and a fire, and the lamp posts that light the paths.
+   * Trees, grass and a fire, the lamp posts that light the paths, and the town's
+   * props and dressing.
    *
    * Baked props where the manifest has them (FS-2325V §C.1, §C.5, §C.7): trees,
-   * bushes, barrels, a brazier on the hearth and lamp posts, the brazier and the
-   * lamps declaring their light. The rest keep their placeholder drawing.
+   * bushes, a brazier on the hearth and lamp posts, the brazier and the lamps
+   * declaring their light. The market stalls, carts, well, crates and fences are
+   * baked too (FS-KYPQ9 §A.2) and keep their placeholder drawing only for when
+   * their sheet is missing; the dressing (FS-KYPQ9 §A.5) has no placeholder. Each
+   * house's roof gets its chimney and smoke here too (FS-KYPQ9 §A.6).
    *
    * All client-side and none of it blocks: anything a delver can walk into is a
    * building, and buildings are server entities so that collision and shape come
@@ -540,10 +570,25 @@ export class HubScene extends Phaser.Scene {
 
     const baked = this.art.available;
     /** A baked prop on a footprint; tall ones fade over the delver, lit ones light. */
-    const place = (sheet: string, at: Point, index: number, tall: boolean) => {
-      const { sprite, light } = addProp(this, this.art, sheet, at, { index });
+    const place = (
+      sheet: string,
+      at: Point,
+      index: number,
+      tall: boolean,
+      query: { animation?: string; layer?: number } = {},
+    ) => {
+      const { sprite, light } = addProp(this, this.art, sheet, at, { index, ...query });
       if (tall) this.occluders.add([sprite]);
       if (light) this.lightMap?.add(light);
+      return sprite;
+    };
+    const placeSpot = (s: PropSpot) =>
+      place(s.sheet, s.at, s.index ?? 0, !!s.tall, { animation: s.animation });
+    // Dressing with no placeholder draws nothing without its sheet (FS-KYPQ9 §A.9). The sheets
+    // missing are gathered and said once, in one warning, after the scenery is laid.
+    const unbaked: string[] = [];
+    const skip = (sheet: string) => {
+      if (!unbaked.includes(sheet)) unbaked.push(sheet);
     };
 
     for (const [x, y] of LAMP_POSTS) {
@@ -623,8 +668,32 @@ export class HubScene extends Phaser.Scene {
       prop.fillCircle(x - 18, y - 18, 5);
     }
 
-    for (const [x, y, length, horizontal] of FENCES) {
-      if (blocked(x, y, 20)) continue;
+    for (const run of HUB_FENCES) {
+      const { x, y } = run.at;
+      const length = run.length;
+      const horizontal = run.axis === "x";
+      // Baked: one-tile post-and-rail segments cut along the run as walls are cut
+      // into pieces, the last trimmed, a stouter post at each end (FS-KYPQ9 §A.2).
+      // A run stands only if every segment and both end posts clear the buildings: a run
+      // whose ends clear a house can still cross it in the middle.
+      const { segments, posts } = fenceSegments(run);
+      if ([...segments.map((s) => s.at), ...posts].some((p) => blocked(p.x, p.y, run.r))) continue;
+      if (this.art.has(segments[0].sheet) && this.art.has("fence_post")) {
+        for (const seg of segments) {
+          const sprite = place(seg.sheet, seg.at, 0, false);
+          sprite.setDepth(worldDepth(seg.depthAt.x, seg.depthAt.y));
+          const sheet = this.art.sheet(seg.sheet);
+          if (seg.keep < 1 && sheet) {
+            const crop = trimCrop(seg.axis, seg.keep, {
+              width: sheet.frameWidth,
+              anchorX: sheet.anchor.x,
+            });
+            sprite.setCrop(crop.x, 0, crop.width, sheet.frameHeight);
+          }
+        }
+        for (const at of posts) place("fence_post", at, 0, false, { layer: 1 });
+        continue;
+      }
 
       // A fence runs along a world axis, which is a diagonal on screen, so each
       // post is projected on its own and the rails join the projected ends.
@@ -636,8 +705,8 @@ export class HubScene extends Phaser.Scene {
       );
       fence.fillStyle(BARROW_HEX.barrowDeep, 1);
 
-      const posts = Math.floor(length / 36);
-      for (let i = 0; i <= posts; i++) {
+      const postCount = Math.floor(length / 36);
+      for (let i = 0; i <= postCount; i++) {
         const post = worldToScreen(horizontal ? x + i * 36 : x, horizontal ? y : y + i * 36);
         fence.fillRect(post.x, post.y - 16, 5, 22);
       }
@@ -650,22 +719,26 @@ export class HubScene extends Phaser.Scene {
       }
     }
 
-    for (const [x, y] of CRATES) {
-      if (blocked(x, y, 14)) continue;
-      if (baked) {
-        place("barrel", { x, y }, 0, false);
-        continue;
-      }
+    // A restyled prop (FS-KYPQ9 §A.2): baked at its spot, its old drawing without the sheet,
+    // nothing at all inside a building.
+    const restyled = (spot: PropSpot, placeholder: () => void) => {
+      if (blocked(spot.at.x, spot.at.y, spot.r)) return;
+      if (this.art.has(spot.sheet)) placeSpot(spot);
+      else placeholder();
+    };
+
+    for (const spot of HUB_CRATES) restyled(spot, () => {
+      const { x, y } = spot.at;
       const prop = this.propAt(x, y);
       prop.fillStyle(BARROW_HEX.barrowDeep, 1);
       prop.fillRect(x - 11, y - 11, 22, 22);
       prop.lineStyle(2, BARROW_HEX.barrowBrown, 0.9);
       prop.strokeRect(x - 11, y - 11, 22, 22);
       prop.lineBetween(x - 11, y - 11, x + 11, y + 11);
-    }
+    });
 
-    for (const [x, y] of CARTS) {
-      if (blocked(x, y, 26)) continue;
+    for (const spot of HUB_CARTS) restyled(spot, () => {
+      const { x, y } = spot.at;
       const prop = this.propAt(x, y + 11);
       prop.fillStyle(BARROW_HEX.barrowDeep, 1);
       prop.fillRect(x - 24, y - 10, 48, 20);
@@ -680,10 +753,10 @@ export class HubScene extends Phaser.Scene {
       prop.fillCircle(x + 14, y + 11, 3);
       // the shaft
       prop.fillRect(x + 22, y - 2, 20, 4);
-    }
+    });
 
-    if (!blocked(WELL[0], WELL[1], 22)) {
-      const [wx, wy] = WELL;
+    restyled(HUB_WELL, () => {
+      const { x: wx, y: wy } = HUB_WELL.at;
       const well = this.propAt(wx, wy);
       well.fillStyle(BARROW_HEX.slate, 1);
       well.fillCircle(wx, wy, 20);
@@ -695,14 +768,15 @@ export class HubScene extends Phaser.Scene {
       well.fillRect(wx + 15, wy - 34, 5, 30);
       well.fillStyle(BARROW_HEX.barrowBrown, 1);
       well.fillRect(wx - 26, wy - 40, 52, 8);
-    }
+    });
 
     // The awnings are the one place a little colour is honest — a market is
-    // meant to catch the eye — so they alternate rather than all matching.
+    // meant to catch the eye — so they alternate rather than all matching. The
+    // baked stall carries the same three as its variants, picked by index.
     const awnings = [BARROW_HEX.oxblood, BARROW_HEX.arcaneDeep, BARROW_HEX.barrowBrown];
 
-    STALLS.forEach(([sx, sy], i) => {
-      if (blocked(sx, sy, 40)) return;
+    HUB_STALLS.forEach((spot, i) => restyled(spot, () => {
+      const { x: sx, y: sy } = spot.at;
       const stall = this.propAt(sx, sy + 8);
 
       stall.fillStyle(BARROW_HEX.barrowDeep, 1);
@@ -720,7 +794,34 @@ export class HubScene extends Phaser.Scene {
       stall.fillRect(sx - 36, sy - 36, 72, 9);
       stall.fillStyle(BARROW_HEX.vellumFaint, 0.5);
       stall.fillRect(sx - 36, sy - 30, 72, 3);
-    });
+    }));
+
+    // New dressing (FS-KYPQ9 §A.5): baked only, decoration only. Nothing here is
+    // interactive, has a hit area or a body; placement keeps it off the walking
+    // ground (hubKeepOut.ts), and blocked() still has the last word.
+    const dress = (spot: PropSpot): boolean => {
+      if (blocked(spot.at.x, spot.at.y, spot.r)) return false;
+      if (!this.art.has(spot.sheet)) {
+        skip(spot.sheet);
+        return false;
+      }
+      placeSpot(spot);
+      return true;
+    };
+    for (const spot of HUB_DRESSING) dress(spot);
+
+    // The washing line hangs between its two posts and sorts by the span's
+    // midpoint, so it goes up only where both posts stood.
+    const { posts: linePosts, line } = HUB_WASHING_LINE;
+    const postsStood = linePosts.map(dress).every(Boolean);
+    if (postsStood && this.art.has(line.sheet)) placeSpot(line);
+    else if (postsStood) skip(line.sheet);
+
+    this.raiseChimneys(skip);
+    if (unbaked.length > 0)
+      console.warn(
+        `hub: no art for ${unbaked.map((s) => `"${s}"`).join(", ")}; that dressing is not drawn`,
+      );
 
     this.scenery = scenery;
 
@@ -744,6 +845,36 @@ export class HubScene extends Phaser.Scene {
     // the flame stands in the ring, drawn just above it
     this.hearth = this.propAt(HEARTH[0], HEARTH[1], 1);
     this.time.addEvent({ delay: 90, loop: true, callback: () => this.flicker() });
+  }
+
+  /**
+   * One chimney on each house's roof, with its smoke (FS-KYPQ9 §A.6). A chimney is part of the
+   * drawn roof, not a ground prop, so it is the one placement that skips `blocked()` and the
+   * keep-out rule: it stands on the roof at the house's `planChimney` spot, sorts with that
+   * roof's pieces, fades with them over the delver and joins the roof's parts, so it hides
+   * whenever the roof does, its smoke with it. Without the `chimney` sheet there is neither
+   * chimney nor smoke; without `fx_smoke` the chimney stands and the runtime draws no smoke. A
+   * house under the placeholder roof (no roof art) gets neither.
+   */
+  private raiseChimneys(skip: (sheet: string) => void): void {
+    if (!this.art.has("chimney")) {
+      skip("chimney");
+      return;
+    }
+    for (const roof of this.roofs) {
+      // the chimney stands on baked slope pieces; over a placeholder roof it would float
+      if (!roof.baked) continue;
+      const spot = planChimney(roof.house, SCENERY_SEED);
+      const { sprite } = addProp(this, this.art, "chimney", spot.at, { layer: CHIMNEY_LAYER });
+      sprite.y -= spot.lift;
+      this.occluders.add([sprite]);
+      const parts: { setVisible(visible: boolean): unknown }[] = [sprite];
+      if (this.fx)
+        parts.push(new ChimneySmoke(this.fx, `chimney:${roof.house.id}`, spot.at, spot.top));
+      // a roof already hidden over the delver keeps its new parts hidden too
+      if (roof.house === this.insideRoof) parts.forEach((p) => p.setVisible(false));
+      roof.parts.push(...parts);
+    }
   }
 
   /**
@@ -883,7 +1014,8 @@ export class HubScene extends Phaser.Scene {
       .text(24, this.cameras.main.height - 44, text, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "14px",
-        color: toCss(BARROW_HEX.amber),
+        // vellum, not amber: the delver cannot act on it (FS-KYPQ9 §I)
+        color: toCss(BARROW_HEX.vellum),
         backgroundColor: toCss(BARROW_HEX.charcoal),
         padding: { x: 12, y: 8 },
       })
@@ -933,7 +1065,7 @@ export class HubScene extends Phaser.Scene {
     for (const house of houses) {
       const roof = addRoof(this, this.art, house);
       if (roof) this.occluders.add(roof);
-      this.roofs.push({ house, parts: roof ?? [this.placeholderRoof(house)] });
+      this.roofs.push({ house, baked: !!roof, parts: roof ?? [this.placeholderRoof(house)] });
     }
 
     // One flag covers both: the walls and their roofs are drawn together.
@@ -1170,9 +1302,8 @@ export class HubScene extends Phaser.Scene {
       new Phaser.Geom.Rectangle(-80, -17, 160, 34),
       Phaser.Geom.Rectangle.Contains,
     );
-    this.input.setDefaultCursor("default");
-    option.on("pointerover", () => this.input.setDefaultCursor("pointer"));
-    option.on("pointerout", () => this.input.setDefaultCursor("default"));
+    // The cursor stays the gauntlet over an option; the text brightening to vellum
+    // is the hover cue (FS-KYPQ9 §H.3).
     option.on("pointerup", onPick);
     option.on("pointerover", () => text.setColor(toCss(BARROW_HEX.vellum)));
     option.on("pointerout", () => text.setColor(toCss(colour)));

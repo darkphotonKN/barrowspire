@@ -109,23 +109,41 @@ function assemble({ tile, facings, sheets }) {
   // Every frame of a sheet in manifest order: animation, then direction, then frame.
   const frameList = (s) => Object.values(s.animations).flatMap((a) => a.frames.flat());
   const pages = packAtlases(
-    sheets.map((s) => ({ name: s.name, group: s.group, frameWidth: s.frameWidth, frameHeight: s.frameHeight, frameCount: frameList(s).length })),
+    sheets.map((s) => ({
+      name: s.name,
+      group: s.group,
+      frameWidth: s.frameWidth,
+      frameHeight: s.frameHeight,
+      frameCount: frameList(s).length,
+      animations: Object.entries(s.animations).map(([name, a]) => ({ name, frameCount: a.frames.flat().length })),
+    })),
   );
+  // where each sheet's frames went: a whole sheet on one page, or (an oversized sheet, FS-Q14EV
+  // §B.7) each animation on its own page
   const atlasOf = {};
+  const partsOf = {};
   const images = {};
   const atlases = {};
+  const blit = (rgba, width, s, frames, spots) =>
+    frames.forEach((b64, i) => {
+      const px = Buffer.from(b64, "base64");
+      const { x, y } = spots[i];
+      for (let row = 0; row < s.frameHeight; row++)
+        px.copy(rgba, ((y + row) * width + x) * 4, row * s.frameWidth * 4, (row + 1) * s.frameWidth * 4);
+    });
   for (const p of pages) {
     const rgba = Buffer.alloc(p.width * p.height * 4);
     for (const [name, spots] of Object.entries(p.placements)) {
       atlasOf[name] = { key: p.key, spots };
       const s = sheets.find((x) => x.name === name);
-      frameList(s).forEach((b64, i) => {
-        const px = Buffer.from(b64, "base64");
-        const { x, y } = spots[i];
-        for (let row = 0; row < s.frameHeight; row++)
-          px.copy(rgba, ((y + row) * p.width + x) * 4, row * s.frameWidth * 4, (row + 1) * s.frameWidth * 4);
-      });
+      blit(rgba, p.width, s, frameList(s), spots);
     }
+    for (const [name, parts] of Object.entries(p.parts))
+      for (const [anim, spots] of Object.entries(parts)) {
+        (partsOf[name] ??= {})[anim] = { key: p.key, spots };
+        const s = sheets.find((x) => x.name === name);
+        blit(rgba, p.width, s, s.animations[anim].frames.flat(), spots);
+      }
     images[p.key] = rgba;
     atlases[p.key] = {
       image: `${p.key}.png`,
@@ -137,11 +155,25 @@ function assemble({ tile, facings, sheets }) {
 
   const manifestSheets = {};
   for (const s of [...sheets].sort((a, b) => (a.name < b.name ? -1 : 1))) {
-    const { key, spots } = atlasOf[s.name];
-    let k = 0;
     const animations = {};
-    for (const [anim, a] of Object.entries(s.animations))
-      animations[anim] = { fps: a.fps, loop: a.loop, frames: a.frames.map((dir) => dir.map(() => spots[k++])) };
+    let key;
+    if (atlasOf[s.name]) {
+      const { spots } = atlasOf[s.name];
+      key = atlasOf[s.name].key;
+      let k = 0;
+      for (const [anim, a] of Object.entries(s.animations))
+        animations[anim] = { fps: a.fps, loop: a.loop, frames: a.frames.map((dir) => dir.map(() => spots[k++])) };
+    } else {
+      // split: the sheet's atlas is its first animation's page; any animation on another page
+      // names it (and only those, so a sheet that fits one page never carries the field)
+      const parts = partsOf[s.name];
+      key = parts[Object.keys(s.animations)[0]].key;
+      for (const [anim, a] of Object.entries(s.animations)) {
+        const { key: page, spots } = parts[anim];
+        let k = 0;
+        animations[anim] = { fps: a.fps, loop: a.loop, ...(page !== key ? { atlas: page } : {}), frames: a.frames.map((dir) => dir.map(() => spots[k++])) };
+      }
+    }
     // the ground's measured colour, which lighting's readability floor is judged against
     const mean = s.group === "ground" ? meanColour(frameList(s).map((b64) => Buffer.from(b64, "base64"))) : undefined;
     // a standing sheet's head height over every facing's idle, where name plates and HP bars sit

@@ -65,6 +65,12 @@ server state and sends intents. ✅
 - [x] Pre-rendered character and creature art → FS-2325V
 - [x] Light-map lighting with placed light sources → FS-2325V
 - [x] Container-open presentation → FS-2325V
+- [ ] Expanded baked enemy roster → FS-Q14EV
+- [x] Hub town props and dressing → FS-KYPQ9
+- [x] Skill and combat effects → FS-none
+- [x] Skill and combat effects in the world's art direction → FS-KYPQ9
+- [x] Custom cursors and entrance markers → FS-none
+- [x] Cursors and world indicators in the world's art direction → FS-KYPQ9
 
 ### Hub
 

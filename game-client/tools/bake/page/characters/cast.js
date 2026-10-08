@@ -47,6 +47,7 @@ import {
   staff,
   wizardHat,
 } from "./gear.js";
+import { DEMON_ANIMATIONS, demon } from "./demon.js";
 
 const FRONT = [Math.PI / 2 - 0.95, Math.PI / 2 + 0.95];
 const BACK = [-Math.PI / 2 - 0.95, -Math.PI / 2 + 0.95];
@@ -378,7 +379,10 @@ export function troll() {
 
 /**
  * The cast as manifest sheets. `_base` is the body layer: equipment layers can join it later as
- * `<sheet>_<slot>` sheets sharing its frame size and anchor (FS-2325V §E.6).
+ * `<sheet>_<slot>` sheets sharing its frame size and anchor (FS-2325V §E.6). A creature built in
+ * its own module names it (`module`, for the manifest's provenance); one with its own clip
+ * lengths carries them (`animations`). The roster (FS-Q14EV §A.3) packs into its own groups, so
+ * no existing atlas reflows.
  */
 export const CAST = [
   { sheet: "char_knight_base", group: "characters", fn: "knight", build: knight },
@@ -386,4 +390,5 @@ export const CAST = [
   { sheet: "char_wizard_base", group: "characters", fn: "wizard", build: wizard },
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
+  { sheet: "creature_demon_base", group: "boss", fn: "demon", module: "demon", build: demon, animations: DEMON_ANIMATIONS },
 ];

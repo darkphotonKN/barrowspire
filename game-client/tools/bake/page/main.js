@@ -50,6 +50,17 @@ window.bakeSheet = (name) => {
     frameWidth = TILE_W;
     frameHeight = TILE_H;
     anchor = { x: 0.5, y: 0.5 };
+  } else if (sheet.kind === "texture") {
+    // drawn per pixel in code at a fixed size and anchor (models/fx.js, models/cursors.js)
+    frameWidth = sheet.width;
+    frameHeight = sheet.height;
+    anchor = sheet.anchor;
+    pixels = order.map((f) => {
+      const px = f.build();
+      if (px.length !== frameWidth * frameHeight * 4)
+        throw new Error(`bake: ${name} frame is not ${frameWidth}×${frameHeight}`);
+      return px;
+    });
   } else if (sheet.kind === "icon") {
     pixels = order.map((f) => baker.bakeIcon(f.build, ICON_SIZE));
     frameWidth = ICON_SIZE;

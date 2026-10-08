@@ -33,6 +33,29 @@ const HALO_SHARE = 0.16;
 const HALO_ALPHA = 0.55;
 /** How fast the carried pool fades when the delver has gone (escaped or died), per frame. */
 const CARRY_FADE = 0.92;
+/** Short-lived sources lit at once (FS-KYPQ9 §C.3); past it, the oldest is dropped. */
+export const TRANSIENT_CAP = 16;
+
+/** What a caller gives for a short-lived pool. It burns steady unless told to flicker. */
+export type TransientSpec = Omit<LightSource, "flicker" | "seed"> &
+  Partial<Pick<LightSource, "flicker" | "seed">>;
+
+/**
+ * A short-lived light (FS-KYPQ9 §C.1): move it by setting `x`/`y`, fade it through `intensity`
+ * (0..1), and `remove()` it. It is the stamped source itself, so a move shows on the next frame.
+ */
+export interface TransientLight extends LightSource {
+  /** False once removed, expired, dropped past the cap, or cleared. */
+  readonly alive: boolean;
+  remove(): void;
+}
+
+interface Transient extends TransientLight {
+  alive: boolean;
+  lifetimeMs?: number;
+  /** The frame time it was first stamped at; its lifetime counts from there. */
+  bornAt?: number;
+}
 
 /**
  * A white radial falloff: a pool stamp takes its colour from the tint. Drawn once per game.
@@ -64,6 +87,9 @@ export class LightMap {
   private readonly image: Phaser.GameObjects.Image;
   private readonly sources: LightSource[] = [];
   private readonly visible: LightSource[] = [];
+  /** Short-lived sources, oldest first. Never holds fixed sources or the carried pool. */
+  private readonly transients: Transient[] = [];
+  private readonly visibleTransients: LightSource[] = [];
   private readonly halos: Phaser.GameObjects.Image[] = [];
   /** When a source's flame can be seen; absent means always. */
   private readonly haloWhen = new Map<LightSource, () => boolean>();
@@ -102,9 +128,10 @@ export class LightMap {
 
     // Window resized or the scale refit: stay full-canvas (FS-2325V "Edge States").
     scene.scale.on(Phaser.Scale.Events.RESIZE, this.fit, this);
-    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
-      scene.scale.off(Phaser.Scale.Events.RESIZE, this.fit, this),
-    );
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      scene.scale.off(Phaser.Scale.Events.RESIZE, this.fit, this);
+      this.clearTransient();
+    });
   }
 
   /**
@@ -115,6 +142,39 @@ export class LightMap {
   add(source: LightSource, haloWhen?: () => boolean): void {
     this.sources.push(source);
     if (haloWhen) this.haloWhen.set(source, haloWhen);
+  }
+
+  /**
+   * A short-lived pool (FS-KYPQ9 §C): a fireball's light, an impact's decay, an escape column.
+   * Stamped like a fixed source but never given a flame halo, so under a roof it lights the floor
+   * and shows nothing through it. Past {@link TRANSIENT_CAP} the oldest is dropped.
+   *
+   * Removal has one owner per light. A caller that runs its own clock removes the light itself
+   * and passes no `lifetimeMs`: the effects runtime does this, removing each light on the same
+   * timer that ends its tween and sprites. `lifetimeMs` is for a caller with no clock of its own:
+   * the light-map then removes the light, counted in frame time from the first frame it is
+   * stamped. Removal is idempotent either way (see {@link drop}), so a late `remove()` after an
+   * expiry, a cap drop or a `clearTransient()` does nothing.
+   */
+  addTransient(spec: TransientSpec, lifetimeMs?: number): TransientLight {
+    while (this.transients.length >= TRANSIENT_CAP)
+      this.drop(this.transients[0]);
+    const light: Transient = {
+      flicker: 0,
+      seed: 0,
+      ...spec,
+      alive: true,
+      lifetimeMs,
+      remove: () => this.drop(light),
+    };
+    this.transients.push(light);
+    return light;
+  }
+
+  /** Removes every short-lived source (scene SHUTDOWN, and `resetRun` in the run). */
+  clearTransient(): void {
+    for (const t of this.transients) t.alive = false;
+    this.transients.length = 0;
   }
 
   setAmbient(ambient: number): void {
@@ -145,11 +205,35 @@ export class LightMap {
     this.texture.fill(this.ambient, 1);
     const lit = cullInto(this.sources, view, this.visible);
     for (const s of lit) this.stamp(s, view, timeMs, 1);
+    this.expire(timeMs);
+    for (const s of cullInto(this.transients, view, this.visibleTransients))
+      this.stamp(s, view, timeMs, 1);
     if (this.carriedAlpha > 0.01)
       this.stamp(this.carried, view, timeMs, this.carriedAlpha);
     this.forceNormalBlend();
 
     this.placeHalos(lit, timeMs);
+  }
+
+  /** Drops short-lived sources whose lifetime has run out. */
+  private expire(timeMs: number): void {
+    for (let i = this.transients.length - 1; i >= 0; i--) {
+      const t = this.transients[i];
+      if (t.lifetimeMs === undefined) continue;
+      t.bornAt ??= timeMs;
+      if (timeMs - t.bornAt >= t.lifetimeMs) this.drop(t);
+    }
+  }
+
+  /**
+   * Takes a short-lived source out of the stamp list. Harmless to repeat: it finds the light by
+   * identity, so a second call (a `remove()` after an expiry, a cap drop or a clear) finds
+   * nothing and never takes out another light.
+   */
+  private drop(light: Transient): void {
+    light.alive = false;
+    const i = this.transients.indexOf(light);
+    if (i >= 0) this.transients.splice(i, 1);
   }
 
   /**

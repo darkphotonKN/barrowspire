@@ -163,8 +163,9 @@ the test above, because most of those things cannot be acted on.
   Creature variants change proportions and add bones (tail, jaw, hunch).
 - **Delver (player):** cloaked/armored figure with a lantern or torch; strong silhouette. The
   class reads at a glance: knight, archer, wizard.
-- **Enemies:** barrow/undead themes — skeletons, wraiths, revenants. Dark palette; **glowing
-  eyes as the readable accent.** Full rules under *Enemy design language* below.
+- **Enemies:** barrow/undead themes — skeletons, wraiths, revenants — for fodder and brutes;
+  a boss may also be an infernal demon the Spire summons. Dark palette; **glowing eyes as the
+  readable accent.** Full rules under *Enemy design language* below.
 - **Hub folk and menus use the same cast.** Villagers, function NPCs, and every character shown
   in a menu (the roster, character creation, the loadout) come from baked sheets on the same
   rig as the delvers, never from a separate illustration or the old pixel generators. What a
@@ -179,9 +180,18 @@ Every hostile is built to be told apart from a delver in one glance, even at the
 the run's dark ambient. These rules apply to every creature added from now on, and the ghoul and
 troll already baked are the reference pair.
 
-- **Undead and barrow-born only.** Skeletons, ghouls, wraiths, revenants, barrow-trolls,
-  grave-hounds. Things that were buried, or that live where the buried are. No demons, no
-  sci-fi, no cartoon monsters.
+- **Undead and barrow-born only, for fodder and brutes.** Skeletons, ghouls, wraiths, revenants,
+  barrow-trolls, grave-hounds. Things that were buried, or that live where the buried are. No
+  demons below boss tier, no sci-fi, no cartoon monsters.
+- **Boss-tier exception: infernal beings the Spire summons.** A demon may appear, but only as a
+  boss. It reads as something the Spire's power has called up from beyond the barrow dead, and it
+  is never licence for demon fodder or demon brutes. *(Amended at the owner's request,
+  2026-10-08.)*
+- **Green-hide clause (bosses only).** A dark, desaturated hide green (bog or lich green, mixed
+  from `BARROW` toward charcoal and barrow-deep, never the `arcane` token as-is and never brighter
+  or more saturated than it) is allowed as a boss's body material. Emissives stay ember red.
+  Green is never an emissive and never a marker colour on a hostile, because arcane green means
+  *safe*. *(Amended at the owner's request, 2026-10-08.)*
 - **Silhouette breaks the human line.** A delver stands upright and symmetrical. A hostile never
   does: it is hunched, too thin, too long in the arm, asymmetric (one arm heavier, a broken
   jaw), or wears rags that trail. Test at 1x: with the colour removed, the outline alone must say

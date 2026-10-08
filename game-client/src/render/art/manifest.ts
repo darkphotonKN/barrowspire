@@ -9,7 +9,9 @@
  * - `anchor` is the origin fraction of the frame where the object's ground footprint origin
  *   sits, so `sprite.setOrigin(anchor.x, anchor.y)` stands it on its world position.
  * - `frames[direction][index]` is the frame's top-left in its atlas, at 1x. Every frame of a
- *   sheet has the sheet's `frameWidth` x `frameHeight`, whatever animation it belongs to.
+ *   sheet has the sheet's `frameWidth` x `frameHeight`, whatever animation it belongs to. The
+ *   atlas is the sheet's, unless the animation names its own page (an oversized sheet split by
+ *   animation, FS-Q14EV §B.7).
  * - A state (door locked/open) or a variant (grass a/b/c) is an animation of one frame per
  *   variant at 0 fps; a moving animation (walk) has several frames at its fps.
  * - Directions, when 8, follow {@link DIRECTION_ORDER}, which the manifest also records as
@@ -64,9 +66,27 @@ export interface ArtFramePosition {
 export interface ArtAnimation {
   fps: number;
   loop: boolean;
-  /** `frames[direction][index]`: the frame's top-left in the sheet's atlas. */
+  /**
+   * The atlas page this animation's frames sit on, written only when that is not the sheet's
+   * `atlas`: a sheet too big for one page is split by animation over several pages of its group
+   * (FS-Q14EV §B.7). Absent, the frames are on the sheet's atlas. See {@link animationAtlas}.
+   */
+  atlas?: string;
+  /** `frames[direction][index]`: the frame's top-left in its atlas. */
   frames: ArtFramePosition[][];
 }
+
+/** The atlas an animation's frames sit on: its own page if it names one, else the sheet's. */
+export const animationAtlas = (sheet: ArtSheet, animation: ArtAnimation) =>
+  animation.atlas ?? sheet.atlas;
+
+/** Every atlas a sheet's frames sit on: its own, plus any page an animation spilled onto. */
+export const sheetAtlases = (sheet: ArtSheet): string[] => [
+  ...new Set([
+    sheet.atlas,
+    ...Object.values(sheet.animations).map((a) => animationAtlas(sheet, a)),
+  ]),
+];
 
 export interface ArtLight {
   offset: { x: number; y: number };
@@ -236,7 +256,14 @@ function checkSheet(
     errors.push(`${at}: animations must name at least one animation`);
   else
     for (const [anim, value] of Object.entries(animations))
-      checkAnimation(`${at} animation ${anim}`, value, sheet, atlas, errors);
+      checkAnimation(
+        `${at} animation ${anim}`,
+        value,
+        sheet,
+        atlas,
+        atlases,
+        errors,
+      );
 
   if (sheet.light !== undefined) checkLight(`${at} light`, sheet.light, errors);
   if (sheet.mean !== undefined && !isRgb(sheet.mean))
@@ -264,10 +291,20 @@ function checkAnimation(
   at: string,
   anim: unknown,
   sheet: Json,
-  atlas: unknown,
+  sheetAtlas: unknown,
+  atlases: Json,
   errors: string[],
 ) {
   if (!isObject(anim)) return void errors.push(`${at}: not an object`);
+  // an animation spilled onto another page of an oversized sheet names that page
+  let atlas = sheetAtlas;
+  let atlasKey = sheet.atlas;
+  if (anim.atlas !== undefined) {
+    atlasKey = anim.atlas;
+    atlas = typeof anim.atlas === "string" ? atlases[anim.atlas] : undefined;
+    if (!isObject(atlas))
+      errors.push(`${at}: atlas must name an atlas in the manifest`);
+  }
   if (!isFinite(anim.fps) || anim.fps < 0)
     errors.push(`${at}: fps must be a number >= 0`);
   if (typeof anim.loop !== "boolean")
@@ -311,7 +348,7 @@ function checkAnimation(
         (frame.x + fw > atlas.width || frame.y + fh > atlas.height)
       )
         errors.push(
-          `${at}: frame ${d}/${i} lies outside atlas ${String(sheet.atlas)}`,
+          `${at}: frame ${d}/${i} lies outside atlas ${String(atlasKey)}`,
         );
     }),
   );

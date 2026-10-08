@@ -301,7 +301,11 @@ export function deathClip(style) {
   return frames.map((p, i) => add(p, style.deathExtra?.(i)));
 }
 
-/** Each animation in `specs`, as key poses for a style, keyed by manifest animation name. */
+/**
+ * Each animation in `specs`, as key poses for a style, keyed by manifest animation name. A
+ * creature whose body the human clips do not fit (a digitigrade, winged boss: FS-Q14EV §B.6)
+ * keys its own in `style.clips[anim](spec)`.
+ */
 export function clipsFor(style, specs = ANIMATIONS) {
   const make = {
     idle: () => idleCycle(style, specs.idle.frames),
@@ -309,7 +313,8 @@ export function clipsFor(style, specs = ANIMATIONS) {
     attack: () => ATTACKS[style.attack]().map((p) => add(p, style.attackExtra)),
     death: () => deathClip(style),
   };
-  return Object.fromEntries(Object.keys(specs).map((anim) => [anim, make[anim]()]));
+  const own = style.clips ?? {};
+  return Object.fromEntries(Object.keys(specs).map((anim) => [anim, own[anim] ? own[anim](specs[anim]) : make[anim]()]));
 }
 
 // --- applying a pose -----------------------------------------------------------------------

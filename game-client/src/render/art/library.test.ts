@@ -140,6 +140,43 @@ describe("ArtLibrary.resolve", () => {
   });
 });
 
+describe("ArtLibrary with a sheet spilled over two pages (FS-Q14EV §B.7)", () => {
+  // door_x's "open" state sits on props-1; its other states stay on the sheet's props-0
+  const spilled = () => {
+    const m = manifest();
+    m.sheets.door_x.animations.open = {
+      ...m.sheets.door_x.animations.open,
+      atlas: "props-1",
+      frames: [[{ x: 200, y: 0 }]],
+    };
+    return m;
+  };
+
+  it("resolves a spilled animation's frames on its own page", () => {
+    const lib = new ArtLibrary(spilled(), logger());
+    expect(lib.resolve("door_x", { animation: "open" })).toMatchObject({
+      placeholder: false,
+      texture: "art:props-1",
+      frame: "door_x/open/0/0",
+    });
+  });
+
+  it("falls back to the sheet's atlas for animations that carry none", () => {
+    const lib = new ArtLibrary(spilled(), logger());
+    expect(lib.resolve("door_x", { animation: "locked" })).toMatchObject({
+      texture: "art:props-0",
+    });
+  });
+
+  it("draws the placeholder when any page of the sheet failed to load", () => {
+    const lib = new ArtLibrary(spilled(), logger(), new Set(["props-0"]));
+    expect(lib.has("door_x")).toBe(false);
+    expect(lib.resolve("door_x", { animation: "locked" }).placeholder).toBe(
+      true,
+    );
+  });
+});
+
 describe("ArtLibrary without a manifest", () => {
   it("is unavailable and resolves everything to the placeholder", () => {
     const lib = ArtLibrary.empty(logger());

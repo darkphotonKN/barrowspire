@@ -89,6 +89,10 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   pieces stand full height (north and west sides); "front" pieces are the low cut-away.
 - **Occluder**: a tall drawn thing (tree, lamp post, back wall piece, roof piece, door, arch) that
   fades while its sprite overlaps the delver's and its footprint sorts nearer the viewer.
+- **Dressing**: a decorative prop placed by the client (a cart, stall, trough, signpost, lamp post,
+  chimney smoke and the like). It is never interactable, never blocks movement and never stands
+  on walking ground. The server knows nothing of it. A prop that would need collision or a click
+  is not dressing (FS-KYPQ9 §A).
 - **Container view**: the on-screen satchel/coffer panel showing a container's contents. Not the
   same thing as a **container**, which is the WS entity in `containers[]`. Opening the view is
   presentation; clicking an item in it sends exactly the message the item row always sent.

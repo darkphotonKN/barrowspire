@@ -19,7 +19,7 @@ const S = 128;
  * Paints a tile: `fn(x, y) → { c: [r, g, b], h: height 0..1 }`. Returns the colour texture and a
  * tangent-space normal map derived from the height by central differences.
  */
-function paint(fn, { strength = 2, repeat = 1 } = {}) {
+export function paint(fn, { strength = 2, repeat = 1 } = {}) {
   const col = mkCanvas(S, S);
   const nrm = mkCanvas(S, S);
   const ci = col.getContext("2d").createImageData(S, S);
@@ -61,9 +61,9 @@ function paint(fn, { strength = 2, repeat = 1 } = {}) {
 }
 
 // Periodic noise helpers: every lattice period divides the tile, so textures tile.
-const pf = (x, y, cell, s, oct = 4) => fbm(x / cell, y / cell, s, oct, S / cell);
+export const pf = (x, y, cell, s, oct = 4) => fbm(x / cell, y / cell, s, oct, S / cell);
 /** Value noise stretched cx by cy px, tiling the S-px tile (cx and cy must divide S). */
-function pn(x, y, cx, cy, s) {
+export function pn(x, y, cx, cy, s) {
   const px = S / cx;
   const py = S / cy;
   const u = x / cx;
@@ -245,7 +245,7 @@ function rag(tone, { seed = 19 } = {}) {
 
 // --- materials -----------------------------------------------------------------------------
 
-function mat(tex, o = {}) {
+export function mat(tex, o = {}) {
   return new THREE.MeshStandardMaterial({
     map: tex.map,
     normalMap: tex.normalMap,

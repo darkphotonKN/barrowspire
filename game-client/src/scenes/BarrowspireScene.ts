@@ -54,6 +54,17 @@ import { artSprite, preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { AMBIENT, LightMap } from "@/render/lighting";
+import { cursorCss, cursorSource } from "@/render/cursors";
+import { EffectsRuntime } from "@/render/effects/runtime";
+import { HitFeedback } from "@/render/effects/hit";
+import { playSlash } from "@/render/effects/slash";
+import { playCharge } from "@/render/effects/charge";
+import { DeathDust } from "@/render/effects/death";
+import { playEscape } from "@/render/effects/escape";
+import { EntranceMarker } from "@/render/effects/entrance";
+import { ProjectileFlights } from "@/render/effects/projectile";
+import { FIREBALL_FLIGHT, playFireballCast } from "@/render/effects/fireball";
+import { ARROW_FLIGHT, playArrowRelease } from "@/render/effects/arrow";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
 import {
   BAKE,
@@ -98,7 +109,8 @@ interface Building {
   wallGroup: Phaser.Physics.Arcade.StaticGroup;
   /** Baked roof pieces, or the placeholder roof: hidden together while the delver is inside. */
   roof: { setVisible(visible: boolean): unknown }[];
-  doorMarker: Phaser.GameObjects.Graphics;
+  /** The entrance glow (FS-KYPQ9 §H.1); absent only if walls came before the effects runtime. */
+  doorMarker?: EntranceMarker;
   // Door properties
   door: Phaser.GameObjects.Graphics;
   doorCollider: Phaser.GameObjects.Rectangle;
@@ -292,10 +304,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private canAttack = true;
   private canCastSkill = true;
-  private projectileSprites: Map<
-    string,
-    { container: Phaser.GameObjects.Container; pos: Point; isArrow: boolean }
-  > = new Map();
+  /** Projectiles in flight: baked body, trail, riding light, impact (FS-KYPQ9 §E.2–§F.4). */
+  private projectiles?: ProjectileFlights;
   /** The map floor, a world-coordinate plane; house floors are added to it. */
   private groundPlane?: WorldPlane;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
@@ -304,6 +314,12 @@ export class BarrowspireScene extends Phaser.Scene {
   private groundLayer?: GroundLayer;
   /** FS-2325V §C.7: replaces the overlay torch pool. */
   private lightMap?: LightMap;
+  /** Every world effect's sprites, emitters, tweens and lights, by owner (FS-KYPQ9 §B.9). */
+  private fx?: EffectsRuntime;
+  /** The struck-character tint (FS-KYPQ9 §G.1). */
+  private hits?: HitFeedback;
+  /** Which characters have settled their death dust this death (FS-KYPQ9 §G.2). */
+  private readonly deathDust = new DeathDust();
   private occluders = new Occluders();
   /** How far above the floor a house's walls reach on screen, for the indoor mask's hole. */
   private wallTop = WALL_HEIGHT;
@@ -383,7 +399,15 @@ export class BarrowspireScene extends Phaser.Scene {
     this.walls.clear();
     this.serverDoors.clear();
     this.serverBuildingsCreated = false;
-    this.projectileSprites.clear();
+    // projectiles cleared by a reset land nowhere: no impact, no body, trail or light left (§B.9)
+    this.projectiles?.clear();
+    this.projectiles = undefined;
+    // every effect's sprites, emitters, tweens, timers and short-lived lights (FS-KYPQ9 §B.9, §C.4)
+    this.fx?.clearAll();
+    this.fx = undefined;
+    this.hits?.clearAll();
+    this.hits = undefined;
+    this.lightMap?.clearTransient();
     this.groundPlane = undefined;
     this.groundLayer = undefined;
     this.lightMap = undefined;
@@ -789,7 +813,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.createEscapeDoorTextures();
     this.createSwitchTextures();
     this.createMetalFloorTexture();
-    this.createEscapeParticleTexture();
 
     // baked world and prop art (FS-2325V §B.6); the textures above stay as placeholders
     preloadArt(this);
@@ -1441,44 +1464,6 @@ export class BarrowspireScene extends Phaser.Scene {
     return `${prefix}${facing.charAt(0).toUpperCase()}${facing.slice(1)}`;
   }
 
-  private playAttackEffect(enemySprite: Phaser.Physics.Arcade.Sprite): void {
-    if (!this.player) return;
-
-    // --- 揮擊弧線 ---
-    const slash = this.add.graphics();
-    slash.setDepth(150);
-
-    const px = this.player.x;
-    const py = this.player.y;
-    const angle = Phaser.Math.Angle.Between(
-      px,
-      py,
-      enemySprite.x,
-      enemySprite.y,
-    );
-    const radius = 35;
-
-    slash.lineStyle(3, palette.hudText, 1);
-    slash.beginPath();
-    slash.arc(px, py, radius, angle - 0.8, angle + 0.8, false);
-    slash.strokePath();
-
-    // 弧線淡出
-    this.tweens.add({
-      targets: slash,
-      alpha: 0,
-      duration: 300,
-      ease: "Power2",
-      onComplete: () => slash.destroy(),
-    });
-
-    // --- 敵人閃紅 ---
-    enemySprite.setTint(palette.damage);
-    this.time.delayedCall(200, () => {
-      enemySprite.clearTint();
-    });
-  }
-
   /**
    * Legs under a delver drawn at screen `(x, y)`. The placeholder rig has four
    * facings, so an 8-way facing shows as the nearest of them until §E sheets land.
@@ -1768,33 +1753,6 @@ export class BarrowspireScene extends Phaser.Scene {
     active.destroy();
   }
 
-  private createEscapeParticleTexture(): void {
-    const g = this.add.graphics();
-    g.fillStyle(palette.escapeGlow, 1);
-    g.fillCircle(4, 4, 4);
-    g.generateTexture("escape_particle", 8, 8);
-    g.destroy();
-  }
-
-  /** Burst at a world position. */
-  private playEscapeParticles(x: number, y: number): void {
-    const at = worldToScreen(x, y);
-    const emitter = this.add.particles(at.x, at.y, "escape_particle", {
-      speed: { min: 60, max: 180 },
-      scale: { start: 1, end: 0 },
-      alpha: { start: 1, end: 0 },
-      lifespan: 800,
-      quantity: 30,
-      emitting: false,
-      tint: [palette.torch, palette.safe, palette.frameBright],
-    });
-    emitter.setDepth(1000);
-    emitter.explode(30);
-
-    // clean up after animation
-    this.time.delayedCall(1000, () => emitter.destroy());
-  }
-
   private updateContainers(containers: ContainerState[]): void {
     const activeEntityIds = new Set(containers.map((c) => c.entity_id));
 
@@ -1991,32 +1949,13 @@ export class BarrowspireScene extends Phaser.Scene {
           roof.filter((r): r is Phaser.GameObjects.Sprite => r instanceof Phaser.GameObjects.Sprite),
         );
 
-        // 入口標示（門在下方）— a screen-space marker at the entrance's projection
-        const doorMarker = this.add.graphics();
-        doorMarker.setDepth(250);
-        const entrance = worldToScreen(minX + bw / 2, maxY + 5);
-        const doorX = entrance.x;
-        const doorY = entrance.y;
-        const arrowSize = 10;
-        doorMarker.fillStyle(palette.torch, 1);
-        doorMarker.fillTriangle(
-          doorX,
-          doorY - arrowSize,
-          doorX - arrowSize,
-          doorY + arrowSize,
-          doorX + arrowSize,
-          doorY + arrowSize,
-        );
-        doorMarker.lineStyle(3, palette.torch, 0.8);
-        doorMarker.strokeCircle(doorX, doorY, 18);
-        this.tweens.add({
-          targets: doorMarker,
-          alpha: 0.4,
-          duration: 800,
-          yoyo: true,
-          repeat: -1,
-          ease: "Sine.easeInOut",
-        });
+        // 入口標示（門在下方）— a soft amber glow on the ground at the threshold (FS-KYPQ9 §H.1)
+        const doorMarker =
+          this.fx &&
+          new EntranceMarker(this.fx, `entrance:server_building_${buildingIndex}`, {
+            x: minX + bw / 2,
+            y: maxY + 5,
+          });
 
         const wallGroup = this.physics.add.staticGroup();
         const door = this.add.graphics();
@@ -2371,6 +2310,7 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.playerAnim.baked) this.playerAnim.dress(this.player);
     // set circular physics body to match backend collision (radius 20), offset for 60x60 texture
     else this.player.body?.setCircle(20, 10, 10);
+    this.settleDustOnDeath(this.player, "self", () => this.playerPos);
 
     // create legs overlay that will follow player; a baked sheet walks on its own legs
     this.playerLegs = this.add.graphics();
@@ -2404,134 +2344,19 @@ export class BarrowspireScene extends Phaser.Scene {
   private defaultCursorCSS = "";
   private crosshairCursorCSS = "";
 
+  /**
+   * The baked cursors (FS-KYPQ9 §H.2): the gauntlet by default, the strike-mark over a rival.
+   * Each hotspot is its manifest anchor scaled with the image, so the click point is unchanged;
+   * with no manifest or sheet the browser's `default`/`crosshair` applies, as before.
+   */
   private setupCustomCursor(): void {
-    // Pixel-art cursors, barrow palette. See docs/design-guideline.md: clean pixel
-    // art, nearest-neighbour (no smoothing), in-palette, dark-outlined so the
-    // art reads against the dark dungeon. No neon, no anti-aliased strokes.
-    const INK = toCss(palette.ink); // outline
-    const GLOVE = toCss(palette.hudText); // vellum leather, lit side
-    const GLOVE_SHADE = toCss(palette.hudLabel); // darkened vellum, shadow side
-    const BRASS = toCss(palette.frame); // wrist cuff band
-    const BRASS_HI = toCss(palette.frameBright); // cuff studs / highlight
-    const OXBLOOD = toCss(palette.damage); // the kill-mark
-    const AMBER = toCss(palette.frameBright); // torch-lit sights
-    const CELL = 2; // logical pixel = 2 screen px → chunky, readable pixels
-
-    // --- Default cursor: medieval gloved pointing hand ---
-    // 16×16 silhouette ('#' = solid glove). The dark outline and the shaded
-    // side are derived from the silhouette so authoring stays simple.
-    const HAND = [
-      "...##...........",
-      "...##...........",
-      "...##...........",
-      "...##...........",
-      "...##...........",
-      "...##...........",
-      "...###.##.##....",
-      "...##########...",
-      ".############...",
-      ".#############..",
-      ".#############..",
-      "..############..",
-      "..############..",
-      "..############..",
-      "..############..",
-      "..############..",
-    ];
-    const hGrid = HAND.length;
-    const dc = document.createElement("canvas");
-    dc.width = hGrid * CELL;
-    dc.height = hGrid * CELL;
-    const dCtx = dc.getContext("2d")!;
-    dCtx.imageSmoothingEnabled = false;
-    const solid = (c: number, r: number) =>
-      r >= 0 && r < hGrid && c >= 0 && c < hGrid && HAND[r][c] === "#";
-    const hPx = (c: number, r: number, color: string) => {
-      dCtx.fillStyle = color;
-      dCtx.fillRect(c * CELL, r * CELL, CELL, CELL);
-    };
-    for (let r = 0; r < hGrid; r++) {
-      let maxC = -1; // rightmost solid cell → shadow side
-      for (let c = 0; c < hGrid; c++) if (solid(c, r)) maxC = c;
-      for (let c = 0; c < hGrid; c++) {
-        if (solid(c, r)) {
-          if (r >= 14)
-            hPx(c, r, c % 2 === 0 ? BRASS : BRASS_HI); // wrist cuff
-          else if (c === maxC) hPx(c, r, GLOVE_SHADE);
-          else hPx(c, r, GLOVE);
-        } else if (
-          solid(c - 1, r) ||
-          solid(c + 1, r) ||
-          solid(c, r - 1) ||
-          solid(c, r + 1)
-        ) {
-          hPx(c, r, INK); // auto-outline
-        }
-      }
-    }
-    // hotspot = index fingertip (cols 3-4, top row)
-    this.defaultCursorCSS = `url(${dc.toDataURL()}) 7 0, default`;
+    const source = cursorSource(this.art, this.textures);
+    this.defaultCursorCSS = cursorCss("cursor_gauntlet", "default", source);
+    this.crosshairCursorCSS = cursorCss("cursor_strike", "crosshair", source);
     this.input.setDefaultCursor(this.defaultCursorCSS);
-
-    // --- Targeting cursor: medieval strike-mark (hovering an attackable rival) ---
-    // Oxblood centre pip + broken ring = the kill-mark; amber sight-ticks.
-    const RG = 15; // odd grid → a true centre cell at 7
-    const rc = document.createElement("canvas");
-    rc.width = RG * CELL;
-    rc.height = RG * CELL;
-    const cCtx = rc.getContext("2d")!;
-    cCtx.imageSmoothingEnabled = false;
-    const marks: Record<string, string> = {};
-    const mark = (cells: number[][], color: string) =>
-      cells.forEach(([c, r]) => (marks[`${c},${r}`] = color));
-    mark(
-      [
-        [7, 1],
-        [7, 2],
-        [7, 12],
-        [7, 13],
-        [1, 7],
-        [2, 7],
-        [12, 7],
-        [13, 7],
-      ],
-      AMBER,
-    );
-    mark(
-      [
-        [7, 7],
-        [2, 2],
-        [12, 2],
-        [2, 12],
-        [12, 12],
-      ],
-      OXBLOOD,
-    );
-    const isMark = (c: number, r: number) => marks[`${c},${r}`] !== undefined;
-    for (let r = 0; r < RG; r++) {
-      for (let c = 0; c < RG; c++) {
-        if (isMark(c, r)) {
-          cCtx.fillStyle = marks[`${c},${r}`];
-          cCtx.fillRect(c * CELL, r * CELL, CELL, CELL);
-        } else if (
-          isMark(c - 1, r) ||
-          isMark(c + 1, r) ||
-          isMark(c, r - 1) ||
-          isMark(c, r + 1)
-        ) {
-          cCtx.fillStyle = INK; // auto-outline for contrast on any background
-          cCtx.fillRect(c * CELL, r * CELL, CELL, CELL);
-        }
-      }
-    }
-    const rMid = (RG * CELL) / 2;
-    this.crosshairCursorCSS = `url(${rc.toDataURL()}) ${rMid} ${rMid}, crosshair`;
   }
 
   create(): void {
-    // custom crosshair cursor
-    this.setupCustomCursor();
-
     // Connect via SocketManager
     this.connectToServer();
 
@@ -2545,6 +2370,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // Baked art, or placeholders for whatever is missing (FS-2325V "Edge States").
     this.art = registerArt(this);
+    // the baked cursors, cropped from the atlas just registered
+    this.setupCustomCursor();
     this.occluders = new Occluders();
     this.containerView = new ContainerView(
       this,
@@ -2666,9 +2493,6 @@ export class BarrowspireScene extends Phaser.Scene {
       // 左鍵發射一般攻擊 (0 MP)
       if (pointer.leftButtonDown() || pointer.button === 0) {
         if (currentClass === "warrior") {
-          // 不管滑鼠在哪裡，通通觸發揮劍劈斬動畫！
-          this.playWarriorSlashEffect(me.x, me.y, target.x, target.y);
-
           // 計算角度與將打擊目標限制在距離 50px 以內
           const dist = Phaser.Math.Distance.Between(
             me.x,
@@ -2681,6 +2505,9 @@ export class BarrowspireScene extends Phaser.Scene {
           const hitX = me.x + Math.cos(angle) * effectiveDist;
           const hitY = me.y + Math.sin(angle) * effectiveDist;
 
+          // 不管滑鼠在哪裡，通通觸發揮劍劈斬動畫！— toward the clamped target, on the send
+          this.playWarriorSlashEffect(me.x, me.y, hitX, hitY);
+
           socketManager.sendMessage(ActionType.CastSkill, {
             skill_id: "slash",
             target_x: hitX,
@@ -2692,14 +2519,14 @@ export class BarrowspireScene extends Phaser.Scene {
             target_x: target.x,
             target_y: target.y,
           });
-          this.playArrowShootEffect(me.x, me.y, target.x, target.y);
+          if (this.fx) playArrowRelease(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
         } else {
           socketManager.sendMessage(ActionType.CastSkill, {
             skill_id: "fireball",
             target_x: target.x,
             target_y: target.y,
           });
-          this.playFireballCastEffect(me.x, me.y, target.x, target.y);
+          if (this.fx) playFireballCast(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
         }
         // the class attack clip rides the same trigger as the effect (FS-2325V §E.4)
         this.playerAnim?.attack(this.time.now, { x: target.x - me.x, y: target.y - me.y });
@@ -2724,14 +2551,14 @@ export class BarrowspireScene extends Phaser.Scene {
             target_x: target.x,
             target_y: target.y,
           });
-          this.playFireballCastEffect(me.x, me.y, target.x, target.y);
+          if (this.fx) playFireballCast(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
         } else if (currentClass === "archer") {
           socketManager.sendMessage(ActionType.CastSkill, {
             skill_id: "triple_arrow",
             target_x: target.x,
             target_y: target.y,
           });
-          this.playArrowShootEffect(me.x, me.y, target.x, target.y);
+          if (this.fx) playArrowRelease(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
         }
         this.playerAnim?.attack(this.time.now, { x: target.x - me.x, y: target.y - me.y });
 
@@ -2916,14 +2743,8 @@ export class BarrowspireScene extends Phaser.Scene {
       const maxMp = state.current_player.max_mana ?? 100;
       // 本身受傷變紅閃爍提示
       if (this.prevLocalPlayerHp !== undefined && curHp < this.prevLocalPlayerHp) {
-        if (this.player) {
-          this.player.setTint(palette.damage);
-          this.time.delayedCall(200, () => {
-            if (this.player && this.player.active) {
-              this.player.clearTint();
-            }
-          });
-        }
+        // part of the way toward oxblood and back (FS-KYPQ9 §G.1)
+        if (this.player) this.hits?.play(this.player);
       }
       this.prevLocalPlayerHp = curHp;
 
@@ -2933,7 +2754,7 @@ export class BarrowspireScene extends Phaser.Scene {
     } else {
       // current_player is null — player has escaped
       if (this.player && this.playerPos && this.player.visible) {
-        this.playEscapeParticles(this.playerPos.x, this.playerPos.y);
+        if (this.fx) playEscape(this.fx, "self", { x: this.playerPos.x, y: this.playerPos.y });
         this.player.setVisible(false);
         this.playerLegs?.setVisible(false);
         this.playerNameText?.setVisible(false);
@@ -2972,260 +2793,55 @@ export class BarrowspireScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Projectiles off `state.projectiles` (FS-KYPQ9 §E.2, §E.3, §F.2–§F.4): first sight launches,
+   * each tick moves, an id gone from state lands (hit or max range alike). Rivals' too.
+   */
   private updateProjectiles(projectiles: ProjectileState[]): void {
-    const activeIds = new Set<string>();
-
-    for (const p of projectiles) {
-      activeIds.add(p.entity_id);
-      const pos = { x: p.position.x, y: p.position.y };
-      let entry = this.projectileSprites.get(p.entity_id);
-
-      if (!entry) {
-        const container = this.add.container(0, 0);
-        const isArrow = p.projectile_type === "arrow";
-
-        if (isArrow) {
-          // Arrow pixel graphics: wood shaft, metallic arrowhead, cream fletching
-          const arrowG = this.add.graphics();
-          arrowG.fillStyle(0x8c6239, 1); // Shaft
-          arrowG.fillRect(-10, -1.5, 18, 3);
-          arrowG.fillStyle(0xd4d7dc, 1); // Metallic Tip
-          arrowG.fillTriangle(8, -4, 18, 0, 8, 4);
-          arrowG.fillStyle(0xf2ebd9, 1); // Feather Fletching
-          arrowG.fillTriangle(-10, -3.5, -4, 0, -10, 3.5);
-
-          container.add(arrowG);
-        } else {
-          // Fireball visual layers: outer glow, core, inner highlight
-          const outerGlow = this.add.circle(0, 0, 14, 0xff4500, 0.45);
-          const innerCore = this.add.circle(0, 0, 8, 0xffa500, 0.9);
-          const centerBright = this.add.circle(0, 0, 4, 0xffffff, 1.0);
-
-          container.add([outerGlow, innerCore, centerBright]);
-
-          // Pulsing animation for fireball core
-          this.tweens.add({
-            targets: innerCore,
-            scale: 1.25,
-            duration: 150,
-            yoyo: true,
-            repeat: -1,
-          });
-        }
-
-        entry = { container, pos, isArrow };
-        this.projectileSprites.set(p.entity_id, entry);
-      }
-      entry.pos = pos;
-      // flying at chest height, over whatever stands on the same footprint
-      standAt(entry.container, pos, 5);
-
-      // Rotate arrow to velocity angle — the velocity as drawn on the projection
-      if (p.velocity && (p.velocity.vx !== 0 || p.velocity.vy !== 0)) {
-        const heading = worldToScreen(p.velocity.vx, p.velocity.vy);
-        entry.container.setRotation(Math.atan2(heading.y, heading.x));
-      }
-    }
-
-    // Remove inactive projectiles (hit target or max range)
-    for (const [id, entry] of this.projectileSprites.entries()) {
-      if (!activeIds.has(id)) {
-        if (entry.isArrow) {
-          this.playArrowHitEffect(entry.pos.x, entry.pos.y);
-        } else {
-          this.playFireballExplosion(entry.pos.x, entry.pos.y);
-        }
-        entry.container.destroy();
-        this.projectileSprites.delete(id);
-      }
-    }
+    this.projectiles?.sync(projectiles);
   }
 
-  private playFireballCastEffect(
-    startX: number,
-    startY: number,
-    targetX: number,
-    targetY: number,
+  /**
+   * When a character's baked death clip completes, dust settles at its feet (FS-KYPQ9 §G.2), once
+   * per death: a corpse turning replays the clip. The listener lives on the sprite and goes with
+   * it; a placeholder plays no clip, so no dust.
+   */
+  private settleDustOnDeath(
+    sprite: Phaser.GameObjects.Sprite,
+    owner: string,
+    feet: () => Point | undefined,
   ): void {
-    // world positions in; the effect is drawn on the projection
-    const start = worldToScreen(startX, startY);
-    const aim = worldToScreen(targetX, targetY);
-    const angle = Phaser.Math.Angle.Between(start.x, start.y, aim.x, aim.y);
-    const flash = this.add.circle(
-      start.x + Math.cos(angle) * 15,
-      start.y + Math.sin(angle) * 15,
-      12,
-      0xffa500,
-      0.8,
+    sprite.on(
+      Phaser.Animations.Events.ANIMATION_COMPLETE,
+      (animation: Phaser.Animations.Animation) => {
+        const at = feet();
+        if (this.fx && at)
+          this.deathDust.clipComplete(this.fx, owner, sprite, animation.key, { x: at.x, y: at.y });
+      },
     );
-    flash.setDepth(160);
-    this.tweens.add({
-      targets: flash,
-      scale: 1.8,
-      alpha: 0,
-      duration: 180,
-      onComplete: () => flash.destroy(),
-    });
   }
 
-  private playFireballExplosion(worldX: number, worldY: number): void {
-    const { x, y } = worldToScreen(worldX, worldY);
-    const burst = this.add.circle(x, y, 16, 0xff4500, 0.8);
-    burst.setDepth(160);
-    this.tweens.add({
-      targets: burst,
-      scale: 2.2,
-      alpha: 0,
-      duration: 250,
-      onComplete: () => burst.destroy(),
-    });
-  }
-
-  private playArrowShootEffect(
-    startX: number,
-    startY: number,
-    targetX: number,
-    targetY: number,
-  ): void {
-    // world positions in; the effect is drawn on the projection
-    const start = worldToScreen(startX, startY);
-    const aim = worldToScreen(targetX, targetY);
-    const angle = Phaser.Math.Angle.Between(start.x, start.y, aim.x, aim.y);
-    const muzzleX = start.x + Math.cos(angle) * 16;
-    const muzzleY = start.y + Math.sin(angle) * 16;
-
-    // Bow string release puff
-    const puff = this.add.circle(muzzleX, muzzleY, 6, 0xd4a373, 0.7);
-    puff.setDepth(160);
-    this.tweens.add({
-      targets: puff,
-      scale: 1.6,
-      alpha: 0,
-      duration: 140,
-      onComplete: () => puff.destroy(),
-    });
-
-    // Arrow streak spark
-    const streak = this.add.graphics();
-    streak.lineStyle(2, 0xffffff, 0.8);
-    streak.lineBetween(
-      muzzleX,
-      muzzleY,
-      muzzleX + Math.cos(angle) * 20,
-      muzzleY + Math.sin(angle) * 20,
-    );
-    streak.setDepth(160);
-    this.tweens.add({
-      targets: streak,
-      alpha: 0,
-      duration: 100,
-      onComplete: () => streak.destroy(),
-    });
-  }
-
-  private playArrowHitEffect(worldX: number, worldY: number): void {
-    const { x, y } = worldToScreen(worldX, worldY);
-    // Wood & metal chip spark particles
-    for (let i = 0; i < 4; i++) {
-      const chip = this.add.rectangle(
-        x + Phaser.Math.Between(-4, 4),
-        y + Phaser.Math.Between(-4, 4),
-        3,
-        3,
-        i % 2 === 0 ? 0xd4a373 : 0xffffff,
-        0.9,
-      );
-      chip.setDepth(160);
-
-      const vx = Phaser.Math.FloatBetween(-40, 40);
-      const vy = Phaser.Math.FloatBetween(-40, 40);
-
-      this.tweens.add({
-        targets: chip,
-        x: chip.x + vx,
-        y: chip.y + vy,
-        alpha: 0,
-        duration: 160,
-        onComplete: () => chip.destroy(),
-      });
-    }
-  }
-
+  /** The charge's dust at the start point, world positions in (FS-KYPQ9 §D.2). */
   private playWarriorDashEffect(
     startX: number,
     startY: number,
     targetX: number,
     targetY: number,
   ): void {
-    // world positions in; the effect is drawn on the projection
-    const start = worldToScreen(startX, startY);
-    const aim = worldToScreen(targetX, targetY);
-    const angle = Phaser.Math.Angle.Between(start.x, start.y, aim.x, aim.y);
-
-    // Dust cloud at origin
-    for (let i = 0; i < 5; i++) {
-      const p = this.add.circle(
-        start.x + Phaser.Math.Between(-8, 8),
-        start.y + Phaser.Math.Between(-8, 8),
-        Phaser.Math.Between(4, 8),
-        0x8a929a,
-        0.6
-      );
-      p.setDepth(140);
-      this.tweens.add({
-        targets: p,
-        scale: 1.8,
-        alpha: 0,
-        duration: 250,
-        onComplete: () => p.destroy(),
-      });
-    }
-
-    // Afterimage streak lines along dash path
-    const streakGraphics = this.add.graphics();
-    streakGraphics.lineStyle(4, palette.torchCore, 0.7);
-    streakGraphics.lineBetween(
-      start.x,
-      start.y,
-      start.x + Math.cos(angle) * 160,
-      start.y + Math.sin(angle) * 160
-    );
-    streakGraphics.setDepth(145);
-    this.tweens.add({
-      targets: streakGraphics,
-      alpha: 0,
-      duration: 200,
-      onComplete: () => streakGraphics.destroy(),
-    });
+    if (this.fx) playCharge(this.fx, "self", { x: startX, y: startY }, { x: targetX, y: targetY });
   }
 
+  /**
+   * The slash, world positions in (FS-KYPQ9 §D.1): the warrior's `CastSkill` slash and the rival
+   * click's `Attack` both play it.
+   */
   private playWarriorSlashEffect(
     startX: number,
     startY: number,
     targetX: number,
-    targetY: number
+    targetY: number,
   ): void {
-    // world positions in; the effect is drawn on the projection
-    const start = worldToScreen(startX, startY);
-    const aim = worldToScreen(targetX, targetY);
-    const slash = this.add.graphics();
-    slash.setDepth(150);
-
-    const angle = Phaser.Math.Angle.Between(start.x, start.y, aim.x, aim.y);
-    const radius = 35;
-
-    slash.lineStyle(3, palette.hudText, 1);
-    slash.beginPath();
-    slash.arc(start.x, start.y, radius, angle - 0.8, angle + 0.8, false);
-    slash.strokePath();
-
-    this.tweens.add({
-      targets: slash,
-      alpha: 0,
-      duration: 300,
-      ease: "Power2",
-      onComplete: () => slash.destroy(),
-    });
+    if (this.fx) playSlash(this.fx, "self", { x: startX, y: startY }, { x: targetX, y: targetY });
   }
 
   /**
@@ -3289,8 +2905,10 @@ export class BarrowspireScene extends Phaser.Scene {
     // Remove players who left
     this.otherPlayers.forEach((sprite, playerId) => {
       if (!activePlayerIds.has(playerId)) {
+        // the rival's own effects go with them; a quiet column marks where (FS-KYPQ9 §B.9, §G.3)
         const leftFrom = this.otherPlayersPos.get(playerId);
-        if (leftFrom) this.playEscapeParticles(leftFrom.x, leftFrom.y);
+        this.fx?.release(playerId);
+        if (leftFrom && this.fx) playEscape(this.fx, playerId, { x: leftFrom.x, y: leftFrom.y });
         sprite.destroy();
         this.otherPlayers.delete(playerId);
         this.otherPlayersTargets.delete(playerId);
@@ -3345,6 +2963,7 @@ export class BarrowspireScene extends Phaser.Scene {
         else if (sprite.body) {
           (sprite.body as Phaser.Physics.Arcade.Body).setCircle(20, 10, 10);
         }
+        this.settleDustOnDeath(sprite, playerData.id, () => this.otherPlayersPos.get(playerData.id));
 
         // 點擊攻擊 — hit-tested on the ground they stand on, not their sprite's
         // bounds (FS-2325V §C.6): the server's collision radius around their
@@ -3368,7 +2987,7 @@ export class BarrowspireScene extends Phaser.Scene {
             socketManager.sendMessage(ActionType.Attack, {
               enemy_entity_id: entityId,
             });
-            this.playAttackEffect(sprite!);
+            this.playWarriorSlashEffect(me.x, me.y, them.x, them.y);
             this.playerAnim?.attack(this.time.now, { x: them.x - me.x, y: them.y - me.y });
             this.canAttack = false;
             this.time.delayedCall(500, () => {
@@ -3431,12 +3050,8 @@ export class BarrowspireScene extends Phaser.Scene {
       const prevHp = this.otherPlayersPrevHp.get(playerData.id);
       const curHp = playerData.current_health;
       if (prevHp !== undefined && curHp !== undefined && curHp < prevHp) {
-        sprite.setTint(palette.damage);
-        this.time.delayedCall(200, () => {
-          if (sprite && sprite.active) {
-            sprite.clearTint();
-          }
-        });
+        // part of the way toward oxblood and back; the tint dies with the sprite (FS-KYPQ9 §G.1)
+        this.hits?.play(sprite);
       }
       if (curHp !== undefined) {
         this.otherPlayersPrevHp.set(playerData.id, curHp);
@@ -3585,11 +3200,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private enterBuilding(building: Building): void {
     // 隱藏當前建築屋頂和入口標示
     building.roof.forEach((part) => part.setVisible(false));
-    building.doorMarker.setVisible(false);
+    building.doorMarker?.setVisible(false);
 
     // 隱藏所有入口標示
     this.buildings.forEach((b) => {
-      b.doorMarker.setVisible(false);
+      b.doorMarker?.setVisible(false);
     });
 
     // 顯示室內遮罩，遮住建築外面的一切
@@ -3601,7 +3216,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // 顯示所有屋頂和入口標示
     this.buildings.forEach((b) => {
       b.roof.forEach((part) => part.setVisible(true));
-      b.doorMarker.setVisible(true);
+      b.doorMarker?.setVisible(true);
     });
 
     // 隱藏室內遮罩
@@ -3685,6 +3300,12 @@ export class BarrowspireScene extends Phaser.Scene {
   private createAtmosphere(): void {
     this.lightMap = new LightMap(this, AMBIENT.run);
     buildAtmosphere(this);
+    // world effects over the baked fx sheets, lighting through the light-map (FS-KYPQ9 §B, §C)
+    this.fx = new EffectsRuntime(this, this.art, this.lightMap);
+    this.hits = new HitFeedback(this);
+    this.projectiles = new ProjectileFlights(this, this.art, this.fx, (type) =>
+      type === "arrow" ? ARROW_FLIGHT : FIREBALL_FLIGHT,
+    );
   }
 
   private showNotification(message: string, color: string): void {
@@ -3904,6 +3525,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // the baked sheet plays what the delver is doing, read off the position just drawn
     if (this.player && this.playerPos && this.playerAnim?.baked) {
       const dead = isDead(this.lastGameState?.current_player);
+      if (!dead) this.deathDust.alive(this.player);
       this.playerAnim.show(this.player, this.playerAnim.step(this.playerPos, time, delta, dead));
     }
 
@@ -3936,6 +3558,7 @@ export class BarrowspireScene extends Phaser.Scene {
         // drawn. Their attacks are not known to this client, so they never swing.
         const anim = this.otherPlayersAnim.get(playerId);
         const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
+        if (!dead) this.deathDust.alive(sprite);
         if (anim?.baked) anim.show(sprite, anim.step(pos, time, delta, dead));
 
         // update facing and legs for other players: the placeholder rig

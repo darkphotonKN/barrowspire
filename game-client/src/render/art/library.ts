@@ -10,7 +10,13 @@
  * side (loading, registering frames and animations, building sprites) is `phaser.ts`.
  */
 
-import type { ArtLight, ArtManifest, ArtSheet } from "./manifest";
+import {
+  animationAtlas,
+  sheetAtlases,
+  type ArtLight,
+  type ArtManifest,
+  type ArtSheet,
+} from "./manifest";
 
 /** Texture key of the neutral stand-in `phaser.ts` generates for anything unresolved. */
 export const PLACEHOLDER_TEXTURE = "art:placeholder";
@@ -91,11 +97,12 @@ export class ArtLibrary {
     return this.sheet(name) !== undefined;
   }
 
-  /** The sheet, if it exists and its atlas loaded. */
+  /** The sheet, if it exists and every atlas page it sits on loaded. */
   sheet(name: string): ArtSheet | undefined {
     const sheet = this.manifest?.sheets[name];
     if (!sheet) return undefined;
-    if (this.loadedAtlases && !this.loadedAtlases.has(sheet.atlas))
+    const loaded = this.loadedAtlases;
+    if (loaded && !sheetAtlases(sheet).every((a) => loaded.has(a)))
       return undefined;
     return sheet;
   }
@@ -118,7 +125,7 @@ export class ArtLibrary {
     const index = wrap(query.index ?? 0, anim.frames[direction].length);
     return {
       placeholder: false,
-      texture: atlasTextureKey(sheet.atlas),
+      texture: atlasTextureKey(animationAtlas(sheet, anim)),
       frame: frameName(name, animation, direction, index),
       anchor: sheet.anchor,
     };

@@ -21,6 +21,18 @@
       "height": 440,
       "sha256": "d082baf0e484c138f1a16405ed30d6f26461b25e259604895ecbbfc71cf7def1"
     },
+    "boss-0": {
+      "image": "boss-0.png",
+      "width": 4004,
+      "height": 3832,
+      "sha256": "793ca12353223100214cc3ccec359b6d499a26bfc153c57a6035e9984e04f806"
+    },
+    "boss-1": {
+      "image": "boss-1.png",
+      "width": 4004,
+      "height": 3832,
+      "sha256": "85317ea66efdecba4c40a7495b3ccf748a50d879428c4de8715da71652b25804"
+    },
     "characters-0": {
       "image": "characters-0.png",
       "width": 1964,
@@ -57,6 +69,12 @@
       "height": 2816,
       "sha256": "909d9cecf6f8838489859c7e0fcc581c0a2fe09a703fbd097e44a5af79c6bde8"
     },
+    "fx-0": {
+      "image": "fx-0.png",
+      "width": 580,
+      "height": 128,
+      "sha256": "2b468c3baea6e7f32fbed8d87ab12b2e5b29a812c2ae7ac2daccaa4e791769ea"
+    },
     "ground-0": {
       "image": "ground-0.png",
       "width": 1588,
@@ -80,6 +98,12 @@
       "width": 2016,
       "height": 324,
       "sha256": "de60f1c5e911c05199f5c60e04b239b1aaa81df9c048b96eb3b68b1458270de1"
+    },
+    "town-0": {
+      "image": "town-0.png",
+      "width": 1836,
+      "height": 156,
+      "sha256": "76ab7ccb45f0d4deaf8e4b135ed26d7f8c1daa1f44a81cc72b535736e99a597a"
     }
   },
   "sheets": {
@@ -172,6 +196,32 @@
         }
       },
       "source": "procedural: tools/bake/page/models/nature.js#bush",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "cart": {
+      "atlas": "town-0",
+      "frameWidth": 98,
+      "frameHeight": 87,
+      "anchor": {
+        "x": 0.45918367346938777,
+        "y": 0.7011494252873564
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1058,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#cart",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "chair": {
@@ -3271,6 +3321,1085 @@
       "source": "procedural: tools/bake/page/models/interactables.js#chest",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "chimney": {
+      "atlas": "town-0",
+      "frameWidth": 50,
+      "frameHeight": 89,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.8426966292134831
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 900,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#chimney",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "crate": {
+      "atlas": "town-0",
+      "frameWidth": 64,
+      "frameHeight": 55,
+      "anchor": {
+        "x": 0.390625,
+        "y": 0.7090909090909091
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1492,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#crate",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "crate_stack": {
+      "atlas": "town-0",
+      "frameWidth": 77,
+      "frameHeight": 67,
+      "anchor": {
+        "x": 0.4025974025974026,
+        "y": 0.746268656716418
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1236,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#crateStack",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "creature_demon_base": {
+      "atlas": "boss-0",
+      "frameWidth": 398,
+      "frameHeight": 317,
+      "anchor": {
+        "x": 0.4045226130653266,
+        "y": 0.7413249211356467
+      },
+      "directions": 8,
+      "animations": {
+        "idle": {
+          "fps": 4,
+          "loop": true,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2554
+              },
+              {
+                "x": 402,
+                "y": 2554
+              },
+              {
+                "x": 802,
+                "y": 2554
+              },
+              {
+                "x": 1202,
+                "y": 2554
+              }
+            ],
+            [
+              {
+                "x": 1602,
+                "y": 2554
+              },
+              {
+                "x": 2002,
+                "y": 2554
+              },
+              {
+                "x": 2402,
+                "y": 2554
+              },
+              {
+                "x": 2802,
+                "y": 2554
+              }
+            ],
+            [
+              {
+                "x": 3202,
+                "y": 2554
+              },
+              {
+                "x": 3602,
+                "y": 2554
+              },
+              {
+                "x": 2,
+                "y": 2873
+              },
+              {
+                "x": 402,
+                "y": 2873
+              }
+            ],
+            [
+              {
+                "x": 802,
+                "y": 2873
+              },
+              {
+                "x": 1202,
+                "y": 2873
+              },
+              {
+                "x": 1602,
+                "y": 2873
+              },
+              {
+                "x": 2002,
+                "y": 2873
+              }
+            ],
+            [
+              {
+                "x": 2402,
+                "y": 2873
+              },
+              {
+                "x": 2802,
+                "y": 2873
+              },
+              {
+                "x": 3202,
+                "y": 2873
+              },
+              {
+                "x": 3602,
+                "y": 2873
+              }
+            ],
+            [
+              {
+                "x": 2,
+                "y": 3192
+              },
+              {
+                "x": 402,
+                "y": 3192
+              },
+              {
+                "x": 802,
+                "y": 3192
+              },
+              {
+                "x": 1202,
+                "y": 3192
+              }
+            ],
+            [
+              {
+                "x": 1602,
+                "y": 3192
+              },
+              {
+                "x": 2002,
+                "y": 3192
+              },
+              {
+                "x": 2402,
+                "y": 3192
+              },
+              {
+                "x": 2802,
+                "y": 3192
+              }
+            ],
+            [
+              {
+                "x": 3202,
+                "y": 3192
+              },
+              {
+                "x": 3602,
+                "y": 3192
+              },
+              {
+                "x": 2,
+                "y": 3511
+              },
+              {
+                "x": 402,
+                "y": 3511
+              }
+            ]
+          ]
+        },
+        "walk": {
+          "fps": 8,
+          "loop": true,
+          "atlas": "boss-1",
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              },
+              {
+                "x": 402,
+                "y": 2
+              },
+              {
+                "x": 802,
+                "y": 2
+              },
+              {
+                "x": 1202,
+                "y": 2
+              },
+              {
+                "x": 1602,
+                "y": 2
+              },
+              {
+                "x": 2002,
+                "y": 2
+              },
+              {
+                "x": 2402,
+                "y": 2
+              },
+              {
+                "x": 2802,
+                "y": 2
+              }
+            ],
+            [
+              {
+                "x": 3202,
+                "y": 2
+              },
+              {
+                "x": 3602,
+                "y": 2
+              },
+              {
+                "x": 2,
+                "y": 321
+              },
+              {
+                "x": 402,
+                "y": 321
+              },
+              {
+                "x": 802,
+                "y": 321
+              },
+              {
+                "x": 1202,
+                "y": 321
+              },
+              {
+                "x": 1602,
+                "y": 321
+              },
+              {
+                "x": 2002,
+                "y": 321
+              }
+            ],
+            [
+              {
+                "x": 2402,
+                "y": 321
+              },
+              {
+                "x": 2802,
+                "y": 321
+              },
+              {
+                "x": 3202,
+                "y": 321
+              },
+              {
+                "x": 3602,
+                "y": 321
+              },
+              {
+                "x": 2,
+                "y": 640
+              },
+              {
+                "x": 402,
+                "y": 640
+              },
+              {
+                "x": 802,
+                "y": 640
+              },
+              {
+                "x": 1202,
+                "y": 640
+              }
+            ],
+            [
+              {
+                "x": 1602,
+                "y": 640
+              },
+              {
+                "x": 2002,
+                "y": 640
+              },
+              {
+                "x": 2402,
+                "y": 640
+              },
+              {
+                "x": 2802,
+                "y": 640
+              },
+              {
+                "x": 3202,
+                "y": 640
+              },
+              {
+                "x": 3602,
+                "y": 640
+              },
+              {
+                "x": 2,
+                "y": 959
+              },
+              {
+                "x": 402,
+                "y": 959
+              }
+            ],
+            [
+              {
+                "x": 802,
+                "y": 959
+              },
+              {
+                "x": 1202,
+                "y": 959
+              },
+              {
+                "x": 1602,
+                "y": 959
+              },
+              {
+                "x": 2002,
+                "y": 959
+              },
+              {
+                "x": 2402,
+                "y": 959
+              },
+              {
+                "x": 2802,
+                "y": 959
+              },
+              {
+                "x": 3202,
+                "y": 959
+              },
+              {
+                "x": 3602,
+                "y": 959
+              }
+            ],
+            [
+              {
+                "x": 2,
+                "y": 1278
+              },
+              {
+                "x": 402,
+                "y": 1278
+              },
+              {
+                "x": 802,
+                "y": 1278
+              },
+              {
+                "x": 1202,
+                "y": 1278
+              },
+              {
+                "x": 1602,
+                "y": 1278
+              },
+              {
+                "x": 2002,
+                "y": 1278
+              },
+              {
+                "x": 2402,
+                "y": 1278
+              },
+              {
+                "x": 2802,
+                "y": 1278
+              }
+            ],
+            [
+              {
+                "x": 3202,
+                "y": 1278
+              },
+              {
+                "x": 3602,
+                "y": 1278
+              },
+              {
+                "x": 2,
+                "y": 1597
+              },
+              {
+                "x": 402,
+                "y": 1597
+              },
+              {
+                "x": 802,
+                "y": 1597
+              },
+              {
+                "x": 1202,
+                "y": 1597
+              },
+              {
+                "x": 1602,
+                "y": 1597
+              },
+              {
+                "x": 2002,
+                "y": 1597
+              }
+            ],
+            [
+              {
+                "x": 2402,
+                "y": 1597
+              },
+              {
+                "x": 2802,
+                "y": 1597
+              },
+              {
+                "x": 3202,
+                "y": 1597
+              },
+              {
+                "x": 3602,
+                "y": 1597
+              },
+              {
+                "x": 2,
+                "y": 1916
+              },
+              {
+                "x": 402,
+                "y": 1916
+              },
+              {
+                "x": 802,
+                "y": 1916
+              },
+              {
+                "x": 1202,
+                "y": 1916
+              }
+            ]
+          ]
+        },
+        "attack": {
+          "fps": 10,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              },
+              {
+                "x": 402,
+                "y": 2
+              },
+              {
+                "x": 802,
+                "y": 2
+              },
+              {
+                "x": 1202,
+                "y": 2
+              },
+              {
+                "x": 1602,
+                "y": 2
+              },
+              {
+                "x": 2002,
+                "y": 2
+              },
+              {
+                "x": 2402,
+                "y": 2
+              },
+              {
+                "x": 2802,
+                "y": 2
+              },
+              {
+                "x": 3202,
+                "y": 2
+              },
+              {
+                "x": 3602,
+                "y": 2
+              }
+            ],
+            [
+              {
+                "x": 2,
+                "y": 321
+              },
+              {
+                "x": 402,
+                "y": 321
+              },
+              {
+                "x": 802,
+                "y": 321
+              },
+              {
+                "x": 1202,
+                "y": 321
+              },
+              {
+                "x": 1602,
+                "y": 321
+              },
+              {
+                "x": 2002,
+                "y": 321
+              },
+              {
+                "x": 2402,
+                "y": 321
+              },
+              {
+                "x": 2802,
+                "y": 321
+              },
+              {
+                "x": 3202,
+                "y": 321
+              },
+              {
+                "x": 3602,
+                "y": 321
+              }
+            ],
+            [
+              {
+                "x": 2,
+                "y": 640
+              },
+              {
+                "x": 402,
+                "y": 640
+              },
+              {
+                "x": 802,
+                "y": 640
+              },
+              {
+                "x": 1202,
+                "y": 640
+              },
+              {
+                "x": 1602,
+                "y": 640
+              },
+              {
+                "x": 2002,
+                "y": 640
+              },
+              {
+                "x": 2402,
+                "y": 640
+              },
+              {
+                "x": 2802,
+                "y": 640
+              },
+              {
+                "x": 3202,
+                "y": 640
+              },
+              {
+                "x": 3602,
+                "y": 640
+              }
+            ],
+            [
+              {
+                "x": 2,
+                "y": 959
+              },
+              {
+                "x": 402,
+                "y": 959
+              },
+              {
+                "x": 802,
+                "y": 959
+              },
+              {
+                "x": 1202,
+                "y": 959
+              },
+              {
+                "x": 1602,
+                "y": 959
+              },
+              {
+                "x": 2002,
+                "y": 959
+              },
+              {
+                "x": 2402,
+                "y": 959
+              },
+              {
+                "x": 2802,
+                "y": 959
+              },
+              {
+                "x": 3202,
+                "y": 959
+              },
+              {
+                "x": 3602,
+                "y": 959
+              }
+            ],
+            [
+              {
+                "x": 2,
+                "y": 1278
+              },
+              {
+                "x": 402,
+                "y": 1278
+              },
+              {
+                "x": 802,
+                "y": 1278
+              },
+              {
+                "x": 1202,
+                "y": 1278
+              },
+              {
+                "x": 1602,
+                "y": 1278
+              },
+              {
+                "x": 2002,
+                "y": 1278
+              },
+              {
+                "x": 2402,
+                "y": 1278
+              },
+              {
+                "x": 2802,
+                "y": 1278
+              },
+              {
+                "x": 3202,
+                "y": 1278
+              },
+              {
+                "x": 3602,
+                "y": 1278
+              }
+            ],
+            [
+              {
+                "x": 2,
+                "y": 1597
+              },
+              {
+                "x": 402,
+                "y": 1597
+              },
+              {
+                "x": 802,
+                "y": 1597
+              },
+              {
+                "x": 1202,
+                "y": 1597
+              },
+              {
+                "x": 1602,
+                "y": 1597
+              },
+              {
+                "x": 2002,
+                "y": 1597
+              },
+              {
+                "x": 2402,
+                "y": 1597
+              },
+              {
+                "x": 2802,
+                "y": 1597
+              },
+              {
+                "x": 3202,
+                "y": 1597
+              },
+              {
+                "x": 3602,
+                "y": 1597
+              }
+            ],
+            [
+              {
+                "x": 2,
+                "y": 1916
+              },
+              {
+                "x": 402,
+                "y": 1916
+              },
+              {
+                "x": 802,
+                "y": 1916
+              },
+              {
+                "x": 1202,
+                "y": 1916
+              },
+              {
+                "x": 1602,
+                "y": 1916
+              },
+              {
+                "x": 2002,
+                "y": 1916
+              },
+              {
+                "x": 2402,
+                "y": 1916
+              },
+              {
+                "x": 2802,
+                "y": 1916
+              },
+              {
+                "x": 3202,
+                "y": 1916
+              },
+              {
+                "x": 3602,
+                "y": 1916
+              }
+            ],
+            [
+              {
+                "x": 2,
+                "y": 2235
+              },
+              {
+                "x": 402,
+                "y": 2235
+              },
+              {
+                "x": 802,
+                "y": 2235
+              },
+              {
+                "x": 1202,
+                "y": 2235
+              },
+              {
+                "x": 1602,
+                "y": 2235
+              },
+              {
+                "x": 2002,
+                "y": 2235
+              },
+              {
+                "x": 2402,
+                "y": 2235
+              },
+              {
+                "x": 2802,
+                "y": 2235
+              },
+              {
+                "x": 3202,
+                "y": 2235
+              },
+              {
+                "x": 3602,
+                "y": 2235
+              }
+            ]
+          ]
+        },
+        "death": {
+          "fps": 7,
+          "loop": false,
+          "atlas": "boss-1",
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2235
+              },
+              {
+                "x": 402,
+                "y": 2235
+              },
+              {
+                "x": 802,
+                "y": 2235
+              },
+              {
+                "x": 1202,
+                "y": 2235
+              },
+              {
+                "x": 1602,
+                "y": 2235
+              },
+              {
+                "x": 2002,
+                "y": 2235
+              }
+            ],
+            [
+              {
+                "x": 2402,
+                "y": 2235
+              },
+              {
+                "x": 2802,
+                "y": 2235
+              },
+              {
+                "x": 3202,
+                "y": 2235
+              },
+              {
+                "x": 3602,
+                "y": 2235
+              },
+              {
+                "x": 2,
+                "y": 2554
+              },
+              {
+                "x": 402,
+                "y": 2554
+              }
+            ],
+            [
+              {
+                "x": 802,
+                "y": 2554
+              },
+              {
+                "x": 1202,
+                "y": 2554
+              },
+              {
+                "x": 1602,
+                "y": 2554
+              },
+              {
+                "x": 2002,
+                "y": 2554
+              },
+              {
+                "x": 2402,
+                "y": 2554
+              },
+              {
+                "x": 2802,
+                "y": 2554
+              }
+            ],
+            [
+              {
+                "x": 3202,
+                "y": 2554
+              },
+              {
+                "x": 3602,
+                "y": 2554
+              },
+              {
+                "x": 2,
+                "y": 2873
+              },
+              {
+                "x": 402,
+                "y": 2873
+              },
+              {
+                "x": 802,
+                "y": 2873
+              },
+              {
+                "x": 1202,
+                "y": 2873
+              }
+            ],
+            [
+              {
+                "x": 1602,
+                "y": 2873
+              },
+              {
+                "x": 2002,
+                "y": 2873
+              },
+              {
+                "x": 2402,
+                "y": 2873
+              },
+              {
+                "x": 2802,
+                "y": 2873
+              },
+              {
+                "x": 3202,
+                "y": 2873
+              },
+              {
+                "x": 3602,
+                "y": 2873
+              }
+            ],
+            [
+              {
+                "x": 2,
+                "y": 3192
+              },
+              {
+                "x": 402,
+                "y": 3192
+              },
+              {
+                "x": 802,
+                "y": 3192
+              },
+              {
+                "x": 1202,
+                "y": 3192
+              },
+              {
+                "x": 1602,
+                "y": 3192
+              },
+              {
+                "x": 2002,
+                "y": 3192
+              }
+            ],
+            [
+              {
+                "x": 2402,
+                "y": 3192
+              },
+              {
+                "x": 2802,
+                "y": 3192
+              },
+              {
+                "x": 3202,
+                "y": 3192
+              },
+              {
+                "x": 3602,
+                "y": 3192
+              },
+              {
+                "x": 2,
+                "y": 3511
+              },
+              {
+                "x": 402,
+                "y": 3511
+              }
+            ],
+            [
+              {
+                "x": 802,
+                "y": 3511
+              },
+              {
+                "x": 1202,
+                "y": 3511
+              },
+              {
+                "x": 1602,
+                "y": 3511
+              },
+              {
+                "x": 2002,
+                "y": 3511
+              },
+              {
+                "x": 2402,
+                "y": 3511
+              },
+              {
+                "x": 2802,
+                "y": 3511
+              }
+            ]
+          ]
+        }
+      },
+      "crown": 194,
+      "source": "authored: tools/bake/page/characters/demon.js#demon",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "creature_ghoul_base": {
       "atlas": "creatures-1",
       "frameWidth": 124,
@@ -5269,6 +6398,58 @@
       "source": "authored: tools/bake/page/characters/cast.js#troll",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "cursor_gauntlet": {
+      "atlas": "fx-0",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "anchor": {
+        "x": 0.21875,
+        "y": 0.03125
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 234,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/cursors.js#gauntlet",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "cursor_strike": {
+      "atlas": "fx-0",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 268,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/cursors.js#strikeMark",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "decal_grass_tuft": {
       "atlas": "nature-0",
       "frameWidth": 31,
@@ -5535,6 +6716,122 @@
         }
       },
       "source": "procedural: tools/bake/page/models/interactables.js#escapeDoor",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fence_post": {
+      "atlas": "town-0",
+      "frameWidth": 45,
+      "frameHeight": 58,
+      "anchor": {
+        "x": 0.24444444444444444,
+        "y": 0.8620689655172413
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1445,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#fencePost",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fence_x": {
+      "atlas": "town-0",
+      "frameWidth": 63,
+      "frameHeight": 60,
+      "anchor": {
+        "x": 0.3968253968253968,
+        "y": 0.7333333333333333
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1315,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#fenceSegment",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fence_y": {
+      "atlas": "town-0",
+      "frameWidth": 63,
+      "frameHeight": 60,
+      "anchor": {
+        "x": 0.3333333333333333,
+        "y": 0.7333333333333333
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1380,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#fenceSegment",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "flower_box": {
+      "atlas": "town-0",
+      "frameWidth": 44,
+      "frameHeight": 38,
+      "anchor": {
+        "x": 0.4318181818181818,
+        "y": 0.6578947368421053
+      },
+      "directions": 1,
+      "animations": {
+        "x": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1739,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "y": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1785,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#flowerBox",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "folk_quartermaster": {
@@ -8165,6 +9462,264 @@
       "source": "authored: tools/bake/page/characters/folk.js#spirewarden",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "fx_arrow": {
+      "atlas": "fx-0",
+      "frameWidth": 56,
+      "frameHeight": 10,
+      "anchor": {
+        "x": 0.6428571428571429,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 488,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/fx.js#arrow",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fx_dust": {
+      "atlas": "fx-0",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 434,
+                "y": 2
+              },
+              {
+                "x": 452,
+                "y": 2
+              },
+              {
+                "x": 470,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/fx.js#dust",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fx_ember": {
+      "atlas": "fx-0",
+      "frameWidth": 8,
+      "frameHeight": 8,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 546,
+                "y": 2
+              },
+              {
+                "x": 556,
+                "y": 2
+              },
+              {
+                "x": 566,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/fx.js#ember",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fx_escape_column": {
+      "atlas": "fx-0",
+      "frameWidth": 40,
+      "frameHeight": 120,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9333333333333333
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/fx.js#escapeColumn",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fx_fire_core": {
+      "atlas": "fx-0",
+      "frameWidth": 28,
+      "frameHeight": 28,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 404,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/fx.js#fireCore",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fx_glow": {
+      "atlas": "fx-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 110,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/fx.js#glow",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fx_scorch": {
+      "atlas": "fx-0",
+      "frameWidth": 56,
+      "frameHeight": 56,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 176,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/fx.js#scorch",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fx_slash": {
+      "atlas": "fx-0",
+      "frameWidth": 64,
+      "frameHeight": 88,
+      "anchor": {
+        "x": 0.0625,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 44,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/fx.js#slash",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fx_smoke": {
+      "atlas": "fx-0",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 302,
+                "y": 2
+              },
+              {
+                "x": 336,
+                "y": 2
+              },
+              {
+                "x": 370,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/fx.js#smoke",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "ground_cobble": {
       "atlas": "ground-0",
       "frameWidth": 64,
@@ -8565,6 +10120,32 @@
         "b": 51
       },
       "source": "procedural: tools/bake/page/ground.js#transitionTile(grass, dirt)",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "hay_cart": {
+      "atlas": "town-0",
+      "frameWidth": 104,
+      "frameHeight": 89,
+      "anchor": {
+        "x": 0.49038461538461536,
+        "y": 0.7078651685393258
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 952,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#hayCart",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "icon_bow": {
@@ -9044,6 +10625,40 @@
       "source": "procedural: tools/bake/page/models/props.js#lampPost",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "market_stall": {
+      "atlas": "town-0",
+      "frameWidth": 158,
+      "frameHeight": 149,
+      "anchor": {
+        "x": 0.3670886075949367,
+        "y": 0.785234899328859
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              },
+              {
+                "x": 162,
+                "y": 2
+              },
+              {
+                "x": 322,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#marketStall",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "post_back": {
       "atlas": "architecture-0",
       "frameWidth": 117,
@@ -9228,6 +10843,62 @@
         }
       },
       "source": "procedural: tools/bake/page/models/architecture.js#roofSlope",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "sacks": {
+      "atlas": "town-0",
+      "frameWidth": 53,
+      "frameHeight": 47,
+      "anchor": {
+        "x": 0.49056603773584906,
+        "y": 0.6808510638297872
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1629,
+                "y": 2
+              },
+              {
+                "x": 1684,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#sacks",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "signpost": {
+      "atlas": "town-0",
+      "frameWidth": 100,
+      "frameHeight": 108,
+      "anchor": {
+        "x": 0.29,
+        "y": 0.8518518518518519
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 729,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#signpost",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "switch": {
@@ -9930,6 +11601,136 @@
         "flicker": 0.1
       },
       "source": "procedural: tools/bake/page/models/architecture.js#wallPiece",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "washing_line": {
+      "atlas": "town-0",
+      "frameWidth": 117,
+      "frameHeight": 115,
+      "anchor": {
+        "x": 0.3247863247863248,
+        "y": 0.808695652173913
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 610,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#washingLine",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "washing_post": {
+      "atlas": "town-0",
+      "frameWidth": 67,
+      "frameHeight": 95,
+      "anchor": {
+        "x": 0.1791044776119403,
+        "y": 0.8842105263157894
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 831,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#washingPost",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "water_trough": {
+      "atlas": "town-0",
+      "frameWidth": 69,
+      "frameHeight": 54,
+      "anchor": {
+        "x": 0.42028985507246375,
+        "y": 0.6666666666666666
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1558,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#waterTrough",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "well": {
+      "atlas": "town-0",
+      "frameWidth": 126,
+      "frameHeight": 130,
+      "anchor": {
+        "x": 0.3333333333333333,
+        "y": 0.8153846153846154
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 482,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#well",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "woodpile": {
+      "atlas": "town-0",
+      "frameWidth": 76,
+      "frameHeight": 70,
+      "anchor": {
+        "x": 0.5921052631578947,
+        "y": 0.6428571428571429
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1158,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/town.js#woodpile",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     }
   }
