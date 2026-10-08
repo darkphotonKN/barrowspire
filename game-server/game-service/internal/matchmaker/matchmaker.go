@@ -1,23 +1,31 @@
-package queue
+package matchmaker
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 	"time"
 
+	"errors"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
+)
+
+var (
+	ErrPlayerAlreadyQueued = errors.New("player already queued")
 )
 
 /**
 * Player queue system - uses channel to listen for players joining matchmaking
 **/
 
-type queueService struct {
+type matchmaker struct {
 	// how many people needed to start game
 	matchSize       int
-	MatchedChan     chan []*types.Player
+	MatchedChan     chan []*types.Player // legacy
 	QueueStatusChan chan QueueStatus
+
+	matchQueue MatchQueue
 
 	mu      sync.Mutex
 	players []*types.Player
@@ -30,8 +38,8 @@ type QueueStatus struct {
 	Total   int
 }
 
-func NewQueueService(matchSize int) *queueService {
-	return &queueService{
+func NewMatchmaker(matchSize int) *matchmaker {
+	return &matchmaker{
 		matchSize:       matchSize,
 		MatchedChan:     make(chan []*types.Player),
 		QueueStatusChan: make(chan QueueStatus),
@@ -39,14 +47,30 @@ func NewQueueService(matchSize int) *queueService {
 	}
 }
 
+// external state store to manage queue and player pod state across server instances
+type MatchQueue interface {
+	QueuePlayer(ctx context.Context, playerID, pod string) error
+	DequeuePlayer(ctx context.Context, playerID string) error
+	Matchmake(ctx context.Context, matchCriteria MatchCriteria) ([]MatchedPlayer, error) // list of playerIDs that successfully matched
+}
+
+type MatchCriteria struct {
+	MatchSize int
+}
+
+type MatchedPlayer struct {
+	PlayerID string
+	Pod      string
+}
+
 // Start launches queue listening
-func (q *queueService) Start() {
+func (q *matchmaker) Start() {
 	go q.MatchQueue()
 	slog.Info("Queue service started, waiting for players to join...")
 }
 
 // AddPlayer adds player to matchmaking queue (via channel)
-func (q *queueService) AddPlayer(player *types.Player) error {
+func (q *matchmaker) AddPlayer(player *types.Player) error {
 	err := q.PlayerJoinQueue(player)
 
 	if err != nil {
@@ -57,7 +81,7 @@ func (q *queueService) AddPlayer(player *types.Player) error {
 }
 
 // matchQueue checks queue once per second
-func (q *queueService) MatchQueue() {
+func (q *matchmaker) MatchQueue() {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -109,7 +133,7 @@ func (q *queueService) MatchQueue() {
 }
 
 // handlePlayerJoinQueue handles logic for player joining queue
-func (q *queueService) PlayerJoinQueue(player *types.Player) error {
+func (q *matchmaker) PlayerJoinQueue(player *types.Player) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -127,7 +151,7 @@ func (q *queueService) PlayerJoinQueue(player *types.Player) error {
 }
 
 // TODO: disconnect remove player
-func (q *queueService) PlayerRemoveQueue(player *types.Player) {
+func (q *matchmaker) PlayerRemoveQueue(player *types.Player) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -139,10 +163,10 @@ func (q *queueService) PlayerRemoveQueue(player *types.Player) {
 	}
 }
 
-func (q *queueService) GetMatchedChan() chan []*types.Player {
+func (q *matchmaker) GetMatchedChan() chan []*types.Player {
 	return q.MatchedChan
 }
 
-func (q *queueService) GetQueueStatusChan() chan QueueStatus {
+func (q *matchmaker) GetQueueStatusChan() chan QueueStatus {
 	return q.QueueStatusChan
 }

@@ -11,8 +11,8 @@ import (
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/queue"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/serializer"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
@@ -74,7 +74,7 @@ type QueueManager interface {
 	AddPlayer(player *types.Player) error
 	PlayerRemoveQueue(player *types.Player)
 	GetMatchedChan() chan []*types.Player
-	GetQueueStatusChan() chan queue.QueueStatus
+	GetQueueStatusChan() chan matchmaker.QueueStatus
 }
 
 func NewServer(authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient) *Server {
@@ -453,7 +453,7 @@ func (s *Server) GetMatchedChan() chan []*types.Player {
 /**
 * get queue status channel for listening to queue updates
 **/
-func (s *Server) GetQueueStatusChan() chan queue.QueueStatus {
+func (s *Server) GetQueueStatusChan() chan matchmaker.QueueStatus {
 	return s.queue.GetQueueStatusChan()
 }
 

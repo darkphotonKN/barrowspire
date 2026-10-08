@@ -14,8 +14,8 @@ import (
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/queue"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -128,22 +128,22 @@ type mockQueueService struct {
 	mu              sync.Mutex
 	players         []*types.Player
 	matchedChan     chan []*types.Player
-	statusChan      chan queue.QueueStatus
-	QueueStatusChan chan queue.QueueStatus
+	statusChan      chan matchmaker.QueueStatus
+	QueueStatusChan chan matchmaker.QueueStatus
 }
 
 func NewMockQueueService() *mockQueueService {
 	return &mockQueueService{
 		players:         make([]*types.Player, 0),
 		matchedChan:     make(chan []*types.Player),
-		statusChan:      make(chan queue.QueueStatus),
-		QueueStatusChan: make(chan queue.QueueStatus),
+		statusChan:      make(chan matchmaker.QueueStatus),
+		QueueStatusChan: make(chan matchmaker.QueueStatus),
 	}
 }
 func (m *mockQueueService) JoinQueue()                    {}
 func (m *mockQueueService) PlayerJoinQueue(*types.Player) {}
 
-func (m *mockQueueService) GetQueueStatusChan() chan queue.QueueStatus {
+func (m *mockQueueService) GetQueueStatusChan() chan matchmaker.QueueStatus {
 	return m.QueueStatusChan
 }
 

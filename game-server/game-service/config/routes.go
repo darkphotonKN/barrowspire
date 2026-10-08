@@ -11,7 +11,7 @@ import (
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/gameserver"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/queue"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -45,14 +45,14 @@ func SetupRouter(statsDB *sqlx.DB, registry discovery.Registry, ch *amqp.Channel
 	itemsClient := grpcitems.NewClient(registry)
 
 	// --- GAME SERVER SETUP ---
-	queueService := queue.NewQueueService(2)
+	matchmaker := matchmaker.NewMatchmaker(2)
 
 	// -- outbox --
 	outboxRepo := commonoutbox.NewRepo(statsDB)
 	outboxService := commonoutbox.NewService(outboxRepo)
 
 	gameService := game.NewService(outboxService)
-	server := gameserver.NewServer(authClient, queueService, gameService, itemsClient)
+	server := gameserver.NewServer(authClient, matchmaker, gameService, itemsClient)
 
 	// -- routes --
 	router.GET("/game/ws", auth.WSAuthMiddleware(authClient), server.HandleWebSocketConnection)

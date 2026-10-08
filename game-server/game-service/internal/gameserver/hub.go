@@ -9,8 +9,8 @@ import (
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/queue"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -36,7 +36,7 @@ type SessionManager interface {
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
 	JoinHub(conn *websocket.Conn, character types.Character) (*game.Session, error)
 	GetMatchedChan() chan []*types.Player
-	GetQueueStatusChan() chan queue.QueueStatus
+	GetQueueStatusChan() chan matchmaker.QueueStatus
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
