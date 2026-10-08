@@ -186,6 +186,46 @@ class ApiClient {
       }),
     );
   }
+
+  // The signed-in delver's gold (FS-8EGFA req 26). 404 until the account exists, just after
+  // signup (ADR-0014).
+  async getWalletAccount() {
+    return unwrap(await client.GET("/api/wallet/account", {}));
+  }
+
+  // A bid as the signed-in delver (FS-8EGFA req 26). The 201 has an empty body, which the
+  // default JSON parsing reads as nothing; nothing is returned.
+  async placeBid(listingId: string, amount: number, idempotencyKey: string): Promise<void> {
+    unwrap(
+      await client.POST("/api/marketplace/listings/{listing_id}/bids", {
+        params: {
+          path: { listing_id: listingId },
+          header: { "Idempotency-Key": idempotencyKey },
+        },
+        body: { amount },
+      }),
+    );
+  }
+
+  // Puts a relic up for auction (FS-8EGFA req 25). 202 with an empty body: the listing appears
+  // once marketplace has reserved the item, so the caller polls `listMyListings` for it.
+  async createListing(itemId: string, startPrice: number, endsAt: string): Promise<void> {
+    unwrap(
+      await client.POST("/api/marketplace/listings", {
+        body: { itemId, startPrice, endsAt },
+      }),
+    );
+  }
+
+  // One page of the signed-in delver's listings in every status, newest first, items joined
+  // (FS-8EGFA req 23).
+  async listMyListings(cursor?: string) {
+    return unwrap(
+      await client.GET("/api/marketplace/listings/mine", {
+        params: { query: { cursor } },
+      }),
+    );
+  }
 }
 
 export const apiClient = new ApiClient();
@@ -201,3 +241,51 @@ export const apiClient = new ApiClient();
  * the check-email poll and then the endpoint itself.
  */
 export const publicClient = createClient<paths>({ baseUrl: API_BASE_URL });
+
+/**
+ * Public reads: routes the gateway answers without a token, called the same way signed in or
+ * out, so a token that expires mid-session never breaks them (FS-8EGFA req 21).
+ */
+class PublicApi {
+  // One page of the Bazaar's active listings, soonest-ending first, each with its item joined.
+  async browseListings(cursor?: string) {
+    return unwrap(
+      await publicClient.GET("/api/marketplace/listings", {
+        params: { query: { cursor } },
+      }),
+    );
+  }
+
+  // One listing in any status, with its item joined (FS-8EGFA req 24): the detail dialog reads
+  // the same signed in or out.
+  async getListing(listingId: string) {
+    return unwrap(
+      await publicClient.GET("/api/marketplace/listings/{listing_id}", {
+        params: { path: { listing_id: listingId } },
+      }),
+    );
+  }
+}
+
+export const publicApi = new PublicApi();
+
+/**
+ * The baked sprite manifest (`public/art/manifest.json`), for DOM pages that crop item icons
+ * out of the atlas (FS-8EGFA req 32). The canvas loads it through Phaser's loader instead.
+ *
+ * NOT a gateway call: a same-origin static asset with no OpenAPI document, so a raw fetch,
+ * kept here because this file is the only place one is allowed. Unvalidated JSON out; the
+ * caller validates it with `validateManifest`, as the canvas does.
+ */
+export async function fetchArtManifest(): Promise<unknown> {
+  const response = await fetch("/art/manifest.json");
+  if (!response.ok) {
+    throw new ApiError({
+      code: "ART_MANIFEST_UNAVAILABLE",
+      status: response.status,
+      detail: `art manifest failed with status ${response.status}`,
+      errors: [],
+    });
+  }
+  return response.json();
+}

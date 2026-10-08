@@ -1,6 +1,6 @@
 # FS-NXP1W: Auction settlement saga
 
-> Status: work-order · SPECIFICATION.md: `game-server/marketplace-service/SPECIFICATION.md` "### Auction lifecycle" → "Auction settlement"; `game-server/wallet-service/SPECIFICATION.md` "### Saga participation" → "Settlement saga activities"; `game-server/items-service/SPECIFICATION.md` "## Marketplace settlement" → "Settlement saga activities" → this FS · Related ADRs: [ADR-0005](../adr/0005-wallet-owns-balance-ledger-is-a-reconciliation-record.md) (wallet owns balance), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-minted idempotency), [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md) (pivot; ledger appended after it), [ADR-0011](../adr/0011-settlement-write-path-is-a-temporal-activity-per-owning-service.md) (activities per owning service), [ADR-0016](../adr/0016-settlement-starts-from-an-expiry-poller-one-workflow-per-listing.md) (trigger + workflow identity), [ADR-0017](../adr/0017-item-transfer-rolls-forward-the-pivot-stays-at-commit-hold.md) (item transfer rolls forward), [ADR-0018](../adr/0018-settlement-failures-are-classified-by-kind-and-park-rather-than-fail.md) (failure classification, escalate-and-park), [ADR-0019](../adr/0019-activity-payloads-are-json-structs-in-per-owner-packages.md) (activity payload encoding)
+> Status: work-order · SPECIFICATION.md: `game-server/marketplace-service/SPECIFICATION.md` "### Auction lifecycle" → "Auction settlement"; `game-server/wallet-service/SPECIFICATION.md` "### Saga participation" → "Settlement saga activities"; `game-server/items-service/SPECIFICATION.md` "## Marketplace settlement" → "Settlement saga activities"; `game-server/api-gateway/SPECIFICATION.md` "### Marketplace" → "Accept the leading bid", "Buy out a listing" → this FS · Related ADRs: [ADR-0005](../adr/0005-wallet-owns-balance-ledger-is-a-reconciliation-record.md) (wallet owns balance), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-minted idempotency), [ADR-0010](../adr/0010-the-ledger-is-appended-past-the-saga-pivot.md) (pivot; ledger appended after it), [ADR-0011](../adr/0011-settlement-write-path-is-a-temporal-activity-per-owning-service.md) (activities per owning service), [ADR-0016](../adr/0016-settlement-starts-from-an-expiry-poller-one-workflow-per-listing.md) (trigger + workflow identity), [ADR-0017](../adr/0017-item-transfer-rolls-forward-the-pivot-stays-at-commit-hold.md) (item transfer rolls forward), [ADR-0018](../adr/0018-settlement-failures-are-classified-by-kind-and-park-rather-than-fail.md) (failure classification, escalate-and-park), [ADR-0019](../adr/0019-activity-payloads-are-json-structs-in-per-owner-packages.md) (activity payload encoding)
 
 > Terms follow `game-server/marketplace-service/CONTEXT.md` §Settlement. All decisions were
 > recorded without adversarial review (the user declined challenge-me).
@@ -58,9 +58,10 @@ issues); the `bids` table (Kiki's bids work); ledger-service's `AppendLedgerTx` 
    caller could also invoke. Temporal-specific code (options, error classification into
    application errors, heartbeats) stays in the wrapper. No saga step makes a gRPC call.
    `CommitHold`, `ReleaseHold` and `CreditSeller` are not added as gRPC RPCs.
-8. **Zero bids:** when 0a finds no WINNING bid, the workflow short-circuits. The listing becomes
-   `EXPIRED` and the item returns from `LISTED` to `AVAILABLE`; no wallet, ledger or bid steps
-   run. This is a normal outcome, not an exception.
+8. **Zero bids:** when 0a finds no WINNING bid, the workflow short-circuits into the no-bids arm:
+   **NB1** `ReturnItem` (items) then **NB2** `ExpireListing` (marketplace), in that order (Req 34a,
+   34b). The item goes from `LISTED` back to `AVAILABLE` and the listing becomes `EXPIRED`. No
+   0b–6, wallet, ledger or bid steps run. This is a normal outcome, not an exception.
 
 ### Failure handling (ADR-0017, ADR-0018)
 
@@ -116,6 +117,8 @@ issues); the `bids` table (Kiki's bids work); ledger-service's `AppendLedgerTx` 
     | `TransferItem` | itemId, buyer memberId | — |
     | `AppendLedgerTx` | existing `ledgeractivity.AppendLedgerTxInput` | existing output |
     | `MarkSold` | listingId | — |
+    | `ReturnItem` (NB1) | listingId | — |
+    | `ExpireListing` (NB2) | listingId | — |
     | `RaiseSettlementException` | listingId, workflowId, step, reason | exceptionId |
     | rollback activities (Req 12) | listingId / itemId / bidIds as needed | — |
 
@@ -137,6 +140,18 @@ issues); the `bids` table (Kiki's bids work); ledger-service's `AppendLedgerTx` 
 23. wallet has a `processed_events` dedup table keyed on **(workflow ID, activity name)**.
 24. marketplace has a `settlement_exceptions` table: listing_id, workflow_id, step, reason, status
     (open / resolved), created_at, resolved_at nullable, published_at nullable.
+24a. `item_instances.listing_id` records which listing an item is reserved for. Status alone cannot
+    tell an old listing from a new one after a relist (see Edge States, "Item relisted before a
+    release retry ran"). items-service mints the ID when it reserves the item
+    (`AVAILABLE → LISTED`) and carries it on `ItemReserved`. The listing is born with that ID
+    instead of minting its own.
+    - Every item write that acts for a listing checks `listing_id = <that listing>` as well as the
+      status. That covers NB1 ReturnItem (Req 34a), the rollback release (Req 12), 0b
+      FreezeItem, 4 TransferItem and the reconciler's `CancelReservation` (Req 34).
+    - Any write that makes the item `AVAILABLE` also clears `listing_id`. The next reservation
+      mints a new one.
+    - A write that changes zero rows because the ID no longer matches was either already applied
+      or superseded by a relist. It returns success and changes nothing.
 
 ### Activities
 
@@ -181,6 +196,16 @@ concurrency). Never read-then-act.
 34. **Stale-reservation reconciler.** Marketplace's reconciler (`ListStaleReserved` →
     `CancelReservation`) treats an item whose listing is `PENDING_SETTLEMENT` as live and never
     cancels its reservation.
+34a. **NB1 ReturnItem** (no-bids arm, items). `UPDATE item_instances SET status = 'AVAILABLE',
+    listing_id = NULL WHERE status = 'LISTED' AND listing_id = :listing_id`. Clearing
+    `listing_id` is what keeps a retry from un-listing a relisted item (Req 24a).
+    - Already applied: zero rows changed. Either this step already ran, or the seller has since
+      relisted the item under a new listing ID. Either way it returns success.
+34b. **NB2 ExpireListing** (no-bids arm, marketplace). `UPDATE listings SET status = 'EXPIRED'
+    WHERE id = :listing_id AND status = 'PENDING_SETTLEMENT'`. It runs after NB1 succeeds.
+    - Already applied: the listing is `EXPIRED`.
+    - Zero rows with any other status is an invariant breach. It escalates and parks (Req 13),
+      the same as MarkSold, and never overwrites.
 
 ### Workflow assembly
 
@@ -212,6 +237,25 @@ concurrency). Never read-then-act.
     ledger (not items); `transaction_id` shown as uuidv5 everywhere; states `PENDING_SETTLEMENT`,
     `SOLD`, `SETTLEMENT_FAILED`, `EXPIRED` drawn and `REVERSED` removed; escalate-and-park drawn. Seller
     credit placement is confirmed as intended escrow (a short window between pivot and CreditSeller).
+
+### HTTP entry points
+
+42. **accept-bid** is the HTTP entry point for the AcceptBid trigger (Req 3). Only the listing's
+    seller may call it, identified by the token and never by the request. It is refused when the
+    listing is not `ACTIVE`, is past its end, or has no `WINNING` bid. Otherwise it starts
+    `settlement-{listingId}` with trigger `ACCEPT_BID` and answers once the start is accepted; the
+    sale completes asynchronously. It carries no bid ID.
+43. **buyout** is the HTTP entry point for the Buyout trigger (Req 4). Any signed-in member except the
+    listing's seller may call it, identified by the token. The listing must be `ACTIVE`, not past its
+    end, and carry a buyout price; the caller's amount must equal that price. It places a
+    BUYOUT-type bid for the caller, which holds the buyer's gold like any bid and takes the lead, and
+    only once that bid is `WINNING` starts `settlement-{listingId}` with trigger `BUYOUT`. Step 0a then
+    selects it as the winner the same way as for every trigger (Req 5).
+    - Depends on a listing buyout price, which no listing has yet. Setting it at listing creation
+      is a prerequisite of this endpoint.
+44. Both endpoints treat "settlement already started" as success (Req 5): a call that loses a race to
+    another trigger, or repeats one that already started, answers as if it had started settlement
+    itself. A buyout repeated with the same `Idempotency-Key` does not place a second bid.
 
 ## User Stories
 
@@ -250,7 +294,8 @@ concurrency). Never read-then-act.
 - [ ] Starting `settlement-{listingId}` twice (any mix of expiry, AcceptBid, buyout) runs one settlement; the second start returns success to its caller.
 - [ ] The expiry poller starts settlement for ACTIVE past-expiry listings and ignores every other status, including `SETTLEMENT_FAILED`.
 - [ ] AcceptBid settles at the current WINNING bid; no bid ID reaches the workflow.
-- [ ] A listing with no bids ends `EXPIRED` with its item `AVAILABLE`, and no wallet or ledger activity runs.
+- [ ] A listing with no bids runs NB1 ReturnItem and then NB2 ExpireListing, and ends `EXPIRED` with its item `AVAILABLE` and `listing_id` NULL. No wallet or ledger activity runs.
+- [ ] NB2 on an `EXPIRED` listing is success. On any other non-`PENDING_SETTLEMENT` status it escalates and parks.
 - [ ] A happy-path settlement ends with: listing `SOLD`; winner `WON`, others `LOST`; winning hold `COMMITTED` and buyer debited by the hold's amount; losing holds `RELEASED`; seller credited once; item owned by the buyer and `AVAILABLE`; exactly two ledger rows under `uuidv5(ns, "settlement:"+listingId)`.
 - [ ] Re-executing any activity after it succeeded returns success with the same output and changes nothing.
 - [ ] `CommitHold` on a `RELEASED` or expired hold is non-retryable; on a `COMMITTED` hold it is success; a caller amount different from the hold's amount is non-retryable.
@@ -264,16 +309,23 @@ concurrency). Never read-then-act.
 - [ ] `PlaceHold` stores the explicitly passed expiry.
 - [ ] `processed_events` rejects a second credit for the same (workflow ID, activity name).
 - [ ] The stale-reservation reconciler does not cancel the reservation of an item whose listing is `PENDING_SETTLEMENT`.
+- [ ] A release retried after the seller relisted the item returns success, and the new listing's item stays `LISTED` (Req 24a).
+- [ ] A listing's ID equals the `listing_id` that items-service minted on reserve. Any write that makes the item `AVAILABLE` clears it.
 - [ ] A crash-point table covering every step is committed, and each crash point resolves to already-applied-and-continue or roll back.
 - [ ] Killing a participant worker mid-activity does not change the final state.
 - [ ] The e2e auction test passes across all four services.
 - [ ] The design diagram reflects Req 41.
+- [ ] `POST /api/marketplace/listings/{listing_id}/accept` from the seller of an `ACTIVE` listing with a `WINNING` bid answers `202` and starts settlement with trigger `ACCEPT_BID`; a non-seller gets `403 · FORBIDDEN` and nothing starts (Req 42, 44).
+- [ ] `POST /api/marketplace/listings/{listing_id}/buyout` from a non-seller at the buyout price answers `202`, leaves a `WINNING` BUYOUT bid and starts settlement with trigger `BUYOUT`; a repeat with the same `Idempotency-Key` places no second bid (Req 43, 44).
 
 ## Edge States
 
 - **Expiry and AcceptBid race:** both start `settlement-{listingId}`; the second is rejected as a duplicate and returns success. One settlement.
 - **Bid placed during freeze:** placeBid acquires the listing row lock after 0a commits, re-checks status, sees `PENDING_SETTLEMENT` and rejects. A bid that committed before 0a is included in winner selection.
-- **Zero bids:** short-circuit to `EXPIRED` + item `AVAILABLE` (Req 8).
+- **Zero bids:** short-circuit to NB1 ReturnItem (item `AVAILABLE`), then NB2 ExpireListing (listing `EXPIRED`) (Req 8).
+- **Crash after NB1 commits, before the workflow records it:** the retry changes zero rows and returns success, then NB2 runs.
+- **Items down during NB1:** NB1 hits its cap, escalates and parks. NB2 has not run, so the listing stays `PENDING_SETTLEMENT` until NB1 succeeds.
+- **Item relisted before a release retry ran:** the release commits, but the activity's completion is lost. Before Temporal retries, the seller relists the item, which is `AVAILABLE` again, under a new listing ID. The retry's old listing ID matches nothing, so it returns success and the new listing's item stays `LISTED` (Req 24a).
 - **Listing withdrawn before 0a runs:** 0a sees a non-ACTIVE status → semantic impossibility. Whether a withdrawn listing then moves to `SETTLEMENT_FAILED` or keeps its withdrawn status is governed by the future ListingWithdraw saga; until then the rollback must not overwrite a terminal status that another flow set.
 - **Crash after 0a commits, before the activity completes:** the retry sees `PENDING_SETTLEMENT` → already applied, same output.
 - **Item owner changed or item unfrozen before 0b:** non-retryable → rollback to `SETTLEMENT_FAILED`.
@@ -291,11 +343,22 @@ concurrency). Never read-then-act.
 - **Marketplace worker down:** no workflow tasks progress; on restart the workflow resumes from history. Participant activities already completed are not re-run.
 - **Workflow code deployed while settlements are open:** short-lived runs make this rare; any change that alters the command sequence must use Temporal versioning.
 
+## API surface
+
+Both operations are bearer-secured; the caller's identity comes from the token and never appears in
+a request. `accept-bid` is transcribed from the built operation (`api-gateway/internal/gateway/listing/typed.go`).
+`buyout` is design: it is not built yet, and this row is its specification.
+
+| Op | Method + Path | Query/Params | Request body | Response | Errors |
+|----|---------------|--------------|--------------|----------|--------|
+| `accept-bid` | `POST /api/marketplace/listings/{listing_id}/accept` | `listing_id` path, uuid | none | `202`, empty | `401 · UNAUTHENTICATED` no or bad token; `403 · FORBIDDEN` caller is not the seller; `404 · NOT_FOUND` unknown listing; `400 · FAILED_PRECONDITION` listing not `ACTIVE`, past its end, or no `WINNING` bid; `409 · CONFLICT` listing busy; `422 · VALIDATION_FAILED` malformed `listing_id`; `500 · INTERNAL_ERROR` settlement could not be started; `503 · SERVICE_UNAVAILABLE` marketplace unreachable |
+| `buyout` | `POST /api/marketplace/listings/{listing_id}/buyout` | `listing_id` path, uuid; `Idempotency-Key` header, uuid, optional (same rule as place-bid) | `amount` integer ≥ 1, required: the gold paid, which must equal the listing's buyout price | `202`, empty | `401 · UNAUTHENTICATED` no or bad token; `403 · FORBIDDEN` caller is the seller; `404 · NOT_FOUND` unknown listing; `400 · VALIDATION_FAILED` amount differs from the buyout price; `400 · FAILED_PRECONDITION` listing not `ACTIVE`, past its end, has no buyout price, or the buyer lacks the gold; `409 · CONFLICT` listing busy; `422 · VALIDATION_FAILED` malformed `listing_id`, `Idempotency-Key` or body; `500 · INTERNAL_ERROR`; `503 · SERVICE_UNAVAILABLE` marketplace or wallet unreachable |
+
 ## Out of Scope
 
 - Temporal infrastructure: compose services, smoke test, `common/temporal`, per-service worker bootstrap, walking skeleton. ADR-0011-anchored, tracked as `I-ADR0011-n` issues.
 - ledger-service internals and the `AppendLedgerTx` activity implementation (FS-F9R7Q, I-F9R7Q-5).
-- The `bids` table and bid placement, AcceptBid's HTTP endpoint, deposit/withdraw (Kiki's work); this FS only defines what AcceptBid triggers.
+- The `bids` table and bid placement, deposit/withdraw (Kiki's work); this FS only defines what AcceptBid triggers.
 - BidPlaced saga; ListingWithdraw saga (with live bids, an open product decision).
 - SYSTEM account design.
 - Funding reconciler sweeper (hold with no bid past grace); hold-expiry sweeper implementation.

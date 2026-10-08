@@ -39,6 +39,12 @@ export default function Header() {
               Game
             </Link>
             <Link
+              href="/marketplace"
+              className={`nav-link ${pathname === '/marketplace' ? 'active' : ''}`}
+            >
+              Bazaar
+            </Link>
+            <Link
               href="/leaderboard"
               className={`nav-link ${pathname === '/leaderboard' ? 'active' : ''}`}
             >

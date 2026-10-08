@@ -40,10 +40,38 @@ type stubListingClient struct {
 	gotReq      *pb.PlaceBidRequest
 	gotListReq  *pb.ListItemRequest
 	gotWithdraw *pb.WithdrawBidRequest
+	gotAccept   *pb.AcceptBidRequest
 	gotMine     *pb.ListMyListingsRequest
+	gotBrowse   *pb.BrowseListingsRequest
+	gotGet      *pb.GetListingRequest
 	gotAuth     []string
 
-	mine *pb.ListMyListingsResponse
+	mine   *pb.ListMyListingsResponse
+	browse *pb.BrowseListingsResponse
+	one    *pb.Listing
+}
+
+func (s *stubListingClient) GetListing(ctx context.Context, req *pb.GetListingRequest) (*pb.GetListingResponse, error) {
+	s.calls++
+	s.gotGet = req
+	s.recordAuth(ctx)
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &pb.GetListingResponse{Listing: s.one}, nil
+}
+
+func (s *stubListingClient) BrowseListings(ctx context.Context, req *pb.BrowseListingsRequest) (*pb.BrowseListingsResponse, error) {
+	s.calls++
+	s.gotBrowse = req
+	s.recordAuth(ctx)
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.browse == nil {
+		return &pb.BrowseListingsResponse{}, nil
+	}
+	return s.browse, nil
 }
 
 func (s *stubListingClient) ListItem(ctx context.Context, req *pb.ListItemRequest) (*pb.ListItemResponse, error) {
@@ -65,6 +93,13 @@ func (s *stubListingClient) WithdrawBid(ctx context.Context, req *pb.WithdrawBid
 	s.gotWithdraw = req
 	s.recordAuth(ctx)
 	return &pb.WithdrawBidResponse{}, s.err
+}
+
+func (s *stubListingClient) AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.AcceptBidResponse, error) {
+	s.calls++
+	s.gotAccept = req
+	s.recordAuth(ctx)
+	return &pb.AcceptBidResponse{}, s.err
 }
 
 func (s *stubListingClient) ListMyListings(ctx context.Context, req *pb.ListMyListingsRequest) (*pb.ListMyListingsResponse, error) {
@@ -95,9 +130,13 @@ func embedding(id commonauth.Identity) gin.HandlerFunc {
 }
 
 func newRouter(client listing.ListingClient) *gin.Engine {
+	return newRouterWithItems(client, &stubItemSummaries{})
+}
+
+func newRouterWithItems(client listing.ListingClient, items listing.ItemSummaries) *gin.Engine {
 	r := gin.New()
 	api := contract.New(r)
-	listing.RegisterOperations(api, listing.NewHandler(client),
+	listing.RegisterOperations(api, listing.NewHandler(client, items),
 		contract.Protected(embedding(commonauth.Identity{MemberID: uuid.New(), Role: commonauth.RolePlayer})),
 		contract.SeamError, contract.Secured)
 	return r
@@ -226,7 +265,21 @@ func TestCreateListing_IsAcceptedWithNoBodyAndForwardsTheTerms(t *testing.T) {
 	assert.Equal(t, itemID, client.gotListReq.GetItemId())
 	assert.Equal(t, int64(250), client.gotListReq.GetStartPrice())
 	assert.True(t, endsAt.Equal(client.gotListReq.GetEndsAt().AsTime()))
+	assert.Nil(t, client.gotListReq.BuyoutPrice, "no buyout must stay absent, not become 0")
 	assert.Equal(t, []string{"Bearer caller-token"}, client.gotAuth)
+}
+
+// The buyout is optional and forwarded as given; whether it clears the start
+// price is marketplace's rule (FS-9XKS6 §API surface).
+func TestCreateListing_ForwardsTheBuyoutPrice(t *testing.T) {
+	client := &stubListingClient{}
+
+	w := createListing(newRouter(client),
+		`{"itemId":"`+uuid.New().String()+`","startPrice":250,"buyoutPrice":900,"endsAt":"2026-12-01T18:30:00Z"}`)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	require.NotNil(t, client.gotListReq.BuyoutPrice)
+	assert.Equal(t, int64(900), client.gotListReq.GetBuyoutPrice())
 }
 
 func TestCreateListing_RejectsInvalidInputBeforeCallingMarketplace(t *testing.T) {
@@ -238,6 +291,7 @@ func TestCreateListing_RejectsInvalidInputBeforeCallingMarketplace(t *testing.T)
 		body string
 	}{
 		{"non-positive start price", `{"itemId":"` + itemID + `","startPrice":0,"endsAt":` + endsAt + `}`},
+		{"non-positive buyout price", `{"itemId":"` + itemID + `","startPrice":250,"buyoutPrice":0,"endsAt":` + endsAt + `}`},
 		{"missing start price", `{"itemId":"` + itemID + `","endsAt":` + endsAt + `}`},
 		{"missing item id", `{"startPrice":250,"endsAt":` + endsAt + `}`},
 		{"malformed item id", `{"itemId":"not-a-uuid","startPrice":250,"endsAt":` + endsAt + `}`},
@@ -352,6 +406,62 @@ func TestWithdrawBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 	}
 }
 
+// ========================= ACCEPT BID =========================
+
+func acceptBid(r *gin.Engine, listingID string) *httptest.ResponseRecorder {
+	return testsupport.DoWithHeaders(r, http.MethodPost,
+		"/api/marketplace/listings/"+listingID+"/accept", "", authedHeaders())
+}
+
+// Settlement runs on after the request returns, so the answer is Accepted, not
+// a finished sale.
+func TestAcceptBid_AnswersAcceptedAndForwardsTheListing(t *testing.T) {
+	client := &stubListingClient{}
+	listingID := uuid.New().String()
+
+	w := acceptBid(newRouter(client), listingID)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	assert.Empty(t, w.Body.String())
+	require.Equal(t, 1, client.calls)
+	assert.Equal(t, listingID, client.gotAccept.GetListingId())
+	// the seller check is marketplace's, against the token, so it must travel on
+	assert.Equal(t, []string{"Bearer caller-token"}, client.gotAuth)
+}
+
+func TestAcceptBid_RejectsAMalformedListingIDBeforeCallingMarketplace(t *testing.T) {
+	client := &stubListingClient{}
+
+	w := acceptBid(newRouter(client), "not-a-uuid")
+
+	testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
+	assert.Zero(t, client.calls, "an invalid request must not reach marketplace")
+}
+
+func TestAcceptBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   errcode.Code
+	}{
+		{"not the seller", status.Error(codes.PermissionDenied, "permission denied"), http.StatusForbidden, errcode.Forbidden},
+		{"unknown listing", status.Error(codes.NotFound, "not found"), http.StatusNotFound, errcode.NotFound},
+		{"no bid to accept or auction closed", status.Error(codes.FailedPrecondition, "failed precondition"), http.StatusBadRequest, errcode.FailedPrecondition},
+		{"settlement could not start", status.Error(codes.Internal, "unhandled error"), http.StatusInternalServerError, errcode.Internal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &stubListingClient{err: tt.err}
+
+			w := acceptBid(newRouter(client), uuid.New().String())
+
+			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
+		})
+	}
+}
+
 // ========================= LIST MY LISTINGS =========================
 
 func listMyListings(r *gin.Engine, query string) *httptest.ResponseRecorder {
@@ -370,16 +480,20 @@ func TestListMyListings_AnswersThePageInTheDocumentedShape(t *testing.T) {
 		EndsAt:     timestamppb.New(time.Date(2026, 12, 1, 18, 0, 0, 0, time.UTC)),
 		CreatedAt:  timestamppb.New(time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)),
 		UpdatedAt:  timestamppb.New(time.Date(2026, 12, 1, 18, 5, 0, 0, time.UTC)),
+		MinimumBid: 176,
+		BidCount:   3,
 	}
 	active := &pb.Listing{
-		Id:         "55555555-5555-5555-5555-555555555555",
-		SellerId:   "22222222-2222-2222-2222-222222222222",
-		ItemId:     "66666666-6666-6666-6666-666666666666",
-		StartPrice: 250,
-		Status:     "ACTIVE",
-		EndsAt:     timestamppb.New(time.Date(2026, 12, 2, 18, 0, 0, 0, time.UTC)),
-		CreatedAt:  timestamppb.New(time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)),
-		UpdatedAt:  timestamppb.New(time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)),
+		Id:          "55555555-5555-5555-5555-555555555555",
+		SellerId:    "22222222-2222-2222-2222-222222222222",
+		ItemId:      "66666666-6666-6666-6666-666666666666",
+		StartPrice:  250,
+		BuyoutPrice: proto.Int64(900),
+		Status:      "ACTIVE",
+		EndsAt:      timestamppb.New(time.Date(2026, 12, 2, 18, 0, 0, 0, time.UTC)),
+		CreatedAt:   timestamppb.New(time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)),
+		UpdatedAt:   timestamppb.New(time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)),
+		MinimumBid:  250,
 	}
 	client := &stubListingClient{mine: &pb.ListMyListingsResponse{
 		Listings:   []*pb.Listing{sold, active},
@@ -401,17 +515,24 @@ func TestListMyListings_AnswersThePageInTheDocumentedShape(t *testing.T) {
 				"status": "SOLD",
 				"endsAt": "2026-12-01T18:00:00Z",
 				"createdAt": "2026-11-01T09:00:00Z",
-				"updatedAt": "2026-12-01T18:05:00Z"
+				"updatedAt": "2026-12-01T18:05:00Z",
+				"minimumBid": 176,
+				"bidCount": 3,
+				"ended": false
 			},
 			{
 				"id": "55555555-5555-5555-5555-555555555555",
 				"itemId": "66666666-6666-6666-6666-666666666666",
 				"sellerId": "22222222-2222-2222-2222-222222222222",
 				"startPrice": 250,
+				"buyoutPrice": 900,
 				"status": "ACTIVE",
 				"endsAt": "2026-12-02T18:00:00Z",
 				"createdAt": "2026-10-01T09:00:00Z",
-				"updatedAt": "2026-10-01T09:00:00Z"
+				"updatedAt": "2026-10-01T09:00:00Z",
+				"minimumBid": 250,
+				"bidCount": 0,
+				"ended": false
 			}
 		],
 		"nextCursor": "next-page"

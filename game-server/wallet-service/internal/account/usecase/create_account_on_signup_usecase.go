@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
@@ -83,6 +84,15 @@ func (uc *CreateAccountOnSignupUC) Handle(ctx context.Context, cmd CreateAccount
 		}
 
 		if err := uc.repo.InsertTx(ctx, tx, acc); err != nil {
+			// The member already has an account — created over gRPC, or by an
+			// earlier signup event with a different id the inbox never saw.
+			// The work this event asks for is done, so it is a redelivery in
+			// effect. Left as a failure, it was requeued forever. Rolling back
+			// also drops this event's inbox mark, which is harmless: member_id
+			// stays the dedupe key on any further delivery.
+			if errors.Is(err, commonconstants.ErrDuplicateResource) {
+				return fmt.Errorf("member %s already has an account: %w", cmd.MemberID, commonconstants.ErrAlreadyProcessed)
+			}
 			return fmt.Errorf("create account on signup inserting account for member %s: %w", cmd.MemberID, err)
 		}
 

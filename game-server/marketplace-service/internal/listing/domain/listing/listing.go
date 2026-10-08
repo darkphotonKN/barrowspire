@@ -26,12 +26,15 @@ type Listing struct {
 	buyerID    *uuid.UUID
 	itemID     uuid.UUID
 	startPrice int
-	soldPrice  *int
-	status     ListingStatus
-	endsAt     time.Time
-	createdAt  time.Time
-	updatedAt  time.Time
-	bids       []*Bid
+	// buyoutPrice is nil when the seller set none: the listing can then only be
+	// won by bidding. Set, it is always above startPrice (FS-9XKS6 Req 2).
+	buyoutPrice *int
+	soldPrice   *int
+	status      ListingStatus
+	endsAt      time.Time
+	createdAt   time.Time
+	updatedAt   time.Time
+	bids        []*Bid
 
 	// version
 	// used for optimistic locking, important in all roots of DDD hexagonal
@@ -46,21 +49,30 @@ type Listing struct {
 
 // snapshot exposes fields for external use, with no path to write fields
 type ListingSnapshot struct {
-	ID         uuid.UUID
-	SellerID   uuid.UUID
-	BuyerID    *uuid.UUID
-	ItemID     uuid.UUID
-	StartPrice int
-	SoldPrice  *int
-	Status     ListingStatus
-	EndsAt     time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	Version    int
-	Bids       []BidSnapshot
+	ID          uuid.UUID
+	SellerID    uuid.UUID
+	BuyerID     *uuid.UUID
+	ItemID      uuid.UUID
+	StartPrice  int
+	BuyoutPrice *int
+	SoldPrice   *int
+	Status      ListingStatus
+	EndsAt      time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	Version     int
+	Bids        []BidSnapshot
 }
 
-func NewListing(sellerID, itemID uuid.UUID, startPrice int, now, endsAt time.Time) (*Listing, error) {
+// NewListing births a listing under id, the listing_id items-service minted when
+// it reserved the item. The listing never mints its own: the item records that ID
+// so later item writes can tell this listing from a relist (FS-NXP1W Req 24a).
+//
+// buyoutPrice is optional: nil births a plain auction.
+func NewListing(id, sellerID, itemID uuid.UUID, startPrice int, buyoutPrice *int, now, endsAt time.Time) (*Listing, error) {
+	if id == uuid.Nil {
+		return nil, ErrInvalidUUID
+	}
 	if sellerID == uuid.Nil {
 		return nil, ErrInvalidUUID
 	}
@@ -73,19 +85,25 @@ func NewListing(sellerID, itemID uuid.UUID, startPrice int, now, endsAt time.Tim
 	if startPrice <= 0 {
 		return nil, ErrInvalidStartPrice
 	}
+	// a buyout at or under the opening bid is just a bid, and would let the first
+	// bidder pay less than the buyout costs
+	if buyoutPrice != nil && *buyoutPrice <= startPrice {
+		return nil, ErrInvalidBuyoutPrice
+	}
 
 	return &Listing{
-		id:         uuid.New(),
-		sellerID:   sellerID,
-		buyerID:    nil,
-		itemID:     itemID,
-		startPrice: startPrice,
-		soldPrice:  nil,
-		status:     StatusActive,
-		endsAt:     endsAt,
-		createdAt:  now,
-		updatedAt:  now,
-		version:    0, // births with 0, all aggregate roots start with 0
+		id:          id,
+		sellerID:    sellerID,
+		buyerID:     nil,
+		itemID:      itemID,
+		startPrice:  startPrice,
+		buyoutPrice: copyInt(buyoutPrice),
+		soldPrice:   nil,
+		status:      StatusActive,
+		endsAt:      endsAt,
+		createdAt:   now,
+		updatedAt:   now,
+		version:     0, // births with 0, all aggregate roots start with 0
 	}, nil
 }
 
@@ -98,36 +116,63 @@ func (l *Listing) Snapshot() ListingSnapshot {
 		bids = append(bids, bid.Snapshot())
 	}
 
-	// buyerID and soldPrice are the only nilable fields, so they are the only ones
-	// that would otherwise hand back a live pointer into the aggregate. Copy the
-	// pointee and point at the copy — nil stays nil, so "not settled yet" still
-	// reads the same to callers and to sqlx.
+	// buyerID, buyoutPrice and soldPrice are the only nilable fields, so they are
+	// the only ones that would otherwise hand back a live pointer into the
+	// aggregate. Copy the pointee and point at the copy — nil stays nil, so "not
+	// settled yet" and "no buyout" still read the same to callers and to sqlx.
 	var buyerID *uuid.UUID
 	if l.buyerID != nil {
 		v := *l.buyerID
 		buyerID = &v
 	}
 
-	var soldPrice *int
-	if l.soldPrice != nil {
-		v := *l.soldPrice
-		soldPrice = &v
+	return ListingSnapshot{
+		ID:          l.id,
+		SellerID:    l.sellerID,
+		BuyerID:     buyerID,
+		ItemID:      l.itemID,
+		StartPrice:  l.startPrice,
+		BuyoutPrice: copyInt(l.buyoutPrice),
+		SoldPrice:   copyInt(l.soldPrice),
+		Status:      l.status,
+		EndsAt:      l.endsAt,
+		Version:     l.version,
+		CreatedAt:   l.createdAt,
+		UpdatedAt:   l.updatedAt,
+		Bids:        bids,
+	}
+}
+
+// copyInt detaches an optional int from whoever handed it over, so neither side
+// can write through the other's pointer.
+func copyInt(p *int) *int {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
+// CanAcceptBid reports whether memberID may end this auction early at its current
+// WINNING bid (FS-NXP1W §Req 3). Read-only: it decides, it never changes the
+// listing. Freezing it is step 0a's job, under the row lock.
+//
+// Seller first, so a member who is not the seller learns nothing about the
+// listing's state from the refusal.
+func (l *Listing) CanAcceptBid(memberID uuid.UUID, now time.Time) error {
+	if l.sellerID != memberID {
+		return ErrNotSeller
 	}
 
-	return ListingSnapshot{
-		ID:         l.id,
-		SellerID:   l.sellerID,
-		BuyerID:    buyerID,
-		ItemID:     l.itemID,
-		StartPrice: l.startPrice,
-		SoldPrice:  soldPrice,
-		Status:     l.status,
-		EndsAt:     l.endsAt,
-		Version:    l.version,
-		CreatedAt:  l.createdAt,
-		UpdatedAt:  l.updatedAt,
-		Bids:       bids,
+	if err := l.AcceptsBidAt(now); err != nil {
+		return err
 	}
+
+	if l.findWinningBid() == nil {
+		return ErrNoBidToAccept
+	}
+
+	return nil
 }
 
 func (l *Listing) Cancel(now time.Time) error {
@@ -203,6 +248,11 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 		return ErrBidTooLow
 	}
 
+	// Paying the buyout price or more is what Buyout is for (FS-9XKS6 Req 4).
+	if l.buyoutPrice != nil && amount >= *l.buyoutPrice {
+		return ErrBidAtOrAboveBuyout
+	}
+
 	newBid, err := newBid(bidID, l.id, memberID, BidTypeBid, amount, idempotencyKey, now)
 	if err != nil {
 		return err
@@ -247,6 +297,22 @@ func (l *Listing) ConfirmBid(bidID uuid.UUID, now time.Time) error {
 	// The checks PlaceBid made were true when the bid was placed, not now. Holds
 	// resolve outside the listing lock and in any order, so both are made again
 	// against the state this confirmation actually sees.
+
+	// A buyout ended the contest while this hold was in flight, and settlement
+	// has not frozen the listing yet. The gold is held, so the bid resolves as a
+	// loser that settlement's losing-hold release will free, rather than failing
+	// and stranding it (FS-NXP1W Req 4). Once the listing is frozen this branch
+	// no longer applies: the release may already have run, so the late
+	// confirmation is refused below like on any frozen listing.
+	if bid.status == BidStatusPending && l.status == StatusActive && l.boughtOut() {
+		if err := bid.transitionTo(BidStatusOutbid, now); err != nil {
+			return err
+		}
+
+		l.updatedAt = now
+
+		return nil
+	}
 
 	// Settlement fixes the winner when it freezes the listing; a late
 	// confirmation must not swap the leader out from under it.
@@ -396,6 +462,63 @@ func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time
 	return nil
 }
 
+// CanBuyout reports whether memberID could buy this listing out at now.
+// Read-only: a caller about to hold gold for a buyout asks it first, and Buyout
+// applies the same rules again under the lock.
+//
+// Seller first, as in CanAcceptBid.
+func (l *Listing) CanBuyout(memberID uuid.UUID, now time.Time) error {
+	if l.sellerID == memberID {
+		return ErrSellerCannotBuyout
+	}
+
+	if l.buyoutPrice == nil {
+		return ErrNoBuyoutPrice
+	}
+
+	return l.AcceptsBidAt(now)
+}
+
+// Buyout records memberID buying the listing outright at its buyout price
+// (FS-NXP1W Req 4). The bid is born WINNING: unlike PlaceBid, the caller has
+// already held the gold, so there is no hold left to wait on. The incumbent
+// leader is demoted, and from here the listing refuses every further bid change
+// (acceptingBidChanges) until settlement freezes it.
+//
+// bidID is minted by the caller and is what the gold is held against, which
+// makes a retry recognisable: a bid already present is a replay and succeeds
+// before any rule is checked, since the first attempt may already have started
+// the settlement that froze the listing.
+func (l *Listing) Buyout(bidID, memberID uuid.UUID, now time.Time) error {
+	if l.findBidByID(bidID) != nil {
+		return nil
+	}
+
+	if err := l.CanBuyout(memberID, now); err != nil {
+		return err
+	}
+
+	bid, err := newBid(bidID, l.id, memberID, BidTypeBuyout, *l.buyoutPrice, uuid.Nil, now)
+	if err != nil {
+		return err
+	}
+
+	if incumbent := l.findWinningBid(); incumbent != nil {
+		if err := incumbent.transitionTo(BidStatusOutbid, now); err != nil {
+			return err
+		}
+	}
+
+	if err := bid.transitionTo(BidStatusWinning, now); err != nil {
+		return err
+	}
+
+	l.bids = append(l.bids, bid)
+	l.updatedAt = now
+
+	return nil
+}
+
 // AcceptsBidAt reports whether a new bid could be placed at now: the listing is
 // open and not yet past its end. PlaceBidWithID applies it under the lock; a
 // caller about to do something costly for a bid — holding its gold — asks it
@@ -423,7 +546,27 @@ func (l *Listing) acceptingBidChanges() error {
 		return ErrListingNotAcceptingBids
 	}
 
+	// A buyout fixes the winner the moment it lands, before settlement freezes
+	// the listing, so from then on the listing is closed to bids exactly as a
+	// frozen one is.
+	if l.boughtOut() {
+		return ErrListingNotAcceptingBids
+	}
+
 	return nil
+}
+
+// boughtOut reports whether a buyout has landed. Derived from the bids rather
+// than stored: a BUYOUT bid is only ever written WINNING, after its gold is
+// held, so its presence alone means the listing is sold to it.
+func (l *Listing) boughtOut() bool {
+	for _, bid := range l.bids {
+		if bid.bidType == BidTypeBuyout {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (l *Listing) findWinningBid() *Bid {
@@ -499,34 +642,50 @@ func (l *Listing) Freeze(now time.Time) error {
 	return nil
 }
 
+// Expire is settlement step NB2 (FS-NXP1W §Req 34b): a frozen listing that
+// nobody won ends EXPIRED. Any other status is an invariant breach, refused and
+// left as it was.
+//
+// Checked explicitly rather than left to the FSM: ACTIVE -> EXPIRED is a legal
+// edge for a listing that lapses outside settlement, but NB2 only ever runs on a
+// listing 0a already froze, so an ACTIVE one here means something else moved it.
+func (l *Listing) Expire(now time.Time) error {
+	switch l.status {
+	case StatusExpired:
+		// a retried activity catching up with its own earlier success
+		return nil
+	case StatusPendingSettlement:
+		return l.transitionTo(StatusExpired, now)
+	default:
+		return ErrInvalidListingState
+	}
+}
+
+// FindWinningBid returns the confirmed leader, or nil when there is none.
+//
+// No leader is a legitimate ending, not corruption: every bid may have been
+// withdrawn (CANCELLED), refused by wallet (FAILED) or still waiting on its hold
+// (PENDING). Even OUTBID bids with no leader are reachable, because a WINNING
+// bidder may withdraw and nothing promotes the runner-up. Two WINNING bids is
+// the real corruption, and Reconstitute already refuses to load that listing.
 func (l *Listing) FindWinningBid() (*Bid, error) {
-	// no bids, no op
-	if len(l.bids) == 0 {
-		return nil, nil
-	}
-
-	for _, bid := range l.bids {
-		if bid.status == BidStatusWinning {
-			return bid, nil
-		}
-	}
-
-	return nil, ErrCorruptListingState
+	return l.findWinningBid(), nil
 }
 
 type ReconstituteParams struct {
-	ID         uuid.UUID
-	SellerID   uuid.UUID
-	BuyerID    *uuid.UUID
-	ItemID     uuid.UUID
-	StartPrice int
-	SoldPrice  *int
-	Status     ListingStatus
-	EndsAt     time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	Version    int
-	Bids       []*BidReconstituteParams
+	ID          uuid.UUID
+	SellerID    uuid.UUID
+	BuyerID     *uuid.UUID
+	ItemID      uuid.UUID
+	StartPrice  int
+	BuyoutPrice *int
+	SoldPrice   *int
+	Status      ListingStatus
+	EndsAt      time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	Version     int
+	Bids        []*BidReconstituteParams
 }
 
 func Reconstitute(params ReconstituteParams) (*Listing, error) {
@@ -548,18 +707,19 @@ func Reconstitute(params ReconstituteParams) (*Listing, error) {
 
 	// reconstitute core listing from params and its bids
 	listing := Listing{
-		id:         params.ID,
-		sellerID:   params.SellerID,
-		buyerID:    params.BuyerID,
-		itemID:     params.ItemID,
-		startPrice: params.StartPrice,
-		soldPrice:  params.SoldPrice,
-		status:     params.Status,
-		endsAt:     params.EndsAt,
-		bids:       bids,
-		createdAt:  params.CreatedAt,
-		updatedAt:  params.UpdatedAt,
-		version:    params.Version,
+		id:          params.ID,
+		sellerID:    params.SellerID,
+		buyerID:     params.BuyerID,
+		itemID:      params.ItemID,
+		startPrice:  params.StartPrice,
+		buyoutPrice: copyInt(params.BuyoutPrice),
+		soldPrice:   copyInt(params.SoldPrice),
+		status:      params.Status,
+		endsAt:      params.EndsAt,
+		bids:        bids,
+		createdAt:   params.CreatedAt,
+		updatedAt:   params.UpdatedAt,
+		version:     params.Version,
 	}
 
 	winners := 0

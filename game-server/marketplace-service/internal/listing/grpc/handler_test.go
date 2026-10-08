@@ -2,12 +2,14 @@ package grpc
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	itemspb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/adapter/itemreserver"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
@@ -21,7 +23,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// fakeRepo keeps one listing in memory. Modify, FindByID and Save all act on
+// fakeRepo keeps one listing in memory. Update, FindByID and Save all act on
 // it, which is enough for the handler tests to observe what the use cases did.
 type fakeRepo struct {
 	l *listing.Listing
@@ -41,10 +43,6 @@ func (r *fakeRepo) Save(ctx context.Context, l *listing.Listing, before listing.
 	return nil
 }
 
-func (r *fakeRepo) Modify(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
-	return fn(r.l)
-}
-
 func (r *fakeRepo) Update(ctx context.Context, id uuid.UUID, fn func(*listing.Listing) error) error {
 	return fn(r.l)
 }
@@ -52,8 +50,14 @@ func (r *fakeRepo) Update(ctx context.Context, id uuid.UUID, fn func(*listing.Li
 // fakeWallet records who the hold was placed for, so a test can prove the
 // handler passed the authenticated caller rather than an invented member.
 type fakeWallet struct {
-	calls       int
-	gotMemberID uuid.UUID
+	calls        int
+	releaseCalls int
+	gotMemberID  uuid.UUID
+}
+
+func (w *fakeWallet) ReleaseHold(ctx context.Context, bidID uuid.UUID) error {
+	w.releaseCalls++
+	return nil
 }
 
 func (w *fakeWallet) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int, expiresAt time.Time) error {
@@ -115,7 +119,11 @@ func newTestHandler(repo *fakeRepo, wallet *fakeWallet) *Handler {
 		nil,
 		nil,
 		usecase.NewPlaceBidUC(repo, wallet),
-		usecase.NewWithdrawBidUC(repo),
+		usecase.NewWithdrawBidUC(repo, wallet),
+		nil,
+		nil,
+		nil,
+		nil,
 		nil,
 	)
 }
@@ -240,7 +248,7 @@ func TestListItem_ItemsRefusal_KeepsItsMeaning(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reserver := itemreserver.NewItemReserver(&fakeItemsClient{code: tt.itemsCode})
-			h := NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil)
+			h := NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil, nil, nil, nil, nil)
 
 			_, err := h.ListItem(authedCtx(t, uuid.New()), &pb.ListItemRequest{
 				ItemId:     uuid.New().String(),
@@ -251,4 +259,51 @@ func TestListItem_ItemsRefusal_KeepsItsMeaning(t *testing.T) {
 			assert.Equal(t, tt.wantCode, status.Code(err))
 		})
 	}
+}
+
+// A contended listing must not look like a broken server. mapError decides two
+// things that matter here: the code the gateway turns into an HTTP status, and the
+// level this shows up at in the logs.
+//
+// Aborted, not Unavailable: the gateway maps Unavailable to 503 and many gRPC
+// clients retry it automatically, which would put back the retry storm the row lock
+// was chosen to avoid. Aborted maps to 409, the same answer an OCC conflict already
+// gets, and says "somebody else got there first" rather than "the service is down".
+func TestMapError_LockTimeout_IsAbortedNotUnavailable(t *testing.T) {
+	err := mapError(context.Background(),
+		fmt.Errorf("place bid: %w", commonconstants.ErrLockUnavailable))
+
+	assert.Equal(t, codes.Aborted, status.Code(err))
+	assert.NotEqual(t, codes.Unavailable, status.Code(err),
+		"a busy listing is not a dead service")
+	assert.NotEqual(t, codes.Internal, status.Code(err),
+		"contention is expected under load, not a bug")
+}
+
+// The infrastructure failures keep their own answer: a real outage still reads as one.
+func TestMapError_TransientStaysUnavailable(t *testing.T) {
+	err := mapError(context.Background(),
+		fmt.Errorf("place bid: %w", commonconstants.ErrTransient))
+
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+}
+
+// A bid at the buyout price is refused like a bid too low, and the gold held
+// for it is given back (FS-9XKS6 Req 4, 10).
+func TestPlaceBid_AtBuyoutPriceIsInvalidArgumentAndReleasesTheHold(t *testing.T) {
+	now := time.Now()
+	buyout := 500
+	l, err := listing.NewListing(uuid.New(), uuid.New(), uuid.New(), 100, &buyout, now, now.Add(time.Hour))
+	require.NoError(t, err)
+	repo := &fakeRepo{l: l}
+	wallet := &fakeWallet{}
+
+	_, err = newTestHandler(repo, wallet).PlaceBid(authedCtx(t, uuid.New()), &pb.PlaceBidRequest{
+		ListingId: l.Snapshot().ID.String(),
+		Amount:    500,
+	})
+
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Empty(t, repo.l.Snapshot().Bids)
+	assert.Equal(t, 1, wallet.releaseCalls)
 }

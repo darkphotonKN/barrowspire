@@ -47,12 +47,18 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] Route item traffic to items
 - [x] Route example traffic to examples
 - [ ] Route ledger read traffic to ledger → FS-F9R7Q
+- [x] Route wallet traffic to wallet → FS-none
+- [x] Typed wallet balance read → FS-8EGFA
 
 ### Marketplace
 
 - [x] Create a listing → FS-none
 - [x] Place a bid on a listing → FS-none
 - [x] Typed marketplace surface → FS-0YXG6
+- [x] Public listing browse and read → FS-8EGFA
+- [ ] Accept the leading bid → FS-NXP1W
+- [ ] Buy out a listing → FS-NXP1W
+- [ ] Buyout price on listings → FS-9XKS6
 
 ### Integration patterns
 

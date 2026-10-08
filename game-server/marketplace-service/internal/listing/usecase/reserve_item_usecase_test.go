@@ -17,15 +17,17 @@ import (
 type fakeItemReserver struct {
 	calls int
 
-	gotItemID     uuid.UUID
-	gotStartPrice int
-	gotEndsAt     time.Time
+	gotItemID      uuid.UUID
+	gotStartPrice  int
+	gotBuyoutPrice *int
+	gotEndsAt      time.Time
 }
 
-func (f *fakeItemReserver) ReserveItem(ctx context.Context, itemID uuid.UUID, startPrice int, endsAt time.Time) (*pb.ReserveItemResponse, error) {
+func (f *fakeItemReserver) ReserveItem(ctx context.Context, itemID uuid.UUID, startPrice int, buyoutPrice *int, endsAt time.Time) (*pb.ReserveItemResponse, error) {
 	f.calls++
 	f.gotItemID = itemID
 	f.gotStartPrice = startPrice
+	f.gotBuyoutPrice = buyoutPrice
 	f.gotEndsAt = endsAt
 	return &pb.ReserveItemResponse{}, nil
 }
@@ -82,4 +84,44 @@ func TestReserveItemRefusesTermsTheListingWouldRefuseBeforeReserving(t *testing.
 			assert.Zero(t, reserver.calls, "items-service must not be called for terms the listing refuses")
 		})
 	}
+}
+
+// The buyout price rides the same path as the start price (FS-9XKS6 Req 5).
+func TestReserveItem_SendsBuyoutPriceToTheReserver(t *testing.T) {
+	now := time.Now()
+	buyout := 900
+	reserver := &fakeItemReserver{}
+
+	err := NewReserveItemUC(reserver).Handle(context.Background(), &ReserveItemCommand{
+		SellerID:    uuid.New(),
+		ItemID:      uuid.New(),
+		StartPrice:  150,
+		BuyoutPrice: &buyout,
+		Now:         now,
+		EndsAt:      now.Add(time.Hour),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, reserver.gotBuyoutPrice)
+	assert.Equal(t, 900, *reserver.gotBuyoutPrice)
+}
+
+// An invalid buyout must be refused before the item is locked for a listing
+// that can never be born (FS-9XKS6 Decision 9).
+func TestReserveItem_InvalidBuyoutRefusedBeforeReserving(t *testing.T) {
+	now := time.Now()
+	buyout := 150
+	reserver := &fakeItemReserver{}
+
+	err := NewReserveItemUC(reserver).Handle(context.Background(), &ReserveItemCommand{
+		SellerID:    uuid.New(),
+		ItemID:      uuid.New(),
+		StartPrice:  150,
+		BuyoutPrice: &buyout,
+		Now:         now,
+		EndsAt:      now.Add(time.Hour),
+	})
+
+	assert.ErrorIs(t, err, listing.ErrInvalidBuyoutPrice)
+	assert.Zero(t, reserver.calls)
 }

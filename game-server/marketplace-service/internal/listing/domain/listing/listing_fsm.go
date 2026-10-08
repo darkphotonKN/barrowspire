@@ -11,6 +11,7 @@ var allowedTransitions = map[ListingStatus]map[ListingStatus]struct{}{
 	StatusPendingSettlement: {
 		StatusSold:      struct{}{},
 		StatusCancelled: struct{}{},
+		StatusExpired:   struct{}{},
 	},
 }
 
@@ -28,7 +29,7 @@ func canTransition(from, to ListingStatus) bool {
 // mutate
 func (l *Listing) transitionTo(to ListingStatus, now time.Time) error {
 	if !canTransition(l.status, to) {
-		return ErrInvalidHoldTransition
+		return ErrInvalidListingState
 	}
 
 	// mutate once safe

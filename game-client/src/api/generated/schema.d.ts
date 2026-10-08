@@ -255,7 +255,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Browse live auctions
+         * @description Pages every seller's live auctions — active and not yet ended — soonest-ending first, each with its item embedded. Public: no token is needed. If the items lookup fails the whole request fails; a page is never returned without its items.
+         */
+        get: operations["browse-listings"];
         put?: never;
         /**
          * List an item for auction
@@ -277,11 +281,51 @@ export interface paths {
         };
         /**
          * Page my listings
-         * @description Pages the signed-in member's own listings, newest first. Every listing's sellerId is the caller: the seller is taken from the token; there is no parameter for reading another member's listings.
+         * @description Pages the signed-in member's own listings in any status, newest first, each with its item embedded. Every listing's sellerId is the caller: the seller is taken from the token; there is no parameter for reading another member's listings. If the items lookup fails the whole request fails.
          */
         get: operations["list-my-listings"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/marketplace/listings/{listing_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a listing
+         * @description Reads one listing in any status, with its item embedded. An active listing past endsAt answers ended: true. Public: no token is needed. If the items lookup fails the request fails.
+         */
+        get: operations["get-listing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/marketplace/listings/{listing_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept the leading bid
+         * @description Ends the signed-in seller's auction early at its current leading bid. There is no bid to choose: whichever bid leads is the one accepted. Answers once settlement has started; the sale completes asynchronously. Refused when the caller is not the seller, the auction is closed, or nobody leads.
+         */
+        post: operations["accept-bid"];
         delete?: never;
         options?: never;
         head?: never;
@@ -668,6 +712,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/wallet/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get my wallet balance
+         * @description Reads the signed-in member's gold balance. The account is taken from the token, never the request. It is created asynchronously after signup, so a 404 just after signing up means it does not exist yet.
+         */
+        get: operations["get-wallet-account"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -942,6 +1006,11 @@ export interface components {
         };
         CreateListingBody: {
             /**
+             * Format: int64
+             * @description Gold that buys the item outright and ends the auction. Optional; when set it must be above startPrice.
+             */
+            buyoutPrice?: number;
+            /**
              * Format: date-time
              * @description When the auction closes. Must be in the future.
              */
@@ -1040,6 +1109,11 @@ export interface components {
             /** Format: int32 */
             sell_price?: number;
             source?: string;
+            /**
+             * @description Lifecycle status; only AVAILABLE relics can be listed
+             * @enum {string}
+             */
+            status?: "AVAILABLE" | "LISTED" | "IN_ESCROW" | "PENDING_SETTLEMENT";
             template_id?: string;
             weapon_type?: string;
         };
@@ -1049,6 +1123,35 @@ export interface components {
             id?: string;
             name?: string;
             updated_at?: components["schemas"]["Timestamp"];
+        };
+        ItemSummary: {
+            armorSlot?: string;
+            /** Format: int32 */
+            attackPower?: number;
+            /** Format: int32 */
+            buffDuration?: number;
+            /** Format: double */
+            criticalRate?: number;
+            /** Format: int32 */
+            defenseRating?: number;
+            description?: string;
+            /** Format: int32 */
+            healingAmount?: number;
+            /**
+             * Format: uuid
+             * @description The item instance; equals the listing's itemId.
+             */
+            id: string;
+            /** @description e.g. weapon, armor, consumable. */
+            itemType: string;
+            /** Format: int32 */
+            magicResistance?: number;
+            /** Format: int32 */
+            manaAmount?: number;
+            name: string;
+            /** @description The rarity tier: normal, uncommon, rare, runed or fabled. */
+            rarity: string;
+            weaponType?: string;
         };
         ItemTemplate: {
             armor_slot?: string;
@@ -1127,18 +1230,42 @@ export interface components {
         };
         Listing: {
             /**
+             * Format: int32
+             * @description Bids that are or were in the running: winning, pending or outbid.
+             */
+            bidCount: number;
+            /**
              * Format: uuid
              * @description Present once sold.
              */
             buyerId?: string;
+            /**
+             * Format: int64
+             * @description Gold that buys the item outright. Absent when the seller set none.
+             */
+            buyoutPrice?: number;
             /** Format: date-time */
             createdAt: string;
+            /**
+             * Format: int64
+             * @description The leading bid. Absent when nobody leads.
+             */
+            currentPrice?: number;
+            /** @description True when the auction is past endsAt but not yet settled; it no longer accepts bids. */
+            ended: boolean;
             /** Format: date-time */
             endsAt: string;
             /** Format: uuid */
             id: string;
+            /** @description The listed item. Absent only when items has no such instance. */
+            item?: components["schemas"]["ItemSummary"];
             /** Format: uuid */
             itemId: string;
+            /**
+             * Format: int64
+             * @description The least amount a bid would be accepted at now: the start price with no leading bid, otherwise one more than the leading bid.
+             */
+            minimumBid: number;
             /** Format: uuid */
             sellerId: string;
             /**
@@ -1262,7 +1389,7 @@ export interface components {
         PlaceBidBody: {
             /**
              * Format: int64
-             * @description Gold offered. The first bid must meet the listing's start price; every later one must exceed the current leading bid.
+             * @description Gold offered. The first bid must meet the listing's start price; every later one must exceed the current leading bid. On a listing with a buyoutPrice every bid must stay below it.
              */
             amount: number;
         };
@@ -1638,6 +1765,23 @@ export interface components {
             status?: string;
             /** @description Stripe subscription id */
             subscription_id?: string;
+        };
+        WalletAccount: {
+            /**
+             * Format: int64
+             * @description Gold spendable now: gold minus heldGold.
+             */
+            availableGold: number;
+            /**
+             * Format: int64
+             * @description Total gold on the account.
+             */
+            gold: number;
+            /**
+             * Format: int64
+             * @description Gold reserved by open bids.
+             */
+            heldGold: number;
         };
         Weapon: {
             /** Format: int32 */
@@ -2417,6 +2561,66 @@ export interface operations {
             };
         };
     };
+    "browse-listings": {
+        parameters: {
+            query?: {
+                /** @description Opaque position from a previous page's nextCursor. Do not construct. */
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
     "create-listing": {
         parameters: {
             query?: never;
@@ -2517,6 +2721,156 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "get-listing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Listing"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "accept-bid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3711,6 +4065,71 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "get-wallet-account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletAccount"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

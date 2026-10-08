@@ -150,3 +150,168 @@ func statusByBidID(t *testing.T, l *Listing) map[uuid.UUID]BidStatus {
 
 	return byID
 }
+
+// Settlement step 0a (FS-NXP1W): Freeze moves an open listing to
+// PENDING_SETTLEMENT. The listing FSM is the guard, so any other starting status
+// is refused and left as it was.
+func TestFreeze(t *testing.T) {
+	tests := []struct {
+		name    string
+		from    ListingStatus
+		wantErr error
+		want    ListingStatus
+	}{
+		{"active is frozen", StatusActive, nil, StatusPendingSettlement},
+		{"already frozen is refused", StatusPendingSettlement, ErrInvalidListingState, StatusPendingSettlement},
+		{"sold is refused", StatusSold, ErrInvalidListingState, StatusSold},
+		{"cancelled is refused", StatusCancelled, ErrInvalidListingState, StatusCancelled},
+		{"expired is refused", StatusExpired, ErrInvalidListingState, StatusExpired},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := listingWithBids(t, tt.from)
+
+			err := l.Freeze(time.Now())
+
+			assert.ErrorIs(t, err, tt.wantErr)
+			assert.Equal(t, tt.want, l.Snapshot().Status)
+		})
+	}
+}
+
+// Settlement step NB2 (FS-NXP1W §Req 34b): a frozen listing nobody bid on ends
+// EXPIRED. A retry catching up with its own success is not an error; any other
+// status is an invariant breach and is left as it was, never overwritten.
+func TestExpire(t *testing.T) {
+	tests := []struct {
+		name    string
+		from    ListingStatus
+		wantErr error
+		want    ListingStatus
+	}{
+		{"pending settlement is expired", StatusPendingSettlement, nil, StatusExpired},
+		{"already expired is applied", StatusExpired, nil, StatusExpired},
+		{"active is refused", StatusActive, ErrInvalidListingState, StatusActive},
+		{"sold is refused", StatusSold, ErrInvalidListingState, StatusSold},
+		{"cancelled is refused", StatusCancelled, ErrInvalidListingState, StatusCancelled},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := listingWithBids(t, tt.from)
+
+			err := l.Expire(time.Now())
+
+			assert.ErrorIs(t, err, tt.wantErr)
+			assert.Equal(t, tt.want, l.Snapshot().Status)
+		})
+	}
+}
+
+// 0a reads the winner off the frozen listing. Only a WINNING bid is a winner;
+// a listing whose bids all dropped out is a legitimate no-winner ending, not
+// corruption.
+func TestFindWinningBid(t *testing.T) {
+	tests := []struct {
+		name       string
+		bids       []BidStatus
+		wantWinner bool
+	}{
+		{"no bids", nil, false},
+		{"one leader among losers", []BidStatus{BidStatusOutbid, BidStatusWinning, BidStatusCancelled}, true},
+		{"all withdrawn", []BidStatus{BidStatusCancelled, BidStatusCancelled}, false},
+		{"all refused by wallet", []BidStatus{BidStatusFailed}, false},
+		{"hold still pending", []BidStatus{BidStatusPending}, false},
+		{"leader withdrew, runner-up left outbid", []BidStatus{BidStatusOutbid, BidStatusCancelled}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := listingWithBids(t, StatusPendingSettlement, tt.bids...)
+
+			bid, err := l.FindWinningBid()
+
+			require.NoError(t, err)
+			if !tt.wantWinner {
+				assert.Nil(t, bid)
+				return
+			}
+			require.NotNil(t, bid)
+			assert.Equal(t, BidStatusWinning, bid.Snapshot().Status)
+		})
+	}
+}
+
+// listingWithBids loads a listing straight into a given status with one bid per
+// status passed, the way the repository would hand it back.
+func listingWithBids(t *testing.T, status ListingStatus, bidStatuses ...BidStatus) *Listing {
+	t.Helper()
+
+	now := time.Now()
+	listingID := uuid.New()
+
+	bids := make([]*BidReconstituteParams, 0, len(bidStatuses))
+	for i, s := range bidStatuses {
+		bids = append(bids, &BidReconstituteParams{
+			ID:        uuid.New(),
+			ListingID: listingID,
+			MemberID:  uuid.New(),
+			Amount:    150 + i,
+			Status:    s,
+			CreatedAt: now,
+			UpdatedAt: now,
+		})
+	}
+
+	params := reconstituteParams(listingID, now, bids)
+	params.Status = status
+
+	l, err := Reconstitute(params)
+	require.NoError(t, err)
+
+	return l
+}
+
+// AcceptBid (FS-NXP1W §Req 3): only the seller may end their auction early, only
+// while it still takes bids, and only at a current WINNING bid. Read-only: the
+// listing is never changed here; 0a does that under the row lock.
+func TestCanAcceptBid(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  ListingStatus
+		bids    []BidStatus
+		asOther bool
+		late    bool
+		wantErr error
+	}{
+		{"seller with a winning bid", StatusActive, []BidStatus{BidStatusOutbid, BidStatusWinning}, false, false, nil},
+		{"not the seller", StatusActive, []BidStatus{BidStatusWinning}, true, false, ErrNotSeller},
+		{"not the seller learns nothing of state", StatusSold, nil, true, false, ErrNotSeller},
+		{"already settling", StatusPendingSettlement, []BidStatus{BidStatusWinning}, false, false, ErrListingNotAcceptingBids},
+		{"past its end", StatusActive, []BidStatus{BidStatusWinning}, false, true, ErrListingExpired},
+		{"no bids", StatusActive, nil, false, false, ErrNoBidToAccept},
+		{"only a pending bid", StatusActive, []BidStatus{BidStatusPending}, false, false, ErrNoBidToAccept},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := listingWithBids(t, tt.status, tt.bids...)
+			before := l.Snapshot()
+
+			member := before.SellerID
+			if tt.asOther {
+				member = uuid.New()
+			}
+			now := time.Now()
+			if tt.late {
+				now = before.EndsAt
+			}
+
+			err := l.CanAcceptBid(member, now)
+
+			assert.ErrorIs(t, err, tt.wantErr)
+			assert.Equal(t, before, l.Snapshot(), "CanAcceptBid must not change the listing")
+		})
+	}
+}

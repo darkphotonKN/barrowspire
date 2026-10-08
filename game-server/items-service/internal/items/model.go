@@ -163,6 +163,10 @@ type ItemInstance struct {
 	Description *string `db:"description" json:"description"`
 	Status      string  `db:"status" json:"status"`
 
+	// ListingID is the listing the item is reserved for (FS-NXP1W Req 24a);
+	// NULL unless the item is LISTED or further along a settlement.
+	ListingID *uuid.UUID `db:"listing_id" json:"listing_id"`
+
 	AcquiredAt time.Time `db:"acquired_at" json:"acquired_at"`
 	CreatedAt  time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt  time.Time `db:"updated_at" json:"updated_at"`
@@ -429,4 +433,27 @@ type UpdateLoadoutRequest struct {
 	MemberId       uuid.UUID  `json:"member_id" binding:"required"`
 	Slot           string     `json:"slot" binding:"required"`
 	ItemInstanceId *uuid.UUID `json:"item_instance_id"`
+}
+
+// ItemSummary is what anyone may see of an item instance (FS-8EGFA
+// §Requirements 9): what it is and how strong, never whose it is, where it came
+// from or what it cost. A nil stat is one the item type does not have.
+type ItemSummary struct {
+	ID          uuid.UUID `db:"id"`
+	Name        string    `db:"name"`
+	Description *string   `db:"description"`
+	ItemType    string    `db:"item_type"` // 'weapon' | 'armor' | 'consumable'
+	// Rarity is the tier's code (normal, uncommon, rare, runed, fabled), empty
+	// for an instance that carries no rarity.
+	Rarity     string  `db:"rarity"`
+	WeaponType *string `db:"weapon_type"`
+	ArmorSlot  *string `db:"armor_slot"`
+
+	AttackPower     *int     `db:"attack_power"`
+	CriticalRate    *float64 `db:"critical_rate"`
+	DefenseRating   *int     `db:"defense_rating"`
+	MagicResistance *int     `db:"magic_resistance"`
+	HealingAmount   *int     `db:"healing_amount"`
+	ManaAmount      *int     `db:"mana_amount"`
+	BuffDuration    *int     `db:"buff_duration"`
 }

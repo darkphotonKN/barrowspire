@@ -30,13 +30,7 @@ var (
 // encodes the cursor into base64
 // no pointer receiver as theres no mutation and cursor struct size is small
 func (c Cursor) Encode() string {
-	cursorBytes := []byte(c.stringForm())
-	return base64.RawURLEncoding.EncodeToString(cursorBytes)
-}
-
-// helper to represent the cursor in string format
-func (c Cursor) stringForm() string {
-	return c.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + c.ID.String()
+	return encodePosition(c.CreatedAt, c.ID)
 }
 
 // decodes a base64 cursor back to the cursor form
@@ -46,9 +40,31 @@ func Decode(cursorStr string) (*Cursor, error) {
 		return nil, nil
 	}
 
+	date, id, err := decodePosition(cursorStr)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Cursor{
+		ID:        id,
+		CreatedAt: date,
+	}, nil
+}
+
+// encodePosition is the one wire format every cursor shape shares (ADR-0012):
+// base64url of `time|id`. Which column the time came from is the shape's
+// business, never the wire's.
+func encodePosition(at time.Time, id uuid.UUID) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(at.UTC().Format(time.RFC3339Nano) + "|" + id.String()))
+}
+
+// decodePosition reverses encodePosition. Every failure is one of the package
+// sentinels, so an adapter maps every cursor shape with the same rule.
+func decodePosition(cursorStr string) (time.Time, uuid.UUID, error) {
+
 	cursorBuffer, err := base64.RawURLEncoding.DecodeString(cursorStr)
 	if err != nil {
-		return nil, ErrInvalidCursor
+		return time.Time{}, uuid.Nil, ErrInvalidCursor
 	}
 
 	s := string(cursorBuffer)
@@ -57,23 +73,20 @@ func Decode(cursorStr string) (*Cursor, error) {
 
 	// hard check length first
 	if len(parts) != 2 {
-		return nil, ErrInvalidCursor
+		return time.Time{}, uuid.Nil, ErrInvalidCursor
 	}
 
 	// validate and parse the first part back to time.Time
 	date, err := time.Parse(time.RFC3339Nano, parts[0])
 	if err != nil {
-		return nil, ErrInvalidDate
+		return time.Time{}, uuid.Nil, ErrInvalidDate
 	}
 
 	// validate and parse the second part back to uuid
 	id, err := uuid.Parse(parts[1])
 	if err != nil {
-		return nil, ErrInvalidUUID
+		return time.Time{}, uuid.Nil, ErrInvalidUUID
 	}
 
-	return &Cursor{
-		ID:        id,
-		CreatedAt: date,
-	}, nil
+	return date, id, nil
 }

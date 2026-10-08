@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
+	"time"
 
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/usecase"
@@ -23,6 +25,22 @@ type signupHandler interface {
 // Wallet learns about new members from the broker rather than being called at
 // signup, so it adds no dependency to auth-service's login path — the property
 // ADR-0014 exists to protect.
+// retryDelays is how long a failed delivery waits before each retry. One delay
+// queue per entry; a message's x-retry-count picks which one it waits in.
+var retryDelays = []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute}
+
+const retryCountHeader = "x-retry-count"
+
+// The retry topology hangs off wallet's own queue name, never auth.events. A
+// delay queue dead-letters through the default exchange straight back into
+// wallet's queue — republishing to auth.events would redeliver the event to
+// every other subscriber too.
+func retryQueueName(level int) string {
+	return fmt.Sprintf("%s.retry-%d", commonconstants.WalletMemberSignedUpQueue, level+1)
+}
+
+var deadLetterQueue = commonconstants.WalletMemberSignedUpQueue + ".dlq"
+
 type Consumer struct {
 	channel *amqp.Channel
 	handler signupHandler
@@ -72,10 +90,46 @@ func (c *Consumer) SetupConsumer() error {
 		return err
 	}
 
+	if err := c.setupRetryTopology(); err != nil {
+		return err
+	}
+
 	slog.Info("Wallet consumer infrastructure ready",
 		"exchange", commonconstants.AuthEventsExchange,
 		"queue", commonconstants.WalletMemberSignedUpQueue,
 	)
+	return nil
+}
+
+// setupRetryTopology declares the delay queues and the parking queue.
+//
+// The work queue itself carries no dead-letter arguments: failures are
+// published here explicitly, then acked. Adding x-dead-letter-* to the existing
+// durable work queue would change its arguments, and RabbitMQ refuses a
+// redeclare with different arguments — wallet would fail to boot on any broker
+// that already has the queue.
+func (c *Consumer) setupRetryTopology() error {
+	for level, delay := range retryDelays {
+		if _, err := c.channel.QueueDeclare(
+			retryQueueName(level),
+			true, false, false, false,
+			amqp.Table{
+				"x-message-ttl":             int32(delay / time.Millisecond),
+				"x-dead-letter-exchange":    "",
+				"x-dead-letter-routing-key": commonconstants.WalletMemberSignedUpQueue,
+			},
+		); err != nil {
+			slog.Error("Failed to declare wallet signup retry queue",
+				"queue", retryQueueName(level), "error", err)
+			return err
+		}
+	}
+
+	if _, err := c.channel.QueueDeclare(deadLetterQueue, true, false, false, false, nil); err != nil {
+		slog.Error("Failed to declare wallet signup dead-letter queue", "error", err)
+		return err
+	}
+
 	return nil
 }
 
@@ -140,7 +194,9 @@ func (c *Consumer) handleMemberSignedUp(msg amqp.Delivery) {
 		MemberID: memberID,
 	})
 
-	switch decideAck(err) {
+	retryCount := retryCountOf(msg)
+
+	switch decideAck(err, retryCount) {
 	case ackDone:
 		msg.Ack(false)
 		slog.Info("Created account for new member", "member_id", memberID)
@@ -149,11 +205,52 @@ func (c *Consumer) handleMemberSignedUp(msg amqp.Delivery) {
 		msg.Ack(false)
 		slog.Info("member.signedup already processed, acking", "member_id", memberID)
 
-	case nackRequeue:
-		slog.Error("Failed to create account for new member, requeueing",
-			"member_id", memberID, "error", err)
-		msg.Nack(false, true)
+	case retryLater:
+		slog.Warn("Failed to create account for new member, retrying after delay",
+			"member_id", memberID, "retry", retryCount+1, "delay", retryDelays[retryCount], "error", err)
+		c.forward(msg, retryQueueName(retryCount), retryCount+1)
+
+	case deadLetter:
+		slog.Error("Failed to create account for new member, retries exhausted, parking",
+			"member_id", memberID, "queue", deadLetterQueue, "error", err)
+		c.forward(msg, deadLetterQueue, retryCount)
 	}
+}
+
+// forward moves a delivery to another queue: publish the copy, then ack the
+// original. Never requeue in place — an immediate redelivery of a failing
+// message is the hot loop this replaced.
+//
+// If the publish fails the channel is almost certainly gone; the nack (or the
+// broker, once the channel closes) returns the message to the work queue, so a
+// broker outage loses nothing.
+func (c *Consumer) forward(msg amqp.Delivery, queue string, retryCount int) {
+	headers := amqp.Table{}
+	for k, v := range msg.Headers {
+		headers[k] = v
+	}
+	headers[retryCountHeader] = int32(retryCount)
+
+	if err := c.channel.PublishWithContext(context.Background(), "", queue, false, false, amqp.Publishing{
+		ContentType:  msg.ContentType,
+		DeliveryMode: amqp.Persistent,
+		Headers:      headers,
+		Body:         msg.Body,
+	}); err != nil {
+		slog.Error("Failed to forward member.signedup, returning it to the queue",
+			"queue", queue, "error", err)
+		msg.Nack(false, true)
+		return
+	}
+
+	msg.Ack(false)
+}
+
+func retryCountOf(msg amqp.Delivery) int {
+	if n, ok := msg.Headers[retryCountHeader].(int32); ok {
+		return int(n)
+	}
+	return 0
 }
 
 // ackDecision is the acknowledgement policy, separated from the delivery so it
@@ -166,20 +263,27 @@ type ackDecision int
 const (
 	ackDone ackDecision = iota
 	ackAlreadyProcessed
-	nackRequeue
+	retryLater
+	deadLetter
 )
 
-func decideAck(err error) ackDecision {
+func decideAck(err error, retryCount int) ackDecision {
 	switch {
 	case err == nil:
 		return ackDone
 	case errors.Is(err, commonconstants.ErrAlreadyProcessed):
 		// Success wearing an error's shape: the work was done on an earlier
-		// delivery. Ack so it leaves the queue rather than spinning forever.
+		// delivery, or the member already had an account. Ack so it leaves the
+		// queue rather than spinning forever.
 		return ackAlreadyProcessed
+	case retryCount < len(retryDelays):
+		// Retry after a delay. Safe because the use case is transactional:
+		// neither the account nor the inbox row survives a failure, so a retry
+		// starts clean.
+		return retryLater
 	default:
-		// Requeue. Safe because the use case is transactional: neither the
-		// account nor the inbox row survives a failure, so a retry starts clean.
-		return nackRequeue
+		// Parked, not dropped: the member still has no account, and someone
+		// has to see that.
+		return deadLetter
 	}
 }

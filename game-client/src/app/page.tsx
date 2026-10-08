@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { useAuthStore } from '@/stores/authStore';
+import RarityBadge from '@/components/RarityBadge';
+import { RARITY_TIERS } from '@/marketplace/rarity';
 
 export default function Home() {
   const { isAuthenticated } = useAuthStore();
@@ -110,7 +112,7 @@ export default function Home() {
         <SectionLabel>Arsenal</SectionLabel>
         <SectionTitle>Gear System</SectionTitle>
         <p className="text-sm text-vellum-dim text-center max-w-lg mx-auto mb-16 tracking-wide leading-relaxed">
-          Every coffer yields randomized spoils from the hoard — 40% weapons, 35% armor, 25% consumables. Four rarity tiers from common to legendary.
+          Every coffer yields randomized spoils from the hoard — 40% weapons, 35% armor, 25% consumables. Five rarity tiers from normal to fabled.
         </p>
 
         <div className="grid sm:grid-cols-3 gap-6">
@@ -132,8 +134,8 @@ export default function Home() {
         </div>
 
         <div className="flex justify-center gap-4 mt-14 flex-wrap">
-          {(['Common', 'Rare', 'Epic', 'Legendary'] as const).map((rarity) => (
-            <RarityBadge key={rarity} rarity={rarity} />
+          {RARITY_TIERS.map((tier) => (
+            <RarityBadge key={tier} tier={tier} />
           ))}
         </div>
       </section>
@@ -349,51 +351,5 @@ function ControlKey({ keys, label }: { keys: string; label: string }) {
       </kbd>
       <span className="text-xs text-vellum-muted tracking-wide">{label}</span>
     </div>
-  );
-}
-
-// Rarity is DATA, not emphasis — which is why it is exempt from
-// one-torch-per-view, and why the exemption is scoped to the badge, the card
-// accent border, and a faint hover glow. Values come from the --rarity-*
-// tokens; the previous map contradicted the guideline on every entry
-// (Rare burned the torch colour, Epic was a neon purple in no palette,
-// Legendary held the green that belongs to Uncommon, and Uncommon was absent).
-const rarityColors = {
-  Common: {
-    text: 'var(--rarity-common)',
-    border: 'color-mix(in srgb, var(--rarity-common) 25%, transparent)',
-    bg: 'color-mix(in srgb, var(--rarity-common) 6%, transparent)',
-  },
-  Uncommon: {
-    text: 'var(--rarity-uncommon)',
-    border: 'color-mix(in srgb, var(--rarity-uncommon) 25%, transparent)',
-    bg: 'color-mix(in srgb, var(--rarity-uncommon) 6%, transparent)',
-  },
-  Rare: {
-    text: 'var(--rarity-rare)',
-    border: 'color-mix(in srgb, var(--rarity-rare) 25%, transparent)',
-    bg: 'color-mix(in srgb, var(--rarity-rare) 6%, transparent)',
-  },
-  Epic: {
-    text: 'var(--rarity-epic)',
-    border: 'color-mix(in srgb, var(--rarity-epic) 25%, transparent)',
-    bg: 'color-mix(in srgb, var(--rarity-epic) 6%, transparent)',
-  },
-  Legendary: {
-    text: 'var(--rarity-legendary)',
-    border: 'color-mix(in srgb, var(--rarity-legendary) 25%, transparent)',
-    bg: 'color-mix(in srgb, var(--rarity-legendary) 6%, transparent)',
-  },
-} as const;
-
-function RarityBadge({ rarity }: { rarity: keyof typeof rarityColors }) {
-  const c = rarityColors[rarity];
-  return (
-    <span
-      className="text-[11px] font-bold tracking-[0.15em] uppercase px-4 py-2 rounded"
-      style={{ color: c.text, border: `1px solid ${c.border}`, background: c.bg }}
-    >
-      {rarity}
-    </span>
   );
 }

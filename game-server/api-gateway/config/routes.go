@@ -134,10 +134,18 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	// Listing routes are SERIALIZED (FS-0YXG6). Every one is a typed operation
 	// in internal/gateway/listing/typed.go, mounted below.
 	listingClient := listing.NewClient(registry)
-	listingHandler := listing.NewHandler(listingClient)
+	// items rides along for the item summaries joined onto every listing read
+	listingHandler := listing.NewHandler(listingClient, itemClient)
 
 	// Item routes are SERIALIZED (FS-NTPW2 slice 2). All eleven are typed
 	// operations in internal/gateway/item/typed.go, mounted below.
+
+	// --- WALLET MICROSERVICE ---
+
+	// Built here, ahead of the contract mount, because GET /wallet/account is a
+	// typed operation (FS-8EGFA). The remaining gin routes are mounted below.
+	walletClient := wallet.NewClient(registry)
+	walletHandler := wallet.NewHandler(walletClient)
 
 	// --- SERIALIZED CONTRACT (FS-NTPW2) ---
 	//
@@ -152,6 +160,7 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 		Payment:        paymentHandler,
 		Ledger:         ledgerHandler,
 		Listing:        listingHandler,
+		Wallet:         walletHandler,
 		AuthMiddleware: auth.AuthMiddleware(),
 	})
 
@@ -169,15 +178,15 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	characterRoutes.POST("/", characterHandler.CreateCharacterHandler)
 	// --- WALLET MICROSERVICE ---
 
-	walletClient := wallet.NewClient(registry)
-	walletHandler := wallet.NewHandler(walletClient)
-
 	walletRoutes := api.Group("/wallet")
 	// Every wallet RPC derives the account from the authenticated member, so
 	// there are no public routes here.
+	//
+	// GET /account is SERIALIZED (FS-8EGFA): a typed operation in
+	// internal/gateway/wallet/typed.go, mounted by contract.RegisterOperations.
+	// Gin and Huma cannot both own it, so it is not registered here.
 	walletRoutes.Use(auth.AuthMiddleware())
 	walletRoutes.POST("/account", walletHandler.CreateAccountHandler)
-	walletRoutes.GET("/account", walletHandler.GetAccountHandler)
 	walletRoutes.POST("/deposit", walletHandler.DepositHandler)
 	walletRoutes.POST("/withdraw", walletHandler.WithdrawHandler)
 

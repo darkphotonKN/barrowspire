@@ -3,11 +3,15 @@ package query
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	commoncursor "github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/dto"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -21,7 +25,7 @@ import (
 const (
 	dsnEnv         = "MARKETPLACE_TEST_DB_DSN"
 	testSchema     = "list_my_listings_test"
-	listingsSchema = "../../../migrations/000001_create_listings_table.up.sql"
+	migrationsGlob = "../../../migrations/*.up.sql"
 )
 
 func listingsDB(t *testing.T) *sqlx.DB {
@@ -54,10 +58,18 @@ func listingsDB(t *testing.T) *sqlx.DB {
 	db, err := sqlx.Connect("postgres", dsn+separator+"search_path="+testSchema)
 	require.NoError(t, err)
 
-	ddl, err := os.ReadFile(listingsSchema)
+	// every up migration, in order: the first alone predates ACTIVE and the
+	// bids table, so a schema built from it rejects the rows these tests write
+	migrations, err := filepath.Glob(migrationsGlob)
 	require.NoError(t, err)
-	_, err = db.Exec(string(ddl))
-	require.NoError(t, err)
+	require.NotEmpty(t, migrations, "no migrations found at %s", migrationsGlob)
+	sort.Strings(migrations)
+	for _, m := range migrations {
+		ddl, err := os.ReadFile(m)
+		require.NoError(t, err)
+		_, err = db.Exec(string(ddl))
+		require.NoError(t, err, "applying %s", filepath.Base(m))
+	}
 
 	t.Cleanup(func() {
 		_ = db.Close()
@@ -185,4 +197,51 @@ func TestListMyListingsBoundsTheLimit(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, page.Listings, 3, "an unset limit falls back to the default page size")
+}
+
+// My listings carry the same price facts and ended flag as browse (FS-8EGFA
+// §Requirements 5, 8). Unlike browse, an ACTIVE listing past its end is still
+// returned, reported as ended.
+func TestListMyListingsCarriesThePriceFactsAndEnded(t *testing.T) {
+	db := listingsDB(t)
+	seller := uuid.New()
+	now := time.Now()
+
+	insert := func(startPrice int, endsAt, createdAt time.Time) uuid.UUID {
+		t.Helper()
+		id := uuid.New()
+		_, err := db.Exec(`
+			INSERT INTO listings (id, seller_id, item_id, start_price, status, ends_at, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, 'ACTIVE', $5, $6, $6)`,
+			id, seller, uuid.New(), startPrice, endsAt, createdAt)
+		require.NoError(t, err)
+		return id
+	}
+
+	bidOn := insert(50, now.Add(time.Hour), now.Add(-time.Minute))
+	insertBid(t, db, bidOn, 60, listing.BidStatusOutbid)
+	insertBid(t, db, bidOn, 75, listing.BidStatusWinning)
+	ended := insert(40, now.Add(-time.Hour), now.Add(-2*time.Hour))
+
+	page, err := NewListMyListingsQuery(db).Execute(context.Background(), seller, nil, 10)
+	require.NoError(t, err)
+	require.Len(t, page.Listings, 2)
+
+	got := make(map[uuid.UUID]dto.ListingDetails, len(page.Listings))
+	for _, l := range page.Listings {
+		got[l.ID] = l
+	}
+
+	withBids := got[bidOn]
+	assert.Equal(t, 2, withBids.BidCount, "bid count")
+	require.NotNil(t, withBids.CurrentPrice, "current price")
+	assert.Equal(t, 75, *withBids.CurrentPrice, "current price")
+	assert.Equal(t, 76, withBids.MinimumBid(), "minimum bid")
+	assert.False(t, withBids.EndedAt(time.Now()))
+
+	past := got[ended]
+	assert.Equal(t, 0, past.BidCount)
+	assert.Nil(t, past.CurrentPrice)
+	assert.Equal(t, 40, past.MinimumBid())
+	assert.True(t, past.EndedAt(time.Now()), "an ACTIVE listing past its end is reported ended")
 }

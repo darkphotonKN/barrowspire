@@ -84,6 +84,17 @@ func TestWireTypes_RoundTripProducesIdenticalBytes(t *testing.T) {
 			conv: func(s any) (any, error) { return wire.As[ItemType](s) },
 		},
 		{
+			name: "ItemInstance",
+			src: &pb.ItemInstance{
+				Id: "ii-1", TemplateId: "t-1", OwnerMemberId: "m-1", Source: "extracted",
+				ItemType: "weapon", Name: "Blade", RarityId: "r-1", AttackPower: 42,
+				CriticalRate: 1.5, WeaponType: "sword", DefenseRating: 7, MagicResistance: 2,
+				ArmorSlot: "chest", HealingAmount: 50, ManaAmount: 25, BuffDuration: 30,
+				BuyPrice: 20, SellPrice: 10, Description: "sharp", Status: "LISTED",
+			},
+			conv: func(s any) (any, error) { return wire.As[ItemInstance](s) },
+		},
+		{
 			name: "ItemRarity",
 			src:  &pb.ItemRarity{Id: "ir-1", Name: "rare"},
 			conv: func(s any) (any, error) { return wire.As[ItemRarity](s) },

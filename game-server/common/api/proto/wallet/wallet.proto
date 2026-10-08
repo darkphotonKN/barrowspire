@@ -14,6 +14,10 @@ service WalletService {
   rpc GetAccount(GetAccountRequest) returns (GetAccountResponse) {}
   // Reserve gold against a member's account for a bid.
   rpc PlaceHold(PlaceHoldRequest) returns (PlaceHoldResponse) {}
+  // Give back a single reservation whose bid never landed.
+  rpc ReleaseHold(ReleaseHoldRequest) returns (ReleaseHoldResponse) {}
+  // List reservations old enough that their bid should have been written by now.
+  rpc ListStaleReservedHolds(ListStaleReservedHoldsRequest) returns (ListStaleReservedHoldsResponse) {}
   // Add gold to a member's account.
   rpc Deposit(DepositRequest) returns (DepositResponse) {}
   // Remove gold from a member's account, up to what is not already held.
@@ -63,6 +67,40 @@ message PlaceHoldRequest {
 // Empty by design: the hold either succeeds or the call fails with a status
 // code. The caller addresses the hold by the bid_id it already owns.
 message PlaceHoldResponse {}
+
+// ReleaseHold
+// The compensating half of PlaceHold: the caller reserved gold for a bid and then
+// could not record that bid, so the reservation has to go back.
+//
+// Addressed by bid_id alone, the same key PlaceHold was given. wallet cannot judge
+// whether the bid exists — it has no listing or bid concept — so this is a command
+// from the service that minted the id, never a decision wallet reaches on its own.
+//
+// Idempotent: releasing a hold that is already RELEASED succeeds, and a bid that
+// never had a hold is nothing to give back rather than an error.
+message ReleaseHoldRequest {
+  string bid_id = 1;  // bid whose reservation is being given back
+}
+
+// Empty by design, same rule as PlaceHoldResponse.
+message ReleaseHoldResponse {}
+
+// ListStaleReservedHolds
+// Reservations still RESERVED after the point their bid should have been written.
+// The caller compares them against its own records and releases the ones that were
+// never claimed; wallet only reports, it does not judge.
+//
+// reserved_before is what closes the race with a bid still in flight: a hold placed
+// moments ago belongs to a request that may still be mid-write, and releasing it
+// would leave a recorded bid with no gold behind it.
+message ListStaleReservedHoldsRequest {
+  google.protobuf.Timestamp reserved_before = 1;
+  int32 limit = 2;  // batch ceiling, so one sweep cannot pull the whole table
+}
+
+message ListStaleReservedHoldsResponse {
+  repeated string bid_ids = 1;
+}
 
 // Deposit
 // The account is resolved from the authenticated member in context, so the

@@ -27,11 +27,16 @@ func NewItemReserver(client ItemReserverClient) *GrpcItemReserver {
 
 // ReserveItem carries the listing terms along with the item: items-service
 // echoes them on the ItemReserved event, which is what the listing is born from.
-func (i *GrpcItemReserver) ReserveItem(ctx context.Context, itemID uuid.UUID, startPrice int, endsAt time.Time) (*pb.ReserveItemResponse, error) {
+func (i *GrpcItemReserver) ReserveItem(ctx context.Context, itemID uuid.UUID, startPrice int, buyoutPrice *int, endsAt time.Time) (*pb.ReserveItemResponse, error) {
 	req := &pb.ReserveItemRequest{
 		ItemId:     itemID.String(),
 		StartPrice: int64(startPrice),
 		EndsAt:     timestamppb.New(endsAt),
+	}
+	// left unset rather than 0 when there is none, so the event says "no buyout"
+	if buyoutPrice != nil {
+		v := int64(*buyoutPrice)
+		req.BuyoutPrice = &v
 	}
 
 	md, ok := metadata.FromIncomingContext(ctx)

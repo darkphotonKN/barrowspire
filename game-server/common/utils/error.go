@@ -55,6 +55,11 @@ func analyzeDBErr(err error) error {
 	if IsConstraintViolation(err) {
 		return commonconstants.ErrConstraintViolation
 	}
+	// before IsTransientError on purpose: whichever matches first wins, and a lock
+	// timeout must never be reported as a transient failure
+	if IsLockUnavailable(err) {
+		return commonconstants.ErrLockUnavailable
+	}
 	if IsTransientError(err) {
 		return commonconstants.ErrTransient
 	}
@@ -139,4 +144,25 @@ func IsTransientError(err error) bool {
 	}
 
 	return contextErrors || sqlErrors || isPgTransientErr
+}
+
+/**
+* Helper function to determine if an error is a row lock that was not acquired
+* within the transaction's lock_timeout (Postgres 55P03 lock_not_available).
+*
+* Distinct from a transient error on purpose. A caller that takes a row lock is
+* choosing to serialise rather than to retry, so reporting contention as transient
+* would feed it back into exactly the retry loop the lock exists to avoid.
+**/
+func IsLockUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return pqErr.Code == "55P03"
+	}
+
+	return false
 }

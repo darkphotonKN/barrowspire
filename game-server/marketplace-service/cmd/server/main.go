@@ -45,6 +45,10 @@ var (
 )
 
 func main() {
+	// --- root context ---
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	// --- database setup ---
 
 	db := config.InitDB()
@@ -58,7 +62,6 @@ func main() {
 		log.Fatal("Failed to create Consul registry")
 	}
 
-	ctx := context.Background()
 	instanceID := discovery.GenerateInstanceID(serviceName)
 
 	// -- discovery --
@@ -90,10 +93,7 @@ func main() {
 		ch.Close()
 	}()
 
-	// --- services setup ---
-	services := appConfig.NewServices(ctx, db, registry, ch)
-
-	// --- temporal worker ---
+	// --- temporal worker: initiate ---
 	// Marketplace is the settlement saga's orchestrator (ADR-0011): it is the only
 	// service that hosts workflows, and it also runs activities for the steps it
 	// owns. Both register on the `marketplace` task queue.
@@ -111,6 +111,11 @@ func main() {
 	}
 	defer temporalClient.Close()
 
+	// --- services setup ---
+	services := appConfig.NewServices(ctx, db, registry, ch, temporalClient)
+
+	// --- temporal worker: initiate ---
+	// run temporal worker after with service initiated activities
 	temporalRunner, err := bstemporal.NewRunner(temporalClient, temporalCfg, temporalLogger, worker.Options{},
 		// testing
 		smoke.RegisterWorkflow,
@@ -145,8 +150,10 @@ func main() {
 			commonauth.Auth(validate),
 		),
 	)
+
 	pb.RegisterMarketplaceServiceServer(grpcServer, services.ListingHandler)
 	reflection.Register(grpcServer)
+
 	// create a network listener to this service
 	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
 	if err != nil {
@@ -156,12 +163,6 @@ func main() {
 	}
 	defer listener.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
 	log.Printf("grpc Marketplace Server started on PORT: %s\n", grpcAddr)
 
 	go func() {
@@ -170,9 +171,9 @@ func main() {
 		}
 	}()
 
-	<-quit
+	<-ctx.Done() // blocks until sigint / sigterm
+	stop()
 
-	cancel()                    // 通知所有worker停止
-	grpcServer.GracefulStop()   // gRPC處理完目前正在執行的請求關閉
-	time.Sleep(2 * time.Second) // 延遲一點時間再關閉
+	log.Println("Shutting down server")
+	grpcServer.GracefulStop() // gRPC處理完目前正在執行的請求關閉
 }

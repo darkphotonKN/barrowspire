@@ -12,6 +12,11 @@
 
 - [ ] Fantasy base-item catalogue and rarity tiers → FS-F8T3H
 
+## Inventory
+
+- [x] Listing status on owned instances → FS-8EGFA
+- [x] Item summaries by id → FS-8EGFA
+
 ## Marketplace settlement
 
 - [ ] Settlement saga activities → FS-NXP1W

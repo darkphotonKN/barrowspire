@@ -31,8 +31,9 @@ func NewListMyListingsQuery(db *sqlx.DB) *ListMyListingsQuery {
 	}
 }
 
-// Execute returns one page of the seller's listings, newest first, keyset-paged
-// on (created_at, id). A nil cursor is the first page.
+// Execute returns one page of the seller's listings in any status, newest
+// first, keyset-paged on (created_at, id), each with its price facts. A nil
+// cursor is the first page.
 func (q *ListMyListingsQuery) Execute(ctx context.Context, sellerID uuid.UUID, c *cursor.Cursor, limit int) (*dto.ListingsPage, error) {
 	if limit < 1 {
 		limit = defaultPageSize
@@ -43,29 +44,30 @@ func (q *ListMyListingsQuery) Execute(ctx context.Context, sellerID uuid.UUID, c
 
 	query := `
 	SELECT
-		id,
-		seller_id,
-		buyer_id,
-		item_id,
-		start_price,
-		sold_price,
-		status,
-		ends_at,
-		created_at,
-		updated_at
-	FROM listings
-	WHERE seller_id = $1`
+		l.id,
+		l.seller_id,
+		l.buyer_id,
+		l.item_id,
+		l.start_price,
+		l.buyout_price,
+		l.sold_price,
+		l.status,
+		l.ends_at,
+		l.created_at,
+		l.updated_at,` + priceFactsColumns + `
+	FROM listings AS l` + priceFactsJoin + `
+	WHERE l.seller_id = $1`
 
 	// one row past the page tells us whether another page exists
 	var args []any
 	if c == nil {
 		query += `
-	ORDER BY created_at DESC, id DESC
+	ORDER BY l.created_at DESC, l.id DESC
 	LIMIT $2`
 		args = []any{sellerID, limit + 1}
 	} else {
-		query += ` AND (created_at, id) < ($2, $3)
-	ORDER BY created_at DESC, id DESC
+		query += ` AND (l.created_at, l.id) < ($2, $3)
+	ORDER BY l.created_at DESC, l.id DESC
 	LIMIT $4`
 		args = []any{sellerID, c.CreatedAt, c.ID, limit + 1}
 	}

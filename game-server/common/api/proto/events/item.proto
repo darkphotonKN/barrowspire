@@ -49,4 +49,8 @@ message ItemReservedEvent {
   int64 start_price = 4; 
   google.protobuf.Timestamp ends_at = 5; 
   ItemInstance itemInstance = 6;
+  // FS-NXP1W Req 24a: minted by items-service at reserve; the listing is born with it.
+  string listing_id = 7;
+  // FS-9XKS6: the seller's optional buyout, forwarded from ReserveItemRequest.
+  optional int64 buyout_price = 8;
 }

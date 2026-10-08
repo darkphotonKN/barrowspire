@@ -173,3 +173,29 @@ func TestCreateAccountOnSignup_OutboxWriteFails_LeavesNoAccount(t *testing.T) {
 	assert.Equal(t, 0, countAccounts(t, db, memberID),
 		"the account insert must roll back with the failed outbox write")
 }
+
+// A member who already has an account — created by POST /api/wallet/account, or
+// by an earlier member.signedup carrying a DIFFERENT event id — must not turn a
+// new delivery into a failure. The inbox cannot catch it (the event id is new),
+// so the unique member_id is the dedupe key of last resort. Reported as
+// already-processed so the consumer acks; before this it requeued forever.
+func TestCreateAccountOnSignup_MemberAlreadyHasAccount_IsAlreadyProcessed(t *testing.T) {
+	db := walletDB(t)
+	uc := newUC(t, db)
+	memberID, firstEvent, secondEvent := uuid.New(), uuid.New(), uuid.New()
+	cleanupMember(t, db, memberID, firstEvent)
+	cleanupMember(t, db, memberID, secondEvent)
+
+	require.NoError(t, uc.Handle(context.Background(), usecase.CreateAccountOnSignupCommand{
+		EventID: firstEvent, MemberID: memberID,
+	}))
+
+	err := uc.Handle(context.Background(), usecase.CreateAccountOnSignupCommand{
+		EventID: secondEvent, MemberID: memberID,
+	})
+
+	assert.ErrorIs(t, err, commonconstants.ErrAlreadyProcessed,
+		"an existing account means the work is done, not that it failed")
+	assert.Equal(t, 1, countAccounts(t, db, memberID), "still exactly one account")
+	assert.Equal(t, 1, countOutbox(t, db, memberID), "no second account.created")
+}

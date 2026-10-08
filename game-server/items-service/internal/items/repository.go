@@ -12,11 +12,16 @@ import (
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
 var ErrItemNotReservable = errors.New("item not reservable")
+
+// ErrItemNotFreezable is settlement step 0b's semantic impossibility: the item is
+// no longer the seller's, or no longer on sale. Retrying cannot change either.
+var ErrItemNotFreezable = errors.New("item not freezable")
 
 type repository struct {
 	DB *sqlx.DB
@@ -704,7 +709,7 @@ func (r *repository) ListItemInstances(ctx context.Context, req *ListItemInstanc
 	 SELECT id, template_id, owner_member_id, source, item_type, name, rarity_id,
 	        attack_power, critical_rate, weapon_type, defense_rating, magic_resistance,
 	        armor_slot, healing_amount, mana_amount, buff_duration,
-	        description, acquired_at, created_at, updated_at
+	        description, status, acquired_at, created_at, updated_at
 	 FROM item_instances
 	 WHERE owner_member_id = $1
 	 ORDER BY created_at DESC
@@ -914,10 +919,11 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 	return nil
 }
 
-func (r *repository) ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error) {
+func (r *repository) ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error) {
 	query := `
 		UPDATE item_instances
 		SET status = 'LISTED',
+			listing_id = :listing_id,
 			updated_at = :updated_at,
 			reserved_at = :reserved_at
 		WHERE id = :id
@@ -946,13 +952,15 @@ func (r *repository) ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, i
 			acquired_at,
 			created_at,
 			updated_at,
-			reserved_at
+			reserved_at,
+			listing_id
 	`
 
 	args := ItemInstance{
 		ID:            itemID,
 		OwnerMemberID: sellerID,
 		Status:        "LISTED",
+		ListingID:     &listingID,
 		UpdatedAt:     updatedAt,
 		ReservedAt:    reservedAt,
 	}
@@ -1019,4 +1027,163 @@ func (r *repository) CancelReservation(ctx context.Context, itemID uuid.UUID) (b
 
 	// false没更新到（不存在、或不是 LISTED）
 	return n > 0, nil
+}
+
+// GetItemSummaries reads the public facts of the given instances. An id with no
+// instance is simply absent from the result.
+func (r *repository) GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error) {
+	return selectItemSummaries(ctx, r.DB, ids)
+}
+
+// selectItemSummaries takes any querier so the round-trip test can run it inside
+// a transaction it rolls back.
+//
+// The column list is the whole privacy rule: owner_member_id, source and
+// reserved_at are never selected, so they cannot leak through a later mapping.
+func selectItemSummaries(ctx context.Context, q sqlx.QueryerContext, ids []uuid.UUID) ([]*ItemSummary, error) {
+	idStrings := make([]string, 0, len(ids))
+	for _, id := range ids {
+		idStrings = append(idStrings, id.String())
+	}
+
+	query := `
+	 SELECT ii.id, ii.name, ii.description, ii.item_type,
+	        COALESCE(r.rarity_code, '') AS rarity,
+	        ii.weapon_type, ii.armor_slot,
+	        ii.attack_power, ii.critical_rate,
+	        ii.defense_rating, ii.magic_resistance,
+	        ii.healing_amount, ii.mana_amount, ii.buff_duration
+	 FROM item_instances AS ii
+	 LEFT JOIN item_rarities AS r ON r.id = ii.rarity_id
+	 WHERE ii.id = ANY($1::uuid[])
+	`
+
+	summaries := []*ItemSummary{}
+	if err := sqlx.SelectContext(ctx, q, &summaries, query, pq.Array(idStrings)); err != nil {
+		return nil, wrapDBErr("get item summaries", err)
+	}
+
+	return summaries, nil
+}
+
+// FreezeItem is settlement step 0b (FS-NXP1W Req 26): LISTED -> PENDING_SETTLEMENT,
+// conditional on the seller still owning the item. It reports false when the item
+// is neither freezable nor already frozen for this seller; the caller decides what
+// that means.
+//
+// Only the LISTED row is written, so a retry on an already-frozen item changes
+// nothing (updated_at is trigger-stamped on any UPDATE, even a no-op one). The
+// already-frozen check is a separate statement on purpose: it takes a fresh
+// snapshot after the write, so an overlapping attempt that froze the item first
+// has committed by then and is seen, where a snapshot shared with the write would
+// miss it.
+func (r *repository) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) (bool, error) {
+	freeze := `
+		UPDATE item_instances
+		SET status = 'PENDING_SETTLEMENT'
+		WHERE id = $1
+		AND owner_member_id = $2
+		AND status = 'LISTED'
+	`
+
+	res, err := r.DB.ExecContext(ctx, freeze, itemID, sellerID)
+	if err != nil {
+		return false, wrapDBErr("freeze item", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("freeze item, rows affected: %w", err)
+	}
+	if n > 0 {
+		return true, nil
+	}
+
+	alreadyFrozen := `
+		SELECT EXISTS (
+			SELECT 1
+			FROM item_instances
+			WHERE id = $1
+			AND owner_member_id = $2
+			AND status = 'PENDING_SETTLEMENT'
+		)
+	`
+
+	var frozen bool
+	if err := r.DB.GetContext(ctx, &frozen, alreadyFrozen, itemID, sellerID); err != nil {
+		return false, wrapDBErr("freeze item, already frozen check", err)
+	}
+
+	return frozen, nil
+}
+
+// NB1
+var (
+	ErrItemCorrupted = errors.New("item corrupted")
+	ErrNoItemFound   = errors.New("item not found")
+)
+
+func (r *repository) ReturnItem(ctx context.Context, id, listingID uuid.UUID) error {
+	query := `
+		UPDATE item_instances 
+		SET
+			status = 'AVAILABLE',
+			listing_id = NULL
+		WHERE
+		id = :id AND listing_id = :listing_id AND status = 'LISTED'
+	`
+
+	mappedArgs := map[string]interface{}{
+		"id":         id,
+		"listing_id": listingID,
+	}
+	res, err := r.DB.NamedExecContext(ctx, query, mappedArgs)
+
+	if err != nil {
+		return commonhelpers.WrapDBErr("items repo", "return item", err)
+	}
+
+	rows, err := res.RowsAffected()
+
+	if err != nil {
+		return fmt.Errorf("ReturnItem, rows affected: %w", err)
+	}
+
+	// rows affected either 0 or 1, whether or not something was updated
+
+	if rows == 1 {
+		// updated successfully
+		return nil
+	}
+
+	// rows == 0 case
+	// we need to query again for enough granularity of differentiating between different edge cases
+	// grab the item in general
+	query = `
+		SELECT 
+			listing_id
+		FROM item_instances 
+		WHERE id = $1
+		`
+
+	var item struct {
+		ListingID *uuid.UUID `db:"listing_id"`
+	}
+	err = r.DB.GetContext(ctx, &item, query, id)
+
+	switch {
+	// item not found case, no item at all, so should fail
+	case errors.Is(err, sql.ErrNoRows):
+		return ErrNoItemFound
+
+	// generic error, use helper
+	case err != nil:
+		return commonhelpers.WrapDBErr("items repo", "return item", err)
+
+	// check for the corrupt case of item is still the same but status has changed already
+	case item.ListingID != nil && *item.ListingID == listingID:
+		return ErrItemCorrupted
+	default:
+		return nil
+	}
 }

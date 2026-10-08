@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
@@ -53,6 +54,10 @@ func (c *Client) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold 
 		switch status.Code(err) {
 		case codes.FailedPrecondition:
 			return fmt.Errorf("wallet place hold for bid %v: %w: %w", bidID, commonconstants.ErrInsufficientGold, err)
+		// the bid ID already has a hold that is not a live replay of this one
+		// (released, committed, or another amount): nothing backs this bid
+		case codes.AlreadyExists:
+			return fmt.Errorf("wallet place hold for bid %v: %w: %w", bidID, commonconstants.ErrDuplicateResource, err)
 		case codes.Unavailable, codes.DeadlineExceeded:
 			return fmt.Errorf("wallet place hold for bid %v: %w: %w", bidID, commonconstants.ErrTransient, err)
 		default:
@@ -79,4 +84,68 @@ func forwardAuthorization(ctx context.Context) (context.Context, error) {
 	}
 
 	return metadata.AppendToOutgoingContext(ctx, "authorization", vals[0]), nil
+}
+
+// ReleaseHold gives back the gold reserved for a bid that was never recorded.
+//
+// No authorization forwarding, unlike PlaceHold. This is marketplace compensating
+// for its own failed write, not a member acting on their account — and by the time
+// it runs the caller's request may already be unwinding, so depending on a token
+// still being in context would make cleanup fail exactly when it is needed.
+func (c *Client) ReleaseHold(ctx context.Context, bidID uuid.UUID) error {
+	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	if err != nil {
+		return fmt.Errorf("wallet release hold for bid %v: connect: %w: %w", bidID, commonconstants.ErrTransient, err)
+	}
+	defer conn.Close()
+
+	if _, err := pb.NewWalletServiceClient(conn).ReleaseHold(ctx, &pb.ReleaseHoldRequest{
+		BidId: bidID.String(),
+	}); err != nil {
+		switch status.Code(err) {
+		case codes.Unavailable, codes.DeadlineExceeded:
+			return fmt.Errorf("wallet release hold for bid %v: %w: %w", bidID, commonconstants.ErrTransient, err)
+		default:
+			return fmt.Errorf("wallet release hold for bid %v: %w", bidID, err)
+		}
+	}
+
+	return nil
+}
+
+// ListStaleReservedHolds asks wallet which reservations have outlived the write that
+// should have followed them. wallet reports; this service decides which were never
+// claimed, because only it can tell.
+func (c *Client) ListStaleReservedHolds(ctx context.Context, createdBefore time.Time) ([]uuid.UUID, error) {
+	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+	if err != nil {
+		return nil, fmt.Errorf("wallet list stale reserved holds: connect: %w: %w", commonconstants.ErrTransient, err)
+	}
+	defer conn.Close()
+
+	res, err := pb.NewWalletServiceClient(conn).ListStaleReservedHolds(ctx, &pb.ListStaleReservedHoldsRequest{
+		ReservedBefore: timestamppb.New(createdBefore),
+	})
+	if err != nil {
+		switch status.Code(err) {
+		case codes.Unavailable, codes.DeadlineExceeded:
+			return nil, fmt.Errorf("wallet list stale reserved holds: %w: %w", commonconstants.ErrTransient, err)
+		default:
+			return nil, fmt.Errorf("wallet list stale reserved holds: %w", err)
+		}
+	}
+
+	bidIDs := make([]uuid.UUID, 0, len(res.BidIds))
+	for _, raw := range res.BidIds {
+		bidID, err := uuid.Parse(raw)
+		if err != nil {
+			// one unparseable id must not sink the batch; it would also be an id this
+			// service never minted, so there is nothing here to reconcile
+			slog.ErrorContext(ctx, "wallet returned an unparseable bid id", "bid_id", raw, "err", err)
+			continue
+		}
+		bidIDs = append(bidIDs, bidID)
+	}
+
+	return bidIDs, nil
 }

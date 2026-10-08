@@ -12,8 +12,10 @@ import (
 	listingrepo "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/repository"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/worker"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/settlement"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.temporal.io/sdk/client"
 )
 
 // sets up all services and their dependency injections at
@@ -27,7 +29,7 @@ type Services struct {
 	Activities *listingactivity.Activities
 }
 
-func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, ch *amqp.Channel) *Services {
+func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, ch *amqp.Channel, temporalClient client.Client) *Services {
 	listingRepo := listingrepo.NewListingRepository(db)
 	grpcClient := itemreserver.NewClient(registry)
 	itemReserver := itemreserver.NewItemReserver(grpcClient)
@@ -35,9 +37,17 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	createAccUC := usecase.NewCreateListingUC(listingRepo)
 	walletClient := listinggrpc.NewClient(registry)
 	placeBidUC := usecase.NewPlaceBidUC(listingRepo, walletClient)
-	withdrawBidUC := usecase.NewWithdrawBidUC(listingRepo)
+	withdrawBidUC := usecase.NewWithdrawBidUC(listingRepo, walletClient)
 	listMyListingsQuery := listingquery.NewListMyListingsQuery(db)
-	listingHandler := listinggrpc.NewHandler(reserveItemUC, createAccUC, placeBidUC, withdrawBidUC, listMyListingsQuery)
+	browseListingsQuery := listingquery.NewBrowseListingsQuery(db)
+	getListingQuery := listingquery.NewGetListingQuery(db)
+
+	// settlement saga
+	settlementStarter := settlement.NewStarter(temporalClient)
+	acceptBidUC := usecase.NewAcceptBidUsecase(listingRepo, settlementStarter)
+	buyoutUC := usecase.NewBuyoutUC(listingRepo, walletClient, settlementStarter)
+
+	listingHandler := listinggrpc.NewHandler(reserveItemUC, createAccUC, placeBidUC, withdrawBidUC, listMyListingsQuery, browseListingsQuery, getListingQuery, acceptBidUC, buyoutUC)
 
 	hasActiveListingQuery := listingquery.NewHasActiveListingQuery(db)
 	reconcileReservationsUC := usecase.NewReconcileReservationsUC(hasActiveListingQuery, itemReserver)
@@ -49,6 +59,13 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	createListingUC := usecase.NewCreateListingUC(listingRepo)
 	consumer := listing.NewConsumer(ch, createListingUC)
 
+	hasBidQuery := listingquery.NewHasBidQuery(db)
+	reconcileHoldsUC := usecase.NewReconcileHoldsUC(hasBidQuery, walletClient)
+	reconcileHoldsWorker := worker.NewReconcileHoldsWorker(reconcileHoldsUC)
+	// same reason as the reservation worker below: Run loops on a ticker and never
+	// returns, so it has to be its own goroutine
+	go reconcileHoldsWorker.Run(ctx)
+
 	reconcileWorker := worker.NewReconcileWorker(reconcileReservationsUC)
 	// Run loops on a ticker and never returns, so it has to be its own
 	// goroutine, called inline it would block NewServices forever.
@@ -59,7 +76,8 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	freezeListingUC := usecase.NewFreezeListingUC(listingRepo)
 	setWinningBidUC := usecase.NewSetWinningBidUC(listingRepo)
 	loseAllBidsUC := usecase.NewLoseAllBidsUC(listingRepo)
-	activities := listingactivity.NewActivities(freezeListingUC, setWinningBidUC, loseAllBidsUC)
+	expireListingUC := usecase.NewExpireListingUC(listingRepo)
+	activities := listingactivity.NewActivities(freezeListingUC, setWinningBidUC, loseAllBidsUC, expireListingUC)
 
 	return &Services{
 		ListingHandler:          listingHandler,

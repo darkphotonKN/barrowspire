@@ -22,7 +22,9 @@ const (
 	serviceName = "items"
 )
 
-func NewClient(registry discovery.Registry) ItemClient {
+// NewClient returns the concrete client. The item handler consumes it as
+// ItemClient and the listing package as its narrower ItemSummaries.
+func NewClient(registry discovery.Registry) *Client {
 	return &Client{
 		registry: registry,
 	}
@@ -151,4 +153,12 @@ func (c *Client) UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutRequest
 	}
 	client := pb.NewItemsServiceClient(conn)
 	return client.UpdateLoadout(ctx, req)
+}
+
+func (c *Client) GetItemSummaries(ctx context.Context, req *pb.GetItemSummariesRequest) (*pb.GetItemSummariesResponse, error) {
+	conn, err := c.ensureConn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to items service: %w", err)
+	}
+	return pb.NewItemsServiceClient(conn).GetItemSummaries(ctx, req)
 }

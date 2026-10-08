@@ -34,17 +34,22 @@ type Services struct {
 func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	accountRepo := accountrepo.NewAccountRepository(db)
 	placeHoldUC := usecase.NewPlaceHoldUC(accountRepo)
+	releaseHoldUC := usecase.NewReleaseHoldUC(accountRepo)
 	createAccUC := usecase.NewCreateAccountUC(accountRepo)
 	depositGoldUC := usecase.NewDepositGoldUC(accountRepo)
 	withdrawGoldUC := usecase.NewWithdrawGoldUC(accountRepo)
 	getAccQuery := accountquery.NewGetAccountQuery(db)
 
+	staleHoldsQuery := accountquery.NewStaleReservedHoldsQuery(db)
+
 	accHandler := accountgrpc.NewHandler(accountgrpc.Deps{
-		CreateAccountUC: createAccUC,
-		PlaceHoldUC:     placeHoldUC,
-		DepositGoldUC:   depositGoldUC,
-		WithdrawGoldUC:  withdrawGoldUC,
-		AccountReader:   getAccQuery,
+		CreateAccountUC:  createAccUC,
+		PlaceHoldUC:      placeHoldUC,
+		ReleaseHoldUC:    releaseHoldUC,
+		DepositGoldUC:    depositGoldUC,
+		WithdrawGoldUC:   withdrawGoldUC,
+		AccountReader:    getAccQuery,
+		StaleHoldsReader: staleHoldsQuery,
 	})
 
 	// The event-driven birth path. Separate from createAccUC on purpose: this
@@ -57,7 +62,8 @@ func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 
 	commitHoldUC := usecase.NewCommitHoldUC(accountRepo)
 	releaseAllHoldsUC := usecase.NewReleaseAllHoldsUC(accountRepo)
-	activities := accountactivity.NewActivities(commitHoldUC, releaseAllHoldsUC)
+	releaseLosingHoldsUC := usecase.NewReleaseLosingHoldsUC(accountRepo)
+	activities := accountactivity.NewActivities(commitHoldUC, releaseAllHoldsUC, releaseLosingHoldsUC)
 
 	return &Services{
 		AccHandler:       accHandler,

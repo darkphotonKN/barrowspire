@@ -92,6 +92,18 @@ func Reconstitute(params ReconstituteParams) (*Account, error) {
 // places hold through account aggregate root, birthing the WalletHold without exposing
 // the access externally.
 func (a *Account) PlaceHold(id uuid.UUID, amount int, bidId uuid.UUID, expiresAt time.Time, now time.Time) error {
+	// The bid ID is the caller's idempotency key (ADR-0009). A retry of a hold
+	// that is still RESERVED for the same amount is the same hold: success, and
+	// no second one. Anything else under that bid ID — released, committed, or
+	// a different amount — backs nothing this caller can rely on, so it is
+	// refused rather than reported as held.
+	if existing := a.findHoldByBidID(bidId); existing != nil {
+		if existing.status == StatusReserved && existing.amount == amount {
+			return nil
+		}
+		return ErrBidAlreadyHeld
+	}
+
 	// validate new amount of gold held checks out across holds and account's
 	availableGold := a.getAvailableGold()
 

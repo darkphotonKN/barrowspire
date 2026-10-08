@@ -18,20 +18,22 @@ import (
 
 // fakeItemReserver records what items-service would be asked to reserve.
 type fakeItemReserver struct {
-	calls         int
-	gotStartPrice int
-	gotEndsAt     time.Time
+	calls          int
+	gotStartPrice  int
+	gotBuyoutPrice *int
+	gotEndsAt      time.Time
 }
 
-func (f *fakeItemReserver) ReserveItem(ctx context.Context, itemID uuid.UUID, startPrice int, endsAt time.Time) (*itemspb.ReserveItemResponse, error) {
+func (f *fakeItemReserver) ReserveItem(ctx context.Context, itemID uuid.UUID, startPrice int, buyoutPrice *int, endsAt time.Time) (*itemspb.ReserveItemResponse, error) {
 	f.calls++
 	f.gotStartPrice = startPrice
+	f.gotBuyoutPrice = buyoutPrice
 	f.gotEndsAt = endsAt
 	return &itemspb.ReserveItemResponse{}, nil
 }
 
 func newListItemHandler(reserver *fakeItemReserver) *Handler {
-	return NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil)
+	return NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func TestListItemSendsTheSellersTermsToTheReservation(t *testing.T) {
@@ -61,4 +63,48 @@ func TestListItemWithAPastEndTimeIsInvalidArgumentAndReservesNothing(t *testing.
 
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 	assert.Zero(t, reserver.calls, "items-service must not be called for an end time in the past")
+}
+
+func TestListItem_SendsBuyoutPriceToTheReservation(t *testing.T) {
+	reserver := &fakeItemReserver{}
+	buyout := int64(900)
+
+	_, err := newListItemHandler(reserver).ListItem(authedCtx(t, uuid.New()), &pb.ListItemRequest{
+		ItemId:      uuid.New().String(),
+		StartPrice:  150,
+		BuyoutPrice: &buyout,
+		EndsAt:      timestamppb.New(time.Now().Add(time.Hour)),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, reserver.gotBuyoutPrice)
+	assert.Equal(t, 900, *reserver.gotBuyoutPrice)
+}
+
+func TestListItem_WithoutBuyoutPriceSendsNone(t *testing.T) {
+	reserver := &fakeItemReserver{}
+
+	_, err := newListItemHandler(reserver).ListItem(authedCtx(t, uuid.New()), &pb.ListItemRequest{
+		ItemId:     uuid.New().String(),
+		StartPrice: 150,
+		EndsAt:     timestamppb.New(time.Now().Add(time.Hour)),
+	})
+
+	require.NoError(t, err)
+	assert.Nil(t, reserver.gotBuyoutPrice)
+}
+
+func TestListItem_BuyoutAtOrBelowStartPriceIsInvalidArgumentAndReservesNothing(t *testing.T) {
+	reserver := &fakeItemReserver{}
+	buyout := int64(150)
+
+	_, err := newListItemHandler(reserver).ListItem(authedCtx(t, uuid.New()), &pb.ListItemRequest{
+		ItemId:      uuid.New().String(),
+		StartPrice:  150,
+		BuyoutPrice: &buyout,
+		EndsAt:      timestamppb.New(time.Now().Add(time.Hour)),
+	})
+
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Zero(t, reserver.calls)
 }

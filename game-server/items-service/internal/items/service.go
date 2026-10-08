@@ -95,9 +95,14 @@ type Repository interface {
 	BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, instances []*ItemInstance) error
 
 	// marketplace
-	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error)
+	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error)
 	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
 	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
+	FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) (bool, error)
+
+	// public item facts, for listing pages
+	GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error)
+	ReturnItem(ctx context.Context, id, listingID uuid.UUID) error
 }
 
 func (s *service) CreateItemInstance(createItemInstanceReq *ItemInstance) (*ItemInstance, error) {
@@ -933,20 +938,25 @@ func (h *service) UpdateLoadout(ctx context.Context, req *UpdateLoadoutRequest) 
 	return h.repo.UpsertLoadoutSlot(ctx, req)
 }
 
-func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, startPrice int64, endsAt time.Time) (*ItemInstance, error) {
+// buyoutPrice is marketplace's term, not items': it is forwarded onto the event
+// unread, nil when the seller set none (FS-9XKS6).
+func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, startPrice int64, buyoutPrice *int64, endsAt time.Time) (*ItemInstance, error) {
 	now := time.Now()
 	updateAt := now
 	reservedAt := now
+	// the listing is born with this ID: it rides ItemReserved to marketplace and
+	// fences every later write for this listing (FS-NXP1W Req 24a)
+	listingID := uuid.New()
 	var itemInstance *ItemInstance
 	err := commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
-		result, err := s.repo.ReserveItemTx(ctx, tx, sellerID, itemID, updateAt, reservedAt)
+		result, err := s.repo.ReserveItemTx(ctx, tx, sellerID, itemID, listingID, updateAt, reservedAt)
 		if err != nil {
 			return fmt.Errorf("Reserve item service: %w", err)
 		}
 		itemInstance = result
 
 		// outbox
-		err = s.PublishItemReservedComplete(ctx, tx, itemInstance, sellerID, startPrice, endsAt)
+		err = s.PublishItemReservedComplete(ctx, tx, itemInstance, sellerID, startPrice, buyoutPrice, endsAt)
 		if err != nil {
 			return err
 		}
@@ -960,11 +970,11 @@ func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, s
 	return itemInstance, nil
 }
 
-func (s *service) PublishItemReservedComplete(ctx context.Context, tx *sqlx.Tx, data *ItemInstance, sellerID uuid.UUID, startPrice int64, endsAt time.Time) error {
+func (s *service) PublishItemReservedComplete(ctx context.Context, tx *sqlx.Tx, data *ItemInstance, sellerID uuid.UUID, startPrice int64, buyoutPrice *int64, endsAt time.Time) error {
 	slog.Debug("service publishItemReservedComplete")
 
 	// proto marshal
-	protoData, err := s.formattedItemInstanceData(data, sellerID, startPrice, endsAt)
+	protoData, err := s.formattedItemInstanceData(data, sellerID, startPrice, buyoutPrice, endsAt)
 
 	if err != nil {
 		slog.Error("Error formatting item reserved event", "error", err)
@@ -991,7 +1001,7 @@ func (s *service) PublishItemReservedComplete(ctx context.Context, tx *sqlx.Tx, 
 /**
 * Formats item instance data.
 **/
-func (s *service) formattedItemInstanceData(itemInstance *ItemInstance, sellerID uuid.UUID, startPrice int64, endsAt time.Time) (*types.FormattedItemInstanceData, error) {
+func (s *service) formattedItemInstanceData(itemInstance *ItemInstance, sellerID uuid.UUID, startPrice int64, buyoutPrice *int64, endsAt time.Time) (*types.FormattedItemInstanceData, error) {
 
 	var rarityIDStr *string
 	if itemInstance.RarityID != nil {
@@ -1031,18 +1041,26 @@ func (s *service) formattedItemInstanceData(itemInstance *ItemInstance, sellerID
 	// generate eventId for idemptotency deduplication
 	eventId := uuid.NewString()
 
+	var listingIDStr string
+	if itemInstance.ListingID != nil {
+		listingIDStr = itemInstance.ListingID.String()
+	}
+
 	itemReservedEvent := pb.ItemReservedEvent{
 		Id:           itemInstance.ID.String(),
 		EventId:      eventId,
 		SellerId:     sellerID.String(),
 		StartPrice:   startPrice,
+		BuyoutPrice:  buyoutPrice,
 		EndsAt:       timestamppb.New(endsAt),
 		ItemInstance: itemInstanceData,
+		ListingId:    listingIDStr,
 	}
 
 	slog.Debug("itemReservedEvent in formattedItemInstanceData before marshalling into protobuf item_reserved_event",
 		"event_id", itemReservedEvent.EventId,
 		"item_id", itemReservedEvent.Id,
+		"listing_id", itemReservedEvent.ListingId,
 		"item_name", itemReservedEvent.ItemInstance.Name,
 		"status", itemReservedEvent.ItemInstance.Status,
 	)
@@ -1084,4 +1102,35 @@ func (s *service) CancelReservation(ctx context.Context, itemID uuid.UUID) (bool
 		return false, err
 	}
 	return ok, nil
+}
+
+// GetItemSummaries answers the public facts of the given instances; an unknown
+// id is omitted rather than an error, since a listing page asks for whatever
+// its listings name.
+func (s *service) GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error) {
+	summaries, err := s.repo.GetItemSummaries(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("get item summaries: %w", err)
+	}
+	return summaries, nil
+}
+
+// FreezeItem is settlement step 0b. Frozen, or already frozen for this seller, is
+// success; anything else is ErrItemNotFreezable, which the settlement treats as
+// final rather than retrying.
+func (s *service) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) error {
+	frozen, err := s.repo.FreezeItem(ctx, itemID, sellerID)
+	if err != nil {
+		return fmt.Errorf("freeze item %v: %w", itemID, err)
+	}
+
+	if !frozen {
+		return fmt.Errorf("freeze item %v for seller %v: %w", itemID, sellerID, ErrItemNotFreezable)
+	}
+
+	return nil
+}
+
+func (s *service) ReturnItem(ctx context.Context, id, listingID uuid.UUID) error {
+	return s.repo.ReturnItem(ctx, id, listingID)
 }
