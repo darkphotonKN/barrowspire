@@ -585,7 +585,7 @@ func registerListItemInstances(api huma.API, h *Handler, mw huma.Middlewares) {
 		if err != nil {
 			return nil, err
 		}
-		wire, err := wire.As[ListItemInstancesResponse](res)
+		wire, err := listItemInstancesFromProto(res)
 		if err != nil {
 			return nil, err
 		}

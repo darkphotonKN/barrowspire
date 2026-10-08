@@ -35,6 +35,7 @@ func TestListMyListings_EmbedsEachItemAndCarriesThePriceFacts(t *testing.T) {
 	items := &stubItemSummaries{byID: map[string]*pbitems.ItemSummary{
 		"44444444-4444-4444-4444-444444444444": {
 			Id: "44444444-4444-4444-4444-444444444444", Name: "Longsword", ItemType: "weapon", Rarity: "runed",
+			ItemLevel: 1, RequiredLevel: 1,
 		},
 	}}
 
@@ -60,7 +61,10 @@ func TestListMyListings_EmbedsEachItemAndCarriesThePriceFacts(t *testing.T) {
 					"id": "44444444-4444-4444-4444-444444444444",
 					"name": "Longsword",
 					"itemType": "weapon",
-					"rarity": "runed"
+					"rarity": "runed",
+					"itemLevel": 1,
+					"requiredLevel": 1,
+					"affixes": []
 				}
 			},
 			{

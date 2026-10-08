@@ -147,6 +147,15 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	walletClient := wallet.NewClient(registry)
 	walletHandler := wallet.NewHandler(walletClient)
 
+	// --- CHARACTERS MICROSERVICE ---
+
+	// Character routes are SERIALIZED (FS-BDA7X): create, list, get and delete
+	// are typed, protected operations in internal/gateway/character/typed.go.
+	// The legacy gin POST /api/character/ was replaced, not wrapped (ADR-0002
+	// §5), so no gin route owns a character path.
+	characterClient := character.NewClient(registry)
+	characterHandler := character.NewHandler(characterClient)
+
 	// --- SERIALIZED CONTRACT (FS-NTPW2) ---
 	//
 	// Mounted after every legacy route so it is obvious that Huma is added to
@@ -161,6 +170,7 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 		Ledger:         ledgerHandler,
 		Listing:        listingHandler,
 		Wallet:         walletHandler,
+		Characters:     characterHandler,
 		AuthMiddleware: auth.AuthMiddleware(),
 	})
 
@@ -169,13 +179,6 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	// `code`. Registered last because NoRoute is the fallback for everything above.
 	router.NoRoute(httperr.NotFoundHandler())
 
-	// --- CHARACTERS MICROSERVICE ---
-
-	characterClient := character.NewClient(registry)
-	characterHandler := character.NewHandler(characterClient)
-
-	characterRoutes := api.Group("/character")
-	characterRoutes.POST("/", characterHandler.CreateCharacterHandler)
 	// --- WALLET MICROSERVICE ---
 
 	walletRoutes := api.Group("/wallet")

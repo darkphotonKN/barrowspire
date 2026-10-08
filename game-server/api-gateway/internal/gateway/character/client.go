@@ -9,10 +9,13 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 const (
-	serviceName = "auth"
+	// serviceName is character-service's Consul registration. It was "auth"
+	// until FS-BDA7X, which dialed the wrong service entirely.
+	serviceName = "character"
 )
 
 type Client struct {
@@ -44,28 +47,42 @@ func (c *Client) ensureConn(ctx context.Context) (*grpc.ClientConn, error) {
 	return conn, nil
 }
 
-func (c *Client) CreateCharacter(ctx context.Context, req *pb.CreateCharacterRequest) (*pb.CreateCharacterResponse, error) {
+func (c *Client) service(ctx context.Context) (pb.CharacterServiceClient, error) {
 	conn, err := c.ensureConn(ctx)
-
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to auth service: %w", err)
+		return nil, fmt.Errorf("connect to character service: %w", err)
 	}
-
-	client := pb.NewCharacterServiceClient(conn)
-
-	character, err := client.CreateCharacter(ctx, req)
-	return character, err
+	return pb.NewCharacterServiceClient(conn), nil
 }
 
-// func (c *Client) GetMember(ctx context.Context, req *pb.GetMemberRequest) (*pb.Member, error) {
-// 	conn, err := c.ensureConn(ctx)
+func (c *Client) CreateCharacter(ctx context.Context, req *pb.CreateCharacterRequest) (*pb.Character, error) {
+	svc, err := c.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return svc.CreateCharacter(ctx, req)
+}
 
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to connect to auth service: %w", err)
-// 	}
+func (c *Client) ListCharacters(ctx context.Context, req *pb.ListCharactersRequest) (*pb.ListCharactersResponse, error) {
+	svc, err := c.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return svc.ListCharacters(ctx, req)
+}
 
-// 	client := pb.NewAuthServiceClient(conn)
+func (c *Client) GetCharacter(ctx context.Context, req *pb.GetCharacterRequest) (*pb.Character, error) {
+	svc, err := c.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return svc.GetCharacter(ctx, req)
+}
 
-// 	member, err := client.GetMember(ctx, req)
-// 	return member, err
-// }
+func (c *Client) DeleteCharacter(ctx context.Context, req *pb.DeleteCharacterRequest) (*emptypb.Empty, error) {
+	svc, err := c.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return svc.DeleteCharacter(ctx, req)
+}

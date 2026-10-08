@@ -3,6 +3,7 @@ package contract
 import (
 	"github.com/danielgtaylor/huma/v2"
 	authgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/auth"
+	charactergw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/character"
 	itemgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/item"
 	ledgergw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/ledger"
 	listinggw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/listing"
@@ -27,6 +28,7 @@ type Deps struct {
 	Ledger       *ledgergw.Handler
 	Listing      *listinggw.Handler
 	Wallet       *walletgw.Handler
+	Characters   *charactergw.Handler
 
 	// AuthMiddleware is the gateway's existing gin JWT middleware. Protected
 	// operations run it per-operation; see Protected. Nil is legal and means
@@ -60,4 +62,5 @@ func RegisterOperations(api huma.API, deps Deps) {
 	ledgergw.RegisterOperations(api, deps.Ledger, protect, SeamError, Secured)
 	listinggw.RegisterOperations(api, deps.Listing, protect, SeamError, Secured)
 	walletgw.RegisterOperations(api, deps.Wallet, protect, SeamError, Secured)
+	charactergw.RegisterOperations(api, deps.Characters, protect, SeamError, Secured)
 }

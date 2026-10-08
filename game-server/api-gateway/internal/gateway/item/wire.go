@@ -1,6 +1,9 @@
 package item
 
-import "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/wire"
+import (
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/wire"
+	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+)
 
 // Transport types for the serialized items surface (FS-NTPW2 slice 2).
 //
@@ -125,7 +128,7 @@ type ItemInstance struct {
 	TemplateId      string  `json:"template_id,omitempty"`
 	OwnerMemberId   string  `json:"owner_member_id,omitempty"`
 	Source          string  `json:"source,omitempty"`
-	ItemType        string  `json:"item_type,omitempty"`
+	ItemType        string  `json:"item_type,omitempty" doc:"e.g. weapon, armor, ring, consumable"`
 	Name            string  `json:"name,omitempty"`
 	RarityId        string  `json:"rarity_id,omitempty"`
 	AttackPower     int32   `json:"attack_power,omitempty"`
@@ -141,6 +144,14 @@ type ItemInstance struct {
 	SellPrice       int32   `json:"sell_price,omitempty"`
 	Description     string  `json:"description,omitempty"`
 	Status          string  `json:"status,omitempty" enum:"AVAILABLE,LISTED,IN_ESCROW,PENDING_SETTLEMENT" doc:"Lifecycle status; only AVAILABLE relics can be listed"`
+	RequiredLevel   int32   `json:"required_level,omitempty" minimum:"1" doc:"Derived requirement: max of base and affix tiers; the template's for items from before item levels"`
+
+	// FS-4R9M9. affixes round-trips like every other field; unique_effect is
+	// filled by listItemInstancesFromProto, since the proto carries both the
+	// effect's code and its text and only the text is public.
+	ItemLevel    int32        `json:"item_level" minimum:"1" doc:"The level the item rolled at"`
+	Affixes      []wire.Affix `json:"affixes" nullable:"false" doc:"Every rolled affix; empty for an item without any"`
+	UniqueEffect string       `json:"unique_effect,omitempty" doc:"The unique's effect text. Absent unless the item is a unique"`
 }
 
 type GetLoadoutResponse struct {
@@ -168,4 +179,23 @@ type ListItemInstancesResponse struct {
 
 type UpdateLoadoutResponse struct {
 	Success bool `json:"success,omitempty"`
+}
+
+// listItemInstancesFromProto maps the stash to the wire: the JSON round-trip
+// for every field whose tag agrees with the proto, then the two that cannot
+// round-trip — the effect text, published under its own name, and affixes as
+// [] rather than null for an item without any.
+func listItemInstancesFromProto(res *pb.ListItemInstancesResponse) (*ListItemInstancesResponse, error) {
+	out, err := wire.As[ListItemInstancesResponse](res)
+	if err != nil {
+		return nil, err
+	}
+	for i, src := range res.GetItems() {
+		dst := out.Items[i]
+		dst.UniqueEffect = src.GetUniqueEffectText()
+		if dst.Affixes == nil {
+			dst.Affixes = []wire.Affix{}
+		}
+	}
+	return out, nil
 }

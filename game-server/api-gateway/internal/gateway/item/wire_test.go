@@ -91,6 +91,11 @@ func TestWireTypes_RoundTripProducesIdenticalBytes(t *testing.T) {
 				CriticalRate: 1.5, WeaponType: "sword", DefenseRating: 7, MagicResistance: 2,
 				ArmorSlot: "chest", HealingAmount: 50, ManaAmount: 25, BuffDuration: 30,
 				BuyPrice: 20, SellPrice: 10, Description: "sharp", Status: "LISTED",
+				RequiredLevel: 7, ItemLevel: 12,
+				Affixes: []*pb.Affix{{Stat: "strength", Tier: 2, Value: 5}},
+				// unique_effect is published under its own name, so it cannot
+				// round-trip; listItemInstancesFromProto fills it and the
+				// list-item-instances tests cover it.
 			},
 			conv: func(s any) (any, error) { return wire.As[ItemInstance](s) },
 		},

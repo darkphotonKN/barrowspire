@@ -16,6 +16,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/contract"
 	authgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/auth"
+	charactergw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/character"
 	itemgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/item"
 	ledgergw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/ledger"
 	listinggw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/listing"
@@ -40,6 +41,7 @@ func main() {
 		Ledger:       ledgergw.NewHandler(nil),
 		Listing:      listinggw.NewHandler(nil, nil),
 		Wallet:       walletgw.NewHandler(nil),
+		Characters:   charactergw.NewHandler(nil),
 	})
 
 	spec, err := api.OpenAPI().YAML()

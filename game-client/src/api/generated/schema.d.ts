@@ -4,6 +4,54 @@
  */
 
 export interface paths {
+    "/api/characters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List my characters
+         * @description Lists the signed-in member's live characters, oldest first, each with its level and experience. The member is taken from the token, never the request.
+         */
+        get: operations["list-my-characters"];
+        put?: never;
+        /**
+         * Create a character
+         * @description Creates a character for the signed-in member at level 1 with no experience. The member is taken from the token, never the request. An unknown class or an empty or over-long name is refused (400); a name already taken, in any case, answers 409.
+         */
+        post: operations["create-character"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{characterId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one of my characters
+         * @description Reads one of the signed-in member's characters with its level and experience. Another member's, a deleted, and an unknown character all answer 404.
+         */
+        get: operations["get-character"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete one of my characters
+         * @description Deletes one of the signed-in member's characters. Another member's, an already deleted, and an unknown character all answer 404.
+         */
+        delete: operations["delete-character"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/items/complete-armor": {
         parameters: {
             query?: never;
@@ -736,6 +784,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Affix: {
+            /** @description The stat the affix raises, by its stat code. */
+            stat: string;
+            /**
+             * Format: int32
+             * @description Affix tier, 1 to 3; 0 is a unique's fixed affix.
+             */
+            tier: number;
+            /**
+             * Format: int32
+             * @description Whole units: percent for attack and move speed, percentage points for crit.
+             */
+            value: number;
+        };
         ArmorDetail: {
             armor_slot?: string;
             /** Format: int32 */
@@ -785,6 +847,52 @@ export interface components {
             s3_key?: string;
             /** @description Correlates the request with its confirmation */
             upload_id?: string;
+        };
+        Character: {
+            /** @description warrior, mage or archer. */
+            class: string;
+            /**
+             * Format: date-time
+             * @description Creation time.
+             */
+            createdAt: string;
+            /**
+             * Format: int64
+             * @description Total experience, monotonic.
+             */
+            experience: number;
+            /**
+             * Format: uuid
+             * @description Character id.
+             */
+            id: string;
+            /**
+             * Format: int32
+             * @description Current level.
+             */
+            level: number;
+            /**
+             * Format: int64
+             * @description Total experience at which the current level began.
+             */
+            levelFloor: number;
+            /** @description Character name. */
+            name: string;
+            /**
+             * Format: int64
+             * @description Total experience for the next level; absent at the level cap.
+             */
+            nextLevelAt?: number;
+        };
+        CharacterCreate: {
+            /** @description warrior, mage or archer (decided by character-service). */
+            class: string;
+            /** @description Character name. Validity (1-32 characters after trimming, unique) is decided by character-service. */
+            name: string;
+        };
+        CharacterList: {
+            /** @description Live characters, oldest first. Empty for a member with none. */
+            characters: components["schemas"]["Character"][];
         };
         ConfirmAvatarEnvelope: {
             /** @description The stored avatar URL */
@@ -1083,6 +1191,8 @@ export interface components {
             weaponId?: string;
         };
         ItemInstance: {
+            /** @description Every rolled affix; empty for an item without any */
+            affixes: components["schemas"]["Affix"][];
             armor_slot?: string;
             /** Format: int32 */
             attack_power?: number;
@@ -1098,6 +1208,12 @@ export interface components {
             /** Format: int32 */
             healing_amount?: number;
             id?: string;
+            /**
+             * Format: int32
+             * @description The level the item rolled at
+             */
+            item_level: number;
+            /** @description e.g. weapon, armor, ring, consumable */
             item_type?: string;
             /** Format: int32 */
             magic_resistance?: number;
@@ -1106,6 +1222,11 @@ export interface components {
             name?: string;
             owner_member_id?: string;
             rarity_id?: string;
+            /**
+             * Format: int32
+             * @description Derived requirement: max of base and affix tiers; the template's for items from before item levels
+             */
+            required_level?: number;
             /** Format: int32 */
             sell_price?: number;
             source?: string;
@@ -1115,6 +1236,8 @@ export interface components {
              */
             status?: "AVAILABLE" | "LISTED" | "IN_ESCROW" | "PENDING_SETTLEMENT";
             template_id?: string;
+            /** @description The unique's effect text. Absent unless the item is a unique */
+            unique_effect?: string;
             weapon_type?: string;
         };
         ItemRarity: {
@@ -1125,6 +1248,8 @@ export interface components {
             updated_at?: components["schemas"]["Timestamp"];
         };
         ItemSummary: {
+            /** @description Every rolled affix; empty for an item without any. */
+            affixes: components["schemas"]["Affix"][];
             armorSlot?: string;
             /** Format: int32 */
             attackPower?: number;
@@ -1142,7 +1267,12 @@ export interface components {
              * @description The item instance; equals the listing's itemId.
              */
             id: string;
-            /** @description e.g. weapon, armor, consumable. */
+            /**
+             * Format: int32
+             * @description The level the item rolled at.
+             */
+            itemLevel: number;
+            /** @description e.g. weapon, armor, ring, consumable. */
             itemType: string;
             /** Format: int32 */
             magicResistance?: number;
@@ -1151,6 +1281,13 @@ export interface components {
             name: string;
             /** @description The rarity tier: normal, uncommon, rare, runed or fabled. */
             rarity: string;
+            /**
+             * Format: int32
+             * @description Character level needed to equip: the higher of the base's and the affixes' tiers; the template's for items from before item levels.
+             */
+            requiredLevel: number;
+            /** @description The unique's effect text. Absent unless the item is a unique. */
+            uniqueEffect?: string;
             weaponType?: string;
         };
         ItemTemplate: {
@@ -1837,6 +1974,265 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "list-my-characters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "create-character": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CharacterCreate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Character"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "get-character": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Character id. */
+                characterId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Character"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "delete-character": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Character id. */
+                characterId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
     "create-complete-armor": {
         parameters: {
             query?: never;
