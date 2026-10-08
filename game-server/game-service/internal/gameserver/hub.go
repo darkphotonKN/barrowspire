@@ -9,8 +9,8 @@ import (
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/queue"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -36,7 +36,7 @@ type SessionManager interface {
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
 	JoinHub(conn *websocket.Conn, character types.Character) (*game.Session, error)
 	GetMatchedChan() chan []*types.Player
-	GetQueueStatusChan() chan queue.QueueStatus
+	GetQueueStatusChan() chan matchmaker.QueueStatus
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
@@ -183,9 +183,9 @@ func (h *messageHub) Run() {
 				if err != nil {
 					slog.Warn("Could not place player in the hub", "error", err)
 
-					// A full hub is a thing the delver can act on — wait and try
-					// again — so it says so. Everything else stays vague: the
-					// detail is in the log, not in a stranger's client.
+					// A full hub is a thing the delver can act on, wait and try
+					// again, so it says so. Everything else stays vague: the
+					// detail is in the log, not in a strangers client
 					clientErr := "Could not enter"
 					if errors.Is(err, game.ErrWorldFull) {
 						clientErr = "The hub is full. Try again shortly."
@@ -242,6 +242,8 @@ func (h *messageHub) Run() {
 
 					if errors.Is(err, game.ErrPlayerAlreadyInQueue) {
 						message = "Player attempted to queue twice."
+						// TODO: send error
+						continue
 					}
 
 					h.sender.SendMessageToConn(clientPackage.Conn, types.Message{

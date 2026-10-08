@@ -72,6 +72,7 @@ server state and sends intents. ✅
 - [ ] Move between hub and run → FS-29KSH
 - [ ] Delve entry from the hub → FS-29KSH
 - [ ] Loadout access from the hub → FS-29KSH
+- [ ] Follow a handoff to another server → FS-K2HKP
 
 ### Marketplace
 

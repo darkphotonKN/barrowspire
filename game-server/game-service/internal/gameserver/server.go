@@ -11,8 +11,8 @@ import (
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/queue"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/serializer"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
@@ -74,7 +74,7 @@ type QueueManager interface {
 	AddPlayer(player *types.Player) error
 	PlayerRemoveQueue(player *types.Player)
 	GetMatchedChan() chan []*types.Player
-	GetQueueStatusChan() chan queue.QueueStatus
+	GetQueueStatusChan() chan matchmaker.QueueStatus
 }
 
 func NewServer(authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient) *Server {
@@ -118,15 +118,16 @@ func NewServer(authClient grpcauth.AuthClient, queueService QueueManager, eventE
 
 /**
 * Builds the one hub world. It is created before anyone connects and lives for
-* the whole process, unlike a run, which is built per match and torn down.
+* the whole process, unlike a run, which is built per match and torn down
 *
 * Note what is deliberately NOT called: InitialSystems(), which creates the
-* MatchProgress entity. RulesSystem ends a session once activePlayers <= 1 — a
-* condition the hub trips constantly — but it returns early when no MatchProgress
+* MatchProgress entity. RulesSystem ends a session once activePlayers <= 1, a
+* condition the hub trips constantly, but it returns early when no MatchProgress
 * exists. Skipping that call is what makes the hub immune, with no change to the
-* system itself. FS-29KSH §Requirements 1.
+* system itself. FS-29KSH §Requirements 1
 **/
 func (s *Server) createHubSession() *game.Session {
+	fmt.Printf("\n\nWorld Hub SESSION INITIALIZED\n\n\n")
 	entityManager := ecs.NewEntityManager()
 	stateSerializer := serializer.NewStateSerializer(entityManager)
 
@@ -148,8 +149,8 @@ func (s *Server) createHubSession() *game.Session {
 /**
 * Places a connected player into the hub world and records that they are in it.
 *
-* Note the two writes. connToPlayer holds a *copy* of the player — MapConnToPlayer
-* takes it by value — so it is a different object from the one in s.players, and
+* Note the two writes. connToPlayer holds a copy of the player, MapConnToPlayer
+* takes it by value, so it is a different object from the one in s.players, and
 * both have to be told. CreateGameSession does the same thing for the same reason.
 **/
 func (s *Server) JoinHub(conn *websocket.Conn, character types.Character) (*game.Session, error) {
@@ -169,7 +170,7 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.Character) (*game
 	}
 
 	// The world decides whether it has room, under its own lock. Counting from
-	// out here would mean holding the server's lock over data the session owns —
+	// out here would mean holding the server's lock over data the session owns,
 	// which serialises JoinHub against itself and nothing else, so the next path
 	// into the hub would sidestep the cap without noticing.
 	if err := hub.Admit(player.ID, username, character.Class); err != nil {
@@ -452,7 +453,7 @@ func (s *Server) GetMatchedChan() chan []*types.Player {
 /**
 * get queue status channel for listening to queue updates
 **/
-func (s *Server) GetQueueStatusChan() chan queue.QueueStatus {
+func (s *Server) GetQueueStatusChan() chan matchmaker.QueueStatus {
 	return s.queue.GetQueueStatusChan()
 }
 

@@ -45,6 +45,7 @@ matchmaking); this service is the engine they feed. ✅
 ### Session & matchmaking lifecycle
 
 - [x] Matchmaking queue
+- [ ] Matchmaking across replicas → FS-K2HKP
 - [x] Start a game session on match
 - [x] Build the world for a session
 - [x] Tear down a session
@@ -78,6 +79,8 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Hub is a safe zone → FS-29KSH
 - [ ] Wandering NPCs with dialogue → FS-29KSH
 - [ ] Hub occupancy cap → FS-29KSH
+- [ ] Hub shared across replicas → FS-JEAVX
+- [ ] Hub occupancy cap across replicas → FS-JEAVX
 
 ### Transport
 
@@ -99,7 +102,7 @@ matchmaking); this service is the engine they feed. ✅
 
 - [ ] Player-to-player trade saga
 - [ ] Gear escrow across the run lifecycle
-- [ ] Start-a-delve distributed coordination
+- [ ] Start-a-delve distributed coordination → FS-K2HKP
 
 ---
 
