@@ -195,12 +195,33 @@ func (h *Handler) ListItemTemplates(ctx context.Context, _ *emptypb.Empty) (*pb.
 			BuffDuration:    buffDuration,
 			MaxStackSize:    maxStackSize,
 			Description:     description,
+			MinItemLevel:    int32(item.MinItemLevel),
+			Unique:          uniqueToProto(item),
 		}
 	}
 
 	return &pb.ListItemTemplatesResponse{
 		Items: pbItems,
 	}, nil
+}
+
+// uniqueToProto is a unique template's unique row on the wire; nil for a
+// template without one (FS-4R9M9 R8).
+func uniqueToProto(item *ItemTemplateAggregate) *pb.UniqueItem {
+	if item.UniqueEffectCode == nil {
+		return nil
+	}
+	unique := &pb.UniqueItem{
+		EffectCode:   *item.UniqueEffectCode,
+		FixedAffixes: make([]*pb.AffixRange, 0, len(item.UniqueFixedAffixes)),
+	}
+	if item.UniqueEffectText != nil {
+		unique.EffectText = *item.UniqueEffectText
+	}
+	for _, r := range item.UniqueFixedAffixes {
+		unique.FixedAffixes = append(unique.FixedAffixes, &pb.AffixRange{Stat: r.Stat, Min: int32(r.Min), Max: int32(r.Max)})
+	}
+	return unique
 }
 
 // CreateWeapon creates a new weapon (gRPC endpoint)
@@ -871,63 +892,17 @@ func (h *Handler) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWit
 		return nil, status.Errorf(codes.Internal, "failed to get loadout with items: %v", err)
 	}
 
-	toProto := func(item *ItemInstance) *pb.ItemInstance {
-		if item == nil {
-			return nil
-		}
-		pbItem := &pb.ItemInstance{
-			Id:            item.ID.String(),
-			TemplateId:    item.TemplateID.String(),
-			OwnerMemberId: item.OwnerMemberID.String(),
-			Source:        item.Source,
-			ItemType:      item.ItemType,
-			Name:          item.Name,
-			RarityId:      commonhelpers.UuidPtrToString(item.RarityID),
-		}
-		if item.AttackPower != nil {
-			pbItem.AttackPower = int32(*item.AttackPower)
-		}
-		if item.CriticalRate != nil {
-			pbItem.CriticalRate = float32(*item.CriticalRate)
-		}
-		if item.WeaponType != nil {
-			pbItem.WeaponType = *item.WeaponType
-		}
-		if item.DefenseRating != nil {
-			pbItem.DefenseRating = int32(*item.DefenseRating)
-		}
-		if item.MagicResistance != nil {
-			pbItem.MagicResistance = int32(*item.MagicResistance)
-		}
-		if item.ArmorSlot != nil {
-			pbItem.ArmorSlot = *item.ArmorSlot
-		}
-		if item.HealingAmount != nil {
-			pbItem.HealingAmount = int32(*item.HealingAmount)
-		}
-		if item.ManaAmount != nil {
-			pbItem.ManaAmount = int32(*item.ManaAmount)
-		}
-		if item.BuffDuration != nil {
-			pbItem.BuffDuration = int32(*item.BuffDuration)
-		}
-		if item.Description != nil {
-			pbItem.Description = *item.Description
-		}
-		return pbItem
-	}
-
 	return &pb.GetLoadoutWithItemsResponse{
-		Weapon:       toProto(loadout.Weapon),
-		Head:         toProto(loadout.Head),
-		Chest:        toProto(loadout.Chest),
-		Gloves:       toProto(loadout.Gloves),
-		Legs:         toProto(loadout.Legs),
-		Ring_1:       toProto(loadout.Ring1),
-		Ring_2:       toProto(loadout.Ring2),
-		Consumable_1: toProto(loadout.Consumable1),
-		Consumable_2: toProto(loadout.Consumable2),
-		Consumable_3: toProto(loadout.Consumable3),
+		Weapon:       itemInstanceToProto(loadout.Weapon),
+		Head:         itemInstanceToProto(loadout.Head),
+		Chest:        itemInstanceToProto(loadout.Chest),
+		Gloves:       itemInstanceToProto(loadout.Gloves),
+		Legs:         itemInstanceToProto(loadout.Legs),
+		Ring_1:       itemInstanceToProto(loadout.Ring1),
+		Ring_2:       itemInstanceToProto(loadout.Ring2),
+		Consumable_1: itemInstanceToProto(loadout.Consumable1),
+		Consumable_2: itemInstanceToProto(loadout.Consumable2),
+		Consumable_3: itemInstanceToProto(loadout.Consumable3),
 	}, nil
 }
 
@@ -948,52 +923,70 @@ func (h *Handler) ListItemInstances(ctx context.Context, req *pb.ListItemInstanc
 
 	pbItems := make([]*pb.ItemInstance, 0, len(items))
 	for _, item := range items {
-		pbItem := &pb.ItemInstance{
-			Id:            item.ID.String(),
-			TemplateId:    item.TemplateID.String(),
-			OwnerMemberId: item.OwnerMemberID.String(),
-			Source:        item.Source,
-			ItemType:      item.ItemType,
-			Name:          item.Name,
-			RarityId:      commonhelpers.UuidPtrToString(item.RarityID),
-			Status:        item.Status,
-		}
-		if item.AttackPower != nil {
-			pbItem.AttackPower = int32(*item.AttackPower)
-		}
-		if item.CriticalRate != nil {
-			pbItem.CriticalRate = float32(*item.CriticalRate)
-		}
-		if item.WeaponType != nil {
-			pbItem.WeaponType = *item.WeaponType
-		}
-		if item.DefenseRating != nil {
-			pbItem.DefenseRating = int32(*item.DefenseRating)
-		}
-		if item.MagicResistance != nil {
-			pbItem.MagicResistance = int32(*item.MagicResistance)
-		}
-		if item.ArmorSlot != nil {
-			pbItem.ArmorSlot = *item.ArmorSlot
-		}
-		if item.HealingAmount != nil {
-			pbItem.HealingAmount = int32(*item.HealingAmount)
-		}
-		if item.ManaAmount != nil {
-			pbItem.ManaAmount = int32(*item.ManaAmount)
-		}
-		if item.BuffDuration != nil {
-			pbItem.BuffDuration = int32(*item.BuffDuration)
-		}
-		if item.Description != nil {
-			pbItem.Description = *item.Description
-		}
-		pbItems = append(pbItems, pbItem)
+		pbItems = append(pbItems, itemInstanceToProto(item))
 	}
 
 	return &pb.ListItemInstancesResponse{
 		Items: pbItems,
 	}, nil
+}
+
+// itemInstanceToProto maps an owned item onto the wire; nil stays nil so an
+// empty loadout slot is absent rather than a zero item.
+func itemInstanceToProto(item *ItemInstance) *pb.ItemInstance {
+	if item == nil {
+		return nil
+	}
+	pbItem := &pb.ItemInstance{
+		Id:            item.ID.String(),
+		TemplateId:    item.TemplateID.String(),
+		OwnerMemberId: item.OwnerMemberID.String(),
+		Source:        item.Source,
+		ItemType:      item.ItemType,
+		Name:          item.Name,
+		RarityId:      commonhelpers.UuidPtrToString(item.RarityID),
+		Status:        item.Status,
+		RequiredLevel: int32(item.RequiredLevel),
+		ItemLevel:     int32(item.ItemLevel),
+		Affixes:       affixesToProto(item.Affixes),
+	}
+	if item.AttackPower != nil {
+		pbItem.AttackPower = int32(*item.AttackPower)
+	}
+	if item.CriticalRate != nil {
+		pbItem.CriticalRate = float32(*item.CriticalRate)
+	}
+	if item.WeaponType != nil {
+		pbItem.WeaponType = *item.WeaponType
+	}
+	if item.DefenseRating != nil {
+		pbItem.DefenseRating = int32(*item.DefenseRating)
+	}
+	if item.MagicResistance != nil {
+		pbItem.MagicResistance = int32(*item.MagicResistance)
+	}
+	if item.ArmorSlot != nil {
+		pbItem.ArmorSlot = *item.ArmorSlot
+	}
+	if item.HealingAmount != nil {
+		pbItem.HealingAmount = int32(*item.HealingAmount)
+	}
+	if item.ManaAmount != nil {
+		pbItem.ManaAmount = int32(*item.ManaAmount)
+	}
+	if item.BuffDuration != nil {
+		pbItem.BuffDuration = int32(*item.BuffDuration)
+	}
+	if item.Description != nil {
+		pbItem.Description = *item.Description
+	}
+	if item.UniqueEffectCode != nil {
+		pbItem.UniqueEffectCode = *item.UniqueEffectCode
+	}
+	if item.UniqueEffectText != nil {
+		pbItem.UniqueEffectText = *item.UniqueEffectText
+	}
+	return pbItem
 }
 
 func (h *Handler) UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutRequest) (*pb.UpdateLoadoutResponse, error) {
@@ -1171,19 +1164,32 @@ func (h *Handler) GetItemSummaries(ctx context.Context, req *pb.GetItemSummaries
 // left unset on the wire rather than sent as zero.
 func toProtoItemSummary(s *ItemSummary) *pb.ItemSummary {
 	return &pb.ItemSummary{
-		Id:              s.ID.String(),
-		Name:            s.Name,
-		Description:     s.Description,
-		ItemType:        s.ItemType,
-		Rarity:          s.Rarity,
-		WeaponType:      s.WeaponType,
-		ArmorSlot:       s.ArmorSlot,
-		AttackPower:     int32Ptr(s.AttackPower),
-		CriticalRate:    s.CriticalRate,
-		DefenseRating:   int32Ptr(s.DefenseRating),
-		MagicResistance: int32Ptr(s.MagicResistance),
-		HealingAmount:   int32Ptr(s.HealingAmount),
-		ManaAmount:      int32Ptr(s.ManaAmount),
-		BuffDuration:    int32Ptr(s.BuffDuration),
+		Id:               s.ID.String(),
+		Name:             s.Name,
+		Description:      s.Description,
+		ItemType:         s.ItemType,
+		Rarity:           s.Rarity,
+		WeaponType:       s.WeaponType,
+		ArmorSlot:        s.ArmorSlot,
+		AttackPower:      int32Ptr(s.AttackPower),
+		CriticalRate:     s.CriticalRate,
+		DefenseRating:    int32Ptr(s.DefenseRating),
+		MagicResistance:  int32Ptr(s.MagicResistance),
+		HealingAmount:    int32Ptr(s.HealingAmount),
+		ManaAmount:       int32Ptr(s.ManaAmount),
+		BuffDuration:     int32Ptr(s.BuffDuration),
+		ItemLevel:        int32(s.ItemLevel),
+		RequiredLevel:    int32(s.RequiredLevel),
+		Affixes:          affixesToProto(s.Affixes),
+		UniqueEffectText: s.UniqueEffectText,
 	}
+}
+
+// affixesToProto keeps roll order; no affixes is an empty list on the wire.
+func affixesToProto(affixes Affixes) []*pb.Affix {
+	out := make([]*pb.Affix, 0, len(affixes))
+	for _, a := range affixes {
+		out = append(out, &pb.Affix{Stat: a.Stat, Tier: int32(a.Tier), Value: int32(a.Value)})
+	}
+	return out
 }

@@ -218,6 +218,7 @@ const (
 	ItemTypeWeapon     ItemType = "weapon"
 	ItemTypeArmor      ItemType = "armor"
 	ItemTypeConsumable ItemType = "consumable"
+	ItemTypeRing       ItemType = "ring"
 )
 
 type ArmorSlot string

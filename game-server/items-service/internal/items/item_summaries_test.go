@@ -39,6 +39,7 @@ func TestGetItemSummariesMapsOnlyThePublicFacts(t *testing.T) {
 	sword := &ItemSummary{
 		ID: uuid.New(), Name: "Longsword", Description: &desc, ItemType: "weapon", Rarity: "runed",
 		WeaponType: &weaponType, AttackPower: &attack, CriticalRate: &crit,
+		ItemLevel: 9, RequiredLevel: 6, Affixes: Affixes{{Stat: "flat_damage", Tier: 2, Value: 2}},
 	}
 	svc := &summaryService{summaries: []*ItemSummary{sword}}
 
@@ -67,11 +68,18 @@ func TestGetItemSummariesMapsOnlyThePublicFacts(t *testing.T) {
 		{"weapon type", got.GetWeaponType(), "sword"},
 		{"attack power", got.GetAttackPower(), int32(12)},
 		{"critical rate", got.GetCriticalRate(), 0.25},
+		{"item level", got.GetItemLevel(), int32(9)},
+		{"required level", got.GetRequiredLevel(), int32(6)},
+		{"affix count", len(got.GetAffixes()), 1},
 	}
 	for _, c := range checks {
 		if c.got != c.want {
 			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)
 		}
+	}
+
+	if a := got.GetAffixes(); len(a) == 1 && (a[0].GetStat() != "flat_damage" || a[0].GetTier() != 2 || a[0].GetValue() != 2) {
+		t.Errorf("affix = %v, want flat_damage tier 2 value 2", a[0])
 	}
 
 	// a weapon has no armor or consumable stats, and says so by absence
