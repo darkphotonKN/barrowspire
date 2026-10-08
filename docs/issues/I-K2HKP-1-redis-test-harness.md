@@ -1,6 +1,6 @@
 ---
 id: I-K2HKP-1
-status: open
+status: done
 implements: FS-K2HKP
 blocked_by: []
 labels: [ready-for-agent]
