@@ -131,8 +131,10 @@ export function composeContact(sheets, facings, labels, theme, z = 1) {
 /** The HTML review page: the committed atlases, framed by the manifest, animated. */
 export function reviewHtml(manifest, names, theme) {
   const sheets = Object.fromEntries(names.map((n) => [n, manifest.sheets[n]]));
+  // a sheet's own atlas, plus any page an oversized sheet's animation spilled onto (FS-Q14EV §B.7)
+  const pagesOf = (s) => [s.atlas, ...Object.values(s.animations).map((a) => a.atlas ?? s.atlas)];
   const atlases = Object.fromEntries(
-    [...new Set(names.map((n) => manifest.sheets[n].atlas))].map((k) => [k, `../../../public/art/${manifest.atlases[k].image}`]),
+    [...new Set(names.flatMap((n) => pagesOf(manifest.sheets[n])))].map((k) => [k, `../../../public/art/${manifest.atlases[k].image}`]),
   );
   const data = JSON.stringify({ facings: manifest.facings, sheets, atlases });
   return `<!doctype html>
@@ -167,7 +169,7 @@ function frameCanvas(s, img, pos, z) {
   return c;
 }
 function table(name, s, anim, z) {
-  const a = s.animations[anim]; const img = imgs[s.atlas];
+  const a = s.animations[anim]; const img = imgs[a.atlas || s.atlas];
   const t = document.createElement("table");
   const head = t.insertRow(); head.innerHTML = "<th></th><th>play</th>" + a.frames[0].map((_, i) => "<th>" + i + "</th>").join("");
   a.frames.forEach((dir, d) => {

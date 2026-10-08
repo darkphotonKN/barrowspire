@@ -19,7 +19,7 @@ const S = 128;
  * Paints a tile: `fn(x, y) → { c: [r, g, b], h: height 0..1 }`. Returns the colour texture and a
  * tangent-space normal map derived from the height by central differences.
  */
-function paint(fn, { strength = 2, repeat = 1 } = {}) {
+export function paint(fn, { strength = 2, repeat = 1 } = {}) {
   const col = mkCanvas(S, S);
   const nrm = mkCanvas(S, S);
   const ci = col.getContext("2d").createImageData(S, S);
@@ -61,9 +61,9 @@ function paint(fn, { strength = 2, repeat = 1 } = {}) {
 }
 
 // Periodic noise helpers: every lattice period divides the tile, so textures tile.
-const pf = (x, y, cell, s, oct = 4) => fbm(x / cell, y / cell, s, oct, S / cell);
+export const pf = (x, y, cell, s, oct = 4) => fbm(x / cell, y / cell, s, oct, S / cell);
 /** Value noise stretched cx by cy px, tiling the S-px tile (cx and cy must divide S). */
-function pn(x, y, cx, cy, s) {
+export function pn(x, y, cx, cy, s) {
   const px = S / cx;
   const py = S / cy;
   const u = x / cx;
@@ -245,7 +245,7 @@ function rag(tone, { seed = 19 } = {}) {
 
 // --- materials -----------------------------------------------------------------------------
 
-function mat(tex, o = {}) {
+export function mat(tex, o = {}) {
   return new THREE.MeshStandardMaterial({
     map: tex.map,
     normalMap: tex.normalMap,
@@ -277,8 +277,9 @@ export const GEAR = {
   skin: shade(mix("vellum", "oxbloodText", 0.45), 0.68),
   beard: mix("vellum", "slateLight", 0.2),
   bone: mix("vellum", "vellumDark", 0.35),
-  troll: mix(mix("arcaneDeep", "slate", 0.55), "barrowBrown", 0.3),
-  trollBelly: mix("arcaneDeep", "vellumFaint", 0.35),
+  // barrow mud and cold stone, kept off the demon boss's bog green so the two never read as kin
+  troll: mix(mix("slate", "barrowBrown", 0.5), "vellumDark", 0.12),
+  trollBelly: mix("barrowBrown", "vellumFaint", 0.3),
   rag: mix("barrowBrown", "slate", 0.45),
   fur: mix("barrowBrown", "barrowDeep", 0.55),
   // hub folk (FS-2325V §G): undyed and plant-dyed homespun, nothing heraldic

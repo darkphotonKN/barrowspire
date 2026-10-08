@@ -23,6 +23,28 @@ import {
 import { brazier, lampPost, table, chair, barrel, BRAZIER_FLAME, LAMP_GLASS } from "./models/props.js";
 import { door, escapeDoor, lever, chest } from "./models/interactables.js";
 import { ICONS } from "./models/items.js";
+import {
+  AWNINGS,
+  SACKS,
+  marketStall,
+  cart,
+  hayCart,
+  well,
+  crate,
+  crateStack,
+  fenceSegment,
+  fencePost,
+  waterTrough,
+  woodpile,
+  sacks,
+  signpost,
+  washingPost,
+  washingLine,
+  flowerBox,
+  chimney,
+} from "./models/town.js";
+import { FX_TEXTURES } from "./models/fx.js";
+import { CURSORS, CURSOR_SIZE } from "./models/cursors.js";
 import { groundTile, transitionTile } from "./ground.js";
 import { CAST } from "./characters/cast.js";
 import { FOLK } from "./characters/folk.js";
@@ -218,6 +240,43 @@ function propSheets() {
   return sheets;
 }
 
+/**
+ * The hub's town props and dressing (FS-KYPQ9 §A.1), authored in code (ADR-0021) and packed on
+ * their own atlas so the existing ones keep their layout. Variant frames are picked by index
+ * (src/render/world/hubKeepOut.ts): awnings in AWNINGS order, sacks in SACKS order.
+ */
+function townSheets() {
+  const sheet = (name, fn, animations, opts = {}) => ({
+    name,
+    group: "town",
+    kind: "prop",
+    animations,
+    source: `authored: tools/bake/page/models/town.js#${fn}`,
+    ...opts,
+  });
+  const one = (build) => ({ default: still(build) });
+  return [
+    sheet("market_stall", "marketStall", { variants: still(...AWNINGS.map((_, i) => () => marketStall(i))) }),
+    sheet("cart", "cart", one(cart)),
+    sheet("hay_cart", "hayCart", one(hayCart)),
+    sheet("well", "well", one(well)),
+    sheet("crate", "crate", one(crate)),
+    sheet("crate_stack", "crateStack", one(crateStack)),
+    sheet("fence_x", "fenceSegment", one(() => fenceSegment("x"))),
+    sheet("fence_y", "fenceSegment", one(() => fenceSegment("y"))),
+    sheet("fence_post", "fencePost", one(fencePost)),
+    sheet("water_trough", "waterTrough", one(waterTrough)),
+    sheet("woodpile", "woodpile", one(woodpile)),
+    sheet("sacks", "sacks", { variants: still(...SACKS.map((v) => () => sacks(v))) }),
+    sheet("signpost", "signpost", one(signpost)),
+    sheet("washing_post", "washingPost", one(washingPost)),
+    sheet("washing_line", "washingLine", one(washingLine)),
+    sheet("flower_box", "flowerBox", { x: still(() => flowerBox("x")), y: still(() => flowerBox("y")) }),
+    // stands on a roof, which carries its own shading: no ground shadow, like the roof pieces
+    sheet("chimney", "chimney", one(chimney), { shadow: false }),
+  ];
+}
+
 function iconSheets() {
   return Object.entries(ICONS).map(([name, build]) => ({
     name: `icon_${name}`,
@@ -238,7 +297,8 @@ function characterSheets() {
     group: c.group,
     kind: "character",
     build: c.build,
-    source: `authored: tools/bake/page/characters/cast.js#${c.fn}`,
+    ...(c.animations ? { animations: c.animations } : {}),
+    source: `authored: tools/bake/page/characters/${c.module ?? "cast"}.js#${c.fn}`,
   }));
 }
 
@@ -257,12 +317,42 @@ function folkSheets() {
   }));
 }
 
+/**
+ * Effect textures and cursors (FS-KYPQ9 §B.10, §H.2), drawn per pixel in code (ADR-0021) and
+ * packed together on the fx atlas. A cursor's anchor is its hotspot.
+ */
+function fxSheets() {
+  const fx = FX_TEXTURES.map((t) => ({
+    name: t.name,
+    group: "fx",
+    kind: "texture",
+    width: t.width,
+    height: t.height,
+    anchor: t.anchor,
+    animations: { [t.frames.length > 1 ? "variants" : "default"]: still(...t.frames) },
+    source: `authored: tools/bake/page/models/fx.js#${t.fn}`,
+  }));
+  const cursors = CURSORS.map((c) => ({
+    name: c.name,
+    group: "fx",
+    kind: "texture",
+    width: CURSOR_SIZE,
+    height: CURSOR_SIZE,
+    anchor: { x: c.hotspot[0] / CURSOR_SIZE, y: c.hotspot[1] / CURSOR_SIZE },
+    animations: { default: still(c.build) },
+    source: `authored: tools/bake/page/models/cursors.js#${c.fn}`,
+  }));
+  return [...fx, ...cursors];
+}
+
 export const CATALOGUE = [
   ...groundSheets(),
   ...natureSheets(),
   ...architectureSheets(),
   ...propSheets(),
+  ...townSheets(),
   ...iconSheets(),
   ...characterSheets(),
   ...folkSheets(),
+  ...fxSheets(),
 ].map((s) => ({ licence: LICENCE, ...s }));

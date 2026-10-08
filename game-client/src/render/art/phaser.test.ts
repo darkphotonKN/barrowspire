@@ -170,4 +170,32 @@ describe("registerArt", () => {
       expect.anything(),
     );
   });
+
+  describe("a sheet spilled over two pages (FS-Q14EV §B.7)", () => {
+    const spilled = () => {
+      const m = structuredClone(manifest);
+      Object.assign(m.sheets.switch.animations.active, {
+        atlas: "props-1",
+        frames: [[{ x: 100, y: 0 }]],
+      });
+      return m;
+    };
+
+    it("registers each animation's frames on the texture of the page it sits on", () => {
+      const { scene, frames } = fakeScene(spilled(), [
+        "art:props-0",
+        "art:props-1",
+      ]);
+      registerArt(scene, { warn: vi.fn() });
+      expect(frames["art:props-0"]).toEqual(["switch/inactive/0/0"]);
+      expect(frames["art:props-1"]).toContain("switch/active/0/0");
+    });
+
+    it("skips the whole sheet when one of its pages did not load", () => {
+      const { scene, frames } = fakeScene(spilled(), ["art:props-0"]);
+      const lib = registerArt(scene, { warn: vi.fn() });
+      expect(frames["art:props-0"] ?? []).not.toContain("switch/inactive/0/0");
+      expect(lib.has("switch")).toBe(false);
+    });
+  });
 });

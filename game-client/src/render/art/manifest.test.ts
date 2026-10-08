@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
+import { BARROW } from "@/utils/theme";
+import { WORLD_PX_PER_TILE, worldToScreen } from "@/render/iso/projection";
+import { HUB_WASHING_LINE } from "@/render/world/hubKeepOut";
 import { DIRECTION_ORDER, directionIndex, validateManifest } from "./manifest";
 
 /** A minimal manifest that satisfies every rule. Each case below breaks one. */
@@ -128,6 +131,48 @@ describe("validateManifest", () => {
     rejects((m) => {
       m.sheets.door.animations.open.frames = [[{ x: 230, y: 0 }]];
     }, /door.*open.*outside atlas/);
+  });
+
+  describe("an animation on another page of an oversized sheet (FS-Q14EV §B.7)", () => {
+    // the door's "open" animation spilled onto a second page of its group
+    const spill = (m: Fixture) => {
+      (m.atlases as Record<string, unknown>)["props-1"] = {
+        image: "props-1.png",
+        width: 64,
+        height: 80,
+        sha256: "b".repeat(64),
+      };
+      Object.assign(m.sheets.door.animations.open, { atlas: "props-1" });
+      m.sheets.door.animations.open.frames = [[{ x: 2, y: 2 }]];
+    };
+
+    it("accepts an animation naming the page it sits on", () => {
+      const m = fixture();
+      spill(m);
+      expect(validateManifest(m)).toEqual({ ok: true, manifest: m });
+    });
+
+    it("rejects an animation atlas that names no atlas in the manifest", () => {
+      rejects((m) => {
+        spill(m);
+        Object.assign(m.sheets.door.animations.open, { atlas: "props-9" });
+      }, /door.*open.*atlas/);
+    });
+
+    it("rejects an animation atlas that is not a name", () => {
+      rejects((m) => {
+        spill(m);
+        Object.assign(m.sheets.door.animations.open, { atlas: 1 });
+      }, /door.*open.*atlas/);
+    });
+
+    it("checks the animation's frames against its own page, not the sheet's", () => {
+      // inside props-0 (256 wide) but outside props-1 (64 wide)
+      rejects((m) => {
+        spill(m);
+        m.sheets.door.animations.open.frames = [[{ x: 100, y: 0 }]];
+      }, /door.*open.*outside atlas props-1/);
+    });
   });
 
   it("accepts a sheet without a mean colour: only ground sheets carry one", () => {
@@ -331,6 +376,202 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     expect(baked.facings).toEqual([...DIRECTION_ORDER]);
   });
 
+  it("keeps every atlas within 4096²", () => {
+    for (const [key, atlas] of Object.entries(baked.atlases) as [
+      string,
+      { width: number; height: number },
+    ][]) {
+      expect(atlas.width, key).toBeLessThanOrEqual(4096);
+      expect(atlas.height, key).toBeLessThanOrEqual(4096);
+    }
+  });
+
+  describe("effect textures and cursors (FS-KYPQ9 §B.10, §H.2)", () => {
+    type Sheet = {
+      frameWidth: number;
+      frameHeight: number;
+      anchor: { x: number; y: number };
+      directions: number;
+      animations: Record<string, { frames: unknown[][] }>;
+      source: string;
+      licence: string;
+    };
+    const sheet = (name: string): Sheet => baked.sheets[name];
+
+    // sheet → the authoring function in tools/bake/page/models/fx.js
+    const FX: [string, string][] = [
+      ["fx_slash", "slash"],
+      ["fx_dust", "dust"],
+      ["fx_ember", "ember"],
+      ["fx_smoke", "smoke"],
+      ["fx_fire_core", "fireCore"],
+      ["fx_scorch", "scorch"],
+      ["fx_glow", "glow"],
+      ["fx_escape_column", "escapeColumn"],
+      ["fx_arrow", "arrow"],
+    ];
+    const CURSORS: [string, string][] = [
+      ["cursor_gauntlet", "gauntlet"],
+      ["cursor_strike", "strikeMark"],
+    ];
+
+    const isSet = (s: Sheet) => {
+      expect(Number.isInteger(s.frameWidth) && s.frameWidth > 0).toBe(true);
+      expect(Number.isInteger(s.frameHeight) && s.frameHeight > 0).toBe(true);
+      expect(s.anchor.x).toBeGreaterThanOrEqual(0);
+      expect(s.anchor.x).toBeLessThanOrEqual(1);
+      expect(s.anchor.y).toBeGreaterThanOrEqual(0);
+      expect(s.anchor.y).toBeLessThanOrEqual(1);
+      expect(s.directions).toBe(1);
+      const anims = Object.values(s.animations);
+      expect(anims.length).toBeGreaterThan(0);
+      for (const a of anims) {
+        expect(a.frames).toHaveLength(1);
+        expect(a.frames[0].length).toBeGreaterThan(0);
+      }
+    };
+
+    it.each(FX)(
+      "%s is baked with its geometry set, authored in models/fx.js#%s",
+      (name, fn) => {
+        const s = sheet(name);
+        expect(s, name).toBeDefined();
+        isSet(s);
+        expect(s.source).toBe(`authored: tools/bake/page/models/fx.js#${fn}`);
+        expect(s.licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it.each(CURSORS)(
+      "%s is a 32x32 cursor, authored in models/cursors.js#%s",
+      (name, fn) => {
+        const s = sheet(name);
+        expect(s, name).toBeDefined();
+        isSet(s);
+        expect([s.frameWidth, s.frameHeight]).toEqual([32, 32]);
+        expect(s.source).toBe(
+          `authored: tools/bake/page/models/cursors.js#${fn}`,
+        );
+        expect(s.licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it("puts the gauntlet's hotspot on its fingertip, at the top left", () => {
+      const { anchor } = sheet("cursor_gauntlet");
+      expect(anchor.x).toBeLessThan(0.35);
+      expect(anchor.y).toBeLessThan(0.15);
+    });
+
+    it("puts the strike-mark's hotspot at its centre", () => {
+      expect(sheet("cursor_strike").anchor).toEqual({ x: 0.5, y: 0.5 });
+    });
+
+    it("keeps the effect textures and cursors on the fx atlas", () => {
+      for (const [name] of [...FX, ...CURSORS])
+        expect(baked.sheets[name].atlas, name).toMatch(/^fx-\d+$/);
+    });
+  });
+
+  describe("hub town props and dressing (FS-KYPQ9 §A.1)", () => {
+    type Sheet = {
+      atlas: string;
+      frameWidth: number;
+      frameHeight: number;
+      anchor: { x: number; y: number };
+      directions: number;
+      animations: Record<string, { frames: unknown[][] }>;
+      light?: { color: string };
+      source: string;
+      licence: string;
+    };
+    const sheet = (name: string): Sheet => baked.sheets[name];
+
+    // sheet → its authoring function in tools/bake/page/models/town.js, and its animations
+    // with their frame counts (variants are picked by index in src/render/world/hubKeepOut.ts)
+    const TOWN: [string, string, Record<string, number>][] = [
+      ["market_stall", "marketStall", { variants: 3 }],
+      ["cart", "cart", { default: 1 }],
+      ["hay_cart", "hayCart", { default: 1 }],
+      ["well", "well", { default: 1 }],
+      ["crate", "crate", { default: 1 }],
+      ["crate_stack", "crateStack", { default: 1 }],
+      ["fence_x", "fenceSegment", { default: 1 }],
+      ["fence_y", "fenceSegment", { default: 1 }],
+      ["fence_post", "fencePost", { default: 1 }],
+      ["water_trough", "waterTrough", { default: 1 }],
+      ["woodpile", "woodpile", { default: 1 }],
+      ["sacks", "sacks", { variants: 2 }],
+      ["signpost", "signpost", { default: 1 }],
+      ["washing_post", "washingPost", { default: 1 }],
+      ["washing_line", "washingLine", { default: 1 }],
+      ["flower_box", "flowerBox", { x: 1, y: 1 }],
+      ["chimney", "chimney", { default: 1 }],
+    ];
+
+    it.each(TOWN)(
+      "%s is baked, authored in models/town.js#%s, with its frames",
+      (name, fn, frames) => {
+        const s = sheet(name);
+        expect(s, name).toBeDefined();
+        expect(Number.isInteger(s.frameWidth) && s.frameWidth > 0).toBe(true);
+        expect(Number.isInteger(s.frameHeight) && s.frameHeight > 0).toBe(true);
+        expect(s.anchor.x).toBeGreaterThan(0);
+        expect(s.anchor.x).toBeLessThan(1);
+        expect(s.anchor.y).toBeGreaterThan(0);
+        expect(s.anchor.y).toBeLessThanOrEqual(1);
+        expect(s.directions).toBe(1);
+        expect(
+          Object.fromEntries(
+            Object.entries(s.animations).map(([a, v]) => [a, v.frames[0].length]),
+          ),
+        ).toEqual(frames);
+        expect(s.source).toBe(`authored: tools/bake/page/models/town.js#${fn}`);
+        expect(s.licence).toBe(baked.sheets.brazier.licence);
+        expect(s.atlas, name).toMatch(/^town-\d+$/);
+      },
+    );
+
+    it("bakes no light into dressing: the lit props are the reused lamp post and brazier", () => {
+      for (const [name] of TOWN) expect(sheet(name).light, name).toBeUndefined();
+      for (const name of ["lamp_post", "brazier"]) {
+        const light = sheet(name).light;
+        expect(light, name).toBeDefined();
+        expect(Object.keys(BARROW)).toContain(light!.color);
+      }
+    });
+
+    it("bakes the washing line to span its posts, 80 world px (two tiles) along world x", () => {
+      // the posts as the hub places them, and the line hung at their midpoint
+      const [west, east] = HUB_WASHING_LINE.posts;
+      const { line } = HUB_WASHING_LINE;
+      const span = east.at.x - west.at.x;
+      expect(span).toBe(80);
+      expect([west.at.y, east.at.y]).toEqual([line.at.y, line.at.y]);
+      expect(line.at.x).toBe(west.at.x + span / 2);
+
+      // the bake model hangs its rope from -LINE_HALF to +LINE_HALF tile edges about its origin
+      const model = readFileSync(
+        join(__dirname, "../../../tools/bake/page/models/town.js"),
+        "utf8",
+      );
+      const half = Number(/const LINE_HALF = ([\d.]+);/.exec(model)?.[1]);
+      expect(2 * half * WORLD_PX_PER_TILE).toBe(span);
+
+      // projected, the rope's west end lies the posts' half-distance left of the anchor: the
+      // frame's left edge, give or take its padding and the rope's knot (the shadow falls east)
+      const s = sheet("washing_line");
+      const anchorX = s.anchor.x * s.frameWidth;
+      const halfOnScreen = worldToScreen(span / 2, 0);
+      expect(halfOnScreen).toEqual({
+        x: baked.tile.width / 2,
+        y: baked.tile.height / 2,
+      });
+      expect(anchorX).toBeGreaterThanOrEqual(halfOnScreen.x);
+      expect(anchorX).toBeLessThanOrEqual(halfOnScreen.x + 8);
+      expect(s.frameWidth - anchorX).toBeGreaterThanOrEqual(halfOnScreen.x);
+    });
+  });
+
   describe("characters and creatures (FS-2325V §E)", () => {
     const CAST = [
       "char_knight_base",
@@ -396,6 +637,113 @@ describe("the baked manifest (public/art/manifest.json)", () => {
           [true, true, false, false],
         );
       }
+    });
+  });
+
+  describe("the expanded enemy roster (FS-Q14EV §A)", () => {
+    type RosterSheet = {
+      atlas: string;
+      directions: number;
+      crown?: number;
+      animations: Record<
+        string,
+        { fps: number; loop: boolean; frames: unknown[][] }
+      >;
+      source: string;
+      licence: string;
+    };
+    const DELVERS = [
+      "char_knight_base",
+      "char_archer_base",
+      "char_wizard_base",
+    ];
+    const delverCrown =
+      DELVERS.reduce((n, name) => n + baked.sheets[name].crown, 0) /
+      DELVERS.length;
+    // sheet → its §A.3 atlas group and §A.6 crown ratio band (to the delver mean)
+    const ROSTER: [string, string, number, number][] = [
+      ["creature_demon_base", "boss", 1.8, Infinity],
+    ];
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+
+    it.each(ROSTER)(
+      "%s packs into the %s group, never an existing one",
+      (name, group) => {
+        const sheet: RosterSheet = baked.sheets[name];
+        expect(sheet, name).toBeDefined();
+        expect(atlasGroup(sheet.atlas)).toBe(group);
+      },
+    );
+
+    it.each(ROSTER)("%s has 8-way idle, walk, attack and death", (name) => {
+      const sheet: RosterSheet = baked.sheets[name];
+      expect(sheet.directions).toBe(8);
+      expect(Object.keys(sheet.animations)).toEqual([
+        "idle",
+        "walk",
+        "attack",
+        "death",
+      ]);
+      for (const a of Object.values(sheet.animations)) {
+        expect(a.frames).toHaveLength(8);
+        expect(a.frames[0].length).toBeGreaterThan(1);
+      }
+      const a = sheet.animations;
+      expect([a.idle.loop, a.walk.loop, a.attack.loop, a.death.loop]).toEqual([
+        true,
+        true,
+        false,
+        false,
+      ]);
+    });
+
+    it.each(ROSTER)(
+      "%s is authored in tools/bake/page/characters/, under the project's licence",
+      (name) => {
+        const sheet: RosterSheet = baked.sheets[name];
+        expect(sheet.source).toMatch(
+          /^authored: tools\/bake\/page\/characters\/[a-z]+\.js#[a-zA-Z]+$/,
+        );
+        expect(sheet.licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it.each(ROSTER)(
+      "%s stands in its size tier (%s): crown between %s× and %s× the delver mean",
+      (name, _group, min, max) => {
+        const sheet: RosterSheet = baked.sheets[name];
+        expect(Number.isInteger(sheet.crown)).toBe(true);
+        const ratio = (sheet.crown as number) / delverCrown;
+        expect(ratio, `${name} crown ratio`).toBeGreaterThanOrEqual(min);
+        expect(ratio, `${name} crown ratio`).toBeLessThanOrEqual(max);
+      },
+    );
+
+    it("writes a per-animation atlas only on the boss's spilled animations, never on existing sheets", () => {
+      for (const [name, sheet] of Object.entries(baked.sheets) as [
+        string,
+        RosterSheet,
+      ][])
+        for (const [anim, a] of Object.entries(sheet.animations) as [
+          string,
+          { atlas?: string },
+        ][]) {
+          if (a.atlas === undefined) continue;
+          expect(
+            ROSTER.map(([n]) => n),
+            `${name}/${anim}`,
+          ).toContain(name);
+          expect(a.atlas, `${name}/${anim}`).not.toBe(sheet.atlas);
+          expect(atlasGroup(a.atlas)).toBe(atlasGroup(sheet.atlas));
+        }
+    });
+
+    it("gives the demon's attack its own timing, long enough for a 0.4 s roar first (§B.6)", () => {
+      const attack = (baked.sheets.creature_demon_base as RosterSheet)
+        .animations.attack;
+      // not the 7-frame default: the roar is held inside the clip, then strike and recovery
+      expect(attack.frames[0].length).not.toBe(7);
+      expect(attack.frames[0].length / attack.fps).toBeGreaterThan(0.4);
     });
   });
 });

@@ -33,6 +33,10 @@ export const HUMAN = {
   headR: 0.062,
   hunch: 0, // > 0 adds a hunch bone between spine and chest
   jaw: false, // adds a jaw bone under the head
+  // creature variants (FS-Q14EV §B.2); the defaults add no bones, so no existing build changes
+  digitigrade: 0, // > 0 adds a metatarsal bone of this length between shin and foot
+  wings: null, // { root, arm, fore, fingers: [[x,y,z]…], split }: a bat-wing chain per side
+  tail: null, // { root: [y, z], segments, length }: a tail chain off the hips
 };
 
 /**
@@ -78,7 +82,19 @@ export function createRig(H, overrides = {}) {
     bone(`hand${side}`, `foreArm${side}`, 0, -p.foreArm, 0);
     bone(`thigh${side}`, "hips", sx * 0.056 * p.hipW, -0.02, 0);
     bone(`shin${side}`, `thigh${side}`, 0, -p.thigh, 0);
-    bone(`foot${side}`, `shin${side}`, 0, -p.shin, 0);
+    if (p.digitigrade > 0) {
+      // reverse-jointed: the ankle rides high on a long metatarsal and the creature stands on
+      // its toes, so the leg reads as bent backward (clips set the zig-zag in the rest pose)
+      bone(`metatarsal${side}`, `shin${side}`, 0, -p.shin, 0);
+      bone(`foot${side}`, `metatarsal${side}`, 0, -p.digitigrade, 0);
+    } else bone(`foot${side}`, `shin${side}`, 0, -p.shin, 0);
+  }
+  if (p.wings) wingBones(p.wings, bone);
+  if (p.tail) {
+    // the chain hangs straight down in bind, like a cloak, so its springs swing back and sideways
+    const { root, segments, length } = p.tail;
+    bone("tail0", "hips", 0, root[0], root[1]);
+    for (let i = 1; i < segments; i++) bone(`tail${i}`, `tail${i - 1}`, 0, -length / segments, 0);
   }
 
   root.updateMatrixWorld(true);
@@ -114,6 +130,27 @@ export function createRig(H, overrides = {}) {
   rig.rest[`upperArmL`] = [0, 0, 0.1];
   rig.rest[`upperArmR`] = [0, 0, -0.1];
   return rig;
+}
+
+/**
+ * A bat wing per side, off the back of the chest: `wingArm` (upper arm) at `root`, `wingFore`
+ * (forearm) at the elbow, then one `wingFinger<i>` per entry of `fingers`, all at the wrist, each
+ * carrying a `wingTip<i>` `split` of the way along it (a spring bone, so the trailing half of the
+ * finger and its membrane lag). Offsets are the left wing's, in H, relative to the parent; the
+ * right wing mirrors x. The bind pose is the wing spread, so the membrane is skinned at full area.
+ */
+function wingBones(w, bone) {
+  for (const [side, sx] of [
+    ["L", 1],
+    ["R", -1],
+  ]) {
+    bone(`wingArm${side}`, "chest", sx * w.root[0], w.root[1], w.root[2]);
+    bone(`wingFore${side}`, `wingArm${side}`, sx * w.arm[0], w.arm[1], w.arm[2]);
+    w.fingers.forEach((f, i) => {
+      bone(`wingFinger${side}${i}`, `wingFore${side}`, sx * w.fore[0], w.fore[1], w.fore[2]);
+      bone(`wingTip${side}${i}`, `wingFinger${side}${i}`, sx * f[0] * w.split, f[1] * w.split, f[2] * w.split);
+    });
+  }
 }
 
 /** A bone's bind position in H units: [x, y, z]. */
@@ -189,6 +226,87 @@ export function skinTube(rig, cps, material, o = {}) {
  */
 export function rigidTube(H, cps, o = {}) {
   return tubeGeometry(H, cps.map((c) => ({ w: {}, ...c })), o, null);
+}
+
+/**
+ * A skinned membrane (a bat wing's skin) lofted across `ribs`: polylines that share their first
+ * point, the hub (a wrist). Each rib point: `p` [x, y, z] (H units, bind pose) and `w` bone
+ * weights. Consecutive ribs bound one panel, so the skin stretches and folds with the bones that
+ * carry its ribs and never tears. `o.scallop[k]` pulls panel k's free edge in toward the hub
+ * between its ribs (a bat wing's curved trailing edge), `o.cols` samples along a rib, `o.rows`
+ * across a panel, `o.bulge(u, v) → [x, y, z]` (H) billows it. Meant for a double-sided material.
+ */
+export function skinMembrane(rig, ribs, material, o = {}) {
+  rig.finalize();
+  const H = rig.H;
+  const cols = o.cols ?? 10;
+  const rows = o.rows ?? 5;
+  const sampled = ribs.map((r) => resampleRib(r, cols));
+  const at = (k, u) => {
+    const s = sampled[k];
+    const f = u * cols;
+    const i = Math.min(cols - 1, Math.floor(f));
+    const t = f - i;
+    return { p: [0, 1, 2].map((j) => s[i].p[j] + (s[i + 1].p[j] - s[i].p[j]) * t), w: blendWeights(s[i].w, s[i + 1].w, t) };
+  };
+  const panels = ribs.length - 1;
+  const lines = panels * rows + 1;
+  const pos = [];
+  const uv = [];
+  const skinIndex = [];
+  const skinWeight = [];
+  const uvScale = o.uv ?? 3;
+  for (let j = 0; j < lines; j++) {
+    const k = Math.min(panels - 1, Math.floor(j / rows));
+    const v = (j - k * rows) / rows;
+    const sc = (o.scallop?.[k] ?? 0) * Math.sin(Math.PI * v);
+    for (let i = 0; i <= cols; i++) {
+      const u = i / cols;
+      const uu = u * (1 - sc * u);
+      const a = at(k, uu);
+      const b = at(k + 1, uu);
+      const bulge = o.bulge ? o.bulge(u, v, k) : [0, 0, 0];
+      const p = [0, 1, 2].map((m) => (a.p[m] + (b.p[m] - a.p[m]) * v + bulge[m]) * H);
+      pos.push(p[0], p[1], p[2]);
+      uv.push(uu * uvScale, ((k + v) / panels) * uvScale);
+      const { idx, wt } = packWeights(rig, blendWeights(a.w, b.w, v));
+      skinIndex.push(...idx);
+      skinWeight.push(...wt);
+    }
+  }
+  const index = [];
+  for (let j = 0; j < lines - 1; j++)
+    for (let i = 0; i < cols; i++) {
+      const a = j * (cols + 1) + i;
+      const b = a + cols + 1;
+      index.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  geo.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(skinIndex, 4));
+  geo.setAttribute("skinWeight", new THREE.Float32BufferAttribute(skinWeight, 4));
+  geo.setIndex(index);
+  geo.computeVertexNormals();
+  return skinned(rig, geo, material, { ground: false, ...o });
+}
+
+/** A polyline of { p, w } resampled to `n` + 1 points evenly spaced along its length. */
+function resampleRib(rib, n) {
+  const len = [0];
+  for (let i = 1; i < rib.length; i++) len.push(len[i - 1] + Math.hypot(...[0, 1, 2].map((j) => rib[i].p[j] - rib[i - 1].p[j])));
+  const total = len[len.length - 1] || 1;
+  const out = [];
+  let seg = 0;
+  for (let i = 0; i <= n; i++) {
+    const d = (total * i) / n;
+    while (seg < rib.length - 2 && len[seg + 1] < d) seg++;
+    const t = Math.min(1, Math.max(0, (d - len[seg]) / (len[seg + 1] - len[seg] || 1)));
+    const a = rib[seg];
+    const b = rib[seg + 1];
+    out.push({ p: [0, 1, 2].map((j) => a.p[j] + (b.p[j] - a.p[j]) * t), w: blendWeights(a.w, b.w, t) });
+  }
+  return out;
 }
 
 function tubeGeometry(H, cps, o, pack) {

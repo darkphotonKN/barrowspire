@@ -58,4 +58,71 @@ describe("packAtlases", () => {
       expect(o.y + 197).toBeLessThanOrEqual(page.height);
     }
   });
+
+  describe("a sheet larger than one page (FS-Q14EV §B.7)", () => {
+    const anims = [
+      ["idle", 48],
+      ["walk", 64],
+      ["attack", 88],
+      ["death", 64],
+    ];
+    const boss = {
+      ...sheet("demon", "boss", 400, 330, 264),
+      animations: anims.map(([name, frameCount]) => ({ name, frameCount })),
+    };
+
+    it("places it one animation per block, each animation whole on one page, over as many pages as it needs", () => {
+      const pages = packAtlases([boss]);
+      expect(pages.length).toBeGreaterThan(1);
+      const pageOf = {};
+      for (const p of pages) {
+        expect(p.placements.demon).toBeUndefined();
+        const rects = [];
+        for (const [anim, spots] of Object.entries(p.parts.demon ?? {})) {
+          expect(pageOf[anim], anim).toBeUndefined();
+          pageOf[anim] = p.key;
+          expect(spots).toHaveLength(anims.find(([n]) => n === anim)[1]);
+          for (const o of spots) {
+            expect(o.x + 400).toBeLessThanOrEqual(p.width);
+            expect(o.y + 330).toBeLessThanOrEqual(p.height);
+            rects.push({ ...o, w: 400, h: 330 });
+          }
+        }
+        rects.forEach((a, i) => rects.slice(i + 1).forEach((b) => expect(overlaps(a, b)).toBe(false)));
+        expect(p.width).toBeLessThanOrEqual(MAX_SIZE);
+        expect(p.height).toBeLessThanOrEqual(MAX_SIZE);
+        expect(p.key.startsWith("boss-")).toBe(true);
+      }
+      expect(Object.keys(pageOf).sort()).toEqual(anims.map(([n]) => n).sort());
+    });
+
+    it("lets its animations share a page where they fit, rather than one page each", () => {
+      const pages = packAtlases([boss]);
+      expect(pages.length).toBeLessThan(anims.length);
+      expect(pages.some((p) => Object.keys(p.parts.demon ?? {}).length > 1)).toBe(true);
+    });
+
+    it("keeps a sheet that fits one page whole, with no parts, whether or not it lists its animations", () => {
+      const small = { ...sheet("ghoul", "creatures", 124, 125, 224), animations: [{ name: "idle", frameCount: 224 }] };
+      const [page] = packAtlases([small]);
+      expect(page.placements.ghoul).toHaveLength(224);
+      expect(page.parts).toEqual({});
+    });
+
+    it("leaves the other sheets of its group where they would be without it", () => {
+      const others = [sheet("a", "creatures", 216, 191, 224), sheet("b", "creatures", 124, 125, 224)];
+      const alone = packAtlases(others);
+      const withBoss = packAtlases([...others, { ...boss, group: "boss" }]);
+      expect(withBoss.filter((p) => p.group === "creatures")).toEqual(alone);
+    });
+
+    it("still throws for one animation too large for a page on its own", () => {
+      const huge = { ...sheet("titan", "boss", 900, 900, 40), animations: [{ name: "idle", frameCount: 40 }] };
+      expect(() => packAtlases([huge])).toThrow(/titan.*idle/);
+    });
+
+    it("packs it identically every time", () => {
+      expect(packAtlases([boss])).toEqual(packAtlases([boss]));
+    });
+  });
 });
