@@ -59,6 +59,11 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [ ] Accept the leading bid → FS-NXP1W
 - [ ] Buy out a listing → FS-NXP1W
 - [ ] Buyout price on listings → FS-9XKS6
+- [ ] Affixes and item level in item summaries → FS-4R9M9
+
+### Characters
+
+- [ ] Character level and experience read → FS-BDA7X
 
 ### Integration patterns
 

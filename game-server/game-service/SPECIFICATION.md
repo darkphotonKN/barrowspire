@@ -60,18 +60,41 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Interaction system for proximate openables
 - [x] Elimination system
 - [x] Rules system governing session end
-- [ ] Combat system
+- [ ] Combat system → FS-77AB6
 - [ ] Skill system
 
 ### Gameplay actions
 
 - [x] Server-authoritative player entities
 - [x] Continuous-velocity movement
-- [ ] Apply attack damage in a combat system rather than inline
+- [ ] Apply attack damage in a combat system rather than inline → FS-77AB6
 - [ ] Item pickup
 - [ ] Equip and unequip
 - [x] Container loot drops from the template pool → FS-none
 - [ ] Rarity-rolled loot with themed names and type-flavoured stats → FS-F8T3H
+- [ ] Co-op runs without player-versus-player damage → FS-77AB6
+- [ ] Equipped gear contributes to character stats → FS-4R9M9
+- [ ] Item levels on dropped loot → FS-4R9M9
+- [ ] Random affixes on rolled loot → FS-4R9M9
+- [ ] Fabled uniques → FS-4R9M9
+
+### Enemies
+
+- [ ] Monsters that wander, chase and attack → FS-77AB6
+- [ ] Monster levels scaled to the party → FS-77AB6
+- [ ] Elite monsters → FS-77AB6
+- [ ] Demon boss → FS-77AB6
+- [ ] Loot drops from slain monsters → FS-4R9M9
+
+### Progression
+
+- [ ] Experience from kills → FS-BDA7X
+- [ ] Character levels with class stat growth → FS-BDA7X
+- [ ] Level requirements on equipment → FS-BDA7X
+
+### Delve layout
+
+- [ ] Multi-floor delves → FS-F6F88
 
 ### Hub world
 
@@ -96,7 +119,7 @@ matchmaking); this service is the engine they feed. ✅
 
 - [ ] Durable accounts and profile
 - [ ] Persistent inventory across runs
-- [ ] Progression persistence
+- [ ] Progression persistence → FS-BDA7X
 
 ### Cross-context flows
 

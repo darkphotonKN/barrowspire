@@ -50,6 +50,13 @@ server state and sends intents. ✅
 - [x] Equip and unequip from the loadout
 - [x] Render authoritative server state each tick
 - [x] Reconnect into an in-progress run
+- [ ] Monsters with level and elite nameplates → FS-77AB6
+- [ ] Affixes and item level in item views → FS-4R9M9
+- [ ] Floor transitions → FS-F6F88
+
+### Character
+
+- [ ] Character level and experience display → FS-BDA7X
 
 ### Billing
 
@@ -80,6 +87,7 @@ server state and sends intents. ✅
 - [x] List an owned item for auction → FS-8EGFA
 - [x] Bid on a listing → FS-8EGFA
 - [x] Filter to my own listings → FS-8EGFA
+- [ ] Affixes and item level in listing detail → FS-4R9M9
 
 ### Deployment
 
