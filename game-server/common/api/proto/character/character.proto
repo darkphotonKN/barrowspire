@@ -1,29 +1,55 @@
 syntax = "proto3";
-package items;
+package character;
 import "google/protobuf/empty.proto";
-option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/items";
+import "google/protobuf/timestamp.proto";
+option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/character";
 
+// CharacterService owns characters per member (FS-BDA7X R1–R4). Every call
+// carries the member it acts for; another member's, a deleted, and an unknown
+// character are all NotFound.
 service CharacterService {
-  // general
-  rpc ListCharacters(google.protobuf.Empty) returns (Character);
-  rpc CreateCharacter(CreateCharacterRequest) returns (CreateCharacterResponse);
+  rpc CreateCharacter(CreateCharacterRequest) returns (Character);
+  rpc ListCharacters(ListCharactersRequest) returns (ListCharactersResponse);
+  rpc GetCharacter(GetCharacterRequest) returns (Character);
+  rpc DeleteCharacter(DeleteCharacterRequest) returns (google.protobuf.Empty);
 }
 
 message Character {
   string id = 1;
-}
-
-message GetCharacterRequest {
-  string id = 1;
+  string name = 2;
+  // warrior, mage or archer
+  string class = 3;
+  int32 level = 4;
+  // total experience, monotonic
+  int64 experience = 5;
+  // total experience at which level began
+  int64 level_floor = 6;
+  // total experience for the next level; unset at the cap
+  optional int64 next_level_at = 7;
+  google.protobuf.Timestamp created_at = 8;
 }
 
 message CreateCharacterRequest {
-  string name = 1; 
-  string class = 2;
+  string member_id = 1;
+  string name = 2;
+  string class = 3;
 }
 
-message CreateCharacterResponse {
-  string ID = 1;
-  string name = 2; 
-  string class = 3;
+message ListCharactersRequest {
+  string member_id = 1;
+}
+
+// Live characters only, oldest first.
+message ListCharactersResponse {
+  repeated Character characters = 1;
+}
+
+message GetCharacterRequest {
+  string member_id = 1;
+  string character_id = 2;
+}
+
+message DeleteCharacterRequest {
+  string member_id = 1;
+  string character_id = 2;
 }
