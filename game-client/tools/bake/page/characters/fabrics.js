@@ -277,8 +277,9 @@ export const GEAR = {
   skin: shade(mix("vellum", "oxbloodText", 0.45), 0.68),
   beard: mix("vellum", "slateLight", 0.2),
   bone: mix("vellum", "vellumDark", 0.35),
-  troll: mix(mix("arcaneDeep", "slate", 0.55), "barrowBrown", 0.3),
-  trollBelly: mix("arcaneDeep", "vellumFaint", 0.35),
+  // barrow mud and cold stone, kept off the demon boss's bog green so the two never read as kin
+  troll: mix(mix("slate", "barrowBrown", 0.5), "vellumDark", 0.12),
+  trollBelly: mix("barrowBrown", "vellumFaint", 0.3),
   rag: mix("barrowBrown", "slate", 0.45),
   fur: mix("barrowBrown", "barrowDeep", 0.55),
   // hub folk (FS-2325V §G): undyed and plant-dyed homespun, nothing heraldic
