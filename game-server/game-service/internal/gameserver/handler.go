@@ -78,11 +78,11 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 		return
 	}
 
-	// update conn to player mapping
-	s.MapConnToPlayer(conn, player)
-
-	// create msgChan
-	s.setupClientWriter(conn)
+	// The writer channel is filled with the reconnect replies before anyone
+	// else can see it, then published with the connection in one step. Nothing
+	// can close it under these sends, and nothing is sent on a channel a
+	// concurrent reconnect has already closed.
+	msgChan := make(chan interface{}, clientWriterBuffer)
 
 	if isReconnection && player.CurrentGameSessionId != uuid.Nil {
 		slog.Debug("Sending reconnection success message.",
@@ -90,24 +90,25 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 			"player_current_game_session_id", player.CurrentGameSessionId,
 		)
 
-		s.mu.RLock()
-		msgChan, exists := s.msgChan[conn]
-		s.mu.RUnlock()
-
-		if exists {
-			// send reconnected message
-			msgChan <- types.Message{
-				Action: "reconnected",
-				Payload: map[string]interface{}{
-					"message":    "Successfully reconnected",
-					"session_id": player.CurrentGameSessionId.String(),
-					"username":   player.Username,
-				},
-			}
-
-			s.announceCurrentWorld(msgChan, &player)
+		msgChan <- types.Message{
+			Action: "reconnected",
+			Payload: map[string]interface{}{
+				"message":    "Successfully reconnected",
+				"session_id": player.CurrentGameSessionId.String(),
+				"username":   player.Username,
+			},
 		}
+
+		s.announceCurrentWorld(msgChan, &player)
 	}
+
+	// the member keeps one live connection: any older one is unmapped, its
+	// writer stopped, and the socket closed
+	for _, superseded := range s.MapConnToPlayer(conn, player, msgChan) {
+		superseded.Close()
+	}
+
+	s.startClientWriter(conn, msgChan)
 
 	// handle connection messages
 	go s.ServeConnectedPlayer(conn)
@@ -244,9 +245,6 @@ func (s *Server) ServeConnectedPlayer(conn *websocket.Conn) {
 			continue
 		}
 
-		// handle concurrent writes back to clients
-		s.setupClientWriter(conn)
-
 		clientPackage := types.ClientPackage{Message: decodedMsg, Conn: conn}
 
 		slog.Debug("Sending clientPackage to message hub")
@@ -256,33 +254,18 @@ func (s *Server) ServeConnectedPlayer(conn *websocket.Conn) {
 	}
 }
 
+// clientWriterBuffer is how many messages a connection's writer channel holds
+// before further sends to it are dropped rather than block the sender.
+const clientWriterBuffer = 10
+
 /**
-* Handles adding clients and creating gameMsgChans for handling connection writes
-* back to the connected client.
+* Writes everything sent on msgChan back to the client, until the channel is
+* closed.
 *
 * NOTE: Gorilla Websocket package only allows ONE CONCURRENT WRITER
-* at a time, meaning its best to utilize unbuffered channels to prevent
-* a single client from locking the entire server, and prevent race conditions
-* where multiple writes to the same connection.
+* at a time, so every write to a connection goes through its one channel.
 **/
-func (s *Server) setupClientWriter(conn *websocket.Conn) {
-	isNew := s.createMsgChan(conn)
-	if !isNew {
-		return
-	}
-
-	// get the message channel for this connection
-	msgChan, err := s.getGameMsgChan(conn)
-
-	if err != nil {
-		slog.Error("Error getting message channel",
-			"error", err,
-		)
-		return
-	}
-
-	// concurrently listen to all incoming messages over the channel to write game actions
-	// back to the client
+func (s *Server) startClientWriter(conn *websocket.Conn, msgChan chan interface{}) {
 	go func() {
 		defer func() {
 			// ensure we recover from any panics in the writer goroutine
@@ -294,13 +277,11 @@ func (s *Server) setupClientWriter(conn *websocket.Conn) {
 		}()
 
 		for msg := range msgChan {
-			err := conn.WriteJSON(msg)
-
-			if err != nil {
+			if err := conn.WriteJSON(msg); err != nil {
 				slog.Error("Error writing to client, connection likely closed",
 					"error", err,
 				)
-				// channel will be closed by cleanUpClient, which will exit this goroutine
+				// the channel is closed when the connection is cleaned up
 				return
 			}
 		}
@@ -308,37 +289,17 @@ func (s *Server) setupClientWriter(conn *websocket.Conn) {
 }
 
 /**
-* Creates the unique game message channel for a specific connection for writing back
-* from server to client. Only creates if it doesn't already exist.
+* Stops a connection's writer: its channel is closed and forgotten in one step.
+*
+* Callers must hold the write lock. Every sender looks the channel up and sends
+* under the read lock, so a channel is closed exactly once and never while
+* anyone can still send on it.
 **/
-func (s *Server) createMsgChan(conn *websocket.Conn) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// if already exists, don't duplicate create
-	if _, exists := s.msgChan[conn]; exists {
-		return false
+func (s *Server) stopClientWriterLocked(conn *websocket.Conn) {
+	if ch, exists := s.msgChan[conn]; exists {
+		close(ch)
+		delete(s.msgChan, conn)
 	}
-
-	s.msgChan[conn] = make(chan interface{}, 10) // add buffer to avoid blocking
-	return true
-}
-
-/**
-* Gets the unique game message channel for a specific connection for writing back
-* from server to client, validating that it exists.
-**/
-func (s *Server) getGameMsgChan(conn *websocket.Conn) (chan interface{}, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	channel, exists := s.msgChan[conn]
-
-	if !exists {
-		return nil, fmt.Errorf("Game message channel for this connection does not exist.")
-	}
-
-	return channel, nil
 }
 
 func (s *Server) markPlayerAsReconnecting(player *types.Player) {
@@ -371,10 +332,7 @@ func (s *Server) cleanUpConnectionOnly(conn *websocket.Conn) {
 		"player_username", player.Username,
 	)
 
-	if ch, exists := s.msgChan[conn]; exists {
-		close(ch)
-		delete(s.msgChan, conn)
-	}
+	s.stopClientWriterLocked(conn)
 
 	// delete conn to player mapping (but don't delete player itself)
 	delete(s.connToPlayer, conn)
@@ -444,23 +402,30 @@ func (s *Server) cleanUpPlayerCompletely(playerID uuid.UUID) {
 /**
 * Cleans up all resources associated with a client connection.
 * Called when connection is closed or errors out.
+*
+* A connection the server no longer maps (one a reconnect replaced) has no
+* player behind it: it is only closed, and the member it used to carry is left
+* alone on the connection that replaced it.
 **/
 func (s *Server) cleanUpClient(conn *websocket.Conn) {
 	s.mu.Lock()
 
-	// 獲取玩家資訊
-	player, exists := s.connToPlayer[conn]
+	mapped, exists := s.connToPlayer[conn]
 
-	// connection never got a player, only its message channel to clean up
+	s.stopClientWriterLocked(conn)
+	delete(s.connToPlayer, conn)
+
+	// a copy taken under the lock: the worlds keep writing the record under it
+	var player types.Player
+	if exists {
+		player = *mapped
+		delete(s.players, player.ID)
+	}
+
+	s.mu.Unlock()
+
 	if !exists {
-		slog.Info("Cleaning up client with no player")
-
-		if ch, exists := s.msgChan[conn]; exists {
-			close(ch)
-			delete(s.msgChan, conn)
-		}
-
-		s.mu.Unlock()
+		slog.Info("Cleaning up a connection no player is mapped to")
 		conn.Close()
 		return
 	}
@@ -470,30 +435,17 @@ func (s *Server) cleanUpClient(conn *websocket.Conn) {
 	// 從 queue 中移除玩家
 	// queue removal is external and can retry for a while, so it never runs under
 	// the server lock; on its own goroutine so the disconnect isn't held up either.
-	// FS-K2HKP §Requirements 8.
+	// FS-K2HKP §Requirements 8. It gets its own copy: the session cleanup below
+	// may still change this one.
+	queued := player
 	go func(player *types.Player) {
 		if err := s.queue.PlayerRemoveQueue(s.ctx, player); err != nil {
 			slog.Error("failed to remove disconnected player from queue", "player_id", player.ID, "err", err)
 		}
-	}(player)
-
-	// 關閉並刪除 msgChan
-	if ch, exists := s.msgChan[conn]; exists {
-		close(ch)
-		delete(s.msgChan, conn)
-		slog.Info("Closed message channel for player", "username", player.Username)
-	}
-
-	// delete conn to player mapping
-	delete(s.connToPlayer, conn)
-
-	// delete player mapping
-	delete(s.players, player.ID)
-
-	s.mu.Unlock()
+	}(&queued)
 
 	// remove player from game session (call after releasing lock to avoid deadlock)
-	s.cleanUpPlayerFromSession(player)
+	s.cleanUpPlayerFromSession(&player)
 
 	// 關閉 WebSocket 連線
 	conn.Close()

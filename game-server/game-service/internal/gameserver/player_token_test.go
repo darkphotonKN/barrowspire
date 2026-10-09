@@ -53,7 +53,7 @@ func TestConnectPlayer_KeepsTheTokenAndAReconnectRefreshesIt(t *testing.T) {
 
 	// the reconnect's own connection copy, as the handler maps it
 	conn := &websocket.Conn{}
-	server.MapConnToPlayer(conn, player)
+	server.MapConnToPlayer(conn, player, make(chan interface{}, clientWriterBuffer))
 
 	again, reconnecting := server.connectPlayer(memberID, "Wren", "second-token")
 	assert.True(t, reconnecting)
@@ -78,7 +78,7 @@ func TestSeating_LoadsTheLoadoutWithTheHeldToken(t *testing.T) {
 	memberID := uuid.New()
 	connected, _ := server.connectPlayer(memberID, "Wren", "hub-token")
 	conn := &websocket.Conn{}
-	server.MapConnToPlayer(conn, connected)
+	server.MapConnToPlayer(conn, connected, make(chan interface{}, clientWriterBuffer))
 	player, ok := server.PlayerByID(memberID)
 	require.True(t, ok)
 	mage := characters.give(memberID, "mage", "Wren", 3, 100)

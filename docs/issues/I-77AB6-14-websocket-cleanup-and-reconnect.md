@@ -1,6 +1,6 @@
 ---
 id: I-77AB6-14
-status: open
+status: done
 implements: FS-77AB6
 blocked_by: []
 labels: [ready-for-agent]
@@ -17,7 +17,13 @@ Implements FS-77AB6 run/session lifecycle safety (as I-77AB6-10) and FS-QG1HR D1
 Also: the new handler tests (connect_handler_test.go) keep client connections open (`heldConns`) and never close the httptest server to avoid #1 — remove that workaround once fixed.
 
 ## Acceptance Criteria
-- [ ] Failing tests first: closing a mapped connection, a connection-reset read error, an unmapped connection cleanup, and overlapping reconnects under -race — each fails/hangs/panics before the fix.
-- [ ] After the fix: no deadlock (bounded test time), no panic, the 30 s reconnection window behaviour unchanged, msgChan closed exactly once, the record keeps one live connection.
-- [ ] connect_handler_test.go closes its connections and server normally.
-- [ ] `go test -race -count=20` on the gameserver connection tests clean; suite green apart from known pre-existing failures.
+- [x] Failing tests first: closing a mapped connection, a connection-reset read error, an unmapped connection cleanup, and overlapping reconnects under -race — each fails/hangs/panics before the fix.
+- [x] After the fix: no deadlock (bounded test time), no panic, the 30 s reconnection window behaviour unchanged, msgChan closed exactly once, the record keeps one live connection.
+- [x] connect_handler_test.go closes its connections and server normally.
+- [x] `go test -race -count=20` on the gameserver connection tests clean; suite green apart from known pre-existing failures.
+
+## Resolution
+- **Deadlock** (handler.go `cleanUpClient`, old line 458): the mapped branch returned holding `s.mu`. Now the lock covers only the map edits (writer stopped, mapping and record deleted) and is released on every path; queue and world cleanup run after it, from a copy of the record.
+- **Panic** (old handler.go:461): an unmapped connection (one a reconnect replaced) is now only closed. The member who now has another connection is left alone.
+- **Send on closed channel** (server.go `MapConnToPlayer` old :468 closing, handler.go old :99/:141 sending): the handler fills a private writer channel with the "reconnected" / world-entered replies, then `MapConnToPlayer(conn, player, msgChan)` publishes connection and channel in one locked step, stops and unmaps every older connection of the member, and returns them for the handler to close. Writer channels are closed only under the write lock together with their map entry (`stopClientWriterLocked`), and `PushMessageToChannelQueue`/`PushMessageToConn` send (non-blocking) under the read lock, so a channel is closed exactly once and never while it can be sent on. The read loop no longer re-creates writers.
+- Regression tests: `connection_lifecycle_test.go`; `connect_handler_test.go` closes its connections and server normally.

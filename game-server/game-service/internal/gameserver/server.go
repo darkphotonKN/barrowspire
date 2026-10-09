@@ -450,31 +450,36 @@ func (s *Server) GetServerChan() chan types.ClientPackage {
 }
 
 /**
-* maps a connected client to its player information
+* Publishes conn as the member's one live connection, written to through
+* msgChan, and returns the connections it supersedes.
+*
+* Mapping the connection and registering its writer happen in one step, as
+* does unmapping a superseded connection and stopping its writer, so
+* overlapping reconnects cannot leave a member with two live connections or a
+* sender holding a closed channel. The caller closes the superseded sockets.
 **/
-func (s *Server) MapConnToPlayer(conn *websocket.Conn, player types.Player) {
+func (s *Server) MapConnToPlayer(conn *websocket.Conn, player types.Player, msgChan chan interface{}) []*websocket.Conn {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// check if there's an old connection with same player ID, if so clean it up
+	var superseded []*websocket.Conn
+
 	for oldConn, existingPlayer := range s.connToPlayer {
 		if existingPlayer.ID == player.ID && oldConn != conn {
 			slog.Info("Player reconnected, cleaning up old connection",
 				"player_id", player.ID,
 				"player_username", player.Username,
 			)
-			// close old msgChan
-			if ch, exists := s.msgChan[oldConn]; exists {
-				close(ch)
-				delete(s.msgChan, oldConn)
-			}
-			// remove old conn to player mapping
+			s.stopClientWriterLocked(oldConn)
 			delete(s.connToPlayer, oldConn)
-			break
+			superseded = append(superseded, oldConn)
 		}
 	}
 
 	s.connToPlayer[conn] = &player
+	s.msgChan[conn] = msgChan
+
+	return superseded
 }
 
 /**
@@ -637,10 +642,13 @@ func (s *Server) PushMessageToChannelQueue(playerID uuid.UUID, msg interface{}) 
 		return fmt.Errorf("player %s not found", playerID)
 	}
 
+	// The send happens under the read lock: a writer channel is only closed
+	// under the write lock, so one found here is still open. The send never
+	// blocks, so the lock is never held waiting on a slow client.
 	s.mu.RLock()
-	ch, ok := s.msgChan[conn]
-	s.mu.RUnlock()
+	defer s.mu.RUnlock()
 
+	ch, ok := s.msgChan[conn]
 	if !ok {
 		return fmt.Errorf("message channel not found for player %s", playerID)
 	}
@@ -663,10 +671,11 @@ func (s *Server) PushMessageToConn(conn *websocket.Conn, msg interface{}) error 
 		slog.Warn("nil connection, skipping send")
 		return nil
 	}
+	// sent under the read lock, as PushMessageToChannelQueue does
 	s.mu.RLock()
-	ch, ok := s.msgChan[conn]
-	s.mu.RUnlock()
+	defer s.mu.RUnlock()
 
+	ch, ok := s.msgChan[conn]
 	if !ok {
 		slog.Warn("message channel not found for connection")
 		return nil
