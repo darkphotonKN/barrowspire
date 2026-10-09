@@ -942,7 +942,21 @@ func (s *service) publishItemCreatedEvent(ctx context.Context, userId, itemName,
 	}
 }
 
-func (h *service) GetLoadout(ctx context.Context, req *GetLoadoutRequest) (*Loadout, error) {
+// ensureOwner refuses a caller acting on another member's stash or loadout with
+// ErrForbidden; every such service method checks it before any repository
+// access (FS-4R9M9 R53).
+func ensureOwner(caller, member uuid.UUID, action string) error {
+	if caller != member {
+		return fmt.Errorf("%s of member %s by %s: %w", action, member, caller, commonconstants.ErrForbidden)
+	}
+	return nil
+}
+
+// GetLoadout returns the loadout req.MemberId wears, and only to that member.
+func (h *service) GetLoadout(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*Loadout, error) {
+	if err := ensureOwner(caller, req.MemberId, "loadout read"); err != nil {
+		return nil, err
+	}
 	return h.repo.GetLoadout(ctx, req)
 }
 
@@ -950,8 +964,8 @@ func (h *service) GetLoadout(ctx context.Context, req *GetLoadoutRequest) (*Load
 // member: a caller asking for anyone else's loadout gets ErrForbidden before any
 // read (FS-4R9M9 R53).
 func (h *service) GetLoadoutWithItems(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*LoadoutWithItems, error) {
-	if caller != req.MemberId {
-		return nil, fmt.Errorf("loadout of member %s read by %s: %w", req.MemberId, caller, commonconstants.ErrForbidden)
+	if err := ensureOwner(caller, req.MemberId, "loadout read"); err != nil {
+		return nil, err
 	}
 
 	loadout, err := h.repo.GetLoadout(ctx, req)
@@ -986,11 +1000,19 @@ func (h *service) GetLoadoutWithItems(ctx context.Context, caller uuid.UUID, req
 	return result, nil
 }
 
-func (h *service) ListItemInstances(ctx context.Context, req *ListItemInstancesRequest) ([]*ItemInstance, error) {
+// ListItemInstances returns the stash req.MemberId owns, and only to that member.
+func (h *service) ListItemInstances(ctx context.Context, caller uuid.UUID, req *ListItemInstancesRequest) ([]*ItemInstance, error) {
+	if err := ensureOwner(caller, req.MemberId, "stash read"); err != nil {
+		return nil, err
+	}
 	return h.repo.ListItemInstances(ctx, req)
 }
 
-func (h *service) UpdateLoadout(ctx context.Context, req *UpdateLoadoutRequest) error {
+// UpdateLoadout changes a slot of req.MemberId's loadout, and only for that member.
+func (h *service) UpdateLoadout(ctx context.Context, caller uuid.UUID, req *UpdateLoadoutRequest) error {
+	if err := ensureOwner(caller, req.MemberId, "loadout update"); err != nil {
+		return err
+	}
 	return h.repo.UpsertLoadoutSlot(ctx, req)
 }
 

@@ -1,6 +1,6 @@
 ---
 id: I-4R9M9-24
-status: open
+status: done
 implements: FS-4R9M9
 blocked_by: [I-4R9M9-22]
 labels: [ready-for-agent]
@@ -16,6 +16,6 @@ Implements FS-4R9M9 §Requirements 53 under the user decision of 2026-10-10 (ite
 The gateway already fills MemberId from the caller's token (api-gateway item/typed.go ~579-584, 618-624) — confirm its calls still pass.
 
 ## Acceptance Criteria
-- [ ] Per RPC: own → OK; foreign member → PermissionDenied with zero repo reads/writes; no identity → Unauthenticated.
-- [ ] A refused attempt is logged once.
-- [ ] items-service `go test ./...` green; api-gateway item tests green.
+- [x] Per RPC: own → OK; foreign member → PermissionDenied with zero repo reads/writes; no identity → Unauthenticated.
+- [x] A refused attempt is logged once.
+- [x] items-service `go test ./...` green; api-gateway item tests green.

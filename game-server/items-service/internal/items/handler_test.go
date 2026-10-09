@@ -19,7 +19,7 @@ type fakeListService struct {
 	items []*ItemInstance
 }
 
-func (f *fakeListService) ListItemInstances(context.Context, *ListItemInstancesRequest) ([]*ItemInstance, error) {
+func (f *fakeListService) ListItemInstances(context.Context, uuid.UUID, *ListItemInstancesRequest) ([]*ItemInstance, error) {
 	return f.items, nil
 }
 
@@ -40,7 +40,9 @@ func TestHandler_ListItemInstances_CarriesStatus(t *testing.T) {
 			}}}
 			h := NewHandler(svc, nil)
 
-			res, err := h.ListItemInstances(context.Background(), &pb.ListItemInstancesRequest{MemberId: uuid.NewString()})
+			owner := uuid.New()
+			ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: owner})
+			res, err := h.ListItemInstances(ctx, &pb.ListItemInstancesRequest{MemberId: owner.String()})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -75,7 +77,9 @@ func TestHandler_ItemInstances_CarryRequiredLevel(t *testing.T) {
 
 	t.Run("ListItemInstances", func(t *testing.T) {
 		h := NewHandler(&fakeListService{items: []*ItemInstance{instance(7)}}, nil)
-		res, err := h.ListItemInstances(context.Background(), &pb.ListItemInstancesRequest{MemberId: uuid.NewString()})
+		owner := uuid.New()
+		ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: owner})
+		res, err := h.ListItemInstances(ctx, &pb.ListItemInstancesRequest{MemberId: owner.String()})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

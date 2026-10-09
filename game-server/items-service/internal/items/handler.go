@@ -83,10 +83,10 @@ type Service interface {
 	CreateCompleteArmor(ctx context.Context, req *CreateCompleteArmorRequest) (*ArmorWithTemplate, error)
 	CreateCompleteConsumable(ctx context.Context, req *CreateCompleteConsumableRequest) (*ConsumableWithTemplate, error)
 
-	GetLoadout(ctx context.Context, req *GetLoadoutRequest) (*Loadout, error)
+	GetLoadout(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*Loadout, error)
 	GetLoadoutWithItems(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*LoadoutWithItems, error)
-	ListItemInstances(ctx context.Context, req *ListItemInstancesRequest) ([]*ItemInstance, error)
-	UpdateLoadout(ctx context.Context, req *UpdateLoadoutRequest) error
+	ListItemInstances(ctx context.Context, caller uuid.UUID, req *ListItemInstancesRequest) ([]*ItemInstance, error)
+	UpdateLoadout(ctx context.Context, caller uuid.UUID, req *UpdateLoadoutRequest) error
 
 	// marketplace
 	ReserveItem(ctx context.Context, seller, itemID uuid.UUID, startPrice int64, buyoutPrice *int64, endsAt time.Time) (*ItemInstance, error)
@@ -846,7 +846,22 @@ func (h *Handler) ListItemRarities(ctx context.Context, req *emptypb.Empty) (*pb
 	}, nil
 }
 
+// refuseForeignMember turns the service's ownership refusal into PermissionDenied
+// and logs the attempt once; any other error passes through for the caller to
+// map (FS-4R9M9 R53).
+func refuseForeignMember(err error, method string, caller uuid.UUID, member string) error {
+	if !errors.Is(err, commonconstants.ErrForbidden) {
+		return nil
+	}
+	slog.Warn("refused access to another member's items", "method", method, "caller", caller, "requested_member", member)
+	return status.Error(codes.PermissionDenied, "permission denied")
+}
+
 func (h *Handler) GetLoadout(ctx context.Context, req *pb.GetLoadoutRequest) (*pb.GetLoadoutResponse, error) {
+	caller, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
 
 	MemberId, err := uuid.Parse(req.MemberId)
 	if err != nil {
@@ -856,7 +871,10 @@ func (h *Handler) GetLoadout(ctx context.Context, req *pb.GetLoadoutRequest) (*p
 		MemberId: MemberId,
 	}
 
-	loadout, err := h.service.GetLoadout(ctx, payload)
+	loadout, err := h.service.GetLoadout(ctx, caller, payload)
+	if denied := refuseForeignMember(err, "GetLoadout", caller, req.MemberId); denied != nil {
+		return nil, denied
+	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get loadout: %v", err)
 	}
@@ -895,8 +913,8 @@ func (h *Handler) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWit
 	}
 
 	loadout, err := h.service.GetLoadoutWithItems(ctx, caller, payload)
-	if errors.Is(err, commonconstants.ErrForbidden) {
-		return nil, status.Error(codes.PermissionDenied, "permission denied")
+	if denied := refuseForeignMember(err, "GetLoadoutWithItems", caller, req.MemberId); denied != nil {
+		return nil, denied
 	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get loadout with items: %v", err)
@@ -917,6 +935,11 @@ func (h *Handler) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWit
 }
 
 func (h *Handler) ListItemInstances(ctx context.Context, req *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error) {
+	caller, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
 	memberId, err := uuid.Parse(req.MemberId)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid member_id: %v", err)
@@ -926,7 +949,10 @@ func (h *Handler) ListItemInstances(ctx context.Context, req *pb.ListItemInstanc
 		MemberId: memberId,
 	}
 
-	items, err := h.service.ListItemInstances(ctx, payload)
+	items, err := h.service.ListItemInstances(ctx, caller, payload)
+	if denied := refuseForeignMember(err, "ListItemInstances", caller, req.MemberId); denied != nil {
+		return nil, denied
+	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list item instances: %v", err)
 	}
@@ -1000,6 +1026,11 @@ func itemInstanceToProto(item *ItemInstance) *pb.ItemInstance {
 }
 
 func (h *Handler) UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutRequest) (*pb.UpdateLoadoutResponse, error) {
+	caller, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
 	memberId, err := uuid.Parse(req.MemberId)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid member_id: %v", err)
@@ -1020,7 +1051,10 @@ func (h *Handler) UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutReques
 		ItemInstanceId: itemInstanceId,
 	}
 
-	err = h.service.UpdateLoadout(ctx, payload)
+	err = h.service.UpdateLoadout(ctx, caller, payload)
+	if denied := refuseForeignMember(err, "UpdateLoadout", caller, req.MemberId); denied != nil {
+		return nil, denied
+	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to update loadout: %v", err)
 	}
