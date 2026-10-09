@@ -5,7 +5,10 @@ import (
 	"testing"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // fakeListService serves ListItemInstances only; any other call panics on the
@@ -119,5 +122,59 @@ func TestItemInstanceToProto_CarriesLevelAndAffixes(t *testing.T) {
 		if got.Affixes[i].Stat != want[i].Stat || got.Affixes[i].Tier != want[i].Tier || got.Affixes[i].Value != want[i].Value {
 			t.Errorf("Affixes[%d] = %v, want %v", i, got.Affixes[i], want[i])
 		}
+	}
+}
+
+// loadoutRepo serves one member's loadout and its worn weapon, and counts reads
+// so a refused caller can be shown to reach no data at all.
+type loadoutRepo struct {
+	Repository
+	owner  uuid.UUID
+	weapon *ItemInstance
+	reads  int
+}
+
+func (r *loadoutRepo) GetLoadout(_ context.Context, req *GetLoadoutRequest) (*Loadout, error) {
+	r.reads++
+	return &Loadout{MemberId: &r.owner, WeaponId: &r.weapon.ID}, nil
+}
+
+func (r *loadoutRepo) GetItemInstanceByID(context.Context, uuid.UUID) (*ItemInstance, error) {
+	r.reads++
+	return r.weapon, nil
+}
+
+// FS-4R9M9 R53: a loadout goes only to the member who wears it.
+func TestHandler_GetLoadoutWithItems_OnlyTheOwnerReadsIt(t *testing.T) {
+	owner := uuid.New()
+	tests := []struct {
+		name     string
+		ctx      context.Context
+		wantCode codes.Code
+	}{
+		{"own loadout is returned", commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: owner}), codes.OK},
+		{"another member's loadout is refused", commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: uuid.New()}), codes.PermissionDenied},
+		{"no caller is unauthenticated", context.Background(), codes.Unauthenticated},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &loadoutRepo{owner: owner, weapon: &ItemInstance{ID: uuid.New(), OwnerMemberID: owner, ItemType: "weapon", Name: "Blade"}}
+			h := NewHandler(NewService(repo, nil, nil, nil), nil)
+
+			res, err := h.GetLoadoutWithItems(tt.ctx, &pb.GetLoadoutWithItemsRequest{MemberId: owner.String()})
+
+			if got := status.Code(err); got != tt.wantCode {
+				t.Fatalf("code = %v, want %v (err %v)", got, tt.wantCode, err)
+			}
+			if tt.wantCode != codes.OK {
+				if repo.reads != 0 {
+					t.Errorf("refused caller reached the repository %d times", repo.reads)
+				}
+				return
+			}
+			if res.Weapon == nil || res.Weapon.Name != "Blade" {
+				t.Errorf("Weapon = %v, want the owner's Blade", res.Weapon)
+			}
+		})
 	}
 }
