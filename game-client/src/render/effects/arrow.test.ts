@@ -81,6 +81,8 @@ describe("archer arrow (FS-KYPQ9 §F)", () => {
     it("should fly the baked arrow turned to its heading, with a pale air-streak and no light", () => {
       expect(ARROW_FLIGHT.body).toBe("fx_arrow");
       expect(ARROW_FLIGHT.turns).toBe(true);
+      // flies at the bow's height, where the release snapped, not out of the feet
+      expect(ARROW_FLIGHT.lift).toBe(BOW_LIFT);
       const trail: EffectEntry = EFFECTS[ARROW_FLIGHT.trail];
       expect(trail.timing).toMatchObject({ kind: "stream", lifeMs: 180 });
       expect(
@@ -132,8 +134,9 @@ describe("archer arrow (FS-KYPQ9 §F)", () => {
         BARROW_HEX.barrowBrown,
         BARROW_HEX.vellumDark,
       ]);
+      // at the arrow's flight height, where it was last drawn
       const s = worldToScreen(at.x, at.y);
-      expect(puff.calls.setPosition).toEqual([s.x, s.y]);
+      expect(puff.calls.setPosition).toEqual([s.x, s.y - BOW_LIFT]);
       expect(fake.timers.map((t) => t.delay)).toEqual([300]);
     });
 

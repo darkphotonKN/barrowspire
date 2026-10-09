@@ -6,9 +6,11 @@
  *   few fibre motes. Signal, unchanged: the archer's own send of `CastSkill {skill_id: "arrow"}`
  *   or `{skill_id: "triple_arrow"}`, one per send.
  * - Flight (§F.2): the baked `fx_arrow` (with a faint hairline streak behind the nock) turned
- *   to its heading, with pale air-streak motes left behind it that die with it
- *   ({@link ARROW_FLIGHT}, flown by `ProjectileFlights`).
- * - Impact (§F.3): a little dust and splinters dropping to the ground.
+ *   to its heading, flying at bow height ({@link BOW_LIFT}) above its footprint, with pale
+ *   air-streak motes left behind it that die with it ({@link ARROW_FLIGHT}, flown by
+ *   `ProjectileFlights`).
+ * - Impact (§F.3): a little dust and splinters where the arrow was last drawn, at the same bow
+ *   height, dropping away. One height from release to impact, so nothing jumps.
  */
 
 import type { Point } from "@/render/iso/projection";
@@ -19,7 +21,7 @@ import type { EffectName } from "./table";
 /** Screen px along the aim from the delver to the bow, as the old release sat. */
 const BOW_REACH = 16;
 
-/** Screen px above the delver's feet to the bow hand, where the string snaps. */
+/** Screen px above the delver's feet to the bow hand: the string snaps and the arrow flies here. */
 export const BOW_LIFT = 38;
 
 /** Plays the release from the delver at `from` aiming at `toward`, both world positions. */
@@ -38,13 +40,13 @@ export function playArrowRelease(
   });
 }
 
-/** Plays the impact at the arrow's last world position. */
+/** Plays the impact at the arrow's last world position, at the height it flew. */
 export function playArrowImpact(
   fx: Pick<EffectsRuntime, "play">,
   owner: OwnerKey,
   at: Point,
 ): void {
-  fx.play(owner, "arrowImpact", at);
+  fx.play(owner, "arrowImpact", at, { lift: BOW_LIFT });
 }
 
 /** An arrow in flight: the baked arrow turned to its heading, and its air-streak. */
@@ -52,6 +54,7 @@ export const ARROW_FLIGHT: ProjectileKind = {
   body: "fx_arrow",
   trail: "arrowTrail",
   turns: true,
+  lift: BOW_LIFT,
   impact: playArrowImpact,
 };
 
