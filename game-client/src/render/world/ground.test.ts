@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { WORLD_PX_PER_TILE } from "@/render/iso";
 import {
+  OUTDOOR_GROUND,
+  TOWER_GROUND,
   planDecals,
   planFloors,
   planGround,
+  planGroundLayer,
   tileHash,
   transitionEdge,
   worldSeed,
@@ -184,5 +187,104 @@ describe("planDecals", () => {
       houses: [],
     });
     expect(decals.every((d) => d.sheet.startsWith("decal_"))).toBe(true);
+  });
+});
+
+describe("planGroundLayer", () => {
+  const houses = [
+    { id: "a", x: 100, y: 60, width: 300, height: 200 },
+    { id: "b", x: 600, y: 400, width: 400, height: 300 },
+  ];
+  const world = { width: 36 * T, height: 24 * T, kind: "run" as const, houses };
+  const inRoom = (p: { x: number; y: number }) =>
+    houses.some(
+      (h) =>
+        p.x >= h.x - T / 2 &&
+        p.x <= h.x + h.width + T / 2 &&
+        p.y >= h.y &&
+        p.y <= h.y + h.height,
+    );
+
+  it("should paint the outdoor ground exactly as before: dirt, then tufts and pebbles, then flagstone", () => {
+    const seed = worldSeed("run");
+    expect(planGroundLayer({ ...world, look: OUTDOOR_GROUND })).toEqual([
+      ...planGround(world),
+      ...planDecals(world),
+      ...planFloors(houses, seed),
+    ]);
+  });
+
+  describe("the tower interior (FS-8RBQY §B.1)", () => {
+    const tower = planGroundLayer({ ...world, look: TOWER_GROUND });
+
+    it("should lay no grass and no decal of any kind", () => {
+      expect(tower.some((p) => p.sheet.includes("grass"))).toBe(false);
+      expect(tower.some((p) => p.sheet.startsWith("decal_"))).toBe(false);
+    });
+
+    it("should lay the halls in worn flags, one per world tile", () => {
+      const halls = tower.filter((p) => p.sheet === "ground_flags");
+      expect(halls).toHaveLength(36 * 24);
+      expect(new Set(halls.map((p) => p.animation))).toEqual(
+        new Set(["variants"]),
+      );
+      expect(new Set(halls.map((p) => p.index % 4)).size).toBe(4);
+    });
+
+    it("should plank every room floor, over the halls, on the same grid the flagstone used", () => {
+      const planks = tower.filter((p) => p.sheet === "ground_planks");
+      const flagstone = planFloors(houses, worldSeed("run"));
+      expect(planks.map((p) => p.at)).toEqual(flagstone.map((p) => p.at));
+      expect(planks.every((p) => inRoom(p.at))).toBe(true);
+      // drawn after the halls, so a room's planks lie over the flags beneath
+      expect(
+        tower.findIndex((p) => p.sheet === "ground_planks"),
+      ).toBeGreaterThan(tower.findLastIndex((p) => p.sheet === "ground_flags"));
+    });
+
+    it("should be the same plan on every call", () => {
+      expect(planGroundLayer({ ...world, look: TOWER_GROUND })).toEqual(tower);
+    });
+  });
+
+  describe("barrow earth breaking through the flags (FS-8RBQY §C.2, the lower band)", () => {
+    const look = {
+      ...TOWER_GROUND,
+      patches: { sheet: "ground_dirt", edge: "ground_flags_dirt", count: 7 },
+    };
+    const lower = planGroundLayer({ ...world, look, houses: [] });
+    const at = (p: { at: { x: number; y: number } }) =>
+      `${Math.floor(p.at.x / T)},${Math.floor(p.at.y / T)}`;
+    const dirt = new Set(lower.filter((p) => p.sheet === "ground_dirt").map(at));
+
+    it("should lay a few patches of earth among the flags, still one tile per world tile", () => {
+      expect(lower).toHaveLength(36 * 24);
+      expect(dirt.size).toBeGreaterThan(10);
+      expect(dirt.size).toBeLessThan((36 * 24) / 4);
+    });
+
+    it("should edge each patch with the flags/dirt transition, facing the earth", () => {
+      const edges = lower.filter((p) => p.sheet === "ground_flags_dirt");
+      expect(edges.length).toBeGreaterThan(0);
+      for (const e of edges) {
+        const [tx, ty] = at(e).split(",").map(Number);
+        const near = [-1, 0, 1].some((dx) =>
+          [-1, 0, 1].some((dy) => dirt.has(`${tx + dx},${ty + dy}`)),
+        );
+        expect(near).toBe(true);
+        expect(["n", "e", "s", "w", "ne", "se", "sw", "nw"]).toContain(e.animation);
+      }
+    });
+
+    it("should lay the same patches for the same seed, and others for another", () => {
+      expect(planGroundLayer({ ...world, look, houses: [] })).toEqual(lower);
+      expect(planGroundLayer({ ...world, look, houses: [], seed: 99 })).not.toEqual(lower);
+    });
+  });
+
+  it("should seed the ground from the floor when one is given, and from the world kind when not", () => {
+    const base = planGroundLayer({ ...world, look: TOWER_GROUND });
+    expect(planGroundLayer({ ...world, look: TOWER_GROUND, seed: worldSeed("run") })).toEqual(base);
+    expect(planGroundLayer({ ...world, look: TOWER_GROUND, seed: 5 })).not.toEqual(base);
   });
 });

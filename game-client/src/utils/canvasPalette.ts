@@ -59,6 +59,9 @@ export function rgba(color: number, alpha: number): string {
 
 // ── The canvas palette ────────────────────────────────────────────────────
 
+/** Slate warmed a little toward barrow earth: grey stone, neither cold nor brown. */
+const FALLBACK_STONE = mix(BARROW_HEX.slate, BARROW_HEX.barrowDeep, 0.3);
+
 export const palette = {
   // -- Ground and structure. Barrow earth and cold stone; the world is
   //    lit only where a torch reaches it.
@@ -72,6 +75,12 @@ export const palette = {
   wallTop: BARROW_HEX.slateLight,
   mapBackground: BARROW_HEX.charcoal,
   mapEdge: BARROW_HEX.pitch,
+  /**
+   * The run floor without its baked art (FS-8RBQY §B.8): neutral dark stone, grey rather than
+   * warm or cold, its joints a step darker. Never the old metal floor.
+   */
+  fallbackStone: FALLBACK_STONE,
+  fallbackStoneJoint: shade(FALLBACK_STONE, 0.4),
 
   // -- Interactables. Amber, per the gameplay accent rule: the player can
   //    do something with each of these. Repetition here is correct.

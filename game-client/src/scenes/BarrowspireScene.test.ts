@@ -43,6 +43,12 @@ const { ArtLibrary } = await import("@/render/art/library");
 const { MonsterRoster } = await import("@/render/creatures");
 const { CANVAS_FONT, palette, toCss } = await import("@/utils/canvasPalette");
 const { ActionType } = await import("@/assets/types/client");
+const { WORLD_THEMES, TOWER_BANDS } = await import("@/render/world/worldTheme");
+const { worldSeed } = await import("@/render/world/ground");
+const await_iso = await import("@/render/iso");
+const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
+const { readFileSync } = await import("node:fs");
+const { join } = await import("node:path");
 type GameState = import("@/types/gameState").ClientGameState;
 
 /** The run state a started scene has built, as the reconnect path finds it. */
@@ -435,6 +441,7 @@ function sceneOnStage() {
   const logger = { warn: () => {} };
   const lights: unknown[] = [];
   const painted: { id: string }[][] = [];
+  const grounds: unknown[] = [];
   run.add = stage.add;
   run.physics = {
     add: {
@@ -466,14 +473,19 @@ function sceneOnStage() {
     clear: () => lights.splice(0),
     clearTransient: () => {},
   };
-  run.groundLayer = { paint: (houses: { id: string }[]) => painted.push(houses) };
+  run.groundLayer = {
+    paint: (houses: { id: string }[], floor?: unknown) => {
+      painted.push(houses);
+      if (floor) grounds.push(floor);
+    },
+  };
   // the satchel a coffer opens into, closed: the state path only asks what it shows
   Object.assign(run, {
     containerView: { entityId: null, isOpen: false, open: vi.fn(), close: vi.fn(), setItems: vi.fn() },
   });
   const texts = () =>
     stage.made.filter((m) => m.kind === "text").map((m) => ({ content: m.args[2], style: m.args[3] as { fontFamily?: string } }));
-  return { run, stage, lights, painted, texts, cursor };
+  return { run, stage, lights, painted, grounds, texts, cursor };
 }
 
 describe("BarrowspireScene floor change (FS-F6F88 req 32, 33)", () => {
@@ -910,7 +922,7 @@ describe("BarrowspireScene burning trails (FS-4R9M9 req 36, 56, 61)", () => {
     expect(live("t1")).toHaveLength(0);
   });
 
-  describe("under a roof (guideline \"Lighting\")", () => {
+  describe("under a roof (guideline \"Lighting\"), in the exterior world theme", () => {
     // house h1 stands at (100, 100), 200 × 160: this trail burns inside it
     const indoors = (entity_id: string) => ({ ...trail(entity_id), from: at(150, 150), to: at(250, 150) });
     /** Whether the trail's glow is painted now: filled since it was last cleared. */
@@ -919,14 +931,21 @@ describe("BarrowspireScene burning trails (FS-4R9M9 req 36, 56, 61)", () => {
       return glow.calls.lastIndexOf("fillPoints") > glow.calls.lastIndexOf("clear");
     };
 
+    /** A run drawn in the exterior world theme, the only one with roofs. */
+    const outdoors = () => {
+      const stage = onStage();
+      Object.assign(stage.run, { worldLook: WORLD_THEMES.exterior });
+      return stage;
+    };
+
     it("should not glow through the roof of a house the delver is outside of", () => {
-      const { run, live } = onStage();
+      const { run, live } = outdoors();
       run.handleGameStateUpdate(withTrails([indoors("t1")]));
       expect(glowing(live, "t1")).toBe(false);
     });
 
     it("should glow once the delver is inside that house, its roof off", () => {
-      const { run, live } = onStage();
+      const { run, live } = outdoors();
       run.handleGameStateUpdate(withTrails([indoors("t1")]));
       const scene = run as unknown as { buildings: unknown[]; currentBuilding: unknown };
       scene.currentBuilding = scene.buildings[0];
@@ -935,8 +954,14 @@ describe("BarrowspireScene burning trails (FS-4R9M9 req 36, 56, 61)", () => {
     });
 
     it("should glow in the open, under no roof", () => {
-      const { run, live } = onStage();
+      const { run, live } = outdoors();
       run.handleGameStateUpdate(withTrails([trail("t1")]));
+      expect(glowing(live, "t1")).toBe(true);
+    });
+
+    it("should glow in a tower room, which has no roof to hide it (FS-8RBQY §B.3)", () => {
+      const { run, live } = onStage();
+      run.handleGameStateUpdate(withTrails([indoors("t1")]));
       expect(glowing(live, "t1")).toBe(true);
     });
   });
@@ -950,3 +975,294 @@ describe("BarrowspireScene burning trails (FS-4R9M9 req 36, 56, 61)", () => {
     expect(marks("t1")).toHaveLength(4);
   });
 });
+
+describe("BarrowspireScene world theme (FS-8RBQY §A, §B)", () => {
+  const manifest = JSON.parse(
+    readFileSync(join(__dirname, "../../public/art/manifest.json"), "utf8"),
+  );
+  interface ThemedRun extends FloorRun {
+    worldLook: unknown;
+    perimeter?: Made[];
+    buildings: { roof: unknown[] }[];
+    currentBuilding: unknown;
+    player?: unknown;
+    playerPos?: { x: number; y: number };
+    events: { emit(event: string): boolean };
+    checkBuildingStatus(): void;
+    createUI(): void;
+  }
+  /** A run on stage in a world theme, with the baked art or with none. */
+  function themed(theme: "exterior" | "tower", baked = false) {
+    const stage = sceneOnStage();
+    const run = stage.run as unknown as ThemedRun;
+    run.worldLook = WORLD_THEMES[theme];
+    if (baked) run.art = new ArtLibrary(manifest, { warn: () => {} });
+    return { ...stage, run };
+  }
+  const slits = (lights: unknown[]) =>
+    lights.filter((l) => (l as { radius: number }).radius === 120).length;
+
+  it("should ring a tower floor with its outer wall, and stamp each arrow slit's cold light", () => {
+    const { run, lights } = themed("tower", true);
+    run.handleGameStateUpdate(floorState(1));
+    run.handleGameStateUpdate(floorState(1));
+    // 36 + 24 tiles along each pair of sides, a pier at each corner: built once, not per broadcast
+    expect(run.perimeter).toHaveLength(2 * 36 + 2 * 24 + 4);
+    expect(slits(lights)).toBe(10);
+  });
+
+  it("should take the outer wall and its lights down on a climb, and raise the next floor's", () => {
+    const { run, lights } = themed("tower", true);
+    run.handleGameStateUpdate(floorState(1));
+    const floorOne = run.perimeter!;
+
+    run.handleGameStateUpdate(floorState(2));
+
+    expect(floorOne.every((m) => m.destroyed)).toBe(true);
+    expect(run.perimeter).not.toBe(floorOne);
+    expect(run.perimeter!.every((m) => !m.destroyed)).toBe(true);
+    // the old floor's slit lights went with the light-map's fixed sources; the new floor's are in
+    expect(slits(lights)).toBe(10);
+  });
+
+  it("should leave the outer wall out without its art, keeping the floor playable (§B.8)", () => {
+    const { run } = themed("tower");
+    run.handleGameStateUpdate(floorState(1));
+    expect(run.perimeter).toEqual([]);
+  });
+
+  it("should build no outer wall in the exterior world theme", () => {
+    const { run, lights } = themed("exterior", true);
+    run.handleGameStateUpdate(floorState(1));
+    expect(run.perimeter).toBeUndefined();
+    expect(slits(lights)).toBe(0);
+  });
+
+  it("should roof no tower room, baked or placeholder (R1)", () => {
+    for (const baked of [false, true]) {
+      const { run } = themed("tower", baked);
+      run.handleGameStateUpdate(floorState(1));
+      expect(run.buildings).toHaveLength(1);
+      expect(run.buildings[0].roof).toEqual([]);
+    }
+  });
+
+  it("should still roof an exterior house", () => {
+    const { run } = themed("exterior");
+    run.handleGameStateUpdate(floorState(1));
+    expect(run.buildings[0].roof).toHaveLength(1);
+  });
+
+  it("should never take a delver in a tower room for indoors: no mask, no change", () => {
+    const { run } = themed("tower");
+    run.handleGameStateUpdate(floorState(1));
+    Object.assign(run, { player: {}, playerPos: { x: 200, y: 180 } });
+    run.checkBuildingStatus();
+    expect(run.currentBuilding).toBeNull();
+  });
+
+  it("should still mask the world outside an exterior house the delver enters", () => {
+    const { run } = themed("exterior");
+    run.handleGameStateUpdate(floorState(1));
+    const mask = { setVisible: vi.fn(), clear: vi.fn(), fillStyle: vi.fn(), fillPoints: vi.fn() };
+    Object.assign(run, { player: {}, playerPos: { x: 200, y: 180 }, indoorMask: mask });
+    run.checkBuildingStatus();
+    expect(run.currentBuilding).toBe(run.buildings[0]);
+    expect(mask.setVisible).toHaveBeenCalledWith(true);
+  });
+
+  it.each(["tower", "exterior"] as const)(
+    "should lay the %s floor without art as plain stone: no metal tiles, windows, stars or hull lights",
+    (theme) => {
+      const { run, stage } = themed(theme);
+      (run as unknown as { createMapBackground(): void }).createMapBackground();
+      expect(stage.made.some((m) => m.kind === "tileSprite")).toBe(false);
+      expect(stage.made.filter((m) => m.kind === "graphics")).toHaveLength(1);
+      expect((run.tweens as { add: ReturnType<typeof vi.fn> }).add).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["tower", "X: 200 Y: 180"],
+    ["exterior", "X: 200 Y: 180 | Outdoor"],
+  ] as const)("should show the %s world theme's position line as %j", (theme, line) => {
+    const { run, texts } = themed(theme);
+    run.createUI();
+    Object.assign(run, { player: {}, playerPos: { x: 200, y: 180 } });
+    run.events.emit("update");
+    expect(texts().some((t) => t.content === line)).toBe(true);
+  });
+});
+
+describe("BarrowspireScene floor bands, run dressing, light budget and stairs (FS-8RBQY §C, §E)", () => {
+  const manifest = JSON.parse(
+    readFileSync(join(__dirname, "../../public/art/manifest.json"), "utf8"),
+  );
+  const { worldToScreen } = await_iso;
+  interface BandRun extends FloorRun {
+    worldLook: unknown;
+    dressing?: (Made & { calls: string[] })[];
+    stairs: { drawn: Map<string, { sprite: Made }> };
+    occluders: { size: number; items: { sprite: unknown }[] };
+  }
+  function banded(theme: "exterior" | "tower", baked = true) {
+    const stage = sceneOnStage();
+    const run = stage.run as unknown as BandRun;
+    run.worldLook = WORLD_THEMES[theme];
+    if (baked) run.art = new ArtLibrary(manifest, { warn: () => {} });
+    return { ...stage, run };
+  }
+  /** Sprites drawn from a sheet: their frame names start with it. */
+  const drawnFrom = (made: Made[], sheet: string) =>
+    made.filter((m) => m.kind === "sprite" && String(m.args[3] ?? "").startsWith(`${sheet}/`));
+  const DRESSING = ["rubble", "bone_pile", "broken_crate", "roots", "chains", "brazier"];
+  /** The stairs' pool: the manifest's radius, a touch brighter than a prop light. */
+  const stairsPool = (lights: unknown[]) =>
+    lights.filter((l) => {
+      const { radius, intensity } = l as { radius: number; intensity: number };
+      return radius === manifest.sheets.stairs_spiral.light.radius && intensity > 0.7;
+    });
+
+  it("should strew a tower floor with dressing once, never interactive and never in physics (§C.4)", () => {
+    const { run, stage } = banded("tower");
+    run.handleGameStateUpdate(floorState(1));
+    const dressing = run.dressing!;
+    expect(dressing.length).toBeGreaterThan(0);
+    expect(dressing.length).toBeLessThanOrEqual(16);
+    run.handleGameStateUpdate(floorState(1));
+    expect(run.dressing).toBe(dressing);
+    const strewn = DRESSING.flatMap((sheet) => drawnFrom(stage.made, sheet));
+    expect(strewn).toHaveLength(dressing.length);
+    for (const m of strewn) {
+      expect(m.calls).not.toContain("setInteractive");
+      expect(Object.keys(m.handlers)).toEqual([]);
+    }
+    const bodies = stage.made.filter((m) => m.kind === "staticGroup").flatMap((g) => g.children);
+    expect(bodies.some((b) => strewn.includes(b))).toBe(false);
+  });
+
+  it("should take a floor's dressing down on a climb, and strew the next band's", () => {
+    const { run } = banded("tower");
+    run.handleGameStateUpdate(floorState(1));
+    const floorOne = run.dressing!;
+    run.handleGameStateUpdate(floorState(2));
+    expect(floorOne.every((m) => m.destroyed)).toBe(true);
+    expect(run.dressing).not.toBe(floorOne);
+    expect(run.dressing!.length).toBeGreaterThan(0);
+  });
+
+  it("should strew nothing in the exterior world theme, nor without art (§A.3, §B.8)", () => {
+    const exterior = banded("exterior");
+    exterior.run.handleGameStateUpdate(floorState(1));
+    expect(exterior.run.dressing ?? []).toEqual([]);
+    const bare = banded("tower", false);
+    bare.run.handleGameStateUpdate(floorState(1));
+    expect(bare.run.dressing ?? []).toEqual([]);
+  });
+
+  it("should paint each floor's own ground: built directly on a reconnect, rebuilt on a climb (§C.7)", () => {
+    const reconnect = banded("tower");
+    reconnect.run.handleGameStateUpdate(floorState(3));
+    expect((reconnect.grounds.at(-1) as { look: { hall: string } }).look.hall).toBe("ground_dressed");
+
+    const climb = banded("tower");
+    climb.run.handleGameStateUpdate(floorState(1));
+    const one = climb.grounds.at(-1) as { look: { patches?: unknown }; seed: number };
+    expect(one.look.patches).toBeDefined();
+    climb.run.handleGameStateUpdate(floorState(2));
+    const two = climb.grounds.at(-1) as { look: { patches?: unknown }; seed: number };
+    expect(two.look.patches).toBeUndefined();
+    expect(two.seed).not.toBe(one.seed);
+  });
+
+  it("should paint the exterior's ground as it always was, on every floor", () => {
+    const { run, grounds } = banded("exterior");
+    run.handleGameStateUpdate(floorState(1));
+    run.handleGameStateUpdate(floorState(2));
+    for (const g of grounds as { look: unknown; seed: number }[])
+      expect(g).toEqual({ look: WORLD_THEMES.exterior.ground, seed: worldSeed("run") });
+  });
+
+  it.each(["tower", "exterior"] as const)(
+    "should draw the %s floor's stairs as the baked spiral at the server position, an occluder in its own pool (§E)",
+    (theme) => {
+      const { run, stage, lights } = banded(theme);
+      run.handleGameStateUpdate(floorState(1));
+      const spiral = drawnFrom(stage.made, "stairs_spiral");
+      expect(spiral).toHaveLength(1);
+      const s = worldToScreen(500, 700);
+      expect(spiral[0].args.slice(0, 2)).toEqual([s.x, s.y]);
+      const sprite = run.stairs.drawn.get("st1")!.sprite;
+      expect(run.occluders.items.some((o) => o.sprite === sprite)).toBe(true);
+      expect(stairsPool(lights)).toHaveLength(1);
+      // stamped once per floor build, not per broadcast
+      run.handleGameStateUpdate(floorState(1));
+      expect(stairsPool(lights)).toHaveLength(1);
+    },
+  );
+
+  it("should fall back to the stairs_up placeholder without art, and draw no stairs on the top floor", () => {
+    const { run, stage, lights } = banded("tower", false);
+    run.handleGameStateUpdate(floorState(1));
+    expect(stage.made.filter((m) => m.kind === "sprite" && m.args[2] === "stairs_up")).toHaveLength(1);
+    expect(stairsPool(lights)).toHaveLength(0);
+    const top = banded("tower");
+    top.run.handleGameStateUpdate(floorState(3));
+    expect(drawnFrom(top.stage.made, "stairs_spiral")).toHaveLength(0);
+    expect(stairsPool(top.lights)).toHaveLength(0);
+  });
+
+  it("should stamp no more than 24 fixed lights on a crowded floor, dropping slits first and keeping the stairs pool (§C.6)", () => {
+    const { run, lights } = banded("tower");
+    const sconces = { ...TOWER_BANDS.lower.walls, back: [[100, "sconce"]] };
+    run.worldLook = {
+      ...WORLD_THEMES.tower,
+      bands: { ...TOWER_BANDS, lower: { ...TOWER_BANDS.lower, walls: sconces } },
+    };
+    const state = floorState(1);
+    // a long north wall of sconces: 30 pieces, more than the budget holds with the slits
+    state.walls = [
+      ...state.walls,
+      { house_id: "big", entity_id: "bn", position: at(100, 400), width: 1200, height: 10 },
+      { house_id: "big", entity_id: "bs", position: at(100, 900), width: 1200, height: 10 },
+    ];
+    run.handleGameStateUpdate(state);
+    expect(lights).toHaveLength(24);
+    expect(stairsPool(lights)).toHaveLength(1);
+    expect(lights.filter((l) => (l as { radius: number }).radius === 120)).toHaveLength(0);
+  });
+
+  /** Faint amber pools on the things a delver uses, as `interactablePool` makes them. */
+  const pools = (lights: unknown[]) =>
+    lights.filter((l) => (l as { radius: number }).radius === INTERACTABLE_RADIUS);
+
+  it("should stand the chest and the switch in faint amber pools on a tower floor, once per floor", () => {
+    const { run, lights } = banded("tower");
+    run.handleGameStateUpdate(floorState(1));
+    run.handleGameStateUpdate(floorState(1));
+    const chest = worldToScreen(150, 150);
+    const lever = worldToScreen(400, 600);
+    expect(pools(lights)).toHaveLength(2);
+    expect(pools(lights).map((l) => [(l as { x: number }).x, (l as { y: number }).y])).toEqual(
+      expect.arrayContaining([
+        [chest.x, chest.y - 12],
+        [lever.x, lever.y - 12],
+      ]),
+    );
+  });
+
+  it("should light no pool under an exterior chest, a drop pile, or anything without art", () => {
+    const exterior = banded("exterior");
+    exterior.run.handleGameStateUpdate(floorState(1));
+    expect(pools(exterior.lights)).toHaveLength(0);
+    const bare = banded("tower", false);
+    bare.run.handleGameStateUpdate(floorState(1));
+    expect(pools(bare.lights)).toHaveLength(0);
+    const pile = banded("tower");
+    const state = floorState(1);
+    state.containers = [{ ...state.containers[0], kind: "drop_pile", items: [{} as never] }];
+    pile.run.handleGameStateUpdate(state);
+    expect(pools(pile.lights)).toHaveLength(1);
+  });
+});
+

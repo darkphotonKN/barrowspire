@@ -160,6 +160,30 @@ describe("CharacterMotion", () => {
     expect(motion.step({ x: 0, y: 0 }, 1800, FRAME, false).animation).toBe("idle");
   });
 
+  it("should hold the attack pose for a longer window when asked, even while the body is drawn moving fast", () => {
+    // a charge: the server carries the body for longer than the swing lasts
+    const motion = new CharacterMotion("se", 500);
+    motion.step({ x: 0, y: 0 }, 1000, FRAME, false);
+    motion.attack(1000, { x: 40, y: 0 }, 800);
+    const pos = { x: 0, y: 0 };
+    let choice = motion.step(pos, 1000, FRAME, false);
+    for (let t = 1000 + FRAME; t < 1799; t += FRAME) {
+      pos.x += (450 * FRAME) / 1000;
+      choice = motion.step(pos, t, FRAME, false);
+      expect(choice.animation, `at ${t.toFixed(0)} ms`).toBe("attack");
+    }
+    expect(choice.facing).toBe("e");
+    pos.x += (450 * FRAME) / 1000;
+    expect(motion.step(pos, 1800, FRAME, false).animation).toBe("walk");
+  });
+
+  it("should keep the clip's length when the hold asked for is shorter", () => {
+    const motion = new CharacterMotion("se", 500);
+    motion.attack(1000, { x: 0, y: -40 }, 100);
+    expect(motion.step({ x: 0, y: 0 }, 1499, FRAME, false).animation).toBe("attack");
+    expect(motion.step({ x: 0, y: 0 }, 1500, FRAME, false).animation).toBe("idle");
+  });
+
   it("should die facing where it fell, whatever it was doing", () => {
     const motion = new CharacterMotion();
     walk(motion, { x: 200, y: 0 }, 300);
@@ -248,6 +272,20 @@ describe("CharacterAnimator", () => {
     anim.show(sprite, swing);
     expect(sprite.plays).toHaveLength(2);
     expect(sprite.plays[1]).toEqual({ key: "char_knight_base/attack/0", startFrame: 0 });
+  });
+
+  it("should hold a charge's pose past the clip on its last frame, without replaying the swing", () => {
+    const sprite = fakeSprite();
+    const anim = new CharacterAnimator(art(), "warrior");
+    anim.attack(0, { x: 40, y: 0 }, 700);
+    const swing = anim.step({ x: 0, y: 0 }, 0, FRAME, false);
+    anim.show(sprite, swing);
+    sprite.at(6);
+    const held = anim.step({ x: 0, y: 0 }, 650, FRAME, false);
+    expect(held.animation).toBe("attack");
+    anim.show(sprite, held);
+    expect(sprite.plays).toHaveLength(1);
+    expect(anim.step({ x: 0, y: 0 }, 700, FRAME, false).animation).toBe("idle");
   });
 
   it("should time the attack window by the sheet's attack clip", () => {

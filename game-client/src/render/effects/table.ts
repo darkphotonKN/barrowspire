@@ -186,20 +186,27 @@ export const EFFECTS = {
     },
   },
   /**
-   * A faint drag of dust kicked back along the charge line: the motes leave the start at
-   * spread speeds, so over its life they string out along a short segment behind it.
+   * Faint dust kicked up at the warrior's feet for as long as the server carries the charge
+   * (a stream that follows the drawn body). Each mote barely drifts back along the heading and
+   * is left where the feet were, so the dust lies along the path actually run, then settles.
    */
   chargeTrail: {
-    timing: { kind: "oneShot", durationMs: 350 },
+    timing: {
+      kind: "stream",
+      lifeMs: 350,
+      intervalMs: 40,
+      maxAlive: 10,
+      onRelease: "fade",
+    },
     ease: "Sine.easeIn",
     particles: {
       texture: ["fx_dust"],
       tint: ["vellumDark", "vellumFaint"],
-      count: 8,
+      count: 1,
       scale: { from: 1.1, to: 1.4 },
       alpha: { from: 0.65, to: 0 },
-      speed: { from: 20, to: 140 },
-      angle: { from: -6, to: 6 },
+      speed: { from: 6, to: 30 },
+      angle: { from: -18, to: 18 },
       accel: noAccel,
     },
   },

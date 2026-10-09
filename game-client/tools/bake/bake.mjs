@@ -2,8 +2,8 @@
 // The build-time bake (ADR-0020 §5, FS-2325V §B): renders the 3D models in tools/bake/page/
 // through the isometric camera and writes public/art/<group>-<n>.png atlases + manifest.json.
 //
-//   npm run bake              bake and write public/art/, plus the character review contact
-//                             sheets in tools/bake/review/ (gitignored; lib/contact.mjs)
+//   npm run bake              bake and write public/art/, plus the review contact sheets of
+//                             the cast and the tower interior in tools/bake/review/ (gitignored; lib/contact.mjs)
 //   npm run bake -- --check   bake, write nothing, exit 1 if the output would change
 //
 // Characters and creatures (FS-2325V §E, ADR-0021) are authored in page/characters/: one
@@ -57,6 +57,9 @@ async function launch() {
   );
 }
 
+/** What the review contact sheets show: the cast, then the tower interior (FS-8RBQY §D.7). */
+const reviewSheets = (sheets) => [...sheets.filter((x) => x.directions === 8), ...sheets.filter((x) => x.group === "tower")];
+
 function readJson(file) {
   try {
     return JSON.parse(readFileSync(file, "utf8"));
@@ -92,10 +95,10 @@ async function bakeAll() {
     }
     if (errors.length) throw new Error(`bake: page errors\n  ${errors.join("\n  ")}`);
     // review labels for the contact sheet, rendered while the page is up
-    const cast = sheets.filter((x) => x.directions === 8);
+    const review = reviewSheets(sheets);
     const labels = new Map();
-    if (!CHECK && cast.length)
-      for (const l of await page.evaluate((t) => window.bakeLabels(t), labelTexts(cast, init.facings)))
+    if (!CHECK && review.length)
+      for (const l of await page.evaluate((t) => window.bakeLabels(t), labelTexts(review, init.facings)))
         labels.set(l.text, { w: l.w, h: l.h, px: Buffer.from(l.rgba, "base64") });
     return { tile: init.tile, facings: init.facings, sheets, labels };
   } finally {
@@ -175,7 +178,7 @@ function assemble({ tile, facings, sheets }) {
       }
     }
     // the ground's measured colour, which lighting's readability floor is judged against
-    const mean = s.group === "ground" ? meanColour(frameList(s).map((b64) => Buffer.from(b64, "base64"))) : undefined;
+    const mean = s.group === "ground" || s.name.startsWith("ground_") ? meanColour(frameList(s).map((b64) => Buffer.from(b64, "base64"))) : undefined;
     // a standing sheet's head height over every facing's idle, where name plates and HP bars sit
     const crown = s.animations.idle
       ? crownHeight(
@@ -240,9 +243,9 @@ async function main() {
   for (const a of Object.values(manifest.atlases)) console.log(`  ${a.image.padEnd(20)} ${a.width}×${a.height}  ${a.sha256.slice(0, 12)}`);
 
   if (!CHECK) {
-    const cast = baked.sheets.filter((x) => x.directions === 8);
-    if (cast.length) {
-      const files = writeReview({ sheets: cast, facings: manifest.facings, labels: baked.labels, manifest, theme: (await loadTheme()).BARROW });
+    const review = reviewSheets(baked.sheets);
+    if (review.length) {
+      const files = writeReview({ sheets: review, facings: manifest.facings, labels: baked.labels, manifest, theme: (await loadTheme()).BARROW });
       console.log(`bake: review contact sheets (not committed):\n  ${files.join("\n  ")}`);
     }
   }

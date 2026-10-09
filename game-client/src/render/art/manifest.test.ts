@@ -572,6 +572,184 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     });
   });
 
+  describe("the tower interior sheets (FS-8RBQY §D, §E.1–§E.3)", () => {
+    type Sheet = {
+      atlas: string;
+      frameWidth: number;
+      frameHeight: number;
+      anchor: { x: number; y: number };
+      directions: number;
+      animations: Record<string, { frames: unknown[][] }>;
+      light?: {
+        offset: { x: number; y: number };
+        radius: number;
+        color: string;
+        flicker: number;
+      };
+      mean?: { r: number; g: number; b: number };
+      source: string;
+      licence: string;
+    };
+    const sheet = (name: string): Sheet => baked.sheets[name];
+    const frameCounts = (s: Sheet) =>
+      Object.fromEntries(
+        Object.entries(s.animations).map(([a, v]) => [a, v.frames[0].length]),
+      );
+    const EDGES = ["n", "e", "s", "w", "ne", "se", "sw", "nw"];
+    const AXES = ["x", "y"];
+
+    const GROUND = ["ground_flags", "ground_planks", "ground_dressed"];
+    const PARTITION_BACK = [
+      "plain",
+      "pillar",
+      "sconce",
+      "banner",
+      "cobweb",
+    ].flatMap((v) => AXES.map((a) => `tower_wall_back_${v}_${a}`));
+    const PARTITION_FRONT = ["plain", "pillar"].flatMap((v) =>
+      AXES.map((a) => `tower_wall_front_${v}_${a}`),
+    );
+    const PARTITION_POSTS = ["tower_post_back", "tower_post_front"];
+    const PERIMETER = [
+      ...["plain", "slit"].flatMap((v) =>
+        AXES.map((a) => `tower_perimeter_back_${v}_${a}`),
+      ),
+      ...AXES.map((a) => `tower_perimeter_front_plain_${a}`),
+      "tower_perimeter_post_back",
+      "tower_perimeter_post_front",
+    ];
+    const DRESSING = ["rubble", "bone_pile", "broken_crate", "roots", "chains"];
+    const TOWER = [
+      ...GROUND,
+      "ground_flags_dirt",
+      ...PARTITION_BACK,
+      ...PARTITION_FRONT,
+      ...PARTITION_POSTS,
+      ...PERIMETER,
+      ...DRESSING,
+      "stairs_spiral",
+    ];
+    const LIT = [
+      ...AXES.map((a) => `tower_wall_back_sconce_${a}`),
+      ...AXES.map((a) => `tower_perimeter_back_slit_${a}`),
+      "stairs_spiral",
+    ];
+
+    it.each(TOWER)(
+      "%s is baked into the tower group, authored in tools/bake/page/",
+      (name) => {
+        const s = sheet(name);
+        expect(s, name).toBeDefined();
+        expect(s.atlas, name).toMatch(/^tower-\d+$/);
+        expect(s.directions).toBe(1);
+        expect(s.source).toMatch(
+          /^authored: tools\/bake\/page\/[a-z/]+\.js#[a-zA-Z(), _]+$/,
+        );
+        expect(s.licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it("fits every tower sheet on one 4096² page", () => {
+      const pages = Object.keys(baked.atlases).filter((k) =>
+        k.startsWith("tower-"),
+      );
+      expect(pages).toEqual(["tower-0"]);
+      expect(baked.atlases["tower-0"].width).toBeLessThanOrEqual(4096);
+      expect(baked.atlases["tower-0"].height).toBeLessThanOrEqual(4096);
+    });
+
+    it.each(GROUND)(
+      "%s is a 64x32 ground tile with 4 variants and a measured mean",
+      (name) => {
+        const s = sheet(name);
+        expect([s.frameWidth, s.frameHeight]).toEqual([64, 32]);
+        expect(s.anchor).toEqual({ x: 0.5, y: 0.5 });
+        expect(frameCounts(s)).toEqual({ variants: 4 });
+        expect(s.mean).toEqual({
+          r: expect.any(Number),
+          g: expect.any(Number),
+          b: expect.any(Number),
+        });
+      },
+    );
+
+    it("bakes the flags/dirt transition with the 8 edges of the grass/dirt one", () => {
+      const s = sheet("ground_flags_dirt");
+      expect(Object.keys(sheet("ground_grass_dirt").animations)).toEqual(EDGES);
+      expect(frameCounts(s)).toEqual(
+        Object.fromEntries(EDGES.map((e) => [e, 1])),
+      );
+      expect([s.frameWidth, s.frameHeight]).toEqual([64, 32]);
+    });
+
+    it.each([
+      ...PARTITION_BACK.map((n) => [n, `wall_back_plain_${n.slice(-1)}`]),
+      ...PARTITION_FRONT.map((n) => [n, `wall_front_plain_${n.slice(-1)}`]),
+      ["tower_post_back", "post_back"],
+      ["tower_post_front", "post_front"],
+    ])(
+      "%s shares the frame and anchor of %s, so cutWall geometry is unchanged",
+      (name, today) => {
+        const s = sheet(name);
+        const t = sheet(today);
+        expect([s.frameWidth, s.frameHeight, s.anchor]).toEqual([
+          t.frameWidth,
+          t.frameHeight,
+          t.anchor,
+        ]);
+      },
+    );
+
+    it("stands the perimeter taller than a partition: px above the anchor", () => {
+      const above = (s: Sheet) => s.anchor.y * s.frameHeight;
+      for (const a of AXES) {
+        expect(above(sheet(`tower_perimeter_back_plain_${a}`))).toBeGreaterThan(
+          above(sheet(`tower_wall_back_plain_${a}`)),
+        );
+        expect(above(sheet(`tower_perimeter_back_slit_${a}`))).toBeGreaterThan(
+          above(sheet(`tower_wall_back_plain_${a}`)),
+        );
+      }
+      expect(above(sheet("tower_perimeter_post_back"))).toBeGreaterThan(
+        above(sheet("tower_post_back")),
+      );
+    });
+
+    it("declares a light on the sconces, the arrow slits and the stairs, and on nothing else", () => {
+      for (const name of TOWER)
+        if (LIT.includes(name)) {
+          const light = sheet(name).light;
+          expect(light, name).toBeDefined();
+          expect(Object.keys(BARROW), name).toContain(light!.color);
+        } else expect(sheet(name).light, name).toBeUndefined();
+    });
+
+    it("lights a sconce warm, an arrow slit faint and cold, and the stairs in a dim warm pool", () => {
+      const warm = ["amber", "amberBright", "ember"];
+      for (const a of AXES) {
+        const sconce = sheet(`tower_wall_back_sconce_${a}`).light!;
+        const slit = sheet(`tower_perimeter_back_slit_${a}`).light!;
+        expect(warm).toContain(sconce.color);
+        expect(["necrotic", "slateLight"]).toContain(slit.color);
+        expect(slit.radius).toBeLessThan(sconce.radius);
+        expect(slit.flicker).toBeLessThan(sconce.flicker);
+      }
+      const stairs = sheet("stairs_spiral").light!;
+      expect(warm).toContain(stairs.color);
+      expect(stairs.radius).toBeLessThan(
+        sheet("tower_wall_back_sconce_x").light!.radius,
+      );
+    });
+
+    it("mirrors a y-axis light across the anchor, as the wall torches do", () => {
+      for (const v of ["tower_wall_back_sconce", "tower_perimeter_back_slit"]) {
+        const x = sheet(`${v}_x`).light!.offset;
+        const y = sheet(`${v}_y`).light!.offset;
+        expect(y).toEqual({ x: -x.x, y: x.y });
+      }
+    });
+  });
+
   describe("characters and creatures (FS-2325V §E)", () => {
     const CAST = [
       "char_knight_base",

@@ -55,6 +55,7 @@ import {
   raise,
   screenToWorld,
   standAt,
+  WORLD_PX_PER_TILE,
   worldDepth,
   worldToScreen,
   type Facing8,
@@ -64,12 +65,12 @@ import {
 import { artSprite, preloadArt, registerArt } from "@/render/art/phaser";
 import { PLACEHOLDER_TEXTURE, type ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
-import { AMBIENT, HALO_DEPTH, LightMap } from "@/render/lighting";
+import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
 import { cursorCss, cursorSource } from "@/render/cursors";
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { HitFeedback } from "@/render/effects/hit";
 import { playSlash } from "@/render/effects/slash";
-import { playCharge } from "@/render/effects/charge";
+import { CHARGE_MS, playCharge, type Charge } from "@/render/effects/charge";
 import { DeathDust } from "@/render/effects/death";
 import { playEscape } from "@/render/effects/escape";
 import { EntranceMarker } from "@/render/effects/entrance";
@@ -81,10 +82,22 @@ import { MonsterRoster, type MonsterTargeting } from "@/render/creatures";
 import {
   BAKE,
   DROP_PILE,
+  FIXED_LIGHT_CAP,
   GroundLayer,
   Occluders,
+  RUN_WORLD_THEME,
+  WORLD_THEMES,
+  addDressing,
+  addPerimeter,
+  addProp,
   addRoof,
   addWalls,
+  budgetLights,
+  dressingStatics,
+  floorLook,
+  interactablePool,
+  planDressing,
+  tileHash,
   footprintHitArea,
   housesFrom,
   paintDropPile,
@@ -92,11 +105,20 @@ import {
   StairsSet,
   TRAIL_BED_DEPTH,
   TrailSet,
-  worldSeed,
+  type FixedLight,
+  type FixedLightKind,
+  type FloorLook,
+  type WorldThemeLook,
 } from "@/render/world";
 
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = 160;
+/**
+ * How strongly the stairs' pool adds at its centre: a touch above a prop light's 0.7, so the
+ * stair's foot and lowest treads sit in warm light under the tower's dark ambient (FS-8RBQY §E.3).
+ * The manifest names the pool's radius and colour; it has no intensity of its own.
+ */
+const STAIRS_POOL_INTENSITY = 0.85;
 /** A delver's footprint, in world px: the server's `PlayerRadius`. */
 const PLAYER_FOOTPRINT_RADIUS = 20;
 /**
@@ -334,11 +356,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /** Stairs up to the next floor, from state (FS-F6F88 req 30); none on the top floor. */
   private stairs = new StairsSet<Phaser.GameObjects.Sprite>({
-    add: (at) => {
-      const sprite = this.add.sprite(0, 0, "stairs_up");
-      standAt(sprite, at);
-      return sprite;
-    },
+    add: (at) => this.addStairs(at),
     stand: (sprite, at) => standAt(sprite, at),
   });
 
@@ -412,10 +430,27 @@ export class BarrowspireScene extends Phaser.Scene {
   private art!: ArtLibrary;
   /** Baked ground, when the manifest has it; otherwise `groundPlane` is the placeholder floor. */
   private groundLayer?: GroundLayer;
+  /** How this run is drawn: its world theme's look (FS-8RBQY §A). */
+  private worldLook: WorldThemeLook = WORLD_THEMES[RUN_WORLD_THEME];
+  /** The tower's outer wall around this floor (FS-8RBQY §B.5); rebuilt for each floor. */
+  private perimeter?: Phaser.GameObjects.Sprite[];
+  /**
+   * What this floor is drawn with: its band's ground, walls and dressing, and its seed
+   * (FS-8RBQY §C.1–§C.3). Resolved from the floor's first broadcast, forgotten at `leaveFloor`.
+   */
+  private floorLook?: FloorLook;
+  /** This floor's run dressing (FS-8RBQY §C.4); built once its static entities are known. */
+  private dressing?: Phaser.GameObjects.Sprite[];
+  /** Fixed lights built this broadcast, waiting on the floor's light budget (FS-8RBQY §C.6). */
+  private pendingLights: FixedLight<{ source: LightSource; haloWhen?: () => boolean }>[] = [];
+  /** How many fixed lights this floor has stamped so far. */
+  private stampedLights = 0;
   /** FS-2325V §C.7: replaces the overlay torch pool. */
   private lightMap?: LightMap;
   /** Every world effect's sprites, emitters, tweens and lights, by owner (FS-KYPQ9 §B.9). */
   private fx?: EffectsRuntime;
+  /** The warrior's charge kicking dust at their drawn feet while the server carries it (§D.2). */
+  private charge?: Charge;
   /** The struck-character tint (FS-KYPQ9 §G.1). */
   private hits?: HitFeedback;
   /** Which characters have settled their death dust this death (FS-KYPQ9 §G.2). */
@@ -525,12 +560,18 @@ export class BarrowspireScene extends Phaser.Scene {
     // every effect's sprites, emitters, tweens, timers and short-lived lights (FS-KYPQ9 §B.9, §C.4)
     this.fx?.clearAll();
     this.fx = undefined;
+    this.charge = undefined;
     this.hits?.clearAll();
     this.hits = undefined;
     this.lightMap?.clearTransient();
     this.houseFloors = [];
     this.groundPlane = undefined;
     this.groundLayer = undefined;
+    this.perimeter = undefined;
+    this.floorLook = undefined;
+    this.dressing = undefined;
+    this.pendingLights = [];
+    this.stampedLights = 0;
     this.lightMap = undefined;
     this.monsters = undefined;
     this.wallTop = WALL_HEIGHT;
@@ -946,78 +987,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.createSwitchTextures();
     this.createStairsTexture();
     this.createDropPileTexture();
-    this.createMetalFloorTexture();
 
     // baked world and prop art (FS-2325V §B.6); the textures above stay as placeholders
     preloadArt(this);
-  }
-
-  private createMetalFloorTexture(): void {
-    // textures belong to the game, not the scene: a restarted run already has it
-    if (this.textures.exists("metalFloor")) return;
-    const size = 128;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d")!;
-    ctx.imageSmoothingEnabled = false;
-
-    // Cracked flagstone floor: cold dark flags in deep mortar, bevelled so the
-    // torch catches the upper-left edge, with faint moss and dust. A 4×4 grid
-    // tiles seamlessly at 128. Texture key kept as "metalFloor".
-    const tile = 32;
-    ctx.fillStyle = toCss(palette.inkDeep); // mortar / gaps
-    ctx.fillRect(0, 0, size, size);
-
-    for (let gy = 0; gy < size; gy += tile) {
-      for (let gx = 0; gx < size; gx += tile) {
-        const v = 40 + Math.floor(Math.random() * 10);
-        ctx.fillStyle = `rgb(${v}, ${v + 1}, ${v + 4})`;
-        ctx.fillRect(gx + 1, gy + 1, tile - 2, tile - 2);
-
-        // bevel: lit top-left, shadowed bottom-right
-        ctx.fillStyle = "rgba(96, 98, 106, 0.16)";
-        ctx.fillRect(gx + 1, gy + 1, tile - 2, 2);
-        ctx.fillRect(gx + 1, gy + 1, 2, tile - 2);
-        ctx.fillStyle = "rgba(6, 5, 4, 0.4)";
-        ctx.fillRect(gx + 1, gy + tile - 3, tile - 2, 2);
-        ctx.fillRect(gx + tile - 3, gy + 1, 2, tile - 2);
-
-        // dithered grain
-        for (let i = 0; i < 60; i++) {
-          const px = gx + 2 + Math.floor(Math.random() * (tile - 4));
-          const py = gy + 2 + Math.floor(Math.random() * (tile - 4));
-          ctx.fillStyle =
-            Math.random() < 0.5
-              ? "rgba(8, 7, 6, 0.22)"
-              : "rgba(110, 112, 120, 0.06)";
-          ctx.fillRect(px, py, 1, 1);
-        }
-
-        // faint moss tucked in a corner
-        if (Math.random() < 0.22) {
-          ctx.fillStyle = "rgba(60, 90, 54, 0.3)";
-          ctx.fillRect(gx + 2, gy + tile - 6, 5, 4);
-        }
-        // short crack kept inside the flag so tiling stays seamless
-        if (Math.random() < 0.3) {
-          ctx.strokeStyle = "rgba(6, 5, 4, 0.5)";
-          ctx.lineWidth = 1;
-          let cxp = gx + 6 + Math.random() * (tile - 12);
-          let cyp = gy + 6 + Math.random() * (tile - 12);
-          ctx.beginPath();
-          ctx.moveTo(cxp, cyp);
-          for (let s = 0; s < 3; s++) {
-            cxp += (Math.random() - 0.5) * 8;
-            cyp += (Math.random() - 0.5) * 8;
-            ctx.lineTo(cxp, cyp);
-          }
-          ctx.stroke();
-        }
-      }
-    }
-
-    this.textures.addCanvas("metalFloor", canvas);
   }
 
   private createSoldierTextures(prefix: string, pal: WizardPalette): void {
@@ -1909,7 +1881,8 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Placeholder stairs up (FS-F6F88 req 30; baked stairs art is follow-up work): stone treads
+   * Placeholder stairs up (FS-F6F88 req 30), kept as the no-art fallback for the baked
+   * `stairs_spiral` (FS-8RBQY §E.5): stone treads
    * climbing away from the viewer, each with an amber nosing. Amber because the delver can act
    * on them (guideline "Gameplay accent").
    */
@@ -1973,6 +1946,7 @@ export class BarrowspireScene extends Phaser.Scene {
           : this.add.sprite(0, 0, "chest_closed");
         chest = { sprite, entityId: container.entity_id, pos };
         this.chests.set(container.entity_id, chest);
+        if (!isPile) this.poolInteractable(pos);
       } else {
         chest.pos = pos;
       }
@@ -2045,6 +2019,7 @@ export class BarrowspireScene extends Phaser.Scene {
         const sprite = this.add.sprite(0, 0, "switch_inactive");
         switchObj = { sprite, entityId: switchState.entity_id, pos };
         this.switches.set(switchState.entity_id, switchObj);
+        this.poolInteractable(pos);
       } else {
         switchObj.pos = pos;
       }
@@ -2074,19 +2049,26 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // 新增或更新牆壁 — baked pieces when the art is there (FS-2325V §C.2)
     const fresh = walls.filter((w) => !this.walls.has(w.entity_id));
-    const baked = fresh.length > 0 ? addWalls(this, this.art, fresh, worldSeed("run")) : null;
+    const look = this.currentFloorLook();
+    const baked =
+      fresh.length > 0
+        ? addWalls(this, this.art, fresh, look.seed, look.walls)
+        : null;
     if (baked) {
       this.wallTop = BAKE.WALL_BACK * BAKE.VPX;
       this.occluders.add(baked.tall);
       // a back wall's sconce or window lights the ground either way, but its flame
-      // is only in sight while its house's roof is off (the delver is inside)
+      // is only in sight while its house's roof is off (the delver is inside); with no
+      // roofs (a tower floor) every flame is always in sight
+      const roofed = this.worldLook.roofs;
       const houseOf = new Map(housesFrom(walls).map((h) => [h.id, h]));
       const wallHouse = new Map(walls.map((w) => [w.entity_id, w.house_id]));
       baked.lights.forEach(({ source, wallId, underRoof }) => {
         const house = houseOf.get(wallHouse.get(wallId) ?? "");
-        this.lightMap?.add(
+        this.queueLight(
+          "sconce",
           source,
-          underRoof && house
+          roofed && underRoof && house
             ? () => this.currentBuilding?.x === house.x && this.currentBuilding?.y === house.y
             : undefined,
         );
@@ -2118,8 +2100,9 @@ export class BarrowspireScene extends Phaser.Scene {
       this.serverBuildingsCreated = true;
 
       const houses = housesFrom(walls);
-      // flagstone under each house, painted into the baked ground (FS-2325V §C.1)
-      this.groundLayer?.paint(houses);
+      // flagstone (or planks) under each house, painted into this floor's baked ground
+      // (FS-2325V §C.1, FS-8RBQY §C.3)
+      this.groundLayer?.paint(houses, { look: look.ground, seed: look.seed });
 
       houses.forEach((house, buildingIndex) => {
         const { x: minX, y: minY, width: bw, height: bh } = house;
@@ -2142,8 +2125,11 @@ export class BarrowspireScene extends Phaser.Scene {
         }
 
         // 屋頂 — baked slope and ridge pieces, each sorted by its own footprint
-        // (FS-2325V §C.3); without art, the placeholder roof on a lifted plane
-        const roof = addRoof(this, this.art, house) ?? [this.placeholderRoof(house)];
+        // (FS-2325V §C.3); without art, the placeholder roof on a lifted plane. A world
+        // theme without roofs (the tower's rooms) draws neither (FS-8RBQY §B.3, R1)
+        const roof = this.worldLook.roofs
+          ? (addRoof(this, this.art, house) ?? [this.placeholderRoof(house)])
+          : [];
         this.occluders.add(
           roof.filter((r): r is Phaser.GameObjects.Sprite => r instanceof Phaser.GameObjects.Sprite),
         );
@@ -2591,13 +2577,15 @@ export class BarrowspireScene extends Phaser.Scene {
       new ContainerContents(this.PENDING_DURATION),
     );
 
-    // the map floor, as a diamond on the projection: baked ground tiles when the
-    // manifest has them, the placeholder floor otherwise (FS-2325V §C.1)
-    this.groundLayer = GroundLayer.available(this.art, "run")
+    // the map floor, as a diamond on the projection: the world theme's baked ground when
+    // the manifest has it, the placeholder floor otherwise (FS-2325V §C.1, FS-8RBQY §B.1)
+    const look = this.worldLook.ground;
+    this.groundLayer = GroundLayer.available(this.art, "run", look)
       ? new GroundLayer(this, this.art, {
           width: this.mapWidth,
           height: this.mapHeight,
           kind: "run",
+          look,
         })
       : undefined;
     if (!this.groundLayer) this.createMapBackground();
@@ -2779,7 +2767,12 @@ export class BarrowspireScene extends Phaser.Scene {
           });
           if (this.fx) playArrowRelease(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
         }
-        this.playerAnim?.attack(this.time.now, { x: target.x - me.x, y: target.y - me.y });
+        // a warrior's charge holds the pose for as long as the server carries them (§D.2)
+        this.playerAnim?.attack(
+          this.time.now,
+          { x: target.x - me.x, y: target.y - me.y },
+          currentClass === "warrior" ? CHARGE_MS : undefined,
+        );
 
         this.canCastSkill = false;
         this.time.delayedCall(400, () => {
@@ -2936,6 +2929,8 @@ export class BarrowspireScene extends Phaser.Scene {
     const climb = climbed(this.lastFloor, state.floor);
     if (state.floor !== undefined) this.lastFloor = state.floor;
     if (climb) this.leaveFloor();
+    // the floor's band and seed, from its first broadcast: a reconnect builds it directly
+    this.floorLook ??= floorLook(this.worldLook, state.floor, state.floor_count);
 
     // Update current player position from server
     if (state.current_player) {
@@ -2995,6 +2990,9 @@ export class BarrowspireScene extends Phaser.Scene {
     // Monsters and corpses: the broadcast is the whole truth (FS-77AB6 req 32, 36)
     this.monsters?.sync(state.monsters ?? []);
 
+    // The tower's outer wall, once per floor; it stands on no server state (FS-8RBQY §B.5)
+    this.buildPerimeter();
+
     // Update walls from server
     this.updateWalls(state.walls || []);
 
@@ -3013,6 +3011,11 @@ export class BarrowspireScene extends Phaser.Scene {
     // Stairs up: the broadcast is the whole truth, empty on the top floor (FS-F6F88 req 27)
     this.stairs.sync(state.stairs ?? []);
     this.updateFloorIndicator(state);
+
+    // Run dressing, once the floor's static entities are known (FS-8RBQY §C.4–§C.5); then every
+    // fixed light built this broadcast goes through the floor's budget, once (§C.6)
+    this.buildDressing(state);
+    this.stampLights();
 
     // Update projectiles from server (fireballs)
     this.updateProjectiles(state.projectiles || []);
@@ -3040,7 +3043,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * Tears down everything built for the floor the party has left (FS-F6F88 req 33): walls, roofs,
-   * house floors and flagstone, entrance markers, occluders, wall lights, and every entity drawn
+   * the perimeter wall, house floors and flagstone, entrance markers, occluders, wall lights, and every entity drawn
    * from the old floor's state. The maps are emptied as well as their objects destroyed, because a
    * cleared entity id may come back on the new floor and must be built fresh there. The one-shot
    * notice memory goes too, so the new floor's switch and escape door announce themselves.
@@ -3048,6 +3051,15 @@ export class BarrowspireScene extends Phaser.Scene {
   private leaveFloor(): void {
     this.walls.forEach((wall) => wall.pieces.forEach((piece) => piece.destroy()));
     this.walls.clear();
+    // the outer wall goes with its floor; its slit lights go with the light-map's fixed sources
+    this.perimeter?.forEach((piece) => piece.destroy());
+    this.perimeter = undefined;
+    // the band's dressing goes too; the next floor resolves its own band, seed and light budget
+    this.dressing?.forEach((piece) => piece.destroy());
+    this.dressing = undefined;
+    this.floorLook = undefined;
+    this.pendingLights = [];
+    this.stampedLights = 0;
 
     this.buildings.forEach((building) => {
       building.roof.forEach((part) => part.destroy());
@@ -3202,14 +3214,30 @@ export class BarrowspireScene extends Phaser.Scene {
     );
   }
 
-  /** The charge's dust at the start point, world positions in (FS-KYPQ9 §D.2). */
+  /**
+   * The charge, world positions in (FS-KYPQ9 §D.2): a dust burst at the start, then dust kicked
+   * at the drawn feet while the server carries the warrior over several ticks, ended after
+   * {@link CHARGE_MS}. A new charge ends the last one first.
+   */
   private playWarriorDashEffect(
     startX: number,
     startY: number,
     targetX: number,
     targetY: number,
   ): void {
-    if (this.fx) playCharge(this.fx, "self", { x: startX, y: startY }, { x: targetX, y: targetY });
+    if (!this.fx) return;
+    this.charge?.end();
+    const charge = playCharge(
+      this.fx,
+      "self",
+      { x: startX, y: startY },
+      { x: targetX, y: targetY },
+    );
+    this.charge = charge;
+    this.time.delayedCall(CHARGE_MS, () => {
+      charge.end();
+      if (this.charge === charge) this.charge = undefined;
+    });
   }
 
   /**
@@ -3425,100 +3453,106 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * The tower's outer wall around the play area, with the cold light of its arrow slits stamped
+   * once (FS-8RBQY §B.5–§B.6). Only for a world theme that has one, once per floor, and never
+   * without its art: a missing perimeter sheet leaves the wall out (§B.8).
+   */
+  private buildPerimeter(): void {
+    if (!this.worldLook.perimeter || this.perimeter) return;
+    const built = addPerimeter(this, this.art, this.mapWidth, this.mapHeight);
+    this.perimeter = built?.sprites ?? [];
+    built?.lights.forEach((light) => this.queueLight("slit", light));
+  }
+  /** This floor's look, or floor 1 of 1's before any broadcast has named the floor. */
+  private currentFloorLook(): FloorLook {
+    return (this.floorLook ??= floorLook(this.worldLook));
+  }
+
+  /**
+   * The stairs up (FS-8RBQY §E): the baked spiral at the server position, sorted by its footprint
+   * like any prop, fading over a delver behind it, in its own warm pool. Without its sheet, the
+   * code-drawn `stairs_up` placeholder, with no pool.
+   */
+  private addStairs(at: Point): Phaser.GameObjects.Sprite {
+    if (!this.art?.has("stairs_spiral")) {
+      const sprite = this.add.sprite(0, 0, "stairs_up");
+      standAt(sprite, at);
+      return sprite;
+    }
+    const { sprite, light } = addProp(this, this.art, "stairs_spiral", at);
+    this.occluders.add([sprite]);
+    if (light) this.queueLight("stairs", { ...light, intensity: STAIRS_POOL_INTENSITY });
+    return sprite;
+  }
+
+  /**
+   * Strews the floor's run dressing once (FS-8RBQY §C.4–§C.5), kept out of everything its
+   * broadcast puts on the floor. Never interactive, never in physics; a brazier's flame joins the
+   * floor's fixed lights. Nothing for a theme without dressing or without its art.
+   */
+  private buildDressing(state: ClientGameState): void {
+    if (this.dressing) return;
+    const look = this.currentFloorLook();
+    const plan = look.dressing
+      ? planDressing(look.dressing, look.seed, dressingStatics(state, this.mapWidth, this.mapHeight))
+      : [];
+    const built = addDressing(this, this.art, plan);
+    this.dressing = built.sprites;
+    this.occluders.add(built.tall);
+    built.lights.forEach((light) => this.queueLight("brazier", light));
+  }
+
+  /**
+   * A faint amber pool under a chest or switch, so it reads as itself under the tower's dark
+   * ambient (FS-8RBQY §B.7), budgeted like any fixed light. Only for a theme that wants one, and
+   * only over baked art: the placeholder textures carry their own amber.
+   */
+  private poolInteractable(at: Point): void {
+    if (!this.worldLook.interactablePools || !this.art?.available) return;
+    const s = worldToScreen(at.x, at.y);
+    const seed = tileHash(Math.round(at.x), Math.round(at.y), 23);
+    this.queueLight("interactable", interactablePool({ x: s.x, y: s.y - 12 }, seed));
+  }
+
+  /** Holds a fixed light for the floor's budget; nothing reaches the light-map until `stampLights`. */
+  private queueLight(kind: FixedLightKind, source: LightSource, haloWhen?: () => boolean): void {
+    this.pendingLights.push({ kind, at: { x: source.x, y: source.y }, light: { source, haloWhen } });
+  }
+
+  /**
+   * Stamps the fixed lights waiting since the last broadcast, within the floor's budget of
+   * {@link FIXED_LIGHT_CAP}: slits drop first, then braziers, then sconces, and the stairs pool
+   * never (FS-8RBQY §C.6). Once per floor build in practice: the light-map is never rebuilt.
+   */
+  private stampLights(): void {
+    if (this.pendingLights.length === 0) return;
+    const kept = budgetLights(this.pendingLights, FIXED_LIGHT_CAP - this.stampedLights);
+    kept.forEach(({ light }) => this.lightMap?.add(light.source, light.haloWhen));
+    this.stampedLights += kept.length;
+    this.pendingLights = [];
+  }
+
+
+  /**
    * The map floor. The map is a diamond on the projection: its floor keeps its
    * world-coordinate drawing on a plane that carries the projection, and the
    * corners beyond the diamond are the camera's dark background (FS-2325V §A.7).
    * The old out-of-map hull decoration is gone with the corners it filled.
    */
   private createMapBackground(): void {
-    const graphics = this.add.graphics();
-
-    // spaceship floor - tiled metal texture
-    const floorTile = this.add.tileSprite(
-      0,
-      0,
-      this.mapWidth,
-      this.mapHeight,
-      "metalFloor",
-    );
-    floorTile.setOrigin(0, 0);
-
-    // viewport windows - see space outside
-    const windowPositions = [
-      { x: 100, y: 0, w: 120, h: 8 },
-      { x: 350, y: 0, w: 120, h: 8 },
-      { x: 600, y: 0, w: 120, h: 8 },
-      { x: 850, y: 0, w: 120, h: 8 },
-      { x: 100, y: this.mapHeight - 8, w: 120, h: 8 },
-      { x: 350, y: this.mapHeight - 8, w: 120, h: 8 },
-      { x: 600, y: this.mapHeight - 8, w: 120, h: 8 },
-      { x: 850, y: this.mapHeight - 8, w: 120, h: 8 },
-    ];
-
-    const windowGraphics = this.add.graphics();
-    windowPositions.forEach((win) => {
-      // space visible through window
-      windowGraphics.fillStyle(palette.mapEdge, 1);
-      windowGraphics.fillRect(win.x, win.y, win.w, win.h);
-      // window frame
-      windowGraphics.lineStyle(2, palette.wallLight, 0.8);
-      windowGraphics.strokeRect(win.x, win.y, win.w, win.h);
-      // stars through window
-      for (let i = 0; i < 5; i++) {
-        const sx = Phaser.Math.Between(win.x + 5, win.x + win.w - 5);
-        const sy = Phaser.Math.Between(win.y + 2, win.y + win.h - 2);
-        windowGraphics.fillStyle(
-          palette.hudText,
-          Phaser.Math.FloatBetween(0.4, 1),
-        );
-        windowGraphics.fillCircle(sx, sy, 1);
-      }
-    });
-
-    // ambient hull lights along edges
-    const lightGraphics = this.add.graphics();
-    for (let x = 40; x < this.mapWidth; x += 200) {
-      // top edge lights
-      lightGraphics.fillStyle(palette.torch, 0.15);
-      lightGraphics.fillCircle(x, 15, 30);
-      lightGraphics.fillStyle(palette.torch, 0.4);
-      lightGraphics.fillCircle(x, 15, 3);
-      // bottom edge lights
-      lightGraphics.fillStyle(palette.torch, 0.15);
-      lightGraphics.fillCircle(x, this.mapHeight - 15, 30);
-      lightGraphics.fillStyle(palette.torch, 0.4);
-      lightGraphics.fillCircle(x, this.mapHeight - 15, 3);
-    }
-
-    // pulsing light animation
-    this.tweens.add({
-      targets: lightGraphics,
-      alpha: 0.5,
-      duration: 2000,
-      ease: "Sine.easeInOut",
-      yoyo: true,
-      repeat: -1,
-    });
-
-    // hull boundary - industrial metal frame
-    graphics.lineStyle(6, palette.floorShade, 1);
-    graphics.strokeRect(0, 0, this.mapWidth, this.mapHeight);
-    graphics.lineStyle(2, palette.floorShade, 1);
-    graphics.strokeRect(3, 3, this.mapWidth - 6, this.mapHeight - 6);
-    // inner warn trim
-    graphics.lineStyle(1, palette.torch, 0.15);
-    graphics.strokeRect(6, 6, this.mapWidth - 12, this.mapHeight - 12);
+    // neutral dark stone, flagged on the world grid: the floor without its baked art (FS-8RBQY §B.8)
+    const stone = this.add.graphics();
+    stone.fillStyle(palette.fallbackStone, 1);
+    stone.fillRect(0, 0, this.mapWidth, this.mapHeight);
+    stone.lineStyle(1, palette.fallbackStoneJoint, 1);
+    for (let x = 0; x <= this.mapWidth; x += WORLD_PX_PER_TILE) stone.lineBetween(x, 0, x, this.mapHeight);
+    for (let y = 0; y <= this.mapHeight; y += WORLD_PX_PER_TILE) stone.lineBetween(0, y, this.mapWidth, y);
 
     const plane = addWorldPlane(this);
     plane.root.setDepth(-1);
-    plane.surface.add([floorTile, windowGraphics, lightGraphics, graphics]);
+    plane.surface.add(stone);
     this.groundPlane = plane;
-
-    // save as outdoor objects
-    this.outsideObjects.push(graphics);
-    this.outsideObjects.push(floorTile);
-    this.outsideObjects.push(windowGraphics);
-    this.outsideObjects.push(lightGraphics);
+    this.outsideObjects.push(stone);
   }
 
   private isPlayerInsideBuilding(building: Building): boolean {
@@ -3529,10 +3563,13 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /** Whether a roof still on (a house the delver is not inside) stands over this world point. */
   private underRoof(at: Point): boolean {
+    if (!this.worldLook.roofs) return false;
     return this.buildings.some((b) => b !== this.currentBuilding && inBuilding(b, at));
   }
 
   private checkBuildingStatus(): void {
+    // a tower floor is all indoors: entering a room changes nothing (FS-8RBQY §B.3)
+    if (!this.worldLook.indoorMask) return;
     let insideBuilding: Building | null = null;
 
     for (const building of this.buildings) {
@@ -3659,9 +3696,11 @@ export class BarrowspireScene extends Phaser.Scene {
         posText.setText("Awaiting the deep...");
         return;
       }
-      const status = this.currentBuilding ? `Indoor` : `Outdoor`;
       const pos = this.playerPos ?? { x: 0, y: 0 };
-      posText.setText(`X: ${Math.round(pos.x)} Y: ${Math.round(pos.y)} | ${status}`);
+      const at = `X: ${Math.round(pos.x)} Y: ${Math.round(pos.y)}`;
+      // a tower floor is all indoors, so it says neither (FS-8RBQY §B.3)
+      if (!this.worldLook.indoorMask) posText.setText(at);
+      else posText.setText(`${at} | ${this.currentBuilding ? "Indoor" : "Outdoor"}`);
     };
     this.events.on("update", showPosition);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off("update", showPosition));
@@ -3674,7 +3713,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * game state, and removing it changes nothing about how the game plays.
    */
   private createAtmosphere(): void {
-    this.lightMap = new LightMap(this, AMBIENT.run);
+    this.lightMap = new LightMap(this, this.worldLook.ambient);
     buildAtmosphere(this);
     // world effects over the baked fx sheets, lighting through the light-map (FS-KYPQ9 §B, §C)
     this.fx = new EffectsRuntime(this, this.art, this.lightMap);
@@ -3939,6 +3978,8 @@ export class BarrowspireScene extends Phaser.Scene {
       );
       standAt(this.player, this.playerPos, 1);
       this.playerLegs?.setDepth(worldDepth(this.playerPos.x, this.playerPos.y, 2));
+      // the charge's dust is kicked where the body is drawn, never where it is predicted to land
+      this.charge?.follow(this.playerPos);
     }
 
     // the baked sheet plays what the delver is doing, read off the position just drawn

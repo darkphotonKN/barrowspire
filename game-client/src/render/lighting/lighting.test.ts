@@ -5,7 +5,9 @@ import {
   contrastRatio,
   cullInto,
   flickerAt,
+  TOWER_AMBIENT,
   litEdgeGround,
+  relativeLuminance,
   sourceFromManifest,
   type LightSource,
 } from "./lighting";
@@ -108,6 +110,22 @@ describe("ambient per world (FS-2325V §C.8, §C.9)", () => {
   it("should leave the run at its dark-barrow base: ambient is never lifted for readability", () => {
     // slate cooled toward necrotic; markers carry readability above the light-map instead
     expect(AMBIENT.run).toBe(mix(BARROW_HEX.slate, BARROW_HEX.necrotic, 0.4));
+  });
+
+  it("should light the tower interior darker than a run outdoors, by relative luminance (FS-8RBQY §B.6)", () => {
+    expect(relativeLuminance(TOWER_AMBIENT)).toBeLessThan(
+      relativeLuminance(AMBIENT.run),
+    );
+  });
+
+  it("should mix the tower ambient from tokens: the run's cold slate sunk toward pitch", () => {
+    expect(TOWER_AMBIENT).toBe(
+      mix(
+        mix(BARROW_HEX.slate, BARROW_HEX.necrotic, 0.3),
+        BARROW_HEX.pitch,
+        0.33,
+      ),
+    );
   });
 
   it("should leave the hub at its warm-dusk base", () => {

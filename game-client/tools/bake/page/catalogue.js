@@ -46,6 +46,22 @@ import {
 import { FX_TEXTURES } from "./models/fx.js";
 import { CURSORS, CURSOR_SIZE } from "./models/cursors.js";
 import { groundTile, transitionTile } from "./ground.js";
+import {
+  partitionWall,
+  partitionPost,
+  perimeterWall,
+  perimeterPost,
+  rubble,
+  bonePile,
+  brokenCrate,
+  roots,
+  chains,
+  spiralStairs,
+  PERIMETER_BACK,
+  PERIMETER_FRONT,
+  SLIT_LIGHT,
+  STAIRS_LIGHT,
+} from "./models/tower.js";
 import { CAST } from "./characters/cast.js";
 import { FOLK } from "./characters/folk.js";
 
@@ -345,6 +361,82 @@ function fxSheets() {
   return [...fx, ...cursors];
 }
 
+/**
+ * The tower interior (FS-8RBQY §D, §E), authored in code (ADR-0021) and packed on its own atlas
+ * so every existing atlas keeps its bytes. Partition pieces mirror the timber wall and post sheets
+ * (same heights, span and frame) so the client cuts walls exactly as today; the perimeter is the
+ * tower's thicker, taller outer wall; dressing is low and unlit; the stairs carry their own pool.
+ */
+const TOWER_LIGHTS = {
+  sconce: { at: SCONCE_FLAME, radius: 220, color: "amber", flicker: 0.6 },
+  // faint and cold: the grey daylight of the world outside, through a hand's breadth of slit
+  slit: { at: SLIT_LIGHT, radius: 120, color: "necrotic", flicker: 0.05 },
+};
+
+function towerSheets() {
+  const sheets = [];
+  const tower = (name, file, fn, animations, opts = {}) =>
+    sheets.push({ name, group: "tower", kind: "prop", animations, source: `authored: tools/bake/page/${file}#${fn}`, ...opts });
+  for (const material of ["flags", "planks", "dressed"])
+    tower(`ground_${material}`, "ground.js", material, { variants: still(...[0, 1, 2, 3].map((v) => () => groundTile(material, v))) }, { kind: "tile" });
+  const edges = {};
+  for (const edge of ["n", "e", "s", "w", "ne", "se", "sw", "nw"]) edges[edge] = still(() => transitionTile("flags", "dirt", edge));
+  tower("ground_flags_dirt", "ground.js", "transitionTile(flags, dirt)", edges, { kind: "tile" });
+
+  const pieces = { back: ["plain", "pillar", "sconce", "banner", "cobweb"], front: ["plain", "pillar"] };
+  for (const [height, H] of [
+    ["back", WALL_BACK],
+    ["front", WALL_FRONT],
+  ]) {
+    for (const variant of pieces[height])
+      for (const axis of ["x", "y"]) {
+        const light = height === "back" ? TOWER_LIGHTS[variant] : undefined;
+        tower(
+          `tower_wall_${height}_${variant}_${axis}`,
+          "models/tower.js",
+          "partitionWall",
+          { variants: still(...[1, 6].map((seed) => () => partitionWall(H, variant, axis, seed + (H > 2 ? 0 : 2)))) },
+          light ? { light: { ...light, at: onAxis(light.at, axis) } } : {},
+        );
+      }
+    tower(`tower_post_${height}`, "models/tower.js", "partitionPost", { default: still(() => partitionPost(H)) });
+  }
+
+  for (const variant of ["plain", "slit"])
+    for (const axis of ["x", "y"]) {
+      const light = TOWER_LIGHTS[variant];
+      tower(
+        `tower_perimeter_back_${variant}_${axis}`,
+        "models/tower.js",
+        "perimeterWall",
+        { variants: still(...[3, 8].map((seed) => () => perimeterWall(PERIMETER_BACK, variant, axis, seed))) },
+        light ? { light: { ...light, at: onAxis(light.at, axis) } } : {},
+      );
+    }
+  for (const axis of ["x", "y"])
+    tower(`tower_perimeter_front_plain_${axis}`, "models/tower.js", "perimeterWall", {
+      variants: still(...[4, 9].map((seed) => () => perimeterWall(PERIMETER_FRONT, "plain", axis, seed))),
+    });
+  tower("tower_perimeter_post_back", "models/tower.js", "perimeterPost", { default: still(() => perimeterPost(PERIMETER_BACK)) });
+  tower("tower_perimeter_post_front", "models/tower.js", "perimeterPost", { default: still(() => perimeterPost(PERIMETER_FRONT)) });
+
+  // dressing: two variants each, picked by the client's hash; never lit (brazier is reused)
+  const dressing = [
+    ["rubble", "rubble", rubble, [301, 302]],
+    ["bone_pile", "bonePile", bonePile, [311, 312]],
+    ["broken_crate", "brokenCrate", brokenCrate, [321, 322]],
+    ["roots", "roots", roots, [331, 332]],
+    ["chains", "chains", chains, [341, 342]],
+  ];
+  for (const [name, fn, build, seeds] of dressing)
+    tower(name, "models/tower.js", fn, { variants: still(...seeds.map((s) => () => build(s))) }, { pad: 0.06 });
+
+  tower("stairs_spiral", "models/tower.js", "spiralStairs", { default: still(spiralStairs) }, {
+    light: { at: STAIRS_LIGHT, radius: 210, color: "amber", flicker: 0.35 },
+  });
+  return sheets;
+}
+
 export const CATALOGUE = [
   ...groundSheets(),
   ...natureSheets(),
@@ -355,4 +447,5 @@ export const CATALOGUE = [
   ...characterSheets(),
   ...folkSheets(),
   ...fxSheets(),
+  ...towerSheets(),
 ].map((s) => ({ licence: LICENCE, ...s }));

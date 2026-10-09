@@ -124,13 +124,93 @@ export function planGround({
   return tiles;
 }
 
+/** Barrow earth breaking up through a tower's halls: patches of one sheet, edged by another. */
+export interface GroundPatches {
+  /** The material the patches are, e.g. `ground_dirt`. */
+  sheet: string;
+  /** The transition laid on a hall tile the patch intrudes on, one animation per edge. */
+  edge: string;
+  /** How many patches a floor carries. */
+  count: number;
+}
+
+/** A patch's radius, in tiles: from this… */
+const PATCH_MIN = 1.1;
+/** …to this much larger, so patches differ in size. */
+const PATCH_SPREAD = 1.4;
+/** How far a tile's own hash pushes it in or out of a patch, in tiles: ragged rims. */
+const PATCH_RAG = 0.45;
+
+/** Whether each world tile lies in one of `patches.count` blobs placed by `seed`. */
+function patchTiles(
+  cols: number,
+  rows: number,
+  patches: GroundPatches,
+  seed: number,
+): (tx: number, ty: number) => boolean {
+  const blobs = [...Array(patches.count).keys()].map((k) => {
+    const h = tileHash(k, 0x5041, seed);
+    return {
+      x: ((h & 0x3ff) / 0x3ff) * cols,
+      y: (((h >>> 10) & 0x3ff) / 0x3ff) * rows,
+      r: PATCH_MIN + (((h >>> 20) & 0xff) / 0xff) * PATCH_SPREAD,
+    };
+  });
+  return (tx, ty) => {
+    if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return false;
+    const rag = ((tileHash(tx, ty, seed + 3) & 0xff) / 0xff - 0.5) * 2 * PATCH_RAG;
+    return blobs.some(
+      (b) => Math.hypot(tx + 0.5 - b.x, ty + 0.5 - b.y) <= b.r + rag,
+    );
+  };
+}
+
 /**
- * Flagstone under each house: a tile grid centred on the house, so any part-tile overhang is
- * split evenly and hides under the walls' footprint and baked contact shadow.
+ * One tile of `sheet` per world tile over `[0, width] × [0, height]`: a tower's halls, with
+ * patches of another material breaking through when the look has them.
+ */
+function planHalls(
+  width: number,
+  height: number,
+  sheet: string,
+  seed: number,
+  patches?: GroundPatches,
+): GroundPiece[] {
+  const cols = Math.ceil(width / T);
+  const rows = Math.ceil(height / T);
+  const inPatch = patches
+    ? patchTiles(cols, rows, patches, seed)
+    : () => false;
+  const tiles: GroundPiece[] = [];
+  for (let tx = 0; tx < cols; tx++)
+    for (let ty = 0; ty < rows; ty++) {
+      const at = centreOf(tx, ty);
+      const index = tileHash(tx, ty, seed);
+      if (patches && inPatch(tx, ty)) {
+        tiles.push({ sheet: patches.sheet, animation: "variants", index, at });
+        continue;
+      }
+      const edge = patches
+        ? transitionEdge((dx, dy) => inPatch(tx + dx, ty + dy))
+        : undefined;
+      tiles.push(
+        edge && patches
+          ? { sheet: patches.edge, animation: edge, index: 0, at }
+          : { sheet, animation: "variants", index, at },
+      );
+    }
+  return tiles;
+}
+
+/**
+ * A floor under each house (flagstone outdoors, planks in a tower room): a tile grid centred on
+ * the house, so any part-tile overhang is split evenly and hides under the walls' footprint and
+ * baked contact shadow.
  */
 export function planFloors(
   houses: readonly House[],
   seed: number,
+  sheet = "ground_flagstone",
 ): GroundPiece[] {
   const tiles: GroundPiece[] = [];
   for (const h of houses) {
@@ -142,7 +222,7 @@ export function planFloors(
       for (let j = 0; j < rows; j++) {
         const at = { x: x0 + (i + 0.5) * T, y: y0 + (j + 0.5) * T };
         tiles.push({
-          sheet: "ground_flagstone",
+          sheet,
           animation: "variants",
           index: tileHash(Math.floor(at.x / T), Math.floor(at.y / T), seed + 7),
           at,
@@ -200,4 +280,53 @@ export function planDecals({
       });
     }
   return decals;
+}
+
+/** What a world theme lays on the ground (FS-8RBQY §A.1, §B.1). */
+export interface GroundLook {
+  /** One sheet over the whole map; absent, the world kind's own ground (barrow dirt, or grass and paths). */
+  hall?: string;
+  /** The floor under each house or room. */
+  floor: string;
+  /** Whether grass tufts and pebbles are scattered. */
+  decals: boolean;
+  /** Another material breaking up through the halls (FS-8RBQY §C.2). */
+  patches?: GroundPatches;
+}
+
+/** The outdoor ground, as runs and the hub have always had it. */
+export const OUTDOOR_GROUND: GroundLook = {
+  floor: "ground_flagstone",
+  decals: true,
+};
+
+/** The tower interior: worn flags in the halls, old planks in the rooms, nothing growing. */
+export const TOWER_GROUND: GroundLook = {
+  hall: "ground_flags",
+  floor: "ground_planks",
+  decals: false,
+};
+
+export interface GroundLayerOptions extends GroundOptions {
+  houses: readonly House[];
+  look: GroundLook;
+  /** The floor's seed (FS-8RBQY §C.3); absent, the world kind's. */
+  seed?: number;
+}
+
+/** Everything painted on the ground, in paint order: base, decals, then the floors over it. */
+export function planGroundLayer({
+  look,
+  houses,
+  seed: floorSeed,
+  ...world
+}: GroundLayerOptions): GroundPiece[] {
+  const seed = floorSeed ?? worldSeed(world.kind);
+  return [
+    ...(look.hall
+      ? planHalls(world.width, world.height, look.hall, seed, look.patches)
+      : planGround(world)),
+    ...(look.decals ? planDecals({ ...world, houses }) : []),
+    ...planFloors(houses, seed, look.floor),
+  ];
 }
