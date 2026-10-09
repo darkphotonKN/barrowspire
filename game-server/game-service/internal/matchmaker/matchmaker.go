@@ -9,6 +9,7 @@ import (
 	"errors"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
+	"github.com/google/uuid"
 )
 
 var (
@@ -31,7 +32,7 @@ type matchmaker struct {
 	QueueStatusChan chan QueueStatus
 	matchQueue      MatchQueue
 
-	// this replica's pod id, recorded against every player it queues
+	// this replicas pod id, recorded against every player it queues
 	podID string
 
 	mu      sync.Mutex
@@ -79,21 +80,20 @@ func (q *matchmaker) Start(ctx context.Context) {
 
 // matchQueue checks queue once per second
 func (q *matchmaker) MatchQueue(ctx context.Context) {
-	// add timeout for external state taking too long
-	queueCtx, queueCtxCanc := context.WithTimeout(ctx, timeoutTime)
-	defer queueCtxCanc()
-
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		// parent ctx gets cancelled
+		// parent ctx gets cancelled we exit loop
 		case <-ctx.Done():
 			return
 
 		case <-ticker.C:
-			matchedPlayers, err := q.matchQueue.Matchmake(queueCtx, MatchCriteria{MatchSize: 2})
+			// add timeout for external state taking too long
+			tickCtx, cancel := context.WithTimeout(ctx, timeoutTime)
+			matchedPlayersRes, err := q.matchQueue.Matchmake(tickCtx, MatchCriteria{MatchSize: q.matchSize})
+			cancel()
 
 			if err != nil {
 				// log exception errors to track what happened
@@ -102,9 +102,24 @@ func (q *matchmaker) MatchQueue(ctx context.Context) {
 			}
 
 			// no results yet
-			if matchedPlayers == nil {
+			if matchedPlayersRes == nil {
 				continue
 			}
+
+			// found result, send to message hub to start game, then continue matchmaking
+			matchedPlayers := make([]*types.Player, 0, len(matchedPlayersRes))
+
+			for _, player := range matchedPlayersRes {
+				id := uuid.MustParse(player.ID)
+
+				// only send ids, look up for the rest is updated to be done by the caller
+				matchedPlayers = append(matchedPlayers, &types.Player{
+					ID: id,
+				})
+			}
+
+			// send to channel
+			q.MatchedChan <- matchedPlayers
 		}
 	}
 }
@@ -117,7 +132,7 @@ func (q *matchmaker) PlayerJoinQueue(ctx context.Context, player *types.Player) 
 
 	retries := 0
 	maxRetries := 5
-	for retries >= maxRetries {
+	for retries <= maxRetries {
 		err := q.matchQueue.QueuePlayer(queueCtx, player.ID.String(), q.podID)
 		if err != nil {
 			// no retry
@@ -148,7 +163,7 @@ func (q *matchmaker) PlayerRemoveQueue(ctx context.Context, player *types.Player
 
 	retries := 0
 	maxRetries := 5
-	for retries >= maxRetries {
+	for retries <= maxRetries {
 		err := q.matchQueue.DequeuePlayer(queueCtx, player.ID.String())
 
 		if err != nil {
@@ -167,10 +182,10 @@ func (q *matchmaker) PlayerRemoveQueue(ctx context.Context, player *types.Player
 	return ErrRetryMaxAttemptsExhausted
 }
 
-func (q *matchmaker) GetMatchedChan() chan []*types.Player {
+func (q *matchmaker) GetMatchedChan(ctx context.Context) chan []*types.Player {
 	return q.MatchedChan
 }
 
-func (q *matchmaker) GetQueueStatusChan() chan QueueStatus {
+func (q *matchmaker) GetQueueStatusChan(ctx context.Context) chan QueueStatus {
 	return q.QueueStatusChan
 }

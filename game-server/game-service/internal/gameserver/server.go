@@ -73,11 +73,11 @@ type MessageSender interface {
 
 // QueueManager is the subset of queue operations the gameserver consumes.
 type QueueManager interface {
-	Start()
+	Start(ctx context.Context)
 	PlayerJoinQueue(ctx context.Context, player *types.Player) error
 	PlayerRemoveQueue(ctx context.Context, player *types.Player) error
-	GetMatchedChan() chan []*types.Player
-	GetQueueStatusChan() chan matchmaker.QueueStatus
+	GetMatchedChan(ctx context.Context) chan []*types.Player
+	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
 }
 
 func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient) *Server {
@@ -109,7 +109,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	newSender := messaging.NewMessageSender(server)
 	server.sender = newSender
 
-	server.queue.Start()
+	server.queue.Start(ctx)
 
 	// initialize message hub
 	messageHub := NewMessageHub(server, newSender)
@@ -241,9 +241,9 @@ func (s *Server) everyRecordOf(player *types.Player) []*types.Player {
 }
 
 /**
-* playerByID finds a connected player.
+* PlayerByID finds a connected player.
 **/
-func (s *Server) playerByID(playerID uuid.UUID) (*types.Player, bool) {
+func (s *Server) PlayerByID(playerID uuid.UUID) (*types.Player, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -273,7 +273,7 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 	}
 
 	for _, playerID := range run.GetPlayerIDs() {
-		player, exists := s.playerByID(playerID)
+		player, exists := s.PlayerByID(playerID)
 		if !exists {
 			continue
 		}
