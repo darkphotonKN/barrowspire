@@ -217,7 +217,9 @@ func TestAuth_WhitelistIsPerMethod(t *testing.T) {
 }
 
 // The marketplace page's reads are open to a visitor who is not signed in
-// (FS-8EGFA §Requirements 6, 10), so they reach their handler with no metadata.
+// (FS-8EGFA §Requirements 6, 10), and the item catalogue (base types, rarity
+// weights) is read once per game session by game-service with no player behind
+// the call, so all of them reach their handler with no metadata.
 func TestAuth_PublicReads_SkipTheTokenCheck(t *testing.T) {
 	for _, method := range publicReads {
 		t.Run(method, func(t *testing.T) {
@@ -265,6 +267,8 @@ func TestAuth_PublicReads_LeaveEveryOtherMarketplaceAndItemsMethodGuarded(t *tes
 	require.Contains(t, guarded, "/marketplace.MarketplaceService/ListItem")
 	require.Contains(t, guarded, "/marketplace.MarketplaceService/ListMyListings")
 	require.Contains(t, guarded, "/items.ItemsService/ReserveItem")
+	// worn gear is member-owned: game-service loads it as the player, with their token
+	require.Contains(t, guarded, "/items.ItemsService/GetLoadoutWithItems")
 
 	for _, method := range guarded {
 		t.Run(method, func(t *testing.T) {
@@ -291,6 +295,8 @@ var publicReads = []string{
 	"/marketplace.MarketplaceService/BrowseListings",
 	"/marketplace.MarketplaceService/GetListing",
 	"/items.ItemsService/GetItemSummaries",
+	"/items.ItemsService/ListItemTemplates",
+	"/items.ItemsService/ListItemRarities",
 }
 
 func rejectEveryToken(string) (commonauth.Identity, error) {
