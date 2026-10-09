@@ -2,6 +2,7 @@ package items
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
@@ -176,6 +177,139 @@ func TestHandler_GetLoadoutWithItems_OnlyTheOwnerReadsIt(t *testing.T) {
 			}
 			if res.Weapon == nil || res.Weapon.Name != "Blade" {
 				t.Errorf("Weapon = %v, want the owner's Blade", res.Weapon)
+			}
+		})
+	}
+}
+
+// stashRepo holds one member's stash and loadout and counts every read and
+// write, so a refused caller can be shown to reach no data at all.
+type stashRepo struct {
+	Repository
+	owner  uuid.UUID
+	reads  int
+	writes int
+}
+
+func (r *stashRepo) GetLoadout(context.Context, *GetLoadoutRequest) (*Loadout, error) {
+	r.reads++
+	return &Loadout{MemberId: &r.owner}, nil
+}
+
+func (r *stashRepo) GetItemInstanceByID(context.Context, uuid.UUID) (*ItemInstance, error) {
+	r.reads++
+	return nil, nil
+}
+
+func (r *stashRepo) ListItemInstances(context.Context, *ListItemInstancesRequest) ([]*ItemInstance, error) {
+	r.reads++
+	return []*ItemInstance{{ID: uuid.New(), TemplateID: uuid.New(), OwnerMemberID: r.owner, ItemType: "weapon", Name: "Blade"}}, nil
+}
+
+func (r *stashRepo) UpsertLoadoutSlot(context.Context, *UpdateLoadoutRequest) error {
+	r.writes++
+	return nil
+}
+
+// ownedRPCs calls each stash/loadout RPC for the given member.
+var ownedRPCs = []struct {
+	name string
+	call func(h *Handler, ctx context.Context, member string) error
+}{
+	{"GetLoadout", func(h *Handler, ctx context.Context, member string) error {
+		_, err := h.GetLoadout(ctx, &pb.GetLoadoutRequest{MemberId: member})
+		return err
+	}},
+	{"GetLoadoutWithItems", func(h *Handler, ctx context.Context, member string) error {
+		_, err := h.GetLoadoutWithItems(ctx, &pb.GetLoadoutWithItemsRequest{MemberId: member})
+		return err
+	}},
+	{"ListItemInstances", func(h *Handler, ctx context.Context, member string) error {
+		_, err := h.ListItemInstances(ctx, &pb.ListItemInstancesRequest{MemberId: member})
+		return err
+	}},
+	{"UpdateLoadout", func(h *Handler, ctx context.Context, member string) error {
+		_, err := h.UpdateLoadout(ctx, &pb.UpdateLoadoutRequest{MemberId: member, Slot: "weapon", ItemInstanceId: uuid.NewString()})
+		return err
+	}},
+}
+
+// FS-4R9M9 R53: a member reads and changes only their own stash and loadout.
+func TestHandler_StashAndLoadout_OnlyTheOwnerReachesThem(t *testing.T) {
+	owner := uuid.New()
+	asMember := func(id uuid.UUID) context.Context {
+		return commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: id})
+	}
+	cases := []struct {
+		name     string
+		ctx      context.Context
+		wantCode codes.Code
+	}{
+		{"own", asMember(owner), codes.OK},
+		{"another member", asMember(uuid.New()), codes.PermissionDenied},
+		{"no caller", context.Background(), codes.Unauthenticated},
+	}
+	for _, rpc := range ownedRPCs {
+		for _, tt := range cases {
+			t.Run(rpc.name+"/"+tt.name, func(t *testing.T) {
+				repo := &stashRepo{owner: owner}
+				h := NewHandler(NewService(repo, nil, nil, nil), nil)
+
+				err := rpc.call(h, tt.ctx, owner.String())
+
+				if got := status.Code(err); got != tt.wantCode {
+					t.Fatalf("code = %v, want %v (err %v)", got, tt.wantCode, err)
+				}
+				if tt.wantCode != codes.OK && repo.reads+repo.writes != 0 {
+					t.Errorf("refused caller reached the repository: %d reads, %d writes", repo.reads, repo.writes)
+				}
+			})
+		}
+	}
+}
+
+// warnCounter counts the Warn records logged through slog's default logger.
+type warnCounter struct {
+	slog.Handler
+	warns *[]slog.Record
+}
+
+func (w warnCounter) Enabled(context.Context, slog.Level) bool { return true }
+
+func (w warnCounter) Handle(_ context.Context, r slog.Record) error {
+	if r.Level == slog.LevelWarn {
+		*w.warns = append(*w.warns, r)
+	}
+	return nil
+}
+
+// FS-4R9M9 R53: every refused ownership attempt leaves exactly one warning.
+func TestHandler_StashAndLoadout_RefusalIsLoggedOnce(t *testing.T) {
+	for _, rpc := range ownedRPCs {
+		t.Run(rpc.name, func(t *testing.T) {
+			var warns []slog.Record
+			prev := slog.Default()
+			slog.SetDefault(slog.New(warnCounter{warns: &warns}))
+			t.Cleanup(func() { slog.SetDefault(prev) })
+
+			owner := uuid.New()
+			h := NewHandler(NewService(&stashRepo{owner: owner}, nil, nil, nil), nil)
+			intruder := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: uuid.New()})
+
+			_ = rpc.call(h, intruder, owner.String())
+
+			if len(warns) != 1 {
+				t.Fatalf("got %d warnings, want 1", len(warns))
+			}
+			var method string
+			warns[0].Attrs(func(a slog.Attr) bool {
+				if a.Key == "method" {
+					method = a.Value.String()
+				}
+				return true
+			})
+			if method != rpc.name {
+				t.Errorf("warning method = %q, want %q", method, rpc.name)
 			}
 		})
 	}
