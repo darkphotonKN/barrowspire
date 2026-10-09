@@ -1,6 +1,6 @@
 ---
 id: I-77AB6-16
-status: open
+status: done
 implements: FS-77AB6
 blocked_by: [I-77AB6-15]
 labels: [ready-for-agent]
@@ -16,6 +16,6 @@ Implements FS-77AB6 §Edge States ("delver disconnects … the reconnect grace")
 3. **LOW cleanup.** `cleanUpPlayerFromSession` (handler.go:~441-445) has no production caller; delete it and point reconnect_test.go / hub_lifecycle_test.go at `cleanUpClient` / `releaseDeparted`. Fix issue I-77AB6-15's wording note: 1001 keeps its 10 s grace (intended).
 
 ## Acceptance Criteria
-- [ ] Drop → reconnect → drop within 30 s: evicted only after the second window.
-- [ ] A connection published after a concurrent old-conn failure stays Connected and is never evicted by a stale timer.
-- [ ] `go test -race -count=20` on the connection tests clean.
+- [x] Drop → reconnect → drop within 30 s: evicted only after the second window. (`TestDisconnect_ARepeatedDropGetsTheFullGraceAgain`)
+- [x] A connection published after a concurrent old-conn failure stays Connected and is never evicted by a stale timer. (`TestMapConnToPlayer_PublishesTheMemberConnected`)
+- [x] `go test -race -count=20` on the connection tests clean.

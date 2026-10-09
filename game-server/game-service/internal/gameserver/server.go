@@ -56,6 +56,11 @@ type Server struct {
 	// [active connections] to player
 	connToPlayer map[*websocket.Conn]*types.Player
 
+	// the reconnect grace each dropped member is held under, by member, and
+	// the last hold handed out
+	graceHolds    map[uuid.UUID]graceHold
+	lastGraceHold graceHold
+
 	mu sync.RWMutex
 
 	queue QueueManager
@@ -109,6 +114,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		sessions:     make(map[uuid.UUID]*game.Session, 10),
 		players:      make(map[uuid.UUID]*types.Player, 10),
 		connToPlayer: make(map[*websocket.Conn]*types.Player, 10),
+		graceHolds:   make(map[uuid.UUID]graceHold),
 
 		queue:        queueService,
 		authClient:   authClient,
@@ -458,6 +464,10 @@ func (s *Server) GetServerChan() chan types.ClientPackage {
 * not the copy the handler took before the upgrade: a run ending or a grace
 * cleanup in between would otherwise be undone on the copy routing reads.
 *
+* A published connection is live, so every record of the member is marked
+* connected and any reconnect grace they are held under ends: an old
+* connection failing after the reconnect began cannot leave them evicted.
+*
 * Mapping the connection and registering its writer happen in one step, as
 * does unmapping a superseded connection and stopping its writer, so
 * overlapping reconnects cannot leave a member with two live connections or a
@@ -485,6 +495,12 @@ func (s *Server) MapConnToPlayer(conn *websocket.Conn, playerID uuid.UUID, msgCh
 			superseded = append(superseded, oldConn)
 		}
 	}
+
+	connected := constants.Connected
+	for _, rec := range s.everyRecordOf(record) {
+		rec.ConnectState = &connected
+	}
+	delete(s.graceHolds, playerID)
 
 	published := *record
 	s.connToPlayer[conn] = &published

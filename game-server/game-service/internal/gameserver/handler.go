@@ -10,7 +10,6 @@ import (
 	authPb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -232,7 +231,7 @@ func (s *Server) handleReadError(conn *websocket.Conn, err error) {
 		grace = goingAwayGrace
 	}
 
-	player, held := s.holdForReconnect(conn)
+	player, hold, held := s.holdForReconnect(conn)
 	conn.Close()
 
 	if !held {
@@ -246,7 +245,7 @@ func (s *Server) handleReadError(conn *websocket.Conn, err error) {
 		"error", err,
 	)
 
-	go s.handleReconnectionTimeout(player.ID, grace)
+	go s.handleReconnectionTimeout(player.ID, hold, grace)
 }
 
 // clientWriterBuffer is how many messages a connection's writer channel holds
@@ -297,10 +296,16 @@ func (s *Server) stopClientWriterLocked(conn *websocket.Conn) {
 	}
 }
 
+// graceHold names one drop's reconnect grace. Only the member's latest drop
+// holds them: a reconnect ends the hold, and a later drop starts a new one, so
+// an earlier drop's grace running out ends nothing.
+type graceHold uint64
+
 /**
 * Holds the member a dropped connection carried for the reconnect grace: the
 * connection is unmapped and its writer stopped, and every record of the member
-* is marked reconnecting. Their record, world and queue place are kept.
+* is marked reconnecting. Their record, world and queue place are kept. The
+* returned hold is the one this drop's grace may end.
 *
 * One step under the lock, and only for a connection still mapped. A connection
 * the server already unmapped (one a reconnect superseded, or one already
@@ -308,13 +313,13 @@ func (s *Server) stopClientWriterLocked(conn *websocket.Conn) {
 * own close of a superseded socket from marking the member on the connection
 * that replaced it as reconnecting. The caller closes the socket.
 **/
-func (s *Server) holdForReconnect(conn *websocket.Conn) (types.Player, bool) {
+func (s *Server) holdForReconnect(conn *websocket.Conn) (types.Player, graceHold, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	mapped, exists := s.connToPlayer[conn]
 	if !exists {
-		return types.Player{}, false
+		return types.Player{}, 0, false
 	}
 
 	s.stopClientWriterLocked(conn)
@@ -325,10 +330,14 @@ func (s *Server) holdForReconnect(conn *websocket.Conn) (types.Player, bool) {
 		record.ConnectState = &reconnecting
 	}
 
-	return *mapped, true
+	s.lastGraceHold++
+	hold := s.lastGraceHold
+	s.graceHolds[mapped.ID] = hold
+
+	return *mapped, hold, true
 }
 
-func (s *Server) handleReconnectionTimeout(playerID uuid.UUID, timeout time.Duration) {
+func (s *Server) handleReconnectionTimeout(playerID uuid.UUID, hold graceHold, timeout time.Duration) {
 	slog.Debug("Reconnection timer started",
 		"player_id", playerID,
 		"timeout", timeout,
@@ -336,30 +345,35 @@ func (s *Server) handleReconnectionTimeout(playerID uuid.UUID, timeout time.Dura
 
 	time.Sleep(timeout)
 
-	s.cleanUpPlayerCompletely(playerID)
+	s.cleanUpPlayerCompletely(playerID, hold)
 }
 
 /**
-* Ends the stay of a member who did not come back within the reconnect grace.
+* Ends the stay of a member who did not come back within the reconnect grace
+* of the drop that started hold.
 *
-* Checking they are still reconnecting and deleting their record is one step
-* under the lock, so a reconnect landing in between either keeps the record
-* (it marked them connected first) or arrives after it is gone and starts
-* fresh, never half of each.
+* Checking they are still reconnecting under that same hold and deleting their
+* record is one step under the lock, so a reconnect landing in between either
+* keeps the record (it marked them connected and ended the hold first) or
+* arrives after it is gone and starts fresh, never half of each. A member who
+* reconnected and dropped again is under a newer hold, and only that drop's
+* grace running out ends their stay.
 **/
-func (s *Server) cleanUpPlayerCompletely(playerID uuid.UUID) {
+func (s *Server) cleanUpPlayerCompletely(playerID uuid.UUID, hold graceHold) {
 	s.mu.Lock()
 
 	record, exists := s.players[playerID]
-	if !exists || record.ConnectState == nil || *record.ConnectState != constants.Reconnecting {
+	if !exists || s.graceHolds[playerID] != hold ||
+		record.ConnectState == nil || *record.ConnectState != constants.Reconnecting {
 		s.mu.Unlock()
-		slog.Debug("Player reconnected or was already cleaned up", "player_id", playerID)
+		slog.Debug("Player reconnected, dropped again or was already cleaned up", "player_id", playerID)
 		return
 	}
 
 	// a copy taken under the lock: the worlds keep writing the record under it
 	player := *record
 	delete(s.players, playerID)
+	delete(s.graceHolds, playerID)
 
 	s.mu.Unlock()
 
@@ -413,6 +427,7 @@ func (s *Server) cleanUpClient(conn *websocket.Conn) {
 	if exists {
 		player = *mapped
 		delete(s.players, player.ID)
+		delete(s.graceHolds, player.ID)
 	}
 
 	s.mu.Unlock()
@@ -433,37 +448,19 @@ func (s *Server) cleanUpClient(conn *websocket.Conn) {
 }
 
 /**
-* Removes a player on record from their world, and shuts the world down if it
-* was a run they were the last in.
-*
-* The hub is not a run, in two ways. It exists before anyone arrives and
-* outlives everyone leaving, so an empty one is not a finished one. And
-* dropping out of it is simply leaving — there is nothing in progress to
-* resume, so the player forgets the world and walks back in from the menu like
-* anyone else, rather than being resumed into a world they no longer occupy
-* (FS-29KSH §Edge States).
-**/
-func (s *Server) cleanUpPlayerFromSession(player *types.Player) {
-	if world := s.leaveCurrentWorld(player); world != nil && world.WorldType() == types.WorldTypeHub {
-		s.forgetCurrentWorld(player)
-	}
-}
-
-/**
 * Removes the player's body from the world their record points at, shutting
-* down a run left empty, and returns that world (nil when they were in none).
-* The record itself is not touched.
+* down a run left empty. The record itself is not touched.
 * This is separated from cleanUpClient to avoid holding the server mutex for too long.
 **/
-func (s *Server) leaveCurrentWorld(player *types.Player) *game.Session {
+func (s *Server) leaveCurrentWorld(player *types.Player) {
 	if player == nil {
 		slog.Warn("leaveCurrentWorld: player is nil, skipping")
-		return nil
+		return
 	}
 
 	if player.CurrentGameSessionId == uuid.Nil {
 		slog.Debug("Player is not in any session, skipping session cleanup", "username", player.Username)
-		return nil
+		return
 	}
 
 	s.mu.RLock()
@@ -472,7 +469,7 @@ func (s *Server) leaveCurrentWorld(player *types.Player) *game.Session {
 
 	if !exists {
 		slog.Warn("Session not found for player", "session_id", player.CurrentGameSessionId, "username", player.Username)
-		return nil
+		return
 	}
 
 	slog.Info("Removing player from session", "username", player.Username, "session_id", playerSession.ID)
@@ -482,7 +479,7 @@ func (s *Server) leaveCurrentWorld(player *types.Player) *game.Session {
 
 	// the hub outlives everyone leaving it
 	if playerSession.WorldType() == types.WorldTypeHub {
-		return playerSession
+		return
 	}
 
 	// check if session still has players
@@ -501,24 +498,5 @@ func (s *Server) leaveCurrentWorld(player *types.Player) *game.Session {
 		slog.Info("Session shut down and removed", "session_id", playerSession.ID)
 	} else {
 		slog.Info("Session still has remaining players", "session_id", playerSession.ID, "remaining", len(remainingPlayers))
-	}
-
-	return playerSession
-}
-
-/**
-* Clears a player's record of which world they are in.
-*
-* Both copies, because MapConnToPlayer stores the player by value: the entry in
-* connToPlayer is a different object from the one in players, and routing reads
-* the former. Leaving one set would leave messages being delivered to a world
-* the player has no body in.
-**/
-func (s *Server) forgetCurrentWorld(player *types.Player) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for _, record := range s.everyRecordOf(player) {
-		record.CurrentGameSessionId = uuid.Nil
 	}
 }
