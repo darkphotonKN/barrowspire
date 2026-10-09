@@ -57,6 +57,7 @@ type MatchQueue interface {
 	QueuePlayer(ctx context.Context, playerID, pod string) error
 	DequeuePlayer(ctx context.Context, playerID string) error
 	Matchmake(ctx context.Context, matchCriteria MatchCriteria) ([]MatchedPlayer, error) // list of playerIDs that successfully matched
+	MarkPodAlive(ctx context.Context, podID string) error                                // liveness heartbeat, lapses on its own if this pod stops calling
 }
 
 type MatchCriteria struct {
@@ -71,7 +72,40 @@ type MatchedPlayer struct {
 // Start launches queue listening
 func (q *matchmaker) Start(ctx context.Context) {
 	go q.MatchLoop(ctx)
+	go q.heartbeatLoop(ctx)
 	slog.Info("Queue service started, waiting for players to join...")
+}
+
+// heartbeatLoop keeps this pod marked alive about once a second, so the match
+// loop on any pod can tell its queued players from a crashed pod's leftovers
+func (q *matchmaker) heartbeatLoop(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	// beat once right away, so the pod counts as alive from boot rather than a tick later
+	q.markAlive(ctx)
+
+	for {
+		select {
+		// parent ctx gets cancelled we stop beating, the alive marker then lapses on its own
+		case <-ctx.Done():
+			return
+
+		case <-ticker.C:
+			q.markAlive(ctx)
+		}
+	}
+}
+
+func (q *matchmaker) markAlive(ctx context.Context) {
+	// add timeout for external state taking too long, a stuck call must not outlive the next beat by much
+	beatCtx, cancel := context.WithTimeout(ctx, timeoutTime)
+	defer cancel()
+
+	// a missed beat is tolerated by the alive marker's expiry, so log and keep going
+	if err := q.matchQueue.MarkPodAlive(beatCtx, q.podID); err != nil {
+		slog.Warn("heartbeat failed to mark pod alive", "pod_id", q.podID, "err", err)
+	}
 }
 
 // matchQueue checks queue once per second
@@ -172,6 +206,8 @@ func (q *matchmaker) requeueUnerroredPlayers(ctx context.Context, matchedPlayers
 
 // handlePlayerJoinQueue handles logic for player joining queue
 func (q *matchmaker) PlayerJoinQueue(ctx context.Context, player *types.Player) error {
+	slog.Debug("Matchmake, attempting to queue", "player_username", player.Username)
+
 	// add timeout for external state taking too long
 	queueCtx, queueCtxCanc := context.WithTimeout(ctx, timeoutTime)
 	defer queueCtxCanc()
@@ -194,22 +230,26 @@ func (q *matchmaker) PlayerJoinQueue(ctx context.Context, player *types.Player) 
 }
 
 func (q *matchmaker) PlayerRemoveQueue(ctx context.Context, player *types.Player) error {
-	// add timeout for external state taking too long
-	queueCtx, queueCtxCanc := context.WithTimeout(ctx, timeoutTime)
-	defer queueCtxCanc()
-
 	retries := 0
 	maxRetries := 5
-	for retries <= maxRetries {
+
+	for retries < maxRetries {
+		// add timeout for external state taking too long
+		queueCtx, queueCtxCanc := context.WithTimeout(ctx, timeoutTime)
+		defer queueCtxCanc()
 		err := q.matchQueue.DequeuePlayer(queueCtx, player.ID.String())
 
 		if err != nil {
 			slog.Warn("met exceptional error when attempting to dequeue, requeueing", "err", err)
 
 			// exception, retry in 1 second
-			time.Sleep(time.Second)
-			retries++
-			continue
+			select {
+			case <-time.After(time.Second):
+				retries++
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 		return nil
 	}

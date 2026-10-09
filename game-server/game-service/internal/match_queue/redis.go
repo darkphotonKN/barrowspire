@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/redis/go-redis/v9"
@@ -23,7 +24,14 @@ func NewRedis(client redis.UniversalClient) *Redis {
 const (
 	keyQueue     = "queue"
 	keyPlayerPod = "player:pod"
+
+	// pod:alive:{podID}, present only while that pod keeps heartbeating
+	keyPodAlivePrefix = "pod:alive:"
 )
+
+// 3x the heartbeat interval, so a pod survives two missed beats (GC pause, slow
+// redis) before it counts as dead
+const podAliveTTL = 3 * time.Second
 
 var queueScript = redis.NewScript(`
 		-- push to player to pod info on hash
@@ -114,6 +122,28 @@ var matchmakeScript = redis.NewScript(`
 				return redis.error_reply("CORRUPTED DATA MISSING PLAYER POD")
 			end
 
+			-- check the player's pod is still heartbeating; a crashed pod's players stay
+			-- queued since its disconnect handlers never ran, so drop them here
+			-- NOTE: building a key inside the script is not Redis Cluster compatible, every
+			-- key a script touches must be passed in KEYS for cluster slot routing
+			local podAlive = redis.call("EXISTS", ARGV[2] .. playerPod)
+			if podAlive == 0 then
+				-- expected case, not corruption: clean up the dead pod's player
+				redis.call("HDEL", KEYS[2], partyIds[i])
+
+				-- push everyone else back to the start, in original order
+				for j = #partyIds, 1, -1 do
+					local playerId = partyIds[j]
+
+					if playerId ~= partyIds[i] then
+						redis.call("LPUSH", KEYS[1], playerId)
+					end
+				end
+
+				-- no match this round
+				return "[]"
+			end
+
 			local player = {
 				id = partyIds[i],
 				pod = playerPod
@@ -132,7 +162,7 @@ var matchmakeScript = redis.NewScript(`
 // checks every tick if there is enough players for a game, removes them from
 // list (queue) and player:pod hash
 func (r *Redis) Matchmake(ctx context.Context, matchCriteria matchmaker.MatchCriteria) ([]matchmaker.MatchedPlayer, error) {
-	raw, err := matchmakeScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, matchCriteria.MatchSize).Text()
+	raw, err := matchmakeScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, matchCriteria.MatchSize, keyPodAlivePrefix).Text()
 
 	if err != nil {
 		return nil, fmt.Errorf("MatchQueue Matchmake redis script : %w", err)
@@ -152,4 +182,16 @@ func (r *Redis) Matchmake(ctx context.Context, matchCriteria matchmaker.MatchCri
 	}
 
 	return matchedPlayers, nil
+}
+
+// refreshes this pod's liveness key; if the pod stops calling this it expires
+// on its own, so a crashed pod needs nobody to clean up after it
+func (r *Redis) MarkPodAlive(ctx context.Context, podID string) error {
+	err := r.client.Set(ctx, keyPodAlivePrefix+podID, 1, podAliveTTL).Err()
+
+	if err != nil {
+		return fmt.Errorf("MatchQueue MarkPodAlive : %w", err)
+	}
+
+	return nil
 }

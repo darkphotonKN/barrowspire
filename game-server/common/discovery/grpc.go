@@ -30,5 +30,10 @@ func ServiceConnection(ctx context.Context, serviceName string, registry Registr
 		addrs[rand.Intn(len(addrs))],
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		// Consul is the discovery mechanism; nothing publishes gRPC service
+		// config over DNS. Without this the dns resolver looks up the TXT
+		// record _grpc_config.<host> and, on upstream DNS that drops the query,
+		// blocks every new connection for ~20 s (5 s x 2 attempts x 2 servers).
+		grpc.WithDisableServiceConfig(),
 	)
 }

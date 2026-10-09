@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"google.golang.org/grpc"
 )
 
 // Config holds the configuration for telemetry initialization.
@@ -87,6 +88,8 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 		otlptracegrpc.WithEndpoint(cfg.CollectorEndpoint),
 		otlptracegrpc.WithInsecure(), // TODO: TLS in prod
 		otlptracegrpc.WithTimeout(exportTimeout),
+		// Skip the DNS TXT service-config lookup (see discovery.ServiceConnection).
+		otlptracegrpc.WithDialOption(grpc.WithDisableServiceConfig()),
 	)
 	if err != nil {
 		return noopShutdown, fmt.Errorf("creating trace exporter: %w", err)
@@ -112,6 +115,7 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 		otlpmetricgrpc.WithEndpoint(cfg.CollectorEndpoint),
 		otlpmetricgrpc.WithInsecure(),
 		otlpmetricgrpc.WithTimeout(exportTimeout),
+		otlpmetricgrpc.WithDialOption(grpc.WithDisableServiceConfig()),
 	)
 	if err != nil {
 		// Tracer is already wired; tear it down before returning.

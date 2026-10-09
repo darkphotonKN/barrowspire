@@ -7,6 +7,7 @@ import (
 
 	"go.temporal.io/sdk/client"
 	sdklog "go.temporal.io/sdk/log"
+	"google.golang.org/grpc"
 )
 
 // Dial connects to the Temporal frontend, retrying with bounded exponential
@@ -36,6 +37,12 @@ func Dial(ctx context.Context, cfg Config, logger sdklog.Logger) (client.Client,
 			HostPort:  cfg.HostPort,
 			Namespace: cfg.Namespace,
 			Logger:    logger,
+			// Skip the DNS TXT service-config lookup that can stall a dial past
+			// its deadline (see discovery.ServiceConnection). The SDK's own
+			// default service config still applies.
+			ConnectionOptions: client.ConnectionOptions{
+				DialOptions: []grpc.DialOption{grpc.WithDisableServiceConfig()},
+			},
 		})
 		if err == nil {
 			if logger != nil {
