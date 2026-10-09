@@ -15,7 +15,9 @@ import (
 
 	Handlers record attack intents as component data; this resolves them on the
 	tick: cooldown, mana, delivery (a targeted strike, a cone, projectiles, a dash),
-	then each hit through the damage formula. Projectile impacts detected earlier
+	then each hit through the damage formula. A dash sets a charge going that the
+	MovementSystem carries over the ticks after; this ends it once it is spent or
+	stopped, or when a new cast lands. Projectile impacts detected earlier
 	in the same tick are handed in by the ProjectileSystem and resolved here too.
 
 	The worn uniques that ride on combat resolve here as well, every hit through
@@ -118,7 +120,17 @@ const (
 	targetedAttackRange = 60.0
 	slashRange          = 50.0
 	slashHalfCone       = 1.05 // ~60°, a 120° cone
-	dashDistance        = 180.0
+
+	// The charge runs dashDistance at dashSpeed: 0.4 s, 12 ticks of 15 px at
+	// the world's 30 per second. The distance is the old teleport's. Under the
+	// fastest capped cooldown (0.4 s / 1.5 = 0.267 s) a charge can be recast
+	// before it is over: the new cast stops the old one where the body stands
+	// and starts afresh, so no cast ever carries anyone more than dashDistance.
+	dashDistance = 180.0
+	dashSpeed    = 450.0 // px per second
+	// dashEpsilon absorbs the float drift of summing steps, so a charge whose
+	// last step lands it on its distance is over on that tick.
+	dashEpsilon = 1e-6
 )
 
 // attackTable is FS-77AB6 §Requirements 6. Starting values. Projectile speed,
@@ -215,6 +227,11 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 		}
 	}
 
+	// after the burn, so a trail a charge lays as it ends first burns next tick
+	for _, entity := range entities {
+		s.settleCharge(entity)
+	}
+
 	for _, entity := range entities {
 		tickCooldowns(entity, deltaTime)
 
@@ -297,10 +314,13 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 		s.slash(attacker, at, intent.TargetX, intent.TargetY, spec, entities)
 	case deliverProjectile:
 		s.fire(attacker, at, intent.TargetX, intent.TargetY, spec)
-	case deliverMovement:
-		fromX, fromY := at.X, at.Y
-		dash(at, intent.TargetX, intent.TargetY)
-		s.layBurningTrail(attacker, fromX, fromY, at.X, at.Y)
+	}
+
+	// a new cast stops a charge in flight where the body stands; a new dash then
+	// starts afresh from there, never adding on what the old one had left
+	s.endCharge(attacker)
+	if spec.delivery == deliverMovement {
+		startCharge(attacker, at, intent.TargetX, intent.TargetY)
 	}
 
 	if mana != nil {
@@ -381,19 +401,62 @@ func (s *CombatSystem) fire(attacker *ecs.Entity, at *components.TransformCompon
 	}
 }
 
-func dash(at *components.TransformComponent, aimX, aimY float64) {
+// startCharge sets a charge going from where the attacker stands toward the
+// aim: +x when the aim is where they stand. The MovementSystem carries it.
+func startCharge(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64) {
+	dirX, dirY := 1.0, 0.0
 	dx, dy := aimX-at.X, aimY-at.Y
-	dist := math.Hypot(dx, dy)
-	if dist == 0 {
-		at.X += dashDistance
+	if dist := math.Hypot(dx, dy); dist > 0 {
+		dirX, dirY = dx/dist, dy/dist
+	}
+	attacker.AddComponent(&components.DashComponent{
+		DirX: dirX, DirY: dirY,
+		Speed:     dashSpeed,
+		Remaining: dashDistance,
+		FromX:     at.X, FromY: at.Y,
+	})
+}
+
+// settleCharge ends a charge that is over: one out of play goes at once and
+// lays nothing, one spent or stopped ends where it stands.
+func (s *CombatSystem) settleCharge(entity *ecs.Entity) {
+	dc, ok := entity.GetComponent(ecs.ComponentTypeDash)
+	if !ok {
 		return
 	}
-	at.X += dx / dist * dashDistance
-	at.Y += dy / dist * dashDistance
+	if !canAct(entity) {
+		entity.RemoveComponent(ecs.ComponentTypeDash)
+		return
+	}
+	if dc.(*components.DashComponent).Remaining <= dashEpsilon {
+		s.endCharge(entity)
+	}
+}
+
+// endCharge ends the entity's charge, if one is in flight, where it stands, and
+// lays an Ashwalk wearer's trail along the path it actually travelled.
+func (s *CombatSystem) endCharge(entity *ecs.Entity) {
+	dc, ok := entity.GetComponent(ecs.ComponentTypeDash)
+	if !ok {
+		return
+	}
+	entity.RemoveComponent(ecs.ComponentTypeDash)
+	tc, ok := entity.GetComponent(ecs.ComponentTypeTransform)
+	if !ok || !canAct(entity) {
+		return
+	}
+	charge := dc.(*components.DashComponent)
+	at := tc.(*components.TransformComponent)
+	slog.Debug("charge ended",
+		"entity_id", entity.ID,
+		"travelled", math.Hypot(at.X-charge.FromX, at.Y-charge.FromY),
+		"unspent", charge.Remaining,
+	)
+	s.layBurningTrail(entity, charge.FromX, charge.FromY, at.X, at.Y)
 }
 
 // layBurningTrail lays an Ashwalk Greaves wearer's trail along the path just
-// dashed: a magic hit from the wearer at power BasePower + their level,
+// dashed, as the charge ends: a magic hit from the wearer at power BasePower + their level,
 // coefficient 1, nothing scaling it and no crit. It first burns on the next
 // tick. A wearer has one live trail: this one replaces any still burning from
 // their last dash. FS-4R9M9 §Requirements 36 (user decision 2026-10-09).
