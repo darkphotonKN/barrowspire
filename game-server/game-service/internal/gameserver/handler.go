@@ -52,47 +52,18 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 		return
 	}
 
-	// check if player is reconnecting by checking if they already exist in the players map
-	s.mu.RLock()
-	reconnectingPlayer, playerIsReconnecting := s.players[memberId]
-	s.mu.RUnlock()
-
-	var player *types.Player
-	isReconnection := false
-
-	if playerIsReconnecting {
+	// a member already on record is reconnecting: their record is kept and
+	// takes the token they reconnected with
+	player, isReconnection := s.connectPlayer(memberId, data.Name, types.BearerToken(c.GetString("token")))
+	if isReconnection {
 		slog.Debug("Player is reconnecting",
-			"username", reconnectingPlayer.Username,
-			"game_session_id", reconnectingPlayer.CurrentGameSessionId,
-			"connect_state", reconnectingPlayer.ConnectState)
-
-		player = reconnectingPlayer
-		isReconnection = true
-
-		// mark as connected
-		connected := constants.Connected
-		player.ConnectState = &connected
-
-		// update username (may have changed name)
-		player.Username = data.Name
+			"username", player.Username,
+			"game_session_id", player.CurrentGameSessionId,
+			"connect_state", player.ConnectState)
 	} else {
-		// new player connecting for the first time
 		slog.Debug("Player connecting fresh.",
 			"username", data.Name,
 		)
-
-		connected := constants.Connected
-		player = &types.Player{
-			ID:                   memberId,
-			Username:             data.Name,
-			CurrentGameSessionId: uuid.Nil,
-			ConnectState:         &connected,
-		}
-
-		// add to players map
-		s.mu.Lock()
-		s.players[memberId] = player
-		s.mu.Unlock()
 	}
 
 	// establish websocket connection

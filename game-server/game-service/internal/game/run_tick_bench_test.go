@@ -27,7 +27,7 @@ func fullRun(b *testing.B) (*Session, []uuid.UUID, *ecs.Entity) {
 
 	delvers := []uuid.UUID{uuid.New(), uuid.New()}
 	for i, class := range []string{"archer", "mage"} {
-		entity, _ := em.GetEntity(s.AddPlayer(delvers[i], types.CharacterInPlay{Name: "Delver", Class: class}))
+		entity, _ := em.GetEntity(s.AddPlayer(delvers[i], types.CharacterInPlay{Name: "Delver", Class: class}, ""))
 		tc, _ := entity.GetComponent(ecs.ComponentTypeTransform)
 		at := tc.(*components.TransformComponent)
 		at.X, at.Y = 300+float64(i)*80, 300

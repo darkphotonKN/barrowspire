@@ -95,7 +95,7 @@ func TestSessionAddPlayer(t *testing.T) {
 	playerID := uuid.New()
 	username := "TestPlayer"
 
-	entityID := session.AddPlayer(playerID, types.CharacterInPlay{Name: username, Class: "warrior"})
+	entityID := session.AddPlayer(playerID, types.CharacterInPlay{Name: username, Class: "warrior"}, "")
 
 	assert.NotEqual(t, uuid.Nil, entityID, "Should return valid entity ID")
 
@@ -129,8 +129,8 @@ func TestSessionAddMultiplePlayers(t *testing.T) {
 	player1ID := uuid.New()
 	player2ID := uuid.New()
 
-	entity1ID := session.AddPlayer(player1ID, types.CharacterInPlay{Name: "Player1", Class: "warrior"})
-	entity2ID := session.AddPlayer(player2ID, types.CharacterInPlay{Name: "Player2", Class: "mage"})
+	entity1ID := session.AddPlayer(player1ID, types.CharacterInPlay{Name: "Player1", Class: "warrior"}, "")
+	entity2ID := session.AddPlayer(player2ID, types.CharacterInPlay{Name: "Player2", Class: "mage"}, "")
 
 	assert.NotEqual(t, entity1ID, entity2ID, "Entity IDs should be unique")
 	assert.Equal(t, 2, len(session.playerIDToEntitiesID), "Should have 2 players")
@@ -889,7 +889,7 @@ func TestHandleInteract_DoorRangeFromDoorwayCentre(t *testing.T) {
 			defer session.Shutdown()
 
 			playerID := uuid.New()
-			playerEntityID := session.AddPlayer(playerID, types.CharacterInPlay{Name: "Delver", Class: "warrior"})
+			playerEntityID := session.AddPlayer(playerID, types.CharacterInPlay{Name: "Delver", Class: "warrior"}, "")
 			playerEntity, ok := em.GetEntity(playerEntityID)
 			require.True(t, ok)
 			transformComp, ok := playerEntity.GetComponent(ecs.ComponentTypeTransform)

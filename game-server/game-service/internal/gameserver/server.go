@@ -229,7 +229,7 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.CharacterInPlay) 
 	// out here would mean holding the server's lock over data the session owns,
 	// which serialises JoinHub against itself and nothing else, so the next path
 	// into the hub would sidestep the cap without noticing.
-	if err := hub.Admit(player.ID, character); err != nil {
+	if err := hub.Admit(player.ID, character, s.tokenOf(player)); err != nil {
 		return nil, err
 	}
 
@@ -292,6 +292,54 @@ func (s *Server) everyRecordOf(player *types.Player) []*types.Player {
 }
 
 /**
+* Finds or creates the record of a member arriving on a connection, holding the
+* bearer token they connected with.
+*
+* A member already on record is reconnecting: the record is kept (it knows the
+* world they are in and the character they play) and every copy of it takes the
+* new token, so the next world they are seated in loads their gear with a token
+* that is current as of this connect. Reports whether it was a reconnect.
+**/
+func (s *Server) connectPlayer(memberID uuid.UUID, username string, token types.BearerToken) (*types.Player, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	connected := constants.Connected
+
+	if player, exists := s.players[memberID]; exists {
+		for _, record := range s.everyRecordOf(player) {
+			record.ConnectState = &connected
+			// may have changed name
+			record.Username = username
+			record.Token = token
+		}
+		return player, true
+	}
+
+	player := &types.Player{
+		ID:                   memberID,
+		Username:             username,
+		CurrentGameSessionId: uuid.Nil,
+		ConnectState:         &connected,
+		Token:                token,
+	}
+	s.players[memberID] = player
+
+	return player, false
+}
+
+/**
+* The bearer token a player's worn gear is loaded with, read under the lock a
+* reconnect refreshes it under.
+**/
+func (s *Server) tokenOf(player *types.Player) types.BearerToken {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return player.Token
+}
+
+/**
 * PlayerByID finds a connected player.
 **/
 func (s *Server) PlayerByID(playerID uuid.UUID) (*types.Player, bool) {
@@ -330,7 +378,7 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 		}
 
 		run.RemovePlayer(playerID.String())
-		hub.AddPlayer(player.ID, player.Character)
+		hub.AddPlayer(player.ID, player.Character, s.tokenOf(player))
 		s.setCurrentWorld(player, hub.ID)
 
 		if err := s.sender.SendMessageToPlayer(playerID, worldEnteredMessage(hub)); err != nil {
@@ -469,7 +517,7 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 	// already be known (FS-77AB6 §Requirements 22). The session is not yet
 	// registered, so nothing routes to it while it is being built.
 	for _, player := range players {
-		newGameSession.AddPlayer(player.ID, player.Character)
+		newGameSession.AddPlayer(player.ID, player.Character, s.tokenOf(player))
 	}
 	newGameSession.InitialMapObjects()
 

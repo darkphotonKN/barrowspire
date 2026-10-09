@@ -22,7 +22,7 @@ type seatedBody struct {
 func seat(t *testing.T, s *Session, character types.CharacterInPlay) seatedBody {
 	t.Helper()
 
-	entity, ok := s.EntityManager.GetEntity(s.AddPlayer(uuid.New(), character))
+	entity, ok := s.EntityManager.GetEntity(s.AddPlayer(uuid.New(), character, ""))
 	require.True(t, ok)
 
 	sc, _ := entity.GetComponent(ecs.ComponentTypeStats)
@@ -94,8 +94,8 @@ func TestAddPlayer_CarriesTheCharactersProgressionAndIdentity(t *testing.T) {
 // Monsters are levelled to the party's highest seated level. FS-77AB6 §22.
 func TestPartyLevel_IsTheHighestSeatedCharacter(t *testing.T) {
 	s := unstartedRun(t)
-	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "mage", Level: 3})
-	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Kaelen", Class: "warrior", Level: 7})
+	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "mage", Level: 3}, "")
+	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Kaelen", Class: "warrior", Level: 7}, "")
 
 	assert.Equal(t, 7, partyLevel(delversOf(s.EntityManager.GetAllEntities())))
 }
@@ -139,8 +139,8 @@ func TestAdmit_HubAsAnotherCharacter_ReseatsTheBody(t *testing.T) {
 	warrior := types.CharacterInPlay{ID: uuid.New(), Name: "Kaelen", Class: "warrior", Level: 5, Experience: 640}
 	mage := types.CharacterInPlay{ID: uuid.New(), Name: "Wren", Class: "mage", Level: 1, Experience: 0}
 
-	require.NoError(t, hub.Admit(member, warrior))
-	require.NoError(t, hub.Admit(member, mage))
+	require.NoError(t, hub.Admit(member, warrior, ""))
+	require.NoError(t, hub.Admit(member, mage, ""))
 
 	body := bodyOf(t, hub, member)
 	assert.Equal(t, mage.ID, body.player.CharacterID)
@@ -157,9 +157,9 @@ func TestAdmit_HubAsTheSameCharacter_KeepsTheBody(t *testing.T) {
 	member := uuid.New()
 	warrior := types.CharacterInPlay{ID: uuid.New(), Name: "Kaelen", Class: "warrior", Level: 5}
 
-	require.NoError(t, hub.Admit(member, warrior))
+	require.NoError(t, hub.Admit(member, warrior, ""))
 	before := hub.playerIDToEntitiesID[member]
-	require.NoError(t, hub.Admit(member, warrior))
+	require.NoError(t, hub.Admit(member, warrior, ""))
 
 	assert.Equal(t, before, hub.playerIDToEntitiesID[member])
 }
@@ -170,9 +170,9 @@ func TestAdmit_RunAsAnotherCharacter_IsRefused(t *testing.T) {
 	run := unstartedRun(t)
 	member := uuid.New()
 	warrior := types.CharacterInPlay{ID: uuid.New(), Name: "Kaelen", Class: "warrior", Level: 5}
-	run.AddPlayer(member, warrior)
+	run.AddPlayer(member, warrior, "")
 
-	err := run.Admit(member, types.CharacterInPlay{ID: uuid.New(), Name: "Wren", Class: "mage", Level: 1})
+	err := run.Admit(member, types.CharacterInPlay{ID: uuid.New(), Name: "Wren", Class: "mage", Level: 1}, "")
 
 	assert.ErrorIs(t, err, ErrCharacterSwitchMidRun)
 	assert.Equal(t, warrior.ID, bodyOf(t, run, member).player.CharacterID)

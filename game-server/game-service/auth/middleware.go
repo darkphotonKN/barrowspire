@@ -83,9 +83,11 @@ func WSAuthMiddleware(authClient grpcauth.AuthClient) gin.HandlerFunc {
 			return
 		}
 
-		// store in context
+		// store in context. The token is kept so the game can load the member's
+		// worn gear as them; it is never logged.
 		c.Set("userId", userID)
 		c.Set("userIdStr", resp.MemberId)
+		c.Set("token", token)
 
 		slog.Debug("stored userId in gin context")
 

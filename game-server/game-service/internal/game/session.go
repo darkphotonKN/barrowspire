@@ -773,17 +773,18 @@ var Classes = map[string]ClassConfig{
 }
 
 // AddPlayer seats the member's character in play in this world, at its level.
-func (s *Session) AddPlayer(playerID uuid.UUID, character types.CharacterInPlay) uuid.UUID {
+// token is the member's own bearer token: their worn gear is loaded as them.
+func (s *Session) AddPlayer(playerID uuid.UUID, character types.CharacterInPlay, token types.BearerToken) uuid.UUID {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.addPlayerLocked(playerID, character)
+	return s.addPlayerLocked(playerID, character, token)
 }
 
 // addPlayerLocked is AddPlayer's body. Callers hold the world's lock, so that
 // deciding whether to admit someone and admitting them cannot be split by
 // another goroutine slipping between the two
-func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterInPlay) uuid.UUID {
+func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterInPlay, token types.BearerToken) uuid.UUID {
 
 	// Already here: there is nothing to build. The guard lives with the world
 	// rather than with whoever is asking, because overwriting the mapping while
@@ -831,7 +832,7 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 		// the fetch runs under the world's lock: a hanging items service must
 		// never hold it, so past the deadline the delver is seated without a loadout
 		ctx, cancel := context.WithTimeout(context.Background(), loadoutLoadTimeout)
-		loadoutResult, err := s.itemsClient.GetLoadoutWithItems(ctx, grpcLoadoutRequest)
+		loadoutResult, err := s.itemsClient.GetLoadoutWithItems(asMember(ctx, token), grpcLoadoutRequest)
 		cancel()
 
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -1000,7 +1001,7 @@ var ErrWorldFull = errors.New("this world is full")
 * a player coming home from one is not arriving, so ReturnPlayersToHub adds them
 * directly rather than asking.
 **/
-func (s *Session) Admit(playerID uuid.UUID, character types.CharacterInPlay) error {
+func (s *Session) Admit(playerID uuid.UUID, character types.CharacterInPlay, token types.BearerToken) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1019,7 +1020,7 @@ func (s *Session) Admit(playerID uuid.UUID, character types.CharacterInPlay) err
 		}
 	}
 
-	s.addPlayerLocked(playerID, character)
+	s.addPlayerLocked(playerID, character, token)
 
 	return nil
 }

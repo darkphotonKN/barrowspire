@@ -28,11 +28,11 @@ func TestGenerateItems_ChestOnFloorTwo_RollsAtTheAreaLevel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := newRun(t, &countingItemsClient{})
-			s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 5})
-			s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Kaelen", Class: "mage", Level: 3})
+			s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 5}, "")
+			s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Kaelen", Class: "mage", Level: 3}, "")
 			if tt.escaped > 0 {
 				gone := uuid.New()
-				s.AddPlayer(gone, types.CharacterInPlay{Name: "Ash", Class: "archer", Level: tt.escaped})
+				s.AddPlayer(gone, types.CharacterInPlay{Name: "Ash", Class: "archer", Level: tt.escaped}, "")
 				markEscaped(t, delverEntity(t, s, gone))
 			}
 			currentFloor(t, s).Depth = tt.floor

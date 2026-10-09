@@ -40,7 +40,7 @@ func rosterOnRun(t *testing.T, seed uint64, roster ...delverAt) *Session {
 
 	for i, d := range roster {
 		playerID := uuid.New()
-		s.AddPlayer(playerID, types.CharacterInPlay{Name: "delver", Class: "warrior"})
+		s.AddPlayer(playerID, types.CharacterInPlay{Name: "delver", Class: "warrior"}, "")
 
 		entity, ok := s.EntityManager.GetEntity(s.playerIDToEntitiesID[playerID])
 		require.True(t, ok, "delver %d was not placed", i)
@@ -338,7 +338,7 @@ func TestPopulateMonsters_SkipsWhatCannotBePlaced(t *testing.T) {
 	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, nil,
 		WorldBounds{Type: types.WorldTypeRun, Width: 500, Height: 500})
 	s.spawnRand = seededSpawns(3)
-	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "delver", Class: "warrior"})
+	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "delver", Class: "warrior"}, "")
 	for _, e := range em.GetAllEntities() {
 		if e.HasComponent(ecs.ComponentTypePlayer) {
 			at := transformOf(t, e)
@@ -365,7 +365,7 @@ func TestPopulateMonsters_NeverInTheHub(t *testing.T) {
 	hub := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, nil, HubBounds())
 	hub.spawnRand = seededSpawns(1)
 	hub.InitialHubMapObjects()
-	hub.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"})
+	hub.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
 
 	hub.populateMonsters(1, false)
 	for range 5 {
@@ -501,7 +501,7 @@ func TestPopulateMonsters_GuaranteedDemonRelaxesTheDelverExclusion(t *testing.T)
 		s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, nil,
 			WorldBounds{Type: types.WorldTypeRun, Width: 500, Height: 500})
 		s.spawnRand = seededSpawns(seed)
-		s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "delver", Class: "warrior"})
+		s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "delver", Class: "warrior"}, "")
 		for _, e := range em.GetAllEntities() {
 			if e.HasComponent(ecs.ComponentTypePlayer) {
 				at := transformOf(t, e)

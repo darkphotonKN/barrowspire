@@ -157,8 +157,8 @@ func newParty(t *testing.T, client *countingItemsClient) *party {
 	s := newRun(t, client)
 	p := &party{s: s, carrier: uuid.New(), fallen: uuid.New()}
 
-	s.AddPlayer(p.carrier, types.CharacterInPlay{Name: "Wren", Class: "warrior"})
-	s.AddPlayer(p.fallen, types.CharacterInPlay{Name: "Kaelen", Class: "mage"})
+	s.AddPlayer(p.carrier, types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
+	s.AddPlayer(p.fallen, types.CharacterInPlay{Name: "Kaelen", Class: "mage"}, "")
 
 	carrier := delverEntity(t, s, p.carrier)
 
@@ -348,7 +348,7 @@ func TestRegenerateFloor_MovesTheLivingAndLeavesTheDeadBehind(t *testing.T) {
 	s.stateSerializer = serializer.NewStateSerializer(s.EntityManager)
 
 	escaped := uuid.New()
-	s.AddPlayer(escaped, types.CharacterInPlay{Name: "Isolde", Class: "archer"})
+	s.AddPlayer(escaped, types.CharacterInPlay{Name: "Isolde", Class: "archer"}, "")
 	escapedPlayer, _ := delverEntity(t, s, escaped).GetComponent(ecs.ComponentTypePlayer)
 	escapedPlayer.(*components.PlayerComponent).Escape = true
 	escapedAt := *transformOf(t, delverEntity(t, s, escaped))

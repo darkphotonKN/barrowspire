@@ -94,7 +94,7 @@ func TestAddPlayer_IsIdempotentWhoeverAsks(t *testing.T) {
 	require.NoError(t, err)
 
 	// any other route into the same world, asking again
-	hub.AddPlayer(player.ID, player.Character)
+	hub.AddPlayer(player.ID, player.Character, "")
 
 	assert.Equal(t, 1, entityCountFor(hub.EntityManager.GetAllEntities(), player.ID),
 		"asking twice gave the delver two bodies")

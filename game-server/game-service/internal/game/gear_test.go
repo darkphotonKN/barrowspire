@@ -25,7 +25,7 @@ func ring(name string, requiredLevel int, affixes ...types.Affix) types.ItemConf
 // whose ring goes back to the inventory. FS-4R9M9 §Requirements 42.
 func TestHandleEquip_Ring_FillsRing1ThenRing2ThenReplacesRing1(t *testing.T) {
 	s, _ := equipRun(t, nil)
-	playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+	playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 	first := carried(t, s, playerEntityID, ring("Bone Ring", 1))
 	second := carried(t, s, playerEntityID, ring("Iron Ring", 1))
 	third := carried(t, s, playerEntityID, ring("Gold Ring", 1))
@@ -54,7 +54,7 @@ func TestHandleEquip_Ring_FillsRing1ThenRing2ThenReplacesRing1(t *testing.T) {
 // Unequip takes the named ring out, whichever slot it is in.
 func TestHandleEquip_RingUnequip_TakesOutTheNamedRing(t *testing.T) {
 	s, _ := equipRun(t, nil)
-	playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+	playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 	first := carried(t, s, playerEntityID, ring("Bone Ring", 1))
 	second := carried(t, s, playerEntityID, ring("Iron Ring", 1))
 	require.NoError(t, s.handleEquip(constants.ActionEquip, playerEntityID, first))
@@ -73,7 +73,7 @@ func TestHandleEquip_RingUnequip_TakesOutTheNamedRing(t *testing.T) {
 func TestHandleEquip_OverLevelRing_IsRefused(t *testing.T) {
 	s, dispatcher := equipRun(t, nil)
 	playerID := uuid.New()
-	playerEntityID := s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+	playerEntityID := s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 	lantern := carried(t, s, playerEntityID, ring("Lantern of the Drowned", 9))
 
 	err := s.handleEquip(constants.ActionEquip, playerEntityID, lantern)
@@ -92,7 +92,7 @@ func TestStep_WornRing_CountsOnTheNextTickAndComesOff(t *testing.T) {
 		t.Run(string(bounds.Type), func(t *testing.T) {
 			s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, nil, bounds)
 			playerID := uuid.New()
-			playerEntityID := s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+			playerEntityID := s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 			s.step(1.0/60, s.EntityManager.GetAllEntities())
 			entity := delverEntity(t, s, playerID)
 			hc, _ := entity.GetComponent(ecs.ComponentTypeHealth)
@@ -123,7 +123,7 @@ func TestStep_WornRing_CountsOnTheNextTickAndComesOff(t *testing.T) {
 // A ring already worn is not worn twice: its affixes would count double.
 func TestHandleEquip_RingAlreadyWorn_IsNotWornTwice(t *testing.T) {
 	s, _ := equipRun(t, nil)
-	playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+	playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 	band := carried(t, s, playerEntityID, ring("Band", 1))
 	require.NoError(t, s.handleEquip(constants.ActionEquip, playerEntityID, band))
 
@@ -148,7 +148,7 @@ func TestStep_SeatedWithMaxHealthGear_StartsAtFull(t *testing.T) {
 	}}
 	s, _ := equipRun(t, client)
 	playerID := uuid.New()
-	s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+	s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 	entity := delverEntity(t, s, playerID)
 	hc, _ := entity.GetComponent(ecs.ComponentTypeHealth)
 	health := hc.(*components.HealthComponent)

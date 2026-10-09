@@ -296,7 +296,7 @@ func TestRun_SlainDemon_DropsAPileADelverTakesFrom(t *testing.T) {
 func TestRegenerateFloor_ClearsDropPilesAndTheirItems(t *testing.T) {
 	s := newRun(t, &countingItemsClient{})
 	playerID := uuid.New()
-	delver, _ := s.EntityManager.GetEntity(s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior"}))
+	delver, _ := s.EntityManager.GetEntity(s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior"}, ""))
 	tc, _ := delver.GetComponent(ecs.ComponentTypeTransform)
 	tc.(*components.TransformComponent).X, tc.(*components.TransformComponent).Y = 640, 360 // beside the pile
 
