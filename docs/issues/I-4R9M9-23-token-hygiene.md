@@ -1,6 +1,6 @@
 ---
 id: I-4R9M9-23
-status: open
+status: done
 implements: FS-4R9M9
 blocked_by: [I-4R9M9-20]
 labels: [ready-for-agent]
@@ -17,7 +17,7 @@ Implements I-4R9M9-20's acceptance criterion "the token never appears in logs" �
 4. **LOW — record copy outside the lock.** `gameserver/handler.go:~60,80` reads `player.*` and `MapConnToPlayer(conn, *player)` copies the record (now incl. Token) without `s.mu`, racing `connectPlayer`/`JoinHub`/`setCurrentWorld`/`ApplyRunProgress`. Have `connectPlayer` return a value snapshot taken under the lock and use that.
 
 ## Acceptance Criteria
-- [ ] A test proves a `/game/ws?token=secret` request logs no `secret`.
-- [ ] Key constant shared; middleware→handler token test.
-- [ ] -race on the handler/connect tests clean.
-- [ ] game-service + common tests green (known pre-existing excluded).
+- [x] A test proves a `/game/ws?token=secret` request logs no `secret`.
+- [x] Key constant shared; middleware→handler token test.
+- [x] -race on the handler/connect tests clean.
+- [x] game-service + common tests green (known pre-existing excluded).

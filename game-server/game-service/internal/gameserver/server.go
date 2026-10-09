@@ -299,8 +299,12 @@ func (s *Server) everyRecordOf(player *types.Player) []*types.Player {
 * world they are in and the character they play) and every copy of it takes the
 * new token, so the next world they are seated in loads their gear with a token
 * that is current as of this connect. Reports whether it was a reconnect.
+*
+* Returns a copy of the record taken under the lock, not the record itself: the
+* worlds the member is in keep writing the record under that lock, so the
+* caller reads, logs and maps the copy rather than racing them.
 **/
-func (s *Server) connectPlayer(memberID uuid.UUID, username string, token types.BearerToken) (*types.Player, bool) {
+func (s *Server) connectPlayer(memberID uuid.UUID, username string, token types.BearerToken) (types.Player, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -313,7 +317,7 @@ func (s *Server) connectPlayer(memberID uuid.UUID, username string, token types.
 			record.Username = username
 			record.Token = token
 		}
-		return player, true
+		return *player, true
 	}
 
 	player := &types.Player{
@@ -325,7 +329,7 @@ func (s *Server) connectPlayer(memberID uuid.UUID, username string, token types.
 	}
 	s.players[memberID] = player
 
-	return player, false
+	return *player, false
 }
 
 /**

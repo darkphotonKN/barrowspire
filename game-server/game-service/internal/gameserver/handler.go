@@ -8,6 +8,7 @@ import (
 	"time"
 
 	authPb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
+	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/gin-gonic/gin"
@@ -53,8 +54,9 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 	}
 
 	// a member already on record is reconnecting: their record is kept and
-	// takes the token they reconnected with
-	player, isReconnection := s.connectPlayer(memberId, data.Name, types.BearerToken(c.GetString("token")))
+	// takes the token they reconnected with. player is a copy of the record,
+	// so it is read below without the lock the worlds write it under.
+	player, isReconnection := s.connectPlayer(memberId, data.Name, types.BearerToken(c.GetString(auth.TokenKey)))
 	if isReconnection {
 		slog.Debug("Player is reconnecting",
 			"username", player.Username,
@@ -77,7 +79,7 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 	}
 
 	// update conn to player mapping
-	s.MapConnToPlayer(conn, *player)
+	s.MapConnToPlayer(conn, player)
 
 	// create msgChan
 	s.setupClientWriter(conn)
@@ -103,7 +105,7 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 				},
 			}
 
-			s.announceCurrentWorld(msgChan, player)
+			s.announceCurrentWorld(msgChan, &player)
 		}
 	}
 

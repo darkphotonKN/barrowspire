@@ -36,11 +36,12 @@ import (
 // The item catalogue reads are public for the same reason: ListItemTemplates and
 // ListItemRarities return base types and rarity weights — catalogue data, owned by
 // no member. game-service reads them once per game session to seed its loot pool,
-// with no player behind the call and so no token to forward. They are internal
-// gRPC only (the gateway does not expose them), take no caller and read nothing by
-// caller. The player's worn gear is the opposite: GetLoadoutWithItems stays
-// guarded, and game-service calls it with the player's own forwarded token so
-// items-service still checks the caller owns that loadout.
+// with no player behind the call and so no token to forward. They take no caller
+// and read nothing by caller. ListItemRarities is also served by the gateway as
+// GET /api/items/rarities, which the gateway keeps behind sign-in itself, so
+// being public here exposes nothing new. The player's worn gear is the opposite:
+// GetLoadoutWithItems stays guarded, and game-service calls it with the player's
+// own forwarded token so items-service still checks the caller owns that loadout.
 //
 // Every other marketplace and items method still needs a token (auth_test pins that).
 var publicMethods = map[string]bool{

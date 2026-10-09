@@ -13,6 +13,16 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// TokenParam is the query parameter the client sends its bearer token in on the
+// WebSocket connect: a browser WebSocket cannot set an Authorization header.
+// Anything that logs a request URL must redact it.
+const TokenParam = "token"
+
+// TokenKey is the gin context key the validated bearer token is passed to the
+// connection handler under. The token is kept so the game can load the member's
+// worn gear as them; it is never logged.
+const TokenKey = "token"
+
 // Custom close code for auth errors (4000-4999 range is for application use)
 const CloseCodeAuthError = 4001
 
@@ -54,7 +64,7 @@ func rejectWebSocket(c *gin.Context, reason string) {
 func WSAuthMiddleware(authClient grpcauth.AuthClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		slog.Debug("incoming request to connect to game")
-		token := c.Query("token")
+		token := c.Query(TokenParam)
 		if token == "" {
 			slog.Debug("token missing")
 			rejectWebSocket(c, "missing token")
@@ -83,11 +93,10 @@ func WSAuthMiddleware(authClient grpcauth.AuthClient) gin.HandlerFunc {
 			return
 		}
 
-		// store in context. The token is kept so the game can load the member's
-		// worn gear as them; it is never logged.
+		// store in context
 		c.Set("userId", userID)
 		c.Set("userIdStr", resp.MemberId)
-		c.Set("token", token)
+		c.Set(TokenKey, token)
 
 		slog.Debug("stored userId in gin context")
 
