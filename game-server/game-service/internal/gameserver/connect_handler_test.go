@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
@@ -32,52 +33,92 @@ func (a *oneMemberAuth) ValidateToken(ctx context.Context, req *pb.ValidateToken
 type connectRoute struct {
 	url     string
 	handled chan struct{}
+	panics  chan any
 }
 
 func newConnectRoute(t *testing.T, server *Server, authClient *oneMemberAuth) *connectRoute {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
-	route := &connectRoute{handled: make(chan struct{}, 1)}
+	route := &connectRoute{handled: make(chan struct{}, 64), panics: make(chan any, 64)}
 
 	router := gin.New()
 	router.GET("/game/ws",
 		func(c *gin.Context) {
+			// a panicking handler is reported, not swallowed by net/http
+			defer func() {
+				if r := recover(); r != nil {
+					route.panics <- r
+				}
+				route.handled <- struct{}{}
+			}()
 			c.Next()
-			route.handled <- struct{}{}
 		},
 		auth.WSAuthMiddleware(authClient),
 		server.HandleWebSocketConnection,
 	)
 
-	// not closed: its connections are held open (see heldConns)
 	httpServer := httptest.NewServer(router)
+	t.Cleanup(httpServer.Close)
 	route.url = "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/game/ws"
 
 	return route
 }
 
-// heldConns keeps the test clients' connections open for the life of the test
-// binary. Closing one drives the server's disconnect handling, which these
-// tests are not about (and whose cleanUpClient cannot yet take a connection it
-// no longer maps).
-var (
-	heldConnsMu sync.Mutex
-	heldConns   []*websocket.Conn
-)
+// dial opens a connection as a member holding token, without waiting for the
+// handler. The connection is closed normally when the test ends.
+func (r *connectRoute) dial(t *testing.T, token string) *websocket.Conn {
+	t.Helper()
+
+	conn, _, err := websocket.DefaultDialer.Dial(r.url+"?"+auth.TokenParam+"="+token, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { closeNormally(conn) })
+
+	return conn
+}
 
 // connect dials as a member holding token and waits for the handler to finish
 // with the connection, so one connect is fully handled before the next.
-func (r *connectRoute) connect(t *testing.T, token string) {
+func (r *connectRoute) connect(t *testing.T, token string) *websocket.Conn {
 	t.Helper()
 
-	conn, _, err := websocket.DefaultDialer.Dial(r.url+"?token="+token, nil)
-	require.NoError(t, err)
-	<-r.handled
+	conn := r.dial(t, token)
+	r.awaitHandled(t)
 
-	heldConnsMu.Lock()
-	heldConns = append(heldConns, conn)
-	heldConnsMu.Unlock()
+	return conn
+}
+
+// awaitHandled waits for the handler to finish with one connection.
+func (r *connectRoute) awaitHandled(t *testing.T) {
+	t.Helper()
+
+	select {
+	case <-r.handled:
+	case <-time.After(settle):
+		t.Fatalf("the connect handler did not finish within %s", settle)
+	}
+}
+
+// assertNoPanics fails the test if any connect handler panicked.
+func (r *connectRoute) assertNoPanics(t *testing.T) {
+	t.Helper()
+
+	for {
+		select {
+		case p := <-r.panics:
+			t.Errorf("the connect handler panicked: %v", p)
+		default:
+			return
+		}
+	}
+}
+
+// closeNormally leaves the way a client does on purpose: a close frame, then
+// the socket.
+func closeNormally(conn *websocket.Conn) {
+	_ = conn.WriteControl(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+	_ = conn.Close()
 }
 
 // The token the member connects with is the one their record holds: the
