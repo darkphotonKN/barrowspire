@@ -1,7 +1,9 @@
 package game
 
 import (
+	"cmp"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
@@ -91,8 +93,9 @@ func TestFirstFloor_SpawnsThePartyTogether(t *testing.T) {
 // Every climb sets the living down together again, around a new point; the
 // dead stay behind and the escaped are untouched.
 func TestClimb_RegroupsTheLivingParty(t *testing.T) {
-	for range 25 {
+	for seed := uint64(1); seed <= 25; seed++ {
 		s, ids := seatedRun(t, 5)
+		s.spawnRand = seededSpawns(seed)
 		living, fallen, escaped := ids[:3], ids[3], ids[4]
 
 		hc, _ := delverEntity(t, s, fallen).GetComponent(ecs.ComponentTypeHealth)
@@ -106,16 +109,16 @@ func TestClimb_RegroupsTheLivingParty(t *testing.T) {
 		for i, id := range living {
 			*transformOf(t, delverEntity(t, s, id)) = components.TransformComponent{X: 100 + float64(i)*600, Y: 100 + float64(i)*300}
 		}
-		before := *transformOf(t, delverEntity(t, s, living[0]))
 
 		require.NoError(t, s.regenerateFloor())
 		assertGrouped(t, s, living)
 		assert.Equal(t, escapedAt, *transformOf(t, delverEntity(t, s, escaped)), "the escaped are not placed")
+		firstRegroup := sortedPoints(transformsOf(t, s, living))
 
 		// and again on the top floor, at a fresh point
 		require.NoError(t, s.regenerateFloor())
 		assertGrouped(t, s, living)
-		assert.NotEqual(t, before, *transformOf(t, delverEntity(t, s, living[0])))
+		assert.NotEqual(t, firstRegroup, sortedPoints(transformsOf(t, s, living)), "seed %d: the party regrouped where it last stood", seed)
 	}
 }
 
@@ -166,4 +169,94 @@ func TestGatherParty_PlacementExhausted_StillPlaces(t *testing.T) {
 			}
 		})
 	}
+}
+
+// transformsOf is where each of the given delvers stands.
+func transformsOf(t *testing.T, s *Session, playerIDs []uuid.UUID) []point {
+	t.Helper()
+	at := make([]point, len(playerIDs))
+	for i, id := range playerIDs {
+		tc := transformOf(t, delverEntity(t, s, id))
+		at[i] = point{tc.X, tc.Y}
+	}
+	return at
+}
+
+// sortedPoints orders points so two placements compare as sets: the world hands
+// its entities back in no fixed order.
+func sortedPoints(at []point) []point {
+	out := slices.Clone(at)
+	slices.SortFunc(out, func(a, b point) int {
+		return cmp.Or(cmp.Compare(a.x, b.x), cmp.Compare(a.y, b.y))
+	})
+	return out
+}
+
+// The same seed sets the party and its monsters down in the same places: the
+// party's spawn point draws on the session's spawn source, as the monsters do.
+func TestGatherParty_SameSeed_PlacesPartyAndMonstersIdentically(t *testing.T) {
+	place := func(seed uint64) (party, monsters []point) {
+		s := rosterOnRun(t, seed, delverAt{level: 1, x: 100, y: 100}, delverAt{level: 1, x: 1300, y: 860}, delverAt{level: 1})
+		// a fixed layout: only the spawn source decides where things stand
+		s.AddBuilding(400, 300, 300, 200, 20, 50)
+		s.objectOccupiedPlaceAreas = []PlaceArea{{X: 400, Y: 300, W: 300, H: 200}}
+
+		s.gatherParty()
+		s.populateMonsters(1, false)
+
+		for _, d := range delversOf(s.EntityManager.GetAllEntities()) {
+			tc := transformOf(t, d)
+			party = append(party, point{tc.X, tc.Y})
+		}
+		for _, m := range monstersIn(s) {
+			tc := transformOf(t, m)
+			monsters = append(monsters, point{tc.X, tc.Y})
+		}
+		return sortedPoints(party), sortedPoints(monsters)
+	}
+
+	for seed := uint64(1); seed <= 10; seed++ {
+		party, monsters := place(seed)
+		againParty, againMonsters := place(seed)
+
+		require.NotEmpty(t, monsters, "seed %d", seed)
+		assert.Equal(t, party, againParty, "seed %d: the party stands elsewhere", seed)
+		assert.Equal(t, monsters, againMonsters, "seed %d: the monsters stand elsewhere", seed)
+	}
+}
+
+// Once the party stands, its formation is taken ground: nothing placed after it
+// lands on a delver.
+func TestGatherParty_ReservesTheFormationArea(t *testing.T) {
+	s, ids := seatedRun(t, 4)
+	s.objectOccupiedPlaceAreas = nil
+
+	s.gatherParty()
+
+	for i, p := range transformsOf(t, s, ids) {
+		assert.True(t, s.IsAreaOccupied(PlaceArea{X: p.x - 1, Y: p.y - 1, W: 2, H: 2}), "delver %d at %v stands on free ground", i, p)
+	}
+}
+
+// The party's formation and the monsters' keep-clear agree on who stands on the
+// floor: not the escaped, not those left behind, not the fallen.
+func TestLivingParty_AgreesWithInPlayPositions(t *testing.T) {
+	s, ids := seatedRun(t, 4)
+	standing, fallen, escaped, leftBehind := ids[0], ids[1], ids[2], ids[3]
+
+	hc, _ := delverEntity(t, s, fallen).GetComponent(ecs.ComponentTypeHealth)
+	hc.(*components.HealthComponent).CurrentHealth = 0
+	hc.(*components.HealthComponent).IsEliminated = true
+	pc, _ := delverEntity(t, s, escaped).GetComponent(ecs.ComponentTypePlayer)
+	pc.(*components.PlayerComponent).Escape = true
+	pc, _ = delverEntity(t, s, leftBehind).GetComponent(ecs.ComponentTypePlayer)
+	pc.(*components.PlayerComponent).LeftBehind = true
+
+	roster := delversOf(s.EntityManager.GetAllEntities())
+	want := transformsOf(t, s, []uuid.UUID{standing})
+
+	assert.Equal(t, want, inPlayPositions(roster), "the monsters keep clear of only the standing delver")
+	party := livingParty(roster)
+	require.Len(t, party, 1, "only the standing delver is gathered")
+	assert.Equal(t, want[0], point{party[0].X, party[0].Y})
 }
