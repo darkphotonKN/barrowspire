@@ -29,7 +29,8 @@ func seededSpawns(seed uint64) *rand.Rand {
 
 // rosterOnRun is a run whose roster stands where the test puts it, before
 // anything is built: the session is not started, so the test is the only thing
-// touching the world. Nothing is built yet; the caller builds the floor.
+// touching the world. Nothing is built yet; the caller builds the floor, and
+// building one sets the party down together, wherever the test put them.
 func rosterOnRun(t *testing.T, seed uint64, roster ...delverAt) *Session {
 	t.Helper()
 
@@ -116,6 +117,9 @@ func TestNewRun_PlacesMonstersOnOpenGroundAwayFromDelvers(t *testing.T) {
 		entities := s.EntityManager.GetAllEntities()
 		keepOut := mapKeepOut(entities)
 		require.NotEmpty(t, keepOut, "the floor has a layout to keep out of")
+		// the floor set the party down together before its monsters came
+		delvers := inPlayPositions(delversOf(entities))
+		require.Len(t, delvers, 2)
 
 		monsters := monstersIn(s)
 		standard := len(standardMonstersIn(s))
@@ -133,7 +137,7 @@ func TestNewRun_PlacesMonstersOnOpenGroundAwayFromDelvers(t *testing.T) {
 					"seed %d: monster at (%.0f, %.0f) overlaps %+v", seed, at.X, at.Y, area)
 			}
 
-			for _, d := range []point{{100, 100}, {1300, 860}} {
+			for _, d := range delvers {
 				assert.GreaterOrEqual(t, math.Hypot(at.X-d.x, at.Y-d.y), MonsterDelverExclusion,
 					"seed %d: monster spawned on top of a delver", seed)
 			}

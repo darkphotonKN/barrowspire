@@ -512,10 +512,11 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 		}
 	}
 
-	// The roster is placed before the first floor is built: the floor's monsters
-	// are levelled to the party and spawned clear of every delver, so both must
-	// already be known (FS-77AB6 §Requirements 22). The session is not yet
-	// registered, so nothing routes to it while it is being built.
+	// The roster is seated before the first floor is built: the floor sets the
+	// party down together at one spawn point, then levels its monsters to the
+	// party and spawns them clear of every delver, so both must already be known
+	// (FS-77AB6 §Requirements 22). The session is not yet registered, so nothing
+	// routes to it while it is being built.
 	for _, player := range players {
 		newGameSession.AddPlayer(player.ID, player.Character, s.tokenOf(player))
 	}

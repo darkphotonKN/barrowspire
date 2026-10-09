@@ -973,9 +973,10 @@ func (s *Session) AddBuilding(bx, by, bw, bh, wallThickness, doorWidth float64) 
 // spawnPoint is where an arriving player is placed.
 //
 // The hub has a front door: everyone enters and returns to the same place, so
-// the world has somewhere to gather (FS-29KSH §Requirements 22). A run scatters
-// arrivals instead, across its own map, not a hardcoded one, so a world of any
-// size places players inside itself.
+// the world has somewhere to gather (FS-29KSH §Requirements 22). In a run this
+// is only where a delver waits while the floor is built: building a floor sets
+// the whole party down together (gatherParty). It stays inside the run's own
+// map, not a hardcoded one, so a world of any size places players inside itself.
 func (s *Session) spawnPoint() (x, y float64) {
 	if s.worldType == types.WorldTypeHub {
 		return constants.HubSpawnX, constants.HubSpawnY
@@ -2496,8 +2497,9 @@ func (s *Session) InitialMapObjects() {
 * run map, buildings, a chest, a locked escape door and the switch that unlocks
 * it, on empty ground, then populates it with monsters levelled to its depth.
 *
-* depth is the floor being built. The roster must already stand on the floor:
-* its monsters are levelled to the party and kept clear of every delver
+* depth is the floor being built. The roster must already be seated: once the
+* layout stands, the party is set down together at one spawn point, and only
+* then are its monsters levelled to the party and kept clear of every delver
 * (FS-77AB6 §Requirements 22). A floor built with nobody on it stays empty.
 **/
 func (s *Session) buildFloor(depth int) {
@@ -2552,6 +2554,10 @@ func (s *Session) buildFloor(depth int) {
 	if depth < constants.RunFloorCount {
 		s.CreateStairs()
 	}
+
+	// the party stands somewhere open before the monsters come, so they keep
+	// clear of it
+	s.gatherParty()
 
 	s.populateMonsters(depth, depth == constants.RunFloorCount)
 }
@@ -2640,8 +2646,8 @@ func (s *Session) regenerateFloor() error {
 
 	floor.Depth++
 
-	// the party stands on the new floor before it is built, so its monsters
-	// spawn clear of them
+	// the party is readied before the floor is built, which sets the living
+	// down together and then spawns its monsters clear of them
 	s.settlePartyOnNewFloor(entities)
 
 	s.buildFloor(floor.Depth)
@@ -2650,10 +2656,11 @@ func (s *Session) regenerateFloor() error {
 }
 
 /**
-* settlePartyOnNewFloor sets living, non-escaped delvers down on the new floor at
-* a fresh spawn point, standing still. The dead stay on the floor they fell on:
-* their record persists, their body is no longer present. The escaped are already
-* gone. No delver keeps an attack aimed at the old floor (FS-F6F88 §13, §15).
+* settlePartyOnNewFloor readies delvers for the new floor: the living stand
+* still, and the floor build sets them down together (gatherParty). The dead
+* stay on the floor they fell on: their record persists, their body is no longer
+* present. The escaped are already gone. No delver keeps an attack aimed at the
+* old floor (FS-F6F88 §13, §15).
 **/
 func (s *Session) settlePartyOnNewFloor(entities []*ecs.Entity) {
 	for _, entity := range entities {
@@ -2680,12 +2687,6 @@ func (s *Session) settlePartyOnNewFloor(entities []*ecs.Entity) {
 
 		if hc, ok := entity.GetComponent(ecs.ComponentTypeHealth); ok && hc.(*components.HealthComponent).IsEliminated {
 			player.LeftBehind = true
-			continue
-		}
-
-		if tc, ok := entity.GetComponent(ecs.ComponentTypeTransform); ok {
-			transform := tc.(*components.TransformComponent)
-			transform.X, transform.Y = s.spawnPoint()
 		}
 	}
 }
