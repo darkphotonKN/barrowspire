@@ -453,3 +453,75 @@ func TestReconnect_RepliesReconnectedThenTheWorld(t *testing.T) {
 		"world_type": string(types.WorldTypeHub),
 	}, world.Payload)
 }
+
+// A member who drops, reconnects and drops again within the first grace is
+// held for the whole second grace: the first drop's timer running out ends
+// nothing, only the second drop's does.
+func TestDisconnect_ARepeatedDropGetsTheFullGraceAgain(t *testing.T) {
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+
+	firstConn := &websocket.Conn{}
+	player := &types.Player{ID: uuid.New(), Username: "Wren"}
+	registerTestConn(server, firstConn, player)
+
+	// drop
+	_, firstHold, held := server.holdForReconnect(firstConn)
+	require.True(t, held)
+
+	// reconnect
+	secondConn := &websocket.Conn{}
+	_, mapped := server.MapConnToPlayer(secondConn, player.ID, make(chan interface{}, clientWriterBuffer))
+	require.True(t, mapped)
+
+	// drop again
+	_, secondHold, held := server.holdForReconnect(secondConn)
+	require.True(t, held)
+
+	// the first drop's grace runs out
+	server.cleanUpPlayerCompletely(player.ID, firstHold)
+	_, onRecord := server.PlayerByID(player.ID)
+	require.True(t, onRecord, "the first drop's grace is over, but the second drop's is not")
+	assert.Equal(t, constants.Reconnecting, connStateOf(t, server, player.ID))
+
+	// the second drop's grace runs out
+	server.cleanUpPlayerCompletely(player.ID, secondHold)
+	_, onRecord = server.PlayerByID(player.ID)
+	assert.False(t, onRecord, "evicted once the second drop's grace is over")
+}
+
+// The old connection failing between the reconnect marking the member
+// connected and publishing the new connection marks them reconnecting. The
+// published connection is live, so it marks them connected again, and the
+// grace that old failure started never evicts them.
+func TestMapConnToPlayer_PublishesTheMemberConnected(t *testing.T) {
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+
+	oldConn := &websocket.Conn{}
+	player := &types.Player{ID: uuid.New(), Username: "Wren"}
+	registerTestConn(server, oldConn, player)
+
+	// a reconnect arrives while the old connection is still mapped
+	server.connectPlayer(player.ID, "Wren", "token")
+
+	// the old connection fails before the new one is published
+	_, staleHold, held := server.holdForReconnect(oldConn)
+	require.True(t, held)
+	require.Equal(t, constants.Reconnecting, connStateOf(t, server, player.ID))
+
+	newConn := &websocket.Conn{}
+	_, mapped := server.MapConnToPlayer(newConn, player.ID, make(chan interface{}, clientWriterBuffer))
+	require.True(t, mapped)
+
+	assert.Equal(t, constants.Connected, connStateOf(t, server, player.ID), "the record is connected")
+	published, ok := server.GetPlayerFromConn(newConn)
+	require.True(t, ok)
+	require.NotNil(t, published.ConnectState)
+	assert.Equal(t, constants.Connected, *published.ConnectState, "and so is the copy routing reads")
+
+	// the old failure's grace runs out
+	server.cleanUpPlayerCompletely(player.ID, staleHold)
+	_, onRecord := server.PlayerByID(player.ID)
+	assert.True(t, onRecord, "a member on a live connection is never evicted")
+	_, stillMapped := server.GetPlayerFromConn(newConn)
+	assert.True(t, stillMapped)
+}

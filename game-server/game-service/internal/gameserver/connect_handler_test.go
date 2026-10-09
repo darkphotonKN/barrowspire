@@ -159,7 +159,7 @@ func TestHandleWebSocketConnection_ReconnectDoesNotRaceTheWorldsWritingTheRecord
 				return
 			default:
 				server.setCurrentWorld(record, hub.ID)
-				server.forgetCurrentWorld(record)
+				server.setCurrentWorld(record, uuid.Nil)
 			}
 		}
 	}()
