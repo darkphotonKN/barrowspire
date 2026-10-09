@@ -48,16 +48,20 @@ func TestConnectPlayer_KeepsTheTokenAndAReconnectRefreshesIt(t *testing.T) {
 	assert.False(t, reconnecting)
 	assert.Equal(t, types.BearerToken("first-token"), player.Token)
 
+	kept, ok := server.PlayerByID(memberID)
+	require.True(t, ok)
+
 	// the reconnect's own connection copy, as the handler maps it
 	conn := &websocket.Conn{}
-	server.MapConnToPlayer(conn, *player)
+	server.MapConnToPlayer(conn, player)
 
 	again, reconnecting := server.connectPlayer(memberID, "Wren", "second-token")
 	assert.True(t, reconnecting)
-	assert.Same(t, player, again, "a reconnect keeps the record")
+	assert.Equal(t, types.BearerToken("second-token"), again.Token)
 
 	record, ok := server.PlayerByID(memberID)
 	require.True(t, ok)
+	assert.Same(t, kept, record, "a reconnect keeps the record")
 	assert.Equal(t, types.BearerToken("second-token"), record.Token)
 	connCopy, ok := server.GetPlayerFromConn(conn)
 	require.True(t, ok)
@@ -72,9 +76,11 @@ func TestSeating_LoadsTheLoadoutWithTheHeldToken(t *testing.T) {
 	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, items, characters)
 
 	memberID := uuid.New()
-	player, _ := server.connectPlayer(memberID, "Wren", "hub-token")
+	connected, _ := server.connectPlayer(memberID, "Wren", "hub-token")
 	conn := &websocket.Conn{}
-	server.MapConnToPlayer(conn, *player)
+	server.MapConnToPlayer(conn, connected)
+	player, ok := server.PlayerByID(memberID)
+	require.True(t, ok)
 	mage := characters.give(memberID, "mage", "Wren", 3, 100)
 
 	_, err := server.EnterHub(context.Background(), conn, mage.ID.String())
