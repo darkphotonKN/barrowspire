@@ -3,11 +3,11 @@ package game
 import (
 	"log/slog"
 	"math"
-	"math/rand/v2"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 )
 
@@ -28,7 +28,11 @@ const partyPlacementAttempts = 100
 * before its monsters, so the monsters spawn clear of where the party stands.
 * The spot keeps clear of every occupied area of the floor, as the stairs do,
 * and like the stairs it never fails: random spots first, then a scan of the
-* floor for the first free one, then the middle of a full floor.
+* floor for the first free one, then the middle of a full floor. The spot is
+* drawn from the session's spawn source, so a seeded run places its party, and
+* the monsters kept clear of it, the same way every time. Once the party
+* stands, its formation is taken ground, so nothing placed after it lands on a
+* delver.
 **/
 func (s *Session) gatherParty() {
 	if s.worldType != types.WorldTypeRun {
@@ -48,12 +52,14 @@ func (s *Session) gatherParty() {
 		transform.X = area.X + partySpacing/2 + float64(i%cols)*partySpacing
 		transform.Y = area.Y + partySpacing/2 + float64(i/cols)*partySpacing
 	}
+
+	s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas, area)
 }
 
 // partyArea finds the w by h area the party's formation stands in.
 func (s *Session) partyArea(w, h float64) PlaceArea {
 	for range partyPlacementAttempts {
-		area := PlaceArea{X: rand.Float64() * (s.mapWidth - w), Y: rand.Float64() * (s.mapHeight - h), W: w, H: h}
+		area := PlaceArea{X: s.spawnRand.Float64() * (s.mapWidth - w), Y: s.spawnRand.Float64() * (s.mapHeight - h), W: w, H: h}
 		if !s.IsAreaOccupied(area) {
 			return area
 		}
@@ -74,20 +80,13 @@ func (s *Session) partyArea(w, h float64) PlaceArea {
 }
 
 // livingParty is where every delver who stands on this floor is: not escaped,
-// not left behind, not fallen.
+// not left behind, not fallen. It is the one rule for who is on the floor, for
+// the party's formation and the monsters' keep-clear alike.
 func livingParty(entities []*ecs.Entity) []*components.TransformComponent {
 	var party []*components.TransformComponent
 
 	for _, entity := range entities {
-		pc, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
-		if !isPlayer {
-			continue
-		}
-		player := pc.(*components.PlayerComponent)
-		if player.Escape || player.LeftBehind {
-			continue
-		}
-		if hc, ok := entity.GetComponent(ecs.ComponentTypeHealth); ok && hc.(*components.HealthComponent).IsEliminated {
+		if !systems.InPlay(entity) {
 			continue
 		}
 		if tc, ok := entity.GetComponent(ecs.ComponentTypeTransform); ok {

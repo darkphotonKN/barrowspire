@@ -975,8 +975,10 @@ func (s *Session) AddBuilding(bx, by, bw, bh, wallThickness, doorWidth float64) 
 // The hub has a front door: everyone enters and returns to the same place, so
 // the world has somewhere to gather (FS-29KSH §Requirements 22). In a run this
 // is only where a delver waits while the floor is built: building a floor sets
-// the whole party down together (gatherParty). It stays inside the run's own
-// map, not a hardcoded one, so a world of any size places players inside itself.
+// the whole party down together (gatherParty). A delver who joins a run whose
+// floor already stands keeps this point until the next climb regroups them
+// (a known gap). It stays inside the run's own map, not a hardcoded one, so a
+// world of any size places players inside itself.
 func (s *Session) spawnPoint() (x, y float64) {
 	if s.worldType == types.WorldTypeHub {
 		return constants.HubSpawnX, constants.HubSpawnY

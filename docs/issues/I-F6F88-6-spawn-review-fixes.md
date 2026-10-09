@@ -1,6 +1,6 @@
 ---
 id: I-F6F88-6
-status: open
+status: done
 implements: FS-F6F88
 blocked_by: [I-F6F88-5, I-4R9M9-23]
 labels: [ready-for-agent]
@@ -18,5 +18,5 @@ Implements FS-F6F88 §Requirements 15 as amended (I-F6F88-5) — code-review MED
 5. **LOW — test.** party_spawn_test.go:~117 compares against the pre-climb scattered position; assert the second climb's point differs from the FIRST regroup point (seeded so it's deterministic).
 
 ## Acceptance Criteria
-- [ ] Seeded runs place the party and monsters identically for the same seed.
-- [ ] Shared in-play helper used by both; formation area reserved; tests green.
+- [x] Seeded runs place the party and monsters identically for the same seed.
+- [x] Shared in-play helper used by both; formation area reserved; tests green.
