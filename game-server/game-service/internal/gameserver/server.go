@@ -451,24 +451,34 @@ func (s *Server) GetServerChan() chan types.ClientPackage {
 
 /**
 * Publishes conn as the member's one live connection, written to through
-* msgChan, and returns the connections it supersedes.
+* msgChan, and returns the connections it supersedes. Reports false, mapping
+* nothing, when the member is no longer on record.
+*
+* The connection carries a copy of the record as it stands now, under the lock,
+* not the copy the handler took before the upgrade: a run ending or a grace
+* cleanup in between would otherwise be undone on the copy routing reads.
 *
 * Mapping the connection and registering its writer happen in one step, as
 * does unmapping a superseded connection and stopping its writer, so
 * overlapping reconnects cannot leave a member with two live connections or a
 * sender holding a closed channel. The caller closes the superseded sockets.
 **/
-func (s *Server) MapConnToPlayer(conn *websocket.Conn, player types.Player, msgChan chan interface{}) []*websocket.Conn {
+func (s *Server) MapConnToPlayer(conn *websocket.Conn, playerID uuid.UUID, msgChan chan interface{}) ([]*websocket.Conn, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	record, onRecord := s.players[playerID]
+	if !onRecord {
+		return nil, false
+	}
 
 	var superseded []*websocket.Conn
 
 	for oldConn, existingPlayer := range s.connToPlayer {
-		if existingPlayer.ID == player.ID && oldConn != conn {
+		if existingPlayer.ID == playerID && oldConn != conn {
 			slog.Info("Player reconnected, cleaning up old connection",
-				"player_id", player.ID,
-				"player_username", player.Username,
+				"player_id", playerID,
+				"player_username", record.Username,
 			)
 			s.stopClientWriterLocked(oldConn)
 			delete(s.connToPlayer, oldConn)
@@ -476,10 +486,11 @@ func (s *Server) MapConnToPlayer(conn *websocket.Conn, player types.Player, msgC
 		}
 	}
 
-	s.connToPlayer[conn] = &player
+	published := *record
+	s.connToPlayer[conn] = &published
 	s.msgChan[conn] = msgChan
 
-	return superseded
+	return superseded, true
 }
 
 /**
@@ -620,6 +631,11 @@ func (s *Server) GetConnFromPlayer(playerID uuid.UUID) (*websocket.Conn, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	return s.connOfLocked(playerID)
+}
+
+// connOfLocked finds the member's live connection. Callers hold the lock.
+func (s *Server) connOfLocked(playerID uuid.UUID) (*websocket.Conn, bool) {
 	for conn, player := range s.connToPlayer {
 		if player.ID == playerID {
 			return conn, true
@@ -637,16 +653,17 @@ func (s *Server) GetConnFromPlayer(playerID uuid.UUID) (*websocket.Conn, bool) {
 * Allows the server to sequentially pipe multiple messages into a single channel for sequential writes back to the client due to gorilla websockets constraint of max one concurrent writer with conn.
 **/
 func (s *Server) PushMessageToChannelQueue(playerID uuid.UUID, msg interface{}) error {
-	conn, exists := s.GetConnFromPlayer(playerID)
+	// The lookups and the send happen under one read lock: a writer channel is
+	// only closed under the write lock, so the connection found here and its
+	// channel are still the member's, and still open. The send never blocks, so
+	// the lock is never held waiting on a slow client.
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	conn, exists := s.connOfLocked(playerID)
 	if !exists {
 		return fmt.Errorf("player %s not found", playerID)
 	}
-
-	// The send happens under the read lock: a writer channel is only closed
-	// under the write lock, so one found here is still open. The send never
-	// blocks, so the lock is never held waiting on a slow client.
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 
 	ch, ok := s.msgChan[conn]
 	if !ok {

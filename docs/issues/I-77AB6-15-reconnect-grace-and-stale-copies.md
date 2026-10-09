@@ -1,6 +1,6 @@
 ---
 id: I-77AB6-15
-status: open
+status: done
 implements: FS-77AB6
 blocked_by: [I-77AB6-14]
 labels: [ready-for-agent]
@@ -18,6 +18,6 @@ Implements FS-77AB6 §Edge States ("delver disconnects … the reconnect grace")
 5. **INFO, cheap:** `PushMessageToChannelQueue` (server.go:~640-648) looks up conn and channel under two RLocks — do both under one.
 
 ## Acceptance Criteria
-- [ ] Reset/network error → delver held for the reconnect window and can resume; normal close → immediate cleanup (unchanged).
-- [ ] Reconnect overlapping a run end maps the live record; old cleanup can't strip a reconnected member.
-- [ ] `go test -race -count=20` on gameserver connection tests clean; suite green apart from known pre-existing.
+- [x] Reset/network error → delver held for the reconnect window and can resume; normal close → immediate cleanup (unchanged).
+- [x] Reconnect overlapping a run end maps the live record; old cleanup can't strip a reconnected member.
+- [x] `go test -race -count=20` on gameserver connection tests clean; suite green apart from known pre-existing.

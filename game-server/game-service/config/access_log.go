@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
@@ -15,8 +16,10 @@ import (
 *
 * gin's default logger writes the raw query, and the client connects with
 * /game/ws?token=<jwt>, so every connect would put a usable credential on
-* stdout. This logs the same line with the token's value redacted; every other
-* parameter is kept for debugging.
+* stdout. This logs a line in gin's default layout (without its colours, so
+* the spacing differs slightly) whose target is the raw path and query as the
+* client sent them, with only the token's value replaced: every other parameter
+* keeps its place and its encoding for debugging.
 **/
 func AccessLogger(out io.Writer) gin.HandlerFunc {
 	return gin.LoggerWithConfig(gin.LoggerConfig{
@@ -41,16 +44,27 @@ func accessLogLine(param gin.LogFormatterParams) string {
 	)
 }
 
-// redactedTarget is the request's path and query with the token's value hidden.
+// redactedTarget is the request's raw path and query with every token value
+// replaced. Parameters are matched by their decoded name, as the server reads
+// them, so an escaped name such as tok%65n is redacted too; one whose name
+// cannot be decoded is redacted as well, rather than risk logging a credential.
 func redactedTarget(u *url.URL) string {
 	if u.RawQuery == "" {
 		return u.Path
 	}
 
-	query := u.Query()
-	if query.Has(auth.TokenParam) {
-		query.Set(auth.TokenParam, "REDACTED")
+	params := strings.Split(u.RawQuery, "&")
+	for i, param := range params {
+		rawName, _, hasValue := strings.Cut(param, "=")
+		if !hasValue {
+			continue
+		}
+
+		name, err := url.QueryUnescape(rawName)
+		if err != nil || name == auth.TokenParam {
+			params[i] = rawName + "=REDACTED"
+		}
 	}
 
-	return u.Path + "?" + query.Encode()
+	return u.Path + "?" + strings.Join(params, "&")
 }
