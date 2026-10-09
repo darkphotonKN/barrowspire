@@ -3,7 +3,6 @@ package matchmaker
 import (
 	"context"
 	"log/slog"
-	"sync"
 	"time"
 
 	"errors"
@@ -34,9 +33,6 @@ type matchmaker struct {
 
 	// this replicas pod id, recorded against every player it queues
 	podID string
-
-	mu      sync.Mutex
-	players []*types.Player
 }
 
 // QueueStatus used to notify queue status
@@ -52,7 +48,6 @@ func NewMatchmaker(matchSize int, podID string, matchQueue MatchQueue) *matchmak
 		podID:           podID,
 		matchedChan:     make(chan []*types.Player),
 		QueueStatusChan: make(chan QueueStatus),
-		players:         make([]*types.Player, 0, matchSize),
 		matchQueue:      matchQueue,
 	}
 }
@@ -75,12 +70,12 @@ type MatchedPlayer struct {
 
 // Start launches queue listening
 func (q *matchmaker) Start(ctx context.Context) {
-	go q.MatchQueue(ctx)
+	go q.MatchLoop(ctx)
 	slog.Info("Queue service started, waiting for players to join...")
 }
 
 // matchQueue checks queue once per second
-func (q *matchmaker) MatchQueue(ctx context.Context) {
+func (q *matchmaker) MatchLoop(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -110,9 +105,22 @@ func (q *matchmaker) MatchQueue(ctx context.Context) {
 
 			// found result, send to message hub to start game, then continue matchmaking
 			matchedPlayers := make([]*types.Player, 0, len(matchedPlayersRes))
-
+			// stores errored players map
+			matchedPlayerErrored := make(map[string]struct{}, 0)
 			for _, player := range matchedPlayersRes {
-				id := uuid.MustParse(player.ID)
+				id, err := uuid.Parse(player.ID)
+
+				// cant parse playerID, corrupted player data, drop him, requeue the rest
+				// also enter block if already one errored player (length of matchedPlayerErr)
+				if err != nil {
+					// add to error list and skip, not checked here as requeueing the others on the spot means each one in a nested loop could also error and need its own check
+					matchedPlayerErrored[player.ID] = struct{}{}
+					continue
+				}
+				// skip if there are already errored players
+				if len(matchedPlayerErrored) > 0 {
+					continue
+				}
 
 				// only send ids, look up for the rest is updated to be done by the caller
 				matchedPlayers = append(matchedPlayers, &types.Player{
@@ -120,8 +128,44 @@ func (q *matchmaker) MatchQueue(ctx context.Context) {
 				})
 			}
 
+			// requeue unerrored players
+			if len(matchedPlayerErrored) > 0 {
+				slog.Error("corruption in UUID of queued player", "matched_player_errored", matchedPlayerErrored)
+
+				// skip errored players and requeue the rest
+				q.requeueUnerroredPlayers(ctx, matchedPlayersRes, matchedPlayerErrored)
+
+				// requeuing, skip sendto channel
+				continue
+			}
+
 			// send to channel
-			q.matchedChan <- matchedPlayers
+			select {
+			// send to message hub, coordinated handoff
+			case q.matchedChan <- matchedPlayers:
+			// fallback incase stuck and ctx was cancelled
+			case <-ctx.Done():
+				return
+			// second fallback if hub hangs for too long
+			case <-time.After(time.Second * 5):
+				slog.Warn("timed out when trying to find match for match ready players")
+				q.requeueUnerroredPlayers(ctx, matchedPlayersRes, matchedPlayerErrored)
+			}
+		}
+	}
+}
+
+func (q *matchmaker) requeueUnerroredPlayers(ctx context.Context, matchedPlayers []MatchedPlayer, erroredPlayers map[string]struct{}) {
+	for _, playerToRequeue := range matchedPlayers {
+		if _, ok := erroredPlayers[playerToRequeue.ID]; ok {
+			continue
+		}
+
+		// requeue player
+		err := q.matchQueue.QueuePlayer(ctx, playerToRequeue.ID, playerToRequeue.Pod)
+		// new boundary is here, so log directly for errors
+		if err != nil {
+			slog.Warn("requeueing player couldnt join queue", "err", err)
 		}
 	}
 }
@@ -132,30 +176,21 @@ func (q *matchmaker) PlayerJoinQueue(ctx context.Context, player *types.Player) 
 	queueCtx, queueCtxCanc := context.WithTimeout(ctx, timeoutTime)
 	defer queueCtxCanc()
 
-	retries := 0
-	maxRetries := 5
-	for retries <= maxRetries {
-		err := q.matchQueue.QueuePlayer(queueCtx, player.ID.String(), q.podID)
-		if err != nil {
-			// no retry
-			if errors.Is(err, ErrPlayerAlreadyQueued) {
-				slog.Info("player already queued but requeue was attempted", "err", err)
-				return err
-			}
+	err := q.matchQueue.QueuePlayer(queueCtx, player.ID.String(), q.podID)
 
-			slog.Warn("player met exceptional error when attempting to queue, requeueing", "err", err)
-
-			// exception, retry in 1 second
-			time.Sleep(time.Second)
-			retries++
-			continue
+	if err != nil {
+		// no retry
+		if errors.Is(err, ErrPlayerAlreadyQueued) {
+			slog.Info("player already queued but requeue was attempted", "err", err)
+			return err
 		}
-		return nil
+
+		slog.Warn("player met exceptional error when attempting to queue, requeueing", "err", err)
+
+		return err
 	}
 
-	// tried all 5 times, log error and pass down
-	slog.Error("max attempts exhausted trying to requeue player", "player_id", player.ID, "pod_id", q.podID)
-	return ErrRetryMaxAttemptsExhausted
+	return nil
 }
 
 func (q *matchmaker) PlayerRemoveQueue(ctx context.Context, player *types.Player) error {

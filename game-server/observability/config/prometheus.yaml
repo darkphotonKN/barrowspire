@@ -63,4 +63,4 @@ scrape_configs:
   # ITEM SERVICE
   - job_name: "item-service"
     static_configs:
-      - targets: ["host.docker.internal:7126"]
+      - targets: ["host.docker.internal:8197"]

@@ -112,8 +112,8 @@ func main() {
 	// setup endpoint for metrics collection
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		log.Println("Metrics server started on :7126")
-		http.ListenAndServe(":7126", nil)
+		log.Println("Metrics server started on :8197")
+		http.ListenAndServe(":8197", nil)
 	}()
 
 	// --- redis setup ---
