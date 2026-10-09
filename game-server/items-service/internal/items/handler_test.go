@@ -59,7 +59,7 @@ type fakeLoadoutService struct {
 	loadout *LoadoutWithItems
 }
 
-func (f *fakeLoadoutService) GetLoadoutWithItems(context.Context, *GetLoadoutRequest) (*LoadoutWithItems, error) {
+func (f *fakeLoadoutService) GetLoadoutWithItems(context.Context, uuid.UUID, *GetLoadoutRequest) (*LoadoutWithItems, error) {
 	return f.loadout, nil
 }
 
@@ -85,7 +85,9 @@ func TestHandler_ItemInstances_CarryRequiredLevel(t *testing.T) {
 
 	t.Run("GetLoadoutWithItems", func(t *testing.T) {
 		h := NewHandler(&fakeLoadoutService{loadout: &LoadoutWithItems{Weapon: instance(7), Ring1: instance(3)}}, nil)
-		res, err := h.GetLoadoutWithItems(context.Background(), &pb.GetLoadoutWithItemsRequest{MemberId: uuid.NewString()})
+		owner := uuid.New()
+		ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: owner})
+		res, err := h.GetLoadoutWithItems(ctx, &pb.GetLoadoutWithItemsRequest{MemberId: owner.String()})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

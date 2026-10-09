@@ -946,7 +946,14 @@ func (h *service) GetLoadout(ctx context.Context, req *GetLoadoutRequest) (*Load
 	return h.repo.GetLoadout(ctx, req)
 }
 
-func (h *service) GetLoadoutWithItems(ctx context.Context, req *GetLoadoutRequest) (*LoadoutWithItems, error) {
+// GetLoadoutWithItems returns the gear req.MemberId wears, and only to that
+// member: a caller asking for anyone else's loadout gets ErrForbidden before any
+// read (FS-4R9M9 R53).
+func (h *service) GetLoadoutWithItems(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*LoadoutWithItems, error) {
+	if caller != req.MemberId {
+		return nil, fmt.Errorf("loadout of member %s read by %s: %w", req.MemberId, caller, commonconstants.ErrForbidden)
+	}
+
 	loadout, err := h.repo.GetLoadout(ctx, req)
 	if err != nil {
 		return nil, err

@@ -2,6 +2,7 @@ package items
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	authpb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commontypes "github.com/darkphotonKN/barrowspire-server/common/constants/types"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/items-service/grpc/auth"
@@ -82,7 +84,7 @@ type Service interface {
 	CreateCompleteConsumable(ctx context.Context, req *CreateCompleteConsumableRequest) (*ConsumableWithTemplate, error)
 
 	GetLoadout(ctx context.Context, req *GetLoadoutRequest) (*Loadout, error)
-	GetLoadoutWithItems(ctx context.Context, req *GetLoadoutRequest) (*LoadoutWithItems, error)
+	GetLoadoutWithItems(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*LoadoutWithItems, error)
 	ListItemInstances(ctx context.Context, req *ListItemInstancesRequest) ([]*ItemInstance, error)
 	UpdateLoadout(ctx context.Context, req *UpdateLoadoutRequest) error
 
@@ -878,6 +880,11 @@ func (h *Handler) GetLoadout(ctx context.Context, req *pb.GetLoadoutRequest) (*p
 }
 
 func (h *Handler) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWithItemsRequest) (*pb.GetLoadoutWithItemsResponse, error) {
+	caller, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
 	memberId, err := uuid.Parse(req.MemberId)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid member_id: %v", err)
@@ -887,7 +894,10 @@ func (h *Handler) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWit
 		MemberId: memberId,
 	}
 
-	loadout, err := h.service.GetLoadoutWithItems(ctx, payload)
+	loadout, err := h.service.GetLoadoutWithItems(ctx, caller, payload)
+	if errors.Is(err, commonconstants.ErrForbidden) {
+		return nil, status.Error(codes.PermissionDenied, "permission denied")
+	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get loadout with items: %v", err)
 	}
