@@ -31,8 +31,18 @@ import (
 // nothing that belongs to a member — auctions everyone is meant to see, and
 // item summaries that carry no owner, no source and no price. They take no caller
 // and read nothing by caller, so no check is being skipped. Not a stopgap: do not
-// "fix" these with a service credential. Every other marketplace and items method
-// still needs a token (auth_test pins that).
+// "fix" these with a service credential.
+//
+// The item catalogue reads are public for the same reason: ListItemTemplates and
+// ListItemRarities return base types and rarity weights — catalogue data, owned by
+// no member. game-service reads them once per game session to seed its loot pool,
+// with no player behind the call and so no token to forward. They are internal
+// gRPC only (the gateway does not expose them), take no caller and read nothing by
+// caller. The player's worn gear is the opposite: GetLoadoutWithItems stays
+// guarded, and game-service calls it with the player's own forwarded token so
+// items-service still checks the caller owns that loadout.
+//
+// Every other marketplace and items method still needs a token (auth_test pins that).
 var publicMethods = map[string]bool{
 	"/grpc.health.v1.Health/Check": true,
 
@@ -42,6 +52,8 @@ var publicMethods = map[string]bool{
 	"/marketplace.MarketplaceService/BrowseListings": true,
 	"/marketplace.MarketplaceService/GetListing":     true,
 	"/items.ItemsService/GetItemSummaries":           true,
+	"/items.ItemsService/ListItemTemplates":          true,
+	"/items.ItemsService/ListItemRarities":           true,
 }
 
 func Auth(validate func(token string) (Identity, error)) grpc.UnaryServerInterceptor {
