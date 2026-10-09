@@ -5,6 +5,8 @@
  * centreline, each its own sprite sorted by its own footprint, with a corner post at each end.
  * North- and west-facing house sides stand full height; south and east sides are the low
  * cut-away, so the fixed camera sees into a house. Variants are hashed per piece, never random.
+ * The same geometry draws timber house walls or masonry partition walls (FS-8RBQY §B.2): only
+ * the sheets and the variant tables change, so a world theme picks a {@link WallSheets}.
  *
  * The bake's facts this relies on (`tools/bake/page/models/architecture.js`): a piece is one
  * tile long, its origin is the centre of its footprint, and `_x` pieces run along world x.
@@ -22,8 +24,9 @@ export type HouseSide = "north" | "south" | "east" | "west";
 export interface WallPiece {
   /** The server wall this piece is part of. */
   wallId: string;
-  /** Manifest sheet: `wall_{back|front}_{plain|brace|window|torch}_{x|y}`. */
+  /** Manifest sheet: `{prefix}wall_{back|front}_{kind}_{x|y}`, e.g. `wall_back_torch_x`. */
   sheet: string;
+  height: WallHeight;
   /** Variant frame; the art library wraps it. */
   index: number;
   axis: WallAxis;
@@ -38,7 +41,9 @@ export interface WallPiece {
 export interface WallPost {
   /** The first wall that ends here; the post goes when it does. */
   wallId: string;
-  sheet: "post_back" | "post_front";
+  /** `{prefix}post_{back|front}`. */
+  sheet: string;
+  height: WallHeight;
   at: Point;
 }
 
@@ -68,20 +73,60 @@ export function heightOf(side: HouseSide | undefined): WallHeight {
   return side === "south" || side === "east" ? "front" : "back";
 }
 
-/** Share of whole pieces of each kind, cumulative, in percent. */
-const KINDS: [number, string][] = [
+/** Share of whole pieces of each kind, cumulative, in percent. The first kind is the plain one. */
+export type VariantTable = readonly (readonly [number, string])[];
+
+/** The sheets one material draws server walls with, and how often each kind turns up. */
+export interface WallSheets {
+  /** Before every piece and post sheet name: `""` for timber, `"tower_"` for masonry. */
+  prefix: string;
+  /** Kinds a full-height piece may be. */
+  back: VariantTable;
+  /** Kinds a cut-away piece may be. */
+  front: VariantTable;
+}
+
+const KINDS: VariantTable = [
   [55, "plain"],
   [78, "brace"],
   [90, "window"],
   [100, "torch"],
 ];
 
+/** Timber-frame house walls, as the exterior world theme has always drawn them. */
+export const TIMBER_WALLS: WallSheets = {
+  prefix: "",
+  back: KINDS,
+  front: KINDS,
+};
+
+/**
+ * Masonry partition walls (FS-8RBQY §B.2): no window indoors, and the low cut-away side is plain
+ * or pillared. These are the `middle` floor band's shares; the band table varies them per floor.
+ */
+export const MASONRY_WALLS: WallSheets = {
+  prefix: "tower_",
+  back: [
+    [40, "plain"],
+    [68, "pillar"],
+    [84, "sconce"],
+    [92, "banner"],
+    [100, "cobweb"],
+  ],
+  front: [
+    [70, "plain"],
+    [100, "pillar"],
+  ],
+};
+
 /** Cuts one wall rect into pieces along its centreline, trimmed at the far end if it must be. */
 export function cutWall(
   w: WallState,
   height: WallHeight,
   seed: number,
+  sheets: WallSheets = TIMBER_WALLS,
 ): WallPiece[] {
+  const kinds = sheets[height];
   const axis = axisOf(w);
   const { x, y } = w.position;
   const length = axis === "x" ? w.width : w.height;
@@ -99,10 +144,12 @@ export function cutWall(
     const depthAt = axis === "x" ? { x: x + k * T, y } : { x, y: y + k * T };
     const keep = k < whole ? 1 : rest;
     const h = tileHash(Math.round(at.x), Math.round(at.y), seed);
-    const kind = keep < 1 ? "plain" : KINDS.find(([cut]) => h % 100 < cut)![1];
+    const kind =
+      keep < 1 ? kinds[0][1] : kinds.find(([cut]) => h % 100 < cut)![1];
     pieces.push({
       wallId: w.entity_id,
-      sheet: `wall_${height}_${kind}_${axis}`,
+      sheet: `${sheets.prefix}wall_${height}_${kind}_${axis}`,
+      height,
       index: h >>> 8,
       axis,
       at,
@@ -137,6 +184,7 @@ function endsOf(w: WallState): [Point, Point] {
 export function planWalls(
   walls: readonly WallState[],
   seed: number,
+  sheets: WallSheets = TIMBER_WALLS,
 ): { pieces: WallPiece[]; posts: WallPost[] } {
   const houses = new Map(housesFrom(walls).map((h) => [h.id, h]));
   const pieces: WallPiece[] = [];
@@ -146,14 +194,15 @@ export function planWalls(
     const height = heightOf(
       sideOf(w, w.house_id ? houses.get(w.house_id) : undefined),
     );
-    pieces.push(...cutWall(w, height, seed));
+    pieces.push(...cutWall(w, height, seed, sheets));
     for (const at of endsOf(w)) {
       const key = `${Math.round(at.x)},${Math.round(at.y)}`;
       const existing = posts.get(key);
-      if (existing?.sheet === "post_back") continue;
+      if (existing?.height === "back") continue;
       posts.set(key, {
         wallId: existing?.wallId ?? w.entity_id,
-        sheet: height === "back" ? "post_back" : "post_front",
+        sheet: `${sheets.prefix}post_${height}`,
+        height,
         at,
       });
     }

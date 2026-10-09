@@ -10,6 +10,7 @@ export {
 export {
   AMBIENT,
   DELVER_TORCH,
+  TOWER_AMBIENT,
   sourceFromManifest,
   type LightSource,
 } from "./lighting";

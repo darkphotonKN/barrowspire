@@ -2,7 +2,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ArtManifest, ArtRgb } from "@/render/art/manifest";
-import { AMBIENT, contrastRatio, litEdgeGround } from "@/render/lighting/lighting";
+import {
+  AMBIENT,
+  TOWER_AMBIENT,
+  contrastRatio,
+  litEdgeGround,
+  relativeLuminance,
+} from "@/render/lighting/lighting";
 import { VIGNETTE_DEPTH, edgeVignetteAlpha } from "@/render/lighting/vignette";
 import type { WorldKind } from "@/render/world/ground";
 import { palette } from "@/utils/canvasPalette";
@@ -82,6 +88,40 @@ describe("the readability floor (FS-2325V §C.9)", () => {
         FLOOR,
       );
   });
+});
+
+describe("the readability floor in the tower interior (FS-8RBQY §B.7)", () => {
+  /** The tower's grounds: the sheets baked onto the tower atlas that carry a measured mean. */
+  const TOWER_GROUNDS = Object.entries(baked.sheets).flatMap(([name, sheet]) =>
+    sheet.mean && sheet.atlas.startsWith("tower")
+      ? [[name, sheet.mean] as [string, ArtRgb]]
+      : [],
+  );
+  const rgb = ({ r, g, b }: ArtRgb) => (r << 16) | (g << 8) | b;
+  const [darkest, darkestMean] = [...TOWER_GROUNDS].sort(
+    ([, a], [, b]) => relativeLuminance(rgb(a)) - relativeLuminance(rgb(b)),
+  )[0];
+
+  it("is measured against the darkest tower ground: the hall flags", () => {
+    expect(TOWER_GROUNDS.map(([n]) => n)).toEqual(
+      expect.arrayContaining(["ground_flags", "ground_planks", "ground_dressed"]),
+    );
+    expect(darkest).toBe("ground_flags");
+  });
+
+  it.each(Object.entries(MARKER_INKS))(
+    "should keep the %s marker at 3:1 or better under the tower ambient at any canvas edge",
+    (_, ink) => {
+      for (const [w, h] of CANVASES)
+        expect(
+          contrastRatio(
+            ink,
+            litEdgeGround(darkestMean, TOWER_AMBIENT, edgeVignetteAlpha(w, h)),
+          ),
+          `${w}×${h}`,
+        ).toBeGreaterThanOrEqual(FLOOR);
+    },
+  );
 });
 
 describe("marker depth", () => {

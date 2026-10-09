@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import { TILE_WIDTH, WORLD_PX_PER_TILE } from "@/render/iso";
 import type { WallState } from "@/types/gameState";
 import { housesFrom } from "./houses";
-import { cutWall, heightOf, planWalls, sideOf, trimCrop } from "./walls";
+import {
+  MASONRY_WALLS,
+  TIMBER_WALLS,
+  cutWall,
+  heightOf,
+  planWalls,
+  sideOf,
+  trimCrop,
+} from "./walls";
 
 const T = WORLD_PX_PER_TILE;
 
@@ -151,6 +159,80 @@ describe("planWalls", () => {
     expect(heights((x, y) => x === 110 && y > 70)).toEqual(new Set(["back"])); // west
     expect(heights((x, y) => x === 390 && y > 70)).toEqual(new Set(["front"])); // east
     expect(heights((_, y) => y === 250)).toEqual(new Set(["front"])); // south
+  });
+});
+
+describe("planWalls with masonry sheets (FS-8RBQY §B.2)", () => {
+  /** The server's three rooms (small, medium, large), walls 20 thick, door gap in the south. */
+  const room = (bx: number, by: number, bw: number, bh: number, id: string) => {
+    const gap = (bw - 50) / 2;
+    return [
+      wall(bx, by, bw, 20, id),
+      wall(bx, by, 20, bh, id),
+      wall(bx + bw - 20, by, 20, bh, id),
+      wall(bx, by + bh - 20, gap, 20, id),
+      wall(bx + gap + 50, by + bh - 20, gap, 20, id),
+    ];
+  };
+  const floor = [
+    ...room(80, 60, 300, 200, "small"),
+    ...room(500, 80, 400, 300, "medium"),
+    ...room(860, 480, 500, 400, "large"),
+  ];
+  const timber = planWalls(floor, 5);
+  const masonry = planWalls(floor, 5, MASONRY_WALLS);
+
+  it("should cut the same pieces in the same places, with the same cut-away, as the timber walls", () => {
+    const shape = (p: {
+      at: unknown;
+      keep?: number;
+      depthAt?: unknown;
+      height: string;
+    }) => [p.at, p.keep, p.depthAt, p.height];
+    expect(masonry.pieces.map(shape)).toEqual(timber.pieces.map(shape));
+    expect(masonry.posts.map(shape)).toEqual(timber.posts.map(shape));
+  });
+
+  it("should draw back pieces only as plain, pillar, sconce, banner or cobweb masonry", () => {
+    const back = masonry.pieces.filter((p) => p.height === "back");
+    expect(back.length).toBeGreaterThan(0);
+    for (const p of back)
+      expect(p.sheet).toMatch(
+        /^tower_wall_back_(plain|pillar|sconce|banner|cobweb)_[xy]$/,
+      );
+    // every kind turns up somewhere on a floor of three rooms
+    expect(new Set(back.map((p) => p.sheet.split("_")[3]))).toEqual(
+      new Set(["plain", "pillar", "sconce", "banner", "cobweb"]),
+    );
+  });
+
+  it("should draw front pieces only as plain or pillar masonry: no window indoors", () => {
+    const front = masonry.pieces.filter((p) => p.height === "front");
+    expect(front.length).toBeGreaterThan(0);
+    for (const p of front)
+      expect(p.sheet).toMatch(/^tower_wall_front_(plain|pillar)_[xy]$/);
+  });
+
+  it("should post corners and jambs with masonry piers", () => {
+    expect(new Set(masonry.posts.map((p) => p.sheet))).toEqual(
+      new Set(["tower_post_back", "tower_post_front"]),
+    );
+  });
+
+  it("should keep a trimmed masonry piece plain", () => {
+    for (let seed = 0; seed < 40; seed++)
+      expect(
+        cutWall(wall(0, 0, 2.3 * T, 20), "back", seed, MASONRY_WALLS).at(-1)!
+          .sheet,
+      ).toBe("tower_wall_back_plain_x");
+  });
+
+  it("should leave the timber walls exactly as they were when no sheets are named", () => {
+    expect(planWalls(floor, 5, TIMBER_WALLS)).toEqual(timber);
+    for (const p of timber.pieces)
+      expect(p.sheet).toMatch(
+        /^wall_(back|front)_(plain|brace|window|torch)_[xy]$/,
+      );
   });
 });
 

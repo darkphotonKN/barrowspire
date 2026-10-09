@@ -76,9 +76,12 @@ export class CharacterMotion {
    * Starts the attack clip, facing `aim` (a world vector toward the target) when given. A new
    * attack restarts the window: skill cooldowns are shorter than the clip, and every cast the
    * server receives should show a swing.
+   *
+   * `holdMs` keeps the attack pose for longer than the clip, its last frame held: a charge the
+   * server carries for longer than the swing lasts. A hold shorter than the clip changes nothing.
    */
-  attack(now: number, aim?: Point): void {
-    this.attackEnds = now + this.attackMs;
+  attack(now: number, aim?: Point, holdMs = 0): void {
+    this.attackEnds = now + Math.max(this.attackMs, holdMs);
     this.aim = aim && (aim.x !== 0 || aim.y !== 0) ? { ...aim } : undefined;
   }
 
@@ -150,8 +153,9 @@ export class CharacterAnimator {
     return this.baked ? this.art.sheet(this.sheet)?.crown : undefined;
   }
 
-  attack(now: number, aim?: Point): void {
-    this.motion.attack(now, aim);
+  /** Starts a swing from its first frame; `holdMs` as {@link CharacterMotion.attack}. */
+  attack(now: number, aim?: Point, holdMs?: number): void {
+    this.motion.attack(now, aim, holdMs);
     this.swingPending = true;
   }
 

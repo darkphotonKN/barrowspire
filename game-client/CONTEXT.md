@@ -90,9 +90,38 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Occluder**: a tall drawn thing (tree, lamp post, back wall piece, roof piece, door, arch) that
   fades while its sprite overlaps the delver's and its footprint sorts nearer the viewer.
 - **Dressing**: a decorative prop placed by the client (a cart, stall, trough, signpost, lamp post,
-  chimney smoke and the like). It is never interactable, never blocks movement and never stands
-  on walking ground. The server knows nothing of it. A prop that would need collision or a click
-  is not dressing (FS-KYPQ9 §A).
+  chimney smoke in the hub; rubble, bone piles, broken crates, roots, chains, braziers in a run,
+  called **run dressing**). It is never interactable, never blocks movement, and never stands
+  where it would get in the way: off the hub's walking ground (its paths, FS-KYPQ9 §A), and
+  outside a run floor's **keep-out**, which is computed from that floor's broadcast (walls, door
+  thresholds, stairs, chest, escape door, switch, map edge; FS-8RBQY §C.5) rather than
+  hand-copied. The server knows nothing of it. A prop that would need collision or a click is not
+  dressing.
+- **World kind**: which world the server put the delver in, `"hub" | "run"` (`WorldKind`,
+  mirroring `world_type` on the wire). Server-decided. Not the same as a world theme.
+- **World theme**: how the client draws a run: `"exterior" | "tower"` (FS-8RBQY §A). It picks the
+  ground plan, wall-piece sheets, roofs and indoor mask on or off, ambient, perimeter wall and run
+  dressing. A client constant, never on the wire, never a game rule. Always say *world* theme:
+  bare "theme" in this client means the design-token theme (`src/utils/theme.ts`, `BARROW`,
+  `docs/theming_plan.md`), which every world theme draws its colours from.
+- **Exterior theme**: the run look as it shipped before FS-8RBQY: barrow-dirt ground with tufts
+  and pebbles, flagstone house floors, timber-frame walls, roofs, the enter-a-house indoor mask.
+  Kept for a future outdoor place. Not "grass": grass is the hub's ground.
+- **Tower interior theme** (short: **tower theme**): the default run look: the inside of the
+  Barrowspire. Stone flags and timber planks, partition walls, a perimeter wall with arrow slits,
+  darkness beyond, no roofs, a darker ambient. The whole floor is indoors, so "indoor" carries no
+  meaning in this theme.
+- **Room**: in the tower theme, the space enclosed by one group of server walls sharing a
+  `house_id`. The same server thing the exterior theme draws as a **house** (and game-service
+  calls a building). One entity, three names by layer; the screen word follows the world theme.
+- **Partition wall**: a server wall as the tower theme draws it: masonry, cut into wall pieces
+  with the same geometry and cut-away rule as a house wall. It is a server wall, with collision.
+- **Perimeter wall**: the tower's outer wall, drawn by the client alone around the outside of the
+  play area. Not a server wall: no entity, no collision, not in `walls[]`. Its south and east runs
+  are always low so it never covers anything in play.
+- **Floor band**: `lower` / `middle` / `upper`, a run floor's place in the climb, derived from
+  `floor` and `floor_count` (FS-8RBQY §C.1). The only input that varies the tower look per floor.
+  Not the same as **floor**, the wire number it is derived from.
 - **Container view**: the on-screen satchel/coffer panel showing a container's contents. Not the
   same thing as a **container**, which is the WS entity in `containers[]`. Opening the view is
   presentation; clicking an item in it sends exactly the message the item row always sent.

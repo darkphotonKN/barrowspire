@@ -23,31 +23,41 @@ import {
   type LightSource,
 } from "@/render/lighting/lighting";
 import {
-  planDecals,
-  planFloors,
-  planGround,
+  OUTDOOR_GROUND,
+  planGroundLayer,
   tileHash,
-  worldSeed,
+  type GroundLook,
   type GroundPiece,
   type WorldKind,
 } from "./ground";
 import type { House } from "./houses";
 import { FADED_ALPHA, occludes, stepAlpha } from "./occlusion";
+import { planPerimeter } from "./perimeter";
 import { planRoof } from "./roofs";
-import { planWalls, trimCrop } from "./walls";
+import type { DressingPiece } from "./runDressing";
+import { TIMBER_WALLS, planWalls, trimCrop, type WallSheets } from "./walls";
 
 /** Below every world object: the ground is flat and everything stands on it. */
 export const GROUND_DEPTH = -1;
 /** Screen px of ground drawn past the projected map, for tiles and decals that overhang it. */
 const GROUND_MARGIN = 48;
 
+/** The ground one floor is painted with: its look, and the seed its tiles hash from. */
+export interface FloorGround {
+  look: GroundLook;
+  seed: number;
+}
+
 /**
- * The ground, painted once into a render texture (it never moves): outdoor tiles, decals, and
- * flagstone under each house. Repainted when the houses become known.
+ * The ground, painted once into a render texture (it never moves): the world theme's ground look
+ * (outdoor tiles, decals and flagstone under each house; or a tower's flags and planked rooms).
+ * Repainted when the houses become known, and with the next floor's look and seed on a climb
+ * (FS-8RBQY §C.3).
  */
 export class GroundLayer {
   private readonly rt: Phaser.GameObjects.RenderTexture;
   private readonly origin: Point;
+  private floor?: FloorGround;
 
   constructor(
     scene: Phaser.Scene,
@@ -57,6 +67,7 @@ export class GroundLayer {
       height: number;
       kind: WorldKind;
       paths?: readonly Rect[];
+      look?: GroundLook;
     },
   ) {
     const b = projectedBounds(world.width, world.height, GROUND_MARGIN);
@@ -71,18 +82,25 @@ export class GroundLayer {
     this.paint([]);
   }
 
-  /** Whether the outdoor ground has art; when not, the scene keeps its placeholder floor. */
-  static available(art: ArtLibrary, kind: WorldKind): boolean {
-    return art.has(kind === "hub" ? "ground_grass" : "ground_dirt");
+  /** Whether the ground has art; when not, the scene keeps its placeholder floor. */
+  static available(
+    art: ArtLibrary,
+    kind: WorldKind,
+    look: GroundLook = OUTDOOR_GROUND,
+  ): boolean {
+    return art.has(
+      look.hall ?? (kind === "hub" ? "ground_grass" : "ground_dirt"),
+    );
   }
 
-  paint(houses: readonly House[]): void {
-    const { width, height, kind, paths } = this.world;
+  /** Paints `houses`' floors over the ground; with `floor`, that floor's ground from now on. */
+  paint(houses: readonly House[], floor?: FloorGround): void {
+    if (floor) this.floor = floor;
+    const { look: worldLook = OUTDOOR_GROUND, ...world } = this.world;
+    const look = this.floor?.look ?? worldLook;
     this.rt.clear();
     this.rt.beginDraw();
-    this.draw(planGround({ width, height, kind, paths }));
-    this.draw(planDecals({ width, height, kind, houses }));
-    this.draw(planFloors(houses, worldSeed(kind)));
+    this.draw(planGroundLayer({ ...world, houses, look, seed: this.floor?.seed }));
     this.rt.endDraw();
   }
 
@@ -138,6 +156,39 @@ export function addProp(
   };
 }
 
+/** A floor's run dressing as drawn (FS-8RBQY §C.4): sprites, the tall ones, and brazier light. */
+export interface BuiltDressing {
+  sprites: Phaser.GameObjects.Sprite[];
+  /** Tall enough to stand over a delver: they fade like any occluder. */
+  tall: Phaser.GameObjects.Sprite[];
+  lights: LightSource[];
+}
+
+/**
+ * Run dressing as baked props, each sorted by its footprint. Decoration only: the sprites are
+ * never made interactive and never join a physics group or collider. A piece whose sheet is
+ * missing is skipped (§B.8), and with no manifest at all there is no dressing.
+ */
+export function addDressing(
+  scene: Phaser.Scene,
+  art: ArtLibrary,
+  pieces: readonly DressingPiece[],
+): BuiltDressing {
+  const built: BuiltDressing = { sprites: [], tall: [], lights: [] };
+  if (!art.available) return built;
+  for (const p of pieces) {
+    if (!art.has(p.sheet)) continue;
+    // the sheet's own animation: variants for the strewn props, the one frame for a brazier
+    const { sprite, light } = addProp(scene, art, p.sheet, p.at, {
+      index: p.index,
+    });
+    built.sprites.push(sprite);
+    if (p.tall) built.tall.push(sprite);
+    if (light) built.lights.push(light);
+  }
+  return built;
+}
+
 export interface BuiltWalls {
   /** Every piece and post, by the server wall it belongs to. */
   byWall: Map<string, Phaser.GameObjects.Sprite[]>;
@@ -148,23 +199,25 @@ export interface BuiltWalls {
 }
 
 /**
- * Server walls as baked pieces and corner posts. Null without a manifest: the scene draws its
- * placeholder blocks instead.
+ * Server walls as baked pieces and corner posts, in timber unless other sheets are named. Null
+ * without a manifest, or without those sheets: the scene draws its placeholder blocks instead.
  */
 export function addWalls(
   scene: Phaser.Scene,
   art: ArtLibrary,
   walls: readonly WallState[],
   seed: number,
+  sheets: WallSheets = TIMBER_WALLS,
 ): BuiltWalls | null {
-  if (!art.available) return null;
+  if (!art.available || !art.has(`${sheets.prefix}wall_back_plain_x`))
+    return null;
   const built: BuiltWalls = { byWall: new Map(), tall: [], lights: [] };
   const keep = (wallId: string, sprite: Phaser.GameObjects.Sprite) => {
     const list = built.byWall.get(wallId);
     if (list) list.push(sprite);
     else built.byWall.set(wallId, [sprite]);
   };
-  const { pieces, posts } = planWalls(walls, seed);
+  const { pieces, posts } = planWalls(walls, seed, sheets);
 
   for (const p of pieces) {
     const s = worldToScreen(p.at.x, p.at.y);
@@ -182,7 +235,7 @@ export function addWalls(
       sprite.setCrop(crop.x, 0, crop.width, sheet.frameHeight);
     }
     keep(p.wallId, sprite);
-    if (p.sheet.startsWith("wall_back")) built.tall.push(sprite);
+    if (p.height === "back") built.tall.push(sprite);
     const light = lightOf(
       art,
       p.sheet,
@@ -193,7 +246,7 @@ export function addWalls(
       built.lights.push({
         source: light,
         wallId: p.wallId,
-        underRoof: p.sheet.startsWith("wall_back"),
+        underRoof: p.height === "back",
       });
   }
   for (const post of posts) {
@@ -201,7 +254,51 @@ export function addWalls(
     const sprite = artSprite(scene, art, s.x, s.y, post.sheet);
     sprite.setDepth(worldDepth(post.at.x, post.at.y, 1));
     keep(post.wallId, sprite);
-    if (post.sheet === "post_back") built.tall.push(sprite);
+    if (post.height === "back") built.tall.push(sprite);
+  }
+  return built;
+}
+
+/** The tower's outer wall as drawn: its sprites, and the cold light each arrow slit lets in. */
+export interface BuiltPerimeter {
+  sprites: Phaser.GameObjects.Sprite[];
+  lights: LightSource[];
+}
+
+/**
+ * The tower's outer wall around a `width` × `height` play area (FS-8RBQY §B.5). Null without a
+ * manifest or without the tower's perimeter sheets: the wall is then left out (§B.8, R4).
+ */
+export function addPerimeter(
+  scene: Phaser.Scene,
+  art: ArtLibrary,
+  width: number,
+  height: number,
+): BuiltPerimeter | null {
+  if (!art.available || !art.has("tower_perimeter_back_plain_x")) return null;
+  const built: BuiltPerimeter = { sprites: [], lights: [] };
+  const { pieces, posts } = planPerimeter(width, height);
+  for (const p of pieces) {
+    const s = worldToScreen(p.at.x, p.at.y);
+    const sprite = artSprite(scene, art, s.x, s.y, p.sheet, {
+      animation: "variants",
+      index: p.index,
+    });
+    built.sprites.push(sprite.setDepth(worldDepth(p.depthAt.x, p.depthAt.y)));
+    const light = lightOf(
+      art,
+      p.sheet,
+      s,
+      tileHash(Math.round(p.at.x), Math.round(p.at.y), 29),
+    );
+    if (light) built.lights.push(light);
+  }
+  for (const post of posts) {
+    const s = worldToScreen(post.at.x, post.at.y);
+    const sprite = artSprite(scene, art, s.x, s.y, post.sheet);
+    built.sprites.push(
+      sprite.setDepth(worldDepth(post.rect.x, post.rect.y, 1)),
+    );
   }
   return built;
 }

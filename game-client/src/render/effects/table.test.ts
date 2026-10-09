@@ -44,7 +44,6 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
     const want: Record<string, number> = {
       slash: 220,
       chargeDust: 450,
-      chargeTrail: 350,
       fireballCast: 160,
       castLight: 200,
       impactFlare: 120,
@@ -276,6 +275,24 @@ describe("effect rules (FS-KYPQ9 §B.4, §B.6, §B.7)", () => {
       maxAlive: 10,
     });
     expect(EFFECTS.chimneySmoke.particles.alpha.from).toBeLessThanOrEqual(0.35);
+  });
+
+  it("should kick the charge's dust at the feet for the gradual move, faint, and let it settle (§D.2)", () => {
+    // the server carries the charge over several ticks: the dust follows the body, then fades
+    expect(EFFECTS.chargeTrail.timing).toMatchObject({
+      kind: "stream",
+      lifeMs: 350,
+      onRelease: "fade",
+    });
+    const t = EFFECTS.chargeTrail.timing;
+    if (t.kind !== "stream") throw new Error("chargeTrail is a stream");
+    // about the old one-shot's 8 motes alive at once, and faint
+    expect(
+      EFFECTS.chargeTrail.particles.count * Math.ceil(t.lifeMs / t.intervalMs),
+    ).toBeLessThanOrEqual(10);
+    expect(t.maxAlive).toBeLessThanOrEqual(10);
+    expect(EFFECTS.chargeTrail.particles.alpha.from).toBeLessThanOrEqual(0.65);
+    expect("light" in EFFECTS.chargeTrail).toBe(false);
   });
 
   it("should pair the fireball trail's embers and smoke each with its own look (§B.4, §B.7)", () => {

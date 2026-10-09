@@ -126,16 +126,16 @@ const linear = (v: number) => {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 };
 
-/** WCAG relative luminance. */
-function luminance(c: number): number {
+/** WCAG relative luminance, 0..1. */
+export function relativeLuminance(c: number): number {
   const [r, g, b] = channels(c).map(linear);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
 /** WCAG contrast ratio, 1..21. */
 export function contrastRatio(a: number, b: number): number {
-  const la = luminance(a);
-  const lb = luminance(b);
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
@@ -149,6 +149,18 @@ export const AMBIENT: Record<WorldKind, number> = {
   hub: mix(BARROW_HEX.barrowBrown, BARROW_HEX.amberBright, 0.55),
   run: mix(BARROW_HEX.slate, BARROW_HEX.necrotic, 0.4),
 };
+
+/**
+ * The tower interior's ambient (FS-8RBQY §B.6): the run's cold slate, sunk toward pitch, so the
+ * inside of the Barrowspire is darker than a run outdoors and its sconces and slits throw their
+ * pools into it. The exterior world theme keeps {@link AMBIENT}`.run`. Never lifted for
+ * readability: markers carry that above the light-map.
+ */
+export const TOWER_AMBIENT = mix(
+  mix(BARROW_HEX.slate, BARROW_HEX.necrotic, 0.3),
+  BARROW_HEX.pitch,
+  0.33,
+);
 
 /**
  * A baked ground colour as it reaches the eye: multiplied by the ambient, then under the

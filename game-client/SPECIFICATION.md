@@ -78,6 +78,10 @@ server state and sends intents. ✅
 - [x] Skill and combat effects in the world's art direction → FS-KYPQ9
 - [x] Custom cursors and entrance markers → FS-none
 - [x] Cursors and world indicators in the world's art direction → FS-KYPQ9
+- [x] Exterior run look → FS-2325V
+- [x] Tower interior run look → FS-8RBQY
+- [x] Per-floor variation of the run look → FS-8RBQY
+- [x] Pre-rendered stairs → FS-8RBQY
 
 ### Hub
 

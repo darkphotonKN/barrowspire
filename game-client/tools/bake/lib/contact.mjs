@@ -1,9 +1,11 @@
 // The owner's review of character art (ADR-0021 §5, FS-2325V §E.7): every class and creature ×
-// 8 directions × each animation, at game scale (1×) and zoomed ×2.
+// 8 directions × each animation, at game scale (1×) and zoomed ×2. The tower interior sheets
+// (FS-8RBQY §D.7) follow the cast on the same sheet, one row per sheet, frames left to right.
 //
 // Written to tools/bake/review/ (gitignored) on every `npm run bake`, never by --check:
 //   contact-sheet.png          all sheets at 1×, labelled
-//   contact-<sheet>-2x.png     each sheet at ×2 (nearest-neighbour, to inspect pixels)
+//   contact-<sheet>-2x.png     each character sheet at ×2 (nearest-neighbour, to inspect pixels)
+//   contact-tower-2x.png       every tower sheet at ×2
 //   index.html                 the same from the baked atlases themselves, labelled from the
 //                              manifest's `facings`, with each clip playing at its fps
 // The HTML reads the committed atlases, so it also proves the manifest's frame order.
@@ -82,7 +84,8 @@ function layout(sheets, z, labels) {
   const blocks = [];
   let y = M;
   let width = 0;
-  for (const s of sheets) {
+  // a character or creature: one block per sheet, a row per facing
+  for (const s of sheets.filter((x) => x.directions > 1)) {
     const title = y;
     y += lh + 4;
     const header = y;
@@ -94,10 +97,33 @@ function layout(sheets, z, labels) {
       x += a.frames[0].length * s.frameWidth * z + GAP;
     }
     width = Math.max(width, x - GAP + M);
-    blocks.push({ s, title, header, top: y, cols });
+    blocks.push({ s, title, titleX: M, header, top: y, cols });
     y += s.directions * s.frameHeight * z + M * 2;
   }
-  return { width, height: y, blocks };
+  // a one-facing sheet (the tower's): blocks flow left to right, wrapping at the widest row
+  const wrap = Math.max(width, 1600 * z);
+  let x0 = M;
+  let rowH = 0;
+  for (const s of sheets.filter((x) => x.directions === 1)) {
+    const framesW = Object.values(s.animations).reduce((n, a) => n + a.frames[0].length * s.frameWidth * z + GAP, -GAP);
+    const w = Math.max(framesW, labels.get(titleOf(s))?.w ?? 0);
+    if (x0 > M && x0 + w > wrap) {
+      y += rowH;
+      x0 = M;
+      rowH = 0;
+    }
+    const cols = [];
+    let x = x0;
+    for (const [anim, a] of Object.entries(s.animations)) {
+      cols.push({ anim, a, x });
+      x += a.frames[0].length * s.frameWidth * z + GAP;
+    }
+    blocks.push({ s, title: y, titleX: x0, header: y + lh + 4, top: y + 2 * lh + 4, cols });
+    rowH = Math.max(rowH, 2 * lh + 4 + s.frameHeight * z + M * 2);
+    x0 += w + GAP * 2;
+    width = Math.max(width, x0 - GAP * 2 + M);
+  }
+  return { width, height: y + rowH, blocks };
 }
 
 /** One contact sheet image for `sheets` at zoom `z`. `theme` is BARROW. */
@@ -110,8 +136,8 @@ export function composeContact(sheets, facings, labels, theme, z = 1) {
     const l = labels.get(text);
     if (l) blit(c, l.px, l.w, l.h, x, y);
   };
-  for (const { s, title, header, top, cols } of blocks) {
-    stamp(titleOf(s), M, title);
+  for (const { s, title, titleX, header, top, cols } of blocks) {
+    stamp(titleOf(s), titleX, title);
     for (const { anim, a, x } of cols) {
       stamp(headerOf(anim, a), x, header);
       a.frames.forEach((dir, d) =>
@@ -123,7 +149,7 @@ export function composeContact(sheets, facings, labels, theme, z = 1) {
         }),
       );
     }
-    facings.forEach((f, d) => stamp(f, M + 6, top + d * s.frameHeight * z + (s.frameHeight * z) / 2 - 9));
+    if (s.directions > 1) facings.forEach((f, d) => stamp(f, M + 6, top + d * s.frameHeight * z + (s.frameHeight * z) / 2 - 9));
   }
   return c;
 }
@@ -206,13 +232,20 @@ export function writeReview({ sheets, facings, labels, manifest, theme }) {
   const one = composeContact(sheets, facings, labels, theme, 1);
   writeFileSync(join(REVIEW_DIR, "contact-sheet.png"), encodePng(one.width, one.height, one.rgba, { fast: true }));
   files.push("contact-sheet.png");
-  for (const s of sheets) {
+  const cast = sheets.filter((s) => s.directions > 1);
+  for (const s of cast) {
     const two = composeContact([s], facings, labels, theme, 2);
     const file = `contact-${s.name}-2x.png`;
     writeFileSync(join(REVIEW_DIR, file), encodePng(two.width, two.height, two.rgba, { fast: true }));
     files.push(file);
   }
-  writeFileSync(join(REVIEW_DIR, "index.html"), reviewHtml(manifest, sheets.map((s) => s.name), theme));
+  const tower = sheets.filter((s) => s.group === "tower");
+  if (tower.length) {
+    const two = composeContact(tower, facings, labels, theme, 2);
+    writeFileSync(join(REVIEW_DIR, "contact-tower-2x.png"), encodePng(two.width, two.height, two.rgba, { fast: true }));
+    files.push("contact-tower-2x.png");
+  }
+  writeFileSync(join(REVIEW_DIR, "index.html"), reviewHtml(manifest, cast.map((s) => s.name), theme));
   files.push("index.html");
   return files.map((f) => join(REVIEW_DIR, f));
 }
