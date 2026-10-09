@@ -135,6 +135,29 @@ describe("sorcerer fireball (FS-KYPQ9 §E)", () => {
       expect(decay.removed).toBe(true);
     });
 
+    it("should flare and drop its embers at the flight height, where the fireball was last drawn", () => {
+      playFireballImpact(fx, "f1", at);
+      const s = worldToScreen(at.x, at.y);
+      const flare = fake.made.find(
+        (m) => m.kind === "image" && m.args[3] === "fx_glow/idle/0/0",
+      )!;
+      expect(flare.calls.setPosition).toEqual([s.x, s.y - HAND_LIFT]);
+      const embers = fake.made.find((m) => m.kind === "particles")!;
+      expect(embers.calls.setPosition).toEqual([s.x, s.y - HAND_LIFT]);
+    });
+
+    it("should mark the scorch on the ground and pool the light at the footprint, under the flame", () => {
+      playFireballImpact(fx, "f1", at);
+      const s = worldToScreen(at.x, at.y);
+      // the scorch's plane pair sits unlifted (+ 0 folds the root's -0 from `-lift`)
+      for (const plane of fake.made.filter((m) => m.kind === "container"))
+        expect((plane.args as number[]).slice(0, 2).map((v) => v + 0)).toEqual([
+          0, 0,
+        ]);
+      const [decay] = lights.added;
+      expect([decay.spec.x, decay.spec.y]).toEqual([s.x, s.y]);
+    });
+
     it("should leave nothing once the scorch has faded", () => {
       playFireballImpact(fx, "f1", at);
       for (const t of fake.timers) t.fire();
@@ -147,6 +170,8 @@ describe("sorcerer fireball (FS-KYPQ9 §E)", () => {
     it("should fly the baked fire core, unturned, trailing embers and smoke with a riding light", () => {
       expect(FIREBALL_FLIGHT.body).toBe("fx_fire_core");
       expect(FIREBALL_FLIGHT.turns).toBe(false);
+      // flies at the casting hand's height, where the cast gathered, not out of the feet
+      expect(FIREBALL_FLIGHT.lift).toBe(HAND_LIFT);
       const trail: EffectEntry = EFFECTS[FIREBALL_FLIGHT.trail];
       expect(trail.timing).toMatchObject({ kind: "stream", lifeMs: 300 });
       expect(

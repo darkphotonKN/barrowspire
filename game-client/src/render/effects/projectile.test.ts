@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { worldToScreen } from "@/render/iso/projection";
 import { worldDepth } from "@/render/iso/shapes";
-import { ARROW_FLIGHT } from "./arrow";
+import { ARROW_FLIGHT, BOW_LIFT } from "./arrow";
 import { fakeArt, fakeLights, fakeScene, type FakeObject } from "./fakeScene";
-import { FIREBALL_FLIGHT } from "./fireball";
+import { FIREBALL_FLIGHT, HAND_LIFT } from "./fireball";
 import { ProjectileFlights, type Sighting } from "./projectile";
 import { EffectsRuntime } from "./runtime";
 import { EFFECTS } from "./table";
@@ -59,11 +59,11 @@ describe("projectile flights (FS-KYPQ9 §E.2, §E.3, §F.2–§F.4, §B.9)", () 
   });
 
   describe("flight", () => {
-    it("should draw the baked fire core at the projectile's footprint, chest layer, as today", () => {
+    it("should draw the baked fire core at the casting hand's height above its footprint, sorted on it", () => {
       flights.sync([fireball("f1", 300, 200)]);
       const [core] = images("fx_fire_core/idle/0/0");
       const s = worldToScreen(300, 200);
-      expect(core.calls.setPosition).toEqual([s.x, s.y]);
+      expect(core.calls.setPosition).toEqual([s.x, s.y - HAND_LIFT]);
       expect(core.calls.setDepth).toEqual([worldDepth(300, 200, 5)]);
     });
 
@@ -72,8 +72,9 @@ describe("projectile flights (FS-KYPQ9 §E.2, §E.3, §F.2–§F.4, §B.9)", () 
       flights.sync([fireball("f1", 320, 200)]);
       const [core] = images("fx_fire_core/idle/0/0");
       const s = worldToScreen(320, 200);
-      expect(core.calls.setPosition).toEqual([s.x, s.y]);
+      expect(core.calls.setPosition).toEqual([s.x, s.y - HAND_LIFT]);
       expect(core.calls.setDepth).toEqual([worldDepth(320, 200, 5)]);
+      // the light pools on the ground under the flame, at the footprint
       const [light] = lights.alive();
       expect([light.light.x, light.light.y]).toEqual([s.x, s.y]);
       expect(light.spec.color).toBeDefined();
@@ -92,6 +93,46 @@ describe("projectile flights (FS-KYPQ9 §E.2, §E.3, §F.2–§F.4, §B.9)", () 
       const [shaft] = images("fx_arrow/idle/0/0");
       const h = worldToScreen(400, 0);
       expect(shaft.calls.setRotation).toEqual([Math.atan2(h.y, h.x)]);
+    });
+
+    it("should fly the arrow at bow height: the body lifted off the footprint, sorted on it", () => {
+      flights.sync([arrow("a1", 100, 100, 400, 0)]);
+      flights.sync([arrow("a1", 120, 100, 400, 0)]);
+      const [shaft] = images("fx_arrow/idle/0/0");
+      const s = worldToScreen(120, 100);
+      // the server's footprint is unchanged; only the drawn body rises to the bow
+      expect(shaft.calls.setPosition).toEqual([s.x, s.y - BOW_LIFT]);
+      expect(shaft.calls.setDepth).toEqual([worldDepth(120, 100, 5)]);
+    });
+
+    it("should stream the arrow's trail from the lifted body, not the feet", () => {
+      flights.sync([arrow("a1", 100, 100, 400, 0)]);
+      const [trail] = emitters("fx_dust/idle/0/0");
+      // startFollow(source, offsetX, offsetY): the same lift as the body
+      expect(trail.calls.startFollow?.slice(1)).toEqual([0, -BOW_LIFT]);
+    });
+
+    it("should turn the lifted arrow along its on-screen travel, unskewed by the lift", () => {
+      // a diagonal heading, where a skew would show
+      const [vx, vy] = [300, -500];
+      flights.sync([arrow("a1", 400, 400, vx, vy)]);
+      const [shaft] = images("fx_arrow/idle/0/0");
+      const before = shaft.calls.setPosition as [number, number];
+      flights.sync([arrow("a1", 400 + vx / 10, 400 + vy / 10, vx, vy)]);
+      const after = shaft.calls.setPosition as [number, number];
+      const travel = Math.atan2(after[1] - before[1], after[0] - before[0]);
+      expect(shaft.calls.setRotation?.[0]).toBeCloseTo(travel, 10);
+    });
+
+    it("should stream the fireball's trail from the lifted core, not the feet", () => {
+      flights.sync([fireball("f1", 300, 200)]);
+      const [trail] = streams();
+      expect(trail.calls.startFollow?.slice(1)).toEqual([0, -HAND_LIFT]);
+    });
+
+    it("should fly each kind at its own release height", () => {
+      expect(FIREBALL_FLIGHT.lift).toBe(HAND_LIFT);
+      expect(ARROW_FLIGHT.lift).toBe(BOW_LIFT);
     });
 
     it("should keep the arrow's last heading when a tick carries no velocity", () => {
@@ -172,9 +213,10 @@ describe("projectile flights (FS-KYPQ9 §E.2, §E.3, §F.2–§F.4, §B.9)", () 
       flights.sync([fireball("f1", 300, 200)]);
       flights.sync([fireball("f1", 340, 200)]);
       flights.sync([]);
+      // the flare at the flight height, where the core was last drawn
       const [flare] = images("fx_glow/idle/0/0");
       const s = worldToScreen(340, 200);
-      expect(flare.calls.setPosition).toEqual([s.x, s.y]);
+      expect(flare.calls.setPosition).toEqual([s.x, s.y - HAND_LIFT]);
       expect(images("fx_scorch/idle/0/0")).toHaveLength(1);
       // the core is gone; the impact's flare, embers and scorch play on
       expect(images("fx_fire_core/idle/0/0")[0].destroyed).toBe(true);
@@ -196,8 +238,9 @@ describe("projectile flights (FS-KYPQ9 §E.2, §E.3, §F.2–§F.4, §B.9)", () 
           !(m.args[3] as { emitting: boolean }).emitting,
       );
       expect(puffs).toHaveLength(1);
+      // lands where the arrow was last drawn, at bow height, then drops
       const s = worldToScreen(100, 100);
-      expect(puffs[0].calls.setPosition).toEqual([s.x, s.y]);
+      expect(puffs[0].calls.setPosition).toEqual([s.x, s.y - BOW_LIFT]);
       expect(lights.added).toEqual([]);
     });
 

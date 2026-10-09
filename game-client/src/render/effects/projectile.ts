@@ -12,10 +12,14 @@
  * carries no owner, so a rival's projectile flies, lights and lands like the delver's own. Cast
  * and release are played by the scene on its own send, never here on first sight.
  *
- * The body is a plain baked image at the footprint, on the chest layer as today (`standAt(…, 5)`).
- * It is never scaled or tweened: no pulse, no yoyo (§B.4). The trail and impacts are table
- * entries played through the runtime, owned by the projectile's `entity_id`, so releasing the id
- * takes the trail and the riding light with it.
+ * The body is a plain baked image at the footprint, on the chest layer (`standAt(…, 5)`),
+ * drawn its kind's `lift` above it: the server's position stays the footprint and the depth sorts
+ * on it, only the drawing rises (the arrow at the bow, the fireball at the casting hand, not out
+ * of the feet). A riding light stays at the footprint, pooling on the ground. The lift is
+ * fixed for the whole flight, so the body's on-screen travel is the projected velocity and its
+ * turn stays true to it. It is never scaled or tweened: no pulse, no yoyo (§B.4). The trail and
+ * impacts are table entries played through the runtime, owned by the projectile's `entity_id`,
+ * so releasing the id takes the trail and the riding light with it.
  */
 
 import type Phaser from "phaser";
@@ -52,6 +56,8 @@ export interface ProjectileKind {
   trail: EffectName;
   /** Whether the body is rotated to the projected velocity (the arrow). */
   turns: boolean;
+  /** Screen px above the footprint the body and its trail fly at, the whole flight. */
+  lift: number;
   /** Plays the impact at the last world position. */
   impact(fx: Pick<EffectsRuntime, "play">, owner: OwnerKey, at: Point): void;
 }
@@ -130,6 +136,7 @@ export class ProjectileFlights {
       body: this.body(kind.body),
       trail: this.fx.play(id, kind.trail, pos, {
         ...(heading ? { direction: heading } : {}),
+        lift: kind.lift,
         layer: TRAIL_LAYER,
       }),
       pos,
@@ -148,7 +155,11 @@ export class ProjectileFlights {
     const body = flight.body;
     if (!body) return;
     const s = worldToScreen(pos.x, pos.y);
-    body.setPosition(s.x, s.y).setDepth(worldDepth(pos.x, pos.y, BODY_LAYER));
+    body
+      .setPosition(s.x, s.y - flight.kind.lift)
+      .setDepth(worldDepth(pos.x, pos.y, BODY_LAYER));
+    // A constant lift shifts every point alike, so the projected velocity is still the
+    // direction the drawn body travels on screen.
     if (flight.kind.turns && heading) {
       const h = worldToScreen(heading.x, heading.y);
       body.setRotation(Math.atan2(h.y, h.x));
