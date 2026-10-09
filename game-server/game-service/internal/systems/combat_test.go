@@ -377,7 +377,9 @@ func TestCombatSystem_HealthNeverGoesBelowZero(t *testing.T) {
 	assert.Equal(t, 0, health(target))
 }
 
-func TestCombatSystem_DashMovesAndCostsMana(t *testing.T) {
+// The dash costs mana on its cast and sets a charge going; the MovementSystem
+// carries it over the ticks after (dash_test.go), so the cast itself moves nothing.
+func TestCombatSystem_DashSetsAChargeGoingAndCostsMana(t *testing.T) {
 	em := ecs.NewEntityManager()
 	attacker := delver(em, 100, 100)
 
@@ -385,7 +387,8 @@ func TestCombatSystem_DashMovesAndCostsMana(t *testing.T) {
 	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
 
 	tc, _ := attacker.GetComponent(ecs.ComponentTypeTransform)
-	assert.InDelta(t, 280, tc.(*components.TransformComponent).X, 1e-9)
+	assert.Equal(t, 100.0, tc.(*components.TransformComponent).X)
+	assert.True(t, attacker.HasComponent(ecs.ComponentTypeDash))
 	assert.Equal(t, 90, mana(attacker))
 }
 

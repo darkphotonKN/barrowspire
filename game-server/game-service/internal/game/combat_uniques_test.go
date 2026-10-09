@@ -119,6 +119,21 @@ func trailsInState(t *testing.T, s *Session, playerID uuid.UUID) []*types.TrailS
 	return stateSerializer.FormatStateToClientState(backendState, playerID).Trails
 }
 
+// chargeThrough ticks the world until the delver's charge is over: it carries
+// them over several ticks and lays a burning trail as it ends.
+func chargeThrough(t *testing.T, s *Session, delver *ecs.Entity) {
+	t.Helper()
+	tick(s) // the cast
+	require.True(t, delver.HasComponent(ecs.ComponentTypeDash), "the cast sets a charge going")
+	for range 100 {
+		tick(s)
+		if !delver.HasComponent(ecs.ComponentTypeDash) {
+			return
+		}
+	}
+	t.Fatal("the charge never ended")
+}
+
 // An Ashwalk wearer's dash leaves a trail in world state that burns a monster
 // in it every 0.5 s for 3 s, never a delver, and is then gone.
 // FS-4R9M9 §Requirements 36, 56; §Acceptance Criteria "Uniques", "Protocol".
@@ -132,7 +147,7 @@ func TestRun_AshwalkGreaves_DashLeavesABurningTrailInState(t *testing.T) {
 	trollBefore, allyBefore := currentHealth(troll), currentHealth(allyEntity)
 
 	require.NoError(t, s.handleCastSkill(runner, "dash", 900, 500))
-	tick(s)
+	chargeThrough(t, s, wearer)
 
 	trails := trailsInState(t, s, ally)
 	require.Len(t, trails, 1)
@@ -177,11 +192,34 @@ func TestRun_AshwalkGreaves_FloorChangeClearsTheTrail(t *testing.T) {
 	wearing(t, s, wearer, inLegsSlot, ashwalkGreaves())
 
 	require.NoError(t, s.handleCastSkill(p.carrier, "dash", 900, 500))
-	tick(s)
+	chargeThrough(t, s, wearer)
 	require.Len(t, entityIDsWith(s, ecs.ComponentTypeBurningTrail), 1)
 
 	require.NoError(t, s.regenerateFloor())
 
 	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeBurningTrail))
 	assert.Empty(t, trailsInState(t, s, p.carrier))
+}
+
+// A floor change ends a charge in flight: the party is set down standing on
+// the new floor, and nothing carries the charger on from the spawn point.
+func TestRun_FloorChangeEndsAChargeInFlight(t *testing.T) {
+	p := newParty(t, &countingItemsClient{})
+	s := p.s
+	charger := delverEntity(t, s, p.carrier)
+
+	require.NoError(t, s.handleCastSkill(p.carrier, "dash", 900, 500))
+	tick(s) // the cast: the charge is set going and carries them from the next tick
+	require.True(t, charger.HasComponent(ecs.ComponentTypeDash), "mid-charge")
+
+	require.NoError(t, s.regenerateFloor())
+	assert.False(t, charger.HasComponent(ecs.ComponentTypeDash))
+
+	tc, _ := charger.GetComponent(ecs.ComponentTypeTransform)
+	at := tc.(*components.TransformComponent)
+	spawnX, spawnY := at.X, at.Y
+	tickFor(s, 0.5)
+	assert.InDelta(t, spawnX, at.X, 1e-9)
+	assert.InDelta(t, spawnY, at.Y, 1e-9)
+	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeBurningTrail))
 }

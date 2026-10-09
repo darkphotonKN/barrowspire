@@ -2665,6 +2665,8 @@ func (s *Session) settlePartyOnNewFloor(entities []*ecs.Entity) {
 		if ic, ok := entity.GetComponent(ecs.ComponentTypeAttackIntent); ok {
 			ic.(*components.AttackIntentComponent).Pending = nil
 		}
+		// nor a charge running on from the old floor
+		entity.RemoveComponent(ecs.ComponentTypeDash)
 
 		if player.Escape {
 			continue

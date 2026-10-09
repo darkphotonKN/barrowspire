@@ -12,6 +12,11 @@ import (
 // MovementSystem integrates velocity into position, resolves collision and keeps
 // entities inside the world. Bounds belong to the world, not to the system: a run's
 // map and the hub are different sizes.
+//
+// A charge in flight (DashComponent) carries its body in place of the walk: a
+// step a tick at the charge's speed, through bodies but never through a wall, a
+// closed door or the world's edge. Anything that stops a step short stops the
+// charge; the CombatSystem then ends it.
 type MovementSystem struct {
 	MapWidth, MapHeight float64
 }
@@ -38,6 +43,7 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 
 		transformComp, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform)
 		_, hasVelocity := entity.GetComponent(ecs.ComponentTypeVelocity)
+		hasCharge := entity.HasComponent(ecs.ComponentTypeDash)
 
 		_, hasWallComp := entity.GetComponent(ecs.ComponentTypeWall)
 		if hasWallComp {
@@ -61,7 +67,7 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 			continue
 		}
 
-		if hasTransform && hasVelocity {
+		if hasTransform && (hasVelocity || hasCharge) {
 			// type assertion
 			transform := transformComp.(*components.TransformComponent)
 
@@ -79,15 +85,27 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 	for _, entity := range movers {
 		targetEntity := entity
 		transformComp, _ := targetEntity.GetComponent(ecs.ComponentTypeTransform)
-		velocityComp, _ := targetEntity.GetComponent(ecs.ComponentTypeVelocity)
 		// type assertion
 		transform := transformComp.(*components.TransformComponent)
-		velocity := velocityComp.(*components.VelocityComponent)
 		// calculate if there are other nearby entities in the 9-grid cells around this targetentity
 		cellX := int(transform.X / (2 * constants.PlayerRadius))
 		cellY := int(transform.Y / (2 * constants.PlayerRadius))
-		dx := velocity.VX * velocity.Speed * deltaTime
-		dy := velocity.VY * velocity.Speed * deltaTime
+
+		// a charge in flight replaces the walk: held input neither adds to it
+		// nor steers it, so it can never stack into a faster move
+		var dx, dy, chargeStep float64
+		dashComp, charging := targetEntity.GetComponent(ecs.ComponentTypeDash)
+		var charge *components.DashComponent
+		if charging {
+			charge = dashComp.(*components.DashComponent)
+			chargeStep = min(charge.Speed*deltaTime, max(charge.Remaining, 0))
+			dx, dy = charge.DirX*chargeStep, charge.DirY*chargeStep
+		} else {
+			velocityComp, _ := targetEntity.GetComponent(ecs.ComponentTypeVelocity)
+			velocity := velocityComp.(*components.VelocityComponent)
+			dx = velocity.VX * velocity.Speed * deltaTime
+			dy = velocity.VY * velocity.Speed * deltaTime
+		}
 
 		// split-axis swept collision, X first
 		minTx := 1.0
@@ -167,8 +185,9 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 
 		newY := transform.Y + dy*minTy
 
-		// check collision in 9-grid and resolve position by hashmap
-		for i := -1; i <= 1; i++ {
+		// check collision in 9-grid and resolve position by hashmap; a charge
+		// runs through bodies, as the teleport it replaced did
+		for i := -1; i <= 1 && !charging; i++ {
 			for j := -1; j <= 1; j++ {
 				cellKey := (cellX+i)<<8 | (cellY + j)
 				for _, other := range cells[cellKey] {
@@ -224,6 +243,15 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 		if newY > mapHeight-constants.PlayerRadius {
 			newY = mapHeight - constants.PlayerRadius
 		}
+		// a charge stopped short by a wall, a closed door or the edge is over
+		if charging {
+			if math.Hypot(newX-(transform.X+dx), newY-(transform.Y+dy)) > dashEpsilon {
+				charge.Remaining = 0
+			} else {
+				charge.Remaining -= chargeStep
+			}
+		}
+
 		// update position based on velocity
 		transform.X = newX
 		transform.Y = newY

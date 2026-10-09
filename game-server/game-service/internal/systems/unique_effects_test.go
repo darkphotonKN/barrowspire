@@ -268,28 +268,44 @@ func trails(em *ecs.EntityManager) []*ecs.Entity {
 	return out
 }
 
-// dashAndBurn has an Ashwalk wearer at (100, 100) dash +x to (280, 100) on one
-// combat tick, then keeps ticking combat for the seconds given, reporting every
-// kill.
+// dashThrough ticks movement and combat until the wearer's charge is over (it
+// lays the trail as it ends), reporting every kill.
+func dashThrough(em *ecs.EntityManager, combat *CombatSystem, wearer *ecs.Entity) []KillRecord {
+	move := NewMovementSystem()
+	var kills []KillRecord
+	for range 1000 {
+		move.Update(tickSeconds, em.GetAllEntities())
+		kills = append(kills, combat.Update(tickSeconds, em.GetAllEntities(), nil)...)
+		if !wearer.HasComponent(ecs.ComponentTypeDash) {
+			break
+		}
+	}
+	return kills
+}
+
+// dashAndBurn has an Ashwalk wearer at (100, 100) charge +x to (280, 100), then
+// keeps ticking for the seconds given, reporting every kill.
 func dashAndBurn(em *ecs.EntityManager, wearer *ecs.Entity, seconds float64) []KillRecord {
 	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
 	intend(wearer, components.AttackIntent{Kind: components.AttackDash, TargetX: 400, TargetY: 100})
-	kills := combat.Update(tickSeconds, em.GetAllEntities(), nil)
+	kills := dashThrough(em, combat, wearer)
+	move := NewMovementSystem()
 	for range int(math.Round(seconds / tickSeconds)) {
+		move.Update(tickSeconds, em.GetAllEntities())
 		kills = append(kills, combat.Update(tickSeconds, em.GetAllEntities(), nil)...)
 	}
 	return kills
 }
 
-// An Ashwalk wearer's dash leaves a trail along the path dashed.
-// FS-4R9M9 §Requirements 36.
+// An Ashwalk wearer's dash leaves a trail along the path dashed, laid as the
+// charge ends. FS-4R9M9 §Requirements 36.
 func TestCombatSystem_BurningDash_LeavesATrailAlongThePath(t *testing.T) {
 	em := ecs.NewEntityManager()
 	wearer := delver(em, 100, 100)
 	wearUnique(em, wearer, legsSlot, types.ItemTypeArmor, types.UniqueEffectBurningDash)
 
 	intend(wearer, components.AttackIntent{Kind: components.AttackDash, TargetX: 400, TargetY: 100})
-	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+	dashThrough(em, NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects), wearer)
 
 	laid := trails(em)
 	require.Len(t, laid, 1)
@@ -317,14 +333,14 @@ func TestCombatSystem_BurningDash_NewDashReplacesTheWearersLiveTrail(t *testing.
 
 	intend(wearer, components.AttackIntent{Kind: components.AttackDash, TargetX: 400, TargetY: 100})
 	intend(other, components.AttackIntent{Kind: components.AttackDash, TargetX: 400, TargetY: 600})
-	combat.Update(tickSeconds, em.GetAllEntities(), nil)
+	dashThrough(em, combat, wearer)
 	for range int(math.Round(0.5 / tickSeconds)) { // past the dash cooldown, both trails still burning
 		combat.Update(tickSeconds, em.GetAllEntities(), nil)
 	}
 	require.Len(t, trails(em), 2)
 
 	intend(wearer, components.AttackIntent{Kind: components.AttackDash, TargetX: 600, TargetY: 100})
-	combat.Update(tickSeconds, em.GetAllEntities(), nil)
+	dashThrough(em, combat, wearer)
 
 	byWearer := map[uuid.UUID][]*components.BurningTrailComponent{}
 	for _, e := range trails(em) {
@@ -345,7 +361,7 @@ func TestCombatSystem_BurningDash_NotWornLeavesNoTrail(t *testing.T) {
 	wearer := delver(em, 100, 100)
 
 	intend(wearer, components.AttackIntent{Kind: components.AttackDash, TargetX: 400, TargetY: 100})
-	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+	dashThrough(em, NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects), wearer)
 
 	assert.Empty(t, trails(em))
 }
@@ -412,11 +428,58 @@ func TestCombatSystem_BurningDash_WearerOutOfPlayPutsTheTrailOut(t *testing.T) {
 	inPath := ghoul(em, 200, 100, 1000)
 	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
 	intend(wearer, components.AttackIntent{Kind: components.AttackDash, TargetX: 400, TargetY: 100})
-	combat.Update(tickSeconds, em.GetAllEntities(), nil)
+	dashThrough(em, combat, wearer)
+	require.Len(t, trails(em), 1)
 
 	escapeDelver(wearer)
 	combat.Update(tickSeconds, em.GetAllEntities(), nil)
 
 	assert.Equal(t, 1000, health(inPath))
 	assert.Empty(t, trails(em))
+}
+
+// The trail lies along the path actually travelled: a charge a wall stopped
+// short lays it only as far as the wall. FS-4R9M9 §Requirements 36.
+func TestCombatSystem_BurningDash_TrailEndsWhereAWallStoppedTheCharge(t *testing.T) {
+	em := ecs.NewEntityManager()
+	wearer := delver(em, 100, 100)
+	wearUnique(em, wearer, legsSlot, types.ItemTypeArmor, types.UniqueEffectBurningDash)
+	wall := em.CreateEntity()
+	wall.AddComponent(components.NewTransformComponent(200, 0))
+	wall.AddComponent(&components.WallComponent{Width: 20, Height: 300})
+
+	intend(wearer, components.AttackIntent{Kind: components.AttackDash, TargetX: 400, TargetY: 100})
+	dashThrough(em, NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects), wearer)
+
+	laid := trails(em)
+	require.Len(t, laid, 1)
+	tc, _ := laid[0].GetComponent(ecs.ComponentTypeBurningTrail)
+	trail := tc.(*components.BurningTrailComponent)
+	assert.Equal(t, 100.0, trail.FromX)
+	assert.InDelta(t, 180.0, trail.ToX, 1e-9)
+	assert.InDelta(t, 100.0, trail.ToY, 1e-9)
+}
+
+// A charge cut short by death lays no trail: effects never fire from a wearer
+// out of play. FS-4R9M9 §Requirements 38.
+func TestCombatSystem_BurningDash_ChargeCutShortByDeathLaysNoTrail(t *testing.T) {
+	em := ecs.NewEntityManager()
+	wearer := delver(em, 100, 100)
+	wearUnique(em, wearer, legsSlot, types.ItemTypeArmor, types.UniqueEffectBurningDash)
+	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+	move := NewMovementSystem()
+
+	intend(wearer, components.AttackIntent{Kind: components.AttackDash, TargetX: 400, TargetY: 100})
+	for range 3 {
+		move.Update(tickSeconds, em.GetAllEntities())
+		combat.Update(tickSeconds, em.GetAllEntities(), nil)
+	}
+	killDelver(wearer)
+	for range 30 {
+		move.Update(tickSeconds, em.GetAllEntities())
+		combat.Update(tickSeconds, em.GetAllEntities(), nil)
+	}
+
+	assert.Empty(t, trails(em))
+	assert.False(t, wearer.HasComponent(ecs.ComponentTypeDash))
 }
