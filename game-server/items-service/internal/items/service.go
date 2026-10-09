@@ -24,6 +24,8 @@ type service struct {
 	db              *sqlx.DB
 	publishCh       commonbroker.Publisher
 	outboxPublisher commonoutbox.OutboxPublisher
+	// withTx runs fn in one transaction on db, committing when fn succeeds.
+	withTx func(ctx context.Context, fn func(tx *sqlx.Tx) error) error
 }
 
 func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher, outboxPublisher commonoutbox.OutboxPublisher) *service {
@@ -32,6 +34,9 @@ func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher, 
 		db:              db,
 		publishCh:       publishCh,
 		outboxPublisher: outboxPublisher,
+		withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
+			return commonutils.ExecTx(ctx, db, nil, fn)
+		},
 	}
 }
 
@@ -113,68 +118,66 @@ func (s *service) CreatePlayerLoadout(createPlayerLoadoutReq *PlayerLoadout) err
 	return nil
 }
 
+// ProcessItemsExtracted stores every player's extracted items and equipped
+// loadout in one transaction, so a requeued event replays from nothing rather
+// than duplicating the items found in a run. An item that cannot be stored on
+// its own (no template, bad affix) is skipped with a warning; any other failure
+// is returned, transient or not, for the consumer to settle (FS-4R9M9 R49, R50).
 func (s *service) ProcessItemsExtracted(ctx context.Context, req *pb.ItemsExtractedEvent) error {
-	// transaction to wrap inventory upserts and player_loadout upserts
-	for _, playerItems := range req.PlayerItems {
-		// loop through each player
-		slog.Debug("single player iterated from req.PlayerItems",
-			"member_id", playerItems.MemberId,
-			"equipment", playerItems.Equipment,
-			"inventory", playerItems.Inventory,
-		)
-
-		// only holds one connection a time, released when committed or rolled back
-		commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
-
-			// convert inventory and equipment into item instances
-			invItemInstances, err := s.MapProtoItemToItemInstances(playerItems.Inventory)
-			if err != nil {
-				slog.Error("Unexpected error converting inventory from pb.Item to InventoryInstance",
-					"err", err,
-				)
+	var writeErr error
+	err := s.withTx(ctx, func(tx *sqlx.Tx) error {
+		for _, playerItems := range req.PlayerItems {
+			if writeErr = s.storeExtractedPlayerItems(ctx, tx, playerItems); writeErr != nil {
+				return writeErr
 			}
+		}
+		return nil
+	})
+	switch {
+	case err == nil:
+		return nil
+	case writeErr == nil:
+		// no write failed, the transaction around them did (begin or commit):
+		// the store, not the event, is at fault
+		return fmt.Errorf("transaction for items extracted %s: %w: %w", req.EventId, commonconstants.ErrTransient, err)
+	default:
+		return fmt.Errorf("store items extracted %s: %w", req.EventId, err)
+	}
+}
 
-			memberId, err := uuid.Parse(playerItems.MemberId)
-			if err != nil {
-				slog.Error("error parsing member id when processing items extracted",
-					"member_id", playerItems.MemberId,
-					"err", err,
-				)
-				return err
-			}
+// storeExtractedPlayerItems writes one player's extracted items and loadout.
+func (s *service) storeExtractedPlayerItems(ctx context.Context, tx *sqlx.Tx, playerItems *pb.PlayerItems) error {
+	slog.Debug("single player iterated from req.PlayerItems",
+		"member_id", playerItems.GetMemberId(),
+		"equipment", playerItems.GetEquipment(),
+		"inventory", playerItems.GetInventory(),
+	)
 
-			equipItemInstances, upsertParams, err := s.MapProtoEquipmentToItemInstances(memberId, playerItems.Equipment)
-			if err != nil {
-				slog.Error("Error when attempting to map pb equipped items to item instances and create upsert player loadout params",
-					"member_id", memberId,
-					"err", err,
-					"player_items_equipment", playerItems.Equipment,
-				)
-			}
+	memberId, err := uuid.Parse(playerItems.GetMemberId())
+	if err != nil {
+		return fmt.Errorf("member id %q: %w: %w", playerItems.GetMemberId(), commonconstants.ErrUUIDCouldNotBeParsed, err)
+	}
 
-			allItemIntances := append(equipItemInstances, invItemInstances...)
+	// convert inventory and equipment into item instances
+	invItemInstances, err := s.MapProtoItemToItemInstances(memberId, playerItems.GetInventory())
+	if err != nil {
+		return fmt.Errorf("map inventory of member %s: %w", memberId, err)
+	}
 
-			// batch update items
-			err = s.repo.BatchUpsertItemInstances(ctx, tx, allItemIntances)
-			if err != nil {
-				slog.Error("Error when attempting to batch upsert item instances",
-					"item_instances", allItemIntances,
-				)
-				return err
-			}
+	equipItemInstances, upsertParams, err := s.MapProtoEquipmentToItemInstances(memberId, playerItems.GetEquipment())
+	if err != nil {
+		return fmt.Errorf("map equipment of member %s: %w", memberId, err)
+	}
 
-			// upsert player loadout with equipment ids
-			err = s.repo.UpsertPlayerLoadoutTx(ctx, tx, upsertParams)
-			if err != nil {
-				slog.Error("Error when attempting to upsert equipment into player_loadouts",
-					"member_id", memberId,
-					"err", err,
-					"upsert_params", upsertParams,
-				)
-				return err
-			}
-			return nil
-		})
+	allItemInstances := append(equipItemInstances, invItemInstances...)
+
+	if err := s.repo.BatchUpsertItemInstances(ctx, tx, allItemInstances); err != nil {
+		return fmt.Errorf("upsert extracted items of member %s: %w", memberId, err)
+	}
+
+	// upsert player loadout with equipment ids
+	if err := s.repo.UpsertPlayerLoadoutTx(ctx, tx, upsertParams); err != nil {
+		return fmt.Errorf("upsert loadout of member %s: %w", memberId, err)
 	}
 	return nil
 }
@@ -182,6 +185,7 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, req *pb.ItemsExtrac
 /**
 * Converts the equipped items, equipment, extracted from items.extracted event into ItemInstance entities for
 * updating the item instance table and formatted into PlayerLoadout for updating player_loadouts table.
+* Nil equipment means nothing equipped: the proto getters are nil-safe.
 **/
 func (s *service) MapProtoEquipmentToItemInstances(memberID uuid.UUID, equipmentProto *pb.Equipment) ([]*ItemInstance, *UpsertPlayerLoadoutRequest, error) {
 	// holds both existing ids and new ids
@@ -192,7 +196,7 @@ func (s *service) MapProtoEquipmentToItemInstances(memberID uuid.UUID, equipment
 	itemInstances := make([]*ItemInstance, 0)
 
 	// convert each item invidually to maintain mapping
-	chestInstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(equipmentProto.Chest)
+	chestInstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(memberID, equipmentProto.GetChest())
 	if err == nil {
 		// update
 		playerLoadoutParam.ChestInstanceID = &chestInstanceItem.ID
@@ -206,7 +210,7 @@ func (s *service) MapProtoEquipmentToItemInstances(memberID uuid.UUID, equipment
 		)
 	}
 
-	weaponInstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(equipmentProto.Weapon)
+	weaponInstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(memberID, equipmentProto.GetWeapon())
 
 	if err == nil {
 		playerLoadoutParam.WeaponInstanceID = &weaponInstanceItem.ID
@@ -220,7 +224,7 @@ func (s *service) MapProtoEquipmentToItemInstances(memberID uuid.UUID, equipment
 		)
 	}
 
-	headInstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(equipmentProto.Head)
+	headInstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(memberID, equipmentProto.GetHead())
 	if err == nil {
 		playerLoadoutParam.HeadInstanceID = &headInstanceItem.ID
 		itemInstances = append(itemInstances, headInstanceItem)
@@ -233,7 +237,7 @@ func (s *service) MapProtoEquipmentToItemInstances(memberID uuid.UUID, equipment
 		)
 	}
 
-	glovesInstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(equipmentProto.Gloves)
+	glovesInstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(memberID, equipmentProto.GetGloves())
 	if err == nil {
 		playerLoadoutParam.GlovesInstanceID = &glovesInstanceItem.ID
 		itemInstances = append(itemInstances, glovesInstanceItem)
@@ -246,7 +250,7 @@ func (s *service) MapProtoEquipmentToItemInstances(memberID uuid.UUID, equipment
 		)
 	}
 
-	legsInstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(equipmentProto.Legs)
+	legsInstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(memberID, equipmentProto.GetLegs())
 	if err == nil {
 		playerLoadoutParam.LegsInstanceID = &legsInstanceItem.ID
 		itemInstances = append(itemInstances, legsInstanceItem)
@@ -259,7 +263,7 @@ func (s *service) MapProtoEquipmentToItemInstances(memberID uuid.UUID, equipment
 		)
 	}
 
-	ring1InstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(equipmentProto.Ring_1)
+	ring1InstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(memberID, equipmentProto.GetRing_1())
 	if err == nil {
 		playerLoadoutParam.Ring1InstanceID = &ring1InstanceItem.ID
 		itemInstances = append(itemInstances, ring1InstanceItem)
@@ -272,7 +276,7 @@ func (s *service) MapProtoEquipmentToItemInstances(memberID uuid.UUID, equipment
 		)
 	}
 
-	ring2InstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(equipmentProto.Ring_2)
+	ring2InstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(memberID, equipmentProto.GetRing_2())
 	if err == nil {
 		playerLoadoutParam.Ring2InstanceID = &ring2InstanceItem.ID
 		itemInstances = append(itemInstances, ring2InstanceItem)
@@ -285,7 +289,7 @@ func (s *service) MapProtoEquipmentToItemInstances(memberID uuid.UUID, equipment
 		)
 	}
 
-	consumable1InstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(equipmentProto.Consumable_1)
+	consumable1InstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(memberID, equipmentProto.GetConsumable_1())
 	if err == nil {
 		playerLoadoutParam.Consumable1ID = &consumable1InstanceItem.ID
 		itemInstances = append(itemInstances, consumable1InstanceItem)
@@ -298,7 +302,7 @@ func (s *service) MapProtoEquipmentToItemInstances(memberID uuid.UUID, equipment
 		)
 	}
 
-	consumable2InstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(equipmentProto.Consumable_2)
+	consumable2InstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(memberID, equipmentProto.GetConsumable_2())
 	if err == nil {
 		playerLoadoutParam.Consumable2ID = &consumable2InstanceItem.ID
 		itemInstances = append(itemInstances, consumable2InstanceItem)
@@ -311,7 +315,7 @@ func (s *service) MapProtoEquipmentToItemInstances(memberID uuid.UUID, equipment
 		)
 	}
 
-	consumable3InstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(equipmentProto.Consumable_3)
+	consumable3InstanceItem, err := s.ConvertSingleProtoItemtoItemInstance(memberID, equipmentProto.GetConsumable_3())
 	if err == nil {
 		playerLoadoutParam.Consumable3ID = &consumable3InstanceItem.ID
 		itemInstances = append(itemInstances, consumable3InstanceItem)
@@ -332,14 +336,23 @@ func (s *service) MapProtoEquipmentToItemInstances(memberID uuid.UUID, equipment
 	return itemInstances, playerLoadoutParam, nil
 }
 
-func (s *service) ConvertSingleProtoItemtoItemInstance(protoItem *pb.Item) (*ItemInstance, error) {
+// ConvertSingleProtoItemtoItemInstance maps one extracted item to the row the
+// member now owns. An item found in the run (no instance id) gets a new id; a
+// brought-in item keeps its own, and the upsert keeps its stored owner, source,
+// status and roll (FS-4R9M9 R20, R53). An item without a template cannot be
+// stored and is refused.
+func (s *service) ConvertSingleProtoItemtoItemInstance(memberID uuid.UUID, protoItem *pb.Item) (*ItemInstance, error) {
 	if protoItem == nil {
 		slog.Debug("Nothing to convert, protoItem was nil")
 		return nil, fmt.Errorf("nil pb.Item cant be converted into ItemInstance.")
 	}
 
+	templateID, err := uuid.Parse(protoItem.TemplateId)
+	if err != nil {
+		return nil, fmt.Errorf("extracted item %q has no usable template_id %q: %w", protoItem.Name, protoItem.TemplateId, err)
+	}
+
 	var itemId uuid.UUID
-	var err error
 	if protoItem.InstanceId == "" {
 		itemId = uuid.New()
 	} else {
@@ -352,15 +365,6 @@ func (s *service) ConvertSingleProtoItemtoItemInstance(protoItem *pb.Item) (*Ite
 		}
 	}
 
-	attackPower := int(protoItem.AttackPower)
-	criticalRate := protoItem.CriticalRate
-	weaponType := protoItem.WeaponType
-	defenseRating := int(protoItem.DefenseRating)
-	magicResistance := int(protoItem.MagicResistance)
-	armorSlot := protoItem.ArmorSlot
-	healingAmount := int(protoItem.HealingAmount)
-	manaAmount := int(protoItem.ManaAmount)
-	buffDuration := int(protoItem.BuffDuration)
 	description := protoItem.Description
 
 	// empty rarity_id = no rarity (NULL); a malformed one keeps the item, NULL rarity
@@ -376,30 +380,73 @@ func (s *service) ConvertSingleProtoItemtoItemInstance(protoItem *pb.Item) (*Ite
 	}
 
 	item := &ItemInstance{
-		ID:              itemId,
-		ItemType:        protoItem.ItemType,
-		Name:            protoItem.Name,
-		RarityID:        rarityID,
-		AttackPower:     &attackPower,
-		CriticalRate:    &criticalRate,
-		WeaponType:      &weaponType,
-		DefenseRating:   &defenseRating,
-		MagicResistance: &magicResistance,
-		ArmorSlot:       &armorSlot,
-		HealingAmount:   &healingAmount,
-		ManaAmount:      &manaAmount,
-		BuffDuration:    &buffDuration,
-		Description:     &description,
+		ID:            itemId,
+		TemplateID:    templateID,
+		OwnerMemberID: memberID,
+		Source:        "extracted",
+		Status:        "AVAILABLE",
+		ItemType:      protoItem.ItemType,
+		Name:          protoItem.Name,
+		RarityID:      rarityID,
+		Description:   &description,
+		ItemLevel:     max(int(protoItem.ItemLevel), 1),
+		RequiredLevel: max(int(protoItem.RequiredLevel), 0),
+		Affixes:       wellFormedAffixes(itemId, protoItem.Affixes),
 	}
+	setTypedStats(item, protoItem)
 
 	return item, nil
+}
+
+// setTypedStats stores only the stat columns of the item's own type; every
+// other stat stays NULL, so a weapon never carries a 0 defense or healing. A
+// ring has no base stats (FS-4R9M9 R5). Only armor has a slot, as
+// item_instances_armor_slot_check demands.
+func setTypedStats(item *ItemInstance, protoItem *pb.Item) {
+	switch protoItem.ItemType {
+	case "weapon":
+		attackPower, criticalRate, weaponType := int(protoItem.AttackPower), protoItem.CriticalRate, protoItem.WeaponType
+		item.AttackPower, item.CriticalRate, item.WeaponType = &attackPower, &criticalRate, &weaponType
+	case "armor":
+		defenseRating, magicResistance := int(protoItem.DefenseRating), int(protoItem.MagicResistance)
+		item.DefenseRating, item.MagicResistance = &defenseRating, &magicResistance
+		if protoItem.ArmorSlot != "" {
+			armorSlot := protoItem.ArmorSlot
+			item.ArmorSlot = &armorSlot
+		}
+	case "consumable":
+		healingAmount, manaAmount, buffDuration := int(protoItem.HealingAmount), int(protoItem.ManaAmount), int(protoItem.BuffDuration)
+		item.HealingAmount, item.ManaAmount, item.BuffDuration = &healingAmount, &manaAmount, &buffDuration
+	}
+}
+
+// wellFormedAffixes keeps an extracted item's well-formed affixes in order and
+// drops any malformed entry with a warning, so a bad producer value never costs
+// the delver the item (FS-4R9M9 R50).
+func wellFormedAffixes(itemID uuid.UUID, in []*pb.ItemAffix) Affixes {
+	out := make(Affixes, 0, len(in))
+	for _, raw := range in {
+		if raw == nil {
+			slog.Warn("dropping nil affix on extracted item", "item_id", itemID)
+			continue
+		}
+		affix := Affix{Stat: raw.Stat, Tier: int(raw.Tier), Value: int(raw.Value)}
+		if !affix.wellFormed() {
+			slog.Warn("dropping malformed affix on extracted item",
+				"item_id", itemID, "stat", affix.Stat, "tier", affix.Tier, "value", affix.Value,
+			)
+			continue
+		}
+		out = append(out, affix)
+	}
+	return out
 }
 
 /**
 * Converts the non equipped slice of items extracted from items.extracted event into ItemInstance entities for
 * updating the item instance table.
 **/
-func (s *service) MapProtoItemToItemInstances(itemsProto []*pb.Item) ([]*ItemInstance, error) {
+func (s *service) MapProtoItemToItemInstances(memberID uuid.UUID, itemsProto []*pb.Item) ([]*ItemInstance, error) {
 	// no items from user
 	if len(itemsProto) == 0 {
 		slog.Error("No itemProtos to map to ItemInstances.")
@@ -411,10 +458,11 @@ func (s *service) MapProtoItemToItemInstances(itemsProto []*pb.Item) ([]*ItemIns
 	itemInstances := make([]*ItemInstance, 0)
 
 	for _, protoItem := range itemsProto {
-		item, err := s.ConvertSingleProtoItemtoItemInstance(protoItem)
+		item, err := s.ConvertSingleProtoItemtoItemInstance(memberID, protoItem)
 		if err != nil {
 			slog.Warn("item couldnt be mapped into ItemInstance",
-				"proto_item_instance_id", protoItem.InstanceId,
+				"proto_item_instance_id", protoItem.GetInstanceId(),
+				"error", err,
 			)
 			continue
 		}

@@ -24,6 +24,17 @@ import {
 } from "@/types/gameState";
 import { EquipmentPanel } from "@/ui/EquipmentPanel";
 import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
+import {
+  climbed,
+  floorCard,
+  floorLabel,
+  interactNotice,
+  type InteractReply,
+  type NoticeTone,
+} from "@/ui/floor";
+import { delveNotice, resolved } from "@/ui/party";
+import { ProgressHud } from "@/ui/ProgressHud";
+import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
 import { GameStateLogger } from "@/utils/gameStateLogger";
 import {
   CANVAS_FONT,
@@ -51,9 +62,9 @@ import {
   type WorldPlane,
 } from "@/render/iso";
 import { artSprite, preloadArt, registerArt } from "@/render/art/phaser";
-import type { ArtLibrary } from "@/render/art/library";
+import { PLACEHOLDER_TEXTURE, type ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
-import { AMBIENT, LightMap } from "@/render/lighting";
+import { AMBIENT, HALO_DEPTH, LightMap } from "@/render/lighting";
 import { cursorCss, cursorSource } from "@/render/cursors";
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { HitFeedback } from "@/render/effects/hit";
@@ -66,15 +77,21 @@ import { ProjectileFlights } from "@/render/effects/projectile";
 import { FIREBALL_FLIGHT, playFireballCast } from "@/render/effects/fireball";
 import { ARROW_FLIGHT, playArrowRelease } from "@/render/effects/arrow";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
+import { MonsterRoster, type MonsterTargeting } from "@/render/creatures";
 import {
   BAKE,
+  DROP_PILE,
   GroundLayer,
   Occluders,
   addRoof,
   addWalls,
   footprintHitArea,
   housesFrom,
+  paintDropPile,
   showState,
+  StairsSet,
+  TRAIL_BED_DEPTH,
+  TrailSet,
   worldSeed,
 } from "@/render/world";
 
@@ -82,6 +99,20 @@ import {
 const CAMERA_MARGIN = 160;
 /** A delver's footprint, in world px: the server's `PlayerRadius`. */
 const PLAYER_FOOTPRINT_RADIUS = 20;
+/**
+ * A targeted `attack`'s reach, centre to centre in world px, and its cooldown in ms: the server's
+ * (`targetedAttackRange`, 0.5 s). A click out of reach sends nothing.
+ */
+const STRIKE_RANGE = 60;
+const STRIKE_COOLDOWN_MS = 500;
+/** Screen y of the delve-continues notice: under the passing notices at 100, clear of them. */
+const DELVE_NOTICE_Y = 150;
+/**
+ * Where the level and experience bar sit (FS-BDA7X req 42): top-left, under the position line,
+ * and clear of the notice band (100–150) across the middle of the screen.
+ */
+const PROGRESS_HUD_X = 10;
+const PROGRESS_HUD_Y = 44;
 /**
  * Screen px above a delver's marker base (`markerBase`: a baked head, or a placeholder's frame
  * top) to their name label, and to their HP bar. Markers draw above the light-map and vignette
@@ -94,6 +125,30 @@ const HP_BAR_GAP = 10;
  * base. A placeholder keeps {@link NAME_GAP}, exactly where it always was.
  */
 const NAME_OVER_BAR_GAP = HP_BAR_GAP + 2;
+
+/**
+ * The backing a HUD notice is drawn on, by tone: a success in arcane green, a refusal in lifted
+ * oxblood (both as before), and the stairs waiting for the party on the neutral HUD panel.
+ */
+const NOTICE_BACKING: Record<NoticeTone, number> = {
+  done: palette.safe,
+  refused: palette.damageBright,
+  waiting: palette.hudPanel,
+};
+
+/**
+ * The climb's dark and floor card (FS-F6F88 req 32): over the world and its atmosphere (~900),
+ * under the HUD (1000) and notices (2000).
+ */
+const FLOOR_VEIL_DEPTH = 950;
+/** How long the view stays dark before the card rises, in ms. */
+const FLOOR_DARK_HOLD_MS = 250;
+/** The card's fade, in ms; it leaves at twice this. */
+const FLOOR_CARD_FADE_MS = 300;
+/** The dark lifting off the new floor, in ms. */
+const FLOOR_VIEW_RETURN_MS = 900;
+/** How long the card holds once up, in ms. */
+const FLOOR_CARD_HOLD_MS = 1400;
 
 /** Health the server already sends, run out: a delver's death clip plays on it. */
 const isDead = (player?: { current_health?: number } | null) =>
@@ -108,13 +163,23 @@ interface Building {
   doorSide: "top" | "bottom" | "left" | "right";
   wallGroup: Phaser.Physics.Arcade.StaticGroup;
   /** Baked roof pieces, or the placeholder roof: hidden together while the delver is inside. */
-  roof: { setVisible(visible: boolean): unknown }[];
+  roof: { setVisible(visible: boolean): unknown; destroy(): void }[];
   /** The entrance glow (FS-KYPQ9 §H.1); absent only if walls came before the effects runtime. */
   doorMarker?: EntranceMarker;
   // Door properties
   door: Phaser.GameObjects.Graphics;
   doorCollider: Phaser.GameObjects.Rectangle;
   isOpen: boolean;
+}
+
+/** The same inside test as ever, on the world position (FS-2325V edge states). */
+function inBuilding(building: Building, at: Point): boolean {
+  return (
+    at.x >= building.x &&
+    at.x <= building.x + building.width &&
+    at.y >= building.y &&
+    at.y <= building.y + building.height
+  );
 }
 
 /** Limited barrow palette for the wizard-delver sprite (0x ints). */
@@ -178,7 +243,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private otherPlayers: Map<string, Phaser.Physics.Arcade.Sprite> = new Map();
   /** Eased world positions of other delvers; their sprites sit at the projection. */
   private otherPlayersPos: Map<string, Point> = new Map();
-  private otherPlayersEntityIds: Map<string, string> = new Map(); // player_id → entity_id
   private otherPlayersTargets: Map<string, { x: number; y: number }> =
     new Map();
 
@@ -227,6 +291,12 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // End-of-game overlay (shown when server sends end_game action)
   private gameEndOverlay?: Phaser.GameObjects.Container;
+  /** The resolved delver's "the delve goes on" notice (FS-77AB6 req 42), until `end_game`. */
+  private delveNoticeText?: Phaser.GameObjects.Text;
+  /** This delver's level and experience bar (FS-BDA7X req 42), made with the first state that has them. */
+  private progressHud?: ProgressHud;
+  /** This delver's level, for the "Requires level N" hints (req 45); unknown until the server sends it. */
+  private characterLevel?: number;
 
   // Game state
   private gameStateUnsubscribe?: () => void;
@@ -243,7 +313,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private outsideObjects: Phaser.GameObjects.GameObject[] = [];
   private indoorMask!: Phaser.GameObjects.Graphics;
 
-  // 寶箱 (從後端同步) — `pos` is the world position; the sprite is drawn at its projection
+  // 寶箱 (從後端同步) — `pos` is the world position; the sprite is drawn at its projection.
+  // Drop piles with loot left in them are held here too: they open and loot like a chest
   private chests: Map<
     string,
     { sprite: Phaser.GameObjects.Sprite; entityId: string; pos: Point }
@@ -260,6 +331,33 @@ export class BarrowspireScene extends Phaser.Scene {
     string,
     { sprite: Phaser.GameObjects.Sprite; entityId: string; pos: Point }
   > = new Map();
+
+  /** Stairs up to the next floor, from state (FS-F6F88 req 30); none on the top floor. */
+  private stairs = new StairsSet<Phaser.GameObjects.Sprite>({
+    add: (at) => {
+      const sprite = this.add.sprite(0, 0, "stairs_up");
+      standAt(sprite, at);
+      return sprite;
+    },
+    stand: (sprite, at) => standAt(sprite, at),
+  });
+
+  /**
+   * Burning trails, from state (FS-4R9M9 req 56, 61): a ground bed and an additive glow each,
+   * named for the trail they burn for.
+   */
+  private trails = new TrailSet<Phaser.GameObjects.Graphics>({
+    bed: (id) => this.add.graphics().setDepth(TRAIL_BED_DEPTH).setName(`trail:${id}:bed`),
+    glow: (id) =>
+      this.add
+        .graphics()
+        .setDepth(HALO_DEPTH)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setName(`trail:${id}:glow`),
+    // the glow sorts above the roofs: like a sconce's halo, it is only in sight while no roof the
+    // delver is outside of stands over either end of the trail
+    glowShown: (trail) => !this.underRoof(trail.from) && !this.underRoof(trail.to),
+  });
 
   // 牆壁 (從後端同步) — baked wall pieces and posts (FS-2325V §C.2), or the
   // placeholder blocks without a manifest; either way, one-tile pieces sorted by footprint
@@ -282,6 +380,8 @@ export class BarrowspireScene extends Phaser.Scene {
     }
   > = new Map();
   private serverBuildingsCreated = false;
+  /** The placeholder floor drawn under each house when there is no baked ground to paint it on. */
+  private houseFloors: Phaser.GameObjects.GameObject[] = [];
 
   // 寶箱跳窗: the satchel a coffer opens into (FS-2325V §D)
   private containerView!: ContainerView;
@@ -320,6 +420,14 @@ export class BarrowspireScene extends Phaser.Scene {
   private hits?: HitFeedback;
   /** Which characters have settled their death dust this death (FS-KYPQ9 §G.2). */
   private readonly deathDust = new DeathDust();
+  /** The run's monsters and corpses, from state (FS-77AB6 req 34–39). */
+  private monsters?: MonsterRoster;
+  /** What a living monster under the pointer does (FS-77AB6 req 39): strike-mark, and a strike. */
+  private readonly monsterTargeting: MonsterTargeting = {
+    strike: (monster) => this.strike(monster.entity_id, monster.position),
+    hover: (monster) =>
+      this.input.setDefaultCursor(monster ? this.crosshairCursorCSS : this.defaultCursorCSS),
+  };
   private occluders = new Occluders();
   /** How far above the floor a house's walls reach on screen, for the indoor mask's hole. */
   private wallTop = WALL_HEIGHT;
@@ -331,6 +439,16 @@ export class BarrowspireScene extends Phaser.Scene {
   private previousSwitchActivated: boolean | null = null;
   private escapedPlayers: Set<string> = new Set();
   private escapedCountText?: Phaser.GameObjects.Text;
+  /** "Floor N of M" (FS-F6F88 req 29), hidden where the broadcast carries no floor. */
+  private floorText?: Phaser.GameObjects.Text;
+  private shownFloorLabel: string | null = null;
+  /**
+   * The floor the last broadcast stood on (FS-F6F88 req 28). Undefined until the first broadcast
+   * of a start, so a reconnect builds the party's floor directly with no transition (req 32).
+   */
+  private lastFloor?: number;
+  /** The dark and the floor card a climb comes back up through; gone once it has faded. */
+  private floorVeil: Phaser.GameObjects.GameObject[] = [];
 
   constructor() {
     super({ key: "BarrowspireScene" });
@@ -363,6 +481,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.connectionStatusUnsubscribe = undefined;
     socketManager.off("exit_door_unlocked");
     socketManager.off("interact");
+    socketManager.off("equip");
     socketManager.off("end_game");
 
     this.player = undefined;
@@ -378,7 +497,6 @@ export class BarrowspireScene extends Phaser.Scene {
 
     this.otherPlayers.clear();
     this.otherPlayersPos.clear();
-    this.otherPlayersEntityIds.clear();
     this.otherPlayersTargets.clear();
     this.otherPlayersHpMpGraphics.clear();
     this.otherPlayersLegs.clear();
@@ -396,6 +514,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.chests.clear();
     this.escapeDoors.clear();
     this.switches.clear();
+    this.stairs.forget();
+    this.trails.forget();
     this.walls.clear();
     this.serverDoors.clear();
     this.serverBuildingsCreated = false;
@@ -408,15 +528,24 @@ export class BarrowspireScene extends Phaser.Scene {
     this.hits?.clearAll();
     this.hits = undefined;
     this.lightMap?.clearTransient();
+    this.houseFloors = [];
     this.groundPlane = undefined;
     this.groundLayer = undefined;
     this.lightMap = undefined;
+    this.monsters = undefined;
     this.wallTop = WALL_HEIGHT;
 
     this.controlsPanel = undefined;
     this.gameEndOverlay = undefined;
+    this.delveNoticeText = undefined;
+    this.progressHud = undefined;
+    this.characterLevel = undefined;
     this.equipmentPanel = undefined;
     this.escapedCountText = undefined;
+    this.floorText = undefined;
+    this.shownFloorLabel = null;
+    this.lastFloor = undefined;
+    this.floorVeil = [];
     this.equippedItems = Object.fromEntries(
       Object.keys(this.equippedItems).map((slot) => [slot, null]),
     ) as unknown as EquippedItems;
@@ -505,6 +634,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private showGameEndOverlay(position: number, result?: string): void {
     if (this.gameEndOverlay) return; // already shown
+    // the overlay carries the last word now
+    this.delveNoticeText?.destroy();
+    this.delveNoticeText = undefined;
 
     const cam = this.cameras.main;
 
@@ -629,8 +761,8 @@ export class BarrowspireScene extends Phaser.Scene {
     });
     redeployHit.on("pointerdown", () => {
       const activeChar = useGameStore.getState().getActiveCharacter();
-      const chosenClass = (activeChar?.className || useGameStore.getState().selectedClass || "warrior").toLowerCase();
-      const chosenName = activeChar?.name || useGameStore.getState().selectedCharacterName || "Hero";
+      const chosenClass = (activeChar?.className || "warrior").toLowerCase();
+      const chosenName = activeChar?.name || "Hero";
 
       socketManager.sendMessage(ActionType.Find_Game, {
         playerId: "1",
@@ -812,6 +944,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.createChestTextures();
     this.createEscapeDoorTextures();
     this.createSwitchTextures();
+    this.createStairsTexture();
+    this.createDropPileTexture();
     this.createMetalFloorTexture();
 
     // baked world and prop art (FS-2325V §B.6); the textures above stay as placeholders
@@ -1465,6 +1599,27 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * A targeted `attack` on the entity standing at world point `them` (FS-77AB6 req 39): only a
+   * monster is ever one, delvers being allies (req 40). Sent only from a delver still in the
+   * delve, off cooldown and within reach, as the server would refuse anything else.
+   */
+  private strike(entityId: string, them: Point): void {
+    const me = this.playerPos;
+    if (!this.canAttack || !this.player || !me || this.gameEndOverlay) return;
+    if (resolved(this.lastGameState?.current_player)) return;
+    // world positions, never the sprites' screen positions
+    if (Math.hypot(them.x - me.x, them.y - me.y) > STRIKE_RANGE) return;
+
+    socketManager.sendMessage(ActionType.Attack, { enemy_entity_id: entityId });
+    this.playWarriorSlashEffect(me.x, me.y, them.x, them.y);
+    this.playerAnim?.attack(this.time.now, { x: them.x - me.x, y: them.y - me.y });
+    this.canAttack = false;
+    this.time.delayedCall(STRIKE_COOLDOWN_MS, () => {
+      this.canAttack = true;
+    });
+  }
+
+  /**
    * Legs under a delver drawn at screen `(x, y)`. The placeholder rig has four
    * facings, so an 8-way facing shows as the nearest of them until §E sheets land.
    */
@@ -1753,7 +1908,46 @@ export class BarrowspireScene extends Phaser.Scene {
     active.destroy();
   }
 
-  private updateContainers(containers: ContainerState[]): void {
+  /**
+   * Placeholder stairs up (FS-F6F88 req 30; baked stairs art is follow-up work): stone treads
+   * climbing away from the viewer, each with an amber nosing. Amber because the delver can act
+   * on them (guideline "Gameplay accent").
+   */
+  private createStairsTexture(): void {
+    const size = 36;
+    const steps = 4;
+    const g = this.make.graphics({});
+    g.fillStyle(palette.hudPanel, 1); // stone footing
+    g.fillRect(0, 0, size, size);
+    const rise = size / steps;
+    for (let i = 0; i < steps; i++) {
+      // the nearest tread is widest; each one up is narrower and lit a touch more
+      const inset = 3 + i * 3;
+      const y = size - (i + 1) * rise;
+      g.fillStyle(palette.stairsRiser, 1);
+      g.fillRect(inset, y, size - inset * 2, rise);
+      g.fillStyle(tint(palette.stairsTread, i * 0.06), 1);
+      g.fillRect(inset, y, size - inset * 2, rise - 3);
+      g.lineStyle(2, palette.stairsNosing, 0.85);
+      g.lineBetween(inset, y + 1, size - inset, y + 1);
+    }
+    g.lineStyle(2, palette.inkDeep, 1);
+    g.strokeRect(0, 0, size, size);
+    g.generateTexture("stairs_up", size, size);
+    g.destroy();
+  }
+
+  /** Placeholder drop pile (FS-4R9M9 req 61), built in code until a baked prop exists. */
+  private createDropPileTexture(): void {
+    const g = this.make.graphics({});
+    paintDropPile(g);
+    g.generateTexture(DROP_PILE.texture, DROP_PILE.width, DROP_PILE.height);
+    g.destroy();
+  }
+
+  private updateContainers(state: ContainerState[]): void {
+    // an emptied drop pile stays in state, but there is nothing left to draw or take (FS-4R9M9 R46)
+    const containers = state.filter((c) => c.kind !== "drop_pile" || c.items.length > 0);
     const activeEntityIds = new Set(containers.map((c) => c.entity_id));
 
     // 移除不存在的寶箱
@@ -1769,17 +1963,21 @@ export class BarrowspireScene extends Phaser.Scene {
       let chest = this.chests.get(container.entity_id);
 
       const pos = { x: container.position.x, y: container.position.y };
+      const isPile = container.kind === "drop_pile";
       if (!chest) {
-        // 新增寶箱
-        const sprite = this.add.sprite(0, 0, "chest_closed");
-        this.showContainerFrame(sprite, container.is_open);
+        // 新增寶箱 — or the heap a slain monster's loot lies in, always open (FS-4R9M9 R61)
+        const sprite = isPile
+          ? this.add
+              .sprite(0, 0, DROP_PILE.texture)
+              .setOrigin(DROP_PILE.origin.x, DROP_PILE.origin.y)
+          : this.add.sprite(0, 0, "chest_closed");
         chest = { sprite, entityId: container.entity_id, pos };
         this.chests.set(container.entity_id, chest);
       } else {
-        // 更新寶箱狀態
-        this.showContainerFrame(chest.sprite, container.is_open);
         chest.pos = pos;
       }
+      // 更新寶箱狀態
+      if (!isPile) this.showContainerFrame(chest.sprite, container.is_open);
       standAt(chest.sprite, pos);
 
       // 如果是打開的寶箱，更新跳窗內容
@@ -1940,6 +2138,7 @@ export class BarrowspireScene extends Phaser.Scene {
             floor.lineBetween(minX, ty, minX + bw, ty);
           }
           this.groundPlane?.surface.add(floor);
+          this.houseFloors.push(floor);
         }
 
         // 屋頂 — baked slope and ridge pieces, each sorted by its own footprint
@@ -2138,7 +2337,7 @@ export class BarrowspireScene extends Phaser.Scene {
     const openFor = this.containerView.entityId;
     if (!this.player || !me || !openFor) return;
 
-    // the coffer vanished from the server's state: nothing left to show
+    // the coffer vanished from the server's state, or the pile was emptied: nothing left to show
     const chest = this.chests.get(openFor);
     if (!chest) {
       this.containerView.close();
@@ -2291,8 +2490,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private createPlayer(x: number, y: number, className?: string, username?: string): void {
     const activeChar = useGameStore.getState().getActiveCharacter();
-    const effectiveClass = (activeChar?.className || className || useGameStore.getState().selectedClass || "warrior").toLowerCase();
-    const displayName = activeChar?.name || username || useGameStore.getState().selectedCharacterName || "Hero";
+    const effectiveClass = (activeChar?.className || className || "warrior").toLowerCase();
+    const displayName = activeChar?.name || username || "Hero";
 
     this.playerTexturePrefix = "player_" + effectiveClass;
     this.playerPos = { x, y };
@@ -2373,10 +2572,22 @@ export class BarrowspireScene extends Phaser.Scene {
     // the baked cursors, cropped from the atlas just registered
     this.setupCustomCursor();
     this.occluders = new Occluders();
+    this.monsters = new MonsterRoster(
+      {
+        sprite: () => this.add.sprite(0, 0, PLACEHOLDER_TEXTURE),
+        text: (content, style) => this.add.text(0, 0, content, style),
+        graphics: () => this.add.graphics(),
+      },
+      this.art,
+      this.monsterTargeting,
+    );
     this.containerView = new ContainerView(
       this,
       this.art,
-      { onLoot: (item) => this.lootChestItem(item) },
+      {
+        onLoot: (item) => this.lootChestItem(item),
+        characterLevel: () => this.characterLevel,
+      },
       new ContainerContents(this.PENDING_DURATION),
     );
 
@@ -2437,6 +2648,12 @@ export class BarrowspireScene extends Phaser.Scene {
         this.interactWithEscapeDoor(nearbyEscapeDoor.entityId);
         return;
       }
+      // Stairs up: the server decides whether the party has gathered (FS-F6F88 req 17–18)
+      const nearbyStairs = this.player && this.playerPos ? this.stairs.nearby(this.playerPos) : null;
+      if (nearbyStairs) {
+        socketManager.sendMessage(ActionType.Interact, { entity_id: nearbyStairs });
+        return;
+      }
       // 檢查寶箱
       const nearbyChest = this.getNearbyChest();
       if (nearbyChest) {
@@ -2480,10 +2697,12 @@ export class BarrowspireScene extends Phaser.Scene {
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
       if (this.containerView.pointerDown(pointer.x, pointer.y, pointer.button === 0)) return;
       if (!this.player || !this.playerPos || !this.canCastSkill) return;
+      // out of the delve: the server refuses it anyway (FS-77AB6 req 17)
+      if (resolved(this.lastGameState?.current_player)) return;
       if (this.equipmentPanel?.isVisible()) return;
 
       const activeChar = useGameStore.getState().getActiveCharacter();
-      const currentClass = (activeChar?.className || useGameStore.getState().selectedClass || "warrior").toLowerCase();
+      const currentClass = (activeChar?.className || "warrior").toLowerCase();
 
       // The pointer is over the projection; the server wants the world point under
       // it. `target` and `me` are world positions (FS-2325V §0.2, §A.5).
@@ -2682,18 +2901,19 @@ export class BarrowspireScene extends Phaser.Scene {
     });
 
     // Listen for interact responses (success/error messages)
-    socketManager.on(
-      "interact",
-      (payload: { success: boolean; message: string }) => {
-        console.log("Interact response:", payload);
-        if (payload.message) {
-          const color = payload.success
-            ? toCss(palette.safe)
-            : toCss(palette.damageBright);
-          this.showNotification(payload.message, color);
-        }
-      },
-    );
+    // A climb that goes through sends no reply: the next broadcast's floor says so (FS-F6F88 req 28)
+    socketManager.on("interact", (payload: InteractReply) => {
+      console.log("Interact response:", payload);
+      const notice = interactNotice(payload);
+      if (notice) this.showNotification(notice.text, toCss(NOTICE_BACKING[notice.tone]));
+    });
+
+    // A refused equip (FS-BDA7X req 32, 45): the server's words, as a refusal. The next state puts
+    // the item back where the server holds it.
+    socketManager.on("equip", (reply: EquipReply) => {
+      const refusal = equipRefusal(reply);
+      if (refusal) this.showNotification(refusal, toCss(NOTICE_BACKING.refused));
+    });
 
     // Listen for end_game — show final position overlay and lock interaction
     socketManager.on(
@@ -2711,6 +2931,12 @@ export class BarrowspireScene extends Phaser.Scene {
   private handleGameStateUpdate(state: ClientGameState): void {
     this.lastGameState = state;
 
+    // The party climbed (FS-F6F88 req 28, 32): the old floor goes before this broadcast builds
+    // the new one, so nothing waits on the transition, which only plays over the result.
+    const climb = climbed(this.lastFloor, state.floor);
+    if (state.floor !== undefined) this.lastFloor = state.floor;
+    if (climb) this.leaveFloor();
+
     // Update current player position from server
     if (state.current_player) {
       const pos = state.current_player.position;
@@ -2722,6 +2948,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
       // 設定目標位置，在 update() 中平滑移動
       this.targetPosition = { x: pos.x, y: pos.y };
+
+      this.showProgress(state.current_player);
 
       // 同步玩家背包
       if (state.current_player.inventory) {
@@ -2764,6 +2992,9 @@ export class BarrowspireScene extends Phaser.Scene {
     // Update other players on screen
     this.updateOtherPlayers(state.other_players || []);
 
+    // Monsters and corpses: the broadcast is the whole truth (FS-77AB6 req 32, 36)
+    this.monsters?.sync(state.monsters ?? []);
+
     // Update walls from server
     this.updateWalls(state.walls || []);
 
@@ -2779,18 +3010,168 @@ export class BarrowspireScene extends Phaser.Scene {
     // Update switches from server
     this.updateSwitches(state.switches || []);
 
+    // Stairs up: the broadcast is the whole truth, empty on the top floor (FS-F6F88 req 27)
+    this.stairs.sync(state.stairs ?? []);
+    this.updateFloorIndicator(state);
+
     // Update projectiles from server (fireballs)
     this.updateProjectiles(state.projectiles || []);
+
+    // Burning trails: the whole truth each tick, the key absent when none burn (FS-4R9M9 R56)
+    this.trails.sync(state.trails ?? []);
 
     // 檢測狀態變化並顯示通知（避免重複）
     this.checkEscapeDoorStateChanges(state);
     this.checkPlayerEscapedState(state);
+
+    this.syncDelveNotice(state);
 
     // Update escaped count HUD
     if (this.escapedCountText) {
       const count = state.escaped_count ?? 0;
       this.escapedCountText.setText(`Escaped: ${count}`);
     }
+
+    if (climb) {
+      this.settleDelvers();
+      this.playFloorTransition(state);
+    }
+  }
+
+  /**
+   * Tears down everything built for the floor the party has left (FS-F6F88 req 33): walls, roofs,
+   * house floors and flagstone, entrance markers, occluders, wall lights, and every entity drawn
+   * from the old floor's state. The maps are emptied as well as their objects destroyed, because a
+   * cleared entity id may come back on the new floor and must be built fresh there. The one-shot
+   * notice memory goes too, so the new floor's switch and escape door announce themselves.
+   */
+  private leaveFloor(): void {
+    this.walls.forEach((wall) => wall.pieces.forEach((piece) => piece.destroy()));
+    this.walls.clear();
+
+    this.buildings.forEach((building) => {
+      building.roof.forEach((part) => part.destroy());
+      // hiding the glow releases its effect; the new floor's marker plays afresh
+      building.doorMarker?.setVisible(false);
+      building.door.destroy();
+      building.doorCollider.destroy();
+      building.wallGroup.destroy(true);
+    });
+    this.buildings = [];
+    this.currentBuilding = null;
+    this.indoorMask?.setVisible(false);
+    this.houseFloors.forEach((floor) => floor.destroy());
+    this.houseFloors = [];
+    this.groundLayer?.paint([]);
+    this.serverBuildingsCreated = false;
+
+    this.serverDoors.forEach((door) => {
+      door.sprite?.destroy();
+      door.slab?.plane.root.destroy();
+    });
+    this.serverDoors.clear();
+    for (const drawn of [this.chests, this.escapeDoors, this.switches]) {
+      drawn.forEach(({ sprite }) => sprite.destroy());
+      drawn.clear();
+    }
+    this.stairs.clear();
+    // the old floor's projectiles land nowhere: no impact, body, trail or light (FS-KYPQ9 §B.9)
+    this.projectiles?.clear();
+    this.trails.clear();
+    this.monsters?.sync([]);
+
+    this.occluders.clear();
+    this.lightMap?.clear();
+    if (this.containerView?.entityId) this.containerView.close();
+
+    this.previousEscapeDoorOpened = null;
+    this.previousSwitchActivated = null;
+  }
+
+  /**
+   * Sets every delver down where the server put them on the new floor, rather than easing them
+   * across the map from where they stood on the old one.
+   */
+  private settleDelvers(): void {
+    if (this.playerPos && this.targetPosition) {
+      this.playerPos.x = this.targetPosition.x;
+      this.playerPos.y = this.targetPosition.y;
+    }
+    this.otherPlayersTargets.forEach((target, playerId) => {
+      const pos = this.otherPlayersPos.get(playerId);
+      if (!pos) return;
+      pos.x = target.x;
+      pos.y = target.y;
+    });
+  }
+
+  /**
+   * The climb's transition (FS-F6F88 req 32): the view drops to dark over the floor just built,
+   * then comes back up with the floor card. Presentation only: state has already applied and
+   * keeps applying under it. It sits below the HUD, so the floor indicator and the new floor's
+   * notices stay readable through it.
+   */
+  private playFloorTransition(state: ClientGameState): void {
+    if (state.floor === undefined || state.floor_count === undefined) return;
+    this.floorVeil.forEach((obj) => obj.destroy());
+
+    const cam = this.cameras.main;
+    const { title, line } = floorCard({ floor: state.floor, floor_count: state.floor_count });
+    const veil = this.add.rectangle(0, 0, cam.width, cam.height, palette.inkDeep, 1);
+    veil.setOrigin(0, 0).setScrollFactor(0).setDepth(FLOOR_VEIL_DEPTH);
+
+    const heading = this.add.text(cam.centerX, cam.centerY - 14, title, {
+      fontFamily: CANVAS_FONT.body,
+      fontSize: "26px",
+      color: toCss(palette.hudText),
+      letterSpacing: 4,
+    });
+    const rule = this.add.graphics();
+    rule.lineStyle(1, palette.frame, 0.6);
+    rule.lineBetween(cam.centerX - 90, cam.centerY + 8, cam.centerX + 90, cam.centerY + 8);
+    const subtitle = this.add.text(cam.centerX, cam.centerY + 26, line, {
+      fontFamily: CANVAS_FONT.body,
+      fontSize: "15px",
+      fontStyle: "italic",
+      color: toCss(palette.hudLabel),
+    });
+    const card = [heading, rule, subtitle];
+    heading.setOrigin(0.5);
+    subtitle.setOrigin(0.5);
+    card.forEach((obj) => obj.setScrollFactor(0).setDepth(FLOOR_VEIL_DEPTH + 1).setAlpha(0));
+    this.floorVeil = [veil, ...card];
+
+    this.tweens.add({
+      targets: card,
+      alpha: 1,
+      duration: FLOOR_CARD_FADE_MS,
+      delay: FLOOR_DARK_HOLD_MS,
+    });
+    this.tweens.add({
+      targets: veil,
+      alpha: 0,
+      duration: FLOOR_VIEW_RETURN_MS,
+      delay: FLOOR_DARK_HOLD_MS + FLOOR_CARD_FADE_MS,
+    });
+    this.tweens.add({
+      targets: card,
+      alpha: 0,
+      duration: FLOOR_CARD_FADE_MS * 2,
+      delay: FLOOR_DARK_HOLD_MS + FLOOR_CARD_FADE_MS + FLOOR_CARD_HOLD_MS,
+      onComplete: () => {
+        this.floorVeil.forEach((obj) => obj.destroy());
+        this.floorVeil = [];
+      },
+    });
+  }
+
+  /** "Floor N of M" from the broadcast, redrawn only when it changes; hidden without floors. */
+  private updateFloorIndicator(state: ClientGameState): void {
+    const label = floorLabel(state);
+    if (!this.floorText || label === this.shownFloorLabel) return;
+    this.shownFloorLabel = label;
+    this.floorText.setText(label ?? "");
+    this.floorText.setVisible(label !== null);
   }
 
   /**
@@ -2965,9 +3346,10 @@ export class BarrowspireScene extends Phaser.Scene {
         }
         this.settleDustOnDeath(sprite, playerData.id, () => this.otherPlayersPos.get(playerData.id));
 
-        // 點擊攻擊 — hit-tested on the ground they stand on, not their sprite's
-        // bounds (FS-2325V §C.6): the server's collision radius around their
-        // world position
+        // Hover shows their name, hit-tested on the ground they stand on, not their
+        // sprite's bounds (FS-2325V §C.6): the server's collision radius around their
+        // world position. Another delver is an ally (FS-77AB6 req 40): no strike-mark,
+        // no click-to-attack.
         sprite.setInteractive({
           hitArea: {},
           hitAreaCallback: footprintHitArea(
@@ -2975,29 +3357,8 @@ export class BarrowspireScene extends Phaser.Scene {
             PLAYER_FOOTPRINT_RADIUS,
           ),
         });
-        sprite.on("pointerdown", () => {
-          const me = this.playerPos;
-          const them = this.otherPlayersPos.get(playerData.id);
-          if (!this.canAttack || !this.player || !me || !them) return;
-          // world positions, never the sprites' screen positions
-          const distance = Phaser.Math.Distance.Between(me.x, me.y, them.x, them.y);
-          if (distance > 60) return;
-          const entityId = this.otherPlayersEntityIds.get(playerData.id);
-          if (entityId) {
-            socketManager.sendMessage(ActionType.Attack, {
-              enemy_entity_id: entityId,
-            });
-            this.playWarriorSlashEffect(me.x, me.y, them.x, them.y);
-            this.playerAnim?.attack(this.time.now, { x: them.x - me.x, y: them.y - me.y });
-            this.canAttack = false;
-            this.time.delayedCall(500, () => {
-              this.canAttack = true;
-            });
-          }
-        });
 
         this.otherPlayers.set(playerData.id, sprite);
-        this.otherPlayersEntityIds.set(playerData.id, playerData.entity_id);
 
         // create legs for this other player
         const legs = this.add.graphics();
@@ -3007,7 +3368,7 @@ export class BarrowspireScene extends Phaser.Scene {
         this.otherPlayersWalkPhase.set(playerData.id, 0);
         if (!anim.baked) this.drawLegs(legs, sprite.x, sprite.y, "se", 0, false, palette.hudLabel);
 
-        // create name text (hidden until hover)
+        // create name text (hidden until hover), in the ally channel (FS-77AB6 req 40)
         const nameText = this.add.text(
           sprite.x,
           (markerBase(sprite, anim.crown, false) ?? sprite.y) - NAME_GAP,
@@ -3015,7 +3376,7 @@ export class BarrowspireScene extends Phaser.Scene {
           {
             fontSize: "11px",
             fontFamily: CANVAS_FONT.body,
-            color: toCss(palette.markerRival),
+            color: toCss(palette.markerAlly),
             stroke: toCss(palette.markerStroke),
             strokeThickness: 3,
             align: "center",
@@ -3026,17 +3387,15 @@ export class BarrowspireScene extends Phaser.Scene {
         nameText.setVisible(false);
         this.otherPlayersNameTexts.set(playerData.id, nameText);
 
-        // hover to show name + crosshair cursor
+        // hover to show their name; the cursor stays the hand
         const pid = playerData.id;
         sprite.on("pointerover", () => {
           this.hoveredPlayerId = pid;
-          this.input.setDefaultCursor(this.crosshairCursorCSS);
         });
         sprite.on("pointerout", () => {
           if (this.hoveredPlayerId === pid) {
             this.hoveredPlayerId = undefined;
           }
-          this.input.setDefaultCursor(this.defaultCursorCSS);
         });
       }
 
@@ -3165,13 +3524,12 @@ export class BarrowspireScene extends Phaser.Scene {
   private isPlayerInsideBuilding(building: Building): boolean {
     const me = this.playerPos;
     if (!this.player || !me) return false;
-    // the same inside test as ever, on the world position (FS-2325V edge states)
-    return (
-      me.x >= building.x &&
-      me.x <= building.x + building.width &&
-      me.y >= building.y &&
-      me.y <= building.y + building.height
-    );
+    return inBuilding(building, me);
+  }
+
+  /** Whether a roof still on (a house the delver is not inside) stands over this world point. */
+  private underRoof(at: Point): boolean {
+    return this.buildings.some((b) => b !== this.currentBuilding && inBuilding(b, at));
   }
 
   private checkBuildingStatus(): void {
@@ -3277,6 +3635,24 @@ export class BarrowspireScene extends Phaser.Scene {
     this.escapedCountText.setScrollFactor(0);
     this.escapedCountText.setDepth(1000);
 
+    // The party's floor (FS-F6F88 req 29): neutral HUD, under the escaped count
+    this.floorText = this.add.text(
+      this.cameras.main.width - 10,
+      this.escapedCountText.y + this.escapedCountText.height + 6,
+      "",
+      {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "14px",
+        color: toCss(palette.hudText),
+        backgroundColor: toCss(palette.hudPanel),
+        padding: { x: 10, y: 5 },
+      },
+    );
+    this.floorText.setOrigin(1, 0);
+    this.floorText.setScrollFactor(0);
+    this.floorText.setDepth(1000);
+    this.floorText.setVisible(false);
+
     // 每幀更新座標 — scene events outlive a shutdown, so the listener goes with it
     const showPosition = () => {
       if (!this.player) {
@@ -3336,6 +3712,48 @@ export class BarrowspireScene extends Phaser.Scene {
         notification.destroy();
       },
     });
+  }
+
+  /**
+   * This delver's level and experience bar, and the cue when the level rises (FS-BDA7X req 42,
+   * 43). The level also feeds the item views' "Requires level N" hints (req 45).
+   */
+  private showProgress(player: PlayerState): void {
+    const progress = progressOf(player);
+    this.characterLevel = progress?.level;
+    this.equipmentPanel?.setCharacterLevel(this.characterLevel);
+    if (!progress) return;
+    this.progressHud ??= new ProgressHud(this, PROGRESS_HUD_X, PROGRESS_HUD_Y);
+    this.progressHud.show(progress);
+  }
+
+  /**
+   * The delve-continues notice (FS-77AB6 req 42): up while this delver is out of the delve and
+   * another is still in it, down otherwise. Once `end_game` has put its overlay up, never again.
+   * Neutral HUD: vellum on the HUD panel, under the passing notices.
+   */
+  private syncDelveNotice(state: ClientGameState): void {
+    const notice = this.gameEndOverlay ? null : delveNotice(state);
+    if (!notice) {
+      this.delveNoticeText?.destroy();
+      this.delveNoticeText = undefined;
+      return;
+    }
+    if (this.delveNoticeText) {
+      this.delveNoticeText.setText(notice);
+      return;
+    }
+    this.delveNoticeText = this.add
+      .text(this.cameras.main.centerX, DELVE_NOTICE_Y, notice, {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "16px",
+        color: toCss(palette.hudText),
+        backgroundColor: toCss(NOTICE_BACKING.waiting),
+        padding: { x: 16, y: 8 },
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(2000);
   }
 
   /**
@@ -3430,6 +3848,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     this.updateLighting(time, delta);
+    this.monsters?.update(delta);
 
     // skip all input/movement if player has escaped
     if (this.player && !this.player.visible) {
@@ -3495,8 +3914,8 @@ export class BarrowspireScene extends Phaser.Scene {
       this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, ownBase, curHp, maxHp, curMp, maxMp);
     }
 
-    // send websocket message for movement
-    if (vx !== 0 || vy !== 0) {
+    // send websocket message for movement; none from a delver out of the delve (FS-77AB6 req 17)
+    if ((vx !== 0 || vy !== 0) && !resolved(this.lastGameState?.current_player)) {
       socketManager.sendMessage(ActionType.Move, {
         vx: vx,
         vy: vy,

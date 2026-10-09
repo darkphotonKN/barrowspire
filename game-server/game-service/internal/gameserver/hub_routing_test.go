@@ -19,7 +19,7 @@ import (
 func newRoutingTestHub(t *testing.T) (*messageHub, *Server) {
 	t.Helper()
 
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub := NewMessageHub(server, messaging.NewMessageSender(server))
 
 	return hub, server
@@ -96,7 +96,7 @@ func TestResolveGameSession_UsesServerHeldState(t *testing.T) {
 // off the method in isolation: a crafted payload naming someone else's world is
 // delivered to the sender's own. FS-29KSH §Requirements 16.
 func TestHubRun_ForeignSessionIDInPayload_RoutesToOwnSession(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 
 	ownID, foreignID := uuid.New(), uuid.New()
 	own := registerRoutableSession(server, ownID)

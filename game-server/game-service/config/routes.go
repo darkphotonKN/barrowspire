@@ -9,6 +9,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
+	grpccharacter "github.com/darkphotonKN/barrowspire-server/game-service/grpc/character"
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/gameserver"
@@ -44,6 +45,7 @@ func SetupRouter(ctx context.Context, statsDB *sqlx.DB, registry discovery.Regis
 	// --- AUTH CLIENT ---
 	authClient := grpcauth.NewClient(registry)
 	itemsClient := grpcitems.NewClient(registry)
+	characterClient := grpccharacter.NewClient(registry)
 
 	// --- GAME SERVER SETUP ---
 	matchmaker := matchmaker.NewMatchmaker(2, pod.ID)
@@ -53,7 +55,7 @@ func SetupRouter(ctx context.Context, statsDB *sqlx.DB, registry discovery.Regis
 	outboxService := commonoutbox.NewService(outboxRepo)
 
 	gameService := game.NewService(outboxService)
-	server := gameserver.NewServer(ctx, authClient, matchmaker, gameService, itemsClient)
+	server := gameserver.NewServer(ctx, authClient, matchmaker, gameService, itemsClient, characterClient)
 
 	// -- routes --
 	router.GET("/game/ws", auth.WSAuthMiddleware(authClient), server.HandleWebSocketConnection)

@@ -2,6 +2,7 @@ package systems
 
 import (
 	"math"
+	"slices"
 
 	commonconstants "github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -10,24 +11,30 @@ import (
 )
 
 type ProjectileSystem struct {
-	em *ecs.EntityManager
+	em           *ecs.EntityManager
+	playerDamage PlayerDamage
 }
 
-func NewProjectileSystem(em *ecs.EntityManager) *ProjectileSystem {
-	return &ProjectileSystem{em: em}
+func NewProjectileSystem(em *ecs.EntityManager, playerDamage PlayerDamage) *ProjectileSystem {
+	return &ProjectileSystem{em: em, playerDamage: playerDamage}
 }
 
-func (s *ProjectileSystem) Update(deltaTime float64, entities []*ecs.Entity) {
+// Update moves projectiles and reports the ones that reached a damageable entity.
+// It never applies damage: each Impact goes to the CombatSystem on the same tick.
+// FS-77AB6 §Requirements 10.
+func (s *ProjectileSystem) Update(deltaTime float64, entities []*ecs.Entity) []Impact {
 	var toRemove []uuid.UUID
+	var impacts []Impact
 
-	// 1. Group entities by targetables (Players) and obstacles (Walls, closed Doors)
-	var players []*ecs.Entity
+	// 1. Group entities by targetables (anything with Health and a place) and
+	// obstacles (Walls, closed Doors)
+	var targets []*ecs.Entity
 	var wallEntities []*ecs.Entity
 	var doorEntities []*ecs.Entity
 
 	for _, entity := range entities {
-		if _, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer); isPlayer {
-			players = append(players, entity)
+		if entity.HasComponent(ecs.ComponentTypeHealth) && entity.HasComponent(ecs.ComponentTypeTransform) {
+			targets = append(targets, entity)
 		}
 		if _, isWall := entity.GetComponent(ecs.ComponentTypeWall); isWall {
 			wallEntities = append(wallEntities, entity)
@@ -125,33 +132,33 @@ func (s *ProjectileSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 			continue
 		}
 
-		// Check collision with Player entities
-		for _, playerEntity := range players {
-			if playerEntity.ID == proj.OwnerEntityID {
+		// Check collision with damageable entities: the first one it can hit stops
+		// it, unless it has pierce left, when it flies on and never hits that one
+		// again. Whatever it cannot hit is passed through without spending pierce:
+		// the dead, delvers out of play and, with player damage off, a delver's
+		// shot through other delvers.
+		for _, target := range targets {
+			if target.ID == proj.OwnerEntityID {
 				continue // Do not hit self
 			}
-
-			healthC, hasHealth := playerEntity.GetComponent(ecs.ComponentTypeHealth)
-			if !hasHealth {
+			if slices.Contains(proj.HitEntityIDs, target.ID) {
 				continue
 			}
-			health := healthC.(*components.HealthComponent)
-			if health.CurrentHealth <= 0 {
-				continue // Already dead
-			}
 
-			pTransC, hasPTrans := playerEntity.GetComponent(ecs.ComponentTypeTransform)
-			if !hasPTrans {
+			if !CanHit(proj.Attack, target, s.playerDamage) {
 				continue
 			}
-			pTrans := pTransC.(*components.TransformComponent)
 
-			distToPlayer := math.Hypot(newX-pTrans.X, newY-pTrans.Y)
-			if distToPlayer <= (proj.Radius + commonconstants.PlayerRadius) {
-				// Apply damage
-				health.CurrentHealth -= proj.Damage
-				if health.CurrentHealth < 0 {
-					health.CurrentHealth = 0
+			tTransC, _ := target.GetComponent(ecs.ComponentTypeTransform)
+			tTrans := tTransC.(*components.TransformComponent)
+
+			if math.Hypot(newX-tTrans.X, newY-tTrans.Y) <= (proj.Radius + commonconstants.PlayerRadius) {
+				impacts = append(impacts, Impact{Attack: proj.Attack, TargetEntityID: target.ID})
+				proj.HitEntityIDs = append(proj.HitEntityIDs, target.ID)
+
+				if proj.PierceLeft > 0 {
+					proj.PierceLeft--
+					continue
 				}
 
 				proj.ShouldDestroy = true
@@ -167,6 +174,8 @@ func (s *ProjectileSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 			s.em.RemoveEntity(id)
 		}
 	}
+
+	return impacts
 }
 
 // isCircleIntersectingRect checks if a circle at (cx, cy) with radius r intersects a rectangle at (rx, ry) with width w, height h

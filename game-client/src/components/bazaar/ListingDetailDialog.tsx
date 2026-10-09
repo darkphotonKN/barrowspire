@@ -8,6 +8,7 @@ import { v4 as uuid } from "uuid";
 import ItemIcon from "@/components/ItemIcon";
 import RarityBadge from "@/components/RarityBadge";
 import { useDialogFocus } from "@/components/bazaar/useDialogFocus";
+import type { ItemLines } from "@/items/itemLines";
 import {
   BID_ENDED,
   bidBox,
@@ -19,7 +20,7 @@ import {
 } from "@/marketplace/bid";
 import { submitBid } from "@/marketplace/bidFlow";
 import { SIGN_IN_TO_MARKETPLACE } from "@/marketplace/browse";
-import { bidPanel, itemStats, listingReader } from "@/marketplace/detail";
+import { bidPanel, itemStats, listingItemLines, listingReader } from "@/marketplace/detail";
 import { formatGold } from "@/marketplace/gold";
 import type { Listing } from "@/marketplace/listing";
 import { rarityOf } from "@/marketplace/rarity";
@@ -85,6 +86,7 @@ export default function ListingDetailDialog({
   const { item } = listing;
   const panel = bidPanel(listing, memberId);
   const stats = itemStats(item);
+  const lines = listingItemLines(item);
 
   return createPortal(
     <div
@@ -131,6 +133,8 @@ export default function ListingDetailDialog({
           </dl>
         )}
 
+        {lines && <ItemLinesBlock lines={lines} />}
+
         <hr className="rule-brass" />
 
         <div className="flex items-baseline justify-between gap-4">
@@ -176,6 +180,36 @@ export default function ListingDetailDialog({
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * The listed item's level, requirement, affixes and unique effect (FS-4R9M9 R59), worded as the
+ * run's item views word them. An item from before item levels shows level 1 and no affix lines.
+ */
+function ItemLinesBlock({ lines }: { lines: ItemLines }) {
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      <p className="flex flex-wrap gap-x-6 gap-y-1 text-vellum-dim">
+        <span className="tabular-nums">{lines.itemLevel}</span>
+        <span className="tabular-nums">{lines.requirement.text}</span>
+      </p>
+      {lines.affixes.length > 0 && (
+        <ul aria-label="Affixes" className="flex flex-col gap-0.5 tabular-nums text-vellum">
+          {lines.affixes.map((line, i) => (
+            <li key={`${i}-${line}`}>{line}</li>
+          ))}
+        </ul>
+      )}
+      {lines.uniqueEffect && (
+        <p className="border-l border-[color:var(--color-border-strong)] pl-3 text-vellum">
+          <span className="mr-2 text-[11px] uppercase tracking-[0.15em] text-vellum-dim">
+            Unique
+          </span>
+          {lines.uniqueEffect}
+        </p>
+      )}
+    </div>
   );
 }
 

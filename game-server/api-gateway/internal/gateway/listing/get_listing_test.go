@@ -42,7 +42,7 @@ func TestGetListing_AnswersWithoutATokenAndEmbedsTheItem(t *testing.T) {
 
 	client := &stubListingClient{one: one}
 	items := &stubItemSummaries{byID: map[string]*pbitems.ItemSummary{
-		oneItemID: {Id: oneItemID, Name: "Longsword", ItemType: "weapon", Rarity: "runed"},
+		oneItemID: {Id: oneItemID, Name: "Longsword", ItemType: "weapon", Rarity: "runed", ItemLevel: 1, RequiredLevel: 1},
 	}}
 
 	w := getListing(newRouterWithItems(client, items), oneListingID)
@@ -65,7 +65,10 @@ func TestGetListing_AnswersWithoutATokenAndEmbedsTheItem(t *testing.T) {
 			"id": "44444444-4444-4444-4444-444444444444",
 			"name": "Longsword",
 			"itemType": "weapon",
-			"rarity": "runed"
+			"rarity": "runed",
+			"itemLevel": 1,
+			"requiredLevel": 1,
+			"affixes": []
 		}
 	}`, stripSchema(t, w.Body.Bytes()))
 

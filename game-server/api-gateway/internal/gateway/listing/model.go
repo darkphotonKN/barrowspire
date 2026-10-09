@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/wire"
 	itempb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
 	pbshared "github.com/darkphotonKN/barrowspire-server/common/api/proto/shared/v1"
@@ -76,7 +77,7 @@ type ItemSummary struct {
 	ID          string  `json:"id" format:"uuid" doc:"The item instance; equals the listing's itemId."`
 	Name        string  `json:"name"`
 	Description *string `json:"description,omitempty"`
-	ItemType    string  `json:"itemType" doc:"e.g. weapon, armor, consumable."`
+	ItemType    string  `json:"itemType" doc:"e.g. weapon, armor, ring, consumable."`
 	Rarity      string  `json:"rarity" doc:"The rarity tier: normal, uncommon, rare, runed or fabled."`
 	WeaponType  *string `json:"weaponType,omitempty"`
 	ArmorSlot   *string `json:"armorSlot,omitempty"`
@@ -88,6 +89,11 @@ type ItemSummary struct {
 	HealingAmount   *int32   `json:"healingAmount,omitempty"`
 	ManaAmount      *int32   `json:"manaAmount,omitempty"`
 	BuffDuration    *int32   `json:"buffDuration,omitempty"`
+
+	ItemLevel     int32        `json:"itemLevel" minimum:"1" doc:"The level the item rolled at."`
+	RequiredLevel int32        `json:"requiredLevel" minimum:"1" doc:"Character level needed to equip: the higher of the base's and the affixes' tiers; the template's for items from before item levels."`
+	Affixes       []wire.Affix `json:"affixes" nullable:"false" doc:"Every rolled affix; empty for an item without any."`
+	UniqueEffect  *string      `json:"uniqueEffect,omitempty" doc:"The unique's effect text. Absent unless the item is a unique."`
 }
 
 // ListingPage is one page of listings, in the order the operation documents.
@@ -112,7 +118,22 @@ func itemSummaryFromProto(s *itempb.ItemSummary) *ItemSummary {
 		HealingAmount:   s.HealingAmount,
 		ManaAmount:      s.ManaAmount,
 		BuffDuration:    s.BuffDuration,
+
+		ItemLevel:     s.GetItemLevel(),
+		RequiredLevel: s.GetRequiredLevel(),
+		Affixes:       affixesFromProto(s.GetAffixes()),
+		UniqueEffect:  s.UniqueEffectText,
 	}
+}
+
+// affixesFromProto maps an item's affixes, as an empty list rather than nil so
+// an item without any serialises [] and never null.
+func affixesFromProto(in []*itempb.Affix) []wire.Affix {
+	out := make([]wire.Affix, 0, len(in))
+	for _, a := range in {
+		out = append(out, wire.Affix{Stat: a.GetStat(), Tier: a.GetTier(), Value: a.GetValue()})
+	}
+	return out
 }
 
 // listingFromProto maps one marketplace listing to the wire. A listing missing

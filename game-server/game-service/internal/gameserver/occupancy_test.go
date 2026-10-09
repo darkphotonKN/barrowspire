@@ -22,7 +22,7 @@ func fillHub(t *testing.T, server *Server, n int) {
 		player := &types.Player{ID: uuid.New(), Username: "Delver"}
 		registerTestConn(server, conn, player)
 
-		_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: "Delver"})
+		_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Delver"})
 		require.NoError(t, err, "the hub refused someone before it was full")
 	}
 }
@@ -30,7 +30,7 @@ func fillHub(t *testing.T, server *Server, n int) {
 // JoinHub hands the decision to the world and passes its refusal back, so a
 // client hears "full" rather than silence. FS-29KSH §Requirements 31-32.
 func TestJoinHub_PassesTheWorldsRefusalOn(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub, _ := server.HubSession()
 
 	fillHub(t, server, constants.HubOccupancyCap)
@@ -39,7 +39,7 @@ func TestJoinHub_PassesTheWorldsRefusalOn(t *testing.T) {
 	latecomer := &types.Player{ID: uuid.New(), Username: "Latecomer"}
 	registerTestConn(server, conn, latecomer)
 
-	_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: "Latecomer"})
+	_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Latecomer"})
 
 	assert.ErrorIs(t, err, game.ErrWorldFull)
 	assert.False(t, hub.HasPlayer(latecomer.ID), "refused, but let in anyway")
@@ -51,13 +51,13 @@ func TestJoinHub_PassesTheWorldsRefusalOn(t *testing.T) {
 // a place; refusing them at the door on the way back would strand them in a run
 // that no longer exists. FS-29KSH §Requirements 33.
 func TestReturnPlayersToHub_IsNotGatedByTheCap(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
 	delver := &types.Player{ID: uuid.New(), Username: "Wren"}
 	registerTestConn(server, conn, delver)
-	_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: "Wren"})
+	_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Wren"})
 	require.NoError(t, err)
 
 	run := server.CreateGameSession([]*types.Player{delver})

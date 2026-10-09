@@ -36,6 +36,17 @@ type ProjectileState struct {
 	Velocity       Velocity  `json:"velocity"`
 }
 
+// TrailState is a burning trail as the client draws it: the path dashed, from
+// one end to the other, burning HalfWidth px either side, for Remaining more
+// seconds. FS-4R9M9 §Requirements 56.
+type TrailState struct {
+	EntityID  uuid.UUID `json:"entity_id"`
+	From      Position  `json:"from"`
+	To        Position  `json:"to"`
+	HalfWidth float64   `json:"half_width"`
+	Remaining float64   `json:"remaining"`
+}
+
 // WorldType names which kind of world a session runs. The client is told which
 // one it is in; it never infers it from the shape of a broadcast.
 // Vocabulary: game-service/CONTEXT.md.
@@ -64,12 +75,28 @@ type ClientGameState struct {
 	NPCs          []*NPCState        `json:"npcs"`
 	Projectiles   []*ProjectileState `json:"projectiles"`
 	EscapedCount  int                `json:"escaped_count"`
+	// Floor and FloorCount are a run's; the hub has no floors and omits both.
+	// FS-F6F88 §Requirements 26.
+	Floor      int `json:"floor,omitempty"`
+	FloorCount int `json:"floor_count,omitempty"`
+	// Stairs are a run's, every tick, an empty list on the top floor; the hub
+	// has none and omits the key, hence the pointer. FS-F6F88 §Requirements 27.
+	Stairs *[]*StairsState `json:"stairs,omitempty"`
+	// Monsters are a run's, every one each tick, corpses included; the hub has
+	// none and omits the key. FS-77AB6 §Requirements 32.
+	Monsters []*MonsterState `json:"monsters,omitempty"`
+	// Trails are a run's live burning trails; with none burning, and always in
+	// the hub, the key is absent. FS-4R9M9 §Requirements 56.
+	Trails []*TrailState `json:"trails,omitempty"`
 }
 
 type BackendGameState struct {
-	SessionID    uuid.UUID
-	WorldType    WorldType
-	Players      map[uuid.UUID]*PlayerState
+	SessionID uuid.UUID
+	WorldType WorldType
+	Players   map[uuid.UUID]*PlayerState
+	// LeftBehind holds dead delvers whose body stayed on a floor the party has
+	// left: each still sees their own state, nobody else sees the body
+	LeftBehind   map[uuid.UUID]*PlayerState
 	Items        []uuid.UUID
 	Doors        []*DoorState
 	Walls        []*WallState
@@ -80,6 +107,11 @@ type BackendGameState struct {
 	NPCs         []*NPCState
 	Projectiles  []*ProjectileState
 	EscapedCount int
+	Floor        int
+	FloorCount   int
+	Stairs       []*StairsState
+	Monsters     []*MonsterState
+	Trails       []*TrailState
 }
 
 // ErrInvalidPayload marks a client payload that cannot be parsed. The payload

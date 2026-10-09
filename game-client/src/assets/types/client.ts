@@ -65,6 +65,11 @@ export interface CastSkillPayload {
  * the request — the server keeps no memory of a menu selection.
  */
 export interface EnterHubPayload {
+  /**
+   * The server record the delver enters as (FS-BDA7X req 5, 41). Once the server seats by it,
+   * the class and name below are ignored; they stay until then so either server reads the entry.
+   */
+  characterId: string;
   class: string;
   className: string;
   characterName: string;

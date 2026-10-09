@@ -1,6 +1,7 @@
 import { ActionType } from "@/assets/types/client";
 import { socketManager, ConnectionStatus } from "@/utils/class/SocketManager";
-import { useGameStore, CharacterSave } from "@/stores/gameStore";
+import { useGameStore } from "@/stores/gameStore";
+import { enterHubPayload, LEDGER_UNREACHABLE } from "@/characters/entry";
 import Phaser from "phaser";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { CLASS_LORE } from "@/data/classLore";
@@ -17,9 +18,16 @@ import {
   sharpenText,
   type ButtonState,
 } from "@/ui/menuChrome";
+import { drawXpBar } from "@/ui/ProgressHud";
+import { atCap, characterProgress, xpFraction } from "@/ui/progress";
 
 /** The hero on the main-menu plinth, of the baked frame (FS-2325V §F.3). */
 const HERO_SCALE = 1.3;
+/**
+ * A roster card's experience bar (FS-BDA7X req 44): under the class line, from the text column to
+ * the card's right edge less a margin, in card-local px.
+ */
+const CARD_XP_BAR = { left: 64, y: 56, rightMargin: 12, height: 4 };
 /** A roster card's head-and-shoulders window. */
 const PORTRAIT = { width: 44, height: 56 };
 
@@ -41,7 +49,7 @@ export class MainMenuScene extends Phaser.Scene {
 
   private heroSidebarCards: {
     index: number;
-    slotIndex: number;
+    characterId: string;
     bg: Phaser.GameObjects.Graphics;
     avatar?: MenuFigure;
     avatarClass?: string;
@@ -241,11 +249,30 @@ export class MainMenuScene extends Phaser.Scene {
     this.time.delayedCall(50, () => {
       this.refreshHeroSidebar();
     });
+    this.loadRoster();
 
     // Register scene shutdown listener
     this.events.once("shutdown", () => {
       this.shutdown();
     });
+  }
+
+  /**
+   * Reads the member's characters from the server, carrying any local-only ones over once
+   * (FS-BDA7X req 39-40), then redraws the roster and tells the delver what the import dropped.
+   */
+  private loadRoster(): void {
+    void useGameStore
+      .getState()
+      .loadCharacters()
+      .then(() => {
+        if (!this.sys?.settings?.active) return;
+        const store = useGameStore.getState();
+        this.createHeroRightSidebar();
+        const notices = store.takeRosterNotices();
+        if (notices.length > 0) this.showRefusal(notices.join("\n"));
+        else if (store.rosterStatus === "unreachable") this.showRefusal(LEDGER_UNREACHABLE);
+      });
   }
 
   private createHeroRightSidebar(): void {
@@ -261,11 +288,8 @@ export class MainMenuScene extends Phaser.Scene {
     }
     this.sidebarContainer = this.add.container(0, 0);
 
-    const store = useGameStore.getState();
-    const createdSlots = store.slots
-      .map((char, index) => ({ char, index }))
-      .filter((item): item is { char: CharacterSave; index: number } => item.char !== null);
-    const numSlots = createdSlots.length;
+    const characters = useGameStore.getState().characters;
+    const numSlots = characters.length;
 
     // Sidebar Background Panel
     const sidebarBg = this.add.graphics();
@@ -314,15 +338,14 @@ export class MainMenuScene extends Phaser.Scene {
     this.heroSidebarCards = [];
 
     for (let i = 0; i < numSlots; i++) {
-      const slotItem = createdSlots[i];
-      const slotIdx = slotItem.index;
+      const char = characters[i];
       const y = startY + i * (cardH + gap);
       const centerX = panelX + 14 + cardW / 2;
 
       const bg = this.add.graphics();
 
       // The class's own baked sheet, head and shoulders, set by refreshHeroSidebar.
-      const cls = (slotItem.char.className || "warrior").toLowerCase();
+      const cls = (char.className || "warrior").toLowerCase();
       const avatar = this.art
         ? new MenuFigure(this, this.art, panelX + 36, y + 6, cls, { portrait: PORTRAIT })
         : undefined;
@@ -358,7 +381,7 @@ export class MainMenuScene extends Phaser.Scene {
 
       const cardObj = {
         index: i,
-        slotIndex: slotIdx,
+        characterId: char.id,
         cardH,
         bg,
         avatar,
@@ -379,7 +402,7 @@ export class MainMenuScene extends Phaser.Scene {
       hitArea.on("pointerup", (pointer: Phaser.Input.Pointer) => {
         const dist = Phaser.Math.Distance.Between(pointer.downX, pointer.downY, pointer.upX, pointer.upY);
         if (dist < 8) {
-          useGameStore.getState().setActiveSlotIndex(slotIdx);
+          useGameStore.getState().selectCharacter(char.id);
           this.refreshHeroSidebar();
           // Picking a hero plays its attack once on the plinth (FS-2325V §F.2).
           this.centerFigure?.flourish();
@@ -414,8 +437,7 @@ export class MainMenuScene extends Phaser.Scene {
 
     this.onSidebarWheel = (pointer: Phaser.Input.Pointer, _gameObjects: any, _deltaX: number, deltaY: number) => {
       if (pointer.x >= panelX && pointer.x <= panelX + panelW && pointer.y >= panelY && pointer.y <= panelY + panelH) {
-        const storeState = useGameStore.getState();
-        const currentCount = storeState.slots.filter((s) => s !== null).length;
+        const currentCount = useGameStore.getState().characters.length;
         const totH = currentCount * (cardH + gap) + 8;
         const maxScr = Math.max(0, totH - maskH);
         if (maxScr <= 0) return;
@@ -430,8 +452,7 @@ export class MainMenuScene extends Phaser.Scene {
         isDragging = false;
         return;
       }
-      const storeState = useGameStore.getState();
-      const currentCount = storeState.slots.filter((s) => s !== null).length;
+      const currentCount = useGameStore.getState().characters.length;
       const totH = currentCount * (cardH + gap) + 8;
       const maxScr = Math.max(0, totH - maskH);
       if (maxScr <= 0) return;
@@ -477,10 +498,7 @@ export class MainMenuScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
 
     createBtnHit.on("pointerdown", () => {
-      const storeState = useGameStore.getState();
-      const emptyIdx = storeState.slots.findIndex((s) => s === null);
-      const targetSlot = emptyIdx !== -1 ? emptyIdx : storeState.slots.length;
-      this.scene.start("CharacterCreationScene", { slotIndex: targetSlot });
+      this.scene.start("CharacterCreationScene");
     });
 
     createBtnHit.on("pointerover", () => drawCreateBtn("hover"));
@@ -571,6 +589,27 @@ export class MainMenuScene extends Phaser.Scene {
       classText.setOrigin(0.5);
 
       this.centerHeroContainer.add([nameText, classText]);
+    } else if (store.rosterStatus !== "ready") {
+      this.centerFigure?.destroy();
+      this.centerFigure = undefined;
+      this.centerFigureClass = undefined;
+
+      // The roster is still being read, or could not be: an empty plinth that offers nothing,
+      // so a delver with heroes is never sent to make another.
+      const glow = addTorchPool(this, 0, 26, 200, 100, 0.5);
+      const waitText = this.add.text(
+        0,
+        0,
+        store.rosterStatus === "unreachable" ? "THE LEDGER IS OUT OF REACH" : "READING THE LEDGER...",
+        {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: "12px",
+          color: toCss(palette.hudLabel),
+          letterSpacing: 2,
+        },
+      );
+      waitText.setOrigin(0.5);
+      this.centerHeroContainer.add([glow, waitText]);
     } else {
       this.centerFigure?.destroy();
       this.centerFigure = undefined;
@@ -593,7 +632,7 @@ export class MainMenuScene extends Phaser.Scene {
       const hit = this.add.rectangle(0, 0, 140, 80, palette.inkDeep, 0);
       hit.setInteractive({ useHandCursor: true });
       hit.on("pointerdown", () => {
-        this.scene.start("CharacterCreationScene", { slotIndex: 0 });
+        this.scene.start("CharacterCreationScene");
       });
 
       this.centerHeroContainer.add([glow, pedestal, emptyText, hit]);
@@ -602,14 +641,15 @@ export class MainMenuScene extends Phaser.Scene {
 
   private refreshHeroSidebar(): void {
     const store = useGameStore.getState();
-    const activeIdx = store.activeSlotIndex;
-    const createdSlots = store.slots
-      .map((char, index) => ({ char, index }))
-      .filter((item): item is { char: CharacterSave; index: number } => item.char !== null);
+    const activeId = store.activeCharacterId;
+    const characters = store.characters;
 
     this.refreshCenterHeroShowcase();
 
-    if (this.heroSidebarCards.length !== createdSlots.length) {
+    if (
+      this.heroSidebarCards.length !== characters.length ||
+      this.heroSidebarCards.some((card, i) => card.characterId !== characters[i].id)
+    ) {
       this.createHeroRightSidebar();
       return;
     }
@@ -626,13 +666,12 @@ export class MainMenuScene extends Phaser.Scene {
     const gap = 10;
     const startY = maskY + 4;
     const x = panelX + 14;
-    const totalHeight = createdSlots.length * (cardH + gap) + 8;
+    const totalHeight = characters.length * (cardH + gap) + 8;
 
     this.heroSidebarCards.forEach((card, i) => {
-      const slotItem = createdSlots[i];
-      if (!slotItem) return;
-      const { char, index: slotIdx } = slotItem;
-      const isSelected = slotIdx === activeIdx;
+      const char = characters[i];
+      if (!char) return;
+      const isSelected = char.id === activeId;
       const y = startY + i * (cardH + gap);
 
       card.hitArea.setPosition(panelX + 14 + cardW / 2, y + cardH / 2);
@@ -653,7 +692,12 @@ export class MainMenuScene extends Phaser.Scene {
       }
 
       card.nameText.setText(char.name).setPosition(panelX + 64, y + 14).setVisible(true);
-      card.classText.setText(`${char.className.toUpperCase()} • LV.${char.level}`).setPosition(panelX + 64, y + 40).setVisible(true);
+      const progress = characterProgress(char);
+      const capMark = atCap(progress) ? " · CAP" : "";
+      card.classText
+        .setText(`${char.className.toUpperCase()} • LV.${char.level}${capMark}`)
+        .setPosition(panelX + 64, y + 40)
+        .setVisible(true);
 
       if (card.deleteBtn && card.deleteHit) {
         card.deleteBtn.setVisible(true);
@@ -663,8 +707,16 @@ export class MainMenuScene extends Phaser.Scene {
         card.deleteHit.on("pointerdown", (e: Phaser.Input.Pointer) => {
           e.event.stopPropagation();
           if (confirm(`Delete character "${char.name}"?`)) {
-            store.deleteCharacter(slotIdx);
-            this.createHeroRightSidebar();
+            // Deleted on the server (FS-BDA7X req 39); the card goes once it is gone there.
+            useGameStore
+              .getState()
+              .deleteCharacter(char.id)
+              .then(() => {
+                if (this.sys?.settings?.active) this.createHeroRightSidebar();
+              })
+              .catch(() => {
+                if (this.sys?.settings?.active) this.showRefusal(LEDGER_UNREACHABLE);
+              });
           }
         });
       }
@@ -673,6 +725,16 @@ export class MainMenuScene extends Phaser.Scene {
         raised: isSelected,
         alpha: isSelected ? 0.95 : 0.6,
       });
+      // Each character's level and bar, from the gateway read (FS-BDA7X req 44).
+      const barX = panelX + CARD_XP_BAR.left;
+      drawXpBar(
+        card.bg,
+        barX,
+        y + CARD_XP_BAR.y,
+        x + cardW - CARD_XP_BAR.rightMargin - barX,
+        CARD_XP_BAR.height,
+        xpFraction(progress),
+      );
       // Every portrait stands in a little torchlight; the chosen hero's burns brighter.
       card.glow?.setPosition(panelX + 36, y + cardH / 2 + 4).setAlpha(isSelected ? 1 : 0.55);
     });
@@ -682,25 +744,25 @@ export class MainMenuScene extends Phaser.Scene {
 
   private handleStartGame(): void {
     const store = useGameStore.getState();
-    const activeChar = store.getActiveCharacter();
 
+    // Until the roster is read, an empty one is not known to be empty.
+    if (store.rosterStatus === "loading") return;
+    if (store.rosterStatus !== "ready") {
+      this.showRefusal(LEDGER_UNREACHABLE);
+      this.loadRoster();
+      return;
+    }
+
+    const activeChar = store.getActiveCharacter();
     if (!activeChar) {
-      const emptyIdx = store.slots.findIndex((s) => s === null);
-      const targetSlot = emptyIdx !== -1 ? emptyIdx : 0;
-      this.scene.start("CharacterCreationScene", { slotIndex: targetSlot });
+      this.scene.start("CharacterCreationScene");
       return;
     }
 
     // Pressing start leads to the hub, not to a queue. Delving is started from
     // inside the hub by talking to an NPC (I-29KSH-6). FS-29KSH §Requirements 34.
-    const chosenClass = (activeChar.className || "warrior").toLowerCase();
-
-    socketManager.sendMessage(ActionType.EnterHub, {
-      class: chosenClass,
-      className: chosenClass,
-      characterName: activeChar.name,
-      username: activeChar.name,
-    });
+    // The server seats by the character's id (FS-BDA7X req 41).
+    socketManager.sendMessage(ActionType.EnterHub, enterHubPayload(activeChar));
   }
 
   private handleConnectionStatusChange(

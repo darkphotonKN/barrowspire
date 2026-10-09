@@ -3,6 +3,9 @@ export { BAKE } from "./bake";
 export { housesFrom, insideHouse, type House } from "./houses";
 export { tileHash, worldSeed, type WorldKind } from "./ground";
 export { footprintHitArea } from "./footprint";
+export { INTERACT_RANGE, StairsSet, type StairsStage } from "./stairs";
+export { DROP_PILE, paintDropPile, type PileBrush } from "./dropPile";
+export { TRAIL_BED_DEPTH, TrailSet, type TrailBrush, type TrailStage } from "./trails";
 export {
   GroundLayer,
   Occluders,

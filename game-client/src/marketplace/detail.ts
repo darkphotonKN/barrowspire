@@ -3,6 +3,8 @@
  * panel stands where the bid box goes, and which of two reads of a listing is the newer.
  */
 
+import { itemLines, type ItemLines, type ItemLinesSource } from "@/items/itemLines";
+
 export interface StatLine {
   label: string;
   value: string;
@@ -47,6 +49,15 @@ export function itemStats(item: Stats | undefined): StatLine[] {
     ),
     ...numbers.flatMap(([v, label, format]) => (v ? [{ label, value: format(v) }] : [])),
   ];
+}
+
+/**
+ * The listed item's level, requirement, affix and unique-effect lines (FS-4R9M9 R59), read like
+ * every run view reads them. The Bazaar knows no character, so a requirement is never marked
+ * too high here. Undefined when the listing's item did not join.
+ */
+export function listingItemLines(item: ItemLinesSource | undefined): ItemLines | undefined {
+  return item && itemLines(item);
 }
 
 /** What stands where the bid box goes: a sign-in prompt, "Your listing", or the box itself. */

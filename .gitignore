@@ -283,3 +283,6 @@ temp/
 
 # Pinned contract-gate tooling (version pinned in the Makefile, which IS tracked)
 .tools/
+
+# Built Go binaries committed by mistake
+game-server/game-service/server

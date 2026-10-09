@@ -79,6 +79,7 @@ const (
 	NotificationDlqQueue            = "notification.dlq"
 	WalletMemberSignedUpQueue       = "wallet.auth.member.signedup"
 	AuthAccountCreatedQueue         = "auth.wallet.account.created"
+	CharacterGameMatchEndedQueue    = "character.game.match.ended"
 )
 
 /**

@@ -26,15 +26,16 @@ func NewMovementSystem() *MovementSystem {
 
 // NOTE: this runs every game tick
 func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
-	// O(n) spatial hashing for collision + entity lookup
-	entitiesMap := make(map[int]*ecs.Entity, 0)
-	entityByID := make(map[uuid.UUID]*ecs.Entity, len(entities))
+	// O(n) spatial hashing for collision. A cell holds every body in it: bodies
+	// close enough to collide are the likeliest to share one (FS-QG1HR D4).
+	cells := make(map[int][]*ecs.Entity)
+	// what this tick moves, iterated in place of the index so no body is skipped
+	movers := make([]*ecs.Entity, 0, len(entities))
 
 	wallEntities := make(map[uuid.UUID]*ecs.Entity, 0)
 	doorEntities := make(map[uuid.UUID]*ecs.Entity, 0)
 	for _, entity := range entities {
 
-		entityByID[entity.ID] = entity
 		transformComp, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform)
 		_, hasVelocity := entity.GetComponent(ecs.ComponentTypeVelocity)
 
@@ -53,6 +54,13 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 			continue
 		}
 
+		// A resolved delver, dead or escaped, keeps a body at coordinates that
+		// may belong to a floor the party has left: it neither moves nor stands
+		// in anyone's way (FS-F6F88 §Requirements 15, FS-77AB6 §Requirements 17)
+		if entity.HasComponent(ecs.ComponentTypePlayer) && !InPlay(entity) {
+			continue
+		}
+
 		if hasTransform && hasVelocity {
 			// type assertion
 			transform := transformComp.(*components.TransformComponent)
@@ -62,12 +70,13 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 
 			key := entityCellX<<8 | entityCellY
 
-			entitiesMap[key] = entity
+			cells[key] = append(cells[key], entity)
+			movers = append(movers, entity)
 		}
 
 	}
 
-	for _, entity := range entitiesMap {
+	for _, entity := range movers {
 		targetEntity := entity
 		transformComp, _ := targetEntity.GetComponent(ecs.ComponentTypeTransform)
 		velocityComp, _ := targetEntity.GetComponent(ecs.ComponentTypeVelocity)
@@ -162,7 +171,7 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 		for i := -1; i <= 1; i++ {
 			for j := -1; j <= 1; j++ {
 				cellKey := (cellX+i)<<8 | (cellY + j)
-				if other, ok := entitiesMap[cellKey]; ok {
+				for _, other := range cells[cellKey] {
 					if other.ID == targetEntity.ID {
 						continue
 					}
@@ -198,42 +207,6 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 			door := doorC.(*components.DoorComponent)
 
 			newX, newY = depenetrate(newX, newY, doorTransform.X, doorTransform.Y, door.Width, door.Height)
-		}
-
-		playerC, hasPlayer := targetEntity.GetComponent(ecs.ComponentTypePlayer)
-		if hasPlayer {
-			player := playerC.(*components.PlayerComponent)
-
-			// tick down cooldown
-			if player.AttackCooldown > 0 {
-				player.AttackCooldown -= deltaTime
-			}
-
-			// attack
-			if player.AttackActive && player.AttackCooldown <= 0 && player.AttackTargetEntityID != uuid.Nil {
-				if enemyEntity, ok := entityByID[player.AttackTargetEntityID]; ok {
-					enemyTransformC, hasTransform := enemyEntity.GetComponent(ecs.ComponentTypeTransform)
-					if hasTransform {
-						enemyTransform := enemyTransformC.(*components.TransformComponent)
-						dx := newX - enemyTransform.X
-						dy := newY - enemyTransform.Y
-						distance := math.Hypot(dx, dy)
-
-						attackRange := float64(60)
-						if distance <= attackRange {
-							enemyHealthC, hasHealth := enemyEntity.GetComponent(ecs.ComponentTypeHealth)
-							if hasHealth {
-								enemyHealth := enemyHealthC.(*components.HealthComponent)
-								enemyHealth.CurrentHealth -= 10
-							}
-						}
-					}
-				}
-				player.HasHit = false
-				player.AttackActive = false
-				player.AttackTargetEntityID = uuid.Nil
-				player.AttackCooldown = 0.5
-			}
 		}
 
 		// clamp position to this world's boundaries

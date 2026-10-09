@@ -31,6 +31,14 @@ export interface PlayerState {
   max_health?: number;
   current_mana?: number;
   max_mana?: number;
+  /** The character's level (FS-BDA7X req 42); sent with every delver, run and hub. */
+  level?: number;
+  /** Total experience, monotonic. */
+  experience?: number;
+  /** Total experience at which the current level began. */
+  level_floor?: number;
+  /** Total experience that reaches the next level; absent at the cap (level 20). */
+  next_level_at?: number;
 }
 
 // Player equipment state from server (matches Go types.EquipmentState JSON tags).
@@ -71,14 +79,46 @@ export interface ItemState {
   healing_amount?: number;
   mana_amount?: number;
   description?: string;
+  /** The level a character needs to equip it (FS-BDA7X req 30); absent means 1. */
+  required_level?: number;
+  /** Armour's magic resistance (FS-4R9M9 R54); absent means 0. */
+  magic_resistance?: number;
+  /** The rarity tier's code: normal, uncommon, rare, runed or fabled. Absent on an unrolled item. */
+  rarity?: string;
+  /** The level the item rolled at (FS-4R9M9 R54); absent on an item from before item levels. */
+  item_level?: number;
+  /** Every rolled affix, and a unique's fixed ones (tier 0); absent when it has none. */
+  affixes?: AffixState[];
+  /** A unique's effect, in words; absent on any other item. */
+  unique_effect?: string;
+  /**
+   * The item's type, where the source names it (the loadout's item instances do, and the run's
+   * world state does once the server sends it, I-4R9M9-16). Where it is absent,
+   * {@link getItemType} falls back to reading it from the stats.
+   */
+  item_type?: string;
   durability?: number;
   lootedAt?: number; // 本地取得時間戳，用於 pending 判斷
 }
+
+/** One affix on an item (FS-4R9M9 R16, R19): tier 0 is a unique's fixed affix. */
+export interface AffixState {
+  stat: string;
+  tier: number;
+  value: number;
+}
+
+/**
+ * What a container is (FS-4R9M9 R55): a floor's chest, or the drop pile a slain monster left,
+ * which is always open and stays in state, emptied, once its last item is taken.
+ */
+export type ContainerKind = "chest" | "drop_pile";
 
 // Container/chest state
 export interface ContainerState {
   container_id: UUID;
   entity_id: UUID;
+  kind: ContainerKind;
   position: Position;
   is_open: boolean;
   items: ItemState[];
@@ -100,6 +140,12 @@ export interface SwitchState {
   is_activated: boolean;
 }
 
+/** Stairs up to the next floor (FS-F6F88 req 27). Every floor below the top has one. */
+export interface StairsState {
+  entity_id: UUID;
+  position: Position;
+}
+
 // Wall state
 export interface WallState {
   house_id?: UUID;
@@ -107,6 +153,18 @@ export interface WallState {
   position: Position;
   width: number;
   height: number;
+}
+
+/**
+ * A live burning trail (FS-4R9M9 R36, R56): the path a `burning_dash` wearer dashed, burning
+ * `half_width` world px either side of `from`→`to` for `remaining` more seconds (3 → 0).
+ */
+export interface TrailState {
+  entity_id: UUID;
+  from: Position;
+  to: Position;
+  half_width: number;
+  remaining: number;
 }
 
 export interface ProjectileState {
@@ -127,6 +185,29 @@ export interface NPCState {
   position: Position;
 }
 
+/** What kind of monster it is: picks its sheet and size tier (FS-77AB6 req 32, 34–35). */
+export type MonsterArchetype = "ghoul" | "troll" | "demon";
+
+/** What a monster is doing this tick. `attack` is the wind-up and the strike. */
+export type MonsterAction = "idle" | "move" | "attack" | "dead";
+
+/** One monster in a run's state broadcast (FS-77AB6 req 32). Absent or empty in the hub. */
+export interface MonsterState {
+  entity_id: UUID;
+  archetype: MonsterArchetype;
+  /** Server-authored display name, including any elite prefix. */
+  name: string;
+  level: number;
+  elite: boolean;
+  boss: boolean;
+  position: Position;
+  /** The direction it faces: non-zero while it stands, winds up or lies dead. */
+  facing: Position;
+  action: MonsterAction;
+  current_health: number;
+  max_health: number;
+}
+
 export interface ClientGameState {
   session_id: UUID;
   /** Which kind of world this state came from. Mirrors types.WorldType. */
@@ -141,6 +222,15 @@ export interface ClientGameState {
   switches: SwitchState[]; // Switches/buttons for puzzles
   npcs?: NPCState[]; // The hub's residents; absent in a run
   projectiles?: ProjectileState[]; // Active projectiles in session
+  monsters?: MonsterState[]; // A run's monsters, corpses included; absent in the hub
+  /** The party's floor, 1-based (FS-F6F88 req 26). Run only; absent in the hub. */
+  floor?: number;
+  /** How many floors the run has (FS-F6F88 req 26). Run only; absent in the hub. */
+  floor_count?: number;
+  /** Stairs up: empty on the top floor, absent in the hub (FS-F6F88 req 27). */
+  stairs?: StairsState[];
+  /** Live burning trails, a full snapshot each tick; absent when none, always absent in the hub (FS-4R9M9 R56). */
+  trails?: TrailState[];
   escaped_count: number; // Number of players who have escaped
 }
 
@@ -172,13 +262,22 @@ export interface EquippedItems {
   consumable_3: ItemState | null;
 }
 
-export type ItemType = 'weapon' | 'armor' | 'consumable' | 'unknown';
+export type ItemType = 'weapon' | 'armor' | 'ring' | 'consumable' | 'unknown';
 
+const ITEM_TYPES: readonly string[] = ['weapon', 'armor', 'ring', 'consumable'];
+
+/**
+ * What kind of item it is. A named type always wins; only where the source names none do the
+ * stats decide, as a fallback, and then an item with no weapon, armour or restorative stats is a
+ * ring: the one type whose power is all affixes (FS-4R9M9 R5).
+ */
 export function getItemType(item: ItemState): ItemType {
+  const named = item.item_type?.trim().toLowerCase();
+  if (named) return ITEM_TYPES.includes(named) ? (named as ItemType) : 'unknown';
   if (item.attack_power || item.weapon_type) return 'weapon';
   if (item.defense_rating !== undefined || item.armor_slot) return 'armor';
   if (item.healing_amount || item.mana_amount) return 'consumable';
-  return 'unknown';
+  return 'ring';
 }
 
 export function getValidSlotsForItem(item: ItemState): EquipmentSlot[] {
@@ -196,10 +295,34 @@ export function getValidSlotsForItem(item: ItemState): EquipmentSlot[] {
         default: return [];
       }
     }
+    case 'ring':
+      return ['ring_1', 'ring_2'];
     case 'consumable':
       return ['consumable_1', 'consumable_2', 'consumable_3'];
     default:
       return [];
+  }
+}
+
+/**
+ * The slot an equip puts an item in, as the server will: a consumable takes the first empty
+ * consumable slot (none when all are full); a ring takes ring 1, then ring 2, and over ring 1
+ * when both are worn (FS-4R9M9 R42); anything else its one slot. Null when it fits nowhere.
+ */
+export function equipSlotFor(
+  item: ItemState,
+  equipped: EquippedItems,
+): EquipmentSlot | null {
+  const slots = getValidSlotsForItem(item);
+  if (slots.length === 0) return null;
+  const empty = slots.find((slot) => equipped[slot] === null);
+  switch (getItemType(item)) {
+    case 'consumable':
+      return empty ?? null;
+    case 'ring':
+      return empty ?? 'ring_1';
+    default:
+      return slots[0];
   }
 }
 

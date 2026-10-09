@@ -1,10 +1,12 @@
 package gameserver
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
@@ -34,7 +36,7 @@ type SessionManager interface {
 	GetServerChan() chan types.ClientPackage
 	AddPlayer(*types.Player) error
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
-	JoinHub(conn *websocket.Conn, character types.Character) (*game.Session, error)
+	EnterHub(ctx context.Context, conn *websocket.Conn, characterID string) (*game.Session, error)
 	GetMatchedChan() chan []*types.Player
 	GetQueueStatusChan() chan matchmaker.QueueStatus
 }
@@ -49,23 +51,63 @@ var (
 	errHubMissing         = errors.New("hub world does not exist")
 )
 
-// characterFromPayload reads the character a client is entering with, falling
-// back the same way find_game does when the class is missing or unknown.
-func characterFromPayload(payload map[string]interface{}) types.Character {
-	class, _ := payload["class"].(string)
-	if class == "" {
-		class, _ = payload["className"].(string)
+// Entry refusals. Each one reaches the menu as a reason the delver can act on.
+// FS-BDA7X §Requirements 6.
+var (
+	errNoCharacter           = errors.New("no character id to enter with")
+	errCharactersUnavailable = errors.New("character service unavailable")
+)
+
+// characterResolveTimeout bounds how long entry waits on character-service
+// before refusing with a retryable reason.
+const characterResolveTimeout = 3 * time.Second
+
+// enterHubRefusal is what the menu shows for a refused entry. The detail stays
+// in the log; a stranger's client gets only what it can act on.
+func enterHubRefusal(err error) string {
+	switch {
+	case errors.Is(err, game.ErrWorldFull):
+		return "The hub is full. Try again shortly."
+	case errors.Is(err, errNoCharacter):
+		return "Choose a character to enter with."
+	case errors.Is(err, types.ErrCharacterNotFound):
+		return "That character could not be found. Choose another."
+	case errors.Is(err, errCharactersUnavailable):
+		return "Characters are unavailable right now. Try again shortly."
+	case errors.Is(err, game.ErrCharacterSwitchMidRun):
+		return "You cannot change character during a delve."
+	default:
+		return "Could not enter"
 	}
-	if _, known := game.Classes[class]; !known {
-		class = "mage"
+}
+
+// enterHub resolves the character a client enters with and seats it. It runs
+// off the message hub's loop: it waits on character-service, and every other
+// connection's messages pass through that loop.
+func (h *messageHub) enterHub(clientPackage types.ClientPackage) {
+	ctx, cancel := context.WithTimeout(context.Background(), characterResolveTimeout)
+	defer cancel()
+
+	characterID, _ := clientPackage.Message.Payload["characterId"].(string)
+
+	var reply types.Message
+	hub, err := h.sessionManager.EnterHub(ctx, clientPackage.Conn, characterID)
+	if err != nil {
+		slog.Warn("Could not place player in the hub", "error", err)
+
+		clientErr := enterHubRefusal(err)
+		reply = types.Message{
+			Action:  clientPackage.Message.Action,
+			Payload: map[string]interface{}{"message": clientErr},
+			Error:   &clientErr,
+		}
+	} else {
+		reply = worldEnteredMessage(hub)
 	}
 
-	name, _ := payload["characterName"].(string)
-	if name == "" {
-		name, _ = payload["username"].(string)
+	if err := h.sender.SendMessageToConn(clientPackage.Conn, reply); err != nil {
+		slog.Warn("Could not answer enter_hub", "error", err)
 	}
-
-	return types.Character{Class: class, Name: name}
 }
 
 // worldEnteredMessage tells a client which world it is now in. Every transition
@@ -172,34 +214,9 @@ func (h *messageHub) Run() {
 
 			// NOTE: a player who has picked a character asks to enter the hub
 			case constants.ActionEnterHub:
-				// The chosen character comes with the request, the same way it
-				// does for find_game: the server has no memory of a selection
-				// made in the menu.
-				hub, err := h.sessionManager.JoinHub(
-					clientPackage.Conn,
-					characterFromPayload(clientPackage.Message.Payload),
-				)
-
-				if err != nil {
-					slog.Warn("Could not place player in the hub", "error", err)
-
-					// A full hub is a thing the delver can act on, wait and try
-					// again, so it says so. Everything else stays vague: the
-					// detail is in the log, not in a strangers client
-					clientErr := "Could not enter"
-					if errors.Is(err, game.ErrWorldFull) {
-						clientErr = "The hub is full. Try again shortly."
-					}
-
-					h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
-						Action:  clientPackage.Message.Action,
-						Payload: map[string]interface{}{"message": clientErr},
-						Error:   &clientErr,
-					})
-					continue
-				}
-
-				h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(hub))
+				// The request names the character by id; who it is comes from
+				// character-service, never the payload. FS-BDA7X §Requirements 5.
+				go h.enterHub(clientPackage)
 
 			// NOTE: queues a player for a game
 			case constants.ActionFindGame:
@@ -212,15 +229,21 @@ func (h *messageHub) Run() {
 					continue
 				}
 
-				// Get and validate class selection from payload
-				classVal, _ := clientPackage.Message.Payload["class"].(string)
-				if classVal == "" {
-					classVal, _ = clientPackage.Message.Payload["className"].(string)
+				// The run seats the character in play from the player's record;
+				// find_game names no character, and a player who has not
+				// entered with one is never queued as a guessed one.
+				// FS-BDA7X §Requirements 6–7.
+				if player.Character.ID == uuid.Nil {
+					slog.Warn("Refusing find_game: no character in play", "player_id", player.ID)
+
+					clientErr := "Enter the hub with a character first."
+					h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
+						Action:  clientPackage.Message.Action,
+						Payload: map[string]interface{}{"message": clientErr},
+						Error:   &clientErr,
+					})
+					continue
 				}
-				if _, ok := game.Classes[classVal]; !ok {
-					classVal = "mage"
-				}
-				player.Class = classVal
 
 				// -- player already exists in an old game --
 				err := h.handlePlayerExistingGame(player, clientPackage)

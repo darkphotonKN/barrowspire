@@ -86,6 +86,19 @@ export const palette = {
   switchOn: BARROW_HEX.amber,
   escapeDoor: BARROW_HEX.brass,
   escapeGlow: BARROW_HEX.amberBright,
+  /** Stairs up (FS-F6F88 req 30): cold stone treads, amber nosing so they read as climbable. */
+  stairsTread: BARROW_HEX.slate,
+  stairsRiser: shade(BARROW_HEX.slate),
+  stairsNosing: BARROW_HEX.amber,
+  /**
+   * A drop pile (FS-4R9M9 req 61): grave materials, a slain thing's remains on barrow earth, with
+   * one amber glint of the loot in it, because the delver can take from it.
+   */
+  dropPileEarth: shade(BARROW_HEX.barrowDeep, 0.15),
+  dropPileRag: mix(BARROW_HEX.slate, BARROW_HEX.barrowBrown, 0.5),
+  dropPileBone: BARROW_HEX.vellumDark,
+  dropPileBoneShade: shade(BARROW_HEX.vellumDark, 0.4),
+  dropPileGlint: BARROW_HEX.amber,
 
   // -- Safe / friendly / restorative. Arcane green.
   safe: BARROW_HEX.arcane,
@@ -96,6 +109,13 @@ export const palette = {
   damage: BARROW_HEX.oxblood,
   damageBright: tint(BARROW_HEX.oxblood, 0.35),
   hostile: BARROW_HEX.necrotic,
+  /**
+   * A burning trail (FS-4R9M9 req 36, 61): fire that harms monsters, so the damage family: a
+   * scorched oxblood bed, ember flame, an ember-red core. Never amber, which means interactable.
+   */
+  trailScorch: shade(BARROW_HEX.oxblood, 0.3),
+  trailFlame: BARROW_HEX.ember,
+  trailCore: mix(BARROW_HEX.ember, BARROW_HEX.oxbloodText, 0.35),
 
   // -- HUD. Vellum reads, brass frames. Never amber unless it is a control
   //    the player can actually act on.
@@ -106,6 +126,24 @@ export const palette = {
   hudPanelDeep: BARROW_HEX.charcoal,
   frame: BARROW_HEX.brass,
   frameBright: BARROW_HEX.brassBright,
+  /**
+   * The experience bar and the level-up cue (FS-BDA7X req 42, 43): progress is neither an
+   * interactable, a friend nor a harm, so it takes the HUD's bright brass, never amber.
+   */
+  xpFill: BARROW_HEX.brassBright,
+  xpTrack: BARROW_HEX.charcoal,
+  levelUp: BARROW_HEX.brassBright,
+
+  // -- Rarity (FS-4R9M9 R59): data, not emphasis. The DOM's --rarity-* ramp, matched by token
+  //    name (src/marketplace/rarity.ts). Per the guideline's rarity ramp it colours only an item
+  //    tip's rarity badge and its accent edge, never a name, heading or fill.
+  rarity: {
+    common: BARROW_HEX.rarityCommon,
+    uncommon: BARROW_HEX.arcane,
+    rare: BARROW_HEX.necrotic,
+    epic: BARROW_HEX.brass,
+    legendary: BARROW_HEX.amberBright,
+  },
 
   // -- Light. The only warmth in the barrow.
   torch: BARROW_HEX.amber,
@@ -136,13 +174,29 @@ export const palette = {
   //    at the canvas edge (tested in src/render/markers/). Oxblood fails that
   //    as a bar fill, so HP takes its lifted text tone.
   markerSelf: BARROW_HEX.brassBright,
-  markerRival: BARROW_HEX.arcane,
+  /** Another delver (FS-77AB6 req 40): co-op, so the ally channel, arcane green. */
+  markerAlly: BARROW_HEX.arcane,
   markerHub: BARROW_HEX.vellum,
+  /** A monster's nameplate (FS-77AB6 req 37): the hostile channel, lifted to read at the edge. */
+  markerHostile: BARROW_HEX.oxbloodText,
+  /**
+   * An elite's prefix (FS-77AB6 req 38): the hostile accent, an ember red from the oxblood
+   * family, set apart from the plate's lifted oxblood. Redder than ember so it never reads as
+   * amber (interactable); held to the same 3:1 floor as every marker.
+   */
+  markerElite: mix(BARROW_HEX.ember, BARROW_HEX.oxblood, 0.15),
   markerStroke: BARROW_HEX.charcoal,
   markerBarBacking: BARROW_HEX.pitch,
   markerBarRim: BARROW_HEX.barrowDeep,
   markerHp: BARROW_HEX.oxbloodText,
   markerMp: BARROW_HEX.necrotic,
+
+  // -- Hostile wash (FS-77AB6 req 38): a multiply tint over a creature's
+  //    baked sprite, from the oxblood family. Lifted toward vellum so they
+  //    shade the body rather than recolour it: an elite reads blood-touched,
+  //    never amber, green or glowing. They sit under the light-map like the
+  //    sprite they wash, so readability stays with the markers.
+  eliteTint: tint(BARROW_HEX.oxbloodText, 0.5),
 
   // -- The satchel (container view, FS-2325V §D). Tanned leather sits between
   //    barrow brown and brass; the flap is the darker, oilier hide; vellum

@@ -27,13 +27,20 @@ const (
 type WanderRegion struct {
 	X, Y, W, H float64
 
+	Wandering
+}
+
+// Wandering is how a walk between random destinations is going: where it is
+// headed, how long it stands on arrival, and whether it has stalled. Hub
+// residents and monsters walk the same way.
+type Wandering struct {
 	// Where they are currently headed, and how long they stand once they arrive.
 	DestinationX, DestinationY float64
 	HasDestination             bool
 	PauseRemaining             float64
 
 	// How long they have failed to get closer. Random walk against hard
-	// collision corners a resident permanently without this.
+	// collision corners a walker permanently without this.
 	StalledFor     float64
 	LastDistanceSq float64
 }

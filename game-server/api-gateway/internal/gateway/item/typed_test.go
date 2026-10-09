@@ -47,6 +47,66 @@ func TestListItemInstances_CarriesStatus(t *testing.T) {
 	assert.Equal(t, map[string]any{"a": "AVAILABLE", "b": "LISTED", "c": "IN_ESCROW", "d": "PENDING_SETTLEMENT"}, got)
 }
 
+// listInstances answers the stash for the given instances, keyed by id.
+func listInstances(t *testing.T, instances ...*pb.ItemInstance) map[string]map[string]any {
+	t.Helper()
+	client := &stubItemClient{instances: &pb.ListItemInstancesResponse{Items: instances}}
+	w := testsupport.Do(newTypedRouter(client), http.MethodGet, "/api/items/instances", "")
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	got := map[string]map[string]any{}
+	for _, it := range testsupport.Decode(t, w)["result"].(map[string]any)["items"].([]any) {
+		m := it.(map[string]any)
+		got[m["id"].(string)] = m
+	}
+	return got
+}
+
+// FS-4R9M9 §API surface: each instance carries what it rolled — item level,
+// the derived required level and its affixes — and a unique its effect text,
+// never its effect code.
+func TestListItemInstances_CarriesItemLevelAffixesAndUniqueEffect(t *testing.T) {
+	got := listInstances(t,
+		&pb.ItemInstance{
+			Id: "rolled", Name: "Ironbound Ring", ItemType: "ring", ItemLevel: 14, RequiredLevel: 9,
+			Affixes: []*pb.Affix{{Stat: "strength", Tier: 2, Value: 6}, {Stat: "crit_chance", Tier: 3, Value: 4}},
+		},
+		&pb.ItemInstance{
+			Id: "unique", Name: "Emberwake", ItemType: "armor", ItemLevel: 30, RequiredLevel: 22,
+			Affixes:          []*pb.Affix{{Stat: "fire_damage", Tier: 0, Value: 0}},
+			UniqueEffectCode: "burning_trail",
+			UniqueEffectText: "Your footsteps leave a burning trail.",
+		},
+	)
+
+	rolled := got["rolled"]
+	assert.EqualValues(t, 14, rolled["item_level"])
+	assert.EqualValues(t, 9, rolled["required_level"])
+	assert.Equal(t, []any{
+		map[string]any{"stat": "strength", "tier": float64(2), "value": float64(6)},
+		map[string]any{"stat": "crit_chance", "tier": float64(3), "value": float64(4)},
+	}, rolled["affixes"])
+	assert.NotContains(t, rolled, "unique_effect", "a non-unique carries no unique effect")
+
+	unique := got["unique"]
+	assert.Equal(t, "Your footsteps leave a burning trail.", unique["unique_effect"])
+	assert.Equal(t, []any{
+		map[string]any{"stat": "fire_damage", "tier": float64(0), "value": float64(0)},
+	}, unique["affixes"], "a unique's fixed affix keeps its tier 0")
+	assert.NotContains(t, unique, "unique_effect_code")
+	assert.NotContains(t, unique, "unique_effect_text")
+}
+
+// A legacy item (from before item levels) serialises affixes as [], never
+// null and never absent.
+func TestListItemInstances_ALegacyItemSerialisesEmptyAffixes(t *testing.T) {
+	got := listInstances(t, &pb.ItemInstance{Id: "legacy", Name: "Longsword", ItemType: "weapon", ItemLevel: 1, RequiredLevel: 1})
+
+	assert.Equal(t, []any{}, got["legacy"]["affixes"])
+	assert.EqualValues(t, 1, got["legacy"]["item_level"])
+	assert.NotContains(t, got["legacy"], "unique_effect")
+}
+
 // items-service authenticates every RPC from the authorization metadata
 // (common/auth.Auth), so each operation must forward the caller's token.
 func TestItemOperations_ForwardTheCallersToken(t *testing.T) {

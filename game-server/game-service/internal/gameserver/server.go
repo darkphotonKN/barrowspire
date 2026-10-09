@@ -2,11 +2,13 @@ package gameserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
 
+	"github.com/darkphotonKN/barrowspire-server/common/progression"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
@@ -65,6 +67,15 @@ type Server struct {
 	eventEmitter game.EventEmitter
 	// item client for gRPC
 	itemsClient grpcitems.ItemsClient
+	// resolves the character a member enters with
+	characters CharacterReader
+}
+
+// CharacterReader reads one of a member's characters from character-service,
+// scoped by member: another member's, a deleted, and an unknown character are
+// all types.ErrCharacterNotFound. FS-BDA7X §Requirements 5.
+type CharacterReader interface {
+	GetCharacter(ctx context.Context, memberID, characterID uuid.UUID) (types.CharacterInPlay, error)
 }
 
 type MessageSender interface {
@@ -80,7 +91,7 @@ type QueueManager interface {
 	GetQueueStatusChan() chan matchmaker.QueueStatus
 }
 
-func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient) *Server {
+func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient, characters CharacterReader) *Server {
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			// TODO: Allow all connections by default for simplicity; can add more logic here
@@ -103,6 +114,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		authClient:   authClient,
 		eventEmitter: eventEmitter,
 		itemsClient:  itemsClient,
+		characters:   characters,
 	}
 
 	// initialize message sender
@@ -125,10 +137,10 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 * the whole process, unlike a run, which is built per match and torn down
 *
 * Note what is deliberately NOT called: InitialSystems(), which creates the
-* MatchProgress entity. RulesSystem ends a session once activePlayers <= 1, a
-* condition the hub trips constantly, but it returns early when no MatchProgress
-* exists. Skipping that call is what makes the hub immune, with no change to the
-* system itself. FS-29KSH §Requirements 1
+* MatchProgress entity. RulesSystem ends a session once every delver on it has
+* resolved, but it returns early when no MatchProgress exists. Skipping that
+* call is what makes the hub immune, with no change to the system itself.
+* FS-29KSH §Requirements 1
 **/
 func (s *Server) createHubSession() *game.Session {
 	fmt.Printf("\n\nWorld Hub SESSION INITIALIZED\n\n\n")
@@ -151,13 +163,49 @@ func (s *Server) createHubSession() *game.Session {
 }
 
 /**
-* Places a connected player into the hub world and records that they are in it.
+* Enters the hub as one of the member's characters.
+*
+* The character is resolved from character-service, scoped by the connection's
+* member, and nothing else about it is taken from the client. A missing id, one
+* that is not the member's, and a service that cannot answer all refuse entry:
+* the member is never seated as a guessed or default character.
+* FS-BDA7X §Requirements 5–6.
+**/
+func (s *Server) EnterHub(ctx context.Context, conn *websocket.Conn, characterID string) (*game.Session, error) {
+	player, exists := s.GetPlayerFromConn(conn)
+	if !exists {
+		return nil, errPlayerNotFound
+	}
+
+	if characterID == "" {
+		return nil, errNoCharacter
+	}
+
+	id, err := uuid.Parse(characterID)
+	if err != nil {
+		return nil, fmt.Errorf("character id %q: %w", characterID, types.ErrCharacterNotFound)
+	}
+
+	character, err := s.characters.GetCharacter(ctx, player.ID, id)
+	if errors.Is(err, types.ErrCharacterNotFound) {
+		return nil, err
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errCharactersUnavailable, err)
+	}
+
+	return s.JoinHub(conn, character)
+}
+
+/**
+* Places a connected player into the hub world as a resolved character, and
+* records both where they are and the character they are playing.
 *
 * Note the two writes. connToPlayer holds a copy of the player, MapConnToPlayer
 * takes it by value, so it is a different object from the one in s.players, and
 * both have to be told. CreateGameSession does the same thing for the same reason.
 **/
-func (s *Server) JoinHub(conn *websocket.Conn, character types.Character) (*game.Session, error) {
+func (s *Server) JoinHub(conn *websocket.Conn, character types.CharacterInPlay) (*game.Session, error) {
 	hub, exists := s.HubSession()
 	if !exists {
 		return nil, errHubMissing
@@ -168,16 +216,20 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.Character) (*game
 		return nil, errPlayerNotFound
 	}
 
-	username := player.Username
-	if character.Name != "" {
-		username = character.Name
+	// A run keeps the character it was entered with: entering the HUB as
+	// another one mid-run would seat a second body and repoint the record away
+	// from the run still holding the first (FS-BDA7X §Requirements 7)
+	if current, inWorld := s.GetGameSession(player.CurrentGameSessionId); inWorld &&
+		current.WorldType() == types.WorldTypeRun && current.HasPlayer(player.ID) &&
+		player.Character.ID != character.ID {
+		return nil, fmt.Errorf("enter hub from run %s: %w", current.ID, game.ErrCharacterSwitchMidRun)
 	}
 
 	// The world decides whether it has room, under its own lock. Counting from
 	// out here would mean holding the server's lock over data the session owns,
 	// which serialises JoinHub against itself and nothing else, so the next path
 	// into the hub would sidestep the cap without noticing.
-	if err := hub.Admit(player.ID, username, character.Class); err != nil {
+	if err := hub.Admit(player.ID, character); err != nil {
 		return nil, err
 	}
 
@@ -187,8 +239,7 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.Character) (*game
 	connected := constants.Connected
 
 	for _, record := range s.everyRecordOf(player) {
-		record.Class = character.Class
-		record.Username = username
+		record.Character = character
 		record.CurrentGameSessionId = hub.ID
 		record.ConnectState = &connected
 	}
@@ -279,12 +330,50 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 		}
 
 		run.RemovePlayer(playerID.String())
-		hub.AddPlayer(player.ID, player.Username, player.Class)
+		hub.AddPlayer(player.ID, player.Character)
 		s.setCurrentWorld(player, hub.ID)
 
 		if err := s.sender.SendMessageToPlayer(playerID, worldEnteredMessage(hub)); err != nil {
 			slog.Warn("Could not tell a returning player they are home",
 				"player_id", playerID, "error", err)
+		}
+	}
+}
+
+/**
+* Keeps what a finished run did to each member's character in play.
+*
+* Called as the run resolves, before its players are sent home, so the HUB
+* seats them at the run's resulting level without waiting for character-service
+* to consume the run's end (FS-BDA7X §Requirements 24). A seated member takes
+* where their body finished; a member removed before the end takes what they
+* earned on top of the record, never below the level they were seated at. A
+* record now playing another character, or a member no longer here, is left
+* alone: the persisted grant still reaches character-service.
+**/
+func (s *Server) ApplyRunProgress(progress []types.RunProgress) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, p := range progress {
+		player, exists := s.players[p.MemberID]
+		if !exists {
+			continue
+		}
+
+		for _, record := range s.everyRecordOf(player) {
+			if record.Character.ID != p.CharacterID {
+				continue
+			}
+
+			if p.Seated {
+				record.Character.Level = p.Level
+				record.Character.Experience = p.Experience
+				continue
+			}
+
+			record.Character.Experience += p.Gained
+			record.Character.Level = max(record.Character.Level, int(progression.LevelFor(record.Character.Experience)))
 		}
 	}
 }
@@ -364,7 +453,6 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 	// create session with message sender
 	newGameSession := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient, game.RunBounds())
 
-	newGameSession.InitialMapObjects()
 	newGameSession.InitialSystems()
 
 	// Leaving the hub is part of arriving in the run: a player occupies one world
@@ -376,15 +464,21 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 		}
 	}
 
+	// The roster is placed before the first floor is built: the floor's monsters
+	// are levelled to the party and spawned clear of every delver, so both must
+	// already be known (FS-77AB6 §Requirements 22). The session is not yet
+	// registered, so nothing routes to it while it is being built.
+	for _, player := range players {
+		newGameSession.AddPlayer(player.ID, player.Character)
+	}
+	newGameSession.InitialMapObjects()
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	connected := constants.Connected
 
 	for _, player := range players {
-		// add player to session
-		newGameSession.AddPlayer(player.ID, player.Username, player.Class)
-
 		for _, record := range s.everyRecordOf(player) {
 			record.CurrentGameSessionId = newGameSession.ID
 			record.ConnectState = &connected

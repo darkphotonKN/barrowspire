@@ -60,24 +60,48 @@ func (s *WanderSystem) step(
 	transform *components.TransformComponent,
 	velocity *components.VelocityComponent,
 ) {
-	if region.PauseRemaining > 0 {
-		region.PauseRemaining -= deltaTime
+	walk(deltaTime, &region.Wandering, residentPace, transform, velocity, func() (float64, float64) {
+		return region.X + rand.Float64()*region.W, region.Y + rand.Float64()*region.H
+	})
+}
+
+// pace is how long a walker stands on arrival and how long it may fail to close
+// on a destination before giving it up.
+type pace struct {
+	pause, stall float64 // seconds
+}
+
+var residentPace = pace{pause: constants.NPCPauseSeconds, stall: constants.NPCStallSeconds}
+
+// walk steers a walker between random destinations that pick chooses: towards
+// the current one, standing a while on arrival, and abandoning one it has
+// stopped closing on. It only ever sets velocity's direction.
+func walk(
+	deltaTime float64,
+	w *components.Wandering,
+	p pace,
+	transform *components.TransformComponent,
+	velocity *components.VelocityComponent,
+	pick func() (x, y float64),
+) {
+	if w.PauseRemaining > 0 {
+		w.PauseRemaining -= deltaTime
 		velocity.VX, velocity.VY = 0, 0
 		return
 	}
 
-	if !region.HasDestination {
-		s.choose(region, transform)
+	if !w.HasDestination {
+		choose(w, transform, pick)
 	}
 
-	dx := region.DestinationX - transform.X
-	dy := region.DestinationY - transform.Y
+	dx := w.DestinationX - transform.X
+	dy := w.DestinationY - transform.Y
 	distanceSq := dx*dx + dy*dy
 
 	// arrived
 	if distanceSq <= arrivalRadius*arrivalRadius {
-		region.HasDestination = false
-		region.PauseRemaining = constants.NPCPauseSeconds
+		w.HasDestination = false
+		w.PauseRemaining = p.pause
 		velocity.VX, velocity.VY = 0, 0
 		return
 	}
@@ -85,31 +109,30 @@ func (s *WanderSystem) step(
 	// Getting no closer means something is in the way — a wall, a building, a
 	// delver standing in a doorway. Give the destination up rather than lean on
 	// it forever.
-	if distanceSq >= region.LastDistanceSq {
-		region.StalledFor += deltaTime
-		if region.StalledFor >= constants.NPCStallSeconds {
-			s.choose(region, transform)
+	if distanceSq >= w.LastDistanceSq {
+		w.StalledFor += deltaTime
+		if w.StalledFor >= p.stall {
+			choose(w, transform, pick)
 		}
 	} else {
-		region.StalledFor = 0
+		w.StalledFor = 0
 	}
-	region.LastDistanceSq = distanceSq
+	w.LastDistanceSq = distanceSq
 
 	distance := math.Sqrt(distanceSq)
 	velocity.VX = dx / distance
 	velocity.VY = dy / distance
 }
 
-// choose picks somewhere new inside the region and forgets any stall.
-func (s *WanderSystem) choose(region *components.WanderRegion, transform *components.TransformComponent) {
-	region.DestinationX = region.X + rand.Float64()*region.W
-	region.DestinationY = region.Y + rand.Float64()*region.H
-	region.HasDestination = true
-	region.StalledFor = 0
+// choose picks somewhere new and forgets any stall.
+func choose(w *components.Wandering, transform *components.TransformComponent, pick func() (x, y float64)) {
+	w.DestinationX, w.DestinationY = pick()
+	w.HasDestination = true
+	w.StalledFor = 0
 
-	dx := region.DestinationX - transform.X
-	dy := region.DestinationY - transform.Y
-	region.LastDistanceSq = dx*dx + dy*dy
+	dx := w.DestinationX - transform.X
+	dy := w.DestinationY - transform.Y
+	w.LastDistanceSq = dx*dx + dy*dy
 }
 
 // How near counts as arrived.

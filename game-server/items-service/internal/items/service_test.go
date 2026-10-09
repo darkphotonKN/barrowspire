@@ -24,7 +24,7 @@ func TestConvertSingleProtoItemtoItemInstance_RarityID(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := (&service{}).ConvertSingleProtoItemtoItemInstance(&pb.Item{ItemType: "weapon", RarityId: tt.rarityID})
+			got, err := (&service{}).ConvertSingleProtoItemtoItemInstance(uuid.New(), &pb.Item{TemplateId: uuid.NewString(), ItemType: "weapon", RarityId: tt.rarityID})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -135,4 +135,76 @@ func TestFormattedItemInstanceData_ForwardsBuyoutPrice(t *testing.T) {
 			}
 		})
 	}
+}
+
+// FS-4R9M9 R48-50: the consumer keeps an extracted item's level, its own
+// required level and its well-formed affixes.
+func TestConvertSingleProtoItemtoItemInstance_LevelAndAffixes(t *testing.T) {
+	tests := []struct {
+		name          string
+		in            *pb.Item
+		wantItemLevel int
+		wantRequired  int
+		wantAffixes   Affixes
+	}{
+		{
+			name: "rolled item keeps level, required level and affixes",
+			in: &pb.Item{ItemType: "weapon", ItemLevel: 9, RequiredLevel: 6, Affixes: []*pb.ItemAffix{
+				{Stat: "strength", Tier: 2, Value: 3},
+				{Stat: "crit_chance", Tier: 1, Value: 1},
+			}},
+			wantItemLevel: 9, wantRequired: 6,
+			wantAffixes: Affixes{{Stat: "strength", Tier: 2, Value: 3}, {Stat: "crit_chance", Tier: 1, Value: 1}},
+		},
+		{
+			name:          "older producer stores ilvl 1, no affixes, no required level of its own",
+			in:            &pb.Item{ItemType: "weapon"},
+			wantItemLevel: 1, wantRequired: 0, wantAffixes: Affixes{},
+		},
+		{
+			name:          "a unique's fixed affix is tier 0",
+			in:            &pb.Item{ItemType: "armor", ItemLevel: 20, RequiredLevel: 13, Affixes: []*pb.ItemAffix{{Stat: "max_health", Tier: 0, Value: 15}}},
+			wantItemLevel: 20, wantRequired: 13, wantAffixes: Affixes{{Stat: "max_health", Tier: 0, Value: 15}},
+		},
+		{
+			name: "malformed entries are dropped, the rest is kept",
+			in: &pb.Item{ItemType: "weapon", ItemLevel: 3, Affixes: []*pb.ItemAffix{
+				{Stat: "luck", Tier: 1, Value: 1},
+				{Stat: "agility", Tier: 4, Value: 1},
+				{Stat: "agility", Tier: -1, Value: 1},
+				{Stat: "defense", Tier: 1, Value: -2},
+				nil,
+				{Stat: "flat_damage", Tier: 1, Value: 1},
+			}},
+			wantItemLevel: 3, wantRequired: 0, wantAffixes: Affixes{{Stat: "flat_damage", Tier: 1, Value: 1}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := (&service{}).ConvertSingleProtoItemtoItemInstance(uuid.New(), withTemplate(tt.in))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.ItemLevel != tt.wantItemLevel {
+				t.Errorf("ItemLevel = %d, want %d", got.ItemLevel, tt.wantItemLevel)
+			}
+			if got.RequiredLevel != tt.wantRequired {
+				t.Errorf("RequiredLevel = %d, want %d", got.RequiredLevel, tt.wantRequired)
+			}
+			if len(got.Affixes) != len(tt.wantAffixes) {
+				t.Fatalf("Affixes = %+v, want %+v", got.Affixes, tt.wantAffixes)
+			}
+			for i := range tt.wantAffixes {
+				if got.Affixes[i] != tt.wantAffixes[i] {
+					t.Errorf("Affixes[%d] = %+v, want %+v", i, got.Affixes[i], tt.wantAffixes[i])
+				}
+			}
+		})
+	}
+}
+
+// withTemplate gives a fixture item the template every stored row needs.
+func withTemplate(item *pb.Item) *pb.Item {
+	item.TemplateId = uuid.NewString()
+	return item
 }

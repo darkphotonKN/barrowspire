@@ -11,11 +11,15 @@
 ## Catalogue
 
 - [ ] Fantasy base-item catalogue and rarity tiers → FS-F8T3H
+- [ ] Item levels and level-gated bases → FS-4R9M9
+- [ ] Fabled unique catalogue → FS-4R9M9
+- [ ] Ring item type → FS-4R9M9
 
 ## Inventory
 
 - [x] Listing status on owned instances → FS-8EGFA
 - [x] Item summaries by id → FS-8EGFA
+- [ ] Affixes and item level on owned instances → FS-4R9M9
 
 ## Marketplace settlement
 

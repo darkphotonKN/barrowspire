@@ -54,6 +54,8 @@ func (m *mockSessionCloser) CloseSession(_ uuid.UUID) error {
 	return nil
 }
 
+func (m *mockSessionCloser) ApplyRunProgress(_ []types.RunProgress) {}
+
 func (m *mockSessionCloser) ReturnPlayersToHub(sessionID uuid.UUID) {
 	m.returnedToHub = append(m.returnedToHub, sessionID)
 }
@@ -93,7 +95,7 @@ func TestSessionAddPlayer(t *testing.T) {
 	playerID := uuid.New()
 	username := "TestPlayer"
 
-	entityID := session.AddPlayer(playerID, username, "warrior")
+	entityID := session.AddPlayer(playerID, types.CharacterInPlay{Name: username, Class: "warrior"})
 
 	assert.NotEqual(t, uuid.Nil, entityID, "Should return valid entity ID")
 
@@ -127,8 +129,8 @@ func TestSessionAddMultiplePlayers(t *testing.T) {
 	player1ID := uuid.New()
 	player2ID := uuid.New()
 
-	entity1ID := session.AddPlayer(player1ID, "Player1", "warrior")
-	entity2ID := session.AddPlayer(player2ID, "Player2", "mage")
+	entity1ID := session.AddPlayer(player1ID, types.CharacterInPlay{Name: "Player1", Class: "warrior"})
+	entity2ID := session.AddPlayer(player2ID, types.CharacterInPlay{Name: "Player2", Class: "mage"})
 
 	assert.NotEqual(t, entity1ID, entity2ID, "Entity IDs should be unique")
 	assert.Equal(t, 2, len(session.playerIDToEntitiesID), "Should have 2 players")
@@ -397,13 +399,13 @@ func TestSession_InitializeItems_CreateItemEntities(t *testing.T) {
 			// 	"session.itemPool", session.itemPool,
 			// )
 
-			assert.Equal(t, tt.wantItemCount, session.itemPool.Count)
+			assert.Equal(t, tt.wantItemCount, session.itemPool.count())
 
 			// testing weapon item type specific counts check out
 			if tt.wantWeaponCount != nil {
 
 				for _, item := range session.itemPool.Weapons {
-					if item.ItemType == types.ItemTypeWeapon {
+					if item.Config.ItemType == types.ItemTypeWeapon {
 						allWeaponCounts++
 					}
 				}
@@ -692,6 +694,7 @@ type mockItemsClient struct {
 	mock.Mock
 	rarities    *pb.ListItemRaritiesResponse
 	raritiesErr error
+	loadout     *pb.GetLoadoutWithItemsResponse
 }
 
 func (c *mockItemsClient) ListItemRarities(ctx context.Context) (*pb.ListItemRaritiesResponse, error) {
@@ -730,7 +733,7 @@ func (c *mockItemsClient) GetLoadout(ctx context.Context, req *pb.GetLoadoutRequ
 }
 
 func (c *mockItemsClient) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWithItemsRequest) (*pb.GetLoadoutWithItemsResponse, error) {
-	return nil, nil
+	return c.loadout, nil
 }
 
 func (c *mockItemsClient) ListItemInstances(ctx context.Context, req *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error) {
@@ -886,7 +889,7 @@ func TestHandleInteract_DoorRangeFromDoorwayCentre(t *testing.T) {
 			defer session.Shutdown()
 
 			playerID := uuid.New()
-			playerEntityID := session.AddPlayer(playerID, "Delver", "warrior")
+			playerEntityID := session.AddPlayer(playerID, types.CharacterInPlay{Name: "Delver", Class: "warrior"})
 			playerEntity, ok := em.GetEntity(playerEntityID)
 			require.True(t, ok)
 			transformComp, ok := playerEntity.GetComponent(ecs.ComponentTypeTransform)

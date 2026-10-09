@@ -2,7 +2,6 @@ package systems_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
@@ -10,119 +9,117 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// TestRulesSystem_Update_EndsGameWhenOnePlayerLeft tests that the game ends
-// when only one player is left alive
-func TestRulesSystem_Update_EndsGameWhenOnePlayerLeft(t *testing.T) {
-	rulesSystem := systems.NewRulesSystem()
-	endSessionCh := make(chan bool, 1)
-	deltaTime := 0.016 // 60 FPS frame time
+const rulesTick = 1.0 / 30
 
-	// Create entity manager and entities
+// runWorld is a run's world with its run-level entity and a party of n delvers.
+func runWorld(t *testing.T, n int) (*ecs.EntityManager, []*ecs.Entity) {
+	t.Helper()
+
 	em := ecs.NewEntityManager()
-
-	playerOneID := uuid.New()
-	playerTwoID := uuid.New()
-
-	players := []struct {
-		MemberID uuid.UUID
-		Username string
-	}{
-		{
-			MemberID: playerOneID,
-			Username: "test_player1",
-		},
-		{
-			MemberID: playerTwoID,
-			Username: "test_player2",
-		},
-	}
-
-	for _, player := range players {
-		game.CreatePlayerEntity(em, game.PlayerConfig{
-			MemberID: player.MemberID,
-			Username: player.Username,
-		})
-	}
-
-	// create match progress component
 	game.CreateMatchProgressEntity(em)
 
-	entities := em.GetAllEntities()
-
-	// test game not ended after this call, players are still alive
-	rulesSystem.Update(deltaTime, entities, endSessionCh)
-
-	select {
-	case endSession := <-endSessionCh:
-		t.Fatalf("should not have gotten end session, but got %v", endSession)
-	default:
+	party := make([]*ecs.Entity, 0, n)
+	for i := 0; i < n; i++ {
+		party = append(party, game.CreatePlayerEntity(em, game.PlayerConfig{MemberID: uuid.New(), Username: "delver", Class: game.Classes["warrior"]}))
 	}
 
-	for _, entity := range entities {
-		playerComp, exists := entity.GetComponent(ecs.ComponentTypePlayer)
-		if !exists {
-			continue
-		}
+	return em, party
+}
 
-		player := playerComp.(*components.PlayerComponent)
+func escape(t *testing.T, delver *ecs.Entity) {
+	t.Helper()
+	pc, ok := delver.GetComponent(ecs.ComponentTypePlayer)
+	require.True(t, ok)
+	pc.(*components.PlayerComponent).Escape = true
+}
 
-		if player.MemberID == playerOneID {
-			// grab first player
+func die(t *testing.T, delver *ecs.Entity) {
+	t.Helper()
+	hc, ok := delver.GetComponent(ecs.ComponentTypeHealth)
+	require.True(t, ok)
+	health := hc.(*components.HealthComponent)
+	health.CurrentHealth = 0
+	health.IsEliminated = true
+}
 
-			// validate in case test entity changes
-			// we want health component specifically
-			isPlayer := entity.HasComponent(ecs.ComponentTypePlayer)
-			if !isPlayer {
-				t.Fatal("Could not get player entity from pool of entities to test on.")
-				return
-			}
+// ticks runs the rules n times and counts the end signals they sent.
+func ticks(em *ecs.EntityManager, n int) int {
+	rules := systems.NewRulesSystem()
+	endSessionCh := make(chan bool, n)
 
-			healthComp, exists := entity.GetComponent(ecs.ComponentTypeHealth)
-
-			if !exists {
-				t.Fatal("Could not get player entity's health component to test on.")
-				return
-			}
-
-			// eliminate player leaving one for testing
-			healthComp.(*components.HealthComponent).IsEliminated = true
-		}
+	for i := 0; i < n; i++ {
+		rules.Update(rulesTick, em.GetAllEntities(), endSessionCh)
 	}
 
-	// test that game ended after this, with only one player left
-	rulesSystem.Update(deltaTime, entities, endSessionCh)
+	return len(endSessionCh)
+}
 
-	select {
-	case endSession := <-endSessionCh:
-		assert.Equal(t, true, endSession)
-	case <-time.After(time.Second):
-		t.Fatal("Didnt receive end game session before timeout.")
+// The co-op end rule: a run ends when every delver on its roster has resolved,
+// and says so once. FS-77AB6 §Requirements 15–16.
+func TestRulesSystem_TwoDelvers_ContinuesAfterOneResolves_EndsOnceWhenBothHave(t *testing.T) {
+	tests := []struct {
+		name    string
+		resolve func(*testing.T, *ecs.Entity)
+	}{
+		{"first escapes", escape},
+		{"first dies", die},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em, party := runWorld(t, 2)
+
+			assert.Zero(t, ticks(em, 5), "nobody has resolved")
+
+			tt.resolve(t, party[0])
+			assert.Zero(t, ticks(em, 5), "the second delver is still in play")
+
+			die(t, party[1])
+			assert.Equal(t, 1, ticks(em, 5), "the end is signalled exactly once")
+			assert.Zero(t, ticks(em, 5), "and never again")
+		})
 	}
 }
 
-// TestRulesSystem_Update_ContinuesWhenMultipleAlive tests that the game continues
-// when multiple players are still alive
-// func TestRulesSystem_Update_ContinuesWhenMultipleAlive(t *testing.T) {
-// 	// Setup
-// 	rulesSystem := systems.NewRulesSystem()
-// 	endSessionCh := make(chan bool, 1)
-// 	deltaTime := 0.016 // 60 FPS frame time
-//
-// 	// Create entity manager and entities
-// 	em := ecs.NewEntityManager()
-//
-// 	// TODO: Create test entities with multiple alive players
-// 	// TODO: Set up match progress component
-// 	// TODO: Ensure at least 2 players are alive
-//
-// 	entities := em.GetAllEntities()
-//
-// 	// Act
-// 	rulesSystem.Update(deltaTime, entities, endSessionCh)
-//
-// 	// Assert
-// 	// TODO: Verify endSessionCh does NOT receive any signal
-// 	// TODO: Verify match progress correctly tracks alive players
-// }
+func TestRulesSystem_OneDelver_EndsOnlyWhenThatDelverResolves(t *testing.T) {
+	em, party := runWorld(t, 1)
+
+	assert.Zero(t, ticks(em, 5), "a one-delver run must not end at once")
+
+	escape(t, party[0])
+	assert.Equal(t, 1, ticks(em, 5))
+}
+
+// A delver removed by disconnect cleanup has left the run: the rest decide it.
+func TestRulesSystem_DelverRemovedByCleanup_CountsAsGone(t *testing.T) {
+	em, party := runWorld(t, 2)
+	rules := systems.NewRulesSystem()
+	endSessionCh := make(chan bool, 10)
+
+	rules.Update(rulesTick, em.GetAllEntities(), endSessionCh)
+	em.RemoveEntity(party[0].ID)
+	rules.Update(rulesTick, em.GetAllEntities(), endSessionCh)
+	require.Empty(t, endSessionCh, "the remaining delver is still in play")
+
+	die(t, party[1])
+	rules.Update(rulesTick, em.GetAllEntities(), endSessionCh)
+	assert.Len(t, endSessionCh, 1)
+}
+
+// A run being built has nobody on it yet; that is not a resolved party.
+func TestRulesSystem_EmptyRoster_DoesNotEnd(t *testing.T) {
+	em, _ := runWorld(t, 0)
+
+	assert.Zero(t, ticks(em, 5))
+}
+
+// The hub has no run-level entity and never ends.
+func TestRulesSystem_NoMatchProgress_NeverEnds(t *testing.T) {
+	em := ecs.NewEntityManager()
+	game.CreatePlayerEntity(em, game.PlayerConfig{MemberID: uuid.New(), Username: "resident", Class: game.Classes["warrior"]})
+
+	assert.Zero(t, ticks(em, 5))
+}

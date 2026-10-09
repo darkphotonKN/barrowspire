@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { bidPanel, formatCriticalRate, fresher, itemStats, listingReader } from "./detail";
+import type { components } from "@/api/generated/schema";
+import {
+  bidPanel,
+  formatCriticalRate,
+  fresher,
+  itemStats,
+  listingItemLines,
+  listingReader,
+} from "./detail";
+
+type ItemSummary = components["schemas"]["ItemSummary"];
 
 describe("itemStats", () => {
   it("should list a weapon's stats in a fixed order", () => {
@@ -33,6 +43,56 @@ describe("itemStats", () => {
   it("should leave out stats the item does not have, and zeroes", () => {
     expect(itemStats({ attackPower: 0 })).toEqual([]);
     expect(itemStats(undefined)).toEqual([]);
+  });
+});
+
+describe("listingItemLines", () => {
+  const summary: ItemSummary = {
+    id: "0b6c2a8e-5c1f-4f57-9d0e-3a2b1c4d5e6f",
+    name: "Barrow-Iron Sword",
+    itemType: "weapon",
+    rarity: "rare",
+    weaponType: "sword",
+    attackPower: 14,
+    itemLevel: 9,
+    requiredLevel: 6,
+    affixes: [
+      { stat: "strength", tier: 2, value: 3 },
+      { stat: "crit_chance", tier: 1, value: 1 },
+    ],
+  };
+
+  it("should give a listing's affixed item its level, requirement and one line per affix", () => {
+    expect(listingItemLines(summary)).toEqual({
+      itemLevel: "Item level 9",
+      requirement: { text: "Requires level 6", tooHigh: false },
+      affixes: ["+3 Strength", "+1% critical chance"],
+      uniqueEffect: undefined,
+    });
+  });
+
+  it("should give a listed unique its effect", () => {
+    const unique: ItemSummary = {
+      ...summary,
+      name: "The Hollow Crown",
+      itemType: "armor",
+      rarity: "fabled",
+      affixes: [{ stat: "max_health", tier: 0, value: 15 }],
+      uniqueEffect: "Each kill restores a little of your health.",
+    };
+    expect(listingItemLines(unique)?.uniqueEffect).toBe(
+      "Each kill restores a little of your health.",
+    );
+  });
+
+  it("should read a listing from before item levels as level 1, without affix lines", () => {
+    const legacy = { ...summary, itemLevel: 1, requiredLevel: 1, affixes: [] };
+    expect(listingItemLines(legacy)?.affixes).toEqual([]);
+    expect(listingItemLines(legacy)?.itemLevel).toBe("Item level 1");
+  });
+
+  it("should claim nothing for a listing whose item did not join", () => {
+    expect(listingItemLines(undefined)).toBeUndefined();
   });
 });
 

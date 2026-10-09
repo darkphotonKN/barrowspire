@@ -357,7 +357,7 @@ func (r *repository) ListItemTemplates(ctx context.Context) ([]*ItemTemplate, er
 	var templates []*ItemTemplate
 
 	query := `SELECT id, item_name, rarity_id, item_type, item_id, icon_url,
-	           required_level,
+	           required_level, min_item_level,
 	           created_at, created_by, updated_at, updated_by
 	           FROM item_templates ORDER BY created_at DESC`
 
@@ -395,7 +395,11 @@ SELECT
     c.mana_amount,
     c.buff_duration,
     c.max_stack_size,
-    COALESCE(w.description, a.description, c.description) AS description,
+    COALESCE(w.description, a.description, c.description, rg.description) AS description,
+    it.min_item_level,
+    u.effect_code AS unique_effect_code,
+    u.effect_text AS unique_effect_text,
+    u.fixed_affixes AS unique_fixed_affixes,
     it.created_at,
     it.created_by,
     it.updated_at,
@@ -407,6 +411,10 @@ LEFT JOIN armors AS a
     ON a.id = it.item_id AND it.item_type = 'armor'
 LEFT JOIN consumables AS c
     ON c.id = it.item_id AND it.item_type = 'consumable'
+LEFT JOIN rings AS rg
+    ON rg.id = it.item_id AND it.item_type = 'ring'
+LEFT JOIN unique_items AS u
+    ON u.template_id = it.id
 LEFT JOIN item_rarities AS r
     ON r.id = it.rarity_id
 	`
@@ -679,16 +687,35 @@ func (r *repository) GetLoadout(ctx context.Context, req *GetLoadoutRequest) (*L
 	return loadout, nil
 }
 
+// instanceLevelColumns selects an instance's (aliased ii) item level, affixes
+// and required level. The required level is the instance's own, else its
+// template's (aliased t); item_templates.required_level is nullable with
+// DEFAULT 1, so a NULL there reads as 1 (FS-BDA7X Req 30, FS-4R9M9 R48).
+const instanceLevelColumns = `ii.item_level, ii.affixes,
+	        COALESCE(ii.required_level, t.required_level, 1) AS required_level`
+
+// uniqueEffectJoin joins the unique row (aliased u) of an instance's (aliased
+// ii) template; every u column is NULL for a non-unique (FS-4R9M9 R51-52).
+const uniqueEffectJoin = `LEFT JOIN unique_items AS u ON u.template_id = ii.template_id`
+
+// instanceUniqueColumns are a unique instance's effect code and text, for
+// the owner-facing reads. The public summary selects the text only.
+const instanceUniqueColumns = `u.effect_code AS unique_effect_code, u.effect_text AS unique_effect_text`
+
 func (r *repository) GetItemInstanceByID(ctx context.Context, id uuid.UUID) (*ItemInstance, error) {
 	item := &ItemInstance{}
 
 	query := `
-	 SELECT id, template_id, owner_member_id, source, item_type, name, rarity_id,
-	        attack_power, critical_rate, weapon_type, defense_rating, magic_resistance,
-	        armor_slot, healing_amount, mana_amount, buff_duration,
-	        description, acquired_at, created_at, updated_at
-	 FROM item_instances
-	 WHERE id = $1
+	 SELECT ii.id, ii.template_id, ii.owner_member_id, ii.source, ii.item_type, ii.name, ii.rarity_id,
+	        ii.attack_power, ii.critical_rate, ii.weapon_type, ii.defense_rating, ii.magic_resistance,
+	        ii.armor_slot, ii.healing_amount, ii.mana_amount, ii.buff_duration,
+	        ii.description, ii.acquired_at, ii.created_at, ii.updated_at,
+	        ` + instanceLevelColumns + `,
+	        ` + instanceUniqueColumns + `
+	 FROM item_instances AS ii
+	 JOIN item_templates AS t ON t.id = ii.template_id
+	 ` + uniqueEffectJoin + `
+	 WHERE ii.id = $1
 	`
 
 	err := r.DB.GetContext(ctx, item, query, id)
@@ -706,13 +733,17 @@ func (r *repository) ListItemInstances(ctx context.Context, req *ListItemInstanc
 	items := []*ItemInstance{}
 
 	query := `
-	 SELECT id, template_id, owner_member_id, source, item_type, name, rarity_id,
-	        attack_power, critical_rate, weapon_type, defense_rating, magic_resistance,
-	        armor_slot, healing_amount, mana_amount, buff_duration,
-	        description, status, acquired_at, created_at, updated_at
-	 FROM item_instances
-	 WHERE owner_member_id = $1
-	 ORDER BY created_at DESC
+	 SELECT ii.id, ii.template_id, ii.owner_member_id, ii.source, ii.item_type, ii.name, ii.rarity_id,
+	        ii.attack_power, ii.critical_rate, ii.weapon_type, ii.defense_rating, ii.magic_resistance,
+	        ii.armor_slot, ii.healing_amount, ii.mana_amount, ii.buff_duration,
+	        ii.description, ii.status, ii.acquired_at, ii.created_at, ii.updated_at,
+	        ` + instanceLevelColumns + `,
+	        ` + instanceUniqueColumns + `
+	 FROM item_instances AS ii
+	 JOIN item_templates AS t ON t.id = ii.template_id
+	 ` + uniqueEffectJoin + `
+	 WHERE ii.owner_member_id = $1
+	 ORDER BY ii.created_at DESC
 	`
 
 	err := r.DB.SelectContext(ctx, &items, query, req.MemberId)
@@ -831,23 +862,60 @@ func (r *repository) UpsertPlayerLoadoutTx(ctx context.Context, tx *sqlx.Tx, req
 	return nil
 }
 
+// batchUpsertColumns are the item_instances columns BatchUpsertItemInstances
+// writes, in the order batchUpsertArgs supplies them.
+var batchUpsertColumns = []string{
+	"id", "template_id", "owner_member_id", "source",
+	"item_type", "name", "rarity_id",
+	"attack_power", "critical_rate", "weapon_type",
+	"defense_rating", "magic_resistance", "armor_slot",
+	"healing_amount", "mana_amount", "buff_duration",
+	"durability", "description", "status",
+	"item_level", "affixes", "required_level",
+}
+
+// batchUpsertArgs is one row's values for batchUpsertColumns. A RequiredLevel
+// of 0 means the instance has no requirement of its own and stores NULL, so
+// reads fall back to the template's (FS-4R9M9 R48-49).
+func batchUpsertArgs(item *ItemInstance) []any {
+	var requiredLevel *int
+	if item.RequiredLevel > 0 {
+		requiredLevel = &item.RequiredLevel
+	}
+	return []any{
+		item.ID, item.TemplateID, item.OwnerMemberID, item.Source,
+		item.ItemType, item.Name, item.RarityID,
+		item.AttackPower, item.CriticalRate, item.WeaponType,
+		item.DefenseRating, item.MagicResistance, item.ArmorSlot,
+		item.HealingAmount, item.ManaAmount, item.BuffDuration,
+		item.Durability, item.Description, item.Status,
+		max(item.ItemLevel, 1), item.Affixes, requiredLevel,
+	}
+}
+
 func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, items []*ItemInstance) error {
 	if len(items) == 0 {
 		return nil
 	}
 
-	const colsPerRow = 18
+	query, args := batchUpsertQuery(items)
+	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+		return wrapDBErr("batch upsert item instances (tx)", err)
+	}
+
+	return nil
+}
+
+// batchUpsertQuery builds the multi-row upsert and its arguments, giving any
+// item without an id a new one. Placeholders are numbered from the column
+// list, so they cannot drift from the arguments.
+func batchUpsertQuery(items []*ItemInstance) (string, []any) {
+	colsPerRow := len(batchUpsertColumns)
 
 	var b strings.Builder
-	b.WriteString(`
-		INSERT INTO item_instances (
-			id, template_id, owner_member_id, source,
-			item_type, name, rarity_id,
-			attack_power, critical_rate, weapon_type,
-			defense_rating, magic_resistance, armor_slot,
-			healing_amount, mana_amount, buff_duration,
-			durability, description, status
-		) VALUES `)
+	b.WriteString("\n\t\tINSERT INTO item_instances (")
+	b.WriteString(strings.Join(batchUpsertColumns, ", "))
+	b.WriteString(") VALUES ")
 
 	args := make([]any, 0, len(items)*colsPerRow)
 
@@ -860,44 +928,26 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 			b.WriteString(", ")
 		}
 
-		base := i * colsPerRow
-		fmt.Fprintf(&b,
-			"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
-			base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10,
-			base+11, base+12, base+13, base+14, base+15, base+16, base+17, base+18, base+19,
-		)
+		b.WriteString("(")
+		for c := range colsPerRow {
+			if c > 0 {
+				b.WriteString(", ")
+			}
+			fmt.Fprintf(&b, "$%d", i*colsPerRow+c+1)
+		}
+		b.WriteString(")")
 
-		args = append(args,
-			item.ID,
-			item.TemplateID,
-			item.OwnerMemberID,
-			item.Source,
-			item.ItemType,
-			item.Name,
-			item.RarityID,
-			item.AttackPower,
-			item.CriticalRate,
-			item.WeaponType,
-			item.DefenseRating,
-			item.MagicResistance,
-			item.ArmorSlot,
-			item.HealingAmount,
-			item.ManaAmount,
-			item.BuffDuration,
-			item.Durability,
-			item.Description,
-			item.Status,
-		)
+		args = append(args, batchUpsertArgs(item)...)
 	}
 
+	// a conflict is a brought-in item coming back out: it keeps its stored
+	// owner, source, rarity, status and roll, which are fixed once (FS-4R9M9
+	// R20, R53), whatever the event carries for them
 	b.WriteString(`
 		ON CONFLICT (id) DO UPDATE SET
 			template_id      = EXCLUDED.template_id,
-			owner_member_id  = EXCLUDED.owner_member_id,
-			source           = EXCLUDED.source,
 			item_type        = EXCLUDED.item_type,
 			name             = EXCLUDED.name,
-			rarity_id        = EXCLUDED.rarity_id,
 			attack_power     = EXCLUDED.attack_power,
 			critical_rate    = EXCLUDED.critical_rate,
 			weapon_type      = EXCLUDED.weapon_type,
@@ -908,15 +958,9 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 			mana_amount      = EXCLUDED.mana_amount,
 			buff_duration    = EXCLUDED.buff_duration,
 			durability       = EXCLUDED.durability,
-			description      = EXCLUDED.description,
-			status           = EXCLUDED.status `)
+			description      = EXCLUDED.description `)
 
-	_, err := tx.ExecContext(ctx, b.String(), args...)
-	if err != nil {
-		return wrapDBErr("batch upsert item instances (tx)", err)
-	}
-
-	return nil
+	return b.String(), args
 }
 
 func (r *repository) ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error) {
@@ -1052,8 +1096,12 @@ func selectItemSummaries(ctx context.Context, q sqlx.QueryerContext, ids []uuid.
 	        ii.weapon_type, ii.armor_slot,
 	        ii.attack_power, ii.critical_rate,
 	        ii.defense_rating, ii.magic_resistance,
-	        ii.healing_amount, ii.mana_amount, ii.buff_duration
+	        ii.healing_amount, ii.mana_amount, ii.buff_duration,
+	        ` + instanceLevelColumns + `,
+	        u.effect_text AS unique_effect_text
 	 FROM item_instances AS ii
+	 JOIN item_templates AS t ON t.id = ii.template_id
+	 ` + uniqueEffectJoin + `
 	 LEFT JOIN item_rarities AS r ON r.id = ii.rarity_id
 	 WHERE ii.id = ANY($1::uuid[])
 	`

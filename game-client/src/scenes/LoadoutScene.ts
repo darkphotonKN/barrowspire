@@ -5,6 +5,7 @@ import { apiClient } from "@/utils/api";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { useGameStore } from "@/stores/gameStore";
 import { CLASS_LORE, type ClassKey } from "@/data/classLore";
+import { instanceItem, rarityNames } from "@/items/loadoutItem";
 import { registerArt } from "@/render/art/phaser";
 import { MenuFigure, preloadMenuArt } from "@/render/art/menuFigure";
 import {
@@ -170,6 +171,11 @@ export class LoadoutScene extends Phaser.Scene {
       );
     };
 
+    // Items above the active character's level say so (FS-BDA7X req 45): a hint, the run's
+    // seating is the gate.
+    this.equipmentPanel.setCharacterLevel(
+      useGameStore.getState().getActiveCharacter()?.level,
+    );
     this.equipmentPanel.show();
 
     // Fetch data from backend
@@ -217,28 +223,18 @@ export class LoadoutScene extends Phaser.Scene {
   private async loadData(): Promise<void> {
     this.showLoadingOverlay();
     try {
-      const [instancesRes, loadoutRes] = await Promise.all([
+      // The rarity names only dress the views (FS-4R9M9 R59): without them the loadout still
+      // loads, its items simply show no rarity badge.
+      const [instancesRes, loadoutRes, raritiesRes] = await Promise.all([
         apiClient.getItemInstances(),
         apiClient.getLoadout(),
+        apiClient.getItemRarities().catch(() => undefined),
       ]);
 
-      // NOTE: proto JSON tags for ItemInstance are snake_case (attack_power,
-      // weapon_type, armor_slot, ...) — NOT camelCase. Do not use item.attackPower.
+      // The instances in the run's item shape, so both read through one presenter.
+      const rarities = rarityNames(raritiesRes?.result);
       const allItems: ItemState[] = (instancesRes.result?.items || []).map(
-        (item: any) => ({
-          item_id: item.template_id || "",
-          entity_id: item.id || "",
-          name: item.name || "",
-          quantity: 1,
-          attack_power: item.attack_power || undefined,
-          critical_rate: item.critical_rate || undefined,
-          weapon_type: item.weapon_type || undefined,
-          defense_rating: item.defense_rating || undefined,
-          armor_slot: item.armor_slot || undefined,
-          healing_amount: item.healing_amount || undefined,
-          mana_amount: item.mana_amount || undefined,
-          description: item.description || undefined,
-        }),
+        (item) => instanceItem(item, rarities),
       );
 
       // Build equipped items from loadout response

@@ -109,10 +109,12 @@ func TestBrowseListings_AnswersWithoutATokenAndEmbedsEachItem(t *testing.T) {
 			Id: "44444444-4444-4444-4444-444444444444", Name: "Longsword", ItemType: "weapon", Rarity: "runed",
 			Description: proto.String("A notched blade"), WeaponType: proto.String("sword"),
 			AttackPower: proto.Int32(12), CriticalRate: proto.Float64(0.25),
+			ItemLevel: 12, RequiredLevel: 8, Affixes: []*pbitems.Affix{{Stat: "strength", Tier: 2, Value: 5}},
 		},
 		"66666666-6666-6666-6666-666666666666": {
 			Id: "66666666-6666-6666-6666-666666666666", Name: "Iron Helm", ItemType: "armor", Rarity: "normal",
 			ArmorSlot: proto.String("head"), DefenseRating: proto.Int32(4), MagicResistance: proto.Int32(0),
+			ItemLevel: 1, RequiredLevel: 1,
 		},
 	}}
 
@@ -142,7 +144,10 @@ func TestBrowseListings_AnswersWithoutATokenAndEmbedsEachItem(t *testing.T) {
 					"rarity": "runed",
 					"weaponType": "sword",
 					"attackPower": 12,
-					"criticalRate": 0.25
+					"criticalRate": 0.25,
+					"itemLevel": 12,
+					"requiredLevel": 8,
+					"affixes": [{"stat": "strength", "tier": 2, "value": 5}]
 				}
 			},
 			{
@@ -164,7 +169,10 @@ func TestBrowseListings_AnswersWithoutATokenAndEmbedsEachItem(t *testing.T) {
 					"rarity": "normal",
 					"armorSlot": "head",
 					"defenseRating": 4,
-					"magicResistance": 0
+					"magicResistance": 0,
+					"itemLevel": 1,
+					"requiredLevel": 1,
+					"affixes": []
 				}
 			}
 		],

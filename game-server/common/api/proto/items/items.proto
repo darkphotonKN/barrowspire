@@ -240,6 +240,27 @@ message ItemTemplate {
   // timestamps
   google.protobuf.Timestamp created_at = 20;
   google.protobuf.Timestamp updated_at = 21;
+
+  // Lowest item level this template can drop at; 1 for tier I (FS-4R9M9 R1).
+  int32 min_item_level = 22;
+  // Present only for a Fabled unique: its unique row (FS-4R9M9 R6, R8).
+  optional UniqueItem unique = 23;
+}
+
+// A unique's row (FS-4R9M9 R6): its effect code (closed set, R31), the
+// one-line effect text shown to players and its fixed affixes as stat ranges.
+message UniqueItem {
+  string effect_code = 1;
+  string effect_text = 2;
+  repeated AffixRange fixed_affixes = 3;
+}
+
+// A fixed affix of a unique: a stat code and the inclusive range it rolls in
+// (FS-4R9M9 R19, R27).
+message AffixRange {
+  string stat = 1;
+  int32 min = 2;
+  int32 max = 3;
 }
 
 // CreateItemTemplateRequest for creating item templates
@@ -348,6 +369,24 @@ message ItemInstance {
   string description = 19;
   // Lifecycle status: AVAILABLE, LISTED or IN_ESCROW (FS-8EGFA).
   string status = 20;
+  // Minimum character level to equip (FS-BDA7X Req 30): derived requirement;
+  // the template's for legacy rows (FS-4R9M9 R23-24, R48).
+  int32 required_level = 21;
+  // Item level the item dropped at; 1 for legacy rows (FS-4R9M9 R48).
+  int32 item_level = 22;
+  // Rolled affixes, in roll order; empty for legacy rows (FS-4R9M9 R16, R48).
+  repeated Affix affixes = 23;
+  // For a unique, its effect code and effect text; empty otherwise (FS-4R9M9 R51).
+  string unique_effect_code = 24;
+  string unique_effect_text = 25;
+}
+
+// One rolled affix (FS-4R9M9 R16): a stat code from the affix table, the tier
+// it rolled at (1-3; 0 = a unique's fixed affix, R19) and its integer value.
+message Affix {
+  string stat = 1;
+  int32 tier = 2;
+  int32 value = 3;
 }
 
 message ListItemInstancesResponse {
@@ -453,6 +492,13 @@ message ItemSummary {
   optional int32 healing_amount = 12;
   optional int32 mana_amount = 13;
   optional int32 buff_duration = 14;
+
+  // FS-4R9M9 R52: item level, derived required level and rolled affixes.
+  int32 item_level = 15;
+  int32 required_level = 16;
+  repeated Affix affixes = 17;
+  // For a unique, its effect text; absent otherwise. Never the effect code (FS-4R9M9 R52).
+  optional string unique_effect_text = 18;
 }
 
 message GetItemSummariesResponse {

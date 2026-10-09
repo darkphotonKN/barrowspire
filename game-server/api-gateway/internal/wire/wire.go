@@ -61,3 +61,14 @@ func AsSlice[T any](src any) ([]T, error) {
 	}
 	return dst, nil
 }
+
+// Affix is one rolled stat line on an item (FS-4R9M9). It lives here, not in
+// each route group, for the same reason Timestamp does: both the item-instance
+// and the listing surfaces carry it, and Huma would refuse a second "Affix".
+// Its field names are single words, so it reads the same on the snake_case
+// item wire and the camelCase listing wire.
+type Affix struct {
+	Stat  string `json:"stat" doc:"The stat the affix raises, by its stat code."`
+	Tier  int32  `json:"tier" minimum:"0" maximum:"3" doc:"Affix tier, 1 to 3; 0 is a unique's fixed affix."`
+	Value int32  `json:"value" minimum:"0" doc:"Whole units: percent for attack and move speed, percentage points for crit."`
+}

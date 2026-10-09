@@ -21,6 +21,11 @@ message PlayerMatchResult {
     int32 kills = 5;
     int32 deaths = 6;
     bool escape = 7;
+    // FS-BDA7X R22: the character in play this run, and the experience it
+    // earned here. A member removed before the run ended is still listed, with
+    // only member_id, character_id and experience_gained set.
+    string character_id = 8;
+    int64 experience_gained = 9;
 }
 
 
@@ -86,5 +91,18 @@ message Item {
   // item_rarities.id rolled for this item (or kept from its stored row for
   // loadout items). Empty means no rarity: the consumer writes NULL.
   string rarity_id = 17;
+
+  // FS-4R9M9 R49: item level (0 = unset, stored as 1), derived required level
+  // (0 = none of its own, stored NULL) and the rolled affixes.
+  int32 item_level = 18;
+  int32 required_level = 19;
+  repeated ItemAffix affixes = 20;
+}
+
+// One rolled affix on an extracted item (FS-4R9M9 R16); mirrors items.Affix.
+message ItemAffix {
+  string stat = 1;
+  int32 tier = 2;
+  int32 value = 3;
 }
 

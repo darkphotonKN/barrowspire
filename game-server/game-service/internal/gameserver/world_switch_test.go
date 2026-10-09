@@ -19,7 +19,7 @@ func enterHub(t *testing.T, server *Server, name string) (*types.Player, *websoc
 	player := &types.Player{ID: uuid.New(), Username: name}
 	registerTestConn(server, conn, player)
 
-	_, err := server.JoinHub(conn, types.Character{Class: "mage", Name: name})
+	_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: name})
 	require.NoError(t, err)
 
 	return player, conn
@@ -28,7 +28,7 @@ func enterHub(t *testing.T, server *Server, name string) (*types.Player, *websoc
 // A player is in one world at a time. Matching moves them; it does not copy them.
 // FS-29KSH §Requirements 20-21, 23.
 func TestCreateGameSession_MovesPlayersOutOfTheHub(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub, _ := server.HubSession()
 
 	wren, _ := enterHub(t, server, "Wren")
@@ -51,7 +51,7 @@ func TestCreateGameSession_MovesPlayersOutOfTheHub(t *testing.T) {
 // the world they were in no longer exists, so leaving them pointed at it would
 // strand them. FS-29KSH §Requirements 22.
 func TestRunEnds_ReturnsPlayersToTheHub(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub, _ := server.HubSession()
 
 	wren, _ := enterHub(t, server, "Wren")
@@ -74,7 +74,7 @@ func TestRunEnds_ReturnsPlayersToTheHub(t *testing.T) {
 // nothing can fail between worlds — so the switch has to be observably internal.
 // FS-29KSH §Requirements 20.
 func TestWorldSwitch_KeepsTheSameConnection(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 
 	wren, wrenConn := enterHub(t, server, "Wren")
 	kaelen, kaelenConn := enterHub(t, server, "Kaelen")
@@ -108,7 +108,7 @@ func TestWorldSwitch_KeepsTheSameConnection(t *testing.T) {
 // the hub broadcasts what it holds, so anyone still held is still seen.
 // FS-29KSH §Requirements 23.
 func TestDelvingPlayer_IsAbsentFromTheHubBroadcast(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{})
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub, _ := server.HubSession()
 
 	wren, _ := enterHub(t, server, "Wren")

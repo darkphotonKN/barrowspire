@@ -91,3 +91,35 @@ describe("publicApi.getListing", () => {
     expect(requests[0].headers.get("Authorization")).toBeNull();
   });
 });
+
+describe("apiClient characters (FS-BDA7X req 39)", () => {
+  const json = (status: number, body: unknown) => () =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  it("should list the member's characters", async () => {
+    answer = json(200, { characters: [{ id: "c1", name: "Kaelen" }] });
+    const { apiClient } = await loadApi();
+    await expect(apiClient.listCharacters()).resolves.toEqual([{ id: "c1", name: "Kaelen" }]);
+    expect(requests[0].method).toBe("GET");
+    expect(new URL(requests[0].url).pathname).toBe("/api/characters");
+  });
+
+  it("should create with exactly name and class", async () => {
+    answer = json(201, { id: "c1", name: "Kaelen", class: "mage" });
+    const { apiClient } = await loadApi();
+    await expect(apiClient.createCharacter("Kaelen", "mage")).resolves.toMatchObject({ id: "c1" });
+    expect(requests[0].method).toBe("POST");
+    expect(await requests[0].json()).toEqual({ name: "Kaelen", class: "mage" });
+  });
+
+  it("should resolve a delete on a 204 with an empty body", async () => {
+    answer = empty(204);
+    const { apiClient } = await loadApi();
+    await expect(apiClient.deleteCharacter("c1")).resolves.toBeUndefined();
+    expect(requests[0].method).toBe("DELETE");
+    expect(new URL(requests[0].url).pathname).toBe("/api/characters/c1");
+  });
+});

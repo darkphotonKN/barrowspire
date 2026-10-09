@@ -145,7 +145,7 @@ func TestTags_EveryRouteGroupIsDeclaredGlobally(t *testing.T) {
 		declared[tag.Name] = tag.Description
 	}
 
-	for _, name := range []string{"member", "items", "notification", "stats", "payment", "ledger"} {
+	for _, name := range []string{"member", "items", "notification", "stats", "payment", "ledger", "characters"} {
 		desc, ok := declared[name]
 		assert.True(t, ok, "tag %q is not declared globally — Spectral will reject any operation carrying it", name)
 		assert.NotEmpty(t, desc, "tag %q is declared with no description", name)

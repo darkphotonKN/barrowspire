@@ -3,9 +3,11 @@ import {
   ItemState,
   EquipmentSlot,
   EquippedItems,
+  equipSlotFor,
   getItemType,
-  getValidSlotsForItem,
 } from "@/types/gameState";
+import { itemView, type ItemView } from "@/items/itemView";
+import { buildItemTip, rarityEdge, type ItemTip } from "./itemTip";
 
 interface SlotLayout {
   slot: EquipmentSlot;
@@ -36,6 +38,11 @@ const SLOT_BOX_H = 44;
 const INV_ROW_H = 32;
 const MAX_VISIBLE_INV = 8;
 const PADDING = 16;
+/** Where the first slot row and the first inventory row sit, panel-local. */
+const SLOTS_TOP = -EQUIP_H / 2 + 48;
+const ROWS_TOP = -INV_H / 2 + 42;
+/** The rarity accent edge on a row or a worn slot (the guideline's rarity ramp). */
+const EDGE_W = 3;
 
 // Colors
 const C_FRAME = palette.frame;
@@ -108,7 +115,9 @@ export class EquipmentPanel {
 
   private hoveredSlot?: EquipmentSlot;
   private hoveredInvIndex = -1;
-  private tooltip?: Phaser.GameObjects.Container;
+  private tooltip?: ItemTip;
+  /** The active character's level, for "Requires level N" (FS-BDA7X req 45); unknown marks nothing. */
+  private characterLevel?: number;
 
   onEquip?: (item: ItemState, slot: EquipmentSlot) => void;
   onUnequip?: (item: ItemState, slot: EquipmentSlot) => void;
@@ -138,6 +147,30 @@ export class EquipmentPanel {
 
   isVisible(): boolean {
     return this.visible;
+  }
+
+  /**
+   * The active character's level. Items above it are dimmed and their requirement is marked: a
+   * hint only, the server is the gate (FS-BDA7X req 45).
+   */
+  setCharacterLevel(level: number | undefined): void {
+    if (level === this.characterLevel) return;
+    this.characterLevel = level;
+    if (this.visible) this.rebuildInventoryRows();
+  }
+
+  /** The item as every item view reads it (FS-4R9M9 R59), for this character. */
+  private view(item: ItemState): ItemView {
+    return itemView(item, this.characterLevel);
+  }
+
+  /** A row's resting colour: dimmed while the character cannot yet equip it. */
+  private rowColor(item: ItemState): string {
+    return toCss(
+      this.view(item).lines.requirement.tooHigh
+        ? palette.hudFaint
+        : palette.hudText,
+    );
   }
 
   updateInventory(items: ItemState[]): void {
@@ -225,11 +258,10 @@ export class EquipmentPanel {
     this.slotHitAreas = [];
     this.slotGraphics.clear();
     this.slotTexts.clear();
-    const slotsTop = -EQUIP_H / 2 + 48;
 
     for (const layout of SLOT_LAYOUT) {
       const slotX = layout.x;
-      const slotY = slotsTop + layout.y;
+      const slotY = SLOTS_TOP + layout.y;
 
       const label = this.scene.add.text(slotX, slotY + 2, layout.label, {
         fontFamily: CANVAS_FONT.body,
@@ -355,13 +387,12 @@ export class EquipmentPanel {
     if (!this.equipContainer) return;
     const cx = this.equipContainer.x;
     const cy = this.equipContainer.y;
-    const slotsTop = -EQUIP_H / 2 + 48;
 
     for (let i = 0; i < SLOT_LAYOUT.length; i++) {
       const layout = SLOT_LAYOUT[i];
       this.slotHitAreas[i].rect = {
         x: cx + layout.x - SLOT_BOX_W / 2,
-        y: cy + slotsTop + layout.y,
+        y: cy + SLOTS_TOP + layout.y,
         w: SLOT_BOX_W,
         h: SLOT_BOX_H,
       };
@@ -371,35 +402,55 @@ export class EquipmentPanel {
   // === SLOT RENDERING ===
 
   private refreshSlots(): void {
-    const slotsTop = -EQUIP_H / 2 + 48;
     for (const layout of SLOT_LAYOUT) {
       const item = this.equipped[layout.slot];
-      const gfx = this.slotGraphics.get(layout.slot);
       const text = this.slotTexts.get(layout.slot);
       const hitArea = this.slotHitAreas.find((h) => h.slot === layout.slot);
       if (hitArea) hitArea.item = item;
-      if (!gfx || !text) continue;
+      if (!text) continue;
 
-      const slotX = layout.x - SLOT_BOX_W / 2;
-      const slotY = slotsTop + layout.y;
-
-      gfx.clear();
+      this.drawSlot(layout.slot, false);
       if (item) {
-        const color = getSlotColor(layout.slot);
-        gfx.fillStyle(color, 0.08);
-        gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
-        gfx.lineStyle(1, color, 0.3);
-        gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
         text.setText(item.name);
         text.setColor(toCss(palette.hudText));
       } else {
-        gfx.fillStyle(C_SLOT_EMPTY, 0.3);
-        gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
-        gfx.lineStyle(1, C_FRAME, 0.06);
-        gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
         text.setText("—");
         text.setColor(toCss(palette.hudFaint));
       }
+    }
+  }
+
+  /** A slot's box: hovered, worn (with its rarity edge) or empty. */
+  private drawSlot(slot: EquipmentSlot, hovered: boolean): void {
+    const gfx = this.slotGraphics.get(slot);
+    const layout = SLOT_LAYOUT.find((l) => l.slot === slot);
+    if (!gfx || !layout) return;
+    const slotX = layout.x - SLOT_BOX_W / 2;
+    const slotY = SLOTS_TOP + layout.y;
+    const item = this.equipped[slot];
+
+    gfx.clear();
+    if (item) {
+      const color = getSlotColor(slot);
+      gfx.fillStyle(color, hovered ? 0.15 : 0.08);
+      gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
+      gfx.lineStyle(1, color, hovered ? 0.5 : 0.3);
+      gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
+      const edge = rarityEdge(this.view(item));
+      if (edge !== undefined) {
+        gfx.fillStyle(edge, 0.9);
+        gfx.fillRect(slotX + 1, slotY + 6, EDGE_W, SLOT_BOX_H - 12);
+      }
+    } else if (hovered) {
+      gfx.fillStyle(C_FRAME, 0.15);
+      gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
+      gfx.lineStyle(1, C_FRAME, 0.5);
+      gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
+    } else {
+      gfx.fillStyle(C_SLOT_EMPTY, 0.3);
+      gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
+      gfx.lineStyle(1, C_FRAME, 0.06);
+      gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
     }
   }
 
@@ -418,7 +469,6 @@ export class EquipmentPanel {
     this.invRowTexts = [];
     this.inventoryHitAreas = [];
 
-    const rowsTop = -INV_H / 2 + 42;
     const rowWidth = INV_W - PADDING * 2;
 
     if (this.inventory.length === 0) {
@@ -438,19 +488,10 @@ export class EquipmentPanel {
 
     for (let i = 0; i < visibleItems.length; i++) {
       const item = visibleItems[i];
-      const rowTop = rowsTop + i * INV_ROW_H;
+      const rowTop = ROWS_TOP + i * INV_ROW_H;
 
       const rowBg = this.scene.add.graphics();
-      const bgAlpha = i % 2 === 0 ? 0.25 : 0.15;
-      rowBg.fillStyle(palette.hudPanelDeep, bgAlpha);
-      rowBg.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
-      rowBg.lineStyle(1, C_FRAME, 0.06);
-      rowBg.lineBetween(
-        -rowWidth / 2 + 8,
-        rowTop + INV_ROW_H,
-        rowWidth / 2 - 8,
-        rowTop + INV_ROW_H,
-      );
+      this.drawRow(rowBg, i, item, false);
       this.invContainer.add(rowBg);
       this.invRowGraphics.push(rowBg);
 
@@ -461,7 +502,7 @@ export class EquipmentPanel {
         {
           fontFamily: CANVAS_FONT.body,
           fontSize: "13px",
-          color: toCss(palette.hudText),
+          color: this.rowColor(item),
         },
       );
       label.setOrigin(0.5);
@@ -480,7 +521,7 @@ export class EquipmentPanel {
     }
 
     if (this.inventory.length > MAX_VISIBLE_INV) {
-      const moreY = rowsTop + MAX_VISIBLE_INV * INV_ROW_H + 4;
+      const moreY = ROWS_TOP + MAX_VISIBLE_INV * INV_ROW_H + 4;
       const moreText = this.scene.add.text(
         0,
         moreY,
@@ -498,24 +539,40 @@ export class EquipmentPanel {
   }
 
   private formatItemLine(item: ItemState): string {
-    const type = getItemType(item);
-    switch (type) {
-      case "weapon":
-        return item.attack_power
-          ? `${item.name}  ATK ${item.attack_power}`
-          : item.name;
-      case "armor":
-        return item.defense_rating
-          ? `${item.name}  DEF ${item.defense_rating}`
-          : item.name;
-      case "consumable": {
-        if (item.healing_amount)
-          return `${item.name}  +${item.healing_amount} HP`;
-        if (item.mana_amount) return `${item.name}  +${item.mana_amount} MP`;
-        return item.name;
-      }
-      default:
-        return item.quantity > 1 ? `${item.name} x${item.quantity}` : item.name;
+    const { summary } = this.view(item);
+    return summary ? `${item.name}  ${summary}` : item.name;
+  }
+
+  /** An inventory row's ground: banded, or lit while hovered, with the item's rarity edge. */
+  private drawRow(
+    gfx: Phaser.GameObjects.Graphics,
+    index: number,
+    item: ItemState,
+    hovered: boolean,
+  ): void {
+    const rowWidth = INV_W - PADDING * 2;
+    const rowTop = ROWS_TOP + index * INV_ROW_H;
+    gfx.clear();
+    if (hovered) {
+      gfx.fillStyle(C_FRAME, 0.08);
+      gfx.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
+      gfx.lineStyle(1, C_FRAME, 0.2);
+      gfx.strokeRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
+    } else {
+      gfx.fillStyle(palette.hudPanelDeep, index % 2 === 0 ? 0.25 : 0.15);
+      gfx.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
+      gfx.lineStyle(1, C_FRAME, 0.06);
+      gfx.lineBetween(
+        -rowWidth / 2 + 8,
+        rowTop + INV_ROW_H,
+        rowWidth / 2 - 8,
+        rowTop + INV_ROW_H,
+      );
+    }
+    const edge = rarityEdge(this.view(item));
+    if (edge !== undefined) {
+      gfx.fillStyle(edge, 0.9);
+      gfx.fillRect(-rowWidth / 2 + 1, rowTop + 5, EDGE_W, INV_ROW_H - 10);
     }
   }
 
@@ -621,33 +678,25 @@ export class EquipmentPanel {
     }
   }
 
+  /**
+   * Equips into the slot the server will choose: a consumable's first empty slot (a flash when
+   * all are full), a ring's first empty ring slot or ring 1 (FS-4R9M9 R42), else its one slot,
+   * swapping out whatever is worn there.
+   */
   private equipHoveredItem(item: ItemState): void {
-    const validSlots = getValidSlotsForItem(item);
-    console.log("[EquipPanel] equipHoveredItem", {
-      item: item.name,
-      type: getItemType(item),
-      validSlots,
-    });
-    if (validSlots.length === 0) return;
-
-    // Consumables: auto-pick first empty consumable slot, or flash if all full.
-    if (getItemType(item) === "consumable") {
-      const emptySlot = validSlots.find((slot) => this.equipped[slot] === null);
-      if (!emptySlot) {
-        const cam = this.scene.cameras.main;
-        this.showFlashMessage(
-          "All consumable slots are full",
-          cam.width / 2,
-          cam.height / 2,
-        );
-        return;
-      }
-      this.equipItem(item, emptySlot);
+    const slot = equipSlotFor(item, this.equipped);
+    if (slot) {
+      this.equipItem(item, slot);
       return;
     }
-
-    // Weapons / armor: only one valid slot — equip there (swapping if occupied).
-    this.equipItem(item, validSlots[0]);
+    if (getItemType(item) === "consumable") {
+      const cam = this.scene.cameras.main;
+      this.showFlashMessage(
+        "All consumable slots are full",
+        cam.width / 2,
+        cam.height / 2,
+      );
+    }
   }
 
   private showFlashMessage(
@@ -709,229 +758,44 @@ export class EquipmentPanel {
   // === HOVER ===
 
   private setSlotHover(slot: EquipmentSlot, hovered: boolean): void {
-    const gfx = this.slotGraphics.get(slot);
-    const layout = SLOT_LAYOUT.find((l) => l.slot === slot);
-    if (!gfx || !layout) return;
-    const slotX = layout.x - SLOT_BOX_W / 2;
-    const slotsTop = -EQUIP_H / 2 + 48;
-    const slotY = slotsTop + layout.y;
-    const item = this.equipped[slot];
-
-    gfx.clear();
-    if (hovered) {
-      const color = item ? getSlotColor(slot) : C_FRAME;
-      gfx.fillStyle(color, 0.15);
-      gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
-      gfx.lineStyle(1, color, 0.5);
-      gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
-    } else if (item) {
-      const color = getSlotColor(slot);
-      gfx.fillStyle(color, 0.08);
-      gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
-      gfx.lineStyle(1, color, 0.3);
-      gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
-    } else {
-      gfx.fillStyle(C_SLOT_EMPTY, 0.3);
-      gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
-      gfx.lineStyle(1, C_FRAME, 0.06);
-      gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
-    }
+    this.drawSlot(slot, hovered);
   }
 
   private setInvRowHover(index: number, hovered: boolean): void {
     const gfx = this.invRowGraphics[index];
     const text = this.invRowTexts[index];
-    if (!gfx || !text) return;
-    const rowWidth = INV_W - PADDING * 2;
-    const rowsTop = -INV_H / 2 + 42;
-    const rowTop = rowsTop + index * INV_ROW_H;
-
-    gfx.clear();
-    if (hovered) {
-      gfx.fillStyle(C_FRAME, 0.08);
-      gfx.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
-      gfx.lineStyle(1, C_FRAME, 0.2);
-      gfx.strokeRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
-      text.setColor(toCss(palette.frameBright));
-    } else {
-      const bgAlpha = index % 2 === 0 ? 0.25 : 0.15;
-      gfx.fillStyle(palette.hudPanelDeep, bgAlpha);
-      gfx.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
-      gfx.lineStyle(1, C_FRAME, 0.06);
-      gfx.lineBetween(
-        -rowWidth / 2 + 8,
-        rowTop + INV_ROW_H,
-        rowWidth / 2 - 8,
-        rowTop + INV_ROW_H,
-      );
-      text.setColor(toCss(palette.hudText));
-    }
+    const item = this.inventoryHitAreas[index]?.item;
+    if (!gfx || !text || !item) return;
+    this.drawRow(gfx, index, item, hovered);
+    text.setColor(hovered ? toCss(palette.frameBright) : this.rowColor(item));
   }
 
   // === TOOLTIP ===
 
+  /** The item's tip (FS-4R9M9 R59): every line the item views share, for this character. */
   private showTooltip(item: ItemState, screenX: number, screenY: number): void {
     this.hideTooltip();
-    const padding = 12;
-    const tooltipWidth = 200;
-    const children: Phaser.GameObjects.GameObject[] = [];
-    let curY = padding;
+    this.tooltip = buildItemTip(this.scene, this.view(item));
+    this.tooltip.container.setDepth(2200);
+    this.tooltip.container.setScrollFactor(0);
+    this.moveTooltip(screenX, screenY);
+  }
 
-    const name = this.scene.add.text(padding, curY, item.name, {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "14px",
-      color: toCss(palette.frameBright),
-      fontStyle: "bold",
-    });
-    children.push(name);
-    curY += 20;
-
-    const type = getItemType(item);
-    const typeColors: Record<string, string> = {
-      weapon: toCss(palette.damageBright),
-      armor: toCss(palette.hostile),
-      consumable: toCss(palette.safe),
-      unknown: toCss(palette.hudLabel),
-    };
-    const typeText = this.scene.add.text(padding, curY, type.toUpperCase(), {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "10px",
-      color: typeColors[type] || toCss(palette.hudLabel),
-      letterSpacing: 2,
-    });
-    children.push(typeText);
-    curY += 18;
-
-    if (item.attack_power) {
-      this.addStat(
-        children,
-        padding,
-        curY,
-        tooltipWidth,
-        "ATK",
-        `${item.attack_power}`,
-        toCss(palette.damageBright),
-      );
-      curY += 18;
-    }
-    if (item.critical_rate) {
-      this.addStat(
-        children,
-        padding,
-        curY,
-        tooltipWidth,
-        "CRIT",
-        `${Math.round(item.critical_rate)}%`,
-        toCss(palette.torch),
-      );
-      curY += 18;
-    }
-    if (item.defense_rating) {
-      this.addStat(
-        children,
-        padding,
-        curY,
-        tooltipWidth,
-        "DEF",
-        `${item.defense_rating}`,
-        toCss(palette.hostile),
-      );
-      curY += 18;
-    }
-    if (item.healing_amount) {
-      this.addStat(
-        children,
-        padding,
-        curY,
-        tooltipWidth,
-        "HEAL",
-        `+${item.healing_amount} HP`,
-        toCss(palette.safe),
-      );
-      curY += 18;
-    }
-    if (item.mana_amount) {
-      this.addStat(
-        children,
-        padding,
-        curY,
-        tooltipWidth,
-        "MANA",
-        `+${item.mana_amount} MP`,
-        toCss(palette.frameBright),
-      );
-      curY += 18;
-    }
-
-    if (item.description) {
-      curY += 4;
-      const desc = this.scene.add.text(padding, curY, item.description, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "11px",
-        color: toCss(palette.hudLabel),
-        wordWrap: { width: tooltipWidth - padding * 2 },
-        lineSpacing: 3,
-      });
-      children.push(desc);
-      curY += desc.height;
-    }
-
-    const tooltipHeight = curY + padding;
-    const bg = this.scene.add.graphics();
-    const borderColor = parseInt(
-      (typeColors[type] || toCss(palette.frameBright)).slice(1),
-      16,
-    );
-    bg.fillStyle(palette.mapEdge, 0.95);
-    bg.fillRoundedRect(0, 0, tooltipWidth, tooltipHeight, 6);
-    bg.lineStyle(1, borderColor, 0.4);
-    bg.strokeRoundedRect(0, 0, tooltipWidth, tooltipHeight, 6);
-    children.unshift(bg);
-
+  /** Beside the cursor, flipped to the other side where it would leave the screen. */
+  private moveTooltip(screenX: number, screenY: number): void {
+    if (!this.tooltip) return;
+    const { container, width, height } = this.tooltip;
+    const cam = this.scene.cameras.main;
     let x = screenX + 14;
     let y = screenY - 10;
-    const cam = this.scene.cameras.main;
-    if (x + tooltipWidth > cam.width) x = screenX - tooltipWidth - 8;
-    if (y + tooltipHeight > cam.height) y = screenY - tooltipHeight - 8;
-
-    this.tooltip = this.scene.add.container(x, y, children);
-    this.tooltip.setDepth(2200);
-    this.tooltip.setScrollFactor(0);
-  }
-
-  private addStat(
-    children: Phaser.GameObjects.GameObject[],
-    padding: number,
-    y: number,
-    width: number,
-    label: string,
-    value: string,
-    color: string,
-  ): void {
-    children.push(
-      this.scene.add.text(padding, y, label, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "11px",
-        color: toCss(palette.frameBright),
-        letterSpacing: 2,
-      }),
-      this.scene.add
-        .text(width - padding, y, value, {
-          fontFamily: CANVAS_FONT.body,
-          fontSize: "12px",
-          color,
-        })
-        .setOrigin(1, 0),
-    );
-  }
-
-  private moveTooltip(screenX: number, screenY: number): void {
-    if (this.tooltip) this.tooltip.setPosition(screenX + 14, screenY - 10);
+    if (x + width > cam.width) x = screenX - width - 8;
+    if (y + height > cam.height) y = Math.max(4, screenY - height - 8);
+    container.setPosition(x, y);
   }
 
   private hideTooltip(): void {
     if (this.tooltip) {
-      this.tooltip.destroy();
+      this.tooltip.container.destroy();
       this.tooltip = undefined;
     }
   }

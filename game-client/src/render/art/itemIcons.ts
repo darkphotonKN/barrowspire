@@ -75,6 +75,8 @@ const NAME_ICONS: [RegExp, ItemIconName][] = [
  */
 export interface IconSubject {
   name?: string;
+  item_type?: string;
+  itemType?: string;
   weapon_type?: string;
   weaponType?: string;
   armor_slot?: string;
@@ -87,7 +89,8 @@ export interface IconSubject {
 
 /**
  * The icon an item is drawn with: its weapon type or armour slot when one is baked, then its
- * restorative stats, then its name. Anything else is `generic` (FS-2325V §D.4).
+ * restorative stats, then a ring by its item type (FS-4R9M9 R60), then its name. Anything else
+ * is `generic` (FS-2325V §D.4).
  */
 export function itemIcon(item: IconSubject): ItemIconName {
   const weaponType = item.weapon_type ?? item.weaponType;
@@ -103,6 +106,8 @@ export function itemIcon(item: IconSubject): ItemIconName {
   if (healing) return "potion_health";
   if (mana) return "potion_mana";
   if (weaponType || armorSlot) return "generic";
+  if ((item.item_type ?? item.itemType)?.toLowerCase() === "ring")
+    return "ring";
   const name = item.name ?? "";
   return NAME_ICONS.find(([word]) => word.test(name))?.[1] ?? "generic";
 }
