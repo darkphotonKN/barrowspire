@@ -147,7 +147,7 @@ func (r *Redis) Matchmake(ctx context.Context, matchCriteria matchmaker.MatchCri
 	}
 
 	// no err, empty slice, no results yet return no error
-	if len(raw) == 0 {
+	if len(matchedPlayers) == 0 {
 		return nil, nil
 	}
 

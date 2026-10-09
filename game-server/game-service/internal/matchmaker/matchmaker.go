@@ -10,7 +10,6 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
-	"github.com/posener/complete/match"
 )
 
 var (
@@ -103,12 +102,11 @@ func (q *matchmaker) MatchQueue(ctx context.Context) {
 				continue
 			}
 
-			// no results yet
+			// no results yet Matchmake returns nil matchedPlayerRes and nil error
 			if matchedPlayersRes == nil {
 				continue
 			}
-
-			slog.Info("match found in tick", "matched_players_res", matchedPlayersRes)
+			slog.Debug("match found in tick", "matched_players_res", matchedPlayersRes)
 
 			// found result, send to message hub to start game, then continue matchmaking
 			matchedPlayers := make([]*types.Player, 0, len(matchedPlayersRes))
