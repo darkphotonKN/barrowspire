@@ -235,7 +235,7 @@ func TestCharacterInPlay_SurvivesAReconnect(t *testing.T) {
 	// is mapped from it
 	server.markPlayerAsReconnecting(player)
 
-	record, ok := server.playerByID(player.ID)
+	record, ok := server.PlayerByID(player.ID)
 	require.True(t, ok)
 	newConn := &websocket.Conn{}
 	server.MapConnToPlayer(newConn, *record)

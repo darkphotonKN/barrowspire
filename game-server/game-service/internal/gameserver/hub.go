@@ -37,8 +37,10 @@ type SessionManager interface {
 	AddPlayer(*types.Player) error
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
 	EnterHub(ctx context.Context, conn *websocket.Conn, characterID string) (*game.Session, error)
-	GetMatchedChan() chan []*types.Player
-	GetQueueStatusChan() chan matchmaker.QueueStatus
+	PlayerByID(playerID uuid.UUID) (*types.Player, bool)
+	JoinHub(conn *websocket.Conn, character types.CharacterInPlay) (*game.Session, error)
+	GetMatchedChan(ctx context.Context) chan []*types.Player
+	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
@@ -156,7 +158,7 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 * Core goroutine hub to handle all incoming messages and orchestrate them
 * to other parts of game.
 **/
-func (h *messageHub) Run() {
+func (h *messageHub) Run(ctx context.Context) {
 	slog.Info("Initializing message hub.")
 
 	for {
@@ -324,9 +326,18 @@ func (h *messageHub) Run() {
 				)
 			}
 
-		case matchedPlayers := <-h.sessionManager.GetMatchedChan():
-			fmt.Printf("Received matched players, creating game session...\n")
-			fmt.Println(matchedPlayers)
+		case matched := <-h.sessionManager.GetMatchedChan(ctx):
+			// The matchmaker deals in ids only: its queue lives in Redis, which
+			// holds no names or classes. The full record is this server's own.
+			matchedPlayers := h.resolveMatchedPlayers(matched)
+			if len(matchedPlayers) == 0 {
+				slog.Warn("Match had no players connected to this server, no run started", "matched", len(matched))
+				continue
+			}
+
+			slog.Info("")
+			slog.Info("Received matched players, creating game session...",
+				"matched_players", matchedPlayers)
 			session := h.sessionManager.CreateGameSession(matchedPlayers)
 			playerIDs := make([]uuid.UUID, len(matchedPlayers))
 			for i, player := range matchedPlayers {
@@ -336,7 +347,7 @@ func (h *messageHub) Run() {
 			// was the only world anyone could enter. FS-29KSH §Requirements 15.
 			h.sender.BroadcastToPlayerList(playerIDs, worldEnteredMessage(session))
 
-		case status := <-h.sessionManager.GetQueueStatusChan():
+		case status := <-h.sessionManager.GetQueueStatusChan(ctx):
 			fmt.Printf("Queue status update: %d/%d\n", status.Current, status.Total)
 			playerIDs := make([]uuid.UUID, len(status.Players))
 			for i, player := range status.Players {
@@ -352,6 +363,30 @@ func (h *messageHub) Run() {
 				})
 		}
 	}
+}
+
+/**
+* Turns a match, which carries only player ids, into this server's full player
+* records, the ones holding the name and class a run is built from.
+*
+* A matched player with no record here is dropped: they disconnected after
+* being popped, or are connected to another replica. Moving those players
+* across replicas is the handoff's job (FS-K2HKP slice 3), not this lookup's.
+**/
+func (h *messageHub) resolveMatchedPlayers(matched []*types.Player) []*types.Player {
+	players := make([]*types.Player, 0, len(matched))
+
+	for _, m := range matched {
+		player, exists := h.sessionManager.PlayerByID(m.ID)
+		if !exists {
+			slog.Warn("Matched player not connected to this server, left out of the run", "player_id", m.ID)
+			continue
+		}
+
+		players = append(players, player)
+	}
+
+	return players
 }
 
 /**

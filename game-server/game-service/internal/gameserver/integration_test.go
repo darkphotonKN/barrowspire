@@ -142,7 +142,7 @@ func NewMockQueueService() *mockQueueService {
 }
 func (m *mockQueueService) JoinQueue() {}
 
-func (m *mockQueueService) GetQueueStatusChan() chan matchmaker.QueueStatus {
+func (m *mockQueueService) GetQueueStatusChan(context.Context) chan matchmaker.QueueStatus {
 	return m.QueueStatusChan
 }
 
@@ -171,11 +171,11 @@ func (m *mockQueueService) PlayerJoinQueue(_ context.Context, player *types.Play
 
 func (m *mockQueueService) PlayerRemoveQueue(context.Context, *types.Player) error { return nil }
 func (m *mockQueueService) MatchQueue()                                            {}
-func (m *mockQueueService) Start() {
+func (m *mockQueueService) Start(context.Context) {
 	// no need to really start during testing
 }
 
-func (m *mockQueueService) GetMatchedChan() chan []*types.Player {
+func (m *mockQueueService) GetMatchedChan(context.Context) chan []*types.Player {
 	return m.matchedChan
 }
 

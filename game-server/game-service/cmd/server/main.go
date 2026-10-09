@@ -19,7 +19,6 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
-	"github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/darkphotonKN/barrowspire-server/game-service/config"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components/metrics"
 	_ "github.com/joho/godotenv/autoload"
@@ -103,11 +102,13 @@ func main() {
 		PoolSize:     10,
 		MinIdleConns: 5,
 	})
+	defer config.CloseRedis()
+
 	if err != nil {
 		log.Fatalf("Failed to initialize Redis: %v", err)
 	}
-	defer config.CloseRedis()
-	cacheService := cache.NewRedisCache(config.GetClient())
+
+	redisClient := config.GetClient()
 
 	// --- service discovery setup ---
 
@@ -168,16 +169,10 @@ func main() {
 
 	broker.DeclareExchange(ch, commonconstants.GameEventsExchange, "topic")
 
-	// TODO: Initialize your services and handlers
-	// repo := yourpackage.NewRepository(db)
-	// service := yourpackage.NewService(repo, ch)
-	// handler := yourpackage.NewHandler(service)
-	// pb.RegisterGameServiceServer(grpcServer, handler)
-
 	log.Printf("grpc Game Server started on PORT: %s\n", grpcAddr)
 
 	// routes setup
-	routes := config.SetupRouter(ctx, statsDB, registry, ch, cacheService, pod)
+	routes := config.SetupRouter(ctx, statsDB, registry, ch, redisClient, pod)
 
 	fmt.Printf("Server listening on port %s.\n", gamePort)
 

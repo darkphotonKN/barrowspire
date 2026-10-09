@@ -6,17 +6,18 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
-	"github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
 	grpccharacter "github.com/darkphotonKN/barrowspire-server/game-service/grpc/character"
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/gameserver"
+	matchqueue "github.com/darkphotonKN/barrowspire-server/game-service/internal/match_queue"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/redis/go-redis/v9"
 
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 )
@@ -24,7 +25,7 @@ import (
 /**
 * Sets up API prefix route and all routers.
 **/
-func SetupRouter(ctx context.Context, statsDB *sqlx.DB, registry discovery.Registry, ch *amqp.Channel, cacheService cache.Cache, pod Pod) *gin.Engine {
+func SetupRouter(ctx context.Context, statsDB *sqlx.DB, registry discovery.Registry, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod) *gin.Engine {
 	router := gin.Default()
 
 	// NOTE: debugging middleware
@@ -48,7 +49,10 @@ func SetupRouter(ctx context.Context, statsDB *sqlx.DB, registry discovery.Regis
 	characterClient := grpccharacter.NewClient(registry)
 
 	// --- GAME SERVER SETUP ---
-	matchmaker := matchmaker.NewMatchmaker(2, pod.ID)
+
+	// -- match maker --
+	matchQueueRedis := matchqueue.NewRedis(redisClient)
+	matchmaker := matchmaker.NewMatchmaker(2, pod.ID, matchQueueRedis)
 
 	// -- outbox --
 	outboxRepo := commonoutbox.NewRepo(statsDB)
