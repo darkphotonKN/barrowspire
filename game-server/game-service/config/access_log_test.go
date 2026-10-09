@@ -44,6 +44,36 @@ func TestAccessLogger_NeverWritesTheBearerToken(t *testing.T) {
 	}
 }
 
+// Only the token's value is replaced: every other parameter keeps its place
+// and its encoding, so the logged target is the one the client sent.
+func TestAccessLogger_RedactsOnlyTheTokenValue(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name   string
+		target string
+		want   string
+	}{
+		{"order and encoding kept", "/game/ws?zone=b%2Fc&token=secret&name=Wren", `"/game/ws?zone=b%2Fc&token=REDACTED&name=Wren"`},
+		{"an escaped token name", "/game/ws?tok%65n=secret&a=1", `"/game/ws?tok%65n=REDACTED&a=1"`},
+		{"every token", "/game/ws?token=secret&token=secret", `"/game/ws?token=REDACTED&token=REDACTED"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logged bytes.Buffer
+			router := gin.New()
+			router.Use(AccessLogger(&logged))
+			router.GET("/game/ws", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+			router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, tt.target, nil))
+
+			assert.NotContains(t, logged.String(), "secret")
+			assert.Contains(t, logged.String(), tt.want)
+		})
+	}
+}
+
 // A path with no query is logged as it is.
 func TestAccessLogger_LogsAPlainPathUnchanged(t *testing.T) {
 	gin.SetMode(gin.TestMode)

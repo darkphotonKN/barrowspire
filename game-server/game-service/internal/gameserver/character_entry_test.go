@@ -231,14 +231,14 @@ func TestCharacterInPlay_SurvivesAReconnect(t *testing.T) {
 	require.NoError(t, err)
 	run := server.CreateGameSession([]*types.Player{player})
 
-	// the handler's reconnect path: the record is kept, and a new connection
-	// is mapped from it
-	server.markPlayerAsReconnecting(player)
+	// the handler's network-drop path: the record is held for the reconnect
+	// grace, and the reconnect maps a new connection to it
+	server.holdForReconnect(conn)
 
 	record, ok := server.PlayerByID(player.ID)
 	require.True(t, ok)
 	newConn := &websocket.Conn{}
-	server.MapConnToPlayer(newConn, *record, make(chan interface{}, clientWriterBuffer))
+	server.MapConnToPlayer(newConn, record.ID, make(chan interface{}, clientWriterBuffer))
 
 	reconnected, ok := server.GetPlayerFromConn(newConn)
 	require.True(t, ok)

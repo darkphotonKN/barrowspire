@@ -122,29 +122,233 @@ func TestDisconnect_ANormalCloseLeavesTheServerServing(t *testing.T) {
 	assert.Zero(t, writers, "its writer channel is gone")
 }
 
-// A connection reset by the peer is a read error the server does not
-// recognise. It is cleaned up like a leave, and the server keeps serving.
+// recordOf is a copy of the member's record, read under the lock the server
+// writes it under.
+func recordOf(t *testing.T, server *Server, memberID uuid.UUID) types.Player {
+	t.Helper()
+
+	server.mu.RLock()
+	defer server.mu.RUnlock()
+
+	record, ok := server.players[memberID]
+	require.True(t, ok, "the member is on record")
+
+	return *record
+}
+
+// connStateOf is the connect state on the member's record.
+func connStateOf(t *testing.T, server *Server, memberID uuid.UUID) constants.ConnectState {
+	t.Helper()
+
+	record := recordOf(t, server, memberID)
+	require.NotNil(t, record.ConnectState)
+
+	return *record.ConnectState
+}
+
+// A connection reset by the peer is a network drop, not a leave: the member is
+// held for the reconnect grace and can resume, and the server keeps serving.
 func TestDisconnect_AConnectionResetLeavesTheServerServing(t *testing.T) {
 	authClient := &oneMemberAuth{memberID: uuid.New()}
 	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	route := newConnectRoute(t, server, authClient)
+	hub, _ := server.HubSession()
 
 	client := route.connect(t, "token")
+	record, ok := server.PlayerByID(authClient.memberID)
+	require.True(t, ok)
+	server.setCurrentWorld(record, hub.ID)
+
 	tcp, ok := client.NetConn().(*net.TCPConn)
 	require.True(t, ok)
 	require.NoError(t, tcp.SetLinger(0)) // close with a reset, not a FIN
 	require.NoError(t, tcp.Close())
 
 	eventually(t, "the reset connection is released", func() bool {
-		mapped, _ := connectionsOf(server, authClient.memberID)
-		return mapped == 0
+		mapped, writers := connectionsOf(server, authClient.memberID)
+		return mapped == 0 && writers == 0
 	})
 
-	// the server is still taking connections
-	route.connect(t, "token")
+	held, onRecord := server.PlayerByID(authClient.memberID)
+	require.True(t, onRecord, "the member is held for the reconnect grace, not removed")
+	assert.Same(t, record, held, "the record they resume is the one they dropped from")
+	assert.Equal(t, constants.Reconnecting, connStateOf(t, server, authClient.memberID))
+	assert.Equal(t, hub.ID, recordOf(t, server, authClient.memberID).CurrentGameSessionId,
+		"still in the world they dropped out of")
+
+	// they resume where they were, and the server is still taking connections
+	resumed := route.connect(t, "token")
+	require.NoError(t, resumed.SetReadDeadline(time.Now().Add(settle)))
+	var reconnected types.Message
+	require.NoError(t, resumed.ReadJSON(&reconnected))
+	assert.Equal(t, "reconnected", reconnected.Action)
+
 	mapped, writers := connectionsOf(server, authClient.memberID)
 	assert.Equal(t, 1, mapped)
 	assert.Equal(t, 1, writers)
+	assert.Equal(t, constants.Connected, connStateOf(t, server, authClient.memberID))
+}
+
+// The server closing a connection a reconnect superseded is not the member
+// dropping: the read error on that socket never marks them reconnecting.
+func TestDisconnect_ClosingASupersededConnectionIsNotADrop(t *testing.T) {
+	authClient := &oneMemberAuth{memberID: uuid.New()}
+	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	route := newConnectRoute(t, server, authClient)
+	hub, _ := server.HubSession()
+
+	first := route.connect(t, "token")
+	record, ok := server.PlayerByID(authClient.memberID)
+	require.True(t, ok)
+	server.setCurrentWorld(record, hub.ID)
+
+	route.connect(t, "token")
+
+	// the server closes the superseded socket
+	require.NoError(t, first.SetReadDeadline(time.Now().Add(settle)))
+	for {
+		if _, _, err := first.ReadMessage(); err != nil {
+			var netErr net.Error
+			if errors.As(err, &netErr) {
+				require.False(t, netErr.Timeout(), "the superseded connection is closed by the server")
+			}
+			break
+		}
+	}
+
+	// its reader sees the server's own close; give it time to act on it
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		require.Equal(t, constants.Connected, connStateOf(t, server, authClient.memberID),
+			"the member on the new connection is not marked reconnecting")
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	mapped, writers := connectionsOf(server, authClient.memberID)
+	assert.Equal(t, 1, mapped)
+	assert.Equal(t, 1, writers)
+}
+
+// The connection is mapped to the member's record as it stands when the
+// connection is published, not to the copy taken before the upgrade: a run
+// ending in between is not undone on the connection routing reads.
+func TestMapConnToPlayer_MapsTheLiveRecord(t *testing.T) {
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	hub, _ := server.HubSession()
+	memberID := uuid.New()
+
+	connected, _ := server.connectPlayer(memberID, "Wren", "token")
+
+	// the run ends and sends them home while the handler is still upgrading
+	record, ok := server.PlayerByID(memberID)
+	require.True(t, ok)
+	server.setCurrentWorld(record, hub.ID)
+
+	conn := &websocket.Conn{}
+	_, mapped := server.MapConnToPlayer(conn, connected.ID, make(chan interface{}, clientWriterBuffer))
+	require.True(t, mapped)
+
+	server.mu.RLock()
+	published := *server.connToPlayer[conn]
+	server.mu.RUnlock()
+	assert.Equal(t, hub.ID, published.CurrentGameSessionId, "the connection carries the live record")
+}
+
+// A member whose record is gone by the time the connection is published (the
+// reconnect grace ran out meanwhile) is refused: nothing is mapped and no
+// writer is registered.
+func TestMapConnToPlayer_RefusesAMemberNoLongerOnRecord(t *testing.T) {
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	memberID := uuid.New()
+
+	connected, _ := server.connectPlayer(memberID, "Wren", "token")
+
+	// the grace cleanup removes the record while the handler is upgrading
+	server.mu.Lock()
+	delete(server.players, memberID)
+	server.mu.Unlock()
+
+	_, mapped := server.MapConnToPlayer(&websocket.Conn{}, connected.ID, make(chan interface{}, clientWriterBuffer))
+	assert.False(t, mapped)
+
+	conns, writers := connectionsOf(server, memberID)
+	assert.Zero(t, conns)
+	assert.Zero(t, writers)
+}
+
+// stalledQueue is a queue whose removals wait until released, as the real one
+// does while it retries a slow store.
+type stalledQueue struct {
+	*mockQueueService
+	removing chan struct{}
+	release  chan struct{}
+}
+
+func (q *stalledQueue) PlayerRemoveQueue(context.Context, *types.Player) error {
+	select {
+	case q.removing <- struct{}{}:
+	default:
+	}
+	<-q.release
+	return nil
+}
+
+// A member who leaves, comes back and walks into the hub again while their old
+// cleanup is still stalled on the queue keeps the body and the world they came
+// back with: the old cleanup finishing never strips them.
+func TestCleanUpClient_AnOldCleanupCannotStripAMemberWhoCameBack(t *testing.T) {
+	authClient := &oneMemberAuth{memberID: uuid.New()}
+	queue := &stalledQueue{mockQueueService: NewMockQueueService(), removing: make(chan struct{}, 1), release: make(chan struct{})}
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(queue.release) }) }
+	t.Cleanup(release)
+
+	characters := newFakeCharacters()
+	server := NewServer(context.Background(), authClient, queue, &MockEventEmitter{}, &MockItemsClient{}, characters)
+	route := newConnectRoute(t, server, authClient)
+	hub, _ := server.HubSession()
+	mage := characters.give(authClient.memberID, "mage", "Wren", 3, 100)
+
+	route.connect(t, "token")
+	oldConn, ok := server.GetConnFromPlayer(authClient.memberID)
+	require.True(t, ok)
+	_, err := server.EnterHub(context.Background(), oldConn, mage.ID.String())
+	require.NoError(t, err)
+
+	// they leave, and the cleanup stalls on the queue
+	cleaned := make(chan struct{})
+	go func() {
+		defer close(cleaned)
+		server.cleanUpClient(oldConn)
+	}()
+	select {
+	case <-queue.removing:
+	case <-time.After(settle):
+		t.Fatal("the cleanup never reached the queue")
+	}
+
+	// meanwhile they come back and walk into the hub again
+	route.connect(t, "token")
+	newConn, ok := server.GetConnFromPlayer(authClient.memberID)
+	require.True(t, ok)
+	_, err = server.EnterHub(context.Background(), newConn, mage.ID.String())
+	require.NoError(t, err)
+
+	release()
+	select {
+	case <-cleaned:
+	case <-time.After(settle):
+		t.Fatal("the old cleanup did not finish")
+	}
+
+	assert.True(t, hub.HasPlayer(authClient.memberID), "the body they came back with is kept")
+	assert.Equal(t, hub.ID, recordOf(t, server, authClient.memberID).CurrentGameSessionId,
+		"their record still points at the hub")
+
+	server.mu.RLock()
+	routed := *server.connToPlayer[newConn]
+	server.mu.RUnlock()
+	assert.Equal(t, hub.ID, routed.CurrentGameSessionId, "and so does the copy routing reads")
 }
 
 // A connection the server no longer maps, such as one a reconnect replaced, is
