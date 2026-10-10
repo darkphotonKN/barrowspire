@@ -478,17 +478,31 @@ func (s *Server) cleanUpClient(conn *websocket.Conn) {
 	// 獲取玩家資訊
 	player, exists := s.connToPlayer[conn]
 
-	if exists {
-		slog.Info("Cleaning up client", "username", player.Username)
-		// 從 queue 中移除玩家
-		s.queue.PlayerRemoveQueue(s.ctx, player)
+	// connection never got a player, only its message channel to clean up
+	if !exists {
+		slog.Info("Cleaning up client with no player")
+
+		if ch, exists := s.msgChan[conn]; exists {
+			close(ch)
+			delete(s.msgChan, conn)
+		}
+
+		s.mu.Unlock()
+		conn.Close()
 		return
 	}
 
 	slog.Info("Cleaning up client", "username", player.Username, "player_id", player.ID)
 
 	// 從 queue 中移除玩家
-	s.queue.PlayerRemoveQueue(s.ctx, player)
+	// queue removal is external and can retry for a while, so it never runs under
+	// the server lock; on its own goroutine so the disconnect isn't held up either.
+	// FS-K2HKP §Requirements 8.
+	go func(player *types.Player) {
+		if err := s.queue.PlayerRemoveQueue(s.ctx, player); err != nil {
+			slog.Error("failed to remove disconnected player from queue", "player_id", player.ID, "err", err)
+		}
+	}(player)
 
 	// 關閉並刪除 msgChan
 	if ch, exists := s.msgChan[conn]; exists {

@@ -537,8 +537,8 @@ func (s *Server) AddPlayer(player *types.Player) error {
 /**
 * remove player from queue (delegates to QueueSystem)
 **/
-func (s *Server) RemovePlayerFromQueue(player *types.Player) {
-	s.queue.PlayerRemoveQueue(s.ctx, player)
+func (s *Server) RemovePlayerFromQueue(player *types.Player) error {
+	return s.queue.PlayerRemoveQueue(s.ctx, player)
 }
 
 /**

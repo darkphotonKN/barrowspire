@@ -195,3 +195,48 @@ func (r *Redis) MarkPodAlive(ctx context.Context, podID string) error {
 
 	return nil
 }
+
+var queuedPlayersScript = redis.NewScript(`
+		-- check the entire queue
+		local queue = redis.call("LRANGE", KEYS[1], 0, -1)
+
+		-- collect this pod's players, in queue order
+		local podPlayers = {}
+		for i, playerId in ipairs(queue) do
+			if redis.call("HGET", KEYS[2], playerId) == ARGV[1] then
+				table.insert(podPlayers, playerId)
+			end
+		end
+
+		-- cjson encodes an empty table as {} not [], so write the empty case out
+		if #podPlayers == 0 then
+			return string.format('{"length":%d,"players":[]}', #queue)
+		end
+
+		return cjson.encode({ length = #queue, players = podPlayers })
+	`)
+
+type queuedPlayersRes struct {
+	Length  int      `json:"length"`
+	Players []string `json:"players"`
+}
+
+// reads the global queue length and which queued players belong to podID, in
+// queue order, so each pod can report progress to its own players
+func (r *Redis) QueuedPlayers(ctx context.Context, podID string) (int, []string, error) {
+	raw, err := queuedPlayersScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, podID).Text()
+
+	if err != nil {
+		return 0, nil, fmt.Errorf("MatchQueue QueuedPlayers redis script : %w", err)
+	}
+
+	var res queuedPlayersRes
+
+	err = json.Unmarshal([]byte(raw), &res)
+
+	if err != nil {
+		return 0, nil, fmt.Errorf("MatchQueue QueuedPlayers json unmarshal : %w", err)
+	}
+
+	return res.Length, res.Players, nil
+}

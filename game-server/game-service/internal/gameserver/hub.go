@@ -35,6 +35,7 @@ type SessionManager interface {
 	GetGameSession(id uuid.UUID) (*game.Session, bool)
 	GetServerChan() chan types.ClientPackage
 	AddPlayer(*types.Player) error
+	RemovePlayerFromQueue(*types.Player) error
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
 	EnterHub(ctx context.Context, conn *websocket.Conn, characterID string) (*game.Session, error)
 	PlayerByID(playerID uuid.UUID) (*types.Player, bool)
@@ -265,7 +266,7 @@ func (h *messageHub) Run(ctx context.Context) {
 					queueErr := err.Error()
 					message := "Error occured when attempting to queue player"
 
-					if errors.Is(err, game.ErrPlayerAlreadyInQueue) {
+					if errors.Is(err, matchmaker.ErrPlayerAlreadyQueued) {
 						message = "Player attempted to queue twice."
 						// TODO: send error
 						continue
@@ -305,13 +306,30 @@ func (h *messageHub) Run(ctx context.Context) {
 					"player_id", player.ID,
 				)
 
-				h.sender.SendMessageToPlayer(player.ID, types.Message{
-					Action: clientPackage.Message.Action,
-					Payload: map[string]interface{}{
-						"message":   "Successfully left the queue",
-						"player_id": player.ID.String(),
-					},
-				})
+				// removal can retry for a while, so it runs off the hub loop; the reply
+				// waits for it, so "left" is only ever said once it is true.
+				// FS-K2HKP §Requirements 7.
+				go func(conn *websocket.Conn, player *types.Player, action string) {
+					if err := h.sessionManager.RemovePlayerFromQueue(player); err != nil {
+						slog.Error("failed to remove player from queue", "player_id", player.ID, "err", err)
+
+						leaveErr := "Could not leave the queue, please try again."
+						h.sender.SendMessageToConn(conn, types.Message{
+							Action:  action,
+							Payload: map[string]interface{}{"message": leaveErr},
+							Error:   &leaveErr,
+						})
+						return
+					}
+
+					h.sender.SendMessageToConn(conn, types.Message{
+						Action: action,
+						Payload: map[string]interface{}{
+							"message":   "Successfully left the queue",
+							"player_id": player.ID.String(),
+						},
+					})
+				}(clientPackage.Conn, player, clientPackage.Message.Action)
 
 			default:
 				err := "Unknown action"

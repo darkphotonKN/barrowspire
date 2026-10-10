@@ -130,6 +130,16 @@ type mockQueueService struct {
 	matchedChan     chan []*types.Player
 	statusChan      chan matchmaker.QueueStatus
 	QueueStatusChan chan matchmaker.QueueStatus
+
+	// removals the queue was asked for, and what to fail them with
+	removed   []uuid.UUID
+	removeErr error
+}
+
+func (m *mockQueueService) removedPlayers() []uuid.UUID {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]uuid.UUID(nil), m.removed...)
 }
 
 func NewMockQueueService() *mockQueueService {
@@ -152,6 +162,13 @@ func (m *mockQueueService) PlayerJoinQueue(_ context.Context, player *types.Play
 	const matchSize = 2
 
 	m.mu.Lock()
+	// refuse a double join the way the real queue does
+	for _, queued := range m.players {
+		if queued.ID == player.ID {
+			m.mu.Unlock()
+			return fmt.Errorf("mock queue : %w", matchmaker.ErrPlayerAlreadyQueued)
+		}
+	}
 	m.players = append(m.players, player)
 
 	if len(m.players) < matchSize {
@@ -169,8 +186,22 @@ func (m *mockQueueService) PlayerJoinQueue(_ context.Context, player *types.Play
 	return nil
 }
 
-func (m *mockQueueService) PlayerRemoveQueue(context.Context, *types.Player) error { return nil }
-func (m *mockQueueService) MatchQueue()                                            {}
+func (m *mockQueueService) PlayerRemoveQueue(_ context.Context, player *types.Player) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.removed = append(m.removed, player.ID)
+	if m.removeErr != nil {
+		return m.removeErr
+	}
+	for i, queued := range m.players {
+		if queued.ID == player.ID {
+			m.players = append(m.players[:i], m.players[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+func (m *mockQueueService) MatchQueue() {}
 func (m *mockQueueService) Start(context.Context) {
 	// no need to really start during testing
 }

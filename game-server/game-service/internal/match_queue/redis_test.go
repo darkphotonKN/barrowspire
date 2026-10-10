@@ -248,3 +248,43 @@ func TestMatchmake_ConcurrentMatchers_NeverDuplicateOrSplitAGroup(t *testing.T) 
 	assert.Zero(t, client.LLen(ctx, queueKey).Val())
 	assert.Zero(t, client.HLen(ctx, playerPodKey).Val())
 }
+
+func TestQueuedPlayers_ReturnsGlobalLengthAndThisPodsPlayersInQueueOrder(t *testing.T) {
+	q, _ := newQueue(t)
+	ctx := context.Background()
+
+	require.NoError(t, q.QueuePlayer(ctx, "p1", "pod-b"))
+	require.NoError(t, q.QueuePlayer(ctx, "p2", "pod-a"))
+	require.NoError(t, q.QueuePlayer(ctx, "p3", "pod-b"))
+	require.NoError(t, q.QueuePlayer(ctx, "p4", "pod-a"))
+
+	queueLen, podPlayerIDs, err := q.QueuedPlayers(ctx, "pod-a")
+
+	require.NoError(t, err)
+	assert.Equal(t, 4, queueLen, "length is the global queue, not this pod's share")
+	assert.Equal(t, []string{"p2", "p4"}, podPlayerIDs)
+}
+
+func TestQueuedPlayers_EmptyQueue_ReturnsZeroAndNoPlayers(t *testing.T) {
+	q, _ := newQueue(t)
+
+	queueLen, podPlayerIDs, err := q.QueuedPlayers(context.Background(), "pod-a")
+
+	require.NoError(t, err)
+	assert.Zero(t, queueLen)
+	assert.Empty(t, podPlayerIDs)
+}
+
+func TestQueuedPlayers_OnlyOtherPodsQueued_ReturnsLengthAndNoPlayers(t *testing.T) {
+	q, _ := newQueue(t)
+	ctx := context.Background()
+
+	require.NoError(t, q.QueuePlayer(ctx, "p1", "pod-b"))
+	require.NoError(t, q.QueuePlayer(ctx, "p2", "pod-b"))
+
+	queueLen, podPlayerIDs, err := q.QueuedPlayers(ctx, "pod-a")
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, queueLen)
+	assert.Empty(t, podPlayerIDs)
+}

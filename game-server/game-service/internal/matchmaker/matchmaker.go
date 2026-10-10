@@ -58,6 +58,7 @@ type MatchQueue interface {
 	DequeuePlayer(ctx context.Context, playerID string) error
 	Matchmake(ctx context.Context, matchCriteria MatchCriteria) ([]MatchedPlayer, error) // list of playerIDs that successfully matched
 	MarkPodAlive(ctx context.Context, podID string) error                                // liveness heartbeat, lapses on its own if this pod stops calling
+	QueuedPlayers(ctx context.Context, podID string) (int, []string, error)              // global queue length, and podID's queued players in queue order
 }
 
 type MatchCriteria struct {
@@ -73,6 +74,7 @@ type MatchedPlayer struct {
 func (q *matchmaker) Start(ctx context.Context) {
 	go q.MatchLoop(ctx)
 	go q.heartbeatLoop(ctx)
+	go q.queueStatusLoop(ctx)
 	slog.Info("Queue service started, waiting for players to join...")
 }
 
@@ -201,6 +203,74 @@ func (q *matchmaker) requeueUnerroredPlayers(ctx context.Context, matchedPlayers
 		if err != nil {
 			slog.Warn("requeueing player couldnt join queue", "err", err)
 		}
+	}
+}
+
+// queueStatusLoop reports the global queue's progress to this pod's queued
+// players about once a second. Every pod runs it, separate from matching, so
+// status keeps flowing whichever pod won the match round.
+func (q *matchmaker) queueStatusLoop(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		// parent ctx gets cancelled we exit loop
+		case <-ctx.Done():
+			return
+
+		case <-ticker.C:
+			q.reportQueueStatus(ctx)
+		}
+	}
+}
+
+func (q *matchmaker) reportQueueStatus(ctx context.Context) {
+	// add timeout for external state taking too long
+	statusCtx, cancel := context.WithTimeout(ctx, timeoutTime)
+	queueLen, podPlayerIDs, err := q.matchQueue.QueuedPlayers(statusCtx, q.podID)
+	cancel()
+
+	if err != nil {
+		slog.Warn("MatchQueue queue status tick exception", "err", err)
+		return
+	}
+
+	players := make([]*types.Player, 0, len(podPlayerIDs))
+	for _, playerID := range podPlayerIDs {
+		id, err := uuid.Parse(playerID)
+
+		// corrupted id, the match loop deals with it when popped; just skip it here
+		if err != nil {
+			slog.Warn("corruption in UUID of queued player, skipping queue status", "player_id", playerID)
+			continue
+		}
+
+		// only send ids, look up for the rest is done by the caller
+		players = append(players, &types.Player{ID: id})
+	}
+
+	// nobody queued on this pod, nobody here to tell
+	if len(players) == 0 {
+		return
+	}
+
+	// the panel shows progress toward the next match, the global queue can briefly
+	// hold more than one group between match ticks
+	current := min(queueLen, q.matchSize)
+
+	select {
+	// send to message hub
+	case q.QueueStatusChan <- QueueStatus{
+		Players: players,
+		Current: current,
+		Total:   q.matchSize,
+	}:
+	// fallback incase stuck and ctx was cancelled
+	case <-ctx.Done():
+	// a snapshot is stale by the next tick anyway, drop it rather than block if the hub is busy
+	case <-time.After(time.Second):
+		slog.Debug("dropped queue status, hub busy")
 	}
 }
 
