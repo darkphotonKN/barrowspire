@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/stretchr/testify/assert"
@@ -150,4 +151,59 @@ func TestWithRetry_StopsOnCancelledContext(t *testing.T) {
 
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, 1, calls, "must not attempt again after cancellation")
+}
+
+// TestWithBackoff pins the helper's contract the same way: what comes back, and how
+// many attempts it took. The retriable predicate is the caller's, so the helper must
+// stop on anything that predicate rejects.
+func TestWithBackoff(t *testing.T) {
+	errAgain := errors.New("try again")
+	retriable := func(err error) bool { return errors.Is(err, errAgain) }
+
+	tests := []struct {
+		name      string
+		attempts  int
+		results   []error
+		wantErr   error
+		wantCalls int
+	}{
+		{name: "succeeds first time", attempts: 3, results: []error{nil}, wantCalls: 1},
+		{name: "retries then succeeds", attempts: 3, results: []error{errAgain, nil}, wantCalls: 2},
+		{name: "returns the last failure at the cap", attempts: 3, results: []error{errAgain, errAgain, errAgain}, wantErr: errAgain, wantCalls: 3},
+		{name: "stops on an error the predicate rejects", attempts: 3, results: []error{errFromDependency}, wantErr: errFromDependency, wantCalls: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			err := withBackoff(context.Background(), tt.attempts, time.Millisecond, retriable, func(ctx context.Context) error {
+				calls++
+				return tt.results[calls-1]
+			})
+
+			if tt.wantErr == nil {
+				assert.NoError(t, err)
+			} else {
+				assert.ErrorIs(t, err, tt.wantErr)
+			}
+			assert.Equal(t, tt.wantCalls, calls)
+		})
+	}
+}
+
+// A caller that has gone away ends the wait, and hears the operation's own failure
+// rather than a bare context error that hides what actually went wrong.
+func TestWithBackoff_CancelledContextReturnsTheLastFailure(t *testing.T) {
+	errAgain := errors.New("try again")
+	ctx, cancel := context.WithCancel(context.Background())
+
+	calls := 0
+	err := withBackoff(ctx, 5, time.Hour, func(error) bool { return true }, func(ctx context.Context) error {
+		calls++
+		cancel()
+		return errAgain
+	})
+
+	assert.ErrorIs(t, err, errAgain)
+	assert.Equal(t, 1, calls)
 }
