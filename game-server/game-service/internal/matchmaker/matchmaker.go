@@ -17,11 +17,27 @@ var (
 )
 
 const (
-	timeoutTime = time.Second * 5
+	timeoutTime      = time.Second * 5
+	matchReadyBuffer = 5
 )
 
+type MatchReadyCh chan MatchStart
+type MatchStep string
+
+const (
+	MatchStepCreate  MatchStep = "match step create"
+	MatchStepHandoff MatchStep = "match step handoff"
+)
+
+type MatchStart struct {
+	PodID string    `json:"pod_id"` // must match id of appointed pod
+	Step  MatchStep `json:"step"`
+	// list of players for this step
+	PlayerIDs []uuid.UUID `json:"players"`
+}
+
 /**
-* Player queue system - uses channel to listen for players joining matchmaking
+* Player queue system. uses an ephemeral state manager to make the queue work cross server instances
 **/
 
 type matchmaker struct {
@@ -33,6 +49,8 @@ type matchmaker struct {
 
 	// this replicas pod id, recorded against every player it queues
 	podID string
+
+	matchReadyCh MatchReadyCh
 }
 
 // QueueStatus used to notify queue status
@@ -49,6 +67,7 @@ func NewMatchmaker(matchSize int, podID string, matchQueue MatchQueue) *matchmak
 		matchedChan:     make(chan []*types.Player),
 		QueueStatusChan: make(chan QueueStatus),
 		matchQueue:      matchQueue,
+		matchReadyCh:    make(chan string, matchReadyBuffer),
 	}
 }
 
@@ -75,6 +94,7 @@ func (q *matchmaker) Start(ctx context.Context) {
 	go q.MatchLoop(ctx)
 	go q.heartbeatLoop(ctx)
 	go q.queueStatusLoop(ctx)
+	go q.MatchReady(ctx)
 	slog.Info("Queue service started, waiting for players to join...")
 }
 
@@ -335,4 +355,16 @@ func (q *matchmaker) GetMatchedChan(ctx context.Context) chan []*types.Player {
 
 func (q *matchmaker) GetQueueStatusChan(ctx context.Context) chan QueueStatus {
 	return q.QueueStatusChan
+}
+
+// Match ready handling loop
+func (q *matchmaker) MatchReady(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case matchReadyPayload := <-q.matchReadyCh:
+			slog.Debug("Recieved match ready", "matchReadyPayload", matchReadyPayload)
+		}
+	}
 }

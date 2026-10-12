@@ -45,8 +45,8 @@ type SessionManager interface {
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
-// every one of these means the server's own record is missing or stale — never
-// that the client said something wrong.
+// each of these means the server's own record is missing or stale. None of
+// them mean the client said something wrong.
 var (
 	errPlayerNotFound     = errors.New("no player registered for this connection")
 	errPlayerNotInSession = errors.New("player is not in a game session")
@@ -419,9 +419,10 @@ func (h *messageHub) handlePlayerExistingGame(player *types.Player, clientPackag
 		session, exists := h.sessionManager.GetGameSession(player.CurrentGameSessionId)
 
 		// Standing in the hub is not being in a game. This check predates the hub,
-		// when the only session anyone could be in was a run, so every delver now
-		// looked like they had one in progress — and asking to descend resumed them
-		// into the world they were already standing in instead of queuing them.
+		// when a run was the only session anyone could be in. Once the hub existed,
+		// every delver looked like they had a run in progress, and asking to descend
+		// resumed them into the world they were already standing in instead of
+		// queuing them.
 		if exists && session.WorldType() == types.WorldTypeHub {
 			slog.Debug("Player is in the hub, which is not a game to resume", "player_id", player.ID)
 			return commonconstants.ErrGameDoesntExist
