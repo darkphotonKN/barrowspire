@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -33,8 +34,15 @@ const (
 // redis) before it counts as dead
 const podAliveTTL = 3 * time.Second
 
+// queueEntry is the player:pod hash value, the player's pod and the character
+// in play they queued with, so whichever pod hosts the match can build the run
+type queueEntry struct {
+	Pod       string                `json:"pod"`
+	Character types.CharacterInPlay `json:"character"`
+}
+
 var queueScript = redis.NewScript(`
-		-- push to player to pod info on hash
+		-- push player's queue entry (pod + character) on hash
 		local created = redis.call("HSETNX", KEYS[2], ARGV[1], ARGV[2])
 
 		if created == 0 then 
@@ -48,9 +56,15 @@ var queueScript = redis.NewScript(`
 		return 1
 	`)
 
-func (r *Redis) QueuePlayer(ctx context.Context, playerID, pod string) error {
-	// atomically push player to list and add their pod info to hash
-	cmd := queueScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, playerID, pod)
+func (r *Redis) QueuePlayer(ctx context.Context, playerID, pod string, character types.CharacterInPlay) error {
+	entry, err := json.Marshal(queueEntry{Pod: pod, Character: character})
+
+	if err != nil {
+		return fmt.Errorf("MatchQueue QueuePlayer json marshal : %w", err)
+	}
+
+	// atomically push player to list and add their queue entry to hash
+	cmd := queueScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, playerID, entry)
 	created, err := cmd.Int64()
 
 	// return early with unexpected redis error
@@ -104,7 +118,19 @@ var matchmakeScript = redis.NewScript(`
 
 		-- get players pods from hash, then remove them
 		for i=1, matchSize do
-			local playerPod = redis.call("HGET", KEYS[2], partyIds[i])
+			local playerEntry = redis.call("HGET", KEYS[2], partyIds[i])
+
+			-- the entry is json {pod, character}, read the pod out of it; an entry that
+			-- won't decode or has no pod is the same corruption as a missing one
+			local playerPod = nil
+			local playerCharacter = nil
+			if playerEntry then
+				local decoded, entry = pcall(cjson.decode, playerEntry)
+				if decoded and type(entry) == "table" and type(entry.pod) == "string" then
+					playerPod = entry.pod
+					playerCharacter = entry.character
+				end
+			end
 		
 			-- check if corresponding playerPod exists, drift means corruption 
 			-- return early with this player popped, everyone else returned to queue
@@ -146,7 +172,8 @@ var matchmakeScript = redis.NewScript(`
 
 			local player = {
 				id = partyIds[i],
-				pod = playerPod
+				pod = playerPod,
+				character = playerCharacter
 			}
 			newMatchPlayers[i] = player
 		end
@@ -203,8 +230,15 @@ var queuedPlayersScript = redis.NewScript(`
 		-- collect this pod's players, in queue order
 		local podPlayers = {}
 		for i, playerId in ipairs(queue) do
-			if redis.call("HGET", KEYS[2], playerId) == ARGV[1] then
-				table.insert(podPlayers, playerId)
+			local playerEntry = redis.call("HGET", KEYS[2], playerId)
+
+			-- match on the pod inside the json entry, skip one that won't decode; the
+			-- match loop reports it as corruption once it is popped
+			if playerEntry then
+				local decoded, entry = pcall(cjson.decode, playerEntry)
+				if decoded and type(entry) == "table" and entry.pod == ARGV[1] then
+					table.insert(podPlayers, playerId)
+				end
 			end
 		end
 

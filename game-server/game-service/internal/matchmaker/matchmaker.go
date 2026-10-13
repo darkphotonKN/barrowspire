@@ -14,6 +14,7 @@ import (
 var (
 	ErrPlayerAlreadyQueued       = errors.New("player already queued")
 	ErrRetryMaxAttemptsExhausted = errors.New("retry max attempts exhausted")
+	ErrNoPodsListening           = errors.New("no pods listening")
 )
 
 const (
@@ -46,6 +47,7 @@ type matchmaker struct {
 	matchedChan     chan []*types.Player
 	QueueStatusChan chan QueueStatus
 	matchQueue      MatchQueue
+	matchAnnouncer  MatchAnnouncer
 
 	// this replicas pod id, recorded against every player it queues
 	podID string
@@ -67,13 +69,13 @@ func NewMatchmaker(matchSize int, podID string, matchQueue MatchQueue) *matchmak
 		matchedChan:     make(chan []*types.Player),
 		QueueStatusChan: make(chan QueueStatus),
 		matchQueue:      matchQueue,
-		matchReadyCh:    make(chan string, matchReadyBuffer),
+		matchReadyCh:    make(MatchReadyCh, matchReadyBuffer),
 	}
 }
 
 // external state store to manage queue and player pod state across server instances
 type MatchQueue interface {
-	QueuePlayer(ctx context.Context, playerID, pod string) error
+	QueuePlayer(ctx context.Context, playerID, pod string, character types.CharacterInPlay) error
 	DequeuePlayer(ctx context.Context, playerID string) error
 	Matchmake(ctx context.Context, matchCriteria MatchCriteria) ([]MatchedPlayer, error) // list of playerIDs that successfully matched
 	MarkPodAlive(ctx context.Context, podID string) error                                // liveness heartbeat, lapses on its own if this pod stops calling
@@ -87,6 +89,12 @@ type MatchCriteria struct {
 type MatchedPlayer struct {
 	ID  string `json:"id"`
 	Pod string `json:"pod"`
+	// character in play they queued with, the host builds the run from it
+	Character types.CharacterInPlay `json:"character"`
+}
+
+type MatchAnnouncer interface {
+	Announce(ctx context.Context, payload MatchStart) error
 }
 
 // Start launches queue listening
@@ -159,10 +167,13 @@ func (q *matchmaker) MatchLoop(ctx context.Context) {
 			}
 			slog.Debug("match found in tick", "matched_players_res", matchedPlayersRes)
 
-			// found result, send to message hub to start game, then continue matchmaking
-			matchedPlayers := make([]*types.Player, 0, len(matchedPlayersRes))
+			// found result, validate and announce to other pods before starting game
+
+			matchedPlayersIds := make([]uuid.UUID, 0, len(matchedPlayersRes))
+
 			// stores errored players map
 			matchedPlayerErrored := make(map[string]struct{}, 0)
+
 			for _, player := range matchedPlayersRes {
 				id, err := uuid.Parse(player.ID)
 
@@ -179,9 +190,7 @@ func (q *matchmaker) MatchLoop(ctx context.Context) {
 				}
 
 				// only send ids, look up for the rest is updated to be done by the caller
-				matchedPlayers = append(matchedPlayers, &types.Player{
-					ID: id,
-				})
+				matchedPlayersIds = append(matchedPlayersIds, id)
 			}
 
 			// requeue unerrored players
@@ -191,21 +200,36 @@ func (q *matchmaker) MatchLoop(ctx context.Context) {
 				// skip errored players and requeue the rest
 				q.requeueUnerroredPlayers(ctx, matchedPlayersRes, matchedPlayerErrored)
 
-				// requeuing, skip sendto channel
+				// requeuing, skip announcing match
 				continue
 			}
 
-			// send to channel
-			select {
-			// send to message hub, coordinated handoff
-			case q.matchedChan <- matchedPlayers:
-			// fallback incase stuck and ctx was cancelled
-			case <-ctx.Done():
-				return
-			// second fallback if hub hangs for too long
-			case <-time.After(time.Second * 5):
-				slog.Warn("timed out when trying to find match for match ready players")
-				q.requeueUnerroredPlayers(ctx, matchedPlayersRes, matchedPlayerErrored)
+			// announce match start to host pod
+			//TODO: implement better host pod selection
+			// host pod now is the first player's pod
+			payload := MatchStart{
+				PodID:     matchedPlayersRes[0].Pod,
+				Step:      MatchStepCreate,
+				PlayerIDs: matchedPlayersIds,
+			}
+
+			// TODO: add a circuit breaker so repeated announce failures fail fast.
+			// After a few failures in a row, stop popping players for a backoff
+			// that doubles each time it trips, and reset on the first success.
+			// Guard the Matchmake pop, not the announce, so players wait in the
+			// queue instead of being popped and requeued every tick.
+			err = q.matchAnnouncer.Announce(ctx, payload)
+
+			if err != nil {
+				if errors.Is(err, ErrNoPodsListening) {
+
+					// not suposed to happen, so log loudly
+					slog.Error("no pods listenign when match intended to start", "host_pod_id_attempted_to_start", payload.PodID, "playerIDs", matchedPlayersIds)
+					continue
+				}
+
+				// log unexpected redis error
+				slog.Warn("unexpected redis error", "err", err)
 			}
 		}
 	}
@@ -218,7 +242,7 @@ func (q *matchmaker) requeueUnerroredPlayers(ctx context.Context, matchedPlayers
 		}
 
 		// requeue player
-		err := q.matchQueue.QueuePlayer(ctx, playerToRequeue.ID, playerToRequeue.Pod)
+		err := q.matchQueue.QueuePlayer(ctx, playerToRequeue.ID, playerToRequeue.Pod, playerToRequeue.Character)
 		// new boundary is here, so log directly for errors
 		if err != nil {
 			slog.Warn("requeueing player couldnt join queue", "err", err)
@@ -302,7 +326,7 @@ func (q *matchmaker) PlayerJoinQueue(ctx context.Context, player *types.Player) 
 	queueCtx, queueCtxCanc := context.WithTimeout(ctx, timeoutTime)
 	defer queueCtxCanc()
 
-	err := q.matchQueue.QueuePlayer(queueCtx, player.ID.String(), q.podID)
+	err := q.matchQueue.QueuePlayer(queueCtx, player.ID.String(), q.podID, player.Character)
 
 	if err != nil {
 		// no retry
@@ -362,9 +386,71 @@ func (q *matchmaker) MatchReady(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.Canceled) {
+				slog.Info("MatchReady loop context cancelled", "err", ctx.Err())
+			}
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				slog.Info("MatchReady loop context deadline reached", "err", ctx.Err())
+			}
 			return
-		case matchReadyPayload := <-q.matchReadyCh:
+
+		case matchReadyPayload, ok := <-q.matchReadyCh:
+			// handle channel closed
+			if !ok {
+				slog.Info("MatchReady loop received channel closed")
+				return
+			}
+
 			slog.Debug("Recieved match ready", "matchReadyPayload", matchReadyPayload)
+
+			// validate message was sent to the correct pod
+			if matchReadyPayload.PodID != q.podID {
+				slog.Error("match ready loop recieved wrong payload for the wrong pod", "pod_id_from_payload", matchReadyPayload.PodID)
+				continue
+			}
+
+			// correct message payload sent, now check which step to handle
+			switch matchReadyPayload.Step {
+
+			case MatchStepCreate:
+				if len(matchReadyPayload.PlayerIDs) <= 0 {
+					slog.Error("match ready loop recieved empty PlayerIDs", "pod_id", matchReadyPayload.PodID)
+					continue
+				}
+
+				players := make([]*types.Player, 0, len(matchReadyPayload.PlayerIDs))
+				for _, player := range matchReadyPayload.PlayerIDs {
+					players = append(players, &types.Player{
+						ID: player,
+					},
+					)
+				}
+
+				select {
+				case <-ctx.Done():
+					if errors.Is(ctx.Err(), context.Canceled) {
+						slog.Info("MatchReady loop, sending players to matchedChan, context cancelled", "err", ctx.Err())
+					}
+					if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+						slog.Warn("MatchReady loop, sending players to matchedChan, context deadline reached", "err", ctx.Err())
+					}
+					return
+
+				case <-time.After(time.Second * 5):
+					slog.Error("sending players to matchedChan, matchedChan unresponsive for 5 seconds", "players_dropped_ids", matchReadyPayload.PlayerIDs)
+
+					continue
+				case q.matchedChan <- players:
+				}
+
+			// handoff to player clients about us
+			case MatchStepHandoff:
+				continue
+
+			default:
+				slog.Info("match ready payload with unexpected step recieved", "match_ready_payload_step", matchReadyPayload.Step)
+				continue
+			}
 		}
 	}
 }

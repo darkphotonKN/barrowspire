@@ -357,7 +357,18 @@ export class HubScene extends Phaser.Scene {
     socketManager.on("queue_status", (payload: { current?: number; total?: number }) =>
       this.showQueueProgress(payload?.current ?? 0, payload?.total ?? 0),
     );
-    this.unsubscribeQueue = () => socketManager.off("queue_status");
+    // A match on another server: the move happens behind this panel, and the
+    // host's world_entered switches the scene. A refused move leaves the delver
+    // here, so say so. FS-K2HKP §Requirements 29, 31.
+    socketManager.on("world_handoff", () => this.showQueueProgressText("Joining the delve…"));
+    socketManager.on("world_handoff_failed", () =>
+      this.showQueueProgressText("The delve could not be joined."),
+    );
+    this.unsubscribeQueue = () => {
+      socketManager.off("queue_status");
+      socketManager.off("world_handoff");
+      socketManager.off("world_handoff_failed");
+    };
 
     // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
     const release = () => {
@@ -1019,8 +1030,10 @@ export class HubScene extends Phaser.Scene {
   }
 
   private showQueueProgress(current: number, total: number): void {
-    const text = `Gathering the delve  ${current}/${total}`;
+    this.showQueueProgressText(`Gathering the delve  ${current}/${total}`);
+  }
 
+  private showQueueProgressText(text: string): void {
     if (this.queuePanel) {
       this.queuePanel.setText(text);
       return;

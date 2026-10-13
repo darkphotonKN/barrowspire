@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 )
 
 // fakeMatchQueue records heartbeats; the queue operations are inert so the
@@ -28,8 +29,10 @@ type fakeMatchQueue struct {
 	queuedPodIDs []string
 }
 
-func (f *fakeMatchQueue) QueuePlayer(context.Context, string, string) error { return nil }
-func (f *fakeMatchQueue) DequeuePlayer(context.Context, string) error       { return nil }
+func (f *fakeMatchQueue) QueuePlayer(context.Context, string, string, types.CharacterInPlay) error {
+	return nil
+}
+func (f *fakeMatchQueue) DequeuePlayer(context.Context, string) error { return nil }
 func (f *fakeMatchQueue) Matchmake(context.Context, matchmaker.MatchCriteria) ([]matchmaker.MatchedPlayer, error) {
 	return nil, nil
 }

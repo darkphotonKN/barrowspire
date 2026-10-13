@@ -2845,7 +2845,9 @@ export class BarrowspireScene extends Phaser.Scene {
   private connectToServer(): void {
     // Connect if not already connected
     if (!socketManager.isConnected()) {
-      socketManager.connect("ws://localhost:5668/game/ws");
+      // back to whichever server this delver is on: after a handoff that is the
+      // run's host, not the one they started on (FS-K2HKP §Requirements 29)
+      socketManager.reconnect();
       GameStateLogger.logConnectionStatus(
         "Connecting to game server...",
         toCss(palette.torchCore),

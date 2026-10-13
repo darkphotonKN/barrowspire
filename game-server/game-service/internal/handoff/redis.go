@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -32,7 +31,26 @@ const (
 )
 
 // announce match found tasks to all the pods subscribed
-func (h *Redis) Announce(ctx context.Context, matchedPlayers []*types.Player) error {
+func (h *Redis) Announce(ctx context.Context, payload matchmaker.MatchStart) error {
+	jsonPayload, err := json.Marshal(payload)
+
+	if err != nil {
+		return fmt.Errorf("handoff announce marshalling payload to json : %w", err)
+	}
+
+	// attempt to publish to corresponding pods
+	res := h.client.Publish(ctx, matchStartChannelKey+payload.PodID, jsonPayload)
+
+	n, err := res.Result()
+
+	if err != nil {
+		return fmt.Errorf("handoff announce unexpected redis error : %w", err)
+	}
+
+	if n == 0 {
+		return fmt.Errorf("handoff announce no pods listening : %w", matchmaker.ErrNoPodsListening)
+	}
+
 	return nil
 }
 
