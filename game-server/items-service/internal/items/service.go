@@ -104,6 +104,7 @@ type Repository interface {
 	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
 	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
 	FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) (bool, error)
+	TransferItem(ctx context.Context, itemID, buyerID, listingID uuid.UUID) (bool, error)
 
 	// public item facts, for listing pages
 	GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error)
@@ -1181,4 +1182,18 @@ func (s *service) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) er
 
 func (s *service) ReturnItem(ctx context.Context, id, listingID uuid.UUID) error {
 	return s.repo.ReturnItem(ctx, id, listingID)
+}
+
+func (s *service) TransferItem(ctx context.Context, itemID, buyerID, listingID uuid.UUID) error {
+
+	transferred, err := s.repo.TransferItem(ctx, itemID, buyerID, listingID)
+	if err != nil {
+		return fmt.Errorf("transfer item %v: %w", itemID, err)
+	}
+
+	if !transferred {
+		return fmt.Errorf("transfer item %v for buyer %v: %w", itemID, buyerID, ErrItemNotTransfer)
+	}
+
+	return nil
 }

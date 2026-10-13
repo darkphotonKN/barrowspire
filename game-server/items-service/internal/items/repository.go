@@ -23,6 +23,8 @@ var ErrItemNotReservable = errors.New("item not reservable")
 // no longer the seller's, or no longer on sale. Retrying cannot change either.
 var ErrItemNotFreezable = errors.New("item not freezable")
 
+var ErrItemNotTransfer = errors.New("item not transfer")
+
 type repository struct {
 	DB *sqlx.DB
 }
@@ -1234,4 +1236,47 @@ func (r *repository) ReturnItem(ctx context.Context, id, listingID uuid.UUID) er
 	default:
 		return nil
 	}
+}
+
+func (r *repository) TransferItem(ctx context.Context, itemID, buyerID, listingID uuid.UUID) (bool, error) {
+	query := `
+		UPDATE item_instances 
+		SET 
+			owner_member_id = $1,
+			status = 'AVAILABLE',
+			listing_id = NULL
+		WHERE status = 'PENDING_SETTLEMENT'
+		AND id = $2
+		AND listing_id = $3
+	`
+
+	res, err := r.DB.ExecContext(ctx, query, buyerID, itemID, listingID)
+	if err != nil {
+		return false, wrapDBErr("transfer item", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("transfer item, rows affected: %w", err)
+	}
+	if n > 0 {
+		return true, nil
+	}
+
+	alreadyTransferred := `
+		SELECT EXISTS (
+			SELECT 1
+			FROM item_instances
+			WHERE id = $1
+			AND owner_member_id = $2
+			AND status <> 'PENDING_SETTLEMENT'
+		)
+	`
+
+	var transferred bool
+	if err := r.DB.GetContext(ctx, &transferred, alreadyTransferred, itemID, buyerID); err != nil {
+		return false, wrapDBErr("transfer item, already transferred check", err)
+	}
+
+	return transferred, nil
 }

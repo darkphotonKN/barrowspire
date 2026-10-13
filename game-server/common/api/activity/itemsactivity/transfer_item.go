@@ -14,4 +14,8 @@ const TransferItemActivityName = "TransferItem"
 type TransferItemInput struct {
 	ItemID        uuid.UUID `json:"item_id"`
 	BuyerMemberID uuid.UUID `json:"buyer_member_id"`
+	ListingID     uuid.UUID `json:"listing_id"`
+}
+
+type TransferItemOutput struct {
 }

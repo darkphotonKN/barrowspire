@@ -179,6 +179,7 @@ func main() {
 
 		activities.FreezeItemActivity.Register,
 		activities.ReturnItemActivity.Register,
+		activities.TransferItemActivity.Register,
 	)
 	if err != nil {
 		log.Fatalf("Failed to build temporal worker: %s", err)
