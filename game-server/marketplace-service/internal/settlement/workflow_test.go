@@ -24,6 +24,11 @@ type noBidsArm struct {
 	expireIn    marketplaceactivity.ExpireListingInput
 	expireQueue string
 	expireErr   error
+
+	// escalate and park: a raise stands for the operator fixing the cause, so
+	// it clears expireErr and the next lap gets through
+	raised   []marketplaceactivity.RaiseSettlementExceptionInput
+	resolved []uuid.UUID
 }
 
 // The workflow schedules each step by its contract name, so the test stands fakes
@@ -47,6 +52,17 @@ func newWorkflowEnv(t *testing.T, freeze func(ctx context.Context, in marketplac
 		arm.expireQueue = activity.GetInfo(ctx).TaskQueue
 		return arm.expireErr
 	}, activity.RegisterOptions{Name: marketplaceactivity.ExpireListingActivityName})
+
+	exceptionID := uuid.New()
+	env.RegisterActivityWithOptions(func(ctx context.Context, in marketplaceactivity.RaiseSettlementExceptionInput) (marketplaceactivity.RaiseSettlementExceptionOutput, error) {
+		arm.raised = append(arm.raised, in)
+		arm.expireErr = nil
+		return marketplaceactivity.RaiseSettlementExceptionOutput{ExceptionID: exceptionID}, nil
+	}, activity.RegisterOptions{Name: marketplaceactivity.RaiseSettlementExceptionActivityName})
+	env.RegisterActivityWithOptions(func(ctx context.Context, in marketplaceactivity.ResolveSettlementExceptionInput) error {
+		arm.resolved = append(arm.resolved, in.ExceptionID)
+		return nil
+	}, activity.RegisterOptions{Name: marketplaceactivity.ResolveSettlementExceptionActivityName})
 
 	return env, arm
 }
@@ -114,16 +130,29 @@ func TestWorkflow_NoBids_ReturnsTheItemThenExpiresTheListing(t *testing.T) {
 	assert.Equal(t, bstemporal.QueueMarketplace.String(), arm.expireQueue)
 }
 
-// A listing NB2 finds in any other status is an invariant breach (§Req 34b).
-// TODO(I-NXP1W-7): escalate and park instead; until that helper exists the run fails.
-func TestWorkflow_NoBids_ExpireImpossible_FailsTheWorkflow(t *testing.T) {
+// A listing NB2 finds in any other status is an invariant breach (§Req 34b). The
+// item is already back with its seller, so there is nothing to roll back: it
+// escalates and parks (I-NXP1W-7), and the run completes once the cause is fixed
+// rather than failing.
+func TestWorkflow_NoBids_ExpireImpossible_ParksThenCompletes(t *testing.T) {
+	listingID := uuid.New()
 	env, arm := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
 		return marketplaceactivity.FreezeListingOutput{Outcome: marketplaceactivity.OutcomeNoBids, ListingID: in.ListingID}, nil
 	})
 	arm.expireErr = temporal.NewNonRetryableApplicationError("listing sold", "ExpireListingImpossible", nil)
 
-	env.ExecuteWorkflow(Workflow, Input{ListingID: uuid.New(), Trigger: usecase.TriggerExpiry})
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerExpiry})
 
 	require.True(t, env.IsWorkflowCompleted())
-	assert.Error(t, env.GetWorkflowError())
+	require.NoError(t, env.GetWorkflowError(), "an impossible NB2 parks; it never fails the run")
+
+	require.Len(t, arm.raised, 1)
+	assert.Equal(t, listingID, arm.raised[0].ListingID)
+	assert.Equal(t, marketplaceactivity.ExpireListingActivityName, arm.raised[0].Step)
+	assert.Len(t, arm.resolved, 1, "the exception is resolved once NB2 gets through")
+	assert.Equal(t, []string{
+		itemsactivity.ReturnItemActivityName,
+		marketplaceactivity.ExpireListingActivityName, // impossible: raise and park
+		marketplaceactivity.ExpireListingActivityName, // after the re-park timer
+	}, arm.calls, "NB1 is not repeated; only the parked step is retried")
 }

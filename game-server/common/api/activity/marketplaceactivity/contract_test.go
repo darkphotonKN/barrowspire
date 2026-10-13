@@ -71,3 +71,9 @@ func TestExpireListingInput_MatchesGolden(t *testing.T) {
 		ListingID: uuid.MustParse("11111111-1111-4111-8111-111111111111"),
 	})
 }
+
+func TestResolveSettlementExceptionInput_MatchesGolden(t *testing.T) {
+	activitytest.Golden(t, "resolve_settlement_exception_input.json", marketplaceactivity.ResolveSettlementExceptionInput{
+		ExceptionID: uuid.MustParse("77777777-7777-4777-8777-777777777777"),
+	})
+}
