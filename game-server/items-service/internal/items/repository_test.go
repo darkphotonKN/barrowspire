@@ -139,6 +139,103 @@ func TestFreezeItem(t *testing.T) {
 	}
 }
 
+// Opt-in and committed like TestFreezeItem. TransferItem is settlement step 4
+// (FS-NXP1W Req 31): PENDING_SETTLEMENT for this listing -> the buyer's,
+// AVAILABLE, listing_id cleared, in one write. Already applied is owner = buyer
+// and not PENDING_SETTLEMENT, whatever the buyer has done with it since.
+func TestTransferItem(t *testing.T) {
+	dsn := os.Getenv("ITEMS_TEST_DSN")
+	if dsn == "" {
+		t.Skip("ITEMS_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	db, err := sqlx.Connect("postgres", dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+
+	seller, buyer := uuid.New(), uuid.New()
+	earlier := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	const (
+		thisListing  = "this"
+		otherListing = "other"
+		noListing    = ""
+	)
+
+	tests := []struct {
+		name            string
+		status          string
+		owner           uuid.UUID
+		listing         string
+		skipSeed        bool
+		wantTransferred bool
+		wantStatus      string
+		wantOwner       uuid.UUID
+		wantListing     string
+	}{
+		{name: "frozen for this listing moves to the buyer and unfreezes", status: "PENDING_SETTLEMENT", owner: seller, listing: thisListing,
+			wantTransferred: true, wantStatus: "AVAILABLE", wantOwner: buyer, wantListing: noListing},
+		{name: "already transferred is success and changes nothing", status: "AVAILABLE", owner: buyer, listing: noListing,
+			wantTransferred: true, wantStatus: "AVAILABLE", wantOwner: buyer, wantListing: noListing},
+		{name: "already transferred and relisted by the buyer is still success", status: "LISTED", owner: buyer, listing: otherListing,
+			wantTransferred: true, wantStatus: "LISTED", wantOwner: buyer, wantListing: otherListing},
+		{name: "frozen for another listing is refused and left alone", status: "PENDING_SETTLEMENT", owner: seller, listing: otherListing,
+			wantStatus: "PENDING_SETTLEMENT", wantOwner: seller, wantListing: otherListing},
+		{name: "listed but never frozen is refused", status: "LISTED", owner: seller, listing: thisListing,
+			wantStatus: "LISTED", wantOwner: seller, wantListing: thisListing},
+		{name: "missing item is refused", skipSeed: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			itemID, listingID, otherListingID := uuid.New(), uuid.New(), uuid.New()
+			listingFor := map[string]*uuid.UUID{thisListing: &listingID, otherListing: &otherListingID, noListing: nil}
+
+			if !tt.skipSeed {
+				seedItemInstance(t, ctx, db, itemID, tt.owner, tt.status, earlier)
+				if _, err := db.ExecContext(ctx, `UPDATE item_instances SET listing_id = $2 WHERE id = $1`, itemID, listingFor[tt.listing]); err != nil {
+					t.Fatalf("seed listing_id: %v", err)
+				}
+			}
+
+			transferred, err := NewRepository(db).TransferItem(ctx, itemID, buyer, listingID)
+			if err != nil {
+				t.Fatalf("transfer: %v", err)
+			}
+			if transferred != tt.wantTransferred {
+				t.Errorf("transferred = %v, want %v", transferred, tt.wantTransferred)
+			}
+			if tt.skipSeed {
+				return
+			}
+
+			var row struct {
+				Status    string     `db:"status"`
+				Owner     uuid.UUID  `db:"owner_member_id"`
+				ListingID *uuid.UUID `db:"listing_id"`
+			}
+			if err := db.GetContext(ctx, &row, `SELECT status, owner_member_id, listing_id FROM item_instances WHERE id = $1`, itemID); err != nil {
+				t.Fatalf("read back: %v", err)
+			}
+			if row.Status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", row.Status, tt.wantStatus)
+			}
+			if row.Owner != tt.wantOwner {
+				t.Errorf("owner = %v, want %v", row.Owner, tt.wantOwner)
+			}
+			want := listingFor[tt.wantListing]
+			switch {
+			case want == nil && row.ListingID != nil:
+				t.Errorf("listing_id = %v, want NULL", *row.ListingID)
+			case want != nil && (row.ListingID == nil || *row.ListingID != *want):
+				t.Errorf("listing_id = %v, want %v", row.ListingID, *want)
+			}
+		})
+	}
+}
+
 func seedItemInstance(t *testing.T, ctx context.Context, db *sqlx.DB, itemID, owner uuid.UUID, status string, updatedAt time.Time) {
 	t.Helper()
 	seedItemInstanceAtLevel(t, ctx, db, itemID, owner, status, updatedAt, 1)

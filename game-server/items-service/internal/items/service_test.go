@@ -82,6 +82,58 @@ func TestServiceFreezeItem(t *testing.T) {
 	}
 }
 
+// transferRepo stubs the one repository call TransferItem makes, and records the
+// IDs it was handed so the test can see they arrive in the right order.
+type transferRepo struct {
+	Repository
+	transferred bool
+	err         error
+
+	gotItemID, gotBuyerID, gotListingID uuid.UUID
+}
+
+func (r *transferRepo) TransferItem(ctx context.Context, itemID, buyerID, listingID uuid.UUID) (bool, error) {
+	r.gotItemID, r.gotBuyerID, r.gotListingID = itemID, buyerID, listingID
+	return r.transferred, r.err
+}
+
+func TestServiceTransferItem(t *testing.T) {
+	dbDown := errors.New("connection refused")
+
+	tests := []struct {
+		name    string
+		repo    *transferRepo
+		wantErr error
+	}{
+		// the repo folds "just transferred" and "already transferred to this buyer" into one true
+		{name: "transferred or already transferred is success", repo: &transferRepo{transferred: true}},
+		{name: "not frozen for this listing is a semantic impossibility", repo: &transferRepo{transferred: false}, wantErr: ErrItemNotTransfer},
+		{name: "infrastructure failure passes through, not as impossibility", repo: &transferRepo{err: dbDown}, wantErr: dbDown},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			itemID, buyerID, listingID := uuid.New(), uuid.New(), uuid.New()
+
+			err := (&service{repo: tt.repo}).TransferItem(context.Background(), itemID, buyerID, listingID)
+
+			if tt.wantErr == nil && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr == dbDown && errors.Is(err, ErrItemNotTransfer) {
+				t.Fatalf("transient failure must not read as ErrItemNotTransfer: %v", err)
+			}
+			if tt.repo.gotItemID != itemID || tt.repo.gotBuyerID != buyerID || tt.repo.gotListingID != listingID {
+				t.Errorf("repo got (item %v, buyer %v, listing %v), want (%v, %v, %v)",
+					tt.repo.gotItemID, tt.repo.gotBuyerID, tt.repo.gotListingID, itemID, buyerID, listingID)
+			}
+		})
+	}
+}
+
 // The listing is born with the ID minted at reserve, so ItemReserved must carry
 // it (FS-NXP1W Req 24a).
 func TestFormattedItemInstanceData_CarriesListingID(t *testing.T) {
