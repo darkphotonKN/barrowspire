@@ -46,14 +46,17 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 			return marketplaceactivity.FreezeListingOutput{}, err
 		}
 
-		expireListingCtx := workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueMarketplace))
-
-		// Step NB2, only once NB1 has returned the item (§Req 34b)
-		// TODO(I-NXP1W-7): an impossible NB2 escalates and parks rather than failing the run
-		err = workflow.ExecuteActivity(expireListingCtx,
+		// Step NB2, only once NB1 has returned the item (§Req 34b). The item is
+		// already back with its seller, so there is nothing to roll back: an
+		// impossible NB2 is an invariant breach that escalates and parks, the same
+		// as an outage, and the run never fails here.
+		err = runUntilDone(ctx, frozen.ListingID,
 			marketplaceactivity.ExpireListingActivityName,
+			bstemporal.QueueMarketplace,
+			afterPivot, // an impossible NB2 parks: nothing left to roll back
 			marketplaceactivity.ExpireListingInput{ListingID: frozen.ListingID},
-		).Get(expireListingCtx, nil)
+			nil,
+		)
 		if err != nil {
 			return marketplaceactivity.FreezeListingOutput{}, err
 		}

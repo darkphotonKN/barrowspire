@@ -17,6 +17,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
+	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
 	"github.com/darkphotonKN/barrowspire-server/common/temporal/smoke"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
@@ -87,11 +88,20 @@ func main() {
 
 	// Declare the items events exchange
 	broker.DeclareExchange(ch, commonconstants.ItemEventsExchange, "topic")
+	// marketplace's own events, settlement.failed first (FS-NXP1W Req 10)
+	broker.DeclareExchange(ch, commonconstants.MarketplaceEventsExchange, "topic")
 
 	defer func() {
 		close()
 		ch.Close()
 	}()
+
+	// --- outbox worker ---
+	// Publishes what use cases wrote to the outbox in their own transaction.
+	// Run loops on a ticker until ctx is cancelled, so it gets its own goroutine.
+	outboxServ := commonoutbox.NewService(commonoutbox.NewRepo(db))
+	outboxWorker := commonoutbox.NewOutboxWorker(time.Minute, 20, outboxServ, broker.NewAmqpPublisher(ch))
+	go outboxWorker.Run(ctx)
 
 	// --- temporal worker: initiate ---
 	// Marketplace is the settlement saga's orchestrator (ADR-0011): it is the only
@@ -124,6 +134,8 @@ func main() {
 		// the workflow and every settlement activity marketplace owns
 		settlement.Register,
 		func(w worker.Worker) { services.Activities.Register(w) },
+		// raise and resolve for escalate and park (FS-NXP1W Req 10)
+		func(w worker.Worker) { services.ExceptionActivities.Register(w) },
 	)
 
 	if err != nil {

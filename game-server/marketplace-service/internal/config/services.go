@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
+	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing"
 	listingactivity "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/activity"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/adapter/itemreserver"
@@ -27,6 +28,9 @@ type Services struct {
 	// Activities are the settlement steps marketplace owns, registered on its
 	// Temporal worker in main.
 	Activities *listingactivity.Activities
+	// ExceptionActivities raise and resolve the exception a parked step records
+	// (FS-NXP1W Req 10), registered next to Activities.
+	ExceptionActivities *listingactivity.ExceptionActivities
 }
 
 func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, ch *amqp.Channel, temporalClient client.Client) *Services {
@@ -79,9 +83,18 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	expireListingUC := usecase.NewExpireListingUC(listingRepo)
 	activities := listingactivity.NewActivities(freezeListingUC, setWinningBidUC, loseAllBidsUC, expireListingUC)
 
+	// escalate and park: the exception and its settlement.failed share one
+	// transaction, so the repository writes the outbox too
+	outboxService := commonoutbox.NewService(commonoutbox.NewRepo(db))
+	exceptionRepo := listingrepo.NewSettlementExceptionRepository(db, outboxService)
+	raiseExceptionUC := usecase.NewRaiseSettlementExceptionUC(exceptionRepo)
+	resolveExceptionUC := usecase.NewResolveSettlementExceptionUC(exceptionRepo)
+	exceptionActivities := listingactivity.NewExceptionActivities(raiseExceptionUC, resolveExceptionUC)
+
 	return &Services{
 		ListingHandler:          listingHandler,
 		ReconcileReservationsUC: reconcileReservationsUC,
 		Activities:              activities,
+		ExceptionActivities:     exceptionActivities,
 	}
 }

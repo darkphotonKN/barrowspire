@@ -23,3 +23,13 @@ type RaiseSettlementExceptionInput struct {
 type RaiseSettlementExceptionOutput struct {
 	ExceptionID uuid.UUID `json:"exception_id"`
 }
+
+// ResolveSettlementExceptionActivityName closes the exception a parked step
+// raised, once that step has succeeded (FS-NXP1W Req 10.3). Resolving an already
+// resolved exception is success.
+const ResolveSettlementExceptionActivityName = "ResolveSettlementException"
+
+type ResolveSettlementExceptionInput struct {
+	// ExceptionID is RaiseSettlementExceptionOutput.ExceptionID.
+	ExceptionID uuid.UUID `json:"exception_id"`
+}

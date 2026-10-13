@@ -22,6 +22,7 @@ const (
 	AuthEventsExchange           = "auth.events"
 	ItemEventsExchange           = "item.events"
 	WalletEventsExchange         = "wallet.events"
+	MarketplaceEventsExchange    = "marketplace.events"
 	DlxEventsExchange            = "dlx.exchange"
 	RetryExchange                = "retry.exchange"
 	MarketplaceDlxEventsExchange = "marketplace.dlx.exchange"
@@ -63,6 +64,7 @@ const (
 
 	// marketplace events
 	MarpetplaceItemReservedDlq = "marketplace.item.reserved.dql"
+	SettlementFailed           = "settlement.failed" // a settlement parked or rolled back (FS-NXP1W)
 )
 
 /**
