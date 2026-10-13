@@ -101,7 +101,7 @@ var level5Helm = types.ItemConfig{
 func TestHandleEquip_AboveTheWearersLevel_IsRefusedWithTheRequiredLevel(t *testing.T) {
 	s, dispatcher := equipRun(t, nil)
 	playerID := uuid.New()
-	playerEntityID := s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+	playerEntityID := s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 	helmID := carried(t, s, playerEntityID, level5Helm)
 
 	err := s.handleEquip(constants.ActionEquip, playerEntityID, helmID)
@@ -123,7 +123,7 @@ func TestHandleEquip_AboveTheWearersLevel_IsRefusedWithTheRequiredLevel(t *testi
 func TestHandleEquip_Unequip_IsNeverGatedByLevel(t *testing.T) {
 	s, dispatcher := equipRun(t, nil)
 	playerID := uuid.New()
-	playerEntityID := s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+	playerEntityID := s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 	helmID := s.AddItem(level5Helm)
 	equipmentOf(t, s, playerEntityID).HeadSlot = &helmID
 
@@ -172,7 +172,7 @@ func TestHandleEquip_LevelGate_AppliesToEverySlot(t *testing.T) {
 			t.Run(slot.name+"/"+req.name, func(t *testing.T) {
 				s, dispatcher := equipRun(t, nil)
 				playerID := uuid.New()
-				playerEntityID := s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "mage", Level: 3})
+				playerEntityID := s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "mage", Level: 3}, "")
 				config := slot.config
 				config.RequiredLevel = req.requiredLevel
 				itemID := carried(t, s, playerEntityID, config)
@@ -201,7 +201,7 @@ func TestHandleEquip_LevelGate_AppliesToEverySlot(t *testing.T) {
 // auto-equipped by the level-up itself. FS-BDA7X §Requirements 33.
 func TestHandleEquip_AfterReachingTheLevel_TheSameEquipSucceeds(t *testing.T) {
 	s, _ := equipRun(t, nil)
-	playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+	playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 	helmID := carried(t, s, playerEntityID, level5Helm)
 	require.ErrorIs(t, s.handleEquip(constants.ActionEquip, playerEntityID, helmID), ErrBelowRequiredLevel)
 
@@ -237,7 +237,7 @@ func TestAddPlayer_OverLevelLoadoutItem_IsSeatedInTheInventory(t *testing.T) {
 	s, _ := equipRun(t, client)
 	playerID := uuid.New()
 
-	playerEntityID := s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+	playerEntityID := s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 
 	equipment := equipmentOf(t, s, playerEntityID)
 	assert.Nil(t, equipment.HeadSlot, "the level-5 helm is not worn")

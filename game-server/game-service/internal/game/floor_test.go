@@ -157,8 +157,8 @@ func newParty(t *testing.T, client *countingItemsClient) *party {
 	s := newRun(t, client)
 	p := &party{s: s, carrier: uuid.New(), fallen: uuid.New()}
 
-	s.AddPlayer(p.carrier, types.CharacterInPlay{Name: "Wren", Class: "warrior"})
-	s.AddPlayer(p.fallen, types.CharacterInPlay{Name: "Kaelen", Class: "mage"})
+	s.AddPlayer(p.carrier, types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
+	s.AddPlayer(p.fallen, types.CharacterInPlay{Name: "Kaelen", Class: "mage"}, "")
 
 	carrier := delverEntity(t, s, p.carrier)
 
@@ -324,8 +324,9 @@ func TestRegenerateFloor_ResetsPerFloorBookkeeping(t *testing.T) {
 	containers := entityIDsWith(s, ecs.ComponentTypeContainer)
 	assert.NotEmpty(t, doors, "the new floor's buildings place")
 	stairs := entityIDsWith(s, ecs.ComponentTypeStairs)
-	assert.Len(t, s.objectOccupiedPlaceAreas, len(doors)+len(containers)+2+len(stairs),
-		"the occupied areas are the new floor's buildings, chest, escape door, switch and stairs, and nothing else")
+	// +1: the party's formation, reserved once it stands
+	assert.Len(t, s.objectOccupiedPlaceAreas, len(doors)+len(containers)+2+len(stairs)+1,
+		"the occupied areas are the new floor's buildings, chest, escape door, switch, stairs and party, and nothing else")
 
 	assert.NotEqual(t, oldExitDoor, s.exitDoorEntityID)
 	assert.Equal(t, entityIDsWith(s, ecs.ComponentTypeEscapeDoor), []uuid.UUID{s.exitDoorEntityID},
@@ -348,7 +349,7 @@ func TestRegenerateFloor_MovesTheLivingAndLeavesTheDeadBehind(t *testing.T) {
 	s.stateSerializer = serializer.NewStateSerializer(s.EntityManager)
 
 	escaped := uuid.New()
-	s.AddPlayer(escaped, types.CharacterInPlay{Name: "Isolde", Class: "archer"})
+	s.AddPlayer(escaped, types.CharacterInPlay{Name: "Isolde", Class: "archer"}, "")
 	escapedPlayer, _ := delverEntity(t, s, escaped).GetComponent(ecs.ComponentTypePlayer)
 	escapedPlayer.(*components.PlayerComponent).Escape = true
 	escapedAt := *transformOf(t, delverEntity(t, s, escaped))

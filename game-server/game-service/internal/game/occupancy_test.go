@@ -25,12 +25,12 @@ func TestAdmit_RefusesBeyondCapacity(t *testing.T) {
 	session := hubSession(t)
 
 	for i := 0; i < constants.HubOccupancyCap; i++ {
-		require.NoError(t, session.Admit(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: "mage"}), "refused before full")
+		require.NoError(t, session.Admit(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: "mage"}, ""), "refused before full")
 	}
 
 	latecomer := uuid.New()
 
-	assert.ErrorIs(t, session.Admit(latecomer, types.CharacterInPlay{Name: "Latecomer", Class: "mage"}), ErrWorldFull)
+	assert.ErrorIs(t, session.Admit(latecomer, types.CharacterInPlay{Name: "Latecomer", Class: "mage"}, ""), ErrWorldFull)
 	assert.False(t, session.HasPlayer(latecomer))
 }
 
@@ -40,13 +40,13 @@ func TestAdmit_SomeoneAlreadyInsideIsNotArriving(t *testing.T) {
 	session := hubSession(t)
 
 	for i := 0; i < constants.HubOccupancyCap-1; i++ {
-		require.NoError(t, session.Admit(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: "mage"}))
+		require.NoError(t, session.Admit(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: "mage"}, ""))
 	}
 
 	resident := uuid.New()
-	require.NoError(t, session.Admit(resident, types.CharacterInPlay{Name: "Wren", Class: "mage"}))
+	require.NoError(t, session.Admit(resident, types.CharacterInPlay{Name: "Wren", Class: "mage"}, ""))
 
-	assert.NoError(t, session.Admit(resident, types.CharacterInPlay{Name: "Wren", Class: "mage"}),
+	assert.NoError(t, session.Admit(resident, types.CharacterInPlay{Name: "Wren", Class: "mage"}, ""),
 		"a delver was refused entry to the world they are already in")
 }
 
@@ -58,7 +58,7 @@ func TestAdmit_LastPlaceGoesToOne(t *testing.T) {
 
 	session := hubSession(t)
 	for i := 0; i < constants.HubOccupancyCap-1; i++ {
-		require.NoError(t, session.Admit(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: "mage"}))
+		require.NoError(t, session.Admit(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: "mage"}, ""))
 	}
 
 	var wg sync.WaitGroup
@@ -71,7 +71,7 @@ func TestAdmit_LastPlaceGoesToOne(t *testing.T) {
 		go func(slot int) {
 			defer wg.Done()
 			start.Wait()
-			results[slot] = session.Admit(uuid.New(), types.CharacterInPlay{Name: "Contender", Class: "mage"})
+			results[slot] = session.Admit(uuid.New(), types.CharacterInPlay{Name: "Contender", Class: "mage"}, "")
 		}(i)
 	}
 
@@ -95,6 +95,6 @@ func TestAdmit_ARunHasNoCap(t *testing.T) {
 	run := NewSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, nil, RunBounds())
 
 	for i := 0; i < constants.HubOccupancyCap+5; i++ {
-		require.NoError(t, run.Admit(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: "mage"}))
+		require.NoError(t, run.Admit(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: "mage"}, ""))
 	}
 }

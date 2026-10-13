@@ -28,7 +28,7 @@ func placeDelver(t *testing.T, s *Session, class string, x, y float64) (uuid.UUI
 	t.Helper()
 
 	playerID := uuid.New()
-	entity, ok := s.EntityManager.GetEntity(s.AddPlayer(playerID, types.CharacterInPlay{Name: "Delver", Class: class}))
+	entity, ok := s.EntityManager.GetEntity(s.AddPlayer(playerID, types.CharacterInPlay{Name: "Delver", Class: class}, ""))
 	require.True(t, ok)
 
 	tc, _ := entity.GetComponent(ecs.ComponentTypeTransform)

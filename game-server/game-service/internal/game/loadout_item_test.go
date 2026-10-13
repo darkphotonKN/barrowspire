@@ -78,7 +78,7 @@ func TestLoadoutItem_WithAffixes_RoundTripsSeatStateAndExtraction(t *testing.T) 
 
 	// the server's order: the roster is seated before the world is built
 	memberID := uuid.New()
-	s.AddPlayer(memberID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 6})
+	s.AddPlayer(memberID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 6}, "")
 	s.InitialMapObjects()
 	eq, _ := delverEntity(t, s, memberID).GetComponent(ecs.ComponentTypeEquipment)
 	equipment := eq.(*components.EquipmentComponent)
@@ -197,8 +197,8 @@ func TestNewSession_LoadsRaritiesOnceAtBuild_WithADeadline(t *testing.T) {
 			assert.Len(t, s.lootRarities, len(pbRarities().ItemRarities))
 
 			memberID := uuid.New()
-			s.AddPlayer(memberID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 6})
-			s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Ash", Class: "mage", Level: 6})
+			s.AddPlayer(memberID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 6}, "")
+			s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Ash", Class: "mage", Level: 6}, "")
 			if bounds.Type == types.WorldTypeRun {
 				s.InitialSystems()
 				s.InitialMapObjects()
@@ -223,8 +223,8 @@ func TestAddPlayer_RaritiesUnavailableAtBuild_SeatsWithoutRetrying(t *testing.T)
 	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, client, HubBounds())
 
 	memberID := uuid.New()
-	s.AddPlayer(memberID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 6})
-	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Ash", Class: "mage", Level: 6})
+	s.AddPlayer(memberID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 6}, "")
+	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Ash", Class: "mage", Level: 6}, "")
 
 	assert.Equal(t, 1, client.rarityLoads)
 	assert.Empty(t, s.lootRarities)

@@ -50,7 +50,7 @@ func seatMember(t *testing.T, s *Session, character types.CharacterInPlay) membe
 	t.Helper()
 
 	id := uuid.New()
-	entity, ok := s.EntityManager.GetEntity(s.AddPlayer(id, character))
+	entity, ok := s.EntityManager.GetEntity(s.AddPlayer(id, character, ""))
 	require.True(t, ok)
 
 	sc, _ := entity.GetComponent(ecs.ComponentTypeStats)

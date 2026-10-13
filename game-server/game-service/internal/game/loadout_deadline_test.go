@@ -35,7 +35,7 @@ func TestAddPlayer_LoadoutFetchHangs_SeatsWithoutLoadoutWithinTheDeadline(t *tes
 
 	seated := make(chan uuid.UUID, 1)
 	go func() {
-		seated <- s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+		seated <- s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 	}()
 
 	var playerEntityID uuid.UUID

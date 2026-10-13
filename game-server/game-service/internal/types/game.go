@@ -17,6 +17,11 @@ type Player struct {
 	// every world the player enters until they enter again. Zero until then.
 	// FS-BDA7X §Requirements 7.
 	Character CharacterInPlay
+	// Token is the bearer token the member last connected with, refreshed on
+	// every reconnect. Worlds load the member's worn gear with it. It is held,
+	// not renewed: a member who stays in the hub past its expiry is seated in
+	// their next world without gear until they reconnect.
+	Token BearerToken `json:"-"`
 }
 
 type PlayerState struct {

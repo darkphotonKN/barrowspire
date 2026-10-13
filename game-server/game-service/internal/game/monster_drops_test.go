@@ -223,6 +223,40 @@ func TestMonsterDrops_NothingEligible_LeavesNoPile(t *testing.T) {
 	assert.Empty(t, dropPiles(s))
 }
 
+// scriptedRand rolls the same Float64 every time and hands out its IntN
+// rolls in order.
+type scriptedRand struct {
+	f    float64
+	ints []int
+}
+
+func (r *scriptedRand) Float64() float64 { return r.f }
+func (r *scriptedRand) IntN(int) int {
+	n := r.ints[0]
+	r.ints = r.ints[1:]
+	return n
+}
+
+// A drop with no ring template still lays its pile with the items that did
+// roll: the ring is skipped, the weapon and armor drop.
+// FS-4R9M9 §Requirements 46; §Edge States (no template of a type at the ilvl).
+func TestMonsterDrops_Demon_RingWithoutATemplate_SkipsOnlyTheRing(t *testing.T) {
+	s := dropSession()
+	s.itemPool.Rings = nil
+	// 1 → three items; type rolls 0 → weapon, 99 → ring, 40 → armor (35 / 45 / 20)
+	r := &scriptedRand{f: 0, ints: []int{1, 0, 99, 40}}
+
+	newMonsterDrops(s, r).ConsumeKill(demonRecord(5))
+
+	piles := dropPiles(s)
+	require.Len(t, piles, 1)
+	items := itemsByID(s, pileItemIDs(t, piles[0]))
+	require.Len(t, items, 2)
+	assert.Equal(t, types.ItemTypeWeapon, items[0].ItemType)
+	assert.Equal(t, types.ItemTypeArmor, items[1].ItemType)
+	assert.Empty(t, r.ints, "every scripted roll was used")
+}
+
 // lootedRun is an unstarted run with a tier I pool of every type to drop from.
 func lootedRun(t *testing.T) *Session {
 	t.Helper()
@@ -295,8 +329,9 @@ func TestRun_SlainDemon_DropsAPileADelverTakesFrom(t *testing.T) {
 // FS-4R9M9 §Requirements 46; FS-F6F88.
 func TestRegenerateFloor_ClearsDropPilesAndTheirItems(t *testing.T) {
 	s := newRun(t, &countingItemsClient{})
+	s.itemPool.Rings = []lootTemplate{ironBand} // as the real catalogue has, so the demon's every roll drops
 	playerID := uuid.New()
-	delver, _ := s.EntityManager.GetEntity(s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior"}))
+	delver, _ := s.EntityManager.GetEntity(s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior"}, ""))
 	tc, _ := delver.GetComponent(ecs.ComponentTypeTransform)
 	tc.(*components.TransformComponent).X, tc.(*components.TransformComponent).Y = 640, 360 // beside the pile
 
@@ -304,7 +339,7 @@ func TestRegenerateFloor_ClearsDropPilesAndTheirItems(t *testing.T) {
 	piles := dropPiles(s)
 	require.Len(t, piles, 1)
 	ids := pileItemIDs(t, piles[0])
-	require.NotEmpty(t, ids)
+	require.Contains(t, []int{2, 3}, len(ids))
 	carried := ids[0]
 	require.NoError(t, s.handleInteract(playerID, carried))
 

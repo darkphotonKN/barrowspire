@@ -45,28 +45,24 @@ func TestReconnect_AnnouncesTheWorldTheyAreActuallyIn(t *testing.T) {
 	assert.Equal(t, hub.ID.String(), worldEntered.Payload["session_id"])
 }
 
-// Dropping out of the hub is leaving it. There is no reconnect window and
-// nothing to resume: the player returns to the menu and walks back in, the same
-// as anyone arriving. A run is different and keeps its window.
-// FS-29KSH §Edge States (Disconnect).
+// Leaving the hub is final. There is nothing to resume: the member is out of
+// the world and off record, and walks back in from the menu like anyone
+// arriving. FS-29KSH §Edge States (Disconnect).
 func TestDisconnect_LeavingTheHubIsFinal(t *testing.T) {
 	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
 	hub, _ := server.HubSession()
 
-	conn := &websocket.Conn{}
+	conn, _ := wsPair(t)
 	player := &types.Player{ID: uuid.New(), Username: "Wren"}
 	registerTestConn(server, conn, player)
 	_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "archer", Name: "Wren"})
 	require.NoError(t, err)
 
-	server.cleanUpPlayerFromSession(player)
+	server.cleanUpClient(conn)
 
 	assert.False(t, hub.HasPlayer(player.ID), "they are out of the world")
-	assert.Equal(t, uuid.Nil, player.CurrentGameSessionId,
-		"and no longer point at it, so nothing tries to resume them into a world they left")
-
-	stored, ok := server.GetPlayerFromConn(conn)
-	require.True(t, ok)
-	assert.Equal(t, uuid.Nil, stored.CurrentGameSessionId,
-		"the connection's copy has to be cleared too, or routing still thinks they are in the hub")
+	_, onRecord := server.PlayerByID(player.ID)
+	assert.False(t, onRecord, "and off record, so nothing tries to resume them into a world they left")
+	_, mapped := server.GetPlayerFromConn(conn)
+	assert.False(t, mapped, "and routing no longer knows the connection")
 }

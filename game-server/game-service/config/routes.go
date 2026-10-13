@@ -26,7 +26,10 @@ import (
 * Sets up API prefix route and all routers.
 **/
 func SetupRouter(ctx context.Context, statsDB *sqlx.DB, registry discovery.Registry, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod) *gin.Engine {
-	router := gin.Default()
+	// gin.Default() with its access logger swapped: the default one writes the
+	// raw query, and the WebSocket connect carries the bearer token in it
+	router := gin.New()
+	router.Use(AccessLogger(gin.DefaultWriter), gin.Recovery())
 
 	// NOTE: debugging middleware
 	router.Use(func(c *gin.Context) {
