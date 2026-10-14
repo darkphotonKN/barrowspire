@@ -406,13 +406,13 @@ var ErrCharacterNotFound = errors.New("character not found")
 // level and experience come from that record, never from the client.
 // FS-BDA7X §Requirements 5, 7.
 type CharacterInPlay struct {
-	ID    uuid.UUID
-	Name  string
-	Class string
+	ID    uuid.UUID `json:"id"`
+	Name  string    `json:"name"`
+	Class string    `json:"class"`
 	// 1..progression.MaxLevel; anything below 1 seats as level 1
-	Level int
+	Level int `json:"level"`
 	// total experience, monotonic
-	Experience int64
+	Experience int64 `json:"experience"`
 }
 
 // RunProgress is what a run did to one member's character in play. Gained is

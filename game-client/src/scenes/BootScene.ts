@@ -58,9 +58,7 @@ export class BootScene extends Phaser.Scene {
 
     console.log("token: ", token);
     console.log("name: ", name);
-    socketManager.connect(
-      `ws://localhost:5668/game/ws?token=${token}&name=${name}`,
-    );
+    socketManager.connectToGame(token, name);
     this.scene.start("PreloadScene");
   }
 }

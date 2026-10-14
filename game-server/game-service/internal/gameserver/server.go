@@ -257,7 +257,7 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.CharacterInPlay) 
 * Records which world a player is in, across every copy of them.
 *
 * MapConnToPlayer stores the player by value, so connToPlayer holds a different
-* object from players — and connToPlayer is the one routing reads. Writing only
+* object from players, and connToPlayer is the one routing reads. Writing only
 * one leaves messages delivered to a world the player is not in.
 **/
 func (s *Server) setCurrentWorld(player *types.Player, worldID uuid.UUID) {
@@ -276,7 +276,7 @@ func (s *Server) setCurrentWorld(player *types.Player, worldID uuid.UUID) {
 * Collects every copy of a player the server holds.
 *
 * MapConnToPlayer stores the player by value, so connToPlayer holds a different
-* object from players — and connToPlayer is the one routing reads. Writing to one
+* object from players, and connToPlayer is the one routing reads. Writing to one
 * and not the others leaves messages delivered to a world the player is not in.
 *
 * Callers must already hold the write lock.
@@ -364,10 +364,10 @@ func (s *Server) PlayerByID(playerID uuid.UUID) (*types.Player, bool) {
 /**
 * Brings a finished run's players home.
 *
-* Called as the run resolves, before its world is torn down: they were in a
-* world that is about to stop existing, and leaving them pointed at it would
-* strand them somewhere unroutable. Escape and death land in the same place —
-* the hub's fixed spawn — because arriving is arriving.
+* Called as the run resolves, before its world is torn down. Its players are in
+* a world about to stop existing, and leaving them pointed at it would strand
+* them somewhere unroutable. Escape and death land in the same place, the hub's
+* fixed spawn, because arriving is arriving.
 **/
 func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 	hub, exists := s.HubSession()

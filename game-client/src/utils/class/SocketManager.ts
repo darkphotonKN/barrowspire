@@ -3,6 +3,7 @@ import {
   ActionMap,
   ClientMessage,
   WorldEnteredPayload,
+  WorldHandoffPayload,
 } from "@/assets/types/client";
 import { ClientGameState, isGameState } from "@/types/gameState";
 import { GameStateLogger } from "@/utils/gameStateLogger";
@@ -15,9 +16,29 @@ export type ConnectionStatus =
   | "connected"
   | "error";
 
+/** The game server a client reaches until a handoff moves it somewhere else. */
+export const DEFAULT_SERVER_ADDR = "ws://localhost:5668/game/ws";
+
+// WebSocket.readyState values, spelled out so the manager doesn't need the
+// browser global to compare against
+const SOCKET_OPEN = 1;
+const SOCKET_CLOSING = 2;
+const SOCKET_CLOSED = 3;
+
+/** The part of a WebSocket the manager uses, so a test can drive one by hand. */
+export interface SocketLike {
+  readyState: number;
+  onopen: ((ev: any) => void) | null;
+  onclose: ((ev: any) => void) | null;
+  onerror: ((ev: any) => void) | null;
+  onmessage: ((ev: any) => void) | null;
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+}
+
 // SocketManager.js
-class SocketManager {
-  private socket: WebSocket | null = null;
+export class SocketManager {
+  private socket: SocketLike | null = null;
   private listeners: Map<string, (data: any) => void> = new Map();
   // Status callback
   private onStatusChange?: (status: string, color: string) => void;
@@ -37,9 +58,39 @@ class SocketManager {
   // Game state listeners
   private gameStateListeners: Set<(state: ClientGameState) => void> = new Set();
 
-  constructor() {
-    this.socket = null;
-    this.listeners = new Map();
+  // Where this client's game server is. It starts at the default and follows
+  // every handoff, so a reconnect returns to the host the delver moved to rather
+  // than the server they started on. FS-K2HKP §Requirements 29.
+  private serverAddr: string = DEFAULT_SERVER_ADDR;
+  private token = "";
+  private name = "";
+  // The socket to a run's host while the move is being decided, and the run it
+  // is for. The run id stays after the move, so a repeated handoff is ignored.
+  private pending: SocketLike | null = null;
+  private handoffRunId: string | null = null;
+
+  constructor(
+    private createSocket: (url: string) => SocketLike = (url) => new WebSocket(url),
+  ) {}
+
+  getServerAddress(): string {
+    return this.serverAddr;
+  }
+
+  /** Connects to the game server as this delver, remembering who they are for later reconnects and handoffs. */
+  connectToGame(token: string, name: string): void {
+    this.token = token;
+    this.name = name;
+    this.connect(this.gameUrl());
+  }
+
+  /** Connects again as the same delver, to whichever server they were last on. */
+  reconnect(): void {
+    this.connect(this.gameUrl());
+  }
+
+  private gameUrl(): string {
+    return `${this.serverAddr}?token=${this.token}&name=${this.name}`;
   }
 
   getConnectionStatus(): ConnectionStatus {
@@ -78,6 +129,7 @@ class SocketManager {
   }
 
   disconnect() {
+    this.dropPending();
     if (this.socket) {
       this.socket.close(1000, "client_disconnect");
       this.socket = null;
@@ -85,27 +137,33 @@ class SocketManager {
     this.setConnectionStatus("disconnected");
   }
 
-  connect(url: string) {
+  private connect(url: string) {
     if (this.socket) return; // 避免重複連接
 
     this.setConnectionStatus("connecting");
-    this.socket = new WebSocket(url);
+    this.socket = this.createSocket(url);
+    this.attach(this.socket);
+  }
 
-    this.socket.onopen = () => {
+  /** Makes `socket` the one the game talks through: its status, its closes, its messages. */
+  private attach(socket: SocketLike) {
+    socket.onopen = () => {
       console.log("WebSocket connected");
       this.setConnectionStatus("connected");
       this.updateStatus("WebSocket Connected", toCss(palette.safe));
     };
 
-    this.socket.onerror = (error) => {
+    socket.onerror = (error) => {
       console.error("WebSocket error:", error);
       this.setConnectionStatus("error");
       this.updateStatus("WebSocket Error", toCss(palette.damageBright));
     };
 
-    this.socket.onclose = (event) => {
+    socket.onclose = (event) => {
       console.log("WebSocket disconnected, code:", event.code, "reason:", event.reason);
-      this.socket = null;
+      if (this.socket === socket) {
+        this.socket = null;
+      }
 
       // Close code 4001 = auth error (token invalid/expired)
       if (event.code === 4001) {
@@ -120,44 +178,154 @@ class SocketManager {
       this.updateStatus("WebSocket Disconnected", toCss(palette.hudLabel));
     };
 
-    this.socket.onmessage = (event) => {
+    socket.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
-
-        // Top-level server error (e.g. duplicate queue, invalid action). Surface to a global handler.
-        if (data.error) {
-          console.warn("Server error message received:", data);
-          if (this.onMessageError) {
-            this.onMessageError({
-              action: data.action ?? "",
-              error: String(data.error),
-              message: data.payload?.message,
-            });
-          }
-          return;
-        }
-
-        // Check if it's a game state update
-        if (isGameState(data)) {
-          this.handleGameStateUpdate(data);
-        } else if (data.action === "world_entered") {
-          // The ONE place the client learns which world it is in. Never infer
-          // it from the shape of a state broadcast. FS-29KSH §Requirements 36.
-          this.handleWorldEntered(data.payload as WorldEnteredPayload);
-          this.listeners.get(data.action)?.(data.payload);
-        } else if (data.action && this.listeners.has(data.action)) {
-          // Handle action-based messages
-          console.log("Received action message:", data.action);
-          this.listeners.get(data.action)?.(data.payload);
-        } else {
-          // Log unhandled messages for debugging
-          console.log("Received unhandled message:", data);
-        }
+        this.dispatch(JSON.parse(event.data));
       } catch (e) {
         console.error("Failed to parse message:", e);
         GameStateLogger.logError("Failed to parse WebSocket message", e);
       }
     };
+  }
+
+  private dispatch(data: any) {
+    // Top-level server error (e.g. duplicate queue, invalid action). Surface to a global handler.
+    if (data.error) {
+      console.warn("Server error message received:", data);
+      if (this.onMessageError) {
+        this.onMessageError({
+          action: data.action ?? "",
+          error: String(data.error),
+          message: data.payload?.message,
+        });
+      }
+      return;
+    }
+
+    // Check if it's a game state update
+    if (isGameState(data)) {
+      this.handleGameStateUpdate(data);
+    } else if (data.action === "world_entered") {
+      // The ONE place the client learns which world it is in. Never infer
+      // it from the shape of a state broadcast. FS-29KSH §Requirements 36.
+      this.handleWorldEntered(data.payload as WorldEnteredPayload);
+      this.listeners.get(data.action)?.(data.payload);
+    } else if (data.action === "world_handoff") {
+      // The run is on another server: move there, then let the world_entered
+      // the host sends do the scene switch as it always does
+      this.handoff(data.payload as WorldHandoffPayload);
+      this.listeners.get(data.action)?.(data.payload);
+    } else if (data.action && this.listeners.has(data.action)) {
+      // Handle action-based messages
+      console.log("Received action message:", data.action);
+      this.listeners.get(data.action)?.(data.payload);
+    } else {
+      // Log unhandled messages for debugging
+      console.log("Received unhandled message:", data);
+    }
+  }
+
+  /**
+   * Follows a handoff to the server hosting a run, make-before-break: the
+   * current socket stays live until the host has seated us, so a refused or
+   * failed move leaves the delver standing where they were.
+   * FS-K2HKP §Requirements 22–24, 29, 31.
+   */
+  private handoff(payload: WorldHandoffPayload) {
+    if (!payload?.addr || !payload?.run_id) {
+      console.error("world_handoff missing addr or run_id:", payload);
+      return;
+    }
+
+    // already moving to (or moved to) this run
+    if (this.handoffRunId === payload.run_id) return;
+
+    this.dropPending();
+    this.handoffRunId = payload.run_id;
+
+    const next = this.createSocket(`${payload.addr}?token=${this.token}&run=${payload.run_id}`);
+    this.pending = next;
+
+    // The host upgrades before it decides and refuses by closing with 4002, so
+    // the socket opening proves nothing. Its world_entered is the acceptance.
+    // Anything it sends before that is held and replayed after the swap.
+    const held: any[] = [];
+    next.onmessage = (event) => {
+      let data: any;
+      try {
+        data = JSON.parse(event.data);
+      } catch (e) {
+        console.error("Failed to parse handoff message:", e);
+        return;
+      }
+
+      if (data.action !== "world_entered") {
+        held.push(data);
+        return;
+      }
+
+      this.promote(next, payload.addr);
+      this.dispatch(data);
+      held.forEach((message) => this.dispatch(message));
+    };
+
+    next.onerror = (error) => {
+      // the close that follows decides what happens
+      console.warn("Handoff socket error:", error);
+    };
+
+    next.onclose = (event) => {
+      if (this.pending !== next) return;
+      this.handoffFailed(payload.run_id, event.code);
+    };
+  }
+
+  /** The host seated us: the new socket becomes the game's, and the old one is let go quietly. */
+  private promote(next: SocketLike, addr: string) {
+    const old = this.socket;
+    this.pending = null;
+
+    if (old) {
+      // detached first, so its close reads as neither a disconnect nor an auth failure
+      old.onopen = null;
+      old.onclose = null;
+      old.onerror = null;
+      old.onmessage = null;
+      old.close(1000, "handoff");
+    }
+
+    this.socket = next;
+    this.serverAddr = addr;
+    this.attach(next);
+    this.setConnectionStatus("connected");
+  }
+
+  private handoffFailed(runId: string, code: number) {
+    console.warn("Handoff to run refused or failed:", runId, "code:", code);
+    this.pending = null;
+    this.handoffRunId = null;
+
+    // Still on the old socket: stay in the hub. If it is gone too, go back to
+    // the server we were on, which puts us in its hub.
+    const old = this.socket;
+    if (!old || old.readyState === SOCKET_CLOSING || old.readyState === SOCKET_CLOSED) {
+      this.socket = null;
+      this.reconnect();
+    }
+
+    this.listeners.get("world_handoff_failed")?.({ run_id: runId, code });
+  }
+
+  private dropPending() {
+    const pending = this.pending;
+    if (!pending) return;
+
+    this.pending = null;
+    pending.onopen = null;
+    pending.onclose = null;
+    pending.onerror = null;
+    pending.onmessage = null;
+    pending.close(1000, "handoff_cancelled");
   }
 
   /**
@@ -186,7 +354,7 @@ class SocketManager {
     action: T,
     payload: ActionMap[T],
   ): void {
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+    if (this.socket && this.socket.readyState === SOCKET_OPEN) {
       // Auto-inject player_id. The world a message belongs to is NOT sent —
       // the server routes on its own record of the player (FS-29KSH §Requirements 16).
       const playerId = useAuthStore.getState().memberInfo?.id;

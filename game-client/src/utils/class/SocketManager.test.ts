@@ -1,0 +1,175 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_SERVER_ADDR, SocketManager, type SocketLike } from "./SocketManager";
+
+/** A socket the test drives by hand: the server side of each event is a method. */
+class FakeSocket implements SocketLike {
+  readyState = 0; // CONNECTING
+  sent: string[] = [];
+  closedWith?: { code?: number; reason?: string };
+
+  onopen: ((ev: any) => void) | null = null;
+  onclose: ((ev: any) => void) | null = null;
+  onerror: ((ev: any) => void) | null = null;
+  onmessage: ((ev: any) => void) | null = null;
+
+  constructor(public url: string) {}
+
+  send(data: string) {
+    this.sent.push(data);
+  }
+
+  close(code?: number, reason?: string) {
+    this.closedWith = { code, reason };
+    this.readyState = 3;
+  }
+
+  // the server's side
+  open() {
+    this.readyState = 1;
+    this.onopen?.({});
+  }
+  receive(message: object) {
+    this.onmessage?.({ data: JSON.stringify(message) });
+  }
+  serverClose(code: number, reason = "") {
+    this.readyState = 3;
+    this.onclose?.({ code, reason });
+  }
+}
+
+const HOST = "ws://localhost:5669/game/ws";
+
+function setup() {
+  const sockets: FakeSocket[] = [];
+  const manager = new SocketManager((url) => {
+    const socket = new FakeSocket(url);
+    sockets.push(socket);
+    return socket;
+  });
+
+  manager.connectToGame("jwt-1", "Ash");
+  const old = sockets[0];
+  old.open();
+
+  return { manager, sockets, old };
+}
+
+const handoff = (runId = "run-1", addr = HOST) => ({
+  action: "world_handoff",
+  payload: { addr, run_id: runId },
+});
+const runEntered = { action: "world_entered", payload: { session_id: "run-1", world_type: "run" } };
+
+describe("SocketManager handoff", () => {
+  let env: ReturnType<typeof setup>;
+  beforeEach(() => {
+    env = setup();
+  });
+
+  it("connects to the default server with the token on the way in", () => {
+    expect(env.old.url).toBe(`${DEFAULT_SERVER_ADDR}?token=jwt-1&name=Ash`);
+  });
+
+  it("opens a socket to the host with the token and run id, keeping the old one open", () => {
+    env.old.receive(handoff());
+
+    expect(env.sockets).toHaveLength(2);
+    expect(env.sockets[1].url).toBe(`${HOST}?token=jwt-1&run=run-1`);
+    expect(env.old.closedWith).toBeUndefined();
+  });
+
+  // The host refuses by upgrading and then closing (4002), so an open socket is
+  // not yet an accepted one. FS-K2HKP §Requirements 24.
+  it("does not treat the new socket opening as acceptance", () => {
+    env.old.receive(handoff());
+    env.sockets[1].open();
+
+    expect(env.old.closedWith).toBeUndefined();
+  });
+
+  it("swaps sockets on the host's world_entered: old closed with 1000, new one carries traffic", () => {
+    const entered = vi.fn();
+    env.manager.on("world_entered", entered);
+
+    env.old.receive(handoff());
+    const next = env.sockets[1];
+    next.open();
+    next.receive(runEntered);
+
+    expect(env.old.closedWith).toEqual({ code: 1000, reason: "handoff" });
+    expect(entered).toHaveBeenCalledWith(runEntered.payload);
+
+    env.manager.sendMessage("move" as any, { vx: 1, vy: 0 } as any);
+    expect(next.sent).toHaveLength(1);
+    expect(env.old.sent).toHaveLength(0);
+  });
+
+  it("does not report a disconnect or an auth error when the old socket closes for a handoff", () => {
+    const authError = vi.fn();
+    env.manager.setOnAuthError(authError);
+
+    env.old.receive(handoff());
+    env.sockets[1].open();
+    env.sockets[1].receive(runEntered);
+    env.old.serverClose(4001);
+
+    expect(authError).not.toHaveBeenCalled();
+    expect(env.manager.getConnectionStatus()).toBe("connected");
+  });
+
+  it("ignores a second world_handoff for the run it is already moving to", () => {
+    env.old.receive(handoff("run-1"));
+    env.old.receive(handoff("run-1"));
+
+    expect(env.sockets).toHaveLength(2);
+  });
+
+  it("stays on the old socket and says so when the host refuses (4002)", () => {
+    const failed = vi.fn();
+    env.manager.on("world_handoff_failed", failed);
+
+    env.old.receive(handoff());
+    env.sockets[1].open();
+    env.sockets[1].serverClose(4002, "no seat");
+
+    expect(env.old.closedWith).toBeUndefined();
+    expect(failed).toHaveBeenCalledTimes(1);
+    expect(env.manager.getConnectionStatus()).toBe("connected");
+
+    env.manager.sendMessage("move" as any, { vx: 1, vy: 0 } as any);
+    expect(env.old.sent).toHaveLength(1);
+  });
+
+  it("stays on the old socket when the host cannot be reached at all", () => {
+    const failed = vi.fn();
+    env.manager.on("world_handoff_failed", failed);
+
+    env.old.receive(handoff());
+    env.sockets[1].serverClose(1006);
+
+    expect(env.old.closedWith).toBeUndefined();
+    expect(failed).toHaveBeenCalledTimes(1);
+  });
+
+  it("reconnects to the original address when the handoff fails and the old socket is gone", () => {
+    env.old.receive(handoff());
+    env.old.readyState = 3;
+    env.sockets[1].serverClose(4002);
+
+    expect(env.sockets).toHaveLength(3);
+    expect(env.sockets[2].url).toBe(`${DEFAULT_SERVER_ADDR}?token=jwt-1&name=Ash`);
+  });
+
+  it("reconnects to the host it moved to, not the server it started on", () => {
+    env.old.receive(handoff());
+    env.sockets[1].open();
+    env.sockets[1].receive(runEntered);
+
+    expect(env.manager.getServerAddress()).toBe(HOST);
+
+    env.sockets[1].serverClose(1006);
+    env.manager.reconnect();
+
+    expect(env.sockets[2].url).toBe(`${HOST}?token=jwt-1&name=Ash`);
+  });
+});

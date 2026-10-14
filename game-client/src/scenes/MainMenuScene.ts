@@ -897,8 +897,8 @@ export class MainMenuScene extends Phaser.Scene {
     cancelBtn.setInteractive({ useHandCursor: true });
 
     cancelBtn.on("pointerdown", () => {
+      // leave_queue alone cancels (FS-K2HKP §Requirements 30)
       socketManager.sendMessage("leave_queue" as any, {});
-      socketManager.sendMessage(ActionType.Find_Game, { cancel: true });
       this.closeQueuePopup();
     });
 
