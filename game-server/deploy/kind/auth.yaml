@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: auth }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: auth } }
+  template:
+    metadata: { labels: { app: auth } }
+    spec:
+      containers:
+        - name: auth
+          image: auth:dev
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 7116, name: grpc }]
+          envFrom:
+            - configMapRef: { name: auth }
+            - secretRef: { name: auth }
+          resources:
+            requests: { cpu: 100m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 128Mi }
+          readinessProbe:
+            tcpSocket: { port: grpc }
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata: { name: auth }
+spec:
+  selector: { app: auth }
+  ports: [{ port: 7116, targetPort: grpc }]
