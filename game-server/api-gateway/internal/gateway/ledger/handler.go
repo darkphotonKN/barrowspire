@@ -10,7 +10,7 @@ package ledger
 //
 // The client may be nil: registration records types and metadata without
 // invoking a handler, which is what lets cmd/openapi build the document
-// without dialing Consul.
+// without dialing ledger-service.
 type Handler struct {
 	client LedgerClient
 }

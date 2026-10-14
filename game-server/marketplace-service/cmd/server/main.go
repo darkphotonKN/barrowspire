@@ -14,8 +14,6 @@ import (
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
@@ -23,6 +21,8 @@ import (
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/config"
 	appConfig "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/config"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/adapter/itemreserver"
+	listinggrpc "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/grpc"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/settlement"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
@@ -34,9 +34,11 @@ import (
 
 var (
 	// grpc
-	serviceName = "marketplace"
-	grpcAddr    = commonhelpers.GetEnvString("GRPC_MARKETPLACE_ADDR", "7127")
-	consulAddr  = commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
+	grpcAddr = commonhelpers.GetEnvString("GRPC_MARKETPLACE_ADDR", "7127")
+
+	// downstream gRPC services ("host:port")
+	itemsAddr  = commonhelpers.GetEnvString("ITEMS_ADDR", "localhost:7126")
+	walletAddr = commonhelpers.GetEnvString("WALLET_ADDR", "localhost:7128")
 
 	// rabbit mq
 	amqpUser     = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
@@ -54,34 +56,6 @@ func main() {
 
 	db := config.InitDB()
 	defer db.Close()
-
-	// --- service discovery setup ---
-
-	// -- consul client --
-	registry, err := consul.NewRegistry(consulAddr, serviceName)
-	if err != nil {
-		log.Fatal("Failed to create Consul registry")
-	}
-
-	instanceID := discovery.GenerateInstanceID(serviceName)
-
-	// -- discovery --
-	if err := registry.Register(ctx, instanceID, serviceName, "localhost:"+grpcAddr); err != nil {
-		log.Printf("\nError when registering service:\n\n%s\n\n", err)
-		panic(err)
-	}
-
-	// -- health check --
-	go func() {
-		for {
-			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
-				log.Fatal("Health check failed.")
-			}
-			time.Sleep(time.Second * 1)
-		}
-	}()
-
-	defer registry.Deregister(ctx, instanceID, serviceName)
 
 	// --- message broker - rabbit mq ---
 	ch, close := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
@@ -122,7 +96,27 @@ func main() {
 	defer temporalClient.Close()
 
 	// --- services setup ---
-	services := appConfig.NewServices(ctx, db, registry, ch, temporalClient)
+	itemsClient, err := itemreserver.NewClient(itemsAddr)
+	if err != nil {
+		log.Fatalf("Failed to create items client: %s", err)
+	}
+	defer func() {
+		if err := itemsClient.Close(); err != nil {
+			slog.Error("close items client", "error", err)
+		}
+	}()
+
+	walletClient, err := listinggrpc.NewClient(walletAddr)
+	if err != nil {
+		log.Fatalf("Failed to create wallet client: %s", err)
+	}
+	defer func() {
+		if err := walletClient.Close(); err != nil {
+			slog.Error("close wallet client", "error", err)
+		}
+	}()
+
+	services := appConfig.NewServices(ctx, db, itemsClient, walletClient, ch, temporalClient)
 
 	// --- temporal worker: initiate ---
 	// run temporal worker after with service initiated activities
@@ -167,7 +161,7 @@ func main() {
 	reflection.Register(grpcServer)
 
 	// create a network listener to this service
-	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
+	listener, err := net.Listen("tcp", ":"+grpcAddr)
 	if err != nil {
 		log.Fatalf(
 			"Failed to listen at port: %s\nError: %s\n", grpcAddr, err,

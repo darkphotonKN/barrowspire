@@ -1,17 +1,5 @@
 version: "3.9"
 services:
-  barrowspire-consul:
-    image: hashicorp/consul
-    container_name: barrowspire-consul
-    command: agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
-    ports:
-      - 8623:8500 # Changed from 8500 to avoid conflicts
-      - 8723:8600/udp # Changed from 8600 to avoid conflicts
-    volumes:
-      - barrowspire-consul-data:/consul/data
-    networks:
-      - barrowspire-network
-
   barrowspire-rabbitmq:
     image: "rabbitmq:3-management"
     container_name: barrowspire-rabbitmq
@@ -336,7 +324,6 @@ networks:
     name: barrowspire-network
 
 volumes:
-  barrowspire-consul-data:
   barrowspire-rabbitmq-data:
   redis_data:
   barrowspire_auth_service_pgdata:

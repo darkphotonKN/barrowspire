@@ -18,7 +18,7 @@ import (
 //
 // Every field may hold a nil downstream client. Registration records an
 // operation's types and metadata and never invokes a handler, so cmd/openapi
-// builds the document without dialing Consul, RabbitMQ, or anything else.
+// builds the document without dialing a downstream, RabbitMQ, or anything else.
 type Deps struct {
 	Auth         *authgw.Handler
 	Items        *itemgw.Handler

@@ -9,7 +9,6 @@ import (
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commoncache "github.com/darkphotonKN/barrowspire-server/common/utils/cache"
@@ -28,9 +27,7 @@ type Activities struct {
 }
 
 // SetupServices initializes all services and their dependencies
-func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, registry discovery.Registry) (*grpc.Server, *Activities) {
-	// Create Auth Service client
-	authClient := auth.NewClient(registry)
+func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, authClient auth.AuthClient) (*grpc.Server, *Activities) {
 
 	// -- outbox --
 	outboxRepo := commonoutbox.NewRepo(db)

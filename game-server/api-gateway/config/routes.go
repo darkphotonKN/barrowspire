@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/auth"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/contract"
@@ -17,17 +19,47 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/wallet"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
+// Downstreams are the gRPC addresses ("host:port") of every service the gateway
+// fans out to. They come from env, so the same binary runs natively
+// (localhost:<port>), in compose, or in Kubernetes (<service>:<port>).
+type Downstreams struct {
+	Auth         string
+	Stats        string
+	Notification string
+	Payment      string
+	Items        string
+	Ledger       string
+	Marketplace  string
+	Wallet       string
+	Character    string
+}
+
 /**
 * Sets up API prefix route and all routers.
+*
+* The returned close func releases every downstream connection; call it on
+* shutdown.
 **/
-func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
+func SetupRouter(addrs Downstreams, ch *amqp.Channel) (*gin.Engine, func() error, error) {
+	var conns []io.Closer
+	closeAll := func() error {
+		var errs []error
+		for _, c := range conns {
+			errs = append(errs, c.Close())
+		}
+		return errors.Join(errs...)
+	}
+	// fail tears down whatever was already dialed before reporting the error
+	fail := func(err error) (*gin.Engine, func() error, error) {
+		return nil, nil, errors.Join(err, closeAll())
+	}
+
 	// gin.New(), not gin.Default(): Default() installs gin's stock Recovery,
 	// which writes a 500 with an EMPTY BODY and so is the one failure path that
 	// bypasses the error contract (FS-22WKC §Edge States). Default() also installs
@@ -69,7 +101,11 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	// --- AUTH & MEMBERS MICROSERVICE ---
 
 	// -- Member Setup (gRPC - for private routes) --
-	authClient := authService.NewClient(registry)
+	authClient, err := authService.NewClient(addrs.Auth)
+	if err != nil {
+		return fail(err)
+	}
+	conns = append(conns, authClient)
 	authHandler := authService.NewHandler(authClient)
 
 	// Member Setup amqp
@@ -85,7 +121,11 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 
 	// --- STATS MICROSERVICE ---
 
-	statsClient := stats.NewClient(registry)
+	statsClient, err := stats.NewClient(addrs.Stats)
+	if err != nil {
+		return fail(err)
+	}
+	conns = append(conns, statsClient)
 	statsHandler := stats.NewHandler(statsClient)
 
 	// Stats routes are SERIALIZED (FS-NTPW2 slice 3) and remain PUBLIC — no
@@ -106,12 +146,20 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 
 	// --- NOTIFICATION MICROSERVICE ---
 
-	notificationClient := notification.NewClient(registry)
+	notificationClient, err := notification.NewClient(addrs.Notification)
+	if err != nil {
+		return fail(err)
+	}
+	conns = append(conns, notificationClient)
 	notificationHandler := notification.NewHandler(notificationClient)
 	// Notification routes are SERIALIZED (FS-NTPW2 slice 3).
 	// --- PAYMENT MICROSERVICE ---
 
-	paymentClient := payment.NewClient(registry)
+	paymentClient, err := payment.NewClient(addrs.Payment)
+	if err != nil {
+		return fail(err)
+	}
+	conns = append(conns, paymentClient)
 	paymentHandler := payment.NewHandler(paymentClient)
 
 	// Payment routes are SERIALIZED (FS-NTPW2 slice 4) — EXCEPT the webhook below.
@@ -121,19 +169,31 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 
 	// --- ITEMS MICROSERVICE ---
 
-	itemClient := item.NewClient(registry)
+	itemClient, err := item.NewClient(addrs.Items)
+	if err != nil {
+		return fail(err)
+	}
+	conns = append(conns, itemClient)
 	itemHandler := item.NewHandler(itemClient)
 
 	//   --- LEDGER MICROSERVICE ---
 
-	ledgerClient := ledger.NewClient(registry)
+	ledgerClient, err := ledger.NewClient(addrs.Ledger)
+	if err != nil {
+		return fail(err)
+	}
+	conns = append(conns, ledgerClient)
 	ledgerHandler := ledger.NewHandler(ledgerClient)
 
 	// --- LISTING MICROSERVICE ---
 
 	// Listing routes are SERIALIZED (FS-0YXG6). Every one is a typed operation
 	// in internal/gateway/listing/typed.go, mounted below.
-	listingClient := listing.NewClient(registry)
+	listingClient, err := listing.NewClient(addrs.Marketplace)
+	if err != nil {
+		return fail(err)
+	}
+	conns = append(conns, listingClient)
 	// items rides along for the item summaries joined onto every listing read
 	listingHandler := listing.NewHandler(listingClient, itemClient)
 
@@ -144,7 +204,11 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 
 	// Built here, ahead of the contract mount, because GET /wallet/account is a
 	// typed operation (FS-8EGFA). The remaining gin routes are mounted below.
-	walletClient := wallet.NewClient(registry)
+	walletClient, err := wallet.NewClient(addrs.Wallet)
+	if err != nil {
+		return fail(err)
+	}
+	conns = append(conns, walletClient)
 	walletHandler := wallet.NewHandler(walletClient)
 
 	// --- CHARACTERS MICROSERVICE ---
@@ -153,7 +217,11 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	// are typed, protected operations in internal/gateway/character/typed.go.
 	// The legacy gin POST /api/character/ was replaced, not wrapped (ADR-0002
 	// §5), so no gin route owns a character path.
-	characterClient := character.NewClient(registry)
+	characterClient, err := character.NewClient(addrs.Character)
+	if err != nil {
+		return fail(err)
+	}
+	conns = append(conns, characterClient)
 	characterHandler := character.NewHandler(characterClient)
 
 	// --- SERIALIZED CONTRACT (FS-NTPW2) ---
@@ -196,5 +264,5 @@ func SetupRouter(registry discovery.Registry, ch *amqp.Channel) *gin.Engine {
 	// NOTE: PlaceHold / CommitHold are intentionally not exposed. They are steps
 	// inside the bidding saga owned by marketplace-service, not user actions.
 
-	return router
+	return router, closeAll, nil
 }

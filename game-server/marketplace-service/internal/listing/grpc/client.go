@@ -10,24 +10,33 @@ import (
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/google/uuid"
+	grpclib "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const (
-	serviceName = "wallet"
-)
-
+// Client calls wallet-service over one long-lived connection.
 type Client struct {
-	registry discovery.Registry
+	conn *grpclib.ClientConn
 }
 
-func NewClient(registry discovery.Registry) *Client {
-	return &Client{
-		registry: registry,
+// NewClient dials wallet-service at addr ("host:port"). The dial is lazy:
+// nothing connects until the first RPC, so marketplace boots with wallet absent
+// and a call made while it is down fails with codes.Unavailable, which every
+// method below already classifies as ErrTransient.
+func NewClient(addr string) (*Client, error) {
+	conn, err := discovery.Dial(addr)
+	if err != nil {
+		return nil, fmt.Errorf("dial wallet service at %s: %w", addr, err)
 	}
+	return &Client{conn: conn}, nil
+}
+
+// Close releases the connection.
+func (c *Client) Close() error {
+	return c.conn.Close()
 }
 
 // PlaceHold reserves the caller's gold against bidID. wallet resolves whose
@@ -39,13 +48,7 @@ func (c *Client) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold 
 		return fmt.Errorf("wallet place hold for bid %v: %w", bidID, err)
 	}
 
-	conn, err := discovery.ServiceConnection(outCtx, serviceName, c.registry)
-	if err != nil {
-		return fmt.Errorf("wallet place hold for bid %v: connect: %w: %w", bidID, commonconstants.ErrTransient, err)
-	}
-	defer conn.Close()
-
-	_, err = pb.NewWalletServiceClient(conn).PlaceHold(outCtx, &pb.PlaceHoldRequest{
+	_, err = pb.NewWalletServiceClient(c.conn).PlaceHold(outCtx, &pb.PlaceHoldRequest{
 		BidId:     bidID.String(),
 		Gold:      int64(gold),
 		ExpiresAt: timestamppb.New(expiresAt),
@@ -93,13 +96,7 @@ func forwardAuthorization(ctx context.Context) (context.Context, error) {
 // it runs the caller's request may already be unwinding, so depending on a token
 // still being in context would make cleanup fail exactly when it is needed.
 func (c *Client) ReleaseHold(ctx context.Context, bidID uuid.UUID) error {
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
-	if err != nil {
-		return fmt.Errorf("wallet release hold for bid %v: connect: %w: %w", bidID, commonconstants.ErrTransient, err)
-	}
-	defer conn.Close()
-
-	if _, err := pb.NewWalletServiceClient(conn).ReleaseHold(ctx, &pb.ReleaseHoldRequest{
+	if _, err := pb.NewWalletServiceClient(c.conn).ReleaseHold(ctx, &pb.ReleaseHoldRequest{
 		BidId: bidID.String(),
 	}); err != nil {
 		switch status.Code(err) {
@@ -117,13 +114,7 @@ func (c *Client) ReleaseHold(ctx context.Context, bidID uuid.UUID) error {
 // should have followed them. wallet reports; this service decides which were never
 // claimed, because only it can tell.
 func (c *Client) ListStaleReservedHolds(ctx context.Context, createdBefore time.Time) ([]uuid.UUID, error) {
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
-	if err != nil {
-		return nil, fmt.Errorf("wallet list stale reserved holds: connect: %w: %w", commonconstants.ErrTransient, err)
-	}
-	defer conn.Close()
-
-	res, err := pb.NewWalletServiceClient(conn).ListStaleReservedHolds(ctx, &pb.ListStaleReservedHoldsRequest{
+	res, err := pb.NewWalletServiceClient(c.conn).ListStaleReservedHolds(ctx, &pb.ListStaleReservedHoldsRequest{
 		ReservedBefore: timestamppb.New(createdBefore),
 	})
 	if err != nil {
