@@ -2,6 +2,7 @@ package items
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -141,8 +142,9 @@ func TestFreezeItem(t *testing.T) {
 
 // Opt-in and committed like TestFreezeItem. TransferItem is settlement step 4
 // (FS-NXP1W Req 31): PENDING_SETTLEMENT for this listing -> the buyer's,
-// AVAILABLE, listing_id cleared, in one write. Already applied is owner = buyer
-// and not PENDING_SETTLEMENT, whatever the buyer has done with it since.
+// AVAILABLE, listing_id cleared, recorded in item_transfers in the same
+// transaction. Already applied is that record, not the item's current state, so
+// it holds whatever the buyer has done with the item since (crash point #11).
 func TestTransferItem(t *testing.T) {
 	dsn := os.Getenv("ITEMS_TEST_DSN")
 	if dsn == "" {
@@ -155,7 +157,7 @@ func TestTransferItem(t *testing.T) {
 	}
 	defer db.Close()
 
-	seller, buyer := uuid.New(), uuid.New()
+	seller, buyer, nextOwner := uuid.New(), uuid.New(), uuid.New()
 	earlier := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	const (
@@ -165,38 +167,54 @@ func TestTransferItem(t *testing.T) {
 	)
 
 	tests := []struct {
-		name            string
-		status          string
-		owner           uuid.UUID
-		listing         string
+		name    string
+		status  string
+		owner   uuid.UUID
+		listing string
+		// recorded: an earlier attempt already transferred for this listing
+		recorded        bool
 		skipSeed        bool
 		wantTransferred bool
 		wantStatus      string
 		wantOwner       uuid.UUID
 		wantListing     string
 	}{
-		{name: "frozen for this listing moves to the buyer and unfreezes", status: "PENDING_SETTLEMENT", owner: seller, listing: thisListing,
+		{name: "frozen for this listing moves to the buyer, unfreezes and is recorded", status: "PENDING_SETTLEMENT", owner: seller, listing: thisListing,
 			wantTransferred: true, wantStatus: "AVAILABLE", wantOwner: buyer, wantListing: noListing},
-		{name: "already transferred is success and changes nothing", status: "AVAILABLE", owner: buyer, listing: noListing,
+		{name: "already transferred is success and changes nothing", status: "AVAILABLE", owner: buyer, listing: noListing, recorded: true,
 			wantTransferred: true, wantStatus: "AVAILABLE", wantOwner: buyer, wantListing: noListing},
-		{name: "already transferred and relisted by the buyer is still success", status: "LISTED", owner: buyer, listing: otherListing,
+		{name: "already transferred and relisted by the buyer is still success", status: "LISTED", owner: buyer, listing: otherListing, recorded: true,
 			wantTransferred: true, wantStatus: "LISTED", wantOwner: buyer, wantListing: otherListing},
-		{name: "frozen for another listing is refused and left alone", status: "PENDING_SETTLEMENT", owner: seller, listing: otherListing,
+		{name: "already transferred and frozen by the buyer's own sale is success and left alone", status: "PENDING_SETTLEMENT", owner: buyer, listing: otherListing, recorded: true,
+			wantTransferred: true, wantStatus: "PENDING_SETTLEMENT", wantOwner: buyer, wantListing: otherListing},
+		{name: "already transferred and sold on to someone else is still success", status: "AVAILABLE", owner: nextOwner, listing: noListing, recorded: true,
+			wantTransferred: true, wantStatus: "AVAILABLE", wantOwner: nextOwner, wantListing: noListing},
+		{name: "frozen for another listing is refused, left alone and not recorded", status: "PENDING_SETTLEMENT", owner: seller, listing: otherListing,
 			wantStatus: "PENDING_SETTLEMENT", wantOwner: seller, wantListing: otherListing},
-		{name: "listed but never frozen is refused", status: "LISTED", owner: seller, listing: thisListing,
+		{name: "listed but never frozen is refused and not recorded", status: "LISTED", owner: seller, listing: thisListing,
 			wantStatus: "LISTED", wantOwner: seller, wantListing: thisListing},
-		{name: "missing item is refused", skipSeed: true},
+		{name: "missing item is refused and not recorded", skipSeed: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			itemID, listingID, otherListingID := uuid.New(), uuid.New(), uuid.New()
 			listingFor := map[string]*uuid.UUID{thisListing: &listingID, otherListing: &otherListingID, noListing: nil}
+			t.Cleanup(func() {
+				db.ExecContext(ctx, `DELETE FROM item_transfers WHERE listing_id = $1`, listingID)
+			})
 
 			if !tt.skipSeed {
 				seedItemInstance(t, ctx, db, itemID, tt.owner, tt.status, earlier)
 				if _, err := db.ExecContext(ctx, `UPDATE item_instances SET listing_id = $2 WHERE id = $1`, itemID, listingFor[tt.listing]); err != nil {
 					t.Fatalf("seed listing_id: %v", err)
+				}
+			}
+			if tt.recorded {
+				if _, err := db.ExecContext(ctx,
+					`INSERT INTO item_transfers (listing_id, item_id, buyer_member_id) VALUES ($1, $2, $3)`,
+					listingID, itemID, buyer); err != nil {
+					t.Fatalf("seed transfer record: %v", err)
 				}
 			}
 
@@ -207,6 +225,23 @@ func TestTransferItem(t *testing.T) {
 			if transferred != tt.wantTransferred {
 				t.Errorf("transferred = %v, want %v", transferred, tt.wantTransferred)
 			}
+
+			// the record exists exactly when the transfer happened: a refusal rolls
+			// it back with the write it would have described
+			var record struct {
+				ItemID uuid.UUID `db:"item_id"`
+				Buyer  uuid.UUID `db:"buyer_member_id"`
+			}
+			err = db.GetContext(ctx, &record, `SELECT item_id, buyer_member_id FROM item_transfers WHERE listing_id = $1`, listingID)
+			switch {
+			case tt.wantTransferred && err != nil:
+				t.Errorf("transfer record: %v, want one for the listing", err)
+			case tt.wantTransferred && (record.ItemID != itemID || record.Buyer != buyer):
+				t.Errorf("transfer record = (item %v, buyer %v), want (%v, %v)", record.ItemID, record.Buyer, itemID, buyer)
+			case !tt.wantTransferred && !errors.Is(err, sql.ErrNoRows):
+				t.Errorf("transfer record lookup = %v, want none for a refused transfer", err)
+			}
+
 			if tt.skipSeed {
 				return
 			}
