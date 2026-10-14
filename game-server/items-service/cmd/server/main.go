@@ -14,14 +14,13 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
 	"github.com/darkphotonKN/barrowspire-server/common/temporal/smoke"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/items-service/config"
+	"github.com/darkphotonKN/barrowspire-server/items-service/grpc/auth"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -37,7 +36,7 @@ var (
 
 	serviceName    = "items"
 	grpcAddr       = commonhelpers.GetEnvString("GRPC_ITEMS_ADDR", "7126")
-	consulAddr     = commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
+	authAddr       = commonhelpers.GetEnvString("AUTH_ADDR", "localhost:7116")
 	serviceVersion = commonhelpers.GetEnvString("SERVICE_VERSION", "1.0.0")
 
 	amqpUser     = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
@@ -49,11 +48,6 @@ var (
 func main() {
 	db := config.InitDB()
 	defer db.Close()
-
-	registry, err := consul.NewRegistry(consulAddr, serviceName)
-	if err != nil {
-		log.Fatal("Failed to create Consul registry")
-	}
 
 	ctx := context.Background()
 
@@ -78,28 +72,10 @@ func main() {
 	// slog.Info("Debugging get item template", "itemData", itemData)
 	// end test
 
-	instanceID := discovery.GenerateInstanceID(serviceName)
-
-	if err := registry.Register(ctx, instanceID, serviceName, "localhost:"+grpcAddr); err != nil {
-		log.Printf("\nError when registering service:\n\n%s\n\n", err)
-		panic(err)
-	}
-
-	go func() {
-		for {
-			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
-				log.Fatal("Health check failed.")
-			}
-			time.Sleep(time.Second * 1)
-		}
-	}()
-
-	defer registry.Deregister(ctx, instanceID, serviceName)
-
 	// --- grpc ---
 	// grpcServer := grpc.NewServer()
 
-	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
+	listener, err := net.Listen("tcp", ":"+grpcAddr)
 	if err != nil {
 		log.Fatalf(
 			"Failed to listen at port: %s\nError: %s\n", grpcAddr, err,
@@ -154,7 +130,17 @@ func main() {
 
 	go outboxWorker.Run(workerCtx)
 	// Use the new config setup to initialize all services
-	grpcServer, activities := config.SetupServices(ctx, db, ch, registry)
+	authClient, err := auth.NewClient(authAddr)
+	if err != nil {
+		log.Fatalf("Failed to create auth client: %s", err)
+	}
+	defer func() {
+		if err := authClient.Close(); err != nil {
+			slog.Error("close auth client", "error", err)
+		}
+	}()
+
+	grpcServer, activities := config.SetupServices(ctx, db, ch, authClient)
 
 	// --- temporal worker ---
 	// Items owns the data behind its settlement steps, so its activities run in

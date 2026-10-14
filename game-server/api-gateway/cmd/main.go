@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
+	"log/slog"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/config"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	_ "github.com/joho/godotenv/autoload"
@@ -26,9 +24,21 @@ var (
 
 	serviceName = "api-gateway"
 
-	// grpc
-	httpAddr   = commonhelpers.GetEnvString("PORT", "7114")
-	consulAddr = commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
+	// http
+	httpAddr = commonhelpers.GetEnvString("PORT", "7114")
+
+	// downstream gRPC services ("host:port")
+	downstreams = config.Downstreams{
+		Auth:         commonhelpers.GetEnvString("AUTH_ADDR", "localhost:7116"),
+		Stats:        commonhelpers.GetEnvString("STATS_ADDR", "localhost:7124"),
+		Notification: commonhelpers.GetEnvString("NOTIFICATION_ADDR", "localhost:7190"),
+		Payment:      commonhelpers.GetEnvString("PAYMENT_ADDR", "localhost:7134"),
+		Items:        commonhelpers.GetEnvString("ITEMS_ADDR", "localhost:7126"),
+		Ledger:       commonhelpers.GetEnvString("LEDGER_ADDR", "localhost:7129"),
+		Marketplace:  commonhelpers.GetEnvString("MARKETPLACE_ADDR", "localhost:7127"),
+		Wallet:       commonhelpers.GetEnvString("WALLET_ADDR", "localhost:7128"),
+		Character:    commonhelpers.GetEnvString("CHARACTER_ADDR", "localhost:7123"),
+	}
 
 	// rabbitmq
 	amqpUser     = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
@@ -63,34 +73,6 @@ func main() {
 	defer shutdown(ctx)
 	// --- database setup removed - api gateway is stateless ---
 
-	// --- service discovery setup ---
-
-	// -- consul client --
-	registry, err := consul.NewRegistry(consulAddr, serviceName)
-	if err != nil {
-		log.Fatal("Failed to create Consul registry")
-	}
-
-	instanceID := discovery.GenerateInstanceID(serviceName)
-
-	// -- discovery --
-	if err := registry.Register(ctx, instanceID, serviceName, "localhost:"+httpAddr); err != nil {
-		fmt.Printf("\nError when registering service:\n\n%s\n\n", err)
-		panic(err)
-	}
-
-	// -- health check --
-	go func() {
-		for {
-			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
-				log.Fatal("Health check failed.")
-			}
-			time.Sleep(time.Second * 1)
-		}
-	}()
-
-	defer registry.Deregister(ctx, instanceID, serviceName)
-
 	// --- message broker - rabbit mq ---
 	ch, closeCh := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
 	broker.DeclareExchange(ch, commonconstants.AuthEventsExchange, "topic")
@@ -100,7 +82,15 @@ func main() {
 	}()
 
 	// --- router setup ---
-	router := config.SetupRouter(registry, ch)
+	router, closeDownstreams, err := config.SetupRouter(downstreams, ch)
+	if err != nil {
+		log.Fatalf("Failed to set up router: %v", err)
+	}
+	defer func() {
+		if err := closeDownstreams(); err != nil {
+			slog.Error("close downstream clients", "error", err)
+		}
+	}()
 
 	// -- start server --
 	if err := router.Run(fmt.Sprintf(":%s", httpAddr)); err != nil {

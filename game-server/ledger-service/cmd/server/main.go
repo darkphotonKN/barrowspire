@@ -8,13 +8,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/ledger"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
 	"github.com/darkphotonKN/barrowspire-server/common/temporal/smoke"
@@ -32,9 +29,7 @@ import (
 
 var (
 	// grpc
-	serviceName = "ledger"
-	grpcAddr    = commonhelpers.GetEnvString("GRPC_LEDGER_ADDR", "7129")
-	consulAddr  = commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
+	grpcAddr = commonhelpers.GetEnvString("GRPC_LEDGER_ADDR", "7129")
 
 	// rabbit mq
 	amqpUser     = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
@@ -54,35 +49,7 @@ func main() {
 	db := config.InitDB()
 	defer db.Close()
 
-	// --- service discovery setup ---
-
-	// -- consul client --
-	registry, err := consul.NewRegistry(consulAddr, serviceName)
-	if err != nil {
-		log.Fatal("Failed to create Consul registry")
-	}
-
 	ctx := context.Background()
-	instanceID := discovery.GenerateInstanceID(serviceName)
-
-	// -- discovery --
-	if err := registry.Register(ctx, instanceID, serviceName, "localhost:"+grpcAddr); err != nil {
-		log.Printf("\nError when registering service:\n\n%s\n\n", err)
-		panic(err)
-	}
-
-	// -- health check --
-	go func() {
-		for {
-			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
-				log.Fatal("Health check failed.")
-			}
-			time.Sleep(time.Second * 1)
-		}
-	}()
-
-	defer registry.Deregister(ctx, instanceID, serviceName)
-
 	// --- services setup ---
 	services := appConfig.NewServices(ctx, db)
 
@@ -103,7 +70,7 @@ func main() {
 	reflection.Register(grpcServer)
 
 	// create a network listener to this service
-	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
+	listener, err := net.Listen("tcp", ":"+grpcAddr)
 	if err != nil {
 		log.Fatalf(
 			"Failed to listen at port: %s\nError: %s\n", grpcAddr, err,

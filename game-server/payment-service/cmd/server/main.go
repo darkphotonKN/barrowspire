@@ -1,15 +1,14 @@
 package main
 
 import (
-	"context"
 	"log"
+	"log/slog"
 	"net"
-	"time"
 
+	authpb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/payment"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/darkphotonKN/barrowspire-server/payment-service/config"
@@ -21,17 +20,16 @@ import (
 )
 
 var (
-	serviceName    = "payments"
-	grpcAddr       = commonhelpers.GetEnvString("GRPC_PAYMENT_ADDR", "7134")
-	consulAddr     = commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
-	amqpUser       = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
-	amqpPassword   = commonhelpers.GetEnvString("RABBITMQ_PASS", "guest")
-	amqpHost       = commonhelpers.GetEnvString("RABBITMQ_HOST", "localhost")
-	amqpPort       = commonhelpers.GetEnvString("RABBITMQ_PORT", "5672")
-	stripeSecretKey    = commonhelpers.GetEnvString("STRIPE_SECRET_KEY", "")
+	grpcAddr            = commonhelpers.GetEnvString("GRPC_PAYMENT_ADDR", "7134")
+	authAddr            = commonhelpers.GetEnvString("AUTH_ADDR", "localhost:7116")
+	amqpUser            = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
+	amqpPassword        = commonhelpers.GetEnvString("RABBITMQ_PASS", "guest")
+	amqpHost            = commonhelpers.GetEnvString("RABBITMQ_HOST", "localhost")
+	amqpPort            = commonhelpers.GetEnvString("RABBITMQ_PORT", "5672")
+	stripeSecretKey     = commonhelpers.GetEnvString("STRIPE_SECRET_KEY", "")
 	stripeWebhookSecret = commonhelpers.GetEnvString("STRIPE_WEBHOOK_SECRET", "")
-	redisAddr          = commonhelpers.GetEnvString("REDIS_ADDR", "localhost:6492")
-	redisPassword      = commonhelpers.GetEnvString("REDIS_PASSWORD", "")
+	redisAddr           = commonhelpers.GetEnvString("REDIS_ADDR", "localhost:6492")
+	redisPassword       = commonhelpers.GetEnvString("REDIS_PASSWORD", "")
 )
 
 func main() {
@@ -52,36 +50,10 @@ func main() {
 	db := config.InitDB()
 	defer db.Close()
 
-	// --- service discovery setup ---
-	registry, err := consul.NewRegistry(consulAddr, serviceName)
-	if err != nil {
-		log.Fatal("Failed to create Consul registry")
-	}
-
-	ctx := context.Background()
-	instanceID := discovery.GenerateInstanceID(serviceName)
-
-	if err := registry.Register(ctx, instanceID, serviceName, "localhost:"+grpcAddr); err != nil {
-		log.Printf("\nError when registering service:\n\n%s\n\n", err)
-		panic(err)
-	}
-
-	// --- health check ---
-	go func() {
-		for {
-			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
-				log.Fatal("Health check failed.")
-			}
-			time.Sleep(time.Second * 1)
-		}
-	}()
-
-	defer registry.Deregister(ctx, instanceID, serviceName)
-
 	// --- grpc ---
 	grpcServer := grpc.NewServer()
 
-	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
+	listener, err := net.Listen("tcp", ":"+grpcAddr)
 	if err != nil {
 		log.Fatalf("Failed to listen at port: %s\nError: %s\n", grpcAddr, err)
 	}
@@ -97,7 +69,17 @@ func main() {
 	// Initialize layers
 	repo := payment.NewRepository(db)
 	processor := payment.NewStripeProcessor()
-	svc := payment.NewService(repo, processor, ch, registry, cacheService, stripeWebhookSecret)
+	authConn, err := discovery.Dial(authAddr)
+	if err != nil {
+		log.Fatalf("Failed to create auth client: %s", err)
+	}
+	defer func() {
+		if err := authConn.Close(); err != nil {
+			slog.Error("close auth client", "error", err)
+		}
+	}()
+
+	svc := payment.NewService(repo, processor, ch, authpb.NewAuthServiceClient(authConn), cacheService, stripeWebhookSecret)
 	handler := payment.NewHandler(svc)
 
 	pb.RegisterPaymentServiceServer(grpcServer, handler)

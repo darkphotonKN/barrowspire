@@ -3,162 +3,98 @@ package item
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
+// Client calls items-service over one long-lived connection.
 type Client struct {
-	registry discovery.Registry
-	mu       sync.Mutex
-	conn     *grpc.ClientConn
+	conn *grpc.ClientConn
 }
 
-const (
-	serviceName = "items"
-)
-
-// NewClient returns the concrete client. The item handler consumes it as
-// ItemClient and the listing package as its narrower ItemSummaries.
-func NewClient(registry discovery.Registry) *Client {
-	return &Client{
-		registry: registry,
-	}
-}
-
-// ensureConn lazily dials the service once and caches the connection for
-// reuse across calls (gRPC multiplexes over it). Opening a fresh conn per RPC
-// serialized badly and churned connections; see common/discovery/grpc.go.
-func (c *Client) ensureConn(ctx context.Context) (*grpc.ClientConn, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.conn != nil && c.conn.GetState() != connectivity.Shutdown {
-		return c.conn, nil
-	}
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+// NewClient dials items-service at addr ("host:port"). The dial is lazy: nothing
+// connects until the first RPC, so this service boots with items-service absent
+// and a call made while it is down fails with codes.Unavailable.
+func NewClient(addr string) (*Client, error) {
+	conn, err := discovery.Dial(addr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("dial items service at %s: %w", addr, err)
 	}
-	c.conn = conn
-	return conn, nil
+	return &Client{conn: conn}, nil
+}
+
+// Close releases the connection.
+func (c *Client) Close() error {
+	return c.conn.Close()
 }
 
 func (c *Client) ListItemTypes(ctx context.Context) (*pb.ListItemTypesResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to items service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	itemTypes, err := client.ListItemTypes(ctx, &emptypb.Empty{})
 	return itemTypes, err
 }
 
 func (c *Client) ListItemRarities(ctx context.Context) (*pb.ListItemRaritiesResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to items service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	rarities, err := client.ListItemRarities(ctx, &emptypb.Empty{})
 	return rarities, err
 }
 
 func (c *Client) CreateWeapon(ctx context.Context, req *pb.CreateWeaponRequest) (*pb.Weapon, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to items service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	weapon, err := client.CreateWeapon(ctx, req)
 	return weapon, err
 }
 
 func (c *Client) ListWeaponsWithTemplate(ctx context.Context) (*pb.ListWeaponsResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to items service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	weapons, err := client.ListWeaponsWithTemplate(ctx, &emptypb.Empty{})
 	return weapons, err
 }
 
 func (c *Client) CreateItemTemplate(ctx context.Context, req *pb.CreateItemTemplateRequest) (*pb.ItemTemplate, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to items service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	template, err := client.CreateItemTemplate(ctx, req)
 	return template, err
 }
 
 func (c *Client) CreateCompleteWeapon(ctx context.Context, req *pb.CreateCompleteWeaponRequest) (*pb.WeaponDetail, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to items service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	weapon, err := client.CreateCompleteWeapon(ctx, req)
 	return weapon, err
 }
 
 func (c *Client) CreateCompleteArmor(ctx context.Context, req *pb.CreateCompleteArmorRequest) (*pb.ArmorDetail, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to items service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	armor, err := client.CreateCompleteArmor(ctx, req)
 	return armor, err
 }
 
 func (c *Client) CreateCompleteConsumable(ctx context.Context, req *pb.CreateCompleteConsumableRequest) (*pb.ConsumableDetail, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to items service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	consumable, err := client.CreateCompleteConsumable(ctx, req)
 	return consumable, err
 }
 
 func (c *Client) GetLoadout(ctx context.Context, req *pb.GetLoadoutRequest) (*pb.GetLoadoutResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to items service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	loadout, err := client.GetLoadout(ctx, req)
 	return loadout, err
 }
 
 func (c *Client) ListItemInstances(ctx context.Context, req *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to items service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	return client.ListItemInstances(ctx, req)
 }
 
 func (c *Client) UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutRequest) (*pb.UpdateLoadoutResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to items service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	return client.UpdateLoadout(ctx, req)
 }
 
 func (c *Client) GetItemSummaries(ctx context.Context, req *pb.GetItemSummariesRequest) (*pb.GetItemSummariesResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to items service: %w", err)
-	}
-	return pb.NewItemsServiceClient(conn).GetItemSummaries(ctx, req)
+	return pb.NewItemsServiceClient(c.conn).GetItemSummaries(ctx, req)
 }

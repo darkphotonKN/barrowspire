@@ -6,15 +6,12 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/character-service/config"
 	"github.com/darkphotonKN/barrowspire-server/character-service/internal/character"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/character"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	_ "github.com/joho/godotenv/autoload"
@@ -25,9 +22,7 @@ import (
 
 var (
 	// grpc
-	serviceName = "character"
-	grpcAddr    = commonhelpers.GetEnvString("GRPC_CHARACTER_ADDR", "7123")
-	consulAddr  = commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
+	grpcAddr = commonhelpers.GetEnvString("GRPC_CHARACTER_ADDR", "7123")
 
 	// rabbit mq
 	amqpUser     = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
@@ -90,36 +85,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// --- service discovery setup ---
-
-	// -- consul client --
-	registry, err := consul.NewRegistry(consulAddr, serviceName)
-	if err != nil {
-		slog.Error("failed to create consul registry", "error", err)
-		os.Exit(1)
-	}
-
-	instanceID := discovery.GenerateInstanceID(serviceName)
-
-	// -- discovery --
-	if err := registry.Register(ctx, instanceID, serviceName, "localhost:"+grpcAddr); err != nil {
-		slog.Error("failed to register service", "error", err)
-		os.Exit(1)
-	}
-
-	// -- health check --
-	go func() {
-		for {
-			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
-				slog.Error("health check failed", "error", err)
-				os.Exit(1)
-			}
-			time.Sleep(time.Second * 1)
-		}
-	}()
-
-	defer registry.Deregister(ctx, instanceID, serviceName)
-
 	// --- grpc ---
 	// Status turns the domain sentinels (not found, already exists, invalid
 	// input) into gRPC codes in one place.
@@ -131,7 +96,7 @@ func main() {
 	)
 
 	// create a network listener to this service
-	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
+	listener, err := net.Listen("tcp", ":"+grpcAddr)
 
 	if err != nil {
 		slog.Error("failed to listen", "port", grpcAddr, "error", err)

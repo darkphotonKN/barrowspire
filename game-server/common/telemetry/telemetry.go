@@ -88,7 +88,7 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 		otlptracegrpc.WithEndpoint(cfg.CollectorEndpoint),
 		otlptracegrpc.WithInsecure(), // TODO: TLS in prod
 		otlptracegrpc.WithTimeout(exportTimeout),
-		// Skip the DNS TXT service-config lookup (see discovery.ServiceConnection).
+		// Skip the DNS TXT service-config lookup (see discovery.Dial).
 		otlptracegrpc.WithDialOption(grpc.WithDisableServiceConfig()),
 	)
 	if err != nil {

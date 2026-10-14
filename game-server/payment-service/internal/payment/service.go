@@ -8,13 +8,13 @@ import (
 	"time"
 
 	authpb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/subscription"
 	"github.com/stripe/stripe-go/v82/webhook"
+	"google.golang.org/grpc"
 )
 
 type Service interface {
@@ -26,21 +26,30 @@ type Service interface {
 	CheckPermission(ctx context.Context, userID string) (bool, error)
 }
 
-type service struct {
-	repo           Repository
-	processor      PaymentProcessor
-	publishCh      *amqp.Channel
-	registry       discovery.Registry
-	cache          cache.Cache
-	webhookSecret  string
+// AuthClient is the slice of auth-service that payment calls: the member's
+// Stripe customer id and subscription status live there. The generated
+// authpb.AuthServiceClient satisfies it.
+type AuthClient interface {
+	GetStripeCustomerID(ctx context.Context, in *authpb.GetStripeCustomerIDRequest, opts ...grpc.CallOption) (*authpb.GetStripeCustomerIDResponse, error)
+	SetStripeCustomerID(ctx context.Context, in *authpb.SetStripeCustomerIDRequest, opts ...grpc.CallOption) (*authpb.SetStripeCustomerIDResponse, error)
+	UpdateSubscriptionStatus(ctx context.Context, in *authpb.UpdateSubscriptionStatusRequest, opts ...grpc.CallOption) (*authpb.UpdateSubscriptionStatusResponse, error)
 }
 
-func NewService(repo Repository, processor PaymentProcessor, ch *amqp.Channel, registry discovery.Registry, cache cache.Cache, webhookSecret string) Service {
+type service struct {
+	repo          Repository
+	processor     PaymentProcessor
+	publishCh     *amqp.Channel
+	auth          AuthClient
+	cache         cache.Cache
+	webhookSecret string
+}
+
+func NewService(repo Repository, processor PaymentProcessor, ch *amqp.Channel, auth AuthClient, cache cache.Cache, webhookSecret string) Service {
 	return &service{
 		repo:          repo,
 		processor:     processor,
 		publishCh:     ch,
-		registry:      registry,
+		auth:          auth,
 		cache:         cache,
 		webhookSecret: webhookSecret,
 	}
@@ -78,14 +87,7 @@ func (s *service) CreateCustomer(ctx context.Context, userId uuid.UUID, email st
 }
 
 func (s *service) getStripeCustomerID(ctx context.Context, memberID string) (string, error) {
-	conn, err := discovery.ServiceConnection(ctx, "auth", s.registry)
-	if err != nil {
-		return "", fmt.Errorf("failed to connect to auth service: %w", err)
-	}
-	defer conn.Close()
-
-	client := authpb.NewAuthServiceClient(conn)
-	resp, err := client.GetStripeCustomerID(ctx, &authpb.GetStripeCustomerIDRequest{
+	resp, err := s.auth.GetStripeCustomerID(ctx, &authpb.GetStripeCustomerIDRequest{
 		MemberId: memberID,
 	})
 	if err != nil {
@@ -95,14 +97,7 @@ func (s *service) getStripeCustomerID(ctx context.Context, memberID string) (str
 }
 
 func (s *service) saveStripeCustomerID(ctx context.Context, memberID, customerID string) error {
-	conn, err := discovery.ServiceConnection(ctx, "auth", s.registry)
-	if err != nil {
-		return fmt.Errorf("failed to connect to auth service: %w", err)
-	}
-	defer conn.Close()
-
-	client := authpb.NewAuthServiceClient(conn)
-	_, err = client.SetStripeCustomerID(ctx, &authpb.SetStripeCustomerIDRequest{
+	_, err := s.auth.SetStripeCustomerID(ctx, &authpb.SetStripeCustomerIDRequest{
 		MemberId:         memberID,
 		StripeCustomerId: customerID,
 	})
@@ -212,12 +207,6 @@ func (s *service) getUserIDByCustomerID(ctx context.Context, customerID string) 
 
 	// Cache miss — look up via Stripe customer metadata
 	// The customer was created with metadata["user_id"]
-	conn, err := discovery.ServiceConnection(ctx, "auth", s.registry)
-	if err != nil {
-		return "", fmt.Errorf("failed to connect to auth service: %w", err)
-	}
-	defer conn.Close()
-
 	// We don't have a "get member by customer ID" RPC, so we'll look it up
 	// from Stripe customer metadata directly
 	cust, err := getStripeCustomer(customerID)
@@ -369,14 +358,7 @@ func (s *service) CheckPermission(ctx context.Context, userID string) (bool, err
 
 // updateMemberSubscriptionStatus calls auth-service to update the member's subscription fields.
 func (s *service) updateMemberSubscriptionStatus(ctx context.Context, memberID, productID, status string) error {
-	conn, err := discovery.ServiceConnection(ctx, "auth", s.registry)
-	if err != nil {
-		return fmt.Errorf("failed to connect to auth service: %w", err)
-	}
-	defer conn.Close()
-
-	client := authpb.NewAuthServiceClient(conn)
-	_, err = client.UpdateSubscriptionStatus(ctx, &authpb.UpdateSubscriptionStatusRequest{
+	_, err := s.auth.UpdateSubscriptionStatus(ctx, &authpb.UpdateSubscriptionStatusRequest{
 		MemberId:  memberID,
 		ProductId: productID,
 		Status:    status,
