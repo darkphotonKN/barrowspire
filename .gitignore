@@ -198,6 +198,10 @@ jwt-secret*
 secrets/
 .secrets/
 
+# Kubernetes Secret manifests (e.g. deploy/kind/auth.secret.yaml)
+*.secret.yaml
+*.secret.yml
+
 # AWS credentials
 .aws/
 

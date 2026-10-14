@@ -9,7 +9,7 @@ The game server follows a **microservices architecture** with domain-driven desi
 - **Domain-Driven Design (DDD Lite)**: Each service owns its domain logic and data
 - **Interface Segregation Principle (ISP)**: Consumers define their own interfaces
 - **Dependency Inversion Principle (DIP)**: Depend on abstractions, not concrete implementations
-- **Database per Service**: Each service has isolated data storage
+- **Database per Service**: Each service has isolated data storage — its own database and role on one shared Postgres instance (ADR-0023)
 - **Event-Driven Communication**: Services communicate through events via RabbitMQ
 
 ## Service Architecture
