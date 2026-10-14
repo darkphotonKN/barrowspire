@@ -17,7 +17,7 @@ the question *"what is the balance"* must not migrate here for convenience. The 
 movements in **double-entry transactions**: a set of legs sharing one `transaction_id` whose
 signed amounts sum to zero.
 
-**Scaffold status.** The service boots, registers with Consul, serves gRPC, connects to the
+**Scaffold status.** The service boots, serves gRPC, connects to the
 broker, and owns its database. Its current `Ledger` aggregate (per-member root with an OCC
 version) predates the domain design and is **retired by FS-F9R7Q** — an append-only record
 performs no read-modify-write, so optimistic concurrency has nothing to protect.
