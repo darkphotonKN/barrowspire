@@ -185,24 +185,24 @@ func (l *Listing) Cancel(now time.Time) error {
 	return nil
 }
 
-func (l *Listing) MarkSold(now time.Time, buyerID uuid.UUID, soldPrice int) error {
-	if l.status != StatusActive {
+func (l *Listing) MarkSold(now time.Time) error {
+	switch l.status {
+	case StatusSold:
+		// a retried activity catching up with its own earlier success
+		return nil
+	case StatusPendingSettlement:
+		wonBid := l.findWonBid()
+		if wonBid == nil {
+			return ErrInvalidListingState
+		}
+		buyer, price := wonBid.memberID, wonBid.amount
+		l.buyerID = &buyer
+		l.soldPrice = &price
+		return l.transitionTo(StatusSold, now)
+	default:
 		return ErrInvalidListingState
 	}
-	if buyerID == uuid.Nil {
-		return ErrInvalidUUID
-	}
-	if soldPrice <= 0 || soldPrice < l.startPrice {
-		return ErrInvalidSoldPrice
-	}
-	if l.endsAt.After(now) {
-		return ErrInvalidSoldTime
-	}
-	l.buyerID = &buyerID
-	l.soldPrice = &soldPrice
-	l.status = StatusSold
-	l.updatedAt = now
-	return nil
+
 }
 
 // PlaceBid records a bid under a freshly minted id. Callers that must know the
@@ -572,6 +572,19 @@ func (l *Listing) boughtOut() bool {
 func (l *Listing) findWinningBid() *Bid {
 	for _, bid := range l.bids {
 		if bid.status != BidStatusWinning {
+			continue
+		}
+		return bid
+	}
+
+	return nil
+}
+
+// findWonBid returns the bid settlement step 1a moved WINNING -> WON, or nil
+// before then. findWinningBid no longer sees it once it is WON.
+func (l *Listing) findWonBid() *Bid {
+	for _, bid := range l.bids {
+		if bid.status != BidStatusWon {
 			continue
 		}
 		return bid

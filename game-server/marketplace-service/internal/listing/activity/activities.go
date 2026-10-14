@@ -16,6 +16,7 @@ type Activities struct {
 	setWinningBid SetWinningBid
 	loseAllBids   LoseAllBids
 	expireListing ExpireListing
+	markSold      MarkSold
 }
 
 type FreezeListing interface {
@@ -34,12 +35,17 @@ type ExpireListing interface {
 	Handle(ctx context.Context, cmd usecase.ExpireListingCommand) error
 }
 
-func NewActivities(freezeListing FreezeListing, setWinningBid SetWinningBid, loseAllBids LoseAllBids, expireListing ExpireListing) *Activities {
+type MarkSold interface {
+	Handle(ctx context.Context, cmd usecase.MarkSoldListingCommand) error
+}
+
+func NewActivities(freezeListing FreezeListing, setWinningBid SetWinningBid, loseAllBids LoseAllBids, expireListing ExpireListing, markSold MarkSold) *Activities {
 	return &Activities{
 		freezeListing: freezeListing,
 		setWinningBid: setWinningBid,
 		loseAllBids:   loseAllBids,
 		expireListing: expireListing,
+		markSold:      markSold,
 	}
 }
 
@@ -57,4 +63,5 @@ func (a *Activities) Register(r activityRegistry) {
 	r.RegisterActivityWithOptions(a.SetWinningBid, activity.RegisterOptions{Name: marketplaceactivity.SetWinningBidActivityName})
 	r.RegisterActivityWithOptions(a.LoseAllBids, activity.RegisterOptions{Name: marketplaceactivity.LoseAllBidsActivityName})
 	r.RegisterActivityWithOptions(a.ExpireListing, activity.RegisterOptions{Name: marketplaceactivity.ExpireListingActivityName})
+	r.RegisterActivityWithOptions(a.MarkSold, activity.RegisterOptions{Name: marketplaceactivity.MarkSoldActivityName})
 }

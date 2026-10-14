@@ -32,7 +32,7 @@ func (s *stubExpireListing) Handle(ctx context.Context, cmd usecase.ExpireListin
 func newExpireEnv(uc ExpireListing) *testsuite.TestActivityEnvironment {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestActivityEnvironment()
-	NewActivities(nil, nil, nil, uc).Register(env)
+	NewActivities(nil, nil, nil, uc, nil).Register(env)
 	return env
 }
 

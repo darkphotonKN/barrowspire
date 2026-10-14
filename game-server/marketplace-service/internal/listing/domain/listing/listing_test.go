@@ -368,15 +368,18 @@ func leadingBid(t *testing.T, l *Listing, member uuid.UUID, amount int, now time
 	return bidID
 }
 
-// soldListing builds a settled listing. MarkSold refuses to run before endsAt,
-// so the clock is pushed past the end of the auction rather than shortening it
-// at construction — NewListing rejects an endsAt that is not in the future.
+// soldListing builds a settled listing the way settlement does: a winning bid at
+// soldPrice, frozen at 0a, marked WON at 1a, then SOLD at step 6, which takes the
+// buyer and the price from that WON bid.
 func soldListing(t *testing.T, startPrice, soldPrice int) *Listing {
 	t.Helper()
 
+	now := time.Now()
 	l := activeListing(t, startPrice)
-	afterEnd := time.Now().Add(2 * time.Hour)
-	require.NoError(t, l.MarkSold(afterEnd, uuid.New(), soldPrice))
+	winner := leadingBid(t, l, uuid.New(), soldPrice, now)
+	require.NoError(t, l.Freeze(now))
+	require.NoError(t, l.SetWinningBid(winner, now))
+	require.NoError(t, l.MarkSold(now))
 
 	return l
 }
