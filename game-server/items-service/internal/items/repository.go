@@ -1238,45 +1238,64 @@ func (r *repository) ReturnItem(ctx context.Context, id, listingID uuid.UUID) er
 	}
 }
 
+var errNotTransferable = errors.New("item not transferable for this listing")
+
 func (r *repository) TransferItem(ctx context.Context, itemID, buyerID, listingID uuid.UUID) (bool, error) {
-	query := `
-		UPDATE item_instances 
-		SET 
-			owner_member_id = $1,
-			status = 'AVAILABLE',
-			listing_id = NULL
-		WHERE status = 'PENDING_SETTLEMENT'
-		AND id = $2
-		AND listing_id = $3
-	`
-
-	res, err := r.DB.ExecContext(ctx, query, buyerID, itemID, listingID)
-	if err != nil {
-		return false, wrapDBErr("transfer item", err)
-	}
-
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("transfer item, rows affected: %w", err)
-	}
-	if n > 0 {
-		return true, nil
-	}
-
-	alreadyTransferred := `
-		SELECT EXISTS (
-			SELECT 1
-			FROM item_instances
-			WHERE id = $1
-			AND owner_member_id = $2
-			AND status <> 'PENDING_SETTLEMENT'
-		)
-	`
-
 	var transferred bool
-	if err := r.DB.GetContext(ctx, &transferred, alreadyTransferred, itemID, buyerID); err != nil {
-		return false, wrapDBErr("transfer item, already transferred check", err)
-	}
+	err := commonhelpers.ExecTx(ctx, r.DB, nil, func(tx *sqlx.Tx) error {
+		// record and check
+		transfer := `
+			INSERT INTO item_transfers (listing_id, item_id, buyer_member_id) 
+			VALUES (
+				$1, $2, $3
+			)
+			ON CONFLICT(listing_id) DO NOTHING
+		`
+		res, err := tx.ExecContext(ctx, transfer, listingID, itemID, buyerID)
+		if err != nil {
+			return wrapDBErr("transfer item, record", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("transfer item, record rows affected: %w", err)
+		}
+		if n == 0 {
+			transferred = true
+			return nil
+		}
 
+		query := `
+			UPDATE item_instances 
+			SET 
+				owner_member_id = $1,
+				status = 'AVAILABLE',
+				listing_id = NULL
+			WHERE status = 'PENDING_SETTLEMENT'
+			AND id = $2
+			AND listing_id = $3
+		`
+
+		res, err = tx.ExecContext(ctx, query, buyerID, itemID, listingID)
+		if err != nil {
+			return wrapDBErr("transfer item, update", err)
+		}
+		n, err = res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("transfer item, update rows affected: %w", err)
+		}
+		if n == 0 {
+			return errNotTransferable
+		}
+
+		transferred = true
+		return nil
+	})
+
+	if errors.Is(err, errNotTransferable) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
 	return transferred, nil
 }
