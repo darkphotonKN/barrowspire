@@ -1,7 +1,6 @@
 package auth_test
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -98,30 +97,18 @@ func TestSignup_AuthServiceRPCUnavailable_Returns503(t *testing.T) {
 	testsupport.AssertProblem(t, w, http.StatusServiceUnavailable, string(errcode.ServiceUnavailable))
 }
 
-// emptyRegistry discovers no instances, which is exactly what Consul reports
-// once auth-service deregisters — the ordinary way the service is "down".
-type emptyRegistry struct{}
-
-func (emptyRegistry) Register(context.Context, string, string, string) error { return nil }
-func (emptyRegistry) Deregister(context.Context, string, string) error       { return nil }
-func (emptyRegistry) HealthCheck(string, string) error                       { return nil }
-func (emptyRegistry) Discover(context.Context, string) ([]string, error) {
-	return nil, nil
-}
-
 // FS-83TJK §Edge States, through the REAL client rather than a stub.
 //
-// This is the case a stubbed AuthClient structurally cannot reach. When
-// auth-service has deregistered, the failure happens in ensureConn ->
-// discovery.ServiceConnection, which returns a plain error carrying no gRPC
-// status. Nothing in httperr's errors.Is chain matches a bare error, so without
-// an explicit ErrUnavailable marker the seam answers 500 — telling the client to
-// abandon a request that would have succeeded once the service came back.
-//
-// Injecting codes.Unavailable into a stub cannot catch that regression: it skips
-// ensureConn entirely and only re-proves the gRPC status mapping.
-func TestSignup_AuthServiceNotDiscoverable_Returns503(t *testing.T) {
-	r := newTypedRouter(gwauth.NewClient(emptyRegistry{}))
+// This is the case a stubbed AuthClient structurally cannot reach: the client is
+// pointed at an address nothing listens on — auth-service is down — so the
+// failure comes from the real connection, not from an injected status. It must
+// reach the seam as codes.Unavailable and answer 503; anything else would tell
+// the client to abandon a request that succeeds once auth-service is back.
+func TestSignup_AuthServiceUnreachable_Returns503(t *testing.T) {
+	client, err := gwauth.NewClient("127.0.0.1:1")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = client.Close() })
+	r := newTypedRouter(client)
 
 	w := testsupport.Do(r, http.MethodPost, "/api/member/signup",
 		`{"name":"Delver","email":"delver@barrowspire.test","password":"hunter2"}`)

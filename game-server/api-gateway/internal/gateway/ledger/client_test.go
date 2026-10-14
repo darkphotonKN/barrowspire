@@ -2,66 +2,55 @@ package ledger_test
 
 import (
 	"context"
-	"errors"
 	"testing"
+	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/ledger"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/ledger"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-// stubRegistry records what the client asked Consul to discover, and refuses to
-// resolve it. Refusing is the point: this slice proves the client dials the
-// right service name through the shared discovery path, not that ledger-service
-// is up.
-type stubRegistry struct {
-	asked []string
-	err   error
-}
+// absentAddr is an address nothing listens on: ledger-service is down.
+const absentAddr = "127.0.0.1:1"
 
-func (s *stubRegistry) Register(ctx context.Context, instanceID, serviceName, hostPort string) error {
-	return nil
-}
-func (s *stubRegistry) Deregister(ctx context.Context, instanceID, serviceName string) error {
-	return nil
-}
-func (s *stubRegistry) HealthCheck(instanceID, serviceName string) error { return nil }
-func (s *stubRegistry) Discover(ctx context.Context, serviceName string) ([]string, error) {
-	s.asked = append(s.asked, serviceName)
-	return nil, s.err
-}
-
-var _ discovery.Registry = (*stubRegistry)(nil)
-
-func TestNewClient_DiscoversTheLedgerServiceName(t *testing.T) {
-	reg := &stubRegistry{err: errors.New("no instances")}
-	c := ledger.NewClient(reg)
-	require.NotNil(t, c)
-
-	_, err := c.GetTransaction(context.Background(), &pb.GetTransactionRequest{})
-
-	require.Error(t, err, "a downstream that cannot be resolved must surface an error")
-	assert.Equal(t, []string{"ledger"}, reg.asked,
-		"the client must discover the name ledger-service registers under")
-}
-
-func TestNewClient_ListEntries_UsesTheSameDiscoveryPath(t *testing.T) {
-	reg := &stubRegistry{err: errors.New("no instances")}
-	c := ledger.NewClient(reg)
-
-	_, err := c.ListEntries(context.Background(), &pb.ListEntriesRequest{})
-
-	require.Error(t, err)
-	assert.Equal(t, []string{"ledger"}, reg.asked)
+func newAbsentClient(t *testing.T) *ledger.Client {
+	t.Helper()
+	c, err := ledger.NewClient(absentAddr)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+	return c
 }
 
 // A missing downstream is a runtime failure, never a boot failure — the gateway
-// must start with ledger-service absent, exactly as it does for the other five.
-func TestNewClient_ConstructsWithoutDialing(t *testing.T) {
-	reg := &stubRegistry{err: errors.New("no instances")}
+// must start with ledger-service absent, exactly as it does for the others.
+func TestNewClient_ConstructsWithDownstreamAbsent(t *testing.T) {
+	c, err := ledger.NewClient(absentAddr)
 
-	assert.NotNil(t, ledger.NewClient(reg))
-	assert.Empty(t, reg.asked, "construction must not dial; the connection is lazy")
+	require.NoError(t, err, "construction must not connect; the connection is lazy")
+	assert.NoError(t, c.Close())
+}
+
+// An absent ledger-service must surface as codes.Unavailable, the status the
+// error seam answers 503 for: the request was valid and retrying is correct.
+func TestGetTransaction_DownstreamAbsent_IsUnavailable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := newAbsentClient(t).GetTransaction(ctx, &pb.GetTransactionRequest{})
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+}
+
+func TestListEntries_DownstreamAbsent_IsUnavailable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := newAbsentClient(t).ListEntries(ctx, &pb.ListEntriesRequest{})
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
 }
