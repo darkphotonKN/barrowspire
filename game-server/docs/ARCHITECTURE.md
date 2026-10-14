@@ -204,8 +204,8 @@ Each service uses environment-specific configs:
 - JWT secrets
 
 ### Service Discovery
-- Currently: Hard-coded service addresses
-- Future: Consul for dynamic discovery
+- Each client reads its downstream's address from `<SERVICE>_ADDR` (default
+  `localhost:<port>`); Kubernetes Services provide the names in-cluster (ADR-0022).
 
 ## Deployment
 

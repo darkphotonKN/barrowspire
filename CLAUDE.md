@@ -43,7 +43,7 @@ Microservices stay structurally identical for now.
 - **Architecture**: Entity Component System (ECS)n
 - **Game Loop**: Fixed timestep (60 ticks/second)
 - **Event Broker**: RabbitMQ
-- **Service Discovery**: Consul
+- **Service Discovery**: env-configured addresses (`<SERVICE>_ADDR`); Kubernetes Service DNS in-cluster (ADR-0022)
 
 ### Frontend
 
