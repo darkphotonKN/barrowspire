@@ -33,7 +33,7 @@ func (s *stubMarkSold) Handle(ctx context.Context, cmd usecase.MarkSoldListingCo
 func newMarkSoldEnv(uc MarkSold) *testsuite.TestActivityEnvironment {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestActivityEnvironment()
-	NewActivities(nil, nil, nil, nil, uc).Register(env)
+	NewActivities(nil, nil, nil, nil, uc, nil).Register(env)
 	return env
 }
 

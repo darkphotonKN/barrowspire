@@ -82,7 +82,8 @@ func NewServices(ctx context.Context, db *sqlx.DB, itemsClient itemreserver.Item
 	loseAllBidsUC := usecase.NewLoseAllBidsUC(listingRepo)
 	expireListingUC := usecase.NewExpireListingUC(listingRepo)
 	markSoldUC := usecase.NewMarkSoldListingUC(listingRepo)
-	activities := listingactivity.NewActivities(freezeListingUC, setWinningBidUC, loseAllBidsUC, expireListingUC, markSoldUC)
+	markSettlementFailedUC := usecase.NewMarkSettlementFailedUC(listingRepo)
+	activities := listingactivity.NewActivities(freezeListingUC, setWinningBidUC, loseAllBidsUC, expireListingUC, markSoldUC, markSettlementFailedUC)
 
 	// escalate and park: the exception and its settlement.failed share one
 	// transaction, so the repository writes the outbox too

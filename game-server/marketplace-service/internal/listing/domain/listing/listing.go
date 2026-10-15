@@ -18,6 +18,9 @@ const (
 	StatusPendingSettlement ListingStatus = "PENDING_SETTLEMENT"
 	StatusExpired           ListingStatus = "EXPIRED"
 	StatusSold              ListingStatus = "SOLD"
+	// StatusSettlementFailed is where a pre-pivot rollback leaves a listing whose
+	// settlement can never succeed (FS-NXP1W §Req 12). Final: never re-settled.
+	StatusSettlementFailed ListingStatus = "SETTLEMENT_FAILED"
 )
 
 type Listing struct {
@@ -653,6 +656,22 @@ func (l *Listing) Freeze(now time.Time) error {
 	}
 
 	return nil
+}
+
+// MarkSettlementFailed is marketplace's share of the pre-pivot rollback
+// (FS-NXP1W §Req 12): a frozen listing ends SETTLEMENT_FAILED.
+//
+// Every other status is left as it is and is success. The rollback is retried
+// without a cap, so SETTLEMENT_FAILED itself must be a no-op; and a 0a
+// impossibility reaches here precisely because another flow already moved the
+// listing to a final status, which the rollback must not overwrite (Edge States,
+// "Listing withdrawn before 0a runs").
+func (l *Listing) MarkSettlementFailed(now time.Time) error {
+	if l.status != StatusPendingSettlement {
+		return nil
+	}
+
+	return l.transitionTo(StatusSettlementFailed, now)
 }
 
 // Expire is settlement step NB2 (FS-NXP1W §Req 34b): a frozen listing that
