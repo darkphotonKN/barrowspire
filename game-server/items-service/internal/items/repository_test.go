@@ -1,10 +1,12 @@
 package items
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -307,6 +309,9 @@ func TestUnfreezeItem(t *testing.T) {
 		wantListing string
 		// a row the rollback does not match must come back untouched, updated_at included
 		wantUpdatedAtKept bool
+		// still reserved for this listing yet unmatched is an invariant breach: it
+		// stays frozen with nothing else to free it, so it has to leave a trace
+		wantWarn bool
 	}{
 		{name: "frozen for this listing goes back to the seller", status: "PENDING_SETTLEMENT", owner: seller, listing: thisListing,
 			wantStatus: "AVAILABLE", wantListing: noListing},
@@ -318,8 +323,8 @@ func TestUnfreezeItem(t *testing.T) {
 			wantStatus: "LISTED", wantListing: otherListing, wantUpdatedAtKept: true},
 		{name: "frozen for another listing is left alone", status: "PENDING_SETTLEMENT", owner: seller, listing: otherListing,
 			wantStatus: "PENDING_SETTLEMENT", wantListing: otherListing, wantUpdatedAtKept: true},
-		{name: "owned by someone else is left alone", status: "PENDING_SETTLEMENT", owner: stranger, listing: thisListing,
-			wantStatus: "PENDING_SETTLEMENT", wantListing: thisListing, wantUpdatedAtKept: true},
+		{name: "owned by someone else is left alone, and warned about", status: "PENDING_SETTLEMENT", owner: stranger, listing: thisListing,
+			wantStatus: "PENDING_SETTLEMENT", wantListing: thisListing, wantUpdatedAtKept: true, wantWarn: true},
 		{name: "missing item is nothing to do", skipSeed: true},
 	}
 
@@ -334,8 +339,16 @@ func TestUnfreezeItem(t *testing.T) {
 				seedItemInstanceForListing(t, ctx, db, itemID, tt.owner, tt.status, earlier, listingFor[tt.listing])
 			}
 
+			var logs bytes.Buffer
+			prev := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(prev) })
+
 			if err := NewRepository(db).UnfreezeItem(ctx, itemID, seller, listingID); err != nil {
 				t.Fatalf("unfreeze: %v", err)
+			}
+			if warned := strings.Contains(logs.String(), "level=WARN"); warned != tt.wantWarn {
+				t.Errorf("warned = %v, want %v; logs: %s", warned, tt.wantWarn, logs.String())
 			}
 			if tt.skipSeed {
 				return

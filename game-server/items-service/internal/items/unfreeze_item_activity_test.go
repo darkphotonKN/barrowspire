@@ -10,6 +10,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/worker"
 )
 
 type stubUnfreezer struct {
@@ -25,14 +26,23 @@ func (s *stubUnfreezer) UnfreezeItem(ctx context.Context, itemID, sellerID, list
 	return s.err
 }
 
-// Register takes a worker.Worker, which the test environment does not satisfy,
-// so the activity is registered here under the same contract name.
+// envWorker lets a test call an activity's real Register: Register takes a
+// worker.Worker, which the test environment does not satisfy, so this forwards the
+// one call Register makes. A wrong name in Register then fails the test, instead
+// of surfacing at runtime as an unregistered activity.
+type envWorker struct {
+	worker.Worker
+	env *testsuite.TestActivityEnvironment
+}
+
+func (w envWorker) RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions) {
+	w.env.RegisterActivityWithOptions(a, options)
+}
+
 func newUnfreezeItemEnv(svc ItemsUnfreezer) *testsuite.TestActivityEnvironment {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestActivityEnvironment()
-	env.RegisterActivityWithOptions(NewUnfreezeItemActivity(svc).UnfreezeItemActivity, activity.RegisterOptions{
-		Name: commonactivity.UnfreezeItemActivityName,
-	})
+	NewUnfreezeItemActivity(svc).Register(envWorker{env: env})
 	return env
 }
 

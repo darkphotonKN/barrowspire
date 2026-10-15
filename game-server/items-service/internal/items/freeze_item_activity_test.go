@@ -8,7 +8,6 @@ import (
 
 	commonactivity "github.com/darkphotonKN/barrowspire-server/common/api/activity/itemsactivity"
 	"github.com/google/uuid"
-	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 )
@@ -19,14 +18,11 @@ func (s *stubFreezer) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID
 	return s.err
 }
 
-// Register takes a worker.Worker, which the test environment does not satisfy,
-// so the activity is registered here under the same contract name.
+// Registered through the activity's own Register, via envWorker.
 func newFreezeItemEnv(svc ItemsFreezer) *testsuite.TestActivityEnvironment {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestActivityEnvironment()
-	env.RegisterActivityWithOptions(NewItemsActivity(svc).FreezeItemActivity, activity.RegisterOptions{
-		Name: commonactivity.FreezeItemActivityName,
-	})
+	NewItemsActivity(svc).Register(envWorker{env: env})
 	return env
 }
 
