@@ -662,10 +662,12 @@ func (l *Listing) Freeze(now time.Time) error {
 // (FS-NXP1W §Req 12): a frozen listing ends SETTLEMENT_FAILED.
 //
 // Every other status is left as it is and is success. The rollback is retried
-// without a cap, so SETTLEMENT_FAILED itself must be a no-op; and a 0a
-// impossibility reaches here precisely because another flow already moved the
-// listing to a final status, which the rollback must not overwrite (Edge States,
-// "Listing withdrawn before 0a runs").
+// without a cap, so SETTLEMENT_FAILED itself must be a no-op. A 0a impossibility
+// reaches here with the listing not PENDING_SETTLEMENT: usually another flow
+// already moved it to a final status, which the rollback must not overwrite (Edge
+// States, "Listing withdrawn before 0a runs"). A listing 0a found corrupt stays as
+// it was too — the freeze rolled back — and is left for an operator, with the
+// rollback's settlement exception as the record.
 func (l *Listing) MarkSettlementFailed(now time.Time) error {
 	if l.status != StatusPendingSettlement {
 		return nil

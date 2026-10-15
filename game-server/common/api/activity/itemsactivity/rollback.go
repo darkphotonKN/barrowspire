@@ -16,8 +16,8 @@ const UnfreezeItemActivityName = "UnfreezeItem"
 // UnfreezeItemInput carries SellerID for the same reason FreezeItemInput does: the
 // write is conditional on the item still belonging to the seller it was frozen for.
 //
-// ListingID scopes the write to this settlement's listing (FS-NXP1W §Req 24a): a
-// release retried after the seller relisted the item must leave the new listing's
+// ListingID scopes the write to this settlement's listing (FS-NXP1W §Req 24a): an
+// unfreeze retried after the seller relisted the item must leave the new listing's
 // item alone, and status alone cannot tell the two apart.
 type UnfreezeItemInput struct {
 	ItemID    uuid.UUID `json:"item_id"`

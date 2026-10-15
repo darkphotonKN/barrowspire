@@ -33,7 +33,7 @@ What happens when 0a or 0b fails. Before the pivot, a failure that can never suc
 ## Acceptance Criteria
 
 - [x] FreezeItem fails non-retryably when the owner is not the seller or the status is neither `LISTED` nor `PENDING_SETTLEMENT`
-- [x] A semantic impossibility in 0a or 0b leaves the listing `SETTLEMENT_FAILED`, the item `AVAILABLE` with the seller, and one `settlement_exceptions` row
+- [x] A semantic impossibility in 0a or 0b leaves the listing `SETTLEMENT_FAILED`, the item `AVAILABLE` with the seller, and one `settlement_exceptions` row (0b also leaves every bid `LOST`; holds are I-NXP1W-6, see Out of slice)
 - [x] A `SETTLEMENT_FAILED` listing is never re-settled
 - [x] A rollback action that fails transiently retries until it succeeds; it never parks halfway
 - [x] Crash-point table for 0a/0b committed
@@ -47,9 +47,10 @@ I-NXP1W-3
 
 | Item | State | Owner |
 |---|---|---|
-| 0b checks `listing_id` (§Req 24a) | `FreezeItemInput` carries no listing ID; the rollback's `UnfreezeItem` does check it | follow-up |
-| Rollback of 1a/1b | the wiring here takes more actions; `ReleaseAllHolds` still needs the listing's bid IDs | I-NXP1W-6 |
-| Same `ErrNotFound` mismatch in SetWinningBid, ExpireListing, MarkSold | their non-retryable sets name `apperr.ErrNotFound`, but the repository returns `commonconstants.ErrNotFound`; fixed for 0a only | follow-up |
+| Holds released by the 0a/0b rollback (§Req 12) | the 0b rollback moves every bid to `LOST` (LoseAllBids), but holds stay `RESERVED`: `ReleaseAllHolds` needs the listing's bid IDs, which nothing produces yet. A `LOST` bid still claims its hold, so the reconciler leaves the gold to settlement | I-NXP1W-6 |
+| Rollback of 1a/1b | the same `rollBack` takes the extra actions | I-NXP1W-6 |
+| 0b checks `listing_id` (§Req 24a) | `FreezeItemInput` carries no listing ID; the rollback's `UnfreezeItem` does check it | I-NXP1W-16 |
+| Same `ErrNotFound` mismatch in SetWinningBid, ExpireListing, MarkSold | their non-retryable sets name `apperr.ErrNotFound`, but the repository returns `commonconstants.ErrNotFound`; fixed for 0a only | I-NXP1W-16 |
 | AC proven against live services | unit and DB-level tests only; no end-to-end run | I-NXP1W-14 |
 
 ## Spec Reference
