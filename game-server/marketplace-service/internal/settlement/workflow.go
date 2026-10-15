@@ -7,6 +7,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/itemsactivity"
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
+	"github.com/darkphotonKN/barrowspire-server/common/api/activity/walletactivity"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 )
@@ -72,6 +73,31 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 		itemsactivity.FreezeItemActivityName,
 		itemsactivity.FreezeItemInput{ItemID: frozen.ItemID, SellerID: frozen.SellerID},
 	).Get(freezeItemCtx, nil)
+	if err != nil {
+		return marketplaceactivity.FreezeListingOutput{}, err
+	}
+
+	// Step 1a
+	err = runUntilDone(ctx, frozen.ListingID,
+		marketplaceactivity.SetWinningBidActivityName,
+		bstemporal.QueueMarketplace,
+		beforePivot,
+		marketplaceactivity.SetWinningBidInput{ListingID: frozen.ListingID, WinnerBidID: frozen.WinnerBidID},
+		nil,
+	)
+	if err != nil {
+		return marketplaceactivity.FreezeListingOutput{}, err
+	}
+
+	// Step 1b, pivot
+	var committed walletactivity.CommitHoldOutput
+	err = runUntilDone(ctx, frozen.ListingID,
+		walletactivity.CommitHoldActivityName,
+		bstemporal.QueueWallet,
+		beforePivot,
+		walletactivity.CommitHoldInput{WinnerBidID: frozen.WinnerBidID, ExpectedAmount: frozen.Amount},
+		&committed,
+	)
 	if err != nil {
 		return marketplaceactivity.FreezeListingOutput{}, err
 	}
