@@ -7,6 +7,7 @@ import (
 
 	commonactivity "github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	commonerr "github.com/darkphotonKN/barrowspire-server/common/apperr"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 )
@@ -55,8 +56,10 @@ var freezeListingNonRetryable = []error{
 	// outcome. Freezing it is not something a retry brings back
 	listing.ErrInvalidListingState,
 	listing.ErrCorruptListingState,
-	// no listing to freeze
+	// no listing to freeze. Both sentinels: ListingRepository.Update reports a
+	// missing row as commonconstants.ErrNotFound (WrapDBErr), not apperr's
 	commonerr.ErrNotFound,
+	commonconstants.ErrNotFound,
 }
 
 func classifyFreezeErr(err error) error {
