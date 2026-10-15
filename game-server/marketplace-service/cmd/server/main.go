@@ -23,6 +23,7 @@ import (
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/config"
 	appConfig "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/config"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/releasehold"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/settlement"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
@@ -133,6 +134,8 @@ func main() {
 
 		// the workflow and every settlement activity marketplace owns
 		settlement.Register,
+		// gives one bid's hold back, retried until it lands
+		releasehold.Register,
 		func(w worker.Worker) { services.Activities.Register(w) },
 		// raise and resolve for escalate and park (FS-NXP1W Req 10)
 		func(w worker.Worker) { services.ExceptionActivities.Register(w) },

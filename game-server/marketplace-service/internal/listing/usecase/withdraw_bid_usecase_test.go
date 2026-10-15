@@ -25,18 +25,20 @@ func TestWithdrawBidUC_ReleasesTheHold(t *testing.T) {
 	require.NoError(t, l.ConfirmBid(bidID, now))
 
 	repo := &fakeRepo{listing: l}
-	wallet := &fakeWallet{}
+	release := &fakeReleaser{}
+	listingID := uuid.New()
 
-	err := NewWithdrawBidUC(repo, wallet).Handle(context.Background(), WithdrawBidCommand{
-		ListingID: uuid.New(),
+	err := NewWithdrawBidUC(repo, release).Handle(context.Background(), WithdrawBidCommand{
+		ListingID: listingID,
 		BidID:     bidID,
 		MemberID:  bidder,
 		Now:       now,
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, 1, wallet.releaseCalls, "the bidder's gold goes back")
-	assert.Equal(t, bidID, wallet.gotReleasedBidID)
+	assert.Equal(t, 1, release.calls, "the bidder's gold goes back")
+	assert.Equal(t, bidID, release.gotBidID)
+	assert.Equal(t, listingID, release.gotListingID)
 	assert.Equal(t, listing.BidStatusCancelled, l.Snapshot().Bids[0].Status)
 }
 
@@ -53,9 +55,9 @@ func TestWithdrawBidUC_WriteFails_GoldStaysHeld(t *testing.T) {
 	require.NoError(t, l.ConfirmBid(bidID, now))
 
 	repo := &fakeRepo{listing: l, saveErr: errListingGone}
-	wallet := &fakeWallet{}
+	release := &fakeReleaser{}
 
-	err := NewWithdrawBidUC(repo, wallet).Handle(context.Background(), WithdrawBidCommand{
+	err := NewWithdrawBidUC(repo, release).Handle(context.Background(), WithdrawBidCommand{
 		ListingID: uuid.New(),
 		BidID:     bidID,
 		MemberID:  bidder,
@@ -63,12 +65,12 @@ func TestWithdrawBidUC_WriteFails_GoldStaysHeld(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	assert.Zero(t, wallet.releaseCalls, "a bid still standing keeps its gold")
+	assert.Zero(t, release.calls, "a bid still standing keeps its gold")
 }
 
-// The release is the part that can fail on its own, and the bid is already cancelled
-// by then. Reporting that as a failed withdrawal would invite a retry of a withdrawal
-// that already happened; the reconciler picks the hold up instead.
+// Starting the release is the part that can fail on its own, and the bid is already
+// cancelled by then. Reporting that as a failed withdrawal would invite a retry of a
+// withdrawal that already happened; the reconciler picks the hold up instead.
 func TestWithdrawBidUC_ReleaseFails_WithdrawalStillSucceeds(t *testing.T) {
 	now := time.Now()
 	l := activeListing(t, 100)
@@ -78,9 +80,9 @@ func TestWithdrawBidUC_ReleaseFails_WithdrawalStillSucceeds(t *testing.T) {
 	require.NoError(t, l.ConfirmBid(bidID, now))
 
 	repo := &fakeRepo{listing: l}
-	wallet := &fakeWallet{releaseErr: errors.New("wallet unreachable")}
+	release := &fakeReleaser{err: errors.New("temporal unreachable")}
 
-	err := NewWithdrawBidUC(repo, wallet).Handle(context.Background(), WithdrawBidCommand{
+	err := NewWithdrawBidUC(repo, release).Handle(context.Background(), WithdrawBidCommand{
 		ListingID: uuid.New(),
 		BidID:     bidID,
 		MemberID:  bidder,

@@ -64,7 +64,7 @@ func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	releaseAllHoldsUC := usecase.NewReleaseAllHoldsUC(accountRepo)
 	releaseLosingHoldsUC := usecase.NewReleaseLosingHoldsUC(accountRepo)
 	creditSellerUC := usecase.NewCreditSellerUC(db, accountRepo, accountrepo.NewProcessedActivityRepo())
-	activities := accountactivity.NewActivities(commitHoldUC, releaseAllHoldsUC, releaseLosingHoldsUC, creditSellerUC)
+	activities := accountactivity.NewActivities(commitHoldUC, releaseAllHoldsUC, releaseLosingHoldsUC, creditSellerUC, releaseHoldUC)
 
 	return &Services{
 		AccHandler:       accHandler,

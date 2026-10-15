@@ -12,18 +12,16 @@ import (
 	"github.com/google/uuid"
 )
 
+// WalletService is what the bid use cases ask of wallet directly. Giving a hold back
+// is not here: it goes through HoldReleaseStarter, so it survives the request.
 type WalletService interface {
 	PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int, expiresAt time.Time) error
-	// ReleaseHold compensates a PlaceHold whose bid never got recorded. Idempotent,
-	// and a bid that never had a hold is nothing to give back rather than an error,
-	// so the caller may call it without knowing whether the hold landed.
-	ReleaseHold(ctx context.Context, bidID uuid.UUID) error
 }
 
-// compensationTimeout bounds the release that follows a failed bid write. Short,
-// because a bidder may still be waiting for the response: one healthy round trip is
-// milliseconds, and anything slower is better left to the reconciler than spent
-// holding the reply.
+// compensationTimeout bounds starting the release that follows a failed bid write.
+// Short, because a bidder may still be waiting for the response: a healthy start is
+// milliseconds, and a start that cannot happen in this long is better left to the
+// reconciler than spent holding the reply.
 const compensationTimeout = 5 * time.Second
 
 // settlementGrace is how long a hold outlives its listing. It must comfortably
@@ -33,14 +31,16 @@ const compensationTimeout = 5 * time.Second
 const settlementGrace = 2 * time.Hour
 
 type PlaceBidUC struct {
-	repo   listing.Repository
-	wallet WalletService
+	repo        listing.Repository
+	wallet      WalletService
+	holdRelease HoldReleaseStarter
 }
 
-func NewPlaceBidUC(repo listing.Repository, wallet WalletService) *PlaceBidUC {
+func NewPlaceBidUC(repo listing.Repository, wallet WalletService, holdRelease HoldReleaseStarter) *PlaceBidUC {
 	return &PlaceBidUC{
-		repo:   repo,
-		wallet: wallet,
+		repo:        repo,
+		wallet:      wallet,
+		holdRelease: holdRelease,
 	}
 }
 
@@ -151,10 +151,6 @@ const (
 	maxWriteAttempts   = 3
 	writeRetryBackoff  = 25 * time.Millisecond
 	writeRetryDeadline = 10 * time.Second
-
-	maxReleaseAttempts    = 3
-	releaseRetryBackoff   = 50 * time.Millisecond
-	releaseAttemptTimeout = time.Second
 )
 
 // bidRejected reports a failure that proves the write rolled back after reading the
@@ -168,6 +164,7 @@ const (
 func bidRejected(err error) bool {
 	for _, rejection := range []error{
 		listing.ErrBidTooLow,
+		listing.ErrBidAtOrAboveBuyout,
 		listing.ErrListingExpired,
 		listing.ErrListingNotAcceptingBids,
 		listing.ErrInvalidAmount,
@@ -196,31 +193,23 @@ func failedBeforeRead(err error) bool {
 // releaseHold is the TCC cancel: it gives back gold reserved for a bid that is proven
 // not to exist.
 //
-// Retried only on a transient failure. ReleaseHold is idempotent, so asking again is
-// safe, but any other failure is wallet's answer and asking again changes nothing.
-// Bounded, because a bidder is waiting: whatever this misses, the reconciler sweeps
-// up, comparing wallet's stale reservations against the bids actually recorded.
+// It only starts the release. The run retries the release itself until it lands, so
+// nothing here waits on wallet or retries it; the bidder hears about their bid, not
+// about the cleanup. Asked once — the Temporal client already retries its own
+// transient failures — and a start that still fails is left to the reconciler, which
+// compares wallet's stale reservations against the bids actually recorded.
 //
-// The cleanup outlives the request that triggered it. A cancelled context is one of
-// the likeliest reasons the write failed, and compensating on that same context would
-// send the release already dead. Each attempt gets its own timeout, so one hung call
-// cannot spend the whole budget.
+// The start outlives the request that triggered it. A cancelled context is one of the
+// likeliest reasons the write failed, and starting on that same context would send
+// the start already dead.
 func (uc *PlaceBidUC) releaseHold(ctx context.Context, bidID, listingID uuid.UUID, cause error) {
-	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), compensationTimeout)
+	startCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), compensationTimeout)
 	defer cancel()
 
-	err := withBackoff(releaseCtx, maxReleaseAttempts, releaseRetryBackoff,
-		func(err error) bool { return errors.Is(err, commonconstants.ErrTransient) },
-		func(ctx context.Context) error {
-			attemptCtx, cancelAttempt := context.WithTimeout(ctx, releaseAttemptTimeout)
-			defer cancelAttempt()
-
-			return uc.wallet.ReleaseHold(attemptCtx, bidID)
-		})
-	if err != nil {
+	if err := uc.holdRelease.StartReleaseHold(startCtx, listingID, bidID); err != nil {
 		// deliberately not returned: the bidder needs to hear why their bid failed,
 		// not why the cleanup did
-		slog.ErrorContext(ctx, "bid not recorded and releasing its hold failed, hold is stranded until reconciled",
+		slog.ErrorContext(ctx, "bid not recorded and starting its hold release failed, hold is stranded until reconciled",
 			"bid_id", bidID, "listing_id", listingID, "release_err", err, "err", cause)
 	}
 }

@@ -46,9 +46,9 @@ func bidSnapshot(l *listing.Listing, bidID uuid.UUID) (listing.BidSnapshot, bool
 func TestBuyout_HoldsRecordsAndStartsSettlementOnce(t *testing.T) {
 	l := buyoutListing(t)
 	member := uuid.New()
-	wallet, starter := &fakeWallet{}, &fakeStarter{}
+	wallet, starter, release := &fakeWallet{}, &fakeStarter{}, &fakeReleaser{}
 
-	err := NewBuyoutUC(&fakeRepo{listing: l}, wallet, starter).Handle(context.Background(), buyoutCmd(l, member))
+	err := NewBuyoutUC(&fakeRepo{listing: l}, wallet, starter, release).Handle(context.Background(), buyoutCmd(l, member))
 
 	require.NoError(t, err)
 	wantID := BuyoutBidID(member, l.Snapshot().ID)
@@ -65,7 +65,7 @@ func TestBuyout_HoldsRecordsAndStartsSettlementOnce(t *testing.T) {
 	assert.Equal(t, 1, starter.calls)
 	assert.Equal(t, l.Snapshot().ID, starter.gotListing)
 	assert.Equal(t, TriggerBuyout, starter.gotTrigger)
-	assert.Zero(t, wallet.releaseCalls)
+	assert.Zero(t, release.calls)
 }
 
 // Refusals the unlocked read can already see cost the buyer nothing: no gold
@@ -85,7 +85,7 @@ func TestBuyout_RefusedBeforeAnyGoldIsHeld(t *testing.T) {
 			l := tt.listing(t)
 			repo, wallet, starter := &fakeRepo{listing: l}, &fakeWallet{}, &fakeStarter{}
 
-			err := NewBuyoutUC(repo, wallet, starter).Handle(context.Background(), buyoutCmd(l, tt.member(l)))
+			err := NewBuyoutUC(repo, wallet, starter, &fakeReleaser{}).Handle(context.Background(), buyoutCmd(l, tt.member(l)))
 
 			assert.ErrorIs(t, err, tt.wantErr)
 			assert.Zero(t, wallet.calls)
@@ -101,11 +101,13 @@ func TestBuyout_HoldRefused_NothingWrittenOrReleased(t *testing.T) {
 	repo, starter := &fakeRepo{listing: l}, &fakeStarter{}
 	wallet := &fakeWallet{err: fmt.Errorf("wallet: %w", commonconstants.ErrInsufficientGold)}
 
-	err := NewBuyoutUC(repo, wallet, starter).Handle(context.Background(), buyoutCmd(l, uuid.New()))
+	release := &fakeReleaser{}
+
+	err := NewBuyoutUC(repo, wallet, starter, release).Handle(context.Background(), buyoutCmd(l, uuid.New()))
 
 	assert.ErrorIs(t, err, commonconstants.ErrInsufficientGold)
 	assert.Zero(t, repo.updateCall)
-	assert.Zero(t, wallet.releaseCalls)
+	assert.Zero(t, release.calls)
 	assert.Zero(t, starter.calls)
 }
 
@@ -119,11 +121,13 @@ func TestBuyout_EarlierHoldSinceReleased_IsRefused(t *testing.T) {
 	repo, starter := &fakeRepo{listing: l}, &fakeStarter{}
 	wallet := &fakeWallet{err: fmt.Errorf("wallet: %w", commonconstants.ErrDuplicateResource)}
 
-	err := NewBuyoutUC(repo, wallet, starter).Handle(context.Background(), buyoutCmd(l, uuid.New()))
+	release := &fakeReleaser{}
+
+	err := NewBuyoutUC(repo, wallet, starter, release).Handle(context.Background(), buyoutCmd(l, uuid.New()))
 
 	assert.ErrorIs(t, err, commonconstants.ErrDuplicateResource)
 	assert.Zero(t, repo.updateCall, "no bid may be recorded without live gold")
-	assert.Zero(t, wallet.releaseCalls)
+	assert.Zero(t, release.calls)
 	assert.Zero(t, starter.calls)
 	assert.Empty(t, l.Snapshot().Bids)
 }
@@ -135,14 +139,14 @@ func TestBuyout_AlreadyRecorded_IsSuccessAndStartsAgain(t *testing.T) {
 	member := uuid.New()
 	require.NoError(t, l.Buyout(BuyoutBidID(member, l.Snapshot().ID), member, time.Now()))
 	require.NoError(t, l.Freeze(time.Now()))
-	starter, wallet := &fakeStarter{}, &fakeWallet{}
+	starter, wallet, release := &fakeStarter{}, &fakeWallet{}, &fakeReleaser{}
 
-	err := NewBuyoutUC(&fakeRepo{listing: l}, wallet, starter).Handle(context.Background(), buyoutCmd(l, member))
+	err := NewBuyoutUC(&fakeRepo{listing: l}, wallet, starter, release).Handle(context.Background(), buyoutCmd(l, member))
 
 	require.NoError(t, err)
 	assert.Len(t, l.Snapshot().Bids, 1)
 	assert.Zero(t, wallet.calls, "a recorded buyout needs no new hold")
-	assert.Zero(t, wallet.releaseCalls)
+	assert.Zero(t, release.calls)
 	assert.Equal(t, 1, starter.calls)
 }
 
@@ -159,17 +163,18 @@ func TestBuyout_DefinitiveRefusalUnderLock_ReleasesTheHold(t *testing.T) {
 		t.Run(refusal.Error(), func(t *testing.T) {
 			l := buyoutListing(t)
 			member := uuid.New()
-			wallet, starter := &fakeWallet{}, &fakeStarter{}
+			wallet, starter, release := &fakeWallet{}, &fakeStarter{}, &fakeReleaser{}
 			repo := &fakeRepo{listing: l, updateErr: fmt.Errorf("update: %w", refusal)}
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			err := NewBuyoutUC(repo, wallet, starter).Handle(ctx, buyoutCmd(l, member))
+			err := NewBuyoutUC(repo, wallet, starter, release).Handle(ctx, buyoutCmd(l, member))
 
 			assert.ErrorIs(t, err, refusal)
-			assert.Equal(t, 1, wallet.releaseCalls)
-			assert.Equal(t, BuyoutBidID(member, l.Snapshot().ID), wallet.gotReleasedBidID)
-			assert.NoError(t, wallet.gotReleaseCtxErr, "the release must not inherit the request's cancellation")
+			assert.Equal(t, 1, release.calls)
+			assert.Equal(t, BuyoutBidID(member, l.Snapshot().ID), release.gotBidID)
+			assert.Equal(t, l.Snapshot().ID, release.gotListingID)
+			assert.NoError(t, release.gotCtxErr, "the release must not inherit the request's cancellation")
 			assert.Zero(t, starter.calls)
 		})
 	}
@@ -186,29 +191,29 @@ func TestBuyout_NonDefinitiveFailure_KeepsTheHold(t *testing.T) {
 	} {
 		t.Run(failure.Error(), func(t *testing.T) {
 			l := buyoutListing(t)
-			wallet, starter := &fakeWallet{}, &fakeStarter{}
+			wallet, starter, release := &fakeWallet{}, &fakeStarter{}, &fakeReleaser{}
 			repo := &fakeRepo{listing: l, updateErr: fmt.Errorf("update: %w", failure)}
 
-			err := NewBuyoutUC(repo, wallet, starter).Handle(context.Background(), buyoutCmd(l, uuid.New()))
+			err := NewBuyoutUC(repo, wallet, starter, release).Handle(context.Background(), buyoutCmd(l, uuid.New()))
 
 			assert.ErrorIs(t, err, failure)
-			assert.Zero(t, wallet.releaseCalls)
+			assert.Zero(t, release.calls)
 			assert.Zero(t, starter.calls)
 		})
 	}
 }
 
-// The release is retried a bounded number of times, and its failure never
-// replaces the refusal the buyer needs to hear.
-func TestBuyout_ReleaseRetriesBoundedAndKeepsTheRefusal(t *testing.T) {
+// Starting the release is asked once — the run retries the release itself — and a
+// start that fails never replaces the refusal the buyer needs to hear.
+func TestBuyout_ReleaseStartFails_KeepsTheRefusal(t *testing.T) {
 	l := buyoutListing(t)
-	wallet := &fakeWallet{releaseErr: errors.New("wallet down")}
+	release := &fakeReleaser{err: errors.New("temporal down")}
 	repo := &fakeRepo{listing: l, updateErr: listing.ErrListingNotAcceptingBids}
 
-	err := NewBuyoutUC(repo, wallet, &fakeStarter{}).Handle(context.Background(), buyoutCmd(l, uuid.New()))
+	err := NewBuyoutUC(repo, &fakeWallet{}, &fakeStarter{}, release).Handle(context.Background(), buyoutCmd(l, uuid.New()))
 
 	assert.ErrorIs(t, err, listing.ErrListingNotAcceptingBids)
-	assert.Equal(t, releaseAttempts, wallet.releaseCalls)
+	assert.Equal(t, 1, release.calls)
 }
 
 // The buyout committed; only the start failed. The bid stays and so does the
@@ -216,15 +221,15 @@ func TestBuyout_ReleaseRetriesBoundedAndKeepsTheRefusal(t *testing.T) {
 func TestBuyout_StartFails_BuyoutStaysRecorded(t *testing.T) {
 	l := buyoutListing(t)
 	member := uuid.New()
-	wallet := &fakeWallet{}
+	release := &fakeReleaser{}
 	starter := &fakeStarter{err: errors.New("temporal down")}
 
-	err := NewBuyoutUC(&fakeRepo{listing: l}, wallet, starter).Handle(context.Background(), buyoutCmd(l, member))
+	err := NewBuyoutUC(&fakeRepo{listing: l}, &fakeWallet{}, starter, release).Handle(context.Background(), buyoutCmd(l, member))
 
 	assert.Error(t, err)
 	_, ok := bidSnapshot(l, BuyoutBidID(member, l.Snapshot().ID))
 	assert.True(t, ok)
-	assert.Zero(t, wallet.releaseCalls)
+	assert.Zero(t, release.calls)
 }
 
 // One member buying one listing always gets the same bid ID, so every retry
@@ -246,11 +251,11 @@ func TestBuyoutBidID_IsDeterministicPerMemberAndListing(t *testing.T) {
 func TestBuyout_RefusedBeforeHold_NeverReleases(t *testing.T) {
 	l := buyoutListing(t)
 	require.NoError(t, l.Buyout(uuid.New(), uuid.New(), time.Now()))
-	wallet := &fakeWallet{}
+	wallet, release := &fakeWallet{}, &fakeReleaser{}
 
-	err := NewBuyoutUC(&fakeRepo{listing: l}, wallet, &fakeStarter{}).Handle(context.Background(), buyoutCmd(l, uuid.New()))
+	err := NewBuyoutUC(&fakeRepo{listing: l}, wallet, &fakeStarter{}, release).Handle(context.Background(), buyoutCmd(l, uuid.New()))
 
 	assert.ErrorIs(t, err, listing.ErrListingNotAcceptingBids)
 	assert.Zero(t, wallet.calls)
-	assert.Zero(t, wallet.releaseCalls)
+	assert.Zero(t, release.calls)
 }

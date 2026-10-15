@@ -13,6 +13,7 @@ import (
 	listingrepo "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/repository"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/worker"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/releasehold"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/settlement"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -40,8 +41,10 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	reserveItemUC := usecase.NewReserveItemUC(itemReserver)
 	createAccUC := usecase.NewCreateListingUC(listingRepo)
 	walletClient := listinggrpc.NewClient(registry)
-	placeBidUC := usecase.NewPlaceBidUC(listingRepo, walletClient)
-	withdrawBidUC := usecase.NewWithdrawBidUC(listingRepo, walletClient)
+	// release hold saga
+	holdReleaseStarter := releasehold.NewStarter(temporalClient)
+	placeBidUC := usecase.NewPlaceBidUC(listingRepo, walletClient, holdReleaseStarter)
+	withdrawBidUC := usecase.NewWithdrawBidUC(listingRepo, holdReleaseStarter)
 	listMyListingsQuery := listingquery.NewListMyListingsQuery(db)
 	browseListingsQuery := listingquery.NewBrowseListingsQuery(db)
 	getListingQuery := listingquery.NewGetListingQuery(db)
@@ -49,7 +52,7 @@ func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, 
 	// settlement saga
 	settlementStarter := settlement.NewStarter(temporalClient)
 	acceptBidUC := usecase.NewAcceptBidUsecase(listingRepo, settlementStarter)
-	buyoutUC := usecase.NewBuyoutUC(listingRepo, walletClient, settlementStarter)
+	buyoutUC := usecase.NewBuyoutUC(listingRepo, walletClient, settlementStarter, holdReleaseStarter)
 
 	listingHandler := listinggrpc.NewHandler(reserveItemUC, createAccUC, placeBidUC, withdrawBidUC, listMyListingsQuery, browseListingsQuery, getListingQuery, acceptBidUC, buyoutUC)
 

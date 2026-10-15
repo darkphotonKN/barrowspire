@@ -16,6 +16,7 @@ type Activities struct {
 	releaseAllHolds    ReleaseAllHolds
 	releaseLosingHolds ReleaseLosingHolds
 	creditSeller       CreditSeller
+	releaseHold        ReleaseHold
 }
 
 type CommitHold interface {
@@ -34,12 +35,17 @@ type CreditSeller interface {
 	Handle(ctx context.Context, cmd *usecase.CreditSellerCommand) (uuid.UUID, error)
 }
 
-func NewActivities(commitHold CommitHold, releaseAllHolds ReleaseAllHolds, releaseLosingHolds ReleaseLosingHolds, creditSeller CreditSeller) *Activities {
+type ReleaseHold interface {
+	Handle(ctx context.Context, cmd *usecase.ReleaseHoldCommand) error
+}
+
+func NewActivities(commitHold CommitHold, releaseAllHolds ReleaseAllHolds, releaseLosingHolds ReleaseLosingHolds, creditSeller CreditSeller, releaseHold ReleaseHold) *Activities {
 	return &Activities{
 		commitHold:         commitHold,
 		releaseAllHolds:    releaseAllHolds,
 		releaseLosingHolds: releaseLosingHolds,
 		creditSeller:       creditSeller,
+		releaseHold:        releaseHold,
 	}
 }
 
@@ -57,4 +63,5 @@ func (a *Activities) Register(r activityRegistry) {
 	r.RegisterActivityWithOptions(a.ReleaseAllHolds, activity.RegisterOptions{Name: walletactivity.ReleaseAllHoldsActivityName})
 	r.RegisterActivityWithOptions(a.ReleaseLosingHolds, activity.RegisterOptions{Name: walletactivity.ReleaseLosingHoldsActivityName})
 	r.RegisterActivityWithOptions(a.CreditSeller, activity.RegisterOptions{Name: walletactivity.CreditSellerActivityName})
+	r.RegisterActivityWithOptions(a.ReleaseHold, activity.RegisterOptions{Name: walletactivity.ReleaseHoldActivityName})
 }

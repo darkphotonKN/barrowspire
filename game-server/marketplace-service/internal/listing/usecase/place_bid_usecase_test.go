@@ -3,7 +3,6 @@ package usecase
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
@@ -101,24 +100,6 @@ type fakeWallet struct {
 	gotMemberID  uuid.UUID
 	gotGold      int
 	gotExpiresAt time.Time
-
-	releaseErr       error
-	releaseCalls     int
-	gotReleasedBidID uuid.UUID
-	gotReleaseCtxErr error
-	// releaseErrs scripts ReleaseHold call by call and wins over releaseErr; calls
-	// past the end of the script return releaseErr.
-	releaseErrs []error
-}
-
-func (f *fakeWallet) ReleaseHold(ctx context.Context, bidID uuid.UUID) error {
-	f.releaseCalls++
-	f.gotReleasedBidID = bidID
-	f.gotReleaseCtxErr = ctx.Err()
-	if i := f.releaseCalls - 1; i < len(f.releaseErrs) {
-		return f.releaseErrs[i]
-	}
-	return f.releaseErr
 }
 
 func (f *fakeWallet) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int, expiresAt time.Time) error {
@@ -127,6 +108,24 @@ func (f *fakeWallet) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, g
 	f.gotMemberID = memberID
 	f.gotGold = gold
 	f.gotExpiresAt = expiresAt
+	return f.err
+}
+
+// fakeReleaser stands in for the release workflow's starter. It records which hold a
+// use case handed back, and on what context, and can be scripted to fail to start.
+type fakeReleaser struct {
+	err          error
+	calls        int
+	gotListingID uuid.UUID
+	gotBidID     uuid.UUID
+	gotCtxErr    error
+}
+
+func (f *fakeReleaser) StartReleaseHold(ctx context.Context, listingID, bidID uuid.UUID) error {
+	f.calls++
+	f.gotListingID = listingID
+	f.gotBidID = bidID
+	f.gotCtxErr = ctx.Err()
 	return f.err
 }
 
@@ -179,7 +178,7 @@ func TestPlaceBidUC(t *testing.T) {
 			l := activeListing(t, 100)
 			repo := &fakeRepo{listing: l, updateErr: tt.updateErr}
 
-			err := NewPlaceBidUC(repo, &fakeWallet{}).Handle(context.Background(), PlaceBidCommand{
+			err := NewPlaceBidUC(repo, &fakeWallet{}, &fakeReleaser{}).Handle(context.Background(), PlaceBidCommand{
 				ListingID: uuid.New(),
 				MemberID:  uuid.New(),
 				Amount:    tt.amount,
@@ -205,7 +204,7 @@ func TestPlaceBidUC(t *testing.T) {
 func TestPlaceBidUCForwardsTheIdempotencyKey(t *testing.T) {
 	l := activeListing(t, 100)
 	repo := &fakeRepo{listing: l}
-	uc := NewPlaceBidUC(repo, &fakeWallet{})
+	uc := NewPlaceBidUC(repo, &fakeWallet{}, &fakeReleaser{})
 	key := uuid.New()
 	member := uuid.New()
 
@@ -229,7 +228,7 @@ func TestConfirmBidUC(t *testing.T) {
 	l := activeListing(t, 100)
 	repo := &fakeRepo{listing: l}
 
-	require.NoError(t, NewPlaceBidUC(repo, &fakeWallet{}).Handle(context.Background(), PlaceBidCommand{
+	require.NoError(t, NewPlaceBidUC(repo, &fakeWallet{}, &fakeReleaser{}).Handle(context.Background(), PlaceBidCommand{
 		ListingID: uuid.New(),
 		MemberID:  uuid.New(),
 		Amount:    150,
@@ -278,7 +277,7 @@ func TestPlaceBidHoldsGoldBeforeRecordingTheBid(t *testing.T) {
 	wallet := &fakeWallet{}
 	member := uuid.New()
 
-	err := NewPlaceBidUC(repo, wallet).Handle(context.Background(), PlaceBidCommand{
+	err := NewPlaceBidUC(repo, wallet, &fakeReleaser{}).Handle(context.Background(), PlaceBidCommand{
 		ListingID: uuid.New(),
 		MemberID:  member,
 		Amount:    150,
@@ -303,7 +302,7 @@ func TestPlaceBidRecordsNothingWhenTheHoldFails(t *testing.T) {
 	repo := &fakeRepo{listing: l}
 	wallet := &fakeWallet{err: errors.New("insufficient available gold")}
 
-	err := NewPlaceBidUC(repo, wallet).Handle(context.Background(), PlaceBidCommand{
+	err := NewPlaceBidUC(repo, wallet, &fakeReleaser{}).Handle(context.Background(), PlaceBidCommand{
 		ListingID: uuid.New(),
 		MemberID:  uuid.New(),
 		Amount:    150,
@@ -326,10 +325,11 @@ func TestPlaceBidRecordsNothingWhenTheHoldFails(t *testing.T) {
 func TestPlaceBidReleasesTheHoldWhenTheWriteFails(t *testing.T) {
 	l := activeListing(t, 100)
 	repo := &fakeRepo{listing: l, updateErr: commonconstants.ErrLockUnavailable}
-	wallet := &fakeWallet{}
+	wallet, release := &fakeWallet{}, &fakeReleaser{}
+	listingID := uuid.New()
 
-	err := NewPlaceBidUC(repo, wallet).Handle(context.Background(), PlaceBidCommand{
-		ListingID: uuid.New(),
+	err := NewPlaceBidUC(repo, wallet, release).Handle(context.Background(), PlaceBidCommand{
+		ListingID: listingID,
 		MemberID:  uuid.New(),
 		Amount:    150,
 		Now:       time.Now(),
@@ -338,21 +338,22 @@ func TestPlaceBidReleasesTheHoldWhenTheWriteFails(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, commonconstants.ErrLockUnavailable, "the caller still learns why the bid failed")
 	assert.Equal(t, 1, wallet.calls, "the gold was held")
-	assert.Equal(t, 1, wallet.releaseCalls, "and given straight back")
-	assert.Equal(t, wallet.gotBidID, wallet.gotReleasedBidID, "the hold released is the one placed")
+	assert.Equal(t, 1, release.calls, "and handed straight back")
+	assert.Equal(t, wallet.gotBidID, release.gotBidID, "the hold released is the one placed")
+	assert.Equal(t, listingID, release.gotListingID)
 	assert.Empty(t, l.Snapshot().Bids, "no bid was recorded")
 }
 
-// The compensation is best effort: it runs on a bidder's request path, so it gets a
-// few bounded attempts and the reconciler sweeps up what it misses. What it must not
-// do is replace the real failure — a caller told "release failed" learns nothing
-// about why their bid did not land.
+// Starting the release is asked once: the run retries the release itself, and the
+// Temporal client already retries its own transient failures, so a start that still
+// fails is left to the reconciler. What it must not do is replace the real failure —
+// a caller told "release failed" learns nothing about why their bid did not land.
 func TestPlaceBidCompensationFailure_StillReportsTheOriginalError(t *testing.T) {
 	l := activeListing(t, 100)
 	repo := &fakeRepo{listing: l, updateErr: commonconstants.ErrLockUnavailable}
-	wallet := &fakeWallet{releaseErr: errors.New("wallet unreachable")}
+	release := &fakeReleaser{err: errors.New("temporal unreachable")}
 
-	err := NewPlaceBidUC(repo, wallet).Handle(context.Background(), PlaceBidCommand{
+	err := NewPlaceBidUC(repo, &fakeWallet{}, release).Handle(context.Background(), PlaceBidCommand{
 		ListingID: uuid.New(),
 		MemberID:  uuid.New(),
 		Amount:    150,
@@ -361,6 +362,7 @@ func TestPlaceBidCompensationFailure_StillReportsTheOriginalError(t *testing.T) 
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, commonconstants.ErrLockUnavailable, "the write failure is what the bidder needs to hear")
+	assert.Equal(t, 1, release.calls, "the start is not retried inline")
 }
 
 // The hold must outlive settlement, not an arbitrary hour: it lapses at the
@@ -370,7 +372,7 @@ func TestPlaceBidUC_HoldExpiresAtListingEndPlusGrace(t *testing.T) {
 	l := activeListing(t, 100)
 	wallet := &fakeWallet{}
 
-	err := NewPlaceBidUC(&fakeRepo{listing: l}, wallet).Handle(context.Background(), PlaceBidCommand{
+	err := NewPlaceBidUC(&fakeRepo{listing: l}, wallet, &fakeReleaser{}).Handle(context.Background(), PlaceBidCommand{
 		ListingID: l.Snapshot().ID,
 		MemberID:  uuid.New(),
 		Amount:    150,
@@ -387,7 +389,7 @@ func TestPlaceBidUC_HoldExpiresAtListingEndPlusGrace(t *testing.T) {
 func TestPlaceBidUC_UnreadableListing_HoldsNoGold(t *testing.T) {
 	wallet := &fakeWallet{}
 
-	err := NewPlaceBidUC(&fakeRepo{findErr: errors.New("listing not found")}, wallet).Handle(context.Background(), PlaceBidCommand{
+	err := NewPlaceBidUC(&fakeRepo{findErr: errors.New("listing not found")}, wallet, &fakeReleaser{}).Handle(context.Background(), PlaceBidCommand{
 		ListingID: uuid.New(),
 		MemberID:  uuid.New(),
 		Amount:    150,
@@ -405,7 +407,7 @@ func TestPlaceBidUC_ExpiredListing_HoldsNoGold(t *testing.T) {
 	l := activeListing(t, 100) // ends an hour from now
 	wallet := &fakeWallet{}
 
-	err := NewPlaceBidUC(&fakeRepo{listing: l}, wallet).Handle(context.Background(), PlaceBidCommand{
+	err := NewPlaceBidUC(&fakeRepo{listing: l}, wallet, &fakeReleaser{}).Handle(context.Background(), PlaceBidCommand{
 		ListingID: l.Snapshot().ID,
 		MemberID:  uuid.New(),
 		Amount:    150,
@@ -426,12 +428,12 @@ func TestPlaceBidUC_ExpiredListing_HoldsNoGold(t *testing.T) {
 func TestPlaceBidCompensatesEvenWhenTheRequestIsCancelled(t *testing.T) {
 	l := activeListing(t, 100)
 	repo := &fakeRepo{listing: l, updateErr: commonconstants.ErrLockUnavailable}
-	wallet := &fakeWallet{}
+	release := &fakeReleaser{}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // the bidder is already gone
 
-	err := NewPlaceBidUC(repo, wallet).Handle(ctx, PlaceBidCommand{
+	err := NewPlaceBidUC(repo, &fakeWallet{}, release).Handle(ctx, PlaceBidCommand{
 		ListingID: uuid.New(),
 		MemberID:  uuid.New(),
 		Amount:    150,
@@ -439,8 +441,8 @@ func TestPlaceBidCompensatesEvenWhenTheRequestIsCancelled(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	assert.Equal(t, 1, wallet.releaseCalls, "the gold still goes back")
-	assert.NoError(t, wallet.gotReleaseCtxErr,
+	assert.Equal(t, 1, release.calls, "the gold still goes back")
+	assert.NoError(t, release.gotCtxErr,
 		"the release must not inherit the cancellation that killed the write")
 }
 
@@ -563,9 +565,9 @@ func TestPlaceBidUC_WriteOutcome(t *testing.T) {
 			seeded := len(l.Snapshot().Bids)
 
 			repo := &fakeRepo{listing: l, updateScript: tt.script(t)}
-			wallet := &fakeWallet{}
+			wallet, release := &fakeWallet{}, &fakeReleaser{}
 
-			err := NewPlaceBidUC(repo, wallet).Handle(context.Background(), PlaceBidCommand{
+			err := NewPlaceBidUC(repo, wallet, release).Handle(context.Background(), PlaceBidCommand{
 				ListingID: uuid.New(),
 				MemberID:  uuid.New(),
 				Amount:    150,
@@ -578,7 +580,7 @@ func TestPlaceBidUC_WriteOutcome(t *testing.T) {
 			for _, want := range tt.wantErrs {
 				assert.ErrorIs(t, err, want)
 			}
-			assert.Equal(t, tt.wantReleases, wallet.releaseCalls, "release calls")
+			assert.Equal(t, tt.wantReleases, release.calls, "release calls")
 			assert.Equal(t, tt.wantUpdates, repo.updateCall, "write attempts")
 
 			bids := l.Snapshot().Bids
@@ -599,12 +601,12 @@ func TestPlaceBidUC_WriteOutcome(t *testing.T) {
 func TestPlaceBidUC_RetriesTheWriteEvenWhenTheRequestIsCancelled(t *testing.T) {
 	l := activeListing(t, 100)
 	repo := &fakeRepo{listing: l, updateScript: []updateOutcome{{err: context.Canceled}}}
-	wallet := &fakeWallet{}
+	release := &fakeReleaser{}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := NewPlaceBidUC(repo, wallet).Handle(ctx, PlaceBidCommand{
+	err := NewPlaceBidUC(repo, &fakeWallet{}, release).Handle(ctx, PlaceBidCommand{
 		ListingID: uuid.New(),
 		MemberID:  uuid.New(),
 		Amount:    150,
@@ -614,7 +616,7 @@ func TestPlaceBidUC_RetriesTheWriteEvenWhenTheRequestIsCancelled(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, repo.updateCall)
 	assert.NoError(t, repo.gotUpdateCtxErrs[1], "the retry must not inherit the cancellation")
-	assert.Zero(t, wallet.releaseCalls)
+	assert.Zero(t, release.calls)
 	assert.Len(t, l.Snapshot().Bids, 1)
 }
 
@@ -624,8 +626,8 @@ func TestPlaceBidUC_RetriesTheWriteEvenWhenTheRequestIsCancelled(t *testing.T) {
 func TestPlaceBidUC_ReplayReleasesItsOwnHold(t *testing.T) {
 	l := activeListing(t, 100)
 	repo := &fakeRepo{listing: l}
-	wallet := &fakeWallet{}
-	uc := NewPlaceBidUC(repo, wallet)
+	wallet, release := &fakeWallet{}, &fakeReleaser{}
+	uc := NewPlaceBidUC(repo, wallet, release)
 
 	cmd := PlaceBidCommand{
 		ListingID:      uuid.New(),
@@ -637,48 +639,10 @@ func TestPlaceBidUC_ReplayReleasesItsOwnHold(t *testing.T) {
 
 	require.NoError(t, uc.Handle(context.Background(), cmd))
 	first := wallet.gotBidID
-	assert.Zero(t, wallet.releaseCalls, "the first placement keeps its hold")
+	assert.Zero(t, release.calls, "the first placement keeps its hold")
 
 	require.NoError(t, uc.Handle(context.Background(), cmd), "a replay is still a success")
-	assert.Equal(t, 1, wallet.releaseCalls, "the replay's hold goes back")
-	assert.Equal(t, wallet.gotBidID, wallet.gotReleasedBidID, "the replay's own hold, not the recorded bid's")
-	assert.NotEqual(t, first, wallet.gotReleasedBidID)
-}
-
-// ReleaseHold is idempotent, so a transient failure is worth another try — but only
-// a transient one: anything else is wallet's answer, and asking again changes nothing.
-func TestPlaceBidUC_ReleaseRetriesOnlyTransientFailures(t *testing.T) {
-	transient := fmt.Errorf("wallet unreachable: %w", commonconstants.ErrTransient)
-	allTransient := make([]error, maxReleaseAttempts)
-	for i := range allTransient {
-		allTransient[i] = transient
-	}
-
-	tests := []struct {
-		name      string
-		results   []error
-		wantCalls int
-	}{
-		{name: "released first time", results: []error{nil}, wantCalls: 1},
-		{name: "transient then released", results: []error{transient, transient, nil}, wantCalls: 3},
-		{name: "gives up after the attempt cap", results: allTransient, wantCalls: maxReleaseAttempts},
-		{name: "a non-transient refusal is not retried", results: []error{errors.New("hold already committed")}, wantCalls: 1},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			repo := &fakeRepo{listing: activeListing(t, 100), updateErr: commonconstants.ErrLockUnavailable}
-			wallet := &fakeWallet{releaseErrs: tt.results, releaseErr: tt.results[len(tt.results)-1]}
-
-			err := NewPlaceBidUC(repo, wallet).Handle(context.Background(), PlaceBidCommand{
-				ListingID: uuid.New(),
-				MemberID:  uuid.New(),
-				Amount:    150,
-				Now:       time.Now(),
-			})
-
-			assert.ErrorIs(t, err, commonconstants.ErrLockUnavailable, "the bid's failure, never the release's")
-			assert.Equal(t, tt.wantCalls, wallet.releaseCalls)
-		})
-	}
+	assert.Equal(t, 1, release.calls, "the replay's hold goes back")
+	assert.Equal(t, wallet.gotBidID, release.gotBidID, "the replay's own hold, not the recorded bid's")
+	assert.NotEqual(t, first, release.gotBidID)
 }

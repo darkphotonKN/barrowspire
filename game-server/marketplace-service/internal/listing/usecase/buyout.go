@@ -15,11 +15,6 @@ import (
 // a retry a different bid ID than its first attempt, and a second hold.
 var buyoutBidNamespace = uuid.MustParse("d3f7b4f4-0d3e-438a-820b-58aa5b87c594")
 
-// releaseAttempts bounds the inline release after a definitive refusal. A
-// handful of tries inside compensationTimeout; whatever still fails is left to
-// the hold reconciler.
-const releaseAttempts = 3
-
 // BuyoutBidID is the bid a member's buyout of a listing is recorded and held
 // under. Deterministic, so a retry finds the hold and the bid its first attempt
 // made instead of making new ones. A member can buy a given listing out once,
@@ -39,13 +34,15 @@ type BuyoutUC struct {
 	repo              listing.Repository
 	wallet            WalletService
 	settlementStarter SettlementStarter
+	holdRelease       HoldReleaseStarter
 }
 
-func NewBuyoutUC(repo listing.Repository, wallet WalletService, settlementStarter SettlementStarter) *BuyoutUC {
+func NewBuyoutUC(repo listing.Repository, wallet WalletService, settlementStarter SettlementStarter, holdRelease HoldReleaseStarter) *BuyoutUC {
 	return &BuyoutUC{
 		repo:              repo,
 		wallet:            wallet,
 		settlementStarter: settlementStarter,
+		holdRelease:       holdRelease,
 	}
 }
 
@@ -127,34 +124,20 @@ func (uc *BuyoutUC) holdAndRecord(ctx context.Context, current *listing.Listing,
 	return fmt.Errorf("buyout usecase recording bid %v : %w", bidID, err)
 }
 
-// releaseHold gives back the gold of a buyout the listing refused, retrying a
-// few times. Detached from the request's cancellation for the same reason
-// PlaceBid's compensation is: a dropped request must not strand the gold.
+// releaseHold starts giving back the gold of a buyout the listing refused. The run
+// retries the release until it lands, so this only starts it, once. Detached from
+// the request's cancellation for the same reason PlaceBid's compensation is: a
+// dropped request must not strand the gold.
 func (uc *BuyoutUC) releaseHold(ctx context.Context, bidID, listingID uuid.UUID, refusal error) {
-	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), compensationTimeout)
+	startCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), compensationTimeout)
 	defer cancel()
 
-	var releaseErr error
-retry:
-	for attempt := 1; attempt <= releaseAttempts; attempt++ {
-		if releaseErr = uc.wallet.ReleaseHold(releaseCtx, bidID); releaseErr == nil {
-			return
-		}
-		if attempt == releaseAttempts {
-			break
-		}
-
-		select {
-		case <-releaseCtx.Done():
-			break retry
-		case <-time.After(time.Duration(attempt) * 50 * time.Millisecond):
-		}
+	if err := uc.holdRelease.StartReleaseHold(startCtx, listingID, bidID); err != nil {
+		// deliberately not returned: the buyer needs to hear why the buyout failed,
+		// not why the cleanup did
+		slog.ErrorContext(ctx, "buyout refused and starting its hold release failed, hold is stranded until reconciled",
+			"bid_id", bidID, "listing_id", listingID, "release_err", err, "err", refusal)
 	}
-
-	// deliberately not returned: the buyer needs to hear why the buyout failed,
-	// not why the cleanup did
-	slog.ErrorContext(ctx, "buyout refused and releasing its hold failed, hold is stranded until reconciled",
-		"bid_id", bidID, "listing_id", listingID, "release_err", releaseErr, "err", refusal)
 }
 
 // isDefinitiveBuyoutRefusal reports whether the listing refused the buyout for
