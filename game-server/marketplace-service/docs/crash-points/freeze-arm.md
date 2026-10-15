@@ -67,7 +67,7 @@ with the impossibility as its reason, and publishes `settlement.failed`.
 | # | Crash point | State left behind | Next attempt | Resolves to | Proven by |
 |---|---|---|---|---|---|
 | 11c | 1a or 1b turns out impossible | listing and item frozen; 1a may have moved the winner to `WON`; no gold moved | rollback: exception, `SETTLEMENT_FAILED`, every bid `LOST` (the `WON` one included), every hold `RELEASED`, item back with its seller; the run fails | roll back | `TestWorkflow_PivotArmImpossible_RollsBackEverything` |
-| 12 | A rollback action fails transiently | earlier actions applied, this one not | retried without a cap until it lands; later actions then run | rollback completes | `TestWorkflow_RollbackActionFailsTransiently_RetriesUntilItLands`; `TestMarkSettlementFailedActivity_Failure_StaysRetryable`; `TestUnfreezeItemActivity_Failure_StaysRetryable` |
+| 12 | A rollback action fails transiently | earlier actions applied, this one not | retried without a cap until it lands; later actions then run | rollback completes | `TestWorkflow_RollbackActionFailsTransiently_RetriesUntilItLands`; `TestWorkflow_ReleaseAllHoldsFailsTransiently_RetriesThenUnfreezes`; `TestMarkSettlementFailedActivity_Failure_StaysRetryable`; `TestUnfreezeItemActivity_Failure_StaysRetryable` |
 | 13 | An action commits but its completion is lost | that action applied | re-run: `MarkSettlementFailed` finds `SETTLEMENT_FAILED`, `UnfreezeItem` matches zero rows; both succeed | already applied → continue | `TestMarkSettlementFailed` "already failed is applied"; `TestMarkSettlementFailedUC_Replay_Succeeds`; `TestUnfreezeItem` "already back with the seller is success and changes nothing" |
 | 14 | The seller relists the item before an `UnfreezeItem` retry runs | item `LISTED` under a new listing ID | `listing_id` no longer matches: zero rows, success; the new listing's item stays `LISTED` | already applied → continue (§Req 24a) | `TestUnfreezeItem` "relisted under another listing is left alone" |
 | 15 | `RaiseSettlementException` retried | one `OPEN` row for (workflow, step) | the partial unique index finds the open row; no second row, no second `settlement.failed` | already applied → continue | `settlement_exception_repository` tests |
@@ -83,10 +83,15 @@ with the impossibility as its reason, and publishes `settlement.failed`.
   `workflow reset` to a point before 1a.
 - 0b does not yet check `listing_id` (§Req 24a lists it): `FreezeItemInput` carries no listing ID.
   Tracked as I-NXP1W-16.
-- **Settlements started before `BidIDs` existed.** A run whose 0a result was recorded without the
-  field decodes it as nil, so its rollback releases no holds. Those bids still end `LOST`, which
-  keeps the reconciler off the gold; the hold sweeper frees it at expiry plus grace. Runs are
-  short, so only one in flight across the deploy can hit this.
+- **Settlements in flight across the I-NXP1W-6 deploy.** Two shapes, both releasing no holds:
+  a 0a result recorded before `BidIDs` existed decodes the field as nil
+  (`TestFreezeListingOutput_DecodesAPayloadRecordedBeforeBidIDs`,
+  `TestWorkflow_FrozenWithoutBidIDs_RollsBackReleasingNothing`); and a rollback already past
+  `LoseAllBids` replays without `ReleaseAllHolds`, kept on its recorded command sequence by the
+  `rollback-release-all-holds` version gate instead of failing on nondeterminism
+  (`TestWorkflow_RollbackRecordedBeforeReleaseAllHolds_ReplaysWithoutIt`). Either way the bids
+  end `LOST`, which keeps the reconciler off the gold, and the hold sweeper frees it at expiry
+  plus grace. Runs are short, so only one in flight across the deploy can hit this.
 - 1a and 1b's own crash points are in `docs/issues/I-NXP1W-6-pivot-compensation.md`; their
   impossibility now rolls back through the same `rollBack`
   (`TestWorkflow_PivotArmImpossible_RollsBackEverything`).

@@ -58,8 +58,25 @@ I-NXP1W-5 landed the rollback path.
 | one `settlement_exceptions` row | done — `RaiseSettlementException` in `rollBack` | same |
 | **Req 37** rollback wired for 0a, 0b, 1a, 1b | done — every pre-pivot step routes its error through `beforePivotFailure` | the 0a/0b tests of I-NXP1W-5 and the test above |
 
-A settlement already running when `BidIDs` shipped has no bid IDs in its recorded 0a result, so
-its rollback releases no holds (see the freeze-arm crash points, Known limits).
+A settlement already running when `BidIDs` shipped has no bid IDs in its recorded 0a result, and
+a rollback already past `LoseAllBids` replays without `ReleaseAllHolds` behind the
+`rollback-release-all-holds` version gate (FS Edge States, "Workflow code deployed while
+settlements are open"). Both release no holds (see the freeze-arm crash points, Known limits).
+
+### Edge State "Winner has insufficient gold at commit" — parks, does not roll back
+
+The FS expects this to surface as a semantic impossibility and roll back. In wallet it cannot:
+`Account` is reconstituted before `CommitHold` runs, and `Reconstitute` refuses an account whose
+holds exceed its gold with `ErrCorruptAccountState`, so the `gold >= amount` guard
+(`ErrInsufficientGold`) is never reached. `ErrCorruptAccountState` is not in
+`commitHoldNonRetryable`, so 1b treats it as transient: it hits the cap, escalates and parks.
+
+Left that way on purpose. Classifying it impossible would start a rollback whose
+`ReleaseAllHolds` reconstitutes the same corrupt account, fails the same way and retries without
+a cap — a rollback stuck halfway with the item still frozen, which Req 12 forbids. Parking keeps
+everything frozen, raises the exception and `settlement.failed`, and waits for an operator to
+repair the account and send `RetryStep`. Making it roll back needs a decision on what a corrupt
+account means for wallet first; that belongs to wallet, not to this slice.
 
 `SetWinBidFailed` was a pre-written shell whose body was a copy of `MarkSoldListingUC`. Its
 body is now the failure flow it was meant for, and it is named for what it does:
