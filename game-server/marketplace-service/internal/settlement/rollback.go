@@ -10,6 +10,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/itemsactivity"
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
+	"github.com/darkphotonKN/barrowspire-server/common/api/activity/walletactivity"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
 )
 
@@ -19,6 +20,16 @@ import (
 func impossible(err error) bool {
 	var appErr *temporal.ApplicationError
 	return errors.As(err, &appErr) && appErr.NonRetryable()
+}
+
+// beforePivotFailure is what a step before the pivot does with its runUntilDone
+// error: an impossibility rolls the settlement back; anything else — the
+// workflow being cancelled — is returned as it is, with nothing undone.
+func beforePivotFailure(ctx workflow.Context, listingID uuid.UUID, step string, err error, frozen *marketplaceactivity.FreezeListingOutput) error {
+	if impossible(err) {
+		return rollBack(ctx, listingID, step, err, frozen)
+	}
+	return err
 }
 
 // rollBack undoes a settlement that can never succeed before the pivot (FS-NXP1W
@@ -37,6 +48,7 @@ func rollBack(ctx workflow.Context, listingID uuid.UUID, step string, cause erro
 	ctx, _ = workflow.NewDisconnectedContext(ctx)
 	marketCtx := workflow.WithActivityOptions(ctx, UncappedOptions(bstemporal.QueueMarketplace))
 	itemsCtx := workflow.WithActivityOptions(ctx, UncappedOptions(bstemporal.QueueItems))
+	walletCtx := workflow.WithActivityOptions(ctx, UncappedOptions(bstemporal.QueueWallet))
 
 	failed := fmt.Errorf("settlement rolled back at %s: %w", step, cause)
 
@@ -65,14 +77,24 @@ func rollBack(ctx workflow.Context, listingID uuid.UUID, step string, cause erro
 		return failed
 	}
 
-	// holds stay RESERVED until ReleaseAllHolds is wired (I-NXP1W-6); a LOST bid
-	// still claims its hold, so the reconciler leaves that gold to settlement
+	// LOST before the holds go back: a LOST bid still claims its hold, so the
+	// reconciler never races this rollback for the gold
 	err = workflow.ExecuteActivity(marketCtx,
 		marketplaceactivity.LoseAllBidsActivityName,
 		marketplaceactivity.LoseAllBidsInput{ListingID: listingID},
 	).Get(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("%w; losing the bids: %w", failed, err)
+	}
+
+	// every hold 0a found, the winner's included: before the pivot nothing has been
+	// spent. wallet skips a bid it holds nothing for, and one already released.
+	err = workflow.ExecuteActivity(walletCtx,
+		walletactivity.ReleaseAllHoldsActivityName,
+		walletactivity.ReleaseAllHoldsInput{ListingID: listingID, BidIDs: frozen.BidIDs},
+	).Get(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("%w; releasing the holds: %w", failed, err)
 	}
 
 	err = workflow.ExecuteActivity(itemsCtx,

@@ -34,10 +34,7 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 		&frozen,
 	)
 	if err != nil {
-		if impossible(err) {
-			return marketplaceactivity.FreezeListingOutput{}, rollBack(ctx, in.ListingID, marketplaceactivity.FreezeListingActivityName, err, nil)
-		}
-		return marketplaceactivity.FreezeListingOutput{}, err
+		return marketplaceactivity.FreezeListingOutput{}, beforePivotFailure(ctx, in.ListingID, marketplaceactivity.FreezeListingActivityName, err, nil)
 	}
 
 	if frozen.Outcome == marketplaceactivity.OutcomeNoBids {
@@ -80,10 +77,7 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 		nil,
 	)
 	if err != nil {
-		if impossible(err) {
-			return marketplaceactivity.FreezeListingOutput{}, rollBack(ctx, frozen.ListingID, itemsactivity.FreezeItemActivityName, err, &frozen)
-		}
-		return marketplaceactivity.FreezeListingOutput{}, err
+		return marketplaceactivity.FreezeListingOutput{}, beforePivotFailure(ctx, frozen.ListingID, itemsactivity.FreezeItemActivityName, err, &frozen)
 	}
 
 	// Step 1a
@@ -95,10 +89,11 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 		nil,
 	)
 	if err != nil {
-		return marketplaceactivity.FreezeListingOutput{}, err
+		return marketplaceactivity.FreezeListingOutput{}, beforePivotFailure(ctx, frozen.ListingID, marketplaceactivity.SetWinningBidActivityName, err, &frozen)
 	}
 
-	// Step 1b, pivot
+	// Step 1b, pivot. A failed CommitHold moved no gold: the pivot is its success,
+	// so rolling back is still legal (ADR-0010).
 	var committed walletactivity.CommitHoldOutput
 	err = runUntilDone(ctx, frozen.ListingID,
 		walletactivity.CommitHoldActivityName,
@@ -108,7 +103,7 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 		&committed,
 	)
 	if err != nil {
-		return marketplaceactivity.FreezeListingOutput{}, err
+		return marketplaceactivity.FreezeListingOutput{}, beforePivotFailure(ctx, frozen.ListingID, walletactivity.CommitHoldActivityName, err, &frozen)
 	}
 
 	// Temporary: returned so the result shows in the UI. Later steps replace this.
