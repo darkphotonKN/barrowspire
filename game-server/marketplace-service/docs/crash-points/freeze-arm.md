@@ -24,11 +24,14 @@ read: already `PENDING_SETTLEMENT` for the seller is success, anything else is
 `ErrItemNotFreezable`, 0b's only non-retryable error.
 
 **Rollback** (uncapped, on a context the workflow's cancellation cannot reach):
-`RaiseSettlementException` → `MarkSettlementFailed` → `LoseAllBids` → `UnfreezeItem`. After a 0a
-impossibility only the first two run: nothing was frozen, and the listing's bids and item belong
+`RaiseSettlementException` → `MarkSettlementFailed` → `LoseAllBids` → `ReleaseAllHolds` →
+`UnfreezeItem`. The same rollback serves 0b, 1a and 1b (I-NXP1W-6). After a 0a impossibility only
+the first two run: nothing was frozen, and the listing's bids and item belong
 to whichever flow ended it. Each action is idempotent: `MarkSettlementFailed` changes only a
 `PENDING_SETTLEMENT` listing and treats every other status, and a missing listing, as success;
-`LoseAllBids` leaves `LOST`, `CANCELLED` and `FAILED` bids as they are; `UnfreezeItem` matches only
+`LoseAllBids` leaves `LOST`, `CANCELLED` and `FAILED` bids as they are; `ReleaseAllHolds` releases
+the hold of every bid 0a reported in `BidIDs`, skipping a bid wallet holds nothing for and one
+already released; `UnfreezeItem` matches only
 an item still the seller's and still reserved for this listing, treats zero rows as success, and
 logs a warning when the item is still reserved for this listing but unmatched.
 
@@ -63,6 +66,7 @@ with the impossibility as its reason, and publishes `settlement.failed`.
 
 | # | Crash point | State left behind | Next attempt | Resolves to | Proven by |
 |---|---|---|---|---|---|
+| 11c | 1a or 1b turns out impossible | listing and item frozen; 1a may have moved the winner to `WON`; no gold moved | rollback: exception, `SETTLEMENT_FAILED`, every bid `LOST` (the `WON` one included), every hold `RELEASED`, item back with its seller; the run fails | roll back | `TestWorkflow_PivotArmImpossible_RollsBackEverything` |
 | 12 | A rollback action fails transiently | earlier actions applied, this one not | retried without a cap until it lands; later actions then run | rollback completes | `TestWorkflow_RollbackActionFailsTransiently_RetriesUntilItLands`; `TestMarkSettlementFailedActivity_Failure_StaysRetryable`; `TestUnfreezeItemActivity_Failure_StaysRetryable` |
 | 13 | An action commits but its completion is lost | that action applied | re-run: `MarkSettlementFailed` finds `SETTLEMENT_FAILED`, `UnfreezeItem` matches zero rows; both succeed | already applied → continue | `TestMarkSettlementFailed` "already failed is applied"; `TestMarkSettlementFailedUC_Replay_Succeeds`; `TestUnfreezeItem` "already back with the seller is success and changes nothing" |
 | 14 | The seller relists the item before an `UnfreezeItem` retry runs | item `LISTED` under a new listing ID | `listing_id` no longer matches: zero rows, success; the new listing's item stays `LISTED` | already applied → continue (§Req 24a) | `TestUnfreezeItem` "relisted under another listing is left alone" |
@@ -79,8 +83,10 @@ with the impossibility as its reason, and publishes `settlement.failed`.
   `workflow reset` to a point before 1a.
 - 0b does not yet check `listing_id` (§Req 24a lists it): `FreezeItemInput` carries no listing ID.
   Tracked as I-NXP1W-16.
-- **Holds are not released by this rollback yet.** After a 0b rollback the bids are `LOST` but
-  every hold on the listing stays `RESERVED` until I-NXP1W-6 wires `ReleaseAllHolds`, which needs
-  the listing's bid IDs. A `LOST` bid still claims its hold, so the reconciler leaves that gold
-  alone; it is freed by the hold sweeper at expiry plus grace, or by I-NXP1W-6.
-- Impossibilities in 1a and 1b are not rolled back yet: that is also I-NXP1W-6.
+- **Settlements started before `BidIDs` existed.** A run whose 0a result was recorded without the
+  field decodes it as nil, so its rollback releases no holds. Those bids still end `LOST`, which
+  keeps the reconciler off the gold; the hold sweeper frees it at expiry plus grace. Runs are
+  short, so only one in flight across the deploy can hit this.
+- 1a and 1b's own crash points are in `docs/issues/I-NXP1W-6-pivot-compensation.md`; their
+  impossibility now rolls back through the same `rollBack`
+  (`TestWorkflow_PivotArmImpossible_RollsBackEverything`).

@@ -47,8 +47,8 @@ I-NXP1W-3
 
 | Item | State | Owner |
 |---|---|---|
-| Holds released by the 0a/0b rollback (§Req 12) | the 0b rollback moves every bid to `LOST` (LoseAllBids), but holds stay `RESERVED`: `ReleaseAllHolds` needs the listing's bid IDs, which nothing produces yet. A `LOST` bid still claims its hold, so the reconciler leaves the gold to settlement | I-NXP1W-6 |
-| Rollback of 1a/1b | the same `rollBack` takes the extra actions | I-NXP1W-6 |
+| Holds released by the 0a/0b rollback (§Req 12) | done in I-NXP1W-6: 0a reports `BidIDs`, and `rollBack` runs `ReleaseAllHolds` | I-NXP1W-6 |
+| Rollback of 1a/1b | done in I-NXP1W-6, through the same `rollBack` | I-NXP1W-6 |
 | 0b checks `listing_id` (§Req 24a) | `FreezeItemInput` carries no listing ID; the rollback's `UnfreezeItem` does check it | I-NXP1W-16 |
 | Same `ErrNotFound` mismatch in SetWinningBid, ExpireListing, MarkSold | their non-retryable sets name `apperr.ErrNotFound`, but the repository returns `commonconstants.ErrNotFound`; fixed for 0a only | I-NXP1W-16 |
 | AC proven against live services | unit and DB-level tests only; no end-to-end run | I-NXP1W-14 |
