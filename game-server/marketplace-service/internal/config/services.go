@@ -3,7 +3,6 @@ package config
 import (
 	"context"
 
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing"
 	listingactivity "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/activity"
@@ -34,13 +33,11 @@ type Services struct {
 	ExceptionActivities *listingactivity.ExceptionActivities
 }
 
-func NewServices(ctx context.Context, db *sqlx.DB, registry discovery.Registry, ch *amqp.Channel, temporalClient client.Client) *Services {
+func NewServices(ctx context.Context, db *sqlx.DB, itemsClient itemreserver.ItemReserverClient, walletClient *listinggrpc.Client, ch *amqp.Channel, temporalClient client.Client) *Services {
 	listingRepo := listingrepo.NewListingRepository(db)
-	grpcClient := itemreserver.NewClient(registry)
-	itemReserver := itemreserver.NewItemReserver(grpcClient)
+	itemReserver := itemreserver.NewItemReserver(itemsClient)
 	reserveItemUC := usecase.NewReserveItemUC(itemReserver)
 	createAccUC := usecase.NewCreateListingUC(listingRepo)
-	walletClient := listinggrpc.NewClient(registry)
 	// release hold saga
 	holdReleaseStarter := releasehold.NewStarter(temporalClient)
 	placeBidUC := usecase.NewPlaceBidUC(listingRepo, walletClient, holdReleaseStarter)

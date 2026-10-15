@@ -6,16 +6,24 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // FS-BDA7X §Requirements 36: the legacy gin POST /api/character/ is replaced by
 // the typed character operations, and gin and Huma never both own a path.
 //
-// SetupRouter dials nothing at construction (every client connects lazily), so
-// the real router is built here with no registry and no channel.
+// SetupRouter connects to nothing at construction (every client connects
+// lazily), so the real router is built here against addresses nothing listens
+// on, and no channel.
 func TestSetupRouter_CharacterRoutesAreTypedOnly(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	r := SetupRouter(nil, nil)
+	unused := "localhost:1"
+	r, closeDownstreams, err := SetupRouter(Downstreams{
+		Auth: unused, Stats: unused, Notification: unused, Payment: unused, Items: unused,
+		Ledger: unused, Marketplace: unused, Wallet: unused, Character: unused,
+	}, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = closeDownstreams() })
 
 	owned := map[string]int{}
 	for _, route := range r.Routes() {

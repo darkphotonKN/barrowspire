@@ -79,35 +79,13 @@ func (s *fakeWalletServer) PlaceHold(ctx context.Context, req *walletpb.PlaceHol
 	return nil, status.Error(s.code, "wallet says no")
 }
 
-// fakeRegistry points discovery at the fake wallet server's address.
-type fakeRegistry struct {
-	addr string
-}
-
-func (r *fakeRegistry) Register(ctx context.Context, instanceID, serviceName, hostPort string) error {
-	return nil
-}
-
-func (r *fakeRegistry) Deregister(ctx context.Context, instanceID, serviceName string) error {
-	return nil
-}
-
-// Discover reports no healthy instance when addr is empty, as when every
-// wallet instance is down.
-func (r *fakeRegistry) Discover(ctx context.Context, serviceName string) ([]string, error) {
-	if r.addr == "" {
-		return nil, nil
-	}
-	return []string{r.addr}, nil
-}
-
-func (r *fakeRegistry) HealthCheck(instanceID, serviceName string) error {
-	return nil
-}
+// unreachableWallet is an address nothing listens on, as when every wallet
+// instance is down.
+const unreachableWallet = "127.0.0.1:1"
 
 // startFakeWallet serves a wallet that refuses every hold with code, and
-// returns a registry that resolves "wallet" to it.
-func startFakeWallet(t *testing.T, code codes.Code) *fakeRegistry {
+// returns its address.
+func startFakeWallet(t *testing.T, code codes.Code) string {
 	t.Helper()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -118,7 +96,18 @@ func startFakeWallet(t *testing.T, code codes.Code) *fakeRegistry {
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 
-	return &fakeRegistry{addr: lis.Addr().String()}
+	return lis.Addr().String()
+}
+
+// newWalletClient dials addr and closes the client when the test ends.
+func newWalletClient(t *testing.T, addr string) *Client {
+	t.Helper()
+
+	c, err := NewClient(addr)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+
+	return c
 }
 
 // captureLogs swaps the default logger for one writing to a buffer, so a test
@@ -148,7 +137,7 @@ func TestPlaceBid_WalletRefusal_KeepsItsMeaning(t *testing.T) {
 		{"insufficient gold", codes.FailedPrecondition, false, codes.FailedPrecondition, "level=INFO"},
 		{"wallet unavailable", codes.Unavailable, false, codes.Unavailable, "level=WARN"},
 		{"wallet deadline exceeded", codes.DeadlineExceeded, false, codes.Unavailable, "level=WARN"},
-		{"no wallet instance", codes.OK, true, codes.Unavailable, "level=WARN"},
+		{"wallet unreachable", codes.OK, true, codes.Unavailable, "level=WARN"},
 		{"unrecognised code", codes.DataLoss, false, codes.Internal, "level=ERROR"},
 	}
 
@@ -157,11 +146,11 @@ func TestPlaceBid_WalletRefusal_KeepsItsMeaning(t *testing.T) {
 			logs := captureLogs(t)
 			l := activeListing(t)
 			repo := &fakeRepo{l: l}
-			registry := &fakeRegistry{}
+			addr := unreachableWallet
 			if !tt.noWallet {
-				registry = startFakeWallet(t, tt.walletCode)
+				addr = startFakeWallet(t, tt.walletCode)
 			}
-			h := NewHandler(nil, nil, usecase.NewPlaceBidUC(repo, NewClient(registry), nil), nil, nil, nil, nil, nil, nil)
+			h := NewHandler(nil, nil, usecase.NewPlaceBidUC(repo, newWalletClient(t, addr), nil), nil, nil, nil, nil, nil, nil)
 
 			_, err := h.PlaceBid(authedCtx(t, uuid.New()), &marketplacepb.PlaceBidRequest{
 				ListingId: l.Snapshot().ID.String(),
@@ -178,9 +167,9 @@ func TestPlaceBid_WalletRefusal_KeepsItsMeaning(t *testing.T) {
 // wallet allows one hold per bid ID. Its AlreadyExists must reach the use case
 // as a duplicate, so Buyout's deterministic retry can recognise its own hold.
 func TestPlaceHold_AlreadyExistsIsADuplicate(t *testing.T) {
-	registry := startFakeWallet(t, codes.AlreadyExists)
+	addr := startFakeWallet(t, codes.AlreadyExists)
 
-	err := NewClient(registry).PlaceHold(authedCtx(t, uuid.New()), uuid.New(), uuid.New(), 500, time.Now().Add(time.Hour))
+	err := newWalletClient(t, addr).PlaceHold(authedCtx(t, uuid.New()), uuid.New(), uuid.New(), 500, time.Now().Add(time.Hour))
 
 	assert.ErrorIs(t, err, commonconstants.ErrDuplicateResource)
 }

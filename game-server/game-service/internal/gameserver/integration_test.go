@@ -10,7 +10,6 @@ import (
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	itemspb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
@@ -20,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -465,10 +465,9 @@ func TestSenderToBroadcastToPlayerList(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			serviceName := "game"
-			consulAddr := commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
-			registry, _ := consul.NewRegistry(consulAddr, serviceName)
-			authClient := grpcauth.NewClient(registry)
+			authClient, err := grpcauth.NewClient(commonhelpers.GetEnvString("AUTH_ADDR", "localhost:7116"))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = authClient.Close() })
 			mockQueue := NewMockQueueService()
 			mockEventEmitter := &MockEventEmitter{}
 			mockItemsClient := &MockItemsClient{}
@@ -476,7 +475,7 @@ func TestSenderToBroadcastToPlayerList(t *testing.T) {
 			playerIDs := tc.setupPlayers(server)
 
 			newSender := messaging.NewMessageSender(server)
-			err := newSender.BroadcastToPlayerList(playerIDs, types.Message{
+			err = newSender.BroadcastToPlayerList(playerIDs, types.Message{
 				Action:  string(tc.action),
 				Payload: tc.payload,
 			})

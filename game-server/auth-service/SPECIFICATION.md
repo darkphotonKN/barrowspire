@@ -13,7 +13,7 @@ file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architecture context:
 ## Assumptions (verify these first)
 
 - auth-service owns the **member identity & authentication** bounded context, plus **avatar
-  uploads**. It is the service behind the gateway's `/api/member` routes and the `auth` Consul name.
+  uploads**. It is the service behind the gateway's `/api/member` routes (`AUTH_ADDR` in its callers).
 - It exposes two gRPC services (`AuthService`, `UploadService`), consumes one AMQP command
   (`member.create`), and publishes member events via a transactional outbox.
 - A large amount of wired-but-unused infrastructure exists (Redis cache, refresh-token
@@ -94,7 +94,7 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 
 ## gRPC — AuthService contract
 
-Consul name `auth`, gRPC port default **7116** (`GRPC_AUTH_ADDR`). Proto in
+gRPC port default **7116** (`GRPC_AUTH_ADDR`); callers reach it at `AUTH_ADDR`. Proto in
 `common/api/proto/auth`. Handler delegates 1:1 to the member service. ✅ DONE
 
 - **CreateMember** (`{Name,Email,Password}` → `Member`) — bcrypt-hash password; in ONE DB tx:
@@ -179,7 +179,6 @@ result is discarded (no reply/correlation).
 
 - **Postgres** (sqlx, lib/pq) — the member store; repo errors mapped to domain sentinels via
   `commonhelpers.WrapDBErr` (`ErrNotFound`, `ErrDuplicateResource`, …).
-- **Consul** — registers as `auth`; 1s health-check loop (`log.Fatal` on a single failure).
 - **RabbitMQ** — `auth.events` exchange (consumer + outbox publisher).
 - **Prometheus** — `/metrics` on `:8194`. **OpenTelemetry** — gRPC + span instrumentation.
 - **Redis** — connected and a cache injected into the member service…

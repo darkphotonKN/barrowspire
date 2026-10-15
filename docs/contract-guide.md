@@ -52,7 +52,7 @@ From `game-server/`:
 docker compose up -d
 ```
 
-That brings up consul, rabbitmq, redis, and one Postgres per service. The gateway will not boot
+That brings up rabbitmq, redis, and one Postgres per service. The gateway will not boot
 without them. Then, from `game-server/api-gateway/`:
 
 ```bash

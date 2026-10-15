@@ -1,4 +1,4 @@
-# ADR-0022 — A bid's hold is given back by a Temporal workflow, not by a gRPC call to wallet
+# ADR-0024 — A bid's hold is given back by a Temporal workflow, not by a gRPC call to wallet
 
 Status: accepted
 Date: 2026-10-10

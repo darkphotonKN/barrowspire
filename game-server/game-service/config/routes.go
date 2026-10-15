@@ -2,9 +2,10 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
@@ -22,10 +23,22 @@ import (
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 )
 
+// Downstreams are the gRPC addresses ("host:port") of the services game-service
+// calls. They come from env, so the same binary runs natively (localhost:<port>),
+// in compose, or in Kubernetes (<service>:<port>).
+type Downstreams struct {
+	Auth      string
+	Items     string
+	Character string
+}
+
 /**
 * Sets up API prefix route and all routers.
+*
+* The returned close func releases every downstream connection; call it on
+* shutdown.
 **/
-func SetupRouter(ctx context.Context, statsDB *sqlx.DB, registry discovery.Registry, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod) *gin.Engine {
+func SetupRouter(ctx context.Context, statsDB *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod) (*gin.Engine, func() error, error) {
 	// gin.Default() with its access logger swapped: the default one writes the
 	// raw query, and the WebSocket connect carries the bearer token in it
 	router := gin.New()
@@ -46,10 +59,27 @@ func SetupRouter(ctx context.Context, statsDB *sqlx.DB, registry discovery.Regis
 	// base route
 	api := router.Group("/api")
 
-	// --- AUTH CLIENT ---
-	authClient := grpcauth.NewClient(registry)
-	itemsClient := grpcitems.NewClient(registry)
-	characterClient := grpccharacter.NewClient(registry)
+	// --- DOWNSTREAM CLIENTS ---
+	authClient, err := grpcauth.NewClient(addrs.Auth)
+	if err != nil {
+		return nil, nil, err
+	}
+	itemsClient, err := grpcitems.NewClient(addrs.Items)
+	if err != nil {
+		return nil, nil, errors.Join(err, authClient.Close())
+	}
+	characterClient, err := grpccharacter.NewClient(addrs.Character)
+	if err != nil {
+		return nil, nil, errors.Join(err, authClient.Close(), itemsClient.Close())
+	}
+	conns := []io.Closer{authClient, itemsClient, characterClient}
+	closeAll := func() error {
+		var errs []error
+		for _, c := range conns {
+			errs = append(errs, c.Close())
+		}
+		return errors.Join(errs...)
+	}
 
 	// --- GAME SERVER SETUP ---
 
@@ -79,5 +109,5 @@ func SetupRouter(ctx context.Context, statsDB *sqlx.DB, registry discovery.Regis
 	// gameRoutes := api.Group("/game")
 	// gameRoutes.GET("/items", gameHandler.GetItems)
 
-	return router
+	return router, closeAll, nil
 }

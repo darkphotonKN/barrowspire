@@ -21,8 +21,8 @@
 set -euo pipefail
 
 API=${API_URL:-http://localhost:7114/api}
-AUTH_DSN=${AUTH_DSN:-postgres://user:password@localhost:5216/barrowspire_auth_service_db?sslmode=disable}
-ITEMS_DSN=${ITEMS_DSN:-postgres://user:password@localhost:5217/barrowspire_items_service_db?sslmode=disable}
+AUTH_DSN=${AUTH_DSN:-postgres://auth_service:auth_service@localhost:5432/barrowspire_auth_service_db?sslmode=disable}
+ITEMS_DSN=${ITEMS_DSN:-postgres://items_service:items_service@localhost:5432/barrowspire_items_service_db?sslmode=disable}
 PASS=${SEED_PASSWORD:-barrowspire-dev}
 NORMAL=f8700000-0000-0000-0000-000000000001
 FABLED=f8700000-0000-0000-0000-000000000005

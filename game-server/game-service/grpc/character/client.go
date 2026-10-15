@@ -5,7 +5,6 @@ package grpccharacter
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/character"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
@@ -13,22 +12,28 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/status"
 )
 
-// serviceName is character-service's Consul registration.
-const serviceName = "character"
-
 // Client reads characters over gRPC. It dials once and reuses the connection.
 type Client struct {
-	registry discovery.Registry
-	mu       sync.Mutex
-	conn     *grpc.ClientConn
+	conn *grpc.ClientConn
 }
 
-func NewClient(registry discovery.Registry) *Client {
-	return &Client{registry: registry}
+// NewClient dials character-service at addr ("host:port"). The dial is lazy:
+// nothing connects until the first RPC, so game-service boots with
+// character-service absent.
+func NewClient(addr string) (*Client, error) {
+	conn, err := discovery.Dial(addr)
+	if err != nil {
+		return nil, fmt.Errorf("dial character service at %s: %w", addr, err)
+	}
+	return &Client{conn: conn}, nil
+}
+
+// Close releases the connection.
+func (c *Client) Close() error {
+	return c.conn.Close()
 }
 
 // GetCharacter reads one of the member's characters as the character in play.
@@ -36,12 +41,7 @@ func NewClient(registry discovery.Registry) *Client {
 // types.ErrCharacterNotFound; any other failure means the service could not
 // answer.
 func (c *Client) GetCharacter(ctx context.Context, memberID, characterID uuid.UUID) (types.CharacterInPlay, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return types.CharacterInPlay{}, fmt.Errorf("connect to character service: %w", err)
-	}
-
-	character, err := pb.NewCharacterServiceClient(conn).GetCharacter(ctx, &pb.GetCharacterRequest{
+	character, err := pb.NewCharacterServiceClient(c.conn).GetCharacter(ctx, &pb.GetCharacterRequest{
 		MemberId:    memberID.String(),
 		CharacterId: characterID.String(),
 	})
@@ -70,23 +70,4 @@ func toCharacterInPlay(character *pb.Character) (types.CharacterInPlay, error) {
 		Level:      int(character.GetLevel()),
 		Experience: character.GetExperience(),
 	}, nil
-}
-
-// ensureConn dials the service once and caches the connection; gRPC
-// multiplexes calls over it.
-func (c *Client) ensureConn(ctx context.Context) (*grpc.ClientConn, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.conn != nil && c.conn.GetState() != connectivity.Shutdown {
-		return c.conn, nil
-	}
-
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
-	if err != nil {
-		return nil, err
-	}
-	c.conn = conn
-
-	return conn, nil
 }

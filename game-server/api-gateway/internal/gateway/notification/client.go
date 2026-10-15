@@ -3,66 +3,42 @@ package notification
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/notification"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
 )
 
-const (
-	serviceName = "notification"
-)
-
+// Client calls notification-service over one long-lived connection.
 type Client struct {
-	registry discovery.Registry
-	mu       sync.Mutex
-	conn     *grpc.ClientConn
+	conn *grpc.ClientConn
 }
 
-func NewClient(registry discovery.Registry) NotificationClient {
-	return &Client{
-		registry: registry,
-	}
-}
-
-// ensureConn lazily dials the service once and caches the connection for
-// reuse across calls (gRPC multiplexes over it). Opening a fresh conn per RPC
-// serialized badly and churned connections; see common/discovery/grpc.go.
-func (c *Client) ensureConn(ctx context.Context) (*grpc.ClientConn, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.conn != nil && c.conn.GetState() != connectivity.Shutdown {
-		return c.conn, nil
-	}
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+// NewClient dials notification-service at addr ("host:port"). The dial is lazy: nothing
+// connects until the first RPC, so this service boots with notification-service absent
+// and a call made while it is down fails with codes.Unavailable.
+func NewClient(addr string) (*Client, error) {
+	conn, err := discovery.Dial(addr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("dial notification service at %s: %w", addr, err)
 	}
-	c.conn = conn
-	return conn, nil
+	return &Client{conn: conn}, nil
+}
+
+// Close releases the connection.
+func (c *Client) Close() error {
+	return c.conn.Close()
 }
 
 func (c *Client) GetNotification(ctx context.Context, req *pb.NotificationRequest) (*pb.NotificationResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to notification service: %w", err)
-	}
-
-	client := pb.NewNotificationServiceClient(conn)
+	client := pb.NewNotificationServiceClient(c.conn)
 
 	response, err := client.GetNotification(ctx, req)
 	return response, err
 }
 
 func (c *Client) MarkNotificationAsRead(ctx context.Context, req *pb.MarkNotificationAsReadRequest) (*pb.MarkNotificationAsReadResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to notification service: %w", err)
-	}
-
-	client := pb.NewNotificationServiceClient(conn)
+	client := pb.NewNotificationServiceClient(c.conn)
 	response, err := client.MarkNotificationAsRead(ctx, req)
 	return response, err
 
@@ -70,12 +46,7 @@ func (c *Client) MarkNotificationAsRead(ctx context.Context, req *pb.MarkNotific
 
 func (c *Client) MarkAllNotificationsAsRead(ctx context.Context, req *pb.MarkAllNotificationsAsReadRequest) (*pb.MarkAllNotificationsAsReadResponse, error) {
 
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to notification service: %w", err)
-	}
-
-	client := pb.NewNotificationServiceClient(conn)
+	client := pb.NewNotificationServiceClient(c.conn)
 	response, err := client.MarkAllNotificationsAsRead(ctx, req)
 	return response, err
 }

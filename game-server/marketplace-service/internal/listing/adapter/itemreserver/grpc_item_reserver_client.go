@@ -4,53 +4,35 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
 )
 
+// Client calls items-service over one long-lived connection.
 type Client struct {
-	registry discovery.Registry
-	mu       sync.Mutex
-	conn     *grpc.ClientConn
+	conn *grpc.ClientConn
 }
 
-const (
-	serviceName = "items"
-)
-
-func NewClient(registry discovery.Registry) ItemReserverClient {
-	return &Client{
-		registry: registry,
-	}
-}
-
-// ensureConn lazily dials the service once and caches the connection for
-// reuse across calls (gRPC multiplexes over it). Opening a fresh conn per RPC
-// serialized badly and churned connections; see common/discovery/grpc.go.
-func (c *Client) ensureConn(ctx context.Context) (*grpc.ClientConn, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.conn != nil && c.conn.GetState() != connectivity.Shutdown {
-		return c.conn, nil
-	}
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+// NewClient dials items-service at addr ("host:port"). The dial is lazy: nothing
+// connects until the first RPC, so this service boots with items-service absent
+// and a call made while it is down fails with codes.Unavailable.
+func NewClient(addr string) (*Client, error) {
+	conn, err := discovery.Dial(addr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("dial items service at %s: %w", addr, err)
 	}
-	c.conn = conn
-	return conn, nil
+	return &Client{conn: conn}, nil
+}
+
+// Close releases the connection.
+func (c *Client) Close() error {
+	return c.conn.Close()
 }
 
 func (c *Client) ReserveItem(ctx context.Context, req *pb.ReserveItemRequest) (*pb.ReserveItemResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	item, err := client.ReserveItem(ctx, req)
 	if err != nil {
 		slog.Info("ReserveItem err", "err", err)
@@ -60,11 +42,7 @@ func (c *Client) ReserveItem(ctx context.Context, req *pb.ReserveItemRequest) (*
 }
 
 func (c *Client) ListStaleReserved(ctx context.Context, req *pb.ListStaleReservedRequest) (*pb.ListStaleReservedResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	itemIds, err := client.ListStaleReserved(ctx, req)
 	if err != nil {
 		slog.Info("ListStaleReserved err", "err", err)
@@ -74,11 +52,7 @@ func (c *Client) ListStaleReserved(ctx context.Context, req *pb.ListStaleReserve
 }
 
 func (c *Client) CancelReservation(ctx context.Context, req *pb.CancelReservationRequest) (*pb.CancelReservationResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
-	}
-	client := pb.NewItemsServiceClient(conn)
+	client := pb.NewItemsServiceClient(c.conn)
 	item, err := client.CancelReservation(ctx, req)
 	if err != nil {
 		slog.Info("CancelReservation err", "err", err)

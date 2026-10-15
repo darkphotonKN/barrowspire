@@ -38,7 +38,7 @@ func Dial(ctx context.Context, cfg Config, logger sdklog.Logger) (client.Client,
 			Namespace: cfg.Namespace,
 			Logger:    logger,
 			// Skip the DNS TXT service-config lookup that can stall a dial past
-			// its deadline (see discovery.ServiceConnection). The SDK's own
+			// its deadline (see discovery.Dial). The SDK's own
 			// default service config still applies.
 			ConnectionOptions: client.ConnectionOptions{
 				DialOptions: []grpc.DialOption{grpc.WithDisableServiceConfig()},
