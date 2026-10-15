@@ -1,6 +1,10 @@
 package marketplaceactivity_test
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/activitytest"
@@ -80,4 +84,33 @@ func TestResolveSettlementExceptionInput_MatchesGolden(t *testing.T) {
 	activitytest.Golden(t, "resolve_settlement_exception_input.json", marketplaceactivity.ResolveSettlementExceptionInput{
 		ExceptionID: uuid.MustParse("77777777-7777-4777-8777-777777777777"),
 	})
+}
+
+// A 0a result recorded before BidIDs was added, as an open settlement's history
+// still holds it, must decode into today's struct with every older field intact
+// and BidIDs nil (ADR-0019: additive only). Decode-only, since today's struct
+// would encode the field.
+func TestFreezeListingOutput_DecodesAPayloadRecordedBeforeBidIDs(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "freeze_listing_output_before_bid_ids.json"))
+	if err != nil {
+		t.Fatalf("read fixture: %s", err)
+	}
+
+	var got marketplaceactivity.FreezeListingOutput
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("decode: %s", err)
+	}
+
+	want := marketplaceactivity.FreezeListingOutput{
+		Outcome:        marketplaceactivity.OutcomeHasWinner,
+		ListingID:      uuid.MustParse("11111111-1111-4111-8111-111111111111"),
+		ItemID:         uuid.MustParse("22222222-2222-4222-8222-222222222222"),
+		SellerID:       uuid.MustParse("33333333-3333-4333-8333-333333333333"),
+		WinnerBidID:    uuid.MustParse("44444444-4444-4444-8444-444444444444"),
+		WinnerMemberID: uuid.MustParse("55555555-5555-4555-8555-555555555555"),
+		Amount:         250,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("decoded %+v, want %+v", got, want)
+	}
 }
