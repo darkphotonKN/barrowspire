@@ -1,1 +1,0 @@
-DROP TABLE IF EXISTS build_item_set_items; 
