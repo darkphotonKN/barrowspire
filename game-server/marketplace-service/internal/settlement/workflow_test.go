@@ -8,6 +8,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/itemsactivity"
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
+	"github.com/darkphotonKN/barrowspire-server/common/api/activity/walletactivity"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	"github.com/google/uuid"
@@ -157,9 +158,12 @@ type freezeArm struct {
 	// transiently before it lands
 	markFailedErrs []error
 
-	markFailedIn marketplaceactivity.MarkSettlementFailedInput
-	loseAllIn    marketplaceactivity.LoseAllBidsInput
-	unfreezeIn   itemsactivity.UnfreezeItemInput
+	markFailedIn  marketplaceactivity.MarkSettlementFailedInput
+	loseAllIn     marketplaceactivity.LoseAllBidsInput
+	releaseAllIn  walletactivity.ReleaseAllHoldsInput
+	unfreezeIn    itemsactivity.UnfreezeItemInput
+	setWinningErr error
+	commitHoldErr error
 }
 
 func (a *freezeArm) record(ctx context.Context, name string) {
@@ -191,6 +195,11 @@ func registerFreezeArm(env *testsuite.TestWorkflowEnvironment, arm *freezeArm) {
 		arm.loseAllIn = in
 		return nil
 	}, activity.RegisterOptions{Name: marketplaceactivity.LoseAllBidsActivityName})
+	env.RegisterActivityWithOptions(func(ctx context.Context, in walletactivity.ReleaseAllHoldsInput) error {
+		arm.record(ctx, walletactivity.ReleaseAllHoldsActivityName)
+		arm.releaseAllIn = in
+		return nil
+	}, activity.RegisterOptions{Name: walletactivity.ReleaseAllHoldsActivityName})
 	env.RegisterActivityWithOptions(func(ctx context.Context, in itemsactivity.UnfreezeItemInput) error {
 		arm.record(ctx, itemsactivity.UnfreezeItemActivityName)
 		arm.unfreezeIn = in
@@ -198,15 +207,30 @@ func registerFreezeArm(env *testsuite.TestWorkflowEnvironment, arm *freezeArm) {
 	}, activity.RegisterOptions{Name: itemsactivity.UnfreezeItemActivityName})
 }
 
+// registerPivotArm stands fakes in for 1a and 1b on top of registerFreezeArm.
+// Nothing past 1b is registered, for the same reason.
+func registerPivotArm(env *testsuite.TestWorkflowEnvironment, arm *freezeArm) {
+	env.RegisterActivityWithOptions(func(ctx context.Context, in marketplaceactivity.SetWinningBidInput) error {
+		arm.record(ctx, marketplaceactivity.SetWinningBidActivityName)
+		return arm.setWinningErr
+	}, activity.RegisterOptions{Name: marketplaceactivity.SetWinningBidActivityName})
+	env.RegisterActivityWithOptions(func(ctx context.Context, in walletactivity.CommitHoldInput) (walletactivity.CommitHoldOutput, error) {
+		arm.record(ctx, walletactivity.CommitHoldActivityName)
+		return walletactivity.CommitHoldOutput{}, arm.commitHoldErr
+	}, activity.RegisterOptions{Name: walletactivity.CommitHoldActivityName})
+}
+
 func hasWinner(listingID, itemID, sellerID uuid.UUID) marketplaceactivity.FreezeListingOutput {
+	winnerBidID := uuid.New()
 	return marketplaceactivity.FreezeListingOutput{
 		Outcome:        marketplaceactivity.OutcomeHasWinner,
 		ListingID:      listingID,
 		ItemID:         itemID,
 		SellerID:       sellerID,
-		WinnerBidID:    uuid.New(),
+		WinnerBidID:    winnerBidID,
 		WinnerMemberID: uuid.New(),
 		Amount:         200,
+		BidIDs:         []uuid.UUID{uuid.New(), winnerBidID},
 	}
 }
 
@@ -217,8 +241,9 @@ func hasWinner(listingID, itemID, sellerID uuid.UUID) marketplaceactivity.Freeze
 // the Temporal UI, and never reaches 1a.
 func TestWorkflow_FreezeItemImpossible_RollsBackAndFails(t *testing.T) {
 	listingID, itemID, sellerID := uuid.New(), uuid.New(), uuid.New()
+	frozen := hasWinner(listingID, itemID, sellerID)
 	env, noBids := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
-		return hasWinner(listingID, itemID, sellerID), nil
+		return frozen, nil
 	})
 	arm := &freezeArm{freezeItemErr: temporal.NewNonRetryableApplicationError("item not freezable", "FreezeItemImpossible", nil)}
 	registerFreezeArm(env, arm)
@@ -238,11 +263,15 @@ func TestWorkflow_FreezeItemImpossible_RollsBackAndFails(t *testing.T) {
 		itemsactivity.FreezeItemActivityName,
 		marketplaceactivity.MarkSettlementFailedActivityName,
 		marketplaceactivity.LoseAllBidsActivityName,
+		walletactivity.ReleaseAllHoldsActivityName,
 		itemsactivity.UnfreezeItemActivityName,
 	}, arm.calls)
 	assert.Equal(t, listingID, arm.markFailedIn.ListingID)
 	assert.Equal(t, listingID, arm.loseAllIn.ListingID, "every bid on the listing ends LOST")
 	assert.Equal(t, bstemporal.QueueMarketplace.String(), arm.queues[marketplaceactivity.LoseAllBidsActivityName])
+	assert.Equal(t, walletactivity.ReleaseAllHoldsInput{ListingID: listingID, BidIDs: frozen.BidIDs}, arm.releaseAllIn,
+		"every hold 0a found on the listing goes back, the winner's included")
+	assert.Equal(t, bstemporal.QueueWallet.String(), arm.queues[walletactivity.ReleaseAllHoldsActivityName])
 	assert.Equal(t, itemsactivity.UnfreezeItemInput{ItemID: itemID, SellerID: sellerID, ListingID: listingID}, arm.unfreezeIn)
 	assert.Equal(t, bstemporal.QueueMarketplace.String(), arm.queues[marketplaceactivity.MarkSettlementFailedActivityName])
 	assert.Equal(t, bstemporal.QueueItems.String(), arm.queues[itemsactivity.UnfreezeItemActivityName])
@@ -281,20 +310,18 @@ func TestWorkflow_FreezeItemOutage_ParksInsteadOfRollingBack(t *testing.T) {
 	})
 	arm := &freezeArm{freezeItemErr: errors.New("dial tcp: connection refused")}
 	registerFreezeArm(env, arm)
-	// items recovers while parked; 1a is the first step past the freeze arm
+	registerPivotArm(env, arm)
+	// items recovers while parked
 	env.RegisterDelayedCallback(func() { arm.freezeItemErr = nil }, stepCap+reparkInterval/2)
-	env.RegisterActivityWithOptions(func(ctx context.Context, in marketplaceactivity.SetWinningBidInput) error {
-		arm.calls = append(arm.calls, marketplaceactivity.SetWinningBidActivityName)
-		return temporal.NewNonRetryableApplicationError("stop the test here", "SetWinningBidImpossible", nil)
-	}, activity.RegisterOptions{Name: marketplaceactivity.SetWinningBidActivityName})
 
 	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerAcceptBid})
 
 	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
 	require.Len(t, noBids.raised, 1, "the outage escalated once")
 	assert.Equal(t, itemsactivity.FreezeItemActivityName, noBids.raised[0].Step)
 	assert.Len(t, noBids.resolved, 1, "and was resolved once 0b got through")
-	assert.Contains(t, arm.calls, marketplaceactivity.SetWinningBidActivityName, "the settlement went on to 1a")
+	assert.Contains(t, arm.calls, walletactivity.CommitHoldActivityName, "the settlement went on through the pivot")
 	assert.NotContains(t, arm.calls, marketplaceactivity.MarkSettlementFailedActivityName, "an outage never rolls back")
 }
 
@@ -323,6 +350,7 @@ func TestWorkflow_RollbackActionFailsTransiently_RetriesUntilItLands(t *testing.
 		marketplaceactivity.MarkSettlementFailedActivityName, // blip
 		marketplaceactivity.MarkSettlementFailedActivityName, // lands
 		marketplaceactivity.LoseAllBidsActivityName,
+		walletactivity.ReleaseAllHoldsActivityName,
 		itemsactivity.UnfreezeItemActivityName,
 	}, arm.calls)
 }
@@ -424,4 +452,65 @@ func TestWorkflow_CancelledDuringRollback_RollbackStillFinishes(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	assert.Contains(t, arm.calls, marketplaceactivity.LoseAllBidsActivityName, "the rollback went on past the cancellation")
 	assert.Contains(t, arm.calls, itemsactivity.UnfreezeItemActivityName)
+}
+
+// 1a and 1b are the last steps before the pivot (§Req 12, 37): one that can never
+// succeed rolls everything back the same way 0b does — the exception, the listing
+// SETTLEMENT_FAILED, every bid LOST (the one 1a moved to WON included), every hold
+// released and the item back with its seller — and never reaches a later step.
+func TestWorkflow_PivotArmImpossible_RollsBackEverything(t *testing.T) {
+	impossible := func(msg string) error { return temporal.NewNonRetryableApplicationError(msg, "Impossible", nil) }
+
+	tests := []struct {
+		name          string
+		setWinningErr error
+		commitHoldErr error
+		step          string
+		ran           []string
+	}{
+		{
+			name:          "1a SetWinningBid: the bid was demoted or is gone",
+			setWinningErr: impossible("bid not winning"),
+			step:          marketplaceactivity.SetWinningBidActivityName,
+			ran:           []string{itemsactivity.FreezeItemActivityName, marketplaceactivity.SetWinningBidActivityName},
+		},
+		{
+			// the pivot boundary is a successful CommitHold, so a failed one moved no
+			// gold and rolling back is still legal (ADR-0010)
+			name:          "1b CommitHold: the hold was released or expired",
+			commitHoldErr: impossible("hold released"),
+			step:          walletactivity.CommitHoldActivityName,
+			ran: []string{itemsactivity.FreezeItemActivityName, marketplaceactivity.SetWinningBidActivityName,
+				walletactivity.CommitHoldActivityName},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			listingID, itemID, sellerID := uuid.New(), uuid.New(), uuid.New()
+			frozen := hasWinner(listingID, itemID, sellerID)
+			env, noBids := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+				return frozen, nil
+			})
+			arm := &freezeArm{setWinningErr: tt.setWinningErr, commitHoldErr: tt.commitHoldErr}
+			registerFreezeArm(env, arm)
+			registerPivotArm(env, arm)
+
+			env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerAcceptBid})
+
+			require.True(t, env.IsWorkflowCompleted())
+			require.Error(t, env.GetWorkflowError(), "a rolled-back settlement fails its run")
+
+			require.Len(t, noBids.raised, 1)
+			assert.Equal(t, tt.step, noBids.raised[0].Step)
+			assert.Equal(t, append(tt.ran,
+				marketplaceactivity.MarkSettlementFailedActivityName,
+				marketplaceactivity.LoseAllBidsActivityName,
+				walletactivity.ReleaseAllHoldsActivityName,
+				itemsactivity.UnfreezeItemActivityName,
+			), arm.calls)
+			assert.Equal(t, frozen.BidIDs, arm.releaseAllIn.BidIDs)
+			assert.Equal(t, itemsactivity.UnfreezeItemInput{ItemID: itemID, SellerID: sellerID, ListingID: listingID}, arm.unfreezeIn)
+		})
+	}
 }
