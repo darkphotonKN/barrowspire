@@ -1189,8 +1189,39 @@ func (r *repository) UnfreezeItem(ctx context.Context, itemID, sellerID, listing
 		AND status IN ('PENDING_SETTLEMENT', 'LISTED')
 	`
 
-	if _, err := r.DB.ExecContext(ctx, unfreeze, itemID, sellerID, listingID); err != nil {
+	res, err := r.DB.ExecContext(ctx, unfreeze, itemID, sellerID, listingID)
+	if err != nil {
 		return wrapDBErr("unfreeze item", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("unfreeze item, rows affected: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+
+	// Zero rows is still success, but one shape of it is an invariant breach rather
+	// than a replay or a relist: the item is still reserved for this listing, yet
+	// not the seller's or not in a status the rollback releases. Nothing else will
+	// free it, so it must leave a trace.
+	stuck := `
+		SELECT EXISTS (
+			SELECT 1
+			FROM item_instances
+			WHERE id = $1
+			AND listing_id = $2
+		)
+	`
+
+	var stillReserved bool
+	if err := r.DB.GetContext(ctx, &stillReserved, stuck, itemID, listingID); err != nil {
+		return wrapDBErr("unfreeze item, still reserved check", err)
+	}
+	if stillReserved {
+		slog.WarnContext(ctx, "unfreeze left an item still reserved for its failed listing",
+			"item_id", itemID, "seller_id", sellerID, "listing_id", listingID)
 	}
 
 	return nil
