@@ -403,7 +403,7 @@ func (q *matchmaker) MatchReady(ctx context.Context) {
 
 			slog.Debug("Recieved match ready", "matchReadyPayload", matchReadyPayload)
 
-			// validate message was sent to the correct pod
+			// validate if the message was sent to the correct pod
 			if matchReadyPayload.PodID != q.podID {
 				slog.Error("match ready loop recieved wrong payload for the wrong pod", "pod_id_from_payload", matchReadyPayload.PodID)
 				continue
@@ -440,6 +440,8 @@ func (q *matchmaker) MatchReady(ctx context.Context) {
 					slog.Error("sending players to matchedChan, matchedChan unresponsive for 5 seconds", "players_dropped_ids", matchReadyPayload.PlayerIDs)
 
 					continue
+
+					// send to matchedChan channel to create game session
 				case q.matchedChan <- players:
 				}
 

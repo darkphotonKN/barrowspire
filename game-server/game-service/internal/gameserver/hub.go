@@ -212,16 +212,14 @@ func (h *messageHub) Run(ctx context.Context) {
 			}
 
 			// --- MENU RELATED ACTIONS ---
-			// These actions will be actions for before game initialization happens.
+			// These actions will be actions for before game initialization happens
 			switch messageAction {
 
-			// NOTE: a player who has picked a character asks to enter the hub
 			case constants.ActionEnterHub:
 				// The request names the character by id; who it is comes from
 				// character-service, never the payload. FS-BDA7X §Requirements 5.
 				go h.enterHub(clientPackage)
 
-			// NOTE: queues a player for a game
 			case constants.ActionFindGame:
 				slog.Debug("ActionFindGame")
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
