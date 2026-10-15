@@ -94,6 +94,13 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 
 	// Step 1b, pivot. A failed CommitHold moved no gold: the pivot is its success,
 	// so rolling back is still legal (ADR-0010).
+	//
+	// That rests on wallet's Account.CommitHold answering COMMITTED as success
+	// before any check that can fail non-retryably (expiry), pinned by wallet's
+	// TestCommitHold_Expiry "a hold committed in time stays already applied after
+	// expiry" and TestCommitHold_AlreadyCommitted_ReturnsSameAmountWithoutMovingGold. If a
+	// committed hold could ever come back impossible, the rollback's ReleaseAllHolds
+	// would meet a hold the FSM refuses to release and retry it without end.
 	var committed walletactivity.CommitHoldOutput
 	err = runUntilDone(ctx, frozen.ListingID,
 		walletactivity.CommitHoldActivityName,

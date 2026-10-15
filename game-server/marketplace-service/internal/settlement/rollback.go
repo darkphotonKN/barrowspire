@@ -14,6 +14,16 @@ import (
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
 )
 
+// releaseAllHoldsChange gates ReleaseAllHolds in rollBack (I-NXP1W-6), inserted
+// between LoseAllBids and UnfreezeItem after the rollback had shipped. The change
+// ID is recorded in every history that takes the new path, so it never changes.
+// Once no run recorded before it can still replay, the minimum can be raised to
+// releaseAllHoldsVersion and the branch dropped, keeping the GetVersion call.
+const (
+	releaseAllHoldsChange  = "rollback-release-all-holds"
+	releaseAllHoldsVersion = workflow.Version(1)
+)
+
 // impossible reports whether a step's error is a semantic impossibility, the only
 // failure that rolls back (FS-NXP1W §Req 12, ADR-0018). runUntilDone also returns
 // when the workflow is cancelled; that is not a reason to undo anything.
@@ -89,12 +99,17 @@ func rollBack(ctx workflow.Context, listingID uuid.UUID, step string, cause erro
 
 	// every hold 0a found, the winner's included: before the pivot nothing has been
 	// spent. wallet skips a bid it holds nothing for, and one already released.
-	err = workflow.ExecuteActivity(walletCtx,
-		walletactivity.ReleaseAllHoldsActivityName,
-		walletactivity.ReleaseAllHoldsInput{ListingID: listingID, BidIDs: frozen.BidIDs},
-	).Get(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("%w; releasing the holds: %w", failed, err)
+	//
+	// Version-gated: a rollback recorded before this step existed replays straight
+	// from LoseAllBids to UnfreezeItem, and leaves its holds to the sweeper.
+	if workflow.GetVersion(ctx, releaseAllHoldsChange, workflow.DefaultVersion, releaseAllHoldsVersion) >= releaseAllHoldsVersion {
+		err = workflow.ExecuteActivity(walletCtx,
+			walletactivity.ReleaseAllHoldsActivityName,
+			walletactivity.ReleaseAllHoldsInput{ListingID: listingID, BidIDs: frozen.BidIDs},
+		).Get(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("%w; releasing the holds: %w", failed, err)
+		}
 	}
 
 	err = workflow.ExecuteActivity(itemsCtx,
