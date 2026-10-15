@@ -1,0 +1,15 @@
+# Everything listed here never enters the build context, so it can't end up in an image.
+
+# Secrets: .env and *.secret.* stay on your machine, never in a build.
+**/.env
+**/*.secret.*
+
+# Build junk: air's tmp output, local binaries, frontend deps.
+**/tmp
+*/server
+**/node_modules
+
+# Not needed to build a service.
+.git
+deploy
+docs
