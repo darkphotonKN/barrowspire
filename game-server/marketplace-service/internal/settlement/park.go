@@ -1,13 +1,11 @@
 package settlement
 
 import (
-	"errors"
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
 	"github.com/google/uuid"
-	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -57,8 +55,7 @@ func runUntilDone(ctx workflow.Context, listingID uuid.UUID, activityName string
 		}
 
 		// before the pivot an impossible step is not parked: the caller rolls back
-		var appErr *temporal.ApplicationError
-		if phase == beforePivot && errors.As(err, &appErr) && appErr.NonRetryable() {
+		if phase == beforePivot && impossible(err) {
 			return err
 		}
 

@@ -21,17 +21,22 @@ type Input struct {
 
 // FS NXP1W Settlement Saga
 func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListingOutput, error) {
-	marketPlaceCtx := workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueMarketplace))
-
 	// declare our own variables, temporal makes them durable because of event history
 	var frozen marketplaceactivity.FreezeListingOutput
 
-	// Step 0a
-	err := workflow.ExecuteActivity(marketPlaceCtx,
+	// Step 0a. An outage parks; an impossibility froze nothing, so its rollback
+	// knows no item (§Req 12).
+	err := runUntilDone(ctx, in.ListingID,
 		marketplaceactivity.FreezeListingActivityName,
+		bstemporal.QueueMarketplace,
+		beforePivot,
 		marketplaceactivity.FreezeListingInput{ListingID: in.ListingID},
-	).Get(marketPlaceCtx, &frozen)
+		&frozen,
+	)
 	if err != nil {
+		if impossible(err) {
+			return marketplaceactivity.FreezeListingOutput{}, rollBack(ctx, in.ListingID, marketplaceactivity.FreezeListingActivityName, err, nil)
+		}
 		return marketplaceactivity.FreezeListingOutput{}, err
 	}
 
@@ -66,14 +71,18 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 		return frozen, nil
 	}
 
-	// Step 0b
-	freezeItemCtx := workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueItems))
-
-	err = workflow.ExecuteActivity(freezeItemCtx,
+	// Step 0b. An outage parks; an item that left its seller rolls back (§Req 12).
+	err = runUntilDone(ctx, frozen.ListingID,
 		itemsactivity.FreezeItemActivityName,
+		bstemporal.QueueItems,
+		beforePivot,
 		itemsactivity.FreezeItemInput{ItemID: frozen.ItemID, SellerID: frozen.SellerID},
-	).Get(freezeItemCtx, nil)
+		nil,
+	)
 	if err != nil {
+		if impossible(err) {
+			return marketplaceactivity.FreezeListingOutput{}, rollBack(ctx, frozen.ListingID, itemsactivity.FreezeItemActivityName, err, &frozen)
+		}
 		return marketplaceactivity.FreezeListingOutput{}, err
 	}
 
