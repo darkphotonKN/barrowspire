@@ -158,6 +158,7 @@ type freezeArm struct {
 	markFailedErrs []error
 
 	markFailedIn marketplaceactivity.MarkSettlementFailedInput
+	loseAllIn    marketplaceactivity.LoseAllBidsInput
 	unfreezeIn   itemsactivity.UnfreezeItemInput
 }
 
@@ -185,6 +186,11 @@ func registerFreezeArm(env *testsuite.TestWorkflowEnvironment, arm *freezeArm) {
 		}
 		return nil
 	}, activity.RegisterOptions{Name: marketplaceactivity.MarkSettlementFailedActivityName})
+	env.RegisterActivityWithOptions(func(ctx context.Context, in marketplaceactivity.LoseAllBidsInput) error {
+		arm.record(ctx, marketplaceactivity.LoseAllBidsActivityName)
+		arm.loseAllIn = in
+		return nil
+	}, activity.RegisterOptions{Name: marketplaceactivity.LoseAllBidsActivityName})
 	env.RegisterActivityWithOptions(func(ctx context.Context, in itemsactivity.UnfreezeItemInput) error {
 		arm.record(ctx, itemsactivity.UnfreezeItemActivityName)
 		arm.unfreezeIn = in
@@ -206,8 +212,8 @@ func hasWinner(listingID, itemID, sellerID uuid.UUID) marketplaceactivity.Freeze
 
 // A 0b that can never succeed — the item left its seller, or was unfrozen —
 // rolls back (FS-NXP1W §Req 12, Edge States "Item owner changed"): the
-// exception is recorded, the listing ends SETTLEMENT_FAILED and the item goes
-// back to its seller for this listing. The run then fails, so it stands out in
+// exception is recorded, the listing ends SETTLEMENT_FAILED, every bid ends LOST
+// and the item goes back to its seller for this listing. The run then fails, so it stands out in
 // the Temporal UI, and never reaches 1a.
 func TestWorkflow_FreezeItemImpossible_RollsBackAndFails(t *testing.T) {
 	listingID, itemID, sellerID := uuid.New(), uuid.New(), uuid.New()
@@ -231,9 +237,12 @@ func TestWorkflow_FreezeItemImpossible_RollsBackAndFails(t *testing.T) {
 	assert.Equal(t, []string{
 		itemsactivity.FreezeItemActivityName,
 		marketplaceactivity.MarkSettlementFailedActivityName,
+		marketplaceactivity.LoseAllBidsActivityName,
 		itemsactivity.UnfreezeItemActivityName,
 	}, arm.calls)
 	assert.Equal(t, listingID, arm.markFailedIn.ListingID)
+	assert.Equal(t, listingID, arm.loseAllIn.ListingID, "every bid on the listing ends LOST")
+	assert.Equal(t, bstemporal.QueueMarketplace.String(), arm.queues[marketplaceactivity.LoseAllBidsActivityName])
 	assert.Equal(t, itemsactivity.UnfreezeItemInput{ItemID: itemID, SellerID: sellerID, ListingID: listingID}, arm.unfreezeIn)
 	assert.Equal(t, bstemporal.QueueMarketplace.String(), arm.queues[marketplaceactivity.MarkSettlementFailedActivityName])
 	assert.Equal(t, bstemporal.QueueItems.String(), arm.queues[itemsactivity.UnfreezeItemActivityName])
@@ -241,7 +250,8 @@ func TestWorkflow_FreezeItemImpossible_RollsBackAndFails(t *testing.T) {
 
 // A 0a that can never succeed has frozen nothing and learned no item, so the
 // rollback records the exception and asks for SETTLEMENT_FAILED — which leaves a
-// listing another flow already ended as it is — and touches no item.
+// listing another flow already ended as it is — and touches neither its bids nor
+// its item: they belong to whichever flow ended it.
 func TestWorkflow_FreezeListingImpossible_RollsBackTheListingOnly(t *testing.T) {
 	listingID := uuid.New()
 	env, noBids := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
@@ -272,7 +282,7 @@ func TestWorkflow_FreezeItemOutage_ParksInsteadOfRollingBack(t *testing.T) {
 	arm := &freezeArm{freezeItemErr: errors.New("dial tcp: connection refused")}
 	registerFreezeArm(env, arm)
 	// items recovers while parked; 1a is the first step past the freeze arm
-	env.RegisterDelayedCallback(func() { arm.freezeItemErr = nil }, 40*time.Minute)
+	env.RegisterDelayedCallback(func() { arm.freezeItemErr = nil }, stepCap+reparkInterval/2)
 	env.RegisterActivityWithOptions(func(ctx context.Context, in marketplaceactivity.SetWinningBidInput) error {
 		arm.calls = append(arm.calls, marketplaceactivity.SetWinningBidActivityName)
 		return temporal.NewNonRetryableApplicationError("stop the test here", "SetWinningBidImpossible", nil)
@@ -312,6 +322,106 @@ func TestWorkflow_RollbackActionFailsTransiently_RetriesUntilItLands(t *testing.
 		marketplaceactivity.MarkSettlementFailedActivityName, // blip
 		marketplaceactivity.MarkSettlementFailedActivityName, // blip
 		marketplaceactivity.MarkSettlementFailedActivityName, // lands
+		marketplaceactivity.LoseAllBidsActivityName,
 		itemsactivity.UnfreezeItemActivityName,
 	}, arm.calls)
+}
+
+// 0b parks on an outage, then turns out impossible on a later lap. The park's
+// exception is resolved — the step is no longer waiting on anything — so the
+// rollback opens its own, with the impossibility as its reason, and alerts. Left
+// open, the park's row would swallow the rollback's raise on the (workflow, step)
+// key and the record would still blame the outage.
+func TestWorkflow_FreezeItemParksThenImpossible_RollbackRaisesItsOwnException(t *testing.T) {
+	listingID := uuid.New()
+	env, noBids := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+		return hasWinner(listingID, uuid.New(), uuid.New()), nil
+	})
+	arm := &freezeArm{freezeItemErr: errors.New("dial tcp: connection refused")}
+	registerFreezeArm(env, arm)
+	// while parked, the item turns out to have left its seller
+	env.RegisterDelayedCallback(func() {
+		arm.freezeItemErr = temporal.NewNonRetryableApplicationError("item not freezable", "FreezeItemImpossible", nil)
+	}, stepCap+reparkInterval/2)
+
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerAcceptBid})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.Error(t, env.GetWorkflowError())
+
+	require.Len(t, noBids.raised, 2, "the park and the rollback each raise")
+	assert.Contains(t, noBids.raised[0].Reason, "connection refused")
+	assert.Contains(t, noBids.raised[1].Reason, "item not freezable", "the rollback's record names the impossibility")
+	assert.Len(t, noBids.resolved, 1, "the park's exception is resolved before the rollback raises")
+	assert.Contains(t, arm.calls, marketplaceactivity.MarkSettlementFailedActivityName)
+}
+
+// An outage is not an impossibility for 0a either (§Req 10): marketplace's own DB
+// outlasting the cap escalates and parks, and the settlement carries on once it
+// is back, with no rollback.
+func TestWorkflow_FreezeListingOutage_ParksInsteadOfRollingBack(t *testing.T) {
+	listingID := uuid.New()
+	var down = true
+	env, noBids := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+		if down {
+			return marketplaceactivity.FreezeListingOutput{}, errors.New("dial tcp: connection refused")
+		}
+		return marketplaceactivity.FreezeListingOutput{Outcome: marketplaceactivity.OutcomeNoBids, ListingID: listingID}, nil
+	})
+	arm := &freezeArm{}
+	registerFreezeArm(env, arm)
+	env.RegisterDelayedCallback(func() { down = false }, stepCap+reparkInterval/2)
+
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerExpiry})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError(), "the settlement completed once marketplace was back")
+	require.Len(t, noBids.raised, 1, "the outage escalated once")
+	assert.Equal(t, marketplaceactivity.FreezeListingActivityName, noBids.raised[0].Step)
+	assert.Len(t, noBids.resolved, 1)
+	assert.Empty(t, arm.calls, "an outage never rolls back")
+	assert.Equal(t, []string{itemsactivity.ReturnItemActivityName, marketplaceactivity.ExpireListingActivityName}, noBids.calls)
+}
+
+// Cancelling a settlement that is only parked is not an impossibility: nothing
+// is undone, and the run ends cancelled.
+func TestWorkflow_CancelledWhileParked_DoesNotRollBack(t *testing.T) {
+	listingID := uuid.New()
+	env, _ := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+		return hasWinner(listingID, uuid.New(), uuid.New()), nil
+	})
+	arm := &freezeArm{freezeItemErr: errors.New("dial tcp: connection refused")}
+	registerFreezeArm(env, arm)
+	env.RegisterDelayedCallback(env.CancelWorkflow, stepCap+reparkInterval/2)
+
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerAcceptBid})
+
+	require.True(t, env.IsWorkflowCompleted())
+	var canceled *temporal.CanceledError
+	assert.ErrorAs(t, env.GetWorkflowError(), &canceled)
+	assert.NotContains(t, arm.calls, marketplaceactivity.MarkSettlementFailedActivityName)
+}
+
+// A rollback that has started finishes even if the workflow is cancelled midway
+// (§Req 12): it runs on a context the cancellation cannot reach, so the listing,
+// the bids and the item are never left half undone.
+func TestWorkflow_CancelledDuringRollback_RollbackStillFinishes(t *testing.T) {
+	listingID := uuid.New()
+	env, _ := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+		return hasWinner(listingID, uuid.New(), uuid.New()), nil
+	})
+	blip := errors.New("dial tcp: connection refused")
+	arm := &freezeArm{
+		freezeItemErr: temporal.NewNonRetryableApplicationError("item not freezable", "FreezeItemImpossible", nil),
+		// keeps MarkSettlementFailed retrying long enough to cancel in the middle
+		markFailedErrs: []error{blip, blip, blip, blip, blip},
+	}
+	registerFreezeArm(env, arm)
+	env.RegisterDelayedCallback(env.CancelWorkflow, 5*time.Second)
+
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerAcceptBid})
+
+	require.True(t, env.IsWorkflowCompleted())
+	assert.Contains(t, arm.calls, marketplaceactivity.LoseAllBidsActivityName, "the rollback went on past the cancellation")
+	assert.Contains(t, arm.calls, itemsactivity.UnfreezeItemActivityName)
 }
