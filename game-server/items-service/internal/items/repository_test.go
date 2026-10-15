@@ -271,6 +271,105 @@ func TestTransferItem(t *testing.T) {
 	}
 }
 
+// Opt-in and committed like TestFreezeItem. UnfreezeItem is items' share of the
+// pre-pivot rollback (FS-NXP1W Req 12): the item goes back to its seller,
+// AVAILABLE, listing_id cleared — but only while it is still this listing's
+// (Req 24a). It is retried without a cap, so every outcome is success; a row it
+// does not match is already applied or no longer this settlement's to touch.
+func TestUnfreezeItem(t *testing.T) {
+	dsn := os.Getenv("ITEMS_TEST_DSN")
+	if dsn == "" {
+		t.Skip("ITEMS_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	db, err := sqlx.Connect("postgres", dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+
+	seller, stranger := uuid.New(), uuid.New()
+	earlier := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	const (
+		thisListing  = "this"
+		otherListing = "other"
+		noListing    = ""
+	)
+
+	tests := []struct {
+		name        string
+		status      string
+		owner       uuid.UUID
+		listing     string
+		skipSeed    bool
+		wantStatus  string
+		wantListing string
+		// a row the rollback does not match must come back untouched, updated_at included
+		wantUpdatedAtKept bool
+	}{
+		{name: "frozen for this listing goes back to the seller", status: "PENDING_SETTLEMENT", owner: seller, listing: thisListing,
+			wantStatus: "AVAILABLE", wantListing: noListing},
+		{name: "listed for this listing but never frozen goes back too", status: "LISTED", owner: seller, listing: thisListing,
+			wantStatus: "AVAILABLE", wantListing: noListing},
+		{name: "already back with the seller is success and changes nothing", status: "AVAILABLE", owner: seller, listing: noListing,
+			wantStatus: "AVAILABLE", wantListing: noListing, wantUpdatedAtKept: true},
+		{name: "relisted under another listing is left alone", status: "LISTED", owner: seller, listing: otherListing,
+			wantStatus: "LISTED", wantListing: otherListing, wantUpdatedAtKept: true},
+		{name: "frozen for another listing is left alone", status: "PENDING_SETTLEMENT", owner: seller, listing: otherListing,
+			wantStatus: "PENDING_SETTLEMENT", wantListing: otherListing, wantUpdatedAtKept: true},
+		{name: "owned by someone else is left alone", status: "PENDING_SETTLEMENT", owner: stranger, listing: thisListing,
+			wantStatus: "PENDING_SETTLEMENT", wantListing: thisListing, wantUpdatedAtKept: true},
+		{name: "missing item is nothing to do", skipSeed: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			itemID, listingID, otherListingID := uuid.New(), uuid.New(), uuid.New()
+			listingFor := map[string]*uuid.UUID{thisListing: &listingID, otherListing: &otherListingID, noListing: nil}
+
+			if !tt.skipSeed {
+				// listing_id at INSERT: updated_at is trigger-stamped on any UPDATE,
+				// so seeding it afterwards would hide whether the rollback touched the row
+				seedItemInstanceForListing(t, ctx, db, itemID, tt.owner, tt.status, earlier, listingFor[tt.listing])
+			}
+
+			if err := NewRepository(db).UnfreezeItem(ctx, itemID, seller, listingID); err != nil {
+				t.Fatalf("unfreeze: %v", err)
+			}
+			if tt.skipSeed {
+				return
+			}
+
+			var row struct {
+				Status    string     `db:"status"`
+				Owner     uuid.UUID  `db:"owner_member_id"`
+				ListingID *uuid.UUID `db:"listing_id"`
+				UpdatedAt time.Time  `db:"updated_at"`
+			}
+			if err := db.GetContext(ctx, &row, `SELECT status, owner_member_id, listing_id, updated_at FROM item_instances WHERE id = $1`, itemID); err != nil {
+				t.Fatalf("read back: %v", err)
+			}
+			if row.Status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", row.Status, tt.wantStatus)
+			}
+			if row.Owner != tt.owner {
+				t.Errorf("owner = %v, want %v: the rollback never changes hands", row.Owner, tt.owner)
+			}
+			want := listingFor[tt.wantListing]
+			switch {
+			case want == nil && row.ListingID != nil:
+				t.Errorf("listing_id = %v, want NULL", *row.ListingID)
+			case want != nil && (row.ListingID == nil || *row.ListingID != *want):
+				t.Errorf("listing_id = %v, want %v", row.ListingID, *want)
+			}
+			if tt.wantUpdatedAtKept && !row.UpdatedAt.Equal(earlier) {
+				t.Errorf("updated_at = %v, want untouched %v", row.UpdatedAt, earlier)
+			}
+		})
+	}
+}
+
 func seedItemInstance(t *testing.T, ctx context.Context, db *sqlx.DB, itemID, owner uuid.UUID, status string, updatedAt time.Time) {
 	t.Helper()
 	seedItemInstanceAtLevel(t, ctx, db, itemID, owner, status, updatedAt, 1)
@@ -278,6 +377,18 @@ func seedItemInstance(t *testing.T, ctx context.Context, db *sqlx.DB, itemID, ow
 
 // seedItemInstanceAtLevel seeds an instance whose template requires level.
 func seedItemInstanceAtLevel(t *testing.T, ctx context.Context, db *sqlx.DB, itemID, owner uuid.UUID, status string, updatedAt time.Time, level int) {
+	t.Helper()
+	seedItem(t, ctx, db, itemID, owner, status, updatedAt, level, nil)
+}
+
+// seedItemInstanceForListing seeds an instance already reserved for listingID
+// (nil for none), written in the INSERT so updated_at stays as given.
+func seedItemInstanceForListing(t *testing.T, ctx context.Context, db *sqlx.DB, itemID, owner uuid.UUID, status string, updatedAt time.Time, listingID *uuid.UUID) {
+	t.Helper()
+	seedItem(t, ctx, db, itemID, owner, status, updatedAt, 1, listingID)
+}
+
+func seedItem(t *testing.T, ctx context.Context, db *sqlx.DB, itemID, owner uuid.UUID, status string, updatedAt time.Time, level int, listingID *uuid.UUID) {
 	t.Helper()
 
 	var rarityID uuid.UUID
@@ -302,9 +413,9 @@ func seedItemInstanceAtLevel(t *testing.T, ctx context.Context, db *sqlx.DB, ite
 		db.ExecContext(ctx, `DELETE FROM weapons WHERE id = $1`, weaponID)
 	})
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO item_instances (id, template_id, owner_member_id, source, item_type, name, rarity_id, attack_power, critical_rate, weapon_type, status, updated_at)
-		 VALUES ($1, $2, $3, 'extracted', 'weapon', 'Test Blade', $4, 6, 0.08, 'sword', $5, $6)`,
-		itemID, templateID, owner, rarityID, status, updatedAt); err != nil {
+		`INSERT INTO item_instances (id, template_id, owner_member_id, source, item_type, name, rarity_id, attack_power, critical_rate, weapon_type, status, updated_at, listing_id)
+		 VALUES ($1, $2, $3, 'extracted', 'weapon', 'Test Blade', $4, 6, 0.08, 'sword', $5, $6, $7)`,
+		itemID, templateID, owner, rarityID, status, updatedAt, listingID); err != nil {
 		t.Fatalf("item instance: %v", err)
 	}
 }

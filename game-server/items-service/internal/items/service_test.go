@@ -260,3 +260,50 @@ func withTemplate(item *pb.Item) *pb.Item {
 	item.TemplateId = uuid.NewString()
 	return item
 }
+
+// unfreezeRepo stubs the one repository call UnfreezeItem makes, and records the
+// IDs it was handed so the test can see they arrive in the right order.
+type unfreezeRepo struct {
+	Repository
+	err error
+
+	gotItemID, gotSellerID, gotListingID uuid.UUID
+}
+
+func (r *unfreezeRepo) UnfreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) error {
+	r.gotItemID, r.gotSellerID, r.gotListingID = itemID, sellerID, listingID
+	return r.err
+}
+
+// UnfreezeItem is the pre-pivot rollback (FS-NXP1W Req 12). The repository
+// already treats every unmatched row as success, so the service only hands the
+// IDs through and lets a database failure reach Temporal to be retried.
+func TestServiceUnfreezeItem(t *testing.T) {
+	dbDown := errors.New("connection refused")
+
+	tests := []struct {
+		name    string
+		repoErr error
+		wantErr error
+	}{
+		{name: "unfrozen or nothing to do is success"},
+		{name: "a database failure is returned for a retry", repoErr: dbDown, wantErr: dbDown},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &unfreezeRepo{err: tt.repoErr}
+			itemID, sellerID, listingID := uuid.New(), uuid.New(), uuid.New()
+
+			err := (&service{repo: repo}).UnfreezeItem(context.Background(), itemID, sellerID, listingID)
+
+			if !errors.Is(err, tt.wantErr) || (tt.wantErr == nil && err != nil) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if repo.gotItemID != itemID || repo.gotSellerID != sellerID || repo.gotListingID != listingID {
+				t.Errorf("repo got (item %v, seller %v, listing %v), want (%v, %v, %v)",
+					repo.gotItemID, repo.gotSellerID, repo.gotListingID, itemID, sellerID, listingID)
+			}
+		})
+	}
+}
