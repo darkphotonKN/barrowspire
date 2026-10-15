@@ -14,7 +14,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 
 - The gateway's job is **only** Gin HTTP routing + a middleware/setup suite + forwarding to
   downstream services (gRPC, plus one AMQP path). It holds **no business logic and
-  no database of its own** — `cmd/main.go` explicitly notes it is stateless.
+  no database of its own** — `cmd/server/main.go` explicitly notes it is stateless.
 - Any in-repo DB artifacts (SQL migrations, `schema.sql`, local entity models) and any handler
   logic that duplicates a downstream service are **legacy** left over from before those
   concerns moved into their own services, and are **out of scope** for this spec. They are
@@ -97,7 +97,7 @@ first.
 - A holder of domain/business logic. Handlers marshal request → call downstream → map response.
 - A saga orchestrator or event processor beyond publishing the signup command.
 
-## Setup & lifecycle (`cmd/main.go`)
+## Setup & lifecycle (`cmd/server/main.go`)
 
 On startup, in order: ✅ DONE
 
@@ -191,7 +191,7 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
 > synchronous gRPC call, and the routing key, both publishers, and auth-service's consumer are
 > gone. gRPC is now the gateway's only downstream integration pattern.
 >
-> REVIEW: `cmd/main.go` still dials RabbitMQ and `SetupRouter` still takes a `*amqp.Channel`
+> REVIEW: `cmd/server/main.go` still dials RabbitMQ and `SetupRouter` still takes a `*amqp.Channel`
 > nothing reads, so the gateway keeps requiring `RABBITMQ_*` for a dependency it no longer uses.
 > Finish the removal or record why the connection is retained.
 
@@ -208,8 +208,8 @@ Present in the tree but **out of scope** — the gateway is declared stateless a
 duplicate concerns now owned by dedicated services. Listed so audits don't mistake them for
 gateway behavior. ⏳ (cleanup)
 
-- `migrations/` (38 files) + `schema.sql` — includes `create_members`, `base_items`, `items`,
-  etc., i.e. tables now owned by auth-service / item-service. No code in the gateway reads them.
+- `schema.sql` — dump including `members`, `base_items`, `items`, etc., i.e. tables now owned
+  by auth-service / item-service. No code in the gateway reads it. (`migrations/` already removed.)
 - `internal/models/entities.go` — local entity models with no DB behind them.
 - `docker-compose.yml`, `.air.toml`, `bin/`, `tmp/` — tooling, not behavior.
   > REVIEW: confirm none of the above is still referenced before deletion, then remove so the
