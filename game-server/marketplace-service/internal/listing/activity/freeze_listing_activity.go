@@ -30,6 +30,7 @@ func (a *Activities) FreezeListing(ctx context.Context, inp commonactivity.Freez
 		ListingID: res.ListingID,
 		ItemID:    res.ItemID,
 		SellerID:  res.SellerID,
+		BidIDs:    res.BidIDs,
 	}
 
 	// legit no winner case when there are no bids, return early with no winner and no bids outcome

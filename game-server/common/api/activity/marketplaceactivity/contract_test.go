@@ -17,6 +17,10 @@ func TestFreezeListingOutput_MatchesGolden(t *testing.T) {
 		WinnerBidID:    uuid.MustParse("44444444-4444-4444-8444-444444444444"),
 		WinnerMemberID: uuid.MustParse("55555555-5555-4555-8555-555555555555"),
 		Amount:         250,
+		BidIDs: []uuid.UUID{
+			uuid.MustParse("44444444-4444-4444-8444-444444444444"),
+			uuid.MustParse("66666666-6666-4666-8666-666666666666"),
+		},
 	})
 }
 

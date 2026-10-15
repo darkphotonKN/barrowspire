@@ -79,6 +79,9 @@ type FreezeListingDto struct {
 	ItemID    uuid.UUID
 	SellerID  uuid.UUID
 	Winner    *FreezeWinner
+	// BidIDs is every bid on the frozen listing, whatever its status: the set
+	// whose holds settlement releases (FS-NXP1W §Req 12, 29)
+	BidIDs []uuid.UUID
 }
 
 type FreezeWinner struct {
