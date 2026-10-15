@@ -32,6 +32,7 @@ func TestListingStatusConstantsAreAdmittedByTheCheckConstraint(t *testing.T) {
 		listing.StatusPendingSettlement,
 		listing.StatusExpired,
 		listing.StatusSold,
+		listing.StatusSettlementFailed,
 	} {
 		require.Containsf(t, admitted, string(s),
 			"listings.status CHECK admits %v, so writing %q fails; add a migration or fix the constant",

@@ -366,3 +366,45 @@ func TestCanAcceptBid(t *testing.T) {
 		})
 	}
 }
+
+// The pre-pivot rollback ends a frozen listing in SETTLEMENT_FAILED (FS-NXP1W
+// §Req 12). It is retried without a cap, so a replay is success, and it never
+// overwrites a final status another flow set (Edge States, "Listing withdrawn
+// before 0a runs") — the 0a impossibility that sends a settlement here is exactly
+// a listing in such a status.
+func TestMarkSettlementFailed(t *testing.T) {
+	tests := []struct {
+		name string
+		from ListingStatus
+		want ListingStatus
+	}{
+		{"pending settlement fails", StatusPendingSettlement, StatusSettlementFailed},
+		{"already failed is applied", StatusSettlementFailed, StatusSettlementFailed},
+		{"cancelled is left as it is", StatusCancelled, StatusCancelled},
+		{"sold is left as it is", StatusSold, StatusSold},
+		{"expired is left as it is", StatusExpired, StatusExpired},
+		{"active is left as it is", StatusActive, StatusActive},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := listingWithBids(t, tt.from)
+
+			err := l.MarkSettlementFailed(time.Now())
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, l.Snapshot().Status)
+		})
+	}
+}
+
+// SETTLEMENT_FAILED is final: nothing moves a listing out of it, so 0a refuses
+// to freeze it and it is never re-settled (§Req 12).
+func TestSettlementFailed_IsNeverFrozenAgain(t *testing.T) {
+	l := listingWithBids(t, StatusSettlementFailed)
+
+	err := l.Freeze(time.Now())
+
+	assert.ErrorIs(t, err, ErrInvalidListingState)
+	assert.Equal(t, StatusSettlementFailed, l.Snapshot().Status)
+}
