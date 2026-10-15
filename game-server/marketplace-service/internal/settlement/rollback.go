@@ -27,7 +27,8 @@ func impossible(err error) bool {
 //
 // frozen is nil when 0a itself was impossible: nothing was frozen and no item is
 // known, so only the listing is asked to fail — and MarkSettlementFailed leaves a
-// listing another flow already ended as it is.
+// listing another flow already ended as it is. Its bids and item belong to that
+// flow and are not touched.
 //
 // The actions run uncapped (§Req 36) on a context the workflow's cancellation
 // cannot reach, so a rollback that has started never stops halfway. They are
@@ -62,6 +63,16 @@ func rollBack(ctx workflow.Context, listingID uuid.UUID, step string, cause erro
 
 	if frozen == nil {
 		return failed
+	}
+
+	// holds stay RESERVED until ReleaseAllHolds is wired (I-NXP1W-6); a LOST bid
+	// still claims its hold, so the reconciler leaves that gold to settlement
+	err = workflow.ExecuteActivity(marketCtx,
+		marketplaceactivity.LoseAllBidsActivityName,
+		marketplaceactivity.LoseAllBidsInput{ListingID: listingID},
+	).Get(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("%w; losing the bids: %w", failed, err)
 	}
 
 	err = workflow.ExecuteActivity(itemsCtx,

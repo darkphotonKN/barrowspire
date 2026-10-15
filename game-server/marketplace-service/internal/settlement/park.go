@@ -56,6 +56,12 @@ func runUntilDone(ctx workflow.Context, listingID uuid.UUID, activityName string
 
 		// before the pivot an impossible step is not parked: the caller rolls back
 		if phase == beforePivot && impossible(err) {
+			// the step is no longer waiting on anything, so an exception an earlier
+			// lap raised is closed: the rollback opens its own under the same
+			// (workflow, step) key, and an open park row would swallow it
+			if raised.ExceptionID != uuid.Nil {
+				resolveException(ctx, marketCtx, raised.ExceptionID)
+			}
 			return err
 		}
 
