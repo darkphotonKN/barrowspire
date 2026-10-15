@@ -78,3 +78,27 @@ func TestFreezeListingUC_OnlyUnconfirmedBids_ReturnsNilWinner(t *testing.T) {
 
 	assert.Nil(t, out.Winner)
 }
+
+// 0a hands the workflow every bid on the frozen listing, whatever its status: the
+// set whose holds a pre-pivot rollback releases (§Req 12), read under the same lock
+// that froze the listing, so no bid can arrive after it. Bids whose gold was never
+// held, or was already given back, are wallet's to skip.
+func TestFreezeListingUC_ReturnsEveryBidOnTheListing(t *testing.T) {
+	l := activeListing(t, 100)
+	now := time.Now()
+	outbidder, leader, withdrawer := uuid.New(), uuid.New(), uuid.New()
+	outbidID, leaderID, withdrawnID := uuid.New(), uuid.New(), uuid.New()
+
+	require.NoError(t, l.PlaceBidWithID(outbidID, outbidder, 150, uuid.Nil, now))
+	require.NoError(t, l.ConfirmBid(outbidID, now))
+	require.NoError(t, l.PlaceBidWithID(leaderID, leader, 200, uuid.Nil, now))
+	require.NoError(t, l.ConfirmBid(leaderID, now))
+	require.NoError(t, l.PlaceBidWithID(withdrawnID, withdrawer, 250, uuid.Nil, now))
+	require.NoError(t, l.WithdrawBid(withdrawnID, withdrawer, now))
+
+	out := freeze(t, &fakeRepo{listing: l})
+
+	assert.ElementsMatch(t, []uuid.UUID{outbidID, leaderID, withdrawnID}, out.BidIDs)
+	require.NotNil(t, out.Winner)
+	assert.Equal(t, leaderID, out.Winner.WinnerBidID)
+}
