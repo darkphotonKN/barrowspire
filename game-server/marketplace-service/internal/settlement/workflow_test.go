@@ -17,6 +17,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/workflow"
 )
 
 // noBidsArm records what the no-bids arm's fakes were asked to do, in order, so a
@@ -164,6 +165,8 @@ type freezeArm struct {
 	unfreezeIn    itemsactivity.UnfreezeItemInput
 	setWinningErr error
 	commitHoldErr error
+	// releaseAllErrs is consumed one per attempt, like markFailedErrs
+	releaseAllErrs []error
 }
 
 func (a *freezeArm) record(ctx context.Context, name string) {
@@ -198,6 +201,11 @@ func registerFreezeArm(env *testsuite.TestWorkflowEnvironment, arm *freezeArm) {
 	env.RegisterActivityWithOptions(func(ctx context.Context, in walletactivity.ReleaseAllHoldsInput) error {
 		arm.record(ctx, walletactivity.ReleaseAllHoldsActivityName)
 		arm.releaseAllIn = in
+		if len(arm.releaseAllErrs) > 0 {
+			err := arm.releaseAllErrs[0]
+			arm.releaseAllErrs = arm.releaseAllErrs[1:]
+			return err
+		}
 		return nil
 	}, activity.RegisterOptions{Name: walletactivity.ReleaseAllHoldsActivityName})
 	env.RegisterActivityWithOptions(func(ctx context.Context, in itemsactivity.UnfreezeItemInput) error {
@@ -513,4 +521,78 @@ func TestWorkflow_PivotArmImpossible_RollsBackEverything(t *testing.T) {
 			assert.Equal(t, itemsactivity.UnfreezeItemInput{ItemID: itemID, SellerID: sellerID, ListingID: listingID}, arm.unfreezeIn)
 		})
 	}
+}
+
+// A rollback that was already running when ReleaseAllHolds shipped replays a
+// history without it. The version gate keeps that replay on the old command
+// sequence — LoseAllBids straight to UnfreezeItem — instead of failing it on a
+// nondeterminism error (FS-NXP1W Edge States, "Workflow code deployed while
+// settlements are open"). Its holds are left to the sweeper, as before.
+func TestWorkflow_RollbackRecordedBeforeReleaseAllHolds_ReplaysWithoutIt(t *testing.T) {
+	listingID := uuid.New()
+	env, _ := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+		return hasWinner(listingID, uuid.New(), uuid.New()), nil
+	})
+	arm := &freezeArm{freezeItemErr: temporal.NewNonRetryableApplicationError("item not freezable", "FreezeItemImpossible", nil)}
+	registerFreezeArm(env, arm)
+	env.OnGetVersion(releaseAllHoldsChange, workflow.DefaultVersion, releaseAllHoldsVersion).Return(workflow.DefaultVersion)
+
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerAcceptBid})
+
+	require.True(t, env.IsWorkflowCompleted())
+	assert.Equal(t, []string{
+		itemsactivity.FreezeItemActivityName,
+		marketplaceactivity.MarkSettlementFailedActivityName,
+		marketplaceactivity.LoseAllBidsActivityName,
+		itemsactivity.UnfreezeItemActivityName,
+	}, arm.calls)
+}
+
+// Wallet down mid-rollback: ReleaseAllHolds is retried without a cap until it
+// lands, and only then does the item go back — the rollback never stops between
+// the gold and the item (§Req 12, 36).
+func TestWorkflow_ReleaseAllHoldsFailsTransiently_RetriesThenUnfreezes(t *testing.T) {
+	listingID := uuid.New()
+	env, _ := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+		return hasWinner(listingID, uuid.New(), uuid.New()), nil
+	})
+	blip := errors.New("dial tcp: connection refused")
+	arm := &freezeArm{
+		freezeItemErr:  temporal.NewNonRetryableApplicationError("item not freezable", "FreezeItemImpossible", nil),
+		releaseAllErrs: []error{blip, blip},
+	}
+	registerFreezeArm(env, arm)
+
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerAcceptBid})
+
+	require.True(t, env.IsWorkflowCompleted())
+	assert.Equal(t, []string{
+		itemsactivity.FreezeItemActivityName,
+		marketplaceactivity.MarkSettlementFailedActivityName,
+		marketplaceactivity.LoseAllBidsActivityName,
+		walletactivity.ReleaseAllHoldsActivityName, // blip
+		walletactivity.ReleaseAllHoldsActivityName, // blip
+		walletactivity.ReleaseAllHoldsActivityName, // lands
+		itemsactivity.UnfreezeItemActivityName,
+	}, arm.calls)
+}
+
+// A 0a result recorded before BidIDs existed decodes it as nil. The rollback
+// still runs to the end — ReleaseAllHolds is handed no bids and wallet releases
+// none — rather than failing on the missing field.
+func TestWorkflow_FrozenWithoutBidIDs_RollsBackReleasingNothing(t *testing.T) {
+	listingID, itemID, sellerID := uuid.New(), uuid.New(), uuid.New()
+	frozen := hasWinner(listingID, itemID, sellerID)
+	frozen.BidIDs = nil
+	env, _ := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+		return frozen, nil
+	})
+	arm := &freezeArm{freezeItemErr: temporal.NewNonRetryableApplicationError("item not freezable", "FreezeItemImpossible", nil)}
+	registerFreezeArm(env, arm)
+
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerAcceptBid})
+
+	require.True(t, env.IsWorkflowCompleted())
+	assert.Empty(t, arm.releaseAllIn.BidIDs)
+	assert.Contains(t, arm.calls, itemsactivity.UnfreezeItemActivityName, "the rollback still finishes")
 }
