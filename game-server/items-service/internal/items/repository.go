@@ -1167,6 +1167,35 @@ func (r *repository) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID)
 	return frozen, nil
 }
 
+// UnfreezeItem is items' share of the pre-pivot rollback (FS-NXP1W Req 12): the
+// item goes back to its seller, AVAILABLE, listing_id cleared. One conditional
+// write, scoped to this listing (Req 24a), so a retry after the seller relisted
+// the item leaves the new listing's item alone.
+//
+// LISTED is matched as well as PENDING_SETTLEMENT: a rollback for a 0b that never
+// froze the item still ends the listing, and its reservation with it.
+//
+// Zero rows is success, never an error. The rollback is retried without a cap, so
+// it must end: an item this write does not match is already back with its seller,
+// relisted, or no longer this settlement's to touch.
+func (r *repository) UnfreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) error {
+	unfreeze := `
+		UPDATE item_instances
+		SET status = 'AVAILABLE',
+			listing_id = NULL
+		WHERE id = $1
+		AND owner_member_id = $2
+		AND listing_id = $3
+		AND status IN ('PENDING_SETTLEMENT', 'LISTED')
+	`
+
+	if _, err := r.DB.ExecContext(ctx, unfreeze, itemID, sellerID, listingID); err != nil {
+		return wrapDBErr("unfreeze item", err)
+	}
+
+	return nil
+}
+
 // NB1
 var (
 	ErrItemCorrupted = errors.New("item corrupted")

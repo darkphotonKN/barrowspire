@@ -105,6 +105,7 @@ type Repository interface {
 	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
 	FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) (bool, error)
 	TransferItem(ctx context.Context, itemID, buyerID, listingID uuid.UUID) (bool, error)
+	UnfreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) error
 
 	// public item facts, for listing pages
 	GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error)
@@ -1204,6 +1205,17 @@ func (s *service) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) er
 
 	if !frozen {
 		return fmt.Errorf("freeze item %v for seller %v: %w", itemID, sellerID, ErrItemNotFreezable)
+	}
+
+	return nil
+}
+
+// UnfreezeItem is the pre-pivot rollback (FS-NXP1W Req 12): the item goes back
+// to its seller. Every row the write does not match is success in the repository,
+// so the only error here is the database failing, which Temporal retries.
+func (s *service) UnfreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) error {
+	if err := s.repo.UnfreezeItem(ctx, itemID, sellerID, listingID); err != nil {
+		return fmt.Errorf("unfreeze item %v for listing %v: %w", itemID, listingID, err)
 	}
 
 	return nil

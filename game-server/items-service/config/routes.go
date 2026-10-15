@@ -24,6 +24,7 @@ type Activities struct {
 	FreezeItemActivity   *items.FreezeItemsActivity
 	ReturnItemActivity   *items.ReturnItemActivity
 	TransferItemActivity *items.TransferItemsActivity
+	UnfreezeItemActivity *items.UnfreezeItemActivity
 }
 
 // SetupServices initializes all services and their dependencies
@@ -44,6 +45,7 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, 
 	freezeItemActivity := items.NewItemsActivity(service)
 	returnItemActivity := items.NewReturnItemsActivity(service)
 	transferItemActivity := items.NewTransferItemsActivity(service)
+	unfreezeItemActivity := items.NewUnfreezeItemActivity(service)
 
 	// Create gRPC handler with service and auth client
 	handler := items.NewHandler(service, authClient)
@@ -79,6 +81,7 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, 
 		FreezeItemActivity:   freezeItemActivity,
 		ReturnItemActivity:   returnItemActivity,
 		TransferItemActivity: transferItemActivity,
+		UnfreezeItemActivity: unfreezeItemActivity,
 	}
 }
 
