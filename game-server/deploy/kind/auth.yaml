@@ -1,30 +1,65 @@
+# Reference copy: only this file carries comments. Other services follow the same shape.
+
+# Deployment: the desired state. The Deployment controller creates a ReplicaSet,
+# and the ReplicaSet controller keeps exactly `replicas` pods alive. A missing pod
+# is replaced by a NEW pod (new name, new IP), never restarted in place.
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: auth }
 spec:
+  # How many copies run. Above 1, gRPC clients pin to one pod (ADR-0022),
+  # so scaling needs a headless Service plus round_robin.
   replicas: 1
+  # The label link: this Deployment owns the pods carrying app: auth.
+  # Must match template.metadata.labels below or the API rejects it.
   selector: { matchLabels: { app: auth } }
   template:
     metadata: { labels: { app: auth } }
     spec:
       containers:
         - name: auth
+          # Which build of the code runs. KinD: the image you built and `kind load`ed.
+          # GKE: registry path plus version tag. Changing it triggers a rolling update.
           image: auth:dev
           imagePullPolicy: IfNotPresent
+          # The port net.Listen(":"+port) opens; must match GRPC_AUTH_ADDR in the ConfigMap.
+          # The name lets other fields say `grpc` instead of repeating 7116.
           ports: [{ containerPort: 7116, name: grpc }]
+          # Every key in the auth ConfigMap and auth Secret becomes an env var,
+          # so os.Getenv works unchanged. The k8s version of .env.
+          # Same key in both: the later one (Secret) wins.
+          # Editing the ConfigMap does not reach running pods: kubectl rollout restart deployment/auth
           envFrom:
             - configMapRef: { name: auth }
             - secretRef: { name: auth }
           resources:
+            # Reserved by the scheduler. On GKE Autopilot this is what you are billed for.
+            # 100m = 0.1 CPU.
             requests: { cpu: 100m, memory: 64Mi }
+            # CPU over the limit: throttled (shows up as latency in traces).
+            # Memory over the limit: killed instantly, no Go log. Look for
+            # `OOMKilled` / exit code 137 in `kubectl describe pod`, and read
+            # the dead container with `kubectl logs <pod> --previous`.
+            # Fix with a higher limit or GOMEMLIMIT (~90% of the limit) in the ConfigMap.
             limits: { cpu: 500m, memory: 128Mi }
+          # Until this passes, the pod is left out of the Service and gets no traffic.
+          # TCP only proves the port is open, not that auth can reach its DB.
+          # Upgrade later: grpc_health_v1 in code, then `grpc: { port: 7116 }` here.
+          # No livenessProbe yet on purpose: a bad one causes restart loops.
           readinessProbe:
             tcpSocket: { port: grpc }
             periodSeconds: 5
 ---
+# Service: a stable virtual IP plus the DNS name `auth`, routed to whichever
+# pods currently match the selector and pass readiness. Callers never see pod IPs.
 apiVersion: v1
 kind: Service
+# This name IS the DNS name: other services use AUTH_ADDR=auth:7116.
+# Renaming it breaks every caller.
 metadata: { name: auth }
 spec:
+  # Which pods get traffic: same label as the Deployment's pods. The label is
+  # the only link; the Service and Deployment never reference each other.
   selector: { app: auth }
+  # port: what callers dial. targetPort: the container port (by name).
   ports: [{ port: 7116, targetPort: grpc }]
