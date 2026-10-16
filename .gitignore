@@ -289,4 +289,4 @@ temp/
 .tools/
 
 # Built Go binaries committed by mistake
-game-server/game-service/server
+/game-server/*/server
