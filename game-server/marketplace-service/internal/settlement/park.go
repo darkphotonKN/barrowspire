@@ -96,8 +96,9 @@ func runUntilDone(ctx workflow.Context, listingID uuid.UUID, activityName string
 	}
 }
 
-// resolveException closes the exception once its step has succeeded. The step is
-// already done, so a resolve that cannot land is logged rather than parking or
+// resolveException closes the exception once its step no longer waits: it has
+// succeeded, or it was impossible and the rollback raises its own. Either way the
+// step is over, so a resolve that cannot land is logged rather than parking or
 // failing the settlement over bookkeeping.
 func resolveException(ctx, marketCtx workflow.Context, exceptionID uuid.UUID) {
 	err := workflow.ExecuteActivity(marketCtx,
@@ -105,7 +106,7 @@ func resolveException(ctx, marketCtx workflow.Context, exceptionID uuid.UUID) {
 		marketplaceactivity.ResolveSettlementExceptionInput{ExceptionID: exceptionID},
 	).Get(ctx, nil)
 	if err != nil {
-		workflow.GetLogger(ctx).Warn("settlement exception left open after its step succeeded",
+		workflow.GetLogger(ctx).Warn("settlement exception left open after its step stopped waiting",
 			"exceptionID", exceptionID, "error", err)
 	}
 }
