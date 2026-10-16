@@ -166,11 +166,29 @@ type freezeArm struct {
 	commitHoldErr error
 	// releaseAllErrs is consumed one per attempt, like markFailedErrs
 	releaseAllErrs []error
+
+	// the tail, past the pivot. tailErrs is keyed by step and consumed one per
+	// attempt, like markFailedErrs.
+	tailErrs        map[string][]error
+	releaseLosingIn walletactivity.ReleaseLosingHoldsInput
+	creditIns       []walletactivity.CreditSellerInput
+	creditRunID     string
+	transferIn      itemsactivity.TransferItemInput
+	markSoldIn      marketplaceactivity.MarkSoldInput
 }
 
 func (a *freezeArm) record(ctx context.Context, name string) {
 	a.calls = append(a.calls, name)
 	a.queues[name] = activity.GetInfo(ctx).TaskQueue
+}
+
+func (a *freezeArm) tailErr(name string) error {
+	errs := a.tailErrs[name]
+	if len(errs) == 0 {
+		return nil
+	}
+	a.tailErrs[name] = errs[1:]
+	return errs[0]
 }
 
 // registerFreezeArm stands fakes in for 0b and the rollback actions. Nothing past
@@ -225,6 +243,36 @@ func registerPivotArm(env *testsuite.TestWorkflowEnvironment, arm *freezeArm) {
 		arm.record(ctx, walletactivity.CommitHoldActivityName)
 		return walletactivity.CommitHoldOutput{}, arm.commitHoldErr
 	}, activity.RegisterOptions{Name: walletactivity.CommitHoldActivityName})
+}
+
+// registerTailArm stands fakes in for the steps past the pivot, on top of
+// registerPivotArm. Step 5 AppendLedgerTx is not registered: the ledger side does
+// not exist yet, and the workflow must not schedule it.
+func registerTailArm(env *testsuite.TestWorkflowEnvironment, arm *freezeArm) {
+	if arm.tailErrs == nil {
+		arm.tailErrs = map[string][]error{}
+	}
+	env.RegisterActivityWithOptions(func(ctx context.Context, in walletactivity.ReleaseLosingHoldsInput) (walletactivity.ReleaseLosingHoldsOutput, error) {
+		arm.record(ctx, walletactivity.ReleaseLosingHoldsActivityName)
+		arm.releaseLosingIn = in
+		return walletactivity.ReleaseLosingHoldsOutput{}, arm.tailErr(walletactivity.ReleaseLosingHoldsActivityName)
+	}, activity.RegisterOptions{Name: walletactivity.ReleaseLosingHoldsActivityName})
+	env.RegisterActivityWithOptions(func(ctx context.Context, in walletactivity.CreditSellerInput) (walletactivity.CreditSellerOutput, error) {
+		arm.record(ctx, walletactivity.CreditSellerActivityName)
+		arm.creditIns = append(arm.creditIns, in)
+		arm.creditRunID = activity.GetInfo(ctx).WorkflowExecution.ID
+		return walletactivity.CreditSellerOutput{SellerWalletAccountID: uuid.New()}, arm.tailErr(walletactivity.CreditSellerActivityName)
+	}, activity.RegisterOptions{Name: walletactivity.CreditSellerActivityName})
+	env.RegisterActivityWithOptions(func(ctx context.Context, in itemsactivity.TransferItemInput) (itemsactivity.TransferItemOutput, error) {
+		arm.record(ctx, itemsactivity.TransferItemActivityName)
+		arm.transferIn = in
+		return itemsactivity.TransferItemOutput{}, arm.tailErr(itemsactivity.TransferItemActivityName)
+	}, activity.RegisterOptions{Name: itemsactivity.TransferItemActivityName})
+	env.RegisterActivityWithOptions(func(ctx context.Context, in marketplaceactivity.MarkSoldInput) error {
+		arm.record(ctx, marketplaceactivity.MarkSoldActivityName)
+		arm.markSoldIn = in
+		return arm.tailErr(marketplaceactivity.MarkSoldActivityName)
+	}, activity.RegisterOptions{Name: marketplaceactivity.MarkSoldActivityName})
 }
 
 func hasWinner(listingID, itemID, sellerID uuid.UUID) marketplaceactivity.FreezeListingOutput {
@@ -318,6 +366,7 @@ func TestWorkflow_FreezeItemOutage_ParksInsteadOfRollingBack(t *testing.T) {
 	arm := &freezeArm{freezeItemErr: errors.New("dial tcp: connection refused")}
 	registerFreezeArm(env, arm)
 	registerPivotArm(env, arm)
+	registerTailArm(env, arm)
 	// items recovers while parked
 	env.RegisterDelayedCallback(func() { arm.freezeItemErr = nil }, stepCap+reparkInterval/2)
 
@@ -569,4 +618,133 @@ func TestWorkflow_FrozenWithoutBidIDs_RollsBackReleasingNothing(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	assert.Empty(t, arm.releaseAllIn.BidIDs)
 	assert.Contains(t, arm.calls, itemsactivity.UnfreezeItemActivityName, "the rollback still finishes")
+}
+
+// Past the pivot the tail runs 2 → 3 → 4 → 6, each on its owner's queue, and the
+// settlement completes (FS-NXP1W §Req 6, 29–33). Step 5 AppendLedgerTx is not
+// wired yet: no ledger activity is registered, so scheduling it would fail the run.
+func TestWorkflow_HasWinner_RunsTheTailInOrderAndCompletes(t *testing.T) {
+	listingID, itemID, sellerID := uuid.New(), uuid.New(), uuid.New()
+	frozen := hasWinner(listingID, itemID, sellerID)
+	env, noBids := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+		return frozen, nil
+	})
+	arm := &freezeArm{}
+	registerFreezeArm(env, arm)
+	registerPivotArm(env, arm)
+	registerTailArm(env, arm)
+
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerAcceptBid})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	assert.Empty(t, noBids.raised, "nothing escalated")
+	assert.Equal(t, []string{
+		itemsactivity.FreezeItemActivityName,
+		marketplaceactivity.SetWinningBidActivityName,
+		walletactivity.CommitHoldActivityName,
+		walletactivity.ReleaseLosingHoldsActivityName,
+		walletactivity.CreditSellerActivityName,
+		itemsactivity.TransferItemActivityName,
+		marketplaceactivity.MarkSoldActivityName,
+	}, arm.calls)
+
+	// 2: every bid 0a found; wallet filters the winner out itself
+	assert.Equal(t, walletactivity.ReleaseLosingHoldsInput{
+		ListingID:    listingID,
+		WinnerBidID:  frozen.WinnerBidID,
+		LosingBidIDs: frozen.BidIDs,
+	}, arm.releaseLosingIn)
+	assert.Equal(t, bstemporal.QueueWallet.String(), arm.queues[walletactivity.ReleaseLosingHoldsActivityName])
+
+	// 3: the key is workflow ID + activity name (§Req 18, ADR-0009)
+	require.Len(t, arm.creditIns, 1)
+	assert.Equal(t, walletactivity.CreditSellerInput{
+		SellerID:       sellerID,
+		Amount:         frozen.Amount,
+		IdempotencyKey: arm.creditRunID + ":" + walletactivity.CreditSellerActivityName,
+	}, arm.creditIns[0])
+	assert.Equal(t, bstemporal.QueueWallet.String(), arm.queues[walletactivity.CreditSellerActivityName])
+
+	// 4: the item goes to the winner
+	assert.Equal(t, itemsactivity.TransferItemInput{
+		ItemID:        itemID,
+		BuyerMemberID: frozen.WinnerMemberID,
+		ListingID:     listingID,
+	}, arm.transferIn)
+	assert.Equal(t, bstemporal.QueueItems.String(), arm.queues[itemsactivity.TransferItemActivityName])
+
+	// 6
+	assert.Equal(t, marketplaceactivity.MarkSoldInput{ListingID: listingID}, arm.markSoldIn)
+	assert.Equal(t, bstemporal.QueueMarketplace.String(), arm.queues[marketplaceactivity.MarkSoldActivityName])
+}
+
+// Past the pivot there is no way back (§Req 13, 14): a tail step that is
+// impossible is an invariant breach that escalates and parks like an outage, and
+// the settlement completes once it gets through. Nothing rolls back, and only the
+// parked step runs again.
+func TestWorkflow_TailImpossible_ParksAndNeverRollsBack(t *testing.T) {
+	impossible := temporal.NewNonRetryableApplicationError("invariant breach", "Impossible", nil)
+
+	for _, step := range []string{
+		walletactivity.ReleaseLosingHoldsActivityName,
+		walletactivity.CreditSellerActivityName,
+		itemsactivity.TransferItemActivityName,
+		marketplaceactivity.MarkSoldActivityName,
+	} {
+		t.Run(step, func(t *testing.T) {
+			listingID := uuid.New()
+			env, noBids := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+				return hasWinner(listingID, uuid.New(), uuid.New()), nil
+			})
+			arm := &freezeArm{tailErrs: map[string][]error{step: {impossible}}}
+			registerFreezeArm(env, arm)
+			registerPivotArm(env, arm)
+			registerTailArm(env, arm)
+
+			env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerAcceptBid})
+
+			require.True(t, env.IsWorkflowCompleted())
+			require.NoError(t, env.GetWorkflowError(), "a settlement never fails past the pivot")
+			require.Len(t, noBids.raised, 1)
+			assert.Equal(t, step, noBids.raised[0].Step)
+			assert.Len(t, noBids.resolved, 1, "the exception is resolved once the step gets through")
+			assert.NotContains(t, arm.calls, marketplaceactivity.MarkSettlementFailedActivityName, "nothing rolls back past the pivot")
+			assert.Equal(t, 2, countOf(arm.calls, step), "the parked step runs again")
+			assert.Equal(t, 1, countOf(arm.calls, walletactivity.CommitHoldActivityName), "steps before it do not")
+			assert.Equal(t, marketplaceactivity.MarkSoldActivityName, arm.calls[len(arm.calls)-1], "and the settlement finishes")
+		})
+	}
+}
+
+// CreditSeller is the one tail step with no prior state to make it idempotent, so
+// its key must be the same on every lap: wallet dedups on it, and a key that
+// changed after a park would credit the seller twice.
+func TestWorkflow_CreditSellerParks_RetriesWithTheSameKey(t *testing.T) {
+	listingID := uuid.New()
+	env, _ := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+		return hasWinner(listingID, uuid.New(), uuid.New()), nil
+	})
+	arm := &freezeArm{tailErrs: map[string][]error{
+		walletactivity.CreditSellerActivityName: {temporal.NewNonRetryableApplicationError("wallet refused", "Impossible", nil)},
+	}}
+	registerFreezeArm(env, arm)
+	registerPivotArm(env, arm)
+	registerTailArm(env, arm)
+
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerAcceptBid})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.Len(t, arm.creditIns, 2)
+	assert.Equal(t, arm.creditIns[0].IdempotencyKey, arm.creditIns[1].IdempotencyKey)
+}
+
+func countOf(calls []string, name string) int {
+	n := 0
+	for _, c := range calls {
+		if c == name {
+			n++
+		}
+	}
+	return n
 }
