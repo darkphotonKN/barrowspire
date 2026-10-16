@@ -12,10 +12,10 @@ DB_STRING=postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?
 MIGRATE_COMMAND = migrate -path $(MIGRATIONS_PATH) -database "postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=disable"
 
 build:
-	go build -o bin/character-service cmd/character-service/main.go
+	go build -o bin/character-service ./cmd/server
 
 run:
-	go run cmd/character-service/main.go
+	go run ./cmd/server
 
 dev: 
 	@air

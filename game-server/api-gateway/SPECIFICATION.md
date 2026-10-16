@@ -211,7 +211,7 @@ gateway behavior. ⏳ (cleanup)
 - `schema.sql` — dump including `members`, `base_items`, `items`, etc., i.e. tables now owned
   by auth-service / item-service. No code in the gateway reads it. (`migrations/` already removed.)
 - `internal/models/entities.go` — local entity models with no DB behind them.
-- `docker-compose.yml`, `.air.toml`, `bin/`, `tmp/` — tooling, not behavior.
+- `.air.toml`, `bin/`, `tmp/` — tooling, not behavior.
   > REVIEW: confirm none of the above is still referenced before deletion, then remove so the
   > gateway's statelessness is structural, not just aspirational.
 

@@ -5,10 +5,10 @@ ifneq (,$(wildcard ./.env))
 endif
 
 build:
-	@go build -o bin/community-builds ./cmd/server
+	@go build -o bin/api-gateway ./cmd/server
 
 run: build
-	@./bin/community-builds
+	@./bin/api-gateway
 
 dev:
 	@air

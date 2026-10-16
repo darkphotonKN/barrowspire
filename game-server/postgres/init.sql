@@ -1,4 +1,4 @@
--- One database and one role per service on a single Postgres instance (ADR-0023).
+-- One database and one role per service on a single Postgres instance (ADR-0023)
 --
 -- Runs once, as the superuser, only when the data volume is empty. Editing this
 -- file does nothing to an existing volume.

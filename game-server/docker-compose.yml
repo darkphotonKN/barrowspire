@@ -34,7 +34,7 @@ services:
   # Mirrors production, where every service database lives on a single Cloud
   # SQL instance. Isolation is by role, not by container: each service's role
   # owns its own database and cannot connect to any other (postgres/init.sql).
-  # Temporal keeps its own instance below.
+  # Temporal keeps its own instance below
   postgres:
     image: postgres:17
     container_name: barrowspire-postgres
@@ -46,7 +46,7 @@ services:
       - "5432:5432"
     volumes:
       - barrowspire_pgdata:/var/lib/postgresql/data
-      # Runs once, on an empty volume only.
+      # Runs once, on an empty volume only
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]

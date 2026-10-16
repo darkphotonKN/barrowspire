@@ -11,15 +11,15 @@ endif
 DB_STRING=postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=disable
 MIGRATE_COMMAND = migrate -path $(MIGRATIONS_PATH) -database "postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=disable"
 
-.PHONY: build run test clean migrate-up migrate-down docker-up docker-down
+.PHONY: build run test clean migrate-up migrate-down
 
 # Build the application
 build:
-	go build -o bin/auth-service cmd/auth-service/main.go
+	go build -o bin/auth-service ./cmd/server
 
 # Run the application
 run:
-	go run cmd/auth-service/main.go
+	go run ./cmd/server
 
 # Run tests
 test:
@@ -39,13 +39,6 @@ migrate-up:
 
 migrate-down:
 	migrate -path migrations -database "postgres://user:password@localhost:5103/barrowspire_auth_service_db?sslmode=disable" down
-
-# Docker commands
-docker-up:
-	docker-compose up -d
-
-docker-down:
-	docker-compose down
 
 # Development with hot reload
 dev:
