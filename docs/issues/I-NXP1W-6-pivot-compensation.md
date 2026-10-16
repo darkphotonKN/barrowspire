@@ -58,10 +58,12 @@ I-NXP1W-5 landed the rollback path.
 | one `settlement_exceptions` row | done — `RaiseSettlementException` in `rollBack` | same |
 | **Req 37** rollback wired for 0a, 0b, 1a, 1b | done — every pre-pivot step routes its error through `beforePivotFailure` | the 0a/0b tests of I-NXP1W-5 and the test above |
 
-A settlement already running when `BidIDs` shipped has no bid IDs in its recorded 0a result, and
-a rollback already past `LoseAllBids` replays without `ReleaseAllHolds` behind the
-`rollback-release-all-holds` version gate (FS Edge States, "Workflow code deployed while
-settlements are open"). Both release no holds (see the freeze-arm crash points, Known limits).
+A 0a result recorded before `BidIDs` existed decodes the field as nil, and its rollback releases
+no holds (see the freeze-arm crash points, Known limits). `ReleaseAllHolds` is not version-gated:
+nothing had been deployed when it was inserted into `rollBack`, so no history recorded the
+rollback without it. Once settlements run in a deployed environment, inserting a step into a
+path an open run may already have passed needs `workflow.GetVersion` (FS Edge States, "Workflow
+code deployed while settlements are open").
 
 ### Edge State "Winner has insufficient gold at commit" — parks, does not roll back
 

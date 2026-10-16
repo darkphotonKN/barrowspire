@@ -83,15 +83,11 @@ with the impossibility as its reason, and publishes `settlement.failed`.
   `workflow reset` to a point before 1a.
 - 0b does not yet check `listing_id` (§Req 24a lists it): `FreezeItemInput` carries no listing ID.
   Tracked as I-NXP1W-16.
-- **Settlements in flight across the I-NXP1W-6 deploy.** Two shapes, both releasing no holds:
-  a 0a result recorded before `BidIDs` existed decodes the field as nil
-  (`TestFreezeListingOutput_DecodesAPayloadRecordedBeforeBidIDs`,
-  `TestWorkflow_FrozenWithoutBidIDs_RollsBackReleasingNothing`); and a rollback already past
-  `LoseAllBids` replays without `ReleaseAllHolds`, kept on its recorded command sequence by the
-  `rollback-release-all-holds` version gate instead of failing on nondeterminism
-  (`TestWorkflow_RollbackRecordedBeforeReleaseAllHolds_ReplaysWithoutIt`). Either way the bids
-  end `LOST`, which keeps the reconciler off the gold, and the hold sweeper frees it at expiry
-  plus grace. Runs are short, so only one in flight across the deploy can hit this.
+- **A 0a result recorded before `BidIDs` existed** decodes the field as nil, and its rollback
+  releases no holds (`TestFreezeListingOutput_DecodesAPayloadRecordedBeforeBidIDs`,
+  `TestWorkflow_FrozenWithoutBidIDs_RollsBackReleasingNothing`). The bids still end `LOST`,
+  which keeps the reconciler off the gold, and the hold sweeper frees it at expiry plus grace.
+- `ReleaseAllHolds` is not version-gated: no deployed run had recorded the rollback without it.
 - 1a and 1b's own crash points are in `docs/issues/I-NXP1W-6-pivot-compensation.md`; their
   impossibility now rolls back through the same `rollBack`
   (`TestWorkflow_PivotArmImpossible_RollsBackEverything`).
