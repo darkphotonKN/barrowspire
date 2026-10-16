@@ -19,7 +19,6 @@ import (
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
-	"github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -73,21 +72,6 @@ func main() {
 
 	db := config.InitDB()
 	defer db.Close()
-
-	// --- redis setup ---
-	err = config.InitRedis(config.RedisConfig{
-		Mode:         commonhelpers.GetEnvString("REDIS_MODE", "standalone"),
-		Addrs:        []string{commonhelpers.GetEnvString("REDIS_ADDR", "localhost:6492")},
-		Password:     commonhelpers.GetEnvString("REDIS_PASSWORD", ""),
-		DB:           0,
-		PoolSize:     10,
-		MinIdleConns: 5,
-	})
-	if err != nil {
-		log.Fatalf("Failed to initialize Redis: %v", err)
-	}
-	defer config.CloseRedis()
-	cacheService := cache.NewRedisCache(config.GetClient())
 
 	// --- S3 setup ---
 	s3Config := config.LoadS3Config()
@@ -155,7 +139,7 @@ func main() {
 	outboxRepo := commonoutbox.NewRepo(db)
 	outboxService := commonoutbox.NewService(outboxRepo)
 
-	memberService := member.NewService(db, memberRepo, publishCh, cacheService, outboxService)
+	memberService := member.NewService(db, memberRepo, publishCh, outboxService)
 	memberHandler := member.NewHandler(memberService)
 
 	outboxWorker := commonoutbox.NewOutboxWorker(time.Second*5, 20, outboxService, publishCh)
