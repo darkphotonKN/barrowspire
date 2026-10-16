@@ -1,6 +1,6 @@
 ---
 id: I-NXP1W-9
-status: in-progress
+status: done
 implements: FS-NXP1W
 blocked_by: [I-NXP1W-4, I-NXP1W-7]
 labels: [blocked]
@@ -28,7 +28,7 @@ transaction as the credit, and everything else is the shared helper.
 
 - [x] The seller is credited exactly once per settlement
 - [x] A second credit for the same (workflow ID, activity name) is rejected by the dedup and returns the same output
-- [ ] Cap exhaustion parks through the slice 7 helper — **wired, unproven until I-NXP1W-7**: outage errors stay retryable and invariant breaches are non-retryable `CreditSellerImpossible`, but the park itself is the workflow helper slice 7 builds
+- [x] Cap exhaustion parks through the slice 7 helper — step 3 is wired through `runUntilDone(afterPivot)` with the key `workflowID:CreditSeller` (`TestWorkflow_TailImpossible_ParksAndNeverRollsBack`, `TestWorkflow_CreditSellerParks_RetriesWithTheSameKey`; cap exhaustion itself in `park_test.go`)
 - [x] Crash-point table committed
 - [x] Use case tested without Temporal; `make test` green
 

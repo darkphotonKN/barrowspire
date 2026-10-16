@@ -113,7 +113,73 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 		return marketplaceactivity.FreezeListingOutput{}, beforePivotFailure(ctx, frozen.ListingID, walletactivity.CommitHoldActivityName, err, &frozen)
 	}
 
-	// Temporary: returned so the result shows in the UI. Later steps replace this.
+	// Past the pivot the buyer has paid, so every step rolls forward: an outage or
+	// an impossibility escalates and parks, and the run never fails (§Req 13, 14).
+
+	// Step 2. Every bid 0a found: wallet filters the winner out itself.
+	err = runUntilDone(ctx, frozen.ListingID,
+		walletactivity.ReleaseLosingHoldsActivityName,
+		bstemporal.QueueWallet,
+		afterPivot,
+		walletactivity.ReleaseLosingHoldsInput{ListingID: frozen.ListingID, WinnerBidID: frozen.WinnerBidID, LosingBidIDs: frozen.BidIDs},
+		nil,
+	)
+	if err != nil {
+		return marketplaceactivity.FreezeListingOutput{}, err
+	}
+
+	// Step 3. The credit has no prior state to make it idempotent, so wallet dedups
+	// on a key the workflow mints (ADR-0009): workflow ID plus activity name, the
+	// same on every retry, park and replay of this settlement.
+	var credited walletactivity.CreditSellerOutput
+	err = runUntilDone(ctx, frozen.ListingID,
+		walletactivity.CreditSellerActivityName,
+		bstemporal.QueueWallet,
+		afterPivot,
+		walletactivity.CreditSellerInput{
+			SellerID:       frozen.SellerID,
+			Amount:         frozen.Amount,
+			IdempotencyKey: workflow.GetInfo(ctx).WorkflowExecution.ID + ":" + walletactivity.CreditSellerActivityName,
+		},
+		&credited,
+	)
+	if err != nil {
+		return marketplaceactivity.FreezeListingOutput{}, err
+	}
+
+	// Step 4
+	err = runUntilDone(ctx, frozen.ListingID,
+		itemsactivity.TransferItemActivityName,
+		bstemporal.QueueItems,
+		afterPivot,
+		itemsactivity.TransferItemInput{ItemID: frozen.ItemID, BuyerMemberID: frozen.WinnerMemberID, ListingID: frozen.ListingID},
+		nil,
+	)
+	if err != nil {
+		return marketplaceactivity.FreezeListingOutput{}, err
+	}
+
+	// TODO(I-NXP1W-12): Step 5 AppendLedgerTx goes here, on the ledger queue, once
+	// ledger registers the activity (I-F9R7Q-5). A two-leg SETTLEMENT transaction
+	// for frozen.Amount, reference frozen.ListingID: buyer DEBIT on
+	// committed.BuyerWalletAccountID, seller CREDIT on credited.SellerWalletAccountID,
+	// transaction_id = uuidv5(settlement namespace, "settlement:" + listingId).
+	// Inserting it here changes the command sequence, so any run that is open past
+	// step 4 by then needs it behind workflow.GetVersion.
+
+	// Step 6
+	err = runUntilDone(ctx, frozen.ListingID,
+		marketplaceactivity.MarkSoldActivityName,
+		bstemporal.QueueMarketplace,
+		afterPivot,
+		marketplaceactivity.MarkSoldInput{ListingID: frozen.ListingID},
+		nil,
+	)
+	if err != nil {
+		return marketplaceactivity.FreezeListingOutput{}, err
+	}
+
+	// TODO: update to a workflow specific response wrapper later
 	return frozen, nil
 }
 
