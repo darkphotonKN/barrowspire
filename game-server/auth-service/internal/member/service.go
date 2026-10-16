@@ -15,7 +15,6 @@ import (
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
-	"github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"go.opentelemetry.io/otel/codes"
@@ -27,7 +26,6 @@ type service struct {
 	db              *sqlx.DB
 	Repo            Repository
 	publishCh       commonbroker.Publisher
-	cache           cache.Cache
 	outboxPublisher commonoutbox.OutboxPublisher
 }
 
@@ -47,12 +45,11 @@ type Repository interface {
 	UpdateSubscriptionStatus(ctx context.Context, memberID uuid.UUID, productID, status string) error
 }
 
-func NewService(db *sqlx.DB, repo Repository, publishCh commonbroker.Publisher, cacheService cache.Cache, outboxPublisher commonoutbox.OutboxPublisher) *service {
+func NewService(db *sqlx.DB, repo Repository, publishCh commonbroker.Publisher, outboxPublisher commonoutbox.OutboxPublisher) *service {
 	return &service{
 		db:              db,
 		Repo:            repo,
 		publishCh:       publishCh,
-		cache:           cacheService,
 		outboxPublisher: outboxPublisher,
 	}
 }

@@ -27,7 +27,7 @@ func (f fakeRepo) GetMemberByEmail(ctx context.Context, email string) (*models.M
 }
 
 func serviceWith(repo member.Repository) member.Service {
-	return member.NewService(nil, repo, nil, nil, nil)
+	return member.NewService(nil, repo, nil, nil)
 }
 
 func memberWithPassword(t *testing.T, plaintext string) *models.Member {
