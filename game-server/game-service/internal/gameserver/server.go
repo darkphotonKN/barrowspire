@@ -94,6 +94,7 @@ type QueueManager interface {
 	PlayerRemoveQueue(ctx context.Context, player *types.Player) error
 	GetMatchedChan(ctx context.Context) chan []*types.Player
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
+	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
 }
 
 func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient, characters CharacterReader) *Server {
@@ -641,6 +642,14 @@ func (s *Server) GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueSt
 }
 
 /**
+* get handoff channel from matchmaker which pipes along players to reconnect to the
+* corresponding pod that hosts the game session
+**/
+func (s *Server) GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart {
+	return s.queue.GetHandoffChan(ctx)
+}
+
+/**
 * get conn from player ID
 **/
 func (s *Server) GetConnFromPlayer(playerID uuid.UUID) (*websocket.Conn, bool) {
@@ -686,7 +695,7 @@ func (s *Server) PushMessageToChannelQueue(playerID uuid.UUID, msg interface{}) 
 		return fmt.Errorf("message channel not found for player %s", playerID)
 	}
 
-	// non-blocking send to prevent slow clients from blocking
+	// nonblocking send to prevent slow clients from blocking
 	select {
 	case ch <- msg:
 		return nil
