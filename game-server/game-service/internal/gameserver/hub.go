@@ -42,6 +42,7 @@ type SessionManager interface {
 	JoinHub(conn *websocket.Conn, character types.CharacterInPlay) (*game.Session, error)
 	GetMatchedChan(ctx context.Context) chan []*types.Player
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
+	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
@@ -377,7 +378,12 @@ func (h *messageHub) Run(ctx context.Context) {
 						"total":   status.Total,
 					},
 				})
+
+		// handoff takes match ready players that shouldn't connect to this pod to reconnect
+		case handoff := <-h.sessionManager.GetHandoffChan(ctx):
+			slog.Debug("handoff received", "handoff", handoff)
 		}
+
 	}
 }
 

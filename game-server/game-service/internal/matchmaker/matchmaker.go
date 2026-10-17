@@ -46,6 +46,7 @@ type matchmaker struct {
 	matchSize       int
 	matchedChan     chan []*types.Player
 	QueueStatusChan chan QueueStatus
+	handOffCh       chan MatchStart // to notify message hub inform client to reconnect these players
 	matchQueue      MatchQueue
 	matchAnnouncer  MatchAnnouncer
 
@@ -68,6 +69,7 @@ func NewMatchmaker(matchSize int, podID string, matchQueue MatchQueue) *matchmak
 		podID:           podID,
 		matchedChan:     make(chan []*types.Player),
 		QueueStatusChan: make(chan QueueStatus),
+		handOffCh:       make(chan []uuid.UUID),
 		matchQueue:      matchQueue,
 		matchReadyCh:    make(MatchReadyCh, matchReadyBuffer),
 	}
@@ -95,6 +97,7 @@ type MatchedPlayer struct {
 
 type MatchAnnouncer interface {
 	Announce(ctx context.Context, payload MatchStart) error
+	Listen(ctx context.Context, podID string, matchReadyCh MatchReadyCh) error
 }
 
 // Start launches queue listening
@@ -381,6 +384,10 @@ func (q *matchmaker) GetQueueStatusChan(ctx context.Context) chan QueueStatus {
 	return q.QueueStatusChan
 }
 
+func (q *matchmaker) GetHandoffChan(ctx context.Context) chan MatchStart {
+	return q.handOffCh
+}
+
 // Match ready handling loop
 func (q *matchmaker) MatchReady(ctx context.Context) {
 	for {
@@ -447,6 +454,16 @@ func (q *matchmaker) MatchReady(ctx context.Context) {
 
 			// handoff to player clients about us
 			case MatchStepHandoff:
+				select {
+				case q.handOffCh <- matchReadyPayload:
+				// if message hub can't react in one second, somethings wrong, explicity log loudly and
+				// skip this queue
+				case <-time.After(time.Second * 1):
+					slog.Error("matchready loop couldn't send handoff to mesage hub after being blocked for 1 second")
+					// TODO: requeue players, for now dropped as message hub being stuck for so long is rare at this
+					// scale and this must be an exception
+				}
+
 				continue
 
 			default:
