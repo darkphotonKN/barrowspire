@@ -14,6 +14,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	commonhealth "github.com/darkphotonKN/barrowspire-server/common/health"
 	commoninbox "github.com/darkphotonKN/barrowspire-server/common/inbox"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
@@ -98,6 +99,10 @@ func main() {
 		),
 	)
 
+	// health checks for liveness probe
+	pingFn := db.PingContext
+	commonhealth.Register(ctx, grpcServer, pingFn)
+
 	// create a network listener to this service
 	listener, err := net.Listen("tcp", ":"+grpcAddr)
 
@@ -138,7 +143,6 @@ func main() {
 	// staying cheap for a low-traffic auth DB.
 	outboxRepo := commonoutbox.NewRepo(db)
 	outboxService := commonoutbox.NewService(outboxRepo)
-
 	memberService := member.NewService(db, memberRepo, publishCh, outboxService)
 	memberHandler := member.NewHandler(memberService)
 
