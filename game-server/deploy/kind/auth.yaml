@@ -35,20 +35,26 @@ spec:
           resources:
             # Reserved by the scheduler. On GKE Autopilot this is what you are billed for.
             # 100m = 0.1 CPU.
-            requests: { cpu: 100m, memory: 64Mi }
+            requests: { cpu: 100m, memory: 3Mi }
             # CPU over the limit: throttled (shows up as latency in traces).
             # Memory over the limit: killed instantly, no Go log. Look for
             # `OOMKilled` / exit code 137 in `kubectl describe pod`, and read
             # the dead container with `kubectl logs <pod> --previous`.
             # Fix with a higher limit or GOMEMLIMIT (~90% of the limit) in the ConfigMap.
-            limits: { cpu: 500m, memory: 128Mi }
-          # Until this passes, the pod is left out of the Service and gets no traffic.
-          # TCP only proves the port is open, not that auth can reach its DB.
-          # Upgrade later: grpc_health_v1 in code, then `grpc: { port: 7116 }` here.
-          # No livenessProbe yet on purpose: a bad one causes restart loops.
+            limits: { cpu: 500m, memory: 3Mi }
+          # Both probes call the standard grpc_health_v1 service the app registers.
+          # Readiness failing: the pod stays alive but leaves the Service, so it gets
+          # no traffic until it recovers. Use it for "my dependencies are down".
+          # Liveness failing: the container is killed and restarted. Keep it to
+          # "the process is stuck"; tying it to the DB turns a DB outage into restart loops.
           readinessProbe:
-            tcpSocket: { port: grpc }
-            periodSeconds: 5
+            grpc: { port: 7116, service: readiness } # kubelet calls Health/Check{service:"readiness"} on :7116
+            periodSeconds: 5 # every 5s, on its own clock, unrelated to your 3s ticker
+            failureThreshold: 2 # two NOT_SERVING in a row → READY 0/1 → out of Service endpoints
+          livenessProbe:
+            grpc: { port: 7116 } # service "" → always SERVING → never restarts
+            periodSeconds: 10
+            failureThreshold: 3
 ---
 # Service: a stable virtual IP plus the DNS name `auth`, routed to whichever
 # pods currently match the selector and pass readiness. Callers never see pod IPs.
