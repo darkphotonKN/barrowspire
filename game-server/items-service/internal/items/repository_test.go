@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -743,5 +744,35 @@ func TestBatchUpsertQuery_PlaceholdersMatchArgs(t *testing.T) {
 	// second row: no level given stores 1, no own requirement stores NULL
 	if args[2*row-3] != 1 || args[2*row-1].(*int) != nil {
 		t.Errorf("second row ilvl, required = %v, %v, want 1, NULL", args[2*row-3], args[2*row-1])
+	}
+}
+
+// A foreign-key violation keeps its SQLSTATE through the repo boundary, so the
+// consumer can tell a reference that is not there yet from a malformed event,
+// while still reading as a constraint violation to every other caller.
+func TestWrapDBErr_ForeignKeyViolationKeepsSQLState(t *testing.T) {
+	got := wrapDBErr("batch upsert item instances (tx)", &pq.Error{Code: "23503"})
+
+	if !errors.Is(got, commonconstants.ErrConstraintViolation) {
+		t.Fatalf("%v is not a constraint violation", got)
+	}
+	var pqErr *pq.Error
+	if !errors.As(got, &pqErr) || pqErr.Code != "23503" {
+		t.Fatalf("%v lost its SQLSTATE 23503", got)
+	}
+	if o := classify(got); o.disposition != retryBounded {
+		t.Fatalf("classified as %v, want %v", o.disposition, retryBounded)
+	}
+}
+
+// Every other constraint violation is still only the sentinel, and rejected.
+func TestWrapDBErr_OtherConstraintViolationIsRejected(t *testing.T) {
+	got := wrapDBErr("batch upsert item instances (tx)", &pq.Error{Code: "23502"})
+
+	if !errors.Is(got, commonconstants.ErrConstraintViolation) {
+		t.Fatalf("%v is not a constraint violation", got)
+	}
+	if o := classify(got); o.disposition != reject {
+		t.Fatalf("classified as %v, want %v", o.disposition, reject)
 	}
 }

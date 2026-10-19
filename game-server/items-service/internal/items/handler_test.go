@@ -166,7 +166,7 @@ func TestHandler_GetLoadoutWithItems_OnlyTheOwnerReadsIt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &loadoutRepo{owner: owner, weapon: &ItemInstance{ID: uuid.New(), OwnerMemberID: owner, ItemType: "weapon", Name: "Blade"}}
-			h := NewHandler(NewService(repo, nil, nil, nil), nil)
+			h := NewHandler(NewService(repo, nil, nil, nil, nil), nil)
 
 			res, err := h.GetLoadoutWithItems(tt.ctx, &pb.GetLoadoutWithItemsRequest{MemberId: owner.String()})
 
@@ -257,7 +257,7 @@ func TestHandler_StashAndLoadout_OnlyTheOwnerReachesThem(t *testing.T) {
 		for _, tt := range cases {
 			t.Run(rpc.name+"/"+tt.name, func(t *testing.T) {
 				repo := &stashRepo{owner: owner}
-				h := NewHandler(NewService(repo, nil, nil, nil), nil)
+				h := NewHandler(NewService(repo, nil, nil, nil, nil), nil)
 
 				err := rpc.call(h, tt.ctx, owner.String())
 
@@ -297,7 +297,7 @@ func TestHandler_StashAndLoadout_RefusalIsLoggedOnce(t *testing.T) {
 			t.Cleanup(func() { slog.SetDefault(prev) })
 
 			owner := uuid.New()
-			h := NewHandler(NewService(&stashRepo{owner: owner}, nil, nil, nil), nil)
+			h := NewHandler(NewService(&stashRepo{owner: owner}, nil, nil, nil, nil), nil)
 			intruder := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: uuid.New()})
 
 			_ = rpc.call(h, intruder, owner.String())

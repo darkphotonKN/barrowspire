@@ -8,6 +8,7 @@ import (
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commontypes "github.com/darkphotonKN/barrowspire-server/common/types"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -79,7 +80,7 @@ func (p *TestPublisher) PublishWithContext(_ context.Context, exchange, key stri
 
 func TestUpdatePlayerStats_IncrementWin(t *testing.T) {
 	repo := &mockRepo{}
-	service := NewService(repo, &TestPublisher{}, nil, nil)
+	service := NewService(repo, nil, &TestPublisher{}, nil, nil)
 
 	playerStats := &pb.PlayerMatchResult{
 		MemberId:      uuid.MustParse("550e8400-e29b-41d4-a716-446655440001").String(),
@@ -98,4 +99,25 @@ func TestUpdatePlayerStats_IncrementWin(t *testing.T) {
 
 	assert.Equal(t, 1, repo.upsertParams.Wins)
 	assert.Equal(t, 10, repo.upsertParams.Kills)
+}
+
+// An unparseable member id is the event's fault, not the store's, so it is
+// reported as ErrUUIDCouldNotBeParsed and the consumer dead-letters it.
+func TestMatchEndedPlayerWrites_BadMemberID_UUIDCouldNotBeParsed(t *testing.T) {
+	service := NewService(&mockRepo{}, nil, &TestPublisher{}, nil, nil)
+	player := &pb.PlayerMatchResult{MemberId: "not-a-uuid"}
+
+	tests := []struct {
+		name  string
+		write func() error
+	}{
+		{"player stats", func() error { return service.updatePlayerStats(context.Background(), nil, player) }},
+		{"leaderboard", func() error { return service.updateDenormalizedLeaderboard(context.Background(), nil, player) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.write()
+			assert.ErrorIs(t, err, commonconstants.ErrUUIDCouldNotBeParsed)
+		})
+	}
 }

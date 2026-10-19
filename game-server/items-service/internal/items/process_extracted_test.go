@@ -29,6 +29,28 @@ func (r *extractionRepo) UpsertPlayerLoadoutTx(ctx context.Context, tx *sqlx.Tx,
 	return r.loadoutErr
 }
 
+// fakeInbox records the marks a service makes and reports each new event as
+// new, or every event as already seen when duplicate is set.
+type fakeInbox struct {
+	duplicate bool
+	err       error
+	marked    []inboxMark
+}
+
+type inboxMark struct {
+	eventID   uuid.UUID
+	eventType string
+	tx        *sqlx.Tx
+}
+
+func (f *fakeInbox) MarkEventProcessed(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string) (bool, error) {
+	f.marked = append(f.marked, inboxMark{eventID, eventType, tx})
+	if f.err != nil {
+		return false, f.err
+	}
+	return !f.duplicate, nil
+}
+
 // runInline runs the transaction body without a database.
 func runInline(ctx context.Context, fn func(tx *sqlx.Tx) error) error { return fn(nil) }
 
@@ -132,9 +154,9 @@ func TestProcessItemsExtracted_Outcome(t *testing.T) {
 			if withTx == nil {
 				withTx = runInline
 			}
-			svc := &service{repo: tt.repo, withTx: withTx}
+			svc := &service{repo: tt.repo, withTx: withTx, inbox: &fakeInbox{}}
 
-			err := svc.ProcessItemsExtracted(context.Background(), tt.event)
+			err := svc.ProcessItemsExtracted(context.Background(), uuid.New(), commonconstants.ItemsExtracted, tt.event)
 
 			switch {
 			case tt.wantErr == nil && err != nil:
@@ -153,15 +175,87 @@ func TestProcessItemsExtracted_Outcome(t *testing.T) {
 // equipped items, never a panic inside the transaction (FS-4R9M9 R49, R50).
 func TestProcessItemsExtracted_NilEquipment_StoresSatchel(t *testing.T) {
 	repo := &extractionRepo{}
-	svc := &service{repo: repo, withTx: runInline}
+	svc := &service{repo: repo, withTx: runInline, inbox: &fakeInbox{}}
 	event := extractedEvent(potion(), potion())
 	event.PlayerItems[0].Equipment = nil
 
-	if err := svc.ProcessItemsExtracted(context.Background(), event); err != nil {
+	if err := svc.ProcessItemsExtracted(context.Background(), uuid.New(), commonconstants.ItemsExtracted, event); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(repo.upserted) != 2 {
 		t.Fatalf("stored %d rows, want the 2 satchel items", len(repo.upserted))
+	}
+}
+
+// The inbox mark is the first statement of the event's transaction, keyed on
+// the event id and type the consumer hands over, so it commits or rolls back
+// with the loot (FS-BVM9H Req 3, 6, 7).
+func TestProcessItemsExtracted_MarksInboxInTheSameTx(t *testing.T) {
+	tx := &sqlx.Tx{}
+	var marksBeforeWrite int
+	inbox := &fakeInbox{}
+	repo := &orderedRepo{extractionRepo: &extractionRepo{}, before: func() { marksBeforeWrite = len(inbox.marked) }}
+	svc := &service{repo: repo, inbox: inbox, withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
+		return fn(tx)
+	}}
+	eventID := uuid.New()
+
+	if err := svc.ProcessItemsExtracted(context.Background(), eventID, commonconstants.ItemsExtracted, extractedEvent(potion())); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(inbox.marked) != 1 {
+		t.Fatalf("marked %d times, want once", len(inbox.marked))
+	}
+	got := inbox.marked[0]
+	if got.eventID != eventID || got.eventType != commonconstants.ItemsExtracted || got.tx != tx {
+		t.Fatalf("marked %+v, want %s/%s in the event's tx", got, eventID, commonconstants.ItemsExtracted)
+	}
+	if marksBeforeWrite != 1 {
+		t.Fatalf("the loot was written before the inbox mark")
+	}
+}
+
+// orderedRepo notes what had happened before the first loot write.
+type orderedRepo struct {
+	*extractionRepo
+	before func()
+	called bool
+}
+
+func (r *orderedRepo) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, items []*ItemInstance) error {
+	if !r.called {
+		r.called = true
+		r.before()
+	}
+	return r.extractionRepo.BatchUpsertItemInstances(ctx, tx, items)
+}
+
+// A duplicate event writes nothing and says so; an inbox that cannot be
+// written fails the event so it is retried, with nothing stored
+// (FS-BVM9H Req 10).
+func TestProcessItemsExtracted_Inbox(t *testing.T) {
+	tests := []struct {
+		name    string
+		inbox   *fakeInbox
+		wantErr error
+	}{
+		{"already processed writes nothing", &fakeInbox{duplicate: true}, commonconstants.ErrAlreadyProcessed},
+		{"inbox write fails", &fakeInbox{err: commonconstants.ErrTransient}, commonconstants.ErrTransient},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &extractionRepo{}
+			svc := &service{repo: repo, withTx: runInline, inbox: tt.inbox}
+
+			err := svc.ProcessItemsExtracted(context.Background(), uuid.New(), commonconstants.ItemsExtracted, extractedEvent(potion()))
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if len(repo.upserted) != 0 {
+				t.Fatalf("stored %d rows, want none", len(repo.upserted))
+			}
+		})
 	}
 }
 
