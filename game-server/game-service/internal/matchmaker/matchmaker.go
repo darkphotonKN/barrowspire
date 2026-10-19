@@ -63,14 +63,15 @@ type QueueStatus struct {
 	Total   int
 }
 
-func NewMatchmaker(matchSize int, podID string, matchQueue MatchQueue) *matchmaker {
+func NewMatchmaker(matchSize int, podID string, matchQueue MatchQueue, matchAnnouncer MatchAnnouncer) *matchmaker {
 	return &matchmaker{
 		matchSize:       matchSize,
 		podID:           podID,
 		matchedChan:     make(chan []*types.Player),
 		QueueStatusChan: make(chan QueueStatus),
-		handOffCh:       make(chan []uuid.UUID),
+		handOffCh:       make(chan MatchStart),
 		matchQueue:      matchQueue,
+		matchAnnouncer:  matchAnnouncer,
 		matchReadyCh:    make(MatchReadyCh, matchReadyBuffer),
 	}
 }
@@ -105,6 +106,7 @@ func (q *matchmaker) Start(ctx context.Context) {
 	go q.MatchLoop(ctx)
 	go q.heartbeatLoop(ctx)
 	go q.queueStatusLoop(ctx)
+	go q.matchAnnouncer.Listen(ctx, q.podID, q.matchReadyCh)
 	go q.MatchReady(ctx)
 	slog.Info("Queue service started, waiting for players to join...")
 }
@@ -463,7 +465,6 @@ func (q *matchmaker) MatchReady(ctx context.Context) {
 					// TODO: requeue players, for now dropped as message hub being stuck for so long is rare at this
 					// scale and this must be an exception
 				}
-
 				continue
 
 			default:

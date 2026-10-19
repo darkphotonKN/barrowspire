@@ -13,6 +13,7 @@ import (
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/gameserver"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/handoff"
 	matchqueue "github.com/darkphotonKN/barrowspire-server/game-service/internal/match_queue"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/gin-gonic/gin"
@@ -83,7 +84,8 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 
 	// -- match maker --
 	matchQueueRedis := matchqueue.NewRedis(redisClient)
-	matchmaker := matchmaker.NewMatchmaker(2, pod.ID, matchQueueRedis)
+	matchAnnouncer := handoff.NewRedis(redisClient)
+	matchmaker := matchmaker.NewMatchmaker(2, pod.ID, matchQueueRedis, matchAnnouncer)
 
 	// outbox is built once in main and shared with the worker that drains it
 	gameService := game.NewService(db, outbox)
