@@ -113,7 +113,8 @@ matchmaking); this service is the engine they feed. ✅
 
 ### Results
 
-- [x] Publish match-end events via transactional outbox
+- [x] Publish match-end events via an outbox → FS-none
+- [x] Match-end outbox in game-service's own database → FS-9TNJA
 
 ### Persistent world (MMO-RPG refactor)
 

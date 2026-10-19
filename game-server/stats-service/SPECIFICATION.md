@@ -7,3 +7,7 @@
      Deep feature specs live in the root docs/specs/ as FS-NNNN. -->
 
 ## stats-service
+
+## Match results
+
+- [x] Deduplicated match-result consumption → FS-BVM9H
