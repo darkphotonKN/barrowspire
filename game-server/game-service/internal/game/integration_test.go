@@ -306,7 +306,7 @@ func TestPublishMatchCompleteIntegration(t *testing.T) {
 
 	// service setup
 	_ = commonbroker.NewAmqpPublisher(ch) // adapter kept for parity with previous test setup; unused with outbox API
-	service := NewService(&mockOutboxPublisher{})
+	service := NewService(committingTxDB(t), &mockOutboxPublisher{})
 
 	// Publish all 3 match scenarios
 	for i, matchData := range matchScenarios {
