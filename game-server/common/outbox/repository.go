@@ -98,9 +98,10 @@ func (r *repo) GetUnpublishedOutboxItems(ctx context.Context, limit *int) ([]*Ou
 	FROM outbox
 	WHERE published_at IS NULL
 	ORDER BY created_at ASC
+	LIMIT $1
 	`
 
-	err := r.db.SelectContext(ctx, &outboxItem, query)
+	err := r.db.SelectContext(ctx, &outboxItem, query, *limit)
 
 	if err != nil {
 		slog.Error("Error occured when attempting to retrive from outbox table",

@@ -50,7 +50,7 @@ func (w *OutboxWorker) Run(ctx context.Context) {
 	for {
 		select {
 		case <-timer.C:
-			w.PublishOutboxEvents(ctx)
+			_ = w.PublishOutboxEvents(ctx) // errors are logged inside; the next tick retries
 
 			// cancelled
 		case <-ctx.Done():
@@ -81,6 +81,8 @@ func (w *OutboxWorker) PublishOutboxEvents(ctx context.Context) error {
 				ContentType:  "application/protobuf",
 				Body:         evt.Payload,
 				DeliveryMode: amqp.Persistent,
+				// row id is stable across republishes, so consumers can dedupe on it
+				MessageId: evt.ID.String(),
 			})
 
 		if err != nil {

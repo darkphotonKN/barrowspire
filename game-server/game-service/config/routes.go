@@ -19,8 +19,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
-
-	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 )
 
 // Downstreams are the gRPC addresses ("host:port") of the services game-service
@@ -38,7 +36,7 @@ type Downstreams struct {
 * The returned close func releases every downstream connection; call it on
 * shutdown.
 **/
-func SetupRouter(ctx context.Context, statsDB *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod) (*gin.Engine, func() error, error) {
+func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod, outbox game.OutboxWriter) (*gin.Engine, func() error, error) {
 	// gin.Default() with its access logger swapped: the default one writes the
 	// raw query, and the WebSocket connect carries the bearer token in it
 	router := gin.New()
@@ -87,11 +85,8 @@ func SetupRouter(ctx context.Context, statsDB *sqlx.DB, addrs Downstreams, ch *a
 	matchQueueRedis := matchqueue.NewRedis(redisClient)
 	matchmaker := matchmaker.NewMatchmaker(2, pod.ID, matchQueueRedis)
 
-	// -- outbox --
-	outboxRepo := commonoutbox.NewRepo(statsDB)
-	outboxService := commonoutbox.NewService(outboxRepo)
-
-	gameService := game.NewService(outboxService)
+	// outbox is built once in main and shared with the worker that drains it
+	gameService := game.NewService(db, outbox)
 	server := gameserver.NewServer(ctx, authClient, matchmaker, gameService, itemsClient, characterClient)
 
 	// -- routes --

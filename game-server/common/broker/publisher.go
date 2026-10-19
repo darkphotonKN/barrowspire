@@ -12,6 +12,9 @@ type Message struct {
 	DeliveryMode  uint8
 	CorrelationId string
 	Headers       map[string]interface{}
+	// MessageId identifies the message for consumer-side dedup. Optional; empty publishes
+	// with no message id. The outbox worker sets it to the outbox row id.
+	MessageId string
 }
 
 const (

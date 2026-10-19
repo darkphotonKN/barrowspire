@@ -5,6 +5,7 @@ go 1.24.2
 replace github.com/darkphotonKN/barrowspire-server/common => ../common
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/darkphotonKN/barrowspire-server/common v0.0.0-00010101000000-000000000000
 	github.com/gin-contrib/cors v1.7.6

@@ -14,6 +14,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/game-service/config"
@@ -62,8 +63,13 @@ func main() {
 	pod := config.LoadPod(gamePort)
 	slog.Info("Pod identity", "pod_id", pod.ID, "pod_addr", pod.Addr, "pod_id_generated", pod.Generated)
 
-	// --- database setup ---
-	statsDB := config.InitStatsServiceDB()
+	// --- database setup (runs migrations; aborts startup on failure) ---
+	db := config.InitDB()
+	defer func() {
+		if err := db.Close(); err != nil {
+			slog.Error("close database", "error", err)
+		}
+	}()
 
 	// --- pprof ---
 
@@ -92,7 +98,7 @@ func main() {
 	// -- custom metrics --
 	err = metrics.Init()
 	if err != nil {
-		log.Printf("\ncustom metrics setup init errored. Error: %w\n\n", err)
+		log.Printf("\ncustom metrics setup init errored. Error: %v\n\n", err)
 	}
 
 	// --- redis setup ---
@@ -143,10 +149,22 @@ func main() {
 
 	broker.DeclareExchange(ch, commonconstants.GameEventsExchange, "topic")
 
+	// --- outbox ---
+	// one outbox over game-service's own database: the game service writes
+	// match-end rows to it (via SetupRouter) and the worker drains it onto the
+	// existing channel; ctx is cancelled on SIGINT/SIGTERM, which stops the worker
+	outboxRepo := commonoutbox.NewRepo(db)
+	outboxServ := commonoutbox.NewService(outboxRepo)
+	publisher := broker.NewAmqpPublisher(ch)
+	workerSettings := config.OutboxWorkerSettings()
+	outboxWorker := commonoutbox.NewOutboxWorker(workerSettings.Cycle, workerSettings.Batch, outboxServ, publisher)
+
+	go outboxWorker.Run(ctx)
+
 	log.Printf("grpc Game Server started on PORT: %s\n", grpcAddr)
 
 	// routes setup
-	routes, closeDownstreams, err := config.SetupRouter(ctx, statsDB, downstreams, ch, redisClient, pod)
+	routes, closeDownstreams, err := config.SetupRouter(ctx, db, downstreams, ch, redisClient, pod, outboxServ)
 	if err != nil {
 		log.Fatalf("Failed to set up router: %v", err)
 	}

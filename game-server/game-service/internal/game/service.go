@@ -2,6 +2,9 @@ package game
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -10,17 +13,31 @@ import (
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type service struct {
-	outboxPublisher commonoutbox.OutboxPublisher
+// TxBeginner begins the transaction the match-end outbox rows are written in.
+// *sqlx.DB satisfies it.
+type TxBeginner interface {
+	BeginTxx(ctx context.Context, opts *sql.TxOptions) (*sqlx.Tx, error)
 }
 
-func NewService(outboxPublisher commonoutbox.OutboxPublisher) *service {
+// OutboxWriter records an event in the outbox inside a caller's transaction.
+type OutboxWriter interface {
+	CreateOutboxTx(ctx context.Context, tx *sqlx.Tx, params commonoutbox.OutboxParams) error
+}
+
+type service struct {
+	db     TxBeginner
+	outbox OutboxWriter
+}
+
+func NewService(db TxBeginner, outbox OutboxWriter) *service {
 	return &service{
-		outboxPublisher: outboxPublisher,
+		db:     db,
+		outbox: outbox,
 	}
 }
 
@@ -33,30 +50,15 @@ func (s *service) PublishMatchComplete(ctx context.Context, data *types.RawMatch
 	protoData, err := s.formatMatchData(data.SessionID, data.StartedAt, data.EndedAt, rankedPlayers, data.Progress)
 
 	if err != nil {
-		slog.Error("Error formatting game match end event", "error", err)
+		slog.Error("Error formatting game match end event", "session_id", data.SessionID, "error", err)
 		return
 	}
 
-	err = s.outboxPublisher.CreateOutbox(ctx, commonoutbox.OutboxParams{
-		RoutingKey: commonconstants.ItemsExtracted,
-		Exchange:   commonconstants.GameEventsExchange,
-		Payload:    protoData.ItemsExtractedEvent,
-	})
-
-	if err != nil {
-		slog.Error("Error publishing items extracted event", "error", err)
-		return
-	}
-
-	// send to outbox for publishing
-	err = s.outboxPublisher.CreateOutbox(ctx, commonoutbox.OutboxParams{
-		RoutingKey: commonconstants.GameMatchEnded,
-		Exchange:   commonconstants.GameEventsExchange,
-		Payload:    protoData.MatchEndedEvent,
-	})
-
-	if err != nil {
-		slog.Error("Error publishing game match end event", "error", err)
+	if err := s.writeMatchEndOutbox(ctx, protoData); err != nil {
+		slog.Error("Error writing match end events to the outbox, rows may not have been recorded",
+			"session_id", data.SessionID,
+			"error", err,
+		)
 		return
 	}
 
@@ -64,6 +66,48 @@ func (s *service) PublishMatchComplete(ctx context.Context, data *types.RawMatch
 		"event_one_name", commonconstants.GameMatchEnded,
 		"event_two_name", commonconstants.ItemsExtracted,
 	)
+}
+
+// writeMatchEndOutbox writes the ItemsExtracted and GameMatchEnded rows in one
+// transaction: both are recorded or neither is, so a match is never counted
+// without its loot or the other way round.
+func (s *service) writeMatchEndOutbox(ctx context.Context, data *types.FormattedMatchData) (err error) {
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin match end outbox tx: %w", err)
+	}
+	defer func() {
+		if err == nil {
+			return
+		}
+		if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
+			err = errors.Join(err, fmt.Errorf("rollback match end outbox tx: %w", rbErr))
+		}
+	}()
+
+	err = s.outbox.CreateOutboxTx(ctx, tx, commonoutbox.OutboxParams{
+		RoutingKey: commonconstants.ItemsExtracted,
+		Exchange:   commonconstants.GameEventsExchange,
+		Payload:    data.ItemsExtractedEvent,
+	})
+	if err != nil {
+		return fmt.Errorf("create items extracted outbox row: %w", err)
+	}
+
+	err = s.outbox.CreateOutboxTx(ctx, tx, commonoutbox.OutboxParams{
+		RoutingKey: commonconstants.GameMatchEnded,
+		Exchange:   commonconstants.GameEventsExchange,
+		Payload:    data.MatchEndedEvent,
+	})
+	if err != nil {
+		return fmt.Errorf("create match ended outbox row: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit match end outbox tx: %w", err)
+	}
+
+	return nil
 }
 
 /**
@@ -87,7 +131,7 @@ func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, ende
 	}
 	playerMatchRes = withRunProgress(playerMatchRes, progress)
 
-	matchEndedEvent := pb.MatchEndedEvent{
+	matchEndedEvent := &pb.MatchEndedEvent{
 		SessionId:      string(sessionID.String()),
 		MatchStartedAt: timestamppb.New(startedAt),
 		MatchEndedAt:   timestamppb.New(endedAt),
@@ -99,7 +143,7 @@ func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, ende
 	)
 
 	// marshal to protobuf
-	protoData, matchEndedErr := proto.Marshal(&matchEndedEvent)
+	protoData, matchEndedErr := proto.Marshal(matchEndedEvent)
 
 	if matchEndedErr != nil {
 		slog.Error("could not marshal end match data to MatchEndedEvent proto",
@@ -132,7 +176,7 @@ func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, ende
 	// generate eventId for idemptotency deduplication
 	eventId := uuid.NewString()
 
-	itemsExtractedEvent := pb.ItemsExtractedEvent{
+	itemsExtractedEvent := &pb.ItemsExtractedEvent{
 		SessionId:   string(sessionID.String()),
 		EventId:     eventId,
 		PlayerItems: playerItems,
@@ -142,7 +186,7 @@ func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, ende
 		"items_extracted_event", itemsExtractedEvent,
 	)
 
-	itemsExtractedProtoData, itemsExtractErr := proto.Marshal(&itemsExtractedEvent)
+	itemsExtractedProtoData, itemsExtractErr := proto.Marshal(itemsExtractedEvent)
 
 	if itemsExtractErr != nil {
 		slog.Error("could not marshal items extracted event to ItemExtractedEvent proto",
