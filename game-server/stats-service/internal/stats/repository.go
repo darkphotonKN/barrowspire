@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	commonutils "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
 type repository struct {
@@ -21,11 +23,22 @@ func NewRepository(db *sqlx.DB) *repository {
 	}
 }
 
+// foreignKeyViolation is Postgres's SQLSTATE for a foreign-key violation.
+const foreignKeyViolation = "23503"
+
 // wrapDBErr is the repo boundary translation point: it delegates to the shared
 // WrapDBErr helper, which converts infrastructure errors into domain sentinels
-// and wraps anything else with the repo name + operation for context.
+// and wraps anything else with the repo name + operation for context. A
+// foreign-key violation keeps its *pq.Error alongside the sentinel, so the
+// match.ended consumer can retry a reference that is not there yet instead of
+// dead-lettering it as malformed.
 func wrapDBErr(op string, err error) error {
-	return commonutils.WrapDBErr("stats repo", op, err)
+	wrapped := commonutils.WrapDBErr("stats repo", op, err)
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Code == foreignKeyViolation {
+		return fmt.Errorf("stats repo: %s: %w: %w", op, wrapped, pqErr)
+	}
+	return wrapped
 }
 
 /**

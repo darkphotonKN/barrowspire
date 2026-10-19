@@ -24,20 +24,29 @@ type service struct {
 	db              *sqlx.DB
 	publishCh       commonbroker.Publisher
 	outboxPublisher commonoutbox.OutboxPublisher
+	inbox           Inbox
 	// withTx runs fn in one transaction on db, committing when fn succeeds.
 	withTx func(ctx context.Context, fn func(tx *sqlx.Tx) error) error
 }
 
-func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher, outboxPublisher commonoutbox.OutboxPublisher) *service {
+func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher, outboxPublisher commonoutbox.OutboxPublisher, inbox Inbox) *service {
 	return &service{
 		repo:            repo,
 		db:              db,
 		publishCh:       publishCh,
 		outboxPublisher: outboxPublisher,
+		inbox:           inbox,
 		withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
 			return commonutils.ExecTx(ctx, db, nil, fn)
 		},
 	}
+}
+
+// Inbox records which events the service has already applied. The mark is
+// written in the caller's transaction, so it commits or rolls back with the
+// event's own writes.
+type Inbox interface {
+	MarkEventProcessed(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string) (bool, error)
 }
 
 type Repository interface {
@@ -121,13 +130,25 @@ func (s *service) CreatePlayerLoadout(createPlayerLoadoutReq *PlayerLoadout) err
 }
 
 // ProcessItemsExtracted stores every player's extracted items and equipped
-// loadout in one transaction, so a requeued event replays from nothing rather
-// than duplicating the items found in a run. An item that cannot be stored on
-// its own (no template, bad affix) is skipped with a warning; any other failure
-// is returned, transient or not, for the consumer to settle (FS-4R9M9 R49, R50).
-func (s *service) ProcessItemsExtracted(ctx context.Context, req *pb.ItemsExtractedEvent) error {
+// loadout in one transaction, opened by marking the event in the inbox, so an
+// event is applied exactly once: a failure rolls the mark back with the loot,
+// and a redelivery of an applied event writes nothing and returns
+// ErrAlreadyProcessed (FS-BVM9H Req 3, 6, 7, 10). An item that cannot be stored
+// on its own (no template, bad affix) is skipped with a warning; any other
+// failure is returned, transient or not, for the consumer to settle
+// (FS-4R9M9 R49, R50).
+func (s *service) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, eventType string, req *pb.ItemsExtractedEvent) error {
 	var writeErr error
 	err := s.withTx(ctx, func(tx *sqlx.Tx) error {
+		isNew, err := s.inbox.MarkEventProcessed(ctx, tx, eventID, eventType)
+		if err != nil {
+			writeErr = fmt.Errorf("mark event processed: %w", err)
+			return writeErr
+		}
+		if !isNew {
+			writeErr = commonconstants.ErrAlreadyProcessed
+			return writeErr
+		}
 		for _, playerItems := range req.PlayerItems {
 			if writeErr = s.storeExtractedPlayerItems(ctx, tx, playerItems); writeErr != nil {
 				return writeErr
@@ -141,9 +162,9 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, req *pb.ItemsExtrac
 	case writeErr == nil:
 		// no write failed, the transaction around them did (begin or commit):
 		// the store, not the event, is at fault
-		return fmt.Errorf("transaction for items extracted %s: %w: %w", req.EventId, commonconstants.ErrTransient, err)
+		return fmt.Errorf("transaction for items extracted %s: %w: %w", eventID, commonconstants.ErrTransient, err)
 	default:
-		return fmt.Errorf("store items extracted %s: %w", req.EventId, err)
+		return fmt.Errorf("store items extracted %s: %w", eventID, err)
 	}
 }
 

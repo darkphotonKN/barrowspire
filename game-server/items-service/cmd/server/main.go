@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"log/slog"
 	"net"
@@ -92,20 +93,6 @@ func main() {
 		http.ListenAndServe(":8197", nil)
 	}()
 
-	// --- redis setup ---
-	err = config.InitRedis(config.RedisConfig{
-		Mode:         commonhelpers.GetEnvString("REDIS_MODE", "standalone"),
-		Addrs:        []string{commonhelpers.GetEnvString("REDIS_ADDR", "localhost:6492")},
-		Password:     commonhelpers.GetEnvString("REDIS_PASSWORD", ""),
-		DB:           0,
-		PoolSize:     10,
-		MinIdleConns: 5,
-	})
-	if err != nil {
-		log.Fatalf("Failed to initialize Redis: %v", err)
-	}
-	defer config.CloseRedis()
-
 	ch, close := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
 
 	// Declare the items events exchange
@@ -140,7 +127,27 @@ func main() {
 		}
 	}()
 
-	grpcServer, activities := config.SetupServices(ctx, db, ch, authClient)
+	// The consumer republishes retries and dead letters on a connection of its
+	// own: a channel in confirm mode, apart from the shared one, and kept off
+	// the consuming connection so broker flow control on publishes cannot stall
+	// consumption.
+	republishConn, republishCh, err := config.InitializeAMQPConnection(
+		fmt.Sprintf("amqp://%s:%s@%s:%s", amqpUser, amqpPassword, amqpHost, amqpPort))
+	if err != nil {
+		slog.Error("failed to open the consumer's republish connection", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := republishConn.Close(); err != nil {
+			slog.Error("close republish connection", "error", err)
+		}
+	}()
+
+	grpcServer, activities, err := config.SetupServices(ctx, db, ch, republishCh, authClient)
+	if err != nil {
+		slog.Error("failed to set up items service", "error", err)
+		os.Exit(1)
+	}
 
 	// --- temporal worker ---
 	// Items owns the data behind its settlement steps, so its activities run in

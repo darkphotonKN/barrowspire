@@ -79,9 +79,3 @@ type GetPlayerRankings struct {
 	limit  int
 	offset int
 }
-
-type ProcessMatchCompletedResponse struct {
-	SessionID string
-	Success   bool
-	Message   string
-}
