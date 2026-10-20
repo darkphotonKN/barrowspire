@@ -1,9 +1,9 @@
 ---
 id: I-49Z37-2
-status: open
+status: done
 implements: FS-49Z37
 blocked_by: [I-49Z37-1]
-labels: [blocked]
+labels: []
 title: "FS-49Z37 slice 2: bids stay below a listing's buyout price"
 ---
 Implements FS-49Z37 §Requirements 20–21
