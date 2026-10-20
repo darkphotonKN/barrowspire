@@ -483,7 +483,7 @@ func TestPlaceBidUC_WriteOutcome(t *testing.T) {
 		wantRecorded bool
 	}{
 		{
-			name:         "a lock timeout fails before the read, so release",
+			name:         "an unkeyed bid's lock timeout fails before the read, so release",
 			script:       func(t *testing.T) []updateOutcome { return []updateOutcome{{err: commonconstants.ErrLockUnavailable}} },
 			wantErrs:     []error{commonconstants.ErrLockUnavailable},
 			wantReleases: 1,
@@ -638,6 +638,33 @@ func TestPlaceBidUC_RetriesTheWriteEvenWhenTheRequestIsCancelled(t *testing.T) {
 // A replayed request reaches PlaceHold with a fresh bid id, so wallet freezes the gold
 // a second time; the domain then deduplicates on the idempotency key and records
 // nothing. That second hold backs no bid, and nothing else will ever release it.
+// A keyed bid whose first write could not take the lock wrote nothing, but its ID
+// is not spent: the caller is told the listing is busy and retries with the same
+// key, landing on this same hold. Releasing it eagerly would race that retry,
+// and a release landing after the retried bid would leave a winning bid with no
+// gold. So the hold is kept, for the retry or else the reconciler.
+func TestPlaceBid_KeyedLockTimeout_KeepsTheHoldForTheSameKeysRetry(t *testing.T) {
+	l := activeListing(t, 100)
+	repo := &fakeRepo{listing: l, updateScript: []updateOutcome{{err: commonconstants.ErrLockUnavailable}}}
+	wallet, release := &fakeWallet{}, &fakeReleaser{}
+	uc := NewPlaceBidUC(repo, wallet, release)
+	cmd := PlaceBidCommand{
+		ListingID: l.Snapshot().ID, MemberID: uuid.New(), Amount: 150, IdempotencyKey: uuid.New(), Now: time.Now(),
+	}
+
+	err := uc.Handle(context.Background(), cmd)
+
+	require.ErrorIs(t, err, commonconstants.ErrLockUnavailable, "still answered as busy, so the caller retries")
+	assert.Equal(t, 1, repo.updateCall, "busy is not retried here")
+	assert.Zero(t, release.calls, "the hold is kept for the same key's retry")
+	held := wallet.gotBidID
+
+	require.NoError(t, uc.Handle(context.Background(), cmd))
+	assert.Equal(t, held, wallet.gotBidID, "the retry holds under the same ID")
+	assert.True(t, l.HasBid(held))
+	assert.Zero(t, release.calls)
+}
+
 // One bid, one ID: every resend with the same key lands on the same hold and
 // bid, and changing member, listing or key gives another.
 func TestPlaceBidID_IsDeterministicPerMemberListingAndKey(t *testing.T) {

@@ -334,18 +334,58 @@ func TestBuyout_AmbiguousWriteThenSuccess_RecordsAndKeepsTheHold(t *testing.T) {
 	assert.Equal(t, 1, starter.calls)
 }
 
-// Failing before the listing was read proves the first attempt wrote nothing,
-// so its gold is given back at once, as PlaceBid does.
-func TestBuyout_FailedBeforeReadOnTheFirstAttempt_ReleasesTheHold(t *testing.T) {
+// Failing before the listing was read proves the first attempt wrote nothing.
+// Unkeyed, its random ID is never retried under, so the gold goes back at once.
+// Keyed, a lock timeout leaves the ID live: the buyer is told the listing is busy
+// and retries with the same key onto the same hold, so releasing would race that
+// retry and could leave the retried buyout with no gold (ADR-0027). A missing
+// listing can never take the buyout, keyed or not.
+func TestBuyout_FailedBeforeReadOnTheFirstAttempt(t *testing.T) {
+	tests := []struct {
+		name         string
+		key          uuid.UUID
+		failure      error
+		wantReleases int
+	}{
+		{"unkeyed lock timeout releases", uuid.Nil, commonconstants.ErrLockUnavailable, 1},
+		{"keyed lock timeout keeps the hold for the same key's retry", testBuyoutKey, commonconstants.ErrLockUnavailable, 0},
+		{"keyed missing listing releases", testBuyoutKey, commonconstants.ErrNotFound, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := buyoutListing(t)
+			release := &fakeReleaser{}
+			repo := &fakeRepo{listing: l, updateErr: fmt.Errorf("update: %w", tt.failure)}
+			cmd := buyoutCmd(l, uuid.New())
+			cmd.IdempotencyKey = tt.key
+
+			err := NewBuyoutUC(repo, &fakeWallet{}, &fakeStarter{}, release).Handle(context.Background(), cmd)
+
+			assert.ErrorIs(t, err, tt.failure)
+			assert.Equal(t, 1, repo.updateCall, "not retried")
+			assert.Equal(t, tt.wantReleases, release.calls)
+		})
+	}
+}
+
+// A keyed buyout that met a busy listing kept its hold; the same key's retry lands
+// on it and buys out, with nothing released along the way.
+func TestBuyout_KeyedLockTimeoutThenSameKeyRetry_BuysOutOnTheSameHold(t *testing.T) {
 	l := buyoutListing(t)
-	release := &fakeReleaser{}
-	repo := &fakeRepo{listing: l, updateErr: fmt.Errorf("update: %w", commonconstants.ErrLockUnavailable)}
+	member := uuid.New()
+	repo := &fakeRepo{listing: l, updateScript: []updateOutcome{{err: commonconstants.ErrLockUnavailable}}}
+	wallet, starter, release := &fakeWallet{}, &fakeStarter{}, &fakeReleaser{}
+	uc := NewBuyoutUC(repo, wallet, starter, release)
+	cmd := buyoutCmd(l, member)
 
-	err := NewBuyoutUC(repo, &fakeWallet{}, &fakeStarter{}, release).Handle(context.Background(), buyoutCmd(l, uuid.New()))
+	require.ErrorIs(t, uc.Handle(context.Background(), cmd), commonconstants.ErrLockUnavailable)
+	held := wallet.gotBidID
 
-	assert.ErrorIs(t, err, commonconstants.ErrLockUnavailable)
-	assert.Equal(t, 1, repo.updateCall, "not retried")
-	assert.Equal(t, 1, release.calls)
+	require.NoError(t, uc.Handle(context.Background(), cmd))
+	assert.Equal(t, held, wallet.gotBidID)
+	assert.True(t, l.HasBid(held))
+	assert.Zero(t, release.calls)
+	assert.Equal(t, 1, starter.calls)
 }
 
 // The first COMMIT landed but its acknowledgement was lost. The retry finds this
