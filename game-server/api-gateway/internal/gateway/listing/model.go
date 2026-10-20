@@ -47,6 +47,12 @@ type PlaceBidBody struct {
 	Amount int64 `json:"amount" minimum:"1" doc:"Gold offered. The first bid must meet the listing's start price; every later one must exceed the current leading bid. On a listing with a buyoutPrice every bid must stay below it."`
 }
 
+// BuyoutBody is the wire shape of a buyout. The listing comes from the path and
+// the buyer from the token; the amount is only the buyer's agreement to the price.
+type BuyoutBody struct {
+	Amount int64 `json:"amount" minimum:"1" doc:"Gold the buyer agrees to pay. Must equal the listing's buyoutPrice; the buyer is always charged that price."`
+}
+
 // Listing is a listing as its seller sees it. The optimistic-locking version is
 // internal to marketplace and has no field here.
 type Listing struct {

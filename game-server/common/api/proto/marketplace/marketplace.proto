@@ -157,8 +157,13 @@ message AcceptBidRequest {
 
 message AcceptBidResponse {}
 
+// Buyout
+// The buyer is derived from the authenticated context server-side. amount is
+// the gold the buyer agreed to; it must equal the listing's buyout price, and
+// the gold held is always that price, never this field.
 message BuyoutRequest {
   string listing_id = 1;
+  int64  amount     = 2;
 }
 
 message BuyoutResponse {}

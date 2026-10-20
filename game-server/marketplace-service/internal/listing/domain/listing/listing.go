@@ -465,18 +465,25 @@ func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time
 	return nil
 }
 
-// CanBuyout reports whether memberID could buy this listing out at now.
+// CanBuyout reports whether memberID could buy this listing out at now for
+// amount, the price they agreed to (FS-NXP1W Req 43).
 // Read-only: a caller about to hold gold for a buyout asks it first, and Buyout
 // applies the same rules again under the lock.
 //
 // Seller first, as in CanAcceptBid.
-func (l *Listing) CanBuyout(memberID uuid.UUID, now time.Time) error {
+func (l *Listing) CanBuyout(memberID uuid.UUID, amount int, now time.Time) error {
 	if l.sellerID == memberID {
 		return ErrSellerCannotBuyout
 	}
 
 	if l.buyoutPrice == nil {
 		return ErrNoBuyoutPrice
+	}
+
+	// the price the buyer agreed to must be the one they will pay, so a price
+	// they were not shown can never be charged
+	if amount != *l.buyoutPrice {
+		return ErrBuyoutAmountMismatch
 	}
 
 	return l.AcceptsBidAt(now)
@@ -491,13 +498,14 @@ func (l *Listing) CanBuyout(memberID uuid.UUID, now time.Time) error {
 // bidID is minted by the caller and is what the gold is held against, which
 // makes a retry recognisable: a bid already present is a replay and succeeds
 // before any rule is checked, since the first attempt may already have started
-// the settlement that froze the listing.
-func (l *Listing) Buyout(bidID, memberID uuid.UUID, now time.Time) error {
+// the settlement that froze the listing. That includes the amount check: the
+// first attempt passed it, and the bid is recorded at the buyout price.
+func (l *Listing) Buyout(bidID, memberID uuid.UUID, amount int, now time.Time) error {
 	if l.findBidByID(bidID) != nil {
 		return nil
 	}
 
-	if err := l.CanBuyout(memberID, now); err != nil {
+	if err := l.CanBuyout(memberID, amount, now); err != nil {
 		return err
 	}
 

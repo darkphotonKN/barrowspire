@@ -431,7 +431,7 @@ export interface paths {
         put?: never;
         /**
          * Buy out a listing
-         * @description Buys the listing outright at its buyout price as the signed-in member, ending the auction. The price is the listing's own; nothing is sent. Answers once settlement has started; the sale completes asynchronously. Repeating it is safe: a buyout already made is not made twice. Refused for the seller, a closed auction, a listing with no buyout price, or a buyer short of gold. 409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means this member's earlier buyout of the listing was abandoned and its gold returned, and retrying will not help.
+         * @description Buys the listing outright at its buyout price as the signed-in member, ending the auction. The amount sent must equal the listing's buyoutPrice, and that price is what is charged. Answers once settlement has started; the sale completes asynchronously. Repeating it is safe: a buyout already made is not made twice. Refused for an amount that is not the buyout price, the seller, a closed auction, a listing with no buyout price, or a buyer short of gold. 409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means this member's earlier buyout of the listing was abandoned and its gold returned, and retrying will not help.
          */
         post: operations["buyout"];
         delete?: never;
@@ -867,6 +867,13 @@ export interface components {
             s3_key?: string;
             /** @description Correlates the request with its confirmation */
             upload_id?: string;
+        };
+        BuyoutBody: {
+            /**
+             * Format: int64
+             * @description Gold the buyer agrees to pay. Must equal the listing's buyoutPrice; the buyer is always charged that price.
+             */
+            amount: number;
         };
         Character: {
             /** @description warrior, mage or archer. */
@@ -3515,7 +3522,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuyoutBody"];
+            };
+        };
         responses: {
             /** @description Accepted */
             202: {

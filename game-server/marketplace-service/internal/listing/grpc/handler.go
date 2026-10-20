@@ -200,6 +200,7 @@ func (h *Handler) Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.Buyout
 	if err := h.buyout.Handle(ctx, usecase.BuyoutCommand{
 		ListingID: listingID,
 		MemberID:  memberID,
+		Amount:    int(req.GetAmount()),
 		Now:       time.Now(),
 	}); err != nil {
 		return nil, mapError(ctx, err)
@@ -408,7 +409,8 @@ func mapError(ctx context.Context, err error) error {
 	// the caller sent a structurally valid request carrying a nonsensical value
 	case errors.Is(err, listing.ErrInvalidAmount) ||
 		errors.Is(err, listing.ErrBidTooLow) ||
-		errors.Is(err, listing.ErrBidAtOrAboveBuyout):
+		errors.Is(err, listing.ErrBidAtOrAboveBuyout) ||
+		errors.Is(err, listing.ErrBuyoutAmountMismatch):
 		code = codes.InvalidArgument
 		msg = "invalid argument"
 		logLevel = slog.LevelInfo

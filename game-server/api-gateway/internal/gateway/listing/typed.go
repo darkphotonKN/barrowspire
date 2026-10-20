@@ -265,9 +265,10 @@ func registerAcceptBid(api huma.API, h *Handler,
 	}))
 }
 
-// No body and no Idempotency-Key, unlike place-bid: marketplace prices the
-// buyout from the listing and derives its bid ID from buyer and listing, so a
-// repeat is recognised without anything from the caller.
+// Unlike place-bid there is no Idempotency-Key: marketplace derives the bid ID
+// from buyer and listing, so a repeat is recognised without anything from the
+// caller. The amount is the buyer's agreement only; marketplace charges the
+// listing's own buyout price.
 func registerBuyout(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)),
 ) {
@@ -277,6 +278,8 @@ func registerBuyout(api huma.API, h *Handler,
 		// Read only to forward downstream: marketplace takes the buyer from this
 		// token. Hidden because the bearer scheme documents it.
 		Authorization string `header:"Authorization" hidden:"true"`
+
+		Body BuyoutBody
 	}
 
 	type output struct{}
@@ -284,9 +287,10 @@ func registerBuyout(api huma.API, h *Handler,
 	huma.Register(api, huma.Operation{
 		OperationID: "buyout",
 		Description: "Buys the listing outright at its buyout price as the signed-in member, ending the auction. " +
-			"The price is the listing's own; nothing is sent. Answers once settlement has started; the sale " +
-			"completes asynchronously. Repeating it is safe: a buyout already made is not made twice. " +
-			"Refused for the seller, a closed auction, a listing with no buyout price, or a buyer short of gold. " +
+			"The amount sent must equal the listing's buyoutPrice, and that price is what is charged. " +
+			"Answers once settlement has started; the sale completes asynchronously. Repeating it is safe: a " +
+			"buyout already made is not made twice. Refused for an amount that is not the buyout price, the " +
+			"seller, a closed auction, a listing with no buyout price, or a buyer short of gold. " +
 			"409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means this member's " +
 			"earlier buyout of the listing was abandoned and its gold returned, and retrying will not help.",
 		DefaultStatus: http.StatusAccepted,
@@ -309,6 +313,7 @@ func registerBuyout(api huma.API, h *Handler,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
 		_, err := h.client.Buyout(withBearer(ctx, in.Authorization), &pb.BuyoutRequest{
 			ListingId: in.ListingID,
+			Amount:    in.Body.Amount,
 		})
 		if err != nil {
 			return nil, err

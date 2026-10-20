@@ -48,10 +48,12 @@ func NewBuyoutUC(repo listing.Repository, wallet WalletService, settlementStarte
 
 // NOTE: named {Action}{Resource}Command because its an INBOUND application WRITE intent
 //
-// No amount: a buyout always costs the listing's buyout price.
+// Amount is what the buyer agreed to pay, checked against the buyout price. It
+// never prices the hold: a buyout always costs the listing's buyout price.
 type BuyoutCommand struct {
 	ListingID uuid.UUID
 	MemberID  uuid.UUID
+	Amount    int
 	Now       time.Time
 }
 
@@ -89,7 +91,7 @@ func (uc *BuyoutUC) Handle(ctx context.Context, cmd BuyoutCommand) error {
 // holdAndRecord holds the buyout price against bidID and records the buyout,
 // giving the gold back when the listing definitively refused it.
 func (uc *BuyoutUC) holdAndRecord(ctx context.Context, current *listing.Listing, bidID uuid.UUID, cmd BuyoutCommand) error {
-	if err := current.CanBuyout(cmd.MemberID, cmd.Now); err != nil {
+	if err := current.CanBuyout(cmd.MemberID, cmd.Amount, cmd.Now); err != nil {
 		return fmt.Errorf("buyout usecase listing %v : %w", cmd.ListingID, err)
 	}
 	// CanBuyout has just refused a listing without one, so the price is set
@@ -107,7 +109,7 @@ func (uc *BuyoutUC) holdAndRecord(ctx context.Context, current *listing.Listing,
 	}
 
 	err := uc.repo.Update(ctx, cmd.ListingID, func(l *listing.Listing) error {
-		return l.Buyout(bidID, cmd.MemberID, cmd.Now)
+		return l.Buyout(bidID, cmd.MemberID, cmd.Amount, cmd.Now)
 	})
 	if err == nil {
 		return nil
@@ -146,5 +148,6 @@ func isDefinitiveBuyoutRefusal(err error) bool {
 	return errors.Is(err, listing.ErrListingNotAcceptingBids) ||
 		errors.Is(err, listing.ErrListingExpired) ||
 		errors.Is(err, listing.ErrSellerCannotBuyout) ||
-		errors.Is(err, listing.ErrNoBuyoutPrice)
+		errors.Is(err, listing.ErrNoBuyoutPrice) ||
+		errors.Is(err, listing.ErrBuyoutAmountMismatch)
 }
