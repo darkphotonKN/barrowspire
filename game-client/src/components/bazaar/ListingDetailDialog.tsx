@@ -279,7 +279,14 @@ function BidBox({
     if (!touched.current) setText(String(listing.minimumBid));
   }, [listing.minimumBid]);
 
-  const box = bidBox({ text, minimumBid: listing.minimumBid, purse, ended, submitting });
+  const box = bidBox({
+    text,
+    minimumBid: listing.minimumBid,
+    buyoutPrice: listing.buyoutPrice,
+    purse,
+    ended,
+    submitting,
+  });
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

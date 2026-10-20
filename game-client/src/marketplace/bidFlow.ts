@@ -6,7 +6,8 @@
  * 2. send the bid;
  * 3. landed: forget the attempt (the next bid is a new bid with a new key), let the box follow
  *    the minimum again, and re-read the listing and purse before saying it leads;
- *    outbid: let the box follow the minimum again and re-read before naming the new minimum;
+ *    outbid: let the box follow the minimum again and re-read before naming the new minimum, or
+ *    the buyout cap when the re-read shows the amount was at or above it (FS-49Z37 req 21);
  *    either failure: keep the attempt only where {@link keepsBidKey} says a same-key retry is
  *    right (FS-49Z37 req 22–23), so a retry of a busy listing lands at most once and a spent
  *    key is never sent again.
@@ -17,7 +18,7 @@ import {
   bidFailure,
   bidLeads,
   keepsBidKey,
-  outbidMessage,
+  validationRefusal,
   type BidAttempt,
   type BidNote,
 } from "./bid";
@@ -26,7 +27,7 @@ import { BROWSE_UNREACHABLE } from "./browse";
 export interface BidSubmitDeps {
   placeBid: (amount: number, idempotencyKey: string) => Promise<void>;
   /** Re-reads the listing; undefined when the read failed. */
-  refresh: () => Promise<{ minimumBid: number } | undefined>;
+  refresh: () => Promise<{ minimumBid: number; buyoutPrice?: number } | undefined>;
   reloadPurse: () => Promise<void>;
   mint: () => string;
   /** Lets the box follow the minimum again; called before the re-read so the new one lands in it. */
@@ -49,7 +50,10 @@ export async function submitBid(
     const fresh = await deps.refresh();
     return {
       attempt: kept,
-      note: { tone: "error", text: fresh ? outbidMessage(fresh.minimumBid) : BROWSE_UNREACHABLE },
+      note: {
+        tone: "error",
+        text: fresh ? validationRefusal(attempt.amount, fresh) : BROWSE_UNREACHABLE,
+      },
     };
   }
   deps.resetTouched();

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
 import {
+  BID_AT_BUYOUT,
   BID_CONFLICT,
   BID_ENDED,
   BID_LAPSED,
@@ -61,6 +62,23 @@ describe("bidBox", () => {
     ["empty", { text: "" }, "Enter a whole amount of gold."],
   ])("should refuse an amount %s", (_label, change, reason) => {
     expect(bidBox({ ...ready, ...change })).toEqual({ canSubmit: false, reason });
+  });
+
+  it("should stop a bid at the buyout price and allow one just below it", () => {
+    const capped = { ...ready, buyoutPrice: 80 };
+    expect(bidBox({ ...capped, text: "80" })).toEqual({ canSubmit: false, reason: BID_AT_BUYOUT });
+    expect(bidBox({ ...capped, text: "79" })).toEqual({ canSubmit: true, amount: 79 });
+  });
+
+  it("should stop a bid above the buyout price before weighing the purse", () => {
+    expect(bidBox({ ...ready, text: "500", buyoutPrice: 80 })).toEqual({
+      canSubmit: false,
+      reason: BID_AT_BUYOUT,
+    });
+  });
+
+  it("should not cap a listing without a buyout price", () => {
+    expect(bidBox({ ...ready, text: "100" })).toEqual({ canSubmit: true, amount: 100 });
   });
 
   it("should close for good once the auction has ended", () => {

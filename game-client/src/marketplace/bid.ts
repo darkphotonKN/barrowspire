@@ -15,6 +15,7 @@ export const BID_LAPSED = "That attempt lapsed — try again.";
 export const PURSE_NOT_READY = "Your purse isn't ready yet — try again shortly.";
 export const PURSE_FAILED = "Your purse could not be read — try again shortly.";
 const NOT_WHOLE = "Enter a whole amount of gold.";
+export const BID_AT_BUYOUT = "Bids must stay below the buyout price — to buy now, use Buy out.";
 
 export const outbidMessage = (minimumBid: number): string =>
   `Someone bid higher — the minimum is now ⟡${formatGold(minimumBid)}.`;
@@ -51,6 +52,8 @@ export function purseFailure(err: unknown): Purse {
 export interface BidBoxInput {
   text: string;
   minimumBid: number;
+  /** When set, the highest acceptable bid is one below it (FS-49Z37 req 20). */
+  buyoutPrice?: number;
   purse: Purse;
   /** By the server's word or by the countdown reaching zero. */
   ended: boolean;
@@ -63,7 +66,9 @@ export type BidBoxState =
 
 /**
  * Whether Bid may be pressed, and why not. Below the minimum or above the available gold is
- * refused here (req 26); an ended auction closes the box for good (Edge States).
+ * refused here (req 26), as is a bid at or above the buyout price (FS-49Z37 req 20), which is
+ * named before the purse so the delver is pointed at Buy out; an ended auction closes the box
+ * for good (Edge States).
  */
 export function bidBox(input: BidBoxInput): BidBoxState {
   if (input.ended) return { canSubmit: false, reason: BID_ENDED, closed: true };
@@ -79,6 +84,8 @@ export function bidBox(input: BidBoxInput): BidBoxState {
       canSubmit: false,
       reason: `The minimum bid is ⟡${formatGold(input.minimumBid)}.`,
     };
+  if (input.buyoutPrice !== undefined && amount >= input.buyoutPrice)
+    return { canSubmit: false, reason: BID_AT_BUYOUT };
   if (amount > purse.availableGold)
     return { canSubmit: false, reason: BID_NOT_ENOUGH_GOLD };
   if (input.submitting) return { canSubmit: false };
@@ -120,7 +127,7 @@ export function keepsBidKey(err: unknown): boolean {
 
 /**
  * What a refused bid means (req 29), routed by the problem's `code`. `refetch` asks the caller
- * to reload the listing and then say {@link outbidMessage} with the new minimum.
+ * to reload the listing and then let {@link validationRefusal} name the cause.
  */
 export function bidFailure(
   err: unknown,
@@ -140,6 +147,20 @@ export function bidFailure(
   }
   if (err.status === 409) return { message: BID_CONFLICT };
   return { message: err.detail };
+}
+
+/**
+ * What a `VALIDATION_FAILED` bid meant, judged by the listing re-read after it (FS-49Z37 req 21).
+ * The server answers a bid at or above the buyout price and a plain too-low bid alike, so an
+ * amount at or above the re-read buyout price was the cap; anything else was outbid.
+ */
+export function validationRefusal(
+  amount: number,
+  fresh: { minimumBid: number; buyoutPrice?: number },
+): string {
+  return fresh.buyoutPrice !== undefined && amount >= fresh.buyoutPrice
+    ? BID_AT_BUYOUT
+    : outbidMessage(fresh.minimumBid);
 }
 
 /** A line under the bid box: the server's answer to a bid. */

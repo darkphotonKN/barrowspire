@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
-import { BID_CONFLICT, BID_LAPSED, BID_NOT_ENOUGH_GOLD, type BidAttempt } from "./bid";
+import { BID_AT_BUYOUT, BID_CONFLICT, BID_LAPSED, BID_NOT_ENOUGH_GOLD, type BidAttempt } from "./bid";
 import { BROWSE_UNREACHABLE } from "./browse";
 import { submitBid, type BidSubmitDeps } from "./bidFlow";
 
@@ -10,7 +10,11 @@ const apiError = (status: number, code: string) =>
 /** Deps that record the order things happen in; `placeBid` answers from a script. */
 function deps(
   answers: (Error | undefined)[],
-  { minimumAfter = 80, refreshFails = false } = {},
+  {
+    minimumAfter = 80,
+    buyoutAfter,
+    refreshFails = false,
+  }: { minimumAfter?: number; buyoutAfter?: number; refreshFails?: boolean } = {},
 ) {
   const log: string[] = [];
   const keys: string[] = [];
@@ -24,7 +28,7 @@ function deps(
     },
     refresh: async () => {
       log.push("refresh");
-      return refreshFails ? undefined : { minimumBid: minimumAfter };
+      return refreshFails ? undefined : { minimumBid: minimumAfter, buyoutPrice: buyoutAfter };
     },
     reloadPurse: async () => {
       log.push("purse");
@@ -71,6 +75,26 @@ describe("submitBid", () => {
     const { d, log } = deps([apiError(400, "VALIDATION_FAILED")], { minimumAfter: 90 });
     const result = await submitBid({ amount: 60, previous: undefined, availableGold: 100 }, d);
     expect(log).toEqual(["place 60", "resetTouched", "refresh"]);
+    expect(result.note).toEqual({
+      tone: "error",
+      text: "Someone bid higher — the minimum is now ⟡90.",
+    });
+  });
+
+  it.each([
+    ["at", 100],
+    ["above", 120],
+  ])("should point a bid refused %s the re-read buyout price at Buy out, not say outbid", async (_, amount) => {
+    const { d, log } = deps([apiError(400, "VALIDATION_FAILED")], { buyoutAfter: 100 });
+    const result = await submitBid({ amount, previous: undefined, availableGold: 500 }, d);
+    expect(log).toEqual([`place ${amount}`, "resetTouched", "refresh"]);
+    expect(result.note).toEqual({ tone: "error", text: BID_AT_BUYOUT });
+    expect(result.attempt).toBeUndefined();
+  });
+
+  it("should still say outbid when the refused amount is below the re-read buyout price", async () => {
+    const { d } = deps([apiError(400, "VALIDATION_FAILED")], { minimumAfter: 90, buyoutAfter: 100 });
+    const result = await submitBid({ amount: 60, previous: undefined, availableGold: 500 }, d);
     expect(result.note).toEqual({
       tone: "error",
       text: "Someone bid higher — the minimum is now ⟡90.",
