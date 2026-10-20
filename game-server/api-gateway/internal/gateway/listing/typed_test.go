@@ -47,9 +47,11 @@ type stubListingClient struct {
 	gotMine     *pb.ListMyListingsRequest
 	gotBrowse   *pb.BrowseListingsRequest
 	gotGet      *pb.GetListingRequest
+	gotMyBids   *pb.ListMyBidsRequest
 	gotAuth     []string
 
 	mine   *pb.ListMyListingsResponse
+	myBids *pb.ListMyBidsResponse
 	browse *pb.BrowseListingsResponse
 	one    *pb.Listing
 }
@@ -123,6 +125,19 @@ func (s *stubListingClient) ListMyListings(ctx context.Context, req *pb.ListMyLi
 		return &pb.ListMyListingsResponse{}, nil
 	}
 	return s.mine, nil
+}
+
+func (s *stubListingClient) ListMyBids(ctx context.Context, req *pb.ListMyBidsRequest) (*pb.ListMyBidsResponse, error) {
+	s.calls++
+	s.gotMyBids = req
+	s.recordAuth(ctx)
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.myBids == nil {
+		return &pb.ListMyBidsResponse{}, nil
+	}
+	return s.myBids, nil
 }
 
 func (s *stubListingClient) recordAuth(ctx context.Context) {
