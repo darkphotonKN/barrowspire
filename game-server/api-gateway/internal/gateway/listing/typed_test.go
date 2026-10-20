@@ -41,6 +41,7 @@ type stubListingClient struct {
 	gotListReq  *pb.ListItemRequest
 	gotWithdraw *pb.WithdrawBidRequest
 	gotAccept   *pb.AcceptBidRequest
+	gotBuyout   *pb.BuyoutRequest
 	gotMine     *pb.ListMyListingsRequest
 	gotBrowse   *pb.BrowseListingsRequest
 	gotGet      *pb.GetListingRequest
@@ -100,6 +101,13 @@ func (s *stubListingClient) AcceptBid(ctx context.Context, req *pb.AcceptBidRequ
 	s.gotAccept = req
 	s.recordAuth(ctx)
 	return &pb.AcceptBidResponse{}, s.err
+}
+
+func (s *stubListingClient) Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.BuyoutResponse, error) {
+	s.calls++
+	s.gotBuyout = req
+	s.recordAuth(ctx)
+	return &pb.BuyoutResponse{}, s.err
 }
 
 func (s *stubListingClient) ListMyListings(ctx context.Context, req *pb.ListMyListingsRequest) (*pb.ListMyListingsResponse, error) {
@@ -456,6 +464,64 @@ func TestAcceptBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 			client := &stubListingClient{err: tt.err}
 
 			w := acceptBid(newRouter(client), uuid.New().String())
+
+			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
+		})
+	}
+}
+
+// ========================= BUYOUT =========================
+
+func buyout(r *gin.Engine, listingID string) *httptest.ResponseRecorder {
+	return testsupport.DoWithHeaders(r, http.MethodPost,
+		"/api/marketplace/listings/"+listingID+"/buyout", "", authedHeaders())
+}
+
+// The buyout is recorded and settlement started before the answer, but the sale
+// itself completes asynchronously, so the answer is Accepted.
+func TestBuyout_AnswersAcceptedAndForwardsTheListing(t *testing.T) {
+	client := &stubListingClient{}
+	listingID := uuid.New().String()
+
+	w := buyout(newRouter(client), listingID)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	assert.Empty(t, w.Body.String())
+	require.Equal(t, 1, client.calls)
+	assert.Equal(t, listingID, client.gotBuyout.GetListingId())
+	// the buyer is marketplace's to read from the token, so it must travel on
+	assert.Equal(t, []string{"Bearer caller-token"}, client.gotAuth)
+}
+
+func TestBuyout_RejectsAMalformedListingIDBeforeCallingMarketplace(t *testing.T) {
+	client := &stubListingClient{}
+
+	w := buyout(newRouter(client), "not-a-uuid")
+
+	testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
+	assert.Zero(t, client.calls, "an invalid request must not reach marketplace")
+}
+
+func TestBuyout_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   errcode.Code
+	}{
+		{"buyer is the seller", status.Error(codes.PermissionDenied, "permission denied"), http.StatusForbidden, errcode.Forbidden},
+		{"unknown listing", status.Error(codes.NotFound, "not found"), http.StatusNotFound, errcode.NotFound},
+		{"closed, bought out, no buyout price or short of gold", status.Error(codes.FailedPrecondition, "failed precondition"), http.StatusBadRequest, errcode.FailedPrecondition},
+		{"listing busy", status.Error(codes.Aborted, "aborted"), http.StatusConflict, errcode.Conflict},
+		{"marketplace or wallet unreachable", status.Error(codes.Unavailable, "unavailable"), http.StatusServiceUnavailable, errcode.ServiceUnavailable},
+		{"settlement could not start", status.Error(codes.Internal, "unhandled error"), http.StatusInternalServerError, errcode.Internal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &stubListingClient{err: tt.err}
+
+			w := buyout(newRouter(client), uuid.New().String())
 
 			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
 		})
