@@ -25,6 +25,9 @@ the gRPC handler (`internal/listing/grpc/handler.go` `Buyout`) and the listing b
 
 > **Later the same day:** `amount` was put back by I-NXP1W-18, so the "no request body" half below
 > no longer holds. Leaving out `Idempotency-Key` stands, recorded as ADR-0025.
+>
+> **Later still:** ADR-0026 superseded ADR-0025, and I-NXP1W-19 put `Idempotency-Key` back. Neither
+> half of the deviation below holds any more; the route now matches the §API surface row.
 
 The route follows the **built** interface, not the §API surface row:
 
