@@ -141,7 +141,7 @@ func TestListMyBidsMapsEveryBidField(t *testing.T) {
 	assert.False(t, got.GetListing().GetEnded())
 	assert.Equal(t, int64(80), got.GetListing().GetCurrentPrice())
 	assert.Equal(t, int64(500), got.GetListing().GetBuyoutPrice())
-	assert.Equal(t, contested.Listing.ItemID.String(), got.GetListing().GetItemInstanceId())
+	assert.Equal(t, contested.Listing.ItemID.String(), got.GetListing().GetItemId())
 
 	// nobody leads and no buyout was set: both say so by absence
 	past := res.GetBids()[1]

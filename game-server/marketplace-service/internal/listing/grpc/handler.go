@@ -429,12 +429,12 @@ func toProtoMyBid(b dto.MyBid, now time.Time) *pb.MyBid {
 		Status:    string(b.Status),
 		PlacedAt:  timestamppb.New(b.PlacedAt),
 		Listing: &pb.MyBidListing{
-			Status:         string(b.Listing.Status),
-			EndsAt:         timestamppb.New(b.Listing.EndsAt),
-			Ended:          b.Listing.EndedAt(now),
-			CurrentPrice:   optionalInt64(b.Listing.CurrentPrice),
-			BuyoutPrice:    optionalInt64(b.Listing.BuyoutPrice),
-			ItemInstanceId: b.Listing.ItemID.String(),
+			Status:       string(b.Listing.Status),
+			EndsAt:       timestamppb.New(b.Listing.EndsAt),
+			Ended:        b.Listing.EndedAt(now),
+			CurrentPrice: optionalInt64(b.Listing.CurrentPrice),
+			BuyoutPrice:  optionalInt64(b.Listing.BuyoutPrice),
+			ItemId:       b.Listing.ItemID.String(),
 		},
 	}
 }

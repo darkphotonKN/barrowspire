@@ -128,7 +128,7 @@ message MyBidListing {
   bool ended = 3;                     // ACTIVE but past ends_at, not yet settled
   optional int64 current_price = 4;   // the leading bid, anyone's; absent when nobody leads
   optional int64 buyout_price = 5;    // absent when the seller set none
-  string item_instance_id = 6;        // the listed item, for the caller to embed
+  string item_id = 6;                 // the listed item, for the caller to embed
 }
 
 // BrowseListings

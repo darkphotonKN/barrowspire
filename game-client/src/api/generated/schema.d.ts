@@ -296,6 +296,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/marketplace/bids/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Page my bids
+         * @description Pages the signed-in member's own bids, newest placed first, one row per bid, each with where its listing stands now and the listed item embedded. Withdrawn and failed bids are not listed. The bidder is taken from the token; there is no parameter for reading another member's bids. If the items lookup fails the whole request fails.
+         */
+        get: operations["list-my-bids"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/marketplace/listings": {
         parameters: {
             query?: never;
@@ -1514,6 +1534,47 @@ export interface components {
              * @description Duplicates the HTTP status
              */
             statusCode: number;
+        };
+        MyBid: {
+            /**
+             * Format: int64
+             * @description Gold bid.
+             */
+            amount: number;
+            /** Format: uuid */
+            bidId: string;
+            /** @description The listed item. Absent only when items has no such instance. */
+            item?: components["schemas"]["ItemSummary"];
+            listing: components["schemas"]["MyBidListing"];
+            /** Format: uuid */
+            listingId: string;
+            /** Format: date-time */
+            placedAt: string;
+            /** @description Bid status: PENDING, WINNING, OUTBID, WON or LOST. */
+            status: string;
+        };
+        MyBidListing: {
+            /**
+             * Format: int64
+             * @description Gold that buys the item outright. Absent when the seller set none.
+             */
+            buyoutPrice?: number;
+            /**
+             * Format: int64
+             * @description The leading bid, anyone's. Absent when nobody leads.
+             */
+            currentPrice?: number;
+            /** @description True when the auction is past endsAt but not yet settled; it no longer accepts bids. */
+            ended: boolean;
+            /** Format: date-time */
+            endsAt: string;
+            /** @description Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED. */
+            status: string;
+        };
+        MyBidPage: {
+            bids: components["schemas"]["MyBid"][];
+            /** @description Pass back as cursor for the next page. Absent on the last page. */
+            nextCursor?: string;
         };
         Notification: {
             /** @description Creation time */
@@ -2948,6 +3009,75 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "list-my-bids": {
+        parameters: {
+            query?: {
+                /** @description Opaque position from a previous page's nextCursor. Do not construct. */
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyBidPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
