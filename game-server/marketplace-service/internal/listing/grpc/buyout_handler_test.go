@@ -29,7 +29,7 @@ func (s *stubBuyout) Handle(ctx context.Context, cmd usecase.BuyoutCommand) erro
 }
 
 func newBuyoutHandler(uc Buyout) *Handler {
-	return NewHandler(nil, nil, nil, nil, nil, nil, nil, nil, uc)
+	return NewHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, uc)
 }
 
 // The buyer is whoever the token says, never anything in the request.
