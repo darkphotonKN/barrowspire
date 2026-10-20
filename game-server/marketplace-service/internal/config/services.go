@@ -70,6 +70,11 @@ func NewServices(ctx context.Context, db *sqlx.DB, itemsClient itemreserver.Item
 	// returns, so it has to be its own goroutine
 	go reconcileHoldsWorker.Run(ctx)
 
+	// the expiry trigger (FS-NXP1W §Req 2, ADR-0016): without it an auction that
+	// simply runs out never settles. Its own goroutine, for the same reason.
+	startExpiredSettlementsUC := usecase.NewStartExpiredSettlementsUC(listingquery.NewExpiredListingsQuery(db), settlementStarter)
+	go worker.NewExpiryPollerWorker(startExpiredSettlementsUC).Run(ctx)
+
 	reconcileWorker := worker.NewReconcileWorker(reconcileReservationsUC)
 	// Run loops on a ticker and never returns, so it has to be its own
 	// goroutine, called inline it would block NewServices forever.
