@@ -42,6 +42,7 @@ func RegisterOperations(api huma.API, h *Handler,
 	registerPlaceBid(api, h, protect)
 	registerWithdrawBid(api, h, protect)
 	registerAcceptBid(api, h, protect)
+	registerBuyout(api, h, protect)
 	registerListMyListings(api, h, protect)
 	registerBrowseListings(api, h)
 	registerGetListing(api, h)
@@ -254,6 +255,57 @@ func registerAcceptBid(api huma.API, h *Handler,
 		Tags:        []string{"marketplace"},
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
 		_, err := h.client.AcceptBid(withBearer(ctx, in.Authorization), &pb.AcceptBidRequest{
+			ListingId: in.ListingID,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return &output{}, nil
+	}))
+}
+
+// No body and no Idempotency-Key, unlike place-bid: marketplace prices the
+// buyout from the listing and derives its bid ID from buyer and listing, so a
+// repeat is recognised without anything from the caller.
+func registerBuyout(api huma.API, h *Handler,
+	protect func(huma.Context, func(huma.Context)),
+) {
+	type input struct {
+		ListingID string `path:"listing_id" format:"uuid"`
+
+		// Read only to forward downstream: marketplace takes the buyer from this
+		// token. Hidden because the bearer scheme documents it.
+		Authorization string `header:"Authorization" hidden:"true"`
+	}
+
+	type output struct{}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "buyout",
+		Description: "Buys the listing outright at its buyout price as the signed-in member, ending the auction. " +
+			"The price is the listing's own; nothing is sent. Answers once settlement has started; the sale " +
+			"completes asynchronously. Repeating it is safe: a buyout already made is not made twice. " +
+			"Refused for the seller, a closed auction, a listing with no buyout price, or a buyer short of gold.",
+		DefaultStatus: http.StatusAccepted,
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusNotFound,
+			http.StatusConflict,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+			http.StatusServiceUnavailable,
+		},
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodPost,
+		Path:        "/api/marketplace/listings/{listing_id}/buyout",
+		Summary:     "Buy out a listing",
+		Tags:        []string{"marketplace"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		_, err := h.client.Buyout(withBearer(ctx, in.Authorization), &pb.BuyoutRequest{
 			ListingId: in.ListingID,
 		})
 		if err != nil {

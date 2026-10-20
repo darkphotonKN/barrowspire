@@ -48,6 +48,10 @@ func (c *Client) AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.A
 	return pb.NewMarketplaceServiceClient(c.conn).AcceptBid(ctx, req)
 }
 
+func (c *Client) Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.BuyoutResponse, error) {
+	return pb.NewMarketplaceServiceClient(c.conn).Buyout(ctx, req)
+}
+
 func (c *Client) ListMyListings(ctx context.Context, req *pb.ListMyListingsRequest) (*pb.ListMyListingsResponse, error) {
 	return pb.NewMarketplaceServiceClient(c.conn).ListMyListings(ctx, req)
 }

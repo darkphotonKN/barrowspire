@@ -3046,6 +3046,73 @@ paths:
       summary: Withdraw a bid
       tags:
         - marketplace
+  /api/marketplace/listings/{listing_id}/buyout:
+    post:
+      description: "Buys the listing outright at its buyout price as the signed-in member, ending the auction. The price is the listing's own; nothing is sent. Answers once settlement has started; the sale completes asynchronously. Repeating it is safe: a buyout already made is not made twice. Refused for the seller, a closed auction, a listing with no buyout price, or a buyer short of gold."
+      operationId: buyout
+      parameters:
+        - in: path
+          name: listing_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "202":
+          description: Accepted
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Buy out a listing
+      tags:
+        - marketplace
   /api/member:
     get:
       description: Returns the member identified by the bearer token. Identity never comes from the request.

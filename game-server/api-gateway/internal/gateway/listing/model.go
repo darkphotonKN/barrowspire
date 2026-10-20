@@ -16,6 +16,7 @@ type ListingClient interface {
 	PlaceBid(ctx context.Context, req *pb.PlaceBidRequest) (*pb.PlaceBidResponse, error)
 	WithdrawBid(ctx context.Context, req *pb.WithdrawBidRequest) (*pb.WithdrawBidResponse, error)
 	AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.AcceptBidResponse, error)
+	Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.BuyoutResponse, error)
 	ListMyListings(ctx context.Context, req *pb.ListMyListingsRequest) (*pb.ListMyListingsResponse, error)
 	BrowseListings(ctx context.Context, req *pb.BrowseListingsRequest) (*pb.BrowseListingsResponse, error)
 	GetListing(ctx context.Context, req *pb.GetListingRequest) (*pb.GetListingResponse, error)
