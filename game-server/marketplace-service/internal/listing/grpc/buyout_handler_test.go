@@ -37,12 +37,13 @@ func TestBuyout_PassesTheListingAndTheAuthenticatedBuyer(t *testing.T) {
 	uc := &stubBuyout{}
 	buyerID, listingID := uuid.New(), uuid.New()
 
-	_, err := newBuyoutHandler(uc).Buyout(authedCtx(t, buyerID), &pb.BuyoutRequest{ListingId: listingID.String()})
+	_, err := newBuyoutHandler(uc).Buyout(authedCtx(t, buyerID), &pb.BuyoutRequest{ListingId: listingID.String(), Amount: 500})
 
 	require.NoError(t, err)
 	require.Equal(t, 1, uc.calls)
 	assert.Equal(t, listingID, uc.gotCmd.ListingID)
 	assert.Equal(t, buyerID, uc.gotCmd.MemberID)
+	assert.Equal(t, 500, uc.gotCmd.Amount, "the agreed amount travels on for the usecase to check")
 	assert.False(t, uc.gotCmd.Now.IsZero())
 }
 
@@ -78,6 +79,8 @@ func TestBuyout_RefusalsKeepTheirMeaning(t *testing.T) {
 	}{
 		{"seller buying own listing", listing.ErrSellerCannotBuyout, codes.PermissionDenied},
 		{"no buyout price", listing.ErrNoBuyoutPrice, codes.FailedPrecondition},
+		// the caller sent a value that is wrong, not a listing that cannot sell
+		{"amount not the buyout price", listing.ErrBuyoutAmountMismatch, codes.InvalidArgument},
 		{"not accepting bids (frozen or bought out)", listing.ErrListingNotAcceptingBids, codes.FailedPrecondition},
 		{"listing ended", listing.ErrListingExpired, codes.FailedPrecondition},
 		{"insufficient gold", commonconstants.ErrInsufficientGold, codes.FailedPrecondition},

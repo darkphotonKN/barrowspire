@@ -124,7 +124,7 @@ func TestListingRepository_BuyoutOverIncumbentPersists(t *testing.T) {
 
 	buyoutBid := uuid.New()
 	require.NoError(t, repo.Update(ctx, id, func(l *listing.Listing) error {
-		return l.Buyout(buyoutBid, uuid.New(), now)
+		return l.Buyout(buyoutBid, uuid.New(), 500, now)
 	}))
 
 	got, err := repo.FindByID(ctx, id)

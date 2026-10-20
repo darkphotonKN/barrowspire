@@ -472,9 +472,11 @@ func TestAcceptBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 
 // ========================= BUYOUT =========================
 
-func buyout(r *gin.Engine, listingID string) *httptest.ResponseRecorder {
+const buyoutBody = `{"amount":500}`
+
+func buyout(r *gin.Engine, listingID, body string) *httptest.ResponseRecorder {
 	return testsupport.DoWithHeaders(r, http.MethodPost,
-		"/api/marketplace/listings/"+listingID+"/buyout", "", authedHeaders())
+		"/api/marketplace/listings/"+listingID+"/buyout", body, authedHeaders())
 }
 
 // The buyout is recorded and settlement started before the answer, but the sale
@@ -483,20 +485,57 @@ func TestBuyout_AnswersAcceptedAndForwardsTheListing(t *testing.T) {
 	client := &stubListingClient{}
 	listingID := uuid.New().String()
 
-	w := buyout(newRouter(client), listingID)
+	w := buyout(newRouter(client), listingID, buyoutBody)
 
 	require.Equal(t, http.StatusAccepted, w.Code)
 	assert.Empty(t, w.Body.String())
 	require.Equal(t, 1, client.calls)
 	assert.Equal(t, listingID, client.gotBuyout.GetListingId())
+	// the agreed amount is checked by marketplace, against the listing
+	assert.Equal(t, int64(500), client.gotBuyout.GetAmount())
 	// the buyer is marketplace's to read from the token, so it must travel on
 	assert.Equal(t, []string{"Bearer caller-token"}, client.gotAuth)
+}
+
+// Shape only: whether the amount is the buyout price is marketplace's to say.
+func TestBuyout_RejectsAnInvalidBodyBeforeCallingMarketplace(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"missing amount", `{}`},
+		{"zero amount", `{"amount":0}`},
+		{"negative amount", `{"amount":-1}`},
+		{"unknown member", `{"amount":500,"bidId":"x"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &stubListingClient{}
+
+			w := buyout(newRouter(client), uuid.New().String(), tt.body)
+
+			testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
+			assert.Zero(t, client.calls, "an invalid request must not reach marketplace")
+		})
+	}
+}
+
+// Huma refuses a missing required body before validating its shape, with 400
+// rather than 422. Every body-carrying route answers it so; pinned here because
+// buyout's body is new.
+func TestBuyout_NoBodyIsABadRequestBeforeCallingMarketplace(t *testing.T) {
+	client := &stubListingClient{}
+
+	w := buyout(newRouter(client), uuid.New().String(), "")
+
+	testsupport.AssertProblem(t, w, http.StatusBadRequest, string(errcode.ValidationFailed))
+	assert.Zero(t, client.calls)
 }
 
 func TestBuyout_RejectsAMalformedListingIDBeforeCallingMarketplace(t *testing.T) {
 	client := &stubListingClient{}
 
-	w := buyout(newRouter(client), "not-a-uuid")
+	w := buyout(newRouter(client), "not-a-uuid", buyoutBody)
 
 	testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
 	assert.Zero(t, client.calls, "an invalid request must not reach marketplace")
@@ -510,6 +549,7 @@ func TestBuyout_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 		wantCode   errcode.Code
 	}{
 		{"buyer is the seller", status.Error(codes.PermissionDenied, "permission denied"), http.StatusForbidden, errcode.Forbidden},
+		{"amount not the buyout price", status.Error(codes.InvalidArgument, "invalid argument"), http.StatusBadRequest, errcode.ValidationFailed},
 		{"unknown listing", status.Error(codes.NotFound, "not found"), http.StatusNotFound, errcode.NotFound},
 		{"closed, bought out, no buyout price or short of gold", status.Error(codes.FailedPrecondition, "failed precondition"), http.StatusBadRequest, errcode.FailedPrecondition},
 		{"listing busy", status.Error(codes.Aborted, "aborted"), http.StatusConflict, errcode.Conflict},
@@ -524,7 +564,7 @@ func TestBuyout_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &stubListingClient{err: tt.err}
 
-			w := buyout(newRouter(client), uuid.New().String())
+			w := buyout(newRouter(client), uuid.New().String(), buyoutBody)
 
 			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
 		})

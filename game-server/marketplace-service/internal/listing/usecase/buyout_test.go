@@ -28,7 +28,7 @@ func buyoutListing(t *testing.T) *listing.Listing {
 }
 
 func buyoutCmd(l *listing.Listing, memberID uuid.UUID) BuyoutCommand {
-	return BuyoutCommand{ListingID: l.Snapshot().ID, MemberID: memberID, Now: time.Now()}
+	return BuyoutCommand{ListingID: l.Snapshot().ID, MemberID: memberID, Amount: testBuyoutPrice, Now: time.Now()}
 }
 
 func bidSnapshot(l *listing.Listing, bidID uuid.UUID) (listing.BidSnapshot, bool) {
@@ -75,17 +75,25 @@ func TestBuyout_RefusedBeforeAnyGoldIsHeld(t *testing.T) {
 		name    string
 		listing func(t *testing.T) *listing.Listing
 		member  func(l *listing.Listing) uuid.UUID
+		amount  int // zero means the buyout price
 		wantErr error
 	}{
-		{"seller", buyoutListing, func(l *listing.Listing) uuid.UUID { return l.Snapshot().SellerID }, listing.ErrSellerCannotBuyout},
-		{"no buyout price", func(t *testing.T) *listing.Listing { return activeListing(t, 100) }, func(*listing.Listing) uuid.UUID { return uuid.New() }, listing.ErrNoBuyoutPrice},
+		{"seller", buyoutListing, func(l *listing.Listing) uuid.UUID { return l.Snapshot().SellerID }, 0, listing.ErrSellerCannotBuyout},
+		{"no buyout price", func(t *testing.T) *listing.Listing { return activeListing(t, 100) }, func(*listing.Listing) uuid.UUID { return uuid.New() }, 0, listing.ErrNoBuyoutPrice},
+		// a wrong amount is refused before PlaceHold, so it never holds gold
+		{"amount not the buyout price", buyoutListing, func(*listing.Listing) uuid.UUID { return uuid.New() }, testBuyoutPrice - 1, listing.ErrBuyoutAmountMismatch},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := tt.listing(t)
 			repo, wallet, starter := &fakeRepo{listing: l}, &fakeWallet{}, &fakeStarter{}
 
-			err := NewBuyoutUC(repo, wallet, starter, &fakeReleaser{}).Handle(context.Background(), buyoutCmd(l, tt.member(l)))
+			cmd := buyoutCmd(l, tt.member(l))
+			if tt.amount != 0 {
+				cmd.Amount = tt.amount
+			}
+
+			err := NewBuyoutUC(repo, wallet, starter, &fakeReleaser{}).Handle(context.Background(), cmd)
 
 			assert.ErrorIs(t, err, tt.wantErr)
 			assert.Zero(t, wallet.calls)
@@ -137,7 +145,7 @@ func TestBuyout_EarlierHoldSinceReleased_IsRefused(t *testing.T) {
 func TestBuyout_AlreadyRecorded_IsSuccessAndStartsAgain(t *testing.T) {
 	l := buyoutListing(t)
 	member := uuid.New()
-	require.NoError(t, l.Buyout(BuyoutBidID(member, l.Snapshot().ID), member, time.Now()))
+	require.NoError(t, l.Buyout(BuyoutBidID(member, l.Snapshot().ID), member, 500, time.Now()))
 	require.NoError(t, l.Freeze(time.Now()))
 	starter, wallet, release := &fakeStarter{}, &fakeWallet{}, &fakeReleaser{}
 
@@ -159,6 +167,7 @@ func TestBuyout_DefinitiveRefusalUnderLock_ReleasesTheHold(t *testing.T) {
 		listing.ErrListingExpired,
 		listing.ErrSellerCannotBuyout,
 		listing.ErrNoBuyoutPrice,
+		listing.ErrBuyoutAmountMismatch,
 	} {
 		t.Run(refusal.Error(), func(t *testing.T) {
 			l := buyoutListing(t)
@@ -250,7 +259,7 @@ func TestBuyoutBidID_IsDeterministicPerMemberAndListing(t *testing.T) {
 // truly backs nothing.
 func TestBuyout_RefusedBeforeHold_NeverReleases(t *testing.T) {
 	l := buyoutListing(t)
-	require.NoError(t, l.Buyout(uuid.New(), uuid.New(), time.Now()))
+	require.NoError(t, l.Buyout(uuid.New(), uuid.New(), 500, time.Now()))
 	wallet, release := &fakeWallet{}, &fakeReleaser{}
 
 	err := NewBuyoutUC(&fakeRepo{listing: l}, wallet, &fakeStarter{}, release).Handle(context.Background(), buyoutCmd(l, uuid.New()))
