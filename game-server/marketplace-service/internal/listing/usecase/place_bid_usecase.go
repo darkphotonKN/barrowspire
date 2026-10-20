@@ -157,6 +157,12 @@ func (uc *PlaceBidUC) Handle(ctx context.Context, cmd PlaceBidCommand) error {
 		}
 	}
 
+	// Nothing written, but not proof the ID is spent: a keyed bid's busy listing.
+	// The hold waits for the same key's retry, or else the reconciler.
+	if err != nil && failedBeforeRead(err) && !releasableBeforeRead(err, cmd.IdempotencyKey != uuid.Nil) {
+		return fmt.Errorf("place bid usecase handle recording bid %v : %w", bidID, err)
+	}
+
 	if err != nil || !recorded {
 		// The gold is frozen behind a bid that does not exist, and no settlement step
 		// will ever free it: settlement works from the listing's bids, and this one is
@@ -215,6 +221,20 @@ func failedBeforeRead(err error) bool {
 	return errors.Is(err, commonconstants.ErrLockUnavailable) ||
 		errors.Is(err, commonconstants.ErrNotFound) ||
 		errors.Is(err, listing.ErrCorruptListingState)
+}
+
+// releasableBeforeRead reports a failure before the read that also proves this
+// bid ID can never land, so its hold may go back at once. Every failedBeforeRead
+// error proves the first attempt wrote nothing, but a lock timeout only means the
+// listing was busy: the caller is told to retry, and a keyed caller retries under
+// the same derived ID, onto this same hold. Releasing it would race that retry,
+// and a release landing after the retried bid leaves a winning bid with no gold
+// (ADR-0027). A random ID is never retried under, so for it the hold may go back.
+func releasableBeforeRead(err error, keyed bool) bool {
+	if !failedBeforeRead(err) {
+		return false
+	}
+	return !keyed || !errors.Is(err, commonconstants.ErrLockUnavailable)
 }
 
 // releaseHold is the TCC cancel: it gives back gold reserved for a bid that is proven

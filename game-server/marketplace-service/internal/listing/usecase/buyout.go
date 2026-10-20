@@ -172,9 +172,15 @@ func (uc *BuyoutUC) holdAndRecord(ctx context.Context, current *listing.Listing,
 		}
 	}
 
+	// Nothing written, but not proof the ID is spent: a keyed buyout's busy listing.
+	// The hold waits for the same key's retry, or else the reconciler.
+	if err != nil && failedBeforeRead(err) && !releasableBeforeRead(err, cmd.IdempotencyKey != uuid.Nil) {
+		return fmt.Errorf("buyout usecase recording bid %v : %w", bidID, err)
+	}
+
 	if err != nil {
-		// a definitive refusal, or nothing read on the first attempt: this gold will
-		// never back a bid
+		// a definitive refusal, or nothing read on the first attempt in a way that
+		// spends the ID: this gold will never back a bid
 		uc.releaseHold(ctx, bidID, cmd.ListingID, err)
 		return fmt.Errorf("buyout usecase recording bid %v : %w", bidID, err)
 	}

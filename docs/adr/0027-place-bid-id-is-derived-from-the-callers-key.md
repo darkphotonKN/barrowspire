@@ -49,6 +49,16 @@ is new and fixed forever, distinct from buyout's.
 - That lookup is scoped to the member (`findBidByIdempotencyKey(memberID, key)`).
 - The global unique index on `bids.idempotency_key` **stays as it is**. The user decided against a
   migration.
+- **A keyed bid's hold is not released eagerly when its write meets a busy listing.** A lock timeout
+  before the read proves the attempt wrote nothing, but it does not spend the derived ID. The caller
+  is answered `409 · CONFLICT`, "may be retried", and a keyed caller retries under the same ID onto
+  the same hold, which wallet answers as success. An eager release still in flight would then land
+  after the retried bid and leave a winning bid with no gold. So that hold is kept, for the same
+  key's retry or else the reconciler, which releases only what no recorded bid claims. A random
+  (unkeyed) ID is never retried under, so its hold still goes back at once. A failure before the
+  read that does spend the ID (a missing listing) also still releases. This applies to buyout too
+  (ADR-0026), whose key-derived ID meets the same race. Found in the I-0YXG6-6 / I-NXP1W-20 code
+  review.
 
 ## Consequences
 
@@ -65,6 +75,9 @@ is new and fixed forever, distinct from buyout's.
   released. Keys are random UUIDs, so this is a collision case only. Scoping the index to
   `(listing_id, member_id, idempotency_key)` would let it record. That is a migration, declined for
   now.
+- **FS-0YXG6's promise that retrying a `409 · CONFLICT` with the same key is safe holds**, because a
+  busy listing no longer releases a keyed bid's hold. Cost: that hold stays reserved until the
+  retry, or the reconciler's grace if none comes.
 - **Unkeyed bids are unchanged**: random ID, no deduplication, as FS-0YXG6 Req 15 says.
 - **Place-bid and buyout now share one scheme**, except that buyout also recognises the buyer's own
   buyout under any ID. A listing takes one buyout per buyer, so that check is meaningful there. A
