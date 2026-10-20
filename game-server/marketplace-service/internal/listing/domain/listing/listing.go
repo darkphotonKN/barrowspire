@@ -233,8 +233,9 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 
 	// A replayed request must not become a second bid. Retries and broker
 	// redelivery both resend the same placement, and without this the member
-	// ends up outbidding themselves.
-	if idempotencyKey != uuid.Nil && l.findBidByIdempotencyKey(idempotencyKey) != nil {
+	// ends up outbidding themselves. The key is the member's own: another
+	// member's bid carrying the same key is not this one (ADR-0027).
+	if idempotencyKey != uuid.Nil && l.findBidByIdempotencyKey(memberID, idempotencyKey) != nil {
 		return nil
 	}
 
@@ -636,9 +637,9 @@ func (l *Listing) findContendingBid() *Bid {
 	return contender
 }
 
-func (l *Listing) findBidByIdempotencyKey(key uuid.UUID) *Bid {
+func (l *Listing) findBidByIdempotencyKey(memberID, key uuid.UUID) *Bid {
 	for _, bid := range l.bids {
-		if bid.idempotencyKey != key {
+		if bid.memberID != memberID || bid.idempotencyKey != key {
 			continue
 		}
 		return bid

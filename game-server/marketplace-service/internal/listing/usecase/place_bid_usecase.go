@@ -30,6 +30,20 @@ const compensationTimeout = 5 * time.Second
 // contract.
 const settlementGrace = 2 * time.Hour
 
+// placeBidNamespace scopes PlaceBidID. Fixed forever: changing it would give a
+// resend a different bid ID than its first attempt, and a second hold.
+var placeBidNamespace = uuid.MustParse("6d839f37-cbdd-4121-b253-5d1479a9850f")
+
+// PlaceBidID is the bid a keyed bid is recorded and held under, so a resend of
+// the same bid finds the hold and the bid its first attempt made instead of
+// holding gold again (ADR-0027, the scheme ADR-0026 gave buyout). Member and
+// listing are part of it so a key reused by another member, or on another
+// listing, is another bid.
+func PlaceBidID(memberID, listingID, idempotencyKey uuid.UUID) uuid.UUID {
+	return uuid.NewSHA1(placeBidNamespace,
+		[]byte(memberID.String()+":"+listingID.String()+":"+idempotencyKey.String()))
+}
+
 type PlaceBidUC struct {
 	repo        listing.Repository
 	wallet      WalletService
@@ -66,7 +80,20 @@ func (uc *PlaceBidUC) Handle(ctx context.Context, cmd PlaceBidCommand) error {
 	}
 	expiresAt := current.Snapshot().EndsAt.Add(settlementGrace)
 
+	// Without a key there is no deduplication: every request is a new bid.
 	bidID := uuid.New()
+	if cmd.IdempotencyKey != uuid.Nil {
+		bidID = PlaceBidID(cmd.MemberID, cmd.ListingID, cmd.IdempotencyKey)
+	}
+
+	// A resend whose bid already landed holds nothing. Advisory, like the read it
+	// comes from: a resend racing its own first attempt holds under the same ID,
+	// which wallet answers as the hold it already has, and the write below finds
+	// the bid under the lock.
+	if current.HasBid(bidID) {
+		return nil
+	}
+
 	if err := uc.wallet.PlaceHold(ctx, cmd.MemberID, bidID, cmd.Amount, expiresAt); err != nil {
 		return fmt.Errorf("place bid usecase handle placing hold for bid %v : %w", bidID, err)
 	}

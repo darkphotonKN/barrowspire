@@ -137,8 +137,11 @@ func registerPlaceBid(api huma.API, h *Handler,
 	type output struct{}
 
 	huma.Register(api, huma.Operation{
-		OperationID:   "place-bid",
-		Description:   "Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request.",
+		OperationID: "place-bid",
+		Description: "Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request. " +
+			"Resending with the same Idempotency-Key is safe and holds no further gold. 409 CONFLICT means the listing is busy " +
+			"and may be retried; 409 ALREADY_EXISTS means the attempt under this Idempotency-Key was refused or abandoned and " +
+			"its gold returned: bid again with a new key.",
 		DefaultStatus: http.StatusCreated,
 		Errors: []int{
 			http.StatusBadRequest,

@@ -391,7 +391,7 @@ export interface paths {
         put?: never;
         /**
          * Place a bid on a listing
-         * @description Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request.
+         * @description Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request. Resending with the same Idempotency-Key is safe and holds no further gold. 409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means the attempt under this Idempotency-Key was refused or abandoned and its gold returned: bid again with a new key.
          */
         post: operations["place-bid"];
         delete?: never;
