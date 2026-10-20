@@ -157,6 +157,24 @@ func TestBuyout_ReplayIsSuccessEvenAfterFreeze(t *testing.T) {
 	assert.Len(t, l.Snapshot().Bids, 1)
 }
 
+// The buyer's own buyout is a replay whatever bid ID the resend carries: a
+// client that lost its key, or sent none, is told it succeeded rather than
+// refused for a listing it already owns (ADR-0026).
+func TestBuyout_ReplayByTheSameMemberUnderANewIDRecordsNothing(t *testing.T) {
+	now := time.Now()
+	l := listingWithBuyout(t, 100, 500)
+	buyer, first, resend := uuid.New(), uuid.New(), uuid.New()
+	require.NoError(t, l.Buyout(first, buyer, 500, now))
+
+	err := l.Buyout(resend, buyer, 500, now)
+
+	require.NoError(t, err)
+	require.Len(t, l.Snapshot().Bids, 1)
+	assert.Equal(t, first, l.Snapshot().Bids[0].ID)
+	assert.True(t, l.HasBuyoutBy(buyer))
+	assert.False(t, l.HasBuyoutBy(uuid.New()))
+}
+
 // A replay's amount is moot: the first attempt already passed the amount check
 // at the listing's price, which is what the recorded bid holds.
 func TestBuyout_ReplayIsSuccessWhateverItsAmount(t *testing.T) {

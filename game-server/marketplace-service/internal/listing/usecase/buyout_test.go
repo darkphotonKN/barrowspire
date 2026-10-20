@@ -16,6 +16,9 @@ import (
 
 const testBuyoutPrice = 500
 
+// testBuyoutKey is the key buyoutCmd sends unless a test overrides it.
+var testBuyoutKey = uuid.MustParse("6a1f2c3d-0000-4000-8000-000000000001")
+
 func buyoutListing(t *testing.T) *listing.Listing {
 	t.Helper()
 
@@ -28,7 +31,7 @@ func buyoutListing(t *testing.T) *listing.Listing {
 }
 
 func buyoutCmd(l *listing.Listing, memberID uuid.UUID) BuyoutCommand {
-	return BuyoutCommand{ListingID: l.Snapshot().ID, MemberID: memberID, Amount: testBuyoutPrice, Now: time.Now()}
+	return BuyoutCommand{ListingID: l.Snapshot().ID, MemberID: memberID, Amount: testBuyoutPrice, IdempotencyKey: testBuyoutKey, Now: time.Now()}
 }
 
 func bidSnapshot(l *listing.Listing, bidID uuid.UUID) (listing.BidSnapshot, bool) {
@@ -51,7 +54,7 @@ func TestBuyout_HoldsRecordsAndStartsSettlementOnce(t *testing.T) {
 	err := NewBuyoutUC(&fakeRepo{listing: l}, wallet, starter, release).Handle(context.Background(), buyoutCmd(l, member))
 
 	require.NoError(t, err)
-	wantID := BuyoutBidID(member, l.Snapshot().ID)
+	wantID := BuyoutBidID(member, l.Snapshot().ID, testBuyoutKey)
 	assert.Equal(t, 1, wallet.calls)
 	assert.Equal(t, wantID, wallet.gotBidID)
 	assert.Equal(t, member, wallet.gotMemberID)
@@ -140,12 +143,106 @@ func TestBuyout_EarlierHoldSinceReleased_IsRefused(t *testing.T) {
 	assert.Empty(t, l.Snapshot().Bids)
 }
 
+// The bug ADR-0026 exists for. An attempt's hold lands, its bid write fails
+// with the outcome unknown so the hold is kept, and the reconciler later finds
+// no bid and releases it. The buyer's next intent, under a new key, must be able
+// to buy the listing out: with one bid ID per buyer and listing it never could.
+func TestBuyout_AfterAnAbandonedAttemptsHoldIsReleased_ANewKeyBuysOut(t *testing.T) {
+	l := buyoutListing(t)
+	member := uuid.New()
+	wallet, starter, release := &fakeWallet{released: map[uuid.UUID]bool{}}, &fakeStarter{}, &fakeReleaser{}
+	repo := &fakeRepo{listing: l, updateScript: []updateOutcome{{err: commonconstants.ErrTransient}}}
+	uc := NewBuyoutUC(repo, wallet, starter, release)
+
+	first := buyoutCmd(l, member)
+	first.IdempotencyKey = uuid.New()
+	require.Error(t, uc.Handle(context.Background(), first))
+	require.Zero(t, release.calls, "an unknown outcome keeps its hold")
+	require.False(t, l.HasBuyoutBy(member))
+	wallet.released[wallet.gotBidID] = true // the reconciler's sweep
+
+	again := buyoutCmd(l, member)
+	again.IdempotencyKey = uuid.New()
+	err := uc.Handle(context.Background(), again)
+
+	require.NoError(t, err)
+	assert.True(t, l.HasBuyoutBy(member))
+	assert.Equal(t, 1, starter.calls)
+}
+
+// A buyer whose buyout landed, resending with another key or none (a client that
+// lost its key), is recognised by their own buyout before any gold is held.
+func TestBuyout_BuyerAlreadyBoughtOut_UnderAnotherKey_IsAReplayWithNoHold(t *testing.T) {
+	for name, key := range map[string]uuid.UUID{"another key": uuid.New(), "no key": uuid.Nil} {
+		t.Run(name, func(t *testing.T) {
+			l := buyoutListing(t)
+			member := uuid.New()
+			require.NoError(t, l.Buyout(uuid.New(), member, testBuyoutPrice, time.Now()))
+			repo, wallet, starter, release := &fakeRepo{listing: l}, &fakeWallet{}, &fakeStarter{}, &fakeReleaser{}
+
+			cmd := buyoutCmd(l, member)
+			cmd.IdempotencyKey = key
+			err := NewBuyoutUC(repo, wallet, starter, release).Handle(context.Background(), cmd)
+
+			require.NoError(t, err)
+			assert.Zero(t, wallet.calls, "a replay holds no gold")
+			assert.Zero(t, repo.updateCall)
+			assert.Len(t, l.Snapshot().Bids, 1)
+			assert.Equal(t, 1, starter.calls, "settlement is asked to start again, which it answers as already started")
+		})
+	}
+}
+
+// Two of the buyer's requests race under different keys. This one's unlocked read
+// saw no buyout, so it held gold; under the lock the other's buyout is there, so
+// this one recorded nothing. Its hold backs no bid and is given back at once,
+// not left for the reconciler's grace. Still success: the buyer did buy it out.
+func TestBuyout_BuyerBoughtOutBetweenReadAndLock_ReleasesItsOwnHold(t *testing.T) {
+	stale := buyoutListing(t)
+	locked := buyoutListing(t)
+	member := uuid.New()
+	require.NoError(t, locked.Buyout(uuid.New(), member, testBuyoutPrice, time.Now()))
+	repo := &fakeRepo{listing: locked, found: stale}
+	wallet, starter, release := &fakeWallet{}, &fakeStarter{}, &fakeReleaser{}
+
+	cmd := buyoutCmd(stale, member)
+	cmd.IdempotencyKey = uuid.New()
+	err := NewBuyoutUC(repo, wallet, starter, release).Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, wallet.calls)
+	assert.Equal(t, 1, release.calls, "the hold that backs nothing goes back at once")
+	assert.Equal(t, wallet.gotBidID, release.gotBidID)
+	assert.Len(t, locked.Snapshot().Bids, 1, "nothing recorded under this call's ID")
+	assert.Equal(t, 1, starter.calls)
+}
+
+// Resending the abandoned attempt's own key is refused: its hold is gone, and
+// wallet will not hold again under it. The remedy is a new key.
+func TestBuyout_ReusingAKeyWhoseHoldWasReleased_IsRefused(t *testing.T) {
+	l := buyoutListing(t)
+	member := uuid.New()
+	wallet := &fakeWallet{released: map[uuid.UUID]bool{}}
+	repo := &fakeRepo{listing: l, updateScript: []updateOutcome{{err: commonconstants.ErrTransient}}}
+	uc := NewBuyoutUC(repo, wallet, &fakeStarter{}, &fakeReleaser{})
+
+	cmd := buyoutCmd(l, member)
+	cmd.IdempotencyKey = uuid.New()
+	require.Error(t, uc.Handle(context.Background(), cmd))
+	wallet.released[wallet.gotBidID] = true
+
+	err := uc.Handle(context.Background(), cmd)
+
+	assert.ErrorIs(t, err, commonconstants.ErrDuplicateResource)
+	assert.False(t, l.HasBuyoutBy(member))
+}
+
 // A buyout that already landed is a replay: success, and the start is asked
 // again, which the starter answers as already started.
 func TestBuyout_AlreadyRecorded_IsSuccessAndStartsAgain(t *testing.T) {
 	l := buyoutListing(t)
 	member := uuid.New()
-	require.NoError(t, l.Buyout(BuyoutBidID(member, l.Snapshot().ID), member, 500, time.Now()))
+	require.NoError(t, l.Buyout(BuyoutBidID(member, l.Snapshot().ID, testBuyoutKey), member, 500, time.Now()))
 	require.NoError(t, l.Freeze(time.Now()))
 	starter, wallet, release := &fakeStarter{}, &fakeWallet{}, &fakeReleaser{}
 
@@ -181,7 +278,7 @@ func TestBuyout_DefinitiveRefusalUnderLock_ReleasesTheHold(t *testing.T) {
 
 			assert.ErrorIs(t, err, refusal)
 			assert.Equal(t, 1, release.calls)
-			assert.Equal(t, BuyoutBidID(member, l.Snapshot().ID), release.gotBidID)
+			assert.Equal(t, BuyoutBidID(member, l.Snapshot().ID, testBuyoutKey), release.gotBidID)
 			assert.Equal(t, l.Snapshot().ID, release.gotListingID)
 			assert.NoError(t, release.gotCtxErr, "the release must not inherit the request's cancellation")
 			assert.Zero(t, starter.calls)
@@ -236,20 +333,22 @@ func TestBuyout_StartFails_BuyoutStaysRecorded(t *testing.T) {
 	err := NewBuyoutUC(&fakeRepo{listing: l}, &fakeWallet{}, starter, release).Handle(context.Background(), buyoutCmd(l, member))
 
 	assert.Error(t, err)
-	_, ok := bidSnapshot(l, BuyoutBidID(member, l.Snapshot().ID))
+	_, ok := bidSnapshot(l, BuyoutBidID(member, l.Snapshot().ID, testBuyoutKey))
 	assert.True(t, ok)
 	assert.Zero(t, release.calls)
 }
 
-// One member buying one listing always gets the same bid ID, so every retry
-// lands on the same hold and the same bid.
-func TestBuyoutBidID_IsDeterministicPerMemberAndListing(t *testing.T) {
-	member, listingID := uuid.New(), uuid.New()
+// One intent, one bid ID: every resend with the same key lands on the same hold
+// and the same bid, and changing any of the three gives a different one.
+func TestBuyoutBidID_IsDeterministicPerMemberListingAndKey(t *testing.T) {
+	member, listingID, key := uuid.New(), uuid.New(), uuid.New()
+	id := BuyoutBidID(member, listingID, key)
 
-	assert.Equal(t, BuyoutBidID(member, listingID), BuyoutBidID(member, listingID))
-	assert.NotEqual(t, BuyoutBidID(member, listingID), BuyoutBidID(uuid.New(), listingID))
-	assert.NotEqual(t, BuyoutBidID(member, listingID), BuyoutBidID(member, uuid.New()))
-	assert.Equal(t, uuid.Version(5), BuyoutBidID(member, listingID).Version())
+	assert.Equal(t, id, BuyoutBidID(member, listingID, key))
+	assert.NotEqual(t, id, BuyoutBidID(uuid.New(), listingID, key))
+	assert.NotEqual(t, id, BuyoutBidID(member, uuid.New(), key))
+	assert.NotEqual(t, id, BuyoutBidID(member, listingID, uuid.New()), "a new key is a new intent")
+	assert.Equal(t, uuid.Version(5), id.Version())
 }
 
 // Refused by the unlocked read, before any hold: nothing is released, even

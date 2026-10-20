@@ -3,6 +3,7 @@ package listing_test
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -475,8 +476,44 @@ func TestAcceptBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 const buyoutBody = `{"amount":500}`
 
 func buyout(r *gin.Engine, listingID, body string) *httptest.ResponseRecorder {
+	return buyoutWithHeaders(r, listingID, body, nil)
+}
+
+func buyoutWithHeaders(r *gin.Engine, listingID, body string, extra map[string]string) *httptest.ResponseRecorder {
+	h := authedHeaders()
+	maps.Copy(h, extra)
 	return testsupport.DoWithHeaders(r, http.MethodPost,
-		"/api/marketplace/listings/"+listingID+"/buyout", body, authedHeaders())
+		"/api/marketplace/listings/"+listingID+"/buyout", body, h)
+}
+
+// Same rule as place-bid: optional, and resent unchanged on every retry of one
+// buyout so the retry is recognised (ADR-0026).
+func TestBuyout_ForwardsTheIdempotencyKey(t *testing.T) {
+	client := &stubListingClient{}
+	key := uuid.New().String()
+
+	w := buyoutWithHeaders(newRouter(client), uuid.New().String(), buyoutBody, map[string]string{"Idempotency-Key": key})
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	assert.Equal(t, key, client.gotBuyout.GetIdempotencyKey())
+}
+
+func TestBuyout_IdempotencyKeyIsOptional(t *testing.T) {
+	client := &stubListingClient{}
+
+	w := buyout(newRouter(client), uuid.New().String(), buyoutBody)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	assert.Empty(t, client.gotBuyout.GetIdempotencyKey())
+}
+
+func TestBuyout_RejectsAMalformedIdempotencyKeyBeforeCallingMarketplace(t *testing.T) {
+	client := &stubListingClient{}
+
+	w := buyoutWithHeaders(newRouter(client), uuid.New().String(), buyoutBody, map[string]string{"Idempotency-Key": "not-a-uuid"})
+
+	testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
+	assert.Zero(t, client.calls)
 }
 
 // The buyout is recorded and settlement started before the answer, but the sale
@@ -553,9 +590,9 @@ func TestBuyout_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 		{"unknown listing", status.Error(codes.NotFound, "not found"), http.StatusNotFound, errcode.NotFound},
 		{"closed, bought out, no buyout price or short of gold", status.Error(codes.FailedPrecondition, "failed precondition"), http.StatusBadRequest, errcode.FailedPrecondition},
 		{"listing busy", status.Error(codes.Aborted, "aborted"), http.StatusConflict, errcode.Conflict},
-		// the buyer's earlier hold for this listing was released, so their buyout
-		// ID is spent; distinct from busy, which the caller may simply retry
-		{"buyout ID already spent", status.Error(codes.AlreadyExists, "already exists"), http.StatusConflict, errcode.AlreadyExists},
+		// the attempt under this key was abandoned and its hold released: a new key
+		// buys again; distinct from busy, which the caller may simply retry
+		{"key's attempt abandoned", status.Error(codes.AlreadyExists, "already exists"), http.StatusConflict, errcode.AlreadyExists},
 		{"marketplace or wallet unreachable", status.Error(codes.Unavailable, "unavailable"), http.StatusServiceUnavailable, errcode.ServiceUnavailable},
 		{"settlement could not start", status.Error(codes.Internal, "unhandled error"), http.StatusInternalServerError, errcode.Internal},
 	}

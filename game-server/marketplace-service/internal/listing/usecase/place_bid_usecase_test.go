@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -20,7 +21,11 @@ var errListingGone = errors.New("listing gone")
 // against a listing the test set up — the same contract, minus the transaction
 // and the row lock.
 type fakeRepo struct {
-	listing    *listing.Listing
+	listing *listing.Listing
+	// found, when set, is what FindByID returns instead of listing: the unlocked
+	// read seeing the listing before another request's write, which Update then
+	// sees under the lock.
+	found      *listing.Listing
 	findErr    error
 	updateErr  error
 	saveErr    error
@@ -51,6 +56,9 @@ type updateOutcome struct {
 func (f *fakeRepo) FindByID(ctx context.Context, id uuid.UUID) (*listing.Listing, error) {
 	if f.findErr != nil {
 		return nil, f.findErr
+	}
+	if f.found != nil {
+		return f.found, nil
 	}
 	return f.listing, nil
 }
@@ -100,6 +108,10 @@ type fakeWallet struct {
 	gotMemberID  uuid.UUID
 	gotGold      int
 	gotExpiresAt time.Time
+
+	// released marks holds already given back. Wallet refuses to hold again under
+	// such a bid ID, as the real one does (TCC: a late Try after Cancel).
+	released map[uuid.UUID]bool
 }
 
 func (f *fakeWallet) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int, expiresAt time.Time) error {
@@ -108,6 +120,9 @@ func (f *fakeWallet) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, g
 	f.gotMemberID = memberID
 	f.gotGold = gold
 	f.gotExpiresAt = expiresAt
+	if f.released[bidID] {
+		return fmt.Errorf("wallet: hold for bid %v was released: %w", bidID, commonconstants.ErrDuplicateResource)
+	}
 	return f.err
 }
 

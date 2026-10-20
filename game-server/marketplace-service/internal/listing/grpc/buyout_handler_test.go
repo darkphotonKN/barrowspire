@@ -47,6 +47,32 @@ func TestBuyout_PassesTheListingAndTheAuthenticatedBuyer(t *testing.T) {
 	assert.False(t, uc.gotCmd.Now.IsZero())
 }
 
+// The key travels on; an absent or malformed one is no key, as for PlaceBid: the
+// buyout is still served, recognised on resend by the buyer's own buyout.
+func TestBuyout_PassesTheIdempotencyKey(t *testing.T) {
+	key := uuid.New()
+	tests := []struct {
+		name string
+		sent string
+		want uuid.UUID
+	}{
+		{"a key", key.String(), key},
+		{"none", "", uuid.Nil},
+		{"malformed", "not-a-uuid", uuid.Nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uc := &stubBuyout{}
+
+			_, err := newBuyoutHandler(uc).Buyout(authedCtx(t, uuid.New()),
+				&pb.BuyoutRequest{ListingId: uuid.NewString(), Amount: 500, IdempotencyKey: tt.sent})
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, uc.gotCmd.IdempotencyKey)
+		})
+	}
+}
+
 func TestBuyout_RejectsBeforeTheUsecase(t *testing.T) {
 	tests := []struct {
 		name     string
