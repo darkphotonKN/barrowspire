@@ -48,7 +48,7 @@ plan/status; the design guideline is the spec.
 - Slice 4: container view (satchel).
 - Slice 5: characters and creatures, including the default wizard (authored in code, ADR-0021).
 
-### 🔨 In progress: [FS-8TCN2](specs/8TCN2-bone-and-soot-web-ui-palette.md) (Bone & Soot web UI palette, ADR-0025)
+### ✅ Done: [FS-8TCN2](specs/8TCN2-bone-and-soot-web-ui-palette.md) (Bone & Soot web UI palette, ADR-0025)
 - Slice 1: amend the design guideline, `game-client/CLAUDE.md` and this plan for a separate UI
   palette (done).
 - Slice 2: retire raw palette rgba literals and extend the CSS fence (done).
