@@ -4,23 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/dto"
 	"github.com/google/uuid"
 )
-
-// ExpiredListing is one ACTIVE listing past its end, as the poller pages them.
-type ExpiredListing struct {
-	ID     uuid.UUID
-	EndsAt time.Time
-}
 
 // ExpiredListingFinder is what the poller needs from the read side: ACTIVE
 // listings ending at or before now, ordered by (ends_at, id), strictly after the
 // cursor (nil for the first page).
 type ExpiredListingFinder interface {
-	ExpiredActiveListings(ctx context.Context, now time.Time, after *ExpiredListing, limit int) ([]ExpiredListing, error)
+	ExpiredActiveListings(ctx context.Context, now time.Time, after *dto.ExpiredListing, limit int) ([]dto.ExpiredListing, error)
 }
 
 // StartExpiredSettlementsUC is the expiry poller's work (FS-NXP1W §Req 2, ADR-0016).
@@ -39,20 +33,19 @@ func NewStartExpiredSettlementsUC(finder ExpiredListingFinder, starter Settlemen
 // poller would let such listings crowd out every later one. Starting one again is
 // harmless, since a start that finds the workflow already running is success.
 //
-// One listing's failed start does not stop the others. It is logged and reported,
-// and the next tick retries it, since it is still ACTIVE and expired.
+// One listing's failed start does not stop the others. Every failure is returned,
+// joined, for the poller to log once; the next tick retries it, since it is still
+// ACTIVE and expired.
 func (uc *StartExpiredSettlementsUC) Handle(ctx context.Context, now time.Time) error {
 	var failed []error
-	var after *ExpiredListing
+	var after *dto.ExpiredListing
 	for {
 		page, err := uc.finder.ExpiredActiveListings(ctx, now, after, expiryPollPage)
 		if err != nil {
 			return errors.Join(append(failed, fmt.Errorf("read expired listings: %w", err))...)
 		}
 		for _, l := range page {
-			if err := uc.starter.StartSettlement(ctx, l.ID, TriggerExpiry); err != nil {
-				slog.ErrorContext(ctx, "starting settlement for an expired listing failed, retried next tick",
-					"listing_id", l.ID, "error", err)
+			if err := uc.start(ctx, l.ID); err != nil {
 				failed = append(failed, fmt.Errorf("start settlement for listing %v: %w", l.ID, err))
 			}
 		}
@@ -63,5 +56,17 @@ func (uc *StartExpiredSettlementsUC) Handle(ctx context.Context, now time.Time) 
 	}
 }
 
+// start runs one settlement start under its own deadline.
+func (uc *StartExpiredSettlementsUC) start(ctx context.Context, listingID uuid.UUID) error {
+	ctx, cancel := context.WithTimeout(ctx, expiryStartTimeout)
+	defer cancel()
+	return uc.starter.StartSettlement(ctx, listingID, TriggerExpiry)
+}
+
 // expiryPollPage bounds one read of expired listings.
 const expiryPollPage = 100
+
+// expiryStartTimeout bounds one settlement start, so a slow or unreachable Temporal
+// costs each listing at most this long instead of stalling the whole tick. A start
+// is one RPC; a healthy one is milliseconds.
+const expiryStartTimeout = 5 * time.Second

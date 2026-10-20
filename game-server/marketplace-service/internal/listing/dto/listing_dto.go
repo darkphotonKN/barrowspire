@@ -89,3 +89,10 @@ type FreezeWinner struct {
 	WinnerMemberID uuid.UUID
 	Amount         int
 }
+
+// ExpiredListing is one ACTIVE listing past its end, as the expiry poller pages
+// them (FS-NXP1W §Req 2): its ID, and its end time as the paging cursor.
+type ExpiredListing struct {
+	ID     uuid.UUID
+	EndsAt time.Time
+}

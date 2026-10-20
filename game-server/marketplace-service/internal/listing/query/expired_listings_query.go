@@ -5,7 +5,7 @@ import (
 	"time"
 
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
-	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/dto"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
@@ -29,7 +29,7 @@ type expiredListingRow struct {
 // ExpiredActiveListings pages ACTIVE listings with ends_at at or before now, soonest
 // ending first. The cursor is (ends_at, id), so listings ending at the same instant
 // still page without a skip or a repeat. A nil after starts from the first.
-func (q *ExpiredListingsQuery) ExpiredActiveListings(ctx context.Context, now time.Time, after *usecase.ExpiredListing, limit int) ([]usecase.ExpiredListing, error) {
+func (q *ExpiredListingsQuery) ExpiredActiveListings(ctx context.Context, now time.Time, after *dto.ExpiredListing, limit int) ([]dto.ExpiredListing, error) {
 	query := `
 	SELECT id, ends_at
 	FROM listings
@@ -57,9 +57,9 @@ func (q *ExpiredListingsQuery) ExpiredActiveListings(ctx context.Context, now ti
 		return nil, commonhelpers.WrapDBErr("listings", "ExpiredActiveListings", err)
 	}
 
-	out := make([]usecase.ExpiredListing, len(rows))
+	out := make([]dto.ExpiredListing, len(rows))
 	for i, r := range rows {
-		out[i] = usecase.ExpiredListing{ID: r.ID, EndsAt: r.EndsAt}
+		out[i] = dto.ExpiredListing{ID: r.ID, EndsAt: r.EndsAt}
 	}
 	return out, nil
 }
