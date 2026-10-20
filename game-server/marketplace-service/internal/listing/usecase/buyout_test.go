@@ -170,6 +170,24 @@ func TestBuyout_AfterAnAbandonedAttemptsHoldIsReleased_ANewKeyBuysOut(t *testing
 	assert.Equal(t, 1, starter.calls)
 }
 
+// The key is optional: without one the buyout still holds, records and starts,
+// under a fresh random ID.
+func TestBuyout_WithoutAKey_BuysOut(t *testing.T) {
+	l := buyoutListing(t)
+	member := uuid.New()
+	wallet, starter := &fakeWallet{}, &fakeStarter{}
+	cmd := buyoutCmd(l, member)
+	cmd.IdempotencyKey = uuid.Nil
+
+	err := NewBuyoutUC(&fakeRepo{listing: l}, wallet, starter, &fakeReleaser{}).Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, wallet.calls)
+	assert.Equal(t, uuid.Version(4), wallet.gotBidID.Version(), "no key, no derivation")
+	assert.True(t, l.HasBid(wallet.gotBidID))
+	assert.Equal(t, 1, starter.calls)
+}
+
 // A buyer whose buyout landed, resending with another key or none (a client that
 // lost its key), is recognised by their own buyout before any gold is held.
 func TestBuyout_BuyerAlreadyBoughtOut_UnderAnotherKey_IsAReplayWithNoHold(t *testing.T) {
