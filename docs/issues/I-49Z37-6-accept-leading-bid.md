@@ -1,9 +1,9 @@
 ---
 id: I-49Z37-6
-status: open
+status: done
 implements: FS-49Z37
 blocked_by: [I-49Z37-4]
-labels: [blocked]
+labels: []
 title: "FS-49Z37 slice 6: accept the leading bid on my listing"
 ---
 Implements FS-49Z37 §Requirements 13–17, 25–27
