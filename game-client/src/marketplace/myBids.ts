@@ -58,10 +58,19 @@ export interface MyBidRow {
   timeLeft: string;
 }
 
+/** Still taking bids: ACTIVE, and not ended by the server's word or by the countdown. */
+export function listingLive(
+  listing: Pick<MyBid["listing"], "status" | "ended" | "endsAt">,
+  now: number,
+): boolean {
+  return (
+    listing.status.toUpperCase() === "ACTIVE" && !listing.ended && Date.parse(listing.endsAt) > now
+  );
+}
+
 export function myBidRow(bid: Omit<MyBid, "item">, now: number): MyBidRow {
   const { listing } = bid;
-  const live =
-    listing.status.toUpperCase() === "ACTIVE" && !listing.ended && Date.parse(listing.endsAt) > now;
+  const live = listingLive(listing, now);
   const status = bid.status.toUpperCase();
   return {
     status: bidStatusLabel(bid.status),

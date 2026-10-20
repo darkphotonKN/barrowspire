@@ -297,6 +297,16 @@ class ApiClient {
       }),
     );
   }
+
+  // Withdraws one of the signed-in delver's leading or outbid bids, releasing its hold (FS-EYQ8K
+  // req 12; ADR-0029). No key, no body; 204 with an empty body.
+  async withdrawBid(listingId: string, bidId: string): Promise<void> {
+    unwrap(
+      await client.DELETE("/api/marketplace/listings/{listing_id}/bids/{bid_id}", {
+        params: { path: { listing_id: listingId, bid_id: bidId } },
+      }),
+    );
+  }
 }
 
 export const apiClient = new ApiClient();

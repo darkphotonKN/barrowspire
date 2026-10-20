@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import BazaarFilters from "@/components/bazaar/BazaarFilters";
+import { NOTE_TONE } from "@/components/bazaar/noteTone";
 import ListRelicDrawer from "@/components/bazaar/ListRelicDrawer";
 import ListingTable from "@/components/bazaar/ListingTable";
 import MyBidsTable from "@/components/bazaar/MyBidsTable";
@@ -14,6 +15,8 @@ import {
   typeChips,
   type BrowseState,
 } from "@/marketplace/browse";
+import type { BidNote, Purse } from "@/marketplace/bid";
+import { formatGold } from "@/marketplace/gold";
 import type { Listing } from "@/marketplace/listing";
 import { NOTHING_LISTED } from "@/marketplace/listRelic";
 import { NO_BIDS, bidPage, type MyBidEntry } from "@/marketplace/myBids";
@@ -21,6 +24,7 @@ import { DEFAULT_SORT, filterRows, sortRows, type RowSort } from "@/marketplace/
 import { useCountdownNow } from "@/marketplace/useCountdownNow";
 import { useListRelic } from "@/marketplace/useListRelic";
 import { usePagedListings } from "@/marketplace/usePagedListings";
+import { useWithdrawBid } from "@/marketplace/useWithdrawBid";
 import { useAuthStore } from "@/stores/authStore";
 import { apiClient, publicApi } from "@/utils/api";
 
@@ -54,6 +58,7 @@ export default function MarketplacePage() {
   const browse = usePagedListings(browsePage);
   const mine = usePagedListings(minePage, showingMine);
   const bids = usePagedListings(myBidsPage, showingBids);
+  const withdrawal = useWithdrawBid(bids.reload, showingBids);
 
   const [sort, setSort] = useState<RowSort>(DEFAULT_SORT);
   const [rarities, setRarities] = useState<string[]>([]);
@@ -109,6 +114,9 @@ export default function MarketplacePage() {
         <MyBidsView
           state={bids.state}
           now={now}
+          purse={withdrawal.purse}
+          note={withdrawal.note}
+          onWithdraw={withdrawal.withdraw}
           onRetry={bids.reload}
           onShowMore={bids.showMore}
           onBrowse={showAll}
@@ -240,16 +248,66 @@ function MineView({
   );
 }
 
-/** The delver's bids (FS-EYQ8K req 15–17): newest first, paged like Mine. */
+/**
+ * The delver's bids (FS-EYQ8K req 15–17): newest first, paged like Mine. Above them, the gold
+ * they have free (story 13) and the answer to the last withdraw (req 13–14), both outliving the
+ * list re-read a withdraw starts.
+ */
 function MyBidsView({
   state,
   now,
+  purse,
+  note,
+  onWithdraw,
   onRetry,
   onShowMore,
   onBrowse,
 }: {
   state: BrowseState<MyBidEntry>;
   now: number;
+  purse: Purse;
+  note: BidNote | undefined;
+  onWithdraw: (bid: MyBidEntry) => Promise<void>;
+  onRetry: () => void;
+  onShowMore: () => void;
+  onBrowse: () => void;
+}) {
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-4 text-sm">
+        <p role="status" aria-live="polite" className="min-h-[1.25rem]">
+          {note && <span className={NOTE_TONE[note.tone]}>{note.text}</span>}
+        </p>
+        <p className="text-vellum-dim">
+          Available:{" "}
+          <span className="tabular-nums text-vellum">
+            {purse.state === "ready" ? `⟡ ${formatGold(purse.availableGold)}` : "—"}
+          </span>
+        </p>
+      </div>
+      <MyBidsList
+        state={state}
+        now={now}
+        onWithdraw={onWithdraw}
+        onRetry={onRetry}
+        onShowMore={onShowMore}
+        onBrowse={onBrowse}
+      />
+    </>
+  );
+}
+
+function MyBidsList({
+  state,
+  now,
+  onWithdraw,
+  onRetry,
+  onShowMore,
+  onBrowse,
+}: {
+  state: BrowseState<MyBidEntry>;
+  now: number;
+  onWithdraw: (bid: MyBidEntry) => Promise<void>;
   onRetry: () => void;
   onShowMore: () => void;
   onBrowse: () => void;
@@ -272,7 +330,12 @@ function MyBidsView({
     );
   return (
     <>
-      <MyBidsTable rows={state.rows} loading={state.phase === "loading"} now={now} />
+      <MyBidsTable
+        rows={state.rows}
+        loading={state.phase === "loading"}
+        now={now}
+        onWithdraw={onWithdraw}
+      />
       <ShowMore state={state} onShowMore={onShowMore} />
     </>
   );
