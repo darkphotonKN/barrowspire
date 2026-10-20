@@ -98,6 +98,11 @@ server state and sends intents. ✅
 - [x] Bid on a listing → FS-8EGFA
 - [x] Filter to my own listings → FS-8EGFA
 - [ ] Affixes and item level in listing detail → FS-4R9M9
+- [ ] Buy out a listing → FS-49Z37
+- [ ] Accept the leading bid on my listing → FS-49Z37
+- [ ] Set a buyout price when listing → FS-49Z37
+- [ ] Bids stay below a listing's buyout price → FS-49Z37
+- [ ] A refused bid retries under a fresh key → FS-49Z37
 
 ### Deployment
 
