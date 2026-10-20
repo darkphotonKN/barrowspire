@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
 
 	"log/slog"
 )
@@ -107,6 +109,11 @@ func main() {
 	// health checks for liveness probe
 	pingFn := db.PingContext
 	healthService := commonhealth.Register(ctx, grpcServer, pingFn)
+
+	// reflection lets grpcurl / grpcui discover the API schema; dev only, so prod never exposes it
+	if strings.EqualFold(environment, "development") {
+		reflection.Register(grpcServer)
+	}
 
 	// create a network listener to this service
 	listener, err := net.Listen("tcp", ":"+grpcAddr)
