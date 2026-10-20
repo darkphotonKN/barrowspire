@@ -109,6 +109,8 @@ func (l *Listing) currentPrice() int {
 
 ### 兩個刻意的取捨
 
+> **已由 [ADR-0028](../adr/0028-a-withdrawn-leader-is-replaced-by-the-next-highest-bid.md) 取代（2026-10-20）**：現在撤回領先者會由次高的 OUTBID 出價遞補；下面這段的前提（亞軍的 hold 在被擠掉時就釋放）在 FS-NXP1W 之後已不成立，原文保留作為當時的紀錄。
+
 **撤回領先者不遞補亞軍**。拍賣直覺上第二名該補上，但一旦連動 wallet：亞軍的 hold 早在
 被擠掉時就釋放了，硬把他拉回領先位，這筆出價背後沒有錢。要遞補就得重新下一次 hold，
 那是階段二的事。目前撤回後 listing 暫時沒有領先者，`currentPrice()` 掉回底價 —— 單一
