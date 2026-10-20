@@ -5,6 +5,7 @@ import Link from "next/link";
 import BazaarFilters from "@/components/bazaar/BazaarFilters";
 import ListRelicDrawer from "@/components/bazaar/ListRelicDrawer";
 import ListingTable from "@/components/bazaar/ListingTable";
+import MyBidsTable from "@/components/bazaar/MyBidsTable";
 import MyListingsTable from "@/components/bazaar/MyListingsTable";
 import {
   SIGN_IN_TO_MARKETPLACE,
@@ -15,6 +16,7 @@ import {
 } from "@/marketplace/browse";
 import type { Listing } from "@/marketplace/listing";
 import { NOTHING_LISTED } from "@/marketplace/listRelic";
+import { NO_BIDS, bidPage, type MyBidEntry } from "@/marketplace/myBids";
 import { DEFAULT_SORT, filterRows, sortRows, type RowSort } from "@/marketplace/rows";
 import { useCountdownNow } from "@/marketplace/useCountdownNow";
 import { useListRelic } from "@/marketplace/useListRelic";
@@ -25,16 +27,21 @@ import { apiClient, publicApi } from "@/utils/api";
 const EMPTY = "The coffers are bare — no relics are up for auction.";
 const NONE_MATCH = "No relics loaded so far match these filters.";
 
-// The two reads the page pages through: the Bazaar signed in or out, and the delver's own.
+// The reads the page pages through: the Bazaar signed in or out, and the delver's own listings
+// and bids.
 const browsePage = (cursor?: string) => publicApi.browseListings(cursor);
 const minePage = (cursor?: string) => apiClient.listMyListings(cursor);
+const myBidsPage = (cursor?: string) => apiClient.listMyBids(cursor).then(bidPage);
 
-type View = "all" | "mine";
+type View = "all" | "mine" | "bids";
+
+const VIEW_LABELS: Record<View, string> = { all: "All", mine: "Mine", bids: "My bids" };
 
 /**
  * The Bazaar (FS-8EGFA req 20–23, 25): every active auction, readable signed in or out. Sorting
  * and filtering apply to the rows loaded so far; "Show more" loads the next page. A signed-in
- * delver can also switch to Mine, their own listings in every status, and list a relic.
+ * delver can also switch to Mine, their own listings in every status, to My bids (FS-EYQ8K
+ * req 15), every bid they have placed, and list a relic. Signed out, neither is offered.
  */
 export default function MarketplacePage() {
   const { isAuthenticated, memberInfo } = useAuthStore();
@@ -42,9 +49,11 @@ export default function MarketplacePage() {
 
   const [view, setView] = useState<View>("all");
   const showingMine = isAuthenticated && view === "mine";
+  const showingBids = isAuthenticated && view === "bids";
 
   const browse = usePagedListings(browsePage);
   const mine = usePagedListings(minePage, showingMine);
+  const bids = usePagedListings(myBidsPage, showingBids);
 
   const [sort, setSort] = useState<RowSort>(DEFAULT_SORT);
   const [rarities, setRarities] = useState<string[]>([]);
@@ -54,11 +63,17 @@ export default function MarketplacePage() {
     () => sortRows(filterRows(browse.state.rows, { rarities, types }), sort),
     [browse.state.rows, rarities, types, sort],
   );
-  const shownRows = showingMine ? mine.state.rows : browse.state.rows;
-  const endsAts = useMemo(() => shownRows.map((r) => r.endsAt), [shownRows]);
+  const endsAts = useMemo(
+    () =>
+      showingBids
+        ? bids.state.rows.map((b) => b.listing.endsAt)
+        : (showingMine ? mine.state.rows : browse.state.rows).map((r) => r.endsAt),
+    [showingBids, showingMine, bids.state.rows, mine.state.rows, browse.state.rows],
+  );
   const now = useCountdownNow(endsAts);
 
   const showMine = useCallback(() => setView("mine"), []);
+  const showAll = useCallback(() => setView("all"), []);
   const listing = useListRelic({ onPosted: showMine, refreshMine: mine.refreshFirstPage });
 
   return (
@@ -90,7 +105,15 @@ export default function MarketplacePage() {
         {isAuthenticated ? listing.notice : undefined}
       </p>
 
-      {showingMine ? (
+      {showingBids ? (
+        <MyBidsView
+          state={bids.state}
+          now={now}
+          onRetry={bids.reload}
+          onShowMore={bids.showMore}
+          onBrowse={showAll}
+        />
+      ) : showingMine ? (
         <MineView
           state={mine.state}
           memberId={memberId}
@@ -146,13 +169,14 @@ export default function MarketplacePage() {
 }
 
 /**
- * All / Mine (req 23; guideline Part II "Tabs / segmented control"): the active segment is
- * brass-bright text and underline, never amber, which "List a relic" already holds.
+ * All / Mine / My bids (FS-8EGFA req 23, FS-EYQ8K req 15; guideline Part II "Tabs / segmented
+ * control"): the active segment is brass-bright text and underline, never amber, which "List a
+ * relic" already holds.
  */
 function ViewToggle({ view, onView }: { view: View; onView: (view: View) => void }) {
   return (
     <div role="group" aria-label="Show listings" className="flex items-center gap-1">
-      {(["all", "mine"] as const).map((v) => {
+      {(["all", "mine", "bids"] as const).map((v) => {
         const active = view === v;
         return (
           <button
@@ -166,7 +190,7 @@ function ViewToggle({ view, onView }: { view: View; onView: (view: View) => void
                 : "border-transparent text-vellum-dim hover:text-vellum"
             }`}
           >
-            {v === "all" ? "All" : "Mine"}
+            {VIEW_LABELS[v]}
           </button>
         );
       })}
@@ -211,6 +235,44 @@ function MineView({
         memberId={memberId}
         now={now}
       />
+      <ShowMore state={state} onShowMore={onShowMore} />
+    </>
+  );
+}
+
+/** The delver's bids (FS-EYQ8K req 15–17): newest first, paged like Mine. */
+function MyBidsView({
+  state,
+  now,
+  onRetry,
+  onShowMore,
+  onBrowse,
+}: {
+  state: BrowseState<MyBidEntry>;
+  now: number;
+  onRetry: () => void;
+  onShowMore: () => void;
+  onBrowse: () => void;
+}) {
+  if (state.phase === "failed")
+    return (
+      <Notice message={state.error}>
+        <button type="button" onClick={onRetry} className="btn-secondary min-h-[40px]">
+          Try again
+        </button>
+      </Notice>
+    );
+  if (state.phase === "ready" && state.rows.length === 0)
+    return (
+      <Notice message={NO_BIDS}>
+        <button type="button" onClick={onBrowse} className="btn-secondary min-h-[40px]">
+          Browse the Bazaar
+        </button>
+      </Notice>
+    );
+  return (
+    <>
+      <MyBidsTable rows={state.rows} loading={state.phase === "loading"} now={now} />
       <ShowMore state={state} onShowMore={onShowMore} />
     </>
   );

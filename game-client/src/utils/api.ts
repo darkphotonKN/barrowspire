@@ -278,6 +278,16 @@ class ApiClient {
     );
   }
 
+  // One page of the signed-in delver's own bids, newest first, each with its listing summary and
+  // item joined (FS-EYQ8K req 1–7).
+  async listMyBids(cursor?: string) {
+    return unwrap(
+      await client.GET("/api/marketplace/bids/mine", {
+        params: { query: { cursor } },
+      }),
+    );
+  }
+
   // Ends the signed-in seller's auction early at its leading bid (FS-49Z37 req 15). No key, no
   // body; 202 with an empty body once settlement has started.
   async acceptBid(listingId: string): Promise<void> {
