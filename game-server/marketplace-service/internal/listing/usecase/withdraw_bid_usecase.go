@@ -17,6 +17,8 @@ import (
 // Withdrawing the current leader promotes the runner-up (ADR-0028); the domain
 // does it in the same write. Only the withdrawn bid's hold is released here: the
 // runner-up's has been RESERVED since it was placed and now backs the lead.
+// An OUTBID bid may be withdrawn too (ADR-0029): its gold comes back now rather
+// than at settlement, and the leader is untouched.
 type WithdrawBidUC struct {
 	repo        listing.Repository
 	holdRelease HoldReleaseStarter

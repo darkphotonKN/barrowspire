@@ -278,12 +278,32 @@ class ApiClient {
     );
   }
 
+  // One page of the signed-in delver's own bids, newest first, each with its listing summary and
+  // item joined (FS-EYQ8K req 1–7).
+  async listMyBids(cursor?: string) {
+    return unwrap(
+      await client.GET("/api/marketplace/bids/mine", {
+        params: { query: { cursor } },
+      }),
+    );
+  }
+
   // Ends the signed-in seller's auction early at its leading bid (FS-49Z37 req 15). No key, no
   // body; 202 with an empty body once settlement has started.
   async acceptBid(listingId: string): Promise<void> {
     unwrap(
       await client.POST("/api/marketplace/listings/{listing_id}/accept", {
         params: { path: { listing_id: listingId } },
+      }),
+    );
+  }
+
+  // Withdraws one of the signed-in delver's leading or outbid bids, releasing its hold (FS-EYQ8K
+  // req 12; ADR-0029). No key, no body; 204 with an empty body.
+  async withdrawBid(listingId: string, bidId: string): Promise<void> {
+    unwrap(
+      await client.DELETE("/api/marketplace/listings/{listing_id}/bids/{bid_id}", {
+        params: { path: { listing_id: listingId, bid_id: bidId } },
       }),
     );
   }

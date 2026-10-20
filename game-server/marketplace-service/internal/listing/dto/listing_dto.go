@@ -63,7 +63,12 @@ func (l ListingDetails) MinimumBid() int {
 // listing out of ACTIVE at its end yet, so this is computed at read time.
 // AcceptsBidAt refuses a bid on exactly these listings.
 func (l ListingDetails) EndedAt(now time.Time) bool {
-	return l.Status == listing.StatusActive && !l.EndsAt.After(now)
+	return endedAt(l.Status, l.EndsAt, now)
+}
+
+// endedAt is the one "ended" rule every listing read reports.
+func endedAt(status listing.ListingStatus, endsAt, now time.Time) bool {
+	return status == listing.StatusActive && !endsAt.After(now)
 }
 
 // ListingsPage is one page of listings, in whatever order the read that built

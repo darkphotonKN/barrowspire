@@ -202,23 +202,22 @@ func TestWithdrawBidNotFound(t *testing.T) {
 	assert.ErrorIs(t, err, ErrBidNotFound)
 }
 
-// TestBidFSMRejectsIllegalTransition pins that terminal states are terminal. A
-// bid that already lost cannot be withdrawn, otherwise a member could cancel
-// their way backwards through the auction's history.
+// TestBidFSMRejectsIllegalTransition pins that final states are final. A bid that
+// already won, lost or was withdrawn cannot be withdrawn, otherwise a member could
+// cancel their way backwards through the auction's history. OUTBID is not among
+// them: an outbid bid may be withdrawn (ADR-0029).
 func TestBidFSMRejectsIllegalTransition(t *testing.T) {
-	l := activeListing(t, 100)
-	bidder := uuid.New()
-	now := time.Now()
+	for _, status := range []BidStatus{BidStatusWon, BidStatusLost, BidStatusCancelled} {
+		t.Run(string(status), func(t *testing.T) {
+			now := time.Now()
+			l, ids, members := auctionWith(t, now, heldBid{status, 150, 0})
 
-	leadingBid(t, l, bidder, 150, now)
-	leadingBid(t, l, uuid.New(), 200, now)
+			err := l.WithdrawBid(ids[0], members[0], now.Add(time.Minute))
 
-	// the first bid is now OUTBID — a terminal state
-	outbidID := l.Snapshot().Bids[0].ID
-
-	err := l.WithdrawBid(outbidID, bidder, now)
-
-	assert.ErrorIs(t, err, ErrInvalidBidTransition)
+			assert.ErrorIs(t, err, ErrInvalidBidTransition)
+			assert.Equal(t, status, bidByID(t, l, ids[0]).Status)
+		})
+	}
 }
 
 // heldBid is one bid in a test auction: its status, amount, and when it was placed.
@@ -343,6 +342,87 @@ func TestWithdrawBid_NonLeaderWithdraws_LeaderStands(t *testing.T) {
 
 	assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[2]).Status)
 	assert.Equal(t, BidStatusOutbid, bidByID(t, l, ids[1]).Status)
+}
+
+// ADR-0029: an outbid bid may be withdrawn while the auction is open. It leaves the
+// auction; the leader and the price stay as they are, and nobody is promoted.
+func TestWithdrawBid_OutbidWithdraws_LeaderAndPriceUnchanged(t *testing.T) {
+	now := time.Now()
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusOutbid, 120, 0},
+		heldBid{BidStatusOutbid, 130, time.Second},
+		heldBid{BidStatusWinning, 150, 2 * time.Second},
+	)
+
+	require.NoError(t, l.WithdrawBid(ids[0], members[0], now.Add(time.Minute)))
+
+	assert.Equal(t, BidStatusCancelled, bidByID(t, l, ids[0]).Status)
+	assert.Equal(t, BidStatusOutbid, bidByID(t, l, ids[1]).Status, "no promotion: the leader did not leave")
+	assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[2]).Status)
+	assert.Equal(t, 150, l.currentPrice())
+}
+
+// ADR-0029: an outbid bid may be withdrawn only while bids may still change. Once
+// settlement has frozen the listing, or a buyout has fixed its winner, the bid is
+// left for settlement to resolve.
+func TestWithdrawBid_OutbidOnClosedListing_Refused(t *testing.T) {
+	tests := []struct {
+		name  string
+		close func(t *testing.T, l *Listing, now time.Time)
+	}{
+		{"frozen", func(t *testing.T, l *Listing, now time.Time) {
+			require.NoError(t, l.Freeze(now))
+		}},
+		{"bought out", func(t *testing.T, l *Listing, now time.Time) {
+			price := 500
+			l.buyoutPrice = &price
+			require.NoError(t, l.Buyout(uuid.New(), uuid.New(), 500, now))
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Now()
+			l, ids, members := auctionWith(t, now,
+				heldBid{BidStatusOutbid, 120, 0},
+				heldBid{BidStatusWinning, 150, time.Second},
+			)
+			tt.close(t, l, now.Add(time.Minute))
+
+			err := l.WithdrawBid(ids[0], members[0], now.Add(2*time.Minute))
+
+			assert.ErrorIs(t, err, ErrListingNotAcceptingBids)
+			assert.Equal(t, BidStatusOutbid, bidByID(t, l, ids[0]).Status)
+		})
+	}
+}
+
+// An auction that has ended takes no more withdrawals, even before settlement has
+// frozen it: "ended" means what it means to PlaceBid (endsAt <= now). Otherwise a
+// leader could withdraw after the end and hand the win to the runner-up.
+func TestWithdrawBid_AuctionEnded_Refused(t *testing.T) {
+	statuses := []BidStatus{BidStatusWinning, BidStatusOutbid}
+	offsets := map[string]time.Duration{"at the end": time.Hour, "after the end": 2 * time.Hour}
+	for _, status := range statuses {
+		for name, offset := range offsets {
+			t.Run(string(status)+" "+name, func(t *testing.T) {
+				now := time.Now() // auctionWith ends the auction at now + 1h
+				l, ids, members := auctionWith(t, now,
+					heldBid{BidStatusOutbid, 120, 0},
+					heldBid{BidStatusWinning, 150, time.Second},
+				)
+				target := 0
+				if status == BidStatusWinning {
+					target = 1
+				}
+				before := l.Snapshot()
+
+				err := l.WithdrawBid(ids[target], members[target], now.Add(offset))
+
+				assert.ErrorIs(t, err, ErrListingExpired)
+				assert.Equal(t, before, l.Snapshot(), "a refused withdrawal changes nothing, promotes nobody")
+			})
+		}
+	}
 }
 
 // TestReconstituteRejectsTwoWinners is the safety net for persisted state. If

@@ -118,3 +118,30 @@ func TestWithdrawBidUC_LeaderWithdraws_RunnerUpLeadsAndKeepsItsHold(t *testing.T
 	assert.Equal(t, listing.BidStatusWinning, bids[0].Status)
 	assert.Equal(t, listing.BidStatusCancelled, bids[1].Status)
 }
+
+// ADR-0029: an outbid bid may be withdrawn, and its gold comes back at once rather
+// than at settlement. The leader keeps its lead and its hold.
+func TestWithdrawBidUC_OutbidWithdraws_ReleasesItsHold(t *testing.T) {
+	now := time.Now()
+	l := activeListing(t, 100)
+	outbidMember := uuid.New()
+	require.NoError(t, l.PlaceBid(outbidMember, 120, uuid.Nil, now))
+	outbid := l.Snapshot().Bids[0].ID
+	require.NoError(t, l.ConfirmBid(outbid, now))
+	require.NoError(t, l.PlaceBid(uuid.New(), 150, uuid.Nil, now))
+	require.NoError(t, l.ConfirmBid(l.Snapshot().Bids[1].ID, now))
+	release := &fakeReleaser{}
+	listingID := uuid.New()
+
+	err := NewWithdrawBidUC(&fakeRepo{listing: l}, release).Handle(context.Background(), WithdrawBidCommand{
+		ListingID: listingID, BidID: outbid, MemberID: outbidMember, Now: now,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, release.calls, "the outbid bidder's gold goes back now")
+	assert.Equal(t, outbid, release.gotBidID)
+	assert.Equal(t, listingID, release.gotListingID)
+	bids := l.Snapshot().Bids
+	assert.Equal(t, listing.BidStatusCancelled, bids[0].Status)
+	assert.Equal(t, listing.BidStatusWinning, bids[1].Status)
+}

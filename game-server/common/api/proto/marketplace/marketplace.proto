@@ -13,6 +13,9 @@ service MarketplaceService {
   rpc ListItem(ListItemRequest) returns (ListItemResponse) {}
   // The caller's own listings, newest first, paged by cursor.
   rpc ListMyListings(ListMyListingsRequest) returns (ListMyListingsResponse) {}
+  // The caller's own bids, newest placed first, paged by cursor (FS-EYQ8K).
+  // FAILED and CANCELLED bids are not listed.
+  rpc ListMyBids(ListMyBidsRequest) returns (ListMyBidsResponse) {}
   // Every seller's live auctions (ACTIVE, not yet ended), soonest-ending first,
   // paged by cursor. Public: needs no caller.
   rpc BrowseListings(BrowseListingsRequest) returns (BrowseListingsResponse) {}
@@ -92,6 +95,40 @@ message ListMyListingsRequest {
 message ListMyListingsResponse {
   repeated Listing listings = 1;
   shared.v1.PageInfo pagination = 2;  // absent on the last page
+}
+
+// ListMyBids
+// The bidder is derived from the authenticated context server-side, never
+// supplied by the caller — same rule as ListMyListingsRequest.
+message ListMyBidsRequest {
+  string cursor = 1;  // opaque; empty for the first page
+  int32  limit  = 2;
+}
+
+message ListMyBidsResponse {
+  repeated MyBid bids = 1;
+  shared.v1.PageInfo pagination = 2;  // absent on the last page
+}
+
+// One of the caller's bids. One row per bid: a member who raised their own bid
+// on a listing has a row for each.
+message MyBid {
+  string bid_id = 1;
+  string listing_id = 2;
+  int64 amount = 3;
+  string status = 4;  // PENDING, WINNING, OUTBID, WON or LOST
+  google.protobuf.Timestamp placed_at = 5;
+  MyBidListing listing = 6;
+}
+
+// Where the bid's listing stands now.
+message MyBidListing {
+  string status = 1;
+  google.protobuf.Timestamp ends_at = 2;
+  bool ended = 3;                     // ACTIVE but past ends_at, not yet settled
+  optional int64 current_price = 4;   // the leading bid, anyone's; absent when nobody leads
+  optional int64 buyout_price = 5;    // absent when the seller set none
+  string item_id = 6;                 // the listed item, for the caller to embed
 }
 
 // BrowseListings

@@ -60,6 +60,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [ ] Buy out a listing → FS-NXP1W
 - [ ] Buyout price on listings → FS-9XKS6
 - [ ] Affixes and item level in item summaries → FS-4R9M9
+- [ ] Read my bids → FS-EYQ8K
 
 ### Characters
 

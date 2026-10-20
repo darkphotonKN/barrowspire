@@ -29,7 +29,7 @@ func (s *stubAcceptBid) Handle(ctx context.Context, cmd usecase.AcceptBidCommand
 }
 
 func newAcceptBidHandler(uc AcceptBid) *Handler {
-	return NewHandler(nil, nil, nil, nil, nil, nil, nil, uc, nil)
+	return NewHandler(nil, nil, nil, nil, nil, nil, nil, nil, uc, nil)
 }
 
 // The seller is whoever the token says, never anything in the request.
