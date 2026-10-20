@@ -1,6 +1,6 @@
 # ADR-0025 — A buyout is idempotent by a bid ID derived from buyer and listing, not by a caller-minted key
 
-Status: accepted
+Status: superseded by [ADR-0026](0026-buyout-replay-is-recognised-by-a-caller-key-and-the-buyers-own-bid.md)
 Date: 2026-10-20
 Scope: `game-server/api-gateway` (`buyout` operation), `game-server/marketplace-service` (`BuyoutUC`)
 Builds on: [ADR-0009](0009-idempotency-belongs-to-the-caller.md) — applies its "the party that knows
