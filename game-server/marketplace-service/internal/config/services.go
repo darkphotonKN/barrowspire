@@ -53,8 +53,8 @@ func NewServices(ctx context.Context, db *sqlx.DB, itemsClient itemreserver.Item
 
 	listingHandler := listinggrpc.NewHandler(reserveItemUC, createAccUC, placeBidUC, withdrawBidUC, listMyListingsQuery, browseListingsQuery, getListingQuery, acceptBidUC, buyoutUC)
 
-	hasActiveListingQuery := listingquery.NewHasActiveListingQuery(db)
-	reconcileReservationsUC := usecase.NewReconcileReservationsUC(hasActiveListingQuery, itemReserver)
+	hasLiveListingQuery := listingquery.NewHasLiveListingQuery(db)
+	reconcileReservationsUC := usecase.NewReconcileReservationsUC(hasLiveListingQuery, itemReserver)
 
 	// NOTE: the listing domain (model/repository/service/handler + proto) is
 	// intentionally left empty for now. This service only boots the server and
