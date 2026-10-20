@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/dto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,13 +15,13 @@ import (
 // pagedFinder serves expired listings a page at a time, the way the query does:
 // ordered by (ends_at, id), strictly after the cursor.
 type pagedFinder struct {
-	listings []ExpiredListing
+	listings []dto.ExpiredListing
 	err      error
 	gotNow   []time.Time
 	pages    int
 }
 
-func (f *pagedFinder) ExpiredActiveListings(ctx context.Context, now time.Time, after *ExpiredListing, limit int) ([]ExpiredListing, error) {
+func (f *pagedFinder) ExpiredActiveListings(ctx context.Context, now time.Time, after *dto.ExpiredListing, limit int) ([]dto.ExpiredListing, error) {
 	f.pages++
 	f.gotNow = append(f.gotNow, now)
 	if f.err != nil {
@@ -40,21 +41,25 @@ func (f *pagedFinder) ExpiredActiveListings(ctx context.Context, now time.Time, 
 
 // recordingStarter keeps every start, and can refuse chosen listings.
 type recordingStarter struct {
-	started  []uuid.UUID
-	triggers []TriggerKind
-	failFor  map[uuid.UUID]error
+	started   []uuid.UUID
+	triggers  []TriggerKind
+	failFor   map[uuid.UUID]error
+	deadlines []time.Duration
 }
 
 func (s *recordingStarter) StartSettlement(ctx context.Context, listingID uuid.UUID, trigger TriggerKind) error {
 	s.started = append(s.started, listingID)
 	s.triggers = append(s.triggers, trigger)
+	if d, ok := ctx.Deadline(); ok {
+		s.deadlines = append(s.deadlines, time.Until(d))
+	}
 	return s.failFor[listingID]
 }
 
-func expiredListings(n int, now time.Time) []ExpiredListing {
-	out := make([]ExpiredListing, n)
+func expiredListings(n int, now time.Time) []dto.ExpiredListing {
+	out := make([]dto.ExpiredListing, n)
 	for i := range out {
-		out[i] = ExpiredListing{ID: uuid.New(), EndsAt: now.Add(-time.Duration(n-i) * time.Minute)}
+		out[i] = dto.ExpiredListing{ID: uuid.New(), EndsAt: now.Add(-time.Duration(n-i) * time.Minute)}
 	}
 	return out
 }
@@ -127,4 +132,21 @@ func TestStartExpiredSettlements_NothingExpired_StartsNothing(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Empty(t, starter.started)
+}
+
+// A slow Temporal must not stall the whole tick: each start runs under its own
+// deadline, so one hung start costs at most that long before the next listing.
+func TestStartExpiredSettlements_EachStartHasItsOwnDeadline(t *testing.T) {
+	now := time.Now()
+	listings := expiredListings(2, now)
+	starter := &recordingStarter{}
+
+	err := NewStartExpiredSettlementsUC(&pagedFinder{listings: listings}, starter).Handle(context.Background(), now)
+
+	require.NoError(t, err)
+	require.Len(t, starter.deadlines, 2, "every start carries a deadline")
+	for _, left := range starter.deadlines {
+		assert.LessOrEqual(t, left, expiryStartTimeout)
+		assert.Greater(t, left, time.Duration(0))
+	}
 }

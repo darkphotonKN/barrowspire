@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
-	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/dto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func expiredIDs(listings []usecase.ExpiredListing) []uuid.UUID {
+func expiredIDs(listings []dto.ExpiredListing) []uuid.UUID {
 	out := make([]uuid.UUID, len(listings))
 	for i, l := range listings {
 		out[i] = l.ID
@@ -58,7 +58,7 @@ func TestExpiredActiveListings_PagesVisitEachListingOnce(t *testing.T) {
 	q := NewExpiredListingsQuery(db)
 
 	var seen []uuid.UUID
-	var after *usecase.ExpiredListing
+	var after *dto.ExpiredListing
 	for {
 		page, err := q.ExpiredActiveListings(context.Background(), now, after, 2)
 		require.NoError(t, err)
