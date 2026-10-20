@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/google/uuid"
 )
@@ -104,8 +105,9 @@ func (uc *BuyoutUC) Handle(ctx context.Context, cmd BuyoutCommand) error {
 	return nil
 }
 
-// holdAndRecord holds the buyout price against bidID and records the buyout,
-// giving the gold back when the listing definitively refused it.
+// holdAndRecord holds the buyout price against bidID and records the buyout. The
+// gold goes back only once the write provably did not land; an ambiguous write is
+// retried first, and one still unknown is left to the reconciler.
 func (uc *BuyoutUC) holdAndRecord(ctx context.Context, current *listing.Listing, bidID uuid.UUID, cmd BuyoutCommand) error {
 	if err := current.CanBuyout(cmd.MemberID, cmd.Amount, cmd.Now); err != nil {
 		return fmt.Errorf("buyout usecase listing %v : %w", cmd.ListingID, err)
@@ -124,33 +126,64 @@ func (uc *BuyoutUC) holdAndRecord(ctx context.Context, current *listing.Listing,
 		return fmt.Errorf("buyout usecase placing hold for bid %v : %w", bidID, err)
 	}
 
-	// Set inside the closure: whether this call's bid is on the listing. The
-	// buyer's own buyout under another ID is a replay that writes nothing, and
-	// the gold just held for this ID then backs no bid.
+	// Set inside the closure, and reset on every attempt: whether this call's bid
+	// is on the listing. The buyer's own buyout under another ID is a replay that
+	// writes nothing, and the gold just held for this ID then backs no bid.
 	var recorded bool
-	err := uc.repo.Update(ctx, cmd.ListingID, func(l *listing.Listing) error {
-		if err := l.Buyout(bidID, cmd.MemberID, cmd.Amount, cmd.Now); err != nil {
-			return err
-		}
-		recorded = l.HasBid(bidID)
-		return nil
-	})
-	if err == nil {
-		if !recorded {
-			uc.releaseHold(ctx, bidID, cmd.ListingID, errBuyoutAlreadyRecorded)
-		}
-		return nil
+	write := func(ctx context.Context) error {
+		recorded = false
+		return uc.repo.Update(ctx, cmd.ListingID, func(l *listing.Listing) error {
+			if err := l.Buyout(bidID, cmd.MemberID, cmd.Amount, cmd.Now); err != nil {
+				return err
+			}
+			recorded = l.HasBid(bidID)
+			return nil
+		})
 	}
 
-	// Only a definitive refusal frees the gold. Anything else — a timeout, an
-	// ambiguous COMMIT — may have recorded the buyout after all, and releasing
-	// would leave a winning bid with no gold behind it. That hold is kept; the
-	// buyer's retry replays onto it, and the reconciler sweeps it if they never do.
-	if isDefinitiveBuyoutRefusal(err) {
+	// TCC, as in PlaceBid: the hold is the Try, this write the Confirm, the release
+	// the Cancel, which runs only once the write provably did not land. An error
+	// that is neither a definitive refusal nor a failure before the read may be an
+	// ambiguous COMMIT, so the write is retried rather than compensated. Retrying
+	// is safe because a retry finding this bid, or the buyer's own buyout, under
+	// the lock is a replay.
+	err := write(ctx)
+	if err != nil && !isDefinitiveBuyoutRefusal(err) && !failedBeforeRead(err) {
+		// On the request's values but not its cancellation: a cancelled request is
+		// among the likeliest causes of an ambiguous COMMIT.
+		retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), writeRetryDeadline)
+		defer cancel()
+
+		// Only a definitive refusal settles a retry. Failing before the read proves
+		// this attempt wrote nothing, and says nothing about the one before it.
+		err = withBackoff(retryCtx, maxWriteAttempts-1, writeRetryBackoff,
+			func(err error) bool { return !isDefinitiveBuyoutRefusal(err) },
+			write)
+
+		if err != nil && !isDefinitiveBuyoutRefusal(err) {
+			// Still unknown. Releasing could pull the gold out from under a buyout
+			// that did land, so it is left to the reconciler, which releases only what
+			// no recorded bid claims. Transient to the caller: resending with the same
+			// key is safe, and settles it.
+			slog.ErrorContext(ctx, "buyout write outcome unknown after retries, hold left for the reconciler",
+				"bid_id", bidID, "listing_id", cmd.ListingID, "err", err)
+
+			return fmt.Errorf("buyout usecase recording bid %v : %w: %w", bidID, commonconstants.ErrTransient, err)
+		}
+	}
+
+	if err != nil {
+		// a definitive refusal, or nothing read on the first attempt: this gold will
+		// never back a bid
 		uc.releaseHold(ctx, bidID, cmd.ListingID, err)
+		return fmt.Errorf("buyout usecase recording bid %v : %w", bidID, err)
 	}
 
-	return fmt.Errorf("buyout usecase recording bid %v : %w", bidID, err)
+	if !recorded {
+		uc.releaseHold(ctx, bidID, cmd.ListingID, errBuyoutAlreadyRecorded)
+	}
+
+	return nil
 }
 
 // releaseHold starts giving back gold held for a buyout that backs no bid: the
