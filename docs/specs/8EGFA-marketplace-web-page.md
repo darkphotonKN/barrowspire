@@ -309,6 +309,7 @@ Settlement stays unbuilt: auctions end, and nobody wins yet.
 - [ ] After one bid of N: `currentPrice = N`, `minimumBid = N + 1` and `bidCount = 1`.
 - [ ] After a higher bid M: `currentPrice = M` and `bidCount = 2`.
 - [ ] After the leader withdraws, with the outbid bid remaining: `currentPrice` is absent and `minimumBid = startPrice`. This mirrors the backend's no-promotion rule (FS-0YXG6).
+  - *Correction 2026-10-20 ([ADR-0028](../adr/0028-a-withdrawn-leader-is-replaced-by-the-next-highest-bid.md)): the backend now promotes the outbid bid, so after the leader withdraws `currentPrice` is that bid's amount and `minimumBid` follows it. FS-0YXG6 never stated a no-promotion rule; it lived in `docs/outline/bids.md`. The client reads both values from the server and needs no change.*
 - [ ] A listing that is `ACTIVE` and past `endsAt` is absent from browse. It appears in `/listings/mine` and get-one with `ended: true`.
 - [ ] `/listings/mine` still answers every field it did before. The new fields are additive, and it still answers 401 without a token.
 - [ ] `list-item-instances` returns `status` for every instance. A listed seed item shows `LISTED`.

@@ -469,14 +469,44 @@ func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time
 		return ErrNotBidOwner
 	}
 
+	wasLeading := bid.status == BidStatusWinning
+
 	// the FSM rejects anything already outbid, won or cancelled
 	if err := bid.transitionTo(BidStatusCancelled, now); err != nil {
 		return err
 	}
 
+	// A withdrawn leader is replaced by the highest bid still held (ADR-0028), so the
+	// auction keeps a leader backed by gold whenever another bid remains.
+	if wasLeading {
+		if runnerUp := l.findRunnerUp(); runnerUp != nil {
+			if err := runnerUp.transitionTo(BidStatusWinning, now); err != nil {
+				return err
+			}
+		}
+	}
+
 	l.updatedAt = now
 
 	return nil
+}
+
+// findRunnerUp is the bid that leads once the leader is gone: the highest OUTBID
+// bid, the one placed first on a tie. Only an OUTBID bid qualifies: its hold has
+// been RESERVED since it was placed, while a PENDING bid has no confirmed hold and
+// competes for the lead when it confirms.
+func (l *Listing) findRunnerUp() *Bid {
+	var best *Bid
+	for _, bid := range l.bids {
+		if bid.status != BidStatusOutbid {
+			continue
+		}
+		if best == nil || bid.amount > best.amount ||
+			(bid.amount == best.amount && bid.createdAt.Before(best.createdAt)) {
+			best = bid
+		}
+	}
+	return best
 }
 
 // CanBuyout reports whether memberID could buy this listing out at now for

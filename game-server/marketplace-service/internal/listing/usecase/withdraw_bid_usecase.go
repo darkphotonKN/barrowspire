@@ -14,8 +14,9 @@ import (
 // domain, which compares the bid's member against MemberID — so MemberID must be
 // the authenticated caller, never taken from the request body.
 //
-// Withdrawing the current leader does NOT promote the runner-up. See
-// docs/outline/bids.md §2 — a promoted runner-up would have no hold backing it.
+// Withdrawing the current leader promotes the runner-up (ADR-0028); the domain
+// does it in the same write. Only the withdrawn bid's hold is released here: the
+// runner-up's has been RESERVED since it was placed and now backs the lead.
 type WithdrawBidUC struct {
 	repo        listing.Repository
 	holdRelease HoldReleaseStarter

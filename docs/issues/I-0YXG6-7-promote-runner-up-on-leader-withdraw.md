@@ -1,9 +1,9 @@
 ---
 id: I-0YXG6-7
-status: open
+status: done
 implements: FS-0YXG6
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "FS-0YXG6 slice 7: withdrawing the WINNING bid promotes the next-highest bid (ADR-0028)"
 ---
 Implements FS-0YXG6 §Place and withdraw a bid (Req 16), per ADR-0028
@@ -41,14 +41,14 @@ Docs in the same change (FS-0YXG6 is shipped and write-once, so these are notes,
 
 ## Acceptance Criteria
 
-- [ ] Withdrawing the WINNING bid with OUTBID bids remaining leaves exactly one WINNING bid: the highest OUTBID, earliest on a tie.
-- [ ] Withdrawing the WINNING bid with no OUTBID bid leaves no WINNING bid; the price is the starting bid.
-- [ ] `PENDING`, `CANCELLED` and `FAILED` bids are never promoted.
-- [ ] The withdrawn bid's hold is released (as today); the promoted bid's hold is untouched.
-- [ ] The single-WINNING invariant holds after the write (repository test against the partial unique index).
-- [ ] A listing whose leader withdrew while others remained settles with the promoted bid as winner, and step 2 releases the other losers (workflow or end-to-end evidence).
-- [ ] FS-8EGFA and FS-NXP1W correction notes added; `docs/outline/bids.md` already points to ADR-0028.
-- [ ] Tests pass.
+- [x] Withdrawing the WINNING bid with OUTBID bids remaining leaves exactly one WINNING bid: the highest OUTBID, earliest on a tie.
+- [x] Withdrawing the WINNING bid with no OUTBID bid leaves no WINNING bid; the price is the starting bid.
+- [x] `PENDING`, `CANCELLED` and `FAILED` bids are never promoted.
+- [x] The withdrawn bid's hold is released (as today); the promoted bid's hold is untouched.
+- [x] The single-WINNING invariant holds after the write (repository test against the partial unique index).
+- [x] A listing whose leader withdrew while others remained settles with the promoted bid as winner, and step 2 releases the other losers (workflow or end-to-end evidence).
+- [x] FS-8EGFA and FS-NXP1W correction notes added; `docs/outline/bids.md` already points to ADR-0028.
+- [x] Tests pass.
 
 ## Blocked By
 

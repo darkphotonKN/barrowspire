@@ -320,6 +320,7 @@ concurrency). Never read-then-act.
 
 ## Edge States
 
+- **The leader withdrew and other bids remain** *(added 2026-10-20, [ADR-0028](../adr/0028-a-withdrawn-leader-is-replaced-by-the-next-highest-bid.md))*: the highest OUTBID bid was promoted to WINNING when the leader withdrew, so 0a finds a winner and step 2 releases every other loser. Before ADR-0028 no one was promoted, 0a took the no-bids arm, and the remaining OUTBID holds were never released.
 - **Expiry and AcceptBid race:** both start `settlement-{listingId}`; the second is rejected as a duplicate and returns success. One settlement.
 - **Bid placed during freeze:** placeBid acquires the listing row lock after 0a commits, re-checks status, sees `PENDING_SETTLEMENT` and rejects. A bid that committed before 0a is included in winner selection.
 - **Zero bids:** short-circuit to NB1 ReturnItem (item `AVAILABLE`), then NB2 ExpireListing (listing `EXPIRED`) (Req 8).
