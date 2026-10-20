@@ -1,9 +1,9 @@
 ---
 id: I-EYQ8K-5
-status: open
+status: done
 implements: FS-EYQ8K
 blocked_by: [I-EYQ8K-1, I-EYQ8K-4]
-labels: [blocked]
+labels: []
 title: "FS-EYQ8K slice 5: withdraw a bid from My bids"
 ---
 Implements FS-EYQ8K §Requirements (Req 10–14), §API surface, §Edge States

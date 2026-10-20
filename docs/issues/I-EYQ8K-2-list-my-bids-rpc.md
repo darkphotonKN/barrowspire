@@ -1,9 +1,9 @@
 ---
 id: I-EYQ8K-2
-status: open
+status: done
 implements: FS-EYQ8K
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "FS-EYQ8K slice 2: marketplace reads a member's own bids (ListMyBids RPC)"
 ---
 Implements FS-EYQ8K §Requirements (Req 1–6, 8)

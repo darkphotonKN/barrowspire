@@ -1,9 +1,9 @@
 ---
 id: I-EYQ8K-1
-status: open
+status: done
 implements: FS-EYQ8K
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "FS-EYQ8K slice 1: an outbid bid may be withdrawn (ADR-0029)"
 ---
 Implements FS-EYQ8K §Requirements (Req 9), §Acceptance Criteria, §Edge States

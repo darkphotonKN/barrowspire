@@ -1,9 +1,9 @@
 ---
 id: I-EYQ8K-3
-status: open
+status: done
 implements: FS-EYQ8K
 blocked_by: [I-EYQ8K-2]
-labels: [blocked]
+labels: []
 title: "FS-EYQ8K slice 3: GET /api/marketplace/bids/mine"
 ---
 Implements FS-EYQ8K §Requirements (Req 1–7), §API surface
