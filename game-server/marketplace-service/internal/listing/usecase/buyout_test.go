@@ -143,6 +143,16 @@ func TestBuyout_EarlierHoldSinceReleased_IsRefused(t *testing.T) {
 	assert.Empty(t, l.Snapshot().Bids)
 }
 
+// unknownOnEveryAttempt scripts a write whose outcome stays unknown through every
+// retry, nothing landing: the attempt is abandoned with its hold kept.
+func unknownOnEveryAttempt() []updateOutcome {
+	script := make([]updateOutcome, maxWriteAttempts)
+	for i := range script {
+		script[i] = updateOutcome{err: commonconstants.ErrTransient}
+	}
+	return script
+}
+
 // The bug ADR-0026 exists for. An attempt's hold lands, its bid write fails
 // with the outcome unknown so the hold is kept, and the reconciler later finds
 // no bid and releases it. The buyer's next intent, under a new key, must be able
@@ -151,7 +161,7 @@ func TestBuyout_AfterAnAbandonedAttemptsHoldIsReleased_ANewKeyBuysOut(t *testing
 	l := buyoutListing(t)
 	member := uuid.New()
 	wallet, starter, release := &fakeWallet{released: map[uuid.UUID]bool{}}, &fakeStarter{}, &fakeReleaser{}
-	repo := &fakeRepo{listing: l, updateScript: []updateOutcome{{err: commonconstants.ErrTransient}}}
+	repo := &fakeRepo{listing: l, updateScript: unknownOnEveryAttempt()}
 	uc := NewBuyoutUC(repo, wallet, starter, release)
 
 	first := buyoutCmd(l, member)
@@ -241,7 +251,7 @@ func TestBuyout_ReusingAKeyWhoseHoldWasReleased_IsRefused(t *testing.T) {
 	l := buyoutListing(t)
 	member := uuid.New()
 	wallet := &fakeWallet{released: map[uuid.UUID]bool{}}
-	repo := &fakeRepo{listing: l, updateScript: []updateOutcome{{err: commonconstants.ErrTransient}}}
+	repo := &fakeRepo{listing: l, updateScript: unknownOnEveryAttempt()}
 	uc := NewBuyoutUC(repo, wallet, &fakeStarter{}, &fakeReleaser{})
 
 	cmd := buyoutCmd(l, member)
@@ -307,10 +317,93 @@ func TestBuyout_DefinitiveRefusalUnderLock_ReleasesTheHold(t *testing.T) {
 // Any other failure may have committed after all (an ambiguous COMMIT, a
 // timeout). Releasing then could free gold backing a real buyout, so the hold
 // is kept and the buyer's retry, a replay, settles it either way.
+// An ambiguous write is retried before the hold is left to the reconciler, as
+// PlaceBid does: one retry usually settles it, and the buyer is told it worked.
+func TestBuyout_AmbiguousWriteThenSuccess_RecordsAndKeepsTheHold(t *testing.T) {
+	l := buyoutListing(t)
+	member := uuid.New()
+	wallet, starter, release := &fakeWallet{}, &fakeStarter{}, &fakeReleaser{}
+	repo := &fakeRepo{listing: l, updateScript: []updateOutcome{{err: errors.New("connection reset")}}}
+
+	err := NewBuyoutUC(repo, wallet, starter, release).Handle(context.Background(), buyoutCmd(l, member))
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, repo.updateCall, "the write is retried")
+	assert.True(t, l.HasBuyoutBy(member))
+	assert.Zero(t, release.calls)
+	assert.Equal(t, 1, starter.calls)
+}
+
+// Failing before the listing was read proves the first attempt wrote nothing,
+// so its gold is given back at once, as PlaceBid does.
+func TestBuyout_FailedBeforeReadOnTheFirstAttempt_ReleasesTheHold(t *testing.T) {
+	l := buyoutListing(t)
+	release := &fakeReleaser{}
+	repo := &fakeRepo{listing: l, updateErr: fmt.Errorf("update: %w", commonconstants.ErrLockUnavailable)}
+
+	err := NewBuyoutUC(repo, &fakeWallet{}, &fakeStarter{}, release).Handle(context.Background(), buyoutCmd(l, uuid.New()))
+
+	assert.ErrorIs(t, err, commonconstants.ErrLockUnavailable)
+	assert.Equal(t, 1, repo.updateCall, "not retried")
+	assert.Equal(t, 1, release.calls)
+}
+
+// The first COMMIT landed but its acknowledgement was lost. The retry finds this
+// call's bid under the lock: recorded, so nothing is released.
+func TestBuyout_CommitLandedButUnacknowledged_RetryFindsIt(t *testing.T) {
+	l := buyoutListing(t)
+	member := uuid.New()
+	release, starter := &fakeReleaser{}, &fakeStarter{}
+	repo := &fakeRepo{listing: l, updateScript: []updateOutcome{{committed: true, err: errors.New("connection reset")}}}
+
+	err := NewBuyoutUC(repo, &fakeWallet{}, starter, release).Handle(context.Background(), buyoutCmd(l, member))
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, repo.updateCall)
+	assert.Len(t, l.Snapshot().Bids, 1)
+	assert.Zero(t, release.calls)
+	assert.Equal(t, 1, starter.calls)
+}
+
+// A retry that fails before reading proves nothing about the attempt before it,
+// which may have committed: the hold is kept.
+func TestBuyout_FailedBeforeReadOnARetry_KeepsTheHold(t *testing.T) {
+	l := buyoutListing(t)
+	release := &fakeReleaser{}
+	script := []updateOutcome{{err: errors.New("connection reset")}}
+	for range maxWriteAttempts - 1 {
+		script = append(script, updateOutcome{err: commonconstants.ErrLockUnavailable})
+	}
+	repo := &fakeRepo{listing: l, updateScript: script}
+
+	err := NewBuyoutUC(repo, &fakeWallet{}, &fakeStarter{}, release).Handle(context.Background(), buyoutCmd(l, uuid.New()))
+
+	assert.ErrorIs(t, err, commonconstants.ErrTransient)
+	assert.Zero(t, release.calls)
+}
+
+// A cancelled request is among the likeliest causes of an ambiguous COMMIT, so
+// the retries must not inherit its cancellation.
+func TestBuyout_RetriesTheWriteEvenWhenTheRequestIsCancelled(t *testing.T) {
+	l := buyoutListing(t)
+	member := uuid.New()
+	repo := &fakeRepo{listing: l, updateScript: []updateOutcome{{err: errors.New("connection reset")}}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := NewBuyoutUC(repo, &fakeWallet{}, &fakeStarter{}, &fakeReleaser{}).Handle(ctx, buyoutCmd(l, member))
+
+	require.NoError(t, err)
+	require.Len(t, repo.gotUpdateCtxErrs, 2)
+	assert.NoError(t, repo.gotUpdateCtxErrs[1], "the retry runs on a context the request cannot cancel")
+	assert.True(t, l.HasBuyoutBy(member))
+}
+
+// Still unknown after every retry: the hold is kept for the reconciler, and the
+// buyer is told to resend.
 func TestBuyout_NonDefinitiveFailure_KeepsTheHold(t *testing.T) {
 	for _, failure := range []error{
 		commonconstants.ErrTransient,
-		commonconstants.ErrLockUnavailable,
 		errors.New("connection reset"),
 	} {
 		t.Run(failure.Error(), func(t *testing.T) {
@@ -321,6 +414,8 @@ func TestBuyout_NonDefinitiveFailure_KeepsTheHold(t *testing.T) {
 			err := NewBuyoutUC(repo, wallet, starter, release).Handle(context.Background(), buyoutCmd(l, uuid.New()))
 
 			assert.ErrorIs(t, err, failure)
+			assert.ErrorIs(t, err, commonconstants.ErrTransient, "the buyer is told to resend")
+			assert.Equal(t, maxWriteAttempts, repo.updateCall)
 			assert.Zero(t, release.calls)
 			assert.Zero(t, starter.calls)
 		})
