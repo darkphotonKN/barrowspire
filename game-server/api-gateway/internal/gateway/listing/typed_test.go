@@ -513,6 +513,9 @@ func TestBuyout_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 		{"unknown listing", status.Error(codes.NotFound, "not found"), http.StatusNotFound, errcode.NotFound},
 		{"closed, bought out, no buyout price or short of gold", status.Error(codes.FailedPrecondition, "failed precondition"), http.StatusBadRequest, errcode.FailedPrecondition},
 		{"listing busy", status.Error(codes.Aborted, "aborted"), http.StatusConflict, errcode.Conflict},
+		// the buyer's earlier hold for this listing was released, so their buyout
+		// ID is spent; distinct from busy, which the caller may simply retry
+		{"buyout ID already spent", status.Error(codes.AlreadyExists, "already exists"), http.StatusConflict, errcode.AlreadyExists},
 		{"marketplace or wallet unreachable", status.Error(codes.Unavailable, "unavailable"), http.StatusServiceUnavailable, errcode.ServiceUnavailable},
 		{"settlement could not start", status.Error(codes.Internal, "unhandled error"), http.StatusInternalServerError, errcode.Internal},
 	}
