@@ -1,9 +1,9 @@
 ---
 id: I-49Z37-5
-status: open
+status: done
 implements: FS-49Z37
 blocked_by: [I-49Z37-4]
-labels: [blocked]
+labels: []
 title: "FS-49Z37 slice 5: buy out a listing"
 ---
 Implements FS-49Z37 §Requirements 5–12, 25–27
