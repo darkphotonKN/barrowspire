@@ -8,7 +8,7 @@ import {
   BUYOUT_LAPSED,
   BUYOUT_PRICE_CHANGED,
 } from "./buyout";
-import { submitBuyout, type BuyoutSubmitDeps } from "./buyoutFlow";
+import { buyoutConfirm, submitBuyout, type BuyoutResult, type BuyoutSubmitDeps } from "./buyoutFlow";
 
 const apiError = (status: number, code: string) =>
   new ApiError({ status, code, detail: "server prose", errors: [] });
@@ -63,7 +63,7 @@ describe("submitBuyout", () => {
     ["a transport failure", new TypeError("Failed to fetch"), BROWSE_UNREACHABLE],
   ])("should resend under the same key after %s", async (_, err, text) => {
     const { keys, results } = await pressAll([err, undefined]);
-    expect(results[0]).toEqual({ bought: false, key: "key-1", note: { tone: "error", text } });
+    expect(results[0]).toEqual({ bought: false, ends: false, key: "key-1", note: { tone: "error", text } });
     expect(keys).toEqual(["key-1", "key-1"]);
   });
 
@@ -73,7 +73,7 @@ describe("submitBuyout", () => {
     ["400 · FAILED_PRECONDITION", apiError(400, "FAILED_PRECONDITION"), BUYOUT_GONE],
   ])("should mint a new key after %s", async (_, err, text) => {
     const { keys, results } = await pressAll([err, undefined]);
-    expect(results[0]).toEqual({ bought: false, key: undefined, note: { tone: "error", text } });
+    expect(results[0]).toMatchObject({ bought: false, key: undefined, note: { tone: "error", text } });
     expect(keys).toEqual(["key-1", "key-2"]);
   });
 
@@ -95,9 +95,48 @@ describe("submitBuyout", () => {
     const result = await submitBuyout({ price: 500, key: undefined, availableGold: 100 }, d);
     expect(result).toEqual({
       bought: false,
+      ends: false,
       key: undefined,
       note: { tone: "error", text: "Not enough gold" },
     });
     expect(log).toEqual(["buyout 500"]);
+  });
+});
+
+describe("buyoutConfirm", () => {
+  const sent: BuyoutResult = { bought: false, ends: false, key: "key-1", note: { tone: "error", text: BUYOUT_CONFLICT } };
+
+  it("should open a new intent with no key, whatever the last one held (req 9)", () => {
+    expect(buyoutConfirm({ open: false, key: "stale" }, { type: "open" })).toEqual({ open: true, key: undefined });
+  });
+
+  it("should drop the key when the confirm closes, so reopening is a new intent", () => {
+    const pressed = buyoutConfirm({ open: true, key: undefined }, { type: "answered", result: sent });
+    expect(pressed).toEqual({ open: true, key: "key-1" });
+    const closed = buyoutConfirm(pressed, { type: "close" });
+    expect(closed).toEqual({ open: false, key: undefined });
+    expect(buyoutConfirm(closed, { type: "open" })).toEqual({ open: true, key: undefined });
+  });
+
+  it("should stay open holding the key the answer kept, or none when it spent it", () => {
+    expect(buyoutConfirm({ open: true, key: "key-1" }, { type: "answered", result: sent })).toEqual({ open: true, key: "key-1" });
+    const spent: BuyoutResult = { ...sent, key: undefined, note: { tone: "error", text: BUYOUT_LAPSED } };
+    expect(buyoutConfirm({ open: true, key: "key-1" }, { type: "answered", result: spent })).toEqual({ open: true, key: undefined });
+  });
+
+  it.each<[string, BuyoutResult]>([
+    ["a sale", { bought: true, note: { tone: "ok", text: BOUGHT } }],
+    ["a relic no longer for sale", { bought: false, ends: true, key: undefined, note: { tone: "error", text: BUYOUT_GONE } }],
+  ])("should close and drop the key after %s", (_, result) => {
+    expect(buyoutConfirm({ open: true, key: "key-1" }, { type: "answered", result })).toEqual({ open: false, key: undefined });
+  });
+});
+
+describe("submitBuyout ends", () => {
+  it("should end the intent only when the relic is no longer for sale", async () => {
+    const gone = await pressAll([apiError(400, "FAILED_PRECONDITION")]);
+    expect(gone.results[0]).toMatchObject({ bought: false, ends: true });
+    const lapsed = await pressAll([apiError(409, "ALREADY_EXISTS")]);
+    expect(lapsed.results[0]).toMatchObject({ bought: false, ends: false });
   });
 });
