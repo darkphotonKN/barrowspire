@@ -65,3 +65,15 @@ hold a withdrawal releases); FS-NXP1W Req 29 (losing holds released at step 2).
 - RED (domain): equal OUTBID amounts → the earlier is promoted.
 - RED (domain): leader withdraws with only a PENDING bid left → nothing promoted, price = start.
 - RED (repository, DB): the promotion persists and the partial unique index accepts it.
+
+## Decided at code review (2026-10-20)
+
+**The runner-up may be the withdrawer's own earlier bid** (option c). A member can bid more than once
+on a listing (raising their own bid leaves their earlier bid `OUTBID`, its gold still held). If they
+withdraw the raise, `findRunnerUp` picks the highest `OUTBID`, which can be their own earlier bid, so
+they still lead at that amount; they can withdraw it in turn once it leads. ADR-0028 says only "the
+highest remaining OUTBID" and does not single this case out. Kept as is for now because nothing goes
+wrong: every promoted bid is backed by its own hold. Pinned by
+`TestWithdrawBid_LeaderWithdraws_OwnEarlierBidMayBePromoted`. Alternatives left for later: skip the
+withdrawer's own bids, or cancel all of the withdrawer's bids on the listing together.
+

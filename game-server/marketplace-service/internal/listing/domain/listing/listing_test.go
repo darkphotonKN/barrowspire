@@ -311,6 +311,25 @@ func TestWithdrawBid_LeaderWithdraws_OnlyOutbidIsPromoted(t *testing.T) {
 	assert.Equal(t, 100, l.currentPrice())
 }
 
+// Decided at code review (I-0YXG6-7, option c): the runner-up may be the
+// withdrawer's own earlier bid. A member who raised their own bid and then
+// withdraws the raise still leads, with the earlier amount; they can withdraw
+// that one too once it leads. Pinned so it stays a decision, not an accident.
+func TestWithdrawBid_LeaderWithdraws_OwnEarlierBidMayBePromoted(t *testing.T) {
+	now := time.Now()
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusOutbid, 150, 0},
+		heldBid{BidStatusWinning, 200, time.Second},
+	)
+	l.bids[0].memberID = members[1] // the same member raised their own bid
+
+	require.NoError(t, l.WithdrawBid(ids[1], members[1], now.Add(time.Minute)))
+
+	assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[0]).Status, "their own earlier bid leads")
+	require.NoError(t, l.WithdrawBid(ids[0], members[1], now.Add(2*time.Minute)), "and can be withdrawn in turn")
+	assert.Nil(t, l.findWinningBid())
+}
+
 // Withdrawing a bid that does not lead promotes nobody: the leader stands.
 func TestWithdrawBid_NonLeaderWithdraws_LeaderStands(t *testing.T) {
 	now := time.Now()
