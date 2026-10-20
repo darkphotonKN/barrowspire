@@ -174,7 +174,7 @@ the server has already spent. Everything here is client work over endpoints that
 - **Purse not read or unreadable:** Buy out uses the bid box's purse states (`PURSE_NOT_READY` / `PURSE_FAILED`) and stays disabled until the purse reads.
 - **Server unreachable:** `BROWSE_UNREACHABLE`; the key is kept, so the retry is the same intent.
 - **Signed out:** no Buy out and no seller block; the existing sign-in prompt stands.
-- **A sold listing that never flips to `SOLD`:** while I-NXP1W-13 is unwired, a sale stays `PENDING_SETTLEMENT` and reads `Sold — settling` indefinitely. Accepted for this FS.
+- **Between the sale and settlement:** a sale reads `Sold — settling` while settlement runs (`PENDING_SETTLEMENT`), then `SOLD` once settlement's step 6 marks it (I-NXP1W-13). *(Corrected 2026-10-20: this line first said step 6 was unwired and the label would stay indefinitely. That was read off a stale issue status; the step was already wired.)*
 - **`SETTLEMENT_FAILED`:** keeps its existing label; no actions offered.
 
 ## Out of Scope
@@ -182,7 +182,7 @@ the server has already spent. Everything here is client work over endpoints that
 - An Accept button on My-listings rows, and buying out from the browse list.
 - Withdrawing a listing (backend `WithdrawListingUC` unexposed; live-bid handling undecided).
 - Bid history, who leads, and a "my bids" view (no backend query).
-- Flipping a sale to `SOLD` (backend I-NXP1W-13) and notifications for outbid / sold / won (no events).
+- Notifications for outbid / sold / won (no events). Flipping a sale to `SOLD` is backend settlement (I-NXP1W-13, already wired).
 - Making the buyer's "reaches your stash" note a notification.
 - Any backend or contract change: every endpoint used already exists. The missing-body `400` vs
   `422` (I-ADR0001-1) is deferred and does not affect the generated client, which always sends the
