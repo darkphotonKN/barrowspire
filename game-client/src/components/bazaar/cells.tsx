@@ -64,8 +64,17 @@ export function ItemCell({ item }: { item: Listing["item"] }) {
   );
 }
 
-/** The price in gold, marked opening while nobody has bid. Vellum, never amber (req 30). */
-export function PriceCell({ price }: { price: { gold: string; opening: boolean } }) {
+/**
+ * The price in gold, marked opening while nobody has bid. Vellum, never amber (req 30). A
+ * listing with a buyout price carries its `Buyout {price}` badge beside it (FS-49Z37 req 3–4).
+ */
+export function PriceCell({
+  price,
+  badge,
+}: {
+  price: { gold: string; opening: boolean };
+  badge?: string;
+}) {
   return (
     <td className={NUMERIC}>
       <span className="text-vellum-muted" aria-hidden>
@@ -76,6 +85,11 @@ export function PriceCell({ price }: { price: { gold: string; opening: boolean }
       {price.opening && (
         <span className="ml-2 text-[11px] uppercase tracking-[0.1em] text-vellum-muted">
           opening
+        </span>
+      )}
+      {badge && (
+        <span className="ml-2 whitespace-nowrap rounded border border-[color:var(--color-border-strong)] px-2 py-0.5 text-[11px] uppercase tracking-[0.1em] text-vellum-dim">
+          {badge}
         </span>
       )}
     </td>

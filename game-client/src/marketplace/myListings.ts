@@ -5,6 +5,7 @@
 
 import { formatGold } from "./gold";
 import { listingStatusLabel } from "./listingStatus";
+import { buyoutBadge } from "./rows";
 import { ENDED, formatTimeLeft } from "./timeLeft";
 
 export interface MineListing {
@@ -14,6 +15,7 @@ export interface MineListing {
   startPrice: number;
   currentPrice?: number;
   soldPrice?: number;
+  buyoutPrice?: number;
 }
 
 export interface MineRow {
@@ -22,6 +24,8 @@ export interface MineRow {
   live: boolean;
   timeLeft: string;
   price: { gold: string; opening: boolean };
+  /** `Buyout {price}` when the seller set one (FS-49Z37 req 3). */
+  buyout?: string;
 }
 
 export function mineRow(listing: MineListing, now: number): MineRow {
@@ -37,5 +41,6 @@ export function mineRow(listing: MineListing, now: number): MineRow {
       gold: formatGold(gold ?? listing.startPrice),
       opening: gold === undefined,
     },
+    buyout: buyoutBadge(listing),
   };
 }

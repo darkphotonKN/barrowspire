@@ -7,6 +7,7 @@ import { useDialogFocus } from "@/components/bazaar/useDialogFocus";
 import {
   DURATIONS,
   NOTHING_LISTABLE,
+  buyoutField,
   canSubmitListing,
   parseStartPrice,
   pickerCards,
@@ -29,32 +30,41 @@ export default function ListRelicDrawer({
   returnFocus,
 }: {
   instances: InstancesState;
-  onSubmit: (itemId: string, startPrice: number, duration: DurationId) => Promise<string | null>;
+  onSubmit: (
+    itemId: string,
+    startPrice: number,
+    buyoutPrice: number | undefined,
+    duration: DurationId,
+  ) => Promise<string | null>;
   onClose: () => void;
   returnFocus: RefObject<HTMLElement | null>;
 }) {
   const titleId = useId();
   const priceId = useId();
+  const buyoutId = useId();
   const panel = useRef<HTMLDivElement>(null);
   useDialogFocus(panel, { onClose, returnFocus });
 
   const cards = useMemo(() => pickerCards(instances.items), [instances.items]);
   const [selectedId, setSelectedId] = useState<string>();
   const [priceText, setPriceText] = useState("");
+  const [buyoutText, setBuyoutText] = useState("");
   const [duration, setDuration] = useState<DurationId>("24h");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
 
   const nothingListable = instances.phase === "ready" && !cards.some((c) => c.selectable);
-  const ready = canSubmitListing({ cards, selectedId, priceText, submitting });
+  const ready = canSubmitListing({ cards, selectedId, priceText, buyoutText, submitting });
+  const buyout = buyoutField(buyoutText, parseStartPrice(priceText));
+  const buyoutError = buyout.valid ? undefined : buyout.error;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const startPrice = parseStartPrice(priceText);
-    if (!ready || !selectedId || startPrice === null) return;
+    if (!ready || !selectedId || startPrice === null || !buyout.valid) return;
     setSubmitting(true);
     setError(undefined);
-    const message = await onSubmit(selectedId, startPrice, duration);
+    const message = await onSubmit(selectedId, startPrice, buyout.buyoutPrice, duration);
     // On success the page unmounts the drawer; only a refusal lands back here.
     if (message) {
       setError(message);
@@ -140,6 +150,29 @@ export default function ListRelicDrawer({
             />
             <span id={`${priceId}-hint`} className="text-xs text-vellum-muted">
               A whole number, 1 or more.
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor={buyoutId} className="login-label">
+              Buyout price (optional)
+            </label>
+            <input
+              id={buyoutId}
+              className="login-input max-w-[16rem] tabular-nums"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              autoComplete="off"
+              value={buyoutText}
+              onChange={(e) => setBuyoutText(e.target.value)}
+              aria-invalid={buyoutError ? true : undefined}
+              aria-describedby={`${buyoutId}-hint`}
+            />
+            <span
+              id={`${buyoutId}-hint`}
+              className={`text-xs ${buyoutError ? "text-[color:var(--color-danger-text)]" : "text-vellum-muted"}`}
+            >
+              {buyoutError ?? "Leave empty for a plain auction."}
             </span>
           </div>
 

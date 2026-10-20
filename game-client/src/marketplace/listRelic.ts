@@ -20,6 +20,8 @@ export const CANNOT_LIST =
   "That relic can't be listed right now — it may already be listed.";
 export const END_TIME_PASSED = "That end time has already passed — check your clock";
 export const LIST_FAILED = "That relic could not be listed — try again.";
+/** FS-49Z37 req 2: the form's own check and the server's refusal read the same. */
+export const BUYOUT_NOT_ABOVE_START = "The buyout price must be above the starting bid.";
 
 // ── Duration ────────────────────────────────────────────────────────────────
 
@@ -51,6 +53,26 @@ export function parseStartPrice(text: string): number | null {
   if (!/^\d+$/.test(trimmed)) return null;
   const gold = Number(trimmed);
   return gold >= 1 && Number.isSafeInteger(gold) ? gold : null;
+}
+
+// ── Buyout price (FS-49Z37 req 1–2) ────────────────────────────────────────
+
+export type BuyoutField =
+  | { valid: true; buyoutPrice: number | undefined }
+  | { valid: false; error?: string };
+
+/**
+ * The optional buyout price. Empty is a plain auction: valid, and nothing is sent. Filled, it
+ * must be a whole amount above the start price. While the start price is not valid yet there is
+ * nothing to compare against, so it is not valid and says nothing; the start field speaks.
+ */
+export function buyoutField(text: string, startPrice: number | null): BuyoutField {
+  if (text.trim() === "") return { valid: true, buyoutPrice: undefined };
+  if (startPrice === null) return { valid: false };
+  const gold = parseStartPrice(text);
+  return gold !== null && gold > startPrice
+    ? { valid: true, buyoutPrice: gold }
+    : { valid: false, error: BUYOUT_NOT_ABOVE_START };
 }
 
 // ── Picker ──────────────────────────────────────────────────────────────────
@@ -161,21 +183,36 @@ export function canSubmitListing(form: {
   cards: readonly PickerCard[];
   selectedId: string | undefined;
   priceText: string;
+  /** The optional buyout price; absent or empty is none. */
+  buyoutText?: string;
   submitting: boolean;
 }): boolean {
   if (form.submitting) return false;
   const chosen = form.cards.find((c) => c.id === form.selectedId);
-  return !!chosen?.selectable && parseStartPrice(form.priceText) !== null;
+  const startPrice = parseStartPrice(form.priceText);
+  return (
+    !!chosen?.selectable &&
+    startPrice !== null &&
+    buyoutField(form.buyoutText ?? "", startPrice).valid
+  );
 }
 
 /**
  * What a refused `create-listing` says (req 29). A 500 is the items-side refusal: the relic is
  * already listed or otherwise held. A 400 is marketplace refusing the listing; the page sends a
- * chosen relic's id and a checked price, so the end time is the one fact it cannot vouch for.
+ * chosen relic's id and checked prices, so the end time is the one fact it cannot vouch for, unless
+ * what was sent carries a buyout price not above the start (FS-49Z37 req 2): the server answers
+ * both with the same 400, so the prices sent tell them apart.
  */
-export function createListingFailureMessage(err: unknown): string {
+export function createListingFailureMessage(
+  err: unknown,
+  sent?: { startPrice: number; buyoutPrice?: number },
+): string {
   if (!(err instanceof ApiError) || err.status === 503) return BROWSE_UNREACHABLE;
   if (err.status === 500) return CANNOT_LIST;
-  if (err.status === 400) return END_TIME_PASSED;
+  if (err.status === 400)
+    return sent?.buyoutPrice !== undefined && sent.buyoutPrice <= sent.startPrice
+      ? BUYOUT_NOT_ABOVE_START
+      : END_TIME_PASSED;
   return LIST_FAILED;
 }

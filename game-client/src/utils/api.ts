@@ -239,10 +239,16 @@ class ApiClient {
 
   // Puts a relic up for auction (FS-8EGFA req 25). 202 with an empty body: the listing appears
   // once marketplace has reserved the item, so the caller polls `listMyListings` for it.
-  async createListing(itemId: string, startPrice: number, endsAt: string): Promise<void> {
+  // A buyout price is sent only when set; none is a plain auction (FS-49Z37 req 1).
+  async createListing(
+    itemId: string,
+    startPrice: number,
+    endsAt: string,
+    buyoutPrice?: number,
+  ): Promise<void> {
     unwrap(
       await client.POST("/api/marketplace/listings", {
-        body: { itemId, startPrice, endsAt },
+        body: { itemId, startPrice, endsAt, ...(buyoutPrice === undefined ? {} : { buyoutPrice }) },
       }),
     );
   }

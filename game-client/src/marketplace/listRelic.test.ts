@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
 import { BROWSE_UNREACHABLE } from "./browse";
 import {
+  BUYOUT_NOT_ABOVE_START,
   CANNOT_LIST,
   DURATIONS,
   END_TIME_PASSED,
   LIST_FAILED,
+  buyoutField,
   canSubmitListing,
   createListingFailureMessage,
   endsAtFor,
@@ -119,6 +121,41 @@ describe("pickerCards", () => {
   });
 });
 
+describe("buyoutField", () => {
+  it.each([
+    ["empty", ""],
+    ["only spaces", "   "],
+  ])("should read %s as no buyout price, valid", (_l, text) => {
+    expect(buyoutField(text, 50)).toEqual({ valid: true, buyoutPrice: undefined });
+  });
+
+  it.each([
+    ["one above the start", "51", 51],
+    ["far above, padded", " 5000 ", 5000],
+  ])("should accept %s", (_l, text, want) => {
+    expect(buyoutField(text, 50)).toEqual({ valid: true, buyoutPrice: want });
+  });
+
+  it.each([
+    ["equal to the start", "50"],
+    ["below the start", "10"],
+    ["zero", "0"],
+    ["not whole", "60.5"],
+    ["not a number", "lots"],
+    ["negative", "-60"],
+  ])("should refuse %s with the copy", (_l, text) => {
+    expect(buyoutField(text, 50)).toEqual({ valid: false, error: BUYOUT_NOT_ABOVE_START });
+  });
+
+  it("should hold its judgement while the start price is not valid yet", () => {
+    expect(buyoutField("60", null)).toEqual({ valid: false });
+  });
+
+  it("should use the copy the spec gives", () => {
+    expect(BUYOUT_NOT_ABOVE_START).toBe("The buyout price must be above the starting bid.");
+  });
+});
+
 describe("canSubmitListing", () => {
   const cards = pickerCards([
     { id: "sword", status: "AVAILABLE" },
@@ -130,12 +167,17 @@ describe("canSubmitListing", () => {
     expect(canSubmitListing(ok)).toBe(true);
   });
 
+  it("should allow a buyout price above the start price", () => {
+    expect(canSubmitListing({ ...ok, buyoutText: "51" })).toBe(true);
+  });
+
   it.each([
     ["nothing is chosen", { selectedId: undefined }],
     ["the chosen relic is listed", { selectedId: "helm" }],
     ["the chosen relic is gone", { selectedId: "gone" }],
     ["the price is not a whole number of 1 or more", { priceText: "0" }],
     ["a listing is already on its way", { submitting: true }],
+    ["the buyout price is not above the start price", { buyoutText: "50" }],
   ])("should refuse when %s", (_l, change) => {
     expect(canSubmitListing({ ...ok, ...change })).toBe(false);
   });
@@ -153,6 +195,18 @@ describe("createListingFailureMessage", () => {
     ["a 422", apiError(422), LIST_FAILED],
   ])("should map %s", (_l, err, want) => {
     expect(createListingFailureMessage(err)).toBe(want);
+  });
+
+  it("should read a 400 on a buyout not above the start as the buyout refusal", () => {
+    expect(
+      createListingFailureMessage(apiError(400), { startPrice: 50, buyoutPrice: 50 }),
+    ).toBe(BUYOUT_NOT_ABOVE_START);
+  });
+
+  it("should still read a 400 on a valid buyout as the end time", () => {
+    expect(
+      createListingFailureMessage(apiError(400), { startPrice: 50, buyoutPrice: 51 }),
+    ).toBe(END_TIME_PASSED);
   });
 
   it("should use the plain copy the spec gives", () => {

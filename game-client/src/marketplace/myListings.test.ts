@@ -57,3 +57,13 @@ describe("mineRow", () => {
     ).toEqual({ gold: "120", opening: false });
   });
 });
+
+describe("mineRow buyout (FS-49Z37 req 3)", () => {
+  it("should carry the buyout badge when the listing has a buyout price", () => {
+    expect(mineRow({ ...listing, buyoutPrice: 900 }, NOW).buyout).toBe("Buyout 900");
+  });
+
+  it("should carry none when it has not", () => {
+    expect(mineRow(listing, NOW).buyout).toBeUndefined();
+  });
+});

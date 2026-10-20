@@ -76,6 +76,18 @@ describe("apiClient.createListing", () => {
       endsAt: "2026-10-02T12:00:00.000Z",
     });
   });
+
+  it("should send a buyout price only when one is given (FS-49Z37 req 1)", async () => {
+    answer = empty(202);
+    const { apiClient } = await loadApi();
+    await apiClient.createListing("item-1", 50, "2026-10-02T12:00:00.000Z", 80);
+    expect(await requests[0].json()).toEqual({
+      itemId: "item-1",
+      startPrice: 50,
+      endsAt: "2026-10-02T12:00:00.000Z",
+      buyoutPrice: 80,
+    });
+  });
 });
 
 describe("publicApi.getListing", () => {

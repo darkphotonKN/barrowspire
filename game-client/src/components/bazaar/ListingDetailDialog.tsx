@@ -155,6 +155,9 @@ export default function ListingDetailDialog({
         <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
           <Fact label="Start price" value={`⟡ ${formatGold(listing.startPrice)}`} />
           <Fact label="Minimum bid" value={`⟡ ${formatGold(listing.minimumBid)}`} />
+          {listing.buyoutPrice !== undefined && (
+            <Fact label="Buyout price" value={`⟡ ${formatGold(listing.buyoutPrice)}`} />
+          )}
           <Fact label="Bids" value={String(listing.bidCount)} />
           <Fact label="Time left" value={formatTimeLeft(listing.endsAt, now)} />
           <div className="col-span-2 flex justify-between gap-2">

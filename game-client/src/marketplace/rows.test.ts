@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SORT,
+  buyoutBadge,
   filterRows,
   rowPrice,
   sortRows,
@@ -160,5 +161,15 @@ describe("filterRows", () => {
     expect(ids(filterRows(rows, { rarities: ["normal"] }))).not.toContain(
       "missing",
     );
+  });
+});
+
+describe("buyoutBadge (FS-49Z37 req 4)", () => {
+  it("should read Buyout and the grouped price when the listing has one", () => {
+    expect(buyoutBadge({ buyoutPrice: 12500 })).toBe("Buyout 12,500");
+  });
+
+  it("should be absent when the listing has no buyout price", () => {
+    expect(buyoutBadge({})).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
-import { CANNOT_LIST, POSTED_LIVE, STILL_PROCESSING, endsAtFor } from "./listRelic";
+import { BUYOUT_NOT_ABOVE_START, CANNOT_LIST, POSTED_LIVE, STILL_PROCESSING, endsAtFor } from "./listRelic";
 import { postListing, type PostListingDeps } from "./listRelicFlow";
 import type { PollOutcome } from "./postedPoll";
 
@@ -13,8 +13,11 @@ function deps({ refuse }: { refuse?: unknown } = {}) {
   let finishPoll: (outcome: PollOutcome) => void = () => {};
   let gone = false;
   const d: PostListingDeps = {
-    createListing: async (itemId, startPrice, endsAt) => {
-      log.push(`create ${itemId} ${startPrice} ${endsAt}`);
+    createListing: async (itemId, startPrice, endsAt, buyoutPrice) => {
+      log.push(
+        `create ${itemId} ${startPrice} ${endsAt}` +
+          (buyoutPrice === undefined ? "" : ` buyout ${buyoutPrice}`),
+      );
       if (refuse) throw refuse;
     },
     onPosted: () => log.push("posted"),
@@ -49,6 +52,19 @@ describe("postListing", () => {
       "posted",
       "poll item-1",
     ]);
+  });
+
+  it("should send the buyout price when one is set", async () => {
+    const t = deps();
+    await postListing({ ...input, buyoutPrice: 80 }, t.d);
+    expect(t.log[0]).toBe(`create item-1 50 ${endsAtFor("24h", NOW)} buyout 80`);
+  });
+
+  it("should read the server's 400 on a buyout not above the start as the buyout refusal", async () => {
+    const t = deps({
+      refuse: new ApiError({ status: 400, code: "VALIDATION_FAILED", detail: "", errors: [] }),
+    });
+    expect(await postListing({ ...input, buyoutPrice: 50 }, t.d)).toBe(BUYOUT_NOT_ABOVE_START);
   });
 
   it("should answer before the poll ends, so the drawer closes at once", async () => {

@@ -2,7 +2,8 @@
  * One press of "List a relic", start to answer (FS-8EGFA req 25). The fetchers and the page's
  * reactions are injected, so the order is testable without a page:
  *
- * 1. post the listing with the end time the chosen duration gives;
+ * 1. post the listing with the end time the chosen duration gives, and its buyout price when set
+ *    (FS-49Z37 req 1);
  * 2. refused: answer the refusal's copy, and nothing else happens;
  * 3. accepted (202): hand over (close the drawer, say it is posted, switch to Mine), answer at
  *    once, and poll for the listing in the background; when the poll ends, say how it went,
@@ -19,7 +20,12 @@ import {
 import type { PollOutcome } from "./postedPoll";
 
 export interface PostListingDeps {
-  createListing: (itemId: string, startPrice: number, endsAt: string) => Promise<void>;
+  createListing: (
+    itemId: string,
+    startPrice: number,
+    endsAt: string,
+    buyoutPrice?: number,
+  ) => Promise<void>;
   /** The listing was accepted: close the drawer, say it is posted, switch to Mine. */
   onPosted: () => void;
   /** Waits for the listing to show under Mine. */
@@ -33,7 +39,7 @@ export interface PostListingDeps {
 
 /** Resolves to the refusal's copy, or null once the listing is accepted. */
 export async function postListing(
-  listing: { itemId: string; startPrice: number; duration: DurationId },
+  listing: { itemId: string; startPrice: number; buyoutPrice?: number; duration: DurationId },
   deps: PostListingDeps,
 ): Promise<string | null> {
   try {
@@ -41,9 +47,10 @@ export async function postListing(
       listing.itemId,
       listing.startPrice,
       endsAtFor(listing.duration, deps.now()),
+      listing.buyoutPrice,
     );
   } catch (err) {
-    return createListingFailureMessage(err);
+    return createListingFailureMessage(err, listing);
   }
   deps.onPosted();
   void deps.poll(listing.itemId).then(({ outcome }) => {

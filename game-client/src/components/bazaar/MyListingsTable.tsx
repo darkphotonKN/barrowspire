@@ -93,7 +93,7 @@ function MineRow({
       {() => (
         <>
           <ItemCell item={listing.item} />
-          <PriceCell price={row.price} />
+          <PriceCell price={row.price} badge={row.buyout} />
           <td className={`${NUMERIC} ${LESSER} text-vellum-dim`}>{listing.bidCount}</td>
           <td className={`${NUMERIC} ${row.live ? "text-vellum" : "text-vellum-dim"}`}>
             {row.timeLeft}
