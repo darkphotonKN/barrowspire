@@ -221,23 +221,109 @@ func TestBidFSMRejectsIllegalTransition(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidBidTransition)
 }
 
-// TestWithdrawWinningBidLeavesNoLeader documents the deliberate choice not to
-// promote the runner-up: the price falls back to the reserve instead. Once bids
-// are backed by wallet holds the runner-up's hold has already been released, so
-// promoting it would create a leading bid with no gold behind it.
-func TestWithdrawWinningBidLeavesNoLeader(t *testing.T) {
-	l := activeListing(t, 100)
-	winner := uuid.New()
+// heldBid is one bid in a test auction: its status, amount, and when it was placed.
+type heldBid struct {
+	status BidStatus
+	amount int
+	placed time.Duration // after the auction's base time
+}
+
+// auctionWith builds an ACTIVE listing (start price 100) holding exactly these
+// bids, and returns each bid's ID and member in the same order.
+func auctionWith(t *testing.T, now time.Time, bids ...heldBid) (*Listing, []uuid.UUID, []uuid.UUID) {
+	t.Helper()
+	listingID := uuid.New()
+	ids, members := make([]uuid.UUID, len(bids)), make([]uuid.UUID, len(bids))
+	params := make([]*BidReconstituteParams, len(bids))
+	for i, b := range bids {
+		ids[i], members[i] = uuid.New(), uuid.New()
+		at := now.Add(b.placed)
+		params[i] = &BidReconstituteParams{
+			ID: ids[i], ListingID: listingID, MemberID: members[i],
+			Type: BidTypeBid, Amount: b.amount, Status: b.status, CreatedAt: at, UpdatedAt: at,
+		}
+	}
+	l, err := Reconstitute(reconstituteParams(listingID, now, params))
+	require.NoError(t, err)
+	return l, ids, members
+}
+
+// ADR-0028: withdrawing the leader promotes the highest remaining OUTBID bid. Its
+// hold has been RESERVED since it was placed (an outbid hold is released only at
+// settlement step 2), so the new leader is backed by gold.
+func TestWithdrawBid_LeaderWithdraws_HighestOutbidIsPromoted(t *testing.T) {
 	now := time.Now()
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusOutbid, 150, 0},
+		heldBid{BidStatusOutbid, 180, time.Second},
+		heldBid{BidStatusWinning, 200, 2 * time.Second},
+	)
 
-	require.NoError(t, l.PlaceBid(uuid.New(), 150, uuid.Nil, now))
-	require.NoError(t, l.PlaceBid(winner, 200, uuid.Nil, now))
+	require.NoError(t, l.WithdrawBid(ids[2], members[2], now.Add(time.Minute)))
 
-	winningID := l.Snapshot().Bids[1].ID
-	require.NoError(t, l.WithdrawBid(winningID, winner, now))
+	assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[1]).Status, "the highest OUTBID leads")
+	assert.Equal(t, BidStatusOutbid, bidByID(t, l, ids[0]).Status)
+	assert.Equal(t, BidStatusCancelled, bidByID(t, l, ids[2]).Status)
+	assert.Equal(t, 180, l.currentPrice())
+}
 
-	assert.Nil(t, l.findWinningBid(), "no bid leads after the leader withdraws")
-	assert.Equal(t, 100, l.currentPrice(), "price falls back to the reserve")
+// Equal amounts: the bid placed first is promoted.
+func TestWithdrawBid_LeaderWithdraws_TieGoesToTheEarliest(t *testing.T) {
+	now := time.Now()
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusOutbid, 150, time.Second}, // placed later
+		heldBid{BidStatusOutbid, 150, 0},           // placed first
+		heldBid{BidStatusWinning, 200, 2 * time.Second},
+	)
+
+	require.NoError(t, l.WithdrawBid(ids[2], members[2], now.Add(time.Minute)))
+
+	assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[1]).Status, "earliest of the tied bids leads")
+	assert.Equal(t, BidStatusOutbid, bidByID(t, l, ids[0]).Status)
+}
+
+// No OUTBID bid left: nobody leads and the price falls back to the starting bid.
+func TestWithdrawBid_LeaderWithdraws_NoOtherBid_PriceFallsBackToStart(t *testing.T) {
+	now := time.Now()
+	l, ids, members := auctionWith(t, now, heldBid{BidStatusWinning, 200, 0})
+
+	require.NoError(t, l.WithdrawBid(ids[0], members[0], now.Add(time.Minute)))
+
+	assert.Nil(t, l.findWinningBid())
+	assert.Equal(t, 100, l.currentPrice())
+}
+
+// Only an OUTBID bid is promoted. A PENDING bid has no confirmed hold yet and
+// competes for the lead when it confirms; CANCELLED, FAILED and LOST bids are out.
+func TestWithdrawBid_LeaderWithdraws_OnlyOutbidIsPromoted(t *testing.T) {
+	now := time.Now()
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusPending, 300, 0},
+		heldBid{BidStatusCancelled, 290, 0},
+		heldBid{BidStatusFailed, 280, 0},
+		heldBid{BidStatusWinning, 200, time.Second},
+	)
+
+	require.NoError(t, l.WithdrawBid(ids[3], members[3], now.Add(time.Minute)))
+
+	assert.Nil(t, l.findWinningBid(), "nothing OUTBID, nothing promoted")
+	assert.Equal(t, BidStatusPending, bidByID(t, l, ids[0]).Status)
+	assert.Equal(t, 100, l.currentPrice())
+}
+
+// Withdrawing a bid that does not lead promotes nobody: the leader stands.
+func TestWithdrawBid_NonLeaderWithdraws_LeaderStands(t *testing.T) {
+	now := time.Now()
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusPending, 160, 0},
+		heldBid{BidStatusOutbid, 150, 0},
+		heldBid{BidStatusWinning, 200, time.Second},
+	)
+
+	require.NoError(t, l.WithdrawBid(ids[0], members[0], now.Add(time.Minute)))
+
+	assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[2]).Status)
+	assert.Equal(t, BidStatusOutbid, bidByID(t, l, ids[1]).Status)
 }
 
 // TestReconstituteRejectsTwoWinners is the safety net for persisted state. If

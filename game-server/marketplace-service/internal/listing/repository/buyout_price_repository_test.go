@@ -136,3 +136,50 @@ func TestListingRepository_BuyoutOverIncumbentPersists(t *testing.T) {
 	assert.Equal(t, listing.BidStatusOutbid, statuses[incumbent])
 	assert.Equal(t, listing.BidStatusWinning, statuses[buyoutBid])
 }
+
+// ADR-0028: a withdrawn leader is replaced by the runner-up in one write. The
+// runner-up usually bid first, so it precedes the leader in the listing's bids;
+// written in that order, its promotion would reach the table while the old leader
+// is still WINNING, and idx_bids_single_winner would refuse the write. The
+// demotion has to land first.
+func TestListingRepository_WithdrawnLeaderIsReplacedByTheEarlierRunnerUp(t *testing.T) {
+	db := repositoryDB(t)
+	repo := NewListingRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	l, err := listing.NewListing(uuid.New(), uuid.New(), uuid.New(), 100, nil, now, now.Add(time.Hour))
+	require.NoError(t, err)
+	require.NoError(t, repo.Insert(ctx, l))
+	id := l.Snapshot().ID
+
+	runnerUp, leader, leaderMember := uuid.New(), uuid.New(), uuid.New()
+	require.NoError(t, repo.Update(ctx, id, func(l *listing.Listing) error {
+		if err := l.PlaceBidWithID(runnerUp, uuid.New(), 150, uuid.New(), now); err != nil {
+			return err
+		}
+		return l.ConfirmBid(runnerUp, now)
+	}))
+	require.NoError(t, repo.Update(ctx, id, func(l *listing.Listing) error {
+		if err := l.PlaceBidWithID(leader, leaderMember, 200, uuid.New(), now.Add(time.Second)); err != nil {
+			return err
+		}
+		return l.ConfirmBid(leader, now.Add(time.Second))
+	}))
+
+	// the WithdrawBidUC path: an OCC read, the domain change, Save
+	current, err := repo.FindByID(ctx, id)
+	require.NoError(t, err)
+	before := current.Snapshot()
+	require.NoError(t, current.WithdrawBid(leader, leaderMember, now.Add(time.Minute)))
+	require.NoError(t, repo.Save(ctx, current, before))
+
+	got, err := repo.FindByID(ctx, id)
+	require.NoError(t, err)
+	statuses := map[uuid.UUID]listing.BidStatus{}
+	for _, b := range got.Snapshot().Bids {
+		statuses[b.ID] = b.Status
+	}
+	assert.Equal(t, listing.BidStatusCancelled, statuses[leader])
+	assert.Equal(t, listing.BidStatusWinning, statuses[runnerUp])
+}

@@ -92,3 +92,29 @@ func TestWithdrawBidUC_ReleaseFails_WithdrawalStillSucceeds(t *testing.T) {
 	require.NoError(t, err, "the bid is cancelled; the hold is the reconciler's problem now")
 	assert.Equal(t, listing.BidStatusCancelled, l.Snapshot().Bids[0].Status)
 }
+
+// ADR-0028: withdrawing the leader promotes the runner-up, and only the withdrawn
+// bid's hold goes back. The runner-up's hold now backs the lead, so it is untouched.
+func TestWithdrawBidUC_LeaderWithdraws_RunnerUpLeadsAndKeepsItsHold(t *testing.T) {
+	now := time.Now()
+	l := activeListing(t, 100)
+	require.NoError(t, l.PlaceBid(uuid.New(), 150, uuid.Nil, now))
+	runnerUp := l.Snapshot().Bids[0].ID
+	require.NoError(t, l.ConfirmBid(runnerUp, now))
+	leaderMember := uuid.New()
+	require.NoError(t, l.PlaceBid(leaderMember, 200, uuid.Nil, now))
+	leader := l.Snapshot().Bids[1].ID
+	require.NoError(t, l.ConfirmBid(leader, now))
+	release := &fakeReleaser{}
+
+	err := NewWithdrawBidUC(&fakeRepo{listing: l}, release).Handle(context.Background(), WithdrawBidCommand{
+		ListingID: uuid.New(), BidID: leader, MemberID: leaderMember, Now: now,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, release.calls, "only the withdrawn leader's gold goes back")
+	assert.Equal(t, leader, release.gotBidID)
+	bids := l.Snapshot().Bids
+	assert.Equal(t, listing.BidStatusWinning, bids[0].Status)
+	assert.Equal(t, listing.BidStatusCancelled, bids[1].Status)
+}
