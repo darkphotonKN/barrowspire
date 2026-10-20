@@ -286,7 +286,9 @@ func registerBuyout(api huma.API, h *Handler,
 		Description: "Buys the listing outright at its buyout price as the signed-in member, ending the auction. " +
 			"The price is the listing's own; nothing is sent. Answers once settlement has started; the sale " +
 			"completes asynchronously. Repeating it is safe: a buyout already made is not made twice. " +
-			"Refused for the seller, a closed auction, a listing with no buyout price, or a buyer short of gold.",
+			"Refused for the seller, a closed auction, a listing with no buyout price, or a buyer short of gold. " +
+			"409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means this member's " +
+			"earlier buyout of the listing was abandoned and its gold returned, and retrying will not help.",
 		DefaultStatus: http.StatusAccepted,
 		Errors: []int{
 			http.StatusBadRequest,
