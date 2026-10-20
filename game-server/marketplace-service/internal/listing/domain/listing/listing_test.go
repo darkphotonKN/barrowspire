@@ -400,3 +400,33 @@ func reconstituteParams(listingID uuid.UUID, now time.Time, bids []*BidReconstit
 		Bids:       bids,
 	}
 }
+
+// The idempotency key deduplicates one member's resends, never another member's
+// bid: the same key from someone else is a bid of their own (ADR-0027).
+func TestPlaceBidWithID_SameKeyFromAnotherMember_IsAnotherBid(t *testing.T) {
+	now := time.Now()
+	l := activeListing(t, 100)
+	key := uuid.New()
+	require.NoError(t, l.PlaceBidWithID(uuid.New(), uuid.New(), 150, key, now))
+
+	other := uuid.New()
+	require.NoError(t, l.PlaceBidWithID(other, uuid.New(), 200, key, now))
+
+	assert.True(t, l.HasBid(other), "another member's bid with the same key is recorded")
+	assert.Len(t, l.Snapshot().Bids, 2)
+}
+
+// The same member resending the same key under a new bid ID is still a replay:
+// the deploy transition, where an earlier bid carries a random ID.
+func TestPlaceBidWithID_SameKeyFromTheSameMember_IsAReplay(t *testing.T) {
+	now := time.Now()
+	l := activeListing(t, 100)
+	member, key := uuid.New(), uuid.New()
+	require.NoError(t, l.PlaceBidWithID(uuid.New(), member, 150, key, now))
+
+	resend := uuid.New()
+	require.NoError(t, l.PlaceBidWithID(resend, member, 150, key, now))
+
+	assert.False(t, l.HasBid(resend))
+	assert.Len(t, l.Snapshot().Bids, 1)
+}

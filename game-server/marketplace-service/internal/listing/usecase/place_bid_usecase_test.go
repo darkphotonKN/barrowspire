@@ -638,14 +638,73 @@ func TestPlaceBidUC_RetriesTheWriteEvenWhenTheRequestIsCancelled(t *testing.T) {
 // A replayed request reaches PlaceHold with a fresh bid id, so wallet freezes the gold
 // a second time; the domain then deduplicates on the idempotency key and records
 // nothing. That second hold backs no bid, and nothing else will ever release it.
-func TestPlaceBidUC_ReplayReleasesItsOwnHold(t *testing.T) {
+// One bid, one ID: every resend with the same key lands on the same hold and
+// bid, and changing member, listing or key gives another.
+func TestPlaceBidID_IsDeterministicPerMemberListingAndKey(t *testing.T) {
+	member, listingID, key := uuid.New(), uuid.New(), uuid.New()
+	id := PlaceBidID(member, listingID, key)
+
+	assert.Equal(t, id, PlaceBidID(member, listingID, key))
+	assert.NotEqual(t, id, PlaceBidID(uuid.New(), listingID, key), "another member's key is another bid")
+	assert.NotEqual(t, id, PlaceBidID(member, uuid.New(), key), "the key on another listing is another bid")
+	assert.NotEqual(t, id, PlaceBidID(member, listingID, uuid.New()))
+	assert.NotEqual(t, id, BuyoutBidID(member, listingID, key), "never a buyout's ID")
+	assert.Equal(t, uuid.Version(5), id.Version())
+}
+
+// Deploy transition: a bid recorded before IDs were derived has a random ID, so
+// a resend with its key derives a different one, holds under it, and is only
+// recognised under the lock by the key. That hold backs nothing and goes back.
+func TestPlaceBid_ResendOfABidRecordedUnderARandomID_IsRecognisedByItsKey(t *testing.T) {
+	l := activeListing(t, 100)
+	member, key, legacy := uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+	require.NoError(t, l.PlaceBidWithID(legacy, member, 150, key, now))
+	require.NoError(t, l.ConfirmBid(legacy, now))
+	wallet, release := &fakeWallet{}, &fakeReleaser{}
+
+	err := NewPlaceBidUC(&fakeRepo{listing: l}, wallet, release).Handle(context.Background(), PlaceBidCommand{
+		ListingID: l.Snapshot().ID, MemberID: member, Amount: 150, IdempotencyKey: key, Now: now,
+	})
+
+	require.NoError(t, err)
+	assert.Len(t, l.Snapshot().Bids, 1)
+	assert.Equal(t, 1, release.calls)
+	assert.Equal(t, PlaceBidID(member, l.Snapshot().ID, key), release.gotBidID, "the resend's own hold, not the legacy bid's")
+}
+
+// A bid refused for being too low gives its hold back. Resending the same key
+// then derives the same, released ID, and wallet will not hold under it again:
+// a new bid needs a new key (ADR-0027). Before IDs were derived, this re-judged
+// the bid and answered too-low again.
+func TestPlaceBid_ReusingAKeyWhoseHoldWasReleased_IsRefused(t *testing.T) {
+	l := activeListing(t, 100)
+	wallet, release := &fakeWallet{released: map[uuid.UUID]bool{}}, &fakeReleaser{}
+	uc := NewPlaceBidUC(&fakeRepo{listing: l}, wallet, release)
+	cmd := PlaceBidCommand{
+		ListingID: l.Snapshot().ID, MemberID: uuid.New(), Amount: 50, IdempotencyKey: uuid.New(), Now: time.Now(),
+	}
+
+	require.ErrorIs(t, uc.Handle(context.Background(), cmd), listing.ErrBidTooLow)
+	require.Equal(t, 1, release.calls)
+	wallet.released[release.gotBidID] = true // the release workflow landed
+
+	err := uc.Handle(context.Background(), cmd)
+
+	assert.ErrorIs(t, err, commonconstants.ErrDuplicateResource)
+	assert.Empty(t, l.Snapshot().Bids)
+}
+
+// A resend with the same key derives the same bid ID, finds its bid already on
+// the listing, and holds no gold: no second hold, nothing to give back.
+func TestPlaceBid_ResendWithTheSameKeyAfterTheBidLanded_HoldsNoGold(t *testing.T) {
 	l := activeListing(t, 100)
 	repo := &fakeRepo{listing: l}
 	wallet, release := &fakeWallet{}, &fakeReleaser{}
 	uc := NewPlaceBidUC(repo, wallet, release)
 
 	cmd := PlaceBidCommand{
-		ListingID:      uuid.New(),
+		ListingID:      l.Snapshot().ID,
 		MemberID:       uuid.New(),
 		Amount:         150,
 		IdempotencyKey: uuid.New(),
@@ -653,11 +712,9 @@ func TestPlaceBidUC_ReplayReleasesItsOwnHold(t *testing.T) {
 	}
 
 	require.NoError(t, uc.Handle(context.Background(), cmd))
-	first := wallet.gotBidID
-	assert.Zero(t, release.calls, "the first placement keeps its hold")
-
 	require.NoError(t, uc.Handle(context.Background(), cmd), "a replay is still a success")
-	assert.Equal(t, 1, release.calls, "the replay's hold goes back")
-	assert.Equal(t, wallet.gotBidID, release.gotBidID, "the replay's own hold, not the recorded bid's")
-	assert.NotEqual(t, first, release.gotBidID)
+
+	assert.Equal(t, 1, wallet.calls, "only the first attempt holds gold")
+	assert.Zero(t, release.calls)
+	assert.Len(t, l.Snapshot().Bids, 1)
 }

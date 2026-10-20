@@ -3,6 +3,7 @@ package listing_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -242,6 +243,21 @@ func TestPlaceBid_BidTooLowIsABadRequest(t *testing.T) {
 		`{"amount":150}`, map[string]string{"Content-Type": "application/json", "Authorization": "Bearer caller-token"})
 
 	testsupport.AssertProblem(t, w, http.StatusBadRequest, string(errcode.ValidationFailed))
+}
+
+// A key whose attempt was refused or abandoned, its gold returned, cannot be
+// held under again (ADR-0027): a conflict the caller fixes with a new key, kept
+// distinct from contention's CONFLICT, which a plain retry fixes.
+func TestPlaceBid_SpentKeyIsAlreadyExists(t *testing.T) {
+	client := &stubListingClient{err: status.Error(codes.AlreadyExists, "already exists")}
+
+	res := placeBid(newRouter(client), uuid.New().String(), `{"amount":150}`,
+		map[string]string{"Idempotency-Key": uuid.New().String()})
+
+	assert.Equal(t, http.StatusConflict, res.StatusCode)
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), string(errcode.AlreadyExists))
 }
 
 // ========================= CREATE LISTING =========================
