@@ -396,6 +396,35 @@ func TestWithdrawBid_OutbidOnClosedListing_Refused(t *testing.T) {
 	}
 }
 
+// An auction that has ended takes no more withdrawals, even before settlement has
+// frozen it: "ended" means what it means to PlaceBid (endsAt <= now). Otherwise a
+// leader could withdraw after the end and hand the win to the runner-up.
+func TestWithdrawBid_AuctionEnded_Refused(t *testing.T) {
+	statuses := []BidStatus{BidStatusWinning, BidStatusOutbid}
+	offsets := map[string]time.Duration{"at the end": time.Hour, "after the end": 2 * time.Hour}
+	for _, status := range statuses {
+		for name, offset := range offsets {
+			t.Run(string(status)+" "+name, func(t *testing.T) {
+				now := time.Now() // auctionWith ends the auction at now + 1h
+				l, ids, members := auctionWith(t, now,
+					heldBid{BidStatusOutbid, 120, 0},
+					heldBid{BidStatusWinning, 150, time.Second},
+				)
+				target := 0
+				if status == BidStatusWinning {
+					target = 1
+				}
+				before := l.Snapshot()
+
+				err := l.WithdrawBid(ids[target], members[target], now.Add(offset))
+
+				assert.ErrorIs(t, err, ErrListingExpired)
+				assert.Equal(t, before, l.Snapshot(), "a refused withdrawal changes nothing, promotes nobody")
+			})
+		}
+	}
+}
+
 // TestReconstituteRejectsTwoWinners is the safety net for persisted state. If
 // the partial unique index ever fails or a row is edited by hand, refusing to
 // load the listing is safer than letting an auction with two leaders keep
