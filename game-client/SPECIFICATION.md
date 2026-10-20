@@ -103,6 +103,7 @@ server state and sends intents. ✅
 - [ ] Set a buyout price when listing → FS-49Z37
 - [ ] Bids stay below a listing's buyout price → FS-49Z37
 - [ ] A refused bid retries under a fresh key → FS-49Z37
+- [ ] View and withdraw my bids → FS-EYQ8K
 
 ### Deployment
 
