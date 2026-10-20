@@ -20,9 +20,10 @@ import {
 } from "@/marketplace/bid";
 import { submitBid } from "@/marketplace/bidFlow";
 import { SIGN_IN_TO_MARKETPLACE } from "@/marketplace/browse";
-import { bidPanel, itemStats, listingItemLines, listingReader } from "@/marketplace/detail";
+import { actionArea, itemStats, listingItemLines, listingReader } from "@/marketplace/detail";
 import { formatGold } from "@/marketplace/gold";
 import type { Listing } from "@/marketplace/listing";
+import { listingStatusLabel } from "@/marketplace/listingStatus";
 import { rarityOf } from "@/marketplace/rarity";
 import { formatTimeLeft } from "@/marketplace/timeLeft";
 import { useCountdownNow } from "@/marketplace/useCountdownNow";
@@ -84,7 +85,7 @@ export default function ListingDetailDialog({
 
   const now = useCountdownNow([listing.endsAt]);
   const { item } = listing;
-  const panel = bidPanel(listing, memberId);
+  const panel = actionArea(listing, memberId, now);
   const stats = itemStats(item);
   const lines = listingItemLines(item);
 
@@ -170,12 +171,15 @@ export default function ListingDetailDialog({
           </Link>
         )}
         {panel === "own" && <p className="text-center text-vellum-dim">Your listing</p>}
-        {panel === "bid" && (
-          <BidBox
-            listing={listing}
-            ended={listing.ended || Date.parse(listing.endsAt) <= now}
-            refresh={refresh}
-          />
+        {/* One mount for "bid" and "closed", so the box keeps its answer as the auction ends. */}
+        {(panel === "bid" || panel === "closed") && (
+          <BidBox listing={listing} ended={panel === "closed"} refresh={refresh} />
+        )}
+        {/* An ACTIVE listing offering nothing has ended, so it reads "Ended — awaiting settlement". */}
+        {panel === "none" && (
+          <p className="text-center text-vellum-dim">
+            {listingStatusLabel({ status: listing.status, ended: true })}
+          </p>
         )}
       </div>
     </div>,

@@ -41,7 +41,7 @@ describe("mineRow", () => {
   });
 
   it.each([
-    ["PENDING_SETTLEMENT", "Settling"],
+    ["PENDING_SETTLEMENT", "Sold — settling"],
     ["SOLD", "Sold"],
     ["CANCELLED", "Withdrawn"],
   ])("should label %s as %s with no countdown", (status, label) => {

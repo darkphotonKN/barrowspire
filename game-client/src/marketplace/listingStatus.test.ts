@@ -10,7 +10,7 @@ describe("listingStatusLabel", () => {
       true,
       "Ended — awaiting settlement",
     ],
-    ["a listing being settled", "PENDING_SETTLEMENT", false, "Settling"],
+    ["a sold listing being settled", "PENDING_SETTLEMENT", false, "Sold — settling"],
     ["a sold listing", "SOLD", false, "Sold"],
     ["a cancelled listing", "CANCELLED", false, "Withdrawn"],
     ["an expired listing", "EXPIRED", false, "Expired"],
@@ -21,7 +21,7 @@ describe("listingStatusLabel", () => {
 
   it.each([
     ["SOLD", "Sold"],
-    ["PENDING_SETTLEMENT", "Settling"],
+    ["PENDING_SETTLEMENT", "Sold — settling"],
     ["CANCELLED", "Withdrawn"],
   ])("should let a settled status win over ended for %s", (status, want) => {
     expect(listingStatusLabel({ status, ended: true })).toBe(want);
