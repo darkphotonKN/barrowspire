@@ -5,6 +5,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/auth-service/config"
@@ -25,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"log/slog"
 )
@@ -49,7 +52,9 @@ var (
 )
 
 func main() {
-	ctx := context.Background()
+	// --- root context ---
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	// --- logger ---
 	commonhelpers.SetupLogger(environment)
@@ -72,7 +77,6 @@ func main() {
 	// --- database setup ---
 
 	db := config.InitDB()
-	defer db.Close()
 
 	// --- S3 setup ---
 	s3Config := config.LoadS3Config()
@@ -101,7 +105,7 @@ func main() {
 
 	// health checks for liveness probe
 	pingFn := db.PingContext
-	commonhealth.Register(ctx, grpcServer, pingFn)
+	healthService := commonhealth.Register(ctx, grpcServer, pingFn)
 
 	// create a network listener to this service
 	listener, err := net.Listen("tcp", ":"+grpcAddr)
@@ -123,11 +127,11 @@ func main() {
 	}()
 
 	// --- message broker - rabbit mq ---
-	ch, close := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
+	ch, brokerClose := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
 
 	broker.DeclareExchange(ch, commonconstants.AuthEventsExchange, "topic")
 	defer func() {
-		close()
+		brokerClose()
 		ch.Close()
 	}()
 
@@ -189,7 +193,34 @@ func main() {
 
 	log.Printf("grpc Auth Server started on PORT: %s\n", grpcAddr)
 
-	if err := grpcServer.Serve(listener); err != nil {
-		log.Fatal("Can't connect to grpc server. Error:", err.Error())
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			log.Fatal("Can't connect to grpc server. Error:", err.Error())
+		}
+	}()
+
+	<-ctx.Done() // wait for SIGTERM
+	slog.Info("shutdown: signal received")
+
+	healthService.SetServingStatus("readiness", healthpb.HealthCheckResponse_NOT_SERVING)
+	time.Sleep(time.Second * 4) // let endpoint removal propogate
+
+	// give 20 second grace period for the other services shutdown
+	doneCh := make(chan struct{})
+
+	go func() {
+		grpcServer.GracefulStop()
+		close(doneCh)
+	}()
+
+	select {
+	case <-doneCh:
+		slog.Info("shutting down after graceful stop...")
+	case <-time.After(time.Second * 20):
+		slog.Info("shutting down after waiting 20 secs...")
+		grpcServer.Stop()
 	}
+
+	db.Close()
+	slog.Info("shutdown clean")
 }

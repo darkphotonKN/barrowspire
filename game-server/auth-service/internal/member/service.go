@@ -130,8 +130,8 @@ func (s *service) CreateMember(ctx context.Context, req *pb.CreateMemberRequest)
 
 	// Atomic write: member row + outbox row share a single transaction so
 	// either both are visible or neither is. This is the core guarantee of
-	// the transactional outbox pattern — without it, an RPC can succeed
-	// while the event is lost (or vice versa).
+	// the transactional outbox pattern, without it, an RPC can succeed
+	// while the event is lost (or vice versa)
 	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)

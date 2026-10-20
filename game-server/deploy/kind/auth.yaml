@@ -35,13 +35,13 @@ spec:
           resources:
             # Reserved by the scheduler. On GKE Autopilot this is what you are billed for.
             # 100m = 0.1 CPU.
-            requests: { cpu: 100m, memory: 3Mi }
+            requests: { cpu: 100m, memory: 128Mi }
             # CPU over the limit: throttled (shows up as latency in traces).
             # Memory over the limit: killed instantly, no Go log. Look for
             # `OOMKilled` / exit code 137 in `kubectl describe pod`, and read
             # the dead container with `kubectl logs <pod> --previous`.
             # Fix with a higher limit or GOMEMLIMIT (~90% of the limit) in the ConfigMap.
-            limits: { cpu: 500m, memory: 3Mi }
+            limits: { cpu: 500m, memory: 128Mi }
           # Both probes call the standard grpc_health_v1 service the app registers.
           # Readiness failing: the pod stays alive but leaves the Service, so it gets
           # no traffic until it recovers. Use it for "my dependencies are down".
