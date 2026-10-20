@@ -237,6 +237,21 @@ class ApiClient {
     );
   }
 
+  // Buys a listing outright at its buyout price (FS-49Z37 req 8–10). 202 with an empty body: the
+  // sale settles asynchronously. The key is one per buyout intent, reused on every resend of it
+  // (ADR-0026), so a resend after a landed buyout is recognised, not charged twice.
+  async buyout(listingId: string, amount: number, idempotencyKey: string): Promise<void> {
+    unwrap(
+      await client.POST("/api/marketplace/listings/{listing_id}/buyout", {
+        params: {
+          path: { listing_id: listingId },
+          header: { "Idempotency-Key": idempotencyKey },
+        },
+        body: { amount },
+      }),
+    );
+  }
+
   // Puts a relic up for auction (FS-8EGFA req 25). 202 with an empty body: the listing appears
   // once marketplace has reserved the item, so the caller polls `listMyListings` for it.
   // A buyout price is sent only when set; none is a plain auction (FS-49Z37 req 1).
