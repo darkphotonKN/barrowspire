@@ -1,6 +1,6 @@
 ---
 id: I-NXP1W-18
-status: open
+status: done
 implements: FS-NXP1W
 blocked_by: [I-NXP1W-17]
 labels: []
