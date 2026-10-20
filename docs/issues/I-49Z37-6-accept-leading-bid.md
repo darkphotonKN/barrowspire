@@ -42,3 +42,12 @@ FS-49Z37 §Requirements 13–17, 25–27; §User Stories 10–13, 17; §Edge Sta
 
 - RED: `sellerBlock` answers "accept {currentPrice}" when someone leads, "no bids" otherwise, "none" once not `ACTIVE` or ended.
 - RED: `acceptFailure` maps each answer to Requirement 17's copy.
+
+## Decided at code review (2026-10-20)
+
+The accept confirm **closes when the auction ends** while it is open, instead of staying up and
+sending the press as FS-49Z37 §Edge States ("Listing ends while a dialog is open: the press is sent
+anyway") describes. There is nothing left to accept on an ended auction, so the confirm drops and
+no request is sent. Buy out keeps the FS behavior (its confirm stays up and the server answers "no
+longer for sale"). Decided by the user; for /spec-audit to reconcile against the FS.
+

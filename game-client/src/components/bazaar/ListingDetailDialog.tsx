@@ -7,6 +7,8 @@ import { XMarkIcon } from "@heroicons/react/24/outline";
 import { v4 as uuid } from "uuid";
 import ItemIcon from "@/components/ItemIcon";
 import RarityBadge from "@/components/RarityBadge";
+import BuyoutAction from "@/components/bazaar/BuyoutAction";
+import { NOTE_TONE } from "@/components/bazaar/noteTone";
 import SellerBlock from "@/components/bazaar/SellerBlock";
 import { useDialogFocus } from "@/components/bazaar/useDialogFocus";
 import type { ItemLines } from "@/items/itemLines";
@@ -20,8 +22,6 @@ import {
   type Purse,
 } from "@/marketplace/bid";
 import { submitBid } from "@/marketplace/bidFlow";
-import { BUYOUT_GONE, buyoutAction, buyoutLabel, buyoutQuestion } from "@/marketplace/buyout";
-import { submitBuyout } from "@/marketplace/buyoutFlow";
 import { SIGN_IN_TO_MARKETPLACE } from "@/marketplace/browse";
 import { actionArea, itemStats, listingItemLines, listingReader } from "@/marketplace/detail";
 import { formatGold } from "@/marketplace/gold";
@@ -33,12 +33,6 @@ import { useCountdownNow } from "@/marketplace/useCountdownNow";
 import { apiClient, publicApi } from "@/utils/api";
 
 const TITLE_ID = "bazaar-detail-title";
-
-const TONE: Record<BidNote["tone"] | "muted", string> = {
-  ok: "text-brass-bright",
-  error: "text-[color:var(--color-danger-text)]",
-  muted: "text-vellum-dim",
-};
 
 const endTime = (endsAt: string) =>
   new Date(endsAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -323,7 +317,7 @@ function BidBox({
     return (
       <div role="status" aria-live="polite" className="flex flex-col gap-1 text-center">
         {closedBoxNotes(note, box.reason ?? BID_ENDED).map((line) => (
-          <p key={line.text} className={TONE[line.tone]}>
+          <p key={line.text} className={NOTE_TONE[line.tone]}>
             {line.text}
           </p>
         ))}
@@ -364,169 +358,11 @@ function BidBox({
       </p>
       <p id="bazaar-bid-reason" role="status" aria-live="polite" className="min-h-[1.25rem] text-sm">
         {note ? (
-          <span className={TONE[note.tone]}>{note.text}</span>
+          <span className={NOTE_TONE[note.tone]}>{note.text}</span>
         ) : (
-          box.reason && <span className={TONE.muted}>{box.reason}</span>
+          box.reason && <span className={NOTE_TONE.muted}>{box.reason}</span>
         )}
       </p>
     </form>
-  );
-}
-
-/**
- * Buy out (FS-49Z37 req 5–12): the button where the bid box is, on a listing with a buyout price,
- * and an inline confirm that sends nothing until its own Buy out is pressed. The confirm holds one
- * Idempotency-Key per open, minted on its first press and dropped on close (ADR-0026); the steps
- * of a press are {@link submitBuyout}. It stays mounted as the listing leaves ACTIVE, so the
- * bought or refused note outlives the button.
- */
-function BuyoutAction({
-  listing,
-  memberId,
-  now,
-  refresh,
-}: {
-  listing: Listing;
-  memberId: string | undefined;
-  now: number;
-  refresh: () => Promise<Listing | undefined>;
-}) {
-  const [purse, setPurse] = useState<Purse>({ state: "loading" });
-  const [confirming, setConfirming] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [note, setNote] = useState<BidNote>();
-  const key = useRef<string>(undefined);
-  const inFlight = useRef(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const confirmButton = useRef<HTMLButtonElement>(null);
-
-  const action = buyoutAction({ listing, memberId, now, purse });
-
-  const loadPurse = useCallback(async () => {
-    try {
-      const account = await apiClient.getWalletAccount();
-      setPurse({ state: "ready", availableGold: account.availableGold });
-    } catch (err) {
-      setPurse(purseFailure(err));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (action.shown) void loadPurse();
-  }, [action.shown, loadPurse]);
-
-  useEffect(() => {
-    if (confirming) confirmButton.current?.focus();
-  }, [confirming]);
-
-  // Each open is a new buyout intent: no key until its first press (req 9).
-  const open = () => {
-    key.current = undefined;
-    setNote(undefined);
-    setConfirming(true);
-  };
-
-  const close = () => {
-    key.current = undefined;
-    setConfirming(false);
-    setNote(undefined);
-    trigger.current?.focus();
-  };
-
-  const price = listing.buyoutPrice;
-
-  const confirm = async () => {
-    if (price === undefined || inFlight.current) return;
-    inFlight.current = true;
-    setSending(true);
-    setNote(undefined);
-    try {
-      const result = await submitBuyout(
-        {
-          price,
-          key: key.current,
-          availableGold: purse.state === "ready" ? purse.availableGold : undefined,
-        },
-        {
-          buyout: (amount, k) => apiClient.buyout(listing.id, amount, k),
-          refresh,
-          reloadPurse: loadPurse,
-          mint: () => uuid(),
-        },
-      );
-      setNote(result.note);
-      // A sale, or a relic gone from sale, ends this intent: the confirm closes with its key.
-      if (result.bought || result.note.text === BUYOUT_GONE) {
-        key.current = undefined;
-        setConfirming(false);
-      } else {
-        key.current = result.key;
-      }
-    } finally {
-      inFlight.current = false;
-      setSending(false);
-    }
-  };
-
-  const noteLine = note && (
-    <p role="status" aria-live="polite" className={`text-center text-sm ${TONE[note.tone]}`}>
-      {note.text}
-    </p>
-  );
-
-  // The confirm stays up if the listing ends while it is open: the press is still sent, and the
-  // server's answer says the relic is no longer for sale (Edge States).
-  if (confirming && price !== undefined)
-    return (
-      <div
-        role="group"
-        aria-label="Confirm buyout"
-        className="surface-well flex flex-col gap-3 rounded-[8px] border border-[color:var(--color-border-strong)] p-4"
-      >
-        <p className="text-vellum">{buyoutQuestion(listing.item?.name ?? "this relic", price)}</p>
-        <div className="flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={close}
-            className="min-h-[40px] rounded-[6px] px-3 text-vellum-dim hover:text-brass-bright"
-          >
-            Keep looking
-          </button>
-          <button
-            ref={confirmButton}
-            type="button"
-            onClick={() => void confirm()}
-            disabled={sending}
-            className="btn-secondary min-h-[40px] disabled:transform-none disabled:opacity-50"
-          >
-            {sending ? "Buying…" : "Buy out"}
-          </button>
-        </div>
-        {noteLine}
-      </div>
-    );
-
-  if (!action.shown) return noteLine ?? null;
-
-  return (
-    <div className="flex flex-col gap-1">
-      <button
-        ref={trigger}
-        type="button"
-        onClick={open}
-        disabled={!action.canPress}
-        aria-describedby="bazaar-buyout-reason"
-        className="btn-secondary min-h-[40px] disabled:transform-none disabled:opacity-50"
-      >
-        {buyoutLabel(action.price)}
-      </button>
-      <p id="bazaar-buyout-reason" role="status" aria-live="polite" className="min-h-[1.25rem] text-center text-sm">
-        {note ? (
-          <span className={TONE[note.tone]}>{note.text}</span>
-        ) : (
-          action.reason && <span className={TONE.muted}>{action.reason}</span>
-        )}
-      </p>
-    </div>
   );
 }

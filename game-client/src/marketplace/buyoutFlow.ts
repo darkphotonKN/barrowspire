@@ -22,7 +22,7 @@ export interface BuyoutSubmitDeps {
 
 export type BuyoutResult =
   | { bought: true; note: BidNote }
-  | { bought: false; key: string | undefined; note: BidNote };
+  | { bought: false; ends: boolean; key: string | undefined; note: BidNote };
 
 export async function submitBuyout(
   press: { price: number; key: string | undefined; availableGold: number | undefined },
@@ -36,10 +36,42 @@ export async function submitBuyout(
     if (failure.refetch) await deps.refresh();
     return {
       bought: false,
+      ends: failure.ends === true,
       key: keepsBuyoutKey(err) ? key : undefined,
       note: { tone: "error", text: failure.message },
     };
   }
   await Promise.all([deps.refresh(), deps.reloadPurse()]);
   return { bought: true, note: { tone: "ok", text: BOUGHT } };
+}
+
+/** The confirm dialog and the one Idempotency-Key its buyout intent holds (req 9; ADR-0026). */
+export interface BuyoutConfirm {
+  open: boolean;
+  key: string | undefined;
+}
+
+export type BuyoutConfirmEvent =
+  | { type: "open" }
+  | { type: "close" }
+  | { type: "answered"; result: BuyoutResult };
+
+/**
+ * The confirm's lifetime, so the dialog only renders it (req 9, 26). Opening starts a new intent
+ * with no key, and the first press mints one ({@link submitBuyout}). An answer keeps the confirm
+ * open under the key it kept, or under none once it spent it. A sale, or a relic no longer for
+ * sale, ends the intent. Closing drops the key, so reopening is a new intent.
+ */
+export function buyoutConfirm(state: BuyoutConfirm, event: BuyoutConfirmEvent): BuyoutConfirm {
+  switch (event.type) {
+    case "open":
+      return { open: true, key: undefined };
+    case "close":
+      return { open: false, key: undefined };
+    case "answered": {
+      const { result } = event;
+      if (result.bought || result.ends) return { open: false, key: undefined };
+      return { open: state.open, key: result.key };
+    }
+  }
 }

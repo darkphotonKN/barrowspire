@@ -72,12 +72,13 @@ export const keepsBuyoutKey: (err: unknown) => boolean = keepsBidKey;
 
 /**
  * What a refused buyout says (req 12), routed by the problem's `code`. `refetch` asks the caller
- * to re-read the listing as well: its price changed, or it is no longer for sale.
+ * to re-read the listing as well: its price changed, or it is no longer for sale. `ends` says the
+ * intent is over, so the confirm closes: the relic is no longer for sale.
  */
 export function buyoutFailure(
   err: unknown,
   context: { price: number; availableGold?: number },
-): { message: string; refetch?: true } {
+): { message: string; refetch?: true; ends?: true } {
   if (!(err instanceof ApiError) || err.status === 503) return { message: BROWSE_UNREACHABLE };
   switch (err.code) {
     case "CONFLICT":
@@ -89,7 +90,7 @@ export function buyoutFailure(
     case "FAILED_PRECONDITION":
       return context.availableGold !== undefined && context.availableGold < context.price
         ? { message: BID_NOT_ENOUGH_GOLD }
-        : { message: BUYOUT_GONE, refetch: true };
+        : { message: BUYOUT_GONE, refetch: true, ends: true };
   }
   return { message: err.detail };
 }

@@ -7,15 +7,11 @@ import {
   leadingBidLine,
   sellerBlock,
 } from "@/marketplace/accept";
+import { NOTE_TONE } from "@/components/bazaar/noteTone";
 import { submitAccept } from "@/marketplace/acceptFlow";
 import type { BidNote } from "@/marketplace/bid";
 import type { Listing } from "@/marketplace/listing";
 import { apiClient } from "@/utils/api";
-
-const TONE: Record<BidNote["tone"], string> = {
-  ok: "text-brass-bright",
-  error: "text-[color:var(--color-danger-text)]",
-};
 
 const CONFIRM_ID = "bazaar-accept-confirm";
 
@@ -72,7 +68,7 @@ export default function SellerBlock({
 
   const status = (
     <p role="status" aria-live="polite" className="min-h-[1.25rem] text-center text-sm">
-      {note && <span className={TONE[note.tone]}>{note.text}</span>}
+      {note && <span className={NOTE_TONE[note.tone]}>{note.text}</span>}
     </p>
   );
 
