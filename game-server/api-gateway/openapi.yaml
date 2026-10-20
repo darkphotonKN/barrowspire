@@ -1098,6 +1098,76 @@ components:
         - message
         - result
       type: object
+    MyBid:
+      additionalProperties: false
+      properties:
+        amount:
+          description: Gold bid.
+          format: int64
+          type: integer
+        bidId:
+          format: uuid
+          type: string
+        item:
+          $ref: "#/components/schemas/ItemSummary"
+          description: The listed item. Absent only when items has no such instance.
+        listing:
+          $ref: "#/components/schemas/MyBidListing"
+        listingId:
+          format: uuid
+          type: string
+        placedAt:
+          format: date-time
+          type: string
+        status:
+          description: "Bid status: PENDING, WINNING, OUTBID, WON or LOST."
+          type: string
+      required:
+        - bidId
+        - listingId
+        - amount
+        - status
+        - placedAt
+        - listing
+      type: object
+    MyBidListing:
+      additionalProperties: false
+      properties:
+        buyoutPrice:
+          description: Gold that buys the item outright. Absent when the seller set none.
+          format: int64
+          type: integer
+        currentPrice:
+          description: The leading bid, anyone's. Absent when nobody leads.
+          format: int64
+          type: integer
+        ended:
+          description: True when the auction is past endsAt but not yet settled; it no longer accepts bids.
+          type: boolean
+        endsAt:
+          format: date-time
+          type: string
+        status:
+          description: Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED.
+          type: string
+      required:
+        - status
+        - endsAt
+        - ended
+      type: object
+    MyBidPage:
+      additionalProperties: false
+      properties:
+        bids:
+          items:
+            $ref: "#/components/schemas/MyBid"
+          type: array
+        nextCursor:
+          description: Pass back as cursor for the next page. Absent on the last page.
+          type: string
+      required:
+        - bids
+      type: object
     Notification:
       additionalProperties: false
       properties:
@@ -2633,6 +2703,69 @@ paths:
       summary: Get a member's transaction.
       tags:
         - ledger
+  /api/marketplace/bids/mine:
+    get:
+      description: Pages the signed-in member's own bids, newest placed first, one row per bid, each with where its listing stands now and the listed item embedded. Withdrawn and failed bids are not listed. The bidder is taken from the token; there is no parameter for reading another member's bids. If the items lookup fails the whole request fails.
+      operationId: list-my-bids
+      parameters:
+        - description: Opaque position from a previous page's nextCursor. Do not construct.
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque position from a previous page's nextCursor. Do not construct.
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyBidPage"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Page my bids
+      tags:
+        - marketplace
   /api/marketplace/listings:
     get:
       description: "Pages every seller's live auctions — active and not yet ended — soonest-ending first, each with its item embedded. Public: no token is needed. If the items lookup fails the whole request fails; a page is never returned without its items."

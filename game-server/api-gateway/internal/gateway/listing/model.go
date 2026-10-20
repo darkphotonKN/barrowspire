@@ -18,6 +18,7 @@ type ListingClient interface {
 	AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.AcceptBidResponse, error)
 	Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.BuyoutResponse, error)
 	ListMyListings(ctx context.Context, req *pb.ListMyListingsRequest) (*pb.ListMyListingsResponse, error)
+	ListMyBids(ctx context.Context, req *pb.ListMyBidsRequest) (*pb.ListMyBidsResponse, error)
 	BrowseListings(ctx context.Context, req *pb.BrowseListingsRequest) (*pb.BrowseListingsResponse, error)
 	GetListing(ctx context.Context, req *pb.GetListingRequest) (*pb.GetListingResponse, error)
 }
@@ -109,6 +110,36 @@ type ListingPage struct {
 	NextCursor *string   `json:"nextCursor,omitempty" doc:"Pass back as cursor for the next page. Absent on the last page."`
 }
 
+// MyBid is one of the caller's own bids, with where its listing stands now.
+type MyBid struct {
+	BidID     string       `json:"bidId" format:"uuid"`
+	ListingID string       `json:"listingId" format:"uuid"`
+	Amount    int64        `json:"amount" doc:"Gold bid."`
+	Status    string       `json:"status" doc:"Bid status: PENDING, WINNING, OUTBID, WON or LOST."`
+	PlacedAt  time.Time    `json:"placedAt"`
+	Listing   MyBidListing `json:"listing"`
+
+	Item *ItemSummary `json:"item,omitempty" doc:"The listed item. Absent only when items has no such instance."`
+
+	// the listed item, only to join its summary; not on the wire
+	itemID string
+}
+
+// MyBidListing is where a bid's listing stands now.
+type MyBidListing struct {
+	Status       string    `json:"status" doc:"Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED."`
+	EndsAt       time.Time `json:"endsAt"`
+	Ended        bool      `json:"ended" doc:"True when the auction is past endsAt but not yet settled; it no longer accepts bids."`
+	CurrentPrice *int64    `json:"currentPrice,omitempty" doc:"The leading bid, anyone's. Absent when nobody leads."`
+	BuyoutPrice  *int64    `json:"buyoutPrice,omitempty" doc:"Gold that buys the item outright. Absent when the seller set none."`
+}
+
+// MyBidPage is one page of the caller's bids, newest placed first.
+type MyBidPage struct {
+	Bids       []MyBid `json:"bids" nullable:"false"`
+	NextCursor *string `json:"nextCursor,omitempty" doc:"Pass back as cursor for the next page. Absent on the last page."`
+}
+
 func itemSummaryFromProto(s *itempb.ItemSummary) *ItemSummary {
 	return &ItemSummary{
 		ID:              s.GetId(),
@@ -183,6 +214,51 @@ func listingPageFromProto(in []*pb.Listing, pagination *pbshared.PageInfo) (List
 	}
 
 	page := ListingPage{Listings: listings}
+	if next := pagination.GetNextCursor(); next != "" {
+		page.NextCursor = &next
+	}
+
+	return page, nil
+}
+
+// myBidFromProto maps one of the caller's bids to the wire. A bid missing its
+// listing or a required timestamp is a fault in marketplace, answered as 500
+// rather than shown to the client as 1970.
+func myBidFromProto(b *pb.MyBid) (MyBid, error) {
+	l := b.GetListing()
+	if b.GetPlacedAt() == nil || l.GetEndsAt() == nil {
+		return MyBid{}, fmt.Errorf("marketplace returned bid %s without its listing or a required timestamp", b.GetBidId())
+	}
+
+	return MyBid{
+		BidID:     b.GetBidId(),
+		ListingID: b.GetListingId(),
+		Amount:    b.GetAmount(),
+		Status:    b.GetStatus(),
+		PlacedAt:  b.GetPlacedAt().AsTime(),
+		Listing: MyBidListing{
+			Status:       l.GetStatus(),
+			EndsAt:       l.GetEndsAt().AsTime(),
+			Ended:        l.GetEnded(),
+			CurrentPrice: l.CurrentPrice,
+			BuyoutPrice:  l.BuyoutPrice,
+		},
+		itemID: l.GetItemId(),
+	}, nil
+}
+
+// myBidPageFromProto maps marketplace's page of the caller's bids to the wire.
+func myBidPageFromProto(in []*pb.MyBid, pagination *pbshared.PageInfo) (MyBidPage, error) {
+	bids := make([]MyBid, 0, len(in))
+	for _, b := range in {
+		bid, err := myBidFromProto(b)
+		if err != nil {
+			return MyBidPage{}, err
+		}
+		bids = append(bids, bid)
+	}
+
+	page := MyBidPage{Bids: bids}
 	if next := pagination.GetNextCursor(); next != "" {
 		page.NextCursor = &next
 	}

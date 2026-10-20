@@ -56,6 +56,10 @@ func (c *Client) ListMyListings(ctx context.Context, req *pb.ListMyListingsReque
 	return pb.NewMarketplaceServiceClient(c.conn).ListMyListings(ctx, req)
 }
 
+func (c *Client) ListMyBids(ctx context.Context, req *pb.ListMyBidsRequest) (*pb.ListMyBidsResponse, error) {
+	return pb.NewMarketplaceServiceClient(c.conn).ListMyBids(ctx, req)
+}
+
 func (c *Client) BrowseListings(ctx context.Context, req *pb.BrowseListingsRequest) (*pb.BrowseListingsResponse, error) {
 	return pb.NewMarketplaceServiceClient(c.conn).BrowseListings(ctx, req)
 }
