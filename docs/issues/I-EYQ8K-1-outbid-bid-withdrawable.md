@@ -40,3 +40,13 @@ FS-EYQ8K §Requirements 9; §Acceptance Criteria (withdraw rows); §Edge States 
 - RED (domain): leader 150, outbid 120 → withdraw the 120 → it is `CANCELLED`, 150 still `WINNING`, price unchanged.
 - RED (domain): same on an ended listing → refused.
 - RED (usecase): withdrawing an outbid bid starts its hold release.
+
+## Decided during develop (2026-10-21)
+
+- Withdraw had no end-time check: `acceptingBidChanges` looks only at status and buyout, so a bid
+  could be withdrawn between `endsAt` and the expiry poller's freeze. `Listing.WithdrawBid` now
+  applies `AcceptsBidAt`, the same end rule as place-bid (`endsAt <= now` is ended →
+  `ErrListingExpired` → `FAILED_PRECONDITION`).
+- This also stops a `WINNING` bidder withdrawing in that window, which previously promoted the
+  runner-up after the end (ADR-0028). The user chose to fix it in this slice rather than as a
+  follow-up.

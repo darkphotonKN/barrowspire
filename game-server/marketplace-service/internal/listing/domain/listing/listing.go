@@ -454,7 +454,10 @@ func (l *Listing) LoseAllBids(now time.Time) error {
 }
 
 func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time) error {
-	if err := l.acceptingBidChanges(); err != nil {
+	// Ended means what it means to PlaceBid. Between the end and settlement's freeze
+	// the listing is still ACTIVE, and a withdrawal there would change the outcome:
+	// a withdrawn leader would hand the win to the runner-up after the end.
+	if err := l.AcceptsBidAt(now); err != nil {
 		return err
 	}
 
@@ -579,7 +582,8 @@ func (l *Listing) Buyout(bidID, memberID uuid.UUID, amount int, now time.Time) e
 // AcceptsBidAt reports whether a new bid could be placed at now: the listing is
 // open and not yet past its end. PlaceBidWithID applies it under the lock; a
 // caller about to do something costly for a bid — holding its gold — asks it
-// first rather than restating the rule.
+// first rather than restating the rule. WithdrawBid applies it too, so "ended"
+// means the same for placing and withdrawing.
 func (l *Listing) AcceptsBidAt(now time.Time) error {
 	if err := l.acceptingBidChanges(); err != nil {
 		return err
