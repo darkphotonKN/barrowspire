@@ -23,6 +23,9 @@ the gRPC handler (`internal/listing/grpc/handler.go` `Buyout`) and the listing b
 
 ### Decided deviation from §API surface (2026-10-20)
 
+> **Later the same day:** `amount` was put back by I-NXP1W-18, so the "no request body" half below
+> no longer holds. Leaving out `Idempotency-Key` stands, recorded as ADR-0025.
+
 The route follows the **built** interface, not the §API surface row:
 
 - **No request body, no `amount`.** `BuyoutCommand` takes none; a buyout always costs the listing's
