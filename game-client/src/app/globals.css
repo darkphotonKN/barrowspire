@@ -18,72 +18,107 @@
   --font-heading: var(--font-pirata), 'Pirata One', 'UnifrakturMaguntia', Georgia, serif;
   --font-body: var(--font-garamond), 'EB Garamond', Georgia, serif;
 
-  /* ── Palette ───────────────────────────────────────────────────────────
+  /* ── Palette: Bone & Soot (the web UI palette) ──────────────────────────
      ADR-0013: this block and src/utils/theme.ts are the ONLY places a raw
-     hex may appear. Everything else refers. A new colour is a token in both
-     files first, then referenced. */
+     colour may appear. Everything else refers. A new colour is a token here
+     first, then referenced.
+     ADR-0025: this is the UI palette, and the UI table in theme.ts mirrors
+     it as JS strings (for Stripe, which cannot read var()). The two MUST
+     agree. The game canvas has its own palette (BARROW) and does not track
+     this one. Values: docs/design-guideline.md Part II. */
 
-  /* Torch — one per view: primary CTA, active nav, page h1, focal number. */
-  --color-primary: #e8a14d;
-  --color-primary-bright: #f2b866;
+  /* Torch: bone. One per view: primary CTA, active nav, page h1, focal
+     number. Text on a bone fill is always --color-bg-dark. */
+  --color-primary: #e9dfc9;
+  --color-primary-bright: #f6efdf;
 
-  --color-accent: #6f8f4a;
+  /* Ash grey: secondary, cancel, subtitle. */
+  --color-accent: #8c8c84;
   --color-danger: #6e1f1f;
   /* Oxblood is a fill. On a dark ground it is unreadable as text, so error
      COPY uses a lifted oxblood that still reads as the same family. */
-  --color-danger-text: #c96b5e;
+  --color-danger-text: #d07a6a;
 
-  /* Surfaces — warm umber/stone. Dark, never black: a base with no value
-     above the floor makes every accent read as emission. */
-  --color-bg-dark: #1c1613;
-  --color-bg-darker: #100c0a;
-  --color-bg-card: rgba(42, 33, 26, 0.88);
-  --color-bg-card-2: rgba(54, 43, 34, 0.92);
-  /* Opaque equivalents, for prefers-reduced-transparency. */
-  --color-bg-card-opaque: #241d17;
-  --color-bg-card-2-opaque: #2f2620;
+  /* Surfaces: neutral soot and grey stone. Soot, never #000: the material
+     layer (grain, surface gradients, carved edges, vignette) is what makes
+     the base read as a surface rather than an absence. */
+  --color-bg-dark: #121212;
+  --color-bg-darker: #0a0a0a;
+  --color-bg-card: rgba(28, 28, 27, 0.88);
+  --color-bg-card-2: rgba(38, 37, 35, 0.92);
+  /* Opaque equivalents, for prefers-reduced-transparency: each surface
+     composited over --color-bg-dark. */
+  --color-bg-card-opaque: #1b1b1a;
+  --color-bg-card-2-opaque: #242322;
+  /* Deep grounds below the page, used translucent via color-mix(). Neutral
+     steps around --color-bg-darker, in the order they had under amber:
+     dropdown deepest, well at the darker step, inset just under the page. */
+  --color-bg-well: #0a0a0a;     /* inputs, card-entry wells, panels over the page */
+  --color-bg-inset: #0e0e0e;    /* inset control groups on the game page chrome */
+  --color-bg-dropdown: #070707; /* dropdown and popover base */
 
-  /* Brass — structure, not fill. Borders, dividers, focus rings, glows. */
-  --color-brass: #9c7b3f;
-  --color-brass-bright: #c9a14e;
-  --color-border: rgba(156, 123, 63, 0.15);
-  --color-border-strong: rgba(156, 123, 63, 0.35);
+  /* Iron: structure, not fill. Borders, dividers, focus rings, glows.
+     "brass" is the role name, not the hue (FS-8TCN2 keeps the names). */
+  --color-brass: #5c5a55;
+  --color-brass-bright: #8a8780;
+  /* Alphas re-derived against soot so a hairline sits at about the same
+     contrast it had under amber: 1.26:1 and 1.73:1 on --color-bg-dark. */
+  --color-border: color-mix(in srgb, var(--color-brass) 30%, transparent);
+  --color-border-strong: color-mix(in srgb, var(--color-brass) 60%, transparent);
 
-  /* Text — measured against --color-bg-dark. Floor: 4.5:1 body/labels,
-     3:1 decorative/disabled. vellum 9.81 · dim 5.52 · muted 3.80. */
-  --color-text: #cdbf9a;
-  --color-text-dim: #9b8e6a;
-  --color-text-muted: #8d8362;
-  --color-text-placeholder: #6b6349;
+  /* Text: measured in the browser against --color-bg-dark. Floor 4.5:1.
+     text 11.35 · dim 6.36 · muted 4.83 (design-guideline.md contrast floor). */
+  --color-text: #cfc9bb;
+  --color-text-dim: #9b968b;
+  --color-text-muted: #85817a;
+  --color-text-placeholder: #5e5b55;
 
-  /* Rarity — data, not emphasis. Exempt from one-torch, but ONLY on the
-     rarity badge, the card accent border, and a faint hover glow. */
+  /* Rarity: data, not theme. Not part of the UI palette and unchanged by
+     Bone & Soot. Exempt from one-torch, but ONLY on the rarity badge, the
+     card accent border, and a faint hover glow. */
   --rarity-common: #a2946d;
   --rarity-uncommon: #6f8f4a;
   --rarity-rare: #688b8f;
-  --rarity-epic: #9c7b3f;
+  --rarity-epic: #a58243; /* brass, lifted within its hue to clear 4.5:1 on soot (FS-8TCN2) */
   --rarity-legendary: #f2b866;
 
   --header-height: 64px;
 
   /* ── Material layer ────────────────────────────────────────────────────
-     CSS only, no image assets. Material is finish, never structure —
-     every view must stay legible with all of this suppressed. */
+     CSS only, no image assets. Material is finish, never structure:
+     every view must stay legible with all of this suppressed. Highlights
+     are neutral white on soot (the warm cast went with the amber palette);
+     glows and the focus ring are derived from the tokens above. */
   --surface-gradient: linear-gradient(
     160deg,
-    rgba(255, 245, 225, 0.045) 0%,
-    rgba(255, 245, 225, 0.012) 38%,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.01) 38%,
     rgba(0, 0, 0, 0.14) 100%
   );
-  --edge-carved: inset 0 1px 0 rgba(255, 240, 214, 0.07),
+  --edge-carved: inset 0 1px 0 rgba(255, 255, 255, 0.06),
     inset 0 -1px 0 rgba(0, 0, 0, 0.45);
   --edge-engraved: inset 0 1px 2px rgba(0, 0, 0, 0.55),
-    inset 0 -1px 0 rgba(255, 240, 214, 0.05);
+    inset 0 -1px 0 rgba(255, 255, 255, 0.045);
   --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.45);
   --shadow-float: 0 10px 40px rgba(0, 0, 0, 0.62);
-  --glow-brass: 0 0 18px rgba(156, 123, 63, 0.22);
-  --glow-torch: 0 0 22px rgba(232, 161, 77, 0.24);
-  --focus-ring: 0 0 0 2px rgba(156, 123, 63, 0.45);
+  --glow-brass: 0 0 18px color-mix(in srgb, var(--color-brass-bright) 22%, transparent);
+  --glow-torch: 0 0 22px color-mix(in srgb, var(--color-primary) 16%, transparent);
+  /* Iron bright at 70%: 3.17:1 on --color-bg-dark, over the 3:1 non-text
+     floor, so focus stays plainly visible on soot. */
+  --focus-ring: 0 0 0 2px color-mix(in srgb, var(--color-brass-bright) 70%, transparent);
+}
+
+/* A browser without color-mix() would leave the derived tokens invalid, and
+   an invalid border colour falls back to currentColor. Degrade to the plain
+   token or to nothing instead, never to an old raw triple (FS-8TCN2). */
+@supports not (color: color-mix(in srgb, red 50%, transparent)) {
+  :root {
+    --color-border: var(--color-brass);
+    --color-border-strong: var(--color-brass-bright);
+    --glow-brass: none;
+    --glow-torch: none;
+    --focus-ring: 0 0 0 2px var(--color-brass-bright);
+  }
 }
 
 
@@ -109,14 +144,15 @@
   /* Grain — a single low-opacity noise field, inline SVG feTurbulence. It
      breaks the flatness of large dark fills, which is what makes a dark page
      read as a surface rather than an absence. If you can see it as noise, it
-     is too strong. */
+     is too strong. 0.035 under amber; lowered to 0.025 on neutral soot, where
+     the same field read as noise (FS-8TCN2, recorded in the guideline). */
   body::before {
     content: '';
     position: fixed;
     inset: 0;
     z-index: 0;
     pointer-events: none;
-    opacity: 0.035;
+    opacity: 0.025;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
@@ -127,11 +163,12 @@
     inset: 0;
     z-index: 0;
     pointer-events: none;
+    /* Atmosphere: deepened from 0.3/0.55 (FS-8TCN2 §D.20). */
     background: radial-gradient(
-      ellipse at 50% 42%,
-      transparent 42%,
-      rgba(0, 0, 0, 0.3) 78%,
-      rgba(0, 0, 0, 0.55) 100%
+      ellipse 85% 75% at 50% 40%,
+      transparent 50%,
+      rgba(0, 0, 0, 0.35) 78%,
+      rgba(0, 0, 0, 0.6) 100%
     );
   }
 
@@ -374,16 +411,16 @@
   margin-left: 0.35rem;
   padding: 0.2rem 0.4rem;
   color: var(--color-text);
-  border: 1px solid rgba(111, 143, 74, 0.35);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
   border-radius: 3px;
-  background: rgba(111, 143, 74, 0.08);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
   text-shadow: none;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
   transition: all 0.3s ease;
 }
 
 .header-logo:hover .logo-beta {
-  border-color: rgba(111, 143, 74, 0.55);
+  border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
   text-shadow: none;
 }
@@ -471,24 +508,24 @@
 .btn-primary {
   background: var(--color-primary);
   color: var(--color-bg-dark);
-  box-shadow: 0 4px 15px rgba(156, 123, 63, 0.2);
+  box-shadow: 0 4px 15px color-mix(in srgb, var(--color-brass) 20%, transparent);
 }
 
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 25px rgba(156, 123, 63, 0.4);
+  box-shadow: 0 6px 25px color-mix(in srgb, var(--color-brass) 40%, transparent);
 }
 
 .btn-secondary {
   background: transparent;
   color: var(--color-text-dim);
-  border: 1px solid rgba(156, 123, 63, 0.2);
+  border: 1px solid color-mix(in srgb, var(--color-brass) 20%, transparent);
 }
 
 .btn-secondary:hover {
   border-color: var(--color-border-strong);
   color: var(--color-brass-bright);
-  background: rgba(156, 123, 63, 0.05);
+  background: color-mix(in srgb, var(--color-brass) 5%, transparent);
 }
 
 /* Header Right Section */
@@ -508,8 +545,8 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem 1rem;
-  background: rgba(156, 123, 63, 0.03);
-  border: 1px solid rgba(156, 123, 63, 0.1);
+  background: color-mix(in srgb, var(--color-brass) 3%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-brass) 10%, transparent);
   border-radius: 50px;
   color: var(--color-text);
   cursor: pointer;
@@ -517,8 +554,8 @@
 }
 
 .user-menu-trigger:hover {
-  background: rgba(156, 123, 63, 0.08);
-  border-color: rgba(156, 123, 63, 0.3);
+  background: color-mix(in srgb, var(--color-brass) 8%, transparent);
+  border-color: color-mix(in srgb, var(--color-brass) 30%, transparent);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
@@ -527,11 +564,11 @@
   height: 32px;
   border-radius: 50%;
   overflow: hidden;
-  border: 2px solid rgba(156, 123, 63, 0.4);
+  border: 2px solid color-mix(in srgb, var(--color-brass) 40%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(156, 123, 63, 0.05);
+  background: color-mix(in srgb, var(--color-brass) 5%, transparent);
 }
 
 .user-avatar img {
@@ -569,7 +606,7 @@
   top: calc(100% + 0.5rem);
   right: 0;
   min-width: 240px;
-  background: rgba(7, 6, 5, 0.98);
+  background: color-mix(in srgb, var(--color-bg-dropdown) 98%, transparent);
   backdrop-filter: blur(20px);
   border: 1px solid var(--color-border);
   border-radius: 10px;
@@ -644,7 +681,7 @@
 }
 
 .menu-item:hover {
-  background: rgba(156, 123, 63, 0.06);
+  background: color-mix(in srgb, var(--color-brass) 6%, transparent);
   color: var(--color-brass-bright);
   transform: translateX(4px);
 }
@@ -660,17 +697,17 @@
 }
 
 .menu-logout {
-  color: rgba(110, 31, 31, 0.7);
+  color: var(--color-danger-text);
 }
 
 .menu-logout:hover {
-  background: rgba(110, 31, 31, 0.08);
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
   color: var(--color-danger);
 }
 
 #game-container {
   transition: 0.3s;
-  border: 1px solid rgba(156, 123, 63, 0.3);
+  border: 1px solid color-mix(in srgb, var(--color-brass) 30%, transparent);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
@@ -680,7 +717,7 @@
 }
 
 #game-container.safe {
-  border: 1px solid rgba(156, 123, 63, 0.3);
+  border: 1px solid color-mix(in srgb, var(--color-brass) 30%, transparent);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
@@ -713,7 +750,7 @@
   overflow: hidden;
   box-shadow:
     0 10px 40px rgba(0, 0, 0, 0.8);
-  border: 1px solid rgba(156, 123, 63, 0.15);
+  border: 1px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
 }
 
 .treasure-hunt-controls {
@@ -724,7 +761,7 @@
 }
 
 .treasure-hunt-control-group {
-  background: rgba(20, 16, 12, 0.8);
+  background: color-mix(in srgb, var(--color-bg-inset) 80%, transparent);
   padding: 8px 14px;
   border-radius: 6px;
   border: 1px solid var(--color-border);
@@ -742,7 +779,7 @@
 
 .treasure-hunt-status {
   padding: 10px 20px;
-  background: rgba(20, 16, 12, 0.8);
+  background: color-mix(in srgb, var(--color-bg-inset) 80%, transparent);
   border-radius: 8px;
   font-size: 14px;
   transition: color 0.3s ease;
@@ -764,8 +801,8 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle at 25% 25%, rgba(156, 123, 63, 0.06) 0%, transparent 50%),
-              radial-gradient(circle at 75% 75%, rgba(111, 143, 74, 0.04) 0%, transparent 50%);
+  background: radial-gradient(circle at 25% 25%, color-mix(in srgb, var(--color-brass) 6%, transparent) 0%, transparent 50%),
+              radial-gradient(circle at 75% 75%, color-mix(in srgb, var(--color-accent) 4%, transparent) 0%, transparent 50%);
   pointer-events: none;
   z-index: 1;
 }
@@ -781,8 +818,8 @@
 }
 
 .profile-back-btn {
-  background: rgba(156, 123, 63, 0.05);
-  border: 1px solid rgba(156, 123, 63, 0.15);
+  background: color-mix(in srgb, var(--color-brass) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
   color: var(--color-text-dim);
   padding: 0.5rem 1rem;
   border-radius: 6px;
@@ -793,9 +830,9 @@
 }
 
 .profile-back-btn:hover {
-  background: rgba(156, 123, 63, 0.1);
+  background: color-mix(in srgb, var(--color-brass) 10%, transparent);
   color: var(--color-brass-bright);
-  border-color: rgba(156, 123, 63, 0.3);
+  border-color: color-mix(in srgb, var(--color-brass) 30%, transparent);
 }
 
 .profile-title {
@@ -831,7 +868,7 @@
   width: 150px;
   height: 150px;
   border-radius: 50%;
-  border: 2px solid rgba(156, 123, 63, 0.2);
+  border: 2px solid color-mix(in srgb, var(--color-brass) 20%, transparent);
   position: relative;
   cursor: pointer;
   overflow: hidden;
@@ -839,7 +876,7 @@
 }
 
 .profile-avatar:hover {
-  border-color: rgba(156, 123, 63, 0.5);
+  border-color: color-mix(in srgb, var(--color-brass) 50%, transparent);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
@@ -856,11 +893,11 @@
 .profile-avatar-placeholder {
   width: 100%;
   height: 100%;
-  background: rgba(156, 123, 63, 0.05);
+  background: color-mix(in srgb, var(--color-brass) 5%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(156, 123, 63, 0.3);
+  color: var(--color-brass-bright);
 }
 
 .profile-avatar-icon {
@@ -913,7 +950,7 @@
 .profile-spinner {
   width: 32px;
   height: 32px;
-  border: 2px solid rgba(156, 123, 63, 0.15);
+  border: 2px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
   border-top: 2px solid var(--color-brass);
   border-radius: 50%;
   animation: spin 1s linear infinite;
@@ -948,7 +985,7 @@
   flex-direction: column;
   gap: 1rem;
   padding: 1rem;
-  background: rgba(156, 123, 63, 0.02);
+  background: color-mix(in srgb, var(--color-brass) 2%, transparent);
   border-radius: 8px;
   border: 1px solid var(--color-border);
 }
@@ -988,14 +1025,14 @@
 }
 
 .profile-error {
-  background: rgba(110, 31, 31, 0.08);
-  border: 1px solid rgba(110, 31, 31, 0.2);
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 20%, transparent);
   color: var(--color-danger-text);
 }
 
 .profile-success {
-  background: rgba(156, 123, 63, 0.06);
-  border: 1px solid rgba(156, 123, 63, 0.2);
+  background: color-mix(in srgb, var(--color-brass) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-brass) 20%, transparent);
   color: var(--color-brass-bright);
 }
 
@@ -1162,8 +1199,8 @@
   right: 0;
   bottom: 0;
   background-image:
-    linear-gradient(rgba(156, 123, 63, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(156, 123, 63, 0.03) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--color-brass) 3%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--color-brass) 3%, transparent) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
@@ -1212,7 +1249,7 @@
   border-radius: 12px;
   border: 1px solid var(--color-border);
   box-shadow:
-    0 0 40px rgba(156, 123, 63, 0.04),
+    0 0 40px color-mix(in srgb, var(--color-brass) 4%, transparent),
     0 20px 60px rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(10px);
   z-index: 10;
@@ -1225,7 +1262,7 @@
   left: -1px;
   right: -1px;
   bottom: -1px;
-  background: linear-gradient(135deg, rgba(156, 123, 63, 0.2), rgba(111, 143, 74, 0.2), rgba(156, 123, 63, 0.2));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--color-brass) 20%, transparent), color-mix(in srgb, var(--color-accent) 20%, transparent), color-mix(in srgb, var(--color-brass) 20%, transparent));
   border-radius: 13px;
   z-index: -1;
   opacity: 0;
@@ -1279,8 +1316,8 @@
   box-shadow: var(--edge-engraved);
   width: 100%;
   padding: 14px 16px;
-  background: rgba(13, 11, 10, 0.8);
-  border: 1px solid rgba(156, 123, 63, 0.1);
+  background: color-mix(in srgb, var(--color-bg-well) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-brass) 10%, transparent);
   border-radius: 6px;
   color: var(--color-text);
   font-size: 14px;
@@ -1294,9 +1331,9 @@
 }
 
 .login-input:focus {
-  border-color: rgba(156, 123, 63, 0.4);
+  border-color: color-mix(in srgb, var(--color-brass) 40%, transparent);
   box-shadow:
-    0 0 0 2px rgba(156, 123, 63, 0.06);
+    0 0 0 2px color-mix(in srgb, var(--color-brass) 6%, transparent);
 }
 
 .login-error {
@@ -1304,9 +1341,9 @@
   font-size: 12px;
   text-align: center;
   padding: 10px;
-  background: rgba(110, 31, 31, 0.06);
+  background: color-mix(in srgb, var(--color-danger) 6%, transparent);
   border-radius: 6px;
-  border: 1px solid rgba(110, 31, 31, 0.15);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 15%, transparent);
   letter-spacing: 0.03em;
 }
 
@@ -1351,7 +1388,7 @@
 .login-button:hover {
   transform: translateY(-2px);
   box-shadow:
-    0 0 20px rgba(156, 123, 63, 0.3),
+    0 0 20px color-mix(in srgb, var(--color-brass) 30%, transparent),
     0 10px 30px rgba(0, 0, 0, 0.3);
 }
 
@@ -1366,7 +1403,7 @@
 }
 
 .login-button.loading {
-  background: rgba(156, 123, 63, 0.7);
+  background: color-mix(in srgb, var(--color-brass) 70%, transparent);
 }
 
 .login-loading {
@@ -1379,7 +1416,7 @@
 .login-spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(13, 11, 10, 0.3);
+  border: 2px solid color-mix(in srgb, var(--color-bg-well) 30%, transparent);
   border-top-color: var(--color-bg-dark);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -1394,7 +1431,7 @@
 .login-footer {
   margin-top: 25px;
   text-align: center;
-  color: var(--color-text-placeholder);
+  color: var(--color-text-muted);
   font-size: 13px;
   letter-spacing: 0.03em;
 }
@@ -1452,8 +1489,8 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle at 30% 20%, rgba(156, 123, 63, 0.04) 0%, transparent 50%),
-              radial-gradient(circle at 70% 80%, rgba(111, 143, 74, 0.03) 0%, transparent 50%);
+  background: radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--color-brass) 4%, transparent) 0%, transparent 50%),
+              radial-gradient(circle at 70% 80%, color-mix(in srgb, var(--color-accent) 3%, transparent) 0%, transparent 50%);
 }
 
 .sub-header {
@@ -1467,8 +1504,8 @@
 }
 
 .sub-back-btn {
-  background: rgba(156, 123, 63, 0.05);
-  border: 1px solid rgba(156, 123, 63, 0.15);
+  background: color-mix(in srgb, var(--color-brass) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
   color: var(--color-text-dim);
   padding: 0.5rem 1rem;
   border-radius: 6px;
@@ -1479,7 +1516,7 @@
 }
 
 .sub-back-btn:hover {
-  background: rgba(156, 123, 63, 0.1);
+  background: color-mix(in srgb, var(--color-brass) 10%, transparent);
   color: var(--color-brass-bright);
 }
 
@@ -1567,15 +1604,15 @@
   font-size: 0.9rem;
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
-  background: rgba(156, 123, 63, 0.02);
-  border: 1px solid rgba(156, 123, 63, 0.05);
+  background: color-mix(in srgb, var(--color-brass) 2%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-brass) 5%, transparent);
 }
 
 .sub-check-icon {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
-  color: var(--color-brass);
+  color: var(--color-brass-bright);
 }
 
 .sub-btn-primary {
@@ -1598,7 +1635,7 @@
 
 .sub-btn-primary:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 25px rgba(156, 123, 63, 0.3);
+  box-shadow: 0 6px 25px color-mix(in srgb, var(--color-brass) 30%, transparent);
 }
 
 .sub-btn-primary:disabled {
@@ -1633,14 +1670,14 @@
 }
 
 .sub-error {
-  background: rgba(110, 31, 31, 0.06);
-  border: 1px solid rgba(110, 31, 31, 0.15);
+  background: color-mix(in srgb, var(--color-danger) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 15%, transparent);
   color: var(--color-danger-text);
 }
 
 .sub-success {
-  background: rgba(156, 123, 63, 0.06);
-  border: 1px solid rgba(156, 123, 63, 0.15);
+  background: color-mix(in srgb, var(--color-brass) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
   color: var(--color-brass-bright);
 }
 
@@ -1661,14 +1698,14 @@
 .sub-card-input-wrapper {
   width: 100%;
   padding: 1rem 1.25rem;
-  border: 1px solid rgba(156, 123, 63, 0.15);
+  border: 1px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
   border-radius: 6px;
-  background: rgba(13, 11, 10, 0.6);
+  background: color-mix(in srgb, var(--color-bg-well) 60%, transparent);
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .sub-card-input-wrapper:focus-within {
-  border-color: rgba(156, 123, 63, 0.4);
+  border-color: color-mix(in srgb, var(--color-brass) 40%, transparent);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
@@ -1752,4 +1789,76 @@
     animation: none;
     display: none;
   }
+}
+
+/* ── Atmosphere (FS-8TCN2 §D) ────────────────────────────────────────────
+   Finish on top of the material layer, built only from tokens so a palette
+   change carries it. Bounds live in docs/design-guideline.md "Material &
+   depth" → Atmosphere. Remove this block and every view still reads. */
+
+/* Blackletter page h1: bone gradient, lit from within. The text fill (not
+   `color`) goes transparent, so `text-primary` stays the solid fallback. */
+h1.font-display {
+  background-image: linear-gradient(
+    180deg,
+    var(--color-primary-bright) 0%,
+    var(--color-primary) 48%,
+    color-mix(in srgb, var(--color-primary) 62%, black) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 28px color-mix(in srgb, var(--color-primary) 35%, transparent))
+    drop-shadow(0 2px 0 rgba(0, 0, 0, 0.6));
+}
+
+/* Hero only: a torch pool behind the title, structure rising from below. */
+.atmo-hero {
+  background:
+    radial-gradient(ellipse 55% 42% at 50% 40%, color-mix(in srgb, var(--color-primary) 16%, transparent) 0%, transparent 70%),
+    radial-gradient(ellipse 90% 60% at 50% 110%, color-mix(in srgb, var(--color-brass) 10%, transparent) 0%, transparent 70%);
+}
+
+/* Section titles are structure, not a second torch. */
+.atmo-section-title {
+  color: var(--color-brass-bright);
+}
+
+/* The one primary CTA per view. Secondary buttons get nothing. */
+.atmo-cta {
+  box-shadow: inset 0 0 0 1px var(--color-primary-bright),
+    0 0 26px color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+
+@supports not (background-clip: text) {
+  h1.font-display {
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+@supports not (color: color-mix(in srgb, red 50%, transparent)) {
+  h1.font-display { filter: none; }
+  .atmo-hero { background: none; }
+  .atmo-cta { box-shadow: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  h1.font-display {
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+    filter: none;
+  }
+  .atmo-hero { background: none; }
+}
+
+@media (forced-colors: active) {
+  h1.font-display {
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+    filter: none;
+  }
+  .atmo-hero { background: none; }
+  .atmo-cta { box-shadow: none; }
+  .atmo-section-title { color: CanvasText; }
 }

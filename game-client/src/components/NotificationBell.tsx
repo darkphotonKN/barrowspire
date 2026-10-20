@@ -212,27 +212,27 @@ export default function NotificationBell() {
           width: 36px;
           height: 36px;
           background: transparent;
-          border: 1px solid rgba(156, 123, 63, 0.2);
+          border: 1px solid color-mix(in srgb, var(--color-brass) 20%, transparent);
           border-radius: 6px;
-          color: rgba(156, 123, 63, 0.7);
+          color: var(--color-brass-bright);
           cursor: pointer;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .notification-bell-trigger:hover {
-          background: rgba(156, 123, 63, 0.05);
-          border-color: var(--color-primary);
-          color: var(--color-primary);
+          background: color-mix(in srgb, var(--color-brass) 5%, transparent);
+          border-color: var(--color-border-strong);
+          color: var(--color-text);
           box-shadow:
-            0 0 20px rgba(156, 123, 63, 0.2),
-            inset 0 0 20px rgba(156, 123, 63, 0.05);
+            0 0 20px color-mix(in srgb, var(--color-brass) 20%, transparent),
+            inset 0 0 20px color-mix(in srgb, var(--color-brass) 5%, transparent);
           transform: translateY(-1px);
         }
 
         .bell-icon {
           width: 18px;
           height: 18px;
-          filter: drop-shadow(0 0 4px rgba(156, 123, 63, 0.3));
+          filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-brass) 30%, transparent));
         }
 
         .notification-count {
@@ -253,7 +253,7 @@ export default function NotificationBell() {
           letter-spacing: 0.03em;
           border: 1.5px solid var(--color-bg-dark);
           box-shadow:
-            0 0 12px rgba(156, 123, 63, 0.6),
+            0 0 12px color-mix(in srgb, var(--color-brass) 60%, transparent),
             0 2px 8px rgba(0, 0, 0, 0.4);
           animation: emberPulse 2s ease-in-out infinite;
         }
@@ -261,12 +261,12 @@ export default function NotificationBell() {
         @keyframes emberPulse {
           0%, 100% {
             box-shadow:
-              0 0 12px rgba(156, 123, 63, 0.6),
+              0 0 12px color-mix(in srgb, var(--color-brass) 60%, transparent),
               0 2px 8px rgba(0, 0, 0, 0.4);
           }
           50% {
             box-shadow:
-              0 0 20px rgba(156, 123, 63, 0.9),
+              0 0 20px color-mix(in srgb, var(--color-brass) 90%, transparent),
               0 2px 12px rgba(0, 0, 0, 0.6);
           }
         }
@@ -277,12 +277,12 @@ export default function NotificationBell() {
           right: 0;
           width: 340px;
           max-height: 480px;
-          background: linear-gradient(145deg, rgba(10, 10, 20, 0.97) 0%, rgba(6, 6, 14, 0.97) 100%);
+          background: linear-gradient(145deg, color-mix(in srgb, var(--color-bg-well) 97%, transparent) 0%, color-mix(in srgb, var(--color-bg-dropdown) 97%, transparent) 100%);
           backdrop-filter: blur(24px) saturate(180%);
-          border: 1px solid rgba(156, 123, 63, 0.2);
+          border: 1px solid color-mix(in srgb, var(--color-brass) 20%, transparent);
           border-radius: 8px;
           box-shadow:
-            0 0 0 1px rgba(156, 123, 63, 0.1),
+            0 0 0 1px color-mix(in srgb, var(--color-brass) 10%, transparent),
             0 8px 32px rgba(0, 0, 0, 0.8);
           animation: dropdownSlide 0.25s cubic-bezier(0.4, 0, 0.2, 1);
           overflow: hidden;
@@ -308,7 +308,7 @@ export default function NotificationBell() {
           height: 1px;
           background: linear-gradient(90deg,
             transparent 0%,
-            rgba(156, 123, 63, 0.4) 50%,
+            color-mix(in srgb, var(--color-brass) 40%, transparent) 50%,
             transparent 100%);
         }
 
@@ -317,8 +317,8 @@ export default function NotificationBell() {
           justify-content: space-between;
           align-items: center;
           padding: 0.875rem 1.125rem;
-          border-bottom: 1px solid rgba(156, 123, 63, 0.08);
-          background: rgba(156, 123, 63, 0.02);
+          border-bottom: 1px solid color-mix(in srgb, var(--color-brass) 8%, transparent);
+          background: color-mix(in srgb, var(--color-brass) 2%, transparent);
         }
 
         .notification-dropdown-header h3 {
@@ -334,8 +334,8 @@ export default function NotificationBell() {
 
         .mark-read-btn {
           background: transparent;
-          border: 1px solid rgba(156, 123, 63, 0.15);
-          color: rgba(156, 123, 63, 0.6);
+          border: 1px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
+          color: var(--color-text-dim);
           font-size: 0.65rem;
           font-weight: 600;
           cursor: pointer;
@@ -347,9 +347,9 @@ export default function NotificationBell() {
         }
 
         .mark-read-btn:hover {
-          background: rgba(156, 123, 63, 0.08);
-          border-color: var(--color-primary);
-          color: var(--color-primary);
+          background: color-mix(in srgb, var(--color-brass) 8%, transparent);
+          border-color: var(--color-border-strong);
+          color: var(--color-brass-bright);
           box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
         }
 
@@ -368,15 +368,15 @@ export default function NotificationBell() {
 
         .notification-list::-webkit-scrollbar-thumb {
           background: linear-gradient(180deg,
-            rgba(156, 123, 63, 0.3) 0%,
-            rgba(156, 123, 63, 0.15) 100%);
+            color-mix(in srgb, var(--color-brass) 30%, transparent) 0%,
+            color-mix(in srgb, var(--color-brass) 15%, transparent) 100%);
           border-radius: 2px;
         }
 
         .notification-list::-webkit-scrollbar-thumb:hover {
           background: linear-gradient(180deg,
-            rgba(156, 123, 63, 0.5) 0%,
-            rgba(156, 123, 63, 0.25) 100%);
+            color-mix(in srgb, var(--color-brass) 50%, transparent) 0%,
+            color-mix(in srgb, var(--color-brass) 25%, transparent) 100%);
         }
 
         .notification-empty {
@@ -388,7 +388,7 @@ export default function NotificationBell() {
           display: flex;
           gap: 0.75rem;
           padding: 0.875rem 1.125rem;
-          border-bottom: 1px solid rgba(156, 123, 63, 0.04);
+          border-bottom: 1px solid color-mix(in srgb, var(--color-brass) 4%, transparent);
           cursor: pointer;
           transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
           position: relative;
@@ -401,8 +401,8 @@ export default function NotificationBell() {
 
         .notification-item.unread {
           background: linear-gradient(90deg,
-            rgba(156, 123, 63, 0.04) 0%,
-            rgba(156, 123, 63, 0.02) 100%);
+            color-mix(in srgb, var(--color-brass) 4%, transparent) 0%,
+            color-mix(in srgb, var(--color-brass) 2%, transparent) 100%);
         }
 
         .notification-item.unread::before {
@@ -414,15 +414,15 @@ export default function NotificationBell() {
           width: 2px;
           background: linear-gradient(180deg,
             var(--color-primary) 0%,
-            rgba(156, 123, 63, 0.4) 100%);
+            color-mix(in srgb, var(--color-brass) 40%, transparent) 100%);
           box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
         }
 
         .notification-item:hover {
           background: linear-gradient(90deg,
-            rgba(156, 123, 63, 0.08) 0%,
-            rgba(156, 123, 63, 0.04) 100%);
-          border-color: rgba(156, 123, 63, 0.1);
+            color-mix(in srgb, var(--color-brass) 8%, transparent) 0%,
+            color-mix(in srgb, var(--color-brass) 4%, transparent) 100%);
+          border-color: color-mix(in srgb, var(--color-brass) 10%, transparent);
         }
 
         .notification-icon {
@@ -433,10 +433,10 @@ export default function NotificationBell() {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: rgba(156, 123, 63, 0.06);
+          background: color-mix(in srgb, var(--color-brass) 6%, transparent);
           border-radius: 6px;
-          border: 1px solid rgba(156, 123, 63, 0.15);
-          filter: drop-shadow(0 0 6px rgba(156, 123, 63, 0.2));
+          border: 1px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
+          filter: drop-shadow(0 0 6px color-mix(in srgb, var(--color-brass) 20%, transparent));
         }
 
         .notification-content {
@@ -455,14 +455,14 @@ export default function NotificationBell() {
         .notification-title {
           font-size: 0.8rem;
           font-weight: 600;
-          color: rgba(255, 255, 255, 0.9);
+          color: var(--color-text);
           letter-spacing: 0.01em;
           line-height: 1.3;
         }
 
         .notification-time {
           font-size: 0.65rem;
-          color: rgba(156, 123, 63, 0.5);
+          color: var(--color-text-muted);
           white-space: nowrap;
           flex-shrink: 0;
           letter-spacing: 0.05em;
@@ -472,7 +472,7 @@ export default function NotificationBell() {
 
         .notification-message {
           font-size: 0.75rem;
-          color: rgba(255, 255, 255, 0.5);
+          color: var(--color-text-dim);
           margin: 0;
           line-height: 1.5;
           overflow: hidden;

@@ -35,6 +35,16 @@ else
 	exit 1
 fi
 
+echo "→ the token fence must REJECT a non-neutral rgba() in TS/TSX (ADR-0013, FS-8TCN2)"
+out=$(npx next lint --file lint-fixtures/raw-rgba.tsx 2>&1)
+if printf '%s' "${out}" | grep -q 'no-restricted-syntax'; then
+	echo "  ok: fixture rejected"
+else
+	echo "❌ the fence did NOT reject lint-fixtures/raw-rgba.tsx: palette triples pass unchecked"
+	printf '%s\n' "${out}" | sed 's/^/    /'
+	exit 1
+fi
+
 echo "→ the token fence must REJECT a raw hex in CSS outside :root (ADR-0013)"
 if ./scripts-check-css-tokens.sh lint-fixtures/raw-hex-css.css >/dev/null 2>&1; then
 	echo "❌ the CSS fence did NOT reject lint-fixtures/raw-hex-css.css — it enforces nothing"
@@ -44,9 +54,16 @@ if ./scripts-check-css-tokens.sh lint-fixtures/raw-hex-css.css >/dev/null 2>&1; 
 fi
 echo "  ok — fixture rejected"
 
+echo "→ the token fence must REJECT a non-neutral rgba() in CSS outside :root (ADR-0013, FS-8TCN2)"
+if ./scripts-check-css-tokens.sh lint-fixtures/raw-rgba-css.css >/dev/null 2>&1; then
+	echo "❌ the CSS fence did NOT reject lint-fixtures/raw-rgba-css.css: palette triples pass unchecked"
+	exit 1
+fi
+echo "  ok: fixture rejected"
+
 echo "→ the CSS token fence must ACCEPT globals.css"
 if ! out=$(./scripts-check-css-tokens.sh src/app/globals.css 2>&1); then
-	echo "❌ globals.css carries a raw hex outside :root:"
+	echo "❌ globals.css carries a raw hex or non-neutral rgba outside :root:"
 	printf '%s\n' "${out}" | sed 's/^/    /'
 	exit 1
 fi

@@ -185,8 +185,8 @@ export default function LeaderboardPage() {
           content: "";
           position: absolute;
           inset: 0;
-          background-image: radial-gradient(circle at 20% 50%, rgba(156, 123, 63, 0.04) 0%, transparent 50%),
-                            radial-gradient(circle at 80% 80%, rgba(111, 143, 74, 0.03) 0%, transparent 50%);
+          background-image: radial-gradient(circle at 20% 50%, color-mix(in srgb, var(--color-brass) 4%, transparent) 0%, transparent 50%),
+                            radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--color-accent) 3%, transparent) 0%, transparent 50%);
         }
 
         .leaderboard-header {
@@ -199,9 +199,9 @@ export default function LeaderboardPage() {
 
         .leaderboard-back-btn {
           padding: 0.5rem 1rem;
-          background: rgba(156, 123, 63, 0.05);
+          background: color-mix(in srgb, var(--color-brass) 5%, transparent);
           color: var(--color-text-dim);
-          border: 1px solid rgba(156, 123, 63, 0.15);
+          border: 1px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
           border-radius: 6px;
           font-size: 0.85rem;
           cursor: pointer;
@@ -210,9 +210,9 @@ export default function LeaderboardPage() {
         }
 
         .leaderboard-back-btn:hover {
-          background: rgba(156, 123, 63, 0.1);
+          background: color-mix(in srgb, var(--color-brass) 10%, transparent);
           color: var(--color-brass-bright);
-          border-color: rgba(156, 123, 63, 0.3);
+          border-color: color-mix(in srgb, var(--color-brass) 30%, transparent);
         }
 
         .leaderboard-title {
@@ -226,11 +226,11 @@ export default function LeaderboardPage() {
         .leaderboard-content {
           max-width: 1000px;
           margin: 0 auto;
-          background: rgba(10, 10, 20, 0.85);
+          background: color-mix(in srgb, var(--color-bg-well) 85%, transparent);
           backdrop-filter: blur(10px);
           border-radius: 10px;
           padding: 2rem;
-          border: 1px solid rgba(156, 123, 63, 0.1);
+          border: 1px solid color-mix(in srgb, var(--color-brass) 10%, transparent);
         }
 
         .leaderboard-loading,
@@ -249,7 +249,7 @@ export default function LeaderboardPage() {
         .loading-spinner {
           width: 48px;
           height: 48px;
-          border: 2px solid rgba(156, 123, 63, 0.1);
+          border: 2px solid color-mix(in srgb, var(--color-brass) 10%, transparent);
           border-left-color: var(--color-brass-bright);
           border-radius: 50%;
           animation: spin 1s linear infinite;
@@ -261,9 +261,9 @@ export default function LeaderboardPage() {
 
         .retry-btn {
           padding: 0.5rem 1.5rem;
-          background: rgba(156, 123, 63, 0.1);
+          background: color-mix(in srgb, var(--color-brass) 10%, transparent);
           color: var(--color-brass-bright);
-          border: 1px solid rgba(156, 123, 63, 0.2);
+          border: 1px solid color-mix(in srgb, var(--color-brass) 20%, transparent);
           border-radius: 6px;
           cursor: pointer;
           transition: all 0.3s ease;
@@ -273,8 +273,8 @@ export default function LeaderboardPage() {
         }
 
         .retry-btn:hover {
-          background: rgba(156, 123, 63, 0.15);
-          border-color: rgba(156, 123, 63, 0.4);
+          background: color-mix(in srgb, var(--color-brass) 15%, transparent);
+          border-color: color-mix(in srgb, var(--color-brass) 40%, transparent);
         }
 
         .leaderboard-table {
@@ -287,7 +287,7 @@ export default function LeaderboardPage() {
           display: grid;
           grid-template-columns: 100px 1fr 100px 100px;
           padding: 1rem;
-          background: rgba(156, 123, 63, 0.03);
+          background: color-mix(in srgb, var(--color-brass) 3%, transparent);
           border-radius: 6px;
           color: var(--color-text-muted);
           font-size: 0.75rem;
@@ -307,23 +307,23 @@ export default function LeaderboardPage() {
         }
 
         .leaderboard-row:hover {
-          background: rgba(156, 123, 63, 0.03);
-          border-color: rgba(156, 123, 63, 0.08);
+          background: color-mix(in srgb, var(--color-brass) 3%, transparent);
+          border-color: color-mix(in srgb, var(--color-brass) 8%, transparent);
         }
 
         .leaderboard-row.top-1 {
-          background: linear-gradient(90deg, rgba(156, 123, 63, 0.06) 0%, transparent 100%);
-          border-color: rgba(156, 123, 63, 0.15);
+          background: linear-gradient(90deg, color-mix(in srgb, var(--color-brass) 6%, transparent) 0%, transparent 100%);
+          border-color: color-mix(in srgb, var(--color-brass) 15%, transparent);
         }
 
         .leaderboard-row.top-2 {
-          background: linear-gradient(90deg, rgba(111, 143, 74, 0.04) 0%, transparent 100%);
-          border-color: rgba(111, 143, 74, 0.1);
+          background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 4%, transparent) 0%, transparent 100%);
+          border-color: color-mix(in srgb, var(--color-accent) 10%, transparent);
         }
 
         .leaderboard-row.top-3 {
-          background: linear-gradient(90deg, rgba(156, 123, 63, 0.03) 0%, transparent 100%);
-          border-color: rgba(156, 123, 63, 0.08);
+          background: linear-gradient(90deg, color-mix(in srgb, var(--color-brass) 3%, transparent) 0%, transparent 100%);
+          border-color: color-mix(in srgb, var(--color-brass) 8%, transparent);
         }
 
         .leaderboard-col {
@@ -368,20 +368,20 @@ export default function LeaderboardPage() {
 
         .rank-badge-1 {
           color: var(--color-brass-bright);
-          background: rgba(156, 123, 63, 0.1);
-          border: 1px solid rgba(156, 123, 63, 0.2);
+          background: color-mix(in srgb, var(--color-brass) 10%, transparent);
+          border: 1px solid color-mix(in srgb, var(--color-brass) 20%, transparent);
         }
 
         .rank-badge-2 {
           color: var(--color-accent);
-          background: rgba(111, 143, 74, 0.1);
-          border: 1px solid rgba(111, 143, 74, 0.2);
+          background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+          border: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
         }
 
         .rank-badge-3 {
           color: var(--color-text-dim);
-          background: rgba(85, 102, 119, 0.1);
-          border: 1px solid rgba(85, 102, 119, 0.2);
+          background: color-mix(in srgb, var(--color-text-dim) 10%, transparent);
+          border: 1px solid color-mix(in srgb, var(--color-text-dim) 20%, transparent);
         }
 
         .player-info {
@@ -395,7 +395,7 @@ export default function LeaderboardPage() {
           height: 36px;
           border-radius: 50%;
           overflow: hidden;
-          border: 1px solid rgba(156, 123, 63, 0.15);
+          border: 1px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
         }
 
         .avatar-img {
@@ -407,7 +407,7 @@ export default function LeaderboardPage() {
         .avatar-placeholder {
           width: 100%;
           height: 100%;
-          background: rgba(156, 123, 63, 0.06);
+          background: color-mix(in srgb, var(--color-brass) 6%, transparent);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -440,9 +440,9 @@ export default function LeaderboardPage() {
 
         .pagination-btn {
           padding: 0.5rem 1rem;
-          background: rgba(156, 123, 63, 0.05);
+          background: color-mix(in srgb, var(--color-brass) 5%, transparent);
           color: var(--color-text-dim);
-          border: 1px solid rgba(156, 123, 63, 0.1);
+          border: 1px solid color-mix(in srgb, var(--color-brass) 10%, transparent);
           border-radius: 6px;
           cursor: pointer;
           transition: all 0.3s ease;
@@ -452,9 +452,9 @@ export default function LeaderboardPage() {
         }
 
         .pagination-btn:hover:not(:disabled) {
-          background: rgba(156, 123, 63, 0.1);
+          background: color-mix(in srgb, var(--color-brass) 10%, transparent);
           color: var(--color-brass-bright);
-          border-color: rgba(156, 123, 63, 0.2);
+          border-color: color-mix(in srgb, var(--color-brass) 20%, transparent);
         }
 
         .pagination-btn:disabled {

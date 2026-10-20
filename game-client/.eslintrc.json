@@ -9,11 +9,19 @@
       },
       {
         "selector": "Literal[value=/#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\\b/]",
-        "message": "Raw hex colour is banned outside the two definition sites (ADR-0013). Colour is defined once in src/app/globals.css :root and src/utils/theme.ts, and referenced everywhere else: var(--color-*) in CSS/styled-jsx, BARROW/BARROW_HEX in TS. A new colour is a token in BOTH files first, then referenced. This covers inline style={{}} objects and third-party theme configs (Stripe Elements) too, which no CSS-only rule would reach."
+        "message": "Raw hex colour is banned outside the two definition sites (ADR-0013). Colour is defined once in src/app/globals.css :root and src/utils/theme.ts, and referenced everywhere else: var(--color-*) in CSS/styled-jsx, the UI table in DOM TS, BARROW/BARROW_HEX in Phaser TS (ADR-0025: DOM never reads BARROW). A new UI colour is a :root token and a UI-table entry first, then referenced. This covers inline style={{}} objects and third-party theme configs (Stripe Elements) too, which no CSS-only rule would reach."
       },
       {
         "selector": "TemplateElement[value.raw=/#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\\b/]",
-        "message": "Raw hex colour is banned outside the two definition sites (ADR-0013) — including inside template literals and styled-jsx blocks. Use var(--color-*) or BARROW.*."
+        "message": "Raw hex colour is banned outside the two definition sites (ADR-0013) — including inside template literals and styled-jsx blocks. Use var(--color-*), or UI.* where a literal is unavoidable (BARROW.* in Phaser code only)."
+      },
+      {
+        "selector": "Literal[value=/rgba?\\(\\s*(?!(?:0[\\s,]+0[\\s,]+0|255[\\s,]+255[\\s,]+255)[\\s,)])\\d/]",
+        "message": "Raw non-neutral rgb()/rgba() colour is banned outside the token definitions (ADR-0013, FS-8TCN2 slice 2). A palette triple typed at the call site does not move when the palette does. Derive it from a token instead: color-mix(in srgb, var(--color-brass) 15%, transparent) for an alpha variant, or add a token to globals.css :root first. Neutral black and white (0,0,0 / 255,255,255) may stay literal."
+      },
+      {
+        "selector": "TemplateElement[value.raw=/rgba?\\(\\s*(?!(?:0[\\s,]+0[\\s,]+0|255[\\s,]+255[\\s,]+255)[\\s,)])\\d/]",
+        "message": "Raw non-neutral rgb()/rgba() colour is banned outside the token definitions (ADR-0013, FS-8TCN2 slice 2), including inside template literals and styled-jsx blocks. Use color-mix(in srgb, var(--color-*) N%, transparent) or a token."
       }
     ]
   },

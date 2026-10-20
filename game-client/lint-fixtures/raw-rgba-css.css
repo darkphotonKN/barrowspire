@@ -1,0 +1,7 @@
+/* FIXTURE: must be REJECTED by the CSS half of the token fence (ADR-0013,
+   FS-8TCN2 slice 2). A non-neutral rgba triple outside globals.css :root, on
+   a line that also carries a neutral one, so stripping neutrals cannot hide
+   it. Not imported by anything. */
+.some-view-class {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 0 18px rgba(156, 123, 63, 0.22);
+}

@@ -2,14 +2,16 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 
-import { BARROW } from '@/utils/theme';
+import { UI } from '@/utils/theme';
 
-/** Ember tone, as an `r, g, b` triple for canvas rgba(). Derived from the
- *  palette rather than restated — ADR-0013 applies to canvas too. */
+/** Mote tone, as an `r, g, b` triple for canvas rgba(). Derived from the
+ *  palette rather than restated — ADR-0013 applies to canvas too. This canvas
+ *  is web UI (the /portal page), not the game, so it reads the UI table and
+ *  never BARROW (ADR-0025): the motes are bone ash off the bone torch. */
 const EMBER_RGB = [
-  parseInt(BARROW.amber.slice(1, 3), 16),
-  parseInt(BARROW.amber.slice(3, 5), 16),
-  parseInt(BARROW.amber.slice(5, 7), 16),
+  parseInt(UI.primary.slice(1, 3), 16),
+  parseInt(UI.primary.slice(3, 5), 16),
+  parseInt(UI.primary.slice(5, 7), 16),
 ].join(', ');
 
 interface Particle {
@@ -80,7 +82,7 @@ export default function ParticleText() {
     const fontSize = Math.min(w / 6, 140);
     const lineGap = fontSize * 0.15;
 
-    offCtx.fillStyle = BARROW.vellum;
+    offCtx.fillStyle = UI.text;
     offCtx.font = `${fontSize}px ${fontFamily}, Georgia, serif`;
     offCtx.textAlign = 'center';
     offCtx.textBaseline = 'middle';
@@ -92,7 +94,7 @@ export default function ParticleText() {
     const data = imageData.data;
     const particles: Particle[] = [];
     const gap = Math.max(3, Math.floor(Math.min(w, h) / 250));
-    const colors = [BARROW.amber, BARROW.brassBright, BARROW.ember];
+    const colors = [UI.primary, UI.primaryBright, UI.brassBright];
 
     for (let y = 0; y < h; y += gap) {
       for (let x = 0; x < w; x += gap) {
