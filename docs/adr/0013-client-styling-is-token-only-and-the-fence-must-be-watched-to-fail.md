@@ -5,6 +5,7 @@ Date: 2026-08-28
 Scope: `game-client` — both the DOM styling layer (`src/app/globals.css`, components) and the
 Phaser layer (`src/scenes/**`), which are two forms of one palette
 Realized by: FS-SWMNW (web platform reskin), FS-W6BP1 (game canvas reskin)
+Amended by: [ADR-0025](0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md) — the "two forms of one palette, must agree" clause (the web UI and the game canvas now have separate palettes)
 
 ## Context
 
