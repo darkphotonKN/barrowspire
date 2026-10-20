@@ -7,6 +7,7 @@ import { XMarkIcon } from "@heroicons/react/24/outline";
 import { v4 as uuid } from "uuid";
 import ItemIcon from "@/components/ItemIcon";
 import RarityBadge from "@/components/RarityBadge";
+import SellerBlock from "@/components/bazaar/SellerBlock";
 import { useDialogFocus } from "@/components/bazaar/useDialogFocus";
 import type { ItemLines } from "@/items/itemLines";
 import {
@@ -175,7 +176,11 @@ export default function ListingDetailDialog({
             Sign in to bid
           </Link>
         )}
-        {panel === "own" && <p className="text-center text-vellum-dim">Your listing</p>}
+        {/* Mounted for the seller whatever the panel, so Sell's answer outlives the re-read that
+            ends the sale; it offers nothing unless the panel is "own" (FS-49Z37 req 13). */}
+        {memberId !== undefined && memberId === listing.sellerId && (
+          <SellerBlock listing={listing} memberId={memberId} now={now} refresh={refresh} />
+        )}
         {/* One mount for "bid" and "closed", so the box keeps its answer as the auction ends. */}
         {(panel === "bid" || panel === "closed") && (
           <BidBox listing={listing} ended={panel === "closed"} refresh={refresh} />
