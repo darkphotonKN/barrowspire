@@ -183,3 +183,47 @@ func TestListingRepository_WithdrawnLeaderIsReplacedByTheEarlierRunnerUp(t *test
 	assert.Equal(t, listing.BidStatusCancelled, statuses[leader])
 	assert.Equal(t, listing.BidStatusWinning, statuses[runnerUp])
 }
+
+// ADR-0029: a withdrawn outbid bid is written CANCELLED and the leader is left as
+// it was.
+func TestListingRepository_WithdrawnOutbidBidPersists(t *testing.T) {
+	db := repositoryDB(t)
+	repo := NewListingRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	l, err := listing.NewListing(uuid.New(), uuid.New(), uuid.New(), 100, nil, now, now.Add(time.Hour))
+	require.NoError(t, err)
+	require.NoError(t, repo.Insert(ctx, l))
+	id := l.Snapshot().ID
+
+	outbid, outbidMember, leader := uuid.New(), uuid.New(), uuid.New()
+	require.NoError(t, repo.Update(ctx, id, func(l *listing.Listing) error {
+		if err := l.PlaceBidWithID(outbid, outbidMember, 120, uuid.New(), now); err != nil {
+			return err
+		}
+		return l.ConfirmBid(outbid, now)
+	}))
+	require.NoError(t, repo.Update(ctx, id, func(l *listing.Listing) error {
+		if err := l.PlaceBidWithID(leader, uuid.New(), 150, uuid.New(), now.Add(time.Second)); err != nil {
+			return err
+		}
+		return l.ConfirmBid(leader, now.Add(time.Second))
+	}))
+
+	// the WithdrawBidUC path: an OCC read, the domain change, Save
+	current, err := repo.FindByID(ctx, id)
+	require.NoError(t, err)
+	before := current.Snapshot()
+	require.NoError(t, current.WithdrawBid(outbid, outbidMember, now.Add(time.Minute)))
+	require.NoError(t, repo.Save(ctx, current, before))
+
+	got, err := repo.FindByID(ctx, id)
+	require.NoError(t, err)
+	statuses := map[uuid.UUID]listing.BidStatus{}
+	for _, b := range got.Snapshot().Bids {
+		statuses[b.ID] = b.Status
+	}
+	assert.Equal(t, listing.BidStatusCancelled, statuses[outbid])
+	assert.Equal(t, listing.BidStatusWinning, statuses[leader])
+}
