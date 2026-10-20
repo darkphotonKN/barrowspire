@@ -66,6 +66,7 @@ server state and sends intents. ✅
 ### Presentation
 
 - [ ] Fantasy-medieval presentation on the web platform → FS-SWMNW
+- [ ] Bone & Soot presentation on the web platform → FS-8TCN2
 - [ ] Fantasy-medieval presentation in the game canvas → FS-W6BP1
 - [x] Isometric projection of the game world → FS-2325V
 - [x] Pre-rendered world and prop art → FS-2325V
