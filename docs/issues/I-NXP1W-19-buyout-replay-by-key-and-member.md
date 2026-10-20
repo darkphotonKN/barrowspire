@@ -1,6 +1,6 @@
 ---
 id: I-NXP1W-19
-status: open
+status: done
 implements: FS-NXP1W
 blocked_by: [I-NXP1W-18]
 labels: []
@@ -40,8 +40,9 @@ Layers:
     under the lock wrote nothing, and its hold backs nothing: release it at once, as PlaceBid does
     for a deduplicated replay. Do not leave it for the reconciler's 10-minute grace.
   - Retire `BuyoutBidID(member, listing)` and its test.
-- **grpc** (`grpc/handler.go`): parse `idempotency_key`. Empty → `uuid.Nil`; malformed →
-  `InvalidArgument`, as PlaceBid does.
+- **grpc** (`grpc/handler.go`): parse `idempotency_key`. Empty or malformed → `uuid.Nil`, as
+  PlaceBid does (corrected during /develop: PlaceBid treats a malformed key as no key, not as
+  `InvalidArgument`; the gateway's `format:"uuid"` already answers it with 422).
 - **gateway** (`listing/typed.go`): `Idempotency-Key` header on `buyout`, `format:"uuid"`, optional,
   same doc as place-bid's. Rewrite the description's 409 sentence: `409 · ALREADY_EXISTS` now means
   this key's earlier attempt was abandoned and its gold returned, so **send a new key**, not

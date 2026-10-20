@@ -986,11 +986,15 @@ func (*AcceptBidResponse) Descriptor() ([]byte, []int) {
 // the gold the buyer agreed to; it must equal the listing's buyout price, and
 // the gold held is always that price, never this field.
 type BuyoutRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ListingId     string                 `protobuf:"bytes,1,opt,name=listing_id,json=listingId,proto3" json:"listing_id,omitempty"`
-	Amount        int64                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ListingId string                 `protobuf:"bytes,1,opt,name=listing_id,json=listingId,proto3" json:"listing_id,omitempty"`
+	Amount    int64                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	// Idempotency key for safe retries, minted once per buyout intent and reused
+	// on every resend of it. Optional; without one a resend is still recognised
+	// by the buyer's own buyout on the listing, but holds gold again first.
+	IdempotencyKey string `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *BuyoutRequest) Reset() {
@@ -1035,6 +1039,13 @@ func (x *BuyoutRequest) GetAmount() int64 {
 		return x.Amount
 	}
 	return 0
+}
+
+func (x *BuyoutRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
 }
 
 type BuyoutResponse struct {
@@ -1164,11 +1175,12 @@ const file_api_proto_marketplace_marketplace_proto_rawDesc = "" +
 	"\x10AcceptBidRequest\x12\x1d\n" +
 	"\n" +
 	"listing_id\x18\x01 \x01(\tR\tlistingId\"\x13\n" +
-	"\x11AcceptBidResponse\"F\n" +
+	"\x11AcceptBidResponse\"o\n" +
 	"\rBuyoutRequest\x12\x1d\n" +
 	"\n" +
 	"listing_id\x18\x01 \x01(\tR\tlistingId\x12\x16\n" +
-	"\x06amount\x18\x02 \x01(\x03R\x06amount\"\x10\n" +
+	"\x06amount\x18\x02 \x01(\x03R\x06amount\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"\x10\n" +
 	"\x0eBuyoutResponse2\x9c\x05\n" +
 	"\x12MarketplaceService\x12I\n" +
 	"\bListItem\x12\x1c.marketplace.ListItemRequest\x1a\x1d.marketplace.ListItemResponse\"\x00\x12[\n" +

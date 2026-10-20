@@ -197,11 +197,19 @@ func (h *Handler) Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.Buyout
 		return nil, status.Error(codes.Unauthenticated, "missing identity")
 	}
 
+	// Optional, as for PlaceBid: an absent or malformed key means "no key", and the
+	// buyout is still recognised on resend by the buyer's own buyout (ADR-0026).
+	idempotencyKey, err := uuid.Parse(req.GetIdempotencyKey())
+	if err != nil {
+		idempotencyKey = uuid.Nil
+	}
+
 	if err := h.buyout.Handle(ctx, usecase.BuyoutCommand{
-		ListingID: listingID,
-		MemberID:  memberID,
-		Amount:    int(req.GetAmount()),
-		Now:       time.Now(),
+		ListingID:      listingID,
+		MemberID:       memberID,
+		Amount:         int(req.GetAmount()),
+		IdempotencyKey: idempotencyKey,
+		Now:            time.Now(),
 	}); err != nil {
 		return nil, mapError(ctx, err)
 	}

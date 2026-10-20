@@ -265,15 +265,19 @@ func registerAcceptBid(api huma.API, h *Handler,
 	}))
 }
 
-// Unlike place-bid there is no Idempotency-Key: marketplace derives the bid ID
-// from buyer and listing, so a repeat is recognised without anything from the
-// caller. The amount is the buyer's agreement only; marketplace charges the
-// listing's own buyout price.
+// Idempotency-Key works as for place-bid, and a resend that lost its key is still
+// recognised by the buyer's own buyout (ADR-0026). The amount is the buyer's
+// agreement only; marketplace charges the listing's own buyout price.
 func registerBuyout(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)),
 ) {
 	type input struct {
 		ListingID string `path:"listing_id" format:"uuid"`
+
+		// Minted by the client once per buyout and resent unchanged on every retry
+		// of it. Optional, matching marketplace: without one a retry is still
+		// recognised by the buyer's own buyout, but holds gold again first.
+		IdempotencyKey string `header:"Idempotency-Key" format:"uuid" doc:"Client-generated per buyout and reused on every retry of it, so a retried buyout is recognised instead of holding gold again. Optional."`
 
 		// Read only to forward downstream: marketplace takes the buyer from this
 		// token. Hidden because the bearer scheme documents it.
@@ -291,8 +295,8 @@ func registerBuyout(api huma.API, h *Handler,
 			"Answers once settlement has started; the sale completes asynchronously. Repeating it is safe: a " +
 			"buyout already made is not made twice. Refused for an amount that is not the buyout price, the " +
 			"seller, a closed auction, a listing with no buyout price, or a buyer short of gold. " +
-			"409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means this member's " +
-			"earlier buyout of the listing was abandoned and its gold returned, and retrying will not help.",
+			"409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means the attempt " +
+			"under this Idempotency-Key was abandoned and its gold returned: buy again with a new key.",
 		DefaultStatus: http.StatusAccepted,
 		Errors: []int{
 			http.StatusBadRequest,
@@ -312,8 +316,9 @@ func registerBuyout(api huma.API, h *Handler,
 		Tags:        []string{"marketplace"},
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
 		_, err := h.client.Buyout(withBearer(ctx, in.Authorization), &pb.BuyoutRequest{
-			ListingId: in.ListingID,
-			Amount:    in.Body.Amount,
+			ListingId:      in.ListingID,
+			Amount:         in.Body.Amount,
+			IdempotencyKey: in.IdempotencyKey,
 		})
 		if err != nil {
 			return nil, err

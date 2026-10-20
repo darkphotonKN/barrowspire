@@ -277,6 +277,19 @@ func (l *Listing) HasBid(bidID uuid.UUID) bool {
 	return l.findBidByID(bidID) != nil
 }
 
+// HasBuyoutBy reports whether memberID has already bought this listing out. A
+// listing takes one buyout, so this is how a resend under a different bid ID,
+// or none, is recognised as the same buyout (ADR-0026).
+func (l *Listing) HasBuyoutBy(memberID uuid.UUID) bool {
+	for _, bid := range l.bids {
+		if bid.bidType == BidTypeBuyout && bid.memberID == memberID {
+			return true
+		}
+	}
+
+	return false
+}
+
 // ConfirmBid promotes a bid once wallet reports its hold is in place, demoting
 // whoever was leading, unless a higher bid confirmed first, in which case this
 // one is marked OUTBID instead. This is the step that must not simply fail: the bidder's
@@ -495,13 +508,14 @@ func (l *Listing) CanBuyout(memberID uuid.UUID, amount int, now time.Time) error
 // leader is demoted, and from here the listing refuses every further bid change
 // (acceptingBidChanges) until settlement freezes it.
 //
-// bidID is minted by the caller and is what the gold is held against, which
-// makes a retry recognisable: a bid already present is a replay and succeeds
-// before any rule is checked, since the first attempt may already have started
-// the settlement that froze the listing. That includes the amount check: the
-// first attempt passed it, and the bid is recorded at the buyout price.
+// bidID is minted by the caller and is what the gold is held against. A replay
+// succeeds before any rule is checked, since the first attempt may already have
+// started the settlement that froze the listing: the same bidID, or a buyout by
+// the same member under any bidID (ADR-0026). A replay under a new bidID records
+// nothing, so its caller's hold backs no bid. That includes the amount check:
+// the first attempt passed it, and the bid is recorded at the buyout price.
 func (l *Listing) Buyout(bidID, memberID uuid.UUID, amount int, now time.Time) error {
-	if l.findBidByID(bidID) != nil {
+	if l.findBidByID(bidID) != nil || l.HasBuyoutBy(memberID) {
 		return nil
 	}
 

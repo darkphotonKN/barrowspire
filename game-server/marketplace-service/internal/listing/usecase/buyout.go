@@ -11,16 +11,24 @@ import (
 	"github.com/google/uuid"
 )
 
-// buyoutBidNamespace scopes BuyoutBidID. Fixed forever: changing it would give
-// a retry a different bid ID than its first attempt, and a second hold.
-var buyoutBidNamespace = uuid.MustParse("d3f7b4f4-0d3e-438a-820b-58aa5b87c594")
+// errBuyoutAlreadyRecorded is why a hold is released when the buyer's own
+// buyout, under another ID, was already on the listing. Logged, never returned:
+// the buyout succeeded.
+var errBuyoutAlreadyRecorded = errors.New("buyer's buyout already recorded under another bid ID")
 
-// BuyoutBidID is the bid a member's buyout of a listing is recorded and held
-// under. Deterministic, so a retry finds the hold and the bid its first attempt
-// made instead of making new ones. A member can buy a given listing out once,
-// which is all a listing allows anyway.
-func BuyoutBidID(memberID, listingID uuid.UUID) uuid.UUID {
-	return uuid.NewSHA1(buyoutBidNamespace, []byte(memberID.String()+":"+listingID.String()))
+// buyoutBidNamespace scopes BuyoutBidID. Fixed forever: changing it would give
+// a resend a different bid ID than its first attempt, and a second hold. Not the
+// namespace ADR-0025 used, whose IDs carried no key.
+var buyoutBidNamespace = uuid.MustParse("9fc9a2e4-2e6e-4606-a9a8-20f7e95b8830")
+
+// BuyoutBidID is the bid a keyed buyout is recorded and held under, so a resend
+// of the same intent finds the hold and the bid its first attempt made instead
+// of making new ones (ADR-0026). The key, not the buyer and listing alone, is
+// what makes it one intent: a buyer whose earlier attempt was abandoned and its
+// hold released needs a fresh ID to try again, and gets one with a new key.
+func BuyoutBidID(memberID, listingID, idempotencyKey uuid.UUID) uuid.UUID {
+	return uuid.NewSHA1(buyoutBidNamespace,
+		[]byte(memberID.String()+":"+listingID.String()+":"+idempotencyKey.String()))
 }
 
 // BuyoutUC is the Buyout settlement trigger (FS-NXP1W §Req 4): a member buys
@@ -51,10 +59,11 @@ func NewBuyoutUC(repo listing.Repository, wallet WalletService, settlementStarte
 // Amount is what the buyer agreed to pay, checked against the buyout price. It
 // never prices the hold: a buyout always costs the listing's buyout price.
 type BuyoutCommand struct {
-	ListingID uuid.UUID
-	MemberID  uuid.UUID
-	Amount    int
-	Now       time.Time
+	ListingID      uuid.UUID
+	MemberID       uuid.UUID
+	Amount         int
+	IdempotencyKey uuid.UUID
+	Now            time.Time
 }
 
 func (uc *BuyoutUC) Handle(ctx context.Context, cmd BuyoutCommand) error {
@@ -66,11 +75,18 @@ func (uc *BuyoutUC) Handle(ctx context.Context, cmd BuyoutCommand) error {
 		return fmt.Errorf("buyout usecase reading listing %v : %w", cmd.ListingID, err)
 	}
 
-	bidID := BuyoutBidID(cmd.MemberID, cmd.ListingID)
+	// without a key a resend cannot be told from a new intent by its ID, only by
+	// the buyer's own buyout on the listing below
+	bidID := uuid.New()
+	if cmd.IdempotencyKey != uuid.Nil {
+		bidID = BuyoutBidID(cmd.MemberID, cmd.ListingID, cmd.IdempotencyKey)
+	}
 
 	// A buyout that already landed is a replay, whatever the listing looks like
-	// now: its own settlement may have frozen it. Skip straight to the start.
-	if !current.HasBid(bidID) {
+	// now: its own settlement may have frozen it. Skip straight to the start. The
+	// buyer's own buyout counts whatever its ID, so a resend that lost its key, or
+	// had none, holds no gold either (ADR-0026).
+	if !current.HasBid(bidID) && !current.HasBuyoutBy(cmd.MemberID) {
 		if err := uc.holdAndRecord(ctx, current, bidID, cmd); err != nil {
 			return err
 		}
@@ -108,10 +124,21 @@ func (uc *BuyoutUC) holdAndRecord(ctx context.Context, current *listing.Listing,
 		return fmt.Errorf("buyout usecase placing hold for bid %v : %w", bidID, err)
 	}
 
+	// Set inside the closure: whether this call's bid is on the listing. The
+	// buyer's own buyout under another ID is a replay that writes nothing, and
+	// the gold just held for this ID then backs no bid.
+	var recorded bool
 	err := uc.repo.Update(ctx, cmd.ListingID, func(l *listing.Listing) error {
-		return l.Buyout(bidID, cmd.MemberID, cmd.Amount, cmd.Now)
+		if err := l.Buyout(bidID, cmd.MemberID, cmd.Amount, cmd.Now); err != nil {
+			return err
+		}
+		recorded = l.HasBid(bidID)
+		return nil
 	})
 	if err == nil {
+		if !recorded {
+			uc.releaseHold(ctx, bidID, cmd.ListingID, errBuyoutAlreadyRecorded)
+		}
 		return nil
 	}
 
@@ -126,19 +153,20 @@ func (uc *BuyoutUC) holdAndRecord(ctx context.Context, current *listing.Listing,
 	return fmt.Errorf("buyout usecase recording bid %v : %w", bidID, err)
 }
 
-// releaseHold starts giving back the gold of a buyout the listing refused. The run
+// releaseHold starts giving back gold held for a buyout that backs no bid: the
+// listing refused it, or the buyer's buyout was already there under another ID. The run
 // retries the release until it lands, so this only starts it, once. Detached from
 // the request's cancellation for the same reason PlaceBid's compensation is: a
 // dropped request must not strand the gold.
-func (uc *BuyoutUC) releaseHold(ctx context.Context, bidID, listingID uuid.UUID, refusal error) {
+func (uc *BuyoutUC) releaseHold(ctx context.Context, bidID, listingID uuid.UUID, cause error) {
 	startCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), compensationTimeout)
 	defer cancel()
 
 	if err := uc.holdRelease.StartReleaseHold(startCtx, listingID, bidID); err != nil {
-		// deliberately not returned: the buyer needs to hear why the buyout failed,
-		// not why the cleanup did
-		slog.ErrorContext(ctx, "buyout refused and starting its hold release failed, hold is stranded until reconciled",
-			"bid_id", bidID, "listing_id", listingID, "release_err", err, "err", refusal)
+		// deliberately not returned: the buyer needs to hear how the buyout went,
+		// not how the cleanup did
+		slog.ErrorContext(ctx, "buyout hold backs no bid and starting its release failed, hold is stranded until reconciled",
+			"bid_id", bidID, "listing_id", listingID, "release_err", err, "cause", cause)
 	}
 }
 

@@ -164,6 +164,10 @@ message AcceptBidResponse {}
 message BuyoutRequest {
   string listing_id = 1;
   int64  amount     = 2;
+  // Idempotency key for safe retries, minted once per buyout intent and reused
+  // on every resend of it. Optional; without one a resend is still recognised
+  // by the buyer's own buyout on the listing, but holds gold again first.
+  string idempotency_key = 3;
 }
 
 message BuyoutResponse {}

@@ -431,7 +431,7 @@ export interface paths {
         put?: never;
         /**
          * Buy out a listing
-         * @description Buys the listing outright at its buyout price as the signed-in member, ending the auction. The amount sent must equal the listing's buyoutPrice, and that price is what is charged. Answers once settlement has started; the sale completes asynchronously. Repeating it is safe: a buyout already made is not made twice. Refused for an amount that is not the buyout price, the seller, a closed auction, a listing with no buyout price, or a buyer short of gold. 409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means this member's earlier buyout of the listing was abandoned and its gold returned, and retrying will not help.
+         * @description Buys the listing outright at its buyout price as the signed-in member, ending the auction. The amount sent must equal the listing's buyoutPrice, and that price is what is charged. Answers once settlement has started; the sale completes asynchronously. Repeating it is safe: a buyout already made is not made twice. Refused for an amount that is not the buyout price, the seller, a closed auction, a listing with no buyout price, or a buyer short of gold. 409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means the attempt under this Idempotency-Key was abandoned and its gold returned: buy again with a new key.
          */
         post: operations["buyout"];
         delete?: never;
@@ -3516,7 +3516,10 @@ export interface operations {
     buyout: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Client-generated per buyout and reused on every retry of it, so a retried buyout is recognised instead of holding gold again. Optional. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 listing_id: string;
             };
