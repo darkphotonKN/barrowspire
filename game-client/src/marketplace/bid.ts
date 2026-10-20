@@ -11,6 +11,7 @@ import { formatGold } from "./gold";
 export const BID_ENDED = "This auction has ended.";
 export const BID_NOT_ENOUGH_GOLD = "Not enough gold";
 export const BID_CONFLICT = "Someone bid at the same moment — try again.";
+export const BID_LAPSED = "That attempt lapsed — try again.";
 export const PURSE_NOT_READY = "Your purse isn't ready yet — try again shortly.";
 export const PURSE_FAILED = "Your purse could not be read — try again shortly.";
 const NOT_WHOLE = "Enter a whole amount of gold.";
@@ -93,7 +94,8 @@ export interface BidAttempt {
 /**
  * The attempt a submit belongs to. Sending the same amount again is a retry of the same bid and
  * reuses its key, so a double submit or a retry after a conflict lands at most once; a new
- * amount is a new bid with a new key. The caller forgets the attempt once a bid lands.
+ * amount is a new bid with a new key. The caller forgets the attempt once a bid lands, or once
+ * {@link keepsBidKey} says its key is spent.
  */
 export function bidAttempt(
   previous: BidAttempt | undefined,
@@ -102,6 +104,18 @@ export function bidAttempt(
 ): BidAttempt {
   if (previous && previous.amount === amount) return previous;
   return { amount, key: mint() };
+}
+
+/**
+ * Whether a failed bid's key may be sent again (FS-49Z37 req 22–23). Only where a same-key
+ * retry is the right retry: a busy listing (`409 · CONFLICT`, whose hold ADR-0027 keeps), a
+ * `503`, or no answer at all. Every other answer spends the key: a refused or lapsed bid's key
+ * answers `409 · ALREADY_EXISTS` on reuse, so the next press must mint a new one.
+ */
+export function keepsBidKey(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return true;
+  if (err.status === 503) return true;
+  return err.status === 409 && err.code === "CONFLICT";
 }
 
 /**
@@ -121,6 +135,8 @@ export function bidFailure(
       return context.availableGold !== undefined && context.availableGold < context.amount
         ? { message: BID_NOT_ENOUGH_GOLD }
         : { message: BID_ENDED };
+    case "ALREADY_EXISTS":
+      return { message: BID_LAPSED };
   }
   if (err.status === 409) return { message: BID_CONFLICT };
   return { message: err.detail };

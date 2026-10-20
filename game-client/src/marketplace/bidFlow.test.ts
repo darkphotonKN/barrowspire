@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
-import { BID_CONFLICT, BID_NOT_ENOUGH_GOLD, type BidAttempt } from "./bid";
+import { BID_CONFLICT, BID_LAPSED, BID_NOT_ENOUGH_GOLD, type BidAttempt } from "./bid";
 import { BROWSE_UNREACHABLE } from "./browse";
 import { submitBid, type BidSubmitDeps } from "./bidFlow";
 
@@ -51,7 +51,7 @@ describe("submitBid", () => {
     expect(keys).toEqual(["key-1", "key-2"]);
   });
 
-  it("should keep a refused bid's key, so a retry of the same amount reuses it", async () => {
+  it("should keep the key after a busy listing, so a retry of the same amount reuses it", async () => {
     const { d, keys } = deps([apiError(409, "CONFLICT"), undefined]);
     const first = await submitBid({ amount: 60, previous: undefined, availableGold: 100 }, d);
     expect(first.note).toEqual({ tone: "error", text: BID_CONFLICT });
@@ -75,6 +75,35 @@ describe("submitBid", () => {
       tone: "error",
       text: "Someone bid higher — the minimum is now ⟡90.",
     });
+  });
+
+  it.each([
+    ["VALIDATION_FAILED", apiError(400, "VALIDATION_FAILED")],
+    ["FAILED_PRECONDITION", apiError(400, "FAILED_PRECONDITION")],
+    ["ALREADY_EXISTS", apiError(409, "ALREADY_EXISTS")],
+  ])("should drop a key spent by %s, so the same amount goes under a new key", async (_, refusal) => {
+    const { d, keys } = deps([refusal, undefined]);
+    const first = await submitBid({ amount: 60, previous: undefined, availableGold: 100 }, d);
+    expect(first.attempt).toBeUndefined();
+    await submitBid({ amount: 60, previous: first.attempt, availableGold: 100 }, d);
+    expect(keys).toEqual(["key-1", "key-2"]);
+  });
+
+  it.each([
+    ["503", apiError(503, "UNAVAILABLE")],
+    ["a transport failure", new TypeError("fetch failed")],
+  ])("should keep the key after %s, so the retry is the same bid", async (_, failure) => {
+    const { d, keys } = deps([failure, undefined]);
+    const first = await submitBid({ amount: 60, previous: undefined, availableGold: 100 }, d);
+    expect(first.note).toEqual({ tone: "error", text: BROWSE_UNREACHABLE });
+    await submitBid({ amount: 60, previous: first.attempt, availableGold: 100 }, d);
+    expect(keys).toEqual(["key-1", "key-1"]);
+  });
+
+  it("should say a lapsed attempt lapsed, not that someone bid at the same moment", async () => {
+    const { d } = deps([apiError(409, "ALREADY_EXISTS")]);
+    const result = await submitBid({ amount: 60, previous: undefined, availableGold: 100 }, d);
+    expect(result.note).toEqual({ tone: "error", text: BID_LAPSED });
   });
 
   it("should say the Bazaar is unreachable when the outbid re-read fails", async () => {

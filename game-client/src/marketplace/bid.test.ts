@@ -3,6 +3,7 @@ import { ApiError } from "@/utils/apiError";
 import {
   BID_CONFLICT,
   BID_ENDED,
+  BID_LAPSED,
   BID_NOT_ENOUGH_GOLD,
   PURSE_FAILED,
   PURSE_NOT_READY,
@@ -11,6 +12,7 @@ import {
   bidFailure,
   bidLeads,
   closedBoxNotes,
+  keepsBidKey,
   outbidMessage,
   parseBidAmount,
   purseFailure,
@@ -124,6 +126,20 @@ describe("bidAttempt", () => {
   });
 });
 
+describe("keepsBidKey", () => {
+  it.each([
+    ["a busy listing (409 · CONFLICT)", apiError(409, "CONFLICT"), true],
+    ["a 503", apiError(503, "UNAVAILABLE"), true],
+    ["no answer at all", new TypeError("fetch failed"), true],
+    ["a too-low bid (VALIDATION_FAILED)", apiError(400, "VALIDATION_FAILED"), false],
+    ["an ended auction or short purse", apiError(400, "FAILED_PRECONDITION"), false],
+    ["a spent key (409 · ALREADY_EXISTS)", apiError(409, "ALREADY_EXISTS"), false],
+    ["any other answer", apiError(400, "SOMETHING_NEW"), false],
+  ])("should decide the key after %s", (_label, err, want) => {
+    expect(keepsBidKey(err)).toBe(want);
+  });
+});
+
 describe("bidFailure", () => {
   it("should refetch before saying someone bid higher", () => {
     expect(bidFailure(apiError(400, "VALIDATION_FAILED"), { amount: 50, availableGold: 100 }))
@@ -146,6 +162,12 @@ describe("bidFailure", () => {
     expect(bidFailure(apiError(409, "CONFLICT"), { amount: 50, availableGold: 100 })).toEqual({
       message: BID_CONFLICT,
     });
+  });
+
+  it("should say a lapsed attempt lapsed, not that someone bid at the same moment", () => {
+    expect(
+      bidFailure(apiError(409, "ALREADY_EXISTS"), { amount: 50, availableGold: 100 }),
+    ).toEqual({ message: BID_LAPSED });
   });
 
   it("should say the Bazaar is unreachable on a 503 or no answer at all", () => {

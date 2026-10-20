@@ -2,18 +2,21 @@
  * One press of Bid, start to answer (FS-8EGFA req 26, 29). The fetchers and the box's `touched`
  * reset are injected, so the order of the steps is testable without a dialog:
  *
- * 1. mint a key, or reuse the one a refused bid of the same amount went with;
+ * 1. mint a key, or reuse the one a failed bid of the same amount kept;
  * 2. send the bid;
  * 3. landed: forget the attempt (the next bid is a new bid with a new key), let the box follow
  *    the minimum again, and re-read the listing and purse before saying it leads;
  *    outbid: let the box follow the minimum again and re-read before naming the new minimum;
- *    otherwise: keep the attempt, so a retry of the same amount lands at most once.
+ *    either failure: keep the attempt only where {@link keepsBidKey} says a same-key retry is
+ *    right (FS-49Z37 req 22–23), so a retry of a busy listing lands at most once and a spent
+ *    key is never sent again.
  */
 
 import {
   bidAttempt,
   bidFailure,
   bidLeads,
+  keepsBidKey,
   outbidMessage,
   type BidAttempt,
   type BidNote,
@@ -39,11 +42,13 @@ export async function submitBid(
     await deps.placeBid(attempt.amount, attempt.key);
   } catch (err) {
     const failure = bidFailure(err, { amount: attempt.amount, availableGold: bid.availableGold });
-    if (!("refetch" in failure)) return { attempt, note: { tone: "error", text: failure.message } };
+    const kept = keepsBidKey(err) ? attempt : undefined;
+    if (!("refetch" in failure))
+      return { attempt: kept, note: { tone: "error", text: failure.message } };
     deps.resetTouched();
     const fresh = await deps.refresh();
     return {
-      attempt,
+      attempt: kept,
       note: { tone: "error", text: fresh ? outbidMessage(fresh.minimumBid) : BROWSE_UNREACHABLE },
     };
   }
