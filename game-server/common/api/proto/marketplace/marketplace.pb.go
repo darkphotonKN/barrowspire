@@ -656,15 +656,15 @@ func (x *MyBid) GetListing() *MyBidListing {
 
 // Where the bid's listing stands now.
 type MyBidListing struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Status         string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
-	EndsAt         *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=ends_at,json=endsAt,proto3" json:"ends_at,omitempty"`
-	Ended          bool                   `protobuf:"varint,3,opt,name=ended,proto3" json:"ended,omitempty"`                                          // ACTIVE but past ends_at, not yet settled
-	CurrentPrice   *int64                 `protobuf:"varint,4,opt,name=current_price,json=currentPrice,proto3,oneof" json:"current_price,omitempty"`  // the leading bid, anyone's; absent when nobody leads
-	BuyoutPrice    *int64                 `protobuf:"varint,5,opt,name=buyout_price,json=buyoutPrice,proto3,oneof" json:"buyout_price,omitempty"`     // absent when the seller set none
-	ItemInstanceId string                 `protobuf:"bytes,6,opt,name=item_instance_id,json=itemInstanceId,proto3" json:"item_instance_id,omitempty"` // the listed item, for the caller to embed
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	EndsAt        *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=ends_at,json=endsAt,proto3" json:"ends_at,omitempty"`
+	Ended         bool                   `protobuf:"varint,3,opt,name=ended,proto3" json:"ended,omitempty"`                                         // ACTIVE but past ends_at, not yet settled
+	CurrentPrice  *int64                 `protobuf:"varint,4,opt,name=current_price,json=currentPrice,proto3,oneof" json:"current_price,omitempty"` // the leading bid, anyone's; absent when nobody leads
+	BuyoutPrice   *int64                 `protobuf:"varint,5,opt,name=buyout_price,json=buyoutPrice,proto3,oneof" json:"buyout_price,omitempty"`    // absent when the seller set none
+	ItemId        string                 `protobuf:"bytes,6,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`                          // the listed item, for the caller to embed
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MyBidListing) Reset() {
@@ -732,9 +732,9 @@ func (x *MyBidListing) GetBuyoutPrice() int64 {
 	return 0
 }
 
-func (x *MyBidListing) GetItemInstanceId() string {
+func (x *MyBidListing) GetItemId() string {
 	if x != nil {
-		return x.ItemInstanceId
+		return x.ItemId
 	}
 	return ""
 }
@@ -1435,14 +1435,14 @@ const file_api_proto_marketplace_marketplace_proto_rawDesc = "" +
 	"\x06amount\x18\x03 \x01(\x03R\x06amount\x12\x16\n" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x127\n" +
 	"\tplaced_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bplacedAt\x123\n" +
-	"\alisting\x18\x06 \x01(\v2\x19.marketplace.MyBidListingR\alisting\"\x90\x02\n" +
+	"\alisting\x18\x06 \x01(\v2\x19.marketplace.MyBidListingR\alisting\"\xff\x01\n" +
 	"\fMyBidListing\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x123\n" +
 	"\aends_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x06endsAt\x12\x14\n" +
 	"\x05ended\x18\x03 \x01(\bR\x05ended\x12(\n" +
 	"\rcurrent_price\x18\x04 \x01(\x03H\x00R\fcurrentPrice\x88\x01\x01\x12&\n" +
-	"\fbuyout_price\x18\x05 \x01(\x03H\x01R\vbuyoutPrice\x88\x01\x01\x12(\n" +
-	"\x10item_instance_id\x18\x06 \x01(\tR\x0eitemInstanceIdB\x10\n" +
+	"\fbuyout_price\x18\x05 \x01(\x03H\x01R\vbuyoutPrice\x88\x01\x01\x12\x17\n" +
+	"\aitem_id\x18\x06 \x01(\tR\x06itemIdB\x10\n" +
 	"\x0e_current_priceB\x0f\n" +
 	"\r_buyout_price\"E\n" +
 	"\x15BrowseListingsRequest\x12\x16\n" +
