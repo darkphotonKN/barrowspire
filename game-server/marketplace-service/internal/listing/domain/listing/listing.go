@@ -471,7 +471,8 @@ func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time
 
 	wasLeading := bid.status == BidStatusWinning
 
-	// the FSM rejects anything already outbid, won or cancelled
+	// the FSM rejects anything already won, lost or cancelled; an OUTBID bid may be
+	// withdrawn (ADR-0029) and, not leading, promotes nobody
 	if err := bid.transitionTo(BidStatusCancelled, now); err != nil {
 		return err
 	}
