@@ -135,3 +135,26 @@ describe("apiClient characters (FS-BDA7X req 39)", () => {
     expect(new URL(requests[0].url).pathname).toBe("/api/characters/c1");
   });
 });
+
+describe("apiClient.withdrawBid (FS-EYQ8K req 12)", () => {
+  it("should DELETE the bid on its listing and resolve on a 204 with an empty body", async () => {
+    answer = empty(204);
+    const { apiClient } = await loadApi();
+    await expect(apiClient.withdrawBid("l1", "b1")).resolves.toBeUndefined();
+    expect(requests[0].method).toBe("DELETE");
+    expect(new URL(requests[0].url).pathname).toBe("/api/marketplace/listings/l1/bids/b1");
+  });
+
+  it("should throw the problem's code on a refusal", async () => {
+    answer = () =>
+      new Response(
+        JSON.stringify({ status: 400, detail: "ended", code: "FAILED_PRECONDITION", errors: [] }),
+        { status: 400, headers: { "Content-Type": "application/problem+json" } },
+      );
+    const { apiClient } = await loadApi();
+    const { ApiError } = await import("./apiError");
+    const err = await apiClient.withdrawBid("l1", "b1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as InstanceType<typeof ApiError>).code).toBe("FAILED_PRECONDITION");
+  });
+});
