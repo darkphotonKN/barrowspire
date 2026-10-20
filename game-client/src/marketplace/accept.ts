@@ -7,12 +7,15 @@
 import { ApiError } from "@/utils/apiError";
 import { BROWSE_UNREACHABLE } from "./browse";
 import { actionArea } from "./detail";
+import { BUYOUT_CONFLICT, BUYOUT_GONE } from "./buyout";
 import { formatGold } from "./gold";
 
 export const NO_BIDS = "No bids yet.";
 export const ACCEPT_SOLD = "Sold — your gold arrives once the sale settles.";
-export const ACCEPT_CONFLICT = "Someone acted at the same moment — try again.";
-export const ACCEPT_GONE = "This relic is no longer for sale.";
+// One wording for both sale actions (FS-49Z37 Req 12, 17): a race and a gone relic read
+// the same whether the delver was buying out or accepting.
+export const ACCEPT_CONFLICT = BUYOUT_CONFLICT;
+export const ACCEPT_GONE = BUYOUT_GONE;
 
 export const leadingBidLine = (currentPrice: number): string =>
   `Leading bid: ${formatGold(currentPrice)} gold`;
