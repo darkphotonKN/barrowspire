@@ -109,7 +109,9 @@ with an ordinary world switch.
    `HSETNX queue:entries <playerID> <entry>`, where the entry is JSON: the player's pod id and the
    **character in play** the pod resolved at HUB entry,
    `{pod, character: {id, name, class, level, experience}}`. Queueing twice is rejected as today
-   (`ErrPlayerAlreadyQueued`).
+   (`ErrPlayerAlreadyQueued`) — but only while the existing entry is live: if it is corrupt or its
+   pod has no `pod:alive` key (a dead pod's leftover), the new entry overwrites it and the player
+   keeps their place in the list (pushed again only if their id is missing from it).
 7. `leave_queue` removes the player: `LREM queue 0 <playerID>` and `HDEL queue:entries <playerID>`,
    and replies only after removal. (Fixes the existing bug where `leave_queue` replied
    "Successfully left the queue" without removing anyone.)
@@ -123,8 +125,10 @@ with an ordinary world switch.
 
 ### Matching
 
-11. Every replica runs a matcher goroutine that ticks about once a second. Each tick it tries
-    `AcquireLock("matcher", 3s)`; only the winner matches that round, then releases.
+11. Every replica runs a matcher goroutine that ticks about once a second. There is no matcher
+    lock: Redis runs the matchmake script serially, so concurrent matchers pop disjoint groups
+    and never double-match or duplicate work. *(Amended: originally an `AcquireLock("matcher",
+    3s)` per round.)*
 12. Matching pops **exactly `matchSize` players or none**, in one Lua script (length check +
     pop, atomic). `LPOP key count` alone is not used: it pops a partial group that then has to
     be pushed back, losing order and racing other replicas.
@@ -132,18 +136,19 @@ with an ordinary world switch.
     queue entry) has no `pod:alive` key, cleans their `queue:entries` entry, and pushes the
     surviving players back to the **head** of the queue (`LPUSH`) so they keep their place.
 13a. A committed match returns each player's id, pod and character, from their queue entries.
-14. The lock is for efficiency only: the Lua pop is what guarantees no player is matched twice,
-    even if the lock expires mid-round and two matchers run.
+14. The Lua pop alone guarantees no player is matched twice, however many matchers run.
+    A popped player whose entry is corrupt or has no pod has that entry deleted, so they can
+    queue again; the others are restored in order.
 15. Matchmaking is otherwise unchanged: `matchSize = 2`, first-come pairing (FS-29KSH R28).
 
 ### Allocation and handoff
 
 16. The **host pod** is the pod of the first popped player.
-17. The matcher publishes a match-start step **`host`** on the **host pod's channel only**,
-    `PUBLISH pod:{hostPodID} <msg>`: `{step: host, pod: hostPodID, runID, players: [{playerID,
-    podID, character}]}`, runID = random UUID. Every replica subscribes to its own
-    `pod:{POD_ID}` channel. A matcher that is itself the host still publishes; there is one path.
-18. On `host`, the host creates the run session at once from the match's characters, with the
+17. The matcher publishes a match-start step **`create`** on the **host pod's channel only**,
+    `PUBLISH matchstart:pod:{hostPodID} <msg>`: `{step: create, pod: hostPodID, runID, players:
+    [{playerID, podID, character}]}`, runID = random UUID. Every replica subscribes to its own
+    `matchstart:pod:{POD_ID}` channel. A matcher that is itself the host still publishes; there is one path.
+18. On `create`, the host creates the run session at once from the match's characters, with the
     matched player ids as its **expected players**, and builds the first floor levelled to the
     full party (FS-77AB6 R22 holds unchanged). The run ticks immediately. It starts the seat
     timer (R25). There is no separate pending structure: the session holds who it expects.
@@ -255,6 +260,9 @@ with an ordinary world switch.
       full match end to end, with no handoff (both players are on the host pod).
 - [ ] `pod:alive:{podID}` exists with ~3s TTL while the replica runs and disappears ≤3s after it
       stops ticking; it is deleted on graceful shutdown.
+- [ ] Queueing again over a dead pod's (or corrupt) leftover entry overwrites it and keeps the
+      player's place in the list; over a live entry it is refused.
+- [ ] A popped player with a corrupt or podless entry has the entry deleted and can queue again.
 - [ ] `find_game` puts the player in the Redis queue with a queue entry in `queue:entries` holding their
       pod id and character in play; queueing twice is refused.
 - [ ] `enter_hub` as a different character while queued is refused.
@@ -267,9 +275,9 @@ with an ordinary world switch.
 - [ ] A popped player whose pod (read from the queue entry) has no `pod:alive` key is dropped and
       cleaned up; the survivor is back at the head of the queue.
 - [ ] A committed match returns each player's pod and character from their queue entries.
-- [ ] The `host` step is published on the host pod's channel only; a `handoff` step on another
+- [ ] The `create` step is published on the host pod's channel only; a `handoff` step on another
       pod's channel is published only after the host has created the run.
-- [ ] On `host`, the run is created at once, its first floor levelled to the whole matched party,
+- [ ] On `create`, the run is created at once, its first floor levelled to the whole matched party,
       and it ticks without waiting for arrivals.
 - [ ] Two replicas: a player queued on A and one queued on B end up in the same run on the host
       pod (first popped player's pod), playing the characters they queued with.
@@ -292,13 +300,13 @@ with an ordinary world switch.
 ## Edge States
 
 - **Replica crash while players queued:** their entries stay until popped; R13 drops them.
-  queue entries for players never popped stay as small leftovers — acceptable, they are
-  overwritten if the player queues again.
+  Queue entries for players never popped stay as small leftovers — acceptable; if the player
+  queues again from a live pod, the leftover is overwritten and they keep their place (R6).
 - **Host pod crashes after the match, before arrival:** the run dies with it. Clients
   already told to move fail to connect and stay on (or fall back to) their original address
   (R31). If the original pod is the host, they reconnect to any address the client has. Nobody
   is re-queued automatically; they queue again.
-- **Host pod never receives the `host` step** (crashed between pop and publish, or subscriber
+- **Host pod never receives the `create` step** (crashed between pop and publish, or subscriber
   reconnecting at that moment): no run, no handoff; every matched player has been popped but
   is told nothing, and their queue panel stops updating. Accepted gap: they queue again by hand.
   Closing it needs a durable record of the match (Redis stream or Temporal), out of scope here.
@@ -314,8 +322,8 @@ with an ordinary world switch.
   leave → the run continues without them.
 - **Nobody arrives** (every matched player was on other pods and none made it): R26 shuts the
   session down after 15s.
-- **Matcher lock expires mid-round (GC pause, slow Redis):** a second matcher may run; the Lua
-  pop keeps the outcome correct (R14).
+- **Several matchers tick at once:** each runs the matchmake script in turn; they pop disjoint
+  groups or nothing (R11, R14).
 - **Someone else tries to take a seat:** the JWT names the member; a member who is not expected
   in the run is refused (R24). The character seated is the one from their own queue entry, never
   one named by the client.
@@ -330,7 +338,8 @@ with an ordinary world switch.
 - **Queued player switches character:** refused while queued (R7a); after leaving the queue they
   may switch and queue again.
 - **Queue entry is not valid JSON or lacks a pod** (corruption): treated like the existing missing
-  pod case — the matcher errors, that player is popped, the others are restored in order.
+  pod case — the matcher errors, that player is popped and their entry deleted, the others are
+  restored in order (R14).
 - **Redis down:** no queueing or matching (refuse `find_game` with a message); runs already in
   progress continue unaffected; the HUB world degrades per FS-JEAVX.
 - **Same player queued from two replicas (two tabs):** refused by the `queue:entries` check

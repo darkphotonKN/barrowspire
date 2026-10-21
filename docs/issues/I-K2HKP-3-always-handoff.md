@@ -13,7 +13,7 @@ Implements FS-K2HKP §Requirements (Allocation and handoff R18–R24, Seat relea
 **Human lane: Kranti builds this, pairing with an agent for decisions and correctness.**
 **Backend only** — the client piece is I-K2HKP-4.
 
-One feature block: **a `host` step turns into a running delve.** The host pod creates the run
+One feature block: **a `create` step turns into a running delve.** The host pod creates the run
 session at once from the match's characters, levels the first floor to the whole party, and
 lets it tick immediately; matched players already on the host are moved in on the spot. Only
 then does the host publish a `handoff` step to each other involved pod, which tells its listed
@@ -24,7 +24,7 @@ requeue, no handoff tickets. Returning to the HUB world after the run stays a pl
 on the host pod.
 
 The flow, end to end:
-`host` step received → create the run session from the match's characters, matched ids as its
+`create` step received → create the run session from the match's characters, matched ids as its
 **expected players**, first floor levelled to the full party, tick starts, 15s seat timer starts
 → host-pod players: ordinary world switch into the run (`world_entered` run), no reconnect →
 publish `handoff {step: handoff, pod, runID, hostAddr, players: [{playerID}]}` on each other
@@ -43,7 +43,7 @@ Details in the FS §Requirements 18–28 and §Edge States.
 
 - On one replica with default env, a match runs end to end with no handoff (both players on the
   host).
-- On `host`, the run exists at once, its first floor is levelled to the whole matched party, and
+- On `create`, the run exists at once, its first floor is levelled to the whole matched party, and
   it ticks without waiting for arrivals.
 - The `handoff` step is published only after the host created the run; only players on other
   pods get `world_handoff`, and a player already on the host is moved in without a reconnect.
