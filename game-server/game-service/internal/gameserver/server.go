@@ -95,6 +95,7 @@ type QueueManager interface {
 	GetMatchedChan(ctx context.Context) chan []*types.Player
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
 	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
+	QueuedCharacter(ctx context.Context, playerID uuid.UUID) (characterID uuid.UUID, queued bool, err error)
 }
 
 func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient, characters CharacterReader) *Server {
@@ -191,6 +192,18 @@ func (s *Server) EnterHub(ctx context.Context, conn *websocket.Conn, characterID
 	id, err := uuid.Parse(characterID)
 	if err != nil {
 		return nil, fmt.Errorf("character id %q: %w", characterID, types.ErrCharacterNotFound)
+	}
+
+	// The queue entry carries the character the run is built from, so a queued
+	// player keeps it until they leave the queue. An unreadable queue lets them
+	// in: queueing needs it too, so nobody can have joined while it is down.
+	// FS-K2HKP §Requirements 7a.
+	queuedID, queued, err := s.queue.QueuedCharacter(ctx, player.ID)
+	if err != nil {
+		slog.Warn("Could not read queue entry on enter_hub, letting them in", "player_id", player.ID, "error", err)
+	}
+	if queued && queuedID != id {
+		return nil, fmt.Errorf("queued as %s, entering as %s: %w", queuedID, id, errCharacterSwitchWhileQueued)
 	}
 
 	character, err := s.characters.GetCharacter(ctx, player.ID, id)

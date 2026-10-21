@@ -60,6 +60,10 @@ var (
 var (
 	errNoCharacter           = errors.New("no character id to enter with")
 	errCharactersUnavailable = errors.New("character service unavailable")
+
+	// the queue entry holds the character the run is built from, so it cannot
+	// change while queued. FS-K2HKP §Requirements 7a.
+	errCharacterSwitchWhileQueued = errors.New("character switch while queued")
 )
 
 // characterResolveTimeout bounds how long entry waits on character-service
@@ -80,6 +84,8 @@ func enterHubRefusal(err error) string {
 		return "Characters are unavailable right now. Try again shortly."
 	case errors.Is(err, game.ErrCharacterSwitchMidRun):
 		return "You cannot change character during a delve."
+	case errors.Is(err, errCharacterSwitchWhileQueued):
+		return "Leave the queue before changing character."
 	default:
 		return "Could not enter"
 	}

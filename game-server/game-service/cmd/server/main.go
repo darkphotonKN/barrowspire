@@ -185,9 +185,13 @@ func main() {
 
 	}()
 
-	if err := grpcServer.Serve(listener); err != nil {
-		log.Fatal("Can't connect to grpc server. Error:", err.Error())
-	}
+	// Serve blocks until GracefulStop, so it runs off the main goroutine, or the
+	// shutdown below (and every deferred close) would never be reached
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			log.Fatal("Can't connect to grpc server. Error:", err.Error())
+		}
+	}()
 
 	// blocks until sigint or sigterm
 	<-ctx.Done()
@@ -195,4 +199,6 @@ func main() {
 
 	log.Println("Shutting down server")
 	grpcServer.GracefulStop()
+
+	// deferred closes run now, the matchmaker's liveness delete first, while redis is open
 }
