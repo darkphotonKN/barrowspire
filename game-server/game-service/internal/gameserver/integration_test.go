@@ -134,6 +134,9 @@ type mockQueueService struct {
 	// removals the queue was asked for, and what to fail them with
 	removed   []uuid.UUID
 	removeErr error
+
+	// what reading a queued player's character fails with
+	queuedErr error
 }
 
 func (m *mockQueueService) removedPlayers() []uuid.UUID {
@@ -202,6 +205,25 @@ func (m *mockQueueService) PlayerRemoveQueue(_ context.Context, player *types.Pl
 	return nil
 }
 func (m *mockQueueService) MatchQueue() {}
+
+// QueuedCharacter answers from the players still waiting in the mock queue.
+func (m *mockQueueService) QueuedCharacter(_ context.Context, playerID uuid.UUID) (uuid.UUID, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.queuedErr != nil {
+		return uuid.Nil, false, m.queuedErr
+	}
+	for _, queued := range m.players {
+		if queued.ID == playerID {
+			return queued.Character.ID, true, nil
+		}
+	}
+	return uuid.Nil, false, nil
+}
+
+func (m *mockQueueService) GetHandoffChan(context.Context) chan matchmaker.MatchStart {
+	return nil
+}
 func (m *mockQueueService) Start(context.Context) {
 	// no need to really start during testing
 }

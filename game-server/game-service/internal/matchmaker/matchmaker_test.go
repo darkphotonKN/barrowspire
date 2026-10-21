@@ -2,6 +2,7 @@ package matchmaker_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -27,14 +28,68 @@ type fakeMatchQueue struct {
 	queueLen     int
 	podPlayerIDs []string
 	queuedPodIDs []string
+
+	// groups Matchmake hands out, one per call, then nothing
+	matches [][]matchmaker.MatchedPlayer
+
+	// liveness deletes, and how many beats had landed when each arrived
+	deads          []string
+	beatsAtDead    int
+	deadCtxErr     error
+	deadHadTimeout bool
+}
+
+func (f *fakeMatchQueue) MarkPodDead(ctx context.Context, podID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deads = append(f.deads, podID)
+	f.beatsAtDead = f.beatCalls
+	f.deadCtxErr = ctx.Err()
+	_, f.deadHadTimeout = ctx.Deadline()
+	return nil
 }
 
 func (f *fakeMatchQueue) QueuePlayer(context.Context, string, string, types.CharacterInPlay) error {
 	return nil
 }
 func (f *fakeMatchQueue) DequeuePlayer(context.Context, string) error { return nil }
+func (f *fakeMatchQueue) QueuedCharacter(context.Context, string) (uuid.UUID, bool, error) {
+	return uuid.Nil, false, nil
+}
 func (f *fakeMatchQueue) Matchmake(context.Context, matchmaker.MatchCriteria) ([]matchmaker.MatchedPlayer, error) {
-	return nil, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.matches) == 0 {
+		return nil, nil
+	}
+	match := f.matches[0]
+	f.matches = f.matches[1:]
+	return match, nil
+}
+
+// fakeAnnouncer records what the match loop announces. Listen blocks like the
+// real subscriber until ctx ends.
+type fakeAnnouncer struct {
+	mu        sync.Mutex
+	announced []matchmaker.MatchStart
+}
+
+func (a *fakeAnnouncer) Announce(_ context.Context, payload matchmaker.MatchStart) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.announced = append(a.announced, payload)
+	return nil
+}
+
+func (a *fakeAnnouncer) Listen(ctx context.Context, _ string, _ matchmaker.MatchReadyCh) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (a *fakeAnnouncer) announcements() []matchmaker.MatchStart {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]matchmaker.MatchStart(nil), a.announced...)
 }
 
 func (f *fakeMatchQueue) MarkPodAlive(ctx context.Context, podID string) error {
@@ -69,7 +124,7 @@ func TestStart_Heartbeat_MarksThisPodAliveRepeatedly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	matchmaker.NewMatchmaker(2, "pod-a", fake).Start(ctx)
+	matchmaker.NewMatchmaker(2, "pod-a", fake, &fakeAnnouncer{}).Start(ctx)
 
 	require.Eventually(t, func() bool {
 		_, beats := fake.calls()
@@ -87,7 +142,7 @@ func TestStart_Heartbeat_BeatsImmediatelyOnStart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	matchmaker.NewMatchmaker(2, "pod-a", fake).Start(ctx)
+	matchmaker.NewMatchmaker(2, "pod-a", fake, &fakeAnnouncer{}).Start(ctx)
 
 	// well under the 1s tick: the pod must count as alive from boot
 	require.Eventually(t, func() bool {
@@ -101,7 +156,7 @@ func TestStart_Heartbeat_KeepsBeatingAfterFailures(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	matchmaker.NewMatchmaker(2, "pod-a", fake).Start(ctx)
+	matchmaker.NewMatchmaker(2, "pod-a", fake, &fakeAnnouncer{}).Start(ctx)
 
 	require.Eventually(t, func() bool {
 		n, _ := fake.calls()
@@ -113,7 +168,7 @@ func TestStart_Heartbeat_StopsWhenContextIsCancelled(t *testing.T) {
 	fake := &fakeMatchQueue{}
 	ctx, cancel := context.WithCancel(context.Background())
 
-	matchmaker.NewMatchmaker(2, "pod-a", fake).Start(ctx)
+	matchmaker.NewMatchmaker(2, "pod-a", fake, &fakeAnnouncer{}).Start(ctx)
 	require.Eventually(t, func() bool {
 		n, _ := fake.calls()
 		return n >= 1
@@ -145,7 +200,7 @@ func TestStart_QueueStatus_ReportsGlobalCountToThisPodsQueuedPlayers(t *testing.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mm := matchmaker.NewMatchmaker(2, "pod-a", fake)
+	mm := matchmaker.NewMatchmaker(2, "pod-a", fake, &fakeAnnouncer{})
 	mm.Start(ctx)
 
 	status, ok := receiveStatus(t, mm.GetQueueStatusChan(ctx), 3*time.Second)
@@ -168,7 +223,7 @@ func TestStart_QueueStatus_CurrentNeverExceedsMatchSize(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mm := matchmaker.NewMatchmaker(2, "pod-a", fake)
+	mm := matchmaker.NewMatchmaker(2, "pod-a", fake, &fakeAnnouncer{})
 	mm.Start(ctx)
 
 	status, ok := receiveStatus(t, mm.GetQueueStatusChan(ctx), 3*time.Second)
@@ -181,7 +236,7 @@ func TestStart_QueueStatus_NoPlayersOnThisPod_SendsNothing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mm := matchmaker.NewMatchmaker(2, "pod-a", fake)
+	mm := matchmaker.NewMatchmaker(2, "pod-a", fake, &fakeAnnouncer{})
 	mm.Start(ctx)
 
 	_, ok := receiveStatus(t, mm.GetQueueStatusChan(ctx), 2500*time.Millisecond)
@@ -195,7 +250,7 @@ func TestStart_QueueStatus_HubNotReading_DropsAndKeepsReporting(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mm := matchmaker.NewMatchmaker(2, "pod-a", fake)
+	mm := matchmaker.NewMatchmaker(2, "pod-a", fake, &fakeAnnouncer{})
 	mm.Start(ctx)
 
 	// nobody reads for a few ticks
@@ -208,4 +263,71 @@ func TestStart_QueueStatus_HubNotReading_DropsAndKeepsReporting(t *testing.T) {
 
 	_, ok := receiveStatus(t, mm.GetQueueStatusChan(ctx), 3*time.Second)
 	assert.True(t, ok, "reporting resumes once the hub reads again")
+}
+
+// The wire values are asserted literally: they are the contract between pods,
+// so reusing the Go constants would not catch a rename. FS-K2HKP §Requirements 17.
+func TestMatchLoop_AnnouncesCreateStepWithARunIDPerMatch(t *testing.T) {
+	p1, p2, p3, p4 := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	fake := &fakeMatchQueue{matches: [][]matchmaker.MatchedPlayer{
+		{{ID: p1.String(), Pod: "pod-a"}, {ID: p2.String(), Pod: "pod-b"}},
+		{{ID: p3.String(), Pod: "pod-b"}, {ID: p4.String(), Pod: "pod-a"}},
+	}}
+	announcer := &fakeAnnouncer{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	matchmaker.NewMatchmaker(2, "pod-a", fake, announcer).Start(ctx)
+
+	require.Eventually(t, func() bool { return len(announcer.announcements()) == 2 },
+		4*time.Second, 20*time.Millisecond)
+	got := announcer.announcements()
+
+	first, err := json.Marshal(got[0])
+	require.NoError(t, err)
+	var wire map[string]any
+	require.NoError(t, json.Unmarshal(first, &wire))
+	assert.Equal(t, "create", wire["step"])
+	assert.Equal(t, "pod-a", wire["pod_id"], "host is the first popped player's pod")
+	assert.NotEmpty(t, wire["run_id"])
+
+	assert.NotEqual(t, uuid.Nil, got[0].RunID)
+	assert.NotEqual(t, got[0].RunID, got[1].RunID, "each match gets its own run id")
+	assert.Equal(t, "pod-b", got[1].PodID)
+	assert.Equal(t, []string{"pod-a", "pod-b"}, []string{got[0].Players[0].Pod, got[0].Players[1].Pod})
+}
+
+func TestMatchStep_WireValues(t *testing.T) {
+	assert.Equal(t, "create", string(matchmaker.MatchStepCreate))
+	assert.Equal(t, "handoff", string(matchmaker.MatchStepHandoff))
+}
+
+// Graceful shutdown: the heartbeat stops first, then the pod deletes its own
+// liveness key on a fresh context (the root one is already cancelled), and
+// Stopped closes once that is done. FS-K2HKP §Requirements 3.
+func TestStart_Shutdown_StopsBeatingThenDeletesAliveKey(t *testing.T) {
+	fake := &fakeMatchQueue{}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	mm := matchmaker.NewMatchmaker(2, "pod-a", fake, &fakeAnnouncer{})
+	mm.Start(ctx)
+	require.Eventually(t, func() bool {
+		n, _ := fake.calls()
+		return n >= 1
+	}, 3*time.Second, 10*time.Millisecond)
+
+	cancel()
+
+	select {
+	case <-mm.Stopped():
+	case <-time.After(3 * time.Second):
+		t.Fatal("Stopped never closed after ctx was cancelled")
+	}
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	assert.Equal(t, []string{"pod-a"}, fake.deads)
+	assert.NoError(t, fake.deadCtxErr, "delete must not run on the cancelled root context")
+	assert.True(t, fake.deadHadTimeout, "delete needs its own short timeout")
+	assert.Equal(t, fake.beatCalls, fake.beatsAtDead, "no beat may land after the delete")
 }

@@ -103,12 +103,71 @@ func TestQueuePlayer_SecondJoin_ReturnsAlreadyQueuedAndKeepsOneEntry(t *testing.
 	q, client := newQueue(t)
 	ctx := context.Background()
 
+	// the first entry's pod is alive, so the second join is a true duplicate
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-a"))
 	queue(t, q, "p1", "pod-a")
 	err := q.QueuePlayer(ctx, "p1", "pod-b", character("p1"))
 
 	assert.ErrorIs(t, err, matchmaker.ErrPlayerAlreadyQueued)
 	assert.Equal(t, []string{"p1"}, client.LRange(ctx, queueKey, 0, -1).Val())
 	assert.Equal(t, "pod-a", entryPod(t, client, "p1"), "first pod must win")
+}
+
+// A crashed pod's player reconnects to a live pod and queues again. Their old
+// entry points at a dead pod, so it is a leftover, not a duplicate: it is
+// overwritten and they keep their place. FS-K2HKP §Requirements 6.
+func TestQueuePlayer_OverDeadPodLeftover_OverwritesAndKeepsPlace(t *testing.T) {
+	client, mr := testutil.NewRedis(t)
+	q := matchqueue.NewRedis(client)
+	ctx := context.Background()
+
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-a"))
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-b"))
+	queue(t, q, "p1", "pod-a")
+	queue(t, q, "p2", "pod-b")
+	queue(t, q, "p3", "pod-a")
+
+	// pod-b goes silent and expires, pod-a keeps beating
+	mr.FastForward(2 * time.Second)
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-a"))
+	mr.FastForward(2 * time.Second)
+	require.False(t, mr.Exists("pod:alive:pod-b"))
+
+	require.NoError(t, q.QueuePlayer(ctx, "p2", "pod-a", character("p2")))
+
+	assert.Equal(t, []string{"p1", "p2", "p3"}, client.LRange(ctx, queueKey, 0, -1).Val(), "place kept, not pushed twice")
+	assert.Equal(t, "pod-a", entryPod(t, client, "p2"))
+}
+
+func TestQueuePlayer_OverCorruptEntry_OverwritesAndKeepsPlace(t *testing.T) {
+	q, client := newQueue(t)
+	ctx := context.Background()
+
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-a"))
+	queue(t, q, "p1", "pod-a")
+	queue(t, q, "p2", "pod-a")
+	require.NoError(t, client.HSet(ctx, queueEntriesKey, "p1", "not json").Err())
+
+	require.NoError(t, q.QueuePlayer(ctx, "p1", "pod-a", character("p1")))
+
+	assert.Equal(t, []string{"p1", "p2"}, client.LRange(ctx, queueKey, 0, -1).Val())
+	assert.Equal(t, "pod-a", entryPod(t, client, "p1"))
+}
+
+// A leftover entry whose id is no longer in the list (drift) is overwritten
+// and the player is pushed to the back, so they are queued for real.
+func TestQueuePlayer_OverLeftoverMissingFromList_PushesThem(t *testing.T) {
+	q, client := newQueue(t)
+	ctx := context.Background()
+
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-a"))
+	queue(t, q, "p2", "pod-a")
+	require.NoError(t, client.HSet(ctx, queueEntriesKey, "p1", `{"pod":"pod-dead"}`).Err())
+
+	require.NoError(t, q.QueuePlayer(ctx, "p1", "pod-a", character("p1")))
+
+	assert.Equal(t, []string{"p2", "p1"}, client.LRange(ctx, queueKey, 0, -1).Val())
+	assert.Equal(t, "pod-a", entryPod(t, client, "p1"))
 }
 
 func TestDequeuePlayer_ClearsQueueAndPodHash_AndIsIdempotent(t *testing.T) {
@@ -244,6 +303,11 @@ func TestMatchmake_MalformedEntry_ReturnsErrorAndRestoresOthersInOrder(t *testin
 			assert.Equal(t, []string{"p1", "p3"}, client.LRange(ctx, queueKey, 0, -1).Val())
 			assert.True(t, client.HExists(ctx, queueEntriesKey, "p1").Val())
 			assert.True(t, client.HExists(ctx, queueEntriesKey, "p3").Val())
+
+			// the corrupt entry is deleted, so the player is not locked out of the queue
+			// FS-K2HKP §Requirements 14.
+			assert.False(t, client.HExists(ctx, queueEntriesKey, "p2").Val())
+			queue(t, q, "p2", "pod-a")
 		})
 	}
 }
@@ -425,4 +489,60 @@ func TestQueuedPlayers_OnlyOtherPodsQueued_ReturnsLengthAndNoPlayers(t *testing.
 	require.NoError(t, err)
 	assert.Equal(t, 2, queueLen)
 	assert.Empty(t, podPlayerIDs)
+}
+
+// R7a reads which character a player is queued with. A dead pod's leftover is
+// not a queue place (R6), so it reads as not queued. FS-K2HKP §Requirements 7a.
+func TestQueuedCharacter(t *testing.T) {
+	client, mr := testutil.NewRedis(t)
+	q := matchqueue.NewRedis(client)
+	ctx := context.Background()
+
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-a"))
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-b"))
+	queue(t, q, "p-live", "pod-a")
+	queue(t, q, "p-dead", "pod-b")
+	require.NoError(t, client.HSet(ctx, queueEntriesKey, "p-corrupt", "not json").Err())
+
+	mr.FastForward(2 * time.Second)
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-a"))
+	mr.FastForward(2 * time.Second)
+
+	tests := []struct {
+		name       string
+		playerID   string
+		wantQueued bool
+		wantChar   uuid.UUID
+	}{
+		{"queued on a live pod", "p-live", true, character("p-live").ID},
+		{"not queued", "p-none", false, uuid.Nil},
+		{"leftover of a dead pod", "p-dead", false, uuid.Nil},
+		{"corrupt entry", "p-corrupt", false, uuid.Nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			charID, queued, err := q.QueuedCharacter(ctx, tt.playerID)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantQueued, queued)
+			assert.Equal(t, tt.wantChar, charID)
+		})
+	}
+}
+
+// On graceful shutdown the pod removes its own liveness key rather than
+// leaving it to expire. FS-K2HKP §Requirements 3.
+func TestMarkPodDead_RemovesTheAliveKey(t *testing.T) {
+	client, mr := testutil.NewRedis(t)
+	q := matchqueue.NewRedis(client)
+	ctx := context.Background()
+
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-a"))
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-b"))
+
+	require.NoError(t, q.MarkPodDead(ctx, "pod-a"))
+	require.NoError(t, q.MarkPodDead(ctx, "pod-a"), "a second delete must be safe")
+
+	assert.False(t, mr.Exists("pod:alive:pod-a"))
+	assert.True(t, mr.Exists("pod:alive:pod-b"))
 }
