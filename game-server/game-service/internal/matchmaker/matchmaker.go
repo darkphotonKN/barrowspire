@@ -34,7 +34,17 @@ type MatchStart struct {
 	PodID string    `json:"pod_id"` // must match id of appointed pod
 	Step  MatchStep `json:"step"`
 	// list of players for this step
-	PlayerIDs []uuid.UUID `json:"players"`
+	Players []MatchStartPlayer `json:"players"`
+}
+
+// MatchStartPlayer is one matched player as sent between pods. The id is
+// already validated by the match loop, and stays a uuid on the wire so the
+// receiving pod never parses a string again.
+type MatchStartPlayer struct {
+	ID  uuid.UUID `json:"id"`
+	Pod string    `json:"pod"`
+	// character in play they queued with, the host builds the run from it
+	Character types.CharacterInPlay `json:"character"`
 }
 
 /**
@@ -174,7 +184,7 @@ func (q *matchmaker) MatchLoop(ctx context.Context) {
 
 			// found result, validate and announce to other pods before starting game
 
-			matchedPlayersIds := make([]uuid.UUID, 0, len(matchedPlayersRes))
+			matchedPlayers := make([]MatchStartPlayer, 0, len(matchedPlayersRes))
 
 			// stores errored players map
 			matchedPlayerErrored := make(map[string]struct{}, 0)
@@ -194,8 +204,12 @@ func (q *matchmaker) MatchLoop(ctx context.Context) {
 					continue
 				}
 
-				// only send ids, look up for the rest is updated to be done by the caller
-				matchedPlayersIds = append(matchedPlayersIds, id)
+				// validated id, pod and character, the host needs all three
+				matchedPlayers = append(matchedPlayers, MatchStartPlayer{
+					ID:        id,
+					Pod:       player.Pod,
+					Character: player.Character,
+				})
 			}
 
 			// requeue unerrored players
@@ -213,9 +227,9 @@ func (q *matchmaker) MatchLoop(ctx context.Context) {
 			//TODO: implement better host pod selection
 			// host pod now is the first player's pod
 			payload := MatchStart{
-				PodID:     matchedPlayersRes[0].Pod,
-				Step:      MatchStepCreate,
-				PlayerIDs: matchedPlayersIds,
+				PodID:   matchedPlayersRes[0].Pod,
+				Step:    MatchStepCreate,
+				Players: matchedPlayers,
 			}
 
 			// TODO: add a circuit breaker so repeated announce failures fail fast.
@@ -229,7 +243,7 @@ func (q *matchmaker) MatchLoop(ctx context.Context) {
 				if errors.Is(err, ErrNoPodsListening) {
 
 					// not suposed to happen, so log loudly
-					slog.Error("no pods listenign when match intended to start", "host_pod_id_attempted_to_start", payload.PodID, "playerIDs", matchedPlayersIds)
+					slog.Error("no pods listenign when match intended to start", "host_pod_id_attempted_to_start", payload.PodID, "playerIDs", matchedPlayers)
 					continue
 				}
 
@@ -422,17 +436,18 @@ func (q *matchmaker) MatchReady(ctx context.Context) {
 			switch matchReadyPayload.Step {
 
 			case MatchStepCreate:
-				if len(matchReadyPayload.PlayerIDs) <= 0 {
+				if len(matchReadyPayload.Players) <= 0 {
 					slog.Error("match ready loop recieved empty PlayerIDs", "pod_id", matchReadyPayload.PodID)
 					continue
 				}
 
-				players := make([]*types.Player, 0, len(matchReadyPayload.PlayerIDs))
-				for _, player := range matchReadyPayload.PlayerIDs {
+				// the hub builds the run from player records, pod stays on the wire type
+				players := make([]*types.Player, 0, len(matchReadyPayload.Players))
+				for _, player := range matchReadyPayload.Players {
 					players = append(players, &types.Player{
-						ID: player,
-					},
-					)
+						ID:        player.ID,
+						Character: player.Character,
+					})
 				}
 
 				select {
@@ -446,7 +461,7 @@ func (q *matchmaker) MatchReady(ctx context.Context) {
 					return
 
 				case <-time.After(time.Second * 5):
-					slog.Error("sending players to matchedChan, matchedChan unresponsive for 5 seconds", "players_dropped_ids", matchReadyPayload.PlayerIDs)
+					slog.Error("sending players to matchedChan, matchedChan unresponsive for 5 seconds", "players_dropped_ids", matchReadyPayload.Players)
 
 					continue
 
