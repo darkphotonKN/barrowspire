@@ -8,6 +8,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -23,8 +24,8 @@ func NewRedis(client redis.UniversalClient) *Redis {
 }
 
 const (
-	keyQueue     = "queue"
-	keyPlayerPod = "player:pod"
+	keyQueue        = "queue"
+	keyQueueEntries = "queue:entries"
 
 	// pod:alive:{podID}, present only while that pod keeps heartbeating
 	keyPodAlivePrefix = "pod:alive:"
@@ -34,7 +35,7 @@ const (
 // redis) before it counts as dead
 const podAliveTTL = 3 * time.Second
 
-// queueEntry is the player:pod hash value, the player's pod and the character
+// queueEntry is the queue:entries hash value, the player's pod and the character
 // in play they queued with, so whichever pod hosts the match can build the run
 type queueEntry struct {
 	Pod       string                `json:"pod"`
@@ -45,14 +46,32 @@ var queueScript = redis.NewScript(`
 		-- push player's queue entry (pod + character) on hash
 		local created = redis.call("HSETNX", KEYS[2], ARGV[1], ARGV[2])
 
-		if created == 0 then 
-			return 0
+		if created == 1 then
+			-- push to the back of queue
+			redis.call("RPUSH", KEYS[1], ARGV[1])
+			return 1
 		end
 
-		-- push to the back of queue
-		redis.call("RPUSH", KEYS[1], ARGV[1])
+		-- an entry already exists; it is a duplicate only while it is live. A
+		-- corrupt entry, or one whose pod stopped heartbeating (a crashed pod's
+		-- leftover), is replaced so the player is not locked out of the queue
+		local existing = redis.call("HGET", KEYS[2], ARGV[1])
+		local decoded, entry = pcall(cjson.decode, existing)
+		if decoded and type(entry) == "table" and type(entry.pod) == "string" then
+			-- NOTE: building a key inside the script is not Redis Cluster compatible, every
+			-- key a script touches must be passed in KEYS for cluster slot routing
+			if redis.call("EXISTS", ARGV[3] .. entry.pod) == 1 then
+				return 0
+			end
+		end
 
-		-- success
+		redis.call("HSET", KEYS[2], ARGV[1], ARGV[2])
+
+		-- keep their place if they are still in the list, push them only if not
+		if not redis.call("LPOS", KEYS[1], ARGV[1]) then
+			redis.call("RPUSH", KEYS[1], ARGV[1])
+		end
+
 		return 1
 	`)
 
@@ -64,7 +83,7 @@ func (r *Redis) QueuePlayer(ctx context.Context, playerID, pod string, character
 	}
 
 	// atomically push player to list and add their queue entry to hash
-	cmd := queueScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, playerID, entry)
+	cmd := queueScript.Run(ctx, r.client, []string{keyQueue, keyQueueEntries}, playerID, entry, keyPodAlivePrefix)
 	created, err := cmd.Int64()
 
 	// return early with unexpected redis error
@@ -92,7 +111,7 @@ var dequeueScript = redis.NewScript(`
 	`)
 
 func (r *Redis) DequeuePlayer(ctx context.Context, playerID string) error {
-	_, err := dequeueScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, playerID).Int64()
+	_, err := dequeueScript.Run(ctx, r.client, []string{keyQueue, keyQueueEntries}, playerID).Int64()
 
 	if err != nil {
 		return fmt.Errorf("MatchQueue DequeuePlayer : %w", err)
@@ -134,7 +153,10 @@ var matchmakeScript = redis.NewScript(`
 		
 			-- check if corresponding playerPod exists, drift means corruption 
 			-- return early with this player popped, everyone else returned to queue
-			if not playerPod then 
+			if not playerPod then
+				-- drop the corrupt entry too, or the player could never queue again
+				redis.call("HDEL", KEYS[2], partyIds[i])
+
 				for j = #partyIds, 1, -1 do
 					local playerId = partyIds[j]
 
@@ -187,9 +209,9 @@ var matchmakeScript = redis.NewScript(`
 	`)
 
 // checks every tick if there is enough players for a game, removes them from
-// list (queue) and player:pod hash
+// list (queue) and queue:entries hash
 func (r *Redis) Matchmake(ctx context.Context, matchCriteria matchmaker.MatchCriteria) ([]matchmaker.MatchedPlayer, error) {
-	raw, err := matchmakeScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, matchCriteria.MatchSize, keyPodAlivePrefix).Text()
+	raw, err := matchmakeScript.Run(ctx, r.client, []string{keyQueue, keyQueueEntries}, matchCriteria.MatchSize, keyPodAlivePrefix).Text()
 
 	if err != nil {
 		return nil, fmt.Errorf("MatchQueue Matchmake redis script : %w", err)
@@ -218,6 +240,18 @@ func (r *Redis) MarkPodAlive(ctx context.Context, podID string) error {
 
 	if err != nil {
 		return fmt.Errorf("MatchQueue MarkPodAlive : %w", err)
+	}
+
+	return nil
+}
+
+// deletes this pod's liveness key on graceful shutdown, so its queued players
+// read as dead at once rather than after the key's expiry
+func (r *Redis) MarkPodDead(ctx context.Context, podID string) error {
+	err := r.client.Del(ctx, keyPodAlivePrefix+podID).Err()
+
+	if err != nil {
+		return fmt.Errorf("MatchQueue MarkPodDead : %w", err)
 	}
 
 	return nil
@@ -258,7 +292,7 @@ type queuedPlayersRes struct {
 // reads the global queue length and which queued players belong to podID, in
 // queue order, so each pod can report progress to its own players
 func (r *Redis) QueuedPlayers(ctx context.Context, podID string) (int, []string, error) {
-	raw, err := queuedPlayersScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, podID).Text()
+	raw, err := queuedPlayersScript.Run(ctx, r.client, []string{keyQueue, keyQueueEntries}, podID).Text()
 
 	if err != nil {
 		return 0, nil, fmt.Errorf("MatchQueue QueuedPlayers redis script : %w", err)
@@ -273,4 +307,51 @@ func (r *Redis) QueuedPlayers(ctx context.Context, podID string) (int, []string,
 	}
 
 	return res.Length, res.Players, nil
+}
+
+var queuedCharacterScript = redis.NewScript(`
+		local raw = redis.call("HGET", KEYS[1], ARGV[1])
+		if not raw then
+			return ""
+		end
+
+		-- only a live entry is a queue place: corrupt or dead-pod leftovers are not
+		local decoded, entry = pcall(cjson.decode, raw)
+		if not (decoded and type(entry) == "table" and type(entry.pod) == "string") then
+			return ""
+		end
+
+		-- NOTE: building a key inside the script is not Redis Cluster compatible, every
+		-- key a script touches must be passed in KEYS for cluster slot routing
+		if redis.call("EXISTS", ARGV[2] .. entry.pod) == 0 then
+			return ""
+		end
+
+		if type(entry.character) ~= "table" or type(entry.character.id) ~= "string" then
+			return ""
+		end
+
+		return entry.character.id
+	`)
+
+// reads the character playerID is queued with; queued is false when they hold
+// no live queue entry (none, corrupt, or a dead pod's leftover)
+func (r *Redis) QueuedCharacter(ctx context.Context, playerID string) (uuid.UUID, bool, error) {
+	raw, err := queuedCharacterScript.Run(ctx, r.client, []string{keyQueueEntries}, playerID, keyPodAlivePrefix).Text()
+
+	if err != nil {
+		return uuid.Nil, false, fmt.Errorf("MatchQueue QueuedCharacter redis script : %w", err)
+	}
+
+	if raw == "" {
+		return uuid.Nil, false, nil
+	}
+
+	characterID, err := uuid.Parse(raw)
+
+	if err != nil {
+		return uuid.Nil, false, fmt.Errorf("MatchQueue QueuedCharacter parse character id : %w", err)
+	}
+
+	return characterID, true, nil
 }

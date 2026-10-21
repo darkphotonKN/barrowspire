@@ -20,21 +20,37 @@ var (
 const (
 	timeoutTime      = time.Second * 5
 	matchReadyBuffer = 5
+
+	// how long shutdown waits on deleting the liveness key; the key expires on
+	// its own anyway, so this only bounds how long a stuck redis delays exit
+	markDeadTimeout = time.Second * 2
 )
 
 type MatchReadyCh chan MatchStart
 type MatchStep string
 
 const (
-	MatchStepCreate  MatchStep = "match step create"
-	MatchStepHandoff MatchStep = "match step handoff"
+	MatchStepCreate  MatchStep = "create"
+	MatchStepHandoff MatchStep = "handoff"
 )
 
 type MatchStart struct {
 	PodID string    `json:"pod_id"` // must match id of appointed pod
 	Step  MatchStep `json:"step"`
+	// the run this match becomes, fixed at match time so every step names the same run
+	RunID uuid.UUID `json:"run_id"`
 	// list of players for this step
-	PlayerIDs []uuid.UUID `json:"players"`
+	Players []MatchStartPlayer `json:"players"`
+}
+
+// MatchStartPlayer is one matched player as sent between pods. The id is
+// already validated by the match loop, and stays a uuid on the wire so the
+// receiving pod never parses a string again.
+type MatchStartPlayer struct {
+	ID  uuid.UUID `json:"id"`
+	Pod string    `json:"pod"`
+	// character in play they queued with, the host builds the run from it
+	Character types.CharacterInPlay `json:"character"`
 }
 
 /**
@@ -46,6 +62,7 @@ type matchmaker struct {
 	matchSize       int
 	matchedChan     chan []*types.Player
 	QueueStatusChan chan QueueStatus
+	handOffCh       chan MatchStart // to notify message hub inform client to reconnect these players
 	matchQueue      MatchQueue
 	matchAnnouncer  MatchAnnouncer
 
@@ -53,6 +70,9 @@ type matchmaker struct {
 	podID string
 
 	matchReadyCh MatchReadyCh
+
+	// closed once the heartbeat has stopped and the liveness key is deleted
+	stopped chan struct{}
 }
 
 // QueueStatus used to notify queue status
@@ -62,14 +82,17 @@ type QueueStatus struct {
 	Total   int
 }
 
-func NewMatchmaker(matchSize int, podID string, matchQueue MatchQueue) *matchmaker {
+func NewMatchmaker(matchSize int, podID string, matchQueue MatchQueue, matchAnnouncer MatchAnnouncer) *matchmaker {
 	return &matchmaker{
 		matchSize:       matchSize,
 		podID:           podID,
 		matchedChan:     make(chan []*types.Player),
 		QueueStatusChan: make(chan QueueStatus),
+		handOffCh:       make(chan MatchStart),
 		matchQueue:      matchQueue,
+		matchAnnouncer:  matchAnnouncer,
 		matchReadyCh:    make(MatchReadyCh, matchReadyBuffer),
+		stopped:         make(chan struct{}),
 	}
 }
 
@@ -79,7 +102,9 @@ type MatchQueue interface {
 	DequeuePlayer(ctx context.Context, playerID string) error
 	Matchmake(ctx context.Context, matchCriteria MatchCriteria) ([]MatchedPlayer, error) // list of playerIDs that successfully matched
 	MarkPodAlive(ctx context.Context, podID string) error                                // liveness heartbeat, lapses on its own if this pod stops calling
+	MarkPodDead(ctx context.Context, podID string) error                                 // graceful shutdown, removes the liveness key at once
 	QueuedPlayers(ctx context.Context, podID string) (int, []string, error)              // global queue length, and podID's queued players in queue order
+	QueuedCharacter(ctx context.Context, playerID string) (uuid.UUID, bool, error)       // character in the player's live queue entry, if they hold one
 }
 
 type MatchCriteria struct {
@@ -95,6 +120,7 @@ type MatchedPlayer struct {
 
 type MatchAnnouncer interface {
 	Announce(ctx context.Context, payload MatchStart) error
+	Listen(ctx context.Context, podID string, matchReadyCh MatchReadyCh) error
 }
 
 // Start launches queue listening
@@ -102,6 +128,7 @@ func (q *matchmaker) Start(ctx context.Context) {
 	go q.MatchLoop(ctx)
 	go q.heartbeatLoop(ctx)
 	go q.queueStatusLoop(ctx)
+	go q.matchAnnouncer.Listen(ctx, q.podID, q.matchReadyCh)
 	go q.MatchReady(ctx)
 	slog.Info("Queue service started, waiting for players to join...")
 }
@@ -117,8 +144,9 @@ func (q *matchmaker) heartbeatLoop(ctx context.Context) {
 
 	for {
 		select {
-		// parent ctx gets cancelled we stop beating, the alive marker then lapses on its own
+		// parent ctx gets cancelled we stop beating, then delete the alive marker
 		case <-ctx.Done():
+			q.markDead()
 			return
 
 		case <-ticker.C:
@@ -136,6 +164,27 @@ func (q *matchmaker) markAlive(ctx context.Context) {
 	if err := q.matchQueue.MarkPodAlive(beatCtx, q.podID); err != nil {
 		slog.Warn("heartbeat failed to mark pod alive", "pod_id", q.podID, "err", err)
 	}
+}
+
+// markDead runs once beating has stopped, so no later beat can recreate the
+// key. The root ctx is already cancelled here, so it gets a fresh one.
+// FS-K2HKP §Requirements 3.
+func (q *matchmaker) markDead() {
+	defer close(q.stopped)
+
+	deadCtx, cancel := context.WithTimeout(context.Background(), markDeadTimeout)
+	defer cancel()
+
+	// failing here only means the key expires on its own instead
+	if err := q.matchQueue.MarkPodDead(deadCtx, q.podID); err != nil {
+		slog.Warn("shutdown failed to delete pod alive marker", "pod_id", q.podID, "err", err)
+	}
+}
+
+// Stopped closes once the heartbeat has stopped and this pod's liveness key is
+// deleted. Shutdown waits on it before closing redis.
+func (q *matchmaker) Stopped() <-chan struct{} {
+	return q.stopped
 }
 
 // matchQueue checks queue once per second
@@ -169,7 +218,7 @@ func (q *matchmaker) MatchLoop(ctx context.Context) {
 
 			// found result, validate and announce to other pods before starting game
 
-			matchedPlayersIds := make([]uuid.UUID, 0, len(matchedPlayersRes))
+			matchedPlayers := make([]MatchStartPlayer, 0, len(matchedPlayersRes))
 
 			// stores errored players map
 			matchedPlayerErrored := make(map[string]struct{}, 0)
@@ -189,8 +238,12 @@ func (q *matchmaker) MatchLoop(ctx context.Context) {
 					continue
 				}
 
-				// only send ids, look up for the rest is updated to be done by the caller
-				matchedPlayersIds = append(matchedPlayersIds, id)
+				// validated id, pod and character, the host needs all three
+				matchedPlayers = append(matchedPlayers, MatchStartPlayer{
+					ID:        id,
+					Pod:       player.Pod,
+					Character: player.Character,
+				})
 			}
 
 			// requeue unerrored players
@@ -208,9 +261,10 @@ func (q *matchmaker) MatchLoop(ctx context.Context) {
 			//TODO: implement better host pod selection
 			// host pod now is the first player's pod
 			payload := MatchStart{
-				PodID:     matchedPlayersRes[0].Pod,
-				Step:      MatchStepCreate,
-				PlayerIDs: matchedPlayersIds,
+				PodID:   matchedPlayersRes[0].Pod,
+				Step:    MatchStepCreate,
+				RunID:   uuid.New(),
+				Players: matchedPlayers,
 			}
 
 			// TODO: add a circuit breaker so repeated announce failures fail fast.
@@ -224,7 +278,7 @@ func (q *matchmaker) MatchLoop(ctx context.Context) {
 				if errors.Is(err, ErrNoPodsListening) {
 
 					// not suposed to happen, so log loudly
-					slog.Error("no pods listenign when match intended to start", "host_pod_id_attempted_to_start", payload.PodID, "playerIDs", matchedPlayersIds)
+					slog.Error("no pods listenign when match intended to start", "host_pod_id_attempted_to_start", payload.PodID, "playerIDs", matchedPlayers)
 					continue
 				}
 
@@ -373,12 +427,26 @@ func (q *matchmaker) PlayerRemoveQueue(ctx context.Context, player *types.Player
 	return ErrRetryMaxAttemptsExhausted
 }
 
+// QueuedCharacter reads which character the player is queued with; queued is
+// false when they hold no live queue entry
+func (q *matchmaker) QueuedCharacter(ctx context.Context, playerID uuid.UUID) (uuid.UUID, bool, error) {
+	// add timeout for external state taking too long
+	queueCtx, cancel := context.WithTimeout(ctx, timeoutTime)
+	defer cancel()
+
+	return q.matchQueue.QueuedCharacter(queueCtx, playerID.String())
+}
+
 func (q *matchmaker) GetMatchedChan(ctx context.Context) chan []*types.Player {
 	return q.matchedChan
 }
 
 func (q *matchmaker) GetQueueStatusChan(ctx context.Context) chan QueueStatus {
 	return q.QueueStatusChan
+}
+
+func (q *matchmaker) GetHandoffChan(ctx context.Context) chan MatchStart {
+	return q.handOffCh
 }
 
 // Match ready handling loop
@@ -413,17 +481,18 @@ func (q *matchmaker) MatchReady(ctx context.Context) {
 			switch matchReadyPayload.Step {
 
 			case MatchStepCreate:
-				if len(matchReadyPayload.PlayerIDs) <= 0 {
+				if len(matchReadyPayload.Players) <= 0 {
 					slog.Error("match ready loop recieved empty PlayerIDs", "pod_id", matchReadyPayload.PodID)
 					continue
 				}
 
-				players := make([]*types.Player, 0, len(matchReadyPayload.PlayerIDs))
-				for _, player := range matchReadyPayload.PlayerIDs {
+				// the hub builds the run from player records, pod stays on the wire type
+				players := make([]*types.Player, 0, len(matchReadyPayload.Players))
+				for _, player := range matchReadyPayload.Players {
 					players = append(players, &types.Player{
-						ID: player,
-					},
-					)
+						ID:        player.ID,
+						Character: player.Character,
+					})
 				}
 
 				select {
@@ -437,7 +506,7 @@ func (q *matchmaker) MatchReady(ctx context.Context) {
 					return
 
 				case <-time.After(time.Second * 5):
-					slog.Error("sending players to matchedChan, matchedChan unresponsive for 5 seconds", "players_dropped_ids", matchReadyPayload.PlayerIDs)
+					slog.Error("sending players to matchedChan, matchedChan unresponsive for 5 seconds", "players_dropped_ids", matchReadyPayload.Players)
 
 					continue
 
@@ -447,6 +516,15 @@ func (q *matchmaker) MatchReady(ctx context.Context) {
 
 			// handoff to player clients about us
 			case MatchStepHandoff:
+				select {
+				case q.handOffCh <- matchReadyPayload:
+				// if message hub can't react in one second, somethings wrong, explicity log loudly and
+				// skip this queue
+				case <-time.After(time.Second * 1):
+					slog.Error("matchready loop couldn't send handoff to mesage hub after being blocked for 1 second")
+					// TODO: requeue players, for now dropped as message hub being stuck for so long is rare at this
+					// scale and this must be an exception
+				}
 				continue
 
 			default:
