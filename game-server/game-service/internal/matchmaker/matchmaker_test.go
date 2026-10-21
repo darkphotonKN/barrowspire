@@ -267,7 +267,7 @@ func TestStart_QueueStatus_HubNotReading_DropsAndKeepsReporting(t *testing.T) {
 
 // The wire values are asserted literally: they are the contract between pods,
 // so reusing the Go constants would not catch a rename. FS-K2HKP §Requirements 17.
-func TestMatchLoop_AnnouncesCreateStepWithARunIDPerMatch(t *testing.T) {
+func TestStart_Match_AnnouncesCreateStepWithARunIDPerMatch(t *testing.T) {
 	p1, p2, p3, p4 := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	fake := &fakeMatchQueue{matches: [][]matchmaker.MatchedPlayer{
 		{{ID: p1.String(), Pod: "pod-a"}, {ID: p2.String(), Pod: "pod-b"}},

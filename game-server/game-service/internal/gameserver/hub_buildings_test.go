@@ -37,8 +37,8 @@ func wallsIn(entities []*ecs.Entity) []rect {
 	return found
 }
 
-// The hub is a place, not a field. Its buildings are fixed — a delver has to be
-// able to say "left of the Quartermaster" and be understood — and they are
+// The hub is a place, not a field. Its buildings are fixed, because a delver has
+// to be able to say "left of the Quartermaster" and be understood. They are also
 // exteriors: walls with no way in. FS-29KSH §Requirements 4.
 func TestHub_HasBuildings(t *testing.T) {
 	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())

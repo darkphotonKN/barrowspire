@@ -32,8 +32,13 @@ type populationRand interface {
 * top floor, otherwise on its rare roll.
 *
 * The hub is never populated, and neither is a run with nobody in it.
+*
+* expected is the matched party not seated yet (FS-K2HKP R18): they count
+* toward the party's level, and the spots kept for them are kept clear like
+* any delver's, so an arrival is not seated next to a monster. nil on every
+* floor but the first.
 **/
-func (s *Session) populateMonsters(floor int, topFloor bool) {
+func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.CharacterInPlay) {
 	if s.worldType != types.WorldTypeRun {
 		return
 	}
@@ -41,17 +46,20 @@ func (s *Session) populateMonsters(floor int, topFloor bool) {
 	entities := s.EntityManager.GetAllEntities()
 
 	roster := delversOf(entities)
-	if len(roster) == 0 {
+	// FS-K2HKP R18: a run whose whole party is still connecting is not empty
+	if len(roster) == 0 && len(expected) == 0 {
 		slog.Debug("Floor left unpopulated: no delvers placed", "sessionID", s.ID, "floor", floor)
 		return
 	}
 
-	level := partyLevel(roster)
+	// FS-K2HKP R18: levelled to the whole matched party, the expected included
+	level := max(partyLevel(roster), expectedPartyLevel(expected))
 	area := spawnArea{
 		width:   s.mapWidth,
 		height:  s.mapHeight,
 		keepOut: mapKeepOut(entities),
-		delvers: inPlayPositions(roster),
+		// FS-K2HKP R18: the spots kept for arrivals are kept clear too
+		delvers: append(inPlayPositions(roster), s.arrivalSlotPositions()...),
 	}
 
 	for _, monster := range rollMonsters(s.spawnRand, level, floor) {
@@ -168,6 +176,17 @@ func partyLevel(roster []*ecs.Entity) int {
 	level := 1
 	for _, delver := range roster {
 		level = max(level, delverLevel(delver))
+	}
+	return level
+}
+
+// expectedPartyLevel is the highest level among the matched players not seated
+// yet, each at the level they will be seated at (FS-K2HKP R18). 1 when there
+// are none, as partyLevel is for an empty roster.
+func expectedPartyLevel(expected []types.CharacterInPlay) int {
+	level := 1
+	for _, character := range expected {
+		level = max(level, seatLevel(character.Level))
 	}
 	return level
 }

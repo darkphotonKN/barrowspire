@@ -109,6 +109,12 @@ type Session struct {
 
 	// what each floor's monsters are rolled from (FS-77AB6 §Requirements 22)
 	spawnRand populationRand
+
+	// FS-K2HKP R18: the first floor's formation spots kept for matched players
+	// still on other pods. Each arrival takes one when seated
+	// (takeArrivalSlotLocked); a later floor regroups everyone and clears what
+	// is left. Guarded by mu.
+	arrivalSlots []point
 }
 
 // pub / sub manager for transporting event state between instances of sessions
@@ -824,6 +830,7 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 		return &id
 	}
 
+	// grpc request to items service to load players items
 	var loadout *components.EquipmentConfig
 	if s.itemsClient != nil {
 		grpcLoadoutRequest := &pbitems.GetLoadoutWithItemsRequest{
@@ -1237,16 +1244,22 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	// release lock after act
 	s.mu.Unlock()
 
-	// the stairs keep no cooldown: one climb is guaranteed by the floor change
-	// request, and a refusal must never lock the way up
+	// a refused interaction must never keep the target reserved, or one bad
+	// click locks it for every delver for the rest of the run. Every exit
+	// releases it here unless a successful branch handed the release off to its
+	// own short cooldown timer (or to pickUpItem). The stairs keep no cooldown:
+	// one climb is guaranteed by the floor change request, so they never hand off.
+	releaseHandedOff := false
+	defer func() {
+		if releaseHandedOff {
+			return
+		}
+		s.mu.Lock()
+		delete(s.containerInteractedCache, targetEntityID)
+		s.mu.Unlock()
+	}()
+
 	_, isStairs := targetEntity.GetComponent(ecs.ComponentTypeStairs)
-	if isStairs {
-		defer func() {
-			s.mu.Lock()
-			delete(s.containerInteractedCache, targetEntityID)
-			s.mu.Unlock()
-		}()
-	}
 
 	// get that entity's type and decide on the effect
 	_, isDoorEntity := targetEntity.GetComponent(ecs.ComponentTypeDoor)
@@ -1265,10 +1278,9 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	// establish player's position
 	s.mu.RLock()
 	playerEntityID := s.playerIDToEntitiesID[playerID]
-	s.mu.RUnlock()
-
 	// exit early if cached
 	_, exists = s.playerInteractedCache[playerEntityID]
+	s.mu.RUnlock()
 
 	if exists {
 		slog.Debug("Player interacted too soon", "playerEntityID", playerEntityID)
@@ -1343,6 +1355,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		doorOpenable.IsOpen = !doorOpenable.IsOpen
 
 		// release cache in 100 milliseconds
+		releaseHandedOff = true
 		go func() {
 			time.Sleep(time.Millisecond * 100)
 			s.mu.Lock()
@@ -1431,6 +1444,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		}
 
 		// release cache in 100 milliseconds
+		releaseHandedOff = true
 		go func() {
 			time.Sleep(time.Millisecond * 100)
 			s.mu.Lock()
@@ -1455,6 +1469,8 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	// --- item entity ---
 	// when directly acting to an item
 	if isItemEntity {
+		// pickUpItem releases a refused item itself and keeps a taken one held
+		releaseHandedOff = true
 		err := s.pickUpItem(playerEntity, playerTransform, targetEntityID)
 		if errors.Is(err, ErrOutOfRange) {
 			s.sendErrorToPlayer(playerID, string(constants.ActionInteract), "too far away to interact")
@@ -1505,6 +1521,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 			}
 		}
 		// release container cache so other players can use this escape door
+		releaseHandedOff = true
 		go func() {
 			time.Sleep(time.Millisecond * 100)
 			s.mu.Lock()
@@ -1575,6 +1592,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		s.handlePlayerEscape(playerID)
 
 		// release container cache so other players can use this escape door
+		releaseHandedOff = true
 		go func() {
 			time.Sleep(time.Millisecond * 100)
 			s.mu.Lock()
@@ -2478,11 +2496,17 @@ const firstFloor = 1
 * InitialMapObjects loads what a run keeps for its whole life, then builds its
 * first floor.
 *
+* expected is the characters of the matched players who are not seated yet,
+* the handoff players still connecting from other pods (FS-K2HKP R18). The
+* first floor is built for the whole matched party: the formation keeps a spot
+* for each of them and the monsters are levelled to them too. nil when the
+* whole party is already seated.
+*
 * The item catalogue is session-scoped: loaded once here and reused on every
 * floor, as the rarity list loaded at build is, so a floor change never calls
 * the items service (FS-F6F88 §Requirements 14).
 **/
-func (s *Session) InitialMapObjects() {
+func (s *Session) InitialMapObjects(expected []types.CharacterInPlay) {
 	// deliberately non-fatal: a session with no loot still runs
 	if err := s.InitializeItems(context.Background()); err != nil {
 		slog.Error("Session created without ground items.",
@@ -2490,7 +2514,9 @@ func (s *Session) InitialMapObjects() {
 		)
 	}
 
-	s.buildFloor(firstFloor)
+	// FS-K2HKP R18: only the first floor waits on arrivals; by the next floor
+	// they are seated or their seat has lapsed
+	s.buildFloor(firstFloor, expected)
 }
 
 /**
@@ -2503,8 +2529,12 @@ func (s *Session) InitialMapObjects() {
 * layout stands, the party is set down together at one spawn point, and only
 * then are its monsters levelled to the party and kept clear of every delver
 * (FS-77AB6 §Requirements 22). A floor built with nobody on it stays empty.
+*
+* expected is the party not seated yet, counted in the formation and the
+* monster level as if they stood there (FS-K2HKP R18). Only the first floor
+* has any; every later floor passes nil.
 **/
-func (s *Session) buildFloor(depth int) {
+func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 	slog.Debug("Building floor", "sessionID", s.ID, "depth", depth)
 
 	// a floor is placed on empty ground: nothing from an earlier floor occupies it
@@ -2558,10 +2588,13 @@ func (s *Session) buildFloor(depth int) {
 	}
 
 	// the party stands somewhere open before the monsters come, so they keep
-	// clear of it
-	s.gatherParty()
+	// clear of it. FS-K2HKP R18: the formation also keeps a spot for each
+	// expected player still connecting
+	s.gatherParty(len(expected))
 
-	s.populateMonsters(depth, depth == constants.RunFloorCount)
+	// FS-K2HKP R18: monsters are levelled to the whole matched party, the
+	// expected included, not only who is seated now
+	s.populateMonsters(depth, depth == constants.RunFloorCount, expected)
 }
 
 // centredArea is the area of half-width rw and half-height rh centred on (x, y).
@@ -2652,7 +2685,8 @@ func (s *Session) regenerateFloor() error {
 	// down together and then spawns its monsters clear of them
 	s.settlePartyOnNewFloor(entities)
 
-	s.buildFloor(floor.Depth)
+	// FS-K2HKP R18: arrivals only ever wait on the first floor
+	s.buildFloor(floor.Depth, nil)
 
 	return nil
 }

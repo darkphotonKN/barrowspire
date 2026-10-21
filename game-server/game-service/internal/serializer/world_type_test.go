@@ -42,7 +42,7 @@ func TestFormatStateToClientState_CarriesTheWorldType(t *testing.T) {
 }
 
 // A delver cannot talk to someone they cannot see. The hub's residents ride in
-// the broadcast alongside players — the ambient ones in I-29KSH-8 will move, so one
+// the broadcast alongside players. The ambient ones in I-29KSH-8 will move, so one
 // list covers both rather than a static delivery plus a moving one.
 // FS-29KSH §Requirements 9.
 func TestSerializeBackendState_CarriesNPCs(t *testing.T) {

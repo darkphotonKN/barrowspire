@@ -31,7 +31,7 @@ type messageHub struct {
 }
 
 type SessionManager interface {
-	CreateGameSession(players []*types.Player) *game.Session
+	CreateGameSession(players *types.ResolvedMatchedPlayers) *game.Session
 	GetGameSession(id uuid.UUID) (*game.Session, bool)
 	GetServerChan() chan types.ClientPackage
 	AddPlayer(*types.Player) error
@@ -351,19 +351,20 @@ func (h *messageHub) Run(ctx context.Context) {
 
 		case matched := <-h.sessionManager.GetMatchedChan(ctx):
 			// The matchmaker deals in ids only: its queue lives in Redis, which
-			// holds no names or classes. The full record is this server's own.
+			// holds no names or classes. The full record is this server's own
 			matchedPlayers := h.resolveMatchedPlayers(matched)
-			if len(matchedPlayers) == 0 {
-				slog.Warn("Match had no players connected to this server, no run started", "matched", len(matched))
+			if len(matchedPlayers.LocalPlayers) == 0 {
+				slog.Warn("Match had no players connected to this server, no run started")
 				continue
 			}
 
-			slog.Info("")
 			slog.Info("Received matched players, creating game session...",
 				"matched_players", matchedPlayers)
 			session := h.sessionManager.CreateGameSession(matchedPlayers)
-			playerIDs := make([]uuid.UUID, len(matchedPlayers))
-			for i, player := range matchedPlayers {
+			playerIDs := make([]uuid.UUID, len(matchedPlayers.LocalPlayers))
+
+			// broadcast to local players
+			for i, player := range matchedPlayers.LocalPlayers {
 				playerIDs[i] = player.ID
 			}
 			// game_found was this message under an older name, from when a run
@@ -401,20 +402,26 @@ func (h *messageHub) Run(ctx context.Context) {
 * being popped, or are connected to another replica. Moving those players
 * across replicas is the handoff's job (FS-K2HKP slice 3), not this lookup's.
 **/
-func (h *messageHub) resolveMatchedPlayers(matched []*types.Player) []*types.Player {
-	players := make([]*types.Player, 0, len(matched))
 
-	for _, m := range matched {
-		player, exists := h.sessionManager.PlayerByID(m.ID)
+func (h *messageHub) resolveMatchedPlayers(matchedPlayers []*types.Player) *types.ResolvedMatchedPlayers {
+	players := make([]*types.Player, 0)
+	handoffPlayers := make([]*types.Player, 0)
+
+	for _, matchedPlayer := range matchedPlayers {
+		player, exists := h.sessionManager.PlayerByID(matchedPlayer.ID)
 		if !exists {
-			slog.Warn("Matched player not connected to this server, left out of the run", "player_id", m.ID)
+			// external player, will need to wait for handoff to reconnect
+			handoffPlayers = append(handoffPlayers, matchedPlayer)
 			continue
 		}
 
 		players = append(players, player)
 	}
 
-	return players
+	return &types.ResolvedMatchedPlayers{
+		LocalPlayers:   players,
+		HandoffPlayers: handoffPlayers,
+	}
 }
 
 /**

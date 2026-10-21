@@ -71,7 +71,7 @@ func TestRunEnds_ReturnsPlayersToTheHub(t *testing.T) {
 
 // The connection is the thing that must not break. ADR-0015 chose one socket for
 // the whole session over refactor_plan's two-connection handoff precisely so that
-// nothing can fail between worlds — so the switch has to be observably internal.
+// nothing can fail between worlds. The switch has to be observably internal.
 // FS-29KSH §Requirements 20.
 func TestWorldSwitch_KeepsTheSameConnection(t *testing.T) {
 	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())

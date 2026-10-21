@@ -74,7 +74,7 @@ func TestCatalogueReads_CarryNoPlayerToken(t *testing.T) {
 	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, client, RunBounds())
 
 	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "member-token")
-	s.InitialMapObjects()
+	s.InitialMapObjects(nil)
 
 	for _, method := range []string{"ListItemTemplates", "ListItemRarities"} {
 		calls := client.calls(method)

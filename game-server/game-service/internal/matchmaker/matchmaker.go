@@ -125,11 +125,11 @@ type MatchAnnouncer interface {
 
 // Start launches queue listening
 func (q *matchmaker) Start(ctx context.Context) {
-	go q.MatchLoop(ctx)
+	go q.matchLoop(ctx)
 	go q.heartbeatLoop(ctx)
 	go q.queueStatusLoop(ctx)
 	go q.matchAnnouncer.Listen(ctx, q.podID, q.matchReadyCh)
-	go q.MatchReady(ctx)
+	go q.matchReady(ctx)
 	slog.Info("Queue service started, waiting for players to join...")
 }
 
@@ -188,7 +188,7 @@ func (q *matchmaker) Stopped() <-chan struct{} {
 }
 
 // matchQueue checks queue once per second
-func (q *matchmaker) MatchLoop(ctx context.Context) {
+func (q *matchmaker) matchLoop(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -261,15 +261,15 @@ func (q *matchmaker) MatchLoop(ctx context.Context) {
 			//TODO: implement better host pod selection
 			// host pod now is the first player's pod
 			payload := MatchStart{
-				PodID:   matchedPlayersRes[0].Pod,
+				PodID:   matchedPlayersRes[0].Pod, // right now pod is selected by first player
 				Step:    MatchStepCreate,
 				RunID:   uuid.New(),
 				Players: matchedPlayers,
 			}
 
-			// TODO: add a circuit breaker so repeated announce failures fail fast.
+			// TODO: add a circuit breaker so repeated announce failures fail fast
 			// After a few failures in a row, stop popping players for a backoff
-			// that doubles each time it trips, and reset on the first success.
+			// that doubles each time it trips, and reset on the first success
 			// Guard the Matchmake pop, not the announce, so players wait in the
 			// queue instead of being popped and requeued every tick.
 			err = q.matchAnnouncer.Announce(ctx, payload)
@@ -450,7 +450,7 @@ func (q *matchmaker) GetHandoffChan(ctx context.Context) chan MatchStart {
 }
 
 // Match ready handling loop
-func (q *matchmaker) MatchReady(ctx context.Context) {
+func (q *matchmaker) matchReady(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():

@@ -543,7 +543,7 @@ func (s *Server) GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool) {
 /**
 * allows the creation of a new game session.
 **/
-func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
+func (s *Server) CreateGameSession(players *types.ResolvedMatchedPlayers) *game.Session {
 	// create entity manager first so it can be shared
 	entityManager := ecs.NewEntityManager()
 	stateSerializer := serializer.NewStateSerializer(entityManager)
@@ -553,11 +553,12 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 
 	newGameSession.InitialSystems()
 
+	// Remove player from Hub
 	// Leaving the hub is part of arriving in the run: a player occupies one world
 	// at a time, and the hub is never torn down, so anything left behind there
 	// stays visible and broadcasting (FS-29KSH §Requirements 23).
 	if hub, exists := s.HubSession(); exists {
-		for _, player := range players {
+		for _, player := range players.LocalPlayers {
 			hub.RemovePlayer(player.ID.String())
 		}
 	}
@@ -567,27 +568,37 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 	// party and spawns them clear of every delver, so both must already be known
 	// (FS-77AB6 §Requirements 22). The session is not yet registered, so nothing
 	// routes to it while it is being built.
-	for _, player := range players {
+	for _, player := range players.LocalPlayers {
 		newGameSession.AddPlayer(player.ID, player.Character, s.tokenOf(player))
 	}
-	newGameSession.InitialMapObjects()
+
+	// FS-K2HKP R18: pass the handoff players so the first floor's formation and
+	// monster level count the whole matched party, not only who is seated now.
+	// Their characters come with the match; they are seated when they connect.
+	expected := make([]types.CharacterInPlay, 0, len(players.HandoffPlayers))
+	for _, player := range players.HandoffPlayers {
+		expected = append(expected, player.Character)
+	}
+	newGameSession.InitialMapObjects(expected)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	connected := constants.Connected
 
-	for _, player := range players {
+	for _, player := range players.LocalPlayers {
 		for _, record := range s.everyRecordOf(player) {
 			record.CurrentGameSessionId = newGameSession.ID
 			record.ConnectState = &connected
 		}
 	}
 
+	// TODO: add handoff players to handof wait list
+
 	s.sessions[newGameSession.ID] = newGameSession
 
 	// NOTE: keep this info level, important to save meta data DO NOT REMOVE
-	slog.Info("New game session initiated", "session_id", newGameSession.ID, "players", len(players))
+	slog.Info("New game session initiated", "session_id", newGameSession.ID, "local_players", len(players.LocalPlayers))
 
 	return newGameSession
 }

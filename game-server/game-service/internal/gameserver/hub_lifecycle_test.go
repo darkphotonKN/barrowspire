@@ -80,7 +80,7 @@ func TestHubMembership(t *testing.T) {
 
 // Being in a world is a fact, not an instruction to build another body. The
 // guard belongs to the world rather than to whoever is asking, so a route added
-// later cannot forget it — JoinHub remembered and ReturnPlayersToHub did not.
+// later cannot forget it. JoinHub remembered; ReturnPlayersToHub did not.
 // FS-29KSH §Requirements 1.
 func TestAddPlayer_IsIdempotentWhoeverAsks(t *testing.T) {
 	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
