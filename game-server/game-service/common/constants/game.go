@@ -27,12 +27,14 @@ const (
 	ActionChat      Action = "chat"
 
 	// system actions
-	ActionError   Action = "error"
-	ActionSuccess Action = "success"
-	ActionEndGame Action = "end_game"
+	ActionError          Action = "error"
+	ActionSuccess        Action = "success"
+	ActionEndGame        Action = "end_game"
+	ActionHandoffConnect Action = "end_game"
+	ActionReconnect      Action = "reconnected"
 
 	// ActionWorldEntered tells a client which world it is now in. One message
-	// for every transition — into the hub, into a run, and back again — so the
+	// for every transition, into the hub, into a run, and back again,, so the
 	// client has a single place to switch scenes. FS-29KSH §Requirements 15.
 	ActionWorldEntered Action = "world_entered"
 )

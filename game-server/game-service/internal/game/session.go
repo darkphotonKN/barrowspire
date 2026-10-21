@@ -115,6 +115,10 @@ type Session struct {
 	// (takeArrivalSlotLocked); a later floor regroups everyone and clears what
 	// is left. Guarded by mu.
 	arrivalSlots []point
+
+	// players waiting to connect via handoff
+	// playerID - Player struct
+	playersPendingConnection map[uuid.UUID]*types.Player
 }
 
 // pub / sub manager for transporting event state between instances of sessions
@@ -225,6 +229,8 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 
 		// the same goroutine-safe global source loot rolls with
 		spawnRand: sharedLootRand{},
+
+		playersPendingConnection: make(map[uuid.UUID]*types.Player),
 	}
 	s.SubscribeKills(newMonsterDrops(s, sharedLootRand{}))
 	s.SubscribeKills(newUniqueEffects(em))
@@ -316,8 +322,6 @@ func (s *Session) manageClientMessages() {
 
 			switch constants.Action(msg.Message.Action) {
 			case constants.ActionMove:
-
-				slog.Debug("Action from client was move")
 				// parse payload based on message action
 				parsedPayload, err := msg.Message.ParsePayload()
 
@@ -554,17 +558,9 @@ func (s *Session) manageGameLoop() {
 	ticker := time.NewTicker((1 * time.Second) / time.Duration(constants.GameFrameRate))
 	defer ticker.Stop()
 
-	// --- debugging ---
-
-	slog.Debug("Showing all item entities that was created at the start of the game session.",
-		"itemsState", s.itemPool,
-	)
-
-	// --- end debugging ---
-
-	// --- core game loop --
 	for {
 		select {
+		// --- core game loop --
 		case <-ticker.C:
 			// NOTE: keep for tracking game loop performance
 			tickStart := time.Now()
@@ -892,6 +888,17 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 	// update players map
 	s.playerEntityIDToPlayerID[entity.ID] = playerID
 	return entity.ID
+}
+
+// add player to pending connection map, when handed off by their own game servber instance (i.e. Pod)
+// they will reconnect to host pod via the handoff and land in this map, waiting for connection
+func (s *Session) AddPlayersToPendingConnection(players []*types.Player) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, player := range players {
+		s.playersPendingConnection[player.ID] = player
+	}
 }
 
 func (s *Session) RemovePlayer(userID string) {

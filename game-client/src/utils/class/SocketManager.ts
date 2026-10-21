@@ -67,7 +67,7 @@ export class SocketManager {
   // The socket to a run's host while the move is being decided, and the run it
   // is for. The run id stays after the move, so a repeated handoff is ignored.
   private pending: SocketLike | null = null;
-  private handoffRunId: string | null = null;
+  private handoffSessionId: string | null = null;
 
   constructor(
     private createSocket: (url: string) => SocketLike = (url) => new WebSocket(url),
@@ -232,18 +232,18 @@ export class SocketManager {
    * FS-K2HKP §Requirements 22–24, 29, 31.
    */
   private handoff(payload: WorldHandoffPayload) {
-    if (!payload?.addr || !payload?.run_id) {
-      console.error("world_handoff missing addr or run_id:", payload);
+    if (!payload?.addr || !payload?.session_id) {
+      console.error("world_handoff missing addr or session_id:", payload);
       return;
     }
 
     // already moving to (or moved to) this run
-    if (this.handoffRunId === payload.run_id) return;
+    if (this.handoffSessionId === payload.session_id) return;
 
     this.dropPending();
-    this.handoffRunId = payload.run_id;
+    this.handoffSessionId = payload.session_id;
 
-    const next = this.createSocket(`${payload.addr}?token=${this.token}&run=${payload.run_id}`);
+    const next = this.createSocket(`${payload.addr}?token=${this.token}&session_id=${payload.session_id}`);
     this.pending = next;
 
     // The host upgrades before it decides and refuses by closing with 4002, so
@@ -276,7 +276,7 @@ export class SocketManager {
 
     next.onclose = (event) => {
       if (this.pending !== next) return;
-      this.handoffFailed(payload.run_id, event.code);
+      this.handoffFailed(payload.session_id, event.code);
     };
   }
 
@@ -300,10 +300,10 @@ export class SocketManager {
     this.setConnectionStatus("connected");
   }
 
-  private handoffFailed(runId: string, code: number) {
-    console.warn("Handoff to run refused or failed:", runId, "code:", code);
+  private handoffFailed(sessionId: string, code: number) {
+    console.warn("Handoff to run refused or failed:", sessionId, "code:", code);
     this.pending = null;
-    this.handoffRunId = null;
+    this.handoffSessionId = null;
 
     // Still on the old socket: stay in the hub. If it is gone too, go back to
     // the server we were on, which puts us in its hub.
@@ -313,7 +313,7 @@ export class SocketManager {
       this.reconnect();
     }
 
-    this.listeners.get("world_handoff_failed")?.({ run_id: runId, code });
+    this.listeners.get("world_handoff_failed")?.({ session_id: sessionId, code });
   }
 
   private dropPending() {

@@ -15,8 +15,8 @@ the FS, so this can be built and unit-tested against it alone. End-to-end verifi
 two replicas waits on I-K2HKP-3. The server is not touched.
 
 The contract (FS-K2HKP R21–R24, R29–R31):
-- Server → client: `{action: "world_handoff", payload: {addr, run_id}}`.
-- New socket: `{addr}?token=<jwt>&run=<run_id>`. The host checks the JWT's member against the
+- Server → client: `{action: "world_handoff", payload: {addr, session_id}}`.
+- New socket: `{addr}?token=<jwt>&session_id=<session_id>`. The host checks the JWT's member against the
   run's expected players. There is no character param, because the host already has the character
   from the queue entry.
 - Refusal: the host closes the new socket with **4002**.
@@ -46,7 +46,7 @@ Behavior:
 
 ## Acceptance Criteria
 
-- [ ] `world_handoff` opens a socket to `addr` with the token and run id, and closes the old socket
+- [ ] `world_handoff` opens a socket to `addr` with the token and session id, and closes the old socket
       (1000) only after the new one is accepted, from the single transition point.
 - [ ] A duplicate `world_handoff` for the same run is ignored.
 - [ ] A 4002 refusal, or a failure before the new socket opens, leaves the player in the HUB

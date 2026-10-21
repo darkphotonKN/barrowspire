@@ -593,7 +593,8 @@ func (s *Server) CreateGameSession(players *types.ResolvedMatchedPlayers) *game.
 		}
 	}
 
-	// TODO: add handoff players to handof wait list
+	// add players to handoff and expected to connect in game session map
+	newGameSession.AddPlayersToPendingConnection(players.HandoffPlayers)
 
 	s.sessions[newGameSession.ID] = newGameSession
 

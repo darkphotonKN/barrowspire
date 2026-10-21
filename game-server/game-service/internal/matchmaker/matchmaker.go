@@ -37,8 +37,6 @@ const (
 type MatchStart struct {
 	PodID string    `json:"pod_id"` // must match id of appointed pod
 	Step  MatchStep `json:"step"`
-	// the run this match becomes, fixed at match time so every step names the same run
-	RunID uuid.UUID `json:"run_id"`
 	// list of players for this step
 	Players []MatchStartPlayer `json:"players"`
 }
@@ -263,7 +261,6 @@ func (q *matchmaker) matchLoop(ctx context.Context) {
 			payload := MatchStart{
 				PodID:   matchedPlayersRes[0].Pod, // right now pod is selected by first player
 				Step:    MatchStepCreate,
-				RunID:   uuid.New(),
 				Players: matchedPlayers,
 			}
 

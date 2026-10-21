@@ -1,6 +1,7 @@
 package gameserver
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	authPb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
+	"github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -66,6 +68,17 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 		slog.Debug("Player connecting fresh.",
 			"username", data.Name,
 		)
+	}
+
+	// setup connecting player from handoff with his gear and character before attempting to connect to the match
+	sessionID, exists := c.Get(auth.SessionIDKey)
+	if exists {
+		sessionIDUUID, err := uuid.Parse(sessionID.(string))
+		if err != nil {
+			slog.Warn("attempt to handoff connect to game with incorrect session id", "session_id", sessionID, "member_id", memberId)
+			// TODO: return error
+		}
+		loadoutRes, err := s.setupHandoffConnectingPlayer(ctx, memberId)
 	}
 
 	// establish websocket connection
@@ -499,4 +512,16 @@ func (s *Server) leaveCurrentWorld(player *types.Player) {
 	} else {
 		slog.Info("Session still has remaining players", "session_id", playerSession.ID, "remaining", len(remainingPlayers))
 	}
+}
+
+func (s *Server) setupHandoffConnectingPlayer(ctx context.Context, memberID uuid.UUID) (*items.GetLoadoutResponse, error) {
+	res, err := s.itemsClient.GetLoadout(ctx, &items.GetLoadoutRequest{
+		MemberId: memberID.String(),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
 }

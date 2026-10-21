@@ -145,8 +145,9 @@ with an ordinary world switch.
 
 16. The **host pod** is the pod of the first popped player.
 17. The matcher publishes a match-start step **`create`** on the **host pod's channel only**,
-    `PUBLISH matchstart:pod:{hostPodID} <msg>`: `{step: create, pod: hostPodID, runID, players:
-    [{playerID, podID, character}]}`, runID = random UUID. Every replica subscribes to its own
+    `PUBLISH matchstart:pod:{hostPodID} <msg>`: `{step: create, pod: hostPodID, players:
+    [{playerID, podID, character}]}`. The run has no id until the host creates its session
+    (R20). *(Amended: originally a random runID minted by the matcher.)* Every replica subscribes to its own
     `matchstart:pod:{POD_ID}` channel. A matcher that is itself the host still publishes; there is one path.
 18. On `create`, the host creates the run session at once from the match's characters, with the
     matched player ids as its **expected players**, and builds the first floor levelled to the
@@ -155,13 +156,15 @@ with an ordinary world switch.
 19. Matched players already on the host pod are moved into the run at once (ordinary world
     switch, `world_entered` run), with no reconnect.
 20. After creating the run, the host publishes a match-start step **`handoff`** on each other
-    involved pod's channel, listing that pod's players only: `{step: handoff, pod, runID,
-    hostAddr, players: [{playerID}]}`. It sends no handoff for its own players.
-21. On `handoff`, a pod sends each listed player connected to it `world_handoff {addr, run_id}`
+    involved pod's channel, listing that pod's players only: `{step: handoff, pod, sessionID,
+    hostAddr, players: [{playerID}]}`, where sessionID is the id of the run session it just created.
+    It sends no handoff for its own players. *(Amended: one id for the run everywhere, the
+    session's, named `session_id` on the wire.)*
+21. On `handoff`, a pod sends each listed player connected to it `world_handoff {addr, session_id}`
     through the normal per-connection writer. A listed player not connected there is skipped;
     their seat lapses (R25). The pod does not remove anyone from its HUB world and does not
     touch the queue.
-22. The client connects to `addr` with its JWT (`?token=`, as today) **plus** `&run=<runID>`. The
+22. The client connects to `addr` with its JWT (`?token=`, as today) **plus** `&session_id=<sessionID>`. The
     host checks the JWT's member is an expected, not-yet-seated player of that run, fetches their
     loadout (items-service) **before** taking the session's lock, then seats them in the running
     world and sends `world_entered` (run).
@@ -192,7 +195,7 @@ with an ordinary world switch.
 ### Client
 
 29. The client handles `world_handoff` in its single world-transition point (ADR-0015 clause 4):
-    open a socket to `addr` with the token and the run id, and only once it is accepted close the
+    open a socket to `addr` with the token and the session id, and only once it is accepted close the
     old socket with a normal closure, behind the existing transition into the run. A
     `world_handoff` for a run the client is already moving to is ignored.
 30. The main menu's cancel no longer sends `find_game {cancel: true}`; `leave_queue` alone
@@ -291,7 +294,7 @@ with an ordinary world switch.
 - [ ] After the old socket closes, the player is gone from the old pod's HUB world and their
       ghost expires elsewhere.
 - [ ] Run resolution returns players to the host pod's HUB world with no reconnect.
-- [ ] Client: `world_handoff` connects with the token and run id and closes the old socket only
+- [ ] Client: `world_handoff` connects with the token and session id and closes the old socket only
       after the new one is accepted, from the single transition point; on refusal or failure it
       stays in (or returns to) the HUB world on its original address.
 - [ ] Client: main-menu cancel sends only `leave_queue`.

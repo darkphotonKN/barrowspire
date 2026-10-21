@@ -54,9 +54,9 @@ function setup() {
   return { manager, sockets, old };
 }
 
-const handoff = (runId = "run-1", addr = HOST) => ({
+const handoff = (sessionId = "run-1", addr = HOST) => ({
   action: "world_handoff",
-  payload: { addr, run_id: runId },
+  payload: { addr, session_id: sessionId },
 });
 const runEntered = { action: "world_entered", payload: { session_id: "run-1", world_type: "run" } };
 
@@ -70,11 +70,11 @@ describe("SocketManager handoff", () => {
     expect(env.old.url).toBe(`${DEFAULT_SERVER_ADDR}?token=jwt-1&name=Ash`);
   });
 
-  it("opens a socket to the host with the token and run id, keeping the old one open", () => {
+  it("opens a socket to the host with the token and session id, keeping the old one open", () => {
     env.old.receive(handoff());
 
     expect(env.sockets).toHaveLength(2);
-    expect(env.sockets[1].url).toBe(`${HOST}?token=jwt-1&run=run-1`);
+    expect(env.sockets[1].url).toBe(`${HOST}?token=jwt-1&session_id=run-1`);
     expect(env.old.closedWith).toBeUndefined();
   });
 
