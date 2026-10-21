@@ -22,8 +22,8 @@ import (
 // Key names are asserted literally: they are the shared contract between
 // replicas, so a test that reused the package constants would not catch a rename.
 const (
-	queueKey     = "queue"
-	playerPodKey = "player:pod"
+	queueKey        = "queue"
+	queueEntriesKey = "queue:entries"
 )
 
 func newQueue(t *testing.T) (*matchqueue.Redis, redis.UniversalClient) {
@@ -47,7 +47,7 @@ func character(playerID string) types.CharacterInPlay {
 // entryPod reads the pod out of a player's queue entry
 func entryPod(t *testing.T, client redis.UniversalClient, playerID string) string {
 	t.Helper()
-	raw, err := client.HGet(context.Background(), playerPodKey, playerID).Result()
+	raw, err := client.HGet(context.Background(), queueEntriesKey, playerID).Result()
 	require.NoError(t, err)
 	var entry struct {
 		Pod string `json:"pod"`
@@ -96,7 +96,7 @@ func TestQueuePlayer_StoresPodAndCharacterAsTheQueueEntry(t *testing.T) {
 			"level": 7,
 			"experience": 3100
 		}
-	}`, client.HGet(ctx, playerPodKey, "p1").Val())
+	}`, client.HGet(ctx, queueEntriesKey, "p1").Val())
 }
 
 func TestQueuePlayer_SecondJoin_ReturnsAlreadyQueuedAndKeepsOneEntry(t *testing.T) {
@@ -122,8 +122,8 @@ func TestDequeuePlayer_ClearsQueueAndPodHash_AndIsIdempotent(t *testing.T) {
 	require.NoError(t, q.DequeuePlayer(ctx, "p1"), "second dequeue must be safe")
 
 	assert.Equal(t, []string{"p2"}, client.LRange(ctx, queueKey, 0, -1).Val())
-	assert.False(t, client.HExists(ctx, playerPodKey, "p1").Val())
-	assert.True(t, client.HExists(ctx, playerPodKey, "p2").Val())
+	assert.False(t, client.HExists(ctx, queueEntriesKey, "p1").Val())
+	assert.True(t, client.HExists(ctx, queueEntriesKey, "p2").Val())
 }
 
 func TestMarkPodAlive_SetsKeyThatExpiresAfterThreeSeconds(t *testing.T) {
@@ -188,9 +188,9 @@ func TestMatchmake_FullGroup_ReturnsArrivalOrderWithPodsAndCleansKeys(t *testing
 		{ID: "p2", Pod: "pod-b", Character: character("p2")},
 	}, matched)
 	assert.Equal(t, []string{"p3"}, client.LRange(ctx, queueKey, 0, -1).Val(), "the rest keeps its place")
-	assert.False(t, client.HExists(ctx, playerPodKey, "p1").Val())
-	assert.False(t, client.HExists(ctx, playerPodKey, "p2").Val())
-	assert.True(t, client.HExists(ctx, playerPodKey, "p3").Val())
+	assert.False(t, client.HExists(ctx, queueEntriesKey, "p1").Val())
+	assert.False(t, client.HExists(ctx, queueEntriesKey, "p2").Val())
+	assert.True(t, client.HExists(ctx, queueEntriesKey, "p3").Val())
 }
 
 func TestMatchmake_MissingPod_ReturnsErrorAndRestoresOthersInOrder(t *testing.T) {
@@ -202,15 +202,15 @@ func TestMatchmake_MissingPod_ReturnsErrorAndRestoresOthersInOrder(t *testing.T)
 	queue(t, q, "p2", "pod-a")
 	queue(t, q, "p3", "pod-a")
 	// drift: p2 is queued but its pod record is gone
-	require.NoError(t, client.HDel(ctx, playerPodKey, "p2").Err())
+	require.NoError(t, client.HDel(ctx, queueEntriesKey, "p2").Err())
 
 	matched, err := q.Matchmake(ctx, matchmaker.MatchCriteria{MatchSize: 3})
 
 	require.Error(t, err)
 	assert.Nil(t, matched)
 	assert.Equal(t, []string{"p1", "p3"}, client.LRange(ctx, queueKey, 0, -1).Val())
-	assert.True(t, client.HExists(ctx, playerPodKey, "p1").Val())
-	assert.True(t, client.HExists(ctx, playerPodKey, "p3").Val())
+	assert.True(t, client.HExists(ctx, queueEntriesKey, "p1").Val())
+	assert.True(t, client.HExists(ctx, queueEntriesKey, "p3").Val())
 }
 
 // A queue entry that is not JSON, or has no pod, is corruption just like a
@@ -235,15 +235,15 @@ func TestMatchmake_MalformedEntry_ReturnsErrorAndRestoresOthersInOrder(t *testin
 			queue(t, q, "p1", "pod-a")
 			queue(t, q, "p2", "pod-a")
 			queue(t, q, "p3", "pod-a")
-			require.NoError(t, client.HSet(ctx, playerPodKey, "p2", tt.entry).Err())
+			require.NoError(t, client.HSet(ctx, queueEntriesKey, "p2", tt.entry).Err())
 
 			matched, err := q.Matchmake(ctx, matchmaker.MatchCriteria{MatchSize: 3})
 
 			require.Error(t, err)
 			assert.Nil(t, matched)
 			assert.Equal(t, []string{"p1", "p3"}, client.LRange(ctx, queueKey, 0, -1).Val())
-			assert.True(t, client.HExists(ctx, playerPodKey, "p1").Val())
-			assert.True(t, client.HExists(ctx, playerPodKey, "p3").Val())
+			assert.True(t, client.HExists(ctx, queueEntriesKey, "p1").Val())
+			assert.True(t, client.HExists(ctx, queueEntriesKey, "p3").Val())
 		})
 	}
 }
@@ -296,7 +296,7 @@ func TestMatchmake_DeadPod_DropsItsPlayerAndSurvivorKeepsTheHead(t *testing.T) {
 	require.NoError(t, err, "a dead pod is an expected case, not an error")
 	assert.Nil(t, matched)
 	assert.Equal(t, []string{"p1", "p3"}, client.LRange(ctx, queueKey, 0, -1).Val(), "survivor back at the head")
-	assert.False(t, client.HExists(ctx, playerPodKey, "p2").Val(), "dead pod's player is cleaned up")
+	assert.False(t, client.HExists(ctx, queueEntriesKey, "p2").Val(), "dead pod's player is cleaned up")
 	assert.Equal(t, "pod-a", entryPod(t, client, "p1"), "survivor keeps its pod record")
 }
 
@@ -316,7 +316,7 @@ func TestMatchmake_DeadPodFirstInGroup_DropsItAndRestoresTheRestInOrder(t *testi
 	require.NoError(t, err)
 	assert.Nil(t, matched)
 	assert.Equal(t, []string{"p2", "p3", "p4"}, client.LRange(ctx, queueKey, 0, -1).Val())
-	assert.False(t, client.HExists(ctx, playerPodKey, "p1").Val())
+	assert.False(t, client.HExists(ctx, queueEntriesKey, "p1").Val())
 }
 
 // Several matchers run the same rounds at once (the lock expired, or it is not
@@ -367,7 +367,7 @@ func TestMatchmake_ConcurrentMatchers_NeverDuplicateOrSplitAGroup(t *testing.T) 
 	}
 	assert.Len(t, seen, players, "every queued player is matched exactly once")
 	assert.Zero(t, client.LLen(ctx, queueKey).Val())
-	assert.Zero(t, client.HLen(ctx, playerPodKey).Val())
+	assert.Zero(t, client.HLen(ctx, queueEntriesKey).Val())
 }
 
 func TestQueuedPlayers_ReturnsGlobalLengthAndThisPodsPlayersInQueueOrder(t *testing.T) {
@@ -394,7 +394,7 @@ func TestQueuedPlayers_MalformedEntry_IsSkippedButStillCounted(t *testing.T) {
 
 	queue(t, q, "p1", "pod-a")
 	queue(t, q, "p2", "pod-a")
-	require.NoError(t, client.HSet(ctx, playerPodKey, "p1", "pod-a").Err())
+	require.NoError(t, client.HSet(ctx, queueEntriesKey, "p1", "pod-a").Err())
 
 	queueLen, podPlayerIDs, err := q.QueuedPlayers(ctx, "pod-a")
 

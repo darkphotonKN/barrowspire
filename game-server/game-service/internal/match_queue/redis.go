@@ -23,8 +23,8 @@ func NewRedis(client redis.UniversalClient) *Redis {
 }
 
 const (
-	keyQueue     = "queue"
-	keyPlayerPod = "player:pod"
+	keyQueue        = "queue"
+	keyQueueEntries = "queue:entries"
 
 	// pod:alive:{podID}, present only while that pod keeps heartbeating
 	keyPodAlivePrefix = "pod:alive:"
@@ -34,7 +34,7 @@ const (
 // redis) before it counts as dead
 const podAliveTTL = 3 * time.Second
 
-// queueEntry is the player:pod hash value, the player's pod and the character
+// queueEntry is the queue:entries hash value, the player's pod and the character
 // in play they queued with, so whichever pod hosts the match can build the run
 type queueEntry struct {
 	Pod       string                `json:"pod"`
@@ -64,7 +64,7 @@ func (r *Redis) QueuePlayer(ctx context.Context, playerID, pod string, character
 	}
 
 	// atomically push player to list and add their queue entry to hash
-	cmd := queueScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, playerID, entry)
+	cmd := queueScript.Run(ctx, r.client, []string{keyQueue, keyQueueEntries}, playerID, entry)
 	created, err := cmd.Int64()
 
 	// return early with unexpected redis error
@@ -92,7 +92,7 @@ var dequeueScript = redis.NewScript(`
 	`)
 
 func (r *Redis) DequeuePlayer(ctx context.Context, playerID string) error {
-	_, err := dequeueScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, playerID).Int64()
+	_, err := dequeueScript.Run(ctx, r.client, []string{keyQueue, keyQueueEntries}, playerID).Int64()
 
 	if err != nil {
 		return fmt.Errorf("MatchQueue DequeuePlayer : %w", err)
@@ -187,9 +187,9 @@ var matchmakeScript = redis.NewScript(`
 	`)
 
 // checks every tick if there is enough players for a game, removes them from
-// list (queue) and player:pod hash
+// list (queue) and queue:entries hash
 func (r *Redis) Matchmake(ctx context.Context, matchCriteria matchmaker.MatchCriteria) ([]matchmaker.MatchedPlayer, error) {
-	raw, err := matchmakeScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, matchCriteria.MatchSize, keyPodAlivePrefix).Text()
+	raw, err := matchmakeScript.Run(ctx, r.client, []string{keyQueue, keyQueueEntries}, matchCriteria.MatchSize, keyPodAlivePrefix).Text()
 
 	if err != nil {
 		return nil, fmt.Errorf("MatchQueue Matchmake redis script : %w", err)
@@ -258,7 +258,7 @@ type queuedPlayersRes struct {
 // reads the global queue length and which queued players belong to podID, in
 // queue order, so each pod can report progress to its own players
 func (r *Redis) QueuedPlayers(ctx context.Context, podID string) (int, []string, error) {
-	raw, err := queuedPlayersScript.Run(ctx, r.client, []string{keyQueue, keyPlayerPod}, podID).Text()
+	raw, err := queuedPlayersScript.Run(ctx, r.client, []string{keyQueue, keyQueueEntries}, podID).Text()
 
 	if err != nil {
 		return 0, nil, fmt.Errorf("MatchQueue QueuedPlayers redis script : %w", err)

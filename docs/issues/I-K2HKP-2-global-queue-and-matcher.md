@@ -22,7 +22,7 @@ slice 3.
 
 The flow, end to end:
 pod identity from env → liveness heartbeat → `find_game` writes the queue entry
-`HSETNX player:pod <playerID> {pod, character: {id, name, class, level, experience}}` and
+`HSETNX queue:entries <playerID> {pod, character: {id, name, class, level, experience}}` and
 `RPUSH queue`; `leave_queue` / disconnect remove both → `enter_hub` as another character is
 refused while queued → matcher round under a lock → atomic all-or-nothing pop (Lua) → read each
 popped player's pod from their queue entry, drop players whose pod is dead, push survivors back

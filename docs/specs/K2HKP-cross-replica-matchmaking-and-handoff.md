@@ -105,12 +105,12 @@ with an ordinary world switch.
 ### Queue
 
 6. `find_game` (sent from the delve NPC dialogue) adds the player to one global Redis queue:
-   `RPUSH queue <playerID>` and a **queue entry** in the `player:pod` hash,
-   `HSETNX player:pod <playerID> <entry>`, where the entry is JSON: the player's pod id and the
+   `RPUSH queue <playerID>` and a **queue entry** in the `queue:entries` hash,
+   `HSETNX queue:entries <playerID> <entry>`, where the entry is JSON: the player's pod id and the
    **character in play** the pod resolved at HUB entry,
    `{pod, character: {id, name, class, level, experience}}`. Queueing twice is rejected as today
    (`ErrPlayerAlreadyQueued`).
-7. `leave_queue` removes the player: `LREM queue 0 <playerID>` and `HDEL player:pod <playerID>`,
+7. `leave_queue` removes the player: `LREM queue 0 <playerID>` and `HDEL queue:entries <playerID>`,
    and replies only after removal. (Fixes the existing bug where `leave_queue` replied
    "Successfully left the queue" without removing anyone.)
 7a. `enter_hub` as a different character while queued is refused until the player leaves the
@@ -129,7 +129,7 @@ with an ordinary world switch.
     pop, atomic). `LPOP key count` alone is not used: it pops a partial group that then has to
     be pushed back, losing order and racing other replicas.
 13. Before committing a match, the matcher drops any popped player whose pod (read from their
-    queue entry) has no `pod:alive` key, cleans their `player:pod` entry, and pushes the
+    queue entry) has no `pod:alive` key, cleans their `queue:entries` entry, and pushes the
     surviving players back to the **head** of the queue (`LPUSH`) so they keep their place.
 13a. A committed match returns each player's id, pod and character, from their queue entries.
 14. The lock is for efficiency only: the Lua pop is what guarantees no player is matched twice,
@@ -255,7 +255,7 @@ with an ordinary world switch.
       full match end to end, with no handoff (both players are on the host pod).
 - [ ] `pod:alive:{podID}` exists with ~3s TTL while the replica runs and disappears ≤3s after it
       stops ticking; it is deleted on graceful shutdown.
-- [ ] `find_game` puts the player in the Redis queue with a `player:pod` queue entry holding their
+- [ ] `find_game` puts the player in the Redis queue with a queue entry in `queue:entries` holding their
       pod id and character in play; queueing twice is refused.
 - [ ] `enter_hub` as a different character while queued is refused.
 - [ ] `leave_queue` removes the player from both before replying; disconnect while queued does
@@ -292,7 +292,7 @@ with an ordinary world switch.
 ## Edge States
 
 - **Replica crash while players queued:** their entries stay until popped; R13 drops them.
-  `player:pod` entries for players never popped stay as small leftovers — acceptable, they are
+  queue entries for players never popped stay as small leftovers — acceptable, they are
   overwritten if the player queues again.
 - **Host pod crashes after the match, before arrival:** the run dies with it. Clients
   already told to move fail to connect and stay on (or fall back to) their original address
@@ -333,7 +333,7 @@ with an ordinary world switch.
   pod case — the matcher errors, that player is popped, the others are restored in order.
 - **Redis down:** no queueing or matching (refuse `find_game` with a message); runs already in
   progress continue unaffected; the HUB world degrades per FS-JEAVX.
-- **Same player queued from two replicas (two tabs):** refused by the `player:pod` check
+- **Same player queued from two replicas (two tabs):** refused by the `queue:entries` check
   (`HSETNX` or check-then-set inside the queue operation).
 - **Handoff message to a non-host pod is lost** (subscriber reconnecting at that moment): that
   pod's players never get `world_handoff`; their seats are released (R25) and the run continues
