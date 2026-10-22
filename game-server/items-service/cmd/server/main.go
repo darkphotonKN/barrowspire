@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -93,13 +94,13 @@ func main() {
 		http.ListenAndServe(":8197", nil)
 	}()
 
-	ch, close := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
+	ch, brokerClose := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
 
 	// Declare the items events exchange
 	broker.DeclareExchange(ch, commonconstants.ItemEventsExchange, "topic")
 
 	defer func() {
-		close()
+		brokerClose()
 		ch.Close()
 	}()
 
@@ -110,10 +111,15 @@ func main() {
 	publisher := commonbroker.NewAmqpPublisher(ch)
 	// TODO: update in prod
 	workcycyleTime := time.Minute * 1
-	outboxWorker := commonoutbox.NewOutboxWorker(workcycyleTime, 20, outboxServ, publisher)
+	workersWg := sync.WaitGroup{}
+	// add the number of workers
+	workersWg.Add(1)
+	outboxWorker := commonoutbox.NewOutboxWorker(workcycyleTime, 20, outboxServ, publisher, &workersWg)
 
-	workerCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	// WARN: we pass context.Background() here to gracefully stop workers with
+	// with an explicit cancel , take care not to remove that in main.go here
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
 
 	go outboxWorker.Run(workerCtx)
 	// Use the new config setup to initialize all services
@@ -201,5 +207,37 @@ func main() {
 	<-quit
 
 	log.Println("Shutting down...")
-	grpcServer.GracefulStop()
+	// give 20 second grace period for the other services shutdown
+	doneCh := make(chan struct{})
+
+	// graceful shutdown for grpc server first, stop the final requests
+	go func() {
+		grpcServer.GracefulStop()
+		close(doneCh)
+	}()
+	select {
+	case <-doneCh:
+		slog.Info("shutting down after graceful stop...")
+	case <-time.After(time.Second * 20):
+		slog.Info("shutting down after waiting 20 secs...")
+		grpcServer.Stop()
+	}
+
+	// then shutdown the outbox workers
+	workerCancel() // cancel and let workers finish
+
+	workersDone := make(chan struct{})
+	go func() {
+		workersWg.Wait()
+		// gracefully send workers are done
+		close(workersDone)
+	}()
+
+	select {
+	case <-workersDone:
+		slog.Info("outbox workers shutdown gracefully...")
+		// back up, don't allow more than 10 seconds
+	case <-time.After(time.Second * 10):
+		slog.Info("outbox workers stopped after waiting 10 seconds...")
+	}
 }

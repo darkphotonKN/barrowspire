@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
@@ -21,6 +22,7 @@ type OutboxWorker struct {
 	batchCount      *int
 	outboxRetriever OutboxRetriever
 	publishCh       commonbroker.Publisher
+	wg              *sync.WaitGroup
 }
 
 type OutboxRetriever interface {
@@ -28,12 +30,13 @@ type OutboxRetriever interface {
 	UpdateOutboxToPublished(ctx context.Context, id uuid.UUID) error
 }
 
-func NewOutboxWorker(workCycle time.Duration, batchCount int, outboxRetriever OutboxRetriever, publishCh commonbroker.Publisher) *OutboxWorker {
+func NewOutboxWorker(workCycle time.Duration, batchCount int, outboxRetriever OutboxRetriever, publishCh commonbroker.Publisher, wg *sync.WaitGroup) *OutboxWorker {
 	return &OutboxWorker{
 		workCycle:       workCycle,
 		batchCount:      &batchCount,
 		outboxRetriever: outboxRetriever,
 		publishCh:       publishCh,
+		wg:              wg,
 	}
 }
 
@@ -41,6 +44,9 @@ func NewOutboxWorker(workCycle time.Duration, batchCount int, outboxRetriever Ou
 * Sets up the cancel and publish for select which initiates the workers
 **/
 func (w *OutboxWorker) Run(ctx context.Context) {
+	// finished cancelling gracefully, notify waitgroup
+	defer w.wg.Done()
+
 	timer := time.NewTicker(w.workCycle)
 
 	slog.Info("Initiating outbox workers..")
@@ -50,11 +56,16 @@ func (w *OutboxWorker) Run(ctx context.Context) {
 	for {
 		select {
 		case <-timer.C:
-			_ = w.PublishOutboxEvents(ctx) // errors are logged inside; the next tick retries
+			// incase time.C and ctx.Done() runs at the same instant
+			if ctx.Err() != nil {
+				return
+			}
+			publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second*30)
+			_ = w.PublishOutboxEvents(publishCtx) // errors are logged inside; the next tick retries
+			cancel()
 
 			// cancelled
 		case <-ctx.Done():
-
 			return
 		}
 	}
@@ -99,7 +110,6 @@ func (w *OutboxWorker) PublishOutboxEvents(ctx context.Context) error {
 
 			for {
 				err := w.outboxRetriever.UpdateOutboxToPublished(ctx, evtId)
-
 				if err != nil {
 					if commonhelpers.IsTransientError(err) && retries < 5 {
 						slog.Error("Transient error when attempting to update outbox to published.",
