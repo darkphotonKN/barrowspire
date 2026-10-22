@@ -145,8 +145,17 @@ The game is a **medieval barrow-dungeon delve / extraction**, not a space shoote
 
 ### Phaser Scenes (In-Game)
 
-Phaser scenes (MainMenuScene, BarrowspireScene) use the **game palette** (`BARROW_HEX`), not the
-web UI's Bone & Soot (ADR-0025):
+**The canvas menus are the exception:** MainMenuScene, CharacterCreationScene, LoadoutScene and
+`src/ui/menuChrome.ts` wear the site's Bone & Soot (soot ground, stone panels, iron hairlines, a
+bone primary button, the title "THE AGE OF BARROWSPIRE" as the site's hero h1). They read it from
+`palette.menu`, whose `menu*` tokens in `BARROW` / `BARROW_HEX` mirror `globals.css` `:root`, never
+from the UI table. The loadout passes `MENU_EQUIPMENT_THEME` to `EquipmentPanel`, whose default
+stays the game look for the run. The baked figures and the HUD pieces a menu reuses (XP bar, HP/MP
+stat colours, item tip) stay on the game palette.
+See the guideline's "UI Chrome".
+
+Every other Phaser scene (HubScene, BarrowspireScene, the HUD) uses the **game palette**
+(`BARROW_HEX`), not the web UI's Bone & Soot (ADR-0025):
 - Background: `#0d0b0a` charcoal with drifting dust/ember motes (not stars)
 - Atmosphere: torch-pool glow + vignette + dust as camera-fixed decorative overlays (`createAtmosphere`), depth ~900, below HUD (1000) and popups (2000)
 - Player = hooded delver, rivals = pale wights (procedural, `spriteGenerator.ts`)

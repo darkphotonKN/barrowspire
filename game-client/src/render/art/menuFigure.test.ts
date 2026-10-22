@@ -1,9 +1,17 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type Phaser from "phaser";
+import { CLASS_LORE, type ClassKey } from "@/data/classLore";
+import { characterSheet } from "./animationSelect";
 import { ArtLibrary, PLACEHOLDER_TEXTURE } from "./library";
-import type { ArtAnimation, ArtManifest } from "./manifest";
-import { MAX_MENU_SCALE, MIN_MENU_SCALE, MenuFigure } from "./menuFigure";
-import { TURNTABLE_STEP_MS } from "./turntable";
+import { directionIndex, type ArtAnimation, type ArtManifest } from "./manifest";
+import {
+  MAX_MENU_SCALE,
+  MENU_FACING,
+  MIN_MENU_SCALE,
+  MenuFigure,
+} from "./menuFigure";
 
 const quiet = { warn: () => {} };
 
@@ -182,19 +190,24 @@ const asScene = (s: ReturnType<typeof fakeScene>) =>
   s as unknown as Phaser.Scene;
 
 describe("MenuFigure", () => {
-  it("draws the class's baked sheet idle, facing the viewer, and turns through the facings", () => {
+  it("faces the viewer: se on the 2:1 iso camera", () => {
+    expect(MENU_FACING).toBe("se");
+    expect(directionIndex(MENU_FACING)).toBe(1);
+  });
+
+  it("draws the class's baked sheet idle, facing the viewer, and never turns", () => {
     const scene = fakeScene();
     new MenuFigure(asScene(scene), library(), 0, 0, "warrior");
     const sprite = scene.sprites[0];
 
     expect(sprite.texture).toBe("art:characters-0");
-    scene.frame(0);
-    expect(sprite.plays.at(-1)?.key).toBe("char_knight_base/idle/1"); // se
-    scene.frame(TURNTABLE_STEP_MS);
-    expect(sprite.plays.at(-1)?.key).toBe("char_knight_base/idle/2"); // s
+    for (let now = 0; now <= 30_000; now += 250) scene.frame(now);
+    expect(new Set(sprite.plays.map((p) => p.key))).toEqual(
+      new Set(["char_knight_base/idle/1"]),
+    );
   });
 
-  it("plays the attack once on selection, then returns to the idle turn", () => {
+  it("plays the attack once on selection, facing the viewer, then idles again", () => {
     const scene = fakeScene();
     const figure = new MenuFigure(asScene(scene), library(), 0, 0, "warrior");
     const sprite = scene.sprites[0];
@@ -236,7 +249,7 @@ describe("MenuFigure", () => {
     expect([MIN_MENU_SCALE, MAX_MENU_SCALE]).toEqual([1, 1.5]);
   });
 
-  it("a portrait crops to head and shoulders at 1x and does not turn", () => {
+  it("a portrait crops to head and shoulders at 1x, facing the viewer", () => {
     const scene = fakeScene();
     new MenuFigure(asScene(scene), library(), 0, 0, "warrior", {
       portrait: { width: 50, height: 60 },
@@ -247,7 +260,7 @@ describe("MenuFigure", () => {
     // anchor at (72, 108) px in the frame; the crown 83 px above it
     expect(sprite.crop).toEqual([47, 21, 50, 60]);
     scene.frame(0);
-    scene.frame(TURNTABLE_STEP_MS * 3);
+    scene.frame(10_000);
     expect(new Set(sprite.plays.map((p) => p.key))).toEqual(
       new Set(["char_knight_base/idle/1"]),
     );
@@ -285,5 +298,32 @@ describe("MenuFigure", () => {
     const other = new MenuFigure(asScene(scene), library(), 0, 0, "warrior");
     other.container.destroy();
     expect(scene.listening("update")).toBe(0);
+  });
+});
+
+describe("menus pick exactly the sheet that walks", () => {
+  const manifest = JSON.parse(
+    readFileSync(join(__dirname, "../../../public/art/manifest.json"), "utf8"),
+  ) as ArtManifest;
+
+  it.each(Object.keys(CLASS_LORE) as ClassKey[])(
+    "the %s class key names a baked 8-way sheet with idle and attack",
+    (key) => {
+      const sheet = manifest.sheets[characterSheet(key)];
+      expect(sheet).toBeDefined();
+      expect(sheet.directions).toBe(8);
+      expect(sheet.animations.idle.frames).toHaveLength(8);
+      expect(sheet.animations.attack.frames).toHaveLength(8);
+    },
+  );
+
+  it("each class key has its own sheet", () => {
+    const sheets = (Object.keys(CLASS_LORE) as ClassKey[]).map(characterSheet);
+    expect(new Set(sheets).size).toBe(sheets.length);
+  });
+
+  it("the stored class name, in any case, draws the same sheet as its key", () => {
+    expect(characterSheet("Mage")).toBe(characterSheet("mage"));
+    expect(characterSheet("WARRIOR")).toBe(characterSheet("warrior"));
   });
 });

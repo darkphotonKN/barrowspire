@@ -11,6 +11,13 @@
  * GAME palette, read only by Phaser code. `UI` at the bottom is the web UI
  * palette (Bone & Soot), read only by DOM code, and it mirrors globals.css
  * :root. The two are not required to agree, and neither reads the other.
+ *
+ * One seam crosses: the canvas MENUS (MainMenuScene, CharacterCreationScene,
+ * LoadoutScene and src/ui/menuChrome.ts) wear the site's Bone & Soot look, so
+ * the gate into the game matches the web UI. Phaser still never reads `UI`:
+ * the `menu*` entries below are game-palette tokens that MIRROR the matching
+ * globals.css :root values, and must agree with them. Everything past the
+ * menus (hub, run, HUD, baked art) stays on the barrow ramp.
  */
 
 export const BARROW = {
@@ -58,6 +65,23 @@ export const BARROW = {
   // Rarity: the one tier colour no other role owns (the rest of the ramp is arcane, necrotic,
   // brass and amber-bright). Must match globals.css --rarity-common.
   rarityCommon: "#a2946d",
+
+  // Menu chrome: Bone & Soot, mirroring globals.css :root token for token (see the header).
+  // Read only by the canvas menus, through `palette.menu` in canvasPalette.ts.
+  menuBone: "#e9dfc9", //         --color-primary (the torch)
+  menuBoneBright: "#f6efdf", //   --color-primary-bright
+  menuAsh: "#8c8c84", //          --color-accent (secondary, cancel, subtitle)
+  menuDangerText: "#d07a6a", //   --color-danger-text
+  menuSoot: "#121212", //         --color-bg-dark
+  menuSootDeep: "#0a0a0a", //     --color-bg-darker
+  menuStone: "#1b1b1a", //        --color-bg-card-opaque
+  menuStoneRaised: "#242322", //  --color-bg-card-2-opaque
+  menuIron: "#5c5a55", //         --color-brass (iron: structure)
+  menuIronBright: "#8a8780", //   --color-brass-bright
+  menuText: "#cfc9bb", //         --color-text
+  menuTextDim: "#9b968b", //      --color-text-dim
+  menuTextMuted: "#85817a", //    --color-text-muted
+  menuTextFaint: "#5e5b55", //    --color-text-placeholder
 } as const;
 
 /** Phaser 0x integer forms of the same palette. */
@@ -85,6 +109,20 @@ export const BARROW_HEX = {
   brass: 0x9c7b3f,
   brassBright: 0xc9a14e,
   rarityCommon: 0xa2946d,
+  menuBone: 0xe9dfc9,
+  menuBoneBright: 0xf6efdf,
+  menuAsh: 0x8c8c84,
+  menuDangerText: 0xd07a6a,
+  menuSoot: 0x121212,
+  menuSootDeep: 0x0a0a0a,
+  menuStone: 0x1b1b1a,
+  menuStoneRaised: 0x242322,
+  menuIron: 0x5c5a55,
+  menuIronBright: 0x8a8780,
+  menuText: 0xcfc9bb,
+  menuTextDim: 0x9b968b,
+  menuTextMuted: 0x85817a,
+  menuTextFaint: 0x5e5b55,
 } as const;
 
 /**

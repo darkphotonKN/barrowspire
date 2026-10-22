@@ -33,6 +33,10 @@ plan/status; the design guideline is the spec.
     with grey stone surfaces and iron structure), plus the token-derived **Atmosphere** layer.
     Chosen by eye from a live comparison of 18 palettes on the home page, 2026-10-21. Defined in
     `globals.css` `:root` and mirrored by the UI table in `theme.ts`. Guideline Part II.
+  - **The canvas menus sit on the web side of that seam.** Main menu, character creation and
+    loadout wear Bone & Soot through `menu*` mirror tokens in `BARROW` / `BARROW_HEX`, so the
+    gate matches the site and the change of register happens on entering the hub. Guideline
+    Part I "UI Chrome".
 
 ---
 
@@ -55,6 +59,14 @@ plan/status; the design guideline is the spec.
 - Slice 3: swap in the Bone & Soot tokens, split the UI table from `BARROW`, measure contrast in
   the browser (done).
 - Slice 4: the Atmosphere layer (done).
+
+### ✅ Done: canvas menus match the site (no FS: wording and colour matching)
+- Main menu, character creation and loadout chrome moved to Bone & Soot via `palette.menu`; the
+  main-menu title reads "THE AGE OF BARROWSPIRE" as the site's hero h1, with the Atmosphere
+  treatment, and the old tagline is gone. The loadout's `EquipmentPanel` takes a menu theme (its
+  default stays the game look for the run), the figure plinths have iron rims, and the loadout
+  subtitle lost the banned "deploy". Baked figures and the reused HUD pieces (XP bar, stat
+  colours, item tip) stay on the game palette.
 
 ### ⏳ Planned / Not Started
 - **Fully medieval typography** wired into the canvas (Pirata One display + EB Garamond body).
