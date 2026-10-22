@@ -14,14 +14,16 @@ import (
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
+	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
 	"github.com/darkphotonKN/barrowspire-server/common/temporal/smoke"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/config"
 	appConfig "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/config"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/adapter/itemreserver"
+	listinggrpc "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/grpc"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/releasehold"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/settlement"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
@@ -33,9 +35,11 @@ import (
 
 var (
 	// grpc
-	serviceName = "marketplace"
-	grpcAddr    = commonhelpers.GetEnvString("GRPC_MARKETPLACE_ADDR", "7127")
-	consulAddr  = commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
+	grpcAddr = commonhelpers.GetEnvString("GRPC_MARKETPLACE_ADDR", "7127")
+
+	// downstream gRPC services ("host:port")
+	itemsAddr  = commonhelpers.GetEnvString("ITEMS_ADDR", "localhost:7126")
+	walletAddr = commonhelpers.GetEnvString("WALLET_ADDR", "localhost:7128")
 
 	// rabbit mq
 	amqpUser     = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
@@ -54,44 +58,25 @@ func main() {
 	db := config.InitDB()
 	defer db.Close()
 
-	// --- service discovery setup ---
-
-	// -- consul client --
-	registry, err := consul.NewRegistry(consulAddr, serviceName)
-	if err != nil {
-		log.Fatal("Failed to create Consul registry")
-	}
-
-	instanceID := discovery.GenerateInstanceID(serviceName)
-
-	// -- discovery --
-	if err := registry.Register(ctx, instanceID, serviceName, "localhost:"+grpcAddr); err != nil {
-		log.Printf("\nError when registering service:\n\n%s\n\n", err)
-		panic(err)
-	}
-
-	// -- health check --
-	go func() {
-		for {
-			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
-				log.Fatal("Health check failed.")
-			}
-			time.Sleep(time.Second * 1)
-		}
-	}()
-
-	defer registry.Deregister(ctx, instanceID, serviceName)
-
 	// --- message broker - rabbit mq ---
 	ch, close := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
 
 	// Declare the items events exchange
 	broker.DeclareExchange(ch, commonconstants.ItemEventsExchange, "topic")
+	// marketplace's own events, settlement.failed first (FS-NXP1W Req 10)
+	broker.DeclareExchange(ch, commonconstants.MarketplaceEventsExchange, "topic")
 
 	defer func() {
 		close()
 		ch.Close()
 	}()
+
+	// --- outbox worker ---
+	// Publishes what use cases wrote to the outbox in their own transaction.
+	// Run loops on a ticker until ctx is cancelled, so it gets its own goroutine.
+	outboxServ := commonoutbox.NewService(commonoutbox.NewRepo(db))
+	outboxWorker := commonoutbox.NewOutboxWorker(time.Minute, 20, outboxServ, broker.NewAmqpPublisher(ch))
+	go outboxWorker.Run(ctx)
 
 	// --- temporal worker: initiate ---
 	// Marketplace is the settlement saga's orchestrator (ADR-0011): it is the only
@@ -112,7 +97,27 @@ func main() {
 	defer temporalClient.Close()
 
 	// --- services setup ---
-	services := appConfig.NewServices(ctx, db, registry, ch, temporalClient)
+	itemsClient, err := itemreserver.NewClient(itemsAddr)
+	if err != nil {
+		log.Fatalf("Failed to create items client: %s", err)
+	}
+	defer func() {
+		if err := itemsClient.Close(); err != nil {
+			slog.Error("close items client", "error", err)
+		}
+	}()
+
+	walletClient, err := listinggrpc.NewClient(walletAddr)
+	if err != nil {
+		log.Fatalf("Failed to create wallet client: %s", err)
+	}
+	defer func() {
+		if err := walletClient.Close(); err != nil {
+			slog.Error("close wallet client", "error", err)
+		}
+	}()
+
+	services := appConfig.NewServices(ctx, db, itemsClient, walletClient, ch, temporalClient)
 
 	// --- temporal worker: initiate ---
 	// run temporal worker after with service initiated activities
@@ -123,7 +128,11 @@ func main() {
 
 		// the workflow and every settlement activity marketplace owns
 		settlement.Register,
+		// gives one bid's hold back, retried until it lands
+		releasehold.Register,
 		func(w worker.Worker) { services.Activities.Register(w) },
+		// raise and resolve for escalate and park (FS-NXP1W Req 10)
+		func(w worker.Worker) { services.ExceptionActivities.Register(w) },
 	)
 
 	if err != nil {
@@ -155,7 +164,7 @@ func main() {
 	reflection.Register(grpcServer)
 
 	// create a network listener to this service
-	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
+	listener, err := net.Listen("tcp", ":"+grpcAddr)
 	if err != nil {
 		log.Fatalf(
 			"Failed to listen at port: %s\nError: %s\n", grpcAddr, err,

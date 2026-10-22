@@ -3,15 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { apiClient } from "@/utils/api";
-import { BARROW } from "@/utils/theme";
-
-// Stripe Elements renders in a cross-origin iframe, so it cannot read our CSS
-// custom properties — its appearance API needs literal values. Per ADR-0013
-// those literals still come from a definition site (theme.ts), never from a
-// hex typed at the call site. Brass at three opacities, for the input chrome.
-const BRASS_BORDER = "rgba(156, 123, 63, 0.3)";
-const BRASS_BORDER_STRONG = "rgba(156, 123, 63, 0.6)";
-const BRASS_RING = "rgba(156, 123, 63, 0.25)";
+import { UI } from "@/utils/theme";
 import { loadStripe } from "@stripe/stripe-js";
 import {
   Elements,
@@ -19,6 +11,12 @@ import {
   useStripe,
   useElements,
 } from "@stripe/react-stripe-js";
+
+// Stripe Elements renders in a cross-origin iframe, so it cannot read our CSS
+// custom properties: its appearance API needs literal values. Those literals
+// come from the UI table in theme.ts, which mirrors globals.css :root
+// (ADR-0025), never from the game palette and never from a colour typed at
+// the call site (ADR-0013).
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "",
@@ -113,11 +111,11 @@ function CheckoutForm({
             style: {
               base: {
                 fontSize: "16px",
-                color: BARROW.vellum,
-                "::placeholder": { color: BARROW.placeholder },
-                iconColor: BARROW.brass,
+                color: UI.text,
+                "::placeholder": { color: UI.textPlaceholder },
+                iconColor: UI.brassBright,
               },
-              invalid: { color: BARROW.oxbloodText, iconColor: BARROW.oxbloodText },
+              invalid: { color: UI.dangerText, iconColor: UI.dangerText },
             },
           }}
         />
@@ -268,24 +266,24 @@ export default function SubscriptionPage() {
               appearance: {
                 theme: "night",
                 variables: {
-                  colorPrimary: BARROW.brass,
-                  colorBackground: BARROW.umber,
-                  colorText: BARROW.vellum,
-                  colorDanger: BARROW.oxbloodText,
+                  colorPrimary: UI.brassBright,
+                  colorBackground: UI.bgCardOpaque,
+                  colorText: UI.text,
+                  colorDanger: UI.dangerText,
                   borderRadius: "8px",
                   fontFamily: "inherit",
                 },
                 rules: {
                   ".Input": {
-                    border: `1px solid ${BRASS_BORDER}`,
-                    backgroundColor: BARROW.pitch,
+                    border: `1px solid ${UI.border}`,
+                    backgroundColor: UI.bgWell,
                   },
                   ".Input:focus": {
-                    border: `1px solid ${BRASS_BORDER_STRONG}`,
-                    boxShadow: `0 0 0 2px ${BRASS_RING}`,
+                    border: `1px solid ${UI.borderStrong}`,
+                    boxShadow: UI.focusRing,
                   },
                   ".Label": {
-                    color: BARROW.vellumDark,
+                    color: UI.textDim,
                   },
                 },
               },

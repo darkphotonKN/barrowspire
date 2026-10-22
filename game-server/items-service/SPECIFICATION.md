@@ -24,3 +24,7 @@
 ## Marketplace settlement
 
 - [ ] Settlement saga activities → FS-NXP1W
+
+## Run extraction
+
+- [x] Deduplicated extracted-items consumption → FS-BVM9H

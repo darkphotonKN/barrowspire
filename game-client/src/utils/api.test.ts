@@ -76,6 +76,18 @@ describe("apiClient.createListing", () => {
       endsAt: "2026-10-02T12:00:00.000Z",
     });
   });
+
+  it("should send a buyout price only when one is given (FS-49Z37 req 1)", async () => {
+    answer = empty(202);
+    const { apiClient } = await loadApi();
+    await apiClient.createListing("item-1", 50, "2026-10-02T12:00:00.000Z", 80);
+    expect(await requests[0].json()).toEqual({
+      itemId: "item-1",
+      startPrice: 50,
+      endsAt: "2026-10-02T12:00:00.000Z",
+      buyoutPrice: 80,
+    });
+  });
 });
 
 describe("publicApi.getListing", () => {
@@ -121,5 +133,28 @@ describe("apiClient characters (FS-BDA7X req 39)", () => {
     await expect(apiClient.deleteCharacter("c1")).resolves.toBeUndefined();
     expect(requests[0].method).toBe("DELETE");
     expect(new URL(requests[0].url).pathname).toBe("/api/characters/c1");
+  });
+});
+
+describe("apiClient.withdrawBid (FS-EYQ8K req 12)", () => {
+  it("should DELETE the bid on its listing and resolve on a 204 with an empty body", async () => {
+    answer = empty(204);
+    const { apiClient } = await loadApi();
+    await expect(apiClient.withdrawBid("l1", "b1")).resolves.toBeUndefined();
+    expect(requests[0].method).toBe("DELETE");
+    expect(new URL(requests[0].url).pathname).toBe("/api/marketplace/listings/l1/bids/b1");
+  });
+
+  it("should throw the problem's code on a refusal", async () => {
+    answer = () =>
+      new Response(
+        JSON.stringify({ status: 400, detail: "ended", code: "FAILED_PRECONDITION", errors: [] }),
+        { status: 400, headers: { "Content-Type": "application/problem+json" } },
+      );
+    const { apiClient } = await loadApi();
+    const { ApiError } = await import("./apiError");
+    const err = await apiClient.withdrawBid("l1", "b1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as InstanceType<typeof ApiError>).code).toBe("FAILED_PRECONDITION");
   });
 });

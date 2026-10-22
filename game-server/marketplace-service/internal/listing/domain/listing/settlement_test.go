@@ -243,6 +243,57 @@ func TestFindWinningBid(t *testing.T) {
 	}
 }
 
+// Settlement step 6 (FS-NXP1W §Req 33): a frozen listing ends SOLD to the bidder
+// 1a marked WON, at that bid's amount. A retry catching up with its own success
+// is not an error; any other status, or no WON bid past the pivot, is an
+// invariant breach and is left as it was, never overwritten.
+func TestMarkSold(t *testing.T) {
+	tests := []struct {
+		name    string
+		from    ListingStatus
+		bids    []BidStatus
+		wantErr error
+		want    ListingStatus
+	}{
+		{"pending settlement with a won bid is sold", StatusPendingSettlement, []BidStatus{BidStatusLost, BidStatusWon}, nil, StatusSold},
+		{"already sold is applied", StatusSold, []BidStatus{BidStatusWon}, nil, StatusSold},
+		{"pending settlement with no won bid is refused", StatusPendingSettlement, []BidStatus{BidStatusWinning}, ErrInvalidListingState, StatusPendingSettlement},
+		{"active is refused", StatusActive, []BidStatus{BidStatusWinning}, ErrInvalidListingState, StatusActive},
+		{"expired is refused", StatusExpired, nil, ErrInvalidListingState, StatusExpired},
+		{"cancelled is refused", StatusCancelled, nil, ErrInvalidListingState, StatusCancelled},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := listingWithBids(t, tt.from, tt.bids...)
+			before := l.Snapshot()
+
+			err := l.MarkSold(time.Now())
+
+			assert.ErrorIs(t, err, tt.wantErr)
+			after := l.Snapshot()
+			assert.Equal(t, tt.want, after.Status)
+
+			if tt.from != StatusPendingSettlement || tt.wantErr != nil {
+				assert.Equal(t, before.BuyerID, after.BuyerID, "a refusal or a replay never rewrites the buyer")
+				assert.Equal(t, before.SoldPrice, after.SoldPrice, "nor the price")
+				return
+			}
+
+			var won BidSnapshot
+			for _, b := range after.Bids {
+				if b.Status == BidStatusWon {
+					won = b
+				}
+			}
+			require.NotNil(t, after.BuyerID)
+			require.NotNil(t, after.SoldPrice)
+			assert.Equal(t, won.MemberID, *after.BuyerID, "the buyer is the WON bidder")
+			assert.Equal(t, won.Amount, *after.SoldPrice, "the price is the WON bid's amount")
+		})
+	}
+}
+
 // listingWithBids loads a listing straight into a given status with one bid per
 // status passed, the way the repository would hand it back.
 func listingWithBids(t *testing.T, status ListingStatus, bidStatuses ...BidStatus) *Listing {
@@ -314,4 +365,46 @@ func TestCanAcceptBid(t *testing.T) {
 			assert.Equal(t, before, l.Snapshot(), "CanAcceptBid must not change the listing")
 		})
 	}
+}
+
+// The pre-pivot rollback ends a frozen listing in SETTLEMENT_FAILED (FS-NXP1W
+// §Req 12). It is retried without a cap, so a replay is success, and it never
+// overwrites a final status another flow set (Edge States, "Listing withdrawn
+// before 0a runs") — the 0a impossibility that sends a settlement here is exactly
+// a listing in such a status.
+func TestMarkSettlementFailed(t *testing.T) {
+	tests := []struct {
+		name string
+		from ListingStatus
+		want ListingStatus
+	}{
+		{"pending settlement fails", StatusPendingSettlement, StatusSettlementFailed},
+		{"already failed is applied", StatusSettlementFailed, StatusSettlementFailed},
+		{"cancelled is left as it is", StatusCancelled, StatusCancelled},
+		{"sold is left as it is", StatusSold, StatusSold},
+		{"expired is left as it is", StatusExpired, StatusExpired},
+		{"active is left as it is", StatusActive, StatusActive},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := listingWithBids(t, tt.from)
+
+			err := l.MarkSettlementFailed(time.Now())
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, l.Snapshot().Status)
+		})
+	}
+}
+
+// SETTLEMENT_FAILED is final: nothing moves a listing out of it, so 0a refuses
+// to freeze it and it is never re-settled (§Req 12).
+func TestSettlementFailed_IsNeverFrozenAgain(t *testing.T) {
+	l := listingWithBids(t, StatusSettlementFailed)
+
+	err := l.Freeze(time.Now())
+
+	assert.ErrorIs(t, err, ErrInvalidListingState)
+	assert.Equal(t, StatusSettlementFailed, l.Snapshot().Status)
 }

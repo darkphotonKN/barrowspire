@@ -7,6 +7,9 @@ import { XMarkIcon } from "@heroicons/react/24/outline";
 import { v4 as uuid } from "uuid";
 import ItemIcon from "@/components/ItemIcon";
 import RarityBadge from "@/components/RarityBadge";
+import BuyoutAction from "@/components/bazaar/BuyoutAction";
+import { NOTE_TONE } from "@/components/bazaar/noteTone";
+import SellerBlock from "@/components/bazaar/SellerBlock";
 import { useDialogFocus } from "@/components/bazaar/useDialogFocus";
 import type { ItemLines } from "@/items/itemLines";
 import {
@@ -20,21 +23,16 @@ import {
 } from "@/marketplace/bid";
 import { submitBid } from "@/marketplace/bidFlow";
 import { SIGN_IN_TO_MARKETPLACE } from "@/marketplace/browse";
-import { bidPanel, itemStats, listingItemLines, listingReader } from "@/marketplace/detail";
+import { actionArea, itemStats, listingItemLines, listingReader } from "@/marketplace/detail";
 import { formatGold } from "@/marketplace/gold";
 import type { Listing } from "@/marketplace/listing";
+import { listingStatusLabel } from "@/marketplace/listingStatus";
 import { rarityOf } from "@/marketplace/rarity";
 import { formatTimeLeft } from "@/marketplace/timeLeft";
 import { useCountdownNow } from "@/marketplace/useCountdownNow";
 import { apiClient, publicApi } from "@/utils/api";
 
 const TITLE_ID = "bazaar-detail-title";
-
-const TONE: Record<BidNote["tone"] | "muted", string> = {
-  ok: "text-brass-bright",
-  error: "text-[color:var(--color-danger-text)]",
-  muted: "text-vellum-dim",
-};
 
 const endTime = (endsAt: string) =>
   new Date(endsAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -84,7 +82,7 @@ export default function ListingDetailDialog({
 
   const now = useCountdownNow([listing.endsAt]);
   const { item } = listing;
-  const panel = bidPanel(listing, memberId);
+  const panel = actionArea(listing, memberId, now);
   const stats = itemStats(item);
   const lines = listingItemLines(item);
 
@@ -154,6 +152,9 @@ export default function ListingDetailDialog({
         <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
           <Fact label="Start price" value={`⟡ ${formatGold(listing.startPrice)}`} />
           <Fact label="Minimum bid" value={`⟡ ${formatGold(listing.minimumBid)}`} />
+          {listing.buyoutPrice !== undefined && (
+            <Fact label="Buyout price" value={`⟡ ${formatGold(listing.buyoutPrice)}`} />
+          )}
           <Fact label="Bids" value={String(listing.bidCount)} />
           <Fact label="Time left" value={formatTimeLeft(listing.endsAt, now)} />
           <div className="col-span-2 flex justify-between gap-2">
@@ -169,13 +170,23 @@ export default function ListingDetailDialog({
             Sign in to bid
           </Link>
         )}
-        {panel === "own" && <p className="text-center text-vellum-dim">Your listing</p>}
-        {panel === "bid" && (
-          <BidBox
-            listing={listing}
-            ended={listing.ended || Date.parse(listing.endsAt) <= now}
-            refresh={refresh}
-          />
+        {/* Mounted for the seller whatever the panel, so Sell's answer outlives the re-read that
+            ends the sale; it offers nothing unless the panel is "own" (FS-49Z37 req 13). */}
+        {memberId !== undefined && memberId === listing.sellerId && (
+          <SellerBlock listing={listing} memberId={memberId} now={now} refresh={refresh} />
+        )}
+        {/* One mount for "bid" and "closed", so the box keeps its answer as the auction ends. */}
+        {(panel === "bid" || panel === "closed") && (
+          <BidBox listing={listing} ended={panel === "closed"} refresh={refresh} />
+        )}
+        {/* Mounted outside the "bid" branch so its bought note outlives the listing leaving ACTIVE. */}
+        <BuyoutAction listing={listing} memberId={memberId} now={now} refresh={refresh} />
+
+        {/* An ACTIVE listing offering nothing has ended, so it reads "Ended — awaiting settlement". */}
+        {panel === "none" && (
+          <p className="text-center text-vellum-dim">
+            {listingStatusLabel({ status: listing.status, ended: true })}
+          </p>
         )}
       </div>
     </div>,
@@ -262,7 +273,14 @@ function BidBox({
     if (!touched.current) setText(String(listing.minimumBid));
   }, [listing.minimumBid]);
 
-  const box = bidBox({ text, minimumBid: listing.minimumBid, purse, ended, submitting });
+  const box = bidBox({
+    text,
+    minimumBid: listing.minimumBid,
+    buyoutPrice: listing.buyoutPrice,
+    purse,
+    ended,
+    submitting,
+  });
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -299,7 +317,7 @@ function BidBox({
     return (
       <div role="status" aria-live="polite" className="flex flex-col gap-1 text-center">
         {closedBoxNotes(note, box.reason ?? BID_ENDED).map((line) => (
-          <p key={line.text} className={TONE[line.tone]}>
+          <p key={line.text} className={NOTE_TONE[line.tone]}>
             {line.text}
           </p>
         ))}
@@ -340,9 +358,9 @@ function BidBox({
       </p>
       <p id="bazaar-bid-reason" role="status" aria-live="polite" className="min-h-[1.25rem] text-sm">
         {note ? (
-          <span className={TONE[note.tone]}>{note.text}</span>
+          <span className={NOTE_TONE[note.tone]}>{note.text}</span>
         ) : (
-          box.reason && <span className={TONE.muted}>{box.reason}</span>
+          box.reason && <span className={NOTE_TONE.muted}>{box.reason}</span>
         )}
       </p>
     </form>

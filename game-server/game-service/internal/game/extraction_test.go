@@ -40,7 +40,7 @@ type capturingOutbox struct {
 	events map[string][]byte
 }
 
-func (c *capturingOutbox) CreateOutbox(_ context.Context, params commonoutbox.OutboxParams) error {
+func (c *capturingOutbox) CreateOutboxTx(_ context.Context, _ *sqlx.Tx, params commonoutbox.OutboxParams) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.events == nil {
@@ -48,10 +48,6 @@ func (c *capturingOutbox) CreateOutbox(_ context.Context, params commonoutbox.Ou
 	}
 	c.events[params.RoutingKey] = params.Payload
 	return nil
-}
-
-func (c *capturingOutbox) CreateOutboxTx(ctx context.Context, _ *sqlx.Tx, params commonoutbox.OutboxParams) error {
-	return c.CreateOutbox(ctx, params)
 }
 
 func (c *capturingOutbox) itemsExtracted(t *testing.T) *pb.ItemsExtractedEvent {
@@ -82,7 +78,7 @@ func TestEndSession_ResolvedRun_PublishesEveryDelversItems(t *testing.T) {
 	s := p.s
 	outbox := &capturingOutbox{}
 	s.sessionCloser = &homeReturner{run: s}
-	s.eventEmitter = NewService(outbox)
+	s.eventEmitter = NewService(committingTxDB(t), outbox)
 	s.sender = &recordingSender{}
 	s.endSessionCh = make(chan bool, 64)
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/walletactivity"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/usecase"
+	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
 )
 
@@ -14,6 +15,8 @@ type Activities struct {
 	commitHold         CommitHold
 	releaseAllHolds    ReleaseAllHolds
 	releaseLosingHolds ReleaseLosingHolds
+	creditSeller       CreditSeller
+	releaseHold        ReleaseHold
 }
 
 type CommitHold interface {
@@ -28,11 +31,21 @@ type ReleaseLosingHolds interface {
 	Handle(ctx context.Context, cmd *usecase.ReleaseLosingHoldsCommand) (int, error)
 }
 
-func NewActivities(commitHold CommitHold, releaseAllHolds ReleaseAllHolds, releaseLosingHolds ReleaseLosingHolds) *Activities {
+type CreditSeller interface {
+	Handle(ctx context.Context, cmd *usecase.CreditSellerCommand) (uuid.UUID, error)
+}
+
+type ReleaseHold interface {
+	Handle(ctx context.Context, cmd *usecase.ReleaseHoldCommand) error
+}
+
+func NewActivities(commitHold CommitHold, releaseAllHolds ReleaseAllHolds, releaseLosingHolds ReleaseLosingHolds, creditSeller CreditSeller, releaseHold ReleaseHold) *Activities {
 	return &Activities{
 		commitHold:         commitHold,
 		releaseAllHolds:    releaseAllHolds,
 		releaseLosingHolds: releaseLosingHolds,
+		creditSeller:       creditSeller,
+		releaseHold:        releaseHold,
 	}
 }
 
@@ -49,4 +62,6 @@ func (a *Activities) Register(r activityRegistry) {
 	r.RegisterActivityWithOptions(a.CommitHold, activity.RegisterOptions{Name: walletactivity.CommitHoldActivityName})
 	r.RegisterActivityWithOptions(a.ReleaseAllHolds, activity.RegisterOptions{Name: walletactivity.ReleaseAllHoldsActivityName})
 	r.RegisterActivityWithOptions(a.ReleaseLosingHolds, activity.RegisterOptions{Name: walletactivity.ReleaseLosingHoldsActivityName})
+	r.RegisterActivityWithOptions(a.CreditSeller, activity.RegisterOptions{Name: walletactivity.CreditSellerActivityName})
+	r.RegisterActivityWithOptions(a.ReleaseHold, activity.RegisterOptions{Name: walletactivity.ReleaseHoldActivityName})
 }

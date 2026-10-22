@@ -2,6 +2,7 @@ package stats
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"time"
@@ -9,6 +10,7 @@ import (
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	pbstats "github.com/darkphotonKN/barrowspire-server/common/api/proto/stats"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commonutils "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	commoncache "github.com/darkphotonKN/barrowspire-server/common/utils/cache"
@@ -30,137 +32,145 @@ type Repository interface {
 	GetPlayerRankings(ctx context.Context, params *GetPlayerRankings) ([]*PlayerRankingStats, error)
 }
 
-type service struct {
-	repo      Repository
-	publishCh commonbroker.Publisher
-	db        *sqlx.DB
-	cache     cache.Cache
+// InboxRepository records which events this service has already applied. It is
+// implemented by common/inbox and declared here because the service is what
+// consumes it.
+type InboxRepository interface {
+	MarkEventProcessed(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string) (bool, error)
 }
 
-func NewService(repo Repository, publishCh commonbroker.Publisher, db *sqlx.DB, cache cache.Cache) *service {
+type service struct {
+	repo      Repository
+	inbox     InboxRepository
+	publishCh commonbroker.Publisher
+	cache     cache.Cache
+	// withTx runs fn in one transaction on db, committing when fn succeeds.
+	withTx func(ctx context.Context, fn func(tx *sqlx.Tx) error) error
+}
+
+func NewService(repo Repository, inbox InboxRepository, publishCh commonbroker.Publisher, db *sqlx.DB, cache cache.Cache) *service {
 	return &service{
 		repo:      repo,
+		inbox:     inbox,
 		publishCh: publishCh,
-		db:        db,
 		cache:     cache,
+		withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
+			return commonutils.ExecTx(ctx, db, nil, fn)
+		},
 	}
 }
 
-/**
-* Runs all the relevant processes after a match is completed, updating the
-* relavant tables.
-**/
-func (s *service) ProcessMatchCompleted(ctx context.Context, req *pb.MatchEndedEvent) (*ProcessMatchCompletedResponse, error) {
+// ProcessMatchCompleted applies one match.ended event exactly once, for every
+// player or for none. One transaction records the event in the inbox and then
+// writes each player's stats, leaderboard row and match history; any failure
+// rolls all of it back, inbox row included, and is returned for the consumer to
+// settle. An event already applied writes nothing and returns
+// ErrAlreadyProcessed. The leaderboard cache version is bumped only once a new
+// event has committed.
+func (s *service) ProcessMatchCompleted(ctx context.Context, eventID uuid.UUID, eventType string, req *pb.MatchEndedEvent) error {
 	slog.Info("Processing match completed",
+		"event_id", eventID,
+		"event_type", eventType,
 		"session_id", req.SessionId,
 		"match_started_at", req.MatchStartedAt.AsTime(),
 		"match_ended_at", req.MatchEndedAt.AsTime(),
 	)
 
-	// track if at least one complete update for a player was successfully processed
-	atLeastOnePlayerUpdated := false
-
-	for _, playerResults := range req.Players {
-		slog.Info("Player match outcome",
-			"playerResults", playerResults,
-		)
-
-		// wrap transaction for business critical sync up between players match
-		// history and their personal stats
-
-		err := commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
-			// -- player stats --
-			err := s.updatePlayerStats(ctx, tx, playerResults)
-			if err != nil {
-				slog.Error("error when updating match stats", "memberID", playerResults.MemberId, "error", err)
-				return err
-			}
-
-			// -- leaderboards --
-			err = s.updateDenormalizedLeaderboard(ctx, tx, playerResults)
-			if err != nil {
-				slog.Error("error when updating leaderboard stats", "memberID", playerResults.MemberId, "error", err)
-				return err
-			}
-
-			// -- match history --
-			sessionId, err := uuid.Parse(req.SessionId)
-			if err != nil {
-				slog.Error("error parsing session id", "sessionId", req.SessionId, "error", err)
-				return err
-			}
-
-			memberId, err := uuid.Parse(playerResults.MemberId)
-			if err != nil {
-				slog.Error("error parsing member id", "memberId", playerResults.MemberId, "error", err)
-				return err
-			}
-
-			matchHistory := &MatchHistory{
-				SessionID:      sessionId,
-				MemberID:       memberId,
-				Win:            playerResults.Win,
-				FinalPosition:  int(playerResults.FinalPosition),
-				Kills:          int(playerResults.Kills),
-				Deaths:         int(playerResults.Deaths),
-				MatchStartedAt: req.MatchStartedAt.AsTime(),
-			}
-
-			err = s.repo.CreateMatchHistoryTx(ctx, tx, matchHistory)
-			if err != nil {
-				slog.Error("error creating match history", "memberID", playerResults.MemberId, "error", err)
-				return err
-			}
-
-			return nil
-		})
-
-		// transaction errored, continue to next player
-		// (roll back automagically handled in helper already)
-		if err != nil {
-			slog.Error("error occured during match processing transaction, rolledback.",
-				"error", err)
-			continue
-		}
-
-		// finished all transactions for one player
-		atLeastOnePlayerUpdated = true
+	var writeErr error
+	err := s.withTx(ctx, func(tx *sqlx.Tx) error {
+		writeErr = s.applyMatchEnded(ctx, tx, eventID, eventType, req)
+		return writeErr
+	})
+	switch {
+	case err == nil:
+	case writeErr == nil:
+		// no write failed, the transaction around them did (begin or commit):
+		// the store, not the event, is at fault
+		return fmt.Errorf("transaction for match ended %s: %w: %w", eventID, commonconstants.ErrTransient, err)
+	default:
+		return err
 	}
 
-	// no update succeeded all rolledback
-	if !atLeastOnePlayerUpdated {
-		slog.Warn("No player succeeded ProcessMatchComplete transactions.")
+	// version increment invalidates the cached leaderboard; no deletion needed,
+	// the short TTL is enough. The event is already committed, so a slow or
+	// failed bump is only logged, under its own deadline so it cannot stall the
+	// consumer.
+	bumpCtx, cancel := context.WithTimeout(ctx, cacheBumpTimeout)
+	defer cancel()
+	newVersion, err := s.cache.Incr(bumpCtx, commoncache.StatsLeaderboardVersionKey())
+	if err != nil {
+		slog.Warn("Cache version could not be updated", "error", err)
+		return nil
+	}
+	slog.Info("Cache version updated", "for key", commoncache.StatsLeaderboardVersionKey(), "new version", newVersion)
 
-		return &ProcessMatchCompletedResponse{
-			Success: false,
-			Message: "All players updates were rolled back",
-		}, nil
+	return nil
+}
+
+// cacheBumpTimeout bounds the leaderboard cache-version bump after an event
+// commits.
+const cacheBumpTimeout = time.Second
+
+// applyMatchEnded is the body of the event's transaction: the inbox mark
+// first, then every player's writes.
+func (s *service) applyMatchEnded(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string, req *pb.MatchEndedEvent) error {
+	inserted, err := s.inbox.MarkEventProcessed(ctx, tx, eventID, eventType)
+	if err != nil {
+		return fmt.Errorf("mark event processed: %w", err)
+	}
+	if !inserted {
+		return commonconstants.ErrAlreadyProcessed
 	}
 
-	// at least one complete update for one player passsed, invalidate cache results for denormalized leaderboard
-	// version increment to invalidate, no deletion needed, short TTL is enough
-	go func() {
-		newVersion, err := s.cache.Incr(context.Background(), commoncache.StatsLeaderboardVersionKey())
+	sessionID, err := uuid.Parse(req.SessionId)
+	if err != nil {
+		return fmt.Errorf("session id %q: %w: %w", req.SessionId, commonconstants.ErrUUIDCouldNotBeParsed, err)
+	}
 
-		if err != nil {
-			slog.Warn("Cache version could not be updated", "error", err)
-			return
+	for _, player := range req.Players {
+		if err := s.applyPlayerResult(ctx, tx, sessionID, req, player); err != nil {
+			return fmt.Errorf("player %s: %w", player.MemberId, err)
 		}
+	}
+	return nil
+}
 
-		slog.Info("Cache version updated", "for key", commoncache.StatsLeaderboardVersionKey(), "new version", newVersion)
-	}()
+// applyPlayerResult writes one player's stats, leaderboard row and match
+// history inside the event's transaction.
+func (s *service) applyPlayerResult(ctx context.Context, tx *sqlx.Tx, sessionID uuid.UUID, req *pb.MatchEndedEvent, player *pb.PlayerMatchResult) error {
+	if err := s.updatePlayerStats(ctx, tx, player); err != nil {
+		return fmt.Errorf("update match stats: %w", err)
+	}
 
-	return &ProcessMatchCompletedResponse{
-		Success: true,
-		Message: "Match data processed successfully",
-	}, nil
+	if err := s.updateDenormalizedLeaderboard(ctx, tx, player); err != nil {
+		return fmt.Errorf("update leaderboard: %w", err)
+	}
+
+	memberID, err := uuid.Parse(player.MemberId)
+	if err != nil {
+		return fmt.Errorf("member id %q: %w: %w", player.MemberId, commonconstants.ErrUUIDCouldNotBeParsed, err)
+	}
+
+	matchHistory := &MatchHistory{
+		SessionID:      sessionID,
+		MemberID:       memberID,
+		Win:            player.Win,
+		FinalPosition:  int(player.FinalPosition),
+		Kills:          int(player.Kills),
+		Deaths:         int(player.Deaths),
+		MatchStartedAt: req.MatchStartedAt.AsTime(),
+	}
+	if err := s.repo.CreateMatchHistoryTx(ctx, tx, matchHistory); err != nil {
+		return fmt.Errorf("create match history: %w", err)
+	}
+	return nil
 }
 
 func (s *service) updatePlayerStats(ctx context.Context, tx *sqlx.Tx, player *pb.PlayerMatchResult) error {
 	memberId, err := uuid.Parse(player.MemberId)
 	if err != nil {
 		slog.Info("Errored when attempting to get parse member id into UUID", "err", err)
-		return err
+		return fmt.Errorf("member id %q: %w: %w", player.MemberId, commonconstants.ErrUUIDCouldNotBeParsed, err)
 	}
 
 	// TODO: recalculate averages, averages migration and update WIP
@@ -237,7 +247,7 @@ func (s *service) updateDenormalizedLeaderboard(ctx context.Context, tx *sqlx.Tx
 	memberId, err := uuid.Parse(results.MemberId)
 	if err != nil {
 		slog.Info("Errored when attempting to get parse member id into UUID", "err", err)
-		return err
+		return fmt.Errorf("member id %q: %w: %w", results.MemberId, commonconstants.ErrUUIDCouldNotBeParsed, err)
 	}
 
 	stats, err := s.repo.GetPlayerMatchStatsTx(ctx, tx, memberId)
@@ -349,7 +359,7 @@ func (s *service) GetLeaderboard(ctx context.Context, req *pbstats.GetLeaderboar
 		err := proto.Unmarshal([]byte(cachedResStr), &cachedResProto)
 
 		if err == nil {
-			slog.Info("cache hit", "cachedResProto", cachedResProto)
+			slog.Info("cache hit", "cachedResProto", &cachedResProto)
 			return &cachedResProto, nil
 		}
 
@@ -391,7 +401,7 @@ func (s *service) GetLeaderboard(ctx context.Context, req *pbstats.GetLeaderboar
 
 	// cache results w with TTL
 	go func() {
-		slog.Debug("Caching results of leaderboard response", "res", res)
+		slog.Debug("Caching results of leaderboard response", "res", &res)
 
 		protoRes, err := proto.Marshal(&res)
 		if err != nil {

@@ -18,14 +18,17 @@ func NewAmqpPublisher(ch *amqp.Channel) *AmqpPublisher {
 }
 
 func (p *AmqpPublisher) PublishWithContext(_ context.Context, exchange, key string, msg Message) error {
+	return p.ch.Publish(exchange, key, false, false, toPublishing(msg))
+}
 
-	amqpMessageParam := amqp.Publishing{
+// toPublishing maps our broker-agnostic Message onto the AMQP wire struct.
+func toPublishing(msg Message) amqp.Publishing {
+	return amqp.Publishing{
 		ContentType:   msg.ContentType,
 		Body:          msg.Body,
 		DeliveryMode:  msg.DeliveryMode,
 		CorrelationId: msg.CorrelationId,
 		Headers:       msg.Headers,
+		MessageId:     msg.MessageId,
 	}
-
-	return p.ch.Publish(exchange, key, false, false, amqpMessageParam)
 }

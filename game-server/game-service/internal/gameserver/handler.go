@@ -8,6 +8,7 @@ import (
 	"time"
 
 	authPb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
+	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/gin-gonic/gin"
@@ -52,47 +53,19 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 		return
 	}
 
-	// check if player is reconnecting by checking if they already exist in the players map
-	s.mu.RLock()
-	reconnectingPlayer, playerIsReconnecting := s.players[memberId]
-	s.mu.RUnlock()
-
-	var player *types.Player
-	isReconnection := false
-
-	if playerIsReconnecting {
+	// a member already on record is reconnecting: their record is kept and
+	// takes the token they reconnected with. player is a copy of the record,
+	// so it is read below without the lock the worlds write it under.
+	player, isReconnection := s.connectPlayer(memberId, data.Name, types.BearerToken(c.GetString(auth.TokenKey)))
+	if isReconnection {
 		slog.Debug("Player is reconnecting",
-			"username", reconnectingPlayer.Username,
-			"game_session_id", reconnectingPlayer.CurrentGameSessionId,
-			"connect_state", reconnectingPlayer.ConnectState)
-
-		player = reconnectingPlayer
-		isReconnection = true
-
-		// mark as connected
-		connected := constants.Connected
-		player.ConnectState = &connected
-
-		// update username (may have changed name)
-		player.Username = data.Name
+			"username", player.Username,
+			"game_session_id", player.CurrentGameSessionId,
+			"connect_state", player.ConnectState)
 	} else {
-		// new player connecting for the first time
 		slog.Debug("Player connecting fresh.",
 			"username", data.Name,
 		)
-
-		connected := constants.Connected
-		player = &types.Player{
-			ID:                   memberId,
-			Username:             data.Name,
-			CurrentGameSessionId: uuid.Nil,
-			ConnectState:         &connected,
-		}
-
-		// add to players map
-		s.mu.Lock()
-		s.players[memberId] = player
-		s.mu.Unlock()
 	}
 
 	// establish websocket connection
@@ -105,11 +78,11 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 		return
 	}
 
-	// update conn to player mapping
-	s.MapConnToPlayer(conn, *player)
-
-	// create msgChan
-	s.setupClientWriter(conn)
+	// The writer channel is filled with the reconnect replies before anyone
+	// else can see it, then published with the connection in one step. Nothing
+	// can close it under these sends, and nothing is sent on a channel a
+	// concurrent reconnect has already closed.
+	msgChan := make(chan interface{}, clientWriterBuffer)
 
 	if isReconnection && player.CurrentGameSessionId != uuid.Nil {
 		slog.Debug("Sending reconnection success message.",
@@ -117,24 +90,39 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 			"player_current_game_session_id", player.CurrentGameSessionId,
 		)
 
-		s.mu.RLock()
-		msgChan, exists := s.msgChan[conn]
-		s.mu.RUnlock()
-
-		if exists {
-			// send reconnected message
-			msgChan <- types.Message{
-				Action: "reconnected",
-				Payload: map[string]interface{}{
-					"message":    "Successfully reconnected",
-					"session_id": player.CurrentGameSessionId.String(),
-					"username":   player.Username,
-				},
-			}
-
-			s.announceCurrentWorld(msgChan, player)
+		msgChan <- types.Message{
+			Action: "reconnected",
+			Payload: map[string]interface{}{
+				"message":    "Successfully reconnected",
+				"session_id": player.CurrentGameSessionId.String(),
+				"username":   player.Username,
+			},
 		}
+
+		s.announceCurrentWorld(msgChan, &player)
 	}
+
+	// the member keeps one live connection: any older one is unmapped, its
+	// writer stopped, and the socket closed
+	superseded, mapped := s.MapConnToPlayer(conn, player.ID, msgChan)
+	if !mapped {
+		// the record went (the reconnect grace ran out) while this connection
+		// was being set up: refuse it rather than serve a member not on record.
+		// msgChan was never published, so nothing else holds it.
+		slog.Warn("Refusing a connection whose member is no longer on record",
+			"player_id", player.ID,
+		)
+		_ = conn.WriteControl(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseTryAgainLater, "member no longer on record, reconnect"),
+			time.Now().Add(time.Second))
+		conn.Close()
+		return
+	}
+	for _, old := range superseded {
+		old.Close()
+	}
+
+	s.startClientWriter(conn, msgChan)
 
 	// handle connection messages
 	go s.ServeConnectedPlayer(conn)
@@ -178,77 +166,8 @@ func (s *Server) ServeConnectedPlayer(conn *websocket.Conn) {
 
 		// --- Handle WebSocket Errors ---
 		if err != nil {
-			player, exists := s.GetPlayerFromConn(conn)
-			playerInfo := "Unknown"
-			playerID := uuid.Nil
-			if exists {
-				playerInfo = fmt.Sprintf("%s (ID: %s)", player.Username, player.ID)
-				playerID = player.ID
-			}
-
-			slog.Error("\nWebSocket Connection Error\n",
-				"player_info", playerInfo,
-				"error", err,
-			)
-
-			if websocket.IsCloseError(err, websocket.CloseAbnormalClosure) {
-				slog.Error("Network disconnection for player. Keeping state for reconnection...",
-					"player_info", playerInfo)
-
-				if exists {
-					// mark as reconnecting state
-					s.markPlayerAsReconnecting(player)
-
-					// only clean connection, keep player data, session, queue
-					s.cleanUpConnectionOnly(conn)
-
-					// start 30 second timer
-					go s.handleReconnectionTimeout(playerID, 30*time.Second)
-				} else {
-					// no player info, directly close connection
-					conn.Close()
-				}
-
-				return // exit this goroutine
-			}
-
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-				slog.Info("Player closed connection normally (intentional leave)", "player_info", playerInfo)
-				s.cleanUpClient(conn)
-				return // exit this goroutine
-			}
-
-			if websocket.IsCloseError(err, websocket.CloseGoingAway) {
-				slog.Info("Player navigated away, keeping state for 10s", "player_info", playerInfo)
-
-				if exists {
-					s.markPlayerAsReconnecting(player)
-					s.cleanUpConnectionOnly(conn)
-					go s.handleReconnectionTimeout(playerID, 10*time.Second)
-				} else {
-					conn.Close()
-				}
-
-				return
-			}
-
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				slog.Warn("Unexpected disconnection, keeping state", "player_info", playerInfo)
-
-				if exists {
-					s.markPlayerAsReconnecting(player)
-					s.cleanUpConnectionOnly(conn)
-					go s.handleReconnectionTimeout(playerID, 30*time.Second)
-				} else {
-					conn.Close()
-				}
-
-				return
-			}
-
-			slog.Error("Unknown websocket error, cleaning up completely", "player_info", playerInfo, "error", err)
-			s.cleanUpClient(conn)
-			return
+			s.handleReadError(conn, err)
+			return // exit this goroutine
 		}
 
 		// --- Normal Message Processing ---
@@ -271,9 +190,6 @@ func (s *Server) ServeConnectedPlayer(conn *websocket.Conn) {
 			continue
 		}
 
-		// handle concurrent writes back to clients
-		s.setupClientWriter(conn)
-
 		clientPackage := types.ClientPackage{Message: decodedMsg, Conn: conn}
 
 		slog.Debug("Sending clientPackage to message hub")
@@ -283,33 +199,67 @@ func (s *Server) ServeConnectedPlayer(conn *websocket.Conn) {
 	}
 }
 
+// How long a dropped member is held for a reconnect: a member who navigated
+// away gets the short window, any other drop the long one.
+const (
+	reconnectGrace = 30 * time.Second
+	goingAwayGrace = 10 * time.Second
+)
+
 /**
-* Handles adding clients and creating gameMsgChans for handling connection writes
-* back to the connected client.
+* Decides what a connection's read error means for the member it carried.
+*
+* Only a deliberate leave, a normal close, ends their stay at once. A member
+* who navigated away is held for the short grace. Every other error is a drop
+* the member did not choose: an abnormal or unexpected close, a reset, a
+* timeout, any network error. It is held for the full grace, so a flaky
+* network never costs a delver their run.
+*
+* The server's own close of a connection it already unmapped (one a reconnect
+* superseded) also lands here, as "use of closed network connection". There is
+* nobody behind it, so it is only closed.
+**/
+func (s *Server) handleReadError(conn *websocket.Conn, err error) {
+	if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+		slog.Info("Player closed connection normally (intentional leave)")
+		s.cleanUpClient(conn)
+		return
+	}
+
+	grace := reconnectGrace
+	if websocket.IsCloseError(err, websocket.CloseGoingAway) {
+		grace = goingAwayGrace
+	}
+
+	player, hold, held := s.holdForReconnect(conn)
+	conn.Close()
+
+	if !held {
+		slog.Info("Closed a connection no player is mapped to", "error", err)
+		return
+	}
+
+	slog.Warn("Player dropped, keeping state for reconnection",
+		"player_info", fmt.Sprintf("%s (ID: %s)", player.Username, player.ID),
+		"grace", grace,
+		"error", err,
+	)
+
+	go s.handleReconnectionTimeout(player.ID, hold, grace)
+}
+
+// clientWriterBuffer is how many messages a connection's writer channel holds
+// before further sends to it are dropped rather than block the sender.
+const clientWriterBuffer = 10
+
+/**
+* Writes everything sent on msgChan back to the client, until the channel is
+* closed.
 *
 * NOTE: Gorilla Websocket package only allows ONE CONCURRENT WRITER
-* at a time, meaning its best to utilize unbuffered channels to prevent
-* a single client from locking the entire server, and prevent race conditions
-* where multiple writes to the same connection.
+* at a time, so every write to a connection goes through its one channel.
 **/
-func (s *Server) setupClientWriter(conn *websocket.Conn) {
-	isNew := s.createMsgChan(conn)
-	if !isNew {
-		return
-	}
-
-	// get the message channel for this connection
-	msgChan, err := s.getGameMsgChan(conn)
-
-	if err != nil {
-		slog.Error("Error getting message channel",
-			"error", err,
-		)
-		return
-	}
-
-	// concurrently listen to all incoming messages over the channel to write game actions
-	// back to the client
+func (s *Server) startClientWriter(conn *websocket.Conn, msgChan chan interface{}) {
 	go func() {
 		defer func() {
 			// ensure we recover from any panics in the writer goroutine
@@ -321,13 +271,11 @@ func (s *Server) setupClientWriter(conn *websocket.Conn) {
 		}()
 
 		for msg := range msgChan {
-			err := conn.WriteJSON(msg)
-
-			if err != nil {
+			if err := conn.WriteJSON(msg); err != nil {
 				slog.Error("Error writing to client, connection likely closed",
 					"error", err,
 				)
-				// channel will be closed by cleanUpClient, which will exit this goroutine
+				// the channel is closed when the connection is cleaned up
 				return
 			}
 		}
@@ -335,87 +283,61 @@ func (s *Server) setupClientWriter(conn *websocket.Conn) {
 }
 
 /**
-* Creates the unique game message channel for a specific connection for writing back
-* from server to client. Only creates if it doesn't already exist.
+* Stops a connection's writer: its channel is closed and forgotten in one step.
+*
+* Callers must hold the write lock. Every sender looks the channel up and sends
+* under the read lock, so a channel is closed exactly once and never while
+* anyone can still send on it.
 **/
-func (s *Server) createMsgChan(conn *websocket.Conn) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// if already exists, don't duplicate create
-	if _, exists := s.msgChan[conn]; exists {
-		return false
-	}
-
-	s.msgChan[conn] = make(chan interface{}, 10) // add buffer to avoid blocking
-	return true
-}
-
-/**
-* Gets the unique game message channel for a specific connection for writing back
-* from server to client, validating that it exists.
-**/
-func (s *Server) getGameMsgChan(conn *websocket.Conn) (chan interface{}, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	channel, exists := s.msgChan[conn]
-
-	if !exists {
-		return nil, fmt.Errorf("Game message channel for this connection does not exist.")
-	}
-
-	return channel, nil
-}
-
-func (s *Server) markPlayerAsReconnecting(player *types.Player) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	reconnecting := constants.Reconnecting
-	player.ConnectState = &reconnecting
-
-	// 同時更新 server 的 players map
-	if existingPlayer, exists := s.players[player.ID]; exists {
-		existingPlayer.ConnectState = &reconnecting
-	}
-}
-
-func (s *Server) cleanUpConnectionOnly(conn *websocket.Conn) {
-	s.mu.Lock()
-
-	player, exists := s.connToPlayer[conn]
-	if !exists {
-		s.mu.Unlock()
-		slog.Error("cleanUpConnectionOnly: connection not found",
-			"conn", conn,
-		)
-		conn.Close()
-		return
-	}
-
-	slog.Info("Cleaning up connection only for player - keeping game state",
-		"player_username", player.Username,
-	)
-
+func (s *Server) stopClientWriterLocked(conn *websocket.Conn) {
 	if ch, exists := s.msgChan[conn]; exists {
 		close(ch)
 		delete(s.msgChan, conn)
 	}
-
-	// delete conn to player mapping (but don't delete player itself)
-	delete(s.connToPlayer, conn)
-
-	// Note: don't delete s.players[player.ID], keep player data
-	// Note: don't remove from queue, keep queue state
-	// Note: don't remove from session, keep game state
-
-	s.mu.Unlock()
-
-	conn.Close()
 }
 
-func (s *Server) handleReconnectionTimeout(playerID uuid.UUID, timeout time.Duration) {
+// graceHold names one drop's reconnect grace. Only the member's latest drop
+// holds them: a reconnect ends the hold, and a later drop starts a new one, so
+// an earlier drop's grace running out ends nothing.
+type graceHold uint64
+
+/**
+* Holds the member a dropped connection carried for the reconnect grace: the
+* connection is unmapped and its writer stopped, and every record of the member
+* is marked reconnecting. Their record, world and queue place are kept. The
+* returned hold is the one this drop's grace may end.
+*
+* One step under the lock, and only for a connection still mapped. A connection
+* the server already unmapped (one a reconnect superseded, or one already
+* cleaned up) carries nobody: reporting false there is what keeps the server's
+* own close of a superseded socket from marking the member on the connection
+* that replaced it as reconnecting. The caller closes the socket.
+**/
+func (s *Server) holdForReconnect(conn *websocket.Conn) (types.Player, graceHold, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	mapped, exists := s.connToPlayer[conn]
+	if !exists {
+		return types.Player{}, 0, false
+	}
+
+	s.stopClientWriterLocked(conn)
+	delete(s.connToPlayer, conn)
+
+	reconnecting := constants.Reconnecting
+	for _, record := range s.everyRecordOf(mapped) {
+		record.ConnectState = &reconnecting
+	}
+
+	s.lastGraceHold++
+	hold := s.lastGraceHold
+	s.graceHolds[mapped.ID] = hold
+
+	return *mapped, hold, true
+}
+
+func (s *Server) handleReconnectionTimeout(playerID uuid.UUID, hold graceHold, timeout time.Duration) {
 	slog.Debug("Reconnection timer started",
 		"player_id", playerID,
 		"timeout", timeout,
@@ -423,102 +345,116 @@ func (s *Server) handleReconnectionTimeout(playerID uuid.UUID, timeout time.Dura
 
 	time.Sleep(timeout)
 
-	s.mu.RLock()
-	player, exists := s.players[playerID]
-	s.mu.RUnlock()
-
-	if !exists {
-		slog.Debug("Player already cleaned up", "player_id", playerID)
-		return
-	}
-
-	// check player state
-	if player.ConnectState != nil && *player.ConnectState == constants.Reconnecting {
-		slog.Debug("Player failed to reconnect within timeout limit.",
-			"player_username", player.Username,
-			"timeout", timeout,
-		)
-		s.cleanUpPlayerCompletely(playerID)
-	} else {
-		slog.Debug("Player already reconnected",
-			"player_username", player.Username)
-	}
+	s.cleanUpPlayerCompletely(playerID, hold)
 }
 
-func (s *Server) cleanUpPlayerCompletely(playerID uuid.UUID) {
-	s.mu.RLock()
-	player, exists := s.players[playerID]
-	s.mu.RUnlock()
+/**
+* Ends the stay of a member who did not come back within the reconnect grace
+* of the drop that started hold.
+*
+* Checking they are still reconnecting under that same hold and deleting their
+* record is one step under the lock, so a reconnect landing in between either
+* keeps the record (it marked them connected and ended the hold first) or
+* arrives after it is gone and starts fresh, never half of each. A member who
+* reconnected and dropped again is under a newer hold, and only that drop's
+* grace running out ends their stay.
+**/
+func (s *Server) cleanUpPlayerCompletely(playerID uuid.UUID, hold graceHold) {
+	s.mu.Lock()
 
-	if !exists {
+	record, exists := s.players[playerID]
+	if !exists || s.graceHolds[playerID] != hold ||
+		record.ConnectState == nil || *record.ConnectState != constants.Reconnecting {
+		s.mu.Unlock()
+		slog.Debug("Player reconnected, dropped again or was already cleaned up", "player_id", playerID)
 		return
 	}
 
-	slog.Info("Completely cleaning up player", "username", player.Username)
-
-	// 從 queue 移除
-	s.queue.PlayerRemoveQueue(s.ctx, player)
-
-	// 從 session 移除
-	s.cleanUpPlayerFromSession(player)
-
-	// 從 players map 移除
-	s.mu.Lock()
+	// a copy taken under the lock: the worlds keep writing the record under it
+	player := *record
 	delete(s.players, playerID)
+	delete(s.graceHolds, playerID)
+
 	s.mu.Unlock()
+
+	slog.Info("Player failed to reconnect within the grace, cleaning up completely", "username", player.Username)
+
+	s.releaseDeparted(&player)
+}
+
+/**
+* Releases what a member whose record is already deleted still holds.
+*
+* The body in their world goes first: it is in-process and quick. The queue
+* place goes after, because removing it may be slow and retried, and a member
+* who reconnects and re-enters a world meanwhile must not have that new body
+* removed by this old cleanup finishing late. Nothing here forgets a world on
+* a record: the record is gone, and the member's current one, if they came
+* back, is not this cleanup's to touch.
+**/
+func (s *Server) releaseDeparted(player *types.Player) {
+	s.leaveCurrentWorld(player)
+
+	// queue removal is external and can retry for a while, so it never runs under
+	// the server lock; on its own goroutine so the disconnect isn't held up either.
+	// It gets its own copy of the record. FS-K2HKP §Requirements 8.
+	queued := *player
+	go func(player *types.Player) {
+		if err := s.queue.PlayerRemoveQueue(s.ctx, player); err != nil {
+			slog.Error("failed to remove disconnected player from queue", "player_id", player.ID, "err", err)
+		}
+	}(&queued)
 }
 
 /**
 * Cleans up all resources associated with a client connection.
 * Called when connection is closed or errors out.
+*
+* A connection the server no longer maps (one a reconnect replaced) has no
+* player behind it: it is only closed, and the member it used to carry is left
+* alone on the connection that replaced it.
 **/
 func (s *Server) cleanUpClient(conn *websocket.Conn) {
 	s.mu.Lock()
 
-	// 獲取玩家資訊
-	player, exists := s.connToPlayer[conn]
+	mapped, exists := s.connToPlayer[conn]
 
+	s.stopClientWriterLocked(conn)
+	delete(s.connToPlayer, conn)
+
+	// a copy taken under the lock: the worlds keep writing the record under it
+	var player types.Player
 	if exists {
-		slog.Info("Cleaning up client", "username", player.Username)
-		// 從 queue 中移除玩家
-		s.queue.PlayerRemoveQueue(s.ctx, player)
+		player = *mapped
+		delete(s.players, player.ID)
+		delete(s.graceHolds, player.ID)
+	}
+
+	s.mu.Unlock()
+
+	if !exists {
+		slog.Info("Cleaning up a connection no player is mapped to")
+		conn.Close()
 		return
 	}
 
 	slog.Info("Cleaning up client", "username", player.Username, "player_id", player.ID)
 
-	// 從 queue 中移除玩家
-	s.queue.PlayerRemoveQueue(s.ctx, player)
+	// removes the body before the (possibly slow) queue removal, and never
+	// touches a record the member may have come back with meanwhile
+	s.releaseDeparted(&player)
 
-	// 關閉並刪除 msgChan
-	if ch, exists := s.msgChan[conn]; exists {
-		close(ch)
-		delete(s.msgChan, conn)
-		slog.Info("Closed message channel for player", "username", player.Username)
-	}
-
-	// delete conn to player mapping
-	delete(s.connToPlayer, conn)
-
-	// delete player mapping
-	delete(s.players, player.ID)
-
-	s.mu.Unlock()
-
-	// remove player from game session (call after releasing lock to avoid deadlock)
-	s.cleanUpPlayerFromSession(player)
-
-	// 關閉 WebSocket 連線
 	conn.Close()
 }
 
 /**
-* Removes player from their game session and shuts down empty sessions.
+* Removes the player's body from the world their record points at, shutting
+* down a run left empty. The record itself is not touched.
 * This is separated from cleanUpClient to avoid holding the server mutex for too long.
 **/
-func (s *Server) cleanUpPlayerFromSession(player *types.Player) {
+func (s *Server) leaveCurrentWorld(player *types.Player) {
 	if player == nil {
-		slog.Warn("cleanUpPlayerFromSession: player is nil, skipping")
+		slog.Warn("leaveCurrentWorld: player is nil, skipping")
 		return
 	}
 
@@ -541,14 +477,8 @@ func (s *Server) cleanUpPlayerFromSession(player *types.Player) {
 	// remove player from session
 	playerSession.RemovePlayer(player.ID.String())
 
-	// The hub is not a run, in two ways. It exists before anyone arrives and
-	// outlives everyone leaving, so an empty one is not a finished one. And
-	// dropping out of it is simply leaving — there is nothing in progress to
-	// resume, so the player forgets the world and walks back in from the menu
-	// like anyone else, rather than being resumed into a world they no longer
-	// occupy (FS-29KSH §Edge States).
+	// the hub outlives everyone leaving it
 	if playerSession.WorldType() == types.WorldTypeHub {
-		s.forgetCurrentWorld(player)
 		return
 	}
 
@@ -568,22 +498,5 @@ func (s *Server) cleanUpPlayerFromSession(player *types.Player) {
 		slog.Info("Session shut down and removed", "session_id", playerSession.ID)
 	} else {
 		slog.Info("Session still has remaining players", "session_id", playerSession.ID, "remaining", len(remainingPlayers))
-	}
-}
-
-/**
-* Clears a player's record of which world they are in.
-*
-* Both copies, because MapConnToPlayer stores the player by value: the entry in
-* connToPlayer is a different object from the one in players, and routing reads
-* the former. Leaving one set would leave messages being delivered to a world
-* the player has no body in.
-**/
-func (s *Server) forgetCurrentWorld(player *types.Player) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for _, record := range s.everyRecordOf(player) {
-		record.CurrentGameSessionId = uuid.Nil
 	}
 }

@@ -28,6 +28,7 @@ type Handler struct {
 
 	// read
 	myListingsReader MyListingsReader
+	myBidsReader     MyBidsReader
 	browseReader     BrowseListingsReader
 	listingReader    ListingReader
 
@@ -56,6 +57,12 @@ type MyListingsReader interface {
 	Execute(ctx context.Context, sellerID uuid.UUID, c *commoncursor.Cursor, limit int) (*dto.ListingsPage, error)
 }
 
+// MyBidsReader reads one page of a member's own bids, newest placed first. A
+// nil cursor is the first page.
+type MyBidsReader interface {
+	Execute(ctx context.Context, memberID uuid.UUID, c *commoncursor.Cursor, limit int) (*dto.MyBidsPage, error)
+}
+
 // BrowseListingsReader reads one page of every seller's live auctions,
 // soonest-ending first. A nil cursor is the first page.
 type BrowseListingsReader interface {
@@ -74,6 +81,7 @@ func NewHandler(
 	placeBidUC *usecase.PlaceBidUC,
 	withdrawBidUC *usecase.WithdrawBidUC,
 	myListingsReader MyListingsReader,
+	myBidsReader MyBidsReader,
 	browseReader BrowseListingsReader,
 	listingReader ListingReader,
 	acceptBid AcceptBid,
@@ -84,6 +92,7 @@ func NewHandler(
 		placeBidUC:       placeBidUC,
 		withdrawBidUC:    withdrawBidUC,
 		myListingsReader: myListingsReader,
+		myBidsReader:     myBidsReader,
 		browseReader:     browseReader,
 		listingReader:    listingReader,
 		acceptBid:        acceptBid,
@@ -197,10 +206,19 @@ func (h *Handler) Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.Buyout
 		return nil, status.Error(codes.Unauthenticated, "missing identity")
 	}
 
+	// Optional, as for PlaceBid: an absent or malformed key means "no key", and the
+	// buyout is still recognised on resend by the buyer's own buyout (ADR-0026).
+	idempotencyKey, err := uuid.Parse(req.GetIdempotencyKey())
+	if err != nil {
+		idempotencyKey = uuid.Nil
+	}
+
 	if err := h.buyout.Handle(ctx, usecase.BuyoutCommand{
-		ListingID: listingID,
-		MemberID:  memberID,
-		Now:       time.Now(),
+		ListingID:      listingID,
+		MemberID:       memberID,
+		Amount:         int(req.GetAmount()),
+		IdempotencyKey: idempotencyKey,
+		Now:            time.Now(),
 	}); err != nil {
 		return nil, mapError(ctx, err)
 	}
@@ -278,6 +296,39 @@ func (h *Handler) ListMyListings(ctx context.Context, req *pb.ListMyListingsRequ
 	}
 
 	res := &pb.ListMyListingsResponse{Listings: listings}
+	if page.NextCursor != "" {
+		res.Pagination = &pbpagination.PageInfo{NextCursor: page.NextCursor}
+	}
+
+	return res, nil
+}
+
+// ListMyBids pages the caller's own bids, newest placed first (FS-EYQ8K).
+func (h *Handler) ListMyBids(ctx context.Context, req *pb.ListMyBidsRequest) (*pb.ListMyBidsResponse, error) {
+	// the bidder is always the caller; the request has no field to choose another
+	memberID, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	// a transport-shape failure, answered here like ListMyListings answers one
+	cursor, err := commoncursor.Decode(req.GetCursor())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "malformed cursor")
+	}
+
+	page, err := h.myBidsReader.Execute(ctx, memberID, cursor, int(req.GetLimit()))
+	if err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	now := time.Now()
+	bids := make([]*pb.MyBid, 0, len(page.Bids))
+	for _, b := range page.Bids {
+		bids = append(bids, toProtoMyBid(b, now))
+	}
+
+	res := &pb.ListMyBidsResponse{Bids: bids}
 	if page.NextCursor != "" {
 		res.Pagination = &pbpagination.PageInfo{NextCursor: page.NextCursor}
 	}
@@ -368,6 +419,26 @@ func toProtoListing(l dto.ListingDetails, now time.Time) *pb.Listing {
 	return out
 }
 
+// toProtoMyBid maps a bid and its listing summary to the wire. Absent prices
+// stay absent rather than collapsing to 0.
+func toProtoMyBid(b dto.MyBid, now time.Time) *pb.MyBid {
+	return &pb.MyBid{
+		BidId:     b.ID.String(),
+		ListingId: b.ListingID.String(),
+		Amount:    int64(b.Amount),
+		Status:    string(b.Status),
+		PlacedAt:  timestamppb.New(b.PlacedAt),
+		Listing: &pb.MyBidListing{
+			Status:       string(b.Listing.Status),
+			EndsAt:       timestamppb.New(b.Listing.EndsAt),
+			Ended:        b.Listing.EndedAt(now),
+			CurrentPrice: optionalInt64(b.Listing.CurrentPrice),
+			BuyoutPrice:  optionalInt64(b.Listing.BuyoutPrice),
+			ItemId:       b.Listing.ItemID.String(),
+		},
+	}
+}
+
 func mapError(ctx context.Context, err error) error {
 	var code codes.Code
 	var msg string
@@ -408,7 +479,8 @@ func mapError(ctx context.Context, err error) error {
 	// the caller sent a structurally valid request carrying a nonsensical value
 	case errors.Is(err, listing.ErrInvalidAmount) ||
 		errors.Is(err, listing.ErrBidTooLow) ||
-		errors.Is(err, listing.ErrBidAtOrAboveBuyout):
+		errors.Is(err, listing.ErrBidAtOrAboveBuyout) ||
+		errors.Is(err, listing.ErrBuyoutAmountMismatch):
 		code = codes.InvalidArgument
 		msg = "invalid argument"
 		logLevel = slog.LevelInfo

@@ -267,29 +267,22 @@ func (r *ListingRepository) writeChanges(ctx context.Context, tx *sqlx.Tx, after
 		}
 	}
 
-	if len(changes.bidsUpdated) != 0 {
-		// create unnest required vertical slices
-		ids := make([]string, 0, len(changes.bidsUpdated))
-		statuses := make([]string, 0, len(changes.bidsUpdated))
-		updatedAts := make([]time.Time, 0, len(changes.bidsUpdated))
-
-		for _, bid := range changes.bidsUpdated {
-			ids = append(ids, bid.id.String())
-			statuses = append(statuses, string(*bid.status))
-			updatedAts = append(updatedAts, bid.updatedAt)
+	// Two statements, not one: a bid becoming WINNING must reach the table only after
+	// the bid leaving WINNING has, or idx_bids_single_winner refuses the write. Within
+	// one UPDATE the rows are visited in the join's order, not the array's, so only
+	// separate statements fix the order. A withdrawn leader's runner-up (ADR-0028)
+	// usually precedes the leader in the listing's bids, the case that needs this.
+	var toWinning, others []*bidChanges
+	for _, bid := range changes.bidsUpdated {
+		if *bid.status == listing.BidStatusWinning {
+			toWinning = append(toWinning, bid)
+		} else {
+			others = append(others, bid)
 		}
-
-		changedBidsQuery := `
-			UPDATE bids b
-			SET status = v.status,
-				updated_at = v.updated_at
-			FROM unnest($1::uuid[], $2::text[], $3::timestamptz[])
-			AS v(id, status, updated_at)
-			WHERE v.id = b.id
-			`
-
-		if _, err := tx.ExecContext(ctx, changedBidsQuery, pq.Array(ids), pq.Array(statuses), pq.Array(updatedAts)); err != nil {
-			return commonhelpers.WrapDBErr("listing", "save", err)
+	}
+	for _, group := range [][]*bidChanges{others, toWinning} {
+		if err := r.updateBids(ctx, tx, group); err != nil {
+			return err
 		}
 	}
 
@@ -324,6 +317,38 @@ func (c *ListingChanges) IsEmpty() bool {
 		c.soldPrice == nil &&
 		len(c.bidsUpdated) == 0 &&
 		len(c.newBids) == 0
+}
+
+// updateBids writes one group of bid status changes in a single statement.
+func (r *ListingRepository) updateBids(ctx context.Context, tx *sqlx.Tx, bids []*bidChanges) error {
+	if len(bids) == 0 {
+		return nil
+	}
+
+	// create unnest required vertical slices
+	ids := make([]string, 0, len(bids))
+	statuses := make([]string, 0, len(bids))
+	updatedAts := make([]time.Time, 0, len(bids))
+
+	for _, bid := range bids {
+		ids = append(ids, bid.id.String())
+		statuses = append(statuses, string(*bid.status))
+		updatedAts = append(updatedAts, bid.updatedAt)
+	}
+
+	changedBidsQuery := `
+		UPDATE bids b
+		SET status = v.status,
+			updated_at = v.updated_at
+		FROM unnest($1::uuid[], $2::text[], $3::timestamptz[])
+		AS v(id, status, updated_at)
+		WHERE v.id = b.id
+		`
+
+	if _, err := tx.ExecContext(ctx, changedBidsQuery, pq.Array(ids), pq.Array(statuses), pq.Array(updatedAts)); err != nil {
+		return commonhelpers.WrapDBErr("listing", "save", err)
+	}
+	return nil
 }
 
 type bidChanges struct {

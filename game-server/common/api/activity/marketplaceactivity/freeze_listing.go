@@ -34,12 +34,18 @@ type FreezeListingInput struct {
 //
 // On OutcomeNoBids the winner fields and Amount are unset: there is no winner to
 // describe, and no step that would read them runs.
+//
+// BidIDs is every bid on the listing when it froze, whatever its status, the
+// winner's included: the set whose holds the pre-pivot rollback releases (Req 12).
+// wallet keeps no listing dimension, so it cannot find them itself. A history
+// recorded before the field existed decodes it as nil.
 type FreezeListingOutput struct {
-	Outcome        string    `json:"outcome"`
-	ListingID      uuid.UUID `json:"listing_id"`
-	ItemID         uuid.UUID `json:"item_id"`
-	SellerID       uuid.UUID `json:"seller_id"`
-	WinnerBidID    uuid.UUID `json:"winner_bid_id"`
-	WinnerMemberID uuid.UUID `json:"winner_member_id"`
-	Amount         int64     `json:"amount"`
+	Outcome        string      `json:"outcome"`
+	ListingID      uuid.UUID   `json:"listing_id"`
+	ItemID         uuid.UUID   `json:"item_id"`
+	SellerID       uuid.UUID   `json:"seller_id"`
+	WinnerBidID    uuid.UUID   `json:"winner_bid_id"`
+	WinnerMemberID uuid.UUID   `json:"winner_member_id"`
+	Amount         int64       `json:"amount"`
+	BidIDs         []uuid.UUID `json:"bid_ids"`
 }

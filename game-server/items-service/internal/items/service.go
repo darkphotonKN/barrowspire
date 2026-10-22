@@ -24,20 +24,29 @@ type service struct {
 	db              *sqlx.DB
 	publishCh       commonbroker.Publisher
 	outboxPublisher commonoutbox.OutboxPublisher
+	inbox           Inbox
 	// withTx runs fn in one transaction on db, committing when fn succeeds.
 	withTx func(ctx context.Context, fn func(tx *sqlx.Tx) error) error
 }
 
-func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher, outboxPublisher commonoutbox.OutboxPublisher) *service {
+func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher, outboxPublisher commonoutbox.OutboxPublisher, inbox Inbox) *service {
 	return &service{
 		repo:            repo,
 		db:              db,
 		publishCh:       publishCh,
 		outboxPublisher: outboxPublisher,
+		inbox:           inbox,
 		withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
 			return commonutils.ExecTx(ctx, db, nil, fn)
 		},
 	}
+}
+
+// Inbox records which events the service has already applied. The mark is
+// written in the caller's transaction, so it commits or rolls back with the
+// event's own writes.
+type Inbox interface {
+	MarkEventProcessed(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string) (bool, error)
 }
 
 type Repository interface {
@@ -104,6 +113,8 @@ type Repository interface {
 	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
 	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
 	FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) (bool, error)
+	TransferItem(ctx context.Context, itemID, buyerID, listingID uuid.UUID) (bool, error)
+	UnfreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) error
 
 	// public item facts, for listing pages
 	GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error)
@@ -119,13 +130,25 @@ func (s *service) CreatePlayerLoadout(createPlayerLoadoutReq *PlayerLoadout) err
 }
 
 // ProcessItemsExtracted stores every player's extracted items and equipped
-// loadout in one transaction, so a requeued event replays from nothing rather
-// than duplicating the items found in a run. An item that cannot be stored on
-// its own (no template, bad affix) is skipped with a warning; any other failure
-// is returned, transient or not, for the consumer to settle (FS-4R9M9 R49, R50).
-func (s *service) ProcessItemsExtracted(ctx context.Context, req *pb.ItemsExtractedEvent) error {
+// loadout in one transaction, opened by marking the event in the inbox, so an
+// event is applied exactly once: a failure rolls the mark back with the loot,
+// and a redelivery of an applied event writes nothing and returns
+// ErrAlreadyProcessed (FS-BVM9H Req 3, 6, 7, 10). An item that cannot be stored
+// on its own (no template, bad affix) is skipped with a warning; any other
+// failure is returned, transient or not, for the consumer to settle
+// (FS-4R9M9 R49, R50).
+func (s *service) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, eventType string, req *pb.ItemsExtractedEvent) error {
 	var writeErr error
 	err := s.withTx(ctx, func(tx *sqlx.Tx) error {
+		isNew, err := s.inbox.MarkEventProcessed(ctx, tx, eventID, eventType)
+		if err != nil {
+			writeErr = fmt.Errorf("mark event processed: %w", err)
+			return writeErr
+		}
+		if !isNew {
+			writeErr = commonconstants.ErrAlreadyProcessed
+			return writeErr
+		}
 		for _, playerItems := range req.PlayerItems {
 			if writeErr = s.storeExtractedPlayerItems(ctx, tx, playerItems); writeErr != nil {
 				return writeErr
@@ -139,9 +162,9 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, req *pb.ItemsExtrac
 	case writeErr == nil:
 		// no write failed, the transaction around them did (begin or commit):
 		// the store, not the event, is at fault
-		return fmt.Errorf("transaction for items extracted %s: %w: %w", req.EventId, commonconstants.ErrTransient, err)
+		return fmt.Errorf("transaction for items extracted %s: %w: %w", eventID, commonconstants.ErrTransient, err)
 	default:
-		return fmt.Errorf("store items extracted %s: %w", req.EventId, err)
+		return fmt.Errorf("store items extracted %s: %w", eventID, err)
 	}
 }
 
@@ -941,11 +964,32 @@ func (s *service) publishItemCreatedEvent(ctx context.Context, userId, itemName,
 	}
 }
 
-func (h *service) GetLoadout(ctx context.Context, req *GetLoadoutRequest) (*Loadout, error) {
+// ensureOwner refuses a caller acting on another member's stash or loadout with
+// ErrForbidden; every such service method checks it before any repository
+// access (FS-4R9M9 R53).
+func ensureOwner(caller, member uuid.UUID, action string) error {
+	if caller != member {
+		return fmt.Errorf("%s of member %s by %s: %w", action, member, caller, commonconstants.ErrForbidden)
+	}
+	return nil
+}
+
+// GetLoadout returns the loadout req.MemberId wears, and only to that member.
+func (h *service) GetLoadout(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*Loadout, error) {
+	if err := ensureOwner(caller, req.MemberId, "loadout read"); err != nil {
+		return nil, err
+	}
 	return h.repo.GetLoadout(ctx, req)
 }
 
-func (h *service) GetLoadoutWithItems(ctx context.Context, req *GetLoadoutRequest) (*LoadoutWithItems, error) {
+// GetLoadoutWithItems returns the gear req.MemberId wears, and only to that
+// member: a caller asking for anyone else's loadout gets ErrForbidden before any
+// read (FS-4R9M9 R53).
+func (h *service) GetLoadoutWithItems(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*LoadoutWithItems, error) {
+	if err := ensureOwner(caller, req.MemberId, "loadout read"); err != nil {
+		return nil, err
+	}
+
 	loadout, err := h.repo.GetLoadout(ctx, req)
 	if err != nil {
 		return nil, err
@@ -978,11 +1022,19 @@ func (h *service) GetLoadoutWithItems(ctx context.Context, req *GetLoadoutReques
 	return result, nil
 }
 
-func (h *service) ListItemInstances(ctx context.Context, req *ListItemInstancesRequest) ([]*ItemInstance, error) {
+// ListItemInstances returns the stash req.MemberId owns, and only to that member.
+func (h *service) ListItemInstances(ctx context.Context, caller uuid.UUID, req *ListItemInstancesRequest) ([]*ItemInstance, error) {
+	if err := ensureOwner(caller, req.MemberId, "stash read"); err != nil {
+		return nil, err
+	}
 	return h.repo.ListItemInstances(ctx, req)
 }
 
-func (h *service) UpdateLoadout(ctx context.Context, req *UpdateLoadoutRequest) error {
+// UpdateLoadout changes a slot of req.MemberId's loadout, and only for that member.
+func (h *service) UpdateLoadout(ctx context.Context, caller uuid.UUID, req *UpdateLoadoutRequest) error {
+	if err := ensureOwner(caller, req.MemberId, "loadout update"); err != nil {
+		return err
+	}
 	return h.repo.UpsertLoadoutSlot(ctx, req)
 }
 
@@ -1179,6 +1231,31 @@ func (s *service) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) er
 	return nil
 }
 
+// UnfreezeItem is the pre-pivot rollback (FS-NXP1W Req 12): the item goes back
+// to its seller. Every row the write does not match is success in the repository,
+// so the only error here is the database failing, which Temporal retries.
+func (s *service) UnfreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) error {
+	if err := s.repo.UnfreezeItem(ctx, itemID, sellerID, listingID); err != nil {
+		return fmt.Errorf("unfreeze item %v for listing %v: %w", itemID, listingID, err)
+	}
+
+	return nil
+}
+
 func (s *service) ReturnItem(ctx context.Context, id, listingID uuid.UUID) error {
 	return s.repo.ReturnItem(ctx, id, listingID)
+}
+
+func (s *service) TransferItem(ctx context.Context, itemID, buyerID, listingID uuid.UUID) error {
+
+	transferred, err := s.repo.TransferItem(ctx, itemID, buyerID, listingID)
+	if err != nil {
+		return fmt.Errorf("transfer item %v: %w", itemID, err)
+	}
+
+	if !transferred {
+		return fmt.Errorf("transfer item %v for buyer %v: %w", itemID, buyerID, ErrItemNotTransfer)
+	}
+
+	return nil
 }

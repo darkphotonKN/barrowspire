@@ -22,7 +22,7 @@ import {
   typeLabel,
 } from "@/marketplace/browse";
 import type { Listing } from "@/marketplace/listing";
-import type { RowSort, SortKey } from "@/marketplace/rows";
+import { buyoutBadge, type RowSort, type SortKey } from "@/marketplace/rows";
 import { formatTimeLeft } from "@/marketplace/timeLeft";
 
 const SKELETON_ROWS = 5;
@@ -161,7 +161,7 @@ function ListingRow({
         <>
           <ItemCell item={listing.item} />
           <td className={`${CELL} ${LESSER} text-vellum-dim`}>{typeLabel(listing.item)}</td>
-          <PriceCell price={priceCell(listing)} />
+          <PriceCell price={priceCell(listing)} badge={buyoutBadge(listing)} />
           <td className={`${NUMERIC} ${LESSER} text-vellum-dim`}>{listing.bidCount}</td>
           <td className={`${NUMERIC} text-vellum`}>{formatTimeLeft(listing.endsAt, now)}</td>
           <td className={`${CELL} text-right`}>

@@ -18,6 +18,9 @@ const (
 	StatusPendingSettlement ListingStatus = "PENDING_SETTLEMENT"
 	StatusExpired           ListingStatus = "EXPIRED"
 	StatusSold              ListingStatus = "SOLD"
+	// StatusSettlementFailed is where a pre-pivot rollback leaves a listing whose
+	// settlement can never succeed (FS-NXP1W §Req 12). Final: never re-settled.
+	StatusSettlementFailed ListingStatus = "SETTLEMENT_FAILED"
 )
 
 type Listing struct {
@@ -185,24 +188,24 @@ func (l *Listing) Cancel(now time.Time) error {
 	return nil
 }
 
-func (l *Listing) MarkSold(now time.Time, buyerID uuid.UUID, soldPrice int) error {
-	if l.status != StatusActive {
+func (l *Listing) MarkSold(now time.Time) error {
+	switch l.status {
+	case StatusSold:
+		// a retried activity catching up with its own earlier success
+		return nil
+	case StatusPendingSettlement:
+		wonBid := l.findWonBid()
+		if wonBid == nil {
+			return ErrInvalidListingState
+		}
+		buyer, price := wonBid.memberID, wonBid.amount
+		l.buyerID = &buyer
+		l.soldPrice = &price
+		return l.transitionTo(StatusSold, now)
+	default:
 		return ErrInvalidListingState
 	}
-	if buyerID == uuid.Nil {
-		return ErrInvalidUUID
-	}
-	if soldPrice <= 0 || soldPrice < l.startPrice {
-		return ErrInvalidSoldPrice
-	}
-	if l.endsAt.After(now) {
-		return ErrInvalidSoldTime
-	}
-	l.buyerID = &buyerID
-	l.soldPrice = &soldPrice
-	l.status = StatusSold
-	l.updatedAt = now
-	return nil
+
 }
 
 // PlaceBid records a bid under a freshly minted id. Callers that must know the
@@ -230,8 +233,9 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 
 	// A replayed request must not become a second bid. Retries and broker
 	// redelivery both resend the same placement, and without this the member
-	// ends up outbidding themselves.
-	if idempotencyKey != uuid.Nil && l.findBidByIdempotencyKey(idempotencyKey) != nil {
+	// ends up outbidding themselves. The key is the member's own: another
+	// member's bid carrying the same key is not this one (ADR-0027).
+	if idempotencyKey != uuid.Nil && l.findBidByIdempotencyKey(memberID, idempotencyKey) != nil {
 		return nil
 	}
 
@@ -272,6 +276,19 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 // away as a replay.
 func (l *Listing) HasBid(bidID uuid.UUID) bool {
 	return l.findBidByID(bidID) != nil
+}
+
+// HasBuyoutBy reports whether memberID has already bought this listing out. A
+// listing takes one buyout, so this is how a resend under a different bid ID,
+// or none, is recognised as the same buyout (ADR-0026).
+func (l *Listing) HasBuyoutBy(memberID uuid.UUID) bool {
+	for _, bid := range l.bids {
+		if bid.bidType == BidTypeBuyout && bid.memberID == memberID {
+			return true
+		}
+	}
+
+	return false
 }
 
 // ConfirmBid promotes a bid once wallet reports its hold is in place, demoting
@@ -437,7 +454,10 @@ func (l *Listing) LoseAllBids(now time.Time) error {
 }
 
 func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time) error {
-	if err := l.acceptingBidChanges(); err != nil {
+	// Ended means what it means to PlaceBid. Between the end and settlement's freeze
+	// the listing is still ACTIVE, and a withdrawal there would change the outcome:
+	// a withdrawn leader would hand the win to the runner-up after the end.
+	if err := l.AcceptsBidAt(now); err != nil {
 		return err
 	}
 
@@ -452,9 +472,22 @@ func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time
 		return ErrNotBidOwner
 	}
 
-	// the FSM rejects anything already outbid, won or cancelled
+	wasLeading := bid.status == BidStatusWinning
+
+	// the FSM rejects anything already won, lost or cancelled; an OUTBID bid may be
+	// withdrawn (ADR-0029) and, not leading, promotes nobody
 	if err := bid.transitionTo(BidStatusCancelled, now); err != nil {
 		return err
+	}
+
+	// A withdrawn leader is replaced by the highest bid still held (ADR-0028), so the
+	// auction keeps a leader backed by gold whenever another bid remains.
+	if wasLeading {
+		if runnerUp := l.findRunnerUp(); runnerUp != nil {
+			if err := runnerUp.transitionTo(BidStatusWinning, now); err != nil {
+				return err
+			}
+		}
 	}
 
 	l.updatedAt = now
@@ -462,18 +495,43 @@ func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time
 	return nil
 }
 
-// CanBuyout reports whether memberID could buy this listing out at now.
+// findRunnerUp is the bid that leads once the leader is gone: the highest OUTBID
+// bid, the one placed first on a tie. Only an OUTBID bid qualifies: its hold has
+// been RESERVED since it was placed, while a PENDING bid has no confirmed hold and
+// competes for the lead when it confirms.
+func (l *Listing) findRunnerUp() *Bid {
+	var best *Bid
+	for _, bid := range l.bids {
+		if bid.status != BidStatusOutbid {
+			continue
+		}
+		if best == nil || bid.amount > best.amount ||
+			(bid.amount == best.amount && bid.createdAt.Before(best.createdAt)) {
+			best = bid
+		}
+	}
+	return best
+}
+
+// CanBuyout reports whether memberID could buy this listing out at now for
+// amount, the price they agreed to (FS-NXP1W Req 43).
 // Read-only: a caller about to hold gold for a buyout asks it first, and Buyout
 // applies the same rules again under the lock.
 //
 // Seller first, as in CanAcceptBid.
-func (l *Listing) CanBuyout(memberID uuid.UUID, now time.Time) error {
+func (l *Listing) CanBuyout(memberID uuid.UUID, amount int, now time.Time) error {
 	if l.sellerID == memberID {
 		return ErrSellerCannotBuyout
 	}
 
 	if l.buyoutPrice == nil {
 		return ErrNoBuyoutPrice
+	}
+
+	// the price the buyer agreed to must be the one they will pay, so a price
+	// they were not shown can never be charged
+	if amount != *l.buyoutPrice {
+		return ErrBuyoutAmountMismatch
 	}
 
 	return l.AcceptsBidAt(now)
@@ -485,16 +543,18 @@ func (l *Listing) CanBuyout(memberID uuid.UUID, now time.Time) error {
 // leader is demoted, and from here the listing refuses every further bid change
 // (acceptingBidChanges) until settlement freezes it.
 //
-// bidID is minted by the caller and is what the gold is held against, which
-// makes a retry recognisable: a bid already present is a replay and succeeds
-// before any rule is checked, since the first attempt may already have started
-// the settlement that froze the listing.
-func (l *Listing) Buyout(bidID, memberID uuid.UUID, now time.Time) error {
-	if l.findBidByID(bidID) != nil {
+// bidID is minted by the caller and is what the gold is held against. A replay
+// succeeds before any rule is checked, since the first attempt may already have
+// started the settlement that froze the listing: the same bidID, or a buyout by
+// the same member under any bidID (ADR-0026). A replay under a new bidID records
+// nothing, so its caller's hold backs no bid. That includes the amount check:
+// the first attempt passed it, and the bid is recorded at the buyout price.
+func (l *Listing) Buyout(bidID, memberID uuid.UUID, amount int, now time.Time) error {
+	if l.findBidByID(bidID) != nil || l.HasBuyoutBy(memberID) {
 		return nil
 	}
 
-	if err := l.CanBuyout(memberID, now); err != nil {
+	if err := l.CanBuyout(memberID, amount, now); err != nil {
 		return err
 	}
 
@@ -522,7 +582,8 @@ func (l *Listing) Buyout(bidID, memberID uuid.UUID, now time.Time) error {
 // AcceptsBidAt reports whether a new bid could be placed at now: the listing is
 // open and not yet past its end. PlaceBidWithID applies it under the lock; a
 // caller about to do something costly for a bid — holding its gold — asks it
-// first rather than restating the rule.
+// first rather than restating the rule. WithdrawBid applies it too, so "ended"
+// means the same for placing and withdrawing.
 func (l *Listing) AcceptsBidAt(now time.Time) error {
 	if err := l.acceptingBidChanges(); err != nil {
 		return err
@@ -580,6 +641,19 @@ func (l *Listing) findWinningBid() *Bid {
 	return nil
 }
 
+// findWonBid returns the bid settlement step 1a moved WINNING -> WON, or nil
+// before then. findWinningBid no longer sees it once it is WON.
+func (l *Listing) findWonBid() *Bid {
+	for _, bid := range l.bids {
+		if bid.status != BidStatusWon {
+			continue
+		}
+		return bid
+	}
+
+	return nil
+}
+
 // findContendingBid returns whoever currently holds or is claiming the lead:
 // the confirmed WINNING bid, or a PENDING one still waiting on its hold. Used
 // for the price threshold, where an unconfirmed bid still sets the bar.
@@ -598,9 +672,9 @@ func (l *Listing) findContendingBid() *Bid {
 	return contender
 }
 
-func (l *Listing) findBidByIdempotencyKey(key uuid.UUID) *Bid {
+func (l *Listing) findBidByIdempotencyKey(memberID, key uuid.UUID) *Bid {
 	for _, bid := range l.bids {
-		if bid.idempotencyKey != key {
+		if bid.memberID != memberID || bid.idempotencyKey != key {
 			continue
 		}
 		return bid
@@ -640,6 +714,24 @@ func (l *Listing) Freeze(now time.Time) error {
 	}
 
 	return nil
+}
+
+// MarkSettlementFailed is marketplace's share of the pre-pivot rollback
+// (FS-NXP1W §Req 12): a frozen listing ends SETTLEMENT_FAILED.
+//
+// Every other status is left as it is and is success. The rollback is retried
+// without a cap, so SETTLEMENT_FAILED itself must be a no-op. A 0a impossibility
+// reaches here with the listing not PENDING_SETTLEMENT: usually another flow
+// already moved it to a final status, which the rollback must not overwrite (Edge
+// States, "Listing withdrawn before 0a runs"). A listing 0a found corrupt stays as
+// it was too — the freeze rolled back — and is left for an operator, with the
+// rollback's settlement exception as the record.
+func (l *Listing) MarkSettlementFailed(now time.Time) error {
+	if l.status != StatusPendingSettlement {
+		return nil
+	}
+
+	return l.transitionTo(StatusSettlementFailed, now)
 }
 
 // Expire is settlement step NB2 (FS-NXP1W §Req 34b): a frozen listing that

@@ -3,107 +3,67 @@ package listing
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
 )
 
+// Client calls marketplace-service over one long-lived connection.
 type Client struct {
-	registry discovery.Registry
-	mu       sync.Mutex
-	conn     *grpc.ClientConn
+	conn *grpc.ClientConn
 }
 
-const (
-	serviceName = "marketplace"
-)
-
-func NewClient(registry discovery.Registry) ListingClient {
-	return &Client{
-		registry: registry,
-	}
-}
-
-// ensureConn lazily dials the service once and caches the connection for
-// reuse across calls (gRPC multiplexes over it). Opening a fresh conn per RPC
-// serialized badly and churned connections; see common/discovery/grpc.go.
-func (c *Client) ensureConn(ctx context.Context) (*grpc.ClientConn, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.conn != nil && c.conn.GetState() != connectivity.Shutdown {
-		return c.conn, nil
-	}
-	conn, err := discovery.ServiceConnection(ctx, serviceName, c.registry)
+// NewClient dials marketplace-service at addr ("host:port"). The dial is lazy: nothing
+// connects until the first RPC, so this service boots with marketplace-service absent
+// and a call made while it is down fails with codes.Unavailable.
+func NewClient(addr string) (*Client, error) {
+	conn, err := discovery.Dial(addr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("dial marketplace service at %s: %w", addr, err)
 	}
-	c.conn = conn
-	return conn, nil
+	return &Client{conn: conn}, nil
+}
+
+// Close releases the connection.
+func (c *Client) Close() error {
+	return c.conn.Close()
 }
 
 func (c *Client) ListItem(ctx context.Context, req *pb.ListItemRequest) (*pb.ListItemResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
-	}
-	client := pb.NewMarketplaceServiceClient(conn)
+	client := pb.NewMarketplaceServiceClient(c.conn)
 	listing, err := client.ListItem(ctx, req)
 	return listing, err
 }
 
 func (c *Client) PlaceBid(ctx context.Context, req *pb.PlaceBidRequest) (*pb.PlaceBidResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
-	}
-
-	return pb.NewMarketplaceServiceClient(conn).PlaceBid(ctx, req)
+	return pb.NewMarketplaceServiceClient(c.conn).PlaceBid(ctx, req)
 }
 
 func (c *Client) WithdrawBid(ctx context.Context, req *pb.WithdrawBidRequest) (*pb.WithdrawBidResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
-	}
-
-	return pb.NewMarketplaceServiceClient(conn).WithdrawBid(ctx, req)
+	return pb.NewMarketplaceServiceClient(c.conn).WithdrawBid(ctx, req)
 }
 
 func (c *Client) AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.AcceptBidResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
-	}
+	return pb.NewMarketplaceServiceClient(c.conn).AcceptBid(ctx, req)
+}
 
-	return pb.NewMarketplaceServiceClient(conn).AcceptBid(ctx, req)
+func (c *Client) Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.BuyoutResponse, error) {
+	return pb.NewMarketplaceServiceClient(c.conn).Buyout(ctx, req)
 }
 
 func (c *Client) ListMyListings(ctx context.Context, req *pb.ListMyListingsRequest) (*pb.ListMyListingsResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
-	}
+	return pb.NewMarketplaceServiceClient(c.conn).ListMyListings(ctx, req)
+}
 
-	return pb.NewMarketplaceServiceClient(conn).ListMyListings(ctx, req)
+func (c *Client) ListMyBids(ctx context.Context, req *pb.ListMyBidsRequest) (*pb.ListMyBidsResponse, error) {
+	return pb.NewMarketplaceServiceClient(c.conn).ListMyBids(ctx, req)
 }
 
 func (c *Client) BrowseListings(ctx context.Context, req *pb.BrowseListingsRequest) (*pb.BrowseListingsResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
-	}
-
-	return pb.NewMarketplaceServiceClient(conn).BrowseListings(ctx, req)
+	return pb.NewMarketplaceServiceClient(c.conn).BrowseListings(ctx, req)
 }
 
 func (c *Client) GetListing(ctx context.Context, req *pb.GetListingRequest) (*pb.GetListingResponse, error) {
-	conn, err := c.ensureConn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to listing service: %w", err)
-	}
-
-	return pb.NewMarketplaceServiceClient(conn).GetListing(ctx, req)
+	return pb.NewMarketplaceServiceClient(c.conn).GetListing(ctx, req)
 }

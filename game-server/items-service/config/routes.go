@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -9,10 +10,9 @@ import (
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
+	commoninbox "github.com/darkphotonKN/barrowspire-server/common/inbox"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
-	commoncache "github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/darkphotonKN/barrowspire-server/items-service/grpc/auth"
 	"github.com/darkphotonKN/barrowspire-server/items-service/internal/items"
 	"github.com/jmoiron/sqlx"
@@ -22,14 +22,17 @@ import (
 )
 
 type Activities struct {
-	FreezeItemActivity *items.FreezeItemsActivity
-	ReturnItemActivity *items.ReturnItemActivity
+	FreezeItemActivity   *items.FreezeItemsActivity
+	ReturnItemActivity   *items.ReturnItemActivity
+	TransferItemActivity *items.TransferItemsActivity
+	UnfreezeItemActivity *items.UnfreezeItemActivity
 }
 
-// SetupServices initializes all services and their dependencies
-func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, registry discovery.Registry) (*grpc.Server, *Activities) {
-	// Create Auth Service client
-	authClient := auth.NewClient(registry)
+// SetupServices initializes all services and their dependencies. republishCh
+// is a channel used for nothing else: the consumer puts it in confirm mode to
+// republish retries and dead letters. An error means the service cannot run
+// safely and must not start.
+func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel, republishCh *amqp.Channel, authClient auth.AuthClient) (*grpc.Server, *Activities, error) {
 
 	// -- outbox --
 	outboxRepo := commonoutbox.NewRepo(db)
@@ -40,25 +43,30 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, 
 
 	// Create service with repository and AMQP channel
 	publishCh := commonbroker.NewAmqpPublisher(amqpChannel)
-	service := items.NewService(repo, db, publishCh, outboxService)
+	service := items.NewService(repo, db, publishCh, outboxService, commoninbox.NewRepo())
 
 	// instantiate activity
 	freezeItemActivity := items.NewItemsActivity(service)
 	returnItemActivity := items.NewReturnItemsActivity(service)
+	transferItemActivity := items.NewTransferItemsActivity(service)
+	unfreezeItemActivity := items.NewUnfreezeItemActivity(service)
 
 	// Create gRPC handler with service and auth client
 	handler := items.NewHandler(service, authClient)
 
-	// cache client
-	cache := commoncache.NewRedisCache(GetClient())
-
-	// Set up AMQP infrastructure
+	// Set up AMQP infrastructure: without the delay queues and the DLQ the
+	// consumer has nowhere to park a failed event
 	if err := items.SetupAMQPInfrastructure(amqpChannel); err != nil {
-		slog.Error("Failed to setup AMQP infrastructure", "error", err)
+		return nil, nil, fmt.Errorf("setup amqp infrastructure: %w", err)
 	}
 
-	// Create AMQP consumer with service
-	consumer := items.NewConsumer(service, amqpChannel, cache)
+	// Create AMQP consumer with service; it republishes through its own
+	// confirm-mode channel, never the one it consumes from
+	republisher, err := items.NewConfirmPublisher(republishCh)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open consumer republisher: %w", err)
+	}
+	consumer := items.NewConsumer(service, amqpChannel, republisher)
 	// Start listening for AMQP events
 	consumer.Listen(ctx)
 
@@ -77,9 +85,11 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel *amqp.Channel, 
 	slog.Info("Items service initialized successfully")
 
 	return grpcServer, &Activities{
-		FreezeItemActivity: freezeItemActivity,
-		ReturnItemActivity: returnItemActivity,
-	}
+		FreezeItemActivity:   freezeItemActivity,
+		ReturnItemActivity:   returnItemActivity,
+		TransferItemActivity: transferItemActivity,
+		UnfreezeItemActivity: unfreezeItemActivity,
+	}, nil
 }
 
 // StartGRPCServer starts the gRPC server on the specified port

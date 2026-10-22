@@ -12,7 +12,7 @@ import (
 )
 
 type ReconcileReader interface {
-	HasActiveListing(ctx context.Context, itemID uuid.UUID) (bool, error)
+	HasLiveListing(ctx context.Context, itemID uuid.UUID) (bool, error)
 }
 
 // adapter interface
@@ -47,7 +47,7 @@ func (uc *ReconcileReservationsUC) Handle(ctx context.Context) error {
 			slog.Info("invalid item id")
 			continue
 		}
-		exists, err := uc.reconcileReader.HasActiveListing(ctx, id)
+		exists, err := uc.reconcileReader.HasLiveListing(ctx, id)
 		if err != nil {
 			slog.Error("check listing failed", "item_id", id, "error", err)
 			continue

@@ -170,7 +170,7 @@ func newClimb(t *testing.T) *climb {
 	c := &climb{s: s, sender: sender}
 	for _, name := range []string{"Wren", "Kaelen", "Odo"} {
 		playerID := uuid.New()
-		s.AddPlayer(playerID, types.CharacterInPlay{Name: name, Class: "warrior"})
+		s.AddPlayer(playerID, types.CharacterInPlay{Name: name, Class: "warrior"}, "")
 		c.delvers = append(c.delvers, playerID)
 		c.standFarAway(t, playerID)
 	}

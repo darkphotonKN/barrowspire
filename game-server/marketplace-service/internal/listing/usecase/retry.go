@@ -64,3 +64,39 @@ func withRetry(ctx context.Context, fn func() error) error {
 
 	return ErrMaxRetries
 }
+
+// withBackoff is the retry for calls that cross a network rather than lose a race:
+// it doubles a jittered delay between attempts instead of withRetry's few
+// milliseconds, and the caller decides what is worth retrying, since only it knows
+// which failures an idempotent call can safely repeat.
+//
+// It returns the last failure, never ctx.Err(): a caller that gave up waiting
+// still needs to know what actually went wrong.
+func withBackoff(ctx context.Context, attempts int, base time.Duration, retriable func(error) bool, fn func(ctx context.Context) error) error {
+	var err error
+	delay := base
+
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if err = fn(ctx); err == nil || !retriable(err) {
+			return err
+		}
+
+		if attempt == attempts {
+			break
+		}
+
+		// up to half the delay again, so callers that failed together do not all
+		// come back together
+		jitter := time.Duration(rand.Int64N(int64(delay)/2 + 1))
+
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(delay + jitter):
+		}
+
+		delay *= 2
+	}
+
+	return err
+}

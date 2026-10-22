@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -17,11 +18,9 @@ import (
 )
 
 /**
-* Sets up the Database connection and provides its access as a singleton to
-* the entire application.
-*
-* Note: game service does not have its own database. Current connection is to
-* items service.
+* Connects to game-service's own database (DB_* env) and runs its migrations
+* before returning. A migration failure aborts startup: game-service must not
+* accept runs whose results it cannot record in its outbox.
 **/
 func InitDB() *sqlx.DB {
 	// construct the db connection string
@@ -34,7 +33,12 @@ func InitDB() *sqlx.DB {
 		os.Getenv("DB_NAME"),
 	)
 
-	fmt.Printf("Attempting to connect to database with dsn: %s\n", dsn)
+	// never log the dsn: it carries the user and password
+	slog.Info("Connecting to database",
+		"host", os.Getenv("DB_HOST"),
+		"port", os.Getenv("DB_PORT"),
+		"db_name", os.Getenv("DB_NAME"),
+	)
 
 	// pass the db connection string to connect to our database
 	db, err := sqlx.Connect("postgres", dsn)
@@ -49,13 +53,18 @@ func InitDB() *sqlx.DB {
 
 	fmt.Printf("\nConnected to the database successfully.\n\n")
 
+	if err := runMigrations(db); err != nil {
+		slog.Error("Failed to run database migrations", "error", err)
+		os.Exit(1)
+	}
+
 	return db
 }
 
 func runMigrations(db *sqlx.DB) error {
 	driver, err := postgres.WithInstance(db.DB, &postgres.Config{})
 	if err != nil {
-		return fmt.Errorf("could not create migration driver: %v", err)
+		return fmt.Errorf("could not create migration driver: %w", err)
 	}
 
 	m, err := migrate.NewWithDatabaseInstance(
@@ -64,42 +73,13 @@ func runMigrations(db *sqlx.DB) error {
 		driver,
 	)
 	if err != nil {
-		return fmt.Errorf("could not create migration instance: %v", err)
+		return fmt.Errorf("could not create migration instance: %w", err)
 	}
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return fmt.Errorf("could not run migrations: %v", err)
+		return fmt.Errorf("could not run migrations: %w", err)
 	}
 
 	fmt.Printf("Successfully ran all migrations.\n\n")
 	return nil
-}
-
-func InitStatsServiceDB() *sqlx.DB {
-	// construct the db connection string
-	dsn := fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		os.Getenv("STATS_DB_USER"),
-		os.Getenv("STATS_DB_PASSWORD"),
-		os.Getenv("STATS_DB_HOST"),
-		os.Getenv("STATS_DB_PORT"),
-		os.Getenv("STATS_DB_NAME"),
-	)
-
-	fmt.Printf("Attempting to connect to database with dsn: %s\n", dsn)
-
-	// pass the db connection string to connect to our database
-	db, err := sqlx.Connect("postgres", dsn)
-	if err != nil {
-		log.Fatalf("Failed to connect to the database: %v", err)
-	}
-
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(10)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	db.SetConnMaxIdleTime(5 * time.Minute)
-
-	fmt.Printf("\nConnected to the database successfully.\n\n")
-
-	return db
 }

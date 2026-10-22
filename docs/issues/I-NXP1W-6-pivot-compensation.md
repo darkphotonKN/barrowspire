@@ -30,7 +30,7 @@ What happens when 1a or 1b fails. This is the last point where rollback is allow
 ## Acceptance Criteria
 
 - [x] CommitHold on a `RELEASED` or expired hold is non-retryable; on a `COMMITTED` hold it is success; an amount mismatch is non-retryable
-- [~] A semantic impossibility in 1a or 1b leaves: listing `SETTLEMENT_FAILED`, all holds on the listing `RELEASED`, all bids `LOST`, item `AVAILABLE` with the seller, one `settlement_exceptions` row — **partial, see Out of slice**
+- [x] A semantic impossibility in 1a or 1b leaves: listing `SETTLEMENT_FAILED`, all holds on the listing `RELEASED`, all bids `LOST`, item `AVAILABLE` with the seller, one `settlement_exceptions` row
 - [x] Crash-point table for 1a/1b committed
 - [x] `make test` green
 
@@ -46,21 +46,39 @@ CommitHold, hold expired while parked, insufficient gold. User stories 14, 20. A
 
 ## Out of slice
 
-The two rollback actions this arm owns are built and registered. The rest of AC 2's end
-state needs machinery that does not exist yet, so it is deferred rather than faked:
+Originally deferred, now done: the rollback actions were built here first and wired once
+I-NXP1W-5 landed the rollback path.
 
-| AC 2 wants | State | Owner |
+| AC 2 wants | State | Proven by |
 |---|---|---|
-| all bids on the listing `LOST` | **done** — `LoseAllBids` | this slice |
-| all holds on the listing `RELEASED` | **done** — `ReleaseAllHolds` | this slice |
-| listing `SETTLEMENT_FAILED` | no such `ListingStatus` and no CHECK value | I-NXP1W-3 / -7 |
-| item `AVAILABLE` with the seller | 0b FreezeItem does not exist | I-NXP1W-3 |
-| one `settlement_exceptions` row | table does not exist | I-NXP1W-7 |
-| **Req 37** rollback wired for 0a, 0b, 1a, 1b | not wired: the workflow still runs 0a alone | I-NXP1W-5 |
+| all bids on the listing `LOST` | done — `LoseAllBids`, run by `rollBack` | `TestWorkflow_PivotArmImpossible_RollsBackEverything` |
+| all holds on the listing `RELEASED` | done — `ReleaseAllHolds`, fed by 0a's new `FreezeListingOutput.BidIDs` | same; `TestFreezeListingUC_ReturnsEveryBidOnTheListing` |
+| listing `SETTLEMENT_FAILED` | done — I-NXP1W-5 | same |
+| item `AVAILABLE` with the seller | done — `UnfreezeItem`, I-NXP1W-5 | same |
+| one `settlement_exceptions` row | done — `RaiseSettlementException` in `rollBack` | same |
+| **Req 37** rollback wired for 0a, 0b, 1a, 1b | done — every pre-pivot step routes its error through `beforePivotFailure` | the 0a/0b tests of I-NXP1W-5 and the test above |
 
-Req 37 is inside this issue's anchor and is deliberately not met: wiring the actions into a
-rollback path is I-NXP1W-5. `UncappedOptions` is the policy they will be scheduled under and it
-is tested, but nothing references it yet — declared, not wired.
+A 0a result recorded before `BidIDs` existed decodes the field as nil, and its rollback releases
+no holds (see the freeze-arm crash points, Known limits). `ReleaseAllHolds` is not version-gated:
+nothing had been deployed when it was inserted into `rollBack`, so no history recorded the
+rollback without it. Once settlements run in a deployed environment, inserting a step into a
+path an open run may already have passed needs `workflow.GetVersion` (FS Edge States, "Workflow
+code deployed while settlements are open").
+
+### Edge State "Winner has insufficient gold at commit" — parks, does not roll back
+
+The FS expects this to surface as a semantic impossibility and roll back. In wallet it cannot:
+`Account` is reconstituted before `CommitHold` runs, and `Reconstitute` refuses an account whose
+holds exceed its gold with `ErrCorruptAccountState`, so the `gold >= amount` guard
+(`ErrInsufficientGold`) is never reached. `ErrCorruptAccountState` is not in
+`commitHoldNonRetryable`, so 1b treats it as transient: it hits the cap, escalates and parks.
+
+Left that way on purpose. Classifying it impossible would start a rollback whose
+`ReleaseAllHolds` reconstitutes the same corrupt account, fails the same way and retries without
+a cap — a rollback stuck halfway with the item still frozen, which Req 12 forbids. Parking keeps
+everything frozen, raises the exception and `settlement.failed`, and waits for an operator to
+repair the account and send `RetryStep`. Making it roll back needs a decision on what a corrupt
+account means for wallet first; that belongs to wallet, not to this slice.
 
 `SetWinBidFailed` was a pre-written shell whose body was a copy of `MarkSoldListingUC`. Its
 body is now the failure flow it was meant for, and it is named for what it does:

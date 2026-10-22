@@ -77,9 +77,11 @@ func lootedRunWithSender(t *testing.T) (*Session, *recordingDispatcher) {
 
 // Client actions reach the world through the tick, never beside it: an attack,
 // an equip and a pickup sent while the world ticks race nothing (run under
-// -race), and none of them is lost. I-77AB6-11.
+// -race), and none of them is lost. The run has no floor built, so no wall can
+// push the warrior out of reach of the target. I-77AB6-11, I-77AB6-13.
 func TestSession_HandlersConcurrentWithTheTick_AttackEquipAndLootAllLand(t *testing.T) {
-	s, _ := lootedRunWithSender(t)
+	s := coopRun(t)
+	s.sender = messaging.NewMessageSender(&recordingDispatcher{})
 	playerID, delver := placeDelver(t, s, "warrior", 500, 500)
 	target := unarmoredTarget(s, 545, 500)
 	band := carried(t, s, delver.ID, ring("Band", 1))
@@ -158,7 +160,11 @@ func TestSession_RefusalsFromTheTick_AreUnchanged(t *testing.T) {
 	at := transformOf(t, stairs)
 
 	playerID, delver := placeDelver(t, s, "warrior", at.X, at.Y)
-	placeDelver(t, s, "mage", at.X+400, at.Y) // away from the stairs
+	awayX := at.X + 400
+	if awayX > constants.MapWidth-constants.PlayerRadius {
+		awayX = at.X - 400 // the stairs are near the right edge; stay on the map
+	}
+	placeDelver(t, s, "mage", awayX, at.Y) // away from the stairs
 	lantern := carried(t, s, delver.ID, ring("Lantern of the Drowned", 9))
 
 	runConcurrently(t, s, []types.ClientPackage{

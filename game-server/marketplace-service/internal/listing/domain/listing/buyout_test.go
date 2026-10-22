@@ -29,7 +29,7 @@ func TestBuyout_OverIncumbentWinsAtTheBuyoutPrice(t *testing.T) {
 	incumbent := leadingBid(t, l, uuid.New(), 200, now)
 	buyer, bidID := uuid.New(), uuid.New()
 
-	require.NoError(t, l.Buyout(bidID, buyer, now))
+	require.NoError(t, l.Buyout(bidID, buyer, 500, now))
 
 	got := bidByID(t, l, bidID)
 	assert.Equal(t, BidTypeBuyout, got.Type)
@@ -44,7 +44,7 @@ func TestBuyout_WithNoBidsWins(t *testing.T) {
 	l := listingWithBuyout(t, 100, 500)
 	bidID := uuid.New()
 
-	require.NoError(t, l.Buyout(bidID, uuid.New(), now))
+	require.NoError(t, l.Buyout(bidID, uuid.New(), 500, now))
 
 	assert.Equal(t, BidStatusWinning, bidByID(t, l, bidID).Status)
 }
@@ -55,9 +55,28 @@ func TestBuyout_Refusals(t *testing.T) {
 	tests := []struct {
 		name    string
 		setup   func(t *testing.T) (*Listing, uuid.UUID)
+		amount  int // zero means the buyout price the listings below carry
 		at      time.Time
 		wantErr error
 	}{
+		{
+			name: "amount under the buyout price",
+			setup: func(t *testing.T) (*Listing, uuid.UUID) {
+				return listingWithBuyout(t, 100, 500), uuid.New()
+			},
+			amount:  499,
+			at:      now,
+			wantErr: ErrBuyoutAmountMismatch,
+		},
+		{
+			name: "amount over the buyout price",
+			setup: func(t *testing.T) (*Listing, uuid.UUID) {
+				return listingWithBuyout(t, 100, 500), uuid.New()
+			},
+			amount:  501,
+			at:      now,
+			wantErr: ErrBuyoutAmountMismatch,
+		},
 		{
 			name: "seller buying their own listing",
 			setup: func(t *testing.T) (*Listing, uuid.UUID) {
@@ -97,7 +116,7 @@ func TestBuyout_Refusals(t *testing.T) {
 			name: "already bought out by someone else",
 			setup: func(t *testing.T) (*Listing, uuid.UUID) {
 				l := listingWithBuyout(t, 100, 500)
-				require.NoError(t, l.Buyout(uuid.New(), uuid.New(), now))
+				require.NoError(t, l.Buyout(uuid.New(), uuid.New(), 500, now))
 				return l, uuid.New()
 			},
 			at:      now,
@@ -110,7 +129,12 @@ func TestBuyout_Refusals(t *testing.T) {
 			before := len(l.Snapshot().Bids)
 			bidID := uuid.New()
 
-			err := l.Buyout(bidID, member, tt.at)
+			amount := tt.amount
+			if amount == 0 {
+				amount = 500
+			}
+
+			err := l.Buyout(bidID, member, amount, tt.at)
 
 			assert.ErrorIs(t, err, tt.wantErr)
 			assert.Len(t, l.Snapshot().Bids, before, "a refused buyout records nothing")
@@ -124,13 +148,46 @@ func TestBuyout_ReplayIsSuccessEvenAfterFreeze(t *testing.T) {
 	now := time.Now()
 	l := listingWithBuyout(t, 100, 500)
 	buyer, bidID := uuid.New(), uuid.New()
-	require.NoError(t, l.Buyout(bidID, buyer, now))
+	require.NoError(t, l.Buyout(bidID, buyer, 500, now))
 	require.NoError(t, l.Freeze(now))
 
-	err := l.Buyout(bidID, buyer, now.Add(2*time.Hour))
+	err := l.Buyout(bidID, buyer, 500, now.Add(2*time.Hour))
 
 	require.NoError(t, err)
 	assert.Len(t, l.Snapshot().Bids, 1)
+}
+
+// The buyer's own buyout is a replay whatever bid ID the resend carries: a
+// client that lost its key, or sent none, is told it succeeded rather than
+// refused for a listing it already owns (ADR-0026).
+func TestBuyout_ReplayByTheSameMemberUnderANewIDRecordsNothing(t *testing.T) {
+	now := time.Now()
+	l := listingWithBuyout(t, 100, 500)
+	buyer, first, resend := uuid.New(), uuid.New(), uuid.New()
+	require.NoError(t, l.Buyout(first, buyer, 500, now))
+
+	err := l.Buyout(resend, buyer, 500, now)
+
+	require.NoError(t, err)
+	require.Len(t, l.Snapshot().Bids, 1)
+	assert.Equal(t, first, l.Snapshot().Bids[0].ID)
+	assert.True(t, l.HasBuyoutBy(buyer))
+	assert.False(t, l.HasBuyoutBy(uuid.New()))
+}
+
+// A replay's amount is moot: the first attempt already passed the amount check
+// at the listing's price, which is what the recorded bid holds.
+func TestBuyout_ReplayIsSuccessWhateverItsAmount(t *testing.T) {
+	now := time.Now()
+	l := listingWithBuyout(t, 100, 500)
+	buyer, bidID := uuid.New(), uuid.New()
+	require.NoError(t, l.Buyout(bidID, buyer, 500, now))
+
+	err := l.Buyout(bidID, buyer, 1, now)
+
+	require.NoError(t, err)
+	require.Len(t, l.Snapshot().Bids, 1)
+	assert.Equal(t, 500, l.Snapshot().Bids[0].Amount)
 }
 
 // Nothing may change the lead once a buyout has taken it.
@@ -138,7 +195,7 @@ func TestBuyout_ListingRejectsFurtherBidChanges(t *testing.T) {
 	now := time.Now()
 	l := listingWithBuyout(t, 100, 500)
 	underbid := leadingBid(t, l, uuid.New(), 200, now)
-	require.NoError(t, l.Buyout(uuid.New(), uuid.New(), now))
+	require.NoError(t, l.Buyout(uuid.New(), uuid.New(), 500, now))
 
 	assert.ErrorIs(t, l.PlaceBidWithID(uuid.New(), uuid.New(), 300, uuid.New(), now), ErrListingNotAcceptingBids, "place")
 	assert.ErrorIs(t, l.WithdrawBid(underbid, bidByID(t, l, underbid).MemberID, now), ErrListingNotAcceptingBids, "withdraw")
@@ -153,7 +210,7 @@ func TestBuyout_PendingBidConfirmingAfterwardsEndsOutbid(t *testing.T) {
 	pending := uuid.New()
 	require.NoError(t, l.PlaceBidWithID(pending, uuid.New(), 400, uuid.New(), now))
 	buyout := uuid.New()
-	require.NoError(t, l.Buyout(buyout, uuid.New(), now))
+	require.NoError(t, l.Buyout(buyout, uuid.New(), 500, now))
 
 	require.NoError(t, l.ConfirmBid(pending, now))
 
@@ -167,7 +224,7 @@ func TestBuyout_PendingBidFailingAfterwardsEndsFailed(t *testing.T) {
 	l := listingWithBuyout(t, 100, 500)
 	pending := uuid.New()
 	require.NoError(t, l.PlaceBidWithID(pending, uuid.New(), 400, uuid.New(), now))
-	require.NoError(t, l.Buyout(uuid.New(), uuid.New(), now))
+	require.NoError(t, l.Buyout(uuid.New(), uuid.New(), 500, now))
 
 	require.NoError(t, l.FailBid(pending, now))
 
@@ -178,7 +235,7 @@ func TestBuyout_PendingBidFailingAfterwardsEndsFailed(t *testing.T) {
 func TestBuyout_SellerCannotAcceptABidAfterwards(t *testing.T) {
 	now := time.Now()
 	l := listingWithBuyout(t, 100, 500)
-	require.NoError(t, l.Buyout(uuid.New(), uuid.New(), now))
+	require.NoError(t, l.Buyout(uuid.New(), uuid.New(), 500, now))
 
 	assert.ErrorIs(t, l.CanAcceptBid(l.Snapshot().SellerID, now), ErrListingNotAcceptingBids)
 }
@@ -191,7 +248,7 @@ func TestBuyout_PendingBidConfirmingAfterFreezeIsRefused(t *testing.T) {
 	l := listingWithBuyout(t, 100, 500)
 	pending := uuid.New()
 	require.NoError(t, l.PlaceBidWithID(pending, uuid.New(), 400, uuid.New(), now))
-	require.NoError(t, l.Buyout(uuid.New(), uuid.New(), now))
+	require.NoError(t, l.Buyout(uuid.New(), uuid.New(), 500, now))
 	require.NoError(t, l.Freeze(now))
 
 	err := l.ConfirmBid(pending, now)

@@ -42,7 +42,9 @@ func RegisterOperations(api huma.API, h *Handler,
 	registerPlaceBid(api, h, protect)
 	registerWithdrawBid(api, h, protect)
 	registerAcceptBid(api, h, protect)
+	registerBuyout(api, h, protect)
 	registerListMyListings(api, h, protect)
+	registerListMyBids(api, h, protect)
 	registerBrowseListings(api, h)
 	registerGetListing(api, h)
 }
@@ -136,8 +138,11 @@ func registerPlaceBid(api huma.API, h *Handler,
 	type output struct{}
 
 	huma.Register(api, huma.Operation{
-		OperationID:   "place-bid",
-		Description:   "Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request.",
+		OperationID: "place-bid",
+		Description: "Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request. " +
+			"Resending with the same Idempotency-Key is safe and holds no further gold. 409 CONFLICT means the listing is busy " +
+			"and may be retried; 409 ALREADY_EXISTS means the attempt under this Idempotency-Key was refused or abandoned and " +
+			"its gold returned: bid again with a new key.",
 		DefaultStatus: http.StatusCreated,
 		Errors: []int{
 			http.StatusBadRequest,
@@ -264,6 +269,69 @@ func registerAcceptBid(api huma.API, h *Handler,
 	}))
 }
 
+// Idempotency-Key works as for place-bid, and a resend that lost its key is still
+// recognised by the buyer's own buyout (ADR-0026). The amount is the buyer's
+// agreement only; marketplace charges the listing's own buyout price.
+func registerBuyout(api huma.API, h *Handler,
+	protect func(huma.Context, func(huma.Context)),
+) {
+	type input struct {
+		ListingID string `path:"listing_id" format:"uuid"`
+
+		// Minted by the client once per buyout and resent unchanged on every retry
+		// of it. Optional, matching marketplace: without one a retry is still
+		// recognised by the buyer's own buyout, but holds gold again first.
+		IdempotencyKey string `header:"Idempotency-Key" format:"uuid" doc:"Client-generated per buyout and reused on every retry of it, so a retried buyout is recognised instead of holding gold again. Optional."`
+
+		// Read only to forward downstream: marketplace takes the buyer from this
+		// token. Hidden because the bearer scheme documents it.
+		Authorization string `header:"Authorization" hidden:"true"`
+
+		Body BuyoutBody
+	}
+
+	type output struct{}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "buyout",
+		Description: "Buys the listing outright at its buyout price as the signed-in member, ending the auction. " +
+			"The amount sent must equal the listing's buyoutPrice, and that price is what is charged. " +
+			"Answers once settlement has started; the sale completes asynchronously. Repeating it is safe: a " +
+			"buyout already made is not made twice. Refused for an amount that is not the buyout price, the " +
+			"seller, a closed auction, a listing with no buyout price, or a buyer short of gold. " +
+			"409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means the attempt " +
+			"under this Idempotency-Key was abandoned and its gold returned: buy again with a new key.",
+		DefaultStatus: http.StatusAccepted,
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusNotFound,
+			http.StatusConflict,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+			http.StatusServiceUnavailable,
+		},
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodPost,
+		Path:        "/api/marketplace/listings/{listing_id}/buyout",
+		Summary:     "Buy out a listing",
+		Tags:        []string{"marketplace"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		_, err := h.client.Buyout(withBearer(ctx, in.Authorization), &pb.BuyoutRequest{
+			ListingId:      in.ListingID,
+			Amount:         in.Body.Amount,
+			IdempotencyKey: in.IdempotencyKey,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return &output{}, nil
+	}))
+}
+
 func registerListMyListings(api huma.API, h *Handler,
 	protect func(huma.Context, func(huma.Context)),
 ) {
@@ -313,6 +381,63 @@ func registerListMyListings(api huma.API, h *Handler,
 		}
 
 		if err := h.embedItems(ctx, page.Listings); err != nil {
+			return nil, err
+		}
+
+		return &output{Body: page}, nil
+	}))
+}
+
+func registerListMyBids(api huma.API, h *Handler,
+	protect func(huma.Context, func(huma.Context)),
+) {
+	type input struct {
+		// Opaque to the gateway: only marketplace can tell a malformed one, and
+		// its refusal comes back through the seam.
+		Cursor string `query:"cursor" doc:"Opaque position from a previous page's nextCursor. Do not construct."`
+		Limit  int    `query:"limit" default:"50" minimum:"1" maximum:"100"`
+
+		// Read only to forward downstream: marketplace takes the bidder from this
+		// token. Hidden because the bearer scheme documents it.
+		Authorization string `header:"Authorization" hidden:"true"`
+	}
+
+	type output struct{ Body MyBidPage }
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-my-bids",
+		Description: "Pages the signed-in member's own bids, newest placed first, one row per bid, each with where its " +
+			"listing stands now and the listed item embedded. Withdrawn and failed bids are not listed. The bidder is " +
+			"taken from the token; there is no parameter for reading another member's bids. If the items lookup fails " +
+			"the whole request fails.",
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+			http.StatusServiceUnavailable,
+		},
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodGet,
+		Path:        "/api/marketplace/bids/mine",
+		Summary:     "Page my bids",
+		Tags:        []string{"marketplace"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		res, err := h.client.ListMyBids(withBearer(ctx, in.Authorization), &pb.ListMyBidsRequest{
+			Cursor: in.Cursor,
+			Limit:  int32(in.Limit),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		page, err := myBidPageFromProto(res.GetBids(), res.GetPagination())
+		if err != nil {
+			return nil, err
+		}
+
+		if err := h.embedBidItems(ctx, page.Bids); err != nil {
 			return nil, err
 		}
 
@@ -422,23 +547,14 @@ func registerGetListing(api huma.API, h *Handler) {
 // "your session ended" and sign a visitor out. Unreachable is 503, so the client
 // retries; anything else is 500. See joinFailure for the exact mapping.
 func (h *Handler) embedItems(ctx context.Context, listings []Listing) error {
-	if len(listings) == 0 {
-		return nil
-	}
-
 	ids := make([]string, 0, len(listings))
 	for _, l := range listings {
 		ids = append(ids, l.ItemID)
 	}
 
-	res, err := h.items.GetItemSummaries(ctx, &itempb.GetItemSummariesRequest{Ids: ids})
+	byID, err := h.itemSummaries(ctx, ids)
 	if err != nil {
-		return joinFailure(ctx, err)
-	}
-
-	byID := make(map[string]*itempb.ItemSummary, len(res.GetSummaries()))
-	for _, s := range res.GetSummaries() {
-		byID[s.GetId()] = s
+		return err
 	}
 
 	for i := range listings {
@@ -448,6 +564,48 @@ func (h *Handler) embedItems(ctx context.Context, listings []Listing) error {
 	}
 
 	return nil
+}
+
+// embedBidItems joins each bid's listed item onto it, exactly as embedItems
+// does for listings (FS-EYQ8K §Requirements 7).
+func (h *Handler) embedBidItems(ctx context.Context, bids []MyBid) error {
+	ids := make([]string, 0, len(bids))
+	for _, b := range bids {
+		ids = append(ids, b.itemID)
+	}
+
+	byID, err := h.itemSummaries(ctx, ids)
+	if err != nil {
+		return err
+	}
+
+	for i := range bids {
+		if s, ok := byID[bids[i].itemID]; ok {
+			bids[i].Item = itemSummaryFromProto(s)
+		}
+	}
+
+	return nil
+}
+
+// itemSummaries looks up the given items with one items call, keyed by id. No
+// ids makes no call. A failed call is already re-coded by joinFailure.
+func (h *Handler) itemSummaries(ctx context.Context, ids []string) (map[string]*itempb.ItemSummary, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	res, err := h.items.GetItemSummaries(ctx, &itempb.GetItemSummariesRequest{Ids: ids})
+	if err != nil {
+		return nil, joinFailure(ctx, err)
+	}
+
+	byID := make(map[string]*itempb.ItemSummary, len(res.GetSummaries()))
+	for _, s := range res.GetSummaries() {
+		byID[s.GetId()] = s
+	}
+
+	return byID, nil
 }
 
 // joinFailure re-codes a failed items call for the client (FS-8EGFA

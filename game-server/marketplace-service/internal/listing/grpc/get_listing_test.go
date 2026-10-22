@@ -34,7 +34,7 @@ func (r *fakeListingReader) Execute(ctx context.Context, listingID uuid.UUID) (*
 }
 
 func newGetListingHandler(reader *fakeListingReader) *Handler {
-	return NewHandler(nil, nil, nil, nil, nil, nil, reader, nil, nil)
+	return NewHandler(nil, nil, nil, nil, nil, nil, nil, reader, nil, nil)
 }
 
 // Get-one is public: a visitor with no identity on the context is served, and

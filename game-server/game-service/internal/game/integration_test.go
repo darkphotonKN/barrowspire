@@ -62,7 +62,7 @@ func TestSession_GameLoopAppliesMovement_Integration(t *testing.T) {
 
 	player1ID := uuid.New()
 	username := "Player1"
-	playerEntityID := session.AddPlayer(player1ID, types.CharacterInPlay{Name: username, Class: "warrior"})
+	playerEntityID := session.AddPlayer(player1ID, types.CharacterInPlay{Name: username, Class: "warrior"}, "")
 
 	// check player initial position
 	playerEntity, ok := session.EntityManager.GetEntity(playerEntityID)
@@ -306,7 +306,7 @@ func TestPublishMatchCompleteIntegration(t *testing.T) {
 
 	// service setup
 	_ = commonbroker.NewAmqpPublisher(ch) // adapter kept for parity with previous test setup; unused with outbox API
-	service := NewService(&mockOutboxPublisher{})
+	service := NewService(committingTxDB(t), &mockOutboxPublisher{})
 
 	// Publish all 3 match scenarios
 	for i, matchData := range matchScenarios {

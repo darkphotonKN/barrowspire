@@ -1,6 +1,0 @@
-CREATE TABLE build_item_sets (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    build_id UUID NOT NULL REFERENCES builds(id) ON DELETE CASCADE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-); 

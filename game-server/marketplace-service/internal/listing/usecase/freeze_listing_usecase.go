@@ -58,6 +58,13 @@ func (uc *FreezeListingUC) Handle(ctx context.Context, cmd FreezelistingCommand)
 		return nil, err
 	}
 
+	// read under the lock that froze the listing, so no bid can join the set after
+	// it. Statuses are not filtered: wallet skips a bid it holds nothing for.
+	bidIDs := make([]uuid.UUID, 0, len(before.Bids))
+	for _, b := range before.Bids {
+		bidIDs = append(bidIDs, b.ID)
+	}
+
 	// legit case where no bids exist either naturally or cuz of a race of bid expiring or
 	// withdrawn (cancelled) right around auction ending and yet before
 	// 0a of settlement saga to freeze the bids
@@ -67,6 +74,7 @@ func (uc *FreezeListingUC) Handle(ctx context.Context, cmd FreezelistingCommand)
 			ItemID:    before.ItemID,
 			SellerID:  before.SellerID,
 			Winner:    nil,
+			BidIDs:    bidIDs,
 		}, nil
 	}
 
@@ -81,5 +89,6 @@ func (uc *FreezeListingUC) Handle(ctx context.Context, cmd FreezelistingCommand)
 			WinnerMemberID: bidSnapshot.MemberID,
 			Amount:         bidSnapshot.Amount,
 		},
+		BidIDs: bidIDs,
 	}, nil
 }

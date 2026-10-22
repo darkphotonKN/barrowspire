@@ -10,7 +10,6 @@ import (
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	itemspb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
@@ -20,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -130,6 +130,19 @@ type mockQueueService struct {
 	matchedChan     chan []*types.Player
 	statusChan      chan matchmaker.QueueStatus
 	QueueStatusChan chan matchmaker.QueueStatus
+
+	// removals the queue was asked for, and what to fail them with
+	removed   []uuid.UUID
+	removeErr error
+
+	// what reading a queued player's character fails with
+	queuedErr error
+}
+
+func (m *mockQueueService) removedPlayers() []uuid.UUID {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]uuid.UUID(nil), m.removed...)
 }
 
 func NewMockQueueService() *mockQueueService {
@@ -152,6 +165,13 @@ func (m *mockQueueService) PlayerJoinQueue(_ context.Context, player *types.Play
 	const matchSize = 2
 
 	m.mu.Lock()
+	// refuse a double join the way the real queue does
+	for _, queued := range m.players {
+		if queued.ID == player.ID {
+			m.mu.Unlock()
+			return fmt.Errorf("mock queue : %w", matchmaker.ErrPlayerAlreadyQueued)
+		}
+	}
 	m.players = append(m.players, player)
 
 	if len(m.players) < matchSize {
@@ -169,8 +189,41 @@ func (m *mockQueueService) PlayerJoinQueue(_ context.Context, player *types.Play
 	return nil
 }
 
-func (m *mockQueueService) PlayerRemoveQueue(context.Context, *types.Player) error { return nil }
-func (m *mockQueueService) MatchQueue()                                            {}
+func (m *mockQueueService) PlayerRemoveQueue(_ context.Context, player *types.Player) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.removed = append(m.removed, player.ID)
+	if m.removeErr != nil {
+		return m.removeErr
+	}
+	for i, queued := range m.players {
+		if queued.ID == player.ID {
+			m.players = append(m.players[:i], m.players[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+func (m *mockQueueService) MatchQueue() {}
+
+// QueuedCharacter answers from the players still waiting in the mock queue.
+func (m *mockQueueService) QueuedCharacter(_ context.Context, playerID uuid.UUID) (uuid.UUID, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.queuedErr != nil {
+		return uuid.Nil, false, m.queuedErr
+	}
+	for _, queued := range m.players {
+		if queued.ID == playerID {
+			return queued.Character.ID, true, nil
+		}
+	}
+	return uuid.Nil, false, nil
+}
+
+func (m *mockQueueService) GetHandoffChan(context.Context) chan matchmaker.MatchStart {
+	return nil
+}
 func (m *mockQueueService) Start(context.Context) {
 	// no need to really start during testing
 }
@@ -434,10 +487,9 @@ func TestSenderToBroadcastToPlayerList(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			serviceName := "game"
-			consulAddr := commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
-			registry, _ := consul.NewRegistry(consulAddr, serviceName)
-			authClient := grpcauth.NewClient(registry)
+			authClient, err := grpcauth.NewClient(commonhelpers.GetEnvString("AUTH_ADDR", "localhost:7116"))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = authClient.Close() })
 			mockQueue := NewMockQueueService()
 			mockEventEmitter := &MockEventEmitter{}
 			mockItemsClient := &MockItemsClient{}
@@ -445,7 +497,7 @@ func TestSenderToBroadcastToPlayerList(t *testing.T) {
 			playerIDs := tc.setupPlayers(server)
 
 			newSender := messaging.NewMessageSender(server)
-			err := newSender.BroadcastToPlayerList(playerIDs, types.Message{
+			err = newSender.BroadcastToPlayerList(playerIDs, types.Message{
 				Action:  string(tc.action),
 				Payload: tc.payload,
 			})

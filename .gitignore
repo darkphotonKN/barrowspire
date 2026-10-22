@@ -198,6 +198,9 @@ jwt-secret*
 secrets/
 .secrets/
 
+# Kubernetes Secret sources, any extension (e.g. deploy/kind/auth.secret.env)
+*.secret.*
+
 # AWS credentials
 .aws/
 
@@ -285,4 +288,4 @@ temp/
 .tools/
 
 # Built Go binaries committed by mistake
-game-server/game-service/server
+/game-server/*/server

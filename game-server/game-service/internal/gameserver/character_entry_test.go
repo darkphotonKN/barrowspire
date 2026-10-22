@@ -231,14 +231,14 @@ func TestCharacterInPlay_SurvivesAReconnect(t *testing.T) {
 	require.NoError(t, err)
 	run := server.CreateGameSession([]*types.Player{player})
 
-	// the handler's reconnect path: the record is kept, and a new connection
-	// is mapped from it
-	server.markPlayerAsReconnecting(player)
+	// the handler's network-drop path: the record is held for the reconnect
+	// grace, and the reconnect maps a new connection to it
+	server.holdForReconnect(conn)
 
 	record, ok := server.PlayerByID(player.ID)
 	require.True(t, ok)
 	newConn := &websocket.Conn{}
-	server.MapConnToPlayer(newConn, *record)
+	server.MapConnToPlayer(newConn, record.ID, make(chan interface{}, clientWriterBuffer))
 
 	reconnected, ok := server.GetPlayerFromConn(newConn)
 	require.True(t, ok)
@@ -322,4 +322,59 @@ func TestEnterHub_AsAnotherCharacterMidRun_IsRefused(t *testing.T) {
 	stored, _ := server.GetPlayerFromConn(conn)
 	assert.Equal(t, warrior, stored.Character)
 	assert.Equal(t, run.ID, stored.CurrentGameSessionId)
+}
+
+// While queued, entering as another character is refused: the queue entry
+// carries the character the run will be built from. Re-entering as the same
+// character is fine. FS-K2HKP §Requirements 7a.
+func TestEnterHub_WhileQueued(t *testing.T) {
+	tests := []struct {
+		name      string
+		asMage    bool
+		queueDown bool
+		wantErr   error
+	}{
+		{"another character is refused", true, false, errCharacterSwitchWhileQueued},
+		{"the same character is allowed", false, false, nil},
+		// queueing needs Redis anyway; an unreadable queue must not lock players out of the HUB
+		{"queue unreadable lets them in", true, true, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			characters := newFakeCharacters()
+			queue := NewMockQueueService()
+			server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, characters)
+
+			conn := &websocket.Conn{}
+			player := &types.Player{ID: uuid.New(), Username: "Wren"}
+			registerTestConn(server, conn, player)
+			warrior := characters.give(player.ID, "warrior", "Kaelen", 5, 700)
+			mage := characters.give(player.ID, "mage", "Wren", 1, 0)
+
+			_, err := server.EnterHub(context.Background(), conn, warrior.ID.String())
+			require.NoError(t, err)
+			stored, _ := server.GetPlayerFromConn(conn)
+			require.NoError(t, server.AddPlayer(stored))
+			if tt.queueDown {
+				queue.queuedErr = errors.New("redis down")
+			}
+
+			next := warrior
+			if tt.asMage {
+				next = mage
+			}
+			_, err = server.EnterHub(context.Background(), conn, next.ID.String())
+
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+				assert.Equal(t, "Leave the queue before changing character.", enterHubRefusal(err))
+				stored, _ = server.GetPlayerFromConn(conn)
+				assert.Equal(t, warrior, stored.Character, "still the character they queued with")
+				return
+			}
+			require.NoError(t, err)
+			stored, _ = server.GetPlayerFromConn(conn)
+			assert.Equal(t, next, stored.Character)
+		})
+	}
 }

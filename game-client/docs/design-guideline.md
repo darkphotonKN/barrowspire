@@ -16,6 +16,9 @@ sections of `CLAUDE.md`) disagree on a visual decision, **this file wins.**
 > DOM UI** (marketplace, profile, auth, leaderboard, subscription — React/Next/Tailwind)
 > jump to **[Part II — Web / Platform UI Design System](#part-ii--web--platform-ui-dom-design-system)**
 > at the end. The "drop Cinzel" rule applies to **both** — see Part II Typography.
+> Each part has **its own palette**: the barrow ramp below is the game palette, and the web UI
+> has a separate one defined in Part II
+> ([ADR-0025](../../docs/adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md)).
 
 ---
 
@@ -49,8 +52,11 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
   `image-rendering: pixelated`) no longer apply to the canvas.
 - **Readable silhouettes over detail.** At game scale a delver is roughly one tile wide and a face
   is a handful of pixels. What makes a thing read is its silhouette, its material and its motion.
-- **Bake colours come from `BARROW`** (`src/utils/theme.ts`), so art and UI stay one ramp
+- **Bake colours come from `BARROW`** (`src/utils/theme.ts`), so baked art and the in-game HUD
+  stay one ramp
   ([ADR-0013](../../docs/adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md)).
+  The web UI does not share it; it has its own palette (Part II,
+  [ADR-0025](../../docs/adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md)).
   Baked PNG pixels are asset data and outside the hex fence.
 - **The sprite manifest is the only way the client learns about art** (`public/art/manifest.json`:
   frame size, anchor, directions, frame counts, fps, declared light source, provenance). Scenes
@@ -85,7 +91,9 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
 ## Palette (fixed, limited global ramp)
 
 Pixel art needs a tight shared palette. Base everything on this barrow ramp. (These
-values are mirrored in code by `src/utils/theme.ts` — `BARROW` / `BARROW_HEX`.)
+values are mirrored in code by `src/utils/theme.ts` — `BARROW` / `BARROW_HEX`.) This is the
+**game palette**, read only by Phaser code. The web UI has its own palette, defined in Part II,
+and the two are not required to agree (ADR-0025).
 
 | Role | Values |
 |------|--------|
@@ -108,8 +116,8 @@ values are mirrored in code by `src/utils/theme.ts` — `BARROW` / `BARROW_HEX`.
 
 ## Gameplay accent — colour is a readability channel
 
-Part II's **one torch per view** rule governs **emphasis on a web page**: amber means *look
-here*, and scarcity is what makes it work. **It does not govern the canvas**, and the two are not
+Part II's **one torch per view** rule governs **emphasis on a web page**: the UI torch (bone, in
+the UI palette) means *look here*, and scarcity is what makes it work. **It does not govern the canvas**, and the two are not
 in conflict — they answer different questions.
 
 In gameplay, colour is a **readability channel, not emphasis**. A player who cannot find the door
@@ -328,32 +336,75 @@ Where the bound and the message conflict — an end-of-run heading long enough t
 profile, leaderboard, auth (login/register), subscription, portal, header/menus, and any future
 web surface. This is **not pixel art**: unlike the in-game HUD (Part I), the platform UI uses
 modern web layout, smooth CSS, rounded corners, and blur. The medieval feel is carried by
-**type, color, brass detailing, and micro-ornament — not textures or 9-slice pixel frames.**
+**type, colour, iron detailing, and micro-ornament, not textures or 9-slice pixel frames.**
 (The Part I "9-slice pixel border" rule is game-canvas-HUD only. The "drop Cinzel" rule now
 applies here too: the web platform uses **Pirata One + EB Garamond** — see Typography.)
 
-**Direction:** *modern web design, medieval aesthetics.* Dark-first (torch-lit crypt), brass as
-structural accent, a single amber "torchlight" moment per view. Fast, scannable, keyboard- and
-mobile-friendly — the medievalism is in the finish, never at the cost of usability.
+**The web UI has its own palette.** It is separate from the Part I game palette, and the two are
+not required to agree
+([ADR-0025](../../docs/adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md)).
+Going from the menus into a delve is a deliberate change of register: the bone-and-soot web UI is
+the gate, and the torch-lit barrow is the place. UI drawn over the canvas as DOM (the `/game`
+page's chrome, the header) belongs to the UI palette. The Phaser HUD inside the canvas belongs to
+the game palette.
 
-**Runtime source of truth:** the CSS variables in [`../src/app/globals.css`](../src/app/globals.css)
-`:root` and the palette in [`../src/utils/theme.ts`](../src/utils/theme.ts) (`BARROW` /
-`BARROW_HEX`). This doc is the *intent*; those files are the *runtime* — keep them in sync (add a
-token here → add the CSS variable too).
+**Direction: Bone & Soot.** *Modern web design, medieval aesthetics.* A neutral soot base,
+bone-white as the single torch per view, grey stone surfaces, and iron framing, finished with the
+Atmosphere layer (see Material & depth). Fast, scannable, keyboard- and mobile-friendly: the
+medievalism is in the finish, never at the cost of usability.
+
+**How it was chosen.** On 2026-10-21 the owner compared 18 candidate palettes live on the home
+page, through a throwaway switcher over the real `:root` tokens, and chose Bone & Soot with the
+Atmosphere layer on
+([FS-8TCN2](../../docs/specs/8TCN2-bone-and-soot-web-ui-palette.md)). It replaced torch amber on
+warm umber, which read as busy on pages people look at for long stretches. The choice was made
+by eye. A later reskin should start from this record rather than relitigate it blind.
+
+**Iron is the structure role, and its tokens are named "brass".** `--color-brass`,
+`--color-brass-bright`, `--color-border` and `--color-border-strong` hold iron-grey values. The
+names stay as they are (a semantic rename is a separate, mechanical follow-up), so **in a token
+name, "brass" is a role, not a hue.** The prose in this part says *iron* for that role. Brass as
+a colour belongs to the game palette.
+
+**Runtime source of truth.** The UI palette is defined in
+[`../src/app/globals.css`](../src/app/globals.css) `:root`. Where DOM code needs the same values
+as JS strings (Stripe Elements' `appearance`, which cannot read CSS variables), it reads the
+**UI table** in [`../src/utils/theme.ts`](../src/utils/theme.ts), which mirrors `:root` and must
+agree with it. The UI table is separate from `BARROW` / `BARROW_HEX`, which are the game palette
+only. **DOM code never reads `BARROW`, and Phaser code never reads the UI table.** This doc is the
+*intent*; `:root` and the UI table are the *runtime*. Keep them in sync: add a token here, then
+add it to `:root` and to the UI table.
+
+**Which side each seam is on** (FS-8TCN2 slice 3). The Stripe card field and Payment Element on
+`/subscription` read the UI table. The `/portal` particle title (`ParticleText`) is a 2D canvas
+inside the web UI, so it reads the UI table too: bone motes and a bone, bone-bright and iron-bright
+title. The `/game` page's DOM chrome around the canvas is styled by `globals.css` and is UI. The
+Phaser game config's canvas clear colour (`PhaserGame`, `BARROW.umber`) is the first pixel of the
+game canvas, so it stays on the game palette with every scene.
 
 ---
 
 ## Principles
 
-1. **Dark, never black.** Base surfaces are warm umber/stone (`#1c1613` / `#100c0a`), not `#000`
-   and not near-black. A base with no value above the floor makes every accent read as emission,
-   which is how a palette that already said "no neon" produced neon anyway.
-2. **One torch per view.** Amber (`--color-primary` `#e8a14d`) marks the single most important
-   thing — primary CTA, active nav, page `h1`, the price to notice. Overuse dilutes it.
-3. **Brass is structure, not fill.** Brass (`#9c7b3f`) lives in 1px hairline borders, dividers,
-   focus rings, and hover glows — rarely a solid fill. Panels are dark; brass frames them.
+1. **Soot, never black.** The base is a **neutral soot** (`--color-bg-dark` `#121212`), never
+   `#000`. What makes it read as a surface rather than an absence is the material layer: grain,
+   surface gradients, carved edges and the vignette (see Material & depth).
+   *Why this changed, deliberately.* This principle used to read "dark, never black" and forbade
+   near-black outright, asking for a warm umber base. Its reason was that a base with no value
+   above the floor makes every accent read as emission, which is how a palette that already said
+   "no neon" produced neon anyway. Bone & Soot was chosen by eye from a live comparison, and the
+   neutral ground is what lets bone carry the torch without reading as emission: bone is a
+   low-chroma light, so on a neutral ground it reads as lit material, where a saturated accent on
+   the same ground read as neon. The material layer and the Atmosphere bounds now carry the
+   emission risk that the warm base used to carry. Pure `#000` stays forbidden.
+2. **One torch per view.** Bone (`--color-primary` `#e9dfc9`) marks the single most important
+   thing: primary CTA, active nav, page `h1`, the focal number. Overuse dilutes it. Text on a
+   bone fill is always `--color-bg-dark`.
+3. **Iron is structure, not fill.** Iron (`--color-brass` `#5c5a55`) lives in 1px hairline
+   borders, dividers, focus rings, and hover glows, and is rarely a solid fill. Panels are dark;
+   iron frames them.
 4. **Modern layout, medieval finish.** Grid/flex, responsive, generous spacing, real interaction
-   affordances. Medieval = blackletter display, uppercase spaced labels, vellum text, brass
+   affordances. Medieval means blackletter display, uppercase spaced labels, bone-grey text, iron
    rules, small carved/wax-seal badges, and the CSS material layer below. No image textures.
 5. **Motion communicates.** Entrance/hover/focus show *what changed*; ≤0.3s; honor
    `prefers-reduced-motion`. No decorative animation.
@@ -364,62 +415,96 @@ token here → add the CSS variable too).
 
 | Token | CSS var | Value | Use |
 |---|---|---|---|
-| Primary (torch amber) | `--color-primary` | `#e8a14d` | CTAs, active states, `h1`, price, focus |
-| Primary bright *(new)* | `--color-primary-bright` | `#f2b866` | hover/emphasis on amber; legendary rarity |
-| Accent (arcane green) | `--color-accent` | `#6f8f4a` | secondary highlight, subtitle, cancel/secondary |
-| Danger (oxblood) | `--color-danger` | `#6e1f1f` | errors, destructive, death |
-| Page bg | `--color-bg-dark` | `#1c1613` | body / page background |
-| Page bg (deepest) | `--color-bg-darker` | `#100c0a` | splash, dropdown base, wells |
-| Surface / card | `--color-bg-card` | `rgba(42,33,26,0.88)` | cards, panels, modals (with blur) |
-| Surface raised *(new)* | `--color-bg-card-2` | `rgba(54,43,34,0.92)` | hovered/elevated card, nested panel |
-| Border (brass hairline) | `--color-border` | `rgba(156,123,63,0.15)` | default 1px borders/dividers |
-| Border strong *(new)* | `--color-border-strong` | `rgba(156,123,63,0.35)` | hover/focus/active border |
-| Text primary *(new)* | `--color-text` | `#cdbf9a` (vellum) | body text, item names, values |
-| Text muted | `--color-text-dim` | `#9b8e6a` | labels, secondary info |
-| Text dim | `--color-text-muted` | `#8d8362` | footnotes, hints, small labels |
-| Brass | (`theme.ts` `brass`/`brassBright`) | `#9c7b3f` / `#c9a14e` | borders, accents, glows |
+| Primary (bone, the torch) | `--color-primary` | `#e9dfc9` | the four torch uses: primary CTA, active nav, page `h1`, focal number |
+| Primary bright | `--color-primary-bright` | `#f6efdf` | hover and emphasis on bone; top stop of the Atmosphere title gradient |
+| Accent (ash grey) | `--color-accent` | `#8c8c84` | secondary, cancel, subtitle |
+| Danger (oxblood) | `--color-danger` | `#6e1f1f` | fill: errors, destructive, death |
+| Danger text | `--color-danger-text` | `#d07a6a` | error copy (oxblood lifted so it reads as text) |
+| Page bg (soot) | `--color-bg-dark` | `#121212` | body / page background; text on a bone fill |
+| Page bg (deepest) | `--color-bg-darker` | `#0a0a0a` | splash, wells, dropdown base |
+| Ground, well | `--color-bg-well` | `#0a0a0a` (the `--color-bg-darker` step) | inputs, card-entry wells, panels over the page; used translucent via `color-mix()` |
+| Ground, inset | `--color-bg-inset` | `#0e0e0e` | inset control groups on the game page chrome; used translucent via `color-mix()` |
+| Ground, dropdown | `--color-bg-dropdown` | `#070707` | dropdown and popover base (user menu, notification panel); used translucent via `color-mix()` |
+| Surface / card | `--color-bg-card` | `rgba(28, 28, 27, 0.88)` | cards, panels, modals (with blur) |
+| Surface raised | `--color-bg-card-2` | `rgba(38, 37, 35, 0.92)` | hovered/elevated card, nested panel |
+| Surface, opaque | `--color-bg-card-opaque` / `--color-bg-card-2-opaque` | `#1b1b1a` / `#242322`: each surface composited over soot, read back in the browser | `prefers-reduced-transparency` |
+| Iron (structure) | `--color-brass` | `#5c5a55` | borders, dividers, focus rings, hover glows |
+| Iron bright | `--color-brass-bright` | `#8a8780` | hover/focus structure; `h2` section titles under the Atmosphere |
+| Border (iron hairline) | `--color-border` | `--color-brass` at 30% (1.26:1 on soot) | default 1px borders/dividers |
+| Border strong | `--color-border-strong` | `--color-brass` at 60% (1.73:1 on soot) | hover/focus/active border |
+| Text primary (bone-grey) | `--color-text` | `#cfc9bb` | body text, item names, values |
+| Text dim | `--color-text-dim` | `#9b968b` | labels, secondary info |
+| Text muted | `--color-text-muted` | `#85817a` | footnotes, hints, small labels |
+| Text placeholder | `--color-text-placeholder` | `#5e5b55` | input placeholder |
 
-Add the *(new)* tokens to `globals.css` before building the marketplace — the palette already
-implies them (`theme.ts` `umber`, `vellum`, `amberBright`, `brass`). **`--color-text` (vellum)
-is the default body colour** — pure white is off-palette and reads cold.
+**`--color-text` (bone-grey) is the default body colour.** Pure white is off-palette: bone is the
+brightest thing on the page, and bone is the torch. The material tokens were re-derived against
+soot rather than carried over from the amber palette:
+
+| Token | Bone & Soot value | Why |
+|---|---|---|
+| `--color-border` / `-strong` | `--color-brass` at 30% / 60% | under amber the hairlines sat at 1.20:1 and 1.62:1 on the page; these land at 1.26:1 and 1.73:1 on soot, the same quiet frame |
+| `--focus-ring` | 2px of `--color-brass-bright` at 70% | 3.17:1 on soot, over the 3:1 non-text floor (amber's ring was 1.90:1) |
+| `--glow-brass` | 18px of `--color-brass-bright` at 22% | plain iron is too dark on soot to read as a glow at all |
+| `--glow-torch` | 22px of `--color-primary` at 16% | bone is lighter than amber, so it takes a lower alpha to stay a glow and not an emission |
+| `--surface-gradient`, `--edge-carved`, `--edge-engraved` | the same stops in neutral white (`255,255,255`) | the warm highlights (`255,245,225`, `255,240,214`) were the amber palette's cast and read as a tint on soot |
+
+The two borders, the glows and the focus ring are written with `color-mix()` from the tokens. A
+browser without `color-mix()` gets an `@supports not` fallback in `:root`: borders drop to the
+plain iron tokens, the glows to none, and the focus ring to solid iron bright. It never falls
+back to an old raw triple.
 
 ### Contrast floor (the bases are chosen against it)
 
-**Body and label text ≥ 4.5:1. Decorative, hint and disabled text ≥ 3:1.** Measured against
-`--color-bg-dark` `#1c1613`:
+**Body and label text ≥ 4.5:1. Decorative, hint and disabled text ≥ 3:1.** Measured in the
+browser against `--color-bg-dark` `#121212`:
 
 | Text token | Value | Ratio | Tier |
 |---|---|---|---|
-| `--color-text` (vellum) | `#cdbf9a` | 9.81:1 | body ✓ |
-| `--color-primary` (amber) | `#e8a14d` | 8.21:1 | body ✓ |
-| `--color-bg-dark` on amber fill | `#1c1613` | 8.21:1 | body ✓ |
-| `--color-text-dim` | `#9b8e6a` | 5.52:1 | body ✓ |
-| `--color-text-muted` | `#8d8362` | 4.73:1 | body ✓ |
+| `--color-text` (bone-grey) | `#cfc9bb` | 11.35:1 | body |
+| `--color-primary` (bone) | `#e9dfc9` | 14.15:1 | body |
+| `--color-primary-bright` | `#f6efdf` | 16.35:1 | body |
+| `--color-bg-dark` on bone fill | `#121212` | 14.15:1 | body |
+| `--color-text-dim` | `#9b968b` | 6.36:1 | body |
+| `--color-text-muted` | `#85817a` | 4.83:1 | body |
+| `--color-danger-text` | `#d07a6a` | 5.95:1 | body |
+| `--color-accent` (ash grey) | `#8c8c84` | 5.53:1 | body |
+| `--color-brass-bright` (iron bright, `h2`) | `#8a8780` | 5.23:1 | body |
+| `--color-text-placeholder` | `#5e5b55` | 2.77:1 | placeholder only |
 
-`--color-text-dim` and `--color-text-muted` were **lifted from `#8a7d5c` / `#6f6647`**, which
-measured 4.41:1 and 3.16:1 — both already failing their tier against the *old* `#0d0b0a` base,
-before any lift. The value range moves with the base; these are not independent choices.
+Measured in the browser on the running app (FS-8TCN2 slice 3, 2026-10-21): each token resolved
+through `getComputedStyle` and its WCAG ratio taken against the resolved `--color-bg-dark`. The
+preview estimated text 11.4, dim 6.4, muted 4.8 and torch 14.2, and the browser agrees.
+`--color-text-placeholder` is below the floor on purpose: it marks an empty input and never
+carries copy, so nothing that has to be read may use it (the auth footer, which used it, now
+uses `--color-text-muted`).
+
+**The value range moves with the base.** Under the amber palette, `--color-text-dim` and
+`--color-text-muted` had to be lifted when the base changed, because both failed their tier
+against the new ground. The same holds here: if a text token fails against soot, lift the token
+within its role. Never fix it by changing the ground behind the text.
 
 **Every text token clears 4.5:1**, including `--color-text-muted`. An earlier draft parked it in
 the 3:1 decorative tier, but measurement in the browser showed it carrying real body copy, hint
-lines and the version footer — those are labels, not decoration. The 3:1 tier is reserved for
+lines and the version footer. Those are labels, not decoration. The 3:1 tier is reserved for
 genuinely disabled controls, which are expressed with opacity rather than this token.
 
 The **rarity badge is small text** (11px uppercase), so the ramp is held to the 4.5:1 body floor
-too. Common and Rare were lifted for this reason; both failed at badge size otherwise.
+too. The browser figures are in the rarity table; one colour, Runed, was lifted within its hue.
 
-**Text on an amber fill is always `--color-bg-dark`, never white.**
+**Text on a bone fill is always `--color-bg-dark`, never white.**
 
 ---
 
 ## Accent vs structure — what carries what
 
-"One torch per view" says what amber is *for*. It never said what carries everything else, so
-amber became the entire accent system by default: **49 occurrences in `globals.css` against 4
-brass and 1 oxblood.** One saturated hue on a near-black ground, repeated everywhere, is neon
-regardless of what the token is called. This rule closes that gap.
+"One torch per view" says what the torch is *for*. It never said what carries everything else, so
+under the old amber palette amber became the entire accent system by default: **49 occurrences in
+`globals.css` against 4 brass and 1 oxblood.** One saturated hue on a dark ground, repeated
+everywhere, is neon regardless of what the token is called. This rule closed that gap, and it
+holds with bone as the torch: a light repeated everywhere stops being a torch.
 
-**Amber (`--color-primary`) is permitted on exactly four things, at most one instance each per
+**Bone (`--color-primary`) is permitted on exactly four things, at most one instance each per
 view:**
 
 1. the **primary CTA**
@@ -427,25 +512,26 @@ view:**
 3. the **page `h1`**
 4. the **single focal number** the view exists to show (a price, a rank, a balance)
 
-Plus the rarity exemption below. **Nothing else.** Not borders, not dividers, not labels, not
-hover states on secondary controls, not icons, not decorative rules.
+**Nothing else.** Not borders, not dividers, not labels, not hover states on secondary controls,
+not icons, not decorative rules.
 
 *One* clarification, because long pages hit it immediately: a **single CTA identity may repeat
 once at the foot of a long page** (the same button, the same words, the same action). That is one
-torch shown twice for reach, not two torches competing — two *different* amber CTAs in one view
-still breaks the rule.
+torch shown twice for reach, not two torches competing. Two *different* bone CTAs in one view
+still break the rule.
 
-**What carries the rest — these are load-bearing, not decoration:**
+**What carries the rest (these are load-bearing, not decoration):**
 
 | Role | Colour | Used for |
 |---|---|---|
-| Structure | **brass** `#9c7b3f` / `--color-border` | borders, dividers, focus rings, hairlines, hover glows |
-| Text | **vellum** `--color-text` / `-dim` / `-muted` | all body, label and value text |
-| Surface | **stone / umber** `--color-bg-*` | pages, cards, panels, wells |
-| Secondary action | **arcane green** `--color-accent` | cancel, secondary, subtitle |
-| Danger | **oxblood** `--color-danger` | errors, destructive, death |
+| Structure | **iron** `--color-brass` `#5c5a55` / `--color-border` | borders, dividers, focus rings, hairlines, hover glows |
+| Structure, bright | **iron bright** `--color-brass-bright` `#8a8780` | hover/focus structure, `h2` section titles |
+| Text | **bone-grey** `--color-text` / `-dim` / `-muted` | all body, label and value text |
+| Surface | **soot / stone** `--color-bg-*` | pages, cards, panels, wells |
+| Secondary action | **ash grey** `--color-accent` | cancel, secondary, subtitle |
+| Danger | **oxblood** `--color-danger` (fill), `--color-danger-text` (copy) | errors, destructive, death |
 
-A view that needs a second emphasis colour reaches for **brass**, never a second amber.
+A view that needs a second emphasis colour reaches for **iron bright**, never a second bone.
 
 ---
 
@@ -460,7 +546,7 @@ calm). **Always pair color with the text label** (colorblind safety).
 | Common | Normal | `--rarity-common` | `#a2946d` | vellum-dark, lifted to clear 4.5:1 at badge size |
 | Uncommon | Uncommon | `--rarity-uncommon` | `#6f8f4a` | arcane green |
 | Rare | Rare | `--rarity-rare` | `#688b8f` | necrotic teal, lifted to clear 4.5:1 at badge size |
-| Epic | Runed | `--rarity-epic` | `#9c7b3f` | brass |
+| Epic | Runed | `--rarity-epic` | `#a58243` | brass, lifted within its hue to clear 4.5:1 at badge size on soot |
 | Legendary | Fabled | `--rarity-legendary` | `#f2b866` | amber-bright |
 
 The server names its five tiers (items-service `CONTEXT.md` "Rarity tier"); the badge shows the
@@ -471,10 +557,35 @@ know renders as Common, labelled with its raw name — never hidden, never guess
 Make these the **canonical rarity colours**: align `items-service` `item_rarities.color_hex` to
 them (or map at the API) so server data and UI agree. Add the vars to `globals.css`.
 
+**Rarity is data, not theme.** These values are not drawn from the UI palette; the "Palette
+source" column records the game-ramp hue each one came from. One that drops under 4.5:1 is lifted
+within its own hue and the new value recorded in this table, never fixed by changing the
+background behind the badge.
+
+Measured in the browser at badge size (11px, 700, uppercase), FS-8TCN2 slice 3. "Badge on soot"
+is the badge as the landing page renders it: the colour on soot plus the badge's own 6% tint.
+"Badge on card" is the same badge composited over `--color-bg-card`, the Bazaar table's ground.
+
+| Rarity | Value | On `--color-bg-dark` | Badge on soot | Badge on card |
+|---|---|---|---|---|
+| Common | `#a2946d` | 6.24:1 | 5.81:1 | 5.30:1 |
+| Uncommon | `#6f8f4a` | 5.09:1 | 4.78:1 | 4.37:1 |
+| Rare | `#688b8f` | 5.07:1 | 4.76:1 | 4.35:1 |
+| Epic (Runed) | `#a58243` | 5.24:1 | 4.92:1 | 4.50:1 |
+| Legendary (Fabled) | `#f2b866` | 10.55:1 | 9.55:1 | 8.67:1 |
+
+Runed was `#9c7b3f`. It cleared soot itself (4.74:1) but its rendered badge measured 4.48:1, so it
+was lifted three lightness points within the brass hue. The client value now differs from the
+game ramp's brass and from the server's `item_rarities.color_hex`, as Common and Rare already did.
+Uncommon and Rare clear the floor on soot but sit at about 4.35:1 on a card surface. That is
+recorded here, not fixed: the slice measured against `--color-bg-dark`, and lifting either is a
+data-colour decision for the owner.
+
 ### The rarity ramp is exempt from one-torch-per-view
 
-`--rarity-legendary` is amber-bright, so a grid of legendary relics repeats amber across a view
-— which the one-torch rule otherwise forbids. Without this clause the two rules contradict each
+`--rarity-legendary` is a warm amber-bright, one of the most saturated colours on a soot page, so
+a grid of legendary relics repeats a bright hue across a view, which the one-torch rule otherwise
+forbids. Without this clause the two rules contradict each
 other and whoever implements the grid picks one at random. The exemption, and its reasoning:
 
 **Rarity colour is data, not emphasis.** It encodes a property of an item rather than directing
@@ -488,8 +599,8 @@ wrong behaviour for emphasis.
 - a **faint hover glow** on that card or row
 
 They may **never** be used as a CTA, nav, heading, or link colour, and a rarity colour never
-becomes a card fill. Outside those three places, `--rarity-legendary` is amber like any other
-amber and the one-torch rule applies in full.
+becomes a card fill. Outside those three places a rarity colour does not appear at all: it is
+never a stand-in for the torch or for iron.
 
 ---
 
@@ -508,7 +619,8 @@ else uses `--font-body`, including `h2` and below, nav, labels, buttons, table c
 footnotes. The size test alone is insufficient — `h2` tops out at 29px and would otherwise
 qualify; 28px is the line that cleanly separates `h1` (29–32) from `h2` (24–29).
 
-**`h1` is amber, one per view.**
+**`h1` is bone, one per view.** A blackletter `h1` takes the Atmosphere's gradient fill (see
+Material & depth); a heading in the body face never does.
 
 **The face is bound to `--font-heading`, and component code never names a face directly.** That
 indirection is deliberate: if blackletter does not hold up in practice, the recorded fallback is
@@ -525,7 +637,7 @@ Type scale (px, desktop; functional base ~14px). Prefer these steps:
 | Body | 14–16 / 22 | body, values, inputs |
 | Lead | 18 / 26 | card titles, item names |
 | Title (`h2`) | 24–29 / 34 | section / page subheads |
-| Page `h1` | 29–32 / 38 | page title (amber) |
+| Page `h1` | 29–32 / 38 | page title (bone) |
 | Hero | 40+ | splash only |
 
 ---
@@ -546,13 +658,16 @@ Type scale (px, desktop; functional base ~14px). Prefer these steps:
 
 - **Shadows:** cards `0 8px 32px rgba(0,0,0,0.4)`; dropdowns/modals `0 10px 40px rgba(0,0,0,0.6)`.
   Deep and soft (crypt depth), never bright.
-- **Glows (hover/focus):** warm amber/brass `box-shadow`, opacity `0.1–0.4`. Focus ring
-  `0 0 0 2px rgba(156,123,63,0.25)`. **Never neon.**
-- **Borders:** 1px brass hairline (`--color-border`); raise to `--color-border-strong` on
+- **Glows (hover/focus):** structure-tinted `box-shadow` derived from `--color-brass` /
+  `--color-brass-bright`, opacity `0.1–0.4`. A torch-tinted glow belongs only to the primary CTA
+  (see the Atmosphere layer). Focus ring is `--focus-ring`, derived from the iron structure role
+  (2px of `--color-brass-bright` at 70%, 3.17:1 on soot); it must stay plainly visible on soot.
+  **Never neon.**
+- **Borders:** 1px iron hairline (`--color-border`); raise to `--color-border-strong` on
   hover/focus/active.
 - **Blur:** floating surfaces (header, dropdown, modal, card) use `backdrop-filter: blur(20px)`.
 - **Motion:** micro `0.2s`, standard `0.3s ease`. Button/card hover `translateY(-2px)` + glow.
-  Entrances: `slideIn` / `fadeInScale` (already in `globals.css`). Spinner = brass ring.
+  Entrances: `slideIn` / `fadeInScale` (already in `globals.css`). Spinner = iron ring.
   Respect `prefers-reduced-motion: reduce`.
 
 ---
@@ -562,7 +677,8 @@ Type scale (px, desktop; functional base ~14px). Prefer these steps:
 The half this document never specified, and the reason a palette that already forbade neon
 produced it anyway. **Medievalism comes from material and hue range, not from an accent colour.**
 Flat dark surfaces plus one saturated hue will read as a dark web app with a brand colour no
-matter how the hue is named; stone, parchment, leather and brass patina are what read as a world.
+matter how the hue is named. Material is what reads as a world: under Bone & Soot that is stone,
+bone, soot and iron.
 
 **Everything here is CSS. No image assets** — no textures, no 9-slice frames, no background
 images. `public/` stays empty. That constraint is deliberate: the material layer must ship
@@ -573,7 +689,9 @@ without waiting on art.
 1. **Grain.** A single low-opacity noise field over the page, via an inline SVG
    `feTurbulence` `data:` URI. It breaks the flatness of large dark fills, which is what makes a
    dark page read as a surface rather than an absence. Keep it *barely* visible — if you can see
-   the noise as noise, it is too strong.
+   the noise as noise, it is too strong. Grain shows more on neutral soot than it did on warm
+   umber: the amber palette's opacity of `0.035` read as visible speckle on soot, so it is now
+   **`0.025`** (FS-8TCN2 slice 3).
 2. **Surface gradients.** Cards, panels, modals, header and dropdowns carry a shallow layered
    gradient so they read as carved stone or parchment rather than a flat fill. Subtle: a surface
    should look lit from somewhere, not shaded.
@@ -581,8 +699,9 @@ without waiting on art.
    engraved — within the existing radius scale. This is what makes a panel read as cut *into*
    or *out of* material rather than pasted on it.
 4. **Vignette.** The page edges darken. The world presses in at the borders of the light; this
-   is the single cheapest way to make a screen feel torch-lit.
-5. **Ornament.** Corner marks, brass rules, and dividers, drawn with borders and pseudo-elements.
+   is the single cheapest way to make a screen feel torch-lit. Its strength is set by the
+   Atmosphere layer below.
+5. **Ornament.** Corner marks, iron rules, and dividers, drawn with borders and pseudo-elements.
    Small and sparse — ornament reads as craft in ones and twos, and as clutter in fives.
 
 ### Rules
@@ -597,8 +716,51 @@ without waiting on art.
   `backdrop-filter: blur(20px)` surfaces is real compositing work. If it degrades scroll
   performance at high-DPI or large viewports, scope the grain to surfaces rather than the page
   — and say so, rather than shipping a quietly slower page.
-- **No glow may read as emission.** Warm brass/amber `box-shadow` at 0.1–0.4 opacity marks a
+- **No glow may read as emission.** Structure-tinted `box-shadow` at 0.1–0.4 opacity marks a
   hover or focus state. A glow bright enough to look like a light source is neon by another name.
+  The Atmosphere's torch-tinted glows are the only glows that take the torch colour, and they are
+  bounded below.
+
+### The Atmosphere layer
+
+The finish chosen with Bone & Soot (FS-8TCN2 §D): five pieces on top of the material layer. It is
+part of "Material & depth", so every rule above applies to it, plus the bounds here.
+
+| Piece | What it is | Where it may appear |
+|---|---|---|
+| **Hero title** | a vertical gradient fill from `--color-primary-bright` through `--color-primary` to a darkened primary, with a soft torch-tinted drop shadow and a hard 2px dark shadow | the landing hero `h1`, and any other page `h1` set in blackletter. Never a heading in the body face |
+| **Hero glow** | a low-opacity radial glow in the torch colour, plus a faint structure-tinted glow rising from the bottom edge | hero sections only |
+| **Section headings** | `h2` section titles in `--color-brass-bright` | any page. This is structure, not a second torch |
+| **Primary CTA glow** | an inset bright-bone hairline and a soft outer torch-tinted glow | the primary CTA only, one per view. Secondary buttons get nothing |
+| **Vignette** | the page vignette, deepened so the edges reach about 60% black | every page, as a fixed, pointer-events-none overlay below the header and popups |
+
+**Everything is derived from tokens.** No piece introduces a raw colour. Gradients and glows are
+built from `var(--color-*)`, for example with `color-mix()` (ADR-0025), so a palette change
+carries the Atmosphere with it and its rules need no edits.
+
+**It is finish, never structure.** With the whole layer removed, every view stays legible and laid
+out the same.
+
+**Fallbacks:**
+- **`prefers-reduced-transparency`:** the gradient title falls back to solid `--color-primary`,
+  and translucent surfaces resolve to opaque ones as above.
+- **`forced-colors`:** the Atmosphere is suppressed entirely, and text sits on a readable ground.
+- **No `background-clip: text`:** the title falls back to solid `--color-primary`, never to
+  transparent text.
+- **No `color-mix()`:** a derived glow or border degrades to the plain token or to transparent,
+  decided per site. It never falls back to a raw value from the old palette.
+
+**Why it does not breach "no glow may read as emission".** Emission is a saturated colour
+spreading light across a ground with nothing else on it; that is how the amber palette read as
+neon. The Atmosphere's glows differ in three ways, and those three ways are its bounds:
+
+1. they take **bone**, a low-chroma light, not a saturated hue;
+2. they stay at **low opacity**, on a ground the material layer already reads as a surface;
+3. they appear **only where the torch already is** (the hero `h1`, the hero, the one primary
+   CTA), so they add no new focal point.
+
+A glow outside those places, a glow in a saturated colour, or a glow bright enough to light the
+ground around it is a breach.
 
 ---
 
@@ -608,27 +770,29 @@ Barrowspire web UI is **custom Tailwind + CSS classes** (no shadcn — that's th
 Prefer Tailwind utilities driven by the tokens above; extract a shared class only when a pattern
 repeats; use a `cn()` helper for conditional classes.
 
-**Buttons** — *Primary:* amber fill, dark text (`--color-bg-dark`), uppercase, letter-spacing
-`0.1em`, radius 6, hover `translateY(-2px)` + amber glow (`.btn-primary`, `.login-button`).
-*Secondary:* transparent, brass border, `text-dim` → amber on hover (`.btn-secondary`).
-*Destructive:* oxblood. *Disabled:* opacity `0.5–0.6`, no transform. *Loading:* inline brass
+**Buttons** — *Primary:* bone fill, dark text (`--color-bg-dark`), uppercase, letter-spacing
+`0.1em`, radius 6, hover `translateY(-2px)`, with the Atmosphere's CTA glow (inset bright-bone
+hairline, soft outer torch glow) (`.btn-primary`, `.login-button`). *Secondary:* transparent,
+iron border, `text-dim` to `--color-text` on hover, never bone (`.btn-secondary`).
+*Destructive:* oxblood. *Disabled:* opacity `0.5–0.6`, no transform. *Loading:* inline iron
 spinner, stable width.
 
-**Inputs / forms** — dark well `rgba(13,11,10,0.8)`, brass border `0.1` → focus `0.4` + brass
-ring, vellum text, placeholder `#5a5238`, radius 6. Label above: uppercase, `text-dim`, small.
+**Inputs / forms** — dark well derived from `--color-bg-darker` (about 80%), iron border `0.1`
+to focus `0.4` plus the iron focus ring, bone-grey text, placeholder `--color-text-placeholder`,
+radius 6. Label above: uppercase, `text-dim`, small.
 
-**Cards & panels** — `bg-card`, 1px brass border, radius `8–12`, `backdrop-blur`, card shadow,
+**Cards & panels** — `bg-card`, 1px iron border, radius `8–12`, `backdrop-blur`, card shadow,
 `2rem` padding. Interactive cards: hover raises border + faint glow + `translateY(-2px)`.
 
 **Item card (marketplace — the List-a-relic item picker)**
-- Layout (approved direction): thumb/icon · **rarity badge** (top-right) · **item name** (vellum,
-  lead size) · thin brass divider · **stat row** (attack / crit / defense, each a line icon — not
-  emoji). No price: the picker chooses a relic to list, it does not sell one.
+- Layout (approved direction): thumb/icon · **rarity badge** (top-right) · **item name**
+  (bone-grey, lead size) · thin iron divider · **stat row** (attack / crit / defense, each a
+  line icon — not emoji). No price: the picker chooses a relic to list, it does not sell one.
 - **Rarity** = top/left accent border in the rarity color + the badge + a faint rarity glow on
-  hover. Card body stays dark charcoal (no rarity fill).
+  hover. Card body stays dark soot (no rarity fill).
 - Sizing: min width `~220–260px`, internal `gap-2/gap-3`, radius 8.
 - States: default (border `0.15`) · hover (border-strong + lift + rarity glow) · focus-visible
-  (brass ring) · owned/disabled (reduced opacity + "Owned" badge on the card).
+  (iron ring) · owned/disabled (reduced opacity + "Owned" badge on the card).
 
 **Item grid** — the **List-a-relic item picker** (the delver's own relics, one to choose) keeps
 the card grid: responsive `grid` `auto-fill minmax(220px, 1fr)`, gap `1rem–1.25rem`; collapses
@@ -636,25 +800,25 @@ to 1–2 cols ≤640px. A relic already listed or in escrow is the owned/disable
 "Listed" or "In escrow" badge on the card.
 
 **Filter / toolbar bar** — search input (left) · **filter chips** (rarity/type/slot) as pills
-(brass border; active = brass-bright for every chip, rarity included — a rarity chip names its
-tier by label, never by rarity color; never amber, which the view's CTA already holds) · **sort** dropdown (right), or the column headers where the view
+(iron border; active = iron bright for every chip, rarity included: a rarity chip names its
+tier by label, never by rarity color; never bone, which the view's CTA already holds) · **sort** dropdown (right), or the column headers where the view
 is the listing table. Sticky under the header when long.
 
 **Badges & pills** — small, uppercase, letter-spacing, radius `3–4`. Rarity badge uses the rarity
 color (text or hairline on a dark chip). Status badges (New/Owned/Sold) share the shape.
 
-**Price display** — tabular number, muted currency/coin glyph. **Vellum** wherever prices repeat
-(the listing table); **amber** only as the view's focal price in the item detail modal (the "one
-torch").
+**Price display** — tabular number, muted currency/coin glyph. **Bone-grey** wherever prices
+repeat (the listing table); **bone** only as the view's focal price in the item detail modal (the
+"one torch").
 
-**Tabs / segmented control** — underline-on-active or brass-outlined segments; active =
-**brass-bright** text and underline, never amber (the view's primary CTA already holds the torch;
+**Tabs / segmented control** — underline-on-active or iron-outlined segments; active =
+**iron bright** text and underline, never bone (the view's primary CTA already holds the torch;
 the All / Mine toggle is a segmented control).
 
 **Listing table (marketplace — the listing browser)** — the Bazaar browses listings as a
 **table**, not a card grid: a buyer compares many relics on a few facts (price, time left,
 rarity), and columns line those facts up where a grid scatters them.
-- **Rows** on `bg-card`, a brass hairline between them; hover raises the row to `bg-card-2`. A
+- **Rows** on `bg-card`, an iron hairline between them; hover raises the row to `bg-card-2`. A
   row is one listing and activates (click, Enter) to open the item detail modal.
 - **Columns:** Item (icon · name · rarity badge) · Type or slot · Current price · Bids · Time
   left · Action. Price, bids and time left are right-aligned, tabular figures. The action cell
@@ -663,33 +827,34 @@ rarity), and columns line those facts up where a grid scatters them.
   direction shown (a Heroicons chevron plus `aria-sort`), never by colour alone. Default: time
   left, ascending.
 - **Filter chips** above the table, per the toolbar bar below: the five rarity tiers and item type,
-  every active chip brass-bright — a rarity chip carries its tier by label, not colour.
+  every active chip iron bright: a rarity chip carries its tier by label, not colour.
 - **Accent edge:** a 2–3px left edge in the row's rarity colour; the only rarity colour on the
   row besides the badge and the faint hover glow.
-- **Price** in the table is **vellum** with the muted `⟡` glyph — no amber anywhere in a row, so
-  a column of prices does not become a column of torches. The price turns amber only in the
+- **Price** in the table is **bone-grey** with the muted `⟡` glyph, and no bone anywhere in a row,
+  so a column of prices does not become a column of torches. The price turns bone only in the
   detail modal, where it is the view's focal number.
-- **Loading:** skeleton rows at row height, brass shimmer. **Empty:** the muted copy and one
+- **Loading:** skeleton rows at row height, iron shimmer. **Empty:** the muted copy and one
   action, in the table's place.
-- Keyboard: rows are focusable in order with a visible brass focus ring; headers are buttons.
+- Keyboard: rows are focusable in order with a visible iron focus ring; headers are buttons.
   Targets ≥40px. Below 640px the lesser columns (type, bids) drop, never the price or time left.
 
-**Modal / item detail** — `bg-card` (or `bg-darker`), brass border, `blur(20px)`, deep shadow,
+**Modal / item detail** — `bg-card` (or `bg-darker`), iron border, `blur(20px)`, deep shadow,
 radius `10–12`, `fadeInScale` entrance; close top-right; trap focus; `Esc` closes.
 
-**Feedback** — *inline:* error → oxblood tint (`.login-error`/`.profile-error`); success →
-**amber/brass, not green** (success uses the torch, per palette rules). *Toasts:* dark panel,
-brass border, auto-dismiss. *Empty state:* muted vellum copy + one action ("The coffers are
-bare — return after the next delve"). *Loading:* skeletons shimmer with a faint **brass** sweep
-(not bright gray); spinner = brass ring.
+**Feedback** — *inline:* error → oxblood tint, copy in `--color-danger-text`
+(`.login-error`/`.profile-error`); success → **bone/iron, not green** (success uses the torch,
+per palette rules). *Toasts:* dark panel, iron border, auto-dismiss. *Empty state:* muted
+bone-grey copy + one action ("The coffers are bare — return after the next delve"). *Loading:*
+skeletons shimmer with a faint **iron** sweep, never a bright one; spinner = iron ring.
 
-**Tooltips** — dark chip, brass hairline, small vellum text, short delay.
+**Tooltips** — dark chip, iron hairline, small bone-grey text, short delay.
 
 ---
 
 ## Iconography
 
-Clean **line icons** (`@heroicons/react`, already a dep), `18–24px`, stroke, amber/vellum,
+Clean **line icons** (`@heroicons/react`, already a dep), `18–24px`, stroke, bone-grey (bone
+only inside one of the four torch uses),
 consistent grid & weight. Prefer small carved/wax-seal badges over emoji. **No emoji in UI.**
 
 ---
@@ -706,10 +871,11 @@ consistent grid & weight. Prefer small carved/wax-seal badges over emoji. **No e
 
 ## Accessibility
 
-- **Contrast:** vellum (`#cdbf9a`) and amber on charcoal pass for text; **text on amber fills
-  must be dark** (`#0d0b0a`), never white. No body text on saturated fills.
+- **Contrast:** every text token, and bone, must clear 4.5:1 on soot (browser figures in the
+  contrast floor table). **Text on bone fills is `--color-bg-dark`**
+  (`#121212`), never white. No body text on saturated fills.
 - **Never rely on rarity color alone** — always pair with the text label.
-- **Focus-visible** brass ring on every interactive element; full keyboard path through grid,
+- **Focus-visible** iron ring on every interactive element; full keyboard path through grid,
   filters, and modal (tab/arrow, `Esc` to close, focus trap in dialogs).
 - **Targets** ≥ `40px`. Honor `prefers-reduced-motion`.
 
@@ -726,16 +892,25 @@ kept as the record of what was wrong, not as outstanding work:
 - Neon purple `#bf5fff` in the landing rarity map, mint `#4ecca3` and `#0f0f23` in the Stripe
   Elements appearance object, cyan `#00d4e6` in the notification bell gradient.
 - **Tokens only, no raw hex.** This is now ADR-0013 and is enforced by a lint fence, not by
-  attention. A new colour is a token in `globals.css` *and* `theme.ts` first, then referenced.
+  attention. A new UI colour is a token in `globals.css` `:root` *and* the UI table in `theme.ts`
+  first, then referenced (ADR-0025).
+- **Raw rgba triples of the amber palette** outside `:root` (brass, arcane, oxblood, amber, the
+  umber surfaces, the warm highlights and darks, and leftover cold blues) slipped past the hex
+  fence. FS-8TCN2 §B.11 retired them in slice 2 (I-8TCN2-2): each became a token or a
+  `color-mix(in srgb, var(--color-*) N%, transparent)` derived from one, the warm darks became
+  the three `--color-bg-*` ground tokens, and the cold blues folded into the nearest warm token.
+  The fence now rejects non-neutral `rgb()` / `rgba()` literals outside `:root`, in CSS and in
+  TS/TSX alike.
 
 ---
 
 ## Implementation notes
 
-- **Tailwind v4** (CSS-first). Define the new tokens (`--color-bg-card-2`,
-  `--color-border-strong`, `--color-text`, `--color-primary-bright`, `--rarity-*`) in
-  `globals.css` / `@theme` so utilities resolve; the existing `--color-*` vars are the pattern.
-- Keep `theme.ts` (`BARROW_HEX`) and the CSS vars agreeing — same palette in two forms (Phaser
-  ints vs CSS strings).
+- **Tailwind v4** (CSS-first). UI tokens live in `globals.css` / `@theme` so utilities resolve;
+  the existing `--color-*` vars are the pattern.
+- Keep `:root` and the UI table in `theme.ts` agreeing: they are the UI palette in two forms (CSS
+  variables and JS strings). `BARROW` / `BARROW_HEX` are the game palette and do not track them
+  (ADR-0025). Nothing forces `:root` and the UI table to agree except review: the fence proves a
+  colour came from *a* palette, not from the right one.
 - Reuse existing class patterns (`.btn-primary`, `.login-*`, `.profile-*`, `.sub-*`) as the
   reference implementation; the marketplace should read as the same family.

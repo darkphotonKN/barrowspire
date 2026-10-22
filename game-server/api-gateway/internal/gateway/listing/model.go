@@ -16,7 +16,9 @@ type ListingClient interface {
 	PlaceBid(ctx context.Context, req *pb.PlaceBidRequest) (*pb.PlaceBidResponse, error)
 	WithdrawBid(ctx context.Context, req *pb.WithdrawBidRequest) (*pb.WithdrawBidResponse, error)
 	AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.AcceptBidResponse, error)
+	Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.BuyoutResponse, error)
 	ListMyListings(ctx context.Context, req *pb.ListMyListingsRequest) (*pb.ListMyListingsResponse, error)
+	ListMyBids(ctx context.Context, req *pb.ListMyBidsRequest) (*pb.ListMyBidsResponse, error)
 	BrowseListings(ctx context.Context, req *pb.BrowseListingsRequest) (*pb.BrowseListingsResponse, error)
 	GetListing(ctx context.Context, req *pb.GetListingRequest) (*pb.GetListingResponse, error)
 }
@@ -44,6 +46,12 @@ type CreateListingBody struct {
 // the bidder from the token, so the amount is all the caller supplies.
 type PlaceBidBody struct {
 	Amount int64 `json:"amount" minimum:"1" doc:"Gold offered. The first bid must meet the listing's start price; every later one must exceed the current leading bid. On a listing with a buyoutPrice every bid must stay below it."`
+}
+
+// BuyoutBody is the wire shape of a buyout. The listing comes from the path and
+// the buyer from the token; the amount is only the buyer's agreement to the price.
+type BuyoutBody struct {
+	Amount int64 `json:"amount" minimum:"1" doc:"Gold the buyer agrees to pay. Must equal the listing's buyoutPrice; the buyer is always charged that price."`
 }
 
 // Listing is a listing as its seller sees it. The optimistic-locking version is
@@ -100,6 +108,36 @@ type ItemSummary struct {
 type ListingPage struct {
 	Listings   []Listing `json:"listings" nullable:"false"`
 	NextCursor *string   `json:"nextCursor,omitempty" doc:"Pass back as cursor for the next page. Absent on the last page."`
+}
+
+// MyBid is one of the caller's own bids, with where its listing stands now.
+type MyBid struct {
+	BidID     string       `json:"bidId" format:"uuid"`
+	ListingID string       `json:"listingId" format:"uuid"`
+	Amount    int64        `json:"amount" doc:"Gold bid."`
+	Status    string       `json:"status" doc:"Bid status: PENDING, WINNING, OUTBID, WON or LOST."`
+	PlacedAt  time.Time    `json:"placedAt"`
+	Listing   MyBidListing `json:"listing"`
+
+	Item *ItemSummary `json:"item,omitempty" doc:"The listed item. Absent only when items has no such instance."`
+
+	// the listed item, only to join its summary; not on the wire
+	itemID string
+}
+
+// MyBidListing is where a bid's listing stands now.
+type MyBidListing struct {
+	Status       string    `json:"status" doc:"Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED."`
+	EndsAt       time.Time `json:"endsAt"`
+	Ended        bool      `json:"ended" doc:"True when the auction is past endsAt but not yet settled; it no longer accepts bids."`
+	CurrentPrice *int64    `json:"currentPrice,omitempty" doc:"The leading bid, anyone's. Absent when nobody leads."`
+	BuyoutPrice  *int64    `json:"buyoutPrice,omitempty" doc:"Gold that buys the item outright. Absent when the seller set none."`
+}
+
+// MyBidPage is one page of the caller's bids, newest placed first.
+type MyBidPage struct {
+	Bids       []MyBid `json:"bids" nullable:"false"`
+	NextCursor *string `json:"nextCursor,omitempty" doc:"Pass back as cursor for the next page. Absent on the last page."`
 }
 
 func itemSummaryFromProto(s *itempb.ItemSummary) *ItemSummary {
@@ -176,6 +214,51 @@ func listingPageFromProto(in []*pb.Listing, pagination *pbshared.PageInfo) (List
 	}
 
 	page := ListingPage{Listings: listings}
+	if next := pagination.GetNextCursor(); next != "" {
+		page.NextCursor = &next
+	}
+
+	return page, nil
+}
+
+// myBidFromProto maps one of the caller's bids to the wire. A bid missing its
+// listing or a required timestamp is a fault in marketplace, answered as 500
+// rather than shown to the client as 1970.
+func myBidFromProto(b *pb.MyBid) (MyBid, error) {
+	l := b.GetListing()
+	if b.GetPlacedAt() == nil || l.GetEndsAt() == nil {
+		return MyBid{}, fmt.Errorf("marketplace returned bid %s without its listing or a required timestamp", b.GetBidId())
+	}
+
+	return MyBid{
+		BidID:     b.GetBidId(),
+		ListingID: b.GetListingId(),
+		Amount:    b.GetAmount(),
+		Status:    b.GetStatus(),
+		PlacedAt:  b.GetPlacedAt().AsTime(),
+		Listing: MyBidListing{
+			Status:       l.GetStatus(),
+			EndsAt:       l.GetEndsAt().AsTime(),
+			Ended:        l.GetEnded(),
+			CurrentPrice: l.CurrentPrice,
+			BuyoutPrice:  l.BuyoutPrice,
+		},
+		itemID: l.GetItemId(),
+	}, nil
+}
+
+// myBidPageFromProto maps marketplace's page of the caller's bids to the wire.
+func myBidPageFromProto(in []*pb.MyBid, pagination *pbshared.PageInfo) (MyBidPage, error) {
+	bids := make([]MyBid, 0, len(in))
+	for _, b := range in {
+		bid, err := myBidFromProto(b)
+		if err != nil {
+			return MyBidPage{}, err
+		}
+		bids = append(bids, bid)
+	}
+
+	page := MyBidPage{Bids: bids}
 	if next := pagination.GetNextCursor(); next != "" {
 		page.NextCursor = &next
 	}

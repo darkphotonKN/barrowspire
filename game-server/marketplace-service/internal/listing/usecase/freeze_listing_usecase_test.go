@@ -78,3 +78,51 @@ func TestFreezeListingUC_OnlyUnconfirmedBids_ReturnsNilWinner(t *testing.T) {
 
 	assert.Nil(t, out.Winner)
 }
+
+// 0a hands the workflow every bid on the frozen listing, whatever its status: the
+// set whose holds a pre-pivot rollback releases (§Req 12), read under the same lock
+// that froze the listing, so no bid can arrive after it. Bids whose gold was never
+// held, or was already given back, are wallet's to skip.
+func TestFreezeListingUC_ReturnsEveryBidOnTheListing(t *testing.T) {
+	l := activeListing(t, 100)
+	now := time.Now()
+	outbidder, leader, withdrawer := uuid.New(), uuid.New(), uuid.New()
+	outbidID, leaderID, withdrawnID := uuid.New(), uuid.New(), uuid.New()
+
+	require.NoError(t, l.PlaceBidWithID(outbidID, outbidder, 150, uuid.Nil, now))
+	require.NoError(t, l.ConfirmBid(outbidID, now))
+	require.NoError(t, l.PlaceBidWithID(leaderID, leader, 200, uuid.Nil, now))
+	require.NoError(t, l.ConfirmBid(leaderID, now))
+	require.NoError(t, l.PlaceBidWithID(withdrawnID, withdrawer, 250, uuid.Nil, now))
+	require.NoError(t, l.WithdrawBid(withdrawnID, withdrawer, now))
+
+	out := freeze(t, &fakeRepo{listing: l})
+
+	assert.ElementsMatch(t, []uuid.UUID{outbidID, leaderID, withdrawnID}, out.BidIDs)
+	require.NotNil(t, out.Winner)
+	assert.Equal(t, leaderID, out.Winner.WinnerBidID)
+}
+
+// ADR-0028: after a leader withdrew, the promoted runner-up is the winner 0a
+// freezes, so settlement takes the winner arm and step 2 releases every loser.
+// Before promotion, 0a found no WINNING bid and the no-bids arm stranded them.
+func TestFreezeListingUC_AfterTheLeaderWithdrew_TheRunnerUpWins(t *testing.T) {
+	now := time.Now()
+	l := activeListing(t, 100)
+	require.NoError(t, l.PlaceBid(uuid.New(), 150, uuid.Nil, now))
+	runnerUp := l.Snapshot().Bids[0].ID
+	require.NoError(t, l.ConfirmBid(runnerUp, now))
+	leaderMember := uuid.New()
+	require.NoError(t, l.PlaceBid(leaderMember, 200, uuid.Nil, now))
+	leader := l.Snapshot().Bids[1].ID
+	require.NoError(t, l.ConfirmBid(leader, now))
+	require.NoError(t, l.WithdrawBid(leader, leaderMember, now))
+	repo := &fakeRepo{listing: l}
+
+	out := freeze(t, repo)
+
+	require.NotNil(t, out.Winner, "the winner arm, not the no-bids arm")
+	assert.Equal(t, runnerUp, out.Winner.WinnerBidID)
+	assert.Equal(t, 150, out.Winner.Amount)
+	assert.Contains(t, out.BidIDs, runnerUp)
+}

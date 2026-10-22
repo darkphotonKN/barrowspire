@@ -63,7 +63,12 @@ func (l ListingDetails) MinimumBid() int {
 // listing out of ACTIVE at its end yet, so this is computed at read time.
 // AcceptsBidAt refuses a bid on exactly these listings.
 func (l ListingDetails) EndedAt(now time.Time) bool {
-	return l.Status == listing.StatusActive && !l.EndsAt.After(now)
+	return endedAt(l.Status, l.EndsAt, now)
+}
+
+// endedAt is the one "ended" rule every listing read reports.
+func endedAt(status listing.ListingStatus, endsAt, now time.Time) bool {
+	return status == listing.StatusActive && !endsAt.After(now)
 }
 
 // ListingsPage is one page of listings, in whatever order the read that built
@@ -79,10 +84,20 @@ type FreezeListingDto struct {
 	ItemID    uuid.UUID
 	SellerID  uuid.UUID
 	Winner    *FreezeWinner
+	// BidIDs is every bid on the frozen listing, whatever its status: the set
+	// whose holds settlement releases (FS-NXP1W §Req 12, 29)
+	BidIDs []uuid.UUID
 }
 
 type FreezeWinner struct {
 	WinnerBidID    uuid.UUID
 	WinnerMemberID uuid.UUID
 	Amount         int
+}
+
+// ExpiredListing is one ACTIVE listing past its end, as the expiry poller pages
+// them (FS-NXP1W §Req 2): its ID, and its end time as the paging cursor.
+type ExpiredListing struct {
+	ID     uuid.UUID
+	EndsAt time.Time
 }

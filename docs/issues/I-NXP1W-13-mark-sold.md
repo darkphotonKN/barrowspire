@@ -1,6 +1,6 @@
 ---
 id: I-NXP1W-13
-status: open
+status: done
 implements: FS-NXP1W
 blocked_by: [I-NXP1W-4, I-NXP1W-7]
 labels: [blocked]
@@ -24,10 +24,10 @@ breach, which goes to the shared helper.
 
 ## Acceptance Criteria
 
-- [ ] The listing ends `SOLD`; re-running after success changes nothing
-- [ ] A listing in any status other than `PENDING_SETTLEMENT` or `SOLD` escalates and parks, and is not overwritten
-- [ ] Crash-point table committed
-- [ ] Use case tested without Temporal; `make test` green
+- [x] The listing ends `SOLD`; re-running after success changes nothing
+- [x] A listing in any status other than `PENDING_SETTLEMENT` or `SOLD` escalates and parks, and is not overwritten
+- [x] Crash-point table committed
+- [x] Use case tested without Temporal; `make test` green
 
 ## Blocked By
 

@@ -14,17 +14,20 @@ import (
 // domain, which compares the bid's member against MemberID — so MemberID must be
 // the authenticated caller, never taken from the request body.
 //
-// Withdrawing the current leader does NOT promote the runner-up. See
-// docs/outline/bids.md §2 — a promoted runner-up would have no hold backing it.
+// Withdrawing the current leader promotes the runner-up (ADR-0028); the domain
+// does it in the same write. Only the withdrawn bid's hold is released here: the
+// runner-up's has been RESERVED since it was placed and now backs the lead.
+// An OUTBID bid may be withdrawn too (ADR-0029): its gold comes back now rather
+// than at settlement, and the leader is untouched.
 type WithdrawBidUC struct {
-	repo   listing.Repository
-	wallet WalletService
+	repo        listing.Repository
+	holdRelease HoldReleaseStarter
 }
 
-func NewWithdrawBidUC(repo listing.Repository, wallet WalletService) *WithdrawBidUC {
+func NewWithdrawBidUC(repo listing.Repository, holdRelease HoldReleaseStarter) *WithdrawBidUC {
 	return &WithdrawBidUC{
-		repo:   repo,
-		wallet: wallet,
+		repo:        repo,
+		holdRelease: holdRelease,
 	}
 }
 
@@ -67,14 +70,16 @@ func (uc *WithdrawBidUC) Handle(ctx context.Context, cmd WithdrawBidCommand) err
 	// leave a live bid with no gold behind it, the same state PlaceBid's
 	// hold-before-bid ordering exists to prevent, reached from the other direction.
 	//
-	// Not returned as an error. The bid is already cancelled by this point, so
-	// reporting failure would invite a retry of a withdrawal that already happened.
-	// The reconciler picks the hold up instead.
-	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), compensationTimeout)
+	// Started, not awaited: the run retries the release until it lands, so a wallet
+	// outage no longer strands the gold. Not returned as an error if the start itself
+	// fails — the bid is already cancelled by this point, so reporting failure would
+	// invite a retry of a withdrawal that already happened. The reconciler picks the
+	// hold up instead.
+	startCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), compensationTimeout)
 	defer cancel()
 
-	if releaseErr := uc.wallet.ReleaseHold(releaseCtx, cmd.BidID); releaseErr != nil {
-		slog.ErrorContext(ctx, "bid withdrawn but releasing its hold failed, gold stays held until reconciled",
+	if releaseErr := uc.holdRelease.StartReleaseHold(startCtx, cmd.ListingID, cmd.BidID); releaseErr != nil {
+		slog.ErrorContext(ctx, "bid withdrawn but starting its hold release failed, gold stays held until reconciled",
 			"bid_id", cmd.BidID, "listing_id", cmd.ListingID, "err", releaseErr)
 	}
 

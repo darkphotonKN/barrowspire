@@ -17,6 +17,11 @@ type Player struct {
 	// every world the player enters until they enter again. Zero until then.
 	// FS-BDA7X §Requirements 7.
 	Character CharacterInPlay
+	// Token is the bearer token the member last connected with, refreshed on
+	// every reconnect. Worlds load the member's worn gear with it. It is held,
+	// not renewed: a member who stays in the hub past its expiry is seated in
+	// their next world without gear until they reconnect.
+	Token BearerToken `json:"-"`
 }
 
 type PlayerState struct {
@@ -401,13 +406,13 @@ var ErrCharacterNotFound = errors.New("character not found")
 // level and experience come from that record, never from the client.
 // FS-BDA7X §Requirements 5, 7.
 type CharacterInPlay struct {
-	ID    uuid.UUID
-	Name  string
-	Class string
+	ID    uuid.UUID `json:"id"`
+	Name  string    `json:"name"`
+	Class string    `json:"class"`
 	// 1..progression.MaxLevel; anything below 1 seats as level 1
-	Level int
+	Level int `json:"level"`
 	// total experience, monotonic
-	Experience int64
+	Experience int64 `json:"experience"`
 }
 
 // RunProgress is what a run did to one member's character in play. Gained is

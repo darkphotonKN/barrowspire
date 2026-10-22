@@ -36,51 +36,65 @@ src/
 The game has a **dark, gothic barrow-dungeon** aesthetic — torch-lit, barrow-deep,
 grim. Cold ambient darkness with warm torch pools as the only real light. The
 rendering technique references hand-drawn, inked, paper-textured illustration
-(Darkest Dungeon / old Ultima, pulled darker), not crisp arcade pixel art. All UI
-must follow these rules:
+(Darkest Dungeon / old Ultima, pulled darker), not crisp arcade pixel art. The web UI
+is the gate to that world rather than the world itself: bone on soot, grey stone and
+iron, so stepping into a delve is a change of register. All UI must follow these rules:
 
 ### Color Palette
 
-| Role | Value | Usage |
-|------|-------|-------|
-| **Primary** | `#e8a14d` (torch amber) | **DOM: one per view only** — primary CTA, active nav, page `h1`, the focal number. **Canvas: means *interactable*** and may repeat — see the guideline's gameplay accent rule |
-| **Accent** | `#6f8f4a` (arcane/lich green) | Secondary highlights, subtitles, corruption, cancel actions |
-| **Brass** | `#9c7b3f` / `#c9a14e` | **Structure** — borders, dividers, focus rings, hover glow |
-| **Background** | `#1c1613` (warm umber) / `#100c0a` (deepest) | Page backgrounds, body, wells |
-| **Card/Panel** | `rgba(42, 33, 26, 0.88)` (stone) | Card backgrounds, popups, modals |
-| **Card raised** | `rgba(54, 43, 34, 0.92)` | Hovered/elevated card, nested panel |
-| **Border** | `rgba(156, 123, 63, 0.15)` (brass) | Default border color for cards, inputs, panels |
-| **Border strong** | `rgba(156, 123, 63, 0.35)` | Hover/focus/active border |
-| **Danger** | `#6e1f1f` (oxblood) | Errors, destructive actions, death |
-| **Text Primary** | `#cdbf9a` (vellum) | Body text, names, values — **the default body colour** |
-| **Text Muted** | `#9b8e6a` | Labels, secondary info, descriptions |
-| **Text Dim** | `#7d7355` | Footer text, hints, disabled states |
+**Two palettes, on purpose** ([ADR-0025](../docs/adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md)).
+The **web UI** (DOM: landing, auth, profile, leaderboard, subscription, Bazaar, header, menus) uses
+**Bone & Soot**, defined in `globals.css` `:root` and mirrored as JS strings by the UI table in
+`src/utils/theme.ts`. The **game canvas** (Phaser) uses the barrow ramp in `BARROW` / `BARROW_HEX`.
+DOM code never reads `BARROW`; Phaser code never reads the UI table. Values, contrast figures
+and the rules behind them live in the guideline (Part II for the web UI, Part I for the game);
+the table below is a quick reference and the guideline wins if they disagree.
 
-**Amber is not the accent system — on the DOM.** There it marks at most four things per view
-(CTA, active nav, `h1`, the focal number) plus the rarity-badge exemption. Brass carries
-structure, vellum carries text, stone carries surfaces. See "Accent vs structure".
+Web UI (Bone & Soot):
+
+| Role | Token | Value |
+|------|-------|-------|
+| **Torch** (bone) | `--color-primary` / `-bright` | `#e9dfc9` / `#f6efdf` |
+| **Accent** (ash grey) | `--color-accent` | `#8c8c84` |
+| **Structure** (iron; the name "brass" is a role, not a hue) | `--color-brass` / `-bright` | `#5c5a55` / `#8a8780` |
+| **Border** | `--color-border` / `-strong` | derived from `--color-brass` |
+| **Background** (soot) | `--color-bg-dark` / `--color-bg-darker` | `#121212` / `#0a0a0a` |
+| **Card / raised** | `--color-bg-card` / `-2` | `rgba(28, 28, 27, 0.88)` / `rgba(38, 37, 35, 0.92)` |
+| **Danger** (oxblood) | `--color-danger` / `--color-danger-text` | `#6e1f1f` fill / `#d07a6a` copy |
+| **Text** (bone-grey, the default body colour) | `--color-text` | `#cfc9bb` |
+| **Text dim** (labels) | `--color-text-dim` | `#9b968b` |
+| **Text muted** (hints, footnotes) | `--color-text-muted` | `#85817a` |
+| **Placeholder** | `--color-text-placeholder` | `#5e5b55` |
+
+**Bone is not the accent system.** On the DOM it marks at most four things per view (primary
+CTA, active nav, page `h1`, the focal number) plus the rarity-badge exemption. Text on a bone
+fill is `--color-bg-dark`. Iron carries structure, bone-grey carries text, soot and stone carry
+surfaces. See the guideline's "Accent vs structure".
 
 **In the Phaser canvas the rule is different, deliberately.** Colour there is a readability
 channel, not emphasis: amber means *interactable*, arcane green *safe*, oxblood *damage*, vellum
 *neutral HUD*, brass *frame*. Amber repeats as often as there are interactables. The test is
-semantic — an amber thing the player cannot act on is a defect. See "Gameplay accent".
+semantic: an amber thing the player cannot act on is a defect. See "Gameplay accent".
 
-**Tokens only — no raw hex** ([ADR-0013](../docs/adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md)).
-Colour is defined in exactly two places, `globals.css` `:root` and `theme.ts`, and referenced
-everywhere else. A lint fence rejects literals in CSS, `styled-jsx`, and inline `style={{}}`.
+**Tokens only, no raw hex** ([ADR-0013](../docs/adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md),
+amended by ADR-0025). Colour is defined in `globals.css` `:root` and `theme.ts` (the UI table and
+`BARROW` / `BARROW_HEX`), and referenced everywhere else. A lint fence rejects literals in CSS,
+`styled-jsx`, and inline `style={{}}`.
 
-CSS variables are defined in `globals.css` under `:root` — always use them.
-Phaser scenes should pull `0x` ints from `src/utils/theme.ts` (`BARROW_HEX`):
+DOM code uses the CSS variables in `globals.css` `:root`, always. Phaser scenes pull `0x` ints from
+`BARROW_HEX` in `src/utils/theme.ts`. The main UI variables (values in the guideline):
 ```css
-var(--color-primary)    /* #e8a14d torch amber */
-var(--color-accent)     /* #6f8f4a arcane green */
-var(--color-danger)     /* #6e1f1f oxblood */
-var(--color-bg-dark)    /* #1c1613 warm umber */
-var(--color-bg-card)    /* rgba(42, 33, 26, 0.88) */
-var(--color-border)     /* rgba(156, 123, 63, 0.15) */
-var(--color-text)       /* #cdbf9a vellum — default body colour */
-var(--color-text-dim)   /* #9b8e6a */
-var(--color-text-muted) /* #7d7355 */
+var(--color-primary)      /* bone, the torch: one per view */
+var(--color-accent)       /* ash grey: secondary, cancel */
+var(--color-danger)       /* oxblood fill */
+var(--color-danger-text)  /* oxblood lifted, for error copy */
+var(--color-bg-dark)      /* soot: page; text on a bone fill */
+var(--color-bg-card)      /* surface */
+var(--color-brass)        /* iron: structure (role name, not a hue) */
+var(--color-border)       /* iron hairline */
+var(--color-text)         /* bone-grey: default body colour */
+var(--color-text-dim)     /* labels */
+var(--color-text-muted)   /* hints, footnotes */
 ```
 
 ### Typography
@@ -91,26 +105,32 @@ var(--color-text-muted) /* #7d7355 */
   and the page `h1`. Everything else — `h2` and below, nav, labels, buttons, inputs, table
   cells, badges, footnotes — uses `var(--font-body)`
 - **Body**: EB Garamond (`var(--font-body)`), old-style serif, kept legible
-- **Labels**: Uppercase, letter-spacing 0.1em+, muted vellum
+- **Labels**: Uppercase, letter-spacing 0.1em+, `--color-text-dim`
 - **Never name a face in component code** — use `var(--font-heading)` / `var(--font-body)`
 - No emojis in UI — use clean text or minimal carved/wax-seal badges
 
 ### Visual Rules
 
-- **Borders**: 1px, low-opacity brass. Weathered, irregular over crisp/bright
+- **Borders**: 1px, low-opacity iron (`--color-border`). Weathered, irregular over crisp/bright
 - **Border radius**: 6px (small), 8-12px (cards/panels). No large modern rounded corners
-- **Glows**: Subtle warm `box-shadow` with brass/amber at 0.1–0.3 opacity. Never garish neon —
-  a glow bright enough to look like a light source is neon by another name
-- **Backgrounds**: Warm umber/stone with layered gradients that read as carved stone or
-  parchment. **Dark, never black** — a base with no value above the floor makes every accent
-  read as emission
+- **Glows**: Subtle structure-tinted `box-shadow` at 0.1–0.4 opacity, derived from tokens. Never
+  garish neon: a glow bright enough to look like a light source is neon by another name. Only the
+  Atmosphere's hero glow and primary-CTA glow take the torch colour (see the guideline)
+- **Backgrounds**: Neutral soot (`#121212`) and stone with layered gradients that read as carved
+  stone. **Soot, never black**: never `#000`, and the material layer is what makes the base read
+  as a surface rather than an absence
 - **Material layer (CSS only, no image assets)**: page grain via inline SVG `data:` URI, surface
   gradients, inset shadows for carved/beveled edges, page vignette, CSS-drawn ornament. Material
-  is finish, never structure — every view must stay legible with it suppressed
-- **Hover states**: Brass/bronze glow, slight brightness. No dramatic transforms
+  is finish, never structure: every view must stay legible with it suppressed
+- **Atmosphere layer** (part of the material layer): gradient bone fill on the blackletter
+  hero/page `h1`, a torch-tinted hero glow, `h2` section titles in `--color-brass-bright`, a glow
+  on the one primary CTA, and a deeper vignette. All derived from tokens; it falls back to solid
+  `--color-primary` text under `prefers-reduced-transparency` and is suppressed under
+  `forced-colors`. Bounds are in the guideline's "Material & depth"
+- **Hover states**: Iron glow, slight brightness. No dramatic transforms
 - **Lighting**: Heavy vignette (darkness pressing at edges) + a warm torch pool. Presentation-only overlays — never coupled to game state or the render pipeline
-- **Success states**: Use amber/brass (primary), not bright green
-- **Buttons**: Amber/brass fill with dark text, or transparent with brass border. Wax-seal/carved-stone feel; arcane green for cancel/secondary
+- **Success states**: Use bone/iron (the torch), not bright green
+- **Buttons**: Primary is a bone fill with `--color-bg-dark` text; secondary is transparent with an iron border. Wax-seal/carved-stone feel; ash grey (`--color-accent`) for cancel/secondary
 
 ### Wording & Tone (lore voice — dread and rumor, terse, grim)
 
@@ -125,7 +145,8 @@ The game is a **medieval barrow-dungeon delve / extraction**, not a space shoote
 
 ### Phaser Scenes (In-Game)
 
-The same palette applies to Phaser scenes (MainMenuScene, BarrowspireScene):
+Phaser scenes (MainMenuScene, BarrowspireScene) use the **game palette** (`BARROW_HEX`), not the
+web UI's Bone & Soot (ADR-0025):
 - Background: `#0d0b0a` charcoal with drifting dust/ember motes (not stars)
 - Atmosphere: torch-pool glow + vignette + dust as camera-fixed decorative overlays (`createAtmosphere`), depth ~900, below HUD (1000) and popups (2000)
 - Player = hooded delver, rivals = pale wights (procedural, `spriteGenerator.ts`)

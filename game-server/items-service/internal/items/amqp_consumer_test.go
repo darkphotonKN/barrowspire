@@ -11,46 +11,26 @@ import (
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"google.golang.org/protobuf/proto"
 )
 
 type fakeExtractor struct {
-	err   error
-	calls int
+	err       error
+	calls     int
+	eventID   uuid.UUID
+	eventType string
 }
 
-func (f *fakeExtractor) ProcessItemsExtracted(ctx context.Context, req *pb.ItemsExtractedEvent) error {
+func (f *fakeExtractor) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, eventType string, req *pb.ItemsExtractedEvent) error {
 	f.calls++
+	f.eventID, f.eventType = eventID, eventType
 	return f.err
 }
 
-// fakeDedup holds dedup keys in memory, as the redis lock does.
-type fakeDedup struct {
-	held       map[string]string
-	acquireErr error
-}
-
-func (d *fakeDedup) AcquireLock(ctx context.Context, key string, ttl time.Duration) (string, bool, error) {
-	if d.acquireErr != nil {
-		return "", false, d.acquireErr
-	}
-	if _, ok := d.held[key]; ok {
-		return "", false, nil
-	}
-	id := fmt.Sprintf("lock-%d", len(d.held))
-	d.held[key] = id
-	return id, true, nil
-}
-
-func (d *fakeDedup) ReleaseLock(ctx context.Context, key, lockID string) error {
-	if d.held[key] != lockID {
-		return errors.New("lock not held")
-	}
-	delete(d.held, key)
-	return nil
-}
+const testMessageID = "0b7c8a3e-6f1d-4c2a-9a55-1f0e2d3c4b5a"
 
 func extractedBody(t *testing.T) []byte {
 	t.Helper()
@@ -61,81 +41,137 @@ func extractedBody(t *testing.T) []byte {
 	return body
 }
 
-// Only a stored (or already stored) event is acked. A failure that is not the
-// event's own fault — a transient or unclassified store failure, a held row
-// lock, the dedup store down — retries it after a delay; only a malformed event
-// or one the store refuses is rejected to the DLQ (FS-4R9M9 R49).
-func TestHandleItemsExtracted_Settles(t *testing.T) {
+// extractedDelivery is a first delivery of an items.extracted event, stamped
+// with its outbox row id as MessageId.
+func extractedDelivery(t *testing.T) amqp.Delivery {
+	t.Helper()
+	return amqp.Delivery{
+		MessageId:  testMessageID,
+		RoutingKey: commonconstants.ItemsExtracted,
+		Body:       extractedBody(t),
+	}
+}
+
+// A failure is classified, not retried blindly. A stored event or a duplicate
+// of one is acked. A delivery with no usable MessageId, a malformed event, or
+// one the store refuses is dead-lettered at once, before any processing. A
+// reference that is not there yet retries a bounded number of times. Anything
+// else is the infrastructure's fault and retries without end
+// (FS-BVM9H Req 4, 10, 12).
+func TestHandleItemsExtracted_Classifies(t *testing.T) {
 	refused := &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
 	tests := []struct {
-		name       string
-		body       []byte
-		processErr error
-		acquireErr error
-		want       disposition
+		name        string
+		messageID   *string
+		body        []byte
+		processErr  error
+		want        disposition
+		wantReason  string
+		wantNoCalls bool
 	}{
 		{name: "stored", want: ack},
+		{name: "already processed", processErr: fmt.Errorf("store: %w", commonconstants.ErrAlreadyProcessed), want: ack},
+		{name: "missing message id", messageID: ptr(""), want: reject, wantReason: dlqReasonMissingMessageID, wantNoCalls: true},
+		{name: "non-uuid message id", messageID: ptr("outbox-row-7"), want: reject, wantReason: dlqReasonInvalidMessageID, wantNoCalls: true},
+		{name: "unreadable event", body: []byte{0xff, 0xff, 0xff}, want: reject, wantReason: dlqReasonMalformed, wantNoCalls: true},
+		{name: "store refused the batch", processErr: fmt.Errorf("store: %w", commonconstants.ErrConstraintViolation), want: reject, wantReason: dlqReasonMalformed},
+		{name: "malformed member id", processErr: fmt.Errorf("member: %w", commonconstants.ErrUUIDCouldNotBeParsed), want: reject, wantReason: dlqReasonMalformed},
+		{name: "invalid input", processErr: fmt.Errorf("store: %w", commonconstants.ErrInvalidInput), want: reject, wantReason: dlqReasonMalformed},
+		{name: "foreign key violation 23503", processErr: fmt.Errorf("store: %w: %w", commonconstants.ErrConstraintViolation, &pq.Error{Code: "23503"}), want: retryBounded},
+		{name: "missing reference", processErr: fmt.Errorf("store: %w", commonconstants.ErrNotFound), want: retryBounded},
 		{name: "transient store failure", processErr: fmt.Errorf("store: %w", commonconstants.ErrTransient), want: retry},
 		{name: "row lock held elsewhere", processErr: fmt.Errorf("store: %w", commonconstants.ErrLockUnavailable), want: retry},
 		{name: "connection refused", processErr: fmt.Errorf("store: %w", refused), want: retry},
 		{name: "admin shutdown 57P01", processErr: fmt.Errorf("store: %w", &pq.Error{Code: "57P01"}), want: retry},
 		{name: "unclassified", processErr: errors.New("boom"), want: retry},
-		{name: "dedup store down", acquireErr: errors.New("redis down"), want: retry},
-		{name: "store refused the batch", processErr: fmt.Errorf("store: %w", commonconstants.ErrConstraintViolation), want: reject},
-		{name: "malformed member id", processErr: fmt.Errorf("member: %w", commonconstants.ErrUUIDCouldNotBeParsed), want: reject},
-		{name: "invalid input", processErr: fmt.Errorf("store: %w", commonconstants.ErrInvalidInput), want: reject},
-		{name: "unreadable event", body: []byte{0xff, 0xff, 0xff}, want: reject},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body := tt.body
-			if body == nil {
-				body = extractedBody(t)
+			msg := extractedDelivery(t)
+			if tt.messageID != nil {
+				msg.MessageId = *tt.messageID
 			}
-			c := &Consumer{
-				service: &fakeExtractor{err: tt.processErr},
-				dedup:   &fakeDedup{held: map[string]string{}, acquireErr: tt.acquireErr},
+			if tt.body != nil {
+				msg.Body = tt.body
 			}
-			if got := c.handleItemsExtracted(context.Background(), body); got != tt.want {
-				t.Errorf("disposition = %v, want %v", got, tt.want)
+			svc := &fakeExtractor{err: tt.processErr}
+			c := &Consumer{service: svc}
+
+			got := c.handleItemsExtracted(context.Background(), msg)
+
+			if got.disposition != tt.want {
+				t.Fatalf("disposition = %v, want %v", got.disposition, tt.want)
+			}
+			if got.dlqReason != tt.wantReason {
+				t.Fatalf("dlq reason = %q, want %q", got.dlqReason, tt.wantReason)
+			}
+			if tt.want != ack && got.cause == nil {
+				t.Fatal("a failed outcome carries no cause")
+			}
+			if tt.wantNoCalls && svc.calls != 0 {
+				t.Fatalf("service called %d times, want never", svc.calls)
 			}
 		})
 	}
 }
 
-// A retried event is processed again when it comes back, not acked as a
-// duplicate; a stored one is.
-func TestHandleItemsExtracted_RedeliveryAfterFailureIsProcessed(t *testing.T) {
-	extractor := &fakeExtractor{err: commonconstants.ErrTransient}
-	c := &Consumer{service: extractor, dedup: &fakeDedup{held: map[string]string{}}}
-	body := extractedBody(t)
+func ptr(s string) *string { return &s }
 
-	if got := c.handleItemsExtracted(context.Background(), body); got != retry {
-		t.Fatalf("first delivery = %v, want retry", got)
-	}
-	extractor.err = nil
-	if got := c.handleItemsExtracted(context.Background(), body); got != ack {
-		t.Fatalf("redelivery = %v, want ack", got)
-	}
-	if extractor.calls != 2 {
-		t.Errorf("processed %d times, want 2", extractor.calls)
-	}
-	if got := c.handleItemsExtracted(context.Background(), body); got != ack || extractor.calls != 2 {
-		t.Errorf("duplicate after success = %v with %d calls, want ack without processing", got, extractor.calls)
+// The service is handed the MessageId as the event id and items.extracted as
+// the event type, even on a copy redelivered from a delay queue, whose routing
+// key is the work queue's name (FS-BVM9H Req 1, 2).
+func TestHandleItemsExtracted_KeysOnMessageIDAndEventType(t *testing.T) {
+	for _, routingKey := range []string{commonconstants.ItemsExtracted, extractedQueue} {
+		t.Run(routingKey, func(t *testing.T) {
+			svc := &fakeExtractor{}
+			c := &Consumer{service: svc}
+			msg := extractedDelivery(t)
+			msg.RoutingKey = routingKey
+
+			if got := c.handleItemsExtracted(context.Background(), msg); got.disposition != ack {
+				t.Fatalf("disposition = %v, want ack", got.disposition)
+			}
+			if svc.eventID != uuid.MustParse(testMessageID) || svc.eventType != commonconstants.ItemsExtracted {
+				t.Fatalf("processed as %s/%q, want %s/%q", svc.eventID, svc.eventType, testMessageID, commonconstants.ItemsExtracted)
+			}
+		})
 	}
 }
 
-// A rejected event leaves no dedup mark behind, so replaying it from the DLQ
-// after a fix stores it instead of skipping it as a duplicate.
-func TestHandleItemsExtracted_RejectReleasesDedupMark(t *testing.T) {
-	dedup := &fakeDedup{held: map[string]string{}}
-	c := &Consumer{service: &fakeExtractor{err: commonconstants.ErrConstraintViolation}, dedup: dedup}
+// inboxExtractor applies an event only once, as the service's inbox does: a
+// failed attempt leaves no mark, so the retry is applied; an applied event is
+// reported as already processed.
+type inboxExtractor struct {
+	failNext bool
+	applied  map[uuid.UUID]int
+}
 
-	if got := c.handleItemsExtracted(context.Background(), extractedBody(t)); got != reject {
-		t.Fatalf("disposition = %v, want reject", got)
+func (f *inboxExtractor) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, eventType string, req *pb.ItemsExtractedEvent) error {
+	if f.failNext {
+		f.failNext = false
+		return commonconstants.ErrTransient
 	}
-	if len(dedup.held) != 0 {
-		t.Fatalf("dedup marks %v left behind after a rejected event", dedup.held)
+	if f.applied[eventID] > 0 {
+		return commonconstants.ErrAlreadyProcessed
+	}
+	f.applied[eventID]++
+	return nil
+}
+
+// A failed event is applied when its retry comes back, and a redelivery of an
+// applied event is acked without applying it again (FS-BVM9H Edge States).
+func TestHandleItemsExtracted_FailedThenRetriedThenDuplicate(t *testing.T) {
+	svc := &inboxExtractor{failNext: true, applied: map[uuid.UUID]int{}}
+	c := &Consumer{service: svc}
+	msg := extractedDelivery(t)
+
+	for i, want := range []disposition{retry, ack, ack} {
+		if got := c.handleItemsExtracted(context.Background(), msg); got.disposition != want {
+			t.Fatalf("delivery %d = %v, want %v", i+1, got.disposition, want)
+		}
+	}
+	if n := svc.applied[uuid.MustParse(testMessageID)]; n != 1 {
+		t.Fatalf("applied %d times, want once", n)
 	}
 }
 
@@ -162,59 +198,78 @@ type published struct {
 	msg           amqp.Publishing
 }
 
-// fakePublisher records every message forwarded to a retry queue.
+// fakePublisher records every copy the consumer republishes; err is what the
+// republisher reports when the copy is not confirmed.
 type fakePublisher struct {
 	sent []published
 	err  error
 }
 
-func (f *fakePublisher) PublishWithContext(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+func (f *fakePublisher) Republish(ctx context.Context, queue string, msg amqp.Publishing) error {
 	if f.err != nil {
 		return f.err
 	}
-	f.sent = append(f.sent, published{exchange, key, msg})
+	f.sent = append(f.sent, published{"", queue, msg})
 	return nil
 }
 
-func delivery(ack *fakeAcknowledger, headers amqp.Table) amqp.Delivery {
-	return amqp.Delivery{Acknowledger: ack, Headers: headers, Body: []byte("loot"), DeliveryTag: 7}
+func delivery(acker *fakeAcknowledger, headers amqp.Table) amqp.Delivery {
+	return amqp.Delivery{
+		Acknowledger:  acker,
+		Headers:       headers,
+		Body:          []byte("loot"),
+		DeliveryTag:   7,
+		MessageId:     testMessageID,
+		ContentType:   "application/x-protobuf",
+		CorrelationId: "corr-1",
+		Type:          commonconstants.ItemsExtracted,
+		AppId:         "game-service",
+		Timestamp:     time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC),
+	}
 }
 
-// A stored event is acked exactly once; a rejected one is nacked without
-// requeue, so the queue's dead-letter exchange parks it in the DLQ rather than
-// discarding every player's loot.
-func TestSettle_AckAndReject(t *testing.T) {
-	tests := []struct {
-		name      string
-		d         disposition
-		wantAcks  int
-		wantNacks int
-	}{
-		{"stored acked once", ack, 1, 0},
-		{"rejected dead-lettered", reject, 0, 1},
+// assertCopyOf checks a forwarded message is the original event: same body,
+// MessageId (the dedup key, FS-BVM9H Req 5), properties and headers, persistent.
+func assertCopyOf(t *testing.T, got amqp.Publishing, original amqp.Delivery) {
+	t.Helper()
+	if string(got.Body) != string(original.Body) || got.DeliveryMode != amqp.Persistent {
+		t.Fatalf("forwarded %+v, want the same body, persistent", got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pub := &fakePublisher{}
-			c := &Consumer{retries: pub}
-			acker := &fakeAcknowledger{}
+	if got.MessageId != original.MessageId {
+		t.Fatalf("forwarded MessageId %q, want %q preserved", got.MessageId, original.MessageId)
+	}
+	if got.ContentType != original.ContentType || got.CorrelationId != original.CorrelationId ||
+		got.Type != original.Type || got.AppId != original.AppId || !got.Timestamp.Equal(original.Timestamp) {
+		t.Fatalf("forwarded properties %+v, want those of %+v", got, original)
+	}
+	for k, v := range original.Headers {
+		if k == retryCountHeader || k == boundedAttemptsHeader {
+			continue
+		}
+		if got.Headers[k] != v {
+			t.Fatalf("header %q = %v, want %v preserved", k, got.Headers[k], v)
+		}
+	}
+}
 
-			c.settle(context.Background(), delivery(acker, nil), tt.d)
+// A stored or duplicate event is acked exactly once and nothing is published.
+func TestSettle_Ack(t *testing.T) {
+	pub := &fakePublisher{}
+	c := &Consumer{broker: pub}
+	acker := &fakeAcknowledger{}
 
-			if acker.acks != tt.wantAcks || acker.nacks != tt.wantNacks || acker.requeued {
-				t.Fatalf("settled %+v, want %d acks %d nacks never requeued", acker, tt.wantAcks, tt.wantNacks)
-			}
-			if len(pub.sent) != 0 {
-				t.Fatalf("forwarded %v, want nothing", pub.sent)
-			}
-		})
+	c.settle(context.Background(), delivery(acker, nil), outcome{disposition: ack})
+
+	if acker.acks != 1 || acker.nacks != 0 || len(pub.sent) != 0 {
+		t.Fatalf("settled %+v, published %v, want one ack and nothing published", acker, pub.sent)
 	}
 }
 
 // A retry never requeues in place: the event waits out a delay in the next
 // retry queue, whose TTL dead-letters it back to the work queue, and the delay
 // stops growing at the last step, so an outage of any length is waited out
-// without a hot loop.
+// without a hot loop. The copy keeps the original MessageId, or the retried
+// event would be rejected as missing one (FS-BVM9H Req 5).
 func TestSettle_Retry_ForwardsWithBackoff(t *testing.T) {
 	last := len(retryDelays) - 1
 	tests := []struct {
@@ -224,16 +279,18 @@ func TestSettle_Retry_ForwardsWithBackoff(t *testing.T) {
 		wantCount int32
 	}{
 		{"first failure", nil, retryQueueName(0), 1},
-		{"second failure", amqp.Table{retryCountHeader: int32(1)}, retryQueueName(1), 2},
+		{"second failure", amqp.Table{retryCountHeader: int32(1), "trace": "abc"}, retryQueueName(1), 2},
 		{"past the last step stays at it", amqp.Table{retryCountHeader: int64(last + 5)}, retryQueueName(last), int32(last + 6)},
+		{"far past every bounded cap still retries", amqp.Table{retryCountHeader: int32(500)}, retryQueueName(last), 501},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pub := &fakePublisher{}
-			c := &Consumer{retries: pub}
+			c := &Consumer{broker: pub}
 			acker := &fakeAcknowledger{}
+			msg := delivery(acker, tt.headers)
 
-			c.settle(context.Background(), delivery(acker, tt.headers), retry)
+			c.settle(context.Background(), msg, outcome{disposition: retry, cause: commonconstants.ErrTransient})
 
 			if len(pub.sent) != 1 {
 				t.Fatalf("forwarded %d messages, want 1", len(pub.sent))
@@ -245,9 +302,7 @@ func TestSettle_Retry_ForwardsWithBackoff(t *testing.T) {
 			if got.msg.Headers[retryCountHeader] != tt.wantCount {
 				t.Fatalf("retry count %v, want %d", got.msg.Headers[retryCountHeader], tt.wantCount)
 			}
-			if string(got.msg.Body) != "loot" || got.msg.DeliveryMode != amqp.Persistent {
-				t.Fatalf("forwarded %+v, want the same body, persistent", got.msg)
-			}
+			assertCopyOf(t, got.msg, msg)
 			if acker.acks != 1 || acker.nacks != 0 {
 				t.Fatalf("original settled %+v, want acked once after the forward", acker)
 			}
@@ -255,16 +310,151 @@ func TestSettle_Retry_ForwardsWithBackoff(t *testing.T) {
 	}
 }
 
-// If the retry cannot be forwarded the broker is in trouble; the original goes
+// If the copy cannot be published the broker is in trouble; the original goes
 // back to its queue rather than being lost.
-func TestSettle_Retry_ForwardFails_ReturnsToQueue(t *testing.T) {
-	c := &Consumer{retries: &fakePublisher{err: errors.New("channel closed")}}
+func TestSettle_PublishFails_ReturnsToQueue(t *testing.T) {
+	for _, d := range []disposition{retry, retryBounded} {
+		t.Run(d.String(), func(t *testing.T) {
+			c := &Consumer{broker: &fakePublisher{err: errors.New("channel closed")}}
+			acker := &fakeAcknowledger{}
+
+			c.settle(context.Background(), delivery(acker, nil), outcome{disposition: d, cause: errors.New("boom")})
+
+			if acker.acks != 0 || acker.nacks != 1 || !acker.requeued {
+				t.Fatalf("settled %+v, want one nack with requeue", acker)
+			}
+		})
+	}
+}
+
+// A rejected event is dead-lettered with a reason: the consumer publishes the
+// copy to the DLQ itself (a plain nack cannot add headers), then acks.
+func TestSettle_Reject_DeadLettersWithReason(t *testing.T) {
+	pub := &fakePublisher{}
+	c := &Consumer{broker: pub}
+	acker := &fakeAcknowledger{}
+	msg := delivery(acker, amqp.Table{retryCountHeader: int32(2), boundedAttemptsHeader: int32(1), "trace": "abc"})
+
+	c.settle(context.Background(), msg, rejected(dlqReasonMalformed, errors.New("bad member id")))
+
+	if len(pub.sent) != 1 {
+		t.Fatalf("published %d messages, want 1", len(pub.sent))
+	}
+	got := pub.sent[0]
+	if got.exchange != "" || got.key != deadLetterQueue {
+		t.Fatalf("dead-lettered to %q/%q, want default exchange/%q", got.exchange, got.key, deadLetterQueue)
+	}
+	assertCopyOf(t, got.msg, msg)
+	if got.msg.Headers[retryCountHeader] != int32(2) ||
+		got.msg.Headers[boundedAttemptsHeader] != int32(1) ||
+		got.msg.Headers[dlqReasonHeader] != dlqReasonMalformed ||
+		got.msg.Headers[lastErrorHeader] != "bad member id" {
+		t.Fatalf("dead-letter headers %v, want count 2, bounded attempts 1, reason %q, last error", got.msg.Headers, dlqReasonMalformed)
+	}
+	if acker.acks != 1 || acker.nacks != 0 {
+		t.Fatalf("original settled %+v, want acked once after dead-lettering", acker)
+	}
+}
+
+// If the DLQ copy cannot be published the original is nacked without requeue,
+// so the work queue's own dead-letter exchange still parks it in the DLQ.
+func TestSettle_Reject_PublishFails_FallsBackToDeadLetterExchange(t *testing.T) {
+	c := &Consumer{broker: &fakePublisher{err: errors.New("channel closed")}}
 	acker := &fakeAcknowledger{}
 
-	c.settle(context.Background(), delivery(acker, nil), retry)
+	c.settle(context.Background(), delivery(acker, nil), rejected(dlqReasonMissingMessageID, errors.New("no id")))
 
-	if acker.acks != 0 || acker.nacks != 1 || !acker.requeued {
-		t.Fatalf("settled %+v, want one nack with requeue", acker)
+	if acker.acks != 0 || acker.nacks != 1 || acker.requeued {
+		t.Fatalf("settled %+v, want one nack without requeue", acker)
+	}
+}
+
+// A bounded retry retries like any other until its own attempts run out, then
+// is dead-lettered as retries_exhausted with the last error and both counts.
+// Only bounded failures count toward the cap: retries spent waiting out an
+// outage (x-retry-count) never use up an event's attempts at a missing
+// reference, though they still pick the delay step.
+func TestSettle_RetryBounded(t *testing.T) {
+	last := len(retryDelays) - 1
+	tests := []struct {
+		name                string
+		retriesDone         int32 // x-retry-count on the delivery
+		boundedDone         int32 // x-bounded-attempts on the delivery
+		wantdeadLetterQueue bool
+		wantRetries         int32 // x-retry-count on the published copy
+		wantAttempts        int32 // x-bounded-attempts on the published copy
+	}{
+		{"first failure retries", 0, 0, false, 1, 1},
+		{"second to last attempt retries", int32(maxBoundedAttempts - 2), int32(maxBoundedAttempts - 2), false, int32(maxBoundedAttempts - 1), int32(maxBoundedAttempts - 1)},
+		{"nine outage retries then a first missing reference retries", 9, 0, false, 10, 1},
+		{"tenth bounded attempt dead-letters", 9, int32(maxBoundedAttempts - 1), true, 9, int32(maxBoundedAttempts)},
+		{"tenth bounded attempt after a long outage dead-letters", 40, int32(maxBoundedAttempts - 1), true, 40, int32(maxBoundedAttempts)},
+		{"past the cap dead-letters", int32(maxBoundedAttempts + 3), int32(maxBoundedAttempts + 3), true, int32(maxBoundedAttempts + 3), int32(maxBoundedAttempts + 4)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pub := &fakePublisher{}
+			c := &Consumer{broker: pub}
+			acker := &fakeAcknowledger{}
+			headers := amqp.Table{retryCountHeader: tt.retriesDone, "trace": "abc"}
+			if tt.boundedDone > 0 {
+				headers[boundedAttemptsHeader] = tt.boundedDone
+			}
+			msg := delivery(acker, headers)
+
+			c.settle(context.Background(), msg, outcome{disposition: retryBounded, cause: errors.New("fk template")})
+
+			if len(pub.sent) != 1 || acker.acks != 1 || acker.nacks != 0 {
+				t.Fatalf("published %d, settled %+v, want one copy then one ack", len(pub.sent), acker)
+			}
+			got := pub.sent[0]
+			assertCopyOf(t, got.msg, msg)
+			if got.msg.Headers[retryCountHeader] != tt.wantRetries {
+				t.Fatalf("retry count %v, want %d", got.msg.Headers[retryCountHeader], tt.wantRetries)
+			}
+			if got.msg.Headers[boundedAttemptsHeader] != tt.wantAttempts {
+				t.Fatalf("bounded attempts %v, want %d", got.msg.Headers[boundedAttemptsHeader], tt.wantAttempts)
+			}
+			if !tt.wantdeadLetterQueue {
+				if want := retryQueueName(min(int(tt.retriesDone), last)); got.key != want {
+					t.Fatalf("forwarded to %q, want %q", got.key, want)
+				}
+				return
+			}
+			if got.key != deadLetterQueue {
+				t.Fatalf("published to %q, want the DLQ %q", got.key, deadLetterQueue)
+			}
+			if got.msg.Headers[dlqReasonHeader] != dlqReasonRetriesExhausted ||
+				got.msg.Headers[lastErrorHeader] != "fk template" {
+				t.Fatalf("dead-letter headers %v, want retries_exhausted with the last error", got.msg.Headers)
+			}
+		})
+	}
+}
+
+// An unbounded retry leaves the bounded attempts alone: waiting out an outage
+// spends none of them.
+func TestSettle_Retry_KeepsBoundedAttempts(t *testing.T) {
+	pub := &fakePublisher{}
+	c := &Consumer{broker: pub}
+	acker := &fakeAcknowledger{}
+	msg := delivery(acker, amqp.Table{retryCountHeader: int32(4), boundedAttemptsHeader: int32(3)})
+
+	c.settle(context.Background(), msg, outcome{disposition: retry, cause: commonconstants.ErrTransient})
+
+	if len(pub.sent) != 1 {
+		t.Fatalf("published %d messages, want 1", len(pub.sent))
+	}
+	got := pub.sent[0].msg.Headers
+	if got[retryCountHeader] != int32(5) || got[boundedAttemptsHeader] != int32(3) {
+		t.Fatalf("headers %v, want retry count 5 and bounded attempts still 3", got)
+	}
+}
+
+// A bounded retry gets ten attempts in all.
+func TestMaxBoundedAttempts(t *testing.T) {
+	if maxBoundedAttempts != 10 {
+		t.Fatalf("maxBoundedAttempts = %d, want 10", maxBoundedAttempts)
 	}
 }
 
@@ -356,6 +546,59 @@ func TestDeclareExtractedTopology(t *testing.T) {
 		}
 		if _, bound := topo.bindings[retryQueueName(step)]; bound {
 			t.Fatalf("retry queue %q is bound to an exchange", retryQueueName(step))
+		}
+	}
+}
+
+// The original is acked only once its copy is confirmed. A copy that is not
+// (a publish error, a broker nack, a confirm that never comes, an unroutable
+// return) leaves the original unacked: a retry goes back to its queue, a dead
+// letter is nacked to the work queue's own dead-letter exchange, so neither is
+// lost (FS-BVM9H Req 5).
+func TestSettle_AcksOnlyAfterConfirm(t *testing.T) {
+	notConfirmed := []struct {
+		name string
+		err  error
+	}{
+		{"publish error", fmt.Errorf("publish copy: %w", amqp.ErrClosed)},
+		{"nacked", fmt.Errorf("publish copy: %w", errNacked)},
+		{"confirm timed out", fmt.Errorf("await confirm: %w", context.DeadlineExceeded)},
+		{"returned unroutable", fmt.Errorf("publish copy: %w", errUnroutable)},
+	}
+	settlements := []struct {
+		name        string
+		outcome     outcome
+		headers     amqp.Table
+		wantRequeue bool
+	}{
+		{"retry", outcome{disposition: retry, cause: commonconstants.ErrTransient}, nil, true},
+		{"bounded retry", outcome{disposition: retryBounded, cause: commonconstants.ErrNotFound}, nil, true},
+		{"reject", rejected(dlqReasonMalformed, errors.New("bad")), nil, false},
+		{"bounded retries exhausted", outcome{disposition: retryBounded, cause: commonconstants.ErrNotFound},
+			amqp.Table{boundedAttemptsHeader: int32(maxBoundedAttempts - 1)}, false},
+	}
+	for _, st := range settlements {
+		t.Run(st.name+"/confirmed", func(t *testing.T) {
+			acker := &fakeAcknowledger{}
+			c := &Consumer{broker: &fakePublisher{}}
+
+			c.settle(context.Background(), delivery(acker, st.headers), st.outcome)
+
+			if acker.acks != 1 || acker.nacks != 0 {
+				t.Fatalf("settled %+v, want one ack after the confirm", acker)
+			}
+		})
+		for _, nc := range notConfirmed {
+			t.Run(st.name+"/"+nc.name, func(t *testing.T) {
+				acker := &fakeAcknowledger{}
+				c := &Consumer{broker: &fakePublisher{err: nc.err}}
+
+				c.settle(context.Background(), delivery(acker, st.headers), st.outcome)
+
+				if acker.acks != 0 || acker.nacks != 1 || acker.requeued != st.wantRequeue {
+					t.Fatalf("settled %+v, want one nack, requeue %v, and no ack", acker, st.wantRequeue)
+				}
+			})
 		}
 	}
 }

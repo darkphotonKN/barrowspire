@@ -19,14 +19,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// mockOutboxPublisher implements commonoutbox.OutboxPublisher.
-// formatMatchData doesn't actually call into it — this exists only so
-// NewService can be constructed for unit tests.
+// mockOutboxPublisher implements OutboxWriter and records nothing; it exists
+// only so NewService can be constructed for unit tests.
 type mockOutboxPublisher struct{}
-
-func (m *mockOutboxPublisher) CreateOutbox(_ context.Context, _ commonoutbox.OutboxParams) error {
-	return nil
-}
 
 func (m *mockOutboxPublisher) CreateOutboxTx(_ context.Context, _ *sqlx.Tx, _ commonoutbox.OutboxParams) error {
 	return nil
@@ -126,7 +121,7 @@ func TestFormatMatchData(t *testing.T) {
 		},
 	}
 
-	svc := NewService(&mockOutboxPublisher{})
+	svc := NewService(committingTxDB(t), &mockOutboxPublisher{})
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -197,7 +192,6 @@ func TestFormatMatchData(t *testing.T) {
 var (
 	serviceName = "stats"
 	grpcAddr    = commonhelpers.GetEnvString("GRPC_STATS_ADDR", "7124")
-	consulAddr  = commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
 
 	amqpUser     = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
 	amqpPassword = commonhelpers.GetEnvString("RABBITMQ_PASS", "guest")

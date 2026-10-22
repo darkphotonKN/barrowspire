@@ -237,12 +237,33 @@ class ApiClient {
     );
   }
 
+  // Buys a listing outright at its buyout price (FS-49Z37 req 8–10). 202 with an empty body: the
+  // sale settles asynchronously. The key is one per buyout intent, reused on every resend of it
+  // (ADR-0026), so a resend after a landed buyout is recognised, not charged twice.
+  async buyout(listingId: string, amount: number, idempotencyKey: string): Promise<void> {
+    unwrap(
+      await client.POST("/api/marketplace/listings/{listing_id}/buyout", {
+        params: {
+          path: { listing_id: listingId },
+          header: { "Idempotency-Key": idempotencyKey },
+        },
+        body: { amount },
+      }),
+    );
+  }
+
   // Puts a relic up for auction (FS-8EGFA req 25). 202 with an empty body: the listing appears
   // once marketplace has reserved the item, so the caller polls `listMyListings` for it.
-  async createListing(itemId: string, startPrice: number, endsAt: string): Promise<void> {
+  // A buyout price is sent only when set; none is a plain auction (FS-49Z37 req 1).
+  async createListing(
+    itemId: string,
+    startPrice: number,
+    endsAt: string,
+    buyoutPrice?: number,
+  ): Promise<void> {
     unwrap(
       await client.POST("/api/marketplace/listings", {
-        body: { itemId, startPrice, endsAt },
+        body: { itemId, startPrice, endsAt, ...(buyoutPrice === undefined ? {} : { buyoutPrice }) },
       }),
     );
   }
@@ -253,6 +274,36 @@ class ApiClient {
     return unwrap(
       await client.GET("/api/marketplace/listings/mine", {
         params: { query: { cursor } },
+      }),
+    );
+  }
+
+  // One page of the signed-in delver's own bids, newest first, each with its listing summary and
+  // item joined (FS-EYQ8K req 1–7).
+  async listMyBids(cursor?: string) {
+    return unwrap(
+      await client.GET("/api/marketplace/bids/mine", {
+        params: { query: { cursor } },
+      }),
+    );
+  }
+
+  // Ends the signed-in seller's auction early at its leading bid (FS-49Z37 req 15). No key, no
+  // body; 202 with an empty body once settlement has started.
+  async acceptBid(listingId: string): Promise<void> {
+    unwrap(
+      await client.POST("/api/marketplace/listings/{listing_id}/accept", {
+        params: { path: { listing_id: listingId } },
+      }),
+    );
+  }
+
+  // Withdraws one of the signed-in delver's leading or outbid bids, releasing its hold (FS-EYQ8K
+  // req 12; ADR-0029). No key, no body; 204 with an empty body.
+  async withdrawBid(listingId: string, bidId: string): Promise<void> {
+    unwrap(
+      await client.DELETE("/api/marketplace/listings/{listing_id}/bids/{bid_id}", {
+        params: { path: { listing_id: listingId, bid_id: bidId } },
       }),
     );
   }

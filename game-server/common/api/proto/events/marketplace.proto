@@ -1,0 +1,18 @@
+syntax = "proto3";
+package events;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/events";
+
+// SettlementFailedEvent is the alert for a settlement that parked or rolled back
+// (FS-NXP1W Req 10, 12; ADR-0018). It carries only the alert: the saga's
+// position stays in its open workflow, the record in settlement_exceptions.
+message SettlementFailedEvent {
+  string exception_id = 1;
+  string listing_id   = 2;
+  string workflow_id  = 3;
+  string step         = 4; // the activity that exhausted its cap or reported an impossibility
+  string reason       = 5;
+  google.protobuf.Timestamp occurred_at = 6;
+}

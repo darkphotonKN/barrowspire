@@ -1,5 +1,5 @@
 /**
- * The status a listing shows under Mine (FS-8EGFA req 23).
+ * The status a listing shows, under Mine and on the detail (FS-8EGFA req 23, FS-49Z37 req 18).
  *
  * `ended` is a read-side fact the server sets on an ACTIVE listing past its end time, so it only
  * changes what an ACTIVE listing says: a listing already settling, sold or withdrawn keeps its
@@ -8,7 +8,7 @@
 
 const LABELS: Record<string, string> = {
   ACTIVE: "Active",
-  PENDING_SETTLEMENT: "Settling",
+  PENDING_SETTLEMENT: "Sold — settling",
   SOLD: "Sold",
   CANCELLED: "Withdrawn",
 };

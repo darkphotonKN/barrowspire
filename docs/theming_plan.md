@@ -23,8 +23,16 @@ plan/status; the design guideline is the spec.
 - **Typography: fully medieval.** Pirata One (blackletter) for display/titles, EB Garamond for
   HUD/body. No bitmap font. The cleaner classical serif (Cinzel-style) was **dropped as too
   modern**.
-- **Palette: the barrow ramp** (warm torch amber/ember against cold charcoal/umber darks,
-  arcane lich green, oxblood, brass, vellum). Full values live in the design guideline.
+- **Two palettes, one per medium**
+  ([ADR-0025](adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md)). They are not
+  required to agree, so going from the menus into a delve is a deliberate change of register.
+  Full values live in the design guideline.
+  - **Game canvas: the barrow ramp** (warm torch amber/ember against cold charcoal/umber darks,
+    arcane lich green, oxblood, brass, vellum), in `BARROW` / `BARROW_HEX`. Guideline Part I.
+  - **Web UI: Bone & Soot** (bone `#e9dfc9` as the one torch per view, on neutral soot `#121212`,
+    with grey stone surfaces and iron structure), plus the token-derived **Atmosphere** layer.
+    Chosen by eye from a live comparison of 18 palettes on the home page, 2026-10-21. Defined in
+    `globals.css` `:root` and mirrored by the UI table in `theme.ts`. Guideline Part II.
 
 ---
 
@@ -39,6 +47,14 @@ plan/status; the design guideline is the spec.
 - Slice 3: world art in scenes, occlusion, light-map lighting.
 - Slice 4: container view (satchel).
 - Slice 5: characters and creatures, including the default wizard (authored in code, ADR-0021).
+
+### ✅ Done: [FS-8TCN2](specs/8TCN2-bone-and-soot-web-ui-palette.md) (Bone & Soot web UI palette, ADR-0025)
+- Slice 1: amend the design guideline, `game-client/CLAUDE.md` and this plan for a separate UI
+  palette (done).
+- Slice 2: retire raw palette rgba literals and extend the CSS fence (done).
+- Slice 3: swap in the Bone & Soot tokens, split the UI table from `BARROW`, measure contrast in
+  the browser (done).
+- Slice 4: the Atmosphere layer (done).
 
 ### ⏳ Planned / Not Started
 - **Fully medieval typography** wired into the canvas (Pirata One display + EB Garamond body).

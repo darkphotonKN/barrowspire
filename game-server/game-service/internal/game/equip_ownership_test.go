@@ -65,7 +65,7 @@ func TestHandleEquip_ItemNotCarried_IsRefusedForEverySlot(t *testing.T) {
 			return s.AddContainer(400, 400)
 		},
 		"another delver": func(t *testing.T, s *Session) uuid.UUID {
-			return s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Kaelen", Class: "mage", Level: 3})
+			return s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Kaelen", Class: "mage", Level: 3}, "")
 		},
 	}
 
@@ -74,7 +74,7 @@ func TestHandleEquip_ItemNotCarried_IsRefusedForEverySlot(t *testing.T) {
 			for _, satchel := range []string{"empty satchel", "carrying something"} {
 				t.Run(holderName+"/"+slotName+"/"+satchel, func(t *testing.T) {
 					s, _ := equipRun(t, nil)
-					playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+					playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 					if satchel == "carrying something" {
 						carried(t, s, playerEntityID, types.ItemConfig{TemplateID: uuid.New(), ItemType: types.ItemTypeConsumable, Name: "Bread"})
 					}
@@ -106,7 +106,7 @@ func TestHandleEquip_UnequipItemNotWorn_IsRefusedForEverySlot(t *testing.T) {
 	for slotName, config := range oneOfEverySlot() {
 		t.Run(slotName, func(t *testing.T) {
 			s, _ := equipRun(t, nil)
-			playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+			playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 			pileID := s.AddContainer(400, 400)
 			itemID := s.AddItem(config)
 			pile := itemList(t, s, pileID)
@@ -128,7 +128,7 @@ func TestHandleEquip_OccupiedSingleSlot_ReturnsTheWornItemToTheSatchel(t *testin
 	for _, slotName := range []string{"weapon", "head", "chest", "gloves", "legs"} {
 		t.Run(slotName, func(t *testing.T) {
 			s, _ := equipRun(t, nil)
-			playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3})
+			playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
 			first := carried(t, s, playerEntityID, oneOfEverySlot()[slotName])
 			second := carried(t, s, playerEntityID, oneOfEverySlot()[slotName])
 

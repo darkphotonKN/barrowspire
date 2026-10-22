@@ -43,11 +43,12 @@ export function useListRelic({
 
   const { reload: reloadInstances } = instances;
   const submit = useCallback(
-    (itemId: string, startPrice: number, duration: DurationId) =>
+    (itemId: string, startPrice: number, buyoutPrice: number | undefined, duration: DurationId) =>
       postListing(
-        { itemId, startPrice, duration },
+        { itemId, startPrice, buyoutPrice, duration },
         {
-          createListing: (id, price, endsAt) => apiClient.createListing(id, price, endsAt),
+          createListing: (id, price, endsAt, buyout) =>
+            apiClient.createListing(id, price, endsAt, buyout),
           onPosted: () => {
             setOpen(false);
             setNotice(POSTED);

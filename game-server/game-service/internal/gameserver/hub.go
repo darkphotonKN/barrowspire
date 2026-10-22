@@ -35,17 +35,19 @@ type SessionManager interface {
 	GetGameSession(id uuid.UUID) (*game.Session, bool)
 	GetServerChan() chan types.ClientPackage
 	AddPlayer(*types.Player) error
+	RemovePlayerFromQueue(*types.Player) error
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
 	EnterHub(ctx context.Context, conn *websocket.Conn, characterID string) (*game.Session, error)
 	PlayerByID(playerID uuid.UUID) (*types.Player, bool)
 	JoinHub(conn *websocket.Conn, character types.CharacterInPlay) (*game.Session, error)
 	GetMatchedChan(ctx context.Context) chan []*types.Player
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
+	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
-// every one of these means the server's own record is missing or stale — never
-// that the client said something wrong.
+// each of these means the server's own record is missing or stale. None of
+// them mean the client said something wrong.
 var (
 	errPlayerNotFound     = errors.New("no player registered for this connection")
 	errPlayerNotInSession = errors.New("player is not in a game session")
@@ -58,6 +60,10 @@ var (
 var (
 	errNoCharacter           = errors.New("no character id to enter with")
 	errCharactersUnavailable = errors.New("character service unavailable")
+
+	// the queue entry holds the character the run is built from, so it cannot
+	// change while queued. FS-K2HKP §Requirements 7a.
+	errCharacterSwitchWhileQueued = errors.New("character switch while queued")
 )
 
 // characterResolveTimeout bounds how long entry waits on character-service
@@ -78,6 +84,8 @@ func enterHubRefusal(err error) string {
 		return "Characters are unavailable right now. Try again shortly."
 	case errors.Is(err, game.ErrCharacterSwitchMidRun):
 		return "You cannot change character during a delve."
+	case errors.Is(err, errCharacterSwitchWhileQueued):
+		return "Leave the queue before changing character."
 	default:
 		return "Could not enter"
 	}
@@ -211,16 +219,14 @@ func (h *messageHub) Run(ctx context.Context) {
 			}
 
 			// --- MENU RELATED ACTIONS ---
-			// These actions will be actions for before game initialization happens.
+			// These actions will be actions for before game initialization happens
 			switch messageAction {
 
-			// NOTE: a player who has picked a character asks to enter the hub
 			case constants.ActionEnterHub:
 				// The request names the character by id; who it is comes from
 				// character-service, never the payload. FS-BDA7X §Requirements 5.
 				go h.enterHub(clientPackage)
 
-			// NOTE: queues a player for a game
 			case constants.ActionFindGame:
 				slog.Debug("ActionFindGame")
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
@@ -265,7 +271,7 @@ func (h *messageHub) Run(ctx context.Context) {
 					queueErr := err.Error()
 					message := "Error occured when attempting to queue player"
 
-					if errors.Is(err, game.ErrPlayerAlreadyInQueue) {
+					if errors.Is(err, matchmaker.ErrPlayerAlreadyQueued) {
 						message = "Player attempted to queue twice."
 						// TODO: send error
 						continue
@@ -305,13 +311,30 @@ func (h *messageHub) Run(ctx context.Context) {
 					"player_id", player.ID,
 				)
 
-				h.sender.SendMessageToPlayer(player.ID, types.Message{
-					Action: clientPackage.Message.Action,
-					Payload: map[string]interface{}{
-						"message":   "Successfully left the queue",
-						"player_id": player.ID.String(),
-					},
-				})
+				// removal can retry for a while, so it runs off the hub loop; the reply
+				// waits for it, so "left" is only ever said once it is true.
+				// FS-K2HKP §Requirements 7.
+				go func(conn *websocket.Conn, player *types.Player, action string) {
+					if err := h.sessionManager.RemovePlayerFromQueue(player); err != nil {
+						slog.Error("failed to remove player from queue", "player_id", player.ID, "err", err)
+
+						leaveErr := "Could not leave the queue, please try again."
+						h.sender.SendMessageToConn(conn, types.Message{
+							Action:  action,
+							Payload: map[string]interface{}{"message": leaveErr},
+							Error:   &leaveErr,
+						})
+						return
+					}
+
+					h.sender.SendMessageToConn(conn, types.Message{
+						Action: action,
+						Payload: map[string]interface{}{
+							"message":   "Successfully left the queue",
+							"player_id": player.ID.String(),
+						},
+					})
+				}(clientPackage.Conn, player, clientPackage.Message.Action)
 
 			default:
 				err := "Unknown action"
@@ -361,7 +384,12 @@ func (h *messageHub) Run(ctx context.Context) {
 						"total":   status.Total,
 					},
 				})
+
+		// handoff takes match ready players that shouldn't connect to this pod to reconnect
+		case handoff := <-h.sessionManager.GetHandoffChan(ctx):
+			slog.Debug("handoff received", "handoff", handoff)
 		}
+
 	}
 }
 
@@ -401,9 +429,10 @@ func (h *messageHub) handlePlayerExistingGame(player *types.Player, clientPackag
 		session, exists := h.sessionManager.GetGameSession(player.CurrentGameSessionId)
 
 		// Standing in the hub is not being in a game. This check predates the hub,
-		// when the only session anyone could be in was a run, so every delver now
-		// looked like they had one in progress — and asking to descend resumed them
-		// into the world they were already standing in instead of queuing them.
+		// when a run was the only session anyone could be in. Once the hub existed,
+		// every delver looked like they had a run in progress, and asking to descend
+		// resumed them into the world they were already standing in instead of
+		// queuing them.
 		if exists && session.WorldType() == types.WorldTypeHub {
 			slog.Debug("Player is in the hub, which is not a game to resume", "player_id", player.ID)
 			return commonconstants.ErrGameDoesntExist

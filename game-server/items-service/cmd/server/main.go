@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"log/slog"
 	"net"
@@ -14,14 +15,13 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
 	"github.com/darkphotonKN/barrowspire-server/common/temporal/smoke"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/items-service/config"
+	"github.com/darkphotonKN/barrowspire-server/items-service/grpc/auth"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -37,7 +37,7 @@ var (
 
 	serviceName    = "items"
 	grpcAddr       = commonhelpers.GetEnvString("GRPC_ITEMS_ADDR", "7126")
-	consulAddr     = commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
+	authAddr       = commonhelpers.GetEnvString("AUTH_ADDR", "localhost:7116")
 	serviceVersion = commonhelpers.GetEnvString("SERVICE_VERSION", "1.0.0")
 
 	amqpUser     = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
@@ -49,11 +49,6 @@ var (
 func main() {
 	db := config.InitDB()
 	defer db.Close()
-
-	registry, err := consul.NewRegistry(consulAddr, serviceName)
-	if err != nil {
-		log.Fatal("Failed to create Consul registry")
-	}
 
 	ctx := context.Background()
 
@@ -78,28 +73,10 @@ func main() {
 	// slog.Info("Debugging get item template", "itemData", itemData)
 	// end test
 
-	instanceID := discovery.GenerateInstanceID(serviceName)
-
-	if err := registry.Register(ctx, instanceID, serviceName, "localhost:"+grpcAddr); err != nil {
-		log.Printf("\nError when registering service:\n\n%s\n\n", err)
-		panic(err)
-	}
-
-	go func() {
-		for {
-			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
-				log.Fatal("Health check failed.")
-			}
-			time.Sleep(time.Second * 1)
-		}
-	}()
-
-	defer registry.Deregister(ctx, instanceID, serviceName)
-
 	// --- grpc ---
 	// grpcServer := grpc.NewServer()
 
-	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
+	listener, err := net.Listen("tcp", ":"+grpcAddr)
 	if err != nil {
 		log.Fatalf(
 			"Failed to listen at port: %s\nError: %s\n", grpcAddr, err,
@@ -112,23 +89,9 @@ func main() {
 	// setup endpoint for metrics collection
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		log.Println("Metrics server started on :7126")
-		http.ListenAndServe(":7126", nil)
+		log.Println("Metrics server started on :8197")
+		http.ListenAndServe(":8197", nil)
 	}()
-
-	// --- redis setup ---
-	err = config.InitRedis(config.RedisConfig{
-		Mode:         commonhelpers.GetEnvString("REDIS_MODE", "standalone"),
-		Addrs:        []string{commonhelpers.GetEnvString("REDIS_ADDR", "localhost:6492")},
-		Password:     commonhelpers.GetEnvString("REDIS_PASSWORD", ""),
-		DB:           0,
-		PoolSize:     10,
-		MinIdleConns: 5,
-	})
-	if err != nil {
-		log.Fatalf("Failed to initialize Redis: %v", err)
-	}
-	defer config.CloseRedis()
 
 	ch, close := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
 
@@ -154,7 +117,37 @@ func main() {
 
 	go outboxWorker.Run(workerCtx)
 	// Use the new config setup to initialize all services
-	grpcServer, activities := config.SetupServices(ctx, db, ch, registry)
+	authClient, err := auth.NewClient(authAddr)
+	if err != nil {
+		log.Fatalf("Failed to create auth client: %s", err)
+	}
+	defer func() {
+		if err := authClient.Close(); err != nil {
+			slog.Error("close auth client", "error", err)
+		}
+	}()
+
+	// The consumer republishes retries and dead letters on a connection of its
+	// own: a channel in confirm mode, apart from the shared one, and kept off
+	// the consuming connection so broker flow control on publishes cannot stall
+	// consumption.
+	republishConn, republishCh, err := config.InitializeAMQPConnection(
+		fmt.Sprintf("amqp://%s:%s@%s:%s", amqpUser, amqpPassword, amqpHost, amqpPort))
+	if err != nil {
+		slog.Error("failed to open the consumer's republish connection", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := republishConn.Close(); err != nil {
+			slog.Error("close republish connection", "error", err)
+		}
+	}()
+
+	grpcServer, activities, err := config.SetupServices(ctx, db, ch, republishCh, authClient)
+	if err != nil {
+		slog.Error("failed to set up items service", "error", err)
+		os.Exit(1)
+	}
 
 	// --- temporal worker ---
 	// Items owns the data behind its settlement steps, so its activities run in
@@ -179,6 +172,8 @@ func main() {
 
 		activities.FreezeItemActivity.Register,
 		activities.ReturnItemActivity.Register,
+		activities.TransferItemActivity.Register,
+		activities.UnfreezeItemActivity.Register,
 	)
 	if err != nil {
 		log.Fatalf("Failed to build temporal worker: %s", err)

@@ -56,6 +56,11 @@ type Server struct {
 	// [active connections] to player
 	connToPlayer map[*websocket.Conn]*types.Player
 
+	// the reconnect grace each dropped member is held under, by member, and
+	// the last hold handed out
+	graceHolds    map[uuid.UUID]graceHold
+	lastGraceHold graceHold
+
 	mu sync.RWMutex
 
 	queue QueueManager
@@ -89,6 +94,8 @@ type QueueManager interface {
 	PlayerRemoveQueue(ctx context.Context, player *types.Player) error
 	GetMatchedChan(ctx context.Context) chan []*types.Player
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
+	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
+	QueuedCharacter(ctx context.Context, playerID uuid.UUID) (characterID uuid.UUID, queued bool, err error)
 }
 
 func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient, characters CharacterReader) *Server {
@@ -109,6 +116,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		sessions:     make(map[uuid.UUID]*game.Session, 10),
 		players:      make(map[uuid.UUID]*types.Player, 10),
 		connToPlayer: make(map[*websocket.Conn]*types.Player, 10),
+		graceHolds:   make(map[uuid.UUID]graceHold),
 
 		queue:        queueService,
 		authClient:   authClient,
@@ -186,6 +194,18 @@ func (s *Server) EnterHub(ctx context.Context, conn *websocket.Conn, characterID
 		return nil, fmt.Errorf("character id %q: %w", characterID, types.ErrCharacterNotFound)
 	}
 
+	// The queue entry carries the character the run is built from, so a queued
+	// player keeps it until they leave the queue. An unreadable queue lets them
+	// in: queueing needs it too, so nobody can have joined while it is down.
+	// FS-K2HKP §Requirements 7a.
+	queuedID, queued, err := s.queue.QueuedCharacter(ctx, player.ID)
+	if err != nil {
+		slog.Warn("Could not read queue entry on enter_hub, letting them in", "player_id", player.ID, "error", err)
+	}
+	if queued && queuedID != id {
+		return nil, fmt.Errorf("queued as %s, entering as %s: %w", queuedID, id, errCharacterSwitchWhileQueued)
+	}
+
 	character, err := s.characters.GetCharacter(ctx, player.ID, id)
 	if errors.Is(err, types.ErrCharacterNotFound) {
 		return nil, err
@@ -229,7 +249,7 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.CharacterInPlay) 
 	// out here would mean holding the server's lock over data the session owns,
 	// which serialises JoinHub against itself and nothing else, so the next path
 	// into the hub would sidestep the cap without noticing.
-	if err := hub.Admit(player.ID, character); err != nil {
+	if err := hub.Admit(player.ID, character, s.tokenOf(player)); err != nil {
 		return nil, err
 	}
 
@@ -251,7 +271,7 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.CharacterInPlay) 
 * Records which world a player is in, across every copy of them.
 *
 * MapConnToPlayer stores the player by value, so connToPlayer holds a different
-* object from players — and connToPlayer is the one routing reads. Writing only
+* object from players, and connToPlayer is the one routing reads. Writing only
 * one leaves messages delivered to a world the player is not in.
 **/
 func (s *Server) setCurrentWorld(player *types.Player, worldID uuid.UUID) {
@@ -270,7 +290,7 @@ func (s *Server) setCurrentWorld(player *types.Player, worldID uuid.UUID) {
 * Collects every copy of a player the server holds.
 *
 * MapConnToPlayer stores the player by value, so connToPlayer holds a different
-* object from players — and connToPlayer is the one routing reads. Writing to one
+* object from players, and connToPlayer is the one routing reads. Writing to one
 * and not the others leaves messages delivered to a world the player is not in.
 *
 * Callers must already hold the write lock.
@@ -292,6 +312,58 @@ func (s *Server) everyRecordOf(player *types.Player) []*types.Player {
 }
 
 /**
+* Finds or creates the record of a member arriving on a connection, holding the
+* bearer token they connected with.
+*
+* A member already on record is reconnecting: the record is kept (it knows the
+* world they are in and the character they play) and every copy of it takes the
+* new token, so the next world they are seated in loads their gear with a token
+* that is current as of this connect. Reports whether it was a reconnect.
+*
+* Returns a copy of the record taken under the lock, not the record itself: the
+* worlds the member is in keep writing the record under that lock, so the
+* caller reads, logs and maps the copy rather than racing them.
+**/
+func (s *Server) connectPlayer(memberID uuid.UUID, username string, token types.BearerToken) (types.Player, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	connected := constants.Connected
+
+	if player, exists := s.players[memberID]; exists {
+		for _, record := range s.everyRecordOf(player) {
+			record.ConnectState = &connected
+			// may have changed name
+			record.Username = username
+			record.Token = token
+		}
+		return *player, true
+	}
+
+	player := &types.Player{
+		ID:                   memberID,
+		Username:             username,
+		CurrentGameSessionId: uuid.Nil,
+		ConnectState:         &connected,
+		Token:                token,
+	}
+	s.players[memberID] = player
+
+	return *player, false
+}
+
+/**
+* The bearer token a player's worn gear is loaded with, read under the lock a
+* reconnect refreshes it under.
+**/
+func (s *Server) tokenOf(player *types.Player) types.BearerToken {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return player.Token
+}
+
+/**
 * PlayerByID finds a connected player.
 **/
 func (s *Server) PlayerByID(playerID uuid.UUID) (*types.Player, bool) {
@@ -306,10 +378,10 @@ func (s *Server) PlayerByID(playerID uuid.UUID) (*types.Player, bool) {
 /**
 * Brings a finished run's players home.
 *
-* Called as the run resolves, before its world is torn down: they were in a
-* world that is about to stop existing, and leaving them pointed at it would
-* strand them somewhere unroutable. Escape and death land in the same place —
-* the hub's fixed spawn — because arriving is arriving.
+* Called as the run resolves, before its world is torn down. Its players are in
+* a world about to stop existing, and leaving them pointed at it would strand
+* them somewhere unroutable. Escape and death land in the same place, the hub's
+* fixed spawn, because arriving is arriving.
 **/
 func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 	hub, exists := s.HubSession()
@@ -330,7 +402,7 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 		}
 
 		run.RemovePlayer(playerID.String())
-		hub.AddPlayer(player.ID, player.Character)
+		hub.AddPlayer(player.ID, player.Character, s.tokenOf(player))
 		s.setCurrentWorld(player, hub.ID)
 
 		if err := s.sender.SendMessageToPlayer(playerID, worldEnteredMessage(hub)); err != nil {
@@ -398,31 +470,57 @@ func (s *Server) GetServerChan() chan types.ClientPackage {
 }
 
 /**
-* maps a connected client to its player information
+* Publishes conn as the member's one live connection, written to through
+* msgChan, and returns the connections it supersedes. Reports false, mapping
+* nothing, when the member is no longer on record.
+*
+* The connection carries a copy of the record as it stands now, under the lock,
+* not the copy the handler took before the upgrade: a run ending or a grace
+* cleanup in between would otherwise be undone on the copy routing reads.
+*
+* A published connection is live, so every record of the member is marked
+* connected and any reconnect grace they are held under ends: an old
+* connection failing after the reconnect began cannot leave them evicted.
+*
+* Mapping the connection and registering its writer happen in one step, as
+* does unmapping a superseded connection and stopping its writer, so
+* overlapping reconnects cannot leave a member with two live connections or a
+* sender holding a closed channel. The caller closes the superseded sockets.
 **/
-func (s *Server) MapConnToPlayer(conn *websocket.Conn, player types.Player) {
+func (s *Server) MapConnToPlayer(conn *websocket.Conn, playerID uuid.UUID, msgChan chan interface{}) ([]*websocket.Conn, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// check if there's an old connection with same player ID, if so clean it up
+	record, onRecord := s.players[playerID]
+	if !onRecord {
+		return nil, false
+	}
+
+	var superseded []*websocket.Conn
+
 	for oldConn, existingPlayer := range s.connToPlayer {
-		if existingPlayer.ID == player.ID && oldConn != conn {
+		if existingPlayer.ID == playerID && oldConn != conn {
 			slog.Info("Player reconnected, cleaning up old connection",
-				"player_id", player.ID,
-				"player_username", player.Username,
+				"player_id", playerID,
+				"player_username", record.Username,
 			)
-			// close old msgChan
-			if ch, exists := s.msgChan[oldConn]; exists {
-				close(ch)
-				delete(s.msgChan, oldConn)
-			}
-			// remove old conn to player mapping
+			s.stopClientWriterLocked(oldConn)
 			delete(s.connToPlayer, oldConn)
-			break
+			superseded = append(superseded, oldConn)
 		}
 	}
 
-	s.connToPlayer[conn] = &player
+	connected := constants.Connected
+	for _, rec := range s.everyRecordOf(record) {
+		rec.ConnectState = &connected
+	}
+	delete(s.graceHolds, playerID)
+
+	published := *record
+	s.connToPlayer[conn] = &published
+	s.msgChan[conn] = msgChan
+
+	return superseded, true
 }
 
 /**
@@ -464,12 +562,13 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 		}
 	}
 
-	// The roster is placed before the first floor is built: the floor's monsters
-	// are levelled to the party and spawned clear of every delver, so both must
-	// already be known (FS-77AB6 §Requirements 22). The session is not yet
-	// registered, so nothing routes to it while it is being built.
+	// The roster is seated before the first floor is built: the floor sets the
+	// party down together at one spawn point, then levels its monsters to the
+	// party and spawns them clear of every delver, so both must already be known
+	// (FS-77AB6 §Requirements 22). The session is not yet registered, so nothing
+	// routes to it while it is being built.
 	for _, player := range players {
-		newGameSession.AddPlayer(player.ID, player.Character)
+		newGameSession.AddPlayer(player.ID, player.Character, s.tokenOf(player))
 	}
 	newGameSession.InitialMapObjects()
 
@@ -537,8 +636,8 @@ func (s *Server) AddPlayer(player *types.Player) error {
 /**
 * remove player from queue (delegates to QueueSystem)
 **/
-func (s *Server) RemovePlayerFromQueue(player *types.Player) {
-	s.queue.PlayerRemoveQueue(s.ctx, player)
+func (s *Server) RemovePlayerFromQueue(player *types.Player) error {
+	return s.queue.PlayerRemoveQueue(s.ctx, player)
 }
 
 /**
@@ -556,12 +655,25 @@ func (s *Server) GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueSt
 }
 
 /**
+* get handoff channel from matchmaker which pipes along players to reconnect to the
+* corresponding pod that hosts the game session
+**/
+func (s *Server) GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart {
+	return s.queue.GetHandoffChan(ctx)
+}
+
+/**
 * get conn from player ID
 **/
 func (s *Server) GetConnFromPlayer(playerID uuid.UUID) (*websocket.Conn, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	return s.connOfLocked(playerID)
+}
+
+// connOfLocked finds the member's live connection. Callers hold the lock.
+func (s *Server) connOfLocked(playerID uuid.UUID) (*websocket.Conn, bool) {
 	for conn, player := range s.connToPlayer {
 		if player.ID == playerID {
 			return conn, true
@@ -579,20 +691,24 @@ func (s *Server) GetConnFromPlayer(playerID uuid.UUID) (*websocket.Conn, bool) {
 * Allows the server to sequentially pipe multiple messages into a single channel for sequential writes back to the client due to gorilla websockets constraint of max one concurrent writer with conn.
 **/
 func (s *Server) PushMessageToChannelQueue(playerID uuid.UUID, msg interface{}) error {
-	conn, exists := s.GetConnFromPlayer(playerID)
+	// The lookups and the send happen under one read lock: a writer channel is
+	// only closed under the write lock, so the connection found here and its
+	// channel are still the member's, and still open. The send never blocks, so
+	// the lock is never held waiting on a slow client.
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	conn, exists := s.connOfLocked(playerID)
 	if !exists {
 		return fmt.Errorf("player %s not found", playerID)
 	}
 
-	s.mu.RLock()
 	ch, ok := s.msgChan[conn]
-	s.mu.RUnlock()
-
 	if !ok {
 		return fmt.Errorf("message channel not found for player %s", playerID)
 	}
 
-	// non-blocking send to prevent slow clients from blocking
+	// nonblocking send to prevent slow clients from blocking
 	select {
 	case ch <- msg:
 		return nil
@@ -610,10 +726,11 @@ func (s *Server) PushMessageToConn(conn *websocket.Conn, msg interface{}) error 
 		slog.Warn("nil connection, skipping send")
 		return nil
 	}
+	// sent under the read lock, as PushMessageToChannelQueue does
 	s.mu.RLock()
-	ch, ok := s.msgChan[conn]
-	s.mu.RUnlock()
+	defer s.mu.RUnlock()
 
+	ch, ok := s.msgChan[conn]
 	if !ok {
 		slog.Warn("message channel not found for connection")
 		return nil

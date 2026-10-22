@@ -12,13 +12,13 @@ export default function Home() {
     <main className="min-h-screen bg-bg-dark text-vellum overflow-x-hidden">
 
       {/* ── Hero ── */}
-      <section className="relative min-h-screen flex flex-col items-center justify-center text-center px-6 sm:px-12 pt-16">
+      <section className="atmo-hero relative min-h-screen flex flex-col items-center justify-center text-center px-6 sm:px-12 pt-16">
         {/* Background glow layers */}
         <div className="absolute inset-0 pointer-events-none" style={{
-          background: 'radial-gradient(ellipse 70% 50% at 50% 35%, rgba(156, 123, 63,0.05) 0%, transparent 60%)',
+          background: 'radial-gradient(ellipse 70% 50% at 50% 35%, color-mix(in srgb, var(--color-brass) 5%, transparent) 0%, transparent 60%)',
         }} />
         <div className="absolute inset-0 pointer-events-none" style={{
-          background: 'radial-gradient(ellipse 40% 30% at 50% 70%, rgba(111, 143, 74,0.02) 0%, transparent 60%)',
+          background: 'radial-gradient(ellipse 40% 30% at 50% 70%, color-mix(in srgb, var(--color-accent) 2%, transparent) 0%, transparent 60%)',
         }} />
 
         <p className="relative text-[11px] text-accent tracking-[0.4em] uppercase mb-6 font-medium">
@@ -42,7 +42,7 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link
                 href="/register"
-                className="px-10 py-3.5 text-sm font-bold text-bg-dark bg-primary rounded-md hover:brightness-110 hover:scale-[1.02] transition-all duration-300 uppercase tracking-[0.2em]"
+                className="atmo-cta px-10 py-3.5 text-sm font-bold text-bg-dark bg-primary rounded-md hover:brightness-110 hover:scale-[1.02] transition-all duration-300 uppercase tracking-[0.2em]"
               >
                 Take the Oath
               </Link>
@@ -56,7 +56,7 @@ export default function Home() {
           ) : (
             <Link
               href="/game"
-              className="px-12 py-3.5 text-sm font-bold text-bg-dark bg-primary rounded-md hover:brightness-110 hover:scale-[1.02] transition-all duration-300 uppercase tracking-[0.2em]"
+              className="atmo-cta px-12 py-3.5 text-sm font-bold text-bg-dark bg-primary rounded-md hover:brightness-110 hover:scale-[1.02] transition-all duration-300 uppercase tracking-[0.2em]"
             >
               Delve
             </Link>
@@ -177,7 +177,7 @@ export default function Home() {
       {/* ── CTA ── */}
       <section className="relative max-w-3xl mx-auto px-6 sm:px-12 lg:px-16 py-32 text-center">
         <div className="absolute inset-0 pointer-events-none" style={{
-          background: 'radial-gradient(ellipse 60% 50% at 50% 50%, rgba(156, 123, 63,0.03) 0%, transparent 70%)',
+          background: 'radial-gradient(ellipse 60% 50% at 50% 50%, color-mix(in srgb, var(--color-brass) 3%, transparent) 0%, transparent 70%)',
         }} />
 
         <h2
@@ -259,7 +259,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <h2
-      className="text-2xl sm:text-3xl font-bold text-center text-vellum mb-16 tracking-[0.1em] uppercase"
+      className="atmo-section-title text-2xl sm:text-3xl font-bold text-center text-vellum mb-16 tracking-[0.1em] uppercase"
       style={{ }}
     >
       {children}
@@ -268,7 +268,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 function Divider({ variant = 'brass' }: { variant?: 'brass' | 'arcane' }) {
-  const color = variant === 'brass' ? 'rgba(156, 123, 63,0.12)' : 'rgba(111, 143, 74,0.08)';
+  const color = variant === 'brass' ? 'color-mix(in srgb, var(--color-brass) 12%, transparent)' : 'color-mix(in srgb, var(--color-accent) 8%, transparent)';
   return (
     <div className="max-w-xl mx-auto px-6 sm:px-12">
       <div className="h-px" style={{ background: `linear-gradient(to right, transparent, ${color}, transparent)` }} />
@@ -280,12 +280,12 @@ function Divider({ variant = 'brass' }: { variant?: 'brass' | 'arcane' }) {
 
 function MechanicCard({ title, description, color }: { title: string; description: string; color: 'brass' | 'arcane' }) {
   const isBrass = color === 'brass';
-  const borderColor = isBrass ? 'rgba(156, 123, 63,0.1)' : 'rgba(111, 143, 74,0.1)';
+  const borderColor = isBrass ? 'color-mix(in srgb, var(--color-brass) 10%, transparent)' : 'color-mix(in srgb, var(--color-accent) 10%, transparent)';
   const titleColor = isBrass ? 'var(--color-text)' : 'var(--color-accent)';
   const hoverBorder = isBrass ? 'hover:border-brass/40' : 'hover:border-accent/40';
   const bgGlow = isBrass
-    ? 'radial-gradient(ellipse at 50% 0%, rgba(156, 123, 63,0.03) 0%, transparent 70%)'
-    : 'radial-gradient(ellipse at 50% 0%, rgba(111, 143, 74,0.02) 0%, transparent 70%)';
+    ? 'radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--color-brass) 3%, transparent) 0%, transparent 70%)'
+    : 'radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--color-accent) 2%, transparent) 0%, transparent 70%)';
 
   return (
     <div
@@ -304,12 +304,12 @@ function MechanicCard({ title, description, color }: { title: string; descriptio
 
 function GearCard({ title, items, color }: { title: string; items: string[]; color: 'brass' | 'arcane' }) {
   const isBrass = color === 'brass';
-  const borderColor = isBrass ? 'rgba(156, 123, 63,0.1)' : 'rgba(111, 143, 74,0.1)';
+  const borderColor = isBrass ? 'color-mix(in srgb, var(--color-brass) 10%, transparent)' : 'color-mix(in srgb, var(--color-accent) 10%, transparent)';
   const titleColor = isBrass ? 'var(--color-text)' : 'var(--color-accent)';
   const dotColor = isBrass ? 'bg-brass/50' : 'bg-accent/50';
   const bgGlow = isBrass
-    ? 'radial-gradient(ellipse at 50% 0%, rgba(156, 123, 63,0.03) 0%, transparent 70%)'
-    : 'radial-gradient(ellipse at 50% 0%, rgba(111, 143, 74,0.02) 0%, transparent 70%)';
+    ? 'radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--color-brass) 3%, transparent) 0%, transparent 70%)'
+    : 'radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--color-accent) 2%, transparent) 0%, transparent 70%)';
 
   return (
     <div
@@ -334,7 +334,7 @@ function GearCard({ title, items, color }: { title: string; items: string[]; col
 function StepCard({ step, title, description }: { step: string; title: string; description: string }) {
   return (
     <div className="p-6 rounded-lg border border-brass/20" style={{
-      background: 'radial-gradient(ellipse at 50% 0%, rgba(156, 123, 63,0.02) 0%, transparent 70%)',
+      background: 'radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--color-brass) 2%, transparent) 0%, transparent 70%)',
     }}>
       <span className="text-[10px] text-vellum-muted tracking-[0.25em] font-bold">{step}</span>
       <h3 className="text-sm font-bold text-vellum tracking-[0.12em] mt-3 mb-3">{title}</h3>

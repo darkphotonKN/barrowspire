@@ -202,42 +202,227 @@ func TestWithdrawBidNotFound(t *testing.T) {
 	assert.ErrorIs(t, err, ErrBidNotFound)
 }
 
-// TestBidFSMRejectsIllegalTransition pins that terminal states are terminal. A
-// bid that already lost cannot be withdrawn, otherwise a member could cancel
-// their way backwards through the auction's history.
+// TestBidFSMRejectsIllegalTransition pins that final states are final. A bid that
+// already won, lost or was withdrawn cannot be withdrawn, otherwise a member could
+// cancel their way backwards through the auction's history. OUTBID is not among
+// them: an outbid bid may be withdrawn (ADR-0029).
 func TestBidFSMRejectsIllegalTransition(t *testing.T) {
-	l := activeListing(t, 100)
-	bidder := uuid.New()
-	now := time.Now()
+	for _, status := range []BidStatus{BidStatusWon, BidStatusLost, BidStatusCancelled} {
+		t.Run(string(status), func(t *testing.T) {
+			now := time.Now()
+			l, ids, members := auctionWith(t, now, heldBid{status, 150, 0})
 
-	leadingBid(t, l, bidder, 150, now)
-	leadingBid(t, l, uuid.New(), 200, now)
+			err := l.WithdrawBid(ids[0], members[0], now.Add(time.Minute))
 
-	// the first bid is now OUTBID — a terminal state
-	outbidID := l.Snapshot().Bids[0].ID
-
-	err := l.WithdrawBid(outbidID, bidder, now)
-
-	assert.ErrorIs(t, err, ErrInvalidBidTransition)
+			assert.ErrorIs(t, err, ErrInvalidBidTransition)
+			assert.Equal(t, status, bidByID(t, l, ids[0]).Status)
+		})
+	}
 }
 
-// TestWithdrawWinningBidLeavesNoLeader documents the deliberate choice not to
-// promote the runner-up: the price falls back to the reserve instead. Once bids
-// are backed by wallet holds the runner-up's hold has already been released, so
-// promoting it would create a leading bid with no gold behind it.
-func TestWithdrawWinningBidLeavesNoLeader(t *testing.T) {
-	l := activeListing(t, 100)
-	winner := uuid.New()
+// heldBid is one bid in a test auction: its status, amount, and when it was placed.
+type heldBid struct {
+	status BidStatus
+	amount int
+	placed time.Duration // after the auction's base time
+}
+
+// auctionWith builds an ACTIVE listing (start price 100) holding exactly these
+// bids, and returns each bid's ID and member in the same order.
+func auctionWith(t *testing.T, now time.Time, bids ...heldBid) (*Listing, []uuid.UUID, []uuid.UUID) {
+	t.Helper()
+	listingID := uuid.New()
+	ids, members := make([]uuid.UUID, len(bids)), make([]uuid.UUID, len(bids))
+	params := make([]*BidReconstituteParams, len(bids))
+	for i, b := range bids {
+		ids[i], members[i] = uuid.New(), uuid.New()
+		at := now.Add(b.placed)
+		params[i] = &BidReconstituteParams{
+			ID: ids[i], ListingID: listingID, MemberID: members[i],
+			Type: BidTypeBid, Amount: b.amount, Status: b.status, CreatedAt: at, UpdatedAt: at,
+		}
+	}
+	l, err := Reconstitute(reconstituteParams(listingID, now, params))
+	require.NoError(t, err)
+	return l, ids, members
+}
+
+// ADR-0028: withdrawing the leader promotes the highest remaining OUTBID bid. Its
+// hold has been RESERVED since it was placed (an outbid hold is released only at
+// settlement step 2), so the new leader is backed by gold.
+func TestWithdrawBid_LeaderWithdraws_HighestOutbidIsPromoted(t *testing.T) {
 	now := time.Now()
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusOutbid, 150, 0},
+		heldBid{BidStatusOutbid, 180, time.Second},
+		heldBid{BidStatusWinning, 200, 2 * time.Second},
+	)
 
-	require.NoError(t, l.PlaceBid(uuid.New(), 150, uuid.Nil, now))
-	require.NoError(t, l.PlaceBid(winner, 200, uuid.Nil, now))
+	require.NoError(t, l.WithdrawBid(ids[2], members[2], now.Add(time.Minute)))
 
-	winningID := l.Snapshot().Bids[1].ID
-	require.NoError(t, l.WithdrawBid(winningID, winner, now))
+	assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[1]).Status, "the highest OUTBID leads")
+	assert.Equal(t, BidStatusOutbid, bidByID(t, l, ids[0]).Status)
+	assert.Equal(t, BidStatusCancelled, bidByID(t, l, ids[2]).Status)
+	assert.Equal(t, 180, l.currentPrice())
+}
 
-	assert.Nil(t, l.findWinningBid(), "no bid leads after the leader withdraws")
-	assert.Equal(t, 100, l.currentPrice(), "price falls back to the reserve")
+// Equal amounts: the bid placed first is promoted.
+func TestWithdrawBid_LeaderWithdraws_TieGoesToTheEarliest(t *testing.T) {
+	now := time.Now()
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusOutbid, 150, time.Second}, // placed later
+		heldBid{BidStatusOutbid, 150, 0},           // placed first
+		heldBid{BidStatusWinning, 200, 2 * time.Second},
+	)
+
+	require.NoError(t, l.WithdrawBid(ids[2], members[2], now.Add(time.Minute)))
+
+	assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[1]).Status, "earliest of the tied bids leads")
+	assert.Equal(t, BidStatusOutbid, bidByID(t, l, ids[0]).Status)
+}
+
+// No OUTBID bid left: nobody leads and the price falls back to the starting bid.
+func TestWithdrawBid_LeaderWithdraws_NoOtherBid_PriceFallsBackToStart(t *testing.T) {
+	now := time.Now()
+	l, ids, members := auctionWith(t, now, heldBid{BidStatusWinning, 200, 0})
+
+	require.NoError(t, l.WithdrawBid(ids[0], members[0], now.Add(time.Minute)))
+
+	assert.Nil(t, l.findWinningBid())
+	assert.Equal(t, 100, l.currentPrice())
+}
+
+// Only an OUTBID bid is promoted. A PENDING bid has no confirmed hold yet and
+// competes for the lead when it confirms; CANCELLED, FAILED and LOST bids are out.
+func TestWithdrawBid_LeaderWithdraws_OnlyOutbidIsPromoted(t *testing.T) {
+	now := time.Now()
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusPending, 300, 0},
+		heldBid{BidStatusCancelled, 290, 0},
+		heldBid{BidStatusFailed, 280, 0},
+		heldBid{BidStatusWinning, 200, time.Second},
+	)
+
+	require.NoError(t, l.WithdrawBid(ids[3], members[3], now.Add(time.Minute)))
+
+	assert.Nil(t, l.findWinningBid(), "nothing OUTBID, nothing promoted")
+	assert.Equal(t, BidStatusPending, bidByID(t, l, ids[0]).Status)
+	assert.Equal(t, 100, l.currentPrice())
+}
+
+// Decided at code review (I-0YXG6-7, option c): the runner-up may be the
+// withdrawer's own earlier bid. A member who raised their own bid and then
+// withdraws the raise still leads, with the earlier amount; they can withdraw
+// that one too once it leads. Pinned so it stays a decision, not an accident.
+func TestWithdrawBid_LeaderWithdraws_OwnEarlierBidMayBePromoted(t *testing.T) {
+	now := time.Now()
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusOutbid, 150, 0},
+		heldBid{BidStatusWinning, 200, time.Second},
+	)
+	l.bids[0].memberID = members[1] // the same member raised their own bid
+
+	require.NoError(t, l.WithdrawBid(ids[1], members[1], now.Add(time.Minute)))
+
+	assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[0]).Status, "their own earlier bid leads")
+	require.NoError(t, l.WithdrawBid(ids[0], members[1], now.Add(2*time.Minute)), "and can be withdrawn in turn")
+	assert.Nil(t, l.findWinningBid())
+}
+
+// Withdrawing a bid that does not lead promotes nobody: the leader stands.
+func TestWithdrawBid_NonLeaderWithdraws_LeaderStands(t *testing.T) {
+	now := time.Now()
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusPending, 160, 0},
+		heldBid{BidStatusOutbid, 150, 0},
+		heldBid{BidStatusWinning, 200, time.Second},
+	)
+
+	require.NoError(t, l.WithdrawBid(ids[0], members[0], now.Add(time.Minute)))
+
+	assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[2]).Status)
+	assert.Equal(t, BidStatusOutbid, bidByID(t, l, ids[1]).Status)
+}
+
+// ADR-0029: an outbid bid may be withdrawn while the auction is open. It leaves the
+// auction; the leader and the price stay as they are, and nobody is promoted.
+func TestWithdrawBid_OutbidWithdraws_LeaderAndPriceUnchanged(t *testing.T) {
+	now := time.Now()
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusOutbid, 120, 0},
+		heldBid{BidStatusOutbid, 130, time.Second},
+		heldBid{BidStatusWinning, 150, 2 * time.Second},
+	)
+
+	require.NoError(t, l.WithdrawBid(ids[0], members[0], now.Add(time.Minute)))
+
+	assert.Equal(t, BidStatusCancelled, bidByID(t, l, ids[0]).Status)
+	assert.Equal(t, BidStatusOutbid, bidByID(t, l, ids[1]).Status, "no promotion: the leader did not leave")
+	assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[2]).Status)
+	assert.Equal(t, 150, l.currentPrice())
+}
+
+// ADR-0029: an outbid bid may be withdrawn only while bids may still change. Once
+// settlement has frozen the listing, or a buyout has fixed its winner, the bid is
+// left for settlement to resolve.
+func TestWithdrawBid_OutbidOnClosedListing_Refused(t *testing.T) {
+	tests := []struct {
+		name  string
+		close func(t *testing.T, l *Listing, now time.Time)
+	}{
+		{"frozen", func(t *testing.T, l *Listing, now time.Time) {
+			require.NoError(t, l.Freeze(now))
+		}},
+		{"bought out", func(t *testing.T, l *Listing, now time.Time) {
+			price := 500
+			l.buyoutPrice = &price
+			require.NoError(t, l.Buyout(uuid.New(), uuid.New(), 500, now))
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Now()
+			l, ids, members := auctionWith(t, now,
+				heldBid{BidStatusOutbid, 120, 0},
+				heldBid{BidStatusWinning, 150, time.Second},
+			)
+			tt.close(t, l, now.Add(time.Minute))
+
+			err := l.WithdrawBid(ids[0], members[0], now.Add(2*time.Minute))
+
+			assert.ErrorIs(t, err, ErrListingNotAcceptingBids)
+			assert.Equal(t, BidStatusOutbid, bidByID(t, l, ids[0]).Status)
+		})
+	}
+}
+
+// An auction that has ended takes no more withdrawals, even before settlement has
+// frozen it: "ended" means what it means to PlaceBid (endsAt <= now). Otherwise a
+// leader could withdraw after the end and hand the win to the runner-up.
+func TestWithdrawBid_AuctionEnded_Refused(t *testing.T) {
+	statuses := []BidStatus{BidStatusWinning, BidStatusOutbid}
+	offsets := map[string]time.Duration{"at the end": time.Hour, "after the end": 2 * time.Hour}
+	for _, status := range statuses {
+		for name, offset := range offsets {
+			t.Run(string(status)+" "+name, func(t *testing.T) {
+				now := time.Now() // auctionWith ends the auction at now + 1h
+				l, ids, members := auctionWith(t, now,
+					heldBid{BidStatusOutbid, 120, 0},
+					heldBid{BidStatusWinning, 150, time.Second},
+				)
+				target := 0
+				if status == BidStatusWinning {
+					target = 1
+				}
+				before := l.Snapshot()
+
+				err := l.WithdrawBid(ids[target], members[target], now.Add(offset))
+
+				assert.ErrorIs(t, err, ErrListingExpired)
+				assert.Equal(t, before, l.Snapshot(), "a refused withdrawal changes nothing, promotes nobody")
+			})
+		}
+	}
 }
 
 // TestReconstituteRejectsTwoWinners is the safety net for persisted state. If
@@ -368,15 +553,18 @@ func leadingBid(t *testing.T, l *Listing, member uuid.UUID, amount int, now time
 	return bidID
 }
 
-// soldListing builds a settled listing. MarkSold refuses to run before endsAt,
-// so the clock is pushed past the end of the auction rather than shortening it
-// at construction — NewListing rejects an endsAt that is not in the future.
+// soldListing builds a settled listing the way settlement does: a winning bid at
+// soldPrice, frozen at 0a, marked WON at 1a, then SOLD at step 6, which takes the
+// buyer and the price from that WON bid.
 func soldListing(t *testing.T, startPrice, soldPrice int) *Listing {
 	t.Helper()
 
+	now := time.Now()
 	l := activeListing(t, startPrice)
-	afterEnd := time.Now().Add(2 * time.Hour)
-	require.NoError(t, l.MarkSold(afterEnd, uuid.New(), soldPrice))
+	winner := leadingBid(t, l, uuid.New(), soldPrice, now)
+	require.NoError(t, l.Freeze(now))
+	require.NoError(t, l.SetWinningBid(winner, now))
+	require.NoError(t, l.MarkSold(now))
 
 	return l
 }
@@ -396,4 +584,34 @@ func reconstituteParams(listingID uuid.UUID, now time.Time, bids []*BidReconstit
 		Version:    0,
 		Bids:       bids,
 	}
+}
+
+// The idempotency key deduplicates one member's resends, never another member's
+// bid: the same key from someone else is a bid of their own (ADR-0027).
+func TestPlaceBidWithID_SameKeyFromAnotherMember_IsAnotherBid(t *testing.T) {
+	now := time.Now()
+	l := activeListing(t, 100)
+	key := uuid.New()
+	require.NoError(t, l.PlaceBidWithID(uuid.New(), uuid.New(), 150, key, now))
+
+	other := uuid.New()
+	require.NoError(t, l.PlaceBidWithID(other, uuid.New(), 200, key, now))
+
+	assert.True(t, l.HasBid(other), "another member's bid with the same key is recorded")
+	assert.Len(t, l.Snapshot().Bids, 2)
+}
+
+// The same member resending the same key under a new bid ID is still a replay:
+// the deploy transition, where an earlier bid carries a random ID.
+func TestPlaceBidWithID_SameKeyFromTheSameMember_IsAReplay(t *testing.T) {
+	now := time.Now()
+	l := activeListing(t, 100)
+	member, key := uuid.New(), uuid.New()
+	require.NoError(t, l.PlaceBidWithID(uuid.New(), member, 150, key, now))
+
+	resend := uuid.New()
+	require.NoError(t, l.PlaceBidWithID(resend, member, 150, key, now))
+
+	assert.False(t, l.HasBid(resend))
+	assert.Len(t, l.Snapshot().Bids, 1)
 }

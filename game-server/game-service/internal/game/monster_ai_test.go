@@ -96,7 +96,7 @@ func TestRun_DelverKilledByMonsters_IsEliminated(t *testing.T) {
 func TestHub_RunsNoMonsterAI(t *testing.T) {
 	em := ecs.NewEntityManager()
 	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, nil, HubBounds())
-	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: "warrior"})
+	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: "warrior"}, "")
 	// the hub never holds one; stand one there to prove nothing would drive it
 	g := ghoulAt(s, 1000, 760)
 

@@ -194,22 +194,11 @@ func delversOf(entities []*ecs.Entity) []*ecs.Entity {
 	return roster
 }
 
-// inPlayPositions is where every delver standing on this floor is. The escaped
-// and the dead left on an earlier floor are not on it.
+// inPlayPositions is where every delver standing on this floor is, by the same
+// rule the party is gathered by (livingParty).
 func inPlayPositions(roster []*ecs.Entity) []point {
 	var at []point
-	for _, delver := range roster {
-		pc, _ := delver.GetComponent(ecs.ComponentTypePlayer)
-		player := pc.(*components.PlayerComponent)
-		if player.Escape || player.LeftBehind {
-			continue
-		}
-
-		tc, ok := delver.GetComponent(ecs.ComponentTypeTransform)
-		if !ok {
-			continue
-		}
-		transform := tc.(*components.TransformComponent)
+	for _, transform := range livingParty(roster) {
 		at = append(at, point{transform.X, transform.Y})
 	}
 	return at

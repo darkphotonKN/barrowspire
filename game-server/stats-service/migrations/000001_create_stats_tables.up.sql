@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- Player match stats (aggregated stats)
 CREATE TABLE player_match_stats (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -17,7 +17,9 @@ var validBidTransitions = map[BidStatus]map[BidStatus]struct{}{
 		BidStatusLost:      {}, // settled, or rolled back, without winning
 	},
 	BidStatusOutbid: {
-		BidStatusLost: {}, // settlement closed the listing; an outbid bid is final
+		BidStatusLost:      {}, // settlement closed the listing without this bid winning
+		BidStatusWinning:   {}, // the leader withdrew and this is the highest bid left (ADR-0028)
+		BidStatusCancelled: {}, // the bidder withdrew to get their gold back now (ADR-0029)
 	},
 	// WON -> LOST is the only edge out of a terminal status in this machine, and it
 	// exists for exactly one reason: a pre-pivot rollback undoing step 1a

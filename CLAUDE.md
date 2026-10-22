@@ -43,7 +43,7 @@ Microservices stay structurally identical for now.
 - **Architecture**: Entity Component System (ECS)n
 - **Game Loop**: Fixed timestep (60 ticks/second)
 - **Event Broker**: RabbitMQ
-- **Service Discovery**: Consul
+- **Service Discovery**: env-configured addresses (`<SERVICE>_ADDR`); Kubernetes Service DNS in-cluster (ADR-0022)
 
 ### Frontend
 
@@ -244,13 +244,13 @@ JWT_SECRET=xxx
 
 - **Tier-1 specs** — per-service `game-server/<service>/SPECIFICATION.md` and `game-client/SPECIFICATION.md` (thin, living index of that surface's capabilities). Root `SPECIFICATION.md` is the **service map only** — never capability lines.
   - **Thin spec lines are capability names only** — no design detail (that lives in the FS one hop away); sections grouped by bounded context, never by status; status lives in the checkbox. Full rule + survival test: `docs/specs/README.md`.
-- **Tier-2 feature specs** — root `docs/specs/NNNN-*.md` (`FS-NNNN`, deep, write-once work orders), globally numbered across all services. Read an FS only when working that feature.
+- **Tier-2 feature specs** — root `docs/specs/<TOKEN>-*.md` (`FS-<TOKEN>`, deep, write-once work orders), one id space across all services. Read an FS only when working that feature.
 - **Decisions** — `docs/adr/` (Nygard ADRs, append-only, immutable).
 - **Vocabulary** — per-service `CONTEXT.md`. Bounded-context terms live with their service, never at root — two services may legitimately use one word differently.
 - **Tracker config** — `docs/agents/tracker.md`.
 - **Conventions live in git next to the artifact they govern** — `docs/specs/README.md` defines the thin-line format, the FS lifecycle (`draft → work-order → shipped`), and FS contents (incl. `§API surface`); `docs/agents/README.md` defines `tracker.md`'s schema. Skills *point at* these conventions; they never embed a copy.
 
-**Spec resolution.** A capability line goes in the `SPECIFICATION.md` of whatever surface changes. A feature spec gets the next **global** number in root `docs/specs/`. A cross-surface feature is **one FS** with a thin line per affected surface. New or redefined domain terms go to that service's `CONTEXT.md`. `game-server/common/` gets no spec — a behavior change there belongs to the FS of the feature driving it.
+**Spec resolution.** A capability line goes in the `SPECIFICATION.md` of whatever surface changes. A feature spec gets a **random 5-character token** in root `docs/specs/`, drawn by the shell, never sequential (minting rule: `docs/specs/README.md` § *Numbering & references*). Existing `NNNN` ids stay valid. A cross-surface feature is **one FS** with a thin line per affected surface. New or redefined domain terms go to that service's `CONTEXT.md`. `game-server/common/` gets no spec — a behavior change there belongs to the FS of the feature driving it.
 
 **Check `docs/adr/` before any architectural change** — a decision recorded there is a constraint, not a suggestion.
 

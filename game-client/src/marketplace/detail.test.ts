@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { components } from "@/api/generated/schema";
 import {
-  bidPanel,
+  actionArea,
   formatCriticalRate,
   fresher,
   itemStats,
@@ -108,15 +108,52 @@ describe("formatCriticalRate", () => {
   });
 });
 
-describe("bidPanel", () => {
-  const listing = { sellerId: "aldric" };
+describe("actionArea", () => {
+  const NOW = Date.parse("2026-10-01T12:00:00Z");
+  const live = {
+    sellerId: "aldric",
+    status: "ACTIVE",
+    ended: false,
+    endsAt: "2026-10-02T12:00:00Z",
+  };
 
   it.each([
     ["a signed-out visitor", undefined, "signIn"],
     ["the listing's seller", "aldric", "own"],
     ["any other delver", "brenna", "bid"],
-  ])("should show %s the right panel", (_label, memberId, want) => {
-    expect(bidPanel(listing, memberId)).toBe(want);
+  ])("should show %s the right panel on a live listing", (_label, memberId, want) => {
+    expect(actionArea(live, memberId, NOW)).toBe(want);
+  });
+
+  it.each(["PENDING_SETTLEMENT", "SOLD", "CANCELLED", "SETTLEMENT_FAILED", "EXPIRED"])(
+    "should offer nobody anything once the listing is %s",
+    (status) => {
+      for (const memberId of [undefined, "aldric", "brenna"]) {
+        expect(actionArea({ ...live, status }, memberId, NOW)).toBe("none");
+      }
+    },
+  );
+
+  it("should read the status regardless of case", () => {
+    expect(actionArea({ ...live, status: "pending_settlement" }, "brenna", NOW)).toBe("none");
+    expect(actionArea({ ...live, status: "active" }, "brenna", NOW)).toBe("bid");
+  });
+
+  // An ended auction takes no bid; a bidder keeps the closed box so a bid still in flight
+  // when it ended shows its answer (FS-8EGFA Edge States).
+  it.each([
+    ["by the server's word", { ended: true }],
+    ["by the countdown", { endsAt: "2026-10-01T12:00:00Z" }],
+  ])("should close the bid box once the listing has ended %s", (_label, ended) => {
+    const listing = { ...live, ...ended };
+    expect(actionArea(listing, "brenna", NOW)).toBe("closed");
+    expect(actionArea(listing, "aldric", NOW)).toBe("none");
+    expect(actionArea(listing, undefined, NOW)).toBe("none");
+  });
+
+  it("should read an absent ended flag as not ended", () => {
+    const { ended: _ended, ...listing } = live;
+    expect(actionArea(listing, "brenna", NOW)).toBe("bid");
   });
 });
 

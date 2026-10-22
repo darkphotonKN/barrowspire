@@ -1,6 +1,6 @@
 /**
- * The listing detail dialog's decisions (FS-8EGFA req 24, 27, 28): which stats it lists, which
- * panel stands where the bid box goes, and which of two reads of a listing is the newer.
+ * The listing detail dialog's decisions (FS-8EGFA req 24, 27, 28): which stats it lists, what
+ * its action area offers, and which of two reads of a listing is the newer.
  */
 
 import { itemLines, type ItemLines, type ItemLinesSource } from "@/items/itemLines";
@@ -60,13 +60,27 @@ export function listingItemLines(item: ItemLinesSource | undefined): ItemLines |
   return item && itemLines(item);
 }
 
-/** What stands where the bid box goes: a sign-in prompt, "Your listing", or the box itself. */
-export function bidPanel(
-  listing: { sellerId: string },
+/**
+ * What the detail's action area offers (FS-8EGFA req 24, FS-49Z37 req 19): a sign-in prompt,
+ * "Your listing", the bid box, the bid box closed, or nothing. It is the one place that decides
+ * the area. A listing that is not ACTIVE, or has ended by the server's word or the countdown,
+ * offers no action. On an ended ACTIVE listing a bidder still gets the closed box ("closed"), so
+ * a bid in flight when the countdown reached zero keeps its answer (FS-8EGFA Edge States); there
+ * is nothing to press in it. "none" leaves only the listing's status label.
+ */
+export type ActionArea = "signIn" | "own" | "bid" | "closed" | "none";
+
+export function actionArea(
+  listing: { sellerId: string; status: string; ended?: boolean; endsAt: string },
   memberId: string | undefined,
-): "signIn" | "own" | "bid" {
+  now: number,
+): ActionArea {
+  if (listing.status.toUpperCase() !== "ACTIVE") return "none";
+  const ended = listing.ended === true || Date.parse(listing.endsAt) <= now;
+  const bidder = memberId !== undefined && memberId !== listing.sellerId;
+  if (ended) return bidder ? "closed" : "none";
   if (!memberId) return "signIn";
-  if (memberId === listing.sellerId) return "own";
+  if (!bidder) return "own";
   return "bid";
 }
 

@@ -1,6 +1,6 @@
 ---
 id: I-NXP1W-3
-status: open
+status: done
 implements: FS-NXP1W
 blocked_by: [I-NXP1W-1]
 labels: [blocked]
@@ -37,13 +37,13 @@ placeBid's post-lock status re-check (Req 25) lives in the bids work. Confirm it
 
 ## Acceptance Criteria
 
-- [ ] Starting `settlement-{listingId}` twice from any mix of triggers runs one settlement; the second start returns success
-- [ ] The expiry poller ignores every non-ACTIVE status, including `SETTLEMENT_FAILED`
-- [ ] AcceptBid settles at the current WINNING bid; no bid ID reaches the workflow
-- [ ] 0a and 0b are conditional writes; re-running either after success returns the same output and changes nothing
-- [ ] 0a returns `NO_BIDS` for a listing with no bids, and the workflow skips 0b (the arm itself is I-NXP1W-15)
-- [ ] The reconciler does not cancel the reservation of an item whose listing is `PENDING_SETTLEMENT`
-- [ ] Use cases tested without Temporal; `make test` green
+- [x] Starting `settlement-{listingId}` twice from any mix of triggers runs one settlement; the second start returns success
+- [x] The expiry poller ignores every non-ACTIVE status, including `SETTLEMENT_FAILED`
+- [x] AcceptBid settles at the current WINNING bid; no bid ID reaches the workflow
+- [x] 0a and 0b are conditional writes; re-running either after success returns the same output and changes nothing
+- [x] 0a returns `NO_BIDS` for a listing with no bids, and the workflow skips 0b (the arm itself is I-NXP1W-15)
+- [x] The reconciler does not cancel the reservation of an item whose listing is `PENDING_SETTLEMENT`
+- [x] Use cases tested without Temporal; `make test` green
 
 ## Blocked By
 

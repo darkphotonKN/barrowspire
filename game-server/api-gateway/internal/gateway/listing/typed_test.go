@@ -3,6 +3,8 @@ package listing_test
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -41,12 +43,15 @@ type stubListingClient struct {
 	gotListReq  *pb.ListItemRequest
 	gotWithdraw *pb.WithdrawBidRequest
 	gotAccept   *pb.AcceptBidRequest
+	gotBuyout   *pb.BuyoutRequest
 	gotMine     *pb.ListMyListingsRequest
 	gotBrowse   *pb.BrowseListingsRequest
 	gotGet      *pb.GetListingRequest
+	gotMyBids   *pb.ListMyBidsRequest
 	gotAuth     []string
 
 	mine   *pb.ListMyListingsResponse
+	myBids *pb.ListMyBidsResponse
 	browse *pb.BrowseListingsResponse
 	one    *pb.Listing
 }
@@ -102,6 +107,13 @@ func (s *stubListingClient) AcceptBid(ctx context.Context, req *pb.AcceptBidRequ
 	return &pb.AcceptBidResponse{}, s.err
 }
 
+func (s *stubListingClient) Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.BuyoutResponse, error) {
+	s.calls++
+	s.gotBuyout = req
+	s.recordAuth(ctx)
+	return &pb.BuyoutResponse{}, s.err
+}
+
 func (s *stubListingClient) ListMyListings(ctx context.Context, req *pb.ListMyListingsRequest) (*pb.ListMyListingsResponse, error) {
 	s.calls++
 	s.gotMine = req
@@ -113,6 +125,19 @@ func (s *stubListingClient) ListMyListings(ctx context.Context, req *pb.ListMyLi
 		return &pb.ListMyListingsResponse{}, nil
 	}
 	return s.mine, nil
+}
+
+func (s *stubListingClient) ListMyBids(ctx context.Context, req *pb.ListMyBidsRequest) (*pb.ListMyBidsResponse, error) {
+	s.calls++
+	s.gotMyBids = req
+	s.recordAuth(ctx)
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.myBids == nil {
+		return &pb.ListMyBidsResponse{}, nil
+	}
+	return s.myBids, nil
 }
 
 func (s *stubListingClient) recordAuth(ctx context.Context) {
@@ -233,6 +258,21 @@ func TestPlaceBid_BidTooLowIsABadRequest(t *testing.T) {
 		`{"amount":150}`, map[string]string{"Content-Type": "application/json", "Authorization": "Bearer caller-token"})
 
 	testsupport.AssertProblem(t, w, http.StatusBadRequest, string(errcode.ValidationFailed))
+}
+
+// A key whose attempt was refused or abandoned, its gold returned, cannot be
+// held under again (ADR-0027): a conflict the caller fixes with a new key, kept
+// distinct from contention's CONFLICT, which a plain retry fixes.
+func TestPlaceBid_SpentKeyIsAlreadyExists(t *testing.T) {
+	client := &stubListingClient{err: status.Error(codes.AlreadyExists, "already exists")}
+
+	res := placeBid(newRouter(client), uuid.New().String(), `{"amount":150}`,
+		map[string]string{"Idempotency-Key": uuid.New().String()})
+
+	assert.Equal(t, http.StatusConflict, res.StatusCode)
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), string(errcode.AlreadyExists))
 }
 
 // ========================= CREATE LISTING =========================
@@ -456,6 +496,143 @@ func TestAcceptBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 			client := &stubListingClient{err: tt.err}
 
 			w := acceptBid(newRouter(client), uuid.New().String())
+
+			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
+		})
+	}
+}
+
+// ========================= BUYOUT =========================
+
+const buyoutBody = `{"amount":500}`
+
+func buyout(r *gin.Engine, listingID, body string) *httptest.ResponseRecorder {
+	return buyoutWithHeaders(r, listingID, body, nil)
+}
+
+func buyoutWithHeaders(r *gin.Engine, listingID, body string, extra map[string]string) *httptest.ResponseRecorder {
+	h := authedHeaders()
+	maps.Copy(h, extra)
+	return testsupport.DoWithHeaders(r, http.MethodPost,
+		"/api/marketplace/listings/"+listingID+"/buyout", body, h)
+}
+
+// Same rule as place-bid: optional, and resent unchanged on every retry of one
+// buyout so the retry is recognised (ADR-0026).
+func TestBuyout_ForwardsTheIdempotencyKey(t *testing.T) {
+	client := &stubListingClient{}
+	key := uuid.New().String()
+
+	w := buyoutWithHeaders(newRouter(client), uuid.New().String(), buyoutBody, map[string]string{"Idempotency-Key": key})
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	assert.Equal(t, key, client.gotBuyout.GetIdempotencyKey())
+}
+
+func TestBuyout_IdempotencyKeyIsOptional(t *testing.T) {
+	client := &stubListingClient{}
+
+	w := buyout(newRouter(client), uuid.New().String(), buyoutBody)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	assert.Empty(t, client.gotBuyout.GetIdempotencyKey())
+}
+
+func TestBuyout_RejectsAMalformedIdempotencyKeyBeforeCallingMarketplace(t *testing.T) {
+	client := &stubListingClient{}
+
+	w := buyoutWithHeaders(newRouter(client), uuid.New().String(), buyoutBody, map[string]string{"Idempotency-Key": "not-a-uuid"})
+
+	testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
+	assert.Zero(t, client.calls)
+}
+
+// The buyout is recorded and settlement started before the answer, but the sale
+// itself completes asynchronously, so the answer is Accepted.
+func TestBuyout_AnswersAcceptedAndForwardsTheListing(t *testing.T) {
+	client := &stubListingClient{}
+	listingID := uuid.New().String()
+
+	w := buyout(newRouter(client), listingID, buyoutBody)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	assert.Empty(t, w.Body.String())
+	require.Equal(t, 1, client.calls)
+	assert.Equal(t, listingID, client.gotBuyout.GetListingId())
+	// the agreed amount is checked by marketplace, against the listing
+	assert.Equal(t, int64(500), client.gotBuyout.GetAmount())
+	// the buyer is marketplace's to read from the token, so it must travel on
+	assert.Equal(t, []string{"Bearer caller-token"}, client.gotAuth)
+}
+
+// Shape only: whether the amount is the buyout price is marketplace's to say.
+func TestBuyout_RejectsAnInvalidBodyBeforeCallingMarketplace(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"missing amount", `{}`},
+		{"zero amount", `{"amount":0}`},
+		{"negative amount", `{"amount":-1}`},
+		{"unknown member", `{"amount":500,"bidId":"x"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &stubListingClient{}
+
+			w := buyout(newRouter(client), uuid.New().String(), tt.body)
+
+			testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
+			assert.Zero(t, client.calls, "an invalid request must not reach marketplace")
+		})
+	}
+}
+
+// Huma refuses a missing required body before validating its shape, with 400
+// rather than 422. Every body-carrying route answers it so; pinned here because
+// buyout's body is new.
+func TestBuyout_NoBodyIsABadRequestBeforeCallingMarketplace(t *testing.T) {
+	client := &stubListingClient{}
+
+	w := buyout(newRouter(client), uuid.New().String(), "")
+
+	testsupport.AssertProblem(t, w, http.StatusBadRequest, string(errcode.ValidationFailed))
+	assert.Zero(t, client.calls)
+}
+
+func TestBuyout_RejectsAMalformedListingIDBeforeCallingMarketplace(t *testing.T) {
+	client := &stubListingClient{}
+
+	w := buyout(newRouter(client), "not-a-uuid", buyoutBody)
+
+	testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
+	assert.Zero(t, client.calls, "an invalid request must not reach marketplace")
+}
+
+func TestBuyout_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   errcode.Code
+	}{
+		{"buyer is the seller", status.Error(codes.PermissionDenied, "permission denied"), http.StatusForbidden, errcode.Forbidden},
+		{"amount not the buyout price", status.Error(codes.InvalidArgument, "invalid argument"), http.StatusBadRequest, errcode.ValidationFailed},
+		{"unknown listing", status.Error(codes.NotFound, "not found"), http.StatusNotFound, errcode.NotFound},
+		{"closed, bought out, no buyout price or short of gold", status.Error(codes.FailedPrecondition, "failed precondition"), http.StatusBadRequest, errcode.FailedPrecondition},
+		{"listing busy", status.Error(codes.Aborted, "aborted"), http.StatusConflict, errcode.Conflict},
+		// the attempt under this key was abandoned and its hold released: a new key
+		// buys again; distinct from busy, which the caller may simply retry
+		{"key's attempt abandoned", status.Error(codes.AlreadyExists, "already exists"), http.StatusConflict, errcode.AlreadyExists},
+		{"marketplace or wallet unreachable", status.Error(codes.Unavailable, "unavailable"), http.StatusServiceUnavailable, errcode.ServiceUnavailable},
+		{"settlement could not start", status.Error(codes.Internal, "unhandled error"), http.StatusInternalServerError, errcode.Internal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &stubListingClient{err: tt.err}
+
+			w := buyout(newRouter(client), uuid.New().String(), buyoutBody)
 
 			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
 		})

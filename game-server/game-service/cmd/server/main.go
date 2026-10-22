@@ -11,12 +11,10 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
-	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
+	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/game-service/config"
@@ -39,10 +37,15 @@ var (
 	gamePort = fmt.Sprintf(":%s", commonhelpers.GetEnvString("GAME_PORT", "5668"))
 
 	// grpc
-	serviceName  = "game"
-	grpcAuthAddr = commonhelpers.GetEnvString("GRPC_AUTH_ADDR", "7116")
-	grpcAddr     = commonhelpers.GetEnvString("GRPC_GAME_ADDR", "7117")
-	consulAddr   = commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
+	serviceName = "game"
+	grpcAddr    = commonhelpers.GetEnvString("GRPC_GAME_ADDR", "7117")
+
+	// downstream gRPC services ("host:port")
+	downstreams = config.Downstreams{
+		Auth:      commonhelpers.GetEnvString("AUTH_ADDR", "localhost:7116"),
+		Items:     commonhelpers.GetEnvString("ITEMS_ADDR", "localhost:7126"),
+		Character: commonhelpers.GetEnvString("CHARACTER_ADDR", "localhost:7123"),
+	}
 
 	// rabbit mq
 	amqpUser     = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
@@ -60,8 +63,13 @@ func main() {
 	pod := config.LoadPod(gamePort)
 	slog.Info("Pod identity", "pod_id", pod.ID, "pod_addr", pod.Addr, "pod_id_generated", pod.Generated)
 
-	// --- database setup ---
-	statsDB := config.InitStatsServiceDB()
+	// --- database setup (runs migrations; aborts startup on failure) ---
+	db := config.InitDB()
+	defer func() {
+		if err := db.Close(); err != nil {
+			slog.Error("close database", "error", err)
+		}
+	}()
 
 	// --- pprof ---
 
@@ -90,7 +98,7 @@ func main() {
 	// -- custom metrics --
 	err = metrics.Init()
 	if err != nil {
-		log.Printf("\ncustom metrics setup init errored. Error: %w\n\n", err)
+		log.Printf("\ncustom metrics setup init errored. Error: %v\n\n", err)
 	}
 
 	// --- redis setup ---
@@ -110,39 +118,11 @@ func main() {
 
 	redisClient := config.GetClient()
 
-	// --- service discovery setup ---
-
-	// -- consul client --
-	registry, err := consul.NewRegistry(consulAddr, serviceName)
-	if err != nil {
-		log.Fatal("Failed to create Consul registry")
-	}
-
-	instanceID := discovery.GenerateInstanceID(serviceName)
-
-	// -- discovery --
-	if err := registry.Register(ctx, instanceID, serviceName, "localhost:"+grpcAddr); err != nil {
-		log.Printf("\nError when registering service:\n\n%s\n\n", err)
-		panic(err)
-	}
-
-	// -- health check --
-	go func() {
-		for {
-			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
-				log.Fatal("Health check failed.")
-			}
-			time.Sleep(time.Second * 1)
-		}
-	}()
-
-	defer registry.Deregister(ctx, instanceID, serviceName)
-
 	// --- grpc ---
 	grpcServer := grpc.NewServer()
 
 	// create a network listener to this service
-	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
+	listener, err := net.Listen("tcp", ":"+grpcAddr)
 
 	if err != nil {
 		log.Fatalf(
@@ -169,10 +149,30 @@ func main() {
 
 	broker.DeclareExchange(ch, commonconstants.GameEventsExchange, "topic")
 
+	// --- outbox ---
+	// one outbox over game-service's own database: the game service writes
+	// match-end rows to it (via SetupRouter) and the worker drains it onto the
+	// existing channel; ctx is cancelled on SIGINT/SIGTERM, which stops the worker
+	outboxRepo := commonoutbox.NewRepo(db)
+	outboxServ := commonoutbox.NewService(outboxRepo)
+	publisher := broker.NewAmqpPublisher(ch)
+	workerSettings := config.OutboxWorkerSettings()
+	outboxWorker := commonoutbox.NewOutboxWorker(workerSettings.Cycle, workerSettings.Batch, outboxServ, publisher)
+
+	go outboxWorker.Run(ctx)
+
 	log.Printf("grpc Game Server started on PORT: %s\n", grpcAddr)
 
 	// routes setup
-	routes := config.SetupRouter(ctx, statsDB, registry, ch, redisClient, pod)
+	routes, closeDownstreams, err := config.SetupRouter(ctx, db, downstreams, ch, redisClient, pod, outboxServ)
+	if err != nil {
+		log.Fatalf("Failed to set up router: %v", err)
+	}
+	defer func() {
+		if err := closeDownstreams(); err != nil {
+			slog.Error("close downstream clients", "error", err)
+		}
+	}()
 
 	fmt.Printf("Server listening on port %s.\n", gamePort)
 
@@ -185,9 +185,13 @@ func main() {
 
 	}()
 
-	if err := grpcServer.Serve(listener); err != nil {
-		log.Fatal("Can't connect to grpc server. Error:", err.Error())
-	}
+	// Serve blocks until GracefulStop, so it runs off the main goroutine, or the
+	// shutdown below (and every deferred close) would never be reached
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			log.Fatal("Can't connect to grpc server. Error:", err.Error())
+		}
+	}()
 
 	// blocks until sigint or sigterm
 	<-ctx.Done()
@@ -195,4 +199,6 @@ func main() {
 
 	log.Println("Shutting down server")
 	grpcServer.GracefulStop()
+
+	// deferred closes run now, the matchmaker's liveness delete first, while redis is open
 }

@@ -3,16 +3,8 @@ package types
 import (
 	"time"
 
-	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/google/uuid"
 )
-
-type Player struct {
-	ID                   uuid.UUID
-	Username             string
-	CurrentGameSessionId uuid.UUID
-	ConnectState         *constants.ConnectState
-}
 
 type PlayerState struct {
 	ID        uuid.UUID        `json:"id"`

@@ -27,7 +27,7 @@ func wearInEverySlot(t *testing.T, s *Session, playerEntityID uuid.UUID) []uuid.
 // What a delver wears in any slot climbs with them. I-77AB6-11.
 func TestPersistentEntityIDs_KeepsWhatIsWornInEverySlot(t *testing.T) {
 	s, _ := equipRun(t, nil)
-	playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"})
+	playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
 	worn := wearInEverySlot(t, s, playerEntityID)
 
 	keep := persistentEntityIDs(s.EntityManager.GetAllEntities())
@@ -40,7 +40,7 @@ func TestPersistentEntityIDs_KeepsWhatIsWornInEverySlot(t *testing.T) {
 // What a delver wears in any slot leaves the run with them. I-77AB6-11.
 func TestGetRawMatchState_ExtractsWhatIsWornInEverySlot(t *testing.T) {
 	s, _ := equipRun(t, nil)
-	playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"})
+	playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
 	wearInEverySlot(t, s, playerEntityID)
 
 	state := s.getRawMatchState()

@@ -5,6 +5,7 @@
  * structural: only the fields the rules read, so a generated `Listing` satisfies it as-is.
  */
 
+import { formatGold } from "./gold";
 import { rarityOf } from "./rarity";
 
 export interface ListingRow {
@@ -31,6 +32,13 @@ export const rowPrice = (
   row: Pick<ListingRow, "startPrice" | "currentPrice">,
 ): number =>
   row.currentPrice ?? row.startPrice;
+
+/**
+ * The `Buyout {price}` badge beside a row's price (FS-49Z37 req 3–4); absent when the seller set
+ * no buyout price. Display only: buying out happens on the detail.
+ */
+export const buyoutBadge = (row: { buyoutPrice?: number }): string | undefined =>
+  row.buyoutPrice === undefined ? undefined : `Buyout ${formatGold(row.buyoutPrice)}`;
 
 const SORT_VALUE: Record<SortKey, (row: ListingRow) => number> = {
   price: rowPrice,

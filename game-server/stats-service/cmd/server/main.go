@@ -2,16 +2,17 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
-	"github.com/darkphotonKN/barrowspire-server/common/discovery/consul"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
@@ -32,7 +33,6 @@ var (
 
 	serviceName = "stats"
 	grpcAddr    = commonhelpers.GetEnvString("GRPC_STATS_ADDR", "7124")
-	consulAddr  = commonhelpers.GetEnvString("CONSUL_ADDR", "localhost:8623")
 
 	amqpUser     = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
 	amqpPassword = commonhelpers.GetEnvString("RABBITMQ_PASS", "guest")
@@ -87,32 +87,9 @@ func main() {
 	}
 	defer config.CloseRedis()
 
-	registry, err := consul.NewRegistry(consulAddr, serviceName)
-	if err != nil {
-		log.Fatal("Failed to create Consul registry")
-	}
-
-	instanceID := discovery.GenerateInstanceID(serviceName)
-
-	if err := registry.Register(ctx, instanceID, serviceName, "localhost:"+grpcAddr); err != nil {
-		log.Printf("\nError when registering service:\n\n%s\n\n", err)
-		panic(err)
-	}
-
-	go func() {
-		for {
-			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
-				log.Fatal("Health check failed.")
-			}
-			time.Sleep(time.Second * 1)
-		}
-	}()
-
-	defer registry.Deregister(ctx, instanceID, serviceName)
-
 	grpcServer := grpc.NewServer()
 
-	listener, err := net.Listen("tcp", "localhost:"+grpcAddr)
+	listener, err := net.Listen("tcp", ":"+grpcAddr)
 	if err != nil {
 		log.Fatalf(
 			"Failed to listen at port: %s\nError: %s\n", grpcAddr, err,
@@ -150,7 +127,27 @@ func main() {
 	go outboxWorker.Run(workerCtx)
 
 	// use the new config setup to initialize all services
-	grpcServer = config.SetupServices(db, ch)
+	// The consumer republishes retries and dead letters on a connection of its
+	// own: a channel in confirm mode, apart from the shared one, and kept off
+	// the consuming connection so broker flow control on publishes cannot stall
+	// consumption.
+	republishConn, republishCh, err := config.InitializeAMQPConnection(
+		fmt.Sprintf("amqp://%s:%s@%s:%s", amqpUser, amqpPassword, amqpHost, amqpPort))
+	if err != nil {
+		slog.Error("failed to open the consumer's republish connection", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := republishConn.Close(); err != nil {
+			slog.Error("close republish connection", "error", err)
+		}
+	}()
+
+	grpcServer, err = config.SetupServices(db, ch, republishCh)
+	if err != nil {
+		slog.Error("failed to set up stats service", "error", err)
+		os.Exit(1)
+	}
 
 	log.Printf("grpc Stats Server started on PORT: %s\n", grpcAddr)
 

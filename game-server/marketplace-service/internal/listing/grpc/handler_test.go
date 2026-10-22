@@ -50,19 +50,24 @@ func (r *fakeRepo) Update(ctx context.Context, id uuid.UUID, fn func(*listing.Li
 // fakeWallet records who the hold was placed for, so a test can prove the
 // handler passed the authenticated caller rather than an invented member.
 type fakeWallet struct {
-	calls        int
-	releaseCalls int
-	gotMemberID  uuid.UUID
-}
-
-func (w *fakeWallet) ReleaseHold(ctx context.Context, bidID uuid.UUID) error {
-	w.releaseCalls++
-	return nil
+	calls       int
+	gotMemberID uuid.UUID
 }
 
 func (w *fakeWallet) PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int, expiresAt time.Time) error {
 	w.calls++
 	w.gotMemberID = memberID
+	return nil
+}
+
+// fakeReleaser stands in for the release workflow's starter: it counts the holds a
+// use case handed back.
+type fakeReleaser struct {
+	calls int
+}
+
+func (r *fakeReleaser) StartReleaseHold(ctx context.Context, listingID, bidID uuid.UUID) error {
+	r.calls++
 	return nil
 }
 
@@ -115,11 +120,16 @@ func activeListing(t *testing.T, bids ...*listing.BidReconstituteParams) *listin
 }
 
 func newTestHandler(repo *fakeRepo, wallet *fakeWallet) *Handler {
+	return newTestHandlerWithRelease(repo, wallet, &fakeReleaser{})
+}
+
+func newTestHandlerWithRelease(repo *fakeRepo, wallet *fakeWallet, release *fakeReleaser) *Handler {
 	return NewHandler(
 		nil,
 		nil,
-		usecase.NewPlaceBidUC(repo, wallet),
-		usecase.NewWithdrawBidUC(repo, wallet),
+		usecase.NewPlaceBidUC(repo, wallet, release),
+		usecase.NewWithdrawBidUC(repo, release),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -248,7 +258,7 @@ func TestListItem_ItemsRefusal_KeepsItsMeaning(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reserver := itemreserver.NewItemReserver(&fakeItemsClient{code: tt.itemsCode})
-			h := NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil, nil, nil, nil, nil)
+			h := NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 			_, err := h.ListItem(authedCtx(t, uuid.New()), &pb.ListItemRequest{
 				ItemId:     uuid.New().String(),
@@ -296,14 +306,14 @@ func TestPlaceBid_AtBuyoutPriceIsInvalidArgumentAndReleasesTheHold(t *testing.T)
 	l, err := listing.NewListing(uuid.New(), uuid.New(), uuid.New(), 100, &buyout, now, now.Add(time.Hour))
 	require.NoError(t, err)
 	repo := &fakeRepo{l: l}
-	wallet := &fakeWallet{}
+	release := &fakeReleaser{}
 
-	_, err = newTestHandler(repo, wallet).PlaceBid(authedCtx(t, uuid.New()), &pb.PlaceBidRequest{
+	_, err = newTestHandlerWithRelease(repo, &fakeWallet{}, release).PlaceBid(authedCtx(t, uuid.New()), &pb.PlaceBidRequest{
 		ListingId: l.Snapshot().ID.String(),
 		Amount:    500,
 	})
 
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 	assert.Empty(t, repo.l.Snapshot().Bids)
-	assert.Equal(t, 1, wallet.releaseCalls)
+	assert.Equal(t, 1, release.calls)
 }

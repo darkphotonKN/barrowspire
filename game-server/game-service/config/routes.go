@@ -2,9 +2,12 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"log/slog"
+	"time"
 
-	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
@@ -12,21 +15,36 @@ import (
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/gameserver"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/handoff"
 	matchqueue "github.com/darkphotonKN/barrowspire-server/game-service/internal/match_queue"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
-
-	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 )
+
+// Downstreams are the gRPC addresses ("host:port") of the services game-service
+// calls. They come from env, so the same binary runs natively (localhost:<port>),
+// in compose, or in Kubernetes (<service>:<port>).
+type Downstreams struct {
+	Auth      string
+	Items     string
+	Character string
+}
 
 /**
 * Sets up API prefix route and all routers.
+*
+* The returned close func waits for the matchmaker to remove this pod's
+* liveness key, then releases every downstream connection; call it on
+* shutdown, before redis is closed.
 **/
-func SetupRouter(ctx context.Context, statsDB *sqlx.DB, registry discovery.Registry, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod) *gin.Engine {
-	router := gin.Default()
+func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod, outbox game.OutboxWriter) (*gin.Engine, func() error, error) {
+	// gin.Default() with its access logger swapped: the default one writes the
+	// raw query, and the WebSocket connect carries the bearer token in it
+	router := gin.New()
+	router.Use(AccessLogger(gin.DefaultWriter), gin.Recovery())
 
 	// NOTE: debugging middleware
 	router.Use(func(c *gin.Context) {
@@ -43,22 +61,37 @@ func SetupRouter(ctx context.Context, statsDB *sqlx.DB, registry discovery.Regis
 	// base route
 	api := router.Group("/api")
 
-	// --- AUTH CLIENT ---
-	authClient := grpcauth.NewClient(registry)
-	itemsClient := grpcitems.NewClient(registry)
-	characterClient := grpccharacter.NewClient(registry)
+	// --- DOWNSTREAM CLIENTS ---
+	authClient, err := grpcauth.NewClient(addrs.Auth)
+	if err != nil {
+		return nil, nil, err
+	}
+	itemsClient, err := grpcitems.NewClient(addrs.Items)
+	if err != nil {
+		return nil, nil, errors.Join(err, authClient.Close())
+	}
+	characterClient, err := grpccharacter.NewClient(addrs.Character)
+	if err != nil {
+		return nil, nil, errors.Join(err, authClient.Close(), itemsClient.Close())
+	}
+	conns := []io.Closer{authClient, itemsClient, characterClient}
+	closeAll := func() error {
+		var errs []error
+		for _, c := range conns {
+			errs = append(errs, c.Close())
+		}
+		return errors.Join(errs...)
+	}
 
 	// --- GAME SERVER SETUP ---
 
 	// -- match maker --
 	matchQueueRedis := matchqueue.NewRedis(redisClient)
-	matchmaker := matchmaker.NewMatchmaker(2, pod.ID, matchQueueRedis)
+	matchAnnouncer := handoff.NewRedis(redisClient)
+	matchmaker := matchmaker.NewMatchmaker(2, pod.ID, matchQueueRedis, matchAnnouncer)
 
-	// -- outbox --
-	outboxRepo := commonoutbox.NewRepo(statsDB)
-	outboxService := commonoutbox.NewService(outboxRepo)
-
-	gameService := game.NewService(outboxService)
+	// outbox is built once in main and shared with the worker that drains it
+	gameService := game.NewService(db, outbox)
 	server := gameserver.NewServer(ctx, authClient, matchmaker, gameService, itemsClient, characterClient)
 
 	// -- routes --
@@ -76,5 +109,20 @@ func SetupRouter(ctx context.Context, statsDB *sqlx.DB, registry discovery.Regis
 	// gameRoutes := api.Group("/game")
 	// gameRoutes.GET("/items", gameHandler.GetItems)
 
-	return router
+	// shutdown waits for the matchmaker to delete this pod's liveness key while
+	// redis is still open (FS-K2HKP §Requirements 3), bounded so a stuck redis
+	// cannot hold up exit, then releases the downstream connections
+	shutdown := func() error {
+		select {
+		case <-matchmaker.Stopped():
+		case <-time.After(matchmakerStopTimeout):
+			slog.Warn("matchmaker did not stop in time, pod alive key left to expire")
+		}
+		return closeAll()
+	}
+
+	return router, shutdown, nil
 }
+
+// a little over the matchmaker's own delete timeout
+const matchmakerStopTimeout = 3 * time.Second

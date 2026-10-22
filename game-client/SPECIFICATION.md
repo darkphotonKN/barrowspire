@@ -66,6 +66,7 @@ server state and sends intents. ✅
 ### Presentation
 
 - [ ] Fantasy-medieval presentation on the web platform → FS-SWMNW
+- [x] Bone & Soot presentation on the web platform → FS-8TCN2
 - [ ] Fantasy-medieval presentation in the game canvas → FS-W6BP1
 - [x] Isometric projection of the game world → FS-2325V
 - [x] Pre-rendered world and prop art → FS-2325V
@@ -98,6 +99,12 @@ server state and sends intents. ✅
 - [x] Bid on a listing → FS-8EGFA
 - [x] Filter to my own listings → FS-8EGFA
 - [ ] Affixes and item level in listing detail → FS-4R9M9
+- [ ] Buy out a listing → FS-49Z37
+- [ ] Accept the leading bid on my listing → FS-49Z37
+- [ ] Set a buyout price when listing → FS-49Z37
+- [ ] Bids stay below a listing's buyout price → FS-49Z37
+- [ ] A refused bid retries under a fresh key → FS-49Z37
+- [ ] View and withdraw my bids → FS-EYQ8K
 
 ### Deployment
 

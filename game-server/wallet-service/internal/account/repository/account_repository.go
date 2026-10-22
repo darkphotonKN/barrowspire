@@ -157,16 +157,36 @@ func (r *AccountRepository) FindByBidID(ctx context.Context, bidID uuid.UUID) (*
 }
 
 func (r *AccountRepository) FindByMemberID(ctx context.Context, memberID uuid.UUID) (*account.Account, error) {
-	var acc AccountRow
-	var holds []HoldsRow
+	var acc *account.Account
 
 	err := commonhelpers.ExecTx(ctx, r.db, &sql.TxOptions{
 		Isolation: sql.LevelRepeatableRead,
 		ReadOnly:  true,
 	}, func(tx *sqlx.Tx) error {
+		var err error
+		acc, err = r.FindByMemberIDTx(ctx, tx, memberID)
+		return err
+	})
 
-		// get single account
-		accountQuery := `
+	if err != nil {
+		return nil, err
+	}
+
+	return acc, nil
+}
+
+// FindByMemberIDTx is FindByMemberID inside a transaction the CALLER owns.
+//
+// It exists so a write that already holds a transaction reads on that same
+// connection. Reading through r.db instead would hold one connection while
+// waiting for a second, and enough concurrent callers would exhaust the pool
+// with every one of them waiting on another.
+func (r *AccountRepository) FindByMemberIDTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID) (*account.Account, error) {
+	var acc AccountRow
+	var holds []HoldsRow
+
+	// get single account
+	accountQuery := `
 	SELECT 
 		id,
 		member_id,
@@ -178,15 +198,14 @@ func (r *AccountRepository) FindByMemberID(ctx context.Context, memberID uuid.UU
 	WHERE member_id = $1
 	`
 
-		err := tx.GetContext(ctx, &acc, accountQuery, memberID)
+	err := tx.GetContext(ctx, &acc, accountQuery, memberID)
 
-		if err != nil {
-			return commonhelpers.WrapDBErr("account", "FindByMemberID", err)
-		}
+	if err != nil {
+		return nil, commonhelpers.WrapDBErr("account", "FindByMemberID", err)
+	}
 
-		// grab all related holds
-		// get single account
-		holdsQuery := `
+	// grab all related holds
+	holdsQuery := `
 	SELECT 
 		id,
 		account_id,
@@ -200,17 +219,10 @@ func (r *AccountRepository) FindByMemberID(ctx context.Context, memberID uuid.UU
 	WHERE account_id = $1
 	`
 
-		err = tx.SelectContext(ctx, &holds, holdsQuery, acc.ID)
-
-		if err != nil {
-			return commonhelpers.WrapDBErr("account", "FindByID", err)
-		}
-
-		return nil
-	})
+	err = tx.SelectContext(ctx, &holds, holdsQuery, acc.ID)
 
 	if err != nil {
-		return nil, err
+		return nil, commonhelpers.WrapDBErr("account", "FindByMemberID", err)
 	}
 
 	// data successfully retrieved, construct and reconstitute
@@ -296,6 +308,18 @@ func (r *AccountRepository) Insert(ctx context.Context, account *account.Account
 // account/errors.go's isRetriable and usecase/retry.go's withRetry relies on this
 // to work
 func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, before account.AccountSnapshot) error {
+	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
+		return r.SaveTx(ctx, tx, acc, before)
+	})
+}
+
+// SaveTx is Save inside a transaction the CALLER owns, under the same
+// ErrConcurrentModification contract.
+//
+// It exists because a seller's credit must commit together with the dedup row
+// that makes it exactly-once: a credit without its row is paid again on retry,
+// and a row without its credit is a seller never paid (FS-NXP1W §Req 30).
+func (r *AccountRepository) SaveTx(ctx context.Context, tx *sqlx.Tx, acc *account.Account, before account.AccountSnapshot) error {
 	after := acc.Snapshot()
 
 	// diff account
@@ -318,72 +342,70 @@ func (r *AccountRepository) Save(ctx context.Context, acc *account.Account, befo
 	WHERE id = $3 AND version = $4
 	`
 
-	return commonhelpers.ExecTx(ctx, r.db, nil, func(tx *sqlx.Tx) error {
-		// -- update account --
-		res, err := tx.ExecContext(ctx, accountQuery, after.Gold, after.UpdatedAt, after.ID, changes.expectedVersion)
+	// -- update account --
+	res, err := tx.ExecContext(ctx, accountQuery, after.Gold, after.UpdatedAt, after.ID, changes.expectedVersion)
+
+	if err != nil {
+		return commonhelpers.WrapDBErr("account", "save", err)
+	}
+
+	n, err := res.RowsAffected()
+
+	if err != nil {
+		return fmt.Errorf("account save, rows affected: %w", err)
+	}
+
+	// race detected
+	if n == 0 {
+		return account.ErrConcurrentModification
+	}
+
+	// -- insert new holds --
+	if len(changes.newHolds) != 0 {
+		newHoldsQuery := `
+	INSERT INTO wallet_holds (id, account_id, bid_id, status, amount, expired_at, created_at, updated_at)
+	VALUES (:id, :account_id, :bid_id, :status, :amount, :expired_at, :created_at, :updated_at)
+	`
+		_, err = tx.NamedExecContext(ctx, newHoldsQuery, changes.newHolds)
 
 		if err != nil {
 			return commonhelpers.WrapDBErr("account", "save", err)
 		}
 
-		n, err := res.RowsAffected()
+	}
+	// -- update existing holds --
 
-		if err != nil {
-			return fmt.Errorf("account save, rows affected: %w", err)
-		}
-
-		// race detected
-		if n == 0 {
-			return account.ErrConcurrentModification
-		}
-
-		// -- insert new holds --
-		if len(changes.newHolds) != 0 {
-			newHoldsQuery := `
-		INSERT INTO wallet_holds (id, account_id, bid_id, status, amount, expired_at, created_at, updated_at)
-		VALUES (:id, :account_id, :bid_id, :status, :amount, :expired_at, :created_at, :updated_at)
-		`
-			_, err = tx.NamedExecContext(ctx, newHoldsQuery, changes.newHolds)
-
-			if err != nil {
-				return commonhelpers.WrapDBErr("account", "save", err)
-			}
-
-		}
-		// -- update existing holds --
-
-		if len(changes.holdsUpdated) == 0 {
-			return nil
-		}
-
-		// create unnest required vertical slices
-		ids := make([]string, 0, len(changes.holdsUpdated))
-		statuses := make([]string, 0, len(changes.holdsUpdated))
-		updatedAts := make([]time.Time, 0, len(changes.holdsUpdated))
-
-		for _, hold := range changes.holdsUpdated {
-			ids = append(ids, hold.id.String())
-			statuses = append(statuses, string(*hold.status))
-			updatedAts = append(updatedAts, hold.updatedAt)
-		}
-
-		changedHoldsQuery := `
-		UPDATE wallet_holds h
-		SET status = v.status,
-			updated_at = v.updated_at
-		FROM unnest($1::uuid[], $2::text[], $3::timestamptz[])
-		AS v(id, status, updated_at)
-		WHERE v.id = h.id
-		`
-
-		_, err = tx.ExecContext(ctx, changedHoldsQuery, pq.Array(ids), pq.Array(statuses), pq.Array(updatedAts))
-
-		if err != nil {
-			return commonhelpers.WrapDBErr("account", "save", err)
-		}
-
+	if len(changes.holdsUpdated) == 0 {
 		return nil
-	})
+	}
+
+	// create unnest required vertical slices
+	ids := make([]string, 0, len(changes.holdsUpdated))
+	statuses := make([]string, 0, len(changes.holdsUpdated))
+	updatedAts := make([]time.Time, 0, len(changes.holdsUpdated))
+
+	for _, hold := range changes.holdsUpdated {
+		ids = append(ids, hold.id.String())
+		statuses = append(statuses, string(*hold.status))
+		updatedAts = append(updatedAts, hold.updatedAt)
+	}
+
+	changedHoldsQuery := `
+	UPDATE wallet_holds h
+	SET status = v.status,
+		updated_at = v.updated_at
+	FROM unnest($1::uuid[], $2::text[], $3::timestamptz[])
+	AS v(id, status, updated_at)
+	WHERE v.id = h.id
+	`
+
+	_, err = tx.ExecContext(ctx, changedHoldsQuery, pq.Array(ids), pq.Array(statuses), pq.Array(updatedAts))
+
+	if err != nil {
+		return commonhelpers.WrapDBErr("account", "save", err)
+	}
+
+	return nil
 
 }
 

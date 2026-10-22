@@ -8,6 +8,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	commonerr "github.com/darkphotonKN/barrowspire-server/common/apperr"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/dto"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
@@ -36,7 +37,7 @@ func (s *stubFreezeListing) Handle(ctx context.Context, cmd usecase.Freezelistin
 func newFreezeEnv(uc FreezeListing) *testsuite.TestActivityEnvironment {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestActivityEnvironment()
-	NewActivities(uc, nil, nil, nil).Register(env)
+	NewActivities(uc, nil, nil, nil, nil, nil).Register(env)
 	return env
 }
 
@@ -56,15 +57,19 @@ func runFreeze(t *testing.T, uc FreezeListing, listingID uuid.UUID) (marketplace
 func TestFreezeListingActivity_Outcome(t *testing.T) {
 	listingID, itemID, sellerID := uuid.New(), uuid.New(), uuid.New()
 	winner := &dto.FreezeWinner{WinnerBidID: uuid.New(), WinnerMemberID: uuid.New(), Amount: 250}
+	withBids := []uuid.UUID{winner.WinnerBidID, uuid.New()}
+	allWithdrawn := []uuid.UUID{uuid.New()}
 
 	tests := []struct {
 		name   string
 		winner *dto.FreezeWinner
+		bidIDs []uuid.UUID
 		want   marketplaceactivity.FreezeListingOutput
 	}{
 		{
 			name:   "a winner was selected",
 			winner: winner,
+			bidIDs: withBids,
 			want: marketplaceactivity.FreezeListingOutput{
 				Outcome:        marketplaceactivity.OutcomeHasWinner,
 				ListingID:      listingID,
@@ -73,17 +78,21 @@ func TestFreezeListingActivity_Outcome(t *testing.T) {
 				WinnerBidID:    winner.WinnerBidID,
 				WinnerMemberID: winner.WinnerMemberID,
 				Amount:         250,
+				BidIDs:         withBids,
 			},
 		},
 		{
-			// no bids is a legitimate ending, not an error: the winner fields stay unset
+			// no winner is a legitimate ending, not an error: the winner fields stay
+			// unset, but bids that dropped out are still reported
 			name:   "no winner",
 			winner: nil,
+			bidIDs: allWithdrawn,
 			want: marketplaceactivity.FreezeListingOutput{
 				Outcome:   marketplaceactivity.OutcomeNoBids,
 				ListingID: listingID,
 				ItemID:    itemID,
 				SellerID:  sellerID,
+				BidIDs:    allWithdrawn,
 			},
 		},
 	}
@@ -95,6 +104,7 @@ func TestFreezeListingActivity_Outcome(t *testing.T) {
 				ItemID:    itemID,
 				SellerID:  sellerID,
 				Winner:    tt.winner,
+				BidIDs:    tt.bidIDs,
 			}}
 
 			out, err := runFreeze(t, uc, listingID)
@@ -119,6 +129,9 @@ func TestFreezeListingActivity_Classification(t *testing.T) {
 		{"listing is not active", listing.ErrInvalidListingState, true},
 		{"listing state is corrupt", listing.ErrCorruptListingState, true},
 		{"listing not found", commonerr.ErrNotFound, true},
+		// what ListingRepository.Update actually returns for a missing row, via
+		// WrapDBErr: a different sentinel from apperr's
+		{"listing not found, as the repository reports it", commonconstants.ErrNotFound, true},
 		{"dependency blip", errors.New("dial tcp: connection refused"), false},
 	}
 

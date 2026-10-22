@@ -13,13 +13,14 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 ## Assumptions (verify these first)
 
 - The gateway's job is **only** Gin HTTP routing + a middleware/setup suite + forwarding to
-  downstream services (gRPC via Consul, plus one AMQP path). It holds **no business logic and
-  no database of its own** — `cmd/main.go` explicitly notes it is stateless.
+  downstream services (gRPC, plus one AMQP path). It holds **no business logic and
+  no database of its own** — `cmd/server/main.go` explicitly notes it is stateless.
 - Any in-repo DB artifacts (SQL migrations, `schema.sql`, local entity models) and any handler
   logic that duplicates a downstream service are **legacy** left over from before those
   concerns moved into their own services, and are **out of scope** for this spec. They are
   listed under [Legacy / to remove](#legacy--to-remove) rather than documented as behavior.
-- Downstream services are discovered by Consul service name; the gateway is a client to each.
+- Each downstream's address comes from an env var (`<SERVICE>_ADDR`, ADR-0022); the gateway is
+  a client to each.
 
 ## Capabilities
 
@@ -33,7 +34,6 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] CORS middleware
 - [x] OpenTelemetry tracing middleware
 - [x] JWT authentication on private route groups
-- [x] Consul register / health-check / deregister lifecycle
 - [x] Error responses on every route → FS-none
 - [x] Uniform, machine-readable error contract → FS-22WKC
 - [x] Gateway HTTP surface serialized → FS-NTPW2
@@ -60,6 +60,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [ ] Buy out a listing → FS-NXP1W
 - [ ] Buyout price on listings → FS-9XKS6
 - [ ] Affixes and item level in item summaries → FS-4R9M9
+- [ ] Read my bids → FS-EYQ8K
 
 ### Characters
 
@@ -67,14 +68,14 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 
 ### Integration patterns
 
-- [x] gRPC fan-out over Consul-discovered clients
+- [x] gRPC fan-out to env-configured downstreams
 - [x] Synchronous signup → FS-83TJK
 
 ## Purpose
 
 api-gateway is the single entry point for **request/response platform traffic**. It terminates
 client HTTP, runs a cross-cutting middleware suite (tracing, CORS, JWT auth), and **fans each
-route out to the owning downstream microservice** over gRPC (Consul-discovered) or, for one
+route out to the owning downstream microservice** over gRPC (address from env) or, for one
 path, RabbitMQ. It is **stateless** — it owns no persistence and no domain rules. ✅ DONE
 
 It is **not** the entry point for the realtime game surface. game-service owns its entire
@@ -88,7 +89,6 @@ first.
 
 - Gin router + route groups under the `/api` prefix (plus a bare `/webhook/stripe`).
 - Middleware suite: request logging, CORS, OpenTelemetry (otelgin) tracing, JWT auth.
-- Service discovery lifecycle: Consul register / health-check / deregister.
 - Translating an authenticated HTTP request into a downstream gRPC (or AMQP) call and
   returning the downstream response.
 
@@ -98,19 +98,17 @@ first.
 - A holder of domain/business logic. Handlers marshal request → call downstream → map response.
 - A saga orchestrator or event processor beyond publishing the signup command.
 
-## Setup & lifecycle (`cmd/main.go`)
+## Setup & lifecycle (`cmd/server/main.go`)
 
 On startup, in order: ✅ DONE
 
 1. Load `.env` (autoloaded), configure structured logger by `ENVIRONMENT`.
 2. Init OpenTelemetry (`OTEL_ENABLED`, `COLLECTOR_ENDPOINT`, `SERVICE_VERSION`); deferred shutdown.
-3. Register with Consul (`CONSUL_ADDR`) under service name **`api-gateway`** at `localhost:<PORT>`;
-   background goroutine health-checks every 1s (fatal on failure); deregister on shutdown.
+3. Read each downstream's gRPC address from env (`AUTH_ADDR`, `ITEMS_ADDR`, …), defaulting to
+   `localhost:<that service's port>` (ADR-0022).
 4. Connect to RabbitMQ (`RABBITMQ_*`) and declare the **`AuthEventsExchange`** topic exchange.
-5. Build the Gin router via `SetupRouter(registry, ch)` and serve on `:<PORT>` (default **7114**).
-
-> REVIEW: the health-check goroutine calls `log.Fatal` on a single failed check — a transient
-> Consul blip takes the whole gateway down. Is that intended, or should it retry/backoff?
+5. Build the Gin router via `SetupRouter(downstreams, ch)`, which dials every downstream once
+   (lazily) and returns a func that closes them on shutdown; serve on `:<PORT>` (default **7114**).
 
 ## Middleware suite
 
@@ -139,7 +137,7 @@ Applied in `SetupRouter`, in order: ✅ DONE
 ## HTTP surface → downstream (routing contract)
 
 All under `/api` unless noted. Each group forwards to the downstream service named in **bold**
-(the Consul service name), via gRPC unless marked AMQP. ✅ DONE
+(the downstream service), via gRPC unless marked AMQP. ✅ DONE
 
 **example → `examples`**
 
@@ -183,17 +181,18 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
 
 ## Downstream integration patterns
 
-- **gRPC via Consul** ✅ — each gateway client lazily dials its downstream once via
-  `discovery.ServiceConnection(ctx, "<consul-name>", registry)`, caches the `*grpc.ClientConn`
-  (re-dials only if `Shutdown`), and calls the generated `pb.New<Svc>Client(conn)`. Consul
-  names in use: `examples`, `auth`, `items`, `notification`, `stats`, `payments`.
+- **gRPC to env-configured addresses** ✅ — each gateway client is constructed with its
+  downstream's `host:port`, dials it once via `discovery.Dial(addr)` (lazy: nothing connects
+  until the first RPC), keeps the `*grpc.ClientConn` for the process lifetime, and calls the
+  generated `pb.New<Svc>Client(conn)`. An unreachable downstream fails the RPC with
+  `codes.Unavailable`, answered as 503 (ADR-0022).
 > **The gateway no longer publishes to the broker at all.** AMQP fire-and-forget existed for
 > signup alone — JSON body → `proto.Marshal` → publish to `AuthEventsExchange` with routing key
 > `AuthMemberCreate`, answering `202` without waiting for a reply. FS-83TJK replaced it with a
 > synchronous gRPC call, and the routing key, both publishers, and auth-service's consumer are
-> gone. gRPC via Consul is now the gateway's only downstream integration pattern.
+> gone. gRPC is now the gateway's only downstream integration pattern.
 >
-> REVIEW: `cmd/main.go` still dials RabbitMQ and `SetupRouter` still takes a `*amqp.Channel`
+> REVIEW: `cmd/server/main.go` still dials RabbitMQ and `SetupRouter` still takes a `*amqp.Channel`
 > nothing reads, so the gateway keeps requiring `RABBITMQ_*` for a dependency it no longer uses.
 > Finish the removal or record why the connection is retained.
 
@@ -202,7 +201,7 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
 - Stateless: no request state persists in the gateway between calls.
 - Downstream connections are process-lived and shared (one cached conn per downstream client).
 - Private routes require a valid JWT; `userId`/`userIdStr` are the only identity passed onward.
-- Default port `7114`; registers itself in Consul as `api-gateway`.
+- Default port `7114`.
 
 ## Legacy / to remove
 
@@ -210,10 +209,10 @@ Present in the tree but **out of scope** — the gateway is declared stateless a
 duplicate concerns now owned by dedicated services. Listed so audits don't mistake them for
 gateway behavior. ⏳ (cleanup)
 
-- `migrations/` (38 files) + `schema.sql` — includes `create_members`, `base_items`, `items`,
-  etc., i.e. tables now owned by auth-service / item-service. No code in the gateway reads them.
+- `schema.sql` — dump including `members`, `base_items`, `items`, etc., i.e. tables now owned
+  by auth-service / item-service. No code in the gateway reads it. (`migrations/` already removed.)
 - `internal/models/entities.go` — local entity models with no DB behind them.
-- `docker-compose.yml`, `.air.toml`, `bin/`, `tmp/` — tooling, not behavior.
+- `.air.toml`, `bin/`, `tmp/` — tooling, not behavior.
   > REVIEW: confirm none of the above is still referenced before deletion, then remove so the
   > gateway's statelessness is structural, not just aspirational.
 
@@ -222,4 +221,3 @@ gateway behavior. ⏳ (cleanup)
 - Are `stats` routes intentionally unauthenticated?
 - Should the `fmt.Println` debug middleware and the `*`-origin CORS be replaced before prod?
 - Which item creation endpoints are the supported contract vs. legacy admin/seed tools?
-- Should the health-check loop tolerate transient Consul failures instead of `log.Fatal`?

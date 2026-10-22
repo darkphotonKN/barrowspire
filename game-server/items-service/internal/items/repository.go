@@ -23,6 +23,8 @@ var ErrItemNotReservable = errors.New("item not reservable")
 // no longer the seller's, or no longer on sale. Retrying cannot change either.
 var ErrItemNotFreezable = errors.New("item not freezable")
 
+var ErrItemNotTransfer = errors.New("item not transfer")
+
 type repository struct {
 	DB *sqlx.DB
 }
@@ -33,11 +35,22 @@ func NewRepository(db *sqlx.DB) *repository {
 	}
 }
 
+// foreignKeyViolation is Postgres's SQLSTATE for a foreign-key violation.
+const foreignKeyViolation = "23503"
+
 // wrapDBErr is the repo boundary translation point: it delegates to the shared
 // WrapDBErr helper, which converts infrastructure errors into domain sentinels
-// and wraps anything else with the repo name + operation for context.
+// and wraps anything else with the repo name + operation for context. A
+// foreign-key violation keeps its *pq.Error alongside the sentinel, so the
+// items.extracted consumer can retry a reference that is not there yet instead
+// of dead-lettering it as malformed.
 func wrapDBErr(op string, err error) error {
-	return commonhelpers.WrapDBErr("items repo", op, err)
+	wrapped := commonhelpers.WrapDBErr("items repo", op, err)
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Code == foreignKeyViolation {
+		return fmt.Errorf("items repo: %s: %w: %w", op, wrapped, pqErr)
+	}
+	return wrapped
 }
 
 func (r *repository) CreateItemType(ctx context.Context, itemType *ItemType) error {
@@ -1165,6 +1178,66 @@ func (r *repository) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID)
 	return frozen, nil
 }
 
+// UnfreezeItem is items' share of the pre-pivot rollback (FS-NXP1W Req 12): the
+// item goes back to its seller, AVAILABLE, listing_id cleared. One conditional
+// write, scoped to this listing (Req 24a), so a retry after the seller relisted
+// the item leaves the new listing's item alone.
+//
+// LISTED is matched as well as PENDING_SETTLEMENT: a rollback for a 0b that never
+// froze the item still ends the listing, and its reservation with it.
+//
+// Zero rows is success, never an error. The rollback is retried without a cap, so
+// it must end: an item this write does not match is already back with its seller,
+// relisted, or no longer this settlement's to touch.
+func (r *repository) UnfreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) error {
+	unfreeze := `
+		UPDATE item_instances
+		SET status = 'AVAILABLE',
+			listing_id = NULL
+		WHERE id = $1
+		AND owner_member_id = $2
+		AND listing_id = $3
+		AND status IN ('PENDING_SETTLEMENT', 'LISTED')
+	`
+
+	res, err := r.DB.ExecContext(ctx, unfreeze, itemID, sellerID, listingID)
+	if err != nil {
+		return wrapDBErr("unfreeze item", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("unfreeze item, rows affected: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+
+	// Zero rows is still success, but one shape of it is an invariant breach rather
+	// than a replay or a relist: the item is still reserved for this listing, yet
+	// not the seller's or not in a status the rollback releases. Nothing else will
+	// free it, so it must leave a trace.
+	stuck := `
+		SELECT EXISTS (
+			SELECT 1
+			FROM item_instances
+			WHERE id = $1
+			AND listing_id = $2
+		)
+	`
+
+	var stillReserved bool
+	if err := r.DB.GetContext(ctx, &stillReserved, stuck, itemID, listingID); err != nil {
+		return wrapDBErr("unfreeze item, still reserved check", err)
+	}
+	if stillReserved {
+		slog.WarnContext(ctx, "unfreeze left an item still reserved for its failed listing",
+			"item_id", itemID, "seller_id", sellerID, "listing_id", listingID)
+	}
+
+	return nil
+}
+
 // NB1
 var (
 	ErrItemCorrupted = errors.New("item corrupted")
@@ -1234,4 +1307,66 @@ func (r *repository) ReturnItem(ctx context.Context, id, listingID uuid.UUID) er
 	default:
 		return nil
 	}
+}
+
+var errNotTransferable = errors.New("item not transferable for this listing")
+
+func (r *repository) TransferItem(ctx context.Context, itemID, buyerID, listingID uuid.UUID) (bool, error) {
+	var transferred bool
+	err := commonhelpers.ExecTx(ctx, r.DB, nil, func(tx *sqlx.Tx) error {
+		// record and check
+		transfer := `
+			INSERT INTO item_transfers (listing_id, item_id, buyer_member_id) 
+			VALUES (
+				$1, $2, $3
+			)
+			ON CONFLICT(listing_id) DO NOTHING
+		`
+		res, err := tx.ExecContext(ctx, transfer, listingID, itemID, buyerID)
+		if err != nil {
+			return wrapDBErr("transfer item, record", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("transfer item, record rows affected: %w", err)
+		}
+		if n == 0 {
+			transferred = true
+			return nil
+		}
+
+		query := `
+			UPDATE item_instances 
+			SET 
+				owner_member_id = $1,
+				status = 'AVAILABLE',
+				listing_id = NULL
+			WHERE status = 'PENDING_SETTLEMENT'
+			AND id = $2
+			AND listing_id = $3
+		`
+
+		res, err = tx.ExecContext(ctx, query, buyerID, itemID, listingID)
+		if err != nil {
+			return wrapDBErr("transfer item, update", err)
+		}
+		n, err = res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("transfer item, update rows affected: %w", err)
+		}
+		if n == 0 {
+			return errNotTransferable
+		}
+
+		transferred = true
+		return nil
+	})
+
+	if errors.Is(err, errNotTransferable) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return transferred, nil
 }

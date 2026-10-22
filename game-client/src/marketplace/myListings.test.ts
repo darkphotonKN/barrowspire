@@ -41,7 +41,7 @@ describe("mineRow", () => {
   });
 
   it.each([
-    ["PENDING_SETTLEMENT", "Settling"],
+    ["PENDING_SETTLEMENT", "Sold — settling"],
     ["SOLD", "Sold"],
     ["CANCELLED", "Withdrawn"],
   ])("should label %s as %s with no countdown", (status, label) => {
@@ -55,5 +55,15 @@ describe("mineRow", () => {
     expect(
       mineRow({ ...listing, status: "SOLD", currentPrice: 90, soldPrice: 120 }, NOW).price,
     ).toEqual({ gold: "120", opening: false });
+  });
+});
+
+describe("mineRow buyout (FS-49Z37 req 3)", () => {
+  it("should carry the buyout badge when the listing has a buyout price", () => {
+    expect(mineRow({ ...listing, buyoutPrice: 900 }, NOW).buyout).toBe("Buyout 900");
+  });
+
+  it("should carry none when it has not", () => {
+    expect(mineRow(listing, NOW).buyout).toBeUndefined();
   });
 });

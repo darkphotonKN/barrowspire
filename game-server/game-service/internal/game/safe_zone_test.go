@@ -44,8 +44,8 @@ func worldWithTwoDelvers(t *testing.T, bounds WorldBounds) (*Session, uuid.UUID,
 	session := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, nil, bounds)
 
 	attacker, target := uuid.New(), uuid.New()
-	session.AddPlayer(attacker, types.CharacterInPlay{Name: "Wren", Class: "warrior"})
-	session.AddPlayer(target, types.CharacterInPlay{Name: "Kaelen", Class: "warrior"})
+	session.AddPlayer(attacker, types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
+	session.AddPlayer(target, types.CharacterInPlay{Name: "Kaelen", Class: "warrior"}, "")
 
 	// AddPlayer scatters a run's arrivals, so place them: within the 60 attack
 	// range, but in different spatial-hash cells. MovementSystem buckets by

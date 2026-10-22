@@ -146,3 +146,13 @@ export interface WorldEnteredPayload {
   session_id: string;
   world_type: WorldType;
 }
+
+/**
+ * The run this delver was matched into is hosted on another server: connect to
+ * `addr` for `run_id`. The host's world_entered follows once they are seated.
+ * FS-K2HKP §Requirements 21, 29.
+ */
+export interface WorldHandoffPayload {
+  addr: string;
+  run_id: string;
+}

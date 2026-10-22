@@ -296,6 +296,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/marketplace/bids/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Page my bids
+         * @description Pages the signed-in member's own bids, newest placed first, one row per bid, each with where its listing stands now and the listed item embedded. Withdrawn and failed bids are not listed. The bidder is taken from the token; there is no parameter for reading another member's bids. If the items lookup fails the whole request fails.
+         */
+        get: operations["list-my-bids"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/marketplace/listings": {
         parameters: {
             query?: never;
@@ -391,7 +411,7 @@ export interface paths {
         put?: never;
         /**
          * Place a bid on a listing
-         * @description Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request.
+         * @description Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request. Resending with the same Idempotency-Key is safe and holds no further gold. 409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means the attempt under this Idempotency-Key was refused or abandoned and its gold returned: bid again with a new key.
          */
         post: operations["place-bid"];
         delete?: never;
@@ -415,6 +435,26 @@ export interface paths {
          * @description Withdraws a bid the signed-in member placed. A bid belonging to another member is refused, never silently ignored.
          */
         delete: operations["withdraw-bid"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/marketplace/listings/{listing_id}/buyout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Buy out a listing
+         * @description Buys the listing outright at its buyout price as the signed-in member, ending the auction. The amount sent must equal the listing's buyoutPrice, and that price is what is charged. Answers once settlement has started; the sale completes asynchronously. Repeating it is safe: a buyout already made is not made twice. Refused for an amount that is not the buyout price, the seller, a closed auction, a listing with no buyout price, or a buyer short of gold. 409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means the attempt under this Idempotency-Key was abandoned and its gold returned: buy again with a new key.
+         */
+        post: operations["buyout"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -847,6 +887,13 @@ export interface components {
             s3_key?: string;
             /** @description Correlates the request with its confirmation */
             upload_id?: string;
+        };
+        BuyoutBody: {
+            /**
+             * Format: int64
+             * @description Gold the buyer agrees to pay. Must equal the listing's buyoutPrice; the buyer is always charged that price.
+             */
+            amount: number;
         };
         Character: {
             /** @description warrior, mage or archer. */
@@ -1487,6 +1534,47 @@ export interface components {
              * @description Duplicates the HTTP status
              */
             statusCode: number;
+        };
+        MyBid: {
+            /**
+             * Format: int64
+             * @description Gold bid.
+             */
+            amount: number;
+            /** Format: uuid */
+            bidId: string;
+            /** @description The listed item. Absent only when items has no such instance. */
+            item?: components["schemas"]["ItemSummary"];
+            listing: components["schemas"]["MyBidListing"];
+            /** Format: uuid */
+            listingId: string;
+            /** Format: date-time */
+            placedAt: string;
+            /** @description Bid status: PENDING, WINNING, OUTBID, WON or LOST. */
+            status: string;
+        };
+        MyBidListing: {
+            /**
+             * Format: int64
+             * @description Gold that buys the item outright. Absent when the seller set none.
+             */
+            buyoutPrice?: number;
+            /**
+             * Format: int64
+             * @description The leading bid, anyone's. Absent when nobody leads.
+             */
+            currentPrice?: number;
+            /** @description True when the auction is past endsAt but not yet settled; it no longer accepts bids. */
+            ended: boolean;
+            /** Format: date-time */
+            endsAt: string;
+            /** @description Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED. */
+            status: string;
+        };
+        MyBidPage: {
+            bids: components["schemas"]["MyBid"][];
+            /** @description Pass back as cursor for the next page. Absent on the last page. */
+            nextCursor?: string;
         };
         Notification: {
             /** @description Creation time */
@@ -2957,6 +3045,75 @@ export interface operations {
             };
         };
     };
+    "list-my-bids": {
+        parameters: {
+            query?: {
+                /** @description Opaque position from a previous page's nextCursor. Do not construct. */
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyBidPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
     "browse-listings": {
         parameters: {
             query?: {
@@ -3407,6 +3564,105 @@ export interface operations {
         responses: {
             /** @description No Content */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    buyout: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated per buyout and reused on every retry of it, so a retried buyout is recognised instead of holding gold again. Optional. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuyoutBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

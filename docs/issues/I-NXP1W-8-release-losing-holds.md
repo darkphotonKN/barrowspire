@@ -25,7 +25,7 @@ slice 7.
 
 - [x] Every losing hold ends `RELEASED`; the winning hold is untouched
 - [x] Re-running after success returns the same count and changes nothing
-- [ ] Cap exhaustion parks through the slice 7 helper — **out of slice, see below**
+- [x] Cap exhaustion parks through the slice 7 helper — step 2 is wired through `runUntilDone(afterPivot)` (`TestWorkflow_TailImpossible_ParksAndNeverRollsBack`; cap exhaustion itself in `park_test.go`)
 - [x] Crash-point table committed
 - [x] Use case tested without Temporal; `make test` green
 

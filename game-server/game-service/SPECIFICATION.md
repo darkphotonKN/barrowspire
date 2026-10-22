@@ -113,7 +113,8 @@ matchmaking); this service is the engine they feed. ✅
 
 ### Results
 
-- [x] Publish match-end events via transactional outbox
+- [x] Publish match-end events via an outbox → FS-none
+- [x] Match-end outbox in game-service's own database → FS-9TNJA
 
 ### Persistent world (MMO-RPG refactor)
 
@@ -248,8 +249,6 @@ Code-certain unless noted:
   (often none).
 - **`leave_queue` broken** — nil-deref path when the player isn't found, and the actual dequeue
   (`RemovePlayerFromQueue`) is commented out — leaving the queue does nothing.
-- **`cleanUpClient` inverted** — the player-exists branch returns early without closing the
-  msg channel / deleting mappings / closing the conn (leak); the fall-through derefs a nil player.
 - **Combat in the wrong system** — damage inlined in MovementSystem; `CombatSystem`/`SkillSystem`
   empty; `DamageCalculator` dead.
 - **Dead infra** — Redis `cacheService` wired but unused; the gRPC game server is created and

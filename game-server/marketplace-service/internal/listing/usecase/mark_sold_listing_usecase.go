@@ -26,35 +26,18 @@ func NewMarkSoldListingUC(repo listing.Repository) *MarkSoldListingUC {
 
 // NOTE: named {Action}{Resource}Command because its an INBOUND application WRITE intent
 type MarkSoldListingCommand struct {
-	ID        uuid.UUID
-	BuyerID   uuid.UUID
-	SoldPrice int
-	Now       time.Time
+	ID  uuid.UUID
+	Now time.Time
 }
 
 func (uc *MarkSoldListingUC) Handle(ctx context.Context, cmd MarkSoldListingCommand) error {
-	return withRetry(ctx, func() error {
-		listingDomain, err := uc.repo.FindByID(ctx, cmd.ID)
 
-		if err != nil {
-			return fmt.Errorf("MarkSold listing usecase handle findByID listing id %v : %w", cmd.ID, err)
-		}
-
-		before := listingDomain.Snapshot()
-
-		err = listingDomain.MarkSold(cmd.Now, cmd.BuyerID, cmd.SoldPrice)
-
-		if err != nil {
-			return fmt.Errorf("MarkSold listing usecase update listing: %w", err)
-		}
-
-		err = uc.repo.Save(ctx, listingDomain, before)
-
-		if err != nil {
-			// propgate error with usecase context
-			return fmt.Errorf("writing repo usecase inserting new listing : %w", err)
-		}
-
-		return nil
+	err := uc.repo.Update(ctx, cmd.ID, func(l *listing.Listing) error {
+		return l.MarkSold(cmd.Now)
 	})
+	if err != nil {
+		return fmt.Errorf("writing repo usecase mark sold listing : %w", err)
+	}
+	return nil
+
 }
