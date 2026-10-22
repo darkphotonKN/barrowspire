@@ -21,7 +21,7 @@ import { BARROW_HEX } from "./theme";
 // ── Derivation helpers ────────────────────────────────────────────────────
 
 /** Mix two 0xRRGGBB colours. `t` of 0 returns `a`, 1 returns `b`. */
-function mix(a: number, b: number, t: number): number {
+export function mix(a: number, b: number, t: number): number {
   const ar = (a >> 16) & 0xff;
   const ag = (a >> 8) & 0xff;
   const ab = a & 0xff;
@@ -219,6 +219,29 @@ export const palette = {
   satchelRivet: BARROW_HEX.brassBright,
   /** Multiplied over the flap once it lifts: the underside is the unlit side. */
   satchelUnderside: shade(BARROW_HEX.vellumDark, 0.35),
+
+  // -- Menu chrome: the canvas menus (main menu, character creation, loadout) wear the web
+  //    UI's Bone & Soot look (design-guideline "UI Chrome"). Bone is the torch, one per view:
+  //    the primary CTA, the title, the active selection. Iron frames, soot grounds, grey stone
+  //    panels. Never used past the menus: the hub, the run and the HUD keep the barrow ramp.
+  //    Derive menu shades with `mix()` toward `menu.well` / `menu.torch`, not `shade()` /
+  //    `tint()`, which pull toward the warm barrow ends.
+  menu: {
+    ground: BARROW_HEX.menuSoot,
+    well: BARROW_HEX.menuSootDeep,
+    panel: BARROW_HEX.menuStone,
+    panelRaised: BARROW_HEX.menuStoneRaised,
+    frame: BARROW_HEX.menuIron,
+    frameBright: BARROW_HEX.menuIronBright,
+    torch: BARROW_HEX.menuBone,
+    torchBright: BARROW_HEX.menuBoneBright,
+    accent: BARROW_HEX.menuAsh,
+    text: BARROW_HEX.menuText,
+    label: BARROW_HEX.menuTextDim,
+    muted: BARROW_HEX.menuTextMuted,
+    faint: BARROW_HEX.menuTextFaint,
+    danger: BARROW_HEX.menuDangerText,
+  },
 } as const;
 
 // ── Typography ────────────────────────────────────────────────────────────

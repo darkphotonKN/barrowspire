@@ -44,20 +44,56 @@ const ROWS_TOP = -INV_H / 2 + 42;
 /** The rarity accent edge on a row or a worn slot (the guideline's rarity ramp). */
 const EDGE_W = 3;
 
-// Colors
-const C_FRAME = palette.frame;
-const C_BG = palette.ink;
-const C_SLOT_EMPTY = palette.hudPanelDeep;
-const C_WEAPON = palette.damageBright;
-const C_ARMOR = palette.hostile;
-const C_CONSUMABLE = palette.safe;
-const C_RING = palette.frameBright;
+/**
+ * Every colour the panel draws with. The run takes {@link GAME_EQUIPMENT_THEME}, the default;
+ * the loadout menu passes the Bone & Soot one from menuChrome. Item tips and rarity edges are not
+ * themed: rarity is data, and the tip is shared with the satchel.
+ */
+export interface EquipmentPanelTheme {
+  /** Panel ground and its 1px border; the border colour also lights hovered empty slots and rows. */
+  panelFill: number;
+  frame: number;
+  /** Panel titles, slot labels, the empty slot mark before a refresh, hints, "(Empty)", "+N more". */
+  heading: number;
+  /** An empty slot's well, and the banding under inventory rows. */
+  well: number;
+  /** An item's name, at rest; dimmed while the character cannot yet equip it. */
+  itemText: number;
+  itemFaint: number;
+  /** An inventory row's text while hovered. */
+  itemHover: number;
+  /** The tint of a worn slot, by what it holds. */
+  slotWeapon: number;
+  slotArmor: number;
+  slotConsumable: number;
+  slotRing: number;
+  /** The "slots are full" flash: its copy and its ground. */
+  flashText: number;
+  flashFill: number;
+}
 
-function getSlotColor(slot: EquipmentSlot): number {
-  if (slot === "weapon") return C_WEAPON;
-  if (slot === "ring_1" || slot === "ring_2") return C_RING;
-  if (slot.startsWith("consumable")) return C_CONSUMABLE;
-  return C_ARMOR;
+/** The game look: vellum and brass on ink, worn slots in their gameplay channels. */
+export const GAME_EQUIPMENT_THEME: EquipmentPanelTheme = {
+  panelFill: palette.ink,
+  frame: palette.frame,
+  heading: palette.frameBright,
+  well: palette.hudPanelDeep,
+  itemText: palette.hudText,
+  itemFaint: palette.hudFaint,
+  itemHover: palette.frameBright,
+  slotWeapon: palette.damageBright,
+  slotArmor: palette.hostile,
+  slotConsumable: palette.safe,
+  slotRing: palette.frameBright,
+  flashText: palette.damageBright,
+  flashFill: palette.mapEdge,
+};
+
+function getSlotColor(theme: EquipmentPanelTheme, slot: EquipmentSlot): number {
+  if (slot === "weapon") return theme.slotWeapon;
+  if (slot === "ring_1" || slot === "ring_2") return theme.slotRing;
+  if (slot.startsWith("consumable")) return theme.slotConsumable;
+  return theme.slotArmor;
 }
 
 // Body silhouette layout:
@@ -124,7 +160,11 @@ export class EquipmentPanel {
 
   private pointerMoveHandler?: (p: Phaser.Input.Pointer) => void;
 
-  constructor(scene: Phaser.Scene) {
+  /** `theme` defaults to the game look; only the loadout menu passes another. */
+  constructor(
+    scene: Phaser.Scene,
+    readonly theme: EquipmentPanelTheme = GAME_EQUIPMENT_THEME,
+  ) {
     this.scene = scene;
   }
 
@@ -168,8 +208,8 @@ export class EquipmentPanel {
   private rowColor(item: ItemState): string {
     return toCss(
       this.view(item).lines.requirement.tooHigh
-        ? palette.hudFaint
-        : palette.hudText,
+        ? this.theme.itemFaint
+        : this.theme.itemText,
     );
   }
 
@@ -239,16 +279,16 @@ export class EquipmentPanel {
     // --- EQUIPMENT PANEL (left) ---
     const eqChildren: Phaser.GameObjects.GameObject[] = [];
     const eqBg = this.scene.add.graphics();
-    eqBg.fillStyle(C_BG, 0.92);
+    eqBg.fillStyle(this.theme.panelFill, 0.92);
     eqBg.fillRoundedRect(-EQUIP_W / 2, -EQUIP_H / 2, EQUIP_W, EQUIP_H, 8);
-    eqBg.lineStyle(1, C_FRAME, 0.5);
+    eqBg.lineStyle(1, this.theme.frame, 0.5);
     eqBg.strokeRoundedRect(-EQUIP_W / 2, -EQUIP_H / 2, EQUIP_W, EQUIP_H, 8);
     eqChildren.push(eqBg);
 
     const eqTitle = this.scene.add.text(0, -EQUIP_H / 2 + 16, "EQUIPMENT", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "16px",
-      color: toCss(palette.frameBright),
+      color: toCss(this.theme.heading),
       letterSpacing: 5,
     });
     eqTitle.setOrigin(0.5);
@@ -266,7 +306,7 @@ export class EquipmentPanel {
       const label = this.scene.add.text(slotX, slotY + 2, layout.label, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "9px",
-        color: toCss(palette.frameBright),
+        color: toCss(this.theme.heading),
         letterSpacing: 2,
       });
       label.setOrigin(0.5, 0);
@@ -279,7 +319,7 @@ export class EquipmentPanel {
       const slotText = this.scene.add.text(slotX, slotY + SLOT_BOX_H - 4, "—", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
-        color: toCss(palette.frameBright),
+        color: toCss(this.theme.heading),
       });
       slotText.setOrigin(0.5);
       eqChildren.push(slotText);
@@ -299,7 +339,7 @@ export class EquipmentPanel {
       {
         fontFamily: CANVAS_FONT.body,
         fontSize: "9px",
-        color: toCss(palette.frameBright),
+        color: toCss(this.theme.heading),
         letterSpacing: 2,
       },
     );
@@ -313,16 +353,16 @@ export class EquipmentPanel {
     // --- INVENTORY PANEL (right) ---
     const invChildren: Phaser.GameObjects.GameObject[] = [];
     const invBg = this.scene.add.graphics();
-    invBg.fillStyle(C_BG, 0.92);
+    invBg.fillStyle(this.theme.panelFill, 0.92);
     invBg.fillRoundedRect(-INV_W / 2, -INV_H / 2, INV_W, INV_H, 8);
-    invBg.lineStyle(1, C_FRAME, 0.5);
+    invBg.lineStyle(1, this.theme.frame, 0.5);
     invBg.strokeRoundedRect(-INV_W / 2, -INV_H / 2, INV_W, INV_H, 8);
     invChildren.push(invBg);
 
     const invTitle = this.scene.add.text(0, -INV_H / 2 + 16, "INVENTORY", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "16px",
-      color: toCss(palette.frameBright),
+      color: toCss(this.theme.heading),
       letterSpacing: 5,
     });
     invTitle.setOrigin(0.5);
@@ -335,7 +375,7 @@ export class EquipmentPanel {
       {
         fontFamily: CANVAS_FONT.body,
         fontSize: "9px",
-        color: toCss(palette.frameBright),
+        color: toCss(this.theme.heading),
         letterSpacing: 2,
       },
     );
@@ -412,10 +452,10 @@ export class EquipmentPanel {
       this.drawSlot(layout.slot, false);
       if (item) {
         text.setText(item.name);
-        text.setColor(toCss(palette.hudText));
+        text.setColor(toCss(this.theme.itemText));
       } else {
         text.setText("—");
-        text.setColor(toCss(palette.hudFaint));
+        text.setColor(toCss(this.theme.itemFaint));
       }
     }
   }
@@ -431,7 +471,7 @@ export class EquipmentPanel {
 
     gfx.clear();
     if (item) {
-      const color = getSlotColor(slot);
+      const color = getSlotColor(this.theme, slot);
       gfx.fillStyle(color, hovered ? 0.15 : 0.08);
       gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
       gfx.lineStyle(1, color, hovered ? 0.5 : 0.3);
@@ -442,14 +482,14 @@ export class EquipmentPanel {
         gfx.fillRect(slotX + 1, slotY + 6, EDGE_W, SLOT_BOX_H - 12);
       }
     } else if (hovered) {
-      gfx.fillStyle(C_FRAME, 0.15);
+      gfx.fillStyle(this.theme.frame, 0.15);
       gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
-      gfx.lineStyle(1, C_FRAME, 0.5);
+      gfx.lineStyle(1, this.theme.frame, 0.5);
       gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
     } else {
-      gfx.fillStyle(C_SLOT_EMPTY, 0.3);
+      gfx.fillStyle(this.theme.well, 0.3);
       gfx.fillRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
-      gfx.lineStyle(1, C_FRAME, 0.06);
+      gfx.lineStyle(1, this.theme.frame, 0.06);
       gfx.strokeRoundedRect(slotX, slotY, SLOT_BOX_W, SLOT_BOX_H, 4);
     }
   }
@@ -475,7 +515,7 @@ export class EquipmentPanel {
       this.invEmptyText = this.scene.add.text(0, 0, "(Empty)", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "13px",
-        color: toCss(palette.frameBright),
+        color: toCss(this.theme.heading),
       });
       this.invEmptyText.setOrigin(0.5);
       this.invContainer.add(this.invEmptyText);
@@ -529,7 +569,7 @@ export class EquipmentPanel {
         {
           fontFamily: CANVAS_FONT.body,
           fontSize: "11px",
-          color: toCss(palette.frameBright),
+          color: toCss(this.theme.heading),
         },
       );
       moreText.setOrigin(0.5);
@@ -554,14 +594,14 @@ export class EquipmentPanel {
     const rowTop = ROWS_TOP + index * INV_ROW_H;
     gfx.clear();
     if (hovered) {
-      gfx.fillStyle(C_FRAME, 0.08);
+      gfx.fillStyle(this.theme.frame, 0.08);
       gfx.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
-      gfx.lineStyle(1, C_FRAME, 0.2);
+      gfx.lineStyle(1, this.theme.frame, 0.2);
       gfx.strokeRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
     } else {
-      gfx.fillStyle(palette.hudPanelDeep, index % 2 === 0 ? 0.25 : 0.15);
+      gfx.fillStyle(this.theme.well, index % 2 === 0 ? 0.25 : 0.15);
       gfx.fillRoundedRect(-rowWidth / 2, rowTop, rowWidth, INV_ROW_H, 4);
-      gfx.lineStyle(1, C_FRAME, 0.06);
+      gfx.lineStyle(1, this.theme.frame, 0.06);
       gfx.lineBetween(
         -rowWidth / 2 + 8,
         rowTop + INV_ROW_H,
@@ -708,15 +748,15 @@ export class EquipmentPanel {
     const text = this.scene.add.text(0, 0, message, {
       fontFamily: CANVAS_FONT.body,
       fontSize: "12px",
-      color: toCss(palette.damageBright),
+      color: toCss(this.theme.flashText),
       letterSpacing: 1,
     });
     const bg = this.scene.add.graphics();
     const w = text.width + padding * 2;
     const h = text.height + padding;
-    bg.fillStyle(palette.mapEdge, 0.95);
+    bg.fillStyle(this.theme.flashFill, 0.95);
     bg.fillRoundedRect(0, 0, w, h, 6);
-    bg.lineStyle(1, palette.damageBright, 0.5);
+    bg.lineStyle(1, this.theme.flashText, 0.5);
     bg.strokeRoundedRect(0, 0, w, h, 6);
     text.setPosition(padding, padding / 2);
 
@@ -767,7 +807,7 @@ export class EquipmentPanel {
     const item = this.inventoryHitAreas[index]?.item;
     if (!gfx || !text || !item) return;
     this.drawRow(gfx, index, item, hovered);
-    text.setColor(hovered ? toCss(palette.frameBright) : this.rowColor(item));
+    text.setColor(hovered ? toCss(this.theme.itemHover) : this.rowColor(item));
   }
 
   // === TOOLTIP ===

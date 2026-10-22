@@ -3,7 +3,7 @@ import { socketManager, ConnectionStatus } from "@/utils/class/SocketManager";
 import { useGameStore } from "@/stores/gameStore";
 import { enterHubPayload, LEDGER_UNREACHABLE } from "@/characters/entry";
 import Phaser from "phaser";
-import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
+import { CANVAS_FONT, mix, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { CLASS_LORE } from "@/data/classLore";
 import { registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
@@ -21,6 +21,13 @@ import {
 import { drawXpBar } from "@/ui/ProgressHud";
 import { atCap, characterProgress, xpFraction } from "@/ui/progress";
 
+/** The menus wear the site's Bone & Soot (design-guideline "UI Chrome"). */
+const ui = palette.menu;
+/**
+ * The title, word for word and in the same casing as the site's hero h1 (src/app/page.tsx).
+ * No tagline under it: the site's hero has none in that place.
+ */
+export const MENU_TITLE = "THE AGE OF BARROWSPIRE";
 /** The hero on the main-menu plinth, of the baked frame (FS-2325V §F.3). */
 const HERO_SCALE = 1.3;
 /**
@@ -84,14 +91,14 @@ export class MainMenuScene extends Phaser.Scene {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
 
-    // The Spire — a black silhouette rising behind the title (Perfectly Centered)
+    // The Spire: a soot silhouette rising behind the title, edged in iron (Perfectly Centered)
     const spire = this.add.graphics();
     const sx = width / 2;
     const baseY = height + 20;
     const spireTopY = height * 0.12;
     const halfBase = 70;
     const halfMid = 26;
-    spire.fillStyle(palette.hoodShadow, 1);
+    spire.fillStyle(ui.well, 1);
     spire.beginPath();
     spire.moveTo(sx - halfBase, baseY);
     spire.lineTo(sx - halfMid, height * 0.42);
@@ -101,45 +108,48 @@ export class MainMenuScene extends Phaser.Scene {
     spire.closePath();
     spire.fillPath();
 
-    spire.lineStyle(1, palette.wallTop, 0.22);
+    spire.lineStyle(1, ui.frame, 0.35);
     spire.beginPath();
     spire.moveTo(sx, spireTopY);
     spire.lineTo(sx - halfMid, height * 0.42);
     spire.lineTo(sx - halfBase, baseY);
     spire.strokePath();
 
-    spire.fillStyle(palette.ember, 0.5);
+    spire.fillStyle(ui.torch, 0.5);
     spire.fillCircle(sx + 6, height * 0.555, 2);
 
-    // Drifting dust and embers: soft motes on the charcoal, no pixel grid or scanlines.
+    // Drifting dust and bone glints on the soot, under a vignette; no pixel grid or scanlines.
     drawBackdrop(this, 120);
 
-    // Main Title (Blackletter display font >= 28px)
+    // Main Title: the site's hero h1 on the canvas (blackletter, >= 28px). Bone lit from within:
+    // a pool of bone light behind it, a soft bone glow, a vertical bone gradient fill and a hard
+    // dark foot shadow, as globals.css "Atmosphere" draws it. Tracking is the site's 0.12em.
     const titleX = width / 2;
     const titleY = height * 0.16;
-    const titleText = this.add.text(titleX, titleY, "BARROWSPIRE", {
+    addTorchPool(this, titleX, titleY, 720, 240, 0.9);
+    const titleStyle: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: CANVAS_FONT.display,
-      fontSize: "44px",
-      color: toCss(palette.frameBright),
-      letterSpacing: 10,
-    });
-    titleText.setOrigin(0.5);
+      fontSize: "40px",
+      fontStyle: "bold",
+      color: toCss(ui.torch),
+      letterSpacing: 5,
+    };
+    // The glow pass: the same words behind, casting only a blurred bone shadow.
+    this.add
+      .text(titleX, titleY, MENU_TITLE, { ...titleStyle, padding: { x: 32, y: 32 } })
+      .setOrigin(0.5)
+      .setShadow(0, 0, rgba(ui.torch, 0.35), 28, false, true);
+    const titleText = this.add
+      .text(titleX, titleY, MENU_TITLE, { ...titleStyle, padding: { x: 4, y: 4 } })
+      .setOrigin(0.5)
+      .setShadow(0, 2, rgba(ui.well, 0.6), 0, false, true);
+    const titleFill = titleText.context.createLinearGradient(0, 0, 0, titleText.height);
+    titleFill.addColorStop(0, toCss(ui.torchBright));
+    titleFill.addColorStop(0.48, toCss(ui.torch));
+    titleFill.addColorStop(1, toCss(mix(ui.torch, ui.well, 0.38)));
+    titleText.setFill(titleFill);
 
-    // Subtitle (body font)
-    const subText = this.add.text(
-      titleX,
-      titleY + 44,
-      "AN EXTRACTION DELVE INTO THE COLD DARK",
-      {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "10px",
-        color: toCss(palette.hudLabel),
-        letterSpacing: 6,
-      },
-    );
-    subText.setOrigin(0.5);
-
-    // Primary Start Game Button (body font): beveled stone, amber because it can be pressed.
+    // Primary Start Game Button (body font): the bone CTA, the one torch in this view.
     this.buttonBg = this.add.graphics();
 
     const btnY = height / 2 + 55;
@@ -149,12 +159,12 @@ export class MainMenuScene extends Phaser.Scene {
     this.startButtonText = this.add.text(titleX, btnY + btnH / 2, "DELVE", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "16px",
-      color: toCss(palette.hudFaint),
+      color: toCss(ui.faint),
       letterSpacing: 4,
     });
     this.startButtonText.setOrigin(0.5);
 
-    const hitArea = this.add.rectangle(titleX, btnY + btnH / 2, btnW, btnH, palette.inkDeep, 0);
+    const hitArea = this.add.rectangle(titleX, btnY + btnH / 2, btnW, btnH, ui.well, 0);
 
     hitArea.on("pointerover", () => {
       if (this.isConnected) this.drawDelveButton("hover");
@@ -184,7 +194,7 @@ export class MainMenuScene extends Phaser.Scene {
       {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
-        color: toCss(palette.hudLabel),
+        color: toCss(ui.label),
         letterSpacing: 1,
       },
     );
@@ -223,7 +233,7 @@ export class MainMenuScene extends Phaser.Scene {
       {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
-        color: toCss(palette.hudFaint),
+        color: toCss(ui.muted),
         letterSpacing: 2,
       },
     );
@@ -237,7 +247,7 @@ export class MainMenuScene extends Phaser.Scene {
       {
         fontFamily: CANVAS_FONT.body,
         fontSize: "9px",
-        color: toCss(palette.ink),
+        color: toCss(ui.faint),
         letterSpacing: 1,
       },
     );
@@ -298,10 +308,11 @@ export class MainMenuScene extends Phaser.Scene {
     this.sidebarContainer.add(sidebarBg);
 
     // Sidebar Header Title
+    // A section title: iron bright, the site's h2 (structure, not a second torch).
     const headerText = this.add.text(panelX + panelW / 2, panelY + 22, "HEROES", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "16px",
-      color: toCss(palette.frameBright),
+      color: toCss(ui.frameBright),
       letterSpacing: 4,
     });
     headerText.setOrigin(0.5);
@@ -319,7 +330,7 @@ export class MainMenuScene extends Phaser.Scene {
     const maskX = panelX + 8;
 
     const maskShape = this.make.graphics({});
-    maskShape.fillStyle(palette.hudText); // any opaque fill: a geometry mask reads shape, not colour
+    maskShape.fillStyle(ui.text); // any opaque fill: a geometry mask reads shape, not colour
     maskShape.fillRect(maskX, maskY, maskW, maskH);
     const mask = maskShape.createGeometryMask();
 
@@ -355,28 +366,28 @@ export class MainMenuScene extends Phaser.Scene {
       const nameText = this.add.text(panelX + 64, y + 14, "", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "13px",
-        color: toCss(palette.hudText),
+        color: toCss(ui.text),
       });
 
       const classText = this.add.text(panelX + 64, y + 40, "", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "10px",
-        color: toCss(palette.hudLabel),
+        color: toCss(ui.label),
       });
 
-      const hitArea = this.add.rectangle(centerX, y + cardH / 2, cardW, cardH, palette.inkDeep, 0);
+      const hitArea = this.add.rectangle(centerX, y + cardH / 2, cardW, cardH, ui.well, 0);
       hitArea.setInteractive({ useHandCursor: true });
 
       // Delete mark: a plain serif cross, not an emoji.
       const deleteText = this.add.text(panelX + panelW - 28, y + 24, "\u00d7", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "16px",
-        color: toCss(palette.hudLabel),
+        color: toCss(ui.label),
       });
       deleteText.setOrigin(0.5);
       deleteText.setVisible(false);
 
-      const deleteHit = this.add.rectangle(panelX + panelW - 28, y + 24, 22, 22, palette.inkDeep, 0);
+      const deleteHit = this.add.rectangle(panelX + panelW - 28, y + 24, 22, 22, ui.well, 0);
       deleteHit.setVisible(false);
 
       const cardObj = {
@@ -466,7 +477,8 @@ export class MainMenuScene extends Phaser.Scene {
       isDragging = false;
     });
 
-    // Add Create Character Button at bottom of sidebar
+    // Add Create Character Button at bottom of sidebar: an outline button, since DELVE is this
+    // view's one bone CTA.
     const createBtnY = panelY + panelH - 32;
     const createBtnW = cardW;
     const createBtnH = 32;
@@ -486,15 +498,15 @@ export class MainMenuScene extends Phaser.Scene {
         createBtnY - createBtnH / 2,
         createBtnW,
         createBtnH,
-        "primary",
+        "secondary",
         state,
       );
-      createBtnText.setColor(toCss(buttonTextColor("primary", state)));
+      createBtnText.setColor(toCss(buttonTextColor("secondary", state)));
     };
     drawCreateBtn("idle");
 
     const createBtnHit = this.add
-      .rectangle(createBtnX, createBtnY, createBtnW, createBtnH, palette.inkDeep, 0)
+      .rectangle(createBtnX, createBtnY, createBtnW, createBtnH, ui.well, 0)
       .setInteractive({ useHandCursor: true });
 
     createBtnHit.on("pointerdown", () => {
@@ -520,14 +532,14 @@ export class MainMenuScene extends Phaser.Scene {
 
       if (maxScroll > 0) {
         // Draw Scroll Track
-        this.sidebarScrollbarGraphics.fillStyle(palette.inkDeep, 0.6);
+        this.sidebarScrollbarGraphics.fillStyle(ui.well, 0.6);
         this.sidebarScrollbarGraphics.fillRect(trackX - 2, maskY, 4, maskH);
 
         // Draw Scroll Thumb
         const thumbH = Math.max(24, Math.floor((maskH / totalHeight) * maskH));
         const thumbY = maskY + (this.sidebarScrollY / maxScroll) * (maskH - thumbH);
 
-        this.sidebarScrollbarGraphics.fillStyle(palette.frame, 0.8);
+        this.sidebarScrollbarGraphics.fillStyle(ui.frame, 0.8);
         this.sidebarScrollbarGraphics.fillRoundedRect(trackX - 2, thumbY, 4, thumbH, 2);
       }
     }
@@ -556,8 +568,8 @@ export class MainMenuScene extends Phaser.Scene {
       const cls = (activeChar.className || "warrior").toLowerCase() as keyof typeof CLASS_LORE;
       const lore = CLASS_LORE[cls];
 
-      // The hero is the class's own baked sheet on a lit plinth, turning (FS-2325V §F.1-F.3).
-      // It outlives this container, so a refresh does not restart its turn.
+      // The hero is the class's own baked sheet on a lit plinth, facing us (FS-2325V §F.1-F.3).
+      // It outlives this container, so a refresh does not restart its idle.
       if (!this.centerFigure && this.art) {
         this.centerFigure = new MenuFigure(this, this.art, centerX, feetY, cls, {
           scale: HERO_SCALE,
@@ -572,9 +584,9 @@ export class MainMenuScene extends Phaser.Scene {
       const nameText = this.add.text(0, 86, activeChar.name.toUpperCase(), {
         fontFamily: CANVAS_FONT.body,
         fontSize: "16px",
-        color: toCss(palette.frameBright),
+        color: toCss(ui.text),
         fontStyle: "bold",
-        stroke: toCss(palette.inkDeep),
+        stroke: toCss(ui.well),
         strokeThickness: 3,
       });
       nameText.setOrigin(0.5);
@@ -583,7 +595,7 @@ export class MainMenuScene extends Phaser.Scene {
       const classText = this.add.text(0, 106, classTitle, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
-        color: toCss(palette.hudLabel),
+        color: toCss(ui.label),
         letterSpacing: 2,
       });
       classText.setOrigin(0.5);
@@ -604,7 +616,7 @@ export class MainMenuScene extends Phaser.Scene {
         {
           fontFamily: CANVAS_FONT.body,
           fontSize: "12px",
-          color: toCss(palette.hudLabel),
+          color: toCss(ui.label),
           letterSpacing: 2,
         },
       );
@@ -615,21 +627,21 @@ export class MainMenuScene extends Phaser.Scene {
       this.centerFigure = undefined;
       this.centerFigureClass = undefined;
 
-      // An empty plinth: a pool of torchlight and a brass ring, waiting for a hero.
+      // An empty plinth: a pool of bone light and an iron ring, waiting for a hero.
       const glow = addTorchPool(this, 0, 26, 200, 100, 0.8);
       const pedestal = this.add.graphics();
-      pedestal.lineStyle(1, palette.frame, 0.45);
+      pedestal.lineStyle(1, ui.frame, 0.6);
       pedestal.strokeEllipse(0, 26, 90, 45);
 
       const emptyText = this.add.text(0, 0, "+ CREATE HERO", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "13px",
-        color: toCss(palette.interactable),
+        color: toCss(ui.text),
         letterSpacing: 2,
       });
       emptyText.setOrigin(0.5);
 
-      const hit = this.add.rectangle(0, 0, 140, 80, palette.inkDeep, 0);
+      const hit = this.add.rectangle(0, 0, 140, 80, ui.well, 0);
       hit.setInteractive({ useHandCursor: true });
       hit.on("pointerdown", () => {
         this.scene.start("CharacterCreationScene");
@@ -778,19 +790,19 @@ export class MainMenuScene extends Phaser.Scene {
         hitArea.setInteractive({ useHandCursor: true });
         this.startButtonText.setText("DELVE");
         this.connectionStatusText.setText("The way is open // Server connected");
-        this.connectionStatusText.setColor(toCss(palette.hudLabel));
+        this.connectionStatusText.setColor(toCss(ui.label));
         this.drawDelveButton("idle");
       } else if (status === "connecting") {
         hitArea.disableInteractive();
         this.startButtonText.setText("CONNECTING...");
         this.connectionStatusText.setText("Kindling torch // Connecting to game server...");
-        this.connectionStatusText.setColor(toCss(palette.torchCore));
+        this.connectionStatusText.setColor(toCss(ui.text));
         this.drawDelveButton("disabled");
       } else {
         hitArea.disableInteractive();
         this.startButtonText.setText("LOST");
         this.connectionStatusText.setText("The torch gutters // Connection lost");
-        this.connectionStatusText.setColor(toCss(palette.damageBright));
+        this.connectionStatusText.setColor(toCss(ui.danger));
         this.drawDelveButton("disabled");
       }
     }
@@ -825,8 +837,8 @@ export class MainMenuScene extends Phaser.Scene {
       .text(width / 2, height / 2 + 150, message, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "14px",
-        color: toCss(palette.damageBright),
-        backgroundColor: toCss(palette.inkDeep),
+        color: toCss(ui.danger),
+        backgroundColor: toCss(ui.well),
         padding: { x: 16, y: 10 },
         align: "center",
       })
@@ -856,7 +868,7 @@ export class MainMenuScene extends Phaser.Scene {
       height / 2,
       width,
       height,
-      palette.inkDeep,
+      ui.well,
       0.7
     );
     this.queueOverlay.setDepth(100);
@@ -872,7 +884,7 @@ export class MainMenuScene extends Phaser.Scene {
     this.queueTitle = this.add.text(0, -40, "GATHERING THE DELVE", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "18px",
-      color: toCss(palette.frameBright),
+      color: toCss(ui.text),
     });
     this.queueTitle.setOrigin(0.5);
 
@@ -883,7 +895,7 @@ export class MainMenuScene extends Phaser.Scene {
       {
         fontFamily: CANVAS_FONT.body,
         fontSize: "14px",
-        color: toCss(palette.hudLabel),
+        color: toCss(ui.label),
       }
     );
     this.queuePeopleText.setOrigin(0.5);
