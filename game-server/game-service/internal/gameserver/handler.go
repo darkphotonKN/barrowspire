@@ -125,13 +125,14 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 			return
 		}
 
-		err = run.SeatArrival(&player, loadoutRes)
+		character, err := run.SeatArrival(&player, loadoutRes)
 		if err != nil {
 			slog.Warn("Refusing a handoff connection, seating failed", "session_id", sessionIDUUID, "member_id", memberId, "error", err)
 			s.refuseHandoff(conn, player.ID, isReconnection, seatRefusalReason(err))
 			return
 		}
 
+		player.Character = character
 		s.enterHandedOffRun(&player, run, msgChan)
 	} else if isReconnection && player.CurrentGameSessionId != uuid.Nil {
 		slog.Debug("Sending reconnection success message.",
@@ -614,6 +615,14 @@ func (s *Server) refuseHandoff(conn *websocket.Conn, playerID uuid.UUID, wasOnRe
 * §Requirements 22.
 **/
 func (s *Server) enterHandedOffRun(player *types.Player, run *game.Session, msgChan chan interface{}) {
+	// an arrival never entered this pod's HUB, so its record has no character
+	// until now: the one seated, which ReturnPlayersToHub reads after the run
+	s.mu.Lock()
+	for _, record := range s.everyRecordOf(player) {
+		record.Character = player.Character
+	}
+	s.mu.Unlock()
+
 	s.setCurrentWorld(player, run.ID)
 
 	msgChan <- worldEnteredMessage(run)

@@ -49,18 +49,20 @@ func TestSeatArrival(t *testing.T) {
 				s.AddPlayersToPendingConnection([]*types.Player{pendingEntry})
 			}
 			if tt.seatFirst {
-				require.NoError(t, s.SeatArrival(player, nil))
+				_, err := s.SeatArrival(player, nil)
+				require.NoError(t, err)
 				// back in the pending seats, so only the existing body refuses
 				s.AddPlayersToPendingConnection([]*types.Player{pendingEntry})
 			}
 
-			err := s.SeatArrival(player, nil)
+			seated, err := s.SeatArrival(player, nil)
 
 			if tt.wantErr != nil {
 				assert.ErrorIs(t, err, tt.wantErr)
 				return
 			}
 			require.NoError(t, err)
+			assert.Equal(t, tt.character, seated, "the seated character is the pending one, for the host record")
 
 			eq, ok := delverEntity(t, s, player.ID).GetComponent(ecs.ComponentTypeEquipment)
 			require.True(t, ok, "a seated delver has an equipment component")
@@ -82,7 +84,8 @@ func TestSeatArrival_StandsOnAReservedArrivalSlot(t *testing.T) {
 	memberID := uuid.New()
 	s.AddPlayersToPendingConnection([]*types.Player{{ID: memberID, Character: expected[0]}})
 
-	require.NoError(t, s.SeatArrival(&types.Player{ID: memberID}, nil))
+	_, err := s.SeatArrival(&types.Player{ID: memberID}, nil)
+	require.NoError(t, err)
 
 	at := transformOf(t, delverEntity(t, s, memberID))
 	assert.Equal(t, slot, point{at.X, at.Y}, "the arrival stands on the kept spot")
@@ -109,5 +112,6 @@ func TestSeatArrival_AfterRelease_HasNoSeat(t *testing.T) {
 	s.AddPlayersToPendingConnection([]*types.Player{{ID: memberID, Character: types.CharacterInPlay{ID: uuid.New(), Class: "warrior", Level: 1}}})
 	s.releaseUnclaimedSeats(s.seatDeadline.Add(time.Millisecond))
 
-	assert.ErrorIs(t, s.SeatArrival(&types.Player{ID: memberID}, nil), ErrNoSeat)
+	_, err := s.SeatArrival(&types.Player{ID: memberID}, nil)
+	assert.ErrorIs(t, err, ErrNoSeat)
 }

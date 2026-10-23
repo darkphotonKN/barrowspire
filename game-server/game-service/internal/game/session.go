@@ -920,7 +920,7 @@ func (s *Session) AddPlayersToPendingConnection(players []*types.Player) {
 
 // add a player connecting in from a handoff, "seat them"
 // the method that holds the loc
-func (s *Session) SeatArrival(player *types.Player, loadout *pbitems.GetLoadoutWithItemsResponse) error {
+func (s *Session) SeatArrival(player *types.Player, loadout *pbitems.GetLoadoutWithItemsResponse) (types.CharacterInPlay, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -928,15 +928,15 @@ func (s *Session) SeatArrival(player *types.Player, loadout *pbitems.GetLoadoutW
 }
 
 // private NON locked seating of a player thats connecting in from a handoff (another pod)
-func (s *Session) seatPlayerLocked(player *types.Player, items *pbitems.GetLoadoutWithItemsResponse) error {
+func (s *Session) seatPlayerLocked(player *types.Player, items *pbitems.GetLoadoutWithItemsResponse) (types.CharacterInPlay, error) {
 	// check if part of the pending handoff players
 	pending, ok := s.playersPendingConnection[player.ID]
 	if !ok {
-		return fmt.Errorf("seat player %s: not expected: %w", player.ID, ErrNoSeat)
+		return types.CharacterInPlay{}, fmt.Errorf("seat player %s: not expected: %w", player.ID, ErrNoSeat)
 	}
 
 	if _, alreadyHere := s.playerIDToEntitiesID[player.ID]; alreadyHere {
-		return fmt.Errorf("seat player %s: already seated: %w", player.ID, ErrNoSeat)
+		return types.CharacterInPlay{}, fmt.Errorf("seat player %s: already seated: %w", player.ID, ErrNoSeat)
 	}
 
 	// the character is the one they queued with, carried by the match onto the
@@ -946,14 +946,14 @@ func (s *Session) seatPlayerLocked(player *types.Player, items *pbitems.GetLoado
 	// class should exist, but validate
 	if character.Class == "" {
 		slog.Error("character for player doesn't exist but made it to seatPlayerLocked", "player_id", player.ID)
-		return fmt.Errorf("seat player %s: no class: %w", player.ID, ErrCharacterNotSeatable)
+		return types.CharacterInPlay{}, fmt.Errorf("seat player %s: no class: %w", player.ID, ErrCharacterNotSeatable)
 	}
 
 	className := character.Class
 	classCfg, ok := Classes[className]
 	if !ok {
 		slog.Error("class for player doesn't have a matching class made it to seatPlayerLocked", "player_id", player.ID)
-		return fmt.Errorf("seat player %s: unknown class %q: %w", player.ID, className, ErrCharacterNotSeatable)
+		return types.CharacterInPlay{}, fmt.Errorf("seat player %s: unknown class %q: %w", player.ID, className, ErrCharacterNotSeatable)
 	}
 
 	level := seatLevel(character.Level)
@@ -1033,7 +1033,9 @@ func (s *Session) seatPlayerLocked(player *types.Player, items *pbitems.GetLoado
 	// remove them from the pending list
 	delete(s.playersPendingConnection, player.ID)
 
-	return nil
+	// returned so the host's record of the player holds the character seated,
+	// which the return to the HUB reads
+	return character, nil
 }
 
 /**

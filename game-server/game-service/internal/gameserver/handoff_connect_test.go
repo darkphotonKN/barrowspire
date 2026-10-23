@@ -127,7 +127,8 @@ func TestHandleWebSocketConnection_HandoffRefusals(t *testing.T) {
 			name: "member already seated in the run",
 			sessionID: func(t *testing.T, server *Server, memberID uuid.UUID) string {
 				run := runExpecting(server, memberID)
-				require.NoError(t, run.SeatArrival(&types.Player{ID: memberID}, nil))
+				_, err := run.SeatArrival(&types.Player{ID: memberID}, nil)
+				require.NoError(t, err)
 				return run.ID.String()
 			},
 		},
