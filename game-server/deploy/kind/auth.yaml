@@ -9,7 +9,7 @@ metadata: { name: auth }
 spec:
   # How many copies run. Above 1, gRPC clients pin to one pod (ADR-0022),
   # so scaling needs a headless Service plus round_robin.
-  replicas: 1
+  replicas: 3
   # The label link: this Deployment owns the pods carrying app: auth.
   # Must match template.metadata.labels below or the API rejects it.
   selector: { matchLabels: { app: auth } }
@@ -68,4 +68,13 @@ spec:
   # the only link; the Service and Deployment never reference each other.
   selector: { app: auth }
   # port: what callers dial. targetPort: the container port (by name).
+  ports: [{ port: 7116, targetPort: grpc }]
+
+---
+apiVersion: v1
+kind: Service
+metadata: { name: auth-headless }
+spec:
+  clusterIP: None # causes the headless ip config to be set, let grpc be in control of the real pod ips
+  selector: { app: auth }
   ports: [{ port: 7116, targetPort: grpc }]

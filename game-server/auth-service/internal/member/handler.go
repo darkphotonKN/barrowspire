@@ -33,6 +33,7 @@ func NewHandler(service Service) *Handler {
 }
 
 func (s *Handler) LoginMember(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
+	slog.Info("login", "user", req.Email)
 	return s.service.LoginMember(ctx, req)
 }
 
