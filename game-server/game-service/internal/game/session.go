@@ -119,7 +119,17 @@ type Session struct {
 	// players waiting to connect via handoff
 	// playerID - Player struct
 	playersPendingConnection map[uuid.UUID]*types.Player
+
+	// FS-K2HKP R25: when unclaimed seats are released, SeatReleaseAfter from
+	// build. Fixed once built; only the tick reads it. seatsReleased latches
+	// the release so it happens once, and is the tick's alone.
+	seatDeadline  time.Time
+	seatsReleased bool
 }
+
+// SeatReleaseAfter is how long a run keeps a seat for a matched player still
+// connecting from another pod. FS-K2HKP §Requirements 25.
+const SeatReleaseAfter = 15 * time.Second
 
 // pub / sub manager for transporting event state between instances of sessions
 //
@@ -231,6 +241,7 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		spawnRand: sharedLootRand{},
 
 		playersPendingConnection: make(map[uuid.UUID]*types.Player),
+		seatDeadline:             time.Now().Add(SeatReleaseAfter),
 	}
 	s.SubscribeKills(newMonsterDrops(s, sharedLootRand{}))
 	s.SubscribeKills(newUniqueEffects(em))
@@ -571,6 +582,12 @@ func (s *Session) manageGameLoop() {
 			}
 			// TEST: END test block
 
+			// FS-K2HKP R25–R26: seats nobody claimed in time are released, and a
+			// run nobody reached is shut down, which ends this loop
+			if s.releaseUnclaimedSeats(tickStart) {
+				return
+			}
+
 			// between ticks: a floor change lands before the tick reads the world
 			s.applyRequestedFloorChange()
 
@@ -899,6 +916,178 @@ func (s *Session) AddPlayersToPendingConnection(players []*types.Player) {
 	for _, player := range players {
 		s.playersPendingConnection[player.ID] = player
 	}
+}
+
+// add a player connecting in from a handoff, "seat them"
+// the method that holds the loc
+func (s *Session) SeatArrival(player *types.Player, loadout *pbitems.GetLoadoutWithItemsResponse) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.seatPlayerLocked(player, loadout)
+}
+
+// private NON locked seating of a player thats connecting in from a handoff (another pod)
+func (s *Session) seatPlayerLocked(player *types.Player, items *pbitems.GetLoadoutWithItemsResponse) error {
+	// check if part of the pending handoff players
+	pending, ok := s.playersPendingConnection[player.ID]
+	if !ok {
+		return fmt.Errorf("seat player %s: not expected: %w", player.ID, ErrNoSeat)
+	}
+
+	if _, alreadyHere := s.playerIDToEntitiesID[player.ID]; alreadyHere {
+		return fmt.Errorf("seat player %s: already seated: %w", player.ID, ErrNoSeat)
+	}
+
+	// the character is the one they queued with, carried by the match onto the
+	// pending entry, never the one on the connecting player
+	character := pending.Character
+
+	// class should exist, but validate
+	if character.Class == "" {
+		slog.Error("character for player doesn't exist but made it to seatPlayerLocked", "player_id", player.ID)
+		return fmt.Errorf("seat player %s: no class: %w", player.ID, ErrCharacterNotSeatable)
+	}
+
+	className := character.Class
+	classCfg, ok := Classes[className]
+	if !ok {
+		slog.Error("class for player doesn't have a matching class made it to seatPlayerLocked", "player_id", player.ID)
+		return fmt.Errorf("seat player %s: unknown class %q: %w", player.ID, className, ErrCharacterNotSeatable)
+	}
+
+	level := seatLevel(character.Level)
+
+	spawnX, spawnY, ok := s.takeArrivalSlotLocked()
+	if !ok {
+		spawnX, spawnY = s.spawnPoint()
+	}
+
+	carried := []uuid.UUID{}
+
+	// add item entity and return its UUID pointer, or nil when it is carried instead
+	rarities := s.lootRarities
+	addSlotItem := func(item *pbitems.ItemInstance) *uuid.UUID {
+		if item == nil {
+			return nil
+		}
+		config := loadoutItemConfig(item, rarities)
+		id := s.AddItemWithUnLocked(config)
+		if !canWear(config.RequiredLevel, level) {
+			carried = append(carried, id)
+			return nil
+		}
+		return &id
+	}
+
+	// Entities from Loadout. No loadout seats the player with no equipment,
+	// as a failed fetch does in addPlayerLocked
+	var loadout *components.EquipmentConfig
+	if items != nil {
+		loadout = &components.EquipmentConfig{
+			WeaponSlot:  addSlotItem(items.Weapon),
+			HeadSlot:    addSlotItem(items.Head),
+			ChestSlot:   addSlotItem(items.Chest),
+			GlovesSlot:  addSlotItem(items.Gloves),
+			LegsSlot:    addSlotItem(items.Legs),
+			Ring1Slot:   addSlotItem(items.Ring_1),
+			Ring2Slot:   addSlotItem(items.Ring_2),
+			Consumable1: addSlotItem(items.Consumable_1),
+			Consumable2: addSlotItem(items.Consumable_2),
+			Consumable3: addSlotItem(items.Consumable_3),
+		}
+	} else {
+		slog.Warn("No loadout for handoff arrival, player spawns with no equipment.", "player_id", player.ID)
+	}
+
+	PlayerConfig := PlayerConfig{
+		MemberID:     player.ID,
+		CharacterID:  character.ID,
+		Level:        level,
+		Experience:   character.Experience,
+		Username:     character.Name,
+		X:            spawnX,
+		Y:            spawnY,
+		Class:        classAtLevel(classCfg, level),
+		ClassName:    className,
+		ItemName:     "Health Potion",
+		ItemQuantity: 3,
+
+		Vx: 0,
+		Vy: 0,
+
+		ItemIDList:    carried,
+		Escape:        false,
+		PlayerLoadout: loadout,
+	}
+
+	// create player state entity
+	entity := CreatePlayerEntity(s.EntityManager, PlayerConfig)
+
+	// update player id to entity id map
+	s.playerIDToEntitiesID[player.ID] = entity.ID
+
+	// update players map
+	s.playerEntityIDToPlayerID[entity.ID] = player.ID
+
+	// remove them from the pending list
+	delete(s.playersPendingConnection, player.ID)
+
+	return nil
+}
+
+/**
+* releaseUnclaimedSeats releases, once now is past the seat deadline, every
+* seat no handoff player claimed: they are no longer expected, so a later
+* handoff connection for them is refused (FS-K2HKP R24–R25). A run nobody was
+* seated in is then shut down the way a run its last delver left is: removed
+* from the host and its loops stopped (R26). Reports whether it shut the run
+* down. The hub expects nobody and never ends.
+*
+* Called from the tick, not holding mu: the pending set is read and changed
+* under it, beside the connection goroutines seating arrivals, and Shutdown
+* takes it itself.
+**/
+func (s *Session) releaseUnclaimedSeats(now time.Time) bool {
+	if s.seatsReleased || now.Before(s.seatDeadline) {
+		return false
+	}
+	s.seatsReleased = true
+
+	if s.worldType != types.WorldTypeRun {
+		return false
+	}
+
+	s.mu.Lock()
+	released := len(s.playersPendingConnection)
+	clear(s.playersPendingConnection)
+	seated := len(s.playerIDToEntitiesID)
+	s.mu.Unlock()
+
+	if released > 0 {
+		slog.Info("Released unclaimed seats", "session_id", s.ID, "released", released, "seated", seated)
+	}
+
+	if seated > 0 {
+		return false
+	}
+
+	slog.Info("Nobody reached the run before its seats were released, shutting down", "session_id", s.ID)
+
+	if err := s.sessionCloser.CloseSession(s.ID); err != nil {
+		slog.Warn("Could not remove an unreached run from the host", "session_id", s.ID, "error", err)
+	}
+	s.Shutdown()
+
+	return true
+}
+
+// Ended reports whether the world has been shut down.
+func (s *Session) Ended() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.closed
 }
 
 func (s *Session) RemovePlayer(userID string) {

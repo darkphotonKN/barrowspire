@@ -3,6 +3,7 @@ package gameserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,11 +13,13 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"go.opentelemetry.io/otel"
+	"google.golang.org/grpc/metadata"
 )
 
 /**
@@ -70,16 +73,10 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 		)
 	}
 
-	// setup connecting player from handoff with his gear and character before attempting to connect to the match
-	sessionID, exists := c.Get(auth.SessionIDKey)
-	if exists {
-		sessionIDUUID, err := uuid.Parse(sessionID.(string))
-		if err != nil {
-			slog.Warn("attempt to handoff connect to game with incorrect session id", "session_id", sessionID, "member_id", memberId)
-			// TODO: return error
-		}
-		loadoutRes, err := s.setupHandoffConnectingPlayer(ctx, memberId)
-	}
+	// a handoff connection names the run it was sent to. The middleware always
+	// passes the session id on, empty for an ordinary connect. FS-K2HKP R22.
+	sessionID := c.GetString(auth.SessionIDKey)
+	isHandoff := sessionID != ""
 
 	// establish websocket connection
 	conn, err := s.upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -97,7 +94,46 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 	// concurrent reconnect has already closed.
 	msgChan := make(chan interface{}, clientWriterBuffer)
 
-	if isReconnection && player.CurrentGameSessionId != uuid.Nil {
+	// setup connecting player from handoff with his gear and character before attempting to connect to the match
+	// decided only after the upgrade, since the client reads a refusal's close
+	// code from an open socket, and before the connection is mapped, so a refused
+	// one is never served. FS-K2HKP §Requirements 22, 24.
+	if isHandoff {
+		sessionIDUUID, err := uuid.Parse(sessionID)
+		if err != nil {
+			slog.Warn("attempt to handoff connect to game with incorrect session id", "session_id", sessionID, "member_id", memberId)
+			s.refuseHandoff(conn, player.ID, isReconnection, "invalid session id")
+			return
+		}
+
+		// check game session already created and is still running
+		run, err := s.handoffRun(sessionIDUUID)
+		if err != nil {
+			slog.Warn("Refusing a handoff connection", "session_id", sessionIDUUID, "member_id", memberId, "error", err)
+			s.refuseHandoff(conn, player.ID, isReconnection, err.Error())
+			return
+		}
+
+		// fetched before the run's lock is taken a slow items-service delays
+		// only this arrival (FS-K2HKP R22)
+		handoffConnectCtx, handoffConnectCancel := context.WithTimeout(ctx, time.Second*3) // wait max 3 seconds for item
+		defer handoffConnectCancel()
+		loadoutRes, err := s.setupHandoffConnectingPlayer(handoffConnectCtx, memberId, player.Token)
+		if err != nil {
+			slog.Warn("Refusing a handoff connection, loadout unavailable", "session_id", sessionIDUUID, "member_id", memberId, "error", err)
+			s.refuseHandoff(conn, player.ID, isReconnection, "loadout unavailable")
+			return
+		}
+
+		err = run.SeatArrival(&player, loadoutRes)
+		if err != nil {
+			slog.Warn("Refusing a handoff connection, seating failed", "session_id", sessionIDUUID, "member_id", memberId, "error", err)
+			s.refuseHandoff(conn, player.ID, isReconnection, seatRefusalReason(err))
+			return
+		}
+
+		s.enterHandedOffRun(&player, run, msgChan)
+	} else if isReconnection && player.CurrentGameSessionId != uuid.Nil {
 		slog.Debug("Sending reconnection success message.",
 			"player_username", player.Username,
 			"player_current_game_session_id", player.CurrentGameSessionId,
@@ -514,8 +550,99 @@ func (s *Server) leaveCurrentWorld(player *types.Player) {
 	}
 }
 
-func (s *Server) setupHandoffConnectingPlayer(ctx context.Context, memberID uuid.UUID) (*items.GetLoadoutResponse, error) {
-	res, err := s.itemsClient.GetLoadout(ctx, &items.GetLoadoutRequest{
+// Why a handoff connection names no run this host can seat it in.
+var (
+	errHandoffUnknownRun = errors.New("unknown run")
+	errHandoffNotARun    = errors.New("session is not a run")
+	errHandoffRunEnded   = errors.New("run has ended")
+)
+
+/**
+* The run a handoff connection names, if it is one an arrival can still be
+* seated in: it exists here, is a run (not the hub), and has not ended.
+* FS-K2HKP §Requirements 24.
+**/
+func (s *Server) handoffRun(sessionID uuid.UUID) (*game.Session, error) {
+	run, exists := s.GetGameSession(sessionID)
+	if !exists {
+		return nil, errHandoffUnknownRun
+	}
+	if run.WorldType() != types.WorldTypeRun {
+		return nil, errHandoffNotARun
+	}
+	if run.Ended() {
+		return nil, errHandoffRunEnded
+	}
+
+	return run, nil
+}
+
+/**
+* Refuses a handoff connection at the handshake: a 4002 close frame with the
+* reason, then the socket. It is called before the connection is mapped, so
+* nothing else holds it and no goroutine serves it. FS-K2HKP §Requirements 24.
+*
+* A record this connect created for a member who was not on record before is
+* forgotten, unless another connection has published them meanwhile: a refused
+* member never arrived here, and would otherwise be kept with no connection and
+* no grace to end it. A member who was already on record keeps their record.
+**/
+func (s *Server) refuseHandoff(conn *websocket.Conn, playerID uuid.UUID, wasOnRecord bool, reason string) {
+	_ = conn.WriteControl(websocket.CloseMessage,
+		websocket.FormatCloseMessage(auth.CloseCodeHandoffRefused, reason),
+		time.Now().Add(time.Second))
+	_ = conn.Close()
+
+	if wasOnRecord {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, connected := s.connOfLocked(playerID); connected {
+		return
+	}
+	delete(s.players, playerID)
+}
+
+/**
+* What follows seating a handed-off arrival: every record of the member points
+* at the run, and the run's world_entered is queued on msgChan. The handler
+* passes the connection's writer channel before MapConnToPlayer publishes it,
+* so world_entered is the first message the connection is sent. FS-K2HKP
+* §Requirements 22.
+**/
+func (s *Server) enterHandedOffRun(player *types.Player, run *game.Session, msgChan chan interface{}) {
+	s.setCurrentWorld(player, run.ID)
+
+	msgChan <- worldEnteredMessage(run)
+}
+
+/**
+* seatRefusalReason is the short, fixed reason a refused seat's 4002 close frame
+* carries: a close reason holds at most 123 bytes, so the full error is logged,
+* never sent.
+**/
+func seatRefusalReason(err error) string {
+	switch {
+	case errors.Is(err, game.ErrNoSeat):
+		return "no seat"
+	case errors.Is(err, game.ErrCharacterNotSeatable):
+		return "character not seatable"
+	default:
+		return "seating failed"
+	}
+}
+
+func (s *Server) setupHandoffConnectingPlayer(ctx context.Context, memberID uuid.UUID, token types.BearerToken) (*items.GetLoadoutWithItemsResponse, error) {
+	// the loadout is the member's own: the call carries their bearer token, as
+	// game's asMember does, so items-service checks they own it
+	if token != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+string(token))
+	}
+
+	res, err := s.itemsClient.GetLoadoutWithItems(ctx, &items.GetLoadoutWithItemsRequest{
 		MemberId: memberID.String(),
 	})
 

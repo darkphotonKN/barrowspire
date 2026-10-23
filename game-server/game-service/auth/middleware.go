@@ -30,6 +30,11 @@ const SessionIDKey = "session_id"
 // Custom close code for auth errors (4000-4999 range is for application use)
 const CloseCodeAuthError = 4001
 
+// Custom close code for a handoff connection the host will not seat: the member
+// is not expected in that run, already seated, their seat was released, their
+// loadout cannot be fetched, or the run is unknown or ended. FS-K2HKP §Requirements 24.
+const CloseCodeHandoffRefused = 4002
+
 var wsUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true

@@ -28,7 +28,7 @@ func enterHub(t *testing.T, server *Server, name string) (*types.Player, *websoc
 // A player is in one world at a time. Matching moves them; it does not copy them.
 // FS-29KSH §Requirements 20-21, 23.
 func TestCreateGameSession_MovesPlayersOutOfTheHub(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	wren, _ := enterHub(t, server, "Wren")
@@ -37,7 +37,7 @@ func TestCreateGameSession_MovesPlayersOutOfTheHub(t *testing.T) {
 	require.True(t, hub.HasPlayer(wren.ID))
 	require.True(t, hub.HasPlayer(kaelen.ID))
 
-	run := server.CreateGameSession([]*types.Player{wren, kaelen})
+	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{wren, kaelen}})
 
 	for _, player := range []*types.Player{wren, kaelen} {
 		assert.True(t, run.HasPlayer(player.ID), "%s should be in the run", player.Username)
@@ -51,13 +51,13 @@ func TestCreateGameSession_MovesPlayersOutOfTheHub(t *testing.T) {
 // the world they were in no longer exists, so leaving them pointed at it would
 // strand them. FS-29KSH §Requirements 22.
 func TestRunEnds_ReturnsPlayersToTheHub(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	wren, _ := enterHub(t, server, "Wren")
 	kaelen, _ := enterHub(t, server, "Kaelen")
 
-	run := server.CreateGameSession([]*types.Player{wren, kaelen})
+	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{wren, kaelen}})
 	require.False(t, hub.HasPlayer(wren.ID))
 
 	server.ReturnPlayersToHub(run.ID)
@@ -74,7 +74,7 @@ func TestRunEnds_ReturnsPlayersToTheHub(t *testing.T) {
 // nothing can fail between worlds. The switch has to be observably internal.
 // FS-29KSH §Requirements 20.
 func TestWorldSwitch_KeepsTheSameConnection(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 
 	wren, wrenConn := enterHub(t, server, "Wren")
 	kaelen, kaelenConn := enterHub(t, server, "Kaelen")
@@ -88,7 +88,7 @@ func TestWorldSwitch_KeepsTheSameConnection(t *testing.T) {
 		server.mu.RUnlock()
 	}
 
-	run := server.CreateGameSession([]*types.Player{wren, kaelen})
+	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{wren, kaelen}})
 	server.ReturnPlayersToHub(run.ID)
 
 	for conn, original := range before {
@@ -108,7 +108,7 @@ func TestWorldSwitch_KeepsTheSameConnection(t *testing.T) {
 // the hub broadcasts what it holds, so anyone still held is still seen.
 // FS-29KSH §Requirements 23.
 func TestDelvingPlayer_IsAbsentFromTheHubBroadcast(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	wren, _ := enterHub(t, server, "Wren")
@@ -117,7 +117,7 @@ func TestDelvingPlayer_IsAbsentFromTheHubBroadcast(t *testing.T) {
 
 	require.ElementsMatch(t, []uuid.UUID{wren.ID, kaelen.ID, watcher.ID}, hub.GetPlayerIDs())
 
-	run := server.CreateGameSession([]*types.Player{wren, kaelen})
+	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{wren, kaelen}})
 
 	assert.ElementsMatch(t, []uuid.UUID{watcher.ID}, hub.GetPlayerIDs(),
 		"the hub should broadcast only the delver who stayed behind")

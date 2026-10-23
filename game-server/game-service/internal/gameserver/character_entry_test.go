@@ -91,7 +91,7 @@ func seatedStats(t *testing.T, world *game.Session, memberID uuid.UUID) *compone
 // FS-BDA7X §Requirements 5, 18.
 func TestEnterHub_SeatsTheResolvedCharacterAtItsLevel(t *testing.T) {
 	characters := newFakeCharacters()
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters)
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
@@ -163,7 +163,7 @@ func TestEnterHub_RefusesWithoutAResolvableCharacter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			characters := newFakeCharacters()
-			server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters)
+			server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{})
 			hub, _ := server.HubSession()
 
 			conn := &websocket.Conn{}
@@ -194,7 +194,7 @@ func TestEnterHub_RefusesWithoutAResolvableCharacter(t *testing.T) {
 // world: it rides HUB → run → HUB. FS-BDA7X §Requirements 7.
 func TestCharacterInPlay_RidesEveryWorldSwitch(t *testing.T) {
 	characters := newFakeCharacters()
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters)
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
@@ -205,7 +205,7 @@ func TestCharacterInPlay_RidesEveryWorldSwitch(t *testing.T) {
 	_, err := server.EnterHub(context.Background(), conn, warrior.ID.String())
 	require.NoError(t, err)
 
-	run := server.CreateGameSession([]*types.Player{player})
+	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{player}})
 	runStats := seatedStats(t, run, player.ID)
 	assert.Equal(t, 5, runStats.Level, "seated in the run at its level")
 	assert.Equal(t, 16, runStats.Strength)
@@ -220,7 +220,7 @@ func TestCharacterInPlay_RidesEveryWorldSwitch(t *testing.T) {
 // carries the character in play. FS-BDA7X §Requirements 7.
 func TestCharacterInPlay_SurvivesAReconnect(t *testing.T) {
 	characters := newFakeCharacters()
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters)
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{})
 
 	conn := &websocket.Conn{}
 	player := &types.Player{ID: uuid.New(), Username: "Wren"}
@@ -229,7 +229,7 @@ func TestCharacterInPlay_SurvivesAReconnect(t *testing.T) {
 
 	_, err := server.EnterHub(context.Background(), conn, mage.ID.String())
 	require.NoError(t, err)
-	run := server.CreateGameSession([]*types.Player{player})
+	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{player}})
 
 	// the handler's network-drop path: the record is held for the reconnect
 	// grace, and the reconnect maps a new connection to it
@@ -251,7 +251,7 @@ func TestCharacterInPlay_SurvivesAReconnect(t *testing.T) {
 // player with none is not queued. FS-BDA7X §Requirements 6–7.
 func TestFindGame_WithoutACharacterInPlay_IsRefused(t *testing.T) {
 	queue := NewMockQueueService()
-	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 
 	conn := &websocket.Conn{}
 	player := &types.Player{ID: uuid.New(), Username: "Wren"}
@@ -274,7 +274,7 @@ func TestFindGame_WithoutACharacterInPlay_IsRefused(t *testing.T) {
 // FS-BDA7X §Requirements 5, 7.
 func TestEnterHub_AsAnotherCharacter_ReseatsAsThatCharacter(t *testing.T) {
 	characters := newFakeCharacters()
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters)
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
@@ -301,7 +301,7 @@ func TestEnterHub_AsAnotherCharacter_ReseatsAsThatCharacter(t *testing.T) {
 // FS-BDA7X §Requirements 7.
 func TestEnterHub_AsAnotherCharacterMidRun_IsRefused(t *testing.T) {
 	characters := newFakeCharacters()
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters)
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
@@ -312,7 +312,7 @@ func TestEnterHub_AsAnotherCharacterMidRun_IsRefused(t *testing.T) {
 
 	_, err := server.EnterHub(context.Background(), conn, warrior.ID.String())
 	require.NoError(t, err)
-	run := server.CreateGameSession([]*types.Player{player})
+	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{player}})
 
 	_, err = server.EnterHub(context.Background(), conn, mage.ID.String())
 
@@ -343,7 +343,7 @@ func TestEnterHub_WhileQueued(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			characters := newFakeCharacters()
 			queue := NewMockQueueService()
-			server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, characters)
+			server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{})
 
 			conn := &websocket.Conn{}
 			player := &types.Player{ID: uuid.New(), Username: "Wren"}

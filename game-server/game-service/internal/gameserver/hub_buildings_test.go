@@ -41,7 +41,7 @@ func wallsIn(entities []*ecs.Entity) []rect {
 // to be able to say "left of the Quartermaster" and be understood. They are also
 // exteriors: walls with no way in. FS-29KSH §Requirements 4.
 func TestHub_HasBuildings(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 	entities := hub.EntityManager.GetAllEntities()
 
@@ -56,7 +56,7 @@ func TestHub_HasBuildings(t *testing.T) {
 	})
 
 	t.Run("fixed, so two clients see one hub", func(t *testing.T) {
-		second := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+		second := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 		otherHub, _ := second.HubSession()
 
 		assert.ElementsMatch(t, walls, wallsIn(otherHub.EntityManager.GetAllEntities()))

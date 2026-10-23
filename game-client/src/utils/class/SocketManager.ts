@@ -17,7 +17,8 @@ export type ConnectionStatus =
   | "error";
 
 /** The game server a client reaches until a handoff moves it somewhere else. */
-export const DEFAULT_SERVER_ADDR = "ws://localhost:5668/game/ws";
+export const DEFAULT_SERVER_ADDR =
+  process.env.NEXT_PUBLIC_GAME_SERVER_ADDR || "ws://localhost:5668/game/ws";
 
 // WebSocket.readyState values, spelled out so the manager doesn't need the
 // browser global to compare against

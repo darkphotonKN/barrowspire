@@ -25,14 +25,14 @@ func monsterCount(world *game.Session) int {
 // party and kept clear of where it stands; the hub never holds one, before the
 // run or after everyone comes home. FS-77AB6 §Requirements 22.
 func TestCreateGameSession_PopulatesTheRunAndNeverTheHub(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	wren, _ := enterHub(t, server, "Wren")
 	kaelen, _ := enterHub(t, server, "Kaelen")
 	assert.Zero(t, monsterCount(hub), "the hub before the run")
 
-	run := server.CreateGameSession([]*types.Player{wren, kaelen})
+	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{wren, kaelen}})
 
 	assert.Positive(t, monsterCount(run), "the run was built before its roster stood on it")
 	assert.LessOrEqual(t, monsterCount(run), game.MonsterCountMax+1, "the standard count, plus at most one demon")

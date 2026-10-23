@@ -17,7 +17,7 @@ import (
 // "Persistence".
 func TestApplyRunProgress_HubSeatsTheRunsResult(t *testing.T) {
 	characters := newFakeCharacters()
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters)
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
@@ -26,7 +26,7 @@ func TestApplyRunProgress_HubSeatsTheRunsResult(t *testing.T) {
 	warrior := characters.give(player.ID, "warrior", "Wren", 1, 90)
 	_, err := server.EnterHub(context.Background(), conn, warrior.ID.String())
 	require.NoError(t, err)
-	run := server.CreateGameSession([]*types.Player{player})
+	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{player}})
 
 	server.ApplyRunProgress([]types.RunProgress{{
 		MemberID: player.ID, CharacterID: warrior.ID, Gained: 150, Seated: true, Level: 3, Experience: 240,
@@ -81,7 +81,7 @@ func TestApplyRunProgress_RecordKeepsTheRunsResult(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+			server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 			conn := &websocket.Conn{}
 			player := &types.Player{ID: uuid.New(), Username: "Wren", Character: tt.seated}
 			registerTestConn(server, conn, player)
@@ -99,7 +99,7 @@ func TestApplyRunProgress_RecordKeepsTheRunsResult(t *testing.T) {
 
 // A member no longer connected has no record to keep it; nothing breaks.
 func TestApplyRunProgress_UnknownMember_Ignored(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 
 	assert.NotPanics(t, func() {
 		server.ApplyRunProgress([]types.RunProgress{{MemberID: uuid.New(), CharacterID: uuid.New(), Gained: 10}})

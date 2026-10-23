@@ -37,6 +37,10 @@ const (
 	// for every transition, into the hub, into a run, and back again,, so the
 	// client has a single place to switch scenes. FS-29KSH §Requirements 15.
 	ActionWorldEntered Action = "world_entered"
+
+	// ActionWorldHandoff tells a client its run is hosted on another pod, and
+	// where to reconnect to enter it. FS-K2HKP §Requirements 21.
+	ActionWorldHandoff Action = "world_handoff"
 )
 
 const (

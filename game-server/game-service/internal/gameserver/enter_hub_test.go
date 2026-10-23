@@ -35,7 +35,7 @@ func awaitAction(t *testing.T, msgCh chan interface{}, action constants.Action) 
 // asks to enter the hub. FS-29KSH §Requirements 15, 19.
 func TestEnterHub_PlacesThePlayerAndTellsThem(t *testing.T) {
 	characters := newFakeCharacters()
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters)
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{})
 	hub, exists := server.HubSession()
 	require.True(t, exists)
 

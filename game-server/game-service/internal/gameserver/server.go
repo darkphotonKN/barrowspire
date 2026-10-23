@@ -92,13 +92,24 @@ type QueueManager interface {
 	Start(ctx context.Context)
 	PlayerJoinQueue(ctx context.Context, player *types.Player) error
 	PlayerRemoveQueue(ctx context.Context, player *types.Player) error
-	GetMatchedChan(ctx context.Context) chan []*types.Player
+	GetMatchedChan(ctx context.Context) chan matchmaker.MatchStart
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
 	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
 	QueuedCharacter(ctx context.Context, playerID uuid.UUID) (characterID uuid.UUID, queued bool, err error)
 }
 
-func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient, characters CharacterReader) *Server {
+// HandoffAnnouncer publishes a match-start step on another pod's channel. The
+// host uses it to tell each other involved pod which of its players to send
+// over. FS-K2HKP §Requirements 20.
+type HandoffAnnouncer interface {
+	Announce(ctx context.Context, payload matchmaker.MatchStart) error
+}
+
+/**
+* podID and podAddr are this replica's identity: a match step names its pods by
+* id, and podAddr is where a handed-off player reconnects to reach this pod.
+**/
+func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient, characters CharacterReader, podID, podAddr string, announcer HandoffAnnouncer) *Server {
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			// TODO: Allow all connections by default for simplicity; can add more logic here
@@ -132,7 +143,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	server.queue.Start(ctx)
 
 	// initialize message hub
-	messageHub := NewMessageHub(server, newSender)
+	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer)
 	go messageHub.Run(ctx)
 
 	server.createHubSession()
@@ -655,7 +666,7 @@ func (s *Server) RemovePlayerFromQueue(player *types.Player) error {
 /**
 * get matched channel for listening to matched players
 **/
-func (s *Server) GetMatchedChan(ctx context.Context) chan []*types.Player {
+func (s *Server) GetMatchedChan(ctx context.Context) chan matchmaker.MatchStart {
 	return s.queue.GetMatchedChan(ctx)
 }
 

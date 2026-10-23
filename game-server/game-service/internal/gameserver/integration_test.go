@@ -127,7 +127,8 @@ func (m *MockItemsClient) ListItemTemplates(ctx context.Context) (*itemspb.ListI
 type mockQueueService struct {
 	mu              sync.Mutex
 	players         []*types.Player
-	matchedChan     chan []*types.Player
+	matchedChan     chan matchmaker.MatchStart
+	handoffChan     chan matchmaker.MatchStart
 	statusChan      chan matchmaker.QueueStatus
 	QueueStatusChan chan matchmaker.QueueStatus
 
@@ -148,7 +149,8 @@ func (m *mockQueueService) removedPlayers() []uuid.UUID {
 func NewMockQueueService() *mockQueueService {
 	return &mockQueueService{
 		players:         make([]*types.Player, 0),
-		matchedChan:     make(chan []*types.Player),
+		matchedChan:     make(chan matchmaker.MatchStart),
+		handoffChan:     make(chan matchmaker.MatchStart),
 		statusChan:      make(chan matchmaker.QueueStatus),
 		QueueStatusChan: make(chan matchmaker.QueueStatus),
 	}
@@ -183,8 +185,16 @@ func (m *mockQueueService) PlayerJoinQueue(_ context.Context, player *types.Play
 	m.players = m.players[matchSize:]
 	m.mu.Unlock()
 
+	// every mock-queued player is on the test server's pod, so the match has
+	// no handoff, as on one replica
+	players := make([]matchmaker.MatchStartPlayer, 0, len(matched))
+	for _, player := range matched {
+		players = append(players, matchmaker.MatchStartPlayer{ID: player.ID, Pod: testPodID, Character: player.Character})
+	}
+	match := matchmaker.MatchStart{PodID: testPodID, Step: matchmaker.MatchStepCreate, Players: players}
+
 	// matchedChan is unbuffered and the server reads it from its own loop.
-	go func() { m.matchedChan <- matched }()
+	go func() { m.matchedChan <- match }()
 
 	return nil
 }
@@ -222,13 +232,13 @@ func (m *mockQueueService) QueuedCharacter(_ context.Context, playerID uuid.UUID
 }
 
 func (m *mockQueueService) GetHandoffChan(context.Context) chan matchmaker.MatchStart {
-	return nil
+	return m.handoffChan
 }
 func (m *mockQueueService) Start(context.Context) {
 	// no need to really start during testing
 }
 
-func (m *mockQueueService) GetMatchedChan(context.Context) chan []*types.Player {
+func (m *mockQueueService) GetMatchedChan(context.Context) chan matchmaker.MatchStart {
 	return m.matchedChan
 }
 
@@ -320,7 +330,7 @@ func TestQueueFindGameFlow(t *testing.T) {
 	mockQueue := NewMockQueueService()
 	mockEventEmitter := &MockEventEmitter{}
 	mockItemsClient := &MockItemsClient{}
-	server := NewServer(context.Background(), mockAuthClient, mockQueue, mockEventEmitter, mockItemsClient, newFakeCharacters())
+	server := NewServer(context.Background(), mockAuthClient, mockQueue, mockEventEmitter, mockItemsClient, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 
 	playerCount := 10
 	var wg sync.WaitGroup
@@ -493,7 +503,7 @@ func TestSenderToBroadcastToPlayerList(t *testing.T) {
 			mockQueue := NewMockQueueService()
 			mockEventEmitter := &MockEventEmitter{}
 			mockItemsClient := &MockItemsClient{}
-			server := NewServer(context.Background(), authClient, mockQueue, mockEventEmitter, mockItemsClient, newFakeCharacters())
+			server := NewServer(context.Background(), authClient, mockQueue, mockEventEmitter, mockItemsClient, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 			playerIDs := tc.setupPlayers(server)
 
 			newSender := messaging.NewMessageSender(server)

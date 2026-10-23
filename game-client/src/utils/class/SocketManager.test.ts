@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SERVER_ADDR, SocketManager, type SocketLike } from "./SocketManager";
 
 /** A socket the test drives by hand: the server side of each event is a method. */
@@ -171,5 +171,26 @@ describe("SocketManager handoff", () => {
     env.manager.reconnect();
 
     expect(env.sockets[2].url).toBe(`${HOST}?token=jwt-1&name=Ash`);
+  });
+});
+
+describe("DEFAULT_SERVER_ADDR", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("falls back to the local game server when NEXT_PUBLIC_GAME_SERVER_ADDR is unset", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GAME_SERVER_ADDR", "");
+    vi.resetModules();
+    const mod = await import("./SocketManager");
+    expect(mod.DEFAULT_SERVER_ADDR).toBe("ws://localhost:5668/game/ws");
+  });
+
+  it("uses NEXT_PUBLIC_GAME_SERVER_ADDR when set", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GAME_SERVER_ADDR", "ws://localhost:5669/game/ws");
+    vi.resetModules();
+    const mod = await import("./SocketManager");
+    expect(mod.DEFAULT_SERVER_ADDR).toBe("ws://localhost:5669/game/ws");
   });
 });
