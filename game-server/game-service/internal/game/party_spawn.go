@@ -3,6 +3,7 @@ package game
 import (
 	"log/slog"
 	"math"
+	"slices"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -33,27 +34,89 @@ const partyPlacementAttempts = 100
 * the monsters kept clear of it, the same way every time. Once the party
 * stands, its formation is taken ground, so nothing placed after it lands on a
 * delver.
+*
+* expected is how many matched players are not seated yet (FS-K2HKP R18). The
+* formation is sized for the seated and the expected together; the seated take
+* the first spots, and the rest are kept as arrival slots for the expected to
+* take as they are seated (takeArrivalSlotLocked). Only the first floor has
+* any expected; on every other floor this is 0 and the formation is exactly
+* the seated party's.
 **/
-func (s *Session) gatherParty() {
+func (s *Session) gatherParty(expected int) {
 	if s.worldType != types.WorldTypeRun {
 		return
 	}
 
+	// FS-K2HKP R18: spots an earlier floor kept for arrivals are on ground that
+	// is gone; this floor keeps its own, or none
+	s.mu.Lock()
+	s.arrivalSlots = nil
+	s.mu.Unlock()
+
 	party := livingParty(s.EntityManager.GetAllEntities())
-	if len(party) == 0 {
+
+	// FS-K2HKP R18: the formation is sized for the whole matched party, so a
+	// handoff player arriving later stands with the rest, not at a random spot
+	size := len(party) + expected
+	if size == 0 {
 		return
 	}
 
-	cols := int(math.Ceil(math.Sqrt(float64(len(party)))))
-	rows := (len(party) + cols - 1) / cols
+	cols := int(math.Ceil(math.Sqrt(float64(size))))
+	rows := (size + cols - 1) / cols
 	area := s.partyArea(float64(cols)*partySpacing, float64(rows)*partySpacing)
 
+	slots := make([]point, size)
+	for i := range slots {
+		slots[i] = point{
+			x: area.X + partySpacing/2 + float64(i%cols)*partySpacing,
+			y: area.Y + partySpacing/2 + float64(i/cols)*partySpacing,
+		}
+	}
+
 	for i, transform := range party {
-		transform.X = area.X + partySpacing/2 + float64(i%cols)*partySpacing
-		transform.Y = area.Y + partySpacing/2 + float64(i/cols)*partySpacing
+		transform.X, transform.Y = slots[i].x, slots[i].y
 	}
 
 	s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas, area)
+
+	// FS-K2HKP R18: what the seated did not take waits for the handoff players
+	if expected > 0 {
+		s.mu.Lock()
+		s.arrivalSlots = slots[len(party):]
+		s.mu.Unlock()
+	}
+}
+
+/**
+* takeArrivalSlotLocked is where a handoff player being seated stands: the
+* next free spot in the first floor's formation, which it takes, so the next
+* arrival gets another (FS-K2HKP R18, R22). ok is false when none is left,
+* after a floor change or when every kept spot is taken, and the caller falls
+* back to spawnPoint.
+*
+* Callers hold the world's lock. The seat checks the member is expected and
+* creates their body under it, and the spot is taken in that same step, so two
+* arrivals seated at once cannot be handed the same spot.
+**/
+func (s *Session) takeArrivalSlotLocked() (x, y float64, ok bool) {
+	if len(s.arrivalSlots) == 0 {
+		return 0, 0, false
+	}
+
+	slot := s.arrivalSlots[0]
+	s.arrivalSlots = s.arrivalSlots[1:]
+
+	return slot.x, slot.y, true
+}
+
+// arrivalSlotPositions is a copy of the spots still kept for arrivals, for the
+// monsters to keep clear of as they do of the seated (FS-K2HKP R18).
+func (s *Session) arrivalSlotPositions() []point {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return slices.Clone(s.arrivalSlots)
 }
 
 // partyArea finds the w by h area the party's formation stands in.

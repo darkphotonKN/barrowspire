@@ -39,6 +39,15 @@ var (
 	// still away from the stairs. FS-F6F88 §Requirements 18.
 	ErrPartyNotGathered = errors.New("party not gathered at the stairs")
 
+	// Handoff seating
+	// ErrNoSeat refuses seating a handoff arrival the run holds no seat for:
+	// one it never expected, one already seated, or one whose seat was
+	// released at the seat deadline. FS-K2HKP §Requirements 22-24.
+	ErrNoSeat = errors.New("no seat for this player")
+	// ErrCharacterNotSeatable refuses seating a handoff arrival whose
+	// character has no class, or one no class config matches.
+	ErrCharacterNotSeatable = errors.New("character cannot be seated")
+
 	// queue
 	ErrPlayerAlreadyInQueue = errors.New("player already in queue")
 )

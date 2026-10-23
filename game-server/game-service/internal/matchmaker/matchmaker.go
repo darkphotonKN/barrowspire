@@ -37,10 +37,14 @@ const (
 type MatchStart struct {
 	PodID string    `json:"pod_id"` // must match id of appointed pod
 	Step  MatchStep `json:"step"`
-	// the run this match becomes, fixed at match time so every step names the same run
-	RunID uuid.UUID `json:"run_id"`
 	// list of players for this step
 	Players []MatchStartPlayer `json:"players"`
+
+	// set on the handoff step only: where the listed players reconnect to, and
+	// the run they are seated in there. The session id is the run's one id.
+	// FS-K2HKP §Requirements 20.
+	HostAddr  string    `json:"host_addr"`
+	SessionID uuid.UUID `json:"session_id"`
 }
 
 // MatchStartPlayer is one matched player as sent between pods. The id is
@@ -60,7 +64,7 @@ type MatchStartPlayer struct {
 type matchmaker struct {
 	// how many people needed to start game
 	matchSize       int
-	matchedChan     chan []*types.Player
+	matchedChan     chan MatchStart
 	QueueStatusChan chan QueueStatus
 	handOffCh       chan MatchStart // to notify message hub inform client to reconnect these players
 	matchQueue      MatchQueue
@@ -86,7 +90,7 @@ func NewMatchmaker(matchSize int, podID string, matchQueue MatchQueue, matchAnno
 	return &matchmaker{
 		matchSize:       matchSize,
 		podID:           podID,
-		matchedChan:     make(chan []*types.Player),
+		matchedChan:     make(chan MatchStart),
 		QueueStatusChan: make(chan QueueStatus),
 		handOffCh:       make(chan MatchStart),
 		matchQueue:      matchQueue,
@@ -125,11 +129,11 @@ type MatchAnnouncer interface {
 
 // Start launches queue listening
 func (q *matchmaker) Start(ctx context.Context) {
-	go q.MatchLoop(ctx)
+	go q.matchLoop(ctx)
 	go q.heartbeatLoop(ctx)
 	go q.queueStatusLoop(ctx)
 	go q.matchAnnouncer.Listen(ctx, q.podID, q.matchReadyCh)
-	go q.MatchReady(ctx)
+	go q.matchReady(ctx)
 	slog.Info("Queue service started, waiting for players to join...")
 }
 
@@ -188,7 +192,7 @@ func (q *matchmaker) Stopped() <-chan struct{} {
 }
 
 // matchQueue checks queue once per second
-func (q *matchmaker) MatchLoop(ctx context.Context) {
+func (q *matchmaker) matchLoop(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -261,15 +265,14 @@ func (q *matchmaker) MatchLoop(ctx context.Context) {
 			//TODO: implement better host pod selection
 			// host pod now is the first player's pod
 			payload := MatchStart{
-				PodID:   matchedPlayersRes[0].Pod,
+				PodID:   matchedPlayersRes[0].Pod, // right now pod is selected by first player
 				Step:    MatchStepCreate,
-				RunID:   uuid.New(),
 				Players: matchedPlayers,
 			}
 
-			// TODO: add a circuit breaker so repeated announce failures fail fast.
+			// TODO: add a circuit breaker so repeated announce failures fail fast
 			// After a few failures in a row, stop popping players for a backoff
-			// that doubles each time it trips, and reset on the first success.
+			// that doubles each time it trips, and reset on the first success
 			// Guard the Matchmake pop, not the announce, so players wait in the
 			// queue instead of being popped and requeued every tick.
 			err = q.matchAnnouncer.Announce(ctx, payload)
@@ -437,7 +440,7 @@ func (q *matchmaker) QueuedCharacter(ctx context.Context, playerID uuid.UUID) (u
 	return q.matchQueue.QueuedCharacter(queueCtx, playerID.String())
 }
 
-func (q *matchmaker) GetMatchedChan(ctx context.Context) chan []*types.Player {
+func (q *matchmaker) GetMatchedChan(ctx context.Context) chan MatchStart {
 	return q.matchedChan
 }
 
@@ -450,7 +453,7 @@ func (q *matchmaker) GetHandoffChan(ctx context.Context) chan MatchStart {
 }
 
 // Match ready handling loop
-func (q *matchmaker) MatchReady(ctx context.Context) {
+func (q *matchmaker) matchReady(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -486,15 +489,8 @@ func (q *matchmaker) MatchReady(ctx context.Context) {
 					continue
 				}
 
-				// the hub builds the run from player records, pod stays on the wire type
-				players := make([]*types.Player, 0, len(matchReadyPayload.Players))
-				for _, player := range matchReadyPayload.Players {
-					players = append(players, &types.Player{
-						ID:        player.ID,
-						Character: player.Character,
-					})
-				}
-
+				// the whole step goes to the hub, it needs each player's pod to
+				// tell its own players from the ones it hands off
 				select {
 				case <-ctx.Done():
 					if errors.Is(ctx.Err(), context.Canceled) {
@@ -511,7 +507,7 @@ func (q *matchmaker) MatchReady(ctx context.Context) {
 					continue
 
 					// send to matchedChan channel to create game session
-				case q.matchedChan <- players:
+				case q.matchedChan <- matchReadyPayload:
 				}
 
 			// handoff to player clients about us

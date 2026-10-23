@@ -105,7 +105,7 @@ func connectionsOf(server *Server, memberID uuid.UUID) (mapped, writers int) {
 // keeps serving everyone else.
 func TestDisconnect_ANormalCloseLeavesTheServerServing(t *testing.T) {
 	authClient := &oneMemberAuth{memberID: uuid.New()}
-	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	route := newConnectRoute(t, server, authClient)
 
 	client := route.connect(t, "token")
@@ -150,7 +150,7 @@ func connStateOf(t *testing.T, server *Server, memberID uuid.UUID) constants.Con
 // held for the reconnect grace and can resume, and the server keeps serving.
 func TestDisconnect_AConnectionResetLeavesTheServerServing(t *testing.T) {
 	authClient := &oneMemberAuth{memberID: uuid.New()}
-	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	route := newConnectRoute(t, server, authClient)
 	hub, _ := server.HubSession()
 
@@ -193,7 +193,7 @@ func TestDisconnect_AConnectionResetLeavesTheServerServing(t *testing.T) {
 // dropping: the read error on that socket never marks them reconnecting.
 func TestDisconnect_ClosingASupersededConnectionIsNotADrop(t *testing.T) {
 	authClient := &oneMemberAuth{memberID: uuid.New()}
-	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	route := newConnectRoute(t, server, authClient)
 	hub, _ := server.HubSession()
 
@@ -233,7 +233,7 @@ func TestDisconnect_ClosingASupersededConnectionIsNotADrop(t *testing.T) {
 // connection is published, not to the copy taken before the upgrade: a run
 // ending in between is not undone on the connection routing reads.
 func TestMapConnToPlayer_MapsTheLiveRecord(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 	memberID := uuid.New()
 
@@ -258,7 +258,7 @@ func TestMapConnToPlayer_MapsTheLiveRecord(t *testing.T) {
 // reconnect grace ran out meanwhile) is refused: nothing is mapped and no
 // writer is registered.
 func TestMapConnToPlayer_RefusesAMemberNoLongerOnRecord(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	memberID := uuid.New()
 
 	connected, _ := server.connectPlayer(memberID, "Wren", "token")
@@ -304,7 +304,7 @@ func TestCleanUpClient_AnOldCleanupCannotStripAMemberWhoCameBack(t *testing.T) {
 	t.Cleanup(release)
 
 	characters := newFakeCharacters()
-	server := NewServer(context.Background(), authClient, queue, &MockEventEmitter{}, &MockItemsClient{}, characters)
+	server := NewServer(context.Background(), authClient, queue, &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{})
 	route := newConnectRoute(t, server, authClient)
 	hub, _ := server.HubSession()
 	mage := characters.give(authClient.memberID, "mage", "Wren", 3, 100)
@@ -355,7 +355,7 @@ func TestCleanUpClient_AnOldCleanupCannotStripAMemberWhoCameBack(t *testing.T) {
 // simply closed: there is no player behind it to clean up, and the members
 // the server does map are left alone.
 func TestCleanUpClient_AnUnmappedConnectionIsOnlyClosed(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 
 	bystanderConn := &websocket.Conn{}
 	bystander := &types.Player{ID: uuid.New(), Username: "Kaelen"}
@@ -386,7 +386,7 @@ func TestCleanUpClient_AnUnmappedConnectionIsOnlyClosed(t *testing.T) {
 // reconnect closed, and no superseded connection keeps a writer. Run under -race.
 func TestReconnect_OverlappingReconnectsKeepOneLiveConnection(t *testing.T) {
 	authClient := &oneMemberAuth{memberID: uuid.New()}
-	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	route := newConnectRoute(t, server, authClient)
 	hub, _ := server.HubSession()
 
@@ -424,7 +424,7 @@ func TestReconnect_OverlappingReconnectsKeepOneLiveConnection(t *testing.T) {
 // the member is in, in that order.
 func TestReconnect_RepliesReconnectedThenTheWorld(t *testing.T) {
 	authClient := &oneMemberAuth{memberID: uuid.New()}
-	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	route := newConnectRoute(t, server, authClient)
 	hub, _ := server.HubSession()
 
@@ -458,7 +458,7 @@ func TestReconnect_RepliesReconnectedThenTheWorld(t *testing.T) {
 // held for the whole second grace: the first drop's timer running out ends
 // nothing, only the second drop's does.
 func TestDisconnect_ARepeatedDropGetsTheFullGraceAgain(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 
 	firstConn := &websocket.Conn{}
 	player := &types.Player{ID: uuid.New(), Username: "Wren"}
@@ -494,7 +494,7 @@ func TestDisconnect_ARepeatedDropGetsTheFullGraceAgain(t *testing.T) {
 // published connection is live, so it marks them connected again, and the
 // grace that old failure started never evicts them.
 func TestMapConnToPlayer_PublishesTheMemberConnected(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 
 	oldConn := &websocket.Conn{}
 	player := &types.Player{ID: uuid.New(), Username: "Wren"}

@@ -33,7 +33,7 @@ func fullRun(b *testing.B) (*Session, []uuid.UUID, *ecs.Entity) {
 		at.X, at.Y = 300+float64(i)*80, 300
 	}
 
-	s.InitialMapObjects()
+	s.InitialMapObjects(nil)
 
 	// replace whatever the floor rolled with the full population
 	for _, m := range monstersInWorld(em) {

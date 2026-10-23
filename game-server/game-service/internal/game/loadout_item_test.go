@@ -79,7 +79,7 @@ func TestLoadoutItem_WithAffixes_RoundTripsSeatStateAndExtraction(t *testing.T) 
 	// the server's order: the roster is seated before the world is built
 	memberID := uuid.New()
 	s.AddPlayer(memberID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 6}, "")
-	s.InitialMapObjects()
+	s.InitialMapObjects(nil)
 	eq, _ := delverEntity(t, s, memberID).GetComponent(ecs.ComponentTypeEquipment)
 	equipment := eq.(*components.EquipmentComponent)
 	require.NotNil(t, equipment.WeaponSlot, "the unique is worn at level 6")
@@ -201,7 +201,7 @@ func TestNewSession_LoadsRaritiesOnceAtBuild_WithADeadline(t *testing.T) {
 			s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Ash", Class: "mage", Level: 6}, "")
 			if bounds.Type == types.WorldTypeRun {
 				s.InitialSystems()
-				s.InitialMapObjects()
+				s.InitialMapObjects(nil)
 			}
 			assert.Equal(t, 1, client.rarityLoads, "never loaded again")
 

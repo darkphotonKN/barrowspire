@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SERVER_ADDR, SocketManager, type SocketLike } from "./SocketManager";
 
 /** A socket the test drives by hand: the server side of each event is a method. */
@@ -54,9 +54,9 @@ function setup() {
   return { manager, sockets, old };
 }
 
-const handoff = (runId = "run-1", addr = HOST) => ({
+const handoff = (sessionId = "run-1", addr = HOST) => ({
   action: "world_handoff",
-  payload: { addr, run_id: runId },
+  payload: { addr, session_id: sessionId },
 });
 const runEntered = { action: "world_entered", payload: { session_id: "run-1", world_type: "run" } };
 
@@ -70,11 +70,11 @@ describe("SocketManager handoff", () => {
     expect(env.old.url).toBe(`${DEFAULT_SERVER_ADDR}?token=jwt-1&name=Ash`);
   });
 
-  it("opens a socket to the host with the token and run id, keeping the old one open", () => {
+  it("opens a socket to the host with the token and session id, keeping the old one open", () => {
     env.old.receive(handoff());
 
     expect(env.sockets).toHaveLength(2);
-    expect(env.sockets[1].url).toBe(`${HOST}?token=jwt-1&run=run-1`);
+    expect(env.sockets[1].url).toBe(`${HOST}?token=jwt-1&session_id=run-1`);
     expect(env.old.closedWith).toBeUndefined();
   });
 
@@ -171,5 +171,26 @@ describe("SocketManager handoff", () => {
     env.manager.reconnect();
 
     expect(env.sockets[2].url).toBe(`${HOST}?token=jwt-1&name=Ash`);
+  });
+});
+
+describe("DEFAULT_SERVER_ADDR", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("falls back to the local game server when NEXT_PUBLIC_GAME_SERVER_ADDR is unset", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GAME_SERVER_ADDR", "");
+    vi.resetModules();
+    const mod = await import("./SocketManager");
+    expect(mod.DEFAULT_SERVER_ADDR).toBe("ws://localhost:5668/game/ws");
+  });
+
+  it("uses NEXT_PUBLIC_GAME_SERVER_ADDR when set", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GAME_SERVER_ADDR", "ws://localhost:5669/game/ws");
+    vi.resetModules();
+    const mod = await import("./SocketManager");
+    expect(mod.DEFAULT_SERVER_ADDR).toBe("ws://localhost:5669/game/ws");
   });
 });

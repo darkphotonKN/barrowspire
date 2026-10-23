@@ -28,7 +28,7 @@ func entityCountFor(entities []*ecs.Entity, playerID uuid.UUID) int {
 // the life of the process. A run hid both of these behind its teardown.
 func TestHubMembership(t *testing.T) {
 	t.Run("entering twice does not duplicate the delver", func(t *testing.T) {
-		server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+		server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 		hub, _ := server.HubSession()
 
 		conn := &websocket.Conn{}
@@ -45,7 +45,7 @@ func TestHubMembership(t *testing.T) {
 	})
 
 	t.Run("disconnecting leaves the hub", func(t *testing.T) {
-		server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+		server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 		hub, _ := server.HubSession()
 
 		conn, _ := wsPair(t)
@@ -61,7 +61,7 @@ func TestHubMembership(t *testing.T) {
 	})
 
 	t.Run("the hub outlives its last delver", func(t *testing.T) {
-		server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+		server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 		hub, _ := server.HubSession()
 
 		conn, _ := wsPair(t)
@@ -80,10 +80,10 @@ func TestHubMembership(t *testing.T) {
 
 // Being in a world is a fact, not an instruction to build another body. The
 // guard belongs to the world rather than to whoever is asking, so a route added
-// later cannot forget it — JoinHub remembered and ReturnPlayersToHub did not.
+// later cannot forget it. JoinHub remembered; ReturnPlayersToHub did not.
 // FS-29KSH §Requirements 1.
 func TestAddPlayer_IsIdempotentWhoeverAsks(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}

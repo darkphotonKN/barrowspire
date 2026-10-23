@@ -267,7 +267,7 @@ func TestStart_QueueStatus_HubNotReading_DropsAndKeepsReporting(t *testing.T) {
 
 // The wire values are asserted literally: they are the contract between pods,
 // so reusing the Go constants would not catch a rename. FS-K2HKP §Requirements 17.
-func TestMatchLoop_AnnouncesCreateStepWithARunIDPerMatch(t *testing.T) {
+func TestStart_Match_AnnouncesCreateStepToTheHostPod(t *testing.T) {
 	p1, p2, p3, p4 := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	fake := &fakeMatchQueue{matches: [][]matchmaker.MatchedPlayer{
 		{{ID: p1.String(), Pod: "pod-a"}, {ID: p2.String(), Pod: "pod-b"}},
@@ -289,10 +289,7 @@ func TestMatchLoop_AnnouncesCreateStepWithARunIDPerMatch(t *testing.T) {
 	require.NoError(t, json.Unmarshal(first, &wire))
 	assert.Equal(t, "create", wire["step"])
 	assert.Equal(t, "pod-a", wire["pod_id"], "host is the first popped player's pod")
-	assert.NotEmpty(t, wire["run_id"])
 
-	assert.NotEqual(t, uuid.Nil, got[0].RunID)
-	assert.NotEqual(t, got[0].RunID, got[1].RunID, "each match gets its own run id")
 	assert.Equal(t, "pod-b", got[1].PodID)
 	assert.Equal(t, []string{"pod-a", "pod-b"}, []string{got[0].Players[0].Pod, got[0].Players[1].Pod})
 }

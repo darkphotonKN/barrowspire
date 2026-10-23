@@ -92,7 +92,9 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 
 	// outbox is built once in main and shared with the worker that drains it
 	gameService := game.NewService(db, outbox)
-	server := gameserver.NewServer(ctx, authClient, matchmaker, gameService, itemsClient, characterClient)
+	// the one announcer: the matchmaker publishes create steps with it, the
+	// server publishes handoff steps to the other pods. FS-K2HKP §Requirements 20.
+	server := gameserver.NewServer(ctx, authClient, matchmaker, gameService, itemsClient, characterClient, pod.ID, pod.Addr, matchAnnouncer)
 
 	// -- routes --
 	router.GET("/game/ws", auth.WSAuthMiddleware(authClient), server.HandleWebSocketConnection)

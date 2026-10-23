@@ -15,7 +15,11 @@ import (
 func hubSession(t *testing.T) *Session {
 	t.Helper()
 	em := ecs.NewEntityManager()
-	return NewSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, nil, HubBounds())
+	// a started world broadcasts state every tick, so it needs a sender, and it
+	// must stop when the test ends or it keeps broadcasting into the next one
+	s := NewSession(&mockSessionCloser{}, createMockSender(), &mockStateSerializer{}, em, &mockEventEmitter{}, nil, HubBounds())
+	t.Cleanup(s.Shutdown)
+	return s
 }
 
 // A world knows how full it is. Asking it to admit someone is the moment to
@@ -92,7 +96,8 @@ func TestAdmit_LastPlaceGoesToOne(t *testing.T) {
 // A run has no door policy: its roster is decided by matchmaking.
 func TestAdmit_ARunHasNoCap(t *testing.T) {
 	em := ecs.NewEntityManager()
-	run := NewSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, nil, RunBounds())
+	run := NewSession(&mockSessionCloser{}, createMockSender(), &mockStateSerializer{}, em, &mockEventEmitter{}, nil, RunBounds())
+	t.Cleanup(run.Shutdown)
 
 	for i := 0; i < constants.HubOccupancyCap+5; i++ {
 		require.NoError(t, run.Admit(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: "mage"}, ""))

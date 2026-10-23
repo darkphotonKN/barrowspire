@@ -126,7 +126,7 @@ func closeNormally(conn *websocket.Conn) {
 // it is passed.
 func TestHandleWebSocketConnection_KeepsTheTokenTheMiddlewareValidated(t *testing.T) {
 	authClient := &oneMemberAuth{memberID: uuid.New()}
-	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	route := newConnectRoute(t, server, authClient)
 
 	route.connect(t, "connect-token")
@@ -140,7 +140,7 @@ func TestHandleWebSocketConnection_KeepsTheTokenTheMiddlewareValidated(t *testin
 // the worlds they are in keep writing it. Run under -race.
 func TestHandleWebSocketConnection_ReconnectDoesNotRaceTheWorldsWritingTheRecord(t *testing.T) {
 	authClient := &oneMemberAuth{memberID: uuid.New()}
-	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	route := newConnectRoute(t, server, authClient)
 	hub, _ := server.HubSession()
 

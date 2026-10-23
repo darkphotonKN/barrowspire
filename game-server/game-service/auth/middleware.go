@@ -23,8 +23,17 @@ const TokenParam = "token"
 // worn gear as them; it is never logged.
 const TokenKey = "token"
 
+// for players initiating a match via handoff, connecting to this server instance from another
+const SessionIDParam = "session_id"
+const SessionIDKey = "session_id"
+
 // Custom close code for auth errors (4000-4999 range is for application use)
 const CloseCodeAuthError = 4001
+
+// Custom close code for a handoff connection the host will not seat: the member
+// is not expected in that run, already seated, their seat was released, their
+// loadout cannot be fetched, or the run is unknown or ended. FS-K2HKP §Requirements 24.
+const CloseCodeHandoffRefused = 4002
 
 var wsUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -93,10 +102,13 @@ func WSAuthMiddleware(authClient grpcauth.AuthClient) gin.HandlerFunc {
 			return
 		}
 
+		sessionID := c.Query(SessionIDParam)
+
 		// store in context
 		c.Set("userId", userID)
 		c.Set("userIdStr", resp.MemberId)
 		c.Set(TokenKey, token)
+		c.Set(SessionIDKey, sessionID) // store session id needed for handoff
 
 		slog.Debug("stored userId in gin context")
 
