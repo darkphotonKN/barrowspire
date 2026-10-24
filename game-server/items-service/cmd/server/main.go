@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -110,7 +111,10 @@ func main() {
 	publisher := commonbroker.NewAmqpPublisher(ch)
 	// TODO: update in prod
 	workcycyleTime := time.Minute * 1
-	outboxWorker := commonoutbox.NewOutboxWorker(workcycyleTime, 20, outboxServ, publisher)
+	workersWg := sync.WaitGroup{}
+	// add the number of workers
+	workersWg.Add(1)
+	outboxWorker := commonoutbox.NewOutboxWorker(workcycyleTime, 20, outboxServ, publisher, &workersWg)
 
 	workerCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -202,4 +206,8 @@ func main() {
 
 	log.Println("Shutting down...")
 	grpcServer.GracefulStop()
+
+	// stop the outbox worker and wait for its current batch to finish
+	cancel()
+	workersWg.Wait()
 }
