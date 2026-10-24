@@ -30,6 +30,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 
 	"log/slog"
@@ -104,6 +105,10 @@ func main() {
 			commoninterceptor.Recovery(slog.Default()),
 			commoninterceptor.Status(slog.Default()),
 		),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			MaxConnectionAge:      30 * time.Second,
+			MaxConnectionAgeGrace: 10 * time.Second,
+		}),
 	)
 
 	// health checks for liveness probe
