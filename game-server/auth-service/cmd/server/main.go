@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -17,17 +18,20 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	commonhealth "github.com/darkphotonKN/barrowspire-server/common/health"
 	commoninbox "github.com/darkphotonKN/barrowspire-server/common/inbox"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
-	"github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/reflection"
 
 	"log/slog"
 )
@@ -77,22 +81,6 @@ func main() {
 	// --- database setup ---
 
 	db := config.InitDB()
-	defer db.Close()
-
-	// --- redis setup ---
-	err = config.InitRedis(config.RedisConfig{
-		Mode:         commonhelpers.GetEnvString("REDIS_MODE", "standalone"),
-		Addrs:        []string{commonhelpers.GetEnvString("REDIS_ADDR", "localhost:6492")},
-		Password:     commonhelpers.GetEnvString("REDIS_PASSWORD", ""),
-		DB:           0,
-		PoolSize:     10,
-		MinIdleConns: 5,
-	})
-	if err != nil {
-		log.Fatalf("Failed to initialize Redis: %v", err)
-	}
-	defer config.CloseRedis()
-	cacheService := cache.NewRedisCache(config.GetClient())
 
 	// --- S3 setup ---
 	s3Config := config.LoadS3Config()
@@ -117,7 +105,20 @@ func main() {
 			commoninterceptor.Recovery(slog.Default()),
 			commoninterceptor.Status(slog.Default()),
 		),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			MaxConnectionAge:      30 * time.Second,
+			MaxConnectionAgeGrace: 10 * time.Second,
+		}),
 	)
+
+	// health checks for liveness probe
+	pingFn := db.PingContext
+	healthService := commonhealth.Register(ctx, grpcServer, pingFn)
+
+	// reflection lets grpcurl / grpcui discover the API schema; dev only, so prod never exposes it
+	if strings.EqualFold(environment, "development") {
+		reflection.Register(grpcServer)
+	}
 
 	// create a network listener to this service
 	listener, err := net.Listen("tcp", ":"+grpcAddr)
@@ -159,8 +160,7 @@ func main() {
 	// staying cheap for a low-traffic auth DB.
 	outboxRepo := commonoutbox.NewRepo(db)
 	outboxService := commonoutbox.NewService(outboxRepo)
-
-	memberService := member.NewService(db, memberRepo, publishCh, cacheService, outboxService)
+	memberService := member.NewService(db, memberRepo, publishCh, outboxService)
 	memberHandler := member.NewHandler(memberService)
 
 	workersWg := sync.WaitGroup{}
@@ -217,6 +217,9 @@ func main() {
 	<-ctx.Done() // wait for SIGTERM
 	slog.Info("shutdown: signal received")
 
+	healthService.SetServingStatus("readiness", healthpb.HealthCheckResponse_NOT_SERVING)
+	time.Sleep(time.Second * 4) // let endpoint removal propogate
+
 	// give 20 second grace period for the other services shutdown
 	doneCh := make(chan struct{})
 
@@ -251,6 +254,7 @@ func main() {
 		slog.Info("outbox workers stopped after waiting 10 seconds...")
 	}
 
-	// db, broker and redis are closed by the deferred calls above
+	// broker is closed by the deferred call above
+	db.Close()
 	slog.Info("shutdown clean")
 }

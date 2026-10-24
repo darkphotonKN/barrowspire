@@ -25,10 +25,6 @@ func Dial(addr string) (*grpc.ClientConn, error) {
 	return grpc.NewClient("dns:///"+addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
-		// Nothing publishes gRPC service config over DNS. Without this the dns
-		// resolver looks up the TXT record _grpc_config.<host> and, on upstream
-		// DNS that drops the query, blocks every new connection for ~20 s
-		// (5 s x 2 attempts x 2 servers).
-		grpc.WithDisableServiceConfig(),
+		grpc.WithDefaultServiceConfig(`{"loadBalancingConfig":[{"round_robin":{}}]}`),
 	)
 }

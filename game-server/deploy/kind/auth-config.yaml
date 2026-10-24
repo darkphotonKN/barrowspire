@@ -17,3 +17,4 @@ data:
   AWS_REGION: "us-east-1"
   S3_BUCKET_NAME: "barrowspire-auth-uploads-dev"
   CDN_URL: ""
+  GOMEMLIMIT: "115MiB"

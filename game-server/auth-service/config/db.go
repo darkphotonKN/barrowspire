@@ -84,7 +84,7 @@ func SeedDefaults(db *sqlx.DB) {
 	memberRepo := member.NewRepository(db)
 	outboxRepo := commonoutbox.NewRepo(db)
 	outboxService := commonoutbox.NewService(outboxRepo)
-	memberService := member.NewService(db, memberRepo, nil, nil, outboxService)
+	memberService := member.NewService(db, memberRepo, nil, outboxService)
 
 	err := memberService.CreateDefaultMembers(constants.DefaultMembers)
 
