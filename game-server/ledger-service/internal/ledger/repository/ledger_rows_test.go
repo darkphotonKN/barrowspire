@@ -96,7 +96,7 @@ func TestRowsRoundTrip(t *testing.T) {
 
 	transaction := LedgerTransaction{
 		TransactionID: uuid.New(),
-		Reason:        "SETTLE_AUCTION",
+		Reason:        "SETTLEMENT",
 		ReferenceID:   uuid.New(),
 		Currency:      "GOLD",
 		CreatedAt:     time.Now().UTC().Truncate(time.Microsecond),

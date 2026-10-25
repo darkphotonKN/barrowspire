@@ -37,7 +37,7 @@ func NewTransaction(transactionID uuid.UUID, referenceID uuid.UUID, reason Trans
 		return nil, ErrInvalidCurrency
 	}
 
-	if reason != ReasonDeposit && reason != ReasonTransfer && reason != ReasonWithdraw && reason != ReasonSettleAuction {
+	if reason != ReasonDeposit && reason != ReasonTransfer && reason != ReasonWithdraw && reason != ReasonSettlement {
 		return nil, ErrInvalidReason
 	}
 
@@ -140,7 +140,7 @@ func (t *Transaction) Snapshot() LedgerSnapshot {
 type TransactionReason string
 
 const (
-	ReasonSettleAuction TransactionReason = "SETTLE_AUCTION"
+	ReasonSettlement TransactionReason = "SETTLEMENT"
 	ReasonDeposit       TransactionReason = "DEPOSIT"
 	ReasonWithdraw      TransactionReason = "WITHDRAW"
 	ReasonTransfer      TransactionReason = "TRANSFER"

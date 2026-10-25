@@ -13,6 +13,17 @@ type AppendLedgerTxInput struct {
 	Legs          []Leg     `json:"legs"`
 }
 
+// Reason values for AppendLedgerTxInput. They mirror ledger_transactions'
+// reason CHECK; the ledger refuses any other value as non-retryable. Reason stays
+// a plain string on the wire (FS-F9R7Q open question 3).
+const (
+	// ReasonSettlement is an auction settling (FS-NXP1W step 5).
+	ReasonSettlement = "SETTLEMENT"
+	ReasonDeposit    = "DEPOSIT"
+	ReasonWithdraw   = "WITHDRAW"
+	ReasonTransfer   = "TRANSFER"
+)
+
 type Leg struct {
 	AccountID uuid.UUID `json:"account_id"`
 	Amount    int64     `json:"amount"`
