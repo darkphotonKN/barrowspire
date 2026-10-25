@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -101,7 +102,10 @@ func main() {
 	// The worker publishes through broker.Publisher, not a raw channel — the
 	// same adapter auth-service uses, so both services publish identically.
 	publishCh := broker.NewAmqpPublisher(ch)
-	outboxWorker := commonoutbox.NewOutboxWorker(time.Second*5, 20, services.OutboxService, publishCh)
+	workersWg := sync.WaitGroup{}
+	// add the number of workers
+	workersWg.Add(1)
+	outboxWorker := commonoutbox.NewOutboxWorker(time.Second*5, 20, services.OutboxService, publishCh, &workersWg)
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
 	defer cancelWorker()
 	go outboxWorker.Run(workerCtx)
@@ -161,4 +165,8 @@ func main() {
 
 	log.Println("Shutting down...")
 	grpcServer.GracefulStop()
+
+	// stop the outbox worker and wait for its current batch to finish
+	cancelWorker()
+	workersWg.Wait()
 }

@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -75,8 +76,14 @@ func main() {
 	// Publishes what use cases wrote to the outbox in their own transaction.
 	// Run loops on a ticker until ctx is cancelled, so it gets its own goroutine.
 	outboxServ := commonoutbox.NewService(commonoutbox.NewRepo(db))
-	outboxWorker := commonoutbox.NewOutboxWorker(time.Minute, 20, outboxServ, broker.NewAmqpPublisher(ch))
-	go outboxWorker.Run(ctx)
+	workersWg := sync.WaitGroup{}
+	// add the number of workers
+	workersWg.Add(1)
+	outboxWorker := commonoutbox.NewOutboxWorker(time.Minute, 20, outboxServ, broker.NewAmqpPublisher(ch), &workersWg)
+
+	workerCtx, cancelWorker := context.WithCancel(ctx)
+	defer cancelWorker()
+	go outboxWorker.Run(workerCtx)
 
 	// --- temporal worker: initiate ---
 	// Marketplace is the settlement saga's orchestrator (ADR-0011): it is the only
@@ -185,4 +192,8 @@ func main() {
 
 	log.Println("Shutting down server")
 	grpcServer.GracefulStop() // gRPC處理完目前正在執行的請求關閉
+
+	// stop the outbox worker and wait for its current batch to finish
+	cancelWorker()
+	workersWg.Wait()
 }

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
@@ -119,7 +120,10 @@ func main() {
 	publisher := commonbroker.NewAmqpPublisher(ch)
 	// TODO: update in prod
 	workcycyleTime := time.Minute * 1
-	outboxWorker := commonoutbox.NewOutboxWorker(workcycyleTime, 20, outboxServ, publisher)
+	workersWg := sync.WaitGroup{}
+	// add the number of workers
+	workersWg.Add(1)
+	outboxWorker := commonoutbox.NewOutboxWorker(workcycyleTime, 20, outboxServ, publisher, &workersWg)
 
 	workerCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
