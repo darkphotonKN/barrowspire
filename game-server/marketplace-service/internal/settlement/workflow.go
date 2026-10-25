@@ -6,6 +6,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/itemsactivity"
+	"github.com/darkphotonKN/barrowspire-server/common/api/activity/ledgeractivity"
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/walletactivity"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
@@ -25,7 +26,6 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 	var frozen marketplaceactivity.FreezeListingOutput
 
 	// Step 0a. An outage parks; an impossibility froze nothing, so its rollback
-	// knows no item (§Req 12).
 	err := runUntilDone(ctx, in.ListingID,
 		marketplaceactivity.FreezeListingActivityName,
 		bstemporal.QueueMarketplace,
@@ -160,12 +160,33 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 	}
 
 	// TODO(I-NXP1W-12): Step 5 AppendLedgerTx goes here, on the ledger queue, once
-	// ledger registers the activity (I-F9R7Q-5). A two-leg SETTLEMENT transaction
-	// for frozen.Amount, reference frozen.ListingID: buyer DEBIT on
-	// committed.BuyerWalletAccountID, seller CREDIT on credited.SellerWalletAccountID,
-	// transaction_id = uuidv5(settlement namespace, "settlement:" + listingId).
-	// Inserting it here changes the command sequence, so any run that is open past
-	// step 4 by then needs it behind workflow.GetVersion.
+	// mints unique id for this listing of this settlement once, no matter how many times this phase forward
+	// is retried it will always generate the same id for deduping. uuidv5 to have a deterministic id generated
+	transactionID := SettlementTransactionID(frozen.ListingID)
+	// two legs, one buyer one seller, no dynamic needed for now
+	ledgerLegs := make([]ledgeractivity.Leg, 0, 2)
+	ledgerLegs = append(ledgerLegs, ledgeractivity.Leg{
+		AccountID: credited.SellerWalletAccountID,
+		Direction: "CREDIT",
+		Amount:    frozen.Amount,
+	})
+	ledgerLegs = append(ledgerLegs, ledgeractivity.Leg{
+		AccountID: committed.BuyerWalletAccountID,
+		Direction: "DEBIT",
+		Amount:    frozen.Amount,
+	})
+
+	err = runUntilDone(ctx, frozen.ListingID, ledgeractivity.AppendLedgerActivityName, bstemporal.QueueLedger, afterPivot, ledgeractivity.AppendLedgerTxInput{
+		TransactionID: transactionID,
+		Reason:        ledgeractivity.ReasonSettlement,
+		ReferenceID:   frozen.ListingID,
+		Currency:      "GOLD",
+		Legs:          ledgerLegs,
+	}, nil)
+
+	if err != nil {
+		return marketplaceactivity.FreezeListingOutput{}, err
+	}
 
 	// Step 6
 	err = runUntilDone(ctx, frozen.ListingID,
@@ -181,6 +202,13 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 
 	// TODO: update to a workflow specific response wrapper later
 	return frozen, nil
+}
+
+var settlementNameSpace = uuid.MustParse("D8538746-9B76-448E-A4DE-277EC290F19")
+
+func SettlementTransactionID(listingID uuid.UUID) uuid.UUID {
+	// use uuidv5 for deterministic id
+	return uuid.NewSHA1(settlementNameSpace, []byte(listingID.String()))
 }
 
 func Register(w worker.Worker) {
