@@ -28,7 +28,7 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 
 - **World** — one isolated ECS simulation: its own `EntityManager`, its own goroutines, its own
   fixed-timestep tick, no mutable state shared with any other world.
-- **World type** — which kind of world: `hub` or `run`. Two types, one client, one process.
+- **World type** — which kind of world: `hub` or `run`. Two types, one client.
 - **Hub** — the shared, long-lived world players occupy between runs. One per deployment,
   server-authoritative, capped. Same thing the refactor plan calls the **HUB**; never call it a
   lobby, a town, or a village in code.
@@ -59,9 +59,16 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   reconnects nor re-authenticates ([ADR-0015](../../docs/adr/0015-hub-and-runs-share-one-process-and-one-connection.md)).
 - **World identity** — the `(type, id)` pair a state broadcast carries so the client is *told*
   which world it is in rather than inferring it from the payload's shape.
-- **Handoff** — reserved, and currently **not a thing this service does**. It means the
-  two-connection transfer described at `refactor_plan.md:42`, suspended by ADR-0015. Do not use
-  it for a world switch; the distinction is the whole point of that ADR.
+- **Handoff** — moving a matched player from their pod to the **host pod** by reconnecting: the
+  client opens a new socket to the host's pod address, then closes the old one (FS-K2HKP). Only
+  across pods; a player already on the host pod gets a world switch instead. The two are never
+  interchangeable: a world switch keeps the connection, a handoff replaces it.
+  - **Handoff player** — a matched player on another pod, who will arrive by handoff
+    (`ResolvedMatchedPlayers.HandoffPlayers`). Opposite of a **local player**.
+  - **Local player** — a matched player already connected to the host pod, seated in the run at
+    creation with a world switch (`ResolvedMatchedPlayers.LocalPlayers`).
+  - **Arrival** — a handoff player's connection reaching the host, carrying `?session_id=`.
+    Seated (`SeatArrival`) or refused with close code `4002`; never served half-seated.
 
 ### Hub population
 
@@ -90,6 +97,53 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Message hub** — the central WebSocket dispatcher (`messageHub.Run`). Owns which connection's
   messages reach which world, and fans a world's broadcasts back to that world's clients only.
   Always written in full to keep it apart from the HUB world.
-- **Connection** — one client's WebSocket, held for the whole session across any number of world
-  switches. One connection, many worlds — never assume connection and world are the same
-  lifetime.
+- **Connection** — one client's WebSocket to one pod, held across any number of world switches on
+  that pod and replaced only by a handoff. Never assume connection and world are the same
+  lifetime, nor that a player keeps one connection from queue to run.
+
+### Pods (FS-K2HKP)
+
+- **Pod** — one running game-service replica. **pod** is the code's word (`podID`, `PodID`);
+  **replica** is fine in prose about scaling. Both mean the same process, never a Kubernetes
+  concept beyond that.
+- **Pod id** — the pod's identity (`POD_ID`), the key for its liveness and its match-start
+  channel. Opaque; never parsed.
+- **Pod address** — the WebSocket URL that reaches **this exact pod** (`POD_ADDR`, `podAddr`). Sent
+  as `addr` in `world_handoff`. A load-balanced address is wrong here, since it may land on another
+  pod.
+- **Pod liveness** — the `pod:alive:<podID>` key a pod refreshes about once a second with a 3s
+  TTL, and deletes on graceful shutdown. A pod without one is treated as dead: its queued players
+  are dropped at pop. Liveness, not a cleanup sweep, because a crashed pod never cleans up.
+- **Host pod** — the pod a match's run lives on. Currently the pod of the first popped player.
+  Every matched player ends the match connected to it, and returns to *its* HUB world.
+
+### Matchmaking (FS-K2HKP)
+
+- **Queue** — the global Redis list (`queue`) of player ids waiting for a match, shared by every
+  pod. Not per pod.
+- **Queue entry** — what the queue knows about one queued player, held in the `queue:entries`
+  hash: their pod id and their character in play. The queue list carries only ids; the entry
+  carries everything else.
+- **Match start** — the message (`MatchStart`) a pod receives on its own `matchstart:pod:<podID>`
+  channel. It comes in two **steps**, in order:
+  - **`create`** — matcher to host pod only: build the run from these players.
+  - **`handoff`** — host pod to each other involved pod, after the run exists: send these
+    players to the host. Never sent by the matcher, so no player can be told to move before
+    the run expecting them exists.
+- **Session id** — the run's one id, minted when the host creates the session and named
+  `session_id` on the wire. There is no separate run id or match id; do not introduce one.
+
+### Seats (FS-K2HKP)
+
+- **Seat** — a matched player's place in a run. A local player's seat is claimed at creation; a
+  handoff player's seat is held for them until they arrive or it is released. Membership, not a
+  position (see *arrival slot*).
+- **Expected player** — a handoff player whose seat is held but not yet claimed. In code, an entry
+  in the session's `playersPendingConnection`; the entry, not the arriving connection, carries
+  the character they are seated as. Once seated, no longer expected.
+- **Seat release** — dropping every unclaimed seat once `SeatReleaseAfter` (15s) has passed since
+  the run was created; a later arrival for one is refused. If nobody is in the run at that point,
+  the run is shut down. Checked in the tick; nothing waits on it.
+- **Arrival slot** — a reserved spawn position in the party formation, kept for a handoff player
+  so they stand with the party. A *position*, unrelated to whether they hold a seat; a run with
+  none left spawns the arrival elsewhere.
