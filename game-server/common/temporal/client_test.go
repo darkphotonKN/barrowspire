@@ -23,6 +23,38 @@ func deadAddr(t *testing.T) string {
 	return addr
 }
 
+// Temporal Cloud refuses a connection without TLS and credentials; a local
+// server has no TLS listener at all. So both switch on together, on the key.
+func TestClientOptions_APIKeyTurnsOnTLSAndCredentials(t *testing.T) {
+	tests := []struct {
+		name     string
+		apiKey   string
+		wantAuth bool
+	}{
+		{"no key: plain connection", "", false},
+		{"key: TLS and API key credentials", "test-key", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{HostPort: "temporal:7233", Namespace: DefaultNamespace, APIKey: tt.apiKey}
+
+			opts := clientOptions(cfg, nil)
+
+			assert.Equal(t, cfg.HostPort, opts.HostPort)
+			assert.Equal(t, cfg.Namespace, opts.Namespace)
+			assert.NotEmpty(t, opts.ConnectionOptions.DialOptions, "the service-config dial option stays in both modes")
+			if tt.wantAuth {
+				assert.NotNil(t, opts.ConnectionOptions.TLS)
+				assert.NotNil(t, opts.Credentials)
+			} else {
+				assert.Nil(t, opts.ConnectionOptions.TLS)
+				assert.Nil(t, opts.Credentials)
+			}
+		})
+	}
+}
+
 // The retry is bounded on purpose. An unbounded one turns a wrong TEMPORAL_HOST_PORT
 // into a service that never starts and never says why.
 func TestDial_Unreachable_StopsAtMaxAttempts(t *testing.T) {

@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: stats }
+spec:
+  # 1: stats migrates on boot, and outbox workers would duplicate-publish across replicas
+  replicas: 1
+  selector: { matchLabels: { app: stats } }
+  template:
+    metadata: { labels: { app: stats } }
+    spec:
+      containers:
+        - name: stats
+          # 04c2273 predates 0624f5e (graceful SIGTERM shutdown); rebuild to pick it up
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/stats:b70ca33
+          ports:
+            - { containerPort: 7124, name: grpc }
+            - { containerPort: 8196, name: metrics }
+          envFrom:
+            - configMapRef: { name: stats }
+            - secretRef: { name: stats }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          # No probes yet: stats does not register a gRPC health service.
+---
+apiVersion: v1
+kind: Service
+metadata: { name: stats }
+spec:
+  selector: { app: stats }
+  ports:
+    - { name: grpc, port: 7124, targetPort: grpc }
+    - { name: metrics, port: 8196, targetPort: metrics }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: stats-headless }
+spec:
+  clusterIP: None
+  selector: { app: stats }
+  ports:
+    - { name: grpc, port: 7124, targetPort: grpc }
+    - { name: metrics, port: 8196, targetPort: metrics }

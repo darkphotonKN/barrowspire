@@ -80,6 +80,31 @@ func TestLoadConfig_Connection(t *testing.T) {
 	}
 }
 
+// Temporal Cloud authenticates with an API key; a local or in-cluster server
+// takes none. The key comes from the environment (a k8s Secret), and unset
+// means the plain connection every existing setup uses.
+func TestLoadConfig_APIKey(t *testing.T) {
+	tests := []struct {
+		name   string
+		apiKey string
+		want   string
+	}{
+		{"unset means no key", "", ""},
+		{"set is passed through", "test-key", "test-key"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(EnvAPIKey, tt.apiKey)
+
+			cfg, err := LoadConfig(QueueItems)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, cfg.APIKey)
+		})
+	}
+}
+
 // A worker with no queue would start, poll nothing, and look healthy. That is
 // the one misconfiguration worth refusing at construction.
 func TestLoadConfig_EmptyQueue_Errors(t *testing.T) {
