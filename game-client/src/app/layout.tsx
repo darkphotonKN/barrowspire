@@ -26,7 +26,7 @@ const ebGaramond = EB_Garamond({
 
 export const metadata: Metadata = {
   title: 'The Age of Barrowspire',
-  description: 'Delve the barrow-deep. Few return whole.',
+  description: 'A tower stood over the town one morning. Its door is open. Few return whole.',
 };
 
 export default function RootLayout({

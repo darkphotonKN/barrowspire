@@ -166,7 +166,7 @@ export default function LoginPage() {
             {isLoading ? (
               <span className="login-loading">
                 <span className="login-spinner" />
-                Verifying...
+                Entering...
               </span>
             ) : (
               "Enter"
@@ -177,9 +177,9 @@ export default function LoginPage() {
         {/* 底部連結 */}
         <div className="login-footer">
           <p>
-            No credentials?{" "}
+            Not yet sworn?{" "}
             <a href="/register" className="login-link">
-              Register
+              Take the Oath
             </a>
           </p>
         </div>

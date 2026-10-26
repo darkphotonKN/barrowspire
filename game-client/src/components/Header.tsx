@@ -44,12 +44,14 @@ export default function Header() {
             >
               Bazaar
             </Link>
+            {/* Leaderboard is off for now (the stats service still records finished games).
             <Link
               href="/leaderboard"
               className={`nav-link ${pathname === '/leaderboard' ? 'active' : ''}`}
             >
               Leaderboard
             </Link>
+            */}
             <Link
               href="/subscription"
               className={`nav-link ${pathname === '/subscription' ? 'active' : ''}`}
@@ -68,10 +70,10 @@ export default function Header() {
           ) : (
             <div className="auth-buttons flex gap-3">
               <Link href="/login" className="btn-secondary px-4 py-2">
-                Sign In
+                Enter
               </Link>
               <Link href="/register" className="btn-primary px-4 py-2">
-                Sign Up
+                Take the Oath
               </Link>
             </div>
           )}

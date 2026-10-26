@@ -218,7 +218,7 @@ export default function ProfilePage() {
             </div>
 
             <div className="profile-detail-item">
-              <span className="profile-detail-label">Enlisted:</span>
+              <span className="profile-detail-label">Sworn:</span>
               <span className="profile-detail-value">
                 {formatDate(memberInfo.created_at)}
               </span>
