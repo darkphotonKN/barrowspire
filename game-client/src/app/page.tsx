@@ -201,12 +201,14 @@ export default function Home() {
             >
               Take the Oath
             </Link>
+            {/* Leaderboard is off for now (the stats service still records finished games).
             <Link
               href="/leaderboard"
               className="px-10 py-3.5 text-sm font-bold text-vellum-muted border border-brass/30 rounded-md hover:bg-brass/10 hover:border-brass/50 hover:text-brass-bright transition-all duration-300 uppercase tracking-[0.2em]"
             >
               View Rankings
             </Link>
+            */}
           </div>
         ) : (
           <div className="relative flex flex-col sm:flex-row gap-4 justify-center">
@@ -216,12 +218,14 @@ export default function Home() {
             >
               Delve
             </Link>
+            {/* Leaderboard is off for now (the stats service still records finished games).
             <Link
               href="/leaderboard"
               className="px-10 py-3.5 text-sm font-bold text-vellum-muted border border-brass/30 rounded-md hover:bg-brass/10 hover:border-brass/50 hover:text-brass-bright transition-all duration-300 uppercase tracking-[0.2em]"
             >
               View Rankings
             </Link>
+            */}
           </div>
         )}
       </section>
@@ -233,9 +237,11 @@ export default function Home() {
             v0.1 // The Barrow-Deep // The Age of Barrowspire
           </span>
           <div className="flex gap-8">
+            {/* Leaderboard is off for now.
             <Link href="/leaderboard" className="text-[11px] text-vellum-muted hover:text-brass-bright tracking-[0.15em] uppercase transition-colors">
               Rankings
             </Link>
+            */}
             <Link href="/subscription" className="text-[11px] text-vellum-muted hover:text-brass-bright tracking-[0.15em] uppercase transition-colors">
               Premium
             </Link>

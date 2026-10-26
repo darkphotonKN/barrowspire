@@ -44,12 +44,14 @@ export default function Header() {
             >
               Bazaar
             </Link>
+            {/* Leaderboard is off for now (the stats service still records finished games).
             <Link
               href="/leaderboard"
               className={`nav-link ${pathname === '/leaderboard' ? 'active' : ''}`}
             >
               Leaderboard
             </Link>
+            */}
             <Link
               href="/subscription"
               className={`nav-link ${pathname === '/subscription' ? 'active' : ''}`}

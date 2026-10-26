@@ -140,14 +140,15 @@ class ApiClient {
     return response;
   }
 
-  // Get leaderboard
-  async getLeaderboard(limit: number = 50, offset: number = 0) {
-    return unwrap(
-      await client.GET("/api/stats/leaderboard", {
-        params: { query: { limit, offset } },
-      }),
-    );
-  }
+  // Leaderboard is off for now (the stats service still records finished games).
+  // // Get leaderboard
+  // async getLeaderboard(limit: number = 50, offset: number = 0) {
+  //   return unwrap(
+  //     await client.GET("/api/stats/leaderboard", {
+  //       params: { query: { limit, offset } },
+  //     }),
+  //   );
+  // }
 
   // Get notifications for current user
   async getNotifications() {
