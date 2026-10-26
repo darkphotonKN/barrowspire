@@ -82,7 +82,7 @@ export default function LeaderboardPage() {
           </div>
         ) : leaderboard.length === 0 ? (
           <div className="leaderboard-empty">
-            <p>No delvers ranked yet</p>
+            <p>No names on the roll yet</p>
           </div>
         ) : (
           <>

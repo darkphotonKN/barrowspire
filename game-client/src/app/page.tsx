@@ -22,7 +22,7 @@ export default function Home() {
         }} />
 
         <p className="relative text-[11px] text-accent tracking-[0.4em] uppercase mb-6 font-medium">
-          Delve the barrow-deep // Few return whole
+          It was not there the night before
         </p>
         <h1
           className="relative text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold font-display text-primary mb-6"
@@ -31,10 +31,10 @@ export default function Home() {
           THE AGE OF BARROWSPIRE
         </h1>
         <p className="relative text-lg sm:text-xl text-vellum-muted max-w-xl leading-relaxed tracking-wide mb-12">
-          Descend into the barrows beneath the Spire. Strip blade, mail, and draught from the long-dead. Cut down rival delvers -- or find the way back to the light.
+          One grey morning the town woke to a tower standing on the old barrow field. Nobody heard it rise. Its stone is older than the town, and its door was already open.
         </p>
         <p className="relative text-sm text-vellum-muted mb-12 tracking-wider">
-          Only those who climb back out keep their spoils.
+          Some who went in came back with gold. Most never came back.
         </p>
 
         <div className="relative">
@@ -72,10 +72,10 @@ export default function Home() {
 
       {/* ── What is The Age of Barrowspire ── */}
       <section className="max-w-4xl mx-auto px-6 sm:px-12 py-28">
-        <SectionLabel>About</SectionLabel>
-        <SectionTitle>What is The Age of Barrowspire?</SectionTitle>
+        <SectionLabel>The Spire</SectionLabel>
+        <SectionTitle>What stands over the town</SectionTitle>
         <p className="text-center text-vellum-muted max-w-2xl mx-auto leading-[1.9] text-base tracking-wide">
-          The Age of Barrowspire is a real-time multiplayer dungeon-delve. You descend as a delver into the barrows beneath the Spire, strip randomized spoils from the dead, fight rival delvers, and race back to the surface before the dark claims you. Every delve is different. Every choice may be your last. Server-authoritative, skill-based, and unforgiving.
+          The Age of Barrowspire is a co-op dungeon crawl played in real time. The town has learned to live in the Spire&apos;s shadow. The market still opens and the bell still rings, and the Spirewarden keeps a list of everyone who goes through the door. Put your name on it and go in. Inside, the stairs only lead up, yet every floor feels further underground than the one below. Nobody has come back from the top to say what lives there. The town has a name for it, and does not say it aloud.
         </p>
       </section>
 
@@ -83,23 +83,23 @@ export default function Home() {
 
       {/* ── Core Mechanics ── */}
       <section className="max-w-5xl mx-auto px-6 sm:px-12 lg:px-16 py-28">
-        <SectionLabel>Systems</SectionLabel>
-        <SectionTitle>Core Mechanics</SectionTitle>
+        <SectionLabel>Inside</SectionLabel>
+        <SectionTitle>What the Spire asks of you</SectionTitle>
 
         <div className="grid md:grid-cols-3 gap-6">
           <MechanicCard
-            title="BLADE & BLOOD"
-            description="Server-authoritative hit detection. Attack, take damage, and eliminate opponents — all synced at 30 ticks per second."
+            title="WHAT WALKS THE FLOORS"
+            description="Ghouls and trolls hold the halls. Some are elites, older and harder to put down, and their names say so. Every one carries its level above its head, so you know how far out of your depth you are. Now and then something larger answers the noise. The few who saw it call it a demon."
             color="brass"
           />
           <MechanicCard
-            title="PLUNDER & ESCAPE"
-            description="Break open coffers for randomized blades, mail, and draughts. Work the old mechanisms, unseal the way out, and climb back to the surface with your haul."
+            title="UP, OR OUT"
+            description="The party climbs together or not at all. Each floor up hits harder and pays better, and each one has its own way out, a sealed door with a switch somewhere in the dark that opens it. Leave whenever you like. Leave alive."
             color="arcane"
           />
           <MechanicCard
-            title="THE DELVER ROLL"
-            description="Delve against rivals. Every kill, death, and escape is carved into the roll. Climb the ranks of the delvers who lived."
+            title="SWORN TOGETHER"
+            description="You go in as a party, and your blades can't touch each other. The Spire does enough. Kills bring experience, and experience lets you wear heavier gear, up to the twentieth level. When you fall, the Spire keeps everything you carried. What you learned, you keep."
             color="brass"
           />
         </div>
@@ -109,26 +109,26 @@ export default function Home() {
 
       {/* ── Gear & Items ── */}
       <section className="max-w-5xl mx-auto px-6 sm:px-12 lg:px-16 py-28">
-        <SectionLabel>Arsenal</SectionLabel>
-        <SectionTitle>Gear System</SectionTitle>
+        <SectionLabel>Plunder</SectionLabel>
+        <SectionTitle>What the Spire gives up</SectionTitle>
         <p className="text-sm text-vellum-dim text-center max-w-lg mx-auto mb-16 tracking-wide leading-relaxed">
-          Every coffer yields randomized spoils from the hoard — 40% weapons, 35% armor, 25% consumables. Five rarity tiers from normal to fabled.
+          Relics come out of old coffers and off the things you kill. A relic is as strong as whatever dropped it, so the worst floors pay the best. Everything you put on counts the moment you wear it.
         </p>
 
         <div className="grid sm:grid-cols-3 gap-6">
           <GearCard
             title="WEAPONS"
-            items={['Attack Power scaling', 'Critical Rate (0-100%)', 'Types: Sword, Axe, Bow']}
+            items={['Swords, axes, maces, spears, knives and bows', 'Attack power and the chance of a critical blow', 'Heavier bases only drop on deeper floors']}
             color="brass"
           />
           <GearCard
-            title="ARMOR"
-            items={['Defense Rating', 'Magic Resistance', 'Slots: Head, Chest, Legs, Gloves, Shield']}
+            title="ARMOR & RINGS"
+            items={['Head, chest, legs, gloves and shield', 'Defense against steel, resistance against sorcery', 'Two rings that carry no armor, only power']}
             color="arcane"
           />
           <GearCard
-            title="CONSUMABLES"
-            items={['Health restoration', 'Mana restoration', 'Timed buffs with duration']}
+            title="DRAUGHTS"
+            items={['Restore health', 'Restore mana', 'Strength that does not last']}
             color="brass"
           />
         </div>
@@ -138,20 +138,23 @@ export default function Home() {
             <RarityBadge key={tier} tier={tier} />
           ))}
         </div>
+        <p className="text-sm text-vellum-dim text-center max-w-lg mx-auto mt-8 tracking-wide leading-relaxed">
+          Rarity decides how many enchantments a relic carries. Normal has none, uncommon one, rare two, runed three or four. Fabled relics are not left to chance. There are six of them, and each holds a power no other relic has. Wightfang is one. The Hollow Crown is another.
+        </p>
       </section>
 
       <Divider />
 
       {/* ── How a Match Works ── */}
       <section className="max-w-5xl mx-auto px-6 sm:px-12 lg:px-16 py-28">
-        <SectionLabel>Match Flow</SectionLabel>
-        <SectionTitle>How It Works</SectionTitle>
+        <SectionLabel>A delve</SectionLabel>
+        <SectionTitle>How it goes</SectionTitle>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          <StepCard step="01" title="GATHER" description="Find a delve. Delvers are paired and sent down into a shared barrow." />
-          <StepCard step="02" title="PLUNDER" description="Break open coffers for randomized spoils. Don blade and mail to gain an edge." />
-          <StepCard step="03" title="FIGHT" description="Engage other delvers. Every kill is tallied — the barrow keeps its dead." />
-          <StepCard step="04" title="ESCAPE" description="Work the old mechanisms to unseal the way out. Climb out to keep your spoils and your name." />
+          <StepCard step="01" title="GATHER" description="Find the Spirewarden in the town. You go in with whoever else is waiting at the door." />
+          <StepCard step="02" title="PLUNDER" description="Break the coffers open and take what the dead drop. Put it on. You will need it." />
+          <StepCard step="03" title="CLIMB" description="Meet at the stairs to go up. Everyone goes, or nobody does. The next floor is worse." />
+          <StepCard step="04" title="ESCAPE" description="Find the switch and walk out the sealed door with what you carry. Fall, and the barrow keeps its dead." />
         </div>
       </section>
 
@@ -184,10 +187,10 @@ export default function Home() {
           className="relative text-3xl sm:text-4xl font-bold text-vellum mb-6 tracking-[0.1em]"
           style={{ }}
         >
-          ENTER THE BARROW
+          THE DOOR IS STILL OPEN
         </h2>
         <p className="relative text-base text-vellum-dim max-w-sm mx-auto mb-12 tracking-wide leading-relaxed">
-          Swear the oath. Take up your torch. Few return whole -- fewer return rich.
+          The bell tolls once for every party that goes in. It tolls less often for the ones that come out.
         </p>
 
         {!isAuthenticated ? (

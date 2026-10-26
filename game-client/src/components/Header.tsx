@@ -68,10 +68,10 @@ export default function Header() {
           ) : (
             <div className="auth-buttons flex gap-3">
               <Link href="/login" className="btn-secondary px-4 py-2">
-                Sign In
+                Enter
               </Link>
               <Link href="/register" className="btn-primary px-4 py-2">
-                Sign Up
+                Take the Oath
               </Link>
             </div>
           )}
