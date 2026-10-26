@@ -2,6 +2,7 @@ package temporal
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"time"
 
@@ -33,17 +34,7 @@ func Dial(ctx context.Context, cfg Config, logger sdklog.Logger) (client.Client,
 
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
-		c, err := client.Dial(client.Options{
-			HostPort:  cfg.HostPort,
-			Namespace: cfg.Namespace,
-			Logger:    logger,
-			// Skip the DNS TXT service-config lookup that can stall a dial past
-			// its deadline (see discovery.Dial). The SDK's own
-			// default service config still applies.
-			ConnectionOptions: client.ConnectionOptions{
-				DialOptions: []grpc.DialOption{grpc.WithDisableServiceConfig()},
-			},
-		})
+		c, err := client.Dial(clientOptions(cfg, logger))
 		if err == nil {
 			if logger != nil {
 				logger.Info("temporal: connected",
@@ -80,4 +71,30 @@ func Dial(ctx context.Context, cfg Config, logger sdklog.Logger) (client.Client,
 	}
 
 	return nil, fmt.Errorf("temporal: dial %s failed after %d attempts: %w", cfg.HostPort, attempts, lastErr)
+}
+
+// clientOptions builds the SDK options for one dial attempt.
+//
+// With an API key the connection is Temporal Cloud's: TLS against the system
+// CA pool plus the key as credentials. Without one it stays the plain
+// connection a local or in-cluster server expects.
+func clientOptions(cfg Config, logger sdklog.Logger) client.Options {
+	opts := client.Options{
+		HostPort:  cfg.HostPort,
+		Namespace: cfg.Namespace,
+		Logger:    logger,
+		// Skip the DNS TXT service-config lookup that can stall a dial past
+		// its deadline (see discovery.Dial). The SDK's own
+		// default service config still applies.
+		ConnectionOptions: client.ConnectionOptions{
+			DialOptions: []grpc.DialOption{grpc.WithDisableServiceConfig()},
+		},
+	}
+
+	if cfg.APIKey != "" {
+		opts.Credentials = client.NewAPIKeyStaticCredentials(cfg.APIKey)
+		opts.ConnectionOptions.TLS = &tls.Config{}
+	}
+
+	return opts
 }
