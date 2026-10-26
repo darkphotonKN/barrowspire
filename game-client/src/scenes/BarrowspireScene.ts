@@ -3,7 +3,7 @@
  * 移動邏輯 + WebSocket + 建築（進入後看不到外面）
  */
 
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { ActionType } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { drawDelverLegs } from "@/utils/characterTextures";

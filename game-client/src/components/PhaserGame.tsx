@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { BARROW } from "@/utils/theme";
 import { MainMenuScene } from "@/scenes/MainMenuScene";
 import { CharacterCreationScene } from "@/scenes/CharacterCreationScene";
