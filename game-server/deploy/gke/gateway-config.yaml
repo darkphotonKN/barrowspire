@@ -9,3 +9,4 @@ data:
   RABBITMQ_PORT: "5672"
   OTEL_ENABLED: "false"
   AUTH_ADDR: "auth-headless:7116"
+  CORS_ORIGINS: "https://barrowspire.app,https://www.barrowspire.app"

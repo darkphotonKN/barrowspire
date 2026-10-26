@@ -1,5 +1,5 @@
 import { socketManager } from "@/utils/class/SocketManager";
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 
 export class BootScene extends Phaser.Scene {
   constructor() {

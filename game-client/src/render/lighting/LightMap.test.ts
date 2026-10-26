@@ -3,15 +3,15 @@ import { BARROW_HEX } from "@/utils/theme";
 
 vi.mock("phaser", async () => {
   const { EventEmitter } = await import("eventemitter3");
-  return {
-    default: {
-      Events: { EventEmitter },
-      BlendModes: { NORMAL: 0, ADD: 1, MULTIPLY: 2 },
-      Scale: { Events: { RESIZE: "resize" } },
-      Scenes: { Events: { SHUTDOWN: "shutdown", DESTROY: "destroy" } },
-      WEBGL: 2,
-    },
+  // `import * as Phaser` reads the module namespace, so the stand-in is the module itself.
+  const phaser = {
+    Events: { EventEmitter },
+    BlendModes: { NORMAL: 0, ADD: 1, MULTIPLY: 2 },
+    Scale: { Events: { RESIZE: "resize" } },
+    Scenes: { Events: { SHUTDOWN: "shutdown", DESTROY: "destroy" } },
+    WEBGL: 2,
   };
+  return { ...phaser, default: phaser };
 });
 
 const { LightMap } = await import("./LightMap");

@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { WORLD_PX_PER_TILE, worldToScreen, type Point } from "./projection";
 import { boxFaces, splitAlongLength, worldDepth } from "./shapes";
 

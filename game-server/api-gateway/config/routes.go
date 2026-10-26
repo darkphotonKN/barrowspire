@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/auth"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/contract"
@@ -44,10 +45,13 @@ type Downstreams struct {
 /**
 * Sets up API prefix route and all routers.
 *
+* corsOrigins is the explicit list of browser origins allowed to call the API
+* (the frontend's URLs). Never "*".
+*
 * The returned close func releases every downstream connection; call it on
 * shutdown.
 **/
-func SetupRouter(addrs Downstreams, ch *amqp.Channel) (*gin.Engine, func() error, error) {
+func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel) (*gin.Engine, func() error, error) {
 	var conns []io.Closer
 	closeAll := func() error {
 		var errs []error
@@ -82,12 +86,16 @@ func SetupRouter(addrs Downstreams, ch *amqp.Channel) (*gin.Engine, func() error
 		c.Next()
 	})
 
-	// TODO: CORS for development, remove in PROD
+	// CORS: only the frontend origins from CORS_ORIGINS may call the API from a browser.
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Content-Type", "Authorization"},
-		AllowCredentials: true,
+		AllowOrigins: corsOrigins,
+		AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		// Idempotency-Key: bids and buyouts send it, so the preflight must allow it
+		AllowHeaders: []string{"Content-Type", "Authorization", "Idempotency-Key"},
+		// auth is a Bearer header, not a cookie, so no credentials mode
+		AllowCredentials: false,
+		// browser caches the preflight, fewer OPTIONS round trips
+		MaxAge: 12 * time.Hour,
 	}))
 
 	router.Use(otelgin.Middleware("api-gateway"))

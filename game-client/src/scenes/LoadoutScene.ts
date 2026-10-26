@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { EquipmentPanel } from "@/ui/EquipmentPanel";
 import { ItemState, EquippedItems, EquipmentSlot } from "@/types/gameState";
 import { apiClient } from "@/utils/api";
