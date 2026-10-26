@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: character }
+spec:
+  # 1: character migrates on boot, so several pods would race on the same migration
+  replicas: 1
+  selector: { matchLabels: { app: character } }
+  template:
+    metadata: { labels: { app: character } }
+    spec:
+      containers:
+        - name: character
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/character:04c2273
+          ports:
+            - { containerPort: 7123, name: grpc }
+          envFrom:
+            - configMapRef: { name: character }
+            - secretRef: { name: character }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          # No probes yet: character does not register a gRPC health service.
+---
+apiVersion: v1
+kind: Service
+metadata: { name: character }
+spec:
+  selector: { app: character }
+  ports: [{ port: 7123, targetPort: grpc }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: character-headless }
+spec:
+  clusterIP: None
+  selector: { app: character }
+  ports: [{ port: 7123, targetPort: grpc }]

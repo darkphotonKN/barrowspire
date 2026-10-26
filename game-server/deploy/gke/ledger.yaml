@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: ledger }
+spec:
+  # 1: ledger migrates on boot, and its outbox workers would duplicate-publish
+  # across replicas (known, deferred).
+  replicas: 1
+  selector: { matchLabels: { app: ledger } }
+  template:
+    metadata: { labels: { app: ledger } }
+    spec:
+      containers:
+        - name: ledger
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/ledger:1b76cc7
+          ports:
+            - { containerPort: 7129, name: grpc }
+          envFrom:
+            - configMapRef: { name: ledger }
+            - secretRef: { name: ledger }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          # No probes yet: ledger does not register a gRPC health service.
+---
+apiVersion: v1
+kind: Service
+metadata: { name: ledger }
+spec:
+  selector: { app: ledger }
+  ports: [{ port: 7129, targetPort: grpc }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: ledger-headless }
+spec:
+  clusterIP: None
+  selector: { app: ledger }
+  ports: [{ port: 7129, targetPort: grpc }]
