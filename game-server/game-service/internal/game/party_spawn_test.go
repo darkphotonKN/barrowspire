@@ -31,7 +31,7 @@ func seatedRun(t *testing.T, delvers int) (*Session, []uuid.UUID) {
 		ids[i] = uuid.New()
 		s.AddPlayer(ids[i], types.CharacterInPlay{Name: "Delver", Class: "warrior"}, "")
 	}
-	s.InitialMapObjects()
+	s.InitialMapObjects(nil)
 
 	return s, ids
 }
@@ -153,7 +153,7 @@ func TestGatherParty_PlacementExhausted_StillPlaces(t *testing.T) {
 			s, ids := seatedRun(t, 4)
 			s.objectOccupiedPlaceAreas = tt.occupied
 
-			s.gatherParty()
+			s.gatherParty(0)
 
 			r := constants.PlayerRadius
 			for i, id := range ids {
@@ -201,8 +201,8 @@ func TestGatherParty_SameSeed_PlacesPartyAndMonstersIdentically(t *testing.T) {
 		s.AddBuilding(400, 300, 300, 200, 20, 50)
 		s.objectOccupiedPlaceAreas = []PlaceArea{{X: 400, Y: 300, W: 300, H: 200}}
 
-		s.gatherParty()
-		s.populateMonsters(1, false)
+		s.gatherParty(0)
+		s.populateMonsters(1, false, nil)
 
 		for _, d := range delversOf(s.EntityManager.GetAllEntities()) {
 			tc := transformOf(t, d)
@@ -231,7 +231,7 @@ func TestGatherParty_ReservesTheFormationArea(t *testing.T) {
 	s, ids := seatedRun(t, 4)
 	s.objectOccupiedPlaceAreas = nil
 
-	s.gatherParty()
+	s.gatherParty(0)
 
 	for i, p := range transformsOf(t, s, ids) {
 		assert.True(t, s.IsAreaOccupied(PlaceArea{X: p.x - 1, Y: p.y - 1, W: 2, H: 2}), "delver %d at %v stands on free ground", i, p)

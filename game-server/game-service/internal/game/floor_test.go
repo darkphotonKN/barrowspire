@@ -88,7 +88,7 @@ func newRun(t *testing.T, client *countingItemsClient) *Session {
 
 	em := ecs.NewEntityManager()
 	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, client, RunBounds())
-	s.InitialMapObjects()
+	s.InitialMapObjects(nil)
 	s.InitialSystems()
 
 	return s

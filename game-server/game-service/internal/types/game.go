@@ -427,3 +427,8 @@ type RunProgress struct {
 	Level       int
 	Experience  int64
 }
+
+type ResolvedMatchedPlayers struct {
+	LocalPlayers   []*Player
+	HandoffPlayers []*Player
+}

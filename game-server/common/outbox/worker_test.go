@@ -89,7 +89,7 @@ func TestPublishOutboxEvents_StampsMessageIdWithRowId(t *testing.T) {
 			for _, i := range tt.failRows {
 				pub.failFor[tt.rows[i].ID.String()] = true
 			}
-			w := NewOutboxWorker(time.Second, 20, &fakeRetriever{rows: tt.rows}, pub)
+			w := NewOutboxWorker(time.Second, 20, &fakeRetriever{rows: tt.rows}, pub, &sync.WaitGroup{})
 
 			if err := w.PublishOutboxEvents(context.Background()); err != nil {
 				t.Fatalf("PublishOutboxEvents() error = %v", err)
@@ -115,7 +115,7 @@ func TestPublishOutboxEvents_StampsMessageIdWithRowId(t *testing.T) {
 func TestPublishOutboxEvents_SameRowOnTwoTicks_SameMessageId(t *testing.T) {
 	row := newRow("items.extracted")
 	pub := &fakePublisher{failFor: map[string]bool{}}
-	w := NewOutboxWorker(time.Second, 20, &fakeRetriever{rows: []*OutboxEvent{row}}, pub)
+	w := NewOutboxWorker(time.Second, 20, &fakeRetriever{rows: []*OutboxEvent{row}}, pub, &sync.WaitGroup{})
 
 	for tick := 0; tick < 2; tick++ {
 		if err := w.PublishOutboxEvents(context.Background()); err != nil {

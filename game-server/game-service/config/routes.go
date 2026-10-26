@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"time"
 
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
@@ -13,6 +15,7 @@ import (
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/gameserver"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/handoff"
 	matchqueue "github.com/darkphotonKN/barrowspire-server/game-service/internal/match_queue"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/gin-gonic/gin"
@@ -33,8 +36,9 @@ type Downstreams struct {
 /**
 * Sets up API prefix route and all routers.
 *
-* The returned close func releases every downstream connection; call it on
-* shutdown.
+* The returned close func waits for the matchmaker to remove this pod's
+* liveness key, then releases every downstream connection; call it on
+* shutdown, before redis is closed.
 **/
 func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod, outbox game.OutboxWriter) (*gin.Engine, func() error, error) {
 	// gin.Default() with its access logger swapped: the default one writes the
@@ -83,11 +87,14 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 
 	// -- match maker --
 	matchQueueRedis := matchqueue.NewRedis(redisClient)
-	matchmaker := matchmaker.NewMatchmaker(2, pod.ID, matchQueueRedis)
+	matchAnnouncer := handoff.NewRedis(redisClient)
+	matchmaker := matchmaker.NewMatchmaker(2, pod.ID, matchQueueRedis, matchAnnouncer)
 
 	// outbox is built once in main and shared with the worker that drains it
 	gameService := game.NewService(db, outbox)
-	server := gameserver.NewServer(ctx, authClient, matchmaker, gameService, itemsClient, characterClient)
+	// the one announcer: the matchmaker publishes create steps with it, the
+	// server publishes handoff steps to the other pods. FS-K2HKP §Requirements 20.
+	server := gameserver.NewServer(ctx, authClient, matchmaker, gameService, itemsClient, characterClient, pod.ID, pod.Addr, matchAnnouncer)
 
 	// -- routes --
 	router.GET("/game/ws", auth.WSAuthMiddleware(authClient), server.HandleWebSocketConnection)
@@ -104,5 +111,20 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 	// gameRoutes := api.Group("/game")
 	// gameRoutes.GET("/items", gameHandler.GetItems)
 
-	return router, closeAll, nil
+	// shutdown waits for the matchmaker to delete this pod's liveness key while
+	// redis is still open (FS-K2HKP §Requirements 3), bounded so a stuck redis
+	// cannot hold up exit, then releases the downstream connections
+	shutdown := func() error {
+		select {
+		case <-matchmaker.Stopped():
+		case <-time.After(matchmakerStopTimeout):
+			slog.Warn("matchmaker did not stop in time, pod alive key left to expire")
+		}
+		return closeAll()
+	}
+
+	return router, shutdown, nil
 }
+
+// a little over the matchmaker's own delete timeout
+const matchmakerStopTimeout = 3 * time.Second

@@ -2,10 +2,13 @@ package game
 
 import (
 	"context"
+	"slices"
 	"testing"
+	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
@@ -141,32 +144,203 @@ func TestSessionAddMultiplePlayers(t *testing.T) {
 	assert.True(t, exists2, "Player 2 entity should exist")
 }
 
-// NOTE: note to team, also white box test here, testing internals
-// test initial coordinates are correctly set by addPlayer
+// A delver arriving in a run is placed at a random point inside the run's map,
+// a full body's width clear of every edge. The hub has a front door instead:
+// everyone arrives at the same spawn point.
 func TestAddPlayerSetsInitialPosition(t *testing.T) {
-	t.Skip("TODO: player spawn is now randomized, test expects (0,0)")
+	spawnOf := func(t *testing.T, s *Session) (float64, float64) {
+		t.Helper()
+		playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: "warrior"}, "")
+		playerEntity, ok := s.EntityManager.GetEntity(playerEntityID)
+		require.True(t, ok)
+		transformComp, ok := playerEntity.GetComponent(ecs.ComponentTypeTransform)
+		require.True(t, ok)
+		transform := transformComp.(*components.TransformComponent)
+		return transform.X, transform.Y
+	}
+
+	t.Run("a run places each delver inside its map", func(t *testing.T) {
+		em := ecs.NewEntityManager()
+		s := newSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em), em, &mockEventEmitter{}, nil, RunBounds())
+
+		for range 50 {
+			x, y := spawnOf(t, s)
+			assert.GreaterOrEqual(t, x, constants.PlayerRadius)
+			assert.LessOrEqual(t, x, constants.MapWidth-constants.PlayerRadius)
+			assert.GreaterOrEqual(t, y, constants.PlayerRadius)
+			assert.LessOrEqual(t, y, constants.MapHeight-constants.PlayerRadius)
+		}
+	})
+
+	t.Run("the hub places everyone at its front door", func(t *testing.T) {
+		em := ecs.NewEntityManager()
+		s := newSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em), em, &mockEventEmitter{}, nil, HubBounds())
+
+		for range 3 {
+			x, y := spawnOf(t, s)
+			assert.Equal(t, constants.HubSpawnX, x)
+			assert.Equal(t, constants.HubSpawnY, y)
+		}
+	})
 }
 
 // ----- Testing Session Handles -----
 
-type handleInteractTable []struct {
-	doorX              float64
-	doorY              float64
-	expectedOutOfRange bool
+// interactAt is a run nobody ticks, with one delver standing at (x, y). Spawn is
+// random, so the delver is moved to a known point before any range is measured.
+func interactAt(t *testing.T, x, y float64) (*Session, uuid.UUID) {
+	t.Helper()
+	em := ecs.NewEntityManager()
+	s := newSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em), em, &mockEventEmitter{}, nil, RunBounds())
+	playerID, _ := placeDelver(t, s, "warrior", x, y)
+	return s, playerID
 }
 
+// waitForInteractCooldown waits until both the delver and the target are off
+// their interact cooldown. Retrying the interaction itself while waiting is not
+// safe: a refusal for the delver's cooldown leaves the target on its cooldown
+// for good.
+func waitForInteractCooldown(t *testing.T, s *Session, playerID, targetID uuid.UUID) {
+	t.Helper()
+	s.mu.RLock()
+	playerEntityID := s.playerIDToEntitiesID[playerID]
+	s.mu.RUnlock()
+
+	require.Eventually(t, func() bool {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		_, targetCooling := s.containerInteractedCache[targetID]
+		_, playerCooling := s.playerInteractedCache[playerEntityID]
+		return !targetCooling && !playerCooling
+	}, time.Second, 10*time.Millisecond)
+}
+
+// A door within interact range of its doorway centre toggles open, and a second
+// interaction once the cooldown has passed closes it again. Out of range, it is
+// refused and stays shut.
 func TestHandleInteract(t *testing.T) {
-	t.Skip("TODO: player spawn is now randomized, door range tests assume (0,0) origin")
+	const playerX, playerY = 500.0, 500.0
+	const doorW, doorH = 50.0, 10.0
+	reach := constants.DefaultInteractableRange
+
+	tests := []struct {
+		name               string
+		centreDX, centreDY float64 // doorway centre, relative to the delver
+		expectedOutOfRange bool
+	}{
+		{name: "doorway centre right beside the delver", centreDX: 5, centreDY: 0, expectedOutOfRange: false},
+		{name: "doorway centre just inside reach", centreDX: 0, centreDY: reach - 1, expectedOutOfRange: false},
+		{name: "doorway centre just past reach", centreDX: 0, centreDY: reach + 1, expectedOutOfRange: true},
+		{name: "doorway centre far away", centreDX: 300, centreDY: 300, expectedOutOfRange: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, playerID := interactAt(t, playerX, playerY)
+
+			// a door is stored by its top-left corner
+			doorX := playerX + tt.centreDX - doorW/2
+			doorY := playerY + tt.centreDY - doorH/2
+			doorID := s.AddDoor(doorX, doorY, doorW, doorH)
+			door, ok := s.EntityManager.GetEntity(doorID)
+			require.True(t, ok)
+			openableComp, ok := door.GetComponent(ecs.ComponentTypeOpenable)
+			require.True(t, ok)
+			openable := openableComp.(*components.OpenableComponent)
+			require.False(t, openable.IsOpen)
+
+			err := s.handleInteract(playerID, doorID)
+
+			if tt.expectedOutOfRange {
+				assert.ErrorIs(t, err, ErrOutOfRange)
+				assert.False(t, openable.IsOpen, "a door out of reach must stay shut")
+				return
+			}
+
+			require.NoError(t, err)
+			assert.True(t, openable.IsOpen, "the door should open")
+
+			// the door and the delver are on a short cooldown; once it passes the
+			// same interaction closes the door
+			waitForInteractCooldown(t, s, playerID, doorID)
+			require.NoError(t, s.handleInteract(playerID, doorID))
+			assert.False(t, openable.IsOpen, "the door should close again")
+		})
+	}
 }
 
-type handleInteractContainerTable []struct {
-	containerX         float64
-	containerY         float64
-	expectedOutOfRange bool
+// containerSession is interactAt with the item pool loaded, so an opened chest
+// has something to roll.
+func containerSession(t *testing.T, x, y float64) (*Session, uuid.UUID) {
+	t.Helper()
+	client := &mockItemsClient{rarities: pbRarities()}
+	client.On("ListItemTemplates", mock.Anything).Return(lootTemplates(true), nil)
+
+	em := ecs.NewEntityManager()
+	s := newSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em), em, &mockEventEmitter{}, client, RunBounds())
+	require.NoError(t, s.InitializeItems(context.Background()))
+
+	playerID, _ := placeDelver(t, s, "warrior", x, y)
+	return s, playerID
 }
 
+// A chest within reach opens on the first interaction and rolls 2 to 4 items
+// into itself. Opening it again keeps the same items: they are rolled once.
+// Out of reach, it is refused and stays closed and empty.
 func TestHandleInteractContainer(t *testing.T) {
-	t.Skip("TODO: player spawn is now randomized + mutex deadlock in test setup")
+	const playerX, playerY = 500.0, 500.0
+	reach := constants.DefaultInteractableRange
+
+	tests := []struct {
+		name               string
+		dx, dy             float64 // chest, relative to the delver
+		expectedOutOfRange bool
+	}{
+		{name: "chest right beside the delver", dx: 5, dy: 0, expectedOutOfRange: false},
+		{name: "chest just inside reach", dx: reach - 1, dy: 0, expectedOutOfRange: false},
+		{name: "chest just past reach", dx: reach + 1, dy: 0, expectedOutOfRange: true},
+		{name: "chest far away", dx: 300, dy: 300, expectedOutOfRange: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, playerID := containerSession(t, playerX, playerY)
+
+			chestID := s.AddContainer(playerX+tt.dx, playerY+tt.dy)
+			chest, ok := s.EntityManager.GetEntity(chestID)
+			require.True(t, ok)
+			openableComp, ok := chest.GetComponent(ecs.ComponentTypeOpenable)
+			require.True(t, ok)
+			openable := openableComp.(*components.OpenableComponent)
+			contents := itemList(t, s, chestID)
+
+			require.False(t, openable.HasBeenOpened)
+			require.Empty(t, contents.ItemIDs)
+
+			err := s.handleInteract(playerID, chestID)
+
+			if tt.expectedOutOfRange {
+				assert.ErrorIs(t, err, ErrOutOfRange)
+				assert.False(t, openable.HasBeenOpened, "a chest out of reach must stay closed")
+				assert.Empty(t, contents.ItemIDs, "a chest out of reach must roll nothing")
+				return
+			}
+
+			require.NoError(t, err)
+			assert.True(t, openable.IsOpen)
+			assert.True(t, openable.HasBeenOpened)
+			assert.GreaterOrEqual(t, len(contents.ItemIDs), 2, "at least 2 items")
+			assert.LessOrEqual(t, len(contents.ItemIDs), 4, "at most 4 items")
+
+			firstOpen := slices.Clone(contents.ItemIDs)
+
+			// once the cooldown passes, opening it again rolls nothing new
+			waitForInteractCooldown(t, s, playerID, chestID)
+			require.NoError(t, s.handleInteract(playerID, chestID))
+			assert.True(t, openable.IsOpen, "a chest never closes")
+			assert.Equal(t, firstOpen, itemList(t, s, chestID).ItemIDs)
+		})
+	}
 }
 
 func TestSession_InitializeItems_CreateItemEntities(t *testing.T) {
@@ -371,8 +545,6 @@ func TestSession_InitializeItems_CreateItemEntities(t *testing.T) {
 			mockClient := mockItemsClient{}
 
 			session := NewSession(&mockSessionCloser{}, sender, &mockStateSerializer{}, em, mockEmitter, &mockClient, RunBounds())
-
-			session.TestMessageSpy = make(chan types.Message, 1)
 
 			defer session.Shutdown()
 
@@ -629,8 +801,6 @@ func TestSession_GenerateItems_CreateItemEntities(t *testing.T) {
 
 			session := NewSession(&mockSessionCloser{}, sender, &mockStateSerializer{}, em, mockEmitter, &mockClient, RunBounds())
 
-			session.TestMessageSpy = make(chan types.Message, 1)
-
 			defer session.Shutdown()
 
 			mockClient.On("ListItemTemplates", mock.Anything).Return(
@@ -799,7 +969,6 @@ func TestSession_GenerateItems_CreateAndSerialize(t *testing.T) {
 	mockClient := mockItemsClient{}
 
 	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, &mockClient, RunBounds())
-	session.TestMessageSpy = make(chan types.Message, 1)
 	defer session.Shutdown()
 
 	mockClient.On("ListItemTemplates", mock.Anything).Return(mockReturn, nil)
@@ -859,8 +1028,74 @@ func TestSession_GenerateItems_CreateAndSerialize(t *testing.T) {
 	}
 }
 
+// handleEquip moves an item between a delver's satchel and the slot it fits:
+// equip takes it out of the satchel and wears it, unequip takes it off and puts
+// it back. Asking for something that is not there is refused and changes nothing.
 func TestSession_HandleEquip(t *testing.T) {
-	t.Skip("TODO: equip handler test table not yet populated")
+	sword := types.ItemConfig{TemplateID: uuid.New(), ItemType: types.ItemTypeWeapon, Name: "Sword"}
+	helm := types.ItemConfig{TemplateID: uuid.New(), ItemType: types.ItemTypeArmor, ArmorSlot: types.ArmorSlotHead, Name: "Helm"}
+
+	weaponSlot := func(eq *components.EquipmentComponent) *uuid.UUID { return eq.WeaponSlot }
+	headSlot := func(eq *components.EquipmentComponent) *uuid.UUID { return eq.HeadSlot }
+
+	tests := []struct {
+		name      string
+		item      types.ItemConfig
+		slot      func(*components.EquipmentComponent) *uuid.UUID
+		wornFirst bool // equipped before the action under test
+		action    constants.Action
+		// what the action is aimed at: the item itself unless overridden
+		unknownPlayer bool
+		unknownItem   bool
+		wantErr       error
+		wantWorn      bool
+		wantCarried   bool
+	}{
+		{name: "equip a carried weapon", item: sword, slot: weaponSlot, action: constants.ActionEquip, wantWorn: true},
+		{name: "equip a carried helm", item: helm, slot: headSlot, action: constants.ActionEquip, wantWorn: true},
+		{name: "unequip a worn weapon", item: sword, slot: weaponSlot, wornFirst: true, action: constants.ActionUnequip, wantCarried: true},
+		{name: "equip an item already worn is a no-op", item: helm, slot: headSlot, wornFirst: true, action: constants.ActionEquip, wantWorn: true},
+		{name: "unequip an item that is only carried", item: sword, slot: weaponSlot, action: constants.ActionUnequip, wantErr: ErrItemNotWorn, wantCarried: true},
+		{name: "unknown player entity", item: sword, slot: weaponSlot, action: constants.ActionEquip, unknownPlayer: true, wantErr: ErrEntityNotFound, wantCarried: true},
+		{name: "unknown item entity", item: sword, slot: weaponSlot, action: constants.ActionEquip, unknownItem: true, wantErr: ErrEntityNotFound, wantCarried: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := equipRun(t, nil)
+			_, delver := placeDelver(t, s, "warrior", 500, 500)
+			itemID := carried(t, s, delver.ID, tt.item)
+			if tt.wornFirst {
+				require.NoError(t, s.handleEquip(constants.ActionEquip, delver.ID, itemID))
+			}
+
+			playerTarget, itemTarget := delver.ID, itemID
+			if tt.unknownPlayer {
+				playerTarget = uuid.New()
+			}
+			if tt.unknownItem {
+				itemTarget = uuid.New()
+			}
+
+			err := s.handleEquip(tt.action, playerTarget, itemTarget)
+
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			worn := tt.slot(equipmentOf(t, s, delver.ID))
+			if tt.wantWorn {
+				require.NotNil(t, worn, "the item should be worn")
+				assert.Equal(t, itemID, *worn)
+			} else {
+				assert.Nil(t, worn, "the slot should be empty")
+			}
+			assert.Equal(t, tt.wantCarried, slices.Contains(inventory(t, s, delver.ID).ItemIDs, itemID),
+				"whether the item is in the satchel")
+		})
+	}
 }
 
 // Door range is measured from the delver to the middle of the doorway. A door is

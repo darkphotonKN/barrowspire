@@ -90,7 +90,7 @@ func monsterOf(e *ecs.Entity) *components.MonsterComponent {
 func TestNewRun_PopulatesMonstersLevelledToTheHighestDelver(t *testing.T) {
 	for seed := uint64(1); seed <= 20; seed++ {
 		s := rosterOnRun(t, seed, delverAt{level: 3, x: 80, y: 80}, delverAt{level: 7, x: 140, y: 80})
-		s.InitialMapObjects()
+		s.InitialMapObjects(nil)
 
 		monsters := standardMonstersIn(s)
 		require.GreaterOrEqual(t, len(monsters), MonsterCountMin, "seed %d", seed)
@@ -112,7 +112,7 @@ func TestNewRun_PlacesMonstersOnOpenGroundAwayFromDelvers(t *testing.T) {
 
 	for seed := uint64(1); seed <= 40; seed++ {
 		s := rosterOnRun(t, seed, delverAt{level: 1, x: 100, y: 100}, delverAt{level: 1, x: 1300, y: 860})
-		s.InitialMapObjects()
+		s.InitialMapObjects(nil)
 
 		entities := s.EntityManager.GetAllEntities()
 		keepOut := mapKeepOut(entities)
@@ -190,7 +190,7 @@ func TestBuildFloor_LevelsMonstersByTheFloorDepth(t *testing.T) {
 					roster[i] = delverAt{level: level, x: 80 + 60*float64(i), y: 80}
 				}
 				s := rosterOnRun(t, seed, roster...)
-				s.buildFloor(tt.floor)
+				s.buildFloor(tt.floor, nil)
 
 				monsters := standardMonstersIn(s)
 				require.NotEmpty(t, monsters)
@@ -350,7 +350,7 @@ func TestPopulateMonsters_SkipsWhatCannotBePlaced(t *testing.T) {
 		}
 	}
 
-	s.populateMonsters(1, false)
+	s.populateMonsters(1, false, nil)
 
 	assert.Empty(t, monstersIn(s))
 }
@@ -371,7 +371,7 @@ func TestPopulateMonsters_NeverInTheHub(t *testing.T) {
 	hub.InitialHubMapObjects()
 	hub.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
 
-	hub.populateMonsters(1, false)
+	hub.populateMonsters(1, false, nil)
 	for range 5 {
 		tick(hub)
 	}
@@ -384,7 +384,7 @@ func TestPopulateMonsters_NeverInTheHub(t *testing.T) {
 // FS-F6F88 §Requirements 9–12 with FS-77AB6 §Requirements 22.
 func TestRegenerateFloor_RepopulatesTheNewFloor(t *testing.T) {
 	s := rosterOnRun(t, 11, delverAt{level: 1, x: 100, y: 100})
-	s.InitialMapObjects()
+	s.InitialMapObjects(nil)
 
 	floorOne := map[uuid.UUID]bool{}
 	for _, m := range monstersIn(s) {
@@ -418,7 +418,7 @@ func TestRegenerateFloor_RepopulatesTheNewFloor(t *testing.T) {
 // FS-77AB6 §Requirements 32.
 func TestRunBroadcast_CarriesTheFloorsMonsters(t *testing.T) {
 	s := rosterOnRun(t, 5, delverAt{level: 1, x: 100, y: 100})
-	s.InitialMapObjects()
+	s.InitialMapObjects(nil)
 	require.NotEmpty(t, monstersIn(s))
 
 	stateSerializer := serializer.NewStateSerializer(s.EntityManager)
@@ -447,7 +447,7 @@ func TestRunBroadcast_CarriesTheFloorsMonsters(t *testing.T) {
 func TestPopulateMonsters_TopFloorHasExactlyOneDemon(t *testing.T) {
 	for seed := uint64(1); seed <= 30; seed++ {
 		s := rosterOnRun(t, seed, delverAt{level: 2, x: 100, y: 100}, delverAt{level: 4, x: 160, y: 100})
-		s.populateMonsters(3, true)
+		s.populateMonsters(3, true, nil)
 
 		var demons []*components.MonsterComponent
 		standard := 0
@@ -517,7 +517,7 @@ func TestPopulateMonsters_GuaranteedDemonRelaxesTheDelverExclusion(t *testing.T)
 
 	for seed := uint64(1); seed <= 10; seed++ {
 		s := crowded(seed)
-		s.populateMonsters(constants.RunFloorCount, true)
+		s.populateMonsters(constants.RunFloorCount, true, nil)
 
 		monsters := monstersIn(s)
 		require.Len(t, monsters, 1, "seed %d: only the guaranteed demon stands", seed)
@@ -608,7 +608,7 @@ func TestCreateMonsterEntity_EliteHasMoreHealthAndDamage(t *testing.T) {
 // boss, an elite with its prefix, the rest plain. FS-77AB6 §Requirements 32.
 func TestRunBroadcast_CarriesEliteBossAndName(t *testing.T) {
 	s := rosterOnRun(t, 8, delverAt{level: 1, x: 100, y: 100})
-	s.populateMonsters(constants.RunFloorCount, true)
+	s.populateMonsters(constants.RunFloorCount, true, nil)
 	elite := CreateMonsterEntity(s.EntityManager, MonsterConfig{
 		Archetype: components.MonsterArchetypeTroll, Level: 2, Elite: true, Name: "Hollow Troll", X: 900, Y: 700,
 	})
@@ -642,7 +642,7 @@ func TestRunBroadcast_CarriesEliteBossAndName(t *testing.T) {
 func TestBuildFloor_TheTopFloorBringsItsDemon(t *testing.T) {
 	for seed := uint64(1); seed <= 10; seed++ {
 		s := rosterOnRun(t, seed, delverAt{level: 1, x: 100, y: 100})
-		s.buildFloor(constants.RunFloorCount)
+		s.buildFloor(constants.RunFloorCount, nil)
 
 		bosses := 0
 		for _, m := range monstersIn(s) {

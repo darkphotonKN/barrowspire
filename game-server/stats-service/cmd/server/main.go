@@ -8,8 +8,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
@@ -48,6 +50,10 @@ var (
 
 func main() {
 	ctx := context.Background()
+
+	// --- shutdown signal ---
+	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	// --- logger ---
 	commonhelpers.SetupLogger(environment)
@@ -107,10 +113,10 @@ func main() {
 		http.ListenAndServe(":8196", nil)
 	}()
 
-	ch, close := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
+	ch, brokerClose := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
 
 	defer func() {
-		close()
+		brokerClose()
 		ch.Close()
 	}()
 
@@ -120,13 +126,16 @@ func main() {
 	publisher := commonbroker.NewAmqpPublisher(ch)
 	// TODO: update in prod
 	workcycyleTime := time.Minute * 1
+
 	workersWg := sync.WaitGroup{}
 	// add the number of workers
 	workersWg.Add(1)
 	outboxWorker := commonoutbox.NewOutboxWorker(workcycyleTime, 20, outboxServ, publisher, &workersWg)
 
-	workerCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	// WARN: we pass context.Background() here to gracefully stop workers with
+	// with an explicit cancel , take care not to remove that in main.go here
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
 
 	go outboxWorker.Run(workerCtx)
 
@@ -155,7 +164,49 @@ func main() {
 
 	log.Printf("grpc Stats Server started on PORT: %s\n", grpcAddr)
 
-	if err := grpcServer.Serve(listener); err != nil {
-		log.Fatal("Can't connect to grpc server. Error:", err.Error())
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			log.Fatal("Can't connect to grpc server. Error:", err.Error())
+		}
+	}()
+
+	<-sigCtx.Done() // wait for SIGTERM
+	slog.Info("shutdown: signal received")
+
+	// give 20 second grace period for the other services shutdown
+	doneCh := make(chan struct{})
+
+	// graceful shutdown for grpc server first, stop the final requests
+	go func() {
+		grpcServer.GracefulStop()
+		close(doneCh)
+	}()
+	select {
+	case <-doneCh:
+		slog.Info("shutting down after graceful stop...")
+	case <-time.After(time.Second * 20):
+		slog.Info("shutting down after waiting 20 secs...")
+		grpcServer.Stop()
 	}
+
+	// then shutdown the outbox workers
+	workerCancel() // cancel and let workers finish
+
+	workersDone := make(chan struct{})
+	go func() {
+		workersWg.Wait()
+		// gracefully send workers are done
+		close(workersDone)
+	}()
+
+	select {
+	case <-workersDone:
+		slog.Info("outbox workers shutdown gracefully...")
+		// back up, don't allow more than 10 seconds
+	case <-time.After(time.Second * 10):
+		slog.Info("outbox workers stopped after waiting 10 seconds...")
+	}
+
+	// db, broker and redis are closed by the deferred calls above
+	slog.Info("shutdown clean")
 }

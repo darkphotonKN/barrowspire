@@ -15,6 +15,9 @@ import {
   type ButtonState,
 } from "@/ui/menuChrome";
 
+/** The menus wear the site's Bone & Soot (design-guideline "UI Chrome"). */
+const ui = palette.menu;
+
 /** The class on the plinth, of the baked frame: as large as §F.3 allows. */
 const PREVIEW_SCALE = 1.5;
 
@@ -73,7 +76,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     this.art = registerArt(this);
     const width = this.cameras.main.width;
 
-    // Charcoal with drifting dust and embers.
+    // Soot with drifting dust and bone glints, under a vignette (Bone & Soot menu chrome).
     drawBackdrop(this, 90);
 
     // Header Title
@@ -81,7 +84,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       .text(width / 2, 38, "SELECT YOUR CLASS", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "24px",
-        color: toCss(palette.frameBright),
+        color: toCss(ui.torch),
         letterSpacing: 4,
       })
       .setOrigin(0.5);
@@ -90,7 +93,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       .text(width / 2, 68, "FORGE YOUR HERO", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "12px",
-        color: toCss(palette.hudLabel),
+        color: toCss(ui.accent),
         letterSpacing: 2,
       })
       .setOrigin(0.5);
@@ -115,7 +118,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       .text(width / 2, 588, "", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "13px",
-        color: toCss(palette.damageBright),
+        color: toCss(ui.danger),
         align: "center",
       })
       .setOrigin(0.5);
@@ -148,17 +151,17 @@ export class CharacterCreationScene extends Phaser.Scene {
       const titleText = this.add.text(18, 18, lore.name, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "18px",
-        color: toCss(palette.hudText),
+        color: toCss(ui.text),
         letterSpacing: 2,
       });
 
       const subText = this.add.text(18, 48, lore.englishTitle, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
-        color: toCss(palette.hudLabel),
+        color: toCss(ui.label),
       });
 
-      const hitArea = this.add.rectangle(btnW / 2, btnH / 2, btnW, btnH, palette.inkDeep, 0);
+      const hitArea = this.add.rectangle(btnW / 2, btnH / 2, btnW, btnH, ui.well, 0);
       hitArea.setInteractive({ useHandCursor: true });
 
       container.add([titleText, subText, hitArea]);
@@ -193,14 +196,14 @@ export class CharacterCreationScene extends Phaser.Scene {
     bg.clear();
     drawPanel(bg, 0, 0, w, h, { raised: isSelected, alpha: isSelected ? 0.95 : 0.6 });
     if (isSelected) {
-      // The chosen class is marked in the interactable channel: a thin amber inlay.
-      bg.lineStyle(1, palette.interactable, 0.8);
+      // The chosen class is marked like the site's active nav: a thin bone inlay.
+      bg.lineStyle(1, ui.torch, 0.7);
       bg.lineBetween(8, h - 8.5, w - 8, h - 8.5);
     }
   }
 
   private createCharacterPreviewArea(): void {
-    // The class's own baked sheet on a lit plinth, turning: exactly what will walk in the run
+    // The class's own baked sheet on a lit plinth, facing us: exactly what will walk in the run
     // (FS-2325V §F.1-F.3). Feet stand where the old pedestal sat.
     const centerX = 460;
     const feetY = 350;
@@ -219,7 +222,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     this.loreTitleText = this.add.text(this.panelContentX, this.panelContentY, "", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "18px",
-      color: toCss(palette.hudText),
+      color: toCss(ui.text),
       letterSpacing: 2,
     });
 
@@ -227,7 +230,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     this.loreWeaponText = this.add.text(this.panelContentX, this.panelContentY + 30, "", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "11px",
-      color: toCss(palette.torchCore),
+      color: toCss(ui.accent),
       letterSpacing: 1,
     });
 
@@ -235,7 +238,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     this.loreDescText = this.add.text(this.panelContentX, this.panelContentY + 56, "", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "14px",
-      color: toCss(palette.hudText),
+      color: toCss(ui.text),
       wordWrap: { width: textWrapWidth },
       lineSpacing: 5,
     });
@@ -244,7 +247,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     this.statTitleText = this.add.text(this.panelContentX, this.panelContentY + 140, "CLASS ATTRIBUTES", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "11px",
-      color: toCss(palette.frame),
+      color: toCss(ui.frameBright),
       letterSpacing: 2,
     });
 
@@ -322,13 +325,13 @@ export class CharacterCreationScene extends Phaser.Scene {
     this.statBarGraphics.setPosition(0, 0);
 
     const statRows = [
-      // HP and MP in the HUD's own bar colours; the rest are measures, in brass.
+      // HP and MP in the HUD's own bar colours; the rest are measures, in bright iron.
       { label: "HP", val: stats.hp, max: 200, color: palette.markerHp },
       { label: "MP", val: stats.mp, max: 200, color: palette.markerMp },
-      { label: "ATK", val: stats.atk, max: 20, color: palette.frame },
-      { label: "DEF", val: stats.def, max: 15, color: palette.frame },
-      { label: "RNG", val: stats.range, max: 10, color: palette.frame },
-      { label: "SPD", val: stats.speed, max: 250, color: palette.frame },
+      { label: "ATK", val: stats.atk, max: 20, color: ui.frameBright },
+      { label: "DEF", val: stats.def, max: 15, color: ui.frameBright },
+      { label: "RNG", val: stats.range, max: 10, color: ui.frameBright },
+      { label: "SPD", val: stats.speed, max: 250, color: ui.frameBright },
     ];
 
     statRows.forEach((row, i) => {
@@ -337,25 +340,25 @@ export class CharacterCreationScene extends Phaser.Scene {
       const lbl = this.add.text(contentX, y - 2, row.label, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
-        color: toCss(palette.hudLabel),
+        color: toCss(ui.label),
       });
       this.statTexts.push(lbl);
 
-      // A carved well with a brass hairline; the fill rounded to match.
-      g.fillStyle(palette.inkDeep, 0.7);
+      // A carved well with an iron hairline; the fill rounded to match.
+      g.fillStyle(ui.well, 0.7);
       g.fillRoundedRect(contentX + 55, y, barW, barH, 3);
       const fillW = Math.min(barW, (row.val / row.max) * barW);
       if (fillW >= 2) {
         g.fillStyle(row.color, 0.85);
         g.fillRoundedRect(contentX + 55, y, fillW, barH, Math.min(3, fillW / 2));
       }
-      g.lineStyle(1, palette.frame, 0.3);
+      g.lineStyle(1, ui.frame, 0.5);
       g.strokeRoundedRect(contentX + 55.5, y + 0.5, barW - 1, barH - 1, 3);
 
       const valTxt = this.add.text(contentX + 55 + barW + 10, y - 2, `${row.val}`, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
-        color: toCss(palette.hudText),
+        color: toCss(ui.text),
       });
       this.statTexts.push(valTxt);
     });
@@ -369,7 +372,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       .text(width / 2, y, "HERO NAME", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "13px",
-        color: toCss(palette.hudLabel),
+        color: toCss(ui.label),
         letterSpacing: 2,
       })
       .setOrigin(0.5);
@@ -388,13 +391,13 @@ export class CharacterCreationScene extends Phaser.Scene {
       .text(width / 2 - 40, boxY + boxH / 2, this.characterName, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "18px",
-        color: toCss(palette.hudText),
+        color: toCss(ui.text),
       })
       .setOrigin(0.5);
 
     // Make Box Clickable for Prompt Input
     const hitArea = this.add
-      .rectangle(boxX + boxW / 2, boxY + boxH / 2, boxW, boxH, palette.inkDeep, 0)
+      .rectangle(boxX + boxW / 2, boxY + boxH / 2, boxW, boxH, ui.well, 0)
       .setInteractive({ useHandCursor: true });
 
     hitArea.on("pointerdown", () => {
@@ -412,13 +415,13 @@ export class CharacterCreationScene extends Phaser.Scene {
       .text(diceBtnX, diceBtnY, "REROLL", {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
-        color: toCss(palette.interactable),
+        color: toCss(ui.accent),
         letterSpacing: 2,
       })
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
-    diceText.on("pointerover", () => diceText.setColor(toCss(palette.interactableBright)));
-    diceText.on("pointerout", () => diceText.setColor(toCss(palette.interactable)));
+    diceText.on("pointerover", () => diceText.setColor(toCss(ui.torch)));
+    diceText.on("pointerout", () => diceText.setColor(toCss(ui.accent)));
 
     diceText.on("pointerdown", () => {
       this.characterName = this.getRandomNameForClass(this.selectedClassKey);
@@ -430,7 +433,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     const width = this.cameras.main.width;
     const y = 620;
 
-    // Confirm Button: amber, it commits the hero.
+    // Confirm Button: the bone CTA, the one torch in this view; it commits the hero.
     const confirmW = 240;
     const confirmH = 50;
     const confirmX = width / 2 - confirmW / 2 + 100;
@@ -438,7 +441,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       this.handleConfirmCreation(),
     );
 
-    // Back Button: arcane green, it backs out.
+    // Back Button: ash grey, it backs out.
     const backW = 160;
     const backH = 50;
     const backX = width / 2 - confirmW / 2 - 130;
@@ -473,7 +476,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     draw("idle");
 
     const hit = this.add
-      .rectangle(x + w / 2, y + h / 2, w, h, palette.inkDeep, 0)
+      .rectangle(x + w / 2, y + h / 2, w, h, ui.well, 0)
       .setInteractive({ useHandCursor: true });
     hit.on("pointerdown", onPress);
     hit.on("pointerover", () => draw("hover"));

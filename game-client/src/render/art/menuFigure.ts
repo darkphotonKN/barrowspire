@@ -1,6 +1,6 @@
 /**
  * A baked character shown in a menu (FS-2325V §F): the class's own sheet, the one that walks in
- * the run, idle on a lit plinth and slowly turning; its attack plays once when it is picked.
+ * the run, idle on a lit plinth and facing the viewer; its attack plays once when it is picked.
  *
  *   const hero = new MenuFigure(this, art, x, feetY, char.className, { scale: 1.5 });
  *   hero.setClass("mage");   // swaps sheet, plays the mage's attack
@@ -17,14 +17,19 @@
 import type Phaser from "phaser";
 import { palette, shade, tint } from "@/utils/canvasPalette";
 import { addTorchPool } from "@/ui/menuChrome";
+import type { Facing8 } from "@/render/iso/facing";
+import type { AnimationChoice } from "./animationSelect";
 import { CharacterAnimator } from "./character";
 import type { ArtLibrary } from "./library";
+import { directionIndex } from "./manifest";
 import { MANIFEST_KEY, preloadArt } from "./phaser";
-import { TURNTABLE_STEP_MS, Turntable } from "./turntable";
 
 /** A menu never shows a baked frame smaller than it was baked, or upscaled past 1.5x (§F.3). */
 export const MIN_MENU_SCALE = 1;
 export const MAX_MENU_SCALE = 1.5;
+
+/** A menu figure stands still, looking at the camera: on the 2:1 iso camera that is `se`. */
+export const MENU_FACING: Facing8 = "se";
 
 /** Headroom kept above the crown in a portrait, so the top of the head is not clipped flat. */
 const PORTRAIT_HEADROOM = 4;
@@ -43,8 +48,6 @@ export function preloadMenuArt(scene: Phaser.Scene): void {
 export interface MenuFigureOptions {
   /** Of the baked frame, clamped to {@link MIN_MENU_SCALE}..{@link MAX_MENU_SCALE}. Default 1. */
   scale?: number;
-  /** Turn through the 8 facings while idle. Default true; a portrait never turns. */
-  turn?: boolean;
   /**
    * A head-and-shoulders crop, for roster cards too small for the whole figure, at 1x and
    * without a plinth. The figure's (x, y) is then the top centre of this window.
@@ -56,8 +59,9 @@ export class MenuFigure {
   /** Holds the plinth and the figure; its position is where the feet stand. */
   readonly container: Phaser.GameObjects.Container;
   private readonly sprite: Phaser.GameObjects.Sprite;
-  private readonly turntable: Turntable;
   private readonly scale: number;
+  /** When the attack picked last finishes; the figure idles from then on. */
+  private attackEnds = -Infinity;
   private animator: CharacterAnimator;
   private destroyed = false;
 
@@ -73,10 +77,6 @@ export class MenuFigure {
     this.scale = portrait
       ? MIN_MENU_SCALE
       : Math.min(MAX_MENU_SCALE, Math.max(MIN_MENU_SCALE, options.scale ?? 1));
-    this.turntable = new Turntable(
-      scene.time.now,
-      portrait || options.turn === false ? 0 : TURNTABLE_STEP_MS,
-    );
 
     this.container = scene.add.container(x, y);
     if (!portrait) {
@@ -111,11 +111,12 @@ export class MenuFigure {
     if (flourish) this.flourish();
   }
 
-  /** Plays the attack once from the start, facing where the turn had reached. */
+  /** Plays the attack once from the start, still facing the viewer. Picking again restarts it. */
   flourish(): void {
     if (this.destroyed || !this.animator.baked) return;
     const now = this.scene.time.now;
-    this.turntable.flourish(now, this.attackMs());
+    const durationMs = this.attackMs();
+    if (durationMs > 0) this.attackEnds = now + durationMs;
     this.animator.attack(now);
   }
 
@@ -133,8 +134,17 @@ export class MenuFigure {
 
   private readonly tick = (): void => {
     if (this.destroyed || !this.animator.baked) return;
-    this.animator.show(this.sprite, this.turntable.pose(this.scene.time.now));
+    this.animator.show(this.sprite, this.pose(this.scene.time.now));
   };
+
+  private pose(now: number): AnimationChoice {
+    return {
+      animation: now < this.attackEnds ? "attack" : "idle",
+      facing: MENU_FACING,
+      direction: directionIndex(MENU_FACING),
+      timeScale: 1,
+    };
+  }
 
   /** Puts the current sheet on the sprite, cropped to a portrait if this is one. */
   private dress(): void {
@@ -175,8 +185,9 @@ export class MenuFigure {
   }
 
   /**
-   * A round stone plinth, seen from the isometric camera (2:1), lit by a torch pool from above
-   * and edged in brass. The figure's own baked shadow falls on its top face.
+   * A round stone plinth, seen from the isometric camera (2:1), lit by a pool of bone light from
+   * above and edged in iron, the menus' Bone & Soot (design-guideline "UI Chrome"). The figure's
+   * own baked shadow falls on its top face.
    */
   private plinth(): Phaser.GameObjects.Graphics {
     const w = PLINTH_WIDTH * this.scale;
@@ -184,7 +195,7 @@ export class MenuFigure {
     const depth = 10 * this.scale;
     const g = this.scene.add.graphics();
 
-    // The drum: shadowed side, then the lit top face, a warm lift toward the key light.
+    // The drum: shadowed side, then the lit top face, a bone lift toward the key light.
     g.fillStyle(shade(palette.wall, 0.45), 1);
     g.fillEllipse(0, depth, w, h);
     g.fillRect(-w / 2, 0, w, depth);
@@ -192,12 +203,12 @@ export class MenuFigure {
     g.fillEllipse(0, 0, w, h);
     g.fillStyle(tint(palette.wall, 0.12), 0.9);
     g.fillEllipse(-w * 0.06, -h * 0.05, w * 0.82, h * 0.78);
-    g.fillStyle(palette.torch, 0.08);
+    g.fillStyle(palette.menu.torch, 0.08);
     g.fillEllipse(-w * 0.1, -h * 0.08, w * 0.55, h * 0.5);
-    // 1px brass rims: the top edge, and the foot of the drum.
-    g.lineStyle(1, palette.frame, 0.7);
+    // 1px iron rims: the top edge, and the foot of the drum.
+    g.lineStyle(1, palette.menu.frameBright, 0.7);
     g.strokeEllipse(0, 0, w, h);
-    g.lineStyle(1, palette.frame, 0.25);
+    g.lineStyle(1, palette.menu.frame, 0.4);
     g.strokeEllipse(0, depth, w, h);
     return g;
   }

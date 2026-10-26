@@ -13,9 +13,16 @@ import {
   drawBackdrop,
   drawButton,
   drawRule,
+  MENU_EQUIPMENT_THEME,
   sharpenText,
   type ButtonState,
 } from "@/ui/menuChrome";
+
+/**
+ * The menus wear the site's Bone & Soot (design-guideline "UI Chrome"), the equipment and
+ * inventory panels included: the run's EquipmentPanel, given the menu theme.
+ */
+const ui = palette.menu;
 
 /** The delver beside the equipment panel: its baked sheet at 1x, in the left margin. */
 const HERO_X = 80;
@@ -72,7 +79,7 @@ export class LoadoutScene extends Phaser.Scene {
 
     const { width } = this.cameras.main;
 
-    // Charcoal with drifting dust and embers; no pixel grid.
+    // Soot with drifting dust and bone glints, under a vignette; no pixel grid.
     drawBackdrop(this, 80);
 
     this.createHero();
@@ -81,7 +88,7 @@ export class LoadoutScene extends Phaser.Scene {
     const title = this.add.text(width / 2, 30, "LOADOUT", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "24px",
-      color: toCss(palette.frameBright),
+      color: toCss(ui.torch),
       letterSpacing: 8,
       fontStyle: "bold",
     });
@@ -90,11 +97,11 @@ export class LoadoutScene extends Phaser.Scene {
     const subtitle = this.add.text(
       width / 2,
       58,
-      "CONFIGURE YOUR GEAR BEFORE DEPLOYMENT",
+      "READY YOUR GEAR BEFORE THE DELVE",
       {
         fontFamily: CANVAS_FONT.body,
         fontSize: "10px",
-        color: toCss(palette.hudLabel),
+        color: toCss(ui.accent),
         letterSpacing: 4,
       },
     );
@@ -102,7 +109,7 @@ export class LoadoutScene extends Phaser.Scene {
 
     // Accent line
     const accent = this.add.graphics();
-    drawRule(accent, width * 0.15, width * 0.85, 72, 0.3);
+    drawRule(accent, width * 0.15, width * 0.85, 72);
 
     // Back button
     const backBtnX = 70;
@@ -133,7 +140,7 @@ export class LoadoutScene extends Phaser.Scene {
       backBtnY,
       100,
       28,
-      palette.inkDeep,
+      ui.well,
       0,
     );
     backHit.setInteractive({ useHandCursor: true });
@@ -151,7 +158,7 @@ export class LoadoutScene extends Phaser.Scene {
     });
 
     // Create equipment panel
-    this.equipmentPanel = new EquipmentPanel(this);
+    this.equipmentPanel = new EquipmentPanel(this, MENU_EQUIPMENT_THEME);
     this.equipmentPanel.onEquip = (item, slot) => {
       if (this.isLoading) return;
       this.equipped[slot] = item;
@@ -185,7 +192,7 @@ export class LoadoutScene extends Phaser.Scene {
   }
 
   /**
-   * The delver being geared, as its class's baked sheet on a lit plinth, turning (FS-2325V §F.1):
+   * The delver being geared, as its class's baked sheet on a lit plinth, facing us (FS-2325V §F.1):
    * the same sheet that walks in the hub and the run. Falls back to the placeholder with no art.
    */
   private createHero(): void {
@@ -201,7 +208,7 @@ export class LoadoutScene extends Phaser.Scene {
       .text(HERO_X, HERO_FEET_Y + 52, label, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "12px",
-        color: toCss(palette.frameBright),
+        color: toCss(ui.text),
         letterSpacing: 2,
         align: "center",
         wordWrap: { width: 140 },
@@ -212,7 +219,7 @@ export class LoadoutScene extends Phaser.Scene {
         .text(HERO_X, name.y + name.height + 4, lore.title, {
           fontFamily: CANVAS_FONT.body,
           fontSize: "9px",
-          color: toCss(palette.hudLabel),
+          color: toCss(ui.label),
           letterSpacing: 2,
           align: "center",
           wordWrap: { width: 140 },
@@ -297,7 +304,7 @@ export class LoadoutScene extends Phaser.Scene {
       height / 2,
       width,
       height,
-      palette.inkDeep,
+      ui.well,
       0.4,
     );
     bg.setInteractive(); // blocks clicks through
@@ -305,7 +312,7 @@ export class LoadoutScene extends Phaser.Scene {
     const text = this.add.text(width / 2, height / 2, "UPDATING...", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "16px",
-      color: toCss(palette.frameBright),
+      color: toCss(ui.text),
       letterSpacing: 4,
     });
     text.setOrigin(0.5);

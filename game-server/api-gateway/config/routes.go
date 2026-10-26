@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/auth"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/contract"
@@ -90,6 +91,9 @@ func SetupRouter(addrs Downstreams, ch *amqp.Channel) (*gin.Engine, func() error
 	}))
 
 	router.Use(otelgin.Middleware("api-gateway"))
+
+	// for testing LB
+	router.GET("/healthz", func(c *gin.Context) { c.Status(http.StatusOK) })
 
 	// base route
 	api := router.Group("/api")

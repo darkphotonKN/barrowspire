@@ -10,7 +10,7 @@ import (
 
 // A client can put anything on the socket. ParsePayload runs inside the session's
 // message loop, which has no recover(), so a panic here takes the whole process
-// down — every concurrent world with it.
+// down, and every concurrent world with it.
 func TestParsePayload_MalformedPayload_ErrorsWithoutPanicking(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -130,7 +130,7 @@ func TestParsePayload_ValidPayload_Parses(t *testing.T) {
 	}
 }
 
-// A payload that still carries session_id — an old client, or a crafted one —
+// A payload that still carries session_id (an old client, or a crafted one)
 // parses fine and the field is simply ignored. It is not part of the contract.
 func TestParsePayload_IgnoresSessionIDIfSent(t *testing.T) {
 	m := &Message{

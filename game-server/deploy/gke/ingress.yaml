@@ -1,0 +1,33 @@
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata: { name: gateway }
+spec:
+  healthCheck:
+    requestPath: /healthz
+    port: 7114
+    type: HTTP
+  timeoutSec: 60
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata: { name: api-cert }
+spec:
+  domains: [api.barrowspire.app]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: barrowspire-api-ip
+    networking.gke.io/managed-certificates: api-cert
+    kubernetes.io/ingress.class: gce
+spec:
+  rules:
+    - host: api.barrowspire.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: gateway, port: { number: 7114 } }

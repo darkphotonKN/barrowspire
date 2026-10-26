@@ -21,7 +21,7 @@ import (
 // send find_game / leave_queue.
 func queuedInHub(t *testing.T, queue *mockQueueService) (*Server, *websocket.Conn, *types.Player, chan interface{}) {
 	t.Helper()
-	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 
 	conn := &websocket.Conn{}
 	player := &types.Player{ID: uuid.New(), Username: "Wren"}
@@ -133,7 +133,7 @@ func cleanUpWithin(t *testing.T, server *Server, conn *websocket.Conn) {
 // server lock is released for everyone else. FS-K2HKP §Requirements 8.
 func TestCleanUpClient_KnownPlayer_DequeuesForgetsAndReleasesTheLock(t *testing.T) {
 	queue := NewMockQueueService()
-	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	conn := serverSideConn(t)
 	player := &types.Player{ID: uuid.New(), Username: "Wren"}
 	registerTestConn(server, conn, player)
@@ -155,7 +155,7 @@ func TestCleanUpClient_KnownPlayer_DequeuesForgetsAndReleasesTheLock(t *testing.
 
 func TestCleanUpClient_UnknownConn_ReleasesTheLockWithoutPanicking(t *testing.T) {
 	queue := NewMockQueueService()
-	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	conn := serverSideConn(t)
 
 	cleanUpWithin(t, server, conn)

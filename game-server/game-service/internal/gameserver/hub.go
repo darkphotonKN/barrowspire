@@ -28,10 +28,20 @@ type messageHub struct {
 	sessions       map[string]*game.Session
 	mu             sync.RWMutex
 	sender         *messaging.MessageSender
+
+	// this pod's identity: a matched player on podID and connected here is
+	// local, anyone else is handed off to the run at podAddr
+	podID     string
+	podAddr   string
+	announcer HandoffAnnouncer
 }
 
+// handoffAnnounceTimeout bounds each announce to another pod, so a slow redis
+// holds up only the announcing goroutine and only for this long per pod.
+const handoffAnnounceTimeout = 2 * time.Second
+
 type SessionManager interface {
-	CreateGameSession(players []*types.Player) *game.Session
+	CreateGameSession(players *types.ResolvedMatchedPlayers) *game.Session
 	GetGameSession(id uuid.UUID) (*game.Session, bool)
 	GetServerChan() chan types.ClientPackage
 	AddPlayer(*types.Player) error
@@ -40,8 +50,9 @@ type SessionManager interface {
 	EnterHub(ctx context.Context, conn *websocket.Conn, characterID string) (*game.Session, error)
 	PlayerByID(playerID uuid.UUID) (*types.Player, bool)
 	JoinHub(conn *websocket.Conn, character types.CharacterInPlay) (*game.Session, error)
-	GetMatchedChan(ctx context.Context) chan []*types.Player
+	GetMatchedChan(ctx context.Context) chan matchmaker.MatchStart
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
+	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
@@ -59,6 +70,10 @@ var (
 var (
 	errNoCharacter           = errors.New("no character id to enter with")
 	errCharactersUnavailable = errors.New("character service unavailable")
+
+	// the queue entry holds the character the run is built from, so it cannot
+	// change while queued. FS-K2HKP §Requirements 7a.
+	errCharacterSwitchWhileQueued = errors.New("character switch while queued")
 )
 
 // characterResolveTimeout bounds how long entry waits on character-service
@@ -79,6 +94,8 @@ func enterHubRefusal(err error) string {
 		return "Characters are unavailable right now. Try again shortly."
 	case errors.Is(err, game.ErrCharacterSwitchMidRun):
 		return "You cannot change character during a delve."
+	case errors.Is(err, errCharacterSwitchWhileQueued):
+		return "Leave the queue before changing character."
 	default:
 		return "Could not enter"
 	}
@@ -147,11 +164,14 @@ func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*game.Session, er
 	return session, nil
 }
 
-func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender) *messageHub {
+func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer) *messageHub {
 	return &messageHub{
 		sessionManager: sessionManager,
 		sessions:       make(map[string]*game.Session),
 		sender:         sender,
+		podID:          podID,
+		podAddr:        podAddr,
+		announcer:      announcer,
 	}
 }
 
@@ -344,24 +364,30 @@ func (h *messageHub) Run(ctx context.Context) {
 
 		case matched := <-h.sessionManager.GetMatchedChan(ctx):
 			// The matchmaker deals in ids only: its queue lives in Redis, which
-			// holds no names or classes. The full record is this server's own.
+			// holds no names or classes. The full record is this server's own
 			matchedPlayers := h.resolveMatchedPlayers(matched)
-			if len(matchedPlayers) == 0 {
-				slog.Warn("Match had no players connected to this server, no run started", "matched", len(matched))
+			if len(matchedPlayers.LocalPlayers) == 0 {
+				slog.Warn("Match had no players connected to this server, no run started")
 				continue
 			}
 
-			slog.Info("")
 			slog.Info("Received matched players, creating game session...",
 				"matched_players", matchedPlayers)
 			session := h.sessionManager.CreateGameSession(matchedPlayers)
-			playerIDs := make([]uuid.UUID, len(matchedPlayers))
-			for i, player := range matchedPlayers {
+			playerIDs := make([]uuid.UUID, len(matchedPlayers.LocalPlayers))
+
+			// broadcast to local players
+			for i, player := range matchedPlayers.LocalPlayers {
 				playerIDs[i] = player.ID
 			}
 			// game_found was this message under an older name, from when a run
 			// was the only world anyone could enter. FS-29KSH §Requirements 15.
 			h.sender.BroadcastToPlayerList(playerIDs, worldEnteredMessage(session))
+
+			// only now that the run exists are the other pods told to send their
+			// players over. Off the loop, so a slow redis never stalls it.
+			// FS-K2HKP §Requirements 20.
+			go h.announceHandoffs(ctx, session.ID, h.handoffsByPod(matched))
 
 		case status := <-h.sessionManager.GetQueueStatusChan(ctx):
 			fmt.Printf("Queue status update: %d/%d\n", status.Current, status.Total)
@@ -377,32 +403,131 @@ func (h *messageHub) Run(ctx context.Context) {
 						"total":   status.Total,
 					},
 				})
+
+		// handoff takes match ready players that shouldn't connect to this pod to reconnect
+		case handoff := <-h.sessionManager.GetHandoffChan(ctx):
+			slog.Debug("handoff received", "handoff", handoff)
+			h.sendWorldHandoff(handoff)
 		}
+
 	}
 }
 
 /**
-* Turns a match, which carries only player ids, into this server's full player
-* records, the ones holding the name and class a run is built from.
-*
-* A matched player with no record here is dropped: they disconnected after
-* being popped, or are connected to another replica. Moving those players
-* across replicas is the handoff's job (FS-K2HKP slice 3), not this lookup's.
+* Splits a match by pod. A player on this pod and connected here is local, and
+* resolves to this server's full record. A player on another pod is handed off,
+* carrying the character they queued with. A player on this pod with no record
+* here disconnected after being popped, and is dropped.
+* FS-K2HKP §Requirements 19–20.
 **/
-func (h *messageHub) resolveMatchedPlayers(matched []*types.Player) []*types.Player {
-	players := make([]*types.Player, 0, len(matched))
 
-	for _, m := range matched {
-		player, exists := h.sessionManager.PlayerByID(m.ID)
+func (h *messageHub) resolveMatchedPlayers(match matchmaker.MatchStart) *types.ResolvedMatchedPlayers {
+	players := make([]*types.Player, 0)
+	handoffPlayers := make([]*types.Player, 0)
+
+	for _, matchedPlayer := range match.Players {
+		// on another pod: seated once they reconnect here, built from the
+		// character they queued with
+		if matchedPlayer.Pod != h.podID {
+			handoffPlayers = append(handoffPlayers, &types.Player{
+				ID:        matchedPlayer.ID,
+				Character: matchedPlayer.Character,
+			})
+			continue
+		}
+
+		player, exists := h.sessionManager.PlayerByID(matchedPlayer.ID)
 		if !exists {
-			slog.Warn("Matched player not connected to this server, left out of the run", "player_id", m.ID)
+			// queued here but gone since, nobody to move in or hand off
+			slog.Warn("Matched player on this pod is not connected, dropped from the run",
+				"player_id", matchedPlayer.ID, "pod_id", h.podID)
 			continue
 		}
 
 		players = append(players, player)
 	}
 
-	return players
+	return &types.ResolvedMatchedPlayers{
+		LocalPlayers:   players,
+		HandoffPlayers: handoffPlayers,
+	}
+}
+
+/**
+* Groups a match's players on other pods by their pod, so each pod is told
+* about its own players only. The host's own players are never in it.
+**/
+func (h *messageHub) handoffsByPod(match matchmaker.MatchStart) map[string][]matchmaker.MatchStartPlayer {
+	byPod := make(map[string][]matchmaker.MatchStartPlayer)
+
+	for _, player := range match.Players {
+		if player.Pod == h.podID {
+			continue
+		}
+		byPod[player.Pod] = append(byPod[player.Pod], player)
+	}
+
+	return byPod
+}
+
+/**
+* Publishes one handoff step per other pod for a run this pod just created.
+*
+* A failed announce is logged and the next pod is still told: nothing is
+* undone, the seats of a pod that never heard simply lapse after 15s.
+* FS-K2HKP §Requirements 20, 25.
+**/
+func (h *messageHub) announceHandoffs(ctx context.Context, sessionID uuid.UUID, byPod map[string][]matchmaker.MatchStartPlayer) {
+	for podID, players := range byPod {
+		announceCtx, cancel := context.WithTimeout(ctx, handoffAnnounceTimeout)
+		err := h.announcer.Announce(announceCtx, matchmaker.MatchStart{
+			PodID:     podID,
+			Step:      matchmaker.MatchStepHandoff,
+			SessionID: sessionID,
+			HostAddr:  h.podAddr,
+			Players:   players,
+		})
+		cancel()
+
+		if err != nil {
+			slog.Warn("Could not announce handoff, its seats lapse",
+				"session_id", sessionID, "pod_id", podID, "players", len(players), "err", err)
+			continue
+		}
+	}
+}
+
+/**
+* Tells each listed player connected here to reconnect to the run's host.
+*
+* A listed player not connected here is skipped by the sender; their seat
+* lapses. The HUB world and the queue are left alone: the player leaves the HUB
+* through the ordinary disconnect once their old socket closes.
+* FS-K2HKP §Requirements 21, 23.
+**/
+func (h *messageHub) sendWorldHandoff(handoff matchmaker.MatchStart) {
+	if handoff.HostAddr == "" || handoff.SessionID == uuid.Nil {
+		slog.Error("handoff step without host addr or session id, dropped",
+			"session_id", handoff.SessionID, "host_addr", handoff.HostAddr, "players", len(handoff.Players))
+		return
+	}
+
+	playerIDs := make([]uuid.UUID, 0, len(handoff.Players))
+	for _, player := range handoff.Players {
+		playerIDs = append(playerIDs, player.ID)
+	}
+
+	err := h.sender.BroadcastToPlayerList(playerIDs, types.Message{
+		Action: string(constants.ActionWorldHandoff),
+		Payload: map[string]interface{}{
+			"addr":       handoff.HostAddr,
+			"session_id": handoff.SessionID.String(),
+		},
+	})
+	if err != nil {
+		slog.Debug("world_handoff not delivered to every listed player",
+			"session_id", handoff.SessionID, "err", err)
+	}
 }
 
 /**

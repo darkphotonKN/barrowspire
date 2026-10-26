@@ -254,6 +254,7 @@ func main() {
 		slog.Info("outbox workers stopped after waiting 10 seconds...")
 	}
 
+	// broker is closed by the deferred call above
 	db.Close()
 	slog.Info("shutdown clean")
 }

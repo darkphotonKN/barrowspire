@@ -27,10 +27,10 @@ func npcsIn(entities []*ecs.Entity) []*components.NPCComponent {
 }
 
 // A function NPC is how anything in the hub is reached. They stand still, so
-// their placement is map data — a delver has to be able to tell someone where to
+// their placement is map data: a delver has to be able to tell someone where to
 // stand. FS-29KSH §Requirements 9, 29.
 func TestHub_HoldsItsFunctionNPCs(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	npcs := npcsIn(hub.EntityManager.GetAllEntities())
@@ -45,7 +45,7 @@ func TestHub_HoldsItsFunctionNPCs(t *testing.T) {
 	assert.Contains(t, byFunction, components.NPCFunctionStorekeeper, "no one to gear you up")
 
 	t.Run("and stands where the map put them", func(t *testing.T) {
-		second := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+		second := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 		otherHub, _ := second.HubSession()
 
 		assert.Equal(t,
@@ -69,9 +69,9 @@ func TestHub_HoldsItsFunctionNPCs(t *testing.T) {
 }
 
 // npcPositions maps each *function* NPC to where they stand. Keyed by function
-// rather than indexed, because entity iteration order is not guaranteed — and
-// residents are skipped, since they share the empty function and are supposed to
-// be somewhere different every time you look.
+// rather than indexed, because entity iteration order is not guaranteed. Residents
+// are skipped, since they share the empty function and are supposed to be
+// somewhere different every time you look.
 func npcPositions(entities []*ecs.Entity) map[components.NPCFunction][2]float64 {
 	positions := map[components.NPCFunction][2]float64{}
 
@@ -96,12 +96,12 @@ func npcPositions(entities []*ecs.Entity) map[components.NPCFunction][2]float64 
 }
 
 // Standing in the hub is not being in a game. The resume check predates the hub
-// and asked only whether the player was in *a* session — which everyone now is,
-// so asking to delve resumed them into the hub they were already standing in and
+// and asked only whether the player was in *a* session. Everyone now is, so
+// asking to delve resumed them into the hub they were already standing in and
 // never queued them. FS-29KSH §Requirements 26.
 func TestFindGame_FromTheHub_Queues(t *testing.T) {
 	queue := NewMockQueueService()
-	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
@@ -131,7 +131,7 @@ func TestFindGame_FromTheHub_Queues(t *testing.T) {
 // and end up in one run together, out of the hub.
 // FS-29KSH §Requirements 26, 28, §Edge States (Concurrent).
 func TestTwoDelversDescend_MatchIntoOneRun(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	for _, name := range []string{"Wren", "Kaelen"} {

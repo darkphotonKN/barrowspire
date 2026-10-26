@@ -19,8 +19,8 @@ import (
 func newRoutingTestHub(t *testing.T) (*messageHub, *Server) {
 	t.Helper()
 
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
-	hub := NewMessageHub(server, messaging.NewMessageSender(server))
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	hub := NewMessageHub(server, messaging.NewMessageSender(server), testPodID, testPodAddr, noopAnnouncer{})
 
 	return hub, server
 }
@@ -96,7 +96,7 @@ func TestResolveGameSession_UsesServerHeldState(t *testing.T) {
 // off the method in isolation: a crafted payload naming someone else's world is
 // delivered to the sender's own. FS-29KSH §Requirements 16.
 func TestHubRun_ForeignSessionIDInPayload_RoutesToOwnSession(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters())
+	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 
 	ownID, foreignID := uuid.New(), uuid.New()
 	own := registerRoutableSession(server, ownID)

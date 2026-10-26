@@ -92,11 +92,24 @@ type QueueManager interface {
 	Start(ctx context.Context)
 	PlayerJoinQueue(ctx context.Context, player *types.Player) error
 	PlayerRemoveQueue(ctx context.Context, player *types.Player) error
-	GetMatchedChan(ctx context.Context) chan []*types.Player
+	GetMatchedChan(ctx context.Context) chan matchmaker.MatchStart
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
+	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
+	QueuedCharacter(ctx context.Context, playerID uuid.UUID) (characterID uuid.UUID, queued bool, err error)
 }
 
-func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient, characters CharacterReader) *Server {
+// HandoffAnnouncer publishes a match-start step on another pod's channel. The
+// host uses it to tell each other involved pod which of its players to send
+// over. FS-K2HKP §Requirements 20.
+type HandoffAnnouncer interface {
+	Announce(ctx context.Context, payload matchmaker.MatchStart) error
+}
+
+/**
+* podID and podAddr are this replica's identity: a match step names its pods by
+* id, and podAddr is where a handed-off player reconnects to reach this pod.
+**/
+func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient, characters CharacterReader, podID, podAddr string, announcer HandoffAnnouncer) *Server {
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			// TODO: Allow all connections by default for simplicity; can add more logic here
@@ -130,7 +143,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	server.queue.Start(ctx)
 
 	// initialize message hub
-	messageHub := NewMessageHub(server, newSender)
+	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer)
 	go messageHub.Run(ctx)
 
 	server.createHubSession()
@@ -190,6 +203,18 @@ func (s *Server) EnterHub(ctx context.Context, conn *websocket.Conn, characterID
 	id, err := uuid.Parse(characterID)
 	if err != nil {
 		return nil, fmt.Errorf("character id %q: %w", characterID, types.ErrCharacterNotFound)
+	}
+
+	// The queue entry carries the character the run is built from, so a queued
+	// player keeps it until they leave the queue. An unreadable queue lets them
+	// in: queueing needs it too, so nobody can have joined while it is down.
+	// FS-K2HKP §Requirements 7a.
+	queuedID, queued, err := s.queue.QueuedCharacter(ctx, player.ID)
+	if err != nil {
+		slog.Warn("Could not read queue entry on enter_hub, letting them in", "player_id", player.ID, "error", err)
+	}
+	if queued && queuedID != id {
+		return nil, fmt.Errorf("queued as %s, entering as %s: %w", queuedID, id, errCharacterSwitchWhileQueued)
 	}
 
 	character, err := s.characters.GetCharacter(ctx, player.ID, id)
@@ -529,7 +554,7 @@ func (s *Server) GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool) {
 /**
 * allows the creation of a new game session.
 **/
-func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
+func (s *Server) CreateGameSession(players *types.ResolvedMatchedPlayers) *game.Session {
 	// create entity manager first so it can be shared
 	entityManager := ecs.NewEntityManager()
 	stateSerializer := serializer.NewStateSerializer(entityManager)
@@ -539,11 +564,12 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 
 	newGameSession.InitialSystems()
 
+	// Remove player from Hub
 	// Leaving the hub is part of arriving in the run: a player occupies one world
 	// at a time, and the hub is never torn down, so anything left behind there
 	// stays visible and broadcasting (FS-29KSH §Requirements 23).
 	if hub, exists := s.HubSession(); exists {
-		for _, player := range players {
+		for _, player := range players.LocalPlayers {
 			hub.RemovePlayer(player.ID.String())
 		}
 	}
@@ -553,27 +579,38 @@ func (s *Server) CreateGameSession(players []*types.Player) *game.Session {
 	// party and spawns them clear of every delver, so both must already be known
 	// (FS-77AB6 §Requirements 22). The session is not yet registered, so nothing
 	// routes to it while it is being built.
-	for _, player := range players {
+	for _, player := range players.LocalPlayers {
 		newGameSession.AddPlayer(player.ID, player.Character, s.tokenOf(player))
 	}
-	newGameSession.InitialMapObjects()
+
+	// FS-K2HKP R18: pass the handoff players so the first floor's formation and
+	// monster level count the whole matched party, not only who is seated now.
+	// Their characters come with the match; they are seated when they connect.
+	expected := make([]types.CharacterInPlay, 0, len(players.HandoffPlayers))
+	for _, player := range players.HandoffPlayers {
+		expected = append(expected, player.Character)
+	}
+	newGameSession.InitialMapObjects(expected)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	connected := constants.Connected
 
-	for _, player := range players {
+	for _, player := range players.LocalPlayers {
 		for _, record := range s.everyRecordOf(player) {
 			record.CurrentGameSessionId = newGameSession.ID
 			record.ConnectState = &connected
 		}
 	}
 
+	// add players to handoff and expected to connect in game session map
+	newGameSession.AddPlayersToPendingConnection(players.HandoffPlayers)
+
 	s.sessions[newGameSession.ID] = newGameSession
 
 	// NOTE: keep this info level, important to save meta data DO NOT REMOVE
-	slog.Info("New game session initiated", "session_id", newGameSession.ID, "players", len(players))
+	slog.Info("New game session initiated", "session_id", newGameSession.ID, "local_players", len(players.LocalPlayers))
 
 	return newGameSession
 }
@@ -629,7 +666,7 @@ func (s *Server) RemovePlayerFromQueue(player *types.Player) error {
 /**
 * get matched channel for listening to matched players
 **/
-func (s *Server) GetMatchedChan(ctx context.Context) chan []*types.Player {
+func (s *Server) GetMatchedChan(ctx context.Context) chan matchmaker.MatchStart {
 	return s.queue.GetMatchedChan(ctx)
 }
 
@@ -638,6 +675,14 @@ func (s *Server) GetMatchedChan(ctx context.Context) chan []*types.Player {
 **/
 func (s *Server) GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus {
 	return s.queue.GetQueueStatusChan(ctx)
+}
+
+/**
+* get handoff channel from matchmaker which pipes along players to reconnect to the
+* corresponding pod that hosts the game session
+**/
+func (s *Server) GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart {
+	return s.queue.GetHandoffChan(ctx)
 }
 
 /**
@@ -686,7 +731,7 @@ func (s *Server) PushMessageToChannelQueue(playerID uuid.UUID, msg interface{}) 
 		return fmt.Errorf("message channel not found for player %s", playerID)
 	}
 
-	// non-blocking send to prevent slow clients from blocking
+	// nonblocking send to prevent slow clients from blocking
 	select {
 	case ch <- msg:
 		return nil
