@@ -145,7 +145,7 @@ The game is a **medieval barrow-dungeon delve / extraction**, not a space shoote
 
 ### Phaser Scenes (In-Game)
 
-**The canvas menus are the exception:** MainMenuScene, CharacterCreationScene, LoadoutScene and
+**The canvas menus are the exception:** PreloadScene, MainMenuScene, CharacterCreationScene, LoadoutScene and
 `src/ui/menuChrome.ts` wear the site's Bone & Soot (soot ground, stone panels, iron hairlines, a
 bone primary button, the title "THE AGE OF BARROWSPIRE" as the site's hero h1). They read it from
 `palette.menu`, whose `menu*` tokens in `BARROW` / `BARROW_HEX` mirror `globals.css` `:root`, never

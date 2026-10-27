@@ -26,7 +26,9 @@ export default function PhaserGame() {
       width: 1080,
       height: 720,
       parent: containerRef.current,
-      backgroundColor: BARROW.umber,
+      // Soot, not umber: Boot and Preload are the gate into the menus, which wear the site's
+      // Bone & Soot. The hub and the run set their own ground.
+      backgroundColor: BARROW.menuSoot,
       // Baked art is drawn smoothed (docs/design-guideline.md "Linear filtering",
       // FS-2325V §C): linear filtering, at 1x from a 2x render. Positions stay
       // integer-aligned so a still frame is crisp and a moving one does not shimmer.

@@ -310,7 +310,7 @@ Where the bound and the message conflict — an end-of-run heading long enough t
 
 ## UI Chrome (align to the pre-rendered world)
 
-- **The canvas menus wear the web UI's Bone & Soot.** The main menu, character creation and the
+- **The canvas menus wear the web UI's Bone & Soot.** The loading screen, the main menu, character creation and the
   loadout screen (`src/ui/menuChrome.ts`) are the gate into the game, so they match the site
   rather than the barrow: soot ground with dust and a vignette, grey-stone panels with a 1px
   iron hairline and a carved edge, bone-grey text, iron section titles, ash grey for cancel and
