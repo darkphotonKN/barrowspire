@@ -141,9 +141,9 @@ type TransactionReason string
 
 const (
 	ReasonSettlement TransactionReason = "SETTLEMENT"
-	ReasonDeposit       TransactionReason = "DEPOSIT"
-	ReasonWithdraw      TransactionReason = "WITHDRAW"
-	ReasonTransfer      TransactionReason = "TRANSFER"
+	ReasonDeposit    TransactionReason = "DEPOSIT"
+	ReasonWithdraw   TransactionReason = "WITHDRAW"
+	ReasonTransfer   TransactionReason = "TRANSFER"
 )
 
 // CurrencyType is a transaction-level fact: every leg of a transaction shares
