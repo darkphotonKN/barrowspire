@@ -49,7 +49,7 @@ export class BootScene extends Phaser.Scene {
       const reason =
         message ||
         error ||
-        "Operator session conflict detected. You have been disconnected.";
+        "This delver is already abroad in another window. You have been disconnected.";
       sessionStorage.setItem("auth-error-message", reason);
       socketManager.disconnect();
       localStorage.removeItem("auth-storage");

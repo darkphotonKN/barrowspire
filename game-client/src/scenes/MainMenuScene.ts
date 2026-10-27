@@ -37,6 +37,12 @@ const HERO_SCALE = 1.3;
 const CARD_XP_BAR = { left: 64, y: 56, rightMargin: 12, height: 4 };
 /** A roster card's head-and-shoulders window. */
 const PORTRAIT = { width: 44, height: 56 };
+/**
+ * The primary button takes the delver into the town (the hub), not into a delve: the Spirewarden
+ * starts those. Wide enough for its label at the button's letter-spacing.
+ */
+const ENTER_LABEL = "ENTER THE TOWN";
+const ENTER_BUTTON = { width: 280, height: 50 };
 
 export class MainMenuScene extends Phaser.Scene {
   private unsubscribeConnectionStatus?: () => void;
@@ -153,10 +159,10 @@ export class MainMenuScene extends Phaser.Scene {
     this.buttonBg = this.add.graphics();
 
     const btnY = height / 2 + 55;
-    const btnW = 220;
-    const btnH = 50;
+    const btnW = ENTER_BUTTON.width;
+    const btnH = ENTER_BUTTON.height;
 
-    this.startButtonText = this.add.text(titleX, btnY + btnH / 2, "DELVE", {
+    this.startButtonText = this.add.text(titleX, btnY + btnH / 2, ENTER_LABEL, {
       fontFamily: CANVAS_FONT.body,
       fontSize: "16px",
       color: toCss(ui.faint),
@@ -477,8 +483,8 @@ export class MainMenuScene extends Phaser.Scene {
       isDragging = false;
     });
 
-    // Add Create Character Button at bottom of sidebar: an outline button, since DELVE is this
-    // view's one bone CTA.
+    // Add Create Character Button at bottom of sidebar: an outline button, since ENTER THE TOWN is
+    // this view's one bone CTA.
     const createBtnY = panelY + panelH - 32;
     const createBtnW = cardW;
     const createBtnH = 32;
@@ -788,7 +794,7 @@ export class MainMenuScene extends Phaser.Scene {
     if (this.startButtonText && this.connectionStatusText) {
       if (status === "connected") {
         hitArea.setInteractive({ useHandCursor: true });
-        this.startButtonText.setText("DELVE");
+        this.startButtonText.setText(ENTER_LABEL);
         this.connectionStatusText.setText("The way is open // Server connected");
         this.connectionStatusText.setColor(toCss(ui.label));
         this.drawDelveButton("idle");
@@ -812,10 +818,10 @@ export class MainMenuScene extends Phaser.Scene {
     if (!this.cameras || !this.cameras.main) return;
     const width = this.cameras.main.width;
     const titleX = width / 2;
-    const btnX = titleX - 110;
+    const btnW = ENTER_BUTTON.width;
+    const btnH = ENTER_BUTTON.height;
+    const btnX = titleX - btnW / 2;
     const btnY = this.cameras.main.height / 2 + 55;
-    const btnW = 220;
-    const btnH = 50;
 
     if (this.buttonBg) drawButton(this.buttonBg, btnX, btnY, btnW, btnH, "primary", state);
     this.startButtonText?.setColor(toCss(buttonTextColor("primary", state)));
@@ -900,7 +906,7 @@ export class MainMenuScene extends Phaser.Scene {
     );
     this.queuePeopleText.setOrigin(0.5);
 
-    const cancelBtn = this.add.text(0, 45, "[ LEAVE QUEUE ]", {
+    const cancelBtn = this.add.text(0, 45, "[ LEAVE THE GATHERING ]", {
       fontFamily: CANVAS_FONT.body,
       fontSize: "12px",
       color: toCss(buttonTextColor("cancel", "idle")),
