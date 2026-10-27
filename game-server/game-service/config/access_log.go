@@ -25,6 +25,8 @@ func AccessLogger(out io.Writer) gin.HandlerFunc {
 	return gin.LoggerWithConfig(gin.LoggerConfig{
 		Output:    out,
 		Formatter: accessLogLine,
+		// hit every few seconds by the readiness probe; failures still show as readiness failures in kubectl describe pod
+		SkipPaths: []string{"/api/health"},
 	})
 }
 

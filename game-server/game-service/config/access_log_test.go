@@ -23,7 +23,7 @@ func TestAccessLogger_NeverWritesTheBearerToken(t *testing.T) {
 	}{
 		{"game websocket connect", "/game/ws?token=secret&name=Wren", []string{"/game/ws", "name=Wren"}},
 		{"token as the only param", "/game/ws?token=secret", []string{"/game/ws"}},
-		{"token on any other path", "/api/health?token=secret", []string{"/api/health"}},
+		{"token on any other path", "/api/items?token=secret", []string{"/api/items"}},
 	}
 
 	for _, tt := range tests {
@@ -32,7 +32,7 @@ func TestAccessLogger_NeverWritesTheBearerToken(t *testing.T) {
 			router := gin.New()
 			router.Use(AccessLogger(&logged))
 			router.GET("/game/ws", func(c *gin.Context) { c.Status(http.StatusOK) })
-			router.GET("/api/health", func(c *gin.Context) { c.Status(http.StatusOK) })
+			router.GET("/api/items", func(c *gin.Context) { c.Status(http.StatusOK) })
 
 			router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, tt.target, nil))
 
@@ -81,10 +81,37 @@ func TestAccessLogger_LogsAPlainPathUnchanged(t *testing.T) {
 	var logged bytes.Buffer
 	router := gin.New()
 	router.Use(AccessLogger(&logged))
-	router.GET("/api/health", func(c *gin.Context) { c.Status(http.StatusOK) })
+	router.GET("/api/items", func(c *gin.Context) { c.Status(http.StatusOK) })
 
-	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/health", nil))
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/items", nil))
 
-	assert.Contains(t, logged.String(), `"/api/health"`)
+	assert.Contains(t, logged.String(), `"/api/items"`)
 	assert.Contains(t, logged.String(), "200")
+}
+
+// The readiness probe hits the health check every few seconds, so it is not
+// logged; a failing probe still shows in kubectl describe pod.
+func TestAccessLogger_SkipsTheHealthCheck(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name   string
+		status int
+	}{
+		{"healthy", http.StatusOK},
+		{"unhealthy", http.StatusServiceUnavailable},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logged bytes.Buffer
+			router := gin.New()
+			router.Use(AccessLogger(&logged))
+			router.GET("/api/health", func(c *gin.Context) { c.Status(tt.status) })
+
+			router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/health", nil))
+
+			assert.Empty(t, logged.String())
+		})
+	}
 }

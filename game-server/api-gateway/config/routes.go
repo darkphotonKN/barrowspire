@@ -2,7 +2,6 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -78,13 +77,8 @@ func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel) (*gi
 	// and a panic in CORS or tracing would produce the empty 500 all over again.
 	router.Use(httperr.Recovery())
 
-	router.Use(gin.Logger())
-
-	// NOTE: debugging middleware
-	router.Use(func(c *gin.Context) {
-		fmt.Println("Incoming request to:", c.Request.Method, c.Request.URL.Path, "from", c.Request.Host)
-		c.Next()
-	})
+	// skip /healthz: LB probes it every few seconds; failures still show as an unhealthy LB backend and in `kubectl describe pod`
+	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{SkipPaths: []string{"/healthz"}}))
 
 	// CORS: only the frontend origins from CORS_ORIGINS may call the API from a browser.
 	router.Use(cors.New(cors.Config{
@@ -100,7 +94,7 @@ func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel) (*gi
 
 	router.Use(otelgin.Middleware("api-gateway"))
 
-	// for testing LB
+	// load balancer and readiness health check
 	router.GET("/healthz", func(c *gin.Context) { c.Status(http.StatusOK) })
 
 	// base route
