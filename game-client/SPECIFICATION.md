@@ -95,6 +95,7 @@ server state and sends intents. ✅
 - [ ] Move between hub and run → FS-29KSH
 - [ ] Delve entry from the hub → FS-29KSH
 - [ ] Loadout access from the hub → FS-29KSH
+- [ ] Function NPC markers → FS-MRZH7
 - [ ] Follow a handoff to another server → FS-K2HKP
 - [x] Switch character from the hub → FS-G4VMQ
 - [x] Leave the queue from the hub → FS-G4VMQ
