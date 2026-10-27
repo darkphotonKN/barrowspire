@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata: { name: notification }
 data:
   SERVICE_VERSION: "1.0.0"
-  ENVIRONMENT: "DEVELOPMENT"
+  ENVIRONMENT: "production"
   GRPC_NOTIFICATION_ADDR: "7190"
   DB_HOST: "10.6.0.3"
   DB_PORT: "5432"

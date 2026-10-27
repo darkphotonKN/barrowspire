@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata: { name: gateway }
 data:
   SERVICE_VERSION: "1.0.0"
-  ENVIRONMENT: "DEVELOPMENT"
+  ENVIRONMENT: "production"
   PORT: "7114"
   RABBITMQ_HOST: "rabbitmq"
   RABBITMQ_PORT: "5672"

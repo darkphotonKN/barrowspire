@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata: { name: payment }
 data:
   SERVICE_VERSION: "1.0.0"
-  ENVIRONMENT: "DEVELOPMENT"
+  ENVIRONMENT: "production"
   GRPC_PAYMENT_ADDR: "7134"
   AUTH_ADDR: "auth-headless:7116"
   DB_HOST: "10.6.0.3"

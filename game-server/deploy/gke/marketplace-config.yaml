@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata: { name: marketplace }
 data:
   SERVICE_VERSION: "1.0.0"
-  ENVIRONMENT: "DEVELOPMENT"
+  ENVIRONMENT: "production"
   GRPC_MARKETPLACE_ADDR: "7127"
   # downstream gRPC peers the settlement saga and listing use cases call
   ITEMS_ADDR: "items-headless:7126"
