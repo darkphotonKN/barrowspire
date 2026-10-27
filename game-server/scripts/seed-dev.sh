@@ -4,7 +4,8 @@
 # unique_items tables) and a running local stack.
 # Creates 1 admin + 4 players (password $SEED_PASSWORD), the 77-template v1
 # catalogue (24 tier I + 44 tier II/III bases, 3 ring bases, 6 uniques with
-# their unique rows), 10,000 gold per player, and 20 owned instances.
+# their unique rows), 3 characters, 10,000 gold per player, and 20 owned
+# instances.
 # Re-runs skip what already exists; it never duplicates data.
 #
 # The instances below are hand-authored but are ones the loot roll could have
@@ -23,6 +24,7 @@ set -euo pipefail
 API=${API_URL:-http://localhost:7114/api}
 AUTH_DSN=${AUTH_DSN:-postgres://auth_service:auth_service@localhost:5432/barrowspire_auth_service_db?sslmode=disable}
 ITEMS_DSN=${ITEMS_DSN:-postgres://items_service:items_service@localhost:5432/barrowspire_items_service_db?sslmode=disable}
+CHAR_DSN=${CHAR_DSN:-postgres://character_service:character_service@localhost:5432/barrowspire_character_service_db?sslmode=disable}
 PASS=${SEED_PASSWORD:-barrowspire-dev}
 NORMAL=f8700000-0000-0000-0000-000000000001
 FABLED=f8700000-0000-0000-0000-000000000005
@@ -54,7 +56,36 @@ done
 sql "$AUTH_DSN" -c "UPDATE members SET role='admin' WHERE email='admin@barrowspire.dev'"
 signin admin@barrowspire.dev; ID_admin=$MID
 
-# 3. Catalogue (FS-4R9M9 R1-R6, R31, R62). Weapons, armor and consumables go
+# 3. Characters. SQL, not the create endpoint, so level and exp can be set.
+# Owners are looked up by email because each environment mints its own member
+# ids. An existing character with the name is re-pointed at that owner, which
+# repairs rows copied in from another environment with its member ids.
+# owner|name|class|level|exp
+while IFS='|' read -r owner name class level exp; do
+  mid=$(sql "$AUTH_DSN" -c "SELECT id FROM members WHERE email='$owner@barrowspire.dev'")
+  [ -n "$mid" ] || die "character $name: no member $owner"
+  did=$(sql "$CHAR_DSN" -v mid="$mid" -v name="$name" -v class="$class" -v level="$level" -v exp="$exp" <<'SQL'
+WITH moved AS (
+  UPDATE characters SET player_id = :'mid'::uuid, updated_at = NOW()
+   WHERE lower(name) = lower(:'name') AND deleted_at IS NULL AND player_id <> :'mid'::uuid
+  RETURNING 'moved'
+), added AS (
+  INSERT INTO characters (player_id, class_id, name, level, exp)
+  SELECT :'mid'::uuid, :'class', :'name', :'level'::int, :'exp'::bigint
+   WHERE NOT EXISTS (SELECT 1 FROM characters WHERE lower(name) = lower(:'name') AND deleted_at IS NULL)
+  RETURNING 'created'
+)
+SELECT * FROM moved UNION ALL SELECT * FROM added;
+SQL
+)
+  echo "character $name ($owner): ${did:-present}"
+done <<'EOF'
+dunstan|Gragas|warrior|1|32
+brenna|Ignis|mage|1|0
+aldric|Valence|mage|1|22
+EOF
+
+# 4. Catalogue (FS-4R9M9 R1-R6, R31, R62). Weapons, armor and consumables go
 # through the real complete-* endpoints; item_code/type_id/durability/prices
 # are required by those bodies and then discarded: dummy values. Rings have no
 # HTTP create (R9), so their `rings` row and template are SQL. Those endpoints
@@ -211,7 +242,7 @@ EOF
   echo "created $created templates; catalogue has all $CATALOGUE and $UNIQUES uniques"
 fi
 
-# 4. Gold. The wallet account is created asynchronously after signup
+# 5. Gold. The wallet account is created asynchronously after signup
 # (ADR-0014), so retry sign-in + read + deposit briefly, then fail loudly.
 # If the account never appears (member.signedup not reaching wallet-service),
 # create it directly: the endpoint derives the account from the caller.
@@ -232,7 +263,7 @@ for u in $PLAYERS; do
   printf -v "ID_$u" %s "$MID"; echo "$u funded to 10,000 gold"
 done
 
-# 5. Instances (FS-4R9M9 R63): 5 per player; every tier from Normal to Runed,
+# 6. Instances (FS-4R9M9 R63): 5 per player; every tier from Normal to Runed,
 # two uniques (the only Fabled instances), three rings. Skipped if any exist.
 owners="'$ID_aldric','$ID_brenna','$ID_corwin','$ID_dunstan'"
 n=$(sql "$ITEMS_DSN" -c "SELECT count(*) FROM item_instances WHERE owner_member_id IN ($owners)")

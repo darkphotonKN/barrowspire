@@ -5,6 +5,7 @@
 #
 #   gateway  localhost:7214
 #   game-N   localhost:566N   (matches POD_ADDR_TEMPLATE in game-config.yaml)
+#   redis    localhost:6479   (for RedisInsight; 6479 so it never collides with local redis)
 
 set -u
 
@@ -20,9 +21,10 @@ forward() {
 trap 'kill 0' EXIT
 
 forward svc/gateway 7214:7114 &
+forward svc/redis 6479:6379 &
 for i in 0 1 2; do
   forward "pod/game-$i" "566$i:5668" &
 done
 
-echo "[forward] gateway :7214, game-0 :5660, game-1 :5661, game-2 :5662 (Ctrl-C to stop)"
+echo "[forward] gateway :7214, game-0 :5660, game-1 :5661, game-2 :5662, redis :6479 (Ctrl-C to stop)"
 wait
