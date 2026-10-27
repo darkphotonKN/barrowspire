@@ -26,6 +26,7 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 	var frozen marketplaceactivity.FreezeListingOutput
 
 	// Step 0a. An outage parks; an impossibility froze nothing, so its rollback
+	// knows no item (§Req 12).
 	err := runUntilDone(ctx, in.ListingID,
 		marketplaceactivity.FreezeListingActivityName,
 		bstemporal.QueueMarketplace,
@@ -159,33 +160,35 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 		return marketplaceactivity.FreezeListingOutput{}, err
 	}
 
-	// TODO(I-NXP1W-12): Step 5 AppendLedgerTx goes here, on the ledger queue, once
-	// mints unique id for this listing of this settlement once, no matter how many times this phase forward
-	// is retried it will always generate the same id for deduping. uuidv5 to have a deterministic id generated
-	transactionID := SettlementTransactionID(frozen.ListingID)
-	// two legs, one buyer one seller, no dynamic needed for now
-	ledgerLegs := make([]ledgeractivity.Leg, 0, 2)
-	ledgerLegs = append(ledgerLegs, ledgeractivity.Leg{
-		AccountID: credited.SellerWalletAccountID,
-		Direction: "CREDIT",
-		Amount:    frozen.Amount,
-	})
-	ledgerLegs = append(ledgerLegs, ledgeractivity.Leg{
-		AccountID: committed.BuyerWalletAccountID,
-		Direction: "DEBIT",
-		Amount:    frozen.Amount,
-	})
-
-	err = runUntilDone(ctx, frozen.ListingID, ledgeractivity.AppendLedgerActivityName, bstemporal.QueueLedger, afterPivot, ledgeractivity.AppendLedgerTxInput{
-		TransactionID: transactionID,
-		Reason:        ledgeractivity.ReasonSettlement,
-		ReferenceID:   frozen.ListingID,
-		Currency:      "GOLD",
-		Legs:          ledgerLegs,
-	}, nil)
-
-	if err != nil {
-		return marketplaceactivity.FreezeListingOutput{}, err
+	// Step 5, on ledger's own queue so a ledger outage parks only this step
+	// (§Req 32). The legs are keyed by the account IDs wallet handed back in steps
+	// 1b and 3; marketplace never reads them from wallet's data (§Req 18). A
+	// duplicate append is a no-op success on the ledger side (FS-F9R7Q), so every
+	// retry and park sends the same transaction under the same derived ID.
+	//
+	// Versioned: a run that was already past step 4 when this shipped recorded
+	// MarkSold next, so it replays without step 5 rather than failing on a
+	// command its history does not hold.
+	if workflow.GetVersion(ctx, appendLedgerTxChange, workflow.DefaultVersion, 1) == 1 {
+		err = runUntilDone(ctx, frozen.ListingID,
+			ledgeractivity.AppendLedgerActivityName,
+			bstemporal.QueueLedger,
+			afterPivot,
+			ledgeractivity.AppendLedgerTxInput{
+				TransactionID: SettlementTransactionID(frozen.ListingID),
+				Reason:        ledgeractivity.ReasonSettlement,
+				Currency:      "GOLD",
+				ReferenceID:   frozen.ListingID,
+				Legs: []ledgeractivity.Leg{
+					{AccountID: committed.BuyerWalletAccountID, Amount: frozen.Amount, Direction: "DEBIT"},
+					{AccountID: credited.SellerWalletAccountID, Amount: frozen.Amount, Direction: "CREDIT"},
+				},
+			},
+			nil,
+		)
+		if err != nil {
+			return marketplaceactivity.FreezeListingOutput{}, err
+		}
 	}
 
 	// Step 6
@@ -204,11 +207,21 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 	return frozen, nil
 }
 
-var settlementNameSpace = uuid.MustParse("D8538746-9B76-448E-A4DE-277EC290F19")
+// appendLedgerTxChange is the workflow.GetVersion change ID that added step 5.
+// Like any change ID it stays in the code for as long as a run from before it
+// can still be open.
+const appendLedgerTxChange = "append-ledger-tx"
 
+// settlementNamespace and the "settlement:" + listingId name under it are a
+// permanent contract (FS-NXP1W §Req 32). The ledger dedups an append on its
+// transaction ID, so changing either one posts every open settlement twice.
+var settlementNamespace = uuid.MustParse("84942edd-022c-469d-b7f3-aa5e6c34e613")
+
+// SettlementTransactionID is the ledger transaction ID for a listing's settlement:
+// uuidv5, so every retry, park and replay mints the same ID, and not the workflow
+// or run ID, which a restarted settlement would not share.
 func SettlementTransactionID(listingID uuid.UUID) uuid.UUID {
-	// use uuidv5 for deterministic id
-	return uuid.NewSHA1(settlementNameSpace, []byte(listingID.String()))
+	return uuid.NewSHA1(settlementNamespace, []byte("settlement:"+listingID.String()))
 }
 
 func Register(w worker.Worker) {
