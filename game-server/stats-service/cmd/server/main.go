@@ -27,7 +27,7 @@ import (
 )
 
 var (
-	environment = commonhelpers.GetEnvString("ENVIRONMENT", "development")
+	environment = commonhelpers.GetEnvString("ENVIRONMENT", "production")
 
 	// observability
 	collectorEndpoint = commonhelpers.GetEnvString("COLLECTOR_ENDPOINT", "localhost:4430")
