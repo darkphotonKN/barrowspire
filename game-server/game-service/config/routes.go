@@ -3,7 +3,6 @@ package config
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"time"
@@ -45,12 +44,6 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 	// raw query, and the WebSocket connect carries the bearer token in it
 	router := gin.New()
 	router.Use(AccessLogger(gin.DefaultWriter), gin.Recovery())
-
-	// NOTE: debugging middleware
-	router.Use(func(c *gin.Context) {
-		fmt.Println("Incoming request to:", c.Request.Method, c.Request.URL.Path, "from", c.Request.Host)
-		c.Next()
-	})
 
 	// CORS for the game service's client surface, including the WebSocket handshake
 	router.Use(GameCORS(
@@ -98,6 +91,11 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 
 	// -- routes --
 	router.GET("/game/ws", auth.WSAuthMiddleware(authClient), server.HandleWebSocketConnection)
+	// the same handler under /<pod name>/, for a path-routing ingress that sends
+	// each pod's prefix to that pod and cannot rewrite the path
+	if pod.Name != "" {
+		router.GET("/"+pod.Name+"/game/ws", auth.WSAuthMiddleware(authClient), server.HandleWebSocketConnection)
+	}
 
 	// --- HEALTH CHECK ---
 	api.GET("/health", func(c *gin.Context) {

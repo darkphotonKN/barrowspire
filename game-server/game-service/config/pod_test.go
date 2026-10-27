@@ -48,8 +48,37 @@ func TestLoadPod_ID_IsUniquePerProcessStart(t *testing.T) {
 }
 
 func TestLoadPod_Addr_IsStableAcrossStarts(t *testing.T) {
-	t.Setenv("POD_ADDR", "ws://game-0.game:5668/game/ws")
+	t.Setenv("POD_NAME", "game-0")
+	t.Setenv("POD_ADDR_TEMPLATE", "ws://{pod}.game:{port}/game/ws")
 
 	assert.Equal(t, LoadPod(":5668").Addr, LoadPod(":5668").Addr)
 	assert.Equal(t, "ws://game-0.game:5668/game/ws", LoadPod(":5668").Addr)
+}
+
+func TestLoadPod_Addr_FromTemplate(t *testing.T) {
+	tests := []struct {
+		name     string
+		podName  string
+		template string
+		want     string
+	}{
+		{"default template follows the port", "game-1", "", "ws://localhost:5668/game/ws"},
+		{"pod name and port", "game-1", "wss://play.example/{pod}/game/ws", "wss://play.example/game-1/game/ws"},
+		{"ordinal from the trailing number", "game-12", "wss://g{ordinal}.example:{port}/game/ws", "wss://g12.example:5668/game/ws"},
+		{"no trailing number is ordinal 0", "laptop", "wss://g{ordinal}.example/game/ws", "wss://g0.example/game/ws"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("POD_NAME", tt.podName)
+			if tt.template != "" {
+				t.Setenv("POD_ADDR_TEMPLATE", tt.template)
+			}
+
+			pod := LoadPod(":5668")
+
+			assert.Equal(t, tt.want, pod.Addr)
+			assert.Equal(t, tt.podName, pod.Name)
+		})
+	}
 }

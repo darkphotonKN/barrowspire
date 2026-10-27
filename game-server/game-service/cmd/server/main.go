@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	_ "net/http/pprof"
 	"os/signal"
 	"runtime"
 	"sync"
@@ -63,7 +62,7 @@ func main() {
 
 	// --- pod identity ---
 	pod := config.LoadPod(gamePort)
-	slog.Info("Pod identity", "pod_id", pod.ID, "pod_addr", pod.Addr, "pod_id_generated", pod.Generated)
+	slog.Info("Pod identity", "pod_id", pod.ID, "pod_name", pod.Name, "pod_addr", pod.Addr, "pod_id_generated", pod.Generated)
 
 	// --- database setup (runs migrations; aborts startup on failure) ---
 	db := config.InitDB()
