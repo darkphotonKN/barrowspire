@@ -34,10 +34,12 @@ Herbwife's quarter off the Spirewarden's ground.
    brass body tint. Only its marker changes; the tint is not a marker.
 7. **Name size.** A function NPC's nameplate is 13 px against the ambient 12 px, so the name
    carries a step more weight under the sigil. Body serif, as every marker.
-8. **The Herbwife's quarter moves.** The Herbwife's wander region moves from
+8. **The Herbwife's quarter moves; the Cottar's narrows.** The Herbwife's wander region moves from
    x 1120, y 540, w 260, h 220 to **x 1260, y 540, w 240, h 220**, in the server's hub map data
    (`hub_map.go`, `hubResidents`) and identically in the client's mirror
-   (`HUB_KEEP_OUT.wander` in `hubKeepOut.ts`). The Spirewarden and Quartermaster keep their
+   (`HUB_KEEP_OUT.wander` in `hubKeepOut.ts`). The Cottar's quarter narrows from w 260 to
+   **w 180** (x 560, y 560, h 200 unchanged), which ended 40 px from the Quartermaster: found by
+   requirement 9's test while implementing. The Spirewarden and Quartermaster keep their
    positions.
 9. **Clearance rule.** No ambient NPC's wander region comes within a function NPC's talk range
    (`NPCInteractRange`, 80) plus a 40 px margin of that NPC's position. Tested on the server's
@@ -86,8 +88,8 @@ Herbwife's quarter off the Spirewarden's ground.
 - [ ] Ambient NPC nameplates are unchanged (vellum, 12 px) and carry no sigil.
 - [ ] `markerFunction` is in `MARKER_INKS` and passes the marker contrast test.
 - [ ] A function NPC with no baked sheet keeps its brass body tint and gets the new marker.
-- [ ] The Herbwife's quarter is x 1260, y 540, w 240, h 220 in `hub_map.go` and in
-      `HUB_KEEP_OUT.wander`.
+- [ ] The Herbwife's quarter is x 1260, y 540, w 240, h 220, and the Cottar's x 560, y 560,
+      w 180, h 200, in `hub_map.go` and in `HUB_KEEP_OUT.wander`.
 - [ ] A server test fails if any `hubResidents` region comes within 120 px (80 + 40) of any
       `hubNPCs` position.
 - [ ] A client test fails if any `HUB_KEEP_OUT.wander` region comes within 120 px of any

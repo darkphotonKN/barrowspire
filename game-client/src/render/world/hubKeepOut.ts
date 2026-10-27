@@ -49,8 +49,8 @@ export const HUB_KEEP_OUT = {
   hearth: { at: { x: HUB_HEARTH[0], y: HUB_HEARTH[1] }, clearance: 80 },
   /** K6: the residents' quarters. */
   wander: [
-    { name: "Cottar", x: 560, y: 560, width: 260, height: 200 },
-    { name: "Herbwife", x: 1120, y: 540, width: 260, height: 220 },
+    { name: "Cottar", x: 560, y: 560, width: 180, height: 200 },
+    { name: "Herbwife", x: 1260, y: 540, width: 240, height: 220 },
     { name: "Woodcutter", x: 700, y: 820, width: 300, height: 140 },
     { name: "Bellringer", x: 1180, y: 820, width: 280, height: 140 },
   ],

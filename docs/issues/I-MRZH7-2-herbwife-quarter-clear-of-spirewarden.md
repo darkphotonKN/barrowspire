@@ -1,6 +1,6 @@
 ---
 id: I-MRZH7-2
-status: open
+status: done
 implements: FS-MRZH7
 blocked_by: []
 labels: [ready-for-agent]
@@ -19,6 +19,7 @@ Map data and tests only: pure labour on the server's human lane, split out as an
 ## Acceptance Criteria
 - [ ] `hubResidents` Herbwife region is `{X: 1260, Y: 540, W: 240, H: 220}`; the Spirewarden and Quartermaster are unmoved.
 - [ ] `HUB_KEEP_OUT.wander` Herbwife entry is `{ x: 1260, y: 540, width: 240, height: 220 }`.
+- [ ] The Cottar's quarter narrows to w 180 on both sides: the clearance test found it 40 px from the Quartermaster.
 - [ ] A Go test fails if any `hubResidents` region comes within `NPCInteractRange + 40` of any `hubNPCs` position.
 - [ ] A client test fails if any `HUB_KEEP_OUT.wander` region comes within 120 px of any `HUB_KEEP_OUT.npcs.at` position.
 - [ ] Existing hub keep-out and dressing tests pass with only the moved quarter's value updated.

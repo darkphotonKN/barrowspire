@@ -67,12 +67,28 @@ describe("the hub keep-out constants (FS-KYPQ9 §A.3)", () => {
     expect(HUB_KEEP_OUT.npcs.clearance).toBe(80);
     expect(HUB_KEEP_OUT.hearth).toEqual({ at: { x: 1000, y: 640 }, clearance: 80 });
     expect(HUB_KEEP_OUT.wander).toEqual([
-      { name: "Cottar", x: 560, y: 560, width: 260, height: 200 },
-      { name: "Herbwife", x: 1120, y: 540, width: 260, height: 220 },
+      { name: "Cottar", x: 560, y: 560, width: 180, height: 200 },
+      { name: "Herbwife", x: 1260, y: 540, width: 240, height: 220 },
       { name: "Woodcutter", x: 700, y: 820, width: 300, height: 140 },
       { name: "Bellringer", x: 1180, y: 820, width: 280, height: 140 },
     ]);
   });
+});
+
+describe("residents keep clear of function NPCs (FS-MRZH7 §Requirements 9)", () => {
+  // a function NPC's talk range plus a margin, so nobody wanders onto who a delver came to see
+  const CLEARANCE = HUB_KEEP_OUT.npcs.clearance + 40;
+
+  it.each(HUB_KEEP_OUT.wander.map((q) => [q.name, q] as const))(
+    "should keep the %s's quarter out of every function NPC's talk range",
+    (_, q) => {
+      for (const at of HUB_KEEP_OUT.npcs.at) {
+        const dx = Math.max(q.x - at.x, 0, at.x - (q.x + q.width));
+        const dy = Math.max(q.y - at.y, 0, at.y - (q.y + q.height));
+        expect(Math.hypot(dx, dy)).toBeGreaterThanOrEqual(CLEARANCE);
+      }
+    },
+  );
 });
 
 describe("every hub prop clears K1–K7 (FS-KYPQ9 §A.4, §A.5)", () => {
