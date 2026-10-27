@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/itemsactivity"
+	"github.com/darkphotonKN/barrowspire-server/common/api/activity/ledgeractivity"
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/walletactivity"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
@@ -17,6 +18,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/workflow"
 )
 
 // noBidsArm records what the no-bids arm's fakes were asked to do, in order, so a
@@ -174,7 +176,15 @@ type freezeArm struct {
 	creditIns       []walletactivity.CreditSellerInput
 	creditRunID     string
 	transferIn      itemsactivity.TransferItemInput
-	markSoldIn      marketplaceactivity.MarkSoldInput
+	// the wallet account IDs CommitHold and CreditSeller hand back, which step 5
+	// must pass to the ledger legs as they are (§Req 18)
+	buyerAccountID  uuid.UUID
+	sellerAccountID uuid.UUID
+	// ledgerIns records every AppendLedgerTx attempt; ledgerErr fails each one
+	// until cleared, standing in for the ledger being down
+	ledgerIns  []ledgeractivity.AppendLedgerTxInput
+	ledgerErr  error
+	markSoldIn marketplaceactivity.MarkSoldInput
 }
 
 func (a *freezeArm) record(ctx context.Context, name string) {
@@ -241,16 +251,23 @@ func registerPivotArm(env *testsuite.TestWorkflowEnvironment, arm *freezeArm) {
 	}, activity.RegisterOptions{Name: marketplaceactivity.SetWinningBidActivityName})
 	env.RegisterActivityWithOptions(func(ctx context.Context, in walletactivity.CommitHoldInput) (walletactivity.CommitHoldOutput, error) {
 		arm.record(ctx, walletactivity.CommitHoldActivityName)
-		return walletactivity.CommitHoldOutput{}, arm.commitHoldErr
+		return walletactivity.CommitHoldOutput{BuyerWalletAccountID: arm.buyerAccountID}, arm.commitHoldErr
 	}, activity.RegisterOptions{Name: walletactivity.CommitHoldActivityName})
 }
 
 // registerTailArm stands fakes in for the steps past the pivot, on top of
-// registerPivotArm. Step 5 AppendLedgerTx is not registered: the ledger side does
-// not exist yet, and the workflow must not schedule it.
+// registerPivotArm, including step 5 AppendLedgerTx under ledger's contract name.
+// The real activity and its no-op-on-duplicate behaviour belong to ledger-service
+// (FS-F9R7Q); this fake only records what the saga asked for.
 func registerTailArm(env *testsuite.TestWorkflowEnvironment, arm *freezeArm) {
 	if arm.tailErrs == nil {
 		arm.tailErrs = map[string][]error{}
+	}
+	if arm.buyerAccountID == uuid.Nil {
+		arm.buyerAccountID = uuid.New()
+	}
+	if arm.sellerAccountID == uuid.Nil {
+		arm.sellerAccountID = uuid.New()
 	}
 	env.RegisterActivityWithOptions(func(ctx context.Context, in walletactivity.ReleaseLosingHoldsInput) (walletactivity.ReleaseLosingHoldsOutput, error) {
 		arm.record(ctx, walletactivity.ReleaseLosingHoldsActivityName)
@@ -261,13 +278,21 @@ func registerTailArm(env *testsuite.TestWorkflowEnvironment, arm *freezeArm) {
 		arm.record(ctx, walletactivity.CreditSellerActivityName)
 		arm.creditIns = append(arm.creditIns, in)
 		arm.creditRunID = activity.GetInfo(ctx).WorkflowExecution.ID
-		return walletactivity.CreditSellerOutput{SellerWalletAccountID: uuid.New()}, arm.tailErr(walletactivity.CreditSellerActivityName)
+		return walletactivity.CreditSellerOutput{SellerWalletAccountID: arm.sellerAccountID}, arm.tailErr(walletactivity.CreditSellerActivityName)
 	}, activity.RegisterOptions{Name: walletactivity.CreditSellerActivityName})
 	env.RegisterActivityWithOptions(func(ctx context.Context, in itemsactivity.TransferItemInput) (itemsactivity.TransferItemOutput, error) {
 		arm.record(ctx, itemsactivity.TransferItemActivityName)
 		arm.transferIn = in
 		return itemsactivity.TransferItemOutput{}, arm.tailErr(itemsactivity.TransferItemActivityName)
 	}, activity.RegisterOptions{Name: itemsactivity.TransferItemActivityName})
+	env.RegisterActivityWithOptions(func(ctx context.Context, in ledgeractivity.AppendLedgerTxInput) (ledgeractivity.AppendLedgerTxOutput, error) {
+		arm.record(ctx, ledgeractivity.AppendLedgerActivityName)
+		arm.ledgerIns = append(arm.ledgerIns, in)
+		if arm.ledgerErr != nil {
+			return ledgeractivity.AppendLedgerTxOutput{}, arm.ledgerErr
+		}
+		return ledgeractivity.AppendLedgerTxOutput{Applied: true}, arm.tailErr(ledgeractivity.AppendLedgerActivityName)
+	}, activity.RegisterOptions{Name: ledgeractivity.AppendLedgerActivityName})
 	env.RegisterActivityWithOptions(func(ctx context.Context, in marketplaceactivity.MarkSoldInput) error {
 		arm.record(ctx, marketplaceactivity.MarkSoldActivityName)
 		arm.markSoldIn = in
@@ -620,9 +645,8 @@ func TestWorkflow_FrozenWithoutBidIDs_RollsBackReleasingNothing(t *testing.T) {
 	assert.Contains(t, arm.calls, itemsactivity.UnfreezeItemActivityName, "the rollback still finishes")
 }
 
-// Past the pivot the tail runs 2 → 3 → 4 → 6, each on its owner's queue, and the
-// settlement completes (FS-NXP1W §Req 6, 29–33). Step 5 AppendLedgerTx is not
-// wired yet: no ledger activity is registered, so scheduling it would fail the run.
+// Past the pivot the tail runs 2 → 3 → 4 → 5 → 6, each on its owner's queue, and
+// the settlement completes (FS-NXP1W §Req 6, 29–33).
 func TestWorkflow_HasWinner_RunsTheTailInOrderAndCompletes(t *testing.T) {
 	listingID, itemID, sellerID := uuid.New(), uuid.New(), uuid.New()
 	frozen := hasWinner(listingID, itemID, sellerID)
@@ -646,6 +670,7 @@ func TestWorkflow_HasWinner_RunsTheTailInOrderAndCompletes(t *testing.T) {
 		walletactivity.ReleaseLosingHoldsActivityName,
 		walletactivity.CreditSellerActivityName,
 		itemsactivity.TransferItemActivityName,
+		ledgeractivity.AppendLedgerActivityName,
 		marketplaceactivity.MarkSoldActivityName,
 	}, arm.calls)
 
@@ -674,6 +699,21 @@ func TestWorkflow_HasWinner_RunsTheTailInOrderAndCompletes(t *testing.T) {
 	}, arm.transferIn)
 	assert.Equal(t, bstemporal.QueueItems.String(), arm.queues[itemsactivity.TransferItemActivityName])
 
+	// 5: two balanced legs keyed by the account IDs wallet handed back (§Req 18,
+	// 32), under the derived transaction ID, on ledger's own queue
+	require.Len(t, arm.ledgerIns, 1)
+	assert.Equal(t, ledgeractivity.AppendLedgerTxInput{
+		TransactionID: SettlementTransactionID(listingID),
+		Reason:        ledgeractivity.ReasonSettlement,
+		Currency:      "GOLD",
+		ReferenceID:   listingID,
+		Legs: []ledgeractivity.Leg{
+			{AccountID: arm.buyerAccountID, Amount: frozen.Amount, Direction: "DEBIT"},
+			{AccountID: arm.sellerAccountID, Amount: frozen.Amount, Direction: "CREDIT"},
+		},
+	}, arm.ledgerIns[0])
+	assert.Equal(t, bstemporal.QueueLedger.String(), arm.queues[ledgeractivity.AppendLedgerActivityName])
+
 	// 6
 	assert.Equal(t, marketplaceactivity.MarkSoldInput{ListingID: listingID}, arm.markSoldIn)
 	assert.Equal(t, bstemporal.QueueMarketplace.String(), arm.queues[marketplaceactivity.MarkSoldActivityName])
@@ -690,6 +730,7 @@ func TestWorkflow_TailImpossible_ParksAndNeverRollsBack(t *testing.T) {
 		walletactivity.ReleaseLosingHoldsActivityName,
 		walletactivity.CreditSellerActivityName,
 		itemsactivity.TransferItemActivityName,
+		ledgeractivity.AppendLedgerActivityName,
 		marketplaceactivity.MarkSoldActivityName,
 	} {
 		t.Run(step, func(t *testing.T) {
@@ -739,6 +780,61 @@ func TestWorkflow_CreditSellerParks_RetriesWithTheSameKey(t *testing.T) {
 	assert.Equal(t, arm.creditIns[0].IdempotencyKey, arm.creditIns[1].IdempotencyKey)
 }
 
+// Ledger down past the cap (FS-NXP1W Edge States "Ledger down"): step 5
+// escalates and parks, and once the ledger is back the settlement completes.
+// Every attempt, before and after the park, carries the same transaction ID, so
+// the ledger posts it once however many times it was sent.
+func TestWorkflow_LedgerDownParks_RetriesWithTheSameTransactionID(t *testing.T) {
+	listingID := uuid.New()
+	env, noBids := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+		return hasWinner(listingID, uuid.New(), uuid.New()), nil
+	})
+	arm := &freezeArm{ledgerErr: errors.New("dial tcp: connection refused")}
+	registerFreezeArm(env, arm)
+	registerPivotArm(env, arm)
+	registerTailArm(env, arm)
+	// the ledger recovers while parked
+	env.RegisterDelayedCallback(func() { arm.ledgerErr = nil }, stepCap+reparkInterval/2)
+
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerAcceptBid})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Len(t, noBids.raised, 1, "the outage escalated once")
+	assert.Equal(t, ledgeractivity.AppendLedgerActivityName, noBids.raised[0].Step)
+	assert.Len(t, noBids.resolved, 1, "and was resolved once step 5 got through")
+	assert.Equal(t, 1, countOf(arm.calls, itemsactivity.TransferItemActivityName), "steps before it do not run again")
+	assert.Equal(t, marketplaceactivity.MarkSoldActivityName, arm.calls[len(arm.calls)-1], "and the settlement finishes")
+
+	require.Greater(t, len(arm.ledgerIns), 1, "step 5 ran again after the park")
+	for _, in := range arm.ledgerIns {
+		assert.Equal(t, arm.ledgerIns[0], in, "every attempt sends the same transaction")
+	}
+	assert.Equal(t, SettlementTransactionID(listingID), arm.ledgerIns[0].TransactionID)
+}
+
+// A run that was already past step 4 when step 5 shipped has no AppendLedgerTx in
+// its history, so on replay it must go straight to MarkSold rather than fail with
+// a nondeterminism error (FS-NXP1W Edge States "Workflow code deployed").
+func TestWorkflow_RunFromBeforeStepFive_SkipsTheLedgerAppend(t *testing.T) {
+	listingID := uuid.New()
+	env, _ := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+		return hasWinner(listingID, uuid.New(), uuid.New()), nil
+	})
+	arm := &freezeArm{}
+	registerFreezeArm(env, arm)
+	registerPivotArm(env, arm)
+	registerTailArm(env, arm)
+	env.OnGetVersion(appendLedgerTxChange, workflow.DefaultVersion, 1).Return(workflow.DefaultVersion)
+
+	env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerAcceptBid})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	assert.NotContains(t, arm.calls, ledgeractivity.AppendLedgerActivityName)
+	assert.Equal(t, marketplaceactivity.MarkSoldActivityName, arm.calls[len(arm.calls)-1])
+}
+
 func countOf(calls []string, name string) int {
 	n := 0
 	for _, c := range calls {
@@ -747,4 +843,15 @@ func countOf(calls []string, name string) int {
 		}
 	}
 	return n
+}
+
+// The settlement transaction ID is a permanent contract (FS-NXP1W §Req 32): the
+// ledger dedups on it, so a changed namespace or derivation posts every open
+// settlement a second time. The expected value is uuidv5 computed outside Go.
+func TestSettlementTransactionID_IsPinned(t *testing.T) {
+	assert.Equal(t, uuid.MustParse("84942edd-022c-469d-b7f3-aa5e6c34e613"), settlementNamespace, "the namespace never changes")
+
+	listingID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	assert.Equal(t, uuid.MustParse("55aaea4a-0686-5271-9a3e-3fd1a71d6a05"), SettlementTransactionID(listingID),
+		`uuidv5(namespace, "settlement:" + listingId)`)
 }

@@ -1,9 +1,9 @@
 ---
 id: I-NXP1W-12
-status: open
+status: done
 implements: FS-NXP1W
 blocked_by: [I-NXP1W-7, I-NXP1W-9]
-labels: [blocked]
+labels: []
 title: "FS-NXP1W slice 12: step 5 AppendLedgerTx (saga side) — forward and roll forward"
 ---
 Implements FS-NXP1W §Requirements 18, 32, 38
