@@ -20,7 +20,7 @@ spec:
         - name: auth
           # Which build of the code runs. KinD: the image you built and `kind load`ed.
           # GKE: registry path plus version tag. Changing it triggers a rolling update.
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/auth:fe192a2
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/auth:4ca1793
           # The port net.Listen(":"+port) opens; must match GRPC_AUTH_ADDR in the ConfigMap.
           # The name lets other fields say `grpc` instead of repeating 7116.
           ports: [{ containerPort: 7116, name: grpc }]

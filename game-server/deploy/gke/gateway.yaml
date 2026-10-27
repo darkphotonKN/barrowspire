@@ -9,7 +9,7 @@ spec:
     spec:
       containers:
         - name: gateway
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/gateway:fe192a2
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/gateway:4ca1793
           ports: [{ containerPort: 7114, name: http }]
           envFrom:
             - configMapRef: { name: gateway }
