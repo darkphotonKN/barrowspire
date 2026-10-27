@@ -3,14 +3,14 @@ kind: Deployment
 metadata: { name: items }
 spec:
   # 1: items migrates on boot, so several pods would race on the same migration
-  replicas: 3 
+  replicas: 1
   selector: { matchLabels: { app: items } }
   template:
     metadata: { labels: { app: items } }
     spec:
       containers:
         - name: items
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/items:b66252f
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/items:fe192a2
           ports:
             - { containerPort: 7126, name: grpc }
             - { containerPort: 8197, name: metrics }

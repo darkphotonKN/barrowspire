@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: marketplace
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/marketplace:1b76cc7
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/marketplace:fe192a2
           ports:
             - { containerPort: 7127, name: grpc }
           envFrom:

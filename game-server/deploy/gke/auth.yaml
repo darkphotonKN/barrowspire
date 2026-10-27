@@ -9,7 +9,7 @@ metadata: { name: auth }
 spec:
   # How many copies run. Above 1, gRPC clients pin to one pod (ADR-0022),
   # so scaling needs a headless Service plus round_robin.
-  replicas: 3
+  replicas: 1
   # The label link: this Deployment owns the pods carrying app: auth.
   # Must match template.metadata.labels below or the API rejects it.
   selector: { matchLabels: { app: auth } }
@@ -20,7 +20,7 @@ spec:
         - name: auth
           # Which build of the code runs. KinD: the image you built and `kind load`ed.
           # GKE: registry path plus version tag. Changing it triggers a rolling update.
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/auth:947f603
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/auth:fe192a2
           # The port net.Listen(":"+port) opens; must match GRPC_AUTH_ADDR in the ConfigMap.
           # The name lets other fields say `grpc` instead of repeating 7116.
           ports: [{ containerPort: 7116, name: grpc }]

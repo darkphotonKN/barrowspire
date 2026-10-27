@@ -11,7 +11,7 @@ spec:
       containers:
         - name: stats
           # 04c2273 predates 0624f5e (graceful SIGTERM shutdown); rebuild to pick it up
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/stats:b70ca33
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/stats:fe192a2
           ports:
             - { containerPort: 7124, name: grpc }
             - { containerPort: 8196, name: metrics }

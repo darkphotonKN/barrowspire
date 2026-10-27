@@ -6,7 +6,7 @@ data:
   ENVIRONMENT: "DEVELOPMENT"
   GRPC_ITEMS_ADDR: "7126"
   AUTH_ADDR: "auth-headless:7116"
-  DB_HOST: "postgres"
+  DB_HOST: "10.6.0.3"
   DB_PORT: "5432"
   DB_NAME: "barrowspire_items_service_db"
   RABBITMQ_HOST: "rabbitmq"

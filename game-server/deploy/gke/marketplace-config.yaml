@@ -8,7 +8,7 @@ data:
   # downstream gRPC peers the settlement saga and listing use cases call
   ITEMS_ADDR: "items-headless:7126"
   WALLET_ADDR: "wallet-headless:7128"
-  DB_HOST: "postgres"
+  DB_HOST: "10.6.0.3"
   DB_PORT: "5432"
   DB_NAME: "barrowspire_marketplace_service_db"
   RABBITMQ_HOST: "rabbitmq"
