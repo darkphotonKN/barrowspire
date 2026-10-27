@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"strings"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/config"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
@@ -26,6 +27,9 @@ var (
 
 	// http
 	httpAddr = commonhelpers.GetEnvString("PORT", "7114")
+
+	// browser origins allowed by CORS, comma separated (the frontend URLs)
+	corsOrigins = commonhelpers.GetEnvString("CORS_ORIGINS", "http://localhost:3938,http://localhost:3000")
 
 	// downstream gRPC services ("host:port")
 	downstreams = config.Downstreams{
@@ -82,7 +86,7 @@ func main() {
 	}()
 
 	// --- router setup ---
-	router, closeDownstreams, err := config.SetupRouter(downstreams, ch)
+	router, closeDownstreams, err := config.SetupRouter(downstreams, splitOrigins(corsOrigins), ch)
 	if err != nil {
 		log.Fatalf("Failed to set up router: %v", err)
 	}
@@ -96,4 +100,15 @@ func main() {
 	if err := router.Run(fmt.Sprintf(":%s", httpAddr)); err != nil {
 		log.Fatal("Failed to start server")
 	}
+}
+
+// splitOrigins turns "a, b,c" into ["a" "b" "c"], dropping empty entries.
+func splitOrigins(raw string) []string {
+	var origins []string
+	for _, o := range strings.Split(raw, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			origins = append(origins, o)
+		}
+	}
+	return origins
 }

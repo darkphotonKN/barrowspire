@@ -14,21 +14,21 @@ vi.mock("phaser", async () => {
     events = new EventEmitter();
     constructor(_config: unknown) {}
   }
-  return {
-    default: {
-      Scene,
-      Scenes: { Events: { SHUTDOWN: "shutdown", DESTROY: "destroy" } },
-      Animations: { Events: { ANIMATION_COMPLETE: "animationcomplete" } },
-      GameObjects: { Sprite: class {} },
-      BlendModes: { NORMAL: 0, ADD: 1, MULTIPLY: 2 },
-      // interact range is measured between world positions
-      Math: {
-        Distance: {
-          Between: (x1: number, y1: number, x2: number, y2: number) => Math.hypot(x2 - x1, y2 - y1),
-        },
+  // `import * as Phaser` reads the module namespace, so the stand-in is the module itself.
+  const phaser = {
+    Scene,
+    Scenes: { Events: { SHUTDOWN: "shutdown", DESTROY: "destroy" } },
+    Animations: { Events: { ANIMATION_COMPLETE: "animationcomplete" } },
+    GameObjects: { Sprite: class {} },
+    BlendModes: { NORMAL: 0, ADD: 1, MULTIPLY: 2 },
+    // interact range is measured between world positions
+    Math: {
+      Distance: {
+        Between: (x1: number, y1: number, x2: number, y2: number) => Math.hypot(x2 - x1, y2 - y1),
       },
     },
   };
+  return { ...phaser, default: phaser };
 });
 
 const { BarrowspireScene } = await import("./BarrowspireScene");

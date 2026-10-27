@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { palette, toCss, CANVAS_FONT } from "@/utils/canvasPalette";
 import { CLASS_LORE, ClassKey } from "@/data/classLore";
 import { useGameStore } from "@/stores/gameStore";

@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   public id: string; // ✅ 自訂屬性：資料庫 ID

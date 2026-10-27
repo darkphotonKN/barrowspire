@@ -8,7 +8,7 @@
  * under one key, so a scene restart on reconnect reuses it rather than allocating another.
  */
 
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import type { Point } from "@/render/iso";
 import {
   DELVER_TORCH,

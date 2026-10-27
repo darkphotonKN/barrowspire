@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 
 /**
  * Barrow dust. Replaces the old starfield — faint motes of dust and stray

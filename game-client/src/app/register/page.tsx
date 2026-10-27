@@ -180,9 +180,9 @@ export default function RegisterPage() {
         {/* 底部連結 */}
         <div className="login-footer">
           <p>
-            Already registered?{" "}
+            Already sworn?{" "}
             <a href="/login" className="login-link">
-              Sign In
+              Enter
             </a>
           </p>
         </div>

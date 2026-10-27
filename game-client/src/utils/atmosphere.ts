@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { palette, rgba } from "@/utils/canvasPalette";
 import {
   DUST_DEPTH,

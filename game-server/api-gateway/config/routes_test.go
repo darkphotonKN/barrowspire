@@ -21,7 +21,7 @@ func TestSetupRouter_CharacterRoutesAreTypedOnly(t *testing.T) {
 	r, closeDownstreams, err := SetupRouter(Downstreams{
 		Auth: unused, Stats: unused, Notification: unused, Payment: unused, Items: unused,
 		Ledger: unused, Marketplace: unused, Wallet: unused, Character: unused,
-	}, nil)
+	}, []string{"http://localhost:3938"}, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = closeDownstreams() })
 

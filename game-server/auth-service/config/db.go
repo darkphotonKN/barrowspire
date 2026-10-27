@@ -41,8 +41,9 @@ func InitDB() *sqlx.DB {
 		log.Fatalf("Failed to connect to the database: %v", err)
 	}
 
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(10)
+	// small pool: Cloud SQL db-f1-micro allows 25 connections for every service and replica combined
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(5 * time.Minute)
 

@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: wallet }
+spec:
+  # 1: wallet migrates on boot and runs an outbox worker; several pods would
+  # race on the migration and duplicate-publish outbox rows (known, deferred).
+  replicas: 1
+  selector: { matchLabels: { app: wallet } }
+  template:
+    metadata: { labels: { app: wallet } }
+    spec:
+      containers:
+        - name: wallet
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/wallet:1b76cc7
+          ports:
+            - { containerPort: 7128, name: grpc }
+          envFrom:
+            - configMapRef: { name: wallet }
+            - secretRef: { name: wallet }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          # No probes yet: wallet does not register a gRPC health service.
+---
+apiVersion: v1
+kind: Service
+metadata: { name: wallet }
+spec:
+  selector: { app: wallet }
+  ports: [{ port: 7128, targetPort: grpc }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: wallet-headless }
+spec:
+  clusterIP: None
+  selector: { app: wallet }
+  ports: [{ port: 7128, targetPort: grpc }]

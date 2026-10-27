@@ -28,7 +28,7 @@ import { useWithdrawBid } from "@/marketplace/useWithdrawBid";
 import { useAuthStore } from "@/stores/authStore";
 import { apiClient, publicApi } from "@/utils/api";
 
-const EMPTY = "The coffers are bare — no relics are up for auction.";
+const EMPTY = "The coffers are bare. No relics are up for auction.";
 const NONE_MATCH = "No relics loaded so far match these filters.";
 
 // The reads the page pages through: the Bazaar signed in or out, and the delver's own listings

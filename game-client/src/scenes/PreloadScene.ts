@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { preloadMenuArt } from "@/render/art/menuFigure";

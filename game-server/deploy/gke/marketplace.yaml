@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: marketplace }
+spec:
+  # 1: the outbox worker and the expiry poller run in-process, so a second
+  # replica would publish and expire twice; marketplace also migrates on boot.
+  replicas: 1
+  selector: { matchLabels: { app: marketplace } }
+  template:
+    metadata: { labels: { app: marketplace } }
+    spec:
+      containers:
+        - name: marketplace
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/marketplace:1b76cc7
+          ports:
+            - { containerPort: 7127, name: grpc }
+          envFrom:
+            - configMapRef: { name: marketplace }
+            - secretRef: { name: marketplace }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          # No probes yet: marketplace does not register a gRPC health service.
+---
+apiVersion: v1
+kind: Service
+metadata: { name: marketplace }
+spec:
+  selector: { app: marketplace }
+  ports: [{ port: 7127, targetPort: grpc }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: marketplace-headless }
+spec:
+  clusterIP: None
+  selector: { app: marketplace }
+  ports: [{ port: 7127, targetPort: grpc }]

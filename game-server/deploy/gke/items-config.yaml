@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: items }
+data:
+  SERVICE_VERSION: "1.0.0"
+  ENVIRONMENT: "DEVELOPMENT"
+  GRPC_ITEMS_ADDR: "7126"
+  AUTH_ADDR: "auth-headless:7116"
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_NAME: "barrowspire_items_service_db"
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5672"
+  TEMPORAL_HOST_PORT: "quickstart-barrowspire-f2c20954.xjqvw.tmprl.cloud:7233"
+  TEMPORAL_NAMESPACE: "quickstart-barrowspire-f2c20954.xjqvw"
+  OTEL_ENABLED: "false"
+  GOMEMLIMIT: "230MiB"
+  

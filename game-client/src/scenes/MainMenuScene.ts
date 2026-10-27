@@ -2,7 +2,7 @@ import { ActionType } from "@/assets/types/client";
 import { socketManager, ConnectionStatus } from "@/utils/class/SocketManager";
 import { useGameStore } from "@/stores/gameStore";
 import { enterHubPayload, LEDGER_UNREACHABLE } from "@/characters/entry";
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { CANVAS_FONT, mix, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { CLASS_LORE } from "@/data/classLore";
 import { registerArt } from "@/render/art/phaser";

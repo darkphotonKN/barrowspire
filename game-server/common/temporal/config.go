@@ -40,6 +40,10 @@ type Config struct {
 	Namespace string
 	TaskQueue TaskQueue
 
+	// APIKey authenticates to Temporal Cloud and switches the connection to TLS.
+	// Empty means a local or in-cluster server, which takes neither.
+	APIKey string
+
 	// DialMaxAttempts bounds startup retry. Temporal's schema setup takes tens
 	// of seconds on a cold volume, so an eager worker without this will
 	// crash-loop and look like a config error when it is only impatience.
@@ -51,6 +55,7 @@ type Config struct {
 const (
 	EnvHostPort  = "TEMPORAL_HOST_PORT"
 	EnvNamespace = "TEMPORAL_NAMESPACE"
+	EnvAPIKey    = "TEMPORAL_API_KEY"
 
 	DefaultHostPort  = "localhost:7233"
 	DefaultNamespace = "barrowspire"
@@ -68,6 +73,7 @@ func LoadConfig(queue TaskQueue) (Config, error) {
 		HostPort:        envOr(EnvHostPort, DefaultHostPort),
 		Namespace:       envOr(EnvNamespace, DefaultNamespace),
 		TaskQueue:       queue,
+		APIKey:          os.Getenv(EnvAPIKey),
 		DialMaxAttempts: envIntOr("TEMPORAL_DIAL_MAX_ATTEMPTS", 30),
 		DialBackoffMin:  time.Second,
 		DialBackoffMax:  15 * time.Second,
