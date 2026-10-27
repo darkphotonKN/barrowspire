@@ -5,3 +5,4 @@ export {
   markerBase,
   type StandingSprite,
 } from "./markers";
+export { NPC_NAME_PX, isFunctionNPC, sigilPoints } from "./npc";

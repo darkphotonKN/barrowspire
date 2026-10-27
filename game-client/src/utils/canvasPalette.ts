@@ -186,6 +186,11 @@ export const palette = {
   /** Another delver (FS-77AB6 req 40): co-op, so the ally channel, arcane green. */
   markerAlly: BARROW_HEX.arcane,
   markerHub: BARROW_HEX.vellum,
+  /**
+   * A function NPC's name and sigil (FS-MRZH7 req 2): someone the delver deals with for real, so
+   * the interactable channel, amber. Apart from the delver's own bright-brass name.
+   */
+  markerFunction: BARROW_HEX.amber,
   /** A monster's nameplate (FS-77AB6 req 37): the hostile channel, lifted to read at the edge. */
   markerHostile: BARROW_HEX.oxbloodText,
   /**

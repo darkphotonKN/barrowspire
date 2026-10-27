@@ -42,7 +42,13 @@ import { cursorCss, cursorSource } from "@/render/cursors";
 // the effects module has no barrel: its runtime and smoke are imported by path
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { ChimneySmoke } from "@/render/effects/smoke";
-import { MARKER_DEPTH, markerBase } from "@/render/markers";
+import {
+  MARKER_DEPTH,
+  NPC_NAME_PX,
+  isFunctionNPC,
+  markerBase,
+  sigilPoints,
+} from "@/render/markers";
 import {
   GroundLayer,
   Occluders,
@@ -95,6 +101,8 @@ const CAMERA_MARGIN = 64;
  * -34, where it always was.
  */
 const NAME_GAP = 4;
+/** Screen px between a function NPC's sigil and the top of its name (FS-MRZH7 req 4). */
+const SIGIL_GAP = 3;
 /** How hard sprites chase the server's position each frame. Matches the run scene. */
 const POSITION_LERP = 0.3;
 /** Screen px from the top-left corner to the level and experience bar. */
@@ -325,6 +333,8 @@ interface NPCView {
   sprite: Phaser.GameObjects.Container;
   /** A marker above the lighting (FS-2325V §C.9), placed over the head each frame. */
   name: Phaser.GameObjects.Text;
+  /** A function NPC's sigil over the name (FS-MRZH7 req 4); ambient NPCs carry none. */
+  sigil?: Phaser.GameObjects.Graphics;
   target: Point;
   /** Eased world position, as for delvers. */
   pos: Point;
@@ -715,7 +725,7 @@ export class HubScene extends Phaser.Scene {
       // folk idle and walk on their own legs, read off the position just drawn
       const body = npc.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
       if (npc.anim.baked && body) npc.anim.show(body, npc.anim.step(npc.pos, time, delta, false));
-      this.placeMarker(npc.sprite, npc.name, npc.anim.crown);
+      this.placeMarker(npc.sprite, npc.name, npc.anim.crown, npc.sigil);
     }
 
     for (const view of this.views.values()) {
@@ -1476,8 +1486,7 @@ export class HubScene extends Phaser.Scene {
       // build and palette, function NPCs as themselves, whose role reads from the silhouette.
       // Only with no sheet at all do the placeholders stand in: a villager texture, or the
       // delver silhouette tinted brass.
-      const isFunction = npc.function !== "";
-      const tone = isFunction ? BARROW_HEX.brassBright : palette.markerHub;
+      const isFunction = isFunctionNPC(npc);
       const anim = new CharacterAnimator(this.art, folkLook(npc, this.art));
       const texture =
         anim.baked || isFunction
@@ -1488,28 +1497,32 @@ export class HubScene extends Phaser.Scene {
         ? this.add.sprite(0, 0, `${texture}_down`)
         : this.add.sprite(0, 0, textureFor("warrior", "down"));
       if (anim.baked) anim.dress(body);
-      else if (isFunction) body.setTint(tone);
+      // the placeholder's brass tint is the body, not a marker, so it stays (FS-MRZH7 req 6)
+      else if (isFunction) body.setTint(BARROW_HEX.brassBright);
       body.setName("body");
 
-      // brass for the two worth crossing the hub for, vellum for the folk
+      // amber, a step larger and under a sigil for those the delver deals with for real;
+      // vellum for the folk (FS-MRZH7 req 2, 5, 7)
       const name = this.add
         .text(0, 0, npc.name, {
           fontFamily: CANVAS_FONT.body,
-          fontSize: "12px",
-          color: toCss(tone),
+          fontSize: `${isFunction ? NPC_NAME_PX.function : NPC_NAME_PX.ambient}px`,
+          color: toCss(isFunction ? palette.markerFunction : palette.markerHub),
         })
         .setOrigin(0.5)
         .setDepth(MARKER_DEPTH.name);
+      const sigil = isFunction ? this.drawSigil() : undefined;
 
       const pos = { x: npc.position.x, y: npc.position.y };
       const sprite = this.add.container(0, 0, [body]);
       standAt(sprite, pos, 1);
-      this.placeMarker(sprite, name, anim.crown);
+      this.placeMarker(sprite, name, anim.crown, sigil);
 
       this.npcs.set(npc.entity_id, {
         state: npc,
         sprite,
         name,
+        sigil,
         target: { ...pos },
         pos,
         // faces the viewer, which the "down" texture shows
@@ -1753,10 +1766,26 @@ export class HubScene extends Phaser.Scene {
   }
 
   /** A name plate over whoever stands in `sprite`: a baked head (`crown`), or the frame's top. */
+  /**
+   * A function NPC's sigil (FS-MRZH7 req 4): an amber lozenge outlined in the marker stroke,
+   * drawn around its own foot so placing it is a single setPosition.
+   */
+  private drawSigil(): Phaser.GameObjects.Graphics {
+    const points = sigilPoints(0, 0);
+    return this.add
+      .graphics()
+      .fillStyle(palette.markerFunction, 1)
+      .fillPoints(points, true)
+      .lineStyle(1.5, palette.markerStroke, 1)
+      .strokePoints(points, true)
+      .setDepth(MARKER_DEPTH.name);
+  }
+
   private placeMarker(
     sprite: Phaser.GameObjects.Container,
     name: Phaser.GameObjects.Text,
     crown: number | undefined,
+    sigil?: Phaser.GameObjects.Graphics,
   ): void {
     const body = sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
     if (!body) return;
@@ -1770,6 +1799,8 @@ export class HubScene extends Phaser.Scene {
       false,
     );
     name.setPosition(sprite.x + body.x, (base ?? sprite.y) - NAME_GAP);
+    // over the name, not the crown, so a placeholder with no measured head is marked the same
+    sigil?.setPosition(name.x, name.y - name.height / 2 - SIGIL_GAP);
   }
 
   private placeDelver(player: PlayerState, isSelf: boolean): void {

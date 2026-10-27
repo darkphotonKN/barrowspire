@@ -25,6 +25,7 @@ export const MARKER_INKS = {
   "own name": palette.markerSelf,
   "ally name": palette.markerAlly,
   "hub name": palette.markerHub,
+  "function NPC name": palette.markerFunction,
   "monster name": palette.markerHostile,
   "elite prefix": palette.markerElite,
   "HP fill": palette.markerHp,

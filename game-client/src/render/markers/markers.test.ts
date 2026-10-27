@@ -12,6 +12,7 @@ import {
 import { VIGNETTE_DEPTH, edgeVignetteAlpha } from "@/render/lighting/vignette";
 import type { WorldKind } from "@/render/world/ground";
 import { palette } from "@/utils/canvasPalette";
+import { BARROW_HEX } from "@/utils/theme";
 import {
   HUD_DEPTH,
   MARKER_BAR,
@@ -59,6 +60,15 @@ function worstEdgeContrast(ink: number, world: WorldKind): number {
       );
   return worst;
 }
+
+describe("function NPC markers (FS-MRZH7 req 2, 3)", () => {
+  it("should read a function NPC's name in its own marker ink, apart from the delver's own", () => {
+    // amber: the delver can act on a function NPC, which is what amber means on the canvas
+    expect(palette.markerFunction).toBe(BARROW_HEX.amber);
+    expect(MARKER_INKS["function NPC name"]).toBe(palette.markerFunction);
+    expect(palette.markerFunction).not.toBe(palette.markerSelf);
+  });
+});
 
 describe("the readability floor (FS-2325V §C.9)", () => {
   it("is measured against every baked ground", () => {
