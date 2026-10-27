@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: game }
+data:
+  ENVIRONMENT: "DEVELOPMENT"
+  GAME_PORT: "5668"
+  GRPC_GAME_ADDR: "7117"
+  POD_ADDR_TEMPLATE: "ws://localhost:566{ordinal}/{pod}/game/ws"
+  GAME_ALLOWED_ORIGINS: "http://localhost:3938,http://localhost:3940,http://localhost:3941"
+  AUTH_ADDR: "auth-headless:7116"
+  ITEMS_ADDR: "items-headless:7126"
+  CHARACTER_ADDR: "character-headless:7123"
+  REDIS_MODE: "standalone"
+  REDIS_ADDR: "redis:6379"
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_NAME: "barrowspire_game_service_db"
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5672"
+  OTEL_ENABLED: "false"
+  DRAIN_TIMEOUT: "5m"

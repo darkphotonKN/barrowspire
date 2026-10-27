@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: items }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: items } }
+  template:
+    metadata: { labels: { app: items } }
+    spec:
+      containers:
+        - name: items
+          image: items:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { containerPort: 7126, name: grpc }
+            - { containerPort: 8197, name: metrics }
+          envFrom:
+            - configMapRef: { name: items }
+            - secretRef: { name: items }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: items }
+spec:
+  selector: { app: items }
+  ports: [{ port: 7126, targetPort: grpc }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: items-headless }
+spec:
+  clusterIP: None
+  selector: { app: items }
+  ports: [{ port: 7126, targetPort: grpc }]

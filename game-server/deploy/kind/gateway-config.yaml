@@ -9,4 +9,4 @@ data:
   RABBITMQ_PORT: "5672"
   OTEL_ENABLED: "false"
   AUTH_ADDR: "auth-headless:7116"
-  CORS_ORIGINS: "http://localhost:3938,http://localhost:3000"
+  CORS_ORIGINS: "http://localhost:3938,http://localhost:3000,http://localhost:3940,http://localhost:3941"
