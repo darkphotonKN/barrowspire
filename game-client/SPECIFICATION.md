@@ -53,6 +53,9 @@ server state and sends intents. ✅
 - [ ] Monsters with level and elite nameplates → FS-77AB6
 - [ ] Affixes and item level in item views → FS-4R9M9
 - [ ] Floor transitions → FS-F6F88
+- [ ] Spectate living teammates after resolving → FS-QPDKN
+- [ ] Leave a run early after dying → FS-QPDKN
+- [ ] Hold the run result until the delver returns → FS-QPDKN
 
 ### Character
 

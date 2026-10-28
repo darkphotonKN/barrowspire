@@ -52,6 +52,8 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Generic instance-allocation contract (warm pool or spawn)
 - [ ] Seed run modifiers onto a roster
 - [ ] Switch a player between hub and run → FS-29KSH
+- [ ] Leave a run early after dying → FS-QPDKN
+- [ ] Resolved delvers settle with the run despite leaving or disconnecting → FS-QPDKN
 
 ### ECS world
 
