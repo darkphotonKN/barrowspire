@@ -255,9 +255,15 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.CharacterInPlay) 
 	// another one mid-run would seat a second body and repoint the record away
 	// from the run still holding the first (FS-BDA7X §Requirements 7)
 	if current, inWorld := s.GetGameSession(player.CurrentGameSessionId); inWorld &&
-		current.WorldType() == types.WorldTypeRun && current.HasPlayer(player.ID) &&
-		player.Character.ID != character.ID {
-		return nil, fmt.Errorf("enter hub from run %s: %w", current.ID, game.ErrCharacterSwitchMidRun)
+		current.WorldType() == types.WorldTypeRun && current.HasPlayer(player.ID) {
+		if player.Character.ID != character.ID {
+			return nil, fmt.Errorf("enter hub from run %s: %w", current.ID, game.ErrCharacterSwitchMidRun)
+		}
+		// The same character, asking in from the menu while their body is still
+		// delving: the run is their world, so it is the one announced. Seating
+		// them in the hub as well would give one member two worlds broadcasting
+		// to one socket (reported 2026-10-29).
+		return current, nil
 	}
 
 	// The world decides whether it has room, under its own lock. Counting from
