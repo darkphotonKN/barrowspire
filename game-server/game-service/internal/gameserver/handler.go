@@ -420,6 +420,19 @@ func (s *Server) cleanUpPlayerCompletely(playerID uuid.UUID, hold graceHold) {
 		return
 	}
 
+	// A resolved member of a run is kept, body and record, until the run ends
+	// and settles them: an escape must not be lost to a dropped connection.
+	// The run's end deletes the record if they are still away (FS-QPDKN R18, R19).
+	if world, inWorld := s.sessions[record.CurrentGameSessionId]; inWorld &&
+		world.WorldType() == types.WorldTypeRun && world.Resolved(playerID) {
+		s.awaitingSettlement[playerID] = struct{}{}
+		delete(s.graceHolds, playerID)
+		s.mu.Unlock()
+		slog.Info("Resolved delver failed to reconnect within the grace, kept for the run's settlement",
+			"username", record.Username, "run_id", world.ID)
+		return
+	}
+
 	// a copy taken under the lock: the worlds keep writing the record under it
 	player := *record
 	delete(s.players, playerID)

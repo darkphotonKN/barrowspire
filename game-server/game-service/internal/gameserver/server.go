@@ -58,8 +58,11 @@ type Server struct {
 
 	// the reconnect grace each dropped member is held under, by member, and
 	// the last hold handed out
-	graceHolds    map[uuid.UUID]graceHold
-	lastGraceHold graceHold
+	graceHolds map[uuid.UUID]graceHold
+	// resolved run members whose reconnect grace ran out: kept, body and
+	// record, until their run ends and settles them (FS-QPDKN R18, R19)
+	awaitingSettlement map[uuid.UUID]struct{}
+	lastGraceHold      graceHold
 
 	mu sync.RWMutex
 
@@ -124,10 +127,11 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		serverChan: make(chan types.ClientPackage, 10),
 		msgChan:    make(map[*websocket.Conn]chan interface{}, constants.MaxMsgChanBuffer),
 
-		sessions:     make(map[uuid.UUID]*game.Session, 10),
-		players:      make(map[uuid.UUID]*types.Player, 10),
-		connToPlayer: make(map[*websocket.Conn]*types.Player, 10),
-		graceHolds:   make(map[uuid.UUID]graceHold),
+		sessions:           make(map[uuid.UUID]*game.Session, 10),
+		players:            make(map[uuid.UUID]*types.Player, 10),
+		connToPlayer:       make(map[*websocket.Conn]*types.Player, 10),
+		graceHolds:         make(map[uuid.UUID]graceHold),
+		awaitingSettlement: make(map[uuid.UUID]struct{}),
 
 		queue:        queueService,
 		authClient:   authClient,
@@ -342,6 +346,8 @@ func (s *Server) connectPlayer(memberID uuid.UUID, username string, token types.
 	connected := constants.Connected
 
 	if player, exists := s.players[memberID]; exists {
+		// back before their run ended: no longer kept only for its settlement
+		delete(s.awaitingSettlement, memberID)
 		for _, record := range s.everyRecordOf(player) {
 			record.ConnectState = &connected
 			// may have changed name
@@ -416,6 +422,12 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 		if world, _ := s.currentWorldOf(playerID); world != runID {
 			continue
 		}
+		// a resolved member kept past their grace is settled by this end (the
+		// snapshot was taken before this) and goes off record; nobody seats a
+		// body in the hub for a member who is not here (FS-QPDKN R18, R19)
+		if s.forgetIfAwaitingSettlement(playerID) {
+			continue
+		}
 
 		run.RemovePlayer(playerID.String())
 		hub.AddPlayer(player.ID, player.Character, s.tokenOf(player))
@@ -426,6 +438,22 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 				"player_id", playerID, "error", err)
 		}
 	}
+}
+
+// forgetIfAwaitingSettlement ends the stay of a member kept only for their
+// run's settlement, now that the run has settled them. Reports whether they
+// were such a member; one who came back meanwhile is not.
+func (s *Server) forgetIfAwaitingSettlement(playerID uuid.UUID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, kept := s.awaitingSettlement[playerID]; !kept {
+		return false
+	}
+	delete(s.awaitingSettlement, playerID)
+	delete(s.players, playerID)
+	slog.Info("Kept delver settled with their run, off record", "player_id", playerID)
+	return true
 }
 
 // currentWorldOf is the world a member's record names, read under the lock
