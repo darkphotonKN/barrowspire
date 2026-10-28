@@ -54,7 +54,7 @@ server state and sends intents. ✅
 - [ ] Affixes and item level in item views → FS-4R9M9
 - [ ] Floor transitions → FS-F6F88
 - [x] Spectate living teammates after resolving → FS-QPDKN
-- [ ] Leave a run early after dying → FS-QPDKN
+- [x] Leave a run early after dying → FS-QPDKN
 - [x] Hold the run result until the delver returns → FS-QPDKN
 
 ### Character
