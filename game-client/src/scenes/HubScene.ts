@@ -381,6 +381,8 @@ export class HubScene extends Phaser.Scene {
   private interactKey?: Phaser.Input.Keyboard.Key;
   /** The ESC menu while it is open (FS-G4VMQ §Requirements 1–5). It owns the keyboard. */
   private menu?: Phaser.GameObjects.Container;
+  /** The open menu's choices by key: the n-th actionable one, and the first on Enter. */
+  private menuChoices?: { pick: (index: number) => void; confirm: () => void };
   /** Shown while queued, wherever the delver walks. */
   private queuePanel?: Phaser.GameObjects.Text;
   /** Beside the panel while queued: the way out of the queue (FS-G4VMQ §Requirements 15). */
@@ -1664,10 +1666,20 @@ export class HubScene extends Phaser.Scene {
    */
   private offerMenu(): void {
     if (this.dialogue || !this.dismissKey) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.dismissKey)) return;
+    const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
 
-    if (this.menu) this.closeMenu();
-    else this.openMenu();
+    if (!this.menu) {
+      if (esc) this.openMenu();
+      return;
+    }
+
+    // open: Esc closes, Enter is the first choice, a number is that choice. Every key is
+    // read each frame, so a press never lingers to answer the next one.
+    const confirm = this.confirmKey && Phaser.Input.Keyboard.JustDown(this.confirmKey);
+    const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
+    if (esc) this.closeMenu();
+    else if (confirm) this.menuChoices?.confirm();
+    else if (numbered >= 0) this.menuChoices?.pick(numbered);
   }
 
   /**
@@ -1692,11 +1704,15 @@ export class HubScene extends Phaser.Scene {
       leave: () => this.leaveQueue(),
       back: () => this.closeMenu(),
     };
+    // each thing to do answers to its number; Back already says Esc on its label
+    const actionable = choices.filter((c) => c.register === "actionable");
+    const hint = (choice: HubMenuChoice) =>
+      choice.register === "actionable" ? `  [${actionable.indexOf(choice) + 1}]` : "";
     const options = choices.map((choice, i) =>
       this.dialogueOption(
         0,
         top + MENU_PAD + MENU_ROW * (i + 0.5),
-        choice.label,
+        `${choice.label}${hint(choice)}`,
         choice.register === "actionable" ? BARROW_HEX.amber : BARROW_HEX.arcane,
         actions[choice.id],
         `menu-${choice.id}`,
@@ -1704,6 +1720,10 @@ export class HubScene extends Phaser.Scene {
       ),
     );
 
+    this.menuChoices = {
+      pick: (index) => actionable[index] && actions[actionable[index].id](),
+      confirm: () => actionable[0] && actions[actionable[0].id](),
+    };
     this.menu = this.add
       .container(width / 2, height / 2, [panel, ...options])
       .setScrollFactor(0)
@@ -1713,6 +1733,7 @@ export class HubScene extends Phaser.Scene {
   private closeMenu(): void {
     this.menu?.destroy();
     this.menu = undefined;
+    this.menuChoices = undefined;
   }
 
   /**
