@@ -923,3 +923,41 @@ describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => 
     expect((hub.scene as { start: ReturnType<typeof vi.fn> }).start).toHaveBeenCalledWith("LoadoutScene");
   });
 });
+
+describe("ESC menu by keyboard (reported 2026-10-29)", () => {
+  // The menu's choices had no keys at all: ESC opened and closed it, and only a click could
+  // pick Change who you are. With the mouse broken too, nothing led to the roster.
+  it("should answer Change who you are on 1, with the number on its label", () => {
+    const { hub, keys, press, stage } = hubOnStage();
+    press(keys.esc);
+    const labels = stage.made
+      .filter((m) => m.kind === "text" && !m.destroyed)
+      .map((m) => String(m.args[2]));
+    expect(labels).toContain("Change who you are  [1]");
+
+    press(keys.one);
+
+    expect((hub.scene as { start: ReturnType<typeof vi.fn> }).start).toHaveBeenCalledWith("MainMenuScene");
+  });
+
+  it("should answer the first choice on Enter", () => {
+    const { hub, keys, press } = hubOnStage();
+    press(keys.esc);
+    press(keys.enter);
+    expect((hub.scene as { start: ReturnType<typeof vi.fn> }).start).toHaveBeenCalledWith("MainMenuScene");
+  });
+
+  it("should number Leave the queue 2 while queued", () => {
+    const { hub, keys, press, stage } = hubOnStage();
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    hub.queued = true;
+    press(keys.esc);
+    const labels = stage.made
+      .filter((m) => m.kind === "text" && !m.destroyed)
+      .map((m) => String(m.args[2]));
+    expect(labels).toContain("Leave the queue  [2]");
+    press(keys.two);
+    expect(send).toHaveBeenCalledWith("leave_queue", {});
+    send.mockRestore();
+  });
+});
