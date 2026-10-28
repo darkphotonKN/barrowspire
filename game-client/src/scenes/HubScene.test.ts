@@ -273,6 +273,7 @@ interface MenuHub {
   queued: boolean;
   leavePending: boolean;
   soloPending: boolean;
+  leavingHub: boolean;
   scene: { start: ReturnType<typeof vi.fn> };
   time: { delayedCall: ReturnType<typeof vi.fn> };
   selfEntityID?: string;
@@ -833,15 +834,17 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
     expect(stage.made.some((m) => m.kind === "text" && m.args[2] === "Keeper")).toBe(true);
   });
 
-  it("should start the main menu on Change who you are, sending nothing", () => {
-    const { hub, keys, press, option } = hubOnStage();
-    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+  it("should ask to leave the hub on Change who you are, and start the main menu once it is left", () => {
+    const { hub, keys, press, option, reply, send } = queuedHubOnStage();
 
     press(keys.esc);
     option("change")?.handlers.pointerup();
 
+    expect(send).toHaveBeenCalledWith("leave_hub", {});
+    expect(hub.scene.start).not.toHaveBeenCalled();
+
+    reply("world_left", {});
     expect(hub.scene.start).toHaveBeenCalledWith("MainMenuScene");
-    expect(send).not.toHaveBeenCalled();
   });
 
   it("should forget the menu on release, so the next visit opens a fresh one", () => {
@@ -857,6 +860,90 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
     press(keys.esc);
     expect(hub.menu).toBeDefined();
     expect(hub.menu).not.toBe(first);
+  });
+});
+
+describe("HubScene changeCharacter leaves the hub (FS-G4VMQ §Requirements 25, 26)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The Change who you are row's label, whose colour says whether it can be pressed. */
+  const changeLabel = (stage: { made: Made[] }) =>
+    stage.made.find((m) => m.name === "menu-change-label" && !m.destroyed)?.children[0] as Made;
+
+  it("should send one leave_hub, dim the row and ignore a second press until the reply", () => {
+    const { hub, stage, keys, press, option, send } = queuedHubOnStage();
+
+    press(keys.esc);
+    option("change")?.handlers.pointerup();
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith("leave_hub", {});
+    expect(hub.leavingHub).toBe(true);
+    expect(hub.scene.start).not.toHaveBeenCalled();
+    expect(changeLabel(stage).color).toBe(toCss(BARROW_HEX.vellumDark));
+
+    option("change")?.handlers.pointerup();
+    press(keys.one);
+    press(keys.enter);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("should start the main menu on world_left", () => {
+    const { hub, keys, press, option, reply } = queuedHubOnStage();
+    press(keys.esc);
+    option("change")?.handlers.pointerup();
+
+    reply("world_left", {});
+
+    expect(hub.scene.start).toHaveBeenCalledWith("MainMenuScene");
+  });
+
+  it("should stay, re-enable the row and pass on the server's message on the error reply, then send again", () => {
+    const { hub, stage, keys, press, option, refuse, send } = queuedHubOnStage();
+    press(keys.esc);
+    option("change")?.handlers.pointerup();
+
+    refuse("leave_hub", "Leave the queue first.");
+
+    expect(hub.scene.start).not.toHaveBeenCalled();
+    expect(hub.leavingHub).toBe(false);
+    expect(changeLabel(stage).color).toBe(toCss(BARROW_HEX.amber));
+    const notice = stage.made.find((m) => m.kind === "text" && m.args[2] === "Leave the queue first.") as Made;
+    expect(notice).toBeDefined();
+    expect(notice.depth).toBe(1000);
+    expect((notice.args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.vellum));
+    // passing: it goes on its own
+    expect(hub.time.delayedCall).toHaveBeenCalledTimes(1);
+    (hub.time.delayedCall.mock.calls[0][1] as () => void)();
+    expect(notice.destroyed).toBe(true);
+
+    option("change")?.handlers.pointerup();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("should let a refusal with nothing pending change nothing", () => {
+    const { hub, stage, refuse } = queuedHubOnStage();
+    const drawn = stage.made.length;
+
+    refuse("leave_hub", "You are not in the hub.");
+
+    expect(hub.leavingHub).toBe(false);
+    expect(stage.made.length).toBe(drawn);
+  });
+
+  it("should hand both replies back and forget the pending leave on release", () => {
+    const { hub, keys, press, option, off, offError } = queuedHubOnStage();
+    press(keys.esc);
+    option("change")?.handlers.pointerup();
+    expect(hub.leavingHub).toBe(true);
+
+    hub.release();
+
+    expect(off).toHaveBeenCalledWith("world_left");
+    expect(offError).toHaveBeenCalledWith("leave_hub");
+    expect(hub.leavingHub).toBe(false);
   });
 });
 
@@ -930,7 +1017,7 @@ describe("ESC menu by keyboard (reported 2026-10-29)", () => {
   // The menu's choices had no keys at all: ESC opened and closed it, and only a click could
   // pick Change who you are. With the mouse broken too, nothing led to the roster.
   it("should answer Change who you are on 1, with the number on its label", () => {
-    const { hub, keys, press, stage } = hubOnStage();
+    const { hub, keys, press, stage, send, reply } = queuedHubOnStage();
     press(keys.esc);
     const labels = stage.made
       .filter((m) => m.kind === "text" && !m.destroyed)
@@ -939,14 +1026,18 @@ describe("ESC menu by keyboard (reported 2026-10-29)", () => {
 
     press(keys.one);
 
-    expect((hub.scene as { start: ReturnType<typeof vi.fn> }).start).toHaveBeenCalledWith("MainMenuScene");
+    expect(send).toHaveBeenCalledWith("leave_hub", {});
+    reply("world_left", {});
+    expect(hub.scene.start).toHaveBeenCalledWith("MainMenuScene");
   });
 
   it("should answer the first choice on Enter", () => {
-    const { hub, keys, press } = hubOnStage();
+    const { hub, keys, press, send, reply } = queuedHubOnStage();
     press(keys.esc);
     press(keys.enter);
-    expect((hub.scene as { start: ReturnType<typeof vi.fn> }).start).toHaveBeenCalledWith("MainMenuScene");
+    expect(send).toHaveBeenCalledWith("leave_hub", {});
+    reply("world_left", {});
+    expect(hub.scene.start).toHaveBeenCalledWith("MainMenuScene");
   });
 
   it("should number Leave the queue 2 while queued", () => {
