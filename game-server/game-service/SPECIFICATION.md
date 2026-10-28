@@ -80,7 +80,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Item levels on dropped loot → FS-4R9M9
 - [ ] Random affixes on rolled loot → FS-4R9M9
 - [ ] Fabled uniques → FS-4R9M9
-- [ ] A delver may end their own run as a death → FS-9K8EZ
+- [x] A delver may end their own run as a death → FS-9K8EZ
 
 ### Enemies
 

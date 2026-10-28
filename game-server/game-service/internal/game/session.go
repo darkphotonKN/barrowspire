@@ -1331,6 +1331,34 @@ func (s *Session) Depart(playerID uuid.UUID) error {
 	return nil
 }
 
+// Fall is a delver in play choosing to die where they stand (FS-9K8EZ
+// §Requirements 10, 11). Their health goes to zero and nothing else happens
+// here: the next tick's elimination, the end rule, end_game and the settlement
+// treat it as the death it is. Refused for anyone already out of the delve.
+func (s *Session) Fall(playerID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	entityID, here := s.playerIDToEntitiesID[playerID]
+	if !here {
+		return fmt.Errorf("fall %s: %w", playerID, ErrNotInThisWorld)
+	}
+	entity, ok := s.EntityManager.GetEntity(entityID)
+	if !ok {
+		return fmt.Errorf("fall %s: %w", playerID, ErrNotInThisWorld)
+	}
+	if !systems.InPlay(entity) {
+		return fmt.Errorf("fall %s: %w", playerID, ErrAlreadyResolved)
+	}
+
+	hc, _ := entity.GetComponent(ecs.ComponentTypeHealth)
+	health := *hc.(*components.HealthComponent)
+	health.CurrentHealth = 0
+	entity.AddComponent(&health)
+
+	return nil
+}
+
 // recipientsLocked is who the run still speaks to: every member with a body
 // here who has not left early. Callers hold at least the read lock.
 func (s *Session) recipientsLocked() []uuid.UUID {

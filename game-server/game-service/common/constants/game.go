@@ -15,6 +15,9 @@ const (
 	// ActionLeaveRun is a dead delver leaving a run for the hub before it ends.
 	// FS-QPDKN §Requirements 13.
 	ActionLeaveRun Action = "leave_run"
+	// ActionForfeitRun is a delver in play choosing to die where they stand.
+	// FS-9K8EZ §Requirements 9.
+	ActionForfeitRun Action = "forfeit_run"
 
 	// ActionEnterHub is how a player asks to enter the hub, after picking a
 	// character. Connecting opens the socket; entering is a separate step.
