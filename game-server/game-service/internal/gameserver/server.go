@@ -411,6 +411,11 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 		if !exists {
 			continue
 		}
+		// a member who left early, or has since entered another world, is not
+		// this run's to move: their body here is for settlement only (FS-QPDKN R22)
+		if world, _ := s.currentWorldOf(playerID); world != runID {
+			continue
+		}
 
 		run.RemovePlayer(playerID.String())
 		hub.AddPlayer(player.ID, player.Character, s.tokenOf(player))
@@ -421,6 +426,47 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 				"player_id", playerID, "error", err)
 		}
 	}
+}
+
+// currentWorldOf is the world a member's record names, read under the lock
+// the worlds write it under.
+func (s *Server) currentWorldOf(playerID uuid.UUID) (uuid.UUID, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	player, exists := s.players[playerID]
+	if !exists {
+		return uuid.Nil, false
+	}
+	return player.CurrentGameSessionId, true
+}
+
+/**
+* Lets a dead delver leave the run their record names, for the hub, before the
+* run ends (FS-QPDKN §Requirements 13, 14). The run keeps their body and settles
+* them at its end; the hub seats them now. Refused, with the run's reason, for
+* anyone the run will not let go, and for a member whose record names no run.
+**/
+func (s *Server) LeaveRun(player *types.Player) (*game.Session, error) {
+	hub, exists := s.HubSession()
+	if !exists {
+		return nil, errHubMissing
+	}
+
+	world, _ := s.currentWorldOf(player.ID)
+	run, exists := s.GetGameSession(world)
+	if !exists || run.WorldType() != types.WorldTypeRun {
+		return nil, fmt.Errorf("leave run: %w", errPlayerNotInSession)
+	}
+
+	if err := run.Depart(player.ID); err != nil {
+		return nil, fmt.Errorf("leave run %s: %w", run.ID, err)
+	}
+
+	hub.AddPlayer(player.ID, player.Character, s.tokenOf(player))
+	s.setCurrentWorld(player, hub.ID)
+
+	return hub, nil
 }
 
 /**
