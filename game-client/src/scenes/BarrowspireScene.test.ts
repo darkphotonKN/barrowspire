@@ -1667,3 +1667,14 @@ describe("BarrowspireScene result card hold (FS-QPDKN req 15, 16, 17)", () => {
   });
 });
 
+
+describe("no way out of a run on ESC (reported 2026-10-29)", () => {
+  // ESC used to start MainMenuScene from inside a run. The server keeps the body in the
+  // world regardless, so the delver stood there being killed while looking at the roster;
+  // the only early exit is the dead delver's Leave the barrow (FS-QPDKN req 13).
+  it("should bind no ESC handler that leaves the run, nor list one in the controls", () => {
+    const source = readFileSync(join(__dirname, "BarrowspireScene.ts"), "utf8");
+    expect(source).not.toMatch(/keydown-ESC/);
+    expect(source).not.toMatch(/\["ESC",\s*"Main Menu"\]/);
+  });
+});

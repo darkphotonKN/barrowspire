@@ -719,7 +719,6 @@ export class BarrowspireScene extends Phaser.Scene {
       ["Q", "Close Panel"],
       ["LEFT CLICK", "Melee Attack"],
       ["RIGHT CLICK", "Fireball (Skill)"],
-      ["ESC", "Main Menu"],
       ["H", "Toggle Controls"],
     ];
 
@@ -2600,10 +2599,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, true);
     this.tabKey.on("down", () => this.cycleWatched());
 
-    // ESC 返回主選單
-    this.input.keyboard?.on("keydown-ESC", () => {
-      this.scene.start("MainMenuScene");
-    });
+    // No ESC out of a run: the server keeps the body in the world whoever is looking at it,
+    // and the only early way home is the dead delver's Leave the barrow (FS-QPDKN req 13).
 
     // E 鍵互動（門、寶箱、開關、逃脫門）
     this.input.keyboard?.on("keydown-E", () => {
