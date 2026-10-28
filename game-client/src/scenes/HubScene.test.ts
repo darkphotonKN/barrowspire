@@ -56,7 +56,7 @@ vi.mock("phaser", async () => {
   return { ...phaser, default: phaser };
 });
 
-const { HubScene, hubMenuChoices } = await import("./HubScene");
+const { HubScene, delveChoices, hubMenuChoices } = await import("./HubScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
 const { toCss } = await import("@/utils/canvasPalette");
@@ -159,6 +159,8 @@ interface Made {
   visible: boolean;
   name?: string;
   depth?: number;
+  /** The colour a text was last set to; its style's colour until then. */
+  color?: string;
   x: number;
   y: number;
   width: number;
@@ -220,6 +222,13 @@ function recordingStage() {
             target.name = name;
             return proxy;
           };
+        if (prop === "setColor")
+          return (color: string) => {
+            target.color = color;
+            return proxy;
+          };
+        if (prop === "getByName")
+          return (name: string) => target.children.find((c) => c.name === name) ?? null;
         if (prop === "on" || prop === "once")
           return (event: string, fn: () => void) => {
             target.handlers[event] = fn;
@@ -253,6 +262,7 @@ interface MenuHub {
   leaveButton?: Made;
   queued: boolean;
   leavePending: boolean;
+  soloPending: boolean;
   scene: { start: ReturnType<typeof vi.fn> };
   time: { delayedCall: ReturnType<typeof vi.fn> };
   selfEntityID?: string;
@@ -497,8 +507,224 @@ function hubOnStage() {
     hub.update(0, 16);
   };
   const option = (id: string) => stage.made.find((m) => m.name === `menu-${id}` && !m.destroyed);
-  return { hub, stage, keys, press, option };
+  /** A drawn dialogue choice, by id, while its dialogue is up. */
+  const choice = (id: string) => stage.made.find((m) => m.name === `choice-${id}` && !m.destroyed);
+  /** Stands the delver beside the NPC with this function and presses to talk. */
+  const talkTo = (fn: string) => {
+    hub.selfEntityID = "me";
+    hub.views = new Map([["me", { pos: { x: 0, y: 0 } }]]);
+    hub.npcs = new Map([
+      [
+        fn,
+        {
+          state: { entity_id: fn, name: fn, function: fn, position: { x: 10, y: 0 } },
+          pos: { x: 10, y: 0 },
+        },
+      ],
+    ]);
+    answer(keys.e);
+  };
+  /** A key read by the dialogue alone: the views above are too bare to ease each frame. */
+  const answer = (k: FakeKey) => {
+    k.justDown = true;
+    hub.offerConversation();
+  };
+  return { hub, stage, keys, press, option, choice, talkTo, answer };
 }
+
+describe("delveChoices (FS-NSV3D §Requirements 1, 4)", () => {
+  it.each([
+    {
+      queued: false,
+      ids: ["solo", "queue", "dismiss"],
+      registers: ["actionable", "actionable", "cancel"],
+      line: "I keep the way into the Spire. Few return whole,\nand fewer return twice. Still set on descending?",
+    },
+    {
+      queued: true,
+      ids: ["dismiss"],
+      registers: ["cancel"],
+      line: "The delve is gathering. Wait, or leave the queue.",
+    },
+  ])("should offer $ids when queued is $queued", ({ queued, ids, registers, line }) => {
+    const dialogue = delveChoices({ queued });
+
+    expect(dialogue.line).toBe(line);
+    expect(dialogue.choices.map((c) => c.id)).toEqual(ids);
+    expect(dialogue.choices.map((c) => c.register)).toEqual(registers);
+  });
+
+  it("should label the three Descend alone, Wait for company, Not yet", () => {
+    expect(delveChoices({ queued: false }).choices.map((c) => c.label)).toEqual([
+      "Descend alone",
+      "Wait for company",
+      "Not yet",
+    ]);
+  });
+
+  it("should hold the solo choice back while a start_solo is pending, and the others not", () => {
+    const [solo, queue, dismiss] = delveChoices({ queued: false }).choices;
+
+    expect(solo.enabled?.({ soloPending: true })).toBe(false);
+    expect(solo.enabled?.({ soloPending: false })).toBe(true);
+    expect(queue.enabled).toBeUndefined();
+    expect(dismiss.enabled).toBeUndefined();
+  });
+});
+
+describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should show Descend alone, Wait for company and Not yet, amber and the cancel register", () => {
+    const { hub, choice, talkTo } = queuedHubOnStage();
+
+    talkTo("delve");
+
+    expect(hub.dialogue).toBeDefined();
+    const solo = choice("solo") as Made;
+    const queue = choice("queue") as Made;
+    const dismiss = choice("dismiss") as Made;
+    expect(solo).toBeDefined();
+    expect(queue).toBeDefined();
+    expect(dismiss).toBeDefined();
+    expect((solo.children[0].args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
+    expect((queue.children[0].args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
+    expect((dismiss.children[0].args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.arcane));
+    // left to right, in the spec's order
+    expect(solo.x).toBeLessThan(queue.x);
+    expect(queue.x).toBeLessThan(dismiss.x);
+  });
+
+  it("should keep the storekeeper's two choices as before", () => {
+    const { choice, talkTo } = queuedHubOnStage();
+
+    talkTo("storekeeper");
+
+    expect(choice("pack")).toBeDefined();
+    expect(choice("later")).toBeDefined();
+    expect(choice("solo")).toBeUndefined();
+  });
+
+  it("should send find_game on Wait for company, as Descend did, and close", () => {
+    const { hub, choice, talkTo, send } = queuedHubOnStage();
+    talkTo("delve");
+
+    choice("queue")?.handlers.pointerup();
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toBe(ActionType.Find_Game);
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should send one start_solo on Descend alone, keep the dialogue open and grey the choice until the reply", () => {
+    const { hub, choice, talkTo, send } = queuedHubOnStage();
+    talkTo("delve");
+    const solo = choice("solo") as Made;
+
+    solo.handlers.pointerup();
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(ActionType.StartSolo, {});
+    expect(hub.soloPending).toBe(true);
+    expect(hub.dialogue).toBeDefined();
+    expect(solo.destroyed).toBe(false);
+    expect(solo.children[0].color).not.toBe(toCss(BARROW_HEX.amber));
+
+    solo.handlers.pointerup();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("should confirm Descend alone on Enter, and once only", () => {
+    const { keys, answer, talkTo, send } = queuedHubOnStage();
+    talkTo("delve");
+
+    answer(keys.enter);
+    answer(keys.enter);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(ActionType.StartSolo, {});
+  });
+
+  it("should dismiss on ESC and on Not yet, sending nothing", () => {
+    const { hub, keys, answer, choice, talkTo, send } = queuedHubOnStage();
+    talkTo("delve");
+    answer(keys.esc);
+    expect(hub.dialogue).toBeUndefined();
+
+    talkTo("delve");
+    choice("dismiss")?.handlers.pointerup();
+    expect(hub.dialogue).toBeUndefined();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should show the queued line and a dismiss only while queued", () => {
+    const { hub, stage, keys, answer, choice, talkTo, send, reply } = queuedHubOnStage();
+    reply("queue_status", { current: 1, total: 2 });
+
+    talkTo("delve");
+
+    expect(hub.dialogue).toBeDefined();
+    expect(choice("solo")).toBeUndefined();
+    expect(choice("queue")).toBeUndefined();
+    expect(choice("dismiss")).toBeDefined();
+    expect(
+      stage.made.some(
+        (m) => m.kind === "text" && m.args[2] === "The delve is gathering. Wait, or leave the queue.",
+      ),
+    ).toBe(true);
+
+    // nothing to confirm: Enter and E close it like ESC, and nothing is sent
+    answer(keys.enter);
+    expect(hub.dialogue).toBeUndefined();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should re-enable the choice and pass on the message as a passing notice when start_solo is refused", () => {
+    const { hub, stage, choice, talkTo, send, refuse } = queuedHubOnStage();
+    talkTo("delve");
+    const solo = choice("solo") as Made;
+    solo.handlers.pointerup();
+
+    refuse("start_solo", "Leave the queue first.");
+
+    expect(hub.soloPending).toBe(false);
+    expect(hub.dialogue).toBeDefined();
+    expect(solo.children[0].color).toBe(toCss(BARROW_HEX.amber));
+    const notice = stage.made.find(
+      (m) => m.kind === "text" && m.args[2] === "Leave the queue first." && m.depth === 1000,
+    ) as Made;
+    expect(notice).toBeDefined();
+    expect((notice.args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.vellum));
+    expect(hub.time.delayedCall).toHaveBeenCalledTimes(1);
+
+    solo.handlers.pointerup();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("should let a refusal with nothing pending change nothing", () => {
+    const { hub, stage, refuse } = queuedHubOnStage();
+    const drawn = stage.made.length;
+
+    refuse("start_solo", "Leave the queue first.");
+
+    expect(hub.soloPending).toBe(false);
+    expect(stage.made.length).toBe(drawn);
+  });
+
+  it("should hand the start_solo refusals back and forget the pending send on release", () => {
+    const { hub, choice, talkTo, offError } = queuedHubOnStage();
+    talkTo("delve");
+    choice("solo")?.handlers.pointerup();
+
+    hub.release();
+
+    expect(offError).toHaveBeenCalledWith("start_solo");
+    expect(hub.soloPending).toBe(false);
+    expect(hub.dialogue).toBeUndefined();
+  });
+});
 
 describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
   afterEach(() => {

@@ -188,13 +188,61 @@ export function hubMenuChoices(state: { queued: boolean }): HubMenuChoice[] {
   return choices;
 }
 
+/** What the hub knows that a dialogue reads: at opening, and live while it is up. */
+interface HubState {
+  queued: boolean;
+}
+
+/** One choice in an NPC's dialogue (FS-NSV3D §Requirements 3). */
+export interface DialogueChoice {
+  id: string;
+  label: string;
+  /** Amber for a thing the delver can do, the cancel register for closing the box. */
+  register: "actionable" | "cancel";
+  /** What picking it does; without one, picking it only closes the dialogue. */
+  act?: (scene: HubScene) => void;
+  /** The dialogue stays up after the pick: a reply is being waited for. */
+  stays?: boolean;
+  /** Whether it can be picked now, read live each time it is drawn or pressed; omitted means always. */
+  enabled?: (state: { soloPending: boolean }) => boolean;
+}
+
+/** What an NPC says and offers: a line and its choices, any number of them. */
+export interface Dialogue {
+  line: string;
+  choices: DialogueChoice[];
+}
+
 /**
- * What each function NPC offers, and what accepting it does.
- *
- * The dialogue itself is one shape — a line and two options — so adding an NPC
- * is adding a row here, not another branch in the scene. An NPC missing from this
- * table opens nothing, which is what an ambient resident is.
+ * What the keeper of the way offers, from the hub's state as the dialogue opens (FS-NSV3D
+ * §Requirements 1, 2, 4): alone, with company, or not yet. While the delver is already queued
+ * there is nothing to offer but the fact, so the dialogue says so and closes; the panel carries
+ * the count. The one warning is the keeper's line: descending alone takes no second asking.
  */
+export function delveChoices(state: HubState): Dialogue {
+  if (state.queued) {
+    return {
+      line: "The delve is gathering. Wait, or leave the queue.",
+      choices: [{ id: "dismiss", label: "I'll wait", register: "cancel" }],
+    };
+  }
+  return {
+    line: "I keep the way into the Spire. Few return whole,\nand fewer return twice. Still set on descending?",
+    choices: [
+      {
+        id: "solo",
+        label: "Descend alone",
+        register: "actionable",
+        act: (scene) => scene.startSolo(),
+        stays: true,
+        enabled: ({ soloPending }) => !soloPending,
+      },
+      { id: "queue", label: "Wait for company", register: "actionable", act: (scene) => scene.joinQueue() },
+      { id: "dismiss", label: "Not yet", register: "cancel" },
+    ],
+  };
+}
+
 /**
  * What a resident says when spoken to. They open nothing — the point is that a
  * delver never has to wonder whether an NPC is broken.
@@ -206,29 +254,29 @@ const RESIDENT_LINES = [
   "Quiet season. Fewer coming back to spend.",
 ];
 
-const NPC_OFFERS: Record<
-  string,
-  {
-    line: string;
-    accepts: string;
-    /** Omitted when there is nothing to decline — a resident, say. */
-    declines?: string;
-    accept: (scene: HubScene) => void;
-  }
-> = {
-  delve: {
-    line: "I keep the way into the Spire. Few return whole,\nand fewer return twice. Still set on descending?",
-    accepts: "Descend",
-    declines: "Not yet",
-    accept: (scene) => scene.joinQueue(),
-  },
-  storekeeper: {
+/**
+ * What each function NPC says and offers, from the hub's state as they are spoken to.
+ *
+ * The dialogue itself is one shape — a line and a row of choices — so adding an NPC, or a
+ * choice, is adding to this table, not another branch in the scene. An NPC missing from
+ * it is an ambient resident, who has a line and nothing to offer.
+ */
+const NPC_DIALOGUE: Record<string, (state: HubState) => Dialogue> = {
+  delve: delveChoices,
+  storekeeper: () => ({
     line: "Steel rusts, and the barrow keeps what it takes.\nSee to your gear before you go down.",
-    accepts: "Open pack",
-    declines: "Later",
-    accept: (scene) => scene.openLoadout(),
-  },
+    choices: [
+      { id: "pack", label: "Open pack", register: "actionable", act: (scene) => scene.openLoadout() },
+      { id: "later", label: "Later", register: "cancel" },
+    ],
+  }),
 };
+
+/** Screen px between the centres of neighbouring dialogue choices. */
+const CHOICE_SPACING = 180;
+
+/** A drawn choice, which can redraw its colour when whether it can be picked changes. */
+type ChoiceOption = Phaser.GameObjects.Container & { retone(): void };
 
 /**
  * One delver as the scene sees them.
@@ -312,9 +360,12 @@ export class HubScene extends Phaser.Scene {
    * never changes.
    */
   private npcs = new Map<string, NPCView>();
-  /** Whose dialogue is open, if any, and what its options do. */
+  /**
+   * Whose dialogue is open, if any, what the keys do to it, and how to redraw its choices when
+   * what can be picked changes under it (a solo start sent, or refused).
+   */
   private dialogue?: Phaser.GameObjects.Container;
-  private dialogueChoices?: { confirm: () => void; dismiss: () => void };
+  private dialogueChoices?: { confirm: () => void; dismiss: () => void; retone: () => void };
   private confirmKey?: Phaser.Input.Keyboard.Key;
   private dismissKey?: Phaser.Input.Keyboard.Key;
   private interactKey?: Phaser.Input.Keyboard.Key;
@@ -331,6 +382,8 @@ export class HubScene extends Phaser.Scene {
   private queued = false;
   /** A leave_queue has been sent and its reply has not come (§Requirements 12). */
   private leavePending = false;
+  /** A start_solo has been sent and its reply has not come (FS-NSV3D §Requirements 2). */
+  private soloPending = false;
   /**
    * The delver's level and experience bar (FS-BDA7X req 42), top-left, clear of the queue panel
    * at the bottom. Made with the first state that carries a level.
@@ -461,6 +514,15 @@ export class HubScene extends Phaser.Scene {
       this.leavePending = false;
       this.notice(info.message ?? "Could not leave the queue, please try again.");
     });
+    // A solo start the server would not give: the choice comes back, the dialogue stays where it
+    // was, and the reason passes by in the hub (FS-NSV3D §Requirements 5). Success needs no
+    // listener: it is the world_entered that switches the scene (§Requirements 6).
+    socketManager.onError(ActionType.StartSolo, (info) => {
+      if (!this.soloPending) return;
+      this.soloPending = false;
+      this.dialogueChoices?.retone();
+      this.notice(info.message ?? "The way is shut for now. Ask again.");
+    });
     this.unsubscribeQueue = () => {
       socketManager.off("queue_status");
       socketManager.off(ActionType.Find_Game);
@@ -468,6 +530,7 @@ export class HubScene extends Phaser.Scene {
       socketManager.off("world_handoff_failed");
       socketManager.off(ActionType.LeaveQueue);
       socketManager.offError(ActionType.LeaveQueue);
+      socketManager.offError(ActionType.StartSolo);
     };
   }
 
@@ -499,6 +562,7 @@ export class HubScene extends Phaser.Scene {
     this.leaveButton = undefined;
     this.queued = false;
     this.leavePending = false;
+    this.soloPending = false;
     this.roofs = [];
     this.insideRoof = undefined;
     // the gauntlet is the hub's and the run's; the menus the hub hands over to keep the browser's
@@ -1422,11 +1486,16 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * A line of who they are, and a choice. Not a dialogue tree: no branching, no
+   * A line of who they are, and a row of choices. Not a dialogue tree: no branching, no
    * memory of what was said. FS-29KSH §Requirements 24, §Out of Scope.
+   *
+   * Built from the hub's state as it opens and not rebuilt while it is up (FS-NSV3D §Edge
+   * States): a queue that changes underneath it shows on the next open. The keys keep their
+   * meaning whatever the row holds: E and Enter confirm the first actionable choice, ESC
+   * dismisses; with nothing to confirm, every key dismisses.
    */
   private openDialogue(npc: NPCState): void {
-    const offer = NPC_OFFERS[npc.function] ?? {
+    const { line, choices } = NPC_DIALOGUE[npc.function]?.({ queued: this.queued }) ?? {
       line: RESIDENT_LINES[
         // stable per resident, so they do not change their mind each time
         [...npc.entity_id].reduce((sum, c) => sum + c.charCodeAt(0), 0) %
@@ -1434,9 +1503,7 @@ export class HubScene extends Phaser.Scene {
       ],
       // A resident has nothing to offer, so they offer no choice. Two options
       // that both close the box is a decision the delver does not have.
-      accepts: "Leave",
-      declines: undefined,
-      accept: () => {},
+      choices: [{ id: "leave", label: "Leave", register: "actionable" }],
     };
 
     const { width, height } = this.cameras.main;
@@ -1454,8 +1521,8 @@ export class HubScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const line = this.add
-      .text(0, -18, offer.line, {
+    const said = this.add
+      .text(0, -18, line, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "14px",
         color: toCss(BARROW_HEX.vellum),
@@ -1464,43 +1531,68 @@ export class HubScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const confirm = () => {
-      this.closeDialogue();
-      offer.accept(this);
+    const enabled = (choice: DialogueChoice) =>
+      choice.enabled?.({ soloPending: this.soloPending }) ?? true;
+    const pick = (choice: DialogueChoice) => {
+      if (!enabled(choice)) return;
+      if (!choice.stays) this.closeDialogue();
+      choice.act?.(this);
+      // what was picked may have changed what can be picked
+      if (choice.stays) this.dialogueChoices?.retone();
     };
     const dismiss = () => this.closeDialogue();
+    const first = choices.find((c) => c.register === "actionable");
+    const confirm = () => (first ? pick(first) : dismiss());
 
-    this.dialogueChoices = { confirm, dismiss };
+    // the key each choice answers to, said on its label
+    const hint = (choice: DialogueChoice) =>
+      choice === first ? "  [E]" : choice.register === "cancel" ? "  [Esc]" : "";
+    const options = choices.map((choice, i) => {
+      const option = this.dialogueOption(
+        (i - (choices.length - 1) / 2) * CHOICE_SPACING,
+        48,
+        `${choice.label}${hint(choice)}`,
+        choice.register === "actionable" ? BARROW_HEX.amber : BARROW_HEX.arcane,
+        () => pick(choice),
+        () => enabled(choice),
+      );
+      option.setName(`choice-${choice.id}`);
+      return option;
+    });
+    const retone = () => options.forEach((o) => o.retone());
 
-    const choices: Phaser.GameObjects.GameObject[] = offer.declines
-      ? [
-          this.dialogueOption(-90, 48, `${offer.accepts}  [E]`, BARROW_HEX.amber, confirm),
-          this.dialogueOption(90, 48, `${offer.declines}  [Esc]`, BARROW_HEX.arcane, dismiss),
-        ]
-      : [this.dialogueOption(0, 48, `${offer.accepts}  [E]`, BARROW_HEX.amber, confirm)];
-
+    this.dialogueChoices = { confirm, dismiss, retone };
     this.dialogue = this.add
-      .container(width / 2, height / 2, [panel, speaker, line, ...choices])
+      .container(width / 2, height / 2, [panel, speaker, said, ...options])
       .setScrollFactor(0)
       .setDepth(2000);
   }
 
+  /**
+   * One pressable line of a dialogue or the menu. Its colour is the register (amber to press,
+   * arcane to go back), dimmed to vellumDark while `enabled` says it cannot be pressed; `retone`
+   * redraws that when the answer changes under an open dialogue.
+   */
   private dialogueOption(
     x: number,
     y: number,
     label: string,
     colour: number,
     onPick: () => void,
-  ): Phaser.GameObjects.Container {
+    enabled: () => boolean = () => true,
+  ): ChoiceOption {
+    const tone = () => toCss(enabled() ? colour : BARROW_HEX.vellumDark);
     const text = this.add
       .text(0, 0, label, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "15px",
-        color: toCss(colour),
+        color: tone(),
       })
       .setOrigin(0.5);
 
-    const option = this.add.container(x, y, [text]);
+    const option = Object.assign(this.add.container(x, y, [text]), {
+      retone: () => void text.setColor(tone()),
+    });
     // A Container has no texture, so it has no hit area to infer: without an
     // explicit shape here the option looks clickable and is not.
     option.setSize(160, 34);
@@ -1509,10 +1601,14 @@ export class HubScene extends Phaser.Scene {
       Phaser.Geom.Rectangle.Contains,
     );
     // The cursor stays the gauntlet over an option; the text brightening to vellum
-    // is the hover cue (FS-KYPQ9 §H.3).
-    option.on("pointerup", onPick);
-    option.on("pointerover", () => text.setColor(toCss(BARROW_HEX.vellum)));
-    option.on("pointerout", () => text.setColor(toCss(colour)));
+    // is the hover cue (FS-KYPQ9 §H.3). A dimmed option neither brightens nor answers.
+    option.on("pointerup", () => {
+      if (enabled()) onPick();
+    });
+    option.on("pointerover", () => {
+      if (enabled()) text.setColor(toCss(BARROW_HEX.vellum));
+    });
+    option.on("pointerout", () => text.setColor(tone()));
 
     return option;
   }
@@ -1592,6 +1688,16 @@ export class HubScene extends Phaser.Scene {
    * is open, standing where they were. */
   openLoadout(): void {
     this.scene.start("LoadoutScene");
+  }
+
+  /**
+   * Down alone, without the queue (FS-NSV3D §Requirements 2): one start_solo, and nothing more
+   * until the server has answered it, by world_entered or a refusal.
+   */
+  startSolo(): void {
+    if (this.soloPending) return;
+    this.soloPending = true;
+    socketManager.sendMessage(ActionType.StartSolo, {});
   }
 
   /** Joining is the delver's decision; the queue itself is unchanged. */

@@ -1,6 +1,6 @@
 ---
 id: I-NSV3D-1
-status: open
+status: in-progress
 implements: FS-NSV3D
 blocked_by: []
 labels: [ready-for-agent]
