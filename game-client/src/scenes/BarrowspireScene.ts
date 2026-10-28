@@ -43,6 +43,7 @@ import {
   type ResolvedCardKind,
   type RunMenuChoice,
 } from "@/ui/party";
+import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
 import { ProgressHud } from "@/ui/ProgressHud";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
 import { ResultHold } from "@/components/resultHold";
@@ -197,26 +198,20 @@ const NOTICE_BACKING: Record<NoticeTone, number> = {
 };
 
 /**
- * The run's ESC menu (FS-9K8EZ req 1): camera-fixed in the popup band with the result card, over
- * the dead delver's card (1500), which it never hides for long (req 6). Its width, the vertical
- * padding, the confirm line's row and one row per choice, in screen px.
+ * The run's ESC menu (FS-9K8EZ req 1): the shared menu chrome, camera-fixed in the popup band
+ * with the result card, over the dead delver's card (1500), which it never hides for long
+ * (req 6). The pressable area of a menu choice, in screen px around its label, and the run's
+ * tokens for the chrome: amber to press, arcane to go back, the HUD's label tone while dimmed.
  */
-const MENU_DEPTH = 2000;
-const MENU_WIDTH = 320;
-const MENU_PAD = 18;
-const MENU_LINE = 44;
-const MENU_ROW = 40;
-/** The pressable area of a menu choice, in screen px around its label. */
 const MENU_CHOICE_HIT = { width: 220, height: 34 };
-/** A drawn menu choice, which can redraw its colour when whether it can be picked changes. */
-type MenuOption = Phaser.GameObjects.Container & { retone(): void };
-/** The run menu's keys while it is open: a number for that row, Enter for the first, Esc back. */
-interface MenuKeys {
-  pick(index: number): void;
-  confirm(): void;
-  dismiss(): void;
-  retone(): void;
-}
+const MENU_TONES: MenuTones = {
+  panel: palette.ink,
+  frame: palette.frame,
+  text: palette.hudText,
+  dim: palette.hudLabel,
+  actionable: palette.interactable,
+  cancel: palette.safe,
+};
 /** What the delver's state was when the menu was built: its rows are right for this and no other. */
 interface MenuState {
   resolved: boolean;
@@ -4118,30 +4113,26 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private openMenu(): void {
     const state = this.menuState();
-    this.showMenuPanel(
-      undefined,
-      runMenuChoices(state),
-      {
+    this.showMenuPanel(undefined, runMenuChoices(state), {
+      actions: {
         fall: () => this.openFallConfirm(),
         leave: () => {
           this.leaveTheBarrow();
           this.closeMenu();
         },
       },
-      { leave: () => !this.leavePending },
-    );
+      enabled: { leave: () => !this.leavePending },
+    });
     this.menuFor = state;
   }
 
   /** Fall where you stand asks once (req 3): the menu's rows become the confirm, nothing sent yet. */
   private openFallConfirm(): void {
     const state = this.menuState();
-    this.showMenuPanel(
-      FALL_CONFIRM.line,
-      FALL_CONFIRM.choices,
-      { "fall-now": () => this.fallWhereYouStand() },
-      { "fall-now": () => !this.fallPending },
-    );
+    this.showMenuPanel(FALL_CONFIRM.line, FALL_CONFIRM.choices, {
+      actions: { "fall-now": () => this.fallWhereYouStand() },
+      enabled: { "fall-now": () => !this.fallPending },
+    });
     this.menuFor = state;
   }
 
@@ -4178,123 +4169,32 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The menu's panel (req 1): a camera-fixed charcoal box with a brass hairline in the popup
-   * band, an optional line over the rows, one row per choice. A number answers each actionable
-   * row, Enter the first; the cancel row already says Esc on its label and is what Esc does.
-   * Any row without an action of its own closes the menu.
+   * The menu's panel (req 1): the shared chrome at the camera's centre, built from the run's
+   * tokens, with an optional line over the rows and one row per choice. Any row without an
+   * action of its own closes the menu; a dimmed row neither brightens nor answers (req 8).
    */
   private showMenuPanel(
     line: string | undefined,
     choices: RunMenuChoice[],
-    actions: Partial<Record<RunMenuChoice["id"], () => void>>,
-    enabled: Partial<Record<RunMenuChoice["id"], () => boolean>>,
+    spec: {
+      actions: Partial<Record<RunMenuChoice["id"], () => void>>;
+      enabled: Partial<Record<RunMenuChoice["id"], () => boolean>>;
+    },
   ): void {
     this.closeMenu();
     const cam = this.cameras.main;
-    const lineHeight = line ? MENU_LINE : 0;
-    const panelHeight = MENU_PAD * 2 + lineHeight + choices.length * MENU_ROW;
-    const top = -panelHeight / 2;
-
-    const panel = this.add.graphics();
-    panel.fillStyle(palette.ink, 0.96);
-    panel.fillRect(-MENU_WIDTH / 2, top, MENU_WIDTH, panelHeight);
-    panel.lineStyle(1, palette.frame, 0.5);
-    panel.strokeRect(-MENU_WIDTH / 2, top, MENU_WIDTH, panelHeight);
-    const parts: Phaser.GameObjects.GameObject[] = [panel];
-    if (line) {
-      parts.push(
-        this.add
-          .text(0, top + MENU_PAD + MENU_LINE / 2, line, {
-            fontFamily: CANVAS_FONT.body,
-            fontSize: "15px",
-            color: toCss(palette.hudText),
-            align: "center",
-            wordWrap: { width: MENU_WIDTH - 32 },
-          })
-          .setOrigin(0.5),
-      );
-    }
-
-    const act = (choice: RunMenuChoice) => actions[choice.id] ?? (() => this.closeMenu());
-    const can = (choice: RunMenuChoice) => enabled[choice.id] ?? (() => true);
-    const actionable = choices.filter((c) => c.register === "actionable");
-    const hint = (choice: RunMenuChoice) =>
-      choice.register === "actionable" ? `  [${actionable.indexOf(choice) + 1}]` : "";
-    const origin = { x: cam.centerX, y: cam.centerY };
-    const options = choices.map((choice, i) =>
-      this.menuOption(
-        0,
-        top + MENU_PAD + lineHeight + MENU_ROW * (i + 0.5),
-        `${choice.label}${hint(choice)}`,
-        choice.register === "actionable" ? palette.interactable : palette.safe,
-        act(choice),
-        `menu-${choice.id}`,
-        origin,
-        can(choice),
-      ),
-    );
-    const press = (choice?: RunMenuChoice) => {
-      if (choice && can(choice)()) act(choice)();
-    };
-    const cancel = choices.find((c) => c.register === "cancel");
-
-    this.menuChoices = {
-      pick: (index) => press(actionable[index]),
-      confirm: () => press(actionable[0]),
-      dismiss: () => (cancel ? press(cancel) : this.closeMenu()),
-      retone: () => options.forEach((option) => option.retone()),
-    };
-    this.menu = this.add
-      .container(cam.centerX, cam.centerY, [...parts, ...options])
-      .setScrollFactor(0)
-      .setDepth(MENU_DEPTH);
-  }
-
-  /**
-   * One pressable row of the menu. Its colour is the register (amber to press, arcane to go
-   * back), dimmed to the HUD's label tone while `enabled` says it cannot be pressed; `retone`
-   * redraws that when the answer changes under an open menu.
-   *
-   * The label sits at (x, y) inside the camera-fixed box the caller builds at `origin`; the hit
-   * area is a separate, camera-fixed rectangle at the same place on the screen, named `name`.
-   * It cannot live in the box: Phaser hit-tests a container's child with the child's own scroll
-   * factor, not the parent's, so once the camera has followed the delver a click lands beside
-   * the row. It goes down with the label's container (req 8).
-   */
-  private menuOption(
-    x: number,
-    y: number,
-    label: string,
-    colour: number,
-    onPick: () => void,
-    name: string,
-    origin: { x: number; y: number },
-    enabled: () => boolean,
-  ): MenuOption {
-    const tone = () => toCss(enabled() ? colour : palette.hudLabel);
-    const text = this.add
-      .text(0, 0, label, { fontFamily: CANVAS_FONT.body, fontSize: "15px", color: tone() })
-      .setOrigin(0.5);
-    const option = Object.assign(this.add.container(x, y, [text]).setName(`${name}-label`), {
-      retone: () => void text.setColor(tone()),
+    const { container, keys } = showMenuPanel(this, {
+      line,
+      choices,
+      actions: spec.actions,
+      enabled: spec.enabled,
+      close: () => this.closeMenu(),
+      origin: { x: cam.centerX, y: cam.centerY },
+      hit: MENU_CHOICE_HIT,
+      tones: MENU_TONES,
     });
-
-    const hit = this.add
-      .rectangle(origin.x + x, origin.y + y, MENU_CHOICE_HIT.width, MENU_CHOICE_HIT.height, palette.ink, 0)
-      .setScrollFactor(0)
-      .setDepth(MENU_DEPTH + 1)
-      .setInteractive()
-      .setName(name);
-    // the text brightening to vellum is the hover cue; a dimmed row neither brightens nor answers
-    hit.on("pointerup", () => {
-      if (enabled()) onPick();
-    });
-    hit.on("pointerover", () => {
-      if (enabled()) text.setColor(toCss(palette.hudText));
-    });
-    hit.on("pointerout", () => text.setColor(tone()));
-    option.once("destroy", () => hit.destroy());
-    return option;
+    this.menuChoices = keys;
+    this.menu = container;
   }
 
   /** The menu or its confirm goes down, hit areas with it; nothing is sent (req 1, 3). */

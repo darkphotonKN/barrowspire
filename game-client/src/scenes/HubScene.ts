@@ -12,6 +12,7 @@ import {
 } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
 import { ProgressHud } from "@/ui/ProgressHud";
+import { MENU_DEPTH, menuOption, showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
 import { progressOf } from "@/ui/progress";
 import {
   ensureCharacterTextures,
@@ -141,10 +142,6 @@ const SCENERY_SEED = 0x5343_4e31;
 /** How close a delver stands to talk. Matches the server's NPCInteractRange. */
 const NPC_TALK_RANGE = 80;
 
-/** The ESC menu's panel: its width, the vertical padding, and one row per choice. */
-const MENU_WIDTH = 320;
-const MENU_PAD = 18;
-const MENU_ROW = 40;
 /** Screen px between the queue panel and its Leave button. */
 const LEAVE_GAP = 8;
 /** A passing notice: where it sits (screen px from the top, under the progress bar) and for how long. */
@@ -275,10 +272,20 @@ const NPC_DIALOGUE: Record<string, (state: HubState) => Dialogue> = {
 /** Screen px between the centres of neighbouring dialogue choices. */
 const CHOICE_SPACING = 180;
 
-/** A drawn choice, which can redraw its colour when whether it can be picked changes. */
-type ChoiceOption = Phaser.GameObjects.Container & { retone(): void };
 /** The pressable area of a dialogue or menu choice, in screen px around its label. */
 const CHOICE_HIT = { width: 160, height: 34 };
+/**
+ * The hub's tokens for the shared menu chrome: charcoal panel, brass hairline, amber to press,
+ * arcane to go back, vellumDark while dimmed, vellum under the pointer.
+ */
+const MENU_TONES: MenuTones = {
+  panel: BARROW_HEX.charcoal,
+  frame: BARROW_HEX.brass,
+  text: BARROW_HEX.vellum,
+  dim: BARROW_HEX.vellumDark,
+  actionable: BARROW_HEX.amber,
+  cancel: BARROW_HEX.arcane,
+};
 
 /**
  * One delver as the scene sees them.
@@ -384,7 +391,7 @@ export class HubScene extends Phaser.Scene {
   /** The ESC menu while it is open (FS-G4VMQ §Requirements 1–5). It owns the keyboard. */
   private menu?: Phaser.GameObjects.Container;
   /** The open menu's choices by key: the n-th actionable one, and the first on Enter. */
-  private menuChoices?: { pick: (index: number) => void; confirm: () => void };
+  private menuChoices?: MenuKeys;
   /** Shown while queued, wherever the delver walks. */
   private queuePanel?: Phaser.GameObjects.Text;
   /** Beside the panel while queued: the way out of the queue (FS-G4VMQ §Requirements 15). */
@@ -1581,18 +1588,22 @@ export class HubScene extends Phaser.Scene {
       if (actionable.length === 1) return "  [E]";
       return `  [${actionable.indexOf(choice) + 1}]`;
     };
+    // Each choice is the shared menu row: its hit area is a separate camera-fixed rectangle
+    // that goes down with the label's container (menuPanel.ts says why).
     const origin = { x: width / 2, y: height / 2 };
     const options = choices.map((choice, i) =>
-      this.dialogueOption(
-        (i - (choices.length - 1) / 2) * CHOICE_SPACING,
-        48,
-        `${choice.label}${hint(choice)}`,
-        choice.register === "actionable" ? BARROW_HEX.amber : BARROW_HEX.arcane,
-        () => pick(choice),
-        `choice-${choice.id}`,
+      menuOption(this, {
+        x: (i - (choices.length - 1) / 2) * CHOICE_SPACING,
+        y: 48,
+        label: `${choice.label}${hint(choice)}`,
+        colour: choice.register === "actionable" ? MENU_TONES.actionable : MENU_TONES.cancel,
+        onPick: () => pick(choice),
+        name: `choice-${choice.id}`,
         origin,
-        () => enabled(choice),
-      ),
+        enabled: () => enabled(choice),
+        hit: CHOICE_HIT,
+        tones: MENU_TONES,
+      }),
     );
     const retone = () => options.forEach((o) => o.retone());
 
@@ -1600,61 +1611,7 @@ export class HubScene extends Phaser.Scene {
     this.dialogue = this.add
       .container(width / 2, height / 2, [panel, speaker, said, ...options])
       .setScrollFactor(0)
-      .setDepth(2000);
-  }
-
-  /**
-   * One pressable line of a dialogue or the menu. Its colour is the register (amber to press,
-   * arcane to go back), dimmed to vellumDark while `enabled` says it cannot be pressed; `retone`
-   * redraws that when the answer changes under an open dialogue.
-   *
-   * The label sits at (x, y) inside the camera-fixed box the caller builds at `origin`; the hit
-   * area is a separate, camera-fixed rectangle at the same place on the screen, named `name`.
-   * It cannot live in the box: Phaser hit-tests a container's child with the child's own
-   * scroll factor, not the parent's, so once the camera has followed the delver a click lands
-   * beside the option. It goes down with the label's container.
-   */
-  private dialogueOption(
-    x: number,
-    y: number,
-    label: string,
-    colour: number,
-    onPick: () => void,
-    name: string,
-    origin: { x: number; y: number },
-    enabled: () => boolean = () => true,
-  ): ChoiceOption {
-    const tone = () => toCss(enabled() ? colour : BARROW_HEX.vellumDark);
-    const text = this.add
-      .text(0, 0, label, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "15px",
-        color: tone(),
-      })
-      .setOrigin(0.5);
-
-    const option = Object.assign(this.add.container(x, y, [text]).setName(`${name}-label`), {
-      retone: () => void text.setColor(tone()),
-    });
-
-    const hit = this.add
-      .rectangle(origin.x + x, origin.y + y, CHOICE_HIT.width, CHOICE_HIT.height, BARROW_HEX.ink, 0)
-      .setScrollFactor(0)
-      .setDepth(2001)
-      .setInteractive()
-      .setName(name);
-    // The cursor stays the gauntlet over an option; the text brightening to vellum
-    // is the hover cue (FS-KYPQ9 §H.3). A dimmed option neither brightens nor answers.
-    hit.on("pointerup", () => {
-      if (enabled()) onPick();
-    });
-    hit.on("pointerover", () => {
-      if (enabled()) text.setColor(toCss(BARROW_HEX.vellum));
-    });
-    hit.on("pointerout", () => text.setColor(tone()));
-    option.once("destroy", () => hit.destroy());
-
-    return option;
+      .setDepth(MENU_DEPTH);
   }
 
   private closeDialogue(): void {
@@ -1692,46 +1649,22 @@ export class HubScene extends Phaser.Scene {
    * chrome's. Camera-fixed in the popup band with the dialogue; the world runs on behind it.
    */
   private openMenu(): void {
-    const choices = hubMenuChoices({ queued: this.queued });
     const { width, height } = this.cameras.main;
-    const panelHeight = MENU_PAD * 2 + choices.length * MENU_ROW;
-    const top = -panelHeight / 2;
-
-    const panel = this.add.graphics();
-    panel.fillStyle(BARROW_HEX.charcoal, 0.96);
-    panel.fillRect(-MENU_WIDTH / 2, top, MENU_WIDTH, panelHeight);
-    panel.lineStyle(1, BARROW_HEX.brass, 0.5);
-    panel.strokeRect(-MENU_WIDTH / 2, top, MENU_WIDTH, panelHeight);
-
     const actions: Record<HubMenuChoice["id"], () => void> = {
       change: () => this.changeCharacter(),
       leave: () => this.leaveQueue(),
       back: () => this.closeMenu(),
     };
-    // each thing to do answers to its number; Back already says Esc on its label
-    const actionable = choices.filter((c) => c.register === "actionable");
-    const hint = (choice: HubMenuChoice) =>
-      choice.register === "actionable" ? `  [${actionable.indexOf(choice) + 1}]` : "";
-    const options = choices.map((choice, i) =>
-      this.dialogueOption(
-        0,
-        top + MENU_PAD + MENU_ROW * (i + 0.5),
-        `${choice.label}${hint(choice)}`,
-        choice.register === "actionable" ? BARROW_HEX.amber : BARROW_HEX.arcane,
-        actions[choice.id],
-        `menu-${choice.id}`,
-        { x: width / 2, y: height / 2 },
-      ),
-    );
-
-    this.menuChoices = {
-      pick: (index) => actionable[index] && actions[actionable[index].id](),
-      confirm: () => actionable[0] && actions[actionable[0].id](),
-    };
-    this.menu = this.add
-      .container(width / 2, height / 2, [panel, ...options])
-      .setScrollFactor(0)
-      .setDepth(2000);
+    const { container, keys } = showMenuPanel(this, {
+      choices: hubMenuChoices({ queued: this.queued }),
+      actions,
+      close: () => this.closeMenu(),
+      origin: { x: width / 2, y: height / 2 },
+      hit: CHOICE_HIT,
+      tones: MENU_TONES,
+    });
+    this.menuChoices = keys;
+    this.menu = container;
   }
 
   /**
