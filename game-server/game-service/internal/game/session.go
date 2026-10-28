@@ -1346,8 +1346,19 @@ func (s *Session) broadcastFullState(entities []*ecs.Entity) error {
 		return err
 	}
 
-	clientStates := make(map[uuid.UUID]*types.ClientGameState)
+	// The recipients are read under the lock and the serialization done outside
+	// it: Admit, RemovePlayer and a run's return to the hub write this map on
+	// other goroutines (FS-QG1HR D2, race A). The pool's aliasing (race B) is
+	// not addressed here.
+	s.mu.RLock()
+	recipients := make([]uuid.UUID, 0, len(s.playerEntityIDToPlayerID))
 	for _, playerID := range s.playerEntityIDToPlayerID {
+		recipients = append(recipients, playerID)
+	}
+	s.mu.RUnlock()
+
+	clientStates := make(map[uuid.UUID]*types.ClientGameState, len(recipients))
+	for _, playerID := range recipients {
 		clientStates[playerID] = s.stateSerializer.FormatStateToClientState(backendState, playerID)
 	}
 

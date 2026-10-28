@@ -46,6 +46,7 @@ type SessionManager interface {
 	GetServerChan() chan types.ClientPackage
 	AddPlayer(*types.Player) error
 	RemovePlayerFromQueue(*types.Player) error
+	IsQueued(ctx context.Context, playerID uuid.UUID) (bool, error)
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
 	EnterHub(ctx context.Context, conn *websocket.Conn, characterID string) (*game.Session, error)
 	PlayerByID(playerID uuid.UUID) (*types.Player, bool)
@@ -79,6 +80,26 @@ var (
 // characterResolveTimeout bounds how long entry waits on character-service
 // before refusing with a retryable reason.
 const characterResolveTimeout = 3 * time.Second
+
+// queueReadTimeout bounds how long a solo start waits to learn whether the
+// member is queued; it runs on the hub's loop, so it must be short.
+const queueReadTimeout = 2 * time.Second
+
+// Solo start refusals, in the words the delver can act on. FS-NSV3D §Requirements 9.
+const (
+	startSoloNoCharacter = "Enter the hub with a character first."
+	startSoloQueued      = "Leave the queue first."
+)
+
+// refuse answers an action with why it was not done: the same words on the
+// error and in the payload, so the client shows one message whichever it reads.
+func (h *messageHub) refuse(conn *websocket.Conn, action string, why string) {
+	h.sender.SendMessageToConn(conn, types.Message{
+		Action:  action,
+		Payload: map[string]interface{}{"message": why},
+		Error:   &why,
+	})
+}
 
 // enterHubRefusal is what the menu shows for a refused entry. The detail stays
 // in the log; a stranger's client gets only what it can act on.
@@ -312,6 +333,48 @@ func (h *messageHub) Run(ctx context.Context) {
 						"username":  player.Username,
 					},
 				})
+
+			// A run of one, built at once: no queue, no matchmaker, no handoff.
+			// The guards are find_game's, and a member already in a run is
+			// resumed as find_game resumes them. FS-NSV3D §Requirements 8–12.
+			case constants.ActionStartSolo:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("start_solo from a connection with no player")
+					continue
+				}
+
+				if player.Character.ID == uuid.Nil {
+					slog.Warn("Refusing start_solo: no character in play", "player_id", player.ID)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, startSoloNoCharacter)
+					continue
+				}
+
+				// already delving: the run they are in is the answer
+				if err := h.handlePlayerExistingGame(player, clientPackage); err == nil {
+					continue
+				}
+
+				// a queued member's character belongs to the queue entry until they
+				// leave it (FS-K2HKP R7a); an unreadable queue is not a queue they
+				// are in, as enter_hub already treats it
+				queueCtx, cancel := context.WithTimeout(ctx, queueReadTimeout)
+				queued, err := h.sessionManager.IsQueued(queueCtx, player.ID)
+				cancel()
+				if err != nil {
+					slog.Warn("Could not read queue entry on start_solo, treating as not queued",
+						"player_id", player.ID, "error", err)
+				}
+				if queued {
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, startSoloQueued)
+					continue
+				}
+
+				session := h.sessionManager.CreateGameSession(&types.ResolvedMatchedPlayers{
+					LocalPlayers: []*types.Player{player},
+				})
+				slog.Info("Solo run started", "session_id", session.ID, "player_id", player.ID)
+				h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(session))
 
 			case constants.ActionLeaveQueue:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)

@@ -9,6 +9,9 @@ const (
 	ActionFindGame   Action = "find_game"
 	ActionLeaveQueue Action = "leave_queue"
 	ActionLeaveGame  Action = "leave_game"
+	// ActionStartSolo asks for a run of one, built at once without the queue.
+	// FS-NSV3D §Requirements 8.
+	ActionStartSolo Action = "start_solo"
 
 	// ActionEnterHub is how a player asks to enter the hub, after picking a
 	// character. Connecting opens the socket; entering is a separate step.
