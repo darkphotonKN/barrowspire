@@ -578,6 +578,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
     this.controlsPanel = undefined;
     this.gameEndOverlay = undefined;
+    // the end-of-run overlay locks the keyboard, and Phaser keeps the plugin
+    // across restarts, so the next run would start unable to move
+    if (this.input?.keyboard) this.input.keyboard.enabled = true;
     this.delveNoticeText = undefined;
     this.progressHud = undefined;
     this.characterLevel = undefined;

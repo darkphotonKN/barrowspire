@@ -157,6 +157,20 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
     expect(run.walls.size).toBe(0);
   });
 
+  // Phaser keeps the scene's keyboard plugin across restarts and reads `enabled`
+  // only at boot, so the end-of-run lock carried into the next run: the delver
+  // could not move until a page refresh built a new game.
+  it("should give the next run back the keyboard the end-of-run overlay locked", () => {
+    const { scene, run } = startedRun();
+    const keyboard = { enabled: false };
+    (run as unknown as { input: unknown }).input = { keyboard };
+
+    run.events.emit("shutdown");
+    scene.init();
+
+    expect(keyboard.enabled).toBe(true);
+  });
+
   it("should not pile up teardown listeners across restarts", () => {
     const { scene, run } = startedRun();
     for (let i = 0; i < 3; i++) {
