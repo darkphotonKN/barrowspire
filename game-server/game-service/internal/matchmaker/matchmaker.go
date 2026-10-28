@@ -132,7 +132,11 @@ func (q *matchmaker) Start(ctx context.Context) {
 	go q.matchLoop(ctx)
 	go q.heartbeatLoop(ctx)
 	go q.queueStatusLoop(ctx)
-	go q.matchAnnouncer.Listen(ctx, q.podID, q.matchReadyCh)
+	go func() {
+		if err := q.matchAnnouncer.Listen(ctx, q.podID, q.matchReadyCh); err != nil {
+			slog.Error("match announcer stopped listening", "pod_id", q.podID, "err", err)
+		}
+	}()
 	go q.matchReady(ctx)
 	slog.Info("Queue service started, waiting for players to join...")
 }

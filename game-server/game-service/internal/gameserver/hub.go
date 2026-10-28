@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
@@ -24,9 +23,7 @@ import (
 
 type messageHub struct {
 	sessionManager SessionManager
-	gameSessionCh  chan types.Message
 	sessions       map[string]*game.Session
-	mu             sync.RWMutex
 	sender         *messaging.MessageSender
 
 	// this pod's identity: a matched player on podID and connected here is
@@ -117,11 +114,13 @@ func forfeitRunRefusal(err error) string {
 // refuse answers an action with why it was not done: the same words on the
 // error and in the payload, so the client shows one message whichever it reads.
 func (h *messageHub) refuse(conn *websocket.Conn, action string, why string) {
-	h.sender.SendMessageToConn(conn, types.Message{
+	if err := h.sender.SendMessageToConn(conn, types.Message{
 		Action:  action,
 		Payload: map[string]interface{}{"message": why},
 		Error:   &why,
-	})
+	}); err != nil {
+		slog.Warn("Could not deliver a refusal", "action", action, "error", err)
+	}
 }
 
 // enterHubRefusal is what the menu shows for a refused entry. The detail stays
@@ -259,14 +258,7 @@ func (h *messageHub) Run(ctx context.Context) {
 						"error", err,
 					)
 
-					clientErr := "You are not in a game session"
-					h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
-						Action: clientPackage.Message.Action,
-						Payload: map[string]interface{}{
-							"message": clientErr,
-						},
-						Error: &clientErr,
-					})
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, "You are not in a game session")
 					continue
 				}
 
@@ -301,12 +293,7 @@ func (h *messageHub) Run(ctx context.Context) {
 				if player.Character.ID == uuid.Nil {
 					slog.Warn("Refusing find_game: no character in play", "player_id", player.ID)
 
-					clientErr := "Enter the hub with a character first."
-					h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
-						Action:  clientPackage.Message.Action,
-						Payload: map[string]interface{}{"message": clientErr},
-						Error:   &clientErr,
-					})
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, startSoloNoCharacter)
 					continue
 				}
 
@@ -329,12 +316,11 @@ func (h *messageHub) Run(ctx context.Context) {
 					message := "Error occured when attempting to queue player"
 
 					if errors.Is(err, matchmaker.ErrPlayerAlreadyQueued) {
-						message = "Player attempted to queue twice."
-						// TODO: send error
+						// TODO: tell the client they are already queued
 						continue
 					}
 
-					h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
+					if err := h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
 						Action: clientPackage.Message.Action,
 						Payload: map[string]interface{}{
 							"message":   message,
@@ -342,20 +328,24 @@ func (h *messageHub) Run(ctx context.Context) {
 							"username":  player.Username,
 						},
 						Error: &queueErr,
-					})
+					}); err != nil {
+						slog.Warn("Could not answer find_game", "player_id", player.ID, "error", err)
+					}
 					continue
 				}
 
 				slog.Info("Player added to matchmaking queue", "player username", player.Username)
 
-				h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
+				if err := h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
 					Action: clientPackage.Message.Action,
 					Payload: map[string]interface{}{
 						"message":   "Successfully joined matchmaking queue",
 						"player_id": player.ID.String(),
 						"username":  player.Username,
 					},
-				})
+				}); err != nil {
+					slog.Warn("Could not answer find_game", "player_id", player.ID, "error", err)
+				}
 
 			// A run of one, built at once: no queue, no matchmaker, no handoff.
 			// The guards are find_game's, and a member already in a run is
@@ -397,7 +387,9 @@ func (h *messageHub) Run(ctx context.Context) {
 					LocalPlayers: []*types.Player{player},
 				})
 				slog.Info("Solo run started", "session_id", session.ID, "player_id", player.ID)
-				h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(session))
+				if err := h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(session)); err != nil {
+					slog.Warn("Could not tell the delver their solo run started", "player_id", player.ID, "error", err)
+				}
 
 			// A dead delver leaving the run for the hub before it ends; the run
 			// keeps their body for its settlement. FS-QPDKN §Requirements 13, 14.
@@ -416,7 +408,9 @@ func (h *messageHub) Run(ctx context.Context) {
 				}
 
 				slog.Info("Delver left the run early", "player_id", player.ID)
-				h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(hub))
+				if err := h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(hub)); err != nil {
+					slog.Warn("Could not tell the leaver they are home", "player_id", player.ID, "error", err)
+				}
 
 			// A delver in play dying where they stand: health to zero, and the
 			// death takes its ordinary course. Nothing is sent on success; the
@@ -454,35 +448,23 @@ func (h *messageHub) Run(ctx context.Context) {
 					if err := h.sessionManager.RemovePlayerFromQueue(player); err != nil {
 						slog.Error("failed to remove player from queue", "player_id", player.ID, "err", err)
 
-						leaveErr := "Could not leave the queue, please try again."
-						h.sender.SendMessageToConn(conn, types.Message{
-							Action:  action,
-							Payload: map[string]interface{}{"message": leaveErr},
-							Error:   &leaveErr,
-						})
+						h.refuse(conn, action, "Could not leave the queue, please try again.")
 						return
 					}
 
-					h.sender.SendMessageToConn(conn, types.Message{
+					if err := h.sender.SendMessageToConn(conn, types.Message{
 						Action: action,
 						Payload: map[string]interface{}{
 							"message":   "Successfully left the queue",
 							"player_id": player.ID.String(),
 						},
-					})
+					}); err != nil {
+						slog.Warn("Could not tell a member they left the queue", "player_id", player.ID, "error", err)
+					}
 				}(clientPackage.Conn, player, clientPackage.Message.Action)
 
 			default:
-				err := "Unknown action"
-				h.sender.SendMessageToConn(
-					clientPackage.Conn, types.Message{
-						Action: clientPackage.Message.Action,
-						Payload: map[string]interface{}{
-							"message": err,
-						},
-						Error: &err,
-					},
-				)
+				h.refuse(clientPackage.Conn, clientPackage.Message.Action, "Unknown action")
 			}
 
 		case matched := <-h.sessionManager.GetMatchedChan(ctx):
@@ -505,7 +487,9 @@ func (h *messageHub) Run(ctx context.Context) {
 			}
 			// game_found was this message under an older name, from when a run
 			// was the only world anyone could enter. FS-29KSH §Requirements 15.
-			h.sender.BroadcastToPlayerList(playerIDs, worldEnteredMessage(session))
+			if err := h.sender.BroadcastToPlayerList(playerIDs, worldEnteredMessage(session)); err != nil {
+				slog.Warn("world_entered not delivered to every matched player", "session_id", session.ID, "error", err)
+			}
 
 			// only now that the run exists are the other pods told to send their
 			// players over. Off the loop, so a slow redis never stalls it.
@@ -518,14 +502,17 @@ func (h *messageHub) Run(ctx context.Context) {
 			for i, player := range status.Players {
 				playerIDs[i] = player.ID
 			}
-			h.sender.BroadcastToPlayerList(playerIDs,
+			if err := h.sender.BroadcastToPlayerList(playerIDs,
 				types.Message{
 					Action: "queue_status",
 					Payload: map[string]any{
 						"current": status.Current,
 						"total":   status.Total,
 					},
-				})
+				}); err != nil {
+				// a snapshot is stale by the next tick anyway
+				slog.Debug("queue_status not delivered to every queued player", "error", err)
+			}
 
 		// handoff takes match ready players that shouldn't connect to this pod to reconnect
 		case handoff := <-h.sessionManager.GetHandoffChan(ctx):
@@ -688,7 +675,9 @@ func (h *messageHub) handlePlayerExistingGame(player *types.Player, clientPackag
 			"player_id", player.ID,
 			"current_game_session_id", player.CurrentGameSessionId)
 
-		h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(session))
+		if err := h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(session)); err != nil {
+			slog.Warn("Could not tell a member which run to resume", "player_id", player.ID, "error", err)
+		}
 
 		// return no error if player exists in a game
 		return nil

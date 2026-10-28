@@ -26,10 +26,6 @@ type ClassGrowth struct {
 	MaxHealth, MaxMana                        int
 }
 
-type MatchConfig struct {
-	players []*ecs.Entity
-}
-
 // CreateMatchProgressEntity makes the run-level entity: match progress and the
 // floor the run is on. It outlives every floor change. FS-F6F88 §Requirements 3.
 func CreateMatchProgressEntity(em *ecs.EntityManager) *ecs.Entity {

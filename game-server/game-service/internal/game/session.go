@@ -9,6 +9,7 @@ import (
 	"math/rand/v2"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pbitems "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
@@ -59,6 +60,10 @@ type Session struct {
 	// its settlement, but nothing is sent to them any more (FS-QPDKN R18, R21)
 	departed map[uuid.UUID]struct{}
 
+	// frames a member's writer could not take, counted rather than logged:
+	// one slow client would otherwise log thirty lines a second (FS-QG1HR D2)
+	droppedFrames atomic.Uint64
+
 	// end session signal
 	endSessionCh chan bool
 
@@ -66,9 +71,8 @@ type Session struct {
 	TestMessageSpy chan types.Message
 
 	// item pool (session level, items are removed once assigned to a container)
-	itemPool            lootPool
-	itemPoolInitialized bool
-	lootRarities        []lootRarity // empty: drops are unscaled with no rarity id (NULL)
+	itemPool     lootPool
+	lootRarities []lootRarity // empty: drops are unscaled with no rarity id (NULL)
 
 	// dependency injections
 	sessionCloser   SessionCloser
@@ -408,7 +412,9 @@ func (s *Session) manageClientMessages() {
 							"player_id", playerID,
 							"entity_id", entityIDUUID,
 							"error", err)
-						s.sender.SendMessageToPlayer(playerID, types.Message{})
+						if err := s.sender.SendMessageToPlayer(playerID, types.Message{}); err != nil {
+							slog.Debug("Could not answer a refused action", "player_id", playerID, "error", err)
+						}
 					}
 				})
 
@@ -449,7 +455,9 @@ func (s *Session) manageClientMessages() {
 
 				s.queueIntent(func() {
 					if err := s.handleAttack(playerID, enemyEntityID); err != nil {
-						s.sender.SendMessageToPlayer(playerID, types.Message{})
+						if err := s.sender.SendMessageToPlayer(playerID, types.Message{}); err != nil {
+							slog.Debug("Could not answer a refused action", "player_id", playerID, "error", err)
+						}
 					}
 				})
 
@@ -1453,7 +1461,9 @@ func (s *Session) broadcastFullState(entities []*ecs.Entity) error {
 
 	for playerID, clientState := range clientStates {
 		go func(pID uuid.UUID, cState *types.ClientGameState) {
-			s.sender.SendStateToPlayer(pID, cState)
+			if err := s.sender.SendStateToPlayer(pID, cState); err != nil {
+				s.droppedFrames.Add(1)
+			}
 		}(playerID, clientState)
 	}
 
@@ -1717,7 +1727,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		containerOpenable.IsOpen = true
 
 		// create items on first open by using seeded itemPool
-		if containerOpenable.HasBeenOpened == false {
+		if !containerOpenable.HasBeenOpened {
 			containerOpenable.HasBeenOpened = true
 
 			// creates RANDOM items on the spot
@@ -2439,13 +2449,15 @@ func (s *Session) generateItems() ([]uuid.UUID, error) {
 * It provides user friendly messages to the client.
 **/
 func (s *Session) sendErrorToPlayer(playerID uuid.UUID, action string, userMessage string) {
-	s.sender.SendMessageToPlayer(playerID, types.Message{
+	if err := s.sender.SendMessageToPlayer(playerID, types.Message{
 		Action: action,
 		Payload: map[string]interface{}{
 			"success": false,
 			"message": userMessage,
 		},
-	})
+	}); err != nil {
+		slog.Debug("Could not deliver an error to a player", "player_id", playerID, "action", action, "error", err)
+	}
 }
 
 /**
@@ -2462,7 +2474,9 @@ func (s *Session) sendRefusalToPlayer(playerID uuid.UUID, action, userMessage, r
 		payload[key] = value
 	}
 
-	s.sender.SendMessageToPlayer(playerID, types.Message{Action: action, Payload: payload})
+	if err := s.sender.SendMessageToPlayer(playerID, types.Message{Action: action, Payload: payload}); err != nil {
+		slog.Debug("Could not deliver a refusal to a player", "player_id", playerID, "action", action, "error", err)
+	}
 }
 
 /**
@@ -2607,7 +2621,9 @@ func (s *Session) endSession() {
 	}
 
 	// remove session from server
-	s.sessionCloser.CloseSession(s.ID)
+	if err := s.sessionCloser.CloseSession(s.ID); err != nil {
+		slog.Warn("Could not remove the ended session from the server", "session_id", s.ID, "error", err)
+	}
 
 	// clean up
 	s.Shutdown()

@@ -236,7 +236,9 @@ func (s *Server) ServeConnectedPlayer(conn *websocket.Conn) {
 		if err != nil {
 			slog.Error("Error when decoding payload", "error", err)
 
-			conn.WriteJSON(types.Message{Action: "Error", Payload: map[string]interface{}{"error": "Your message to server was the incorrect format and could not be decoded as JSON."}})
+			if err := conn.WriteJSON(types.Message{Action: "Error", Payload: map[string]interface{}{"error": "Your message to server was the incorrect format and could not be decoded as JSON."}}); err != nil {
+				slog.Warn("Could not tell a client its message was malformed", "error", err)
+			}
 			continue
 		}
 

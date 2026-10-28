@@ -11,7 +11,6 @@ import (
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontypes "github.com/darkphotonKN/barrowspire-server/common/types"
-	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -189,16 +188,6 @@ func TestFormatMatchData(t *testing.T) {
 	}
 }
 
-var (
-	serviceName = "stats"
-	grpcAddr    = commonhelpers.GetEnvString("GRPC_STATS_ADDR", "7124")
-
-	amqpUser     = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
-	amqpPassword = commonhelpers.GetEnvString("RABBITMQ_PASS", "guest")
-	amqpHost     = commonhelpers.GetEnvString("RABBITMQ_HOST", "localhost")
-	amqpPort     = commonhelpers.GetEnvString("RABBITMQ_PORT", "5672")
-)
-
 // test publisher just for testing
 type TestPublisher struct {
 }
@@ -217,10 +206,7 @@ func (p *TestPublisher) PublishWithContext(_ context.Context, exchange, key stri
 	return nil
 }
 
-type TestFramework struct {
-	sample  string
-	success string
-}
+type TestFramework struct{}
 
 func TestPublishMatchComplete_DataStructure(t *testing.T) {
 

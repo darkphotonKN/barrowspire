@@ -32,7 +32,7 @@ func TestBearerToken_NeverPrints(t *testing.T) {
 		"slog json": js.String(),
 		"%v":        fmt.Sprintf("%v", *player),
 		"%+v":       fmt.Sprintf("%+v", *player),
-		"%s":        fmt.Sprintf("%s", player.Token),
+		"%s":        player.Token.String(),
 		"json":      string(body),
 	} {
 		assert.NotContains(t, out, secret, name)
