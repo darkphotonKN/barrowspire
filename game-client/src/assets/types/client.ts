@@ -90,6 +90,8 @@ export interface ActionMap {
   cast_skill: CastSkillPayload;
   /** A dead delver leaving the run for the hub (FS-QPDKN req 13): no payload. */
   leave_run: Record<string, never>;
+  /** A queued delver cancelling (FS-G4VMQ req 18): no payload. */
+  leave_queue: Record<string, never>;
 }
 
 export const ActionType = {
@@ -105,6 +107,7 @@ export const ActionType = {
   Unequip: "unequip",
   CastSkill: "cast_skill",
   LeaveRun: "leave_run",
+  LeaveQueue: "leave_queue",
 } as const;
 
 export type ActionType = (typeof ActionType)[keyof typeof ActionType];

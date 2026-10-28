@@ -910,7 +910,7 @@ export class MainMenuScene extends Phaser.Scene {
 
     cancelBtn.on("pointerdown", () => {
       // leave_queue alone cancels (FS-K2HKP §Requirements 30)
-      socketManager.sendMessage("leave_queue" as any, {});
+      socketManager.sendMessage(ActionType.LeaveQueue, {});
       this.closeQueuePopup();
     });
 
