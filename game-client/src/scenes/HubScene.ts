@@ -347,6 +347,8 @@ export class HubScene extends Phaser.Scene {
   /** Everything the scene knows about one delver, keyed by entity id. */
   private views = new Map<string, DelverView>();
   private selfEntityID: string | null = null;
+  /** The sprite the camera is latched onto, so it is latched once per sprite, not per tick. */
+  private followedSprite?: unknown;
 
   /** Drawn once: the hub's buildings are fixed and never change. */
   private structuresDrawn = false;
@@ -573,6 +575,10 @@ export class HubScene extends Phaser.Scene {
     this.queuePanel = undefined;
     this.leaveButton = undefined;
     this.queued = false;
+    // the next visit rebuilds every sprite; the camera must latch onto the new body
+    // whatever its entity id, so neither survives the visit
+    this.selfEntityID = null;
+    this.followedSprite = undefined;
     this.leavePending = false;
     this.soloPending = false;
     this.roofs = [];
@@ -1181,11 +1187,9 @@ export class HubScene extends Phaser.Scene {
         this.progressHud.show(progress);
       }
 
-      if (this.selfEntityID !== state.current_player.entity_id) {
-        this.selfEntityID = state.current_player.entity_id;
-        const self = this.views.get(this.selfEntityID);
-        if (self) this.cameras.main.startFollow(self.sprite, true, 0.1, 0.1);
-      }
+      this.selfEntityID = state.current_player.entity_id;
+      const self = this.views.get(this.selfEntityID);
+      if (self) this.keepCameraOn(self.sprite);
     }
 
     this.renderStructures(state.walls ?? []);
@@ -1728,6 +1732,17 @@ export class HubScene extends Phaser.Scene {
       .container(width / 2, height / 2, [panel, ...options])
       .setScrollFactor(0)
       .setDepth(2000);
+  }
+
+  /**
+   * The camera on the delver's own body. Latched by sprite, not by entity id: a scene restart
+   * (back from the loadout, re-entering the hub) rebuilds every sprite under the same id, and
+   * startFollow snaps the camera each time it is called, so it is called once per sprite.
+   */
+  private keepCameraOn(sprite: Phaser.GameObjects.Container): void {
+    if (sprite === this.followedSprite) return;
+    this.cameras.main.startFollow(sprite, true, 0.1, 0.1);
+    this.followedSprite = sprite;
   }
 
   private closeMenu(): void {
