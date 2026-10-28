@@ -1,6 +1,6 @@
 ---
 id: I-9K8EZ-1
-status: open
+status: in-progress
 implements: FS-9K8EZ
 blocked_by: []
 labels: [ready-for-agent]
