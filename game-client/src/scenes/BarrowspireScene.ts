@@ -359,6 +359,12 @@ export class BarrowspireScene extends Phaser.Scene {
   private watchedDelverId?: string;
   /** The sprite the camera was last latched onto while spectating, so it is latched once. */
   private followedSprite?: unknown;
+  /**
+   * The run `world_entered` put us in. The server may still broadcast another world this
+   * member has a body in (a stale run, the hub); drawing those frames here would snap the
+   * delver between two positions every tick.
+   */
+  private sessionID?: string;
   /** Whose eyes, and how to switch (req 9); up while spectating. */
   private spectateHud?: { watching: Phaser.GameObjects.Text; hint: Phaser.GameObjects.Text };
   /** How this delver is out of the delve, while the card or the spectate view is up (req 2, 10). */
@@ -559,7 +565,9 @@ export class BarrowspireScene extends Phaser.Scene {
    * builds is forgotten when it stops, and the next start rebuilds it through the
    * same code path (FS-2325V "Edge States": reconnect mid-run).
    */
-  init(): void {
+  init(data?: { sessionID?: string }): void {
+    // the run this scene was started for; state from any other world is not ours to draw
+    this.sessionID = data?.sessionID;
     // DESTROY too: tearing the game down mid-run (the page unmounts) skips SHUTDOWN.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.resetRun, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.resetRun, this);
@@ -675,6 +683,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.canAttack = true;
     this.canCastSkill = true;
     this.lastGameState = undefined;
+    this.sessionID = undefined;
     this.previousEscapeDoorOpened = null;
     this.previousSwitchActivated = null;
     this.escapedPlayers.clear();
@@ -2925,6 +2934,7 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   private handleGameStateUpdate(state: ClientGameState): void {
+    if (this.sessionID !== undefined && state.session_id !== this.sessionID) return;
     this.lastGameState = state;
 
     // The party climbed (FS-F6F88 req 28, 32): the old floor goes before this broadcast builds
