@@ -55,6 +55,10 @@ type Session struct {
 	// tick that eliminated them
 	eliminations map[uuid.UUID]int
 
+	// members who left this run early: their body stays for the run's end and
+	// its settlement, but nothing is sent to them any more (FS-QPDKN R18, R21)
+	departed map[uuid.UUID]struct{}
+
 	// end session signal
 	endSessionCh chan bool
 
@@ -205,6 +209,7 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		// map [playerID] to entityID
 		playerIDToEntitiesID:     make(map[uuid.UUID]uuid.UUID),
 		playerEntityIDToPlayerID: make(map[uuid.UUID]uuid.UUID, constants.DefautMaxSessionPlayers),
+		departed:                 make(map[uuid.UUID]struct{}),
 		MessageCh:                make(chan types.ClientPackage, 100),
 
 		playerDamage:       playerDamage,
@@ -1282,6 +1287,49 @@ func (s *Session) HasPlayer(playerID uuid.UUID) bool {
 	return exists
 }
 
+// Depart lets a resolved delver leave this run early (FS-QPDKN §Requirements
+// 13, 14, 18). Their body stays, so the run's end settles them as if they had
+// stayed; they are dropped from the run's recipients (R21). Refused while they
+// are still in play, and for an escaped delver, whose plunder is settled from
+// the run's end snapshot and who therefore waits for it.
+func (s *Session) Depart(playerID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	entityID, here := s.playerIDToEntitiesID[playerID]
+	if !here {
+		return fmt.Errorf("depart %s: %w", playerID, ErrNotInThisWorld)
+	}
+	entity, ok := s.EntityManager.GetEntity(entityID)
+	if !ok {
+		return fmt.Errorf("depart %s: %w", playerID, ErrNotInThisWorld)
+	}
+	if systems.InPlay(entity) {
+		return fmt.Errorf("depart %s: %w", playerID, ErrStillInPlay)
+	}
+	if pc, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer); isPlayer {
+		if pc.(*components.PlayerComponent).Escape {
+			return fmt.Errorf("depart %s: %w", playerID, ErrEscapedWaits)
+		}
+	}
+
+	s.departed[playerID] = struct{}{}
+	return nil
+}
+
+// recipientsLocked is who the run still speaks to: every member with a body
+// here who has not left early. Callers hold at least the read lock.
+func (s *Session) recipientsLocked() []uuid.UUID {
+	recipients := make([]uuid.UUID, 0, len(s.playerIDToEntitiesID))
+	for playerID := range s.playerIDToEntitiesID {
+		if _, left := s.departed[playerID]; left {
+			continue
+		}
+		recipients = append(recipients, playerID)
+	}
+	return recipients
+}
+
 // WorldType is the kind of world this session runs.
 func (s *Session) WorldType() types.WorldType {
 	return s.worldType
@@ -1351,10 +1399,7 @@ func (s *Session) broadcastFullState(entities []*ecs.Entity) error {
 	// other goroutines (FS-QG1HR D2, race A). The pool's aliasing (race B) is
 	// not addressed here.
 	s.mu.RLock()
-	recipients := make([]uuid.UUID, 0, len(s.playerEntityIDToPlayerID))
-	for _, playerID := range s.playerEntityIDToPlayerID {
-		recipients = append(recipients, playerID)
-	}
+	recipients := s.recipientsLocked()
 	s.mu.RUnlock()
 
 	clientStates := make(map[uuid.UUID]*types.ClientGameState, len(recipients))
@@ -2446,11 +2491,10 @@ func (s *Session) notifyPlayersOfGameEnd() {
 	// no concurrent processes here but gather info
 	// during lock to get a consistent copy
 	s.mu.RLock()
+	// positions count every body, including a member who left early; only
+	// the members still here are told (FS-QPDKN R21, R23)
 	totalPlayers := len(s.playerIDToEntitiesID)
-	playerIDs := make([]uuid.UUID, 0, totalPlayers)
-	for pid := range s.playerIDToEntitiesID {
-		playerIDs = append(playerIDs, pid)
-	}
+	playerIDs := s.recipientsLocked()
 	eliminations := make(map[uuid.UUID]int, len(s.eliminations))
 	for k, v := range s.eliminations {
 		eliminations[k] = v

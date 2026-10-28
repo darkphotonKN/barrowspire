@@ -19,6 +19,14 @@ var (
 	// a run they are already in: a run keeps the character it was entered with.
 	// FS-BDA7X §Requirements 7.
 	ErrCharacterSwitchMidRun = errors.New("cannot switch character mid-run")
+	// ErrStillInPlay refuses an early leave by a delver who is still in the
+	// delve: only a resolved one may go. FS-QPDKN §Requirements 14.
+	ErrStillInPlay = errors.New("delver is still in play")
+	// ErrEscapedWaits refuses an early leave by an escaped delver: their plunder
+	// is settled with the run, so they wait for its end. FS-QPDKN §Out of Scope.
+	ErrEscapedWaits = errors.New("an escaped delver waits for the run's end")
+	// ErrNotInThisWorld refuses acting on a member who has no body here.
+	ErrNotInThisWorld = errors.New("member has no body in this world")
 	// ErrItemNotCarried refuses equipping an item that is not in the delver's
 	// own satchel: one lying in a pile or carried by someone else.
 	ErrItemNotCarried = errors.New("item is not carried by the delver")

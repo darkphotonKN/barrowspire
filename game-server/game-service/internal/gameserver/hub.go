@@ -47,6 +47,7 @@ type SessionManager interface {
 	AddPlayer(*types.Player) error
 	RemovePlayerFromQueue(*types.Player) error
 	IsQueued(ctx context.Context, playerID uuid.UUID) (bool, error)
+	LeaveRun(player *types.Player) (*game.Session, error)
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
 	EnterHub(ctx context.Context, conn *websocket.Conn, characterID string) (*game.Session, error)
 	PlayerByID(playerID uuid.UUID) (*types.Player, bool)
@@ -90,6 +91,19 @@ const (
 	startSoloNoCharacter = "Enter the hub with a character first."
 	startSoloQueued      = "Leave the queue first."
 )
+
+// leaveRunRefusal is what a refused leave_run says, by why the run would not
+// let the member go. FS-QPDKN §Requirements 14.
+func leaveRunRefusal(err error) string {
+	switch {
+	case errors.Is(err, game.ErrStillInPlay):
+		return "You are still in the delve."
+	case errors.Is(err, game.ErrEscapedWaits):
+		return "You are out of the barrow; the delve ends for you when it ends."
+	default:
+		return "You are not in a delve."
+	}
+}
 
 // refuse answers an action with why it was not done: the same words on the
 // error and in the payload, so the client shows one message whichever it reads.
@@ -375,6 +389,25 @@ func (h *messageHub) Run(ctx context.Context) {
 				})
 				slog.Info("Solo run started", "session_id", session.ID, "player_id", player.ID)
 				h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(session))
+
+			// A dead delver leaving the run for the hub before it ends; the run
+			// keeps their body for its settlement. FS-QPDKN §Requirements 13, 14.
+			case constants.ActionLeaveRun:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("leave_run from a connection with no player")
+					continue
+				}
+
+				hub, err := h.sessionManager.LeaveRun(player)
+				if err != nil {
+					slog.Warn("Refusing leave_run", "player_id", player.ID, "error", err)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, leaveRunRefusal(err))
+					continue
+				}
+
+				slog.Info("Delver left the run early", "player_id", player.ID)
+				h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(hub))
 
 			case constants.ActionLeaveQueue:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
