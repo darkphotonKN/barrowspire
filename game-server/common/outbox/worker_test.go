@@ -131,3 +131,54 @@ func TestPublishOutboxEvents_SameRowOnTwoTicks_SameMessageId(t *testing.T) {
 		t.Errorf("MessageIds across ticks = %v, want both %q", ids, row.ID.String())
 	}
 }
+
+// markingRetriever records the state of the context each mark-published call is made with.
+type markingRetriever struct {
+	fakeRetriever
+	mu     sync.Mutex
+	marked []error // ctx.Err() at the time of each UpdateOutboxToPublished
+}
+
+func (r *markingRetriever) UpdateOutboxToPublished(ctx context.Context, _ uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.marked = append(r.marked, ctx.Err())
+	return ctx.Err()
+}
+
+func (r *markingRetriever) marks() []error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]error(nil), r.marked...)
+}
+
+// Run cancels the tick's context as soon as PublishOutboxEvents returns, but marking a row
+// published happens on a goroutine after that: the mark must not be made with the tick's
+// cancelled context, or every row is republished each tick and the retry loop logs
+// "context canceled" for minutes (reported 2026-10-29).
+func TestPublishOutboxEvents_MarksPublishedAfterTheTickContextIsCancelled(t *testing.T) {
+	rows := []*OutboxEvent{newRow("items.extracted"), newRow("game.match.ended")}
+	ret := &markingRetriever{fakeRetriever: fakeRetriever{rows: rows}}
+	w := NewOutboxWorker(time.Second, 20, ret, &fakePublisher{failFor: map[string]bool{}}, &sync.WaitGroup{})
+
+	tick, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := w.PublishOutboxEvents(tick); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	cancel() // as Run does the moment PublishOutboxEvents returns
+
+	deadline := time.Now().Add(2 * time.Second)
+	for len(ret.marks()) < len(rows) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	marks := ret.marks()
+	if len(marks) != len(rows) {
+		t.Fatalf("expected %d marks, got %d", len(rows), len(marks))
+	}
+	for i, err := range marks {
+		if err != nil {
+			t.Errorf("row %d was marked published with a dead context: %v", i, err)
+		}
+	}
+}

@@ -40,6 +40,10 @@ func NewOutboxWorker(workCycle time.Duration, batchCount int, outboxRetriever Ou
 	}
 }
 
+// markTimeout bounds one attempt to mark a published row, independent of the
+// tick that published it.
+const markTimeout = 10 * time.Second
+
 /**
 * Sets up the cancel and publish for select which initiates the workers
 **/
@@ -104,12 +108,18 @@ func (w *OutboxWorker) PublishOutboxEvents(ctx context.Context) error {
 		}
 
 		// no error, rabbitmq acknowledged, recieved, update status.
+		// The mark outlives the tick: Run cancels ctx as soon as this function
+		// returns, and a mark made with that context fails at once, so the row
+		// would be republished every tick while the retries logged "context
+		// canceled" for minutes. Each attempt gets its own bounded context.
 		go func(evtId uuid.UUID) {
 			var offsetTime = time.Second * 10
 			var retries = 0
 
 			for {
-				err := w.outboxRetriever.UpdateOutboxToPublished(ctx, evtId)
+				markCtx, cancelMark := context.WithTimeout(context.WithoutCancel(ctx), markTimeout)
+				err := w.outboxRetriever.UpdateOutboxToPublished(markCtx, evtId)
+				cancelMark()
 				if err != nil {
 					if commonhelpers.IsTransientError(err) && retries < 5 {
 						slog.Error("Transient error when attempting to update outbox to published.",
