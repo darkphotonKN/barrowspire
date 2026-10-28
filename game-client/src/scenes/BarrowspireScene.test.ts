@@ -21,6 +21,17 @@ vi.mock("phaser", async () => {
     Animations: { Events: { ANIMATION_COMPLETE: "animationcomplete" } },
     GameObjects: { Sprite: class {} },
     BlendModes: { NORMAL: 0, ADD: 1, MULTIPLY: 2 },
+    Input: {
+      Keyboard: {
+        // Phaser's JustDown: true once per press, and reading it clears the press
+        JustDown: (key: { justDown: boolean }) => {
+          const pressed = key.justDown;
+          key.justDown = false;
+          return pressed;
+        },
+        KeyCodes: {},
+      },
+    },
     // interact range is measured between world positions
     Math: {
       Distance: {
@@ -1717,5 +1728,314 @@ describe("state from another world is not drawn (reported 2026-10-29)", () => {
     run.resetRun();
     expect(run.sessionID).toBeUndefined();
     expect(run.acceptsFrame({ session_id: "run-b" })).toBe(true);
+  });
+});
+
+describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8; edge states: Menu)", () => {
+  interface FakeKey {
+    justDown: boolean;
+    isDown: boolean;
+  }
+  const key = (): FakeKey => ({ justDown: false, isDown: false });
+
+  /** What the scene holds for the run's menu. */
+  interface Menued {
+    menu?: unknown;
+    menuChoices?: unknown;
+    fallPending: boolean;
+    leavePending: boolean;
+    controlsPanel?: unknown;
+    dismissKey?: FakeKey;
+    confirmKey?: FakeKey;
+    choiceKeys: FakeKey[];
+    offerMenu(): void;
+    openMenu(): void;
+    bindRunInput(): void;
+    sendMovementIntent(vx: number, vy: number): void;
+    canSendMove(): boolean;
+    toggleControlsPanel(): void;
+    fallRefused(info: { message?: string }): void;
+    showGameEndOverlay(position: number, result?: string): void;
+    resetRun(): void;
+  }
+
+  const dead = { current_health: 0 };
+  const escaped = { escape: true };
+
+  function menuOnStage(me: ReturnType<typeof delver> | null = delver("me", "Aldric", 130)) {
+    const stage = onStage();
+    const run = stage.run as unknown as Menued;
+    const keys = { esc: key(), enter: key(), one: key(), two: key() };
+    run.dismissKey = keys.esc;
+    run.confirmKey = keys.enter;
+    run.choiceKeys = [keys.one, keys.two];
+    const keyHandlers: Record<string, (...args: unknown[]) => void> = {};
+    const pointerHandlers: Record<string, (...args: unknown[]) => void> = {};
+    Object.assign(stage.run, {
+      input: {
+        setDefaultCursor: vi.fn(),
+        keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) },
+        on: (event: string, fn: () => void) => (pointerHandlers[event] = fn),
+      },
+    });
+    stage.run.handleGameStateUpdate(partyState(me));
+    const press = (k: FakeKey) => {
+      k.justDown = true;
+      run.offerMenu();
+    };
+    const option = (id: string) =>
+      stage.stage.made.find((m) => (m as { name?: string }).name === `menu-${id}` && !m.destroyed);
+    const pick = (id: string) => option(id)?.handlers.pointerup();
+    const labels = () =>
+      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+    const sentOf = (action: string) => stage.sent.mock.calls.filter(([a]) => a === action);
+    const hit = (name: string) =>
+      stage.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
+    return { ...stage, run, keys, keyHandlers, pointerHandlers, press, option, pick, labels, sentOf, hit };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should open the menu on ESC, with Fall where you stand and Back for a delver in play", () => {
+    const { run, keys, press, option, labels } = menuOnStage();
+    press(keys.esc);
+
+    expect(run.menu).toBeDefined();
+    expect(option("fall")).toBeDefined();
+    expect(option("back")).toBeDefined();
+    expect(labels()).toContain("Fall where you stand  [1]");
+    expect(labels()).toContain("Back  [Esc]");
+  });
+
+  it("should close the menu on a second ESC, and on Back, taking its hit areas with it", () => {
+    const { run, keys, press, option, pick } = menuOnStage();
+    press(keys.esc);
+    const fall = option("fall");
+    press(keys.esc);
+    expect(run.menu).toBeUndefined();
+    expect(fall?.destroyed).toBe(true);
+
+    press(keys.esc);
+    pick("back");
+    expect(run.menu).toBeUndefined();
+    expect(option("fall")).toBeUndefined();
+  });
+
+  it.each([
+    ["dead", dead, ["leave", "back"], "Leave the barrow  [1]"],
+    ["escaped", escaped, ["back"], "Back  [Esc]"],
+  ])("should offer a %s delver %j", (_, me, ids, label) => {
+    const { keys, press, option, labels } = menuOnStage(delver("me", "Aldric", 130, me));
+    press(keys.esc);
+    for (const id of ["fall", "leave", "back"])
+      expect(option(id) !== undefined).toBe(ids.includes(id));
+    expect(labels()).toContain(label);
+  });
+
+  it("should do nothing on ESC once the result card is up", () => {
+    const { run, keys, press } = menuOnStage();
+    run.showGameEndOverlay(1, "escaped");
+    press(keys.esc);
+    expect(run.menu).toBeUndefined();
+  });
+
+  it("should list ESC as the menu in the controls panel", () => {
+    const { run, labels } = menuOnStage();
+    run.toggleControlsPanel();
+    expect(labels()).toContain("ESC");
+    expect(labels()).toContain("Menu");
+  });
+
+  it("should swap the rows for the confirm on Fall where you stand, and send nothing until Fall", () => {
+    const { keys, press, option, labels, sent } = menuOnStage();
+    press(keys.esc);
+    press(keys.one);
+
+    expect(labels()).toContain("The barrow keeps its dead. Fall here?");
+    expect(option("fall-now")).toBeDefined();
+    expect(option("not-yet")).toBeDefined();
+    expect(option("fall")).toBeUndefined();
+    expect(labels()).toContain("Fall  [1]");
+    expect(labels()).toContain("Not yet  [Esc]");
+    expect(sent).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Not yet", (s: ReturnType<typeof menuOnStage>) => s.pick("not-yet")],
+    ["Esc", (s: ReturnType<typeof menuOnStage>) => s.press(s.keys.esc)],
+  ])("should return to the run on %s with nothing sent", (_, back) => {
+    const s = menuOnStage();
+    s.press(s.keys.esc);
+    s.pick("fall");
+    back(s);
+    expect(s.run.menu).toBeUndefined();
+    expect(s.option("fall-now")).toBeUndefined();
+    expect(s.sent).not.toHaveBeenCalled();
+    expect(s.run.fallPending).toBe(false);
+  });
+
+  it("should send forfeit_run once on Fall, with no payload, and nothing on a second press", () => {
+    const { run, keys, press, pick, sentOf, option } = menuOnStage();
+    press(keys.esc);
+    pick("fall");
+    pick("fall-now");
+    pick("fall-now");
+    press(keys.one);
+    press(keys.enter);
+
+    expect(sentOf(ActionType.ForfeitRun)).toEqual([[ActionType.ForfeitRun, {}]]);
+    expect(run.fallPending).toBe(true);
+    // the confirm stays up, Fall dimmed, until the server answers
+    expect(option("fall-now")).toBeDefined();
+  });
+
+  it("should answer Fall where you stand on Enter, then Fall on Enter", () => {
+    const { keys, press, sentOf } = menuOnStage();
+    press(keys.esc);
+    press(keys.enter);
+    press(keys.enter);
+    expect(sentOf(ActionType.ForfeitRun)).toHaveLength(1);
+  });
+
+  it("should send leave_run through the card's path from a dead delver's menu, once", () => {
+    const { run, keys, press, pick, sentOf, hit } = menuOnStage(delver("me", "Aldric", 130, dead));
+    press(keys.esc);
+    pick("leave");
+    expect(sentOf(ActionType.LeaveRun)).toEqual([[ActionType.LeaveRun, {}]]);
+    expect(run.leavePending).toBe(true);
+    expect(run.menu).toBeUndefined();
+    // the card's own button is pending too: one send between them
+    expect(hit("leave-the-barrow")?.calls).toContain("disableInteractive");
+    hit("leave-the-barrow")?.handlers.pointerdown();
+    press(keys.esc);
+    pick("leave");
+    expect(sentOf(ActionType.LeaveRun)).toHaveLength(1);
+  });
+
+  it("should send no move while the menu is open, stopping a stride it interrupts once", () => {
+    const { run, keys, press, sentOf } = menuOnStage();
+    run.sendMovementIntent(0, -1);
+    expect(sentOf(ActionType.Move)).toEqual([[ActionType.Move, { vx: 0, vy: -1 }]]);
+
+    press(keys.esc);
+    expect(run.canSendMove()).toBe(false);
+    run.sendMovementIntent(0, -1);
+    run.sendMovementIntent(0, -1);
+    run.sendMovementIntent(1, 0);
+    expect(sentOf(ActionType.Move).slice(1)).toEqual([[ActionType.Move, { vx: 0, vy: 0 }]]);
+
+    // closing resumes
+    press(keys.esc);
+    run.sendMovementIntent(1, 0);
+    expect(sentOf(ActionType.Move).at(-1)).toEqual([ActionType.Move, { vx: 1, vy: 0 }]);
+  });
+
+  it("should send no stop when the menu opens over a delver standing still", () => {
+    const { run, keys, press, sentOf } = menuOnStage();
+    run.sendMovementIntent(0, 0);
+    press(keys.esc);
+    run.sendMovementIntent(0, 0);
+    expect(sentOf(ActionType.Move)).toHaveLength(0);
+  });
+
+  it("should drop E, F, I, Q and H while the menu is open, and answer them again once it closes", () => {
+    const s = menuOnStage();
+    s.run.bindRunInput();
+    const containerView = (s.run as unknown as { containerView: { close: ReturnType<typeof vi.fn>; lootFirst: ReturnType<typeof vi.fn> } }).containerView;
+    containerView.lootFirst = vi.fn();
+    s.press(s.keys.esc);
+
+    s.keyHandlers["keydown-H"]();
+    s.keyHandlers["keydown-Q"]();
+    s.keyHandlers["keydown-F"]();
+    s.keyHandlers["keydown-E"]();
+    s.keyHandlers["keydown-I"]();
+    expect(s.run.controlsPanel).toBeUndefined();
+    expect(containerView.close).not.toHaveBeenCalled();
+    expect(containerView.lootFirst).not.toHaveBeenCalled();
+    expect(s.sent).not.toHaveBeenCalled();
+
+    s.pick("back");
+    s.keyHandlers["keydown-H"]();
+    expect(s.run.controlsPanel).toBeDefined();
+  });
+
+  it("should drop pointer attacks and skills while the menu is open", () => {
+    const s = menuOnStage();
+    s.run.bindRunInput();
+    const pointerDown = vi.fn(() => false);
+    Object.assign((s.run as unknown as { containerView: object }).containerView, { pointerDown });
+    s.press(s.keys.esc);
+
+    s.pointerHandlers.pointerdown({ x: 10, y: 10, button: 0, worldX: 130, worldY: 300, leftButtonDown: () => true, rightButtonDown: () => false });
+    s.monsters()[0].handlers.pointerdown();
+
+    expect(s.sent).not.toHaveBeenCalled();
+    expect(pointerDown).not.toHaveBeenCalled();
+  });
+
+  it("should take the menu and its confirm down when the next state shows the delver dead, and show the dead card", () => {
+    const { run, keys, press, pick, option, labels } = menuOnStage();
+    press(keys.esc);
+    pick("fall");
+    pick("fall-now");
+    expect(run.fallPending).toBe(true);
+
+    (run as unknown as FloorRun).handleGameStateUpdate(partyState(delver("me", "Aldric", 130, dead)));
+
+    expect(run.menu).toBeUndefined();
+    expect(option("fall-now")).toBeUndefined();
+    expect(run.fallPending).toBe(false);
+    expect(labels().some((l) => /barrow keeps you/i.test(l))).toBe(true);
+  });
+
+  it("should keep a dead delver's menu up across the states that keep showing them dead", () => {
+    const { run, keys, press, option } = menuOnStage(delver("me", "Aldric", 130, dead));
+    press(keys.esc);
+    (run as unknown as FloorRun).handleGameStateUpdate(partyState(delver("me", "Aldric", 130, dead)));
+    expect(run.menu).toBeDefined();
+    expect(option("leave")).toBeDefined();
+  });
+
+  it("should take the menu down when end_game arrives", () => {
+    const { run, keys, press, option } = menuOnStage();
+    press(keys.esc);
+    run.showGameEndOverlay(1, "eliminated");
+    expect(run.menu).toBeUndefined();
+    expect(option("fall")).toBeUndefined();
+  });
+
+  it("should hand Fall back on a refusal and say why in passing", () => {
+    const { run, keys, press, pick, sentOf, option, labels } = menuOnStage();
+    press(keys.esc);
+    pick("fall");
+    pick("fall-now");
+    const before = option("fall-now")?.calls.length ?? 0;
+
+    run.fallRefused({ message: "You are not in a delve." });
+
+    expect(run.fallPending).toBe(false);
+    expect(labels()).toContain("You are not in a delve.");
+    expect(option("fall-now")?.calls.slice(before)).not.toContain("destroy");
+    pick("fall-now");
+    expect(sentOf(ActionType.ForfeitRun)).toHaveLength(2);
+  });
+
+  it("should forget the menu, the confirm, the pending send and the refusal listener on a restart", () => {
+    const offError = vi.spyOn(socketManager, "offError");
+    const { run, keys, press, pick } = menuOnStage();
+    press(keys.esc);
+    pick("fall");
+    pick("fall-now");
+    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey: vi.fn() } };
+
+    run.resetRun();
+
+    expect(run.menu).toBeUndefined();
+    expect(run.menuChoices).toBeUndefined();
+    expect(run.fallPending).toBe(false);
+    expect(offError).toHaveBeenCalledWith("forfeit_run");
   });
 });

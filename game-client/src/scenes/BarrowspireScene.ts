@@ -33,12 +33,15 @@ import {
   type NoticeTone,
 } from "@/ui/floor";
 import {
+  FALL_CONFIRM,
   nextWatched,
   resolved,
   resolvedCard,
+  runMenuChoices,
   watchable,
   type ResolvedCard,
   type ResolvedCardKind,
+  type RunMenuChoice,
 } from "@/ui/party";
 import { ProgressHud } from "@/ui/ProgressHud";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
@@ -192,6 +195,33 @@ const NOTICE_BACKING: Record<NoticeTone, number> = {
   refused: palette.damageBright,
   waiting: palette.hudPanel,
 };
+
+/**
+ * The run's ESC menu (FS-9K8EZ req 1): camera-fixed in the popup band with the result card, over
+ * the dead delver's card (1500), which it never hides for long (req 6). Its width, the vertical
+ * padding, the confirm line's row and one row per choice, in screen px.
+ */
+const MENU_DEPTH = 2000;
+const MENU_WIDTH = 320;
+const MENU_PAD = 18;
+const MENU_LINE = 44;
+const MENU_ROW = 40;
+/** The pressable area of a menu choice, in screen px around its label. */
+const MENU_CHOICE_HIT = { width: 220, height: 34 };
+/** A drawn menu choice, which can redraw its colour when whether it can be picked changes. */
+type MenuOption = Phaser.GameObjects.Container & { retone(): void };
+/** The run menu's keys while it is open: a number for that row, Enter for the first, Esc back. */
+interface MenuKeys {
+  pick(index: number): void;
+  confirm(): void;
+  dismiss(): void;
+  retone(): void;
+}
+/** What the delver's state was when the menu was built: its rows are right for this and no other. */
+interface MenuState {
+  resolved: boolean;
+  escaped: boolean;
+}
 
 /**
  * The climb's dark and floor card (FS-F6F88 req 32): over the world and its atmosphere (~900),
@@ -373,6 +403,20 @@ export class BarrowspireScene extends Phaser.Scene {
   private leaveButton?: WorldButton;
   /** A `leave_run` is on its way and unanswered: further presses send nothing (req 13). */
   private leavePending = false;
+  /** The ESC menu, or its confirm, while open (FS-9K8EZ req 1–6). It owns the keyboard and pointer. */
+  private menu?: Phaser.GameObjects.Container;
+  /** The open menu's choices by key: the n-th actionable one, the first on Enter, back on Esc. */
+  private menuChoices?: MenuKeys;
+  /** The state the open menu's rows were built for; a state that differs takes it down (req 6). */
+  private menuFor?: MenuState;
+  /** A `forfeit_run` is on its way and unanswered: Fall is dimmed until a reply or the death (req 3). */
+  private fallPending = false;
+  /** Whether the last frame sent a stride, so the menu that interrupts it can stop it once (req 5). */
+  private striding = false;
+  /** The menu's keys (req 1), polled each frame as the hub's are: ESC, Enter, and one per row. */
+  private dismissKey?: Phaser.Input.Keyboard.Key;
+  private confirmKey?: Phaser.Input.Keyboard.Key;
+  private choiceKeys: Phaser.Input.Keyboard.Key[] = [];
   private readonly watchSpec: ButtonSpec = {
     name: "watch-the-delve",
     label: "WATCH THE DELVE",
@@ -592,6 +636,7 @@ export class BarrowspireScene extends Phaser.Scene {
     socketManager.off("end_game");
     socketManager.off("leave_run");
     socketManager.offError("leave_run");
+    socketManager.offError("forfeit_run");
 
     this.player = undefined;
     this.playerPos = undefined;
@@ -664,6 +709,15 @@ export class BarrowspireScene extends Phaser.Scene {
     this.resolvedKind = undefined;
     this.leaveButton = undefined;
     this.leavePending = false;
+    // the menu went down with the scene's objects; its keys are rebound by the next create
+    this.menu = undefined;
+    this.menuChoices = undefined;
+    this.menuFor = undefined;
+    this.fallPending = false;
+    this.striding = false;
+    this.dismissKey = undefined;
+    this.confirmKey = undefined;
+    this.choiceKeys = [];
     // Phaser destroys the run's keys on shutdown but keeps their captures; a teardown
     // without a shutdown keeps both. Either way the next run binds Tab afresh.
     if (this.tabKey) this.input?.keyboard?.removeKey(this.tabKey, true, true);
@@ -698,7 +752,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     const cam = this.cameras.main;
     const panelW = 260;
-    const panelH = 220;
+    const panelH = 240;
     const x = cam.width / 2;
     const y = cam.height / 2;
 
@@ -729,6 +783,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ["LEFT CLICK", "Melee Attack"],
       ["RIGHT CLICK", "Fireball (Skill)"],
       ["H", "Toggle Controls"],
+      ["ESC", "Menu"],
     ];
 
     let curY = -panelH / 2 + 44;
@@ -764,8 +819,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private showGameEndOverlay(position: number, result?: string): void {
     if (this.gameEndOverlay) return; // already shown
-    // the overlay carries the last word now
+    // the overlay carries the last word now; the menu never covers it (FS-9K8EZ req 6)
     this.takeDownResolvedView();
+    this.closeMenu();
 
     const cam = this.cameras.main;
 
@@ -1579,6 +1635,8 @@ export class BarrowspireScene extends Phaser.Scene {
     const me = this.playerPos;
     if (!this.canAttack || !this.player || !me || this.gameEndOverlay) return;
     if (resolved(this.lastGameState?.current_player)) return;
+    // the pointer is the menu's while it is open (FS-9K8EZ req 5)
+    if (this.menu) return;
     // world positions, never the sprites' screen positions
     if (Math.hypot(them.x - me.x, them.y - me.y) > STRIKE_RANGE) return;
 
@@ -2608,11 +2666,60 @@ export class BarrowspireScene extends Phaser.Scene {
     this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, true);
     this.tabKey.on("down", () => this.cycleWatched());
 
-    // No ESC out of a run: the server keeps the body in the world whoever is looking at it,
-    // and the only early way home is the dead delver's Leave the barrow (FS-QPDKN req 13).
+    // The run's ESC menu (FS-9K8EZ req 1): ESC opens and closes it, a number picks a row, Enter
+    // the first. Polled each frame in update, as the hub's are. Nothing here leaves the run: the
+    // server keeps the body in the world whoever is looking at it (FS-QPDKN req 13).
+    this.dismissKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    this.confirmKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+    this.choiceKeys = [Phaser.Input.Keyboard.KeyCodes.ONE, Phaser.Input.Keyboard.KeyCodes.TWO].map(
+      (code) => this.input.keyboard!.addKey(code),
+    );
 
+    this.bindRunInput();
+
+    // Initialize equipment panel
+    this.equipmentPanel = new EquipmentPanel(this);
+    this.equipmentPanel.onEquip = (item, slot) => {
+      // Send to backend
+      socketManager.sendMessage(ActionType.Equip, {
+        item_entity_id: item.entity_id,
+      });
+      // Optimistic update
+      this.equippedItems[slot] = item;
+      this.inventoryItems = this.inventoryItems.filter(
+        (i) => i.entity_id !== item.entity_id,
+      );
+    };
+    this.equipmentPanel.onUnequip = (item, slot) => {
+      // Send to backend
+      socketManager.sendMessage(ActionType.Unequip, {
+        item_entity_id: item.entity_id,
+      });
+      // Optimistic update
+      this.equippedItems[slot] = null;
+      this.inventoryItems.push(item);
+    };
+
+    // 創建室內遮罩（用於遮住建築外面）
+    this.indoorMask = this.add.graphics();
+    this.indoorMask.setDepth(500);
+    this.indoorMask.setVisible(false);
+
+    // 顯示座標 UI
+    this.createUI();
+
+    // torch-lit barrow atmosphere — pure decoration, no game state
+    this.createAtmosphere();
+  }
+
+  /**
+   * The run's keys and pointer, bound once per create. Every binding checks the menu first: while
+   * it is open the keyboard and the pointer are its (FS-9K8EZ req 5), and closing it resumes them.
+   */
+  private bindRunInput(): void {
     // E 鍵互動（門、寶箱、開關、逃脫門）
     this.input.keyboard?.on("keydown-E", () => {
+      if (this.menu) return;
       // When the equipment panel is open, E equips/unequips the hovered item.
       if (this.equipmentPanel?.isVisible()) {
         this.equipmentPanel.handleEquipKey();
@@ -2654,16 +2761,19 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // I 鍵開啟/關閉道具欄
     this.input.keyboard?.on("keydown-I", () => {
+      if (this.menu) return;
       this.toggleInventory();
     });
 
     // F 鍵從寶箱取得道具
     this.input.keyboard?.on("keydown-F", () => {
+      if (this.menu) return;
       this.containerView.lootFirst();
     });
 
     // Q 鍵關閉任何打開的彈窗
     this.input.keyboard?.on("keydown-Q", () => {
+      if (this.menu) return;
       if (this.equipmentPanel?.isVisible()) {
         this.equipmentPanel.hide();
         return;
@@ -2673,6 +2783,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // H 鍵顯示/隱藏操作說明
     this.input.keyboard?.on("keydown-H", () => {
+      if (this.menu) return;
       this.toggleControlsPanel();
     });
 
@@ -2685,6 +2796,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // 技能攻擊控制 (Left-Click Primary Attack 0 MP // Right-Click Special Skill 10 MP)
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      // the menu's hit areas take their own clicks; nothing else answers one (FS-9K8EZ req 5)
+      if (this.menu) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
       if (this.containerView.pointerDown(pointer.x, pointer.y, pointer.button === 0)) return;
       if (!this.player || !this.playerPos || !this.canCastSkill) return;
@@ -2784,42 +2897,10 @@ export class BarrowspireScene extends Phaser.Scene {
       }
     });
 
-    // Initialize equipment panel
-    this.equipmentPanel = new EquipmentPanel(this);
-    this.equipmentPanel.onEquip = (item, slot) => {
-      // Send to backend
-      socketManager.sendMessage(ActionType.Equip, {
-        item_entity_id: item.entity_id,
-      });
-      // Optimistic update
-      this.equippedItems[slot] = item;
-      this.inventoryItems = this.inventoryItems.filter(
-        (i) => i.entity_id !== item.entity_id,
-      );
-    };
-    this.equipmentPanel.onUnequip = (item, slot) => {
-      // Send to backend
-      socketManager.sendMessage(ActionType.Unequip, {
-        item_entity_id: item.entity_id,
-      });
-      // Optimistic update
-      this.equippedItems[slot] = null;
-      this.inventoryItems.push(item);
-    };
-
-    // 創建室內遮罩（用於遮住建築外面）
-    this.indoorMask = this.add.graphics();
-    this.indoorMask.setDepth(500);
-    this.indoorMask.setVisible(false);
-
-    // 顯示座標 UI
-    this.createUI();
-
-    // torch-lit barrow atmosphere — pure decoration, no game state
-    this.createAtmosphere();
-
     // 放開移動鍵時停止
     this.input.keyboard?.on("keyup", (event: KeyboardEvent) => {
+      // the stride was stopped as the menu opened; the keys are its until it closes
+      if (this.menu) return;
       const movementKeys = [
         "KeyW",
         "KeyA",
@@ -2925,6 +3006,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // A refused leave_run (FS-QPDKN req 14, edge state "Leaving"): the button can be pressed
     // again. The server's refusals come in two shapes; both land here.
     socketManager.onError("leave_run", () => this.leaveRefused());
+    // A refused forfeit_run (FS-9K8EZ req 4): Fall can be pressed again, and the server's words pass by.
+    socketManager.onError("forfeit_run", (info) => this.fallRefused(info));
     socketManager.on("leave_run", (reply: { success?: boolean }) => {
       if (reply?.success === false) this.leaveRefused();
     });
@@ -3045,6 +3128,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.checkEscapeDoorStateChanges(state);
     this.checkPlayerEscapedState(state);
 
+    this.yieldMenu(state);
     this.syncResolvedView(state);
 
     // Update escaped count HUD
@@ -3790,7 +3874,11 @@ export class BarrowspireScene extends Phaser.Scene {
    * States "Spectating": the camera target is not the delver).
    */
   private canSendMove(): boolean {
-    return !resolved(this.lastGameState?.current_player) && this.watchedDelverId === undefined;
+    return (
+      !this.menu &&
+      !resolved(this.lastGameState?.current_player) &&
+      this.watchedDelverId === undefined
+    );
   }
 
   /**
@@ -3975,6 +4063,249 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * The stride the keys ask for, sent each frame it is non-zero; none from a delver out of the
+   * delve (FS-77AB6 req 17). While the menu is open the keys are its (FS-9K8EZ req 5): a stride
+   * it interrupts is stopped once, and nothing more goes until it closes.
+   */
+  private sendMovementIntent(vx: number, vy: number): void {
+    if (this.menu) {
+      if (this.striding) socketManager.sendMessage(ActionType.Move, { vx: 0, vy: 0 });
+      this.striding = false;
+      return;
+    }
+    const moving = (vx !== 0 || vy !== 0) && this.canSendMove();
+    if (moving) socketManager.sendMessage(ActionType.Move, { vx, vy });
+    this.striding = moving;
+  }
+
+  /**
+   * ESC and the menu's keys, read once a frame (FS-9K8EZ req 1). Closed, ESC opens the menu;
+   * open, ESC goes back, Enter is the first row and a number is that row. Every key is read each
+   * frame, so a press never lingers to answer the next one. Once the result card is up there is
+   * nothing to open: it has the only action left (edge state "Menu").
+   */
+  private offerMenu(): void {
+    if (!this.dismissKey) return;
+    const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
+    const confirm = this.confirmKey !== undefined && Phaser.Input.Keyboard.JustDown(this.confirmKey);
+    const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
+    if (this.gameEndOverlay) return;
+
+    if (!this.menu) {
+      if (esc) this.openMenu();
+      return;
+    }
+    if (esc) this.menuChoices?.dismiss();
+    else if (confirm) this.menuChoices?.confirm();
+    else if (numbered >= 0) this.menuChoices?.pick(numbered);
+  }
+
+  /**
+   * The delver's state as the menu reads it (FS-9K8EZ req 2), from the last state unless one is
+   * given. A delver the server no longer lists is out of the delve: the broadcast drops an
+   * escaped delver's `current_player`.
+   */
+  private menuState(state = this.lastGameState): MenuState {
+    const me = state?.current_player;
+    const gone = me === null;
+    return { resolved: gone || resolved(me), escaped: gone || me?.escape === true };
+  }
+
+  /**
+   * The run's ESC menu (FS-9K8EZ req 2): built from the delver's state as it opens, so what it
+   * offers is runMenuChoices' rule, not the chrome's. Leave the barrow is the card's own path
+   * (FS-QPDKN req 13), so the two entry points share one send and one pending flag.
+   */
+  private openMenu(): void {
+    const state = this.menuState();
+    this.showMenuPanel(
+      undefined,
+      runMenuChoices(state),
+      {
+        fall: () => this.openFallConfirm(),
+        leave: () => {
+          this.leaveTheBarrow();
+          this.closeMenu();
+        },
+      },
+      { leave: () => !this.leavePending },
+    );
+    this.menuFor = state;
+  }
+
+  /** Fall where you stand asks once (req 3): the menu's rows become the confirm, nothing sent yet. */
+  private openFallConfirm(): void {
+    const state = this.menuState();
+    this.showMenuPanel(
+      FALL_CONFIRM.line,
+      FALL_CONFIRM.choices,
+      { "fall-now": () => this.fallWhereYouStand() },
+      { "fall-now": () => !this.fallPending },
+    );
+    this.menuFor = state;
+  }
+
+  /**
+   * Fall (req 3, 4): one `forfeit_run`, then nothing until the server answers. The answer is the
+   * next state with this delver at 0 health, seen through FS-QPDKN's card as any death, or a
+   * refusal that hands Fall back. The confirm stays up, Fall dimmed, until either.
+   */
+  private fallWhereYouStand(): void {
+    if (this.fallPending || this.menuState().resolved) return;
+    this.fallPending = true;
+    this.menuChoices?.retone();
+    socketManager.sendMessage(ActionType.ForfeitRun, {});
+  }
+
+  /** The server refused the `forfeit_run` (req 4): Fall again, and the reason in passing. */
+  private fallRefused(info: { message?: string }): void {
+    this.fallPending = false;
+    this.menuChoices?.retone();
+    if (this.gameEndOverlay) return;
+    this.showNotification(info.message ?? "The barrow will not take you yet.", toCss(palette.hudPanel));
+  }
+
+  /**
+   * The menu yields to what the server says (req 6): a state in which the delver's rows would
+   * be wrong (newly dead, newly out) takes the menu and its confirm down, so the card that
+   * follows is never covered. A death seen is a `forfeit_run` answered.
+   */
+  private yieldMenu(state: ClientGameState): void {
+    const now = this.menuState(state);
+    if (now.resolved) this.fallPending = false;
+    if (!this.menu || !this.menuFor) return;
+    if (now.resolved !== this.menuFor.resolved || now.escaped !== this.menuFor.escaped) this.closeMenu();
+  }
+
+  /**
+   * The menu's panel (req 1): a camera-fixed charcoal box with a brass hairline in the popup
+   * band, an optional line over the rows, one row per choice. A number answers each actionable
+   * row, Enter the first; the cancel row already says Esc on its label and is what Esc does.
+   * Any row without an action of its own closes the menu.
+   */
+  private showMenuPanel(
+    line: string | undefined,
+    choices: RunMenuChoice[],
+    actions: Partial<Record<RunMenuChoice["id"], () => void>>,
+    enabled: Partial<Record<RunMenuChoice["id"], () => boolean>>,
+  ): void {
+    this.closeMenu();
+    const cam = this.cameras.main;
+    const lineHeight = line ? MENU_LINE : 0;
+    const panelHeight = MENU_PAD * 2 + lineHeight + choices.length * MENU_ROW;
+    const top = -panelHeight / 2;
+
+    const panel = this.add.graphics();
+    panel.fillStyle(palette.ink, 0.96);
+    panel.fillRect(-MENU_WIDTH / 2, top, MENU_WIDTH, panelHeight);
+    panel.lineStyle(1, palette.frame, 0.5);
+    panel.strokeRect(-MENU_WIDTH / 2, top, MENU_WIDTH, panelHeight);
+    const parts: Phaser.GameObjects.GameObject[] = [panel];
+    if (line) {
+      parts.push(
+        this.add
+          .text(0, top + MENU_PAD + MENU_LINE / 2, line, {
+            fontFamily: CANVAS_FONT.body,
+            fontSize: "15px",
+            color: toCss(palette.hudText),
+            align: "center",
+            wordWrap: { width: MENU_WIDTH - 32 },
+          })
+          .setOrigin(0.5),
+      );
+    }
+
+    const act = (choice: RunMenuChoice) => actions[choice.id] ?? (() => this.closeMenu());
+    const can = (choice: RunMenuChoice) => enabled[choice.id] ?? (() => true);
+    const actionable = choices.filter((c) => c.register === "actionable");
+    const hint = (choice: RunMenuChoice) =>
+      choice.register === "actionable" ? `  [${actionable.indexOf(choice) + 1}]` : "";
+    const origin = { x: cam.centerX, y: cam.centerY };
+    const options = choices.map((choice, i) =>
+      this.menuOption(
+        0,
+        top + MENU_PAD + lineHeight + MENU_ROW * (i + 0.5),
+        `${choice.label}${hint(choice)}`,
+        choice.register === "actionable" ? palette.interactable : palette.safe,
+        act(choice),
+        `menu-${choice.id}`,
+        origin,
+        can(choice),
+      ),
+    );
+    const press = (choice?: RunMenuChoice) => {
+      if (choice && can(choice)()) act(choice)();
+    };
+    const cancel = choices.find((c) => c.register === "cancel");
+
+    this.menuChoices = {
+      pick: (index) => press(actionable[index]),
+      confirm: () => press(actionable[0]),
+      dismiss: () => (cancel ? press(cancel) : this.closeMenu()),
+      retone: () => options.forEach((option) => option.retone()),
+    };
+    this.menu = this.add
+      .container(cam.centerX, cam.centerY, [...parts, ...options])
+      .setScrollFactor(0)
+      .setDepth(MENU_DEPTH);
+  }
+
+  /**
+   * One pressable row of the menu. Its colour is the register (amber to press, arcane to go
+   * back), dimmed to the HUD's label tone while `enabled` says it cannot be pressed; `retone`
+   * redraws that when the answer changes under an open menu.
+   *
+   * The label sits at (x, y) inside the camera-fixed box the caller builds at `origin`; the hit
+   * area is a separate, camera-fixed rectangle at the same place on the screen, named `name`.
+   * It cannot live in the box: Phaser hit-tests a container's child with the child's own scroll
+   * factor, not the parent's, so once the camera has followed the delver a click lands beside
+   * the row. It goes down with the label's container (req 8).
+   */
+  private menuOption(
+    x: number,
+    y: number,
+    label: string,
+    colour: number,
+    onPick: () => void,
+    name: string,
+    origin: { x: number; y: number },
+    enabled: () => boolean,
+  ): MenuOption {
+    const tone = () => toCss(enabled() ? colour : palette.hudLabel);
+    const text = this.add
+      .text(0, 0, label, { fontFamily: CANVAS_FONT.body, fontSize: "15px", color: tone() })
+      .setOrigin(0.5);
+    const option = Object.assign(this.add.container(x, y, [text]).setName(`${name}-label`), {
+      retone: () => void text.setColor(tone()),
+    });
+
+    const hit = this.add
+      .rectangle(origin.x + x, origin.y + y, MENU_CHOICE_HIT.width, MENU_CHOICE_HIT.height, palette.ink, 0)
+      .setScrollFactor(0)
+      .setDepth(MENU_DEPTH + 1)
+      .setInteractive()
+      .setName(name);
+    // the text brightening to vellum is the hover cue; a dimmed row neither brightens nor answers
+    hit.on("pointerup", () => {
+      if (enabled()) onPick();
+    });
+    hit.on("pointerover", () => {
+      if (enabled()) text.setColor(toCss(palette.hudText));
+    });
+    hit.on("pointerout", () => text.setColor(tone()));
+    option.once("destroy", () => hit.destroy());
+    return option;
+  }
+
+  /** The menu or its confirm goes down, hit areas with it; nothing is sent (req 1, 3). */
+  private closeMenu(): void {
+    this.menu?.destroy();
+    this.menu = undefined;
+    this.menuChoices = undefined;
+    this.menuFor = undefined;
+  }
+
+  /**
    * The dead spectator's leave button (req 10): its own corner of the screen, in the HUD band,
    * clear of the watched delver at the centre and the HUD along the top. The escaped have none.
    */
@@ -4155,6 +4486,8 @@ export class BarrowspireScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     this.updateLighting(time, delta);
     this.monsters?.update(delta);
+    // the menu's keys, read before anything else is: it opens over every state (FS-9K8EZ req 1, 2)
+    this.offerMenu();
 
     // skip all input/movement if player has escaped
     if (this.player && !this.player.visible) {
@@ -4179,6 +4512,11 @@ export class BarrowspireScene extends Phaser.Scene {
       vy = -1;
     } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
       vy = 1;
+    }
+    // the keys are the menu's while it is open (FS-9K8EZ req 5): they read as released
+    if (this.menu) {
+      vx = 0;
+      vy = 0;
     }
 
     // update player facing and legs: the placeholder rig (a baked sheet plays below)
@@ -4220,13 +4558,7 @@ export class BarrowspireScene extends Phaser.Scene {
       this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, ownBase, curHp, maxHp, curMp, maxMp);
     }
 
-    // send websocket message for movement; none from a delver out of the delve (FS-77AB6 req 17)
-    if ((vx !== 0 || vy !== 0) && this.canSendMove()) {
-      socketManager.sendMessage(ActionType.Move, {
-        vx: vx,
-        vy: vy,
-      });
-    }
+    this.sendMovementIntent(vx, vy);
 
     // 平滑移動到目標位置 (lerp)
     const lerpFactor = 0.3; // 0-1，越大越快到達目標

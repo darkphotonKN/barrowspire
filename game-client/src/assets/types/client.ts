@@ -94,6 +94,8 @@ export interface ActionMap {
   leave_queue: Record<string, never>;
   /** A delver descending alone, without the queue (FS-NSV3D req 7): no payload. */
   start_solo: Record<string, never>;
+  /** A delver in play choosing to fall where they stand (FS-9K8EZ req 7): no payload. */
+  forfeit_run: Record<string, never>;
 }
 
 export const ActionType = {
@@ -111,6 +113,7 @@ export const ActionType = {
   LeaveRun: "leave_run",
   LeaveQueue: "leave_queue",
   StartSolo: "start_solo",
+  ForfeitRun: "forfeit_run",
 } as const;
 
 export type ActionType = (typeof ActionType)[keyof typeof ActionType];

@@ -1,8 +1,8 @@
 /**
- * The co-op party on the HUD (FS-77AB6 req 40; FS-QPDKN req 1, 3, 7, 8, 11): whether a delver is
- * still in the delve, which card a delver who is out of it is shown while the rest play on, and
- * whose eyes they may watch through. Pure, so the rules and the copy are tested without a
- * canvas; the scene draws what these return.
+ * The co-op party on the HUD (FS-77AB6 req 40; FS-QPDKN req 1, 3, 7, 8, 11; FS-9K8EZ req 2, 3):
+ * whether a delver is still in the delve, which card a delver who is out of it is shown while
+ * the rest play on, whose eyes they may watch through, and what the run's ESC menu offers them.
+ * Pure, so the rules and the copy are tested without a canvas; the scene draws what these return.
  */
 
 import type { PlayerState } from "@/types/gameState";
@@ -97,3 +97,36 @@ export function nextWatched(
   const at = list.findIndex((w) => w.id === current);
   return list[(at + 1) % list.length].id;
 }
+
+/** One line of the run's ESC menu, or of the confirm that replaces its rows (FS-9K8EZ req 2, 3). */
+export interface RunMenuChoice {
+  id: "fall" | "leave" | "back" | "fall-now" | "not-yet";
+  label: string;
+  /** Amber for a thing the delver can do, the cancel register for going back. */
+  register: "actionable" | "cancel";
+}
+
+const BACK: RunMenuChoice = { id: "back", label: "Back  [Esc]", register: "cancel" };
+
+/**
+ * What the run's ESC menu offers, from the delver's state as it opens (FS-9K8EZ req 2): a
+ * living delver may fall where they stand; a dead one (left behind counts as dead) may leave
+ * the barrow, the same door as their card's; an escaped one waits for the run's end, so there
+ * is nothing but the way back. The row says death, never a forfeit or a withdrawal.
+ */
+export function runMenuChoices(state: { resolved: boolean; escaped: boolean }): RunMenuChoice[] {
+  if (!state.resolved)
+    return [{ id: "fall", label: "Fall where you stand", register: "actionable" }, BACK];
+  if (!state.escaped)
+    return [{ id: "leave", label: "Leave the barrow", register: "actionable" }, BACK];
+  return [BACK];
+}
+
+/** The one asking before a chosen death (FS-9K8EZ req 3): the line, and Fall or Not yet. */
+export const FALL_CONFIRM: { line: string; choices: RunMenuChoice[] } = {
+  line: "The barrow keeps its dead. Fall here?",
+  choices: [
+    { id: "fall-now", label: "Fall", register: "actionable" },
+    { id: "not-yet", label: "Not yet  [Esc]", register: "cancel" },
+  ],
+};
