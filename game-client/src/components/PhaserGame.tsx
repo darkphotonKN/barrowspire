@@ -12,6 +12,7 @@ import { HubScene } from "@/scenes/HubScene";
 import { WorldEnteredPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { LoadoutScene } from "@/scenes/LoadoutScene";
+import { bootInProgress } from "./bootGate";
 
 export default function PhaserGame() {
   const gameRef = useRef<Phaser.Game | null>(null);
@@ -83,7 +84,7 @@ export default function PhaserGame() {
       // On a refresh the server announces the world as soon as the socket opens,
       // which can beat the boot chain to it. Switching then would tear down
       // PreloadScene mid-flight, so hold the message until the menu stands up.
-      if (game.scene.isActive("PreloadScene") || game.scene.isActive("BootScene")) {
+      if (bootInProgress(game.scene)) {
         const menu = game.scene.getScene("MainMenuScene");
         menu?.events.once(Phaser.Scenes.Events.CREATE, () => enterWorld(payload));
         return;
