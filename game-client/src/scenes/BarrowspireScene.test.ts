@@ -1678,3 +1678,34 @@ describe("no way out of a run on ESC (reported 2026-10-29)", () => {
     expect(source).not.toMatch(/\["ESC",\s*"Main Menu"\]/);
   });
 });
+
+describe("state from another world is not drawn (reported 2026-10-29)", () => {
+  // A member can briefly have a body in two worlds (a stale run and a new one, or a run and
+  // the hub); both broadcast to the same socket. The scene draws only the run it was started
+  // for, so the delver is not snapped between two positions every tick.
+  it("should ignore frames whose session is not the one the scene was started for", () => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as { lastGameState?: unknown; handleGameStateUpdate(s: unknown): void; resetRun(): void; sessionID?: string };
+    scene.init({ sessionID: "run-a" });
+
+    run.handleGameStateUpdate({ session_id: "run-b", current_player: null });
+    expect(run.lastGameState).toBeUndefined();
+
+    const ours = { session_id: "run-a", current_player: null };
+    run.handleGameStateUpdate(ours);
+    expect(run.lastGameState).toBe(ours);
+  });
+
+  it("should draw everything when started without a session, and forget the session on reset", () => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as { lastGameState?: unknown; handleGameStateUpdate(s: unknown): void; resetRun(): void; sessionID?: string };
+    scene.init();
+    const any = { session_id: "whatever", current_player: null };
+    run.handleGameStateUpdate(any);
+    expect(run.lastGameState).toBe(any);
+
+    scene.init({ sessionID: "run-a" });
+    run.resetRun();
+    expect(run.sessionID).toBeUndefined();
+  });
+});
