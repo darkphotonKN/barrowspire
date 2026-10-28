@@ -277,6 +277,8 @@ const CHOICE_SPACING = 180;
 
 /** A drawn choice, which can redraw its colour when whether it can be picked changes. */
 type ChoiceOption = Phaser.GameObjects.Container & { retone(): void };
+/** The pressable area of a dialogue or menu choice, in screen px around its label. */
+const CHOICE_HIT = { width: 160, height: 34 };
 
 /**
  * One delver as the scene sees them.
@@ -365,7 +367,15 @@ export class HubScene extends Phaser.Scene {
    * what can be picked changes under it (a solo start sent, or refused).
    */
   private dialogue?: Phaser.GameObjects.Container;
-  private dialogueChoices?: { confirm: () => void; dismiss: () => void; retone: () => void };
+  private dialogueChoices?: {
+    confirm: () => void;
+    dismiss: () => void;
+    /** The n-th actionable choice, as the number keys count them. */
+    pick: (index: number) => void;
+    retone: () => void;
+  };
+  /** 1, 2, 3: one per actionable choice when a dialogue offers more than one. */
+  private choiceKeys: Phaser.Input.Keyboard.Key[] = [];
   private confirmKey?: Phaser.Input.Keyboard.Key;
   private dismissKey?: Phaser.Input.Keyboard.Key;
   private interactKey?: Phaser.Input.Keyboard.Key;
@@ -629,9 +639,12 @@ export class HubScene extends Phaser.Scene {
       const talk = Phaser.Input.Keyboard.JustDown(this.interactKey);
       const confirm = this.confirmKey && Phaser.Input.Keyboard.JustDown(this.confirmKey);
       const dismiss = this.dismissKey && Phaser.Input.Keyboard.JustDown(this.dismissKey);
+      // every key is read, so a press is never left to answer the next frame
+      const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
 
       if (talk || confirm) this.dialogueChoices?.confirm();
       else if (dismiss) this.dialogueChoices?.dismiss();
+      else if (numbered >= 0) this.dialogueChoices?.pick(numbered);
 
       return;
     }
@@ -1115,6 +1128,11 @@ export class HubScene extends Phaser.Scene {
     this.interactKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.confirmKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     this.dismissKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    this.choiceKeys = [
+      Phaser.Input.Keyboard.KeyCodes.ONE,
+      Phaser.Input.Keyboard.KeyCodes.TWO,
+      Phaser.Input.Keyboard.KeyCodes.THREE,
+    ].map((code) => keyboard.addKey(code));
     this.wasd = {
       up: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
       down: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
@@ -1541,27 +1559,38 @@ export class HubScene extends Phaser.Scene {
       if (choice.stays) this.dialogueChoices?.retone();
     };
     const dismiss = () => this.closeDialogue();
-    const first = choices.find((c) => c.register === "actionable");
+    const actionable = choices.filter((c) => c.register === "actionable");
+    const first = actionable[0];
     const confirm = () => (first ? pick(first) : dismiss());
+    const pickNumbered = (index: number) => {
+      const choice = actionable[index];
+      if (choice) pick(choice);
+    };
 
-    // the key each choice answers to, said on its label
-    const hint = (choice: DialogueChoice) =>
-      choice === first ? "  [E]" : choice.register === "cancel" ? "  [Esc]" : "";
-    const options = choices.map((choice, i) => {
-      const option = this.dialogueOption(
+    // The key each choice answers to, said on its label: with one thing to do it is E (the
+    // key that opened the dialogue), with several each has its number so none is mouse-only;
+    // E and Enter still mean the first. Esc always declines.
+    const hint = (choice: DialogueChoice) => {
+      if (choice.register === "cancel") return "  [Esc]";
+      if (actionable.length === 1) return "  [E]";
+      return `  [${actionable.indexOf(choice) + 1}]`;
+    };
+    const origin = { x: width / 2, y: height / 2 };
+    const options = choices.map((choice, i) =>
+      this.dialogueOption(
         (i - (choices.length - 1) / 2) * CHOICE_SPACING,
         48,
         `${choice.label}${hint(choice)}`,
         choice.register === "actionable" ? BARROW_HEX.amber : BARROW_HEX.arcane,
         () => pick(choice),
+        `choice-${choice.id}`,
+        origin,
         () => enabled(choice),
-      );
-      option.setName(`choice-${choice.id}`);
-      return option;
-    });
+      ),
+    );
     const retone = () => options.forEach((o) => o.retone());
 
-    this.dialogueChoices = { confirm, dismiss, retone };
+    this.dialogueChoices = { confirm, dismiss, pick: pickNumbered, retone };
     this.dialogue = this.add
       .container(width / 2, height / 2, [panel, speaker, said, ...options])
       .setScrollFactor(0)
@@ -1572,6 +1601,12 @@ export class HubScene extends Phaser.Scene {
    * One pressable line of a dialogue or the menu. Its colour is the register (amber to press,
    * arcane to go back), dimmed to vellumDark while `enabled` says it cannot be pressed; `retone`
    * redraws that when the answer changes under an open dialogue.
+   *
+   * The label sits at (x, y) inside the camera-fixed box the caller builds at `origin`; the hit
+   * area is a separate, camera-fixed rectangle at the same place on the screen, named `name`.
+   * It cannot live in the box: Phaser hit-tests a container's child with the child's own
+   * scroll factor, not the parent's, so once the camera has followed the delver a click lands
+   * beside the option. It goes down with the label's container.
    */
   private dialogueOption(
     x: number,
@@ -1579,6 +1614,8 @@ export class HubScene extends Phaser.Scene {
     label: string,
     colour: number,
     onPick: () => void,
+    name: string,
+    origin: { x: number; y: number },
     enabled: () => boolean = () => true,
   ): ChoiceOption {
     const tone = () => toCss(enabled() ? colour : BARROW_HEX.vellumDark);
@@ -1590,25 +1627,26 @@ export class HubScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const option = Object.assign(this.add.container(x, y, [text]), {
+    const option = Object.assign(this.add.container(x, y, [text]).setName(`${name}-label`), {
       retone: () => void text.setColor(tone()),
     });
-    // A Container has no texture, so it has no hit area to infer: without an
-    // explicit shape here the option looks clickable and is not.
-    option.setSize(160, 34);
-    option.setInteractive(
-      new Phaser.Geom.Rectangle(-80, -17, 160, 34),
-      Phaser.Geom.Rectangle.Contains,
-    );
+
+    const hit = this.add
+      .rectangle(origin.x + x, origin.y + y, CHOICE_HIT.width, CHOICE_HIT.height, BARROW_HEX.ink, 0)
+      .setScrollFactor(0)
+      .setDepth(2001)
+      .setInteractive()
+      .setName(name);
     // The cursor stays the gauntlet over an option; the text brightening to vellum
     // is the hover cue (FS-KYPQ9 §H.3). A dimmed option neither brightens nor answers.
-    option.on("pointerup", () => {
+    hit.on("pointerup", () => {
       if (enabled()) onPick();
     });
-    option.on("pointerover", () => {
+    hit.on("pointerover", () => {
       if (enabled()) text.setColor(toCss(BARROW_HEX.vellum));
     });
-    option.on("pointerout", () => text.setColor(tone()));
+    hit.on("pointerout", () => text.setColor(tone()));
+    option.once("destroy", () => hit.destroy());
 
     return option;
   }
@@ -1661,7 +1699,9 @@ export class HubScene extends Phaser.Scene {
         choice.label,
         choice.register === "actionable" ? BARROW_HEX.amber : BARROW_HEX.arcane,
         actions[choice.id],
-      ).setName(`menu-${choice.id}`),
+        `menu-${choice.id}`,
+        { x: width / 2, y: height / 2 },
+      ),
     );
 
     this.menu = this.add
