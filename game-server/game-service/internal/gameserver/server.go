@@ -503,6 +503,53 @@ func (s *Server) LeaveRun(player *types.Player) (*game.Session, error) {
 	return hub, nil
 }
 
+// Why a member may not leave the hub right now.
+var (
+	errLeaveHubQueued  = errors.New("queued members leave the queue first")
+	errLeaveHubInRun   = errors.New("member is in a run")
+	errLeaveHubNotHere = errors.New("member is not in the hub")
+)
+
+/**
+* Lets a hub member leave for the roster (FS-G4VMQ §Requirements 23, 24): their
+* body goes, the hub slot is freed, and their record names no world while
+* keeping its token and character, so a later enter_hub seats them again
+* through Admit and a reconnect meanwhile is announced nothing. Refused for a
+* queued member (the queue entry holds their character, FS-K2HKP R7a), for one
+* in a run, and for one in no world. An unreadable queue is not a queue they
+* are in, as enter_hub already treats it.
+**/
+func (s *Server) LeaveHub(ctx context.Context, player *types.Player) error {
+	hub, exists := s.HubSession()
+	if !exists {
+		return errHubMissing
+	}
+
+	world, _ := s.currentWorldOf(player.ID)
+	if world == uuid.Nil {
+		return errLeaveHubNotHere
+	}
+	if world != hub.ID {
+		if current, inWorld := s.GetGameSession(world); inWorld && current.WorldType() == types.WorldTypeRun {
+			return errLeaveHubInRun
+		}
+		return errLeaveHubNotHere
+	}
+
+	queued, err := s.IsQueued(ctx, player.ID)
+	if err != nil {
+		slog.Warn("Could not read queue entry on leave_hub, treating as not queued", "player_id", player.ID, "error", err)
+	}
+	if queued {
+		return errLeaveHubQueued
+	}
+
+	hub.RemovePlayer(player.ID.String())
+	s.setCurrentWorld(player, uuid.Nil)
+
+	return nil
+}
+
 /**
 * A delver in play choosing to die where they stand (FS-9K8EZ §Requirements
 * 10–12): the run their record names sets their health to zero, and the death
