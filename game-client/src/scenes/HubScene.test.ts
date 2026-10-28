@@ -264,6 +264,8 @@ interface MenuHub {
   interactKey?: FakeKey;
   confirmKey?: FakeKey;
   choiceKeys?: FakeKey[];
+  keepCameraOn(sprite: unknown): void;
+  cameras: { main: { width: number; height: number; startFollow: ReturnType<typeof vi.fn> } };
   cursors: Record<"up" | "down" | "left" | "right", FakeKey>;
   wasd: Record<"up" | "down" | "left" | "right", FakeKey>;
   queuePanel?: Made;
@@ -505,7 +507,7 @@ function hubOnStage() {
   };
   hub.add = stage.add;
   hub.choiceKeys = [keys.one, keys.two, keys.three];
-  hub.cameras = { main: { width: 800, height: 600 } };
+  hub.cameras = { main: { width: 800, height: 600, startFollow: vi.fn() } };
   hub.scene = { start: vi.fn() };
   hub.time = { delayedCall: vi.fn() };
   hub.input = { setDefaultCursor: vi.fn() };
@@ -959,5 +961,32 @@ describe("ESC menu by keyboard (reported 2026-10-29)", () => {
     press(keys.two);
     expect(send).toHaveBeenCalledWith("leave_queue", {});
     send.mockRestore();
+  });
+});
+
+describe("camera on the delver across visits (reported 2026-10-29)", () => {
+  // The camera latched on when the delver's entity id changed, and the id survived a scene
+  // restart while every sprite was rebuilt: back from the loadout, or re-entering as the same
+  // character, the camera sat where it was and the delver walked off screen.
+  it("should latch onto a new sprite after release, even for the same delver", () => {
+    const { hub } = hubOnStage();
+    const first = { id: "sprite-1" };
+    hub.keepCameraOn(first);
+    hub.keepCameraOn(first);
+    expect(hub.cameras.main.startFollow).toHaveBeenCalledTimes(1);
+
+    hub.release();
+    const rebuilt = { id: "sprite-2" };
+    hub.keepCameraOn(rebuilt);
+
+    expect(hub.cameras.main.startFollow).toHaveBeenCalledTimes(2);
+    expect(hub.cameras.main.startFollow).toHaveBeenLastCalledWith(rebuilt, true, 0.1, 0.1);
+  });
+
+  it("should forget whose body it followed on release", () => {
+    const { hub } = hubOnStage();
+    hub.selfEntityID = "me";
+    hub.release();
+    expect(hub.selfEntityID).toBeNull();
   });
 });
