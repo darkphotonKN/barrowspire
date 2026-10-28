@@ -54,7 +54,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Switch a player between hub and run → FS-29KSH
 - [x] Leave a run early after dying → FS-QPDKN
 - [x] Start a solo run without the queue → FS-NSV3D
-- [ ] Resolved delvers settle with the run despite leaving or disconnecting → FS-QPDKN
+- [x] Resolved delvers settle with the run despite leaving or disconnecting → FS-QPDKN
 
 ### ECS world
 
