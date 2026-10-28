@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { nextWatched, resolved, resolvedCard, watchable } from "./party";
+import {
+  FALL_CONFIRM,
+  nextWatched,
+  resolved,
+  resolvedCard,
+  runMenuChoices,
+  watchable,
+} from "./party";
 
 const delver = (
   fields: {
@@ -146,5 +153,42 @@ describe("nextWatched (FS-QPDKN req 7, 8, 11)", () => {
 
   it("should pick nobody with no one in play", () => {
     expect(nextWatched([], "tam")).toBeUndefined();
+  });
+});
+
+describe("runMenuChoices (FS-9K8EZ req 2)", () => {
+  it.each([
+    ["in play", { resolved: false, escaped: false }, ["fall", "back"]],
+    ["dead or left behind", { resolved: true, escaped: false }, ["leave", "back"]],
+    ["escaped", { resolved: true, escaped: true }, ["back"]],
+  ])("should offer %s: %j -> %j", (_, state, ids) => {
+    expect(runMenuChoices(state).map((c) => c.id)).toEqual(ids);
+  });
+
+  it("should word the way out as death, never as a forfeit or a withdrawal", () => {
+    const fall = runMenuChoices({ resolved: false, escaped: false })[0];
+    expect(fall.label).toBe("Fall where you stand");
+    expect(fall.register).toBe("actionable");
+    for (const choice of runMenuChoices({ resolved: false, escaped: false }))
+      expect(choice.label).not.toMatch(/forfeit|withdraw/i);
+  });
+
+  it("should name the dead delver's row as the card does, and keep Back in the cancel register", () => {
+    const [leave, back] = runMenuChoices({ resolved: true, escaped: false });
+    expect(leave.label).toBe("Leave the barrow");
+    expect(back.label).toBe("Back  [Esc]");
+    expect(back.register).toBe("cancel");
+  });
+});
+
+describe("FALL_CONFIRM (FS-9K8EZ req 3)", () => {
+  it("should ask once, in the barrow's words, with Fall to press and Not yet to go back", () => {
+    expect(FALL_CONFIRM.line).toBe("The barrow keeps its dead. Fall here?");
+    expect(FALL_CONFIRM.choices.map((c) => [c.id, c.register])).toEqual([
+      ["fall-now", "actionable"],
+      ["not-yet", "cancel"],
+    ]);
+    expect(FALL_CONFIRM.choices[0].label).toBe("Fall");
+    expect(FALL_CONFIRM.choices[1].label).toBe("Not yet  [Esc]");
   });
 });
