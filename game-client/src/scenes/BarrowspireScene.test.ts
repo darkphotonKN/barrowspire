@@ -66,7 +66,7 @@ interface RunState {
   lightMap?: unknown;
   projectiles?: unknown;
   monsters?: unknown;
-  delveNoticeText?: unknown;
+  resolvedCard?: unknown;
   floorText?: unknown;
   shownFloorLabel: string | null;
   lastFloor?: number;
@@ -91,7 +91,7 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
     run.player = {};
     run.gameEndOverlay = {};
     run.monsters = {};
-    run.delveNoticeText = {};
+    run.resolvedCard = {};
     return { scene, run, broadcasts };
   }
 
@@ -114,7 +114,7 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
     expect(run.player).toBeUndefined();
     expect(run.gameEndOverlay).toBeUndefined();
     expect(run.monsters).toBeUndefined();
-    expect(run.delveNoticeText).toBeUndefined();
+    expect(run.resolvedCard).toBeUndefined();
   });
 
   it("should forget the stopped run's stairs and floor, so the next start shows the new ones", () => {
@@ -318,10 +318,13 @@ function recordingStage() {
       calls: [] as string[],
     } as Made & { active: boolean; [k: string]: unknown };
     if (kind === "container" && Array.isArray(args[2])) self.children.push(...(args[2] as Made[]));
+    // destroying runs what was hung on `destroy` (hit areas that go with their card)
     const kill = (m: Made & { active?: boolean }) => {
+      if (m.destroyed) return;
       m.destroyed = true;
       m.active = false;
       m.children.forEach(kill);
+      m.handlers.destroy?.();
     };
     const proxy: unknown = new Proxy(self, {
       get(target, prop) {
@@ -346,7 +349,7 @@ function recordingStage() {
             (target as { name?: string }).name = name;
             return proxy;
           };
-        if (prop === "on")
+        if (prop === "on" || prop === "once")
           return (event: string, fn: () => void) => {
             target.handlers[event] = fn;
             return proxy;
@@ -585,52 +588,49 @@ describe("BarrowspireScene floor change (FS-F6F88 req 32, 33)", () => {
   });
 });
 
-describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40, 42)", () => {
-  const delver = (
-    id: string,
-    username: string,
-    x: number,
-    fields: { escape?: boolean; current_health?: number } = {},
-  ) => ({
-    id,
-    entity_id: `e_${id}`,
-    username,
-    class: "warrior",
-    position: at(x, 300),
-    direction: { vx: 0, vy: 0, speed: 0 },
-    escape: false,
-    current_health: 100,
-    max_health: 100,
-    ...fields,
-  });
+/** A delver as the broadcast lists them, at `x` on the row the ghoul stands on. */
+const delver = (
+  id: string,
+  username: string,
+  x: number,
+  fields: { escape?: boolean; current_health?: number } = {},
+) => ({
+  id,
+  entity_id: `e_${id}`,
+  username,
+  class: "warrior",
+  position: at(x, 300),
+  direction: { vx: 0, vy: 0, speed: 0 },
+  escape: false,
+  current_health: 100,
+  max_health: 100,
+  ...fields,
+});
 
-  /** Floor 1 with this client's delver at `meX` and an ally beside the living ghoul at x 100. */
-  function partyState(
-    me: ReturnType<typeof delver> | null = delver("me", "Aldric", 130),
-    ally = delver("ally", "Wenna", 160),
-  ): GameState {
-    return {
-      ...floorState(1),
-      current_player: me,
-      other_players: [ally],
-    } as GameState;
-  }
+/** Floor 1 with this client's delver at `meX` and an ally beside the living ghoul at x 100. */
+function partyState(
+  me: ReturnType<typeof delver> | null = delver("me", "Aldric", 130),
+  ally = delver("ally", "Wenna", 160),
+): GameState {
+  return {
+    ...floorState(1),
+    current_player: me,
+    other_players: [ally],
+  } as GameState;
+}
 
-  function onStage() {
-    const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
-    const scene = sceneOnStage();
-    const sprites = () => scene.stage.made.filter((m) => m.kind === "sprite");
-    /** The roster's sprites, in broadcast order: made bare, where delvers are made at a texture. */
-    const monsters = () => sprites().filter((m) => m.args.length === 0);
-    /** Delver sprites, in the order the broadcast built them: this client's first. */
-    const delvers = () => sprites().filter((m) => m.args.length > 0);
-    const notices = () =>
-      scene.stage.made.filter(
-        (m) => m.kind === "text" && /delve goes on/i.test(String(m.args[2])) && !m.destroyed,
-      );
-    return { ...scene, sent, monsters, delvers, notices };
-  }
+function onStage() {
+  const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+  const scene = sceneOnStage();
+  const sprites = () => scene.stage.made.filter((m) => m.kind === "sprite");
+  /** The roster's sprites, in broadcast order: made bare, where delvers are made at a texture. */
+  const monsters = () => sprites().filter((m) => m.args.length === 0);
+  /** Delver sprites, in the order the broadcast built them: this client's first. */
+  const delvers = () => sprites().filter((m) => m.args.length > 0);
+  return { ...scene, sent, monsters, delvers };
+}
 
+describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -694,30 +694,358 @@ describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40, 42)", () => {
     expect(color).not.toBe(toCss(palette.markerHostile));
   });
 
+});
+
+describe("BarrowspireScene resolved delver card and spectating (FS-QPDKN req 1, 3–9, 11–12)", () => {
+  /** What the scene holds for a resolved delver: the card, whose eyes they watch through. */
+  interface Spectating {
+    otherPlayers: Map<string, unknown>;
+    watchedDelverId?: string;
+    resolvedCard?: unknown;
+    spectateHud?: unknown;
+    tabKey?: unknown;
+    cycleWatched(): void;
+    canSendMove(): boolean;
+    resetRun(): void;
+  }
+
+  const dead = { current_health: 0 };
+  const escaped = { escape: true };
+
+  function resolvedOnStage(me: ReturnType<typeof delver>, allies = [delver("ally", "Wenna", 160)]) {
+    const stage = onStage();
+    const run = stage.run as unknown as Spectating;
+    const state = (...others: ReturnType<typeof delver>[]) =>
+      ({ ...partyState(me), other_players: others } as GameState);
+    stage.run.handleGameStateUpdate(state(...allies));
+    const live = (test: (content: string) => boolean) =>
+      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed && test(String(m.args[2])));
+    const watchButtons = () => live((t) => /watch the delve/i.test(t));
+    const cardTitles = () => live((t) => /barrow keeps you|out of the barrow/i.test(t));
+    const watching = () => live((t) => /^Watching /.test(t)).map((m) => m.args[2]);
+    const hints = () => live((t) => /Tab: next delver/i.test(t));
+    const pressWatch = () => {
+      const hit = stage.stage.made.find((m) => (m as { name?: string }).name === "watch-the-delve");
+      hit?.handlers.pointerdown();
+    };
+    const follow = stage.run.cameras as { main: { startFollow: ReturnType<typeof vi.fn> } };
+    const followed = () => follow.main.startFollow.mock.calls.at(-1)?.[0];
+    const own = () => (run as unknown as { player: unknown }).player;
+    return { ...stage, run, state, watchButtons, cardTitles, watching, hints, pressWatch, followed, own };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it.each([
-    ["escaped", { escape: true }],
-    ["fallen", { current_health: 0 }],
-  ])("should tell an %s delver the delve goes on while the ally is still in it", (_, fields) => {
-    const { run, notices } = onStage();
-    run.handleGameStateUpdate(partyState(delver("me", "Aldric", 130, fields)));
-    run.handleGameStateUpdate(partyState(delver("me", "Aldric", 130, fields)));
-    expect(notices()).toHaveLength(1);
+    ["dead", dead, /barrow keeps you/i],
+    ["escaped", escaped, /out of the barrow/i],
+  ])("should show a %s delver the card with Watch the delve while the ally is still in it", (_, me, copy) => {
+    const { run, state, watchButtons, cardTitles } = resolvedOnStage(delver("me", "Aldric", 130, me));
+    // the card survives the next broadcast unchanged: one card, not one per tick
+    (run as unknown as FloorRun).handleGameStateUpdate(state(delver("ally", "Wenna", 160)));
+    expect(cardTitles()).toHaveLength(1);
+    expect(String(cardTitles()[0].args[2])).toMatch(copy);
+    expect(watchButtons()).toHaveLength(1);
   });
 
-  it("should say nothing while this delver is still in the delve", () => {
-    const { run, notices } = onStage();
-    run.handleGameStateUpdate(partyState());
-    expect(notices()).toHaveLength(0);
+  it("should show no card while this delver is still in the delve", () => {
+    const { watchButtons, cardTitles } = resolvedOnStage(delver("me", "Aldric", 130));
+    expect(cardTitles()).toHaveLength(0);
+    expect(watchButtons()).toHaveLength(0);
   });
 
-  it("should take the notice down when end_game arrives, and not raise it again", () => {
-    const { run, notices } = onStage();
-    const escaped = () => partyState(delver("me", "Aldric", 130, { escape: true }));
-    run.handleGameStateUpdate(escaped());
-    run.showGameEndOverlay(1, "escaped");
-    expect(notices()).toHaveLength(0);
-    run.handleGameStateUpdate(escaped());
-    expect(notices()).toHaveLength(0);
+  it("should show no card once nobody is left in play: the end is coming", () => {
+    const { watchButtons } = resolvedOnStage(delver("me", "Aldric", 130, dead), [
+      delver("ally", "Wenna", 160, escaped),
+    ]);
+    expect(watchButtons()).toHaveLength(0);
+  });
+
+  it("should keep the camera on the delver's own body until Watch is pressed", () => {
+    const { run, followed, own, watching } = resolvedOnStage(delver("me", "Aldric", 130, dead));
+    expect(own()).toBeDefined();
+    expect(followed()).toBe(own());
+    expect(run.watchedDelverId).toBeUndefined();
+    expect(watching()).toEqual([]);
+  });
+
+  it("should do nothing on Tab while the card is still up", () => {
+    const { run, followed, own } = resolvedOnStage(delver("me", "Aldric", 130, dead));
+    run.cycleWatched();
+    expect(followed()).toBe(own());
+    expect(run.watchedDelverId).toBeUndefined();
+  });
+
+  it("should follow a teammate in play once Watch is pressed, and say whose eyes, with the Tab hint", () => {
+    const { run, pressWatch, followed, watching, hints, watchButtons } = resolvedOnStage(
+      delver("me", "Aldric", 130, dead),
+    );
+    pressWatch();
+    expect(run.watchedDelverId).toBe("ally");
+    expect(followed()).toBe(run.otherPlayers.get("ally"));
+    expect(watching()).toEqual(["Watching Wenna"]);
+    expect(hints()).toHaveLength(1);
+    expect(watchButtons()).toHaveLength(0);
+  });
+
+  it("should letter the spectate HUD in vellum on the HUD panel, never amber", () => {
+    const { stage, pressWatch, watching, hints } = resolvedOnStage(delver("me", "Aldric", 130, dead));
+    pressWatch();
+    const made = (test: (t: string) => boolean) =>
+      stage.made.find((m) => m.kind === "text" && !m.destroyed && test(String(m.args[2])))!;
+    for (const text of [made((t) => watching().includes(t)), hints()[0]]) {
+      const style = text.args[3] as { color?: string; backgroundColor?: string };
+      expect(style.color).toBe(toCss(palette.hudText));
+      expect(style.backgroundColor).toBe(toCss(palette.hudPanel));
+      expect(style.color).not.toBe(toCss(palette.interactable));
+    }
+  });
+
+  it("should cycle the watched delver on Tab, never through the delver's own body", () => {
+    const { run, pressWatch, followed, own, watching } = resolvedOnStage(delver("me", "Aldric", 130, dead), [
+      delver("ally", "Wenna", 160),
+      delver("brom", "Brom", 200),
+    ]);
+    pressWatch();
+    expect(watching()).toEqual(["Watching Wenna"]);
+    const seen: (string | undefined)[] = [run.watchedDelverId];
+    for (let i = 0; i < 3; i++) {
+      run.cycleWatched();
+      seen.push(run.watchedDelverId);
+      expect(followed()).toBe(run.otherPlayers.get(run.watchedDelverId!));
+      expect(followed()).not.toBe(own());
+    }
+    expect(seen).toEqual(["ally", "brom", "ally", "brom"]);
+    expect(watching()).toEqual(["Watching Brom"]);
+  });
+
+  it("should keep the hint with only one teammate in play, and Tab keeps watching them", () => {
+    const { run, pressWatch, hints } = resolvedOnStage(delver("me", "Aldric", 130, dead));
+    pressWatch();
+    run.cycleWatched();
+    expect(run.watchedDelverId).toBe("ally");
+    expect(hints()).toHaveLength(1);
+  });
+
+  it("should move on to another teammate in play when the watched delver resolves", () => {
+    const { run, state, pressWatch, followed, watching } = resolvedOnStage(delver("me", "Aldric", 130, dead), [
+      delver("ally", "Wenna", 160),
+      delver("brom", "Brom", 200),
+    ]);
+    pressWatch();
+    expect(run.watchedDelverId).toBe("ally");
+    (run as unknown as FloorRun).handleGameStateUpdate(
+      state(delver("ally", "Wenna", 160, escaped), delver("brom", "Brom", 200)),
+    );
+    expect(run.watchedDelverId).toBe("brom");
+    expect(followed()).toBe(run.otherPlayers.get("brom"));
+    expect(watching()).toEqual(["Watching Brom"]);
+  });
+
+  // Phaser's startFollow snaps the camera onto its target every time it is called, so calling
+  // it per tick would throw away the lerp: the view must latch onto a teammate once, and again
+  // only when the teammate changes.
+  it("should start following once, not on every broadcast", () => {
+    const { run, state, pressWatch, followed } = resolvedOnStage(delver("me", "Aldric", 130, dead));
+    const follow = run as unknown as { cameras: { main: { startFollow: ReturnType<typeof vi.fn> } } };
+    pressWatch();
+    const calls = follow.cameras.main.startFollow.mock.calls.length;
+    for (let i = 0; i < 3; i++) {
+      (run as unknown as FloorRun).handleGameStateUpdate(state(delver("ally", "Wenna", 160 - i)));
+    }
+    expect(follow.cameras.main.startFollow.mock.calls.length).toBe(calls);
+    expect(followed()).toBe(run.otherPlayers.get("ally"));
+  });
+
+  it("should latch onto the watched delver once their sprite exists, if it was not there yet", () => {
+    const { run, state, pressWatch, followed } = resolvedOnStage(delver("me", "Aldric", 130, dead), [
+      delver("ally", "Wenna", 160),
+      delver("brom", "Brom", 200),
+    ]);
+    pressWatch();
+    expect(run.watchedDelverId).toBe("ally");
+    // the watched delver resolves while the next one's sprite is not drawn yet
+    const brom = run.otherPlayers.get("brom");
+    run.otherPlayers.delete("brom");
+    (run as unknown as FloorRun).handleGameStateUpdate(
+      state(delver("ally", "Wenna", 160, escaped), delver("brom", "Brom", 200)),
+    );
+    expect(run.watchedDelverId).toBe("brom");
+    run.otherPlayers.set("brom", brom);
+    (run as unknown as FloorRun).handleGameStateUpdate(
+      state(delver("ally", "Wenna", 160, escaped), delver("brom", "Brom", 200)),
+    );
+    expect(followed()).toBe(brom);
+  });
+
+  it("should send no move while spectating, nor once out of the delve", () => {
+    const inPlay = resolvedOnStage(delver("me", "Aldric", 130));
+    expect(inPlay.run.canSendMove()).toBe(true);
+    const { run, pressWatch } = resolvedOnStage(delver("me", "Aldric", 130, dead));
+    expect(run.canSendMove()).toBe(false);
+    pressWatch();
+    expect(run.canSendMove()).toBe(false);
+  });
+
+  it("should take the card down when end_game arrives, and not raise it again", () => {
+    const { run, state, watchButtons } = resolvedOnStage(delver("me", "Aldric", 130, escaped));
+    (run as unknown as FloorRun).showGameEndOverlay(1, "escaped");
+    expect(watchButtons()).toHaveLength(0);
+    (run as unknown as FloorRun).handleGameStateUpdate(state(delver("ally", "Wenna", 160)));
+    expect(watchButtons()).toHaveLength(0);
+  });
+
+  it("should take the spectate HUD down when end_game arrives", () => {
+    const { run, pressWatch, watching, hints } = resolvedOnStage(delver("me", "Aldric", 130, dead));
+    pressWatch();
+    (run as unknown as FloorRun).showGameEndOverlay(2, "eliminated");
+    expect(watching()).toEqual([]);
+    expect(hints()).toHaveLength(0);
+  });
+
+  it("should forget the watched delver, the follow, the Tab key, the card and the HUD on a restart", () => {
+    const { run, pressWatch } = resolvedOnStage(delver("me", "Aldric", 130, dead));
+    pressWatch();
+    const removeKey = vi.fn();
+    const tabKey = {};
+    run.tabKey = tabKey;
+    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey } };
+
+    run.resetRun();
+
+    expect(removeKey).toHaveBeenCalledWith(tabKey, true, true);
+    expect(run.tabKey).toBeUndefined();
+    expect(run.watchedDelverId).toBeUndefined();
+    expect(run.resolvedCard).toBeUndefined();
+    expect(run.spectateHud).toBeUndefined();
+  });
+});
+
+describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge state: Leaving)", () => {
+  /** What the scene holds for a dead delver's way out. */
+  interface Leaving {
+    leavePending: boolean;
+    leaveButton?: unknown;
+    gameEndOverlay?: unknown;
+    leaveRefused(): void;
+    resetRun(): void;
+  }
+
+  const dead = { current_health: 0 };
+  const escaped = { escape: true };
+
+  function leavingOnStage(me: ReturnType<typeof delver>) {
+    const stage = onStage();
+    const run = stage.run as unknown as Leaving;
+    stage.run.handleGameStateUpdate(partyState(me));
+    const live = (test: (content: string) => boolean) =>
+      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed && test(String(m.args[2])));
+    const leaveLabels = () => live((t) => /leave the barrow/i.test(t));
+    const watchLabels = () => live((t) => /watch the delve/i.test(t));
+    const hit = (name: string) =>
+      stage.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
+    const press = (name: string) => hit(name)?.handlers.pointerdown();
+    const leavesSent = () => stage.sent.mock.calls.filter(([action]) => action === ActionType.LeaveRun);
+    return { ...stage, run, leaveLabels, watchLabels, hit, press, leavesSent };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should give the dead delver Leave the barrow beside Watch the delve, and the escaped delver Watch alone", () => {
+    const fallen = leavingOnStage(delver("me", "Aldric", 130, dead));
+    expect(fallen.watchLabels()).toHaveLength(1);
+    expect(fallen.leaveLabels()).toHaveLength(1);
+
+    const out = leavingOnStage(delver("me", "Aldric", 130, escaped));
+    expect(out.watchLabels()).toHaveLength(1);
+    expect(out.leaveLabels()).toHaveLength(0);
+  });
+
+  it("should send leave_run once, with no payload, and nothing on a second press before the answer", () => {
+    const { press, leavesSent, hit } = leavingOnStage(delver("me", "Aldric", 130, dead));
+    press("leave-the-barrow");
+    press("leave-the-barrow");
+
+    expect(leavesSent()).toEqual([[ActionType.LeaveRun, {}]]);
+    expect(hit("leave-the-barrow")?.calls).toContain("disableInteractive");
+  });
+
+  it("should hand the button back when the server refuses, with the card up", () => {
+    const { run, press, leavesSent, hit, leaveLabels } = leavingOnStage(delver("me", "Aldric", 130, dead));
+    press("leave-the-barrow");
+    const before = hit("leave-the-barrow")?.calls.length ?? 0;
+
+    run.leaveRefused();
+
+    expect(run.leavePending).toBe(false);
+    expect(leaveLabels()).toHaveLength(1);
+    expect(hit("leave-the-barrow")?.calls.slice(before)).toContain("setInteractive");
+    press("leave-the-barrow");
+    expect(leavesSent()).toHaveLength(2);
+  });
+
+  it("should ignore a refusal once the end-of-run overlay is up: the run ended first", () => {
+    const { run, press, leaveLabels } = leavingOnStage(delver("me", "Aldric", 130, dead));
+    press("leave-the-barrow");
+    (run as unknown as FloorRun).showGameEndOverlay(2, "eliminated");
+
+    run.leaveRefused();
+
+    expect(run.leavePending).toBe(true);
+    expect(leaveLabels()).toHaveLength(0);
+  });
+
+  it("should keep the dead spectator's button in the bottom-right corner, clear of the spectate HUD", () => {
+    const { run, press, hit, leaveLabels, leavesSent } = leavingOnStage(delver("me", "Aldric", 130, dead));
+    press("watch-the-delve");
+
+    expect(leaveLabels()).toHaveLength(1);
+    const corner = hit("leave-the-barrow")!;
+    const [x, y, w, h] = corner.args as number[];
+    // the recording camera is 800 x 600; the HUD runs along the top edge, the watched delver sits at the centre
+    expect(x - w / 2).toBeGreaterThan(400 + 100);
+    expect(y - h / 2).toBeGreaterThan(300 + 100);
+    expect(x + w / 2).toBeLessThanOrEqual(800);
+    expect(y + h / 2).toBeLessThanOrEqual(600);
+    press("leave-the-barrow");
+    expect(leavesSent()).toHaveLength(1);
+    expect(run.leavePending).toBe(true);
+  });
+
+  it("should give the escaped spectator no leave button", () => {
+    const { press, leaveLabels, hit } = leavingOnStage(delver("me", "Aldric", 130, escaped));
+    press("watch-the-delve");
+    expect(leaveLabels()).toHaveLength(0);
+    expect(hit("leave-the-barrow")).toBeUndefined();
+  });
+
+  it("should take the corner button down with the spectate HUD when end_game arrives", () => {
+    const { run, press, leaveLabels, hit } = leavingOnStage(delver("me", "Aldric", 130, dead));
+    press("watch-the-delve");
+    (run as unknown as FloorRun).showGameEndOverlay(2, "eliminated");
+
+    expect(leaveLabels()).toHaveLength(0);
+    expect(hit("leave-the-barrow")).toBeUndefined();
+    expect(run.leaveButton).toBeUndefined();
+  });
+
+  it("should forget the button, the pending send and the refusal listener on a restart", () => {
+    const offError = vi.spyOn(socketManager, "offError");
+    const off = vi.spyOn(socketManager, "off");
+    const { run, press } = leavingOnStage(delver("me", "Aldric", 130, dead));
+    press("leave-the-barrow");
+    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey: vi.fn() } };
+
+    run.resetRun();
+
+    expect(run.leavePending).toBe(false);
+    expect(run.leaveButton).toBeUndefined();
+    expect(offError).toHaveBeenCalledWith("leave_run");
+    expect(off).toHaveBeenCalledWith("leave_run");
   });
 });
 
@@ -1277,6 +1605,65 @@ describe("BarrowspireScene floor bands, run dressing, light budget and stairs (F
     state.containers = [{ ...state.containers[0], kind: "drop_pile", items: [{} as never] }];
     pile.run.handleGameStateUpdate(state);
     expect(pools(pile.lights)).toHaveLength(1);
+  });
+});
+
+describe("BarrowspireScene result card hold (FS-QPDKN req 15, 16, 17)", () => {
+  const hub = { session_id: "hub-1", world_type: "hub" as const };
+
+  function onStage() {
+    const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const scene = sceneOnStage();
+    const start = vi.fn();
+    const run = scene.run as FloorRun & { resultHold: import("@/components/resultHold").ResultHold };
+    Object.assign(run, { scene: { start } });
+    const buttons = () =>
+      scene.stage.made.filter((m) => m.kind === "rectangle" && m.handlers.pointerdown && !m.destroyed);
+    return { ...scene, run, sent, start, buttons };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should put up one button, Return to the hub, and neither legacy one", () => {
+    const { run, texts, buttons } = onStage();
+    run.showGameEndOverlay(1, "escaped");
+
+    expect(buttons()).toHaveLength(1);
+    const labels = texts().map((t) => String(t.content));
+    expect(labels.filter((l) => /return to the hub/i.test(l))).toHaveLength(1);
+    expect(labels.some((l) => /delve again|withdraw/i.test(l))).toBe(false);
+  });
+
+  it("should hold the hub world behind the card and apply it when the button is pressed", () => {
+    const { run, sent, start, buttons } = onStage();
+    run.showGameEndOverlay(3, "eliminated");
+    const apply = vi.fn();
+
+    expect(run.resultHold.hold(hub, apply)).toBe(true);
+    expect(apply).not.toHaveBeenCalled();
+
+    buttons()[0].handlers.pointerdown();
+
+    expect(apply).toHaveBeenCalledWith(hub);
+    // client-only: nothing goes to the server, and the switch is the handler's, not the scene's
+    expect(sent).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("should forget the held world when the scene stops, so the next run gets no stale switch", () => {
+    const { run } = onStage();
+    (run as unknown as { init(): void }).init();
+    run.showGameEndOverlay(2, "survived");
+    const apply = vi.fn();
+    run.resultHold.hold(hub, apply);
+
+    (run as unknown as RunState).events.emit("shutdown");
+
+    run.resultHold.release();
+    expect(apply).not.toHaveBeenCalled();
+    expect(run.resultHold.hold(hub, apply)).toBe(false);
   });
 });
 

@@ -90,6 +90,12 @@ export default function PhaserGame() {
         return;
       }
 
+      // The run's end sends end_game and the hub in the same moment. While the
+      // result card is up, the hub waits behind it until *Return to the hub*;
+      // a run is never held. FS-QPDKN §Requirements 15–17.
+      const run = game.scene.getScene("BarrowspireScene") as BarrowspireScene | null;
+      if (run?.resultHold.hold(payload, enterWorld)) return;
+
       enterWorld(payload);
     });
   }, []);

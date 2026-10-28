@@ -37,6 +37,13 @@ export interface SocketLike {
   close(code?: number, reason?: string): void;
 }
 
+/** A refused action: the action, the server's error, and its message for the delver if any. */
+export interface MessageError {
+  action: string;
+  error: string;
+  message?: string;
+}
+
 // SocketManager.js
 export class SocketManager {
   private socket: SocketLike | null = null;
@@ -46,11 +53,9 @@ export class SocketManager {
   // Auth error callback
   private onAuthError?: () => void;
   // Generic server-side message error callback (top-level `error` field)
-  private onMessageError?: (info: {
-    action: string;
-    error: string;
-    message?: string;
-  }) => void;
+  private onMessageError?: (info: MessageError) => void;
+  // Error replies a scene handles for one action itself; everything else goes to the global one
+  private errorListeners: Map<string, (info: MessageError) => void> = new Map();
   // Connection status
   private connectionStatus: ConnectionStatus = "disconnected";
   private connectionStatusListeners: Set<(status: ConnectionStatus) => void> =
@@ -123,10 +128,21 @@ export class SocketManager {
     this.onAuthError = callback;
   }
 
-  setOnMessageError(
-    callback: (info: { action: string; error: string; message?: string }) => void,
-  ) {
+  setOnMessageError(callback: (info: MessageError) => void) {
     this.onMessageError = callback;
+  }
+
+  /**
+   * Hear the server refuse one action (a reply on that action with `error` set) instead of the
+   * global handler: the refusal is that action's own business, not a session problem. One
+   * listener per action; `offError` hands the action back to the global handler.
+   */
+  onError(action: string, callback: (info: MessageError) => void): void {
+    this.errorListeners.set(action, callback);
+  }
+
+  offError(action: string): void {
+    this.errorListeners.delete(action);
   }
 
   disconnect() {
@@ -193,13 +209,14 @@ export class SocketManager {
     // Top-level server error (e.g. duplicate queue, invalid action). Surface to a global handler.
     if (data.error) {
       console.warn("Server error message received:", data);
-      if (this.onMessageError) {
-        this.onMessageError({
-          action: data.action ?? "",
-          error: String(data.error),
-          message: data.payload?.message,
-        });
-      }
+      const info: MessageError = {
+        action: data.action ?? "",
+        error: String(data.error),
+        message: data.payload?.message,
+      };
+      const scoped = this.errorListeners.get(info.action);
+      if (scoped) scoped(info);
+      else this.onMessageError?.(info);
       return;
     }
 

@@ -1,9 +1,9 @@
 ---
 id: I-QPDKN-4
-status: open
+status: done
 implements: FS-QPDKN
 blocked_by: [I-QPDKN-2, I-QPDKN-3]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-QPDKN slice 4: Leave the barrow button for the dead delver"
 ---
 Implements FS-QPDKN §Requirements 2, 10, 13–14
