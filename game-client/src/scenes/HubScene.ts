@@ -405,6 +405,8 @@ export class HubScene extends Phaser.Scene {
   private leavePending = false;
   /** A start_solo has been sent and its reply has not come (FS-NSV3D §Requirements 2). */
   private soloPending = false;
+  /** A leave_hub has been sent and its reply has not come (FS-G4VMQ §Requirements 25). */
+  private leavingHub = false;
   /**
    * The delver's level and experience bar (FS-BDA7X req 42), top-left, clear of the queue panel
    * at the bottom. Made with the first state that carries a level.
@@ -491,8 +493,9 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * What the queue tells this client, from asking in to being moved out, and what it is told
-   * back. Released as one in release(), so no visit's listener outlives it.
+   * What the queue tells this client, from asking in to being moved out, what it is told back,
+   * and the hub's answer to leaving it. Released as one in release(), so no visit's listener
+   * outlives it.
    */
   private listenForQueue(): void {
     // Queue progress follows the delver rather than pinning them to a popup:
@@ -544,6 +547,20 @@ export class HubScene extends Phaser.Scene {
       this.dialogueChoices?.retone();
       this.notice(info.message ?? "The way is shut for now. Ask again.");
     });
+    // Leaving for the roster (FS-G4VMQ §Requirements 25): the body goes with the server's word,
+    // not the press, so the scene switches on world_left. A refusal (queued, or no longer here)
+    // gives the row back and says why in passing; the delver stays where they stand.
+    socketManager.on("world_left", () => {
+      if (!this.leavingHub) return;
+      this.leavingHub = false;
+      this.scene.start("MainMenuScene");
+    });
+    socketManager.onError(ActionType.LeaveHub, (info) => {
+      if (!this.leavingHub) return;
+      this.leavingHub = false;
+      this.menuChoices?.retone();
+      this.notice(info.message ?? "The hub will not let you go yet. Ask again.");
+    });
     this.unsubscribeQueue = () => {
       socketManager.off("queue_status");
       socketManager.off(ActionType.Find_Game);
@@ -552,6 +569,8 @@ export class HubScene extends Phaser.Scene {
       socketManager.off(ActionType.LeaveQueue);
       socketManager.offError(ActionType.LeaveQueue);
       socketManager.offError(ActionType.StartSolo);
+      socketManager.off("world_left");
+      socketManager.offError(ActionType.LeaveHub);
     };
   }
 
@@ -588,6 +607,7 @@ export class HubScene extends Phaser.Scene {
     this.followedSprite = undefined;
     this.leavePending = false;
     this.soloPending = false;
+    this.leavingHub = false;
     this.roofs = [];
     this.insideRoof = undefined;
     // the gauntlet is the hub's and the run's; the menus the hub hands over to keep the browser's
@@ -1658,6 +1678,8 @@ export class HubScene extends Phaser.Scene {
     const { container, keys } = showMenuPanel(this, {
       choices: hubMenuChoices({ queued: this.queued }),
       actions,
+      // dimmed while the server is asked, so a second press has nothing to land on
+      enabled: { change: () => !this.leavingHub },
       close: () => this.closeMenu(),
       origin: { x: width / 2, y: height / 2 },
       hit: CHOICE_HIT,
@@ -1685,12 +1707,15 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * Back to the main menu, whose roster and DELVE re-enter the hub as whoever is picked
-   * (FS-G4VMQ §Requirements 6–9). Nothing is sent: the body stays here until then, as the run's
-   * ESC leaves it (§Requirements 21).
+   * Out of the hub for the main menu, whose roster and DELVE re-enter it as whoever is picked
+   * (FS-G4VMQ §Requirements 6–9, 25). One leave_hub, and nothing more until the server has
+   * answered it: world_left switches the scene, a refusal keeps the delver here.
    */
   private changeCharacter(): void {
-    this.scene.start("MainMenuScene");
+    if (this.leavingHub) return;
+    this.leavingHub = true;
+    this.menuChoices?.retone();
+    socketManager.sendMessage(ActionType.LeaveHub, {});
   }
 
   /** The loadout is a screen, not a world: the delver stays in the hub while it

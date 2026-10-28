@@ -92,6 +92,8 @@ export interface ActionMap {
   leave_run: Record<string, never>;
   /** A queued delver cancelling (FS-G4VMQ req 18): no payload. */
   leave_queue: Record<string, never>;
+  /** A hub delver leaving for the roster (FS-G4VMQ req 23, 25): no payload; `world_left` answers. */
+  leave_hub: Record<string, never>;
   /** A delver descending alone, without the queue (FS-NSV3D req 7): no payload. */
   start_solo: Record<string, never>;
   /** A delver in play choosing to fall where they stand (FS-9K8EZ req 7): no payload. */
@@ -112,6 +114,7 @@ export const ActionType = {
   CastSkill: "cast_skill",
   LeaveRun: "leave_run",
   LeaveQueue: "leave_queue",
+  LeaveHub: "leave_hub",
   StartSolo: "start_solo",
   ForfeitRun: "forfeit_run",
 } as const;
