@@ -2,9 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: wallet }
 spec:
-  # 1: wallet migrates on boot and runs an outbox worker; several pods would
-  # race on the migration and duplicate-publish outbox rows (known, deferred).
-  replicas: 1
+  # The RabbitMQ consumer and the Temporal worker share load across replicas.
+  # Migrate-on-boot serialises on a postgres advisory lock. Known, deferred:
+  # each replica's outbox worker can publish the same row (no SKIP LOCKED in
+  # common/outbox).
+  replicas: 3
   selector: { matchLabels: { app: wallet } }
   template:
     metadata: { labels: { app: wallet } }

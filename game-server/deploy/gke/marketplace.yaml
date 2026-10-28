@@ -2,9 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: marketplace }
 spec:
-  # 1: the outbox worker and the expiry poller run in-process, so a second
-  # replica would publish and expire twice; marketplace also migrates on boot.
-  replicas: 1
+  # The expiry poller is safe on every replica: settlement-{listingId} with
+  # REJECT_DUPLICATE starts one run (ADR-0016). Migrate-on-boot serialises on a
+  # postgres advisory lock. Known, deferred: each replica's outbox worker can
+  # publish the same row (no SKIP LOCKED in common/outbox).
+  replicas: 3
   selector: { matchLabels: { app: marketplace } }
   template:
     metadata: { labels: { app: marketplace } }
