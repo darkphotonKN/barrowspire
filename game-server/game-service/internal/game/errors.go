@@ -25,6 +25,9 @@ var (
 	// ErrEscapedWaits refuses an early leave by an escaped delver: their plunder
 	// is settled with the run, so they wait for its end. FS-QPDKN §Out of Scope.
 	ErrEscapedWaits = errors.New("an escaped delver waits for the run's end")
+	// ErrAlreadyResolved refuses a chosen death by a delver already out of the
+	// delve: dead, escaped or left behind. FS-9K8EZ §Requirements 12.
+	ErrAlreadyResolved = errors.New("delver is already out of the delve")
 	// ErrNotInThisWorld refuses acting on a member who has no body here.
 	ErrNotInThisWorld = errors.New("member has no body in this world")
 	// ErrItemNotCarried refuses equipping an item that is not in the delver's

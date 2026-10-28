@@ -56,7 +56,7 @@ server state and sends intents. ✅
 - [x] Spectate living teammates after resolving → FS-QPDKN
 - [x] Leave a run early after dying → FS-QPDKN
 - [x] Hold the run result until the delver returns → FS-QPDKN
-- [ ] Die by choice from the run's ESC menu → FS-9K8EZ
+- [x] Die by choice from the run's ESC menu → FS-9K8EZ
 
 ### Character
 

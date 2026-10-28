@@ -504,6 +504,26 @@ func (s *Server) LeaveRun(player *types.Player) (*game.Session, error) {
 }
 
 /**
+* A delver in play choosing to die where they stand (FS-9K8EZ §Requirements
+* 10–12): the run their record names sets their health to zero, and the death
+* takes its ordinary course from the next tick. Refused with the run's reason,
+* and for a member whose record names no run.
+**/
+func (s *Server) ForfeitRun(player *types.Player) error {
+	world, _ := s.currentWorldOf(player.ID)
+	run, exists := s.GetGameSession(world)
+	if !exists || run.WorldType() != types.WorldTypeRun {
+		return fmt.Errorf("forfeit run: %w", errPlayerNotInSession)
+	}
+
+	if err := run.Fall(player.ID); err != nil {
+		return fmt.Errorf("forfeit run %s: %w", run.ID, err)
+	}
+
+	return nil
+}
+
+/**
 * Keeps what a finished run did to each member's character in play.
 *
 * Called as the run resolves, before its players are sent home, so the HUB

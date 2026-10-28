@@ -48,6 +48,7 @@ type SessionManager interface {
 	RemovePlayerFromQueue(*types.Player) error
 	IsQueued(ctx context.Context, playerID uuid.UUID) (bool, error)
 	LeaveRun(player *types.Player) (*game.Session, error)
+	ForfeitRun(player *types.Player) error
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
 	EnterHub(ctx context.Context, conn *websocket.Conn, characterID string) (*game.Session, error)
 	PlayerByID(playerID uuid.UUID) (*types.Player, bool)
@@ -103,6 +104,14 @@ func leaveRunRefusal(err error) string {
 	default:
 		return "You are not in a delve."
 	}
+}
+
+// forfeitRunRefusal is what a refused forfeit_run says. FS-9K8EZ §Requirements 12.
+func forfeitRunRefusal(err error) string {
+	if errors.Is(err, game.ErrAlreadyResolved) {
+		return "You are already out of the delve."
+	}
+	return "You are not in a delve."
 }
 
 // refuse answers an action with why it was not done: the same words on the
@@ -408,6 +417,24 @@ func (h *messageHub) Run(ctx context.Context) {
 
 				slog.Info("Delver left the run early", "player_id", player.ID)
 				h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(hub))
+
+			// A delver in play dying where they stand: health to zero, and the
+			// death takes its ordinary course. Nothing is sent on success; the
+			// next state shows it. FS-9K8EZ §Requirements 9–12.
+			case constants.ActionForfeitRun:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("forfeit_run from a connection with no player")
+					continue
+				}
+
+				if err := h.sessionManager.ForfeitRun(player); err != nil {
+					slog.Warn("Refusing forfeit_run", "player_id", player.ID, "error", err)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, forfeitRunRefusal(err))
+					continue
+				}
+
+				slog.Info("Delver fell where they stood", "player_id", player.ID)
 
 			case constants.ActionLeaveQueue:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
