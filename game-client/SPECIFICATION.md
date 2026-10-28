@@ -95,6 +95,9 @@ server state and sends intents. ✅
 - [ ] Delve entry from the hub → FS-29KSH
 - [ ] Loadout access from the hub → FS-29KSH
 - [ ] Follow a handoff to another server → FS-K2HKP
+- [ ] Switch character from the hub → FS-G4VMQ
+- [ ] Leave the queue from the hub → FS-G4VMQ
+- [ ] Solo delve entry from the hub → FS-NSV3D
 
 ### Marketplace
 

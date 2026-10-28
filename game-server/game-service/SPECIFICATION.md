@@ -53,6 +53,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Seed run modifiers onto a roster
 - [ ] Switch a player between hub and run → FS-29KSH
 - [ ] Leave a run early after dying → FS-QPDKN
+- [ ] Start a solo run without the queue → FS-NSV3D
 - [ ] Resolved delvers settle with the run despite leaving or disconnecting → FS-QPDKN
 
 ### ECS world
