@@ -46,6 +46,7 @@ type SessionManager interface {
 	IsQueued(ctx context.Context, playerID uuid.UUID) (bool, error)
 	LeaveRun(player *types.Player) (*game.Session, error)
 	ForfeitRun(player *types.Player) error
+	LeaveHub(ctx context.Context, player *types.Player) error
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
 	EnterHub(ctx context.Context, conn *websocket.Conn, characterID string) (*game.Session, error)
 	PlayerByID(playerID uuid.UUID) (*types.Player, bool)
@@ -109,6 +110,18 @@ func forfeitRunRefusal(err error) string {
 		return "You are already out of the delve."
 	}
 	return "You are not in a delve."
+}
+
+// leaveHubRefusal is what a refused leave_hub says. FS-G4VMQ §Requirements 24.
+func leaveHubRefusal(err error) string {
+	switch {
+	case errors.Is(err, errLeaveHubQueued):
+		return "Leave the queue first."
+	case errors.Is(err, errLeaveHubInRun):
+		return "You are in a delve."
+	default:
+		return "You are not in the hub."
+	}
 }
 
 // refuse answers an action with why it was not done: the same words on the
@@ -429,6 +442,31 @@ func (h *messageHub) Run(ctx context.Context) {
 				}
 
 				slog.Info("Delver fell where they stood", "player_id", player.ID)
+
+			// A hub member leaving for the roster: body gone, record in no world,
+			// so a refresh lands on the roster. FS-G4VMQ §Requirements 23–24.
+			case constants.ActionLeaveHub:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("leave_hub from a connection with no player")
+					continue
+				}
+
+				queueCtx, cancel := context.WithTimeout(ctx, queueReadTimeout)
+				err := h.sessionManager.LeaveHub(queueCtx, player)
+				cancel()
+				if err != nil {
+					slog.Warn("Refusing leave_hub", "player_id", player.ID, "error", err)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, leaveHubRefusal(err))
+					continue
+				}
+
+				slog.Info("Delver left the hub for the roster", "player_id", player.ID)
+				if err := h.sender.SendMessageToConn(clientPackage.Conn, types.Message{
+					Action: string(constants.ActionWorldLeft),
+				}); err != nil {
+					slog.Warn("Could not tell a member they left the hub", "player_id", player.ID, "error", err)
+				}
 
 			case constants.ActionLeaveQueue:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
