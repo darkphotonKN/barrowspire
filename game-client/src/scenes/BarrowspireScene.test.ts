@@ -1683,29 +1683,39 @@ describe("state from another world is not drawn (reported 2026-10-29)", () => {
   // A member can briefly have a body in two worlds (a stale run and a new one, or a run and
   // the hub); both broadcast to the same socket. The scene draws only the run it was started
   // for, so the delver is not snapped between two positions every tick.
-  it("should ignore frames whose session is not the one the scene was started for", () => {
+  interface Filtered {
+    lastGameState?: unknown;
+    sessionID?: string;
+    acceptsFrame(s: { session_id: string }): boolean;
+    handleGameStateUpdate(s: unknown): void;
+    resetRun(): void;
+  }
+
+  it("should accept only frames of the session the scene was started for", () => {
     const scene = new BarrowspireScene();
-    const run = scene as unknown as { lastGameState?: unknown; handleGameStateUpdate(s: unknown): void; resetRun(): void; sessionID?: string };
+    const run = scene as unknown as Filtered;
     scene.init({ sessionID: "run-a" });
-
-    run.handleGameStateUpdate({ session_id: "run-b", current_player: null });
-    expect(run.lastGameState).toBeUndefined();
-
-    const ours = { session_id: "run-a", current_player: null };
-    run.handleGameStateUpdate(ours);
-    expect(run.lastGameState).toBe(ours);
+    expect(run.acceptsFrame({ session_id: "run-a" })).toBe(true);
+    expect(run.acceptsFrame({ session_id: "run-b" })).toBe(false);
   });
 
-  it("should draw everything when started without a session, and forget the session on reset", () => {
+  it("should drop a foreign frame before it touches anything", () => {
     const scene = new BarrowspireScene();
-    const run = scene as unknown as { lastGameState?: unknown; handleGameStateUpdate(s: unknown): void; resetRun(): void; sessionID?: string };
+    const run = scene as unknown as Filtered;
+    scene.init({ sessionID: "run-a" });
+    run.handleGameStateUpdate({ session_id: "run-b", current_player: null });
+    expect(run.lastGameState).toBeUndefined();
+  });
+
+  it("should accept everything when started without a session, and forget the session on reset", () => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as Filtered;
     scene.init();
-    const any = { session_id: "whatever", current_player: null };
-    run.handleGameStateUpdate(any);
-    expect(run.lastGameState).toBe(any);
+    expect(run.acceptsFrame({ session_id: "whatever" })).toBe(true);
 
     scene.init({ sessionID: "run-a" });
     run.resetRun();
     expect(run.sessionID).toBeUndefined();
+    expect(run.acceptsFrame({ session_id: "run-b" })).toBe(true);
   });
 });

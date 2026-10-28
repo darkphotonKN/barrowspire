@@ -2933,8 +2933,13 @@ export class BarrowspireScene extends Phaser.Scene {
     GameStateLogger.reset();
   }
 
+  /** Whether a broadcast is this run's to draw: started without a session, everything is. */
+  private acceptsFrame(state: Pick<ClientGameState, "session_id">): boolean {
+    return this.sessionID === undefined || state.session_id === this.sessionID;
+  }
+
   private handleGameStateUpdate(state: ClientGameState): void {
-    if (this.sessionID !== undefined && state.session_id !== this.sessionID) return;
+    if (!this.acceptsFrame(state)) return;
     this.lastGameState = state;
 
     // The party climbed (FS-F6F88 req 28, 32): the old floor goes before this broadcast builds
