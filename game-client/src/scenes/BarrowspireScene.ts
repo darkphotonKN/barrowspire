@@ -32,9 +32,17 @@ import {
   type InteractReply,
   type NoticeTone,
 } from "@/ui/floor";
-import { delveNotice, resolved } from "@/ui/party";
+import {
+  nextWatched,
+  resolved,
+  resolvedCard,
+  watchable,
+  type ResolvedCard,
+  type ResolvedCardKind,
+} from "@/ui/party";
 import { ProgressHud } from "@/ui/ProgressHud";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
+import { ResultHold } from "@/components/resultHold";
 import { GameStateLogger } from "@/utils/gameStateLogger";
 import {
   CANVAS_FONT,
@@ -127,8 +135,35 @@ const PLAYER_FOOTPRINT_RADIUS = 20;
  */
 const STRIKE_RANGE = 60;
 const STRIKE_COOLDOWN_MS = 500;
-/** Screen y of the delve-continues notice: under the passing notices at 100, clear of them. */
-const DELVE_NOTICE_Y = 150;
+/**
+ * The resolved delver's card (FS-QPDKN req 1–6): over the HUD (1000), under the passing notices
+ * (2000), which still have the last word while it is up.
+ */
+const RESOLVED_CARD_DEPTH = 1500;
+/** Screen y of the spectate HUD (req 9): top centre, between the position line and the escaped count. */
+const SPECTATE_HUD_Y = 10;
+/**
+ * The dead spectator's leave button (FS-QPDKN req 10): bottom-right, in the HUD band (1000) with
+ * the counters, and away from the watched delver at the centre and the HUD along the top edge.
+ */
+const LEAVE_BUTTON_DEPTH = 1000;
+const LEAVE_BUTTON_MARGIN = 16;
+/** A button over the world: what it says, the name its hit area answers to, what a press does. */
+interface ButtonSpec {
+  name: string;
+  label: string;
+  onPress: () => void;
+}
+/** A button as drawn: its face and label, its hit area, and how it is dimmed or taken down. */
+interface WorldButton {
+  parts: (Phaser.GameObjects.Graphics | Phaser.GameObjects.Text)[];
+  hit: Phaser.GameObjects.Rectangle;
+  setEnabled(on: boolean): void;
+  destroy(): void;
+}
+const BUTTON_W = 200;
+const BUTTON_H = 38;
+const BUTTON_GAP = 16;
 /**
  * Where the level and experience bar sit (FS-BDA7X req 42): top-left, under the position line,
  * and clear of the notice band (100–150) across the middle of the screen.
@@ -313,8 +348,37 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // End-of-game overlay (shown when server sends end_game action)
   private gameEndOverlay?: Phaser.GameObjects.Container;
-  /** The resolved delver's "the delve goes on" notice (FS-77AB6 req 42), until `end_game`. */
-  private delveNoticeText?: Phaser.GameObjects.Text;
+  /**
+   * Holds the hub `world_entered` behind the result card until *Return to the hub*
+   * (FS-QPDKN req 15–17). Read by the `world_entered` handler in `PhaserGame.tsx`.
+   */
+  readonly resultHold = new ResultHold();
+  /** The resolved delver's card (FS-QPDKN req 1): up until Watch is pressed or `end_game`. */
+  private resolvedCard?: Phaser.GameObjects.Container;
+  /** The teammate this resolved delver watches through (req 7); set only while spectating. */
+  private watchedDelverId?: string;
+  /** The sprite the camera was last latched onto while spectating, so it is latched once. */
+  private followedSprite?: unknown;
+  /** Whose eyes, and how to switch (req 9); up while spectating. */
+  private spectateHud?: { watching: Phaser.GameObjects.Text; hint: Phaser.GameObjects.Text };
+  /** How this delver is out of the delve, while the card or the spectate view is up (req 2, 10). */
+  private resolvedKind?: ResolvedCardKind;
+  /** The dead delver's way out (req 2, 13): on the card, or in its corner while they spectate. */
+  private leaveButton?: WorldButton;
+  /** A `leave_run` is on its way and unanswered: further presses send nothing (req 13). */
+  private leavePending = false;
+  private readonly watchSpec: ButtonSpec = {
+    name: "watch-the-delve",
+    label: "WATCH THE DELVE",
+    onPress: () => this.startWatching(),
+  };
+  private readonly leaveSpec: ButtonSpec = {
+    name: "leave-the-barrow",
+    label: "LEAVE THE BARROW",
+    onPress: () => this.leaveTheBarrow(),
+  };
+  /** Tab, the next delver to watch (req 8); made with the run, removed with it. */
+  private tabKey?: Phaser.Input.Keyboard.Key;
   /** This delver's level and experience bar (FS-BDA7X req 42), made with the first state that has them. */
   private progressHud?: ProgressHud;
   /** This delver's level, for the "Requires level N" hints (req 45); unknown until the server sends it. */
@@ -518,6 +582,8 @@ export class BarrowspireScene extends Phaser.Scene {
     socketManager.off("interact");
     socketManager.off("equip");
     socketManager.off("end_game");
+    socketManager.off("leave_run");
+    socketManager.offError("leave_run");
 
     this.player = undefined;
     this.playerPos = undefined;
@@ -578,10 +644,22 @@ export class BarrowspireScene extends Phaser.Scene {
 
     this.controlsPanel = undefined;
     this.gameEndOverlay = undefined;
+    // a hub held behind the card must not switch the next run away (FS-QPDKN req 15)
+    this.resultHold.clear();
     // the end-of-run overlay locks the keyboard, and Phaser keeps the plugin
     // across restarts, so the next run would start unable to move
     if (this.input?.keyboard) this.input.keyboard.enabled = true;
-    this.delveNoticeText = undefined;
+    this.resolvedCard = undefined;
+    this.watchedDelverId = undefined;
+    this.followedSprite = undefined;
+    this.spectateHud = undefined;
+    this.resolvedKind = undefined;
+    this.leaveButton = undefined;
+    this.leavePending = false;
+    // Phaser destroys the run's keys on shutdown but keeps their captures; a teardown
+    // without a shutdown keeps both. Either way the next run binds Tab afresh.
+    if (this.tabKey) this.input?.keyboard?.removeKey(this.tabKey, true, true);
+    this.tabKey = undefined;
     this.progressHud = undefined;
     this.characterLevel = undefined;
     this.equipmentPanel = undefined;
@@ -679,8 +757,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private showGameEndOverlay(position: number, result?: string): void {
     if (this.gameEndOverlay) return; // already shown
     // the overlay carries the last word now
-    this.delveNoticeText?.destroy();
-    this.delveNoticeText = undefined;
+    this.takeDownResolvedView();
 
     const cam = this.cameras.main;
 
@@ -737,132 +814,43 @@ export class BarrowspireScene extends Phaser.Scene {
     });
     subtitle.setOrigin(0.5);
 
-    // --- action buttons ---
-    const btnW = 180;
+    // --- the one action: Return to the hub (FS-QPDKN req 15) ---
+    // The card stays until this is pressed; the hub the server has already moved the
+    // delver to waits in `resultHold`. Amber: it is the one thing here to act on.
+    const btnW = 220;
     const btnH = 38;
     const btnY = 70;
-    const btnGap = 16;
 
-    // RE-DEPLOY button (re-queue) — cyan fill
-    const redeployBtn = this.add.graphics();
-    redeployBtn.fillStyle(palette.interactable, 1);
-    redeployBtn.fillRoundedRect(
-      -btnW / 2 - btnW / 2 - btnGap / 2,
-      btnY - btnH / 2,
-      btnW,
-      btnH,
-      6,
-    );
-    const redeployText = this.add.text(
-      -btnW / 2 - btnGap / 2,
-      btnY,
-      "DELVE AGAIN",
-      {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "14px",
-        color: toCss(palette.ink),
-        fontStyle: "bold",
-        letterSpacing: 3,
-      },
-    );
-    redeployText.setOrigin(0.5);
-    // hit areas live outside containers so pointer events work reliably
-    const cx = cam.width / 2;
-    const cy = cam.height / 2;
-    const redeployHit = this.add
-      .rectangle(
-        cx - btnW / 2 - btnGap / 2,
-        cy + btnY,
-        btnW,
-        btnH,
-        palette.inkDeep,
-        0,
-      )
-      .setInteractive({ useHandCursor: true })
-      .setScrollFactor(0)
-      .setDepth(2001);
-    redeployHit.on("pointerover", () => {
-      redeployBtn.clear();
-      redeployBtn.fillStyle(palette.interactableBright, 1);
-      redeployBtn.fillRoundedRect(
-        -btnW / 2 - btnW / 2 - btnGap / 2,
-        btnY - btnH / 2,
-        btnW,
-        btnH,
-        6,
-      );
-    });
-    redeployHit.on("pointerout", () => {
-      redeployBtn.clear();
-      redeployBtn.fillStyle(palette.interactable, 1);
-      redeployBtn.fillRoundedRect(
-        -btnW / 2 - btnW / 2 - btnGap / 2,
-        btnY - btnH / 2,
-        btnW,
-        btnH,
-        6,
-      );
-    });
-    redeployHit.on("pointerdown", () => {
-      const activeChar = useGameStore.getState().getActiveCharacter();
-      const chosenClass = (activeChar?.className || "warrior").toLowerCase();
-      const chosenName = activeChar?.name || "Hero";
-
-      socketManager.sendMessage(ActionType.Find_Game, {
-        playerId: "1",
-        class: chosenClass,
-        className: chosenClass,
-        characterName: chosenName,
-        username: chosenName,
-      });
-      this.scene.start("MainMenuScene");
-    });
-
-    // RETURN TO BASE button — outlined
     const returnBtn = this.add.graphics();
-    returnBtn.lineStyle(1, palette.interactable, 0.6);
-    returnBtn.strokeRoundedRect(btnGap / 2, btnY - btnH / 2, btnW, btnH, 6);
-    const returnText = this.add.text(btnGap / 2 + btnW / 2, btnY, "WITHDRAW", {
+    const paintReturn = (fill: number) => {
+      returnBtn.clear();
+      returnBtn.fillStyle(fill, 1);
+      returnBtn.fillRoundedRect(-btnW / 2, btnY - btnH / 2, btnW, btnH, 6);
+    };
+    paintReturn(palette.interactable);
+    const returnText = this.add.text(0, btnY, "RETURN TO THE HUB", {
       fontFamily: CANVAS_FONT.body,
-      fontSize: "13px",
-      color: toCss(palette.frameBright),
-      letterSpacing: 2,
+      fontSize: "14px",
+      color: toCss(palette.ink),
+      fontStyle: "bold",
+      letterSpacing: 3,
     });
     returnText.setOrigin(0.5);
+    // the hit area lives outside the container so pointer events work reliably
     const returnHit = this.add
-      .rectangle(
-        cx + btnGap / 2 + btnW / 2,
-        cy + btnY,
-        btnW,
-        btnH,
-        palette.inkDeep,
-        0,
-      )
+      .rectangle(cam.width / 2, cam.height / 2 + btnY, btnW, btnH, palette.inkDeep, 0)
       .setInteractive({ useHandCursor: true })
       .setScrollFactor(0)
       .setDepth(2001);
-    returnHit.on("pointerover", () => {
-      returnBtn.clear();
-      returnBtn.fillStyle(palette.interactable, 0.1);
-      returnBtn.fillRoundedRect(btnGap / 2, btnY - btnH / 2, btnW, btnH, 6);
-      returnBtn.lineStyle(1, palette.interactableBright, 0.8);
-      returnBtn.strokeRoundedRect(btnGap / 2, btnY - btnH / 2, btnW, btnH, 6);
-    });
-    returnHit.on("pointerout", () => {
-      returnBtn.clear();
-      returnBtn.lineStyle(1, palette.interactable, 0.6);
-      returnBtn.strokeRoundedRect(btnGap / 2, btnY - btnH / 2, btnW, btnH, 6);
-    });
-    returnHit.on("pointerdown", () => {
-      this.scene.start("MainMenuScene");
-    });
+    returnHit.on("pointerover", () => paintReturn(palette.interactableBright));
+    returnHit.on("pointerout", () => paintReturn(palette.interactable));
+    // client-only (req 17): nothing goes to the server; the held world_entered is applied
+    returnHit.on("pointerdown", () => this.resultHold.release());
 
     const cardContainer = this.add.container(cam.width / 2, cam.height / 2, [
       card,
       title,
       subtitle,
-      redeployBtn,
-      redeployText,
       returnBtn,
       returnText,
     ]);
@@ -870,6 +858,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.gameEndOverlay = this.add.container(0, 0, [backdrop, cardContainer]);
     this.gameEndOverlay.setDepth(2000);
     this.gameEndOverlay.setScrollFactor(0);
+    this.resultHold.raise();
 
     // disable game input — keyboard movement, hover, clicks
     if (this.input.keyboard) {
@@ -2606,6 +2595,11 @@ export class BarrowspireScene extends Phaser.Scene {
       right: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
 
+    // Tab: the next delver to watch (FS-QPDKN req 8). Captured, so the browser does not move
+    // focus off the canvas; nothing happens unless this delver is spectating.
+    this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, true);
+    this.tabKey.on("down", () => this.cycleWatched());
+
     // ESC 返回主選單
     this.input.keyboard?.on("keydown-ESC", () => {
       this.scene.start("MainMenuScene");
@@ -2922,6 +2916,13 @@ export class BarrowspireScene extends Phaser.Scene {
       },
     );
 
+    // A refused leave_run (FS-QPDKN req 14, edge state "Leaving"): the button can be pressed
+    // again. The server's refusals come in two shapes; both land here.
+    socketManager.onError("leave_run", () => this.leaveRefused());
+    socketManager.on("leave_run", (reply: { success?: boolean }) => {
+      if (reply?.success === false) this.leaveRefused();
+    });
+
     // Reset the logger for new session
     GameStateLogger.reset();
   }
@@ -3032,7 +3033,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.checkEscapeDoorStateChanges(state);
     this.checkPlayerEscapedState(state);
 
-    this.syncDelveNotice(state);
+    this.syncResolvedView(state);
 
     // Update escaped count HUD
     if (this.escapedCountText) {
@@ -3772,32 +3773,281 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The delve-continues notice (FS-77AB6 req 42): up while this delver is out of the delve and
-   * another is still in it, down otherwise. Once `end_game` has put its overlay up, never again.
-   * Neutral HUD: vellum on the HUD panel, under the passing notices.
+   * Whether this delver's movement keys send `move`: not once they are out of the delve
+   * (FS-77AB6 req 17), and not while they watch through a teammate's eyes (FS-QPDKN §Edge
+   * States "Spectating": the camera target is not the delver).
    */
-  private syncDelveNotice(state: ClientGameState): void {
-    const notice = this.gameEndOverlay ? null : delveNotice(state);
-    if (!notice) {
-      this.delveNoticeText?.destroy();
-      this.delveNoticeText = undefined;
+  private canSendMove(): boolean {
+    return !resolved(this.lastGameState?.current_player) && this.watchedDelverId === undefined;
+  }
+
+  /**
+   * What a resolved delver sees (FS-QPDKN req 1–6, 11): the card while a teammate is still in
+   * the delve and Watch has not been pressed; the watched delver's view once it has. State keeps
+   * rendering behind both. Once `end_game` has put its overlay up, neither again.
+   */
+  private syncResolvedView(state: ClientGameState): void {
+    if (this.gameEndOverlay) return;
+    if (this.watchedDelverId !== undefined) {
+      this.followWatched(state);
       return;
     }
-    if (this.delveNoticeText) {
-      this.delveNoticeText.setText(notice);
-      return;
-    }
-    this.delveNoticeText = this.add
-      .text(this.cameras.main.centerX, DELVE_NOTICE_Y, notice, {
+    const card = resolvedCard(state);
+    // in play again (a reconnect's first state), or nobody left to watch: the end is coming
+    if (!card) this.takeDownCard();
+    else if (!this.resolvedCard) this.showResolvedCard(card);
+  }
+
+  private takeDownCard(): void {
+    if (!this.resolvedCard) return;
+    this.resolvedCard.destroy();
+    this.resolvedCard = undefined;
+    // the card's leave button went down with it
+    this.leaveButton = undefined;
+  }
+
+  /**
+   * The card, the spectate HUD and the corner leave button go down together: `end_game`
+   * (req 6, 12) carries the last word.
+   */
+  private takeDownResolvedView(): void {
+    this.takeDownCard();
+    this.spectateHud?.watching.destroy();
+    this.spectateHud?.hint.destroy();
+    this.spectateHud = undefined;
+    this.leaveButton?.destroy();
+    this.leaveButton = undefined;
+    this.resolvedKind = undefined;
+  }
+
+  /**
+   * The resolved delver's card (req 1–5): a dark vellum panel with a brass hairline over the
+   * run view, its copy by how they resolved, and the buttons under it. No backdrop: the delve
+   * goes on behind it, visibly. The camera stays where it is until a button says otherwise.
+   */
+  private showResolvedCard(card: ResolvedCard): void {
+    const cam = this.cameras.main;
+    const cardW = 420;
+    const cardH = 200;
+    const panel = this.add.graphics();
+    panel.fillStyle(palette.ink, 0.92);
+    panel.fillRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 10);
+    panel.lineStyle(1, palette.frame, 0.6);
+    panel.strokeRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 10);
+
+    const title = this.add
+      .text(0, -62, card.title, {
         fontFamily: CANVAS_FONT.body,
-        fontSize: "16px",
+        fontSize: "26px",
         color: toCss(palette.hudText),
-        backgroundColor: toCss(NOTICE_BACKING.waiting),
-        padding: { x: 16, y: 8 },
+        letterSpacing: 2,
       })
-      .setOrigin(0.5)
+      .setOrigin(0.5);
+    const body = this.add
+      .text(0, -22, card.body, {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "14px",
+        color: toCss(palette.hudLabel),
+        align: "center",
+        wordWrap: { width: cardW - 48 },
+      })
+      .setOrigin(0.5);
+
+    // one row of buttons, centred: Watch for everyone, Leave for the dead (req 2, 3)
+    const buttons: ButtonSpec[] = [this.watchSpec];
+    if (card.kind === "dead") buttons.push(this.leaveSpec);
+    const made = buttons.map((button, i) => this.cardButton(cam, button, i, buttons.length));
+
+    this.resolvedKind = card.kind;
+    this.resolvedCard = this.add
+      .container(cam.centerX, cam.centerY, [panel, title, body, ...made.flatMap((b) => b.parts)])
       .setScrollFactor(0)
-      .setDepth(2000);
+      .setDepth(RESOLVED_CARD_DEPTH);
+    // hit areas live outside containers so pointer events work reliably; they go with the card
+    const hits = made.map((b) => b.hit);
+    this.resolvedCard.once("destroy", () => hits.forEach((hit) => hit.destroy()));
+    const leaveAt = buttons.indexOf(this.leaveSpec);
+    this.leaveButton = leaveAt < 0 ? undefined : made[leaveAt];
+    this.leaveButton?.setEnabled(!this.leavePending);
+  }
+
+  /**
+   * A card button: its face and label for the card's container, and its hit area for the scene.
+   * Buttons sit in one row, `index` of `count`, under the card's copy.
+   */
+  private cardButton(
+    cam: Phaser.Cameras.Scene2D.Camera,
+    button: ButtonSpec,
+    index: number,
+    count: number,
+  ): WorldButton {
+    const x = (index - (count - 1) / 2) * (BUTTON_W + BUTTON_GAP);
+    const y = 50;
+    return this.worldButton(button, { x, y }, { x: cam.centerX, y: cam.centerY }, RESOLVED_CARD_DEPTH + 1);
+  }
+
+  /**
+   * A button in the world's amber (it can be acted on), bright on hover, dimmed while it cannot be
+   * pressed: its face and label at `at`, drawn relative to `origin` (the container they will go
+   * in, or the screen), and its hit area at the same place on the screen, at `hitDepth`.
+   */
+  private worldButton(
+    button: ButtonSpec,
+    at: { x: number; y: number },
+    origin: { x: number; y: number },
+    hitDepth: number,
+  ): WorldButton {
+    const face = this.add.graphics();
+    let enabled = true;
+    const paint = (fill: number) => {
+      face.clear();
+      face.fillStyle(fill, 1);
+      face.fillRoundedRect(at.x - BUTTON_W / 2, at.y - BUTTON_H / 2, BUTTON_W, BUTTON_H, 6);
+    };
+    const rest = () => paint(enabled ? palette.interactable : palette.hudLabel);
+    rest();
+    const label = this.add
+      .text(at.x, at.y, button.label, {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "14px",
+        color: toCss(palette.ink),
+        fontStyle: "bold",
+        letterSpacing: 3,
+      })
+      .setOrigin(0.5);
+    const hit = this.add
+      .rectangle(origin.x + at.x, origin.y + at.y, BUTTON_W, BUTTON_H, palette.inkDeep, 0)
+      .setInteractive({ useHandCursor: true })
+      .setScrollFactor(0)
+      .setDepth(hitDepth)
+      .setName(button.name);
+    hit.on("pointerover", () => enabled && paint(palette.interactableBright));
+    hit.on("pointerout", rest);
+    hit.on("pointerdown", () => enabled && button.onPress());
+    return {
+      parts: [face, label],
+      hit,
+      setEnabled: (on: boolean) => {
+        enabled = on;
+        if (on) hit.setInteractive({ useHandCursor: true });
+        else hit.disableInteractive();
+        rest();
+      },
+      destroy: () => {
+        face.destroy();
+        label.destroy();
+        hit.destroy();
+      },
+    };
+  }
+
+  /**
+   * Leave the barrow (req 13, 14): one `leave_run`, then nothing until the server answers. The
+   * answer is a `world_entered(hub)`, applied as any other, or a refusal that hands the button back.
+   */
+  private leaveTheBarrow(): void {
+    if (this.leavePending) return;
+    this.leavePending = true;
+    this.leaveButton?.setEnabled(false);
+    socketManager.sendMessage(ActionType.LeaveRun, {});
+  }
+
+  /**
+   * The server refused the `leave_run` (req 14). Once the end-of-run overlay is up the run ended
+   * first and the delver is already on the way home: nothing to do (edge state "Leaving").
+   */
+  private leaveRefused(): void {
+    if (this.gameEndOverlay) return;
+    this.leavePending = false;
+    this.leaveButton?.setEnabled(true);
+  }
+
+  /**
+   * The dead spectator's leave button (req 10): its own corner of the screen, in the HUD band,
+   * clear of the watched delver at the centre and the HUD along the top. The escaped have none.
+   */
+  private placeLeaveInCorner(): void {
+    if (this.resolvedKind !== "dead" || this.leaveButton) return;
+    const cam = this.cameras.main;
+    const at = {
+      x: cam.width - LEAVE_BUTTON_MARGIN - BUTTON_W / 2,
+      y: cam.height - LEAVE_BUTTON_MARGIN - BUTTON_H / 2,
+    };
+    this.leaveButton = this.worldButton(this.leaveSpec, at, { x: 0, y: 0 }, LEAVE_BUTTON_DEPTH + 1);
+    this.leaveButton.parts.forEach((part) => part.setScrollFactor(0).setDepth(LEAVE_BUTTON_DEPTH));
+    this.leaveButton.setEnabled(!this.leavePending);
+  }
+
+  /**
+   * Watch the delve (req 7): the card goes down and the camera takes a teammate still in play.
+   * With nobody left there is nothing to watch; the end is on its way.
+   */
+  private startWatching(): void {
+    if (!this.lastGameState || this.watchedDelverId !== undefined) return;
+    const first = nextWatched(watchable(this.lastGameState));
+    if (first === undefined) return;
+    this.takeDownCard();
+    this.placeLeaveInCorner();
+    this.watchedDelverId = first;
+    this.followWatched(this.lastGameState);
+  }
+
+  /** Tab (req 8): the next teammate still in play, round to the first. Nothing while the card is up. */
+  private cycleWatched(): void {
+    if (this.watchedDelverId === undefined || !this.lastGameState) return;
+    const next = nextWatched(watchable(this.lastGameState), this.watchedDelverId);
+    if (next === undefined) return;
+    this.watchedDelverId = next;
+    this.followWatched(this.lastGameState);
+  }
+
+  /**
+   * The camera on the watched delver and the HUD naming them (req 9); on to another teammate
+   * in play once they resolve (req 11). With nobody left the camera stays where it is: the run
+   * ends on the server's next tick.
+   */
+  private followWatched(state: ClientGameState): void {
+    const inPlay = watchable(state);
+    const current = inPlay.find((w) => w.id === this.watchedDelverId);
+    const watched = current ?? inPlay.find((w) => w.id === nextWatched(inPlay, this.watchedDelverId));
+    if (!watched) return;
+    this.watchedDelverId = watched.id;
+    // startFollow snaps the camera onto its target each time it is called, so it is called
+    // once per sprite: on a new watched delver, or on theirs appearing after a tick without it
+    const sprite = this.otherPlayers.get(watched.id);
+    if (sprite && sprite !== this.followedSprite) {
+      this.cameras.main.startFollow(sprite, true, 0.1, 0.1);
+      this.followedSprite = sprite;
+    }
+    this.showSpectateHud(watched.username);
+  }
+
+  /** "Watching <name>" and the Tab hint, neutral HUD: vellum on the HUD panel, no amber (req 9). */
+  private showSpectateHud(name: string): void {
+    const watching = `Watching ${name}`;
+    if (this.spectateHud) {
+      this.spectateHud.watching.setText(watching);
+      return;
+    }
+    const style = {
+      fontFamily: CANVAS_FONT.body,
+      fontSize: "14px",
+      color: toCss(palette.hudText),
+      backgroundColor: toCss(palette.hudPanel),
+      padding: { x: 10, y: 5 },
+    };
+    const x = this.cameras.main.centerX;
+    const watchingText = this.add
+      .text(x, SPECTATE_HUD_Y, watching, style)
+      .setOrigin(0.5, 0)
+      .setScrollFactor(0)
+      .setDepth(1000);
+    const hint = this.add
+      .text(x, SPECTATE_HUD_Y + 30, "Tab: next delver", { ...style, fontSize: "12px" })
+      .setOrigin(0.5, 0)
+      .setScrollFactor(0)
+      .setDepth(1000);
+    this.spectateHud = { watching: watchingText, hint };
   }
 
   /**
@@ -3959,7 +4209,7 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     // send websocket message for movement; none from a delver out of the delve (FS-77AB6 req 17)
-    if ((vx !== 0 || vy !== 0) && !resolved(this.lastGameState?.current_player)) {
+    if ((vx !== 0 || vy !== 0) && this.canSendMove()) {
       socketManager.sendMessage(ActionType.Move, {
         vx: vx,
         vy: vy,

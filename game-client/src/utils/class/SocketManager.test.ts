@@ -194,3 +194,54 @@ describe("DEFAULT_SERVER_ADDR", () => {
     expect(mod.DEFAULT_SERVER_ADDR).toBe("ws://localhost:5669/game/ws");
   });
 });
+
+describe("SocketManager refused actions (FS-QPDKN req 13, 14)", () => {
+  const refusal = {
+    action: "leave_run",
+    payload: { message: "You are not in a delve." },
+    error: "not in run",
+  };
+
+  it("hands an action's error reply to that action's own listener, not the global handler", () => {
+    const { manager, old } = setup();
+    const global = vi.fn();
+    manager.setOnMessageError(global);
+    const refused = vi.fn();
+    manager.onError("leave_run", refused);
+
+    old.receive(refusal);
+
+    expect(refused).toHaveBeenCalledWith({
+      action: "leave_run",
+      error: "not in run",
+      message: "You are not in a delve.",
+    });
+    expect(global).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the global handler for an action nobody listens to, and once the listener is gone", () => {
+    const { manager, old } = setup();
+    const global = vi.fn();
+    manager.setOnMessageError(global);
+    const refused = vi.fn();
+    manager.onError("leave_run", refused);
+
+    old.receive({ ...refusal, action: "find_game" });
+    manager.offError("leave_run");
+    old.receive(refusal);
+
+    expect(refused).not.toHaveBeenCalled();
+    expect(global).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an error reply away from the action's ordinary listener", () => {
+    const { manager, old } = setup();
+    const ordinary = vi.fn();
+    manager.on("leave_run", ordinary);
+    manager.onError("leave_run", vi.fn());
+
+    old.receive(refusal);
+
+    expect(ordinary).not.toHaveBeenCalled();
+  });
+});
