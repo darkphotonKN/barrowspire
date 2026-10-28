@@ -196,6 +196,8 @@ function recordingStage() {
       m.destroyed = true;
       m.active = false;
       m.children.forEach(kill);
+      // what was hung on the object's destroy goes with it, as in Phaser
+      (m.handlers as Record<string, (() => void) | undefined>).destroy?.();
     };
     const proxy: unknown = new Proxy(self, {
       get(target, prop) {
@@ -220,6 +222,11 @@ function recordingStage() {
         if (prop === "setName")
           return (name: string) => {
             target.name = name;
+            return proxy;
+          };
+        if (prop === "setScrollFactor")
+          return (factor: number) => {
+            target.scrollFactor = factor;
             return proxy;
           };
         if (prop === "setColor")
@@ -256,6 +263,7 @@ interface MenuHub {
   dismissKey?: FakeKey;
   interactKey?: FakeKey;
   confirmKey?: FakeKey;
+  choiceKeys?: FakeKey[];
   cursors: Record<"up" | "down" | "left" | "right", FakeKey>;
   wasd: Record<"up" | "down" | "left" | "right", FakeKey>;
   queuePanel?: Made;
@@ -491,8 +499,12 @@ function hubOnStage() {
     e: key(),
     enter: key(),
     w: key(),
+    one: key(),
+    two: key(),
+    three: key(),
   };
   hub.add = stage.add;
+  hub.choiceKeys = [keys.one, keys.two, keys.three];
   hub.cameras = { main: { width: 800, height: 600 } };
   hub.scene = { start: vi.fn() };
   hub.time = { delayedCall: vi.fn() };
@@ -509,6 +521,9 @@ function hubOnStage() {
   const option = (id: string) => stage.made.find((m) => m.name === `menu-${id}` && !m.destroyed);
   /** A drawn dialogue choice, by id, while its dialogue is up. */
   const choice = (id: string) => stage.made.find((m) => m.name === `choice-${id}` && !m.destroyed);
+  /** The label text of a drawn choice: the choice itself is its camera-fixed hit area. */
+  const label = (id: string) =>
+    stage.made.find((m) => m.name === `choice-${id}-label` && !m.destroyed)?.children[0] as Made;
   /** Stands the delver beside the NPC with this function and presses to talk. */
   const talkTo = (fn: string) => {
     hub.selfEntityID = "me";
@@ -529,7 +544,7 @@ function hubOnStage() {
     k.justDown = true;
     hub.offerConversation();
   };
-  return { hub, stage, keys, press, option, choice, talkTo, answer };
+  return { hub, stage, keys, press, option, choice, label, talkTo, answer };
 }
 
 describe("delveChoices (FS-NSV3D §Requirements 1, 4)", () => {
@@ -578,7 +593,7 @@ describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
   });
 
   it("should show Descend alone, Wait for company and Not yet, amber and the cancel register", () => {
-    const { hub, choice, talkTo } = queuedHubOnStage();
+    const { hub, choice, label, talkTo } = queuedHubOnStage();
 
     talkTo("delve");
 
@@ -589,9 +604,9 @@ describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
     expect(solo).toBeDefined();
     expect(queue).toBeDefined();
     expect(dismiss).toBeDefined();
-    expect((solo.children[0].args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
-    expect((queue.children[0].args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
-    expect((dismiss.children[0].args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.arcane));
+    expect((label("solo").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
+    expect((label("queue").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
+    expect((label("dismiss").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.arcane));
     // left to right, in the spec's order
     expect(solo.x).toBeLessThan(queue.x);
     expect(queue.x).toBeLessThan(dismiss.x);
@@ -619,7 +634,7 @@ describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
   });
 
   it("should send one start_solo on Descend alone, keep the dialogue open and grey the choice until the reply", () => {
-    const { hub, choice, talkTo, send } = queuedHubOnStage();
+    const { hub, choice, label, talkTo, send } = queuedHubOnStage();
     talkTo("delve");
     const solo = choice("solo") as Made;
 
@@ -630,7 +645,7 @@ describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
     expect(hub.soloPending).toBe(true);
     expect(hub.dialogue).toBeDefined();
     expect(solo.destroyed).toBe(false);
-    expect(solo.children[0].color).not.toBe(toCss(BARROW_HEX.amber));
+    expect(label("solo").color).not.toBe(toCss(BARROW_HEX.amber));
 
     solo.handlers.pointerup();
     expect(send).toHaveBeenCalledTimes(1);
@@ -682,7 +697,7 @@ describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
   });
 
   it("should re-enable the choice and pass on the message as a passing notice when start_solo is refused", () => {
-    const { hub, stage, choice, talkTo, send, refuse } = queuedHubOnStage();
+    const { hub, stage, choice, label, talkTo, send, refuse } = queuedHubOnStage();
     talkTo("delve");
     const solo = choice("solo") as Made;
     solo.handlers.pointerup();
@@ -691,7 +706,7 @@ describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
 
     expect(hub.soloPending).toBe(false);
     expect(hub.dialogue).toBeDefined();
-    expect(solo.children[0].color).toBe(toCss(BARROW_HEX.amber));
+    expect(label("solo").color).toBe(toCss(BARROW_HEX.amber));
     const notice = stage.made.find(
       (m) => m.kind === "text" && m.args[2] === "Leave the queue first." && m.depth === 1000,
     ) as Made;
@@ -840,5 +855,71 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
     press(keys.esc);
     expect(hub.menu).toBeDefined();
     expect(hub.menu).not.toBe(first);
+  });
+});
+
+describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => {
+  // Phaser hit-tests a container's child with the child's own scroll factor, not the
+  // camera-fixed parent's, so once the camera had followed the delver a click on a choice
+  // landed beside it. The hit area lives outside the dialogue, camera-fixed, and dies with it.
+  it("should press a choice through a camera-fixed hit area outside the dialogue", () => {
+    const { hub, stage, choice, talkTo } = hubOnStage();
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    talkTo("delve");
+
+    const queue = choice("queue") as Made & { kind: string; scrollFactor?: number };
+    expect(queue.kind).toBe("rectangle");
+    expect(queue.scrollFactor).toBe(0);
+    const dialogue = hub.dialogue as Made;
+    expect(dialogue.children.map((c) => c.name)).not.toContain("choice-queue");
+    expect(stage.made.filter((m) => m.name === "choice-queue" && !m.destroyed)).toHaveLength(1);
+
+    queue.handlers.pointerup();
+    expect(send).toHaveBeenCalledWith("find_game", expect.anything());
+    expect(queue.destroyed).toBe(true);
+    send.mockRestore();
+  });
+
+  it("should press a menu choice the same way", () => {
+    const { hub, keys, press, option } = hubOnStage();
+    press(keys.esc);
+    const back = option("back") as Made & { kind: string; scrollFactor?: number };
+    expect(back.kind).toBe("rectangle");
+    expect(back.scrollFactor).toBe(0);
+    back.handlers.pointerup();
+    expect(hub.menu).toBeUndefined();
+    expect(back.destroyed).toBe(true);
+  });
+
+  // Wait for company had no key at all: E and Enter meant the first choice, Descend alone.
+  it("should answer Descend alone on 1 and Wait for company on 2, with those keys on the labels", () => {
+    const { stage, keys, talkTo, answer } = hubOnStage();
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    talkTo("delve");
+    const labels = stage.made
+      .filter((m) => m.kind === "text" && !m.destroyed)
+      .map((m) => String(m.args[2]));
+    expect(labels).toContain("Descend alone  [1]");
+    expect(labels).toContain("Wait for company  [2]");
+    expect(labels).toContain("Not yet  [Esc]");
+
+    answer(keys.two);
+    expect(send).toHaveBeenLastCalledWith("find_game", expect.anything());
+
+    talkTo("delve");
+    answer(keys.one);
+    expect(send).toHaveBeenLastCalledWith("start_solo", expect.anything());
+    send.mockRestore();
+  });
+
+  it("should keep [E] on a dialogue with one choice, and E still means the first", () => {
+    const { stage, keys, talkTo, answer, hub } = hubOnStage();
+    talkTo("storekeeper");
+    const labels = stage.made
+      .filter((m) => m.kind === "text" && !m.destroyed)
+      .map((m) => String(m.args[2]));
+    expect(labels).toContain("Open pack  [E]");
+    answer(keys.e);
+    expect((hub.scene as { start: ReturnType<typeof vi.fn> }).start).toHaveBeenCalledWith("LoadoutScene");
   });
 });
