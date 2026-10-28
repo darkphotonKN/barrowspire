@@ -129,6 +129,33 @@ changes.
 22. **No confirmation step** on either choice. **[charter default]** Reason: nothing is lost by
     either action; the queue can be rejoined and the character re-entered.
 
+### Amendment 2026-10-29: leaving for the roster leaves the hub
+
+R21's accepted consequence was played and rejected by the user: a refresh while on the
+roster put the delver straight back in the hub, and their body stood there for everyone
+meanwhile. *Change who you are* now leaves the hub. R21 and the `leave_hub` line in Out of
+Scope are superseded by the following.
+
+23. **A new inbound action `leave_hub`** (no payload), routed on the sender's record. Accepted
+    from a member whose record names the hub and who is not queued: their body is removed from
+    the hub and their record names no world (the record itself, with its token and character,
+    stays). The reply is `world_left` (no payload). A later `enter_hub` seats them again through
+    `Admit`, cap and all.
+24. **Refused** with an error on the `leave_hub` action and nothing changed: queued → "Leave the
+    queue first." (as FS-K2HKP R7a); record names a run → "You are in a delve."; record names no
+    world → "You are not in the hub."
+25. **The client sends `leave_hub` on *Change who you are*** and switches to `MainMenuScene` on
+    `world_left`; a second press before the reply sends nothing. On an error reply it stays in
+    the hub and shows the message as a passing notice (the ESC menu's *Leave the queue* is the
+    way out of the queued case).
+26. **A refresh while on the roster lands on the roster.** A reconnect of a member in no world
+    is announced nothing (today's `announceCurrentWorld` already does this) and the client
+    boots to the main menu.
+27. **The hub slot is freed** by leaving; re-entry may be refused by the cap like any entry
+    (FS-29KSH), and the refusal shows on the main menu (FS-BDA7X R41).
+28. A member who disconnects while in no world is cleaned up at grace end as today (nothing to
+    remove from any world).
+
 ## User Stories
 
 1. As a delver in the hub, I want ESC to open a small menu, so that I have a way out without a
@@ -301,8 +328,7 @@ the contract; nothing here touches it). The client gains type entries only (R18)
 - **A new character-pick scene.** The main menu is the pick screen.
 - **Creating or deleting characters in the hub.** Both stay on the main menu / creation scene.
 - **A new server NPC** for leaving the queue or switching.
-- **A `leave_hub` message**, or any way to remove the delver's body from the hub while they are
-  on the main menu.
+- ~~A `leave_hub` message~~ — superseded by the 2026-10-29 amendment (R23–R28).
 - **Changing the run's ESC** (`BarrowspireScene`'s `keydown-ESC → MainMenuScene`).
 - **Changing `MainMenuScene`'s roster, `activate`, or DELVE logic.**
 - **Any server change**, including the `leave_queue` retry policy or its reply copy.
