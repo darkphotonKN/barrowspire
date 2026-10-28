@@ -76,6 +76,13 @@ Settled by the user during scoping:
    reconnect into an in-progress run, and — once FS-K2HKP's handoff lands — the seat on the host
    pod, which re-resolves the character from character-service by the id the handoff carries.
 
+   > **Amendment 2026-10-29.** A run keeps the character it was entered with, whoever asks:
+   > `enter_hub` while the record names a live run is refused for *another* character (as
+   > before) and, for the *same* character, answers with that run's `world_entered` and seats
+   > nobody in the HUB. Seating them in the HUB as well gave one member two worlds broadcasting
+   > to one socket (the delver jittered between two positions). Server fix `c773354`; the
+   > client's run scene also ignores frames of any world but its own (FS-QPDKN R16 spirit).
+
 ### Experience and levels
 
 8. A character has a **total experience** (monotonic, never decreases) and a **level** in 1..20
