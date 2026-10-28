@@ -53,9 +53,9 @@ server state and sends intents. ✅
 - [ ] Monsters with level and elite nameplates → FS-77AB6
 - [ ] Affixes and item level in item views → FS-4R9M9
 - [ ] Floor transitions → FS-F6F88
-- [ ] Spectate living teammates after resolving → FS-QPDKN
+- [x] Spectate living teammates after resolving → FS-QPDKN
 - [ ] Leave a run early after dying → FS-QPDKN
-- [ ] Hold the run result until the delver returns → FS-QPDKN
+- [x] Hold the run result until the delver returns → FS-QPDKN
 
 ### Character
 
@@ -95,9 +95,9 @@ server state and sends intents. ✅
 - [ ] Delve entry from the hub → FS-29KSH
 - [ ] Loadout access from the hub → FS-29KSH
 - [ ] Follow a handoff to another server → FS-K2HKP
-- [ ] Switch character from the hub → FS-G4VMQ
-- [ ] Leave the queue from the hub → FS-G4VMQ
-- [ ] Solo delve entry from the hub → FS-NSV3D
+- [x] Switch character from the hub → FS-G4VMQ
+- [x] Leave the queue from the hub → FS-G4VMQ
+- [x] Solo delve entry from the hub → FS-NSV3D
 
 ### Marketplace
 
