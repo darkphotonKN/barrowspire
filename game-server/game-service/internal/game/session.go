@@ -1287,6 +1287,20 @@ func (s *Session) HasPlayer(playerID uuid.UUID) bool {
 	return exists
 }
 
+// Resolved reports whether the member has a body here that is out of play:
+// dead, escaped or left behind (FS-77AB6 §Requirements 17). A member with no
+// body here is not resolved; they are simply not here.
+func (s *Session) Resolved(playerID uuid.UUID) bool {
+	s.mu.RLock()
+	entityID, here := s.playerIDToEntitiesID[playerID]
+	s.mu.RUnlock()
+	if !here {
+		return false
+	}
+	entity, ok := s.EntityManager.GetEntity(entityID)
+	return ok && !systems.InPlay(entity)
+}
+
 // Depart lets a resolved delver leave this run early (FS-QPDKN §Requirements
 // 13, 14, 18). Their body stays, so the run's end settles them as if they had
 // stayed; they are dropped from the run's recipients (R21). Refused while they

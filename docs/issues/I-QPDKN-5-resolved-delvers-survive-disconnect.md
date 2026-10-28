@@ -1,6 +1,6 @@
 ---
 id: I-QPDKN-5
-status: in-progress
+status: done
 implements: FS-QPDKN
 blocked_by: []
 labels: [ready-for-agent]
