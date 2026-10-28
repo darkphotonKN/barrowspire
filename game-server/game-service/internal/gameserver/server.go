@@ -659,6 +659,16 @@ func (s *Server) AddPlayer(player *types.Player) error {
 /**
 * remove player from queue (delegates to QueueSystem)
 **/
+// IsQueued reports whether the member holds a queue entry. The error means the
+// queue could not be read, not that they are queued.
+func (s *Server) IsQueued(ctx context.Context, playerID uuid.UUID) (bool, error) {
+	_, queued, err := s.queue.QueuedCharacter(ctx, playerID)
+	if err != nil {
+		return false, fmt.Errorf("read queue entry for %s: %w", playerID, err)
+	}
+	return queued, nil
+}
+
 func (s *Server) RemovePlayerFromQueue(player *types.Player) error {
 	return s.queue.PlayerRemoveQueue(s.ctx, player)
 }
