@@ -389,6 +389,7 @@ export class HubScene extends Phaser.Scene {
       this.lightMap = undefined;
       this.groundLayer = undefined;
       this.progressHud = undefined;
+      this.queuePanel = undefined;
       this.roofs = [];
       this.insideRoof = undefined;
       // the gauntlet is the hub's and the run's; the menus the hub hands over to keep the browser's
@@ -1034,7 +1035,8 @@ export class HubScene extends Phaser.Scene {
   }
 
   private showQueueProgressText(text: string): void {
-    if (this.queuePanel) {
+    // a panel from an earlier visit was destroyed with that visit's scene
+    if (this.queuePanel?.active) {
       this.queuePanel.setText(text);
       return;
     }
