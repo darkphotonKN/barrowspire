@@ -1,6 +1,6 @@
 ---
 id: I-G4VMQ-1
-status: open
+status: done
 implements: FS-G4VMQ
 blocked_by: []
 labels: [ready-for-agent]

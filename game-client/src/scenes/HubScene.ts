@@ -141,6 +141,53 @@ const SCENERY_SEED = 0x5343_4e31;
 /** How close a delver stands to talk. Matches the server's NPCInteractRange. */
 const NPC_TALK_RANGE = 80;
 
+/** The ESC menu's panel: its width, the vertical padding, and one row per choice. */
+const MENU_WIDTH = 320;
+const MENU_PAD = 18;
+const MENU_ROW = 40;
+/** Screen px between the queue panel and its Leave button. */
+const LEAVE_GAP = 8;
+/** A passing notice: where it sits (screen px from the top, under the progress bar) and for how long. */
+const NOTICE_Y = 72;
+const NOTICE_MS = 3200;
+
+/**
+ * One line of HUD chrome on a charcoal ground: the queue panel, its Leave button and a passing
+ * notice are all this shape, so they stand the same height side by side. The colour is the
+ * channel (docs/design-guideline.md, Gameplay accent): vellum to read, amber to press.
+ */
+function hudLine(colour: number): Phaser.Types.GameObjects.Text.TextStyle {
+  return {
+    fontFamily: CANVAS_FONT.body,
+    fontSize: "14px",
+    color: toCss(colour),
+    backgroundColor: toCss(BARROW_HEX.charcoal),
+    padding: { x: 12, y: 8 },
+  };
+}
+
+/** One line of the hub's ESC menu (FS-G4VMQ §Requirements 3). */
+export interface HubMenuChoice {
+  id: "change" | "leave" | "back";
+  label: string;
+  /** Amber for a thing the delver can do, the cancel register for going back. */
+  register: "actionable" | "cancel";
+}
+
+/**
+ * What the ESC menu offers, from the scene's state at the moment it opens: the way to the main
+ * menu and the way back into the hub always; leaving the queue only while there is a queue to
+ * leave. The menu never names the hub ("hub" has no lore name), so it says who, not where.
+ */
+export function hubMenuChoices(state: { queued: boolean }): HubMenuChoice[] {
+  const choices: HubMenuChoice[] = [
+    { id: "change", label: "Change who you are", register: "actionable" },
+  ];
+  if (state.queued) choices.push({ id: "leave", label: "Leave the queue", register: "actionable" });
+  choices.push({ id: "back", label: "Back  [Esc]", register: "cancel" });
+  return choices;
+}
+
 /**
  * What each function NPC offers, and what accepting it does.
  *
@@ -271,8 +318,19 @@ export class HubScene extends Phaser.Scene {
   private confirmKey?: Phaser.Input.Keyboard.Key;
   private dismissKey?: Phaser.Input.Keyboard.Key;
   private interactKey?: Phaser.Input.Keyboard.Key;
+  /** The ESC menu while it is open (FS-G4VMQ §Requirements 1–5). It owns the keyboard. */
+  private menu?: Phaser.GameObjects.Container;
   /** Shown while queued, wherever the delver walks. */
   private queuePanel?: Phaser.GameObjects.Text;
+  /** Beside the panel while queued: the way out of the queue (FS-G4VMQ §Requirements 15). */
+  private leaveButton?: Phaser.GameObjects.Text;
+  /**
+   * Whether this client is in the queue (FS-G4VMQ §Requirements 11): set by a find_game reply or
+   * any queue_status, cleared when the server says the delver is out or the join failed.
+   */
+  private queued = false;
+  /** A leave_queue has been sent and its reply has not come (§Requirements 12). */
+  private leavePending = false;
   /**
    * The delver's level and experience bar (FS-BDA7X req 42), top-left, clear of the queue panel
    * at the bottom. Made with the first state that carries a level.
@@ -351,55 +409,105 @@ export class HubScene extends Phaser.Scene {
       this.renderState(state),
     );
 
+    this.listenForQueue();
+
+    // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.release, this);
+  }
+
+  /**
+   * What the queue tells this client, from asking in to being moved out, and what it is told
+   * back. Released as one in release(), so no visit's listener outlives it.
+   */
+  private listenForQueue(): void {
     // Queue progress follows the delver rather than pinning them to a popup:
     // they keep walking while they wait, so the panel has to be visible from
     // anywhere. FS-29KSH §Requirements 25, 27.
     socketManager.on("queue_status", (payload: { current?: number; total?: number }) =>
       this.showQueueProgress(payload?.current ?? 0, payload?.total ?? 0),
     );
+    // The reply to joinQueue's find_game: a refusal goes to the global handler, so hearing it
+    // here at all means the server took the entry (FS-G4VMQ §Requirements 11).
+    socketManager.on(ActionType.Find_Game, () => {
+      this.queued = true;
+    });
     // A match on another server: the move happens behind this panel, and the
     // host's world_entered switches the scene. A refused move leaves the delver
     // here, so say so. FS-K2HKP §Requirements 29, 31.
-    socketManager.on("world_handoff", () => this.showQueueProgressText("Joining the delve…"));
-    socketManager.on("world_handoff_failed", () =>
-      this.showQueueProgressText("The delve could not be joined."),
-    );
+    socketManager.on("world_handoff", () => {
+      this.showQueueProgressText("Joining the delve…");
+      // too late to leave: the delver is being moved (FS-G4VMQ §Requirements 16)
+      this.leaveButton?.setVisible(false);
+    });
+    socketManager.on("world_handoff_failed", () => {
+      // the seat is released and the entry is gone (FS-K2HKP §Requirements 25)
+      this.leftQueue();
+      this.showQueueProgressText("The delve could not be joined.");
+    });
+    // The reply is the truth: the server answers only once the entry is removed (FS-K2HKP
+    // §Requirements 7), so the panel comes down on its word and never on the press. A refusal
+    // keeps everything and says why, so the delver can ask again. FS-G4VMQ §Requirements 13, 14, 17.
+    // A reply after the handoff already failed finds nothing to leave and changes nothing.
+    socketManager.on(ActionType.LeaveQueue, () => {
+      if (!this.queued) return;
+      this.leftQueue();
+      this.queuePanel?.destroy();
+      this.queuePanel = undefined;
+      this.closeMenu();
+    });
+    socketManager.onError(ActionType.LeaveQueue, (info) => {
+      if (!this.leavePending) return;
+      this.leavePending = false;
+      this.notice(info.message ?? "Could not leave the queue, please try again.");
+    });
     this.unsubscribeQueue = () => {
       socketManager.off("queue_status");
+      socketManager.off(ActionType.Find_Game);
       socketManager.off("world_handoff");
       socketManager.off("world_handoff_failed");
+      socketManager.off(ActionType.LeaveQueue);
+      socketManager.offError(ActionType.LeaveQueue);
     };
+  }
 
-    // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
-    const release = () => {
-      this.events.off(Phaser.Scenes.Events.SHUTDOWN, release);
-      this.events.off(Phaser.Scenes.Events.DESTROY, release);
-      this.unsubscribeState?.();
-      this.unsubscribeQueue?.();
-      this.views.clear();
-      this.npcs.clear();
-      this.closeDialogue();
-      // the chimneys' smoke, puffs still burning out too: none outlives this scene instance
-      this.fx?.clearAll();
-      this.fx = undefined;
-      // the scene clock stops with the scene, so the flicker goes with it
-      this.hearth = undefined;
-      this.structuresDrawn = false;
-      this.scenery = undefined;
-      this.lightMap = undefined;
-      this.groundLayer = undefined;
-      this.progressHud = undefined;
-      this.queuePanel = undefined;
-      this.roofs = [];
-      this.insideRoof = undefined;
-      // the gauntlet is the hub's and the run's; the menus the hub hands over to keep the browser's
-      this.input.setDefaultCursor("");
-    };
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, release);
-    this.events.once(Phaser.Scenes.Events.DESTROY, release);
+  /**
+   * Everything one visit made is let go here. Phaser reuses the scene instance for the next
+   * visit, and a reference to something the last visit's display list destroyed draws nothing
+   * (commit 0a35e36): forget it, and make it again only while it is `.active`.
+   */
+  private release(): void {
+    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
+    this.events.off(Phaser.Scenes.Events.DESTROY, this.release, this);
+    this.unsubscribeState?.();
+    this.unsubscribeQueue?.();
+    this.views.clear();
+    this.npcs.clear();
+    this.closeDialogue();
+    this.closeMenu();
+    // the chimneys' smoke, puffs still burning out too: none outlives this scene instance
+    this.fx?.clearAll();
+    this.fx = undefined;
+    // the scene clock stops with the scene, so the flicker goes with it
+    this.hearth = undefined;
+    this.structuresDrawn = false;
+    this.scenery = undefined;
+    this.lightMap = undefined;
+    this.groundLayer = undefined;
+    this.progressHud = undefined;
+    this.queuePanel = undefined;
+    this.leaveButton = undefined;
+    this.queued = false;
+    this.leavePending = false;
+    this.roofs = [];
+    this.insideRoof = undefined;
+    // the gauntlet is the hub's and the run's; the menus the hub hands over to keep the browser's
+    this.input.setDefaultCursor("");
   }
 
   update(time: number, delta: number): void {
+    // who owns the keyboard is settled before the keys are read for walking
+    this.offerMenu();
     this.sendMovementIntent();
     this.easeTowardServerPositions(time, delta);
     this.offerConversation();
@@ -443,6 +551,13 @@ export class HubScene extends Phaser.Scene {
    */
   private offerConversation(): void {
     if (!this.interactKey) return;
+
+    // The menu owns the keyboard while it is open (FS-G4VMQ §Requirements 5): a press to talk
+    // is read and dropped, so it does not open a dialogue the moment the menu closes.
+    if (this.menu) {
+      Phaser.Input.Keyboard.JustDown(this.interactKey);
+      return;
+    }
 
     // While a dialogue is open the same key answers it, so a delver never has to
     // reach for the mouse to finish what the keyboard started.
@@ -945,15 +1060,18 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * Sends velocity only when it changes, rather than every frame.
+   * Sends velocity only when it changes, rather than every frame. While the menu is open the
+   * keys are its (FS-G4VMQ §Requirements 5): they read as released, so a stride the menu
+   * interrupted is stopped once and nothing more is sent until it closes.
    */
   private sendMovementIntent(): void {
     if (!this.cursors || !this.wasd) return;
 
-    const left = this.cursors.left.isDown || this.wasd.left.isDown;
-    const right = this.cursors.right.isDown || this.wasd.right.isDown;
-    const up = this.cursors.up.isDown || this.wasd.up.isDown;
-    const down = this.cursors.down.isDown || this.wasd.down.isDown;
+    const held = (k: Phaser.Input.Keyboard.Key) => !this.menu && k.isDown;
+    const left = held(this.cursors.left) || held(this.wasd.left);
+    const right = held(this.cursors.right) || held(this.wasd.right);
+    const up = held(this.cursors.up) || held(this.wasd.up);
+    const down = held(this.cursors.down) || held(this.wasd.down);
 
     const vx = (right ? 1 : 0) - (left ? 1 : 0);
     const vy = (down ? 1 : 0) - (up ? 1 : 0);
@@ -1031,7 +1149,70 @@ export class HubScene extends Phaser.Scene {
   }
 
   private showQueueProgress(current: number, total: number): void {
+    // queue_status only ever reaches a queued player (FS-G4VMQ §Requirements 11)
+    this.queued = true;
     this.showQueueProgressText(`Gathering the delve  ${current}/${total}`);
+    this.showLeaveButton();
+  }
+
+  /**
+   * The *Leave* button beside the queue panel (FS-G4VMQ §Requirements 15): the panel's twin in
+   * amber, since it is the one thing on the panel the delver can act on. Same lifecycle as the
+   * panel: made beside it, reused only while it is still on screen, down when the queue is left.
+   */
+  private showLeaveButton(): void {
+    const panel = this.queuePanel;
+    if (!panel) return;
+    const x = panel.x + panel.width + LEAVE_GAP;
+
+    if (this.leaveButton?.active) {
+      this.leaveButton.setPosition(x, panel.y).setVisible(true);
+      return;
+    }
+
+    // amber: the one thing on the panel the delver can act on
+    const button = this.add
+      .text(x, panel.y, "Leave", hudLine(BARROW_HEX.amber))
+      .setScrollFactor(0)
+      .setDepth(1000)
+      .setInteractive();
+    button.on("pointerup", () => this.leaveQueue());
+    // the gauntlet stays; brightening to vellum is the hover cue, as on a dialogue option
+    button.on("pointerover", () => button.setColor(toCss(BARROW_HEX.vellum)));
+    button.on("pointerout", () => button.setColor(toCss(BARROW_HEX.amber)));
+    this.leaveButton = button;
+  }
+
+  /** The queue is behind the delver: no entry, nothing pending, no way out to offer. */
+  private leftQueue(): void {
+    this.queued = false;
+    this.leavePending = false;
+    this.leaveButton?.destroy();
+    this.leaveButton = undefined;
+  }
+
+  /**
+   * One path out of the queue for the menu choice and the panel button (FS-G4VMQ §Requirements
+   * 12): one leave_queue, and nothing more until the server has answered it.
+   */
+  private leaveQueue(): void {
+    if (!this.queued || this.leavePending) return;
+    this.leavePending = true;
+    socketManager.sendMessage(ActionType.LeaveQueue, {});
+  }
+
+  /**
+   * A line the hub says in passing, in the neutral HUD register: the delver cannot act on it,
+   * and it goes on its own.
+   */
+  private notice(text: string): void {
+    const { width } = this.cameras.main;
+    const line = this.add
+      .text(width / 2, NOTICE_Y, text, hudLine(BARROW_HEX.vellum))
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1000);
+    this.time.delayedCall(NOTICE_MS, () => line.destroy());
   }
 
   private showQueueProgressText(text: string): void {
@@ -1041,15 +1222,9 @@ export class HubScene extends Phaser.Scene {
       return;
     }
 
+    // vellum, not amber: the delver cannot act on it (FS-KYPQ9 §I)
     this.queuePanel = this.add
-      .text(24, this.cameras.main.height - 44, text, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "14px",
-        // vellum, not amber: the delver cannot act on it (FS-KYPQ9 §I)
-        color: toCss(BARROW_HEX.vellum),
-        backgroundColor: toCss(BARROW_HEX.charcoal),
-        padding: { x: 12, y: 8 },
-      })
+      .text(24, this.cameras.main.height - 44, text, hudLine(BARROW_HEX.vellum))
       .setScrollFactor(0)
       .setDepth(1000);
   }
@@ -1346,6 +1521,71 @@ export class HubScene extends Phaser.Scene {
     this.dialogue?.destroy();
     this.dialogue = undefined;
     this.dialogueChoices = undefined;
+  }
+
+  /**
+   * ESC, read once a frame on the one ESC key the hub binds (FS-G4VMQ §Requirements 1, 2, 20).
+   * While a dialogue is open the key is the dialogue's, read in offerConversation, so this does
+   * not touch it; otherwise ESC opens the menu, and pressed again closes it.
+   */
+  private offerMenu(): void {
+    if (this.dialogue || !this.dismissKey) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.dismissKey)) return;
+
+    if (this.menu) this.closeMenu();
+    else this.openMenu();
+  }
+
+  /**
+   * The hub's ESC menu: a way to the main menu, a way back (FS-G4VMQ §Requirements 3, 4). Built
+   * from the scene's state as it opens, so what it offers is hubMenuChoices' rule, not the
+   * chrome's. Camera-fixed in the popup band with the dialogue; the world runs on behind it.
+   */
+  private openMenu(): void {
+    const choices = hubMenuChoices({ queued: this.queued });
+    const { width, height } = this.cameras.main;
+    const panelHeight = MENU_PAD * 2 + choices.length * MENU_ROW;
+    const top = -panelHeight / 2;
+
+    const panel = this.add.graphics();
+    panel.fillStyle(BARROW_HEX.charcoal, 0.96);
+    panel.fillRect(-MENU_WIDTH / 2, top, MENU_WIDTH, panelHeight);
+    panel.lineStyle(1, BARROW_HEX.brass, 0.5);
+    panel.strokeRect(-MENU_WIDTH / 2, top, MENU_WIDTH, panelHeight);
+
+    const actions: Record<HubMenuChoice["id"], () => void> = {
+      change: () => this.changeCharacter(),
+      leave: () => this.leaveQueue(),
+      back: () => this.closeMenu(),
+    };
+    const options = choices.map((choice, i) =>
+      this.dialogueOption(
+        0,
+        top + MENU_PAD + MENU_ROW * (i + 0.5),
+        choice.label,
+        choice.register === "actionable" ? BARROW_HEX.amber : BARROW_HEX.arcane,
+        actions[choice.id],
+      ).setName(`menu-${choice.id}`),
+    );
+
+    this.menu = this.add
+      .container(width / 2, height / 2, [panel, ...options])
+      .setScrollFactor(0)
+      .setDepth(2000);
+  }
+
+  private closeMenu(): void {
+    this.menu?.destroy();
+    this.menu = undefined;
+  }
+
+  /**
+   * Back to the main menu, whose roster and DELVE re-enter the hub as whoever is picked
+   * (FS-G4VMQ §Requirements 6–9). Nothing is sent: the body stays here until then, as the run's
+   * ESC leaves it (§Requirements 21).
+   */
+  private changeCharacter(): void {
+    this.scene.start("MainMenuScene");
   }
 
   /** The loadout is a screen, not a world: the delver stays in the hub while it

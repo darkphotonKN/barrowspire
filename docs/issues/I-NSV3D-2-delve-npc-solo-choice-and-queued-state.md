@@ -3,7 +3,7 @@ id: I-NSV3D-2
 status: open
 implements: FS-NSV3D
 blocked_by: [I-G4VMQ-2]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-NSV3D slice 2: delve NPC with Descend alone, Wait for company, and the queued state"
 ---
 Implements FS-NSV3D §Requirements 1–7
