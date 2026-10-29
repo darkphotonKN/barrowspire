@@ -29,8 +29,8 @@ export interface PlayerState {
   escape: boolean;
   current_health?: number;
   max_health?: number;
-  current_mana?: number;
-  max_mana?: number;
+  /** The delver's class resource (FS-8AY7S req 17): sent on `current_player` only. */
+  resource?: ResourceState;
   /** The character's level (FS-BDA7X req 42); sent with every delver, run and hub. */
   level?: number;
   /** Total experience, monotonic. */
@@ -39,6 +39,34 @@ export interface PlayerState {
   level_floor?: number;
   /** Total experience that reaches the next level; absent at the cap (level 20). */
   next_level_at?: number;
+  /**
+   * The Mercenary's parry stance (FS-MAMHR req 28): sent on a mercenary's own `current_player`
+   * only, absent for every other class and from `other_players`. Whether the stance is open
+   * this tick.
+   */
+  parry_open?: boolean;
+  /** Seconds left on the whiff lockout, 0 when none (FS-MAMHR req 28). A raw float. */
+  parry_lockout?: number;
+  /**
+   * Strikes this merc has parried in this run, monotonic (FS-MAMHR req 28): a rise is a parry,
+   * and it still rises at 3 parry charges, where the charge count does not move.
+   */
+  parries?: number;
+}
+
+/** What a class resource is (FS-8AY7S req 17): mage mana, warrior/archer stamina, mercenary parry charges. */
+export type ResourceKind = "mana" | "stamina" | "parry_charges";
+
+/**
+ * A delver's class resource as the broadcast carries it (FS-8AY7S req 17). `current` is the pool
+ * rounded down, so `current >= ability_cost` agrees with the server.
+ */
+export interface ResourceState {
+  kind: ResourceKind;
+  current: number;
+  max: number;
+  /** What the delver's own ability costs in this pool. */
+  ability_cost: number;
 }
 
 // Player equipment state from server (matches Go types.EquipmentState JSON tags).

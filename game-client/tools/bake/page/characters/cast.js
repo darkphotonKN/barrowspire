@@ -1,4 +1,4 @@
-// The cast (FS-2325V §E.3): the three playable classes and the run's creatures, each dressed on
+// The cast (FS-2325V §E.3): the playable classes and the run's creatures, each dressed on
 // the shared rig and given a movement style for the clips. Rivals reuse the class models.
 //
 // Heights are in world units (one unit = one tile edge). A delver stands about 2 units: under the
@@ -9,7 +9,7 @@
 
 import * as THREE from "three";
 import { materials } from "../materials.js";
-import { attach, createRig, ellipsoid, jointAt as J, mount } from "./rig.js";
+import { attach, createRig, ellipsoid, jointAt as J, mount, rigidTube } from "./rig.js";
 import { fabrics } from "./fabrics.js";
 import { pose, solveArm } from "./clips.js";
 import {
@@ -21,6 +21,7 @@ import {
   boots,
   cloak,
   cloakBones,
+  hair,
   hands,
   head,
   hood,
@@ -32,17 +33,22 @@ import {
   torso,
 } from "./anatomy.js";
 import {
+  armingSword,
   cleaver,
   greatHelm,
   gripAt,
   inHand,
+  kettleHat,
   kiteShield,
+  kneeCop,
   limbGuard,
   longbow,
   longsword,
   pauldrons,
   poleyns,
   quiver,
+  scabbard,
+  spaulder,
   spikedClub,
   staff,
   wizardHat,
@@ -219,6 +225,78 @@ export function wizard() {
   return { rig, style };
 }
 
+/**
+ * The Mercenary (FS-MAMHR §H): a sellsword, dextrous but still strong. Bought kit that never
+ * matched: a riveted brigandine over a buff coat, one blackened pauldron and one of leather, a
+ * steel vambrace on the sword arm and a leather bracer on the other, one knee cop, an iron
+ * kettle hat over a bearded face. A one-handed arming sword, no shield, an empty scabbard
+ * at the hip. No cloak, no hood, no crest: the outline is the brim, the uneven shoulders and the
+ * blade, so it reads as neither the knight nor the archer.
+ */
+export function mercenary() {
+  const M = materials();
+  const F = fabrics();
+  const rig = createRig(1.97, { shoulderW: 1.08, torsoW: 1.04, hipW: 0.98, armR: 1.1, limbR: 1.12 });
+  rig.hooks = [];
+  skirtBones(rig, { stiffness: 50 });
+  const [, hy] = J(rig, "hips");
+  const [, ny] = J(rig, "neck");
+  const [, fy] = J(rig, "foreArmL");
+  const [, wy] = J(rig, "handL");
+  const [, hdy, hdz] = J(rig, "head");
+  const r = rig.p.headR;
+
+  torso(rig, F.brigandine);
+  neck(rig, F.skin);
+  arms(rig, F.buff);
+  legs(rig, F.breeches);
+  hands(rig, F.leather);
+  boots(rig, F.leatherDark, { top: 0.15 });
+  head(rig, F.skin);
+  hair(rig, F.hairDark);
+  // a short, dark beard along the jaw
+  attach(rig, "head", ellipsoid(r * 0.62 * rig.H, r * 0.4 * rig.H, r * 0.5 * rig.H, 14), F.hairDark, [0, hdy + 0.014, hdz + 0.03]);
+  kettleHat(rig, F.darkSteel);
+  // an undyed scarf wound at the throat, over the brigandine's collar
+  const scarf = rigidTube(
+    rig.H,
+    [
+      { p: [0, ny + 0.02, 0.004], r: [0.042, 0.042] },
+      { p: [0, ny + 0.0, 0.004], r: [0.058, 0.056] },
+      { p: [0, ny - 0.02, 0.006], r: [0.066 * rig.p.shoulderW, 0.064] },
+    ],
+    { segs: 20, steps: 3 },
+  );
+  attach(rig, "chest", scarf, F.scarf, [0, 0, 0]);
+  spaulder(rig, "L", F.darkSteelDouble, { lames: 3, size: 1.06 });
+  spaulder(rig, "R", F.buffDouble, { lames: 2, size: 0.86 });
+  limbGuard(rig, "foreArmR", wy + 0.02, fy - 0.03, [0.037, 0.035], F.darkSteel);
+  limbGuard(rig, "foreArmL", wy + 0.02, fy - 0.035, [0.034, 0.032], F.leatherDark);
+  kneeCop(rig, "L", F.darkSteel);
+  // leather tassets over the hips, split front and back
+  skirt(rig, F.leatherDark, { top: hy + 0.02, bottom: hy - 0.15, rTop: [0.1, 0.078], rBottom: [0.114, 0.095], legFollow: 0.75, panels: true, panelWeight: 0.3 });
+  belt(rig, F.leatherDark, F.blackIron, { r: [0.108, 0.088], dy: 0.012, pouch: true });
+  scabbard(rig, "L", F);
+  inHand(rig, "R").add(armingSword(rig, M, F));
+
+  const style = {
+    attack: "slash",
+    speed: 1.08,
+    // a low guard: the blade forward and up, the free hand loose at the belt
+    hold: pose({
+      upperArmL: [-0.08, 0, 0.06],
+      foreArmL: [-0.42, 0, 0],
+      upperArmR: [-0.18, 0, -0.2],
+      foreArmR: [-0.7, 0, 0],
+      handR: [-0.4, -0.4, 0],
+    }),
+    walk: { stride: 1.05, arms: [0.75, 0.45], lean: 0.07 },
+    // the knight's cut, without a shield to hide behind: the free arm swings out for balance
+    attackExtra: pose({ upperArmL: [0.28, 0.85, 0.06], foreArmL: [0.62, 0, 0] }),
+  };
+  return { rig, style };
+}
+
 /** A skull on the head bone, its jaw on the jaw bone, hostile red light in the sockets. */
 function skull(rig, boneMat, M) {
   const H = rig.H;
@@ -388,6 +466,7 @@ export const CAST = [
   { sheet: "char_knight_base", group: "characters", fn: "knight", build: knight },
   { sheet: "char_archer_base", group: "characters", fn: "archer", build: archer },
   { sheet: "char_wizard_base", group: "characters", fn: "wizard", build: wizard },
+  { sheet: "char_mercenary_base", group: "characters", fn: "mercenary", build: mercenary },
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   { sheet: "creature_demon_base", group: "boss", fn: "demon", module: "demon", build: demon, animations: DEMON_ANIMATIONS },

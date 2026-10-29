@@ -66,6 +66,7 @@ export class CharacterMotion {
   private last?: Point;
   private attackEnds = -Infinity;
   private aim?: Point;
+  private holding?: Point;
 
   constructor(
     public facing: Facing8 = "se",
@@ -83,6 +84,15 @@ export class CharacterMotion {
   attack(now: number, aim?: Point, holdMs = 0): void {
     this.attackEnds = now + Math.max(this.attackMs, holdMs);
     this.aim = aim && (aim.x !== 0 || aim.y !== 0) ? { ...aim } : undefined;
+  }
+
+  /**
+   * Stands the character in its idle clip turned to `aim` (a world vector), from the next step
+   * until it is let go with undefined: an archer drawing a Shadow Shot (FS-JTNPR req 10). The
+   * facing it was turned to is kept once let go.
+   */
+  holdAim(aim: Point | undefined): void {
+    this.holding = aim ? { ...aim } : undefined;
   }
 
   /** One frame: `pos` is the world position just drawn, `deltaMs` the frame's length. */
@@ -105,6 +115,7 @@ export class CharacterMotion {
       attacking,
       dead,
       aim: attacking ? this.aim : undefined,
+      holding: this.holding,
     });
     this.facing = choice.facing;
     return choice;
@@ -157,6 +168,11 @@ export class CharacterAnimator {
   attack(now: number, aim?: Point, holdMs?: number): void {
     this.motion.attack(now, aim, holdMs);
     this.swingPending = true;
+  }
+
+  /** Holds the idle clip turned to `aim`; as {@link CharacterMotion.holdAim}. */
+  holdAim(aim: Point | undefined): void {
+    this.motion.holdAim(aim);
   }
 
   step(pos: Point, now: number, deltaMs: number, dead: boolean): AnimationChoice {

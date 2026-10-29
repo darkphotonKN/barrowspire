@@ -6,7 +6,7 @@
 import * as Phaser from "phaser";
 import { ActionType } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
-import { drawDelverLegs } from "@/utils/characterTextures";
+import { drawDelverLegs, drawMercenary } from "@/utils/characterTextures";
 import { createAtmosphere as buildAtmosphere } from "@/utils/atmosphere";
 import { useGameStore } from "@/stores/gameStore";
 import {
@@ -21,6 +21,7 @@ import {
   EquippedItems,
   EquipmentState,
   ProjectileState,
+  ResourceState,
 } from "@/types/gameState";
 import { EquipmentPanel } from "@/ui/EquipmentPanel";
 import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
@@ -45,6 +46,11 @@ import {
 } from "@/ui/party";
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
 import { ProgressHud } from "@/ui/ProgressHud";
+import { ResourceHud } from "@/ui/ResourceHud";
+import { AbilityHud } from "@/ui/AbilityHud";
+import { abilityCard, parryRefused } from "@/ui/abilityCard";
+import { hudBars, teammateHealthFill } from "@/ui/resources";
+import { SHADOW_SHOT_COOLDOWN_MS, ShadowShotAim } from "./shadowShotAim";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
 import { ResultHold } from "@/components/resultHold";
 import { GameStateLogger } from "@/utils/gameStateLogger";
@@ -86,9 +92,14 @@ import { CHARGE_MS, playCharge, type Charge } from "@/render/effects/charge";
 import { DeathDust } from "@/render/effects/death";
 import { playEscape } from "@/render/effects/escape";
 import { EntranceMarker } from "@/render/effects/entrance";
-import { ProjectileFlights } from "@/render/effects/projectile";
+import { ProjectileFlights, type ProjectileKind } from "@/render/effects/projectile";
 import { FIREBALL_FLIGHT, playFireballCast } from "@/render/effects/fireball";
 import { ARROW_FLIGHT, playArrowRelease } from "@/render/effects/arrow";
+import { SHADOW_SHOT_FLIGHT, playShadowShotRelease } from "@/render/effects/shadowShot";
+import { AimLine } from "@/render/effects/aimLine";
+import { CutFx } from "@/render/effects/cut";
+import { ParryFx } from "@/render/effects/parry";
+import { RiposteFx, riposteArmed } from "@/render/effects/riposte";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
 import { MonsterRoster, type MonsterTargeting } from "@/render/creatures";
 import {
@@ -175,17 +186,36 @@ const BUTTON_GAP = 16;
 const PROGRESS_HUD_X = 10;
 const PROGRESS_HUD_Y = 44;
 /**
+ * Where the Health and class resource bars sit (FS-8AY7S req 20): bottom-left, on the progress
+ * bar's left edge and the leave button's bottom margin, so nothing else on the HUD shares the corner.
+ */
+const RESOURCE_HUD_X = PROGRESS_HUD_X;
+const RESOURCE_HUD_MARGIN = 16;
+/**
+ * The ability card (FS-8AY7S req 29, 32): bottom-right, on the leave button's margins. The two
+ * share the corner and are never up together: the card is down whenever the button is up.
+ */
+const ABILITY_CARD_MARGIN = LEAVE_BUTTON_MARGIN;
+/** How long a right-click locks out the next cast, and greys the card (req 31). */
+const ABILITY_LOCKOUT_MS = 400;
+/**
  * Screen px above a delver's marker base (`markerBase`: a baked head, or a placeholder's frame
- * top) to their name label, and to their HP bar. Markers draw above the light-map and vignette
- * (FS-2325V §C.9).
+ * top) to their name label. Markers draw above the light-map and vignette (FS-2325V §C.9). The
+ * delver has no bar over their own head (FS-8AY7S req 26), so their name sits there too.
  */
 const NAME_GAP = 5;
-const HP_BAR_GAP = 10;
 /**
- * On a baked sheet the delver's own name clears their HP bar, which spans the 11 px over the
- * base. A placeholder keeps {@link NAME_GAP}, exactly where it always was.
+ * A teammate's overhead health bar (FS-8AY7S req 27): the monsters' bar, health only, sat
+ * `gap` px over the marker base. Their name, shown on hover, lifts clear of it.
  */
-const NAME_OVER_BAR_GAP = HP_BAR_GAP + 2;
+const TEAMMATE_BAR = { width: 38, height: 4, gap: 2 } as const;
+const NAME_OVER_BAR_GAP = 2;
+
+/** A teammate's overhead health bar, and how full it is (null: none drawn). */
+interface TeammateBar {
+  graphics: Phaser.GameObjects.Graphics;
+  fill: number | null;
+}
 
 /**
  * The backing a HUD notice is drawn on, by tone: a success in arcane green, a refusal in lifted
@@ -313,6 +343,20 @@ interface ArcherPalette {
   ink: number;
 }
 
+/**
+ * How a projectile of a server `projectile_type` is drawn in flight (FS-KYPQ9 §E.2, §F.2;
+ * FS-JTNPR req 20, 23). A kind with no flight of its own stays drawn as today, as a fireball.
+ */
+const FLIGHTS: ReadonlyMap<string, ProjectileKind> = new Map([
+  ["arrow", ARROW_FLIGHT],
+  ["shadow_shot", SHADOW_SHOT_FLIGHT],
+  ["fireball", FIREBALL_FLIGHT],
+]);
+
+export function projectileFlightOf(projectileType: string): ProjectileKind {
+  return FLIGHTS.get(projectileType) ?? FIREBALL_FLIGHT;
+}
+
 export class BarrowspireScene extends Phaser.Scene {
   /** The local delver's sprite, drawn at the projection of `playerPos`. */
   private player?: Phaser.Physics.Arcade.Sprite;
@@ -330,8 +374,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // leg graphics for walking animation
   private playerLegs?: Phaser.GameObjects.Graphics;
-  private playerHpMpGraphics?: Phaser.GameObjects.Graphics;
-  private otherPlayersHpMpGraphics: Map<string, Phaser.GameObjects.Graphics> = new Map();
+  /** The health bar over each teammate's head, by player id (FS-8AY7S req 27). */
+  private teammateHealthBars: Map<string, TeammateBar> = new Map();
   /** The warm pool the delver carries. Built once; only ever repositioned. */
   private otherPlayersLegs: Map<string, Phaser.GameObjects.Graphics> =
     new Map();
@@ -426,6 +470,25 @@ export class BarrowspireScene extends Phaser.Scene {
   private tabKey?: Phaser.Input.Keyboard.Key;
   /** This delver's level and experience bar (FS-BDA7X req 42), made with the first state that has them. */
   private progressHud?: ProgressHud;
+  /** The Health and class resource bars, bottom-left (FS-8AY7S req 20). */
+  private resourceHud?: ResourceHud;
+  /** The class ability card, bottom right (FS-8AY7S req 29–32). */
+  private abilityHud?: AbilityHud;
+  /**
+   * The client's own lockout after a right-click is running: the card is grey (req 31). For the
+   * archer it is Shadow Shot's cooldown mirror, from a fired shot (FS-JTNPR req 13).
+   */
+  private abilityLockedOut = false;
+  /** The Mercenary's own stance tell and parry flash (FS-MAMHR §G.35, §G.36); made on first use. */
+  private parry?: ParryFx;
+  /** The Mercenary's own armed tell and riposte slice (FS-MAMHR §G.33, §G.34); made on first use. */
+  private riposte?: RiposteFx;
+  /** The Mercenary's own cut (FS-MAMHR §G.32); made on first use, so a restart can take it down. */
+  private cut?: CutFx;
+  /** The archer's Shadow Shot hold (FS-JTNPR req 8–17): client presentation only (ADR-0030). */
+  private readonly shadowShot = new ShadowShotAim();
+  /** The hold's aim line (FS-JTNPR req 11); made on the hold's first draw. */
+  private aimLine?: AimLine;
   /** This delver's level, for the "Requires level N" hints (req 45); unknown until the server sends it. */
   private characterLevel?: number;
 
@@ -636,7 +699,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.player = undefined;
     this.playerPos = undefined;
     this.playerLegs = undefined;
-    this.playerHpMpGraphics = undefined;
     this.playerNameText = undefined;
     this.playerAnim = undefined;
     this.playerFacing = "se";
@@ -647,7 +709,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.otherPlayers.clear();
     this.otherPlayersPos.clear();
     this.otherPlayersTargets.clear();
-    this.otherPlayersHpMpGraphics.clear();
+    this.teammateHealthBars.clear();
     this.otherPlayersLegs.clear();
     this.otherPlayersFacing.clear();
     this.otherPlayersWalkPhase.clear();
@@ -718,6 +780,24 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.tabKey) this.input?.keyboard?.removeKey(this.tabKey, true, true);
     this.tabKey = undefined;
     this.progressHud = undefined;
+    this.resourceHud = undefined;
+    this.abilityHud = undefined;
+    this.abilityLockedOut = false;
+    // the next first state is a fresh baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
+    this.parry?.forget();
+    this.parry = undefined;
+    // the slice and the tell are drawn, not table effects: clearAll never sees them
+    this.riposte?.forget();
+    this.riposte = undefined;
+    // nor a cut still fading
+    this.cut?.forget();
+    this.cut = undefined;
+    // a hold dies with its run: nothing is sent, nothing queued for later (FS-JTNPR req 15)
+    this.game?.events.off(Phaser.Core.Events.BLUR, this.cancelAim, this);
+    this.game?.events.off(Phaser.Core.Events.HIDDEN, this.cancelAim, this);
+    this.shadowShot.reset();
+    this.aimLine?.forget();
+    this.aimLine = undefined;
     this.characterLevel = undefined;
     this.equipmentPanel = undefined;
     this.escapedCountText = undefined;
@@ -817,6 +897,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // the overlay carries the last word now; the menu never covers it (FS-9K8EZ req 6)
     this.takeDownResolvedView();
     this.closeMenu();
+    // the run is over: a Shadow Shot hold ends with nothing sent (FS-JTNPR req 15)
+    this.cancelAim();
 
     const cam = this.cameras.main;
 
@@ -1027,11 +1109,14 @@ export class BarrowspireScene extends Phaser.Scene {
     this.createKnightTextures("player_warrior", knightPalette);
     this.createSoldierTextures("player_mage", playerPalette);
     this.createArcherTextures("player_archer", archerPalette);
+    // the Mercenary's own placeholder: his fallback when the art is missing, as every class has
+    this.createMercenaryTextures("player_mercenary");
 
     // Other players class sprites
     this.createKnightTextures("other_warrior", rivalKnightPalette);
     this.createSoldierTextures("other_mage", rivalPalette);
     this.createArcherTextures("other_archer", rivalArcherPalette);
+    this.createMercenaryTextures("other_mercenary");
 
     this.createChestTextures();
     this.createEscapeDoorTextures();
@@ -1190,6 +1275,16 @@ export class BarrowspireScene extends Phaser.Scene {
         g.fillStyle(c, soft[y][x] && c === pal.orbGlow ? 0.45 : 1);
         g.fillRect(ox + x * P, oy + y * P, P, P);
       }
+    }
+  }
+
+  /** The Mercenary's placeholder at the four facings, drawn as the hub draws it. */
+  private createMercenaryTextures(prefix: string): void {
+    for (const facing of ["down", "up", "left", "right"] as const) {
+      const g = this.make.graphics({});
+      drawMercenary(g, facing);
+      g.generateTexture(this.facingTextureKey(prefix, facing), 60, 60);
+      g.destroy();
     }
   }
 
@@ -1632,6 +1727,9 @@ export class BarrowspireScene extends Phaser.Scene {
     if (resolved(this.lastGameState?.current_player)) return;
     // the pointer is the menu's while it is open (FS-9K8EZ req 5)
     if (this.menu) return;
+    // the archer's right button is the Shadow Shot hold, and a hold answers no click (FS-JTNPR req 8, 16)
+    if (this.shadowShot.aiming) return;
+    if (this.input.activePointer?.button === 2 && this.delverClass() === "archer") return;
     // world positions, never the sprites' screen positions
     if (Math.hypot(them.x - me.x, them.y - me.y) > STRIKE_RANGE) return;
 
@@ -2398,6 +2496,7 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!this.equipmentPanel) return;
     this.equipmentPanel.toggle();
     if (this.equipmentPanel.isVisible()) {
+      this.cancelAim();
       this.equipmentPanel.updateInventory(this.inventoryItems);
       this.equipmentPanel.updateEquipment(this.equippedItems);
     }
@@ -2558,7 +2657,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // username label above player
     const base = markerBase(this.player, this.playerAnim.crown, false) ?? at.y;
-    this.playerNameText = this.add.text(at.x, base - this.ownNameGap(), displayName, {
+    this.playerNameText = this.add.text(at.x, base - NAME_GAP, displayName, {
       fontSize: "11px",
       fontFamily: CANVAS_FONT.body,
       color: toCss(palette.markerSelf),
@@ -2789,27 +2888,44 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // Disable browser right-click menu for equipment panel context menus
 
-    // 技能攻擊控制 (Left-Click Primary Attack 0 MP // Right-Click Special Skill 10 MP)
+    // 技能攻擊控制 (Left-Click Primary Attack // Right-Click Class Ability, priced by the server)
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       // the menu's hit areas take their own clicks; nothing else answers one (FS-9K8EZ req 5)
       if (this.menu) return;
+      // an archer drawing a Shadow Shot answers no other click (FS-JTNPR req 16)
+      if (this.shadowShot.aiming) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
       if (this.containerView.pointerDown(pointer.x, pointer.y, pointer.button === 0)) return;
-      if (!this.player || !this.playerPos || !this.canCastSkill) return;
+      if (!this.player || !this.playerPos) return;
       // out of the delve: the server refuses it anyway (FS-77AB6 req 17)
       if (resolved(this.lastGameState?.current_player)) return;
       if (this.equipmentPanel?.isVisible()) return;
 
-      const activeChar = useGameStore.getState().getActiveCharacter();
-      const currentClass = (activeChar?.className || "warrior").toLowerCase();
+      const currentClass = this.delverClass();
+      const leftButton = pointer.leftButtonDown() || pointer.button === 0;
+      const rightButton = pointer.rightButtonDown() || pointer.button === 2;
+
+      // the archer's right-press only starts aiming: nothing is sent (FS-JTNPR req 8, ADR-0030).
+      // A hold may begin at any time; its release is what the cooldown gates.
+      if (!leftButton && rightButton && currentClass === "archer") {
+        this.startAim();
+        return;
+      }
+      // the merc's parry costs nothing and has no cooldown: only the latest state gates it, never
+      // the left-click's own lockout (FS-MAMHR §C.10, §G.35)
+      if (!leftButton && rightButton && currentClass === "mercenary") {
+        this.raiseParry(screenToWorld(pointer.worldX, pointer.worldY));
+        return;
+      }
+      if (!this.canCastSkill) return;
 
       // The pointer is over the projection; the server wants the world point under
       // it. `target` and `me` are world positions (FS-2325V §0.2, §A.5).
       const target = screenToWorld(pointer.worldX, pointer.worldY);
       const me = this.playerPos;
 
-      // 左鍵發射一般攻擊 (0 MP)
-      if (pointer.leftButtonDown() || pointer.button === 0) {
+      // 左鍵發射一般攻擊
+      if (leftButton) {
         if (currentClass === "warrior") {
           // 計算角度與將打擊目標限制在距離 50px 以內
           const dist = Phaser.Math.Distance.Between(
@@ -2838,6 +2954,22 @@ export class BarrowspireScene extends Phaser.Scene {
             target_y: target.y,
           });
           if (this.fx) playArrowRelease(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
+        } else if (currentClass === "mercenary") {
+          // the cut, toward the cursor; the server resolves its cone (FS-MAMHR §B.6, §G.32). At 3
+          // parry charges the server throws it as the riposte, so the riposte slice plays (§G.33)
+          const riposte = riposteArmed(this.lastGameState?.current_player);
+          socketManager.sendMessage(ActionType.CastSkill, {
+            skill_id: "cut",
+            target_x: target.x,
+            target_y: target.y,
+          });
+          if (riposte) {
+            this.riposte ??= new RiposteFx(this);
+            this.riposte.play({ x: me.x, y: me.y }, { x: target.x, y: target.y });
+          } else {
+            this.cut ??= new CutFx(this);
+            this.cut.play({ x: me.x, y: me.y }, { x: target.x, y: target.y });
+          }
         } else {
           socketManager.sendMessage(ActionType.CastSkill, {
             skill_id: "fireball",
@@ -2854,8 +2986,8 @@ export class BarrowspireScene extends Phaser.Scene {
           this.canCastSkill = true;
         });
       }
-      // 右鍵觸發職業專屬 10 MP 技能
-      else if (pointer.rightButtonDown() || pointer.button === 2) {
+      // 右鍵觸發職業專屬技能 (the archer's Shadow Shot hold and the merc's parry are above)
+      else if (rightButton) {
         if (currentClass === "warrior") {
           socketManager.sendMessage(ActionType.CastSkill, {
             skill_id: "dash",
@@ -2870,13 +3002,6 @@ export class BarrowspireScene extends Phaser.Scene {
             target_y: target.y,
           });
           if (this.fx) playFireballCast(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
-        } else if (currentClass === "archer") {
-          socketManager.sendMessage(ActionType.CastSkill, {
-            skill_id: "triple_arrow",
-            target_x: target.x,
-            target_y: target.y,
-          });
-          if (this.fx) playArrowRelease(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
         }
         // a warrior's charge holds the pose for as long as the server carries them (§D.2)
         this.playerAnim?.attack(
@@ -2886,16 +3011,31 @@ export class BarrowspireScene extends Phaser.Scene {
         );
 
         this.canCastSkill = false;
-        this.time.delayedCall(400, () => {
+        this.abilityLockedOut = true;
+        this.showAbilityCard();
+        this.time.delayedCall(ABILITY_LOCKOUT_MS, () => {
           this.canCastSkill = true;
+          this.abilityLockedOut = false;
+          this.showAbilityCard();
         });
       }
     });
 
+    // Shadow Shot (FS-JTNPR req 14, 15): letting go of the right button fires or cancels the hold;
+    // a release off the canvas, or the window losing focus, never fires
+    this.input.on("pointerup", (pointer: Phaser.Input.Pointer) => {
+      if (pointer.button === 2) this.releaseAim(pointer);
+    });
+    this.input.on("pointerupoutside", (pointer: Phaser.Input.Pointer) => {
+      if (pointer.button === 2) this.cancelAim();
+    });
+    this.game?.events.on(Phaser.Core.Events.BLUR, this.cancelAim, this);
+    this.game?.events.on(Phaser.Core.Events.HIDDEN, this.cancelAim, this);
+
     // 放開移動鍵時停止
     this.input.keyboard?.on("keyup", (event: KeyboardEvent) => {
-      // the stride was stopped as the menu opened; the keys are its until it closes
-      if (this.menu) return;
+      // the stride was stopped as the menu opened, or a hold began; the keys are theirs until they end
+      if (this.menu || this.shadowShot.aiming) return;
       const movementKeys = [
         "KeyW",
         "KeyA",
@@ -2919,6 +3059,125 @@ export class BarrowspireScene extends Phaser.Scene {
         }
       }
     });
+  }
+
+  /** The class this delver's right-click answers for, lower-cased; a warrior when none is chosen. */
+  private delverClass(): string {
+    const activeChar = useGameStore.getState().getActiveCharacter();
+    return (activeChar?.className || "warrior").toLowerCase();
+  }
+
+  /**
+   * A merc's right-click (FS-MAMHR §G.35): sends `parry` and raises the stance tell, unless the
+   * latest state shows the stance open or the whiff lockout running, where the server would
+   * refuse it and nothing is sent. The cast carries the cursor's world point as every cast does;
+   * the stance is not directional and the server ignores it (§C.10). No attack clip.
+   */
+  private raiseParry(target: { x: number; y: number }): void {
+    if (parryRefused(this.lastGameState?.current_player)) return;
+    socketManager.sendMessage(ActionType.CastSkill, {
+      skill_id: "parry",
+      target_x: target.x,
+      target_y: target.y,
+    });
+    this.parry ??= new ParryFx(this);
+    this.parry.raise(this.time.now);
+  }
+
+  /** The merc's own parry fields from this state; a class without them draws nothing. */
+  private syncParry(me: PlayerState | null | undefined): void {
+    if (!this.parry && me?.parry_open === undefined && me?.parries === undefined) return;
+    this.parry ??= new ParryFx(this);
+    this.parry.sync(me, this.time.now);
+  }
+
+  /** The merc's own armed tell from this state's parry charges; another class draws nothing. */
+  private syncRiposte(me: PlayerState | null | undefined): void {
+    if (!this.riposte && !riposteArmed(me)) return;
+    this.riposte ??= new RiposteFx(this);
+    this.riposte.sync(me, this.time.now);
+  }
+
+  /** An archer's right-press (FS-JTNPR req 8): the hold starts and its line is drawn; nothing is sent. */
+  private startAim(): void {
+    if (this.shadowShot.press(this.time.now)) this.aimFrame();
+  }
+
+  /**
+   * The hold, drawn once a frame (FS-JTNPR req 10, 11): the archer's idle clip turned to the
+   * cursor, and the line from the bow toward it, faint until a release would fire. Local only.
+   */
+  private aimFrame(): void {
+    if (!this.shadowShot.aiming || !this.playerPos) return;
+    const toward = this.cursorWorld();
+    const me = this.playerPos;
+    this.playerAnim?.holdAim({ x: toward.x - me.x, y: toward.y - me.y });
+    this.aimLine ??= new AimLine(() => this.add.graphics());
+    this.aimLine.draw(me, toward, this.shadowShot.ready(this.time.now, this.ownResource()));
+  }
+
+  /**
+   * This delver's class resource as last broadcast, which the hold judges affordability from
+   * the same way the ability card greys (FS-JTNPR req 18); none from an older server.
+   */
+  private ownResource(): ResourceState | undefined {
+    return this.lastGameState?.current_player?.resource;
+  }
+
+  /** The world point under the cursor now, wherever the camera has moved since it last moved. */
+  private cursorWorld(): { x: number; y: number } {
+    // Phaser types the result as `Vector2 | object`; with no output given it is a Vector2
+    const screen = this.input.activePointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
+    return screenToWorld(screen.x, screen.y);
+  }
+
+  /**
+   * The right button let go (FS-JTNPR req 13, 14, 18): a ready, affordable hold sends exactly one
+   * `shadow_shot` at the world point under the cursor, and plays the release and the attack clip
+   * on that send; any other release ends the hold with nothing sent or played.
+   */
+  private releaseAim(pointer: Phaser.Input.Pointer): void {
+    // a hold never outlives the run: once the end overlay is up, letting go only cancels
+    if (this.gameEndOverlay) {
+      this.cancelAim();
+      return;
+    }
+    const outcome = this.shadowShot.release(this.time.now, this.ownResource());
+    if (outcome === null) return;
+    this.endAimDrawing();
+    const me = this.playerPos;
+    if (outcome !== "fire" || !me) return;
+
+    const target = screenToWorld(pointer.worldX, pointer.worldY);
+    socketManager.sendMessage(ActionType.CastSkill, {
+      skill_id: "shadow_shot",
+      target_x: target.x,
+      target_y: target.y,
+    });
+    if (this.fx) playShadowShotRelease(this.fx, "self", { x: me.x, y: me.y }, target);
+    this.playerAnim?.attack(this.time.now, { x: target.x - me.x, y: target.y - me.y });
+
+    // the card greys for exactly the cooldown the next release is gated by (FS-8AY7S req 31)
+    this.abilityLockedOut = true;
+    this.showAbilityCard();
+    this.time.delayedCall(SHADOW_SHOT_COOLDOWN_MS, () => {
+      this.abilityLockedOut = false;
+      this.showAbilityCard();
+    });
+  }
+
+  /**
+   * Ends a hold with nothing sent and no cooldown started (FS-JTNPR req 15): death, a floor
+   * change, the menu or equipment panel, a release off the canvas, the window losing focus.
+   */
+  private cancelAim(): void {
+    if (this.shadowShot.cancel()) this.endAimDrawing();
+  }
+
+  /** No line left behind, and the archer's facing let go to its idle (FS-JTNPR req 15). */
+  private endAimDrawing(): void {
+    this.aimLine?.clear();
+    this.playerAnim?.holdAim(undefined);
   }
 
   private connectToServer(): void {
@@ -3051,25 +3310,13 @@ export class BarrowspireScene extends Phaser.Scene {
         this.syncEquipment(state.current_player.equipment);
       }
 
-      // 同步玩家頭頂 HP/MP 狀態條
-      if (!this.playerHpMpGraphics) {
-        this.playerHpMpGraphics = this.add.graphics();
-        this.playerHpMpGraphics.setDepth(MARKER_DEPTH.bar);
-      }
-      const curHp = state.current_player.current_health ?? (state.current_player.class === "warrior" ? 150 : 100);
-      const maxHp = state.current_player.max_health ?? (state.current_player.class === "warrior" ? 150 : 100);
-      const curMp = state.current_player.current_mana ?? 100;
-      const maxMp = state.current_player.max_mana ?? 100;
       // 本身受傷變紅閃爍提示
-      if (this.prevLocalPlayerHp !== undefined && curHp < this.prevLocalPlayerHp) {
+      const curHp = state.current_player.current_health;
+      if (this.prevLocalPlayerHp !== undefined && curHp !== undefined && curHp < this.prevLocalPlayerHp) {
         // part of the way toward oxblood and back (FS-KYPQ9 §G.1)
         if (this.player) this.hits?.play(this.player);
       }
-      this.prevLocalPlayerHp = curHp;
-
-      if (this.player && this.playerHpMpGraphics) {
-        this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, this.ownMarkerBase(), curHp, maxHp, curMp, maxMp);
-      }
+      if (curHp !== undefined) this.prevLocalPlayerHp = curHp;
     } else {
       // current_player is null — player has escaped
       if (this.player && this.playerPos && this.player.visible) {
@@ -3080,8 +3327,13 @@ export class BarrowspireScene extends Phaser.Scene {
       }
     }
 
+    // the merc's own stance and parries: never a teammate's (FS-MAMHR §G.35, §G.36, §G.38)
+    this.syncParry(state.current_player);
+    // and their armed riposte, from their own parry charges alone (§G.34, §G.38)
+    this.syncRiposte(state.current_player);
+
     // Update other players on screen
-    this.updateOtherPlayers(state.other_players || []);
+    this.updateOtherPlayers(state.other_players || [], state.world_type);
 
     // Monsters and corpses: the broadcast is the whole truth (FS-77AB6 req 32, 36)
     this.monsters?.sync(state.monsters ?? []);
@@ -3124,7 +3376,11 @@ export class BarrowspireScene extends Phaser.Scene {
     this.checkPlayerEscapedState(state);
 
     this.yieldMenu(state);
+    // out of the delve, a hold ends the moment the client sees it (FS-JTNPR req 15)
+    if (this.menuState(state).resolved) this.cancelAim();
     this.syncResolvedView(state);
+    this.showResourceBars(state);
+    this.showAbilityCard();
 
     // Update escaped count HUD
     if (this.escapedCountText) {
@@ -3146,6 +3402,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * notice memory goes too, so the new floor's switch and escape door announce themselves.
    */
   private leaveFloor(): void {
+    // a hold drawn on the old floor never fires on the new one (FS-JTNPR req 15)
+    this.cancelAim();
     this.walls.forEach((wall) => wall.pieces.forEach((piece) => piece.destroy()));
     this.walls.clear();
     // the outer wall goes with its floor; its slit lights go with the light-map's fixed sources
@@ -3359,51 +3617,9 @@ export class BarrowspireScene extends Phaser.Scene {
     return markerBase(this.player, this.playerAnim?.crown, isDead(this.lastGameState?.current_player));
   }
 
-  /** How far over the marker base the delver's own name sits: clear of the HP bar when baked. */
-  private ownNameGap(): number {
-    return this.playerAnim?.crown === undefined ? NAME_GAP : NAME_OVER_BAR_GAP;
-  }
-
-  /** `top` is the delver's marker base ({@link markerBase}); the bar sits above it. Null: none. */
-  private drawOverheadHpMpBar(
-    g: Phaser.GameObjects.Graphics,
-    x: number,
-    top: number | null,
-    curHp: number,
-    maxHp: number,
-    curMp: number,
-    maxMp: number
-  ): void {
-    g.clear();
-    if (top === null) return;
-
-    const barW = 38;
-    const hpH = 4;
-    const mpH = 3;
-    const startX = Math.round(x - barW / 2);
-    const startY = Math.round(top - HP_BAR_GAP);
-
-    // Pitch backing with a barrow rim
-    g.fillStyle(MARKER_BAR.backing, 0.9);
-    g.fillRect(startX - 1, startY - 1, barW + 2, hpH + mpH + 3);
-    g.lineStyle(1, MARKER_BAR.rim, 0.9);
-    g.strokeRect(startX - 1, startY - 1, barW + 2, hpH + mpH + 3);
-
-    // HP fill: oxblood's lifted tone, which holds 3:1 at the canvas edge (FS-2325V §C.9)
-    const hpRatio = Math.max(0, Math.min(1, curHp / Math.max(1, maxHp)));
-    const hpFillW = Math.round(barW * hpRatio);
-    g.fillStyle(MARKER_BAR.hp, 1);
-    g.fillRect(startX, startY, hpFillW, hpH);
-
-    // MP fill: necrotic blue-green
-    const mpRatio = Math.max(0, Math.min(1, curMp / Math.max(1, maxMp)));
-    const mpFillW = Math.round(barW * mpRatio);
-    g.fillStyle(MARKER_BAR.mp, 1);
-    g.fillRect(startX, startY + hpH + 1, mpFillW, mpH);
-  }
-
   private updateOtherPlayers(
     otherPlayersData: PlayerState[],
+    worldType: ClientGameState["world_type"],
   ): void {
     // Track which players are still in the game
     const activePlayerIds = new Set(otherPlayersData.map((p) => p.id));
@@ -3436,12 +3652,9 @@ export class BarrowspireScene extends Phaser.Scene {
           nameText.destroy();
           this.otherPlayersNameTexts.delete(playerId);
         }
-        // remove hp/mp bar
-        const hpMpG = this.otherPlayersHpMpGraphics.get(playerId);
-        if (hpMpG) {
-          hpMpG.destroy();
-          this.otherPlayersHpMpGraphics.delete(playerId);
-        }
+        // remove their health bar
+        this.teammateHealthBars.get(playerId)?.graphics.destroy();
+        this.teammateHealthBars.delete(playerId);
         if (this.hoveredPlayerId === playerId) {
           this.hoveredPlayerId = undefined;
         }
@@ -3541,11 +3754,16 @@ export class BarrowspireScene extends Phaser.Scene {
         this.otherPlayersPrevHp.set(playerData.id, curHp);
       }
 
-      // 其他玩家不顯示頭頂 HP/MP 狀態條（僅個人可見）
-      let hpMpG = this.otherPlayersHpMpGraphics.get(playerData.id);
-      if (hpMpG) {
-        hpMpG.clear();
+      // their overhead health bar: none over a corpse, an escaped teammate, or in the hub
+      let bar = this.teammateHealthBars.get(playerData.id);
+      if (!bar) {
+        const graphics = this.add.graphics();
+        graphics.setDepth(MARKER_DEPTH.bar);
+        bar = { graphics, fill: null };
+        this.teammateHealthBars.set(playerData.id, bar);
       }
+      bar.fill = teammateHealthFill(worldType, playerData);
+      this.markTeammate(playerData.id);
     });
   }
 
@@ -3815,9 +4033,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // world effects over the baked fx sheets, lighting through the light-map (FS-KYPQ9 §B, §C)
     this.fx = new EffectsRuntime(this, this.art, this.lightMap);
     this.hits = new HitFeedback(this);
-    this.projectiles = new ProjectileFlights(this, this.art, this.fx, (type) =>
-      type === "arrow" ? ARROW_FLIGHT : FIREBALL_FLIGHT,
-    );
+    this.projectiles = new ProjectileFlights(this, this.art, this.fx, projectileFlightOf);
   }
 
   private showNotification(message: string, color: string): void {
@@ -3861,6 +4077,37 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!progress) return;
     this.progressHud ??= new ProgressHud(this, PROGRESS_HUD_X, PROGRESS_HUD_Y);
     this.progressHud.show(progress);
+  }
+
+  /**
+   * This delver's Health and class resource bars (FS-8AY7S req 20–25): up while they are in the
+   * delve, down once they are out of it, and never before their first state.
+   */
+  private showResourceBars(state: ClientGameState): void {
+    this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_X, this.cameras.main.height - RESOURCE_HUD_MARGIN);
+    this.resourceHud.show(hudBars(state));
+  }
+
+  /**
+   * This delver's ability card (FS-8AY7S req 29–32), redrawn on every state and as the lockout
+   * starts and ends: up while they are in the delve, grey while the ability cannot fire, down
+   * whenever the dead spectator's leave button holds the bottom-right corner.
+   */
+  private showAbilityCard(): void {
+    const state = this.lastGameState;
+    if (!state) return;
+    const cam = this.cameras.main;
+    this.abilityHud ??= new AbilityHud(
+      this,
+      cam.width - ABILITY_CARD_MARGIN,
+      cam.height - ABILITY_CARD_MARGIN,
+    );
+    this.abilityHud.show(
+      abilityCard(state, {
+        lockedOut: this.abilityLockedOut,
+        leaveUp: this.leaveButton !== undefined,
+      }),
+    );
   }
 
   /**
@@ -4063,7 +4310,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * it interrupts is stopped once, and nothing more goes until it closes.
    */
   private sendMovementIntent(vx: number, vy: number): void {
-    if (this.menu) {
+    // an archer drawing a Shadow Shot stands still the same way (FS-JTNPR req 9)
+    if (this.menu || this.shadowShot.aiming) {
       if (this.striding) socketManager.sendMessage(ActionType.Move, { vx: 0, vy: 0 });
       this.striding = false;
       return;
@@ -4112,6 +4360,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * (FS-QPDKN req 13), so the two entry points share one send and one pending flag.
    */
   private openMenu(): void {
+    // closing the menu does not resume the hold (FS-JTNPR req 15)
+    this.cancelAim();
     const state = this.menuState();
     this.showMenuPanel(undefined, runMenuChoices(state), {
       actions: {
@@ -4219,6 +4469,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.leaveButton = this.worldButton(this.leaveSpec, at, { x: 0, y: 0 }, LEAVE_BUTTON_DEPTH + 1);
     this.leaveButton.parts.forEach((part) => part.setScrollFactor(0).setDepth(LEAVE_BUTTON_DEPTH));
     this.leaveButton.setEnabled(!this.leavePending);
+    // the corner is the button's now (FS-8AY7S req 32)
+    this.showAbilityCard();
   }
 
   /**
@@ -4413,8 +4665,9 @@ export class BarrowspireScene extends Phaser.Scene {
     } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
       vy = 1;
     }
-    // the keys are the menu's while it is open (FS-9K8EZ req 5): they read as released
-    if (this.menu) {
+    // the keys are the menu's while it is open (FS-9K8EZ req 5), and read as released while an
+    // archer draws a Shadow Shot (FS-JTNPR req 9)
+    if (this.menu || this.shadowShot.aiming) {
       vx = 0;
       vy = 0;
     }
@@ -4422,16 +4675,21 @@ export class BarrowspireScene extends Phaser.Scene {
     // update player facing and legs: the placeholder rig (a baked sheet plays below)
     if (this.player && this.playerLegs && !this.playerAnim?.baked) {
       const isMoving = vx !== 0 || vy !== 0;
-      if (isMoving) {
+      // an archer drawing a Shadow Shot stands turned to the cursor instead (FS-JTNPR req 10)
+      const cursor = this.shadowShot.aiming && this.playerPos ? this.cursorWorld() : undefined;
+      const turn = cursor && this.playerPos
+        ? { x: cursor.x - this.playerPos.x, y: cursor.y - this.playerPos.y }
+        : isMoving ? { x: vx, y: vy } : undefined;
+      if (turn) {
         // 8-way facing from the world velocity the delver is asking for; the
         // input itself is sent unchanged below (ADR-0020 §4)
-        const newFacing = facingFrom(vx, vy, this.playerFacing);
+        const newFacing = facingFrom(turn.x, turn.y, this.playerFacing);
         if (newFacing !== this.playerFacing) {
           this.playerFacing = newFacing;
           this.player.setTexture(this.facingTexture(this.playerTexturePrefix, newFacing));
         }
-        this.walkPhase += 0.3;
       }
+      if (isMoving) this.walkPhase += 0.3;
       this.drawLegs(
         this.playerLegs,
         this.player.x,
@@ -4443,19 +4701,11 @@ export class BarrowspireScene extends Phaser.Scene {
       );
     }
 
-    // update player name position and overhead HP/MP bar; none over a baked corpse
+    // update player name position; none over a baked corpse
     const ownBase = this.ownMarkerBase();
     if (this.player && this.playerNameText) {
-      if (ownBase !== null) this.playerNameText.setPosition(this.player.x, ownBase - this.ownNameGap());
+      if (ownBase !== null) this.playerNameText.setPosition(this.player.x, ownBase - NAME_GAP);
       this.playerNameText.setVisible(this.player.visible && ownBase !== null);
-    }
-    if (this.player && this.playerHpMpGraphics && this.lastGameState?.current_player) {
-      const p = this.lastGameState.current_player;
-      const curHp = p.current_health ?? (p.class === "warrior" ? 150 : 100);
-      const maxHp = p.max_health ?? (p.class === "warrior" ? 150 : 100);
-      const curMp = p.current_mana ?? 100;
-      const maxMp = p.max_mana ?? 100;
-      this.drawOverheadHpMpBar(this.playerHpMpGraphics, this.player.x, ownBase, curHp, maxHp, curMp, maxMp);
     }
 
     this.sendMovementIntent(vx, vy);
@@ -4479,7 +4729,13 @@ export class BarrowspireScene extends Phaser.Scene {
       this.playerLegs?.setDepth(worldDepth(this.playerPos.x, this.playerPos.y, 2));
       // the charge's dust is kicked where the body is drawn, never where it is predicted to land
       this.charge?.follow(this.playerPos);
+      // the stance never roots the merc: the tell and the flash ride on the body (FS-MAMHR §C.13)
+      this.parry?.follow(this.playerPos, this.time.now);
+      this.riposte?.follow(this.playerPos, this.time.now);
     }
+
+    // an archer's hold follows the body just drawn and the cursor now (FS-JTNPR req 10, 11)
+    this.aimFrame();
 
     // the baked sheet plays what the delver is doing, read off the position just drawn
     if (this.player && this.playerPos && this.playerAnim?.baked) {
@@ -4554,21 +4810,51 @@ export class BarrowspireScene extends Phaser.Scene {
           );
         }
 
-        // update name text position and hover visibility; none over a baked corpse
-        const nameText = this.otherPlayersNameTexts.get(playerId);
-        if (nameText) {
-          const base = markerBase(sprite, anim?.crown, dead);
-          if (base !== null) nameText.setPosition(sprite.x, base - NAME_GAP);
-          nameText.setVisible(this.hoveredPlayerId === playerId && base !== null);
-        }
-
-        // update overhead HP/MP bar position (clear for other players)
-        const hpMpG = this.otherPlayersHpMpGraphics.get(playerId);
-        if (hpMpG) {
-          hpMpG.clear();
-        }
+        this.markTeammate(playerId);
       }
     });
+  }
+
+  /**
+   * A teammate's markers where their figure now stands: the health bar over their head (FS-8AY7S
+   * req 27), and their name over it while hovered. Neither over a baked corpse.
+   */
+  private markTeammate(playerId: string): void {
+    const sprite = this.otherPlayers.get(playerId);
+    if (!sprite) return;
+    const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
+    const base = markerBase(sprite, this.otherPlayersAnim.get(playerId)?.crown, dead);
+    const bar = this.teammateHealthBars.get(playerId);
+    const barTop = bar ? this.drawTeammateBar(bar, sprite.x, base) : null;
+
+    const nameText = this.otherPlayersNameTexts.get(playerId);
+    if (nameText) {
+      if (barTop !== null) nameText.setPosition(sprite.x, barTop - 1 - NAME_OVER_BAR_GAP);
+      else if (base !== null) nameText.setPosition(sprite.x, base - NAME_GAP);
+      nameText.setVisible(this.hoveredPlayerId === playerId && base !== null);
+    }
+  }
+
+  /**
+   * One teammate's health bar over `base` (their marker base), in the monsters' overhead style:
+   * a pitch backing with a barrow rim, and the health fill. Returns the bar's top, or null when
+   * none is drawn.
+   */
+  private drawTeammateBar(bar: TeammateBar, x: number, base: number | null): number | null {
+    const g = bar.graphics;
+    g.clear();
+    if (base === null || bar.fill === null) return null;
+
+    const { width, height, gap } = TEAMMATE_BAR;
+    const top = Math.round(base - gap - height);
+    const left = Math.round(x - width / 2);
+    g.fillStyle(MARKER_BAR.backing, 0.9);
+    g.fillRect(left - 1, top - 1, width + 2, height + 2);
+    g.lineStyle(1, MARKER_BAR.rim, 0.9);
+    g.strokeRect(left - 1, top - 1, width + 2, height + 2);
+    g.fillStyle(MARKER_BAR.hp, 1);
+    g.fillRect(left, top, Math.round(width * bar.fill), height);
+    return top;
   }
 
   // private connectWebSocket(): void {

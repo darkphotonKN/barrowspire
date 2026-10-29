@@ -3,8 +3,9 @@
  * duration, easing, colour tokens, particle counts and scale range of each effect, so "no silly
  * animations" is a vitest (`table.test.ts`) and not a matter of taste.
  *
- * FS-fixed: later slices read this table and never edit it. A value found wrong against the FS
- * is flagged, not patched, so slices running in parallel do not collide.
+ * Entries are added per FS: a feature that brings a new effect adds its own entry here, citing
+ * its FS. Existing values are not patched: one found wrong against its FS is flagged, not
+ * edited, so slices running in parallel do not collide.
  *
  * `runtime.ts` plays an entry's `sprite`, `particles` and `light`. `tint` is not drawable on its
  * own: the hit module applies it to the struck character.
@@ -365,6 +366,84 @@ export const EFFECTS = {
       speed: { from: 8, to: 22 },
       angle: { from: 240, to: 300 },
       accel: { x: 0, y: 220 },
+    },
+  },
+
+  // ── Archer: Shadow Shot (FS-JTNPR req 20–22) ───────────────────────────
+  /**
+   * A heavier release than the arrow's: a dim slate snap at the bow and a puff of dark smoke
+   * with a few cold steel motes, held a little longer. No light: a shadow, not a flash.
+   */
+  shadowShotRelease: {
+    timing: { kind: "oneShot", durationMs: 220 },
+    ease: "Quad.easeOut",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["slate"],
+      scale: still,
+      alpha: { from: 0.45, to: 0 },
+    },
+    particles: {
+      texture: ["fx_smoke", "fx_dust"],
+      tint: ["slateLight"],
+      count: 6,
+      scale: still,
+      alpha: { from: 0.8, to: 0 },
+      speed: { from: 6, to: 18 },
+      angle: { from: -35, to: 35 },
+      accel: noAccel,
+      looks: {
+        fx_smoke: { tint: ["pitch", "slate"], scale: { from: 1, to: 1.4 } },
+      },
+    },
+  },
+  /**
+   * Dark smoke streaming behind the bolt, threaded with a few cold steel motes so it reads
+   * against the brown ground. Slower and longer-lived than the arrow's air-streak; once the
+   * bolt lands it stops and the last smoke thins out over its life. No light.
+   */
+  shadowShotTrail: {
+    timing: {
+      kind: "stream",
+      lifeMs: 360,
+      intervalMs: 40,
+      maxAlive: 10,
+      onRelease: "fade",
+    },
+    ease: "Sine.easeOut",
+    particles: {
+      texture: ["fx_smoke", "fx_dust"],
+      tint: ["slateLight"],
+      count: 1,
+      scale: still,
+      alpha: { from: 0.75, to: 0 },
+      speed: { from: 8, to: 24 },
+      angle: { from: -14, to: 14 },
+      accel: noAccel,
+      looks: {
+        fx_smoke: { tint: ["pitch", "slate"], scale: { from: 1, to: 1.5 } },
+      },
+    },
+  },
+  /**
+   * A heavier landing than the arrow's: dark smoke and steel motes that sink and settle where
+   * the bolt was last drawn, over a longer fade. Debris settles; it never sprays (§B.6).
+   */
+  shadowShotImpact: {
+    timing: { kind: "oneShot", durationMs: 480 },
+    ease: "Quad.easeIn",
+    particles: {
+      texture: ["fx_smoke", "fx_dust"],
+      tint: ["slateLight"],
+      count: 10,
+      scale: still,
+      alpha: { from: 0.85, to: 0 },
+      speed: { from: 6, to: 20 },
+      angle: { from: 235, to: 305 },
+      accel: { x: 0, y: 120 },
+      looks: {
+        fx_smoke: { tint: ["pitch", "slate"], scale: { from: 1, to: 1.5 } },
+      },
     },
   },
 
