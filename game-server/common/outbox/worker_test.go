@@ -46,16 +46,35 @@ func (p *fakePublisher) messageIds() []string {
 
 // fakeRetriever always returns the same pending rows and never marks them published,
 // so successive ticks see the same rows (as during a slow mark-published retry).
+// marks are recorded, and a mark on a done ctx fails like a real db call would.
 type fakeRetriever struct {
 	rows []*OutboxEvent
+
+	mu     sync.Mutex
+	marked map[uuid.UUID]bool
 }
 
 func (r *fakeRetriever) GetPendingOutboxItems(_ context.Context, _ *int) ([]*OutboxEvent, error) {
 	return r.rows, nil
 }
 
-func (r *fakeRetriever) UpdateOutboxToPublished(_ context.Context, _ uuid.UUID) error {
+func (r *fakeRetriever) UpdateOutboxToPublished(ctx context.Context, id uuid.UUID) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.marked == nil {
+		r.marked = map[uuid.UUID]bool{}
+	}
+	r.marked[id] = true
 	return nil
+}
+
+func (r *fakeRetriever) isMarked(id uuid.UUID) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.marked[id]
 }
 
 func newRow(key string) *OutboxEvent {
@@ -132,53 +151,45 @@ func TestPublishOutboxEvents_SameRowOnTwoTicks_SameMessageId(t *testing.T) {
 	}
 }
 
-// markingRetriever records the state of the context each mark-published call is made with.
-type markingRetriever struct {
-	fakeRetriever
-	mu     sync.Mutex
-	marked []error // ctx.Err() at the time of each UpdateOutboxToPublished
-}
-
-func (r *markingRetriever) UpdateOutboxToPublished(ctx context.Context, _ uuid.UUID) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.marked = append(r.marked, ctx.Err())
-	return ctx.Err()
-}
-
-func (r *markingRetriever) marks() []error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]error(nil), r.marked...)
-}
-
-// Run cancels the tick's context as soon as PublishOutboxEvents returns, but marking a row
-// published happens on a goroutine after that: the mark must not be made with the tick's
-// cancelled context, or every row is republished each tick and the retry loop logs
-// "context canceled" for minutes (reported 2026-10-29).
-func TestPublishOutboxEvents_MarksPublishedAfterTheTickContextIsCancelled(t *testing.T) {
-	rows := []*OutboxEvent{newRow("items.extracted"), newRow("game.match.ended")}
-	ret := &markingRetriever{fakeRetriever: fakeRetriever{rows: rows}}
-	w := NewOutboxWorker(time.Second, 20, ret, &fakePublisher{failFor: map[string]bool{}}, &sync.WaitGroup{})
-
-	tick, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	if err := w.PublishOutboxEvents(tick); err != nil {
-		t.Fatalf("publish: %v", err)
-	}
-	cancel() // as Run does the moment PublishOutboxEvents returns
-
-	deadline := time.Now().Add(2 * time.Second)
-	for len(ret.marks()) < len(rows) && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
+func TestPublishOutboxEvents_MarksPublishedBeforeCallerCancels(t *testing.T) {
+	tests := []struct {
+		name     string
+		rows     []*OutboxEvent
+		failRows []int // indexes of rows whose publish fails
+	}{
+		{name: "one row", rows: []*OutboxEvent{newRow("account.created")}},
+		{name: "several rows", rows: []*OutboxEvent{newRow("account.created"), newRow("items.extracted"), newRow("other")}},
+		{
+			name:     "failed publish is not marked",
+			rows:     []*OutboxEvent{newRow("account.created"), newRow("items.extracted"), newRow("other")},
+			failRows: []int{1},
+		},
 	}
 
-	marks := ret.marks()
-	if len(marks) != len(rows) {
-		t.Fatalf("expected %d marks, got %d", len(rows), len(marks))
-	}
-	for i, err := range marks {
-		if err != nil {
-			t.Errorf("row %d was marked published with a dead context: %v", i, err)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			failed := map[int]bool{}
+			pub := &fakePublisher{failFor: map[string]bool{}}
+			for _, i := range tt.failRows {
+				failed[i] = true
+				pub.failFor[tt.rows[i].ID.String()] = true
+			}
+			ret := &fakeRetriever{rows: tt.rows}
+			w := NewOutboxWorker(time.Second, 20, ret, pub, &sync.WaitGroup{})
+
+			// mirror Run: a per-cycle ctx that is cancelled as soon as the cycle returns
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := w.PublishOutboxEvents(ctx); err != nil {
+				cancel()
+				t.Fatalf("PublishOutboxEvents() error = %v", err)
+			}
+			cancel()
+
+			for i, row := range tt.rows {
+				if got, want := ret.isMarked(row.ID), !failed[i]; got != want {
+					t.Errorf("row %d marked published = %v, want %v", i, got, want)
+				}
+			}
+		})
 	}
 }

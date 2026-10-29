@@ -40,10 +40,6 @@ func NewOutboxWorker(workCycle time.Duration, batchCount int, outboxRetriever Ou
 	}
 }
 
-// markTimeout bounds one attempt to mark a published row, independent of the
-// tick that published it.
-const markTimeout = 10 * time.Second
-
 /**
 * Sets up the cancel and publish for select which initiates the workers
 **/
@@ -107,43 +103,15 @@ func (w *OutboxWorker) PublishOutboxEvents(ctx context.Context) error {
 			continue
 		}
 
-		// no error, rabbitmq acknowledged, recieved, update status.
-		// The mark outlives the tick: Run cancels ctx as soon as this function
-		// returns, and a mark made with that context fails at once, so the row
-		// would be republished every tick while the retries logged "context
-		// canceled" for minutes. Each attempt gets its own bounded context.
-		go func(evtId uuid.UUID) {
-			var offsetTime = time.Second * 10
-			var retries = 0
+		// no error, rabbitmq acknowledged, recieved, mark published now while ctx is still live.
+		// a failed mark only means a republish next cycle, consumers dedupe on MessageId.
+		if err := w.markPublished(ctx, evt.ID); err != nil {
+			slog.Error("Error when attempting to update outbox to published.",
+				"outbox_id", evt.ID,
+				"err", err)
+			continue
+		}
 
-			for {
-				markCtx, cancelMark := context.WithTimeout(context.WithoutCancel(ctx), markTimeout)
-				err := w.outboxRetriever.UpdateOutboxToPublished(markCtx, evtId)
-				cancelMark()
-				if err != nil {
-					if commonhelpers.IsTransientError(err) && retries < 5 {
-						slog.Error("Transient error when attempting to update outbox to published.",
-							"err", err)
-
-						time.Sleep(offsetTime)
-
-						// exponential backoff
-						offsetTime = offsetTime * 2
-						retries += 1
-						continue
-					}
-
-					slog.Error("Error when attempting to update outbox to published.",
-						"err", err)
-
-					return
-				}
-
-				return
-			}
-		}(evt.ID)
-
-		// update worked, exit goroutine
 		slog.Debug("successfully published outbox event",
 			"event_id", evt.ID,
 			"event", evt.RoutingKey,
@@ -152,4 +120,44 @@ func (w *OutboxWorker) PublishOutboxEvents(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+/**
+* Marks a single outbox row published, retrying transient errors with a
+* short backoff that never outlives ctx.
+**/
+func (w *OutboxWorker) markPublished(ctx context.Context, id uuid.UUID) error {
+	const maxRetries = 3
+	backoff := 200 * time.Millisecond
+
+	for attempt := 0; ; attempt++ {
+		err := w.outboxRetriever.UpdateOutboxToPublished(ctx, id)
+		if err == nil {
+			return nil
+		}
+
+		// ctx is done or the error is permanent, retrying cannot help
+		if ctx.Err() != nil || !commonhelpers.IsTransientError(err) || attempt >= maxRetries {
+			return err
+		}
+
+		// don't sleep past the deadline
+		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < backoff {
+			return err
+		}
+
+		slog.Warn("Transient error when attempting to update outbox to published, retrying.",
+			"outbox_id", id,
+			"attempt", attempt+1,
+			"err", err)
+
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(backoff):
+		}
+
+		// exponential backoff
+		backoff *= 2
+	}
 }
