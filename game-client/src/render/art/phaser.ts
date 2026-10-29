@@ -65,21 +65,34 @@ export interface ArtScene {
 }
 
 /**
- * Queues the manifest, then every atlas it names, on the scene's loader. Call from `preload()`.
- * A missing manifest only fails its own file; {@link registerArt} then falls back.
+ * Queues the manifest, then every atlas it names that is not already a texture, on the scene's
+ * loader. Call from `preload()`. A missing manifest only fails its own file; {@link registerArt}
+ * then falls back.
+ *
+ * The manifest may already be cached by another scene whose atlases are still in flight: a
+ * refresh lands the delver in the hub while the preload scene is still fetching. Phaser skips a
+ * cached key without firing `filecomplete`, so the atlases are queued straight from the cache
+ * then, or this scene would finish loading with none of them and draw only placeholders.
  */
 export function preloadArt(
   scene: Phaser.Scene,
   baseUrl = DEFAULT_ART_URL,
 ): void {
+  const queueAtlases = (data: unknown) => {
+    const result = validateManifest(data);
+    if (!result.ok) return; // registerArt reports it with the scene's logger
+    for (const [key, atlas] of Object.entries(result.manifest.atlases))
+      if (!scene.textures.exists(atlasTextureKey(key)))
+        scene.load.image(atlasTextureKey(key), `${baseUrl}${atlas.image}`);
+  };
+
+  if (scene.cache.json.exists(MANIFEST_KEY)) {
+    queueAtlases(scene.cache.json.get(MANIFEST_KEY));
+    return;
+  }
   scene.load.once(
     `filecomplete-json-${MANIFEST_KEY}`,
-    (_key: string, _type: string, data: unknown) => {
-      const result = validateManifest(data);
-      if (!result.ok) return; // registerArt reports it with the scene's logger
-      for (const [key, atlas] of Object.entries(result.manifest.atlases))
-        scene.load.image(atlasTextureKey(key), `${baseUrl}${atlas.image}`);
-    },
+    (_key: string, _type: string, data: unknown) => queueAtlases(data),
   );
   scene.load.json(MANIFEST_KEY, `${baseUrl}manifest.json`);
 }

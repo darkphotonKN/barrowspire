@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
-import { registerArt, MANIFEST_KEY, type ArtScene } from "./phaser";
-import { PLACEHOLDER_TEXTURE } from "./library";
+import type Phaser from "phaser";
+import { registerArt, preloadArt, MANIFEST_KEY, type ArtScene } from "./phaser";
+import { PLACEHOLDER_TEXTURE, atlasTextureKey } from "./library";
 
 const manifest = {
   version: 1,
@@ -99,6 +100,49 @@ function fakeScene(json: unknown, loadedTextures: string[]) {
   } as unknown as ArtScene;
   return { scene, frames, anims, textures };
 }
+
+/**
+ * A loader that behaves as Phaser's does: queuing a key its cache already holds is skipped
+ * silently (`LoaderPlugin.keyExists`), so no `filecomplete` event ever fires for it.
+ */
+function loadingScene(opts: { cachedManifest: boolean; textures: string[] }) {
+  const listeners = new Map<string, (...args: unknown[]) => void>();
+  const images: string[] = [];
+  const scene = {
+    cache: {
+      json: {
+        exists: (key: string) => opts.cachedManifest && key === MANIFEST_KEY,
+        get: (key: string) => (opts.cachedManifest && key === MANIFEST_KEY ? manifest : undefined),
+      },
+    },
+    textures: { exists: (key: string) => opts.textures.includes(key) },
+    load: {
+      once: (event: string, fn: (...args: unknown[]) => void) => listeners.set(event, fn),
+      json: (key: string) => {
+        if (opts.cachedManifest) return; // Phaser: cache conflict, file skipped
+        listeners.get(`filecomplete-json-${key}`)?.(key, "json", manifest);
+      },
+      image: (key: string) => images.push(key),
+    },
+  };
+  return { scene: scene as unknown as Phaser.Scene, images };
+}
+
+describe("preloadArt", () => {
+  it("should queue every atlas when the manifest loads with the scene", () => {
+    const { scene, images } = loadingScene({ cachedManifest: false, textures: [] });
+    preloadArt(scene);
+    expect(images.sort()).toEqual([atlasTextureKey("props-0"), atlasTextureKey("props-1")].sort());
+  });
+
+  // A refresh: the server names the hub while the preload scene is still fetching the atlases,
+  // so the hub starts with the manifest cached and the atlases not yet in.
+  it("should still queue the atlases not yet loaded when another scene already cached the manifest", () => {
+    const { scene, images } = loadingScene({ cachedManifest: true, textures: [atlasTextureKey("props-0")] });
+    preloadArt(scene);
+    expect(images).toEqual([atlasTextureKey("props-1")]);
+  });
+});
 
 describe("registerArt", () => {
   it("registers every frame of every sheet on its atlas texture", () => {
