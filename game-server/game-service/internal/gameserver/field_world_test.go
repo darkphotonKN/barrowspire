@@ -419,6 +419,7 @@ func TestEnterField_ADropMidEntry_IsNeverResumedInTheField(t *testing.T) {
 	assert.Equal(t, rig.hub.ID, record.CurrentGameSessionId, "the record never names the field")
 	assert.Equal(t, constants.Reconnecting, *record.ConnectState, "still held through the grace")
 	assert.False(t, rig.meadows.HasPlayer(wren.ID), "the seated body is ended")
+	assert.True(t, rig.hub.HasPlayer(wren.ID), "a reconnect within the grace finds its hub body")
 	assert.Len(t, rig.settle.settled(), 1, "the visit it seated settles once")
 }
 

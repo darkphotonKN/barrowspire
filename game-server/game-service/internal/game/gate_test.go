@@ -145,3 +145,23 @@ func TestGateArrival(t *testing.T) {
 		})
 	}
 }
+
+// A second gate to a destination the world already has a gate to is not
+// indexed: the first one placed stays the gate to it, as a scan in placement
+// order found it before the index.
+func TestIndexGate_ASecondGateToOneDestination_KeepsTheFirst(t *testing.T) {
+	hub := builtHub()
+	firstX, firstY, ok := hub.GateArrival(components.GateDestinationMeadows)
+	require.True(t, ok)
+
+	hub.indexGate(CreateGateEntity(hub.EntityManager, hubGate{
+		Destination: components.GateDestinationMeadows,
+		X:           10, Y: 10,
+		Arrival: &components.GateArrival{X: 20, Y: 20},
+	}))
+
+	x, y, ok := hub.GateArrival(components.GateDestinationMeadows)
+	assert.True(t, ok)
+	assert.Equal(t, firstX, x, "the first gate's arrival point")
+	assert.Equal(t, firstY, y, "the first gate's arrival point")
+}

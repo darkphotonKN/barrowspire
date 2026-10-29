@@ -11,9 +11,10 @@ vi.mock("phaser", async () => {
   const phaser = {
     Scene,
     Scenes: { Events: { SHUTDOWN: "shutdown", DESTROY: "destroy" } },
+    Scale: { Events: { RESIZE: "resize" } },
     BlendModes: { NORMAL: 0, ADD: 1, MULTIPLY: 2 },
     Input: { Keyboard: { KeyCodes: {} } },
-    Math: { Linear: (a: number, b: number, t: number) => a + (b - a) * t },
+    Math: { Linear: (a: number, b: number, t: number) => a + (b - a) * t, Between: () => 0, FloatBetween: () => 0 },
   };
   return { ...phaser, default: phaser };
 });
@@ -536,5 +537,41 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     field.release();
 
     expect(field.equipment).toBeUndefined();
+  });
+
+  it("should compose the run's equip HUD and bind its keys when the field is created", () => {
+    const field = new FieldScene() as unknown as Hud & { create(data?: { field?: string }): void };
+    // every Phaser surface create() draws on answers anything, numbers as 0
+    const stub: unknown = new Proxy(function () {}, {
+      get: (_target, key) => (key === Symbol.toPrimitive ? () => 0 : stub),
+      apply: () => stub,
+      construct: () => stub as object,
+    });
+    // the keys the keyboard is asked to answer; the rest of the input answers anything
+    const keys = new Map<string, () => void>();
+    const keyboard = { on: (event: string, cb: () => void) => keys.set(event, cb) };
+    const input = new Proxy({}, { get: (_target, key) => (key === "keyboard" ? keyboard : stub) });
+    Object.assign(field, {
+      add: stub,
+      make: stub,
+      textures: stub,
+      cache: stub,
+      scale: stub,
+      tweens: stub,
+      time: stub,
+      sys: stub,
+      cameras: { main: stub },
+      input,
+      bindInput: vi.fn(),
+      createPiles: vi.fn(),
+    });
+    vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+    vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+    vi.spyOn(socketManager, "on").mockImplementation(() => {});
+
+    field.create({ field: "gentle_meadows" });
+
+    expect(field.equipment).toBeInstanceOf(EquipmentHud);
+    expect([...keys.keys()]).toEqual(expect.arrayContaining(["keydown-I", "keydown-E", "keydown-Q", "keydown-F"]));
   });
 });
