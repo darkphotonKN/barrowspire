@@ -109,18 +109,18 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Hub occupancy cap → FS-29KSH
 - [ ] Hub shared across replicas → FS-JEAVX
 - [ ] Hub occupancy cap across replicas → FS-JEAVX
-- [ ] Destination gates in the hub → FS-0XMCP
-- [ ] Spire entry from its gate → FS-0XMCP
+- [x] Destination gates in the hub → FS-0XMCP
+- [x] Spire entry from its gate → FS-0XMCP
 
 ### Field worlds
 
-- [ ] Shared field worlds per replica → FS-X2F2H
-- [ ] Costless death with respawn at the field entrance → FS-X2F2H
-- [ ] Killer-first loot → FS-X2F2H
-- [ ] Field drop rates derived from the Spire's → FS-X2F2H
-- [ ] Gentle Meadows → FS-X2F2H
-- [ ] Branching-trail level generation → FS-3QHQZ
-- [ ] Forlorn Forest → FS-3QHQZ
+- [x] Shared field worlds per replica → FS-X2F2H
+- [x] Costless death with respawn at the field entrance → FS-X2F2H
+- [x] Killer-first loot → FS-X2F2H
+- [x] Field drop rates derived from the Spire's → FS-X2F2H
+- [x] Gentle Meadows → FS-X2F2H
+- [x] Branching-trail level generation → FS-3QHQZ
+- [x] Forlorn Forest → FS-3QHQZ
 
 ### Transport
 
