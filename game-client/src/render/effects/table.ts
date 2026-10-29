@@ -45,7 +45,8 @@ export interface Range {
  * - `stream` emits one particle per `intervalMs`, each living `lifeMs`, until its owner is
  *   released (a projectile's trail, a chimney's smoke). On release it either stops emitting and
  *   lets the particles already out finish their life (`"fade"`), or goes at once with what it
- *   follows (`"cut"`). A reset or scene shutdown cuts every stream either way.
+ *   follows (`"cut"`). A stream's sprite rides on its owner and always goes at once on release.
+ *   A reset or scene shutdown cuts every stream either way.
  * - `loop` repeats every `periodMs` until released (the entrance marker's breath).
  */
 export type Timing =
@@ -371,80 +372,100 @@ export const EFFECTS = {
 
   // ── Archer: Shadow Shot (FS-JTNPR req 20–22) ───────────────────────────
   /**
-   * A heavier release than the arrow's: a dim slate snap at the bow and a puff of dark smoke
-   * with a few cold steel motes, held a little longer. No light: a shadow, not a flash.
+   * A heavier release than the arrow's: a dim umbra bloom at the bow and a puff of dark smoke
+   * with lifted umbra motes that drift up off it, held a little longer. Umbra (dusk violet) is
+   * the shadow's hue: it reads against the brown floor where dark smoke alone would vanish. No
+   * light: a shadow, not a flash.
    */
   shadowShotRelease: {
-    timing: { kind: "oneShot", durationMs: 220 },
+    timing: { kind: "oneShot", durationMs: 260 },
     ease: "Quad.easeOut",
     sprite: {
       texture: "fx_glow",
-      tint: ["slate"],
+      tint: ["umbra"],
       scale: still,
-      alpha: { from: 0.45, to: 0 },
+      alpha: { from: 0.75, to: 0 },
     },
     particles: {
       texture: ["fx_smoke", "fx_dust"],
-      tint: ["slateLight"],
-      count: 6,
+      tint: ["umbraLight"],
+      count: 9,
       scale: still,
-      alpha: { from: 0.8, to: 0 },
-      speed: { from: 6, to: 18 },
-      angle: { from: -35, to: 35 },
-      accel: noAccel,
+      alpha: { from: 0.9, to: 0 },
+      speed: { from: 8, to: 26 },
+      angle: { from: -40, to: 40 },
+      accel: { x: 0, y: -10 },
       looks: {
-        fx_smoke: { tint: ["pitch", "slate"], scale: { from: 1, to: 1.4 } },
+        fx_smoke: { tint: ["pitch", "umbra"], scale: { from: 1.1, to: 1.6 } },
       },
     },
   },
   /**
-   * Dark smoke streaming behind the bolt, threaded with a few cold steel motes so it reads
-   * against the brown ground. Slower and longer-lived than the arrow's air-streak; once the
-   * bolt lands it stops and the last smoke thins out over its life. No light.
+   * The bolt wrapped in shadow: a pitch-dark halo rides on the bolt for its whole flight inside a
+   * dim umbra light, so in the barrow's dark (where a shadow has nothing to be darker than) it
+   * reads as a hole of shadow in its own violet gloom. Behind it a thick wake of umbra smoke,
+   * threaded with lifted umbra wisps, drifts up and lingers: far slower and longer-lived than the
+   * arrow's air-streak, so it hangs in the air behind the bolt. Once the bolt lands the halo and
+   * the light go with it and the last smoke thins out over its life.
    */
   shadowShotTrail: {
     timing: {
       kind: "stream",
-      lifeMs: 360,
+      lifeMs: 640,
       intervalMs: 40,
-      maxAlive: 10,
+      maxAlive: 32,
       onRelease: "fade",
     },
-    ease: "Sine.easeOut",
+    ease: "Sine.easeIn",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["pitch"],
+      scale: still,
+      alpha: { from: 0.9, to: 0.9 },
+    },
     particles: {
       texture: ["fx_smoke", "fx_dust"],
-      tint: ["slateLight"],
-      count: 1,
+      tint: ["umbraLight"],
+      count: 2,
       scale: still,
-      alpha: { from: 0.75, to: 0 },
-      speed: { from: 8, to: 24 },
-      angle: { from: -14, to: 14 },
-      accel: noAccel,
+      alpha: { from: 0.9, to: 0 },
+      speed: { from: 6, to: 40 },
+      angle: { from: -24, to: 24 },
+      accel: { x: 0, y: -14 },
       looks: {
-        fx_smoke: { tint: ["pitch", "slate"], scale: { from: 1, to: 1.5 } },
+        fx_smoke: { tint: ["umbra", "umbraLight"], scale: { from: 1.2, to: 1.6 } },
       },
     },
+    light: { color: "umbraLight", radius: 150, intensity: { from: 0.8, to: 0.8 } },
   },
   /**
-   * A heavier landing than the arrow's: dark smoke and steel motes that sink and settle where
-   * the bolt was last drawn, over a longer fade. Debris settles; it never sprays (§B.6).
+   * A heavier landing than the arrow's: an umbra bloom where the bolt was last drawn, and dark
+   * smoke with umbra motes that sink and settle over a longer fade, under the bolt's gloom
+   * fading out. Debris settles; it never sprays (§B.6).
    */
   shadowShotImpact: {
-    timing: { kind: "oneShot", durationMs: 480 },
+    timing: { kind: "oneShot", durationMs: 640 },
     ease: "Quad.easeIn",
-    particles: {
-      texture: ["fx_smoke", "fx_dust"],
-      tint: ["slateLight"],
-      count: 10,
+    sprite: {
+      texture: "fx_glow",
+      tint: ["umbra"],
       scale: still,
       alpha: { from: 0.85, to: 0 },
-      speed: { from: 6, to: 20 },
-      angle: { from: 235, to: 305 },
-      accel: { x: 0, y: 120 },
+    },
+    particles: {
+      texture: ["fx_smoke", "fx_dust"],
+      tint: ["umbraLight"],
+      count: 12,
+      scale: still,
+      alpha: { from: 0.9, to: 0 },
+      speed: { from: 8, to: 28 },
+      angle: { from: 225, to: 315 },
+      accel: { x: 0, y: 90 },
       looks: {
-        fx_smoke: { tint: ["pitch", "slate"], scale: { from: 1, to: 1.5 } },
+        fx_smoke: { tint: ["pitch", "umbra"], scale: { from: 1.1, to: 1.6 } },
       },
     },
+    light: { color: "umbraLight", radius: 120, intensity: { from: 0.75, to: 0 } },
   },
 
   // ── Hit, death, escape (§G) ─────────────────────────────────────────────

@@ -1,16 +1,19 @@
 /**
- * Archer Shadow Shot (FS-JTNPR req 20–23): the arrow's baked body with a shadow on it. Effects
- * only, built on the arrow's: no new baked texture or pose.
+ * Archer Shadow Shot (FS-JTNPR req 20–23): the arrow's baked body wrapped in shadow. Effects
+ * only, built on the arrow's: no new baked texture or pose. Its hue is umbra, a dim dusk violet
+ * no other channel uses, because a shadow has nothing to be darker than in the barrow's dark and
+ * dark smoke alone vanishes over the brown floor.
  *
- * - Release (req 21): a dim slate snap and a puff of dark smoke at the bow, at bow height, heavier
+ * - Release (req 21): an umbra bloom and a puff of dark smoke at the bow, at bow height, heavier
  *   than the arrow's. Signal: the archer's own fired `CastSkill {skill_id: "shadow_shot"}`
  *   (FS-JTNPR req 14), one per send.
  * - Flight (req 20): the baked `fx_arrow` turned to its heading at bow height ({@link BOW_LIFT}),
- *   trailing dark smoke instead of the arrow's pale air-streak ({@link SHADOW_SHOT_FLIGHT}, flown
- *   by `ProjectileFlights` for a `shadow_shot` projectile). Flights are global, so teammates see
- *   the bolt as the archer does.
- * - Impact (req 21): dark smoke and steel motes settling where the bolt was last drawn, at the
- *   same bow height, heavier than the arrow's.
+ *   a pitch-dark halo riding on it inside a dim umbra gloom, and a long wake of umbra smoke and
+ *   wisps that drift up and linger, instead of the arrow's pale air-streak
+ *   ({@link SHADOW_SHOT_FLIGHT}, flown by `ProjectileFlights` for a `shadow_shot` projectile).
+ *   Flights are global, so teammates see the bolt as the archer does.
+ * - Impact (req 21): an umbra burst, then smoke and motes settling where the bolt was last
+ *   drawn, at the same bow height, as its gloom fades: heavier than the arrow's.
  */
 
 import type { Point } from "@/render/iso/projection";
