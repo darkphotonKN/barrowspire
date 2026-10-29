@@ -64,8 +64,6 @@ describe("folkLook", () => {
   );
 
   it.each([
-    // the Warden by either name while the server renames his function (FS-0XMCP R25)
-    ["delve", "folk_spirewarden"],
     ["storyteller", "folk_spirewarden"],
     ["storekeeper", "folk_quartermaster"],
   ] as const)("should draw the %s NPC as their own character", (fn, sheet) => {
@@ -75,9 +73,16 @@ describe("folkLook", () => {
     });
   });
 
+  it("should know only the functions the server sends, the Warden's old name gone (FS-0XMCP R25)", () => {
+    expect(Object.keys(FUNCTION_NPC_SHEETS).sort()).toEqual([
+      "storekeeper",
+      "storyteller",
+    ]);
+  });
+
   it("should draw a function the client does not know as the default villager", () => {
     expect(
-      folkLook({ function: "ferryman" as "delve", appearance: "" }, BAKED),
+      folkLook({ function: "ferryman" as "storyteller", appearance: "" }, BAKED),
     ).toEqual({ sheet: DEFAULT_RESIDENT_SHEET, variant: undefined });
   });
 
@@ -110,7 +115,7 @@ const HUB_RESIDENTS = [
   "slate_trousers",
   "flax_skirt",
 ];
-const HUB_FUNCTIONS = ["delve", "storyteller", "storekeeper"] as const;
+const HUB_FUNCTIONS = ["storyteller", "storekeeper"] as const;
 
 describe("the shipped hub folk (public/art/manifest.json)", () => {
   const manifest = JSON.parse(

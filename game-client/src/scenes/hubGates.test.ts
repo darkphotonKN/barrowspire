@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GateState } from "@/types/gameState";
-import { gateAt, gateEdges } from "./hubGates";
+import { FIELD_NAMES, fieldOf, gateAt, gateEdges, signpostOf } from "./hubGates";
 
 const spire: GateState = {
   entity_id: "spire-gate",
@@ -58,5 +58,52 @@ describe("gateEdges (FS-0XMCP §Requirements 10)", () => {
 
   it("should leave one gate and enter the other when moving straight between them", () => {
     expect(gateEdges(spire, forest)).toEqual({ entered: forest, left: spire });
+  });
+});
+
+const meadows: GateState = {
+  entity_id: "meadows-gate",
+  destination: "meadows",
+  position: { x: 1960, y: 360 },
+  range: 80,
+};
+
+describe("fieldOf (FS-0XMCP §Requirements 21)", () => {
+  it("should yield one meadows field on entering the Meadows gate, and none while lingering", () => {
+    const stepIn = gateEdges(undefined, gateAt({ x: 1950, y: 360 }, [meadows]));
+    const linger = gateEdges(meadows, gateAt({ x: 1960, y: 370 }, [{ ...meadows }]));
+
+    expect(fieldOf(stepIn.entered)).toBe("meadows");
+    expect(fieldOf(linger.entered)).toBeUndefined();
+  });
+
+  it.each([
+    { gate: forest, want: "forest" },
+    { gate: meadows, want: "meadows" },
+    { gate: spire, want: undefined },
+    { gate: undefined, want: undefined },
+  ])("should call the $gate.destination gate's field $want", ({ gate, want }) => {
+    expect(fieldOf(gate)).toBe(want);
+  });
+
+  it("should name each field as the screen says it", () => {
+    expect(FIELD_NAMES).toEqual({ forest: "The Forlorn Forest", meadows: "Gentle Meadows" });
+  });
+});
+
+describe("signpostOf (FS-0XMCP §Requirements 18, 21)", () => {
+  const dressing = [
+    { sheet: "signpost", at: { x: 140, y: 470 } },
+    { sheet: "tree_pine", at: { x: 45, y: 405 } },
+    { sheet: "signpost", at: { x: 1860, y: 420 } },
+  ];
+
+  it("should find the signpost standing beside the gate, not another prop nearer it", () => {
+    expect(signpostOf(forest, dressing)).toEqual({ x: 140, y: 470 });
+    expect(signpostOf(meadows, dressing)).toEqual({ x: 1860, y: 420 });
+  });
+
+  it("should fall back to the gate itself with no signpost to stand over", () => {
+    expect(signpostOf(meadows, [])).toEqual(meadows.position);
   });
 });

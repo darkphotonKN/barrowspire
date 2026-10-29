@@ -61,6 +61,7 @@ const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
 const { toCss } = await import("@/utils/canvasPalette");
 const { BARROW_HEX } = await import("@/utils/theme");
+const { MARKER_DEPTH } = await import("@/render/markers");
 
 interface QueuePanelScene {
   queuePanel?: { active: boolean; setText(text: string): unknown };
@@ -282,6 +283,7 @@ interface MenuHub {
   update(time: number, delta: number): void;
   offerConversation(): void;
   followGates(pos: { x: number; y: number }, gates: unknown[]): void;
+  onFieldGate(destination: "forest" | "meadows"): void;
   renderState(state: unknown): void;
   listenForQueue(): void;
   release(): void;
@@ -572,7 +574,13 @@ const FOREST_GATE = {
   position: { x: 40, y: 400 },
   range: 80,
 };
-const HUB_GATES = [SPIRE_GATE, FOREST_GATE];
+const MEADOWS_GATE = {
+  entity_id: "meadows-gate",
+  destination: "meadows" as const,
+  position: { x: 1960, y: 360 },
+  range: 80,
+};
+const HUB_GATES = [SPIRE_GATE, FOREST_GATE, MEADOWS_GATE];
 /** The middle of the hub: at no gate. */
 const AWAY = { x: 1000, y: 500 };
 
@@ -845,7 +853,7 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
       [
         "keeper",
         {
-          state: { entity_id: "keeper", name: "Keeper", function: "delve", position: { x: 10, y: 0 } },
+          state: { entity_id: "keeper", name: "Keeper", function: "storyteller", position: { x: 10, y: 0 } },
           pos: { x: 10, y: 0 },
         },
       ],
@@ -1146,6 +1154,82 @@ describe("HubScene the Spire gate trigger (FS-0XMCP §Requirements 10, 22)", () 
   });
 });
 
+describe("HubScene field gates (FS-0XMCP §Requirements 21, 22)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The destination's name hanging over a signpost, while it is up. */
+  const marker = (stage: { made: Made[] }) =>
+    stage.made.filter(
+      (m) => m.kind === "text" && !m.destroyed && /Forlorn Forest|Gentle Meadows/.test(String(m.args[2])),
+    );
+
+  it.each([
+    { gate: FOREST_GATE, name: "The Forlorn Forest" },
+    { gate: MEADOWS_GATE, name: "Gentle Meadows" },
+  ])("should name $name over its signpost on stepping in, and drop it on stepping out", ({ gate, name }) => {
+    const { stage, standAt } = hubOnStage();
+    standAt(AWAY);
+
+    standAt(gate.position);
+    const shown = marker(stage);
+    expect(shown.map((m) => m.args[2])).toEqual([name]);
+    // a marker: amber, for a place to walk into, above the light-map
+    expect((shown[0].args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
+    expect(shown[0].depth).toBe(MARKER_DEPTH.name);
+
+    standAt({ x: gate.position.x, y: gate.position.y + 10 });
+    expect(marker(stage)).toHaveLength(1);
+
+    standAt(AWAY);
+    expect(marker(stage)).toHaveLength(0);
+  });
+
+  it("should fire the seam once per entry with the gate's field, not while lingering, and not at the Spire", () => {
+    const { hub, standAt, atTheDoor } = hubOnStage();
+    const onFieldGate = vi.fn();
+    hub.onFieldGate = onFieldGate;
+
+    standAt(AWAY);
+    standAt(FOREST_GATE.position);
+    standAt({ x: 50, y: 410 });
+    expect(onFieldGate.mock.calls).toEqual([["forest"]]);
+
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+    standAt(AWAY);
+    standAt(FOREST_GATE.position);
+    expect(onFieldGate.mock.calls).toEqual([["forest"], ["meadows"], ["forest"]]);
+
+    atTheDoor();
+    expect(onFieldGate).toHaveBeenCalledTimes(3);
+  });
+
+  it("should send nothing and stay in the hub on stepping into a field gate", () => {
+    const { hub, standAt, send } = queuedHubOnStage();
+
+    standAt(AWAY);
+    standAt(FOREST_GATE.position);
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+
+    expect(send).not.toHaveBeenCalled();
+    expect(hub.scene.start).not.toHaveBeenCalled();
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should drop the name on release, so a fresh visit starts without it", () => {
+    const { hub, stage, standAt } = hubOnStage();
+    standAt(AWAY);
+    standAt(FOREST_GATE.position);
+
+    hub.release();
+
+    expect(marker(stage)).toHaveLength(0);
+  });
+});
+
 describe("HubScene the Warden tells the story (FS-0XMCP §Requirements 24, 25)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1161,24 +1245,30 @@ describe("HubScene the Warden tells the story (FS-0XMCP §Requirements 24, 25)",
     expect(WARDEN_TALE[WARDEN_TALE.length - 1]).toMatch(/door/);
   });
 
-  it.each(["storyteller", "delve"])(
-    "should go on through the passages for %s, the last offering only Farewell",
-    (fn) => {
-      const { hub, stage, keys, answer, choice, talkTo } = hubOnStage();
-      talkTo(fn);
+  it("should go on through the passages, the last offering only Farewell", () => {
+    const { hub, stage, keys, answer, choice, talkTo } = hubOnStage();
+    talkTo("storyteller");
 
-      WARDEN_TALE.forEach((passage, i) => {
-        expect(said(stage)).toContain(passage);
-        const last = i === WARDEN_TALE.length - 1;
-        expect(choice("farewell")).toBeDefined();
-        expect(choice("on") !== undefined).toBe(!last);
-        if (!last) choice("on")?.handlers.pointerup();
-      });
+    WARDEN_TALE.forEach((passage, i) => {
+      expect(said(stage)).toContain(passage);
+      const last = i === WARDEN_TALE.length - 1;
+      expect(choice("farewell")).toBeDefined();
+      expect(choice("on") !== undefined).toBe(!last);
+      if (!last) choice("on")?.handlers.pointerup();
+    });
 
-      answer(keys.e);
-      expect(hub.dialogue).toBeUndefined();
-    },
-  );
+    answer(keys.e);
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should leave the Warden's old function name unanswered: a stranger with a resident's line", () => {
+    const { stage, choice, talkTo } = hubOnStage();
+    // the server sends storyteller since I-0XMCP-4; the retired alias is gone (R25)
+    talkTo("delve");
+
+    expect(said(stage)).not.toContain(WARDEN_TALE[0]);
+    expect(choice("on")).toBeUndefined();
+  });
 
   it("should go on with E, close on Farewell, and start again from the first passage", () => {
     const { hub, stage, keys, answer, choice, talkTo } = hubOnStage();

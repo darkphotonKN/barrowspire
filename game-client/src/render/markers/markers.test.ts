@@ -77,6 +77,10 @@ describe("the readability floor (FS-2325V §C.9)", () => {
     },
   );
 
+  it("should read a gate's name in the interactable channel, amber (FS-0XMCP §Requirements 21)", () => {
+    expect(MARKER_INKS["gate name"]).toBe(palette.interactable);
+  });
+
   it("should fail an ink too dark to read, so the check has teeth", () => {
     // oxblood is a fill, never a marker: it vanishes into the barrow at the edge
     expect(worstEdgeContrast(palette.damage, "run")).toBeLessThan(FLOOR);
