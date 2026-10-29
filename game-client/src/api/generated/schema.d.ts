@@ -896,7 +896,7 @@ export interface components {
             amount: number;
         };
         Character: {
-            /** @description warrior, mage or archer. */
+            /** @description warrior, mage, archer or mercenary. */
             class: string;
             /**
              * Format: date-time
@@ -932,7 +932,7 @@ export interface components {
             nextLevelAt?: number;
         };
         CharacterCreate: {
-            /** @description warrior, mage or archer (decided by character-service). */
+            /** @description warrior, mage, archer or mercenary (decided by character-service). */
             class: string;
             /** @description Character name. Validity (1-32 characters after trimming, unique) is decided by character-service. */
             name: string;
