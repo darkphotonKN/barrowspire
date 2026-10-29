@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ActionType } from "@/assets/types/client";
 import type { ContainerState, ItemState } from "@/types/gameState";
 import { RESERVED_PILE_ALPHA } from "@/render/world/dropPile";
-import { FieldPiles, PILE_REACH, type PileSatchel, type PileStage } from "./fieldPiles";
+import { CHEST_OPEN_WINDOW_MS, FieldPiles, PILE_REACH, type PileSatchel, type PileStage } from "./fieldPiles";
 import { lootRefusalCopy } from "./fieldRefusals";
 
 const ME = "me";
@@ -61,10 +61,12 @@ function piles() {
   };
   const notices: string[] = [];
   const send = vi.fn();
-  const fp = new FieldPiles(stage, satchel, { notice: (t) => notices.push(t), send });
+  let now = 10_000;
+  const fp = new FieldPiles(stage, satchel, { notice: (t) => notices.push(t), send }, () => now);
   const live = () => [...sprites.values()].filter((s) => !s.destroyed);
   const liveChests = () => [...chests.values()].filter((c) => !c.destroyed);
-  return { fp, satchel, notices, send, live, liveChests };
+  const wait = (ms: number) => void (now += ms);
+  return { fp, satchel, notices, send, live, liveChests, wait };
 }
 
 describe("FieldPiles drawing (FS-X2F2H §Requirements 56, 59)", () => {
@@ -215,12 +217,16 @@ describe("FieldPiles chests (FS-3QHQZ §Requirements 19, 20)", () => {
     expect(liveChests()).toHaveLength(0);
   });
 
-  it("should open a chest in reach with the run's message and its satchel", () => {
+  it("should open a chest in reach with the run's message, its satchel once the server has it open", () => {
     const { fp, satchel, send } = piles();
     fp.sync([chest("c", 10)], ME);
 
     expect(fp.interact({ x: 0, y: 0 })).toBe(true);
     expect(send).toHaveBeenCalledWith(ActionType.Interact, { entity_id: "c" });
+    // not on the press: the server has not answered (I-3QHQZ-8 review, finding a)
+    expect(satchel.entityId).toBeUndefined();
+
+    fp.sync([chest("c", 10, true, [item("a")])], ME);
     expect(satchel.entityId).toBe("c");
   });
 
@@ -229,17 +235,45 @@ describe("FieldPiles chests (FS-3QHQZ §Requirements 19, 20)", () => {
     fp.sync([chest("c", 10)], ME);
     fp.interact({ x: 0, y: 0 });
     fp.sync([chest("c", 10)], ME);
-    expect(satchel.entityId).toBe("c");
+    expect(satchel.entityId).toBeUndefined();
 
     fp.sync([chest("c", 10, true, [item("a"), item("b")])], ME);
+    expect(satchel.entityId).toBe("c");
     expect(satchel.items).toEqual([item("a"), item("b")]);
+  });
+
+  it("should leave nothing open when the server refuses the open: no open state comes within the window", () => {
+    const { fp, satchel, wait } = piles();
+    fp.sync([chest("c", 10)], ME);
+    fp.interact({ x: 0, y: 0 });
+
+    wait(CHEST_OPEN_WINDOW_MS + 1);
+    fp.sync([chest("c", 10)], ME);
+    expect(satchel.entityId).toBeUndefined();
+
+    // someone else opens it later: my lapsed reach does not pop the satchel open
+    fp.sync([chest("c", 10, true, [item("a")])], ME);
+    expect(satchel.entityId).toBeUndefined();
+  });
+
+  it("should try again on a second press before the chest has opened", () => {
+    const { fp, satchel, send } = piles();
+    fp.sync([chest("c", 10)], ME);
+    fp.interact({ x: 0, y: 0 });
+    fp.interact({ x: 0, y: 0 });
+
+    expect(send).toHaveBeenCalledTimes(2);
+    fp.sync([chest("c", 10, true, [item("a")])], ME);
+    expect(satchel.entityId).toBe("c");
   });
 
   it("should open a chest someone else opened, never faint and never reserved", () => {
     const { fp, satchel, notices } = piles();
-    fp.sync([{ ...chest("c", 10, true, [item("a")]), reserved_for: "killer" }], ME);
+    const theirs = { ...chest("c", 10, true, [item("a")]), reserved_for: "killer" };
+    fp.sync([theirs], ME);
 
     fp.interact({ x: 0, y: 0 });
+    fp.sync([theirs], ME);
     expect(notices).toEqual([]);
     expect(satchel.entityId).toBe("c");
     expect(satchel.items).toEqual([item("a")]);
@@ -249,38 +283,71 @@ describe("FieldPiles chests (FS-3QHQZ §Requirements 19, 20)", () => {
     const { fp, send } = piles();
     fp.sync([chest("c", 10, true, [item("a")])], ME);
     fp.interact({ x: 0, y: 0 });
+    fp.sync([chest("c", 10, true, [item("a")])], ME);
     fp.loot(item("a"));
 
     expect(send).toHaveBeenLastCalledWith(ActionType.Interact, { entity_id: "a" });
   });
 
   it("should close the satchel when its chest restocks, and open it again on a fresh press", () => {
-    const { fp, satchel, send } = piles();
+    const { fp, satchel, send, wait } = piles();
     fp.sync([chest("c", 10, true, [item("a")])], ME);
     fp.interact({ x: 0, y: 0 });
+    fp.sync([chest("c", 10, true, [item("a")])], ME);
+    wait(CHEST_OPEN_WINDOW_MS + 1);
     fp.sync([chest("c", 10, false, [])], ME);
     expect(satchel.entityId).toBeUndefined();
 
     fp.interact({ x: 0, y: 0 });
+    fp.sync([chest("c", 10, true, [item("b")])], ME);
     expect(satchel.entityId).toBe("c");
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("should keep the satchel open through a restock that lands before my own open (I-3QHQZ-8 review, finding b)", () => {
+    const { fp, satchel } = piles();
+    // last seen open; the press races a restock
+    fp.sync([chest("c", 10, true, [item("a")])], ME);
+    fp.interact({ x: 0, y: 0 });
+    fp.sync([chest("c", 10, true, [item("a")])], ME);
+    fp.sync([chest("c", 10, false, [])], ME);
+    expect(satchel.entityId).toBe("c");
+
+    // my own interact reopens the restocked chest
+    fp.sync([chest("c", 10, true, [item("fresh")])], ME);
+    expect(satchel.entityId).toBe("c");
+    expect(satchel.items).toEqual([item("fresh")]);
   });
 
   it("should close the satchel on a second press without sending again", () => {
     const { fp, satchel, send } = piles();
     fp.sync([chest("c", 10, true, [item("a")])], ME);
     fp.interact({ x: 0, y: 0 });
+    fp.sync([chest("c", 10, true, [item("a")])], ME);
     fp.interact({ x: 0, y: 0 });
+    fp.sync([chest("c", 10, true, [item("a")])], ME);
 
     expect(satchel.entityId).toBeUndefined();
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it("should reach for the nearer of a pile and a chest", () => {
+  it("should not reopen a chest's satchel walked away from while its open was on the way", () => {
     const { fp, satchel } = piles();
+    fp.sync([chest("c", 10)], ME);
+    fp.interact({ x: 0, y: 0 });
+    fp.follow({ x: 10 + PILE_REACH + 1, y: 0 });
+    fp.sync([chest("c", 10, true, [item("a")])], ME);
+
+    expect(satchel.entityId).toBeUndefined();
+  });
+
+  it("should reach for the nearer of a pile and a chest", () => {
+    const { fp, satchel, send } = piles();
     fp.sync([pile("p", 40), chest("c", 10)], ME);
     fp.interact({ x: 0, y: 0 });
 
+    expect(send).toHaveBeenCalledWith(ActionType.Interact, { entity_id: "c" });
+    fp.sync([pile("p", 40), chest("c", 10, true, [item("a")])], ME);
     expect(satchel.entityId).toBe("c");
   });
 

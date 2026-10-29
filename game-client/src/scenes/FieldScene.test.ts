@@ -21,6 +21,7 @@ vi.mock("phaser", async () => {
 const { FieldScene } = await import("./FieldScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
+const { EquipmentHud } = await import("@/ui/EquipmentHud");
 
 /** The road home as the Meadows' state carries it. */
 const ROAD_HOME = { entity_id: "road-home", destination: "hub", position: { x: 40, y: 500 }, range: 80 };
@@ -382,5 +383,158 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
     field.release();
 
     expect(field.fallenLine).toBeUndefined();
+  });
+});
+
+describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge States)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const sword = { entity_id: "sword", name: "Sword" };
+  const helm = { entity_id: "helm", name: "Helm" };
+  const worn = {
+    weapon: null,
+    head: helm,
+    chest: null,
+    gloves: null,
+    legs: null,
+    ring_1: null,
+    ring_2: null,
+    consumable_1: null,
+    consumable_2: null,
+    consumable_3: null,
+  };
+  const carrying = {
+    world_type: "field",
+    current_player: { id: "member-me", entity_id: "me", position: ARRIVAL, level: 4, inventory: [sword], equipment: worn },
+    other_players: [],
+    walls: [],
+    gates: [ROAD_HOME],
+  };
+
+  type Hud = FieldUnderTest & {
+    input: unknown;
+    equipment?: InstanceType<typeof EquipmentHud>;
+    piles?: unknown;
+    bindHudKeys(): void;
+    takesPointer(x: number, y: number, primary: boolean): boolean;
+    lootFromSatchel(item: unknown): void;
+  };
+
+  /** The field with the run's HUD on a recording panel, its keys bound to a fake keyboard. */
+  function hudOnStage() {
+    const stage = fieldOnStage();
+    const field = stage.field as Hud;
+    let visible = false;
+    let hovered: "inventory" | "head" = "inventory";
+    const panel = {
+      onEquip: undefined as undefined | ((item: unknown, slot: string) => void),
+      onUnequip: undefined as undefined | ((item: unknown, slot: string) => void),
+      toggle: vi.fn(() => void (visible = !visible)),
+      hide: vi.fn(() => void (visible = false)),
+      isVisible: () => visible,
+      // the pointer over the first inventory row, or over the worn helm
+      handleEquipKey: vi.fn((): void =>
+        hovered === "inventory" ? panel.onEquip?.(sword, "weapon") : panel.onUnequip?.(helm, "head"),
+      ),
+      updateInventory: vi.fn(),
+      updateEquipment: vi.fn(),
+      setCharacterLevel: vi.fn(),
+    };
+    field.equipment = new EquipmentHud(panel as never, {
+      send: (action, payload) => socketManager.sendMessage(action, payload),
+    });
+    const piles = {
+      sync: vi.fn(),
+      follow: vi.fn(),
+      refused: vi.fn(),
+      release: vi.fn(),
+      interact: vi.fn(),
+      loot: vi.fn(() => true),
+    };
+    field.piles = piles;
+    const keys = new Map<string, () => void>();
+    field.input = { keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) }, on: vi.fn() };
+    field.bindHudKeys();
+    const press = (key: string) => keys.get(`keydown-${key}`)?.();
+    const hover = (over: "inventory" | "head") => (hovered = over);
+    return { ...stage, field, panel, piles, press, hover };
+  }
+
+  it("should open the run's equipment panel on I with what the field's state says I carry and wear", () => {
+    const { field, panel, press } = hudOnStage();
+    field.renderState(carrying);
+
+    press("I");
+
+    expect(panel.toggle).toHaveBeenCalledTimes(1);
+    expect(panel.updateInventory).toHaveBeenLastCalledWith([sword]);
+    expect(panel.updateEquipment).toHaveBeenLastCalledWith(expect.objectContaining({ head: helm }));
+    expect(panel.setCharacterLevel).toHaveBeenLastCalledWith(4);
+  });
+
+  it("should send the run's equip and unequip on E over the open panel, and reach for no pile", () => {
+    const { field, send, piles, press, hover } = hudOnStage();
+    field.renderState(carrying);
+    press("I");
+
+    press("E");
+    hover("head");
+    press("E");
+
+    expect(send.mock.calls).toEqual([
+      [ActionType.Equip, { item_entity_id: "sword" }],
+      [ActionType.Unequip, { item_entity_id: "helm" }],
+    ]);
+    expect(piles.interact).not.toHaveBeenCalled();
+  });
+
+  it("should reach for a pile on E while the panel is closed", () => {
+    const { field, piles, press } = hudOnStage();
+    field.renderState(carrying);
+
+    press("E");
+
+    expect(piles.interact).toHaveBeenCalledWith(ARRIVAL);
+  });
+
+  it("should close the panel on Q, and take a click while it is open as no attack", () => {
+    const { field, panel, press } = hudOnStage();
+    expect(field.takesPointer(10, 10, true)).toBe(false);
+
+    press("I");
+    expect(field.takesPointer(10, 10, true)).toBe(true);
+
+    press("Q");
+    expect(panel.hide).toHaveBeenCalledTimes(1);
+    expect(field.takesPointer(10, 10, true)).toBe(false);
+  });
+
+  it("should hold an item taken from a pile in the inventory while its loot is pending, as the run does", () => {
+    const { field, piles } = hudOnStage();
+    field.renderState({ ...carrying, current_player: { ...carrying.current_player, inventory: [] } });
+
+    field.lootFromSatchel({ entity_id: "coin" });
+
+    expect(piles.loot).toHaveBeenCalledWith({ entity_id: "coin" });
+    expect(field.equipment?.inventory.map((i) => i.entity_id)).toEqual(["coin"]);
+  });
+
+  it("should hold nothing when the pile is someone else's and the loot is not sent", () => {
+    const { field, piles } = hudOnStage();
+    piles.loot.mockReturnValue(false);
+
+    field.lootFromSatchel({ entity_id: "coin" });
+
+    expect(field.equipment?.inventory).toEqual([]);
+  });
+
+  it("should let the HUD go on release, so the next visit starts empty", () => {
+    const { field } = hudOnStage();
+
+    field.release();
+
+    expect(field.equipment).toBeUndefined();
   });
 });
