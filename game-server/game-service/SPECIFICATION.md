@@ -113,7 +113,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Shared hub world → FS-29KSH
 - [ ] Hub is a safe zone → FS-29KSH
 - [ ] Wandering NPCs with dialogue → FS-29KSH
-- [ ] Function NPCs kept clear of ambient NPCs → FS-MRZH7
+- [x] Function NPCs kept clear of ambient NPCs → FS-MRZH7
 - [ ] Hub occupancy cap → FS-29KSH
 - [ ] Hub shared across replicas → FS-JEAVX
 - [ ] Hub occupancy cap across replicas → FS-JEAVX
