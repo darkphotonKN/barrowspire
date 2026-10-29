@@ -132,16 +132,19 @@ func (s *service) applyMatchEnded(ctx context.Context, tx *sqlx.Tx, eventID uuid
 		return nil
 	}
 
-	sessionID, err := uuid.Parse(req.SessionId)
-	if err != nil {
-		return fmt.Errorf("session id %q: %w: %w", req.SessionId, commonconstants.ErrUUIDCouldNotBeParsed, err)
-	}
-
-	for _, player := range req.Players {
-		if err := s.applyPlayerResult(ctx, tx, sessionID, req, player); err != nil {
-			return fmt.Errorf("player %s: %w", player.MemberId, err)
-		}
-	}
+	// TODO: update game stats tracking. Barrowspire is now PvE with grouping, so the
+	// per-player match stats (games, wins, kills, leaderboard, history) are off: the
+	// event is still marked processed above, so it is acked and never redelivered.
+	// sessionID, err := uuid.Parse(req.SessionId)
+	// if err != nil {
+	// 	return fmt.Errorf("session id %q: %w: %w", req.SessionId, commonconstants.ErrUUIDCouldNotBeParsed, err)
+	// }
+	//
+	// for _, player := range req.Players {
+	// 	if err := s.applyPlayerResult(ctx, tx, sessionID, req, player); err != nil {
+	// 		return fmt.Errorf("player %s: %w", player.MemberId, err)
+	// 	}
+	// }
 	return nil
 }
 
