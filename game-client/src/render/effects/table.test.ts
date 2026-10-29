@@ -57,8 +57,8 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
       arrowRelease: 140,
       arrowImpact: 300,
       // FS-JTNPR req 21: heavier than the arrow's 140 / 300
-      shadowShotRelease: 220,
-      shadowShotImpact: 480,
+      shadowShotRelease: 260,
+      shadowShotImpact: 640,
       hit: 220,
       deathDust: 600,
       escape: 1000,
