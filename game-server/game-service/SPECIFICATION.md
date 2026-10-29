@@ -84,11 +84,9 @@ matchmaking); this service is the engine they feed. ✅
 
 ### Classes
 
-- [ ] Per-class resources → FS-8AY7S
-- [ ] ~Every class's ability spends a shared mana pool~ → superseded by FS-8AY7S
-- [ ] Mercenary class → FS-MAMHR
-- [ ] Archer's Shadow Shot → FS-JTNPR
-- [ ] ~Archer's triple-arrow volley~ → superseded by FS-JTNPR
+- [x] Per-class resources → FS-8AY7S
+- [x] Mercenary class → FS-MAMHR
+- [x] Archer's Shadow Shot → FS-JTNPR
 
 ### Enemies
 
