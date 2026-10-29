@@ -142,14 +142,17 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNothing(t *testing.T) {
 
 			intend(attacker, intent)
 			combat.Update(tickSeconds, em.GetAllEntities(), nil)
-			hpAfterFirst, mpAfterFirst, shotsAfterFirst := health(target), pool(attacker), len(projectiles(em))
-			assert.Equal(t, 100-tt.cost, mpAfterFirst)
+			hpAfterFirst, shotsAfterFirst := health(target), len(projectiles(em))
+			assert.Equal(t, 100-tt.cost, pool(attacker))
+			// refilled so only the cooldown can refuse what follows; one Shadow
+			// Shot alone nearly drains the pool
+			resourceOf(attacker).Current = 100
 
 			// inside the cooldown: nothing at all happens
 			intend(attacker, intent)
 			combat.Update(tickSeconds, em.GetAllEntities(), nil)
 			assert.Equal(t, hpAfterFirst, health(target))
-			assert.Equal(t, mpAfterFirst, pool(attacker), "a refused request spends nothing")
+			assert.Equal(t, 100, pool(attacker), "a refused request spends nothing")
 			assert.Equal(t, shotsAfterFirst, len(projectiles(em)))
 
 			// once the cooldown has run out the request goes through again
@@ -158,7 +161,7 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNothing(t *testing.T) {
 			}
 			intend(attacker, intent)
 			combat.Update(tickSeconds, em.GetAllEntities(), nil)
-			assert.Equal(t, 100-2*tt.cost, pool(attacker))
+			assert.Equal(t, 100-tt.cost, pool(attacker))
 			if tt.cost == 0 {
 				assert.Less(t, health(target), hpAfterFirst)
 			} else {
