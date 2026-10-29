@@ -1,6 +1,6 @@
 # FS-0XMCP: Hub destination gates and the Spire entrance
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Hub" (walk to a destination gate in the hub · the Spire's entrance at the back of the hub · the Warden as storyteller, not the queue); `game-server/game-service/SPECIFICATION.md` "### Hub world" (destination gates in the hub · Spire entry from its gate) → this FS · Related ADRs: [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (one process, one connection per pod, per-pod player ceiling), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art), [ADR-0021](../adr/0021-characters-are-authored-in-code-not-sourced.md) (built in code, never sourced), [ADR-0030](../adr/0030-field-worlds-are-per-replica-channels-entered-by-a-local-world-switch.md) (what the field gates switch to) · Related: [FS-29KSH](29KSH-hub-world-and-delve-entry.md) (hub, Warden, delve entry today; §Requirements 9, 24 superseded in part here), [FS-K2HKP](K2HKP-cross-replica-matchmaking-and-handoff.md) (queue → match → handoff; out of bounds), [FS-NSV3D](NSV3D-solo-delve-entry.md) (Go alone), [FS-G4VMQ](G4VMQ-switch-character-and-leave-queue-from-hub.md) (leave queue from the hub), [FS-KYPQ9](KYPQ9-remainder-restyle-town-dressing-and-effects.md) (hub dressing and its keep-out rules), [FS-X2F2H](X2F2H-field-worlds-and-gentle-meadows.md) (Gentle Meadows, behind the east gate; owns entering a field), [FS-3QHQZ](3QHQZ-forlorn-forest-and-branching-trails.md) (Forlorn Forest, behind the west gate)
+> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Hub" (walk to a destination gate in the hub · the Spire's entrance at the back of the hub · the Warden as storyteller, not the queue); `game-server/game-service/SPECIFICATION.md` "### Hub world" (destination gates in the hub · Spire entry from its gate) → this FS · Related ADRs: [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (one process, one connection per pod, per-pod player ceiling), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art), [ADR-0021](../adr/0021-characters-are-authored-in-code-not-sourced.md) (built in code, never sourced), [ADR-0030](../adr/0030-field-worlds-are-per-replica-channels-entered-by-a-local-world-switch.md) (what the field gates switch to) · Related: [FS-29KSH](29KSH-hub-world-and-delve-entry.md) (hub, Warden, delve entry today; §Requirements 9, 24 superseded in part here; §Requirements 5's player–player push in the hub superseded by the 2026-10-30 amendment), [FS-K2HKP](K2HKP-cross-replica-matchmaking-and-handoff.md) (queue → match → handoff; out of bounds), [FS-NSV3D](NSV3D-solo-delve-entry.md) (Go alone), [FS-G4VMQ](G4VMQ-switch-character-and-leave-queue-from-hub.md) (leave queue from the hub), [FS-KYPQ9](KYPQ9-remainder-restyle-town-dressing-and-effects.md) (hub dressing and its keep-out rules), [FS-X2F2H](X2F2H-field-worlds-and-gentle-meadows.md) (Gentle Meadows, behind the east gate; owns entering a field), [FS-3QHQZ](3QHQZ-forlorn-forest-and-branching-trails.md) (Forlorn Forest, behind the west gate)
 
 ## Summary
 
@@ -144,6 +144,40 @@ offers no queue at all.
     order leaves him drawn as a stranger or the delve unreachable. The `delve` alias is
     removed once the server sends `storyteller`.
 
+### Amendment 2026-10-30: players pass through each other in the hub and the fields
+
+Implementing I-0XMCP-4 showed that the Concurrent edge state ("players do not collide in the
+hub today") was false. The hub reuses the runs' `MovementSystem` (FS-29KSH §Requirements 5,
+D7), which pushes any two moving bodies apart, players included. Ten players walking to the
+Spire's door lined up about 40 px apart, only about three stood inside the 80 px gate range,
+and the rest were refused *"Walk to the Spire's door first."* One player standing in the
+doorway could push everyone else out of range, which is a griefing hole. The user chose to
+take player-vs-player collision out of the shared worlds and keep the gate rule as written.
+This supersedes FS-29KSH §Requirements 5's "player–player push" for the hub, and that FS's
+D7 ("hub collision is the runs' collision") in this one respect.
+
+26. **Players pass through each other in the hub and in field worlds.** In a world whose type
+    is `hub` or `field`, the `MovementSystem` resolves no body-vs-body collision between two
+    player bodies (both carry the Player component): neither pushes the other, in either
+    order of movement, whether one stands still or both walk.
+27. **Spire runs keep player collision unchanged.** In a world whose type is `run`, players
+    still push each other apart exactly as today. Body-blocking is part of run combat.
+28. **Everything else collides as it does today, in every world.** Players still stop at walls,
+    hub buildings and closed doors, are depenetrated from them, and are held in by the world's
+    edge clamp. Players and monsters still push each other in fields and runs. Hub residents
+    (ambient NPCs) still collide with players and with each other (FS-29KSH §Requirements 11).
+    A charge in flight still runs through every body, as today.
+29. **Pass-through belongs to the world, fixed when it is built**, like its bounds: the session
+    tells its movement system which rule applies, from the world type it already holds. The
+    movement system does not look anything up and nothing is decided per tick from client
+    input. One rule keyed on world type; no per-player or per-area exceptions.
+30. **The gate rule is unchanged.** `GateRange` stays 80 and "at a gate" stays the server's
+    `AtGate` (R4, R7, R12). With pass-through, any number of players can stand at the Spire
+    gate at once, and each is at the gate.
+31. **No client change and no message change.** The hub and field scenes draw server
+    positions and run no player-vs-player collision of their own; overlapping players are
+    drawn overlapping, depth-sorted as any two bodies are.
+
 ## User Stories
 
 1. As a player, I want to walk to a place to go there, so that the hub feels like a world and not a menu.
@@ -173,6 +207,11 @@ offers no queue at all.
 25. As a client developer, I want a keep-out rule for gates, so that no future prop is dropped onto a gate or its approach.
 26. As an FS-X2F2H implementer, I want a gate-entered seam on the client and an at-gate query and arrival points on the server, so that entering a field is wiring, not a redesign of the hub.
 27. As an artist-agent, I want the Spire's facade to be front face and lower storeys only, so that the bake stays small and its top never needs drawing.
+28. As a player in a crowd at the Spire's door, I want to walk through the others to the door, so that nobody standing in the doorway can keep me out of the Spire.
+29. As a player in the hub or a field, I want other players never to shove me around, so that a busy shared world does not push me off where I am standing.
+30. As a player in a Spire run, I want my party and I still to block each other's bodies, so that run combat keeps its body-blocking.
+31. As a player in a field, I want monsters still to block and push me, so that fighting in a field feels like fighting in the Spire.
+32. As the owner of game-service, I want pass-through decided by world type when the world is built, so that the hub, fields and runs cannot drift into different rules by accident.
 
 ## Acceptance Criteria
 
@@ -195,13 +234,33 @@ offers no queue at all.
 - [ ] The Warden still looks like the Warden (`folk_spirewarden`) before and after the server rename.
 - [ ] A contact sheet of the new and changed baked art is produced and reviewed before the art issue closes.
 
+Added by the 2026-10-30 amendment (R26–R31):
+
+- [ ] In the hub, a player walking into a standing player passes through them: neither body is pushed, and the walker ends where an unobstructed walk would put them. The same holds in a field world.
+- [ ] In a run, the same walk is stopped at `2 × PlayerRadius` as today, and the existing crowd tests (`movement_crowd_test.go`) stay green.
+- [ ] In the hub and in a field, a player still stops at walls and buildings and is held by the edge clamp; in a field, a player and a monster still push each other; in the hub, a resident and a player still push each other.
+- [ ] Ten players walking to the Spire's door together all end within `GateRange` of the Spire gate, and every one's `find_game` is accepted (no "Walk to the Spire's door first.").
+- [ ] Pass-through is chosen from the world's type when the world is built, not per tick from anything a client sends.
+- [ ] No file under `internal/matchmaker` or `internal/match_queue` changes, and no client file or message changes.
+
 ## Edge States
 
 - **Empty hub / nobody else queued:** the Spire gate behaves as the Warden did (FS-29KSH,
   FS-NSV3D): *Wait for company* waits; *Descend alone* goes at once.
 - **Concurrent:** two players step into the Spire gate in the same tick: each opens their own
-  panel; two `find_game`s in one tick both queue (unchanged FS-29KSH behaviour). Many players
-  crowding the door do not block each other (players do not collide in the hub today).
+  panel; two `find_game`s in one tick both queue (unchanged FS-29KSH behaviour).
+  ~~Many players crowding the door do not block each other (players do not collide in the hub
+  today).~~ Corrected by the 2026-10-30 amendment: players did collide in the hub, and a crowd
+  lined up out of range. Players now pass through each other in the hub and the fields
+  (R26), so a crowd at the door all stands at the gate and nobody can block the doorway.
+- **Players stacked on one spot (hub or field):** two players seated at the same spawn or
+  arrival point, or walking onto each other, stay overlapping until one walks away; nothing
+  pushes them apart and nothing breaks. A resident or monster that touches the stack pushes
+  each body as it would one alone.
+- **Remote players (other pods' ghosts in the hub):** already collide with nothing
+  (FS-JEAVX §Requirements 13); unchanged.
+- **Moving from the hub or a field into a run:** the run's rule applies from the first tick in
+  the run; party members seated close together are pushed apart there as today.
 - **Lag at the boundary:** the client opens the panel from the server-reported position (R10),
   so it opens only where the server agrees. If the player walks out between opening and
   choosing, the panel closes; a choice sent in the same instant may be refused with the walk
@@ -246,6 +305,9 @@ offers no queue at all.
 - Widening or reshaping the hub beyond the gate approaches.
 - Renaming backend "delver" identifiers.
 - Writing the Gate term to CONTEXT.md and the thin lines (already done at scoping).
+- Any change to collision in Spire runs, or to how walls, buildings, doors, monsters and
+  residents collide, in any world (2026-10-30 amendment, R27–R28).
+- Widening `GateRange` or moving the gates to fit a crowd; pass-through is the fix (R30).
 
 ## Decision log
 
@@ -272,6 +334,9 @@ under the same charter.
 | D14 | Gates are ECS entities broadcast as `gates` in the hub state; arrival points server-only (R5, R6) | [spec] |
 | D15 | Gate check order: after no-character and resume, before queue / solo (R12); `leave_queue` not gated (R13) | [spec] |
 | D16 | Client aliases `delve` → storyteller during the rename (R25) | [spec] |
+| D17 | Players pass through each other in the hub and in field worlds; Spire runs keep player collision; walls, buildings and monsters collide everywhere as today; the gate rule stays as written (R26–R28, R30). Decided 2026-10-30: the user answered "Brighter, fix edges" to the choice "no player collision in hub and fields" | [user] |
+| D18 | Residents keep colliding with players (FS-29KSH §Requirements 11 unchanged); only player-vs-player is removed (R28) | [spec] (amendment, reading D17 narrowly) |
+| D19 | Pass-through is a property of the world chosen from its type when built, not looked up by the movement system or decided per tick (R29) | [spec] (amendment) |
 
 **Rejected:** a single destination device (waystone / map table) listing destinations. The
 user chose walk-to gates: the hub itself is the map.
@@ -282,3 +347,11 @@ Warden. `find_game` and `start_solo` are accepted from anywhere in the hub
 in `HubScene.ts`, mirroring `NPCInteractRange`. "Moving the Warden's check to the gate"
 therefore means adding the server check for the first time (R7, R12), at the gate, with the
 Warden's range as the gate's range (R4).
+
+**Finding while implementing I-0XMCP-4 (2026-10-30), led to D17:** players **do** collide in
+the hub. The hub reuses the runs' `MovementSystem`, whose body-vs-body push applies to every
+moving body, players included. The FS's Concurrent edge state said otherwise. In the
+gameserver test, ten players walking to the Spire's door lined up about 40 px apart and only
+about three were inside the 80 px range; the rest were refused. `TestQueueFindGameFlow` was
+changed to walk players to the door one at a time as a stopgap. Players on other pods (ghosts,
+FS-JEAVX) never collided, so the effect only showed among players on one pod.
