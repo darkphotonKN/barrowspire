@@ -88,6 +88,9 @@ type ClientGameState struct {
 	// Trails are a run's live burning trails; with none burning, and always in
 	// the hub, the key is absent. FS-4R9M9 §Requirements 56.
 	Trails []*TrailState `json:"trails,omitempty"`
+	// Gates are the hub's; a run has none and omits the key. FS-0XMCP
+	// §Requirements 6.
+	Gates []*GateState `json:"gates,omitempty"`
 }
 
 type BackendGameState struct {
@@ -112,6 +115,7 @@ type BackendGameState struct {
 	Stairs       []*StairsState
 	Monsters     []*MonsterState
 	Trails       []*TrailState
+	Gates        []*GateState
 }
 
 // ErrInvalidPayload marks a client payload that cannot be parsed. The payload

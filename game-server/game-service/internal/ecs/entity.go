@@ -54,6 +54,7 @@ const (
 	ComponentTypeLockable   ComponentType = "Lockable"
 	ComponentTypeSwitch     ComponentType = "Switch"
 	ComponentTypeStairs     ComponentType = "Stairs"
+	ComponentTypeGate       ComponentType = "Gate"
 	ComponentTypeProjectile ComponentType = "Projectile"
 
 	ComponentTypeAttackIntent ComponentType = "AttackIntent"

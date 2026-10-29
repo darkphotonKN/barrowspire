@@ -52,6 +52,10 @@ type Session struct {
 	// [entityID] - interacted
 	containerInteractedCache map[uuid.UUID]bool
 
+	// where each player body stood after the last tick, by entity id, for the
+	// at-gate query; written by the tick under mu (FS-0XMCP §Requirements 7)
+	bodiesAt map[uuid.UUID]bodyPosition
+
 	// elimination tracking: [memberID] the order they fell in, recorded by the
 	// tick that eliminated them
 	eliminations map[uuid.UUID]int
@@ -683,6 +687,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 
 	// rules
 	s.applyEndRule(deltaTime, entities)
+
+	// where everyone ended up, for anyone asking from beside the tick
+	s.recordBodies(entities)
 }
 
 // queueIntent hands a client action to the tick, which applies it at the start

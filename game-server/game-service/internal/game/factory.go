@@ -250,6 +250,25 @@ func CreateFunctionNPCEntity(em *ecs.EntityManager, npc hubNPC) *ecs.Entity {
 	return entity
 }
 
+// CreateGateEntity places a hub gate.
+//
+// It never moves and is nobody: no velocity and no NPC component, only where it
+// goes, where it stands and how close counts. FS-0XMCP §Requirements 5.
+func CreateGateEntity(em *ecs.EntityManager, gate hubGate) *ecs.Entity {
+	// a copy, so no two worlds share the map data's arrival point
+	var arrival *components.GateArrival
+	if gate.Arrival != nil {
+		at := *gate.Arrival
+		arrival = &at
+	}
+
+	entity := em.CreateEntity()
+	entity.AddComponent(components.NewGateComponent(gate.Destination, arrival))
+	entity.AddComponent(components.NewTransformComponent(gate.X, gate.Y))
+	entity.AddComponent(components.NewInteractableComponent(commonconstants.GateRange))
+	return entity
+}
+
 // CreateResidentEntity places an ambient NPC who wanders their quarter.
 //
 // They carry a velocity, unlike a function NPC, because WanderSystem steers them

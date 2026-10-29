@@ -105,6 +105,10 @@ const NPCStallSeconds float64 = 1.2
 // How close a delver must stand to talk to an NPC.
 const NPCInteractRange float64 = 80
 
+// How close a player must stand to a hub gate to be at it: the distance the
+// Warden is spoken to from. FS-0XMCP §Requirements 4.
+const GateRange float64 = 80
+
 // How far from its spawn point a monster with no target wanders, in px, and how
 // long it stands between destinations and may fail to close on one before
 // giving it up. Starting values. FS-77AB6 §Requirements 26.

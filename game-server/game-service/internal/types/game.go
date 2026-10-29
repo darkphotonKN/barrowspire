@@ -271,6 +271,17 @@ type StairsState struct {
 	Position *Position `json:"position"`
 }
 
+// GateState is a hub gate as the client sees it: where it goes, where it
+// stands and how close counts. Its arrival point is server-only. FS-0XMCP
+// §Requirements 6.
+type GateState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	// spire | forest | meadows
+	Destination string    `json:"destination"`
+	Position    *Position `json:"position"`
+	Range       float64   `json:"range"`
+}
+
 type SwitchState struct {
 	EntityID    uuid.UUID `json:"entity_id"`
 	Position    *Position `json:"position"`

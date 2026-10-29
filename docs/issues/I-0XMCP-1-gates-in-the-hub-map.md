@@ -1,6 +1,6 @@
 ---
 id: I-0XMCP-1
-status: open
+status: done
 implements: FS-0XMCP
 blocked_by: []
 labels: [ready-for-agent]
