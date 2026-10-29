@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: payment }
 spec:
-  replicas: 1
+  replicas: 0
   selector: { matchLabels: { app: payment } }
   template:
     metadata: { labels: { app: payment } }

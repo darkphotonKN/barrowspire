@@ -1,0 +1,68 @@
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata: { name: game }
+spec:
+  healthCheck: { requestPath: /api/health, port: 5668, type: HTTP }
+  timeoutSec: 3600 # WebSocket connections live for the whole delve
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: game-0
+  annotations: { cloud.google.com/backend-config: '{"default": "game"}' }
+spec:
+  selector: { statefulset.kubernetes.io/pod-name: game-0 } # exactly one pod
+  ports: [{ port: 5668, targetPort: ws }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: game-1
+  annotations: { cloud.google.com/backend-config: '{"default": "game"}' }
+spec:
+  selector: { statefulset.kubernetes.io/pod-name: game-1 } # exactly one pod
+  ports: [{ port: 5668, targetPort: ws }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: game
+  annotations: { cloud.google.com/backend-config: '{"default": "game"}' }
+spec:
+  selector: { app: game } # any pod: the pre-match queue
+  ports: [{ port: 5668, targetPort: ws }]
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata: { name: play-cert }
+spec:
+  domains: [play.barrowspire.app]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: play
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: barrowspire-api-ip
+    networking.gke.io/managed-certificates: play-cert
+    kubernetes.io/ingress.class: gce
+spec:
+  rules:
+    - host: play.barrowspire.app
+      http:
+        paths:
+          - {
+              path: /game-0/,
+              pathType: Prefix,
+              backend: { service: { name: game-0, port: { number: 5668 } } },
+            }
+          - {
+              path: /game-1/,
+              pathType: Prefix,
+              backend: { service: { name: game-1, port: { number: 5668 } } },
+            }
+          - {
+              path: /,
+              pathType: Prefix,
+              backend: { service: { name: game, port: { number: 5668 } } },
+            }

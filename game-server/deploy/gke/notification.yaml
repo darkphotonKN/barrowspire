@@ -3,7 +3,7 @@ kind: Deployment
 metadata: { name: notification }
 spec:
   # 1: notification migrates on boot, so several pods would race on the same migration
-  replicas: 1
+  replicas: 0
   selector: { matchLabels: { app: notification } }
   template:
     metadata: { labels: { app: notification } }

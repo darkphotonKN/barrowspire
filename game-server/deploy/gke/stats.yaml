@@ -3,7 +3,7 @@ kind: Deployment
 metadata: { name: stats }
 spec:
   # 1: stats migrates on boot, and outbox workers would duplicate-publish across replicas
-  replicas: 1
+  replicas: 0
   selector: { matchLabels: { app: stats } }
   template:
     metadata: { labels: { app: stats } }
