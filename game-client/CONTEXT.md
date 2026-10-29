@@ -39,7 +39,16 @@ translation belongs to the surface that renders words.
   the run itself (*"your last delve"*). The player-facing name for what
   [`SPECIFICATION.md`](SPECIFICATION.md) calls an **escape run** and the WS protocol calls a
   **game** / **session**. All three name one thing at different layers; none of them is wrong in
-  its own layer.
+  its own layer. The Spire's own word: a visit to a field world is not a delve.
+- **Field world** — a shared, always-open place outside the Spire where players farm XP and
+  plunder with nothing at risk: no queue, and death costs nothing (FS-X2F2H). Two are scoped:
+  - **Gentle Meadows** — east of the hub: cozy greens, sparse trees, a horizon; low-level animals.
+  - **Forlorn Forest** — west of the hub: a gloomy branching trail; zombies, and rarely a ghost
+    (FS-3QHQZ).
+- **Gate** — a place in the hub a player walks into to go somewhere (FS-0XMCP). The **Spire
+  gate** (north, the tower's entrance) opens the gather / go-alone panel; a **field gate** (west
+  trail to the Forlorn Forest, east road to Gentle Meadows) takes the player into that field. Once
+  FS-0XMCP ships, the Warden no longer opens the queue: he only tells the story.
 - **The Spire** — the place players descend into. The antagonist-realm and the source of relics.
   Note the article: *the* Spire, never bare "Spire".
 - **Barrowspire** — the product. The world entire, not a location within it. Never used as a
@@ -103,7 +112,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   hand-copied. The server knows nothing of it. A prop that would need collision or a click is not
   dressing.
 - **World kind**: which world the server put the player in, `"hub" | "run"` (`WorldKind`,
-  mirroring `world_type` on the wire). Server-decided. Not the same as a world theme.
+  mirroring `world_type` on the wire). Server-decided. Not the same as a world theme. Gains
+  `"field"` with FS-X2F2H.
 - **World theme**: how the client draws a run: `"exterior" | "tower"` (FS-8RBQY §A). It picks the
   ground plan, wall-piece sheets, roofs and indoor mask on or off, ambient, perimeter wall and run
   dressing. A client constant, never on the wire, never a game rule. Always say *world* theme:
@@ -138,6 +148,7 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 | player | `Member`, `member_id` | `player`, `player_id`, `current_player` | "player" |
 | a delve | — | `game`, `session_id`, `find_game`, `end_game` | "escape run" |
 | the Spire | — | the instance world | "escape run" (the instance) |
+| Gentle Meadows, the Forlorn Forest | — | `world_type` `field` | "field world" |
 | relic, plunder | `/api/items/*` | `items[]` | "loadout", "items" |
 
 ## Voice rules that ride on the vocabulary
@@ -151,9 +162,12 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 
 ## Open
 
-- **Delve** and **the Spire** assume every run leads into the Spire. Runs that lead elsewhere (a
-  forest trail, a farm) are being scoped; whether "delve" survives as the general word or stays
-  the Spire's own is decided there, not here.
+- ~~**Delve** and **the Spire** assume every run leads into the Spire.~~ Resolved 2026-10-29
+  (FS-X2F2H): "delve" stays the Spire's own word. The places elsewhere are **field worlds**, not
+  runs, and a field visit is not a delve.
+- **World theme** names only how a run is drawn. Whether each field world gets its own world
+  theme (the forest on the exterior theme's ground family) or a separate term is decided at
+  write-a-spec for FS-X2F2H / FS-3QHQZ.
 - The **HUB** world (refactor plan) has no lore name yet — "hub" is an engineering word. It needs
   one before the HUB client ships, and the answer is not obvious: the settlement above the Spire,
   the camp, the hall. Deliberately unresolved rather than guessed.

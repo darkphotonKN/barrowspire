@@ -28,7 +28,8 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 
 - **World** — one isolated ECS simulation: its own `EntityManager`, its own goroutines, its own
   fixed-timestep tick, no mutable state shared with any other world.
-- **World type** — which kind of world: `hub` or `run`. Two types, one client.
+- **World type** — which kind of world: `hub` or `run`. Two types, one client. Gains `field`
+  with FS-X2F2H (the client calls this **world kind**, mirroring `world_type` on the wire).
 - **Hub** — the shared, long-lived world players occupy between runs. One per deployment,
   server-authoritative, capped. Same thing the refactor plan calls the **HUB**; never call it a
   lobby, a town, or a village in code.
@@ -50,7 +51,21 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
     the hub work in `git blame`.
 - **Delve** — the *player-facing* word for entering a run, owned by
   [`game-client/docs/design-guideline.md`](../../game-client/docs/design-guideline.md). Server
-  code says **run**; UI copy says **delve**. Do not mix them in one layer.
+  code says **run**; UI copy says **delve**. Do not mix them in one layer. "Delve" stays the
+  Spire's own word: a field visit is not a delve.
+- **Field world** (world type `field`, FS-X2F2H) — a long-lived world shared like the hub, with
+  monsters and loot and **no queue**: anyone walks in through its gate. Not a run: it is not built
+  for a match, never resolves, and is never torn down while its pod lives. Death in it costs
+  nothing. Its gains settle when the player leaves, through the match-end outbox path as a
+  `returned` result, but a field visit is still not a match; do not call it one.
+  - **Gentle Meadows** — the easy field, east of the hub: open, hand-laid map, low-level animals.
+  - **Forlorn Forest** — the harder field, west of the hub: a generated branching trail, zombies
+    and the rare ghost (FS-3QHQZ).
+- **Channel** — one pod's copy of a field world (ADR-0030). Every pod runs one channel of each
+  field, created at boot; two players on different pods are in different channels of the same
+  field. **Collides with the Redis pub/sub channel** (`matchstart:pod:<podID>`, the hub's state
+  channel): when either could be meant, write "field channel" or "Redis channel", never a bare
+  "channel".
 
 ### Moving between worlds
 
@@ -69,6 +84,12 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
     creation with a world switch (`ResolvedMatchedPlayers.LocalPlayers`).
   - **Arrival** — a handoff player's connection reaching the host, carrying `?session_id=`.
     Seated (`SeatArrival`) or refused with close code `4002`; never served half-seated.
+- **Gate** (FS-0XMCP) — a fixed hub location a player walks into to go to a place, entry
+  validated by proximity on the server. The **Spire gate** opens the queue panel (queue or solo
+  start; the queue and handoff are unchanged); a **field gate** world-switches the player into
+  that pod's channel of the field, never a handoff (ADR-0030). Each field has an entrance gate
+  back to the matching hub gate. A gate is map data, not an NPC: it replaces the **Delve NPC** as
+  the queue's entry point once FS-0XMCP ships.
 
 ### Hub population
 
@@ -91,6 +112,14 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Ambient NPC** — a wandering resident with no function attached, there to make the place feel
   inhabited. Server-authoritative and broadcast per tick, so every player sees one in the same
   position. Not decoration in the technical sense: it costs broadcast and server-side collision.
+
+### Field combat (FS-X2F2H)
+
+- **Kill credit** — in a field world, the XP and the loot roll of a kill belong to the player who
+  lands the killing blow, and to no one else. Not shared, not split by damage dealt.
+- **Killer-first window** — the 30s after a field kill during which only the killer may take the
+  dropped pile; after it, anyone may. Kill credit decides who rolls the loot; the window decides
+  who may pick it up.
 
 ### The message hub (the other `hub`)
 
