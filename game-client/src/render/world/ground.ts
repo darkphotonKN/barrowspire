@@ -10,7 +10,7 @@ import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso";
 import type { House } from "./houses";
 
 /** Which kind of world is being dressed. Mirrors `ClientGameState.world_type`. */
-export type WorldKind = "hub" | "run";
+export type WorldKind = "hub" | "run" | "field";
 
 /** One ground tile, decal or floor tile to draw: a manifest sheet and frame, at a world point. */
 export interface GroundPiece {
@@ -39,8 +39,15 @@ export function tileHash(tx: number, ty: number, seed: number): number {
 
 /** The seed each kind of world scatters its ground with. */
 export function worldSeed(kind: WorldKind): number {
-  return kind === "hub" ? 0x4855_4231 : 0x5255_4e31;
+  return WORLD_SEEDS[kind];
 }
+
+const WORLD_SEEDS: Record<WorldKind, number> = {
+  hub: 0x4855_4231,
+  run: 0x5255_4e31,
+  // a field's own pattern (FS-X2F2H §Requirements 54); its look per field is slice 9's
+  field: 0x4649_4531,
+};
 
 /** World n = -y, e = +x: the edge a transition tile's second material intrudes from. */
 export type Edge = "n" | "e" | "s" | "w" | "ne" | "se" | "sw" | "nw";
@@ -123,7 +130,8 @@ export function planGround({
   const seed = worldSeed(kind);
   const cols = Math.ceil(width / T);
   const rows = Math.ceil(height / T);
-  const base: Material = kind === "hub" ? "grass" : "dirt";
+  // a run is barrow dirt; the hub and a field are grass
+  const base: Material = kind === "run" ? "dirt" : "grass";
   const material = (tx: number, ty: number): Material =>
     paths.some((p) => within(centreOf(tx, ty), p)) ? "dirt" : base;
 
@@ -276,9 +284,9 @@ export function planFloors(
 }
 
 /** Share of tiles that carry a decal, in percent. */
-const DECAL_DENSITY: Record<WorldKind, number> = { hub: 14, run: 10 };
+const DECAL_DENSITY: Record<WorldKind, number> = { hub: 14, run: 10, field: 14 };
 /** Share of those decals that are grass tufts rather than pebbles, in percent. */
-const TUFT_SHARE: Record<WorldKind, number> = { hub: 70, run: 15 };
+const TUFT_SHARE: Record<WorldKind, number> = { hub: 70, run: 15, field: 85 };
 /** How far a decal may sit from its tile's centre, in world px. */
 const DECAL_JITTER = 14;
 

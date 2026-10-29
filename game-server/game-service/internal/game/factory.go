@@ -269,6 +269,17 @@ func CreateGateEntity(em *ecs.EntityManager, gate hubGate) *ecs.Entity {
 	return entity
 }
 
+// CreateFieldEntranceEntity places a field's entrance gate: the road back to
+// the hub, a gate like the hub's, with the place's own range and no arrival
+// point (the arrival is the place's). FS-X2F2H §Requirements 3, 14.
+func CreateFieldEntranceEntity(em *ecs.EntityManager, x, y, gateRange float64) *ecs.Entity {
+	entity := em.CreateEntity()
+	entity.AddComponent(components.NewGateComponent(components.GateDestinationHub, nil))
+	entity.AddComponent(components.NewTransformComponent(x, y))
+	entity.AddComponent(components.NewInteractableComponent(gateRange))
+	return entity
+}
+
 // CreateResidentEntity places an ambient NPC who wanders their quarter.
 //
 // They carry a velocity, unlike a function NPC, because WanderSystem steers them

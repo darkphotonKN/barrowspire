@@ -13,6 +13,9 @@ const (
 	GateDestinationForest GateDestination = "forest"
 	// GateDestinationMeadows is the road east, to Gentle Meadows.
 	GateDestinationMeadows GateDestination = "meadows"
+	// GateDestinationHub is a field's entrance gate: the road back to the hub.
+	// It stands in a field world, never in the hub. FS-X2F2H §Requirements 3.
+	GateDestinationHub GateDestination = "hub"
 )
 
 // GateArrival is where a player coming back through a gate is set down: just

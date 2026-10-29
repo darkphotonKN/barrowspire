@@ -98,6 +98,10 @@ export interface ActionMap {
   start_solo: Record<string, never>;
   /** A player in play choosing to fall where they stand (FS-9K8EZ req 7): no payload. */
   forfeit_run: Record<string, never>;
+  /** A hub player walking into a field gate (FS-X2F2H req 9). */
+  enter_field: { field: FieldId };
+  /** A field player walking into the entrance gate, home to the hub (FS-X2F2H req 14): no payload. */
+  leave_field: Record<string, never>;
 }
 
 export const ActionType = {
@@ -117,6 +121,8 @@ export const ActionType = {
   LeaveHub: "leave_hub",
   StartSolo: "start_solo",
   ForfeitRun: "forfeit_run",
+  EnterField: "enter_field",
+  LeaveField: "leave_field",
 } as const;
 
 export type ActionType = (typeof ActionType)[keyof typeof ActionType];
@@ -147,9 +153,14 @@ export type ClientAction =
 export const WorldType = {
   Hub: "hub",
   Run: "run",
+  /** A field world, shared like the hub, with no queue (FS-X2F2H §Requirements 1, 55). */
+  Field: "field",
 } as const;
 
 export type WorldType = (typeof WorldType)[keyof typeof WorldType];
+
+/** A field world's stable id, sent as `field` in its world_entered (FS-X2F2H §Requirements 2). */
+export type FieldId = "gentle_meadows" | "forlorn_forest";
 
 /**
  * The one message that tells the client which world it is now in. It arrives on
@@ -160,6 +171,8 @@ export type WorldType = (typeof WorldType)[keyof typeof WorldType];
 export interface WorldEnteredPayload {
   session_id: string;
   world_type: WorldType;
+  /** Which field, for a field world only (FS-X2F2H §Requirements 2). */
+  field?: FieldId;
 }
 
 /**

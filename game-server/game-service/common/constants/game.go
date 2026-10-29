@@ -24,6 +24,14 @@ const (
 	// ActionWorldLeft answers an accepted leave_hub: the member is in no world.
 	ActionWorldLeft Action = "world_left"
 
+	// ActionEnterField is a hub member at a field gate asking to walk into
+	// this pod's channel of that field; payload { "field": "<id>" }.
+	// FS-X2F2H §Requirements 9.
+	ActionEnterField Action = "enter_field"
+	// ActionLeaveField is a player at a field's entrance gate asking to walk
+	// back to the hub; no payload. FS-X2F2H §Requirements 14.
+	ActionLeaveField Action = "leave_field"
+
 	// ActionEnterHub is how a player asks to enter the hub, after picking a
 	// character. Connecting opens the socket; entering is a separate step.
 	ActionEnterHub Action = "enter_hub"
@@ -108,6 +116,15 @@ const NPCInteractRange float64 = 80
 // How close a player must stand to a hub gate to be at it: the distance the
 // Warden is spoken to from. FS-0XMCP §Requirements 4.
 const GateRange float64 = 80
+
+// Gentle Meadows is about the hub's size, larger than the viewport, so it
+// scrolls. FS-X2F2H §Requirements 51.
+const MeadowsMapWidth float64 = 2000
+const MeadowsMapHeight float64 = 1000
+
+// How close a player must stand to a field's entrance gate to walk back to the
+// hub through it: the hub gates' own range. FS-X2F2H §Requirements 14.
+const FieldEntranceRange float64 = GateRange
 
 // How far from its spawn point a monster with no target wanders, in px, and how
 // long it stands between destinations and may fail to close on one before

@@ -59,6 +59,19 @@ var (
 	// character has no class, or one no class config matches.
 	ErrCharacterNotSeatable = errors.New("character cannot be seated")
 
+	// Field visits (FS-X2F2H §B)
+	// ErrNotAField refuses seating a visitor in a world that is not a field.
+	ErrNotAField = errors.New("this world is not a field")
+	// ErrAlreadyHere refuses seating a member who already has a body here.
+	ErrAlreadyHere = errors.New("member already has a body in this world")
+	// ErrNoLoadout refuses seating a visitor whose loadout was not read: a bare
+	// body would clear the stored loadout when its visit settles (D27).
+	ErrNoLoadout = errors.New("no loadout to seat the visitor with")
+	// ErrNotAtGate refuses walking out of a field away from its entrance.
+	ErrNotAtGate = errors.New("not at the entrance gate")
+	// ErrFallen refuses walking out of a field while dead.
+	ErrFallen = errors.New("fallen")
+
 	// queue
 	ErrPlayerAlreadyInQueue = errors.New("player already in queue")
 )

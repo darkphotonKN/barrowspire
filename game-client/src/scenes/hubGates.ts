@@ -7,6 +7,7 @@
  * gate's panel only where the server agrees the player is at it.
  */
 
+import type { FieldId } from "@/assets/types/client";
 import type { GateState, Position } from "@/types/gameState";
 
 /**
@@ -35,8 +36,11 @@ export function gateEdges(before: GateState | undefined, now: GateState | undefi
   return { entered: now, left: before };
 }
 
-/** Where a field gate leads: every gate but the Spire's (FS-0XMCP §Requirements 21). */
-export type FieldDestination = Exclude<GateState["destination"], "spire">;
+/**
+ * Where a field gate leads: every hub gate but the Spire's (FS-0XMCP §Requirements 21). A field's
+ * own entrance gate (`hub`, the road home, FS-X2F2H §Requirements 3) leads to no field.
+ */
+export type FieldDestination = Exclude<GateState["destination"], "spire" | "hub">;
 
 /** What the screen calls each field, over its gate's signpost (CONTEXT.md, *Field world*). */
 export const FIELD_NAMES: Record<FieldDestination, string> = {
@@ -44,9 +48,18 @@ export const FIELD_NAMES: Record<FieldDestination, string> = {
   meadows: "Gentle Meadows",
 };
 
-/** The field a gate leads to, or undefined for the Spire's gate and for no gate at all. */
+/**
+ * The field id `enter_field` names for each field gate (FS-X2F2H §Requirements 2, 11). A gate with
+ * no id here sends nothing: the Forest is added when the server builds it (FS-3QHQZ).
+ */
+export const FIELD_IDS: Partial<Record<FieldDestination, FieldId>> = {
+  meadows: "gentle_meadows",
+};
+
+/** The field a gate leads to, or undefined for the Spire's gate, a road home, and no gate at all. */
 export function fieldOf(gate: GateState | undefined): FieldDestination | undefined {
-  return gate && gate.destination !== "spire" ? gate.destination : undefined;
+  if (!gate || gate.destination === "spire" || gate.destination === "hub") return undefined;
+  return gate.destination;
 }
 
 /**

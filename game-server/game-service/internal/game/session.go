@@ -44,6 +44,14 @@ type Session struct {
 	worldType           types.WorldType
 	mapWidth, mapHeight float64
 
+	// a field channel's place and its layout, set once as it is built; nil for
+	// the hub and a run. Guarded by mu. FS-X2F2H §Requirements 3.
+	place       *FieldPlace
+	fieldLayout FieldLayout
+	// a field's open visits, by member: minted on entry, ended exactly once by
+	// whichever way out removes the body first. Guarded by mu. FS-X2F2H R13, R49.
+	visits map[uuid.UUID]FieldVisit
+
 	// caching
 
 	// [playerID] - interacted
@@ -218,6 +226,7 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		playerIDToEntitiesID:     make(map[uuid.UUID]uuid.UUID),
 		playerEntityIDToPlayerID: make(map[uuid.UUID]uuid.UUID, constants.DefautMaxSessionPlayers),
 		departed:                 make(map[uuid.UUID]struct{}),
+		visits:                   make(map[uuid.UUID]FieldVisit),
 		MessageCh:                make(chan types.ClientPackage, 100),
 
 		playerDamage:       playerDamage,
@@ -653,9 +662,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		wanderSys.Update(deltaTime, entities)
 	}
 
-	// monster AI steers the monsters before anything moves; a run's alone, the
-	// hub holds no monsters (FS-77AB6 §Requirements 27)
-	if s.worldType == types.WorldTypeRun {
+	// monster AI steers the monsters before anything moves; the hub holds no
+	// monsters (FS-77AB6 §Requirements 27)
+	if s.hasMonsters() {
 		s.monsterAISystem.Update(deltaTime, entities)
 	}
 
@@ -670,9 +679,8 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	// combat
 	kills := s.combatSystem.Update(deltaTime, entities, impacts)
 
-	// monster death: the slain lie dead from this tick; a run's alone, the hub
-	// holds no monsters
-	if s.worldType == types.WorldTypeRun {
+	// monster death: the slain lie dead from this tick; the hub holds no monsters
+	if s.hasMonsters() {
 		s.monsterDeathSystem.Update(deltaTime, entities)
 		s.publishKills(kills)
 	}
@@ -690,6 +698,13 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 
 	// where everyone ended up, for anyone asking from beside the tick
 	s.recordBodies(entities)
+}
+
+// hasMonsters is whether this world ticks the monster systems: the one switch
+// for them. A run only, for now; FS-X2F2H slice 3 adds field worlds here
+// (FS-X2F2H §Requirements 6).
+func (s *Session) hasMonsters() bool {
+	return s.worldType == types.WorldTypeRun
 }
 
 // queueIntent hands a client action to the tick, which applies it at the start
@@ -820,6 +835,27 @@ func (s *Session) AddPlayer(playerID uuid.UUID, character types.CharacterInPlay,
 	return s.addPlayerLocked(playerID, character, token)
 }
 
+/**
+* AddPlayerAt seats the member's character in play at (x, y) rather than at the
+* world's spawn: a player walking back into the hub from a field is set down at
+* that field's gate (FS-X2F2H §Requirements 15). No door check: coming home is
+* not arriving. A member already here keeps the body they have.
+*
+* The body is a new entity, built under the world's lock like any seat, so the
+* tick's MovementSystem never sees a half-placed transform; AtGate counts it
+* from the next tick on.
+**/
+func (s *Session) AddPlayerAt(playerID uuid.UUID, character types.CharacterInPlay, token types.BearerToken, x, y float64) uuid.UUID {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if existing, alreadyHere := s.playerIDToEntitiesID[playerID]; alreadyHere {
+		return existing
+	}
+
+	return s.buildBodyLocked(playerID, character, x, y, s.fetchLoadoutLocked(playerID, token))
+}
+
 // addPlayerLocked is AddPlayer's body. Callers hold the world's lock, so that
 // deciding whether to admit someone and admitting them cannot be split by
 // another goroutine slipping between the two
@@ -836,6 +872,46 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 
 	spawnX, spawnY := s.spawnPoint()
 
+	return s.buildBodyLocked(playerID, character, spawnX, spawnY, s.fetchLoadoutLocked(playerID, token))
+}
+
+// fetchLoadoutLocked reads the member's equipped loadout from items-service, or
+// nil when there is no client or the read fails or times out: the delver is
+// then seated without equipment.
+func (s *Session) fetchLoadoutLocked(playerID uuid.UUID, token types.BearerToken) *pbitems.GetLoadoutWithItemsResponse {
+	if s.itemsClient != nil {
+		grpcLoadoutRequest := &pbitems.GetLoadoutWithItemsRequest{
+			MemberId: playerID.String(),
+		}
+		// the fetch runs under the world's lock: a hanging items service must
+		// never hold it, so past the deadline the delver is seated without a loadout
+		ctx, cancel := context.WithTimeout(context.Background(), loadoutLoadTimeout)
+		loadoutResult, err := s.itemsClient.GetLoadoutWithItems(asMember(ctx, token), grpcLoadoutRequest)
+		cancel()
+
+		if errors.Is(err, context.DeadlineExceeded) {
+			slog.Warn("Loadout fetch timed out, player spawns with no equipment.",
+				"member_id", playerID, "timeout", loadoutLoadTimeout, "error", err)
+		} else if err != nil || loadoutResult == nil {
+			slog.Error("Failed to get loadout, player spawns with no equipment.", "error", err)
+		} else {
+			return loadoutResult
+		}
+	}
+
+	return nil
+}
+
+/**
+* buildBodyLocked creates the member's body at (x, y), as their character in
+* play, wearing items: the one place a body is built, whichever way it was
+* seated. An unknown class is seated as a mage. Seating is the loadout's level
+* gate: an item above the character's level is brought in and carried, not
+* worn (FS-BDA7X §Requirements 31). Nil items seats the body with no
+* equipment. Callers hold the world's lock and have checked the member has no
+* body here.
+**/
+func (s *Session) buildBodyLocked(playerID uuid.UUID, character types.CharacterInPlay, x, y float64, items *pbitems.GetLoadoutWithItemsResponse) uuid.UUID {
 	className := character.Class
 	classCfg, ok := Classes[className]
 	if !ok {
@@ -844,8 +920,6 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 	}
 	level := seatLevel(character.Level)
 
-	// Seating is the loadout's level gate: an item above the character's level
-	// is brought in and carried, not worn. FS-BDA7X §Requirements 31.
 	carried := []uuid.UUID{}
 
 	// add item entity and return its UUID pointer, or nil when it is carried instead
@@ -863,66 +937,41 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 		return &id
 	}
 
-	// grpc request to items service to load players items
 	var loadout *components.EquipmentConfig
-	if s.itemsClient != nil {
-		grpcLoadoutRequest := &pbitems.GetLoadoutWithItemsRequest{
-			MemberId: playerID.String(),
-		}
-		// the fetch runs under the world's lock: a hanging items service must
-		// never hold it, so past the deadline the delver is seated without a loadout
-		ctx, cancel := context.WithTimeout(context.Background(), loadoutLoadTimeout)
-		loadoutResult, err := s.itemsClient.GetLoadoutWithItems(asMember(ctx, token), grpcLoadoutRequest)
-		cancel()
-
-		if errors.Is(err, context.DeadlineExceeded) {
-			slog.Warn("Loadout fetch timed out, player spawns with no equipment.",
-				"member_id", playerID, "timeout", loadoutLoadTimeout, "error", err)
-		} else if err != nil || loadoutResult == nil {
-			slog.Error("Failed to get loadout, player spawns with no equipment.", "error", err)
-		} else {
-			loadout = &components.EquipmentConfig{
-				WeaponSlot:  addSlotItem(loadoutResult.Weapon),
-				HeadSlot:    addSlotItem(loadoutResult.Head),
-				ChestSlot:   addSlotItem(loadoutResult.Chest),
-				GlovesSlot:  addSlotItem(loadoutResult.Gloves),
-				LegsSlot:    addSlotItem(loadoutResult.Legs),
-				Ring1Slot:   addSlotItem(loadoutResult.Ring_1),
-				Ring2Slot:   addSlotItem(loadoutResult.Ring_2),
-				Consumable1: addSlotItem(loadoutResult.Consumable_1),
-				Consumable2: addSlotItem(loadoutResult.Consumable_2),
-				Consumable3: addSlotItem(loadoutResult.Consumable_3),
-			}
+	if items != nil {
+		loadout = &components.EquipmentConfig{
+			WeaponSlot:  addSlotItem(items.Weapon),
+			HeadSlot:    addSlotItem(items.Head),
+			ChestSlot:   addSlotItem(items.Chest),
+			GlovesSlot:  addSlotItem(items.Gloves),
+			LegsSlot:    addSlotItem(items.Legs),
+			Ring1Slot:   addSlotItem(items.Ring_1),
+			Ring2Slot:   addSlotItem(items.Ring_2),
+			Consumable1: addSlotItem(items.Consumable_1),
+			Consumable2: addSlotItem(items.Consumable_2),
+			Consumable3: addSlotItem(items.Consumable_3),
 		}
 	}
 
-	PlayerConfig := PlayerConfig{
+	entity := CreatePlayerEntity(s.EntityManager, PlayerConfig{
 		MemberID:     playerID,
 		CharacterID:  character.ID,
 		Level:        level,
 		Experience:   character.Experience,
 		Username:     character.Name,
-		X:            spawnX,
-		Y:            spawnY,
+		X:            x,
+		Y:            y,
 		Class:        classAtLevel(classCfg, level),
 		ClassName:    className,
 		ItemName:     "Health Potion",
 		ItemQuantity: 3,
 
-		Vx: 0,
-		Vy: 0,
-
 		ItemIDList:    carried,
 		Escape:        false,
 		PlayerLoadout: loadout,
-	}
+	})
 
-	// create player state entity
-	entity := CreatePlayerEntity(s.EntityManager, PlayerConfig)
-
-	// update player id to entity id map
 	s.playerIDToEntitiesID[playerID] = entity.ID
-	// update players map
 	s.playerEntityIDToPlayerID[entity.ID] = playerID
 	return entity.ID
 }
@@ -969,86 +1018,22 @@ func (s *Session) seatPlayerLocked(player *types.Player, items *pbitems.GetLoado
 		return types.CharacterInPlay{}, fmt.Errorf("seat player %s: no class: %w", player.ID, ErrCharacterNotSeatable)
 	}
 
-	className := character.Class
-	classCfg, ok := Classes[className]
-	if !ok {
+	if _, ok := Classes[character.Class]; !ok {
 		slog.Error("class for player doesn't have a matching class made it to seatPlayerLocked", "player_id", player.ID)
-		return types.CharacterInPlay{}, fmt.Errorf("seat player %s: unknown class %q: %w", player.ID, className, ErrCharacterNotSeatable)
+		return types.CharacterInPlay{}, fmt.Errorf("seat player %s: unknown class %q: %w", player.ID, character.Class, ErrCharacterNotSeatable)
 	}
-
-	level := seatLevel(character.Level)
 
 	spawnX, spawnY, ok := s.takeArrivalSlotLocked()
 	if !ok {
 		spawnX, spawnY = s.spawnPoint()
 	}
 
-	carried := []uuid.UUID{}
-
-	// add item entity and return its UUID pointer, or nil when it is carried instead
-	rarities := s.lootRarities
-	addSlotItem := func(item *pbitems.ItemInstance) *uuid.UUID {
-		if item == nil {
-			return nil
-		}
-		config := loadoutItemConfig(item, rarities)
-		id := s.AddItemWithUnLocked(config)
-		if !canWear(config.RequiredLevel, level) {
-			carried = append(carried, id)
-			return nil
-		}
-		return &id
-	}
-
-	// Entities from Loadout. No loadout seats the player with no equipment,
-	// as a failed fetch does in addPlayerLocked
-	var loadout *components.EquipmentConfig
-	if items != nil {
-		loadout = &components.EquipmentConfig{
-			WeaponSlot:  addSlotItem(items.Weapon),
-			HeadSlot:    addSlotItem(items.Head),
-			ChestSlot:   addSlotItem(items.Chest),
-			GlovesSlot:  addSlotItem(items.Gloves),
-			LegsSlot:    addSlotItem(items.Legs),
-			Ring1Slot:   addSlotItem(items.Ring_1),
-			Ring2Slot:   addSlotItem(items.Ring_2),
-			Consumable1: addSlotItem(items.Consumable_1),
-			Consumable2: addSlotItem(items.Consumable_2),
-			Consumable3: addSlotItem(items.Consumable_3),
-		}
-	} else {
+	// No loadout seats the player with no equipment, as a failed fetch does in
+	// addPlayerLocked
+	if items == nil {
 		slog.Warn("No loadout for handoff arrival, player spawns with no equipment.", "player_id", player.ID)
 	}
-
-	PlayerConfig := PlayerConfig{
-		MemberID:     player.ID,
-		CharacterID:  character.ID,
-		Level:        level,
-		Experience:   character.Experience,
-		Username:     character.Name,
-		X:            spawnX,
-		Y:            spawnY,
-		Class:        classAtLevel(classCfg, level),
-		ClassName:    className,
-		ItemName:     "Health Potion",
-		ItemQuantity: 3,
-
-		Vx: 0,
-		Vy: 0,
-
-		ItemIDList:    carried,
-		Escape:        false,
-		PlayerLoadout: loadout,
-	}
-
-	// create player state entity
-	entity := CreatePlayerEntity(s.EntityManager, PlayerConfig)
-
-	// update player id to entity id map
-	s.playerIDToEntitiesID[player.ID] = entity.ID
-
-	// update players map
-	s.playerEntityIDToPlayerID[entity.ID] = player.ID
+	s.buildBodyLocked(player.ID, character, spawnX, spawnY, items)
 
 	// remove them from the pending list
 	delete(s.playersPendingConnection, player.ID)

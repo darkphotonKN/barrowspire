@@ -180,7 +180,8 @@ export interface ProjectileState {
  */
 export interface GateState {
   entity_id: UUID;
-  destination: "spire" | "forest" | "meadows";
+  /** `hub` is a field's entrance gate, the road back (FS-X2F2H §Requirements 3). */
+  destination: "spire" | "forest" | "meadows" | "hub";
   position: Position;
   /** World px from `position` within which a player is at the gate. */
   range: number;
@@ -232,7 +233,7 @@ export interface MonsterState {
 export interface ClientGameState {
   session_id: UUID;
   /** Which kind of world this state came from. Mirrors types.WorldType. */
-  world_type?: "hub" | "run";
+  world_type?: "hub" | "run" | "field";
   current_player: PlayerState | null; // This client's player state
   other_players: PlayerState[]; // Other players in session
   items: string[]; // TODO: Update when items are structured

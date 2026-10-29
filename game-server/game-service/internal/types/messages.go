@@ -57,6 +57,10 @@ const (
 	WorldTypeHub WorldType = "hub"
 	// WorldTypeRun is a short-lived world built for one match.
 	WorldTypeRun WorldType = "run"
+	// WorldTypeField is a long-lived world shared like the hub, with no queue:
+	// one channel of each field per pod, entered by a world switch from the hub
+	// and never ended. FS-X2F2H §Requirements 1.
+	WorldTypeField WorldType = "field"
 )
 
 // represents entire game state that client receives

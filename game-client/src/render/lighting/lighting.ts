@@ -142,12 +142,14 @@ export function contrastRatio(a: number, b: number): number {
 // ── Ambient, and the ground it leaves at the edge ─────────────────────────
 
 /**
- * Warm dusk in the hub, dark barrow in a run (FS-2325V §C.8). Fixed: the world may stay dark,
- * because hostile markers carry readability above the light-map (§C.9).
+ * Warm dusk in the hub, dark barrow in a run (FS-2325V §C.8), daylight in a field (FS-X2F2H
+ * §Requirements 54; slice 9 tunes it per field). Fixed: the world may stay dark, because hostile
+ * markers carry readability above the light-map (§C.9).
  */
 export const AMBIENT: Record<WorldKind, number> = {
   hub: mix(BARROW_HEX.barrowBrown, BARROW_HEX.amberBright, 0.55),
   run: mix(BARROW_HEX.slate, BARROW_HEX.necrotic, 0.4),
+  field: mix(BARROW_HEX.vellum, BARROW_HEX.amberBright, 0.2),
 };
 
 /**

@@ -92,7 +92,7 @@ export class GroundLayer {
     look: GroundLook = OUTDOOR_GROUND,
   ): boolean {
     return art.has(
-      look.hall ?? (kind === "hub" ? "ground_grass" : "ground_dirt"),
+      look.hall ?? (kind === "run" ? "ground_dirt" : "ground_grass"),
     );
   }
 

@@ -12,7 +12,9 @@ import {
   Position,
   WallState,
 } from "@/types/gameState";
+import { fieldRefusalCopy } from "./fieldRefusals";
 import {
+  FIELD_IDS,
   FIELD_NAMES,
   fieldOf,
   gateAt,
@@ -464,9 +466,11 @@ export class HubScene extends Phaser.Scene {
   /**
    * The field-gate seam (FS-0XMCP §Requirements 21): called once each time the player steps into
    * a field gate, with the field it leads to; never while lingering, never for the Spire's gate.
-   * A no-op until FS-X2F2H sends its enter message from here: no message, no world switch.
+   * Asks the server to walk the player into that field (FS-X2F2H §Requirements 9, 11).
    */
-  onFieldGate: (destination: FieldDestination) => void = () => {};
+  onFieldGate: (destination: FieldDestination) => void = (destination) => this.enterField(destination);
+  /** An enter_field has been sent and its reply has not come (FS-X2F2H §Requirements 11, 57). */
+  private enteringField = false;
   /** 1, 2, 3: one per actionable choice when a dialogue offers more than one. */
   private choiceKeys: Phaser.Input.Keyboard.Key[] = [];
   private confirmKey?: Phaser.Input.Keyboard.Key;
@@ -647,6 +651,14 @@ export class HubScene extends Phaser.Scene {
       this.menuChoices?.retone();
       this.notice(info.message ?? "The hub will not let you go yet. Ask again.");
     });
+    // A field that would not take the player (FS-X2F2H §Requirements 10, 60): they stay where
+    // they stand, told why in the client's words, and the next step into the gate asks again.
+    // Success needs no listener: world_entered switches the scene.
+    socketManager.onError(ActionType.EnterField, (info) => {
+      if (!this.enteringField) return;
+      this.enteringField = false;
+      this.notice(fieldRefusalCopy(ActionType.EnterField, info.reason));
+    });
     this.unsubscribeQueue = () => {
       socketManager.off("queue_status");
       socketManager.off(ActionType.Find_Game);
@@ -657,6 +669,7 @@ export class HubScene extends Phaser.Scene {
       socketManager.offError(ActionType.StartSolo);
       socketManager.off("world_left");
       socketManager.offError(ActionType.LeaveHub);
+      socketManager.offError(ActionType.EnterField);
     };
   }
 
@@ -697,6 +710,7 @@ export class HubScene extends Phaser.Scene {
     this.leavePending = false;
     this.soloPending = false;
     this.leavingHub = false;
+    this.enteringField = false;
     this.roofs = [];
     this.insideRoof = undefined;
     // the gauntlet is the hub's and the run's; the menus the hub hands over to keep the browser's
@@ -1434,6 +1448,19 @@ export class HubScene extends Phaser.Scene {
   private dropFieldSign(): void {
     this.fieldSign?.destroy();
     this.fieldSign = undefined;
+  }
+
+  /**
+   * Out through a field gate (FS-X2F2H §Requirements 9, 11): one enter_field, and nothing more
+   * until the server has answered it, by world_entered or a refusal. Not while the Esc menu or a
+   * dialogue is up, as the Spire's door does not open over them; that step is spent, and stepping
+   * out and back in asks. A gate whose field this pod does not build yet sends nothing.
+   */
+  private enterField(destination: FieldDestination): void {
+    const field = FIELD_IDS[destination];
+    if (!field || this.menu || this.dialogue || this.enteringField) return;
+    this.enteringField = true;
+    socketManager.sendMessage(ActionType.EnterField, { field });
   }
 
   /** The Spire door's panel: today's delve choices, the door speaking (FS-0XMCP §Requirements 8, 9). */

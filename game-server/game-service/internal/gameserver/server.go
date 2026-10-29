@@ -45,6 +45,12 @@ type Server struct {
 	// the hub world. One per process, built at startup, outlives every run.
 	hubSessionID uuid.UUID
 
+	// this pod's channel of each field, by field, built at startup beside the
+	// hub and never shut down (FS-X2F2H §Requirements 4, 5)
+	fields map[game.FieldID]uuid.UUID
+	// where every ended field visit goes, exactly once (FS-X2F2H §F)
+	visitSettler VisitSettler
+
 	// for messages the server itself originates, such as telling a returning
 	// player which world they are now in
 	sender *messaging.MessageSender
@@ -129,6 +135,8 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		msgChan:    make(map[*websocket.Conn]chan interface{}, constants.MaxMsgChanBuffer),
 
 		sessions:           make(map[uuid.UUID]*game.Session, 10),
+		fields:             make(map[game.FieldID]uuid.UUID),
+		visitSettler:       logVisitSettler{},
 		players:            make(map[uuid.UUID]*types.Player, 10),
 		connToPlayer:       make(map[*websocket.Conn]*types.Player, 10),
 		graceHolds:         make(map[uuid.UUID]graceHold),
@@ -152,6 +160,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	go messageHub.Run(ctx)
 
 	server.createHubSession()
+	server.createFieldSessions()
 
 	return server
 }
@@ -265,6 +274,22 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.CharacterInPlay) 
 		// them in the hub as well would give one member two worlds broadcasting
 		// to one socket (reported 2026-10-29).
 		return current, nil
+	}
+
+	// From a field: the visit settles and the player is seated home at the
+	// field's gate as the requested character, past the cap, since coming home
+	// is not arriving. A field is never resumed (FS-X2F2H §Requirements 19).
+	if current, inWorld := s.GetGameSession(player.CurrentGameSessionId); inWorld &&
+		current.WorldType() == types.WorldTypeField {
+		s.endVisit(s.ctx, current, player.ID)
+		if !hub.HasPlayer(player.ID) {
+			place, _ := current.FieldPlace()
+			x, y, ok := hub.GateArrival(place.HubGate)
+			if !ok {
+				x, y = constants.HubSpawnX, constants.HubSpawnY
+			}
+			hub.AddPlayerAt(player.ID, character, s.tokenOf(player), x, y)
+		}
 	}
 
 	// The world decides whether it has room, under its own lock. Counting from
@@ -524,6 +549,12 @@ func (s *Server) LeaveHub(ctx context.Context, player *types.Player) error {
 	hub, exists := s.HubSession()
 	if !exists {
 		return errHubMissing
+	}
+
+	// from a field: the visit settles and they leave for the roster from there
+	// (FS-X2F2H §Requirements 18)
+	if s.leaveFieldForRoster(ctx, player) {
+		return nil
 	}
 
 	world, _ := s.currentWorldOf(player.ID)

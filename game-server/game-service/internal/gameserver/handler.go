@@ -297,6 +297,10 @@ func (s *Server) handleReadError(conn *websocket.Conn, err error) {
 		"error", err,
 	)
 
+	// a member dropped in a field waits out the grace at home in the hub
+	// (FS-X2F2H §Requirements 17)
+	s.homeFromField(player.ID)
+
 	go s.handleReconnectionTimeout(player.ID, hold, grace)
 }
 
@@ -534,6 +538,13 @@ func (s *Server) leaveCurrentWorld(player *types.Player) {
 
 	if !exists {
 		slog.Warn("Session not found for player", "session_id", player.CurrentGameSessionId, "username", player.Username)
+		return
+	}
+
+	// a field is never shut down: the visit settles and the field keeps
+	// ticking for whoever is left, or nobody (FS-X2F2H §Requirements 5, 49)
+	if playerSession.WorldType() == types.WorldTypeField {
+		s.endVisit(s.ctx, playerSession, player.ID)
 		return
 	}
 

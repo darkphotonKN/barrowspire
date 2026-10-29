@@ -42,6 +42,8 @@ export interface MessageError {
   action: string;
   error: string;
   message?: string;
+  /** The refusal's stable reason code, when the server sends one: switched on, never shown. */
+  reason?: string;
 }
 
 // SocketManager.js
@@ -214,6 +216,8 @@ export class SocketManager {
         error: String(data.error),
         message: data.payload?.message,
       };
+      // a stable reason the client writes its own copy for (FS-X2F2H §Requirements 60)
+      if (typeof data.payload?.reason === "string") info.reason = data.payload.reason;
       const scoped = this.errorListeners.get(info.action);
       if (scoped) scoped(info);
       else this.onMessageError?.(info);
@@ -357,7 +361,7 @@ export class SocketManager {
       return;
     }
 
-    useGameStore.getState().setWorld(payload.session_id, payload.world_type);
+    useGameStore.getState().setWorld(payload.session_id, payload.world_type, payload.field);
     console.log(`Entered ${payload.world_type}:`, payload.session_id);
   }
 
