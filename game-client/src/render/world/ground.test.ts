@@ -41,6 +41,18 @@ describe("tileHash", () => {
     );
     expect(differs).toBe(true);
   });
+
+  it("should seed a field world of its own (FS-X2F2H §Requirements 54)", () => {
+    expect(worldSeed("field")).not.toBe(worldSeed("hub"));
+    expect(worldSeed("field")).not.toBe(worldSeed("run"));
+  });
+});
+
+describe("planGround in a field world (FS-X2F2H §Requirements 55)", () => {
+  it("should lay grass, as the hub does, until slice 9 dresses the Meadows", () => {
+    const field = planGround({ width: 3 * T, height: 3 * T, kind: "field" });
+    expect(new Set(field.map((t) => t.sheet))).toEqual(new Set(["ground_grass"]));
+  });
 });
 
 describe("planGround", () => {

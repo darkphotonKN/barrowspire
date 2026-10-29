@@ -307,8 +307,8 @@ function queuedHubOnStage() {
   const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
   stage.hub.listenForQueue();
   const reply = (action: string, payload: unknown = {}) => listeners.get(action)?.(payload);
-  const refuse = (action: string, message: string) =>
-    errorListeners.get(action)?.({ action, error: message, message });
+  const refuse = (action: string, message: string, reason?: string) =>
+    errorListeners.get(action)?.({ action, error: message, message, reason });
   const button = () => stage.stage.made.find((m) => m.kind === "text" && m.args[2] === "Leave" && !m.destroyed);
   return { ...stage, listeners, reply, refuse, button, send, off, offError };
 }
@@ -1206,13 +1206,11 @@ describe("HubScene field gates (FS-0XMCP §Requirements 21, 22)", () => {
     expect(onFieldGate).toHaveBeenCalledTimes(3);
   });
 
-  it("should send nothing and stay in the hub on stepping into a field gate", () => {
+  it("should send nothing and stay in the hub on stepping into the Forest's gate, which leads nowhere yet", () => {
     const { hub, standAt, send } = queuedHubOnStage();
 
     standAt(AWAY);
     standAt(FOREST_GATE.position);
-    standAt(AWAY);
-    standAt(MEADOWS_GATE.position);
 
     expect(send).not.toHaveBeenCalled();
     expect(hub.scene.start).not.toHaveBeenCalled();
@@ -1227,6 +1225,80 @@ describe("HubScene field gates (FS-0XMCP §Requirements 21, 22)", () => {
     hub.release();
 
     expect(marker(stage)).toHaveLength(0);
+  });
+});
+
+describe("HubScene walking into Gentle Meadows (FS-X2F2H §Requirements 9, 11, 57, 60)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Lines the hub said in passing. */
+  const said = (stage: { made: Made[] }, text: string) =>
+    stage.made.some((m) => m.kind === "text" && m.args[2] === text);
+
+  it("should send enter_field once on stepping into the Meadows gate, and leave the switch to world_entered", () => {
+    const { hub, standAt, send } = queuedHubOnStage();
+
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+
+    expect(send.mock.calls).toEqual([[ActionType.EnterField, { field: "gentle_meadows" }]]);
+    expect(hub.scene.start).not.toHaveBeenCalled();
+  });
+
+  it("should send nothing more while the first is unanswered, however often the gate is crossed", () => {
+    const { standAt, send } = queuedHubOnStage();
+
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("should say why in its own words on a refusal, never the code, and let the next step in ask again", () => {
+    const { stage, standAt, send, refuse } = queuedHubOnStage();
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+
+    refuse(ActionType.EnterField, "Leave the queue first.", "queued");
+
+    expect(said(stage, "The delve is gathering. Leave the queue first.")).toBe(true);
+    expect(stage.made.some((m) => m.kind === "text" && m.args[2] === "queued")).toBe(false);
+
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("should not walk out while the Esc menu or a dialogue is open, as the Spire's door does not open", () => {
+    const { hub, keys, press, standAt, send, talkTo } = queuedHubOnStage();
+    standAt(AWAY);
+    press(keys.esc);
+
+    standAt(MEADOWS_GATE.position);
+    expect(hub.menu).toBeDefined();
+    expect(send).not.toHaveBeenCalled();
+
+    press(keys.esc);
+    standAt(AWAY);
+    talkTo("storekeeper");
+    standAt(MEADOWS_GATE.position);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should forget an unanswered entry on release, so a fresh visit can walk out", () => {
+    const { hub, standAt, send } = queuedHubOnStage();
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+
+    hub.release();
+    hub.listenForQueue();
+    standAt(MEADOWS_GATE.position);
+
+    expect(send).toHaveBeenCalledTimes(2);
   });
 });
 

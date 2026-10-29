@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GateState } from "@/types/gameState";
-import { FIELD_NAMES, fieldOf, gateAt, gateEdges, signpostOf } from "./hubGates";
+import { FIELD_IDS, FIELD_NAMES, fieldOf, gateAt, gateEdges, signpostOf } from "./hubGates";
 
 const spire: GateState = {
   entity_id: "spire-gate",
@@ -88,6 +88,27 @@ describe("fieldOf (FS-0XMCP §Requirements 21)", () => {
 
   it("should name each field as the screen says it", () => {
     expect(FIELD_NAMES).toEqual({ forest: "The Forlorn Forest", meadows: "Gentle Meadows" });
+  });
+});
+
+describe("field ids (FS-X2F2H §Requirements 2, 11)", () => {
+  const entrance: GateState = {
+    entity_id: "road-home",
+    destination: "hub",
+    position: { x: 40, y: 500 },
+    range: 80,
+  };
+
+  it("should lead nowhere from a field's entrance gate: it is the road home, not a field", () => {
+    expect(fieldOf(entrance)).toBeUndefined();
+  });
+
+  it("should name the Meadows gate's field by the id the server knows it by", () => {
+    expect(FIELD_IDS.meadows).toBe("gentle_meadows");
+  });
+
+  it("should name no field for the Forest's gate until the Forest is built (FS-3QHQZ)", () => {
+    expect(FIELD_IDS.forest).toBeUndefined();
   });
 });
 

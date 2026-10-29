@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SERVER_ADDR, SocketManager, type SocketLike } from "./SocketManager";
+import { useGameStore } from "../../stores/gameStore";
 
 /** A socket the test drives by hand: the server side of each event is a method. */
 class FakeSocket implements SocketLike {
@@ -192,6 +193,45 @@ describe("DEFAULT_SERVER_ADDR", () => {
     vi.resetModules();
     const mod = await import("./SocketManager");
     expect(mod.DEFAULT_SERVER_ADDR).toBe("ws://localhost:5669/game/ws");
+  });
+});
+
+describe("SocketManager field worlds (FS-X2F2H §Requirements 10, 14, 55, 60)", () => {
+  it("records the field a field's world_entered names", () => {
+    const { manager, old } = setup();
+    const entered = vi.fn();
+    manager.on("world_entered", entered);
+
+    old.receive({
+      action: "world_entered",
+      payload: { session_id: "meadows-1", world_type: "field", field: "gentle_meadows" },
+    });
+
+    expect(useGameStore.getState()).toMatchObject({
+      sessionId: "meadows-1",
+      worldType: "field",
+      fieldId: "gentle_meadows",
+    });
+    expect(entered).toHaveBeenCalledOnce();
+  });
+
+  it("hands a refusal's stable reason to the action's listener", () => {
+    const { manager, old } = setup();
+    const refused = vi.fn();
+    manager.onError("enter_field", refused);
+
+    old.receive({
+      action: "enter_field",
+      payload: { message: "Walk to the gate first.", reason: "not_at_gate" },
+      error: "Walk to the gate first.",
+    });
+
+    expect(refused).toHaveBeenCalledWith({
+      action: "enter_field",
+      error: "Walk to the gate first.",
+      message: "Walk to the gate first.",
+      reason: "not_at_gate",
+    });
   });
 });
 

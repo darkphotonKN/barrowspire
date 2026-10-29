@@ -184,7 +184,7 @@ func TestTwoDelversDescend_MatchIntoOneRun(t *testing.T) {
 	require.Eventually(t, func() bool {
 		server.mu.RLock()
 		defer server.mu.RUnlock()
-		return len(server.sessions) == 2 // the hub, plus one run
+		return len(server.sessions) == 3 // the hub, the Meadows, plus one run
 	}, 3*time.Second, 20*time.Millisecond, "the two delvers never got a run")
 
 	assert.Empty(t, hub.GetPlayerIDs(), "both left the hub to descend")

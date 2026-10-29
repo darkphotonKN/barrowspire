@@ -101,6 +101,10 @@ describe("ambient per world (FS-2325V §C.8, §C.9)", () => {
       return c | (Math.round(x + (y - x) * t) << shift);
     }, 0);
 
+  it("should light a field in daylight, brighter than the hub's dusk (FS-X2F2H §Requirements 54)", () => {
+    expect(relativeLuminance(AMBIENT.field)).toBeGreaterThan(relativeLuminance(AMBIENT.hub));
+  });
+
   it("should light the hub warmer than a run", () => {
     expect(AMBIENT.hub).not.toBe(AMBIENT.run);
     const warmth = (c: number) => ((c >> 16) & 0xff) - (c & 0xff);
