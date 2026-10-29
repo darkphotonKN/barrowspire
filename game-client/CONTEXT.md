@@ -126,6 +126,23 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   same thing as a **container**, which is the WS entity in `containers[]`. Opening the view is
   presentation; clicking an item in it sends exactly the message the item row always sent.
 
+- **Ability card**: the HUD panel at the bottom right of a run showing the delver's class
+  ability: its name, the right-mouse glyph and a line on how it works (FS-8AY7S). Runs only. The
+  ability itself is game-service's term ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md)
+  "Classes and abilities").
+- **Resource bars**: the delver's own Health bar and, below it, their class resource bar at the
+  bottom left of a run, each labelled with its own name ("Health:", "Mana:", "Stamina:",
+  "Parry:"). The mercenary's bar is drawn as 3 pips. Teammates show an overhead health bar only;
+  the delver has no bar over their own head (FS-8AY7S).
+
+- **Aim line**: the line an archer sees while holding to aim Shadow Shot, faint until a release
+  would fire. Drawn for the aiming player only; the server never knows about it (ADR-0030).
+- **Stance tell**: the raised blade over a mercenary while their parry stance is open.
+- **Armed tell**: the blade carried at a mercenary's hip while they hold 3 parry charges (riposte
+  armed).
+- **Riposte slice**: the wide sword arc drawn when an armed mercenary cuts. Not the **cut**, the
+  narrow arc of their ordinary left-click.
+
 ## Mapping table
 
 | Screen says | REST / auth | WS protocol | SPECIFICATION.md |
@@ -145,6 +162,10 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   why, not that the gates are barred.
 
 ## Open
+
+- **Class display names.** The class-select screen says WARRIOR / MAGE / ARCHER (`classLore.ts`),
+  the art sheets say knight / wizard / archer, and the design talk says Knight / Wizard. Which
+  name the screen uses is unsettled. The Mercenary (FS-MAMHR) is "Mercenary" in every layer.
 
 - The **HUB** world (refactor plan) has no lore name yet — "hub" is an engineering word. It needs
   one before the HUB client ships, and the answer is not obvious: the settlement above the Spire,
