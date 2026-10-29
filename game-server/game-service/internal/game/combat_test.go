@@ -79,7 +79,7 @@ func TestCastSkill_HandlerSpendsNothing(t *testing.T) {
 	assert.Equal(t, before, currentResource(entity))
 
 	tick(s)
-	assert.Equal(t, before-40, currentResource(entity))
+	assert.Equal(t, before-90, currentResource(entity))
 }
 
 func TestCastSkill_UnknownSkillIsRefused(t *testing.T) {

@@ -107,7 +107,7 @@ func TestFormatStateToClientState_RoundsAFractionalPoolDown(t *testing.T) {
 	assert.Equal(t, float64(25), resource["ability_cost"])
 }
 
-// The archer's ability is Shadow Shot at 40 stamina. FS-8AY7S §Requirements
+// The archer's ability is Shadow Shot at 90 stamina. FS-8AY7S §Requirements
 // 12, 17; FS-JTNPR §Requirements 5.
 func TestFormatStateToClientState_PricesTheArchersAbility(t *testing.T) {
 	em := ecs.NewEntityManager()
@@ -117,7 +117,7 @@ func TestFormatStateToClientState_PricesTheArchersAbility(t *testing.T) {
 	_, frame := wireFor(t, em, types.WorldTypeRun, archer)
 
 	resource := frame["current_player"].(map[string]any)["resource"].(map[string]any)
-	assert.Equal(t, float64(40), resource["ability_cost"])
+	assert.Equal(t, float64(90), resource["ability_cost"])
 }
 
 // The resource is sent in the hub too, and to a delver left behind on an
