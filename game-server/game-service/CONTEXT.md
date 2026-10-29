@@ -113,6 +113,53 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   inhabited. Server-authoritative and broadcast per tick, so every player sees one in the same
   position. Not decoration in the technical sense: it costs broadcast and server-side collision.
 
+### Field places and visits (FS-X2F2H, FS-3QHQZ)
+
+- **Field place** — a field as data (`FieldPlace`): everything one channel of it is built from,
+  its size, layout provider, entrance and arrival, hub gate, creature table, level band, stat and
+  drop factors, respawn delay, elite rule and chest restock delay. One per field, the same for
+  every pod; the channel is what a pod builds from it.
+- **Layout provider** — what hands a field place its layout for one channel (`LayoutProvider`).
+  The Meadows' provider returns a fixed, hand-laid layout; the Forest's returns the one its pod
+  generated at boot, and may fail. The seam that lets a hand-laid field and a generated one be
+  built the same way.
+- **Visit** — one player's stay in a field, from entering through its gate to whichever way out
+  removes their body first (`FieldVisit`). What settles when they leave. Not a match and not a
+  run, though it settles through the match-end outbox path.
+  - **Visit id** — minted fresh on every field entry, and sent as the settlement event's
+    `session_id`. Never the channel's own id: character-service keys XP grants on it, so two
+    visits to one channel must never share one. The one place a `session_id` does not name a run.
+
+### Generated layouts (FS-3QHQZ, `internal/levelgen`)
+
+- **Layout** — two layers, one word; qualify when either could be meant:
+  - **generator layout** (`levelgen.Layout`) — the branching-trail generator's pure output for a
+    seed: bounds, wall rects, entrance, trails, dead ends, open cells, seed and attempt. Knows
+    nothing of monsters, chests or loot.
+  - **field layout** (`FieldLayout`) — what stands on a field's ground: keep-out obstacles,
+    standard and elite spawn points, chests. The Forest's field layout is derived from its
+    generator layout; the Meadows' is hand-laid.
+- **Trail** — one walked path of carved cells in a generator layout, in walk order. The **main
+  trail** starts at the entrance mouth; a **branch** sprouts from another trail and records which.
+  The trails form a tree: they never join except where one sprouted.
+- **Dead end** — where a trail stops. Every trail has exactly one, and every dead end opens into a
+  clearing. The main trail's is the deepest.
+- **Clearing** — the open round space carved at a dead end. In the Forest each holds either an
+  elite spawn point or a chest, and the main trail's always holds an elite. Spawn points for
+  ordinary monsters are never placed in one.
+- **Spawn point** — a fixed point in a field where one monster stands, and where it respawns after
+  dying. Two kinds:
+  - **standard spawn point** — on open ground (in the Forest, on the trails); its elite rule is
+    the field place's.
+  - **elite spawn point** — at a clearing's centre; always elite.
+  - **Elite rule** (`FieldElite`) — how a spawn point's monsters come elite, rolled at each spawn
+    and respawn: **Rolled** (the Spire's floor-1 chance; the Meadows), **Never** (the Forest's
+    trail points), **Always** (every elite spawn point).
+  A spawn point is a point, not a placed object: it is not recorded as an occupied area.
+- **Restock** — a field chest emptying and closing a set delay after it was **first opened**
+  (`ChestRestockDelay`; 5 minutes in the Forest), so its next opening rolls afresh. What a player
+  already took is theirs. Timed from the first open, not from the last item taken.
+
 ### Field combat (FS-X2F2H)
 
 - **Kill credit** — in a field world, the XP and the loot roll of a kill belong to the player who
@@ -160,7 +207,8 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
     players to the host. Never sent by the matcher, so no player can be told to move before
     the run expecting them exists.
 - **Session id** — the run's one id, minted when the host creates the session and named
-  `session_id` on the wire. There is no separate run id or match id; do not introduce one.
+  `session_id` on the wire. There is no separate run id or match id; do not introduce one. The
+  one exception: a field visit's settlement carries its **visit id** as `session_id`.
 
 ### Seats (FS-K2HKP)
 

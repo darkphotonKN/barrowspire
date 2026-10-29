@@ -98,6 +98,10 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   eyes. Markers draw above the light-map and vignette and carry the readability floor, so the
   world may stay dark (`src/render/markers/`). A marker is not the thing it marks: a corpse shows
   none.
+- **Field marker outline**: the dark outline every marker wears in a field world
+  (`FIELD_MARKER_OUTLINE`), so it keeps the 3:1 readability floor on bright, daylit ground. It is
+  why a field's daylight need not be capped for the floor. Runs and the hub draw markers without
+  it.
 - **Wall piece**: one tile of a server wall as drawn. A server wall rect is cut into wall pieces
   along its centreline, each sorted by its own footprint, with a **post** at each end. "Back"
   pieces stand full height (north and west sides); "front" pieces are the low cut-away.
@@ -119,6 +123,18 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   dressing. A client constant, never on the wire, never a game rule. Always say *world* theme:
   bare "theme" in this client means the design-token theme (`src/utils/theme.ts`, `BARROW`,
   `docs/theming_plan.md`), which every world theme draws its colours from.
+- **Field look**: how the client draws a field world, keyed by field id (`FieldLook`,
+  `FIELD_LOOKS` in `src/render/world/fieldLook.ts`; FS-X2F2H, FS-3QHQZ). The field counterpart of
+  a world theme: it picks the ground, the fixed daylight, the horizon, and what stands on the
+  server's walls, either **dressing** (the Meadows' groves and rocks) or **tree stands** (the
+  Forlorn Forest), plus optional verges and mist. A client constant, never on the wire. A field
+  with no entry is drawn as the Meadows. Not a world theme: a field never has a world theme.
+- **Tree stand**: a server wall as the forest's field look draws it: trees planted across the
+  wall's footprint, about one per cell, each pick hashed from the cell and the world seed so
+  every client plants the same forest (FS-3QHQZ §Requirements 23–24). It is a server wall, with
+  collision, so it is **not dressing**: what the player sees blocking the trail is exactly what
+  the server collides against. Trees on its north- and west-facing edge are always bare, so no
+  crown hides the trail.
 - **Exterior theme**: the run look as it shipped before FS-8RBQY: barrow-dirt ground with tufts
   and pebbles, flagstone house floors, timber-frame walls, roofs, the enter-a-house indoor mask.
   Kept for a future outdoor place. Not "grass": grass is the hub's ground.
@@ -165,9 +181,11 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - ~~**Delve** and **the Spire** assume every run leads into the Spire.~~ Resolved 2026-10-29
   (FS-X2F2H): "delve" stays the Spire's own word. The places elsewhere are **field worlds**, not
   runs, and a field visit is not a delve.
-- **World theme** names only how a run is drawn. Whether each field world gets its own world
+- ~~**World theme** names only how a run is drawn. Whether each field world gets its own world
   theme (the forest on the exterior theme's ground family) or a separate term is decided at
-  write-a-spec for FS-X2F2H / FS-3QHQZ.
+  write-a-spec for FS-X2F2H / FS-3QHQZ.~~ Resolved 2026-10-30 (FS-3QHQZ amendment): a separate
+  term. A field is drawn by its **field look**, keyed by field id; **world theme** stays "how the
+  client draws a run".
 - The **HUB** world (refactor plan) has no lore name yet — "hub" is an engineering word. It needs
   one before the HUB client ships, and the answer is not obvious: the settlement above the Spire,
   the camp, the hall. Deliberately unresolved rather than guessed.

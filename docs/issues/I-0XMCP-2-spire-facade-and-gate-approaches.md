@@ -70,3 +70,18 @@ Part I.
 - RED: `hubKeepOut.test.ts`: a prop inside a gate's range or on an approach breaks K8.
 - GREEN: K8 rule and gate data; then place the dressing until every spot passes.
 - Art is verified by the contact sheet and in-scene screenshots, not unit tests.
+
+## Review record
+
+- **Contact sheet approved 2026-10-30.** The owner reviewed the Spire facade contact sheet and
+  answered "Approve".
+- **Approach nudges as built** (`game-client/src/render/world/hubKeepOut.ts`, `HUB_APPROACHES`):
+  - west trail: `[-200, 390, 710, 50]`, then south down the west house's east side at x 470,
+    `[470, 390, 40, 320]`, joining the west arm along `[480, 680, 230, 30]`. The FS path
+    `[60, 390, 600, 50]` + `[620, 390, 60, 300]` would have crossed the cart, the washing line,
+    the sacks and a market stall;
+  - north lane: `[950, 0, 100, 500]`, run on to the edge to meet the Spire's steps;
+  - east road: `[1380, 340, 820, 50]`, run on to the edge and beyond; its drop
+    `[1340, 390, 60, 300]` unchanged.
+- **Props moved to clear K8:** braziers to (1080, 440) and (530, 600); a crate to (1320, 505);
+  the fence at (1740, 300) cut from 180 to 130 long.

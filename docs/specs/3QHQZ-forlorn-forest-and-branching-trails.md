@@ -8,6 +8,12 @@
 > promotion filled at acceptance-criteria level (starting values and edge rules; see the Decision
 > log). Code citations are against `51bb641` (feat/hub-gates-and-fields). The user's direction for
 > this FS is "no hand coded here, all agents now": every slice, server included, is agent lane.
+>
+> **Amended 2026-10-30** after code review of I-3QHQZ-1 to -8: Requirements 13, 22 and 24 and
+> their acceptance criteria are corrected to what was built (struck text kept beside each
+> correction), and slice I-3QHQZ-8 is noted. See "Amendment 2026-10-30" at the end of
+> Requirements and Decision log rows 22–25. **[implementation]** marks a call made while
+> building, recorded after the fact.
 
 ## Summary
 
@@ -111,10 +117,14 @@ and keeps it for the pod's life (ADR-0030).
 13. **The layout becomes the world through today's construction.** Every layout wall rect is one
     wall entity made by `CreateWallEntity` with its own house id, so walls broadcast in
     `walls[]` exactly as a run's or the hub's do and collide in the MovementSystem with no new
-    code. Every placed object (entrance gate, chests, spawn points) is recorded as an occupied
-    area the way the floor build step records them (`objectOccupiedPlaceAreas`), and nothing is
-    placed on a wall. No run-only object is built: no buildings, doors, escape door, switch or
-    stairs (as `InitialHubMapObjects` builds none of them).
+    code. ~~Every placed object (entrance gate, chests, spawn points) is recorded as an occupied
+    area~~ The entrance gate, every wall and every chest are recorded as occupied areas the way
+    the floor build step records what it places (`objectOccupiedPlaceAreas`), and nothing is
+    placed on a wall. Spawn points are deliberately **not** recorded: they are points a monster
+    stands on, not objects, recording them would change the Meadows' occupied set, and nothing
+    is placed in a field after its build today (corrected by the 2026-10-30 amendment). No
+    run-only object is built: no buildings, doors, escape door, switch or stairs (as
+    `InitialHubMapObjects` builds none of them).
 14. **The entrance.** FS-X2F2H's field entrance gate stands at the layout's `Entrance`, inside
     the mouth, and the field's respawn point is beside it on open ground.
 15. **Clearings: an elite or a chest.** **[charter default]** The main trail's dead end always
@@ -163,11 +173,19 @@ and keeps it for the pod's life (ADR-0030).
 
 ### §C. The Forest look (game-client)
 
-22. **A world theme.** The Forest is drawn with a new world theme, `"forest"`, one more entry in
+22. ~~**A world theme.** The Forest is drawn with a new world theme, `"forest"`, one more entry in
     `src/render/world/worldTheme.ts`, chosen when the server says the player is in the Forest
     field (by the field identity FS-X2F2H puts on the wire), never by a constant. It reuses the
     `WorldThemeLook` machinery: no roofs, no indoor mask, no perimeter wall (the forest's edge is
-    its own border of trees), forest dressing on, and a forest ambient.
+    its own border of trees), forest dressing on, and a forest ambient.~~
+    **A field look** (corrected by the 2026-10-30 amendment). The Forest is drawn with a
+    `forlorn_forest` entry in `FIELD_LOOKS` (`FieldLook`, `src/render/world/fieldLook.ts`), the
+    field counterpart of the world theme, chosen by the field identity FS-X2F2H puts on the wire,
+    never by a constant; `worldTheme.ts` is unchanged. A `FieldLook` either stands `dressing`
+    on the server's walls (the Meadows' groves) or fills them with tree `stands` (the forest),
+    and may add `verges` and `mist`. The intent holds: selected by field identity, no roofs, no
+    indoor mask, no perimeter wall (the forest's edge is its own border of trees), and a forest
+    ambient.
 23. **Trees are the server's walls.** A forest wall is not cut into wall pieces. Each server wall
     rect is drawn as a **tree stand**: baked trees filling the rect's footprint, about one per 80
     px cell, jittered within the cell, so what the player sees blocking the trail is exactly what
@@ -178,7 +196,11 @@ and keeps it for the pod's life (ADR-0030).
     forest holds; a stand past its share draws fewer, larger-spaced trees, never more.
 24. **Dead and live trees.** **[charter default]** A stand mixes live trees (dark, low-saturation
     oak and pine variants) and dead ones (bare, gnarled, broken snags), about two live to one
-    dead, by the stand's seeded picks.
+    dead, by the stand's seeded picks. The picks follow one rule (2026-10-30 amendment): every
+    tree on a stand's north- or west-facing edge is bare (a dead tree or a snag), because it
+    stands in front of the trail on screen and its crown would hide the trail and the monsters
+    on it; the stand's other trees are dead one in twelve, live otherwise. The overall ~2:1
+    live to dead falls out of the stands' shape and is not tuned directly.
 25. **Ground.** The exterior theme's ground family (FS-8RBQY, `OUTDOOR_GROUND`): worn barrow dirt
     on the trails and in the clearings, darker leaf litter under the stands.
 26. **Dim, not dark.** **[user]** "a little gloomy but not so dark". The forest ambient sits
@@ -210,6 +232,26 @@ and keeps it for the pod's life (ADR-0030).
 30. **Baked, not sourced.** Every new sheet (trees, dressing, both creatures) is authored in code
     in the bake tool and baked (ADR-0020, ADR-0021); nothing is sourced. Each bake ends at a
     contact sheet the owner approves.
+
+### Amendment 2026-10-30: matching the record to the build
+
+Code review of the built slices found three places where the implementation took a better or
+narrower path than the text, and one slice the original slicing missed. Intent is unchanged in
+every case; the requirements above are corrected in place, with the struck text kept.
+
+- **R22 (field look, not world theme).** I-3QHQZ-7 (`863e7c2`) drew the Forest as a
+  `forlorn_forest` entry in `FIELD_LOOKS` rather than a `"forest"` world theme. FS-X2F2H had
+  already given fields their own look (`FieldLook`, keyed by field id), so a world theme would
+  have been a second selection path for the same thing. `FieldLook` became a union: `dressing`
+  for open country, `stands` for a forest, with optional `verges` and `mist`.
+- **R24 (tree picks).** Edge trees facing north or west are always bare; the rest are dead one
+  in twelve. Readability of the trail beats an even mix; ~2:1 overall is a result, not a knob.
+- **R13 (occupied areas).** Gate, walls and chests are recorded; spawn points are not.
+- **I-3QHQZ-8, field chests drawn and opened on the client** (§B, Requirements 19 and 20). The
+  server's clearing chests (I-3QHQZ-4) reached the client in `containers[]`, but the field scene
+  kept only drop piles, so a Forest chest was never drawn or openable. The slice draws chests in
+  the field scene and opens them through the same satchel, sharing the run's chest drawing. No
+  wire change. Added after the original slicing; it was found by I-3QHQZ-7.
 
 ## User Stories
 
@@ -262,6 +304,8 @@ and keeps it for the pod's life (ADR-0030).
 - [ ] Each pod builds exactly one Forest at boot, of size 2 080 × 1 360 px, logging seed and attempt; it is not rebuilt while the pod runs.
 - [ ] Every layout rect becomes one wall entity via `CreateWallEntity`; the Forest's `walls[]` count equals the layout's rect count and is ≤ 120.
 - [ ] The Forest contains no building, door, escape door, switch or stairs.
+- [ ] The entrance gate, every wall and every chest are recorded as occupied areas; spawn points are not, and the Meadows' occupied set is unchanged (2026-10-30 amendment).
+- [ ] The field scene draws the Forest's clearing chests from `containers[]` and opens them through the run's satchel (I-3QHQZ-8, 2026-10-30 amendment).
 - [ ] The entrance gate stands at the layout's entrance on the east side; respawn is beside it on open ground.
 - [ ] The main trail's dead end holds an elite spawn point; other dead ends hold an elite or a chest, with at least one chest when there are two or more dead ends; the same seed gives the same assignment.
 - [ ] 18–24 standard spawn points, all on open cells, ≥ 400 px from the entrance, ≥ `MonsterSpacing` apart, none in a clearing; an unplaceable one is skipped and logged.
@@ -272,11 +316,12 @@ and keeps it for the pod's life (ADR-0030).
 
 ### Forest look (§C)
 
-- [ ] `WorldTheme` gains `"forest"`; the Forest field is drawn with it and no other world is.
+- [ ] ~~`WorldTheme` gains `"forest"`; the Forest field is drawn with it and no other world is.~~ `FIELD_LOOKS` gains a `forlorn_forest` entry (a `FieldLook` with tree `stands`, `verges` and `mist`), selected by field id; the Forest field is drawn with it and no other world is; `worldTheme.ts` is unchanged (2026-10-30 amendment).
 - [ ] Every server wall rect in the Forest is drawn as a tree stand covering its footprint; no wall pieces and no perimeter wall are drawn there.
 - [ ] Two clients given the same `walls[]` plant identical stands (pure, tested function of rect and seed).
 - [ ] Total tree sprites never exceed 400 for any valid forest (tested against a ≤ 120-rect fixture filling the map).
 - [ ] Stands mix live and dead trees about two to one; trees are occluders.
+- [ ] Every tree on a stand's north- or west-facing edge is bare (dead tree or snag); the stand's other trees are dead one in twelve (2026-10-30 amendment).
 - [ ] Ground is trail dirt on open ground and leaf litter under stands, from the exterior ground family.
 - [ ] The forest ambient is lighter than a run's and darker than the hub's, from `BARROW_HEX` only (lint fence green).
 - [ ] Mist drifts above the ground and below markers; under `prefers-reduced-motion` it is static.
@@ -310,7 +355,7 @@ and keeps it for the pod's life (ADR-0030).
 - **Using the generator for the Spire's floors or the Meadows.** It is built to be reused; switching any other world to it is a later FS.
 - **Join a friend's channel** (parked with party formation).
 - **Sending the layout once instead of in every broadcast.** The wall budget bounds the cost for now.
-- **Vocabulary** (not written by this FS; route through `domain-model`): game-service `CONTEXT.md` — *Layout* (the generator's output), *Trail*, *Dead end*, *Clearing*, *Spawn point*, *Forlorn Forest*, archetypes *zombie* and *ghost*; game-client `CONTEXT.md` — *Forest theme* (a world theme; "World theme" widens from "how the client draws a run" to "how the client draws a run or a field"), *Tree stand* (a server wall as the forest theme draws it).
+- **Vocabulary** (not written by this FS; route through `domain-model`): game-service `CONTEXT.md` — *Layout* (the generator's output), *Trail*, *Dead end*, *Clearing*, *Spawn point*, *Forlorn Forest*, archetypes *zombie* and *ghost*; game-client `CONTEXT.md` — ~~*Forest theme* (a world theme; "World theme" widens from "how the client draws a run" to "how the client draws a run or a field")~~ *Field look* (how the client draws a field, keyed by field id; the field counterpart of World theme, which stays "how the client draws a run"; 2026-10-30 amendment), *Tree stand* (a server wall as the forest look draws it).
 
 ## Decision log
 
@@ -337,4 +382,8 @@ and keeps it for the pod's life (ADR-0030).
 | 19 | Zombie and ghost starting sheets (table in R18) | [write-a-spec] |
 | 20 | Chests roll on first open at a band item level with the Forest drop factor, restock 5 min after first open | [write-a-spec] |
 | 21 | Entrance on the east side (faces the hub) | [write-a-spec] |
+| 22 | The forest look is a `forlorn_forest` `FieldLook` in `FIELD_LOOKS`, selected by field id; `worldTheme.ts` unchanged; `FieldLook` is a union of `dressing` or `stands`, with optional `verges` and `mist` (supersedes row 13; R22) | [implementation] (I-3QHQZ-7, `863e7c2`; 2026-10-30 amendment) |
+| 23 | Every north- or west-facing edge tree of a stand is bare so crowns never hide the trail or monsters on it; the rest are dead 1 in 12; ~2:1 overall falls out of the shape (R24) | [implementation] (I-3QHQZ-7; 2026-10-30 amendment) |
+| 24 | Gate, walls and chests are occupied areas; spawn points are not, keeping the Meadows' occupied set unchanged, since nothing is placed in a field after its build today (R13) | [implementation] (2026-10-30 amendment) |
+| 25 | Slice I-3QHQZ-8 added after the original slicing: field chests drawn and opened on the client (R19, R20) | [implementation] (found by I-3QHQZ-7; 2026-10-30 amendment) |
 | R | Rejected: chained zones (later); fixed-per-deploy or daily seed | [user] |
