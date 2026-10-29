@@ -18,11 +18,10 @@ import {
   SwitchState,
   WallState,
   DoorState,
-  EquippedItems,
-  EquipmentState,
   ProjectileState,
 } from "@/types/gameState";
 import { EquipmentPanel } from "@/ui/EquipmentPanel";
+import { EquipmentHud } from "@/ui/EquipmentHud";
 import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
 import {
   climbed,
@@ -509,21 +508,8 @@ export class BarrowspireScene extends Phaser.Scene {
   // 寶箱跳窗: the satchel a coffer opens into (FS-2325V §D)
   private containerView!: ContainerView;
 
-  // 道具欄 + 裝備面板
-  private equipmentPanel?: EquipmentPanel;
-  private equippedItems: EquippedItems = {
-    weapon: null,
-    head: null,
-    body: null,
-    hands: null,
-    feet: null,
-    ring_1: null,
-    ring_2: null,
-    consumable_1: null,
-    consumable_2: null,
-    consumable_3: null,
-  };
-  private inventoryItems: ItemState[] = [];
+  // 道具欄 + 裝備面板: the equip HUD, shared with the field scene (FS-X2F2H §Requirements 56)
+  private equipment?: EquipmentHud;
 
   /** The player's strike and casts, shared with the field scene (FS-X2F2H §Requirements 56). */
   private readonly combat = new PlayerCombat(
@@ -731,16 +717,12 @@ export class BarrowspireScene extends Phaser.Scene {
     this.tabKey = undefined;
     this.progressHud = undefined;
     this.characterLevel = undefined;
-    this.equipmentPanel = undefined;
+    this.equipment = undefined;
     this.escapedCountText = undefined;
     this.floorText = undefined;
     this.shownFloorLabel = null;
     this.lastFloor = undefined;
     this.floorVeil = [];
-    this.equippedItems = Object.fromEntries(
-      Object.keys(this.equippedItems).map((slot) => [slot, null]),
-    ) as unknown as EquippedItems;
-    this.inventoryItems = [];
     this.combat.reset();
     this.lastGameState = undefined;
     this.sessionID = undefined;
@@ -2373,79 +2355,6 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // === 道具欄功能 ===
 
-  private toggleInventory(): void {
-    if (!this.equipmentPanel) return;
-    this.equipmentPanel.toggle();
-    if (this.equipmentPanel.isVisible()) {
-      this.equipmentPanel.updateInventory(this.inventoryItems);
-      this.equipmentPanel.updateEquipment(this.equippedItems);
-    }
-  }
-
-  private syncInventory(serverInventory: ItemState[]): void {
-    const now = Date.now();
-
-    // 建立後端物品 Map (by entity_id)
-    const serverItemMap = new Map<string, ItemState>();
-    for (const item of serverInventory) {
-      serverItemMap.set(item.entity_id, item);
-    }
-
-    // 過濾本地物品：保留後端有的 + pending 中的
-    const newInventory: ItemState[] = [];
-
-    for (const localItem of this.inventoryItems) {
-      const isPending =
-        localItem.lootedAt && now - localItem.lootedAt < this.PENDING_DURATION;
-
-      if (serverItemMap.has(localItem.entity_id)) {
-        // 後端有，使用後端資料（清除 pending 狀態）
-        const serverItem = serverItemMap.get(localItem.entity_id)!;
-        newInventory.push({
-          ...serverItem,
-          lootedAt: undefined, // 後端確認後清除 pending
-        });
-        serverItemMap.delete(localItem.entity_id);
-      } else if (isPending) {
-        // 後端沒有，但還在 pending 中，保留本地的
-        newInventory.push(localItem);
-      }
-      // 後端沒有且不是 pending → 不保留（被移除了）
-    }
-
-    // 加入後端有但本地沒有的（其他來源的物品）
-    for (const item of serverItemMap.values()) {
-      newInventory.push(item);
-    }
-
-    this.inventoryItems = newInventory;
-
-    // 更新裝備面板
-    if (this.equipmentPanel?.isVisible()) {
-      this.equipmentPanel.updateInventory(this.inventoryItems);
-    }
-  }
-
-  // Map backend EquipmentState (chest/gloves/legs) → local EquippedItems (body/hands/feet).
-  private syncEquipment(serverEquipment: EquipmentState): void {
-    this.equippedItems = {
-      weapon: serverEquipment.weapon,
-      head: serverEquipment.head,
-      body: serverEquipment.chest,
-      hands: serverEquipment.gloves,
-      feet: serverEquipment.legs,
-      ring_1: serverEquipment.ring_1,
-      ring_2: serverEquipment.ring_2,
-      consumable_1: serverEquipment.consumable_1,
-      consumable_2: serverEquipment.consumable_2,
-      consumable_3: serverEquipment.consumable_3,
-    };
-
-    if (this.equipmentPanel?.isVisible()) {
-      this.equipmentPanel.updateEquipment(this.equippedItems);
-    }
-  }
-
   /**
    * An item taken from the open satchel (icon click or F): the view has already hidden it and
    * marked its loot pending; tell the server, and hold it in the inventory optimistically.
@@ -2453,15 +2362,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private lootChestItem(item: ItemState): void {
     const { action, payload } = lootMessage(item);
     socketManager.sendMessage(action, payload);
-
-    this.inventoryItems.push({
-      ...item,
-      lootedAt: Date.now(),
-    });
-
-    if (this.equipmentPanel?.isVisible()) {
-      this.equipmentPanel.updateInventory(this.inventoryItems);
-    }
+    this.equipment?.taken(item);
   }
 
   private getNearbyChest(): { entityId: string } | null {
@@ -2643,28 +2544,10 @@ export class BarrowspireScene extends Phaser.Scene {
 
     this.bindRunInput();
 
-    // Initialize equipment panel
-    this.equipmentPanel = new EquipmentPanel(this);
-    this.equipmentPanel.onEquip = (item, slot) => {
-      // Send to backend
-      socketManager.sendMessage(ActionType.Equip, {
-        item_entity_id: item.entity_id,
-      });
-      // Optimistic update
-      this.equippedItems[slot] = item;
-      this.inventoryItems = this.inventoryItems.filter(
-        (i) => i.entity_id !== item.entity_id,
-      );
-    };
-    this.equipmentPanel.onUnequip = (item, slot) => {
-      // Send to backend
-      socketManager.sendMessage(ActionType.Unequip, {
-        item_entity_id: item.entity_id,
-      });
-      // Optimistic update
-      this.equippedItems[slot] = null;
-      this.inventoryItems.push(item);
-    };
+    // the equipment panel and its equip / unequip sends, applied at once
+    this.equipment = new EquipmentHud(new EquipmentPanel(this), {
+      send: (action, payload) => socketManager.sendMessage(action, payload),
+    });
 
     // 創建室內遮罩（用於遮住建築外面）
     this.indoorMask = this.add.graphics();
@@ -2687,10 +2570,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-E", () => {
       if (this.menu) return;
       // When the equipment panel is open, E equips/unequips the hovered item.
-      if (this.equipmentPanel?.isVisible()) {
-        this.equipmentPanel.handleEquipKey();
-        return;
-      }
+      if (this.equipment?.equipKey()) return;
 
       // 檢查後端門
       const nearbyDoor = this.getNearbyDoor();
@@ -2728,7 +2608,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // I 鍵開啟/關閉道具欄
     this.input.keyboard?.on("keydown-I", () => {
       if (this.menu) return;
-      this.toggleInventory();
+      this.equipment?.toggle();
     });
 
     // F 鍵從寶箱取得道具
@@ -2740,10 +2620,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Q 鍵關閉任何打開的彈窗
     this.input.keyboard?.on("keydown-Q", () => {
       if (this.menu) return;
-      if (this.equipmentPanel?.isVisible()) {
-        this.equipmentPanel.hide();
-        return;
-      }
+      if (this.equipment?.hide()) return;
       this.containerView.close();
     });
 
@@ -2769,7 +2646,7 @@ export class BarrowspireScene extends Phaser.Scene {
       if (!this.player || !this.playerPos) return;
       // out of the delve: the server refuses it anyway (FS-77AB6 req 17)
       if (resolved(this.lastGameState?.current_player)) return;
-      if (this.equipmentPanel?.isVisible()) return;
+      if (this.equipment?.isOpen()) return;
 
       const activeChar = useGameStore.getState().getActiveCharacter();
       const currentClass = (activeChar?.className || "warrior").toLowerCase();
@@ -2936,14 +2813,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
       this.showProgress(state.current_player);
 
-      // 同步玩家背包
-      if (state.current_player.inventory) {
-        this.syncInventory(state.current_player.inventory);
-      }
-      // 同步玩家裝備
-      if (state.current_player.equipment) {
-        this.syncEquipment(state.current_player.equipment);
-      }
+      // 同步玩家背包與裝備
+      this.equipment?.sync(state.current_player);
 
       // 同步玩家頭頂 HP/MP 狀態條
       if (!this.playerHpMpGraphics) {
@@ -3751,7 +3622,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private showProgress(player: PlayerState): void {
     const progress = progressOf(player);
     this.characterLevel = progress?.level;
-    this.equipmentPanel?.setCharacterLevel(this.characterLevel);
+    this.equipment?.setCharacterLevel(this.characterLevel);
     if (!progress) return;
     this.progressHud ??= new ProgressHud(this, PROGRESS_HUD_X, PROGRESS_HUD_Y);
     this.progressHud.show(progress);

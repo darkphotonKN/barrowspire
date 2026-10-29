@@ -12,12 +12,22 @@ import { lootRefusalCopy } from "./fieldRefusals";
  * reaching for it gets the `loot_reserved` words instead (R33, R60). A Forest clearing chest
  * (FS-3QHQZ §Requirements 19) is drawn and opened as a run's coffer, through the same satchel: its
  * frame follows `is_open` on every state, never a remembered open, so a chest that restocks draws
- * closed and opens again; it is never reserved. Phaser-free: the scene hands it a stage to draw
- * on, the satchel, and a port for words and sends.
+ * closed and opens again; it is never reserved. A chest's satchel opens on the state that has it
+ * open after the player reached for it, never on the key press, so an open the server refuses
+ * leaves nothing open and empty. Phaser-free: the scene hands it a stage to draw on, the satchel,
+ * a port for words and sends, and a clock.
  */
 
 /** How near, in world px, the player stands to reach a pile or chest: the run's coffer reach. */
 export const PILE_REACH = 60;
+
+/**
+ * How long, in ms, after reaching for a chest its open is waited for: a chest open by then opens
+ * its satchel; one still shut by then was refused (out of the server's reach, or the server's
+ * 100 ms interact cooldown), and nothing opens. Within it a shut state never closes the satchel:
+ * it may be a restock landing ahead of the player's own open.
+ */
+export const CHEST_OPEN_WINDOW_MS = 1000;
 
 /** A pile as drawn. */
 export interface PileSprite {
@@ -60,11 +70,14 @@ export class FieldPiles {
   private me: string | undefined;
   /** The open satchel's chest was seen open since the satchel opened: shut again, it restocked. */
   private chestSeenOpen = false;
+  /** A chest reached for, and until when its open is waited for ({@link CHEST_OPEN_WINDOW_MS}). */
+  private reach: { id: string; until: number } | undefined;
 
   constructor(
     private readonly stage: PileStage,
     private readonly satchel: PileSatchel,
     private readonly port: PilesPort,
+    private readonly now: () => number = Date.now,
   ) {}
 
   /**
@@ -91,10 +104,11 @@ export class FieldPiles {
   }
 
   /**
-   * The player reaches for the nearest pile or chest within reach: its satchel opens (or closes,
-   * if it is the one open), unless the pile is someone else's, which gets the reserved words. A
-   * chest is opened as a run opens its coffer, by the run's interact with the chest's id, and its
-   * satchel fills once the state has it open. Whether anything was in reach.
+   * The player reaches for the nearest pile or chest within reach: a pile's satchel opens (or
+   * closes, if it is the one open), unless the pile is someone else's, which gets the reserved
+   * words. A chest is opened as a run opens its coffer, by the run's interact with the chest's id;
+   * its satchel opens and fills once a state has it open, and a second press before then tries
+   * again. Whether anything was in reach.
    */
   interact(at: Point): boolean {
     const near = this.nearest(at);
@@ -104,26 +118,35 @@ export class FieldPiles {
       return true;
     }
     if (this.satchel.entityId === near.entity_id) {
-      this.satchel.close();
+      this.shut();
       return true;
     }
-    if (near.kind === "chest") this.port.send(ActionType.Interact, { entity_id: near.entity_id });
+    if (near.kind === "chest") {
+      this.port.send(ActionType.Interact, { entity_id: near.entity_id });
+      this.shut();
+      this.reach = { id: near.entity_id, until: this.now() + CHEST_OPEN_WINDOW_MS };
+      return true;
+    }
+    this.reach = undefined;
     this.satchel.open(near.entity_id);
-    this.chestSeenOpen = near.is_open;
-    if (near.kind !== "chest" || near.is_open) this.satchel.setItems(near.items);
+    this.satchel.setItems(near.items);
     return true;
   }
 
-  /** A loot from the open satchel, sent as the run sends it; held back from someone else's pile. */
-  loot(item: ItemState): void {
+  /**
+   * A loot from the open satchel, sent as the run sends it; held back from someone else's pile.
+   * Whether it was sent.
+   */
+  loot(item: ItemState): boolean {
     const open = this.satchel.entityId;
     const pile = open === undefined ? undefined : this.drawn.get(open)?.pile;
     if (pile && this.heldForOther(pile)) {
       this.say("loot_reserved");
-      return;
+      return false;
     }
     const { action, payload } = lootMessage(item);
     this.port.send(action, payload);
+    return true;
   }
 
   /** The server refused a pickup: its words, if it was a reserved pile's. */
@@ -131,12 +154,15 @@ export class FieldPiles {
     this.say(reason);
   }
 
-  /** The player has moved: the satchel closes once its pile or chest is out of reach. */
+  /**
+   * The player has moved: the satchel closes once its pile or chest is out of reach, and a chest
+   * reached for and walked away from is no longer waited for.
+   */
   follow(at: Point): void {
-    const open = this.satchel.entityId;
-    if (open === undefined) return;
-    const pile = this.drawn.get(open)?.pile;
-    if (!pile || distance(at, pile.position) > PILE_REACH) this.satchel.close();
+    const target = this.satchel.entityId ?? this.reach?.id;
+    if (target === undefined) return;
+    const pile = this.drawn.get(target)?.pile;
+    if (!pile || distance(at, pile.position) > PILE_REACH) this.shut();
   }
 
   /** Everything one visit drew is let go. */
@@ -144,8 +170,7 @@ export class FieldPiles {
     for (const drawn of this.drawn.values()) drawn.sprite.destroy();
     this.drawn.clear();
     this.me = undefined;
-    this.chestSeenOpen = false;
-    if (this.satchel.entityId !== undefined) this.satchel.close();
+    this.shut();
   }
 
   /** One container as this state has it: a pile at its reservation's alpha, a chest in its frame. */
@@ -164,16 +189,18 @@ export class FieldPiles {
   }
 
   /**
-   * The open satchel in step with the state: closed once its pile or chest is gone, its pile is
-   * someone else's, or its chest has restocked (seen open, now shut); otherwise showing what is
-   * in it, a chest's once the server has it open.
+   * The open satchel in step with the state: a chest reached for opens its satchel on the first
+   * state that has it open, or is given up once its window passes; the satchel closes once its
+   * pile or chest is gone, its pile is someone else's, or its chest has restocked (seen open since
+   * the reach, now shut, and the window passed); otherwise it shows what is in it.
    */
   private followSatchel(): void {
+    this.followReach();
     const open = this.satchel.entityId;
     if (open === undefined) return;
     const shown = this.drawn.get(open)?.pile;
     if (!shown || this.heldForOther(shown)) {
-      this.satchel.close();
+      this.shut();
       return;
     }
     if (shown.kind !== "chest") {
@@ -183,9 +210,31 @@ export class FieldPiles {
     if (shown.is_open) {
       this.chestSeenOpen = true;
       this.satchel.setItems(shown.items);
-    } else if (this.chestSeenOpen) {
-      this.satchel.close();
+    } else if (this.chestSeenOpen && this.reach?.id !== open) {
+      this.shut();
     }
+  }
+
+  /** The chest reached for: its satchel opened once a state has it open; let go once its window passes. */
+  private followReach(): void {
+    const reach = this.reach;
+    if (!reach) return;
+    const chest = this.drawn.get(reach.id)?.pile;
+    if (!chest || this.now() > reach.until) {
+      this.reach = undefined;
+      return;
+    }
+    if (chest.is_open && this.satchel.entityId !== reach.id) {
+      this.satchel.open(reach.id);
+      this.chestSeenOpen = false;
+    }
+  }
+
+  /** The satchel closed, and nothing reached for or remembered. */
+  private shut(): void {
+    this.reach = undefined;
+    this.chestSeenOpen = false;
+    if (this.satchel.entityId !== undefined) this.satchel.close();
   }
 
   private nearest(at: Point): ContainerState | undefined {

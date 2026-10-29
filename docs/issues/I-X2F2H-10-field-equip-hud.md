@@ -1,6 +1,6 @@
 ---
 id: I-X2F2H-10
-status: open
+status: done
 implements: FS-X2F2H
 blocked_by: [I-X2F2H-1, I-X2F2H-5]
 labels: [ready-for-agent]

@@ -2,7 +2,7 @@ import * as Phaser from "phaser";
 import { ActionType, type FieldId } from "@/assets/types/client";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
-import type { ClientGameState, GateState, PlayerState, Position, WallState } from "@/types/gameState";
+import type { ClientGameState, GateState, ItemState, PlayerState, Position, WallState } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
 import { ensureCharacterTextures, type Facing } from "@/utils/characterTextures";
 import {
@@ -44,6 +44,8 @@ import { addMist } from "@/render/effects/mist";
 import { DROP_PILE, paintDropPile } from "@/render/world/dropPile";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { ContainerView } from "@/ui/ContainerView";
+import { EquipmentPanel } from "@/ui/EquipmentPanel";
+import { EquipmentHud } from "@/ui/EquipmentHud";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
 import { FieldPiles } from "./fieldPiles";
@@ -58,7 +60,8 @@ import { gateAt, gateEdges } from "./hubGates";
  * and rocks on the server's keep-outs, a horizon behind the far edge (§Requirements 54). Monsters
  * and the fight with them are the run scene's own pieces, composed in `fieldCombat`; drop piles
  * and the satchel they are taken through, in `fieldPiles`, a pile held for someone else's kill
- * drawn faint and not offered (§Requirements 56, 59). The equip HUD comes later, shared the same way.
+ * drawn faint and not offered (§Requirements 56, 59). The equip HUD is the run's own
+ * (`EquipmentHud` on the run's EquipmentPanel), on the run's keys: I opens it, E over it equips.
  *
  * Walking into the entrance gate sends one leave_field and waits for world_entered or a refusal,
  * as the hub does for its own sends (§Requirements 57).
@@ -149,6 +152,8 @@ export class FieldScene extends Phaser.Scene {
   /** The field's drop piles and the run's satchel they are taken through (§Requirements 56, 59). */
   private piles?: FieldPiles;
   private satchel?: ContainerView;
+  /** The run's equip HUD, what the player carries and wears (§Requirements 56). */
+  private equipment?: EquipmentHud;
   /** The player's server-reported position and level, for reaching a pile and the satchel's marks. */
   private selfAt?: Point;
   private selfLevel?: number;
@@ -198,9 +203,13 @@ export class FieldScene extends Phaser.Scene {
       selfAt: () => this.selfView()?.pos,
       bodyOf: (entityID) =>
         this.views.get(entityID)?.sprite.getByName("body") as Phaser.GameObjects.Sprite | undefined,
-      takesPointer: (x, y, primary) => this.satchel?.pointerDown(x, y, primary) ?? false,
+      takesPointer: (x, y, primary) => this.takesPointer(x, y, primary),
     });
     this.createPiles();
+    this.equipment = new EquipmentHud(new EquipmentPanel(this), {
+      send: (action, payload) => socketManager.sendMessage(action, payload),
+    });
+    this.bindHudKeys();
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
     this.listen();
@@ -244,7 +253,7 @@ export class FieldScene extends Phaser.Scene {
       g.destroy();
     }
     const satchel = new ContainerView(this, this.art, {
-      onLoot: (item) => this.piles?.loot(item),
+      onLoot: (item) => this.lootFromSatchel(item),
       characterLevel: () => this.selfLevel,
     });
     this.satchel = satchel;
@@ -274,11 +283,33 @@ export class FieldScene extends Phaser.Scene {
         send: (action, payload) => socketManager.sendMessage(action, payload),
       },
     );
+  }
+
+  /**
+   * The run's keys for the satchel and the equip HUD: I opens and closes the panel and Q closes
+   * it; E over the open panel equips or unequips, as in the run, else reaches for a pile or chest;
+   * F takes the satchel's first item.
+   */
+  private bindHudKeys(): void {
     this.input.keyboard?.on("keydown-E", () => {
+      if (this.equipment?.equipKey()) return;
       if (this.selfAt && !this.fallen.isDown()) this.piles?.interact(this.selfAt);
     });
+    this.input.keyboard?.on("keydown-I", () => this.equipment?.toggle());
+    this.input.keyboard?.on("keydown-Q", () => this.equipment?.hide());
     this.input.keyboard?.on("keydown-F", () => this.satchel?.lootFirst());
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => this.satchel?.pointerMove(pointer.x, pointer.y));
+  }
+
+  /** A click on the open satchel is a loot, and one while the equip panel is open no attack, as in the run. */
+  private takesPointer(x: number, y: number, primary: boolean): boolean {
+    if (this.satchel?.pointerDown(x, y, primary)) return true;
+    return this.equipment?.isOpen() ?? false;
+  }
+
+  /** An item taken from the satchel: sent by the piles, and held in the inventory while pending. */
+  private lootFromSatchel(item: ItemState): void {
+    if (this.piles?.loot(item)) this.equipment?.taken(item);
   }
 
   /** Everything one visit made is let go: Phaser reuses the scene instance for the next. */
@@ -291,6 +322,7 @@ export class FieldScene extends Phaser.Scene {
     this.piles?.release();
     this.piles = undefined;
     this.satchel = undefined;
+    this.equipment = undefined;
     this.selfAt = undefined;
     this.selfLevel = undefined;
     this.views.clear();
@@ -402,6 +434,8 @@ export class FieldScene extends Phaser.Scene {
     const me = state.current_player;
     this.selfAt = me ? { x: me.position.x, y: me.position.y } : undefined;
     this.selfLevel = me?.level;
+    if (me) this.equipment?.sync(me);
+    this.equipment?.setCharacterLevel(me?.level);
     this.piles?.sync(state.containers ?? [], me?.id);
     if (this.selfAt) this.piles?.follow(this.selfAt);
   }
