@@ -814,6 +814,78 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     });
   });
 
+  describe("the Forlorn Forest's trees and dressing (FS-3QHQZ §C R24, R28, R30)", () => {
+    type Sheet = {
+      atlas: string;
+      frameHeight: number;
+      anchor: { x: number; y: number };
+      directions: number;
+      animations: Record<string, { frames: unknown[][] }>;
+      light?: unknown;
+      source: string;
+      licence: string;
+    };
+    const sheet = (name: string): Sheet => baked.sheets[name];
+    /** px of a sheet standing above its anchor: how tall it reads on screen. */
+    const standing = (name: string) =>
+      sheet(name).anchor.y * sheet(name).frameHeight;
+
+    // sheet → its authoring function in tools/bake/page/models/nature.js, and its variant count
+    const FOREST: [string, string, number][] = [
+      ["tree_dead", "deadTree", 2],
+      ["tree_dead_snag", "deadSnag", 2],
+      ["tree_oak_gloom", "oak", 2],
+      ["tree_pine_gloom", "pine", 2],
+      ["fern", "fern", 3],
+      ["stump", "stump", 2],
+      ["fallen_log", "fallenLog", 2],
+      ["toadstools", "toadstools", 3],
+    ];
+
+    it.each(FOREST)(
+      "%s is baked on the forest atlas, authored in models/nature.js#%s, with %i variants",
+      (name, fn, variants) => {
+        const s = sheet(name);
+        expect(s, name).toBeDefined();
+        expect(s.atlas).toMatch(/^forest-\d+$/);
+        expect(s.directions).toBe(1);
+        expect(Object.keys(s.animations)).toEqual(["variants"]);
+        expect(s.animations.variants.frames[0]).toHaveLength(variants);
+        expect(s.source).toBe(
+          `procedural: tools/bake/page/models/nature.js#${fn}`,
+        );
+        expect(s.licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it("bakes no light into a tree or a dressing prop: nothing in the forest glows", () => {
+      for (const [name] of FOREST)
+        expect(sheet(name).light, name).toBeUndefined();
+    });
+
+    it("keeps the dressing small and low beside the trees (R28)", () => {
+      const shortestTree = Math.min(
+        ...["tree_dead", "tree_oak_gloom", "tree_pine_gloom"].map(standing),
+      );
+      for (const name of ["fern", "stump", "fallen_log", "toadstools"])
+        expect(standing(name), name).toBeLessThan(shortestTree / 3);
+    });
+
+    it("reuses the run's bone pile rather than baking another", () => {
+      expect(sheet("bone_pile").atlas).toMatch(/^tower-\d+$/);
+    });
+
+    it("draws every forest colour from BARROW: no colour literal in models/nature.js", () => {
+      const model = readFileSync(
+        join(__dirname, "../../../tools/bake/page/models/nature.js"),
+        "utf8",
+      );
+      expect(model).not.toMatch(
+        /#[0-9a-fA-F]{3,8}\b|0x[0-9a-fA-F]{6}\b|rgba?\(/,
+      );
+    });
+  });
+
   describe("characters and creatures (FS-2325V §E)", () => {
     const CAST = [
       "char_knight_base",
