@@ -307,3 +307,77 @@ func TestServiceUnfreezeItem(t *testing.T) {
 		})
 	}
 }
+
+// gearRepo serves one loadout and answers each instance read from items/errs
+// by id: an id in neither reads as not found (nil, nil), the way the
+// repository reports an instance that no longer exists.
+type gearRepo struct {
+	Repository
+	loadout *Loadout
+	items   map[uuid.UUID]*ItemInstance
+	errs    map[uuid.UUID]error
+}
+
+func (r *gearRepo) GetLoadout(context.Context, *GetLoadoutRequest) (*Loadout, error) {
+	return r.loadout, nil
+}
+
+func (r *gearRepo) GetItemInstanceByID(_ context.Context, id uuid.UUID) (*ItemInstance, error) {
+	if err, ok := r.errs[id]; ok {
+		return nil, err
+	}
+	return r.items[id], nil
+}
+
+// A slot whose instance read fails must fail the whole loadout read: reading
+// it as empty is what let settlement NULL a worn item. A slot whose instance
+// is genuinely gone stays empty, so one deleted item never locks a player out.
+func TestServiceGetLoadoutWithItems_SlotReads(t *testing.T) {
+	owner := uuid.New()
+	weaponID, helmID := uuid.New(), uuid.New()
+	weapon := &ItemInstance{ID: weaponID, OwnerMemberID: owner, ItemType: "weapon", Name: "Blade"}
+	helm := &ItemInstance{ID: helmID, OwnerMemberID: owner, ItemType: "armor", Name: "Helm"}
+	dbDown := errors.New("connection refused")
+
+	tests := []struct {
+		name     string
+		items    map[uuid.UUID]*ItemInstance
+		errs     map[uuid.UUID]error
+		wantErr  error
+		wantHead *ItemInstance
+	}{
+		{"every slot reads", map[uuid.UUID]*ItemInstance{weaponID: weapon, helmID: helm}, nil, nil, helm},
+		{"a slot read error fails the whole read", map[uuid.UUID]*ItemInstance{weaponID: weapon}, map[uuid.UUID]error{helmID: dbDown}, dbDown, nil},
+		{"a slot whose instance is gone reads empty", map[uuid.UUID]*ItemInstance{weaponID: weapon}, nil, nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &gearRepo{
+				loadout: &Loadout{MemberId: &owner, WeaponId: &weaponID, HeadId: &helmID},
+				items:   tt.items,
+				errs:    tt.errs,
+			}
+
+			got, err := NewService(repo, nil, nil, nil, nil).GetLoadoutWithItems(context.Background(), owner, &GetLoadoutRequest{MemberId: owner})
+
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("err = %v, want %v", err, tt.wantErr)
+				}
+				if got != nil {
+					t.Errorf("loadout = %+v, want none on a failed read", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Weapon != weapon {
+				t.Errorf("Weapon = %v, want the Blade", got.Weapon)
+			}
+			if got.Head != tt.wantHead {
+				t.Errorf("Head = %v, want %v", got.Head, tt.wantHead)
+			}
+		})
+	}
+}

@@ -769,6 +769,53 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     expect(stage.made.length).toBe(drawn);
   });
 
+  it("should say in the client's words that the gear cannot be fetched when start_solo is refused for it", () => {
+    const { hub, stage, choice, atTheDoor, refuse } = queuedHubOnStage();
+    atTheDoor();
+    choice("solo")?.handlers.pointerup();
+
+    refuse("start_solo", "Your gear could not be fetched. Try again shortly.", "loadout_unavailable");
+
+    expect(hub.soloPending).toBe(false);
+    const notice = stage.made.find(
+      (m) => m.kind === "text" && m.args[2] === "Your gear cannot be fetched. Try again shortly." && m.depth === 1000,
+    );
+    expect(notice).toBeDefined();
+  });
+
+  it("should pass on a refused find_game as a passing notice, gear in the client's words, and not queue", () => {
+    const { hub, stage, choice, atTheDoor, refuse } = queuedHubOnStage();
+    atTheDoor();
+    choice("queue")?.handlers.pointerup();
+
+    refuse("find_game", "Your gear could not be fetched. Try again shortly.", "loadout_unavailable");
+
+    expect(hub.queued).toBe(false);
+    const notice = stage.made.find(
+      (m) => m.kind === "text" && m.args[2] === "Your gear cannot be fetched. Try again shortly." && m.depth === 1000,
+    );
+    expect(notice).toBeDefined();
+  });
+
+  it("should pass on any other refused find_game in the server's words", () => {
+    const { stage, refuse } = queuedHubOnStage();
+
+    refuse("find_game", "Walk to the Spire's door first.");
+
+    const notice = stage.made.find(
+      (m) => m.kind === "text" && m.args[2] === "Walk to the Spire's door first." && m.depth === 1000,
+    );
+    expect(notice).toBeDefined();
+  });
+
+  it("should hand the find_game refusals back on release", () => {
+    const { hub, offError } = queuedHubOnStage();
+
+    hub.release();
+
+    expect(offError).toHaveBeenCalledWith("find_game");
+  });
+
   it("should hand the start_solo refusals back and forget the pending send on release", () => {
     const { hub, choice, atTheDoor, offError } = queuedHubOnStage();
     atTheDoor();
