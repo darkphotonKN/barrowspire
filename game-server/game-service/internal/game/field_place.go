@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -32,14 +33,16 @@ type FieldObstacle struct {
 	X, Y, W, H float64
 }
 
-// FieldLayout is what stands on a field's ground: its keep-out areas and the
-// points its monsters spawn at. A standard spawn point's elites follow its
-// place's StandardElites; an elite spawn point always holds an elite
-// (FS-3QHQZ §Requirements 16–17).
+// FieldLayout is what stands on a field's ground: its keep-out areas, the
+// points its monsters spawn at and where its chests stand. A standard spawn
+// point's elites follow its place's StandardElites; an elite spawn point always
+// holds an elite (FS-3QHQZ §Requirements 16–17). The Meadows has no chests; the
+// Forest's stand in its chest clearings (FS-3QHQZ §Requirements 19).
 type FieldLayout struct {
 	Obstacles        []FieldObstacle
 	SpawnPoints      []FieldPoint
 	EliteSpawnPoints []FieldPoint
+	Chests           []FieldPoint
 }
 
 // FieldElite is a spawn point's elite rule: how the monsters it rolls, at each
@@ -98,6 +101,11 @@ type FieldPlace struct {
 	RespawnDelay   float64
 	ElitePrefixes  []string
 	StandardElites FieldElite
+
+	// ChestRestockDelay is how long, in seconds, after a chest's first open it
+	// restocks (FS-3QHQZ §Requirements 19); none means its chests never do. A
+	// place with no chests leaves it unset.
+	ChestRestockDelay float64
 }
 
 // FieldPlaces are the fields this pod builds a channel of at boot: the Meadows,
@@ -146,9 +154,9 @@ type FieldVisit struct {
 
 /**
 * InitialFieldMapObjects builds a channel of the place: the entrance gate back
-* to the hub and the layout's keep-out areas. A field has no floors, stairs,
-* escape, containers or match-progress entity, so the end rule never ends it
-* (FS-X2F2H §Requirements 5, 6). Called once, as the channel is built, before
+* to the hub, the layout's keep-out areas and its chests, if any. A field has no
+* floors, stairs, escape or match-progress entity, so the end rule never ends
+* it (FS-X2F2H §Requirements 5, 6). Called once, as the channel is built, before
 * anyone can be seated in it.
 **/
 func (s *Session) InitialFieldMapObjects(place FieldPlace, layout FieldLayout) {
@@ -175,12 +183,21 @@ func (s *Session) InitialFieldMapObjects(place FieldPlace, layout FieldLayout) {
 		s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas, PlaceArea(obstacle))
 	}
 
+	// each chest closed and empty, rolled when first opened (FS-3QHQZ
+	// §Requirements 19)
+	for _, at := range layout.Chests {
+		CreateContainerEntity(s.EntityManager, ContainerConfig(at), nil)
+		s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas,
+			centredArea(at.X, at.Y, constants.ContainerWidthRadius, constants.ContainerHeightRadius))
+	}
+
 	slog.Info("Field channel built",
 		"session_id", s.ID,
 		"field", place.ID,
 		"obstacles", len(layout.Obstacles),
 		"spawn_points", len(layout.SpawnPoints),
 		"elite_spawn_points", len(layout.EliteSpawnPoints),
+		"chests", len(layout.Chests),
 	)
 }
 

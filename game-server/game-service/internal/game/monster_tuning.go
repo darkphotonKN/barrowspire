@@ -124,6 +124,9 @@ const (
 	// a side dead end's clearing holds a chest with this probability, else an
 	// elite; the main trail's always holds an elite
 	ForestChestShare = 0.5
+	// a clearing chest restocks this long after it was first opened, in
+	// seconds (FS-3QHQZ §Requirements 19, D20)
+	ForestChestRestockDelay = 300.0
 )
 
 // FieldElitePrefixes is the authored list a field elite's name prefix is drawn

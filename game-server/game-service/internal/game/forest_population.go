@@ -73,8 +73,18 @@ func assignForestClearings(generated levelgen.Layout) forestClearings {
 
 // eliteSpawnPoints is one elite spawn point at each elite clearing's centre. R16.
 func (c forestClearings) eliteSpawnPoints() []FieldPoint {
+	return centres(c.Elites)
+}
+
+// chests is one chest at each chest clearing's centre. R19.
+func (c forestClearings) chests() []FieldPoint {
+	return centres(c.Chests)
+}
+
+// centres is each dead end's clearing centre, in order.
+func centres(deadEnds []levelgen.DeadEnd) []FieldPoint {
 	var points []FieldPoint
-	for _, deadEnd := range c.Elites {
+	for _, deadEnd := range deadEnds {
 		points = append(points, FieldPoint{X: deadEnd.Center.X, Y: deadEnd.Center.Y})
 	}
 	return points

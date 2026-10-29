@@ -48,6 +48,9 @@ func ForlornForest(generated levelgen.Layout) FieldPlace {
 		RespawnDelay:   FieldRespawnDelay,
 		ElitePrefixes:  ElitePrefixes,
 		StandardElites: FieldEliteNever,
+
+		// its clearing chests fill again 5 minutes after first opened (R19)
+		ChestRestockDelay: ForestChestRestockDelay,
 	}
 }
 
@@ -67,9 +70,9 @@ func inward(at FieldPoint, side levelgen.Side, by float64) FieldPoint {
 
 /**
 * forestLayout hands the Forest's generated layout to the field build: every
-* wall rect one keep-out area, the standard spawn points on its trails and an
-* elite spawn point at each elite clearing's centre (FS-3QHQZ §Requirements
-* 15–16). It keeps the whole generated layout, so they are placed from its dead
+* wall rect one keep-out area, the standard spawn points on its trails, an
+* elite spawn point at each elite clearing's centre and a chest at each chest
+* clearing's centre (FS-3QHQZ §Requirements 15–16, 19). It keeps the whole generated layout, so they are placed from its dead
 * ends and open cells without generating again, from a source derived from the
 * layout's seed: the same boot seed gives the same forest, monsters included.
 **/
@@ -83,9 +86,11 @@ func (f forestLayout) Layout() (FieldLayout, error) {
 		obstacles = append(obstacles, FieldObstacle{X: wall.X, Y: wall.Y, W: wall.W, H: wall.H})
 	}
 
+	clearings := assignForestClearings(f.generated)
 	return FieldLayout{
 		Obstacles:        obstacles,
 		SpawnPoints:      forestSpawnPoints(f.generated),
-		EliteSpawnPoints: assignForestClearings(f.generated).eliteSpawnPoints(),
+		EliteSpawnPoints: clearings.eliteSpawnPoints(),
+		Chests:           clearings.chests(),
 	}, nil
 }

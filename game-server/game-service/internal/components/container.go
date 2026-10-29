@@ -23,9 +23,10 @@ type ContainerComponent struct {
 	// ends, then uuid.Nil. Always uuid.Nil on a chest and on a run's pile.
 	// FS-X2F2H §Requirements 33, 35.
 	ReservedFor uuid.UUID
-	// Age is how long, in seconds, a field drop pile has lain since it landed;
-	// the field's tick advances it. Always 0 on a run's pile.
-	// FS-X2F2H §Requirements 33–34.
+	// Age is how long, in seconds, a field drop pile has lain since it landed
+	// (FS-X2F2H §Requirements 33–34), or a field chest has stood since its
+	// first open, back to 0 as it restocks (FS-3QHQZ §Requirements 19); the
+	// field's tick advances it. Always 0 in a run.
 	Age float64
 }
 

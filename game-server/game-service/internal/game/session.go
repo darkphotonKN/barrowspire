@@ -134,6 +134,10 @@ type Session struct {
 	// what each floor's monsters are rolled from (FS-77AB6 §Requirements 22)
 	spawnRand populationRand
 
+	// what a field chest's item level and keep rolls are drawn from
+	// (FS-3QHQZ §Requirements 19); a run's chest does not draw on it
+	chestRand lootRand
+
 	// FS-K2HKP R18: the first floor's formation spots kept for matched players
 	// still on other pods. Each arrival takes one when seated
 	// (takeArrivalSlotLocked); a later floor regroups everyone and clears what
@@ -265,6 +269,7 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 
 		// the same goroutine-safe global source loot rolls with
 		spawnRand: sharedLootRand{},
+		chestRand: sharedLootRand{},
 
 		playersPendingConnection: make(map[uuid.UUID]*types.Player),
 		seatDeadline:             time.Now().Add(SeatReleaseAfter),
@@ -703,6 +708,8 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.refillSpawnPoints(deltaTime, entities)
 		// a field's piles open to anyone, then go (FS-X2F2H §Requirements 33–34)
 		s.ageFieldDropPiles(deltaTime, entities)
+		// a field's opened chests fill again (FS-3QHQZ §Requirements 19)
+		s.restockFieldChests(deltaTime, entities)
 	}
 
 	// interaction
@@ -1747,8 +1754,9 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		if !containerOpenable.HasBeenOpened {
 			containerOpenable.HasBeenOpened = true
 
-			// creates RANDOM items on the spot
-			itemIDs, err := s.generateItems()
+			// creates RANDOM items on the spot: the Spire's chest roll, or a
+			// field's derived from it (FS-3QHQZ §Requirements 19)
+			itemIDs, err := s.rollChest()
 
 			if err != nil {
 				fmt.Printf("Error generating container items: %v\n", err)
@@ -2407,9 +2415,19 @@ const (
 
 /**
 * generateItems generates new random items from the session itemPool base,
-* creates item entities, and returns their IDs.
+* creates item entities, and returns their IDs: the Spire's chest roll, at the
+* floor's area level.
 **/
 func (s *Session) generateItems() ([]uuid.UUID, error) {
+	return s.generateItemsAt(s.chestDrop())
+}
+
+/**
+* generateItemsAt is the chest roll for the drop given: the item count and type
+* split, then each item rolled for that drop. A field chest hands it its own
+* item level (FS-3QHQZ §Requirements 19); a run's chest, the floor's.
+**/
+func (s *Session) generateItemsAt(drop lootDrop) ([]uuid.UUID, error) {
 	slog.Debug("generating items from itemPool when opening container",
 		"s.itemPool", s.itemPool)
 
@@ -2458,8 +2476,6 @@ func (s *Session) generateItems() ([]uuid.UUID, error) {
 		return nil, fmt.Errorf("Item pool was empty.")
 	}
 
-	// chests never drop rings (FS-4R9M9 §Requirements 47)
-	drop := s.chestDrop()
 	newItemEntityIDs := make([]uuid.UUID, 0, numberOfArmor+numberOfWeapons+numberOfConsumables)
 	newItemEntityIDs = append(newItemEntityIDs, s.dropLoot(types.ItemTypeWeapon, s.itemPool.Weapons, numberOfWeapons, drop)...)
 	newItemEntityIDs = append(newItemEntityIDs, s.dropLoot(types.ItemTypeArmor, s.itemPool.Armor, numberOfArmor, drop)...)
