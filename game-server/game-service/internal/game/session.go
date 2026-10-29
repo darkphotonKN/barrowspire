@@ -52,6 +52,10 @@ type Session struct {
 	// and a run. The pointer is guarded by mu, its contents are the tick's alone.
 	// FS-X2F2H §Requirements 26–27.
 	fieldPopulation *fieldPopulation
+	// a field channel's chest restock delay, its place's, cached as it is built
+	// so the tick reads one number rather than the place; 0 never restocks.
+	// Guarded by mu. FS-3QHQZ §Requirements 19.
+	chestRestockDelay float64
 	// a field's open visits, by member: minted on entry, ended exactly once by
 	// whichever way out removes the body first. Guarded by mu. FS-X2F2H R13, R49.
 	visits map[uuid.UUID]FieldVisit
@@ -64,9 +68,13 @@ type Session struct {
 	// [entityID] - interacted
 	containerInteractedCache map[uuid.UUID]bool
 
-	// where each player body stood after the last tick, by entity id, for the
-	// at-gate query; written by the tick under mu (FS-0XMCP §Requirements 7)
-	bodiesAt map[uuid.UUID]bodyPosition
+	// where each player body stood after the last tick, by member, for the
+	// at-gate query; published whole by the tick and read without mu, so a
+	// seat holding mu never parks a reader (FS-0XMCP §Requirements 7)
+	bodiesAt atomic.Pointer[map[uuid.UUID]bodyPosition]
+
+	// this world's gates by destination, indexed as the map is built
+	gates gateIndex
 
 	// elimination tracking: [memberID] the order they fell in, recorded by the
 	// tick that eliminated them
@@ -226,6 +234,13 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 	sessionId := uuid.New()
 	playerDamage := systems.PlayerDamage(constants.RunPlayerDamage)
 	runExperience := NewRunExperience()
+	// clamped to this world's bounds; players pass through each other in the
+	// hub and the fields, never in a run (FS-0XMCP §Requirements 26–29)
+	movementSystem := &systems.MovementSystem{
+		MapWidth:           bounds.Width,
+		MapHeight:          bounds.Height,
+		PlayersPassThrough: bounds.Type == types.WorldTypeHub || bounds.Type == types.WorldTypeField,
+	}
 
 	s := &Session{
 		ID:            sessionId,
@@ -238,7 +253,7 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		MessageCh:                make(chan types.ClientPackage, 100),
 
 		playerDamage:       playerDamage,
-		movementSystem:     systems.NewMovementSystem(),
+		movementSystem:     movementSystem,
 		combatSystem:       systems.NewCombatSystem(em, rand.Float64, playerDamage, UniqueEffects),
 		monsterAISystem:    systems.NewMonsterAISystem(rand.Float64),
 		monsterDeathSystem: systems.NewMonsterDeathSystem(em, MonsterCorpseLifetime),
@@ -688,10 +703,8 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.monsterAISystem.Update(deltaTime, entities)
 	}
 
-	// movement; players pass through each other in the hub and the fields, never in a run (FS-0XMCP §Requirements 26–29)
-	passThrough := s.worldType == types.WorldTypeHub || s.worldType == types.WorldTypeField
-	movementSys := systems.MovementSystem{MapWidth: s.mapWidth, MapHeight: s.mapHeight, PlayersPassThrough: passThrough}
-	movementSys.Update(deltaTime, entities)
+	// movement, by the world's own rules, fixed as it was built
+	s.movementSystem.Update(deltaTime, entities)
 
 	// projectile
 	projectileSys := systems.NewProjectileSystem(s.EntityManager, s.playerDamage)
@@ -2017,6 +2030,14 @@ func (s *Session) delversAwayFrom(x, y float64) int {
 func (s *Session) pickUpItem(playerEntity *ecs.Entity, at *components.TransformComponent, itemID uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// the body is read before this lock: one whose member left meanwhile (a
+	// field visit ended) is nobody's, and its satchel is never settled
+	memberID := s.playerEntityIDToPlayerID[playerEntity.ID]
+	if seated, ok := s.playerIDToEntitiesID[memberID]; !ok || seated != playerEntity.ID {
+		delete(s.containerInteractedCache, itemID)
+		return fmt.Errorf("pick up item %s: %w", itemID, ErrNotInThisWorld)
+	}
 
 	if err := s.moveItemToSatchel(playerEntity, at, itemID); err != nil {
 		delete(s.containerInteractedCache, itemID)

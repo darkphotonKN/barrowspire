@@ -299,7 +299,7 @@ func (s *Server) handleReadError(conn *websocket.Conn, err error) {
 
 	// a member dropped in a field waits out the grace at home in the hub
 	// (FS-X2F2H §Requirements 17)
-	s.homeFromField(player.ID)
+	s.homeFromField(s.ctx, player.ID)
 
 	go s.handleReconnectionTimeout(player.ID, hold, grace)
 }

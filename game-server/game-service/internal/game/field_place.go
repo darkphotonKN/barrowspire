@@ -169,12 +169,13 @@ func (s *Session) InitialFieldMapObjects(place FieldPlace, layout FieldLayout) {
 	s.place = &place
 	s.fieldLayout = layout
 	s.fieldPopulation = population
+	s.chestRestockDelay = place.ChestRestockDelay
 	s.mu.Unlock()
 
 	// the gate and every wall are recorded as occupied, as the floor build
 	// records what it places, so nothing placed later lands on them
 	// (FS-3QHQZ §Requirements 13)
-	CreateFieldEntranceEntity(s.EntityManager, place.Entrance.X, place.Entrance.Y, place.EntranceRange)
+	s.indexGate(CreateFieldEntranceEntity(s.EntityManager, place.Entrance.X, place.Entrance.Y, place.EntranceRange))
 	s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas,
 		centredArea(place.Entrance.X, place.Entrance.Y, place.EntranceRange, place.EntranceRange))
 

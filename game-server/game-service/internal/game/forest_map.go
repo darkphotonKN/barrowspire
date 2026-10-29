@@ -9,6 +9,10 @@ import (
 // forestArrivalInset is how far inside the mouth, in px, a player arriving in
 // the Forest is set down: beyond the entrance gate's range, on the trail in, as
 // the Meadows sets them down just inside its road. FS-3QHQZ §Requirements 14.
+// Fixed, not derived from the mouth: TestForlornForest_EntranceAndArrival holds
+// it to open ground clear of every wall by PlayerRadius, beyond the gate's
+// range, over 1 000 seeds, so a change to the mouth's geometry that breaks it
+// fails there.
 const forestArrivalInset = 140
 
 /**
@@ -25,8 +29,8 @@ func ForlornForest(generated levelgen.Layout) FieldPlace {
 
 	return FieldPlace{
 		ID:            FieldForlornForest,
-		Width:         constants.ForestMapWidth,
-		Height:        constants.ForestMapHeight,
+		Width:         generated.Bounds.W,
+		Height:        generated.Bounds.H,
 		Layout:        forestLayout{generated: generated},
 		Entrance:      entrance,
 		EntranceRange: constants.FieldEntranceRange,

@@ -54,9 +54,9 @@ type SessionManager interface {
 	GetMatchedChan(ctx context.Context) chan matchmaker.MatchStart
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
 	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
-	AtSpireGate(player *types.Player) bool
+	AtSpireGate(playerID uuid.UUID) bool
 	EnterField(ctx context.Context, conn *websocket.Conn, fieldID string) (*game.Session, error)
-	LeaveField(player *types.Player) (*game.Session, error)
+	LeaveField(ctx context.Context, player *types.Player) (*game.Session, error)
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
@@ -372,7 +372,7 @@ func (h *messageHub) Run(ctx context.Context) {
 
 				// the Spire is entered at its door; the queue below is untouched.
 				// FS-0XMCP §Requirements 12, 14.
-				if !h.sessionManager.AtSpireGate(player) {
+				if !h.sessionManager.AtSpireGate(player.ID) {
 					slog.Debug("Refusing find_game: not at the Spire gate", "player_id", player.ID)
 					h.refuse(clientPackage.Conn, clientPackage.Message.Action, awayFromSpireGate)
 					continue
@@ -438,7 +438,7 @@ func (h *messageHub) Run(ctx context.Context) {
 				}
 
 				// FS-0XMCP §Requirements 12
-				if !h.sessionManager.AtSpireGate(player) {
+				if !h.sessionManager.AtSpireGate(player.ID) {
 					slog.Debug("Refusing start_solo: not at the Spire gate", "player_id", player.ID)
 					h.refuse(clientPackage.Conn, clientPackage.Message.Action, awayFromSpireGate)
 					continue
@@ -503,7 +503,7 @@ func (h *messageHub) Run(ctx context.Context) {
 					continue
 				}
 
-				hub, err := h.sessionManager.LeaveField(player)
+				hub, err := h.sessionManager.LeaveField(ctx, player)
 				if err != nil {
 					slog.Warn("Refusing leave_field", "player_id", player.ID, "error", err)
 					h.refuseField(clientPackage.Conn, clientPackage.Message.Action, err)

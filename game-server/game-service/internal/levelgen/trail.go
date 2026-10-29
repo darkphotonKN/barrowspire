@@ -295,7 +295,11 @@ func (b *builder) openClearing(t int) bool {
 		if t == 0 && len(tr.nodes) == 1 {
 			return false
 		}
-		b.popNode(end)
+		// trails grow one at a time, so a trail's end is the newest node; were
+		// it not, the clearing fails rather than unpick another trail
+		if !b.popNode(end) {
+			return false
+		}
 		tr.nodes = tr.nodes[:len(tr.nodes)-1]
 	}
 	return false
@@ -348,8 +352,13 @@ func (b *builder) addNode(lx, ly, parent int) int {
 	return id
 }
 
-// popNode removes the most recently added node and everything it carved.
-func (b *builder) popNode(id int) {
+// popNode removes the most recently added node and everything it carved. Any
+// other id is refused, changing nothing: the node list is truncated at id, so
+// popping an older node would drop every node added after it.
+func (b *builder) popNode(id int) bool {
+	if id != len(b.nodes)-1 {
+		return false
+	}
 	for i, o := range b.owner {
 		if o == id {
 			b.owner[i] = -1
@@ -359,6 +368,7 @@ func (b *builder) popNode(id int) {
 	n := b.nodes[id]
 	b.lattice[n.ly*b.nx+n.lx] = -1
 	b.nodes = b.nodes[:id]
+	return true
 }
 
 func (b *builder) claim(s span, id int) {
@@ -386,6 +396,11 @@ func (b *builder) edge(ax, ay, bx, by int) span {
 
 // mouthLattice picks the mouth's lattice point on the entrance side, at a
 // seeded position away from the corners when the side is long enough.
+//
+// On a side of three or more points it draws twice and keeps the second draw.
+// The first is wasted, but it is part of the seeded stream: dropping it shifts
+// every later draw and changes the layout every seed generates (the golden
+// layout fails), so it stays until a deliberate layout change re-pins it.
 func (b *builder) mouthLattice() (int, int) {
 	along := b.ny
 	if b.p.Entrance == SideNorth || b.p.Entrance == SideSouth {

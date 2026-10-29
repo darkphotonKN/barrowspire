@@ -43,11 +43,15 @@ func (s *Session) fieldChestRoll(r lootRand, place FieldPlace) ([]uuid.UUID, err
 * open its place's ChestRestockDelay it restocks: whatever it still holds
 * leaves the world, it closes, and its next opening rolls afresh. What was
 * taken from it before then is the taker's. A run's chests, and a place that
-* names no delay, never restock. It runs on the tick, unlocked, as the piles do.
+* names no delay, never restock. It runs on the tick, unlocked, as the piles do;
+* the delay is the one cached as the channel was built.
 **/
 func (s *Session) restockFieldChests(deltaTime float64, entities []*ecs.Entity) {
-	place, ok := s.FieldPlace()
-	if !ok || place.ChestRestockDelay <= 0 {
+	s.mu.RLock()
+	restockDelay := s.chestRestockDelay
+	s.mu.RUnlock()
+
+	if restockDelay <= 0 {
 		return
 	}
 
@@ -69,8 +73,8 @@ func (s *Session) restockFieldChests(deltaTime float64, entities []*ecs.Entity) 
 			continue
 		}
 
-		chest.Age += deltaTime
-		if chest.Age < place.ChestRestockDelay {
+		chest.OpenedFor += deltaTime
+		if chest.OpenedFor < restockDelay {
 			continue
 		}
 
@@ -82,6 +86,6 @@ func (s *Session) restockFieldChests(deltaTime float64, entities []*ecs.Entity) 
 			held.ItemIDs = nil
 		}
 		openable.IsOpen, openable.HasBeenOpened = false, false
-		chest.Age = 0
+		chest.OpenedFor = 0
 	}
 }

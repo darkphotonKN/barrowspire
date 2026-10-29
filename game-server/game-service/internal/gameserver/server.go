@@ -668,13 +668,13 @@ func (s *Server) HubSession() (*game.Session, bool) {
 * as the hub measured them on its last tick. A player in a run, a field, or no
 * world at all is at no gate. FS-0XMCP §Requirements 12.
 **/
-func (s *Server) AtSpireGate(player *types.Player) bool {
+func (s *Server) AtSpireGate(playerID uuid.UUID) bool {
 	hub, exists := s.HubSession()
 	if !exists {
 		return false
 	}
 
-	return hub.AtGate(player.ID, components.GateDestinationSpire)
+	return hub.AtGate(playerID, components.GateDestinationSpire)
 }
 
 /**

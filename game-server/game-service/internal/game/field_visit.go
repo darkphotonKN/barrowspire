@@ -85,7 +85,7 @@ func (s *Session) LeaveThroughEntrance(memberID uuid.UUID) (FieldVisit, error) {
 		return FieldVisit{}, fmt.Errorf("leave field %s: %w", s.ID, ErrNotInThisWorld)
 	}
 
-	body, measured := s.bodiesAt[entityID]
+	body, measured := s.measuredBody(memberID)
 	if !hasEntrance || !measured || math.Hypot(body.X-gate.X, body.Y-gate.Y) > gate.Range {
 		return FieldVisit{}, fmt.Errorf("leave field %s: %w", s.ID, ErrNotAtGate)
 	}

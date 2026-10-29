@@ -122,7 +122,7 @@ func (s *Session) InitialHubMapObjects() {
 	}
 
 	for _, gate := range hubGates {
-		CreateGateEntity(s.EntityManager, gate)
+		s.indexGate(CreateGateEntity(s.EntityManager, gate))
 	}
 
 	for _, building := range hubBuildings {

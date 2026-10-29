@@ -150,7 +150,6 @@ type laidOutField struct {
 func layOutFields(boot bootOptions) ([]laidOutField, error) {
 	forest, err := levelgen.Generate(boot.forestParams, boot.seed)
 	if err != nil {
-		slog.Error("Could not generate the Forlorn Forest, the pod will not start", "seed", boot.seed, "error", err)
 		return nil, fmt.Errorf("generate the forlorn forest from seed %d: %w", boot.seed, err)
 	}
 
@@ -266,14 +265,14 @@ func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID s
 		return nil, fmt.Errorf("enter field %s: %w", place.ID, err)
 	}
 
-	// The hub body goes before the record moves: a drop in between finds the
-	// record in the hub with no body there, and the field body is ended by
-	// whichever way out comes later. If the record left the hub meanwhile
-	// (leave_hub, a normal close), this visit never began and is ended now.
+	// The hub body goes before the record moves. If the record left the hub
+	// meanwhile (leave_hub, a normal close), or conn dropped and its member is
+	// held for a reconnect, this visit never began and is ended now: a reconnect
+	// finds the record in the hub, never the field (R17, D7).
 	hub.RemovePlayer(player.ID.String())
-	if moved, _ := s.moveRecord(player.ID, hub.ID, field.ID); !moved {
+	if !s.moveRecordOnConn(conn, player.ID, hub.ID, field.ID) {
 		s.endVisit(ctx, field, player.ID)
-		return nil, fmt.Errorf("enter field %s: record left the hub: %w", place.ID, errEnterFieldNotInHub)
+		return nil, fmt.Errorf("enter field %s: record left the hub or the connection dropped: %w", place.ID, errEnterFieldNotInHub)
 	}
 
 	slog.Info("Walked into a field", "player_id", player.ID, "field", place.ID, "visit_id", visit.ID)
@@ -286,7 +285,7 @@ func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID s
 * entrance gate, home to the hub at the matching hub gate's arrival point.
 * Refused away from the entrance and while fallen. FS-X2F2H §Requirements 14, 15.
 **/
-func (s *Server) LeaveField(player *types.Player) (*game.Session, error) {
+func (s *Server) LeaveField(ctx context.Context, player *types.Player) (*game.Session, error) {
 	world, _ := s.currentWorldOf(player.ID)
 	field, exists := s.GetGameSession(world)
 	if !exists || field.WorldType() != types.WorldTypeField {
@@ -304,7 +303,7 @@ func (s *Server) LeaveField(player *types.Player) (*game.Session, error) {
 		return nil, fmt.Errorf("leave field %s: %w: %w", field.ID, errLeaveFieldNotInField, err)
 	}
 
-	return s.comeHome(s.ctx, field, visit)
+	return s.comeHome(ctx, field, visit)
 }
 
 /**
@@ -319,13 +318,15 @@ func (s *Server) LeaveField(player *types.Player) (*game.Session, error) {
 func (s *Server) comeHome(ctx context.Context, field *game.Session, visit game.FieldVisit) (*game.Session, error) {
 	s.settleVisit(ctx, visit)
 
+	// the body is already gone, so a member with no home to come to is in no
+	// field either: that is the reason leave_field answers
 	hub, exists := s.HubSession()
 	if !exists {
-		return nil, errHubMissing
+		return nil, fmt.Errorf("come home: %w: %w", errLeaveFieldNotInField, errHubMissing)
 	}
 	player, onRecord := s.PlayerByID(visit.MemberID)
 	if !onRecord {
-		return nil, fmt.Errorf("come home: %w", errPlayerNotFound)
+		return nil, fmt.Errorf("come home: %w: %w", errLeaveFieldNotInField, errPlayerNotFound)
 	}
 
 	place, _ := field.FieldPlace()
@@ -368,14 +369,21 @@ func (s *Server) endVisit(ctx context.Context, field *game.Session, memberID uui
 * The write is one local transaction, bounded so a stalled database cannot hold
 * the message hub's loop (leave_field runs on it), and detached from the
 * caller's cancellation so a closing connection does not abort it. A visit that
-* fails to write is lost, as a pod crash loses it (R50): nothing was at risk.
+* fails to write is lost, as a pod crash loses it (R50): nothing was at risk,
+* and the record keeps the level and experience it had before the visit, since
+* the next load would not show what the visit earned.
 **/
 func (s *Server) settleVisit(ctx context.Context, visit game.FieldVisit) {
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), visitSettleTimeout)
 	defer cancel()
 
+	// TODO(owner): this write still runs on the message hub's loop for
+	// leave_field; settlement moves off it with the leave_field / hub-loop rework.
 	if err := s.visitSettler.PublishFieldVisit(writeCtx, visit); err != nil {
-		slog.Error("Could not settle a field visit", "visit_id", visit.ID, "member_id", visit.MemberID, "error", err)
+		slog.Error("Could not settle a field visit, it is lost and the record keeps its pre-visit progress",
+			"visit_id", visit.ID, "field", visit.Field, "member_id", visit.MemberID,
+			"character_id", visit.CharacterID, "level", visit.Level, "experience", visit.Experience, "error", err)
+		return
 	}
 
 	s.ApplyRunProgress([]types.RunProgress{{
@@ -394,7 +402,7 @@ func (s *Server) settleVisit(ctx context.Context, visit game.FieldVisit) {
 * member in no field, or whose body another way out already took, is left
 * alone.
 **/
-func (s *Server) homeFromField(playerID uuid.UUID) {
+func (s *Server) homeFromField(ctx context.Context, playerID uuid.UUID) {
 	world, onRecord := s.currentWorldOf(playerID)
 	if !onRecord {
 		return
@@ -408,7 +416,7 @@ func (s *Server) homeFromField(playerID uuid.UUID) {
 	if !ended {
 		return
 	}
-	if _, err := s.comeHome(s.ctx, field, visit); err != nil {
+	if _, err := s.comeHome(ctx, field, visit); err != nil {
 		slog.Warn("A member dropped in a field did not come home", "player_id", playerID, "error", err)
 	}
 }
@@ -447,6 +455,30 @@ func (s *Server) moveRecord(playerID, from, to uuid.UUID) (bool, uuid.UUID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	return s.moveRecordLocked(playerID, from, to)
+}
+
+/**
+* moveRecordOnConn is moveRecord for a move the member asked for on conn, made
+* off the message hub's loop: it moves only while conn is still the member's
+* live connection. A member whose conn dropped (held for a reconnect, or back
+* on another connection) is left where the record names, so a move decided
+* before the drop never lands after it. Reports whether it moved.
+* FS-X2F2H §Requirements 17.
+**/
+func (s *Server) moveRecordOnConn(conn *websocket.Conn, playerID, from, to uuid.UUID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if mapped, live := s.connToPlayer[conn]; !live || mapped.ID != playerID {
+		return false
+	}
+	moved, _ := s.moveRecordLocked(playerID, from, to)
+	return moved
+}
+
+// moveRecordLocked is moveRecord's move. Callers must hold the write lock.
+func (s *Server) moveRecordLocked(playerID, from, to uuid.UUID) (bool, uuid.UUID) {
 	record, onRecord := s.players[playerID]
 	if !onRecord {
 		return false, uuid.Nil
