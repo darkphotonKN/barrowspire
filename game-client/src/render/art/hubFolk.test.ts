@@ -64,7 +64,9 @@ describe("folkLook", () => {
   );
 
   it.each([
+    // the Warden by either name while the server renames his function (FS-0XMCP R25)
     ["delve", "folk_spirewarden"],
+    ["storyteller", "folk_spirewarden"],
     ["storekeeper", "folk_quartermaster"],
   ] as const)("should draw the %s NPC as their own character", (fn, sheet) => {
     expect(folkLook({ function: fn, appearance: "" }, BAKED)).toEqual({
@@ -108,7 +110,7 @@ const HUB_RESIDENTS = [
   "slate_trousers",
   "flax_skirt",
 ];
-const HUB_FUNCTIONS = ["delve", "storekeeper"] as const;
+const HUB_FUNCTIONS = ["delve", "storyteller", "storekeeper"] as const;
 
 describe("the shipped hub folk (public/art/manifest.json)", () => {
   const manifest = JSON.parse(
