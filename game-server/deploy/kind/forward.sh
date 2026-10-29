@@ -9,10 +9,13 @@
 
 set -u
 
+# pinned, so switching the current context (e.g. to GKE) never redirects a reconnect
+CONTEXT=kind-barrowspire
+
 forward() {
   local target=$1 ports=$2
   while true; do
-    kubectl port-forward "$target" "$ports" >/dev/null 2>&1
+    kubectl --context "$CONTEXT" port-forward "$target" "$ports" >/dev/null 2>&1
     echo "[forward] $target dropped, reconnecting"
     sleep 1
   done
