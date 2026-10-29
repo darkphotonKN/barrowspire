@@ -9,6 +9,7 @@ import {
   litEdgeGround,
   relativeLuminance,
   sourceFromManifest,
+  groundMean,
   tinted,
   type LightSource,
 } from "./lighting";
@@ -180,5 +181,26 @@ describe("tinted", () => {
   it("should multiply a mean by the tint, channel by channel, as the GPU tints a sprite", () => {
     const tint = (128 << 16) | (255 << 8) | 0;
     expect(tinted(grass, tint)).toEqual({ r: 41, g: 83, b: 0 });
+  });
+});
+
+describe("groundMean", () => {
+  const grass = { r: 81, g: 83, b: 53 };
+  const tint = (128 << 16) | (255 << 8) | 0;
+
+  it("should leave a ground with no tint and no lift as baked", () => {
+    expect(groundMean(grass, {})).toEqual(grass);
+  });
+
+  it("should tint it as the GPU does", () => {
+    expect(groundMean(grass, { tint })).toEqual(tinted(grass, tint));
+  });
+
+  it("should lift it by adding the tinted ground again at the lift's share", () => {
+    expect(groundMean(grass, { tint, lift: 0.5 })).toEqual({ r: 62, g: 125, b: 0 });
+  });
+
+  it("should clip a lift at full", () => {
+    expect(groundMean({ r: 200, g: 10, b: 0 }, { lift: 1 })).toEqual({ r: 255, g: 20, b: 0 });
   });
 });

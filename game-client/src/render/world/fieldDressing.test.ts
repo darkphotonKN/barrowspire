@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Point, Rect } from "@/render/iso";
 import { MEADOWS_LOOK } from "./fieldLook";
-import {
-  ROAD_HALF_WIDTH,
-  planFieldAprons,
-  planKeepOutDressing,
-  planRoadHome,
-} from "./fieldDressing";
+import { ROAD_HALF_WIDTH, planKeepOutDressing, planRoadHome } from "./fieldDressing";
 import { planGround } from "./ground";
 
 /**
@@ -94,10 +89,16 @@ describe("planRoadHome (FS-X2F2H §Requirements 51, 54)", () => {
     for (const p of road.paths) expect(p.height).toBe(2 * ROAD_HALF_WIDTH);
   });
 
-  it("should carry the road on past the edge, as far as the ground runs on there", () => {
-    const west = planFieldAprons(2000, 1000).find((a) => a.along === "y" && a.x < 0)!;
-    const path = road.paths[0];
-    expect(path.x).toBeLessThanOrEqual(-west.fade);
+  it("should carry the road alone on past the edge, fading, and no grass beyond it", () => {
+    const tiles = planGround({ width: 400, height: 1000, kind: "field", ...road });
+    const beyond = tiles.filter((t) => t.at.x < 0);
+    expect(beyond.length).toBeGreaterThan(0);
+    // the map ends on its own edge: past it, only the road's own row of dirt
+    expect(beyond.every((t) => t.sheet === "ground_dirt" && t.at.y === GATE.y)).toBe(true);
+    const nearest = beyond.find((t) => t.at.x === -20)!;
+    const furthest = beyond.reduce((a, b) => (a.at.x < b.at.x ? a : b));
+    expect(nearest.alpha!).toBeGreaterThan(furthest.alpha!);
+    expect(Math.min(...road.paths.map((p) => p.x))).toBeLessThanOrEqual(furthest.at.x);
   });
 
   it("should stand the signpost beside the road, at the gate, inside the map", () => {
@@ -108,32 +109,3 @@ describe("planRoadHome (FS-X2F2H §Requirements 51, 54)", () => {
   });
 });
 
-describe("planFieldAprons (FS-X2F2H §Requirements 54)", () => {
-  const W = 400;
-  const H = 200;
-  const T = 40;
-  const aprons = planFieldAprons(W, H);
-  const tiles = planGround({ width: W, height: H, kind: "field", aprons });
-  const beyond = tiles.filter((t) => t.at.x < 0 || t.at.y < 0 || t.at.x > W || t.at.y > H);
-
-  it("should run the ground on past every edge and every corner", () => {
-    const at = (x: number, y: number) => beyond.some((t) => t.at.x === x && t.at.y === y);
-    expect(at(W / 2 + T / 2, -T / 2)).toBe(true); // north
-    expect(at(W / 2 + T / 2, H + T / 2)).toBe(true); // south
-    expect(at(-T / 2, 3.5 * T)).toBe(true); // west
-    expect(at(W + T / 2, 3.5 * T)).toBe(true); // east
-    expect(at(-T / 2, -T / 2)).toBe(true); // a corner
-  });
-
-  it("should fade it out with distance, so it dissolves into the land beyond", () => {
-    expect(beyond.every((t) => t.alpha! > 0 && t.alpha! <= 1)).toBe(true);
-    const row = (y: number) => beyond.filter((t) => t.at.y === y && t.at.x > 0 && t.at.x < W);
-    const mean = (ts: typeof beyond) => ts.reduce((n, t) => n + t.alpha!, 0) / Math.max(1, ts.length);
-    expect(mean(row(-T / 2))).toBeGreaterThan(mean(row(-3.5 * T)));
-  });
-
-  it("should lay each tile beyond the edge once", () => {
-    const keys = beyond.map((t) => `${t.at.x},${t.at.y}`);
-    expect(new Set(keys).size).toBe(keys.length);
-  });
-});

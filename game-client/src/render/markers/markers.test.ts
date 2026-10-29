@@ -6,15 +6,16 @@ import {
   AMBIENT,
   TOWER_AMBIENT,
   contrastRatio,
+  groundMean,
   litEdgeGround,
   relativeLuminance,
-  tinted,
 } from "@/render/lighting/lighting";
 import { FIELD_LOOKS } from "@/render/world/fieldLook";
 import { VIGNETTE_DEPTH, edgeVignetteAlpha } from "@/render/lighting/vignette";
 import type { WorldKind } from "@/render/world/ground";
 import { palette } from "@/utils/canvasPalette";
 import {
+  FIELD_MARKER_OUTLINE,
   HUD_DEPTH,
   MARKER_BAR,
   MARKER_DEPTH,
@@ -138,25 +139,44 @@ describe("the readability floor in daylit fields (FS-X2F2H §Requirements 54, gu
       : [],
   );
 
+  /** From the canvas centre, where the daylight is brightest, out to each canvas's edge. */
+  const VIGNETTES = [0, ...CANVASES.map(([w, h]) => edgeVignetteAlpha(w, h))];
+  const outline = FIELD_MARKER_OUTLINE.color;
+
   it("is measured against the outdoor ground family", () => {
     expect(OUTDOOR_GROUNDS.map(([n]) => n)).toEqual(
       expect.arrayContaining(["ground_grass", "ground_dirt", "ground_grass_dirt"]),
     );
   });
 
-  // every field's own look: a field added to the table is held to the floor by being added
+  it.each(Object.entries(MARKER_INKS))(
+    "should keep the %s marker at 3:1 or better against the field outline around it",
+    (_, ink) => {
+      expect(contrastRatio(ink, outline)).toBeGreaterThanOrEqual(FLOOR);
+    },
+  );
+
+  it("should draw the outline thick enough to stand between ink and ground", () => {
+    expect(FIELD_MARKER_OUTLINE.thickness).toBeGreaterThanOrEqual(2);
+  });
+
+  it("should fail an outline too light to carry the ink, so the check has teeth", () => {
+    expect(contrastRatio(MARKER_INKS["hub name"], palette.markerSelf)).toBeLessThan(FLOOR);
+  });
+
+  // every field's own look: a field added to the table is held to the rule by being added
   describe.each(Object.entries(FIELD_LOOKS))("%s", (_, look) => {
     it.each(Object.entries(MARKER_INKS))(
-      "should keep the %s marker at 3:1 or better against the field's own lit ground at any canvas edge",
+      "should read the %s marker at 3:1 or better on the field's own lit ground, directly or through its outline",
       (_, ink) => {
-        for (const [name, mean] of OUTDOOR_GROUNDS) {
-          const ground = look.ground.tint === undefined ? mean : tinted(mean, look.ground.tint);
-          for (const [w, h] of CANVASES)
+        for (const [name, mean] of OUTDOOR_GROUNDS)
+          for (const v of VIGNETTES) {
+            const ground = litEdgeGround(groundMean(mean, look.ground), look.ambient, v);
             expect(
-              contrastRatio(ink, litEdgeGround(ground, look.ambient, edgeVignetteAlpha(w, h))),
-              `${name} ${w}×${h}`,
+              Math.max(contrastRatio(ink, ground), contrastRatio(ink, outline)),
+              `${name} vignette ${v.toFixed(2)}`,
             ).toBeGreaterThanOrEqual(FLOOR);
-        }
+          }
       },
     );
   });

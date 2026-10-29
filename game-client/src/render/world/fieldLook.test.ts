@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { AMBIENT, relativeLuminance, tinted } from "@/render/lighting/lighting";
+import type { ArtRgb } from "@/render/art/manifest";
+import {
+  AMBIENT,
+  groundMean,
+  litEdgeGround,
+  relativeLuminance,
+} from "@/render/lighting/lighting";
 import { OUTDOOR_GROUND, planGroundLayer } from "./ground";
 import { FIELD_LOOKS, MEADOWS_LOOK, fieldLook, landBeyond } from "./fieldLook";
 
 const channels = (c: number) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
+/** The baked grass's measured mean (public/art/manifest.json, ground_grass). */
+const GRASS: ArtRgb = { r: 81, g: 83, b: 53 };
 
 describe("fieldLook (FS-X2F2H §Requirements 54)", () => {
   it("should draw Gentle Meadows with the Meadows look", () => {
@@ -20,10 +28,11 @@ describe("fieldLook (FS-X2F2H §Requirements 54)", () => {
 });
 
 describe("the Meadows look", () => {
-  it("should lay the exterior theme's ground family, recoloured", () => {
-    const { tint, ...family } = MEADOWS_LOOK.ground;
+  it("should lay the exterior theme's ground family, recoloured and lifted", () => {
+    const { tint, lift, ...family } = MEADOWS_LOOK.ground;
     expect(family).toEqual(OUTDOOR_GROUND);
     expect(tint).toBeDefined();
+    expect(lift).toBeGreaterThan(0);
   });
 
   it("should recolour it toward green: green over red over blue", () => {
@@ -32,11 +41,24 @@ describe("the Meadows look", () => {
     expect(r).toBeGreaterThan(b);
   });
 
-  it("should be lit by daylight, brighter than the hub's dusk", () => {
-    expect(MEADOWS_LOOK.ambient).toBe(AMBIENT.field);
+  it("should be lit by a warm daylight, brighter than the hub's dusk and the old field default", () => {
+    const [r, g, b] = channels(MEADOWS_LOOK.ambient);
+    expect(r).toBeGreaterThanOrEqual(g);
+    expect(g).toBeGreaterThan(b);
     expect(relativeLuminance(MEADOWS_LOOK.ambient)).toBeGreaterThan(
-      relativeLuminance(AMBIENT.hub),
+      relativeLuminance(AMBIENT.field),
     );
+  });
+
+  it("should light the grass a clearly daylit green: green-led, and well above the hub's dusk", () => {
+    const lit = (mean: ArtRgb, look: { tint?: number; lift?: number }, ambient: number) =>
+      litEdgeGround(groundMean(mean, look), ambient, 0);
+    const meadow = lit(GRASS, MEADOWS_LOOK.ground, MEADOWS_LOOK.ambient);
+    const hub = lit(GRASS, {}, AMBIENT.hub);
+    const [r, g, b] = channels(meadow);
+    expect(g).toBeGreaterThan(r);
+    expect(r).toBeGreaterThan(b);
+    expect(relativeLuminance(meadow)).toBeGreaterThan(3 * relativeLuminance(hub));
   });
 
   it("should give two clients the same tiles", () => {
@@ -53,10 +75,9 @@ describe("the Meadows look", () => {
     expect([...sheets].sort()).toEqual(["decal_grass_tuft", "decal_pebbles", "ground_grass"]);
   });
 
-  it("should paint the land beyond the edges in the field's own ground colour, as the grass is tinted", () => {
-    const grass = { r: 81, g: 83, b: 53 };
-    const { r, g, b } = tinted(grass, MEADOWS_LOOK.ground.tint!);
-    expect(landBeyond(MEADOWS_LOOK, grass)).toBe((r << 16) | (g << 8) | b);
+  it("should paint the land beyond the edges in the field's own ground colour, as the grass is painted", () => {
+    const { r, g, b } = groundMean(GRASS, MEADOWS_LOOK.ground);
+    expect(landBeyond(MEADOWS_LOOK, GRASS)).toBe((r << 16) | (g << 8) | b);
   });
 
   it("should paint the land in the look's own colour when the ground has no measured mean", () => {
