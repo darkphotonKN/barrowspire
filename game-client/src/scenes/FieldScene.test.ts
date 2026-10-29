@@ -228,3 +228,88 @@ describe("FieldScene monsters and the fight (FS-X2F2H §Requirements 56)", () =>
     expect((field as unknown as { fight?: unknown }).fight).toBeUndefined();
   });
 });
+
+describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const stateAt = (current_health: number, position = ARRIVAL) => ({
+    world_type: "field",
+    current_player: { entity_id: "me", position, current_health },
+    other_players: [],
+    walls: [],
+    gates: [ROAD_HOME],
+  });
+
+  type Fallen = Omit<FieldUnderTest, "time"> & {
+    time: { delayedCall: ReturnType<typeof vi.fn>; now: number };
+    fallenLine?: unknown;
+    cursors?: unknown;
+    wasd?: unknown;
+    update(time: number, delta: number): void;
+  };
+
+  /** The field with a clock the test sets, and keys the test holds down. */
+  function fallenOnStage() {
+    const stage = fieldOnStage();
+    const field = stage.field as unknown as Fallen;
+    field.time = { delayedCall: vi.fn(), now: 0 };
+    Object.assign(field, { fight: { sync: vi.fn(), update: vi.fn(), release: vi.fn() } });
+    const idle = { isDown: false };
+    const right = { isDown: false };
+    field.cursors = { left: idle, right, up: idle, down: idle };
+    field.wasd = { left: idle, right: idle, up: idle, down: idle };
+    const holdRight = (down: boolean) => (right.isDown = down);
+    const frame = (now: number) => {
+      field.time.now = now;
+      field.update(now, 16);
+    };
+    return { ...stage, field, holdRight, frame };
+  }
+
+  it("should show the fallen state counting 3-2-1, with no result card or loss copy", () => {
+    const { field, texts } = fallenOnStage();
+
+    field.time.now = 1000;
+    field.renderState(stateAt(0, { x: 900, y: 420 }));
+
+    expect(texts).toContain("You have fallen. You rise at the road home in 3.");
+    expect(field.fallenLine).toBeDefined();
+    expect(texts.filter((t) => /lost|defeat|victory|escape|result/i.test(t))).toEqual([]);
+  });
+
+  it("should take the fallen state down once the player stands at the entrance again", () => {
+    const { field } = fallenOnStage();
+    field.time.now = 1000;
+    field.renderState(stateAt(0, { x: 900, y: 420 }));
+
+    field.time.now = 4000;
+    field.renderState(stateAt(150));
+
+    expect(field.fallenLine).toBeUndefined();
+  });
+
+  it("should send no move while fallen, and move again on rising with the key still held", () => {
+    const { field, send, holdRight, frame } = fallenOnStage();
+    field.renderState(stateAt(0, { x: 900, y: 420 }));
+
+    holdRight(true);
+    frame(500);
+    expect(send).not.toHaveBeenCalledWith(ActionType.Move, expect.anything());
+
+    field.time.now = 3000;
+    field.renderState(stateAt(150));
+    frame(3016);
+    expect(send).toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });
+  });
+
+  it("should forget a fall on release, so the next visit starts standing", () => {
+    const { field } = fallenOnStage();
+    field.renderState(stateAt(0, { x: 900, y: 420 }));
+
+    field.release();
+
+    expect(field.fallenLine).toBeUndefined();
+  });
+});
