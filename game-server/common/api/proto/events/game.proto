@@ -39,6 +39,11 @@ message PlayerItems {
   string member_id = 1;
   Equipment equipment = 2;
   repeated Item inventory = 3;
+  // The member's stored loadout could not be read when they were seated, so
+  // the run never knew what they brought in. Equipment then says nothing
+  // about the stored loadout: the consumer stores the items but leaves the
+  // stored loadout as it is.
+  bool loadout_unknown = 4;
 }
 
 // All equipment slots — mirrors EquipmentComponent in game-service.

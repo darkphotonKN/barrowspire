@@ -168,7 +168,8 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, 
 	}
 }
 
-// storeExtractedPlayerItems writes one player's extracted items and loadout.
+// storeExtractedPlayerItems writes one player's extracted items and loadout,
+// or only the items when the run never knew their stored loadout.
 func (s *service) storeExtractedPlayerItems(ctx context.Context, tx *sqlx.Tx, playerItems *pb.PlayerItems) error {
 	slog.Debug("single player iterated from req.PlayerItems",
 		"member_id", playerItems.GetMemberId(),
@@ -196,6 +197,16 @@ func (s *service) storeExtractedPlayerItems(ctx context.Context, tx *sqlx.Tx, pl
 
 	if err := s.repo.BatchUpsertItemInstances(ctx, tx, allItemInstances); err != nil {
 		return fmt.Errorf("upsert extracted items of member %s: %w", memberId, err)
+	}
+
+	// the run never read their stored loadout, so its empty slots are not an
+	// empty loadout: what they wore out is kept as items, the loadout untouched
+	if playerItems.GetLoadoutUnknown() {
+		slog.Warn("loadout was unknown in the run, leaving the stored loadout as it is",
+			"member_id", memberId,
+			"items_kept", len(allItemInstances),
+		)
+		return nil
 	}
 
 	// upsert player loadout with equipment ids

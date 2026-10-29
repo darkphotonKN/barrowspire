@@ -908,6 +908,8 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 		ItemIDList:    carried,
 		Escape:        false,
 		PlayerLoadout: loadout,
+		// no loadout here means it was never read, not that none is stored
+		LoadoutUnknown: loadout == nil,
 	}
 
 	// create player state entity
@@ -1032,6 +1034,8 @@ func (s *Session) seatPlayerLocked(player *types.Player, items *pbitems.GetLoado
 		ItemIDList:    carried,
 		Escape:        false,
 		PlayerLoadout: loadout,
+		// no loadout here means it was never read, not that none is stored
+		LoadoutUnknown: loadout == nil,
 	}
 
 	// create player state entity
@@ -2758,13 +2762,14 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 			}
 
 			rawPlayers = append(rawPlayers, types.RawPlayerState{
-				MemberID:  playerState.MemberID.String(),
-				Username:  playerState.Username,
-				Kills:     int32(stats.Kills),
-				Deaths:    int32(stats.Deaths),
-				Escape:    playerState.Escape,
-				Equipment: extractedEquipment,
-				Inventory: inventory,
+				MemberID:       playerState.MemberID.String(),
+				Username:       playerState.Username,
+				Kills:          int32(stats.Kills),
+				Deaths:         int32(stats.Deaths),
+				Escape:         playerState.Escape,
+				Equipment:      extractedEquipment,
+				Inventory:      inventory,
+				LoadoutUnknown: playerState.LoadoutUnknown,
 			})
 		}
 	}

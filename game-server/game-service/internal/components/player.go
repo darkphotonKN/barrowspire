@@ -17,6 +17,11 @@ type PlayerComponent struct {
 	// since climbed away from. Their record persists for run-end accounting, but
 	// they are no longer present on the current floor. FS-F6F88 §Requirements 15.
 	LeftBehind bool
+	// LoadoutUnknown marks a delver seated without their stored loadout because
+	// it could not be read. What they wear says nothing about what is stored,
+	// so the run's extraction tells the settlement to leave the stored loadout
+	// alone rather than overwrite it with empty slots.
+	LoadoutUnknown bool
 }
 
 func (p *PlayerComponent) Type() ecs.ComponentType {

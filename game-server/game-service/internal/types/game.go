@@ -143,18 +143,22 @@ type RawPlayerState struct {
 	Escape    bool
 	Equipment ExtractedEquipment
 	Inventory []*ExtractedItem
+	// LoadoutUnknown: the stored loadout was never read, so Equipment says
+	// nothing about it
+	LoadoutUnknown bool
 }
 
 type RankedPlayerState struct {
-	MemberID      string
-	Username      string
-	Kills         int32
-	Deaths        int32
-	FinalPosition int32
-	Win           bool
-	Escape        bool
-	Equipment     ExtractedEquipment
-	Inventory     []*ExtractedItem
+	MemberID       string
+	Username       string
+	Kills          int32
+	Deaths         int32
+	FinalPosition  int32
+	Win            bool
+	Escape         bool
+	Equipment      ExtractedEquipment
+	Inventory      []*ExtractedItem
+	LoadoutUnknown bool
 }
 
 type ExtractedItem struct {

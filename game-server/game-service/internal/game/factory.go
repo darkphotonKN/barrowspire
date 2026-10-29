@@ -55,6 +55,9 @@ type PlayerConfig struct {
 	ItemIDList    []uuid.UUID
 	Escape        bool
 	PlayerLoadout *components.EquipmentConfig
+	// LoadoutUnknown is set when the stored loadout could not be read, so
+	// PlayerLoadout is empty for want of it, not because nothing is stored.
+	LoadoutUnknown bool
 }
 
 func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity {
@@ -62,6 +65,7 @@ func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity 
 
 	player := components.NewPlayerComponent(config.MemberID, config.ClassName, config.Username, config.Escape)
 	player.CharacterID = config.CharacterID
+	player.LoadoutUnknown = config.LoadoutUnknown
 	entity.AddComponent(player)
 
 	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))

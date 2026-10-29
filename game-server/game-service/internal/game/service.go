@@ -170,6 +170,8 @@ func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, ende
 				Consumable_3: extractedItemToPb(player.Equipment.Consumable3),
 			},
 			Inventory: extractedInventoryToPb(player.Inventory),
+			// an unread loadout must never be settled as an empty one
+			LoadoutUnknown: player.LoadoutUnknown,
 		}
 	}
 
@@ -254,8 +256,9 @@ func (s *service) rankPlayers(players []types.RawPlayerState, eliminationOrder m
 			Deaths:   player.Deaths,
 			Escape:   player.Escape,
 			// what the delver brings out; dropping it here lost every extraction
-			Equipment: player.Equipment,
-			Inventory: player.Inventory,
+			Equipment:      player.Equipment,
+			Inventory:      player.Inventory,
+			LoadoutUnknown: player.LoadoutUnknown,
 		}
 
 		// determining final positions
