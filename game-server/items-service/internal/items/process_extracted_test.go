@@ -18,6 +18,7 @@ type extractionRepo struct {
 	upsertErr  error
 	loadoutErr error
 	upserted   []*ItemInstance
+	loadouts   []*UpsertPlayerLoadoutRequest
 }
 
 func (r *extractionRepo) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, items []*ItemInstance) error {
@@ -26,6 +27,7 @@ func (r *extractionRepo) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.
 }
 
 func (r *extractionRepo) UpsertPlayerLoadoutTx(ctx context.Context, tx *sqlx.Tx, req *UpsertPlayerLoadoutRequest) error {
+	r.loadouts = append(r.loadouts, req)
 	return r.loadoutErr
 }
 
@@ -184,6 +186,43 @@ func TestProcessItemsExtracted_NilEquipment_StoresSatchel(t *testing.T) {
 	}
 	if len(repo.upserted) != 2 {
 		t.Fatalf("stored %d rows, want the 2 satchel items", len(repo.upserted))
+	}
+}
+
+// A delver seated without their stored loadout (it could not be read) brought
+// none of it in, so their extraction says nothing about it: what they leave
+// with is stored, and the stored loadout is left as it was instead of being
+// overwritten with empty slots. A delver whose loadout was read has it
+// replaced by what they wear out.
+func TestProcessItemsExtracted_LoadoutUnknown_LeavesTheStoredLoadoutAlone(t *testing.T) {
+	foundSword := &pb.Item{TemplateId: uuid.NewString(), ItemType: "weapon", Name: "Barrow Blade", AttackPower: 7}
+
+	tests := []struct {
+		name           string
+		loadoutUnknown bool
+		wantLoadouts   int
+	}{
+		{name: "loadout read at seating: replaced by what is worn out", loadoutUnknown: false, wantLoadouts: 1},
+		{name: "loadout unknown at seating: stored loadout untouched", loadoutUnknown: true, wantLoadouts: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &extractionRepo{}
+			svc := &service{repo: repo, withTx: runInline, inbox: &fakeInbox{}}
+			event := extractedEvent(potion())
+			event.PlayerItems[0].Equipment = &pb.Equipment{Weapon: foundSword}
+			event.PlayerItems[0].LoadoutUnknown = tt.loadoutUnknown
+
+			if err := svc.ProcessItemsExtracted(context.Background(), uuid.New(), commonconstants.ItemsExtracted, event); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(repo.upserted) != 2 {
+				t.Errorf("stored %d items, want the worn sword and the satchel potion", len(repo.upserted))
+			}
+			if len(repo.loadouts) != tt.wantLoadouts {
+				t.Fatalf("wrote the stored loadout %d times, want %d", len(repo.loadouts), tt.wantLoadouts)
+			}
+		})
 	}
 }
 
