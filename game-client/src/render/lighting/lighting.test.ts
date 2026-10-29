@@ -6,6 +6,7 @@ import {
   cullInto,
   flickerAt,
   TOWER_AMBIENT,
+  FOREST_AMBIENT,
   litEdgeGround,
   relativeLuminance,
   sourceFromManifest,
@@ -122,6 +123,17 @@ describe("ambient per world (FS-2325V §C.8, §C.9)", () => {
     expect(relativeLuminance(TOWER_AMBIENT)).toBeLessThan(
       relativeLuminance(AMBIENT.run),
     );
+  });
+
+  it("should light the Forest dim, not dark: strictly between the hub's dusk and a run's barrow cold (FS-3QHQZ §Requirements 26)", () => {
+    expect(relativeLuminance(FOREST_AMBIENT)).toBeLessThan(relativeLuminance(AMBIENT.hub));
+    expect(relativeLuminance(FOREST_AMBIENT)).toBeGreaterThan(relativeLuminance(AMBIENT.run));
+  });
+
+  it("should mix the forest ambient from tokens: an overcast grey-green, cooler than the hub", () => {
+    expect(FOREST_AMBIENT).toBe(mix(BARROW_HEX.vellumDark, BARROW_HEX.necrotic, 0.3));
+    const warmth = (c: number) => ((c >> 16) & 0xff) - (c & 0xff);
+    expect(warmth(FOREST_AMBIENT)).toBeLessThan(warmth(AMBIENT.hub));
   });
 
   it("should mix the tower ambient from tokens: the run's cold slate sunk toward pitch", () => {

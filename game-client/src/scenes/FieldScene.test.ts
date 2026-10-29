@@ -180,7 +180,8 @@ describe("FieldScene the road home (FS-X2F2H §Requirements 14, 57, 60)", () => 
     expect(field.drawGround).not.toHaveBeenCalled();
 
     field.renderState(state("field"));
-    expect(field.drawGround).toHaveBeenCalledWith([ROAD_HOME]);
+    // and the walls, for a forest's litter under its stands (FS-3QHQZ §Requirements 25)
+    expect(field.drawGround).toHaveBeenCalledWith([ROAD_HOME], []);
   });
 });
 

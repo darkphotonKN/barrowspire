@@ -109,3 +109,40 @@ describe("planRoadHome (FS-X2F2H §Requirements 51, 54)", () => {
   });
 });
 
+describe("planRoadHome at a gate on another edge (FS-3QHQZ §Requirements 14: the Forest's mouth is east)", () => {
+  /** The Forest's entrance gate, inside the mouth on its east edge, toward the hub. */
+  const SIZE = { width: 2080, height: 1360 };
+  const GATE = { x: 2040, y: 880 };
+  const road = planRoadHome(GATE, SIZE);
+
+  it("should run the road through the gate and off the east edge, not across the map", () => {
+    expect(road.paths.some((p) => inside(GATE, p))).toBe(true);
+    for (const p of road.paths) {
+      expect(p.x + p.width).toBeGreaterThan(SIZE.width);
+      expect(p.x).toBeGreaterThan(SIZE.width / 2);
+    }
+  });
+
+  it("should fade the road out past the east edge", () => {
+    const tiles = planGround({ ...SIZE, kind: "field", ...road });
+    const beyond = tiles.filter((t) => t.at.x > SIZE.width);
+    expect(beyond.length).toBeGreaterThan(0);
+    expect(beyond.every((t) => t.sheet === "ground_dirt")).toBe(true);
+    const nearest = beyond.reduce((a, b) => (a.at.x < b.at.x ? a : b));
+    const furthest = beyond.reduce((a, b) => (a.at.x > b.at.x ? a : b));
+    expect(nearest.alpha!).toBeGreaterThan(furthest.alpha!);
+  });
+
+  it("should stand the signpost beside the road, inside the map, on the gate's inward side", () => {
+    expect(road.signpost.x).toBeLessThan(GATE.x);
+    expect(Math.hypot(road.signpost.x - GATE.x, road.signpost.y - GATE.y)).toBeLessThanOrEqual(120);
+    expect(road.paths.some((p) => inside(road.signpost, p))).toBe(false);
+  });
+
+  it("should keep a west-edge gate's road as it was", () => {
+    expect(planRoadHome({ x: 40, y: 500 }, { width: 2000, height: 1000 })).toEqual(
+      planRoadHome({ x: 40, y: 500 }),
+    );
+  });
+});
+

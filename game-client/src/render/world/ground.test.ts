@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { WORLD_PX_PER_TILE } from "@/render/iso";
+import { BARROW_HEX } from "@/utils/theme";
 import {
   OUTDOOR_GROUND,
   TOWER_GROUND,
@@ -52,6 +53,71 @@ describe("planGround in a field world (FS-X2F2H §Requirements 55)", () => {
   it("should lay grass, as the hub does, until slice 9 dresses the Meadows", () => {
     const field = planGround({ width: 3 * T, height: 3 * T, kind: "field" });
     expect(new Set(field.map((t) => t.sheet))).toEqual(new Set(["ground_grass"]));
+  });
+});
+
+describe("planGround in a forest (FS-3QHQZ §Requirements 25)", () => {
+  // a 6 × 4 tile forest: a stand over the west half, open ground (trail) east of it
+  const stand = { x: 0, y: 0, width: 3 * T, height: 4 * T };
+  const tiles = planGround({
+    width: 6 * T,
+    height: 4 * T,
+    kind: "field",
+    trodden: true,
+    litter: [stand],
+  });
+  const at = (tx: number, ty: number) =>
+    tiles.find((t) => t.at.x === (tx + 0.5) * T && t.at.y === (ty + 0.5) * T)!;
+
+  it("should lay worn barrow dirt on the open ground", () => {
+    for (let ty = 0; ty < 4; ty++)
+      for (let tx = 3; tx < 6; tx++) expect(at(tx, ty).sheet).toBe("ground_dirt");
+  });
+
+  it("should lay leaf litter under the stands, blended where it meets the trail", () => {
+    for (let ty = 0; ty < 4; ty++) {
+      expect(at(0, ty).sheet).toBe("ground_grass");
+      expect(at(2, ty)).toMatchObject({ sheet: "ground_grass_dirt", animation: "e" });
+    }
+  });
+
+  it("should shade the litter alone, darker than the trail, when the look gives a shade", () => {
+    const shaded = planGround({
+      width: 6 * T,
+      height: 4 * T,
+      kind: "field",
+      trodden: true,
+      litter: [stand],
+      litterShade: BARROW_HEX.vellumDark,
+    });
+    const c = (v: number) => [(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff];
+    const half = c(BARROW_HEX.vellumDark).map((v) => Math.round(v + (255 - v) / 2));
+    for (const t of shaded) {
+      const where = `${t.sheet} at ${t.at.x}`;
+      if (t.sheet === "ground_dirt") expect(t.shade, where).toBeUndefined();
+      else if (t.sheet === "ground_grass") expect(t.shade, where).toBe(BARROW_HEX.vellumDark);
+      // where the litter meets the trail, half shaded: no step against the dirt beside it
+      else expect(c(t.shade!), where).toEqual(half);
+    }
+    // without a shade, nothing is shaded
+    expect(tiles.every((t) => t.shade === undefined)).toBe(true);
+  });
+
+  it("should lay a field's grass as before when the ground is not trodden", () => {
+    const meadow = planGround({ width: 3 * T, height: 3 * T, kind: "field", litter: [stand] });
+    expect(new Set(meadow.map((t) => t.sheet))).toEqual(new Set(["ground_grass"]));
+  });
+
+  it("should carry trodden and litter through planGroundLayer from the look and the world", () => {
+    const layer = planGroundLayer({
+      width: 6 * T,
+      height: 4 * T,
+      kind: "field",
+      litter: [stand],
+      houses: [],
+      look: { ...OUTDOOR_GROUND, decals: false, trodden: true },
+    });
+    expect(layer).toEqual(tiles);
   });
 });
 
