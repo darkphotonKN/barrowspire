@@ -94,6 +94,69 @@ describe("planGround", () => {
   });
 });
 
+describe("planGround's aprons beyond the edge (FS-0XMCP R18)", () => {
+  const W = 10 * T;
+  const H = 10 * T;
+  // an apron six tiles deep past the east edge, a path running out through it
+  const apron = {
+    x: W,
+    y: 2 * T,
+    width: 6 * T,
+    height: 4 * T,
+    from: { x: W, y: 3.5 * T },
+    fade: 5 * T,
+  };
+  const tiles = planGround({
+    width: W,
+    height: H,
+    kind: "hub",
+    paths: [{ x: 6 * T, y: 3 * T, width: 10 * T, height: T }],
+    aprons: [apron],
+  });
+  const outside = tiles.filter((t) => t.at.x > W);
+
+  it("should leave the map's own tiles whole", () => {
+    const inside = tiles.filter((t) => t.at.x < W);
+    expect(inside).toHaveLength(100);
+    expect(inside.every((t) => t.alpha === undefined)).toBe(true);
+  });
+
+  it("should lay ground past the edge only on the apron, fading toward its far side", () => {
+    expect(outside.length).toBeGreaterThan(0);
+    for (const t of outside) {
+      expect(t.at.x).toBeLessThan(apron.x + apron.width);
+      expect(t.at.y).toBeGreaterThan(apron.y);
+      expect(t.at.y).toBeLessThan(apron.y + apron.height);
+      expect(t.alpha).toBeGreaterThan(0);
+      expect(t.alpha).toBeLessThanOrEqual(1);
+    }
+    const mean = (col: number) => {
+      const c = outside.filter((t) => t.at.x === W + (col + 0.5) * T);
+      return c.reduce((n, t) => n + t.alpha!, 0) / Math.max(1, c.length);
+    };
+    expect(mean(0)).toBeGreaterThan(mean(3));
+    // nothing survives past the fade
+    expect(outside.every((t) => t.at.x - W < apron.fade)).toBe(true);
+  });
+
+  it("should carry the path on past the edge as dirt", () => {
+    const row = outside.filter((t) => t.at.y === 3.5 * T && t.at.x < W + 3 * T);
+    expect(row.length).toBeGreaterThan(0);
+    expect(row.every((t) => t.sheet === "ground_dirt")).toBe(true);
+  });
+
+  it("should plan the same apron on every client", () => {
+    const again = planGround({
+      width: W,
+      height: H,
+      kind: "hub",
+      paths: [{ x: 6 * T, y: 3 * T, width: 10 * T, height: T }],
+      aprons: [apron],
+    });
+    expect(again).toEqual(tiles);
+  });
+});
+
 describe("transitionEdge", () => {
   const only =
     (...dirs: [number, number][]) =>

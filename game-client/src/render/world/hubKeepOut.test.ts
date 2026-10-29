@@ -1,12 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { projectedBounds, worldToScreen } from "@/render/iso/projection";
 import type { WallState } from "@/types/gameState";
 import {
+  HUB_APPROACHES,
+  HUB_APRONS,
+  HUB_BEYOND_EDGE,
+  HUB_BEYOND_EDGE_FENCES,
+  HUB_CAMERA_MARGIN,
   HUB_CARTS,
   HUB_CRATES,
   HUB_DRESSING,
   HUB_FENCES,
+  HUB_GATE_DRESSING,
   HUB_KEEP_OUT,
   HUB_PATHS,
+  HUB_SIZE,
+  HUB_SPIRE_FACADE,
   HUB_STALLS,
   HUB_WASHING_LINE,
   HUB_WELL,
@@ -57,6 +66,17 @@ const breaches = (fp: Footprint) => keepOutBreaches(fp, HUB_WALLS, EAVE);
 
 const label = (s: PropSpot) => `${s.sheet} at (${s.at.x}, ${s.at.y})`;
 
+type Rect4 = readonly [number, number, number, number];
+
+/** A footprint whose whole square lies outside the map: dressing drawn beyond the edge. */
+function beyondTheEdge(fp: Footprint): boolean {
+  const x0 = Math.min(fp.from.x, fp.to.x) - fp.r;
+  const x1 = Math.max(fp.from.x, fp.to.x) + fp.r;
+  const y0 = Math.min(fp.from.y, fp.to.y) - fp.r;
+  const y1 = Math.max(fp.from.y, fp.to.y) + fp.r;
+  return x1 < 0 || y1 < 0 || x0 > HUB_SIZE.width || y0 > HUB_SIZE.height;
+}
+
 describe("the hub keep-out constants (FS-KYPQ9 §A.3)", () => {
   it("holds K3–K6 as the server places them", () => {
     expect(HUB_KEEP_OUT.spawn).toEqual({ at: { x: 1000, y: 800 }, clearance: 60 });
@@ -73,9 +93,18 @@ describe("the hub keep-out constants (FS-KYPQ9 §A.3)", () => {
       { name: "Bellringer", x: 1180, y: 820, width: 280, height: 140 },
     ]);
   });
+
+  it("holds K8's gates as the server places them, with GateRange (FS-0XMCP R2, R4)", () => {
+    expect(HUB_KEEP_OUT.gates.at).toEqual([
+      { destination: "spire", x: 1000, y: 50 },
+      { destination: "forest", x: 40, y: 400 },
+      { destination: "meadows", x: 1960, y: 360 },
+    ]);
+    expect(HUB_KEEP_OUT.gates.range).toBe(80);
+  });
 });
 
-describe("every hub prop clears K1–K7 (FS-KYPQ9 §A.4, §A.5)", () => {
+describe("every hub prop clears K1–K8 (FS-KYPQ9 §A.4, §A.5; FS-0XMCP R20)", () => {
   const spots: PropSpot[] = [
     HUB_WELL,
     ...HUB_STALLS,
@@ -83,6 +112,7 @@ describe("every hub prop clears K1–K7 (FS-KYPQ9 §A.4, §A.5)", () => {
     ...HUB_CRATES,
     ...HUB_DRESSING,
     ...HUB_WASHING_LINE.posts,
+    ...HUB_GATE_DRESSING,
   ];
 
   it.each(spots.map((s) => [label(s), s] as const))("%s", (_, spot) => {
@@ -109,14 +139,17 @@ describe("every hub prop clears K1–K7 (FS-KYPQ9 §A.4, §A.5)", () => {
     ]);
     expect(HUB_CRATES.map((s) => [s.sheet, s.at.x, s.at.y, s.r])).toEqual([
       ["crate", 1300, 470, 14],
-      ["crate", 1330, 500, 14],
+      // nudged off the east road's drop (FS-0XMCP R19, K8), from (1330, 500)
+      ["crate", 1320, 505, 14],
       ["crate", 530, 730, 14],
       ["crate", 1050, 910, 14],
       ["crate_stack", 1110, 935, 14],
     ]);
     expect(HUB_FENCES).toEqual([
       { at: { x: 300, y: 760 }, length: 220, axis: "x", r: 20 },
-      { at: { x: 1740, y: 300 }, length: 180, axis: "x", r: 20 },
+      // shortened from 180 to clear the Meadows gate's range (FS-0XMCP K8): the fence end
+      // beside the east road
+      { at: { x: 1740, y: 300 }, length: 130, axis: "x", r: 20 },
       { at: { x: 240, y: 950 }, length: 240, axis: "x", r: 20 },
     ]);
   });
@@ -126,8 +159,10 @@ describe("every hub prop clears K1–K7 (FS-KYPQ9 §A.4, §A.5)", () => {
     expect(rows).toEqual([
       ["lamp_post", 925, 760, 12, true],
       ["lamp_post", 1085, 760, 12, true],
-      ["brazier", 1000, 430, 16, true],
-      ["brazier", 515, 600, 16, true],
+      // moved off the north lane and the west trail's drop (FS-0XMCP R19, K8), from
+      // (1000, 430) and (515, 600)
+      ["brazier", 1080, 440, 16, true],
+      ["brazier", 530, 600, 16, true],
       ["water_trough", 750, 450, 20, false],
       ["water_trough", 310, 840, 20, false],
       ["woodpile", 660, 880, 24, false],
@@ -178,6 +213,12 @@ describe("the keep-out check catches a bad placement", () => {
     ["K5 by the hearth", { x: 1080, y: 600 }, 10, "K5"],
     ["K6 in the Woodcutter's quarter", { x: 850, y: 900 }, 10, "K6"],
     ["K7 off the map", { x: 1990, y: 500 }, 20, "K7"],
+    ["K8 in the Spire gate's range", { x: 1060, y: 110 }, 10, "K8"],
+    ["K8 in the Forest gate's range", { x: 80, y: 470 }, 10, "K8"],
+    ["K8 in the Meadows gate's range", { x: 1900, y: 300 }, 10, "K8"],
+    ["K8 on the north lane", { x: 1000, y: 300 }, 10, "K8"],
+    ["K8 on the west trail", { x: 300, y: 415 }, 10, "K8"],
+    ["K8 on the east road", { x: 1600, y: 365 }, 10, "K8"],
   ] as const)("flags %s", (_, at, r, rule) => {
     expect(breaches(spotFootprint({ sheet: "crate", at, r }))).toContain(rule);
   });
@@ -185,6 +226,105 @@ describe("the keep-out check catches a bad placement", () => {
   it("measures K3–K5 from the nearest point of a fence run, not its start", () => {
     const run: FenceRun = { at: { x: 800, y: 760 }, length: 400, axis: "x", r: 10 };
     expect(breaches(fenceFootprint(run))).toContain("K3");
+  });
+});
+
+describe("the gates' approaches and dressing (FS-0XMCP R18–R20)", () => {
+  const touches = (a: Rect4, b: Rect4) =>
+    a[0] <= b[0] + b[2] && b[0] <= a[0] + a[2] && a[1] <= b[1] + b[3] && b[1] <= a[1] + a[3];
+  const holds = (r: Rect4, p: { x: number; y: number }) =>
+    p.x >= r[0] && p.x <= r[0] + r[2] && p.y >= r[1] && p.y <= r[1] + r[3];
+  /** The hearth's paths from before the gates: the spawn's lane and its two arms. */
+  const HEARTH_PATHS = HUB_PATHS.slice(0, 3);
+  /** Where each gate's trodden ground leaves the map: the edge it stands on. */
+  const EXIT = {
+    spire: { x: 1000, y: 0 },
+    forest: { x: 0, y: 400 },
+    meadows: { x: HUB_SIZE.width, y: 360 },
+  } as const;
+
+  it("lays every approach as trodden ground in HUB_PATHS", () => {
+    for (const rects of Object.values(HUB_APPROACHES))
+      for (const r of rects) expect(HUB_PATHS).toContainEqual(r);
+  });
+
+  it.each(HUB_KEEP_OUT.gates.at.map((g) => [g.destination, g] as const))(
+    "joins the %s gate, at the map's edge, to the hearth's paths",
+    (destination, gate) => {
+      const rects = HUB_APPROACHES[destination];
+      // the first rect carries the trodden ground through the gate to the edge
+      expect(holds(rects[0], gate)).toBe(true);
+      expect(holds(rects[0], EXIT[destination])).toBe(true);
+      // each rect touches the one before, and the last meets a hearth path
+      rects.slice(1).forEach((r, i) => expect(touches(r, rects[i])).toBe(true));
+      expect(HEARTH_PATHS.some((p) => touches(p, rects[rects.length - 1]))).toBe(true);
+    },
+  );
+
+  it("stands a signpost beside each field gate, outside its range", () => {
+    const signposts = HUB_GATE_DRESSING.filter((s) => s.sheet === "signpost");
+    for (const destination of ["forest", "meadows"] as const) {
+      const gate = HUB_KEEP_OUT.gates.at.find((g) => g.destination === destination)!;
+      const near = signposts.filter(
+        (s) => Math.hypot(s.at.x - gate.x, s.at.y - gate.y) <= 2 * HUB_KEEP_OUT.gates.range,
+      );
+      expect(near, destination).toHaveLength(1);
+    }
+  });
+
+  it("flanks the trail mouth with pines and oaks, thickening beyond the west edge", () => {
+    const trees = (spots: readonly PropSpot[]) =>
+      spots.filter((s) => /^tree_(pine|oak)$/.test(s.sheet));
+    const inside = trees(HUB_GATE_DRESSING).filter((s) => s.at.x < 300);
+    const beyond = trees(HUB_BEYOND_EDGE).filter((s) => s.at.x < 0);
+    expect(inside.length).toBeGreaterThanOrEqual(2);
+    expect(beyond.length).toBeGreaterThan(inside.length);
+  });
+
+  it.each(HUB_BEYOND_EDGE.map((s) => [label(s), s] as const))(
+    "%s stands wholly beyond the map's edge and clears K8",
+    (_, spot) => {
+      expect(beyondTheEdge(spotFootprint(spot))).toBe(true);
+      expect(breaches(spotFootprint(spot))).toEqual(["K7"]);
+    },
+  );
+
+  it.each(
+    HUB_BEYOND_EDGE_FENCES.map((f) => [`fence run from (${f.at.x}, ${f.at.y})`, f] as const),
+  )("%s beside the east road stands wholly beyond the edge and clears K8", (_, run) => {
+    expect(beyondTheEdge(fenceFootprint(run))).toBe(true);
+    expect(breaches(fenceFootprint(run))).toEqual(["K7"]);
+  });
+
+  it("lays ground past the edge only outside the map, running on from each gate", () => {
+    const reach = projectedBounds(HUB_SIZE.width, HUB_SIZE.height, HUB_CAMERA_MARGIN);
+    expect(HUB_APRONS).toHaveLength(HUB_KEEP_OUT.gates.at.length);
+    for (const a of HUB_APRONS) {
+      const fp: Footprint = {
+        from: { x: a.x + 1, y: a.y + 1 },
+        to: { x: a.x + a.width - 1, y: a.y + a.height - 1 },
+        r: 0,
+      };
+      expect(beyondTheEdge(fp)).toBe(true);
+      // it fades out from a point on the map's edge, inside a gate's range
+      const { x, y } = a.from;
+      expect(x === 0 || y === 0 || x === HUB_SIZE.width || y === HUB_SIZE.height).toBe(true);
+      expect(
+        HUB_KEEP_OUT.gates.at.some((g) => Math.hypot(g.x - x, g.y - y) <= HUB_KEEP_OUT.gates.range),
+      ).toBe(true);
+      // and that point is where the camera can see it
+      const s = worldToScreen(x, y);
+      expect(s.x).toBeGreaterThan(reach.x);
+      expect(s.x).toBeLessThan(reach.x + reach.width);
+      expect(s.y).toBeGreaterThan(reach.y);
+    }
+  });
+
+  it("draws the Spire's facade beyond the north edge, its door on the Spire gate", () => {
+    const spire = HUB_KEEP_OUT.gates.at.find((g) => g.destination === "spire")!;
+    expect(HUB_SPIRE_FACADE.sheet).toBe("spire_facade");
+    expect(HUB_SPIRE_FACADE.at.x).toBe(spire.x);
+    expect(HUB_SPIRE_FACADE.at.y).toBeLessThan(0);
   });
 });
 

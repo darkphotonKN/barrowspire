@@ -2,8 +2,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import { BARROW } from "@/utils/theme";
-import { WORLD_PX_PER_TILE, worldToScreen } from "@/render/iso/projection";
-import { HUB_WASHING_LINE } from "@/render/world/hubKeepOut";
+import { WORLD_PX_PER_TILE, projectedBounds, worldToScreen } from "@/render/iso/projection";
+import {
+  HUB_CAMERA_MARGIN,
+  HUB_SIZE,
+  HUB_SPIRE_FACADE,
+  HUB_WASHING_LINE,
+} from "@/render/world/hubKeepOut";
 import { DIRECTION_ORDER, directionIndex, validateManifest } from "./manifest";
 
 /** A minimal manifest that satisfies every rule. Each case below breaks one. */
@@ -747,6 +752,65 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         const y = sheet(`${v}_y`).light!.offset;
         expect(y).toEqual({ x: -x.x, y: x.y });
       }
+    });
+  });
+
+  describe("the Spire's facade (FS-0XMCP §R15–§R17)", () => {
+    const s = () => baked.sheets.spire_facade;
+    const model = readFileSync(
+      join(__dirname, "../../../tools/bake/page/models/spire.js"),
+      "utf8",
+    );
+    /** A dimension of the model, read from its source as the washing line's is. */
+    const dim = (name: string) => {
+      const value = Number(new RegExp(`const ${name} = (-?[\\d.]+);`).exec(model)?.[1]);
+      expect(Number.isFinite(value), name).toBe(true);
+      return value;
+    };
+
+    it("is baked into its own spire group, authored in models/spire.js", () => {
+      expect(s()).toBeDefined();
+      expect(s().atlas).toMatch(/^spire-\d+$/);
+      expect(s().directions).toBe(1);
+      expect(Object.keys(s().animations)).toEqual(["default"]);
+      expect(s().source).toBe("authored: tools/bake/page/models/spire.js#spireFacade");
+      expect(s().licence).toBe(baked.sheets.brazier.licence);
+    });
+
+    it("declares one light, amber, at the door's threshold: its only amber", () => {
+      expect(s().light).toMatchObject({ color: "amber" });
+      // the threshold pool sits low on the door, just above the sprite's anchor
+      expect(Math.abs(s().light.offset.x)).toBeLessThanOrEqual(baked.tile.width / 2);
+      expect(s().light.offset.y).toBeLessThan(0);
+      expect(s().light.offset.y).toBeGreaterThan(-2 * baked.tile.height * 2);
+    });
+
+    it("stands its tower's top above the hub camera's reach, so it is never on screen (R16)", () => {
+      // the drum's rim, from the model: a circle of the top radius about (0, H, TOWER_Z)
+      const H = dim("TOWER_H");
+      const topRadius = dim("TOWER_R") - dim("TAPER");
+      const z = dim("TOWER_Z");
+      // the bake camera (tools/bake/page/projection.js): px per tile edge in the view plane, and
+      // of height
+      const K1 = baked.tile.width / 2 / Math.SQRT1_2;
+      const VPX = K1 * Math.cos(Math.PI / 6);
+      const anchor = worldToScreen(HUB_SPIRE_FACADE.at.x, HUB_SPIRE_FACADE.at.y);
+      const centre = worldToScreen(0, z * WORLD_PX_PER_TILE).y + anchor.y - H * VPX;
+      // a level circle projects to an ellipse r·K1·sin 30° tall: its lowest point is nearest us
+      const rimLowest = centre + topRadius * K1 * Math.sin(Math.PI / 6);
+      const reach = projectedBounds(HUB_SIZE.width, HUB_SIZE.height, HUB_CAMERA_MARGIN);
+      expect(rimLowest).toBeLessThan(reach.y);
+      // and the sprite's frame reaches that high: the bake drew the drum, not a stub
+      const frameTop = anchor.y - s().anchor.y * s().frameHeight;
+      expect(frameTop).toBeLessThan(rimLowest);
+    });
+
+    it("keeps the facade inside the camera's reach side to side, never past a corner", () => {
+      const anchor = worldToScreen(HUB_SPIRE_FACADE.at.x, HUB_SPIRE_FACADE.at.y);
+      const left = anchor.x - s().anchor.x * s().frameWidth;
+      const reach = projectedBounds(HUB_SIZE.width, HUB_SIZE.height, HUB_CAMERA_MARGIN);
+      expect(left).toBeGreaterThan(reach.x);
+      expect(left + s().frameWidth).toBeLessThan(reach.x + reach.width);
     });
   });
 
