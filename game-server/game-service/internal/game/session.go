@@ -679,8 +679,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.monsterAISystem.Update(deltaTime, entities)
 	}
 
-	// movement
-	movementSys := systems.MovementSystem{MapWidth: s.mapWidth, MapHeight: s.mapHeight}
+	// movement; players pass through each other in the hub and the fields, never in a run (FS-0XMCP §Requirements 26–29)
+	passThrough := s.worldType == types.WorldTypeHub || s.worldType == types.WorldTypeField
+	movementSys := systems.MovementSystem{MapWidth: s.mapWidth, MapHeight: s.mapHeight, PlayersPassThrough: passThrough}
 	movementSys.Update(deltaTime, entities)
 
 	// projectile

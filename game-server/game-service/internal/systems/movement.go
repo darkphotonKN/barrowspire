@@ -17,8 +17,13 @@ import (
 // step a tick at the charge's speed, through bodies but never through a wall, a
 // closed door or the world's edge. Anything that stops a step short stops the
 // charge; the CombatSystem then ends it.
+//
+// PlayersPassThrough belongs to the world, like its bounds: in the hub and the
+// fields two player bodies never push each other; in a run they do. Every other
+// pair of bodies collides either way (FS-0XMCP §Requirements 26–29).
 type MovementSystem struct {
 	MapWidth, MapHeight float64
+	PlayersPassThrough  bool
 }
 
 // NewMovementSystem returns a system bounded to a run's map.
@@ -194,6 +199,9 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 					if other.ID == targetEntity.ID {
 						continue
 					}
+					if s.PlayersPassThrough && bothPlayers(targetEntity, other) {
+						continue
+					}
 					resolvedX, resolvedY, collided := resolveCollision(newX, newY, other)
 					if collided {
 						newX = resolvedX
@@ -258,6 +266,12 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 
 	}
 
+}
+
+// bothPlayers reports whether a and b are both player bodies: the one pair a
+// shared world lets through (FS-0XMCP §Requirements 26).
+func bothPlayers(a, b *ecs.Entity) bool {
+	return a.HasComponent(ecs.ComponentTypePlayer) && b.HasComponent(ecs.ComponentTypePlayer)
 }
 
 // resolveCollision checks collision and returns resolved position
