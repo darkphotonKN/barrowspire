@@ -255,7 +255,7 @@ func (m *mockQueueService) GetMatchedChan(context.Context) chan matchmaker.Match
 // 	mockQueue := NewMockQueueService()
 // 	mockEventEmitter := &MockEventEmitter{}
 // 	mockItemsClient := &MockItemsClient{}
-// 	server := NewServer(context.Background(), mockAuthClient, mockQueue, mockEventEmitter, mockItemsClient, newFakeCharacters())
+// 	server := newTestServer(t, context.Background(), mockAuthClient, mockQueue, mockEventEmitter, mockItemsClient, newFakeCharacters())
 //
 // 	// create test players
 // 	player1 := &types.Player{
@@ -331,7 +331,7 @@ func TestQueueFindGameFlow(t *testing.T) {
 	mockQueue := NewMockQueueService()
 	mockEventEmitter := &MockEventEmitter{}
 	mockItemsClient := &MockItemsClient{}
-	server := NewServer(context.Background(), mockAuthClient, mockQueue, mockEventEmitter, mockItemsClient, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), mockAuthClient, mockQueue, mockEventEmitter, mockItemsClient, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 
 	playerCount := 10
 	var wg sync.WaitGroup
@@ -406,9 +406,9 @@ func TestQueueFindGameFlow(t *testing.T) {
 	sessionCount := len(server.sessions)
 	server.mu.RUnlock()
 
-	// runs, plus the hub world and the Meadows channel the server builds at
-	// startup (FS-X2F2H §Requirements 4)
-	expectedSessions := playerCount/2 + 2
+	// runs, plus the hub world and the Meadows and Forest channels the server
+	// builds at startup (FS-X2F2H §Requirements 4, FS-3QHQZ §Requirements 10)
+	expectedSessions := playerCount/2 + 3
 	assert.Equal(t, expectedSessions, sessionCount)
 	fmt.Println("total games created", expectedSessions)
 }
@@ -523,7 +523,7 @@ func TestSenderToBroadcastToPlayerList(t *testing.T) {
 			mockQueue := NewMockQueueService()
 			mockEventEmitter := &MockEventEmitter{}
 			mockItemsClient := &MockItemsClient{}
-			server := NewServer(context.Background(), authClient, mockQueue, mockEventEmitter, mockItemsClient, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+			server := newTestServer(t, context.Background(), authClient, mockQueue, mockEventEmitter, mockItemsClient, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 			playerIDs := tc.setupPlayers(server)
 
 			newSender := messaging.NewMessageSender(server)

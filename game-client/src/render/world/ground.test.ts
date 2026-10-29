@@ -169,6 +169,48 @@ describe("planGround's aprons beyond the edge (FS-0XMCP R18)", () => {
   });
 });
 
+describe("planGround's straight-edge aprons (FS-X2F2H §Requirements 54)", () => {
+  const W = 10 * T;
+  const H = 10 * T;
+  // a field's ground running on past its whole north edge, fading with distance from the edge
+  const north = {
+    x: 0,
+    y: -6 * T,
+    width: W,
+    height: 6 * T,
+    from: { x: 0, y: 0 },
+    fade: 5 * T,
+    along: "x" as const,
+  };
+  const outside = planGround({ width: W, height: H, kind: "field", aprons: [north] }).filter(
+    (t) => t.at.y < 0,
+  );
+
+  it("should fade by distance from the edge alone: a row past the edge is laid evenly", () => {
+    const row = outside.filter((t) => t.at.y === -0.5 * T);
+    expect(row).toHaveLength(10);
+    // the hash roughens each tile a little, never by more than its rag
+    const alphas = row.map((t) => t.alpha!);
+    expect(Math.max(...alphas) - Math.min(...alphas)).toBeLessThan(0.35);
+  });
+
+  it("should fade further from the edge, and lay nothing past the fade", () => {
+    const mean = (y: number) => {
+      const r = outside.filter((t) => t.at.y === y);
+      return r.reduce((n, t) => n + t.alpha!, 0) / Math.max(1, r.length);
+    };
+    expect(mean(-0.5 * T)).toBeGreaterThan(mean(-3.5 * T));
+    expect(outside.every((t) => -t.at.y < north.fade)).toBe(true);
+  });
+
+  it("should fade a west edge by its x distance", () => {
+    const west = { x: -6 * T, y: 0, width: 6 * T, height: H, from: { x: 0, y: 0 }, fade: 5 * T, along: "y" as const };
+    const tiles = planGround({ width: W, height: H, kind: "field", aprons: [west] }).filter((t) => t.at.x < 0);
+    const column = tiles.filter((t) => t.at.x === -0.5 * T);
+    expect(column).toHaveLength(10);
+  });
+});
+
 describe("transitionEdge", () => {
   const only =
     (...dirs: [number, number][]) =>

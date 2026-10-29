@@ -16,7 +16,7 @@ import (
 // actually were. Telling every returning player they found a game sent anyone
 // standing in the hub into the run scene. FS-29KSH §Requirements 15.
 func TestReconnect_AnnouncesTheWorldTheyAreActuallyIn(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
@@ -49,7 +49,7 @@ func TestReconnect_AnnouncesTheWorldTheyAreActuallyIn(t *testing.T) {
 // the world and off record, and walks back in from the menu like anyone
 // arriving. FS-29KSH §Edge States (Disconnect).
 func TestDisconnect_LeavingTheHubIsFinal(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	conn, _ := wsPair(t)

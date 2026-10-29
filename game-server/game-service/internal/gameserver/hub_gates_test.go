@@ -59,7 +59,7 @@ func gatesIn(t *testing.T, entities []*ecs.Entity) map[components.GateDestinatio
 // data so every pod and every restart agrees where they are.
 // FS-0XMCP §Requirements 1, 2, 4, 5.
 func TestHub_HoldsItsThreeGates(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	gates := gatesIn(t, hub.EntityManager.GetAllEntities())
@@ -71,7 +71,7 @@ func TestHub_HoldsItsThreeGates(t *testing.T) {
 	}, gates)
 
 	t.Run("the same on every server", func(t *testing.T) {
-		second := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+		second := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 		otherHub, _ := second.HubSession()
 
 		assert.Equal(t, gates, gatesIn(t, otherHub.EntityManager.GetAllEntities()))
@@ -81,7 +81,7 @@ func TestHub_HoldsItsThreeGates(t *testing.T) {
 // The client draws the gates from the hub's state, never from its own copy.
 // FS-0XMCP §Requirements 6.
 func TestHub_StateCarriesItsGates(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	stateSerializer := serializer.NewStateSerializer(hub.EntityManager)
@@ -100,7 +100,7 @@ func TestHub_StateCarriesItsGates(t *testing.T) {
 // The at-gate query is asked from the server's goroutines while the hub ticks
 // and moves the very body it measures. Run with -race. FS-0XMCP §Requirements 7.
 func TestAtGate_WhileTheHubTicks(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
@@ -147,7 +147,7 @@ func TestAtGate_WhileTheHubTicks(t *testing.T) {
 // arrival point inside the range would send a returning player straight back
 // out. FS-0XMCP §Requirements 3.
 func TestHub_GateLayout(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 	entities := hub.EntityManager.GetAllEntities()
 

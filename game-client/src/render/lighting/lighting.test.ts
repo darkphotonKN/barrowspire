@@ -9,6 +9,7 @@ import {
   litEdgeGround,
   relativeLuminance,
   sourceFromManifest,
+  tinted,
   type LightSource,
 } from "./lighting";
 
@@ -165,5 +166,19 @@ describe("litEdgeGround", () => {
     expect(lum(litEdgeGround(dirt, AMBIENT.run, 0.5))).toBeLessThan(
       lum(litEdgeGround(dirt, AMBIENT.run, 0.2)),
     );
+  });
+});
+
+describe("tinted", () => {
+  const grass = { r: 81, g: 83, b: 53 };
+  const white = (1 << 24) - 1;
+
+  it("should leave a mean as baked under a white tint", () => {
+    expect(tinted(grass, white)).toEqual(grass);
+  });
+
+  it("should multiply a mean by the tint, channel by channel, as the GPU tints a sprite", () => {
+    const tint = (128 << 16) | (255 << 8) | 0;
+    expect(tinted(grass, tint)).toEqual({ r: 41, g: 83, b: 0 });
   });
 });

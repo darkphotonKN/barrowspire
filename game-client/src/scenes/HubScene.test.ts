@@ -1206,13 +1206,13 @@ describe("HubScene field gates (FS-0XMCP §Requirements 21, 22)", () => {
     expect(onFieldGate).toHaveBeenCalledTimes(3);
   });
 
-  it("should send nothing and stay in the hub on stepping into the Forest's gate, which leads nowhere yet", () => {
+  it("should send enter_field for the Forest on stepping into its gate, and leave the switch to world_entered (FS-3QHQZ)", () => {
     const { hub, standAt, send } = queuedHubOnStage();
 
     standAt(AWAY);
     standAt(FOREST_GATE.position);
 
-    expect(send).not.toHaveBeenCalled();
+    expect(send.mock.calls).toEqual([[ActionType.EnterField, { field: "forlorn_forest" }]]);
     expect(hub.scene.start).not.toHaveBeenCalled();
     expect(hub.dialogue).toBeUndefined();
   });

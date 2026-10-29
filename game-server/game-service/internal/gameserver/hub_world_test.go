@@ -12,14 +12,15 @@ import (
 // The hub is a world type, not a run: it exists before anyone connects and
 // outlives every run. FS-29KSH §Requirements 1.
 func TestNewServer_BuildsTheHubWorld(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 
-	t.Run("only the hub and the Meadows channel exist with nobody connected", func(t *testing.T) {
+	t.Run("only the hub and the field channels exist with nobody connected", func(t *testing.T) {
 		server.mu.RLock()
 		defer server.mu.RUnlock()
 
-		// the Meadows is built beside the hub at boot (FS-X2F2H §Requirements 4)
-		assert.Len(t, server.sessions, 2, "the hub and one field, and no runs")
+		// the Meadows and the Forest are built beside the hub at boot
+		// (FS-X2F2H §Requirements 4, FS-3QHQZ §Requirements 10)
+		assert.Len(t, server.sessions, 3, "the hub and two fields, and no runs")
 	})
 
 	t.Run("it is reachable as the hub", func(t *testing.T) {

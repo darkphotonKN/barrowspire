@@ -126,7 +126,7 @@ func (s *startSoloEmitterSpy) published() []*types.RawMatchState {
 func startSoloServer(t *testing.T, queue *startSoloQueue, emitter game.EventEmitter) (*Server, *game.Session) {
 	t.Helper()
 
-	server := NewServer(context.Background(), &MockAuthClient{}, queue, emitter, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, queue, emitter, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, ok := server.HubSession()
 	require.True(t, ok, "the server builds a hub at startup")
 

@@ -37,6 +37,7 @@ interface FieldUnderTest {
   renderState(state: unknown): void;
   followEntrance(pos: { x: number; y: number }, gates: unknown[]): void;
   placePlayer(...args: unknown[]): void;
+  drawGround(...args: unknown[]): void;
   drawObstacles(...args: unknown[]): void;
   drawEntrance(...args: unknown[]): void;
   views: Map<string, unknown>;
@@ -56,7 +57,12 @@ function fieldOnStage() {
   field.cameras = { main: { width: 800, startFollow: vi.fn() } };
   field.time = { delayedCall: vi.fn() };
   field.scene = { start: vi.fn() };
-  Object.assign(field, { placePlayer: vi.fn(), drawObstacles: vi.fn(), drawEntrance: vi.fn() });
+  Object.assign(field, {
+    placePlayer: vi.fn(),
+    drawGround: vi.fn(),
+    drawObstacles: vi.fn(),
+    drawEntrance: vi.fn(),
+  });
 
   const errors = new Map<string, (info: unknown) => void>();
   vi.spyOn(socketManager, "onError").mockImplementation((action, cb) => {
@@ -152,5 +158,73 @@ describe("FieldScene the road home (FS-X2F2H §Requirements 14, 57, 60)", () => 
     field.renderState(state("field", ARRIVAL));
     field.renderState(state("field", ROAD_HOME.position));
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("should lay the ground from a field's state, with the server's gates for the road home (§Requirements 54)", () => {
+    const { field } = fieldOnStage();
+    const state = (world_type: string) => ({
+      world_type,
+      current_player: { entity_id: "me", position: ARRIVAL },
+      other_players: [],
+      walls: [],
+      gates: [ROAD_HOME],
+    });
+
+    field.renderState(state("hub"));
+    expect(field.drawGround).not.toHaveBeenCalled();
+
+    field.renderState(state("field"));
+    expect(field.drawGround).toHaveBeenCalledWith([ROAD_HOME]);
+  });
+});
+
+describe("FieldScene monsters and the fight (FS-X2F2H §Requirements 56)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const boarState = (world_type: string) => ({
+    world_type,
+    current_player: { entity_id: "me", position: ARRIVAL, current_health: 100 },
+    other_players: [],
+    walls: [],
+    gates: [ROAD_HOME],
+    monsters: [{ entity_id: "b1", archetype: "boar", position: { x: 600, y: 420 }, action: "idle" }],
+    projectiles: [],
+  });
+
+  it("should hand a field's state to the shared fight, and no other world's", () => {
+    const { field } = fieldOnStage();
+    const fight = { sync: vi.fn(), update: vi.fn(), release: vi.fn() };
+    Object.assign(field, { fight });
+
+    field.renderState(boarState("run"));
+    expect(fight.sync).not.toHaveBeenCalled();
+
+    const state = boarState("field");
+    field.renderState(state);
+    expect(fight.sync).toHaveBeenCalledWith(state);
+  });
+
+  it("should draw no run-only surface: no result card, escape, floor, die-by-choice or leave-run", () => {
+    const { field, texts, send } = fieldOnStage();
+    Object.assign(field, { fight: { sync: vi.fn(), update: vi.fn(), release: vi.fn() } });
+
+    field.renderState(boarState("field"));
+
+    expect(texts.filter((t) => /escape|floor|victory|fallen|leave the barrow|yield/i.test(t))).toEqual([]);
+    expect(send).not.toHaveBeenCalledWith(ActionType.LeaveRun, expect.anything());
+    expect(send).not.toHaveBeenCalledWith(ActionType.ForfeitRun, expect.anything());
+  });
+
+  it("should let the fight go on release, so the next visit starts empty", () => {
+    const { field } = fieldOnStage();
+    const fight = { sync: vi.fn(), update: vi.fn(), release: vi.fn() };
+    Object.assign(field, { fight });
+
+    field.release();
+
+    expect(fight.release).toHaveBeenCalledTimes(1);
+    expect((field as unknown as { fight?: unknown }).fight).toBeUndefined();
   });
 });

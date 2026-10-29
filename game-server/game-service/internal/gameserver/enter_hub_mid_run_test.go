@@ -16,7 +16,7 @@ import (
 // between two positions (reported 2026-10-29). Whether the member is refused
 // or resumed into the run is the owner's call; neither seats them in the hub.
 func TestEnterHub_WhileInARun_SeatsNoSecondBody(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 	wren, conn := enterHub(t, server, "Wren")
 	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{wren}})

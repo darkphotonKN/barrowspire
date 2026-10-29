@@ -41,7 +41,7 @@ func (r *loadoutAuthRecorder) last(t *testing.T) []string {
 // The token a member connects with is kept on their record, and a reconnect
 // replaces it with the one they reconnect with.
 func TestConnectPlayer_KeepsTheTokenAndAReconnectRefreshesIt(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	memberID := uuid.New()
 
 	player, reconnecting := server.connectPlayer(memberID, "Wren", "first-token")
@@ -73,7 +73,7 @@ func TestConnectPlayer_KeepsTheTokenAndAReconnectRefreshesIt(t *testing.T) {
 func TestSeating_LoadsTheLoadoutWithTheHeldToken(t *testing.T) {
 	items := &loadoutAuthRecorder{}
 	characters := newFakeCharacters()
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, items, characters, testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, items, characters, testPodID, testPodAddr, noopAnnouncer{})
 
 	memberID := uuid.New()
 	connected, _ := server.connectPlayer(memberID, "Wren", "hub-token")

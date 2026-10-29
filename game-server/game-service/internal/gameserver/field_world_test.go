@@ -71,7 +71,7 @@ func newFieldRig(t *testing.T, items grpcitems.ItemsClient) *fieldRig {
 
 	queue := newStartSoloQueue()
 	characters := newFakeCharacters()
-	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, items, characters, testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, items, characters, testPodID, testPodAddr, noopAnnouncer{})
 	spy := &settleSpy{}
 	server.visitSettler = spy
 
@@ -267,7 +267,7 @@ func TestEnterField_Refusals(t *testing.T) {
 			field: meadowsField, reason: "no_character",
 		},
 		{name: "unknown field", field: "nowhere", reason: "unknown_field"},
-		{name: "a field this pod does not build", field: "forlorn_forest", reason: "unknown_field"},
+		{name: "a field this pod does not build", field: "sunken_fen", reason: "unknown_field"},
 		{
 			name: "queued for the Spire",
 			setup: func(t *testing.T, rig *fieldRig, player *types.Player, _ *websocket.Conn, _ *startSoloInbox) {

@@ -48,13 +48,14 @@ func fieldLoadout() *pb.GetLoadoutWithItemsResponse {
 
 var fieldWren = types.CharacterInPlay{ID: uuid.New(), Name: "Wren", Class: "warrior", Level: 3, Experience: 900}
 
-// Only the Meadows is registered here; the Forest plugs into the same list
-// (FS-3QHQZ). R4.
-func TestFieldPlaces_RegistersOnlyTheMeadows(t *testing.T) {
-	places := FieldPlaces()
+// The Meadows and the Forest are registered, the Forest built from the layout
+// handed in. R4; FS-3QHQZ §Requirements 10.
+func TestFieldPlaces_RegistersTheMeadowsAndTheForest(t *testing.T) {
+	places := FieldPlaces(forestLayoutFor(t, forestSeed))
 
-	require.Len(t, places, 1)
+	require.Len(t, places, 2)
 	assert.Equal(t, FieldGentleMeadows, places[0].ID)
+	assert.Equal(t, FieldForlornForest, places[1].ID)
 }
 
 // A field world is its own kind, the place's size, with the entrance gate back
@@ -86,7 +87,7 @@ func TestFieldWorld_BuildsThePlace(t *testing.T) {
 	}
 	assert.Equal(t, 1, gates, "one entrance gate")
 	assert.Equal(t, len(layout.Obstacles), walls, "one keep-out wall per obstacle")
-	assert.False(t, field.hasMonsters(), "monsters come with slice 3")
+	assert.True(t, field.hasMonsters(), "a field ticks the monster systems")
 }
 
 // An accepted entry seats a fresh body at the arrival point from the loadout

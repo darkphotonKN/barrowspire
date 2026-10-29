@@ -8,7 +8,9 @@ import {
   contrastRatio,
   litEdgeGround,
   relativeLuminance,
+  tinted,
 } from "@/render/lighting/lighting";
+import { FIELD_LOOKS } from "@/render/world/fieldLook";
 import { VIGNETTE_DEPTH, edgeVignetteAlpha } from "@/render/lighting/vignette";
 import type { WorldKind } from "@/render/world/ground";
 import { palette } from "@/utils/canvasPalette";
@@ -126,6 +128,38 @@ describe("the readability floor in the tower interior (FS-8RBQY §B.7)", () => {
         ).toBeGreaterThanOrEqual(FLOOR);
     },
   );
+});
+
+describe("the readability floor in daylit fields (FS-X2F2H §Requirements 54, guideline 'Daylit fields keep the floor')", () => {
+  /** The outdoor ground family every field lays, by its measured mean. */
+  const OUTDOOR_GROUNDS = Object.entries(baked.sheets).flatMap(([name, sheet]) =>
+    sheet.mean && sheet.atlas.startsWith("ground")
+      ? [[name, sheet.mean] as [string, ArtRgb]]
+      : [],
+  );
+
+  it("is measured against the outdoor ground family", () => {
+    expect(OUTDOOR_GROUNDS.map(([n]) => n)).toEqual(
+      expect.arrayContaining(["ground_grass", "ground_dirt", "ground_grass_dirt"]),
+    );
+  });
+
+  // every field's own look: a field added to the table is held to the floor by being added
+  describe.each(Object.entries(FIELD_LOOKS))("%s", (_, look) => {
+    it.each(Object.entries(MARKER_INKS))(
+      "should keep the %s marker at 3:1 or better against the field's own lit ground at any canvas edge",
+      (_, ink) => {
+        for (const [name, mean] of OUTDOOR_GROUNDS) {
+          const ground = look.ground.tint === undefined ? mean : tinted(mean, look.ground.tint);
+          for (const [w, h] of CANVASES)
+            expect(
+              contrastRatio(ink, litEdgeGround(ground, look.ambient, edgeVignetteAlpha(w, h))),
+              `${name} ${w}×${h}`,
+            ).toBeGreaterThanOrEqual(FLOOR);
+        }
+      },
+    );
+  });
 });
 
 describe("marker depth", () => {

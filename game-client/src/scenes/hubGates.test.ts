@@ -107,8 +107,8 @@ describe("field ids (FS-X2F2H §Requirements 2, 11)", () => {
     expect(FIELD_IDS.meadows).toBe("gentle_meadows");
   });
 
-  it("should name no field for the Forest's gate until the Forest is built (FS-3QHQZ)", () => {
-    expect(FIELD_IDS.forest).toBeUndefined();
+  it("should name the Forest gate's field by the id the server knows it by (FS-3QHQZ)", () => {
+    expect(FIELD_IDS.forest).toBe("forlorn_forest");
   });
 });
 

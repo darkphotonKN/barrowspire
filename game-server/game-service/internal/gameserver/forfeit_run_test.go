@@ -55,7 +55,7 @@ const forfeitQuiet = 300 * time.Millisecond
 func forfeitServer(t *testing.T, emitter game.EventEmitter) (*Server, *game.Session) {
 	t.Helper()
 
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), emitter, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), emitter, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, ok := server.HubSession()
 	require.True(t, ok, "the server builds a hub at startup")
 

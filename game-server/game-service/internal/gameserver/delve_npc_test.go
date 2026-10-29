@@ -31,7 +31,7 @@ func npcsIn(entities []*ecs.Entity) []*components.NPCComponent {
 // their placement is map data: a delver has to be able to tell someone where to
 // stand. FS-29KSH §Requirements 9, 29.
 func TestHub_HoldsItsFunctionNPCs(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	npcs := npcsIn(hub.EntityManager.GetAllEntities())
@@ -53,7 +53,7 @@ func TestHub_HoldsItsFunctionNPCs(t *testing.T) {
 	assert.Contains(t, byFunction, components.NPCFunctionStorekeeper, "no one to gear you up")
 
 	t.Run("and stands where the map put them", func(t *testing.T) {
-		second := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+		second := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 		otherHub, _ := second.HubSession()
 
 		assert.Equal(t,
@@ -121,7 +121,7 @@ func npcPositions(entities []*ecs.Entity) map[components.NPCFunction][2]float64 
 // never queued them. FS-29KSH §Requirements 26.
 func TestFindGame_FromTheHub_Queues(t *testing.T) {
 	queue := NewMockQueueService()
-	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}
@@ -152,7 +152,7 @@ func TestFindGame_FromTheHub_Queues(t *testing.T) {
 // to descend, and end up in one run together, out of the hub.
 // FS-29KSH §Requirements 26, 28, §Edge States (Concurrent); FS-0XMCP R12.
 func TestTwoDelversDescend_MatchIntoOneRun(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	conns := map[uuid.UUID]*websocket.Conn{}
@@ -184,7 +184,7 @@ func TestTwoDelversDescend_MatchIntoOneRun(t *testing.T) {
 	require.Eventually(t, func() bool {
 		server.mu.RLock()
 		defer server.mu.RUnlock()
-		return len(server.sessions) == 3 // the hub, the Meadows, plus one run
+		return len(server.sessions) == 4 // the hub, the Meadows, the Forest, plus one run
 	}, 3*time.Second, 20*time.Millisecond, "the two delvers never got a run")
 
 	assert.Empty(t, hub.GetPlayerIDs(), "both left the hub to descend")

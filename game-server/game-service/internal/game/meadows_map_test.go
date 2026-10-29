@@ -46,7 +46,7 @@ func TestGentleMeadows_IsTheEasyFieldEastOfTheHub(t *testing.T) {
 	assert.Equal(t, 1000.0, meadows.Height)
 	assert.Equal(t, components.GateDestinationMeadows, meadows.HubGate, "entered from the hub's east road")
 
-	assert.Equal(t, []FieldCreature{{Archetype: "boar"}}, meadows.Creatures)
+	assert.Equal(t, []FieldCreature{{Archetype: "boar", Weight: 1}}, meadows.Creatures)
 	assert.Equal(t, 1, meadows.MinLevel)
 	assert.Equal(t, 4, meadows.MaxLevel)
 	assert.Equal(t, 0.75, meadows.StatFactor)

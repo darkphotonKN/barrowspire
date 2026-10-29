@@ -70,7 +70,7 @@ func (a *recordingAnnouncer) recorded() []announceCall {
 
 func newHandoffServer(t *testing.T, queue *mockQueueService, announcer HandoffAnnouncer) *Server {
 	t.Helper()
-	return NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, announcer)
+	return newTestServer(t, context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, announcer)
 }
 
 func matchPlayer(pod string) matchmaker.MatchStartPlayer {
