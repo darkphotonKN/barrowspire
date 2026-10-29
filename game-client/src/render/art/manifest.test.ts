@@ -232,6 +232,30 @@ describe("validateManifest", () => {
     });
   });
 
+  describe("a quadruped's body length (FS-X2F2H §H R61)", () => {
+    // the door fixture: frames are 50 px wide
+    const withLength = (length: unknown) => (m: Fixture) => {
+      (m.sheets.door as { length?: unknown }).length = length;
+    };
+
+    it("accepts a sheet without one: only quadrupeds carry it", () => {
+      expect(fixture().sheets.door).not.toHaveProperty("length");
+      expect(validateManifest(fixture()).ok).toBe(true);
+    });
+
+    it("accepts a whole number of px up to the frame's width", () => {
+      for (const length of [1, 30, 50]) {
+        const m = fixture();
+        withLength(length)(m);
+        expect(validateManifest(m).ok, String(length)).toBe(true);
+      }
+    });
+
+    it.each([0, -4, 12.5, "40", 51])("rejects a length of %s", (length) => {
+      rejects(withLength(length), /door.*length/);
+    });
+  });
+
   it("rejects a sheet that names an unknown atlas", () => {
     rejects((m) => {
       m.sheets.door.atlas = "missing-0";
@@ -1063,6 +1087,133 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       // not the 7-frame default: the roar is held inside the clip, then strike and recovery
       expect(attack.frames[0].length).not.toBe(7);
       expect(attack.frames[0].length / attack.fps).toBeGreaterThan(0.4);
+    });
+  });
+
+  describe("the boar, on the quadruped rig (FS-X2F2H §H R61)", () => {
+    type BoarSheet = {
+      atlas: string;
+      frameWidth: number;
+      directions: number;
+      crown?: number;
+      length?: number;
+      animations: Record<
+        string,
+        { fps: number; loop: boolean; frames: unknown[][] }
+      >;
+      source: string;
+      licence: string;
+    };
+    const BOARS: [string, string][] = [
+      ["creature_boar_base", "boar"],
+      ["creature_boar_elite", "eliteBoar"],
+    ];
+    const PLAYERS = [
+      "char_knight_base",
+      "char_archer_base",
+      "char_wizard_base",
+    ];
+    const playerCrown =
+      PLAYERS.reduce((n, name) => n + baked.sheets[name].crown, 0) /
+      PLAYERS.length;
+    /** A side-on screen px of length reads as cos 30° px of height (tools/bake/lib/length.mjs). */
+    const HEIGHT_PER_LENGTH_PX = Math.cos(Math.PI / 6);
+    const boar = (name: string): BoarSheet => baked.sheets[name];
+
+    it.each(BOARS)(
+      "%s has 8-way idle, walk, attack and death, idle and walk looping",
+      (name) => {
+        const sheet = boar(name);
+        expect(sheet, name).toBeDefined();
+        expect(sheet.directions).toBe(8);
+        expect(Object.keys(sheet.animations)).toEqual([
+          "idle",
+          "walk",
+          "attack",
+          "death",
+        ]);
+        for (const a of Object.values(sheet.animations)) {
+          expect(a.frames).toHaveLength(8);
+          expect(a.frames[0].length).toBeGreaterThan(1);
+        }
+        const a = sheet.animations;
+        expect([a.idle.loop, a.walk.loop, a.attack.loop, a.death.loop]).toEqual(
+          [true, true, false, false],
+        );
+      },
+    );
+
+    it.each(BOARS)(
+      "%s is authored in code in characters/boar.js#%s, under the project's licence",
+      (name, fn) => {
+        const sheet = boar(name);
+        expect(sheet.source).toBe(
+          `authored: tools/bake/page/characters/boar.js#${fn}`,
+        );
+        expect(sheet.licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it.each(BOARS)(
+      "%s packs into its own wildlife group, so no existing atlas reflows",
+      (name) => {
+        expect(boar(name).atlas).toMatch(/^wildlife-\d+$/);
+      },
+    );
+
+    it("packs nothing else into the wildlife group", () => {
+      for (const [name, sheet] of Object.entries(baked.sheets) as [
+        string,
+        BoarSheet,
+      ][])
+        if (/^wildlife-/.test(sheet.atlas))
+          expect(BOARS.map(([n]) => n)).toContain(name);
+    });
+
+    it.each(BOARS)(
+      "%s measures inside the fodder tier by body length, shorter than a player is tall",
+      (name) => {
+        const sheet = boar(name);
+        expect(Number.isInteger(sheet.length), name).toBe(true);
+        expect(sheet.length).toBeLessThanOrEqual(sheet.frameWidth);
+        const ratio =
+          ((sheet.length as number) * HEIGHT_PER_LENGTH_PX) / playerCrown;
+        expect(ratio, `${name} length ratio`).toBeGreaterThanOrEqual(0.85);
+        expect(ratio, `${name} length ratio`).toBeLessThan(1);
+      },
+    );
+
+    it.each(BOARS)(
+      "%s stands low: its back below a player's shoulder",
+      (name) => {
+        // a player's shoulder sits about 0.8 of the way up. The boar's crown is the top of its
+        // bristled ridge, and in the facings that run it into the screen its far end rides
+        // higher by depth, so the crown overstates how tall it stands.
+        expect(boar(name).crown as number).toBeLessThan(0.75 * playerCrown);
+      },
+    );
+
+    it("bakes the elite at the base's size: the same build, not a bigger beast", () => {
+      const base = boar("creature_boar_base").length as number;
+      const elite = boar("creature_boar_elite").length as number;
+      expect(Math.abs(elite - base) / base).toBeLessThan(0.08);
+    });
+
+    it.each(BOARS)(
+      "%s winds up long enough to read: the lowered head held through the server's 0.45 s wind-up, then the charge",
+      (name) => {
+        const attack = boar(name).animations.attack;
+        expect(attack.frames[0].length / attack.fps).toBeGreaterThan(0.6);
+      },
+    );
+
+    it("measures a length only on quadrupeds", () => {
+      for (const [name, sheet] of Object.entries(baked.sheets) as [
+        string,
+        BoarSheet,
+      ][])
+        if (sheet.length !== undefined)
+          expect(BOARS.map(([n]) => n)).toContain(name);
     });
   });
 });
