@@ -89,6 +89,7 @@ func TestCreateCharacter_Validation(t *testing.T) {
 		{"valid warrior", CharacterCreate{member, "Aldric", "warrior"}, nil, "Aldric"},
 		{"valid mage", CharacterCreate{member, "Mira", "mage"}, nil, "Mira"},
 		{"valid archer", CharacterCreate{member, "Fen", "archer"}, nil, "Fen"},
+		{"valid mercenary", CharacterCreate{member, "Corvin", "mercenary"}, nil, "Corvin"},
 		{"name is trimmed", CharacterCreate{member, "  Aldric \t", "warrior"}, nil, "Aldric"},
 		{"name of exactly 32", CharacterCreate{member, strings.Repeat("a", 32), "mage"}, nil, strings.Repeat("a", 32)},
 		{"32 multibyte runes", CharacterCreate{member, strings.Repeat("é", 32), "mage"}, nil, strings.Repeat("é", 32)},

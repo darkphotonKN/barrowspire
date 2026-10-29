@@ -57,10 +57,15 @@ server state and sends intents. ✅
 - [x] Leave a run early after dying → FS-QPDKN
 - [x] Hold the run result until the player returns → FS-QPDKN
 - [x] Die by choice from the run's ESC menu → FS-9K8EZ
+- [ ] Health and class resource bars on the HUD → FS-8AY7S
+- [ ] Ability card on the HUD → FS-8AY7S
+- [ ] ~Overhead health bar over one's own player~ → superseded by FS-8AY7S
+- [ ] Shadow Shot aimed by holding → FS-JTNPR
 
 ### Character
 
 - [ ] Character level and experience display → FS-BDA7X
+- [ ] Mercenary class → FS-MAMHR
 
 ### Billing
 

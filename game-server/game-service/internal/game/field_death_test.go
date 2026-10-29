@@ -21,17 +21,18 @@ func fallInField(t *testing.T, field *Session, memberID uuid.UUID) {
 	require.True(t, field.Resolved(memberID), "fallen on the tick their health ran out")
 }
 
-func healthAndMana(t *testing.T, body *ecs.Entity) (*components.HealthComponent, *components.ManaComponent) {
+func healthAndResource(t *testing.T, body *ecs.Entity) (*components.HealthComponent, *components.ResourceComponent) {
 	t.Helper()
 	hc, ok := body.GetComponent(ecs.ComponentTypeHealth)
 	require.True(t, ok)
-	mc, ok := body.GetComponent(ecs.ComponentTypeMana)
+	rc, ok := body.GetComponent(ecs.ComponentTypeResource)
 	require.True(t, ok)
-	return hc.(*components.HealthComponent), mc.(*components.ManaComponent)
+	return hc.(*components.HealthComponent), rc.(*components.ResourceComponent)
 }
 
 // A player who falls in a field keeps everything worn and carried, and 3 s
-// later stands at the arrival point in play, at full health and mana. R22, R23.
+// later stands at the arrival point in play, at full health and a full class
+// resource. R22, R23.
 func TestFieldDeath_RespawnsAtTheArrivalKeepingEverything(t *testing.T) {
 	field := builtField(t)
 	place := GentleMeadows()
@@ -42,8 +43,8 @@ func TestFieldDeath_RespawnsAtTheArrivalKeepingEverything(t *testing.T) {
 	body := delverEntity(t, field, memberID)
 	held := heldItems(body)
 	require.NotEmpty(t, held)
-	_, mana := healthAndMana(t, body)
-	mana.CurrentMana = 3
+	_, pool := healthAndResource(t, body)
+	pool.Current = 3
 
 	fallInField(t, field, memberID)
 	tickFor(field, FieldPlayerRespawnDelay-0.1)
@@ -56,9 +57,9 @@ func TestFieldDeath_RespawnsAtTheArrivalKeepingEverything(t *testing.T) {
 	tc, _ := body.GetComponent(ecs.ComponentTypeTransform)
 	assert.Equal(t, place.Arrival.X, tc.(*components.TransformComponent).X)
 	assert.Equal(t, place.Arrival.Y, tc.(*components.TransformComponent).Y)
-	health, mana := healthAndMana(t, body)
+	health, pool := healthAndResource(t, body)
 	assert.Equal(t, health.MaxHealth, health.CurrentHealth, "full health")
-	assert.Equal(t, mana.MaxMana, mana.CurrentMana, "full mana")
+	assert.Equal(t, pool.Max, pool.Current, "a full class resource")
 
 	assert.ElementsMatch(t, held, heldItems(body), "nothing worn or carried is lost")
 	for _, id := range held {

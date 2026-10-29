@@ -82,6 +82,14 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Fabled uniques → FS-4R9M9
 - [x] A player may end their own run as a death → FS-9K8EZ
 
+### Classes
+
+- [ ] Per-class resources → FS-8AY7S
+- [ ] ~Every class's ability spends a shared mana pool~ → superseded by FS-8AY7S
+- [ ] Mercenary class → FS-MAMHR
+- [ ] Archer's Shadow Shot → FS-JTNPR
+- [ ] ~Archer's triple-arrow volley~ → superseded by FS-JTNPR
+
 ### Enemies
 
 - [ ] Monsters that wander, chase and attack → FS-77AB6

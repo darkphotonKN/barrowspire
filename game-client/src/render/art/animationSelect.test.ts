@@ -65,8 +65,33 @@ describe("selectAnimation", () => {
       { animation: "attack", facing: "sw", direction: 3 },
     ],
     [
+      "holding an aim stands idle turned to it (FS-JTNPR req 10)",
+      { facing: "se", holding: { x: -50, y: 0 } },
+      { animation: "idle", facing: "w", direction: 4 },
+    ],
+    [
+      "holding an aim stays idle, turned to it, while the body still eases to a stop",
+      { velocity: { vx: 200, vy: 0 }, holding: { x: 0, y: -50 } },
+      { animation: "idle", facing: "n", direction: 6 },
+    ],
+    [
+      "an attack plays over a held aim",
+      { attacking: true, aim: { x: 0, y: 50 }, holding: { x: -50, y: 0 } },
+      { animation: "attack", facing: "s", direction: 2 },
+    ],
+    [
+      "a held aim on the player's own footprint keeps the facing",
+      { facing: "ne", holding: { x: 0, y: 0 } },
+      { animation: "idle", facing: "ne", direction: 7 },
+    ],
+    [
       "dead plays death and never turns",
       { dead: true, facing: "w", velocity: { vx: 200, vy: 0 } },
+      { animation: "death", facing: "w", direction: 4 },
+    ],
+    [
+      "dead wins over a held aim",
+      { dead: true, facing: "w", holding: { x: 50, y: 0 } },
       { animation: "death", facing: "w", direction: 4 },
     ],
     [
@@ -114,6 +139,9 @@ describe("characterSheet", () => {
     ["mage", "char_wizard_base"],
     ["archer", "char_archer_base"],
     ["Archer", "char_archer_base"],
+    // FS-MAMHR §H.42: the approved Mercenary sheet, no longer the knight's
+    ["mercenary", "char_mercenary_base"],
+    ["Mercenary", "char_mercenary_base"],
     ["", "char_knight_base"],
     ["necromancer", "char_knight_base"],
     [undefined, "char_knight_base"],
@@ -127,7 +155,7 @@ describe("the shipped character sheets", () => {
     readFileSync(join(__dirname, "../../../public/art/manifest.json"), "utf8"),
   ) as ArtManifest;
 
-  it.each(["warrior", "mage", "archer"])(
+  it.each(["warrior", "mage", "archer", "mercenary"])(
     "should give %s every animation the selector picks, 8-way",
     (cls) => {
       const sheet = manifest.sheets[characterSheet(cls)];

@@ -70,20 +70,20 @@ const (
 
 // represents entire game state that client receives
 type ClientGameState struct {
-	SessionID     uuid.UUID          `json:"session_id"`
-	WorldType     WorldType          `json:"world_type"`
-	CurrentPlayer *PlayerState       `json:"current_player"` // The recipient's player state
-	OtherPlayers  []*PlayerState     `json:"other_players"`  // All other players
-	Items         []uuid.UUID        `json:"items"`          // TODO: update with item entity converted into struct format
-	Doors         []*DoorState       `json:"doors"`
-	Walls         []*WallState       `json:"walls"`
-	Containers    []*ContainerState  `json:"containers"`
-	EscapeDoor    []*EscapeDoorState `json:"escape_doors"`
-	Equipment     *EquipmentState    `json:"equipment"`
-	Switch        []*SwitchState     `json:"switches"`
-	NPCs          []*NPCState        `json:"npcs"`
-	Projectiles   []*ProjectileState `json:"projectiles"`
-	EscapedCount  int                `json:"escaped_count"`
+	SessionID     uuid.UUID           `json:"session_id"`
+	WorldType     WorldType           `json:"world_type"`
+	CurrentPlayer *CurrentPlayerState `json:"current_player"` // The recipient's player state
+	OtherPlayers  []*PlayerState      `json:"other_players"`  // All other players
+	Items         []uuid.UUID         `json:"items"`          // TODO: update with item entity converted into struct format
+	Doors         []*DoorState        `json:"doors"`
+	Walls         []*WallState        `json:"walls"`
+	Containers    []*ContainerState   `json:"containers"`
+	EscapeDoor    []*EscapeDoorState  `json:"escape_doors"`
+	Equipment     *EquipmentState     `json:"equipment"`
+	Switch        []*SwitchState      `json:"switches"`
+	NPCs          []*NPCState         `json:"npcs"`
+	Projectiles   []*ProjectileState  `json:"projectiles"`
+	EscapedCount  int                 `json:"escaped_count"`
 	// Floor and FloorCount are a run's; the hub has no floors and omits both.
 	// FS-F6F88 §Requirements 26.
 	Floor      int `json:"floor,omitempty"`
@@ -102,13 +102,29 @@ type ClientGameState struct {
 	Gates []*GateState `json:"gates,omitempty"`
 }
 
+// CurrentPlayerState is the recipient's own player state: what every player
+// shows, plus what only its owner is told. Other players are bare
+// PlayerStates, so a resource cannot reach them. FS-8AY7S §Requirements 17–18.
+// A mercenary's parry fields sit inline beside the resource; for anyone else
+// the embedded pointer is nil and the keys are absent. FS-MAMHR §Requirements 28.
+type CurrentPlayerState struct {
+	*PlayerState
+	Resource *ResourceState `json:"resource,omitempty"`
+	*ParryState
+}
+
 type BackendGameState struct {
 	SessionID uuid.UUID
 	WorldType WorldType
 	Players   map[uuid.UUID]*PlayerState
 	// LeftBehind holds dead delvers whose body stayed on a floor the party has
 	// left: each still sees their own state, nobody else sees the body
-	LeftBehind   map[uuid.UUID]*PlayerState
+	LeftBehind map[uuid.UUID]*PlayerState
+	// Resources is each delver's class resource, kept beside their state and
+	// attached only to the frame their own client is sent
+	Resources map[uuid.UUID]*ResourceState
+	// Parries is each mercenary's parry stance, attached like Resources
+	Parries      map[uuid.UUID]*ParryState
 	Items        []uuid.UUID
 	Doors        []*DoorState
 	Walls        []*WallState

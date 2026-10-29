@@ -3,6 +3,7 @@ import { ActionType } from "@/assets/types/client";
 import { ArtLibrary } from "@/render/art/library";
 import { MonsterRoster } from "@/render/creatures";
 import { STRIKE_RANGE } from "@/render/combat/playerCombat";
+import { SHADOW_SHOT_MIN_HOLD_MS } from "./shadowShotAim";
 import { FieldCombat } from "./fieldCombat";
 
 /** A drawn object that takes any call, remembering the handlers hung on it. */
@@ -43,7 +44,7 @@ const boar = (entity_id: string, x: number, action: "idle" | "dead" = "idle") =>
   max_health: 20,
 });
 
-const me = (x: number, current_health = 100, cls = "mage") => ({
+const me = (x: number, current_health = 100, cls = "mage", fields: Record<string, unknown> = {}) => ({
   id: "me",
   entity_id: "e_me",
   username: "Wren",
@@ -51,6 +52,7 @@ const me = (x: number, current_health = 100, cls = "mage") => ({
   position: { x, y: 500 },
   current_health,
   max_health: 100,
+  ...fields,
 });
 
 function fieldOnStage() {
@@ -61,6 +63,22 @@ function fieldOnStage() {
   const projectiles = { sync: vi.fn(), clear: vi.fn() };
   const body = drawn();
   const art = ArtLibrary.empty({ warn: () => {} });
+  const clock = { now: 0 };
+  const button = { pressed: 0 as number | undefined };
+  const kit = { sync: vi.fn(), forget: vi.fn() };
+  const look = {
+    slash: vi.fn(),
+    dash: vi.fn(),
+    arrow: vi.fn(),
+    fireball: vi.fn(),
+    cut: vi.fn(),
+    riposte: vi.fn(),
+    parry: vi.fn(),
+    shadowShot: vi.fn(),
+    aim: vi.fn(),
+    endAim: vi.fn(),
+    attackClip: vi.fn(),
+  };
   const combat = new FieldCombat({
     roster: (targeting) =>
       new MonsterRoster(
@@ -76,8 +94,10 @@ function fieldOnStage() {
         art,
         targeting,
       ),
-    port: { sendMessage, later: () => {} },
-    look: { slash: vi.fn(), dash: vi.fn(), arrow: vi.fn(), fireball: vi.fn(), attackClip: vi.fn() },
+    port: { sendMessage, later: () => {}, now: () => clock.now },
+    look,
+    kit,
+    button: () => button.pressed,
     projectiles,
     hits,
     cursor,
@@ -85,7 +105,7 @@ function fieldOnStage() {
   });
   const state = (player: ReturnType<typeof me> | null, monsters = [boar("b1", 1000), boar("b2", 1100, "dead")]) =>
     combat.sync({ current_player: player as never, other_players: [], monsters: monsters as never, projectiles: [] });
-  return { combat, sprites, sendMessage, cursor, hits, projectiles, body, state };
+  return { combat, sprites, sendMessage, cursor, hits, projectiles, body, state, clock, button, kit, look };
 }
 
 describe("FieldCombat (FS-X2F2H §Requirements 56)", () => {
@@ -157,5 +177,61 @@ describe("FieldCombat (FS-X2F2H §Requirements 56)", () => {
     state(me(990));
     sprites[2].handlers.pointerdown();
     expect(sendMessage).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("FieldCombat class kits, the run's own (FS-X2F2H §Requirements 56; FS-JTNPR; FS-MAMHR)", () => {
+  it("should fire an archer's Shadow Shot on a held release, and send nothing on the press", () => {
+    const { combat, state, sendMessage, clock } = fieldOnStage();
+    state(me(200, 100, "archer", { resource: { kind: "stamina", current: 100, max: 100, ability_cost: 25 } }));
+    combat.cast("special", { x: 400, y: 500 });
+    expect(combat.aiming).toBe(true);
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    clock.now = SHADOW_SHOT_MIN_HOLD_MS;
+    combat.releaseAim({ x: 400, y: 500 });
+    expect(sendMessage).toHaveBeenCalledWith(ActionType.CastSkill, { skill_id: "shadow_shot", target_x: 400, target_y: 500 });
+    expect(combat.lockedOut).toBe(true);
+  });
+
+  it("should not strike on an archer's right button", () => {
+    const { state, sprites, sendMessage, button } = fieldOnStage();
+    state(me(990, 100, "archer"));
+    button.pressed = 2;
+    sprites[0].handlers.pointerdown();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("should end a hold, with nothing sent, once the player falls", () => {
+    const { combat, state, sendMessage, clock, look } = fieldOnStage();
+    state(me(200, 100, "archer"));
+    combat.cast("special", { x: 400, y: 500 });
+    state(me(200, 0, "archer"));
+    expect(combat.aiming).toBe(false);
+    expect(look.endAim).toHaveBeenCalled();
+
+    clock.now = SHADOW_SHOT_MIN_HOLD_MS;
+    combat.releaseAim({ x: 400, y: 500 });
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("should send a Mercenary's cut, its riposte at 3 parry charges, and parry on the right click", () => {
+    const { combat, state, sendMessage, look } = fieldOnStage();
+    const charges = (current: number) => ({ resource: { kind: "parry_charges", current, max: 3, ability_cost: 0 } });
+    state(me(200, 100, "mercenary", charges(3)));
+    combat.cast("primary", { x: 250, y: 500 });
+    combat.cast("special", { x: 250, y: 500 });
+    expect(sendMessage.mock.calls.map(([, p]) => (p as { skill_id: string }).skill_id)).toEqual(["cut", "parry"]);
+    expect(look.riposte).toHaveBeenCalledTimes(1);
+    expect(look.parry).toHaveBeenCalledTimes(1);
+  });
+
+  it("should hand the kit each state's own player, and let it go on release", () => {
+    const { combat, state, kit } = fieldOnStage();
+    const player = me(200, 100, "mercenary", { parry_open: true });
+    state(player);
+    expect(kit.sync).toHaveBeenCalledWith(player, 0);
+    combat.release();
+    expect(kit.forget).toHaveBeenCalledTimes(1);
   });
 });

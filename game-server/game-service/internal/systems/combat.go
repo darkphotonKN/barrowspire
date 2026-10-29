@@ -14,7 +14,7 @@ import (
 	CombatSystem is the only code that reduces Health. FS-77AB6 §Requirements 1–11.
 
 	Handlers record attack intents as component data; this resolves them on the
-	tick: cooldown, mana, delivery (a targeted strike, a cone, projectiles, a dash),
+	tick: cooldown, cost, delivery (a targeted strike, a cone, projectiles, a dash),
 	then each hit through the damage formula. A dash sets a charge going that the
 	MovementSystem carries over the ticks after; this ends it once it is spent or
 	stopped, or when a new cast lands. Projectile impacts detected earlier
@@ -25,6 +25,11 @@ import (
 	reflects a monster's strike, the Lantern of the Drowned gives projectiles
 	pierce, and Ashwalk Greaves' dash lays a burning trail this pulses.
 	FS-4R9M9 §Requirements 34–36.
+
+	The mercenary's parry stance is server state here too (ADR-0030's
+	exception): stances are raised before any strike resolves, and a monster
+	strike landing on an open one is negated for a parry charge.
+	FS-MAMHR §Requirements 10–21.
 */
 
 // Impact is a projectile reaching a damageable entity, waiting to be resolved.
@@ -95,10 +100,13 @@ const (
 	scaleStrength
 	scaleAgility
 	scaleIntelligence
+	// scaleStrengthAgility scales on the mean of Strength and Agility, its
+	// half kept. FS-MAMHR §Requirements 7.
+	scaleStrengthAgility
 )
 
 type projectileSpec struct {
-	kind        string // what the client draws: "arrow", "fireball"
+	kind        string // what the client draws: "arrow", "fireball", "shadow_shot"
 	speed       float64
 	maxDistance float64
 	radius      float64
@@ -110,16 +118,30 @@ type attackSpec struct {
 	damageType  components.DamageType
 	scaling     scalingStat
 	coefficient float64
-	manaCost    int
-	cooldown    float64 // seconds
-	reach       float64 // px, how far a targeted strike lands
-	projectile  projectileSpec
+	// cost is paid from the caster's own class resource, whatever its kind.
+	// FS-8AY7S §Requirements 8–10.
+	cost       int
+	cooldown   float64 // seconds
+	reach      float64 // px, how far a targeted strike or a cone lands
+	halfArc    float64 // radians either side of the aim a cone sweeps
+	projectile projectileSpec
+	// parriable: an open parry stance on the target negates it.
+	// FS-MAMHR §Requirements 14.
+	parriable bool
 }
 
 const (
 	targetedAttackRange = 60.0
 	slashRange          = 50.0
 	slashHalfCone       = 1.05 // ~60°, a 120° cone
+	// the cut: narrower and a little longer than the slash. FS-MAMHR §Requirements 6.
+	cutRange    = 55.0
+	cutHalfCone = 35 * math.Pi / 180 // a 70° cone
+	// the riposte: a wide, long cleave toward the cursor, paid with every parry
+	// charge the merc can hold. Charter defaults. FS-MAMHR §Requirements 23.
+	riposteRange        = 90.0
+	riposteHalfCone     = 120 * math.Pi / 180 // a 240° cone
+	riposteParryCharges = 3
 
 	// The charge runs dashDistance at dashSpeed: 0.4 s, 12 ticks of 15 px at
 	// the world's 30 per second. The distance is the old teleport's. Under the
@@ -131,6 +153,15 @@ const (
 	// dashEpsilon absorbs the float drift of summing steps, so a charge whose
 	// last step lands it on its distance is over on that tick.
 	dashEpsilon = 1e-6
+
+	// The parry stance: open for parryWindow from its opening tick; one that
+	// closes having negated nothing locks the stance out for parryLockout from
+	// its close. Charter defaults. FS-MAMHR §Requirements 11, 15.
+	parryWindow  = 0.25 // seconds
+	parryLockout = 1.0  // seconds
+	// parryEpsilon absorbs the float drift of summing tick lengths, so a window
+	// on 1/60 s ticks covers exactly the ticks within 0.25 s of its opening.
+	parryEpsilon = 1e-9
 )
 
 // attackTable is FS-77AB6 §Requirements 6. Starting values. Projectile speed,
@@ -148,13 +179,27 @@ var attackTable = map[components.AttackKind]attackSpec{
 	// a monster's strike is its damage at level, as is: no coefficient, no stat
 	// (§Requirements 5). The MonsterAISystem paces it and measures its reach
 	// (range × 1.25) as the wind-up ends, so it has no cooldown or reach here.
+	// Every monster's strike is parriable, elites' and the boss's included.
 	components.AttackMonsterStrike: {
 		delivery: deliverTargeted, damageType: components.DamagePhysical, scaling: scaleNone,
-		coefficient: 1, reach: math.Inf(1),
+		coefficient: 1, reach: math.Inf(1), parriable: true,
 	},
 	components.AttackSlash: {
 		delivery: deliverCone, damageType: components.DamagePhysical, scaling: scaleStrength,
-		coefficient: 1.5, cooldown: 0.25,
+		coefficient: 1.5, cooldown: 0.25, reach: slashRange, halfArc: slashHalfCone,
+	},
+	// the mercenary's left-click: a narrow, heavy sword cut on Strength and
+	// Agility together. FS-MAMHR §Requirements 6–8.
+	components.AttackCut: {
+		delivery: deliverCone, damageType: components.DamagePhysical, scaling: scaleStrengthAgility,
+		coefficient: 1.8, cooldown: 0.25, reach: cutRange, halfArc: cutHalfCone,
+	},
+	// the cut a merc throws at 3 parry charges, spending them all. No skill id
+	// maps to it: armCut swaps it in for a resolving cut, and its 0.25 s starts
+	// in the cut's cooldown slot. FS-MAMHR §Requirements 23–25.
+	components.AttackRiposte: {
+		delivery: deliverCone, damageType: components.DamagePhysical, scaling: scaleStrengthAgility,
+		coefficient: 3.0, cost: riposteParryCharges, cooldown: 0.25, reach: riposteRange, halfArc: riposteHalfCone,
 	},
 	components.AttackArrow: {
 		delivery: deliverProjectile, damageType: components.DamagePhysical, scaling: scaleAgility,
@@ -166,19 +211,28 @@ var attackTable = map[components.AttackKind]attackSpec{
 		coefficient: 1.1, cooldown: 0.25,
 		projectile: projectileSpec{kind: "fireball", speed: 350, maxDistance: 500, radius: 12, spread: []float64{0}},
 	},
-	components.AttackTripleArrow: {
+	// the archer's ability: one slow, heavy bolt, paid in stamina. FS-JTNPR
+	// §Requirements 1, 5.
+	components.AttackShadowShot: {
 		delivery: deliverProjectile, damageType: components.DamagePhysical, scaling: scaleAgility,
-		coefficient: 1.2, manaCost: 10, cooldown: 0.4,
-		projectile: projectileSpec{kind: "arrow", speed: 480, maxDistance: 550, radius: 8, spread: []float64{-0.22, 0, 0.22}},
+		coefficient: 3.2, cost: 40, cooldown: 1.2,
+		projectile: projectileSpec{kind: "shadow_shot", speed: 260, maxDistance: 650, radius: 10, spread: []float64{0}},
 	},
 	components.AttackTripleFireball: {
 		delivery: deliverProjectile, damageType: components.DamageMagic, scaling: scaleIntelligence,
-		coefficient: 0.9, manaCost: 10, cooldown: 0.4,
+		coefficient: 0.9, cost: 15, cooldown: 0.4,
 		projectile: projectileSpec{kind: "fireball", speed: 360, maxDistance: 500, radius: 12, spread: []float64{-0.26, 0, 0.26}},
 	},
 	components.AttackDash: {
-		delivery: deliverMovement, manaCost: 10, cooldown: 0.4,
+		delivery: deliverMovement, cost: 25, cooldown: 0.4,
 	},
+}
+
+// AttackCost is what one resolved cast of an attack row costs its caster's
+// class resource; 0 for a row that costs nothing or does not exist.
+// FS-8AY7S §Requirements 9, 12.
+func AttackCost(kind components.AttackKind) int {
+	return attackTable[kind].cost
 }
 
 // skillAliases folds every cast_skill id the client sends onto its attack row.
@@ -186,16 +240,17 @@ var skillAliases = map[string]components.AttackKind{
 	"slash":              components.AttackSlash,
 	"melee_slash":        components.AttackSlash,
 	"strike":             components.AttackSlash,
+	"cut":                components.AttackCut,
 	"arrow":              components.AttackArrow,
 	"power_shot":         components.AttackArrow,
 	"shoot":              components.AttackArrow,
 	"fireball":           components.AttackFireball,
-	"triple_arrow":       components.AttackTripleArrow,
-	"multishot_arrow":    components.AttackTripleArrow,
+	"shadow_shot":        components.AttackShadowShot,
 	"triple_fireball":    components.AttackTripleFireball,
 	"multishot_fireball": components.AttackTripleFireball,
 	"dash":               components.AttackDash,
 	"sprint":             components.AttackDash,
+	"parry":              components.AttackParry,
 }
 
 // SkillAttackKind names the attack a cast_skill id asks for, false when unknown.
@@ -230,6 +285,13 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 	// after the burn, so a trail a charge lays as it ends first burns next tick
 	for _, entity := range entities {
 		s.settleCharge(entity)
+	}
+
+	// every stance before any strike, so a parry cast and a strike on the same
+	// tick resolve with the stance open, whatever the entity order.
+	// FS-MAMHR §Requirements 12
+	for _, entity := range entities {
+		stepStance(entity, deltaTime)
 	}
 
 	for _, entity := range entities {
@@ -274,9 +336,9 @@ func tickCooldowns(entity *ecs.Entity, deltaTime float64) {
 	}
 }
 
-// resolve carries out one intent. A request inside its cooldown, short of mana,
-// or (for a targeted attack) with no valid target in range does nothing at all:
-// no damage, no mana spent, no cooldown started.
+// resolve carries out one intent. A request inside its cooldown, short of its
+// cost, or (for a targeted attack) with no valid target in range does nothing
+// at all: no damage, nothing spent, no cooldown started. FS-8AY7S §Requirements 10.
 func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackIntent, entities []*ecs.Entity) {
 	spec, ok := attackTable[intent.Kind]
 	if !ok {
@@ -297,10 +359,11 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 		}
 	}
 
-	var mana *components.ManaComponent
-	if mc, ok := attacker.GetComponent(ecs.ComponentTypeMana); ok {
-		mana = mc.(*components.ManaComponent)
-		if mana.CurrentMana < spec.manaCost {
+	var pool *components.ResourceComponent
+	if rc, ok := attacker.GetComponent(ecs.ComponentTypeResource); ok {
+		pool = rc.(*components.ResourceComponent)
+		spec = armCut(intent.Kind, pool, spec)
+		if pool.Current < spec.cost {
 			return
 		}
 	}
@@ -311,7 +374,7 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 			return
 		}
 	case deliverCone:
-		s.slash(attacker, at, intent.TargetX, intent.TargetY, spec, entities)
+		s.cone(attacker, at, intent.TargetX, intent.TargetY, spec, entities)
 	case deliverProjectile:
 		s.fire(attacker, at, intent.TargetX, intent.TargetY, spec)
 	}
@@ -323,13 +386,25 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 		startCharge(attacker, at, intent.TargetX, intent.TargetY)
 	}
 
-	if mana != nil {
-		mana.CurrentMana -= spec.manaCost
+	if pool != nil {
+		pool.Current -= spec.cost
 	}
 	if cooldowns != nil {
 		// worn attack speed, already capped, shortens every cooldown
 		cooldowns.Remaining[intent.Kind] = spec.cooldown / (1 + float64(wornGear(attacker).AttackSpeedPercent)/100)
 	}
+}
+
+// armCut is the row a cut that passed its cooldown resolves as: the riposte
+// when the caster holds 3 parry charges, else the cut as it is. Its cost then
+// spends all 3, whether or not it hits anything; the cooldown it starts stays
+// the cut's slot. Any other attack, or any other resource, is left alone.
+// FS-MAMHR §Requirements 23–25.
+func armCut(kind components.AttackKind, pool *components.ResourceComponent, spec attackSpec) attackSpec {
+	if kind != components.AttackCut || pool.Kind != components.ResourceParryCharges || pool.Current < riposteParryCharges {
+		return spec
+	}
+	return attackTable[components.AttackRiposte]
 }
 
 // strike lands a targeted attack, reporting false when there was nothing in
@@ -355,12 +430,102 @@ func (s *CombatSystem) strike(attacker *ecs.Entity, at *components.TransformComp
 		return false
 	}
 
+	if spec.parriable && parryStrike(target) {
+		return true
+	}
 	s.applyHit(attack, target)
 	return true
 }
 
-// slash hits every valid target inside the cone, each resolved on its own.
-func (s *CombatSystem) slash(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec, entities []*ecs.Entity) {
+// stepStance steps a mercenary's parry stance by a tick: it runs the window and
+// whiff lockout clocks on, then takes their parry casts out of the queue and
+// raises the stance for the first one it may. A cast while the stance is open
+// or locked out is refused: it neither opens, extends nor restarts anything.
+// Anyone else's parry cast is left to resolve, which finds no row for it and
+// does nothing. A mercenary out of play keeps their parry state as it is.
+// FS-MAMHR §Requirements 10–18.
+func stepStance(entity *ecs.Entity, deltaTime float64) {
+	pc, ok := entity.GetComponent(ecs.ComponentTypeParry)
+	if !ok || !canAct(entity) {
+		return
+	}
+	stance := pc.(*components.ParryComponent)
+	runStanceClocks(stance, deltaTime)
+
+	ic, ok := entity.GetComponent(ecs.ComponentTypeAttackIntent)
+	if !ok {
+		return
+	}
+	intents := ic.(*components.AttackIntentComponent)
+	var rest []components.AttackIntent
+	for _, intent := range intents.Pending {
+		if intent.Kind != components.AttackParry {
+			rest = append(rest, intent)
+			continue
+		}
+		if !stance.Open && stance.LockoutRemaining == 0 {
+			stance.Open, stance.OpenFor, stance.Negated = true, 0, false
+		}
+	}
+	intents.Pending = rest
+}
+
+// runStanceClocks advances the whiff lockout and an open stance by a tick. A
+// stance past its window closes; if it negated nothing, the lockout starts,
+// counted from the moment the window ended rather than from this tick.
+// FS-MAMHR §Requirements 11, 15.
+func runStanceClocks(stance *components.ParryComponent, deltaTime float64) {
+	// before the close below, so a lockout started this tick is not shortened twice
+	if stance.LockoutRemaining > 0 {
+		stance.LockoutRemaining -= deltaTime
+		if stance.LockoutRemaining <= parryEpsilon {
+			stance.LockoutRemaining = 0
+		}
+	}
+
+	if !stance.Open {
+		return
+	}
+	stance.OpenFor += deltaTime
+	if stance.OpenFor <= parryWindow+parryEpsilon {
+		return
+	}
+	if !stance.Negated {
+		stance.LockoutRemaining = parryLockout - (stance.OpenFor - parryWindow)
+	}
+	stance.Open, stance.OpenFor, stance.Negated = false, 0, false
+}
+
+// parryStrike negates a strike landing on the target's open parry stance: no
+// damage, no crit roll, so nothing for Gravewarden's Oath to reflect. It grants
+// a parry charge up to the cap, counts the parry even at the cap, and leaves
+// the stance open. False when the target has no open stance.
+// FS-MAMHR §Requirements 14, 19.
+func parryStrike(target *ecs.Entity) bool {
+	pc, ok := target.GetComponent(ecs.ComponentTypeParry)
+	if !ok {
+		return false
+	}
+	stance := pc.(*components.ParryComponent)
+	if !stance.Open {
+		return false
+	}
+
+	stance.Negated = true
+	stance.Parries++
+	if rc, ok := target.GetComponent(ecs.ComponentTypeResource); ok {
+		if parryCharges := rc.(*components.ResourceComponent); parryCharges.Kind == components.ResourceParryCharges {
+			parryCharges.Current = min(parryCharges.Current+1, parryCharges.Max)
+		}
+	}
+
+	slog.Debug("strike parried", "entity_id", target.ID, "parries", stance.Parries)
+	return true
+}
+
+// cone hits every valid target within the attack's reach and arc around the
+// aim, each resolved on its own.
+func (s *CombatSystem) cone(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec, entities []*ecs.Entity) {
 	aim := math.Atan2(aimY-at.Y, aimX-at.X)
 	attack := s.snapshot(attacker, spec)
 
@@ -375,10 +540,10 @@ func (s *CombatSystem) slash(attacker *ecs.Entity, at *components.TransformCompo
 		to := tc.(*components.TransformComponent)
 
 		dx, dy := to.X-at.X, to.Y-at.Y
-		if math.Hypot(dx, dy) > slashRange {
+		if math.Hypot(dx, dy) > spec.reach {
 			continue
 		}
-		if math.Abs(normalizeAngle(math.Atan2(dy, dx)-aim)) > slashHalfCone {
+		if math.Abs(normalizeAngle(math.Atan2(dy, dx)-aim)) > spec.halfArc {
 			continue
 		}
 
@@ -655,7 +820,8 @@ func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) component
 		attack.Power = float64(cc.(*components.CombatComponent).Attack)
 	}
 	if sc, ok := attacker.GetComponent(ecs.ComponentTypeStats); ok {
-		attack.ScalingStat = statValue(sc.(*components.StatsComponent), spec.scaling)
+		stats := sc.(*components.StatsComponent)
+		attack.ScalingStat = scalingValue(spec.scaling, stats.Strength, stats.Agility, stats.Intelligence)
 	}
 	critRate := 0.0
 	if weapon := wornItem(s.em, attacker, wornWeapon); weapon != nil {
@@ -665,7 +831,7 @@ func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) component
 
 	// worn gear on top, never written into the character's own stats
 	gear := wornGear(attacker)
-	attack.ScalingStat += gearStatValue(gear, spec.scaling)
+	attack.ScalingStat += scalingValue(spec.scaling, gear.Strength, gear.Agility, gear.Intelligence)
 	attack.Power += float64(gear.FlatDamage)
 	attack.CritChance = CritChance(critRate + float64(gear.CritChance)/100)
 
@@ -711,27 +877,20 @@ func wornGear(entity *ecs.Entity) components.GearBonusComponent {
 	return components.GearBonusComponent{}
 }
 
-func gearStatValue(gear components.GearBonusComponent, scaling scalingStat) int {
+// scalingValue is what an attack's scaling reads from one set of attributes,
+// the character's own or their worn gear's: one stat as is, or the mean of two
+// with its half kept. Own and worn values add, so a hybrid attack scales on
+// ((STR + worn STR) + (AGI + worn AGI)) / 2. FS-MAMHR §Requirements 7.
+func scalingValue(scaling scalingStat, strength, agility, intelligence int) float64 {
 	switch scaling {
 	case scaleStrength:
-		return gear.Strength
+		return float64(strength)
 	case scaleAgility:
-		return gear.Agility
+		return float64(agility)
 	case scaleIntelligence:
-		return gear.Intelligence
-	default:
-		return 0
-	}
-}
-
-func statValue(stats *components.StatsComponent, scaling scalingStat) int {
-	switch scaling {
-	case scaleStrength:
-		return stats.Strength
-	case scaleAgility:
-		return stats.Agility
-	case scaleIntelligence:
-		return stats.Intelligence
+		return float64(intelligence)
+	case scaleStrengthAgility:
+		return float64(strength+agility) / 2
 	default:
 		return 0
 	}

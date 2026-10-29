@@ -14,7 +14,7 @@ import (
 // §6–§8), so neither carries a constraint here; the edge checks shape only.
 type CharacterCreate struct {
 	Name  string `json:"name" doc:"Character name. Validity (1-32 characters after trimming, unique) is decided by character-service."`
-	Class string `json:"class" doc:"warrior, mage or archer (decided by character-service)."`
+	Class string `json:"class" doc:"warrior, mage, archer or mercenary (decided by character-service)."`
 }
 
 // Character is one of the signed-in member's characters. No member / owner
@@ -25,7 +25,7 @@ type CharacterCreate struct {
 type Character struct {
 	ID          string    `json:"id" format:"uuid" doc:"Character id."`
 	Name        string    `json:"name" doc:"Character name."`
-	Class       string    `json:"class" doc:"warrior, mage or archer."`
+	Class       string    `json:"class" doc:"warrior, mage, archer or mercenary."`
 	Level       int32     `json:"level" minimum:"1" maximum:"20" doc:"Current level."`
 	Experience  int64     `json:"experience" minimum:"0" doc:"Total experience, monotonic."`
 	LevelFloor  int64     `json:"levelFloor" minimum:"0" doc:"Total experience at which the current level began."`

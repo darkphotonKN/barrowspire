@@ -1,6 +1,6 @@
 import * as Phaser from "phaser";
 import { palette, toCss, CANVAS_FONT } from "@/utils/canvasPalette";
-import { CLASS_LORE, ClassKey } from "@/data/classLore";
+import { CLASS_LORE, ClassKey, type ClassStats } from "@/data/classLore";
 import { useGameStore } from "@/stores/gameStore";
 import { creationRefusal } from "@/characters/entry";
 import { registerArt } from "@/render/art/phaser";
@@ -14,6 +14,7 @@ import {
   sharpenText,
   type ButtonState,
 } from "@/ui/menuChrome";
+import { CLASS_ORDER, classCardRects, loreStatRows } from "@/ui/classSelect";
 
 /** The menus wear the site's Bone & Soot (design-guideline "UI Chrome"). */
 const ui = palette.menu;
@@ -34,6 +35,8 @@ export class CharacterCreationScene extends Phaser.Scene {
       titleText: Phaser.GameObjects.Text;
       subText: Phaser.GameObjects.Text;
       hitArea: Phaser.GameObjects.Rectangle;
+      w: number;
+      h: number;
     }
   > = new Map();
 
@@ -133,29 +136,25 @@ export class CharacterCreationScene extends Phaser.Scene {
   }
 
   private createClassSelectorPanel(): void {
-    const keys: ClassKey[] = ["warrior", "mage", "archer"];
-    const startX = 60;
-    const startY = 110;
-    const btnW = 210;
-    const btnH = 95;
-    const gap = 16;
+    // Every class the server seats, each on its own card down the left (FS-MAMHR §G.30).
+    const rects = classCardRects(CLASS_ORDER.length);
 
-    keys.forEach((key, idx) => {
-      const y = startY + idx * (btnH + gap);
-      const container = this.add.container(startX, y);
+    CLASS_ORDER.forEach((key, idx) => {
+      const { x, y, w: btnW, h: btnH } = rects[idx];
+      const container = this.add.container(x, y);
 
       const bg = this.add.graphics();
       container.add(bg);
 
       const lore = CLASS_LORE[key];
-      const titleText = this.add.text(18, 18, lore.name, {
+      const titleText = this.add.text(18, 16, lore.name, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "18px",
         color: toCss(ui.text),
         letterSpacing: 2,
       });
 
-      const subText = this.add.text(18, 48, lore.englishTitle, {
+      const subText = this.add.text(18, 44, lore.englishTitle, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
         color: toCss(ui.label),
@@ -183,7 +182,7 @@ export class CharacterCreationScene extends Phaser.Scene {
         }
       });
 
-      this.classButtonsMap.set(key, { container, bg, titleText, subText, hitArea });
+      this.classButtonsMap.set(key, { container, bg, titleText, subText, hitArea, w: btnW, h: btnH });
     });
   }
 
@@ -262,7 +261,7 @@ export class CharacterCreationScene extends Phaser.Scene {
 
     // Update Class Selector Buttons visual state
     this.classButtonsMap.forEach((item, k) => {
-      this.renderClassButtonBg(item.bg, 210, 95, k === key);
+      this.renderClassButtonBg(item.bg, item.w, item.h, k === key);
     });
 
     // The plinth shows the picked class's baked sheet.
@@ -299,14 +298,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     this.renderStatBars(lore.stats);
   }
 
-  private renderStatBars(stats: {
-    hp: number;
-    mp: number;
-    atk: number;
-    def: number;
-    range: number;
-    speed: number;
-  }): void {
+  private renderStatBars(stats: ClassStats): void {
     if (!this.statBarGraphics || !this.statTitleText) return;
 
     const g = this.statBarGraphics;
@@ -324,17 +316,8 @@ export class CharacterCreationScene extends Phaser.Scene {
 
     this.statBarGraphics.setPosition(0, 0);
 
-    const statRows = [
-      // HP and MP in the HUD's own bar colours; the rest are measures, in bright iron.
-      { label: "HP", val: stats.hp, max: 200, color: palette.markerHp },
-      { label: "MP", val: stats.mp, max: 200, color: palette.markerMp },
-      { label: "ATK", val: stats.atk, max: 20, color: ui.frameBright },
-      { label: "DEF", val: stats.def, max: 15, color: ui.frameBright },
-      { label: "RNG", val: stats.range, max: 10, color: ui.frameBright },
-      { label: "SPD", val: stats.speed, max: 250, color: ui.frameBright },
-    ];
-
-    statRows.forEach((row, i) => {
+    // The class's own resource is named by its kind, in the HUD's colour (FS-8AY7S req 21).
+    loreStatRows(stats).forEach((row, i) => {
       const y = contentY + i * rowH;
 
       const lbl = this.add.text(contentX, y - 2, row.label, {
@@ -344,18 +327,31 @@ export class CharacterCreationScene extends Phaser.Scene {
       });
       this.statTexts.push(lbl);
 
-      // A carved well with an iron hairline; the fill rounded to match.
-      g.fillStyle(ui.well, 0.7);
-      g.fillRoundedRect(contentX + 55, y, barW, barH, 3);
-      const fillW = Math.min(barW, (row.val / row.max) * barW);
-      if (fillW >= 2) {
-        g.fillStyle(row.color, 0.85);
-        g.fillRoundedRect(contentX + 55, y, fillW, barH, Math.min(3, fillW / 2));
+      if (row.pips !== undefined) {
+        // Parry charges are studs, as on the run's HUD: one per charge the class can hold.
+        const pipGap = 6;
+        const pipW = Math.floor((barW - pipGap * (row.pips - 1)) / row.pips);
+        for (let p = 0; p < row.pips; p++) {
+          const px = contentX + 55 + p * (pipW + pipGap);
+          g.fillStyle(row.color, 0.85);
+          g.fillRoundedRect(px, y, pipW, barH, 3);
+          g.lineStyle(1, ui.frame, 0.5);
+          g.strokeRoundedRect(px + 0.5, y + 0.5, pipW - 1, barH - 1, 3);
+        }
+      } else {
+        // A carved well with an iron hairline; the fill rounded to match.
+        g.fillStyle(ui.well, 0.7);
+        g.fillRoundedRect(contentX + 55, y, barW, barH, 3);
+        const fillW = row.fill * barW;
+        if (fillW >= 2) {
+          g.fillStyle(row.color, 0.85);
+          g.fillRoundedRect(contentX + 55, y, fillW, barH, Math.min(3, fillW / 2));
+        }
+        g.lineStyle(1, ui.frame, 0.5);
+        g.strokeRoundedRect(contentX + 55.5, y + 0.5, barW - 1, barH - 1, 3);
       }
-      g.lineStyle(1, ui.frame, 0.5);
-      g.strokeRoundedRect(contentX + 55.5, y + 0.5, barW - 1, barH - 1, 3);
 
-      const valTxt = this.add.text(contentX + 55 + barW + 10, y - 2, `${row.val}`, {
+      const valTxt = this.add.text(contentX + 55 + barW + 10, y - 2, `${row.value}`, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
         color: toCss(ui.text),

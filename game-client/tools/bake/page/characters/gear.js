@@ -440,6 +440,132 @@ export function wizardHat(rig, mat, bandMat) {
   attach(rig, "head", band, bandMat, [0, hy + 0.086, hz - 0.013], { rx: -0.22 });
 }
 
+// --- the Mercenary (FS-MAMHR §H) -----------------------------------------------------------
+
+/**
+ * A one-handed arming sword: shorter and narrower than the knight's longsword, a plain iron
+ * cross with down-swept quillons, a wheel pommel, a grip for one fist. A working blade, not a
+ * house's.
+ */
+export function armingSword(rig, M, F) {
+  const H = rig.H;
+  const g = new THREE.Group();
+  const L = 0.34 * H;
+  const w = 0.022 * H;
+  const blade = new THREE.Shape();
+  blade.moveTo(-w / 2, 0);
+  blade.lineTo(w / 2, 0);
+  blade.lineTo(w * 0.38, L * 0.8);
+  blade.lineTo(0, L);
+  blade.lineTo(-w * 0.38, L * 0.8);
+  blade.closePath();
+  const bg = extrude(blade, 0.0036 * H, 0.0016 * H);
+  bg.applyMatrix4(GRIP_BASIS);
+  bg.translate(0, 0, 0.045 * H);
+  g.add(new THREE.Mesh(bg, F.steel));
+  g.add(placed(new THREE.BoxGeometry(0.0062 * H, 0.0055 * H, L * 0.5), F.blackIron, 0, 0, 0.045 * H + L * 0.3));
+  // the cross: a bar, its quillons swept toward the blade
+  g.add(placed(new THREE.BoxGeometry(0.012 * H, 0.06 * H, 0.012 * H), F.blackIron, 0, 0, 0.042 * H));
+  for (const sy of [-1, 1])
+    g.add(placed(new THREE.BoxGeometry(0.01 * H, 0.03 * H, 0.01 * H), F.blackIron, 0, sy * 0.04 * H, 0.048 * H, sy * 0.6, 0, 0));
+  g.add(new THREE.Mesh(rod(0.0095 * H, 0.0085 * H, 0.07 * H), F.leatherDark));
+  const pommel = new THREE.CylinderGeometry(0.017 * H, 0.017 * H, 0.011 * H, 14);
+  pommel.rotateZ(Math.PI / 2);
+  g.add(placed(pommel, F.blackIron, 0, 0, -0.043 * H));
+  return g;
+}
+
+/**
+ * A kettle hat: a low iron dome on a broad brim that droops all round, tipped back off the brow.
+ * Open faced, no crest: the hat of a foot soldier who bought his own kit.
+ */
+export function kettleHat(rig, mat) {
+  const H = rig.H;
+  const [, hy, hz] = J(rig, "head");
+  const r = rig.p.headR;
+  const at = [0, hy + 0.07, hz - 0.008];
+  const dome = new THREE.LatheGeometry(
+    [
+      new THREE.Vector2(r * 1.1 * H, 0),
+      new THREE.Vector2(r * 1.12 * H, 0.022 * H),
+      new THREE.Vector2(r * 1.02 * H, 0.046 * H),
+      new THREE.Vector2(r * 0.78 * H, 0.066 * H),
+      new THREE.Vector2(r * 0.42 * H, 0.078 * H),
+      new THREE.Vector2(0, 0.082 * H),
+    ],
+    24,
+  );
+  attach(rig, "head", dome, mat, at, { rx: -0.2 });
+  const brim = [];
+  const N = 6;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    brim.push(new THREE.Vector2((r * 1.08 + t * r * 0.62) * H, (-t * t * 0.026 + 0.003) * H));
+  }
+  for (let i = N; i >= 0; i--) {
+    const t = i / N;
+    brim.push(new THREE.Vector2((r * 1.08 + t * r * 0.62) * H, (-t * t * 0.026 - 0.003) * H - (i === N ? 0.004 * H : 0)));
+  }
+  attach(rig, "head", new THREE.LatheGeometry(brim, 28), mat, [at[0], at[1] + 0.002, at[2]], { rx: -0.2 });
+  // the band where dome meets brim, riveted
+  const band = new THREE.CylinderGeometry(r * 1.13 * H, r * 1.13 * H, 0.012 * H, 24, 1, true);
+  attach(rig, "head", band, mat, [at[0], at[1] + 0.007, at[2]], { rx: -0.2 });
+}
+
+/**
+ * One shoulder's defence: `lames` overlapping caps riding the upper arm, from the top down.
+ * `size` scales them; `mat` should be double-sided.
+ */
+export function spaulder(rig, side, mat, { lames = 3, size = 1 } = {}) {
+  const H = rig.H;
+  const sx = side === "L" ? 1 : -1;
+  const [x, uy] = J(rig, `upperArm${side}`);
+  for (let k = 0; k < lames; k++) {
+    const cap = new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
+    cap.scale(0.064 * H * size * (1 - k * 0.1), 0.042 * H * size, 0.066 * H * size * (1 - k * 0.09));
+    attach(rig, `upperArm${side}`, cap, mat, [x + sx * (0.008 + k * 0.012) * size, uy + 0.026 - k * 0.026 * size, 0], {
+      rz: -sx * (0.32 + k * 0.24),
+    });
+  }
+}
+
+/** A knee cop on one knee, riding the shin. */
+export function kneeCop(rig, side, mat) {
+  const H = rig.H;
+  const [x, ky] = J(rig, `shin${side}`);
+  const cap = new THREE.SphereGeometry(0.031 * H, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
+  cap.rotateX(Math.PI / 2);
+  attach(rig, `shin${side}`, cap, mat, [x, ky - 0.004, 0.035]);
+  // the wing on the outside of the knee
+  const wing = new THREE.SphereGeometry(0.022 * H, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.5);
+  wing.rotateZ((side === "L" ? -1 : 1) * Math.PI / 2);
+  attach(rig, `shin${side}`, wing, mat, [x + (side === "L" ? 0.03 : -0.03), ky - 0.004, 0.018]);
+}
+
+/**
+ * A leather scabbard hung from the belt on one hip, slung back so the tip trails behind the
+ * leg, with an iron locket at the mouth and a chape at the tip.
+ */
+export function scabbard(rig, side, F) {
+  const H = rig.H;
+  const [, hy] = J(rig, "hips");
+  const sx = side === "L" ? 1 : -1;
+  const g = mount(rig, "hips", [sx * 0.118 * rig.p.hipW, hy + 0.005, 0.03], { rx: 0.36, rz: sx * 0.12 });
+  const L = 0.3 * H;
+  const sheath = new THREE.CylinderGeometry(0.011 * H, 0.015 * H, L, 8);
+  sheath.scale(0.7, 1, 1.25);
+  g.add(placed(sheath, F.leatherDark, 0, -L / 2 - 0.02 * H, 0));
+  g.add(placed(new THREE.BoxGeometry(0.018 * H, 0.03 * H, 0.03 * H), F.blackIron, 0, -0.03 * H, 0));
+  const chape = new THREE.ConeGeometry(0.0125 * H, 0.04 * H, 8);
+  chape.scale(0.75, 1, 1.2);
+  chape.rotateX(Math.PI);
+  g.add(placed(chape, F.blackIron, 0, -L - 0.03 * H, 0));
+  // the hilt of the dagger that rides beside it
+  g.add(placed(new THREE.CylinderGeometry(0.007 * H, 0.007 * H, 0.05 * H, 6), F.leatherDark, -sx * 0.018 * H, 0.012 * H, -0.012 * H));
+  g.add(placed(new THREE.SphereGeometry(0.009 * H, 8, 6), F.blackIron, -sx * 0.018 * H, 0.04 * H, -0.012 * H));
+  return g;
+}
+
 // --- hub folk (FS-2325V §G) ----------------------------------------------------------------
 
 /**

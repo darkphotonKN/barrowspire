@@ -15,8 +15,8 @@ import (
 // maxNameLength matches characters.name VARCHAR(32), counted in characters.
 const maxNameLength = 32
 
-// classes is the closed set a character may be (FS-BDA7X R3).
-var classes = map[string]bool{"warrior": true, "mage": true, "archer": true}
+// classes is the closed set a character may be (FS-BDA7X R3; FS-MAMHR R4).
+var classes = map[string]bool{"warrior": true, "mage": true, "archer": true, "mercenary": true}
 
 type service struct {
 	repo      Repository

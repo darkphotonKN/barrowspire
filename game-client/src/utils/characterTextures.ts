@@ -1,5 +1,7 @@
 import * as Phaser from "phaser";
-import { palette } from "@/utils/canvasPalette";
+import { palette, shade, tint } from "@/utils/canvasPalette";
+import { BARROW_HEX } from "@/utils/theme";
+import type { ClassKey } from "@/data/classLore";
 
 export type Facing = "up" | "down" | "left" | "right";
 
@@ -649,19 +651,194 @@ export function drawArcher(
   }
 }
 
+/**
+ * The Mercenary's placeholder (FS-MAMHR §G.31), until its baked sheet is approved: a bareheaded
+ * sellsword in a worn leather jerkin with one mismatched steel pauldron, a one-handed arming
+ * sword held low at his side and no shield, so he reads as neither the helmed, shielded knight nor
+ * the hooded archer. Tokens only.
+ */
+interface MercenaryPalette {
+  hair: number;
+  skin: number;
+  skinShade: number;
+  eye: number;
+  leather: number;
+  leatherShade: number;
+  pauldron: number;
+  pauldronShade: number;
+  pauldronLight: number;
+  blade: number;
+  hilt: number;
+  boot: number;
+  ink: number;
+}
+
+const MERCENARY_PALETTE: MercenaryPalette = {
+  hair: shade(BARROW_HEX.barrowDeep, 0.45),
+  skin: BARROW_HEX.vellum,
+  skinShade: BARROW_HEX.vellumDark,
+  eye: BARROW_HEX.ink,
+  leather: BARROW_HEX.barrowBrown,
+  leatherShade: shade(BARROW_HEX.barrowBrown),
+  pauldron: BARROW_HEX.slateLight,
+  pauldronShade: BARROW_HEX.slate,
+  pauldronLight: tint(BARROW_HEX.slateLight, 0.35),
+  blade: tint(BARROW_HEX.slateLight, 0.55),
+  hilt: BARROW_HEX.brass,
+  boot: shade(BARROW_HEX.barrowDeep, 0.3),
+  ink: palette.ink,
+};
+
+export function drawMercenary(
+  g: Phaser.GameObjects.Graphics,
+  facing: Facing,
+  pal: MercenaryPalette = MERCENARY_PALETTE,
+): void {
+  drawPixelFigure(g, pal.ink, (set, bar) => {
+    const back = facing === "up";
+    const left = facing === "left";
+    const right = facing === "right";
+    const side = left || right;
+    const lean = left ? -1 : right ? 1 : 0;
+
+    // the arming sword, held low in the sword hand: grip, a brass cross, the blade toward the ground
+    const swordCol = left ? 4 : 19;
+    set(swordCol, 13, pal.hilt);
+    set(swordCol, 14, pal.hilt);
+    bar(15, swordCol - 1, swordCol + 1, pal.hilt);
+    for (let y = 16; y <= 23; y++) set(swordCol, y, pal.blade);
+
+    // a bare, close-cropped head: hair on top (all of it from behind), the face under it
+    bar(3, 10 + lean, 13 + lean, pal.hair);
+    bar(4, 9 + lean, 14 + lean, pal.hair);
+    for (let y = 5; y <= 10; y++) bar(y, 9 + lean, 14 + lean, back ? pal.hair : pal.skin);
+    if (!back) {
+      bar(5, 9 + lean, 14 + lean, pal.hair);
+      for (let y = 6; y <= 10; y++) set(14 + lean, y, pal.skinShade);
+      if (side) set(left ? 9 : 14, 7, pal.eye);
+      else {
+        set(10, 7, pal.eye);
+        set(13, 7, pal.eye);
+      }
+    }
+    bar(11, 10 + lean, 13 + lean, back ? pal.hair : pal.skinShade);
+
+    // the worn leather jerkin, shaded on its far side
+    for (let y = 12; y <= 21; y++) {
+      const w = y <= 13 ? 4 : y <= 18 ? 5 : 4;
+      const cx = 11 + lean;
+      const lo = side ? cx - w + 1 : cx - w;
+      const hi = side ? cx + w - 1 : cx + w + 1;
+      bar(y, lo, hi, pal.leather);
+      for (let x = Math.floor((lo + hi) / 2) + 1; x <= hi; x++) set(x, y, pal.leatherShade);
+    }
+    // a sword belt
+    bar(18, side ? 8 + lean : 7, side ? 14 + lean : 16, pal.hilt);
+
+    // one steel pauldron only, on the sword arm: mismatched half-armour
+    const pauldron = side ? (left ? [7, 10] : [13, 16]) : [14, 18];
+    for (let y = 12; y <= 14; y++) {
+      bar(y, pauldron[0], pauldron[1], pal.pauldron);
+      set(pauldron[1], y, pal.pauldronShade);
+    }
+    bar(12, pauldron[0], pauldron[1] - 1, pal.pauldronLight);
+
+    // legs and boots
+    for (let y = 22; y <= 23; y++) {
+      bar(y, side ? 10 : 8, side ? 12 : 10, pal.leatherShade);
+      if (!side) bar(y, 13, 15, pal.leatherShade);
+    }
+    bar(24, side ? 10 : 8, side ? 12 : 10, pal.boot);
+    bar(25, side ? (left ? 9 : 10) : 7, side ? (left ? 12 : 13) : 10, pal.boot);
+    if (!side) {
+      bar(24, 13, 15, pal.boot);
+      bar(25, 13, 16, pal.boot);
+    }
+  });
+}
+
+/**
+ * Lays a 24 × 26 pixel figure at 2× in a 60 × 60 texture, inked one pixel round its hard edges,
+ * as the other placeholders are drawn. `paint` sets its cells; a soft cell takes no ink.
+ */
+function drawPixelFigure(
+  g: Phaser.GameObjects.Graphics,
+  inkColour: number,
+  paint: (
+    set: (x: number, y: number, c: number, isSoft?: boolean) => void,
+    bar: (y: number, x0: number, x1: number, c: number) => void,
+  ) => void,
+): void {
+  const P = 2;
+  const W = 24;
+  const H = 26;
+  const ox = (60 - W * P) / 2;
+  const oy = (60 - H * P) / 2;
+
+  const grid: (number | null)[][] = Array.from({ length: H }, () =>
+    Array<number | null>(W).fill(null),
+  );
+  const soft: boolean[][] = Array.from({ length: H }, () => Array<boolean>(W).fill(false));
+  const set = (x: number, y: number, c: number, isSoft = false) => {
+    if (x < 0 || x >= W || y < 0 || y >= H) return;
+    grid[y][x] = c;
+    soft[y][x] = isSoft;
+  };
+  const bar = (y: number, x0: number, x1: number, c: number) => {
+    for (let x = x0; x <= x1; x++) set(x, y, c);
+  };
+  paint(set, bar);
+
+  const ink: Array<[number, number]> = [];
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      if (grid[y][x] !== null) continue;
+      const near =
+        (grid[y][x - 1] != null && !soft[y][x - 1]) ||
+        (grid[y][x + 1] != null && !soft[y][x + 1]) ||
+        (grid[y - 1]?.[x] != null && !soft[y - 1][x]) ||
+        (grid[y + 1]?.[x] != null && !soft[y + 1][x]);
+      if (near) ink.push([x, y]);
+    }
+  ink.forEach(([x, y]) => set(x, y, inkColour));
+
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const c = grid[y][x];
+      if (c === null) continue;
+      g.fillStyle(c, 1);
+      g.fillRect(ox + x * P, oy + y * P, P, P);
+    }
+}
+
+/** Each class's placeholder drawer: every class the client knows (FS-MAMHR §G.31). */
+const PLACEHOLDERS: Readonly<
+  Record<ClassKey, (g: Phaser.GameObjects.Graphics, facing: Facing) => void>
+> = {
+  warrior: (g, facing) => drawKnight(g, facing),
+  mage: (g, facing) => drawWizard(g, facing),
+  archer: (g, facing) => drawArcher(g, facing),
+  mercenary: (g, facing) => drawMercenary(g, facing),
+};
+
+/**
+ * The placeholder texture a server class draws as at a facing. Falls back to the warrior only
+ * for a class the client does not know (missing or unrecognised), never for a known one.
+ */
+export function placeholderTexture(playerClass: string | undefined, facing: Facing): string {
+  const cls = (playerClass ?? "").toLowerCase();
+  return `preview_${Object.hasOwn(PLACEHOLDERS, cls) ? cls : "warrior"}_${facing}`;
+}
+
 export function ensureCharacterTextures(scene: Phaser.Scene): void {
   const facings = ["down", "up", "left", "right"] as const;
-  const classes = ["warrior", "mage", "archer"] as const;
 
-  for (const cls of classes) {
+  for (const [cls, draw] of Object.entries(PLACEHOLDERS)) {
     for (const facing of facings) {
       const key = `preview_${cls}_${facing}`;
       if (!scene.textures.exists(key) || scene.textures.get(key).key === "__MISSING") {
         const g = scene.make.graphics({});
-        if (cls === "warrior") drawKnight(g, facing);
-        else if (cls === "mage") drawWizard(g, facing);
-        else if (cls === "archer") drawArcher(g, facing);
-
+        draw(g, facing);
         g.generateTexture(key, 60, 60);
         g.destroy();
       }

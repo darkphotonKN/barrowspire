@@ -184,6 +184,23 @@ describe("CharacterMotion", () => {
     expect(motion.step({ x: 0, y: 0 }, 1500, FRAME, false).animation).toBe("idle");
   });
 
+  it("should stand idle turned to a held aim, following it each frame, and keep the facing once let go (FS-JTNPR req 10)", () => {
+    const motion = new CharacterMotion("se");
+    motion.holdAim({ x: 40, y: 0 });
+    expect(motion.step({ x: 0, y: 0 }, 0, FRAME, false)).toMatchObject({ animation: "idle", facing: "e" });
+    motion.holdAim({ x: 0, y: 40 });
+    expect(motion.step({ x: 0, y: 0 }, FRAME, FRAME, false)).toMatchObject({ animation: "idle", facing: "s" });
+    motion.holdAim(undefined);
+    expect(motion.step({ x: 0, y: 0 }, 2 * FRAME, FRAME, false)).toMatchObject({ animation: "idle", facing: "s" });
+  });
+
+  it("should stay idle under a held aim while the body is still drawn moving", () => {
+    const motion = new CharacterMotion("se");
+    walk(motion, { x: 200, y: 0 }, 300);
+    motion.holdAim({ x: -40, y: 0 });
+    expect(motion.step({ x: 70, y: 0 }, 320, FRAME, false)).toMatchObject({ animation: "idle", facing: "w" });
+  });
+
   it("should die facing where it fell, whatever it was doing", () => {
     const motion = new CharacterMotion();
     walk(motion, { x: 200, y: 0 }, 300);

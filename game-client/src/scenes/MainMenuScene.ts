@@ -28,6 +28,12 @@ const ui = palette.menu;
  * No tagline under it: the site's hero has none in that place.
  */
 export const MENU_TITLE = "THE AGE OF BARROWSPIRE";
+/**
+ * The controls line under the menu. The right button is each class's own ability, priced by the
+ * server in that class's resource, so the line names no cost (FS-8AY7S).
+ */
+export const MENU_CONTROLS =
+  "WASD Move  //  L-Click Primary Attack  //  R-Click Class Ability  //  E Interact";
 /** The hero on the main-menu plinth, of the baked frame (FS-2325V §F.3). */
 const HERO_SCALE = 1.3;
 /**
@@ -235,7 +241,7 @@ export class MainMenuScene extends Phaser.Scene {
     const controlsText = this.add.text(
       width / 2,
       height - 60,
-      "WASD Move  //  L-Click Primary Attack  //  R-Click Special Skill (10 MP)  //  E Interact",
+      MENU_CONTROLS,
       {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",

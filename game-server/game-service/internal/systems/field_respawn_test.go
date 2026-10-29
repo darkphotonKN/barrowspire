@@ -39,12 +39,11 @@ func positionOf(e *ecs.Entity) (float64, float64) {
 }
 
 // A fallen player stays fallen where they lie until the delay has run, then
-// stands at the arrival point in play, at full health and full mana.
+// stands at the arrival point in play, at full health and a full class resource.
 func TestFieldRespawnSystem_RisesAtTheArrivalAfterTheDelay(t *testing.T) {
 	em := ecs.NewEntityManager()
 	body := delver(em, 900, 420)
-	mc, _ := body.GetComponent(ecs.ComponentTypeMana)
-	mc.(*components.ManaComponent).CurrentMana = 7
+	resourceOf(body).Current = 7
 	sys := respawnSystem()
 	entities := em.GetAllEntities()
 
@@ -61,7 +60,7 @@ func TestFieldRespawnSystem_RisesAtTheArrivalAfterTheDelay(t *testing.T) {
 	assert.Equal(t, fieldArrival.X, x)
 	assert.Equal(t, fieldArrival.Y, y)
 	assert.Equal(t, 150, health(body), "full health")
-	assert.Equal(t, 100, mana(body), "full mana")
+	assert.Equal(t, 100, resourceOf(body).Current, "full stamina")
 	assert.False(t, body.HasComponent(ecs.ComponentTypeRespawn), "nothing left counting down")
 }
 
@@ -100,4 +99,19 @@ func TestFieldRespawnSystem_EveryDeathWaitsTheFullDelay(t *testing.T) {
 	assert.False(t, InPlay(body), "the second fall waits its own delay")
 	fallFor(sys, entities, 0.1)
 	assert.True(t, InPlay(body))
+}
+
+// A mercenary rises with the 0 parry charges their death left them: the pool is
+// earned by parrying, never refilled. FS-MAMHR §Requirements 21, 22.
+func TestFieldRespawnSystem_ParryChargesStayLost(t *testing.T) {
+	em := ecs.NewEntityManager()
+	body := delver(em, 900, 420)
+	body.AddComponent(components.NewResourceComponent(components.ResourceParryCharges, 0, 3, 0))
+	sys := respawnSystem()
+	entities := em.GetAllEntities()
+
+	fall(sys, entities, body)
+	fallFor(sys, entities, riseAfter)
+	require.True(t, InPlay(body))
+	assert.Equal(t, 0, resourceOf(body).Current, "no parry charges for rising")
 }

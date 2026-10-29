@@ -3,8 +3,8 @@
  * release at the bow and a dull puff where it lands. No white streak, no chips, no light.
  *
  * - Release (§F.1): a faint string-snap shimmer at the bow, at bow height above the feet, and a
- *   few fibre motes. Signal, unchanged: the archer's own send of `CastSkill {skill_id: "arrow"}`
- *   or `{skill_id: "triple_arrow"}`, one per send.
+ *   few fibre motes. Signal, unchanged: the archer's own send of `CastSkill {skill_id: "arrow"}`,
+ *   one per send. A fired Shadow Shot plays its own release (`shadowShot.ts`).
  * - Flight (§F.2): the baked `fx_arrow` (with a faint hairline streak behind the nock) turned
  *   to its heading, flying at bow height ({@link BOW_LIFT}) above its footprint, with pale
  *   air-streak motes left behind it that die with it ({@link ARROW_FLIGHT}, flown by
@@ -19,7 +19,7 @@ import type { EffectsRuntime, OwnerKey } from "./runtime";
 import type { EffectName } from "./table";
 
 /** Screen px along the aim from the player to the bow, as the old release sat. */
-const BOW_REACH = 16;
+export const BOW_REACH = 16;
 
 /** Screen px above the player's feet to the bow hand: the string snaps and the arrow flies here. */
 export const BOW_LIFT = 38;
@@ -31,10 +31,24 @@ export function playArrowRelease(
   from: Point,
   toward: Point,
 ): void {
+  playAtBow(fx, owner, "arrowRelease", from, toward);
+}
+
+/**
+ * Plays `effect` at the bow of a player at `from` aiming at `toward`, both world positions:
+ * {@link BOW_REACH} along the projected aim, lifted to {@link BOW_LIFT}, heading along the aim.
+ */
+export function playAtBow(
+  fx: Pick<EffectsRuntime, "play">,
+  owner: OwnerKey,
+  effect: EffectName,
+  from: Point,
+  toward: Point,
+): void {
   const dx = toward.x - from.x;
   const dy = toward.y - from.y;
   const direction = dx !== 0 || dy !== 0 ? { x: dx, y: dy } : undefined;
-  fx.play(owner, "arrowRelease", alongAim(from, toward, BOW_REACH), {
+  fx.play(owner, effect, alongAim(from, toward, BOW_REACH), {
     lift: BOW_LIFT,
     ...(direction ? { direction } : {}),
   });

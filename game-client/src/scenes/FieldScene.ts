@@ -4,7 +4,7 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
 import type { ClientGameState, GateState, ItemState, PlayerState, Position, WallState } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
-import { ensureCharacterTextures, type Facing } from "@/utils/characterTextures";
+import { ensureCharacterTextures, placeholderTexture } from "@/utils/characterTextures";
 import {
   addWorldPlane,
   facingFrom,
@@ -46,6 +46,10 @@ import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { ContainerView } from "@/ui/ContainerView";
 import { EquipmentPanel } from "@/ui/EquipmentPanel";
 import { EquipmentHud } from "@/ui/EquipmentHud";
+import { ResourceHud } from "@/ui/ResourceHud";
+import { AbilityHud } from "@/ui/AbilityHud";
+import { abilityCard } from "@/ui/abilityCard";
+import { hudBars } from "@/ui/resources";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
 import { FieldPiles } from "./fieldPiles";
@@ -62,6 +66,9 @@ import { gateAt, gateEdges } from "./hubGates";
  * and the satchel they are taken through, in `fieldPiles`, a pile held for someone else's kill
  * drawn faint and not offered (§Requirements 56, 59). The equip HUD is the run's own
  * (`EquipmentHud` on the run's EquipmentPanel), on the run's keys: I opens it, E over it equips.
+ * The class kit is the run's too (FS-8AY7S, FS-JTNPR, FS-MAMHR): the Health and class resource
+ * bars bottom-left, the ability card bottom-right, the archer's Shadow Shot hold (the keys read
+ * released while it is drawn) and the Mercenary's cut, riposte and parry, all through `fieldCombat`.
  *
  * Walking into the entrance gate sends one leave_field and waits for world_entered or a refusal,
  * as the hub does for its own sends (§Requirements 57).
@@ -82,6 +89,9 @@ const POSITION_LERP = 0.3;
 const NAME_GAP = 4;
 const NOTICE_Y = 72;
 const NOTICE_MS = 3200;
+/** The run's HUD corners: the resource bars bottom-left, the ability card bottom-right (FS-8AY7S req 20, 29). */
+const RESOURCE_HUD_X = 10;
+const HUD_MARGIN = 16;
 
 /** What the entrance gate is called on the ground, for a player to walk to. */
 const ROAD_HOME = "The road home";
@@ -101,12 +111,6 @@ function rectOfWall(wall: WallState): { x: number; y: number; width: number; hei
 /** The field's entrance gate: the one gate that leads to the hub. */
 function roadHomeGate(gates: readonly GateState[]): GateState | undefined {
   return gates.find((gate) => gate.destination === "hub");
-}
-
-function textureFor(playerClass: string | undefined, facing: Facing): string {
-  const known = ["warrior", "mage", "archer"];
-  const cls = (playerClass ?? "").toLowerCase();
-  return `preview_${known.includes(cls) ? cls : "warrior"}_${facing}`;
 }
 
 interface PlayerView {
@@ -154,6 +158,11 @@ export class FieldScene extends Phaser.Scene {
   private satchel?: ContainerView;
   /** The run's equip HUD, what the player carries and wears (§Requirements 56). */
   private equipment?: EquipmentHud;
+  /** The Health and class resource bars, and the ability card: the run's own (FS-8AY7S req 20, 29). */
+  private resourceHud?: ResourceHud;
+  private abilityHud?: AbilityHud;
+  /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
+  private lastState?: ClientGameState;
   /** The player's server-reported position and level, for reaching a pile and the satchel's marks. */
   private selfAt?: Point;
   private selfLevel?: number;
@@ -204,6 +213,7 @@ export class FieldScene extends Phaser.Scene {
       bodyOf: (entityID) =>
         this.views.get(entityID)?.sprite.getByName("body") as Phaser.GameObjects.Sprite | undefined,
       takesPointer: (x, y, primary) => this.takesPointer(x, y, primary),
+      lockout: () => this.showAbilityCard(),
     });
     this.createPiles();
     this.equipment = new EquipmentHud(new EquipmentPanel(this), {
@@ -295,7 +305,11 @@ export class FieldScene extends Phaser.Scene {
       if (this.equipment?.equipKey()) return;
       if (this.selfAt && !this.fallen.isDown()) this.piles?.interact(this.selfAt);
     });
-    this.input.keyboard?.on("keydown-I", () => this.equipment?.toggle());
+    this.input.keyboard?.on("keydown-I", () => {
+      this.equipment?.toggle();
+      // opening the panel ends a Shadow Shot hold (FS-JTNPR req 15)
+      if (this.equipment?.isOpen()) this.fight?.cancelAim();
+    });
     this.input.keyboard?.on("keydown-Q", () => this.equipment?.hide());
     this.input.keyboard?.on("keydown-F", () => this.satchel?.lootFirst());
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => this.satchel?.pointerMove(pointer.x, pointer.y));
@@ -323,6 +337,9 @@ export class FieldScene extends Phaser.Scene {
     this.piles = undefined;
     this.satchel = undefined;
     this.equipment = undefined;
+    this.resourceHud = undefined;
+    this.abilityHud = undefined;
+    this.lastState = undefined;
     this.selfAt = undefined;
     this.selfLevel = undefined;
     this.views.clear();
@@ -389,8 +406,10 @@ export class FieldScene extends Phaser.Scene {
     const right = this.cursors.right.isDown || this.wasd.right.isDown;
     const up = this.cursors.up.isDown || this.wasd.up.isDown;
     const down = this.cursors.down.isDown || this.wasd.down.isDown;
-    const vx = (right ? 1 : 0) - (left ? 1 : 0);
-    const vy = (down ? 1 : 0) - (up ? 1 : 0);
+    // the keys read released while an archer draws a Shadow Shot (FS-JTNPR req 9)
+    const aiming = this.fight?.aiming === true;
+    const vx = aiming ? 0 : (right ? 1 : 0) - (left ? 1 : 0);
+    const vy = aiming ? 0 : (down ? 1 : 0) - (up ? 1 : 0);
     if (vx === this.lastSent.vx && vy === this.lastSent.vy) return;
     this.lastSent = { vx, vy };
     socketManager.sendMessage(ActionType.Move, { vx, vy });
@@ -438,6 +457,30 @@ export class FieldScene extends Phaser.Scene {
     this.equipment?.setCharacterLevel(me?.level);
     this.piles?.sync(state.containers ?? [], me?.id);
     if (this.selfAt) this.piles?.follow(this.selfAt);
+
+    this.lastState = state;
+    this.showClassHud(state);
+  }
+
+  /**
+   * The run's Health and class resource bars and its ability card (FS-8AY7S req 20–32), by the
+   * same rules: up while the player stands in the field, down while they lie fallen. A field has
+   * no leave button to share the card's corner.
+   */
+  private showClassHud(state: ClientGameState): void {
+    const { height } = this.cameras.main;
+    this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_X, height - HUD_MARGIN);
+    this.resourceHud.show(hudBars(state));
+    this.showAbilityCard();
+  }
+
+  /** The ability card, redrawn on every state and as the lockout starts and ends (req 31). */
+  private showAbilityCard(): void {
+    const state = this.lastState;
+    if (!state) return;
+    const { width, height } = this.cameras.main;
+    this.abilityHud ??= new AbilityHud(this, width - HUD_MARGIN, height - HUD_MARGIN);
+    this.abilityHud.show(abilityCard(state, { lockedOut: this.fight?.lockedOut ?? false, leaveUp: false }));
   }
 
   /** This client's player as drawn, once the field has reported them. */
@@ -629,12 +672,12 @@ export class FieldScene extends Phaser.Scene {
       existing.facing = facingFrom(vx, vy, existing.facing);
       if (!existing.anim.baked) {
         const body = existing.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
-        body?.setTexture(textureFor(player.class, nearestScreenFacing(existing.facing)));
+        body?.setTexture(placeholderTexture(player.class, nearestScreenFacing(existing.facing)));
       }
       return;
     }
 
-    const body = this.add.sprite(0, 0, textureFor(player.class, "down"));
+    const body = this.add.sprite(0, 0, placeholderTexture(player.class, "down"));
     body.setName("body");
     const anim = new CharacterAnimator(this.art, player.class);
     if (anim.baked) anim.dress(body);

@@ -23,6 +23,8 @@ const { FieldScene } = await import("./FieldScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
 const { EquipmentHud } = await import("@/ui/EquipmentHud");
+const { ResourceHud } = await import("@/ui/ResourceHud");
+const { AbilityHud } = await import("@/ui/AbilityHud");
 
 /** The road home as the Meadows' state carries it. */
 const ROAD_HOME = { entity_id: "road-home", destination: "hub", position: { x: 40, y: 500 }, range: 80 };
@@ -573,5 +575,81 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
 
     expect(field.equipment).toBeInstanceOf(EquipmentHud);
     expect([...keys.keys()]).toEqual(expect.arrayContaining(["keydown-I", "keydown-E", "keydown-Q", "keydown-F"]));
+  });
+});
+
+describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8AY7S; FS-JTNPR)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  type Kitted = Omit<FieldUnderTest, "time" | "cameras"> & {
+    time: { delayedCall: ReturnType<typeof vi.fn>; now: number };
+    cameras: { main: { width: number; height: number; startFollow: ReturnType<typeof vi.fn> } };
+    cursors?: unknown;
+    wasd?: unknown;
+    update(time: number, delta: number): void;
+  };
+
+  const archerState = {
+    world_type: "field",
+    current_player: {
+      entity_id: "me",
+      class: "archer",
+      position: ARRIVAL,
+      current_health: 80,
+      max_health: 100,
+      resource: { kind: "stamina", current: 50, max: 100, ability_cost: 25 },
+    },
+    other_players: [],
+    walls: [],
+    gates: [ROAD_HOME],
+  };
+
+  function kitOnStage(fight: Record<string, unknown> = {}) {
+    const stage = fieldOnStage();
+    const field = stage.field as unknown as Kitted;
+    field.time = { delayedCall: vi.fn(), now: 0 };
+    field.cameras = { main: { width: 800, height: 600, startFollow: vi.fn() } };
+    // the same fight object, so a test can change what it says between frames
+    Object.assign(field, { fight: Object.assign(fight, { sync: vi.fn(), update: vi.fn(), release: vi.fn() }) });
+    const idle = { isDown: false };
+    const right = { isDown: true };
+    field.cursors = { left: idle, right, up: idle, down: idle };
+    field.wasd = { left: idle, right: idle, up: idle, down: idle };
+    return { ...stage, field };
+  }
+
+  it("should draw the run's Health and stamina bars and the archer's ability card in a field", () => {
+    const bars = vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    const card = vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
+    const { field } = kitOnStage({ lockedOut: false });
+
+    field.renderState(archerState);
+
+    expect(bars.mock.calls.at(-1)?.[0].map((bar) => bar.label)).toEqual(["Health:", "Stamina:"]);
+    expect(card.mock.calls.at(-1)?.[0]).toMatchObject({ name: "Shadow Shot", greyed: false });
+  });
+
+  it("should grey the card while the ability lockout runs", () => {
+    vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    const card = vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
+    const { field } = kitOnStage({ lockedOut: true });
+
+    field.renderState(archerState);
+
+    expect(card.mock.calls.at(-1)?.[0]).toMatchObject({ greyed: true });
+  });
+
+  it("should stand still while an archer draws a Shadow Shot, and walk on once it ends", () => {
+    const fight = { aiming: true };
+    const { field, send } = kitOnStage(fight);
+
+    field.update(16, 16);
+    expect(send).not.toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });
+
+    fight.aiming = false;
+    field.update(32, 16);
+    expect(send).toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });
   });
 });

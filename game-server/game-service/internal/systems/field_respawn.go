@@ -12,7 +12,9 @@ const riseSlack = 1e-9
 /**
 * FieldRespawnSystem is a field's costless death (FS-X2F2H §Requirements
 * 22–23): a fallen player lies where they fell for the delay, then stands at
-* the field's arrival point, at full health and full mana, in play again.
+* the field's arrival point, at full health and a full class resource, in play
+* again (a mercenary's parry charges stay at the 0 death left them: FS-MAMHR
+* §Requirements 21, 22).
 * Nothing else on the body changes: what they wear and carry stays theirs.
 *
 * The wait starts on the tick the player falls (the EliminationSystem marks
@@ -54,7 +56,8 @@ func (s *FieldRespawnSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 	}
 }
 
-// rise stands the body at the arrival point at full health and mana. Each
+// rise stands the body at the arrival point at full health and a full class
+// resource; parry charges are never refilled, only earned. Each
 // component is replaced, never written in place, so a reader beside the tick
 // (the leave check) sees the body fallen or risen, never half of each.
 func (s *FieldRespawnSystem) rise(entity *ecs.Entity, fallen *components.HealthComponent) {
@@ -63,10 +66,12 @@ func (s *FieldRespawnSystem) rise(entity *ecs.Entity, fallen *components.HealthC
 	health.IsEliminated = false
 	entity.AddComponent(&health)
 
-	if mc, ok := entity.GetComponent(ecs.ComponentTypeMana); ok {
-		mana := *mc.(*components.ManaComponent)
-		mana.CurrentMana = mana.MaxMana
-		entity.AddComponent(&mana)
+	if rc, ok := entity.GetComponent(ecs.ComponentTypeResource); ok {
+		pool := *rc.(*components.ResourceComponent)
+		if pool.Kind != components.ResourceParryCharges {
+			pool.Current, pool.Accrued = pool.Max, 0
+		}
+		entity.AddComponent(&pool)
 	}
 
 	entity.AddComponent(components.NewTransformComponent(s.arrivalX, s.arrivalY))

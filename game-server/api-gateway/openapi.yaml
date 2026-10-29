@@ -121,7 +121,7 @@ components:
       additionalProperties: false
       properties:
         class:
-          description: warrior, mage or archer.
+          description: warrior, mage, archer or mercenary.
           type: string
         createdAt:
           description: Creation time.
@@ -167,7 +167,7 @@ components:
       additionalProperties: false
       properties:
         class:
-          description: warrior, mage or archer (decided by character-service).
+          description: warrior, mage, archer or mercenary (decided by character-service).
           type: string
         name:
           description: Character name. Validity (1-32 characters after trimming, unique) is decided by character-service.

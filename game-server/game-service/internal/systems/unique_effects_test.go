@@ -137,14 +137,44 @@ func TestCombatSystem_PierceWorn_ProjectilesPierceOnceHoweverManyCopies(t *testi
 				wearUnique(em, archer, slot, types.ItemTypeRing, types.UniqueEffectPierce)
 			}
 
-			intend(archer, components.AttackIntent{Kind: components.AttackTripleArrow, TargetX: 300, TargetY: 100})
+			intend(archer, components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 300, TargetY: 100})
 			NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
 
 			shots := projectiles(em)
-			require.Len(t, shots, 3)
-			for _, shot := range shots {
-				assert.Equal(t, tt.want, shot.PierceLeft)
+			require.Len(t, shots, 1)
+			assert.Equal(t, tt.want, shots[0].PierceLeft)
+		})
+	}
+}
+
+// A Lantern wearer's Shadow Shot flies through its first target into one more
+// distinct target; without the Lantern it stops at the first. FS-JTNPR
+// §Requirements 6.
+func TestCombatSystem_ShadowShot_PiercesOnlyForALanternWearer(t *testing.T) {
+	tests := []struct {
+		name    string
+		lantern bool
+		hits    int
+	}{
+		{"without the lantern", false, 1},
+		{"wearing the lantern", true, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			archer := delver(em, 0, 0)
+			if tt.lantern {
+				wearUnique(em, archer, ring1Slot, types.ItemTypeRing, types.UniqueEffectPierce)
 			}
+			first := ghoul(em, 100, 0, 1000)
+			second := ghoul(em, 200, 0, 1000)
+			third := ghoul(em, 300, 0, 1000)
+
+			intend(archer, components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 400, TargetY: 0})
+			NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+			hit := flyFor(em, 3)
+
+			assert.Equal(t, []uuid.UUID{first.ID, second.ID, third.ID}[:tt.hits], hit)
 		})
 	}
 }

@@ -12,8 +12,12 @@ type ClassConfig struct {
 	Stats  components.StatsComponent
 	Combat components.CombatComponent
 	Health components.HealthComponent
-	Mana   components.ManaComponent
-	Skills []components.SkillComponent
+	// Resource is the class resource the ability spends. FS-8AY7S §Requirements 1–3.
+	Resource components.ResourceComponent
+	// Ability is the attack row the class's right-click resolves to.
+	// FS-8AY7S §Requirements 12.
+	Ability components.AttackKind
+	Skills  []components.SkillComponent
 	// Growth is what each level past the first adds. FS-BDA7X §Requirements 19.
 	Growth ClassGrowth
 }
@@ -23,7 +27,10 @@ type ClassConfig struct {
 // FS-BDA7X §Requirements 19.
 type ClassGrowth struct {
 	Strength, Agility, Intelligence, Vitality int
-	MaxHealth, MaxMana                        int
+	MaxHealth                                 int
+	// MaxMana grows a mana pool only; stamina and parry charges never grow
+	// with level. FS-8AY7S §Requirements 15.
+	MaxMana int
 }
 
 // CreateMatchProgressEntity makes the run-level entity: match progress and the
@@ -73,7 +80,14 @@ func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity 
 	entity.AddComponent(components.NewVelocityComponent(config.Vx, config.Vy, commonconstants.DefaultSpeed))
 
 	entity.AddComponent(components.NewHealthComponent(config.Class.Health.CurrentHealth, config.Class.Health.MaxHealth))
-	entity.AddComponent(components.NewManaComponent(config.Class.Mana.CurrentMana, config.Class.Mana.MaxMana))
+	resource := config.Class.Resource
+	entity.AddComponent(&resource)
+	entity.AddComponent(components.NewAbilityComponent(config.Class.Ability))
+	// the parry stance is server state, so its ability carries it: a mercenary
+	// is seated with it down. FS-MAMHR §Requirements 18, 22.
+	if config.Class.Ability == components.AttackParry {
+		entity.AddComponent(components.NewParryComponent())
+	}
 
 	for _, skill := range config.Class.Skills {
 		entity.AddComponent(components.NewSkillComponent(skill.SkillName, skill.Level))

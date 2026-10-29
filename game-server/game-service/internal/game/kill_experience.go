@@ -49,9 +49,10 @@ func (k *KillExperience) ConsumeKill(record systems.KillRecord) {
 }
 
 // gainExperience adds experience to a delver and levels them up in the same
-// tick, once per level crossed, up to the cap. Each level grows the attributes
-// and max HP / MP by the class growth; current HP and MP do not change.
-// FS-BDA7X §Requirements 8, 16–17, 19.
+// tick, once per level crossed, up to the cap. Each level grows the attributes,
+// max HP and a mana pool's max by the class growth; current HP and class
+// resource do not change.
+// FS-BDA7X §Requirements 8, 16–17, 19; FS-8AY7S §Requirements 15.
 func gainExperience(entity *ecs.Entity, growth ClassGrowth, amount int) {
 	sc, ok := entity.GetComponent(ecs.ComponentTypeStats)
 	if !ok {
@@ -71,8 +72,10 @@ func gainExperience(entity *ecs.Entity, growth ClassGrowth, amount int) {
 		if hc, ok := entity.GetComponent(ecs.ComponentTypeHealth); ok {
 			hc.(*components.HealthComponent).MaxHealth += growth.MaxHealth
 		}
-		if mc, ok := entity.GetComponent(ecs.ComponentTypeMana); ok {
-			mc.(*components.ManaComponent).MaxMana += growth.MaxMana
+		if rc, ok := entity.GetComponent(ecs.ComponentTypeResource); ok {
+			if pool := rc.(*components.ResourceComponent); growsWithLevel(pool.Kind) {
+				pool.Max += growth.MaxMana
+			}
 		}
 	}
 }

@@ -39,6 +39,19 @@ export function playSlash(
   from: Point,
   toward: Point,
 ): void {
+  const rotation = Math.atan2(toward.y - from.y, toward.x - from.x);
+  fx.play(owner, "slash", from, {
+    rotation,
+    layer: swingLayer(from, toward),
+  });
+}
+
+/**
+ * The sub-layer a swing laid at `from`'s feet sorts at so that it draws over the player and over
+ * anything on the aim toward `toward` within {@link SMEAR_REACH}, whichever stands nearer the
+ * viewer. Shared by every melee swing drawn on the ground (the slash, the Mercenary's cut).
+ */
+export function swingLayer(from: Point, toward: Point): number {
   const dx = toward.x - from.x;
   const dy = toward.y - from.y;
   const rotation = Math.atan2(dy, dx);
@@ -51,8 +64,5 @@ export function playSlash(
     0,
     depthKey(front.x, front.y) - depthKey(from.x, from.y),
   );
-  fx.play(owner, "slash", from, {
-    rotation,
-    layer: OVER_CHARACTERS + ahead * LAYERS_PER_KEY,
-  });
+  return OVER_CHARACTERS + ahead * LAYERS_PER_KEY;
 }

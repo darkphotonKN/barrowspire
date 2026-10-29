@@ -38,6 +38,11 @@ export interface CharacterState {
   dead: boolean;
   /** World vector from the character toward what the attack is aimed at, when known. */
   aim?: { x: number; y: number };
+  /**
+   * World vector toward a held aim (FS-JTNPR req 10): the character stands in its idle clip
+   * turned to it, whatever motion is still being drawn. Attack and death play over it.
+   */
+  holding?: { x: number; y: number };
 }
 
 export interface AnimationChoice {
@@ -49,9 +54,9 @@ export interface AnimationChoice {
   timeScale: number;
 }
 
-/** Dead over attacking over moving over idle. */
+/** Dead over attacking over holding an aim over moving over idle. */
 export function selectAnimation(state: CharacterState): AnimationChoice {
-  const { velocity, facing, attacking, dead, aim } = state;
+  const { velocity, facing, attacking, dead, aim, holding } = state;
   const speed = Math.hypot(velocity.vx, velocity.vy);
   const moving = speed >= MOVING_SPEED;
 
@@ -68,6 +73,8 @@ export function selectAnimation(state: CharacterState): AnimationChoice {
   if (attacking)
     return choose("attack", aim ? facingFrom(aim.x, aim.y, walking) : walking);
 
+  if (holding) return choose("idle", facingFrom(holding.x, holding.y, facing));
+
   if (moving)
     return choose("walk", walking, Math.min(speed / WALK_PACE, MAX_WALK_SCALE));
 
@@ -76,8 +83,9 @@ export function selectAnimation(state: CharacterState): AnimationChoice {
 
 /**
  * The sheet a server class draws from (today's `createKnight/Soldier/ArcherTextures`): warrior
- * is the knight, mage the wizard. Unknown classes fall back to the knight, as the placeholder
- * textures fall back to the warrior. Rivals reuse their class's sheet (FS-2325V §E.3).
+ * is the knight, mage the wizard, the mercenary his own (FS-MAMHR §H.42). Unknown classes fall
+ * back to the knight, as the placeholder textures fall back to the warrior. Rivals reuse their
+ * class's sheet (FS-2325V §E.3).
  */
 export function characterSheet(playerClass: string | undefined): string {
   switch ((playerClass ?? "").toLowerCase()) {
@@ -85,6 +93,8 @@ export function characterSheet(playerClass: string | undefined): string {
       return "char_wizard_base";
     case "archer":
       return "char_archer_base";
+    case "mercenary":
+      return "char_mercenary_base";
     default:
       return "char_knight_base";
   }

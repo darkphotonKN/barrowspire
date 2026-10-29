@@ -691,6 +691,10 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	// gear: what each delver wears counts from this tick, in every world
 	systems.NewGearSystem(s.EntityManager, GearCaps, UniqueEffects, Attributes).Update(deltaTime, entities)
 
+	// class resources regenerate toward this tick's maxima, before any cast
+	// this tick is judged against them (FS-8AY7S §Requirements 5)
+	systems.NewResourceSystem().Update(deltaTime, entities)
+
 	// residents amble; a run has none, so this is the hub's alone
 	if s.worldType == types.WorldTypeHub {
 		wanderSys := systems.NewWanderSystem()
@@ -846,28 +850,41 @@ func (s *Session) manageEndSession() {
 
 var Classes = map[string]ClassConfig{
 	"warrior": {
-		Stats:  components.StatsComponent{Strength: 8, Agility: 4, Intelligence: 2, Vitality: 9},
-		Combat: components.CombatComponent{Attack: 12, Defense: 10, AttackSpeed: 1.0, AttackRange: 1},
-		Health: components.HealthComponent{CurrentHealth: 150, MaxHealth: 150},
-		Mana:   components.ManaComponent{CurrentMana: 50, MaxMana: 50},
-		Skills: []components.SkillComponent{{SkillName: "slash", Level: 1}},
-		Growth: ClassGrowth{Strength: 2, Vitality: 2, MaxHealth: 12, MaxMana: 2},
+		Stats:    components.StatsComponent{Strength: 8, Agility: 4, Intelligence: 2, Vitality: 9},
+		Combat:   components.CombatComponent{Attack: 12, Defense: 10, AttackSpeed: 1.0, AttackRange: 1},
+		Health:   components.HealthComponent{CurrentHealth: 150, MaxHealth: 150},
+		Resource: components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
+		Ability:  components.AttackDash,
+		Skills:   []components.SkillComponent{{SkillName: "slash", Level: 1}},
+		Growth:   ClassGrowth{Strength: 2, Vitality: 2, MaxHealth: 12},
 	},
 	"mage": {
-		Stats:  components.StatsComponent{Strength: 2, Agility: 3, Intelligence: 9, Vitality: 3},
-		Combat: components.CombatComponent{Attack: 15, Defense: 3, AttackSpeed: 0.8, AttackRange: 6},
-		Health: components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
-		Mana:   components.ManaComponent{CurrentMana: 150, MaxMana: 150},
-		Skills: []components.SkillComponent{{SkillName: "fireball", Level: 1}},
-		Growth: ClassGrowth{Intelligence: 3, MaxHealth: 6, MaxMana: 10},
+		Stats:    components.StatsComponent{Strength: 2, Agility: 3, Intelligence: 9, Vitality: 3},
+		Combat:   components.CombatComponent{Attack: 15, Defense: 3, AttackSpeed: 0.8, AttackRange: 6},
+		Health:   components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
+		Resource: components.ResourceComponent{Kind: components.ResourceMana, Current: 150, Max: 150, RegenPerSecond: 4},
+		Ability:  components.AttackTripleFireball,
+		Skills:   []components.SkillComponent{{SkillName: "fireball", Level: 1}},
+		Growth:   ClassGrowth{Intelligence: 3, MaxHealth: 6, MaxMana: 10},
 	},
 	"archer": {
-		Stats:  components.StatsComponent{Strength: 4, Agility: 8, Intelligence: 3, Vitality: 5},
-		Combat: components.CombatComponent{Attack: 10, Defense: 5, AttackSpeed: 1.5, AttackRange: 8},
-		Health: components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
-		Mana:   components.ManaComponent{CurrentMana: 100, MaxMana: 100},
-		Skills: []components.SkillComponent{{SkillName: "power_shot", Level: 1}},
-		Growth: ClassGrowth{Agility: 3, MaxHealth: 8, MaxMana: 5},
+		Stats:    components.StatsComponent{Strength: 4, Agility: 8, Intelligence: 3, Vitality: 5},
+		Combat:   components.CombatComponent{Attack: 10, Defense: 5, AttackSpeed: 1.5, AttackRange: 8},
+		Health:   components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
+		Resource: components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
+		Ability:  components.AttackShadowShot,
+		Skills:   []components.SkillComponent{{SkillName: "power_shot", Level: 1}},
+		Growth:   ClassGrowth{Agility: 3, MaxHealth: 8},
+	},
+	// FS-MAMHR §Requirements 2.
+	"mercenary": {
+		Stats:    components.StatsComponent{Strength: 7, Agility: 7, Intelligence: 2, Vitality: 7},
+		Combat:   components.CombatComponent{Attack: 12, Defense: 7, AttackSpeed: 1.2, AttackRange: 1},
+		Health:   components.HealthComponent{CurrentHealth: 130, MaxHealth: 130},
+		Resource: components.ResourceComponent{Kind: components.ResourceParryCharges, Max: 3},
+		Ability:  components.AttackParry,
+		Skills:   []components.SkillComponent{{SkillName: "cut", Level: 1}},
+		Growth:   ClassGrowth{Strength: 1, Agility: 2, MaxHealth: 10},
 	},
 }
 
@@ -2364,7 +2381,7 @@ func (s *Session) handleAttack(playerID uuid.UUID, enemyEntityID uuid.UUID) erro
 	})
 }
 
-// handleCastSkill validates a skill request and records it as an intent. Mana,
+// handleCastSkill validates a skill request and records it as an intent. Cost,
 // cooldown, projectiles and damage are the CombatSystem's, on the next tick.
 func (s *Session) handleCastSkill(playerID uuid.UUID, skillID string, targetX, targetY float64) error {
 	if err := s.combatAllowed(); err != nil {

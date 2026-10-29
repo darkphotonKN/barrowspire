@@ -33,8 +33,8 @@ type Mitigation struct {
 }
 
 // RawDamage is a hit before crit and mitigation.
-func RawDamage(power, coefficient float64, scalingStat int) float64 {
-	return power * coefficient * (1 + float64(scalingStat)/statScalingDivisor)
+func RawDamage(power, coefficient, scalingStat float64) float64 {
+	return power * coefficient * (1 + scalingStat/statScalingDivisor)
 }
 
 // CritChance is the base chance plus the equipped weapon's critical_rate, capped.
