@@ -17,6 +17,10 @@ const (
 	// field wildlife: the Gentle Meadows' creature, never rolled in the Spire
 	// (FS-X2F2H §Requirements 37)
 	MonsterArchetypeBoar MonsterArchetype = "boar"
+	// the Forlorn Forest's creatures: the zombie by default and the rare ghost,
+	// never rolled in the Spire (FS-3QHQZ §Requirements 18)
+	MonsterArchetypeZombie MonsterArchetype = "zombie"
+	MonsterArchetypeGhost  MonsterArchetype = "ghost"
 )
 
 // MonsterAction is what a monster is doing, as the state broadcast names it.

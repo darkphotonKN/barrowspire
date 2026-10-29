@@ -33,12 +33,21 @@ func ForlornForest(generated levelgen.Layout) FieldPlace {
 		Arrival:       inward(entrance, generated.Entrance.Side, forestArrivalInset),
 		HubGate:       components.GateDestinationForest,
 
-		// the Forest level band and drop factor (FS-X2F2H D15, D17); its
-		// creatures come with FS-3QHQZ slice 3
-		MinLevel:   4,
-		MaxLevel:   9,
-		StatFactor: 0.75,
-		DropFactor: 0.5,
+		// zombies, and now and then a ghost (FS-3QHQZ §Requirements 17)
+		Creatures: []FieldCreature{
+			{Archetype: components.MonsterArchetypeZombie, Weight: 1 - ForestGhostShare},
+			{Archetype: components.MonsterArchetypeGhost, Weight: ForestGhostShare},
+		},
+		MinLevel:   ForestMinLevel,
+		MaxLevel:   ForestMaxLevel,
+		StatFactor: FieldStatFactor,
+		DropFactor: ForestDropFactor,
+
+		// trail points never hold an elite; the elite clearings always do,
+		// named from the barrow prefixes
+		RespawnDelay:   FieldRespawnDelay,
+		ElitePrefixes:  ElitePrefixes,
+		StandardElites: FieldEliteNever,
 	}
 }
 
@@ -58,9 +67,11 @@ func inward(at FieldPoint, side levelgen.Side, by float64) FieldPoint {
 
 /**
 * forestLayout hands the Forest's generated layout to the field build: every
-* wall rect one keep-out area. It keeps the whole generated layout, so the
-* Forest's spawn points and chests (FS-3QHQZ slices 3, 4) are placed from its
-* dead ends and open cells without generating again.
+* wall rect one keep-out area, the standard spawn points on its trails and an
+* elite spawn point at each elite clearing's centre (FS-3QHQZ §Requirements
+* 15–16). It keeps the whole generated layout, so they are placed from its dead
+* ends and open cells without generating again, from a source derived from the
+* layout's seed: the same boot seed gives the same forest, monsters included.
 **/
 type forestLayout struct {
 	generated levelgen.Layout
@@ -71,5 +82,10 @@ func (f forestLayout) Layout() (FieldLayout, error) {
 	for _, wall := range f.generated.Walls {
 		obstacles = append(obstacles, FieldObstacle{X: wall.X, Y: wall.Y, W: wall.W, H: wall.H})
 	}
-	return FieldLayout{Obstacles: obstacles}, nil
+
+	return FieldLayout{
+		Obstacles:        obstacles,
+		SpawnPoints:      forestSpawnPoints(f.generated),
+		EliteSpawnPoints: assignForestClearings(f.generated).eliteSpawnPoints(),
+	}, nil
 }

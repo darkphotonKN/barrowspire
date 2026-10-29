@@ -26,18 +26,25 @@ type fieldPopulation struct {
 	spawns []fieldSpawn
 }
 
-// fieldSpawn is one spawn point: where it stands, the living monster it holds
-// (uuid.Nil once that one has died), and how long until it rolls the next.
+// fieldSpawn is one spawn point: where it stands, its elite rule, the living
+// monster it holds (uuid.Nil once that one has died), and how long until it
+// rolls the next.
 type fieldSpawn struct {
 	at       FieldPoint
+	elite    FieldElite
 	monster  uuid.UUID
 	refillIn float64 // s
 }
 
-func newFieldPopulation(em *ecs.EntityManager, place FieldPlace, points []FieldPoint, rng populationRand) *fieldPopulation {
-	spawns := make([]fieldSpawn, len(points))
-	for i, at := range points {
-		spawns[i] = fieldSpawn{at: at}
+// newFieldPopulation is the layout's spawn points, standard ones first under
+// the place's rule, then its elite ones, always elite.
+func newFieldPopulation(em *ecs.EntityManager, place FieldPlace, layout FieldLayout, rng populationRand) *fieldPopulation {
+	spawns := make([]fieldSpawn, 0, len(layout.SpawnPoints)+len(layout.EliteSpawnPoints))
+	for _, at := range layout.SpawnPoints {
+		spawns = append(spawns, fieldSpawn{at: at, elite: place.StandardElites})
+	}
+	for _, at := range layout.EliteSpawnPoints {
+		spawns = append(spawns, fieldSpawn{at: at, elite: FieldEliteAlways})
 	}
 	return &fieldPopulation{em: em, place: place, rng: rng, spawns: spawns}
 }
@@ -98,7 +105,7 @@ func (p *fieldPopulation) update(deltaTime float64, entities []*ecs.Entity) {
 * tries again after the delay, loudly.
 **/
 func (p *fieldPopulation) refill(spawn *fieldSpawn) {
-	monster := rollFieldMonster(p.rng, p.place)
+	monster := rollFieldSpawn(p.rng, p.place, spawn.elite)
 	if _, known := monsterSheets[monster.Archetype]; !known {
 		slog.Error("Field spawn point left empty: no sheet for its creature",
 			"field", p.place.ID, "archetype", monster.Archetype, "x", spawn.at.X, "y", spawn.at.Y)
@@ -150,16 +157,25 @@ func (s *Session) refillSpawnPoints(deltaTime float64, entities []*ecs.Entity) {
 	}
 }
 
-/**
-* rollFieldMonster rolls what a field's spawn point holds next (FS-X2F2H
-* §Requirements 28): the archetype from the place's creature table, the level
-* uniform in its band, and an elite at the Spire's floor-1 chance, read live.
-* Who is in the field does not matter: a field is not party-scaled. The place's
-* stat factor rides along to the one place it is applied (monsterStats.scaled).
-*
-* Draws, in order: the creature, the level, the elite roll, the prefix.
-**/
+// rollFieldMonster rolls what one of the place's standard spawn points holds
+// next, under the place's standard elite rule.
 func rollFieldMonster(rng populationRand, place FieldPlace) MonsterConfig {
+	return rollFieldSpawn(rng, place, place.StandardElites)
+}
+
+/**
+* rollFieldSpawn rolls what a field's spawn point holds next (FS-X2F2H
+* §Requirements 28, FS-3QHQZ §Requirements 17): the archetype from the place's
+* creature table, the level uniform in its band, and whether it is an elite by
+* the point's rule: at the Spire's floor-1 chance read live, never, or always.
+* Who is in the field does not matter: a field is not party-scaled. The place's
+* stat factor rides along to the one place it is applied (monsterStats.scaled),
+* and an elite's multipliers go on top of it there.
+*
+* Draws, in order: the creature, the level, the elite roll (a rolled point
+* only), the prefix (an elite only).
+**/
+func rollFieldSpawn(rng populationRand, place FieldPlace, rule FieldElite) MonsterConfig {
 	archetype := pickCreature(rng, place.Creatures)
 
 	monster := MonsterConfig{
@@ -168,7 +184,7 @@ func rollFieldMonster(rng populationRand, place FieldPlace) MonsterConfig {
 		StatFactor: place.StatFactor,
 	}
 
-	if rng.Float64() < eliteChance(1) {
+	if fieldElite(rng, rule) {
 		prefixes := place.ElitePrefixes
 		if len(prefixes) == 0 {
 			prefixes = FieldElitePrefixes
@@ -178,6 +194,19 @@ func rollFieldMonster(rng populationRand, place FieldPlace) MonsterConfig {
 	}
 
 	return monster
+}
+
+// fieldElite is whether a point's roll comes elite under its rule. Only a
+// rolled point draws.
+func fieldElite(rng populationRand, rule FieldElite) bool {
+	switch rule {
+	case FieldEliteNever:
+		return false
+	case FieldEliteAlways:
+		return true
+	default:
+		return rng.Float64() < eliteChance(1)
+	}
 }
 
 // pickCreature draws one archetype from a creature table by weight; a row with

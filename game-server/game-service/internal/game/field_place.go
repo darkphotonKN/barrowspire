@@ -33,11 +33,28 @@ type FieldObstacle struct {
 }
 
 // FieldLayout is what stands on a field's ground: its keep-out areas and the
-// points its monsters spawn at (used from FS-X2F2H slice 3).
+// points its monsters spawn at. A standard spawn point's elites follow its
+// place's StandardElites; an elite spawn point always holds an elite
+// (FS-3QHQZ §Requirements 16–17).
 type FieldLayout struct {
-	Obstacles   []FieldObstacle
-	SpawnPoints []FieldPoint
+	Obstacles        []FieldObstacle
+	SpawnPoints      []FieldPoint
+	EliteSpawnPoints []FieldPoint
 }
+
+// FieldElite is a spawn point's elite rule: how the monsters it rolls, at each
+// spawn and each respawn, come elite.
+type FieldElite int
+
+const (
+	// FieldEliteRolled is elite at the Spire's floor-1 chance, read live
+	// (FS-X2F2H §Requirements 28): the Meadows' points. The zero value.
+	FieldEliteRolled FieldElite = iota
+	// FieldEliteNever is never elite: the Forest's trail points.
+	FieldEliteNever
+	// FieldEliteAlways is always elite: the Forest's elite clearings.
+	FieldEliteAlways
+)
 
 // LayoutProvider builds a field's layout for one channel. The Meadows hands
 // back a fixed, hand-laid one; a generated field (FS-3QHQZ) builds its own per
@@ -76,9 +93,11 @@ type FieldPlace struct {
 
 	// RespawnDelay is how long, in seconds, a spawn point stays empty after its
 	// monster dies (FS-X2F2H §Requirements 27). ElitePrefixes names its elites;
-	// none means FieldElitePrefixes.
-	RespawnDelay  float64
-	ElitePrefixes []string
+	// none means FieldElitePrefixes. StandardElites is the elite rule of its
+	// layout's standard spawn points; its elite spawn points are always elite.
+	RespawnDelay   float64
+	ElitePrefixes  []string
+	StandardElites FieldElite
 }
 
 // FieldPlaces are the fields this pod builds a channel of at boot: the Meadows,
@@ -126,7 +145,7 @@ type FieldVisit struct {
 func (s *Session) InitialFieldMapObjects(place FieldPlace, layout FieldLayout) {
 	// every spawn point holds its monster before the tick can see the points
 	// (FS-X2F2H §Requirements 26)
-	population := newFieldPopulation(s.EntityManager, place, layout.SpawnPoints, s.spawnRand)
+	population := newFieldPopulation(s.EntityManager, place, layout, s.spawnRand)
 	population.fill()
 
 	s.mu.Lock()
@@ -152,6 +171,7 @@ func (s *Session) InitialFieldMapObjects(place FieldPlace, layout FieldLayout) {
 		"field", place.ID,
 		"obstacles", len(layout.Obstacles),
 		"spawn_points", len(layout.SpawnPoints),
+		"elite_spawn_points", len(layout.EliteSpawnPoints),
 	)
 }
 

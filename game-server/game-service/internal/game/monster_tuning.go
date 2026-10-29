@@ -83,6 +83,26 @@ const (
 	// the Gentle Meadows' drop chance over the Spire's (rolled by FS-X2F2H's
 	// drop slice)
 	MeadowsDropFactor = 0.35
+
+	// the Forlorn Forest's level band, inclusive, and its drop chance over
+	// the Spire's (FS-X2F2H D15, D17)
+	ForestMinLevel   = 4
+	ForestMaxLevel   = 9
+	ForestDropFactor = 0.5
+)
+
+// The Forlorn Forest's population. FS-3QHQZ §Requirements 15–17.
+const (
+	// standard (trail) spawn points, a uniform integer in [min, max]
+	ForestSpawnPointsMin = 18
+	ForestSpawnPointsMax = 24
+	// no standard spawn point stands closer than this to the entrance, in px
+	ForestEntranceExclusion = 400.0
+	// each spawn and respawn is a ghost with this probability, else a zombie
+	ForestGhostShare = 1.0 / 12
+	// a side dead end's clearing holds a chest with this probability, else an
+	// elite; the main trail's always holds an elite
+	ForestChestShare = 0.5
 )
 
 // FieldElitePrefixes is the authored list a field elite's name prefix is drawn
@@ -155,16 +175,32 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 		Defense: 2, MagicResistance: 0,
 		AggroRadius: 200, LeashRadius: 450,
 	},
+	// the Forest's shambling default (FS-3QHQZ §Requirements 18)
+	components.MonsterArchetypeZombie: {
+		Name: "Zombie", HP: 70, Damage: 9,
+		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 45, MoveSpeed: 100,
+		Defense: 5, MagicResistance: 1,
+		AggroRadius: 240, LeashRadius: 480,
+	},
+	// the Forest's rare drifter: faster and frailer than the zombie
+	components.MonsterArchetypeGhost: {
+		Name: "Ghost", HP: 30, Damage: 8,
+		AttackInterval: 0.9, WindUp: 0.3, AttackRange: 50, MoveSpeed: 175,
+		Defense: 0, MagicResistance: 8,
+		AggroRadius: 300, LeashRadius: 560,
+	},
 }
 
 // killExperienceBase is what killing a level-1 monster of an archetype is worth,
 // before its level and its multiplier. A new archetype adds a row; one without
 // a row is worth nothing. FS-BDA7X §Requirements 11.
 var killExperienceBase = map[components.MonsterArchetype]int{
-	components.MonsterArchetypeGhoul: 10,
-	components.MonsterArchetypeTroll: 25,
-	components.MonsterArchetypeDemon: 25,
-	components.MonsterArchetypeBoar:  8,
+	components.MonsterArchetypeGhoul:  10,
+	components.MonsterArchetypeTroll:  25,
+	components.MonsterArchetypeDemon:  25,
+	components.MonsterArchetypeBoar:   8,
+	components.MonsterArchetypeZombie: 15,
+	components.MonsterArchetypeGhost:  20,
 }
 
 // Kill experience scaling. FS-BDA7X §Requirements 10.
