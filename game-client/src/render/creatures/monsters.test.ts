@@ -8,8 +8,9 @@ import { palette, toCss } from "@/utils/canvasPalette";
 import { worldDepth } from "@/render/iso/shapes";
 import { worldToScreen } from "@/render/iso/projection";
 import type { footprintHitArea } from "@/render/world/footprint";
-import type { MonsterState } from "@/types/gameState";
+import type { MonsterArchetype, MonsterState } from "@/types/gameState";
 import {
+  FALLBACK_LOOK,
   PLAYER_REFERENCE_SHEET,
   MonsterRoster,
   SIZE_TIERS,
@@ -317,6 +318,34 @@ describe("monsterLook", () => {
     for (const unknown of ["wraith", ""])
       expect(baked.has(monsterLook(unknown).sheet)).toBe(true);
   });
+
+  it("should draw an archetype it does not know as the troll", () => {
+    expect(FALLBACK_LOOK.sheet).toBe("creature_troll_base");
+    for (const unknown of ["wraith", "revenant", ""])
+      expect(monsterLook(unknown)).toBe(FALLBACK_LOOK);
+  });
+});
+
+describe("the Forlorn Forest's dead (FS-3QHQZ §C R29)", () => {
+  it.each([
+    ["zombie", "creature_zombie_base"],
+    ["ghost", "creature_ghost_base"],
+  ] as [MonsterArchetype, string][])(
+    "should draw a %s from its own baked sheet, at fodder tier",
+    (archetype, sheet) => {
+      expect(monsterLook(archetype)).toEqual({ sheet, tier: "fodder" });
+      expect(baked.has(sheet)).toBe(true);
+    },
+  );
+
+  it("should play a ghost's clips from its own sheet, drawn as baked", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    roster.sync([monster({ archetype: "ghost", name: "Ghost" })]);
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toMatch(/^creature_ghost_base\//);
+    expect(sprites[0].tint).toBeNull();
+  });
 });
 
 describe("size reads as threat tier (req 35)", () => {
@@ -330,6 +359,8 @@ describe("size reads as threat tier (req 35)", () => {
 
   it.each([
     ["ghoul", SIZE_TIERS.fodder],
+    ["zombie", SIZE_TIERS.fodder],
+    ["ghost", SIZE_TIERS.fodder],
     ["troll", SIZE_TIERS.brute],
     ["demon", SIZE_TIERS.boss],
   ])("should stand a %s inside its tier's band", (archetype, tier) => {

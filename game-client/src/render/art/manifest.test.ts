@@ -893,6 +893,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       "char_wizard_base",
       "creature_ghoul_base",
       "creature_troll_base",
+      "creature_zombie_base",
+      "creature_ghost_base",
     ];
 
     it.each(CAST)("%s has 8-way idle, walk, attack and death", (name) => {
@@ -977,6 +979,9 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     // sheet → its §A.3 atlas group and §A.6 crown ratio band (to the player mean)
     const ROSTER: [string, string, number, number][] = [
       ["creature_demon_base", "boss", 1.8, Infinity],
+      // the Forlorn Forest's dead (FS-3QHQZ §C R29): fodder, in their own group
+      ["creature_zombie_base", "fodder", 0.85, 1.05],
+      ["creature_ghost_base", "fodder", 0.85, 1.05],
     ];
     const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
 
