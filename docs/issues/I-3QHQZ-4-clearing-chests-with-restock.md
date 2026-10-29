@@ -2,7 +2,7 @@
 id: I-3QHQZ-4
 status: open
 implements: FS-3QHQZ
-blocked_by: [I-3QHQZ-3]
+blocked_by: [I-3QHQZ-3, I-X2F2H-5]
 labels: [ready-for-agent, blocked]
 title: "FS-3QHQZ slice 4: clearing chests that roll at the Forest's level and drop factor and restock after 5 minutes"
 ---

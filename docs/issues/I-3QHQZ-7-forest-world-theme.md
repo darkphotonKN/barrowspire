@@ -2,7 +2,7 @@
 id: I-3QHQZ-7
 status: open
 implements: FS-3QHQZ
-blocked_by: [I-3QHQZ-5]
+blocked_by: [I-3QHQZ-5, I-X2F2H-1]
 labels: [ready-for-agent, blocked]
 title: "FS-3QHQZ slice 7: the forest world theme in the field scene (tree stands from server walls, ground, ambient, mist, dressing)"
 ---

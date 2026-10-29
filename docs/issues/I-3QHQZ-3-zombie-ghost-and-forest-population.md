@@ -2,7 +2,7 @@
 id: I-3QHQZ-3
 status: open
 implements: FS-3QHQZ
-blocked_by: [I-3QHQZ-2]
+blocked_by: [I-3QHQZ-2, I-X2F2H-3]
 labels: [ready-for-agent, blocked]
 title: "FS-3QHQZ slice 3: zombie and ghost archetypes, clearing assignment and the Forest's spawn points"
 ---

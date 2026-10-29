@@ -2,7 +2,7 @@
 id: I-3QHQZ-2
 status: open
 implements: FS-3QHQZ
-blocked_by: [I-3QHQZ-1]
+blocked_by: [I-3QHQZ-1, I-X2F2H-1]
 labels: [ready-for-agent, blocked]
 title: "FS-3QHQZ slice 2: the Forlorn Forest field world built from the generator at pod boot (walls, bounds, entrance)"
 ---
