@@ -42,7 +42,7 @@ export default function Header() {
               href="/marketplace"
               className={`nav-link ${pathname === '/marketplace' ? 'active' : ''}`}
             >
-              Bazaar
+              Trade
             </Link>
             {/* Leaderboard is off for now (the stats service still records finished games).
             <Link

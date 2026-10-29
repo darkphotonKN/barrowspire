@@ -189,7 +189,7 @@ describe("bidFailure", () => {
   });
 
   it("should say the Bazaar is unreachable on a 503 or no answer at all", () => {
-    const want = { message: "The Bazaar is unreachable — try again shortly." };
+    const want = { message: "The marketplace is unreachable. Try again shortly." };
     expect(bidFailure(apiError(503, "UNAVAILABLE"), { amount: 50 })).toEqual(want);
     expect(bidFailure(new TypeError("fetch failed"), { amount: 50 })).toEqual(want);
   });
