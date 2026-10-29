@@ -18,6 +18,7 @@ vi.mock("phaser", async () => {
   const phaser = {
     Scene,
     Scenes: { Events: { SHUTDOWN: "shutdown", DESTROY: "destroy" } },
+    Core: { Events: { BLUR: "blur", HIDDEN: "hidden" } },
     Animations: { Events: { ANIMATION_COMPLETE: "animationcomplete" } },
     GameObjects: { Sprite: class {} },
     BlendModes: { NORMAL: 0, ADD: 1, MULTIPLY: 2 },
@@ -42,7 +43,7 @@ vi.mock("phaser", async () => {
   return { ...phaser, default: phaser };
 });
 
-const { BarrowspireScene } = await import("./BarrowspireScene");
+const { BarrowspireScene, projectileFlightOf } = await import("./BarrowspireScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { EffectsRuntime } = await import("@/render/effects/runtime");
 const { HitFeedback } = await import("@/render/effects/hit");
@@ -50,6 +51,12 @@ const { fakeArt, fakeLights, fakeScene } = await import("@/render/effects/fakeSc
 const { ProjectileFlights } = await import("@/render/effects/projectile");
 const { FIREBALL_FLIGHT } = await import("@/render/effects/fireball");
 const { ARROW_FLIGHT } = await import("@/render/effects/arrow");
+const { SHADOW_SHOT_FLIGHT } = await import("@/render/effects/shadowShot");
+const { AimLine } = await import("@/render/effects/aimLine");
+const { CUT_MS } = await import("@/render/effects/cut");
+const { MENU_CONTROLS } = await import("./MainMenuScene");
+const { PARRY_FLASH_MS } = await import("@/render/effects/parry");
+const { RIPOSTE_MS } = await import("@/render/effects/riposte");
 const { ArtLibrary } = await import("@/render/art/library");
 const { MonsterRoster } = await import("@/render/creatures");
 const { CANVAS_FONT, palette, toCss } = await import("@/utils/canvasPalette");
@@ -58,6 +65,9 @@ const { WORLD_THEMES, TOWER_BANDS } = await import("@/render/world/worldTheme");
 const { worldSeed } = await import("@/render/world/ground");
 const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
+const { useGameStore } = await import("@/stores/gameStore");
+const { EventEmitter } = await import("eventemitter3");
+const { readdirSync } = await import("node:fs");
 const { readFileSync } = await import("node:fs");
 const { join } = await import("node:path");
 type GameState = import("@/types/gameState").ClientGameState;
@@ -256,6 +266,44 @@ describe("BarrowspireScene effect teardown (FS-KYPQ9 §B.9, §C.4)", () => {
   });
 });
 
+describe("BarrowspireScene projectile kinds (FS-JTNPR req 20, 23)", () => {
+  it.each([
+    ["shadow_shot", "the shadow bolt", SHADOW_SHOT_FLIGHT],
+    ["arrow", "the arrow", ARROW_FLIGHT],
+    ["fireball", "the fireball", FIREBALL_FLIGHT],
+    ["something_new", "the fireball, as drawn today", FIREBALL_FLIGHT],
+    ["toString", "the fireball, as drawn today", FIREBALL_FLIGHT],
+  ])("should fly a projectile of kind %s as %s", (type, _what, flight) => {
+    expect(projectileFlightOf(type)).toBe(flight);
+  });
+});
+
+describe("BarrowspireScene Mercenary placeholder (FS-MAMHR §G.31)", () => {
+  it("should make the Mercenary's own placeholder at every facing, for this delver and a teammate", () => {
+    const scene = new BarrowspireScene();
+    const made: string[] = [];
+    const graphics = () => {
+      const g: Record<string, unknown> = new Proxy(
+        {},
+        {
+          get: (_, prop) =>
+            prop === "generateTexture" ? (key: string) => made.push(key) : () => g,
+        },
+      );
+      return g;
+    };
+    Object.assign(scene, {
+      make: { graphics },
+      textures: { exists: () => false },
+      cache: { json: { exists: () => false } },
+      load: { once: () => {}, json: () => {} },
+    });
+    (scene as unknown as { preload(): void }).preload();
+    for (const prefix of ["player_mercenary", "other_mercenary"])
+      for (const facing of ["Down", "Up", "Left", "Right"]) expect(made).toContain(`${prefix}${facing}`);
+  });
+});
+
 describe("BarrowspireScene projectile teardown (FS-KYPQ9 §B.9, edge state: resetRun mid-flight)", () => {
   /** A started run with a fireball and an arrow in flight, the fireball's light riding on it. */
   function runInFlight() {
@@ -269,9 +317,7 @@ describe("BarrowspireScene projectile teardown (FS-KYPQ9 §B.9, edge state: rese
       clearTransient: () => lights.added.forEach((l) => (l.removed = true)),
     };
     const fx = new EffectsRuntime(fake.scene, fakeArt, lightMap, { warn: () => {} });
-    const projectiles = new ProjectileFlights(fake.scene, fakeArt, fx, (type) =>
-      type === "arrow" ? ARROW_FLIGHT : FIREBALL_FLIGHT,
-    );
+    const projectiles = new ProjectileFlights(fake.scene, fakeArt, fx, projectileFlightOf);
     run.fx = fx;
     run.lightMap = lightMap;
     run.projectiles = projectiles;
@@ -707,6 +753,78 @@ describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
 
 });
 
+describe("BarrowspireScene teammate health bars (FS-8AY7S req 27, 28)", () => {
+  interface Bars {
+    teammateHealthBars: Map<string, { graphics: Made; fill: number | null }>;
+  }
+  /** What a bar's graphics drew since it was last cleared: a drawn bar ends in its fill. */
+  const drawn = (g: Made) => g.calls.slice(g.calls.lastIndexOf("clear") + 1);
+
+  function barsOnStage() {
+    const scene = onStage();
+    const bars = (scene.run as unknown as Bars).teammateHealthBars;
+    const bar = (id: string) => bars.get(id);
+    return { ...scene, bars, bar };
+  }
+
+  it("should draw a health-only bar over a living teammate in a run, filled by their health", () => {
+    const { run, bar } = barsOnStage();
+    run.handleGameStateUpdate(partyState(undefined, delver("ally", "Wenna", 160, { current_health: 25 })));
+    const ally = bar("ally")!;
+    expect(ally.fill).toBe(0.25);
+    expect(ally.graphics.kind).toBe("graphics");
+    expect(ally.graphics.calls).toContain("setDepth");
+    // backing, rim and one health fill: no resource half
+    expect(drawn(ally.graphics).filter((c) => c === "fillRect")).toHaveLength(2);
+  });
+
+  it("should follow the teammate's health from state to state", () => {
+    const { run, bar } = barsOnStage();
+    run.handleGameStateUpdate(partyState());
+    run.handleGameStateUpdate(partyState(undefined, delver("ally", "Wenna", 160, { current_health: 50 })));
+    expect(bar("ally")!.fill).toBe(0.5);
+  });
+
+  it("should draw none over the delver's own head", () => {
+    const { run, bars } = barsOnStage();
+    run.handleGameStateUpdate(partyState());
+    expect([...bars.keys()]).toEqual(["ally"]);
+  });
+
+  it.each([
+    ["dead", { current_health: 0 }],
+    ["escaped", { escape: true }],
+  ])("should draw none over a teammate who is %s", (_, fields) => {
+    const { run, bar } = barsOnStage();
+    run.handleGameStateUpdate(partyState());
+    run.handleGameStateUpdate(partyState(undefined, delver("ally", "Wenna", 160, fields)));
+    expect(bar("ally")!.fill).toBeNull();
+    expect(drawn(bar("ally")!.graphics)).not.toContain("fillRect");
+  });
+
+  it("should take the bar with a teammate who leaves, leaving no stale graphics", () => {
+    const { run, bars } = barsOnStage();
+    run.handleGameStateUpdate(partyState());
+    const graphics = bars.get("ally")!.graphics;
+    run.handleGameStateUpdate({ ...partyState(), other_players: [] } as GameState);
+    expect(bars.size).toBe(0);
+    expect(graphics.destroyed).toBe(true);
+  });
+
+  it("should draw none in the hub", () => {
+    const { run, bar } = barsOnStage();
+    run.handleGameStateUpdate({ ...partyState(), world_type: "hub" } as GameState);
+    expect(drawn(bar("ally")!.graphics)).not.toContain("fillRect");
+  });
+
+  it("should forget every bar on a restart", () => {
+    const { run, bars } = barsOnStage();
+    run.handleGameStateUpdate(partyState());
+    (run as unknown as { resetRun(): void }).resetRun();
+    expect(bars.size).toBe(0);
+  });
+});
+
 describe("BarrowspireScene resolved delver card and spectating (FS-QPDKN req 1, 3–9, 11–12)", () => {
   /** What the scene holds for a resolved delver: the card, whose eyes they watch through. */
   interface Spectating {
@@ -1057,6 +1175,251 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     expect(run.leaveButton).toBeUndefined();
     expect(offError).toHaveBeenCalledWith("leave_run");
     expect(off).toHaveBeenCalledWith("leave_run");
+  });
+});
+
+describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
+  type Resource = { kind: string; current: number; max: number; ability_cost: number };
+  const mana: Resource = { kind: "mana", current: 30, max: 120, ability_cost: 30 };
+  const me = (fields: { resource?: Resource; escape?: boolean; current_health?: number } = {}) => ({
+    ...delver("me", "Aldric", 130),
+    class: "mage",
+    resource: mana,
+    ...fields,
+  });
+  const withMe = (player: ReturnType<typeof me>, ally = delver("ally", "Wenna", 160)): GameState =>
+    ({ ...floorState(1), current_player: player, other_players: [ally] }) as GameState;
+
+  function barsOnStage() {
+    const scene = sceneOnStage();
+    const cam = (scene.run.cameras as { main: { width: number; height: number } }).main;
+    const live = () => scene.stage.made.filter((m) => m.kind === "text" && !m.destroyed);
+    const labels = () =>
+      live()
+        .map((m) => String(m.args[2]))
+        .filter((t) => /^(Health|Mana|Stamina|Parry):$/.test(t));
+    const label = (content: string) => live().find((m) => m.args[2] === content);
+    return { ...scene, cam, labels, label };
+  }
+
+  it("should show Health: and Mana: at the bottom left in a run, in the body serif", () => {
+    const { run, cam, labels, label } = barsOnStage();
+    run.handleGameStateUpdate(withMe(me()));
+    expect(labels()).toEqual(["Health:", "Mana:"]);
+    for (const name of ["Health:", "Mana:"]) {
+      const text = label(name)!;
+      expect(text.args[0] as number).toBeLessThan(cam.width / 2);
+      expect(text.args[1] as number).toBeGreaterThan(cam.height / 2);
+      expect((text.args[3] as { fontFamily?: string }).fontFamily).toBe(CANVAS_FONT.body);
+    }
+    // the resource bar sits under the health bar
+    expect(label("Mana:")!.args[1] as number).toBeGreaterThan(label("Health:")!.args[1] as number);
+  });
+
+  it("should label a stamina resource Stamina:, and parry charges Parry:", () => {
+    const { run, labels } = barsOnStage();
+    run.handleGameStateUpdate(withMe(me({ resource: { kind: "stamina", current: 5, max: 10, ability_cost: 5 } })));
+    expect(labels()).toEqual(["Health:", "Stamina:"]);
+    run.handleGameStateUpdate(withMe(me({ resource: { kind: "parry_charges", current: 2, max: 3, ability_cost: 0 } })));
+    expect(labels()).toEqual(["Health:", "Parry:"]);
+  });
+
+  it("should show the health bar alone when the state carries no resource", () => {
+    const { run, labels } = barsOnStage();
+    run.handleGameStateUpdate(withMe(me({ resource: undefined })));
+    expect(labels()).toEqual(["Health:"]);
+  });
+
+  it.each([
+    ["dies", { current_health: 0 }],
+    ["escapes", { escape: true }],
+  ])("should take the bars down when the delver %s, and keep them down", (_, fields) => {
+    const { run, labels } = barsOnStage();
+    run.handleGameStateUpdate(withMe(me()));
+    run.handleGameStateUpdate(withMe(me(fields)));
+    expect(labels()).toEqual([]);
+    run.handleGameStateUpdate(withMe(me(fields)));
+    expect(labels()).toEqual([]);
+  });
+
+  it("should draw no bar over the delver's own head, health or resource", () => {
+    const { run, stage } = barsOnStage();
+    /** World-space graphics framing a bar (a filled, stroked rect), as the overhead bars draw. */
+    const overheadBars = () =>
+      stage.made.filter(
+        (m) =>
+          m.kind === "graphics" &&
+          !m.destroyed &&
+          !m.calls.includes("setScrollFactor") &&
+          m.calls.includes("fillRect") &&
+          m.calls.includes("strokeRect"),
+      );
+    const alone = (ally?: ReturnType<typeof delver>) =>
+      ({ ...withMe(me()), other_players: ally ? [ally] : [], monsters: [] }) as GameState;
+
+    run.handleGameStateUpdate(alone());
+    expect(overheadBars()).toHaveLength(0);
+    // the same probe finds a teammate's bar, so the empty answer above is not vacuous
+    run.handleGameStateUpdate(alone(delver("ally", "Wenna", 160)));
+    expect(overheadBars()).toHaveLength(1);
+  });
+
+  it("should build the bars afresh after a restart", () => {
+    const { run, labels } = barsOnStage();
+    run.handleGameStateUpdate(withMe(me()));
+    (run as unknown as { resetRun(): void }).resetRun();
+    run.handleGameStateUpdate(withMe(me()));
+    expect(labels().filter((l) => l === "Health:").length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
+  type Resource = { kind: string; current: number; max: number; ability_cost: number };
+  const stamina = (current: number): Resource => ({ kind: "stamina", current, max: 100, ability_cost: 25 });
+  const me = (fields: { class?: string; resource?: Resource; escape?: boolean; current_health?: number } = {}) => ({
+    ...delver("me", "Aldric", 130),
+    resource: stamina(100),
+    ...fields,
+  });
+  const withMe = (player: ReturnType<typeof me>): GameState =>
+    ({ ...floorState(1), current_player: player, other_players: [delver("ally", "Wenna", 160)] }) as GameState;
+
+  interface Carded {
+    abilityHud?: { shown: { name: string; greyed: boolean } | null };
+    leaveButton?: unknown;
+    bindRunInput(): void;
+    resetRun(): void;
+  }
+
+  function cardOnStage() {
+    const stage = onStage();
+    const carded = stage.run as unknown as Carded;
+    const cam = (stage.run.cameras as { main: { width: number; height: number } }).main;
+    const pointerHandlers: Record<string, (...args: unknown[]) => void> = {};
+    Object.assign(stage.run, {
+      input: {
+        setDefaultCursor: vi.fn(),
+        keyboard: { on: vi.fn() },
+        on: (event: string, fn: () => void) => (pointerHandlers[event] = fn),
+      },
+    });
+    // a click off the satchel: it takes none
+    Object.assign((stage.run as unknown as { containerView: object }).containerView, { pointerDown: vi.fn(() => false) });
+    const live = () => stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed);
+    const text = (content: string) => live().find((m) => m.args[2] === content);
+    const shown = () => carded.abilityHud?.shown ?? null;
+    const rightClick = () =>
+      pointerHandlers.pointerdown({
+        x: 10,
+        y: 10,
+        button: 2,
+        worldX: 400,
+        worldY: 300,
+        leftButtonDown: () => false,
+        rightButtonDown: () => true,
+      });
+    const delayed = () =>
+      (stage.run.time as { delayedCall: ReturnType<typeof vi.fn> }).delayedCall.mock.calls as [number, () => void][];
+    return { ...stage, carded, cam, live, text, shown, rightClick, delayed };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ["warrior", "Dash", "Charge a short way toward the cursor."],
+    ["mage", "Triple Fireball", "Hurl three fireballs in a spread toward the cursor."],
+    ["archer", "Shadow Shot", "Hold to aim, release to loose one slow, heavy bolt."],
+  ])("should show the %s's card at the bottom right in a run, in the body serif", (cls, name, line) => {
+    const { run, cam, text } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me({ class: cls })));
+    for (const content of [name, line]) {
+      const t = text(content)!;
+      expect(t).toBeDefined();
+      expect(t.args[0] as number).toBeGreaterThan(cam.width / 2);
+      expect(t.args[1] as number).toBeGreaterThan(cam.height / 2);
+      expect((t.args[3] as { fontFamily?: string }).fontFamily).toBe(CANVAS_FONT.body);
+    }
+  });
+
+  it("should grey the card with the pool one short of the cost, and light it at the cost", () => {
+    const { run, shown } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me({ resource: stamina(24) })));
+    expect(shown()?.greyed).toBe(true);
+    run.handleGameStateUpdate(withMe(me({ resource: stamina(25) })));
+    expect(shown()?.greyed).toBe(false);
+  });
+
+  it("should show the card lit with no resource on the wire", () => {
+    const { run, shown } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me({ resource: undefined })));
+    expect(shown()).toMatchObject({ name: "Dash", greyed: false });
+  });
+
+  it("should grey the card for the lockout after a right-click, and light it once the lockout ends", () => {
+    const { run, carded, sent, shown, rightClick, delayed } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me()));
+    carded.bindRunInput();
+    rightClick();
+    expect(sent.mock.calls.some(([action]) => action === ActionType.CastSkill)).toBe(true);
+    expect(shown()?.greyed).toBe(true);
+
+    const lockout = delayed().find(([ms]) => ms === 400);
+    lockout![1]();
+    expect(shown()?.greyed).toBe(false);
+  });
+
+  it("should show no card for a class with no row", () => {
+    const { run, shown } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me({ class: "necromancer" })));
+    expect(shown()).toBeNull();
+  });
+
+  it("should show no card in the hub", () => {
+    const { run, shown, text } = cardOnStage();
+    run.handleGameStateUpdate({ ...withMe(me()), world_type: "hub" } as GameState);
+    expect(shown()).toBeNull();
+    expect(text("Dash")).toBeUndefined();
+  });
+
+  it.each([
+    ["dies", { current_health: 0 }],
+    ["escapes", { escape: true }],
+  ])("should take the card down when the delver %s", (_, fields) => {
+    const { run, shown, text } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me()));
+    expect(text("Dash")).toBeDefined();
+    run.handleGameStateUpdate(withMe(me(fields)));
+    expect(shown()).toBeNull();
+    expect(text("Dash")).toBeUndefined();
+  });
+
+  it("should never be up with the leave button", () => {
+    const { run, carded, text } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
+    expect(carded.leaveButton).toBeDefined();
+    expect(text("Dash")).toBeUndefined();
+  });
+
+  it("should build the card afresh after a restart", () => {
+    const { run, carded, text } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me()));
+    carded.resetRun();
+    run.handleGameStateUpdate(withMe(me()));
+    expect(text("Dash")).toBeDefined();
+  });
+
+  it.each(["warrior", "mage", "archer", "mercenary"])("should show the %s's card with no MP on it", (cls) => {
+    const { run, live, shown } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me({ class: cls })));
+    expect(shown()).not.toBeNull();
+    expect(live().map((t) => String(t.args[2])).filter((t) => /\bMP\b/.test(t))).toEqual([]);
+  });
+
+  it("should price nothing in MP on the main menu's controls line", () => {
+    expect(MENU_CONTROLS).not.toMatch(/\bMP\b/);
+    expect(MENU_CONTROLS).toContain("R-Click Class Ability");
   });
 });
 
@@ -2037,5 +2400,637 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(run.menuChoices).toBeUndefined();
     expect(run.fallPending).toBe(false);
     expect(offError).toHaveBeenCalledWith("forfeit_run");
+  });
+});
+
+describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", () => {
+  interface Aimed {
+    time: { now: number; delayedCall: ReturnType<typeof vi.fn> };
+    fx?: unknown;
+    playerAnim?: { attack(...args: unknown[]): void; holdAim(aim: unknown): void };
+    abilityHud?: { shown: { name: string; greyed: boolean } | null };
+    aimLine?: { drawn: boolean };
+    equipmentPanel?: unknown;
+    menu?: unknown;
+    bindRunInput(): void;
+    resetRun(): void;
+    leaveFloor(): void;
+    openMenu(): void;
+    showGameEndOverlay(position: number, result?: string): void;
+    toggleInventory(): void;
+    aimFrame(): void;
+    sendMovementIntent(vx: number, vy: number): void;
+    handleGameStateUpdate(state: GameState): void;
+  }
+
+  const ME_X = 130;
+  const ME_Y = 300;
+  const as = (cls: string, fields: { current_health?: number } = {}) => ({
+    ...delver("me", "Aldric", ME_X, fields),
+    class: cls,
+  });
+
+  function aimOnStage(cls = "archer") {
+    const stage = onStage();
+    vi.spyOn(useGameStore.getState(), "getActiveCharacter").mockReturnValue({ className: cls } as never);
+    const run = stage.run as unknown as Aimed;
+    const pointerHandlers: Record<string, (...args: unknown[]) => void> = {};
+    const keyHandlers: Record<string, (...args: unknown[]) => void> = {};
+    const game = { events: new EventEmitter() };
+    const cursor = { x: 400, y: 300 };
+    Object.assign(stage.run, {
+      game,
+      input: {
+        setDefaultCursor: vi.fn(),
+        keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) },
+        on: (event: string, fn: () => void) => (pointerHandlers[event] = fn),
+        activePointer: { button: 0, positionToCamera: () => ({ ...cursor }) },
+      },
+    });
+    Object.assign((stage.run as unknown as { containerView: object }).containerView, { pointerDown: vi.fn(() => false) });
+    run.handleGameStateUpdate(partyState(as(cls) as ReturnType<typeof delver>));
+    run.bindRunInput();
+    run.time.now = 1000;
+    const fxPlay = vi.fn();
+    run.fx = { play: fxPlay, clearAll: vi.fn() };
+    const attack = vi.spyOn(run.playerAnim!, "attack");
+    const holdAim = vi.spyOn(run.playerAnim!, "holdAim");
+
+    const pointer = (button: number, worldX = 400, worldY = 300) => ({
+      x: 10,
+      y: 10,
+      button,
+      worldX,
+      worldY,
+      leftButtonDown: () => button === 0,
+      rightButtonDown: () => button === 2,
+    });
+    // Phaser hands a sprite its pointerdown before the scene's, on the same active pointer
+    const active = (stage.run as unknown as { input: { activePointer: { button: number } } }).input.activePointer;
+    const press = () => {
+      active.button = 2;
+      pointerHandlers.pointerdown(pointer(2));
+    };
+    const leftClick = () => {
+      active.button = 0;
+      pointerHandlers.pointerdown(pointer(0));
+    };
+    const onMonster = (button: number) => {
+      active.button = button;
+      stage.monsters()[0].handlers.pointerdown();
+    };
+    const release = (at: number, worldX = 400, worldY = 300) => {
+      run.time.now = at;
+      pointerHandlers.pointerup({ ...pointer(2, worldX, worldY), rightButtonDown: () => false });
+    };
+    const casts = () => stage.sent.mock.calls.filter(([action]) => action === ActionType.CastSkill);
+    const moves = () => stage.sent.mock.calls.filter(([action]) => action === ActionType.Move);
+    const lineUp = () => run.aimLine?.drawn === true;
+    const delayed = () => run.time.delayedCall.mock.calls as [number, () => void][];
+    return { ...stage, run, game, cursor, keyHandlers, pointerHandlers, press, leftClick, onMonster, release, casts, moves, lineUp, fxPlay, attack, holdAim, delayed };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should send nothing on an archer's right-press, and start aiming with the line up", () => {
+    const s = aimOnStage();
+    s.press();
+    expect(s.sent).not.toHaveBeenCalled();
+    expect(s.lineUp()).toBe(true);
+  });
+
+  it.each([
+    ["warrior", "dash"],
+    ["mage", "triple_fireball"],
+  ])("should leave the %s's right-click as it was: %s sent on the press", (cls, skill) => {
+    const s = aimOnStage(cls);
+    s.press();
+    expect(s.casts()).toEqual([[ActionType.CastSkill, { skill_id: skill, target_x: expect.any(Number), target_y: expect.any(Number) }]]);
+    expect(s.lineUp()).toBe(false);
+  });
+
+  it("should send exactly one shadow_shot at the cursor's world point on a release held 0.3 s, with the Shadow Shot release and attack clip", () => {
+    const s = aimOnStage();
+    s.press();
+    s.release(1300, 520, 410);
+
+    const target = await_iso.screenToWorld(520, 410);
+    expect(s.casts()).toEqual([
+      [ActionType.CastSkill, { skill_id: "shadow_shot", target_x: target.x, target_y: target.y }],
+    ]);
+    expect(s.fxPlay).toHaveBeenCalledTimes(1);
+    expect(s.fxPlay.mock.calls[0][1]).toBe("shadowShotRelease");
+    expect(s.attack).toHaveBeenCalledWith(1300, { x: target.x - ME_X, y: target.y - ME_Y });
+    expect(s.lineUp()).toBe(false);
+  });
+
+  it("should send and play nothing on a release under 0.3 s, and leave no line", () => {
+    const s = aimOnStage();
+    s.press();
+    s.release(1299);
+    expect(s.sent).not.toHaveBeenCalled();
+    expect(s.fxPlay).not.toHaveBeenCalled();
+    expect(s.attack).not.toHaveBeenCalled();
+    expect(s.lineUp()).toBe(false);
+  });
+
+  it("should send nothing on a release inside 1.2 s of the last sent shot, and fire again after", () => {
+    const s = aimOnStage();
+    s.press();
+    s.release(1300);
+    s.press();
+    s.release(2499);
+    expect(s.casts()).toHaveLength(1);
+    expect(s.fxPlay).toHaveBeenCalledTimes(1);
+    // held from 2499: ready at 2799, a full 1.2 s after the shot sent at 1300
+    s.press();
+    s.release(2799);
+    expect(s.casts()).toHaveLength(2);
+  });
+
+  it("should start no cooldown on a quick tap", () => {
+    const s = aimOnStage();
+    s.press();
+    s.release(1100);
+    s.press();
+    s.release(1400);
+    expect(s.casts()).toHaveLength(1);
+  });
+
+  it("should grey the ability card from a fired shot until the 1.2 s cooldown is over, and not for a hold", () => {
+    const s = aimOnStage();
+    s.press();
+    expect(s.run.abilityHud?.shown?.greyed).toBe(false);
+    s.release(1300);
+    expect(s.run.abilityHud?.shown?.greyed).toBe(true);
+    const cooldown = s.delayed().find(([ms]) => ms === 1200);
+    expect(cooldown).toBeDefined();
+    cooldown![1]();
+    expect(s.run.abilityHud?.shown?.greyed).toBe(false);
+  });
+
+  it("should allow a hold to begin during the left-click's own lockout", () => {
+    const s = aimOnStage();
+    s.leftClick();
+    s.press();
+    s.release(1300);
+    expect(s.casts().map(([, body]) => (body as { skill_id: string }).skill_id)).toEqual(["arrow", "shadow_shot"]);
+  });
+
+  it("should stop a stride once as the hold begins, send no move while aiming, and resume from the keys after", () => {
+    const s = aimOnStage();
+    s.run.sendMovementIntent(1, 0);
+    expect(s.moves()).toEqual([[ActionType.Move, { vx: 1, vy: 0 }]]);
+    s.press();
+    s.run.sendMovementIntent(1, 0);
+    s.run.sendMovementIntent(0, 1);
+    s.keyHandlers.keyup({ code: "KeyD" });
+    expect(s.moves()).toEqual([
+      [ActionType.Move, { vx: 1, vy: 0 }],
+      [ActionType.Move, { vx: 0, vy: 0 }],
+    ]);
+    s.release(1300);
+    s.run.sendMovementIntent(1, 0);
+    expect(s.moves().at(-1)).toEqual([ActionType.Move, { vx: 1, vy: 0 }]);
+  });
+
+  it("should send no stop when a hold begins over a delver standing still", () => {
+    const s = aimOnStage();
+    s.press();
+    s.run.sendMovementIntent(0, 0);
+    expect(s.moves()).toHaveLength(0);
+  });
+
+  it("should drop a left-click during a hold, and keep the hold", () => {
+    const s = aimOnStage();
+    s.press();
+    s.leftClick();
+    expect(s.sent).not.toHaveBeenCalled();
+    s.release(1300);
+    expect(s.casts()).toHaveLength(1);
+  });
+
+  it("should strike no monster on a click during a hold", () => {
+    const s = aimOnStage();
+    s.press();
+    s.onMonster(0);
+    s.leftClick();
+    expect(s.sent).not.toHaveBeenCalled();
+  });
+
+  it("should strike no monster on an archer's right-press, which only starts the hold", () => {
+    const s = aimOnStage();
+    s.onMonster(2);
+    s.press();
+    expect(s.sent).not.toHaveBeenCalled();
+    expect(s.lineUp()).toBe(true);
+  });
+
+  it("should still strike a monster on an archer's left-click outside a hold", () => {
+    const s = aimOnStage();
+    s.onMonster(0);
+    expect(s.sent.mock.calls.filter(([a]) => a === ActionType.Attack)).toHaveLength(1);
+  });
+
+  it("should turn the archer's idle clip to the cursor and draw the line each frame, faint until ready, then let the facing go", () => {
+    const s = aimOnStage();
+    s.press();
+    const cursorWorld = await_iso.screenToWorld(s.cursor.x, s.cursor.y);
+    s.run.aimFrame();
+    expect(s.holdAim).toHaveBeenLastCalledWith({ x: cursorWorld.x - ME_X, y: cursorWorld.y - ME_Y });
+    s.cursor.x = 600;
+    s.run.aimFrame();
+    const moved = await_iso.screenToWorld(600, s.cursor.y);
+    expect(s.holdAim).toHaveBeenLastCalledWith({ x: moved.x - ME_X, y: moved.y - ME_Y });
+
+    const line = s.stage.made.filter((m) => m.kind === "graphics" && !m.destroyed).at(-1)!;
+    expect(line.calls).toContain("lineBetween");
+    s.release(1300);
+    expect(s.holdAim).toHaveBeenLastCalledWith(undefined);
+    expect(line.destroyed).toBe(true);
+  });
+
+  it("should do nothing each frame with no hold running", () => {
+    const s = aimOnStage();
+    s.run.aimFrame();
+    expect(s.holdAim).not.toHaveBeenCalled();
+    expect(s.lineUp()).toBe(false);
+  });
+
+  const cancels: [string, (s: ReturnType<typeof aimOnStage>) => void][] = [
+    ["the delver dying", (s) => s.run.handleGameStateUpdate(partyState(as("archer", { current_health: 0 }) as ReturnType<typeof delver>))],
+    ["the party leaving the floor", (s) => s.run.leaveFloor()],
+    ["the ESC menu opening", (s) => s.run.openMenu()],
+    ["the run ending", (s) => s.run.showGameEndOverlay(1, "escaped")],
+    [
+      "the equipment panel opening",
+      (s) => {
+        s.run.equipmentPanel = { toggle: vi.fn(), isVisible: () => true, updateInventory: vi.fn(), updateEquipment: vi.fn() };
+        s.run.toggleInventory();
+      },
+    ],
+    ["the right button released outside the canvas", (s) => s.pointerHandlers.pointerupoutside({ button: 2 })],
+    ["the window losing focus", (s) => s.game.events.emit("blur")],
+    ["the tab going hidden", (s) => s.game.events.emit("hidden")],
+    ["the scene tearing down", (s) => s.run.resetRun()],
+  ];
+
+  it.each(cancels)("should end a hold on %s with nothing sent and no line left", (_, cancel) => {
+    const s = aimOnStage();
+    s.press();
+    cancel(s);
+    expect(s.lineUp()).toBe(false);
+    s.release(1500);
+    expect(s.casts()).toHaveLength(0);
+    expect(s.fxPlay).not.toHaveBeenCalled();
+  });
+
+  it("should send nothing on a release once the run has ended, even from a hold begun after", () => {
+    const s = aimOnStage();
+    s.run.showGameEndOverlay(1, "escaped");
+    s.press();
+    s.release(1500);
+    expect(s.casts()).toHaveLength(0);
+    expect(s.fxPlay).not.toHaveBeenCalled();
+    expect(s.lineUp()).toBe(false);
+  });
+
+  it("should not cancel a hold on the left button released outside the canvas", () => {
+    const s = aimOnStage();
+    s.press();
+    s.pointerHandlers.pointerupoutside({ button: 0 });
+    s.release(1300);
+    expect(s.casts()).toHaveLength(1);
+  });
+
+  it("should stop hearing window blur once the scene tears down", () => {
+    const s = aimOnStage();
+    s.run.resetRun();
+    expect(s.game.events.listenerCount("blur")).toBe(0);
+    expect(s.game.events.listenerCount("hidden")).toBe(0);
+  });
+
+  it("should not let a dead delver start a hold", () => {
+    const s = aimOnStage();
+    s.run.handleGameStateUpdate(partyState(as("archer", { current_health: 0 }) as ReturnType<typeof delver>));
+    s.press();
+    expect(s.lineUp()).toBe(false);
+    s.release(1500);
+    expect(s.sent.mock.calls.filter(([a]) => a === ActionType.CastSkill)).toHaveLength(0);
+  });
+
+  describe("short of stamina (FS-JTNPR req 18; edge state: Short of stamina)", () => {
+    const stamina = (current: number) => ({ kind: "stamina", current, max: 100, ability_cost: 40 });
+    const withStamina = (s: ReturnType<typeof aimOnStage>, current: number) =>
+      s.run.handleGameStateUpdate(partyState({ ...as("archer"), resource: stamina(current) } as ReturnType<typeof delver>));
+    /** Whether the last aim line drawn was at full strength. */
+    const lineReady = (draw: { mock: { calls: unknown[][] } }) => draw.mock.calls.at(-1)?.[2];
+
+    it("should send and play nothing on a ready-length, off-cooldown release at stamina 39, the line faint throughout", () => {
+      const s = aimOnStage();
+      const draw = vi.spyOn(AimLine.prototype, "draw");
+      withStamina(s, 39);
+      s.press();
+      s.run.time.now = 1300;
+      s.run.aimFrame();
+      expect(lineReady(draw)).toBe(false);
+      s.release(1300);
+      expect(s.casts()).toHaveLength(0);
+      expect(s.fxPlay).not.toHaveBeenCalled();
+      expect(s.attack).not.toHaveBeenCalled();
+      expect(s.lineUp()).toBe(false);
+    });
+
+    it("should start no cooldown on a release it cancels for want of stamina", () => {
+      const s = aimOnStage();
+      withStamina(s, 39);
+      s.press();
+      s.release(1300);
+      expect(s.run.abilityHud?.shown?.greyed).toBe(true);
+      withStamina(s, 40);
+      expect(s.run.abilityHud?.shown?.greyed).toBe(false);
+      s.press();
+      s.release(1600);
+      expect(s.casts()).toHaveLength(1);
+    });
+
+    it("should fire once stamina regained during the hold reaches 40", () => {
+      const s = aimOnStage();
+      const draw = vi.spyOn(AimLine.prototype, "draw");
+      withStamina(s, 30);
+      s.press();
+      s.run.time.now = 1300;
+      s.run.aimFrame();
+      expect(lineReady(draw)).toBe(false);
+      withStamina(s, 40);
+      s.run.aimFrame();
+      expect(lineReady(draw)).toBe(true);
+      s.release(1300);
+      expect(s.casts()).toEqual([[ActionType.CastSkill, expect.objectContaining({ skill_id: "shadow_shot" })]]);
+    });
+
+    it("should draw the line ready exactly where the card is lit, for every stamina value", () => {
+      const s = aimOnStage();
+      const draw = vi.spyOn(AimLine.prototype, "draw");
+      s.press();
+      s.run.time.now = 1300;
+      for (let current = 0; current <= 100; current++) {
+        withStamina(s, current);
+        s.run.aimFrame();
+        expect(lineReady(draw)).toBe(s.run.abilityHud?.shown?.greyed === false);
+      }
+    });
+  });
+
+  describe("a Mercenary's left-click (FS-MAMHR §G.32)", () => {
+    it("should send cut at the cursor's world point, with the class attack clip", () => {
+      const s = aimOnStage("mercenary");
+      s.leftClick();
+      const target = await_iso.screenToWorld(400, 300);
+      expect(s.casts()).toEqual([
+        [ActionType.CastSkill, { skill_id: "cut", target_x: target.x, target_y: target.y }],
+      ]);
+      expect(s.attack).toHaveBeenCalledWith(1000, { x: target.x - ME_X, y: target.y - ME_Y });
+    });
+
+    it("should play the cut at once, and no other class's effect", () => {
+      const s = aimOnStage("mercenary");
+      const before = s.stage.made.length;
+      s.leftClick();
+      const drawn = s.stage.made.slice(before).filter((m) => m.kind === "graphics");
+      expect(drawn.some((g) => g.calls.includes("fillPoints"))).toBe(true);
+      const tweens = (s.run as unknown as { tweens: { add: ReturnType<typeof vi.fn> } }).tweens.add;
+      expect(tweens).toHaveBeenCalledWith(expect.objectContaining({ duration: CUT_MS }));
+      expect(s.fxPlay).not.toHaveBeenCalled();
+    });
+
+    it("should take a cut still fading down with the run on a restart", () => {
+      const s = aimOnStage("mercenary");
+      const before = s.stage.made.length;
+      s.leftClick();
+      const live = () => s.stage.made.slice(before).filter((m) => m.kind === "graphics" && !m.destroyed);
+      expect(live().length).toBeGreaterThan(0);
+      s.run.resetRun();
+      expect(live()).toHaveLength(0);
+    });
+
+    it("should hold the left-click's own lockout: a second click inside it sends nothing", () => {
+      const s = aimOnStage("mercenary");
+      s.leftClick();
+      s.leftClick();
+      expect(s.casts()).toHaveLength(1);
+    });
+  });
+
+  describe("a Mercenary's parry (FS-MAMHR §G.35–38)", () => {
+    type ParryFields = { parry_open?: boolean; parry_lockout?: number; parries?: number };
+    const merc = (fields: ParryFields = {}) =>
+      ({
+        ...as("mercenary"),
+        resource: { kind: "parry_charges", current: 0, max: 3, ability_cost: 0 },
+        parry_open: false,
+        parry_lockout: 0,
+        parries: 0,
+        ...fields,
+      }) as unknown as ReturnType<typeof delver>;
+    const parryOnStage = (fields: ParryFields = {}) => {
+      const s = aimOnStage("mercenary");
+      s.run.handleGameStateUpdate(partyState(merc(fields)));
+      return s;
+    };
+    const stance = (s: ReturnType<typeof aimOnStage>) =>
+      (s.run as unknown as { parry?: { stanceShown: boolean } }).parry?.stanceShown === true;
+    const flashes = (s: ReturnType<typeof aimOnStage>) =>
+      (s.run as unknown as { tweens: { add: ReturnType<typeof vi.fn> } }).tweens.add.mock.calls.filter(
+        ([config]) => (config as { duration?: number }).duration === PARRY_FLASH_MS,
+      ).length;
+
+    it("should send parry on a right-click and raise the stance tell, with no attack clip", () => {
+      const s = parryOnStage();
+      s.press();
+      expect(s.casts()).toEqual([[ActionType.CastSkill, { skill_id: "parry", target_x: expect.any(Number), target_y: expect.any(Number) }]]);
+      expect(stance(s)).toBe(true);
+      expect(s.attack).not.toHaveBeenCalled();
+      expect(s.lineUp()).toBe(false);
+    });
+
+    it.each([
+      ["the stance is open", { parry_open: true }],
+      ["the whiff lockout runs", { parry_lockout: 0.98333 }],
+    ])("should send nothing on a right-click while %s", (_, fields) => {
+      const s = parryOnStage(fields);
+      s.press();
+      expect(s.casts()).toEqual([]);
+    });
+
+    it("should send parry again once the latest state shows the lockout over", () => {
+      const s = parryOnStage({ parry_lockout: 0.5 });
+      s.press();
+      s.run.handleGameStateUpdate(partyState(merc({ parry_lockout: 0 })));
+      s.press();
+      expect(s.casts()).toEqual([[ActionType.CastSkill, { skill_id: "parry", target_x: expect.any(Number), target_y: expect.any(Number) }]]);
+    });
+
+    it("should not hold the parry behind the cut's own lockout", () => {
+      const s = parryOnStage();
+      s.leftClick();
+      s.press();
+      expect(s.casts().map(([, p]) => (p as { skill_id: string }).skill_id)).toEqual(["cut", "parry"]);
+    });
+
+    it("should hold the tell while the server reports the stance open, and clear it when it closes", () => {
+      const s = parryOnStage();
+      s.press();
+      s.run.handleGameStateUpdate(partyState(merc({ parry_open: true })));
+      s.run.time.now = 2000; // long past the click: the server's word alone holds it
+      s.run.handleGameStateUpdate(partyState(merc({ parry_open: true })));
+      expect(stance(s)).toBe(true);
+      s.run.handleGameStateUpdate(partyState(merc({ parry_open: false, parry_lockout: 1 })));
+      expect(stance(s)).toBe(false);
+    });
+
+    it("should flash on a rise in parries, at 3 parry charges too, and not on the first state", () => {
+      const s = aimOnStage("mercenary");
+      s.run.resetRun();
+      s.run.handleGameStateUpdate(partyState(merc({ parries: 7 })));
+      expect(flashes(s)).toBe(0);
+      s.run.handleGameStateUpdate(partyState(merc({ parries: 8, parry_open: true })));
+      expect(flashes(s)).toBe(1);
+      s.run.handleGameStateUpdate(partyState(merc({ parries: 9, parry_open: true })));
+      expect(flashes(s)).toBe(2);
+    });
+
+    it("should take the stance tell and a fading flash down with the run on a restart", () => {
+      const s = parryOnStage({ parries: 1 });
+      const before = s.stage.made.length;
+      s.run.handleGameStateUpdate(partyState(merc({ parries: 2, parry_open: true })));
+      const live = () => s.stage.made.slice(before).filter((m) => m.kind === "graphics" && !m.destroyed);
+      expect(live().length).toBeGreaterThanOrEqual(2);
+      s.run.resetRun();
+      expect(live()).toHaveLength(0);
+    });
+
+    it("should take the first state after a restart (a reconnect) as the baseline", () => {
+      const s = parryOnStage({ parries: 1 });
+      s.run.resetRun();
+      s.run.handleGameStateUpdate(partyState(merc({ parries: 4 })));
+      expect(flashes(s)).toBe(0);
+    });
+
+    it("should draw nothing for a teammate's parry", () => {
+      const s = parryOnStage();
+      const ally = (parries: number) =>
+        ({ ...delver("ally", "Wenna", 160), class: "mercenary", parry_open: true, parries }) as ReturnType<typeof delver>;
+      s.run.handleGameStateUpdate(partyState(merc(), ally(0)));
+      s.run.handleGameStateUpdate(partyState(merc(), ally(3)));
+      expect(flashes(s)).toBe(0);
+      expect(stance(s)).toBe(false);
+    });
+
+    it("should grey the Parry card while parry_lockout is above 0, and light it at 0", () => {
+      const s = parryOnStage({ parry_lockout: 0.98333 });
+      expect(s.run.abilityHud?.shown).toMatchObject({ name: "Parry", greyed: true });
+      s.run.handleGameStateUpdate(partyState(merc({ parry_lockout: 0 })));
+      expect(s.run.abilityHud?.shown).toMatchObject({ name: "Parry", greyed: false });
+    });
+  });
+
+  describe("a Mercenary's riposte (FS-MAMHR §G.33, §G.34, §G.38)", () => {
+    const merc = (current: number) =>
+      ({
+        ...as("mercenary"),
+        resource: { kind: "parry_charges", current, max: 3, ability_cost: 0 },
+        parry_open: false,
+        parry_lockout: 0,
+        parries: 0,
+      }) as unknown as ReturnType<typeof delver>;
+    const atCharges = (current: number) => {
+      const s = aimOnStage("mercenary");
+      s.run.handleGameStateUpdate(partyState(merc(current)));
+      return s;
+    };
+    const played = (s: ReturnType<typeof aimOnStage>) =>
+      (s.run as unknown as { tweens: { add: ReturnType<typeof vi.fn> } }).tweens.add.mock.calls.map(
+        ([config]) => (config as { duration?: number }).duration,
+      );
+    const armed = (s: ReturnType<typeof aimOnStage>) =>
+      (s.run as unknown as { riposte?: { armedShown: boolean } }).riposte?.armedShown === true;
+
+    it("should send cut at 3 parry charges and play the riposte slice, not the cut, with the attack clip", () => {
+      const s = atCharges(3);
+      s.leftClick();
+      const target = await_iso.screenToWorld(400, 300);
+      expect(s.casts()).toEqual([
+        [ActionType.CastSkill, { skill_id: "cut", target_x: target.x, target_y: target.y }],
+      ]);
+      expect(played(s)).toContain(RIPOSTE_MS);
+      expect(played(s)).not.toContain(CUT_MS);
+      expect(s.attack).toHaveBeenCalledWith(1000, { x: target.x - ME_X, y: target.y - ME_Y });
+      expect(s.fxPlay).not.toHaveBeenCalled();
+    });
+
+    it.each([0, 1, 2])("should play the cut, not the riposte, at %i parry charges", (n) => {
+      const s = atCharges(n);
+      s.leftClick();
+      expect(played(s)).toContain(CUT_MS);
+      expect(played(s)).not.toContain(RIPOSTE_MS);
+    });
+
+    it("should play the cut once the latest state shows the charges spent", () => {
+      const s = atCharges(3);
+      s.leftClick();
+      s.run.handleGameStateUpdate(partyState(merc(0)));
+      s.delayed().forEach(([, fn]) => fn()); // the left-click's own lockout runs out
+      s.leftClick();
+      expect(played(s).filter((d) => d === RIPOSTE_MS)).toHaveLength(1);
+      expect(played(s)).toContain(CUT_MS);
+    });
+
+    it("should show the armed tell at 3 parry charges and clear it when the count drops", () => {
+      const s = atCharges(2);
+      expect(armed(s)).toBe(false);
+      s.run.handleGameStateUpdate(partyState(merc(3)));
+      expect(armed(s)).toBe(true);
+      s.run.handleGameStateUpdate(partyState(merc(0)));
+      expect(armed(s)).toBe(false);
+    });
+
+    it("should draw nothing for a teammate's riposte", () => {
+      const s = atCharges(0);
+      const ally = {
+        ...delver("ally", "Wenna", 160),
+        class: "mercenary",
+        resource: { kind: "parry_charges", current: 3, max: 3, ability_cost: 0 },
+      } as ReturnType<typeof delver>;
+      s.run.handleGameStateUpdate(partyState(merc(0), ally));
+      expect(armed(s)).toBe(false);
+      expect(played(s)).not.toContain(RIPOSTE_MS);
+    });
+
+    it("should take the slice and the tell down with the run on a restart", () => {
+      const s = atCharges(2);
+      const before = s.stage.made.length;
+      s.run.handleGameStateUpdate(partyState(merc(3)));
+      s.leftClick();
+      const live = () => s.stage.made.slice(before).filter((m) => m.kind === "graphics" && !m.destroyed);
+      expect(live().length).toBeGreaterThan(0);
+      s.run.resetRun();
+      expect(armed(s)).toBe(false);
+      expect(live()).toHaveLength(0);
+    });
+  });
+
+  it("should leave no code that sends triple_arrow or multishot_arrow", () => {
+    const SRC = join(__dirname, "..");
+    const sources = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
+        const path = join(dir, d.name);
+        if (d.isDirectory()) return sources(path);
+        return /\.tsx?$/.test(d.name) && !/\.test\.tsx?$/.test(d.name) ? [path] : [];
+      });
+    const offenders = sources(SRC).filter((f) => /triple_arrow|multishot_arrow/.test(readFileSync(f, "utf8")));
+    expect(offenders).toEqual([]);
   });
 });

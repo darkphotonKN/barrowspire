@@ -755,6 +755,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       "char_knight_base",
       "char_archer_base",
       "char_wizard_base",
+      "char_mercenary_base",
       "creature_ghoul_base",
       "creature_troll_base",
     ];
@@ -815,6 +816,27 @@ describe("the baked manifest (public/art/manifest.json)", () => {
           [true, true, false, false],
         );
       }
+    });
+  });
+
+  describe("the Mercenary (FS-MAMHR §H)", () => {
+    it("is its own sheet in the characters group, authored as the mercenary model", () => {
+      const sheet = baked.sheets.char_mercenary_base;
+      expect(sheet).toBeDefined();
+      expect(sheet.atlas).toMatch(/^characters-\d+$/);
+      expect(sheet.source).toBe(
+        "authored: tools/bake/page/characters/cast.js#mercenary",
+      );
+    });
+
+    it("keeps the other classes on their own atlases", () => {
+      const merc = baked.sheets.char_mercenary_base.atlas;
+      for (const name of [
+        "char_knight_base",
+        "char_archer_base",
+        "char_wizard_base",
+      ])
+        expect(baked.sheets[name].atlas, name).not.toBe(merc);
     });
   });
 
