@@ -25,7 +25,7 @@ func TestRawDamage_PowerCoefficientAndStatScaling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.InDelta(t, tt.want, RawDamage(tt.power, tt.coefficient, tt.scalingStat), 1e-9)
+			assert.InDelta(t, tt.want, RawDamage(tt.power, tt.coefficient, float64(tt.scalingStat)), 1e-9)
 		})
 	}
 }

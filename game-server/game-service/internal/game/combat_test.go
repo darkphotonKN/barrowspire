@@ -51,9 +51,9 @@ func currentHealth(e *ecs.Entity) int {
 	return c.(*components.HealthComponent).CurrentHealth
 }
 
-func currentMana(e *ecs.Entity) int {
-	c, _ := e.GetComponent(ecs.ComponentTypeMana)
-	return c.(*components.ManaComponent).CurrentMana
+func currentResource(e *ecs.Entity) int {
+	c, _ := e.GetComponent(ecs.ComponentTypeResource)
+	return c.(*components.ResourceComponent).Current
 }
 
 // The warrior slash used to cut health straight from the message goroutine. Now
@@ -70,16 +70,16 @@ func TestCastSkill_SlashLandsOnTheTickNotInTheHandler(t *testing.T) {
 	assert.Less(t, currentHealth(target), 1000, "the tick resolves the slash")
 }
 
-func TestCastSkill_HandlerSpendsNoMana(t *testing.T) {
+func TestCastSkill_HandlerSpendsNothing(t *testing.T) {
 	s := unstartedRun(t)
 	archer, entity := placeDelver(t, s, "archer", 500, 500)
-	before := currentMana(entity)
+	before := currentResource(entity)
 
-	require.NoError(t, s.handleCastSkill(archer, "triple_arrow", 600, 500))
-	assert.Equal(t, before, currentMana(entity))
+	require.NoError(t, s.handleCastSkill(archer, "shadow_shot", 600, 500))
+	assert.Equal(t, before, currentResource(entity))
 
 	tick(s)
-	assert.Equal(t, before-10, currentMana(entity))
+	assert.Equal(t, before-40, currentResource(entity))
 }
 
 func TestCastSkill_UnknownSkillIsRefused(t *testing.T) {
@@ -87,6 +87,19 @@ func TestCastSkill_UnknownSkillIsRefused(t *testing.T) {
 	delver, _ := placeDelver(t, s, "mage", 500, 500)
 
 	assert.ErrorIs(t, s.handleCastSkill(delver, "meteor", 600, 500), ErrUnknownSkill)
+}
+
+// The volley's ids are gone, not remapped: an old client's cast is an unknown
+// skill like any other. FS-JTNPR §Requirements 3.
+func TestCastSkill_TheVolleysOldIdsAreUnknown(t *testing.T) {
+	for _, skillID := range []string{"triple_arrow", "multishot_arrow"} {
+		t.Run(skillID, func(t *testing.T) {
+			s := unstartedRun(t)
+			archer, _ := placeDelver(t, s, "archer", 500, 500)
+
+			assert.ErrorIs(t, s.handleCastSkill(archer, skillID, 600, 500), ErrUnknownSkill)
+		})
+	}
 }
 
 // Coefficients are tuned so a level-1 unequipped delver deals about what the old

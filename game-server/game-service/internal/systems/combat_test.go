@@ -1,6 +1,7 @@
 package systems
 
 import (
+	"math"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -18,13 +19,13 @@ func neverCrit() float64  { return 0.999 }
 func alwaysCrit() float64 { return 0 }
 
 // delver stands a warrior-shaped attacker (Attack 12, Defense 10, Str 8, Agi 8,
-// Int 9) at (x, y) with 100 MP.
+// Int 9) at (x, y) with a full 100-point stamina pool.
 func delver(em *ecs.EntityManager, x, y float64) *ecs.Entity {
 	e := em.CreateEntity()
 	e.AddComponent(components.NewPlayerComponent(uuid.New(), "warrior", "Wren", false))
 	e.AddComponent(components.NewTransformComponent(x, y))
 	e.AddComponent(components.NewHealthComponent(150, 150))
-	e.AddComponent(components.NewManaComponent(100, 100))
+	e.AddComponent(components.NewResourceComponent(components.ResourceStamina, 100, 100, 20))
 	e.AddComponent(components.NewCombatComponent(12, 10, 1, 1.0))
 	e.AddComponent(components.NewStatsComponent(8, 8, 9, 9))
 	e.AddComponent(components.NewEquipmentComponent(nil))
@@ -46,9 +47,9 @@ func health(e *ecs.Entity) int {
 	return c.(*components.HealthComponent).CurrentHealth
 }
 
-func mana(e *ecs.Entity) int {
-	c, _ := e.GetComponent(ecs.ComponentTypeMana)
-	return c.(*components.ManaComponent).CurrentMana
+// pool is the delver's class resource, as the wire reads it.
+func pool(e *ecs.Entity) int {
+	return resourceOf(e).Current
 }
 
 func intend(e *ecs.Entity, intent components.AttackIntent) {
@@ -115,16 +116,17 @@ func TestCombatSystem_TargetedAttack_OutOfRangeStartsNoCooldown(t *testing.T) {
 	assert.Equal(t, 1000-8, health(target))
 }
 
-func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNoMana(t *testing.T) {
+func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNothing(t *testing.T) {
 	tests := []struct {
 		name     string
 		intent   components.AttackIntent
 		cooldown float64
-		manaCost int
+		cost     int
 	}{
 		{"targeted attack", components.AttackIntent{Kind: components.AttackTargeted}, 0.5, 0},
 		{"slash", components.AttackIntent{Kind: components.AttackSlash, TargetX: 200, TargetY: 100}, 0.25, 0},
-		{"triple arrow", components.AttackIntent{Kind: components.AttackTripleArrow, TargetX: 200, TargetY: 100}, 0.4, 10},
+		{"cut", components.AttackIntent{Kind: components.AttackCut, TargetX: 200, TargetY: 100}, 0.25, 0},
+		{"shadow shot", components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 200, TargetY: 100}, 1.2, 40},
 	}
 
 	for _, tt := range tests {
@@ -140,14 +142,14 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNoMana(t *testing.T) {
 
 			intend(attacker, intent)
 			combat.Update(tickSeconds, em.GetAllEntities(), nil)
-			hpAfterFirst, mpAfterFirst, shotsAfterFirst := health(target), mana(attacker), len(projectiles(em))
-			assert.Equal(t, 100-tt.manaCost, mpAfterFirst)
+			hpAfterFirst, mpAfterFirst, shotsAfterFirst := health(target), pool(attacker), len(projectiles(em))
+			assert.Equal(t, 100-tt.cost, mpAfterFirst)
 
 			// inside the cooldown: nothing at all happens
 			intend(attacker, intent)
 			combat.Update(tickSeconds, em.GetAllEntities(), nil)
 			assert.Equal(t, hpAfterFirst, health(target))
-			assert.Equal(t, mpAfterFirst, mana(attacker), "a refused request spends no MP")
+			assert.Equal(t, mpAfterFirst, pool(attacker), "a refused request spends nothing")
 			assert.Equal(t, shotsAfterFirst, len(projectiles(em)))
 
 			// once the cooldown has run out the request goes through again
@@ -156,8 +158,8 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNoMana(t *testing.T) {
 			}
 			intend(attacker, intent)
 			combat.Update(tickSeconds, em.GetAllEntities(), nil)
-			assert.Equal(t, 100-2*tt.manaCost, mana(attacker))
-			if tt.manaCost == 0 {
+			assert.Equal(t, 100-2*tt.cost, pool(attacker))
+			if tt.cost == 0 {
 				assert.Less(t, health(target), hpAfterFirst)
 			} else {
 				assert.Greater(t, len(projectiles(em)), shotsAfterFirst)
@@ -166,17 +168,18 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNoMana(t *testing.T) {
 	}
 }
 
-func TestCombatSystem_NotEnoughManaDoesNothing(t *testing.T) {
+func TestCombatSystem_NotEnoughResourceDoesNothing(t *testing.T) {
 	em := ecs.NewEntityManager()
 	attacker := delver(em, 100, 100)
-	mc, _ := attacker.GetComponent(ecs.ComponentTypeMana)
-	mc.(*components.ManaComponent).CurrentMana = 9
+	resourceOf(attacker).Current = 39 // one short of Shadow Shot's 40
+	cooldowns, _ := attacker.GetComponent(ecs.ComponentTypeCooldown)
 
-	intend(attacker, components.AttackIntent{Kind: components.AttackTripleArrow, TargetX: 200, TargetY: 100})
+	intend(attacker, components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 200, TargetY: 100})
 	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
 
-	assert.Equal(t, 9, mana(attacker))
+	assert.Equal(t, 39, pool(attacker))
 	assert.Empty(t, projectiles(em))
+	assert.Zero(t, cooldowns.(*components.CooldownComponent).Remaining[components.AttackShadowShot], "a refused cast starts no cooldown")
 }
 
 func TestCombatSystem_EquipmentChangesTheNextHit(t *testing.T) {
@@ -291,6 +294,126 @@ func TestCombatSystem_SlashHitsEveryValidTargetInTheCone(t *testing.T) {
 	assert.Equal(t, 150, health(attacker), "a slash never hits its own swinger")
 }
 
+// mercenary re-stats a delver to the merc's level-1 attributes: STR 7, AGI 7.
+func mercenary(em *ecs.EntityManager, x, y float64) *ecs.Entity {
+	e := delver(em, x, y)
+	e.AddComponent(components.NewStatsComponent(7, 7, 9, 9))
+	return e
+}
+
+// offAim is the point dist px from (x, y), deg degrees off a +x aim.
+func offAim(x, y, dist, deg float64) (float64, float64) {
+	rad := deg * math.Pi / 180
+	return x + dist*math.Cos(rad), y + dist*math.Sin(rad)
+}
+
+// A level-1 cut, unequipped, no crit, no mitigation: 12 × 1.8 × (1 + 7/20) =
+// 29.16 → 29. FS-MAMHR §Requirements 8.
+func TestCombatSystem_Cut_LevelOneUnequippedDeals29(t *testing.T) {
+	em := ecs.NewEntityManager()
+	merc := mercenary(em, 100, 100)
+	x, y := offAim(100, 100, 40, 20)
+	target := dummy(em, x, y)
+
+	intend(merc, components.AttackIntent{Kind: components.AttackCut, TargetX: 200, TargetY: 100})
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+	assert.Equal(t, 1000-29, health(target))
+}
+
+// The cut hits every valid target within 55 px inside 70° of the aim, none
+// outside; the slash keeps its own 120° and 50 px. FS-MAMHR §Requirements 6.
+func TestCombatSystem_ConeTakesItsArcAndReachFromTheRow(t *testing.T) {
+	tests := []struct {
+		name  string
+		kind  components.AttackKind
+		dist  float64 // px from the swinger
+		deg   float64 // degrees off the aim
+		inCut bool
+	}{
+		{"cut: dead ahead", components.AttackCut, 40, 0, true},
+		{"cut: 20° off", components.AttackCut, 40, 20, true},
+		{"cut: just inside the arc", components.AttackCut, 40, -34, true},
+		{"cut: just outside the arc", components.AttackCut, 40, 36, false},
+		{"cut: just inside reach", components.AttackCut, 54, 0, true},
+		{"cut: just past reach", components.AttackCut, 56, 0, false},
+		{"cut: behind", components.AttackCut, 40, 180, false},
+		{"slash: past its 50 px, inside the cut's 55", components.AttackSlash, 52, 0, false},
+		{"slash: just inside reach", components.AttackSlash, 49, 0, true},
+		{"slash: 55° off, outside the cut's arc", components.AttackSlash, 40, 55, true},
+		{"slash: just outside its 120°", components.AttackSlash, 40, 62, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			swinger := mercenary(em, 100, 100)
+			x, y := offAim(100, 100, tt.dist, tt.deg)
+			target := dummy(em, x, y)
+
+			intend(swinger, components.AttackIntent{Kind: tt.kind, TargetX: 200, TargetY: 100})
+			NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+			if tt.inCut {
+				assert.Less(t, health(target), 1000)
+			} else {
+				assert.Equal(t, 1000, health(target))
+			}
+		})
+	}
+}
+
+// Hybrid scaling: the cut scales on ((STR + worn STR) + (AGI + worn AGI)) / 2,
+// its half kept. FS-MAMHR §Requirements 7.
+func TestCombatSystem_Cut_ScalesOnTheMeanOfStrengthAndAgility(t *testing.T) {
+	tests := []struct {
+		name      string
+		strength  int
+		agility   int
+		worn      components.GearBonusComponent
+		wantScale float64
+		want      int
+	}{
+		{"STR 7 / AGI 7, unequipped", 7, 7, components.GearBonusComponent{}, 7, 29},                // 29.16
+		{"worn Strength alone raises it", 7, 7, components.GearBonusComponent{Strength: 2}, 8, 30}, // 30.24
+		{"worn Agility alone raises it", 7, 7, components.GearBonusComponent{Agility: 2}, 8, 30},   // 30.24
+		{"STR 7 / AGI 8 keeps the half", 7, 8, components.GearBonusComponent{}, 7.5, 30},           // 29.7
+		{"an odd worn sum keeps the half", 7, 7, components.GearBonusComponent{Strength: 1}, 7.5, 30},
+		{"Intelligence does nothing", 7, 7, components.GearBonusComponent{Intelligence: 9}, 7, 29},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			merc := delver(em, 100, 100)
+			merc.AddComponent(components.NewStatsComponent(tt.strength, tt.agility, 9, 9))
+			worn := tt.worn
+			merc.AddComponent(&worn)
+			target := dummy(em, 140, 100)
+
+			intend(merc, components.AttackIntent{Kind: components.AttackCut, TargetX: 200, TargetY: 100})
+			combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+			combat.Update(tickSeconds, em.GetAllEntities(), nil)
+
+			assert.Equal(t, tt.wantScale, combat.snapshot(merc, attackTable[components.AttackCut]).ScalingStat)
+			assert.Equal(t, 1000-tt.want, health(target))
+		})
+	}
+}
+
+// Worn attack speed shortens the cut's 0.25 s like every cooldown.
+func TestCombatSystem_Cut_WornAttackSpeedShortensItsCooldown(t *testing.T) {
+	em := ecs.NewEntityManager()
+	merc := mercenary(em, 100, 100)
+	merc.AddComponent(&components.GearBonusComponent{AttackSpeedPercent: 25})
+
+	intend(merc, components.AttackIntent{Kind: components.AttackCut, TargetX: 200, TargetY: 100})
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+	cc, _ := merc.GetComponent(ecs.ComponentTypeCooldown)
+	assert.InDelta(t, 0.2, cc.(*components.CooldownComponent).Remaining[components.AttackCut], 1e-9) // 0.25 / 1.25
+}
+
 func TestCombatSystem_ProjectileSkillsFireSnapshots(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -302,7 +425,7 @@ func TestCombatSystem_ProjectileSkillsFireSnapshots(t *testing.T) {
 	}{
 		{"arrow", components.AttackArrow, 1, components.DamagePhysical, 8, "arrow"},
 		{"fireball", components.AttackFireball, 1, components.DamageMagic, 9, "fireball"},
-		{"triple arrow", components.AttackTripleArrow, 3, components.DamagePhysical, 8, "arrow"},
+		{"shadow shot", components.AttackShadowShot, 1, components.DamagePhysical, 8, "shadow_shot"},
 		{"triple fireball", components.AttackTripleFireball, 3, components.DamageMagic, 9, "fireball"},
 	}
 
@@ -328,12 +451,44 @@ func TestCombatSystem_ProjectileSkillsFireSnapshots(t *testing.T) {
 					DamageType:       tt.dmgType,
 					Power:            17,
 					Coefficient:      attackTable[tt.kind].coefficient,
-					ScalingStat:      tt.stat,
+					ScalingStat:      float64(tt.stat),
 					CritChance:       CritChance(0.1),
 				}, p.Attack)
 			}
 		})
 	}
+}
+
+// Shadow Shot looses one slow, heavy bolt toward the aim: physical, Agility at
+// 3.2, 260 px/s over 650 px with a 10 px radius. FS-JTNPR §Requirements 1.
+func TestCombatSystem_ShadowShot_LoosesOneSlowHeavyBolt(t *testing.T) {
+	em := ecs.NewEntityManager()
+	archer := delver(em, 100, 100)
+
+	intend(archer, components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 100, TargetY: 400})
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+	var bolts []*ecs.Entity
+	for _, e := range em.GetAllEntities() {
+		if _, ok := e.GetComponent(ecs.ComponentTypeProjectile); ok {
+			bolts = append(bolts, e)
+		}
+	}
+	require.Len(t, bolts, 1)
+	pc, _ := bolts[0].GetComponent(ecs.ComponentTypeProjectile)
+	bolt := pc.(*components.ProjectileComponent)
+	assert.Equal(t, "shadow_shot", bolt.ProjectileType)
+	assert.Equal(t, 260.0, bolt.Speed)
+	assert.Equal(t, 650.0, bolt.MaxDistance)
+	assert.Equal(t, 10.0, bolt.Radius)
+	assert.Equal(t, components.DamagePhysical, bolt.Attack.DamageType)
+	assert.Equal(t, 3.2, bolt.Attack.Coefficient)
+	assert.Equal(t, scaleAgility, attackTable[components.AttackShadowShot].scaling)
+
+	vc, _ := bolts[0].GetComponent(ecs.ComponentTypeVelocity)
+	v := vc.(*components.VelocityComponent)
+	assert.InDelta(t, 0, v.VX, 1e-9, "flies straight at the aim")
+	assert.InDelta(t, 260, v.VY, 1e-9)
 }
 
 func TestCombatSystem_ImpactsResolveEvenAfterTheOwnerIsGone(t *testing.T) {
@@ -377,9 +532,9 @@ func TestCombatSystem_HealthNeverGoesBelowZero(t *testing.T) {
 	assert.Equal(t, 0, health(target))
 }
 
-// The dash costs mana on its cast and sets a charge going; the MovementSystem
+// The dash costs stamina on its cast and sets a charge going; the MovementSystem
 // carries it over the ticks after (dash_test.go), so the cast itself moves nothing.
-func TestCombatSystem_DashSetsAChargeGoingAndCostsMana(t *testing.T) {
+func TestCombatSystem_DashSetsAChargeGoingAndCostsStamina(t *testing.T) {
 	em := ecs.NewEntityManager()
 	attacker := delver(em, 100, 100)
 
@@ -389,7 +544,7 @@ func TestCombatSystem_DashSetsAChargeGoingAndCostsMana(t *testing.T) {
 	tc, _ := attacker.GetComponent(ecs.ComponentTypeTransform)
 	assert.Equal(t, 100.0, tc.(*components.TransformComponent).X)
 	assert.True(t, attacker.HasComponent(ecs.ComponentTypeDash))
-	assert.Equal(t, 90, mana(attacker))
+	assert.Equal(t, 75, pool(attacker))
 }
 
 func TestCombatSystem_IntentsAreConsumed(t *testing.T) {
@@ -413,17 +568,21 @@ func TestSkillAttackKind_FoldsAliases(t *testing.T) {
 		{"slash", components.AttackSlash, true},
 		{"melee_slash", components.AttackSlash, true},
 		{"strike", components.AttackSlash, true},
+		{"cut", components.AttackCut, true}, // its own row, not a slash
 		{"arrow", components.AttackArrow, true},
 		{"power_shot", components.AttackArrow, true},
 		{"shoot", components.AttackArrow, true},
 		{"fireball", components.AttackFireball, true},
-		{"triple_arrow", components.AttackTripleArrow, true},
-		{"multishot_arrow", components.AttackTripleArrow, true},
+		{"shadow_shot", components.AttackShadowShot, true},
+		{"triple_arrow", "", false}, // the volley is gone, not remapped
+		{"multishot_arrow", "", false},
 		{"triple_fireball", components.AttackTripleFireball, true},
 		{"multishot_fireball", components.AttackTripleFireball, true},
 		{"dash", components.AttackDash, true},
 		{"sprint", components.AttackDash, true},
-		{"attack", "", false}, // the targeted attack is its own action, not a skill
+		{"parry", components.AttackParry, true}, // the merc's stance, no table row
+		{"riposte", "", false},                  // armed on the server only
+		{"attack", "", false},                   // the targeted attack is its own action, not a skill
 		{"meteor", "", false},
 	}
 
@@ -615,4 +774,125 @@ func TestCombatSystem_KillCreditGoesToAGoneProjectileOwner(t *testing.T) {
 
 	require.Len(t, kills, 1)
 	assert.Equal(t, owner, kills[0].KillerMemberID)
+}
+
+// Only abilities cost; left-click attacks and monster strikes are free.
+// FS-8AY7S §Requirements 8–9.
+func TestAttackCost_OnlyAbilitiesCost(t *testing.T) {
+	tests := []struct {
+		kind components.AttackKind
+		want int
+	}{
+		{components.AttackDash, 25},
+		{components.AttackTripleFireball, 15},
+		{components.AttackShadowShot, 40},
+		{components.AttackSlash, 0},
+		{components.AttackArrow, 0},
+		{components.AttackFireball, 0},
+		{components.AttackTargeted, 0},
+		{components.AttackMonsterStrike, 0},
+		{components.AttackParry, 0}, // free: the whiff lockout limits it
+		{components.AttackCut, 0},
+		{components.AttackRiposte, 3}, // every parry charge; armed only, never cast
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.kind), func(t *testing.T) {
+			assert.Equal(t, tt.want, AttackCost(tt.kind))
+		})
+	}
+}
+
+// A cast is affordable when current ≥ cost: one short does nothing at all, and
+// exactly enough pays exactly the cost and leaves 0 over it. FS-8AY7S
+// §Requirements 10; §Edge States "Unaffordable press", "Exactly enough".
+func TestCombatSystem_DashIsAffordableFromItsExactCost(t *testing.T) {
+	tests := []struct {
+		name        string
+		stamina     int
+		wantDash    bool
+		wantStamina int
+	}{
+		{"one short", 24, false, 24},
+		{"exactly enough", 25, true, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			warrior := delver(em, 100, 100)
+			resourceOf(warrior).Current = tt.stamina
+
+			intend(warrior, components.AttackIntent{Kind: components.AttackDash, TargetX: 400, TargetY: 100})
+			NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+			assert.Equal(t, tt.wantDash, dashing(warrior), "charge started")
+			assert.Equal(t, tt.wantStamina, pool(warrior))
+			assert.Equal(t, tt.wantDash, cooldownOf(warrior, components.AttackDash) > 0, "cooldown set")
+		})
+	}
+}
+
+// A full stamina pool holds four dashes back to back; the fifth is refused
+// until regen covers its cost. FS-8AY7S §Requirements 3, 5, 9–10.
+func TestCombatSystem_FullStaminaHoldsFourDashes(t *testing.T) {
+	em := ecs.NewEntityManager()
+	warrior := delver(em, 100, 100)
+	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+	regen := NewResourceSystem()
+	dashCooldown := attackTable[components.AttackDash].cooldown
+
+	// waitOut runs the world's ticks with no cast until the dash is off cooldown
+	waitOut := func() {
+		for cooldownOf(warrior, components.AttackDash) > 0 {
+			combat.Update(worldTick, em.GetAllEntities(), nil)
+		}
+	}
+
+	// pinned between casts so the four come out of the full pool alone
+	for i := range 4 {
+		before := pool(warrior)
+		dashToward(warrior, 400, 100)
+		combat.Update(worldTick, em.GetAllEntities(), nil)
+		require.Equal(t, before-25, pool(warrior), "dash %d paid", i+1)
+		waitOut()
+	}
+	require.Equal(t, 0, pool(warrior))
+
+	dashToward(warrior, 400, 100)
+	combat.Update(worldTick, em.GetAllEntities(), nil)
+	assert.Equal(t, 0, pool(warrior), "the fifth is refused")
+	assert.Zero(t, cooldownOf(warrior, components.AttackDash))
+
+	// 38 ticks, just over 1.25 s of regen at 20/s, covers it
+	for range 38 {
+		regen.Update(worldTick, em.GetAllEntities())
+	}
+	require.Equal(t, 25, pool(warrior))
+	dashToward(warrior, 400, 100)
+	combat.Update(worldTick, em.GetAllEntities(), nil)
+	assert.Equal(t, 0, pool(warrior), "regen covered the fifth")
+	assert.InDelta(t, dashCooldown, cooldownOf(warrior, components.AttackDash), 1e-9)
+}
+
+// A targeted cast that resolves to nothing costs nothing, whatever its row's
+// cost. No targeted row costs today, so one is stood in for the test.
+// FS-8AY7S §Requirements 10.
+func TestCombatSystem_TargetedCastAtNothingCostsNothing(t *testing.T) {
+	const costed components.AttackKind = "test_costed_strike"
+	attackTable[costed] = attackSpec{
+		delivery: deliverTargeted, damageType: components.DamagePhysical, scaling: scaleStrength,
+		coefficient: 1, cost: 30, cooldown: 0.5, reach: targetedAttackRange,
+	}
+	t.Cleanup(func() { delete(attackTable, costed) })
+
+	em := ecs.NewEntityManager()
+	attacker := delver(em, 100, 100)
+	farTarget := dummy(em, 900, 100)
+
+	intend(attacker, components.AttackIntent{Kind: costed, TargetEntityID: farTarget.ID})
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+	assert.Equal(t, 100, pool(attacker))
+	assert.Zero(t, cooldownOf(attacker, costed))
 }
