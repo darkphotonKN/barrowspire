@@ -155,7 +155,16 @@ the test above, because most of those things cannot be acted on.
   chains, lamp posts, furniture, trees. Interactables have one baked frame per state (door
   locked/unlocked/open, switch inactive/active, chest closed/open).
 - The world reads as a **torch-lit crypt:** pooled warm light, deep shadow, with shading
-  baked into the art so it looks lit *before* any light-map is applied.
+  baked into the art so it looks lit *before* any light-map is applied. This holds for the hub
+  and for every run in the Spire.
+- **Field worlds may be daylit instead** (FS-X2F2H; Gentle Meadows first). A field is open
+  country outside the Spire: grass, sparse trees and rocks, with a horizon backdrop (sky and
+  distant hills) behind the map's far edge. Its daylight may be as warm as a cozy meadow or as
+  dim as an overcast wood, but never bright high-fantasy: the ground stays low-key and
+  desaturated, mixed from `BARROW` tokens like every other surface, and shading is still baked
+  into the art first. Grass is ground material, not a marker: a green field never carries the
+  *safe* channel's meaning, and pickups, allies and hostiles still read against it.
+  *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
 
 ---
 
@@ -164,15 +173,18 @@ the test above, because most of those things cannot be acted on.
 - **Authored in code, never sourced**
   ([ADR-0021](../../docs/adr/0021-characters-are-authored-in-code-not-sourced.md)). Characters and
   creatures are modelled, skinned, textured and hand-animated inside the bake tool on one shared
-  humanoid rig. No stock model or animation is used; the art is Barrowspire's own.
+  rig: humanoid, with a quadruped variant for field wildlife. No stock model or animation is
+  used; the art is Barrowspire's own.
 - **Fidelity bar: Ultima Online.** Believable proportions, readable silhouettes, textured gear.
   Not photoreal, and not blocky cartoon mannequins.
 - **Each gets 8 directions** and idle, walk, attack and death animations, baked from that rig.
-  Creature variants change proportions and add bones (tail, jaw, hunch).
+  Creature variants change proportions and add bones (tail, jaw, hunch), or lay the spine
+  horizontal on four legs.
 - **Player:** cloaked/armored figure with a lantern or torch; strong silhouette. The
   class reads at a glance: knight, archer, wizard.
 - **Enemies:** barrow/undead themes — skeletons, wraiths, revenants — for fodder and brutes;
-  a boss may also be an infernal demon the Spire summons. Dark palette; **glowing eyes as the
+  a boss may also be an infernal demon the Spire summons. In field worlds only, fodder and
+  brutes may also be living animals (the boar first). Dark palette; **glowing eyes as the
   readable accent.** Full rules under *Enemy design language* below.
 - **Hub folk and menus use the same cast.** Villagers, function NPCs, and every character shown
   in a menu (the roster, character creation, the loadout) come from baked sheets on the same
@@ -190,7 +202,8 @@ troll already baked are the reference pair.
 
 - **Undead and barrow-born only, for fodder and brutes.** Skeletons, ghouls, wraiths, revenants,
   barrow-trolls, grave-hounds. Things that were buried, or that live where the buried are. No
-  demons below boss tier, no sci-fi, no cartoon monsters.
+  demons below boss tier, no sci-fi, no cartoon monsters. This is the Spire's rule and it holds
+  unchanged for every run; field worlds carry the one exception below.
 - **Boss-tier exception: infernal beings the Spire summons.** A demon may appear, but only as a
   boss. It reads as something the Spire's power has called up from beyond the barrow dead, and it
   is never licence for demon fodder or demon brutes. *(Amended at the owner's request,
@@ -200,26 +213,46 @@ troll already baked are the reference pair.
   or more saturated than it) is allowed as a boss's body material. Emissives stay ember red.
   Green is never an emissive and never a marker colour on a hostile, because arcane green means
   *safe*. *(Amended at the owner's request, 2026-10-08.)*
+- **Field-wildlife clause (field worlds only).** In a field world, fodder and brutes may be
+  living animals: the boar first. They are beasts of the country outside the Spire, never
+  cartoon animals and never pets. Their materials are natural hide, bristle, tusk and horn, taken
+  from the warm, desaturated end of `BARROW` (barrowBrown, barrowDeep, umber, charcoal for hide
+  and bristle; the bone mix of vellum and vellumDark for tusk and horn). Never bright, and never
+  amber, which means *interactable*. A living animal never appears in a run.
+  *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
+- **Quadruped rig variant (field wildlife).** A creature variant of the shared rig may be a
+  quadruped: a horizontal spine, four legs, and head and tail chains. It is still authored in
+  code in the bake tool (ADR-0021), still baked in 8 directions with idle, walk, attack and
+  death, and still goes through the same contact-sheet approval. Four legs break the human line
+  by build; the 1x colourless outline test below still applies.
+  *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
 - **Silhouette breaks the human line.** A player stands upright and symmetrical. A hostile never
   does: it is hunched, too thin, too long in the arm, asymmetric (one arm heavier, a broken
   jaw), or wears rags that trail. Test at 1x: with the colour removed, the outline alone must say
   "not a player".
 - **Size is a threat tier.** Fodder is 0.85–1.0x player height. A brute is 1.3–1.5x and wider.
   A boss is at least 1.8x. The tier reads before any name plate does.
+  A quadruped is measured against the player by body length along the shoulder line, not by
+  standing height, and takes the same multiples. Quadruped fodder stays shorter in body length
+  than a player is tall, so it reads smaller than a player; its shoulder sits well below the
+  player's. *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
 - **Materials are grave materials.** Bone, grave-rot skin, bog hide, rust, rotted linen, rag,
   corroded bronze. Take colours from the cold, desaturated end of `BARROW` (charcoal, slate,
   necrotic, barrowBrown, bone). Never bright, never clean metal, never a player's heraldic red.
+  Field wildlife takes its own natural materials under the field-wildlife clause above.
 - **Eyes are the accent, and they are in the hostile channel.** Glowing eyes use an ember red
   from the oxblood family (the *damage / hostile* channel above). Never amber, which means
   *interactable*, and never arcane green, which means *safe*. Eyes are the one emissive part of a
   hostile. They are marker material (FS-2325V §C.9): drawn above the light-map, so darkness never
-  dims them.
+  dims them. This holds for field wildlife too: a boar's eyes are the same ember red, its one
+  emissive, so a boar in daylight still reads hostile and never reads as livestock.
+  *(Field wildlife amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
 - **Motion tells intent.** Fodder moves jerkily and low. Brutes move heavily and slowly. Every
   attack has a readable wind-up, a pull-back or a raised arm, held long enough to see before it
   lands. An attack that cannot be read before it hits is unfair, not scary.
 - **Deaths are final and distinct from a player's fall.** Undead collapse: bones scatter, a
   wraith unravels, a brute topples with weight. No gore and no blood spray. The barrow keeps its
-  dead quietly.
+  dead quietly. A living animal falls onto its side and goes still, with the same restraint.
 - **Same pipeline as everyone.** Built on the shared rig in the bake tool (ADR-0021), with 8
   directions and idle, walk, attack and death, on the same contact-sheet approval as players.
 
@@ -233,7 +266,11 @@ troll already baked are the reference pair.
   camera-fixed multiply layer filled with the world's ambient, with additive radial pools for
   each light source in view (torch sconce, brazier, lit window, lamp post, the player's own
   torch). Sources flicker on their own clocks.
-- **Ambient is fixed per world:** warm dusk in the hub, dark barrow in a run.
+- **Ambient is fixed per world:** warm dusk in the hub, dark barrow in a run, and daylight in a
+  daylit field world (from a cozy meadow's warmth to an overcast wood's gloom, fixed per field).
+  A daylit field keeps the light-map and the vignette; its light sources simply pool less
+  against a brighter ambient. *(Daylit fields amended at the owner's approval of FS-X2F2H,
+  2026-10-29.)*
 - The static vignette stays, above the light-map and below the HUD.
 - Flame halos draw just above the light-map, so a flame reads as the source of its own pool. A
   flame under a roof lights the ground around it but shows no halo until the roof is off.
@@ -271,6 +308,11 @@ Marker colours are palette tokens like any other.
 dusk and the run its dark barrow. Lifting cannot work anyway — any multiply darkening lowers
 contrast, and against the baked ground even full light under the vignette reaches only about
 1.8:1. Ultima Online solves it the same way, with overlays that ignore lighting.
+
+**Daylit fields keep the floor.** A daylit field's daylight is that field's look, not a lift for
+readability. The floor holds there unchanged: markers draw above the light-map and keep at least
+3:1 against the field's own lit ground at the canvas edge, and the gameplay accent channels mean
+what they mean in every other world. *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
 
 ---
 
