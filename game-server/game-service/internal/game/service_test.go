@@ -9,6 +9,7 @@ import (
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontypes "github.com/darkphotonKN/barrowspire-server/common/types"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -124,7 +125,7 @@ func TestFormatMatchData(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := svc.formatMatchData(sessionID, startedAt, endedAt, tc.players, nil)
+			got, err := svc.formatMatchData(sessionID, startedAt, endedAt, tc.players, nil, commonconstants.WorldTypeRun)
 			assert.NoError(t, err)
 			assert.NotNil(t, got)
 

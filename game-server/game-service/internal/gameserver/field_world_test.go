@@ -40,7 +40,7 @@ type settleSpy struct {
 	visits []game.FieldVisit
 }
 
-func (s *settleSpy) Settle(_ context.Context, visit game.FieldVisit) error {
+func (s *settleSpy) PublishFieldVisit(_ context.Context, visit game.FieldVisit) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
