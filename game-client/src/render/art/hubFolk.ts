@@ -19,12 +19,16 @@ import type { CharacterLook } from "./character";
 /** The fallback: an ordinary villager in the trousers build's first palette. */
 export const DEFAULT_RESIDENT_SHEET = "folk_resident_trousers";
 
-/** Each function NPC's own character. */
+/**
+ * Each function NPC's own character. The Warden answers to `delve` and `storyteller` alike while
+ * the server renames his function, so he is himself whichever side ships first (FS-0XMCP R25).
+ */
 export const FUNCTION_NPC_SHEETS: Record<
   Exclude<NPCState["function"], "">,
   string
 > = {
   delve: "folk_spirewarden",
+  storyteller: "folk_spirewarden",
   storekeeper: "folk_quartermaster",
 };
 

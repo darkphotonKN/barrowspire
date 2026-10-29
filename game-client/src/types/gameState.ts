@@ -174,12 +174,27 @@ export interface ProjectileState {
   velocity: { vx: number; vy: number };
 }
 
+/**
+ * A place in the hub a player walks into to go somewhere (FS-0XMCP §Requirements 6). Its position
+ * and range are the server's: every gameplay decision about a gate reads them from here.
+ */
+export interface GateState {
+  entity_id: UUID;
+  destination: "spire" | "forest" | "meadows";
+  position: Position;
+  /** World px from `position` within which a player is at the gate. */
+  range: number;
+}
+
 // Complete game state received from server
-/** One of the hub's residents. `function` is empty for an ambient NPC. */
+/**
+ * One of the hub's residents. `function` is empty for an ambient NPC. `delve` is the Warden's
+ * function until the server renames it `storyteller` (FS-0XMCP §Requirements 25).
+ */
 export interface NPCState {
   entity_id: UUID;
   name: string;
-  function: "" | "delve" | "storekeeper";
+  function: "" | "delve" | "storyteller" | "storekeeper";
   /** How they look, e.g. "green_skirt". Empty for a function NPC. */
   appearance?: string;
   position: Position;
@@ -221,6 +236,8 @@ export interface ClientGameState {
   escape_doors: EscapeDoorState[]; // Escape doors with lock state
   switches: SwitchState[]; // Switches/buttons for puzzles
   npcs?: NPCState[]; // The hub's residents; absent in a run
+  /** The hub's gates (FS-0XMCP §Requirements 6); absent in a run. */
+  gates?: GateState[];
   projectiles?: ProjectileState[]; // Active projectiles in session
   monsters?: MonsterState[]; // A run's monsters, corpses included; absent in the hub
   /** The party's floor, 1-based (FS-F6F88 req 26). Run only; absent in the hub. */

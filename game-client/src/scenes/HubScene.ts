@@ -6,10 +6,13 @@ import { CANVAS_FONT, palette, shade, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
 import {
   ClientGameState,
+  GateState,
   NPCState,
   PlayerState,
+  Position,
   WallState,
 } from "@/types/gameState";
+import { gateAt, gateEdges } from "./hubGates";
 import { BARROW_HEX } from "@/utils/theme";
 import { ProgressHud } from "@/ui/ProgressHud";
 import { MENU_DEPTH, menuOption, showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
@@ -225,6 +228,8 @@ export interface DialogueChoice {
   stays?: boolean;
   /** Whether it can be picked now, read live each time it is drawn or pressed; omitted means always. */
   enabled?: (state: { soloPending: boolean }) => boolean;
+  /** Picking it turns the page: the same speaker goes on with this, instead of the box closing. */
+  next?: () => Dialogue;
 }
 
 /** What an NPC says and offers: a line and its choices, any number of them. */
@@ -233,11 +238,15 @@ export interface Dialogue {
   choices: DialogueChoice[];
 }
 
+/** Who speaks when the player steps up to the Spire gate: the place, not a keeper. */
+const SPIRE_DOOR = "The Spire's door";
+
 /**
- * What the keeper of the way offers, from the hub's state as the dialogue opens (FS-NSV3D
- * §Requirements 1, 2, 4): alone, with company, or not yet. While the player is already queued
- * there is nothing to offer but the fact, so the dialogue says so and closes; the panel carries
- * the count. The one warning is the keeper's line: descending alone takes no second asking.
+ * What the Spire's door offers, from the hub's state as the panel opens (FS-NSV3D §Requirements
+ * 1, 2, 4; FS-0XMCP §Requirements 8, 9): alone, with company, or not yet. While the player is
+ * already queued there is nothing to offer but the fact, so the panel says so and closes; the
+ * corner panel carries the count. The one warning is the door's line: descending alone takes no
+ * second asking.
  */
 export function delveChoices(state: HubState): Dialogue {
   if (state.queued) {
@@ -247,7 +256,7 @@ export function delveChoices(state: HubState): Dialogue {
     };
   }
   return {
-    line: "I keep the way into the Spire. Few return whole,\nand fewer return twice. Still set on descending?",
+    line: "The Spire's door stands open. Few return whole,\nand fewer return twice.",
     choices: [
       {
         id: "solo",
@@ -275,14 +284,48 @@ const RESIDENT_LINES = [
 ];
 
 /**
+ * How the Spire came, as the Warden tells it (FS-0XMCP §Requirements 24): the morning it stood
+ * there, what it took, and where its door is, so a newcomer who asks him first still finds the
+ * way in.
+ */
+export const WARDEN_TALE = [
+  "One morning the town woke to a tower\nstanding on the old barrow field. No one saw it rise.",
+  "It took the bold first, then the curious,\nthen the ones who went looking for them.",
+  "Its door stands at the north of town.\nWalk up to it when you are ready, and not before.",
+];
+
+/**
+ * One passage of the Warden's tale: *Go on* turns to the next, *Farewell* ends it, and the last
+ * offers only *Farewell*. No memory: every telling starts at the first passage. He offers no
+ * queue, queued or not; the Spire's door does that.
+ */
+function wardenTale(passage = 0): Dialogue {
+  const farewell: DialogueChoice = { id: "farewell", label: "Farewell", register: "cancel" };
+  const last = passage >= WARDEN_TALE.length - 1;
+  return {
+    line: WARDEN_TALE[Math.min(passage, WARDEN_TALE.length - 1)],
+    choices: last
+      ? [farewell]
+      : [
+          { id: "on", label: "Go on", register: "actionable", next: () => wardenTale(passage + 1) },
+          farewell,
+        ],
+  };
+}
+
+/**
  * What each function NPC says and offers, from the hub's state as they are spoken to.
  *
  * The dialogue itself is one shape — a line and a row of choices — so adding an NPC, or a
  * choice, is adding to this table, not another branch in the scene. An NPC missing from
  * it is an ambient resident, who has a line and nothing to offer.
+ *
+ * The Warden answers to `delve` and `storyteller` alike while the server renames his function
+ * (FS-0XMCP §Requirements 25); `delve` goes once the server sends `storyteller`.
  */
 const NPC_DIALOGUE: Record<string, (state: HubState) => Dialogue> = {
-  delve: delveChoices,
+  delve: () => wardenTale(),
+  storyteller: () => wardenTale(),
   storekeeper: () => ({
     line: "Steel rusts, and the barrow keeps what it takes.\nSee to your gear before you go down.",
     choices: [
@@ -406,6 +449,13 @@ export class HubScene extends Phaser.Scene {
     pick: (index: number) => void;
     retone: () => void;
   };
+  /** The open dialogue is the Spire door's panel, which walking out of the gate closes. */
+  private doorOpen = false;
+  /**
+   * The gate the player stands in, by their last server-reported position and the state's gates
+   * (FS-0XMCP §Requirements 10, 22): the enter and leave edges are read against it.
+   */
+  private atGate?: GateState;
   /** 1, 2, 3: one per actionable choice when a dialogue offers more than one. */
   private choiceKeys: Phaser.Input.Keyboard.Key[] = [];
   private confirmKey?: Phaser.Input.Keyboard.Key;
@@ -630,6 +680,8 @@ export class HubScene extends Phaser.Scene {
     // whatever its entity id, so neither survives the visit
     this.selfEntityID = null;
     this.followedSprite = undefined;
+    // the next visit steps into whatever gate it starts in
+    this.atGate = undefined;
     this.leavePending = false;
     this.soloPending = false;
     this.leavingHub = false;
@@ -679,9 +731,9 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * Opens a dialogue when the player is standing close enough and presses to
-   * talk. Walking past never does anything: joining the queue takes a choice,
-   * not a collision. FS-29KSH §Requirements 24.
+   * Opens a dialogue when the player presses to talk: the Spire door's panel inside the Spire
+   * gate (FS-0XMCP §Requirements 10), otherwise whoever stands close enough. Joining the queue
+   * still takes a choice, never a collision. FS-29KSH §Requirements 24.
    */
   private offerConversation(): void {
     if (!this.interactKey) return;
@@ -710,6 +762,12 @@ export class HubScene extends Phaser.Scene {
     }
 
     if (!Phaser.Input.Keyboard.JustDown(this.interactKey)) return;
+
+    // E inside the gate reopens a panel dismissed there
+    if (this.atGate?.destination === "spire") {
+      this.openDoor();
+      return;
+    }
 
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
     if (!self) return;
@@ -1287,6 +1345,8 @@ export class HubScene extends Phaser.Scene {
       this.selfEntityID = state.current_player.entity_id;
       const self = this.views.get(this.selfEntityID);
       if (self) this.keepCameraOn(self.sprite);
+
+      this.followGates(state.current_player.position, state.gates ?? []);
     }
 
     this.renderStructures(state.walls ?? []);
@@ -1308,6 +1368,29 @@ export class HubScene extends Phaser.Scene {
       view.legs.destroy();
       this.views.delete(entityID);
     }
+  }
+
+  /**
+   * The Spire gate's trigger (FS-0XMCP §Requirements 8, 10, 22), run on each hub state with the
+   * player's server-reported position and the server's gates, so the panel opens only where the
+   * server agrees the player is at the door. Stepping in opens the door's panel once, unless the
+   * Esc menu or another dialogue is up (that step is spent: E or stepping out and in opens it
+   * after). Stepping out closes the door's panel and nothing else; a start_solo already sent is
+   * still answered as before. Field gates are found here too, and do nothing yet.
+   */
+  private followGates(pos: Position, gates: readonly GateState[]): void {
+    const now = gateAt(pos, gates);
+    const { entered, left } = gateEdges(this.atGate, now);
+    this.atGate = now;
+
+    if (left?.destination === "spire" && this.doorOpen) this.closeDialogue();
+    if (entered?.destination === "spire" && !this.menu && !this.dialogue) this.openDoor();
+  }
+
+  /** The Spire door's panel: today's delve choices, the door speaking (FS-0XMCP §Requirements 8, 9). */
+  private openDoor(): void {
+    this.showDialogue(SPIRE_DOOR, delveChoices({ queued: this.queued }));
+    this.doorOpen = true;
   }
 
   /**
@@ -1616,7 +1699,7 @@ export class HubScene extends Phaser.Scene {
    * dismisses; with nothing to confirm, every key dismisses.
    */
   private openDialogue(npc: NPCState): void {
-    const { line, choices } = NPC_DIALOGUE[npc.function]?.({ queued: this.queued }) ?? {
+    const dialogue = NPC_DIALOGUE[npc.function]?.({ queued: this.queued }) ?? {
       line: RESIDENT_LINES[
         // stable per resident, so they do not change their mind each time
         [...npc.entity_id].reduce((sum, c) => sum + c.charCodeAt(0), 0) %
@@ -1626,7 +1709,11 @@ export class HubScene extends Phaser.Scene {
       // that both close the box is a decision the player does not have.
       choices: [{ id: "leave", label: "Leave", register: "actionable" }],
     };
+    this.showDialogue(npc.name, dialogue);
+  }
 
+  /** Draws a dialogue: who speaks, their line, and a row of choices; a choice with `next` turns the page. */
+  private showDialogue(speakerName: string, { line, choices }: Dialogue): void {
     const { width, height } = this.cameras.main;
     const panel = this.add.graphics();
     panel.fillStyle(BARROW_HEX.charcoal, 0.96);
@@ -1635,7 +1722,7 @@ export class HubScene extends Phaser.Scene {
     panel.strokeRect(-300, -90, 600, 180);
 
     const speaker = this.add
-      .text(0, -60, npc.name, {
+      .text(0, -60, speakerName, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "16px",
         color: toCss(BARROW_HEX.brassBright),
@@ -1656,6 +1743,11 @@ export class HubScene extends Phaser.Scene {
       choice.enabled?.({ soloPending: this.soloPending }) ?? true;
     const pick = (choice: DialogueChoice) => {
       if (!enabled(choice)) return;
+      if (choice.next) {
+        this.closeDialogue();
+        this.showDialogue(speakerName, choice.next());
+        return;
+      }
       if (!choice.stays) this.closeDialogue();
       choice.act?.(this);
       // what was picked may have changed what can be picked
@@ -1708,6 +1800,7 @@ export class HubScene extends Phaser.Scene {
     this.dialogue?.destroy();
     this.dialogue = undefined;
     this.dialogueChoices = undefined;
+    this.doorOpen = false;
   }
 
   /**
