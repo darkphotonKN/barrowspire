@@ -142,6 +142,13 @@ func (s *service) ProcessItemCreated(ctx context.Context, payload *pb.ItemCreate
 }
 
 func (s *service) ProcessGameEnded(ctx context.Context, payload *pb.MatchEndedEvent) error {
+	// A field visit is not a match: no game result to announce (FS-X2F2H R45,
+	// ADR-0031). An empty world type is a run.
+	if payload.GetWorldType() == commonconstants.WorldTypeField {
+		slog.Info("Skipping field visit: not a match", "session_id", payload.SessionId)
+		return nil
+	}
+
 	// Notify all players about the game result
 	for _, player := range payload.Players {
 		playerID, err := uuid.Parse(player.MemberId)

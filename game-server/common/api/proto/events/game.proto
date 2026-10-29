@@ -11,6 +11,10 @@ message MatchEndedEvent {
   google.protobuf.Timestamp match_started_at = 2;
   google.protobuf.Timestamp match_ended_at = 3;
   repeated PlayerMatchResult players = 4;
+  // FS-X2F2H R43, ADR-0031: the kind of world that ended, "run" or "field".
+  // Empty reads as "run" (events written before fields existed). A "field"
+  // event is one player's visit to a field world, not a match.
+  string world_type = 5;
 }
 
 message PlayerMatchResult {

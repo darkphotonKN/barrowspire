@@ -91,6 +91,11 @@ func (s *service) ProcessMatchCompleted(ctx context.Context, eventID uuid.UUID, 
 		return err
 	}
 
+	if isFieldVisit(req) {
+		// nothing reached the leaderboard, so its cache stays valid
+		return nil
+	}
+
 	// version increment invalidates the cached leaderboard; no deletion needed,
 	// the short TTL is enough. The event is already committed, so a slow or
 	// failed bump is only logged, under its own deadline so it cannot stall the
@@ -122,6 +127,11 @@ func (s *service) applyMatchEnded(ctx context.Context, tx *sqlx.Tx, eventID uuid
 		return commonconstants.ErrAlreadyProcessed
 	}
 
+	if isFieldVisit(req) {
+		slog.Info("Skipping field visit: not a match", "event_id", eventID, "session_id", req.SessionId)
+		return nil
+	}
+
 	sessionID, err := uuid.Parse(req.SessionId)
 	if err != nil {
 		return fmt.Errorf("session id %q: %w: %w", req.SessionId, commonconstants.ErrUUIDCouldNotBeParsed, err)
@@ -133,6 +143,13 @@ func (s *service) applyMatchEnded(ctx context.Context, tx *sqlx.Tx, eventID uuid
 		}
 	}
 	return nil
+}
+
+// isFieldVisit reports whether a match.ended event is one player's visit to a
+// field world rather than a run. A visit is not a match: it counts no game,
+// win or history (FS-X2F2H R44, ADR-0031). An empty world type is a run.
+func isFieldVisit(req *pb.MatchEndedEvent) bool {
+	return req.GetWorldType() == commonconstants.WorldTypeField
 }
 
 // applyPlayerResult writes one player's stats, leaderboard row and match
