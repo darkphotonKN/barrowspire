@@ -43,7 +43,7 @@ func TestAddPlayer_SeatsAResourceTheWireCarries(t *testing.T) {
 	}{
 		{"warrior", map[string]any{"kind": "stamina", "current": float64(100), "max": float64(100), "ability_cost": float64(25)}},
 		{"mage", map[string]any{"kind": "mana", "current": float64(150), "max": float64(150), "ability_cost": float64(15)}},
-		{"archer", map[string]any{"kind": "stamina", "current": float64(100), "max": float64(100), "ability_cost": float64(40)}},
+		{"archer", map[string]any{"kind": "stamina", "current": float64(100), "max": float64(100), "ability_cost": float64(90)}},
 		{"mercenary", map[string]any{"kind": "parry_charges", "current": float64(0), "max": float64(3), "ability_cost": float64(0)}},
 	}
 

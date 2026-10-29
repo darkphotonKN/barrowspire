@@ -2722,16 +2722,16 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
   });
 
   describe("short of stamina (FS-JTNPR req 18; edge state: Short of stamina)", () => {
-    const stamina = (current: number) => ({ kind: "stamina", current, max: 100, ability_cost: 40 });
+    const stamina = (current: number) => ({ kind: "stamina", current, max: 100, ability_cost: 90 });
     const withStamina = (s: ReturnType<typeof aimOnStage>, current: number) =>
       s.run.handleGameStateUpdate(partyState({ ...as("archer"), resource: stamina(current) } as ReturnType<typeof delver>));
     /** Whether the last aim line drawn was at full strength. */
     const lineReady = (draw: { mock: { calls: unknown[][] } }) => draw.mock.calls.at(-1)?.[2];
 
-    it("should send and play nothing on a ready-length, off-cooldown release at stamina 39, the line faint throughout", () => {
+    it("should send and play nothing on a ready-length, off-cooldown release at stamina 89, the line faint throughout", () => {
       const s = aimOnStage();
       const draw = vi.spyOn(AimLine.prototype, "draw");
-      withStamina(s, 39);
+      withStamina(s, 89);
       s.press();
       s.run.time.now = 1300;
       s.run.aimFrame();
@@ -2745,26 +2745,26 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
 
     it("should start no cooldown on a release it cancels for want of stamina", () => {
       const s = aimOnStage();
-      withStamina(s, 39);
+      withStamina(s, 89);
       s.press();
       s.release(1300);
       expect(s.run.abilityHud?.shown?.greyed).toBe(true);
-      withStamina(s, 40);
+      withStamina(s, 90);
       expect(s.run.abilityHud?.shown?.greyed).toBe(false);
       s.press();
       s.release(1600);
       expect(s.casts()).toHaveLength(1);
     });
 
-    it("should fire once stamina regained during the hold reaches 40", () => {
+    it("should fire once stamina regained during the hold reaches 90", () => {
       const s = aimOnStage();
       const draw = vi.spyOn(AimLine.prototype, "draw");
-      withStamina(s, 30);
+      withStamina(s, 80);
       s.press();
       s.run.time.now = 1300;
       s.run.aimFrame();
       expect(lineReady(draw)).toBe(false);
-      withStamina(s, 40);
+      withStamina(s, 90);
       s.run.aimFrame();
       expect(lineReady(draw)).toBe(true);
       s.release(1300);

@@ -194,7 +194,7 @@ func TestAddPlayer_SeatsEachClassWithItsOwnResource(t *testing.T) {
 		abilityCost int
 	}{
 		{"warrior", components.ResourceStamina, 100, 20, components.AttackDash, 25},
-		{"archer", components.ResourceStamina, 100, 20, components.AttackShadowShot, 40},
+		{"archer", components.ResourceStamina, 100, 20, components.AttackShadowShot, 90},
 		{"mage", components.ResourceMana, 150, 4, components.AttackTripleFireball, 15},
 	}
 

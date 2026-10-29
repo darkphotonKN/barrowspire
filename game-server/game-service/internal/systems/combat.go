@@ -211,11 +211,12 @@ var attackTable = map[components.AttackKind]attackSpec{
 		coefficient: 1.1, cooldown: 0.25,
 		projectile: projectileSpec{kind: "fireball", speed: 350, maxDistance: 500, radius: 12, spread: []float64{0}},
 	},
-	// the archer's ability: one slow, heavy bolt, paid in stamina. FS-JTNPR
-	// §Requirements 1, 5.
+	// the archer's ability: one slow, heavy bolt, paid in stamina. 90 of the
+	// archer's 100 nearly drains it, so the next waits on regen. FS-JTNPR
+	// §Requirements 1, 5 (amended 2026-10-30).
 	components.AttackShadowShot: {
 		delivery: deliverProjectile, damageType: components.DamagePhysical, scaling: scaleAgility,
-		coefficient: 3.2, cost: 40, cooldown: 1.2,
+		coefficient: 3.2, cost: 90, cooldown: 1.2,
 		projectile: projectileSpec{kind: "shadow_shot", speed: 260, maxDistance: 650, radius: 10, spread: []float64{0}},
 	},
 	components.AttackTripleFireball: {

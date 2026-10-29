@@ -126,7 +126,7 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNothing(t *testing.T) {
 		{"targeted attack", components.AttackIntent{Kind: components.AttackTargeted}, 0.5, 0},
 		{"slash", components.AttackIntent{Kind: components.AttackSlash, TargetX: 200, TargetY: 100}, 0.25, 0},
 		{"cut", components.AttackIntent{Kind: components.AttackCut, TargetX: 200, TargetY: 100}, 0.25, 0},
-		{"shadow shot", components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 200, TargetY: 100}, 1.2, 40},
+		{"shadow shot", components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 200, TargetY: 100}, 1.2, 90},
 	}
 
 	for _, tt := range tests {
@@ -142,14 +142,17 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNothing(t *testing.T) {
 
 			intend(attacker, intent)
 			combat.Update(tickSeconds, em.GetAllEntities(), nil)
-			hpAfterFirst, mpAfterFirst, shotsAfterFirst := health(target), pool(attacker), len(projectiles(em))
-			assert.Equal(t, 100-tt.cost, mpAfterFirst)
+			hpAfterFirst, shotsAfterFirst := health(target), len(projectiles(em))
+			assert.Equal(t, 100-tt.cost, pool(attacker))
+			// refilled so only the cooldown can refuse what follows; one Shadow
+			// Shot alone nearly drains the pool
+			resourceOf(attacker).Current = 100
 
 			// inside the cooldown: nothing at all happens
 			intend(attacker, intent)
 			combat.Update(tickSeconds, em.GetAllEntities(), nil)
 			assert.Equal(t, hpAfterFirst, health(target))
-			assert.Equal(t, mpAfterFirst, pool(attacker), "a refused request spends nothing")
+			assert.Equal(t, 100, pool(attacker), "a refused request spends nothing")
 			assert.Equal(t, shotsAfterFirst, len(projectiles(em)))
 
 			// once the cooldown has run out the request goes through again
@@ -158,7 +161,7 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNothing(t *testing.T) {
 			}
 			intend(attacker, intent)
 			combat.Update(tickSeconds, em.GetAllEntities(), nil)
-			assert.Equal(t, 100-2*tt.cost, pool(attacker))
+			assert.Equal(t, 100-tt.cost, pool(attacker))
 			if tt.cost == 0 {
 				assert.Less(t, health(target), hpAfterFirst)
 			} else {
@@ -171,13 +174,13 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNothing(t *testing.T) {
 func TestCombatSystem_NotEnoughResourceDoesNothing(t *testing.T) {
 	em := ecs.NewEntityManager()
 	attacker := delver(em, 100, 100)
-	resourceOf(attacker).Current = 39 // one short of Shadow Shot's 40
+	resourceOf(attacker).Current = 89 // one short of Shadow Shot's 90
 	cooldowns, _ := attacker.GetComponent(ecs.ComponentTypeCooldown)
 
 	intend(attacker, components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 200, TargetY: 100})
 	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
 
-	assert.Equal(t, 39, pool(attacker))
+	assert.Equal(t, 89, pool(attacker))
 	assert.Empty(t, projectiles(em))
 	assert.Zero(t, cooldowns.(*components.CooldownComponent).Remaining[components.AttackShadowShot], "a refused cast starts no cooldown")
 }
@@ -785,7 +788,7 @@ func TestAttackCost_OnlyAbilitiesCost(t *testing.T) {
 	}{
 		{components.AttackDash, 25},
 		{components.AttackTripleFireball, 15},
-		{components.AttackShadowShot, 40},
+		{components.AttackShadowShot, 90},
 		{components.AttackSlash, 0},
 		{components.AttackArrow, 0},
 		{components.AttackFireball, 0},
@@ -873,6 +876,35 @@ func TestCombatSystem_FullStaminaHoldsFourDashes(t *testing.T) {
 	combat.Update(worldTick, em.GetAllEntities(), nil)
 	assert.Equal(t, 0, pool(warrior), "regen covered the fifth")
 	assert.InDelta(t, dashCooldown, cooldownOf(warrior, components.AttackDash), 1e-9)
+}
+
+// One Shadow Shot nearly empties a full pool, and the next waits on regen
+// (about 4 s at 20/s), not on the 1.2 s cooldown. FS-JTNPR §Requirements 1,
+// 5 (amended 2026-10-30).
+func TestCombatSystem_ShadowShotNearlyEmptiesTheStaminaPool(t *testing.T) {
+	em := ecs.NewEntityManager()
+	archer := delver(em, 100, 100)
+	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+	regen := NewResourceSystem()
+	shoot := func() {
+		intend(archer, components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 400, TargetY: 100})
+		combat.Update(worldTick, em.GetAllEntities(), nil)
+	}
+
+	shoot()
+	require.Len(t, projectiles(em), 1)
+	require.Equal(t, 10, pool(archer), "one shot leaves 10 of 100")
+
+	// the archer asks for a shot every tick while the pool refills
+	elapsed := 0.0
+	for len(projectiles(em)) == 1 && elapsed < 10 {
+		regen.Update(worldTick, em.GetAllEntities())
+		elapsed += worldTick
+		shoot()
+	}
+
+	assert.Len(t, projectiles(em), 2)
+	assert.InDelta(t, 4.0, elapsed, 0.1, "the second shot waits for the pool to be almost full")
 }
 
 // A targeted cast that resolves to nothing costs nothing, whatever its row's
