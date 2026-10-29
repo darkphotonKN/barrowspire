@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { ActionType } from "@/assets/types/client";
-import { fieldRefusalCopy } from "./fieldRefusals";
+import { fieldRefusalCopy, lootRefusalCopy } from "./fieldRefusals";
+
+describe("lootRefusalCopy (FS-X2F2H §Requirements 33, 59, 60)", () => {
+  it("should give loot_reserved its own words, never the code", () => {
+    const copy = lootRefusalCopy("loot_reserved") ?? "";
+    expect(copy).not.toMatch(/_/);
+    expect(copy.length).toBeGreaterThan(0);
+  });
+
+  it("should say nothing for a refusal that is not a reserved pile's", () => {
+    expect(lootRefusalCopy("some_other_reason")).toBeUndefined();
+    expect(lootRefusalCopy(undefined)).toBeUndefined();
+  });
+});
 
 describe("fieldRefusalCopy (FS-X2F2H §Requirements 10, 14, 60)", () => {
   const enterReasons = [

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { palette } from "@/utils/canvasPalette";
-import { DROP_PILE, paintDropPile, type PileBrush } from "./dropPile";
+import {
+  DROP_PILE,
+  RESERVED_PILE_ALPHA,
+  paintDropPile,
+  pileAlpha,
+  reservedForOther,
+  type PileBrush,
+} from "./dropPile";
 
 /** A brush that records every colour it is given and every point it touches. */
 function recordingBrush() {
@@ -50,5 +57,29 @@ describe("paintDropPile", () => {
       expect(p.x).toBeLessThanOrEqual(DROP_PILE.width);
       expect(p.y).toBeLessThanOrEqual(DROP_PILE.height);
     }
+  });
+});
+
+describe("pileAlpha (FS-X2F2H §Requirements 59)", () => {
+  const pile = (reserved_for?: string) => ({ reserved_for });
+
+  it("should dim a pile reserved for someone else, and hold its pickup back", () => {
+    expect(reservedForOther(pile("killer"), "me")).toBe(true);
+    expect(pileAlpha(pile("killer"), "me")).toBe(RESERVED_PILE_ALPHA);
+    expect(RESERVED_PILE_ALPHA).toBeLessThan(1);
+  });
+
+  it("should draw a pile reserved for me as a run's, and offer it", () => {
+    expect(reservedForOther(pile("me"), "me")).toBe(false);
+    expect(pileAlpha(pile("me"), "me")).toBe(1);
+  });
+
+  it("should draw an open pile, and every run pile, as a run's", () => {
+    expect(reservedForOther(pile(), "me")).toBe(false);
+    expect(pileAlpha(pile(), "me")).toBe(1);
+  });
+
+  it("should hold back a reserved pile while it does not yet know who I am", () => {
+    expect(reservedForOther(pile("killer"), undefined)).toBe(true);
   });
 });

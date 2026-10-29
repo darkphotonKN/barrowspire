@@ -69,13 +69,19 @@ function fieldOnStage() {
     errors.set(action, cb as (info: unknown) => void);
   });
   vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+  const replies = new Map<string, (payload: unknown) => void>();
+  vi.spyOn(socketManager, "on").mockImplementation((action, cb) => {
+    replies.set(action, cb);
+  });
+  vi.spyOn(socketManager, "off").mockImplementation(() => {});
   const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
   field.listen();
+  const reply = (action: string, payload: unknown) => replies.get(action)?.(payload);
 
   const standAt = (pos: { x: number; y: number }) => field.followEntrance(pos, [ROAD_HOME]);
   const refuse = (reason: string) =>
     errors.get(ActionType.LeaveField)?.({ action: ActionType.LeaveField, error: "x", message: "x", reason });
-  return { field, texts, send, standAt, refuse };
+  return { field, texts, send, standAt, refuse, reply };
 }
 
 describe("FieldScene the road home (FS-X2F2H §Requirements 14, 57, 60)", () => {
@@ -226,6 +232,70 @@ describe("FieldScene monsters and the fight (FS-X2F2H §Requirements 56)", () =>
 
     expect(fight.release).toHaveBeenCalledTimes(1);
     expect((field as unknown as { fight?: unknown }).fight).toBeUndefined();
+  });
+});
+
+describe("FieldScene drop piles (FS-X2F2H §Requirements 33, 56, 59, 60)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const pileState = (world_type: string) => ({
+    world_type,
+    current_player: { id: "member-me", entity_id: "me", position: ARRIVAL, current_health: 100, level: 3 },
+    other_players: [],
+    walls: [],
+    gates: [ROAD_HOME],
+    containers: [
+      {
+        container_id: "c1",
+        entity_id: "p1",
+        kind: "drop_pile",
+        position: ARRIVAL,
+        is_open: true,
+        items: [{ entity_id: "i1" }],
+        reserved_for: "member-killer",
+      },
+    ],
+  });
+
+  const fakePiles = () => ({ sync: vi.fn(), follow: vi.fn(), refused: vi.fn(), release: vi.fn() });
+
+  it("should hand a field's piles to the shared pile drawing with my member id, and no other world's", () => {
+    const { field } = fieldOnStage();
+    const piles = fakePiles();
+    Object.assign(field, { piles });
+
+    field.renderState(pileState("run"));
+    expect(piles.sync).not.toHaveBeenCalled();
+
+    const state = pileState("field");
+    field.renderState(state);
+    expect(piles.sync).toHaveBeenCalledWith(state.containers, "member-me");
+    expect(piles.follow).toHaveBeenCalledWith(ARRIVAL);
+  });
+
+  it("should hand a refused pickup's reason to the piles, and ignore a pickup that went through", () => {
+    const { field, reply } = fieldOnStage();
+    const piles = fakePiles();
+    Object.assign(field, { piles });
+
+    reply(ActionType.Interact, { success: false, message: "x", reason: "loot_reserved" });
+    reply(ActionType.Interact, { success: true });
+
+    expect(piles.refused).toHaveBeenCalledTimes(1);
+    expect(piles.refused).toHaveBeenCalledWith("loot_reserved");
+  });
+
+  it("should let the piles and the interact replies go on release", () => {
+    const { field } = fieldOnStage();
+    const piles = fakePiles();
+    Object.assign(field, { piles });
+
+    field.release();
+
+    expect(piles.release).toHaveBeenCalledTimes(1);
+    expect(socketManager.off).toHaveBeenCalledWith(ActionType.Interact);
   });
 });
 
