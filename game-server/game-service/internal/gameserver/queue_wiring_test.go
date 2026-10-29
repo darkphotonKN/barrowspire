@@ -43,8 +43,10 @@ func send(server *Server, conn *websocket.Conn, action constants.Action) {
 // refusal is not reported as a failure to queue. FS-K2HKP §Requirements 6.
 func TestFindGame_Twice_IsNotReportedAsAQueueFailure(t *testing.T) {
 	queue := NewMockQueueService()
-	server, conn, _, msgCh := queuedInHub(t, queue)
+	server, conn, player, msgCh := queuedInHub(t, queue)
 
+	walkToSpireGate(t, server, conn, player.ID)
+	drainWriter(msgCh) // the walk's state frames, so the reply finds room
 	send(server, conn, constants.ActionFindGame)
 	joined := awaitAction(t, msgCh, constants.ActionFindGame)
 	require.Nil(t, joined.Error)

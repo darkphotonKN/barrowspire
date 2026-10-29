@@ -13,6 +13,7 @@ import (
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -338,12 +339,30 @@ func TestQueueFindGameFlow(t *testing.T) {
 
 	for i := 1; i <= playerCount; i++ {
 		time.Sleep(3 * time.Second)
+
+		// each walks from the spawn to the Spire's door before asking to
+		// descend, since find_game is refused anywhere else (FS-0XMCP
+		// §Requirements 12). Bodies block each other, so they walk in turn
+		// rather than crowding the door all at once.
+		fakeConn := &websocket.Conn{}
+		player := &types.Player{ID: uuid.New(), Username: fmt.Sprintf("Player%d", i), Character: types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: fmt.Sprintf("Player%d", i), Level: 1}}
+		msgCh := registerTestConn(server, fakeConn, player)
+		_, err := server.JoinHub(fakeConn, player.Character)
+		require.NoError(t, err)
+		hub := headForSpireGate(t, server, fakeConn, player.ID)
+
 		go func(idx int) {
 			defer wg.Done()
 
-			fakeConn := &websocket.Conn{}
-			player := &types.Player{ID: uuid.New(), Username: fmt.Sprintf("Player%d", idx), Character: types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: fmt.Sprintf("Player%d", idx), Level: 1}}
-			msgCh := registerTestConn(server, fakeConn, player)
+			arrived := time.After(spireGateWalk)
+			for !hub.AtGate(player.ID, components.GateDestinationSpire) {
+				select {
+				case <-arrived:
+					fmt.Printf("❌ Player%d never reached the Spire's door\n", idx)
+					return
+				case <-time.After(20 * time.Millisecond):
+				}
+			}
 
 			server.serverChan <- types.ClientPackage{
 				Message: types.Message{
