@@ -1,6 +1,6 @@
 # FS-MRZH7: Function NPC markers
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Hub" → "Function NPC markers"; `game-server/game-service/SPECIFICATION.md` "### Hub world" → "Function NPCs kept clear of ambient NPCs" → this FS · Related ADRs: [ADR-0025](../adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md) (the canvas keeps its own palette), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (token-only colour) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) § NPCs (function NPC, ambient NPC), [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) (marker)
+> Status: shipped · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Hub" → "Function NPC markers"; `game-server/game-service/SPECIFICATION.md` "### Hub world" → "Function NPCs kept clear of ambient NPCs" → this FS · Related ADRs: [ADR-0025](../adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md) (the canvas keeps its own palette), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (token-only colour) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) § NPCs (function NPC, ambient NPC), [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) (marker)
 
 ## Summary
 
