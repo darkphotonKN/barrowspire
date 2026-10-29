@@ -31,6 +31,7 @@ import {
   type GroundPiece,
   type WorldKind,
 } from "./ground";
+import type { HorizonPlan } from "./horizon";
 import type { House } from "./houses";
 import { FADED_ALPHA, occludes, stepAlpha } from "./occlusion";
 import { planPerimeter } from "./perimeter";
@@ -68,12 +69,14 @@ export class GroundLayer {
       height: number;
       kind: WorldKind;
       paths?: readonly Rect[];
-      /** Ground past the edge (FS-0XMCP R18), within GROUND_MARGIN's reach of the map. */
+      /** Ground past the edge (FS-0XMCP R18), within `margin`'s reach of the map. */
       aprons?: readonly Apron[];
+      /** Screen px of ground painted past the projected map; absent, GROUND_MARGIN. */
+      margin?: number;
       look?: GroundLook;
     },
   ) {
-    const b = projectedBounds(world.width, world.height, GROUND_MARGIN);
+    const b = projectedBounds(world.width, world.height, world.margin ?? GROUND_MARGIN);
     this.origin = { x: b.x, y: b.y };
     this.rt = scene.add.renderTexture(
       b.x,
@@ -101,6 +104,9 @@ export class GroundLayer {
     if (floor) this.floor = floor;
     const { look: worldLook = OUTDOOR_GROUND, ...world } = this.world;
     const look = this.floor?.look ?? worldLook;
+    // a recoloured ground (a field's greens): the whole painted layer under one multiply
+    if (look.tint === undefined) this.rt.clearTint();
+    else this.rt.setTint(look.tint);
     this.rt.clear();
     this.rt.beginDraw();
     this.draw(planGroundLayer({ ...world, houses, look, seed: this.floor?.seed }));
@@ -125,6 +131,32 @@ export class GroundLayer {
       );
     }
   }
+}
+
+/** Under the ground: a field's horizon is behind everything in the world. */
+export const HORIZON_DEPTH = GROUND_DEPTH - 1;
+
+/**
+ * A field's horizon (FS-X2F2H §Requirements 54): sky, hills and the land beyond, drawn in code
+ * under the ground and moving with the camera at the plan's slower rate. Under the light-map
+ * like the rest of the world, so the field's daylight lights it too.
+ */
+export function addHorizon(
+  scene: Phaser.Scene,
+  plan: HorizonPlan,
+): Phaser.GameObjects.Graphics {
+  const g = scene.add.graphics();
+  g.setScrollFactor(plan.factor).setDepth(HORIZON_DEPTH);
+  for (const band of [...plan.sky, ...plan.land]) {
+    g.fillStyle(band.color, 1);
+    // a pixel of overlap, so no seam shows between bands
+    g.fillRect(plan.span.x, band.y, plan.span.width, band.height + 1);
+  }
+  for (const hill of plan.hills) {
+    g.fillStyle(hill.color, 1);
+    g.fillPoints(hill.points, true);
+  }
+  return g;
 }
 
 /** A light source for a sprite's sheet, if its manifest entry declares one. */

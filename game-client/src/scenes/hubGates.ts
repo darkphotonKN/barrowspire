@@ -49,10 +49,11 @@ export const FIELD_NAMES: Record<FieldDestination, string> = {
 };
 
 /**
- * The field id `enter_field` names for each field gate (FS-X2F2H §Requirements 2, 11). A gate with
- * no id here sends nothing: the Forest is added when the server builds it (FS-3QHQZ).
+ * The field id `enter_field` names for each field gate (FS-X2F2H §Requirements 2, 11; FS-3QHQZ).
+ * A gate with no id here sends nothing.
  */
 export const FIELD_IDS: Partial<Record<FieldDestination, FieldId>> = {
+  forest: "forlorn_forest",
   meadows: "gentle_meadows",
 };
 

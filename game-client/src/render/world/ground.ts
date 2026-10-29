@@ -45,7 +45,8 @@ export function worldSeed(kind: WorldKind): number {
 const WORLD_SEEDS: Record<WorldKind, number> = {
   hub: 0x4855_4231,
   run: 0x5255_4e31,
-  // a field's own pattern (FS-X2F2H §Requirements 54); its look per field is slice 9's
+  // a field's own pattern (FS-X2F2H §Requirements 54); each field's colours are its look's
+  // (fieldLook.ts)
   field: 0x4649_4531,
 };
 
@@ -97,6 +98,12 @@ const centreOf = (tx: number, ty: number): Point => ({
 export interface Apron extends Rect {
   from: Point;
   fade: number;
+  /**
+   * An apron along a whole straight edge (a field's ground running on past every side, FS-X2F2H
+   * §Requirements 54): the fade is measured from the edge line through `from` that runs along this
+   * world axis, not from the point. Absent, the fade is radial from `from` (a gate's mouth).
+   */
+  along?: "x" | "y";
 }
 
 export interface GroundOptions {
@@ -162,7 +169,12 @@ export function planGround({
         if (laid.has(key)) continue;
         const c = centreOf(tx, ty);
         if (!within(c, apron)) continue;
-        const away = Math.hypot(c.x - apron.from.x, c.y - apron.from.y);
+        const away =
+          apron.along === "x"
+            ? Math.abs(c.y - apron.from.y)
+            : apron.along === "y"
+              ? Math.abs(c.x - apron.from.x)
+              : Math.hypot(c.x - apron.from.x, c.y - apron.from.y);
         if (away >= apron.fade) continue;
         // whole near the edge, then easing out, each tile's hash roughening the rim
         const rag = ((tileHash(tx, ty, seed + 5) & 0xff) / 0xff - 0.5) * 2 * APRON_RAG;
@@ -343,6 +355,11 @@ export interface GroundLook {
   decals: boolean;
   /** Another material breaking up through the halls (FS-8RBQY §C.2). */
   patches?: GroundPatches;
+  /**
+   * A multiply over the whole painted ground, 0xRRGGBB: the same sheets recoloured (a field's
+   * daylight greens, FS-X2F2H §Requirements 54). Absent, the ground is drawn as baked.
+   */
+  tint?: number;
 }
 
 /** The outdoor ground, as runs and the hub have always had it. */

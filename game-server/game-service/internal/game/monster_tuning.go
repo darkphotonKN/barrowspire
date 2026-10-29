@@ -58,6 +58,37 @@ const (
 // in "Dread Ghoul".
 var ElitePrefixes = []string{"Dread", "Grave-sworn", "Hollow", "Barrow-cursed"}
 
+/*
+	Field tuning: the field worlds' numbers, beside the Spire's they derive from.
+	FS-X2F2H §Requirements 26–29, 36–37 (D14–D16, D24, D26). Every number is a
+	starting value, carried on each field place.
+*/
+
+// Field monsters.
+const (
+	// a field monster's level stats over the Spire's at the same level; an
+	// elite takes the Spire's elite multipliers on top
+	FieldStatFactor = 0.75
+
+	// a spawn point rolls its next monster this long after its last one died,
+	// in seconds
+	FieldRespawnDelay = 45.0
+	// how long a due respawn waits, in seconds, before trying again while a
+	// player in play stands within MonsterDelverExclusion of the point
+	FieldRespawnRetry = 1.0
+
+	// the Gentle Meadows' level band, inclusive
+	MeadowsMinLevel = 1
+	MeadowsMaxLevel = 4
+	// the Gentle Meadows' drop chance over the Spire's (rolled by FS-X2F2H's
+	// drop slice)
+	MeadowsDropFactor = 0.35
+)
+
+// FieldElitePrefixes is the authored list a field elite's name prefix is drawn
+// from, as in "Scarred Boar", in place of the barrow ElitePrefixes.
+var FieldElitePrefixes = []string{"Old", "Scarred", "Great"}
+
 // The demon boss. FS-77AB6 §Requirements 21, 24.
 const (
 	// chance of a demon on a floor that is not the top one; the top floor
@@ -117,6 +148,13 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 		Defense: 15, MagicResistance: 15,
 		AggroRadius: 320, LeashRadius: 700,
 	},
+	// field wildlife: a lowered-head charge (FS-X2F2H §Requirements 37)
+	components.MonsterArchetypeBoar: {
+		Name: "Boar", HP: 36, Damage: 5,
+		AttackInterval: 1.2, WindUp: 0.45, AttackRange: 45, MoveSpeed: 140,
+		Defense: 2, MagicResistance: 0,
+		AggroRadius: 200, LeashRadius: 450,
+	},
 }
 
 // killExperienceBase is what killing a level-1 monster of an archetype is worth,
@@ -126,6 +164,7 @@ var killExperienceBase = map[components.MonsterArchetype]int{
 	components.MonsterArchetypeGhoul: 10,
 	components.MonsterArchetypeTroll: 25,
 	components.MonsterArchetypeDemon: 25,
+	components.MonsterArchetypeBoar:  8,
 }
 
 // Kill experience scaling. FS-BDA7X §Requirements 10.
@@ -161,6 +200,21 @@ func (stats monsterStats) elite() monsterStats {
 	stats.HP = int(math.Round(float64(stats.HP) * EliteHPMultiplier))
 	stats.Damage = int(math.Round(float64(stats.Damage) * EliteDamageMultiplier))
 	return stats
+}
+
+/**
+* scaled is a field's factor applied to a monster's level stats: each × factor,
+* rounded, with HP and damage at least 1. The one place a field factor touches
+* stats; a field never keeps a second sheet. FS-X2F2H §Requirements 29.
+**/
+func (stats monsterStats) scaled(factor float64) monsterStats {
+	scale := func(v int) int { return int(math.Round(float64(v) * factor)) }
+	return monsterStats{
+		HP:              max(scale(stats.HP), 1),
+		Damage:          max(scale(stats.Damage), 1),
+		Defense:         scale(stats.Defense),
+		MagicResistance: scale(stats.MagicResistance),
+	}
 }
 
 // eliteChance is the chance a standard monster on this floor is an elite.

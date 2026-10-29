@@ -31,6 +31,9 @@ sections of `CLAUDE.md`) disagree on a visual decision, **this file wins.**
   environments read from a fixed game camera. **Dark fantasy, not bright high-fantasy.**
 - The world should feel cold and dangerous, with warmth only where torches burn. Dread
   and rumor over spectacle.
+- **Field worlds are the one carve-out:** open country outside the Spire may be daylit, its
+  warmth the field's own daylight rather than torches; the hub and the Spire keep the torch-lit
+  dark. *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
 
 ---
 
@@ -110,6 +113,9 @@ and the two are not required to agree (ADR-0025).
 - Keep darks as bases, **never pure black** — preserve enough value range that pixel
   detail still reads in dim scenes.
 - Low-key, desaturated overall. Warm torch pools against cold dark.
+  - In a daylit field world, daylight over a low-key ground stands in for torch against dark;
+    still desaturated, still mixed from these tokens. *(Amended at the owner's approval of
+    FS-X2F2H, 2026-10-29.)*
 - **No bright saturated primaries.** No neon, no cyan, no electric glows.
 
 ---

@@ -75,7 +75,7 @@ import {
   type WorldPlane,
 } from "@/render/iso";
 import { artSprite, preloadArt, registerArt } from "@/render/art/phaser";
-import { PLACEHOLDER_TEXTURE, type ArtLibrary } from "@/render/art/library";
+import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
 import { cursorCss, cursorSource } from "@/render/cursors";
@@ -90,7 +90,8 @@ import { ProjectileFlights } from "@/render/effects/projectile";
 import { FIREBALL_FLIGHT, playFireballCast } from "@/render/effects/fireball";
 import { ARROW_FLIGHT, playArrowRelease } from "@/render/effects/arrow";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
-import { MonsterRoster, type MonsterTargeting } from "@/render/creatures";
+import { MonsterRoster, phaserMonsterStage, type MonsterTargeting } from "@/render/creatures";
+import { PlayerCombat } from "@/render/combat/playerCombat";
 import {
   BAKE,
   DROP_PILE,
@@ -133,12 +134,6 @@ const CAMERA_MARGIN = 160;
 const STAIRS_POOL_INTENSITY = 0.85;
 /** A player's footprint, in world px: the server's `PlayerRadius`. */
 const PLAYER_FOOTPRINT_RADIUS = 20;
-/**
- * A targeted `attack`'s reach, centre to centre in world px, and its cooldown in ms: the server's
- * (`targetedAttackRange`, 0.5 s). A click out of reach sends nothing.
- */
-const STRIKE_RANGE = 60;
-const STRIKE_COOLDOWN_MS = 500;
 /**
  * The resolved player's card (FS-QPDKN req 1–6): over the HUD (1000), under the passing notices
  * (2000), which still have the last word while it is up.
@@ -529,8 +524,24 @@ export class BarrowspireScene extends Phaser.Scene {
   };
   private inventoryItems: ItemState[] = [];
 
-  private canAttack = true;
-  private canCastSkill = true;
+  /** The player's strike and casts, shared with the field scene (FS-X2F2H §Requirements 56). */
+  private readonly combat = new PlayerCombat(
+    {
+      sendMessage: (action, payload) => socketManager.sendMessage(action, payload),
+      later: (ms, fn) => this.time.delayedCall(ms, fn),
+    },
+    {
+      slash: (from, to) => this.playWarriorSlashEffect(from.x, from.y, to.x, to.y),
+      dash: (from, to) => this.playWarriorDashEffect(from.x, from.y, to.x, to.y),
+      arrow: (from, to) => {
+        if (this.fx) playArrowRelease(this.fx, "self", from, to);
+      },
+      fireball: (from, to) => {
+        if (this.fx) playFireballCast(this.fx, "self", from, to);
+      },
+      attackClip: (aim, holdMs) => this.playerAnim?.attack(this.time.now, aim, holdMs),
+    },
+  );
   /** Projectiles in flight: baked body, trail, riding light, impact (FS-KYPQ9 §E.2–§F.4). */
   private projectiles?: ProjectileFlights;
   /** The map floor, a world-coordinate plane; house floors are added to it. */
@@ -729,8 +740,7 @@ export class BarrowspireScene extends Phaser.Scene {
       Object.keys(this.equippedItems).map((slot) => [slot, null]),
     ) as unknown as EquippedItems;
     this.inventoryItems = [];
-    this.canAttack = true;
-    this.canCastSkill = true;
+    this.combat.reset();
     this.lastGameState = undefined;
     this.sessionID = undefined;
     this.previousEscapeDoorOpened = null;
@@ -1628,20 +1638,12 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private strike(entityId: string, them: Point): void {
     const me = this.playerPos;
-    if (!this.canAttack || !this.player || !me || this.gameEndOverlay) return;
+    if (!this.player || !me || this.gameEndOverlay) return;
     if (resolved(this.lastGameState?.current_player)) return;
     // the pointer is the menu's while it is open (FS-9K8EZ req 5)
     if (this.menu) return;
-    // world positions, never the sprites' screen positions
-    if (Math.hypot(them.x - me.x, them.y - me.y) > STRIKE_RANGE) return;
 
-    socketManager.sendMessage(ActionType.Attack, { enemy_entity_id: entityId });
-    this.playWarriorSlashEffect(me.x, me.y, them.x, them.y);
-    this.playerAnim?.attack(this.time.now, { x: them.x - me.x, y: them.y - me.y });
-    this.canAttack = false;
-    this.time.delayedCall(STRIKE_COOLDOWN_MS, () => {
-      this.canAttack = true;
-    });
+    this.combat.strike(me, entityId, them);
   }
 
   /**
@@ -2611,15 +2613,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // the baked cursors, cropped from the atlas just registered
     this.setupCustomCursor();
     this.occluders = new Occluders();
-    this.monsters = new MonsterRoster(
-      {
-        sprite: () => this.add.sprite(0, 0, PLACEHOLDER_TEXTURE),
-        text: (content, style) => this.add.text(0, 0, content, style),
-        graphics: () => this.add.graphics(),
-      },
-      this.art,
-      this.monsterTargeting,
-    );
+    this.monsters = new MonsterRoster(phaserMonsterStage(this), this.art, this.monsterTargeting);
     this.containerView = new ContainerView(
       this,
       this.art,
@@ -2795,7 +2789,7 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.menu) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
       if (this.containerView.pointerDown(pointer.x, pointer.y, pointer.button === 0)) return;
-      if (!this.player || !this.playerPos || !this.canCastSkill) return;
+      if (!this.player || !this.playerPos) return;
       // out of the delve: the server refuses it anyway (FS-77AB6 req 17)
       if (resolved(this.lastGameState?.current_player)) return;
       if (this.equipmentPanel?.isVisible()) return;
@@ -2806,89 +2800,12 @@ export class BarrowspireScene extends Phaser.Scene {
       // The pointer is over the projection; the server wants the world point under
       // it. `target` and `me` are world positions (FS-2325V §0.2, §A.5).
       const target = screenToWorld(pointer.worldX, pointer.worldY);
-      const me = this.playerPos;
 
-      // 左鍵發射一般攻擊 (0 MP)
+      // 左鍵發射一般攻擊 (0 MP) // 右鍵觸發職業專屬 10 MP 技能
       if (pointer.leftButtonDown() || pointer.button === 0) {
-        if (currentClass === "warrior") {
-          // 計算角度與將打擊目標限制在距離 50px 以內
-          const dist = Phaser.Math.Distance.Between(
-            me.x,
-            me.y,
-            target.x,
-            target.y
-          );
-          const angle = Phaser.Math.Angle.Between(me.x, me.y, target.x, target.y);
-          const effectiveDist = Math.min(dist, 50);
-          const hitX = me.x + Math.cos(angle) * effectiveDist;
-          const hitY = me.y + Math.sin(angle) * effectiveDist;
-
-          // 不管滑鼠在哪裡，通通觸發揮劍劈斬動畫！— toward the clamped target, on the send
-          this.playWarriorSlashEffect(me.x, me.y, hitX, hitY);
-
-          socketManager.sendMessage(ActionType.CastSkill, {
-            skill_id: "slash",
-            target_x: hitX,
-            target_y: hitY,
-          });
-        } else if (currentClass === "archer") {
-          socketManager.sendMessage(ActionType.CastSkill, {
-            skill_id: "arrow",
-            target_x: target.x,
-            target_y: target.y,
-          });
-          if (this.fx) playArrowRelease(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
-        } else {
-          socketManager.sendMessage(ActionType.CastSkill, {
-            skill_id: "fireball",
-            target_x: target.x,
-            target_y: target.y,
-          });
-          if (this.fx) playFireballCast(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
-        }
-        // the class attack clip rides the same trigger as the effect (FS-2325V §E.4)
-        this.playerAnim?.attack(this.time.now, { x: target.x - me.x, y: target.y - me.y });
-
-        this.canCastSkill = false;
-        this.time.delayedCall(250, () => {
-          this.canCastSkill = true;
-        });
-      }
-      // 右鍵觸發職業專屬 10 MP 技能
-      else if (pointer.rightButtonDown() || pointer.button === 2) {
-        if (currentClass === "warrior") {
-          socketManager.sendMessage(ActionType.CastSkill, {
-            skill_id: "dash",
-            target_x: target.x,
-            target_y: target.y,
-          });
-          this.playWarriorDashEffect(me.x, me.y, target.x, target.y);
-        } else if (currentClass === "mage") {
-          socketManager.sendMessage(ActionType.CastSkill, {
-            skill_id: "triple_fireball",
-            target_x: target.x,
-            target_y: target.y,
-          });
-          if (this.fx) playFireballCast(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
-        } else if (currentClass === "archer") {
-          socketManager.sendMessage(ActionType.CastSkill, {
-            skill_id: "triple_arrow",
-            target_x: target.x,
-            target_y: target.y,
-          });
-          if (this.fx) playArrowRelease(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
-        }
-        // a warrior's charge holds the pose for as long as the server carries them (§D.2)
-        this.playerAnim?.attack(
-          this.time.now,
-          { x: target.x - me.x, y: target.y - me.y },
-          currentClass === "warrior" ? CHARGE_MS : undefined,
-        );
-
-        this.canCastSkill = false;
-        this.time.delayedCall(400, () => {
-          this.canCastSkill = true;
-        });
+        this.combat.cast("primary", currentClass, this.playerPos, target);
+      } else if (pointer.rightButtonDown() || pointer.button === 2) {
+        this.combat.cast("special", currentClass, this.playerPos, target);
       }
     });
 

@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/serializer"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -87,30 +89,89 @@ func fieldRefusal(err error) (reason, message string) {
 	return errEnterFieldNotInHub.Error(), fieldRefusals[errEnterFieldNotInHub]
 }
 
+// Option adjusts how a Server boots.
+type Option func(*bootOptions)
+
+// bootOptions are what a pod's fields are generated from at boot.
+type bootOptions struct {
+	// seed is the one seed every generated field of this pod comes from
+	seed         uint64
+	forestParams levelgen.Params
+}
+
 /**
-* createFieldSessions builds one channel of every registered field place, each
-* before anyone can connect, and never shuts one down. A place whose layout
-* cannot be built is skipped and logged: the pod runs without that field.
-* FS-X2F2H §Requirements 4, 5.
+* WithBootSeed builds this pod's generated fields from seed rather than a fresh
+* one, so a forest reported from a pod's log is rebuilt exactly.
+* FS-3QHQZ §Requirements 10, User Story 26.
 **/
-func (s *Server) createFieldSessions() {
-	for _, place := range game.FieldPlaces() {
+func WithBootSeed(seed uint64) Option {
+	return func(o *bootOptions) { o.seed = seed }
+}
+
+// laidOutField is a field place with the layout of the one channel this pod
+// builds of it.
+type laidOutField struct {
+	place  game.FieldPlace
+	layout game.FieldLayout
+	// how a generated field's layout is rebuilt (seed, attempt), logged with
+	// the channel's session id; none for a hand-laid field
+	generatedFrom []any
+}
+
+/**
+* layOutFields lays out every field this pod builds, before anything is
+* started. The Forest is generated from a fresh seed drawn once per boot (or
+* the one WithBootSeed fixes), outside levelgen, and logged so the layout can be
+* rebuilt. A field that cannot be laid out is an error: the pod fails to start
+* rather than serve a broken one. FS-3QHQZ §Requirements 10, Edge States
+* "Generator boxed in".
+**/
+func layOutFields(opts ...Option) ([]laidOutField, error) {
+	boot := bootOptions{seed: rand.Uint64(), forestParams: levelgen.ForestParams}
+	for _, opt := range opts {
+		opt(&boot)
+	}
+
+	forest, err := levelgen.Generate(boot.forestParams, boot.seed)
+	if err != nil {
+		slog.Error("Could not generate the Forlorn Forest, the pod will not start", "seed", boot.seed, "error", err)
+		return nil, fmt.Errorf("generate the forlorn forest from seed %d: %w", boot.seed, err)
+	}
+
+	places := game.FieldPlaces(forest)
+	fields := make([]laidOutField, 0, len(places))
+	for _, place := range places {
 		layout, err := place.Layout.Layout()
 		if err != nil {
-			slog.Error("Could not lay out a field, this pod runs without it", "field", place.ID, "error", err)
-			continue
+			return nil, fmt.Errorf("lay out field %s: %w", place.ID, err)
 		}
+		laidOut := laidOutField{place: place, layout: layout}
+		if place.ID == game.FieldForlornForest {
+			laidOut.generatedFrom = []any{"seed", forest.Seed, "attempt", forest.Attempt}
+		}
+		fields = append(fields, laidOut)
+	}
+	return fields, nil
+}
+
+/**
+* createFieldSessions builds one channel of every laid-out field, each before
+* anyone can connect, and never shuts one down. FS-X2F2H §Requirements 4, 5.
+**/
+func (s *Server) createFieldSessions(fields []laidOutField) {
+	for _, laidOut := range fields {
+		place := laidOut.place
 
 		entityManager := ecs.NewEntityManager()
 		field := game.NewSession(s, messaging.NewMessageSender(s), serializer.NewStateSerializer(entityManager), entityManager, s.eventEmitter, s.itemsClient, game.FieldBounds(place))
-		field.InitialFieldMapObjects(place, layout)
+		field.InitialFieldMapObjects(place, laidOut.layout)
 
 		s.mu.Lock()
 		s.sessions[field.ID] = field
 		s.fields[place.ID] = field.ID
 		s.mu.Unlock()
 
-		slog.Info("Field world initiated", "field", place.ID, "session_id", field.ID)
+		slog.Info("Field world initiated", append([]any{"field", place.ID, "session_id", field.ID}, laidOut.generatedFrom...)...)
 	}
 }
 

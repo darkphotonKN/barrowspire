@@ -315,6 +315,9 @@ type MonsterConfig struct {
 	// archetype's own name.
 	Name string
 	X, Y float64
+	// StatFactor scales a field monster's level stats before any promotion
+	// (FS-X2F2H §Requirements 29); 0 is a Spire monster's own, unscaled.
+	StatFactor float64
 }
 
 // CreateMonsterEntity spawns a monster from its archetype's sheet at its level.
@@ -328,6 +331,9 @@ type MonsterConfig struct {
 func CreateMonsterEntity(em *ecs.EntityManager, config MonsterConfig) *ecs.Entity {
 	sheet := monsterSheets[config.Archetype]
 	stats := sheet.statsAt(config.Level)
+	if config.StatFactor > 0 {
+		stats = stats.scaled(config.StatFactor)
+	}
 	if config.Elite {
 		stats = stats.elite()
 	}

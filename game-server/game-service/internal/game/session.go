@@ -48,6 +48,10 @@ type Session struct {
 	// the hub and a run. Guarded by mu. FS-X2F2H §Requirements 3.
 	place       *FieldPlace
 	fieldLayout FieldLayout
+	// a field channel's spawn points, set once as it is built; nil for the hub
+	// and a run. The pointer is guarded by mu, its contents are the tick's alone.
+	// FS-X2F2H §Requirements 26–27.
+	fieldPopulation *fieldPopulation
 	// a field's open visits, by member: minted on entry, ended exactly once by
 	// whichever way out removes the body first. Guarded by mu. FS-X2F2H R13, R49.
 	visits map[uuid.UUID]FieldVisit
@@ -235,7 +239,7 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		monsterAISystem:    systems.NewMonsterAISystem(rand.Float64),
 		monsterDeathSystem: systems.NewMonsterDeathSystem(em, MonsterCorpseLifetime),
 		skillSystem:        systems.NewSkillSystem(),
-		killConsumers:      []KillConsumer{NewKillLog(slog.Default()), NewKillExperience(em, runExperience)},
+		killConsumers:      []KillConsumer{NewKillLog(slog.Default())},
 		runExperience:      runExperience,
 		stopChan:           make(chan struct{}),
 		isRunning:          false,
@@ -264,6 +268,13 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 
 		playersPendingConnection: make(map[uuid.UUID]*types.Player),
 		seatDeadline:             time.Now().Add(SeatReleaseAfter),
+	}
+	// a run's kill awards the whole party; a field's, the killer alone
+	// (FS-X2F2H §Requirements 30)
+	if bounds.Type == types.WorldTypeField {
+		s.SubscribeKills(newFieldKillCredit(s))
+	} else {
+		s.SubscribeKills(NewKillExperience(em, runExperience))
 	}
 	s.SubscribeKills(newMonsterDrops(s, sharedLootRand{}))
 	s.SubscribeKills(newUniqueEffects(em))
@@ -683,6 +694,8 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	if s.hasMonsters() {
 		s.monsterDeathSystem.Update(deltaTime, entities)
 		s.publishKills(kills)
+		// a field's spawn points see their monsters fall and refill
+		s.refillSpawnPoints(deltaTime, entities)
 	}
 
 	// interaction
@@ -701,10 +714,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 }
 
 // hasMonsters is whether this world ticks the monster systems: the one switch
-// for them. A run only, for now; FS-X2F2H slice 3 adds field worlds here
-// (FS-X2F2H §Requirements 6).
+// for them. A run and a field; never the hub (FS-X2F2H §Requirements 6).
 func (s *Session) hasMonsters() bool {
-	return s.worldType == types.WorldTypeRun
+	return s.worldType == types.WorldTypeRun || s.worldType == types.WorldTypeField
 }
 
 // queueIntent hands a client action to the tick, which applies it at the start

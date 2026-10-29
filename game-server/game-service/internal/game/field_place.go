@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 )
@@ -16,6 +17,8 @@ type FieldID string
 const (
 	// FieldGentleMeadows is the easy field east of the hub.
 	FieldGentleMeadows FieldID = "gentle_meadows"
+	// FieldForlornForest is the generated forest west of the hub (FS-3QHQZ).
+	FieldForlornForest FieldID = "forlorn_forest"
 )
 
 // FieldPoint is a point on a field's map.
@@ -43,9 +46,11 @@ type LayoutProvider interface {
 	Layout() (FieldLayout, error)
 }
 
-// FieldCreature is one row of a field's creature table.
+// FieldCreature is one row of a field's creature table: what may spawn, and
+// how often against the table's other rows (a row with no weight counts as 1).
 type FieldCreature struct {
-	Archetype string
+	Archetype components.MonsterArchetype
+	Weight    float64
 }
 
 /**
@@ -68,12 +73,19 @@ type FieldPlace struct {
 	MinLevel, MaxLevel int
 	StatFactor         float64
 	DropFactor         float64
+
+	// RespawnDelay is how long, in seconds, a spawn point stays empty after its
+	// monster dies (FS-X2F2H §Requirements 27). ElitePrefixes names its elites;
+	// none means FieldElitePrefixes.
+	RespawnDelay  float64
+	ElitePrefixes []string
 }
 
-// FieldPlaces are the fields this pod builds a channel of at boot. Only the
-// Meadows here; FS-3QHQZ registers the Forest. FS-X2F2H §Requirements 4.
-func FieldPlaces() []FieldPlace {
-	return []FieldPlace{GentleMeadows()}
+// FieldPlaces are the fields this pod builds a channel of at boot: the Meadows,
+// and the Forest built from the layout this pod generated for it at boot.
+// FS-X2F2H §Requirements 4, FS-3QHQZ §Requirements 10.
+func FieldPlaces(forest levelgen.Layout) []FieldPlace {
+	return []FieldPlace{GentleMeadows(), ForlornForest(forest)}
 }
 
 // FieldBounds is a field world of the place's size.
@@ -99,6 +111,9 @@ type FieldVisit struct {
 
 	Level      int
 	Experience int64
+	// ExperienceGained is what this visit's kills earned, from zero at entry
+	// (FS-X2F2H §Requirements 13, 30): the settlement's experience_gained.
+	ExperienceGained int
 }
 
 /**
@@ -109,15 +124,27 @@ type FieldVisit struct {
 * anyone can be seated in it.
 **/
 func (s *Session) InitialFieldMapObjects(place FieldPlace, layout FieldLayout) {
+	// every spawn point holds its monster before the tick can see the points
+	// (FS-X2F2H §Requirements 26)
+	population := newFieldPopulation(s.EntityManager, place, layout.SpawnPoints, s.spawnRand)
+	population.fill()
+
 	s.mu.Lock()
 	s.place = &place
 	s.fieldLayout = layout
+	s.fieldPopulation = population
 	s.mu.Unlock()
 
+	// the gate and every wall are recorded as occupied, as the floor build
+	// records what it places, so nothing placed later lands on them
+	// (FS-3QHQZ §Requirements 13)
 	CreateFieldEntranceEntity(s.EntityManager, place.Entrance.X, place.Entrance.Y, place.EntranceRange)
+	s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas,
+		centredArea(place.Entrance.X, place.Entrance.Y, place.EntranceRange, place.EntranceRange))
 
 	for _, obstacle := range layout.Obstacles {
 		CreateWallEntity(s.EntityManager, WallConfig{X: obstacle.X, Y: obstacle.Y, Width: obstacle.W, Height: obstacle.H}, uuid.New())
+		s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas, PlaceArea(obstacle))
 	}
 
 	slog.Info("Field channel built",

@@ -118,8 +118,18 @@ type HandoffAnnouncer interface {
 /**
 * podID and podAddr are this replica's identity: a match step names its pods by
 * id, and podAddr is where a handed-off player reconnects to reach this pod.
+*
+* The pod's fields are laid out first, before anything starts: a field that
+* cannot be laid out fails construction with the wrapped error and the pod does
+* not start, rather than serving a broken field (FS-3QHQZ Edge States
+* "Generator boxed in").
 **/
-func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient, characters CharacterReader, podID, podAddr string, announcer HandoffAnnouncer) *Server {
+func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient, characters CharacterReader, podID, podAddr string, announcer HandoffAnnouncer, opts ...Option) (*Server, error) {
+	fields, err := layOutFields(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("new server: %w", err)
+	}
+
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			// TODO: Allow all connections by default for simplicity; can add more logic here
@@ -160,9 +170,9 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	go messageHub.Run(ctx)
 
 	server.createHubSession()
-	server.createFieldSessions()
+	server.createFieldSessions(fields)
 
-	return server
+	return server, nil
 }
 
 /**

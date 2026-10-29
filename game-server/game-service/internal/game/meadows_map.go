@@ -26,11 +26,14 @@ func GentleMeadows() FieldPlace {
 		Arrival:       FieldPoint{X: 180, Y: 500},
 		HubGate:       components.GateDestinationMeadows,
 
-		Creatures:  []FieldCreature{{Archetype: "boar"}},
-		MinLevel:   1,
-		MaxLevel:   4,
-		StatFactor: 0.75,
-		DropFactor: 0.35,
+		Creatures:  []FieldCreature{{Archetype: components.MonsterArchetypeBoar, Weight: 1}},
+		MinLevel:   MeadowsMinLevel,
+		MaxLevel:   MeadowsMaxLevel,
+		StatFactor: FieldStatFactor,
+		DropFactor: MeadowsDropFactor,
+
+		RespawnDelay:  FieldRespawnDelay,
+		ElitePrefixes: FieldElitePrefixes,
 	}
 }
 

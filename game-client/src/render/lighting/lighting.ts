@@ -143,8 +143,9 @@ export function contrastRatio(a: number, b: number): number {
 
 /**
  * Warm dusk in the hub, dark barrow in a run (FS-2325V §C.8), daylight in a field (FS-X2F2H
- * §Requirements 54; slice 9 tunes it per field). Fixed: the world may stay dark, because hostile
- * markers carry readability above the light-map (§C.9).
+ * §Requirements 54). `field` is the cozy meadow's daylight; each field picks its own ambient in
+ * its look (`src/render/world/fieldLook.ts`), Gentle Meadows taking this one. Fixed: the world
+ * may stay dark, because hostile markers carry readability above the light-map (§C.9).
  */
 export const AMBIENT: Record<WorldKind, number> = {
   hub: mix(BARROW_HEX.barrowBrown, BARROW_HEX.amberBright, 0.55),
@@ -163,6 +164,20 @@ export const TOWER_AMBIENT = mix(
   BARROW_HEX.pitch,
   0.33,
 );
+
+/**
+ * A baked sheet's mean under a sprite tint: the GPU multiplies each texel by the tint, so the
+ * tinted sheet's mean is its mean multiplied by the tint (a field's recoloured ground, FS-X2F2H
+ * §Requirements 54). Rounded to whole channels, as a mean is measured.
+ */
+export function tinted(mean: ArtRgb, tint: number): ArtRgb {
+  const [r, g, b] = channels(tint);
+  return {
+    r: Math.round((mean.r * r) / 255),
+    g: Math.round((mean.g * g) / 255),
+    b: Math.round((mean.b * b) / 255),
+  };
+}
 
 /**
  * A baked ground colour as it reaches the eye: multiplied by the ambient, then under the

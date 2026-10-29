@@ -18,17 +18,35 @@ import {
 import { preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
-import { AMBIENT, LightMap } from "@/render/lighting";
+import { LightMap } from "@/render/lighting";
 import { MARKER_DEPTH } from "@/render/markers";
-import { GroundLayer } from "@/render/world";
+import {
+  GroundLayer,
+  MEADOWS_LOOK,
+  Occluders,
+  addHorizon,
+  addProp,
+  fieldLook,
+  landBeyond,
+  planFieldAprons,
+  planHorizon,
+  planKeepOutDressing,
+  planRoadHome,
+  worldSeed,
+  type FieldLook,
+} from "@/render/world";
+import { createAtmosphere } from "@/utils/atmosphere";
+import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
 
 /**
  * A field world (FS-X2F2H §H): the ground, the player and the others in this pod's channel, the
- * field's keep-out areas and its entrance gate, the road home. Placeholder dressing: slice 9
- * dresses the Meadows, and monsters, combat, piles and the HUD come with later slices, shared with
- * the run scene rather than copied (§Requirements 56).
+ * field's keep-out areas and its entrance gate, the road home. Each field is drawn in its own look
+ * (`fieldLook`, keyed by the field id from world_entered): its daylit ground, its ambient, trees
+ * and rocks on the server's keep-outs, a horizon behind the far edge (§Requirements 54). Monsters
+ * and the fight with them are the run scene's own pieces, composed in `fieldCombat`; piles and the
+ * HUD come with later slices, shared the same way (§Requirements 56).
  *
  * Walking into the entrance gate sends one leave_field and waits for world_entered or a refusal,
  * as the hub does for its own sends (§Requirements 57).
@@ -37,8 +55,8 @@ import { gateAt, gateEdges } from "./hubGates";
 /** Each field's size in world px, as the server builds it (FS-X2F2H §Requirements 51). */
 const FIELD_SIZE: Record<FieldId, { width: number; height: number }> = {
   gentle_meadows: { width: 2000, height: 1000 },
-  // FS-3QHQZ sets the Forest's own size when it builds the Forest
-  forlorn_forest: { width: 2000, height: 1000 },
+  // 26 x 17 cells of 80 px (FS-3QHQZ §Requirements 11)
+  forlorn_forest: { width: 2080, height: 1360 },
 };
 
 const CAMERA_MARGIN = 120;
@@ -49,6 +67,13 @@ const NOTICE_MS = 3200;
 
 /** What the entrance gate is called on the ground, for a player to walk to. */
 const ROAD_HOME = "The road home";
+/** The baked signpost the road home's name hangs over, as at the hub's field gates. */
+const SIGNPOST = "signpost";
+
+/** The field's entrance gate: the one gate that leads to the hub. */
+function roadHomeGate(gates: readonly GateState[]): GateState | undefined {
+  return gates.find((gate) => gate.destination === "hub");
+}
 
 function textureFor(playerClass: string | undefined, facing: Facing): string {
   const known = ["warrior", "mage", "archer"];
@@ -71,6 +96,11 @@ export class FieldScene extends Phaser.Scene {
   private lastSent = { vx: 0, vy: 0 };
 
   private field: FieldId = "gentle_meadows";
+  /** How this field is drawn, by its id (FS-X2F2H §Requirements 54). */
+  private look: FieldLook = MEADOWS_LOOK;
+  private size = FIELD_SIZE.gentle_meadows;
+  /** Trees and the signpost, faded while they stand over the player (FS-2325V §C.5). */
+  private occluders = new Occluders();
   private art!: ArtLibrary;
   private lightMap?: LightMap;
   private views = new Map<string, PlayerView>();
@@ -84,6 +114,8 @@ export class FieldScene extends Phaser.Scene {
   private atEntrance?: GateState;
   /** A leave_field has been sent and its reply has not come (§Requirements 57). */
   private leavingField = false;
+  /** The field's monsters and the player's fight with them (§Requirements 56). */
+  private fight?: FieldCombat;
   private unsubscribeState?: () => void;
 
   constructor() {
@@ -96,19 +128,39 @@ export class FieldScene extends Phaser.Scene {
 
   create(data?: { field?: FieldId }): void {
     this.field = data?.field ?? "gentle_meadows";
-    const { width, height } = FIELD_SIZE[this.field] ?? FIELD_SIZE.gentle_meadows;
+    this.look = fieldLook(this.field);
+    this.size = FIELD_SIZE[this.field] ?? FIELD_SIZE.gentle_meadows;
+    const { width, height } = this.size;
 
+    const camera = this.cameras.main;
     const bounds = projectedBounds(width, height, CAMERA_MARGIN);
-    this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
-    this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
+    camera.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
 
     ensureCharacterTextures(this);
     this.art = registerArt(this);
-    this.drawGround(width, height);
+    // the horizon behind the far edge, over land in the ground's own colour; the ground itself is
+    // laid with the first state, road and all
+    const land = landBeyond(this.look, this.art.sheet("ground_grass")?.mean);
+    camera.setBackgroundColor(land);
+    addHorizon(
+      this,
+      planHorizon(
+        { ...this.look.horizon, land },
+        { bounds, view: { width: camera.width, height: camera.height } },
+      ),
+    );
     this.bindInput();
 
-    // daylight, no torch-lit dark (FS-X2F2H §Requirements 54; slice 9 tunes it)
-    this.lightMap = new LightMap(this, AMBIENT.field);
+    // the field's daylight, no torch-lit dark; the vignette and dust stay, as in every world
+    // (FS-X2F2H §Requirements 54, guideline "Lighting")
+    this.lightMap = new LightMap(this, this.look.ambient);
+    createAtmosphere(this);
+    this.fight = fieldCombatOnScene(this, this.art, this.lightMap, {
+      selfAnim: () => this.selfView()?.anim,
+      selfAt: () => this.selfView()?.pos,
+      bodyOf: (entityID) =>
+        this.views.get(entityID)?.sprite.getByName("body") as Phaser.GameObjects.Sprite | undefined,
+    });
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
     this.listen();
@@ -138,14 +190,18 @@ export class FieldScene extends Phaser.Scene {
     this.groundDrawn = false;
     this.obstaclesDrawn = false;
     this.entranceDrawn = false;
+    this.occluders.clear();
     this.atEntrance = undefined;
     this.leavingField = false;
+    this.fight?.release();
+    this.fight = undefined;
     this.lightMap = undefined;
     this.lastSent = { vx: 0, vy: 0 };
   }
 
   update(time: number, delta: number): void {
     this.sendMovementIntent();
+    this.fight?.update(delta);
     for (const view of this.views.values()) {
       view.pos.x = Phaser.Math.Linear(view.pos.x, view.target.x, POSITION_LERP);
       view.pos.y = Phaser.Math.Linear(view.pos.y, view.target.y, POSITION_LERP);
@@ -159,6 +215,11 @@ export class FieldScene extends Phaser.Scene {
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
     this.lightMap?.carry(self ? { x: self.sprite.x, y: self.sprite.y } : null);
     this.lightMap?.update(time);
+    const selfBody = self?.sprite.getByName("body") as Phaser.GameObjects.Sprite | null | undefined;
+    this.occluders.update(
+      self && selfBody ? { bounds: selfBody.getBounds(), depth: self.sprite.depth } : null,
+      delta,
+    );
   }
 
   private bindInput(): void {
@@ -201,6 +262,7 @@ export class FieldScene extends Phaser.Scene {
       this.followEntrance(state.current_player.position, state.gates ?? []);
     }
 
+    this.drawGround(state.gates ?? []);
     this.drawObstacles(state.walls ?? []);
     this.drawEntrance(state.gates ?? []);
 
@@ -215,6 +277,14 @@ export class FieldScene extends Phaser.Scene {
       view.name.destroy();
       this.views.delete(entityID);
     }
+
+    // the field's monsters, projectiles and struck players, once the bodies stand
+    this.fight?.sync(state);
+  }
+
+  /** This client's player as drawn, once the field has reported them. */
+  private selfView(): PlayerView | undefined {
+    return this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
   }
 
   /**
@@ -241,12 +311,29 @@ export class FieldScene extends Phaser.Scene {
     this.followedSprite = sprite;
   }
 
-  /** Baked ground when the manifest has it; otherwise a placeholder meadow floor. */
-  private drawGround(width: number, height: number): void {
+  /**
+   * The field's ground in its look (§Requirements 54), with the road home running from inside the
+   * entrance gate off the west edge: laid once, with the first state, which carries the gate.
+   * Without the ground's art, a placeholder meadow floor.
+   */
+  private drawGround(gates: readonly GateState[]): void {
     if (this.groundDrawn) return;
     this.groundDrawn = true;
-    if (GroundLayer.available(this.art, "field")) {
-      new GroundLayer(this, this.art, { width, height, kind: "field" });
+    const { width, height } = this.size;
+    const look = this.look.ground;
+    if (GroundLayer.available(this.art, "field", look)) {
+      const gate = roadHomeGate(gates);
+      // the ground runs on past every edge, fading into the land beyond, the road with it
+      new GroundLayer(this, this.art, {
+        width,
+        height,
+        kind: "field",
+        look,
+        paths: gate ? planRoadHome(gate.position).paths : [],
+        aprons: planFieldAprons(width, height),
+        // as far as the camera can see past the map
+        margin: CAMERA_MARGIN,
+      });
       return;
     }
     const plane = addWorldPlane(this);
@@ -259,10 +346,28 @@ export class FieldScene extends Phaser.Scene {
     plane.surface.add(ground);
   }
 
-  /** The field's keep-out areas, server entities like the hub's walls. Placeholder until slice 9. */
+  /**
+   * The field's keep-out areas, server entities like the hub's walls, each dressed as a tree
+   * cluster or a rock in the field's look, standing on the server's own rects (§Requirements 52,
+   * 54). Decoration only: never interactive, never a collider. Without the art, placeholder blocks.
+   */
   private drawObstacles(walls: readonly WallState[]): void {
     if (this.obstaclesDrawn || walls.length === 0) return;
     this.obstaclesDrawn = true;
+    const keepOuts = walls.map((wall) => ({
+      x: wall.position.x,
+      y: wall.position.y,
+      width: wall.width,
+      height: wall.height,
+    }));
+    const pieces = planKeepOutDressing(keepOuts, this.look.dressing, worldSeed("field"));
+    const baked = pieces.filter((piece) => this.art.has(piece.sheet));
+    for (const piece of baked) {
+      const { sprite } = addProp(this, this.art, piece.sheet, piece.at, { index: piece.index });
+      if (piece.tall) this.occluders.add([sprite]);
+    }
+    if (baked.length > 0) return;
+
     const plane = addWorldPlane(this);
     plane.root.setDepth(1);
     const shapes = this.add.graphics();
@@ -271,21 +376,36 @@ export class FieldScene extends Phaser.Scene {
     plane.surface.add(shapes);
   }
 
-  /** The road home: its reach on the ground, and its name, amber for a place to walk into. */
+  /**
+   * The road home (§Requirements 54): the road is laid with the ground; here its signpost beside
+   * the gate, and its name over the signpost, amber for a place to walk into: a marker, above the
+   * light-map. Without a baked signpost, the gate's reach is ringed on the ground instead.
+   */
   private drawEntrance(gates: readonly GateState[]): void {
-    const road = gates.find((gate) => gate.destination === "hub");
+    const road = roadHomeGate(gates);
     if (this.entranceDrawn || !road) return;
     this.entranceDrawn = true;
-    const plane = addWorldPlane(this);
-    plane.root.setDepth(1);
-    const reach = this.add.graphics();
-    reach.lineStyle(3, BARROW_HEX.amber, 0.6);
-    reach.strokeCircle(road.position.x, road.position.y, road.range);
-    plane.surface.add(reach);
 
-    const at = worldToScreen(road.position.x, road.position.y);
+    let at = worldToScreen(road.position.x, road.position.y);
+    let rise = 40;
+    const post = this.art.sheet(SIGNPOST);
+    if (post) {
+      const { signpost } = planRoadHome(road.position);
+      const { sprite } = addProp(this, this.art, SIGNPOST, signpost);
+      this.occluders.add([sprite]);
+      at = worldToScreen(signpost.x, signpost.y);
+      rise = post.frameHeight * post.anchor.y + NAME_GAP;
+    } else {
+      const plane = addWorldPlane(this);
+      plane.root.setDepth(1);
+      const reach = this.add.graphics();
+      reach.lineStyle(3, BARROW_HEX.amber, 0.6);
+      reach.strokeCircle(road.position.x, road.position.y, road.range);
+      plane.surface.add(reach);
+    }
+
     this.add
-      .text(at.x, at.y - 40, ROAD_HOME, {
+      .text(at.x, at.y - rise, ROAD_HOME, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "14px",
         color: toCss(palette.markerGate),

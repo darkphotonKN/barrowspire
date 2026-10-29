@@ -1,6 +1,6 @@
 ---
 id: I-3QHQZ-2
-status: open
+status: done
 implements: FS-3QHQZ
 blocked_by: [I-3QHQZ-1, I-X2F2H-1]
 labels: [ready-for-agent, blocked]
