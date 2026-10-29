@@ -33,14 +33,16 @@ loadout" cannot happen from the client.
 
 ## Acceptance Criteria
 
-- [ ] In a field, I opens the run's equipment panel with the player's inventory and worn gear; I or
+- [x] In a field, I opens the run's equipment panel with the player's inventory and worn gear; I or
       Q closes it.
-- [ ] E over an inventory row sends `equip { item_entity_id }`; E over a worn slot sends
+- [x] E over an inventory row sends `equip { item_entity_id }`; E over a worn slot sends
       `unequip { item_entity_id }`: the run's messages, byte for byte.
-- [ ] While the panel is open, E does not reach for a pile or chest, and a click does not attack.
-- [ ] The run scene's equip HUD behaves as before (its tests unchanged and green).
-- [ ] No kill stats, no new server messages, no file under `game-server/` changed.
+- [x] While the panel is open, E does not reach for a pile or chest, and a click does not attack.
+- [x] The run scene's equip HUD behaves as before (its tests unchanged and green).
+- [x] No kill stats, no new server messages, no file under `game-server/` changed.
 - [ ] `tsc`, `eslint` and `vitest`: no new failures versus the branch point.
+      `tsc` and `vitest` are clean; `eslint` is unverified, since `next lint` needs Node >= 18.18
+      and this machine runs 18.17.
 
 ## Blocked By
 

@@ -1,6 +1,7 @@
 package game
 
 import (
+	"log/slog"
 	"math"
 	"sync"
 
@@ -88,6 +89,12 @@ func (s *Session) indexGate(entity *ecs.Entity) {
 
 	if s.gates.byDestination == nil {
 		s.gates.byDestination = make(map[components.GateDestination]gateAt)
+	}
+	// one gate per destination: a second is a map error, and the first placed
+	// stays the gate to it, as a scan in placement order found it
+	if _, indexed := s.gates.byDestination[gate.Destination]; indexed {
+		slog.Warn("A second gate to one destination, keeping the first", "destination", gate.Destination, "session_id", s.ID)
+		return
 	}
 	s.gates.byDestination[gate.Destination] = gateAt{
 		X:       transform.X,

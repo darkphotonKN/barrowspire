@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
@@ -268,10 +269,12 @@ func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID s
 	// The hub body goes before the record moves. If the record left the hub
 	// meanwhile (leave_hub, a normal close), or conn dropped and its member is
 	// held for a reconnect, this visit never began and is ended now: a reconnect
-	// finds the record in the hub, never the field (R17, D7).
+	// finds the record in the hub, never the field, and finds its body there too,
+	// put back at the gate it stood at (R17, D7).
 	hub.RemovePlayer(player.ID.String())
 	if !s.moveRecordOnConn(conn, player.ID, hub.ID, field.ID) {
 		s.endVisit(ctx, field, player.ID)
+		s.reseatAtHubGate(hub, player, place.HubGate)
 		return nil, fmt.Errorf("enter field %s: record left the hub or the connection dropped: %w", place.ID, errEnterFieldNotInHub)
 	}
 
@@ -330,11 +333,7 @@ func (s *Server) comeHome(ctx context.Context, field *game.Session, visit game.F
 	}
 
 	place, _ := field.FieldPlace()
-	x, y, ok := hub.GateArrival(place.HubGate)
-	if !ok {
-		x, y = constants.HubSpawnX, constants.HubSpawnY
-	}
-	hub.AddPlayerAt(player.ID, s.characterOf(player), s.tokenOf(player), x, y)
+	s.seatAtHubGate(hub, player, place.HubGate)
 
 	moved, world := s.moveRecord(player.ID, field.ID, hub.ID)
 	if !moved {
@@ -345,6 +344,29 @@ func (s *Server) comeHome(ctx context.Context, field *game.Session, visit game.F
 	}
 
 	return hub, nil
+}
+
+// seatAtHubGate seats the member's hub body at gate's arrival point, or at the
+// hub's spawn if the hub has no such gate. Past the occupancy cap: whoever is
+// seated here is coming home, not arriving (R15).
+func (s *Server) seatAtHubGate(hub *game.Session, player *types.Player, gate components.GateDestination) {
+	x, y, ok := hub.GateArrival(gate)
+	if !ok {
+		x, y = constants.HubSpawnX, constants.HubSpawnY
+	}
+	hub.AddPlayerAt(player.ID, s.characterOf(player), s.tokenOf(player), x, y)
+}
+
+// reseatAtHubGate puts back the hub body an entry took out before its move was
+// refused, while the record still names the hub. The body goes in first and
+// the record is read after, as comeHome does: a record that left the hub in
+// between (the grace ran out, leave_hub, a normal close) takes the body back
+// out, so no body is left seated here for nobody. FS-X2F2H §Requirements 17.
+func (s *Server) reseatAtHubGate(hub *game.Session, player *types.Player, gate components.GateDestination) {
+	s.seatAtHubGate(hub, player, gate)
+	if world, _ := s.currentWorldOf(player.ID); world != hub.ID {
+		hub.RemovePlayer(player.ID.String())
+	}
 }
 
 /**
