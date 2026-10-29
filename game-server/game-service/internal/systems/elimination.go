@@ -59,8 +59,28 @@ func (s *EliminationSystem) Update(deltaTime float64, entities []*ecs.Entity, se
 				velocity := vc.(*components.VelocityComponent)
 				velocity.VX, velocity.VY = 0, 0
 			}
+
+			loseParryState(entity)
 		}
 	}
 
 	return eliminated
+}
+
+// loseParryState takes a dead mercenary's parry charges to 0 and clears their
+// parry stance and whiff lockout, on the tick of death. The run's parry count
+// stays: it only ever rises. FS-MAMHR §Requirements 21.
+func loseParryState(entity *ecs.Entity) {
+	pc, ok := entity.GetComponent(ecs.ComponentTypeParry)
+	if !ok {
+		return
+	}
+	stance := pc.(*components.ParryComponent)
+	*stance = components.ParryComponent{Parries: stance.Parries}
+
+	if rc, ok := entity.GetComponent(ecs.ComponentTypeResource); ok {
+		if parryCharges := rc.(*components.ResourceComponent); parryCharges.Kind == components.ResourceParryCharges {
+			parryCharges.Current = 0
+		}
+	}
 }

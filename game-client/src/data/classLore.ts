@@ -1,8 +1,19 @@
-export type ClassKey = "warrior" | "mage" | "archer";
+import type { ResourceKind } from "@/types/gameState";
+
+export type ClassKey = "warrior" | "mage" | "archer" | "mercenary";
+
+/**
+ * The class's own resource as the lore card shows it (FS-8AY7S req 3): its kind and the most it
+ * holds when seated. There is no shared mana pool; each class names its own.
+ */
+export interface ClassResource {
+  kind: ResourceKind;
+  max: number;
+}
 
 export interface ClassStats {
   hp: number;
-  mp: number;
+  resource: ClassResource;
   atk: number;
   def: number;
   range: number;
@@ -35,7 +46,7 @@ export const CLASS_LORE: Record<ClassKey, ClassLoreData> = {
     playstyle: "Heavy Melee, High Armor, Frontline Crusher",
     stats: {
       hp: 150,
-      mp: 50,
+      resource: { kind: "stamina", max: 100 },
       atk: 12,
       def: 10,
       range: 1,
@@ -62,20 +73,13 @@ export const CLASS_LORE: Record<ClassKey, ClassLoreData> = {
     playstyle: "Ranged Fireball, High Burst Spell Damage",
     stats: {
       hp: 100,
-      mp: 150,
+      resource: { kind: "mana", max: 150 },
       atk: 15,
       def: 3,
       range: 6,
       speed: 200,
     },
-    randomNames: [
-      "Ignis",
-      "Cyrus",
-      "Maelis",
-      "Arcana",
-      "Valence",
-      "Zephyrus",
-    ],
+    randomNames: ["Ignis", "Cyrus", "Maelis", "Arcana", "Valence", "Zephyrus"],
   },
   archer: {
     key: "archer",
@@ -89,19 +93,32 @@ export const CLASS_LORE: Record<ClassKey, ClassLoreData> = {
     playstyle: "Swift Kiting, Precision Snipe, Long Range",
     stats: {
       hp: 100,
-      mp: 100,
+      resource: { kind: "stamina", max: 100 },
       atk: 10,
       def: 5,
       range: 8,
       speed: 220,
     },
-    randomNames: [
-      "Sylvan",
-      "Fallon",
-      "Astra",
-      "Kaelen",
-      "Orion",
-      "Lothar",
-    ],
+    randomNames: ["Sylvan", "Fallon", "Astra", "Kaelen", "Orion", "Lothar"],
+  },
+  mercenary: {
+    key: "mercenary",
+    name: "MERCENARY",
+    englishTitle: "THE MERCENARY",
+    title: "OATHLESS BLADE",
+    description:
+      "Sworn to no banner, bound by no oath but the coin. He turns the barrow's blows aside on a notched blade, and when the dead have spent their strength, answers every one of them at once.",
+    primaryStat: "Strength 7 / Agility 7",
+    weaponType: "Notched Arming Sword",
+    playstyle: "Parry, Riposte, Close Steel",
+    stats: {
+      hp: 130,
+      resource: { kind: "parry_charges", max: 3 },
+      atk: 12,
+      def: 7,
+      range: 1,
+      speed: 200,
+    },
+    randomNames: ["Corvane", "Hask", "Ulric", "Brannoch", "Vesh", "Mordaunt"],
   },
 };

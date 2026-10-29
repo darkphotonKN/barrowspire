@@ -15,7 +15,7 @@ const entries = Object.entries(EFFECTS) as [string, EffectEntry][];
 const oneShots = entries.filter(([, e]) => e.timing.kind === "oneShot");
 
 describe("effects table (FS-KYPQ9 §B.2)", () => {
-  it("should carry one entry per effect named in §B.2", () => {
+  it("should carry one entry per effect named in §B.2 and FS-JTNPR req 22", () => {
     expect(Object.keys(EFFECTS).sort()).toEqual(
       [
         "slash",
@@ -31,6 +31,10 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
         "arrowRelease",
         "arrowTrail",
         "arrowImpact",
+        // FS-JTNPR req 21, 22: the Shadow Shot's own trail, release and impact
+        "shadowShotRelease",
+        "shadowShotTrail",
+        "shadowShotImpact",
         "hit",
         "deathDust",
         "escape",
@@ -52,6 +56,9 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
       scorch: 1200,
       arrowRelease: 140,
       arrowImpact: 300,
+      // FS-JTNPR req 21: heavier than the arrow's 140 / 300
+      shadowShotRelease: 220,
+      shadowShotImpact: 480,
       hit: 220,
       deathDust: 600,
       escape: 1000,

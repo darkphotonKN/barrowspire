@@ -29,15 +29,13 @@ export const MARKER_INKS = {
   "monster name": palette.markerHostile,
   "elite prefix": palette.markerElite,
   "HP fill": palette.markerHp,
-  "MP fill": palette.markerMp,
 } as const;
 
-/** The HP bar's parts. */
+/** The HP bar's parts. Health only: nothing draws a resource overhead (FS-8AY7S req 26, 27). */
 export const MARKER_BAR = {
   backing: palette.markerBarBacking,
   rim: palette.markerBarRim,
   hp: palette.markerHp,
-  mp: palette.markerMp,
 } as const;
 
 /** Screen px between a baked character's head and the lower edge of its marker stack. */

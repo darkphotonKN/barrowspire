@@ -7,6 +7,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 )
@@ -26,6 +27,8 @@ func NewStateSerializer(em *ecs.EntityManager) *StateSerializer {
 			return &types.BackendGameState{
 				Players:    make(map[uuid.UUID]*types.PlayerState),
 				LeftBehind: make(map[uuid.UUID]*types.PlayerState),
+				Resources:  make(map[uuid.UUID]*types.ResourceState),
+				Parries:    make(map[uuid.UUID]*types.ParryState),
 				Items:      make([]uuid.UUID, 0),
 				Doors:      make([]*types.DoorState, 0),
 				Walls:      make([]*types.WallState, 0),
@@ -144,11 +147,11 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				maxHP = h.MaxHealth
 			}
 
-			curMP, maxMP := 100, 100
-			if manaC, ok := entity.GetComponent(ecs.ComponentTypeMana); ok {
-				m := manaC.(*components.ManaComponent)
-				curMP = m.CurrentMana
-				maxMP = m.MaxMana
+			if resource := resourceState(entity); resource != nil {
+				backendState.Resources[player.MemberID] = resource
+			}
+			if parry := parryState(entity); parry != nil {
+				backendState.Parries[player.MemberID] = parry
 			}
 
 			level, experience := 1, int64(0)
@@ -176,8 +179,6 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				Escape:        player.Escape,
 				CurrentHealth: curHP,
 				MaxHealth:     maxHP,
-				CurrentMana:   curMP,
-				MaxMana:       maxMP,
 				Level:         level,
 				Experience:    experience,
 				LevelFloor:    progression.LevelFloor(int32(level)),
@@ -456,9 +457,19 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		}
 	}
 
-	currentPlayer, present := backendState.Players[playerID]
+	ownState, present := backendState.Players[playerID]
 	if !present {
-		currentPlayer = backendState.LeftBehind[playerID]
+		ownState = backendState.LeftBehind[playerID]
+	}
+	// the shared PlayerState is wrapped, never written: the resource is the
+	// recipient's alone. FS-8AY7S §Requirements 17–18
+	var currentPlayer *types.CurrentPlayerState
+	if ownState != nil {
+		currentPlayer = &types.CurrentPlayerState{
+			PlayerState: ownState,
+			Resource:    backendState.Resources[playerID],
+			ParryState:  backendState.Parries[playerID],
+		}
 	}
 
 	state := &types.ClientGameState{
@@ -502,6 +513,12 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	for k := range state.LeftBehind {
 		delete(state.LeftBehind, k)
 	}
+	for k := range state.Resources {
+		delete(state.Resources, k)
+	}
+	for k := range state.Parries {
+		delete(state.Parries, k)
+	}
 	state.Items = state.Items[:0]
 	state.Doors = state.Doors[:0]
 	state.Walls = state.Walls[:0]
@@ -517,6 +534,34 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.Stairs = state.Stairs[:0]
 	state.Monsters = state.Monsters[:0]
 	state.Trails = state.Trails[:0]
+}
+
+// resourceState is a delver's class resource as its owner is told it, its
+// ability priced in that pool; nil when the delver carries none.
+// FS-8AY7S §Requirements 17.
+func resourceState(entity *ecs.Entity) *types.ResourceState {
+	rc, ok := entity.GetComponent(ecs.ComponentTypeResource)
+	if !ok {
+		return nil
+	}
+	pool := rc.(*components.ResourceComponent)
+
+	state := &types.ResourceState{Kind: string(pool.Kind), Current: pool.Current, Max: pool.Max}
+	if ac, ok := entity.GetComponent(ecs.ComponentTypeAbility); ok {
+		state.AbilityCost = systems.AttackCost(ac.(*components.AbilityComponent).Kind)
+	}
+	return state
+}
+
+// parryState is a mercenary's parry stance as its owner is told it; nil for
+// anyone without one. FS-MAMHR §Requirements 28.
+func parryState(entity *ecs.Entity) *types.ParryState {
+	pc, ok := entity.GetComponent(ecs.ComponentTypeParry)
+	if !ok {
+		return nil
+	}
+	stance := pc.(*components.ParryComponent)
+	return &types.ParryState{ParryOpen: stance.Open, ParryLockout: stance.LockoutRemaining, Parries: stance.Parries}
 }
 
 // monsterState is a monster as the client draws it. One at no health lies dead,

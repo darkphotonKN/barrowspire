@@ -55,14 +55,14 @@ func seatMember(t *testing.T, s *Session, character types.CharacterInPlay) membe
 
 	sc, _ := entity.GetComponent(ecs.ComponentTypeStats)
 	hc, _ := entity.GetComponent(ecs.ComponentTypeHealth)
-	mc, _ := entity.GetComponent(ecs.ComponentTypeMana)
+	rc, _ := entity.GetComponent(ecs.ComponentTypeResource)
 	pc, _ := entity.GetComponent(ecs.ComponentTypePlayer)
 
 	return member{id: id, body: seatedBody{
-		stats:  sc.(*components.StatsComponent),
-		health: hc.(*components.HealthComponent),
-		mana:   mc.(*components.ManaComponent),
-		player: pc.(*components.PlayerComponent),
+		stats:    sc.(*components.StatsComponent),
+		health:   hc.(*components.HealthComponent),
+		resource: rc.(*components.ResourceComponent),
+		player:   pc.(*components.PlayerComponent),
 	}}
 }
 
@@ -112,9 +112,11 @@ func TestKillExperience_NoPlayerKiller_AwardsNothing(t *testing.T) {
 }
 
 // Crossing thresholds levels up in the same award, once per level crossed, with
-// the class growth each time; max HP / MP grow, current HP / MP do not. Level
-// stops at the cap while experience keeps accumulating. FS-BDA7X §Requirements
-// 8, 16–17, 19; §Edge States "Demon kill at low level", "At the cap".
+// the class growth each time; max HP and a mage's max mana grow, current HP and
+// class resource do not, and stamina never grows. Level stops at the cap while
+// experience keeps accumulating. FS-BDA7X §Requirements 8, 16–17, 19; FS-8AY7S
+// §Requirements 15; §Edge States "Demon kill at low level", "At the cap",
+// "Level-up mid-run".
 func TestKillExperience_LevelsUpInTheSameAward(t *testing.T) {
 	demon := func(level int) systems.KillRecord {
 		return systems.KillRecord{Archetype: components.MonsterArchetypeDemon, Level: level, Boss: true}
@@ -131,10 +133,12 @@ func TestKillExperience_LevelsUpInTheSameAward(t *testing.T) {
 		maxHP, maxMP       int // growth over the seat
 	}{
 		{"below the threshold", "warrior", 1, 80, ghoul, 1, 90, 0, 0, 0, 0, 0, 0},
-		{"onto the threshold", "warrior", 1, 90, ghoul, 2, 100, 2, 0, 0, 2, 12, 2},
+		{"onto the threshold", "warrior", 1, 90, ghoul, 2, 100, 2, 0, 0, 2, 12, 0},
 		{"a demon crosses two levels", "mage", 1, 0, demon(1), 3, 250, 0, 0, 6, 0, 12, 20},
-		{"a demon crosses three levels", "archer", 2, 200, demon(5), 5, 600, 0, 9, 0, 0, 24, 15},
-		{"onto the cap", "warrior", 19, 38525, ghoul, 20, 38535, 2, 0, 0, 2, 12, 2},
+		{"a demon crosses three levels", "archer", 2, 200, demon(5), 5, 600, 0, 9, 0, 0, 24, 0},
+		{"onto the cap", "warrior", 19, 38525, ghoul, 20, 38535, 2, 0, 0, 2, 12, 0},
+		{"a mage levels 1 to 2", "mage", 1, 90, ghoul, 2, 100, 0, 0, 3, 0, 6, 10},
+		{"a mercenary levels 1 to 2", "mercenary", 1, 90, ghoul, 2, 100, 1, 2, 0, 0, 10, 0},
 		{"at the cap experience accumulates", "warrior", 20, 40000, demon(10), 20, 40000 + 588, 0, 0, 0, 0, 0, 0},
 	}
 
@@ -143,9 +147,9 @@ func TestKillExperience_LevelsUpInTheSameAward(t *testing.T) {
 			s := unstartedRun(t)
 			m := seatMember(t, s, types.CharacterInPlay{Name: "Wren", Class: tt.class, Level: tt.level, Experience: int64(tt.experience)})
 			seated := *m.body.stats
-			seatedMaxHP, seatedMaxMP := m.body.health.MaxHealth, m.body.mana.MaxMana
+			seatedMaxHP, seatedMaxMP := m.body.health.MaxHealth, m.body.resource.Max
 			// wounded and drained, so a heal would show
-			m.body.health.CurrentHealth, m.body.mana.CurrentMana = 7, 3
+			m.body.health.CurrentHealth, m.body.resource.Current = 7, 3
 
 			tt.kill.KillerMemberID = m.id
 			s.publishKills([]systems.KillRecord{tt.kill})
@@ -158,9 +162,40 @@ func TestKillExperience_LevelsUpInTheSameAward(t *testing.T) {
 			assert.Equal(t, tt.int, stats.Intelligence-seated.Intelligence, "intelligence growth")
 			assert.Equal(t, tt.vit, stats.Vitality-seated.Vitality, "vitality growth")
 			assert.Equal(t, tt.maxHP, m.body.health.MaxHealth-seatedMaxHP, "max HP growth")
-			assert.Equal(t, tt.maxMP, m.body.mana.MaxMana-seatedMaxMP, "max MP growth")
+			assert.Equal(t, tt.maxMP, m.body.resource.Max-seatedMaxMP, "max class resource growth")
 			assert.Equal(t, 7, m.body.health.CurrentHealth, "no heal on level-up")
-			assert.Equal(t, 3, m.body.mana.CurrentMana, "no mana refill on level-up")
+			assert.Equal(t, 3, m.body.resource.Current, "no class resource refill on level-up")
+		})
+	}
+}
+
+// A level-up grows a mana pool's max by the class growth and leaves a stamina
+// or parry-charges pool alone, whatever the growth says. FS-8AY7S
+// §Requirements 15.
+func TestGainExperience_GrowsOnlyAManaPool(t *testing.T) {
+	tests := []struct {
+		name    string
+		kind    components.ResourceKind
+		wantMax int
+	}{
+		{"mana", components.ResourceMana, 60},
+		{"stamina", components.ResourceStamina, 50},
+		{"parry charges", components.ResourceParryCharges, 50},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			entity := em.CreateEntity()
+			entity.AddComponent(&components.StatsComponent{Level: 1})
+			entity.AddComponent(components.NewResourceComponent(tt.kind, 20, 50, 0))
+
+			gainExperience(entity, ClassGrowth{MaxMana: 10}, 100)
+
+			rc, _ := entity.GetComponent(ecs.ComponentTypeResource)
+			pool := rc.(*components.ResourceComponent)
+			assert.Equal(t, tt.wantMax, pool.Max)
+			assert.Equal(t, 20, pool.Current, "no refill on level-up")
 		})
 	}
 }

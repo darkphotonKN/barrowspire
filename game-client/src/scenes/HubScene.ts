@@ -18,8 +18,8 @@ import { progressOf } from "@/ui/progress";
 import {
   ensureCharacterTextures,
   ensureVillagerTexture,
+  placeholderTexture,
   drawDelverLegs,
-  type Facing,
 } from "@/utils/characterTextures";
 import {
   WALL_HEIGHT,
@@ -77,14 +77,6 @@ import {
 } from "@/render/world/hubKeepOut";
 import { planChimney } from "@/render/world/roofs";
 import { trimCrop } from "@/render/world/walls";
-
-/** Falls back to the warrior when a class is missing or unrecognised. */
-function textureFor(playerClass: string | undefined, facing: Facing): string {
-  const known = ["warrior", "mage", "archer"];
-  const cls = (playerClass ?? "").toLowerCase();
-
-  return `preview_${known.includes(cls) ? cls : "warrior"}_${facing}`;
-}
 
 /** Moves a world position a step toward its target. */
 function easeToward(pos: Point, target: Point): void {
@@ -1275,7 +1267,7 @@ export class HubScene extends Phaser.Scene {
 
     view.facing = facing;
     const body = view.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
-    body?.setTexture(textureFor(player.class, nearestScreenFacing(facing)));
+    body?.setTexture(placeholderTexture(player.class, nearestScreenFacing(facing)));
   }
 
   private showQueueProgress(current: number, total: number): void {
@@ -1500,7 +1492,7 @@ export class HubScene extends Phaser.Scene {
 
       const body = texture
         ? this.add.sprite(0, 0, `${texture}_down`)
-        : this.add.sprite(0, 0, textureFor("warrior", "down"));
+        : this.add.sprite(0, 0, placeholderTexture("warrior", "down"));
       if (anim.baked) anim.dress(body);
       // the placeholder's brass tint is the body, not a marker, so it stays (FS-MRZH7 req 6)
       else if (isFunction) body.setTint(BARROW_HEX.brassBright);
@@ -1798,7 +1790,7 @@ export class HubScene extends Phaser.Scene {
 
     // The same sprites the character-select screen previews, so the delver a
     // player picked is the delver they see.
-    const body = this.add.sprite(0, 0, textureFor(player.class, "down"));
+    const body = this.add.sprite(0, 0, placeholderTexture(player.class, "down"));
     body.setName("body");
 
     // The class's baked sheet, stood on its footprint by the sheet's anchor

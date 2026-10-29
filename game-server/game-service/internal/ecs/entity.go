@@ -32,12 +32,13 @@ const (
 	ComponentTypeTransform ComponentType = "Transform"
 	ComponentTypeVelocity  ComponentType = "Velocity"
 
-	ComponentTypeHealth ComponentType = "Health"
-	ComponentTypeMana   ComponentType = "Mana"
-	ComponentTypeAttack ComponentType = "Attack"
-	ComponentTypeBuff   ComponentType = "Buff"
-	ComponentTypeDebuff ComponentType = "Debuff"
-	ComponentTypeSkill  ComponentType = "Skill"
+	ComponentTypeHealth   ComponentType = "Health"
+	ComponentTypeResource ComponentType = "Resource"
+	ComponentTypeAttack   ComponentType = "Attack"
+	ComponentTypeBuff     ComponentType = "Buff"
+	ComponentTypeDebuff   ComponentType = "Debuff"
+	ComponentTypeSkill    ComponentType = "Skill"
+	ComponentTypeAbility  ComponentType = "Ability"
 
 	ComponentTypeStats      ComponentType = "Stats"
 	ComponentTypeCombat     ComponentType = "Combat"
@@ -64,6 +65,7 @@ const (
 
 	ComponentTypeBurningTrail ComponentType = "BurningTrail"
 	ComponentTypeDash         ComponentType = "Dash"
+	ComponentTypeParry        ComponentType = "Parry"
 )
 
 type Entity struct {

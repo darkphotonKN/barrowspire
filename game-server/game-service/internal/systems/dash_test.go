@@ -101,16 +101,16 @@ func TestDash_CarriesTheDelverGraduallyOverSeveralTicks(t *testing.T) {
 	assert.False(t, dashing(d), "a spent charge is over")
 }
 
-// The cast resolves on the combat tick: mana and cooldown are spent there and
-// the charge is set going, but the body only moves on the ticks after.
-func TestDash_CastSpendsManaAndCooldownAndSetsTheChargeGoing(t *testing.T) {
+// The cast resolves on the combat tick: stamina and cooldown are spent there
+// and the charge is set going, but the body only moves on the ticks after.
+func TestDash_CastSpendsStaminaAndCooldownAndSetsTheChargeGoing(t *testing.T) {
 	w := newDashWorld()
 	d := delver(w.em, 100, 100)
 
 	dashToward(d, 100, 400)
 	w.combat.Update(tickSeconds, w.em.GetAllEntities(), nil)
 
-	assert.Equal(t, 90, mana(d))
+	assert.Equal(t, 75, pool(d))
 	assert.Positive(t, cooldownOf(d, components.AttackDash))
 	require.True(t, dashing(d))
 	dc, _ := d.GetComponent(ecs.ComponentTypeDash)
@@ -263,14 +263,13 @@ func TestDash_PassesThroughBodies(t *testing.T) {
 	assert.InDelta(t, 100+dashDistance, transformOf(t, d).X, 1e-6)
 }
 
-// Spamming the charge never outruns it: it is gated by its cooldown and mana,
+// Spamming the charge never outruns it: it is gated by its cooldown and cost,
 // no tick ever carries the delver further than one charge step, and the
 // distance covered is never more than one full charge per cast.
 func TestDash_CannotBeChainedIntoASpeedExploit(t *testing.T) {
 	w := newDashWorld()
 	d := walking(delver(w.em, 50, 300), 1, 0)
-	mc, _ := d.GetComponent(ecs.ComponentTypeMana)
-	mc.(*components.ManaComponent).CurrentMana = 10_000
+	resourceOf(d).Current, resourceOf(d).Max = 10_000, 10_000
 
 	const seconds = 2.0
 	prev := transformOf(t, d).X
@@ -282,7 +281,7 @@ func TestDash_CannotBeChainedIntoASpeedExploit(t *testing.T) {
 		prev = x
 	}
 
-	casts := (10_000 - mana(d)) / 10
+	casts := (10_000 - pool(d)) / AttackCost(components.AttackDash)
 	assert.LessOrEqual(t, casts, int(seconds/attackTable[components.AttackDash].cooldown)+1)
 	// a charge carries the delver in place of the walk, so the walk adds at most its own pace
 	assert.LessOrEqual(t, prev-50, float64(casts)*dashDistance+seconds*constants.DefaultSpeed+1e-6)

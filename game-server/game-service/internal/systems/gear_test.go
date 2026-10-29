@@ -249,11 +249,6 @@ func healthOf(e *ecs.Entity) *components.HealthComponent {
 	return c.(*components.HealthComponent)
 }
 
-func manaOf(e *ecs.Entity) *components.ManaComponent {
-	c, _ := e.GetComponent(ecs.ComponentTypeMana)
-	return c.(*components.ManaComponent)
-}
-
 func TestGearSystem_SeatedDelver_StartsFullIncludingGear(t *testing.T) {
 	em := ecs.NewEntityManager()
 	d := delver(em, 100, 100)
@@ -263,8 +258,83 @@ func TestGearSystem_SeatedDelver_StartsFullIncludingGear(t *testing.T) {
 
 	assert.Equal(t, 150+45+12, healthOf(d).MaxHealth, "own, Vitality 9 and gear")
 	assert.Equal(t, 150+45+12, healthOf(d).CurrentHealth)
-	assert.Equal(t, 108, manaOf(d).MaxMana)
-	assert.Equal(t, 108, manaOf(d).CurrentMana)
+	assert.Equal(t, 108, resourceOf(d).Max)
+	assert.Equal(t, 108, resourceOf(d).Current)
+}
+
+// withPool gives a delver a class resource pool in place of the one it has.
+func withPool(d *ecs.Entity, kind components.ResourceKind, current, maximum int) *ecs.Entity {
+	d.AddComponent(components.NewResourceComponent(kind, current, maximum, 0))
+	return d
+}
+
+// The max_mana affix raises the max of a mana or a stamina pool alike: seated,
+// current is the raised max; worn mid-run, current is not raised; taken off,
+// current is lowered to the new max. FS-8AY7S §Requirements 13; §Edge States
+// "Gear swap mid-run".
+func TestGearSystem_MaxManaAffix_MovesManaAndStaminaPools(t *testing.T) {
+	tests := []struct {
+		name string
+		kind components.ResourceKind
+		base int
+	}{
+		{"warrior or archer stamina", components.ResourceStamina, 100},
+		{"mage mana", components.ResourceMana, 150},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name+" seated with it", func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			d := withPool(delver(em, 100, 100), tt.kind, tt.base, tt.base)
+			wear(em, d, chestSlot, types.ItemTypeArmor, affix(types.AffixMaxMana, 10))
+
+			NewGearSystem(em, testGearCaps, testUniqueEffects, testAttributes).Update(tickSeconds, em.GetAllEntities())
+
+			assert.Equal(t, tt.base+10, resourceOf(d).Max)
+			assert.Equal(t, tt.base+10, resourceOf(d).Current, "the seating pass fills it")
+		})
+
+		t.Run(tt.name+" worn and removed mid-run", func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			d := withPool(delver(em, 100, 100), tt.kind, tt.base, tt.base)
+			gear := NewGearSystem(em, testGearCaps, testUniqueEffects, testAttributes)
+			gear.Update(tickSeconds, em.GetAllEntities()) // seated with nothing worn
+			resourceOf(d).Current = 40
+
+			wear(em, d, chestSlot, types.ItemTypeArmor, affix(types.AffixMaxMana, 10))
+			gear.Update(tickSeconds, em.GetAllEntities())
+			gear.Update(tickSeconds, em.GetAllEntities())
+			assert.Equal(t, tt.base+10, resourceOf(d).Max, "applied once, not every tick")
+			assert.Equal(t, 40, resourceOf(d).Current, "gaining max never raises current")
+
+			resourceOf(d).Current = tt.base + 10
+			ec, _ := d.GetComponent(ecs.ComponentTypeEquipment)
+			ec.(*components.EquipmentComponent).ChestSlot = nil
+			gear.Update(tickSeconds, em.GetAllEntities())
+			assert.Equal(t, tt.base, resourceOf(d).Max)
+			assert.Equal(t, tt.base, resourceOf(d).Current, "lowered to the new max")
+		})
+	}
+}
+
+// A parry-charges pool ignores the max_mana affix: its max stays 3 and its
+// current is untouched, seated, worn or removed. FS-8AY7S §Requirements 14.
+func TestGearSystem_MaxManaAffix_ParryChargesIgnoreIt(t *testing.T) {
+	em := ecs.NewEntityManager()
+	d := withPool(delver(em, 100, 100), components.ResourceParryCharges, 1, 3)
+	wear(em, d, chestSlot, types.ItemTypeArmor, affix(types.AffixMaxMana, 10))
+	gear := NewGearSystem(em, testGearCaps, testUniqueEffects, testAttributes)
+
+	gear.Update(tickSeconds, em.GetAllEntities())
+	gear.Update(tickSeconds, em.GetAllEntities())
+	assert.Equal(t, 3, resourceOf(d).Max)
+	assert.Equal(t, 1, resourceOf(d).Current)
+
+	ec, _ := d.GetComponent(ecs.ComponentTypeEquipment)
+	ec.(*components.EquipmentComponent).ChestSlot = nil
+	gear.Update(tickSeconds, em.GetAllEntities())
+	assert.Equal(t, 3, resourceOf(d).Max)
+	assert.Equal(t, 1, resourceOf(d).Current)
 }
 
 func TestGearSystem_MaxHealthGear_NeverHealsAndUnequipClamps(t *testing.T) {

@@ -14,8 +14,9 @@ import (
 	weapon, armor and ring slots into their GearBonusComponent, which the
 	CombatSystem reads beside the character's own stats. A unique's fixed
 	affixes (tier 0) count like any other. The two bonuses that live on other
-	components are applied here: the maxima of health and mana, by the change in
-	the bonus so level-up growth on the same maxima is kept, and movement speed.
+	components are applied here: the maxima of health and the class resource,
+	by the change in the bonus so level-up growth on the same maxima is kept,
+	and movement speed.
 
 	Vitality, the character's own and the gear's, is max HP: each point adds
 	HealthPerVitality to the health bonus, so it follows the same rules as gear
@@ -210,7 +211,10 @@ func addAffix(bonus *components.GearBonusComponent, affix types.Affix) {
 	}
 }
 
-// applyMaxima moves the health and mana maxima by the change in their bonus.
+// applyMaxima moves the health and class resource maxima by the change in
+// their bonus; the max_mana affix moves the class resource's when it is a mana
+// or stamina pool, and a parry-charges pool ignores it (FS-8AY7S §Requirements
+// 13–14).
 // Gaining maximum never raises current; losing it lowers current to the new
 // maximum. On a delver's first gear pass, the one that seats their gear, the
 // gain is current too: seated at full, they stay at full including gear. A
@@ -222,11 +226,17 @@ func applyMaxima(entity *ecs.Entity, bonus *components.GearBonusComponent, seate
 	}
 	bonus.AppliedMaxHealth = bonus.MaxHealth
 
-	if mc, ok := entity.GetComponent(ecs.ComponentTypeMana); ok {
-		mana := mc.(*components.ManaComponent)
-		mana.MaxMana, mana.CurrentMana = shiftMaximum(mana.MaxMana, mana.CurrentMana, bonus.MaxMana-bonus.AppliedMaxMana, seated)
+	if rc, ok := entity.GetComponent(ecs.ComponentTypeResource); ok {
+		if pool := rc.(*components.ResourceComponent); takesMaxMana(pool.Kind) {
+			pool.Max, pool.Current = shiftMaximum(pool.Max, pool.Current, bonus.MaxMana-bonus.AppliedMaxMana, seated)
+		}
 	}
 	bonus.AppliedMaxMana = bonus.MaxMana
+}
+
+// takesMaxMana reports whether the max_mana affix moves a pool of this kind.
+func takesMaxMana(kind components.ResourceKind) bool {
+	return kind == components.ResourceMana || kind == components.ResourceStamina
 }
 
 func shiftMaximum(maximum, current, delta int, seated bool) (int, int) {

@@ -69,7 +69,7 @@ func TestRun_EveryDamageSourceKillsAMonsterOnce(t *testing.T) {
 		{"slash", "warrior", func(s *Session, d, _ uuid.UUID) error { return s.handleCastSkill(d, "slash", 600, 500) }},
 		{"arrow", "archer", func(s *Session, d, _ uuid.UUID) error { return s.handleCastSkill(d, "arrow", 600, 500) }},
 		{"fireball", "mage", func(s *Session, d, _ uuid.UUID) error { return s.handleCastSkill(d, "fireball", 600, 500) }},
-		{"triple arrow", "archer", func(s *Session, d, _ uuid.UUID) error { return s.handleCastSkill(d, "triple_arrow", 600, 500) }},
+		{"shadow shot", "archer", func(s *Session, d, _ uuid.UUID) error { return s.handleCastSkill(d, "shadow_shot", 600, 500) }},
 		{"triple fireball", "mage", func(s *Session, d, _ uuid.UUID) error { return s.handleCastSkill(d, "triple_fireball", 600, 500) }},
 	}
 
@@ -185,23 +185,34 @@ func TestRun_CorpseDoesNotBlockMovement(t *testing.T) {
 }
 
 // A projectile fired by a delver who dies before it lands still kills, and still
-// credits them. FS-77AB6 §Requirements 9.
+// credits them. FS-77AB6 §Requirements 9; FS-JTNPR §Requirements 7.
 func TestRun_KillCreditGoesToAProjectileOwnerWhoDiedFirst(t *testing.T) {
-	s, spy := watchedRun(t)
-	mage, mageEntity := placeDelver(t, s, "mage", 500, 500)
-	g := frailGhoul(s, 700, 500)
-	// rooted: once the mage is gone it would wander off the shot's line
-	g.RemoveComponent(ecs.ComponentTypeVelocity)
-	killer := memberOf(t, mageEntity)
+	tests := []struct {
+		class, skillID string
+	}{
+		{"mage", "fireball"},
+		{"archer", "shadow_shot"},
+	}
 
-	require.NoError(t, s.handleCastSkill(mage, "fireball", 800, 500))
-	tick(s) // fired
-	s.EntityManager.RemoveEntity(mageEntity.ID)
+	for _, tt := range tests {
+		t.Run(tt.skillID, func(t *testing.T) {
+			s, spy := watchedRun(t)
+			delver, delverEntity := placeDelver(t, s, tt.class, 500, 500)
+			g := frailGhoul(s, 700, 500)
+			// rooted: once the delver is gone it would wander off the shot's line
+			g.RemoveComponent(ecs.ComponentTypeVelocity)
+			killer := memberOf(t, delverEntity)
 
-	tickFor(s, 1)
-	require.Len(t, spy.records, 1)
-	assert.Equal(t, g.ID, spy.records[0].MonsterEntityID)
-	assert.Equal(t, killer, spy.records[0].KillerMemberID)
+			require.NoError(t, s.handleCastSkill(delver, tt.skillID, 800, 500))
+			tick(s) // fired
+			s.EntityManager.RemoveEntity(delverEntity.ID)
+
+			tickFor(s, 1)
+			require.Len(t, spy.records, 1)
+			assert.Equal(t, g.ID, spy.records[0].MonsterEntityID)
+			assert.Equal(t, killer, spy.records[0].KillerMemberID)
+		})
+	}
 }
 
 // The v1 consumer is a structured log line carrying the whole record.

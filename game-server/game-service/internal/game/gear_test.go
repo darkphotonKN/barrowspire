@@ -152,17 +152,17 @@ func TestStep_SeatedWithMaxHealthGear_StartsAtFull(t *testing.T) {
 	entity := delverEntity(t, s, playerID)
 	hc, _ := entity.GetComponent(ecs.ComponentTypeHealth)
 	health := hc.(*components.HealthComponent)
-	mc, _ := entity.GetComponent(ecs.ComponentTypeMana)
-	mana := mc.(*components.ManaComponent)
-	ownHealth, ownMana := health.MaxHealth, mana.MaxMana
+	rc, _ := entity.GetComponent(ecs.ComponentTypeResource)
+	pool := rc.(*components.ResourceComponent)
+	ownHealth, ownPool := health.MaxHealth, pool.Max
 
 	s.step(1.0/60, s.EntityManager.GetAllEntities())
 
 	vitality := classAtLevel(Classes["warrior"], 3).Stats.Vitality * HealthPerVitality
 	assert.Equal(t, ownHealth+vitality+10, health.MaxHealth)
 	assert.Equal(t, ownHealth+vitality+10, health.CurrentHealth)
-	assert.Equal(t, ownMana+12, mana.MaxMana)
-	assert.Equal(t, ownMana+12, mana.CurrentMana)
+	assert.Equal(t, ownPool+12, pool.Max)
+	assert.Equal(t, ownPool+12, pool.Current)
 }
 
 // Vitality is max HP: a seated delver starts full with HealthPerVitality per

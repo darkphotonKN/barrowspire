@@ -17,13 +17,20 @@ const (
 type AttackKind string
 
 const (
-	AttackTargeted       AttackKind = "attack"
-	AttackSlash          AttackKind = "slash"
+	AttackTargeted AttackKind = "attack"
+	AttackSlash    AttackKind = "slash"
+	AttackCut      AttackKind = "cut"
+	// AttackRiposte is the cleave a mercenary's cut becomes at 3 parry charges.
+	// It has no skill alias: only the server arms it. FS-MAMHR §Requirements 23–24.
+	AttackRiposte        AttackKind = "riposte"
 	AttackArrow          AttackKind = "arrow"
 	AttackFireball       AttackKind = "fireball"
-	AttackTripleArrow    AttackKind = "triple_arrow"
+	AttackShadowShot     AttackKind = "shadow_shot"
 	AttackTripleFireball AttackKind = "triple_fireball"
 	AttackDash           AttackKind = "dash"
+	// AttackParry raises the mercenary's parry stance. It has no row in the attack
+	// table: no cost, no cooldown, no damage. FS-MAMHR §Requirements 10.
+	AttackParry AttackKind = "parry"
 	// AttackMonsterStrike is a monster's swing landing at the end of its
 	// wind-up. Only the MonsterAISystem records it; no client message maps to it.
 	AttackMonsterStrike AttackKind = "monster_strike"
@@ -38,8 +45,10 @@ type AttackSnapshot struct {
 	DamageType       DamageType
 	Power            float64 // class attack + equipped weapon attack_power
 	Coefficient      float64
-	ScalingStat      int // the attack's scaling stat value at capture
-	CritChance       float64
+	// ScalingStat is the attack's scaling stat value at capture: one stat, or
+	// the mean of two with its half kept. FS-MAMHR §Requirements 7.
+	ScalingStat float64
+	CritChance  float64
 	// FromMonster marks a monster's strike: monsters never damage monsters.
 	FromMonster bool
 	// Pierce is how many more distinct targets a projectile fired with this

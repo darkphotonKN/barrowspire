@@ -142,6 +142,20 @@ export const palette = {
   xpFill: BARROW_HEX.brassBright,
   xpTrack: BARROW_HEX.charcoal,
   levelUp: BARROW_HEX.brassBright,
+  /**
+   * The resource bars (FS-8AY7S req 23), on a dark track in a brass rim. Health is the oxblood
+   * channel, lifted as the marker HP bar is, since raw oxblood vanishes on the dark track. Mana
+   * keeps the necrotic blue-green the old MP bar had. Stamina is worn parchment-gold: the neutral
+   * HUD family, apart from health, mana and the bright-brass XP bar, never amber (not actionable)
+   * nor arcane green (allies, healing). A held parry charge is a bright-brass stud; an unknown kind
+   * draws in the plain label tone.
+   */
+  hudTrack: BARROW_HEX.charcoal,
+  hudHealth: BARROW_HEX.oxbloodText,
+  hudMana: BARROW_HEX.necrotic,
+  hudStamina: mix(BARROW_HEX.vellum, BARROW_HEX.brass, 0.35),
+  hudParry: BARROW_HEX.brassBright,
+  hudResourceOther: BARROW_HEX.vellumDark,
 
   // -- Rarity (FS-4R9M9 R59): data, not emphasis. The DOM's --rarity-* ramp, matched by token
   //    name (src/marketplace/rarity.ts). Per the guideline's rarity ramp it colours only an item
@@ -203,7 +217,12 @@ export const palette = {
   markerBarBacking: BARROW_HEX.pitch,
   markerBarRim: BARROW_HEX.barrowDeep,
   markerHp: BARROW_HEX.oxbloodText,
-  markerMp: BARROW_HEX.necrotic,
+
+  /**
+   * The archer's Shadow Shot aim line (FS-JTNPR req 11): a neutral vellum thread, drawn faint
+   * until a release would fire and full once it would. Not amber: it is not an interactable.
+   */
+  aimLine: BARROW_HEX.vellum,
 
   // -- Hostile wash (FS-77AB6 req 38): a multiply tint over a creature's
   //    baked sprite, from the oxblood family. Lifted toward vellum so they

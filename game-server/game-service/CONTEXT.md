@@ -147,3 +147,42 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Arrival slot** — a reserved spawn position in the party formation, kept for a handoff player
   so they stand with the party. A *position*, unrelated to whether they hold a seat; a run with
   none left spawns the arrival elsewhere.
+
+### Classes and abilities (FS-8AY7S, FS-MAMHR, FS-JTNPR, ADR-0030)
+
+- **Class** — a character's archetype, by its server id: `warrior`, `mage`, `archer`, `mercenary`
+  (FS-MAMHR). The id is the term in code and on the wire. Display names belong to game-client:
+  the screen and the art say other things (the warrior is drawn from the *knight* sheet, the mage
+  from the *wizard* sheet).
+- **Ability** — a class's one right-click skill: `dash` (warrior), `triple_fireball` (mage),
+  Shadow Shot (archer), the parry stance (mercenary). Not every `cast_skill` is an ability:
+  left-click attacks (`slash`, `arrow`, `fireball`, `cut`) go out as `cast_skill` too. On the wire,
+  *skill* is the message and *ability* is the role.
+- **Class resource** — what a class's ability costs: **mana** (mage), **stamina** (warrior,
+  archer), **parry charges** (mercenary). One per class. Only abilities spend it; left-click
+  attacks are free. Replaces the shared mana pool every class had before FS-8AY7S. On the wire
+  the kinds are `mana`, `stamina` and `parry_charges` (never bare `parry`).
+- **Mana** — the mage's class resource: a big pool that regenerates slowly. "MP" is old HUD
+  shorthand, not a separate term.
+- **Stamina** — the warrior's and archer's class resource: a small pool that regenerates
+  quickly.
+- **Parry charge** — the mercenary's class resource: a count from 0 to 3, gained one per parried
+  strike and never regenerated. Kept until spent, carried across floors, lost on death. **Always
+  say "parry charge", never just "charge"**: in this service *charge* already means the warrior's
+  dash in flight (`DashComponent`, "a charge in flight").
+- **Parry stance** — the mercenary's ability: a short window, opened on the tick its cast
+  arrives, in which a monster strike that lands is negated and grants a parry charge.
+  Server-authoritative (ADR-0030's exception).
+- **Whiff lockout** — the 1.0 s, timed from the close of a parry stance that caught nothing,
+  during which it cannot be raised again. A stance that parried starts none.
+- **Riposte** — the cleave the mercenary's next left-click becomes once they hold 3 parry
+  charges: a wide front arc that hits every enemy in it and spends all three. **Riposte armed**
+  is the state of holding 3 parry charges with the riposte not yet thrown. The riposte has no
+  skill id: the client sends `cut`, and the server arms it from the parry-charge count.
+- **Cut** — the mercenary's left-click: a narrow sword cone scaling on the mean of Strength and
+  Agility (FS-MAMHR). Not the warrior's `slash`.
+- **Shadow Shot** — the archer's ability: one slow, heavy projectile. The client draws the hold
+  to aim; the server only sees the release (ADR-0030).
+- **Resolved cast** — a cast the server acts on: skill id plus target point, judged on the tick
+  against cooldown and cost. Aiming, holding and wind-up before it are client presentation and
+  never reach game-service state (ADR-0030).
