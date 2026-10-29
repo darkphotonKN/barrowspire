@@ -105,9 +105,16 @@ and the two are not required to agree (ADR-0025).
 | **Earth / barrow** | browns `#5a4632`, `#3e2f22` |
 | **Torch warmth** (the only real light) | amber `#e8a14d`, ember `#c2611f` |
 | **Arcane / Lich corruption** | sickly green `#6f8f4a`, necrotic teal `#4a6b6f` |
+| **Umbra / shadow magic** | dusk violet `#3f3452`, lifted `#7d6c99` |
 | **Blood / danger** | oxblood `#6e1f1f` |
 | **Parchment / UI** | vellum `#cdbf9a`, darkened `#8a7d5c`, ink `#1c1712` |
 | **Brass** | `#9c7b3f`, `#c9a14e` |
+
+**Umbra is narrow on purpose:** it is the archer's Shadow Shot (the bolt, its wake and gloom,
+and its aim arrow) and nothing else. A shadow has nothing to be darker than in a dark barrow, and
+dark smoke vanishes over brown ground, so the shot reads by hue instead: a dim, desaturated
+violet that no other channel uses. It is not a readability channel (see below), and it is never
+saturated or bright: a violet that glows like neon fails the rule below.
 
 **Rules:**
 - Keep darks as bases, **never pure black** — preserve enough value range that pixel

@@ -446,6 +446,10 @@ export class EffectsRuntime {
     if (set?.size === 0) this.owners.delete(group.owner);
 
     if (now || !group.fade) return this.cut(group);
+    // Only the particles burn out: a sprite riding on the stream goes with what it followed.
+    const fading = new Set<unknown>(group.fade.emitters);
+    for (const o of group.objects) if (!fading.has(o)) o.destroy();
+    group.objects = group.objects.filter((o) => fading.has(o));
     for (const emitter of group.fade.emitters) emitter.emitting = false;
     this.fading.add(group);
     group.timer = this.scene.time.delayedCall(group.fade.ms, () =>

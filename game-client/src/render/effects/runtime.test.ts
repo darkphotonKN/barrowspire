@@ -391,6 +391,25 @@ describe("EffectsRuntime (FS-KYPQ9 §B.8–§B.10)", () => {
       expect(emitter.destroyed).toBe(true);
     });
 
+    it("should take a fading trail's riding sprite at once, leaving only its particles to burn out", () => {
+      const played = fx.play("s1", "shadowShotTrail", at)!;
+      const halo = fake.made.find((m) => m.kind === "image")!;
+      const emitter = emitterOf();
+      const next = { x: at.x + 40, y: at.y };
+      played.moveTo(next);
+      const s = worldToScreen(next.x, next.y);
+      expect(halo.calls.setPosition).toEqual([s.x, s.y]);
+      fx.release("s1");
+
+      // the halo goes with the bolt; it never hangs at the impact while the smoke thins
+      expect(halo.destroyed).toBe(true);
+      expect(emitter.destroyed).toBe(false);
+      expect(emitter.object.emitting).toBe(false);
+
+      fake.timers[0].fire();
+      expect(fake.live()).toEqual([]);
+    });
+
     it("should cut a trail marked to die with what it follows", () => {
       fx.play("a1", "arrowTrail", at);
       fx.release("a1");

@@ -108,11 +108,11 @@ describe("ShadowShotAim (FS-JTNPR req 8, 12, 13, 15)", () => {
   });
 
   describe("affordability (FS-JTNPR req 18)", () => {
-    const stamina = (current: number): ResourceState => ({ kind: "stamina", current, max: 100, ability_cost: 40 });
+    const stamina = (current: number): ResourceState => ({ kind: "stamina", current, max: 100, ability_cost: 90 });
 
     it.each([
-      [39, "cancel"],
-      [40, "fire"],
+      [89, "cancel"],
+      [90, "fire"],
     ] as const)("should answer a ready-length, off-cooldown release at stamina %i with %s", (current, outcome) => {
       const aim = new ShadowShotAim();
       aim.press(0);
@@ -125,14 +125,14 @@ describe("ShadowShotAim (FS-JTNPR req 8, 12, 13, 15)", () => {
       aim.press(0);
       expect(aim.release(400, stamina(10))).toBe("cancel");
       aim.press(500);
-      expect(aim.release(800, stamina(40))).toBe("fire");
+      expect(aim.release(800, stamina(90))).toBe("fire");
     });
 
     it("should judge at release, so stamina regained during the hold counts", () => {
       const aim = new ShadowShotAim();
       aim.press(0);
-      expect(aim.ready(300, stamina(30))).toBe(false);
-      expect(aim.release(900, stamina(40))).toBe("fire");
+      expect(aim.ready(300, stamina(80))).toBe(false);
+      expect(aim.release(900, stamina(90))).toBe("fire");
     });
 
     it("should fire with no resource on the wire (an older server refuses it itself)", () => {

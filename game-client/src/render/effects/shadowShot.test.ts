@@ -64,10 +64,33 @@ describe("Shadow Shot bolt (FS-JTNPR req 20–23)", () => {
       expect(trail.particles?.texture).toContain("fx_smoke");
       const smoke =
         trail.particles?.looks?.fx_smoke?.tint ?? trail.particles?.tint;
-      // dark smoke: pitch and cold slate, never the arrow's vellum
-      expect(smoke).toEqual(["pitch", "slate"]);
+      // umbra smoke, deep and lifted violet, never the arrow's pale vellum
+      expect(smoke).toEqual(["umbra", "umbraLight"]);
       for (const c of colorsOf(trail)) expect(c).not.toMatch(/^vellum/);
-      expect("light" in trail).toBe(false);
+    });
+
+    it("should wrap the bolt in a pitch-dark halo inside a dim umbra gloom, so a shadow reads in the dark", () => {
+      const trail: EffectEntry = EFFECTS.shadowShotTrail;
+      expect(trail.sprite?.texture).toBe("fx_glow");
+      expect(trail.sprite?.tint).toEqual(["pitch"]);
+      // the gloom rides with the bolt, held steady while it flies
+      expect(trail.light?.color).toBe("umbraLight");
+      expect(trail.light?.intensity.from).toBe(trail.light?.intensity.to);
+    });
+
+    it("should leave a wake that lingers far longer than the arrow's, its wisps drifting up", () => {
+      const trail: EffectEntry = EFFECTS.shadowShotTrail;
+      // the wake: thicker and longer-lived than the arrow's streak, its wisps drifting up
+      const life = (e: EffectEntry) => (e.timing.kind === "stream" ? e.timing.lifeMs : -1);
+      expect(life(trail)).toBeGreaterThan(2 * life(EFFECTS.arrowTrail));
+      expect(trail.particles?.count).toBeGreaterThanOrEqual(2);
+      expect(trail.particles?.accel.y).toBeLessThan(0);
+      // the edge reads against the brown floor by hue: lifted umbra wisps
+      expect(trail.particles?.tint).toEqual(["umbraLight"]);
+      // enough alive to string the whole life out behind the bolt, not just its first half
+      const t = trail.timing;
+      if (t.kind !== "stream") throw new Error("trail is a stream");
+      expect(t.maxAlive).toBeGreaterThanOrEqual((t.lifeMs / t.intervalMs) * trail.particles!.count * 0.9);
     });
 
     it("should draw a shadow_shot sighting with the fx_arrow body and the shadow trail, then land with the shadow impact", () => {
@@ -151,9 +174,16 @@ describe("Shadow Shot bolt (FS-JTNPR req 20–23)", () => {
       const config = puff.args[3] as { accelerationY: number };
       // it settles: never sprays outward (FS-KYPQ9 §B.6)
       expect(config.accelerationY).toBeGreaterThan(0);
-      expect(lights.added).toEqual([]);
+      // the bolt's gloom fades out over the landing
+      expect(lights.added).toHaveLength(1);
+      expect(lights.added[0].spec).toMatchObject({
+        color: BARROW_HEX.umbraLight,
+        x: s.x,
+        y: s.y,
+      });
       fake.timers[0].fire();
       expect(fake.live()).toEqual([]);
+      expect(lights.alive()).toEqual([]);
     });
 
     it("should be heavier than the arrow's impact: longer, with more motes", () => {
@@ -165,16 +195,17 @@ describe("Shadow Shot bolt (FS-JTNPR req 20–23)", () => {
   });
 
   describe("palette (req 22, FS-KYPQ9 §B.7)", () => {
-    it("should play only smoke-and-steel tokens, no light and never the amber accent", () => {
-      const smokeAndSteel: Token[] = ["pitch", "slate", "slateLight"];
+    it("should play only smoke-and-umbra tokens, and never the amber accent", () => {
+      const smokeAndUmbra: Token[] = ["pitch", "umbra", "umbraLight"];
       for (const name of SHADOW_SHOT_EFFECTS) {
         const e: EffectEntry = EFFECTS[name];
         for (const c of colorsOf(e)) {
-          expect(smokeAndSteel, `${name}: ${c}`).toContain(c);
+          expect(smokeAndUmbra, `${name}: ${c}`).toContain(c);
           expect(c in BARROW_HEX).toBe(true);
         }
-        expect("light" in e, name).toBe(false);
       }
+      // a shadow, not a flash: no light at the release, only the bolt's own umbra gloom
+      expect("light" in EFFECTS.shadowShotRelease).toBe(false);
     });
 
     it("should name no amber key and no colour literal in its source", () => {
