@@ -35,12 +35,14 @@ import {
   planRoadHome,
   planTreeStands,
   planVerges,
+  showState,
   standSheet,
   worldSeed,
   type FieldLook,
 } from "@/render/world";
 import { addMist } from "@/render/effects/mist";
 import { DROP_PILE, paintDropPile } from "@/render/world/dropPile";
+import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { ContainerView } from "@/ui/ContainerView";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
@@ -222,14 +224,23 @@ export class FieldScene extends Phaser.Scene {
 
   /**
    * The field's drop piles (§Requirements 56, 59): the run's heap texture and the run's satchel,
-   * composed, never copied. E reaches for the nearest pile, F takes its first item, a click on the
-   * open satchel takes that one.
+   * composed, never copied. A Forest clearing chest is the run's chest, opened through the same
+   * satchel (FS-3QHQZ §Requirements 19). E reaches for the nearest pile or chest, F takes its
+   * first item, a click on the open satchel takes that one.
    */
   private createPiles(): void {
     if (!this.textures.exists(DROP_PILE.texture)) {
       const g = this.make.graphics({});
       paintDropPile(g);
       g.generateTexture(DROP_PILE.texture, DROP_PILE.width, DROP_PILE.height);
+      g.destroy();
+    }
+    // the run's chest placeholders, should the baked chest sheet be missing (FS-3QHQZ §Requirements 19)
+    for (const frame of ["closed", "open"] as const) {
+      if (this.textures.exists(CHEST.placeholder[frame])) continue;
+      const g = this.make.graphics({});
+      paintChest(g, frame);
+      g.generateTexture(CHEST.placeholder[frame], CHEST.width, CHEST.height);
       g.destroy();
     }
     const satchel = new ContainerView(this, this.art, {
@@ -243,6 +254,18 @@ export class FieldScene extends Phaser.Scene {
           const sprite = this.add.sprite(0, 0, DROP_PILE.texture).setOrigin(DROP_PILE.origin.x, DROP_PILE.origin.y);
           standAt(sprite, at);
           return sprite;
+        },
+        // a clearing chest, its frame shown as the run shows a coffer's, from is_open each state
+        placeChest: (at) => {
+          const sprite = this.add.sprite(0, 0, CHEST.placeholder.closed);
+          return {
+            show: (isOpen) => {
+              const frame = chestFrame(isOpen);
+              showState(sprite, this.art, CHEST.sheet, frame, CHEST.placeholder[frame]);
+              standAt(sprite, at);
+            },
+            destroy: () => sprite.destroy(),
+          };
         },
       },
       satchel,

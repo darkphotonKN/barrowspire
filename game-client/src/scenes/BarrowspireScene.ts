@@ -123,6 +123,7 @@ import {
   type FloorLook,
   type WorldThemeLook,
 } from "@/render/world";
+import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = 160;
@@ -1667,38 +1668,14 @@ export class BarrowspireScene extends Phaser.Scene {
     return this.facingTextureKey(prefix, nearestScreenFacing(facing));
   }
 
+  /** 寶箱: the chest's placeholder frames, shared with the field's chests (render/world/chest). */
   private createChestTextures(): void {
-    const width = 40;
-    const height = 32;
-
-    // 關閉的寶箱
-    const closed = this.make.graphics({});
-    closed.fillStyle(palette.floor, 1);
-    closed.fillRect(0, 10, width, height - 10);
-    closed.fillStyle(palette.ground, 1);
-    closed.fillRect(0, 0, width, 12);
-    closed.fillStyle(palette.frameBright, 1);
-    closed.fillRect(0, 10, width, 3);
-    closed.fillRect(16, 6, 8, 10);
-    closed.lineStyle(2, palette.playerCloak, 1);
-    closed.strokeRect(0, 0, width, height);
-    closed.generateTexture("chest_closed", width, height);
-    closed.destroy();
-
-    // 打開的寶箱
-    const open = this.make.graphics({});
-    open.fillStyle(palette.floor, 1);
-    open.fillRect(0, 16, width, height - 16);
-    open.fillStyle(palette.ground, 1);
-    open.fillRect(0, 0, width, 10);
-    open.fillStyle(palette.hudText, 1);
-    open.fillRect(4, 18, width - 8, height - 22);
-    open.fillStyle(palette.frameBright, 1);
-    open.fillRect(0, 16, width, 3);
-    open.lineStyle(2, palette.playerCloak, 1);
-    open.strokeRect(0, 0, width, height);
-    open.generateTexture("chest_open", width, height);
-    open.destroy();
+    for (const frame of ["closed", "open"] as const) {
+      const g = this.make.graphics({});
+      paintChest(g, frame);
+      g.generateTexture(CHEST.placeholder[frame], CHEST.width, CHEST.height);
+      g.destroy();
+    }
   }
 
   private createEscapeDoorTextures(): void {
@@ -1998,7 +1975,7 @@ export class BarrowspireScene extends Phaser.Scene {
           ? this.add
               .sprite(0, 0, DROP_PILE.texture)
               .setOrigin(DROP_PILE.origin.x, DROP_PILE.origin.y)
-          : this.add.sprite(0, 0, "chest_closed");
+          : this.add.sprite(0, 0, CHEST.placeholder.closed);
         chest = { sprite, entityId: container.entity_id, pos };
         this.chests.set(container.entity_id, chest);
         if (!isPile) this.poolInteractable(pos);
@@ -2087,8 +2064,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /** A coffer's baked frame for its server state, or the placeholder texture. */
   private showContainerFrame(sprite: Phaser.GameObjects.Sprite, isOpen: boolean): void {
-    const state = isOpen ? "open" : "closed";
-    showState(sprite, this.art, "chest", state, `chest_${state}`);
+    const frame = chestFrame(isOpen);
+    showState(sprite, this.art, CHEST.sheet, frame, CHEST.placeholder[frame]);
   }
 
   private updateWalls(walls: WallState[]): void {
