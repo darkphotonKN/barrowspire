@@ -20,6 +20,8 @@ export interface GroundPiece {
   index: number;
   /** World position of the tile's centre (or the decal's footprint). */
   at: Point;
+  /** 0..1, for ground fading out past the map's edge (an apron); absent, opaque. */
+  alpha?: number;
 }
 
 const T = WORLD_PX_PER_TILE;
@@ -80,13 +82,32 @@ const centreOf = (tx: number, ty: number): Point => ({
   y: (ty + 0.5) * T,
 });
 
+/**
+ * Ground laid past the map's edge (FS-0XMCP R18), where nobody walks: tiles within a world rect
+ * outside the map, fading out over `fade` world px from `from` (where the ground leaves the map,
+ * on its edge) into the dark the camera shows there. Paths running through it carry on as dirt.
+ */
+export interface Apron extends Rect {
+  from: Point;
+  fade: number;
+}
+
 export interface GroundOptions {
   width: number;
   height: number;
   kind: WorldKind;
   /** Trodden ground (world rects), laid as dirt. The hub's paths. */
   paths?: readonly Rect[];
+  /** Ground past the edge (the hub's gates). */
+  aprons?: readonly Apron[];
 }
+
+/** How far a tile's own hash pushes its apron fade, either way: a ragged rim, not a line. */
+const APRON_RAG = 0.1;
+/** The share of an apron's fade over which its ground is still laid whole. */
+const APRON_WHOLE = 0.3;
+/** Below this an apron tile is not laid at all. */
+const APRON_MIN_ALPHA = 0.06;
 
 /**
  * The outdoor ground over `[0, width] × [0, height]`, one tile per world tile. A run is barrow
@@ -97,6 +118,7 @@ export function planGround({
   height,
   kind,
   paths = [],
+  aprons = [],
 }: GroundOptions): GroundPiece[] {
   const seed = worldSeed(kind);
   const cols = Math.ceil(width / T);
@@ -105,22 +127,43 @@ export function planGround({
   const material = (tx: number, ty: number): Material =>
     paths.some((p) => within(centreOf(tx, ty), p)) ? "dirt" : base;
 
+  const tile = (tx: number, ty: number): GroundPiece => {
+    const at = centreOf(tx, ty);
+    const index = tileHash(tx, ty, seed);
+    const m = material(tx, ty);
+    const edge =
+      m === "grass"
+        ? transitionEdge((dx, dy) => material(tx + dx, ty + dy) === "dirt")
+        : undefined;
+    return edge
+      ? { sheet: "ground_grass_dirt", animation: edge, index: 0, at }
+      : { sheet: `ground_${m}`, animation: "variants", index, at };
+  };
+
   const tiles: GroundPiece[] = [];
   for (let tx = 0; tx < cols; tx++)
-    for (let ty = 0; ty < rows; ty++) {
-      const at = centreOf(tx, ty);
-      const index = tileHash(tx, ty, seed);
-      const m = material(tx, ty);
-      const edge =
-        m === "grass"
-          ? transitionEdge((dx, dy) => material(tx + dx, ty + dy) === "dirt")
-          : undefined;
-      tiles.push(
-        edge
-          ? { sheet: "ground_grass_dirt", animation: edge, index: 0, at }
-          : { sheet: `ground_${m}`, animation: "variants", index, at },
-      );
-    }
+    for (let ty = 0; ty < rows; ty++) tiles.push(tile(tx, ty));
+
+  // aprons past the edge: each tile once, however the aprons overlap
+  const laid = new Set<string>();
+  for (const apron of aprons)
+    for (let tx = Math.floor(apron.x / T); tx * T < apron.x + apron.width; tx++)
+      for (let ty = Math.floor(apron.y / T); ty * T < apron.y + apron.height; ty++) {
+        if (tx >= 0 && ty >= 0 && tx < cols && ty < rows) continue;
+        const key = `${tx},${ty}`;
+        if (laid.has(key)) continue;
+        const c = centreOf(tx, ty);
+        if (!within(c, apron)) continue;
+        const away = Math.hypot(c.x - apron.from.x, c.y - apron.from.y);
+        if (away >= apron.fade) continue;
+        // whole near the edge, then easing out, each tile's hash roughening the rim
+        const rag = ((tileHash(tx, ty, seed + 5) & 0xff) / 0xff - 0.5) * 2 * APRON_RAG;
+        const t = Math.min(1, Math.max(0, (away / apron.fade - APRON_WHOLE) / (1 - APRON_WHOLE) + rag));
+        const alpha = 1 - t * t * (3 - 2 * t);
+        if (alpha < APRON_MIN_ALPHA) continue;
+        laid.add(key);
+        tiles.push({ ...tile(tx, ty), alpha });
+      }
   return tiles;
 }
 

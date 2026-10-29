@@ -26,6 +26,7 @@ import {
   OUTDOOR_GROUND,
   planGroundLayer,
   tileHash,
+  type Apron,
   type GroundLook,
   type GroundPiece,
   type WorldKind,
@@ -67,6 +68,8 @@ export class GroundLayer {
       height: number;
       kind: WorldKind;
       paths?: readonly Rect[];
+      /** Ground past the edge (FS-0XMCP R18), within GROUND_MARGIN's reach of the map. */
+      aprons?: readonly Apron[];
       look?: GroundLook;
     },
   ) {
@@ -118,6 +121,7 @@ export class GroundLayer {
         frame.frame,
         Math.round(s.x - sheet.anchor.x * sheet.frameWidth - this.origin.x),
         Math.round(s.y - sheet.anchor.y * sheet.frameHeight - this.origin.y),
+        p.alpha ?? 1,
       );
     }
   }

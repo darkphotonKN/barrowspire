@@ -57,8 +57,15 @@ async function launch() {
   );
 }
 
-/** What the review contact sheets show: the cast, then the tower interior (FS-8RBQY §D.7). */
-const reviewSheets = (sheets) => [...sheets.filter((x) => x.directions === 8), ...sheets.filter((x) => x.group === "tower")];
+/**
+ * What the review contact sheets show: the cast, then the tower interior (FS-8RBQY §D.7), then the
+ * Spire's facade (FS-0XMCP §R15).
+ */
+const reviewSheets = (sheets) => [
+  ...sheets.filter((x) => x.directions === 8),
+  ...sheets.filter((x) => x.group === "tower"),
+  ...sheets.filter((x) => x.group === "spire"),
+];
 
 function readJson(file) {
   try {

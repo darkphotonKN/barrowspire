@@ -62,6 +62,7 @@ import {
   SLIT_LIGHT,
   STAIRS_LIGHT,
 } from "./models/tower.js";
+import { spireFacade, DOOR_LIGHT } from "./models/spire.js";
 import { CAST } from "./characters/cast.js";
 import { FOLK } from "./characters/folk.js";
 
@@ -437,6 +438,26 @@ function towerSheets() {
   return sheets;
 }
 
+/**
+ * The Spire's entrance at the hub's north edge (FS-0XMCP §R15–§R17), authored in code (ADR-0021)
+ * in the tower interior's stone and packed on its own atlas so every existing atlas keeps its
+ * bytes. It stands beyond the map, where the hub has no ground, so it casts no catcher shadow; its
+ * own flagstones ground it. The door's light is the only amber on it.
+ */
+function spireSheets() {
+  return [
+    {
+      name: "spire_facade",
+      group: "spire",
+      kind: "prop",
+      shadow: false,
+      animations: { default: still(spireFacade) },
+      light: { at: DOOR_LIGHT, radius: 200, color: "amber", flicker: 0.5 },
+      source: "authored: tools/bake/page/models/spire.js#spireFacade",
+    },
+  ];
+}
+
 export const CATALOGUE = [
   ...groundSheets(),
   ...natureSheets(),
@@ -448,4 +469,5 @@ export const CATALOGUE = [
   ...folkSheets(),
   ...fxSheets(),
   ...towerSheets(),
+  ...spireSheets(),
 ].map((s) => ({ licence: LICENCE, ...s }));

@@ -99,6 +99,12 @@
       "height": 324,
       "sha256": "de60f1c5e911c05199f5c60e04b239b1aaa81df9c048b96eb3b68b1458270de1"
     },
+    "spire-0": {
+      "image": "spire-0.png",
+      "width": 516,
+      "height": 744,
+      "sha256": "33faf7c562eb281f06aa0e944eb41a92fb85e48b375460ada19a0a44da69a91c"
+    },
     "tower-0": {
       "image": "tower-0.png",
       "width": 2040,
@@ -11299,6 +11305,41 @@
         }
       },
       "source": "authored: tools/bake/page/models/town.js#signpost",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "spire_facade": {
+      "atlas": "spire-0",
+      "frameWidth": 508,
+      "frameHeight": 736,
+      "anchor": {
+        "x": 0.27755905511811024,
+        "y": 0.8817934782608695
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": 13,
+          "y": -50
+        },
+        "radius": 200,
+        "color": "amber",
+        "flicker": 0.5
+      },
+      "source": "authored: tools/bake/page/models/spire.js#spireFacade",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "stairs_spiral": {

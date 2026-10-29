@@ -56,12 +56,18 @@ import {
   type House,
 } from "@/render/world";
 import {
+  HUB_APRONS,
+  HUB_BEYOND_EDGE,
+  HUB_BEYOND_EDGE_FENCES,
+  HUB_CAMERA_MARGIN,
   HUB_CARTS,
   HUB_CRATES,
   HUB_DRESSING,
   HUB_FENCES,
+  HUB_GATE_DRESSING,
   HUB_HEARTH,
   HUB_PATHS,
+  HUB_SPIRE_FACADE,
   HUB_STALLS,
   HUB_WASHING_LINE,
   HUB_WELL,
@@ -88,7 +94,7 @@ function easeToward(pos: Point, target: Point): void {
 const HUB_WIDTH = 2000;
 const HUB_HEIGHT = 1000;
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
-const CAMERA_MARGIN = 64;
+const CAMERA_MARGIN = HUB_CAMERA_MARGIN;
 /**
  * Screen px from a player's marker base (`markerBase`: a baked head, or the preview's frame top)
  * to the middle of their name label: a 60 px preview centred on the footprint keeps its label at
@@ -114,25 +120,42 @@ const CHIMNEY_LAYER = 3;
  * The well, market stalls, carts, crates, fences and the new dressing stand at the fixed spots in
  * render/world/hubKeepOut.ts, every one clear of the walking ground (FS-KYPQ9 §A.3–§A.5).
  */
-/** Lamp posts along the paths: the hub's lit places after dusk (FS-2325V §C.7). */
+/**
+ * Lamp posts along the paths: the hub's lit places after dusk (FS-2325V §C.7). The last moved off
+ * the east road's drop (FS-0XMCP R19), from (1390, 650).
+ */
 const LAMP_POSTS: [number, number][] = [
   [930, 490],
   [1090, 490],
   [690, 650],
-  [1390, 650],
+  [1420, 640],
 ];
-/** Trodden ground, joining the spawn to the people worth walking to. */
+/** Trodden ground, joining the spawn to the people worth walking to, and on to the gates. */
 const PATHS = HUB_PATHS;
+/**
+ * Trees and bushes. Off the gates' approaches (FS-0XMCP R19, K8): trees moved from (500, 360) and
+ * (1500, 330), bushes from (640, 700), (1320, 560) and (1000, 300).
+ */
 const TREES: [number, number][] = [
-  [430, 300], [500, 360], [1420, 260], [1500, 330], [1470, 205],
+  [430, 300], [470, 330], [1420, 260], [1500, 280], [1470, 205],
   [180, 820], [260, 880], [1900, 600], [1900, 780], [560, 900],
   [700, 760], [1180, 880],
 ];
 const GRASS: [number, number][] = [
-  [560, 520], [640, 700], [820, 480], [880, 820], [1120, 500],
-  [1240, 700], [1320, 560], [760, 600], [980, 880], [1400, 780],
-  [160, 600], [1880, 480], [520, 780], [1000, 300], [900, 660],
+  [560, 520], [640, 740], [820, 480], [880, 820], [1120, 500],
+  [1240, 700], [1310, 565], [760, 600], [980, 880], [1400, 780],
+  [160, 600], [1880, 480], [520, 780], [1160, 420], [900, 660],
 ];
+/**
+ * Daylight over the road east (FS-0XMCP R18): the ground beyond the Meadows gate is lighter, a
+ * pale steady pool on the light-map where the road leaves the hub. Not amber: nothing to act on.
+ */
+const MEADOWS_DAYLIGHT = { at: { x: 2120, y: 365 }, radius: 320, intensity: 0.5 } as const;
+/**
+ * Trees past the edge darken toward pitch with depth (FS-0XMCP R18, "into the dark"): the tint
+ * reaches its darkest, `most`, `over` world px past the edge.
+ */
+const EDGE_DUSK = { over: 330, most: 0.75 } as const;
 
 /** The baked trees the hub's tree spots choose between, by a hash of the spot. */
 const TREE_SHEETS = ["tree_oak", "tree_pine", "tree_oak_autumn"];
@@ -461,13 +484,15 @@ export class HubScene extends Phaser.Scene {
       cursorCss("cursor_gauntlet", "default", cursorSource(this.art, this.textures)),
     );
 
-    // Baked ground with dirt paths when the manifest has it (FS-2325V §C.1).
+    // Baked ground with dirt paths when the manifest has it (FS-2325V §C.1), running on past
+    // the edge at the gates and fading into the dark there (FS-0XMCP R18).
     this.groundLayer = GroundLayer.available(this.art, "hub")
       ? new GroundLayer(this, this.art, {
           width: HUB_WIDTH,
           height: HUB_HEIGHT,
           kind: "hub",
           paths: PATHS.map(([x, y, width, height]) => ({ x, y, width, height })),
+          aprons: HUB_APRONS,
         })
       : undefined;
     if (!this.groundLayer) this.drawGround();
@@ -917,7 +942,8 @@ export class HubScene extends Phaser.Scene {
       prop.fillCircle(x - 18, y - 18, 5);
     }
 
-    for (const run of HUB_FENCES) {
+    // the hub's runs, then the two flanking the east road past the edge (FS-0XMCP R18)
+    for (const run of [...HUB_FENCES, ...HUB_BEYOND_EDGE_FENCES]) {
       const { x, y } = run.at;
       const length = run.length;
       const horizontal = run.axis === "x";
@@ -1066,6 +1092,7 @@ export class HubScene extends Phaser.Scene {
     if (postsStood && this.art.has(line.sheet)) placeSpot(line);
     else if (postsStood) skip(line.sheet);
 
+    this.dressTheGates(dress, skip);
     this.raiseChimneys(skip);
     if (unbaked.length > 0)
       console.warn(
@@ -1094,6 +1121,49 @@ export class HubScene extends Phaser.Scene {
     // the flame stands in the ring, drawn just above it
     this.hearth = this.propAt(HEARTH[0], HEARTH[1], 1);
     this.time.addEvent({ delay: 90, loop: true, callback: () => this.flicker() });
+  }
+
+  /**
+   * The gates' dressing (FS-0XMCP R15–R18): signposts and the first trees inside the hub, the
+   * forest past the west edge, the Spire's entrance past the north edge, and daylight on the road
+   * east. Baked only and decoration only, like the rest of the dressing: nothing past the edge
+   * needs collision, since the server's clamp keeps everyone inside the map.
+   *
+   * The facade sorts behind everything in the hub: it stands wholly north of the map's edge, where
+   * nobody walks, so anything a player can stand by is nearer the viewer. Its door's light is the
+   * amber cue on the Spire gate.
+   */
+  private dressTheGates(dress: (spot: PropSpot) => boolean, skip: (sheet: string) => void): void {
+    for (const spot of HUB_GATE_DRESSING) dress(spot);
+    // past the edge the trees go darker the deeper they stand, into the dark beyond the map
+    for (const spot of HUB_BEYOND_EDGE) {
+      if (!this.art.has(spot.sheet)) {
+        skip(spot.sheet);
+        continue;
+      }
+      const { sprite } = addProp(this, this.art, spot.sheet, spot.at, { index: spot.index });
+      const past = Math.max(-spot.at.x, spot.at.x - HUB_WIDTH, -spot.at.y, spot.at.y - HUB_HEIGHT, 0);
+      sprite.setTint(shade(BARROW_HEX.vellum, Math.min(EDGE_DUSK.most, past / EDGE_DUSK.over)));
+      if (spot.tall) this.occluders.add([sprite]);
+    }
+
+    const facade = HUB_SPIRE_FACADE;
+    if (this.art.has(facade.sheet)) {
+      const { sprite, light } = addProp(this, this.art, facade.sheet, facade.at);
+      sprite.setDepth(worldDepth(-HUB_WIDTH, 0));
+      if (light) this.lightMap?.add(light);
+    } else skip(facade.sheet);
+
+    const day = worldToScreen(MEADOWS_DAYLIGHT.at.x, MEADOWS_DAYLIGHT.at.y);
+    this.lightMap?.add({
+      x: day.x,
+      y: day.y,
+      radius: MEADOWS_DAYLIGHT.radius,
+      color: BARROW_HEX.vellum,
+      intensity: MEADOWS_DAYLIGHT.intensity,
+      flicker: 0,
+      seed: 0,
+    });
   }
 
   /**
