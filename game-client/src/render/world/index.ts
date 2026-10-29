@@ -34,7 +34,6 @@ export { DROP_PILE, paintDropPile, type PileBrush } from "./dropPile";
 export { TRAIL_BED_DEPTH, TrailSet, type TrailBrush, type TrailStage } from "./trails";
 export { FIELD_LOOKS, MEADOWS_LOOK, fieldLook, landBeyond, type FieldLook } from "./fieldLook";
 export {
-  planFieldAprons,
   planKeepOutDressing,
   planRoadHome,
   type FieldDressingLook,

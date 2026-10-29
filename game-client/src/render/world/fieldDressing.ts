@@ -113,43 +113,11 @@ export function planKeepOutDressing(
 
 const T = WORLD_PX_PER_TILE;
 
-/** How far a field's ground runs on past its edges, fading, world px. */
-const EDGE_FADE = 3 * T;
-
-/**
- * The ground running on past every edge and corner of a field (FS-X2F2H §Requirements 54), fading
- * with distance from the map until it dissolves into the land beyond, which the horizon paints in
- * the ground's own colour. Edges fade from their line; corners fade from their point.
- */
-export function planFieldAprons(width: number, height: number): Apron[] {
-  const F = EDGE_FADE;
-  const edge = (x: number, y: number, w: number, h: number, from: Point, along: "x" | "y"): Apron => ({
-    x,
-    y,
-    width: w,
-    height: h,
-    from,
-    fade: F,
-    along,
-  });
-  const corner = (x: number, y: number, from: Point): Apron => ({ x, y, width: F, height: F, from, fade: F });
-  return [
-    edge(0, -F, width, F, { x: 0, y: 0 }, "x"),
-    edge(0, height, width, F, { x: 0, y: height }, "x"),
-    edge(-F, 0, F, height, { x: 0, y: 0 }, "y"),
-    edge(width, 0, F, height, { x: width, y: 0 }, "y"),
-    corner(-F, -F, { x: 0, y: 0 }),
-    corner(width, -F, { x: width, y: 0 }),
-    corner(-F, height, { x: 0, y: height }),
-    corner(width, height, { x: width, y: height }),
-  ];
-}
-
 /** Half the road's width, world px: one tile of dirt, edged by the grass-to-dirt blend. */
 export const ROAD_HALF_WIDTH = T / 2;
-/** How far the road runs on into the field past the gate, and past the edge out of it. */
+/** How far the road runs on into the field past the gate, and past the edge out of it, fading. */
 const ROAD_IN = 160;
-const ROAD_OUT = EDGE_FADE;
+const ROAD_OUT = 4 * T;
 /** Where the signpost stands from the gate: further in, on the road's north side. */
 const SIGNPOST_FROM_GATE = { x: 90, y: -60 } as const;
 
@@ -157,15 +125,17 @@ const SIGNPOST_FROM_GATE = { x: 90, y: -60 } as const;
 export interface RoadHome {
   /** Trodden ground, laid as dirt: through the gate and out past the west edge. */
   paths: Rect[];
+  /** The road's own row past the edge, fading; no grass is laid beyond the map. */
+  aprons: Apron[];
   /** Where the signpost reading the way home stands. */
   signpost: Point;
 }
 
 /**
  * The road from the field's west-edge gate back toward the hub: dirt from inside the gate, through
- * it, and off the edge as far as the ground runs on there ({@link planFieldAprons}), fading with
- * it. The signpost stands beside the road inside the gate's reach, mirroring the hub's own
- * signpost at the Meadows gate.
+ * it, and off the edge, fading into the land beyond. Only the road runs on past the edge: the map's
+ * grass ends on its own clean edge against the horizon. The signpost stands beside the road inside
+ * the gate's reach, mirroring the hub's own signpost at the Meadows gate.
  */
 export function planRoadHome(gate: Point): RoadHome {
   return {
@@ -175,6 +145,17 @@ export function planRoadHome(gate: Point): RoadHome {
         y: gate.y - ROAD_HALF_WIDTH,
         width: ROAD_OUT + gate.x + ROAD_IN,
         height: 2 * ROAD_HALF_WIDTH,
+      },
+    ],
+    aprons: [
+      {
+        x: -ROAD_OUT,
+        y: gate.y - ROAD_HALF_WIDTH,
+        width: ROAD_OUT,
+        height: 2 * ROAD_HALF_WIDTH,
+        from: { x: 0, y: gate.y },
+        fade: ROAD_OUT,
+        along: "y",
       },
     ],
     signpost: { x: gate.x + SIGNPOST_FROM_GATE.x, y: gate.y + SIGNPOST_FROM_GATE.y },

@@ -113,9 +113,9 @@ and the two are not required to agree (ADR-0025).
 - Keep darks as bases, **never pure black** — preserve enough value range that pixel
   detail still reads in dim scenes.
 - Low-key, desaturated overall. Warm torch pools against cold dark.
-  - In a daylit field world, daylight over a low-key ground stands in for torch against dark;
-    still desaturated, still mixed from these tokens. *(Amended at the owner's approval of
-    FS-X2F2H, 2026-10-29.)*
+  - In a daylit field world, warm daylight over a lit green ground stands in for torch against
+    dark; never neon, still mixed from these tokens. *(Amended at the owner's approval of
+    FS-X2F2H, 2026-10-30.)*
 - **No bright saturated primaries.** No neon, no cyan, no electric glows.
 
 ---
@@ -166,9 +166,11 @@ the test above, because most of those things cannot be acted on.
 - **Field worlds may be daylit instead** (FS-X2F2H; Gentle Meadows first). A field is open
   country outside the Spire: grass, sparse trees and rocks, with a horizon backdrop (sky and
   distant hills) behind the map's far edge. Its daylight may be as warm as a cozy meadow or as
-  dim as an overcast wood, but never bright high-fantasy: the ground stays low-key and
-  desaturated, mixed from `BARROW` tokens like every other surface, and shading is still baked
-  into the art first. Grass is ground material, not a marker: a green field never carries the
+  dim as an overcast wood, but never bright high-fantasy: the ground is mixed from `BARROW`
+  tokens like every other surface, never neon, and shading is still baked into the art first. A
+  meadow's ground may be lit clearly daylit, since its markers wear the field outline (see "The
+  readability floor"). *(Ground brightness amended at the owner's approval of FS-X2F2H,
+  2026-10-30.)* Grass is ground material, not a marker: a green field never carries the
   *safe* channel's meaning, and pickups, allies and hostiles still read against it.
   *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
 
@@ -317,8 +319,15 @@ contrast, and against the baked ground even full light under the vignette reache
 
 **Daylit fields keep the floor.** A daylit field's daylight is that field's look, not a lift for
 readability. The floor holds there unchanged: markers draw above the light-map and keep at least
-3:1 against the field's own lit ground at the canvas edge, and the gameplay accent channels mean
+3:1, carried by the field outline below, and the gameplay accent channels mean
 what they mean in every other world. *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
+
+**In a field world the outline is the mechanism.** A daylit field's ground is not held dark for
+the floor: every marker there (names, plates, a gate's name) wears a dark charcoal outline, and
+each ink keeps at least 3:1 against that outline, so it reads on any ground however bright the
+field's daylight (`FIELD_MARKER_OUTLINE` in `src/render/markers/`, tested for every field's look).
+Field worlds only: the hub's and the Spire's markers stay as they are, measured against their lit
+edge ground. *(Amended at the owner's approval of FS-X2F2H, 2026-10-30.)*
 
 ---
 

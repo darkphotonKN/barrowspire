@@ -360,6 +360,12 @@ export interface GroundLook {
    * daylight greens, FS-X2F2H §Requirements 54). Absent, the ground is drawn as baked.
    */
   tint?: number;
+  /**
+   * A brightening past what the baked sheets carry: the (tinted) ground is added over itself at
+   * this share, 0..1, so 0.5 paints it half as bright again with its texture intact (a daylit field,
+   * FS-X2F2H §Requirements 54). Absent, none.
+   */
+  lift?: number;
 }
 
 /** The outdoor ground, as runs and the hub have always had it. */

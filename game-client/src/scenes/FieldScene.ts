@@ -19,7 +19,7 @@ import { preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { LightMap } from "@/render/lighting";
-import { MARKER_DEPTH } from "@/render/markers";
+import { FIELD_MARKER_OUTLINE, MARKER_DEPTH } from "@/render/markers";
 import {
   GroundLayer,
   MEADOWS_LOOK,
@@ -28,7 +28,6 @@ import {
   addProp,
   fieldLook,
   landBeyond,
-  planFieldAprons,
   planHorizon,
   planKeepOutDressing,
   planRoadHome,
@@ -73,6 +72,11 @@ const NOTICE_MS = 3200;
 const ROAD_HOME = "The road home";
 /** The baked signpost the road home's name hangs over, as at the hub's field gates. */
 const SIGNPOST = "signpost";
+/** Every marker's dark outline in a field, so it reads on daylit ground (guideline "Daylit fields"). */
+const FIELD_MARKER_STROKE = {
+  stroke: toCss(FIELD_MARKER_OUTLINE.color),
+  strokeThickness: FIELD_MARKER_OUTLINE.thickness,
+};
 
 /** The field's entrance gate: the one gate that leads to the hub. */
 function roadHomeGate(gates: readonly GateState[]): GateState | undefined {
@@ -367,15 +371,16 @@ export class FieldScene extends Phaser.Scene {
     const { width, height } = this.size;
     const look = this.look.ground;
     if (GroundLayer.available(this.art, "field", look)) {
-      const gate = roadHomeGate(gates);
-      // the ground runs on past every edge, fading into the land beyond, the road with it
+      // the map's grass ends on its own edge; only the road runs on past it, fading
+      const road = roadHomeGate(gates);
+      const { paths, aprons } = road ? planRoadHome(road.position) : { paths: [], aprons: [] };
       new GroundLayer(this, this.art, {
         width,
         height,
         kind: "field",
         look,
-        paths: gate ? planRoadHome(gate.position).paths : [],
-        aprons: planFieldAprons(width, height),
+        paths,
+        aprons,
         // as far as the camera can see past the map
         margin: CAMERA_MARGIN,
       });
@@ -454,6 +459,7 @@ export class FieldScene extends Phaser.Scene {
         fontFamily: CANVAS_FONT.body,
         fontSize: "14px",
         color: toCss(palette.markerGate),
+        ...FIELD_MARKER_STROKE,
       })
       .setOrigin(0.5)
       .setDepth(MARKER_DEPTH.name);
@@ -487,6 +493,7 @@ export class FieldScene extends Phaser.Scene {
         fontFamily: CANVAS_FONT.body,
         fontSize: "12px",
         color: toCss(palette.markerHub),
+        ...FIELD_MARKER_STROKE,
       })
       .setOrigin(0.5)
       .setDepth(MARKER_DEPTH.name);

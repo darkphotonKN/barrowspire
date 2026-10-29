@@ -10,7 +10,7 @@
 
 import type { FieldId } from "@/assets/types/client";
 import type { ArtRgb } from "@/render/art/manifest";
-import { AMBIENT, tinted } from "@/render/lighting/lighting";
+import { groundMean } from "@/render/lighting/lighting";
 import { mix } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 import type { FieldDressingLook } from "./fieldDressing";
@@ -30,8 +30,8 @@ export interface FieldLook {
 
 /**
  * A colour's hue lifted (or sunk) so its brightest channel is `value` of full: a multiply that
- * keeps a token's channel ratio. A ground tint can only darken, and every token is darker than
- * the baked grass needs to stay daylit, so the tint takes a token's hue rather than its value.
+ * keeps a token's channel ratio. A tint or an ambient can only darken, and every token is darker
+ * than daylight needs, so they take a token's hue rather than its value.
  */
 function atValue(color: number, value: number): number {
   const c = [(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff];
@@ -49,16 +49,19 @@ const MEADOWS_HAZE = atValue(mix(BARROW_HEX.vellum, BARROW_HEX.necrotic, 0.3), 0
 
 /**
  * Gentle Meadows (D18): cozy, daylit greens, sparse trees, a horizon. The grass is the outdoor
- * family's, tinted toward a moss green (arcane-deep's hue warmed with a little vellum), kept low
- * enough that the darkest marker ink still clears 3:1 at the canvas edge. The grass is ground
- * material, never the safe channel: it sits far darker than arcane green.
+ * family's, tinted toward arcane-deep's green and lifted well past the baked sheet, under a warm
+ * vellum-and-amber daylight at full value. Brightness is not capped for the readability floor:
+ * in a field every marker wears a dark outline (`FIELD_MARKER_OUTLINE`), which carries 3:1
+ * against any ground. The grass is ground material, never the safe channel: a lit meadow green,
+ * not arcane's.
  */
 export const MEADOWS_LOOK: FieldLook = {
   ground: {
     ...OUTDOOR_GROUND,
-    tint: atValue(mix(BARROW_HEX.arcaneDeep, BARROW_HEX.vellum, 0.1), 0.85),
+    tint: atValue(mix(BARROW_HEX.arcaneDeep, BARROW_HEX.vellum, 0.2), 1),
+    lift: 0.5,
   },
-  ambient: AMBIENT.field,
+  ambient: atValue(mix(BARROW_HEX.vellum, BARROW_HEX.amberBright, 0.25), 1),
   dressing: {
     // oaks mostly, a pine now and then: green, never autumn or gloom
     trees: ["tree_oak", "tree_oak", "tree_pine"],
@@ -78,12 +81,13 @@ export const MEADOWS_LOOK: FieldLook = {
 };
 
 /**
- * The land beyond a field's edges: its grass's measured mean under the look's tint, so the ground
- * fading out past the edge dissolves into a colour it already has. Without a mean, the look's own.
+ * The land beyond a field's edges: its grass's measured mean as the look paints it (tint and lift),
+ * so the map's edge meets a colour it already has and the road fading out past it dissolves into
+ * that. Without a mean, the look's own.
  */
 export function landBeyond(look: FieldLook, grassMean: ArtRgb | undefined): number {
   if (!grassMean) return look.horizon.land;
-  const { r, g, b } = look.ground.tint === undefined ? grassMean : tinted(grassMean, look.ground.tint);
+  const { r, g, b } = groundMean(grassMean, look.ground);
   return (r << 16) | (g << 8) | b;
 }
 

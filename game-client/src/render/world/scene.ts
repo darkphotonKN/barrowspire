@@ -60,9 +60,11 @@ export class GroundLayer {
   private readonly rt: Phaser.GameObjects.RenderTexture;
   private readonly origin: Point;
   private floor?: FloorGround;
+  /** The painted ground again, added over itself: a look's lift. Made the first time one asks. */
+  private lifted?: Phaser.GameObjects.Image;
 
   constructor(
-    scene: Phaser.Scene,
+    private readonly scene: Phaser.Scene,
     private readonly art: ArtLibrary,
     private readonly world: {
       width: number;
@@ -107,10 +109,31 @@ export class GroundLayer {
     // a recoloured ground (a field's greens): the whole painted layer under one multiply
     if (look.tint === undefined) this.rt.clearTint();
     else this.rt.setTint(look.tint);
+    this.lift(look);
     this.rt.clear();
     this.rt.beginDraw();
     this.draw(planGroundLayer({ ...world, houses, look, seed: this.floor?.seed }));
     this.rt.endDraw();
+  }
+
+  /**
+   * A look's lift (a daylit field): the same painted texture drawn again just over it, additively,
+   * at the lift's share and under the same tint, so the ground brightens with its texture intact.
+   */
+  private lift(look: GroundLook): void {
+    const share = look.lift ?? 0;
+    if (share <= 0) {
+      this.lifted?.setVisible(false);
+      return;
+    }
+    this.lifted ??= this.scene.add
+      .image(this.origin.x, this.origin.y, this.rt.texture)
+      .setOrigin(0, 0)
+      .setDepth(GROUND_DEPTH)
+      .setBlendMode("ADD");
+    this.lifted.setVisible(true).setAlpha(Math.min(1, share));
+    if (look.tint === undefined) this.lifted.clearTint();
+    else this.lifted.setTint(look.tint);
   }
 
   private draw(pieces: readonly GroundPiece[]): void {

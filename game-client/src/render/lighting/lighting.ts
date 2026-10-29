@@ -180,6 +180,21 @@ export function tinted(mean: ArtRgb, tint: number): ArtRgb {
 }
 
 /**
+ * A baked ground sheet's mean as a ground look paints it (FS-X2F2H §Requirements 54): under the
+ * look's tint, then lifted by adding the tinted ground again at `lift`'s share, as the ground
+ * layer's additive copy does. Clipped at full, as the GPU clips.
+ */
+export function groundMean(
+  mean: ArtRgb,
+  look: { tint?: number; lift?: number },
+): ArtRgb {
+  const base = look.tint === undefined ? mean : tinted(mean, look.tint);
+  const k = 1 + (look.lift ?? 0);
+  const up = (v: number) => Math.min(255, Math.round(v * k));
+  return { r: up(base.r), g: up(base.g), b: up(base.b) };
+}
+
+/**
  * A baked ground colour as it reaches the eye: multiplied by the ambient, then under the
  * vignette's dark at `vignette` alpha (FS-2325V §C.9: ambient × baked ground mean × vignette).
  * Both are sRGB operations, so lighting a sheet's mean equals the mean of its lit pixels.
