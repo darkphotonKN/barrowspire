@@ -45,6 +45,12 @@ export const BARROW = {
   arcaneDeep: "#3c5a36",
   necrotic: "#688b8f",
 
+  // Umbra — shadow magic, the archer's Shadow Shot (FS-JTNPR req 20–22). A dusk violet, dim and
+  // desaturated, so a shadow reads by hue against the brown barrow floor where dark smoke alone
+  // would vanish. The deep tone is the shadow's body; the lifted one its edge and the aim arrow.
+  umbra: "#3f3452",
+  umbraLight: "#7d6c99",
+
   // Blood / danger — oxblood
   oxblood: "#6e1f1f",
   /* Oxblood is a fill; on a dark ground it is unreadable AS text, so error
@@ -99,6 +105,8 @@ export const BARROW_HEX = {
   arcane: 0x6f8f4a,
   arcaneDeep: 0x3c5a36,
   necrotic: 0x688b8f,
+  umbra: 0x3f3452,
+  umbraLight: 0x7d6c99,
   oxblood: 0x6e1f1f,
   oxbloodText: 0xc96b5e,
   vellum: 0xcdbf9a,

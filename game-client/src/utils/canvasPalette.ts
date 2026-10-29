@@ -219,10 +219,12 @@ export const palette = {
   markerHp: BARROW_HEX.oxbloodText,
 
   /**
-   * The archer's Shadow Shot aim line (FS-JTNPR req 11): a neutral vellum thread, drawn faint
-   * until a release would fire and full once it would. Not amber: it is not an interactable.
+   * The archer's Shadow Shot aim arrow (FS-JTNPR req 11): the bolt's own umbra, lifted, so the
+   * hint and the shot read as one thing. Faint until a release would fire; once it would, full
+   * and haloed in a softer, lighter umbra. Not amber: it is not an interactable.
    */
-  aimLine: BARROW_HEX.vellum,
+  aimLine: BARROW_HEX.umbraLight,
+  aimGlow: tint(BARROW_HEX.umbraLight, 0.3),
 
   // -- Hostile wash (FS-77AB6 req 38): a multiply tint over a creature's
   //    baked sprite, from the oxblood family. Lifted toward vellum so they
