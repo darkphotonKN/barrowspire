@@ -136,6 +136,12 @@ type FieldVisit struct {
 	// Deaths is how many times the player fell on this visit (FS-X2F2H
 	// §Requirements 22), for the settlement to read.
 	Deaths int
+
+	// Equipment and Satchel are what the body wore and carried as the visit
+	// ended: loadout items with their stored instance, items picked up here
+	// with none (FS-X2F2H §Requirements 38, 41).
+	Equipment types.ExtractedEquipment
+	Satchel   []*types.ExtractedItem
 }
 
 /**

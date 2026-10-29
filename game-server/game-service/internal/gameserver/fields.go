@@ -28,19 +28,19 @@ import (
 * member (D4).
 **/
 
-// VisitSettler takes a field visit that has ended, exactly once per visit
-// (FS-X2F2H §F). Slice 6 writes it to the match-end outbox; until then it is
-// logged.
+// VisitSettler takes a field visit that has ended, exactly once per visit, and
+// writes it to the match-end outbox (FS-X2F2H §F R39, ADR-0031). The game
+// service is the one in production.
 type VisitSettler interface {
-	Settle(ctx context.Context, visit game.FieldVisit) error
+	PublishFieldVisit(ctx context.Context, visit game.FieldVisit) error
 }
 
-// logVisitSettler is the settlement before FS-X2F2H slice 6: it publishes
-// nothing.
+// logVisitSettler is the settlement of a server built without a publisher: it
+// logs the visit and publishes nothing.
 type logVisitSettler struct{}
 
-func (logVisitSettler) Settle(_ context.Context, visit game.FieldVisit) error {
-	slog.Info("Field visit settled (not published until the outbox write lands)",
+func (logVisitSettler) PublishFieldVisit(_ context.Context, visit game.FieldVisit) error {
+	slog.Info("Field visit settled with no publisher, nothing written",
 		"visit_id", visit.ID, "field", visit.Field, "member_id", visit.MemberID,
 		"character_id", visit.CharacterID, "entered_at", visit.EnteredAt, "left_at", visit.LeftAt)
 	return nil
@@ -49,6 +49,9 @@ func (logVisitSettler) Settle(_ context.Context, visit game.FieldVisit) error {
 // fieldReadTimeout bounds the queue and loadout reads an entry waits on, the
 // arrival path's loadout bound.
 const fieldReadTimeout = 3 * time.Second
+
+// visitSettleTimeout bounds a visit's outbox write.
+const visitSettleTimeout = 2 * time.Second
 
 // Why a field would not take or let go of a player, each with the stable reason
 // the client switches on. FS-X2F2H §Requirements 10, 14.
@@ -92,11 +95,29 @@ func fieldRefusal(err error) (reason, message string) {
 // Option adjusts how a Server boots.
 type Option func(*bootOptions)
 
-// bootOptions are what a pod's fields are generated from at boot.
+// bootOptions are what a pod's fields are generated from at boot, and where
+// their visits settle.
 type bootOptions struct {
 	// seed is the one seed every generated field of this pod comes from
 	seed         uint64
 	forestParams levelgen.Params
+	visitSettler VisitSettler
+}
+
+// newBootOptions are the defaults with opts applied: a fresh seed, the
+// Forest's own parameters, and visits settled to the log alone.
+func newBootOptions(opts ...Option) bootOptions {
+	boot := bootOptions{seed: rand.Uint64(), forestParams: levelgen.ForestParams, visitSettler: logVisitSettler{}}
+	for _, opt := range opts {
+		opt(&boot)
+	}
+	return boot
+}
+
+// WithVisitSettler settles every ended field visit through settler, the
+// match-end outbox write in production. FS-X2F2H §F R39.
+func WithVisitSettler(settler VisitSettler) Option {
+	return func(o *bootOptions) { o.visitSettler = settler }
 }
 
 /**
@@ -126,12 +147,7 @@ type laidOutField struct {
 * rather than serve a broken one. FS-3QHQZ §Requirements 10, Edge States
 * "Generator boxed in".
 **/
-func layOutFields(opts ...Option) ([]laidOutField, error) {
-	boot := bootOptions{seed: rand.Uint64(), forestParams: levelgen.ForestParams}
-	for _, opt := range opts {
-		opt(&boot)
-	}
-
+func layOutFields(boot bootOptions) ([]laidOutField, error) {
 	forest, err := levelgen.Generate(boot.forestParams, boot.seed)
 	if err != nil {
 		slog.Error("Could not generate the Forlorn Forest, the pod will not start", "seed", boot.seed, "error", err)
@@ -243,6 +259,9 @@ func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID s
 	if errors.Is(err, game.ErrAlreadyHere) {
 		return nil, fmt.Errorf("enter field %s: %w: %w", place.ID, errEnterFieldNotInHub, err)
 	}
+	if errors.Is(err, game.ErrNoLoadout) {
+		return nil, fmt.Errorf("enter field %s: %w: %w", place.ID, errEnterFieldNoLoadout, err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("enter field %s: %w", place.ID, err)
 	}
@@ -341,11 +360,21 @@ func (s *Server) endVisit(ctx context.Context, field *game.Session, memberID uui
 	return true
 }
 
-// settleVisit hands an ended visit to the settlement seam and keeps what it
-// earned on the record, so the hub shows it without waiting for
-// character-service. FS-X2F2H §Requirements 16, 38.
+/**
+* settleVisit writes an ended visit to the match-end outbox and keeps what it
+* earned on the record, so the hub shows it without waiting for
+* character-service. FS-X2F2H §Requirements 16, 38, 39.
+*
+* The write is one local transaction, bounded so a stalled database cannot hold
+* the message hub's loop (leave_field runs on it), and detached from the
+* caller's cancellation so a closing connection does not abort it. A visit that
+* fails to write is lost, as a pod crash loses it (R50): nothing was at risk.
+**/
 func (s *Server) settleVisit(ctx context.Context, visit game.FieldVisit) {
-	if err := s.visitSettler.Settle(ctx, visit); err != nil {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), visitSettleTimeout)
+	defer cancel()
+
+	if err := s.visitSettler.PublishFieldVisit(writeCtx, visit); err != nil {
 		slog.Error("Could not settle a field visit", "visit_id", visit.ID, "member_id", visit.MemberID, "error", err)
 	}
 

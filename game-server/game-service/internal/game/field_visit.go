@@ -112,6 +112,7 @@ func (s *Session) endVisitLocked(memberID uuid.UUID) (FieldVisit, bool) {
 			visit.Level = stats.Level
 			visit.Experience = int64(stats.Experience)
 		}
+		visit.Equipment, visit.Satchel = s.gearOf(entity)
 		for _, itemID := range heldItems(entity) {
 			s.EntityManager.RemoveEntity(itemID)
 		}
@@ -124,6 +125,38 @@ func (s *Session) endVisitLocked(memberID uuid.UUID) (FieldVisit, bool) {
 	slog.Info("Visit ended", "field", visit.Field, "visit_id", visit.ID, "member_id", memberID)
 
 	return visit, true
+}
+
+// gearOf is what the body wears, slot by slot, and carries in its satchel, as
+// the run's end extracts it (FS-X2F2H §Requirements 38). Callers hold the
+// world's lock.
+func (s *Session) gearOf(body *ecs.Entity) (types.ExtractedEquipment, []*types.ExtractedItem) {
+	items := make(map[uuid.UUID]*components.ItemComponent)
+	for _, itemID := range heldItems(body) {
+		entity, ok := s.EntityManager.GetEntity(itemID)
+		if !ok {
+			continue
+		}
+		if ic, isItem := entity.GetComponent(ecs.ComponentTypeItem); isItem {
+			items[itemID] = ic.(*components.ItemComponent)
+		}
+	}
+
+	equipment := types.ExtractedEquipment{}
+	if ec, ok := body.GetComponent(ecs.ComponentTypeEquipment); ok {
+		equipment = extractedEquipmentOf(items, ec.(*components.EquipmentComponent))
+	}
+
+	satchel := []*types.ExtractedItem{}
+	if lc, ok := body.GetComponent(ecs.ComponentTypeItemIDList); ok {
+		for _, itemID := range lc.(*components.ItemIDListComponent).ItemIDs {
+			if item, ok := items[itemID]; ok {
+				satchel = append(satchel, extractedItemFrom(item))
+			}
+		}
+	}
+
+	return equipment, satchel
 }
 
 // heldItems is every item entity a body holds: what it wears and what it

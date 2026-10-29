@@ -125,7 +125,8 @@ type HandoffAnnouncer interface {
 * "Generator boxed in").
 **/
 func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient, characters CharacterReader, podID, podAddr string, announcer HandoffAnnouncer, opts ...Option) (*Server, error) {
-	fields, err := layOutFields(opts...)
+	boot := newBootOptions(opts...)
+	fields, err := layOutFields(boot)
 	if err != nil {
 		return nil, fmt.Errorf("new server: %w", err)
 	}
@@ -146,7 +147,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 
 		sessions:           make(map[uuid.UUID]*game.Session, 10),
 		fields:             make(map[game.FieldID]uuid.UUID),
-		visitSettler:       logVisitSettler{},
+		visitSettler:       boot.visitSettler,
 		players:            make(map[uuid.UUID]*types.Player, 10),
 		connToPlayer:       make(map[*websocket.Conn]*types.Player, 10),
 		graceHolds:         make(map[uuid.UUID]graceHold),
