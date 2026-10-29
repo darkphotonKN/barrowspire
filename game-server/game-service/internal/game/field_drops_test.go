@@ -313,6 +313,29 @@ func TestFieldPile_KillerLeft_WindowStillRuns(t *testing.T) {
 	require.NoError(t, pickUp(t, field, other, itemID))
 }
 
+// A pickup that lands after its body's visit ended takes nothing: the item
+// stays in the pile, never in a satchel nobody will settle. R49.
+func TestPickUpItem_BodyNoLongerSeated_TakesNothing(t *testing.T) {
+	field := lootedField(t)
+	killer := visitor(t, field, fieldWren)
+	pile, itemID := landPile(t, field, killer)
+	ageFieldPiles(field, FieldLootWindow) // open to anyone
+	body := delverEntity(t, field, killer)
+	tc, ok := body.GetComponent(ecs.ComponentTypeTransform)
+	require.True(t, ok)
+
+	_, ended := field.EndVisit(killer)
+	require.True(t, ended)
+
+	err := field.pickUpItem(body, tc.(*components.TransformComponent), itemID)
+
+	require.ErrorIs(t, err, ErrNotInThisWorld)
+	assert.Equal(t, []uuid.UUID{itemID}, pileItemIDs(t, pile), "the item stays in the pile")
+	satchel, ok := body.GetComponent(ecs.ComponentTypeItemIDList)
+	require.True(t, ok)
+	assert.NotContains(t, satchel.(*components.ItemIDListComponent).ItemIDs, itemID, "the orphaned satchel takes nothing")
+}
+
 // A refused pickup tells the player why, with the loot_reserved reason.
 // R33, R60.
 func TestHandleInteract_ReservedPile_RefusesWithLootReserved(t *testing.T) {

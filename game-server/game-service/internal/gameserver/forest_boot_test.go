@@ -95,5 +95,8 @@ func TestNewServer_ForestThatCannotBeGenerated_FailsConstruction(t *testing.T) {
 		WithBootSeed(7), withForestParams(boxedIn))
 
 	require.ErrorIs(t, err, levelgen.ErrNoLayout)
+	// the error is the one record of the failure, so it carries the seed that
+	// rebuilds the layout
+	assert.ErrorContains(t, err, "seed 7")
 	assert.Nil(t, server)
 }

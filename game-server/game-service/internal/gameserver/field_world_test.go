@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -372,6 +373,53 @@ func TestEnterField_AStalledLoadoutReadDoesNotHoldTheField(t *testing.T) {
 	reply, answered := inbox.await(string(constants.ActionWorldEntered), string(constants.ActionEnterField))
 	require.True(t, answered)
 	assert.Equal(t, string(constants.ActionWorldEntered), reply.Action)
+}
+
+// armedStallingItems answers loadout reads at once until armed, then stalls
+// them as stallingItems does, so the hub's own seating read is not the one held.
+type armedStallingItems struct {
+	stallingItems
+	armed atomic.Bool
+}
+
+func (s *armedStallingItems) GetLoadoutWithItems(ctx context.Context, req *itemspb.GetLoadoutWithItemsRequest) (*itemspb.GetLoadoutWithItemsResponse, error) {
+	if !s.armed.Load() {
+		return &itemspb.GetLoadoutWithItemsResponse{}, nil
+	}
+	return s.stallingItems.GetLoadoutWithItems(ctx, req)
+}
+
+// A connection that drops while its entry is still under way never lands in
+// the field: the entry ends the visit it seated, and the record stays in the
+// hub, so a reconnect is never announced the field. R17 (D7), R49.
+func TestEnterField_ADropMidEntry_IsNeverResumedInTheField(t *testing.T) {
+	items := &armedStallingItems{stallingItems: stallingItems{started: make(chan struct{}, 1), release: make(chan struct{})}}
+	rig := newFieldRig(t, items)
+	serverSide, _ := wsPair(t)
+	wren, _, _ := rig.inHubAt(t, "Wren", serverSide, 1960, 360)
+	rig.awaitAtMeadowsGate(t, wren)
+
+	items.armed.Store(true)
+	sendEnterField(rig.server, serverSide, meadowsField)
+	select {
+	case <-items.started:
+	case <-time.After(startSoloSettle):
+		t.Fatal("the loadout read never started")
+	}
+	// the drop lands while the entry is off the loop, between its checks and
+	// the record's move
+	rig.server.handleReadError(serverSide, &websocket.CloseError{Code: websocket.CloseAbnormalClosure})
+	close(items.release)
+
+	require.Eventually(t, func() bool {
+		return len(rig.settle.settled()) == 1 || recordOf(t, rig.server, wren.ID).CurrentGameSessionId == rig.meadows.ID
+	}, startSoloSettle, 10*time.Millisecond, "the entry never finished")
+
+	record := recordOf(t, rig.server, wren.ID)
+	assert.Equal(t, rig.hub.ID, record.CurrentGameSessionId, "the record never names the field")
+	assert.Equal(t, constants.Reconnecting, *record.ConnectState, "still held through the grace")
+	assert.False(t, rig.meadows.HasPlayer(wren.ID), "the seated body is ended")
+	assert.Len(t, rig.settle.settled(), 1, "the visit it seated settles once")
 }
 
 // loadoutItems answers every loadout read with one loadout.

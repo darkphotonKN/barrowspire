@@ -2,6 +2,7 @@ package game
 
 import (
 	"testing"
+	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -92,6 +93,29 @@ func TestAtGate_FalseForAPlayerNotInThisWorld(t *testing.T) {
 
 		assert.False(t, run.AtGate(playerID, components.GateDestinationSpire))
 	})
+}
+
+// The at-gate query never waits on the world's lock: a seat holds it across the
+// loadout read, and the hub's one message loop asks at-gate for every
+// find_game and start_solo, so waiting here would park the whole loop behind
+// one seat. FS-0XMCP §Requirements 7, 12.
+func TestAtGate_DoesNotWaitOnTheWorldsLock(t *testing.T) {
+	hub := builtHub()
+	playerID := standAt(t, hub, 1000, 50)
+
+	// a seat in progress
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+
+	answered := make(chan bool, 1)
+	go func() { answered <- hub.AtGate(playerID, components.GateDestinationSpire) }()
+
+	select {
+	case at := <-answered:
+		assert.True(t, at, "at the Spire gate, measured on the last tick")
+	case <-time.After(time.Second):
+		t.Fatal("AtGate waited on the world's lock")
+	}
 }
 
 // A player coming back through a field gate is set down at its arrival point.

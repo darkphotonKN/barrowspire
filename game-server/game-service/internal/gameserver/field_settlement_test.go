@@ -2,6 +2,7 @@ package gameserver
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -295,4 +296,71 @@ func TestEnterField_NoLoadout_RefusedAsUnreadable(t *testing.T) {
 	assertRefused(t, inbox, constants.ActionEnterField, "loadout_unavailable")
 	assert.False(t, rig.meadows.HasPlayer(wren.ID))
 	assert.True(t, rig.hub.HasPlayer(wren.ID), "still in the hub")
+}
+
+// A leave_field that cannot bring its member home is refused not_in_field, the
+// reason that is true of them, never not_in_hub. R14, R60.
+func TestComingHome_NoHomeToComeTo_RefusedNotInField(t *testing.T) {
+	tests := []struct {
+		name   string
+		noHome func(rig *fieldRig, wren *types.Player)
+	}{
+		{"off record", func(rig *fieldRig, wren *types.Player) {
+			rig.server.mu.Lock()
+			delete(rig.server.players, wren.ID)
+			rig.server.mu.Unlock()
+		}},
+		{"no hub", func(rig *fieldRig, _ *types.Player) {
+			rig.server.mu.Lock()
+			delete(rig.server.sessions, rig.server.hubSessionID)
+			rig.server.mu.Unlock()
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rig := newFieldRig(t, &MockItemsClient{})
+			wren, conn, inbox := rig.atMeadowsGate(t, "Wren")
+			rig.enterMeadows(t, wren, conn, inbox)
+			visit, ended := rig.meadows.EndVisit(wren.ID)
+			require.True(t, ended)
+			tt.noHome(rig, wren)
+
+			_, err := rig.server.comeHome(context.Background(), rig.meadows, visit)
+
+			require.Error(t, err)
+			reason, _ := fieldRefusal(err)
+			assert.Equal(t, "not_in_field", reason)
+		})
+	}
+}
+
+// failingSettler is a settlement whose outbox write always fails.
+type failingSettler struct{}
+
+func (failingSettler) PublishFieldVisit(context.Context, game.FieldVisit) error {
+	return errors.New("outbox unreachable")
+}
+
+// A visit whose write failed earned nothing that survives the next load, so the
+// hub keeps the level and experience from before it. R16, R50.
+func TestComingHome_ASettlementThatFailed_KeepsThePreVisitLevel(t *testing.T) {
+	rig := newFieldRig(t, meadowsLoadout())
+	rig.server.visitSettler = failingSettler{}
+	wren, conn, inbox := rig.atMeadowsGate(t, "Wren")
+	rig.enterMeadows(t, wren, conn, inbox)
+
+	visit, ended := rig.meadows.EndVisit(wren.ID)
+	require.True(t, ended)
+	visit.Level, visit.Experience = 6, 2600
+
+	_, err := rig.server.comeHome(context.Background(), rig.meadows, visit)
+	require.NoError(t, err, "a failed write still brings them home")
+
+	record := recordOf(t, rig.server, wren.ID)
+	assert.Equal(t, 3, record.Character.Level, "the record keeps the pre-visit level")
+	assert.Equal(t, int64(900), record.Character.Experience, "and experience")
+	body := bodyIn(rig.hub, wren.ID)
+	require.NotNil(t, body)
+	sc, _ := body.GetComponent(ecs.ComponentTypeStats)
+	assert.Equal(t, 3, sc.(*components.StatsComponent).Level, "the hub body is at the pre-visit level")
 }

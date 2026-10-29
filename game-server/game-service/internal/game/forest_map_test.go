@@ -79,6 +79,18 @@ func TestForlornForest_IsTheLayoutsSize(t *testing.T) {
 	assert.Equal(t, generated.Bounds.H, forest.mapHeight)
 }
 
+// The Forest's size is read from the layout it is built from, never fixed
+// beside it: a layout of another size makes a Forest of that size. R11.
+func TestForlornForest_TakesItsSizeFromTheLayout(t *testing.T) {
+	generated := forestLayoutFor(t, forestSeed)
+	generated.Bounds = levelgen.Size{W: 1600, H: 960}
+
+	place := ForlornForest(generated)
+
+	assert.Equal(t, 1600.0, place.Width)
+	assert.Equal(t, 960.0, place.Height)
+}
+
 // Nothing of a run stands in the Forest: no building door, escape door,
 // switch or stairs. Its only containers are its clearing chests (R19). R13.
 func TestForlornForest_BuildsNoRunObject(t *testing.T) {
@@ -112,7 +124,7 @@ func overlapsWall(walls []levelgen.Rect, p FieldPoint, r float64) bool {
 // east edge, and the arrival (the respawn point) is beside it on open ground,
 // beyond the gate's range so arriving never walks straight back out. R14.
 func TestForlornForest_EntranceAndArrival(t *testing.T) {
-	for seed := uint64(1); seed <= 300; seed++ {
+	for seed := uint64(1); seed <= 1000; seed++ {
 		generated := forestLayoutFor(t, seed)
 		place := ForlornForest(generated)
 

@@ -143,6 +143,44 @@ func TestAtGate_WhileTheHubTicks(t *testing.T) {
 	wg.Wait()
 }
 
+// Readers asking from beside the tick see the body arrive: while it walks into
+// the Spire's door, each of them eventually reads true. Run with -race.
+// FS-0XMCP §Requirements 7, 12.
+func TestAtGate_WhileTheHubTicks_ReadersSeeTheArrival(t *testing.T) {
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+
+	conn := &websocket.Conn{}
+	player := &types.Player{ID: uuid.New(), Username: "Wren"}
+	registerTestConn(server, conn, player)
+	_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Wren"})
+	require.NoError(t, err)
+
+	hub := headForSpireGate(t, server, conn, player.ID)
+
+	deadline := time.Now().Add(spireGateWalk)
+	const readers = 4
+	arrived := make([]bool, readers)
+	var wg sync.WaitGroup
+	for reader := range readers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for time.Now().Before(deadline) {
+				if hub.AtGate(player.ID, components.GateDestinationSpire) && server.AtSpireGate(player.ID) {
+					arrived[reader] = true
+					return
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}()
+	}
+	wg.Wait()
+
+	for reader, saw := range arrived {
+		assert.True(t, saw, "reader %d never saw the body at the Spire's door", reader)
+	}
+}
+
 // A gate nobody can reach, or one a building half covers, is not a place; an
 // arrival point inside the range would send a returning player straight back
 // out. FS-0XMCP §Requirements 3.

@@ -268,6 +268,22 @@ func TestForestChest_RestockCountsFromTheFirstOpen(t *testing.T) {
 	assert.NotEmpty(t, chestHolds(t, chest))
 }
 
+// A chest's time since its first open is its own clock, never a pile's age:
+// it runs from the first open and is back to zero as the chest restocks. R19.
+func TestForestChest_TimeOpenIsKeptApartFromPileAge(t *testing.T) {
+	forest := lootedForest(t, &chestRoll{f: 0})
+	chest, player := firstChest(t, forest)
+	require.NoError(t, forest.handleInteract(player, chest.ID))
+
+	ageChests(forest, 10)
+	container := pileOf(t, chest)
+	assert.InDelta(t, 10.0, container.OpenedFor, 1e-9, "open for 10 s")
+	assert.Zero(t, container.Age, "a chest has no pile age")
+
+	ageChests(forest, ForestChestRestockDelay)
+	assert.Zero(t, container.OpenedFor, "back to zero as it restocks")
+}
+
 // An item already taken when the chest restocks is the taker's; only what is
 // still inside vanishes. Edge "A chest is mid-restock while someone stands at it".
 func TestForestChest_RestockLeavesTakenItemsWithTheTaker(t *testing.T) {
