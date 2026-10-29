@@ -24,7 +24,7 @@ type hubNPC struct {
 var hubNPCs = []hubNPC{
 	{
 		Name:     "Spirewarden",
-		Function: components.NPCFunctionDelve,
+		Function: components.NPCFunctionStoryteller,
 		X:        constants.HubSpawnX + 140,
 		Y:        constants.HubSpawnY - 120,
 	},

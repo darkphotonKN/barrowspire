@@ -54,6 +54,7 @@ type SessionManager interface {
 	GetMatchedChan(ctx context.Context) chan matchmaker.MatchStart
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
 	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
+	AtSpireGate(player *types.Player) bool
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
@@ -90,6 +91,11 @@ const (
 	startSoloNoCharacter = "Enter the hub with a character first."
 	startSoloQueued      = "Leave the queue first."
 )
+
+// awayFromSpireGate refuses find_game and start_solo from anyone not standing
+// at the Spire's door: the Spire is entered there, not from across the hub.
+// FS-0XMCP §Requirements 12.
+const awayFromSpireGate = "Walk to the Spire's door first."
 
 // leaveRunRefusal is what a refused leave_run says, by why the run would not
 // let the member go. FS-QPDKN §Requirements 14.
@@ -322,6 +328,14 @@ func (h *messageHub) Run(ctx context.Context) {
 					continue
 				}
 
+				// the Spire is entered at its door; the queue below is untouched.
+				// FS-0XMCP §Requirements 12, 14.
+				if !h.sessionManager.AtSpireGate(player) {
+					slog.Debug("Refusing find_game: not at the Spire gate", "player_id", player.ID)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, awayFromSpireGate)
+					continue
+				}
+
 				// -- queue up player --
 				err = h.sessionManager.AddPlayer(player)
 				if err != nil {
@@ -378,6 +392,13 @@ func (h *messageHub) Run(ctx context.Context) {
 
 				// already delving: the run they are in is the answer
 				if err := h.handlePlayerExistingGame(player, clientPackage); err == nil {
+					continue
+				}
+
+				// FS-0XMCP §Requirements 12
+				if !h.sessionManager.AtSpireGate(player) {
+					slog.Debug("Refusing start_solo: not at the Spire gate", "player_id", player.ID)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, awayFromSpireGate)
 					continue
 				}
 

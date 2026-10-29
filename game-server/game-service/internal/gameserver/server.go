@@ -12,6 +12,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
@@ -618,6 +619,20 @@ func (s *Server) HubSession() (*game.Session, bool) {
 	hub, exists := s.sessions[s.hubSessionID]
 
 	return hub, exists
+}
+
+/**
+* AtSpireGate reports whether the player stands at the Spire's door in the hub,
+* as the hub measured them on its last tick. A player in a run, a field, or no
+* world at all is at no gate. FS-0XMCP §Requirements 12.
+**/
+func (s *Server) AtSpireGate(player *types.Player) bool {
+	hub, exists := s.HubSession()
+	if !exists {
+		return false
+	}
+
+	return hub.AtGate(player.ID, components.GateDestinationSpire)
 }
 
 /**

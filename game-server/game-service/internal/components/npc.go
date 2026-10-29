@@ -13,8 +13,9 @@ type NPCFunction string
 const (
 	// NPCFunctionNone is an ambient resident, who opens nothing.
 	NPCFunctionNone NPCFunction = ""
-	// NPCFunctionDelve opens the matchmaking queue.
-	NPCFunctionDelve NPCFunction = "delve"
+	// NPCFunctionStoryteller tells the hub's story and opens nothing. The
+	// Spire is entered at its gate, never through an NPC. FS-0XMCP §Requirements 23.
+	NPCFunctionStoryteller NPCFunction = "storyteller"
 	// NPCFunctionStorekeeper opens the loadout.
 	NPCFunctionStorekeeper NPCFunction = "storekeeper"
 )
