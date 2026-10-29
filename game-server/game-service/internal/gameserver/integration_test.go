@@ -338,12 +338,10 @@ func TestQueueFindGameFlow(t *testing.T) {
 	wg.Add(playerCount)
 
 	for i := 1; i <= playerCount; i++ {
-		time.Sleep(3 * time.Second)
-
-		// each walks from the spawn to the Spire's door before asking to
-		// descend, since find_game is refused anywhere else (FS-0XMCP
-		// §Requirements 12). Bodies block each other, so they walk in turn
-		// rather than crowding the door all at once.
+		// all ten walk from the spawn to the Spire's door at once before asking
+		// to descend, since find_game is refused anywhere else (FS-0XMCP
+		// §Requirements 12). Players pass through each other in the hub, so the
+		// whole crowd stands at the door (FS-0XMCP §Requirements 26, 30).
 		fakeConn := &websocket.Conn{}
 		player := &types.Player{ID: uuid.New(), Username: fmt.Sprintf("Player%d", i), Character: types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: fmt.Sprintf("Player%d", i), Level: 1}}
 		msgCh := registerTestConn(server, fakeConn, player)
@@ -358,12 +356,15 @@ func TestQueueFindGameFlow(t *testing.T) {
 			for !hub.AtGate(player.ID, components.GateDestinationSpire) {
 				select {
 				case <-arrived:
-					fmt.Printf("❌ Player%d never reached the Spire's door\n", idx)
+					t.Errorf("Player%d never reached the Spire's door", idx)
 					return
 				case <-time.After(20 * time.Millisecond):
 				}
 			}
 
+			// the crowd's arrivals filled the writer during the walk; a full
+			// one drops the reply
+			drainWriter(msgCh)
 			server.serverChan <- types.ClientPackage{
 				Message: types.Message{
 					Action: string(constants.ActionFindGame),
@@ -383,16 +384,14 @@ func TestQueueFindGameFlow(t *testing.T) {
 					if !ok {
 						continue
 					}
-					if msgMessage.Action == "game_found" {
-						server.mu.RLock()
-						currentSessions := len(server.sessions)
-						server.mu.RUnlock()
-						fmt.Printf("✅ Player%d received game_found, current session count: %d\n", idx, currentSessions)
+					// matched: the player is told they are now in a run
+					if msgMessage.Action == string(constants.ActionWorldEntered) &&
+						msgMessage.Payload["world_type"] == string(types.WorldTypeRun) {
 						return
 					}
 					// queue_status 继续等待
 				case <-timeout:
-					fmt.Printf("❌ Player%d did not receive game_found\n", idx)
+					t.Errorf("Player%d was never put into a run", idx)
 					return
 				}
 			}
