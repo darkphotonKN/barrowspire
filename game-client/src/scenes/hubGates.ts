@@ -34,3 +34,31 @@ export function gateEdges(before: GateState | undefined, now: GateState | undefi
   if (before?.entity_id === now?.entity_id) return { entered: undefined, left: undefined };
   return { entered: now, left: before };
 }
+
+/** Where a field gate leads: every gate but the Spire's (FS-0XMCP §Requirements 21). */
+export type FieldDestination = Exclude<GateState["destination"], "spire">;
+
+/** What the screen calls each field, over its gate's signpost (CONTEXT.md, *Field world*). */
+export const FIELD_NAMES: Record<FieldDestination, string> = {
+  forest: "The Forlorn Forest",
+  meadows: "Gentle Meadows",
+};
+
+/** The field a gate leads to, or undefined for the Spire's gate and for no gate at all. */
+export function fieldOf(gate: GateState | undefined): FieldDestination | undefined {
+  return gate && gate.destination !== "spire" ? gate.destination : undefined;
+}
+
+/**
+ * Where a gate's signpost stands, for its name to hang over: the signpost in the hub's dressing
+ * nearest the server's gate, or the gate itself when there is none. Presentation only: the gate
+ * is still found by its server position.
+ */
+export function signpostOf(
+  gate: GateState,
+  dressing: readonly { sheet: string; at: Position }[],
+): Position {
+  const away = (at: Position) => Math.hypot(at.x - gate.position.x, at.y - gate.position.y);
+  const posts = dressing.filter((spot) => spot.sheet === "signpost").map((spot) => spot.at);
+  return posts.sort((a, b) => away(a) - away(b))[0] ?? gate.position;
+}

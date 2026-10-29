@@ -188,13 +188,13 @@ export interface GateState {
 
 // Complete game state received from server
 /**
- * One of the hub's residents. `function` is empty for an ambient NPC. `delve` is the Warden's
- * function until the server renames it `storyteller` (FS-0XMCP §Requirements 25).
+ * One of the hub's residents. `function` is empty for an ambient NPC; the Warden's is
+ * `storyteller` (FS-0XMCP §Requirements 23).
  */
 export interface NPCState {
   entity_id: UUID;
   name: string;
-  function: "" | "delve" | "storyteller" | "storekeeper";
+  function: "" | "storyteller" | "storekeeper";
   /** How they look, e.g. "green_skirt". Empty for a function NPC. */
   appearance?: string;
   position: Position;

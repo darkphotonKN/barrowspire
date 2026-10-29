@@ -194,6 +194,8 @@ export const palette = {
    * amber (interactable); held to the same 3:1 floor as every marker.
    */
   markerElite: mix(BARROW_HEX.ember, BARROW_HEX.oxblood, 0.15),
+  /** A field gate's name over its signpost (FS-0XMCP R21): a place to walk into, so amber. */
+  markerGate: BARROW_HEX.amber,
   markerStroke: BARROW_HEX.charcoal,
   markerBarBacking: BARROW_HEX.pitch,
   markerBarRim: BARROW_HEX.barrowDeep,

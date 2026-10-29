@@ -27,6 +27,7 @@ export const MARKER_INKS = {
   "hub name": palette.markerHub,
   "monster name": palette.markerHostile,
   "elite prefix": palette.markerElite,
+  "gate name": palette.markerGate,
   "HP fill": palette.markerHp,
   "MP fill": palette.markerMp,
 } as const;

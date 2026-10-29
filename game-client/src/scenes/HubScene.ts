@@ -12,7 +12,14 @@ import {
   Position,
   WallState,
 } from "@/types/gameState";
-import { gateAt, gateEdges } from "./hubGates";
+import {
+  FIELD_NAMES,
+  fieldOf,
+  gateAt,
+  gateEdges,
+  signpostOf,
+  type FieldDestination,
+} from "./hubGates";
 import { BARROW_HEX } from "@/utils/theme";
 import { ProgressHud } from "@/ui/ProgressHud";
 import { MENU_DEPTH, menuOption, showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
@@ -319,12 +326,8 @@ function wardenTale(passage = 0): Dialogue {
  * The dialogue itself is one shape — a line and a row of choices — so adding an NPC, or a
  * choice, is adding to this table, not another branch in the scene. An NPC missing from
  * it is an ambient resident, who has a line and nothing to offer.
- *
- * The Warden answers to `delve` and `storyteller` alike while the server renames his function
- * (FS-0XMCP §Requirements 25); `delve` goes once the server sends `storyteller`.
  */
 const NPC_DIALOGUE: Record<string, (state: HubState) => Dialogue> = {
-  delve: () => wardenTale(),
   storyteller: () => wardenTale(),
   storekeeper: () => ({
     line: "Steel rusts, and the barrow keeps what it takes.\nSee to your gear before you go down.",
@@ -456,6 +459,14 @@ export class HubScene extends Phaser.Scene {
    * (FS-0XMCP §Requirements 10, 22): the enter and leave edges are read against it.
    */
   private atGate?: GateState;
+  /** The name of the field gate the player stands in, over its signpost (FS-0XMCP §Requirements 21). */
+  private fieldSign?: Phaser.GameObjects.Text;
+  /**
+   * The field-gate seam (FS-0XMCP §Requirements 21): called once each time the player steps into
+   * a field gate, with the field it leads to; never while lingering, never for the Spire's gate.
+   * A no-op until FS-X2F2H sends its enter message from here: no message, no world switch.
+   */
+  onFieldGate: (destination: FieldDestination) => void = () => {};
   /** 1, 2, 3: one per actionable choice when a dialogue offers more than one. */
   private choiceKeys: Phaser.Input.Keyboard.Key[] = [];
   private confirmKey?: Phaser.Input.Keyboard.Key;
@@ -682,6 +693,7 @@ export class HubScene extends Phaser.Scene {
     this.followedSprite = undefined;
     // the next visit steps into whatever gate it starts in
     this.atGate = undefined;
+    this.dropFieldSign();
     this.leavePending = false;
     this.soloPending = false;
     this.leavingHub = false;
@@ -1376,7 +1388,11 @@ export class HubScene extends Phaser.Scene {
    * server agrees the player is at the door. Stepping in opens the door's panel once, unless the
    * Esc menu or another dialogue is up (that step is spent: E or stepping out and in opens it
    * after). Stepping out closes the door's panel and nothing else; a start_solo already sent is
-   * still answered as before. Field gates are found here too, and do nothing yet.
+   * still answered as before.
+   *
+   * A field gate (FS-0XMCP §Requirements 21) names its field over its signpost while the player
+   * stands in it and raises {@link onFieldGate} once on stepping in, and that is all: no dialogue
+   * and no message, so the movement clamp keeps the player at the edge.
    */
   private followGates(pos: Position, gates: readonly GateState[]): void {
     const now = gateAt(pos, gates);
@@ -1384,7 +1400,40 @@ export class HubScene extends Phaser.Scene {
     this.atGate = now;
 
     if (left?.destination === "spire" && this.doorOpen) this.closeDialogue();
+    if (fieldOf(left)) this.dropFieldSign();
+
     if (entered?.destination === "spire" && !this.menu && !this.dialogue) this.openDoor();
+    const field = fieldOf(entered);
+    if (entered && field) {
+      this.showFieldSign(entered, field);
+      this.onFieldGate(field);
+    }
+  }
+
+  /**
+   * The field's name over the gate's signpost: a marker, so it draws above the light-map and
+   * vignette (FS-2325V §C.9), amber for a place the player can walk into. The signpost is found
+   * near the server's gate; with no baked signpost the name stands over the gate's spot.
+   */
+  private showFieldSign(gate: GateState, field: FieldDestination): void {
+    this.dropFieldSign();
+    const at = signpostOf(gate, HUB_GATE_DRESSING);
+    const foot = worldToScreen(at.x, at.y);
+    const sheet = this.art?.sheet("signpost");
+    const rise = sheet ? sheet.frameHeight * sheet.anchor.y : 0;
+    this.fieldSign = this.add
+      .text(foot.x, foot.y - rise - NAME_GAP, FIELD_NAMES[field], {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "14px",
+        color: toCss(palette.markerGate),
+      })
+      .setOrigin(0.5)
+      .setDepth(MARKER_DEPTH.name);
+  }
+
+  private dropFieldSign(): void {
+    this.fieldSign?.destroy();
+    this.fieldSign = undefined;
   }
 
   /** The Spire door's panel: today's delve choices, the door speaking (FS-0XMCP §Requirements 8, 9). */
