@@ -20,14 +20,33 @@ metadata:
   name: api
   annotations:
     kubernetes.io/ingress.global-static-ip-name: barrowspire-api-ip
-    networking.gke.io/managed-certificates: api-cert
+    networking.gke.io/managed-certificates: api-cert,play-cert
     kubernetes.io/ingress.class: gce
 spec:
   rules:
     - host: api.barrowspire.app
       http:
         paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service: { name: gateway, port: { number: 7114 } }
+          - {
+              path: /,
+              pathType: Prefix,
+              backend: { service: { name: gateway, port: { number: 7114 } } },
+            }
+    - host: play.barrowspire.app
+      http:
+        paths:
+          - {
+              path: /game-0/,
+              pathType: Prefix,
+              backend: { service: { name: game-0, port: { number: 5668 } } },
+            }
+          - {
+              path: /game-1/,
+              pathType: Prefix,
+              backend: { service: { name: game-1, port: { number: 5668 } } },
+            }
+          - {
+              path: /,
+              pathType: Prefix,
+              backend: { service: { name: game, port: { number: 5668 } } },
+            }

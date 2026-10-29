@@ -37,32 +37,3 @@ kind: ManagedCertificate
 metadata: { name: play-cert }
 spec:
   domains: [play.barrowspire.app]
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: play
-  annotations:
-    kubernetes.io/ingress.global-static-ip-name: barrowspire-api-ip
-    networking.gke.io/managed-certificates: play-cert
-    kubernetes.io/ingress.class: gce
-spec:
-  rules:
-    - host: play.barrowspire.app
-      http:
-        paths:
-          - {
-              path: /game-0/,
-              pathType: Prefix,
-              backend: { service: { name: game-0, port: { number: 5668 } } },
-            }
-          - {
-              path: /game-1/,
-              pathType: Prefix,
-              backend: { service: { name: game-1, port: { number: 5668 } } },
-            }
-          - {
-              path: /,
-              pathType: Prefix,
-              backend: { service: { name: game, port: { number: 5668 } } },
-            }
