@@ -2,6 +2,14 @@
 
 > Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Classes" → "Archer's Shadow Shot" (supersedes "Archer's triple-arrow volley"); `game-client/SPECIFICATION.md` "### Escape run" → "Shadow Shot aimed by holding" → this FS · Depends on: [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) (stamina, the class resource it is priced in; the ability card that names it) · Siblings (same scoping session, 2026-10-30): [FS-MAMHR](MAMHR-mercenary-class.md) · Interacts with: [FS-77AB6](77AB6-monsters-and-combat.md) (attack table, projectiles; this FS replaces its `triple_arrow` row), [FS-4R9M9](4R9M9-item-levels-affixes-and-uniques.md) §Requirements 35 (projectile pierce from the Lantern of the Drowned), [FS-KYPQ9](KYPQ9-remainder-restyle-town-dressing-and-effects.md) (the effects table, projectile flights, the arrow) · Related ADRs: [ADR-0030](../adr/0030-ability-aiming-is-client-presentation-the-server-holds-resolved-casts.md) (aiming is client presentation; resolved casts are server state), ADR-0013 (colours are `BARROW` tokens) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) "Classes and abilities" (*ability*, *Shadow Shot*, *resolved cast*, *stamina*), [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) (*ability card*)
 
+> **Amendment, 2026-10-30 (playtest tuning).** The cost is raised from 40 to **90 stamina**,
+> a flat number. At 40 an archer with 100 stamina and 20/s regen could fire almost without a
+> break, the 1.2 s cooldown being the only limit. At 90 one shot leaves about 10 of 100, and
+> the next waits about 4 s for regen, so the pool, not the cooldown, paces the shot. Every
+> cost figure below reads 90, except the interim-pricing passages (R5's last two sentences, the
+> Interim-pricing edge state), which are history from before stamina landed and keep the 40.
+> Nothing else in this FS changes. The client prices the shot from `ability_cost` on the wire.
+
 ## Summary
 
 The archer's right-click is today a triple-arrow volley: three quick arrows in a spread. Shadow
@@ -31,7 +39,7 @@ agents to build both in this run.
    | Damage type | physical |
    | Scaling stat | Agility |
    | Coefficient | 3.2 |
-   | Cost | 40 of the archer's class resource (stamina) |
+   | Cost | 90 of the archer's class resource (stamina; amended from 40) |
    | Cooldown | 1.2 s |
    | Projectile speed | 260 px/s |
    | Projectile range | 650 px |
@@ -53,8 +61,8 @@ agents to build both in this run.
    (no projectile, no cost paid, no cooldown started). The server holds no aiming state, start
    tick, hold time or facing for Shadow Shot, and how long the client held cannot change the
    outcome.
-5. **The cost is paid in the archer's class resource** (charter default: 40 stamina; stamina
-   itself comes from FS-8AY7S). The target is 40 **stamina**, which FS-8AY7S introduces (a generic resource component replacing the mana component). If this row
+5. **The cost is paid in the archer's class resource** (90 stamina, amended from the charter default of 40; stamina
+   itself comes from FS-8AY7S). The target is 90 **stamina**, which FS-8AY7S introduces (a generic resource component replacing the mana component). If this row
    lands before FS-8AY7S's resource does, it is priced at 40 in whatever pool the attack table
    charges at that moment (today `manaCost`, against the archer's 100 mana), and FS-8AY7S's
    migration carries the 40 across to stamina with the other abilities' costs.
@@ -202,9 +210,9 @@ agents to build both in this run.
 - [ ] `AttackTripleArrow` no longer exists; no test or code references it.
 - [ ] A Shadow Shot cast with the resource and off cooldown creates exactly one projectile of
       kind `shadow_shot` with speed 260, range 650 and radius 10, flying toward the target.
-- [ ] The cast spends 40 of the archer's class resource (or of the interim pool, per R5) and
+- [ ] The cast spends 90 of the archer's class resource (or of the interim pool, per R5) and
       starts a 1.2 s cooldown.
-- [ ] A second cast inside 1.2 s, or a cast with under 40 of the resource, creates no projectile,
+- [ ] A second cast inside 1.2 s, or a cast with under 90 of the resource, creates no projectile,
       spends nothing and starts no cooldown.
 - [ ] Its hit deals physical damage scaled by Agility at coefficient 3.2.
 - [ ] Fired by a Lantern wearer, the bolt passes through its first target and hits a second
@@ -253,7 +261,7 @@ agents to build both in this run.
 - **Short of stamina.** Before FS-8AY7S: the client sends and the server refuses. After it: the
   client sends nothing (R18), and the card shows the ability unaffordable (FS-8AY7S).
 - **Modded client.** A client that skips the hold and casts at once is accepted: the 1.2 s
-  cooldown and the 40 cost bound it, and the server already refuses casts inside the cooldown
+  cooldown and the 90 cost bound it, and the server already refuses casts inside the cooldown
   (ADR-0030).
 - **Old client after the server ships.** An old client sending `triple_arrow` gets an unknown
   skill error and no shot. Server and client slices ship together.
