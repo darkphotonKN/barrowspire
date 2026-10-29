@@ -34,8 +34,11 @@ import {
   worldSeed,
   type FieldLook,
 } from "@/render/world";
+import { DROP_PILE, paintDropPile } from "@/render/world/dropPile";
+import { ContainerView } from "@/ui/ContainerView";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
+import { FieldPiles } from "./fieldPiles";
 import { FallenCountdown, fallenCopy, isFallen } from "./fieldFallen";
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
@@ -45,8 +48,9 @@ import { gateAt, gateEdges } from "./hubGates";
  * field's keep-out areas and its entrance gate, the road home. Each field is drawn in its own look
  * (`fieldLook`, keyed by the field id from world_entered): its daylit ground, its ambient, trees
  * and rocks on the server's keep-outs, a horizon behind the far edge (§Requirements 54). Monsters
- * and the fight with them are the run scene's own pieces, composed in `fieldCombat`; piles and the
- * HUD come with later slices, shared the same way (§Requirements 56).
+ * and the fight with them are the run scene's own pieces, composed in `fieldCombat`; drop piles
+ * and the satchel they are taken through, in `fieldPiles`, a pile held for someone else's kill
+ * drawn faint and not offered (§Requirements 56, 59). The equip HUD comes later, shared the same way.
  *
  * Walking into the entrance gate sends one leave_field and waits for world_entered or a refusal,
  * as the hub does for its own sends (§Requirements 57).
@@ -129,6 +133,12 @@ export class FieldScene extends Phaser.Scene {
   /** The player's own fall and its 3-2-1 (§Requirements 58). */
   private fallen = new FallenCountdown();
   private fallenLine?: Phaser.GameObjects.Text;
+  /** The field's drop piles and the run's satchel they are taken through (§Requirements 56, 59). */
+  private piles?: FieldPiles;
+  private satchel?: ContainerView;
+  /** The player's server-reported position and level, for reaching a pile and the satchel's marks. */
+  private selfAt?: Point;
+  private selfLevel?: number;
   private unsubscribeState?: () => void;
 
   constructor() {
@@ -173,7 +183,9 @@ export class FieldScene extends Phaser.Scene {
       selfAt: () => this.selfView()?.pos,
       bodyOf: (entityID) =>
         this.views.get(entityID)?.sprite.getByName("body") as Phaser.GameObjects.Sprite | undefined,
+      takesPointer: (x, y, primary) => this.satchel?.pointerDown(x, y, primary) ?? false,
     });
+    this.createPiles();
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
     this.listen();
@@ -189,6 +201,48 @@ export class FieldScene extends Phaser.Scene {
       this.leavingField = false;
       this.notice(fieldRefusalCopy(ActionType.LeaveField, info.reason));
     });
+    // a refused pickup: a pile still held for its killer says so (§Requirements 33, 60)
+    socketManager.on(ActionType.Interact, (reply: { success?: boolean; reason?: string } | undefined) => {
+      if (reply?.success === false) this.piles?.refused(reply.reason);
+    });
+  }
+
+  /**
+   * The field's drop piles (§Requirements 56, 59): the run's heap texture and the run's satchel,
+   * composed, never copied. E reaches for the nearest pile, F takes its first item, a click on the
+   * open satchel takes that one.
+   */
+  private createPiles(): void {
+    if (!this.textures.exists(DROP_PILE.texture)) {
+      const g = this.make.graphics({});
+      paintDropPile(g);
+      g.generateTexture(DROP_PILE.texture, DROP_PILE.width, DROP_PILE.height);
+      g.destroy();
+    }
+    const satchel = new ContainerView(this, this.art, {
+      onLoot: (item) => this.piles?.loot(item),
+      characterLevel: () => this.selfLevel,
+    });
+    this.satchel = satchel;
+    this.piles = new FieldPiles(
+      {
+        place: (at) => {
+          const sprite = this.add.sprite(0, 0, DROP_PILE.texture).setOrigin(DROP_PILE.origin.x, DROP_PILE.origin.y);
+          standAt(sprite, at);
+          return sprite;
+        },
+      },
+      satchel,
+      {
+        notice: (text) => this.notice(text),
+        send: (action, payload) => socketManager.sendMessage(action, payload),
+      },
+    );
+    this.input.keyboard?.on("keydown-E", () => {
+      if (this.selfAt && !this.fallen.isDown()) this.piles?.interact(this.selfAt);
+    });
+    this.input.keyboard?.on("keydown-F", () => this.satchel?.lootFirst());
+    this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => this.satchel?.pointerMove(pointer.x, pointer.y));
   }
 
   /** Everything one visit made is let go: Phaser reuses the scene instance for the next. */
@@ -197,6 +251,12 @@ export class FieldScene extends Phaser.Scene {
     this.events.off(Phaser.Scenes.Events.DESTROY, this.release, this);
     this.unsubscribeState?.();
     socketManager.offError(ActionType.LeaveField);
+    socketManager.off(ActionType.Interact);
+    this.piles?.release();
+    this.piles = undefined;
+    this.satchel = undefined;
+    this.selfAt = undefined;
+    this.selfLevel = undefined;
     this.views.clear();
     this.selfEntityID = null;
     this.followedSprite = undefined;
@@ -301,6 +361,13 @@ export class FieldScene extends Phaser.Scene {
 
     // the field's monsters, projectiles and struck players, once the bodies stand
     this.fight?.sync(state);
+
+    // the field's piles, each as faint as its reservation for me says (§Requirements 59)
+    const me = state.current_player;
+    this.selfAt = me ? { x: me.position.x, y: me.position.y } : undefined;
+    this.selfLevel = me?.level;
+    this.piles?.sync(state.containers ?? [], me?.id);
+    if (this.selfAt) this.piles?.follow(this.selfAt);
   }
 
   /** This client's player as drawn, once the field has reported them. */

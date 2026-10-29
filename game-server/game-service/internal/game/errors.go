@@ -71,6 +71,9 @@ var (
 	ErrNotAtGate = errors.New("not at the entrance gate")
 	// ErrFallen refuses walking out of a field while dead.
 	ErrFallen = errors.New("fallen")
+	// ErrLootReserved refuses taking from a field drop pile still reserved for
+	// someone else's kill. FS-X2F2H §Requirements 33.
+	ErrLootReserved = errors.New("loot is reserved for its killer")
 
 	// queue
 	ErrPlayerAlreadyInQueue = errors.New("player already in queue")

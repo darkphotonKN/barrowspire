@@ -122,6 +122,9 @@ export interface ContainerState {
   position: Position;
   is_open: boolean;
   items: ItemState[];
+  /** A field pile's killer (member id) while its killer-first window is open; absent after it,
+   *  and on every run pile and chest (FS-X2F2H §Requirements 35). */
+  reserved_for?: UUID;
 }
 
 // Escape door state

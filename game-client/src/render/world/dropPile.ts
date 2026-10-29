@@ -21,6 +21,23 @@ export const DROP_PILE = {
   origin: { x: 0.5, y: 0.75 },
 } as const;
 
+/**
+ * A field pile reserved for someone else's kill is drawn this faint (FS-X2F2H §Requirements 59):
+ * still there to see, plainly not the player's to take yet. Amber that cannot be acted on is a
+ * defect (guideline "Gameplay accent"), so its glint fades with it.
+ */
+export const RESERVED_PILE_ALPHA = 0.4;
+
+/** Whether a pile is held for someone other than me: reserved, and not for me (or me unknown). */
+export function reservedForOther(pile: { reserved_for?: string }, me: string | undefined): boolean {
+  return !!pile.reserved_for && pile.reserved_for !== me;
+}
+
+/** How opaque a pile is drawn: faint while someone else's, as a run's otherwise. */
+export function pileAlpha(pile: { reserved_for?: string }, me: string | undefined): number {
+  return reservedForOther(pile, me) ? RESERVED_PILE_ALPHA : 1;
+}
+
 /** What the painter asks of a graphics object. */
 export interface PileBrush {
   fillStyle(color: number, alpha?: number): unknown;

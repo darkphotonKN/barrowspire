@@ -17,6 +17,16 @@ const (
 type ContainerComponent struct {
 	ContainerID uuid.UUID
 	Kind        ContainerKind
+
+	// ReservedFor is the member a field drop pile is held for while its
+	// killer-first window is open: the killer, from landing until the window
+	// ends, then uuid.Nil. Always uuid.Nil on a chest and on a run's pile.
+	// FS-X2F2H §Requirements 33, 35.
+	ReservedFor uuid.UUID
+	// Age is how long, in seconds, a field drop pile has lain since it landed;
+	// the field's tick advances it. Always 0 on a run's pile.
+	// FS-X2F2H §Requirements 33–34.
+	Age float64
 }
 
 func (d *ContainerComponent) Type() ecs.ComponentType {

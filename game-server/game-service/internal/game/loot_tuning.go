@@ -196,6 +196,11 @@ var (
 
 // MonsterDrops is the drop table by archetype. A new archetype adds a row; one
 // without a row drops nothing.
+//
+// These rows (and EliteMonsterDrop) are also every field's drop table: a field
+// creature drops as the row FieldDropsAs names, read at roll time, its chance
+// scaled by the place's drop factor (fieldDrops). Retuning a row here retunes
+// the fields with it; no field keeps a table of its own. FS-X2F2H §Requirements 31.
 var MonsterDrops = map[components.MonsterArchetype]MonsterDrop{
 	components.MonsterArchetypeGhoul: {Chance: 0.08, MinItems: 1, MaxItems: 1, Source: lootSourceStandard, TypeSplit: standardDropSplit},
 	components.MonsterArchetypeTroll: {Chance: 0.15, MinItems: 1, MaxItems: 1, Source: lootSourceStandard, TypeSplit: standardDropSplit},

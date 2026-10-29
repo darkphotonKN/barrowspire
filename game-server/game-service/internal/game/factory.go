@@ -136,6 +136,18 @@ func CreateDropPileEntity(em *ecs.EntityManager, x, y float64, itemIDs []uuid.UU
 	return entity
 }
 
+// CreateFieldDropPileEntity places a field's drop pile: a run's drop pile,
+// reserved for the killer from the moment it lands (uuid.Nil: for nobody).
+// The field's tick ages it, ends the reservation and removes it.
+// FS-X2F2H §Requirements 33–35.
+func CreateFieldDropPileEntity(em *ecs.EntityManager, x, y float64, itemIDs []uuid.UUID, killer uuid.UUID) *ecs.Entity {
+	entity := CreateDropPileEntity(em, x, y, itemIDs)
+	if cc, ok := entity.GetComponent(ecs.ComponentTypeContainer); ok {
+		cc.(*components.ContainerComponent).ReservedFor = killer
+	}
+	return entity
+}
+
 type WallConfig struct {
 	X, Y, Width, Height float64
 }

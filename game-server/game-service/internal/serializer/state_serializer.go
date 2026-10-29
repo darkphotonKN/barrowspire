@@ -423,6 +423,9 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				IsOpen: isOpen,
 				Items:  items,
 			}
+			if container.ReservedFor != uuid.Nil {
+				containerState.ReservedFor = container.ReservedFor.String()
+			}
 			backendState.Containers = append(backendState.Containers, containerState)
 		}
 

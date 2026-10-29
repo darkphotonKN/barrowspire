@@ -129,6 +129,8 @@ export function fieldCombatOnScene(
     selfAnim(): { attack(now: number, aim?: Point, holdMs?: number): void } | undefined;
     selfAt(): Point | undefined;
     bodyOf(entityId: string): Tintable | undefined;
+    /** Whether a click at this screen point is the open satchel's (a loot), never an attack. */
+    takesPointer?(x: number, y: number, primary: boolean): boolean;
   },
 ): FieldCombat {
   const fx = new EffectsRuntime(scene, art, lightMap);
@@ -180,6 +182,8 @@ export function fieldCombatOnScene(
   // the left click's primary attack, the right's class special, at the world point under the
   // pointer (FS-2325V §0.2, §A.5)
   const onPointer = (pointer: Phaser.Input.Pointer) => {
+    // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
+    if (hooks.takesPointer?.(pointer.x, pointer.y, pointer.button === 0)) return;
     const target = screenToWorld(pointer.worldX, pointer.worldY);
     if (pointer.leftButtonDown() || pointer.button === 0) combat.cast("primary", target);
     else if (pointer.rightButtonDown() || pointer.button === 2) combat.cast("special", target);

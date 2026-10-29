@@ -26,6 +26,16 @@ const FALLBACK: Record<string, string> = {
   [ActionType.LeaveField]: "The road home is shut for now. Try again.",
 };
 
+/** A pile still held for the one who made the kill (FS-X2F2H §Requirements 33, 59). */
+const LOOT: Record<string, string> = {
+  loot_reserved: "Not yours yet. The one who slew it has first claim.",
+};
+
+/** The words for a refused pickup from a field pile, by its reason; none for any other refusal. */
+export function lootRefusalCopy(reason: string | undefined): string | undefined {
+  return reason ? LOOT[reason] : undefined;
+}
+
 /** The words for a refused enter_field or leave_field, by its reason. */
 export function fieldRefusalCopy(action: string, reason: string | undefined): string {
   const words = action === ActionType.LeaveField ? LEAVE : ENTER;

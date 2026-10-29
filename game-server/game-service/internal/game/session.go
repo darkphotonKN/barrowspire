@@ -271,15 +271,19 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 	}
 	// a run's kill awards the whole party; a field's, the killer alone
 	// (FS-X2F2H §Requirements 30)
+	// and drops from the Spire's own row, a field's from that row at its
+	// place's factor (FS-X2F2H §Requirements 31)
 	if bounds.Type == types.WorldTypeField {
 		s.SubscribeKills(newFieldKillCredit(s))
+		s.SubscribeKills(newFieldDrops(s, sharedLootRand{}))
 	} else {
 		s.SubscribeKills(NewKillExperience(em, runExperience))
+		s.SubscribeKills(newMonsterDrops(s, sharedLootRand{}))
 	}
-	s.SubscribeKills(newMonsterDrops(s, sharedLootRand{}))
 	s.SubscribeKills(newUniqueEffects(em))
 
 	s.loadRaritiesAtBuild()
+	s.loadFieldItemPool()
 
 	return s
 }
@@ -697,6 +701,8 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.publishKills(kills)
 		// a field's spawn points see their monsters fall and refill
 		s.refillSpawnPoints(deltaTime, entities)
+		// a field's piles open to anyone, then go (FS-X2F2H §Requirements 33–34)
+		s.ageFieldDropPiles(deltaTime, entities)
 	}
 
 	// interaction
@@ -1792,6 +1798,9 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		if errors.Is(err, ErrOutOfRange) {
 			s.sendErrorToPlayer(playerID, string(constants.ActionInteract), "too far away to interact")
 		}
+		if errors.Is(err, ErrLootReserved) {
+			s.sendRefusalToPlayer(playerID, string(constants.ActionInteract), "that loot is reserved for its killer", "loot_reserved", nil)
+		}
 		return err
 	}
 
@@ -2027,6 +2036,10 @@ func (s *Session) moveItemToSatchel(playerEntity *ecs.Entity, at *components.Tra
 	openableComp, ok := container.GetComponent(ecs.ComponentTypeOpenable)
 	if !ok || !openableComp.(*components.OpenableComponent).IsOpen {
 		return fmt.Errorf("pick up item %s: %w", itemID, ErrContainerClosed)
+	}
+	// a field pile is its killer's alone inside its window (FS-X2F2H R33)
+	if reservedAgainst(container, s.playerEntityIDToPlayerID[playerEntity.ID]) {
+		return fmt.Errorf("pick up item %s: %w", itemID, ErrLootReserved)
 	}
 
 	transformComp, ok := container.GetComponent(ecs.ComponentTypeTransform)

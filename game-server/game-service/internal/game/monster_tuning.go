@@ -80,8 +80,7 @@ const (
 	// the Gentle Meadows' level band, inclusive
 	MeadowsMinLevel = 1
 	MeadowsMaxLevel = 4
-	// the Gentle Meadows' drop chance over the Spire's (rolled by FS-X2F2H's
-	// drop slice)
+	// the Gentle Meadows' drop chance over the Spire's row (fieldDrops)
 	MeadowsDropFactor = 0.35
 
 	// the Forlorn Forest's level band, inclusive, and its drop chance over
@@ -90,6 +89,28 @@ const (
 	ForestMaxLevel   = 9
 	ForestDropFactor = 0.5
 )
+
+// Field loot. FS-X2F2H §Requirements 33–34 (D13, D25).
+const (
+	// a field drop pile is the killer's alone this long after it lands, in
+	// seconds; then anyone's
+	FieldLootWindow = 30.0
+	// a field drop pile is removed this long after it lands, in seconds, with
+	// whatever it still holds
+	FieldDropPileLifetime = 120.0
+)
+
+// FieldDropsAs names, for each field creature, the Spire archetype whose
+// MonsterDrops row it drops as: a reference, never a copied chance. Any elite
+// drops as EliteMonsterDrop. A creature with no entry drops nothing.
+// FS-X2F2H §Requirements 31 (D17, D23).
+var FieldDropsAs = map[components.MonsterArchetype]components.MonsterArchetype{
+	// fodder drops as Spire fodder (D23)
+	components.MonsterArchetypeBoar: components.MonsterArchetypeGhoul,
+	// the Forest's dead: FS-3QHQZ names no row, so they drop as the boar does
+	components.MonsterArchetypeZombie: components.MonsterArchetypeGhoul,
+	components.MonsterArchetypeGhost:  components.MonsterArchetypeGhoul,
+}
 
 // The Forlorn Forest's population. FS-3QHQZ §Requirements 15–17.
 const (

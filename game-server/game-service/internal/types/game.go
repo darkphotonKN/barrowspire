@@ -121,6 +121,10 @@ type ContainerState struct {
 	Position *Position    `json:"position"`
 	IsOpen   bool         `json:"is_open"`
 	Items    []*ItemState `json:"items"`
+	// ReservedFor is the member a field drop pile is reserved for while its
+	// killer-first window is open; absent after it, and on every run pile
+	// and chest. FS-X2F2H §Requirements 35.
+	ReservedFor string `json:"reserved_for,omitempty"`
 }
 
 type RawMatchState struct {
