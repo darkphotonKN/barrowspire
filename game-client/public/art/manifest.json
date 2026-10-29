@@ -69,6 +69,12 @@
       "height": 2816,
       "sha256": "909d9cecf6f8838489859c7e0fcc581c0a2fe09a703fbd097e44a5af79c6bde8"
     },
+    "forest-0": {
+      "image": "forest-0.png",
+      "width": 2016,
+      "height": 288,
+      "sha256": "ea9900279c04de2af594e59895d0bd10d35e9da04790575432e7cea38f846d16"
+    },
     "fx-0": {
       "image": "fx-0.png",
       "width": 580,
@@ -6820,6 +6826,36 @@
       "source": "procedural: tools/bake/page/models/interactables.js#escapeDoor",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "fallen_log": {
+      "atlas": "forest-0",
+      "frameWidth": 51,
+      "frameHeight": 65,
+      "anchor": {
+        "x": 0.47058823529411764,
+        "y": 0.5846153846153846
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1680,
+                "y": 2
+              },
+              {
+                "x": 1733,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#fallenLog",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "fence_post": {
       "atlas": "town-0",
       "frameWidth": 45,
@@ -6896,6 +6932,40 @@
         }
       },
       "source": "authored: tools/bake/page/models/town.js#fenceSegment",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fern": {
+      "atlas": "forest-0",
+      "frameWidth": 73,
+      "frameHeight": 51,
+      "anchor": {
+        "x": 0.4794520547945205,
+        "y": 0.6274509803921569
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1786,
+                "y": 2
+              },
+              {
+                "x": 1861,
+                "y": 2
+              },
+              {
+                "x": 1936,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#fern",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "flower_box": {
@@ -11377,6 +11447,36 @@
       "source": "authored: tools/bake/page/models/tower.js#spiralStairs",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "stump": {
+      "atlas": "forest-0",
+      "frameWidth": 68,
+      "frameHeight": 46,
+      "anchor": {
+        "x": 0.45588235294117646,
+        "y": 0.5652173913043478
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 235
+              },
+              {
+                "x": 72,
+                "y": 235
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#stump",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "switch": {
       "atlas": "props-0",
       "frameWidth": 64,
@@ -11439,6 +11539,40 @@
         }
       },
       "source": "procedural: tools/bake/page/models/props.js#table",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "toadstools": {
+      "atlas": "forest-0",
+      "frameWidth": 43,
+      "frameHeight": 31,
+      "anchor": {
+        "x": 0.46511627906976744,
+        "y": 0.6451612903225806
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 142,
+                "y": 235
+              },
+              {
+                "x": 187,
+                "y": 235
+              },
+              {
+                "x": 232,
+                "y": 235
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#toadstools",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "tower_perimeter_back_plain_x": {
@@ -12181,6 +12315,66 @@
       "source": "authored: tools/bake/page/models/tower.js#partitionWall",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "tree_dead": {
+      "atlas": "forest-0",
+      "frameWidth": 271,
+      "frameHeight": 223,
+      "anchor": {
+        "x": 0.3210332103321033,
+        "y": 0.8385650224215246
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 904,
+                "y": 2
+              },
+              {
+                "x": 1177,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#deadTree",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "tree_dead_snag": {
+      "atlas": "forest-0",
+      "frameWidth": 113,
+      "frameHeight": 118,
+      "anchor": {
+        "x": 0.336283185840708,
+        "y": 0.788135593220339
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1450,
+                "y": 2
+              },
+              {
+                "x": 1565,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#deadSnag",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "tree_oak": {
       "atlas": "nature-0",
       "frameWidth": 224,
@@ -12237,6 +12431,36 @@
       "source": "procedural: tools/bake/page/models/nature.js#oak",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "tree_oak_gloom": {
+      "atlas": "forest-0",
+      "frameWidth": 255,
+      "frameHeight": 230,
+      "anchor": {
+        "x": 0.3607843137254902,
+        "y": 0.8
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 390,
+                "y": 2
+              },
+              {
+                "x": 647,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#oak",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "tree_pine": {
       "atlas": "nature-0",
       "frameWidth": 195,
@@ -12258,6 +12482,36 @@
               },
               {
                 "x": 199,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/nature.js#pine",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "tree_pine_gloom": {
+      "atlas": "forest-0",
+      "frameWidth": 192,
+      "frameHeight": 231,
+      "anchor": {
+        "x": 0.359375,
+        "y": 0.8441558441558441
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              },
+              {
+                "x": 196,
                 "y": 2
               }
             ]
