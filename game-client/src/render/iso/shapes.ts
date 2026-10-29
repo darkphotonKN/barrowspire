@@ -87,7 +87,7 @@ export function outsideConvex(polygon: Point[], reach: number): Point[][] {
 /**
  * Cuts a world rect along its longer axis into pieces no longer than `step`, so each
  * piece can take its own footprint depth. A long wall sorted by one key would stand
- * in front of a delver at one end and behind them at the other.
+ * in front of a player at one end and behind them at the other.
  */
 export function splitAlongLength(
   x: number,

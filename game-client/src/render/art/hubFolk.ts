@@ -10,7 +10,7 @@
  * to pixel art. Function NPCs are their own characters, whose role reads from the silhouette.
  *
  * Pure, so it is tested without a canvas; the scene plays the result through
- * `CharacterAnimator`, as it does a delver.
+ * `CharacterAnimator`, as it does a player.
  */
 
 import type { NPCState } from "@/types/gameState";

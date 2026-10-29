@@ -67,7 +67,7 @@ const lum = (v, a) => [...grey(clamp(v, 0, 255)), a];
 const withAlpha = (c, a) => [c[0], c[1], c[2], a];
 
 /**
- * fx_slash: a steel smear on the ground (§D.1). Top-down, the delver at the pivot (the
+ * fx_slash: a steel smear on the ground (§D.1). Top-down, the player at the pivot (the
  * anchor), the arc facing +x. It sweeps from the top end (the tail, thin and broken) to the
  * bottom end (the leading edge, heavy and crisp); the runtime rotates it to the target and
  * flips it for the other hand. A broad, near-solid band with a bright cutting lip on its outer
@@ -278,7 +278,7 @@ export function glow(seed = 101) {
 }
 
 /**
- * fx_escape_column: a quiet column of pale light where a delver leaves (§G.3), upright: a
+ * fx_escape_column: a quiet column of pale light where a player leaves (§G.3), upright: a
  * faint pool at the feet (the anchor) and a soft shaft fading upward, with slow vertical
  * striations. No rays, no sparkle.
  */

@@ -13,7 +13,7 @@ import { formatGold } from "./gold";
 export const NO_BIDS = "No bids yet.";
 export const ACCEPT_SOLD = "Sold — your gold arrives once the sale settles.";
 // One wording for both sale actions (FS-49Z37 Req 12, 17): a race and a gone relic read
-// the same whether the delver was buying out or accepting.
+// the same whether the player was buying out or accepting.
 export const ACCEPT_CONFLICT = BUYOUT_CONFLICT;
 export const ACCEPT_GONE = BUYOUT_GONE;
 

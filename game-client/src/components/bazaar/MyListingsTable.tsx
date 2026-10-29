@@ -25,7 +25,7 @@ const SKELETON: readonly SkeletonCell[] = [
 ];
 
 /**
- * The delver's own listings under Mine (FS-8EGFA req 23; design guideline Part II "Listing
+ * The player's own listings under Mine (FS-8EGFA req 23; design guideline Part II "Listing
  * table"). The same row anatomy as the browse table, but a status column takes the action's
  * place: nobody bids on their own relic, and a sold or withdrawn one has nothing to act on.
  * Rows arrive newest first and are shown in that order. A row opens the listing detail (req 24)

@@ -57,7 +57,7 @@ export default function PhaserGame() {
     // per scene, so no scene has to know what comes after it.
     // FS-29KSH §Requirements 15, 36.
     // Everything a world transition replaces. LoadoutScene is here because it is a
-    // screen the delver opens while standing in the hub: a match found with it open
+    // screen the player opens while standing in the hub: a match found with it open
     // would otherwise leave it sitting on top of the run.
     const WORLD_SCENES = [
       "MainMenuScene",

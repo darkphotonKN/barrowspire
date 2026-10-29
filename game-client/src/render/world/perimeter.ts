@@ -4,7 +4,7 @@
  *
  * It stands wholly outside `[0, width] × [0, height]` with its inner face on the edge. North and
  * west stand full height, pierced by arrow slits at a fixed pitch; south and east are the low
- * cut-away, so they never cover a delver or anything usable at the map edge. A pier stands at each
+ * cut-away, so they never cover a player or anything usable at the map edge. A pier stands at each
  * corner. Every choice is fixed by position, never random.
  *
  * The bake's facts this relies on (`tools/bake/page/models/tower.js`): a piece is one tile long,

@@ -9,26 +9,26 @@ const box = (x: number, y: number, width: number, height: number) => ({
 });
 
 describe("occludes", () => {
-  const delver = { bounds: box(100, 100, 60, 60), depth: 500 };
+  const player = { bounds: box(100, 100, 60, 60), depth: 500 };
 
-  it("should fade a prop that overlaps the delver and stands nearer the viewer", () => {
+  it("should fade a prop that overlaps the player and stands nearer the viewer", () => {
     expect(
-      occludes({ bounds: box(80, 40, 120, 200), depth: 520 }, delver),
+      occludes({ bounds: box(80, 40, 120, 200), depth: 520 }, player),
     ).toBe(true);
   });
 
-  it("should leave a prop behind the delver alone, however much it overlaps", () => {
+  it("should leave a prop behind the player alone, however much it overlaps", () => {
     expect(
-      occludes({ bounds: box(80, 40, 120, 200), depth: 480 }, delver),
+      occludes({ bounds: box(80, 40, 120, 200), depth: 480 }, player),
     ).toBe(false);
   });
 
   it("should leave a nearer prop alone when it does not overlap", () => {
     expect(
-      occludes({ bounds: box(170, 40, 50, 200), depth: 900 }, delver),
+      occludes({ bounds: box(170, 40, 50, 200), depth: 900 }, player),
     ).toBe(false);
     expect(
-      occludes({ bounds: box(100, 161, 60, 60), depth: 900 }, delver),
+      occludes({ bounds: box(100, 161, 60, 60), depth: 900 }, player),
     ).toBe(false);
   });
 });

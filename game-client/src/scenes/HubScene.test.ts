@@ -103,7 +103,7 @@ function fakeText(): FakeText {
 }
 
 describe("HubScene queue panel (FS-29KSH §Requirements 25, 27)", () => {
-  // Phaser reuses the scene instance when the delver comes home from a run. The
+  // Phaser reuses the scene instance when the player comes home from a run. The
   // panel from the first visit was destroyed with that visit, and writing to it
   // shows nothing: the second queue looked like it never started.
   it("should show queue progress on a live panel after the hub was left and re-entered", () => {
@@ -527,7 +527,7 @@ function hubOnStage() {
   /** The label text of a drawn choice: the choice itself is its camera-fixed hit area. */
   const label = (id: string) =>
     stage.made.find((m) => m.name === `choice-${id}-label` && !m.destroyed)?.children[0] as Made;
-  /** Stands the delver beside the NPC with this function and presses to talk. */
+  /** Stands the player beside the NPC with this function and presses to talk. */
   const talkTo = (fn: string) => {
     hub.selfEntityID = "me";
     hub.views = new Map([["me", { pos: { x: 0, y: 0 } }]]);
@@ -809,7 +809,7 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
   it("should not open a dialogue on E while the menu is open", () => {
     const { hub, stage, keys, press, option } = hubOnStage();
     press(keys.esc);
-    // the delver stands beside the keeper of the way
+    // the player stands beside the keeper of the way
     hub.selfEntityID = "me";
     hub.views = new Map([["me", { pos: { x: 0, y: 0 } }]]);
     hub.npcs = new Map([
@@ -949,7 +949,7 @@ describe("HubScene changeCharacter leaves the hub (FS-G4VMQ §Requirements 25, 2
 
 describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => {
   // Phaser hit-tests a container's child with the child's own scroll factor, not the
-  // camera-fixed parent's, so once the camera had followed the delver a click on a choice
+  // camera-fixed parent's, so once the camera had followed the player a click on a choice
   // landed beside it. The hit area lives outside the dialogue, camera-fixed, and dies with it.
   it("should press a choice through a camera-fixed hit area outside the dialogue", () => {
     const { hub, stage, choice, talkTo } = hubOnStage();
@@ -1055,11 +1055,11 @@ describe("ESC menu by keyboard (reported 2026-10-29)", () => {
   });
 });
 
-describe("camera on the delver across visits (reported 2026-10-29)", () => {
-  // The camera latched on when the delver's entity id changed, and the id survived a scene
+describe("camera on the player across visits (reported 2026-10-29)", () => {
+  // The camera latched on when the player's entity id changed, and the id survived a scene
   // restart while every sprite was rebuilt: back from the loadout, or re-entering as the same
-  // character, the camera sat where it was and the delver walked off screen.
-  it("should latch onto a new sprite after release, even for the same delver", () => {
+  // character, the camera sat where it was and the player walked off screen.
+  it("should latch onto a new sprite after release, even for the same player", () => {
     const { hub } = hubOnStage();
     const first = { id: "sprite-1" };
     hub.keepCameraOn(first);

@@ -1,7 +1,7 @@
 /**
  * A floor's fixed-light budget (FS-8RBQY §C.6): the sconces, arrow slits, braziers and the stairs
  * pool stamped once per floor build are capped, so a crowded floor never stamps more pools than
- * the light-map is tuned for. The delver's carried torch and transient lights are not fixed
+ * the light-map is tuned for. The player's carried torch and transient lights are not fixed
  * lights and never pass through here.
  *
  * Pure: it decides which lights to keep, the scene stamps them. The choice depends only on each
@@ -40,7 +40,7 @@ const DROP_ORDER: readonly FixedLightKind[] = [
 
 /**
  * The faint warm pool an interactable stands in, so a chest or switch never sinks into the
- * ambient (FS-8RBQY §B.7). Amber, because the delver can act on it (guideline "Gameplay
+ * ambient (FS-8RBQY §B.7). Amber, because the player can act on it (guideline "Gameplay
  * accent"); smaller and dimmer than any sconce, so it reads as a glint, not a light.
  */
 export function interactablePool(at: Point, seed: number): LightSource {

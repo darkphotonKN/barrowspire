@@ -180,7 +180,7 @@ describe("rowAction", () => {
   it.each([
     ["the seller's own listing", live, { memberId: "seller" }, "own"],
     ["a signed-out visitor", live, signedOut, "signIn"],
-    ["a signed-in delver on a live listing", live, signedIn, "bid"],
+    ["a signed-in player on a live listing", live, signedIn, "bid"],
     [
       "a listing the server says has ended",
       { ...live, ended: true },

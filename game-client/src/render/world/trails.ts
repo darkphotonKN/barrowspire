@@ -6,7 +6,7 @@
  * changed) is taken down.
  *
  * Fire harms monsters, so it burns in the damage family (oxblood bed, ember flame), never amber:
- * a trail is not something the delver can act on (guideline "Gameplay accent"). It is drawn in
+ * a trail is not something the player can act on (guideline "Gameplay accent"). It is drawn in
  * two marks: a bed on the ground, under everything that stands, and a thin additive core above
  * the light-map, so the fire reads as burning in the barrow's dark rather than as a stain.
  *
@@ -71,7 +71,7 @@ export interface TrailStage<B extends TrailBrush & { destroy(): void }> {
   glow(trailId: string): B;
   /**
    * Whether a trail's flame is in sight; absent means always. The glow sorts above the roofs, so
-   * a trail under a roof the delver is outside of must not glow through it, as a sconce's halo
+   * a trail under a roof the player is outside of must not glow through it, as a sconce's halo
    * must not (guideline "Lighting"). The bed sorts under the roof and needs no gate.
    */
   glowShown?(trail: TrailState): boolean;

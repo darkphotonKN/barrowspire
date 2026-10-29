@@ -1,7 +1,7 @@
 // The hub's town props and dressing (FS-KYPQ9 §A.1): market stalls, carts, the well, crates,
 // fences, troughs, the woodpile, sacks, signposts, the washing line, flower boxes and chimneys.
 // Authored in code (ADR-0021), on the same materials, key light and scale as the furniture in
-// props.js: modelled a little over life size, so a delver (about 1.6 tiles) reads against them as
+// props.js: modelled a little over life size, so a player (about 1.6 tiles) reads against them as
 // against a barrel or a lamp post.
 //
 // One three.js unit is one tile edge (40 world px); +x is world +x, +z is world +y. Each model's

@@ -33,7 +33,7 @@ export const MENU_FACING: Facing8 = "se";
 
 /** Headroom kept above the crown in a portrait, so the top of the head is not clipped flat. */
 const PORTRAIT_HEADROOM = 4;
-/** Plinth width per 1x of figure scale: a little wider than a delver's stance. */
+/** Plinth width per 1x of figure scale: a little wider than a player's stance. */
 const PLINTH_WIDTH = 104;
 
 /**

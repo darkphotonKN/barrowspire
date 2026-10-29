@@ -11,7 +11,7 @@ export type InstancesState =
   | { phase: "failed"; items: PickerInstance[]; error: string };
 
 /**
- * The delver's relics with their status, for the List-a-relic picker (FS-8EGFA req 25). Loads
+ * The player's relics with their status, for the List-a-relic picker (FS-8EGFA req 25). Loads
  * when `enabled` turns on; `reload` re-reads, keeping the cards shown until the new ones land.
  * `list-item-instances` answers a `{statusCode, message, result:{items}}` envelope in snake_case.
  */

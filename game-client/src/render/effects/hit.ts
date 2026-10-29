@@ -4,7 +4,7 @@
  * `setTint(palette.damage)` fill.
  *
  *   const hits = new HitFeedback(scene);
- *   hits.play(sprite);  // an HP drop on the delver or a rival
+ *   hits.play(sprite);  // an HP drop on the player or a rival
  *   hits.clearAll();    // resetRun, scene SHUTDOWN
  *
  * Only the drawn character's tint changes: never its position, the camera, `standAt` or

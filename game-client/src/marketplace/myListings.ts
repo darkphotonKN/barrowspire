@@ -1,5 +1,5 @@
 /**
- * How a row reads under Mine (FS-8EGFA req 23): the delver's listings in every status. The status
+ * How a row reads under Mine (FS-8EGFA req 23): the player's listings in every status. The status
  * label replaces the Bid action, and only a live auction counts down.
  */
 

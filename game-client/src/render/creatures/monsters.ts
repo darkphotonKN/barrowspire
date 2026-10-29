@@ -5,7 +5,7 @@
  * it, a click strikes it, and a hit the server confirms flashes it.
  *
  * Nothing about a monster is client-held. The server sends where it stands, which way it faces
- * and what it is doing (`action`); the roster eases the position between ticks like a delver's
+ * and what it is doing (`action`); the roster eases the position between ticks like a player's
  * and plays the clip the action names. A reconnect rebuilds every monster and corpse from the
  * next broadcast.
  *
@@ -35,7 +35,7 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 // ── Looks and size ────────────────────────────────────────────────────────
 
 /**
- * Height tiers as a multiple of a delver's (guideline "Enemy design language"): fodder
+ * Height tiers as a multiple of a player's (guideline "Enemy design language"): fodder
  * 0.85–1.0x, a brute 1.3–1.5x, a boss at least 1.8x. Each look aims at the middle of its band;
  * the boss's ceiling is ours, to keep it on screen.
  */
@@ -46,8 +46,8 @@ export const SIZE_TIERS = {
 } as const;
 export type SizeTier = keyof typeof SIZE_TIERS;
 
-/** The delver height a tier is measured against: the default class's sheet (`characterSheet`). */
-export const DELVER_REFERENCE_SHEET = "char_knight_base";
+/** The player height a tier is measured against: the default class's sheet (`characterSheet`). */
+export const PLAYER_REFERENCE_SHEET = "char_knight_base";
 
 export interface MonsterLook {
   sheet: string;
@@ -94,19 +94,19 @@ interface SheetHeights {
 }
 
 /**
- * The sprite scale that stands a look at its tier: the tier's aim times a delver's head height,
+ * The sprite scale that stands a look at its tier: the tier's aim times a player's head height,
  * over the creature's own (both measured by the bake as `crown`). Without both crowns the art is
  * not there to measure, and the tier's aim is the best guess.
  */
 export function monsterScale(look: MonsterLook, art: SheetHeights): number {
   const aim = SIZE_TIERS[look.tier].aim;
-  const delver = art.sheet(DELVER_REFERENCE_SHEET)?.crown;
+  const player = art.sheet(PLAYER_REFERENCE_SHEET)?.crown;
   const creature = art.sheet(look.sheet)?.crown;
-  if (!delver || !creature) return aim;
-  return (aim * delver) / creature;
+  if (!player || !creature) return aim;
+  return (aim * player) / creature;
 }
 
-/** A monster's body on the server, in world px: the delver's `PlayerRadius`, for every archetype. */
+/** A monster's body on the server, in world px: the player's `PlayerRadius`, for every archetype. */
 const BODY_RADIUS = 20;
 
 /**
@@ -183,7 +183,7 @@ export function elitePlate(
 
 // ── The roster ────────────────────────────────────────────────────────────
 
-/** Eased toward the server position each frame, as delvers are. */
+/** Eased toward the server position each frame, as players are. */
 const LERP = 0.3;
 /** How quickly the measured speed follows the drawn motion, in ms (as `CharacterMotion`). */
 const SPEED_SMOOTHING_MS = 100;
@@ -195,7 +195,7 @@ const BAR_H = 4;
 const NAME_GAP = 2;
 /** Screen px between an elite's prefix and the rest of its plate: a word space at 11px. */
 const PREFIX_GAP = 3;
-/** How long a confirmed hit holds the damage flash, in ms: as long as a delver's. */
+/** How long a confirmed hit holds the damage flash, in ms: as long as a player's. */
 export const FLASH_MS = 200;
 /** No facing: the clip keeps the one it has. */
 const STILL = { x: 0, y: 0 };
@@ -488,7 +488,7 @@ export class MonsterRoster {
     if (key && frames) view.sprite.play({ key, startFrame: frames.length - 1 });
   }
 
-  /** Same projection and depth sorting as a delver (FS-2325V §A): on its world footprint. */
+  /** Same projection and depth sorting as a player (FS-2325V §A): on its world footprint. */
   private stand(view: MonsterView): void {
     const at = worldToScreen(view.pos.x, view.pos.y);
     view.sprite.setPosition(at.x, at.y);

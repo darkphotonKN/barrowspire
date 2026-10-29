@@ -24,9 +24,9 @@ const SKELETON: readonly SkeletonCell[] = [
 ];
 
 /**
- * The delver's own bids under My bids (FS-EYQ8K req 15–17; design guideline Part II "Listing
+ * The player's own bids under My bids (FS-EYQ8K req 15–17; design guideline Part II "Listing
  * table"). The listing table's row anatomy, one row per bid, newest first as the server sends
- * them: the relic, the delver's bid, what the auction stands at now, its time left, and where the
+ * them: the relic, the player's bid, what the auction stands at now, its time left, and where the
  * bid stands. No amber in a row: prices are vellum, a standing bid is brass-bright.
  *
  * A leading or outbid bid on a live auction offers Withdraw (req 10), which asks first, in a row

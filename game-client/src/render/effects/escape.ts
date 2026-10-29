@@ -1,5 +1,5 @@
 /**
- * Escape (FS-KYPQ9 §G.3): a quiet column of pale light where a delver leaves, a few slow rising
+ * Escape (FS-KYPQ9 §G.3): a quiet column of pale light where a player leaves, a few slow rising
  * motes and a short-lived `vellum` pool, all fading over the table's 1000 ms. It replaces the
  * 30-particle radial burst.
  *

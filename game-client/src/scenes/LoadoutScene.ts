@@ -24,7 +24,7 @@ import {
  */
 const ui = palette.menu;
 
-/** The delver beside the equipment panel: its baked sheet at 1x, in the left margin. */
+/** The player beside the equipment panel: its baked sheet at 1x, in the left margin. */
 const HERO_X = 80;
 const HERO_FEET_Y = 420;
 
@@ -192,7 +192,7 @@ export class LoadoutScene extends Phaser.Scene {
   }
 
   /**
-   * The delver being geared, as its class's baked sheet on a lit plinth, facing us (FS-2325V §F.1):
+   * The player being geared, as its class's baked sheet on a lit plinth, facing us (FS-2325V §F.1):
    * the same sheet that walks in the hub and the run. Falls back to the placeholder with no art.
    */
   private createHero(): void {

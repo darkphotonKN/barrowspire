@@ -4,7 +4,7 @@
  * in physics, never in a message, so placement is all that keeps it out of the way.
  *
  * The keep-out is computed from the floor's own broadcast (R3), never hand-copied the way the
- * hub's is (`hubKeepOut.ts`): walls, door thresholds and their approach lanes, the things a delver
+ * hub's is (`hubKeepOut.ts`): walls, door thresholds and their approach lanes, the things a player
  * uses, and the play area's edge. A candidate that breaks a rule is dropped, never nudged, and
  * every choice is a hash of the floor seed, so every client strews the same floor.
  *
@@ -56,7 +56,7 @@ const KEEP_OUT = {
   wall: 24,
   /** A door rect grows by this on every side… */
   door: 40,
-  /** …and by this more to the south, the lane a delver walks up to it on. */
+  /** …and by this more to the south, the lane a player walks up to it on. */
   lane: 60,
   /** No dressing this near the stairs, chest, escape door or switch. */
   use: INTERACT_RANGE,
@@ -85,7 +85,7 @@ export interface DressingPiece {
   index: number;
   at: Point;
   r: number;
-  /** Tall enough to stand over a delver behind it: joins the occluders. */
+  /** Tall enough to stand over a player behind it: joins the occluders. */
   tall: boolean;
 }
 

@@ -3,7 +3,7 @@
  * leaves where its loot fell. No baked prop fits yet, so it is built in code (ADR-0021's rule:
  * our own art, never sourced) as a placeholder texture, like the chest and the stairs before
  * their sheets: barrow earth, a rag, a skull and bones, and one amber glint of the loot in it,
- * because amber on the canvas means the delver can act on it (guideline "Gameplay accent").
+ * because amber on the canvas means the player can act on it (guideline "Gameplay accent").
  *
  * Phaser-free: it paints through {@link PileBrush}, the slice of `Phaser.GameObjects.Graphics`
  * it uses, so the art is tested without a canvas. The scene bakes it to a texture once.

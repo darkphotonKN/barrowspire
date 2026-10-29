@@ -1,32 +1,32 @@
 /**
  * The co-op party on the HUD (FS-77AB6 req 40; FS-QPDKN req 1, 3, 7, 8, 11; FS-9K8EZ req 2, 3):
- * whether a delver is still in the delve, which card a delver who is out of it is shown while
+ * whether a player is still in the delve, which card a player who is out of it is shown while
  * the rest play on, whose eyes they may watch through, and what the run's ESC menu offers them.
  * Pure, so the rules and the copy are tested without a canvas; the scene draws what these return.
  */
 
 import type { PlayerState } from "@/types/gameState";
 
-/** The slice of a delver these rules read. */
-type Delver = Pick<PlayerState, "escape" | "current_health">;
+/** The slice of a player these rules read. */
+type Player = Pick<PlayerState, "escape" | "current_health">;
 
 /**
- * Out of the delve (FS-77AB6 req 17): escaped, or fallen. A resolved delver keeps receiving
- * state until the end, but no longer acts in it. An absent delver is not one. A delver left on
+ * Out of the delve (FS-77AB6 req 17): escaped, or fallen. A resolved player keeps receiving
+ * state until the end, but no longer acts in it. An absent player is not one. A player left on
  * a lower floor (FS-F6F88) arrives fallen, so they count here too.
  */
-export function resolved(delver?: Delver | null): boolean {
-  if (!delver) return false;
+export function resolved(player?: Player | null): boolean {
+  if (!player) return false;
   return (
-    delver.escape === true ||
-    (delver.current_health !== undefined && delver.current_health <= 0)
+    player.escape === true ||
+    (player.current_health !== undefined && player.current_health <= 0)
   );
 }
 
-/** How the delver is out of the delve: escaped, or dead (left behind counts as dead). */
+/** How the player is out of the delve: escaped, or dead (left behind counts as dead). */
 export type ResolvedCardKind = "dead" | "escaped";
 
-/** The resolved delver's card: its kind and its copy. The scene adds the buttons. */
+/** The resolved player's card: its kind and its copy. The scene adds the buttons. */
 export interface ResolvedCard {
   kind: ResolvedCardKind;
   title: string;
@@ -47,12 +47,12 @@ const CARDS: Record<ResolvedCardKind, ResolvedCard> = {
 };
 
 /**
- * The card a resolved delver sees while another delver is still in the delve (FS-QPDKN req 1,
+ * The card a resolved player sees while another player is still in the delve (FS-QPDKN req 1,
  * 3), or `null`. Once no one is left in it, `end_game` is on its way and carries the last word.
  */
 export function resolvedCard(state: {
-  current_player: Delver | null;
-  other_players?: Delver[];
+  current_player: Player | null;
+  other_players?: Player[];
 }): ResolvedCard | null {
   const me = state.current_player;
   if (!me || !resolved(me)) return null;
@@ -67,15 +67,15 @@ export interface Watchable {
   username: string;
 }
 
-type NamedDelver = Delver & Pick<PlayerState, "id" | "username">;
+type NamedPlayer = Player & Pick<PlayerState, "id" | "username">;
 
 /**
  * The teammates still in play, in a stable order (by id, whatever order the broadcast lists
- * them in), never this delver (FS-QPDKN req 7, 8).
+ * them in), never this player (FS-QPDKN req 7, 8).
  */
 export function watchable(state: {
   current_player: Pick<PlayerState, "id"> | null;
-  other_players?: NamedDelver[];
+  other_players?: NamedPlayer[];
 }): Watchable[] {
   const me = state.current_player?.id;
   return (state.other_players ?? [])
@@ -102,15 +102,15 @@ export function nextWatched(
 export interface RunMenuChoice {
   id: "fall" | "leave" | "back" | "fall-now" | "not-yet";
   label: string;
-  /** Amber for a thing the delver can do, the cancel register for going back. */
+  /** Amber for a thing the player can do, the cancel register for going back. */
   register: "actionable" | "cancel";
 }
 
 const BACK: RunMenuChoice = { id: "back", label: "Back  [Esc]", register: "cancel" };
 
 /**
- * What the run's ESC menu offers, from the delver's state as it opens (FS-9K8EZ req 2): a
- * living delver may fall where they stand; a dead one (left behind counts as dead) may leave
+ * What the run's ESC menu offers, from the player's state as it opens (FS-9K8EZ req 2): a
+ * living player may fall where they stand; a dead one (left behind counts as dead) may leave
  * the barrow, the same door as their card's; an escaped one waits for the run's end, so there
  * is nothing but the way back. The row says death, never a forfeit or a withdrawal.
  */

@@ -20,7 +20,7 @@ describe("warrior slash (FS-KYPQ9 §D.1)", () => {
     });
   });
 
-  it("should lay the steel smear on a world plane at the delver's world position, turned toward the target", () => {
+  it("should lay the steel smear on a world plane at the player's world position, turned toward the target", () => {
     playSlash(fx, "self", me, { x: 200, y: 260 });
     const smear = fake.made.find((m) => m.kind === "image")!;
     expect(smear.args[3]).toBe("fx_slash/idle/0/0");
@@ -45,7 +45,7 @@ describe("warrior slash (FS-KYPQ9 §D.1)", () => {
     return (root.calls.setDepth as [number])[0];
   };
 
-  it("should draw over the delver (standAt layer 1) when the aim points away from the viewer", () => {
+  it("should draw over the player (standAt layer 1) when the aim points away from the viewer", () => {
     playSlash(fx, "self", me, { x: me.x - 40, y: me.y - 30 });
     expect(smearDepth()).toBeGreaterThan(worldDepth(me.x, me.y, 1));
   });
@@ -81,7 +81,7 @@ describe("warrior slash (FS-KYPQ9 §D.1)", () => {
     expect(fake.timers.map((t) => t.delay)).toEqual([220]);
   });
 
-  it("should settle at most 4 dust motes at the delver's feet", () => {
+  it("should settle at most 4 dust motes at the player's feet", () => {
     playSlash(fx, "self", me, { x: 260, y: 200 });
     const dust = fake.made.find((m) => m.kind === "particles")!;
     const [count] = dust.calls.emitParticle as [number];
@@ -93,7 +93,7 @@ describe("warrior slash (FS-KYPQ9 §D.1)", () => {
     ]);
   });
 
-  it("should face +x when the target is the delver's own point", () => {
+  it("should face +x when the target is the player's own point", () => {
     playSlash(fx, "self", me, me);
     const smear = fake.made.find((m) => m.kind === "image")!;
     expect(smear.calls.setRotation).toEqual([0]);

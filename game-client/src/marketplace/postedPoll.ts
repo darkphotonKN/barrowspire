@@ -13,7 +13,7 @@ export const POLL_MAX_TRIES = 8;
 export type PollOutcome = "found" | "gaveUp" | "cancelled";
 
 export interface PostedPollDeps<L> {
-  /** One read of the delver's listings, newest first (the first page is enough). */
+  /** One read of the player's listings, newest first (the first page is enough). */
   fetchMine: () => Promise<{ listings: L[] }>;
   /** Waits `ms`; the real one is a timer, a test's records the wait. */
   sleep: (ms: number) => Promise<void>;

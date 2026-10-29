@@ -43,7 +43,7 @@ describe("sellerBlock", () => {
   });
 
   it.each([
-    ["another delver", "brenna"],
+    ["another player", "brenna"],
     ["a signed-out visitor", undefined],
   ])("should give %s no seller block", (_label, memberId) => {
     expect(sellerBlock(live, memberId, NOW)).toEqual({ kind: "none" });

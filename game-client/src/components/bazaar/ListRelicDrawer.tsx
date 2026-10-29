@@ -17,7 +17,7 @@ import {
 import type { InstancesState } from "@/marketplace/useItemInstances";
 
 /**
- * The List-a-relic drawer (FS-8EGFA req 25; design guideline Part II "Item grid"). The delver
+ * The List-a-relic drawer (FS-8EGFA req 25; design guideline Part II "Item grid"). The player
  * picks one of their relics from a card grid, sets a start price and a duration, and submits.
  * `onSubmit` resolves to an error message to show, or null once the listing is posted, when the
  * page closes the drawer. Esc and the close control dismiss it; focus stays inside while open

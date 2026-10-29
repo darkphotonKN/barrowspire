@@ -2,7 +2,7 @@
  * The ground: decorative, client-side, and the same on every client (FS-2325V §C.1).
  *
  * Every choice is a hash of world tile coordinates and a per-world seed, never `Math.random`,
- * so two delvers looking at the same place see the same tiles and decals. Pure planning: the
+ * so two players looking at the same place see the same tiles and decals. Pure planning: the
  * result names sheets from the sprite manifest and world positions; drawing is `scene.ts`.
  */
 

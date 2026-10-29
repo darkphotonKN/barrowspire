@@ -7,7 +7,7 @@ import type { MyBidEntry } from "./myBids";
 import { submitWithdraw } from "./withdrawBidFlow";
 
 /**
- * Withdraw under My bids (FS-EYQ8K req 12–14, story 13): the delver's purse, read while the view
+ * Withdraw under My bids (FS-EYQ8K req 12–14, story 13): the player's purse, read while the view
  * is shown, and the answer to the last withdraw. The note outlives the list re-read a withdraw
  * starts, which unmounts every row. `reloadList` re-reads My bids from its first page.
  */

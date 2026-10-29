@@ -254,7 +254,7 @@ export interface ContainerViewOptions {
   onLoot(item: ItemState): void;
   /** Wall-clock ms for the pending window. The scene's inventory uses `Date.now` too. */
   now?: () => number;
-  /** The delver's level, to mark "Requires level N" when above it (FS-BDA7X req 45). */
+  /** The player's level, to mark "Requires level N" when above it (FS-BDA7X req 45). */
   characterLevel?: () => number | undefined;
 }
 
@@ -535,7 +535,7 @@ export class ContainerView {
 
   /**
    * The hovered item's tip above its icon, or below it where it would not fit (§D.3): every line the item views share (FS-4R9M9
-   * R59), its requirement marked when above the delver's level (FS-BDA7X req 45).
+   * R59), its requirement marked when above the player's level (FS-BDA7X req 45).
    */
   private showTip(
     item: ItemState,

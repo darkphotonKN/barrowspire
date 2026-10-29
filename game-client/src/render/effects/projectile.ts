@@ -9,7 +9,7 @@
  *   flights.clear();                 // resetRun: no impact, nothing left tracked
  *
  * Signal, unchanged: `ProjectileState` appearing, moving and disappearing. It is global and
- * carries no owner, so a rival's projectile flies, lights and lands like the delver's own. Cast
+ * carries no owner, so a rival's projectile flies, lights and lands like the player's own. Cast
  * and release are played by the scene on its own send, never here on first sight.
  *
  * The body is a plain baked image at the footprint, on the chest layer (`standAt(…, 5)`),

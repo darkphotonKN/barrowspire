@@ -56,8 +56,8 @@ export function sourceFromManifest(
   };
 }
 
-/** The pool the delver carries; replaces FS-W6BP1's overlay torch. */
-export const DELVER_TORCH = {
+/** The pool the player carries; replaces FS-W6BP1's overlay torch. */
+export const PLAYER_TORCH = {
   radius: 260,
   color: BARROW_HEX.amber,
   intensity: 0.8,

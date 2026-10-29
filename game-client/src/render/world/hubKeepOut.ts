@@ -1,7 +1,7 @@
 /**
  * Where the hub's props and dressing stand, and the ground they must keep off (FS-KYPQ9 §A.3–§A.5).
  *
- * Dressing is decoration only (CONTEXT.md "Dressing"): nothing stops a delver or a resident
+ * Dressing is decoration only (CONTEXT.md "Dressing"): nothing stops a player or a resident
  * walking through it, so placement is what keeps it believable. Every spot here clears the
  * keep-out rule, K1–K7, which `hubKeepOut.test.ts` checks at review. The scene still refuses a
  * prop inside a building at draw time (`blocked()`), because the walls are the server's.
@@ -37,7 +37,7 @@ export const HUB_PATHS: [number, number, number, number][] = [
 export const HUB_KEEP_OUT = {
   /** K3: arrivals land here. */
   spawn: { at: { x: 1000, y: 800 }, clearance: 60 },
-  /** K4: where a delver stands to talk to a function NPC (NPCInteractRange). */
+  /** K4: where a player stands to talk to a function NPC (NPCInteractRange). */
   npcs: {
     at: [
       { x: 860, y: 680 },
@@ -65,7 +65,7 @@ export interface PropSpot {
   index?: number;
   /** The sheet's animation, where it has one per axis (a flower box along a wall). */
   animation?: string;
-  /** Tall enough to hide a delver: joins the occluders and fades over them. */
+  /** Tall enough to hide a player: joins the occluders and fades over them. */
   tall?: boolean;
 }
 
@@ -77,7 +77,7 @@ export interface FenceRun {
   r: number;
 }
 
-/** The well (§A.4). Tall: its hoist and roof stand over a delver behind it. */
+/** The well (§A.4). Tall: its hoist and roof stand over a player behind it. */
 export const HUB_WELL: PropSpot = { sheet: "well", at: { x: 820, y: 460 }, r: 22, tall: true };
 
 /**

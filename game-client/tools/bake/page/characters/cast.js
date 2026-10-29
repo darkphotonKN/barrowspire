@@ -1,7 +1,7 @@
 // The cast (FS-2325V §E.3): the three playable classes and the run's creatures, each dressed on
 // the shared rig and given a movement style for the clips. Rivals reuse the class models.
 //
-// Heights are in world units (one unit = one tile edge). A delver stands about 2 units: under the
+// Heights are in world units (one unit = one tile edge). A player stands about 2 units: under the
 // 2.4-unit door lintel, roughly 80 px tall on screen, one tile wide at the shoulders.
 //
 // Every cast member returns { rig, style }. `style` feeds clips.js: `attack` names the attack,

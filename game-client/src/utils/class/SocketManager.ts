@@ -37,7 +37,7 @@ export interface SocketLike {
   close(code?: number, reason?: string): void;
 }
 
-/** A refused action: the action, the server's error, and its message for the delver if any. */
+/** A refused action: the action, the server's error, and its message for the player if any. */
 export interface MessageError {
   action: string;
   error: string;
@@ -65,7 +65,7 @@ export class SocketManager {
   private gameStateListeners: Set<(state: ClientGameState) => void> = new Set();
 
   // Where this client's game server is. It starts at the default and follows
-  // every handoff, so a reconnect returns to the host the delver moved to rather
+  // every handoff, so a reconnect returns to the host the player moved to rather
   // than the server they started on. FS-K2HKP §Requirements 29.
   private serverAddr: string = DEFAULT_SERVER_ADDR;
   private token = "";
@@ -83,14 +83,14 @@ export class SocketManager {
     return this.serverAddr;
   }
 
-  /** Connects to the game server as this delver, remembering who they are for later reconnects and handoffs. */
+  /** Connects to the game server as this player, remembering who they are for later reconnects and handoffs. */
   connectToGame(token: string, name: string): void {
     this.token = token;
     this.name = name;
     this.connect(this.gameUrl());
   }
 
-  /** Connects again as the same delver, to whichever server they were last on. */
+  /** Connects again as the same player, to whichever server they were last on. */
   reconnect(): void {
     this.connect(this.gameUrl());
   }
@@ -246,7 +246,7 @@ export class SocketManager {
   /**
    * Follows a handoff to the server hosting a run, make-before-break: the
    * current socket stays live until the host has seated us, so a refused or
-   * failed move leaves the delver standing where they were.
+   * failed move leaves the player standing where they were.
    * FS-K2HKP §Requirements 22–24, 29, 31.
    */
   private handoff(payload: WorldHandoffPayload) {

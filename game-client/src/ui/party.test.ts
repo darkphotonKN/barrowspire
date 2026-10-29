@@ -8,7 +8,7 @@ import {
   watchable,
 } from "./party";
 
-const delver = (
+const player = (
   fields: {
     id?: string;
     username?: string;
@@ -26,71 +26,71 @@ const delver = (
 const ally = (
   id: string,
   fields: { escape?: boolean; current_health?: number } = {},
-) => delver({ id, username: id[0].toUpperCase() + id.slice(1), ...fields });
+) => player({ id, username: id[0].toUpperCase() + id.slice(1), ...fields });
 
 const state = (
-  me: ReturnType<typeof delver> | null,
-  others: ReturnType<typeof delver>[],
+  me: ReturnType<typeof player> | null,
+  others: ReturnType<typeof player>[],
 ) => ({ current_player: me, other_players: others });
 
 describe("resolved (FS-77AB6 req 17)", () => {
   it.each([
-    ["escaped", delver({ escape: true }), true],
-    ["fallen", delver({ current_health: 0 }), true],
-    ["in play", delver(), false],
+    ["escaped", player({ escape: true }), true],
+    ["fallen", player({ current_health: 0 }), true],
+    ["in play", player(), false],
     ["in play with no health sent", { escape: false }, false],
     ["absent", null, false],
-  ])("should count a delver %s as %s", (_, d, want) => {
+  ])("should count a player %s as %s", (_, d, want) => {
     expect(resolved(d)).toBe(want);
   });
 });
 
 describe("resolvedCard (FS-QPDKN req 1, 3; edge state: left behind)", () => {
   it.each([
-    ["dead", delver({ current_health: 0 }), [ally("wenna")], "dead"],
-    ["escaped", delver({ escape: true }), [ally("wenna")], "escaped"],
-    // a delver left on a lower floor (FS-F6F88) arrives dead, not escaped: the grim card
+    ["dead", player({ current_health: 0 }), [ally("wenna")], "dead"],
+    ["escaped", player({ escape: true }), [ally("wenna")], "escaped"],
+    // a player left on a lower floor (FS-F6F88) arrives dead, not escaped: the grim card
     [
       "left behind",
-      delver({ current_health: 0, escape: false }),
+      player({ current_health: 0, escape: false }),
       [ally("wenna")],
       "dead",
     ],
     [
       "dead with one ally still in among resolved ones",
-      delver({ current_health: 0 }),
+      player({ current_health: 0 }),
       [ally("wenna", { escape: true }), ally("tam")],
       "dead",
     ],
-    ["in play", delver(), [ally("wenna")], null],
+    ["in play", player(), [ally("wenna")], null],
     [
       "dead with nobody left in play",
-      delver({ current_health: 0 }),
+      player({ current_health: 0 }),
       [ally("wenna", { current_health: 0 })],
       null,
     ],
-    ["escaped alone", delver({ escape: true }), [], null],
+    ["escaped alone", player({ escape: true }), [], null],
     ["absent", null, [ally("wenna")], null],
-  ])("should give a %s delver the %s card", (_, me, others, want) => {
+  ])("should give a %s player the %s card", (_, me, others, want) => {
     expect(resolvedCard(state(me, others))?.kind ?? null).toBe(want);
   });
 
-  it("should keep the dead delver's grim line", () => {
+  it("should keep the dead player's grim line", () => {
     const card = resolvedCard(
-      state(delver({ current_health: 0 }), [ally("wenna")]),
+      state(player({ current_health: 0 }), [ally("wenna")]),
     );
     expect(`${card?.title} ${card?.body}`).toMatch(/barrow keeps you/i);
   });
 
-  it("should tell the escaped delver they are out, grim and terse", () => {
-    const card = resolvedCard(state(delver({ escape: true }), [ally("wenna")]));
+  it("should tell the escaped player they are out, grim and terse", () => {
+    const card = resolvedCard(state(player({ escape: true }), [ally("wenna")]));
     expect(`${card?.title} ${card?.body}`).toMatch(/out of the barrow/i);
     expect(`${card?.title} ${card?.body}`).not.toMatch(/!/);
   });
 
   it.each([
-    ["dead", delver({ current_health: 0 })],
-    ["escaped", delver({ escape: true })],
+    ["dead", player({ current_health: 0 })],
+    ["escaped", player({ escape: true })],
   ])(
     "should keep the hub's words on the %s card: delve, never run",
     (_, me) => {
@@ -101,9 +101,9 @@ describe("resolvedCard (FS-QPDKN req 1, 3; edge state: left behind)", () => {
 });
 
 describe("watchable (FS-QPDKN req 7, 8)", () => {
-  it("should list the teammates still in play, by id, never this delver", () => {
+  it("should list the teammates still in play, by id, never this player", () => {
     const list = watchable(
-      state(delver({ current_health: 0 }), [
+      state(player({ current_health: 0 }), [
         ally("wenna"),
         ally("tam"),
         ally("brom", { escape: true }),
@@ -115,15 +115,15 @@ describe("watchable (FS-QPDKN req 7, 8)", () => {
     ]);
   });
 
-  it("should leave this delver out even if the broadcast lists them among the others", () => {
-    const list = watchable(state(delver(), [delver(), ally("wenna")]));
+  it("should leave this player out even if the broadcast lists them among the others", () => {
+    const list = watchable(state(player(), [player(), ally("wenna")]));
     expect(list.map((w) => w.id)).toEqual(["wenna"]);
   });
 
   it("should be empty with nobody else in play", () => {
     expect(
       watchable(
-        state(delver({ current_health: 0 }), [
+        state(player({ current_health: 0 }), [
           ally("wenna", { current_health: 0 }),
         ]),
       ),
@@ -173,7 +173,7 @@ describe("runMenuChoices (FS-9K8EZ req 2)", () => {
       expect(choice.label).not.toMatch(/forfeit|withdraw/i);
   });
 
-  it("should name the dead delver's row as the card does, and keep Back in the cancel register", () => {
+  it("should name the dead player's row as the card does, and keep Back in the cancel register", () => {
     const [leave, back] = runMenuChoices({ resolved: true, escaped: false });
     expect(leave.label).toBe("Leave the barrow");
     expect(back.label).toBe("Back  [Esc]");

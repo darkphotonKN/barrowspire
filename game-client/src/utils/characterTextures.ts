@@ -68,13 +68,13 @@ const KNIGHT_PALETTE: KnightPalette = {
 };
 
 const WIZARD_PALETTE: WizardPalette = {
-  hat: palette.delverCloak,
-  hatShade: palette.delverCloakShade,
+  hat: palette.playerCloak,
+  hatShade: palette.playerCloakShade,
   band: palette.frame,
   face: 0xdcbd9d,
-  eye: palette.delverGlow,
-  robe: palette.delverCloak,
-  robeShade: palette.delverCloakShade,
+  eye: palette.playerGlow,
+  robe: palette.playerCloak,
+  robeShade: palette.playerCloakShade,
   robeLight: palette.interactable,
   staff: palette.containerLid,
   orb: palette.escapeGlow,
@@ -670,15 +670,15 @@ export function ensureCharacterTextures(scene: Phaser.Scene): void {
 }
 
 /**
- * Draws a delver's legs beneath their sprite, swinging while they walk.
+ * Draws a player's legs beneath their sprite, swinging while they walk.
  *
  * The character textures are one static image per class per facing, so walking
  * is animated by drawing the legs rather than by cycling frames. Shared so a
- * delver strides the same way in every world.
+ * player strides the same way in every world.
  *
  * Clears and redraws the graphics each call; the caller owns its depth.
  */
-export function drawDelverLegs(
+export function drawPlayerLegs(
   graphics: Phaser.GameObjects.Graphics,
   x: number,
   y: number,

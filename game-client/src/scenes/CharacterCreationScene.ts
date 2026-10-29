@@ -255,7 +255,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     this.statBarGraphics = this.add.graphics();
   }
 
-  /** `picked` is a delver's click: the class then plays its attack once (FS-2325V §F.2). */
+  /** `picked` is a player's click: the class then plays its attack once (FS-2325V §F.2). */
   private updateClassSelection(key: ClassKey, picked = true): void {
     const changed = key !== this.selectedClassKey;
     this.selectedClassKey = key;
@@ -485,7 +485,7 @@ export class CharacterCreationScene extends Phaser.Scene {
 
   /**
    * The hero is made on the server (FS-BDA7X req 39); the menu is only reached once it exists.
-   * A refusal (a taken name, the ledger out of reach) keeps the delver here to try again.
+   * A refusal (a taken name, the ledger out of reach) keeps the player here to try again.
    */
   private async handleConfirmCreation(): Promise<void> {
     if (!this.characterName || this.characterName.trim().length === 0) {

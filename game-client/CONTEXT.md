@@ -25,17 +25,22 @@ translation belongs to the surface that renders words.
 
 ## Terms
 
-- **Delver** — the presentation name for a human who plays Barrowspire. Scope is deliberately
-  wide: a delver is a delver in the hub, inside a run, and on the leaderboard, whether or not
-  they have ever descended. Maps to `Member` (REST/auth) and `player` (WS). Replaces **operator**
-  everywhere it appears — that word is sci-fi residue from the pre-fork game and is being removed
-  by FS-SWMNW/FS-W6BP1, not kept as a synonym.
+- **Player** — a human who plays Barrowspire, on screen and in code alike, so it needs no
+  translation (like **Gold**). Scope is deliberately wide: a player is a player in the hub,
+  inside a run, and on the leaderboard, whether or not they have ever entered one. Maps to
+  `Member` (REST/auth) and `player` (WS). Not a **character**: a player owns characters and
+  brings one into a world at a time; the figure on the canvas is the character, the person
+  behind it is the player. Replaces **delver** (retired 2026-10-29: it tied the person to one
+  kind of place, the Spire, when runs may lead elsewhere) and **operator** (sci-fi residue,
+  removed by FS-SWMNW/FS-W6BP1). Neither is kept as a synonym. "Delver" survives only as a
+  **rank** title on the profile (member status 1, beside "Warden"): a rank is a title a player
+  holds, not the word for the player.
 - **Delve** — both the act of entering a run (*"Delve"*, the primary CTA, replacing "Play") and
   the run itself (*"your last delve"*). The player-facing name for what
   [`SPECIFICATION.md`](SPECIFICATION.md) calls an **escape run** and the WS protocol calls a
   **game** / **session**. All three name one thing at different layers; none of them is wrong in
   its own layer.
-- **The Spire** — the place delvers descend into. The antagonist-realm and the source of relics.
+- **The Spire** — the place players descend into. The antagonist-realm and the source of relics.
   Note the article: *the* Spire, never bare "Spire".
 - **Barrowspire** — the product. The world entire, not a location within it. Never used as a
   synonym for the Spire.
@@ -43,7 +48,7 @@ translation belongs to the surface that renders words.
   (*barrow-deep*, *barrow earth*, the *barrow ramp* palette) rather than as a standalone noun for
   a place.
 - **Lich Lord** — the ruling antagonist of the Spire. Named sparingly; dread over exposition.
-- **Relic** / **plunder** — what a delver carries out. `items` on the wire, item cards in the
+- **Relic** / **plunder** — what a player carries out. `items` on the wire, item cards in the
   marketplace.
 - **Gold** — the in-game currency, in copy and in code alike (wallet-service and ledger-service
   both use it). One of the few words that needs no translation.
@@ -75,8 +80,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   two measured values: a ground sheet's mean colour and a standing sheet's head height (`crown`).
   The client learns about art only through it.
 - **Light source**: a point that lights the light-map (torch, brazier, window, lantern, the
-  delver's torch pool). It is declared per prop type in the sprite manifest, or attached to the
-  delver. Purely visual: it has no effect on what anyone can see or hit.
+  player's torch pool). It is declared per prop type in the sprite manifest, or attached to the
+  player. Purely visual: it has no effect on what anyone can see or hit.
 - **Light-map**: the camera-fixed layer that multiplies the lit world: filled each frame with the
   world's **ambient** (fixed per world type), plus an additive pool per light source in view.
   Built once and restamped, never rebuilt (`src/render/lighting/`).
@@ -88,7 +93,7 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   along its centreline, each sorted by its own footprint, with a **post** at each end. "Back"
   pieces stand full height (north and west sides); "front" pieces are the low cut-away.
 - **Occluder**: a tall drawn thing (tree, lamp post, back wall piece, roof piece, door, arch) that
-  fades while its sprite overlaps the delver's and its footprint sorts nearer the viewer.
+  fades while its sprite overlaps the player's and its footprint sorts nearer the viewer.
 - **Dressing**: a decorative prop placed by the client (a cart, stall, trough, signpost, lamp post,
   chimney smoke in the hub; rubble, bone piles, broken crates, roots, chains, braziers in a run,
   called **run dressing**). It is never interactable, never blocks movement, and never stands
@@ -97,7 +102,7 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   thresholds, stairs, chest, escape door, switch, map edge; FS-8RBQY §C.5) rather than
   hand-copied. The server knows nothing of it. A prop that would need collision or a click is not
   dressing.
-- **World kind**: which world the server put the delver in, `"hub" | "run"` (`WorldKind`,
+- **World kind**: which world the server put the player in, `"hub" | "run"` (`WorldKind`,
   mirroring `world_type` on the wire). Server-decided. Not the same as a world theme.
 - **World theme**: how the client draws a run: `"exterior" | "tower"` (FS-8RBQY §A). It picks the
   ground plan, wall-piece sheets, roofs and indoor mask on or off, ambient, perimeter wall and run
@@ -130,7 +135,7 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 
 | Screen says | REST / auth | WS protocol | SPECIFICATION.md |
 |---|---|---|---|
-| delver | `Member`, `member_id` | `player`, `player_id`, `current_player` | "player" |
+| player | `Member`, `member_id` | `player`, `player_id`, `current_player` | "player" |
 | a delve | — | `game`, `session_id`, `find_game`, `end_game` | "escape run" |
 | the Spire | — | the instance world | "escape run" (the instance) |
 | relic, plunder | `/api/items/*` | `items[]` | "loadout", "items" |
@@ -141,11 +146,14 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Money clarity overrides lore.** Real-money and subscription flows use unambiguous verbs —
   "Subscribe", "Pay", the actual price. Never hide a paid action behind flavor. Reserve
   "Acquire" / "Claim" for in-game-gold purchases. (Design guideline, Part II, Voice & tone.)
-- **No lore in error messages that must be acted on.** A delver who cannot log in needs to know
+- **No lore in error messages that must be acted on.** A player who cannot log in needs to know
   why, not that the gates are barred.
 
 ## Open
 
+- **Delve** and **the Spire** assume every run leads into the Spire. Runs that lead elsewhere (a
+  forest trail, a farm) are being scoped; whether "delve" survives as the general word or stays
+  the Spire's own is decided there, not here.
 - The **HUB** world (refactor plan) has no lore name yet — "hub" is an engineering word. It needs
   one before the HUB client ships, and the answer is not obvious: the settlement above the Spire,
   the camp, the hall. Deliberately unresolved rather than guessed.

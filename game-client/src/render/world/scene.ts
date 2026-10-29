@@ -159,7 +159,7 @@ export function addProp(
 /** A floor's run dressing as drawn (FS-8RBQY §C.4): sprites, the tall ones, and brazier light. */
 export interface BuiltDressing {
   sprites: Phaser.GameObjects.Sprite[];
-  /** Tall enough to stand over a delver: they fade like any occluder. */
+  /** Tall enough to stand over a player: they fade like any occluder. */
   tall: Phaser.GameObjects.Sprite[];
   lights: LightSource[];
 }
@@ -192,7 +192,7 @@ export function addDressing(
 export interface BuiltWalls {
   /** Every piece and post, by the server wall it belongs to. */
   byWall: Map<string, Phaser.GameObjects.Sprite[]>;
-  /** Full-height pieces: tall enough to hide a delver standing behind them. */
+  /** Full-height pieces: tall enough to hide a player standing behind them. */
   tall: Phaser.GameObjects.Sprite[];
   /** Declared lights, with the wall they hang on; a back wall's stand under its house's roof. */
   lights: { source: LightSource; wallId: string; underRoof: boolean }[];
@@ -338,7 +338,7 @@ export function showState(
 }
 
 /**
- * Trees, tall props, back walls and roofs that fade while they stand over the delver (§C.5).
+ * Trees, tall props, back walls and roofs that fade while they stand over the player (§C.5).
  * Occluders do not move, so their bounds are taken once.
  */
 export class Occluders {
@@ -367,7 +367,7 @@ export class Occluders {
     this.items.length = 0;
   }
 
-  /** Eases each occluder toward faded or restored; `subject` is the delver, or null if gone. */
+  /** Eases each occluder toward faded or restored; `subject` is the player, or null if gone. */
   update(subject: { bounds: Rect; depth: number } | null, dtMs: number): void {
     for (const { sprite, bounds } of this.items) {
       if (!sprite.active) continue;

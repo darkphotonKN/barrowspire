@@ -1,7 +1,7 @@
 /**
  * The light-map (FS-2325V §C.7, guideline "Lighting"): a camera-fixed layer that multiplies the
  * lit world, refilled each frame with the world's ambient, with an additive radial pool per light
- * source in view and the delver's torch. Flame halos draw just above it; the vignette (905) and
+ * source in view and the player's torch. Flame halos draw just above it; the vignette (905) and
  * the HUD (1000) stay above both.
  *
  * Built once, restamped per frame, never rebuilt: its texture lives in the game's texture manager
@@ -11,7 +11,7 @@
 import * as Phaser from "phaser";
 import type { Point } from "@/render/iso";
 import {
-  DELVER_TORCH,
+  PLAYER_TORCH,
   cullInto,
   flickerAt,
   type LightSource,
@@ -31,7 +31,7 @@ const HALO_SIZE = 64;
 /** A halo's radius as a share of its source's pool radius. */
 const HALO_SHARE = 0.16;
 const HALO_ALPHA = 0.55;
-/** How fast the carried pool fades when the delver has gone (escaped or died), per frame. */
+/** How fast the carried pool fades when the player has gone (escaped or died), per frame. */
 const CARRY_FADE = 0.92;
 /** Short-lived sources lit at once (FS-KYPQ9 §C.3); past it, the oldest is dropped. */
 export const TRANSIENT_CAP = 16;
@@ -96,7 +96,7 @@ export class LightMap {
   private readonly carried: LightSource = {
     x: 0,
     y: 0,
-    ...DELVER_TORCH,
+    ...PLAYER_TORCH,
     seed: 0.5,
   };
   private carriedAlpha = 0;
@@ -179,7 +179,7 @@ export class LightMap {
 
   /**
    * Forget every fixed source and hide its halo: the walls that held them are gone with their
-   * floor (FS-F6F88 req 33). The delver's carried torch is not a fixed source and stays.
+   * floor (FS-F6F88 req 33). The player's carried torch is not a fixed source and stays.
    */
   clear(): void {
     this.sources.length = 0;
@@ -192,7 +192,7 @@ export class LightMap {
     this.ambient = ambient;
   }
 
-  /** Where the delver's torch is this frame, or null once there is no delver to carry it. */
+  /** Where the player's torch is this frame, or null once there is no player to carry it. */
   carry(at: Point | null): void {
     this.carrying = at !== null;
     if (at) {

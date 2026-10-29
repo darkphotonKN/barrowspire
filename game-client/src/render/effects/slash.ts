@@ -1,7 +1,7 @@
 /**
  * Warrior slash (FS-KYPQ9 §D.1): a heavy steel smear laid on the isometric ground, swept toward
- * the target from the delver's world position and fading over the table's 220 ms, with a little
- * dust settling at the feet. Drawn over the delver and the target. No flash, no shake.
+ * the target from the player's world position and fading over the table's 220 ms, with a little
+ * dust settling at the feet. Drawn over the player and the target. No flash, no shake.
  *
  * Signals, unchanged: the warrior's own left click that sends `CastSkill {skill_id: "slash"}`,
  * and the rival click that sends `Attack`. It plays the moment the message is sent, as today,
@@ -28,10 +28,10 @@ const LAYERS_PER_KEY =
 
 /**
  * Plays the slash from `from` toward `toward`, both world positions. The baked smear's arc faces
- * world +x with the delver at its pivot, so it is turned by the world heading to the target.
+ * world +x with the player at its pivot, so it is turned by the world heading to the target.
  *
- * It lies at the delver's feet but sorts over whichever stands nearer the viewer, the delver or
- * anything on the aim within {@link SMEAR_REACH}, so neither the delver nor the target hides it.
+ * It lies at the player's feet but sorts over whichever stands nearer the viewer, the player or
+ * anything on the aim within {@link SMEAR_REACH}, so neither the player nor the target hides it.
  */
 export function playSlash(
   fx: Pick<EffectsRuntime, "play">,

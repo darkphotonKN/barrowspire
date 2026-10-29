@@ -10,7 +10,7 @@ import { worldToScreen } from "@/render/iso/projection";
 import type { footprintHitArea } from "@/render/world/footprint";
 import type { MonsterState } from "@/types/gameState";
 import {
-  DELVER_REFERENCE_SHEET,
+  PLAYER_REFERENCE_SHEET,
   MonsterRoster,
   SIZE_TIERS,
   monsterLook,
@@ -320,12 +320,12 @@ describe("monsterLook", () => {
 });
 
 describe("size reads as threat tier (req 35)", () => {
-  /** Drawn head height over a delver's, both off the baked manifest. */
-  const heightOverDelver = (archetype: string) => {
+  /** Drawn head height over a player's, both off the baked manifest. */
+  const heightOverPlayer = (archetype: string) => {
     const look = monsterLook(archetype);
     const crown = baked.sheet(look.sheet)!.crown!;
-    const delver = baked.sheet(DELVER_REFERENCE_SHEET)!.crown!;
-    return (crown * monsterScale(look, baked)) / delver;
+    const player = baked.sheet(PLAYER_REFERENCE_SHEET)!.crown!;
+    return (crown * monsterScale(look, baked)) / player;
   };
 
   it.each([
@@ -333,7 +333,7 @@ describe("size reads as threat tier (req 35)", () => {
     ["troll", SIZE_TIERS.brute],
     ["demon", SIZE_TIERS.boss],
   ])("should stand a %s inside its tier's band", (archetype, tier) => {
-    const ratio = heightOverDelver(archetype);
+    const ratio = heightOverPlayer(archetype);
     expect(ratio).toBeGreaterThanOrEqual(tier.min);
     expect(ratio).toBeLessThanOrEqual(tier.max);
   });
@@ -515,7 +515,7 @@ describe("MonsterRoster markers (req 37)", () => {
     expect(texts[0].content).toBe("Troll · Lv 4");
   });
 
-  it("should stand a monster on its footprint, sorted like a delver", () => {
+  it("should stand a monster on its footprint, sorted like a player", () => {
     const { stage, sprites } = fakeStage();
     const roster = new MonsterRoster(stage, fixtureArt());
     roster.sync([monster({ position: { x: 640, y: 200 } })]);

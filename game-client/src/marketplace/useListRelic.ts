@@ -8,7 +8,7 @@ import { pollForPostedListing, sleep } from "./postedPoll";
 import { useItemInstances } from "./useItemInstances";
 
 /**
- * The List-a-relic flow's state (FS-8EGFA req 25): whether the drawer is open, the delver's
+ * The List-a-relic flow's state (FS-8EGFA req 25): whether the drawer is open, the player's
  * relics, the notice above the table, and the submit, whose steps are {@link postListing}.
  * `refreshMine` is the poll's read: it merges each page into Mine as it reads it.
  *

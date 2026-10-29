@@ -1,12 +1,12 @@
 import { palette, rgba, toCss } from "./canvasPalette";
 
 /**
- * sprite generator for the hooded delver character
+ * sprite generator for the hooded player character
  * creates programmatic sprites for the game since we dont have image assets.
  *
  * Reskin note: same sprite-sheet dimensions, frame layout (8 dir x 5 frames)
  * and limited walk animation as before — only the *drawing* changed from a
- * spacesuit astronaut to an inked, paper-cutout hooded delver to match the
+ * spacesuit astronaut to an inked, paper-cutout hooded player to match the
  * barrow-dark art direction. No gameplay/animation timing was altered.
  */
 
@@ -37,11 +37,11 @@ export class AstronautSpriteGenerator {
 
     directions.forEach((dir, dirIndex) => {
       // generate idle frame
-      this.drawDelver(0, dirIndex, dir, 0);
+      this.drawPlayer(0, dirIndex, dir, 0);
 
       // generate 4 walking frames
       for (let frame = 1; frame <= 4; frame++) {
-        this.drawDelver(frame, dirIndex, dir, frame);
+        this.drawPlayer(frame, dirIndex, dir, frame);
       }
     });
 
@@ -49,10 +49,10 @@ export class AstronautSpriteGenerator {
   }
 
   /**
-   * The player delver: a cloaked, hooded figure in deep umber with a sliver of
+   * The player: a cloaked, hooded figure in deep umber with a sliver of
    * warm torchlight at the hood. Inked outlines, flat fills — paper-cutout read.
    */
-  private drawDelver(
+  private drawPlayer(
     col: number,
     row: number,
     direction: string,
@@ -62,12 +62,12 @@ export class AstronautSpriteGenerator {
     const y = row * this.frameHeight + this.frameHeight / 2;
 
     this.drawCloakedFigure(x, y, direction, animFrame, {
-      cloak: toCss(palette.delverCloak),
-      cloakDark: toCss(palette.delverCloakShade),
+      cloak: toCss(palette.playerCloak),
+      cloakDark: toCss(palette.playerCloakShade),
       ink: toCss(palette.inkDeep),
       hoodShadow: toCss(palette.hoodShadow),
-      glow: rgba(palette.delverGlow, 0.85), // torch-amber face glint
-      glowSoft: rgba(palette.delverGlow, 0.35),
+      glow: rgba(palette.playerGlow, 0.85), // torch-amber face glint
+      glowSoft: rgba(palette.playerGlow, 0.35),
     });
   }
 
@@ -84,9 +84,9 @@ export class AstronautSpriteGenerator {
     const directions = ["S", "SW", "W", "NW", "N", "NE", "E", "SE"];
 
     directions.forEach((dir, dirIndex) => {
-      this.drawOtherDelver(0, dirIndex, dir, 0);
+      this.drawOtherPlayer(0, dirIndex, dir, 0);
       for (let frame = 1; frame <= 4; frame++) {
-        this.drawOtherDelver(frame, dirIndex, dir, frame);
+        this.drawOtherPlayer(frame, dirIndex, dir, frame);
       }
     });
 
@@ -94,10 +94,10 @@ export class AstronautSpriteGenerator {
   }
 
   /**
-   * Rival delver, drawn as a pale wight: ashen cloak, sickly necrotic-green
+   * Rival player, drawn as a pale wight: ashen cloak, sickly necrotic-green
    * eye-glow instead of the player's warm torchlight.
    */
-  private drawOtherDelver(
+  private drawOtherPlayer(
     col: number,
     row: number,
     direction: string,

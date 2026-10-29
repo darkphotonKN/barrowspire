@@ -1,5 +1,5 @@
 /**
- * The delver's own level and experience bar on the HUD (FS-BDA7X req 42), and the brief cue when
+ * The player's own level and experience bar on the HUD (FS-BDA7X req 42), and the brief cue when
  * the level rises (req 43). Shared by the run and the hub: each scene places one and hands it
  * every state's progress. The widget keeps the last level it showed, so a fresh widget (a new
  * start, a reconnect) takes its first state as the baseline and raises no cue for it.

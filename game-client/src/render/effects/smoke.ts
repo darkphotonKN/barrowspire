@@ -6,7 +6,7 @@
  * no light.
  *
  * Signal: the first hub state that carries walls, which builds the roofs once. The smoke rides
- * with its roof: it is one of the roof's parts, so hiding the roof over the delver stops it
+ * with its roof: it is one of the roof's parts, so hiding the roof over the player stops it
  * (its last puffs burn out) and showing the roof plays it again. The runtime's `clearAll()`, on
  * scene SHUTDOWN/DESTROY, takes it away with everything else. Without `fx_smoke` the runtime
  * plays nothing and says so once.

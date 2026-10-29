@@ -830,15 +830,15 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       source: string;
       licence: string;
     };
-    const DELVERS = [
+    const PLAYERS = [
       "char_knight_base",
       "char_archer_base",
       "char_wizard_base",
     ];
-    const delverCrown =
-      DELVERS.reduce((n, name) => n + baked.sheets[name].crown, 0) /
-      DELVERS.length;
-    // sheet → its §A.3 atlas group and §A.6 crown ratio band (to the delver mean)
+    const playerCrown =
+      PLAYERS.reduce((n, name) => n + baked.sheets[name].crown, 0) /
+      PLAYERS.length;
+    // sheet → its §A.3 atlas group and §A.6 crown ratio band (to the player mean)
     const ROSTER: [string, string, number, number][] = [
       ["creature_demon_base", "boss", 1.8, Infinity],
     ];
@@ -887,11 +887,11 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     );
 
     it.each(ROSTER)(
-      "%s stands in its size tier (%s): crown between %s× and %s× the delver mean",
+      "%s stands in its size tier (%s): crown between %s× and %s× the player mean",
       (name, _group, min, max) => {
         const sheet: RosterSheet = baked.sheets[name];
         expect(Number.isInteger(sheet.crown)).toBe(true);
-        const ratio = (sheet.crown as number) / delverCrown;
+        const ratio = (sheet.crown as number) / playerCrown;
         expect(ratio, `${name} crown ratio`).toBeGreaterThanOrEqual(min);
         expect(ratio, `${name} crown ratio`).toBeLessThanOrEqual(max);
       },

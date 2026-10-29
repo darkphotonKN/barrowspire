@@ -24,7 +24,7 @@ function recordingBrush() {
 }
 
 describe("paintDropPile", () => {
-  it("should catch the eye in amber, because a pile is something the delver can loot", () => {
+  it("should catch the eye in amber, because a pile is something the player can loot", () => {
     const { brush, colours } = recordingBrush();
     paintDropPile(brush);
     expect(colours).toContain(palette.interactable);

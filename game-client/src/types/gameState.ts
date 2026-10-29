@@ -31,7 +31,7 @@ export interface PlayerState {
   max_health?: number;
   current_mana?: number;
   max_mana?: number;
-  /** The character's level (FS-BDA7X req 42); sent with every delver, run and hub. */
+  /** The character's level (FS-BDA7X req 42); sent with every player, run and hub. */
   level?: number;
   /** Total experience, monotonic. */
   experience?: number;

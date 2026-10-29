@@ -66,7 +66,7 @@ export interface CastSkillPayload {
  */
 export interface EnterHubPayload {
   /**
-   * The server record the delver enters as (FS-BDA7X req 5, 41). Once the server seats by it,
+   * The server record the player enters as (FS-BDA7X req 5, 41). Once the server seats by it,
    * the class and name below are ignored; they stay until then so either server reads the entry.
    */
   characterId: string;
@@ -88,15 +88,15 @@ export interface ActionMap {
   equip: EquipPayload;
   unequip: UnequipPayload;
   cast_skill: CastSkillPayload;
-  /** A dead delver leaving the run for the hub (FS-QPDKN req 13): no payload. */
+  /** A dead player leaving the run for the hub (FS-QPDKN req 13): no payload. */
   leave_run: Record<string, never>;
-  /** A queued delver cancelling (FS-G4VMQ req 18): no payload. */
+  /** A queued player cancelling (FS-G4VMQ req 18): no payload. */
   leave_queue: Record<string, never>;
-  /** A hub delver leaving for the roster (FS-G4VMQ req 23, 25): no payload; `world_left` answers. */
+  /** A hub player leaving for the roster (FS-G4VMQ req 23, 25): no payload; `world_left` answers. */
   leave_hub: Record<string, never>;
-  /** A delver descending alone, without the queue (FS-NSV3D req 7): no payload. */
+  /** A player descending alone, without the queue (FS-NSV3D req 7): no payload. */
   start_solo: Record<string, never>;
-  /** A delver in play choosing to fall where they stand (FS-9K8EZ req 7): no payload. */
+  /** A player in play choosing to fall where they stand (FS-9K8EZ req 7): no payload. */
   forfeit_run: Record<string, never>;
 }
 
@@ -163,7 +163,7 @@ export interface WorldEnteredPayload {
 }
 
 /**
- * The run this delver was matched into is hosted on another server: connect to
+ * The run this player was matched into is hosted on another server: connect to
  * `addr` for the run with `session_id`. The host's world_entered follows once they are seated.
  * FS-K2HKP §Requirements 21, 29.
  */

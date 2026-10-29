@@ -3,7 +3,7 @@ import { worldToScreen } from "@/render/iso";
 import { footprintHitArea } from "./footprint";
 
 describe("footprintHitArea", () => {
-  // a 60×60 delver sprite standing on world (300, 200), origin at its centre, as `standAt` places it
+  // a 60×60 player sprite standing on world (300, 200), origin at its centre, as `standAt` places it
   const pos = { x: 300, y: 200 };
   const at = worldToScreen(pos.x, pos.y);
   const sprite = {
@@ -19,7 +19,7 @@ describe("footprintHitArea", () => {
   const local = (sx: number, sy: number) =>
     [sx - at.x + 30, sy - at.y + 30] as const;
 
-  it("should hit where the delver stands", () => {
+  it("should hit where the player stands", () => {
     expect(hit({}, ...local(at.x, at.y), sprite)).toBe(true);
     const edge = worldToScreen(pos.x + 18, pos.y);
     expect(hit({}, ...local(edge.x, edge.y), sprite)).toBe(true);
@@ -35,7 +35,7 @@ describe("footprintHitArea", () => {
     expect(hit({}, ...local(past.x, past.y), sprite)).toBe(false);
   });
 
-  it("should follow the delver as they move", () => {
+  it("should follow the player as they move", () => {
     let where = { x: 300, y: 200 };
     const moving = footprintHitArea(() => where, 20);
     where = { x: 340, y: 200 };

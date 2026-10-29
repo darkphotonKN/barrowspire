@@ -17,7 +17,7 @@ import { progressOf } from "@/ui/progress";
 import {
   ensureCharacterTextures,
   ensureVillagerTexture,
-  drawDelverLegs,
+  drawPlayerLegs,
   type Facing,
 } from "@/utils/characterTextures";
 import {
@@ -90,7 +90,7 @@ const HUB_HEIGHT = 1000;
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = 64;
 /**
- * Screen px from a delver's marker base (`markerBase`: a baked head, or the preview's frame top)
+ * Screen px from a player's marker base (`markerBase`: a baked head, or the preview's frame top)
  * to the middle of their name label: a 60 px preview centred on the footprint keeps its label at
  * -34, where it always was.
  */
@@ -139,7 +139,7 @@ const TREE_SHEETS = ["tree_oak", "tree_pine", "tree_oak_autumn"];
 /** Seeds the hub's scenery variant picks, so every client plants the same trees. */
 const SCENERY_SEED = 0x5343_4e31;
 
-/** How close a delver stands to talk. Matches the server's NPCInteractRange. */
+/** How close a player stands to talk. Matches the server's NPCInteractRange. */
 const NPC_TALK_RANGE = 80;
 
 /** Screen px between the queue panel and its Leave button. */
@@ -167,7 +167,7 @@ function hudLine(colour: number): Phaser.Types.GameObjects.Text.TextStyle {
 export interface HubMenuChoice {
   id: "change" | "leave" | "back";
   label: string;
-  /** Amber for a thing the delver can do, the cancel register for going back. */
+  /** Amber for a thing the player can do, the cancel register for going back. */
   register: "actionable" | "cancel";
 }
 
@@ -194,7 +194,7 @@ interface HubState {
 export interface DialogueChoice {
   id: string;
   label: string;
-  /** Amber for a thing the delver can do, the cancel register for closing the box. */
+  /** Amber for a thing the player can do, the cancel register for closing the box. */
   register: "actionable" | "cancel";
   /** What picking it does; without one, picking it only closes the dialogue. */
   act?: (scene: HubScene) => void;
@@ -212,7 +212,7 @@ export interface Dialogue {
 
 /**
  * What the keeper of the way offers, from the hub's state as the dialogue opens (FS-NSV3D
- * §Requirements 1, 2, 4): alone, with company, or not yet. While the delver is already queued
+ * §Requirements 1, 2, 4): alone, with company, or not yet. While the player is already queued
  * there is nothing to offer but the fact, so the dialogue says so and closes; the panel carries
  * the count. The one warning is the keeper's line: descending alone takes no second asking.
  */
@@ -242,7 +242,7 @@ export function delveChoices(state: HubState): Dialogue {
 
 /**
  * What a resident says when spoken to. They open nothing — the point is that a
- * delver never has to wonder whether an NPC is broken.
+ * player never has to wonder whether an NPC is broken.
  */
 const RESIDENT_LINES = [
   "The Spire took my brother's whole company.\nWe do not speak of it.",
@@ -288,13 +288,13 @@ const MENU_TONES: MenuTones = {
 };
 
 /**
- * One delver as the scene sees them.
+ * One player as the scene sees them.
  *
- * The pieces are kept together because they live and die together: a delver who
+ * The pieces are kept together because they live and die together: a player who
  * leaves takes their sprite, their legs and their stride with them, and keeping
  * that as one entry means removal cannot half-happen.
  */
-interface DelverView {
+interface PlayerView {
   /** The body, drawn at the projection of `pos`. */
   sprite: Phaser.GameObjects.Container;
   /**
@@ -326,11 +326,11 @@ interface NPCView {
   /** A marker above the lighting (FS-2325V §C.9), placed over the head each frame. */
   name: Phaser.GameObjects.Text;
   target: Point;
-  /** Eased world position, as for delvers. */
+  /** Eased world position, as for players. */
   pos: Point;
   facing: Facing8;
   /**
-   * Their baked sheet (FS-2325V §G), played like a delver's. When it is not `baked`, the
+   * Their baked sheet (FS-2325V §G), played like a player's. When it is not `baked`, the
    * placeholder textures below stand in.
    */
   anim: CharacterAnimator;
@@ -339,7 +339,7 @@ interface NPCView {
 }
 
 /**
- * The hub: the shared world delvers occupy between runs.
+ * The hub: the shared world players occupy between runs.
  *
  * Server-authoritative like a run — this renders broadcast state and sends
  * intents, never simulating. The map is larger than the viewport, so the camera
@@ -351,8 +351,8 @@ export class HubScene extends Phaser.Scene {
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key>;
 
-  /** Everything the scene knows about one delver, keyed by entity id. */
-  private views = new Map<string, DelverView>();
+  /** Everything the scene knows about one player, keyed by entity id. */
+  private views = new Map<string, PlayerView>();
   private selfEntityID: string | null = null;
   /** The sprite the camera is latched onto, so it is latched once per sprite, not per tick. */
   private followedSprite?: unknown;
@@ -367,7 +367,7 @@ export class HubScene extends Phaser.Scene {
    * The hub's residents and its function NPCs, keyed by entity id.
    *
    * Residents walk, so each keeps a target the sprite eases toward — the same
-   * treatment delvers get. Function NPCs never move, so their target simply
+   * treatment players get. Function NPCs never move, so their target simply
    * never changes.
    */
   private npcs = new Map<string, NPCView>();
@@ -392,13 +392,13 @@ export class HubScene extends Phaser.Scene {
   private menu?: Phaser.GameObjects.Container;
   /** The open menu's choices by key: the n-th actionable one, and the first on Enter. */
   private menuChoices?: MenuKeys;
-  /** Shown while queued, wherever the delver walks. */
+  /** Shown while queued, wherever the player walks. */
   private queuePanel?: Phaser.GameObjects.Text;
   /** Beside the panel while queued: the way out of the queue (FS-G4VMQ §Requirements 15). */
   private leaveButton?: Phaser.GameObjects.Text;
   /**
    * Whether this client is in the queue (FS-G4VMQ §Requirements 11): set by a find_game reply or
-   * any queue_status, cleared when the server says the delver is out or the join failed.
+   * any queue_status, cleared when the server says the player is out or the join failed.
    */
   private queued = false;
   /** A leave_queue has been sent and its reply has not come (§Requirements 12). */
@@ -408,7 +408,7 @@ export class HubScene extends Phaser.Scene {
   /** A leave_hub has been sent and its reply has not come (FS-G4VMQ §Requirements 25). */
   private leavingHub = false;
   /**
-   * The delver's level and experience bar (FS-BDA7X req 42), top-left, clear of the queue panel
+   * The player's level and experience bar (FS-BDA7X req 42), top-left, clear of the queue panel
    * at the bottom. Made with the first state that carries a level.
    */
   private progressHud?: ProgressHud;
@@ -416,13 +416,13 @@ export class HubScene extends Phaser.Scene {
   private art!: ArtLibrary;
   /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
   private groundLayer?: GroundLayer;
-  /** FS-2325V §C.7: carries the delver's torch, replacing the overlay pool. */
+  /** FS-2325V §C.7: carries the player's torch, replacing the overlay pool. */
   private lightMap?: LightMap;
   /** World effects over the baked fx sheets (FS-KYPQ9 §B): the chimneys' smoke. */
   private fx?: EffectsRuntime;
   private occluders = new Occluders();
   /**
-   * Each house's roof, hidden while the delver stands inside it (FS-2325V §C.3). `baked` is
+   * Each house's roof, hidden while the player stands inside it (FS-2325V §C.3). `baked` is
    * false for the placeholder roof drawn without roof art, which carries no chimney.
    */
   private roofs: {
@@ -474,7 +474,7 @@ export class HubScene extends Phaser.Scene {
     this.bindInput();
 
     // Lit like a run, in warm dusk rather than barrow dark (FS-2325V §C.8): the
-    // light-map with the delver's torch, then the vignette and dust above it.
+    // light-map with the player's torch, then the vignette and dust above it.
     const lightMap = new LightMap(this, AMBIENT.hub);
     this.lightMap = lightMap;
     createAtmosphere(this);
@@ -498,7 +498,7 @@ export class HubScene extends Phaser.Scene {
    * outlives it.
    */
   private listenForQueue(): void {
-    // Queue progress follows the delver rather than pinning them to a popup:
+    // Queue progress follows the player rather than pinning them to a popup:
     // they keep walking while they wait, so the panel has to be visible from
     // anywhere. FS-29KSH §Requirements 25, 27.
     socketManager.on("queue_status", (payload: { current?: number; total?: number }) =>
@@ -510,11 +510,11 @@ export class HubScene extends Phaser.Scene {
       this.queued = true;
     });
     // A match on another server: the move happens behind this panel, and the
-    // host's world_entered switches the scene. A refused move leaves the delver
+    // host's world_entered switches the scene. A refused move leaves the player
     // here, so say so. FS-K2HKP §Requirements 29, 31.
     socketManager.on("world_handoff", () => {
       this.showQueueProgressText("Joining the delve…");
-      // too late to leave: the delver is being moved (FS-G4VMQ §Requirements 16)
+      // too late to leave: the player is being moved (FS-G4VMQ §Requirements 16)
       this.leaveButton?.setVisible(false);
     });
     socketManager.on("world_handoff_failed", () => {
@@ -524,7 +524,7 @@ export class HubScene extends Phaser.Scene {
     });
     // The reply is the truth: the server answers only once the entry is removed (FS-K2HKP
     // §Requirements 7), so the panel comes down on its word and never on the press. A refusal
-    // keeps everything and says why, so the delver can ask again. FS-G4VMQ §Requirements 13, 14, 17.
+    // keeps everything and says why, so the player can ask again. FS-G4VMQ §Requirements 13, 14, 17.
     // A reply after the handoff already failed finds nothing to leave and changes nothing.
     socketManager.on(ActionType.LeaveQueue, () => {
       if (!this.queued) return;
@@ -549,7 +549,7 @@ export class HubScene extends Phaser.Scene {
     });
     // Leaving for the roster (FS-G4VMQ §Requirements 25): the body goes with the server's word,
     // not the press, so the scene switches on world_left. A refusal (queued, or no longer here)
-    // gives the row back and says why in passing; the delver stays where they stand.
+    // gives the row back and says why in passing; the player stays where they stand.
     socketManager.on("world_left", () => {
       if (!this.leavingHub) return;
       this.leavingHub = false;
@@ -625,7 +625,7 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * Restamps the light-map with the delver's torch on the delver's drawn
+   * Restamps the light-map with the player's torch on the player's drawn
    * position, and eases whatever stands over them (FS-2325V §C.5, §C.7).
    */
   private carryTheTorch(time: number, delta: number): void {
@@ -641,7 +641,7 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * The roof of the house the delver stands in hides, and returns when they
+   * The roof of the house the player stands in hides, and returns when they
    * leave: the run's inside test, on world positions (FS-2325V §C.3). The hub's
    * houses have no door today, so this waits for one that does.
    */
@@ -654,7 +654,7 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * Opens a dialogue when the delver is standing close enough and presses to
+   * Opens a dialogue when the player is standing close enough and presses to
    * talk. Walking past never does anything: joining the queue takes a choice,
    * not a collision. FS-29KSH §Requirements 24.
    */
@@ -668,7 +668,7 @@ export class HubScene extends Phaser.Scene {
       return;
     }
 
-    // While a dialogue is open the same key answers it, so a delver never has to
+    // While a dialogue is open the same key answers it, so a player never has to
     // reach for the mouse to finish what the keyboard started.
     if (this.dialogue) {
       const talk = Phaser.Input.Keyboard.JustDown(this.interactKey);
@@ -702,7 +702,7 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * The server ticks at 30Hz and the screen redraws at 60. Applying broadcast
-   * positions directly makes every delver — including your own — teleport twice
+   * positions directly makes every player — including your own — teleport twice
    * per three frames, which reads as juddering, and the camera chasing a target
    * that jumps is worse still. So sprites ease toward the last known position
    * instead, the same way the run scene does.
@@ -736,7 +736,7 @@ export class HubScene extends Phaser.Scene {
       // Legs follow the eased sprite rather than the raw server position, and
       // sit just beneath the body on the same footprint.
       view.legs.setDepth(worldDepth(pos.x, pos.y, 0));
-      drawDelverLegs(
+      drawPlayerLegs(
         view.legs,
         sprite.x,
         sprite.y,
@@ -778,13 +778,13 @@ export class HubScene extends Phaser.Scene {
    * their sheet is missing; the dressing (FS-KYPQ9 §A.5) has no placeholder. Each
    * house's roof gets its chimney and smoke here too (FS-KYPQ9 §A.6).
    *
-   * All client-side and none of it blocks: anything a delver can walk into is a
+   * All client-side and none of it blocks: anything a player can walk into is a
    * building, and buildings are server entities so that collision and shape come
    * from one source. Scenery has no such obligation, so it costs the broadcast
    * nothing.
    *
    * The fire is ember, not amber. On the canvas amber means *interactable*, and
-   * a delver cannot do anything with this one — an amber thing you cannot act on
+   * a player cannot do anything with this one — an amber thing you cannot act on
    * is a defect (docs/design-guideline.md).
    */
   private drawScenery(walls: WallState[]): void {
@@ -818,7 +818,7 @@ export class HubScene extends Phaser.Scene {
     }
 
     const baked = this.art.available;
-    /** A baked prop on a footprint; tall ones fade over the delver, lit ones light. */
+    /** A baked prop on a footprint; tall ones fade over the player, lit ones light. */
     const place = (
       sheet: string,
       at: Point,
@@ -1100,7 +1100,7 @@ export class HubScene extends Phaser.Scene {
    * One chimney on each house's roof, with its smoke (FS-KYPQ9 §A.6). A chimney is part of the
    * drawn roof, not a ground prop, so it is the one placement that skips `blocked()` and the
    * keep-out rule: it stands on the roof at the house's `planChimney` spot, sorts with that
-   * roof's pieces, fades with them over the delver and joins the roof's parts, so it hides
+   * roof's pieces, fades with them over the player and joins the roof's parts, so it hides
    * whenever the roof does, its smoke with it. Without the `chimney` sheet there is neither
    * chimney nor smoke; without `fx_smoke` the chimney stands and the runtime draws no smoke. A
    * house under the placeholder roof (no roof art) gets neither.
@@ -1120,7 +1120,7 @@ export class HubScene extends Phaser.Scene {
       const parts: { setVisible(visible: boolean): unknown }[] = [sprite];
       if (this.fx)
         parts.push(new ChimneySmoke(this.fx, `chimney:${roof.house.id}`, spot.at, spot.top));
-      // a roof already hidden over the delver keeps its new parts hidden too
+      // a roof already hidden over the player keeps its new parts hidden too
       if (roof.house === this.insideRoof) parts.forEach((p) => p.setVisible(false));
       roof.parts.push(...parts);
     }
@@ -1205,7 +1205,7 @@ export class HubScene extends Phaser.Scene {
     const present = new Set<string>();
 
     if (state.current_player) {
-      this.placeDelver(state.current_player, true);
+      this.placePlayer(state.current_player, true);
       present.add(state.current_player.entity_id);
 
       const progress = progressOf(state.current_player);
@@ -1225,7 +1225,7 @@ export class HubScene extends Phaser.Scene {
     this.renderNPCs(state.npcs ?? []);
 
     for (const other of state.other_players ?? []) {
-      this.placeDelver(other, false);
+      this.placePlayer(other, false);
       present.add(other.entity_id);
     }
 
@@ -1241,12 +1241,12 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * Turns a delver to face where they are going, and advances their stride.
+   * Turns a player to face where they are going, and advances their stride.
    *
    * The character textures have no walk frames — one static image per class per
    * facing — so the stride is animated by drawing legs, the same as in a run.
    */
-  private updateAppearance(view: DelverView, player: PlayerState): void {
+  private updateAppearance(view: PlayerView, player: PlayerState): void {
     // a baked sheet is turned and strided each frame instead (easeTowardServerPositions)
     if (view.anim.baked) return;
     const { vx, vy } = player.direction ?? { vx: 0, vy: 0 };
@@ -1272,7 +1272,7 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * The *Leave* button beside the queue panel (FS-G4VMQ §Requirements 15): the panel's twin in
-   * amber, since it is the one thing on the panel the delver can act on. Same lifecycle as the
+   * amber, since it is the one thing on the panel the player can act on. Same lifecycle as the
    * panel: made beside it, reused only while it is still on screen, down when the queue is left.
    */
   private showLeaveButton(): void {
@@ -1285,7 +1285,7 @@ export class HubScene extends Phaser.Scene {
       return;
     }
 
-    // amber: the one thing on the panel the delver can act on
+    // amber: the one thing on the panel the player can act on
     const button = this.add
       .text(x, panel.y, "Leave", hudLine(BARROW_HEX.amber))
       .setScrollFactor(0)
@@ -1298,7 +1298,7 @@ export class HubScene extends Phaser.Scene {
     this.leaveButton = button;
   }
 
-  /** The queue is behind the delver: no entry, nothing pending, no way out to offer. */
+  /** The queue is behind the player: no entry, nothing pending, no way out to offer. */
   private leftQueue(): void {
     this.queued = false;
     this.leavePending = false;
@@ -1317,7 +1317,7 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * A line the hub says in passing, in the neutral HUD register: the delver cannot act on it,
+   * A line the hub says in passing, in the neutral HUD register: the player cannot act on it,
    * and it goes on its own.
    */
   private notice(text: string): void {
@@ -1337,7 +1337,7 @@ export class HubScene extends Phaser.Scene {
       return;
     }
 
-    // vellum, not amber: the delver cannot act on it (FS-KYPQ9 §I)
+    // vellum, not amber: the player cannot act on it (FS-KYPQ9 §I)
     this.queuePanel = this.add
       .text(24, this.cameras.main.height - 44, text, hudLine(BARROW_HEX.vellum))
       .setScrollFactor(0)
@@ -1347,7 +1347,7 @@ export class HubScene extends Phaser.Scene {
   /**
    * Draws the hub's buildings.
    *
-   * They are server entities, so the collision a delver feels and the shape they
+   * They are server entities, so the collision a player feels and the shape they
    * see come from one source — an invisible wall is worse than no wall. Fixed,
    * so this runs once rather than every tick.
    */
@@ -1396,7 +1396,7 @@ export class HubScene extends Phaser.Scene {
   /** The pre-art roof: two shaded slopes on a plane lifted to the wall tops. */
   private placeholderRoof(house: House): Phaser.GameObjects.Container {
     const roofPlane = addWorldPlane(this, WALL_HEIGHT);
-    // sorted by the centre of its footprint: over a delver behind the house, under one in front
+    // sorted by the centre of its footprint: over a player behind the house, under one in front
     roofPlane.root.setDepth(worldDepth(house.x + house.width / 2, house.y + house.height / 2));
     const roof = this.add.graphics();
     roofPlane.surface.add(roof);
@@ -1472,10 +1472,10 @@ export class HubScene extends Phaser.Scene {
         continue;
       }
 
-      // Everyone is a baked character on the delvers' rig (FS-2325V §G): residents in their
+      // Everyone is a baked character on the players' rig (FS-2325V §G): residents in their
       // build and palette, function NPCs as themselves, whose role reads from the silhouette.
       // Only with no sheet at all do the placeholders stand in: a villager texture, or the
-      // delver silhouette tinted brass.
+      // player silhouette tinted brass.
       const isFunction = npc.function !== "";
       const tone = isFunction ? BARROW_HEX.brassBright : palette.markerHub;
       const anim = new CharacterAnimator(this.art, folkLook(npc, this.art));
@@ -1553,7 +1553,7 @@ export class HubScene extends Phaser.Scene {
           RESIDENT_LINES.length
       ],
       // A resident has nothing to offer, so they offer no choice. Two options
-      // that both close the box is a decision the delver does not have.
+      // that both close the box is a decision the player does not have.
       choices: [{ id: "leave", label: "Leave", register: "actionable" }],
     };
 
@@ -1690,7 +1690,7 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * The camera on the delver's own body. Latched by sprite, not by entity id: a scene restart
+   * The camera on the player's own body. Latched by sprite, not by entity id: a scene restart
    * (back from the loadout, re-entering the hub) rebuilds every sprite under the same id, and
    * startFollow snaps the camera each time it is called, so it is called once per sprite.
    */
@@ -1709,7 +1709,7 @@ export class HubScene extends Phaser.Scene {
   /**
    * Out of the hub for the main menu, whose roster and DELVE re-enter it as whoever is picked
    * (FS-G4VMQ §Requirements 6–9, 25). One leave_hub, and nothing more until the server has
-   * answered it: world_left switches the scene, a refusal keeps the delver here.
+   * answered it: world_left switches the scene, a refusal keeps the player here.
    */
   private changeCharacter(): void {
     if (this.leavingHub) return;
@@ -1718,7 +1718,7 @@ export class HubScene extends Phaser.Scene {
     socketManager.sendMessage(ActionType.LeaveHub, {});
   }
 
-  /** The loadout is a screen, not a world: the delver stays in the hub while it
+  /** The loadout is a screen, not a world: the player stays in the hub while it
    * is open, standing where they were. */
   openLoadout(): void {
     this.scene.start("LoadoutScene");
@@ -1734,7 +1734,7 @@ export class HubScene extends Phaser.Scene {
     socketManager.sendMessage(ActionType.StartSolo, {});
   }
 
-  /** Joining is the delver's decision; the queue itself is unchanged. */
+  /** Joining is the player's decision; the queue itself is unchanged. */
   joinQueue(): void {
     const character = useGameStore.getState().getActiveCharacter();
     const chosenClass = (character?.className ?? "warrior").toLowerCase();
@@ -1747,8 +1747,8 @@ export class HubScene extends Phaser.Scene {
     });
   }
 
-  /** A delver's name plate over their head ({@link markerBase}); the hub has no corpses. */
-  private placeName(view: DelverView): void {
+  /** A player's name plate over their head ({@link markerBase}); the hub has no corpses. */
+  private placeName(view: PlayerView): void {
     this.placeMarker(view.sprite, view.name, view.anim.crown);
   }
 
@@ -1772,10 +1772,10 @@ export class HubScene extends Phaser.Scene {
     name.setPosition(sprite.x + body.x, (base ?? sprite.y) - NAME_GAP);
   }
 
-  private placeDelver(player: PlayerState, isSelf: boolean): void {
+  private placePlayer(player: PlayerState, isSelf: boolean): void {
     const existing = this.views.get(player.entity_id);
 
-    // Existing delvers ease toward the target in update(); only a delver seen
+    // Existing players ease toward the target in update(); only a player seen
     // for the first time is placed outright, so it does not slide in from the
     // origin.
     if (existing) {
@@ -1784,8 +1784,8 @@ export class HubScene extends Phaser.Scene {
       return;
     }
 
-    // The same sprites the character-select screen previews, so the delver a
-    // player picked is the delver they see.
+    // The same sprites the character-select screen previews, so the player a
+    // player picked is the player they see.
     const body = this.add.sprite(0, 0, textureFor(player.class, "down"));
     body.setName("body");
 
@@ -1815,7 +1815,7 @@ export class HubScene extends Phaser.Scene {
     const legs = this.add.graphics();
     legs.setDepth(worldDepth(pos.x, pos.y, 0));
 
-    const view: DelverView = {
+    const view: PlayerView = {
       sprite,
       name,
       legs,
