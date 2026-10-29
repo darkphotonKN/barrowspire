@@ -80,13 +80,13 @@ func TestForlornForest_IsTheLayoutsSize(t *testing.T) {
 }
 
 // Nothing of a run stands in the Forest: no building door, escape door,
-// switch, stairs or Spire chest. R13.
+// switch or stairs. Its only containers are its clearing chests (R19). R13.
 func TestForlornForest_BuildsNoRunObject(t *testing.T) {
 	forest, _, _ := builtForest(t, forestSeed)
 
 	runOnly := []ecs.ComponentType{
 		ecs.ComponentTypeDoor, ecs.ComponentTypeEscapeDoor, ecs.ComponentTypeSwitch,
-		ecs.ComponentTypeStairs, ecs.ComponentTypeContainer,
+		ecs.ComponentTypeStairs,
 	}
 	for _, entity := range forest.EntityManager.GetAllEntities() {
 		for _, kind := range runOnly {
