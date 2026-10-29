@@ -221,3 +221,17 @@ func TestPublishMatchComplete_OutboxRows_AllOrNothing(t *testing.T) {
 		})
 	}
 }
+
+// A run's match.ended says it was a run, so the consumers can tell it from a
+// field visit. FS-X2F2H §F R43, ADR-0031, I-X2F2H-2.
+func TestPublishMatchComplete_MatchEnded_SaysRun(t *testing.T) {
+	outbox := &capturingOutbox{}
+	svc := NewService(committingTxDB(t), outbox)
+
+	svc.PublishMatchComplete(context.Background(), &types.RawMatchState{
+		SessionID: uuid.New(),
+		Players:   []types.RawPlayerState{{MemberID: uuid.NewString(), Username: "wren"}},
+	})
+
+	assert.Equal(t, commonconstants.WorldTypeRun, outbox.matchEnded(t).GetWorldType())
+}

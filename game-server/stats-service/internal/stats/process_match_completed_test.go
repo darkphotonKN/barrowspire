@@ -379,3 +379,63 @@ func TestProcessMatchCompleted_CacheBump_Bounded(t *testing.T) {
 		})
 	}
 }
+
+// A field visit is not a match: its event is recorded processed in the inbox
+// and writes no stats, history or leaderboard row, and leaves the cached
+// leaderboard alone. A run, named or left empty, is applied as before.
+// FS-X2F2H §F R44, ADR-0031, I-X2F2H-2.
+func TestProcessMatchCompleted_WorldType(t *testing.T) {
+	tests := []struct {
+		name       string
+		worldType  string
+		wantWrites []string
+		wantBumps  int
+	}{
+		{"field visit: inbox only", commonconstants.WorldTypeField, nil, 0},
+		{"run: every player's writes", commonconstants.WorldTypeRun, allPlayerWrites, 1},
+		{"empty reads as run", "", allPlayerWrites, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newMatchFixture()
+			eventID := uuid.New()
+			event := twoPlayerMatch()
+			event.WorldType = tt.worldType
+
+			err := f.svc.ProcessMatchCompleted(context.Background(), eventID, commonconstants.GameMatchEnded, event)
+
+			if err != nil {
+				t.Fatalf("process: %v", err)
+			}
+			assertWrites(t, f.store.committed, tt.wantWrites)
+			if !f.store.seen[inboxKey{eventID, commonconstants.GameMatchEnded}] {
+				t.Fatalf("inbox %v has no %s row for %s", f.store.seen, commonconstants.GameMatchEnded, eventID)
+			}
+			if f.cache.incrs != tt.wantBumps {
+				t.Fatalf("cache version bumped %d times, want %d", f.cache.incrs, tt.wantBumps)
+			}
+		})
+	}
+}
+
+// A redelivered field visit is still a no-op the consumer acks.
+func TestProcessMatchCompleted_FieldRedelivery_AlreadyProcessed(t *testing.T) {
+	f := newMatchFixture()
+	eventID := uuid.New()
+	ctx := context.Background()
+	event := twoPlayerMatch()
+	event.WorldType = commonconstants.WorldTypeField
+
+	if err := f.svc.ProcessMatchCompleted(ctx, eventID, commonconstants.GameMatchEnded, event); err != nil {
+		t.Fatalf("first delivery: %v", err)
+	}
+	err := f.svc.ProcessMatchCompleted(ctx, eventID, commonconstants.GameMatchEnded, event)
+
+	if !errors.Is(err, commonconstants.ErrAlreadyProcessed) {
+		t.Fatalf("redelivery error %v, want ErrAlreadyProcessed", err)
+	}
+	assertWrites(t, f.store.committed, nil)
+	if f.cache.incrs != 0 {
+		t.Fatalf("cache version bumped %d times, want 0", f.cache.incrs)
+	}
+}
