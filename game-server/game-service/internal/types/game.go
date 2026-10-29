@@ -36,14 +36,33 @@ type PlayerState struct {
 	Escape        bool             `json:"escape"`
 	CurrentHealth int              `json:"current_health"`
 	MaxHealth     int              `json:"max_health"`
-	CurrentMana   int              `json:"current_mana"`
-	MaxMana       int              `json:"max_mana"`
 	// Progression of the character in play, from the shared experience table.
 	// NextLevelAt is absent at the cap. FS-BDA7X §Requirements 21.
 	Level       int    `json:"level"`
 	Experience  int64  `json:"experience"`
 	LevelFloor  int64  `json:"level_floor"`
 	NextLevelAt *int64 `json:"next_level_at,omitempty"`
+}
+
+// ResourceState is a delver's class resource as its owner is told it, in whole
+// points: Current is the pool rounded down, so a client comparing it with
+// AbilityCost reaches the same answer the server does. FS-8AY7S §Requirements 17.
+type ResourceState struct {
+	Kind        string `json:"kind"`
+	Current     int    `json:"current"`
+	Max         int    `json:"max"`
+	AbilityCost int    `json:"ability_cost"`
+}
+
+// ParryState is a mercenary's parry stance as its owner is told it. The parry
+// charges themselves ride ResourceState. FS-MAMHR §Requirements 27–28.
+type ParryState struct {
+	ParryOpen bool `json:"parry_open"`
+	// ParryLockout is the seconds left on the whiff lockout, 0 when none.
+	ParryLockout float64 `json:"parry_lockout"`
+	// Parries is how many strikes this mercenary has parried in this run; it
+	// rises at the parry-charge cap too, so the client can flash every parry.
+	Parries int `json:"parries"`
 }
 
 type EquipmentState struct {
