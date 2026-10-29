@@ -55,6 +55,7 @@ type SessionManager interface {
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
 	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
 	AtSpireGate(playerID uuid.UUID) bool
+	CheckLoadout(ctx context.Context, player *types.Player) error
 	EnterField(ctx context.Context, conn *websocket.Conn, fieldID string) (*game.Session, error)
 	LeaveField(ctx context.Context, player *types.Player) (*game.Session, error)
 }
@@ -247,6 +248,30 @@ func (h *messageHub) enterField(clientPackage types.ClientPackage) {
 	}
 }
 
+// checkGear reads a Spire entrant's gear off the message hub's loop, bounded as
+// a field entry's read is. Unreadable gear is refused with loadout_unavailable,
+// as a field refuses it: a run seated on unread gear would settle the stored
+// loadout as empty, so entry fails closed. Readable gear sends the message
+// back into the hub's inbound channel marked checked, so the loop runs every
+// guard again on its own state and decides there.
+func (h *messageHub) checkGear(ctx context.Context, player *types.Player, clientPackage types.ClientPackage) {
+	readCtx, cancel := context.WithTimeout(ctx, fieldReadTimeout)
+	err := h.sessionManager.CheckLoadout(readCtx, player)
+	cancel()
+	if err != nil {
+		slog.Warn("Refusing Spire entry: gear unreadable",
+			"action", clientPackage.Message.Action, "player_id", player.ID, "error", err)
+		h.refuseField(clientPackage.Conn, clientPackage.Message.Action, err)
+		return
+	}
+
+	clientPackage.LoadoutChecked = true
+	select {
+	case h.sessionManager.GetServerChan() <- clientPackage:
+	case <-ctx.Done():
+	}
+}
+
 // resolveGameSession answers which world a connection's messages belong to,
 // from the server's own record of the player. It deliberately takes no payload:
 // a client cannot address a world it is not in (FS-29KSH §Requirements 16).
@@ -378,6 +403,12 @@ func (h *messageHub) Run(ctx context.Context) {
 					continue
 				}
 
+				// gear is read off the loop; the message comes back checked
+				if !clientPackage.LoadoutChecked {
+					go h.checkGear(ctx, player, clientPackage)
+					continue
+				}
+
 				// -- queue up player --
 				err = h.sessionManager.AddPlayer(player)
 				if err != nil {
@@ -441,6 +472,12 @@ func (h *messageHub) Run(ctx context.Context) {
 				if !h.sessionManager.AtSpireGate(player.ID) {
 					slog.Debug("Refusing start_solo: not at the Spire gate", "player_id", player.ID)
 					h.refuse(clientPackage.Conn, clientPackage.Message.Action, awayFromSpireGate)
+					continue
+				}
+
+				// gear is read off the loop; the message comes back checked
+				if !clientPackage.LoadoutChecked {
+					go h.checkGear(ctx, player, clientPackage)
 					continue
 				}
 

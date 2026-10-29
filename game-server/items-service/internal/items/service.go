@@ -1008,27 +1008,35 @@ func (h *service) GetLoadoutWithItems(ctx context.Context, caller uuid.UUID, req
 
 	result := &LoadoutWithItems{}
 
-	getItem := func(id *uuid.UUID) *ItemInstance {
-		if id == nil {
-			return nil
-		}
-		item, err := h.repo.GetItemInstanceByID(ctx, *id)
-		if err != nil {
-			return nil
-		}
-		return item
+	// Each worn slot reads its instance. A read error fails the whole read: a
+	// caller seeing that slot as empty would settle it to NULL and wipe the
+	// item. An instance that no longer exists (the repository's nil, nil)
+	// stays an empty slot, so one deleted item never locks a player out.
+	slots := []struct {
+		id   *uuid.UUID
+		dest **ItemInstance
+	}{
+		{loadout.WeaponId, &result.Weapon},
+		{loadout.HeadId, &result.Head},
+		{loadout.ChestId, &result.Chest},
+		{loadout.GlovesId, &result.Gloves},
+		{loadout.LegsId, &result.Legs},
+		{loadout.Ring1Id, &result.Ring1},
+		{loadout.Ring2Id, &result.Ring2},
+		{loadout.Consumable1Id, &result.Consumable1},
+		{loadout.Consumable2Id, &result.Consumable2},
+		{loadout.Consumable3Id, &result.Consumable3},
 	}
-
-	result.Weapon = getItem(loadout.WeaponId)
-	result.Head = getItem(loadout.HeadId)
-	result.Chest = getItem(loadout.ChestId)
-	result.Gloves = getItem(loadout.GlovesId)
-	result.Legs = getItem(loadout.LegsId)
-	result.Ring1 = getItem(loadout.Ring1Id)
-	result.Ring2 = getItem(loadout.Ring2Id)
-	result.Consumable1 = getItem(loadout.Consumable1Id)
-	result.Consumable2 = getItem(loadout.Consumable2Id)
-	result.Consumable3 = getItem(loadout.Consumable3Id)
+	for _, slot := range slots {
+		if slot.id == nil {
+			continue
+		}
+		item, err := h.repo.GetItemInstanceByID(ctx, *slot.id)
+		if err != nil {
+			return nil, fmt.Errorf("read worn instance %s: %w", *slot.id, err)
+		}
+		*slot.dest = item
+	}
 
 	return result, nil
 }

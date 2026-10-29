@@ -36,6 +36,15 @@ export function lootRefusalCopy(reason: string | undefined): string | undefined 
   return reason ? LOOT[reason] : undefined;
 }
 
+/**
+ * The words for a refused find_game or start_solo at the Spire's door. Unreadable gear refuses
+ * there as it refuses at a field's gate, in the same words; any other refusal is in the server's
+ * words, else fallback.
+ */
+export function spireRefusalCopy(reason: string | undefined, message: string | undefined, fallback: string): string {
+  return (reason === "loadout_unavailable" && ENTER[reason]) || message || fallback;
+}
+
 /** The words for a refused enter_field or leave_field, by its reason. */
 export function fieldRefusalCopy(action: string, reason: string | undefined): string {
   const words = action === ActionType.LeaveField ? LEAVE : ENTER;

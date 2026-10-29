@@ -678,6 +678,18 @@ func (s *Server) AtSpireGate(playerID uuid.UUID) bool {
 }
 
 /**
+* CheckLoadout reads the member's worn gear from items-service, as their own
+* token, and reports errNoLoadout when it cannot be read. It blocks on the
+* read, so callers run it off the message hub's loop and bound ctx.
+**/
+func (s *Server) CheckLoadout(ctx context.Context, player *types.Player) error {
+	if _, err := s.setupHandoffConnectingPlayer(ctx, player.ID, s.tokenOf(player)); err != nil {
+		return fmt.Errorf("check loadout of %s: %w: %w", player.ID, errNoLoadout, err)
+	}
+	return nil
+}
+
+/**
 * exposes server chan for communication between server and client
 **/
 func (s *Server) GetServerChan() chan types.ClientPackage {

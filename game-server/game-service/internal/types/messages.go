@@ -27,6 +27,11 @@ type Message struct {
 type ClientPackage struct {
 	Message Message
 	Conn    *websocket.Conn
+
+	// LoadoutChecked marks a message the message hub sent back to itself once
+	// the sender's gear was read off its loop. Only the hub sets it; a client's
+	// message is decoded into Message alone, so a client can never set it.
+	LoadoutChecked bool
 }
 
 type ProjectileState struct {

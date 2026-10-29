@@ -62,7 +62,10 @@ var (
 	errEnterFieldUnknown     = errors.New("unknown_field")
 	errEnterFieldNotAtGate   = errors.New("not_at_gate")
 	errEnterFieldQueued      = errors.New("queued")
-	errEnterFieldNoLoadout   = errors.New("loadout_unavailable")
+
+	// unreadable gear refuses entry anywhere it would be worn: a field, and
+	// the Spire's find_game and start_solo. Fail closed.
+	errNoLoadout = errors.New("loadout_unavailable")
 
 	errLeaveFieldNotInField = errors.New("not_in_field")
 	errLeaveFieldNotAtGate  = errors.New("not_at_gate")
@@ -77,7 +80,7 @@ var fieldRefusals = map[error]string{
 	errEnterFieldUnknown:     "That road leads nowhere yet.",
 	errEnterFieldNotAtGate:   "Walk to the gate first.",
 	errEnterFieldQueued:      "Leave the queue first.",
-	errEnterFieldNoLoadout:   "Your gear could not be fetched. Try again shortly.",
+	errNoLoadout:             "Your gear could not be fetched. Try again shortly.",
 	errLeaveFieldNotInField:  "You are not in the fields.",
 	errLeaveFieldNotAtGate:   "Walk to the road home first.",
 	errLeaveFieldFallen:      "You have fallen. You will rise at the road home.",
@@ -252,7 +255,7 @@ func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID s
 	// read before the field's lock: a slow items-service delays only this entry
 	loadout, err := s.setupHandoffConnectingPlayer(ctx, player.ID, s.tokenOf(player))
 	if err != nil {
-		return nil, fmt.Errorf("enter field %s: %w: %w", place.ID, errEnterFieldNoLoadout, err)
+		return nil, fmt.Errorf("enter field %s: %w: %w", place.ID, errNoLoadout, err)
 	}
 
 	visit, err := field.SeatVisitor(player.ID, character, loadout)
@@ -260,7 +263,7 @@ func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID s
 		return nil, fmt.Errorf("enter field %s: %w: %w", place.ID, errEnterFieldNotInHub, err)
 	}
 	if errors.Is(err, game.ErrNoLoadout) {
-		return nil, fmt.Errorf("enter field %s: %w: %w", place.ID, errEnterFieldNoLoadout, err)
+		return nil, fmt.Errorf("enter field %s: %w: %w", place.ID, errNoLoadout, err)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("enter field %s: %w", place.ID, err)

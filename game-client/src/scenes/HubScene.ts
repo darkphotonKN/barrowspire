@@ -12,7 +12,7 @@ import {
   Position,
   WallState,
 } from "@/types/gameState";
-import { fieldRefusalCopy } from "./fieldRefusals";
+import { fieldRefusalCopy, spireRefusalCopy } from "./fieldRefusals";
 import {
   FIELD_IDS,
   FIELD_NAMES,
@@ -606,8 +606,8 @@ export class HubScene extends Phaser.Scene {
     socketManager.on("queue_status", (payload: { current?: number; total?: number }) =>
       this.showQueueProgress(payload?.current ?? 0, payload?.total ?? 0),
     );
-    // The reply to joinQueue's find_game: a refusal goes to the global handler, so hearing it
-    // here at all means the server took the entry (FS-G4VMQ §Requirements 11).
+    // The reply to joinQueue's find_game: a refusal goes to its own error listener below, so
+    // hearing it here at all means the server took the entry (FS-G4VMQ §Requirements 11).
     socketManager.on(ActionType.Find_Game, () => {
       this.queued = true;
     });
@@ -647,7 +647,12 @@ export class HubScene extends Phaser.Scene {
       if (!this.soloPending) return;
       this.soloPending = false;
       this.dialogueChoices?.retone();
-      this.notice(info.message ?? "The way is shut for now. Ask again.");
+      this.notice(spireRefusalCopy(info.reason, info.message, "The way is shut for now. Ask again."));
+    });
+    // A find_game the server would not take (unreadable gear, or away from the door): the player
+    // is not queued and stays where they stand, told why in passing.
+    socketManager.onError(ActionType.Find_Game, (info) => {
+      this.notice(spireRefusalCopy(info.reason, info.message, "The delve will not gather for you yet. Ask again."));
     });
     // Leaving for the roster (FS-G4VMQ §Requirements 25): the body goes with the server's word,
     // not the press, so the scene switches on world_left. A refusal (queued, or no longer here)
@@ -674,6 +679,7 @@ export class HubScene extends Phaser.Scene {
     this.unsubscribeQueue = () => {
       socketManager.off("queue_status");
       socketManager.off(ActionType.Find_Game);
+      socketManager.offError(ActionType.Find_Game);
       socketManager.off("world_handoff");
       socketManager.off("world_handoff_failed");
       socketManager.off(ActionType.LeaveQueue);
