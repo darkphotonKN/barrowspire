@@ -191,8 +191,8 @@ function claw(rig, s, material, { size = 1, reach = 1, nail = null } = {}) {
   });
 }
 
-/** Ember-red eyes that go dark over the death clip (`fx.eyes`), as the demon's do. */
-function fadingEyes(rig) {
+/** Ember-red eyes that go dark over the death clip (`fx.eyes`), as the demon's do. Shared with the boar. */
+export function fadingEyes(rig) {
   const M = materials();
   const eye = M.hostileEye.clone();
   const base = eye.emissiveIntensity;

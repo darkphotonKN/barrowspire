@@ -54,6 +54,16 @@ export interface MonsterLook {
   tier: SizeTier;
   /** A multiply tint over the whole sprite, when the look is a recoloured sheet. */
   tint?: number;
+  /**
+   * The sheet an elite is drawn from, when the archetype has its own elite look baked. It is
+   * drawn as baked: the sheet is the elite's look. Without one an elite wears the hostile wash.
+   */
+  elite?: string;
+  /**
+   * How its size tier is measured: a standing figure by its height (the default), a quadruped by
+   * its body length (guideline "Size is a threat tier").
+   */
+  measure?: "length";
 }
 
 /** Each archetype the client has a look for. */
@@ -66,6 +76,16 @@ export const MONSTER_LOOKS: Record<string, MonsterLook> = {
   zombie: { sheet: "creature_zombie_base", tier: "fodder" },
   /** Its translucence is baked into the sheet (body alpha ≈ 0.6, eyes opaque): no tint here. */
   ghost: { sheet: "creature_ghost_base", tier: "fodder" },
+  /**
+   * Gentle Meadows' boar (FS-X2F2H §H R61): field wildlife on the quadruped rig, fodder by body
+   * length, with its own elite sheet (bigger tusks, scarred, darker bristle).
+   */
+  boar: {
+    sheet: "creature_boar_base",
+    tier: "fodder",
+    elite: "creature_boar_elite",
+    measure: "length",
+  },
 };
 
 /**
@@ -81,31 +101,50 @@ export function monsterLook(archetype: string): MonsterLook {
     : FALLBACK_LOOK;
 }
 
+/** The sheet a monster is drawn from: its look's elite sheet for an elite, when it has one. */
+export function monsterSheet(
+  look: MonsterLook,
+  monster: Pick<MonsterState, "elite">,
+): string {
+  return monster.elite && look.elite ? look.elite : look.sheet;
+}
+
 /**
  * The wash over a monster's sprite, if any: its look's own tint, else the elite tint on an elite
- * (req 38). A common monster is drawn as baked.
+ * (req 38) whose archetype has no elite sheet. A common monster, and an elite drawn from its own
+ * elite sheet, are drawn as baked.
  */
 export function monsterTint(
   look: MonsterLook,
   monster: Pick<MonsterState, "elite">,
 ): number | undefined {
-  return look.tint ?? (monster.elite ? palette.eliteTint : undefined);
+  return (
+    look.tint ?? (monster.elite && !look.elite ? palette.eliteTint : undefined)
+  );
 }
 
 /** The slice of the art library sizing reads. */
 interface SheetHeights {
-  sheet(name: string): { crown?: number } | undefined;
+  sheet(name: string): { crown?: number; length?: number } | undefined;
 }
+
+/** A side-on screen px of a quadruped's length reads as cos 30° px of height (the iso view). */
+const HEIGHT_PER_LENGTH_PX = Math.cos(Math.PI / 6);
 
 /**
  * The sprite scale that stands a look at its tier: the tier's aim times a player's head height,
- * over the creature's own (both measured by the bake as `crown`). Without both crowns the art is
- * not there to measure, and the tier's aim is the best guess.
+ * over the creature's own measure, both taken by the bake: its `crown`, or a quadruped's body
+ * `length` in the same height px. Without both the art is not there to measure, and the tier's
+ * aim is the best guess.
  */
 export function monsterScale(look: MonsterLook, art: SheetHeights): number {
   const aim = SIZE_TIERS[look.tier].aim;
   const player = art.sheet(PLAYER_REFERENCE_SHEET)?.crown;
-  const creature = art.sheet(look.sheet)?.crown;
+  const own = art.sheet(look.sheet);
+  const creature =
+    look.measure === "length"
+      ? (own?.length ?? 0) * HEIGHT_PER_LENGTH_PX
+      : own?.crown;
   if (!player || !creature) return aim;
   return (aim * player) / creature;
 }
@@ -395,8 +434,9 @@ export class MonsterRoster {
 
   private create(state: MonsterState): MonsterView {
     const look = monsterLook(state.archetype);
+    const sheet = monsterSheet(look, state);
     const facing = facingFrom(state.facing.x, state.facing.y, "se");
-    const anim = new CharacterAnimator(this.art, { sheet: look.sheet }, facing);
+    const anim = new CharacterAnimator(this.art, { sheet }, facing);
     const sprite = this.stage.sprite();
     anim.dress(sprite);
     const scale = monsterScale(look, this.art);
@@ -434,7 +474,7 @@ export class MonsterRoster {
     this.wear(view);
     this.target(view, look);
     this.stand(view);
-    if (state.action === "dead") this.layCorpse(view, look.sheet);
+    if (state.action === "dead") this.layCorpse(view, sheet);
     return view;
   }
 

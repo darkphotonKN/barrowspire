@@ -1,9 +1,11 @@
-// The shared humanoid rig (ADR-0021 §1, FS-2325V §E.1): one three.js skeleton, and the builders
-// that hang smooth-skinned bodies and garments on it.
+// The shared rig (ADR-0021 §1, FS-2325V §E.1): one three.js skeleton, humanoid or (field
+// wildlife, FS-X2F2H §H R61) quadruped, and the builders that hang smooth-skinned bodies and
+// garments on it.
 //
 // Conventions. Model space is three.js with +y up; the model is built facing +z (world +y, "s")
 // and the baker turns it to each facing (facing.js). The character's LEFT is +x. Lengths are
-// fractions of the character's height H, multiplied out once in createRig.
+// fractions of the character's height H (a quadruped's body length), multiplied out once in
+// createRig.
 //
 // Bind pose: every bone at zero rotation, arms hanging straight down. All geometry is authored in
 // model space in that pose; `attach` converts to bone-local for rigid pieces.
@@ -37,6 +39,31 @@ export const HUMAN = {
   digitigrade: 0, // > 0 adds a metatarsal bone of this length between shin and foot
   wings: null, // { root, arm, fore, fingers: [[x,y,z]…], split }: a bat-wing chain per side
   tail: null, // { root: [y, z], segments, length }: a tail chain off the hips
+  quadruped: null, // { …QUADRUPED overrides }: lays the spine horizontal on four legs (field wildlife)
+};
+
+/**
+ * The quadruped variant's proportions (FS-X2F2H §H R61, guideline "Quadruped rig variant"). For a
+ * quadruped, H is its BODY LENGTH (rump to snout), the measure its size tier is taken by, so
+ * every length here is a fraction of that. Bind pose: the spine level along +z, the legs hanging
+ * under it, the hind legs already in their zig-zag (stifle forward, hock back).
+ */
+export const QUADRUPED = {
+  hipY: 0.4, // the hips bone (the hip joints' height)
+  rump: -0.22, // the hips' z: the body sits centred over its footprint
+  back: 0.42, // hips → chest along +z, the spine bone half way
+  rise: 0.02, // chest above hips
+  neck: 0.11, // chest → neck, forward
+  head: 0.08, // neck → head, forward
+  headDrop: -0.03, // neck → head, down
+  jaw: [-0.035, 0.03], // head → jaw [y, z], when `jaw` is on
+  shoulderX: 0.075,
+  shoulderDrop: 0.05, // shoulder joint below the chest bone
+  hipX: 0.07,
+  foreLeg: [0.13, 0.13], // shoulder → elbow, elbow → knee (the carpus)
+  hindLeg: [0.13, 0.12], // hip → stifle, stifle → hock
+  stifle: 0.05, // the stifle sits this far ahead of the hip
+  hock: -0.07, // and the hock this far behind the stifle
 };
 
 /**
@@ -61,34 +88,8 @@ export function createRig(H, overrides = {}) {
     return b;
   };
 
-  bone("hips", null, 0, p.hipY, 0);
-  bone("spine", "hips", 0, 0.05, 0);
-  if (p.hunch > 0) {
-    bone("hunch", "spine", 0, p.spine * 0.55, -0.01);
-    bone("chest", "hunch", 0, p.spine * 0.45, 0);
-  } else bone("chest", "spine", 0, p.spine, 0);
-  bone("neck", "chest", 0, p.neck, 0);
-  bone("head", "neck", 0, 0.05, 0.008);
-  if (p.jaw) bone("jaw", "head", 0, 0.012, 0.018);
-
-  const shoulderX = 0.118 * p.shoulderW;
-  for (const [side, sx] of [
-    ["L", 1],
-    ["R", -1],
-  ]) {
-    bone(`clavicle${side}`, "chest", sx * 0.02, p.neck - 0.035, 0);
-    bone(`upperArm${side}`, `clavicle${side}`, sx * (shoulderX - 0.02), 0, 0);
-    bone(`foreArm${side}`, `upperArm${side}`, 0, -p.upperArm, 0);
-    bone(`hand${side}`, `foreArm${side}`, 0, -p.foreArm, 0);
-    bone(`thigh${side}`, "hips", sx * 0.056 * p.hipW, -0.02, 0);
-    bone(`shin${side}`, `thigh${side}`, 0, -p.thigh, 0);
-    if (p.digitigrade > 0) {
-      // reverse-jointed: the ankle rides high on a long metatarsal and the creature stands on
-      // its toes, so the leg reads as bent backward (clips set the zig-zag in the rest pose)
-      bone(`metatarsal${side}`, `shin${side}`, 0, -p.shin, 0);
-      bone(`foot${side}`, `metatarsal${side}`, 0, -p.digitigrade, 0);
-    } else bone(`foot${side}`, `shin${side}`, 0, -p.shin, 0);
-  }
+  if (p.quadruped) quadrupedBones({ ...QUADRUPED, ...p.quadruped }, p, bone);
+  else humanoidBones(p, bone);
   if (p.wings) wingBones(p.wings, bone);
   if (p.tail) {
     // the chain hangs straight down in bind, like a cloak, so its springs swing back and sideways
@@ -127,9 +128,69 @@ export function createRig(H, overrides = {}) {
     },
   };
   // shoulder spread arms slightly so they clear the torso: the rest pose clips build on
-  rig.rest[`upperArmL`] = [0, 0, 0.1];
-  rig.rest[`upperArmR`] = [0, 0, -0.1];
+  if (!p.quadruped) {
+    rig.rest[`upperArmL`] = [0, 0, 0.1];
+    rig.rest[`upperArmR`] = [0, 0, -0.1];
+  }
   return rig;
+}
+
+/**
+ * The quadruped skeleton: hips at the rump, spine and chest running forward, neck and head out in
+ * front, a foreleg off each side of the chest (`upperArm`, `foreArm`, `hand`: shoulder, elbow,
+ * knee) and a hind leg off each side of the hips (`thigh`, `shin`, `foot`: hip, stifle, hock).
+ * The legs keep the humanoid's bone names, so a pose mirrors left and right the same way.
+ */
+function quadrupedBones(q, p, bone) {
+  bone("hips", null, 0, q.hipY, q.rump);
+  bone("spine", "hips", 0, q.rise / 2, q.back / 2);
+  bone("chest", "spine", 0, q.rise / 2, q.back / 2);
+  bone("neck", "chest", 0, 0, q.neck);
+  bone("head", "neck", 0, q.headDrop, q.head);
+  if (p.jaw) bone("jaw", "head", 0, q.jaw[0], q.jaw[1]);
+  for (const [side, sx] of [
+    ["L", 1],
+    ["R", -1],
+  ]) {
+    bone(`upperArm${side}`, "chest", sx * q.shoulderX, -q.shoulderDrop, 0);
+    bone(`foreArm${side}`, `upperArm${side}`, 0, -q.foreLeg[0], -0.02);
+    bone(`hand${side}`, `foreArm${side}`, 0, -q.foreLeg[1], 0.015);
+    bone(`thigh${side}`, "hips", sx * q.hipX, -0.03, 0);
+    bone(`shin${side}`, `thigh${side}`, 0, -q.hindLeg[0], q.stifle);
+    bone(`foot${side}`, `shin${side}`, 0, -q.hindLeg[1], q.hock);
+  }
+}
+
+/** The humanoid skeleton, as every build before the quadruped variant had it. */
+function humanoidBones(p, bone) {
+  bone("hips", null, 0, p.hipY, 0);
+  bone("spine", "hips", 0, 0.05, 0);
+  if (p.hunch > 0) {
+    bone("hunch", "spine", 0, p.spine * 0.55, -0.01);
+    bone("chest", "hunch", 0, p.spine * 0.45, 0);
+  } else bone("chest", "spine", 0, p.spine, 0);
+  bone("neck", "chest", 0, p.neck, 0);
+  bone("head", "neck", 0, 0.05, 0.008);
+  if (p.jaw) bone("jaw", "head", 0, 0.012, 0.018);
+
+  const shoulderX = 0.118 * p.shoulderW;
+  for (const [side, sx] of [
+    ["L", 1],
+    ["R", -1],
+  ]) {
+    bone(`clavicle${side}`, "chest", sx * 0.02, p.neck - 0.035, 0);
+    bone(`upperArm${side}`, `clavicle${side}`, sx * (shoulderX - 0.02), 0, 0);
+    bone(`foreArm${side}`, `upperArm${side}`, 0, -p.upperArm, 0);
+    bone(`hand${side}`, `foreArm${side}`, 0, -p.foreArm, 0);
+    bone(`thigh${side}`, "hips", sx * 0.056 * p.hipW, -0.02, 0);
+    bone(`shin${side}`, `thigh${side}`, 0, -p.thigh, 0);
+    if (p.digitigrade > 0) {
+      // reverse-jointed: the ankle rides high on a long metatarsal and the creature stands on
+      // its toes, so the leg reads as bent backward (clips set the zig-zag in the rest pose)
+      bone(`metatarsal${side}`, `shin${side}`, 0, -p.shin, 0);
+      bone(`foot${side}`, `metatarsal${side}`, 0, -p.digitigrade, 0);
+    } else bone(`foot${side}`, `shin${side}`, 0, -p.shin, 0);
+  }
 }
 
 /**

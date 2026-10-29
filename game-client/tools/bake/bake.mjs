@@ -30,6 +30,7 @@ import { chromium } from "playwright-core";
 import { encodePng } from "./lib/png.mjs";
 import { meanColour } from "./lib/mean.mjs";
 import { crownHeight } from "./lib/crown.mjs";
+import { SIDE_ON, bodyLength } from "./lib/length.mjs";
 import { packAtlases } from "./lib/pack.mjs";
 import { startServer } from "./lib/server.mjs";
 import { CLIENT_ROOT, loadManifestValidator, loadTheme } from "./lib/source.mjs";
@@ -195,6 +196,13 @@ function assemble({ tile, facings, sheets }) {
           Math.round(s.anchor.y * s.frameHeight),
         )
       : undefined;
+    // a quadruped's body length, side-on over its idle: the measure its size tier is taken by
+    const length = s.quadruped
+      ? bodyLength(
+          SIDE_ON.flatMap((f) => s.animations.idle.frames[facings.indexOf(f)]).map((b64) => Buffer.from(b64, "base64")),
+          s.frameWidth,
+        )
+      : undefined;
     manifestSheets[s.name] = {
       atlas: key,
       frameWidth: s.frameWidth,
@@ -205,6 +213,7 @@ function assemble({ tile, facings, sheets }) {
       ...(s.light ? { light: s.light } : {}),
       ...(mean ? { mean } : {}),
       ...(crown ? { crown } : {}),
+      ...(length ? { length } : {}),
       source: s.source,
       licence: s.licence,
     };

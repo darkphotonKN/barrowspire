@@ -26,6 +26,9 @@
  * - A standing sheet's `crown` is measured too: screen px from the anchor up to the top of its
  *   opaque idle silhouette, the tallest across facings, so name plates and HP bars sit over the
  *   head rather than over the frame, which is padded for attack and death poses.
+ * - A quadruped's `length` is measured the same way, side-on: screen px across its opaque idle
+ *   silhouette in the facings that lay its body along the screen (ne, sw), the longest. Its size
+ *   tier is taken by body length, not height (guideline "Size is a threat tier", FS-X2F2H R61).
  */
 
 import type { Facing8 } from "@/render/iso/facing";
@@ -121,6 +124,11 @@ export interface ArtSheet {
    * top of the opaque idle silhouette, the tallest across facings, measured by the bake.
    */
   crown?: number;
+  /**
+   * Quadrupeds only: screen px rump to snout, measured side-on by the bake, the measure its size
+   * tier is taken by. A side-on px of length reads as cos 30° px of height.
+   */
+  length?: number;
   source: string;
   licence: string;
 }
@@ -269,6 +277,17 @@ function checkSheet(
   if (sheet.mean !== undefined && !isRgb(sheet.mean))
     errors.push(`${at}: mean must be {r, g, b} integers within 0..255`);
   if (sheet.crown !== undefined) checkCrown(at, sheet, errors);
+  if (
+    sheet.length !== undefined &&
+    !(
+      isPositiveInt(sheet.length) &&
+      isPositiveInt(sheet.frameWidth) &&
+      sheet.length <= sheet.frameWidth
+    )
+  )
+    errors.push(
+      `${at}: length must be a whole number of px no wider than the frame`,
+    );
 
   if (!isText(sheet.source)) errors.push(`${at}: source must be recorded`);
   if (!isText(sheet.licence)) errors.push(`${at}: licence must be recorded`);

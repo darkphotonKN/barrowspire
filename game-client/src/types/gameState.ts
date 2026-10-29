@@ -208,7 +208,9 @@ export type MonsterArchetype =
   | "demon"
   // the Forlorn Forest's dead (FS-3QHQZ R18): sent only in the Forest field
   | "zombie"
-  | "ghost";
+  | "ghost"
+  // Gentle Meadows' one creature (FS-X2F2H R53): sent only in the Meadows field
+  | "boar";
 
 /** What a monster is doing this tick. `attack` is the wind-up and the strike. */
 export type MonsterAction = "idle" | "move" | "attack" | "dead";

@@ -167,6 +167,8 @@ function bakeCharacterSheet(sheet) {
     anchor: { x: out.anchorPx[0] / out.frameWidth, y: out.anchorPx[1] / out.frameHeight },
     directions: FACINGS.length,
     animations,
+    // a quadruped's size tier is taken by its length (bake.mjs measures it), not its height
+    ...(rig.p.quadruped ? { quadruped: true } : {}),
     source: sheet.source,
     licence: sheet.licence,
   };

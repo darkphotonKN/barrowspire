@@ -49,6 +49,7 @@ import {
 } from "./gear.js";
 import { DEMON_ANIMATIONS, demon } from "./demon.js";
 import { ghost, zombie } from "./forlorn.js";
+import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
 
 const FRONT = [Math.PI / 2 - 0.95, Math.PI / 2 + 0.95];
 const BACK = [-Math.PI / 2 - 0.95, -Math.PI / 2 + 0.95];
@@ -395,4 +396,7 @@ export const CAST = [
   // the Forlorn Forest's dead (FS-3QHQZ §C R29), packed in their own group so no atlas reflows
   { sheet: "creature_zombie_base", group: "fodder", fn: "zombie", module: "forlorn", build: zombie },
   { sheet: "creature_ghost_base", group: "fodder", fn: "ghost", module: "forlorn", build: ghost },
+  // Gentle Meadows' boar and its elite (FS-X2F2H §H R61), on the quadruped rig, in their own group
+  { sheet: "creature_boar_base", group: "wildlife", fn: "boar", module: "boar", build: boar, animations: BOAR_ANIMATIONS },
+  { sheet: "creature_boar_elite", group: "wildlife", fn: "eliteBoar", module: "boar", build: eliteBoar, animations: BOAR_ANIMATIONS },
 ];
