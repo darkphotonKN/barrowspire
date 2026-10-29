@@ -76,7 +76,7 @@ export default function ListRelicDrawer({
     <div className="fixed inset-0 z-[60] flex justify-end">
       <div
         aria-hidden
-        className="absolute inset-0"
+        className="scrim-in absolute inset-0"
         style={{ background: "color-mix(in srgb, var(--color-bg-darker) 75%, transparent)" }}
         onClick={onClose}
       />
@@ -85,7 +85,7 @@ export default function ListRelicDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative flex h-full w-full max-w-2xl flex-col gap-6 overflow-y-auto border-l border-[color:var(--color-border-strong)] bg-bg-darker px-4 py-6 shadow-[var(--shadow-card)] sm:px-8"
+        className="enter-from-right relative flex h-full w-full max-w-2xl flex-col gap-6 overflow-y-auto border-l border-[color:var(--color-border-strong)] bg-bg-darker px-4 py-6 shadow-[var(--shadow-card)] sm:px-8"
       >
         <div className="flex items-center justify-between gap-4">
           <h2 id={titleId} className="text-xl font-semibold text-vellum">

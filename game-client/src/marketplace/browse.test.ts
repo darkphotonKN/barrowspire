@@ -162,7 +162,7 @@ describe("browseFailureMessage", () => {
 
   it("uses the plain copy the spec gives for 503", () => {
     expect(BROWSE_UNREACHABLE).toBe(
-      "The Bazaar is unreachable — try again shortly.",
+      "The marketplace is unreachable. Try again shortly.",
     );
   });
 });

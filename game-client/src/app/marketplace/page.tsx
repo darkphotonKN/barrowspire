@@ -85,7 +85,7 @@ export default function MarketplacePage() {
     <main className="relative z-[1] mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10 sm:px-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h1 className="font-display text-[40px] leading-none text-primary">The Bazaar</h1>
+          <h1 className="font-display text-[40px] leading-none text-primary">The Marketplace</h1>
           <p className="text-vellum-dim">Relics carried out of the Spire, sold to the highest bid.</p>
         </div>
         {isAuthenticated ? (
@@ -324,7 +324,7 @@ function MyBidsList({
     return (
       <Notice message={NO_BIDS}>
         <button type="button" onClick={onBrowse} className="btn-secondary min-h-[40px]">
-          Browse the Bazaar
+          Browse the marketplace
         </button>
       </Notice>
     );

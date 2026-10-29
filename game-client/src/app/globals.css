@@ -612,18 +612,64 @@
   border-radius: 10px;
   padding: 0.5rem;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-  animation: fadeInScale 0.2s ease-out;
+  animation: dropFromAbove 0.2s ease-out;
 }
 
-@keyframes fadeInScale {
+/* ── Entrances: a panel slides in from where it belongs ────────────────────
+   A drawer from the edge it docks to, a dialog up from below, a dropdown down
+   from the bar it hangs off; the scrim behind a modal fades rather than pops.
+   Standard 0.3s, micro 0.2s (design-guideline "Elevation, borders, motion");
+   the reduced-motion block above stills them all. */
+@keyframes slideFromRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes riseFromBelow {
   from {
     opacity: 0;
-    transform: scale(0.95) translateY(-10px);
+    transform: translateY(24px);
   }
   to {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: translateY(0);
   }
+}
+
+@keyframes dropFromAbove {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scrimIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.enter-from-right {
+  animation: slideFromRight 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.enter-from-below {
+  animation: riseFromBelow 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.scrim-in {
+  animation: scrimIn 0.2s ease-out;
 }
 
 .menu-header {
