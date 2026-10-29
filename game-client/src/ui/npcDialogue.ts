@@ -1,0 +1,260 @@
+/**
+ * The card a hub NPC speaks through: a compact carved panel at the lower right, sized to what is
+ * said, never a box floating in the middle of the world. A medallion bust and the speaker's name
+ * head it, the line follows, and the answers are rows below it, top to bottom.
+ *
+ * Game palette, not the menus' Bone & Soot: it is a panel in the world (design-guideline "UI
+ * Chrome"), so dark vellum on carved stone with a brass rule. Each answer is the shared menu row
+ * (`menuOption`), so its colour, its key on the label, its dimming and its camera-fixed hit area
+ * are the same as every other canvas menu's.
+ */
+
+import type Phaser from "phaser";
+import { CANVAS_FONT, shade, tint, toCss } from "@/utils/canvasPalette";
+import { BARROW_HEX } from "@/utils/theme";
+import { bustCrop, bustSize, type Bounds } from "./bust";
+import { MENU_DEPTH, menuOption, type MenuOption, type MenuTones } from "./menuPanel";
+
+/** One answer: its label already carries its key, e.g. "Descend alone  [1]". */
+export interface DialogueCardRow {
+  id: string;
+  label: string;
+  colour: number;
+  onPick: () => void;
+  /** Whether it can be picked now, read live; omitted means always. */
+  enabled?: () => boolean;
+}
+
+export interface DialogueCardSpec {
+  name: string;
+  /** A few words of who they are, under the name. Residents have none. */
+  role?: string;
+  line: string;
+  rows: DialogueCardRow[];
+  /** The frame to cut the medallion bust from: whatever the speaker is showing. */
+  portrait?: { texture: string; frame: string | number };
+  tones: Pick<MenuTones, "panel" | "text" | "dim">;
+}
+
+/** The scene slice the card draws with; the portrait needs the textures and an unlisted mask. */
+type CardStage = Pick<Phaser.Scene, "add" | "cameras"> & Partial<Pick<Phaser.Scene, "make" | "textures">>;
+
+export interface DialogueCard {
+  /** Camera-fixed, in the popup band; destroying it takes the rows' hit areas and the mask too. */
+  container: Phaser.GameObjects.Container;
+  /** Redraws each row's colour when whether it can be picked changes under the open card. */
+  retone(): void;
+}
+
+const hex = BARROW_HEX;
+const MARGIN = 20;
+const WIDTH = 372;
+const PAD = 22;
+const HEAD_H = 76;
+const ROW_H = 38;
+const MEDALLION_R = 27;
+interface Figure {
+  bounds: Bounds;
+  /** The middle of the opaque pixels across the bust's rows. */
+  centreX: number;
+}
+
+const figureCache = new Map<string, Figure | undefined>();
+
+/** Where the figure is in its frame, read once from the frame's pixels and remembered. */
+function figureOf(scene: Phaser.Scene, texture: string, frameName: string | number): Figure | undefined {
+  const cacheKey = `${texture}:${frameName}`;
+  if (figureCache.has(cacheKey)) return figureCache.get(cacheKey);
+
+  let figure: Figure | undefined;
+  const frame = scene.textures.getFrame(texture, frameName);
+  const image = frame?.source.image as CanvasImageSource | undefined;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (frame && image && ctx) {
+    const w = (canvas.width = frame.cutWidth);
+    const h = (canvas.height = frame.cutHeight);
+    ctx.drawImage(image, frame.cutX, frame.cutY, w, h, 0, 0, w, h);
+    const { data } = ctx.getImageData(0, 0, w, h);
+    const solid = (x: number, y: number) => data[(y * w + x) * 4 + 3] > 40;
+
+    let left = w, top = h, right = 0, bottom = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (!solid(x, y)) continue;
+        left = Math.min(left, x);
+        top = Math.min(top, y);
+        right = Math.max(right, x + 1);
+        bottom = Math.max(bottom, y + 1);
+      }
+    }
+    if (right > left) {
+      const bounds = { left, top, right, bottom };
+      let sum = 0, count = 0;
+      for (let y = top; y < Math.min(h, top + bustSize(bounds)); y++) {
+        for (let x = left; x < right; x++) {
+          if (!solid(x, y)) continue;
+          sum += x;
+          count++;
+        }
+      }
+      figure = { bounds, centreX: sum / count };
+    }
+  }
+  figureCache.set(cacheKey, figure);
+  return figure;
+}
+
+/** Dark vellum on carved stone: a soft drop shadow, a lit top edge, a double brass rule, studs. */
+function carvedPanel(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number): void {
+  g.fillStyle(hex.pitch, 0.55);
+  g.fillRoundedRect(x - 2, y + 3, w + 4, h + 4, 7);
+  g.fillStyle(shade(hex.charcoal, 0.2), 0.97);
+  g.fillRoundedRect(x, y, w, h, 6);
+  g.fillStyle(hex.umber, 0.9);
+  g.fillRoundedRect(x + 1, y + 1, w - 2, h - 4, 5);
+  g.lineStyle(1, tint(hex.umber, 0.12), 0.7);
+  g.lineBetween(x + 6, y + 1.5, x + w - 6, y + 1.5);
+  g.lineStyle(1, hex.brass, 0.75);
+  g.strokeRoundedRect(x + 0.5, y + 0.5, w - 1, h - 1, 6);
+  g.lineStyle(1, hex.brass, 0.22);
+  g.strokeRoundedRect(x + 4.5, y + 4.5, w - 9, h - 9, 3);
+  for (const [cx, cy] of [
+    [x + 4.5, y + 4.5],
+    [x + w - 4.5, y + 4.5],
+    [x + 4.5, y + h - 4.5],
+    [x + w - 4.5, y + h - 4.5],
+  ]) {
+    g.fillStyle(hex.brass, 1);
+    g.fillCircle(cx, cy, 2);
+    g.fillStyle(hex.brassBright, 0.9);
+    g.fillCircle(cx - 0.5, cy - 0.5, 0.9);
+  }
+}
+
+/** A carved key cap: the key that answers, in small vellum on pitch. */
+
+function bust(
+  scene: CardStage,
+  portrait: NonNullable<DialogueCardSpec["portrait"]>,
+  mx: number,
+  my: number,
+  r: number,
+): Phaser.GameObjects.Image | undefined {
+  if (!scene.textures) return undefined;
+  const frame = scene.textures.getFrame(portrait.texture, portrait.frame);
+  const figure = figureOf(scene as Phaser.Scene, portrait.texture, portrait.frame);
+  if (!frame || !figure) return undefined;
+  const crop = bustCrop(figure.bounds, figure.centreX, frame.cutWidth);
+  const scale = (r * 2) / crop.size;
+  // Placed by the figure's centre, not the crop's edge: a figure near its frame's edge has
+  // its crop clamped, and would otherwise sit off-centre in the ring.
+  return scene.add
+    .image(mx - figure.centreX * scale, my - r - crop.y * scale, portrait.texture, portrait.frame)
+    .setOrigin(0, 0)
+    .setCrop(crop.x, crop.y, crop.size, crop.size)
+    .setScale(scale);
+}
+
+/** Draws the card and its rows; the caller keeps the container and closes it by destroying it. */
+export function showDialogueCard(scene: CardStage, spec: DialogueCardSpec): DialogueCard {
+  const { width, height } = scene.cameras.main;
+  const line = scene.add.text(0, 0, spec.line, {
+    fontFamily: CANVAS_FONT.body,
+    fontSize: "15px",
+    color: toCss(hex.vellum),
+    lineSpacing: 5,
+    wordWrap: { width: WIDTH - PAD * 2, useAdvancedWrap: true },
+  });
+  const h = HEAD_H + 16 + line.height + 18 + spec.rows.length * ROW_H + 14;
+  const x = width - MARGIN - WIDTH;
+  const y = height - MARGIN - h;
+
+  const panel = scene.add.graphics();
+  carvedPanel(panel, x, y, WIDTH, h);
+  // A darker head band, like a page's running head.
+  panel.fillStyle(hex.pitch, 0.55);
+  panel.fillRect(x + 5, y + 5, WIDTH - 10, HEAD_H - 5);
+  panel.lineStyle(1, hex.brass, 0.45);
+  panel.lineBetween(x + 5, y + HEAD_H + 0.5, x + WIDTH - 5, y + HEAD_H + 0.5);
+  const parts: Phaser.GameObjects.GameObject[] = [panel];
+
+  // The medallion: a round bust in a brass ring.
+  const r = MEDALLION_R;
+  const mx = x + PAD + r;
+  const my = y + 5 + (HEAD_H - 5) / 2;
+  const disc = scene.add.graphics();
+  disc.fillStyle(hex.charcoal, 1);
+  disc.fillCircle(mx, my, r);
+  parts.push(disc);
+  const figure = spec.portrait && bust(scene, spec.portrait, mx, my, r);
+  let mask: Phaser.GameObjects.Graphics | undefined;
+  if (figure && scene.make) {
+    mask = scene.make.graphics({}, false).setScrollFactor(0);
+    mask.fillStyle(0xffffff);
+    mask.fillCircle(mx, my, r - 1);
+    figure.setMask(mask.createGeometryMask());
+    parts.push(figure);
+  }
+  const ring = scene.add.graphics();
+  ring.lineStyle(2, hex.brass, 0.9);
+  ring.strokeCircle(mx, my, r);
+  ring.lineStyle(1, hex.brassBright, 0.5);
+  ring.strokeCircle(mx, my, r + 3);
+  parts.push(ring);
+
+  const nx = mx + r + 16;
+  parts.push(
+    scene.add
+      .text(nx, my - (spec.role ? 10 : 0), spec.name.toUpperCase(), {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "16px",
+        color: toCss(hex.brassBright),
+        letterSpacing: 3,
+      })
+      .setOrigin(0, 0.5),
+  );
+  if (spec.role) {
+    parts.push(
+      scene.add
+        .text(nx, my + 12, spec.role, {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: "13px",
+          fontStyle: "italic",
+          color: toCss(hex.vellumDark),
+        })
+        .setOrigin(0, 0.5),
+    );
+  }
+
+  line.setPosition(x + PAD, y + HEAD_H + 16);
+  parts.push(line);
+
+  // The rows, top to bottom in the order given, a brass hairline above each.
+  const top = y + HEAD_H + 16 + line.height + 18;
+  const rules = scene.add.graphics();
+  rules.lineStyle(1, hex.brass, 0.18);
+  spec.rows.forEach((_, i) => rules.lineBetween(x + PAD, top + i * ROW_H + 0.5, x + WIDTH - PAD, top + i * ROW_H + 0.5));
+  parts.push(rules);
+  // The card sits at the screen's origin, so a row's place in it is its place on the screen.
+  const options: MenuOption[] = spec.rows.map((row, i) =>
+    menuOption(scene, {
+      x: x + WIDTH / 2,
+      y: top + i * ROW_H + ROW_H / 2,
+      label: row.label,
+      colour: row.colour,
+      onPick: row.onPick,
+      name: `choice-${row.id}`,
+      origin: { x: 0, y: 0 },
+      enabled: row.enabled,
+      hit: { width: WIDTH - 12, height: ROW_H },
+      tones: spec.tones,
+    }),
+  );
+  parts.push(...options);
+
+  const container = scene.add.container(0, 0, parts).setScrollFactor(0).setDepth(MENU_DEPTH);
+  // the mask lives outside the container, so it goes down with it by hand
+  container.once("destroy", () => mask?.destroy());
+  return { container, retone: () => options.forEach((o) => o.retone()) };
+}

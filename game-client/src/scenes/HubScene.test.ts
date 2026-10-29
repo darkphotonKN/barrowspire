@@ -610,9 +610,9 @@ describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
     expect((label("solo").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
     expect((label("queue").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
     expect((label("dismiss").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.arcane));
-    // left to right, in the spec's order
-    expect(solo.x).toBeLessThan(queue.x);
-    expect(queue.x).toBeLessThan(dismiss.x);
+    // top to bottom down the card, in the spec's order
+    expect(solo.y).toBeLessThan(queue.y);
+    expect(queue.y).toBeLessThan(dismiss.y);
   });
 
   it("should keep the storekeeper's two choices as before", () => {
@@ -831,7 +831,8 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
     keys.e.justDown = true;
     hub.offerConversation();
     expect(hub.dialogue).toBeDefined();
-    expect(stage.made.some((m) => m.kind === "text" && m.args[2] === "Keeper")).toBe(true);
+    // the card sets the speaker's name in capitals
+    expect(stage.made.some((m) => m.kind === "text" && m.args[2] === "KEEPER")).toBe(true);
   });
 
   it("should ask to leave the hub on Change who you are, and start the main menu once it is left", () => {

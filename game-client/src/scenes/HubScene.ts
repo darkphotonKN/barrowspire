@@ -12,7 +12,8 @@ import {
 } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
 import { ProgressHud } from "@/ui/ProgressHud";
-import { MENU_DEPTH, menuOption, showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
+import { showDialogueCard } from "@/ui/npcDialogue";
+import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
 import { progressOf } from "@/ui/progress";
 import {
   ensureCharacterTextures,
@@ -214,6 +215,8 @@ export interface DialogueChoice {
 
 /** What an NPC says and offers: a line and its choices, any number of them. */
 export interface Dialogue {
+  /** Who they are, under their name on the card. Residents have none. */
+  role?: string;
   line: string;
   choices: DialogueChoice[];
 }
@@ -224,14 +227,18 @@ export interface Dialogue {
  * there is nothing to offer but the fact, so the dialogue says so and closes; the panel carries
  * the count. The one warning is the keeper's line: descending alone takes no second asking.
  */
+const KEEPER_OF_THE_WAY = "Keeper of the way in";
+
 export function delveChoices(state: HubState): Dialogue {
   if (state.queued) {
     return {
+      role: KEEPER_OF_THE_WAY,
       line: "The delve is gathering. Wait, or leave the queue.",
       choices: [{ id: "dismiss", label: "I'll wait", register: "cancel" }],
     };
   }
   return {
+    role: KEEPER_OF_THE_WAY,
     line: "I keep the way into the Spire. Few return whole,\nand fewer return twice. Still set on descending?",
     choices: [
       {
@@ -269,6 +276,7 @@ const RESIDENT_LINES = [
 const NPC_DIALOGUE: Record<string, (state: HubState) => Dialogue> = {
   delve: delveChoices,
   storekeeper: () => ({
+    role: "Keeper of the stores",
     line: "Steel rusts, and the barrow keeps what it takes.\nSee to your gear before you go down.",
     choices: [
       { id: "pack", label: "Open pack", register: "actionable", act: (scene) => scene.openLoadout() },
@@ -276,9 +284,6 @@ const NPC_DIALOGUE: Record<string, (state: HubState) => Dialogue> = {
     ],
   }),
 };
-
-/** Screen px between the centres of neighbouring dialogue choices. */
-const CHOICE_SPACING = 180;
 
 /** The pressable area of a dialogue or menu choice, in screen px around its label. */
 const CHOICE_HIT = { width: 160, height: 34 };
@@ -1559,7 +1564,7 @@ export class HubScene extends Phaser.Scene {
    * dismisses; with nothing to confirm, every key dismisses.
    */
   private openDialogue(npc: NPCState): void {
-    const { line, choices } = NPC_DIALOGUE[npc.function]?.({ queued: this.queued }) ?? {
+    const { role, line, choices }: Dialogue = NPC_DIALOGUE[npc.function]?.({ queued: this.queued }) ?? {
       line: RESIDENT_LINES[
         // stable per resident, so they do not change their mind each time
         [...npc.entity_id].reduce((sum, c) => sum + c.charCodeAt(0), 0) %
@@ -1569,31 +1574,6 @@ export class HubScene extends Phaser.Scene {
       // that both close the box is a decision the delver does not have.
       choices: [{ id: "leave", label: "Leave", register: "actionable" }],
     };
-
-    const { width, height } = this.cameras.main;
-    const panel = this.add.graphics();
-    panel.fillStyle(BARROW_HEX.charcoal, 0.96);
-    panel.fillRect(-300, -90, 600, 180);
-    panel.lineStyle(1, BARROW_HEX.brass, 0.5);
-    panel.strokeRect(-300, -90, 600, 180);
-
-    const speaker = this.add
-      .text(0, -60, npc.name, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "16px",
-        color: toCss(BARROW_HEX.brassBright),
-      })
-      .setOrigin(0.5);
-
-    const said = this.add
-      .text(0, -18, line, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "14px",
-        color: toCss(BARROW_HEX.vellum),
-        align: "center",
-        lineSpacing: 6,
-      })
-      .setOrigin(0.5);
 
     const enabled = (choice: DialogueChoice) =>
       choice.enabled?.({ soloPending: this.soloPending }) ?? true;
@@ -1621,30 +1601,31 @@ export class HubScene extends Phaser.Scene {
       if (actionable.length === 1) return "  [E]";
       return `  [${actionable.indexOf(choice) + 1}]`;
     };
-    // Each choice is the shared menu row: its hit area is a separate camera-fixed rectangle
-    // that goes down with the label's container (menuPanel.ts says why).
-    const origin = { x: width / 2, y: height / 2 };
-    const options = choices.map((choice, i) =>
-      menuOption(this, {
-        x: (i - (choices.length - 1) / 2) * CHOICE_SPACING,
-        y: 48,
+    // The bust is cut from whatever frame they are showing, so it is the same figure the
+    // delver just walked up to, baked or placeholder.
+    const body = this.npcs.get(npc.entity_id)?.sprite?.getByName("body") as
+      | Phaser.GameObjects.Sprite
+      | null
+      | undefined;
+    // Each choice is the shared menu row, stacked down the card: its hit area is a separate
+    // camera-fixed rectangle that goes down with the card (menuPanel.ts says why).
+    const card = showDialogueCard(this, {
+      name: npc.name,
+      role,
+      line,
+      rows: choices.map((choice) => ({
+        id: choice.id,
         label: `${choice.label}${hint(choice)}`,
         colour: choice.register === "actionable" ? MENU_TONES.actionable : MENU_TONES.cancel,
         onPick: () => pick(choice),
-        name: `choice-${choice.id}`,
-        origin,
         enabled: () => enabled(choice),
-        hit: CHOICE_HIT,
-        tones: MENU_TONES,
-      }),
-    );
-    const retone = () => options.forEach((o) => o.retone());
+      })),
+      portrait: body ? { texture: body.texture.key, frame: body.frame.name } : undefined,
+      tones: MENU_TONES,
+    });
 
-    this.dialogueChoices = { confirm, dismiss, pick: pickNumbered, retone };
-    this.dialogue = this.add
-      .container(width / 2, height / 2, [panel, speaker, said, ...options])
-      .setScrollFactor(0)
-      .setDepth(MENU_DEPTH);
+    this.dialogueChoices = { confirm, dismiss, pick: pickNumbered, retone: card.retone };
+    this.dialogue = card.container;
   }
 
   private closeDialogue(): void {
