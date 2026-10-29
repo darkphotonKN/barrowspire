@@ -62,6 +62,10 @@ export const MONSTER_LOOKS: Record<string, MonsterLook> = {
   troll: { sheet: "creature_troll_base", tier: "brute" },
   /** The winged demon boss (req 41, FS-KYPQ9): its own baked sheet, drawn as baked, at boss size. */
   demon: { sheet: "creature_demon_base", tier: "boss" },
+  /** The Forlorn Forest's dead (FS-3QHQZ §C R29): the shambling zombie, and the rarer ghost. */
+  zombie: { sheet: "creature_zombie_base", tier: "fodder" },
+  /** Its translucence is baked into the sheet (body alpha ≈ 0.6, eyes opaque): no tint here. */
+  ghost: { sheet: "creature_ghost_base", tier: "fodder" },
 };
 
 /**

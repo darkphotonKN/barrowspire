@@ -11,6 +11,7 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { K1, SS, VIEW_DIR } from "./projection.js";
 import { color, mix, normalized } from "./palette.js";
+import { applyOpacity } from "./opacity.js";
 
 /** Key light direction (toward the light): from screen-left and above. */
 const LIGHT_DIR = new THREE.Vector3(-1, 2.83, 1).normalize();
@@ -182,6 +183,31 @@ export function createBaker() {
     return { frames, frameWidth: w1, frameHeight: h1, anchorPx: [ax, ay] };
   }
 
+  /** What a part with no opacity material of its own is drawn as in an opacity pass: opaque. */
+  const solid = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 1, 1), toneMapped: false, side: THREE.DoubleSide });
+
+  /**
+   * The opacity pass of a translucent model (opacity.js): every mesh drawn unlit in its
+   * `userData.opacity` material (a grey that is its opacity), linear out, no ground shadow.
+   */
+  function captureOpacity(root, w1, h1) {
+    const worn = [];
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      worn.push([o, o.material]);
+      o.material = o.userData.opacity ?? solid;
+    });
+    const out = renderer.outputColorSpace;
+    const shadow = catcher.visible;
+    renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+    catcher.visible = false;
+    const px = capture(w1, h1);
+    renderer.outputColorSpace = out;
+    catcher.visible = shadow;
+    for (const [o, m] of worn) o.material = m;
+    return px;
+  }
+
   /** Screen-px offset of a model-space point from the model origin, at 1×. */
   function screenOffset(p) {
     const [x, y] = toView(p);
@@ -218,9 +244,11 @@ export function createBaker() {
    * Bakes one posed model from several facings (FS-2325V §E): `poses` are functions that pose the
    * model in place, `yaws` the y rotations that turn it to each facing. Every frame shares one
    * frame size and anchor (the footprint origin), so a sheet swaps frames without jitter.
-   * Returns frames[pose][yaw].
+   * Returns frames[pose][yaw]. A translucent model (`opacity`, the ghost: FS-3QHQZ §C R29) is
+   * also drawn as an opacity pass, which scales each frame's alpha; `opacity.floor` is the
+   * ground shadow's.
    */
-  function bakeCharacter(root, poses, yaws, { pad = 0.06 } = {}) {
+  function bakeCharacter(root, poses, yaws, { pad = 0.06, opacity = null } = {}) {
     prep(root);
     scene.add(root);
     // pass 1: bounds over every pose and facing, from the skinned vertices themselves
@@ -279,7 +307,8 @@ export function createBaker() {
       return yaws.map((yaw) => {
         root.rotation.y = yaw;
         root.updateMatrixWorld(true);
-        return capture(w1, h1);
+        const px = capture(w1, h1);
+        return opacity ? applyOpacity(px, captureOpacity(root, w1, h1), opacity) : px;
       });
     });
     scene.remove(root);

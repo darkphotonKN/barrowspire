@@ -201,7 +201,13 @@ export interface NPCState {
 }
 
 /** What kind of monster it is: picks its sheet and size tier (FS-77AB6 req 32, 34–35). */
-export type MonsterArchetype = "ghoul" | "troll" | "demon";
+export type MonsterArchetype =
+  | "ghoul"
+  | "troll"
+  | "demon"
+  // the Forlorn Forest's dead (FS-3QHQZ R18): sent only in the Forest field
+  | "zombie"
+  | "ghost";
 
 /** What a monster is doing this tick. `attack` is the wind-up and the strike. */
 export type MonsterAction = "idle" | "move" | "attack" | "dead";

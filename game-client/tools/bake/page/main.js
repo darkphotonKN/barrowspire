@@ -152,6 +152,7 @@ function bakeCharacterSheet(sheet) {
     rig.root,
     poses.map((p) => p.apply),
     FACINGS.map(yawFor),
+    rig.opacity ? { opacity: rig.opacity } : {},
   );
   poses.forEach((p, k) =>
     FACINGS.forEach((_, d) => {

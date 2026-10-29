@@ -2,7 +2,7 @@
 // Only IHDR, IDAT and IEND are written: no tIME, no text, no gamma or colour-profile chunks,
 // so identical pixels always produce identical bytes on the same Node (FS-2325V §B.3).
 
-import { deflateSync } from "node:zlib";
+import { deflateSync, inflateSync } from "node:zlib";
 
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -102,4 +102,42 @@ export function encodePng(width, height, rgba, { fast = false } = {}) {
     chunk("IDAT", idat),
     chunk("IEND", Buffer.alloc(0)),
   ]);
+}
+
+/**
+ * Reads back what `encodePng` writes (8-bit RGBA, not interlaced), for tests that check baked
+ * pixels. Not a general PNG reader.
+ */
+export function decodePng(png) {
+  if (png.length < 8 || png.readUInt32BE(0) !== 0x89504e47) throw new Error("png: not a PNG");
+  let width = 0;
+  let height = 0;
+  const idat = [];
+  for (let o = 8; o < png.length; ) {
+    const len = png.readUInt32BE(o);
+    const type = png.toString("ascii", o + 4, o + 8);
+    const data = png.subarray(o + 8, o + 8 + len);
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      if (data[8] !== 8 || data[9] !== 6 || data[12] !== 0) throw new Error("png: only 8-bit RGBA, not interlaced");
+    } else if (type === "IDAT") idat.push(data);
+    o += 12 + len;
+  }
+  const raw = inflateSync(Buffer.concat(idat));
+  const stride = width * 4;
+  const rgba = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    const f = raw[y * (stride + 1)];
+    const src = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    const row = y * stride;
+    for (let i = 0; i < stride; i++) {
+      const a = i >= 4 ? rgba[row + i - 4] : 0;
+      const b = y > 0 ? rgba[row - stride + i] : 0;
+      const c = i >= 4 && y > 0 ? rgba[row - stride + i - 4] : 0;
+      const p = f === 0 ? 0 : f === 1 ? a : f === 2 ? b : f === 3 ? (a + b) >> 1 : paeth(a, b, c);
+      rgba[row + i] = (src[i] + p) & 0xff;
+    }
+  }
+  return { width, height, rgba };
 }

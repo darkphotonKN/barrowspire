@@ -48,6 +48,7 @@ import {
   wizardHat,
 } from "./gear.js";
 import { DEMON_ANIMATIONS, demon } from "./demon.js";
+import { ghost, zombie } from "./forlorn.js";
 
 const FRONT = [Math.PI / 2 - 0.95, Math.PI / 2 + 0.95];
 const BACK = [-Math.PI / 2 - 0.95, -Math.PI / 2 + 0.95];
@@ -391,4 +392,7 @@ export const CAST = [
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   { sheet: "creature_demon_base", group: "boss", fn: "demon", module: "demon", build: demon, animations: DEMON_ANIMATIONS },
+  // the Forlorn Forest's dead (FS-3QHQZ §C R29), packed in their own group so no atlas reflows
+  { sheet: "creature_zombie_base", group: "fodder", fn: "zombie", module: "forlorn", build: zombie },
+  { sheet: "creature_ghost_base", group: "fodder", fn: "ghost", module: "forlorn", build: ghost },
 ];
