@@ -24,16 +24,22 @@ import {
   GroundLayer,
   MEADOWS_LOOK,
   Occluders,
+  addDressing,
   addHorizon,
   addProp,
   fieldLook,
+  forestStatics,
   landBeyond,
   planHorizon,
   planKeepOutDressing,
   planRoadHome,
+  planTreeStands,
+  planVerges,
+  standSheet,
   worldSeed,
   type FieldLook,
 } from "@/render/world";
+import { addMist } from "@/render/effects/mist";
 import { DROP_PILE, paintDropPile } from "@/render/world/dropPile";
 import { ContainerView } from "@/ui/ContainerView";
 import { createAtmosphere } from "@/utils/atmosphere";
@@ -81,6 +87,11 @@ const FIELD_MARKER_STROKE = {
   stroke: toCss(FIELD_MARKER_OUTLINE.color),
   strokeThickness: FIELD_MARKER_OUTLINE.thickness,
 };
+
+/** A server wall's rect. */
+function rectOfWall(wall: WallState): { x: number; y: number; width: number; height: number } {
+  return { x: wall.position.x, y: wall.position.y, width: wall.width, height: wall.height };
+}
 
 /** The field's entrance gate: the one gate that leads to the hub. */
 function roadHomeGate(gates: readonly GateState[]): GateState | undefined {
@@ -178,6 +189,8 @@ export class FieldScene extends Phaser.Scene {
     // (FS-X2F2H §Requirements 54, guideline "Lighting")
     this.lightMap = new LightMap(this, this.look.ambient);
     createAtmosphere(this);
+    // a forest's low mist over its ground, under everything standing (FS-3QHQZ §Requirements 27)
+    if (this.look.mist) addMist(this, this.look.mist, worldSeed("field"));
     this.fight = fieldCombatOnScene(this, this.art, this.lightMap, {
       selfAnim: () => this.selfView()?.anim,
       selfAt: () => this.selfView()?.pos,
@@ -343,8 +356,8 @@ export class FieldScene extends Phaser.Scene {
       this.followFall(state.current_player);
     }
 
-    this.drawGround(state.gates ?? []);
-    this.drawObstacles(state.walls ?? []);
+    this.drawGround(state.gates ?? [], state.walls ?? []);
+    this.drawObstacles(state);
     this.drawEntrance(state.gates ?? []);
 
     for (const other of state.other_players ?? []) {
@@ -429,18 +442,21 @@ export class FieldScene extends Phaser.Scene {
 
   /**
    * The field's ground in its look (§Requirements 54), with the road home running from inside the
-   * entrance gate off the west edge: laid once, with the first state, which carries the gate.
+   * entrance gate off its edge: laid once, with the first state, which carries the gate. A forest
+   * waits for its walls, its stands' leaf litter laid under them (FS-3QHQZ §Requirements 25).
    * Without the ground's art, a placeholder meadow floor.
    */
-  private drawGround(gates: readonly GateState[]): void {
-    if (this.groundDrawn) return;
+  private drawGround(gates: readonly GateState[], walls: readonly WallState[]): void {
+    if (this.groundDrawn || (this.look.stands && walls.length === 0)) return;
     this.groundDrawn = true;
     const { width, height } = this.size;
     const look = this.look.ground;
     if (GroundLayer.available(this.art, "field", look)) {
-      // the map's grass ends on its own edge; only the road runs on past it, fading
+      // the map's ground ends on its own edge; only the road runs on past it, fading
       const road = roadHomeGate(gates);
-      const { paths, aprons } = road ? planRoadHome(road.position) : { paths: [], aprons: [] };
+      const { paths, aprons } = road
+        ? planRoadHome(road.position, this.size)
+        : { paths: [], aprons: [] };
       new GroundLayer(this, this.art, {
         width,
         height,
@@ -448,6 +464,7 @@ export class FieldScene extends Phaser.Scene {
         look,
         paths,
         aprons,
+        litter: this.look.stands ? walls.map(rectOfWall) : [],
         // as far as the camera can see past the map
         margin: CAMERA_MARGIN,
       });
@@ -464,24 +481,35 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * The field's keep-out areas, server entities like the hub's walls, each dressed as a tree
-   * cluster or a rock in the field's look, standing on the server's own rects (§Requirements 52,
-   * 54). Decoration only: never interactive, never a collider. Without the art, placeholder blocks.
+   * The field's keep-out areas, server entities like the hub's walls, drawn in the field's look on
+   * the server's own rects (§Requirements 52, 54): open country stands a tree cluster or a rock on
+   * each; a forest fills each with a tree stand, its trees occluders, and strews its verges
+   * (FS-3QHQZ §Requirements 23, 28). Decoration only: never interactive, never a collider. Without
+   * the art, placeholder blocks.
    */
-  private drawObstacles(walls: readonly WallState[]): void {
+  private drawObstacles(state: ClientGameState): void {
+    const walls = state.walls ?? [];
     if (this.obstaclesDrawn || walls.length === 0) return;
     this.obstaclesDrawn = true;
-    const keepOuts = walls.map((wall) => ({
-      x: wall.position.x,
-      y: wall.position.y,
-      width: wall.width,
-      height: wall.height,
-    }));
-    const pieces = planKeepOutDressing(keepOuts, this.look.dressing, worldSeed("field"));
-    const baked = pieces.filter((piece) => this.art.has(piece.sheet));
+    const keepOuts = walls.map(rectOfWall);
+    const seed = worldSeed("field");
+    const has = (sheet: string) => this.art.has(sheet);
+    const pieces = this.look.stands
+      ? planTreeStands(keepOuts, this.size, this.look.stands, seed).map((tree) => ({
+          ...tree,
+          // before the forest's own trees are baked, the oak and pine stand in for them
+          sheet: standSheet(tree.sheet, has),
+          tall: true,
+        }))
+      : planKeepOutDressing(keepOuts, this.look.dressing, seed);
+    const baked = pieces.filter((piece) => has(piece.sheet));
     for (const piece of baked) {
       const { sprite } = addProp(this, this.art, piece.sheet, piece.at, { index: piece.index });
       if (piece.tall) this.occluders.add([sprite]);
+    }
+    if (this.look.verges) {
+      const statics = forestStatics(state, this.size.width, this.size.height);
+      addDressing(this, this.art, planVerges(this.look.verges, seed, statics));
     }
     if (baked.length > 0) return;
 
@@ -507,7 +535,7 @@ export class FieldScene extends Phaser.Scene {
     let rise = 40;
     const post = this.art.sheet(SIGNPOST);
     if (post) {
-      const { signpost } = planRoadHome(road.position);
+      const { signpost } = planRoadHome(road.position, this.size);
       const { sprite } = addProp(this, this.art, SIGNPOST, signpost);
       this.occluders.add([sprite]);
       at = worldToScreen(signpost.x, signpost.y);

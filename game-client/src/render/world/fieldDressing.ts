@@ -9,7 +9,11 @@
  */
 
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
-import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso/projection";
+import {
+  WORLD_PX_PER_TILE,
+  type Point,
+  type Rect,
+} from "@/render/iso/projection";
 import { tileHash, type Apron } from "./ground";
 
 /** The baked sheets a field dresses its keep-outs with, chosen between by hash. */
@@ -43,7 +47,8 @@ const MAX_ROCKS = 3;
 /** How far in from a keep-out's edge a piece's foot stands, as a share of the side. */
 const INSET = 0.15;
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const clamp = (v: number, lo: number, hi: number) =>
+  Math.min(hi, Math.max(lo, v));
 const pick = <T>(list: readonly T[], h: number): T => list[h % list.length];
 
 /**
@@ -89,23 +94,40 @@ export function planKeepOutDressing(
       const count = clamp(Math.round(area / ROCK_AREA), 1, MAX_ROCKS);
       spread(rect, count, seed + 1).forEach((at, i) => {
         const h = tileHash(Math.round(at.x), Math.round(at.y), seed + 2 + i);
-        pieces.push({ sheet: pick(look.rocks, h), index: h >>> 4, at, tall: false });
+        pieces.push({
+          sheet: pick(look.rocks, h),
+          index: h >>> 4,
+          at,
+          tall: false,
+        });
       });
       continue;
     }
     const count = clamp(Math.round(area / TREE_AREA), 2, MAX_TREES);
     spread(rect, count, seed + 3).forEach((at, i) => {
       const h = tileHash(Math.round(at.x), Math.round(at.y), seed + 4 + i);
-      pieces.push({ sheet: pick(look.trees, h >>> 3), index: h >>> 8, at, tall: true });
+      pieces.push({
+        sheet: pick(look.trees, h >>> 3),
+        index: h >>> 8,
+        at,
+        tall: true,
+      });
     });
     if (look.undergrowth.length > 0) {
       // one bush toward the grove's near corner, where it reads in front of the trunks
       const h = tileHash(Math.round(rect.x), Math.round(rect.y), seed + 5);
       const at = {
         x: rect.x + rect.width * (1 - INSET - ((h & 0xff) / 0xff) * 0.2),
-        y: rect.y + rect.height * (1 - INSET - (((h >>> 8) & 0xff) / 0xff) * 0.2),
+        y:
+          rect.y +
+          rect.height * (1 - INSET - (((h >>> 8) & 0xff) / 0xff) * 0.2),
       };
-      pieces.push({ sheet: pick(look.undergrowth, h >>> 16), index: h >>> 4, at, tall: false });
+      pieces.push({
+        sheet: pick(look.undergrowth, h >>> 16),
+        index: h >>> 4,
+        at,
+        tall: false,
+      });
     }
   }
   return pieces;
@@ -118,12 +140,29 @@ export const ROAD_HALF_WIDTH = T / 2;
 /** How far the road runs on into the field past the gate, and past the edge out of it, fading. */
 const ROAD_IN = 160;
 const ROAD_OUT = 4 * T;
-/** Where the signpost stands from the gate: further in, on the road's north side. */
-const SIGNPOST_FROM_GATE = { x: 90, y: -60 } as const;
+/** Where the signpost stands from the gate: further in, and to one side of the road. */
+const SIGNPOST_IN = 90;
+const SIGNPOST_ASIDE = 60;
+
+/** The map edge a gate stands on: the one nearest it. */
+type GateSide = "west" | "east" | "north" | "south";
+
+function sideOf(
+  gate: Point,
+  size: { width: number; height: number },
+): GateSide {
+  const away: [GateSide, number][] = [
+    ["west", gate.x],
+    ["east", size.width - gate.x],
+    ["north", gate.y],
+    ["south", size.height - gate.y],
+  ];
+  return away.reduce((a, b) => (b[1] < a[1] ? b : a))[0];
+}
 
 /** The road home at a field's entrance gate (FS-X2F2H §Requirements 51, 54). */
 export interface RoadHome {
-  /** Trodden ground, laid as dirt: through the gate and out past the west edge. */
+  /** Trodden ground, laid as dirt: through the gate and out past its edge. */
   paths: Rect[];
   /** The road's own row past the edge, fading; no grass is laid beyond the map. */
   aprons: Apron[];
@@ -132,32 +171,113 @@ export interface RoadHome {
 }
 
 /**
- * The road from the field's west-edge gate back toward the hub: dirt from inside the gate, through
- * it, and off the edge, fading into the land beyond. Only the road runs on past the edge: the map's
- * grass ends on its own clean edge against the horizon. The signpost stands beside the road inside
- * the gate's reach, mirroring the hub's own signpost at the Meadows gate.
+ * The road from the field's entrance gate back toward the hub: dirt from inside the gate, through
+ * it, and off the edge the gate stands on, fading into the land beyond. Only the road runs on past
+ * the edge: the map's ground ends on its own clean edge. The signpost stands beside the road inside
+ * the gate's reach, mirroring the hub's own signpost at the field's gate. Without the field's size
+ * the gate is taken to stand on the west edge, as the Meadows' does.
  */
-export function planRoadHome(gate: Point): RoadHome {
-  return {
-    paths: [
-      {
-        x: -ROAD_OUT,
-        y: gate.y - ROAD_HALF_WIDTH,
-        width: ROAD_OUT + gate.x + ROAD_IN,
-        height: 2 * ROAD_HALF_WIDTH,
-      },
-    ],
-    aprons: [
-      {
-        x: -ROAD_OUT,
-        y: gate.y - ROAD_HALF_WIDTH,
-        width: ROAD_OUT,
-        height: 2 * ROAD_HALF_WIDTH,
-        from: { x: 0, y: gate.y },
-        fade: ROAD_OUT,
-        along: "y",
-      },
-    ],
-    signpost: { x: gate.x + SIGNPOST_FROM_GATE.x, y: gate.y + SIGNPOST_FROM_GATE.y },
-  };
+export function planRoadHome(
+  gate: Point,
+  size: { width: number; height: number } = {
+    width: Infinity,
+    height: Infinity,
+  },
+): RoadHome {
+  const side = sideOf(gate, size);
+  const H = ROAD_HALF_WIDTH;
+  switch (side) {
+    case "east":
+      return {
+        paths: [
+          {
+            x: gate.x - ROAD_IN,
+            y: gate.y - H,
+            width: size.width - gate.x + ROAD_IN + ROAD_OUT,
+            height: 2 * H,
+          },
+        ],
+        aprons: [
+          {
+            x: size.width,
+            y: gate.y - H,
+            width: ROAD_OUT,
+            height: 2 * H,
+            from: { x: size.width, y: gate.y },
+            fade: ROAD_OUT,
+            along: "y",
+          },
+        ],
+        signpost: { x: gate.x - SIGNPOST_IN, y: gate.y - SIGNPOST_ASIDE },
+      };
+    case "north":
+      return {
+        paths: [
+          {
+            x: gate.x - H,
+            y: -ROAD_OUT,
+            width: 2 * H,
+            height: ROAD_OUT + gate.y + ROAD_IN,
+          },
+        ],
+        aprons: [
+          {
+            x: gate.x - H,
+            y: -ROAD_OUT,
+            width: 2 * H,
+            height: ROAD_OUT,
+            from: { x: gate.x, y: 0 },
+            fade: ROAD_OUT,
+            along: "x",
+          },
+        ],
+        signpost: { x: gate.x - SIGNPOST_ASIDE, y: gate.y + SIGNPOST_IN },
+      };
+    case "south":
+      return {
+        paths: [
+          {
+            x: gate.x - H,
+            y: gate.y - ROAD_IN,
+            width: 2 * H,
+            height: size.height - gate.y + ROAD_IN + ROAD_OUT,
+          },
+        ],
+        aprons: [
+          {
+            x: gate.x - H,
+            y: size.height,
+            width: 2 * H,
+            height: ROAD_OUT,
+            from: { x: gate.x, y: size.height },
+            fade: ROAD_OUT,
+            along: "x",
+          },
+        ],
+        signpost: { x: gate.x - SIGNPOST_ASIDE, y: gate.y - SIGNPOST_IN },
+      };
+    default:
+      return {
+        paths: [
+          {
+            x: -ROAD_OUT,
+            y: gate.y - H,
+            width: ROAD_OUT + gate.x + ROAD_IN,
+            height: 2 * H,
+          },
+        ],
+        aprons: [
+          {
+            x: -ROAD_OUT,
+            y: gate.y - H,
+            width: ROAD_OUT,
+            height: 2 * H,
+            from: { x: 0, y: gate.y },
+            fade: ROAD_OUT,
+            along: "y",
+          },
+        ],
+        signpost: { x: gate.x + SIGNPOST_IN, y: gate.y - SIGNPOST_ASIDE },
+      };
+  }
 }

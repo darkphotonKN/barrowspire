@@ -32,7 +32,23 @@ export { footprintHitArea } from "./footprint";
 export { INTERACT_RANGE, StairsSet, type StairsStage } from "./stairs";
 export { DROP_PILE, paintDropPile, type PileBrush } from "./dropPile";
 export { TRAIL_BED_DEPTH, TrailSet, type TrailBrush, type TrailStage } from "./trails";
-export { FIELD_LOOKS, MEADOWS_LOOK, fieldLook, landBeyond, type FieldLook } from "./fieldLook";
+export {
+  FIELD_LOOKS,
+  FOREST_LOOK,
+  MEADOWS_LOOK,
+  fieldLook,
+  landBeyond,
+  type FieldLook,
+} from "./fieldLook";
+export { forestStatics, planVerges, type VergeLean, type VergePiece } from "./forestDressing";
+export {
+  STAND_CELL,
+  TREE_CAP,
+  planTreeStands,
+  standSheet,
+  type StandTree,
+  type TreeStandLook,
+} from "./treeStands";
 export {
   planKeepOutDressing,
   planRoadHome,

@@ -22,6 +22,8 @@ export interface GroundPiece {
   at: Point;
   /** 0..1, for ground fading out past the map's edge (an apron); absent, opaque. */
   alpha?: number;
+  /** A multiply over this tile alone, 0xRRGGBB: a forest's darker litter. Absent, as baked. */
+  shade?: number;
 }
 
 const T = WORLD_PX_PER_TILE;
@@ -35,6 +37,15 @@ export function tileHash(tx: number, ty: number, seed: number): number {
   h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
   return (h ^ (h >>> 16)) >>> 0;
+}
+
+/** A multiply colour eased halfway back to none: each channel halfway to full. */
+function halfway(shade: number): number {
+  const up = (shift: number) => {
+    const v = (shade >> shift) & 0xff;
+    return Math.round(v + (255 - v) / 2) << shift;
+  };
+  return up(16) | up(8) | up(0);
 }
 
 /** The seed each kind of world scatters its ground with. */
@@ -114,6 +125,18 @@ export interface GroundOptions {
   paths?: readonly Rect[];
   /** Ground past the edge (the hub's gates). */
   aprons?: readonly Apron[];
+  /**
+   * Open ground is trodden barrow dirt rather than grass: a forest's trails and clearings
+   * (FS-3QHQZ §Requirements 25). Paths stay dirt; only `litter` grows.
+   */
+  trodden?: boolean;
+  /**
+   * Ground under cover (world rects): a forest's stands, laid as the grass sheet, which the
+   * forest's tint turns to dark leaf litter, blended where it meets the trail.
+   */
+  litter?: readonly Rect[];
+  /** A multiply over the litter alone, 0xRRGGBB, so it lies darker than the trail beside it. */
+  litterShade?: number;
 }
 
 /** How far a tile's own hash pushes its apron fade, either way: a ragged rim, not a line. */
@@ -133,14 +156,22 @@ export function planGround({
   kind,
   paths = [],
   aprons = [],
+  trodden = false,
+  litter = [],
+  litterShade,
 }: GroundOptions): GroundPiece[] {
   const seed = worldSeed(kind);
   const cols = Math.ceil(width / T);
   const rows = Math.ceil(height / T);
-  // a run is barrow dirt; the hub and a field are grass
-  const base: Material = kind === "run" ? "dirt" : "grass";
-  const material = (tx: number, ty: number): Material =>
-    paths.some((p) => within(centreOf(tx, ty), p)) ? "dirt" : base;
+  // a run and a forest's trails are barrow dirt; the hub and an open field are grass
+  const base: Material = kind === "run" || trodden ? "dirt" : "grass";
+  const material = (tx: number, ty: number): Material => {
+    const c = centreOf(tx, ty);
+    if (paths.some((p) => within(c, p))) return "dirt";
+    // a forest runs on past its edge under its trees: the border's litter meets no trail there
+    const offMap = tx < 0 || ty < 0 || tx >= cols || ty >= rows;
+    return litter.some((r) => within(c, r)) || (trodden && offMap) ? "grass" : base;
+  };
 
   const tile = (tx: number, ty: number): GroundPiece => {
     const at = centreOf(tx, ty);
@@ -150,9 +181,14 @@ export function planGround({
       m === "grass"
         ? transitionEdge((dx, dy) => material(tx + dx, ty + dy) === "dirt")
         : undefined;
-    return edge
+    const piece: GroundPiece = edge
       ? { sheet: "ground_grass_dirt", animation: edge, index: 0, at }
       : { sheet: `ground_${m}`, animation: "variants", index, at };
+    // under a forest's trees the grass is litter, shaded down from the trail; where it meets the
+    // trail, half shaded, so the blend tile's dirt does not step down from the dirt beside it
+    if (trodden && m === "grass" && litterShade !== undefined)
+      piece.shade = edge ? halfway(litterShade) : litterShade;
+    return piece;
   };
 
   const tiles: GroundPiece[] = [];
@@ -366,6 +402,10 @@ export interface GroundLook {
    * FS-X2F2H §Requirements 54). Absent, none.
    */
   lift?: number;
+  /** Open ground is trodden barrow dirt, grass only under cover (a forest, FS-3QHQZ §Requirements 25). */
+  trodden?: boolean;
+  /** A multiply over that covered grass alone, so the litter lies darker than the trail. */
+  litterShade?: number;
 }
 
 /** The outdoor ground, as runs and the hub have always had it. */
@@ -399,7 +439,7 @@ export function planGroundLayer({
   return [
     ...(look.hall
       ? planHalls(world.width, world.height, look.hall, seed, look.patches)
-      : planGround(world)),
+      : planGround({ ...world, trodden: look.trodden, litterShade: look.litterShade })),
     ...(look.decals ? planDecals({ ...world, houses }) : []),
     ...planFloors(houses, seed, look.floor),
   ];

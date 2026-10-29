@@ -166,6 +166,14 @@ export const TOWER_AMBIENT = mix(
 );
 
 /**
+ * The Forlorn Forest's ambient (FS-3QHQZ §Requirements 26): "a little gloomy but not so dark". An
+ * overcast grey-green between the hub's dusk and a run's barrow cold, dimmer than the first and
+ * lighter than the second. Fixed for the field like every ambient, and never lifted for
+ * readability: field markers carry their outline.
+ */
+export const FOREST_AMBIENT = mix(BARROW_HEX.vellumDark, BARROW_HEX.necrotic, 0.3);
+
+/**
  * A baked sheet's mean under a sprite tint: the GPU multiplies each texel by the tint, so the
  * tinted sheet's mean is its mean multiplied by the tint (a field's recoloured ground, FS-X2F2H
  * §Requirements 54). Rounded to whole channels, as a mean is measured.

@@ -71,6 +71,8 @@ export class GroundLayer {
       height: number;
       kind: WorldKind;
       paths?: readonly Rect[];
+      /** Ground under a forest's stands, laid as leaf litter (FS-3QHQZ §Requirements 25). */
+      litter?: readonly Rect[];
       /** Ground past the edge (FS-0XMCP R18), within `margin`'s reach of the map. */
       aprons?: readonly Apron[];
       /** Screen px of ground painted past the projected map; absent, GROUND_MARGIN. */
@@ -151,6 +153,7 @@ export class GroundLayer {
         Math.round(s.x - sheet.anchor.x * sheet.frameWidth - this.origin.x),
         Math.round(s.y - sheet.anchor.y * sheet.frameHeight - this.origin.y),
         p.alpha ?? 1,
+        p.shade,
       );
     }
   }
@@ -224,14 +227,15 @@ export interface BuiltDressing {
 }
 
 /**
- * Run dressing as baked props, each sorted by its footprint. Decoration only: the sprites are
+ * Run dressing (and a forest's verges, FS-3QHQZ §Requirements 28) as baked props, each sorted by
+ * its footprint. Decoration only: the sprites are
  * never made interactive and never join a physics group or collider. A piece whose sheet is
  * missing is skipped (§B.8), and with no manifest at all there is no dressing.
  */
 export function addDressing(
   scene: Phaser.Scene,
   art: ArtLibrary,
-  pieces: readonly DressingPiece[],
+  pieces: readonly (Omit<DressingPiece, "sheet"> & { sheet: string })[],
 ): BuiltDressing {
   const built: BuiltDressing = { sprites: [], tall: [], lights: [] };
   if (!art.available) return built;
