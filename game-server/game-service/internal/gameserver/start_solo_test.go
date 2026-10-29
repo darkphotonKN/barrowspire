@@ -126,7 +126,7 @@ func (s *startSoloEmitterSpy) published() []*types.RawMatchState {
 func startSoloServer(t *testing.T, queue *startSoloQueue, emitter game.EventEmitter) (*Server, *game.Session) {
 	t.Helper()
 
-	server := NewServer(context.Background(), &MockAuthClient{}, queue, emitter, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, queue, emitter, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, ok := server.HubSession()
 	require.True(t, ok, "the server builds a hub at startup")
 
@@ -321,6 +321,7 @@ func TestStartSolo_CreatesARunOfOne(t *testing.T) {
 	require.True(t, hub.HasPlayer(wren.ID))
 	worldsBefore := startSoloSessionCount(server)
 
+	walkToSpireGate(t, server, wrenConn, wren.ID)
 	startSoloSend(server, wrenConn)
 
 	run := startSoloAwaitRun(t, server, wrenInbox)
@@ -406,6 +407,7 @@ func TestStartSolo_RefusedWhileQueued(t *testing.T) {
 	require.True(t, queue.holds(wren))
 	worldsBefore := startSoloSessionCount(server)
 
+	walkToSpireGate(t, server, wrenConn, wren.ID)
 	startSoloSend(server, wrenConn)
 
 	startSoloAssertRefused(t, wrenInbox, startSoloQueuedCopy)
@@ -460,6 +462,7 @@ func TestStartSolo_UnreadableQueueDoesNotBlock(t *testing.T) {
 	wren, wrenConn, wrenInbox := startSoloEnter(t, server, "Wren")
 	worldsBefore := startSoloSessionCount(server)
 
+	walkToSpireGate(t, server, wrenConn, wren.ID)
 	startSoloSend(server, wrenConn)
 
 	run := startSoloAwaitRun(t, server, wrenInbox)
@@ -481,6 +484,7 @@ func TestSoloRun_EndsWhenTheDelverDies(t *testing.T) {
 	server, hub := startSoloServer(t, queue, spy)
 	wren, wrenConn, wrenInbox := startSoloEnter(t, server, "Wren")
 
+	walkToSpireGate(t, server, wrenConn, wren.ID)
 	startSoloSend(server, wrenConn)
 	run := startSoloAwaitRun(t, server, wrenInbox)
 	require.Empty(t, spy.published(), "the run has not ended before anyone resolved")

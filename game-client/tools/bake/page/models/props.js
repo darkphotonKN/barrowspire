@@ -1,5 +1,5 @@
 // Furniture and fixtures: lamp post, brazier, table, chairs, barrels. Scales follow the spike:
-// a delver stands about 1.6 tiles tall, so furniture is modelled at life size and scaled 1.5.
+// a player stands about 1.6 tiles tall, so furniture is modelled at life size and scaled 1.5.
 
 import * as THREE from "three";
 import { rng } from "../noise.js";

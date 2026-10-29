@@ -4,7 +4,8 @@
  *
  * Markers draw above the light-map and the vignette, so darkness never dims them, and each keeps
  * at least 3:1 contrast against the darkest lit ground at the canvas edge. They carry readability
- * so the world itself may stay dark; ambient is never lifted for it.
+ * so the world itself may stay dark; ambient is never lifted for it. In a daylit field world the
+ * ground may be bright instead, and every marker there wears {@link FIELD_MARKER_OUTLINE}.
  *
  * Phaser-free: depths, inks and placement, tested without a canvas. Scenes draw them.
  */
@@ -28,8 +29,20 @@ export const MARKER_INKS = {
   "function NPC name": palette.markerFunction,
   "monster name": palette.markerHostile,
   "elite prefix": palette.markerElite,
+  "gate name": palette.markerGate,
   "HP fill": palette.markerHp,
   "MP fill": palette.markerMp,
+} as const;
+
+/**
+ * The outline every marker wears in a field world (FS-X2F2H §Requirements 54, guideline "Daylit
+ * fields keep the floor"): a dark stroke between ink and ground, so each ink keeps 3:1 against its
+ * own outline however bright the field's daylight. Field worlds only: the hub's and a run's
+ * markers are drawn as they always were.
+ */
+export const FIELD_MARKER_OUTLINE = {
+  color: palette.markerStroke,
+  thickness: 3,
 } as const;
 
 /** The HP bar's parts. */

@@ -140,6 +140,18 @@ func CreateDropPileEntity(em *ecs.EntityManager, x, y float64, itemIDs []uuid.UU
 	return entity
 }
 
+// CreateFieldDropPileEntity places a field's drop pile: a run's drop pile,
+// reserved for the killer from the moment it lands (uuid.Nil: for nobody).
+// The field's tick ages it, ends the reservation and removes it.
+// FS-X2F2H §Requirements 33–35.
+func CreateFieldDropPileEntity(em *ecs.EntityManager, x, y float64, itemIDs []uuid.UUID, killer uuid.UUID) *ecs.Entity {
+	entity := CreateDropPileEntity(em, x, y, itemIDs)
+	if cc, ok := entity.GetComponent(ecs.ComponentTypeContainer); ok {
+		cc.(*components.ContainerComponent).ReservedFor = killer
+	}
+	return entity
+}
+
 type WallConfig struct {
 	X, Y, Width, Height float64
 }
@@ -254,6 +266,36 @@ func CreateFunctionNPCEntity(em *ecs.EntityManager, npc hubNPC) *ecs.Entity {
 	return entity
 }
 
+// CreateGateEntity places a hub gate.
+//
+// It never moves and is nobody: no velocity and no NPC component, only where it
+// goes, where it stands and how close counts. FS-0XMCP §Requirements 5.
+func CreateGateEntity(em *ecs.EntityManager, gate hubGate) *ecs.Entity {
+	// a copy, so no two worlds share the map data's arrival point
+	var arrival *components.GateArrival
+	if gate.Arrival != nil {
+		at := *gate.Arrival
+		arrival = &at
+	}
+
+	entity := em.CreateEntity()
+	entity.AddComponent(components.NewGateComponent(gate.Destination, arrival))
+	entity.AddComponent(components.NewTransformComponent(gate.X, gate.Y))
+	entity.AddComponent(components.NewInteractableComponent(commonconstants.GateRange))
+	return entity
+}
+
+// CreateFieldEntranceEntity places a field's entrance gate: the road back to
+// the hub, a gate like the hub's, with the place's own range and no arrival
+// point (the arrival is the place's). FS-X2F2H §Requirements 3, 14.
+func CreateFieldEntranceEntity(em *ecs.EntityManager, x, y, gateRange float64) *ecs.Entity {
+	entity := em.CreateEntity()
+	entity.AddComponent(components.NewGateComponent(components.GateDestinationHub, nil))
+	entity.AddComponent(components.NewTransformComponent(x, y))
+	entity.AddComponent(components.NewInteractableComponent(gateRange))
+	return entity
+}
+
 // CreateResidentEntity places an ambient NPC who wanders their quarter.
 //
 // They carry a velocity, unlike a function NPC, because WanderSystem steers them
@@ -289,6 +331,9 @@ type MonsterConfig struct {
 	// archetype's own name.
 	Name string
 	X, Y float64
+	// StatFactor scales a field monster's level stats before any promotion
+	// (FS-X2F2H §Requirements 29); 0 is a Spire monster's own, unscaled.
+	StatFactor float64
 }
 
 // CreateMonsterEntity spawns a monster from its archetype's sheet at its level.
@@ -302,6 +347,9 @@ type MonsterConfig struct {
 func CreateMonsterEntity(em *ecs.EntityManager, config MonsterConfig) *ecs.Entity {
 	sheet := monsterSheets[config.Archetype]
 	stats := sheet.statsAt(config.Level)
+	if config.StatFactor > 0 {
+		stats = stats.scaled(config.StatFactor)
+	}
 	if config.Elite {
 		stats = stats.elite()
 	}

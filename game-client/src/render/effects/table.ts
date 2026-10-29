@@ -417,7 +417,7 @@ export const EFFECTS = {
   },
 
   // ── World indicators (§H) ───────────────────────────────────────────────
-  /** A soft amber ground glow that breathes slowly and shallowly. Amber: the delver can act. */
+  /** A soft amber ground glow that breathes slowly and shallowly. Amber: the player can act. */
   entranceBreath: {
     timing: { kind: "loop", periodMs: 2400 },
     ease: "Sine.easeInOut",

@@ -25,7 +25,7 @@ func monsterCount(world *game.Session) int {
 // party and kept clear of where it stands; the hub never holds one, before the
 // run or after everyone comes home. FS-77AB6 §Requirements 22.
 func TestCreateGameSession_PopulatesTheRunAndNeverTheHub(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	wren, _ := enterHub(t, server, "Wren")

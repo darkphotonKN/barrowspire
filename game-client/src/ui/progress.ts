@@ -46,7 +46,7 @@ export function levelLabel(
 }
 
 /**
- * A delver's progress from the world state, or null while the server sends no level (a world
+ * A player's progress from the world state, or null while the server sends no level (a world
  * that does not carry progress yet draws no bar rather than a wrong one).
  */
 export function progressOf(

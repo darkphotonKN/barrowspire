@@ -1,6 +1,6 @@
 import { createStore, type StoreApi } from "zustand";
 import { ClassKey } from "@/data/classLore";
-import { WorldType } from "@/assets/types/client";
+import { WorldType, type FieldId } from "@/assets/types/client";
 import { apiClient } from "@/utils/api";
 import { ApiError } from "@/utils/apiError";
 import {
@@ -35,6 +35,8 @@ interface GameState {
   /** The world the player is currently in, or null before entering one. */
   sessionId: string | null;
   worldType: WorldType | null;
+  /** Which field, while the world is a field; null otherwise (FS-X2F2H §Requirements 55). */
+  fieldId: FieldId | null;
 
   /** The member's live characters, oldest first, from the server. */
   characters: Character[];
@@ -44,8 +46,8 @@ interface GameState {
   /** Notices from the last load (a local character whose name was taken), not yet shown. */
   rosterNotices: string[];
 
-  /** Set together: the world's id is meaningless without knowing its kind. */
-  setWorld: (id: string, worldType: WorldType) => void;
+  /** Set together: the world's id is meaningless without knowing its kind (and a field's id). */
+  setWorld: (id: string, worldType: WorldType, fieldId?: FieldId) => void;
   /** Reads the roster from the server, importing any local-only characters first (req 40). */
   loadCharacters: () => Promise<void>;
   selectCharacter: (id: string) => void;
@@ -91,12 +93,18 @@ export function createGameStore({
     return {
       sessionId: null,
       worldType: null,
+      fieldId: null,
       characters: [],
       activeCharacterId: null,
       rosterStatus: "idle",
       rosterNotices: [],
 
-      setWorld: (id, worldType) => set({ sessionId: id, worldType }),
+      setWorld: (id, worldType, fieldId) =>
+        set({
+          sessionId: id,
+          worldType,
+          fieldId: worldType === "field" ? (fieldId ?? null) : null,
+        }),
 
       loadCharacters: () => {
         loading ??= load().finally(() => {

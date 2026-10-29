@@ -47,7 +47,7 @@ describe("bidBox", () => {
     submitting: false,
   };
 
-  it("should allow a bid at the minimum the delver can afford", () => {
+  it("should allow a bid at the minimum the player can afford", () => {
     expect(bidBox(ready)).toEqual({ canSubmit: true, amount: 50 });
   });
 

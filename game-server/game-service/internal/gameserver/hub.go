@@ -54,6 +54,9 @@ type SessionManager interface {
 	GetMatchedChan(ctx context.Context) chan matchmaker.MatchStart
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
 	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
+	AtSpireGate(playerID uuid.UUID) bool
+	EnterField(ctx context.Context, conn *websocket.Conn, fieldID string) (*game.Session, error)
+	LeaveField(ctx context.Context, player *types.Player) (*game.Session, error)
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
@@ -90,6 +93,11 @@ const (
 	startSoloNoCharacter = "Enter the hub with a character first."
 	startSoloQueued      = "Leave the queue first."
 )
+
+// awayFromSpireGate refuses find_game and start_solo from anyone not standing
+// at the Spire's door: the Spire is entered there, not from across the hub.
+// FS-0XMCP §Requirements 12.
+const awayFromSpireGate = "Walk to the Spire's door first."
 
 // leaveRunRefusal is what a refused leave_run says, by why the run would not
 // let the member go. FS-QPDKN §Requirements 14.
@@ -188,14 +196,54 @@ func (h *messageHub) enterHub(clientPackage types.ClientPackage) {
 
 // worldEnteredMessage tells a client which world it is now in. Every transition
 // uses this one message, so the client has a single place to switch scenes.
-// FS-29KSH §Requirements 15.
+// FS-29KSH §Requirements 15. A field's also names the field, so the client
+// picks its look without inferring it; hub and run messages are unchanged
+// (FS-X2F2H §Requirements 2).
 func worldEnteredMessage(session *game.Session) types.Message {
+	payload := map[string]interface{}{
+		"session_id": session.ID.String(),
+		"world_type": string(session.WorldType()),
+	}
+	if session.WorldType() == types.WorldTypeField {
+		payload["field"] = string(session.FieldID())
+	}
+
 	return types.Message{
-		Action: string(constants.ActionWorldEntered),
-		Payload: map[string]interface{}{
-			"session_id": session.ID.String(),
-			"world_type": string(session.WorldType()),
-		},
+		Action:  string(constants.ActionWorldEntered),
+		Payload: payload,
+	}
+}
+
+// refuseField answers a refused field action with its words and the stable
+// reason the client switches on. FS-X2F2H §Requirements 10, 14, 60.
+func (h *messageHub) refuseField(conn *websocket.Conn, action string, err error) {
+	reason, why := fieldRefusal(err)
+	if sendErr := h.sender.SendMessageToConn(conn, types.Message{
+		Action:  action,
+		Payload: map[string]interface{}{"message": why, "reason": reason},
+		Error:   &why,
+	}); sendErr != nil {
+		slog.Warn("Could not deliver a field refusal", "action", action, "error", sendErr)
+	}
+}
+
+// enterField walks a hub member into a field. It runs off the message hub's
+// loop: it waits on the queue and on items-service. FS-X2F2H §Requirements 9–13.
+func (h *messageHub) enterField(clientPackage types.ClientPackage) {
+	ctx, cancel := context.WithTimeout(context.Background(), fieldReadTimeout)
+	defer cancel()
+
+	fieldID, _ := clientPackage.Message.Payload["field"].(string)
+
+	field, err := h.sessionManager.EnterField(ctx, clientPackage.Conn, fieldID)
+	if err != nil {
+		slog.Warn("Refusing enter_field", "field", fieldID, "error", err)
+		h.refuseField(clientPackage.Conn, clientPackage.Message.Action, err)
+		return
+	}
+
+	if err := h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(field)); err != nil {
+		slog.Warn("Could not tell a player they are in the field", "error", err)
 	}
 }
 
@@ -322,6 +370,14 @@ func (h *messageHub) Run(ctx context.Context) {
 					continue
 				}
 
+				// the Spire is entered at its door; the queue below is untouched.
+				// FS-0XMCP §Requirements 12, 14.
+				if !h.sessionManager.AtSpireGate(player.ID) {
+					slog.Debug("Refusing find_game: not at the Spire gate", "player_id", player.ID)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, awayFromSpireGate)
+					continue
+				}
+
 				// -- queue up player --
 				err = h.sessionManager.AddPlayer(player)
 				if err != nil {
@@ -381,6 +437,13 @@ func (h *messageHub) Run(ctx context.Context) {
 					continue
 				}
 
+				// FS-0XMCP §Requirements 12
+				if !h.sessionManager.AtSpireGate(player.ID) {
+					slog.Debug("Refusing start_solo: not at the Spire gate", "player_id", player.ID)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, awayFromSpireGate)
+					continue
+				}
+
 				// a queued member's character belongs to the queue entry until they
 				// leave it (FS-K2HKP R7a); an unreadable queue is not a queue they
 				// are in, as enter_hub already treats it
@@ -423,6 +486,33 @@ func (h *messageHub) Run(ctx context.Context) {
 				slog.Info("Delver left the run early", "player_id", player.ID)
 				if err := h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(hub)); err != nil {
 					slog.Warn("Could not tell the leaver they are home", "player_id", player.ID, "error", err)
+				}
+
+			// A hub member at a field gate walking into this pod's channel of
+			// the field; off the loop, since it reads the queue and the loadout.
+			// FS-X2F2H §Requirements 9–13.
+			case constants.ActionEnterField:
+				go h.enterField(clientPackage)
+
+			// A player at a field's entrance walking home to the hub, beside
+			// leave_run. FS-X2F2H §Requirements 14–16.
+			case constants.ActionLeaveField:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("leave_field from a connection with no player")
+					continue
+				}
+
+				hub, err := h.sessionManager.LeaveField(ctx, player)
+				if err != nil {
+					slog.Warn("Refusing leave_field", "player_id", player.ID, "error", err)
+					h.refuseField(clientPackage.Conn, clientPackage.Message.Action, err)
+					continue
+				}
+
+				slog.Info("Walked home from a field", "player_id", player.ID)
+				if err := h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(hub)); err != nil {
+					slog.Warn("Could not tell a player they are home", "player_id", player.ID, "error", err)
 				}
 
 			// A delver in play dying where they stand: health to zero, and the

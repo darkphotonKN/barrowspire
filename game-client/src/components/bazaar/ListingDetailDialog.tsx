@@ -234,7 +234,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * The bid box (req 26, 29): pre-filled with the minimum, the delver's available gold beside it,
+ * The bid box (req 26, 29): pre-filled with the minimum, the player's available gold beside it,
  * one Idempotency-Key per bid reused on a retry of the same amount (the steps are
  * {@link submitBid}). A bid in flight when the countdown reaches zero still shows its answer.
  */
@@ -268,7 +268,7 @@ function BidBox({
     void loadPurse();
   }, [loadPurse]);
 
-  // Until the delver types, the box follows the minimum as fresh reads arrive.
+  // Until the player types, the box follows the minimum as fresh reads arrive.
   useEffect(() => {
     if (!touched.current) setText(String(listing.minimumBid));
   }, [listing.minimumBid]);

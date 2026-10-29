@@ -25,17 +25,31 @@ translation belongs to the surface that renders words.
 
 ## Terms
 
-- **Delver** — the presentation name for a human who plays Barrowspire. Scope is deliberately
-  wide: a delver is a delver in the hub, inside a run, and on the leaderboard, whether or not
-  they have ever descended. Maps to `Member` (REST/auth) and `player` (WS). Replaces **operator**
-  everywhere it appears — that word is sci-fi residue from the pre-fork game and is being removed
-  by FS-SWMNW/FS-W6BP1, not kept as a synonym.
+- **Player** — a human who plays Barrowspire, on screen and in code alike, so it needs no
+  translation (like **Gold**). Scope is deliberately wide: a player is a player in the hub,
+  inside a run, and on the leaderboard, whether or not they have ever entered one. Maps to
+  `Member` (REST/auth) and `player` (WS). Not a **character**: a player owns characters and
+  brings one into a world at a time; the figure on the canvas is the character, the person
+  behind it is the player. Replaces **delver** (retired 2026-10-29: it tied the person to one
+  kind of place, the Spire, when runs may lead elsewhere) and **operator** (sci-fi residue,
+  removed by FS-SWMNW/FS-W6BP1). Neither is kept as a synonym. "Delver" survives only as a
+  **rank** title on the profile (member status 1, beside "Warden"): a rank is a title a player
+  holds, not the word for the player.
 - **Delve** — both the act of entering a run (*"Delve"*, the primary CTA, replacing "Play") and
   the run itself (*"your last delve"*). The player-facing name for what
   [`SPECIFICATION.md`](SPECIFICATION.md) calls an **escape run** and the WS protocol calls a
   **game** / **session**. All three name one thing at different layers; none of them is wrong in
-  its own layer.
-- **The Spire** — the place delvers descend into. The antagonist-realm and the source of relics.
+  its own layer. The Spire's own word: a visit to a field world is not a delve.
+- **Field world** — a shared, always-open place outside the Spire where players farm XP and
+  plunder with nothing at risk: no queue, and death costs nothing (FS-X2F2H). Two are scoped:
+  - **Gentle Meadows** — east of the hub: cozy greens, sparse trees, a horizon; low-level animals.
+  - **Forlorn Forest** — west of the hub: a gloomy branching trail; zombies, and rarely a ghost
+    (FS-3QHQZ).
+- **Gate** — a place in the hub a player walks into to go somewhere (FS-0XMCP). The **Spire
+  gate** (north, the tower's entrance) opens the gather / go-alone panel; a **field gate** (west
+  trail to the Forlorn Forest, east road to Gentle Meadows) takes the player into that field. Once
+  FS-0XMCP ships, the Warden no longer opens the queue: he only tells the story.
+- **The Spire** — the place players descend into. The antagonist-realm and the source of relics.
   Note the article: *the* Spire, never bare "Spire".
 - **Barrowspire** — the product. The world entire, not a location within it. Never used as a
   synonym for the Spire.
@@ -43,7 +57,7 @@ translation belongs to the surface that renders words.
   (*barrow-deep*, *barrow earth*, the *barrow ramp* palette) rather than as a standalone noun for
   a place.
 - **Lich Lord** — the ruling antagonist of the Spire. Named sparingly; dread over exposition.
-- **Relic** / **plunder** — what a delver carries out. `items` on the wire, item cards in the
+- **Relic** / **plunder** — what a player carries out. `items` on the wire, item cards in the
   marketplace.
 - **Gold** — the in-game currency, in copy and in code alike (wallet-service and ledger-service
   both use it). One of the few words that needs no translation.
@@ -75,8 +89,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   two measured values: a ground sheet's mean colour and a standing sheet's head height (`crown`).
   The client learns about art only through it.
 - **Light source**: a point that lights the light-map (torch, brazier, window, lantern, the
-  delver's torch pool). It is declared per prop type in the sprite manifest, or attached to the
-  delver. Purely visual: it has no effect on what anyone can see or hit.
+  player's torch pool). It is declared per prop type in the sprite manifest, or attached to the
+  player. Purely visual: it has no effect on what anyone can see or hit.
 - **Light-map**: the camera-fixed layer that multiplies the lit world: filled each frame with the
   world's **ambient** (fixed per world type), plus an additive pool per light source in view.
   Built once and restamped, never rebuilt (`src/render/lighting/`).
@@ -84,11 +98,15 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   eyes. Markers draw above the light-map and vignette and carry the readability floor, so the
   world may stay dark (`src/render/markers/`). A marker is not the thing it marks: a corpse shows
   none.
+- **Field marker outline**: the dark outline every marker wears in a field world
+  (`FIELD_MARKER_OUTLINE`), so it keeps the 3:1 readability floor on bright, daylit ground. It is
+  why a field's daylight need not be capped for the floor. Runs and the hub draw markers without
+  it.
 - **Wall piece**: one tile of a server wall as drawn. A server wall rect is cut into wall pieces
   along its centreline, each sorted by its own footprint, with a **post** at each end. "Back"
   pieces stand full height (north and west sides); "front" pieces are the low cut-away.
 - **Occluder**: a tall drawn thing (tree, lamp post, back wall piece, roof piece, door, arch) that
-  fades while its sprite overlaps the delver's and its footprint sorts nearer the viewer.
+  fades while its sprite overlaps the player's and its footprint sorts nearer the viewer.
 - **Dressing**: a decorative prop placed by the client (a cart, stall, trough, signpost, lamp post,
   chimney smoke in the hub; rubble, bone piles, broken crates, roots, chains, braziers in a run,
   called **run dressing**). It is never interactable, never blocks movement, and never stands
@@ -97,13 +115,26 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   thresholds, stairs, chest, escape door, switch, map edge; FS-8RBQY §C.5) rather than
   hand-copied. The server knows nothing of it. A prop that would need collision or a click is not
   dressing.
-- **World kind**: which world the server put the delver in, `"hub" | "run"` (`WorldKind`,
-  mirroring `world_type` on the wire). Server-decided. Not the same as a world theme.
+- **World kind**: which world the server put the player in, `"hub" | "run"` (`WorldKind`,
+  mirroring `world_type` on the wire). Server-decided. Not the same as a world theme. Gains
+  `"field"` with FS-X2F2H.
 - **World theme**: how the client draws a run: `"exterior" | "tower"` (FS-8RBQY §A). It picks the
   ground plan, wall-piece sheets, roofs and indoor mask on or off, ambient, perimeter wall and run
   dressing. A client constant, never on the wire, never a game rule. Always say *world* theme:
   bare "theme" in this client means the design-token theme (`src/utils/theme.ts`, `BARROW`,
   `docs/theming_plan.md`), which every world theme draws its colours from.
+- **Field look**: how the client draws a field world, keyed by field id (`FieldLook`,
+  `FIELD_LOOKS` in `src/render/world/fieldLook.ts`; FS-X2F2H, FS-3QHQZ). The field counterpart of
+  a world theme: it picks the ground, the fixed daylight, the horizon, and what stands on the
+  server's walls, either **dressing** (the Meadows' groves and rocks) or **tree stands** (the
+  Forlorn Forest), plus optional verges and mist. A client constant, never on the wire. A field
+  with no entry is drawn as the Meadows. Not a world theme: a field never has a world theme.
+- **Tree stand**: a server wall as the forest's field look draws it: trees planted across the
+  wall's footprint, about one per cell, each pick hashed from the cell and the world seed so
+  every client plants the same forest (FS-3QHQZ §Requirements 23–24). It is a server wall, with
+  collision, so it is **not dressing**: what the player sees blocking the trail is exactly what
+  the server collides against. Trees on its north- and west-facing edge are always bare, so no
+  crown hides the trail.
 - **Exterior theme**: the run look as it shipped before FS-8RBQY: barrow-dirt ground with tufts
   and pebbles, flagstone house floors, timber-frame walls, roofs, the enter-a-house indoor mask.
   Kept for a future outdoor place. Not "grass": grass is the hub's ground.
@@ -130,9 +161,10 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 
 | Screen says | REST / auth | WS protocol | SPECIFICATION.md |
 |---|---|---|---|
-| delver | `Member`, `member_id` | `player`, `player_id`, `current_player` | "player" |
+| player | `Member`, `member_id` | `player`, `player_id`, `current_player` | "player" |
 | a delve | — | `game`, `session_id`, `find_game`, `end_game` | "escape run" |
 | the Spire | — | the instance world | "escape run" (the instance) |
+| Gentle Meadows, the Forlorn Forest | — | `world_type` `field` | "field world" |
 | relic, plunder | `/api/items/*` | `items[]` | "loadout", "items" |
 
 ## Voice rules that ride on the vocabulary
@@ -141,11 +173,19 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Money clarity overrides lore.** Real-money and subscription flows use unambiguous verbs —
   "Subscribe", "Pay", the actual price. Never hide a paid action behind flavor. Reserve
   "Acquire" / "Claim" for in-game-gold purchases. (Design guideline, Part II, Voice & tone.)
-- **No lore in error messages that must be acted on.** A delver who cannot log in needs to know
+- **No lore in error messages that must be acted on.** A player who cannot log in needs to know
   why, not that the gates are barred.
 
 ## Open
 
+- ~~**Delve** and **the Spire** assume every run leads into the Spire.~~ Resolved 2026-10-29
+  (FS-X2F2H): "delve" stays the Spire's own word. The places elsewhere are **field worlds**, not
+  runs, and a field visit is not a delve.
+- ~~**World theme** names only how a run is drawn. Whether each field world gets its own world
+  theme (the forest on the exterior theme's ground family) or a separate term is decided at
+  write-a-spec for FS-X2F2H / FS-3QHQZ.~~ Resolved 2026-10-30 (FS-3QHQZ amendment): a separate
+  term. A field is drawn by its **field look**, keyed by field id; **world theme** stays "how the
+  client draws a run".
 - The **HUB** world (refactor plan) has no lore name yet — "hub" is an engineering word. It needs
   one before the HUB client ships, and the answer is not obvious: the settlement above the Spire,
   the camp, the hall. Deliberately unresolved rather than guessed.

@@ -47,7 +47,7 @@ export const LEGACY_ACTIVE_SLOT_KEY = "barrowspire_active_slot";
 export interface Roster {
   characters: Character[];
   activeId: string | null;
-  /** Things the delver must be told, e.g. a local character whose name was taken. */
+  /** Things the player must be told, e.g. a local character whose name was taken. */
   notices: string[];
 }
 
@@ -170,7 +170,7 @@ function writeLegacySlots(
 }
 
 const nameTakenOnImport = (name: string) =>
-  `Another delver already bears the name ${name}. Raise them anew under another.`;
+  `Another player already bears the name ${name}. Raise them anew under another.`;
 
 const refusedOnImport = (name: string) =>
   `The ledger would not take ${name}. Raise them anew.`;

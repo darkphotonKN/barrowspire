@@ -49,7 +49,7 @@ func TestSerializeBackendState_CarriesNPCs(t *testing.T) {
 	em := ecs.NewEntityManager()
 
 	npc := em.CreateEntity()
-	npc.AddComponent(components.NewNPCComponent("Spirewarden", components.NPCFunctionDelve))
+	npc.AddComponent(components.NewNPCComponent("Spirewarden", components.NPCFunctionStoryteller))
 	npc.AddComponent(components.NewTransformComponent(300, 400))
 
 	s := NewStateSerializer(em)
@@ -63,7 +63,7 @@ func TestSerializeBackendState_CarriesNPCs(t *testing.T) {
 
 	require.Len(t, clientState.NPCs, 1)
 	assert.Equal(t, "Spirewarden", clientState.NPCs[0].Name)
-	assert.Equal(t, string(components.NPCFunctionDelve), clientState.NPCs[0].Function)
+	assert.Equal(t, "storyteller", clientState.NPCs[0].Function)
 	assert.Equal(t, 300.0, clientState.NPCs[0].Position.X)
 	assert.Equal(t, 400.0, clientState.NPCs[0].Position.Y)
 }

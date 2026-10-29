@@ -51,13 +51,13 @@ describe("withdrawOffered", () => {
 });
 
 describe("withdrawConfirmText", () => {
-  it("should warn a leading delver that the next highest bid takes the lead", () => {
+  it("should warn a leading player that the next highest bid takes the lead", () => {
     expect(withdrawConfirmText({ status: "WINNING", amount: 1200 })).toBe(
       "Withdraw your bid of 1,200 gold? The next highest bid takes the lead.",
     );
   });
 
-  it("should tell an outbid delver their gold is returned", () => {
+  it("should tell an outbid player their gold is returned", () => {
     expect(withdrawConfirmText({ status: "outbid", amount: 75 })).toBe(
       "Withdraw your bid of 75 gold? Your gold is returned.",
     );

@@ -69,7 +69,7 @@ func runExpecting(server *Server, memberID uuid.UUID) *game.Session {
 // middleware passes the empty value on.
 func TestHandleWebSocketConnection_NoSessionID_ConnectsAsBefore(t *testing.T) {
 	authClient := &oneMemberAuth{memberID: uuid.New()}
-	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	route := newConnectRoute(t, server, authClient)
 
 	route.connect(t, "token")
@@ -150,7 +150,7 @@ func TestHandleWebSocketConnection_HandoffRefusals(t *testing.T) {
 			if tt.items != nil {
 				items = tt.items
 			}
-			server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, items, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+			server := newTestServer(t, context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, items, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 			route := newConnectRoute(t, server, authClient)
 
 			conn := route.dialHandoff(t, "token", tt.sessionID(t, server, authClient.memberID))
@@ -172,7 +172,7 @@ func TestHandleWebSocketConnection_HandoffRefusals(t *testing.T) {
 // record the refused connect itself created is forgotten.
 func TestHandleWebSocketConnection_HandoffRefusal_KeepsAnExistingRecord(t *testing.T) {
 	authClient := &oneMemberAuth{memberID: uuid.New()}
-	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	route := newConnectRoute(t, server, authClient)
 
 	route.connect(t, "token")
@@ -192,7 +192,7 @@ func TestHandleWebSocketConnection_HandoffRefusal_KeepsAnExistingRecord(t *testi
 // §Requirements 22.
 func TestEnterHandedOffRun_RecordsTheRunAndAnnouncesItFirst(t *testing.T) {
 	authClient := &oneMemberAuth{memberID: uuid.New()}
-	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	run := runExpecting(server, authClient.memberID)
 
 	player, _ := server.connectPlayer(authClient.memberID, "arrival", "token")
@@ -216,7 +216,7 @@ func TestEnterHandedOffRun_RecordsTheRunAndAnnouncesItFirst(t *testing.T) {
 func TestHandleWebSocketConnection_HandoffArrival_IsSeatedAndServed(t *testing.T) {
 	authClient := &oneMemberAuth{memberID: uuid.New()}
 	items := &loadoutAuthRecorder{}
-	server := NewServer(context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, items, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, items, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	route := newConnectRoute(t, server, authClient)
 	run := runExpecting(server, authClient.memberID)
 

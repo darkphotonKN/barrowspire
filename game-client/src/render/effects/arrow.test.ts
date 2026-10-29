@@ -44,7 +44,7 @@ describe("archer arrow (FS-KYPQ9 §F)", () => {
       // faint: never a glow
       expect(shimmer.calls.setAlpha?.[0]).toBeLessThanOrEqual(0.45);
       expect(fake.timers.map((t) => t.delay)).toEqual([140]);
-      // 16 screen px from the delver's projected position
+      // 16 screen px from the player's projected position
       const from = worldToScreen(me.x, me.y);
       expect(Math.hypot(s.x - from.x, s.y - from.y)).toBeCloseTo(16);
     });
@@ -71,7 +71,7 @@ describe("archer arrow (FS-KYPQ9 §F)", () => {
       expect(fake.live()).toEqual([]);
     });
 
-    it("should still play when the aim is the delver's own point", () => {
+    it("should still play when the aim is the player's own point", () => {
       playArrowRelease(fx, "self", me, me);
       expect(fake.made.some((m) => m.kind === "image")).toBe(true);
     });

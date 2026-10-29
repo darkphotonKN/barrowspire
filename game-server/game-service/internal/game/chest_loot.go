@@ -12,7 +12,14 @@ import (
 // chestDrop is what a chest opened now drops at: the floor's area level, from
 // a standard source, never a ring. FS-4R9M9 §Requirements 10, 47.
 func (s *Session) chestDrop() lootDrop {
-	return lootDrop{ItemLevel: areaLevel(s.EntityManager.GetAllEntities()), Source: lootSourceStandard, NoRings: true}
+	return chestDropAt(areaLevel(s.EntityManager.GetAllEntities()))
+}
+
+// chestDropAt is a chest's drop at the item level given: a standard source,
+// never a ring (FS-4R9M9 §Requirements 47). A field chest names its level from
+// its band (FS-3QHQZ §Requirements 19).
+func chestDropAt(itemLevel int) lootDrop {
+	return lootDrop{ItemLevel: itemLevel, Source: lootSourceStandard, NoRings: true}
 }
 
 // areaLevel is the floor's area level: the highest level among the delvers

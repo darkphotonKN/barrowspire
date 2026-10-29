@@ -15,7 +15,7 @@ import (
 // announced the run they are in, not the hub. A run of one must behave as a
 // run of two here; nobody else keeps it alive. FS-NSV3D §Edge States "The run".
 func TestSoloRun_RefreshReturnsToTheRun(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	wren, conn := enterHub(t, server, "Wren")
 	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{wren}})
 	t.Cleanup(run.Shutdown)

@@ -8,9 +8,10 @@ import { palette, toCss } from "@/utils/canvasPalette";
 import { worldDepth } from "@/render/iso/shapes";
 import { worldToScreen } from "@/render/iso/projection";
 import type { footprintHitArea } from "@/render/world/footprint";
-import type { MonsterState } from "@/types/gameState";
+import type { MonsterArchetype, MonsterState } from "@/types/gameState";
 import {
-  DELVER_REFERENCE_SHEET,
+  FALLBACK_LOOK,
+  PLAYER_REFERENCE_SHEET,
   MonsterRoster,
   SIZE_TIERS,
   monsterLook,
@@ -317,25 +318,168 @@ describe("monsterLook", () => {
     for (const unknown of ["wraith", ""])
       expect(baked.has(monsterLook(unknown).sheet)).toBe(true);
   });
+
+  it("should draw an archetype it does not know as the troll", () => {
+    expect(FALLBACK_LOOK.sheet).toBe("creature_troll_base");
+    for (const unknown of ["wraith", "revenant", ""])
+      expect(monsterLook(unknown)).toBe(FALLBACK_LOOK);
+  });
+});
+
+describe("the Forlorn Forest's dead (FS-3QHQZ §C R29)", () => {
+  it.each([
+    ["zombie", "creature_zombie_base"],
+    ["ghost", "creature_ghost_base"],
+  ] as [MonsterArchetype, string][])(
+    "should draw a %s from its own baked sheet, at fodder tier",
+    (archetype, sheet) => {
+      expect(monsterLook(archetype)).toEqual({ sheet, tier: "fodder" });
+      expect(baked.has(sheet)).toBe(true);
+    },
+  );
+
+  it("should play a ghost's clips from its own sheet, drawn as baked", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    roster.sync([monster({ archetype: "ghost", name: "Ghost" })]);
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toMatch(/^creature_ghost_base\//);
+    expect(sprites[0].tint).toBeNull();
+  });
+});
+
+describe("the boar and its elite (FS-X2F2H §H R61)", () => {
+  const boar = (fields: Partial<MonsterState> = {}) =>
+    monster({ archetype: "boar", name: "Boar", ...fields });
+
+  it("should draw a boar from its own baked sheet at fodder tier, an elite one from the elite sheet", () => {
+    const look = monsterLook("boar");
+    expect(look.sheet).toBe("creature_boar_base");
+    expect(look.elite).toBe("creature_boar_elite");
+    expect(look.tier).toBe("fodder");
+    expect(baked.has(look.sheet)).toBe(true);
+    expect(baked.has(look.elite!)).toBe(true);
+  });
+
+  it("should play a common boar's clips from the base sheet and an elite boar's from the elite sheet", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    roster.sync([
+      boar({ entity_id: "a" }),
+      boar({ entity_id: "b", name: "Scarred Boar", elite: true }),
+    ]);
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toMatch(/^creature_boar_base\//);
+    expect(sprites[1].anims.currentAnim?.key).toMatch(/^creature_boar_elite\//);
+  });
+
+  it("should draw the elite boar as baked: its sheet is its elite look, so no hostile wash over it", () => {
+    const { stage, sprites } = fakeStage();
+    new MonsterRoster(stage, baked).sync([
+      boar({ name: "Old Boar", elite: true }),
+    ]);
+    expect(sprites[0].tint).toBeNull();
+  });
+
+  it("should still letter an elite boar's prefix apart, in the hostile accent", () => {
+    const { stage, texts } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    roster.sync([boar({ name: "Great Boar", elite: true, level: 4 })]);
+    roster.update(FRAME);
+    expect(texts.map((t) => [t.content, t.color])).toEqual([
+      ["Boar · Lv 4", toCss(palette.markerHostile)],
+      ["Great", toCss(palette.markerElite)],
+    ]);
+  });
+
+  it("should draw an elite ghoul as before: the ghoul sheet, washed in the elite tint", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    roster.sync([
+      monster({ archetype: "ghoul", name: "Hollow Ghoul", elite: true }),
+    ]);
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toMatch(/^creature_ghoul_base\//);
+    expect(sprites[0].tint).toBe(palette.eliteTint);
+  });
+
+  it("should lay a dead elite boar first seen on the elite sheet's last death frame", () => {
+    const { stage, sprites } = fakeStage();
+    new MonsterRoster(stage, baked).sync([
+      boar({
+        name: "Old Boar",
+        elite: true,
+        action: "dead",
+        current_health: 0,
+      }),
+    ]);
+    const last =
+      baked.sheet("creature_boar_elite")!.animations.death.frames[0].length - 1;
+    expect(sprites[0].plays.at(-1)?.key).toMatch(
+      /^creature_boar_elite\/death\//,
+    );
+    expect(sprites[0].plays.at(-1)?.startFrame).toBe(last);
+  });
 });
 
 describe("size reads as threat tier (req 35)", () => {
-  /** Drawn head height over a delver's, both off the baked manifest. */
-  const heightOverDelver = (archetype: string) => {
+  /** Drawn head height over a player's, both off the baked manifest. */
+  const heightOverPlayer = (archetype: string) => {
     const look = monsterLook(archetype);
     const crown = baked.sheet(look.sheet)!.crown!;
-    const delver = baked.sheet(DELVER_REFERENCE_SHEET)!.crown!;
-    return (crown * monsterScale(look, baked)) / delver;
+    const player = baked.sheet(PLAYER_REFERENCE_SHEET)!.crown!;
+    return (crown * monsterScale(look, baked)) / player;
   };
 
   it.each([
     ["ghoul", SIZE_TIERS.fodder],
+    ["zombie", SIZE_TIERS.fodder],
+    ["ghost", SIZE_TIERS.fodder],
     ["troll", SIZE_TIERS.brute],
     ["demon", SIZE_TIERS.boss],
   ])("should stand a %s inside its tier's band", (archetype, tier) => {
-    const ratio = heightOverDelver(archetype);
+    const ratio = heightOverPlayer(archetype);
     expect(ratio).toBeGreaterThanOrEqual(tier.min);
     expect(ratio).toBeLessThanOrEqual(tier.max);
+  });
+
+  /**
+   * A quadruped is measured by body length, not height (guideline "Size is a threat tier"): its
+   * side-on length in screen px reads as cos 30° px of height.
+   */
+  const lengthOverPlayer = (archetype: string, elite = false) => {
+    const look = monsterLook(archetype);
+    const sheet = baked.sheet(elite ? look.elite! : look.sheet)!;
+    const player = baked.sheet(PLAYER_REFERENCE_SHEET)!.crown!;
+    return (
+      (sheet.length! * Math.cos(Math.PI / 6) * monsterScale(look, baked)) /
+      player
+    );
+  };
+
+  it.each([false, true])(
+    "should draw a boar (elite: %s) inside the fodder band by body length, shorter than a player is tall",
+    (elite) => {
+      expect(monsterLook("boar").measure).toBe("length");
+      const ratio = lengthOverPlayer("boar", elite);
+      expect(ratio).toBeGreaterThanOrEqual(SIZE_TIERS.fodder.min);
+      expect(ratio).toBeLessThan(1);
+    },
+  );
+
+  it("should measure a quadruped by its length, which no crown can stand in for", () => {
+    const look = {
+      sheet: "q",
+      tier: "fodder" as const,
+      measure: "length" as const,
+    };
+    const art = {
+      sheet: (name: string) =>
+        name === "q" ? { crown: 40, length: 100 } : { crown: 80 },
+    };
+    expect(monsterScale(look, art)).toBeCloseTo(
+      (SIZE_TIERS.fodder.aim * 80) / (100 * Math.cos(Math.PI / 6)),
+    );
   });
 
   it("should put the sprite at that scale", () => {
@@ -515,7 +659,7 @@ describe("MonsterRoster markers (req 37)", () => {
     expect(texts[0].content).toBe("Troll · Lv 4");
   });
 
-  it("should stand a monster on its footprint, sorted like a delver", () => {
+  it("should stand a monster on its footprint, sorted like a player", () => {
     const { stage, sprites } = fakeStage();
     const roster = new MonsterRoster(stage, fixtureArt());
     roster.sync([monster({ position: { x: 640, y: 200 } })]);

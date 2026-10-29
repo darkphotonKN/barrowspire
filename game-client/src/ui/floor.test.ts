@@ -37,7 +37,7 @@ describe("interactNotice (FS-F6F88 req 22, 31)", () => {
     expect(notice?.tone).toBe("waiting");
   });
 
-  it("should agree with a single missing delver", () => {
+  it("should agree with a single missing player", () => {
     expect(interactNotice(gather(1))?.text).toBe(
       "The stair waits. 1 of your party is not yet with you.",
     );

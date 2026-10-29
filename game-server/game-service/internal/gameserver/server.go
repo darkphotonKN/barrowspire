@@ -12,6 +12,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
@@ -43,6 +44,12 @@ type Server struct {
 
 	// the hub world. One per process, built at startup, outlives every run.
 	hubSessionID uuid.UUID
+
+	// this pod's channel of each field, by field, built at startup beside the
+	// hub and never shut down (FS-X2F2H §Requirements 4, 5)
+	fields map[game.FieldID]uuid.UUID
+	// where every ended field visit goes, exactly once (FS-X2F2H §F)
+	visitSettler VisitSettler
 
 	// for messages the server itself originates, such as telling a returning
 	// player which world they are now in
@@ -111,8 +118,19 @@ type HandoffAnnouncer interface {
 /**
 * podID and podAddr are this replica's identity: a match step names its pods by
 * id, and podAddr is where a handed-off player reconnects to reach this pod.
+*
+* The pod's fields are laid out first, before anything starts: a field that
+* cannot be laid out fails construction with the wrapped error and the pod does
+* not start, rather than serving a broken field (FS-3QHQZ Edge States
+* "Generator boxed in").
 **/
-func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient, characters CharacterReader, podID, podAddr string, announcer HandoffAnnouncer) *Server {
+func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService QueueManager, eventEmitter game.EventEmitter, itemsClient grpcitems.ItemsClient, characters CharacterReader, podID, podAddr string, announcer HandoffAnnouncer, opts ...Option) (*Server, error) {
+	boot := newBootOptions(opts...)
+	fields, err := layOutFields(boot)
+	if err != nil {
+		return nil, fmt.Errorf("new server: %w", err)
+	}
+
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			// TODO: Allow all connections by default for simplicity; can add more logic here
@@ -128,6 +146,8 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		msgChan:    make(map[*websocket.Conn]chan interface{}, constants.MaxMsgChanBuffer),
 
 		sessions:           make(map[uuid.UUID]*game.Session, 10),
+		fields:             make(map[game.FieldID]uuid.UUID),
+		visitSettler:       boot.visitSettler,
 		players:            make(map[uuid.UUID]*types.Player, 10),
 		connToPlayer:       make(map[*websocket.Conn]*types.Player, 10),
 		graceHolds:         make(map[uuid.UUID]graceHold),
@@ -151,8 +171,9 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	go messageHub.Run(ctx)
 
 	server.createHubSession()
+	server.createFieldSessions(fields)
 
-	return server
+	return server, nil
 }
 
 /**
@@ -264,6 +285,22 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.CharacterInPlay) 
 		// them in the hub as well would give one member two worlds broadcasting
 		// to one socket (reported 2026-10-29).
 		return current, nil
+	}
+
+	// From a field: the visit settles and the player is seated home at the
+	// field's gate as the requested character, past the cap, since coming home
+	// is not arriving. A field is never resumed (FS-X2F2H §Requirements 19).
+	if current, inWorld := s.GetGameSession(player.CurrentGameSessionId); inWorld &&
+		current.WorldType() == types.WorldTypeField {
+		s.endVisit(s.ctx, current, player.ID)
+		if !hub.HasPlayer(player.ID) {
+			place, _ := current.FieldPlace()
+			x, y, ok := hub.GateArrival(place.HubGate)
+			if !ok {
+				x, y = constants.HubSpawnX, constants.HubSpawnY
+			}
+			hub.AddPlayerAt(player.ID, character, s.tokenOf(player), x, y)
+		}
 	}
 
 	// The world decides whether it has room, under its own lock. Counting from
@@ -525,6 +562,12 @@ func (s *Server) LeaveHub(ctx context.Context, player *types.Player) error {
 		return errHubMissing
 	}
 
+	// from a field: the visit settles and they leave for the roster from there
+	// (FS-X2F2H §Requirements 18)
+	if s.leaveFieldForRoster(ctx, player) {
+		return nil
+	}
+
 	world, _ := s.currentWorldOf(player.ID)
 	if world == uuid.Nil {
 		return errLeaveHubNotHere
@@ -618,6 +661,20 @@ func (s *Server) HubSession() (*game.Session, bool) {
 	hub, exists := s.sessions[s.hubSessionID]
 
 	return hub, exists
+}
+
+/**
+* AtSpireGate reports whether the player stands at the Spire's door in the hub,
+* as the hub measured them on its last tick. A player in a run, a field, or no
+* world at all is at no gate. FS-0XMCP §Requirements 12.
+**/
+func (s *Server) AtSpireGate(playerID uuid.UUID) bool {
+	hub, exists := s.HubSession()
+	if !exists {
+		return false
+	}
+
+	return hub.AtGate(playerID, components.GateDestinationSpire)
 }
 
 /**

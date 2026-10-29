@@ -56,11 +56,12 @@ vi.mock("phaser", async () => {
   return { ...phaser, default: phaser };
 });
 
-const { HubScene, delveChoices, hubMenuChoices } = await import("./HubScene");
+const { HubScene, delveChoices, hubMenuChoices, WARDEN_TALE } = await import("./HubScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
 const { toCss } = await import("@/utils/canvasPalette");
 const { BARROW_HEX } = await import("@/utils/theme");
+const { MARKER_DEPTH } = await import("@/render/markers");
 
 interface QueuePanelScene {
   queuePanel?: { active: boolean; setText(text: string): unknown };
@@ -103,7 +104,7 @@ function fakeText(): FakeText {
 }
 
 describe("HubScene queue panel (FS-29KSH §Requirements 25, 27)", () => {
-  // Phaser reuses the scene instance when the delver comes home from a run. The
+  // Phaser reuses the scene instance when the player comes home from a run. The
   // panel from the first visit was destroyed with that visit, and writing to it
   // shows nothing: the second queue looked like it never started.
   it("should show queue progress on a live panel after the hub was left and re-entered", () => {
@@ -281,6 +282,9 @@ interface MenuHub {
   npcs: Map<string, unknown>;
   update(time: number, delta: number): void;
   offerConversation(): void;
+  followGates(pos: { x: number; y: number }, gates: unknown[]): void;
+  onFieldGate(destination: "forest" | "meadows"): void;
+  renderState(state: unknown): void;
   listenForQueue(): void;
   release(): void;
 }
@@ -303,8 +307,8 @@ function queuedHubOnStage() {
   const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
   stage.hub.listenForQueue();
   const reply = (action: string, payload: unknown = {}) => listeners.get(action)?.(payload);
-  const refuse = (action: string, message: string) =>
-    errorListeners.get(action)?.({ action, error: message, message });
+  const refuse = (action: string, message: string, reason?: string) =>
+    errorListeners.get(action)?.({ action, error: message, message, reason });
   const button = () => stage.stage.made.find((m) => m.kind === "text" && m.args[2] === "Leave" && !m.destroyed);
   return { ...stage, listeners, reply, refuse, button, send, off, offError };
 }
@@ -527,7 +531,7 @@ function hubOnStage() {
   /** The label text of a drawn choice: the choice itself is its camera-fixed hit area. */
   const label = (id: string) =>
     stage.made.find((m) => m.name === `choice-${id}-label` && !m.destroyed)?.children[0] as Made;
-  /** Stands the delver beside the NPC with this function and presses to talk. */
+  /** Stands the player beside the NPC with this function and presses to talk. */
   const talkTo = (fn: string) => {
     hub.selfEntityID = "me";
     hub.views = new Map([["me", { pos: { x: 0, y: 0 } }]]);
@@ -547,16 +551,47 @@ function hubOnStage() {
     k.justDown = true;
     hub.offerConversation();
   };
-  return { hub, stage, keys, press, option, choice, label, talkTo, answer };
+  /** Where the server says the player stands, as each hub state reports it. */
+  const standAt = (pos: { x: number; y: number }) => hub.followGates(pos, HUB_GATES);
+  /** Walks up to the Spire's door from outside it, as the server reports the steps. */
+  const atTheDoor = () => {
+    standAt(AWAY);
+    standAt(SPIRE_GATE.position);
+  };
+  return { hub, stage, keys, press, option, choice, label, talkTo, answer, standAt, atTheDoor };
 }
 
-describe("delveChoices (FS-NSV3D §Requirements 1, 4)", () => {
+/** The hub's gates as the server sends them (FS-0XMCP §Requirements 2, 6). */
+const SPIRE_GATE = {
+  entity_id: "spire-gate",
+  destination: "spire" as const,
+  position: { x: 1000, y: 50 },
+  range: 80,
+};
+const FOREST_GATE = {
+  entity_id: "forest-gate",
+  destination: "forest" as const,
+  position: { x: 40, y: 400 },
+  range: 80,
+};
+const MEADOWS_GATE = {
+  entity_id: "meadows-gate",
+  destination: "meadows" as const,
+  position: { x: 1960, y: 360 },
+  range: 80,
+};
+const HUB_GATES = [SPIRE_GATE, FOREST_GATE, MEADOWS_GATE];
+/** The middle of the hub: at no gate. */
+const AWAY = { x: 1000, y: 500 };
+
+describe("delveChoices (FS-NSV3D §Requirements 1, 4; FS-0XMCP §Requirements 9)", () => {
   it.each([
     {
       queued: false,
       ids: ["solo", "queue", "dismiss"],
       registers: ["actionable", "actionable", "cancel"],
-      line: "I keep the way into the Spire. Few return whole,\nand fewer return twice. Still set on descending?",
+      // a door, not a keeper, and the warning kept
+      line: "The Spire's door stands open. Few return whole,\nand fewer return twice.",
     },
     {
       queued: true,
@@ -590,17 +625,20 @@ describe("delveChoices (FS-NSV3D §Requirements 1, 4)", () => {
   });
 });
 
-describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
+describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XMCP §Requirements 8, 9)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it("should show Descend alone, Wait for company and Not yet, amber and the cancel register", () => {
-    const { hub, choice, label, talkTo } = queuedHubOnStage();
+    const { hub, stage, choice, label, atTheDoor } = queuedHubOnStage();
 
-    talkTo("delve");
+    atTheDoor();
 
     expect(hub.dialogue).toBeDefined();
+    // the door speaks, not a keeper: the card letters its name, under no role
+    expect(stage.made.some((m) => m.kind === "text" && m.args[2] === "THE SPIRE'S DOOR")).toBe(true);
+    expect(stage.made.some((m) => m.kind === "text" && /keeper/i.test(String(m.args[2])))).toBe(false);
     const solo = choice("solo") as Made;
     const queue = choice("queue") as Made;
     const dismiss = choice("dismiss") as Made;
@@ -626,8 +664,8 @@ describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
   });
 
   it("should send find_game on Wait for company, as Descend did, and close", () => {
-    const { hub, choice, talkTo, send } = queuedHubOnStage();
-    talkTo("delve");
+    const { hub, choice, atTheDoor, send } = queuedHubOnStage();
+    atTheDoor();
 
     choice("queue")?.handlers.pointerup();
 
@@ -637,8 +675,8 @@ describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
   });
 
   it("should send one start_solo on Descend alone, keep the dialogue open and grey the choice until the reply", () => {
-    const { hub, choice, label, talkTo, send } = queuedHubOnStage();
-    talkTo("delve");
+    const { hub, choice, label, atTheDoor, send } = queuedHubOnStage();
+    atTheDoor();
     const solo = choice("solo") as Made;
 
     solo.handlers.pointerup();
@@ -655,8 +693,8 @@ describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
   });
 
   it("should confirm Descend alone on Enter, and once only", () => {
-    const { keys, answer, talkTo, send } = queuedHubOnStage();
-    talkTo("delve");
+    const { keys, answer, atTheDoor, send } = queuedHubOnStage();
+    atTheDoor();
 
     answer(keys.enter);
     answer(keys.enter);
@@ -666,22 +704,22 @@ describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
   });
 
   it("should dismiss on ESC and on Not yet, sending nothing", () => {
-    const { hub, keys, answer, choice, talkTo, send } = queuedHubOnStage();
-    talkTo("delve");
+    const { hub, keys, answer, choice, atTheDoor, send } = queuedHubOnStage();
+    atTheDoor();
     answer(keys.esc);
     expect(hub.dialogue).toBeUndefined();
 
-    talkTo("delve");
+    atTheDoor();
     choice("dismiss")?.handlers.pointerup();
     expect(hub.dialogue).toBeUndefined();
     expect(send).not.toHaveBeenCalled();
   });
 
   it("should show the queued line and a dismiss only while queued", () => {
-    const { hub, stage, keys, answer, choice, talkTo, send, reply } = queuedHubOnStage();
+    const { hub, stage, keys, answer, choice, atTheDoor, send, reply } = queuedHubOnStage();
     reply("queue_status", { current: 1, total: 2 });
 
-    talkTo("delve");
+    atTheDoor();
 
     expect(hub.dialogue).toBeDefined();
     expect(choice("solo")).toBeUndefined();
@@ -700,8 +738,8 @@ describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
   });
 
   it("should re-enable the choice and pass on the message as a passing notice when start_solo is refused", () => {
-    const { hub, stage, choice, label, talkTo, send, refuse } = queuedHubOnStage();
-    talkTo("delve");
+    const { hub, stage, choice, label, atTheDoor, send, refuse } = queuedHubOnStage();
+    atTheDoor();
     const solo = choice("solo") as Made;
     solo.handlers.pointerup();
 
@@ -732,8 +770,8 @@ describe("HubScene delve NPC dialogue (FS-NSV3D §Requirements 1–6)", () => {
   });
 
   it("should hand the start_solo refusals back and forget the pending send on release", () => {
-    const { hub, choice, talkTo, offError } = queuedHubOnStage();
-    talkTo("delve");
+    const { hub, choice, atTheDoor, offError } = queuedHubOnStage();
+    atTheDoor();
     choice("solo")?.handlers.pointerup();
 
     hub.release();
@@ -809,14 +847,14 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
   it("should not open a dialogue on E while the menu is open", () => {
     const { hub, stage, keys, press, option } = hubOnStage();
     press(keys.esc);
-    // the delver stands beside the keeper of the way
+    // the player stands beside the keeper of the way
     hub.selfEntityID = "me";
     hub.views = new Map([["me", { pos: { x: 0, y: 0 } }]]);
     hub.npcs = new Map([
       [
         "keeper",
         {
-          state: { entity_id: "keeper", name: "Keeper", function: "delve", position: { x: 10, y: 0 } },
+          state: { entity_id: "keeper", name: "Keeper", function: "storyteller", position: { x: 10, y: 0 } },
           pos: { x: 10, y: 0 },
         },
       ],
@@ -948,14 +986,402 @@ describe("HubScene changeCharacter leaves the hub (FS-G4VMQ §Requirements 25, 2
   });
 });
 
+describe("HubScene the Spire gate trigger (FS-0XMCP §Requirements 10, 22)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The door's panel is the one up: its three choices are drawn. */
+  const doorIsOpen = (choice: (id: string) => Made | undefined) =>
+    choice("solo") !== undefined && choice("queue") !== undefined;
+
+  it("should open the door's panel once on stepping in, and not again while lingering after a dismiss", () => {
+    const { hub, keys, answer, choice, standAt, atTheDoor } = hubOnStage();
+
+    atTheDoor();
+    expect(doorIsOpen(choice)).toBe(true);
+
+    answer(keys.esc);
+    standAt(SPIRE_GATE.position);
+    standAt({ x: 1010, y: 60 });
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should reopen it on stepping out and back in", () => {
+    const { hub, keys, answer, choice, standAt } = hubOnStage();
+    standAt(SPIRE_GATE.position);
+    answer(keys.esc);
+
+    standAt(AWAY);
+    standAt(SPIRE_GATE.position);
+
+    expect(hub.dialogue).toBeDefined();
+    expect(doorIsOpen(choice)).toBe(true);
+  });
+
+  it("should reopen it on E inside the gate, and E away from it opens nothing", () => {
+    const { hub, keys, answer, choice, standAt, atTheDoor } = hubOnStage();
+    atTheDoor();
+    choice("dismiss")?.handlers.pointerup();
+
+    answer(keys.e);
+    expect(doorIsOpen(choice)).toBe(true);
+
+    answer(keys.esc);
+    standAt(AWAY);
+    answer(keys.e);
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should close the panel on walking out, and let a start_solo already sent complete", () => {
+    const { hub, choice, standAt, atTheDoor, send } = queuedHubOnStage();
+    atTheDoor();
+    choice("solo")?.handlers.pointerup();
+
+    standAt(AWAY);
+
+    expect(hub.dialogue).toBeUndefined();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(ActionType.StartSolo, {});
+    // the reply is still waited for, and handled as before
+    expect(hub.soloPending).toBe(true);
+  });
+
+  it("should never queue anyone by walking in, out or past", () => {
+    const { standAt, atTheDoor, send } = queuedHubOnStage();
+
+    atTheDoor();
+    standAt(AWAY);
+    atTheDoor();
+    standAt({ x: 1000, y: 140 });
+
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should not open over the Esc menu, nor when the menu closes inside the gate", () => {
+    const { hub, keys, press, option, choice, standAt, answer } = hubOnStage();
+    standAt(AWAY);
+    press(keys.esc);
+
+    standAt(SPIRE_GATE.position);
+    expect(hub.menu).toBeDefined();
+    expect(hub.dialogue).toBeUndefined();
+
+    option("back")?.handlers.pointerup();
+    standAt(SPIRE_GATE.position);
+    expect(hub.dialogue).toBeUndefined();
+
+    // E is the way in from there
+    answer(keys.e);
+    expect(doorIsOpen(choice)).toBe(true);
+  });
+
+  it("should not stack over another dialogue, nor close it on walking out", () => {
+    const { hub, choice, standAt, talkTo } = hubOnStage();
+    standAt(AWAY);
+    talkTo("storekeeper");
+
+    standAt(SPIRE_GATE.position);
+    expect(choice("pack")).toBeDefined();
+    expect(choice("solo")).toBeUndefined();
+
+    standAt(AWAY);
+    expect(hub.dialogue).toBeDefined();
+    expect(choice("pack")).toBeDefined();
+  });
+
+  it("should open nothing at a field gate", () => {
+    const { hub, standAt } = hubOnStage();
+    standAt(AWAY);
+
+    standAt(FOREST_GATE.position);
+
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should show the queued line at the door while queued", () => {
+    const { stage, choice, reply, atTheDoor } = queuedHubOnStage();
+    reply("queue_status", { current: 1, total: 2 });
+
+    atTheDoor();
+
+    expect(choice("solo")).toBeUndefined();
+    expect(
+      stage.made.some(
+        (m) => m.kind === "text" && m.args[2] === "The delve is gathering. Wait, or leave the queue.",
+      ),
+    ).toBe(true);
+  });
+
+  it("should measure from the server-reported position and the state's gates, not the drawn one", () => {
+    const { hub, choice } = hubOnStage();
+    Object.assign(hub, {
+      placePlayer: vi.fn(),
+      renderStructures: vi.fn(),
+      drawScenery: vi.fn(),
+      renderNPCs: vi.fn(),
+    });
+    // the sprite is still easing in from the middle of the hub
+    hub.views = new Map([["me", { pos: { ...AWAY } }]]);
+    const state = (position: { x: number; y: number }, gates = HUB_GATES) => ({
+      world_type: "hub",
+      current_player: { entity_id: "me", position },
+      other_players: [],
+      walls: [],
+      gates,
+    });
+
+    hub.renderState(state(AWAY));
+    hub.renderState(state(SPIRE_GATE.position));
+    expect(doorIsOpen(choice)).toBe(true);
+
+    hub.renderState(state(AWAY));
+    expect(hub.dialogue).toBeUndefined();
+
+    // a gate the server moved is where the client looks for it
+    const moved = { ...SPIRE_GATE, position: { x: 1000, y: 500 } };
+    hub.renderState(state(AWAY, [moved]));
+    expect(doorIsOpen(choice)).toBe(true);
+  });
+
+  it("should forget which gate the player stood in on release", () => {
+    const { hub, choice, atTheDoor } = hubOnStage();
+    atTheDoor();
+
+    hub.release();
+    hub.followGates(SPIRE_GATE.position, HUB_GATES);
+
+    // a fresh visit that starts inside the gate steps into it
+    expect(doorIsOpen(choice)).toBe(true);
+  });
+});
+
+describe("HubScene field gates (FS-0XMCP §Requirements 21, 22)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The destination's name hanging over a signpost, while it is up. */
+  const marker = (stage: { made: Made[] }) =>
+    stage.made.filter(
+      (m) => m.kind === "text" && !m.destroyed && /Forlorn Forest|Gentle Meadows/.test(String(m.args[2])),
+    );
+
+  it.each([
+    { gate: FOREST_GATE, name: "The Forlorn Forest" },
+    { gate: MEADOWS_GATE, name: "Gentle Meadows" },
+  ])("should name $name over its signpost on stepping in, and drop it on stepping out", ({ gate, name }) => {
+    const { stage, standAt } = hubOnStage();
+    standAt(AWAY);
+
+    standAt(gate.position);
+    const shown = marker(stage);
+    expect(shown.map((m) => m.args[2])).toEqual([name]);
+    // a marker: amber, for a place to walk into, above the light-map
+    expect((shown[0].args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
+    expect(shown[0].depth).toBe(MARKER_DEPTH.name);
+
+    standAt({ x: gate.position.x, y: gate.position.y + 10 });
+    expect(marker(stage)).toHaveLength(1);
+
+    standAt(AWAY);
+    expect(marker(stage)).toHaveLength(0);
+  });
+
+  it("should fire the seam once per entry with the gate's field, not while lingering, and not at the Spire", () => {
+    const { hub, standAt, atTheDoor } = hubOnStage();
+    const onFieldGate = vi.fn();
+    hub.onFieldGate = onFieldGate;
+
+    standAt(AWAY);
+    standAt(FOREST_GATE.position);
+    standAt({ x: 50, y: 410 });
+    expect(onFieldGate.mock.calls).toEqual([["forest"]]);
+
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+    standAt(AWAY);
+    standAt(FOREST_GATE.position);
+    expect(onFieldGate.mock.calls).toEqual([["forest"], ["meadows"], ["forest"]]);
+
+    atTheDoor();
+    expect(onFieldGate).toHaveBeenCalledTimes(3);
+  });
+
+  it("should send enter_field for the Forest on stepping into its gate, and leave the switch to world_entered (FS-3QHQZ)", () => {
+    const { hub, standAt, send } = queuedHubOnStage();
+
+    standAt(AWAY);
+    standAt(FOREST_GATE.position);
+
+    expect(send.mock.calls).toEqual([[ActionType.EnterField, { field: "forlorn_forest" }]]);
+    expect(hub.scene.start).not.toHaveBeenCalled();
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should drop the name on release, so a fresh visit starts without it", () => {
+    const { hub, stage, standAt } = hubOnStage();
+    standAt(AWAY);
+    standAt(FOREST_GATE.position);
+
+    hub.release();
+
+    expect(marker(stage)).toHaveLength(0);
+  });
+});
+
+describe("HubScene walking into Gentle Meadows (FS-X2F2H §Requirements 9, 11, 57, 60)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Lines the hub said in passing. */
+  const said = (stage: { made: Made[] }, text: string) =>
+    stage.made.some((m) => m.kind === "text" && m.args[2] === text);
+
+  it("should send enter_field once on stepping into the Meadows gate, and leave the switch to world_entered", () => {
+    const { hub, standAt, send } = queuedHubOnStage();
+
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+
+    expect(send.mock.calls).toEqual([[ActionType.EnterField, { field: "gentle_meadows" }]]);
+    expect(hub.scene.start).not.toHaveBeenCalled();
+  });
+
+  it("should send nothing more while the first is unanswered, however often the gate is crossed", () => {
+    const { standAt, send } = queuedHubOnStage();
+
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("should say why in its own words on a refusal, never the code, and let the next step in ask again", () => {
+    const { stage, standAt, send, refuse } = queuedHubOnStage();
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+
+    refuse(ActionType.EnterField, "Leave the queue first.", "queued");
+
+    expect(said(stage, "The delve is gathering. Leave the queue first.")).toBe(true);
+    expect(stage.made.some((m) => m.kind === "text" && m.args[2] === "queued")).toBe(false);
+
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("should not walk out while the Esc menu or a dialogue is open, as the Spire's door does not open", () => {
+    const { hub, keys, press, standAt, send, talkTo } = queuedHubOnStage();
+    standAt(AWAY);
+    press(keys.esc);
+
+    standAt(MEADOWS_GATE.position);
+    expect(hub.menu).toBeDefined();
+    expect(send).not.toHaveBeenCalled();
+
+    press(keys.esc);
+    standAt(AWAY);
+    talkTo("storekeeper");
+    standAt(MEADOWS_GATE.position);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should forget an unanswered entry on release, so a fresh visit can walk out", () => {
+    const { hub, standAt, send } = queuedHubOnStage();
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+
+    hub.release();
+    hub.listenForQueue();
+    standAt(MEADOWS_GATE.position);
+
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("HubScene the Warden tells the story (FS-0XMCP §Requirements 24, 25)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const said = (stage: { made: Made[] }) =>
+    stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+
+  it("should tell up to three passages", () => {
+    expect(WARDEN_TALE.length).toBeGreaterThan(0);
+    expect(WARDEN_TALE.length).toBeLessThanOrEqual(3);
+    // the last points a newcomer at the door
+    expect(WARDEN_TALE[WARDEN_TALE.length - 1]).toMatch(/door/);
+  });
+
+  it("should go on through the passages, the last offering only Farewell", () => {
+    const { hub, stage, keys, answer, choice, talkTo } = hubOnStage();
+    talkTo("storyteller");
+
+    WARDEN_TALE.forEach((passage, i) => {
+      expect(said(stage)).toContain(passage);
+      const last = i === WARDEN_TALE.length - 1;
+      expect(choice("farewell")).toBeDefined();
+      expect(choice("on") !== undefined).toBe(!last);
+      if (!last) choice("on")?.handlers.pointerup();
+    });
+
+    answer(keys.e);
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should leave the Warden's old function name unanswered: a stranger with a resident's line", () => {
+    const { stage, choice, talkTo } = hubOnStage();
+    // the server sends storyteller since I-0XMCP-4; the retired alias is gone (R25)
+    talkTo("delve");
+
+    expect(said(stage)).not.toContain(WARDEN_TALE[0]);
+    expect(choice("on")).toBeUndefined();
+  });
+
+  it("should go on with E, close on Farewell, and start again from the first passage", () => {
+    const { hub, stage, keys, answer, choice, talkTo } = hubOnStage();
+    talkTo("storyteller");
+    answer(keys.e);
+    expect(said(stage)).toContain(WARDEN_TALE[1]);
+
+    choice("farewell")?.handlers.pointerup();
+    expect(hub.dialogue).toBeUndefined();
+
+    talkTo("storyteller");
+    expect(said(stage)).toContain(WARDEN_TALE[0]);
+    expect(said(stage)).not.toContain(WARDEN_TALE[1]);
+    expect(said(stage)).toContain("Go on  [E]");
+    expect(said(stage)).toContain("Farewell  [Esc]");
+  });
+
+  it.each([false, true])("should offer no queue, solo or leave choice when queued is %s", (queued) => {
+    const { choice, talkTo, reply, send } = queuedHubOnStage();
+    if (queued) reply("queue_status", { current: 1, total: 2 });
+
+    talkTo("storyteller");
+    for (let i = 0; i < WARDEN_TALE.length; i++) {
+      for (const id of ["solo", "queue", "dismiss", "leave"]) expect(choice(id)).toBeUndefined();
+      choice("on")?.handlers.pointerup();
+    }
+
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
 describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => {
   // Phaser hit-tests a container's child with the child's own scroll factor, not the
-  // camera-fixed parent's, so once the camera had followed the delver a click on a choice
+  // camera-fixed parent's, so once the camera had followed the player a click on a choice
   // landed beside it. The hit area lives outside the dialogue, camera-fixed, and dies with it.
   it("should press a choice through a camera-fixed hit area outside the dialogue", () => {
-    const { hub, stage, choice, talkTo } = hubOnStage();
+    const { hub, stage, choice, atTheDoor } = hubOnStage();
     const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
-    talkTo("delve");
+    atTheDoor();
 
     const queue = choice("queue") as Made & { kind: string; scrollFactor?: number };
     expect(queue.kind).toBe("rectangle");
@@ -983,9 +1409,9 @@ describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => 
 
   // Wait for company had no key at all: E and Enter meant the first choice, Descend alone.
   it("should answer Descend alone on 1 and Wait for company on 2, with those keys on the labels", () => {
-    const { stage, keys, talkTo, answer } = hubOnStage();
+    const { stage, keys, atTheDoor, answer } = hubOnStage();
     const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
-    talkTo("delve");
+    atTheDoor();
     const labels = stage.made
       .filter((m) => m.kind === "text" && !m.destroyed)
       .map((m) => String(m.args[2]));
@@ -996,7 +1422,7 @@ describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => 
     answer(keys.two);
     expect(send).toHaveBeenLastCalledWith("find_game", expect.anything());
 
-    talkTo("delve");
+    atTheDoor();
     answer(keys.one);
     expect(send).toHaveBeenLastCalledWith("start_solo", expect.anything());
     send.mockRestore();
@@ -1056,11 +1482,11 @@ describe("ESC menu by keyboard (reported 2026-10-29)", () => {
   });
 });
 
-describe("camera on the delver across visits (reported 2026-10-29)", () => {
-  // The camera latched on when the delver's entity id changed, and the id survived a scene
+describe("camera on the player across visits (reported 2026-10-29)", () => {
+  // The camera latched on when the player's entity id changed, and the id survived a scene
   // restart while every sprite was rebuilt: back from the loadout, or re-entering as the same
-  // character, the camera sat where it was and the delver walked off screen.
-  it("should latch onto a new sprite after release, even for the same delver", () => {
+  // character, the camera sat where it was and the player walked off screen.
+  it("should latch onto a new sprite after release, even for the same player", () => {
     const { hub } = hubOnStage();
     const first = { id: "sprite-1" };
     hub.keepCameraOn(first);

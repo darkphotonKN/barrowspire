@@ -45,7 +45,7 @@ func leaveHubServer(t *testing.T, queue *startSoloQueue) (*Server, *game.Session
 	t.Helper()
 
 	characters := newFakeCharacters()
-	server := NewServer(context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{})
 	hub, ok := server.HubSession()
 	require.True(t, ok, "the server builds a hub at startup")
 

@@ -5,7 +5,7 @@
  * it, a click strikes it, and a hit the server confirms flashes it.
  *
  * Nothing about a monster is client-held. The server sends where it stands, which way it faces
- * and what it is doing (`action`); the roster eases the position between ticks like a delver's
+ * and what it is doing (`action`); the roster eases the position between ticks like a player's
  * and plays the clip the action names. A reconnect rebuilds every monster and corpse from the
  * next broadcast.
  *
@@ -35,7 +35,7 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 // ── Looks and size ────────────────────────────────────────────────────────
 
 /**
- * Height tiers as a multiple of a delver's (guideline "Enemy design language"): fodder
+ * Height tiers as a multiple of a player's (guideline "Enemy design language"): fodder
  * 0.85–1.0x, a brute 1.3–1.5x, a boss at least 1.8x. Each look aims at the middle of its band;
  * the boss's ceiling is ours, to keep it on screen.
  */
@@ -46,14 +46,24 @@ export const SIZE_TIERS = {
 } as const;
 export type SizeTier = keyof typeof SIZE_TIERS;
 
-/** The delver height a tier is measured against: the default class's sheet (`characterSheet`). */
-export const DELVER_REFERENCE_SHEET = "char_knight_base";
+/** The player height a tier is measured against: the default class's sheet (`characterSheet`). */
+export const PLAYER_REFERENCE_SHEET = "char_knight_base";
 
 export interface MonsterLook {
   sheet: string;
   tier: SizeTier;
   /** A multiply tint over the whole sprite, when the look is a recoloured sheet. */
   tint?: number;
+  /**
+   * The sheet an elite is drawn from, when the archetype has its own elite look baked. It is
+   * drawn as baked: the sheet is the elite's look. Without one an elite wears the hostile wash.
+   */
+  elite?: string;
+  /**
+   * How its size tier is measured: a standing figure by its height (the default), a quadruped by
+   * its body length (guideline "Size is a threat tier").
+   */
+  measure?: "length";
 }
 
 /** Each archetype the client has a look for. */
@@ -62,6 +72,20 @@ export const MONSTER_LOOKS: Record<string, MonsterLook> = {
   troll: { sheet: "creature_troll_base", tier: "brute" },
   /** The winged demon boss (req 41, FS-KYPQ9): its own baked sheet, drawn as baked, at boss size. */
   demon: { sheet: "creature_demon_base", tier: "boss" },
+  /** The Forlorn Forest's dead (FS-3QHQZ §C R29): the shambling zombie, and the rarer ghost. */
+  zombie: { sheet: "creature_zombie_base", tier: "fodder" },
+  /** Its translucence is baked into the sheet (body alpha ≈ 0.6, eyes opaque): no tint here. */
+  ghost: { sheet: "creature_ghost_base", tier: "fodder" },
+  /**
+   * Gentle Meadows' boar (FS-X2F2H §H R61): field wildlife on the quadruped rig, fodder by body
+   * length, with its own elite sheet (bigger tusks, scarred, darker bristle).
+   */
+  boar: {
+    sheet: "creature_boar_base",
+    tier: "fodder",
+    elite: "creature_boar_elite",
+    measure: "length",
+  },
 };
 
 /**
@@ -77,36 +101,55 @@ export function monsterLook(archetype: string): MonsterLook {
     : FALLBACK_LOOK;
 }
 
+/** The sheet a monster is drawn from: its look's elite sheet for an elite, when it has one. */
+export function monsterSheet(
+  look: MonsterLook,
+  monster: Pick<MonsterState, "elite">,
+): string {
+  return monster.elite && look.elite ? look.elite : look.sheet;
+}
+
 /**
  * The wash over a monster's sprite, if any: its look's own tint, else the elite tint on an elite
- * (req 38). A common monster is drawn as baked.
+ * (req 38) whose archetype has no elite sheet. A common monster, and an elite drawn from its own
+ * elite sheet, are drawn as baked.
  */
 export function monsterTint(
   look: MonsterLook,
   monster: Pick<MonsterState, "elite">,
 ): number | undefined {
-  return look.tint ?? (monster.elite ? palette.eliteTint : undefined);
+  return (
+    look.tint ?? (monster.elite && !look.elite ? palette.eliteTint : undefined)
+  );
 }
 
 /** The slice of the art library sizing reads. */
 interface SheetHeights {
-  sheet(name: string): { crown?: number } | undefined;
+  sheet(name: string): { crown?: number; length?: number } | undefined;
 }
 
+/** A side-on screen px of a quadruped's length reads as cos 30° px of height (the iso view). */
+const HEIGHT_PER_LENGTH_PX = Math.cos(Math.PI / 6);
+
 /**
- * The sprite scale that stands a look at its tier: the tier's aim times a delver's head height,
- * over the creature's own (both measured by the bake as `crown`). Without both crowns the art is
- * not there to measure, and the tier's aim is the best guess.
+ * The sprite scale that stands a look at its tier: the tier's aim times a player's head height,
+ * over the creature's own measure, both taken by the bake: its `crown`, or a quadruped's body
+ * `length` in the same height px. Without both the art is not there to measure, and the tier's
+ * aim is the best guess.
  */
 export function monsterScale(look: MonsterLook, art: SheetHeights): number {
   const aim = SIZE_TIERS[look.tier].aim;
-  const delver = art.sheet(DELVER_REFERENCE_SHEET)?.crown;
-  const creature = art.sheet(look.sheet)?.crown;
-  if (!delver || !creature) return aim;
-  return (aim * delver) / creature;
+  const player = art.sheet(PLAYER_REFERENCE_SHEET)?.crown;
+  const own = art.sheet(look.sheet);
+  const creature =
+    look.measure === "length"
+      ? (own?.length ?? 0) * HEIGHT_PER_LENGTH_PX
+      : own?.crown;
+  if (!player || !creature) return aim;
+  return (aim * player) / creature;
 }
 
-/** A monster's body on the server, in world px: the delver's `PlayerRadius`, for every archetype. */
+/** A monster's body on the server, in world px: the player's `PlayerRadius`, for every archetype. */
 const BODY_RADIUS = 20;
 
 /**
@@ -183,7 +226,7 @@ export function elitePlate(
 
 // ── The roster ────────────────────────────────────────────────────────────
 
-/** Eased toward the server position each frame, as delvers are. */
+/** Eased toward the server position each frame, as players are. */
 const LERP = 0.3;
 /** How quickly the measured speed follows the drawn motion, in ms (as `CharacterMotion`). */
 const SPEED_SMOOTHING_MS = 100;
@@ -195,7 +238,7 @@ const BAR_H = 4;
 const NAME_GAP = 2;
 /** Screen px between an elite's prefix and the rest of its plate: a word space at 11px. */
 const PREFIX_GAP = 3;
-/** How long a confirmed hit holds the damage flash, in ms: as long as a delver's. */
+/** How long a confirmed hit holds the damage flash, in ms: as long as a player's. */
 export const FLASH_MS = 200;
 /** No facing: the clip keeps the one it has. */
 const STILL = { x: 0, y: 0 };
@@ -391,8 +434,9 @@ export class MonsterRoster {
 
   private create(state: MonsterState): MonsterView {
     const look = monsterLook(state.archetype);
+    const sheet = monsterSheet(look, state);
     const facing = facingFrom(state.facing.x, state.facing.y, "se");
-    const anim = new CharacterAnimator(this.art, { sheet: look.sheet }, facing);
+    const anim = new CharacterAnimator(this.art, { sheet }, facing);
     const sprite = this.stage.sprite();
     anim.dress(sprite);
     const scale = monsterScale(look, this.art);
@@ -430,7 +474,7 @@ export class MonsterRoster {
     this.wear(view);
     this.target(view, look);
     this.stand(view);
-    if (state.action === "dead") this.layCorpse(view, look.sheet);
+    if (state.action === "dead") this.layCorpse(view, sheet);
     return view;
   }
 
@@ -488,7 +532,7 @@ export class MonsterRoster {
     if (key && frames) view.sprite.play({ key, startFrame: frames.length - 1 });
   }
 
-  /** Same projection and depth sorting as a delver (FS-2325V §A): on its world footprint. */
+  /** Same projection and depth sorting as a player (FS-2325V §A): on its world footprint. */
   private stand(view: MonsterView): void {
     const at = worldToScreen(view.pos.x, view.pos.y);
     view.sprite.setPosition(at.x, at.y);

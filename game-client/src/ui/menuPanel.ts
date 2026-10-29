@@ -30,7 +30,7 @@ export interface MenuTones {
   text: number;
   /** A row that cannot be pressed now. */
   dim: number;
-  /** A row the delver can act on. */
+  /** A row the player can act on. */
   actionable: number;
   /** A row that goes back. */
   cancel: number;
@@ -89,7 +89,7 @@ export interface MenuOptionSpec {
  * The label sits at (x, y) inside the camera-fixed box the caller builds at `origin`; the hit
  * area is a separate, camera-fixed rectangle at the same place on the screen, named `name`. It
  * cannot live in the box: Phaser hit-tests a container's child with the child's own scroll
- * factor, not the parent's, so once the camera has followed the delver a click lands beside the
+ * factor, not the parent's, so once the camera has followed the player a click lands beside the
  * row. It goes down with the label's container.
  */
 export function menuOption(scene: MenuStage, spec: MenuOptionSpec): MenuOption {

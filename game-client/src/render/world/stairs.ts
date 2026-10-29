@@ -11,7 +11,7 @@ import type { Point } from "@/render/iso/projection";
 import type { StairsState } from "@/types/gameState";
 
 /**
- * World px from a delver to an interactable's centre within which the interact key reaches it:
+ * World px from a player to an interactable's centre within which the interact key reaches it:
  * the server's default interact range, the same the switch and the escape door use.
  */
 export const INTERACT_RANGE = 60;

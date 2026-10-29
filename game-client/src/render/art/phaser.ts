@@ -70,7 +70,7 @@ export interface ArtScene {
  * then falls back.
  *
  * The manifest may already be cached by another scene whose atlases are still in flight: a
- * refresh lands the delver in the hub while the preload scene is still fetching. Phaser skips a
+ * refresh lands the player in the hub while the preload scene is still fetching. Phaser skips a
  * cached key without firing `filecomplete`, so the atlases are queued straight from the cache
  * then, or this scene would finish loading with none of them and draw only placeholders.
  */

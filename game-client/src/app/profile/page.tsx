@@ -136,7 +136,7 @@ export default function ProfilePage() {
         >
           Back to Game
         </button>
-        <h1 className="profile-title">DELVER PROFILE</h1>
+        <h1 className="profile-title">PLAYER PROFILE</h1>
       </div>
 
       {/* Profile Card */}
@@ -207,13 +207,6 @@ export default function ProfilePage() {
               <span className="profile-detail-label">Rank:</span>
               <span className="profile-detail-value">
                 {getStatusLabel(memberInfo.status)}
-              </span>
-            </div>
-
-            <div className="profile-detail-item">
-              <span className="profile-detail-label">Rating:</span>
-              <span className="profile-detail-value">
-                {memberInfo.average_rating?.toFixed(1)}/5.0
               </span>
             </div>
 

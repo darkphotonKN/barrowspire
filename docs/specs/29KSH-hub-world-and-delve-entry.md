@@ -1,6 +1,6 @@
 # FS-29KSH: Hub world and delve entry
 
-> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Hub world" (shared hub world · hub is a safe zone · wandering NPCs with dialogue · hub occupancy cap), "### Session & matchmaking lifecycle" → "Switch a player between hub and run", "### Transport" → "World identity in the state protocol" + "Route client messages from server-held session state"; `game-client/SPECIFICATION.md` "### Hub" (hub scene · move between hub and run · delve entry from the hub · loadout access from the hub) → this FS · Related ADRs: [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (one process, one connection, 50-player ceiling), [ADR-0004](../adr/0004-game-traffic-bypasses-the-application-gateway.md) (§3 amended by ADR-0015) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) · Project context: [`docs/refactor_plan.md`](../refactor_plan.md)
+> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Hub world" (shared hub world · hub is a safe zone · wandering NPCs with dialogue · hub occupancy cap), "### Session & matchmaking lifecycle" → "Switch a player between hub and run", "### Transport" → "World identity in the state protocol" + "Route client messages from server-held session state"; `game-client/SPECIFICATION.md` "### Hub" (hub scene · move between hub and run · delve entry from the hub · loadout access from the hub) → this FS · Related ADRs: [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (one process, one connection, 50-player ceiling), [ADR-0004](../adr/0004-game-traffic-bypasses-the-application-gateway.md) (§3 amended by ADR-0015) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) · Project context: [`docs/refactor_plan.md`](../refactor_plan.md) · Superseded in part by: [FS-0XMCP](0XMCP-hub-destination-gates.md) Requirements 26–31 (2026-10-30 amendment, `988a942`): player–player push in the hub (§Requirements 5, D7)
 
 ## Summary
 
@@ -29,6 +29,8 @@ stop asking the client which world its messages belong to.
    component type is required for them.
 5. Movement in the hub uses the existing `MovementSystem` — spatial-hash bucketing,
    swept-AABB collision against walls, depenetration, player–player push, boundary clamp.
+   *(Superseded in part by FS-0XMCP Requirements 26–31, 2026-10-30: players no longer push
+   each other in the hub; residents still collide with players and each other.)*
 6. The hub is a **safe zone**. `attack` and `cast_skill` are rejected there and produce no
    effect on any entity. Combat exists only in runs.
 7. The hub holds **no items, containers, doors, switches, or escape doors**. Its broadcast
@@ -315,7 +317,9 @@ also in [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection
 - **D5 — NPCs are how hub functions are reached.** Delve and storekeeper today; expect more.
 - **D6 — Two NPC kinds.** Function NPCs fixed (position is map data); ambient NPCs wander and are
   server-authoritative so everyone sees the same hub.
-- **D7 — Hub collision is the runs' collision.** One `MovementSystem`, no fork.
+- **D7 — Hub collision is the runs' collision.** One `MovementSystem`, no fork. *(Superseded
+  for player-vs-player pairs by FS-0XMCP Requirements 26–31, 2026-10-30: the same system, but
+  players pass through each other in the hub; residents still collide.)*
 - **D8 — 30 Hz.** Cap-dependent: at several hundred players the hub would become the most
   expensive world in the system, since it is the only one doing N per-player formats per tick.
 - **D9 — Explicit world identity outbound; server-state routing inbound.** See R15–R19.

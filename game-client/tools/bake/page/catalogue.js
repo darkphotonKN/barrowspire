@@ -8,7 +8,21 @@
 // World directions: n = -y, s = +y, e = +x, w = -x (server axes; screen: s/e fall toward the
 // viewer).
 
-import { oak, pine, bush, rock, grassTuft, pebbles, LEAF } from "./models/nature.js";
+import {
+  oak,
+  pine,
+  bush,
+  rock,
+  grassTuft,
+  pebbles,
+  deadTree,
+  deadSnag,
+  fern,
+  stump,
+  fallenLog,
+  toadstools,
+  LEAF,
+} from "./models/nature.js";
 import {
   wallPiece,
   post,
@@ -62,6 +76,7 @@ import {
   SLIT_LIGHT,
   STAIRS_LIGHT,
 } from "./models/tower.js";
+import { spireFacade, DOOR_LIGHT } from "./models/spire.js";
 import { CAST } from "./characters/cast.js";
 import { FOLK } from "./characters/folk.js";
 
@@ -437,6 +452,54 @@ function towerSheets() {
   return sheets;
 }
 
+/**
+ * The Spire's entrance at the hub's north edge (FS-0XMCP §R15–§R17), authored in code (ADR-0021)
+ * in the tower interior's stone and packed on its own atlas so every existing atlas keeps its
+ * bytes. It stands beyond the map, where the hub has no ground, so it casts no catcher shadow; its
+ * own flagstones ground it. The door's light is the only amber on it.
+ */
+function spireSheets() {
+  return [
+    {
+      name: "spire_facade",
+      group: "spire",
+      kind: "prop",
+      shadow: false,
+      animations: { default: still(spireFacade) },
+      light: { at: DOOR_LIGHT, radius: 200, color: "amber", flicker: 0.5 },
+      source: "authored: tools/bake/page/models/spire.js#spireFacade",
+    },
+  ];
+}
+
+/**
+ * The Forlorn Forest's trees and floor dressing (FS-3QHQZ §C R24, R28), authored in code
+ * (ADR-0020, ADR-0021) and packed on their own atlas so every existing atlas keeps its bytes. A
+ * stand mixes the live gloom trees and the dead ones about two to one; the dressing is low,
+ * unlit, never amber. Variants are picked by the client's seeded hash. Bone piles reuse the run's
+ * `bone_pile` sheet.
+ */
+function forestSheets() {
+  const prop = (name, fn, builders, opts = {}) => ({
+    name,
+    group: "forest",
+    kind: "prop",
+    animations: { variants: still(...builders) },
+    source: src("models/nature.js", fn),
+    ...opts,
+  });
+  return [
+    prop("tree_oak_gloom", "oak", [() => oak(23, LEAF.oakGloom), () => oak(31, LEAF.oakGloomDeep)]),
+    prop("tree_pine_gloom", "pine", [() => pine(14, LEAF.pineGloom), () => pine(27, LEAF.pineGloom)]),
+    prop("tree_dead", "deadTree", [401, 402].map((s) => () => deadTree(s))),
+    prop("tree_dead_snag", "deadSnag", [411, 412].map((s) => () => deadSnag(s))),
+    prop("fern", "fern", [421, 422, 423].map((s) => () => fern(s)), { pad: 0.06 }),
+    prop("stump", "stump", [431, 432].map((s) => () => stump(s)), { pad: 0.06 }),
+    prop("fallen_log", "fallenLog", [441, 442].map((s) => () => fallenLog(s)), { pad: 0.06 }),
+    prop("toadstools", "toadstools", [450, 451, 452].map((s) => () => toadstools(s)), { pad: 0.05 }),
+  ];
+}
+
 export const CATALOGUE = [
   ...groundSheets(),
   ...natureSheets(),
@@ -448,4 +511,6 @@ export const CATALOGUE = [
   ...folkSheets(),
   ...fxSheets(),
   ...towerSheets(),
+  ...spireSheets(),
+  ...forestSheets(),
 ].map((s) => ({ licence: LICENCE, ...s }));

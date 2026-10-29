@@ -47,7 +47,7 @@ func (s *service) PublishMatchComplete(ctx context.Context, data *types.RawMatch
 	rankedPlayers := s.rankPlayers(data.Players, data.EliminationOrder)
 
 	// proto marshal
-	protoData, err := s.formatMatchData(data.SessionID, data.StartedAt, data.EndedAt, rankedPlayers, data.Progress)
+	protoData, err := s.formatMatchData(data.SessionID, data.StartedAt, data.EndedAt, rankedPlayers, data.Progress, commonconstants.WorldTypeRun)
 
 	if err != nil {
 		slog.Error("Error formatting game match end event", "session_id", data.SessionID, "error", err)
@@ -66,6 +66,43 @@ func (s *service) PublishMatchComplete(ctx context.Context, data *types.RawMatch
 		"event_one_name", commonconstants.GameMatchEnded,
 		"event_two_name", commonconstants.ItemsExtracted,
 	)
+}
+
+/**
+* PublishFieldVisit settles an ended field visit through the run's own
+* match-end write: one items.extracted and one match.ended, in one transaction,
+* under the visit's own id (FS-X2F2H §F R39–R42, ADR-0031). It never goes
+* through rankPlayers, which would make the visitor a winner: a visit is the
+* returned result, never a win, at final position 1 (stats-service's
+* match_history requires at least 1), in a field.
+**/
+func (s *service) PublishFieldVisit(ctx context.Context, visit FieldVisit) error {
+	result := types.RankedPlayerState{
+		MemberID:      visit.MemberID.String(),
+		Username:      visit.Username,
+		Deaths:        int32(visit.Deaths),
+		FinalPosition: 1,
+		Win:           false,
+		Escape:        false,
+		Equipment:     visit.Equipment,
+		Inventory:     visit.Satchel,
+	}
+	progress := []types.RunProgress{{
+		MemberID:    visit.MemberID,
+		CharacterID: visit.CharacterID,
+		Gained:      int64(visit.ExperienceGained),
+	}}
+
+	data, err := s.formatMatchData(visit.ID, visit.EnteredAt, visit.LeftAt, []types.RankedPlayerState{result}, progress, commonconstants.WorldTypeField)
+	if err != nil {
+		return fmt.Errorf("format field visit %s: %w", visit.ID, err)
+	}
+
+	if err := s.writeMatchEndOutbox(ctx, data); err != nil {
+		return fmt.Errorf("write field visit %s to the outbox: %w", visit.ID, err)
+	}
+
+	return nil
 }
 
 // writeMatchEndOutbox writes the ItemsExtracted and GameMatchEnded rows in one
@@ -111,9 +148,10 @@ func (s *service) writeMatchEndOutbox(ctx context.Context, data *types.Formatted
 }
 
 /**
-* Formats from raw game state to match end state.
+* Formats from raw game state to match end state, for the kind of world that
+* ended (FS-X2F2H §F R43).
 **/
-func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, endedAt time.Time, players []types.RankedPlayerState, progress []types.RunProgress) (*types.FormattedMatchData, error) {
+func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, endedAt time.Time, players []types.RankedPlayerState, progress []types.RunProgress, worldType string) (*types.FormattedMatchData, error) {
 
 	// format data for marshalling as protobuf
 	playerMatchRes := make([]*pb.PlayerMatchResult, len(players))
@@ -136,6 +174,7 @@ func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, ende
 		MatchStartedAt: timestamppb.New(startedAt),
 		MatchEndedAt:   timestamppb.New(endedAt),
 		Players:        playerMatchRes,
+		WorldType:      worldType,
 	}
 
 	slog.Debug("matchEndedEvent in formatMatchData before marshalling into protobuf",

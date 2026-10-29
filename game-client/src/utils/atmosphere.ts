@@ -12,7 +12,7 @@ import {
  * The static layers every world keeps above its light-map: darkness pressing in
  * at the edges, and dust adrift in it.
  *
- * The warm pool the delver carries is no longer drawn here: it is a light source
+ * The warm pool the player carries is no longer drawn here: it is a light source
  * on the light-map (`src/render/lighting/`, FS-2325V §C.7), which replaced
  * FS-W6BP1's overlay pool. The vignette stays, above the light-map and below the
  * HUD (§C.10).

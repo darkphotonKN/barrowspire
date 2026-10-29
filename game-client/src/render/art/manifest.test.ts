@@ -2,8 +2,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import { BARROW } from "@/utils/theme";
-import { WORLD_PX_PER_TILE, worldToScreen } from "@/render/iso/projection";
-import { HUB_WASHING_LINE } from "@/render/world/hubKeepOut";
+import { WORLD_PX_PER_TILE, projectedBounds, worldToScreen } from "@/render/iso/projection";
+import {
+  HUB_CAMERA_MARGIN,
+  HUB_SIZE,
+  HUB_SPIRE_FACADE,
+  HUB_WASHING_LINE,
+} from "@/render/world/hubKeepOut";
 import { DIRECTION_ORDER, directionIndex, validateManifest } from "./manifest";
 
 /** A minimal manifest that satisfies every rule. Each case below breaks one. */
@@ -224,6 +229,30 @@ describe("validateManifest", () => {
 
     it("rejects a crown above the frame's top", () => {
       rejects(withCrown(64), /door.*crown/);
+    });
+  });
+
+  describe("a quadruped's body length (FS-X2F2H §H R61)", () => {
+    // the door fixture: frames are 50 px wide
+    const withLength = (length: unknown) => (m: Fixture) => {
+      (m.sheets.door as { length?: unknown }).length = length;
+    };
+
+    it("accepts a sheet without one: only quadrupeds carry it", () => {
+      expect(fixture().sheets.door).not.toHaveProperty("length");
+      expect(validateManifest(fixture()).ok).toBe(true);
+    });
+
+    it("accepts a whole number of px up to the frame's width", () => {
+      for (const length of [1, 30, 50]) {
+        const m = fixture();
+        withLength(length)(m);
+        expect(validateManifest(m).ok, String(length)).toBe(true);
+      }
+    });
+
+    it.each([0, -4, 12.5, "40", 51])("rejects a length of %s", (length) => {
+      rejects(withLength(length), /door.*length/);
     });
   });
 
@@ -750,6 +779,137 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     });
   });
 
+  describe("the Spire's facade (FS-0XMCP §R15–§R17)", () => {
+    const s = () => baked.sheets.spire_facade;
+    const model = readFileSync(
+      join(__dirname, "../../../tools/bake/page/models/spire.js"),
+      "utf8",
+    );
+    /** A dimension of the model, read from its source as the washing line's is. */
+    const dim = (name: string) => {
+      const value = Number(new RegExp(`const ${name} = (-?[\\d.]+);`).exec(model)?.[1]);
+      expect(Number.isFinite(value), name).toBe(true);
+      return value;
+    };
+
+    it("is baked into its own spire group, authored in models/spire.js", () => {
+      expect(s()).toBeDefined();
+      expect(s().atlas).toMatch(/^spire-\d+$/);
+      expect(s().directions).toBe(1);
+      expect(Object.keys(s().animations)).toEqual(["default"]);
+      expect(s().source).toBe("authored: tools/bake/page/models/spire.js#spireFacade");
+      expect(s().licence).toBe(baked.sheets.brazier.licence);
+    });
+
+    it("declares one light, amber, at the door's threshold: its only amber", () => {
+      expect(s().light).toMatchObject({ color: "amber" });
+      // the threshold pool sits low on the door, just above the sprite's anchor
+      expect(Math.abs(s().light.offset.x)).toBeLessThanOrEqual(baked.tile.width / 2);
+      expect(s().light.offset.y).toBeLessThan(0);
+      expect(s().light.offset.y).toBeGreaterThan(-2 * baked.tile.height * 2);
+    });
+
+    it("stands its tower's top above the hub camera's reach, so it is never on screen (R16)", () => {
+      // the drum's rim, from the model: a circle of the top radius about (0, H, TOWER_Z)
+      const H = dim("TOWER_H");
+      const topRadius = dim("TOWER_R") - dim("TAPER");
+      const z = dim("TOWER_Z");
+      // the bake camera (tools/bake/page/projection.js): px per tile edge in the view plane, and
+      // of height
+      const K1 = baked.tile.width / 2 / Math.SQRT1_2;
+      const VPX = K1 * Math.cos(Math.PI / 6);
+      const anchor = worldToScreen(HUB_SPIRE_FACADE.at.x, HUB_SPIRE_FACADE.at.y);
+      const centre = worldToScreen(0, z * WORLD_PX_PER_TILE).y + anchor.y - H * VPX;
+      // a level circle projects to an ellipse r·K1·sin 30° tall: its lowest point is nearest us
+      const rimLowest = centre + topRadius * K1 * Math.sin(Math.PI / 6);
+      const reach = projectedBounds(HUB_SIZE.width, HUB_SIZE.height, HUB_CAMERA_MARGIN);
+      expect(rimLowest).toBeLessThan(reach.y);
+      // and the sprite's frame reaches that high: the bake drew the drum, not a stub
+      const frameTop = anchor.y - s().anchor.y * s().frameHeight;
+      expect(frameTop).toBeLessThan(rimLowest);
+    });
+
+    it("keeps the facade inside the camera's reach side to side, never past a corner", () => {
+      const anchor = worldToScreen(HUB_SPIRE_FACADE.at.x, HUB_SPIRE_FACADE.at.y);
+      const left = anchor.x - s().anchor.x * s().frameWidth;
+      const reach = projectedBounds(HUB_SIZE.width, HUB_SIZE.height, HUB_CAMERA_MARGIN);
+      expect(left).toBeGreaterThan(reach.x);
+      expect(left + s().frameWidth).toBeLessThan(reach.x + reach.width);
+    });
+  });
+
+  describe("the Forlorn Forest's trees and dressing (FS-3QHQZ §C R24, R28, R30)", () => {
+    type Sheet = {
+      atlas: string;
+      frameHeight: number;
+      anchor: { x: number; y: number };
+      directions: number;
+      animations: Record<string, { frames: unknown[][] }>;
+      light?: unknown;
+      source: string;
+      licence: string;
+    };
+    const sheet = (name: string): Sheet => baked.sheets[name];
+    /** px of a sheet standing above its anchor: how tall it reads on screen. */
+    const standing = (name: string) =>
+      sheet(name).anchor.y * sheet(name).frameHeight;
+
+    // sheet → its authoring function in tools/bake/page/models/nature.js, and its variant count
+    const FOREST: [string, string, number][] = [
+      ["tree_dead", "deadTree", 2],
+      ["tree_dead_snag", "deadSnag", 2],
+      ["tree_oak_gloom", "oak", 2],
+      ["tree_pine_gloom", "pine", 2],
+      ["fern", "fern", 3],
+      ["stump", "stump", 2],
+      ["fallen_log", "fallenLog", 2],
+      ["toadstools", "toadstools", 3],
+    ];
+
+    it.each(FOREST)(
+      "%s is baked on the forest atlas, authored in models/nature.js#%s, with %i variants",
+      (name, fn, variants) => {
+        const s = sheet(name);
+        expect(s, name).toBeDefined();
+        expect(s.atlas).toMatch(/^forest-\d+$/);
+        expect(s.directions).toBe(1);
+        expect(Object.keys(s.animations)).toEqual(["variants"]);
+        expect(s.animations.variants.frames[0]).toHaveLength(variants);
+        expect(s.source).toBe(
+          `procedural: tools/bake/page/models/nature.js#${fn}`,
+        );
+        expect(s.licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it("bakes no light into a tree or a dressing prop: nothing in the forest glows", () => {
+      for (const [name] of FOREST)
+        expect(sheet(name).light, name).toBeUndefined();
+    });
+
+    it("keeps the dressing small and low beside the trees (R28)", () => {
+      const shortestTree = Math.min(
+        ...["tree_dead", "tree_oak_gloom", "tree_pine_gloom"].map(standing),
+      );
+      for (const name of ["fern", "stump", "fallen_log", "toadstools"])
+        expect(standing(name), name).toBeLessThan(shortestTree / 3);
+    });
+
+    it("reuses the run's bone pile rather than baking another", () => {
+      expect(sheet("bone_pile").atlas).toMatch(/^tower-\d+$/);
+    });
+
+    it("draws every forest colour from BARROW: no colour literal in models/nature.js", () => {
+      const model = readFileSync(
+        join(__dirname, "../../../tools/bake/page/models/nature.js"),
+        "utf8",
+      );
+      expect(model).not.toMatch(
+        /#[0-9a-fA-F]{3,8}\b|0x[0-9a-fA-F]{6}\b|rgba?\(/,
+      );
+    });
+  });
+
   describe("characters and creatures (FS-2325V §E)", () => {
     const CAST = [
       "char_knight_base",
@@ -757,6 +917,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       "char_wizard_base",
       "creature_ghoul_base",
       "creature_troll_base",
+      "creature_zombie_base",
+      "creature_ghost_base",
     ];
 
     it.each(CAST)("%s has 8-way idle, walk, attack and death", (name) => {
@@ -830,17 +992,20 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       source: string;
       licence: string;
     };
-    const DELVERS = [
+    const PLAYERS = [
       "char_knight_base",
       "char_archer_base",
       "char_wizard_base",
     ];
-    const delverCrown =
-      DELVERS.reduce((n, name) => n + baked.sheets[name].crown, 0) /
-      DELVERS.length;
-    // sheet → its §A.3 atlas group and §A.6 crown ratio band (to the delver mean)
+    const playerCrown =
+      PLAYERS.reduce((n, name) => n + baked.sheets[name].crown, 0) /
+      PLAYERS.length;
+    // sheet → its §A.3 atlas group and §A.6 crown ratio band (to the player mean)
     const ROSTER: [string, string, number, number][] = [
       ["creature_demon_base", "boss", 1.8, Infinity],
+      // the Forlorn Forest's dead (FS-3QHQZ §C R29): fodder, in their own group
+      ["creature_zombie_base", "fodder", 0.85, 1.05],
+      ["creature_ghost_base", "fodder", 0.85, 1.05],
     ];
     const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
 
@@ -887,11 +1052,11 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     );
 
     it.each(ROSTER)(
-      "%s stands in its size tier (%s): crown between %s× and %s× the delver mean",
+      "%s stands in its size tier (%s): crown between %s× and %s× the player mean",
       (name, _group, min, max) => {
         const sheet: RosterSheet = baked.sheets[name];
         expect(Number.isInteger(sheet.crown)).toBe(true);
-        const ratio = (sheet.crown as number) / delverCrown;
+        const ratio = (sheet.crown as number) / playerCrown;
         expect(ratio, `${name} crown ratio`).toBeGreaterThanOrEqual(min);
         expect(ratio, `${name} crown ratio`).toBeLessThanOrEqual(max);
       },
@@ -922,6 +1087,133 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       // not the 7-frame default: the roar is held inside the clip, then strike and recovery
       expect(attack.frames[0].length).not.toBe(7);
       expect(attack.frames[0].length / attack.fps).toBeGreaterThan(0.4);
+    });
+  });
+
+  describe("the boar, on the quadruped rig (FS-X2F2H §H R61)", () => {
+    type BoarSheet = {
+      atlas: string;
+      frameWidth: number;
+      directions: number;
+      crown?: number;
+      length?: number;
+      animations: Record<
+        string,
+        { fps: number; loop: boolean; frames: unknown[][] }
+      >;
+      source: string;
+      licence: string;
+    };
+    const BOARS: [string, string][] = [
+      ["creature_boar_base", "boar"],
+      ["creature_boar_elite", "eliteBoar"],
+    ];
+    const PLAYERS = [
+      "char_knight_base",
+      "char_archer_base",
+      "char_wizard_base",
+    ];
+    const playerCrown =
+      PLAYERS.reduce((n, name) => n + baked.sheets[name].crown, 0) /
+      PLAYERS.length;
+    /** A side-on screen px of length reads as cos 30° px of height (tools/bake/lib/length.mjs). */
+    const HEIGHT_PER_LENGTH_PX = Math.cos(Math.PI / 6);
+    const boar = (name: string): BoarSheet => baked.sheets[name];
+
+    it.each(BOARS)(
+      "%s has 8-way idle, walk, attack and death, idle and walk looping",
+      (name) => {
+        const sheet = boar(name);
+        expect(sheet, name).toBeDefined();
+        expect(sheet.directions).toBe(8);
+        expect(Object.keys(sheet.animations)).toEqual([
+          "idle",
+          "walk",
+          "attack",
+          "death",
+        ]);
+        for (const a of Object.values(sheet.animations)) {
+          expect(a.frames).toHaveLength(8);
+          expect(a.frames[0].length).toBeGreaterThan(1);
+        }
+        const a = sheet.animations;
+        expect([a.idle.loop, a.walk.loop, a.attack.loop, a.death.loop]).toEqual(
+          [true, true, false, false],
+        );
+      },
+    );
+
+    it.each(BOARS)(
+      "%s is authored in code in characters/boar.js#%s, under the project's licence",
+      (name, fn) => {
+        const sheet = boar(name);
+        expect(sheet.source).toBe(
+          `authored: tools/bake/page/characters/boar.js#${fn}`,
+        );
+        expect(sheet.licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it.each(BOARS)(
+      "%s packs into its own wildlife group, so no existing atlas reflows",
+      (name) => {
+        expect(boar(name).atlas).toMatch(/^wildlife-\d+$/);
+      },
+    );
+
+    it("packs nothing else into the wildlife group", () => {
+      for (const [name, sheet] of Object.entries(baked.sheets) as [
+        string,
+        BoarSheet,
+      ][])
+        if (/^wildlife-/.test(sheet.atlas))
+          expect(BOARS.map(([n]) => n)).toContain(name);
+    });
+
+    it.each(BOARS)(
+      "%s measures inside the fodder tier by body length, shorter than a player is tall",
+      (name) => {
+        const sheet = boar(name);
+        expect(Number.isInteger(sheet.length), name).toBe(true);
+        expect(sheet.length).toBeLessThanOrEqual(sheet.frameWidth);
+        const ratio =
+          ((sheet.length as number) * HEIGHT_PER_LENGTH_PX) / playerCrown;
+        expect(ratio, `${name} length ratio`).toBeGreaterThanOrEqual(0.85);
+        expect(ratio, `${name} length ratio`).toBeLessThan(1);
+      },
+    );
+
+    it.each(BOARS)(
+      "%s stands low: its back below a player's shoulder",
+      (name) => {
+        // a player's shoulder sits about 0.8 of the way up. The boar's crown is the top of its
+        // bristled ridge, and in the facings that run it into the screen its far end rides
+        // higher by depth, so the crown overstates how tall it stands.
+        expect(boar(name).crown as number).toBeLessThan(0.75 * playerCrown);
+      },
+    );
+
+    it("bakes the elite at the base's size: the same build, not a bigger beast", () => {
+      const base = boar("creature_boar_base").length as number;
+      const elite = boar("creature_boar_elite").length as number;
+      expect(Math.abs(elite - base) / base).toBeLessThan(0.08);
+    });
+
+    it.each(BOARS)(
+      "%s winds up long enough to read: the lowered head held through the server's 0.45 s wind-up, then the charge",
+      (name) => {
+        const attack = boar(name).animations.attack;
+        expect(attack.frames[0].length / attack.fps).toBeGreaterThan(0.6);
+      },
+    );
+
+    it("measures a length only on quadrupeds", () => {
+      for (const [name, sheet] of Object.entries(baked.sheets) as [
+        string,
+        BoarSheet,
+      ][])
+        if (sheet.length !== undefined)
+          expect(BOARS.map(([n]) => n)).toContain(name);
     });
   });
 });

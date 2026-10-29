@@ -17,11 +17,11 @@ export type CharacterAnimation = (typeof CHARACTER_ANIMATIONS)[number];
 
 /**
  * World px per second the walk clip covers at 1x: the stride the bake keyed, over one cycle at
- * its authored fps. The server moves a delver at `DefaultSpeed` (200 world px/s), so a walk
+ * its authored fps. The server moves a player at `DefaultSpeed` (200 world px/s), so a walk
  * plays at about 2.7x to keep planted feet planted.
  */
 export const WALK_PACE = 74;
-/** Below this drawn speed (world px/s) a delver is standing, not walking: easing residue. */
+/** Below this drawn speed (world px/s) a player is standing, not walking: easing residue. */
 export const MOVING_SPEED = 20;
 /** The walk never plays faster than this, however fast a burst (a dash) carries the body. */
 export const MAX_WALK_SCALE = 4;

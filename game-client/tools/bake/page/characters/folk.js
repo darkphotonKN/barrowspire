@@ -1,13 +1,13 @@
 // The hub's folk (FS-2325V §G, ADR-0021): its residents and its two function NPCs, dressed on
-// the same rig as the delvers, idling and walking only.
+// the same rig as the players, idling and walking only.
 //
-// Residents are ordinary people, and read as such next to a delver: bare heads, homespun, no
+// Residents are ordinary people, and read as such next to a player: bare heads, homespun, no
 // weapon, no armour, a working gait. They come in builds ("trousers", "skirt"), one sheet each;
 // the server's `appearance` is "<palette>_<build>", and each palette in use is baked into the
 // build's sheet as a variant that re-dresses the same rig (fabrics.js FOLK_PALETTES).
 //
 // Function NPCs are worth crossing the hub for, and their role reads from the silhouette: the
-// Spirewarden, who sends delvers down, is tall in grave-watch mail and a hooded mantle, with a
+// Spirewarden, who sends players down, is tall in grave-watch mail and a hooded mantle, with a
 // lantern hung from a crook; the Quartermaster, who keeps the stores, is stout, in a leather
 // apron and felt cap, with a ledger on his arm.
 

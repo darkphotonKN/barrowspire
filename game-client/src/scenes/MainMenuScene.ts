@@ -38,7 +38,7 @@ const CARD_XP_BAR = { left: 64, y: 56, rightMargin: 12, height: 4 };
 /** A roster card's head-and-shoulders window. */
 const PORTRAIT = { width: 44, height: 56 };
 /**
- * The primary button takes the delver into the town (the hub), not into a delve: the Spirewarden
+ * The primary button takes the player into the town (the hub), not into a delve: the Spirewarden
  * starts those. Wide enough for its label at the button's letter-spacing.
  */
 const ENTER_LABEL = "ENTER THE TOWN";
@@ -189,7 +189,7 @@ export class MainMenuScene extends Phaser.Scene {
     this.drawDelveButton("disabled");
 
     // The loadout moved into the hub: the Quartermaster keeps it now, and gearing
-    // up happens where the delver is rather than back in a menu.
+    // up happens where the player is rather than back in a menu.
     // FS-29KSH §Requirements 30.
 
     // Connection Status indicator
@@ -275,7 +275,7 @@ export class MainMenuScene extends Phaser.Scene {
 
   /**
    * Reads the member's characters from the server, carrying any local-only ones over once
-   * (FS-BDA7X req 39-40), then redraws the roster and tells the delver what the import dropped.
+   * (FS-BDA7X req 39-40), then redraws the roster and tells the player what the import dropped.
    */
   private loadRoster(): void {
     void useGameStore
@@ -613,7 +613,7 @@ export class MainMenuScene extends Phaser.Scene {
       this.centerFigureClass = undefined;
 
       // The roster is still being read, or could not be: an empty plinth that offers nothing,
-      // so a delver with heroes is never sent to make another.
+      // so a player with heroes is never sent to make another.
       const glow = addTorchPool(this, 0, 26, 200, 100, 0.5);
       const waitText = this.add.text(
         0,
@@ -830,7 +830,7 @@ export class MainMenuScene extends Phaser.Scene {
   /**
    * Shows why the way in was refused.
    *
-   * A refusal the delver cannot see is a button that does nothing: pressing
+   * A refusal the player cannot see is a button that does nothing: pressing
    * start and having the menu sit there is the worst reading of a full hub.
    * FS-29KSH §Requirements 32.
    */
@@ -860,7 +860,7 @@ export class MainMenuScene extends Phaser.Scene {
   private showQueuePopup(queueLength: number, maxPlayers: number = 2): void {
     if (this.queuePopupActive) {
       if (this.queuePeopleText) {
-        this.queuePeopleText.setText(`Delvers gathered: ${queueLength}/${maxPlayers}`);
+        this.queuePeopleText.setText(`Players gathered: ${queueLength}/${maxPlayers}`);
       }
       return;
     }
@@ -897,7 +897,7 @@ export class MainMenuScene extends Phaser.Scene {
     this.queuePeopleText = this.add.text(
       0,
       0,
-      `Delvers gathered: ${queueLength}/${maxPlayers}`,
+      `Players gathered: ${queueLength}/${maxPlayers}`,
       {
         fontFamily: CANVAS_FONT.body,
         fontSize: "14px",

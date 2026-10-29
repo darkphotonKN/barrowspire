@@ -30,7 +30,7 @@ func fillHub(t *testing.T, server *Server, n int) {
 // JoinHub hands the decision to the world and passes its refusal back, so a
 // client hears "full" rather than silence. FS-29KSH §Requirements 31-32.
 func TestJoinHub_PassesTheWorldsRefusalOn(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	fillHub(t, server, constants.HubOccupancyCap)
@@ -51,7 +51,7 @@ func TestJoinHub_PassesTheWorldsRefusalOn(t *testing.T) {
 // a place; refusing them at the door on the way back would strand them in a run
 // that no longer exists. FS-29KSH §Requirements 33.
 func TestReturnPlayersToHub_IsNotGatedByTheCap(t *testing.T) {
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
 	conn := &websocket.Conn{}

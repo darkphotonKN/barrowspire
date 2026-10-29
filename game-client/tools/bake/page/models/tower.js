@@ -32,7 +32,7 @@ export const SLIT_LIGHT = [0, 2.2, PER_THICK / 2 + 0.02];
 export const STAIRS_LIGHT = [0.2, 1.0, 0.3];
 
 /** Texture px per tile edge on a wall face. */
-const PX = 128;
+export const PX = 128;
 
 // ── Palette (BARROW blends only) ─────────────────────────────────────────────────
 const STONE_LO = mix("slate", "barrowDeep", 0.4);
@@ -93,7 +93,7 @@ function jointsOf(W, [lo, hi], k, key) {
  * tile edges (darkens toward the top), `soot` [{ x, y, r }] px from the ground, `moss` 0..1,
  * `damp` 0..1, `grime` 0..1 (at the foot).
  */
-function masonry(width, height, o = {}) {
+export function masonry(width, height, o = {}) {
   const W = width;
   const Hp = height;
   const key = o.key ?? 5100;
@@ -183,7 +183,7 @@ function masonry(width, height, o = {}) {
   return { map: canvasTexture(col), bump: canvasTexture(bmp) };
 }
 
-const stoneMat = (t, o = {}) =>
+export const stoneMat = (t, o = {}) =>
   new THREE.MeshStandardMaterial({
     map: t.map,
     bumpMap: t.bump,
@@ -196,7 +196,7 @@ const stoneMat = (t, o = {}) =>
 let TOWER = null;
 
 /** The tower's shared materials, built once per bake (seeded, so deterministic). */
-function towerMaterials() {
+export function towerMaterials() {
   if (TOWER) return TOWER;
   const cap = (s) =>
     pixelTexture(128, 128, (x, y) => {
@@ -361,7 +361,7 @@ function guide(obj) {
 }
 
 /** A box whose vertices are pushed about by noise: a rough-hewn stone or a broken one. */
-function roughBox(w, h, d, seed, amount = 0.18, seg = 3) {
+export function roughBox(w, h, d, seed, amount = 0.18, seg = 3) {
   const geo = new THREE.BoxGeometry(w, h, d, seg, seg, seg);
   const pos = geo.attributes.position;
   const v = new THREE.Vector3();

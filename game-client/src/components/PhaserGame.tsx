@@ -9,6 +9,8 @@ import { BarrowspireScene } from "@/scenes/BarrowspireScene";
 import { PreloadScene } from "@/scenes/PreloadScene";
 import { BootScene } from "@/scenes/BootScene";
 import { HubScene } from "@/scenes/HubScene";
+import { FieldScene } from "@/scenes/FieldScene";
+import { WORLD_SCENES, sceneFor } from "./worldRouting";
 import { WorldEnteredPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { LoadoutScene } from "@/scenes/LoadoutScene";
@@ -45,7 +47,7 @@ export default function PhaserGame() {
           debug: false,
         },
       },
-      scene: [BootScene, PreloadScene, MainMenuScene, CharacterCreationScene, LoadoutScene, HubScene, BarrowspireScene],
+      scene: [BootScene, PreloadScene, MainMenuScene, CharacterCreationScene, LoadoutScene, HubScene, BarrowspireScene, FieldScene],
     };
 
     const game = new Phaser.Game(config);
@@ -56,19 +58,9 @@ export default function PhaserGame() {
     // and the scene follows. One handler at the Phaser bridge rather than one
     // per scene, so no scene has to know what comes after it.
     // FS-29KSH §Requirements 15, 36.
-    // Everything a world transition replaces. LoadoutScene is here because it is a
-    // screen the delver opens while standing in the hub: a match found with it open
-    // would otherwise leave it sitting on top of the run.
-    const WORLD_SCENES = [
-      "MainMenuScene",
-      "HubScene",
-      "LoadoutScene",
-      "BarrowspireScene",
-    ];
-
+    // Everything a world transition replaces: WORLD_SCENES (worldRouting.ts).
     const enterWorld = (payload: WorldEnteredPayload) => {
-      const target =
-        payload.world_type === "hub" ? "HubScene" : "BarrowspireScene";
+      const target = sceneFor(payload.world_type);
 
       // scene.start() from the manager does not stop what is already running,
       // unlike the same call from inside a scene, so the previous world would
@@ -77,7 +69,7 @@ export default function PhaserGame() {
         if (key !== target && game.scene.isActive(key)) game.scene.stop(key);
       }
 
-      game.scene.start(target, { sessionID: payload.session_id });
+      game.scene.start(target, { sessionID: payload.session_id, field: payload.field });
     };
 
     socketManager.on("world_entered", (payload: WorldEnteredPayload) => {

@@ -1,7 +1,7 @@
 // The cast (FS-2325V §E.3): the three playable classes and the run's creatures, each dressed on
 // the shared rig and given a movement style for the clips. Rivals reuse the class models.
 //
-// Heights are in world units (one unit = one tile edge). A delver stands about 2 units: under the
+// Heights are in world units (one unit = one tile edge). A player stands about 2 units: under the
 // 2.4-unit door lintel, roughly 80 px tall on screen, one tile wide at the shoulders.
 //
 // Every cast member returns { rig, style }. `style` feeds clips.js: `attack` names the attack,
@@ -48,6 +48,8 @@ import {
   wizardHat,
 } from "./gear.js";
 import { DEMON_ANIMATIONS, demon } from "./demon.js";
+import { ghost, zombie } from "./forlorn.js";
+import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
 
 const FRONT = [Math.PI / 2 - 0.95, Math.PI / 2 + 0.95];
 const BACK = [-Math.PI / 2 - 0.95, -Math.PI / 2 + 0.95];
@@ -391,4 +393,10 @@ export const CAST = [
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   { sheet: "creature_demon_base", group: "boss", fn: "demon", module: "demon", build: demon, animations: DEMON_ANIMATIONS },
+  // the Forlorn Forest's dead (FS-3QHQZ §C R29), packed in their own group so no atlas reflows
+  { sheet: "creature_zombie_base", group: "fodder", fn: "zombie", module: "forlorn", build: zombie },
+  { sheet: "creature_ghost_base", group: "fodder", fn: "ghost", module: "forlorn", build: ghost },
+  // Gentle Meadows' boar and its elite (FS-X2F2H §H R61), on the quadruped rig, in their own group
+  { sheet: "creature_boar_base", group: "wildlife", fn: "boar", module: "boar", build: boar, animations: BOAR_ANIMATIONS },
+  { sheet: "creature_boar_elite", group: "wildlife", fn: "eliteBoar", module: "boar", build: eliteBoar, animations: BOAR_ANIMATIONS },
 ];

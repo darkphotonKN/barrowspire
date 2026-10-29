@@ -28,7 +28,8 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 
 - **World** — one isolated ECS simulation: its own `EntityManager`, its own goroutines, its own
   fixed-timestep tick, no mutable state shared with any other world.
-- **World type** — which kind of world: `hub` or `run`. Two types, one client.
+- **World type** — which kind of world: `hub` or `run`. Two types, one client. Gains `field`
+  with FS-X2F2H (the client calls this **world kind**, mirroring `world_type` on the wire).
 - **Hub** — the shared, long-lived world players occupy between runs. One per deployment,
   server-authoritative, capped. Same thing the refactor plan calls the **HUB**; never call it a
   lobby, a town, or a village in code.
@@ -50,7 +51,21 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
     the hub work in `git blame`.
 - **Delve** — the *player-facing* word for entering a run, owned by
   [`game-client/docs/design-guideline.md`](../../game-client/docs/design-guideline.md). Server
-  code says **run**; UI copy says **delve**. Do not mix them in one layer.
+  code says **run**; UI copy says **delve**. Do not mix them in one layer. "Delve" stays the
+  Spire's own word: a field visit is not a delve.
+- **Field world** (world type `field`, FS-X2F2H) — a long-lived world shared like the hub, with
+  monsters and loot and **no queue**: anyone walks in through its gate. Not a run: it is not built
+  for a match, never resolves, and is never torn down while its pod lives. Death in it costs
+  nothing. Its gains settle when the player leaves, through the match-end outbox path as a
+  `returned` result, but a field visit is still not a match; do not call it one.
+  - **Gentle Meadows** — the easy field, east of the hub: open, hand-laid map, low-level animals.
+  - **Forlorn Forest** — the harder field, west of the hub: a generated branching trail, zombies
+    and the rare ghost (FS-3QHQZ).
+- **Channel** — one pod's copy of a field world (ADR-0030). Every pod runs one channel of each
+  field, created at boot; two players on different pods are in different channels of the same
+  field. **Collides with the Redis pub/sub channel** (`matchstart:pod:<podID>`, the hub's state
+  channel): when either could be meant, write "field channel" or "Redis channel", never a bare
+  "channel".
 
 ### Moving between worlds
 
@@ -69,6 +84,12 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
     creation with a world switch (`ResolvedMatchedPlayers.LocalPlayers`).
   - **Arrival** — a handoff player's connection reaching the host, carrying `?session_id=`.
     Seated (`SeatArrival`) or refused with close code `4002`; never served half-seated.
+- **Gate** (FS-0XMCP) — a fixed hub location a player walks into to go to a place, entry
+  validated by proximity on the server. The **Spire gate** opens the queue panel (queue or solo
+  start; the queue and handoff are unchanged); a **field gate** world-switches the player into
+  that pod's channel of the field, never a handoff (ADR-0030). Each field has an entrance gate
+  back to the matching hub gate. A gate is map data, not an NPC: it replaces the **Delve NPC** as
+  the queue's entry point once FS-0XMCP ships.
 
 ### Hub population
 
@@ -91,6 +112,61 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Ambient NPC** — a wandering resident with no function attached, there to make the place feel
   inhabited. Server-authoritative and broadcast per tick, so every player sees one in the same
   position. Not decoration in the technical sense: it costs broadcast and server-side collision.
+
+### Field places and visits (FS-X2F2H, FS-3QHQZ)
+
+- **Field place** — a field as data (`FieldPlace`): everything one channel of it is built from,
+  its size, layout provider, entrance and arrival, hub gate, creature table, level band, stat and
+  drop factors, respawn delay, elite rule and chest restock delay. One per field, the same for
+  every pod; the channel is what a pod builds from it.
+- **Layout provider** — what hands a field place its layout for one channel (`LayoutProvider`).
+  The Meadows' provider returns a fixed, hand-laid layout; the Forest's returns the one its pod
+  generated at boot, and may fail. The seam that lets a hand-laid field and a generated one be
+  built the same way.
+- **Visit** — one player's stay in a field, from entering through its gate to whichever way out
+  removes their body first (`FieldVisit`). What settles when they leave. Not a match and not a
+  run, though it settles through the match-end outbox path.
+  - **Visit id** — minted fresh on every field entry, and sent as the settlement event's
+    `session_id`. Never the channel's own id: character-service keys XP grants on it, so two
+    visits to one channel must never share one. The one place a `session_id` does not name a run.
+
+### Generated layouts (FS-3QHQZ, `internal/levelgen`)
+
+- **Layout** — two layers, one word; qualify when either could be meant:
+  - **generator layout** (`levelgen.Layout`) — the branching-trail generator's pure output for a
+    seed: bounds, wall rects, entrance, trails, dead ends, open cells, seed and attempt. Knows
+    nothing of monsters, chests or loot.
+  - **field layout** (`FieldLayout`) — what stands on a field's ground: keep-out obstacles,
+    standard and elite spawn points, chests. The Forest's field layout is derived from its
+    generator layout; the Meadows' is hand-laid.
+- **Trail** — one walked path of carved cells in a generator layout, in walk order. The **main
+  trail** starts at the entrance mouth; a **branch** sprouts from another trail and records which.
+  The trails form a tree: they never join except where one sprouted.
+- **Dead end** — where a trail stops. Every trail has exactly one, and every dead end opens into a
+  clearing. The main trail's is the deepest.
+- **Clearing** — the open round space carved at a dead end. In the Forest each holds either an
+  elite spawn point or a chest, and the main trail's always holds an elite. Spawn points for
+  ordinary monsters are never placed in one.
+- **Spawn point** — a fixed point in a field where one monster stands, and where it respawns after
+  dying. Two kinds:
+  - **standard spawn point** — on open ground (in the Forest, on the trails); its elite rule is
+    the field place's.
+  - **elite spawn point** — at a clearing's centre; always elite.
+  - **Elite rule** (`FieldElite`) — how a spawn point's monsters come elite, rolled at each spawn
+    and respawn: **Rolled** (the Spire's floor-1 chance; the Meadows), **Never** (the Forest's
+    trail points), **Always** (every elite spawn point).
+  A spawn point is a point, not a placed object: it is not recorded as an occupied area.
+- **Restock** — a field chest emptying and closing a set delay after it was **first opened**
+  (`ChestRestockDelay`; 5 minutes in the Forest), so its next opening rolls afresh. What a player
+  already took is theirs. Timed from the first open, not from the last item taken.
+
+### Field combat (FS-X2F2H)
+
+- **Kill credit** — in a field world, the XP and the loot roll of a kill belong to the player who
+  lands the killing blow, and to no one else. Not shared, not split by damage dealt.
+- **Killer-first window** — the 30s after a field kill during which only the killer may take the
+  dropped pile; after it, anyone may. Kill credit decides who rolls the loot; the window decides
+  who may pick it up.
 
 ### The message hub (the other `hub`)
 
@@ -131,7 +207,8 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
     players to the host. Never sent by the matcher, so no player can be told to move before
     the run expecting them exists.
 - **Session id** — the run's one id, minted when the host creates the session and named
-  `session_id` on the wire. There is no separate run id or match id; do not introduce one.
+  `session_id` on the wire. There is no separate run id or match id; do not introduce one. The
+  one exception: a field visit's settlement carries its **visit id** as `session_id`.
 
 ### Seats (FS-K2HKP)
 

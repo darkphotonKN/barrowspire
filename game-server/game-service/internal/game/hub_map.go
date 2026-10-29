@@ -24,7 +24,7 @@ type hubNPC struct {
 var hubNPCs = []hubNPC{
 	{
 		Name:     "Spirewarden",
-		Function: components.NPCFunctionDelve,
+		Function: components.NPCFunctionStoryteller,
 		X:        constants.HubSpawnX + 140,
 		Y:        constants.HubSpawnY - 120,
 	},
@@ -34,6 +34,28 @@ var hubNPCs = []hubNPC{
 		X:        constants.HubSpawnX - 140,
 		Y:        constants.HubSpawnY - 120,
 	},
+}
+
+// hubGate is a fixed place a player walks into to go somewhere.
+//
+// Map data like the NPCs and buildings: a gate is where it is on every pod and
+// after every restart. FS-0XMCP §Requirements 1, 2.
+type hubGate struct {
+	Destination components.GateDestination
+	X, Y        float64
+	// Where a player coming back through it is set down; nil when nobody comes
+	// back that way.
+	Arrival *components.GateArrival
+}
+
+// The hub's gates: the Spire's door at the back (north), the trail west to the
+// Forlorn Forest, the road east to Gentle Meadows. Each field gate's arrival
+// point lies just inside the hub, beyond the gate's range. FS-0XMCP
+// §Requirements 2, 3.
+var hubGates = []hubGate{
+	{Destination: components.GateDestinationSpire, X: 1000, Y: 50},
+	{Destination: components.GateDestinationForest, X: 40, Y: 400, Arrival: &components.GateArrival{X: 180, Y: 400}},
+	{Destination: components.GateDestinationMeadows, X: 1960, Y: 360, Arrival: &components.GateArrival{X: 1820, Y: 360}},
 }
 
 // hubBuilding is one structure's footprint in the hub.
@@ -100,6 +122,10 @@ func (s *Session) InitialHubMapObjects() {
 		CreateFunctionNPCEntity(s.EntityManager, npc)
 	}
 
+	for _, gate := range hubGates {
+		s.indexGate(CreateGateEntity(s.EntityManager, gate))
+	}
+
 	for _, building := range hubBuildings {
 		s.addHubBuilding(building)
 	}
@@ -111,6 +137,7 @@ func (s *Session) InitialHubMapObjects() {
 	slog.Info("Hub map built",
 		"session_id", s.ID,
 		"npcs", len(hubNPCs),
+		"gates", len(hubGates),
 		"buildings", len(hubBuildings),
 		"residents", len(hubResidents),
 	)

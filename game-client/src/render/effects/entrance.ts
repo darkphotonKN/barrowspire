@@ -1,7 +1,7 @@
 /**
  * Entrance marker (FS-KYPQ9 §H.1): a soft amber glow laid on the ground at a building's
  * threshold, breathing slowly and shallowly on alpha alone (the table's `entranceBreath`). No
- * arrow, no outline, no scale change. It stays amber: an entrance leads to a door the delver can
+ * arrow, no outline, no scale change. It stays amber: an entrance leads to a door the player can
  * act on.
  *
  * Signal, unchanged: built once per building in `updateWalls`, hidden in `enterBuilding` and

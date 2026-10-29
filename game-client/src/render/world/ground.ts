@@ -2,7 +2,7 @@
  * The ground: decorative, client-side, and the same on every client (FS-2325V §C.1).
  *
  * Every choice is a hash of world tile coordinates and a per-world seed, never `Math.random`,
- * so two delvers looking at the same place see the same tiles and decals. Pure planning: the
+ * so two players looking at the same place see the same tiles and decals. Pure planning: the
  * result names sheets from the sprite manifest and world positions; drawing is `scene.ts`.
  */
 
@@ -10,7 +10,7 @@ import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso";
 import type { House } from "./houses";
 
 /** Which kind of world is being dressed. Mirrors `ClientGameState.world_type`. */
-export type WorldKind = "hub" | "run";
+export type WorldKind = "hub" | "run" | "field";
 
 /** One ground tile, decal or floor tile to draw: a manifest sheet and frame, at a world point. */
 export interface GroundPiece {
@@ -20,6 +20,10 @@ export interface GroundPiece {
   index: number;
   /** World position of the tile's centre (or the decal's footprint). */
   at: Point;
+  /** 0..1, for ground fading out past the map's edge (an apron); absent, opaque. */
+  alpha?: number;
+  /** A multiply over this tile alone, 0xRRGGBB: a forest's darker litter. Absent, as baked. */
+  shade?: number;
 }
 
 const T = WORLD_PX_PER_TILE;
@@ -35,10 +39,27 @@ export function tileHash(tx: number, ty: number, seed: number): number {
   return (h ^ (h >>> 16)) >>> 0;
 }
 
+/** A multiply colour eased halfway back to none: each channel halfway to full. */
+function halfway(shade: number): number {
+  const up = (shift: number) => {
+    const v = (shade >> shift) & 0xff;
+    return Math.round(v + (255 - v) / 2) << shift;
+  };
+  return up(16) | up(8) | up(0);
+}
+
 /** The seed each kind of world scatters its ground with. */
 export function worldSeed(kind: WorldKind): number {
-  return kind === "hub" ? 0x4855_4231 : 0x5255_4e31;
+  return WORLD_SEEDS[kind];
 }
+
+const WORLD_SEEDS: Record<WorldKind, number> = {
+  hub: 0x4855_4231,
+  run: 0x5255_4e31,
+  // a field's own pattern (FS-X2F2H §Requirements 54); each field's colours are its look's
+  // (fieldLook.ts)
+  field: 0x4649_4531,
+};
 
 /** World n = -y, e = +x: the edge a transition tile's second material intrudes from. */
 export type Edge = "n" | "e" | "s" | "w" | "ne" | "se" | "sw" | "nw";
@@ -80,13 +101,50 @@ const centreOf = (tx: number, ty: number): Point => ({
   y: (ty + 0.5) * T,
 });
 
+/**
+ * Ground laid past the map's edge (FS-0XMCP R18), where nobody walks: tiles within a world rect
+ * outside the map, fading out over `fade` world px from `from` (where the ground leaves the map,
+ * on its edge) into the dark the camera shows there. Paths running through it carry on as dirt.
+ */
+export interface Apron extends Rect {
+  from: Point;
+  fade: number;
+  /**
+   * An apron along a whole straight edge (a field's ground running on past every side, FS-X2F2H
+   * §Requirements 54): the fade is measured from the edge line through `from` that runs along this
+   * world axis, not from the point. Absent, the fade is radial from `from` (a gate's mouth).
+   */
+  along?: "x" | "y";
+}
+
 export interface GroundOptions {
   width: number;
   height: number;
   kind: WorldKind;
   /** Trodden ground (world rects), laid as dirt. The hub's paths. */
   paths?: readonly Rect[];
+  /** Ground past the edge (the hub's gates). */
+  aprons?: readonly Apron[];
+  /**
+   * Open ground is trodden barrow dirt rather than grass: a forest's trails and clearings
+   * (FS-3QHQZ §Requirements 25). Paths stay dirt; only `litter` grows.
+   */
+  trodden?: boolean;
+  /**
+   * Ground under cover (world rects): a forest's stands, laid as the grass sheet, which the
+   * forest's tint turns to dark leaf litter, blended where it meets the trail.
+   */
+  litter?: readonly Rect[];
+  /** A multiply over the litter alone, 0xRRGGBB, so it lies darker than the trail beside it. */
+  litterShade?: number;
 }
+
+/** How far a tile's own hash pushes its apron fade, either way: a ragged rim, not a line. */
+const APRON_RAG = 0.1;
+/** The share of an apron's fade over which its ground is still laid whole. */
+const APRON_WHOLE = 0.3;
+/** Below this an apron tile is not laid at all. */
+const APRON_MIN_ALPHA = 0.06;
 
 /**
  * The outdoor ground over `[0, width] × [0, height]`, one tile per world tile. A run is barrow
@@ -97,30 +155,71 @@ export function planGround({
   height,
   kind,
   paths = [],
+  aprons = [],
+  trodden = false,
+  litter = [],
+  litterShade,
 }: GroundOptions): GroundPiece[] {
   const seed = worldSeed(kind);
   const cols = Math.ceil(width / T);
   const rows = Math.ceil(height / T);
-  const base: Material = kind === "hub" ? "grass" : "dirt";
-  const material = (tx: number, ty: number): Material =>
-    paths.some((p) => within(centreOf(tx, ty), p)) ? "dirt" : base;
+  // a run and a forest's trails are barrow dirt; the hub and an open field are grass
+  const base: Material = kind === "run" || trodden ? "dirt" : "grass";
+  const material = (tx: number, ty: number): Material => {
+    const c = centreOf(tx, ty);
+    if (paths.some((p) => within(c, p))) return "dirt";
+    // a forest runs on past its edge under its trees: the border's litter meets no trail there
+    const offMap = tx < 0 || ty < 0 || tx >= cols || ty >= rows;
+    return litter.some((r) => within(c, r)) || (trodden && offMap) ? "grass" : base;
+  };
+
+  const tile = (tx: number, ty: number): GroundPiece => {
+    const at = centreOf(tx, ty);
+    const index = tileHash(tx, ty, seed);
+    const m = material(tx, ty);
+    const edge =
+      m === "grass"
+        ? transitionEdge((dx, dy) => material(tx + dx, ty + dy) === "dirt")
+        : undefined;
+    const piece: GroundPiece = edge
+      ? { sheet: "ground_grass_dirt", animation: edge, index: 0, at }
+      : { sheet: `ground_${m}`, animation: "variants", index, at };
+    // under a forest's trees the grass is litter, shaded down from the trail; where it meets the
+    // trail, half shaded, so the blend tile's dirt does not step down from the dirt beside it
+    if (trodden && m === "grass" && litterShade !== undefined)
+      piece.shade = edge ? halfway(litterShade) : litterShade;
+    return piece;
+  };
 
   const tiles: GroundPiece[] = [];
   for (let tx = 0; tx < cols; tx++)
-    for (let ty = 0; ty < rows; ty++) {
-      const at = centreOf(tx, ty);
-      const index = tileHash(tx, ty, seed);
-      const m = material(tx, ty);
-      const edge =
-        m === "grass"
-          ? transitionEdge((dx, dy) => material(tx + dx, ty + dy) === "dirt")
-          : undefined;
-      tiles.push(
-        edge
-          ? { sheet: "ground_grass_dirt", animation: edge, index: 0, at }
-          : { sheet: `ground_${m}`, animation: "variants", index, at },
-      );
-    }
+    for (let ty = 0; ty < rows; ty++) tiles.push(tile(tx, ty));
+
+  // aprons past the edge: each tile once, however the aprons overlap
+  const laid = new Set<string>();
+  for (const apron of aprons)
+    for (let tx = Math.floor(apron.x / T); tx * T < apron.x + apron.width; tx++)
+      for (let ty = Math.floor(apron.y / T); ty * T < apron.y + apron.height; ty++) {
+        if (tx >= 0 && ty >= 0 && tx < cols && ty < rows) continue;
+        const key = `${tx},${ty}`;
+        if (laid.has(key)) continue;
+        const c = centreOf(tx, ty);
+        if (!within(c, apron)) continue;
+        const away =
+          apron.along === "x"
+            ? Math.abs(c.y - apron.from.y)
+            : apron.along === "y"
+              ? Math.abs(c.x - apron.from.x)
+              : Math.hypot(c.x - apron.from.x, c.y - apron.from.y);
+        if (away >= apron.fade) continue;
+        // whole near the edge, then easing out, each tile's hash roughening the rim
+        const rag = ((tileHash(tx, ty, seed + 5) & 0xff) / 0xff - 0.5) * 2 * APRON_RAG;
+        const t = Math.min(1, Math.max(0, (away / apron.fade - APRON_WHOLE) / (1 - APRON_WHOLE) + rag));
+        const alpha = 1 - t * t * (3 - 2 * t);
+        if (alpha < APRON_MIN_ALPHA) continue;
+        laid.add(key);
+        tiles.push({ ...tile(tx, ty), alpha });
+      }
   return tiles;
 }
 
@@ -233,9 +332,9 @@ export function planFloors(
 }
 
 /** Share of tiles that carry a decal, in percent. */
-const DECAL_DENSITY: Record<WorldKind, number> = { hub: 14, run: 10 };
+const DECAL_DENSITY: Record<WorldKind, number> = { hub: 14, run: 10, field: 14 };
 /** Share of those decals that are grass tufts rather than pebbles, in percent. */
-const TUFT_SHARE: Record<WorldKind, number> = { hub: 70, run: 15 };
+const TUFT_SHARE: Record<WorldKind, number> = { hub: 70, run: 15, field: 85 };
 /** How far a decal may sit from its tile's centre, in world px. */
 const DECAL_JITTER = 14;
 
@@ -292,6 +391,21 @@ export interface GroundLook {
   decals: boolean;
   /** Another material breaking up through the halls (FS-8RBQY §C.2). */
   patches?: GroundPatches;
+  /**
+   * A multiply over the whole painted ground, 0xRRGGBB: the same sheets recoloured (a field's
+   * daylight greens, FS-X2F2H §Requirements 54). Absent, the ground is drawn as baked.
+   */
+  tint?: number;
+  /**
+   * A brightening past what the baked sheets carry: the (tinted) ground is added over itself at
+   * this share, 0..1, so 0.5 paints it half as bright again with its texture intact (a daylit field,
+   * FS-X2F2H §Requirements 54). Absent, none.
+   */
+  lift?: number;
+  /** Open ground is trodden barrow dirt, grass only under cover (a forest, FS-3QHQZ §Requirements 25). */
+  trodden?: boolean;
+  /** A multiply over that covered grass alone, so the litter lies darker than the trail. */
+  litterShade?: number;
 }
 
 /** The outdoor ground, as runs and the hub have always had it. */
@@ -325,7 +439,7 @@ export function planGroundLayer({
   return [
     ...(look.hall
       ? planHalls(world.width, world.height, look.hall, seed, look.patches)
-      : planGround(world)),
+      : planGround({ ...world, trodden: look.trodden, litterShade: look.litterShade })),
     ...(look.decals ? planDecals({ ...world, houses }) : []),
     ...planFloors(houses, seed, look.floor),
   ];

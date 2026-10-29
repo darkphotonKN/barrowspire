@@ -29,14 +29,14 @@ export const TILE_HEIGHT = 32;
 /**
  * How many server (world) pixels one tile spans, along either world axis.
  *
- * Calibrated from the server's entity sizes so a delver's collision footprint
+ * Calibrated from the server's entity sizes so a player's collision footprint
  * spans roughly one tile (game-server/game-service/common/constants/game.go,
  * game-server/game-service/internal/game/session.go, hub_map.go):
  *
- * - `PlayerRadius = 20` → a delver's footprint is 40 world px across: one tile.
+ * - `PlayerRadius = 20` → a player's footprint is 40 world px across: one tile.
  * - run and hub wall thickness is `20` → half a tile, a wall reads as a wall and
  *   not as a floor strip.
- * - a run building's door gap is `50` → 1.25 tiles, one delver wide with room to
+ * - a run building's door gap is `50` → 1.25 tiles, one player wide with room to
  *   spare, which is what walking through it feels like.
  *
  * So 40. At this scale one world pixel moves a sprite about 0.9 screen px, and

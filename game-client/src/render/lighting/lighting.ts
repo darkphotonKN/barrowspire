@@ -56,8 +56,8 @@ export function sourceFromManifest(
   };
 }
 
-/** The pool the delver carries; replaces FS-W6BP1's overlay torch. */
-export const DELVER_TORCH = {
+/** The pool the player carries; replaces FS-W6BP1's overlay torch. */
+export const PLAYER_TORCH = {
   radius: 260,
   color: BARROW_HEX.amber,
   intensity: 0.8,
@@ -142,12 +142,15 @@ export function contrastRatio(a: number, b: number): number {
 // ── Ambient, and the ground it leaves at the edge ─────────────────────────
 
 /**
- * Warm dusk in the hub, dark barrow in a run (FS-2325V §C.8). Fixed: the world may stay dark,
- * because hostile markers carry readability above the light-map (§C.9).
+ * Warm dusk in the hub, dark barrow in a run (FS-2325V §C.8), daylight in a field (FS-X2F2H
+ * §Requirements 54). `field` is the cozy meadow's daylight; each field picks its own ambient in
+ * its look (`src/render/world/fieldLook.ts`), Gentle Meadows taking this one. Fixed: the world
+ * may stay dark, because hostile markers carry readability above the light-map (§C.9).
  */
 export const AMBIENT: Record<WorldKind, number> = {
   hub: mix(BARROW_HEX.barrowBrown, BARROW_HEX.amberBright, 0.55),
   run: mix(BARROW_HEX.slate, BARROW_HEX.necrotic, 0.4),
+  field: mix(BARROW_HEX.vellum, BARROW_HEX.amberBright, 0.2),
 };
 
 /**
@@ -161,6 +164,43 @@ export const TOWER_AMBIENT = mix(
   BARROW_HEX.pitch,
   0.33,
 );
+
+/**
+ * The Forlorn Forest's ambient (FS-3QHQZ §Requirements 26): "a little gloomy but not so dark". An
+ * overcast grey-green between the hub's dusk and a run's barrow cold, dimmer than the first and
+ * lighter than the second. Fixed for the field like every ambient, and never lifted for
+ * readability: field markers carry their outline.
+ */
+export const FOREST_AMBIENT = mix(BARROW_HEX.vellumDark, BARROW_HEX.necrotic, 0.3);
+
+/**
+ * A baked sheet's mean under a sprite tint: the GPU multiplies each texel by the tint, so the
+ * tinted sheet's mean is its mean multiplied by the tint (a field's recoloured ground, FS-X2F2H
+ * §Requirements 54). Rounded to whole channels, as a mean is measured.
+ */
+export function tinted(mean: ArtRgb, tint: number): ArtRgb {
+  const [r, g, b] = channels(tint);
+  return {
+    r: Math.round((mean.r * r) / 255),
+    g: Math.round((mean.g * g) / 255),
+    b: Math.round((mean.b * b) / 255),
+  };
+}
+
+/**
+ * A baked ground sheet's mean as a ground look paints it (FS-X2F2H §Requirements 54): under the
+ * look's tint, then lifted by adding the tinted ground again at `lift`'s share, as the ground
+ * layer's additive copy does. Clipped at full, as the GPU clips.
+ */
+export function groundMean(
+  mean: ArtRgb,
+  look: { tint?: number; lift?: number },
+): ArtRgb {
+  const base = look.tint === undefined ? mean : tinted(mean, look.tint);
+  const k = 1 + (look.lift ?? 0);
+  const up = (v: number) => Math.min(255, Math.round(v * k));
+  return { r: up(base.r), g: up(base.g), b: up(base.b) };
+}
 
 /**
  * A baked ground colour as it reaches the eye: multiplied by the ambient, then under the

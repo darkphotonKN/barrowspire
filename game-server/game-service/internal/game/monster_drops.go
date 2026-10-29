@@ -22,26 +22,42 @@ func newMonsterDrops(s *Session, r lootRand) *monsterDrops {
 
 func (m *monsterDrops) ConsumeKill(record systems.KillRecord) {
 	table, ok := monsterDropFor(record)
-	if !ok || m.r.Float64() >= table.Chance {
+	if !ok {
 		return
 	}
 
-	n := table.MinItems
-	if table.MaxItems > table.MinItems {
-		n += m.r.IntN(table.MaxItems - table.MinItems + 1)
-	}
-
-	drop := lootDrop{ItemLevel: record.Level, Source: table.Source}
-	itemIDs := make([]uuid.UUID, 0, n)
-	for range n {
-		itemType := pickItemType(m.r, table.TypeSplit)
-		itemIDs = append(itemIDs, m.s.dropLoot(itemType, m.s.itemPool.of(itemType), 1, drop)...)
-	}
+	itemIDs := m.s.rollKillDrop(m.r, table, table.Chance, record.Level)
 	if len(itemIDs) == 0 {
 		return
 	}
 
 	CreateDropPileEntity(m.s.EntityManager, record.X, record.Y, itemIDs)
+}
+
+/**
+* rollKillDrop rolls one kill against a drop table row at the given chance:
+* the row's own for a run, derived from it for a field (FS-X2F2H §Requirements
+* 31). Item count, type split and rarity source are the row's, the item level
+* the kill's. It makes the items and hands back their ids; none when the roll
+* fails or nothing was eligible.
+**/
+func (s *Session) rollKillDrop(r lootRand, table MonsterDrop, chance float64, level int) []uuid.UUID {
+	if r.Float64() >= chance {
+		return nil
+	}
+
+	n := table.MinItems
+	if table.MaxItems > table.MinItems {
+		n += r.IntN(table.MaxItems - table.MinItems + 1)
+	}
+
+	drop := lootDrop{ItemLevel: level, Source: table.Source}
+	itemIDs := make([]uuid.UUID, 0, n)
+	for range n {
+		itemType := pickItemType(r, table.TypeSplit)
+		itemIDs = append(itemIDs, s.dropLoot(itemType, s.itemPool.of(itemType), 1, drop)...)
+	}
+	return itemIDs
 }
 
 // monsterDropFor is the drop table row a kill rolls: the boss's, else an

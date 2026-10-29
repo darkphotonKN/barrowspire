@@ -6,9 +6,12 @@ import {
   cullInto,
   flickerAt,
   TOWER_AMBIENT,
+  FOREST_AMBIENT,
   litEdgeGround,
   relativeLuminance,
   sourceFromManifest,
+  groundMean,
+  tinted,
   type LightSource,
 } from "./lighting";
 
@@ -101,6 +104,10 @@ describe("ambient per world (FS-2325V §C.8, §C.9)", () => {
       return c | (Math.round(x + (y - x) * t) << shift);
     }, 0);
 
+  it("should light a field in daylight, brighter than the hub's dusk (FS-X2F2H §Requirements 54)", () => {
+    expect(relativeLuminance(AMBIENT.field)).toBeGreaterThan(relativeLuminance(AMBIENT.hub));
+  });
+
   it("should light the hub warmer than a run", () => {
     expect(AMBIENT.hub).not.toBe(AMBIENT.run);
     const warmth = (c: number) => ((c >> 16) & 0xff) - (c & 0xff);
@@ -116,6 +123,17 @@ describe("ambient per world (FS-2325V §C.8, §C.9)", () => {
     expect(relativeLuminance(TOWER_AMBIENT)).toBeLessThan(
       relativeLuminance(AMBIENT.run),
     );
+  });
+
+  it("should light the Forest dim, not dark: strictly between the hub's dusk and a run's barrow cold (FS-3QHQZ §Requirements 26)", () => {
+    expect(relativeLuminance(FOREST_AMBIENT)).toBeLessThan(relativeLuminance(AMBIENT.hub));
+    expect(relativeLuminance(FOREST_AMBIENT)).toBeGreaterThan(relativeLuminance(AMBIENT.run));
+  });
+
+  it("should mix the forest ambient from tokens: an overcast grey-green, cooler than the hub", () => {
+    expect(FOREST_AMBIENT).toBe(mix(BARROW_HEX.vellumDark, BARROW_HEX.necrotic, 0.3));
+    const warmth = (c: number) => ((c >> 16) & 0xff) - (c & 0xff);
+    expect(warmth(FOREST_AMBIENT)).toBeLessThan(warmth(AMBIENT.hub));
   });
 
   it("should mix the tower ambient from tokens: the run's cold slate sunk toward pitch", () => {
@@ -161,5 +179,40 @@ describe("litEdgeGround", () => {
     expect(lum(litEdgeGround(dirt, AMBIENT.run, 0.5))).toBeLessThan(
       lum(litEdgeGround(dirt, AMBIENT.run, 0.2)),
     );
+  });
+});
+
+describe("tinted", () => {
+  const grass = { r: 81, g: 83, b: 53 };
+  const white = (1 << 24) - 1;
+
+  it("should leave a mean as baked under a white tint", () => {
+    expect(tinted(grass, white)).toEqual(grass);
+  });
+
+  it("should multiply a mean by the tint, channel by channel, as the GPU tints a sprite", () => {
+    const tint = (128 << 16) | (255 << 8) | 0;
+    expect(tinted(grass, tint)).toEqual({ r: 41, g: 83, b: 0 });
+  });
+});
+
+describe("groundMean", () => {
+  const grass = { r: 81, g: 83, b: 53 };
+  const tint = (128 << 16) | (255 << 8) | 0;
+
+  it("should leave a ground with no tint and no lift as baked", () => {
+    expect(groundMean(grass, {})).toEqual(grass);
+  });
+
+  it("should tint it as the GPU does", () => {
+    expect(groundMean(grass, { tint })).toEqual(tinted(grass, tint));
+  });
+
+  it("should lift it by adding the tinted ground again at the lift's share", () => {
+    expect(groundMean(grass, { tint, lift: 0.5 })).toEqual({ r: 62, g: 125, b: 0 });
+  });
+
+  it("should clip a lift at full", () => {
+    expect(groundMean({ r: 200, g: 10, b: 0 }, { lift: 1 })).toEqual({ r: 255, g: 20, b: 0 });
   });
 });

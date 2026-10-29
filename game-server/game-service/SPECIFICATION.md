@@ -54,7 +54,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Switch a player between hub and run → FS-29KSH
 - [x] Leave a run early after dying → FS-QPDKN
 - [x] Start a solo run without the queue → FS-NSV3D
-- [x] Resolved delvers settle with the run despite leaving or disconnecting → FS-QPDKN
+- [x] Resolved players settle with the run despite leaving or disconnecting → FS-QPDKN
 
 ### ECS world
 
@@ -80,7 +80,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Item levels on dropped loot → FS-4R9M9
 - [ ] Random affixes on rolled loot → FS-4R9M9
 - [ ] Fabled uniques → FS-4R9M9
-- [x] A delver may end their own run as a death → FS-9K8EZ
+- [x] A player may end their own run as a death → FS-9K8EZ
 
 ### Enemies
 
@@ -109,6 +109,18 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Hub occupancy cap → FS-29KSH
 - [ ] Hub shared across replicas → FS-JEAVX
 - [ ] Hub occupancy cap across replicas → FS-JEAVX
+- [ ] Destination gates in the hub → FS-0XMCP
+- [ ] Spire entry from its gate → FS-0XMCP
+
+### Field worlds
+
+- [ ] Shared field worlds per replica → FS-X2F2H
+- [ ] Costless death with respawn at the field entrance → FS-X2F2H
+- [ ] Killer-first loot → FS-X2F2H
+- [ ] Field drop rates derived from the Spire's → FS-X2F2H
+- [ ] Gentle Meadows → FS-X2F2H
+- [ ] Branching-trail level generation → FS-3QHQZ
+- [ ] Forlorn Forest → FS-3QHQZ
 
 ### Transport
 

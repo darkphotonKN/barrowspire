@@ -1,5 +1,5 @@
 /**
- * Entering the HUB as a server character, and what the delver is told when one cannot be made
+ * Entering the HUB as a server character, and what the player is told when one cannot be made
  * (FS-BDA7X req 39, 41).
  */
 
@@ -23,11 +23,11 @@ export function enterHubPayload(character: Character): EnterHubPayload {
 }
 
 export const NAME_TAKEN =
-  "That name is taken. Another delver already bears it.";
+  "That name is taken. Another player already bears it.";
 export const LEDGER_UNREACHABLE =
   "The barrow's ledger is out of reach. Try again shortly.";
 
-/** Why a character could not be made, in words for the delver. */
+/** Why a character could not be made, in words for the player. */
 export function creationRefusal(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 409) return NAME_TAKEN;

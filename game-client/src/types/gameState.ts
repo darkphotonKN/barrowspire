@@ -31,7 +31,7 @@ export interface PlayerState {
   max_health?: number;
   current_mana?: number;
   max_mana?: number;
-  /** The character's level (FS-BDA7X req 42); sent with every delver, run and hub. */
+  /** The character's level (FS-BDA7X req 42); sent with every player, run and hub. */
   level?: number;
   /** Total experience, monotonic. */
   experience?: number;
@@ -122,6 +122,9 @@ export interface ContainerState {
   position: Position;
   is_open: boolean;
   items: ItemState[];
+  /** A field pile's killer (member id) while its killer-first window is open; absent after it,
+   *  and on every run pile and chest (FS-X2F2H §Requirements 35). */
+  reserved_for?: UUID;
 }
 
 // Escape door state
@@ -174,19 +177,43 @@ export interface ProjectileState {
   velocity: { vx: number; vy: number };
 }
 
+/**
+ * A place in the hub a player walks into to go somewhere (FS-0XMCP §Requirements 6). Its position
+ * and range are the server's: every gameplay decision about a gate reads them from here.
+ */
+export interface GateState {
+  entity_id: UUID;
+  /** `hub` is a field's entrance gate, the road back (FS-X2F2H §Requirements 3). */
+  destination: "spire" | "forest" | "meadows" | "hub";
+  position: Position;
+  /** World px from `position` within which a player is at the gate. */
+  range: number;
+}
+
 // Complete game state received from server
-/** One of the hub's residents. `function` is empty for an ambient NPC. */
+/**
+ * One of the hub's residents. `function` is empty for an ambient NPC; the Warden's is
+ * `storyteller` (FS-0XMCP §Requirements 23).
+ */
 export interface NPCState {
   entity_id: UUID;
   name: string;
-  function: "" | "delve" | "storekeeper";
+  function: "" | "storyteller" | "storekeeper";
   /** How they look, e.g. "green_skirt". Empty for a function NPC. */
   appearance?: string;
   position: Position;
 }
 
 /** What kind of monster it is: picks its sheet and size tier (FS-77AB6 req 32, 34–35). */
-export type MonsterArchetype = "ghoul" | "troll" | "demon";
+export type MonsterArchetype =
+  | "ghoul"
+  | "troll"
+  | "demon"
+  // the Forlorn Forest's dead (FS-3QHQZ R18): sent only in the Forest field
+  | "zombie"
+  | "ghost"
+  // Gentle Meadows' one creature (FS-X2F2H R53): sent only in the Meadows field
+  | "boar";
 
 /** What a monster is doing this tick. `attack` is the wind-up and the strike. */
 export type MonsterAction = "idle" | "move" | "attack" | "dead";
@@ -211,7 +238,7 @@ export interface MonsterState {
 export interface ClientGameState {
   session_id: UUID;
   /** Which kind of world this state came from. Mirrors types.WorldType. */
-  world_type?: "hub" | "run";
+  world_type?: "hub" | "run" | "field";
   current_player: PlayerState | null; // This client's player state
   other_players: PlayerState[]; // Other players in session
   items: string[]; // TODO: Update when items are structured
@@ -221,6 +248,8 @@ export interface ClientGameState {
   escape_doors: EscapeDoorState[]; // Escape doors with lock state
   switches: SwitchState[]; // Switches/buttons for puzzles
   npcs?: NPCState[]; // The hub's residents; absent in a run
+  /** The hub's gates (FS-0XMCP §Requirements 6); absent in a run. */
+  gates?: GateState[];
   projectiles?: ProjectileState[]; // Active projectiles in session
   monsters?: MonsterState[]; // A run's monsters, corpses included; absent in the hub
   /** The party's floor, 1-based (FS-F6F88 req 26). Run only; absent in the hub. */

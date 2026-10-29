@@ -55,7 +55,7 @@ server state and sends intents. ✅
 - [ ] Floor transitions → FS-F6F88
 - [x] Spectate living teammates after resolving → FS-QPDKN
 - [x] Leave a run early after dying → FS-QPDKN
-- [x] Hold the run result until the delver returns → FS-QPDKN
+- [x] Hold the run result until the player returns → FS-QPDKN
 - [x] Die by choice from the run's ESC menu → FS-9K8EZ
 
 ### Character
@@ -100,6 +100,15 @@ server state and sends intents. ✅
 - [x] Switch character from the hub → FS-G4VMQ
 - [x] Leave the queue from the hub → FS-G4VMQ
 - [x] Solo delve entry from the hub → FS-NSV3D
+- [ ] Walk to a destination gate in the hub → FS-0XMCP
+- [ ] The Spire's entrance at the back of the hub → FS-0XMCP
+- [ ] The Warden as storyteller, not the queue → FS-0XMCP
+
+### Field worlds
+
+- [ ] Field world scene → FS-X2F2H
+- [ ] Gentle Meadows look and creature → FS-X2F2H
+- [ ] Forlorn Forest look and creatures → FS-3QHQZ
 
 ### Marketplace
 

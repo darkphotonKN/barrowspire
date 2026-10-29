@@ -1,6 +1,6 @@
 /**
- * Occlusion fade (FS-2325V §C.5): a tall thing drawn over the delver fades so they are never lost
- * behind it, and restores when clear. "Over" means both: its sprite overlaps the delver's, and its
+ * Occlusion fade (FS-2325V §C.5): a tall thing drawn over the player fades so they are never lost
+ * behind it, and restores when clear. "Over" means both: its sprite overlaps the player's, and its
  * footprint sorts nearer the viewer. Pure; the scene supplies bounds and depths.
  */
 

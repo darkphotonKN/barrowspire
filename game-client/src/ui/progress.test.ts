@@ -34,7 +34,7 @@ describe("levelLabel", () => {
 });
 
 describe("progressOf", () => {
-  it("should read a delver's progress from the world state", () => {
+  it("should read a player's progress from the world state", () => {
     expect(
       progressOf({
         level: 3,

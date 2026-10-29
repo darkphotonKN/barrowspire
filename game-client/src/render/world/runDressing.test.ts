@@ -113,7 +113,7 @@ describe("dressingBreaches (FS-8RBQY §C.5)", () => {
     expect(dressingBreaches(fp(625, 345), s)).not.toContain("door");
   });
 
-  it("should refuse one within 60 px of something a delver uses", () => {
+  it("should refuse one within 60 px of something a player uses", () => {
     const s = { ...empty, interactables: [at(700, 480)] };
     expect(dressingBreaches(fp(765, 480), s)).toContain("interactable");
     expect(dressingBreaches(fp(775, 480), s)).not.toContain("interactable");

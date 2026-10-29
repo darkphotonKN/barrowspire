@@ -295,6 +295,22 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			continue
 		}
 
+		// -- Gates (the hub's; a run has none) --
+		if gc, isGate := entity.GetComponent(ecs.ComponentTypeGate); isGate {
+			tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform)
+			ic, hasRange := entity.GetComponent(ecs.ComponentTypeInteractable)
+			if hasTransform && hasRange {
+				transform := tc.(*components.TransformComponent)
+				backendState.Gates = append(backendState.Gates, &types.GateState{
+					EntityID:    entity.ID,
+					Destination: string(gc.(*components.GateComponent).Destination),
+					Position:    &types.Position{X: transform.X, Y: transform.Y},
+					Range:       ic.(*components.InteractableComponent).Range,
+				})
+			}
+			continue
+		}
+
 		// -- Monsters (a run's; the hub never holds one) --
 		if mc, isMonster := entity.GetComponent(ecs.ComponentTypeEnemy); isMonster {
 			backendState.Monsters = append(backendState.Monsters, monsterState(entity, mc.(*components.MonsterComponent)))
@@ -407,6 +423,9 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				IsOpen: isOpen,
 				Items:  items,
 			}
+			if container.ReservedFor != uuid.Nil {
+				containerState.ReservedFor = container.ReservedFor.String()
+			}
 			backendState.Containers = append(backendState.Containers, containerState)
 		}
 
@@ -480,6 +499,7 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		FloorCount:    backendState.FloorCount,
 		Monsters:      backendState.Monsters,
 		Trails:        backendState.Trails,
+		Gates:         backendState.Gates,
 	}
 
 	// a run always says where its stairs are, even when there are none; the
@@ -517,6 +537,7 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.Stairs = state.Stairs[:0]
 	state.Monsters = state.Monsters[:0]
 	state.Trails = state.Trails[:0]
+	state.Gates = state.Gates[:0]
 }
 
 // monsterState is a monster as the client draws it. One at no health lies dead,

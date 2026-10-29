@@ -1,12 +1,12 @@
 import type { WorldEnteredPayload } from "@/assets/types/client";
 
 /**
- * Keeps the result card on screen until the delver dismisses it (FS-QPDKN §Requirements
+ * Keeps the result card on screen until the player dismisses it (FS-QPDKN §Requirements
  * 15–17). The run's end sends `end_game` and `world_entered(hub)` in the same moment; applied
  * at once, the hub would sweep the card away before it can be read. So while the card is up
  * the hub world is held here, and *Return to the hub* applies it.
  *
- * Client-only: the server already has the delver in the hub. The switch itself stays with
+ * Client-only: the server already has the player in the hub. The switch itself stays with
  * the `world_entered` handler, which hands `hold` the continuation to run on release.
  */
 export class ResultHold {
@@ -29,7 +29,7 @@ export class ResultHold {
     return true;
   }
 
-  /** The delver dismissed the card: applies the held world, if one has arrived. */
+  /** The player dismissed the card: applies the held world, if one has arrived. */
   release(): void {
     const held = this.held;
     this.clear();

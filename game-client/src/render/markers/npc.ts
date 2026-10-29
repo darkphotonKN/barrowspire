@@ -1,5 +1,5 @@
 /**
- * Function NPC markers (FS-MRZH7): how the hub tells the people a delver deals with for real
+ * Function NPC markers (FS-MRZH7): how the hub tells the people a player deals with for real
  * (who give, take, or start a system) apart from the folk who only live there.
  */
 

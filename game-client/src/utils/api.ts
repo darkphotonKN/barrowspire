@@ -218,13 +218,13 @@ class ApiClient {
     );
   }
 
-  // The signed-in delver's gold (FS-8EGFA req 26). 404 until the account exists, just after
+  // The signed-in player's gold (FS-8EGFA req 26). 404 until the account exists, just after
   // signup (ADR-0014).
   async getWalletAccount() {
     return unwrap(await client.GET("/api/wallet/account", {}));
   }
 
-  // A bid as the signed-in delver (FS-8EGFA req 26). The 201 has an empty body, which the
+  // A bid as the signed-in player (FS-8EGFA req 26). The 201 has an empty body, which the
   // default JSON parsing reads as nothing; nothing is returned.
   async placeBid(listingId: string, amount: number, idempotencyKey: string): Promise<void> {
     unwrap(
@@ -269,7 +269,7 @@ class ApiClient {
     );
   }
 
-  // One page of the signed-in delver's listings in every status, newest first, items joined
+  // One page of the signed-in player's listings in every status, newest first, items joined
   // (FS-8EGFA req 23).
   async listMyListings(cursor?: string) {
     return unwrap(
@@ -279,7 +279,7 @@ class ApiClient {
     );
   }
 
-  // One page of the signed-in delver's own bids, newest first, each with its listing summary and
+  // One page of the signed-in player's own bids, newest first, each with its listing summary and
   // item joined (FS-EYQ8K req 1–7).
   async listMyBids(cursor?: string) {
     return unwrap(
@@ -299,7 +299,7 @@ class ApiClient {
     );
   }
 
-  // Withdraws one of the signed-in delver's leading or outbid bids, releasing its hold (FS-EYQ8K
+  // Withdraws one of the signed-in player's leading or outbid bids, releasing its hold (FS-EYQ8K
   // req 12; ADR-0029). No key, no body; 204 with an empty body.
   async withdrawBid(listingId: string, bidId: string): Promise<void> {
     unwrap(

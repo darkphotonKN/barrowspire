@@ -136,10 +136,10 @@ var(--color-text-muted)   /* hints, footnotes */
 
 The game is a **medieval barrow-dungeon delve / extraction**, not a space shooter. All copy should reflect:
 
-- Players are **delvers** (not operators/users). The realm/enemy is the **Spire** and its **Lich Lord**
+- Players are **players** (not operators, users or delvers). The realm/enemy is the **Spire** and its **Lich Lord**
 - **Lore swaps**: Play/Start → "Delve"; queue → "Gather the delve"; loot/container → "plunder"/"coffer"; extract/escape → "escape the barrow"; death → grim ("Few return whole", "The barrow keeps its dead")
 - **Never use**: "operator", "uplink", "deploy", "the void", "Sector", "extraction" (sci-fi register)
-- Login = "Speak Your Name" / "Enter", Register = "Take the Oath" (delver name, not callsign)
+- Login = "Speak Your Name" / "Enter", Register = "Take the Oath" (player name, not callsign)
 - Version footer: `v0.1 // The Barrow-Deep`
 - MAIN MENU label stays "MAIN MENU" (a named hub is future game-logic work — do not rename it)
 
@@ -158,7 +158,7 @@ Every other Phaser scene (HubScene, BarrowspireScene, the HUD) uses the **game p
 (`BARROW_HEX`), not the web UI's Bone & Soot (ADR-0025):
 - Background: `#0d0b0a` charcoal with drifting dust/ember motes (not stars)
 - Atmosphere: torch-pool glow + vignette + dust as camera-fixed decorative overlays (`createAtmosphere`), depth ~900, below HUD (1000) and popups (2000)
-- Player = hooded delver, rivals = pale wights (procedural, `spriteGenerator.ts`)
+- Player = hooded figure, rivals = pale wights (procedural, `spriteGenerator.ts`)
 - UI popups: Dark vellum panels with brass borders, same font sizing
 - Buttons: Amber fill or brass-outlined; arcane green for cancel
 - Status text: Vellum/brass with letter-spacing

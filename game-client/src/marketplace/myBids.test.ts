@@ -47,7 +47,7 @@ describe("bidStatusLabel", () => {
 });
 
 describe("NO_BIDS", () => {
-  it("should say the delver has no bids", () => {
+  it("should say the player has no bids", () => {
     expect(NO_BIDS).toBe("You have no bids.");
   });
 });
@@ -83,7 +83,7 @@ describe("myBidRow", () => {
     });
   });
 
-  it("should show the leader's price, not the delver's, when outbid", () => {
+  it("should show the leader's price, not the player's, when outbid", () => {
     const row = myBidRow(
       { ...bid, status: "OUTBID", listing: { ...bid.listing, currentPrice: 2000 } },
       NOW,

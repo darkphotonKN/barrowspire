@@ -101,7 +101,7 @@ export const palette = {
   stairsNosing: BARROW_HEX.amber,
   /**
    * A drop pile (FS-4R9M9 req 61): grave materials, a slain thing's remains on barrow earth, with
-   * one amber glint of the loot in it, because the delver can take from it.
+   * one amber glint of the loot in it, because the player can take from it.
    */
   dropPileEarth: shade(BARROW_HEX.barrowDeep, 0.15),
   dropPileRag: mix(BARROW_HEX.slate, BARROW_HEX.barrowBrown, 0.5),
@@ -164,13 +164,13 @@ export const palette = {
   ink: BARROW_HEX.charcoal,
   inkDeep: BARROW_HEX.pitch,
 
-  // -- Characters. The delver reads warm (a torch you are carrying); rivals
+  // -- Characters. The player reads warm (a torch you are carrying); rivals
   //    read cold and necrotic (a light that is not yours). Their eyes are the
   //    readable accent against dark, which is why the two glows differ in hue
   //    rather than only in brightness.
-  delverCloak: BARROW_HEX.umber,
-  delverCloakShade: shade(BARROW_HEX.umber),
-  delverGlow: BARROW_HEX.amber,
+  playerCloak: BARROW_HEX.umber,
+  playerCloakShade: shade(BARROW_HEX.umber),
+  playerGlow: BARROW_HEX.amber,
   rivalCloak: BARROW_HEX.slate,
   rivalCloakShade: shade(BARROW_HEX.slate),
   rivalGlow: BARROW_HEX.arcane,
@@ -183,12 +183,12 @@ export const palette = {
   //    at the canvas edge (tested in src/render/markers/). Oxblood fails that
   //    as a bar fill, so HP takes its lifted text tone.
   markerSelf: BARROW_HEX.brassBright,
-  /** Another delver (FS-77AB6 req 40): co-op, so the ally channel, arcane green. */
+  /** Another player (FS-77AB6 req 40): co-op, so the ally channel, arcane green. */
   markerAlly: BARROW_HEX.arcane,
   markerHub: BARROW_HEX.vellum,
   /**
-   * A function NPC's name and sigil (FS-MRZH7 req 2): someone the delver deals with for real, so
-   * the interactable channel, amber. Apart from the delver's own bright-brass name.
+   * A function NPC's name and sigil (FS-MRZH7 req 2): someone the player deals with for real, so
+   * the interactable channel, amber. Apart from the player's own bright-brass name.
    */
   markerFunction: BARROW_HEX.amber,
   /** A monster's nameplate (FS-77AB6 req 37): the hostile channel, lifted to read at the edge. */
@@ -199,6 +199,8 @@ export const palette = {
    * amber (interactable); held to the same 3:1 floor as every marker.
    */
   markerElite: mix(BARROW_HEX.ember, BARROW_HEX.oxblood, 0.15),
+  /** A field gate's name over its signpost (FS-0XMCP R21): a place to walk into, so amber. */
+  markerGate: BARROW_HEX.amber,
   markerStroke: BARROW_HEX.charcoal,
   markerBarBacking: BARROW_HEX.pitch,
   markerBarRim: BARROW_HEX.barrowDeep,

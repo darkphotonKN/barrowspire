@@ -31,7 +31,7 @@ import { apiClient, publicApi } from "@/utils/api";
 const EMPTY = "The coffers are bare. No relics are up for auction.";
 const NONE_MATCH = "No relics loaded so far match these filters.";
 
-// The reads the page pages through: the Bazaar signed in or out, and the delver's own listings
+// The reads the page pages through: the Bazaar signed in or out, and the player's own listings
 // and bids.
 const browsePage = (cursor?: string) => publicApi.browseListings(cursor);
 const minePage = (cursor?: string) => apiClient.listMyListings(cursor);
@@ -44,7 +44,7 @@ const VIEW_LABELS: Record<View, string> = { all: "All", mine: "Mine", bids: "My 
 /**
  * The Bazaar (FS-8EGFA req 20–23, 25): every active auction, readable signed in or out. Sorting
  * and filtering apply to the rows loaded so far; "Show more" loads the next page. A signed-in
- * delver can also switch to Mine, their own listings in every status, to My bids (FS-EYQ8K
+ * player can also switch to Mine, their own listings in every status, to My bids (FS-EYQ8K
  * req 15), every bid they have placed, and list a relic. Signed out, neither is offered.
  */
 export default function MarketplacePage() {
@@ -249,7 +249,7 @@ function MineView({
 }
 
 /**
- * The delver's bids (FS-EYQ8K req 15–17): newest first, paged like Mine. Above them, the gold
+ * The player's bids (FS-EYQ8K req 15–17): newest first, paged like Mine. Above them, the gold
  * they have free (story 13) and the answer to the last withdraw (req 13–14), both outliving the
  * list re-read a withdraw starts.
  */

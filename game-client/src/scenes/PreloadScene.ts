@@ -12,7 +12,7 @@ import {
 const ui = palette.menu;
 
 /**
- * The first frame a delver ever sees, between the site's "Lighting the Torch" loader and the
+ * The first frame a player ever sees, between the site's "Lighting the Torch" loader and the
  * main menu. It wears the menus' Bone & Soot (design-guideline "UI Chrome") so the hand-off from
  * the page to the canvas to the menu is one room, not three. Presentation only; the load logic
  * is untouched.

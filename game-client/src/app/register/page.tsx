@@ -36,7 +36,7 @@ export default function RegisterPage() {
     setError("");
 
     if (!name.trim()) {
-      setError("Please enter your delver name");
+      setError("Please enter your player name");
       return;
     }
 
@@ -116,7 +116,7 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmit} className="login-form">
           <div className="login-input-group">
             <label htmlFor="name" className="login-label">
-              Delver Name
+              Player Name
             </label>
             <input
               id="name"
@@ -124,7 +124,7 @@ export default function RegisterPage() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="login-input"
-              placeholder="Enter delver name..."
+              placeholder="Enter player name..."
               autoComplete="name"
             />
           </div>

@@ -163,7 +163,7 @@ export default function Home() {
       {/* ── Controls ── */}
       <section className="max-w-3xl mx-auto px-6 sm:px-12 lg:px-16 py-28">
         <SectionLabel>Controls</SectionLabel>
-        <SectionTitle>Delver Controls</SectionTitle>
+        <SectionTitle>Player Controls</SectionTitle>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-w-md mx-auto">
           <ControlKey keys="WASD" label="Move" />

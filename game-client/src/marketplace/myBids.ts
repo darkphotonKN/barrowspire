@@ -1,5 +1,5 @@
 /**
- * How a row reads under My bids (FS-EYQ8K req 15–18): one row per bid the delver placed, the relic
+ * How a row reads under My bids (FS-EYQ8K req 15–18): one row per bid the player placed, the relic
  * it is on, where its auction stands and whether they lead. Pure, so the page only wires it.
  */
 
@@ -9,7 +9,7 @@ import { formatGold } from "./gold";
 import { buyoutBadge } from "./rows";
 import { ENDED, formatTimeLeft } from "./timeLeft";
 
-/** One of the delver's bids as the gateway sends it, listing summary and item joined. */
+/** One of the player's bids as the gateway sends it, listing summary and item joined. */
 export type MyBid = components["schemas"]["MyBid"];
 type MyBidPage = components["schemas"]["MyBidPage"];
 
@@ -47,7 +47,7 @@ export interface MyBidRow {
   status: string;
   /** Leading or won: the bid that stands. Brass-bright, never amber. */
   emphasis: boolean;
-  /** The delver's own bid. */
+  /** The player's own bid. */
   amount: { gold: string; opening: false };
   /** What the auction stands at now, anyone's; absent when nobody leads. */
   price?: { gold: string; opening: false };

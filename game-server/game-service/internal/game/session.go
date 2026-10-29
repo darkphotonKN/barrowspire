@@ -44,6 +44,22 @@ type Session struct {
 	worldType           types.WorldType
 	mapWidth, mapHeight float64
 
+	// a field channel's place and its layout, set once as it is built; nil for
+	// the hub and a run. Guarded by mu. FS-X2F2H §Requirements 3.
+	place       *FieldPlace
+	fieldLayout FieldLayout
+	// a field channel's spawn points, set once as it is built; nil for the hub
+	// and a run. The pointer is guarded by mu, its contents are the tick's alone.
+	// FS-X2F2H §Requirements 26–27.
+	fieldPopulation *fieldPopulation
+	// a field channel's chest restock delay, its place's, cached as it is built
+	// so the tick reads one number rather than the place; 0 never restocks.
+	// Guarded by mu. FS-3QHQZ §Requirements 19.
+	chestRestockDelay float64
+	// a field's open visits, by member: minted on entry, ended exactly once by
+	// whichever way out removes the body first. Guarded by mu. FS-X2F2H R13, R49.
+	visits map[uuid.UUID]FieldVisit
+
 	// caching
 
 	// [playerID] - interacted
@@ -51,6 +67,14 @@ type Session struct {
 
 	// [entityID] - interacted
 	containerInteractedCache map[uuid.UUID]bool
+
+	// where each player body stood after the last tick, by member, for the
+	// at-gate query; published whole by the tick and read without mu, so a
+	// seat holding mu never parks a reader (FS-0XMCP §Requirements 7)
+	bodiesAt atomic.Pointer[map[uuid.UUID]bodyPosition]
+
+	// this world's gates by destination, indexed as the map is built
+	gates gateIndex
 
 	// elimination tracking: [memberID] the order they fell in, recorded by the
 	// tick that eliminated them
@@ -117,6 +141,10 @@ type Session struct {
 
 	// what each floor's monsters are rolled from (FS-77AB6 §Requirements 22)
 	spawnRand populationRand
+
+	// what a field chest's item level and keep rolls are drawn from
+	// (FS-3QHQZ §Requirements 19); a run's chest does not draw on it
+	chestRand lootRand
 
 	// FS-K2HKP R18: the first floor's formation spots kept for matched players
 	// still on other pods. Each arrival takes one when seated
@@ -206,6 +234,13 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 	sessionId := uuid.New()
 	playerDamage := systems.PlayerDamage(constants.RunPlayerDamage)
 	runExperience := NewRunExperience()
+	// clamped to this world's bounds; players pass through each other in the
+	// hub and the fields, never in a run (FS-0XMCP §Requirements 26–29)
+	movementSystem := &systems.MovementSystem{
+		MapWidth:           bounds.Width,
+		MapHeight:          bounds.Height,
+		PlayersPassThrough: bounds.Type == types.WorldTypeHub || bounds.Type == types.WorldTypeField,
+	}
 
 	s := &Session{
 		ID:            sessionId,
@@ -214,15 +249,16 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		playerIDToEntitiesID:     make(map[uuid.UUID]uuid.UUID),
 		playerEntityIDToPlayerID: make(map[uuid.UUID]uuid.UUID, constants.DefautMaxSessionPlayers),
 		departed:                 make(map[uuid.UUID]struct{}),
+		visits:                   make(map[uuid.UUID]FieldVisit),
 		MessageCh:                make(chan types.ClientPackage, 100),
 
 		playerDamage:       playerDamage,
-		movementSystem:     systems.NewMovementSystem(),
+		movementSystem:     movementSystem,
 		combatSystem:       systems.NewCombatSystem(em, rand.Float64, playerDamage, UniqueEffects),
 		monsterAISystem:    systems.NewMonsterAISystem(rand.Float64),
 		monsterDeathSystem: systems.NewMonsterDeathSystem(em, MonsterCorpseLifetime),
 		skillSystem:        systems.NewSkillSystem(),
-		killConsumers:      []KillConsumer{NewKillLog(slog.Default()), NewKillExperience(em, runExperience)},
+		killConsumers:      []KillConsumer{NewKillLog(slog.Default())},
 		runExperience:      runExperience,
 		stopChan:           make(chan struct{}),
 		isRunning:          false,
@@ -248,14 +284,26 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 
 		// the same goroutine-safe global source loot rolls with
 		spawnRand: sharedLootRand{},
+		chestRand: sharedLootRand{},
 
 		playersPendingConnection: make(map[uuid.UUID]*types.Player),
 		seatDeadline:             time.Now().Add(SeatReleaseAfter),
 	}
-	s.SubscribeKills(newMonsterDrops(s, sharedLootRand{}))
+	// a run's kill awards the whole party; a field's, the killer alone
+	// (FS-X2F2H §Requirements 30)
+	// and drops from the Spire's own row, a field's from that row at its
+	// place's factor (FS-X2F2H §Requirements 31)
+	if bounds.Type == types.WorldTypeField {
+		s.SubscribeKills(newFieldKillCredit(s))
+		s.SubscribeKills(newFieldDrops(s, sharedLootRand{}))
+	} else {
+		s.SubscribeKills(NewKillExperience(em, runExperience))
+		s.SubscribeKills(newMonsterDrops(s, sharedLootRand{}))
+	}
 	s.SubscribeKills(newUniqueEffects(em))
 
 	s.loadRaritiesAtBuild()
+	s.loadFieldItemPool()
 
 	return s
 }
@@ -649,15 +697,14 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		wanderSys.Update(deltaTime, entities)
 	}
 
-	// monster AI steers the monsters before anything moves; a run's alone, the
-	// hub holds no monsters (FS-77AB6 §Requirements 27)
-	if s.worldType == types.WorldTypeRun {
+	// monster AI steers the monsters before anything moves; the hub holds no
+	// monsters (FS-77AB6 §Requirements 27)
+	if s.hasMonsters() {
 		s.monsterAISystem.Update(deltaTime, entities)
 	}
 
-	// movement
-	movementSys := systems.MovementSystem{MapWidth: s.mapWidth, MapHeight: s.mapHeight}
-	movementSys.Update(deltaTime, entities)
+	// movement, by the world's own rules, fixed as it was built
+	s.movementSystem.Update(deltaTime, entities)
 
 	// projectile
 	projectileSys := systems.NewProjectileSystem(s.EntityManager, s.playerDamage)
@@ -666,23 +713,43 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	// combat
 	kills := s.combatSystem.Update(deltaTime, entities, impacts)
 
-	// monster death: the slain lie dead from this tick; a run's alone, the hub
-	// holds no monsters
-	if s.worldType == types.WorldTypeRun {
+	// monster death: the slain lie dead from this tick; the hub holds no monsters
+	if s.hasMonsters() {
 		s.monsterDeathSystem.Update(deltaTime, entities)
 		s.publishKills(kills)
+		// a field's spawn points see their monsters fall and refill
+		s.refillSpawnPoints(deltaTime, entities)
+		// a field's piles open to anyone, then go (FS-X2F2H §Requirements 33–34)
+		s.ageFieldDropPiles(deltaTime, entities)
+		// a field's opened chests fill again (FS-3QHQZ §Requirements 19)
+		s.restockFieldChests(deltaTime, entities)
 	}
 
 	// interaction
 	interactionSys := systems.InteractionSystem{}
 	interactionSys.Update(entities)
 
-	// elimination
+	// elimination: a run records who fell; a field counts the death and stands
+	// the fallen back up at its entrance (FS-X2F2H §Requirements 22–24)
 	eliminationSys := systems.EliminationSystem{}
-	s.recordEliminations(eliminationSys.Update(deltaTime, entities, s.ID))
+	fallen := eliminationSys.Update(deltaTime, entities, s.ID)
+	if s.worldType == types.WorldTypeField {
+		s.settleFieldDeaths(deltaTime, entities, fallen)
+	} else {
+		s.recordEliminations(fallen)
+	}
 
 	// rules
 	s.applyEndRule(deltaTime, entities)
+
+	// where everyone ended up, for anyone asking from beside the tick
+	s.recordBodies(entities)
+}
+
+// hasMonsters is whether this world ticks the monster systems: the one switch
+// for them. A run and a field; never the hub (FS-X2F2H §Requirements 6).
+func (s *Session) hasMonsters() bool {
+	return s.worldType == types.WorldTypeRun || s.worldType == types.WorldTypeField
 }
 
 // queueIntent hands a client action to the tick, which applies it at the start
@@ -813,6 +880,27 @@ func (s *Session) AddPlayer(playerID uuid.UUID, character types.CharacterInPlay,
 	return s.addPlayerLocked(playerID, character, token)
 }
 
+/**
+* AddPlayerAt seats the member's character in play at (x, y) rather than at the
+* world's spawn: a player walking back into the hub from a field is set down at
+* that field's gate (FS-X2F2H §Requirements 15). No door check: coming home is
+* not arriving. A member already here keeps the body they have.
+*
+* The body is a new entity, built under the world's lock like any seat, so the
+* tick's MovementSystem never sees a half-placed transform; AtGate counts it
+* from the next tick on.
+**/
+func (s *Session) AddPlayerAt(playerID uuid.UUID, character types.CharacterInPlay, token types.BearerToken, x, y float64) uuid.UUID {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if existing, alreadyHere := s.playerIDToEntitiesID[playerID]; alreadyHere {
+		return existing
+	}
+
+	return s.buildBodyLocked(playerID, character, x, y, s.fetchLoadoutLocked(playerID, token))
+}
+
 // addPlayerLocked is AddPlayer's body. Callers hold the world's lock, so that
 // deciding whether to admit someone and admitting them cannot be split by
 // another goroutine slipping between the two
@@ -829,6 +917,46 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 
 	spawnX, spawnY := s.spawnPoint()
 
+	return s.buildBodyLocked(playerID, character, spawnX, spawnY, s.fetchLoadoutLocked(playerID, token))
+}
+
+// fetchLoadoutLocked reads the member's equipped loadout from items-service, or
+// nil when there is no client or the read fails or times out: the delver is
+// then seated without equipment.
+func (s *Session) fetchLoadoutLocked(playerID uuid.UUID, token types.BearerToken) *pbitems.GetLoadoutWithItemsResponse {
+	if s.itemsClient != nil {
+		grpcLoadoutRequest := &pbitems.GetLoadoutWithItemsRequest{
+			MemberId: playerID.String(),
+		}
+		// the fetch runs under the world's lock: a hanging items service must
+		// never hold it, so past the deadline the delver is seated without a loadout
+		ctx, cancel := context.WithTimeout(context.Background(), loadoutLoadTimeout)
+		loadoutResult, err := s.itemsClient.GetLoadoutWithItems(asMember(ctx, token), grpcLoadoutRequest)
+		cancel()
+
+		if errors.Is(err, context.DeadlineExceeded) {
+			slog.Warn("Loadout fetch timed out, player spawns with no equipment.",
+				"member_id", playerID, "timeout", loadoutLoadTimeout, "error", err)
+		} else if err != nil || loadoutResult == nil {
+			slog.Error("Failed to get loadout, player spawns with no equipment.", "error", err)
+		} else {
+			return loadoutResult
+		}
+	}
+
+	return nil
+}
+
+/**
+* buildBodyLocked creates the member's body at (x, y), as their character in
+* play, wearing items: the one place a body is built, whichever way it was
+* seated. An unknown class is seated as a mage. Seating is the loadout's level
+* gate: an item above the character's level is brought in and carried, not
+* worn (FS-BDA7X §Requirements 31). Nil items seats the body with no
+* equipment. Callers hold the world's lock and have checked the member has no
+* body here.
+**/
+func (s *Session) buildBodyLocked(playerID uuid.UUID, character types.CharacterInPlay, x, y float64, items *pbitems.GetLoadoutWithItemsResponse) uuid.UUID {
 	className := character.Class
 	classCfg, ok := Classes[className]
 	if !ok {
@@ -837,8 +965,6 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 	}
 	level := seatLevel(character.Level)
 
-	// Seating is the loadout's level gate: an item above the character's level
-	// is brought in and carried, not worn. FS-BDA7X §Requirements 31.
 	carried := []uuid.UUID{}
 
 	// add item entity and return its UUID pointer, or nil when it is carried instead
@@ -856,68 +982,43 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 		return &id
 	}
 
-	// grpc request to items service to load players items
 	var loadout *components.EquipmentConfig
-	if s.itemsClient != nil {
-		grpcLoadoutRequest := &pbitems.GetLoadoutWithItemsRequest{
-			MemberId: playerID.String(),
-		}
-		// the fetch runs under the world's lock: a hanging items service must
-		// never hold it, so past the deadline the delver is seated without a loadout
-		ctx, cancel := context.WithTimeout(context.Background(), loadoutLoadTimeout)
-		loadoutResult, err := s.itemsClient.GetLoadoutWithItems(asMember(ctx, token), grpcLoadoutRequest)
-		cancel()
-
-		if errors.Is(err, context.DeadlineExceeded) {
-			slog.Warn("Loadout fetch timed out, player spawns with no equipment.",
-				"member_id", playerID, "timeout", loadoutLoadTimeout, "error", err)
-		} else if err != nil || loadoutResult == nil {
-			slog.Error("Failed to get loadout, player spawns with no equipment.", "error", err)
-		} else {
-			loadout = &components.EquipmentConfig{
-				WeaponSlot:  addSlotItem(loadoutResult.Weapon),
-				HeadSlot:    addSlotItem(loadoutResult.Head),
-				ChestSlot:   addSlotItem(loadoutResult.Chest),
-				GlovesSlot:  addSlotItem(loadoutResult.Gloves),
-				LegsSlot:    addSlotItem(loadoutResult.Legs),
-				Ring1Slot:   addSlotItem(loadoutResult.Ring_1),
-				Ring2Slot:   addSlotItem(loadoutResult.Ring_2),
-				Consumable1: addSlotItem(loadoutResult.Consumable_1),
-				Consumable2: addSlotItem(loadoutResult.Consumable_2),
-				Consumable3: addSlotItem(loadoutResult.Consumable_3),
-			}
+	if items != nil {
+		loadout = &components.EquipmentConfig{
+			WeaponSlot:  addSlotItem(items.Weapon),
+			HeadSlot:    addSlotItem(items.Head),
+			ChestSlot:   addSlotItem(items.Chest),
+			GlovesSlot:  addSlotItem(items.Gloves),
+			LegsSlot:    addSlotItem(items.Legs),
+			Ring1Slot:   addSlotItem(items.Ring_1),
+			Ring2Slot:   addSlotItem(items.Ring_2),
+			Consumable1: addSlotItem(items.Consumable_1),
+			Consumable2: addSlotItem(items.Consumable_2),
+			Consumable3: addSlotItem(items.Consumable_3),
 		}
 	}
 
-	PlayerConfig := PlayerConfig{
+	entity := CreatePlayerEntity(s.EntityManager, PlayerConfig{
 		MemberID:     playerID,
 		CharacterID:  character.ID,
 		Level:        level,
 		Experience:   character.Experience,
 		Username:     character.Name,
-		X:            spawnX,
-		Y:            spawnY,
+		X:            x,
+		Y:            y,
 		Class:        classAtLevel(classCfg, level),
 		ClassName:    className,
 		ItemName:     "Health Potion",
 		ItemQuantity: 3,
-
-		Vx: 0,
-		Vy: 0,
 
 		ItemIDList:    carried,
 		Escape:        false,
 		PlayerLoadout: loadout,
 		// no loadout here means it was never read, not that none is stored
 		LoadoutUnknown: loadout == nil,
-	}
+	})
 
-	// create player state entity
-	entity := CreatePlayerEntity(s.EntityManager, PlayerConfig)
-
-	// update player id to entity id map
 	s.playerIDToEntitiesID[playerID] = entity.ID
-	// update players map
 	s.playerEntityIDToPlayerID[entity.ID] = playerID
 	return entity.ID
 }
@@ -964,88 +1065,22 @@ func (s *Session) seatPlayerLocked(player *types.Player, items *pbitems.GetLoado
 		return types.CharacterInPlay{}, fmt.Errorf("seat player %s: no class: %w", player.ID, ErrCharacterNotSeatable)
 	}
 
-	className := character.Class
-	classCfg, ok := Classes[className]
-	if !ok {
+	if _, ok := Classes[character.Class]; !ok {
 		slog.Error("class for player doesn't have a matching class made it to seatPlayerLocked", "player_id", player.ID)
-		return types.CharacterInPlay{}, fmt.Errorf("seat player %s: unknown class %q: %w", player.ID, className, ErrCharacterNotSeatable)
+		return types.CharacterInPlay{}, fmt.Errorf("seat player %s: unknown class %q: %w", player.ID, character.Class, ErrCharacterNotSeatable)
 	}
-
-	level := seatLevel(character.Level)
 
 	spawnX, spawnY, ok := s.takeArrivalSlotLocked()
 	if !ok {
 		spawnX, spawnY = s.spawnPoint()
 	}
 
-	carried := []uuid.UUID{}
-
-	// add item entity and return its UUID pointer, or nil when it is carried instead
-	rarities := s.lootRarities
-	addSlotItem := func(item *pbitems.ItemInstance) *uuid.UUID {
-		if item == nil {
-			return nil
-		}
-		config := loadoutItemConfig(item, rarities)
-		id := s.AddItemWithUnLocked(config)
-		if !canWear(config.RequiredLevel, level) {
-			carried = append(carried, id)
-			return nil
-		}
-		return &id
-	}
-
-	// Entities from Loadout. No loadout seats the player with no equipment,
-	// as a failed fetch does in addPlayerLocked
-	var loadout *components.EquipmentConfig
-	if items != nil {
-		loadout = &components.EquipmentConfig{
-			WeaponSlot:  addSlotItem(items.Weapon),
-			HeadSlot:    addSlotItem(items.Head),
-			ChestSlot:   addSlotItem(items.Chest),
-			GlovesSlot:  addSlotItem(items.Gloves),
-			LegsSlot:    addSlotItem(items.Legs),
-			Ring1Slot:   addSlotItem(items.Ring_1),
-			Ring2Slot:   addSlotItem(items.Ring_2),
-			Consumable1: addSlotItem(items.Consumable_1),
-			Consumable2: addSlotItem(items.Consumable_2),
-			Consumable3: addSlotItem(items.Consumable_3),
-		}
-	} else {
+	// No loadout seats the player with no equipment, as a failed fetch does in
+	// addPlayerLocked
+	if items == nil {
 		slog.Warn("No loadout for handoff arrival, player spawns with no equipment.", "player_id", player.ID)
 	}
-
-	PlayerConfig := PlayerConfig{
-		MemberID:     player.ID,
-		CharacterID:  character.ID,
-		Level:        level,
-		Experience:   character.Experience,
-		Username:     character.Name,
-		X:            spawnX,
-		Y:            spawnY,
-		Class:        classAtLevel(classCfg, level),
-		ClassName:    className,
-		ItemName:     "Health Potion",
-		ItemQuantity: 3,
-
-		Vx: 0,
-		Vy: 0,
-
-		ItemIDList:    carried,
-		Escape:        false,
-		PlayerLoadout: loadout,
-		// no loadout here means it was never read, not that none is stored
-		LoadoutUnknown: loadout == nil,
-	}
-
-	// create player state entity
-	entity := CreatePlayerEntity(s.EntityManager, PlayerConfig)
-
-	// update player id to entity id map
-	s.playerIDToEntitiesID[player.ID] = entity.ID
-
-	// update players map
-	s.playerEntityIDToPlayerID[entity.ID] = player.ID
+	s.buildBodyLocked(player.ID, character, spawnX, spawnY, items)
 
 	// remove them from the pending list
 	delete(s.playersPendingConnection, player.ID)
@@ -1734,8 +1769,9 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		if !containerOpenable.HasBeenOpened {
 			containerOpenable.HasBeenOpened = true
 
-			// creates RANDOM items on the spot
-			itemIDs, err := s.generateItems()
+			// creates RANDOM items on the spot: the Spire's chest roll, or a
+			// field's derived from it (FS-3QHQZ §Requirements 19)
+			itemIDs, err := s.rollChest()
 
 			if err != nil {
 				fmt.Printf("Error generating container items: %v\n", err)
@@ -1784,6 +1820,9 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		err := s.pickUpItem(playerEntity, playerTransform, targetEntityID)
 		if errors.Is(err, ErrOutOfRange) {
 			s.sendErrorToPlayer(playerID, string(constants.ActionInteract), "too far away to interact")
+		}
+		if errors.Is(err, ErrLootReserved) {
+			s.sendRefusalToPlayer(playerID, string(constants.ActionInteract), "that loot is reserved for its killer", "loot_reserved", nil)
 		}
 		return err
 	}
@@ -1994,6 +2033,14 @@ func (s *Session) pickUpItem(playerEntity *ecs.Entity, at *components.TransformC
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// the body is read before this lock: one whose member left meanwhile (a
+	// field visit ended) is nobody's, and its satchel is never settled
+	memberID := s.playerEntityIDToPlayerID[playerEntity.ID]
+	if seated, ok := s.playerIDToEntitiesID[memberID]; !ok || seated != playerEntity.ID {
+		delete(s.containerInteractedCache, itemID)
+		return fmt.Errorf("pick up item %s: %w", itemID, ErrNotInThisWorld)
+	}
+
 	if err := s.moveItemToSatchel(playerEntity, at, itemID); err != nil {
 		delete(s.containerInteractedCache, itemID)
 		return err
@@ -2020,6 +2067,10 @@ func (s *Session) moveItemToSatchel(playerEntity *ecs.Entity, at *components.Tra
 	openableComp, ok := container.GetComponent(ecs.ComponentTypeOpenable)
 	if !ok || !openableComp.(*components.OpenableComponent).IsOpen {
 		return fmt.Errorf("pick up item %s: %w", itemID, ErrContainerClosed)
+	}
+	// a field pile is its killer's alone inside its window (FS-X2F2H R33)
+	if reservedAgainst(container, s.playerEntityIDToPlayerID[playerEntity.ID]) {
+		return fmt.Errorf("pick up item %s: %w", itemID, ErrLootReserved)
 	}
 
 	transformComp, ok := container.GetComponent(ecs.ComponentTypeTransform)
@@ -2387,9 +2438,19 @@ const (
 
 /**
 * generateItems generates new random items from the session itemPool base,
-* creates item entities, and returns their IDs.
+* creates item entities, and returns their IDs: the Spire's chest roll, at the
+* floor's area level.
 **/
 func (s *Session) generateItems() ([]uuid.UUID, error) {
+	return s.generateItemsAt(s.chestDrop())
+}
+
+/**
+* generateItemsAt is the chest roll for the drop given: the item count and type
+* split, then each item rolled for that drop. A field chest hands it its own
+* item level (FS-3QHQZ §Requirements 19); a run's chest, the floor's.
+**/
+func (s *Session) generateItemsAt(drop lootDrop) ([]uuid.UUID, error) {
 	slog.Debug("generating items from itemPool when opening container",
 		"s.itemPool", s.itemPool)
 
@@ -2438,8 +2499,6 @@ func (s *Session) generateItems() ([]uuid.UUID, error) {
 		return nil, fmt.Errorf("Item pool was empty.")
 	}
 
-	// chests never drop rings (FS-4R9M9 §Requirements 47)
-	drop := s.chestDrop()
 	newItemEntityIDs := make([]uuid.UUID, 0, numberOfArmor+numberOfWeapons+numberOfConsumables)
 	newItemEntityIDs = append(newItemEntityIDs, s.dropLoot(types.ItemTypeWeapon, s.itemPool.Weapons, numberOfWeapons, drop)...)
 	newItemEntityIDs = append(newItemEntityIDs, s.dropLoot(types.ItemTypeArmor, s.itemPool.Armor, numberOfArmor, drop)...)

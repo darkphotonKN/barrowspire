@@ -57,6 +57,10 @@ const (
 	WorldTypeHub WorldType = "hub"
 	// WorldTypeRun is a short-lived world built for one match.
 	WorldTypeRun WorldType = "run"
+	// WorldTypeField is a long-lived world shared like the hub, with no queue:
+	// one channel of each field per pod, entered by a world switch from the hub
+	// and never ended. FS-X2F2H §Requirements 1.
+	WorldTypeField WorldType = "field"
 )
 
 // represents entire game state that client receives
@@ -88,6 +92,9 @@ type ClientGameState struct {
 	// Trails are a run's live burning trails; with none burning, and always in
 	// the hub, the key is absent. FS-4R9M9 §Requirements 56.
 	Trails []*TrailState `json:"trails,omitempty"`
+	// Gates are the hub's; a run has none and omits the key. FS-0XMCP
+	// §Requirements 6.
+	Gates []*GateState `json:"gates,omitempty"`
 }
 
 type BackendGameState struct {
@@ -112,6 +119,7 @@ type BackendGameState struct {
 	Stairs       []*StairsState
 	Monsters     []*MonsterState
 	Trails       []*TrailState
+	Gates        []*GateState
 }
 
 // ErrInvalidPayload marks a client payload that cannot be parsed. The payload

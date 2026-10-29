@@ -26,10 +26,12 @@ import {
   OUTDOOR_GROUND,
   planGroundLayer,
   tileHash,
+  type Apron,
   type GroundLook,
   type GroundPiece,
   type WorldKind,
 } from "./ground";
+import type { HorizonPlan } from "./horizon";
 import type { House } from "./houses";
 import { FADED_ALPHA, occludes, stepAlpha } from "./occlusion";
 import { planPerimeter } from "./perimeter";
@@ -58,19 +60,27 @@ export class GroundLayer {
   private readonly rt: Phaser.GameObjects.RenderTexture;
   private readonly origin: Point;
   private floor?: FloorGround;
+  /** The painted ground again, added over itself: a look's lift. Made the first time one asks. */
+  private lifted?: Phaser.GameObjects.Image;
 
   constructor(
-    scene: Phaser.Scene,
+    private readonly scene: Phaser.Scene,
     private readonly art: ArtLibrary,
     private readonly world: {
       width: number;
       height: number;
       kind: WorldKind;
       paths?: readonly Rect[];
+      /** Ground under a forest's stands, laid as leaf litter (FS-3QHQZ §Requirements 25). */
+      litter?: readonly Rect[];
+      /** Ground past the edge (FS-0XMCP R18), within `margin`'s reach of the map. */
+      aprons?: readonly Apron[];
+      /** Screen px of ground painted past the projected map; absent, GROUND_MARGIN. */
+      margin?: number;
       look?: GroundLook;
     },
   ) {
-    const b = projectedBounds(world.width, world.height, GROUND_MARGIN);
+    const b = projectedBounds(world.width, world.height, world.margin ?? GROUND_MARGIN);
     this.origin = { x: b.x, y: b.y };
     this.rt = scene.add.renderTexture(
       b.x,
@@ -89,7 +99,7 @@ export class GroundLayer {
     look: GroundLook = OUTDOOR_GROUND,
   ): boolean {
     return art.has(
-      look.hall ?? (kind === "hub" ? "ground_grass" : "ground_dirt"),
+      look.hall ?? (kind === "run" ? "ground_dirt" : "ground_grass"),
     );
   }
 
@@ -98,10 +108,34 @@ export class GroundLayer {
     if (floor) this.floor = floor;
     const { look: worldLook = OUTDOOR_GROUND, ...world } = this.world;
     const look = this.floor?.look ?? worldLook;
+    // a recoloured ground (a field's greens): the whole painted layer under one multiply
+    if (look.tint === undefined) this.rt.clearTint();
+    else this.rt.setTint(look.tint);
+    this.lift(look);
     this.rt.clear();
     this.rt.beginDraw();
     this.draw(planGroundLayer({ ...world, houses, look, seed: this.floor?.seed }));
     this.rt.endDraw();
+  }
+
+  /**
+   * A look's lift (a daylit field): the same painted texture drawn again just over it, additively,
+   * at the lift's share and under the same tint, so the ground brightens with its texture intact.
+   */
+  private lift(look: GroundLook): void {
+    const share = look.lift ?? 0;
+    if (share <= 0) {
+      this.lifted?.setVisible(false);
+      return;
+    }
+    this.lifted ??= this.scene.add
+      .image(this.origin.x, this.origin.y, this.rt.texture)
+      .setOrigin(0, 0)
+      .setDepth(GROUND_DEPTH)
+      .setBlendMode("ADD");
+    this.lifted.setVisible(true).setAlpha(Math.min(1, share));
+    if (look.tint === undefined) this.lifted.clearTint();
+    else this.lifted.setTint(look.tint);
   }
 
   private draw(pieces: readonly GroundPiece[]): void {
@@ -118,9 +152,37 @@ export class GroundLayer {
         frame.frame,
         Math.round(s.x - sheet.anchor.x * sheet.frameWidth - this.origin.x),
         Math.round(s.y - sheet.anchor.y * sheet.frameHeight - this.origin.y),
+        p.alpha ?? 1,
+        p.shade,
       );
     }
   }
+}
+
+/** Under the ground: a field's horizon is behind everything in the world. */
+export const HORIZON_DEPTH = GROUND_DEPTH - 1;
+
+/**
+ * A field's horizon (FS-X2F2H §Requirements 54): sky, hills and the land beyond, drawn in code
+ * under the ground and moving with the camera at the plan's slower rate. Under the light-map
+ * like the rest of the world, so the field's daylight lights it too.
+ */
+export function addHorizon(
+  scene: Phaser.Scene,
+  plan: HorizonPlan,
+): Phaser.GameObjects.Graphics {
+  const g = scene.add.graphics();
+  g.setScrollFactor(plan.factor).setDepth(HORIZON_DEPTH);
+  for (const band of [...plan.sky, ...plan.land]) {
+    g.fillStyle(band.color, 1);
+    // a pixel of overlap, so no seam shows between bands
+    g.fillRect(plan.span.x, band.y, plan.span.width, band.height + 1);
+  }
+  for (const hill of plan.hills) {
+    g.fillStyle(hill.color, 1);
+    g.fillPoints(hill.points, true);
+  }
+  return g;
 }
 
 /** A light source for a sprite's sheet, if its manifest entry declares one. */
@@ -159,20 +221,21 @@ export function addProp(
 /** A floor's run dressing as drawn (FS-8RBQY §C.4): sprites, the tall ones, and brazier light. */
 export interface BuiltDressing {
   sprites: Phaser.GameObjects.Sprite[];
-  /** Tall enough to stand over a delver: they fade like any occluder. */
+  /** Tall enough to stand over a player: they fade like any occluder. */
   tall: Phaser.GameObjects.Sprite[];
   lights: LightSource[];
 }
 
 /**
- * Run dressing as baked props, each sorted by its footprint. Decoration only: the sprites are
+ * Run dressing (and a forest's verges, FS-3QHQZ §Requirements 28) as baked props, each sorted by
+ * its footprint. Decoration only: the sprites are
  * never made interactive and never join a physics group or collider. A piece whose sheet is
  * missing is skipped (§B.8), and with no manifest at all there is no dressing.
  */
 export function addDressing(
   scene: Phaser.Scene,
   art: ArtLibrary,
-  pieces: readonly DressingPiece[],
+  pieces: readonly (Omit<DressingPiece, "sheet"> & { sheet: string })[],
 ): BuiltDressing {
   const built: BuiltDressing = { sprites: [], tall: [], lights: [] };
   if (!art.available) return built;
@@ -192,7 +255,7 @@ export function addDressing(
 export interface BuiltWalls {
   /** Every piece and post, by the server wall it belongs to. */
   byWall: Map<string, Phaser.GameObjects.Sprite[]>;
-  /** Full-height pieces: tall enough to hide a delver standing behind them. */
+  /** Full-height pieces: tall enough to hide a player standing behind them. */
   tall: Phaser.GameObjects.Sprite[];
   /** Declared lights, with the wall they hang on; a back wall's stand under its house's roof. */
   lights: { source: LightSource; wallId: string; underRoof: boolean }[];
@@ -338,7 +401,7 @@ export function showState(
 }
 
 /**
- * Trees, tall props, back walls and roofs that fade while they stand over the delver (§C.5).
+ * Trees, tall props, back walls and roofs that fade while they stand over the player (§C.5).
  * Occluders do not move, so their bounds are taken once.
  */
 export class Occluders {
@@ -367,7 +430,7 @@ export class Occluders {
     this.items.length = 0;
   }
 
-  /** Eases each occluder toward faded or restored; `subject` is the delver, or null if gone. */
+  /** Eases each occluder toward faded or restored; `subject` is the player, or null if gone. */
   update(subject: { bounds: Rect; depth: number } | null, dtMs: number): void {
     for (const { sprite, bounds } of this.items) {
       if (!sprite.active) continue;

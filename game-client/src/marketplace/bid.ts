@@ -1,5 +1,5 @@
 /**
- * The bid box's decisions (FS-8EGFA req 26, 29): what the delver typed, whether it may be sent,
+ * The bid box's decisions (FS-8EGFA req 26, 29): what the player typed, whether it may be sent,
  * which Idempotency-Key it goes with, and what each refusal says. Pure, so the dialog only wires
  * them to state; the server stays the authority on every one of them.
  */
@@ -36,7 +36,7 @@ export function parseBidAmount(text: string): number | null {
   return amount;
 }
 
-/** The delver's wallet as the bid box sees it: 404 means the purse is not made yet (ADR-0014). */
+/** The player's wallet as the bid box sees it: 404 means the purse is not made yet (ADR-0014). */
 export type Purse =
   | { state: "loading" }
   | { state: "ready"; availableGold: number }
@@ -67,7 +67,7 @@ export type BidBoxState =
 /**
  * Whether Bid may be pressed, and why not. Below the minimum or above the available gold is
  * refused here (req 26), as is a bid at or above the buyout price (FS-49Z37 req 20), which is
- * named before the purse so the delver is pointed at Buy out; an ended auction closes the box
+ * named before the purse so the player is pointed at Buy out; an ended auction closes the box
  * for good (Edge States).
  */
 export function bidBox(input: BidBoxInput): BidBoxState {

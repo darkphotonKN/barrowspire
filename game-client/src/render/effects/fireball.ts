@@ -20,13 +20,13 @@ import { alongAim, type ProjectileKind } from "./projectile";
 import type { EffectsRuntime, OwnerKey } from "./runtime";
 import type { EffectName } from "./table";
 
-/** Screen px along the aim from the delver to the casting hand, where the old flash sat. */
+/** Screen px along the aim from the player to the casting hand, where the old flash sat. */
 const HAND_REACH = 15;
 
-/** Screen px above the delver's feet to the casting hand and staff head; the fireball flies here. */
+/** Screen px above the player's feet to the casting hand and staff head; the fireball flies here. */
 export const HAND_LIFT = 42;
 
-/** Plays the cast from the delver at `from` aiming at `toward`, both world positions. */
+/** Plays the cast from the player at `from` aiming at `toward`, both world positions. */
 export function playFireballCast(
   fx: Pick<EffectsRuntime, "play">,
   owner: OwnerKey,

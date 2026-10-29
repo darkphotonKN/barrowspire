@@ -294,7 +294,7 @@ export const GEAR = {
 /**
  * A hub resident's palette (FS-2325V §G.2): the name is the first half of the server's
  * `appearance` ("rust" in "rust_trousers"). `cloth` is the main garment (tunic, kirtle), `under`
- * the second (trousers, shawl), `hair` the hair. Earthy, muted dyes; none of them a delver's
+ * the second (trousers, shawl), `hair` the hair. Earthy, muted dyes; none of them a player's
  * heraldic red or a channel colour at full strength.
  */
 export const FOLK_PALETTES = {

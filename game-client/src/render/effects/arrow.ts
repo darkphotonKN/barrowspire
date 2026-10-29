@@ -18,13 +18,13 @@ import { alongAim, type ProjectileKind } from "./projectile";
 import type { EffectsRuntime, OwnerKey } from "./runtime";
 import type { EffectName } from "./table";
 
-/** Screen px along the aim from the delver to the bow, as the old release sat. */
+/** Screen px along the aim from the player to the bow, as the old release sat. */
 const BOW_REACH = 16;
 
-/** Screen px above the delver's feet to the bow hand: the string snaps and the arrow flies here. */
+/** Screen px above the player's feet to the bow hand: the string snaps and the arrow flies here. */
 export const BOW_LIFT = 38;
 
-/** Plays the release from the delver at `from` aiming at `toward`, both world positions. */
+/** Plays the release from the player at `from` aiming at `toward`, both world positions. */
 export function playArrowRelease(
   fx: Pick<EffectsRuntime, "play">,
   owner: OwnerKey,

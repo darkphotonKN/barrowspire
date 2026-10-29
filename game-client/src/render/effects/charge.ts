@@ -4,7 +4,7 @@
  * them, left lying along the path they actually ran. No bright streak.
  *
  * Signal, unchanged: the warrior's own right click that sends `CastSkill {skill_id: "dash"}`.
- * The server carries the delver over several ticks (180 px at 450 px/s), so nothing here
+ * The server carries the player over several ticks (180 px at 450 px/s), so nothing here
  * predicts or marks where the charge lands: the scene hands the drawn position to
  * {@link Charge.follow} each frame, and ends it after {@link CHARGE_MS}.
  */

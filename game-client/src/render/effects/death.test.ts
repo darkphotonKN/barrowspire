@@ -89,18 +89,18 @@ describe("death dust, once per death (FS-KYPQ9 §G.2)", () => {
   });
 
   it("should settle again on the next death once the character is alive again", () => {
-    const delver = {};
-    dust.clipComplete(fx, "self", delver, "warrior/death/3", body);
-    dust.alive(delver);
-    dust.clipComplete(fx, "self", delver, "warrior/death/1", body);
+    const player = {};
+    dust.clipComplete(fx, "self", player, "warrior/death/3", body);
+    dust.alive(player);
+    dust.clipComplete(fx, "self", player, "warrior/death/1", body);
     expect(settles()).toBe(2);
   });
 
   it("should not count a finished attack clip as the death", () => {
-    const delver = {};
-    dust.clipComplete(fx, "self", delver, "warrior/attack/3", body);
+    const player = {};
+    dust.clipComplete(fx, "self", player, "warrior/attack/3", body);
     expect(settles()).toBe(0);
-    dust.clipComplete(fx, "self", delver, "warrior/death/3", body);
+    dust.clipComplete(fx, "self", player, "warrior/death/3", body);
     expect(settles()).toBe(1);
   });
 

@@ -68,6 +68,15 @@ const (
 )
 
 /**
+* World types carried by MatchEndedEvent.world_type (FS-X2F2H R43, ADR-0031).
+* An empty world_type is a run: events written before the field existed.
+**/
+const (
+	WorldTypeRun   = "run"
+	WorldTypeField = "field"
+)
+
+/**
 * Queue Names
 * NOTE: {service}.{domain}.{resource}.{action}
 **/

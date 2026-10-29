@@ -73,7 +73,7 @@ export default function LeaderboardPage() {
 //         >
 //           Back to Game
 //         </button>
-//         <h1 className="leaderboard-title">THE DELVER ROLL</h1>
+//         <h1 className="leaderboard-title">THE PLAYER ROLL</h1>
 //       </div>
 //
 //       <div className="leaderboard-content">
@@ -98,7 +98,7 @@ export default function LeaderboardPage() {
 //             <div className="leaderboard-table">
 //               <div className="leaderboard-header-row">
 //                 <div className="leaderboard-col rank-col">Rank</div>
-//                 <div className="leaderboard-col player-col">Delver</div>
+//                 <div className="leaderboard-col player-col">Player</div>
 //                 <div className="leaderboard-col wins-col">Wins</div>
 //                 <div className="leaderboard-col top3-col">Top 3</div>
 //               </div>

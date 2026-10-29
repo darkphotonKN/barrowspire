@@ -58,7 +58,7 @@ export interface InteractReply {
   success: boolean;
   message: string;
   reason?: string;
-  /** Living delvers not yet in range of the stairs, on a `party_not_gathered` refusal. */
+  /** Living players not yet in range of the stairs, on a `party_not_gathered` refusal. */
   missing?: number;
 }
 

@@ -9,7 +9,7 @@ export {
 } from "./LightMap";
 export {
   AMBIENT,
-  DELVER_TORCH,
+  PLAYER_TORCH,
   TOWER_AMBIENT,
   sourceFromManifest,
   type LightSource,

@@ -6,7 +6,7 @@
 import * as Phaser from "phaser";
 import { ActionType } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
-import { drawDelverLegs } from "@/utils/characterTextures";
+import { drawPlayerLegs } from "@/utils/characterTextures";
 import { createAtmosphere as buildAtmosphere } from "@/utils/atmosphere";
 import { useGameStore } from "@/stores/gameStore";
 import {
@@ -18,11 +18,10 @@ import {
   SwitchState,
   WallState,
   DoorState,
-  EquippedItems,
-  EquipmentState,
   ProjectileState,
 } from "@/types/gameState";
 import { EquipmentPanel } from "@/ui/EquipmentPanel";
+import { EquipmentHud } from "@/ui/EquipmentHud";
 import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
 import {
   climbed,
@@ -75,7 +74,7 @@ import {
   type WorldPlane,
 } from "@/render/iso";
 import { artSprite, preloadArt, registerArt } from "@/render/art/phaser";
-import { PLACEHOLDER_TEXTURE, type ArtLibrary } from "@/render/art/library";
+import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
 import { cursorCss, cursorSource } from "@/render/cursors";
@@ -90,7 +89,8 @@ import { ProjectileFlights } from "@/render/effects/projectile";
 import { FIREBALL_FLIGHT, playFireballCast } from "@/render/effects/fireball";
 import { ARROW_FLIGHT, playArrowRelease } from "@/render/effects/arrow";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
-import { MonsterRoster, type MonsterTargeting } from "@/render/creatures";
+import { MonsterRoster, phaserMonsterStage, type MonsterTargeting } from "@/render/creatures";
+import { PlayerCombat } from "@/render/combat/playerCombat";
 import {
   BAKE,
   DROP_PILE,
@@ -122,6 +122,7 @@ import {
   type FloorLook,
   type WorldThemeLook,
 } from "@/render/world";
+import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = 160;
@@ -131,16 +132,10 @@ const CAMERA_MARGIN = 160;
  * The manifest names the pool's radius and colour; it has no intensity of its own.
  */
 const STAIRS_POOL_INTENSITY = 0.85;
-/** A delver's footprint, in world px: the server's `PlayerRadius`. */
+/** A player's footprint, in world px: the server's `PlayerRadius`. */
 const PLAYER_FOOTPRINT_RADIUS = 20;
 /**
- * A targeted `attack`'s reach, centre to centre in world px, and its cooldown in ms: the server's
- * (`targetedAttackRange`, 0.5 s). A click out of reach sends nothing.
- */
-const STRIKE_RANGE = 60;
-const STRIKE_COOLDOWN_MS = 500;
-/**
- * The resolved delver's card (FS-QPDKN req 1–6): over the HUD (1000), under the passing notices
+ * The resolved player's card (FS-QPDKN req 1–6): over the HUD (1000), under the passing notices
  * (2000), which still have the last word while it is up.
  */
 const RESOLVED_CARD_DEPTH = 1500;
@@ -148,7 +143,7 @@ const RESOLVED_CARD_DEPTH = 1500;
 const SPECTATE_HUD_Y = 10;
 /**
  * The dead spectator's leave button (FS-QPDKN req 10): bottom-right, in the HUD band (1000) with
- * the counters, and away from the watched delver at the centre and the HUD along the top edge.
+ * the counters, and away from the watched player at the centre and the HUD along the top edge.
  */
 const LEAVE_BUTTON_DEPTH = 1000;
 const LEAVE_BUTTON_MARGIN = 16;
@@ -175,14 +170,14 @@ const BUTTON_GAP = 16;
 const PROGRESS_HUD_X = 10;
 const PROGRESS_HUD_Y = 44;
 /**
- * Screen px above a delver's marker base (`markerBase`: a baked head, or a placeholder's frame
+ * Screen px above a player's marker base (`markerBase`: a baked head, or a placeholder's frame
  * top) to their name label, and to their HP bar. Markers draw above the light-map and vignette
  * (FS-2325V §C.9).
  */
 const NAME_GAP = 5;
 const HP_BAR_GAP = 10;
 /**
- * On a baked sheet the delver's own name clears their HP bar, which spans the 11 px over the
+ * On a baked sheet the player's own name clears their HP bar, which spans the 11 px over the
  * base. A placeholder keeps {@link NAME_GAP}, exactly where it always was.
  */
 const NAME_OVER_BAR_GAP = HP_BAR_GAP + 2;
@@ -199,7 +194,7 @@ const NOTICE_BACKING: Record<NoticeTone, number> = {
 
 /**
  * The run's ESC menu (FS-9K8EZ req 1): the shared menu chrome, camera-fixed in the popup band
- * with the result card, over the dead delver's card (1500), which it never hides for long
+ * with the result card, over the dead player's card (1500), which it never hides for long
  * (req 6). The pressable area of a menu choice, in screen px around its label, and the run's
  * tokens for the chrome: amber to press, arcane to go back, the HUD's label tone while dimmed.
  */
@@ -212,7 +207,7 @@ const MENU_TONES: MenuTones = {
   actionable: palette.interactable,
   cancel: palette.safe,
 };
-/** What the delver's state was when the menu was built: its rows are right for this and no other. */
+/** What the player's state was when the menu was built: its rows are right for this and no other. */
 interface MenuState {
   resolved: boolean;
   escaped: boolean;
@@ -232,7 +227,7 @@ const FLOOR_VIEW_RETURN_MS = 900;
 /** How long the card holds once up, in ms. */
 const FLOOR_CARD_HOLD_MS = 1400;
 
-/** Health the server already sends, run out: a delver's death clip plays on it. */
+/** Health the server already sends, run out: a player's death clip plays on it. */
 const isDead = (player?: { current_health?: number } | null) =>
   player?.current_health !== undefined && player.current_health <= 0;
 
@@ -244,7 +239,7 @@ interface Building {
   height: number;
   doorSide: "top" | "bottom" | "left" | "right";
   wallGroup: Phaser.Physics.Arcade.StaticGroup;
-  /** Baked roof pieces, or the placeholder roof: hidden together while the delver is inside. */
+  /** Baked roof pieces, or the placeholder roof: hidden together while the player is inside. */
   roof: { setVisible(visible: boolean): unknown; destroy(): void }[];
   /** The entrance glow (FS-KYPQ9 §H.1); absent only if walls came before the effects runtime. */
   doorMarker?: EntranceMarker;
@@ -264,7 +259,7 @@ function inBuilding(building: Building, at: Point): boolean {
   );
 }
 
-/** Limited barrow palette for the wizard-delver sprite (0x ints). */
+/** Limited barrow palette for the wizard-player sprite (0x ints). */
 interface WizardPalette {
   hat: number;
   hatShade: number;
@@ -280,7 +275,7 @@ interface WizardPalette {
   ink: number;
 }
 
-/** Limited barrow palette for the knight-delver sprite (0x ints). */
+/** Limited barrow palette for the knight-player sprite (0x ints). */
 interface KnightPalette {
   helm: number;
   helmShade: number;
@@ -299,7 +294,7 @@ interface KnightPalette {
   ink: number;
 }
 
-/** Limited barrow palette for the archer-delver sprite (0x ints). */
+/** Limited barrow palette for the archer-player sprite (0x ints). */
 interface ArcherPalette {
   hood: number;
   hoodShade: number;
@@ -314,16 +309,16 @@ interface ArcherPalette {
 }
 
 export class BarrowspireScene extends Phaser.Scene {
-  /** The local delver's sprite, drawn at the projection of `playerPos`. */
+  /** The local player's sprite, drawn at the projection of `playerPos`. */
   private player?: Phaser.Physics.Arcade.Sprite;
   /**
-   * The local delver's world position as rendered (eased toward the server's).
+   * The local player's world position as rendered (eased toward the server's).
    * Every gameplay calculation uses this, never `player.x/y`, which are screen
    * coordinates. CONTEXT.md "World position".
    */
   private playerPos?: Point;
   private otherPlayers: Map<string, Phaser.Physics.Arcade.Sprite> = new Map();
-  /** Eased world positions of other delvers; their sprites sit at the projection. */
+  /** Eased world positions of other players; their sprites sit at the projection. */
   private otherPlayersPos: Map<string, Point> = new Map();
   private otherPlayersTargets: Map<string, { x: number; y: number }> =
     new Map();
@@ -332,7 +327,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private playerLegs?: Phaser.GameObjects.Graphics;
   private playerHpMpGraphics?: Phaser.GameObjects.Graphics;
   private otherPlayersHpMpGraphics: Map<string, Phaser.GameObjects.Graphics> = new Map();
-  /** The warm pool the delver carries. Built once; only ever repositioned. */
+  /** The warm pool the player carries. Built once; only ever repositioned. */
   private otherPlayersLegs: Map<string, Phaser.GameObjects.Graphics> =
     new Map();
   /** One of eight world directions (FS-2325V §A.6); "se" faces the viewer. */
@@ -343,7 +338,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private playerTexturePrefix: string = "player_warrior";
   private otherPlayersClass: Map<string, string> = new Map();
   /**
-   * Each delver's baked character sheet (FS-2325V §E.4). When a sheet is not `baked` the delver
+   * Each player's baked character sheet (FS-2325V §E.4). When a sheet is not `baked` the player
    * keeps its placeholder texture, facing swaps and drawn legs above.
    */
   private playerAnim?: CharacterAnimator;
@@ -378,23 +373,23 @@ export class BarrowspireScene extends Phaser.Scene {
    * (FS-QPDKN req 15–17). Read by the `world_entered` handler in `PhaserGame.tsx`.
    */
   readonly resultHold = new ResultHold();
-  /** The resolved delver's card (FS-QPDKN req 1): up until Watch is pressed or `end_game`. */
+  /** The resolved player's card (FS-QPDKN req 1): up until Watch is pressed or `end_game`. */
   private resolvedCard?: Phaser.GameObjects.Container;
-  /** The teammate this resolved delver watches through (req 7); set only while spectating. */
-  private watchedDelverId?: string;
+  /** The teammate this resolved player watches through (req 7); set only while spectating. */
+  private watchedPlayerId?: string;
   /** The sprite the camera was last latched onto while spectating, so it is latched once. */
   private followedSprite?: unknown;
   /**
    * The run `world_entered` put us in. The server may still broadcast another world this
    * member has a body in (a stale run, the hub); drawing those frames here would snap the
-   * delver between two positions every tick.
+   * player between two positions every tick.
    */
   private sessionID?: string;
   /** Whose eyes, and how to switch (req 9); up while spectating. */
   private spectateHud?: { watching: Phaser.GameObjects.Text; hint: Phaser.GameObjects.Text };
-  /** How this delver is out of the delve, while the card or the spectate view is up (req 2, 10). */
+  /** How this player is out of the delve, while the card or the spectate view is up (req 2, 10). */
   private resolvedKind?: ResolvedCardKind;
-  /** The dead delver's way out (req 2, 13): on the card, or in its corner while they spectate. */
+  /** The dead player's way out (req 2, 13): on the card, or in its corner while they spectate. */
   private leaveButton?: WorldButton;
   /** A `leave_run` is on its way and unanswered: further presses send nothing (req 13). */
   private leavePending = false;
@@ -422,11 +417,11 @@ export class BarrowspireScene extends Phaser.Scene {
     label: "LEAVE THE BARROW",
     onPress: () => this.leaveTheBarrow(),
   };
-  /** Tab, the next delver to watch (req 8); made with the run, removed with it. */
+  /** Tab, the next player to watch (req 8); made with the run, removed with it. */
   private tabKey?: Phaser.Input.Keyboard.Key;
-  /** This delver's level and experience bar (FS-BDA7X req 42), made with the first state that has them. */
+  /** This player's level and experience bar (FS-BDA7X req 42), made with the first state that has them. */
   private progressHud?: ProgressHud;
-  /** This delver's level, for the "Requires level N" hints (req 45); unknown until the server sends it. */
+  /** This player's level, for the "Requires level N" hints (req 45); unknown until the server sends it. */
   private characterLevel?: number;
 
   // Game state
@@ -482,7 +477,7 @@ export class BarrowspireScene extends Phaser.Scene {
         .setBlendMode(Phaser.BlendModes.ADD)
         .setName(`trail:${id}:glow`),
     // the glow sorts above the roofs: like a sconce's halo, it is only in sight while no roof the
-    // delver is outside of stands over either end of the trail
+    // player is outside of stands over either end of the trail
     glowShown: (trail) => !this.underRoof(trail.from) && !this.underRoof(trail.to),
   });
 
@@ -513,24 +508,27 @@ export class BarrowspireScene extends Phaser.Scene {
   // 寶箱跳窗: the satchel a coffer opens into (FS-2325V §D)
   private containerView!: ContainerView;
 
-  // 道具欄 + 裝備面板
-  private equipmentPanel?: EquipmentPanel;
-  private equippedItems: EquippedItems = {
-    weapon: null,
-    head: null,
-    body: null,
-    hands: null,
-    feet: null,
-    ring_1: null,
-    ring_2: null,
-    consumable_1: null,
-    consumable_2: null,
-    consumable_3: null,
-  };
-  private inventoryItems: ItemState[] = [];
+  // 道具欄 + 裝備面板: the equip HUD, shared with the field scene (FS-X2F2H §Requirements 56)
+  private equipment?: EquipmentHud;
 
-  private canAttack = true;
-  private canCastSkill = true;
+  /** The player's strike and casts, shared with the field scene (FS-X2F2H §Requirements 56). */
+  private readonly combat = new PlayerCombat(
+    {
+      sendMessage: (action, payload) => socketManager.sendMessage(action, payload),
+      later: (ms, fn) => this.time.delayedCall(ms, fn),
+    },
+    {
+      slash: (from, to) => this.playWarriorSlashEffect(from.x, from.y, to.x, to.y),
+      dash: (from, to) => this.playWarriorDashEffect(from.x, from.y, to.x, to.y),
+      arrow: (from, to) => {
+        if (this.fx) playArrowRelease(this.fx, "self", from, to);
+      },
+      fireball: (from, to) => {
+        if (this.fx) playFireballCast(this.fx, "self", from, to);
+      },
+      attackClip: (aim, holdMs) => this.playerAnim?.attack(this.time.now, aim, holdMs),
+    },
+  );
   /** Projectiles in flight: baked body, trail, riding light, impact (FS-KYPQ9 §E.2–§F.4). */
   private projectiles?: ProjectileFlights;
   /** The map floor, a world-coordinate plane; house floors are added to it. */
@@ -600,7 +598,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * Phaser reuses this instance when the scene restarts (a reconnect mid-run is a
-   * `world_entered` for the run the delver is already in), so everything a run
+   * `world_entered` for the run the player is already in), so everything a run
    * builds is forgotten when it stops, and the next start rebuilds it through the
    * same code path (FS-2325V "Edge States": reconnect mid-run).
    */
@@ -615,7 +613,7 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * Drops every subscription and every reference to the stopped run's world. Phaser
    * has already destroyed the game objects; what is left here are the maps and flags
-   * that would otherwise make the next start skip building walls, roofs and delvers,
+   * that would otherwise make the next start skip building walls, roofs and players,
    * or touch sprites that no longer exist.
    */
   private resetRun(): void {
@@ -698,7 +696,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // across restarts, so the next run would start unable to move
     if (this.input?.keyboard) this.input.keyboard.enabled = true;
     this.resolvedCard = undefined;
-    this.watchedDelverId = undefined;
+    this.watchedPlayerId = undefined;
     this.followedSprite = undefined;
     this.spectateHud = undefined;
     this.resolvedKind = undefined;
@@ -719,18 +717,13 @@ export class BarrowspireScene extends Phaser.Scene {
     this.tabKey = undefined;
     this.progressHud = undefined;
     this.characterLevel = undefined;
-    this.equipmentPanel = undefined;
+    this.equipment = undefined;
     this.escapedCountText = undefined;
     this.floorText = undefined;
     this.shownFloorLabel = null;
     this.lastFloor = undefined;
     this.floorVeil = [];
-    this.equippedItems = Object.fromEntries(
-      Object.keys(this.equippedItems).map((slot) => [slot, null]),
-    ) as unknown as EquippedItems;
-    this.inventoryItems = [];
-    this.canAttack = true;
-    this.canCastSkill = true;
+    this.combat.reset();
     this.lastGameState = undefined;
     this.sessionID = undefined;
     this.previousEscapeDoorOpened = null;
@@ -848,7 +841,7 @@ export class BarrowspireScene extends Phaser.Scene {
         break;
       case "survived":
         titleStr = "YOU LIVE";
-        subtitleStr = "LAST DELVER STANDING";
+        subtitleStr = "LAST PLAYER STANDING";
         break;
       default: // "eliminated"
         titleStr = `YOU FELL #${position}`;
@@ -875,7 +868,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // --- the one action: Return to the hub (FS-QPDKN req 15) ---
     // The card stays until this is pressed; the hub the server has already moved the
-    // delver to waits in `resultHold`. Amber: it is the one thing here to act on.
+    // player to waits in `resultHold`. Amber: it is the one thing here to act on.
     const btnW = 220;
     const btnH = 38;
     const btnY = 70;
@@ -928,12 +921,12 @@ export class BarrowspireScene extends Phaser.Scene {
   preload(): void {
     // 1. Wizard (Mage) Palettes
     const playerPalette: WizardPalette = {
-      hat: palette.delverCloak,
-      hatShade: shade(palette.delverCloak, 0.45),
+      hat: palette.playerCloak,
+      hatShade: shade(palette.playerCloak, 0.45),
       band: palette.frame,
-      robe: tint(palette.delverCloak, 0.06),
-      robeShade: palette.delverCloakShade,
-      robeLight: tint(palette.delverCloak, 0.16),
+      robe: tint(palette.playerCloak, 0.06),
+      robeShade: palette.playerCloakShade,
+      robeLight: tint(palette.playerCloak, 0.16),
       face: palette.hoodShadow,
       eye: palette.torch,
       staff: palette.floor,
@@ -1059,7 +1052,7 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The player/rival sprite: a hooded wizard-delver — pointed wide-brim hat,
+   * The player/rival sprite: a hooded wizard-player — pointed wide-brim hat,
    * flowing robe, and a staff with a glowing orb. Hand-placed pixel blocks on a
    * 24×26 logical grid (2px cells), dark-outlined so the figure reads against
    * the barrow dark. Same 60×60 frame and 4-facing rig as before — only the
@@ -1439,7 +1432,7 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The knight-delver sprite: battered medieval plate, a great helm with a narrow
+   * The knight-player sprite: battered medieval plate, a great helm with a narrow
    * glowing visor slit (the readable accent in the dark), a muted barrow-tone
    * surcoat, a sword and a kite shield. Hand-placed pixel blocks on the SAME
    * 24×26 logical grid (2px cells) and SAME 60×60 frame / 4-facing rig as the
@@ -1623,29 +1616,21 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * A targeted `attack` on the entity standing at world point `them` (FS-77AB6 req 39): only a
-   * monster is ever one, delvers being allies (req 40). Sent only from a delver still in the
+   * monster is ever one, players being allies (req 40). Sent only from a player still in the
    * delve, off cooldown and within reach, as the server would refuse anything else.
    */
   private strike(entityId: string, them: Point): void {
     const me = this.playerPos;
-    if (!this.canAttack || !this.player || !me || this.gameEndOverlay) return;
+    if (!this.player || !me || this.gameEndOverlay) return;
     if (resolved(this.lastGameState?.current_player)) return;
     // the pointer is the menu's while it is open (FS-9K8EZ req 5)
     if (this.menu) return;
-    // world positions, never the sprites' screen positions
-    if (Math.hypot(them.x - me.x, them.y - me.y) > STRIKE_RANGE) return;
 
-    socketManager.sendMessage(ActionType.Attack, { enemy_entity_id: entityId });
-    this.playWarriorSlashEffect(me.x, me.y, them.x, them.y);
-    this.playerAnim?.attack(this.time.now, { x: them.x - me.x, y: them.y - me.y });
-    this.canAttack = false;
-    this.time.delayedCall(STRIKE_COOLDOWN_MS, () => {
-      this.canAttack = true;
-    });
+    this.combat.strike(me, entityId, them);
   }
 
   /**
-   * Legs under a delver drawn at screen `(x, y)`. The placeholder rig has four
+   * Legs under a player drawn at screen `(x, y)`. The placeholder rig has four
    * facings, so an 8-way facing shows as the nearest of them until §E sheets land.
    */
   private drawLegs(
@@ -1657,7 +1642,7 @@ export class BarrowspireScene extends Phaser.Scene {
     isMoving: boolean,
     darkColor: number,
   ): void {
-    drawDelverLegs(graphics, x, y, nearestScreenFacing(facing), walkPhase, isMoving, darkColor);
+    drawPlayerLegs(graphics, x, y, nearestScreenFacing(facing), walkPhase, isMoving, darkColor);
   }
 
   /** The texture key for a class prefix and an 8-way facing (nearest placeholder facing). */
@@ -1665,38 +1650,14 @@ export class BarrowspireScene extends Phaser.Scene {
     return this.facingTextureKey(prefix, nearestScreenFacing(facing));
   }
 
+  /** 寶箱: the chest's placeholder frames, shared with the field's chests (render/world/chest). */
   private createChestTextures(): void {
-    const width = 40;
-    const height = 32;
-
-    // 關閉的寶箱
-    const closed = this.make.graphics({});
-    closed.fillStyle(palette.floor, 1);
-    closed.fillRect(0, 10, width, height - 10);
-    closed.fillStyle(palette.ground, 1);
-    closed.fillRect(0, 0, width, 12);
-    closed.fillStyle(palette.frameBright, 1);
-    closed.fillRect(0, 10, width, 3);
-    closed.fillRect(16, 6, 8, 10);
-    closed.lineStyle(2, palette.delverCloak, 1);
-    closed.strokeRect(0, 0, width, height);
-    closed.generateTexture("chest_closed", width, height);
-    closed.destroy();
-
-    // 打開的寶箱
-    const open = this.make.graphics({});
-    open.fillStyle(palette.floor, 1);
-    open.fillRect(0, 16, width, height - 16);
-    open.fillStyle(palette.ground, 1);
-    open.fillRect(0, 0, width, 10);
-    open.fillStyle(palette.hudText, 1);
-    open.fillRect(4, 18, width - 8, height - 22);
-    open.fillStyle(palette.frameBright, 1);
-    open.fillRect(0, 16, width, 3);
-    open.lineStyle(2, palette.delverCloak, 1);
-    open.strokeRect(0, 0, width, height);
-    open.generateTexture("chest_open", width, height);
-    open.destroy();
+    for (const frame of ["closed", "open"] as const) {
+      const g = this.make.graphics({});
+      paintChest(g, frame);
+      g.generateTexture(CHEST.placeholder[frame], CHEST.width, CHEST.height);
+      g.destroy();
+    }
   }
 
   private createEscapeDoorTextures(): void {
@@ -1936,7 +1897,7 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * Placeholder stairs up (FS-F6F88 req 30), kept as the no-art fallback for the baked
    * `stairs_spiral` (FS-8RBQY §E.5): stone treads
-   * climbing away from the viewer, each with an amber nosing. Amber because the delver can act
+   * climbing away from the viewer, each with an amber nosing. Amber because the player can act
    * on them (guideline "Gameplay accent").
    */
   private createStairsTexture(): void {
@@ -1996,7 +1957,7 @@ export class BarrowspireScene extends Phaser.Scene {
           ? this.add
               .sprite(0, 0, DROP_PILE.texture)
               .setOrigin(DROP_PILE.origin.x, DROP_PILE.origin.y)
-          : this.add.sprite(0, 0, "chest_closed");
+          : this.add.sprite(0, 0, CHEST.placeholder.closed);
         chest = { sprite, entityId: container.entity_id, pos };
         this.chests.set(container.entity_id, chest);
         if (!isPile) this.poolInteractable(pos);
@@ -2046,7 +2007,7 @@ export class BarrowspireScene extends Phaser.Scene {
       const state = door.is_open ? "open" : door.is_locked ? "locked" : "unlocked";
       showState(escapeDoor.sprite, this.art, "escape_door_x", state, `escape_door_${state}`);
       standAt(escapeDoor.sprite, escapeDoor.pos);
-      // a tall arch: it fades while it stands over the delver (FS-2325V §C.5)
+      // a tall arch: it fades while it stands over the player (FS-2325V §C.5)
       if (created) this.occluders.add([escapeDoor.sprite]);
     });
   }
@@ -2085,8 +2046,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /** A coffer's baked frame for its server state, or the placeholder texture. */
   private showContainerFrame(sprite: Phaser.GameObjects.Sprite, isOpen: boolean): void {
-    const state = isOpen ? "open" : "closed";
-    showState(sprite, this.art, "chest", state, `chest_${state}`);
+    const frame = chestFrame(isOpen);
+    showState(sprite, this.art, CHEST.sheet, frame, CHEST.placeholder[frame]);
   }
 
   private updateWalls(walls: WallState[]): void {
@@ -2111,7 +2072,7 @@ export class BarrowspireScene extends Phaser.Scene {
       this.wallTop = BAKE.WALL_BACK * BAKE.VPX;
       this.occluders.add(baked.tall);
       // a back wall's sconce or window lights the ground either way, but its flame
-      // is only in sight while its house's roof is off (the delver is inside); with no
+      // is only in sight while its house's roof is off (the player is inside); with no
       // roofs (a tower floor) every flame is always in sight
       const roofed = this.worldLook.roofs;
       const houseOf = new Map(housesFrom(walls).map((h) => [h.id, h]));
@@ -2228,7 +2189,7 @@ export class BarrowspireScene extends Phaser.Scene {
     height: number;
   }): Phaser.GameObjects.Container {
     const { x, y, width, height } = house;
-    // sorted by the house's centre: over a delver behind the house, under one in front
+    // sorted by the house's centre: over a player behind the house, under one in front
     const roofPlane = addWorldPlane(this, WALL_HEIGHT);
     roofPlane.root.setDepth(worldDepth(x + width / 2, y + height / 2));
     const roof = this.add.graphics();
@@ -2319,7 +2280,7 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!this.player || !me) return null;
     const interactDistance = 60;
 
-    // world positions: the delver's and the closed door's centre
+    // world positions: the player's and the closed door's centre
     for (const [entityId, door] of this.serverDoors) {
       const distance = Phaser.Math.Distance.Between(me.x, me.y, door.pos.x, door.pos.y);
       if (distance < interactDistance) {
@@ -2394,79 +2355,6 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // === 道具欄功能 ===
 
-  private toggleInventory(): void {
-    if (!this.equipmentPanel) return;
-    this.equipmentPanel.toggle();
-    if (this.equipmentPanel.isVisible()) {
-      this.equipmentPanel.updateInventory(this.inventoryItems);
-      this.equipmentPanel.updateEquipment(this.equippedItems);
-    }
-  }
-
-  private syncInventory(serverInventory: ItemState[]): void {
-    const now = Date.now();
-
-    // 建立後端物品 Map (by entity_id)
-    const serverItemMap = new Map<string, ItemState>();
-    for (const item of serverInventory) {
-      serverItemMap.set(item.entity_id, item);
-    }
-
-    // 過濾本地物品：保留後端有的 + pending 中的
-    const newInventory: ItemState[] = [];
-
-    for (const localItem of this.inventoryItems) {
-      const isPending =
-        localItem.lootedAt && now - localItem.lootedAt < this.PENDING_DURATION;
-
-      if (serverItemMap.has(localItem.entity_id)) {
-        // 後端有，使用後端資料（清除 pending 狀態）
-        const serverItem = serverItemMap.get(localItem.entity_id)!;
-        newInventory.push({
-          ...serverItem,
-          lootedAt: undefined, // 後端確認後清除 pending
-        });
-        serverItemMap.delete(localItem.entity_id);
-      } else if (isPending) {
-        // 後端沒有，但還在 pending 中，保留本地的
-        newInventory.push(localItem);
-      }
-      // 後端沒有且不是 pending → 不保留（被移除了）
-    }
-
-    // 加入後端有但本地沒有的（其他來源的物品）
-    for (const item of serverItemMap.values()) {
-      newInventory.push(item);
-    }
-
-    this.inventoryItems = newInventory;
-
-    // 更新裝備面板
-    if (this.equipmentPanel?.isVisible()) {
-      this.equipmentPanel.updateInventory(this.inventoryItems);
-    }
-  }
-
-  // Map backend EquipmentState (chest/gloves/legs) → local EquippedItems (body/hands/feet).
-  private syncEquipment(serverEquipment: EquipmentState): void {
-    this.equippedItems = {
-      weapon: serverEquipment.weapon,
-      head: serverEquipment.head,
-      body: serverEquipment.chest,
-      hands: serverEquipment.gloves,
-      feet: serverEquipment.legs,
-      ring_1: serverEquipment.ring_1,
-      ring_2: serverEquipment.ring_2,
-      consumable_1: serverEquipment.consumable_1,
-      consumable_2: serverEquipment.consumable_2,
-      consumable_3: serverEquipment.consumable_3,
-    };
-
-    if (this.equipmentPanel?.isVisible()) {
-      this.equipmentPanel.updateEquipment(this.equippedItems);
-    }
-  }
-
   /**
    * An item taken from the open satchel (icon click or F): the view has already hidden it and
    * marked its loot pending; tell the server, and hold it in the inventory optimistically.
@@ -2474,15 +2362,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private lootChestItem(item: ItemState): void {
     const { action, payload } = lootMessage(item);
     socketManager.sendMessage(action, payload);
-
-    this.inventoryItems.push({
-      ...item,
-      lootedAt: Date.now(),
-    });
-
-    if (this.equipmentPanel?.isVisible()) {
-      this.equipmentPanel.updateInventory(this.inventoryItems);
-    }
+    this.equipment?.taken(item);
   }
 
   private getNearbyChest(): { entityId: string } | null {
@@ -2538,7 +2418,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.walkPhase = 0;
     this.player = this.physics.add.sprite(0, 0, this.facingTexture(this.playerTexturePrefix, this.playerFacing));
     // No world-bounds clamp: the sprite lives in screen space (the projection),
-    // and the server is authoritative for where a delver may stand.
+    // and the server is authoritative for where a player may stand.
     standAt(this.player, this.playerPos, 1);
     const at = worldToScreen(x, y);
 
@@ -2611,15 +2491,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // the baked cursors, cropped from the atlas just registered
     this.setupCustomCursor();
     this.occluders = new Occluders();
-    this.monsters = new MonsterRoster(
-      {
-        sprite: () => this.add.sprite(0, 0, PLACEHOLDER_TEXTURE),
-        text: (content, style) => this.add.text(0, 0, content, style),
-        graphics: () => this.add.graphics(),
-      },
-      this.art,
-      this.monsterTargeting,
-    );
+    this.monsters = new MonsterRoster(phaserMonsterStage(this), this.art, this.monsterTargeting);
     this.containerView = new ContainerView(
       this,
       this.art,
@@ -2656,8 +2528,8 @@ export class BarrowspireScene extends Phaser.Scene {
       right: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
 
-    // Tab: the next delver to watch (FS-QPDKN req 8). Captured, so the browser does not move
-    // focus off the canvas; nothing happens unless this delver is spectating.
+    // Tab: the next player to watch (FS-QPDKN req 8). Captured, so the browser does not move
+    // focus off the canvas; nothing happens unless this player is spectating.
     this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, true);
     this.tabKey.on("down", () => this.cycleWatched());
 
@@ -2672,28 +2544,10 @@ export class BarrowspireScene extends Phaser.Scene {
 
     this.bindRunInput();
 
-    // Initialize equipment panel
-    this.equipmentPanel = new EquipmentPanel(this);
-    this.equipmentPanel.onEquip = (item, slot) => {
-      // Send to backend
-      socketManager.sendMessage(ActionType.Equip, {
-        item_entity_id: item.entity_id,
-      });
-      // Optimistic update
-      this.equippedItems[slot] = item;
-      this.inventoryItems = this.inventoryItems.filter(
-        (i) => i.entity_id !== item.entity_id,
-      );
-    };
-    this.equipmentPanel.onUnequip = (item, slot) => {
-      // Send to backend
-      socketManager.sendMessage(ActionType.Unequip, {
-        item_entity_id: item.entity_id,
-      });
-      // Optimistic update
-      this.equippedItems[slot] = null;
-      this.inventoryItems.push(item);
-    };
+    // the equipment panel and its equip / unequip sends, applied at once
+    this.equipment = new EquipmentHud(new EquipmentPanel(this), {
+      send: (action, payload) => socketManager.sendMessage(action, payload),
+    });
 
     // 創建室內遮罩（用於遮住建築外面）
     this.indoorMask = this.add.graphics();
@@ -2716,10 +2570,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-E", () => {
       if (this.menu) return;
       // When the equipment panel is open, E equips/unequips the hovered item.
-      if (this.equipmentPanel?.isVisible()) {
-        this.equipmentPanel.handleEquipKey();
-        return;
-      }
+      if (this.equipment?.equipKey()) return;
 
       // 檢查後端門
       const nearbyDoor = this.getNearbyDoor();
@@ -2757,7 +2608,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // I 鍵開啟/關閉道具欄
     this.input.keyboard?.on("keydown-I", () => {
       if (this.menu) return;
-      this.toggleInventory();
+      this.equipment?.toggle();
     });
 
     // F 鍵從寶箱取得道具
@@ -2769,10 +2620,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Q 鍵關閉任何打開的彈窗
     this.input.keyboard?.on("keydown-Q", () => {
       if (this.menu) return;
-      if (this.equipmentPanel?.isVisible()) {
-        this.equipmentPanel.hide();
-        return;
-      }
+      if (this.equipment?.hide()) return;
       this.containerView.close();
     });
 
@@ -2795,10 +2643,10 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.menu) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
       if (this.containerView.pointerDown(pointer.x, pointer.y, pointer.button === 0)) return;
-      if (!this.player || !this.playerPos || !this.canCastSkill) return;
+      if (!this.player || !this.playerPos) return;
       // out of the delve: the server refuses it anyway (FS-77AB6 req 17)
       if (resolved(this.lastGameState?.current_player)) return;
-      if (this.equipmentPanel?.isVisible()) return;
+      if (this.equipment?.isOpen()) return;
 
       const activeChar = useGameStore.getState().getActiveCharacter();
       const currentClass = (activeChar?.className || "warrior").toLowerCase();
@@ -2806,89 +2654,12 @@ export class BarrowspireScene extends Phaser.Scene {
       // The pointer is over the projection; the server wants the world point under
       // it. `target` and `me` are world positions (FS-2325V §0.2, §A.5).
       const target = screenToWorld(pointer.worldX, pointer.worldY);
-      const me = this.playerPos;
 
-      // 左鍵發射一般攻擊 (0 MP)
+      // 左鍵發射一般攻擊 (0 MP) // 右鍵觸發職業專屬 10 MP 技能
       if (pointer.leftButtonDown() || pointer.button === 0) {
-        if (currentClass === "warrior") {
-          // 計算角度與將打擊目標限制在距離 50px 以內
-          const dist = Phaser.Math.Distance.Between(
-            me.x,
-            me.y,
-            target.x,
-            target.y
-          );
-          const angle = Phaser.Math.Angle.Between(me.x, me.y, target.x, target.y);
-          const effectiveDist = Math.min(dist, 50);
-          const hitX = me.x + Math.cos(angle) * effectiveDist;
-          const hitY = me.y + Math.sin(angle) * effectiveDist;
-
-          // 不管滑鼠在哪裡，通通觸發揮劍劈斬動畫！— toward the clamped target, on the send
-          this.playWarriorSlashEffect(me.x, me.y, hitX, hitY);
-
-          socketManager.sendMessage(ActionType.CastSkill, {
-            skill_id: "slash",
-            target_x: hitX,
-            target_y: hitY,
-          });
-        } else if (currentClass === "archer") {
-          socketManager.sendMessage(ActionType.CastSkill, {
-            skill_id: "arrow",
-            target_x: target.x,
-            target_y: target.y,
-          });
-          if (this.fx) playArrowRelease(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
-        } else {
-          socketManager.sendMessage(ActionType.CastSkill, {
-            skill_id: "fireball",
-            target_x: target.x,
-            target_y: target.y,
-          });
-          if (this.fx) playFireballCast(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
-        }
-        // the class attack clip rides the same trigger as the effect (FS-2325V §E.4)
-        this.playerAnim?.attack(this.time.now, { x: target.x - me.x, y: target.y - me.y });
-
-        this.canCastSkill = false;
-        this.time.delayedCall(250, () => {
-          this.canCastSkill = true;
-        });
-      }
-      // 右鍵觸發職業專屬 10 MP 技能
-      else if (pointer.rightButtonDown() || pointer.button === 2) {
-        if (currentClass === "warrior") {
-          socketManager.sendMessage(ActionType.CastSkill, {
-            skill_id: "dash",
-            target_x: target.x,
-            target_y: target.y,
-          });
-          this.playWarriorDashEffect(me.x, me.y, target.x, target.y);
-        } else if (currentClass === "mage") {
-          socketManager.sendMessage(ActionType.CastSkill, {
-            skill_id: "triple_fireball",
-            target_x: target.x,
-            target_y: target.y,
-          });
-          if (this.fx) playFireballCast(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
-        } else if (currentClass === "archer") {
-          socketManager.sendMessage(ActionType.CastSkill, {
-            skill_id: "triple_arrow",
-            target_x: target.x,
-            target_y: target.y,
-          });
-          if (this.fx) playArrowRelease(this.fx, "self", { x: me.x, y: me.y }, { x: target.x, y: target.y });
-        }
-        // a warrior's charge holds the pose for as long as the server carries them (§D.2)
-        this.playerAnim?.attack(
-          this.time.now,
-          { x: target.x - me.x, y: target.y - me.y },
-          currentClass === "warrior" ? CHARGE_MS : undefined,
-        );
-
-        this.canCastSkill = false;
-        this.time.delayedCall(400, () => {
-          this.canCastSkill = true;
-        });
+        this.combat.cast("primary", currentClass, this.playerPos, target);
+      } else if (pointer.rightButtonDown() || pointer.button === 2) {
+        this.combat.cast("special", currentClass, this.playerPos, target);
       }
     });
 
@@ -2924,7 +2695,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private connectToServer(): void {
     // Connect if not already connected
     if (!socketManager.isConnected()) {
-      // back to whichever server this delver is on: after a handoff that is the
+      // back to whichever server this player is on: after a handoff that is the
       // run's host, not the one they started on (FS-K2HKP §Requirements 29)
       socketManager.reconnect();
       GameStateLogger.logConnectionStatus(
@@ -3042,14 +2813,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
       this.showProgress(state.current_player);
 
-      // 同步玩家背包
-      if (state.current_player.inventory) {
-        this.syncInventory(state.current_player.inventory);
-      }
-      // 同步玩家裝備
-      if (state.current_player.equipment) {
-        this.syncEquipment(state.current_player.equipment);
-      }
+      // 同步玩家背包與裝備
+      this.equipment?.sync(state.current_player);
 
       // 同步玩家頭頂 HP/MP 狀態條
       if (!this.playerHpMpGraphics) {
@@ -3133,7 +2898,7 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     if (climb) {
-      this.settleDelvers();
+      this.settlePlayers();
       this.playFloorTransition(state);
     }
   }
@@ -3198,10 +2963,10 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Sets every delver down where the server put them on the new floor, rather than easing them
+   * Sets every player down where the server put them on the new floor, rather than easing them
    * across the map from where they stood on the old one.
    */
-  private settleDelvers(): void {
+  private settlePlayers(): void {
     if (this.playerPos && this.targetPosition) {
       this.playerPos.x = this.targetPosition.x;
       this.playerPos.y = this.targetPosition.y;
@@ -3351,7 +3116,7 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Where the delver's own markers stack from this frame ({@link markerBase}), or null over
+   * Where the player's own markers stack from this frame ({@link markerBase}), or null over
    * their baked corpse.
    */
   private ownMarkerBase(): number | null {
@@ -3359,12 +3124,12 @@ export class BarrowspireScene extends Phaser.Scene {
     return markerBase(this.player, this.playerAnim?.crown, isDead(this.lastGameState?.current_player));
   }
 
-  /** How far over the marker base the delver's own name sits: clear of the HP bar when baked. */
+  /** How far over the marker base the player's own name sits: clear of the HP bar when baked. */
   private ownNameGap(): number {
     return this.playerAnim?.crown === undefined ? NAME_GAP : NAME_OVER_BAR_GAP;
   }
 
-  /** `top` is the delver's marker base ({@link markerBase}); the bar sits above it. Null: none. */
+  /** `top` is the player's marker base ({@link markerBase}); the bar sits above it. Null: none. */
   private drawOverheadHpMpBar(
     g: Phaser.GameObjects.Graphics,
     x: number,
@@ -3473,7 +3238,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
         // Hover shows their name, hit-tested on the ground they stand on, not their
         // sprite's bounds (FS-2325V §C.6): the server's collision radius around their
-        // world position. Another delver is an ally (FS-77AB6 req 40): no strike-mark,
+        // world position. Another player is an ally (FS-77AB6 req 40): no strike-mark,
         // no click-to-attack.
         sprite.setInteractive({
           hitArea: {},
@@ -3567,7 +3332,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * The stairs up (FS-8RBQY §E): the baked spiral at the server position, sorted by its footprint
-   * like any prop, fading over a delver behind it, in its own warm pool. Without its sheet, the
+   * like any prop, fading over a player behind it, in its own warm pool. Without its sheet, the
    * code-drawn `stairs_up` placeholder, with no pool.
    */
   private addStairs(at: Point): Phaser.GameObjects.Sprite {
@@ -3658,7 +3423,7 @@ export class BarrowspireScene extends Phaser.Scene {
     return inBuilding(building, me);
   }
 
-  /** Whether a roof still on (a house the delver is not inside) stands over this world point. */
+  /** Whether a roof still on (a house the player is not inside) stands over this world point. */
   private underRoof(at: Point): boolean {
     if (!this.worldLook.roofs) return false;
     return this.buildings.some((b) => b !== this.currentBuilding && inBuilding(b, at));
@@ -3805,7 +3570,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * The run's lighting (FS-2325V §C.7–§C.10): the light-map, lit by the barrow's
-   * dark ambient, every declared light source in view and the delver's torch; the
+   * dark ambient, every declared light source in view and the player's torch; the
    * static vignette and dust above it. Presentation only: it reads and writes no
    * game state, and removing it changes nothing about how the game plays.
    */
@@ -3851,39 +3616,39 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * This delver's level and experience bar, and the cue when the level rises (FS-BDA7X req 42,
+   * This player's level and experience bar, and the cue when the level rises (FS-BDA7X req 42,
    * 43). The level also feeds the item views' "Requires level N" hints (req 45).
    */
   private showProgress(player: PlayerState): void {
     const progress = progressOf(player);
     this.characterLevel = progress?.level;
-    this.equipmentPanel?.setCharacterLevel(this.characterLevel);
+    this.equipment?.setCharacterLevel(this.characterLevel);
     if (!progress) return;
     this.progressHud ??= new ProgressHud(this, PROGRESS_HUD_X, PROGRESS_HUD_Y);
     this.progressHud.show(progress);
   }
 
   /**
-   * Whether this delver's movement keys send `move`: not once they are out of the delve
+   * Whether this player's movement keys send `move`: not once they are out of the delve
    * (FS-77AB6 req 17), and not while they watch through a teammate's eyes (FS-QPDKN §Edge
-   * States "Spectating": the camera target is not the delver).
+   * States "Spectating": the camera target is not the player).
    */
   private canSendMove(): boolean {
     return (
       !this.menu &&
       !resolved(this.lastGameState?.current_player) &&
-      this.watchedDelverId === undefined
+      this.watchedPlayerId === undefined
     );
   }
 
   /**
-   * What a resolved delver sees (FS-QPDKN req 1–6, 11): the card while a teammate is still in
-   * the delve and Watch has not been pressed; the watched delver's view once it has. State keeps
+   * What a resolved player sees (FS-QPDKN req 1–6, 11): the card while a teammate is still in
+   * the delve and Watch has not been pressed; the watched player's view once it has. State keeps
    * rendering behind both. Once `end_game` has put its overlay up, neither again.
    */
   private syncResolvedView(state: ClientGameState): void {
     if (this.gameEndOverlay) return;
-    if (this.watchedDelverId !== undefined) {
+    if (this.watchedPlayerId !== undefined) {
       this.followWatched(state);
       return;
     }
@@ -3916,7 +3681,7 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The resolved delver's card (req 1–5): a dark vellum panel with a brass hairline over the
+   * The resolved player's card (req 1–5): a dark vellum panel with a brass hairline over the
    * run view, its copy by how they resolved, and the buttons under it. No backdrop: the delve
    * goes on behind it, visibly. The camera stays where it is until a button says otherwise.
    */
@@ -4049,7 +3814,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * The server refused the `leave_run` (req 14). Once the end-of-run overlay is up the run ended
-   * first and the delver is already on the way home: nothing to do (edge state "Leaving").
+   * first and the player is already on the way home: nothing to do (edge state "Leaving").
    */
   private leaveRefused(): void {
     if (this.gameEndOverlay) return;
@@ -4058,7 +3823,7 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The stride the keys ask for, sent each frame it is non-zero; none from a delver out of the
+   * The stride the keys ask for, sent each frame it is non-zero; none from a player out of the
    * delve (FS-77AB6 req 17). While the menu is open the keys are its (FS-9K8EZ req 5): a stride
    * it interrupts is stopped once, and nothing more goes until it closes.
    */
@@ -4096,9 +3861,9 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The delver's state as the menu reads it (FS-9K8EZ req 2), from the last state unless one is
-   * given. A delver the server no longer lists is out of the delve: the broadcast drops an
-   * escaped delver's `current_player`.
+   * The player's state as the menu reads it (FS-9K8EZ req 2), from the last state unless one is
+   * given. A player the server no longer lists is out of the delve: the broadcast drops an
+   * escaped player's `current_player`.
    */
   private menuState(state = this.lastGameState): MenuState {
     const me = state?.current_player;
@@ -4107,7 +3872,7 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The run's ESC menu (FS-9K8EZ req 2): built from the delver's state as it opens, so what it
+   * The run's ESC menu (FS-9K8EZ req 2): built from the player's state as it opens, so what it
    * offers is runMenuChoices' rule, not the chrome's. Leave the barrow is the card's own path
    * (FS-QPDKN req 13), so the two entry points share one send and one pending flag.
    */
@@ -4138,7 +3903,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * Fall (req 3, 4): one `forfeit_run`, then nothing until the server answers. The answer is the
-   * next state with this delver at 0 health, seen through FS-QPDKN's card as any death, or a
+   * next state with this player at 0 health, seen through FS-QPDKN's card as any death, or a
    * refusal that hands Fall back. The confirm stays up, Fall dimmed, until either.
    */
   private fallWhereYouStand(): void {
@@ -4157,7 +3922,7 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The menu yields to what the server says (req 6): a state in which the delver's rows would
+   * The menu yields to what the server says (req 6): a state in which the player's rows would
    * be wrong (newly dead, newly out) takes the menu and its confirm down, so the card that
    * follows is never covered. A death seen is a `forfeit_run` answered.
    */
@@ -4207,7 +3972,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * The dead spectator's leave button (req 10): its own corner of the screen, in the HUD band,
-   * clear of the watched delver at the centre and the HUD along the top. The escaped have none.
+   * clear of the watched player at the centre and the HUD along the top. The escaped have none.
    */
   private placeLeaveInCorner(): void {
     if (this.resolvedKind !== "dead" || this.leaveButton) return;
@@ -4226,37 +3991,37 @@ export class BarrowspireScene extends Phaser.Scene {
    * With nobody left there is nothing to watch; the end is on its way.
    */
   private startWatching(): void {
-    if (!this.lastGameState || this.watchedDelverId !== undefined) return;
+    if (!this.lastGameState || this.watchedPlayerId !== undefined) return;
     const first = nextWatched(watchable(this.lastGameState));
     if (first === undefined) return;
     this.takeDownCard();
     this.placeLeaveInCorner();
-    this.watchedDelverId = first;
+    this.watchedPlayerId = first;
     this.followWatched(this.lastGameState);
   }
 
   /** Tab (req 8): the next teammate still in play, round to the first. Nothing while the card is up. */
   private cycleWatched(): void {
-    if (this.watchedDelverId === undefined || !this.lastGameState) return;
-    const next = nextWatched(watchable(this.lastGameState), this.watchedDelverId);
+    if (this.watchedPlayerId === undefined || !this.lastGameState) return;
+    const next = nextWatched(watchable(this.lastGameState), this.watchedPlayerId);
     if (next === undefined) return;
-    this.watchedDelverId = next;
+    this.watchedPlayerId = next;
     this.followWatched(this.lastGameState);
   }
 
   /**
-   * The camera on the watched delver and the HUD naming them (req 9); on to another teammate
+   * The camera on the watched player and the HUD naming them (req 9); on to another teammate
    * in play once they resolve (req 11). With nobody left the camera stays where it is: the run
    * ends on the server's next tick.
    */
   private followWatched(state: ClientGameState): void {
     const inPlay = watchable(state);
-    const current = inPlay.find((w) => w.id === this.watchedDelverId);
-    const watched = current ?? inPlay.find((w) => w.id === nextWatched(inPlay, this.watchedDelverId));
+    const current = inPlay.find((w) => w.id === this.watchedPlayerId);
+    const watched = current ?? inPlay.find((w) => w.id === nextWatched(inPlay, this.watchedPlayerId));
     if (!watched) return;
-    this.watchedDelverId = watched.id;
+    this.watchedPlayerId = watched.id;
     // startFollow snaps the camera onto its target each time it is called, so it is called
-    // once per sprite: on a new watched delver, or on theirs appearing after a tick without it
+    // once per sprite: on a new watched player, or on theirs appearing after a tick without it
     const sprite = this.otherPlayers.get(watched.id);
     if (sprite && sprite !== this.followedSprite) {
       this.cameras.main.startFollow(sprite, true, 0.1, 0.1);
@@ -4286,7 +4051,7 @@ export class BarrowspireScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(1000);
     const hint = this.add
-      .text(x, SPECTATE_HUD_Y + 30, "Tab: next delver", { ...style, fontSize: "12px" })
+      .text(x, SPECTATE_HUD_Y + 30, "Tab: next player", { ...style, fontSize: "12px" })
       .setOrigin(0.5, 0)
       .setScrollFactor(0)
       .setDepth(1000);
@@ -4372,8 +4137,8 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Restamp the light-map and ease the occluders, once per frame. The delver's
-   * torch rides on the delver's drawn position; once they have escaped or died
+   * Restamp the light-map and ease the occluders, once per frame. The player's
+   * torch rides on the player's drawn position; once they have escaped or died
    * there is no light to carry, and the pool fades out.
    */
   private updateLighting(time: number, delta: number): void {
@@ -4423,7 +4188,7 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.player && this.playerLegs && !this.playerAnim?.baked) {
       const isMoving = vx !== 0 || vy !== 0;
       if (isMoving) {
-        // 8-way facing from the world velocity the delver is asking for; the
+        // 8-way facing from the world velocity the player is asking for; the
         // input itself is sent unchanged below (ADR-0020 §4)
         const newFacing = facingFrom(vx, vy, this.playerFacing);
         if (newFacing !== this.playerFacing) {
@@ -4481,7 +4246,7 @@ export class BarrowspireScene extends Phaser.Scene {
       this.charge?.follow(this.playerPos);
     }
 
-    // the baked sheet plays what the delver is doing, read off the position just drawn
+    // the baked sheet plays what the player is doing, read off the position just drawn
     if (this.player && this.playerPos && this.playerAnim?.baked) {
       const dead = isDead(this.lastGameState?.current_player);
       if (!dead) this.deathDust.alive(this.player);

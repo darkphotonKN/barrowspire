@@ -72,6 +72,24 @@ function fakeApi(existing: ServerCharacter[] = []) {
   return { api, calls, existing, fail: (e: Error) => (failNext = e) };
 }
 
+describe("gameStore world (FS-X2F2H §Requirements 55)", () => {
+  it("keeps the field id a field's world_entered names, and drops it for any other world", () => {
+    const { api } = fakeApi();
+    const { storage } = memoryStorage();
+    const store = createGameStore({ api, storage: () => storage });
+
+    store.getState().setWorld("meadows-1", "field", "gentle_meadows");
+    expect(store.getState()).toMatchObject({
+      sessionId: "meadows-1",
+      worldType: "field",
+      fieldId: "gentle_meadows",
+    });
+
+    store.getState().setWorld("hub-1", "hub");
+    expect(store.getState()).toMatchObject({ sessionId: "hub-1", worldType: "hub", fieldId: null });
+  });
+});
+
 describe("gameStore characters (FS-BDA7X req 39-40)", () => {
   it("should load the server list and pick the oldest when none is active", async () => {
     const a = server("Aldric");

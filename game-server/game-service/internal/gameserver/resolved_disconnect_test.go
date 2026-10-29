@@ -62,7 +62,7 @@ func resolvedDropServer(t *testing.T) (*Server, *resolvedDropEmitter) {
 	t.Helper()
 
 	emitter := &resolvedDropEmitter{}
-	server := NewServer(context.Background(), &MockAuthClient{}, NewMockQueueService(), emitter, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), emitter, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 
 	return server, emitter
 }

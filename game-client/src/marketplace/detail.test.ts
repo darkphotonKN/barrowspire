@@ -120,7 +120,7 @@ describe("actionArea", () => {
   it.each([
     ["a signed-out visitor", undefined, "signIn"],
     ["the listing's seller", "aldric", "own"],
-    ["any other delver", "brenna", "bid"],
+    ["any other player", "brenna", "bid"],
   ])("should show %s the right panel on a live listing", (_label, memberId, want) => {
     expect(actionArea(live, memberId, NOW)).toBe(want);
   });

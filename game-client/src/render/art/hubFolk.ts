@@ -10,7 +10,7 @@
  * to pixel art. Function NPCs are their own characters, whose role reads from the silhouette.
  *
  * Pure, so it is tested without a canvas; the scene plays the result through
- * `CharacterAnimator`, as it does a delver.
+ * `CharacterAnimator`, as it does a player.
  */
 
 import type { NPCState } from "@/types/gameState";
@@ -19,12 +19,12 @@ import type { CharacterLook } from "./character";
 /** The fallback: an ordinary villager in the trousers build's first palette. */
 export const DEFAULT_RESIDENT_SHEET = "folk_resident_trousers";
 
-/** Each function NPC's own character. */
+/** Each function NPC's own character: the Warden is the storyteller (FS-0XMCP R23). */
 export const FUNCTION_NPC_SHEETS: Record<
   Exclude<NPCState["function"], "">,
   string
 > = {
-  delve: "folk_spirewarden",
+  storyteller: "folk_spirewarden",
   storekeeper: "folk_quartermaster",
 };
 

@@ -121,6 +121,10 @@ type ContainerState struct {
 	Position *Position    `json:"position"`
 	IsOpen   bool         `json:"is_open"`
 	Items    []*ItemState `json:"items"`
+	// ReservedFor is the member a field drop pile is reserved for while its
+	// killer-first window is open; absent after it, and on every run pile
+	// and chest. FS-X2F2H §Requirements 35.
+	ReservedFor string `json:"reserved_for,omitempty"`
 }
 
 type RawMatchState struct {
@@ -273,6 +277,17 @@ type MonsterState struct {
 type StairsState struct {
 	EntityID uuid.UUID `json:"entity_id"`
 	Position *Position `json:"position"`
+}
+
+// GateState is a hub gate as the client sees it: where it goes, where it
+// stands and how close counts. Its arrival point is server-only. FS-0XMCP
+// §Requirements 6.
+type GateState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	// spire | forest | meadows
+	Destination string    `json:"destination"`
+	Position    *Position `json:"position"`
+	Range       float64   `json:"range"`
 }
 
 type SwitchState struct {

@@ -25,12 +25,15 @@ sections of `CLAUDE.md`) disagree on a visual decision, **this file wins.**
 ## Identity & Mood
 
 - **The Age of Barrowspire** — a dark, gothic, medieval dungeon-crawl. Torch-lit,
-  oppressive, barrow-deep, rumor-haunted. Players are **delvers** who descend into the
+  oppressive, barrow-deep, rumor-haunted. Players are **players** who descend into the
   **Spire** and escape with relics.
 - Reference feel: a 2D tile-based medieval CRPG world — earthy, lived-in, hand-built
   environments read from a fixed game camera. **Dark fantasy, not bright high-fantasy.**
 - The world should feel cold and dangerous, with warmth only where torches burn. Dread
   and rumor over spectacle.
+- **Field worlds are the one carve-out:** open country outside the Spire may be daylit, its
+  warmth the field's own daylight rather than torches; the hub and the Spire keep the torch-lit
+  dark. *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
 
 ---
 
@@ -50,7 +53,7 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
 - **Linear filtering.** Baked sprites are drawn smoothed, at 1x from a 2x render. The pixel-art
   rules (nearest-neighbour, dithering, hand-placed clusters, pixel-grid outlines,
   `image-rendering: pixelated`) no longer apply to the canvas.
-- **Readable silhouettes over detail.** At game scale a delver is roughly one tile wide and a face
+- **Readable silhouettes over detail.** At game scale a player is roughly one tile wide and a face
   is a handful of pixels. What makes a thing read is its silhouette, its material and its motion.
 - **Bake colours come from `BARROW`** (`src/utils/theme.ts`), so baked art and the in-game HUD
   stay one ramp
@@ -82,7 +85,7 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
 - **Eight facings.** Characters face one of eight world directions, taken from the velocity the
   client already renders.
 - **Occlusion is cut-away, then fade.** House fronts (south and east sides) are low cut-away
-  walls. A tree or tall prop in front of the delver fades to about 40% while it overlaps them.
+  walls. A tree or tall prop in front of the player fades to about 40% while it overlaps them.
 - **Outside the map is dark.** The corners of the screen beyond the projected diamond are a dark
   fill, never a void or a stray background.
 
@@ -110,6 +113,9 @@ and the two are not required to agree (ADR-0025).
 - Keep darks as bases, **never pure black** — preserve enough value range that pixel
   detail still reads in dim scenes.
 - Low-key, desaturated overall. Warm torch pools against cold dark.
+  - In a daylit field world, warm daylight over a lit green ground stands in for torch against
+    dark; never neon, still mixed from these tokens. *(Amended at the owner's approval of
+    FS-X2F2H, 2026-10-30.)*
 - **No bright saturated primaries.** No neon, no cyan, no electric glows.
 
 ---
@@ -155,7 +161,18 @@ the test above, because most of those things cannot be acted on.
   chains, lamp posts, furniture, trees. Interactables have one baked frame per state (door
   locked/unlocked/open, switch inactive/active, chest closed/open).
 - The world reads as a **torch-lit crypt:** pooled warm light, deep shadow, with shading
-  baked into the art so it looks lit *before* any light-map is applied.
+  baked into the art so it looks lit *before* any light-map is applied. This holds for the hub
+  and for every run in the Spire.
+- **Field worlds may be daylit instead** (FS-X2F2H; Gentle Meadows first). A field is open
+  country outside the Spire: grass, sparse trees and rocks, with a horizon backdrop (sky and
+  distant hills) behind the map's far edge. Its daylight may be as warm as a cozy meadow or as
+  dim as an overcast wood, but never bright high-fantasy: the ground is mixed from `BARROW`
+  tokens like every other surface, never neon, and shading is still baked into the art first. A
+  meadow's ground may be lit clearly daylit, since its markers wear the field outline (see "The
+  readability floor"). *(Ground brightness amended at the owner's approval of FS-X2F2H,
+  2026-10-30.)* Grass is ground material, not a marker: a green field never carries the
+  *safe* channel's meaning, and pickups, allies and hostiles still read against it.
+  *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
 
 ---
 
@@ -164,19 +181,22 @@ the test above, because most of those things cannot be acted on.
 - **Authored in code, never sourced**
   ([ADR-0021](../../docs/adr/0021-characters-are-authored-in-code-not-sourced.md)). Characters and
   creatures are modelled, skinned, textured and hand-animated inside the bake tool on one shared
-  humanoid rig. No stock model or animation is used; the art is Barrowspire's own.
+  rig: humanoid, with a quadruped variant for field wildlife. No stock model or animation is
+  used; the art is Barrowspire's own.
 - **Fidelity bar: Ultima Online.** Believable proportions, readable silhouettes, textured gear.
   Not photoreal, and not blocky cartoon mannequins.
 - **Each gets 8 directions** and idle, walk, attack and death animations, baked from that rig.
-  Creature variants change proportions and add bones (tail, jaw, hunch).
-- **Delver (player):** cloaked/armored figure with a lantern or torch; strong silhouette. The
+  Creature variants change proportions and add bones (tail, jaw, hunch), or lay the spine
+  horizontal on four legs.
+- **Player:** cloaked/armored figure with a lantern or torch; strong silhouette. The
   class reads at a glance: knight, archer, wizard.
 - **Enemies:** barrow/undead themes — skeletons, wraiths, revenants — for fodder and brutes;
-  a boss may also be an infernal demon the Spire summons. Dark palette; **glowing eyes as the
+  a boss may also be an infernal demon the Spire summons. In field worlds only, fodder and
+  brutes may also be living animals (the boar first). Dark palette; **glowing eyes as the
   readable accent.** Full rules under *Enemy design language* below.
 - **Hub folk and menus use the same cast.** Villagers, function NPCs, and every character shown
   in a menu (the roster, character creation, the loadout) come from baked sheets on the same
-  rig as the delvers, never from a separate illustration or the old pixel generators. What a
+  rig as the players, never from a separate illustration or the old pixel generators. What a
   player picks in a menu is exactly what walks in the world.
 - **The owner approves a contact sheet** (every class and creature x 8 directions x each
   animation, at game scale) before scenes switch to character sheets.
@@ -184,13 +204,14 @@ the test above, because most of those things cannot be acted on.
 
 ### Enemy design language
 
-Every hostile is built to be told apart from a delver in one glance, even at the canvas edge in
+Every hostile is built to be told apart from a player in one glance, even at the canvas edge in
 the run's dark ambient. These rules apply to every creature added from now on, and the ghoul and
 troll already baked are the reference pair.
 
 - **Undead and barrow-born only, for fodder and brutes.** Skeletons, ghouls, wraiths, revenants,
   barrow-trolls, grave-hounds. Things that were buried, or that live where the buried are. No
-  demons below boss tier, no sci-fi, no cartoon monsters.
+  demons below boss tier, no sci-fi, no cartoon monsters. This is the Spire's rule and it holds
+  unchanged for every run; field worlds carry the one exception below.
 - **Boss-tier exception: infernal beings the Spire summons.** A demon may appear, but only as a
   boss. It reads as something the Spire's power has called up from beyond the barrow dead, and it
   is never licence for demon fodder or demon brutes. *(Amended at the owner's request,
@@ -200,28 +221,48 @@ troll already baked are the reference pair.
   or more saturated than it) is allowed as a boss's body material. Emissives stay ember red.
   Green is never an emissive and never a marker colour on a hostile, because arcane green means
   *safe*. *(Amended at the owner's request, 2026-10-08.)*
-- **Silhouette breaks the human line.** A delver stands upright and symmetrical. A hostile never
+- **Field-wildlife clause (field worlds only).** In a field world, fodder and brutes may be
+  living animals: the boar first. They are beasts of the country outside the Spire, never
+  cartoon animals and never pets. Their materials are natural hide, bristle, tusk and horn, taken
+  from the warm, desaturated end of `BARROW` (barrowBrown, barrowDeep, umber, charcoal for hide
+  and bristle; the bone mix of vellum and vellumDark for tusk and horn). Never bright, and never
+  amber, which means *interactable*. A living animal never appears in a run.
+  *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
+- **Quadruped rig variant (field wildlife).** A creature variant of the shared rig may be a
+  quadruped: a horizontal spine, four legs, and head and tail chains. It is still authored in
+  code in the bake tool (ADR-0021), still baked in 8 directions with idle, walk, attack and
+  death, and still goes through the same contact-sheet approval. Four legs break the human line
+  by build; the 1x colourless outline test below still applies.
+  *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
+- **Silhouette breaks the human line.** A player stands upright and symmetrical. A hostile never
   does: it is hunched, too thin, too long in the arm, asymmetric (one arm heavier, a broken
   jaw), or wears rags that trail. Test at 1x: with the colour removed, the outline alone must say
-  "not a delver".
-- **Size is a threat tier.** Fodder is 0.85–1.0x delver height. A brute is 1.3–1.5x and wider.
+  "not a player".
+- **Size is a threat tier.** Fodder is 0.85–1.0x player height. A brute is 1.3–1.5x and wider.
   A boss is at least 1.8x. The tier reads before any name plate does.
+  A quadruped is measured against the player by body length along the shoulder line, not by
+  standing height, and takes the same multiples. Quadruped fodder stays shorter in body length
+  than a player is tall, so it reads smaller than a player; its shoulder sits well below the
+  player's. *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
 - **Materials are grave materials.** Bone, grave-rot skin, bog hide, rust, rotted linen, rag,
   corroded bronze. Take colours from the cold, desaturated end of `BARROW` (charcoal, slate,
-  necrotic, barrowBrown, bone). Never bright, never clean metal, never a delver's heraldic red.
+  necrotic, barrowBrown, bone). Never bright, never clean metal, never a player's heraldic red.
+  Field wildlife takes its own natural materials under the field-wildlife clause above.
 - **Eyes are the accent, and they are in the hostile channel.** Glowing eyes use an ember red
   from the oxblood family (the *damage / hostile* channel above). Never amber, which means
   *interactable*, and never arcane green, which means *safe*. Eyes are the one emissive part of a
   hostile. They are marker material (FS-2325V §C.9): drawn above the light-map, so darkness never
-  dims them.
+  dims them. This holds for field wildlife too: a boar's eyes are the same ember red, its one
+  emissive, so a boar in daylight still reads hostile and never reads as livestock.
+  *(Field wildlife amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
 - **Motion tells intent.** Fodder moves jerkily and low. Brutes move heavily and slowly. Every
   attack has a readable wind-up, a pull-back or a raised arm, held long enough to see before it
   lands. An attack that cannot be read before it hits is unfair, not scary.
-- **Deaths are final and distinct from a delver's fall.** Undead collapse: bones scatter, a
+- **Deaths are final and distinct from a player's fall.** Undead collapse: bones scatter, a
   wraith unravels, a brute topples with weight. No gore and no blood spray. The barrow keeps its
-  dead quietly.
+  dead quietly. A living animal falls onto its side and goes still, with the same restraint.
 - **Same pipeline as everyone.** Built on the shared rig in the bake tool (ADR-0021), with 8
-  directions and idle, walk, attack and death, on the same contact-sheet approval as delvers.
+  directions and idle, walk, attack and death, on the same contact-sheet approval as players.
 
 ---
 
@@ -231,19 +272,23 @@ troll already baked are the reference pair.
 
 - **Shading is baked into the sprites first**, then a **light-map** lights the scene: a
   camera-fixed multiply layer filled with the world's ambient, with additive radial pools for
-  each light source in view (torch sconce, brazier, lit window, lamp post, the delver's own
+  each light source in view (torch sconce, brazier, lit window, lamp post, the player's own
   torch). Sources flicker on their own clocks.
-- **Ambient is fixed per world:** warm dusk in the hub, dark barrow in a run.
+- **Ambient is fixed per world:** warm dusk in the hub, dark barrow in a run, and daylight in a
+  daylit field world (from a cozy meadow's warmth to an overcast wood's gloom, fixed per field).
+  A daylit field keeps the light-map and the vignette; its light sources simply pool less
+  against a brighter ambient. *(Daylit fields amended at the owner's approval of FS-X2F2H,
+  2026-10-29.)*
 - The static vignette stays, above the light-map and below the HUD.
 - Flame halos draw just above the light-map, so a flame reads as the source of its own pool. A
   flame under a roof lights the ground around it but shows no halo until the roof is off.
 
 **Before art (superseded):** the overlay was the whole of the lighting, and it was two things.
-The delver's pool is now a light source on the light-map; the vignette is unchanged.
+The player's pool is now a light source on the light-map; the vignette is unchanged.
 
 - A **static vignette** darkens the canvas edges. This does the atmospheric work — the world
   pressing in around the light.
-- A **warm pool centred on the delver**, moving with them. This is the part that makes the scene
+- A **warm pool centred on the player**, moving with them. This is the part that makes the scene
   read as *carrying a torch* rather than merely as a dark screen. A vignette alone gives darkness
   with no source; the pool is what implies one.
 - **Built once, depth-sorted above the world, repositioned per tick — never rebuilt.** The scene
@@ -271,6 +316,18 @@ Marker colours are palette tokens like any other.
 dusk and the run its dark barrow. Lifting cannot work anyway — any multiply darkening lowers
 contrast, and against the baked ground even full light under the vignette reaches only about
 1.8:1. Ultima Online solves it the same way, with overlays that ignore lighting.
+
+**Daylit fields keep the floor.** A daylit field's daylight is that field's look, not a lift for
+readability. The floor holds there unchanged: markers draw above the light-map and keep at least
+3:1, carried by the field outline below, and the gameplay accent channels mean
+what they mean in every other world. *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
+
+**In a field world the outline is the mechanism.** A daylit field's ground is not held dark for
+the floor: every marker there (names, plates, a gate's name) wears a dark charcoal outline, and
+each ink keeps at least 3:1 against that outline, so it reads on any ground however bright the
+field's daylight (`FIELD_MARKER_OUTLINE` in `src/render/markers/`, tested for every field's look).
+Field worlds only: the hub's and the Spire's markers stay as they are, measured against their lit
+edge ground. *(Amended at the owner's approval of FS-X2F2H, 2026-10-30.)*
 
 ---
 
@@ -336,7 +393,7 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   and whose item icons drop in (FS-2325V §D). Item icons are baked, with a generic fallback.
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
-- **Copy voice:** grim, terse. Players = **delvers**; enemy realm = the **Spire** / **Lich
+- **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich
   Lord**; "Play" → "Delve"; death → "Few return whole."
 
 ---
@@ -815,7 +872,7 @@ radius 6. Label above: uppercase, `text-dim`, small.
 - States: default (border `0.15`) · hover (border-strong + lift + rarity glow) · focus-visible
   (iron ring) · owned/disabled (reduced opacity + "Owned" badge on the card).
 
-**Item grid** — the **List-a-relic item picker** (the delver's own relics, one to choose) keeps
+**Item grid** — the **List-a-relic item picker** (the player's own relics, one to choose) keeps
 the card grid: responsive `grid` `auto-fill minmax(220px, 1fr)`, gap `1rem–1.25rem`; collapses
 to 1–2 cols ≤640px. A relic already listed or in escrow is the owned/disabled card state, with a
 "Listed" or "In escrow" badge on the card.
@@ -882,7 +939,7 @@ consistent grid & weight. Prefer small carved/wax-seal badges over emoji. **No e
 
 ## Voice & tone (web)
 
-- Reuse the delver/Spire lore (Part I copy voice). Marketplace naming may lean lore — "The
+- Reuse the player/Spire lore (Part I copy voice). Marketplace naming may lean lore — "The
   Trove" / "Bazaar of the Deep"; items are "relics/plunder"; currency is "gold".
 - **Money-clarity exception:** for real-money / subscription flows, use unambiguous verbs
   ("Subscribe", "Pay", the price) over lore — never hide a paid action behind flavor. Reserve

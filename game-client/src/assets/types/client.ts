@@ -66,7 +66,7 @@ export interface CastSkillPayload {
  */
 export interface EnterHubPayload {
   /**
-   * The server record the delver enters as (FS-BDA7X req 5, 41). Once the server seats by it,
+   * The server record the player enters as (FS-BDA7X req 5, 41). Once the server seats by it,
    * the class and name below are ignored; they stay until then so either server reads the entry.
    */
   characterId: string;
@@ -88,16 +88,20 @@ export interface ActionMap {
   equip: EquipPayload;
   unequip: UnequipPayload;
   cast_skill: CastSkillPayload;
-  /** A dead delver leaving the run for the hub (FS-QPDKN req 13): no payload. */
+  /** A dead player leaving the run for the hub (FS-QPDKN req 13): no payload. */
   leave_run: Record<string, never>;
-  /** A queued delver cancelling (FS-G4VMQ req 18): no payload. */
+  /** A queued player cancelling (FS-G4VMQ req 18): no payload. */
   leave_queue: Record<string, never>;
-  /** A hub delver leaving for the roster (FS-G4VMQ req 23, 25): no payload; `world_left` answers. */
+  /** A hub player leaving for the roster (FS-G4VMQ req 23, 25): no payload; `world_left` answers. */
   leave_hub: Record<string, never>;
-  /** A delver descending alone, without the queue (FS-NSV3D req 7): no payload. */
+  /** A player descending alone, without the queue (FS-NSV3D req 7): no payload. */
   start_solo: Record<string, never>;
-  /** A delver in play choosing to fall where they stand (FS-9K8EZ req 7): no payload. */
+  /** A player in play choosing to fall where they stand (FS-9K8EZ req 7): no payload. */
   forfeit_run: Record<string, never>;
+  /** A hub player walking into a field gate (FS-X2F2H req 9). */
+  enter_field: { field: FieldId };
+  /** A field player walking into the entrance gate, home to the hub (FS-X2F2H req 14): no payload. */
+  leave_field: Record<string, never>;
 }
 
 export const ActionType = {
@@ -117,6 +121,8 @@ export const ActionType = {
   LeaveHub: "leave_hub",
   StartSolo: "start_solo",
   ForfeitRun: "forfeit_run",
+  EnterField: "enter_field",
+  LeaveField: "leave_field",
 } as const;
 
 export type ActionType = (typeof ActionType)[keyof typeof ActionType];
@@ -147,9 +153,14 @@ export type ClientAction =
 export const WorldType = {
   Hub: "hub",
   Run: "run",
+  /** A field world, shared like the hub, with no queue (FS-X2F2H §Requirements 1, 55). */
+  Field: "field",
 } as const;
 
 export type WorldType = (typeof WorldType)[keyof typeof WorldType];
+
+/** A field world's stable id, sent as `field` in its world_entered (FS-X2F2H §Requirements 2). */
+export type FieldId = "gentle_meadows" | "forlorn_forest";
 
 /**
  * The one message that tells the client which world it is now in. It arrives on
@@ -160,10 +171,12 @@ export type WorldType = (typeof WorldType)[keyof typeof WorldType];
 export interface WorldEnteredPayload {
   session_id: string;
   world_type: WorldType;
+  /** Which field, for a field world only (FS-X2F2H §Requirements 2). */
+  field?: FieldId;
 }
 
 /**
- * The run this delver was matched into is hosted on another server: connect to
+ * The run this player was matched into is hosted on another server: connect to
  * `addr` for the run with `session_id`. The host's world_entered follows once they are seated.
  * FS-K2HKP §Requirements 21, 29.
  */

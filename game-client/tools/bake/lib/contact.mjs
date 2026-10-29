@@ -6,6 +6,8 @@
 //   contact-sheet.png          all sheets at 1×, labelled
 //   contact-<sheet>-2x.png     each character sheet at ×2 (nearest-neighbour, to inspect pixels)
 //   contact-tower-2x.png       every tower sheet at ×2
+//   contact-spire-2x.png       the Spire's facade at ×2 (FS-0XMCP §R15)
+//   contact-forest-2x.png      the Forlorn Forest's trees and dressing at ×2 (FS-3QHQZ §C R30)
 //   index.html                 the same from the baked atlases themselves, labelled from the
 //                              manifest's `facings`, with each clip playing at its fps
 // The HTML reads the committed atlases, so it also proves the manifest's frame order.
@@ -244,6 +246,14 @@ export function writeReview({ sheets, facings, labels, manifest, theme }) {
     const two = composeContact(tower, facings, labels, theme, 2);
     writeFileSync(join(REVIEW_DIR, "contact-tower-2x.png"), encodePng(two.width, two.height, two.rgba, { fast: true }));
     files.push("contact-tower-2x.png");
+  }
+  for (const group of ["spire", "forest"]) {
+    const set = sheets.filter((s) => s.group === group);
+    if (!set.length) continue;
+    const two = composeContact(set, facings, labels, theme, 2);
+    const file = `contact-${group}-2x.png`;
+    writeFileSync(join(REVIEW_DIR, file), encodePng(two.width, two.height, two.rgba, { fast: true }));
+    files.push(file);
   }
   writeFileSync(join(REVIEW_DIR, "index.html"), reviewHtml(manifest, cast.map((s) => s.name), theme));
   files.push("index.html");
