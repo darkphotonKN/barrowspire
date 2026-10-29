@@ -702,9 +702,15 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	interactionSys := systems.InteractionSystem{}
 	interactionSys.Update(entities)
 
-	// elimination
+	// elimination: a run records who fell; a field counts the death and stands
+	// the fallen back up at its entrance (FS-X2F2H §Requirements 22–24)
 	eliminationSys := systems.EliminationSystem{}
-	s.recordEliminations(eliminationSys.Update(deltaTime, entities, s.ID))
+	fallen := eliminationSys.Update(deltaTime, entities, s.ID)
+	if s.worldType == types.WorldTypeField {
+		s.settleFieldDeaths(deltaTime, entities, fallen)
+	} else {
+		s.recordEliminations(fallen)
+	}
 
 	// rules
 	s.applyEndRule(deltaTime, entities)

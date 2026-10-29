@@ -65,6 +65,8 @@ const (
 
 	ComponentTypeBurningTrail ComponentType = "BurningTrail"
 	ComponentTypeDash         ComponentType = "Dash"
+
+	ComponentTypeRespawn ComponentType = "Respawn"
 )
 
 type Entity struct {

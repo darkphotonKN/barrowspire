@@ -37,6 +37,7 @@ import {
 } from "@/render/world";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
+import { FallenCountdown, fallenCopy, isFallen } from "./fieldFallen";
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
 
@@ -50,6 +51,9 @@ import { gateAt, gateEdges } from "./hubGates";
  *
  * Walking into the entrance gate sends one leave_field and waits for world_entered or a refusal,
  * as the hub does for its own sends (§Requirements 57).
+ *
+ * A fallen player lies in the run scene's death pose under a short fallen state counting 3-2-1,
+ * then stands at the entrance: no result card, no loss copy (§Requirements 58).
  */
 
 /** Each field's size in world px, as the server builds it (FS-X2F2H §Requirements 51). */
@@ -88,6 +92,8 @@ interface PlayerView {
   target: Point;
   facing: Facing8;
   anim: CharacterAnimator;
+  /** At 0 HP by the last state: drawn in the death pose, and snapped, not eased, when they rise. */
+  fallen: boolean;
 }
 
 export class FieldScene extends Phaser.Scene {
@@ -116,6 +122,9 @@ export class FieldScene extends Phaser.Scene {
   private leavingField = false;
   /** The field's monsters and the player's fight with them (§Requirements 56). */
   private fight?: FieldCombat;
+  /** The player's own fall and its 3-2-1 (§Requirements 58). */
+  private fallen = new FallenCountdown();
+  private fallenLine?: Phaser.GameObjects.Text;
   private unsubscribeState?: () => void;
 
   constructor() {
@@ -193,6 +202,9 @@ export class FieldScene extends Phaser.Scene {
     this.occluders.clear();
     this.atEntrance = undefined;
     this.leavingField = false;
+    this.fallen.reset();
+    this.fallenLine?.destroy();
+    this.fallenLine = undefined;
     this.fight?.release();
     this.fight = undefined;
     this.lightMap = undefined;
@@ -202,12 +214,14 @@ export class FieldScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     this.sendMovementIntent();
     this.fight?.update(delta);
+    const count = this.fallen.count(this.time.now);
+    if (count !== undefined) this.fallenLine?.setText(fallenCopy(count));
     for (const view of this.views.values()) {
       view.pos.x = Phaser.Math.Linear(view.pos.x, view.target.x, POSITION_LERP);
       view.pos.y = Phaser.Math.Linear(view.pos.y, view.target.y, POSITION_LERP);
       standAt(view.sprite, view.pos, 1);
       const body = view.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
-      if (view.anim.baked && body) view.anim.show(body, view.anim.step(view.pos, time, delta, false));
+      if (view.anim.baked && body) view.anim.show(body, view.anim.step(view.pos, time, delta, view.fallen));
       const s = worldToScreen(view.pos.x, view.pos.y);
       view.name.setPosition(s.x, s.y - (body?.displayHeight ?? 60) - NAME_GAP);
     }
@@ -237,6 +251,8 @@ export class FieldScene extends Phaser.Scene {
   /** Velocity, sent only when it changes. */
   private sendMovementIntent(): void {
     if (!this.cursors || !this.wasd) return;
+    // the fallen do not walk; the server would refuse it
+    if (this.fallen.isDown()) return;
     const left = this.cursors.left.isDown || this.wasd.left.isDown;
     const right = this.cursors.right.isDown || this.wasd.right.isDown;
     const up = this.cursors.up.isDown || this.wasd.up.isDown;
@@ -260,6 +276,7 @@ export class FieldScene extends Phaser.Scene {
       const self = this.views.get(this.selfEntityID);
       if (self) this.keepCameraOn(self.sprite);
       this.followEntrance(state.current_player.position, state.gates ?? []);
+      this.followFall(state.current_player);
     }
 
     this.drawGround(state.gates ?? []);
@@ -296,6 +313,34 @@ export class FieldScene extends Phaser.Scene {
     const { entered } = gateEdges(this.atEntrance, gateAt(pos, roads));
     this.atEntrance = gateAt(pos, roads);
     if (entered) this.leave();
+  }
+
+  /**
+   * The player's own fall (§Requirements 58): on the state that reports it, the fallen state goes
+   * up, counted down each frame; on the state that has them standing again, at the entrance, it
+   * comes down and a key still held walks them on.
+   */
+  private followFall(me: PlayerState): void {
+    const change = this.fallen.observe(isFallen(me), this.time.now);
+    if (change === "fell") {
+      const { width, height } = this.cameras.main;
+      this.fallenLine = this.add
+        .text(width / 2, height / 2, fallenCopy(this.fallen.count(this.time.now) ?? 3), {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: "18px",
+          color: toCss(BARROW_HEX.vellum),
+          backgroundColor: toCss(BARROW_HEX.charcoal),
+          padding: { x: 16, y: 10 },
+        })
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(1000);
+    } else if (change === "rose") {
+      this.fallenLine?.destroy();
+      this.fallenLine = undefined;
+      // the server stopped them as they fell: a key still held is sent again
+      this.lastSent = { vx: 0, vy: 0 };
+    }
   }
 
   /** Home through the road: one leave_field, and nothing more until it is answered. */
@@ -416,8 +461,12 @@ export class FieldScene extends Phaser.Scene {
 
   private placePlayer(player: PlayerState, isSelf: boolean): void {
     const existing = this.views.get(player.entity_id);
+    const fallen = isFallen(player);
     if (existing) {
       existing.target = { x: player.position.x, y: player.position.y };
+      // risen at the entrance: stand there at once rather than slide across the field
+      if (existing.fallen && !fallen) existing.pos = { ...existing.target };
+      existing.fallen = fallen;
       const { vx, vy } = player.direction ?? { vx: 0, vy: 0 };
       existing.facing = facingFrom(vx, vy, existing.facing);
       if (!existing.anim.baked) {
@@ -445,7 +494,7 @@ export class FieldScene extends Phaser.Scene {
     const pos = { x: player.position.x, y: player.position.y };
     const sprite = this.add.container(0, 0, [body]);
     standAt(sprite, pos, 1);
-    this.views.set(player.entity_id, { sprite, name, pos, target: { ...pos }, facing: "se", anim });
+    this.views.set(player.entity_id, { sprite, name, pos, target: { ...pos }, facing: "se", anim, fallen });
   }
 
   /** A line said in passing, in the neutral HUD register. */

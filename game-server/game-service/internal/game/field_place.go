@@ -133,6 +133,9 @@ type FieldVisit struct {
 	// ExperienceGained is what this visit's kills earned, from zero at entry
 	// (FS-X2F2H §Requirements 13, 30): the settlement's experience_gained.
 	ExperienceGained int
+	// Deaths is how many times the player fell on this visit (FS-X2F2H
+	// §Requirements 22), for the settlement to read.
+	Deaths int
 }
 
 /**
