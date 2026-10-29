@@ -88,7 +88,7 @@ export default function ListingDetailDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-[color-mix(in_srgb,var(--color-bg-darker)_80%,transparent)] p-4"
+      className="scrim-in fixed inset-0 z-[100] flex items-center justify-center bg-[color-mix(in_srgb,var(--color-bg-darker)_80%,transparent)] p-4"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
@@ -96,7 +96,7 @@ export default function ListingDetailDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={TITLE_ID}
-        className="surface-raised relative flex max-h-full w-full max-w-lg animate-[fadeInScale_0.2s_ease-out] flex-col gap-5 overflow-y-auto rounded-[12px] p-6 backdrop-blur-[20px]"
+        className="enter-from-below surface-raised relative flex max-h-full w-full max-w-lg flex-col gap-5 overflow-y-auto rounded-[12px] p-6 backdrop-blur-[20px]"
         style={{ "--row-rarity": `var(--rarity-${rarityOf(item?.rarity).token})` } as React.CSSProperties}
       >
         <button

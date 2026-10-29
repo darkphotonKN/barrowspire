@@ -99,8 +99,8 @@ export const canShowMore = (state: BrowseState<unknown>): boolean =>
   state.phase === "ready" && !!state.nextCursor && !state.loadingMore;
 
 /** The 503 copy (req 29); also what a gateway that never answered shows. */
-export const BROWSE_UNREACHABLE = "The Bazaar is unreachable — try again shortly.";
-export const BROWSE_FAILED = "The Bazaar could not be read — try again.";
+export const BROWSE_UNREACHABLE = "The marketplace is unreachable. Try again shortly.";
+export const BROWSE_FAILED = "The marketplace could not be read. Try again.";
 
 export function browseFailureMessage(err: unknown): string {
   if (!(err instanceof ApiError) || err.status === 503) return BROWSE_UNREACHABLE;

@@ -688,7 +688,10 @@ Type scale (px, desktop; functional base ~14px). Prefer these steps:
   hover/focus/active.
 - **Blur:** floating surfaces (header, dropdown, modal, card) use `backdrop-filter: blur(20px)`.
 - **Motion:** micro `0.2s`, standard `0.3s ease`. Button/card hover `translateY(-2px)` + glow.
-  Entrances: `slideIn` / `fadeInScale` (already in `globals.css`). Spinner = iron ring.
+  Entrances slide in from where the surface belongs (`globals.css` "Entrances"): a drawer from
+  the edge it docks to (`.enter-from-right`), a modal up from below (`.enter-from-below`), a
+  dropdown down from its bar; the scrim fades (`.scrim-in`). `slideIn` for inline notes. Spinner =
+  iron ring.
   Respect `prefers-reduced-motion: reduce`.
 
 ---
@@ -860,7 +863,8 @@ rarity), and columns line those facts up where a grid scatters them.
   Targets ≥40px. Below 640px the lesser columns (type, bids) drop, never the price or time left.
 
 **Modal / item detail** — `bg-card` (or `bg-darker`), iron border, `blur(20px)`, deep shadow,
-radius `10–12`, `fadeInScale` entrance; close top-right; trap focus; `Esc` closes.
+radius `10–12`, rises in from below (`.enter-from-below`) over a fading scrim; close top-right;
+trap focus; `Esc` closes.
 
 **Feedback** — *inline:* error → oxblood tint, copy in `--color-danger-text`
 (`.login-error`/`.profile-error`); success → **bone/iron, not green** (success uses the torch,
