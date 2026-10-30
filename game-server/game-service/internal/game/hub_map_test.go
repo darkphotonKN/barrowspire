@@ -11,6 +11,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 )
 
 // hubResidentMargin is the room kept between a resident's quarter and a function
@@ -316,21 +317,29 @@ func TestHubLayout_Quartermaster_StandsInHisStore(t *testing.T) {
 
 // Talk is gated by distance alone, so placement is all that stops a delver
 // outside from talking through a wall: everyone inside a building stands more
-// than talk range from each of its walls. FS-B0H2D §Requirements 14.
+// than talk range from each of its walls. Furnishings do not count: the Alewife
+// is talked to across her counter. Every fixed resident stands indoors.
+// FS-B0H2D §Requirements 14, 18.
 func TestHubLayout_NobodyIndoors_IsTalkedToThroughAWall(t *testing.T) {
 	houses := hubWalls(t)
 
-	for _, npc := range hubNPCs {
+	indoors := map[string]bool{}
+	for _, npc := range npcsIn(builtHub()) {
 		for _, house := range houses {
-			if !footprintOf(house).contains(npc.X, npc.Y) {
+			if !footprintOf(house).contains(npc.At.X, npc.At.Y) {
 				continue
 			}
+			indoors[npc.Name] = true
 			for _, wall := range outerWallsOf(house) {
-				got := wall.distanceTo(npc.X, npc.Y)
+				got := wall.distanceTo(npc.At.X, npc.At.Y)
 				assert.Greater(t, got, constants.NPCInteractRange,
 					"the %s can be talked to through the wall at %+v (%.0f away)", npc.Name, wall, got)
 			}
 		}
+	}
+
+	for _, resident := range hubFixedResidents {
+		assert.True(t, indoors[resident.Name], "the %s stands outdoors", resident.Name)
 	}
 }
 
@@ -351,4 +360,318 @@ func TestHubResidents_QuartersLieOutdoors_InsideTheMap(t *testing.T) {
 			assert.False(t, quarter.overlaps(foot), "%s's quarter reaches into the building at %+v", resident.Name, foot)
 		}
 	}
+}
+
+// ----- The people inside (FS-B0H2D §D) -----
+
+// hubAppearances are the looks the client already draws for a person; a fixed
+// resident wears one of them. FS-B0H2D §Requirements 17.
+var hubAppearances = []string{"rust_trousers", "green_skirt", "slate_trousers", "flax_skirt"}
+
+// hubNPCAt is one NPC as the built hub holds it.
+type hubNPCAt struct {
+	Name   string
+	Entity *ecs.Entity
+	NPC    *components.NPCComponent
+	At     *components.TransformComponent
+}
+
+func npcsIn(s *Session) []hubNPCAt {
+	found := []hubNPCAt{}
+	for _, entity := range s.EntityManager.GetAllEntities() {
+		npcComp, isNPC := entity.GetComponent(ecs.ComponentTypeNPC)
+		transformComp, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform)
+		if !isNPC || !hasTransform {
+			continue
+		}
+		npc := npcComp.(*components.NPCComponent)
+		found = append(found, hubNPCAt{Name: npc.Name, Entity: entity, NPC: npc, At: transformComp.(*components.TransformComponent)})
+	}
+	return found
+}
+
+// The innkeeper, the patrons and the smith are the ambient NPC kind pinned in
+// place: no function, a look the client already draws, no quarter and no
+// velocity, so nothing ever moves them. FS-B0H2D §Requirements 16, 17.
+func TestHubFixedResidents_StandWhereTheMapPutsThem_AndNeverMove(t *testing.T) {
+	hub := builtHub()
+	hub.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
+
+	want := []string{"Alewife", "Drover", "Gravedigger", "Pilgrim", "Smith"}
+	byName := map[string]hubNPCAt{}
+	for _, npc := range npcsIn(hub) {
+		byName[npc.Name] = npc
+	}
+
+	start := map[string][2]float64{}
+	for _, name := range want {
+		npc, ok := byName[name]
+		require.True(t, ok, "the hub has no %s", name)
+
+		assert.Equal(t, components.NPCFunctionNone, npc.NPC.Function, "the %s opens something", name)
+		assert.Contains(t, hubAppearances, npc.NPC.Appearance, "the %s wears a look the client cannot draw", name)
+		assert.Nil(t, npc.NPC.Wander, "the %s keeps a quarter", name)
+		assert.False(t, npc.Entity.HasComponent(ecs.ComponentTypeVelocity), "the %s can be moved", name)
+		assert.True(t, npc.Entity.HasComponent(ecs.ComponentTypeInteractable), "the %s cannot be talked to", name)
+		start[name] = [2]float64{npc.At.X, npc.At.Y}
+	}
+
+	for range 120 {
+		tick(hub)
+	}
+
+	for _, name := range want {
+		at := byName[name].At
+		assert.Equal(t, start[name], [2]float64{at.X, at.Y}, "the %s moved", name)
+	}
+}
+
+// ----- Furnishings (FS-B0H2D §C) -----
+
+// furnishingClearance is the room kept around a furnishing, so a delver can walk
+// round it. FS-B0H2D §Requirements 12.
+const furnishingClearance = 50
+
+// furnishingsOf is what stands inside a building: its walls that touch none of
+// its outer edges, the way the client tells them apart.
+func furnishingsOf(walls []box) []box {
+	outer := outerWallsOf(walls)
+	inside := []box{}
+	for _, w := range walls {
+		isOuter := false
+		for _, o := range outer {
+			if w == o {
+				isOuter = true
+			}
+		}
+		if !isOuter {
+			inside = append(inside, w)
+		}
+	}
+	return inside
+}
+
+// distanceBetween is the gap between two boxes; zero when they meet.
+func distanceBetween(a, b box) float64 {
+	dx := math.Max(math.Max(b.X-(a.X+a.W), a.X-(b.X+b.W)), 0)
+	dy := math.Max(math.Max(b.Y-(a.Y+a.H), a.Y-(b.Y+b.H)), 0)
+	return math.Hypot(dx, dy)
+}
+
+// houseOf is the walls of the named building, found by its footprint.
+func houseOf(t *testing.T, houses map[uuid.UUID][]box, name string) []box {
+	t.Helper()
+
+	for _, b := range hubBuildings {
+		if b.Name != name {
+			continue
+		}
+		for _, house := range houses {
+			if footprintOf(house) == (box{X: b.X, Y: b.Y, W: b.W, H: b.H}) {
+				return house
+			}
+		}
+	}
+	require.Failf(t, "no such building", "the hub has no %s", name)
+	return nil
+}
+
+// The Inn's counter and three tables and the smithy's forge are keep-outs: walls
+// of their building, touching none of its edges, with room to walk round each.
+// The store has none. FS-B0H2D §Requirements 10, 12.
+func TestHubFurnishings_StandInsideTheirBuilding_WithRoomAround(t *testing.T) {
+	houses := hubWalls(t)
+	walls := allWalls(houses)
+
+	kinds := map[string][]string{}
+	for _, b := range hubBuildings {
+		for _, f := range b.Furnishings {
+			kinds[b.Name] = append(kinds[b.Name], f.Kind)
+		}
+	}
+	assert.ElementsMatch(t, []string{"counter", "table", "table", "table"}, kinds["Inn"], "the Inn's furnishings")
+	assert.ElementsMatch(t, []string{"forge"}, kinds["Smithy"], "the smithy's furnishings")
+	assert.Empty(t, kinds["Quartermaster's store"], "the store's furnishings")
+
+	for _, b := range hubBuildings {
+		house := houseOf(t, houses, b.Name)
+		furnishings := furnishingsOf(house)
+		require.Len(t, furnishings, len(b.Furnishings), "the %s's furnishings, as walled", b.Name)
+
+		for _, f := range furnishings {
+			for _, other := range walls {
+				if other == f {
+					continue
+				}
+				got := distanceBetween(f, other)
+				assert.GreaterOrEqual(t, got, float64(furnishingClearance),
+					"the furnishing at %+v in the %s stands %.0f from %+v", f, b.Name, got, other)
+			}
+		}
+	}
+}
+
+// ----- The room is reachable (FS-B0H2D §Requirements 13, 18) -----
+
+// reachCell is the flood fill's grid: 10 px, the coarsest R13 allows. Door-gap
+// centres sit on it, and a player only fits a 50 px gap within 5 px of centre.
+const reachCell = 10
+
+// walkerFits is true when a player's body, centred at p, overlaps no wall.
+// Bodies are the MovementSystem's: a square PlayerRadius either side of centre,
+// free to touch a wall but not to enter it.
+func walkerFits(p point, walls []box) bool {
+	r := constants.PlayerRadius
+	body := box{X: p.x - r, Y: p.y - r, W: 2 * r, H: 2 * r}
+	for _, w := range walls {
+		if body.overlaps(w) {
+			return false
+		}
+	}
+	return true
+}
+
+// reachableFrom is every grid point inside a building's footprint a player can
+// walk to from start without crossing a wall or a furnishing.
+func reachableFrom(start point, walls []box) []point {
+	foot := footprintOf(walls)
+	if !walkerFits(start, walls) {
+		return nil
+	}
+
+	seen := map[point]bool{start: true}
+	queue := []point{start}
+	for len(queue) > 0 {
+		p := queue[0]
+		queue = queue[1:]
+		for _, step := range [4]point{{x: reachCell}, {x: -reachCell}, {y: reachCell}, {y: -reachCell}} {
+			next := point{x: p.x + step.x, y: p.y + step.y}
+			if seen[next] || !foot.contains(next.x, next.y) || !walkerFits(next, walls) {
+				continue
+			}
+			seen[next] = true
+			queue = append(queue, next)
+		}
+	}
+
+	reached := make([]point, 0, len(seen))
+	for p := range seen {
+		reached = append(reached, p)
+	}
+	return reached
+}
+
+// doorwayOf is where a player stands in a building's door gap: its centre.
+func doorwayOf(t *testing.T, walls []box) point {
+	t.Helper()
+
+	gap, ok := doorGapOf(walls)
+	require.True(t, ok, "the building at %+v has no door gap", footprintOf(walls))
+	at := point{x: gap.X + gap.W/2, y: gap.Y + gap.H/2}
+	require.Zero(t, math.Mod(at.x, reachCell), "the door gap's centre is off the flood fill's grid")
+	require.Zero(t, math.Mod(at.y, reachCell), "the door gap's centre is off the flood fill's grid")
+	return at
+}
+
+// withinTalkRange is true when some reached point is in talk range of (x, y).
+func withinTalkRange(reached []point, x, y float64) bool {
+	for _, p := range reached {
+		if math.Hypot(p.x-x, p.y-y) <= constants.NPCInteractRange {
+			return true
+		}
+	}
+	return false
+}
+
+// The flood fill sees a sealed room: a counter flush across it leaves the far
+// side out of reach, and an open room is reached end to end.
+func TestReachableFrom_StopsAtAWallAcrossTheRoom(t *testing.T) {
+	// a 300x240 house, its door gap centred at x 150
+	shell := []box{
+		{X: 0, Y: 0, W: 300, H: 20},
+		{X: 0, Y: 0, W: 20, H: 240},
+		{X: 280, Y: 0, W: 20, H: 240},
+		{X: 0, Y: 220, W: 125, H: 20},
+		{X: 175, Y: 220, W: 125, H: 20},
+	}
+	door := point{x: 150, y: 230}
+	farSide := point{x: 150, y: 50}
+
+	tests := []struct {
+		name  string
+		walls []box
+		want  bool
+	}{
+		{"an open room", shell, true},
+		{"a counter flush across it", append(append([]box{}, shell...), box{X: 20, Y: 120, W: 260, H: 20}), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reached := reachableFrom(door, tt.walls)
+			assert.NotEmpty(t, reached, "a player cannot stand in the doorway")
+			assert.Equal(t, tt.want, withinTalkRange(reached, farSide.x, farSide.y))
+		})
+	}
+}
+
+// From each door gap a player can walk to within talk range of everyone inside
+// that building, furnishings and all. FS-B0H2D §Requirements 13.
+func TestHubLayout_EveryoneIndoors_CanBeReachedFromTheDoor(t *testing.T) {
+	houses := hubWalls(t)
+	npcs := npcsIn(builtHub())
+
+	for _, b := range hubBuildings {
+		t.Run(b.Name, func(t *testing.T) {
+			house := houseOf(t, houses, b.Name)
+			reached := reachableFrom(doorwayOf(t, house), house)
+			require.NotEmpty(t, reached, "a player cannot stand in the %s's doorway", b.Name)
+
+			for _, npc := range npcs {
+				if !footprintOf(house).contains(npc.At.X, npc.At.Y) {
+					continue
+				}
+				assert.True(t, withinTalkRange(reached, npc.At.X, npc.At.Y),
+					"nobody walking in from the door can reach the %s at (%.0f, %.0f)", npc.Name, npc.At.X, npc.At.Y)
+			}
+		})
+	}
+}
+
+// The Alewife stands behind her counter, on its far side from the door, and is
+// talked to across it from the door's side. FS-B0H2D §Requirements 18.
+func TestHubLayout_Alewife_IsTalkedToAcrossHerCounter(t *testing.T) {
+	houses := hubWalls(t)
+	house := houseOf(t, houses, "Inn")
+	door := doorwayOf(t, house)
+
+	var counter *hubFurnishing
+	for _, b := range hubBuildings {
+		for i := range b.Furnishings {
+			if b.Name == "Inn" && b.Furnishings[i].Kind == "counter" {
+				counter = &b.Furnishings[i]
+			}
+		}
+	}
+	require.NotNil(t, counter, "the Inn has no counter")
+
+	var alewife *hubFixedResident
+	for i := range hubFixedResidents {
+		if hubFixedResidents[i].Name == "Alewife" {
+			alewife = &hubFixedResidents[i]
+		}
+	}
+	require.NotNil(t, alewife, "the Inn has no Alewife")
+
+	require.Less(t, door.x, counter.X, "the counter does not stand east of the door")
+	assert.Greater(t, alewife.X, counter.X+counter.W, "the Alewife is not behind her counter")
+	assert.True(t, alewife.Y > counter.Y && alewife.Y < counter.Y+counter.H, "the Alewife is not behind her counter")
+
+	nearSide := []point{}
+	for _, p := range reachableFrom(door, house) {
+		if p.x+constants.PlayerRadius <= counter.X {
+			nearSide = append(nearSide, p)
+		}
+	}
+	assert.True(t, withinTalkRange(nearSide, alewife.X, alewife.Y),
+		"nobody on the door's side of the counter can talk to the Alewife")
 }
