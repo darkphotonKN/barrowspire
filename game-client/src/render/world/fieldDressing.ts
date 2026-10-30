@@ -14,7 +14,7 @@ import {
   type Point,
   type Rect,
 } from "@/render/iso/projection";
-import { tileHash, type Apron } from "./ground";
+import { tileHash } from "./ground";
 
 /** The baked sheets a field dresses its keep-outs with, chosen between by hash. */
 export interface FieldDressingLook {
@@ -137,7 +137,10 @@ const T = WORLD_PX_PER_TILE;
 
 /** Half the road's width, world px: one tile of dirt, edged by the grass-to-dirt blend. */
 export const ROAD_HALF_WIDTH = T / 2;
-/** How far the road runs on into the field past the gate, and past the edge out of it, fading. */
+/**
+ * How far the road runs on into the field past the gate, and over the edge out of it, so the edge
+ * row reads as dirt, never a blend; nothing past the edge is drawn.
+ */
 const ROAD_IN = 160;
 const ROAD_OUT = 4 * T;
 /** Where the signpost stands from the gate: further in, and to one side of the road. */
@@ -162,20 +165,18 @@ function sideOf(
 
 /** The road home at a field's entrance gate (FS-X2F2H §Requirements 51, 54). */
 export interface RoadHome {
-  /** Trodden ground, laid as dirt: through the gate and out past its edge. */
+  /** Trodden ground, laid as dirt: through the gate and over the map's edge. */
   paths: Rect[];
-  /** The road's own row past the edge, fading; no grass is laid beyond the map. */
-  aprons: Apron[];
   /** Where the signpost reading the way home stands. */
   signpost: Point;
 }
 
 /**
  * The road from the field's entrance gate back toward the hub: dirt from inside the gate, through
- * it, and off the edge the gate stands on, fading into the land beyond. Only the road runs on past
- * the edge: the map's ground ends on its own clean edge. The signpost stands beside the road inside
- * the gate's reach, mirroring the hub's own signpost at the field's gate. Without the field's size
- * the gate is taken to stand on the west edge, as the Meadows' does.
+ * it, to the edge the gate stands on. There the ground, road and all, fades into the edge tint,
+ * and nothing is drawn past the edge (FS-KSD6K §Requirements 16). The signpost stands beside the
+ * road inside the gate's reach, mirroring the hub's own signpost at the field's gate. Without the
+ * field's size the gate is taken to stand on the west edge, as the Meadows' does.
  */
 export function planRoadHome(
   gate: Point,
@@ -197,17 +198,6 @@ export function planRoadHome(
             height: 2 * H,
           },
         ],
-        aprons: [
-          {
-            x: size.width,
-            y: gate.y - H,
-            width: ROAD_OUT,
-            height: 2 * H,
-            from: { x: size.width, y: gate.y },
-            fade: ROAD_OUT,
-            along: "y",
-          },
-        ],
         signpost: { x: gate.x - SIGNPOST_IN, y: gate.y - SIGNPOST_ASIDE },
       };
     case "north":
@@ -218,17 +208,6 @@ export function planRoadHome(
             y: -ROAD_OUT,
             width: 2 * H,
             height: ROAD_OUT + gate.y + ROAD_IN,
-          },
-        ],
-        aprons: [
-          {
-            x: gate.x - H,
-            y: -ROAD_OUT,
-            width: 2 * H,
-            height: ROAD_OUT,
-            from: { x: gate.x, y: 0 },
-            fade: ROAD_OUT,
-            along: "x",
           },
         ],
         signpost: { x: gate.x - SIGNPOST_ASIDE, y: gate.y + SIGNPOST_IN },
@@ -243,17 +222,6 @@ export function planRoadHome(
             height: size.height - gate.y + ROAD_IN + ROAD_OUT,
           },
         ],
-        aprons: [
-          {
-            x: gate.x - H,
-            y: size.height,
-            width: 2 * H,
-            height: ROAD_OUT,
-            from: { x: gate.x, y: size.height },
-            fade: ROAD_OUT,
-            along: "x",
-          },
-        ],
         signpost: { x: gate.x - SIGNPOST_ASIDE, y: gate.y - SIGNPOST_IN },
       };
     default:
@@ -264,17 +232,6 @@ export function planRoadHome(
             y: gate.y - H,
             width: ROAD_OUT + gate.x + ROAD_IN,
             height: 2 * H,
-          },
-        ],
-        aprons: [
-          {
-            x: -ROAD_OUT,
-            y: gate.y - H,
-            width: ROAD_OUT,
-            height: 2 * H,
-            from: { x: 0, y: gate.y },
-            fade: ROAD_OUT,
-            along: "y",
           },
         ],
         signpost: { x: gate.x + SIGNPOST_IN, y: gate.y - SIGNPOST_ASIDE },

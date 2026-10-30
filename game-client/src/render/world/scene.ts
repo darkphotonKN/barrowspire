@@ -51,6 +51,42 @@ export interface FloorGround {
   seed: number;
 }
 
+/** The world a `GroundLayer` paints: its size and kind, its paths, and its look. */
+interface GroundWorldBase {
+  width: number;
+  height: number;
+  kind: WorldKind;
+  paths?: readonly Rect[];
+  /** Ground under a forest's stands, laid as leaf litter (FS-3QHQZ §Requirements 25). */
+  litter?: readonly Rect[];
+  look?: GroundLook;
+}
+
+/**
+ * A `GroundLayer`'s world: either its ground runs on past the edge (aprons, a margin), or it fades
+ * out at the edge with nothing painted past it, never both.
+ */
+export type GroundWorld = GroundWorldBase &
+  (
+    | {
+        /** Ground past the edge (FS-0XMCP R18), within `margin`'s reach of the map. */
+        aprons?: readonly Apron[];
+        /** Screen px of ground painted past the projected map; absent, GROUND_MARGIN. */
+        margin?: number;
+        fadeEdge?: false;
+      }
+    | {
+        /**
+         * The ground fades out at the map's edge into the camera's background, and nothing is
+         * painted past it: a field's edge tint (FS-KSD6K §Requirements 16). So no aprons and no
+         * margin: past the edge they would only be erased.
+         */
+        fadeEdge: true;
+        aprons?: never;
+        margin?: never;
+      }
+  );
+
 /**
  * The ground, painted once into a render texture (it never moves): the world theme's ground look
  * (outdoor tiles, decals and flagstone under each house; or a tower's flags and planked rooms).
@@ -67,24 +103,7 @@ export class GroundLayer {
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly art: ArtLibrary,
-    private readonly world: {
-      width: number;
-      height: number;
-      kind: WorldKind;
-      paths?: readonly Rect[];
-      /** Ground under a forest's stands, laid as leaf litter (FS-3QHQZ §Requirements 25). */
-      litter?: readonly Rect[];
-      /** Ground past the edge (FS-0XMCP R18), within `margin`'s reach of the map. */
-      aprons?: readonly Apron[];
-      /** Screen px of ground painted past the projected map; absent, GROUND_MARGIN. */
-      margin?: number;
-      look?: GroundLook;
-      /**
-       * The ground fades out at the map's edge into the camera's background, and nothing is
-       * painted past it: a field's edge tint (FS-KSD6K §Requirements 16). Absent, it does not.
-       */
-      fadeEdge?: boolean;
-    },
+    private readonly world: GroundWorld,
   ) {
     const b = projectedBounds(world.width, world.height, world.margin ?? GROUND_MARGIN);
     this.origin = { x: b.x, y: b.y };

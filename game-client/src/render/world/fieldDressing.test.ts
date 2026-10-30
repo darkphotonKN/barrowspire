@@ -90,16 +90,13 @@ describe("planRoadHome (FS-X2F2H §Requirements 51, 54)", () => {
     for (const p of road.paths) expect(p.height).toBe(2 * ROAD_HALF_WIDTH);
   });
 
-  it("should carry the road alone on past the edge, fading, and no grass beyond it", () => {
+  it("should lay the road to the map's edge and nothing past it, the edge fading into the tint (FS-KSD6K §Requirements 16)", () => {
+    expect(road).not.toHaveProperty("aprons");
     const tiles = planGround({ width: 400, height: 1000, kind: "field", ...road });
-    const beyond = tiles.filter((t) => t.at.x < 0);
-    expect(beyond.length).toBeGreaterThan(0);
-    // the map ends on its own edge: past it, only the road's own row of dirt
-    expect(beyond.every((t) => t.sheet === "ground_dirt" && t.at.y === GATE.y)).toBe(true);
-    const nearest = beyond.find((t) => t.at.x === -20)!;
-    const furthest = beyond.reduce((a, b) => (a.at.x < b.at.x ? a : b));
-    expect(nearest.alpha!).toBeGreaterThan(furthest.alpha!);
-    expect(Math.min(...road.paths.map((p) => p.x))).toBeLessThanOrEqual(furthest.at.x);
+    expect(tiles.every((t) => t.at.x > 0 && t.at.y > 0)).toBe(true);
+    // the edge row of the road is still dirt: the ground's own fade ends it, not a gap
+    const edge = tiles.find((t) => t.at.x === 20 && t.at.y === GATE.y)!;
+    expect(edge.sheet).toBe("ground_dirt");
   });
 
   it("should stand the signpost beside the road, at the gate, inside the map", () => {
@@ -124,14 +121,10 @@ describe("planRoadHome at a gate on another edge (FS-3QHQZ §Requirements 14: th
     }
   });
 
-  it("should fade the road out past the east edge", () => {
+  it("should lay nothing past the east edge (FS-KSD6K §Requirements 16)", () => {
+    expect(road).not.toHaveProperty("aprons");
     const tiles = planGround({ ...SIZE, kind: "field", ...road });
-    const beyond = tiles.filter((t) => t.at.x > SIZE.width);
-    expect(beyond.length).toBeGreaterThan(0);
-    expect(beyond.every((t) => t.sheet === "ground_dirt")).toBe(true);
-    const nearest = beyond.reduce((a, b) => (a.at.x < b.at.x ? a : b));
-    const furthest = beyond.reduce((a, b) => (a.at.x > b.at.x ? a : b));
-    expect(nearest.alpha!).toBeGreaterThan(furthest.alpha!);
+    expect(tiles.every((t) => t.at.x < SIZE.width)).toBe(true);
   });
 
   it("should stand the signpost beside the road, inside the map, on the gate's inward side", () => {
