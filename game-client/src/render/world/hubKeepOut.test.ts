@@ -27,21 +27,18 @@ import {
   type Footprint,
   type PropSpot,
 } from "./hubKeepOut";
+import { HUB_TOWN_GOLDEN } from "./hubTownGolden";
 import { ROOF_EAVE } from "./roofs";
 
 /**
- * The town's buildings, copied from game-server/game-service/internal/game/hub_map.go
+ * The town's buildings, from the golden of game-server/game-service/internal/game/hub_map.go
  * (hubBuildings): the Inn, the Quartermaster's store and the smithy (FS-B0H2D R1–R3), walled
  * 20 thick as addHubBuilding does, the south wall cut in two around a centred door gap a run
- * door wide (R9). Furnishings are not copied here: they stand indoors, and this checks the
- * outdoor dressing. The scene takes its walls from the server; this copy exists so the keep-out
- * rule can be checked at review.
+ * door wide (R9). Furnishings are not used here: they stand indoors, and this checks the
+ * outdoor dressing. The scene takes its walls from the server; the golden lets the keep-out rule
+ * be checked at review against the town hub_map.go actually lays out.
  */
-const HUB_BUILDINGS: [number, number, number, number][] = [
-  [470, 110, 400, 300],
-  [1130, 150, 300, 240],
-  [110, 50, 300, 240],
-];
+const HUB_BUILDINGS = HUB_TOWN_GOLDEN.buildings.map(({ x, y, w, h }): Rect4 => [x, y, w, h]);
 const THICK = 20;
 const DOOR = 50;
 /** Each building's door gap, as the span along its south wall's line: [x0, x1, y of the sill]. */

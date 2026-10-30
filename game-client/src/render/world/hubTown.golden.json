@@ -1,0 +1,92 @@
+{
+  "buildings": [
+    {
+      "name": "Inn",
+      "x": 470,
+      "y": 110,
+      "w": 400,
+      "h": 300,
+      "furnishings": [
+        {
+          "kind": "counter",
+          "x": 715,
+          "y": 190,
+          "w": 25,
+          "h": 140
+        },
+        {
+          "kind": "table",
+          "x": 540,
+          "y": 185,
+          "w": 30,
+          "h": 40
+        },
+        {
+          "kind": "table",
+          "x": 540,
+          "y": 285,
+          "w": 30,
+          "h": 40
+        },
+        {
+          "kind": "table",
+          "x": 620,
+          "y": 240,
+          "w": 45,
+          "h": 40
+        }
+      ]
+    },
+    {
+      "name": "Quartermaster's store",
+      "x": 1130,
+      "y": 150,
+      "w": 300,
+      "h": 240,
+      "furnishings": []
+    },
+    {
+      "name": "Smithy",
+      "x": 110,
+      "y": 50,
+      "w": 300,
+      "h": 240,
+      "furnishings": [
+        {
+          "kind": "forge",
+          "x": 225,
+          "y": 120,
+          "w": 70,
+          "h": 35
+        }
+      ]
+    }
+  ],
+  "fixedResidents": [
+    {
+      "name": "Alewife",
+      "x": 765,
+      "y": 260
+    },
+    {
+      "name": "Drover",
+      "x": 590,
+      "y": 220
+    },
+    {
+      "name": "Gravedigger",
+      "x": 590,
+      "y": 300
+    },
+    {
+      "name": "Pilgrim",
+      "x": 643,
+      "y": 220
+    },
+    {
+      "name": "Smith",
+      "x": 260,
+      "y": 175
+    }
+  ]
+}

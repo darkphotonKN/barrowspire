@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Facing8 } from "@/render/iso/facing";
 import type { Rect } from "@/render/iso/projection";
 import type { WallState } from "@/types/gameState";
@@ -10,34 +10,24 @@ import {
   furnishingOf,
   hiddenIndoors,
   isFurnishing,
+  placeholderWarning,
   residentFacing,
   splitFurnishings,
   type IndoorSpot,
 } from "./hubInteriors";
+import { HUB_TOWN_GOLDEN, type TownRect } from "./hubTownGolden";
 
 /**
- * The town's buildings and furnishings, copied from
+ * The town's buildings and furnishings, from the golden of
  * game-server/game-service/internal/game/hub_map.go (hubBuildings): walled 20 thick as
  * addHubBuilding does, the south wall cut in two around a centred 50 px door gap, each furnishing
  * a wall carrying its building's house id (FS-B0H2D R1–R3, R9, R10, R12). In hub_map.go's order:
  * the Inn, the Quartermaster's store, the smithy.
  */
-const BUILDINGS: [number, number, number, number][] = [
-  [470, 110, 400, 300],
-  [1130, 150, 300, 240],
-  [110, 50, 300, 240],
-];
+const rect4 = ({ x, y, w, h }: TownRect): [number, number, number, number] => [x, y, w, h];
+const BUILDINGS = HUB_TOWN_GOLDEN.buildings.map(rect4);
 const THICK = 20;
 const DOOR = 50;
-const FURNISHED: Record<number, [number, number, number, number][]> = {
-  0: [
-    [715, 190, 25, 140],
-    [540, 185, 30, 40],
-    [540, 285, 30, 40],
-    [620, 240, 45, 40],
-  ],
-  2: [[225, 120, 70, 35]],
-};
 
 const wall = (id: string, house: string, [x, y, w, h]: number[]): WallState => ({
   entity_id: id,
@@ -56,8 +46,8 @@ const BUILDING_WALLS: WallState[] = BUILDINGS.flatMap(([x, y, w, h], i) => {
     [x + side + DOOR, y + h - THICK, side, THICK],
   ].map((r, k) => wall(`b${i}w${k}`, `b${i}`, r));
 });
-const FURNISHING_WALLS: WallState[] = Object.entries(FURNISHED).flatMap(([i, rects]) =>
-  rects.map((r, k) => wall(`b${i}f${k}`, `b${i}`, r)),
+const FURNISHING_WALLS: WallState[] = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
+  b.furnishings.map((f, k) => wall(`b${i}f${k}`, `b${i}`, rect4(f))),
 );
 const WALLS = [...BUILDING_WALLS, ...FURNISHING_WALLS];
 const HOUSES = housesFrom(WALLS);
@@ -118,6 +108,42 @@ describe("HUB_FURNISHINGS, the client's mirror of the furnishings (FS-B0H2D R19,
 
   it("should know no furnishing on a rect the mirror lacks", () => {
     expect(furnishingOf(wall("z", "b0", [600, 200, 33, 33]))).toBeUndefined();
+  });
+
+  it("should mirror hub_map.go's furnishings exactly, kind and rect, in its order", () => {
+    const golden = HUB_TOWN_GOLDEN.buildings.flatMap((b) =>
+      b.furnishings.map(({ kind, x, y, w, h }) => ({ kind, rect: { x, y, width: w, height: h } })),
+    );
+    expect(HUB_FURNISHINGS.map(({ kind, rect }) => ({ kind, rect }))).toEqual(golden);
+  });
+});
+
+describe("placeholderWarning (FS-B0H2D R19)", () => {
+  const unmirrored = wall("z", "b0", [600, 200, 33, 33]);
+
+  it("should warn when a furnishing wall falls back to the placeholder, naming its rect", () => {
+    const warn = vi.fn();
+    placeholderWarning(warn)(unmirrored);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0][0]).toContain("600, 200");
+    expect(warn.mock.calls[0][0]).toContain("33 × 33");
+  });
+
+  it("should warn once per rect, however often the room is drawn", () => {
+    const warn = vi.fn();
+    const warnFor = placeholderWarning(warn);
+    warnFor(unmirrored);
+    warnFor({ ...unmirrored, entity_id: "z2" });
+    expect(warn).toHaveBeenCalledOnce();
+    warnFor(wall("y", "b0", [610, 200, 33, 33]));
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("HUB_FIXED_RESIDENTS, the client's mirror of the fixed residents (FS-B0H2D R25)", () => {
+  it("should mirror hub_map.go's fixed residents exactly, name and place, in its order", () => {
+    const mirrored = HUB_FIXED_RESIDENTS.map(({ name, at }) => ({ name, x: at.x, y: at.y }));
+    expect(mirrored).toEqual(HUB_TOWN_GOLDEN.fixedResidents);
   });
 });
 
