@@ -2,6 +2,20 @@
 
 > Status: shipped · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Classes" → "Mercenary class"; `game-client/SPECIFICATION.md` "### Character" → "Mercenary class" → this FS · Character-service (no SPECIFICATION.md of its own) carries its class allowlist change under this FS · Depends on: [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) (the generic class resource, the parry-charge resource kind, the resource fields on `current_player`, the bottom-left bars with the merc's 3 pips, the bottom-right ability card) · Siblings (same scoping session, 2026-10-30): [FS-JTNPR](JTNPR-shadow-shot.md) · Interacts with: [FS-77AB6](77AB6-monsters-and-combat.md) (attack table, damage formula, monster wind-up), [FS-BDA7X](BDA7X-character-leveling.md) (class growth row, `create-character`), [FS-2325V](2325V-pre-rendered-isometric-art.md) (character art pipeline), [FS-F6F88](F6F88-multi-floor-delves.md) (delvers persist across floors), [FS-4R9M9](4R9M9-item-levels-affixes-and-uniques.md) (worn attributes, Gravewarden's Oath) · Related ADRs: [ADR-0030](../adr/0030-ability-aiming-is-client-presentation-the-server-holds-resolved-casts.md) (the parry window is its server-authoritative exception), ADR-0020 and ADR-0021 (character art is built in code, never sourced)
 
+> **Amendment, 2026-10-31 (playtest tuning).** The parry now reads on the merc himself. His
+> sheet carries a fifth clip, **`parry`**: he raises the arming sword into a guard, blade up and
+> across before him, feet set, a slight lean back. It reaches the guard in about 125 ms, inside
+> the 0.25 s window, and holds its last frame. His own client plays it from the right-click for
+> exactly as long as the stance tell shows (the click's grace, then `parry_open`), so §G.35's
+> signals are unchanged. The **stance tell** loses its drawn crosswise blade: the baked sword now
+> does that job, and the steel glint stays. The parry flash is unchanged. While moving (§C.13
+> still holds: no root), the guard **overrides the walk for the whole body** and slides with him
+> for its quarter second. A baked sprite is one image per frame, so it cannot split the legs from
+> the arms. A cut thrown inside the stance plays its swing over the guard, and raising the guard
+> cuts a running swing short: the newest action shows. Teammates still see none of it (§G.38):
+> the guard is driven from `current_player` only, never `other_players`. Nothing else in this FS
+> changes; read §G.35 and §H with this note.
+
 ## Summary
 
 A fourth class, the **Mercenary** (server id `mercenary`): dextrous but still strong, a sword
