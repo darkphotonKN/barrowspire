@@ -11,7 +11,7 @@ import * as THREE from "three";
 import { materials } from "../materials.js";
 import { attach, createRig, ellipsoid, jointAt as J, mount, rigidTube } from "./rig.js";
 import { fabrics } from "./fabrics.js";
-import { pose, solveArm } from "./clips.js";
+import { MERC_ANIMATIONS, pose, solveArm } from "./clips.js";
 import {
   arms,
   bareFeet,
@@ -295,6 +295,28 @@ export function mercenary() {
     walk: { stride: 1.05, arms: [0.75, 0.45], lean: 0.07 },
     // the knight's cut, without a shield to hide behind: the free arm swings out for balance
     attackExtra: pose({ upperArmL: [0.28, 0.85, 0.06], foreArmL: [0.62, 0, 0] }),
+    // the parry (FS-MAMHR §G.35): the blade raised up and across before him, feet set square, a
+    // little lean back from the blow
+    guard: pose(
+      {
+        hips: [0, 0.12, 0],
+        spine: [-0.08, 0.08, 0],
+        chest: [-0.06, 0.12, 0],
+        neck: [0.06, -0.2, 0],
+        thighL: [-0.24, 0, 0.1],
+        shinL: [0.28, 0, 0],
+        footL: [-0.04, 0, 0],
+        thighR: [0.16, 0, -0.1],
+        shinR: [0.26, 0, 0],
+        footR: [-0.42, 0, 0],
+        upperArmR: [-0.81, -0.54, -0.03],
+        foreArmR: [-1.37, 0, 0],
+        handR: [-0.06, 1.01, -0.8],
+        upperArmL: [-0.4, 0, 0.2],
+        foreArmL: [-0.9, 0, 0],
+      },
+      { z: -0.01 },
+    ),
   };
   return { rig, style };
 }
@@ -468,7 +490,7 @@ export const CAST = [
   { sheet: "char_knight_base", group: "characters", fn: "knight", build: knight },
   { sheet: "char_archer_base", group: "characters", fn: "archer", build: archer },
   { sheet: "char_wizard_base", group: "characters", fn: "wizard", build: wizard },
-  { sheet: "char_mercenary_base", group: "characters", fn: "mercenary", build: mercenary },
+  { sheet: "char_mercenary_base", group: "characters", fn: "mercenary", build: mercenary, animations: MERC_ANIMATIONS },
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   { sheet: "creature_demon_base", group: "boss", fn: "demon", module: "demon", build: demon, animations: DEMON_ANIMATIONS },

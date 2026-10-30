@@ -47,15 +47,15 @@
     },
     "characters-2": {
       "image": "characters-2.png",
-      "width": 1984,
-      "height": 2780,
-      "sha256": "0db84f8406d3eee15b8ac57de3da177147f237e0b25dfeb588da99a6a8bb9fee"
+      "width": 1944,
+      "height": 2804,
+      "sha256": "1278fe235bcbb9d02667700e1100f3f1371cc40a1e5eea6cd1916cb6516c6efb"
     },
     "characters-3": {
       "image": "characters-3.png",
-      "width": 1944,
-      "height": 2524,
-      "sha256": "46e4bd7a02cf596e1112d41e68d7076d096b11cff7e619ee8231206eca91a6bf"
+      "width": 1984,
+      "height": 2780,
+      "sha256": "0db84f8406d3eee15b8ac57de3da177147f237e0b25dfeb588da99a6a8bb9fee"
     },
     "creatures-0": {
       "image": "creatures-0.png",
@@ -457,7 +457,7 @@
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "char_archer_base": {
-      "atlas": "characters-2",
+      "atlas": "characters-3",
       "frameWidth": 163,
       "frameHeight": 144,
       "anchor": {
@@ -2455,7 +2455,7 @@
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "char_mercenary_base": {
-      "atlas": "characters-3",
+      "atlas": "characters-2",
       "frameWidth": 147,
       "frameHeight": 138,
       "anchor": {
@@ -3444,6 +3444,156 @@
               {
                 "x": 300,
                 "y": 2382
+              }
+            ]
+          ]
+        },
+        "parry": {
+          "fps": 24,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 449,
+                "y": 2382
+              },
+              {
+                "x": 598,
+                "y": 2382
+              },
+              {
+                "x": 747,
+                "y": 2382
+              },
+              {
+                "x": 896,
+                "y": 2382
+              }
+            ],
+            [
+              {
+                "x": 1045,
+                "y": 2382
+              },
+              {
+                "x": 1194,
+                "y": 2382
+              },
+              {
+                "x": 1343,
+                "y": 2382
+              },
+              {
+                "x": 1492,
+                "y": 2382
+              }
+            ],
+            [
+              {
+                "x": 1641,
+                "y": 2382
+              },
+              {
+                "x": 1790,
+                "y": 2382
+              },
+              {
+                "x": 2,
+                "y": 2522
+              },
+              {
+                "x": 151,
+                "y": 2522
+              }
+            ],
+            [
+              {
+                "x": 300,
+                "y": 2522
+              },
+              {
+                "x": 449,
+                "y": 2522
+              },
+              {
+                "x": 598,
+                "y": 2522
+              },
+              {
+                "x": 747,
+                "y": 2522
+              }
+            ],
+            [
+              {
+                "x": 896,
+                "y": 2522
+              },
+              {
+                "x": 1045,
+                "y": 2522
+              },
+              {
+                "x": 1194,
+                "y": 2522
+              },
+              {
+                "x": 1343,
+                "y": 2522
+              }
+            ],
+            [
+              {
+                "x": 1492,
+                "y": 2522
+              },
+              {
+                "x": 1641,
+                "y": 2522
+              },
+              {
+                "x": 1790,
+                "y": 2522
+              },
+              {
+                "x": 2,
+                "y": 2662
+              }
+            ],
+            [
+              {
+                "x": 151,
+                "y": 2662
+              },
+              {
+                "x": 300,
+                "y": 2662
+              },
+              {
+                "x": 449,
+                "y": 2662
+              },
+              {
+                "x": 598,
+                "y": 2662
+              }
+            ],
+            [
+              {
+                "x": 747,
+                "y": 2662
+              },
+              {
+                "x": 896,
+                "y": 2662
+              },
+              {
+                "x": 1045,
+                "y": 2662
+              },
+              {
+                "x": 1194,
+                "y": 2662
               }
             ]
           ]
