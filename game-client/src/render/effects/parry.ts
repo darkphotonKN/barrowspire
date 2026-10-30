@@ -1,8 +1,9 @@
 /**
  * The Mercenary's parry, as its own client draws it (FS-MAMHR §G.35, §G.36): the **stance tell**
- * (the blade raised crosswise before the chest, a steel glint at its point) and the **parry
- * flash** (a short, bright burst of steel on steel). Both ride on the merc's own figure and
- * follow it, since the stance never roots the merc (§C.13).
+ * (a steel glint at his guard) and the **parry flash** (a short, bright burst of steel on steel).
+ * The guard itself is his own baked sword, raised by the parry clip, which plays for exactly as
+ * long as {@link ParryFx.stanceShown} (FS-MAMHR amendment, 2026-10-31). Both ride on the merc's
+ * own figure and follow it, since the stance never roots the merc (§C.13).
  *
  * Signals:
  * - The tell shows from the right-click that sends `parry` and holds for as long as the server
@@ -34,19 +35,16 @@ export const PARRY_TELL_GRACE_MS = 400;
 /** How long the flash shows: short, a spark rather than a glow. */
 export const PARRY_FLASH_MS = 180;
 
-/** Screen px above the merc's feet the blade is held at: chest height, the bow's (38) a touch lower. */
+/** Screen px above the merc's feet the guard is held at: chest height, the bow's (38) a touch lower. */
 export const BLADE_LIFT = 34;
 
-/** Over the merc's body (`standAt(…, 1)`) and legs (layer 2): the blade is held in front. */
+/** Over the merc's body (`standAt(…, 1)`) and legs (layer 2): the guard is held in front. */
 const OVER_FIGURE = 3;
 
 /** The flash grows a little as it fades: uniform, and never past 1.6 (FS-KYPQ9 §B.4). */
 const FLASH_SCALE = { from: 1, to: 1.35 };
 
-/** The blade, chest-centred: pommel low-left, point high-right, a short guard across it. */
-const BLADE = { from: { x: -12, y: 8 }, to: { x: 13, y: -10 } };
-const GUARD = { from: { x: -9, y: 1 }, to: { x: -3, y: 9 } };
-/** Where the glint sits on the blade, toward the point. */
+/** Where the glint sits, chest-centred: up and across, where the raised blade crosses him. */
 const GLINT = { x: 9, y: -7 };
 
 /** What the merc's own state says of the stance and its parries (FS-MAMHR req 28). */
@@ -78,15 +76,8 @@ export interface ParryScene {
   };
 }
 
-/** The blade raised crosswise, drawn about (0, 0): dull steel, a pale edge, a glint. */
+/** The glint on the raised steel, drawn about (0, 0); the blade is the baked one. */
 function drawTell(g: ParryGraphics): void {
-  const { from, to } = BLADE;
-  g.lineStyle(3, BARROW_HEX.slateLight, 1);
-  g.lineBetween(from.x, from.y, to.x, to.y);
-  g.lineStyle(1, BARROW_HEX.vellumDark, 1);
-  g.lineBetween(from.x + 1, from.y - 1, to.x, to.y - 1);
-  g.lineStyle(2, BARROW_HEX.brass, 1);
-  g.lineBetween(GUARD.from.x, GUARD.from.y, GUARD.to.x, GUARD.to.y);
   g.fillStyle(BARROW_HEX.vellum, 1);
   g.fillPoints(fourPointStar(GLINT, 4), true);
 }
@@ -120,7 +111,7 @@ export class ParryFx {
 
   constructor(private readonly scene: ParryScene) {}
 
-  /** Whether the stance tell is up. */
+  /** Whether the stance tell is up: the merc's guard clip plays for exactly as long. */
   get stanceShown(): boolean {
     return this.tell !== undefined;
   }

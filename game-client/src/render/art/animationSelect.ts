@@ -13,7 +13,11 @@ import { directionIndex } from "./manifest";
 
 /** The clips every character and creature sheet carries (FS-2325V §E.2). */
 export const CHARACTER_ANIMATIONS = ["idle", "walk", "attack", "death"] as const;
-export type CharacterAnimation = (typeof CHARACTER_ANIMATIONS)[number];
+/**
+ * Those, and the Mercenary's own guard (FS-MAMHR §G.35): the parry clip only his sheet carries,
+ * raised into and then held on its last frame.
+ */
+export type CharacterAnimation = (typeof CHARACTER_ANIMATIONS)[number] | "parry";
 
 /**
  * World px per second the walk clip covers at 1x: the stride the bake keyed, over one cycle at
@@ -43,6 +47,13 @@ export interface CharacterState {
    * turned to it, whatever motion is still being drawn. Attack and death play over it.
    */
   holding?: { x: number; y: number };
+  /**
+   * The Mercenary's parry stance is up (FS-MAMHR §G.35): he stands in his guard, the whole body,
+   * walking or not. The stance never roots him (§C.13), so a guard drawn while he moves slides with
+   * him for its quarter second rather than splitting legs from arms, which one baked sprite cannot.
+   * A swing started inside the stance plays over it; death over both.
+   */
+  guarding?: boolean;
 }
 
 export interface AnimationChoice {
@@ -54,9 +65,9 @@ export interface AnimationChoice {
   timeScale: number;
 }
 
-/** Dead over attacking over holding an aim over moving over idle. */
+/** Dead over attacking over guarding over holding an aim over moving over idle. */
 export function selectAnimation(state: CharacterState): AnimationChoice {
-  const { velocity, facing, attacking, dead, aim, holding } = state;
+  const { velocity, facing, attacking, dead, aim, holding, guarding } = state;
   const speed = Math.hypot(velocity.vx, velocity.vy);
   const moving = speed >= MOVING_SPEED;
 
@@ -72,6 +83,9 @@ export function selectAnimation(state: CharacterState): AnimationChoice {
   const walking = moving ? facingFrom(velocity.vx, velocity.vy, facing) : facing;
   if (attacking)
     return choose("attack", aim ? facingFrom(aim.x, aim.y, walking) : walking);
+
+  // not directional (§C.10): he guards whichever way he is going
+  if (guarding) return choose("parry", walking);
 
   if (holding) return choose("idle", facingFrom(holding.x, holding.y, facing));
 

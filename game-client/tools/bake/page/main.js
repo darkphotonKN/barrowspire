@@ -124,7 +124,7 @@ function bakeCharacterSheet(sheet) {
       ...spec,
       speed: anim === "walk" ? (style.speed ?? 1) : 0,
       settle: anim === "death",
-      calm: anim === "attack" ? 0.25 : 1,
+      calm: anim === "attack" || anim === "parry" ? 0.25 : 1,
     });
   }
   // A palette variant (a hub resident's) re-dresses the same rig and poses: its clips follow the

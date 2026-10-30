@@ -178,7 +178,11 @@ export function fieldCombatOnScene(
   lightMap: LightMap,
   hooks: {
     selfAnim():
-      | { attack(now: number, aim?: Point, holdMs?: number): void; holdAim(aim: Point | undefined): void }
+      | {
+          attack(now: number, aim?: Point, holdMs?: number): void;
+          holdAim(aim: Point | undefined): void;
+          guard(up: boolean, now: number): void;
+        }
       | undefined;
     selfAt(): Point | undefined;
     bodyOf(entityId: string): Tintable | undefined;
@@ -252,13 +256,15 @@ export function fieldCombatOnScene(
     },
   });
 
-  // each frame: the charge's dust and the kit's tells ride on the drawn body, and a hold follows
-  // the body and the cursor now (FS-MAMHR §C.13, FS-JTNPR req 10, 11)
+  // each frame: the charge's dust and the kit's tells ride on the drawn body, the merc's guard
+  // clip holds while his stance does, and a hold follows the body and the cursor now (FS-MAMHR
+  // §C.13, §G.35, FS-JTNPR req 10, 11). Before the scene's own update steps the clip
   const followSelf = () => {
     const at = hooks.selfAt();
     if (!at) return;
     charge?.follow(at);
     kit.follow(at, scene.time.now);
+    hooks.selfAnim()?.guard(kit.guarding, scene.time.now);
     combat.aimFrame(at);
   };
   scene.events.on("update", followSelf);

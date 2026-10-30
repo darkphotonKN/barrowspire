@@ -21,6 +21,16 @@ export const ANIMATIONS = {
 };
 
 /**
+ * The Mercenary's clips (FS-MAMHR §H): the four, and the parry, which raises into the guard fast
+ * enough to land inside the server's 0.25 s window (§C.11) and then holds its last frame for as
+ * long as the stance is up.
+ */
+export const MERC_ANIMATIONS = {
+  ...ANIMATIONS,
+  parry: { frames: 4, fps: 24, loop: false },
+};
+
+/**
  * Hub folk (FS-2325V §G.1) only idle and walk: they never fight or fall. Their idle is a shorter
  * loop, the breath of someone standing about, which keeps their sheets small.
  */
@@ -282,6 +292,33 @@ export const ATTACKS = {
   ].map((p) => add(STANCE, p)),
 };
 
+// --- parry ---------------------------------------------------------------------------------
+
+/** Where the raise has got to at each key frame: most of the way at once, then settling in. */
+const RAISE = [0.45, 0.8, 0.96, 1];
+
+/**
+ * From the carry (the idle's first frame) up into `style.guard`, the last frame the guard held.
+ * Both feet are set: the legs take the guard's own keys, never the walk's.
+ */
+export function parryClip(style, n) {
+  const from = idleCycle(style, 1)[0];
+  const to = add(style.guard);
+  const keys = new Set([...Object.keys(from.b), ...Object.keys(to.b)]);
+  const bodyKeys = new Set([...Object.keys(from.body), ...Object.keys(to.body)]);
+  return Array.from({ length: n }, (_, i) => {
+    const t = RAISE[Math.min(i, RAISE.length - 1)];
+    const p = pose();
+    for (const k of keys) {
+      const a = from.b[k] ?? ZERO;
+      const b = to.b[k] ?? ZERO;
+      p.b[k] = [0, 1, 2].map((j) => a[j] + (b[j] - a[j]) * t);
+    }
+    for (const k of bodyKeys) p.body[k] = (from.body[k] ?? 0) + ((to.body[k] ?? 0) - (from.body[k] ?? 0)) * t;
+    return p;
+  });
+}
+
 // --- death ---------------------------------------------------------------------------------
 
 /**
@@ -312,6 +349,7 @@ export function clipsFor(style, specs = ANIMATIONS) {
     walk: () => walkCycle(style),
     attack: () => ATTACKS[style.attack]().map((p) => add(p, style.attackExtra)),
     death: () => deathClip(style),
+    parry: () => parryClip(style, specs.parry.frames),
   };
   const own = style.clips ?? {};
   return Object.fromEntries(Object.keys(specs).map((anim) => [anim, own[anim] ? own[anim](specs[anim]) : make[anim]()]));

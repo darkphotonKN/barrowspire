@@ -85,6 +85,26 @@ describe("selectAnimation", () => {
       { animation: "idle", facing: "ne", direction: 7 },
     ],
     [
+      "guarding stands in the parry clip, keeping the facing (FS-MAMHR §G.35)",
+      { facing: "nw", guarding: true },
+      { animation: "parry", facing: "nw", direction: 5 },
+    ],
+    [
+      "guarding while walking holds the guard over the walk, turned the way it goes (§C.13)",
+      { guarding: true, velocity: { vx: 0, vy: 200 } },
+      { animation: "parry", facing: "s", direction: 2 },
+    ],
+    [
+      "a swing started inside the stance plays over the guard",
+      { guarding: true, attacking: true, aim: { x: 50, y: 0 } },
+      { animation: "attack", facing: "e", direction: 0 },
+    ],
+    [
+      "dead wins over a guard",
+      { dead: true, guarding: true, facing: "w" },
+      { animation: "death", facing: "w", direction: 4 },
+    ],
+    [
       "dead plays death and never turns",
       { dead: true, facing: "w", velocity: { vx: 200, vy: 0 } },
       { animation: "death", facing: "w", direction: 4 },
@@ -128,6 +148,7 @@ describe("selectAnimation", () => {
     ["idle", {}],
     ["attack", { attacking: true }],
     ["death", { dead: true }],
+    ["parry", { guarding: true, velocity: { vx: 200, vy: 0 } }],
   ])("should play %s at its authored rate", (_name, fields) => {
     expect(selectAnimation(state(fields)).timeScale).toBe(1);
   });
@@ -169,6 +190,17 @@ describe("the shipped character sheets", () => {
       expect(sheet.animations.death.loop).toBe(false);
     },
   );
+
+  it("should give the mercenary alone the parry clip: raised once, its last frame held (FS-MAMHR §G.35)", () => {
+    const merc = manifest.sheets[characterSheet("mercenary")];
+    expect(merc.animations.parry?.loop).toBe(false);
+    expect(merc.animations.parry?.frames).toHaveLength(8);
+    // raised inside the server's 0.25 s window (§C.11)
+    const { frames, fps } = merc.animations.parry;
+    expect(((frames[0].length - 1) / fps) * 1000).toBeLessThan(250);
+    for (const cls of ["warrior", "mage", "archer"])
+      expect(manifest.sheets[characterSheet(cls)].animations.parry, cls).toBeUndefined();
+  });
 });
 
 // keeps the table honest: every facing the selector can return has a frame list

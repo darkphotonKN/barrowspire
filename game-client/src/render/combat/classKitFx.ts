@@ -26,6 +26,14 @@ export class ClassKitFx {
 
   constructor(private readonly scene: Phaser.Scene) {}
 
+  /**
+   * Whether the merc's own parry stance is up, from the click's grace and then the server's word
+   * (FS-MAMHR §G.35): the scene holds his guard clip for exactly as long.
+   */
+  get guarding(): boolean {
+    return this.parry?.stanceShown ?? false;
+  }
+
   playCut(from: Point, toward: Point): void {
     this.cut ??= new CutFx(this.scene);
     this.cut.play(from, toward);

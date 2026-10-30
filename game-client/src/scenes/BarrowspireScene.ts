@@ -4421,6 +4421,8 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.player && this.playerPos && this.playerAnim?.baked) {
       const dead = isDead(this.lastGameState?.current_player);
       if (!dead) this.deathDust.alive(this.player);
+      // the merc's guard clip holds while his stance does (FS-MAMHR §G.35)
+      this.playerAnim.guard(this.kit.guarding, this.time.now);
       this.playerAnim.show(this.player, this.playerAnim.step(this.playerPos, time, delta, dead));
     }
 

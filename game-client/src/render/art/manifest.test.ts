@@ -1023,6 +1023,9 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       "creature_ghost_base",
     ];
 
+    /** Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35). */
+    const OWN_CLIPS: Record<string, string[]> = { char_mercenary_base: ["parry"] };
+
     it.each(CAST)("%s has 8-way idle, walk, attack and death", (name) => {
       const sheet = baked.sheets[name];
       expect(sheet, name).toBeDefined();
@@ -1032,6 +1035,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         "walk",
         "attack",
         "death",
+        ...(OWN_CLIPS[name] ?? []),
       ]);
       for (const anim of Object.values(sheet.animations) as {
         frames: unknown[][];
