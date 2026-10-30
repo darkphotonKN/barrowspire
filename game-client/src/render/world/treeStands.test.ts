@@ -73,6 +73,57 @@ describe("planTreeStands (FS-3QHQZ §Requirements 23–24)", () => {
     expect(edge).toBeGreaterThan(trees.length - edge);
   });
 
+  it("should plant every trail-facing cell of the 3 120 x 2 000 Forest, past the cap, so no wall blocks on bare ground (FS-3QHQZ §Requirements 23)", () => {
+    // a cell is trail-facing when open ground lies one cell from its centre, straight or diagonal
+    const open = (p: { x: number; y: number }) =>
+      p.x >= 0 &&
+      p.y >= 0 &&
+      p.x < FOREST_SIZE.width &&
+      p.y < FOREST_SIZE.height &&
+      !FOREST_WALLS.some(
+        (w) =>
+          p.x >= w.x &&
+          p.x < w.x + w.width &&
+          p.y >= w.y &&
+          p.y < w.y + w.height,
+      );
+    const bare: string[] = [];
+    let facing = 0;
+    for (const [i, wall] of FOREST_WALLS.entries()) {
+      const cols = Math.round(wall.width / STAND_CELL);
+      const rows = Math.round(wall.height / STAND_CELL);
+      const w = wall.width / cols;
+      const h = wall.height / rows;
+      for (let r = 0; r < rows; r++)
+        for (let c = 0; c < cols; c++) {
+          const cell = { x: wall.x + c * w, y: wall.y + r * h };
+          const centre = { x: cell.x + w / 2, y: cell.y + h / 2 };
+          const faces = [-1, 0, 1].some((dx) =>
+            [-1, 0, 1].some(
+              (dy) =>
+                (dx || dy) &&
+                open({ x: centre.x + dx * w, y: centre.y + dy * h }),
+            ),
+          );
+          if (!faces) continue;
+          facing++;
+          const planted = trees.some(
+            (t) =>
+              t.wall === i &&
+              t.edge &&
+              t.at.x >= cell.x &&
+              t.at.x < cell.x + w &&
+              t.at.y >= cell.y &&
+              t.at.y < cell.y + h,
+          );
+          if (!planted) bare.push(`wall ${i} cell (${cell.x}, ${cell.y})`);
+        }
+    }
+    expect(facing).toBeGreaterThan(200);
+    expect(bare).toEqual([]);
+    expect(trees.length).toBeLessThanOrEqual(TREE_CAP);
+  });
+
   it("should stand only bare trees in front of the trail, their crowns over it on screen", () => {
     const bare = (ts: typeof trees) =>
       ts.filter((t) => LOOK.dead.includes(t.sheet)).length / ts.length;

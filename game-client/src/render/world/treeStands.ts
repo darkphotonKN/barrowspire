@@ -7,8 +7,8 @@
  * About one tree per 80 px cell of a stand, jittered within the cell. A cell facing open ground
  * is a stand's **edge**: its tree stands at the stand's very edge, so the trail reads clearly. The
  * interior is thinner, a tree on every other cell, wandering, the litter showing between trunks.
- * Past the forest's cap, each stand keeps its share: edge trees first, then an evenly thinned
- * interior, never more.
+ * Past the forest's cap, every edge cell of every stand keeps its tree first, so nothing blocks the
+ * trail on bare ground; the interiors share what is left by area, each thinned evenly.
  *
  * Live and dead trees run about two to one, but not evenly: a tree on a stand's north or west edge
  * stands in front of the trail on screen, its crown over the ground the player walks, so it is
@@ -145,9 +145,29 @@ function footOf(cell: Cell, h: number): Point {
 }
 
 /**
+ * `budget` shared among lists of `sizes`, each its `floors` and the rest by size, never past its
+ * size; every list whole when they all fit.
+ */
+function apportion(
+  sizes: readonly number[],
+  floors: readonly number[],
+  budget: number,
+): number[] {
+  const total = sizes.reduce((n, s) => n + s, 0);
+  if (total <= budget) return [...sizes];
+  const floor = floors.reduce((n, f) => n + f, 0);
+  const rest = Math.max(0, budget - floor);
+  const spare = Math.max(1, total - floor);
+  return sizes.map(
+    (s, i) => floors[i] + Math.floor((rest * (s - floors[i])) / spare),
+  );
+}
+
+/**
  * Every wall rect's stand, from the broadcast's walls in order. Under the cap, a tree on every
- * edge cell and every other interior cell; past it, each stand keeps one tree, so no wall stands
- * unseen, and its share of the rest of the cap by area, its edge before its interior.
+ * edge cell and every other interior cell. Past it, every edge cell first, so what blocks the
+ * trail is always drawn; then the interiors share the rest of the cap by area, a stand with no
+ * edge keeping one tree, so no wall stands unseen.
  */
 export function planTreeStands(
   walls: readonly Rect[],
@@ -156,24 +176,29 @@ export function planTreeStands(
   seed: number,
 ): StandTree[] {
   const stands = walls.map((wall) => cellsOf(wall, walls, size));
-  const total = stands.reduce((n, cells) => n + cells.length, 0);
+  const edges = stands.map((cells) => cells.filter((c) => c.open));
+  const interiors = stands.map((cells) =>
+    cells.filter((c) => !c.open && c.even),
+  );
   // the server's wall budget keeps the rects well under the cap, so one tree each always fits
-  const rest = Math.max(0, TREE_CAP - stands.length);
+  const unseen = edges.filter((e) => e.length === 0).length;
+  const edgeShares = apportion(
+    edges.map((e) => e.length),
+    edges.map((e) => Math.min(1, e.length)),
+    TREE_CAP - unseen,
+  );
+  const planted = edgeShares.reduce((n, s) => n + s, 0);
+  const interiorShares = apportion(
+    interiors.map((c) => c.length),
+    interiors.map((c, i) => (edgeShares[i] === 0 ? Math.min(1, c.length) : 0)),
+    TREE_CAP - planted,
+  );
   const trees: StandTree[] = [];
-  stands.forEach((cells, wall) => {
-    const share =
-      total <= TREE_CAP
-        ? cells.length
-        : 1 +
-          Math.floor(
-            (rest * (cells.length - 1)) / Math.max(1, total - stands.length),
-          );
-    const edge = cells.filter((c) => c.open);
-    const interior = cells.filter((c) => !c.open && c.even);
-    const kept =
-      edge.length >= share
-        ? evenly(edge, share)
-        : [...edge, ...evenly(interior, share - edge.length)];
+  stands.forEach((_, wall) => {
+    const kept = [
+      ...evenly(edges[wall], edgeShares[wall]),
+      ...evenly(interiors[wall], interiorShares[wall]),
+    ];
     for (const cell of kept) {
       const h = tileHash(
         Math.round(cell.rect.x + cell.rect.width / 2),
