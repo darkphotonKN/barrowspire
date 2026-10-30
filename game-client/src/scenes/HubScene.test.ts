@@ -56,10 +56,21 @@ vi.mock("phaser", async () => {
   return { ...phaser, default: phaser };
 });
 
+// The interiors' drawing is watched through these, called through to the real helpers: which walls
+// go to the wall pieces, which props stand where, and which footprints get a placeholder block.
+vi.mock("@/render/world", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/render/world")>();
+  return { ...real, addWalls: vi.fn(real.addWalls), addProp: vi.fn(real.addProp) };
+});
+vi.mock("@/render/iso", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/render/iso")>();
+  return { ...real, addUprightBlock: vi.fn(real.addUprightBlock) };
+});
+
 const { HubScene, delveChoices, hubMenuChoices, WARDEN_TALE } = await import("./HubScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
-const { toCss } = await import("@/utils/canvasPalette");
+const { palette, toCss } = await import("@/utils/canvasPalette");
 const { BARROW_HEX } = await import("@/utils/theme");
 const { MARKER_DEPTH } = await import("@/render/markers");
 
@@ -1743,5 +1754,244 @@ describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)"
     const { hub } = hubOnStage();
     hub.release();
     expect(hub.gear).toBeUndefined();
+  });
+});
+
+const { readFileSync } = await import("node:fs");
+const { ArtLibrary } = await import("@/render/art/library");
+const world = await import("@/render/world");
+const iso = await import("@/render/iso");
+
+describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () => {
+  const { WALL_HEIGHT } = iso;
+
+  const quiet = { warn: () => {} };
+  const BAKED = new ArtLibrary(
+    JSON.parse(readFileSync(new URL("../../public/art/manifest.json", import.meta.url), "utf8")),
+    quiet,
+  );
+  const BARE = ArtLibrary.empty(quiet);
+
+  /** The town as hub_map.go walls it (FS-B0H2D R1–R3, R9, R12): the Inn, the store, the smithy. */
+  const BUILDINGS: [string, number, number, number, number][] = [
+    ["inn", 470, 110, 400, 300],
+    ["store", 1130, 150, 300, 240],
+    ["smithy", 110, 50, 300, 240],
+  ];
+  const FURNISHINGS: [string, number, number, number, number][] = [
+    ["inn", 715, 190, 25, 140],
+    ["inn", 540, 185, 30, 40],
+    ["inn", 540, 285, 30, 40],
+    ["inn", 620, 240, 45, 40],
+    ["smithy", 225, 120, 70, 35],
+  ];
+  const wall = (id: string, house: string, x: number, y: number, width: number, height: number) => ({
+    entity_id: id,
+    house_id: house,
+    position: { x, y },
+    width,
+    height,
+  });
+  const BUILDING_WALLS = BUILDINGS.flatMap(([id, x, y, w, h]) => {
+    const side = (w - 50) / 2;
+    return [
+      wall(`${id}-n`, id, x, y, w, 20),
+      wall(`${id}-w`, id, x, y, 20, h),
+      wall(`${id}-e`, id, x + w - 20, y, 20, h),
+      wall(`${id}-sw`, id, x, y + h - 20, side, 20),
+      wall(`${id}-se`, id, x + side + 50, y + h - 20, side, 20),
+    ];
+  });
+  const FURNISHING_WALLS = FURNISHINGS.map(([house, x, y, w, h], i) => wall(`f${i}`, house, x, y, w, h));
+  const TOWN = [...BUILDING_WALLS, ...FURNISHING_WALLS];
+
+  const IN_INN = { x: 690, y: 370 };
+  const IN_STORE = { x: 1280, y: 330 };
+  const IN_SMITHY = { x: 260, y: 230 };
+  const OUTDOORS = { x: 1000, y: 800 };
+
+  interface InteriorHub {
+    art: unknown;
+    lightMap?: { add: ReturnType<typeof vi.fn> };
+    selfEntityID: string | null;
+    views: Map<string, unknown>;
+    npcs: Map<string, { sprite: Made; name: Made; sigil?: Made; facing: string; pos: { x: number; y: number } }>;
+    interiors: { house: { id: string }; parts: Made[]; lights: { source: { intensity: number } }[] }[];
+    renderStructures(walls: unknown[]): void;
+    renderNPCs(npcs: unknown[]): void;
+    hideRoofOverhead(): void;
+    hideWhoIsIndoors(): void;
+  }
+
+  /** The town drawn on the recording stage, with `art`, and the player standing at `at`. */
+  function town(art: InstanceType<typeof ArtLibrary>) {
+    vi.mocked(world.addWalls).mockClear();
+    vi.mocked(world.addProp).mockClear();
+    vi.mocked(iso.addUprightBlock).mockClear();
+    const { hub: raw, stage } = hubOnStage();
+    const hub = raw as unknown as InteriorHub;
+    hub.art = art;
+    hub.lightMap = { add: vi.fn() };
+    // the placeholder villagers' textures, as though already made
+    (hub as unknown as Record<string, unknown>).textures = { exists: () => true, get: (key: string) => ({ key }) };
+    hub.renderStructures(TOWN);
+    const npc = (entity: string, name: string, fn: string, at: { x: number; y: number }) => ({
+      entity_id: entity,
+      name,
+      function: fn,
+      appearance: "rust_trousers",
+      position: at,
+    });
+    hub.renderNPCs([
+      npc("drover", "Drover", "", { x: 590, y: 220 }),
+      npc("smith", "Smith", "", { x: 260, y: 175 }),
+      npc("qm", "Quartermaster", "storekeeper", { x: 1280, y: 270 }),
+      npc("cottar", "Cottar", "", { x: 600, y: 600 }),
+    ]);
+    const add = stage.add as Record<string, (...args: unknown[]) => Made>;
+    const player = (pos: { x: number; y: number }) => ({
+      pos,
+      sprite: add.container(0, 0, []),
+      name: add.text(0, 0, ""),
+      legs: add.graphics(),
+    });
+    const self = player({ ...OUTDOORS });
+    const rival = player({ ...IN_INN });
+    hub.selfEntityID = "me";
+    hub.views = new Map<string, unknown>([
+      ["me", self],
+      ["rival", rival],
+    ]);
+    /** Puts the player at `at` and runs the frame's roof and indoor tests. */
+    const standIn = (at: { x: number; y: number }) => {
+      self.pos.x = at.x;
+      self.pos.y = at.y;
+      hub.hideRoofOverhead();
+      hub.hideWhoIsIndoors();
+    };
+    const room = (id: string) => hub.interiors.find((r) => r.house.id === id)!;
+    standIn(OUTDOORS);
+    return { hub, stage, self, rival, standIn, room };
+  }
+
+  const sameRect = (args: unknown[], [, x, y, w, h]: [string, number, number, number, number]) =>
+    args[1] === x && args[2] === y && args[3] === w && args[4] === h;
+
+  it("should hand the wall pieces the building walls only, never a furnishing", () => {
+    town(BAKED);
+    const drawn = vi.mocked(world.addWalls).mock.calls[0][2] as readonly { entity_id: string }[];
+    expect(drawn.map((w) => w.entity_id)).toEqual(BUILDING_WALLS.map((w) => w.entity_id));
+  });
+
+  it("should stand each furnishing's prop on the centre of its rect", () => {
+    town(BAKED);
+    const props = vi.mocked(world.addProp).mock.calls.map(([, , sheet, at, q]) => ({ sheet, at, animation: q?.animation }));
+    expect(props).toEqual(
+      expect.arrayContaining([
+        { sheet: "counter", at: { x: 727.5, y: 260 }, animation: "y" },
+        { sheet: "inn_table", at: { x: 555, y: 205 }, animation: "narrow" },
+        { sheet: "inn_table", at: { x: 555, y: 305 }, animation: "narrow" },
+        { sheet: "inn_table", at: { x: 642.5, y: 260 }, animation: "wide" },
+        { sheet: "forge", at: { x: 260, y: 137.5 }, animation: undefined },
+      ]),
+    );
+    expect(props.map((p) => p.sheet)).toEqual(expect.arrayContaining(["stool", "inn_hearth", "shelf", "anvil"]));
+  });
+
+  it("should draw a low placeholder block on a furnishing the mirror does not know", () => {
+    vi.mocked(iso.addUprightBlock).mockClear();
+    const { hub } = hubOnStage() as unknown as { hub: InteriorHub };
+    hub.art = BAKED;
+    hub.renderStructures([...TOWN, wall("odd", "inn", 520, 350, 30, 20)]);
+    const calls = vi.mocked(iso.addUprightBlock).mock.calls;
+    expect(calls.filter((c) => sameRect(c, ["inn", 520, 350, 30, 20]))).toHaveLength(1);
+    expect(calls.find((c) => sameRect(c, ["inn", 520, 350, 30, 20]))?.[6]).toBeLessThan(WALL_HEIGHT);
+  });
+
+  it("should draw every furnishing as a low placeholder block, never a wall, without art", () => {
+    town(BARE);
+    const calls = vi.mocked(iso.addUprightBlock).mock.calls;
+    for (const f of FURNISHINGS) {
+      const mine = calls.filter((c) => sameRect(c, f));
+      expect(mine, `${f}`).toHaveLength(1);
+      expect(mine[0][6]).toBeLessThan(WALL_HEIGHT);
+    }
+    for (const w of BUILDING_WALLS)
+      expect(calls.some((c) => sameRect(c, ["", w.position.x, w.position.y, w.width, w.height]) && c[6] === undefined)).toBe(true);
+  });
+
+  it("should hide every room, and whoever is in one, while its roof is on", () => {
+    const { hub, rival, room } = town(BAKED);
+    for (const id of ["inn", "store", "smithy"]) {
+      expect(room(id).parts.length, id).toBeGreaterThan(0);
+      expect(room(id).parts.every((p) => !p.visible), id).toBe(true);
+    }
+    const drover = hub.npcs.get("drover")!;
+    expect([drover.sprite.visible, drover.name.visible]).toEqual([false, false]);
+    expect([rival.sprite.visible, rival.name.visible, rival.legs.visible]).toEqual([false, false, false]);
+    expect(hub.npcs.get("cottar")!.sprite.visible).toBe(true);
+  });
+
+  it("should keep the Quartermaster's plate and sigil in sight over his roof, his body hidden (R21)", () => {
+    const { hub } = town(BAKED);
+    const qm = hub.npcs.get("qm")!;
+    expect(qm.sprite.visible).toBe(false);
+    expect(qm.name.visible).toBe(true);
+    expect(qm.sigil?.visible).toBe(true);
+  });
+
+  it("should show the room and who is in it when the player walks in, and hide them again on the way out", () => {
+    const { hub, rival, room, standIn } = town(BAKED);
+    standIn(IN_INN);
+    expect(room("inn").parts.every((p) => p.visible)).toBe(true);
+    expect(room("smithy").parts.every((p) => !p.visible)).toBe(true);
+    expect(hub.npcs.get("drover")!.sprite.visible).toBe(true);
+    expect(hub.npcs.get("drover")!.name.visible).toBe(true);
+    expect([rival.sprite.visible, rival.name.visible]).toEqual([true, true]);
+    // the smith is in another house, still under its roof
+    expect(hub.npcs.get("smith")!.sprite.visible).toBe(false);
+
+    standIn(IN_STORE);
+    expect(hub.npcs.get("qm")!.sprite.visible).toBe(true);
+    expect(room("inn").parts.every((p) => !p.visible)).toBe(true);
+
+    standIn(OUTDOORS);
+    expect(room("store").parts.every((p) => !p.visible)).toBe(true);
+    expect(rival.sprite.visible).toBe(false);
+  });
+
+  it("should light the hearth and the forge only while their roof is lifted (R22)", () => {
+    const { hub, room, standIn } = town(BAKED);
+    const forge = room("smithy").lights;
+    const hearth = room("inn").lights;
+    expect(forge).toHaveLength(1);
+    expect(hearth).toHaveLength(1);
+    expect(forge[0].source.intensity).toBe(0);
+    const gate = hub.lightMap!.add.mock.calls.find(([source]) => source === forge[0].source)?.[1] as () => boolean;
+    expect(gate()).toBe(false);
+
+    standIn(IN_SMITHY);
+    expect(forge[0].source.intensity).toBeGreaterThan(0);
+    expect(hearth[0].source.intensity).toBe(0);
+    expect(gate()).toBe(true);
+
+    standIn(OUTDOORS);
+    expect(forge[0].source.intensity).toBe(0);
+    expect(gate()).toBe(false);
+  });
+
+  it("should face the fixed residents their work, and everyone else the viewer (R25)", () => {
+    const { hub } = town(BAKED);
+    expect(hub.npcs.get("smith")!.facing).toBe("n");
+    expect(hub.npcs.get("drover")!.facing).toBe("w");
+    expect(hub.npcs.get("cottar")!.facing).toBe("se");
+  });
+
+  it("should give the fixed residents the ambient plate and no sigil (R21)", () => {
+    const { hub } = town(BAKED);
+    for (const id of ["drover", "smith"]) {
+      expect(hub.npcs.get(id)!.sigil).toBeUndefined();
+      expect(hub.npcs.get(id)!.name.args[3]).toMatchObject({ color: toCss(palette.markerHub) });
+    }
   });
 });

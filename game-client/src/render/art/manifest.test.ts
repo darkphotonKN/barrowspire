@@ -930,10 +930,11 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     const sheet = (name: string): Sheet => baked.sheets[name];
 
     // sheet → its authoring function in tools/bake/page/models/interior.js, and its animations
-    // with their frame counts (the counter runs along either world axis; stools and shelves
-    // carry variants, picked by index)
+    // with their frame counts (the counter runs along either world axis; the Inn's table comes
+    // in its two server rects; stools and shelves carry variants, picked by index)
     const INTERIOR: [string, string, Record<string, number>][] = [
       ["counter", "counter", { x: 1, y: 1 }],
+      ["inn_table", "innTable", { narrow: 1, wide: 1 }],
       ["stool", "stool", { variants: 2 }],
       ["inn_hearth", "innHearth", { default: 1 }],
       ["shelf", "shelf", { variants: 2 }],
@@ -985,8 +986,9 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         } else expect(sheet(name).light, name).toBeUndefined();
     });
 
-    it("reuses the table, crate and barrel rather than baking new ones", () => {
+    it("reuses the crate and barrel, and bakes the Inn's tables to their rects beside the old table", () => {
       expect(sheet("table").atlas).toMatch(/^props-\d+$/);
+      expect(sheet("inn_table").atlas).toMatch(/^interior-\d+$/);
       expect(sheet("barrel").atlas).toMatch(/^props-\d+$/);
       expect(sheet("crate").atlas).toMatch(/^town-\d+$/);
     });
