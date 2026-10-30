@@ -73,6 +73,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Apply attack damage in a combat system rather than inline → FS-77AB6
 - [ ] Item pickup
 - [ ] Equip and unequip
+- [ ] Bag capacity limit → FS-HRH2J
 - [x] Container loot drops from the template pool → FS-none
 - [ ] Rarity-rolled loot with themed names and type-flavoured stats → FS-F8T3H
 - [ ] Co-op runs without player-versus-player damage → FS-77AB6

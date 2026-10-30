@@ -108,7 +108,10 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   broadcast. Talking to one opens that function. The established pattern for reaching anything
   in the hub; expect more of them.
   - **Delve NPC** — opens the matchmaking queue.
-  - **Storekeeper NPC** — opens the loadout.
+  - **Storekeeper NPC** — the Quartermaster. Has a line and opens nothing since FS-HRH2J: gear
+    and the bag open from the gear overlay anywhere, not from an NPC. The function id
+    (`NPCFunctionStorekeeper`, `storekeeper`) keeps its name; whether he becomes the stash keeper
+    is FS-VPD8Y's call.
 - **Ambient NPC** — a wandering resident with no function attached, there to make the place feel
   inhabited. Server-authoritative and broadcast per tick, so every player sees one in the same
   position. Not decoration in the technical sense: it costs broadcast and server-side collision.
@@ -167,6 +170,25 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Killer-first window** — the 30s after a field kill during which only the killer may take the
   dropped pile; after it, anyone may. Kill credit decides who rolls the loot; the window decides
   who may pick it up.
+
+### Carried items (FS-HRH2J)
+
+- **Bag** — the ordered list of items a player's body carries but does not wear: the body's
+  `ItemIDListComponent.ItemIDs`. Holds at most **bag capacity** items. New items always go on
+  the end; nothing reorders it. In code it is still `satchel` / `itemIDList`; say **bag** in
+  prose, specs and new names. **Avoid "satchel"**: game-client uses it for the container view
+  (a chest's or pile's contents), which is not the bag. Avoid "inventory" too: that is the wire
+  field (`inventory`) and items-service's word for everything an account owns.
+- **Bag capacity** — the most items a bag holds: 30 (`BagCapacity`). Enforced on every move that
+  grows the bag inside a run or a field world: a pickup into a full bag, and an unequip into a
+  full bag, are refused and nothing moves (`ErrBagFull`). An equip that swaps out what a slot
+  held is net-zero and allowed at full. Not enforced in the HUB world, whose gear screen reads
+  items-service over REST rather than a body's bag.
+- **Worn gear** — what a body has in its equipment slots (`EquipmentComponent`). Never counts
+  toward bag capacity.
+- **Not the bag:** a **container**'s item list (a chest or drop pile) is the same component on a
+  different entity and has no cap here; the **stash** (FS-VPD8Y) is account storage outside any
+  world.
 
 ### The message hub (the other `hub`)
 

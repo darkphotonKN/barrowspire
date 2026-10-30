@@ -65,6 +65,8 @@ server state and sends intents. ✅
 
 - [ ] Character level and experience display → FS-BDA7X
 - [x] Mercenary class → FS-MAMHR
+- [ ] Gear and bag overlay → FS-HRH2J
+- [ ] Character stats overlay → FS-HRH2J
 
 ### Billing
 
@@ -98,11 +100,12 @@ server state and sends intents. ✅
 - [ ] Hub scene → FS-29KSH
 - [ ] Move between hub and run → FS-29KSH
 - [ ] Delve entry from the hub → FS-29KSH
-- [ ] Loadout access from the hub → FS-29KSH
+- [ ] ~Loadout access from the hub~ → superseded by FS-HRH2J
 - [x] Function NPC markers → FS-MRZH7
 - [ ] Follow a handoff to another server → FS-K2HKP
 - [x] Switch character from the hub → FS-G4VMQ
 - [x] Leave the queue from the hub → FS-G4VMQ
+- [ ] Town stash → FS-VPD8Y
 - [x] Solo delve entry from the hub → FS-NSV3D
 - [x] Walk to a destination gate in the hub → FS-0XMCP
 - [x] The Spire's entrance at the back of the hub → FS-0XMCP
