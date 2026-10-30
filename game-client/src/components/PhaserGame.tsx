@@ -13,7 +13,6 @@ import { FieldScene } from "@/scenes/FieldScene";
 import { WORLD_SCENES, sceneFor } from "./worldRouting";
 import { WorldEnteredPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
-import { LoadoutScene } from "@/scenes/LoadoutScene";
 import { bootInProgress } from "./bootGate";
 
 export default function PhaserGame() {
@@ -47,7 +46,7 @@ export default function PhaserGame() {
           debug: false,
         },
       },
-      scene: [BootScene, PreloadScene, MainMenuScene, CharacterCreationScene, LoadoutScene, HubScene, BarrowspireScene, FieldScene],
+      scene: [BootScene, PreloadScene, MainMenuScene, CharacterCreationScene, HubScene, BarrowspireScene, FieldScene],
     };
 
     const game = new Phaser.Game(config);

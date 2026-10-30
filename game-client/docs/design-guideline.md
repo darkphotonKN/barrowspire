@@ -202,7 +202,7 @@ the test above, because most of those things cannot be acted on.
   brutes may also be living animals (the boar first). Dark palette; **glowing eyes as the
   readable accent.** Full rules under *Enemy design language* below.
 - **Hub folk and menus use the same cast.** Villagers, function NPCs, and every character shown
-  in a menu (the roster, character creation, the loadout) come from baked sheets on the same
+  in a menu (the roster, character creation) come from baked sheets on the same
   rig as the players, never from a separate illustration or the old pixel generators. What a
   player picks in a menu is exactly what walks in the world.
 - **The owner approves a contact sheet** (every class and creature x 8 directions x each
@@ -374,8 +374,8 @@ Where the bound and the message conflict — an end-of-run heading long enough t
 
 ## UI Chrome (align to the pre-rendered world)
 
-- **The canvas menus wear the web UI's Bone & Soot.** The loading screen, the main menu, character creation and the
-  loadout screen (`src/ui/menuChrome.ts`) are the gate into the game, so they match the site
+- **The canvas menus wear the web UI's Bone & Soot.** The loading screen, the main menu and character creation
+  (`src/ui/menuChrome.ts`) are the gate into the game, so they match the site
   rather than the barrow: soot ground with dust and a vignette, grey-stone panels with a 1px
   iron hairline and a carved edge, bone-grey text, iron section titles, ash grey for cancel and
   subtitles, and bone as the one torch per view (the primary button, the page title, the active
@@ -386,13 +386,9 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   light behind it. It has no tagline under it. Phaser still never reads the DOM's UI table
   (ADR-0025): the values come from the `menu*` entries of `BARROW` / `BARROW_HEX`, which mirror
   `globals.css` `:root` and must agree with it, through `palette.menu`. The figures' plinths are
-  slate stone with iron rims under a bone pool. The loadout's equipment and inventory panels are
-  the run's `EquipmentPanel` given the menu theme (`MENU_EQUIPMENT_THEME`): stone ground, iron
-  border and headings, bone-grey item names, worn slots tinted iron with the rarity edge as the
-  only colour. **What stays on the game palette:** the baked figures themselves, the HUD pieces a
-  menu reuses (the roster's XP bar, the HP/MP stat colours, the item tip), and everything past
-  the menus: hub, run, HUD and overlays. The run's `EquipmentPanel` keeps its default game
-  theme.
+  slate stone with iron rims under a bone pool. **What stays on the game palette:** the baked
+  figures themselves, the HUD pieces a menu reuses (the roster's XP bar, the HP/MP stat colours,
+  the item tip), and everything past the menus: hub, run, HUD and overlays.
 - **Panels in the world (HUD, popups over the hub and the run):** dark vellum and carved-stone
   panels with 1px brass borders, in the palette above. Smooth fills and soft edges match the
   linearly filtered world; no pixel-grid frames.
@@ -430,7 +426,7 @@ not required to agree
 Going from the menus into a delve is a deliberate change of register: the bone-and-soot web UI is
 the gate, and the torch-lit barrow is the place. UI drawn over the canvas as DOM (the `/game`
 page's chrome, the header) belongs to the UI palette. The Phaser HUD inside the canvas belongs to
-the game palette. The canvas menus (main menu, character creation, loadout) are part of the gate,
+the game palette. The canvas menus (main menu, character creation) are part of the gate,
 so they take the Bone & Soot values through game-palette mirror tokens (Part I "UI Chrome").
 
 **Direction: Bone & Soot.** *Modern web design, medieval aesthetics.* A neutral soot base,

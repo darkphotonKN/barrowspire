@@ -194,9 +194,8 @@ export class MainMenuScene extends Phaser.Scene {
 
     this.drawDelveButton("disabled");
 
-    // The loadout moved into the hub: the Quartermaster keeps it now, and gearing
-    // up happens where the player is rather than back in a menu.
-    // FS-29KSH §Requirements 30.
+    // Gearing up happens where the player is rather than back in a menu: the gear and bag
+    // overlay opens with I or B in any world with a body (FS-HRH2J; FS-29KSH §Requirements 30).
 
     // Connection Status indicator
     this.connectionStatusText = this.add.text(

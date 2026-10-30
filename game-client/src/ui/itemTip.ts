@@ -1,6 +1,6 @@
 /**
  * The item tip every canvas item view shows on hover (FS-4R9M9 R59): the satchel (container
- * view), the equipment panel's slots and rows, and so the loadout. It draws an {@link ItemView}
+ * view) and the gear and bag overlay's slots and cells, in every world. It draws an {@link ItemView}
  * and decides nothing: the words and the "too high" mark come from the presenter.
  *
  * Rarity colour follows the guideline's rarity ramp: only on the badge and the tip's accent

@@ -168,7 +168,7 @@ interface Made {
   height: number;
   children: Made[];
   /** The pointer handlers it was given, by event, as Phaser would call them. */
-  handlers: Record<string, () => void>;
+  handlers: Record<string, (pointer?: { x: number; y: number }) => void>;
 }
 
 /**
@@ -254,6 +254,36 @@ function recordingStage() {
 }
 
 const key = (): FakeKey => ({ isDown: false, justDown: false });
+
+/** Where a press on the queue's Leave lands, as Phaser hands its pointer to the handler. */
+const AT_LEAVE = { x: 200, y: 556 };
+
+/** The hub's gear overlay as the scene drives it (FS-HRH2J §E): open or not, and what it was handed. */
+function fakeGear() {
+  const state = { open: false };
+  return {
+    get open() {
+      return state.open;
+    },
+    set open(open: boolean) {
+      state.open = open;
+    },
+    toggle: vi.fn(() => {
+      state.open = !state.open;
+    }),
+    hide: vi.fn(() => {
+      const was = state.open;
+      state.open = false;
+      return was;
+    }),
+    isOpen: () => state.open,
+    /** While open, the panels are over the screen's left half, where the queue's Leave sits. */
+    covers: vi.fn((x: number) => state.open && x < 400),
+    equipKey: vi.fn(() => state.open),
+    updateCharacter: vi.fn(),
+    setCharacterLevel: vi.fn(),
+  };
+}
 
 /** The hub as the keyboard and the queue reach it. */
 interface MenuHub {
@@ -407,16 +437,34 @@ describe("HubScene leaveQueue (FS-G4VMQ §Requirements 12–14, 17, 19)", () => 
     const { hub, keys, press, option, reply, button, send } = queuedHubOnStage();
     reply("queue_status", { current: 1, total: 2 });
 
-    button()?.handlers.pointerup();
+    button()?.handlers.pointerup(AT_LEAVE);
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith(ActionType.LeaveQueue, {});
     expect(hub.leavePending).toBe(true);
 
-    button()?.handlers.pointerup();
+    button()?.handlers.pointerup(AT_LEAVE);
     press(keys.esc);
     option("leave")?.handlers.pointerup();
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("should not leave from a press on Leave through the open gear overlay's panel (FS-HRH2J R8)", () => {
+    const { hub, gear, reply, button, send } = queuedHubOnStage();
+    reply("queue_status", { current: 1, total: 2 });
+    const leave = button() as Made;
+    gear.open = true;
+
+    leave.handlers.pointerup({ x: leave.x, y: leave.y });
+
+    expect(gear.covers).toHaveBeenCalledWith(leave.x, leave.y);
+    expect(send).not.toHaveBeenCalled();
+    expect(hub.leavePending).toBe(false);
+
+    // closed, the same press leaves
+    gear.open = false;
+    leave.handlers.pointerup({ x: leave.x, y: leave.y });
+    expect(send).toHaveBeenCalledWith(ActionType.LeaveQueue, {});
   });
 
   it("should take the panel and button down, clear the flags and close the menu on the success reply", () => {
@@ -446,7 +494,7 @@ describe("HubScene leaveQueue (FS-G4VMQ §Requirements 12–14, 17, 19)", () => 
   it("should keep everything and pass on the server's message on the error reply, then send again", () => {
     const { hub, stage, reply, refuse, button, send } = queuedHubOnStage();
     reply("queue_status", { current: 1, total: 2 });
-    button()?.handlers.pointerup();
+    button()?.handlers.pointerup(AT_LEAVE);
 
     refuse("leave_queue", "Could not leave the queue, please try again.");
 
@@ -465,14 +513,14 @@ describe("HubScene leaveQueue (FS-G4VMQ §Requirements 12–14, 17, 19)", () => 
     (hub.time.delayedCall.mock.calls[0][1] as () => void)();
     expect(notice.destroyed).toBe(true);
 
-    button()?.handlers.pointerup();
+    button()?.handlers.pointerup(AT_LEAVE);
     expect(send).toHaveBeenCalledTimes(2);
   });
 
   it("should let a reply that arrives after the join already failed change nothing", () => {
     const { hub, stage, reply, refuse, button } = queuedHubOnStage();
     reply("queue_status", { current: 2, total: 2 });
-    button()?.handlers.pointerup();
+    button()?.handlers.pointerup(AT_LEAVE);
     reply("world_handoff_failed", { session_id: "run", code: 4002 });
     const panel = hub.queuePanel as Made;
     const drawn = stage.made.length;
@@ -509,8 +557,13 @@ function hubOnStage() {
     one: key(),
     two: key(),
     three: key(),
+    i: key(),
+    b: key(),
   };
+  const gear = fakeGear();
   hub.add = stage.add;
+  hub.gear = gear;
+  hub.gearKeys = [keys.i, keys.b];
   hub.choiceKeys = [keys.one, keys.two, keys.three];
   hub.cameras = { main: { width: 800, height: 600, startFollow: vi.fn() } };
   hub.scene = { start: vi.fn() };
@@ -558,7 +611,7 @@ function hubOnStage() {
     standAt(AWAY);
     standAt(SPIRE_GATE.position);
   };
-  return { hub, stage, keys, press, option, choice, label, talkTo, answer, standAt, atTheDoor };
+  return { hub, stage, keys, gear, press, option, choice, label, talkTo, answer, standAt, atTheDoor };
 }
 
 /** The hub's gates as the server sends them (FS-0XMCP §Requirements 2, 6). */
@@ -653,14 +706,22 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     expect(queue.y).toBeLessThan(dismiss.y);
   });
 
-  it("should keep the storekeeper's two choices as before", () => {
-    const { choice, talkTo } = queuedHubOnStage();
+  it("should give the storekeeper one dismiss choice and no Open pack (FS-HRH2J R45)", () => {
+    const { hub, stage, choice, talkTo } = queuedHubOnStage();
 
     talkTo("storekeeper");
 
-    expect(choice("pack")).toBeDefined();
-    expect(choice("later")).toBeDefined();
+    const texts = stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+    expect(texts.some((t) => /pack/i.test(t))).toBe(false);
+    expect(texts).toContain("Keeper of the stores");
+    expect(choice("pack")).toBeUndefined();
     expect(choice("solo")).toBeUndefined();
+    expect(choice("farewell")).toBeDefined();
+    expect(stage.made.filter((m) => typeof m.name === "string" && m.name.startsWith("choice-") && !m.name.endsWith("-label") && !m.destroyed)).toHaveLength(1);
+
+    choice("farewell")?.handlers.pointerup();
+    expect(hub.dialogue).toBeUndefined();
+    expect(hub.scene.start).not.toHaveBeenCalled();
   });
 
   it("should send find_game on Wait for company, as Descend did, and close", () => {
@@ -1129,12 +1190,12 @@ describe("HubScene the Spire gate trigger (FS-0XMCP §Requirements 10, 22)", () 
     talkTo("storekeeper");
 
     standAt(SPIRE_GATE.position);
-    expect(choice("pack")).toBeDefined();
+    expect(choice("farewell")).toBeDefined();
     expect(choice("solo")).toBeUndefined();
 
     standAt(AWAY);
     expect(hub.dialogue).toBeDefined();
-    expect(choice("pack")).toBeDefined();
+    expect(choice("farewell")).toBeDefined();
   });
 
   it("should open nothing at a field gate", () => {
@@ -1477,13 +1538,13 @@ describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => 
 
   it("should keep [E] on a dialogue with one choice, and E still means the first", () => {
     const { stage, keys, talkTo, answer, hub } = hubOnStage();
-    talkTo("storekeeper");
+    talkTo("villager");
     const labels = stage.made
       .filter((m) => m.kind === "text" && !m.destroyed)
       .map((m) => String(m.args[2]));
-    expect(labels).toContain("Open pack  [E]");
+    expect(labels).toContain("Leave  [E]");
     answer(keys.e);
-    expect((hub.scene as { start: ReturnType<typeof vi.fn> }).start).toHaveBeenCalledWith("LoadoutScene");
+    expect(hub.dialogue).toBeUndefined();
   });
 });
 
@@ -1531,7 +1592,7 @@ describe("ESC menu by keyboard (reported 2026-10-29)", () => {
 
 describe("camera on the player across visits (reported 2026-10-29)", () => {
   // The camera latched on when the player's entity id changed, and the id survived a scene
-  // restart while every sprite was rebuilt: back from the loadout, or re-entering as the same
+  // restart while every sprite was rebuilt: back from a run, or re-entering as the same
   // character, the camera sat where it was and the player walked off screen.
   it("should latch onto a new sprite after release, even for the same player", () => {
     const { hub } = hubOnStage();
@@ -1553,5 +1614,134 @@ describe("camera on the player across visits (reported 2026-10-29)", () => {
     hub.selfEntityID = "me";
     hub.release();
     expect(hub.selfEntityID).toBeNull();
+  });
+});
+
+describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should toggle the overlay on I and on B, staying in the hub", () => {
+    const { hub, keys, gear, press } = hubOnStage();
+
+    press(keys.i);
+    expect(gear.open).toBe(true);
+    press(keys.i);
+    expect(gear.open).toBe(false);
+    press(keys.b);
+    expect(gear.open).toBe(true);
+    press(keys.b);
+    expect(gear.open).toBe(false);
+
+    expect(hub.scene.start).not.toHaveBeenCalled();
+    expect(hub.menu).toBeUndefined();
+  });
+
+  it("should keep walking with WASD while the overlay is open (R7)", () => {
+    const { hub, keys, press } = hubOnStage();
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    press(keys.i);
+
+    keys.w.isDown = true;
+    hub.update(0, 16);
+
+    expect(send).toHaveBeenLastCalledWith(ActionType.Move, { vx: 0, vy: -1 });
+  });
+
+  it("should close the overlay on ESC without opening the menu, and open the menu on the next (R5)", () => {
+    const { hub, keys, gear, press } = hubOnStage();
+    press(keys.i);
+
+    press(keys.esc);
+    expect(gear.open).toBe(false);
+    expect(hub.menu).toBeUndefined();
+
+    press(keys.esc);
+    expect(hub.menu).toBeDefined();
+  });
+
+  it("should close a dialogue before the overlay on ESC (R5)", () => {
+    const { hub, keys, gear, press, atTheDoor } = hubOnStage();
+    press(keys.i);
+    // walking into the Spire's gate with the overlay open raises the door's panel over it
+    atTheDoor();
+    expect(hub.dialogue).toBeDefined();
+
+    press(keys.esc);
+    expect(hub.dialogue).toBeUndefined();
+    expect(gear.open).toBe(true);
+
+    press(keys.esc);
+    expect(gear.open).toBe(false);
+    expect(hub.menu).toBeUndefined();
+  });
+
+  it("should do nothing on I or B while the ESC menu or a dialogue is open (R6)", () => {
+    const { hub, keys, gear, press, talkTo } = hubOnStage();
+    press(keys.esc);
+    press(keys.i);
+    press(keys.b);
+    expect(gear.toggle).not.toHaveBeenCalled();
+
+    press(keys.esc);
+    talkTo("storekeeper");
+    expect(hub.dialogue).toBeDefined();
+    // the views talkTo stands up are too bare to ease each frame
+    hub.views = new Map();
+    hub.npcs = new Map();
+    press(keys.i);
+    press(keys.b);
+    expect(gear.toggle).not.toHaveBeenCalled();
+    // and the press is spent, not left to open the overlay once the dialogue closes
+    press(keys.esc);
+    hub.update(0, 16);
+    expect(gear.open).toBe(false);
+  });
+
+  it("should give E to the overlay while it is open, reaching for no one beside the player (R10)", () => {
+    const { hub, keys, gear, press, answer } = hubOnStage();
+    press(keys.i);
+    hub.selfEntityID = "me";
+    hub.views = new Map([["me", { pos: { x: 0, y: 0 } }]]);
+    hub.npcs = new Map([
+      [
+        "keeper",
+        {
+          state: { entity_id: "keeper", name: "Keeper", function: "storyteller", position: { x: 10, y: 0 } },
+          pos: { x: 10, y: 0 },
+        },
+      ],
+    ]);
+
+    answer(keys.e);
+    expect(gear.equipKey).toHaveBeenCalledTimes(1);
+    expect(hub.dialogue).toBeUndefined();
+
+    gear.open = false;
+    answer(keys.e);
+    expect(hub.dialogue).toBeDefined();
+  });
+
+  it("should hand the player's hub state and level to the stats panel on every state (R24)", () => {
+    const { hub, gear } = hubOnStage();
+    Object.assign(hub, {
+      placePlayer: vi.fn(),
+      renderStructures: vi.fn(),
+      drawScenery: vi.fn(),
+      renderNPCs: vi.fn(),
+    });
+    const me = { entity_id: "me", username: "Ignis", class: "mage", level: 3, position: AWAY };
+
+    hub.renderState({ world_type: "hub", current_player: me, other_players: [], walls: [], gates: [] });
+
+    expect(gear.updateCharacter).toHaveBeenCalledWith(me);
+    expect(gear.setCharacterLevel).toHaveBeenCalledWith(3);
+  });
+
+  it("should forget the overlay on release, so the next visit composes a fresh one", () => {
+    const { hub } = hubOnStage();
+    hub.release();
+    expect(hub.gear).toBeUndefined();
   });
 });

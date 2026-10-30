@@ -20,7 +20,7 @@ import {
   DoorState,
   ProjectileState,
 } from "@/types/gameState";
-import { EquipmentPanel } from "@/ui/EquipmentPanel";
+import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
 import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
 import {
@@ -825,7 +825,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ["WASD", "Move"],
       ["E", "Interact"],
       ["F", "Take Item"],
-      ["I", "Equipment"],
+      ["I / B", "Gear and bag"],
       ["Q", "Close Panel"],
       ["LEFT CLICK", "Melee Attack"],
       ["RIGHT CLICK", "Fireball (Skill)"],
@@ -2430,7 +2430,10 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // === 道具欄功能 ===
 
-  /** I opens and closes the equipment panel; opening it ends a Shadow Shot hold (FS-JTNPR req 15). */
+  /**
+   * I or B opens and closes the gear and bag overlay (FS-HRH2J R4); opening it ends a Shadow Shot
+   * hold (FS-JTNPR req 15).
+   */
   private toggleInventory(): void {
     this.equipment?.toggle();
     if (this.equipment?.isOpen()) this.cancelAim();
@@ -2579,6 +2582,7 @@ export class BarrowspireScene extends Phaser.Scene {
       {
         onLoot: (item) => this.lootChestItem(item),
         characterLevel: () => this.characterLevel,
+        mayTake: () => this.bagHasRoom(),
       },
       new ContainerContents(this.PENDING_DURATION),
     );
@@ -2625,10 +2629,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     this.bindRunInput();
 
-    // the equipment panel and its equip / unequip sends, applied at once
-    this.equipment = new EquipmentHud(new EquipmentPanel(this), {
-      send: (action, payload) => socketManager.sendMessage(action, payload),
-    });
+    this.equipment = this.composeEquipment();
 
     // 創建室內遮罩（用於遮住建築外面）
     this.indoorMask = this.add.graphics();
@@ -2640,6 +2641,22 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // torch-lit barrow atmosphere — pure decoration, no game state
     this.createAtmosphere();
+  }
+
+  /**
+   * The gear and bag overlay over the live run (FS-HRH2J), its equip / unequip sends applied at
+   * once, and its full-bag refusals in the run's refused notice (R22).
+   */
+  private composeEquipment(): EquipmentHud {
+    return new EquipmentHud(new GearOverlay(this, this.art), {
+      send: (action, payload) => socketManager.sendMessage(action, payload),
+      notice: (text) => this.showNotification(text, toCss(NOTICE_BACKING.refused)),
+    });
+  }
+
+  /** Whether the bag can take one more pickup (FS-HRH2J R21); when it cannot, the notice says so. */
+  private bagHasRoom(): boolean {
+    return this.equipment?.roomForOne() ?? true;
   }
 
   /**
@@ -2686,11 +2703,13 @@ export class BarrowspireScene extends Phaser.Scene {
       }
     });
 
-    // I 鍵開啟/關閉道具欄
-    this.input.keyboard?.on("keydown-I", () => {
-      if (this.menu) return;
-      this.toggleInventory();
-    });
+    // I or B opens and closes the gear and bag overlay (FS-HRH2J R4); not while the menu is open (R6)
+    for (const key of ["keydown-I", "keydown-B"]) {
+      this.input.keyboard?.on(key, () => {
+        if (this.menu) return;
+        this.toggleInventory();
+      });
+    }
 
     // F 鍵從寶箱取得道具
     this.input.keyboard?.on("keydown-F", () => {
@@ -2724,12 +2743,14 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.menu) return;
       // an archer drawing a Shadow Shot answers no other click (FS-JTNPR req 16)
       if (this.combat.aiming) return;
+      // a press over the overlay's panels is the overlay's: no attack, no cast, no hold; one in the
+      // clear middle band answers as with the overlay closed (FS-HRH2J R8)
+      if (this.equipment?.covers(pointer.x, pointer.y)) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
       if (this.containerView.pointerDown(pointer.x, pointer.y, pointer.button === 0)) return;
       if (!this.player || !this.playerPos) return;
       // out of the delve: the server refuses it anyway (FS-77AB6 req 17)
       if (resolved(this.lastGameState?.current_player)) return;
-      if (this.equipment?.isOpen()) return;
 
       const currentClass = this.ownClass();
       const leftButton = pointer.leftButtonDown() || pointer.button === 0;
@@ -2967,6 +2988,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
       // 同步玩家背包與裝備
       this.equipment?.sync(state.current_player);
+      // the overlay's stats panel, from this state (FS-HRH2J R24, R30)
+      this.equipment?.updateCharacter(state.current_player);
 
       // 本身受傷變紅閃爍提示
       const curHp = state.current_player.current_health;
@@ -3988,6 +4011,8 @@ export class BarrowspireScene extends Phaser.Scene {
     const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
     const confirm = this.confirmKey !== undefined && Phaser.Input.Keyboard.JustDown(this.confirmKey);
     const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
+    // one ESC closes one thing: the gear and bag overlay before the menu opens (FS-HRH2J R5)
+    if (esc && !this.menu && this.equipment?.hide()) return;
     if (this.gameEndOverlay) return;
 
     if (!this.menu) {

@@ -423,6 +423,8 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     bindHudKeys(): void;
     takesPointer(x: number, y: number, primary: boolean): boolean;
     lootFromSatchel(item: unknown): void;
+    bagHasRoom(): boolean;
+    satchel?: unknown;
   };
 
   /** The field with the run's HUD on a recording panel, its keys bound to a fake keyboard. */
@@ -434,6 +436,9 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     const panel = {
       onEquip: undefined as undefined | ((item: unknown, slot: string) => void),
       onUnequip: undefined as undefined | ((item: unknown, slot: string) => void),
+      mayUnequip: undefined as undefined | (() => boolean),
+      // the panels stand right of x 500; the clear band is left of it
+      covers: (x: number) => x > 500,
       toggle: vi.fn(() => void (visible = !visible)),
       hide: vi.fn(() => void (visible = false)),
       isVisible: () => visible,
@@ -444,9 +449,12 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       updateInventory: vi.fn(),
       updateEquipment: vi.fn(),
       setCharacterLevel: vi.fn(),
+      updateCharacter: vi.fn(),
     };
+    const notices: string[] = [];
     field.equipment = new EquipmentHud(panel as never, {
       send: (action, payload) => socketManager.sendMessage(action, payload),
+      notice: (text) => notices.push(text),
     });
     const piles = {
       sync: vi.fn(),
@@ -462,7 +470,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     field.bindHudKeys();
     const press = (key: string) => keys.get(`keydown-${key}`)?.();
     const hover = (over: "inventory" | "head") => (hovered = over);
-    return { ...stage, field, panel, piles, press, hover };
+    return { ...stage, field, panel, piles, press, hover, notices };
   }
 
   it("should open the run's equipment panel on I with what the field's state says I carry and wear", () => {
@@ -475,6 +483,13 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     expect(panel.updateInventory).toHaveBeenLastCalledWith([sword]);
     expect(panel.updateEquipment).toHaveBeenLastCalledWith(expect.objectContaining({ head: helm }));
     expect(panel.setCharacterLevel).toHaveBeenLastCalledWith(4);
+  });
+
+  it("should hand the field's own player to the stats panel on every state (FS-HRH2J R24, R30)", () => {
+    const { field, panel } = hudOnStage();
+    field.renderState(carrying);
+
+    expect(panel.updateCharacter).toHaveBeenLastCalledWith(carrying.current_player);
   });
 
   it("should send the run's equip and unequip on E over the open panel, and reach for no pile", () => {
@@ -502,16 +517,57 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     expect(piles.interact).toHaveBeenCalledWith(ARRIVAL);
   });
 
-  it("should close the panel on Q, and take a click while it is open as no attack", () => {
+  it("should close the panel on Q, and take a click over its panels, not in the clear band, as no attack (FS-HRH2J R8)", () => {
     const { field, panel, press } = hudOnStage();
-    expect(field.takesPointer(10, 10, true)).toBe(false);
+    expect(field.takesPointer(600, 10, true)).toBe(false);
 
     press("I");
-    expect(field.takesPointer(10, 10, true)).toBe(true);
+    expect(field.takesPointer(600, 10, true)).toBe(true);
+    expect(field.takesPointer(600, 10, false)).toBe(true);
+    expect(field.takesPointer(300, 10, true)).toBe(false);
 
     press("Q");
     expect(panel.hide).toHaveBeenCalledTimes(1);
-    expect(field.takesPointer(10, 10, true)).toBe(false);
+    expect(field.takesPointer(600, 10, true)).toBe(false);
+  });
+
+  it("should toggle the overlay on I and on B, and close it on ESC (FS-HRH2J R4)", () => {
+    const { field, press } = hudOnStage();
+    press("B");
+    expect(field.equipment?.isOpen()).toBe(true);
+    press("I");
+    expect(field.equipment?.isOpen()).toBe(false);
+    press("I");
+    press("ESC");
+    expect(field.equipment?.isOpen()).toBe(false);
+  });
+
+  it("should still loot through the open satchel when the press is not over the overlay", () => {
+    const { field } = hudOnStage();
+    field.satchel = { pointerDown: vi.fn(() => true) };
+    field.equipment?.toggle();
+    expect(field.takesPointer(300, 10, true)).toBe(true);
+  });
+
+  it("should refuse a pile take and an unequip into a full bag with the field's notice (FS-HRH2J R20–22)", () => {
+    const { field, panel, send, notices } = hudOnStage();
+    const full = Array.from({ length: 30 }, (_, i) => ({ entity_id: `i${i}`, name: `i${i}` }));
+    field.renderState({ ...carrying, current_player: { ...carrying.current_player, inventory: full } });
+
+    expect(field.bagHasRoom()).toBe(false);
+    expect(panel.mayUnequip?.()).toBe(false);
+    expect(notices).toEqual(["Your bag is full.", "Your bag is full."]);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should count a pending take, so two quick takes at 29 allow one (FS-HRH2J edge state: Pending pickups)", () => {
+    const { field } = hudOnStage();
+    const almost = Array.from({ length: 29 }, (_, i) => ({ entity_id: `i${i}`, name: `i${i}` }));
+    field.renderState({ ...carrying, current_player: { ...carrying.current_player, inventory: almost } });
+
+    expect(field.bagHasRoom()).toBe(true);
+    field.lootFromSatchel({ entity_id: "coin" });
+    expect(field.bagHasRoom()).toBe(false);
   });
 
   it("should hold an item taken from a pile in the inventory while its loot is pending, as the run does", () => {
@@ -574,7 +630,9 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     field.create({ field: "gentle_meadows" });
 
     expect(field.equipment).toBeInstanceOf(EquipmentHud);
-    expect([...keys.keys()]).toEqual(expect.arrayContaining(["keydown-I", "keydown-E", "keydown-Q", "keydown-F"]));
+    expect([...keys.keys()]).toEqual(
+      expect.arrayContaining(["keydown-I", "keydown-B", "keydown-E", "keydown-Q", "keydown-ESC", "keydown-F"]),
+    );
   });
 });
 
@@ -639,6 +697,14 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     field.renderState(archerState);
 
     expect(card.mock.calls.at(-1)?.[0]).toMatchObject({ greyed: true });
+  });
+
+  it("should keep walking with the gear overlay open (FS-HRH2J R7)", () => {
+    const { field, send } = kitOnStage({ aiming: false });
+    Object.assign(field, { equipment: { isOpen: () => true, covers: () => true } });
+
+    field.update(16, 16);
+    expect(send).toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });
   });
 
   it("should stand still while an archer draws a Shadow Shot, and walk on once it ends", () => {

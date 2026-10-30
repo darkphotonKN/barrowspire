@@ -12,8 +12,8 @@
  * palette (Bone & Soot), read only by DOM code, and it mirrors globals.css
  * :root. The two are not required to agree, and neither reads the other.
  *
- * One seam crosses: the canvas MENUS (MainMenuScene, CharacterCreationScene,
- * LoadoutScene and src/ui/menuChrome.ts) wear the site's Bone & Soot look, so
+ * One seam crosses: the canvas MENUS (PreloadScene, MainMenuScene,
+ * CharacterCreationScene and src/ui/menuChrome.ts) wear the site's Bone & Soot look, so
  * the gate into the game matches the web UI. Phaser still never reads `UI`:
  * the `menu*` entries below are game-palette tokens that MIRROR the matching
  * globals.css :root values, and must agree with them. Everything past the

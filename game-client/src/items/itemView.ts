@@ -3,9 +3,9 @@
  * badge, its base stats, "Item level N", "Requires level N" (marked when above the character's
  * level, FS-BDA7X R45), one line per affix and, for a unique, its effect and lore.
  *
- * Phaser-free, so the words are tested without a canvas; the satchel (container view), the
- * equipment panel and the loadout draw what this returns. It reads the run's snake_case
- * `ItemState`; the loadout maps its item instances into the same shape first.
+ * Phaser-free, so the words are tested without a canvas; the satchel (container view) and the
+ * gear and bag overlay draw what this returns. It reads the run's snake_case `ItemState`; the
+ * hub maps its REST item instances into the same shape first.
  */
 
 import { itemStats, type StatLine } from "@/marketplace/detail";

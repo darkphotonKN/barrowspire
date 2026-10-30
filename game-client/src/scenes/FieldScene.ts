@@ -44,7 +44,7 @@ import { addMist } from "@/render/effects/mist";
 import { DROP_PILE, paintDropPile } from "@/render/world/dropPile";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { ContainerView } from "@/ui/ContainerView";
-import { EquipmentPanel } from "@/ui/EquipmentPanel";
+import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
 import { ResourceHud } from "@/ui/ResourceHud";
 import { AbilityHud } from "@/ui/AbilityHud";
@@ -65,7 +65,8 @@ import { gateAt, gateEdges } from "./hubGates";
  * and the fight with them are the run scene's own pieces, composed in `fieldCombat`; drop piles
  * and the satchel they are taken through, in `fieldPiles`, a pile held for someone else's kill
  * drawn faint and not offered (§Requirements 56, 59). The equip HUD is the run's own
- * (`EquipmentHud` on the run's EquipmentPanel), on the run's keys: I opens it, E over it equips.
+ * (`EquipmentHud` on the gear and bag overlay, FS-HRH2J), on the run's keys: I or B opens it,
+ * E over it equips, and a full bag refuses pickups and unequips with the field's notice.
  * The class kit is the run's too (FS-8AY7S, FS-JTNPR, FS-MAMHR): the Health and class resource
  * bars bottom-left, the ability card bottom-right, the archer's Shadow Shot hold (the keys read
  * released while it is drawn) and the Mercenary's cut, riposte and parry, all through `fieldCombat`.
@@ -216,9 +217,7 @@ export class FieldScene extends Phaser.Scene {
       lockout: () => this.showAbilityCard(),
     });
     this.createPiles();
-    this.equipment = new EquipmentHud(new EquipmentPanel(this), {
-      send: (action, payload) => socketManager.sendMessage(action, payload),
-    });
+    this.equipment = this.composeEquipment();
     this.bindHudKeys();
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
@@ -265,6 +264,7 @@ export class FieldScene extends Phaser.Scene {
     const satchel = new ContainerView(this, this.art, {
       onLoot: (item) => this.lootFromSatchel(item),
       characterLevel: () => this.selfLevel,
+      mayTake: () => this.bagHasRoom(),
     });
     this.satchel = satchel;
     this.piles = new FieldPiles(
@@ -296,29 +296,52 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * The run's keys for the satchel and the equip HUD: I opens and closes the panel and Q closes
-   * it; E over the open panel equips or unequips, as in the run, else reaches for a pile or chest;
-   * F takes the satchel's first item.
+   * The run's gear and bag overlay over the live field (FS-HRH2J), its sends the run's, its
+   * full-bag refusals in the field's notice (R22).
+   */
+  private composeEquipment(): EquipmentHud {
+    return new EquipmentHud(new GearOverlay(this, this.art), {
+      send: (action, payload) => socketManager.sendMessage(action, payload),
+      notice: (text) => this.notice(text),
+    });
+  }
+
+  /** Whether the bag can take one more pickup from a pile or chest (FS-HRH2J R21); the notice says when not. */
+  private bagHasRoom(): boolean {
+    return this.equipment?.roomForOne() ?? true;
+  }
+
+  /**
+   * The run's keys for the satchel and the equip HUD: I or B opens and closes the overlay, Q and
+   * ESC close it (FS-HRH2J R4; a field has no ESC menu); E over the open overlay equips or
+   * unequips, as in the run, else reaches for a pile or chest; F takes the satchel's first item.
    */
   private bindHudKeys(): void {
     this.input.keyboard?.on("keydown-E", () => {
       if (this.equipment?.equipKey()) return;
       if (this.selfAt && !this.fallen.isDown()) this.piles?.interact(this.selfAt);
     });
-    this.input.keyboard?.on("keydown-I", () => {
-      this.equipment?.toggle();
-      // opening the panel ends a Shadow Shot hold (FS-JTNPR req 15)
-      if (this.equipment?.isOpen()) this.fight?.cancelAim();
-    });
+    for (const key of ["keydown-I", "keydown-B"]) {
+      this.input.keyboard?.on(key, () => {
+        this.equipment?.toggle();
+        // opening the overlay ends a Shadow Shot hold (FS-JTNPR req 15)
+        if (this.equipment?.isOpen()) this.fight?.cancelAim();
+      });
+    }
     this.input.keyboard?.on("keydown-Q", () => this.equipment?.hide());
+    this.input.keyboard?.on("keydown-ESC", () => this.equipment?.hide());
     this.input.keyboard?.on("keydown-F", () => this.satchel?.lootFirst());
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => this.satchel?.pointerMove(pointer.x, pointer.y));
   }
 
-  /** A click on the open satchel is a loot, and one while the equip panel is open no attack, as in the run. */
+  /**
+   * A press over the overlay's panels is the overlay's, and a click on the open satchel a loot:
+   * neither is an attack, a cast or a Shadow Shot hold. A press in the overlay's clear middle
+   * band attacks as with it closed (FS-HRH2J R8).
+   */
   private takesPointer(x: number, y: number, primary: boolean): boolean {
-    if (this.satchel?.pointerDown(x, y, primary)) return true;
-    return this.equipment?.isOpen() ?? false;
+    if (this.equipment?.covers(x, y)) return true;
+    return this.satchel?.pointerDown(x, y, primary) ?? false;
   }
 
   /** An item taken from the satchel: sent by the piles, and held in the inventory while pending. */
@@ -453,7 +476,11 @@ export class FieldScene extends Phaser.Scene {
     const me = state.current_player;
     this.selfAt = me ? { x: me.position.x, y: me.position.y } : undefined;
     this.selfLevel = me?.level;
-    if (me) this.equipment?.sync(me);
+    if (me) {
+      this.equipment?.sync(me);
+      // the overlay's stats panel, from this state (FS-HRH2J R24, R30)
+      this.equipment?.updateCharacter(me);
+    }
     this.equipment?.setCharacterLevel(me?.level);
     this.piles?.sync(state.containers ?? [], me?.id);
     if (this.selfAt) this.piles?.follow(this.selfAt);
