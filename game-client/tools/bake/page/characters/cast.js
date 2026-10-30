@@ -28,17 +28,18 @@ import {
   legs,
   neck,
   overTorso,
+  sash,
+  shortBeard,
   skirt,
   skirtBones,
   torso,
 } from "./anatomy.js";
 import {
-  armingSword,
   cleaver,
+  curvedSword,
   greatHelm,
   gripAt,
   inHand,
-  kettleHat,
   kiteShield,
   kneeCop,
   limbGuard,
@@ -228,58 +229,55 @@ export function wizard() {
 }
 
 /**
- * The Mercenary (FS-MAMHR §H): a sellsword, dextrous but still strong. Bought kit that never
- * matched: a riveted brigandine over a buff coat, one blackened pauldron and one of leather, a
- * steel vambrace on the sword arm and a leather bracer on the other, one knee cop, an iron
- * kettle hat over a bearded face. A one-handed arming sword, no shield, an empty scabbard
- * at the hip. No cloak, no hood, no crest: the outline is the brim, the uneven shoulders and the
- * blade, so it reads as neither the knight nor the archer.
+ * The Mercenary (FS-MAMHR §H): a lightly armoured, strength-and-skill swordsman, a fighter in the
+ * open, never a skulker. A fitted quilted arming coat in faded madder, high-collared and skirted
+ * to mid-thigh, split at the front; a madder sash at the waist; one blackened steel spaulder on
+ * the off-hand shoulder, a steel vambrace on the sword arm and a leather bracer on the other, one
+ * knee cop, tall boots. Bareheaded: the hair swept back and tied at the nape, a trimmed beard, so
+ * the face and hair carry him. A curved, single-edged dueling sword with a knuckle-bow, an empty
+ * scabbard at the hip, no shield, no cloak. Broad in the shoulder and heavy in the arm, so it
+ * reads as neither the knight nor the archer.
  */
 export function mercenary() {
-  const M = materials();
   const F = fabrics();
-  const rig = createRig(1.97, { shoulderW: 1.08, torsoW: 1.04, hipW: 0.98, armR: 1.1, limbR: 1.12 });
+  const rig = createRig(1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1.04, hipW: 0.95, armR: 1.16, limbR: 1.1 });
   rig.hooks = [];
-  skirtBones(rig, { stiffness: 50 });
+  skirtBones(rig, { stiffness: 55 });
   const [, hy] = J(rig, "hips");
   const [, ny] = J(rig, "neck");
   const [, fy] = J(rig, "foreArmL");
   const [, wy] = J(rig, "handL");
-  const [, hdy, hdz] = J(rig, "head");
-  const r = rig.p.headR;
+  // the coat is open across the front by `gap` radians each side of centre
+  const openFront = (gap) => [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap];
 
-  torso(rig, F.brigandine);
+  torso(rig, F.coat);
   neck(rig, F.skin);
-  arms(rig, F.buff);
+  arms(rig, F.coat, { r: 1.06 });
   legs(rig, F.breeches);
-  hands(rig, F.leather);
-  boots(rig, F.leatherDark, { top: 0.15 });
+  hands(rig, F.leatherDark);
+  boots(rig, F.leatherDark, { top: 0.22 });
   head(rig, F.skin);
-  hair(rig, F.hairDark);
-  // a short, dark beard along the jaw
-  attach(rig, "head", ellipsoid(r * 0.62 * rig.H, r * 0.4 * rig.H, r * 0.5 * rig.H, 14), F.hairDark, [0, hdy + 0.014, hdz + 0.03]);
-  kettleHat(rig, F.darkSteel);
-  // an undyed scarf wound at the throat, over the brigandine's collar
-  const scarf = rigidTube(
+  hair(rig, F.hairDark, { tail: true });
+  shortBeard(rig, F.hairDark, { full: 0.8 });
+  // the coat's standing collar
+  const collar = rigidTube(
     rig.H,
     [
-      { p: [0, ny + 0.02, 0.004], r: [0.042, 0.042] },
-      { p: [0, ny + 0.0, 0.004], r: [0.058, 0.056] },
-      { p: [0, ny - 0.02, 0.006], r: [0.066 * rig.p.shoulderW, 0.064] },
+      { p: [0, ny - 0.016, 0.002], r: [0.05, 0.05] },
+      { p: [0, ny + 0.022, 0.004], r: [0.044, 0.045] },
     ],
-    { segs: 20, steps: 3 },
+    { segs: 18, steps: 2, caps: false, arc: openFront(0.35) },
   );
-  attach(rig, "chest", scarf, F.scarf, [0, 0, 0]);
-  spaulder(rig, "L", F.darkSteelDouble, { lames: 3, size: 1.06 });
-  spaulder(rig, "R", F.buffDouble, { lames: 2, size: 0.86 });
-  limbGuard(rig, "foreArmR", wy + 0.02, fy - 0.03, [0.037, 0.035], F.darkSteel);
-  limbGuard(rig, "foreArmL", wy + 0.02, fy - 0.035, [0.034, 0.032], F.leatherDark);
+  attach(rig, "chest", collar, F.coat, [0, 0, 0]);
+  // the coat's skirts, split at the front
+  skirt(rig, F.coat, { top: hy + 0.02, bottom: hy - 0.2, rTop: [0.104, 0.084], rBottom: [0.13, 0.112], legFollow: 0.7, panels: true, panelWeight: 0.35, arc: openFront(0.16), segs: 30 });
+  sash(rig, F.sash, { side: "R", depth: 0.045 });
+  spaulder(rig, "L", F.darkSteelDouble, { lames: 3, size: 0.98 });
+  limbGuard(rig, "foreArmR", wy + 0.02, fy - 0.03, [0.04, 0.038], F.darkSteel);
+  limbGuard(rig, "foreArmL", wy + 0.02, fy - 0.035, [0.038, 0.035], F.leatherDark);
   kneeCop(rig, "L", F.darkSteel);
-  // leather tassets over the hips, split front and back
-  skirt(rig, F.leatherDark, { top: hy + 0.02, bottom: hy - 0.15, rTop: [0.1, 0.078], rBottom: [0.114, 0.095], legFollow: 0.75, panels: true, panelWeight: 0.3 });
-  belt(rig, F.leatherDark, F.blackIron, { r: [0.108, 0.088], dy: 0.012, pouch: true });
   scabbard(rig, "L", F);
-  inHand(rig, "R").add(armingSword(rig, M, F));
+  inHand(rig, "R").add(curvedSword(rig, F));
 
   const style = {
     attack: "slash",
