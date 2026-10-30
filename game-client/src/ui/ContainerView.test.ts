@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ItemState } from "@/types/gameState";
 import { ActionType } from "@/assets/types/client";
 import { iconSheet, itemIcon } from "@/render/art/itemIcons";
+import type { ArtLibrary } from "@/render/art/library";
 import {
   ContainerContents,
+  ContainerView,
   SATCHEL_INTERIOR,
   itemAt,
   lootMessage,
@@ -352,5 +354,57 @@ describe("satchelIcon", () => {
     expect(
       satchelIcon(item({ name: "Health Potion", healing_amount: 50 })),
     ).toBe(iconSheet("potion_health"));
+  });
+});
+
+describe("ContainerView full bag (FS-HRH2J R21; edge state: Pending pickups)", () => {
+  /** Every Phaser surface the view draws on answers anything; positions read 0, scales and alpha 1. */
+  const numbers: Record<string, number> = { x: 0, y: 0, scaleX: 1, scaleY: 1, alpha: 1, width: 64, height: 64, now: 0 };
+  const stub: unknown = new Proxy(function () {}, {
+    get: (_t, key) => (key === Symbol.toPrimitive ? () => 0 : typeof key === "string" && key in numbers ? numbers[key] : stub),
+    apply: () => stub,
+  });
+  const sword = item({ name: "Iron Sword", weapon_type: "sword" });
+  const potion = item({ name: "Health Potion", healing_amount: 50 });
+
+  function satchel(room: boolean) {
+    const onLoot = vi.fn();
+    const mayTake = vi.fn(() => room);
+    const view = new ContainerView(stub as Phaser.Scene, stub as ArtLibrary, { onLoot, mayTake, now: () => 0 });
+    view.open("coffer");
+    view.setItems([sword, potion]);
+    return { view, onLoot, mayTake };
+  }
+
+  it("should take nothing on F into a full bag: nothing sent, the item stays takeable", () => {
+    const { view, onLoot, mayTake } = satchel(false);
+    view.lootFirst();
+    expect(mayTake).toHaveBeenCalledTimes(1);
+    expect(onLoot).not.toHaveBeenCalled();
+
+    mayTake.mockReturnValue(true);
+    view.lootFirst();
+    expect(onLoot).toHaveBeenCalledWith(sword);
+  });
+
+  it("should take nothing on a click into a full bag, though the click is still the satchel's", () => {
+    const { view, onLoot } = satchel(false);
+    const { slots } = satchelLayout([sword, potion]);
+    expect(view.pointerDown(slots[1].x, slots[1].y, true)).toBe(true);
+    expect(onLoot).not.toHaveBeenCalled();
+  });
+
+  it("should take on a click with room", () => {
+    const { view, onLoot } = satchel(true);
+    const { slots } = satchelLayout([sword, potion]);
+    view.pointerDown(slots[1].x, slots[1].y, true);
+    expect(onLoot).toHaveBeenCalledWith(potion);
+  });
+
+  it("should not ask about the bag when there is nothing to take", () => {
+    const { view, mayTake } = satchel(true);
+    view.setItems([]);
+    view.lootFirst();
+    expect(mayTake).not.toHaveBeenCalled();
   });
 });

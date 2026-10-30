@@ -156,6 +156,19 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Container view**: the on-screen satchel/coffer panel showing a container's contents. Not the
   same thing as a **container**, which is the WS entity in `containers[]`. Opening the view is
   presentation; clicking an item in it sends exactly the message the item row always sent.
+- **Bag**: the ordered list of items the player's character carries but does not wear, drawn as
+  the 30-cell grid (6 × 5) in the gear overlay's right panel, under the gear slots (FS-HRH2J). It
+  holds at most **bag capacity**, 30 items (`BAG_CAPACITY` in `src/ui/bag.ts`, game-service's
+  `BagCapacity`). New items go on the end, and nothing reorders it. In a run or a field world it
+  is the WS `inventory` (plus items taken and still pending), and a pickup or unequip into a full
+  bag is not sent ("Your bag is full."). In the hub it is every owned item the loadout does not
+  wear, read over REST and not capped, so it can read over capacity (e.g. `34 / 30`). Same
+  meaning as game-service's **bag**
+  ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Carried items").
+  **Not the container view**: the satchel/coffer panel shows a container's contents, never the
+  bag, even though code still says `satchel` in places (`satchelIcon`, the container view's
+  leather). Say **bag** in prose, specs and new names. Not "inventory" either: that is the wire
+  field, and items-service's word for everything an account owns.
 
 - **Ability card**: the HUD panel at the bottom right of a run or a field world showing the
   player's class ability: its name, the right-mouse glyph and a line on how it works (FS-8AY7S).

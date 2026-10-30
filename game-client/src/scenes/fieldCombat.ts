@@ -182,7 +182,7 @@ export function fieldCombatOnScene(
       | undefined;
     selfAt(): Point | undefined;
     bodyOf(entityId: string): Tintable | undefined;
-    /** Whether a click at this screen point is the open satchel's (a loot), never an attack. */
+    /** Whether a click at this screen point is the open satchel's (a loot) or the gear overlay's, never an attack. */
     takesPointer?(x: number, y: number, primary: boolean): boolean;
     /** The ability lockout started or ended: the ability card redraws (FS-8AY7S req 31). */
     lockout?(): void;

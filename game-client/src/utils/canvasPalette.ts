@@ -248,7 +248,7 @@ export const palette = {
   /** Multiplied over the flap once it lifts: the underside is the unlit side. */
   satchelUnderside: shade(BARROW_HEX.vellumDark, 0.35),
 
-  // -- Menu chrome: the canvas menus (main menu, character creation, loadout) wear the web
+  // -- Menu chrome: the canvas menus (loading screen, main menu, character creation) wear the web
   //    UI's Bone & Soot look (design-guideline "UI Chrome"). Bone is the torch, one per view:
   //    the primary CTA, the title, the active selection. Iron frames, soot grounds, grey stone
   //    panels. Never used past the menus: the hub, the run and the HUD keep the barrow ramp.

@@ -14,15 +14,10 @@ export function sceneFor(worldType: WorldType): string {
   return WORLD_SCENE[worldType];
 }
 
-/**
- * Everything a world transition replaces. LoadoutScene is here because it is a screen the player
- * opens while standing in the hub: a match found with it open would otherwise leave it sitting on
- * top of the run.
- */
+/** Everything a world transition replaces. */
 export const WORLD_SCENES = [
   "MainMenuScene",
   "HubScene",
-  "LoadoutScene",
   "BarrowspireScene",
   "FieldScene",
 ];

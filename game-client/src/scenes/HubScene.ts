@@ -24,6 +24,9 @@ import {
 } from "./hubGates";
 import { BARROW_HEX } from "@/utils/theme";
 import { ProgressHud } from "@/ui/ProgressHud";
+import { GearOverlay } from "@/ui/GearOverlay";
+import { HubGear } from "@/ui/HubGear";
+import { apiClient } from "@/utils/api";
 import { showDialogueCard } from "@/ui/npcDialogue";
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
 import { progressOf } from "@/ui/progress";
@@ -335,13 +338,11 @@ function wardenTale(passage = 0): Dialogue {
  */
 const NPC_DIALOGUE: Record<string, (state: HubState) => Dialogue> = {
   storyteller: () => wardenTale(),
+  // He opens nothing now: the player's gear is theirs to open anywhere (FS-HRH2J R45).
   storekeeper: () => ({
     role: "Keeper of the stores",
-    line: "Steel rusts, and the barrow keeps what it takes.\nSee to your gear before you go down.",
-    choices: [
-      { id: "pack", label: "Open pack", register: "actionable", act: (scene) => scene.openLoadout() },
-      { id: "later", label: "Later", register: "cancel" },
-    ],
+    line: "The stores are bare. What steel there is, you carry.\nMind it well; the barrow keeps what it takes.",
+    choices: [{ id: "farewell", label: "Farewell", register: "cancel" }],
   }),
 };
 
@@ -480,6 +481,10 @@ export class HubScene extends Phaser.Scene {
   private confirmKey?: Phaser.Input.Keyboard.Key;
   private dismissKey?: Phaser.Input.Keyboard.Key;
   private interactKey?: Phaser.Input.Keyboard.Key;
+  /** I and B: either opens or closes the gear and bag overlay (FS-HRH2J R4). */
+  private gearKeys: Phaser.Input.Keyboard.Key[] = [];
+  /** The gear, bag and stats overlay, fed from REST (FS-HRH2J §E); one per visit. */
+  private gear?: HubGear;
   /** The ESC menu while it is open (FS-G4VMQ §Requirements 1–5). It owns the keyboard. */
   private menu?: Phaser.GameObjects.Container;
   /** The open menu's choices by key: the n-th actionable one, and the first on Enter. */
@@ -566,6 +571,7 @@ export class HubScene extends Phaser.Scene {
       : undefined;
     if (!this.groundLayer) this.drawGround();
     this.bindInput();
+    this.gear = this.composeGear();
 
     // Lit like a run, in warm dusk rather than barrow dark (FS-2325V §C.8): the
     // light-map with the player's torch, then the vignette and dust above it.
@@ -697,6 +703,9 @@ export class HubScene extends Phaser.Scene {
     this.npcs.clear();
     this.closeDialogue();
     this.closeMenu();
+    // the overlay goes with the visit; a change still in flight finishes unheard
+    this.gear?.hide();
+    this.gear = undefined;
     // the chimneys' smoke, puffs still burning out too: none outlives this scene instance
     this.fx?.clearAll();
     this.fx = undefined;
@@ -730,6 +739,7 @@ export class HubScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     // who owns the keyboard is settled before the keys are read for walking
     this.offerMenu();
+    this.offerGear();
     this.sendMovementIntent();
     this.easeTowardServerPositions(time, delta);
     this.offerConversation();
@@ -798,6 +808,9 @@ export class HubScene extends Phaser.Scene {
     }
 
     if (!Phaser.Input.Keyboard.JustDown(this.interactKey)) return;
+
+    // E over the open overlay wears or takes off what is hovered, and talks to no one (FS-HRH2J R10)
+    if (this.gear?.equipKey()) return;
 
     // E inside the gate reopens a panel dismissed there
     if (this.atGate?.destination === "spire") {
@@ -1327,6 +1340,9 @@ export class HubScene extends Phaser.Scene {
     this.interactKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.confirmKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     this.dismissKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    this.gearKeys = [Phaser.Input.Keyboard.KeyCodes.I, Phaser.Input.Keyboard.KeyCodes.B].map((code) =>
+      keyboard.addKey(code),
+    );
     this.choiceKeys = [
       Phaser.Input.Keyboard.KeyCodes.ONE,
       Phaser.Input.Keyboard.KeyCodes.TWO,
@@ -1371,6 +1387,10 @@ export class HubScene extends Phaser.Scene {
     if (state.current_player) {
       this.placePlayer(state.current_player, true);
       present.add(state.current_player.entity_id);
+
+      // the overlay's stats panel, from the hub's own state (FS-HRH2J R24, R30)
+      this.gear?.updateCharacter(state.current_player);
+      this.gear?.setCharacterLevel(state.current_player.level);
 
       const progress = progressOf(state.current_player);
       if (progress) {
@@ -1530,11 +1550,22 @@ export class HubScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(1000)
       .setInteractive();
-    button.on("pointerup", () => this.leaveQueue());
+    button.on("pointerup", (pointer: Phaser.Input.Pointer) => {
+      if (!this.overGear(pointer)) this.leaveQueue();
+    });
     // the gauntlet stays; brightening to vellum is the hover cue, as on a dialogue option
     button.on("pointerover", () => button.setColor(toCss(BARROW_HEX.vellum)));
     button.on("pointerout", () => button.setColor(toCss(BARROW_HEX.amber)));
     this.leaveButton = button;
+  }
+
+  /**
+   * Whether a press lies over the open gear overlay's panels (FS-HRH2J R8): it is the overlay's,
+   * and no hub object under the panel (the queue's Leave, depth 1000 under the overlay's 1100)
+   * takes it. The run and the field world apply the same rule to their presses.
+   */
+  private overGear(pointer: Phaser.Input.Pointer): boolean {
+    return this.gear?.covers(pointer.x, pointer.y) ?? false;
   }
 
   /** The queue is behind the player: no entry, nothing pending, no way out to offer. */
@@ -1877,15 +1908,16 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * ESC, read once a frame on the one ESC key the hub binds (FS-G4VMQ §Requirements 1, 2, 20).
-   * While a dialogue is open the key is the dialogue's, read in offerConversation, so this does
-   * not touch it; otherwise ESC opens the menu, and pressed again closes it.
+   * One press closes one thing (FS-HRH2J R5): while a dialogue is open the key is the
+   * dialogue's, read in offerConversation, so this does not touch it; then an open gear overlay
+   * closes; otherwise ESC opens the menu, and pressed again closes it.
    */
   private offerMenu(): void {
     if (this.dialogue || !this.dismissKey) return;
     const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
 
     if (!this.menu) {
-      if (esc) this.openMenu();
+      if (esc && !this.gear?.hide()) this.openMenu();
       return;
     }
 
@@ -1896,6 +1928,30 @@ export class HubScene extends Phaser.Scene {
     if (esc) this.closeMenu();
     else if (confirm) this.menuChoices?.confirm();
     else if (numbered >= 0) this.menuChoices?.pick(numbered);
+  }
+
+  /**
+   * I or B opens or closes the gear overlay over the live hub (FS-HRH2J R4, R40). While the menu
+   * or a dialogue is open they own the keyboard (R6): the press is read and dropped, so it does
+   * not open the overlay the moment they close.
+   */
+  private offerGear(): void {
+    const pressed = this.gearKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).includes(true);
+    if (!pressed || this.menu || this.dialogue) return;
+    this.gear?.toggle();
+  }
+
+  /**
+   * The run's gear and bag overlay, fed from the REST loadout (FS-HRH2J §E R41–43); a refused
+   * change in the hub's passing notice. A change answered after this visit ended says nothing.
+   */
+  private composeGear(): HubGear {
+    const gear: HubGear = new HubGear(new GearOverlay(this, this.art), apiClient, {
+      notice: (text) => {
+        if (this.gear === gear) this.notice(text);
+      },
+    });
+    return gear;
   }
 
   /**
@@ -1926,7 +1982,7 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * The camera on the player's own body. Latched by sprite, not by entity id: a scene restart
-   * (back from the loadout, re-entering the hub) rebuilds every sprite under the same id, and
+   * (back from a run, re-entering the hub) rebuilds every sprite under the same id, and
    * startFollow snaps the camera each time it is called, so it is called once per sprite.
    */
   private keepCameraOn(sprite: Phaser.GameObjects.Container): void {
@@ -1951,12 +2007,6 @@ export class HubScene extends Phaser.Scene {
     this.leavingHub = true;
     this.menuChoices?.retone();
     socketManager.sendMessage(ActionType.LeaveHub, {});
-  }
-
-  /** The loadout is a screen, not a world: the player stays in the hub while it
-   * is open, standing where they were. */
-  openLoadout(): void {
-    this.scene.start("LoadoutScene");
   }
 
   /**

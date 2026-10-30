@@ -66,6 +66,9 @@ const { worldSeed } = await import("@/render/world/ground");
 const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
 const { useGameStore } = await import("@/stores/gameStore");
+const { EquipmentHud } = await import("@/ui/EquipmentHud");
+const { gearPanelLayout, overlayLayout } = await import("@/ui/gearOverlayLayout");
+const { BAG_FULL_NOTICE } = await import("@/ui/bag");
 const { EventEmitter } = await import("eventemitter3");
 const { readdirSync } = await import("node:fs");
 const { readFileSync } = await import("node:fs");
@@ -2400,6 +2403,180 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(run.menuChoices).toBeUndefined();
     expect(run.fallPending).toBe(false);
     expect(offError).toHaveBeenCalledWith("forfeit_run");
+  });
+});
+
+describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20–22)", () => {
+  interface Overlaid {
+    equipment?: InstanceType<typeof EquipmentHud>;
+    menu?: unknown;
+    controlsPanel?: unknown;
+    dismissKey?: { justDown: boolean; isDown: boolean };
+    confirmKey?: { justDown: boolean; isDown: boolean };
+    choiceKeys: { justDown: boolean; isDown: boolean }[];
+    combat: { aiming: boolean };
+    bindRunInput(): void;
+    offerMenu(): void;
+    composeEquipment(): InstanceType<typeof EquipmentHud>;
+    bagHasRoom(): boolean;
+    lootChestItem(item: unknown): void;
+    toggleControlsPanel(): void;
+    handleGameStateUpdate(state: GameState): void;
+    sendMovementIntent(vx: number, vy: number): void;
+  }
+
+  const sword = { entity_id: "sword", name: "Iron Sword", weapon_type: "sword", attack_power: 10 };
+  const bag = (n: number) => Array.from({ length: n }, (_, i) => ({ entity_id: `i${i}`, name: `Relic ${i}` }));
+  /** The run's camera is 800 × 600: the right panel's middle, and the clear band's. */
+  const layout = overlayLayout(800, 600);
+  const OVER_PANEL = { x: layout.right.x + layout.right.w / 2, y: 300 };
+  const IN_BAND = { x: layout.band.x + layout.band.w / 2, y: 300 };
+
+  function overlayOnStage(cls = "warrior", inventory: unknown[] = [sword]) {
+    const stage = onStage();
+    vi.spyOn(useGameStore.getState(), "getActiveCharacter").mockReturnValue({ className: cls } as never);
+    const run = stage.run as unknown as Overlaid;
+    const esc = { justDown: false, isDown: false };
+    run.dismissKey = esc;
+    run.confirmKey = { justDown: false, isDown: false };
+    run.choiceKeys = [];
+    const keyHandlers: Record<string, () => void> = {};
+    const input = Object.assign(new EventEmitter(), {
+      setDefaultCursor: vi.fn(),
+      keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) },
+      activePointer: { button: 0, positionToCamera: () => ({ x: 400, y: 300 }) },
+    });
+    Object.assign(stage.run, { input, game: { events: new EventEmitter() } });
+    Object.assign((stage.run as unknown as { containerView: object }).containerView, {
+      pointerDown: vi.fn(() => false),
+      pointerMove: vi.fn(),
+    });
+    run.equipment = run.composeEquipment();
+    run.handleGameStateUpdate(partyState({ ...player("me", "Aldric", 130), class: cls, inventory } as ReturnType<typeof player>));
+    run.bindRunInput();
+    (stage.run as unknown as { time: { now: number } }).time.now = 1000;
+    const key = (name: string) => keyHandlers[`keydown-${name}`]();
+    const pressEsc = () => {
+      esc.justDown = true;
+      run.offerMenu();
+    };
+    const pointer = (at: { x: number; y: number }, button: number) => ({
+      ...at,
+      button,
+      worldX: 400,
+      worldY: 300,
+      leftButtonDown: () => button === 0,
+      rightButtonDown: () => button === 2,
+    });
+    const press = (at: { x: number; y: number }, button: number) => {
+      input.activePointer.button = button;
+      input.emit("pointermove", pointer(at, button));
+      input.emit("pointerdown", pointer(at, button));
+    };
+    const sentOf = (action: string) => stage.sent.mock.calls.filter(([a]) => a === action);
+    const shown = (content: string) => stage.texts().some((t) => t.content === content);
+    return { ...stage, run, key, pressEsc, press, sentOf, shown };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should show the player's class, name and health on the stats panel, live while open (FS-HRH2J R24–30)", () => {
+    const { run, key, shown } = overlayOnStage();
+    key("I");
+    expect(shown("WARRIOR")).toBe(true);
+    expect(shown("Aldric")).toBe(true);
+    expect(shown("100 / 100")).toBe(true);
+
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, { current_health: 61 })));
+
+    expect(shown("61 / 100")).toBe(true);
+  });
+
+  it("should toggle the overlay on I and on B, and close it on Q (R4)", () => {
+    const { run, key } = overlayOnStage();
+    key("I");
+    expect(run.equipment?.isOpen()).toBe(true);
+    key("B");
+    expect(run.equipment?.isOpen()).toBe(false);
+    key("B");
+    expect(run.equipment?.isOpen()).toBe(true);
+    key("I");
+    expect(run.equipment?.isOpen()).toBe(false);
+    key("B");
+    key("Q");
+    expect(run.equipment?.isOpen()).toBe(false);
+  });
+
+  it("should close the overlay on one ESC and leave the menu closed; the next ESC opens the menu (R5)", () => {
+    const { run, key, pressEsc } = overlayOnStage();
+    key("I");
+    pressEsc();
+    expect(run.equipment?.isOpen()).toBe(false);
+    expect(run.menu).toBeUndefined();
+    pressEsc();
+    expect(run.menu).toBeDefined();
+  });
+
+  it("should keep walking with the overlay open: nothing pauses (R7)", () => {
+    const { run, key, sentOf } = overlayOnStage();
+    key("I");
+    run.sendMovementIntent(1, 0);
+    expect(sentOf(ActionType.Move).at(-1)).toEqual([ActionType.Move, { vx: 1, vy: 0 }]);
+  });
+
+  it("should ignore I and B while the ESC menu is open (R6)", () => {
+    const { run, key, pressEsc } = overlayOnStage();
+    pressEsc();
+    key("I");
+    key("B");
+    expect(run.equipment?.isOpen()).toBe(false);
+  });
+
+  it("should send no cast for a left or right press over a panel, and cast for one in the clear band (R8)", () => {
+    const { key, press, sentOf } = overlayOnStage("warrior", []);
+    key("I");
+    press(OVER_PANEL, 0);
+    press(OVER_PANEL, 2);
+    expect(sentOf(ActionType.CastSkill)).toHaveLength(0);
+
+    press(IN_BAND, 2);
+    expect(sentOf(ActionType.CastSkill)).toEqual([[ActionType.CastSkill, expect.objectContaining({ skill_id: "dash" })]]);
+  });
+
+  it("should start no Shadow Shot hold on a right-press over a panel, and start one in the clear band (R8)", () => {
+    const { run, key, press } = overlayOnStage("archer", []);
+    key("I");
+    press(OVER_PANEL, 2);
+    expect(run.combat.aiming).toBe(false);
+    press(IN_BAND, 2);
+    expect(run.combat.aiming).toBe(true);
+  });
+
+  it("should send equip for a right-click on a hovered bag item, and E over it while open owns E (R10, R16)", () => {
+    const { key, press, sentOf } = overlayOnStage();
+    key("I");
+    const cell = gearPanelLayout(layout.right, 1).cells[0].rect;
+    press({ x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 }, 2);
+    expect(sentOf(ActionType.Equip)).toEqual([[ActionType.Equip, { item_entity_id: "sword" }]]);
+    expect(sentOf(ActionType.CastSkill)).toHaveLength(0);
+  });
+
+  it("should list I / B for the overlay in the controls help (R11)", () => {
+    const { run, shown } = overlayOnStage();
+    run.toggleControlsPanel();
+    expect(shown("I / B")).toBe(true);
+    expect(shown("I")).toBe(false);
+  });
+
+  it("should refuse a pickup into a full bag with the refused notice, pending takes counted (R21, R22)", () => {
+    const { run, shown } = overlayOnStage("warrior", bag(29));
+    expect(run.bagHasRoom()).toBe(true);
+    run.lootChestItem({ entity_id: "coin", name: "coin" });
+    expect(shown(BAG_FULL_NOTICE)).toBe(false);
+    expect(run.bagHasRoom()).toBe(false);
+    expect(shown(BAG_FULL_NOTICE)).toBe(true);
   });
 });
 

@@ -145,12 +145,11 @@ The game is a **medieval barrow-dungeon delve / extraction**, not a space shoote
 
 ### Phaser Scenes (In-Game)
 
-**The canvas menus are the exception:** PreloadScene, MainMenuScene, CharacterCreationScene, LoadoutScene and
+**The canvas menus are the exception:** PreloadScene, MainMenuScene, CharacterCreationScene and
 `src/ui/menuChrome.ts` wear the site's Bone & Soot (soot ground, stone panels, iron hairlines, a
 bone primary button, the title "THE AGE OF BARROWSPIRE" as the site's hero h1). They read it from
 `palette.menu`, whose `menu*` tokens in `BARROW` / `BARROW_HEX` mirror `globals.css` `:root`, never
-from the UI table. The loadout passes `MENU_EQUIPMENT_THEME` to `EquipmentPanel`, whose default
-stays the game look for the run. The baked figures and the HUD pieces a menu reuses (XP bar, HP/MP
+from the UI table. The baked figures and the HUD pieces a menu reuses (XP bar, HP/MP
 stat colours, item tip) stay on the game palette.
 See the guideline's "UI Chrome".
 

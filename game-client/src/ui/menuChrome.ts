@@ -13,7 +13,6 @@
 
 import type Phaser from "phaser";
 import { mix, palette, rgba } from "@/utils/canvasPalette";
-import type { EquipmentPanelTheme } from "./EquipmentPanel";
 
 const PANEL_RADIUS = 6;
 
@@ -150,27 +149,6 @@ export function drawButton(
   g.lineStyle(1, edge, disabled ? 0.4 : hover ? 0.95 : 0.75);
   g.strokeRoundedRect(x + 0.5, y + 0.5, w - 1, h - 1, BUTTON_RADIUS);
 }
-
-/**
- * The loadout's equipment and inventory panels in Bone & Soot: stone ground, iron border and
- * iron-bright headings, bone-grey item names that brighten to bone on hover. A worn slot is
- * tinted iron whatever it holds; its rarity edge still carries the data.
- */
-export const MENU_EQUIPMENT_THEME: EquipmentPanelTheme = {
-  panelFill: ui.panel,
-  frame: ui.frame,
-  heading: ui.frameBright,
-  well: ui.well,
-  itemText: ui.text,
-  itemFaint: ui.muted,
-  itemHover: ui.torchBright,
-  slotWeapon: ui.frameBright,
-  slotArmor: ui.frameBright,
-  slotConsumable: ui.frameBright,
-  slotRing: ui.frameBright,
-  flashText: ui.danger,
-  flashFill: ui.well,
-};
 
 const VIGNETTE_TEXTURE = "menu:vignette";
 const VIGNETTE_SIZE = 256;

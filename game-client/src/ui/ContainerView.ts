@@ -256,6 +256,11 @@ export interface ContainerViewOptions {
   now?: () => number;
   /** The player's level, to mark "Requires level N" when above it (FS-BDA7X req 45). */
   characterLevel?: () => number | undefined;
+  /**
+   * Asked before a take (FS-HRH2J R21): false leaves the item where it lies, takeable, and
+   * nothing is sent; the caller says why. Absent, every take is allowed.
+   */
+  mayTake?: () => boolean;
 }
 
 interface Icon {
@@ -389,7 +394,8 @@ export class ContainerView {
 
   /** The F key: loot the first item, as it always has. */
   lootFirst(): void {
-    if (!this.isOpen) return;
+    if (!this.isOpen || this.contents.items.length === 0 || !this.mayTake())
+      return;
     this.looted(this.contents.takeFirst(this.now()));
   }
 
@@ -408,8 +414,13 @@ export class ContainerView {
     if (!onSatchel(p.x, p.y)) return false;
     if (!primary) return true;
     const item = this.shownAt(p.x, p.y);
-    if (item) this.looted(this.contents.take(item.entity_id, this.now()));
+    if (item && this.mayTake())
+      this.looted(this.contents.take(item.entity_id, this.now()));
     return true;
+  }
+
+  private mayTake(): boolean {
+    return this.options.mayTake?.() ?? true;
   }
 
   /** The takeable item under a panel-local point, once its icon has dropped into view. */

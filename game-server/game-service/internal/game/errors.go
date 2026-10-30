@@ -42,6 +42,9 @@ var (
 	ErrContainerClosed = errors.New("container is closed")
 	// ErrItemNotEquippable refuses equipping an item no slot takes.
 	ErrItemNotEquippable = errors.New("item fits no equipment slot")
+	// ErrBagFull refuses a pickup or an unequip into a bag already holding
+	// BagCapacity items. FS-HRH2J §Requirements 32–34.
+	ErrBagFull = errors.New("bag is full")
 
 	// Floors
 	ErrNoFloors = errors.New("this world has no floors")
