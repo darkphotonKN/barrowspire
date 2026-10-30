@@ -38,8 +38,9 @@ func wallsIn(entities []*ecs.Entity) []rect {
 }
 
 // The hub is a place, not a field. Its buildings are fixed, because a delver has
-// to be able to say "left of the Quartermaster" and be understood. They are also
-// exteriors: walls with no way in. FS-29KSH §Requirements 4.
+// to be able to say "in the Quartermaster's store" and be understood. Each is
+// walked into through an open gap in its south wall: nothing hangs in it.
+// FS-29KSH §Requirements 4, FS-B0H2D §Requirements 9.
 func TestHub_HasBuildings(t *testing.T) {
 	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
@@ -51,7 +52,7 @@ func TestHub_HasBuildings(t *testing.T) {
 	t.Run("nothing to open", func(t *testing.T) {
 		for _, entity := range entities {
 			_, isDoor := entity.GetComponent(ecs.ComponentTypeDoor)
-			assert.False(t, isDoor, "hub buildings are exteriors; there is nothing to go into")
+			assert.False(t, isDoor, "a town building's way in is an open gap, with no door entity")
 		}
 	})
 
