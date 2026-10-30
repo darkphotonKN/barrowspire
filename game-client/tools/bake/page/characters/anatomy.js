@@ -6,7 +6,7 @@
 // Units are fractions of H (rig.js). The model faces +z; its left is +x.
 
 import * as THREE from "three";
-import { attach, ellipsoid, jointAt as J, rigidTube, skinTube, spring } from "./rig.js";
+import { attach, ellipsoid, jointAt as J, mount, rigidTube, skinTube, spring } from "./rig.js";
 import { hash2 } from "../noise.js";
 
 const sides = [
@@ -459,6 +459,45 @@ export function beard(rig, mat) {
   };
 }
 
+/** A close-trimmed beard along the jaw and over the lip; `full` scales its depth down the chin. */
+export function shortBeard(rig, mat, { full = 1 } = {}) {
+  const H = rig.H;
+  const [, hy, hz] = J(rig, "head");
+  const r = rig.p.headR;
+  attach(rig, "head", ellipsoid(r * 0.66 * H, r * 0.42 * full * H, r * 0.52 * H, 14), mat, [0, hy + 0.016, hz + 0.028]);
+  attach(rig, "head", ellipsoid(r * 0.34 * H, r * 0.09 * H, r * 0.12 * H, 8), mat, [0, hy + 0.034, hz + 0.06]);
+}
+
+/** A sash wound about the waist, its knotted end hanging at one hip (`side`). */
+export function sash(rig, mat, { side = "L", depth = 0.05, pad = 0.006 } = {}) {
+  const H = rig.H;
+  const [, hy] = J(rig, "hips");
+  const sx = side === "L" ? 1 : -1;
+  const band = rigidTube(
+    H,
+    [
+      { p: [0, hy - 0.02, 0.002], r: [0.104 * rig.p.hipW + pad, 0.082 * rig.p.torsoD + pad] },
+      { p: [0, hy + 0.02, 0.004], r: [0.1 * rig.p.torsoW + pad, 0.08 * rig.p.torsoD + pad] },
+      { p: [0, hy + depth, 0.004], r: [0.09 * rig.p.torsoW + pad, 0.072 * rig.p.torsoD + pad] },
+    ],
+    { segs: 24, steps: 3, caps: false },
+  );
+  attach(rig, "hips", band, mat, [0, 0, 0]);
+  attach(rig, "hips", ellipsoid(0.022 * H, 0.02 * H, 0.016 * H, 10), mat, [sx * 0.07, hy + 0.012, 0.07]);
+  const tail = mount(rig, "hips", [sx * 0.078, hy, 0.066], { rz: sx * 0.12, rx: 0.08 });
+  const cloth = new THREE.BoxGeometry(0.036 * H, 0.15 * H, 0.008 * H);
+  cloth.translate(0, -0.075 * H, 0);
+  // a little twist and taper down its length
+  const p = cloth.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const t = -p.getY(i) / (0.15 * H);
+    p.setX(i, p.getX(i) * (1 - 0.3 * t));
+    p.setZ(i, p.getZ(i) + Math.sin(t * 3) * 0.006 * H);
+  }
+  cloth.computeVertexNormals();
+  tail.add(new THREE.Mesh(cloth, mat));
+}
+
 /** A belt around the hips with a buckle and a pouch. */
 export function belt(rig, mat, buckleMat, o = {}) {
   const H = rig.H;
@@ -476,7 +515,8 @@ export function belt(rig, mat, buckleMat, o = {}) {
 /**
  * Hair over a bare head (FS-2325V §G): a cap over the crown with the hairline above the brow,
  * and the back of the head down to the nape. `long` lets it fall to the collar; `bun` gathers it
- * at the back. Returns the meshes, so a palette can recolour them.
+ * at the back; `tail` ties it at the nape in a short tail. Returns the meshes, so a palette can
+ * recolour them.
  */
 export function hair(rig, mat, o = {}) {
   const H = rig.H;
@@ -493,6 +533,7 @@ export function hair(rig, mat, o = {}) {
     attach(rig, "head", new THREE.SphereGeometry(1, 20, 10, Math.PI / 2 + 1.15, Math.PI * 2 - 2.3, Math.PI * 0.25, Math.PI * fall), mat, at, scale),
   );
   if (o.bun) out.push(attach(rig, "head", ellipsoid(r * 0.5 * H, r * 0.46 * H, r * 0.44 * H, 12), mat, [0, hy + 0.078, hz - r * 1.02]));
+  if (o.tail) out.push(attach(rig, "head", ellipsoid(r * 0.3 * H, r * 0.75 * H, r * 0.3 * H, 10), mat, [0, hy + 0.01, hz - r * 1.02], { rx: 0.35 }));
   return out;
 }
 

@@ -201,7 +201,15 @@ the test above, because most of those things cannot be acted on.
   Creature variants change proportions and add bones (tail, jaw, hunch), or lay the spine
   horizontal on four legs.
 - **Player:** cloaked/armored figure with a lantern or torch; strong silhouette. The
-  class reads at a glance: knight, archer, wizard.
+  class reads at a glance: knight, archer, wizard, mercenary.
+- **Mercenary:** a lightly armoured, skilled swordsman built on strength. He is a fighter in the
+  open, never a rogue or an assassin. He wears a quilted arming coat in faded madder, skirted to
+  mid-thigh, with a madder sash, one blackened spaulder, a vambrace on the sword arm and tall
+  boots. He goes bareheaded, his hair tied back and his beard trimmed, so the face and hair
+  carry him. His sword is a long, slender, curved dueling blade with a knuckle-bow, used
+  one-handed with no shield. He is broad in the shoulder and heavy in the arm: never the
+  knight's plate and helm, never the archer's hood and cloak. *(Amended at the owner's pick,
+  FS-MAMHR §H, 2026-10-31.)*
 - **Enemies:** barrow/undead themes — skeletons, wraiths, revenants — for fodder and brutes;
   a boss may also be an infernal demon the Spire summons. In field worlds only, fodder and
   brutes may also be living animals (the boar first). Dark palette; **glowing eyes as the

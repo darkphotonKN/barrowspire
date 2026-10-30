@@ -244,33 +244,21 @@ function rag(tone, { seed = 19 } = {}) {
 }
 
 /**
- * A brigandine: worn cloth over small overlapping plates, riveted through. The plates show as
- * horizontal lames (each row's lower edge proud, its top tucked under the row above), the rivets
- * as iron dots in staggered rows, and the cloth is rubbed thin where the plate edges press.
+ * A quilted arming coat: padding stitched in long vertical channels, each one puffed between
+ * the sunken seams, the cloth rubbed pale along the puffs and dark in the seams.
  */
-function brigandine(tone, rivet, { dirt = 0.45, seed = 61 } = {}) {
-  const row = 16;
-  const cw = 8;
+function quilted(tone, { dirt = 0.4, seed = 71 } = {}) {
+  const cell = 8;
   return paint(
     (x, y) => {
-      const t = (y % row) / row;
-      // a lame: rises from under the row above, swells, and drops at its lower edge
-      const lame = smoothstep(0, 0.25, t) * (1 - 0.35 * smoothstep(0.8, 1, t));
-      const r = Math.floor(y / row);
-      const off = (r % 2) * (cw / 2);
-      const cx = Math.floor((x - off) / cw) * cw + off + cw / 2;
-      const cy = r * row + row * 0.55;
-      const d = Math.hypot(x - cx, y - cy);
-      const dome = Math.max(0, 1 - d / 1.9);
-      const weave = pn(x, y, 2, 2, seed) * 0.5 + 0.25 * Math.sin(((x + y) * Math.PI) / 2);
-      const h = 0.35 * lame + 0.08 * weave + 0.7 * dome;
-      let c = shade(tone, 0.72 + 0.32 * lame + 0.08 * weave + 0.2 * pf(x, y, 32, seed + 1));
-      // the cloth rubbed through to the plate along each edge
-      c = mix(c, shade(rivet, 0.8), 0.35 * smoothstep(0.86, 1, t) * smoothstep(0.45, 0.8, pf(x, y, 16, seed + 2)));
-      c = mix(c, shade(rivet, 0.75 + 0.6 * dome), smoothstep(0.05, 0.4, dome));
-      return { c: grime(c, dirt, x, y, seed + 3), h };
+      const u = x % cell;
+      const puff = Math.sin((u / cell) * Math.PI) ** 0.6;
+      const weave = pn(x, y, 2, 2, seed) * 0.5 + 0.25 * Math.sin(((x - y) * Math.PI) / 2);
+      const h = 0.7 * puff + 0.08 * weave;
+      const c = shade(tone, 0.68 + 0.3 * puff + 0.06 * weave + 0.16 * pf(x, y, 32, seed + 1));
+      return { c: grime(c, dirt, x, y, seed + 2), h };
     },
-    { strength: 1.6 },
+    { strength: 2 },
   );
 }
 
@@ -320,11 +308,10 @@ export const GEAR = {
   felt: mix("barrowDeep", "slate", 0.5),
   apron: mix("barrowBrown", "brass", 0.4),
   hairGrey: mix("slateLight", "vellumDark", 0.45),
-  // the Mercenary (FS-MAMHR §H): a brigandine's faded madder over blackened rivets, buff leather,
-  // an undyed scarf. Burnt sienna, kept off the knight's crimson and the archer's green.
-  brigandine: mix(mix("ember", "oxblood", 0.45), "barrowDeep", 0.64),
-  buff: mix(mix("barrowBrown", "vellumDark", 0.12), "barrowDeep", 0.3),
-  scarf: mix("vellumDark", "barrowBrown", 0.55),
+  // the Mercenary (FS-MAMHR §H): a quilted arming coat in faded madder, a madder sash. Burnt
+  // sienna, kept off the knight's crimson and the archer's green.
+  coat: mix(mix("ember", "oxblood", 0.5), "barrowDeep", 0.7),
+  sash: mix(mix("ember", "oxblood", 0.35), "barrowDeep", 0.35),
   hairDark: mix("barrowDeep", "pitch", 0.35),
 };
 
@@ -396,10 +383,8 @@ export function fabrics() {
     felt: mat(wool(GEAR.felt, { seed: 47, dirt: 0.3 }), { side: D }),
     apron: mat(leather(GEAR.apron, { seed: 49, dirt: 0.5 }), { rough: 0.75, side: D }),
     hairGrey: mat(hair(GEAR.hairGrey, { seed: 51 }), { rough: 0.9 }),
-    brigandine: mat(brigandine(GEAR.brigandine, GEAR.blackIron), { rough: 0.8, normal: 1.1 }),
-    buff: mat(leather(GEAR.buff, { seed: 63, dirt: 0.45 }), { rough: 0.75 }),
-    buffDouble: mat(leather(GEAR.buff, { seed: 63, dirt: 0.45 }), { rough: 0.75, side: D }),
-    scarf: mat(wool(GEAR.scarf, { seed: 65, dirt: 0.5 }), { side: D }),
+    coat: mat(quilted(GEAR.coat), { rough: 0.85, normal: 1.2, side: D }),
+    sash: mat(wool(GEAR.sash, { seed: 79, dirt: 0.35 }), { side: D }),
     hairDark: mat(hair(GEAR.hairDark, { seed: 67 }), { rough: 0.9 }),
   };
   return SET;

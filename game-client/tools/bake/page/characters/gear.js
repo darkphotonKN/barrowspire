@@ -443,73 +443,67 @@ export function wizardHat(rig, mat, bandMat) {
 // --- the Mercenary (FS-MAMHR §H) -----------------------------------------------------------
 
 /**
- * A one-handed arming sword: shorter and narrower than the knight's longsword, a plain iron
- * cross with down-swept quillons, a wheel pommel, a grip for one fist. A working blade, not a
- * house's.
+ * A curved, single-edged dueling sword held in one fist (the Aldori blade): long and slender,
+ * longer than an arming sword but nowhere near a greatsword. The edge runs along the grip frame's
+ * -y, the convex side; the back sweeps toward +y and drops to a clipped point near the tip. A
+ * short cross, its back quillon a knob and its front one swept down into a knuckle-bow.
  */
-export function armingSword(rig, M, F) {
+export function curvedSword(rig, F) {
   const H = rig.H;
   const g = new THREE.Group();
-  const L = 0.34 * H;
-  const w = 0.022 * H;
+  const L = 0.46 * H;
+  const w = 0.019 * H;
+  const k = 0.055 * H; // the tip's offset from straight
+  const clip = 0.8;
+  const grip = 0.08 * H;
+  const N = 24;
+  const centre = (t) => k * t ** 1.6;
+  const half = (t) => (w / 2) * (1 - 0.3 * t);
   const blade = new THREE.Shape();
-  blade.moveTo(-w / 2, 0);
-  blade.lineTo(w / 2, 0);
-  blade.lineTo(w * 0.38, L * 0.8);
-  blade.lineTo(0, L);
-  blade.lineTo(-w * 0.38, L * 0.8);
+  // the edge, hilt to tip
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const x = centre(t) - half(t) * (t > 0.92 ? 1 - (t - 0.92) / 0.08 : 1);
+    if (i === 0) blade.moveTo(x, 0);
+    else blade.lineTo(x, t * L);
+  }
+  // the back, tip to hilt: from the clip it falls straight to the point
+  for (let i = N - 1; i >= 0; i--) {
+    const t = i / N;
+    const fall = t > clip ? (t - clip) / (1 - clip) : 0;
+    blade.lineTo(centre(t) + half(t) * (1 - 1.6 * fall ** 1.4), t * L);
+  }
   blade.closePath();
-  const bg = extrude(blade, 0.0036 * H, 0.0016 * H);
+  const bg = extrude(blade, 0.0034 * H, 0.0014 * H);
   bg.applyMatrix4(GRIP_BASIS);
   bg.translate(0, 0, 0.045 * H);
   g.add(new THREE.Mesh(bg, F.steel));
-  g.add(placed(new THREE.BoxGeometry(0.0062 * H, 0.0055 * H, L * 0.5), F.blackIron, 0, 0, 0.045 * H + L * 0.3));
-  // the cross: a bar, its quillons swept toward the blade
-  g.add(placed(new THREE.BoxGeometry(0.012 * H, 0.06 * H, 0.012 * H), F.blackIron, 0, 0, 0.042 * H));
-  for (const sy of [-1, 1])
-    g.add(placed(new THREE.BoxGeometry(0.01 * H, 0.03 * H, 0.01 * H), F.blackIron, 0, sy * 0.04 * H, 0.048 * H, sy * 0.6, 0, 0));
-  g.add(new THREE.Mesh(rod(0.0095 * H, 0.0085 * H, 0.07 * H), F.leatherDark));
-  const pommel = new THREE.CylinderGeometry(0.017 * H, 0.017 * H, 0.011 * H, 14);
-  pommel.rotateZ(Math.PI / 2);
-  g.add(placed(pommel, F.blackIron, 0, 0, -0.043 * H));
-  return g;
-}
+  // a narrow fuller near the back, following the curve
+  const fpts = [];
+  for (let i = 0; i <= 8; i++) {
+    const t = (i / 8) * 0.68 + 0.02;
+    fpts.push(new THREE.Vector3(0, centre(t) + half(t) * 0.3, 0.045 * H + t * L));
+  }
+  const fuller = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(fpts), 16, 0.0026 * H, 4, false);
+  fuller.scale(1.5, 1, 1);
+  g.add(new THREE.Mesh(fuller, F.blackIron));
 
-/**
- * A kettle hat: a low iron dome on a broad brim that droops all round, tipped back off the brow.
- * Open faced, no crest: the hat of a foot soldier who bought his own kit.
- */
-export function kettleHat(rig, mat) {
-  const H = rig.H;
-  const [, hy, hz] = J(rig, "head");
-  const r = rig.p.headR;
-  const at = [0, hy + 0.07, hz - 0.008];
-  const dome = new THREE.LatheGeometry(
-    [
-      new THREE.Vector2(r * 1.1 * H, 0),
-      new THREE.Vector2(r * 1.12 * H, 0.022 * H),
-      new THREE.Vector2(r * 1.02 * H, 0.046 * H),
-      new THREE.Vector2(r * 0.78 * H, 0.066 * H),
-      new THREE.Vector2(r * 0.42 * H, 0.078 * H),
-      new THREE.Vector2(0, 0.082 * H),
-    ],
-    24,
-  );
-  attach(rig, "head", dome, mat, at, { rx: -0.2 });
-  const brim = [];
-  const N = 6;
-  for (let i = 0; i <= N; i++) {
-    const t = i / N;
-    brim.push(new THREE.Vector2((r * 1.08 + t * r * 0.62) * H, (-t * t * 0.026 + 0.003) * H));
-  }
-  for (let i = N; i >= 0; i--) {
-    const t = i / N;
-    brim.push(new THREE.Vector2((r * 1.08 + t * r * 0.62) * H, (-t * t * 0.026 - 0.003) * H - (i === N ? 0.004 * H : 0)));
-  }
-  attach(rig, "head", new THREE.LatheGeometry(brim, 28), mat, [at[0], at[1] + 0.002, at[2]], { rx: -0.2 });
-  // the band where dome meets brim, riveted
-  const band = new THREE.CylinderGeometry(r * 1.13 * H, r * 1.13 * H, 0.012 * H, 24, 1, true);
-  attach(rig, "head", band, mat, [at[0], at[1] + 0.007, at[2]], { rx: -0.2 });
+  // the cross, short and flat across the blade, and the grip
+  const span = 0.056 * H;
+  g.add(placed(new THREE.BoxGeometry(0.011 * H, span, 0.011 * H), F.blackIron, 0, 0, 0.04 * H));
+  g.add(new THREE.Mesh(rod(0.0095 * H, 0.0088 * H, grip), F.leatherDark));
+  // the back quillon curls toward the blade, the front one sweeps down into a knuckle-bow
+  const pz = -grip / 2 - 0.006 * H;
+  g.add(placed(new THREE.SphereGeometry(0.008 * H, 8, 6), F.blackIron, 0, span / 2, 0.05 * H));
+  const bow = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, -span / 2, 0.04 * H),
+    new THREE.Vector3(0, -0.04 * H, 0.012 * H),
+    new THREE.Vector3(0, -0.036 * H, -0.024 * H),
+    new THREE.Vector3(0, -0.014 * H, pz),
+  ]);
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(bow, 16, 0.0042 * H, 5, false), F.blackIron));
+  g.add(placed(new THREE.SphereGeometry(0.012 * H, 10, 8), F.blackIron, 0, -0.004 * H, pz));
+  return g;
 }
 
 /**
