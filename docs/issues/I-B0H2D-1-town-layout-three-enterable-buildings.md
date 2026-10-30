@@ -1,6 +1,6 @@
 ---
 id: I-B0H2D-1
-status: open
+status: done
 implements: FS-B0H2D
 blocked_by: []
 labels: [ready-for-agent]
@@ -41,18 +41,18 @@ Not touched: `internal/matchmaker`, `internal/match_queue`, any proto, the clien
 
 ## Acceptance Criteria
 
-- [ ] Exactly three hub buildings; Inn footprint the largest; store and smithy 300×240; Inn ≤ 400×300.
-- [ ] Each building's south wall has a centred 50 px gap; no `Door` component anywhere in the hub.
-- [ ] Test: for each gate (Spire 1000,50; Forest 40,400; Meadows 1960,360) every wall rect is more
+- [x] Exactly three hub buildings; Inn footprint the largest; store and smithy 300×240; Inn ≤ 400×300.
+- [x] Each building's south wall has a centred 50 px gap; no `Door` component anywhere in the hub.
+- [x] Test: for each gate (Spire 1000,50; Forest 40,400; Meadows 1960,360) every wall rect is more
       than 120 px from the spawn→gate segment (the 240 px lane, R4).
-- [ ] Test: a gap-wide, 80 px deep rect south of each door gap lies in the map and touches no wall (R5).
-- [ ] Test: spawn and both gate arrival points lie outside every building (R6).
-- [ ] Test: every resident quarter lies outside every building footprint and inside the map (R7);
+- [x] Test: a gap-wide, 80 px deep rect south of each door gap lies in the map and touches no wall (R5).
+- [x] Test: spawn and both gate arrival points lie outside every building (R6).
+- [x] Test: every resident quarter lies outside every building footprint and inside the map (R7);
       `TestHubResidents_QuartersClearOfFunctionNPCs_KeepTalkRangePlusMargin` passes unchanged.
-- [ ] Test: every NPC inside a building (here, the Quartermaster) is more than `NPCInteractRange`
+- [x] Test: every NPC inside a building (here, the Quartermaster) is more than `NPCInteractRange`
       from each of that building's outer wall rects (R14).
-- [ ] `go test ./...` in game-service green; `make lint` clean.
-- [ ] Commit notes the final coordinates (buildings, Quartermaster, quarters) for I-B0H2D-3's mirror.
+- [x] `go test ./...` in game-service green; `make lint` clean.
+- [x] Commit notes the final coordinates (buildings, Quartermaster, quarters) for I-B0H2D-3's mirror.
 
 ## Blocked By
 

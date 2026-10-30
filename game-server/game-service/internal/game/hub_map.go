@@ -19,8 +19,9 @@ type hubNPC struct {
 	X, Y     float64
 }
 
-// The hub's residents. Placed near the spawn so an arriving delver can see who
-// is worth talking to without hunting the map.
+// The hub's function NPCs. The Spirewarden stands near the spawn, so an arriving
+// delver sees who is worth talking to without hunting the map; the Quartermaster
+// keeps his store (FS-B0H2D §Requirements 8), his marker showing over its roof.
 var hubNPCs = []hubNPC{
 	{
 		Name:     "Spirewarden",
@@ -31,8 +32,11 @@ var hubNPCs = []hubNPC{
 	{
 		Name:     "Quartermaster",
 		Function: components.NPCFunctionStorekeeper,
-		X:        constants.HubSpawnX - 140,
-		Y:        constants.HubSpawnY - 120,
+		// on the store's centre line, a step in from its door gap: more than talk
+		// range from every one of its walls, so nobody outside talks to him
+		// through one (FS-B0H2D §Requirements 14)
+		X: 1280,
+		Y: 270,
 	},
 }
 
@@ -58,34 +62,41 @@ var hubGates = []hubGate{
 	{Destination: components.GateDestinationMeadows, X: 1960, Y: 360, Arrival: &components.GateArrival{X: 1820, Y: 360}},
 }
 
-// hubBuilding is one structure's footprint in the hub.
+// hubBuilding is one town building's footprint in the hub, and which one it is.
 //
-// Exteriors only: four walls and no door. A delver cannot go inside one, so
-// there is nothing to open and no interior to build (FS-29KSH §Out of Scope).
+// Every town building can be walked into: a gap in its south wall and a room
+// inside, in this same world (FS-B0H2D §Requirements 1, 9). The name is how the
+// map data says which room is which, so what stands inside one is placed against
+// that building and not against a coordinate copied around.
 type hubBuilding struct {
+	Name       string
 	X, Y, W, H float64
 }
 
-// The hub's buildings, laid out by hand.
+// The town's buildings, laid out by hand: the Quartermaster's store, the Inn and
+// the smithy.
 //
 // Fixed, not scattered: a run randomises its map because every run is new, but
-// the hub is somewhere a delver returns to, and "left of the Quartermaster" has
-// to mean the same thing tomorrow. The middle of the map is left open — that is
-// where delvers arrive, where both function NPCs stand, and where the residents
-// of I-29KSH-8 need room to wander without wedging in a corner.
+// the hub is somewhere a delver returns to, and "in the Quartermaster's store"
+// has to mean the same thing tomorrow. All three stand north of the trails to
+// the Forest and the Meadows and clear of the walk to the Spire, so nothing
+// walls off the way out of town: a lane 240 px wide runs from the spawn to every
+// gate (tested in hub_map_test.go). Each south-wall door faces the town.
+// FS-B0H2D §Requirements 2-6.
 var hubBuildings = []hubBuilding{
-	// the north row, behind the NPCs
-	{X: 620, Y: 180, W: 300, H: 200},
-	{X: 1080, Y: 180, W: 260, H: 200},
-	// the west side
-	{X: 240, Y: 460, W: 220, H: 260},
-	// the east side, leaving the walk south of the spawn clear
-	{X: 1560, Y: 420, W: 240, H: 300},
-	// the south-east corner
-	{X: 1500, Y: 800, W: 300, H: 140},
+	// the largest, west of the walk to the Spire
+	{Name: "Inn", X: 470, Y: 110, W: 400, H: 300},
+	// east of the walk to the Spire. 240 deep, not a run house's 200, so the
+	// Quartermaster can stand out of talk range of every wall (R2, R14)
+	{Name: "Quartermaster's store", X: 1130, Y: 150, W: 300, H: 240},
+	// the north-west corner, above the Forest trail
+	{Name: "Smithy", X: 110, Y: 50, W: 300, H: 240},
 }
 
 const hubWallThickness = 20
+
+// hubDoorWidth is a town building's door gap: a run house's door width.
+const hubDoorWidth = 50
 
 // hubResident is an ambient NPC and the quarter they keep to.
 //
@@ -97,10 +108,14 @@ type hubResident struct {
 	Region     components.WanderRegion
 }
 
-// Their quarters sit in the open ground the buildings leave, and away from the
-// spawn and the two function NPCs so nobody has to walk through a crowd to reach
-// the Spirewarden: each quarter keeps a function NPC's talk range plus a margin
-// clear (FS-MRZH7 §Requirements 9, tested in hub_map_test.go).
+// Their quarters sit in the open ground south of the town buildings, wholly
+// outside every one: a walk is a straight line between two points of a quarter,
+// so no resident ever crosses a door gap into a room (FS-B0H2D §Requirements 7).
+// They keep away from the spawn and the two function NPCs so nobody has to walk
+// through a crowd to reach the Spirewarden: each quarter keeps a function NPC's
+// talk range plus a margin clear (FS-MRZH7 §Requirements 9). A quarter may
+// cross a lane; a resident does not block a corridor 240 px wide. Both tested in
+// hub_map_test.go.
 var hubResidents = []hubResident{
 	{Name: "Cottar", Appearance: "rust_trousers", Region: components.WanderRegion{X: 560, Y: 560, W: 180, H: 200}},
 	{Name: "Herbwife", Appearance: "green_skirt", Region: components.WanderRegion{X: 1260, Y: 540, W: 240, H: 220}},
@@ -111,11 +126,13 @@ var hubResidents = []hubResident{
 /**
 * Places the hub's fixed residents.
 *
-* Deliberately NOT InitialMapObjects. A run's map is buildings, doors, containers,
-* switches, an escape door and a seeded item pool; the hub has none of those, and
-* those entity kinds simply never exist here rather than being filtered out
-* downstream. There are no boundary walls either — a world's edge is the
-* MovementSystem clamp, the same as in a run. FS-29KSH §Requirements 7, 9.
+* Deliberately NOT InitialMapObjects. A run's map is random buildings, doors,
+* containers, switches, an escape door and a seeded item pool; the hub has its
+* own fixed town buildings, open door gaps and none of the rest, and those entity
+* kinds simply never exist here rather than being filtered out downstream
+* (FS-B0H2D §Requirements 9). There are no boundary walls either — a world's
+* edge is the MovementSystem clamp, the same as in a run. FS-29KSH
+* §Requirements 7, 9.
 **/
 func (s *Session) InitialHubMapObjects() {
 	for _, npc := range hubNPCs {
@@ -143,19 +160,28 @@ func (s *Session) InitialHubMapObjects() {
 	)
 }
 
-// addHubBuilding walls a footprint in on all four sides.
+// addHubBuilding walls a town building in, leaving a door gap in its south wall.
 //
-// Deliberately not AddBuilding, which cuts a gap in the south wall and hangs a
-// door in it: a run's buildings are meant to be entered and looted, and the
-// hub's are scenery.
+// The same cut AddBuilding makes for a run house, a run door wide and centred,
+// but with nothing hung in it: a town building is a shop, so there is nothing to
+// open, lock or sync, and the hub keeps no Door component at all. Every wall
+// carries the building's house id, so the client rebuilds the footprint from
+// the walls. FS-B0H2D §Requirements 9, 10.
 func (s *Session) addHubBuilding(building hubBuilding) {
 	houseID := uuid.New()
+	sideOfDoor := (building.W - hubDoorWidth) / 2
+	southY := building.Y + building.H - hubWallThickness
 
 	walls := []WallConfig{
+		// north
 		{X: building.X, Y: building.Y, Width: building.W, Height: hubWallThickness},
-		{X: building.X, Y: building.Y + building.H - hubWallThickness, Width: building.W, Height: hubWallThickness},
+		// west
 		{X: building.X, Y: building.Y, Width: hubWallThickness, Height: building.H},
+		// east
 		{X: building.X + building.W - hubWallThickness, Y: building.Y, Width: hubWallThickness, Height: building.H},
+		// south, either side of the door gap
+		{X: building.X, Y: southY, Width: sideOfDoor, Height: hubWallThickness},
+		{X: building.X + sideOfDoor + hubDoorWidth, Y: southY, Width: sideOfDoor, Height: hubWallThickness},
 	}
 
 	for _, wall := range walls {
