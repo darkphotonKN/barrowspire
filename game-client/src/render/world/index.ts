@@ -37,7 +37,6 @@ export {
   FOREST_LOOK,
   MEADOWS_LOOK,
   fieldLook,
-  landBeyond,
   type FieldLook,
 } from "./fieldLook";
 export { forestStatics, planVerges, type VergeLean, type VergePiece } from "./forestDressing";
@@ -56,11 +55,9 @@ export {
   type FieldPiece,
   type RoadHome,
 } from "./fieldDressing";
-export { planHorizon, type HorizonLook, type HorizonPlan } from "./horizon";
 export {
   GroundLayer,
   Occluders,
-  addHorizon,
   addDressing,
   addPerimeter,
   addProp,

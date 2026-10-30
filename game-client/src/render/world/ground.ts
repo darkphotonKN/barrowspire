@@ -223,6 +223,54 @@ export function planGround({
   return tiles;
 }
 
+/**
+ * How deep a field's ground fades into its edge tint, world px: the outermost tile (FS-KSD6K
+ * §Requirements 16).
+ */
+export const EDGE_FADE = T;
+/**
+ * Steps across the fade: bands, not a shader, so it erases the same on every renderer. Divides
+ * `EDGE_FADE` evenly, so the bands meet on whole world px with no gap.
+ */
+const EDGE_FADE_BANDS = 10;
+
+/** A world rect of painted ground to erase, by this share, 0..1 (1 takes it all). */
+export interface FadeBand extends Rect {
+  erase: number;
+}
+
+/**
+ * Where a field's painted ground is erased so it fades into the edge tint the camera shows past
+ * the map (FS-KSD6K §Requirements 16): bands along every edge, taking more of the ground the
+ * nearer the edge over `EDGE_FADE`, and everything past the edge out to `reach`, so any road or
+ * tile overhanging the edge goes with the ground. Where bands overlap (a corner) their erasures
+ * compound, so a corner fades at least as much as either edge.
+ */
+export function planEdgeFade(width: number, height: number, reach: number): FadeBand[] {
+  const step = EDGE_FADE / EDGE_FADE_BANDS;
+  const bands: FadeBand[] = [];
+  for (let k = 0; k < EDGE_FADE_BANDS; k++) {
+    // kept: a smoothstep from none at the edge to all at the fade's depth, at the band's middle
+    const s = (k + 0.5) / EDGE_FADE_BANDS;
+    const erase = 1 - s * s * (3 - 2 * s);
+    const d = k * step;
+    bands.push(
+      { x: 0, y: d, width, height: step, erase },
+      { x: 0, y: height - d - step, width, height: step, erase },
+      { x: d, y: 0, width: step, height, erase },
+      { x: width - d - step, y: 0, width: step, height, erase },
+    );
+  }
+  // past the edge: north and south the full reach wide, west and east between them
+  bands.push(
+    { x: -reach, y: -reach, width: width + 2 * reach, height: reach, erase: 1 },
+    { x: -reach, y: height, width: width + 2 * reach, height: reach, erase: 1 },
+    { x: -reach, y: 0, width: reach, height, erase: 1 },
+    { x: width, y: 0, width: reach, height, erase: 1 },
+  );
+  return bands;
+}
+
 /** Barrow earth breaking up through a tower's halls: patches of one sheet, edged by another. */
 export interface GroundPatches {
   /** The material the patches are, e.g. `ground_dirt`. */

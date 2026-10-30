@@ -87,7 +87,8 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
 - **Occlusion is cut-away, then fade.** House fronts (south and east sides) are low cut-away
   walls. A tree or tall prop in front of the player fades to about 40% while it overlaps them.
 - **Outside the map is dark.** The corners of the screen beyond the projected diamond are a dark
-  fill, never a void or a stray background.
+  fill, never a void or a stray background. In a field world it is that field's edge tint, which
+  the ground fades into (see "Field worlds may be daylit instead"; FS-KSD6K, 2026-10-30).
 
 ---
 
@@ -171,8 +172,12 @@ the test above, because most of those things cannot be acted on.
   baked into the art so it looks lit *before* any light-map is applied. This holds for the hub
   and for every run in the Spire.
 - **Field worlds may be daylit instead** (FS-X2F2H; Gentle Meadows first). A field is open
-  country outside the Spire: grass, sparse trees and rocks, with a horizon backdrop (sky and
-  distant hills) behind the map's far edge. Its daylight may be as warm as a cozy meadow or as
+  country outside the Spire: grass, sparse trees and rocks. Past a field's map edge there is no
+  horizon backdrop and no painted land: only one flat tint per field, mixed from `BARROW` tokens
+  (the Forest a deep moss-black, the Meadows a soft muted green-grey), and the ground, road
+  included, fades into it over the outermost tile so the edge reads as the map falling away into
+  the field's mood, never a hard seam. *(Horizon replaced by the edge tint, FS-KSD6K,
+  2026-10-30.)* Its daylight may be as warm as a cozy meadow or as
   dim as an overcast wood, but never bright high-fantasy: the ground is mixed from `BARROW`
   tokens like every other surface, never neon, and shading is still baked into the art first. A
   meadow's ground may be lit clearly daylit, since its markers wear the field outline (see "The

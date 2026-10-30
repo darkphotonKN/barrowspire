@@ -25,12 +25,9 @@ import {
   MEADOWS_LOOK,
   Occluders,
   addDressing,
-  addHorizon,
   addProp,
   fieldLook,
   forestStatics,
-  landBeyond,
-  planHorizon,
   planKeepOutDressing,
   planRoadHome,
   planTreeStands,
@@ -61,7 +58,8 @@ import { gateAt, gateEdges } from "./hubGates";
  * A field world (FS-X2F2H §H): the ground, the player and the others in this pod's channel, the
  * field's keep-out areas and its entrance gate, the road home. Each field is drawn in its own look
  * (`fieldLook`, keyed by the field id from world_entered): its daylit ground, its ambient, trees
- * and rocks on the server's keep-outs, a horizon behind the far edge (§Requirements 54). Monsters
+ * and rocks on the server's keep-outs, and past the map's edge only its flat edge tint, the ground
+ * fading into it (FS-KSD6K §Requirements 14, 16). Monsters
  * and the fight with them are the run scene's own pieces, composed in `fieldCombat`; drop piles
  * and the satchel they are taken through, in `fieldPiles`, a pile held for someone else's kill
  * drawn faint and not offered (§Requirements 56, 59). The equip HUD is the run's own
@@ -189,17 +187,9 @@ export class FieldScene extends Phaser.Scene {
 
     ensureCharacterTextures(this);
     this.art = registerArt(this);
-    // the horizon behind the far edge, over land in the ground's own colour; the ground itself is
-    // laid with the first state, road and all
-    const land = landBeyond(this.look, this.art.sheet("ground_grass")?.mean);
-    camera.setBackgroundColor(land);
-    addHorizon(
-      this,
-      planHorizon(
-        { ...this.look.horizon, land },
-        { bounds, view: { width: camera.width, height: camera.height } },
-      ),
-    );
+    // past the map's edge, the field's flat edge tint and nothing else; the ground, laid with the
+    // first state, road and all, fades into it (FS-KSD6K §Requirements 14, 16)
+    camera.setBackgroundColor(this.look.beyond);
     this.bindInput();
 
     // the field's daylight, no torch-lit dark; the vignette and dust stay, as in every world
@@ -569,9 +559,10 @@ export class FieldScene extends Phaser.Scene {
 
   /**
    * The field's ground in its look (§Requirements 54), with the road home running from inside the
-   * entrance gate off its edge: laid once, with the first state, which carries the gate. A forest
-   * waits for its walls, its stands' leaf litter laid under them (FS-3QHQZ §Requirements 25).
-   * Without the ground's art, a placeholder meadow floor.
+   * entrance gate to the map's edge, all of it fading into the edge tint there (FS-KSD6K
+   * §Requirements 16): laid once, with the first state, which carries the gate. A forest waits for
+   * its walls, its stands' leaf litter laid under them (FS-3QHQZ §Requirements 25). Without the
+   * ground's art, a placeholder meadow floor.
    */
   private drawGround(gates: readonly GateState[], walls: readonly WallState[]): void {
     if (this.groundDrawn || (this.look.stands && walls.length === 0)) return;
@@ -579,21 +570,18 @@ export class FieldScene extends Phaser.Scene {
     const { width, height } = this.size;
     const look = this.look.ground;
     if (GroundLayer.available(this.art, "field", look)) {
-      // the map's ground ends on its own edge; only the road runs on past it, fading
+      // the map's ground, road and all, fades out at its own edge into the edge tint; nothing,
+      // not even the road, runs on past it (FS-KSD6K §Requirements 16)
       const road = roadHomeGate(gates);
-      const { paths, aprons } = road
-        ? planRoadHome(road.position, this.size)
-        : { paths: [], aprons: [] };
+      const paths = road ? planRoadHome(road.position, this.size).paths : [];
       new GroundLayer(this, this.art, {
         width,
         height,
         kind: "field",
         look,
         paths,
-        aprons,
         litter: this.look.stands ? walls.map(rectOfWall) : [],
-        // as far as the camera can see past the map
-        margin: CAMERA_MARGIN,
+        fadeEdge: true,
       });
       return;
     }
