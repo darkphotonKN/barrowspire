@@ -335,6 +335,23 @@ func CreateResidentEntity(em *ecs.EntityManager, resident hubResident) *ecs.Enti
 	return entity
 }
 
+// CreateFixedResidentEntity places an ambient NPC who stands at one point.
+//
+// The resident kind with the quarter left off: function "" and an appearance,
+// so the wire carries them exactly as it does a wandering resident, but no wander
+// region and no velocity, so WanderSystem skips them and MovementSystem never
+// moves them. The innkeeper, the patrons and the smith. FS-B0H2D §Requirements 16.
+func CreateFixedResidentEntity(em *ecs.EntityManager, resident hubFixedResident) *ecs.Entity {
+	entity := em.CreateEntity()
+	npc := components.NewNPCComponent(resident.Name, components.NPCFunctionNone)
+	npc.Appearance = resident.Appearance
+	entity.AddComponent(npc)
+	entity.AddComponent(components.NewTransformComponent(resident.X, resident.Y))
+	entity.AddComponent(components.NewInteractableComponent(commonconstants.NPCInteractRange))
+
+	return entity
+}
+
 // MonsterConfig is one monster to place: what it is and where it stands.
 type MonsterConfig struct {
 	Archetype components.MonsterArchetype

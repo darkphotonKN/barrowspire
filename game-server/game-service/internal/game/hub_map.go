@@ -71,6 +71,23 @@ var hubGates = []hubGate{
 type hubBuilding struct {
 	Name       string
 	X, Y, W, H float64
+	// What stands inside, in world space.
+	Furnishings []hubFurnishing
+}
+
+// hubFurnishing is a keep-out inside a town building that a piece of furniture
+// stands on: the Inn's counter and tables, the smithy's forge.
+//
+// A wall like the building's own, carrying its house id, so a delver collides
+// with it exactly as with a wall and the client groups it with its building. It
+// touches none of the building's outer edges, which is how the client tells it
+// from one of them, and keeps 50 px clear of every wall and every other
+// furnishing so the room stays walkable round it. The kind says which prop the
+// client draws on it; it is map data only and never goes on the wire.
+// FS-B0H2D §Requirements 10, 12.
+type hubFurnishing struct {
+	Kind       string
+	X, Y, W, H float64
 }
 
 // The town's buildings, laid out by hand: the Quartermaster's store, the Inn and
@@ -84,13 +101,24 @@ type hubBuilding struct {
 // gate (tested in hub_map_test.go). Each south-wall door faces the town.
 // FS-B0H2D §Requirements 2-6.
 var hubBuildings = []hubBuilding{
-	// the largest, west of the walk to the Spire
-	{Name: "Inn", X: 470, Y: 110, W: 400, H: 300},
+	// the largest, west of the walk to the Spire. The counter runs north-south
+	// in the east half, the Alewife behind it; the three tables sit in the west
+	// half, clear of the walk in from the door (R18)
+	{Name: "Inn", X: 470, Y: 110, W: 400, H: 300, Furnishings: []hubFurnishing{
+		{Kind: "counter", X: 715, Y: 190, W: 25, H: 140},
+		{Kind: "table", X: 540, Y: 185, W: 30, H: 40},
+		{Kind: "table", X: 540, Y: 285, W: 30, H: 40},
+		{Kind: "table", X: 620, Y: 240, W: 45, H: 40},
+	}},
 	// east of the walk to the Spire. 240 deep, not a run house's 200, so the
-	// Quartermaster can stand out of talk range of every wall (R2, R14)
+	// Quartermaster can stand out of talk range of every wall (R2, R14). No
+	// furnishing: its shelves and crates are dressing (R12)
 	{Name: "Quartermaster's store", X: 1130, Y: 150, W: 300, H: 240},
-	// the north-west corner, above the Forest trail
-	{Name: "Smithy", X: 110, Y: 50, W: 300, H: 240},
+	// the north-west corner, above the Forest trail. The forge stands against
+	// the back of the room, as near the north wall as its clearance allows
+	{Name: "Smithy", X: 110, Y: 50, W: 300, H: 240, Furnishings: []hubFurnishing{
+		{Kind: "forge", X: 225, Y: 120, W: 70, H: 35},
+	}},
 }
 
 const hubWallThickness = 20
@@ -123,6 +151,31 @@ var hubResidents = []hubResident{
 	{Name: "Bellringer", Appearance: "flax_skirt", Region: components.WanderRegion{X: 1180, Y: 820, W: 280, H: 140}},
 }
 
+// hubFixedResident is an ambient NPC who stands at one point indoors: no
+// quarter, no velocity, function "" (FS-B0H2D §Requirements 16).
+type hubFixedResident struct {
+	Name       string
+	Appearance string
+	X, Y       float64
+}
+
+// The people inside the town buildings. Names follow the town's role-names and
+// are exact: the client keys each one's lines and facing by name. Each stands
+// more than talk range from every wall of their building, so nobody outside
+// talks to them through one, and within talk range of ground a delver can walk
+// to from the door; the Alewife across her counter. FS-B0H2D §Requirements
+// 13, 14, 17, 18.
+var hubFixedResidents = []hubFixedResident{
+	// Inn: behind the counter, on its far side from the door
+	{Name: "Alewife", Appearance: "flax_skirt", X: 765, Y: 260},
+	// Inn: one patron at each table
+	{Name: "Drover", Appearance: "rust_trousers", X: 590, Y: 220},
+	{Name: "Gravedigger", Appearance: "slate_trousers", X: 590, Y: 300},
+	{Name: "Pilgrim", Appearance: "green_skirt", X: 643, Y: 220},
+	// Smithy: before the forge, facing the door
+	{Name: "Smith", Appearance: "rust_trousers", X: 260, Y: 175},
+}
+
 /**
 * Places the hub's fixed residents.
 *
@@ -151,22 +204,28 @@ func (s *Session) InitialHubMapObjects() {
 		CreateResidentEntity(s.EntityManager, resident)
 	}
 
+	for _, resident := range hubFixedResidents {
+		CreateFixedResidentEntity(s.EntityManager, resident)
+	}
+
 	slog.Info("Hub map built",
 		"session_id", s.ID,
 		"npcs", len(hubNPCs),
 		"gates", len(hubGates),
 		"buildings", len(hubBuildings),
 		"residents", len(hubResidents),
+		"fixed_residents", len(hubFixedResidents),
 	)
 }
 
-// addHubBuilding walls a town building in, leaving a door gap in its south wall.
+// addHubBuilding walls a town building in, leaving a door gap in its south wall,
+// and stands its furnishings inside.
 //
 // The same cut AddBuilding makes for a run house, a run door wide and centred,
 // but with nothing hung in it: a town building is a shop, so there is nothing to
-// open, lock or sync, and the hub keeps no Door component at all. Every wall
-// carries the building's house id, so the client rebuilds the footprint from
-// the walls. FS-B0H2D §Requirements 9, 10.
+// open, lock or sync, and the hub keeps no Door component at all. Every wall,
+// furnishings included, carries the building's house id, so the client
+// rebuilds the footprint from the walls. FS-B0H2D §Requirements 9, 10, 12.
 func (s *Session) addHubBuilding(building hubBuilding) {
 	houseID := uuid.New()
 	sideOfDoor := (building.W - hubDoorWidth) / 2
@@ -182,6 +241,10 @@ func (s *Session) addHubBuilding(building hubBuilding) {
 		// south, either side of the door gap
 		{X: building.X, Y: southY, Width: sideOfDoor, Height: hubWallThickness},
 		{X: building.X + sideOfDoor + hubDoorWidth, Y: southY, Width: sideOfDoor, Height: hubWallThickness},
+	}
+
+	for _, furnishing := range building.Furnishings {
+		walls = append(walls, WallConfig{X: furnishing.X, Y: furnishing.Y, Width: furnishing.W, Height: furnishing.H})
 	}
 
 	for _, wall := range walls {

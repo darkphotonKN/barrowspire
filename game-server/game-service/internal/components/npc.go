@@ -51,7 +51,8 @@ type NPCComponent struct {
 	Name string
 	// What talking to them opens, if anything.
 	Function NPCFunction
-	// Set for a resident; nil for a function NPC, who stands still.
+	// Set for a wandering resident; nil for a function NPC or a fixed resident,
+	// who stand still.
 	Wander *WanderRegion
 	// How they look, e.g. "green_skirt". Authored in the hub's map data so a
 	// resident looks the same to everyone and after a restart. Empty means the

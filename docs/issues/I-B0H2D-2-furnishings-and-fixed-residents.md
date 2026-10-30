@@ -1,6 +1,6 @@
 ---
 id: I-B0H2D-2
-status: open
+status: done
 implements: FS-B0H2D
 blocked_by: [I-B0H2D-1]
 labels: [ready-for-agent]
@@ -39,19 +39,19 @@ Not touched: wire types, serializer, `internal/systems` (WanderSystem already sk
 
 ## Acceptance Criteria
 
-- [ ] Inn has a counter and three tables, smithy a forge; each a wall with its building's
+- [x] Inn has a counter and three tables, smithy a forge; each a wall with its building's
       `house_id`; test: none touches its building's outer edges; each ≥ 50 px from every wall and
       other furnishing (R12).
-- [ ] Five fixed residents exist with function `""`, an existing appearance, no wander region,
+- [x] Five fixed residents exist with function `""`, an existing appearance, no wander region,
       no velocity; test: positions unchanged after several ticks.
-- [ ] Test: every NPC inside a building is more than `NPCInteractRange` from each of its outer
+- [x] Test: every NPC inside a building is more than `NPCInteractRange` from each of its outer
       wall rects; furnishings excluded (R14).
-- [ ] Test (R13): a coarse grid flood fill (≤ 10 px cells, walker radius `PlayerRadius`) from
+- [x] Test (R13): a coarse grid flood fill (≤ 10 px cells, walker radius `PlayerRadius`) from
       each door gap reaches a cell within `NPCInteractRange` of every NPC inside that building
       (the Alewife across the counter).
-- [ ] All I-B0H2D-1 tests still green (lanes, doors, quarters).
-- [ ] `NPCState` and every proto unchanged; `go test ./...` green; `make lint` clean.
-- [ ] Commit notes each furnishing's kind and rect and each fixed resident's point, for the
+- [x] All I-B0H2D-1 tests still green (lanes, doors, quarters).
+- [x] `NPCState` and every proto unchanged; `go test ./...` green; `make lint` clean.
+- [x] Commit notes each furnishing's kind and rect and each fixed resident's point, for the
       client mirror (I-B0H2D-3, I-B0H2D-5).
 
 ## Blocked By
