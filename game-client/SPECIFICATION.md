@@ -110,12 +110,14 @@ server state and sends intents. ✅
 - [x] Walk to a destination gate in the hub → FS-0XMCP
 - [x] The Spire's entrance at the back of the hub → FS-0XMCP
 - [x] The Warden as storyteller, not the queue → FS-0XMCP
+- [ ] Town building interiors → FS-B0H2D
 
 ### Field worlds
 
 - [x] Field world scene → FS-X2F2H
 - [x] Gentle Meadows look and creature → FS-X2F2H
 - [x] Forlorn Forest look and creatures → FS-3QHQZ
+- [ ] Field edges without a horizon → FS-KSD6K
 
 ### Marketplace
 
