@@ -118,8 +118,8 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Hub occupancy cap across replicas → FS-JEAVX
 - [x] Destination gates in the hub → FS-0XMCP
 - [x] Spire entry from its gate → FS-0XMCP
-- [ ] Enterable town buildings → FS-B0H2D
-- [ ] The Inn and its innkeeper → FS-B0H2D
+- [x] Enterable town buildings → FS-B0H2D
+- [x] The Inn and its innkeeper → FS-B0H2D
 
 ### Field worlds
 
@@ -130,7 +130,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Gentle Meadows → FS-X2F2H
 - [x] Branching-trail level generation → FS-3QHQZ
 - [x] Forlorn Forest → FS-3QHQZ
-- [ ] Roomier Forlorn Forest → FS-KSD6K
+- [x] Roomier Forlorn Forest → FS-KSD6K
 
 ### Transport
 

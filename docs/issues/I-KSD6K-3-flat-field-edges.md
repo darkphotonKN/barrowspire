@@ -1,6 +1,6 @@
 ---
 id: I-KSD6K-3
-status: open
+status: done
 implements: FS-KSD6K
 blocked_by: []
 labels: [ready-for-agent]
@@ -36,14 +36,14 @@ Does not change the Forest's size, fixture or verge count (I-KSD6K-4).
 
 ## Acceptance Criteria
 
-- [ ] No file imports `horizon`; `horizon.ts` and its test are deleted; `FieldLook` has no `horizon`; `HORIZON_DEPTH`, `addHorizon` and `landBeyond` are gone.
-- [ ] Each field's `FieldLook` has a `beyond` tint mixed from `BARROW_HEX`; the field scene uses it as the camera background.
-- [ ] The ground fades into the tint at the map edge in both fields; the Meadows road fades with it; no hard seam.
-- [ ] An unknown field id falls back to the Meadows look, tint included.
-- [ ] The owner approved each field's edge on the screenshot (or swatch stand-in); the committed tints are the approved ones.
-- [ ] `design-guideline.md` amended, dated, citing FS-KSD6K.
-- [ ] The hub and runs draw exactly as before.
-- [ ] `npm test`, lint and `lint:fence`: no new failures versus the branch point.
+- [x] No file imports `horizon`; `horizon.ts` and its test are deleted; `FieldLook` has no `horizon`; `HORIZON_DEPTH`, `addHorizon` and `landBeyond` are gone.
+- [x] Each field's `FieldLook` has a `beyond` tint mixed from `BARROW_HEX`; the field scene uses it as the camera background.
+- [x] The ground fades into the tint at the map edge in both fields; the Meadows road fades with it; no hard seam.
+- [x] An unknown field id falls back to the Meadows look, tint included.
+- [x] The owner approved each field's edge on the screenshot (or swatch stand-in); the committed tints are the approved ones.
+- [x] `design-guideline.md` amended, dated, citing FS-KSD6K.
+- [x] The hub and runs draw exactly as before.
+- [x] `npm test`, lint and `lint:fence`: no new failures versus the branch point.
 
 ## Files expected to touch
 
