@@ -68,13 +68,15 @@ func TestForlornForest_WallsAreTheLayoutsRects(t *testing.T) {
 	assert.LessOrEqual(t, len(walls), levelgen.ForestParams.WallBudget)
 }
 
-// The Forest is the generator's map: its bounds are the layout's, 2 080 x 1 360
-// px, so the MovementSystem clamps at the forest's edge. R11.
+// The Forest is the generator's map: its bounds are the layout's, 3 120 x 2 000
+// px, so the MovementSystem clamps at the forest's edge. FS-KSD6K R1.
 func TestForlornForest_IsTheLayoutsSize(t *testing.T) {
 	forest, place, generated := builtForest(t, forestSeed)
 
-	assert.Equal(t, 2080.0, place.Width)
-	assert.Equal(t, 1360.0, place.Height)
+	assert.Equal(t, 3120.0, place.Width)
+	assert.Equal(t, 2000.0, place.Height)
+	assert.Equal(t, constants.ForestMapWidth, place.Width, "the constant matches the built Forest")
+	assert.Equal(t, constants.ForestMapHeight, place.Height, "the constant matches the built Forest")
 	assert.Equal(t, generated.Bounds.W, forest.mapWidth)
 	assert.Equal(t, generated.Bounds.H, forest.mapHeight)
 }

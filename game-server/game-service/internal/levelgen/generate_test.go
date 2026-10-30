@@ -90,6 +90,8 @@ func TestGenerate_ConsecutiveSeeds_ReturnDifferentLayouts(t *testing.T) {
 func TestGenerate_ForestParams_EverySeedValid(t *testing.T) {
 	const seeds = 1000
 	maxWalls, retried := 0, 0
+	cells := float64(ForestParams.Cols * ForestParams.Rows)
+	openShare := 0.0
 	for seed := uint64(0); seed < seeds; seed++ {
 		l, err := Generate(ForestParams, seed)
 		if err != nil {
@@ -102,9 +104,12 @@ func TestGenerate_ForestParams_EverySeedValid(t *testing.T) {
 		if l.Attempt > 0 {
 			retried++
 		}
+		openShare += float64(len(l.Open)) / cells
 	}
-	t.Logf("%d seeds: max %d wall rects (budget %d), %d needed a retry",
-		seeds, maxWalls, ForestParams.WallBudget, retried)
+	// The mean open share shows review the forest has not gone open country
+	// (FS-KSD6K R5).
+	t.Logf("%d seeds: max %d wall rects (budget %d), %d needed a retry, mean open share %.1f%%",
+		seeds, maxWalls, ForestParams.WallBudget, retried, 100*openShare/seeds)
 }
 
 func TestGenerate_FirstAttemptFails_RetriesDeterministically(t *testing.T) {

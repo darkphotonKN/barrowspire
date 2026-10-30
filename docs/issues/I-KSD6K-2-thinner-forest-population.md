@@ -1,9 +1,9 @@
 ---
 id: I-KSD6K-2
-status: open
+status: done
 implements: FS-KSD6K
 blocked_by: [I-KSD6K-1]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-KSD6K slice 2: 12-16 Forest spawn points spread by the Forest's own spacing (game-service)"
 ---
 Implements FS-KSD6K §B (Requirements 8–12), §Supersession
@@ -31,11 +31,11 @@ out, without moving the Spire:
 
 ## Acceptance Criteria
 
-- [ ] `ForestSpawnPointsMin/Max` are 12/16; `ForestSpawnSpacing` exists, is >= 120 px, and is the only spacing `forestSpawnPoints` uses.
-- [ ] `MonsterSpacing` is 60 and every Spire spawn/population test passes unchanged.
-- [ ] `TestForestLayout_SpawnPoints` passes on the new layout: every seed places 12–16 points, on open trail cells, off walls, outside clearings, >= 400 px from the entrance and >= `ForestSpawnSpacing` apart; same seed, same points.
-- [ ] The elite clearing points and chest clearings are as FS-3QHQZ R15 assigns them.
-- [ ] `go test ./...` and lint in game-service: no new failures versus the branch point.
+- [x] `ForestSpawnPointsMin/Max` are 12/16; `ForestSpawnSpacing` exists, is >= 120 px, and is the only spacing `forestSpawnPoints` uses.
+- [x] `MonsterSpacing` is 60 and every Spire spawn/population test passes unchanged.
+- [x] `TestForestLayout_SpawnPoints` passes on the new layout: every seed places 12–16 points, on open trail cells, off walls, outside clearings, >= 400 px from the entrance and >= `ForestSpawnSpacing` apart; same seed, same points.
+- [x] The elite clearing points and chest clearings are as FS-3QHQZ R15 assigns them.
+- [x] `go test ./...` and lint in game-service: no new failures versus the branch point.
 
 ## Files expected to touch
 

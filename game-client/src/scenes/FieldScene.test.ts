@@ -25,6 +25,8 @@ const { ActionType } = await import("@/assets/types/client");
 const { EquipmentHud } = await import("@/ui/EquipmentHud");
 const { ResourceHud } = await import("@/ui/ResourceHud");
 const { AbilityHud } = await import("@/ui/AbilityHud");
+const { projectedBounds } = await import("@/render/iso/projection");
+const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
 
 /** The road home as the Meadows' state carries it. */
 const ROAD_HOME = { entity_id: "road-home", destination: "hub", position: { x: 40, y: 500 }, range: 80 };
@@ -86,6 +88,37 @@ function fieldOnStage() {
   const refuse = (reason: string) =>
     errors.get(ActionType.LeaveField)?.({ action: ActionType.LeaveField, error: "x", message: "x", reason });
   return { field, texts, send, standAt, refuse, reply };
+}
+
+/**
+ * A field ready for create(): every Phaser surface it draws on answers anything, numbers as 0, and
+ * the socket subscriptions are stubbed.
+ */
+function fieldToCreate<T>() {
+  const field = new FieldScene() as unknown as T & { create(data?: { field?: string }): void };
+  const stub: unknown = new Proxy(function () {}, {
+    get: (_target, key) => (key === Symbol.toPrimitive ? () => 0 : stub),
+    apply: () => stub,
+    construct: () => stub as object,
+  });
+  Object.assign(field, {
+    add: stub,
+    make: stub,
+    textures: stub,
+    cache: stub,
+    scale: stub,
+    tweens: stub,
+    time: stub,
+    sys: stub,
+    input: stub,
+    cameras: { main: stub },
+    bindInput: vi.fn(),
+    createPiles: vi.fn(),
+  });
+  vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+  vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+  vi.spyOn(socketManager, "on").mockImplementation(() => {});
+  return { field, stub };
 }
 
 describe("FieldScene the road home (FS-X2F2H §Requirements 14, 57, 60)", () => {
@@ -598,34 +631,11 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
   });
 
   it("should compose the run's equip HUD and bind its keys when the field is created", () => {
-    const field = new FieldScene() as unknown as Hud & { create(data?: { field?: string }): void };
-    // every Phaser surface create() draws on answers anything, numbers as 0
-    const stub: unknown = new Proxy(function () {}, {
-      get: (_target, key) => (key === Symbol.toPrimitive ? () => 0 : stub),
-      apply: () => stub,
-      construct: () => stub as object,
-    });
     // the keys the keyboard is asked to answer; the rest of the input answers anything
     const keys = new Map<string, () => void>();
     const keyboard = { on: (event: string, cb: () => void) => keys.set(event, cb) };
-    const input = new Proxy({}, { get: (_target, key) => (key === "keyboard" ? keyboard : stub) });
-    Object.assign(field, {
-      add: stub,
-      make: stub,
-      textures: stub,
-      cache: stub,
-      scale: stub,
-      tweens: stub,
-      time: stub,
-      sys: stub,
-      cameras: { main: stub },
-      input,
-      bindInput: vi.fn(),
-      createPiles: vi.fn(),
-    });
-    vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
-    vi.spyOn(socketManager, "onError").mockImplementation(() => {});
-    vi.spyOn(socketManager, "on").mockImplementation(() => {});
+    const { field, stub } = fieldToCreate<Hud>();
+    field.input = new Proxy({}, { get: (_target, key) => (key === "keyboard" ? keyboard : stub) });
 
     field.create({ field: "gentle_meadows" });
 
@@ -633,6 +643,27 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     expect([...keys.keys()]).toEqual(
       expect.arrayContaining(["keydown-I", "keydown-B", "keydown-E", "keydown-Q", "keydown-ESC", "keydown-F"]),
     );
+  });
+});
+
+describe("FieldScene the Forest's bounds (FS-KSD6K §Requirements 17)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should frame the whole 3120 x 2000 Forest the server builds, so no player walks out of view", () => {
+    const setBounds = vi.fn();
+    const { field, stub } = fieldToCreate<{ cameras: unknown }>();
+    field.cameras = { main: new Proxy({}, { get: (_target, key) => (key === "setBounds" ? setBounds : stub) }) };
+
+    field.create({ field: "forlorn_forest" });
+
+    // constants.ForestMapWidth/Height, and the golden layout the fixture copies
+    expect(FOREST_SIZE).toEqual({ width: 3120, height: 2000 });
+    const [x, y, width, height] = setBounds.mock.calls[0];
+    const bare = projectedBounds(FOREST_SIZE.width, FOREST_SIZE.height);
+    const margin = bare.x - x;
+    expect({ x, y, width, height }).toEqual(projectedBounds(FOREST_SIZE.width, FOREST_SIZE.height, margin));
   });
 });
 

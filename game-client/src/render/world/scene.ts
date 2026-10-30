@@ -18,12 +18,14 @@ import {
   type Rect,
 } from "@/render/iso";
 import type { WallState } from "@/types/gameState";
+import { BARROW_HEX } from "@/utils/theme";
 import {
   sourceFromManifest,
   type LightSource,
 } from "@/render/lighting/lighting";
 import {
   OUTDOOR_GROUND,
+  planEdgeFade,
   planGroundLayer,
   tileHash,
   type Apron,
@@ -31,7 +33,6 @@ import {
   type GroundPiece,
   type WorldKind,
 } from "./ground";
-import type { HorizonPlan } from "./horizon";
 import type { House } from "./houses";
 import { FADED_ALPHA, occludes, stepAlpha } from "./occlusion";
 import { planPerimeter } from "./perimeter";
@@ -50,6 +51,42 @@ export interface FloorGround {
   seed: number;
 }
 
+/** The world a `GroundLayer` paints: its size and kind, its paths, and its look. */
+interface GroundWorldBase {
+  width: number;
+  height: number;
+  kind: WorldKind;
+  paths?: readonly Rect[];
+  /** Ground under a forest's stands, laid as leaf litter (FS-3QHQZ §Requirements 25). */
+  litter?: readonly Rect[];
+  look?: GroundLook;
+}
+
+/**
+ * A `GroundLayer`'s world: either its ground runs on past the edge (aprons, a margin), or it fades
+ * out at the edge with nothing painted past it, never both.
+ */
+export type GroundWorld = GroundWorldBase &
+  (
+    | {
+        /** Ground past the edge (FS-0XMCP R18), within `margin`'s reach of the map. */
+        aprons?: readonly Apron[];
+        /** Screen px of ground painted past the projected map; absent, GROUND_MARGIN. */
+        margin?: number;
+        fadeEdge?: false;
+      }
+    | {
+        /**
+         * The ground fades out at the map's edge into the camera's background, and nothing is
+         * painted past it: a field's edge tint (FS-KSD6K §Requirements 16). So no aprons and no
+         * margin: past the edge they would only be erased.
+         */
+        fadeEdge: true;
+        aprons?: never;
+        margin?: never;
+      }
+  );
+
 /**
  * The ground, painted once into a render texture (it never moves): the world theme's ground look
  * (outdoor tiles, decals and flagstone under each house; or a tower's flags and planked rooms).
@@ -66,19 +103,7 @@ export class GroundLayer {
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly art: ArtLibrary,
-    private readonly world: {
-      width: number;
-      height: number;
-      kind: WorldKind;
-      paths?: readonly Rect[];
-      /** Ground under a forest's stands, laid as leaf litter (FS-3QHQZ §Requirements 25). */
-      litter?: readonly Rect[];
-      /** Ground past the edge (FS-0XMCP R18), within `margin`'s reach of the map. */
-      aprons?: readonly Apron[];
-      /** Screen px of ground painted past the projected map; absent, GROUND_MARGIN. */
-      margin?: number;
-      look?: GroundLook;
-    },
+    private readonly world: GroundWorld,
   ) {
     const b = projectedBounds(world.width, world.height, world.margin ?? GROUND_MARGIN);
     this.origin = { x: b.x, y: b.y };
@@ -114,8 +139,35 @@ export class GroundLayer {
     this.lift(look);
     this.rt.clear();
     this.rt.beginDraw();
-    this.draw(planGroundLayer({ ...world, houses, look, seed: this.floor?.seed }));
+    const { fadeEdge, ...plan } = world;
+    this.draw(planGroundLayer({ ...plan, houses, look, seed: this.floor?.seed }));
     this.rt.endDraw();
+    if (fadeEdge) this.fadeEdge();
+  }
+
+  /**
+   * Erases the painted ground along the map's edge and past it (`planEdgeFade`), once per paint,
+   * so it fades into the background the camera shows there. The lift is the same texture, so it
+   * fades with it.
+   */
+  private fadeEdge(): void {
+    const { width, height } = this.world;
+    // far enough past the map to cover every px painted around it
+    const reach = width + height;
+    const g = this.scene.make.graphics({}, false);
+    for (const band of planEdgeFade(width, height, reach)) {
+      const corners = [
+        worldToScreen(band.x, band.y),
+        worldToScreen(band.x + band.width, band.y),
+        worldToScreen(band.x + band.width, band.y + band.height),
+        worldToScreen(band.x, band.y + band.height),
+      ].map((p) => ({ x: p.x - this.origin.x, y: p.y - this.origin.y }));
+      // only the alpha erases; the colour is never seen
+      g.fillStyle(BARROW_HEX.pitch, band.erase);
+      g.fillPoints(corners, true);
+    }
+    this.rt.erase(g, 0, 0);
+    g.destroy();
   }
 
   /**
@@ -157,32 +209,6 @@ export class GroundLayer {
       );
     }
   }
-}
-
-/** Under the ground: a field's horizon is behind everything in the world. */
-export const HORIZON_DEPTH = GROUND_DEPTH - 1;
-
-/**
- * A field's horizon (FS-X2F2H §Requirements 54): sky, hills and the land beyond, drawn in code
- * under the ground and moving with the camera at the plan's slower rate. Under the light-map
- * like the rest of the world, so the field's daylight lights it too.
- */
-export function addHorizon(
-  scene: Phaser.Scene,
-  plan: HorizonPlan,
-): Phaser.GameObjects.Graphics {
-  const g = scene.add.graphics();
-  g.setScrollFactor(plan.factor).setDepth(HORIZON_DEPTH);
-  for (const band of [...plan.sky, ...plan.land]) {
-    g.fillStyle(band.color, 1);
-    // a pixel of overlap, so no seam shows between bands
-    g.fillRect(plan.span.x, band.y, plan.span.width, band.height + 1);
-  }
-  for (const hill of plan.hills) {
-    g.fillStyle(hill.color, 1);
-    g.fillPoints(hill.points, true);
-  }
-  return g;
 }
 
 /** A light source for a sprite's sheet, if its manifest entry declares one. */

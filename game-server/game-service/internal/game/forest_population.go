@@ -91,12 +91,13 @@ func centres(deadEnds []levelgen.DeadEnd) []FieldPoint {
 }
 
 /**
-* forestSpawnPoints picks the Forest's standard spawn points (R16): a seeded
-* count in [ForestSpawnPointsMin, ForestSpawnPointsMax], each at the centre of
-* an open cell on a trail, at least ForestEntranceExclusion from the entrance
-* and MonsterSpacing from every other point, and never inside a clearing. The
-* cells are tried in a seeded order; a point that finds no valid cell is
-* skipped and logged, never forced, and the forest runs with fewer monsters.
+* forestSpawnPoints picks the Forest's standard spawn points (FS-3QHQZ R16, as
+* thinned by FS-KSD6K R8–R9): a seeded count in [ForestSpawnPointsMin,
+* ForestSpawnPointsMax], each at the centre of an open cell on a trail, at
+* least ForestEntranceExclusion from the entrance and ForestSpawnSpacing from
+* every other point, and never inside a clearing. The cells are tried in a
+* seeded order; a point that finds no valid cell is skipped and logged, never
+* forced, and the forest runs with fewer monsters.
 **/
 func forestSpawnPoints(generated levelgen.Layout) []FieldPoint {
 	rng := forestRand(generated.Seed, forestSpawnStream)
@@ -122,7 +123,7 @@ func forestSpawnPoints(generated levelgen.Layout) []FieldPoint {
 		if len(points) == want {
 			break
 		}
-		if spacedFrom(points, candidate, MonsterSpacing) {
+		if spacedFrom(points, candidate, ForestSpawnSpacing) {
 			points = append(points, candidate)
 		}
 	}

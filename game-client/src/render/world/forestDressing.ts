@@ -59,15 +59,18 @@ export const VERGE_DEPTH = WALL_CLEAR + VERGE_BAND + 2 * 16 + 1;
  */
 const CORNER_CLEAR = 40;
 /**
- * How far across its trail a verge looks for the stand on the far side, world px: a trail is two
- * 80 px cells wide (FS-3QHQZ §Requirements 11), so a verge's far side is a stand within this. Open
+ * How far across its trail a verge looks for the stand on the far side, world px: a trail is three
+ * 80 px cells wide (FS-KSD6K §Requirements 2), so a verge's far side is a stand within this. Open
  * ground past it is a clearing or a junction, whose middle stays clear.
  */
-const TRAIL_ACROSS = 160;
+const TRAIL_ACROSS = 240;
 /** Clear ground kept between two pieces, so the verges scatter rather than heap. */
 const GAP = 30;
-/** How many places a forest tries; most land on a side that faces another stand or the edge. */
-const CANDIDATES = 900;
+/**
+ * How many places a forest tries; most land on a side that faces another stand or the edge. Enough
+ * for the 3 120 x 2 000 Forest's verge count to place (FS-KSD6K §Requirements 17).
+ */
+const CANDIDATES = 3000;
 
 const rectOf = (e: {
   position: Point;

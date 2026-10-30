@@ -1,6 +1,6 @@
 ---
 id: I-KSD6K-1
-status: open
+status: done
 implements: FS-KSD6K
 blocked_by: []
 labels: [ready-for-agent]
@@ -39,14 +39,14 @@ population values to I-KSD6K-2; do not change `ForestSpawnPoints*` or `MonsterSp
 
 ## Acceptance Criteria
 
-- [ ] `ForestParams` is 39 x 25 x 80 px, `TrailWidth` 3; `ForestParams.Validate()` and `TestForestParams_TrailFitsTwoBodiesSideBySide` pass.
-- [ ] `constants.ForestMapWidth/Height` are 3120/2000 and the boot test asserts the built Forest's size equals them.
-- [ ] `TestGenerate_ForestParams_EverySeedValid` passes over 1 000 seeds and logs max wall rects, retries and mean open share; `WallBudget` is >= 1.2 x the logged max.
-- [ ] The golden ASCII is regenerated and shows a branching-trail forest with clearings, not open ground.
-- [ ] Over 1 000 seeds the arrival point is on open ground, clear of walls by `PlayerRadius`, beyond the gate's range; the entrance is on the east edge.
-- [ ] The retry and too-small-map generator tests still exercise what they claim.
-- [ ] No `.proto`, generated code, matchmaker, match_queue or Meadows file changes.
-- [ ] `go test ./...` and lint in game-service: no new failures versus the branch point.
+- [x] `ForestParams` is 39 x 25 x 80 px, `TrailWidth` 3; `ForestParams.Validate()` and `TestForestParams_TrailFitsTwoBodiesSideBySide` pass.
+- [x] `constants.ForestMapWidth/Height` are 3120/2000 and the boot test asserts the built Forest's size equals them.
+- [x] `TestGenerate_ForestParams_EverySeedValid` passes over 1 000 seeds and logs max wall rects, retries and mean open share; `WallBudget` is >= 1.2 x the logged max.
+- [x] The golden ASCII is regenerated and shows a branching-trail forest with clearings, not open ground.
+- [x] Over 1 000 seeds the arrival point is on open ground, clear of walls by `PlayerRadius`, beyond the gate's range; the entrance is on the east edge.
+- [x] The retry and too-small-map generator tests still exercise what they claim.
+- [x] No `.proto`, generated code, matchmaker, match_queue or Meadows file changes.
+- [x] `go test ./...` and lint in game-service: no new failures versus the branch point.
 
 ## Files expected to touch
 

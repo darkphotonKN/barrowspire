@@ -8,10 +8,15 @@ import {
   relativeLuminance,
   tinted,
 } from "@/render/lighting/lighting";
+import { FOREST_SIZE } from "./forest.fixture";
 import { OUTDOOR_GROUND, planGroundLayer } from "./ground";
-import { FIELD_LOOKS, FOREST_LOOK, MEADOWS_LOOK, fieldLook, landBeyond } from "./fieldLook";
+import { FIELD_LOOKS, FOREST_LOOK, MEADOWS_LOOK, fieldLook } from "./fieldLook";
 
 const channels = (c: number) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
+const channelsRgb = (c: number): ArtRgb => {
+  const [r, g, b] = channels(c);
+  return { r, g, b };
+};
 /** The baked grass's measured mean (public/art/manifest.json, ground_grass). */
 const GRASS: ArtRgb = { r: 81, g: 83, b: 53 };
 /** The baked barrow dirt's measured mean (ground_dirt). */
@@ -37,6 +42,50 @@ describe("fieldLook (FS-X2F2H §Requirements 54)", () => {
     expect(fieldLook(undefined)).toBe(MEADOWS_LOOK);
     // a name the table's object already answers to is still not a field
     expect(fieldLook("constructor")).toBe(MEADOWS_LOOK);
+  });
+});
+
+describe("the edge tint past a field's map (FS-KSD6K §Requirements 13-15)", () => {
+  /** Spread between a colour's strongest and weakest channel, 0..255: how saturated it is. */
+  const spread = (c: number) => Math.max(...channels(c)) - Math.min(...channels(c));
+
+  it("should give every field a flat tint beyond its edge, and no horizon", () => {
+    for (const look of Object.values(FIELD_LOOKS)) {
+      expect(look!.beyond).toBeTypeOf("number");
+      expect("horizon" in look!).toBe(false);
+    }
+  });
+
+  it("should carry the Meadows tint for a field it has no look for", () => {
+    expect(fieldLook("somewhere_new").beyond).toBe(MEADOWS_LOOK.beyond);
+    expect(fieldLook(undefined).beyond).toBe(MEADOWS_LOOK.beyond);
+  });
+
+  it("should sink the Forest into a deep moss-black: near black, green over red over blue", () => {
+    const [r, g, b] = channels(FOREST_LOOK.beyond);
+    expect(g).toBeGreaterThan(r);
+    expect(r).toBeGreaterThan(b);
+    expect(relativeLuminance(FOREST_LOOK.beyond)).toBeLessThan(0.03);
+  });
+
+  it("should fade the Meadows into a soft muted green-grey: green-led, low saturation, lighter than the Forest's", () => {
+    const [r, g, b] = channels(MEADOWS_LOOK.beyond);
+    expect(g).toBeGreaterThan(r);
+    expect(g).toBeGreaterThan(b);
+    expect(spread(MEADOWS_LOOK.beyond)).toBeLessThan(40);
+    expect(relativeLuminance(MEADOWS_LOOK.beyond)).toBeGreaterThan(
+      relativeLuminance(FOREST_LOOK.beyond),
+    );
+  });
+
+  it("should sit darker than the field's own lit ground, so the edge reads as the map falling away", () => {
+    const meadow = lit(GRASS, MEADOWS_LOOK.ground, MEADOWS_LOOK.ambient);
+    const trail = lit(DIRT, FOREST_LOOK.ground, FOREST_LOOK.ambient);
+    // the tint is the camera's background, under the light-map like the ground
+    const beyondLit = (look: typeof MEADOWS_LOOK | typeof FOREST_LOOK) =>
+      relativeLuminance(litEdgeGround(channelsRgb(look.beyond), look.ambient, 0));
+    expect(beyondLit(MEADOWS_LOOK)).toBeLessThan(relativeLuminance(meadow));
+    expect(beyondLit(FOREST_LOOK)).toBeLessThan(relativeLuminance(trail));
   });
 });
 
@@ -86,15 +135,6 @@ describe("the Meadows look", () => {
     expect(plan()).toEqual(plan());
     const sheets = new Set(plan().map((p) => p.sheet));
     expect([...sheets].sort()).toEqual(["decal_grass_tuft", "decal_pebbles", "ground_grass"]);
-  });
-
-  it("should paint the land beyond the edges in the field's own ground colour, as the grass is painted", () => {
-    const { r, g, b } = groundMean(GRASS, MEADOWS_LOOK.ground);
-    expect(landBeyond(MEADOWS_LOOK, GRASS)).toBe((r << 16) | (g << 8) | b);
-  });
-
-  it("should paint the land in the look's own colour when the ground has no measured mean", () => {
-    expect(landBeyond(MEADOWS_LOOK, undefined)).toBe(MEADOWS_LOOK.horizon.land);
   });
 
   it("should dress keep-outs with sparse baked trees and rocks", () => {
@@ -151,14 +191,9 @@ describe("the Forest look (FS-3QHQZ §C)", () => {
     expect(FOREST_LOOK.mist.alpha).toBeLessThanOrEqual(0.5);
   });
 
-  it("should paint the land beyond its edges as the litter under its stands, the forest running on", () => {
-    const litter = groundMean(tinted(GRASS, FOREST_LOOK.ground.litterShade), FOREST_LOOK.ground);
-    expect(landBeyond(FOREST_LOOK, GRASS)).toBe((litter.r << 16) | (litter.g << 8) | litter.b);
-  });
-
   it("should lay out the same ground on every client", () => {
     const plan = () =>
-      planGroundLayer({ width: 2080, height: 1360, kind: "field", houses: [], look: FOREST_LOOK.ground });
+      planGroundLayer({ ...FOREST_SIZE, kind: "field", houses: [], look: FOREST_LOOK.ground });
     expect(plan()).toEqual(plan());
   });
 });

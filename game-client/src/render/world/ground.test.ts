@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import { WORLD_PX_PER_TILE } from "@/render/iso";
 import { BARROW_HEX } from "@/utils/theme";
 import {
+  EDGE_FADE,
   OUTDOOR_GROUND,
   TOWER_GROUND,
   planDecals,
   planFloors,
   planGround,
+  planEdgeFade,
   planGroundLayer,
   tileHash,
   transitionEdge,
@@ -274,6 +276,81 @@ describe("planGround's straight-edge aprons (FS-X2F2H §Requirements 54)", () =>
     const tiles = planGround({ width: W, height: H, kind: "field", aprons: [west] }).filter((t) => t.at.x < 0);
     const column = tiles.filter((t) => t.at.x === -0.5 * T);
     expect(column).toHaveLength(10);
+  });
+});
+
+describe("planEdgeFade: a field's ground fading into its edge tint (FS-KSD6K §Requirements 16)", () => {
+  const W = 20 * T;
+  const H = 12 * T;
+  const REACH = 8 * T;
+  const bands = planEdgeFade(W, H, REACH);
+  const covers = (r: { x: number; y: number; width: number; height: number }, p: { x: number; y: number }) =>
+    p.x >= r.x && p.x < r.x + r.width && p.y >= r.y && p.y < r.y + r.height;
+  /** How much of the ground is kept at a world point once every band is erased from it. */
+  const kept = (p: { x: number; y: number }) =>
+    bands.filter((b) => covers(b, p)).reduce((k, b) => k * (1 - b.erase), 1);
+
+  it("should start one tile deep", () => {
+    expect(EDGE_FADE).toBe(T);
+  });
+
+  it("should leave the ground whole more than the fade's depth inside every edge", () => {
+    for (const p of [
+      { x: W / 2, y: H / 2 },
+      { x: EDGE_FADE + 1, y: EDGE_FADE + 1 },
+      { x: W - EDGE_FADE - 1, y: H - EDGE_FADE - 1 },
+      { x: W / 2, y: EDGE_FADE + 1 },
+    ])
+      expect(kept(p)).toBe(1);
+  });
+
+  it("should take everything past the map's edge, out to the reach, so only the tint shows there", () => {
+    for (const p of [
+      { x: -1, y: H / 2 },
+      { x: W + 1, y: H / 2 },
+      { x: W / 2, y: -1 },
+      { x: W / 2, y: H + 1 },
+      { x: -REACH + 1, y: -REACH + 1 },
+      { x: W + REACH - 1, y: H + REACH - 1 },
+      // the road home's run past the west edge goes with the ground
+      { x: -2 * T, y: H / 2 },
+    ])
+      expect(kept(p)).toBe(0);
+  });
+
+  it("should fade the ground smoothly toward each edge: near nothing at the edge, more kept further in", () => {
+    for (const edge of [
+      (d: number) => ({ x: W / 2, y: d }),
+      (d: number) => ({ x: W / 2, y: H - d }),
+      (d: number) => ({ x: d, y: H / 2 }),
+      (d: number) => ({ x: W - d, y: H / 2 }),
+    ]) {
+      const steps = [...Array(9).keys()].map((i) => kept(edge(((i + 0.5) / 9) * EDGE_FADE)));
+      expect(steps[0]).toBeLessThan(0.1);
+      expect(steps[steps.length - 1]).toBeGreaterThan(0.9);
+      for (let i = 1; i < steps.length; i++) expect(steps[i]).toBeGreaterThanOrEqual(steps[i - 1]);
+    }
+  });
+
+  it("should fade a corner at least as much as either edge beside it", () => {
+    const d = EDGE_FADE / 2;
+    expect(kept({ x: d, y: d })).toBeLessThanOrEqual(kept({ x: W / 2, y: d }));
+    expect(kept({ x: d, y: d })).toBeLessThanOrEqual(kept({ x: d, y: H / 2 }));
+  });
+
+  it("should erase only within the map's fade band or outside the map", () => {
+    for (const b of bands) {
+      expect(b.erase).toBeGreaterThan(0);
+      expect(b.erase).toBeLessThanOrEqual(1);
+      if (b.erase === 1) continue;
+      const inside = b.x >= 0 && b.y >= 0 && b.x + b.width <= W && b.y + b.height <= H;
+      const nearEdge =
+        b.y + b.height <= EDGE_FADE ||
+        b.y >= H - EDGE_FADE ||
+        b.x + b.width <= EDGE_FADE ||
+        b.x >= W - EDGE_FADE;
+      expect(inside && nearEdge).toBe(true);
+    }
   });
 });
 

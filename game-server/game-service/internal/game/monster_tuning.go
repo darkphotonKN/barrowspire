@@ -112,11 +112,20 @@ var FieldDropsAs = map[components.MonsterArchetype]components.MonsterArchetype{
 	components.MonsterArchetypeGhost:  components.MonsterArchetypeGhoul,
 }
 
-// The Forlorn Forest's population. FS-3QHQZ §Requirements 15–17.
+// The Forlorn Forest's population. FS-3QHQZ §Requirements 15–17, thinned by
+// FS-KSD6K §Requirements 8–10.
 const (
 	// standard (trail) spawn points, a uniform integer in [min, max]
-	ForestSpawnPointsMin = 18
-	ForestSpawnPointsMax = 24
+	ForestSpawnPointsMin = 12
+	ForestSpawnPointsMax = 16
+	// minimum centre-to-centre gap between two standard spawn points, in px,
+	// so the Forest's monsters spread out (FS-KSD6K R9). Its own value, not
+	// MonsterSpacing: that one holds every Spire spawn apart (spawnArea.open)
+	// and is set by the movement spatial hash, so raising it would move the
+	// Spire. Started at one trail width (240) and lowered until every seed of
+	// TestForestLayout_SpawnPoints places ForestSpawnPointsMin; never below
+	// 2 × MonsterSpacing.
+	ForestSpawnSpacing = 220.0
 	// no standard spawn point stands closer than this to the entrance, in px
 	ForestEntranceExclusion = 400.0
 	// each spawn and respawn is a ghost with this probability, else a zombie
