@@ -13,6 +13,8 @@ import {
   planVerges,
   type VergeLean,
 } from "./forestDressing";
+import { FOREST_LOOK } from "./fieldLook";
+import { worldSeed } from "./ground";
 import { dressingBreaches } from "./runDressing";
 
 const LEAN: VergeLean = {
@@ -35,7 +37,7 @@ const asWall = (r: Rect, i: number) => ({
 });
 
 /** The Forest's broadcast as the scene sees it: walls, the road home and one clearing's chest. */
-const CHEST: Point = { x: 400, y: 1120 };
+const CHEST: Point = { x: FOREST_CLEARINGS[1].x, y: FOREST_CLEARINGS[1].y };
 const STATE = {
   walls: FOREST_WALLS.map(asWall),
   gates: [{ id: "g", position: FOREST_GATE, range: 80, destination: "hub" }],
@@ -91,6 +93,16 @@ describe("planVerges (FS-3QHQZ §Requirements 28)", () => {
           c.radius / 2,
         );
     }
+  });
+
+  it("should strew the Forest look's whole verge count along its 3-cell trails (FS-KSD6K §Requirements 17)", () => {
+    const lean = FOREST_LOOK.verges;
+    // today's density held: twice the trail of the 2 080 x 1 360 Forest, which strewed 37
+    expect(lean.count).toBeGreaterThanOrEqual(70);
+    for (const seed of [SEED, worldSeed("field")])
+      expect(planVerges(lean, seed, statics), `seed ${seed}`).toHaveLength(
+        lean.count,
+      );
   });
 
   it("should be decoration only: nothing tall, nothing to click", () => {

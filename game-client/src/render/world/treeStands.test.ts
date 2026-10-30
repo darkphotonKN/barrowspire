@@ -18,7 +18,7 @@ const SEED = 0x4649_4531;
 const inside = (p: { x: number; y: number }, r: Rect) =>
   p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height;
 
-/** ≤ 120 rects tiling the whole 2 080 × 1 360 map: 12 × 10 stands, no open ground at all. */
+/** ≤ 120 rects tiling the whole 3 120 × 2 000 map: 12 × 10 stands, no open ground at all. */
 const FILLED: Rect[] = [...Array(120).keys()].map((i) => {
   const w = FOREST_SIZE.width / 12;
   const h = FOREST_SIZE.height / 10;
@@ -37,22 +37,40 @@ describe("planTreeStands (FS-3QHQZ §Requirements 23–24)", () => {
   });
 
   it("should plant about one tree per 80 px cell on a stand's edge, its interior thinner", () => {
+    // a small forest under the cap: two 10 × 3-cell stands either side of a 4-cell trail
+    const size = { width: 800, height: 800 };
+    const walls: Rect[] = [
+      { x: 0, y: 0, width: 800, height: 240 },
+      { x: 0, y: 560, width: 800, height: 240 },
+    ];
+    const cells = 2 * 10 * 3;
+    const planted = planTreeStands(walls, size, LOOK, SEED);
+    const edge = planted.filter((t) => t.edge).length;
+    const interior = planted.length - edge;
+    // every trail-facing cell
+    expect(edge).toBe(2 * 10);
+    expect(planted.length).toBeLessThan(cells);
+    expect(planted.length).toBeGreaterThan(cells / 2);
+    // every other interior cell
+    expect(interior).toBeGreaterThan(0);
+    expect(interior).toBeLessThanOrEqual(
+      Math.ceil((cells - edge) / 2) + walls.length,
+    );
+  });
+
+  it("should keep the 3 120 x 2 000 Forest, past the cap, under 400 trees, its edges before its interiors (FS-KSD6K §Requirements 17)", () => {
     const cells = FOREST_WALLS.reduce(
       (n, w) =>
         n +
         Math.round(w.width / STAND_CELL) * Math.round(w.height / STAND_CELL),
       0,
     );
-    expect(cells).toBeLessThanOrEqual(TREE_CAP);
+    expect(cells).toBeGreaterThan(TREE_CAP);
+    expect(trees.length).toBeLessThanOrEqual(TREE_CAP);
+    // most of the cap is used: only the shares' rounding, and a small stand's thinned interior, are lost
+    expect(trees.length).toBeGreaterThan(TREE_CAP * 0.85);
     const edge = trees.filter((t) => t.edge).length;
-    const interior = trees.length - edge;
-    expect(trees.length).toBeLessThan(cells);
-    expect(trees.length).toBeGreaterThan(cells / 2);
-    // every other interior cell
-    expect(interior).toBeGreaterThan(0);
-    expect(interior).toBeLessThanOrEqual(
-      Math.ceil((cells - edge) / 2) + FOREST_WALLS.length,
-    );
+    expect(edge).toBeGreaterThan(trees.length - edge);
   });
 
   it("should stand only bare trees in front of the trail, their crowns over it on screen", () => {
@@ -99,9 +117,9 @@ describe("planTreeStands (FS-3QHQZ §Requirements 23–24)", () => {
   });
 
   it("should stand a trail-facing tree at its stand's edge, so what blocks is what is drawn", () => {
-    // the stand south of the trail into the main clearing faces open ground on its north side
-    const wall = FOREST_WALLS[19]; // x 960, y 800, 320 × 240
-    const edge = trees.filter((t) => t.wall === 19 && t.edge);
+    // the great stand west of the main trail's northern run faces open ground on its east side
+    const wall = FOREST_WALLS[9]; // x 0, y 480, 1 760 × 400
+    const edge = trees.filter((t) => t.wall === 9 && t.edge);
     expect(edge.length).toBeGreaterThan(0);
     for (const t of edge) {
       const fromSide = Math.min(
@@ -124,22 +142,22 @@ describe("planTreeStands (FS-3QHQZ §Requirements 23–24)", () => {
   });
 
   it("should thin a huge stand's interior first, keeping its trail-facing edge whole", () => {
-    // the whole map two stands of 26 × 8 cells but for a one-cell trail across its middle: 416
+    // the whole map two stands of 39 × 12 cells but for a one-cell trail across its middle: 936
     // cells, past the cap
     const huge: Rect[] = [
-      { x: 0, y: 0, width: 2080, height: 640 },
-      { x: 0, y: 720, width: 2080, height: 640 },
+      { x: 0, y: 0, width: 3120, height: 960 },
+      { x: 0, y: 1040, width: 3120, height: 960 },
     ];
     const planted = planTreeStands(huge, FOREST_SIZE, LOOK, SEED);
     expect(planted.length).toBeLessThanOrEqual(TREE_CAP);
-    // 26 cells along each side of the trail, all kept
+    // 39 cells along each side of the trail, all kept
     const edge = planted.filter((t) => t.edge);
-    expect(edge.filter((t) => t.wall === 0)).toHaveLength(26);
-    expect(edge.filter((t) => t.wall === 1)).toHaveLength(26);
+    expect(edge.filter((t) => t.wall === 0)).toHaveLength(39);
+    expect(edge.filter((t) => t.wall === 1)).toHaveLength(39);
     // the interior thinned, never the edge
     const interior = planted.filter((t) => !t.edge);
     expect(interior.length).toBeGreaterThan(0);
-    expect(interior.length).toBeLessThan(2 * 26 * 7);
+    expect(interior.length).toBeLessThan(2 * 39 * 11);
   });
 });
 

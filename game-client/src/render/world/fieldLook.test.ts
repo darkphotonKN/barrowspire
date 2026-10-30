@@ -8,6 +8,7 @@ import {
   relativeLuminance,
   tinted,
 } from "@/render/lighting/lighting";
+import { FOREST_SIZE } from "./forest.fixture";
 import { OUTDOOR_GROUND, planGroundLayer } from "./ground";
 import { FIELD_LOOKS, FOREST_LOOK, MEADOWS_LOOK, fieldLook } from "./fieldLook";
 
@@ -192,7 +193,7 @@ describe("the Forest look (FS-3QHQZ §C)", () => {
 
   it("should lay out the same ground on every client", () => {
     const plan = () =>
-      planGroundLayer({ width: 2080, height: 1360, kind: "field", houses: [], look: FOREST_LOOK.ground });
+      planGroundLayer({ ...FOREST_SIZE, kind: "field", houses: [], look: FOREST_LOOK.ground });
     expect(plan()).toEqual(plan());
   });
 });

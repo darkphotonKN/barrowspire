@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Point, Rect } from "@/render/iso";
 import { MEADOWS_LOOK } from "./fieldLook";
 import { ROAD_HALF_WIDTH, planKeepOutDressing, planRoadHome } from "./fieldDressing";
+import { FOREST_GATE, FOREST_SIZE } from "./forest.fixture";
 import { planGround } from "./ground";
 
 /**
@@ -111,8 +112,8 @@ describe("planRoadHome (FS-X2F2H §Requirements 51, 54)", () => {
 
 describe("planRoadHome at a gate on another edge (FS-3QHQZ §Requirements 14: the Forest's mouth is east)", () => {
   /** The Forest's entrance gate, inside the mouth on its east edge, toward the hub. */
-  const SIZE = { width: 2080, height: 1360 };
-  const GATE = { x: 2040, y: 880 };
+  const SIZE = FOREST_SIZE;
+  const GATE = FOREST_GATE;
   const road = planRoadHome(GATE, SIZE);
 
   it("should run the road through the gate and off the east edge, not across the map", () => {
