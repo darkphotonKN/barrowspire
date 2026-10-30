@@ -243,14 +243,18 @@ func TestForestClearings_OnlyTheMainDeadEnd(t *testing.T) {
 	assert.Empty(t, clearings.Chests)
 }
 
-// Over many seeds: 18-24 standard spawn points, each on an open trail cell, at
-// least ForestEntranceExclusion from the entrance and MonsterSpacing from each
-// other, none in a clearing; one elite point at each elite clearing's centre;
-// and the same seed gives the same points. R16.
+// Over many seeds: 12-16 standard spawn points, each on an open trail cell, at
+// least ForestEntranceExclusion from the entrance and ForestSpawnSpacing from
+// each other, none in a clearing; one elite point at each elite clearing's
+// centre; and the same seed gives the same points. FS-3QHQZ R16 as superseded
+// by FS-KSD6K R8-R11; MonsterSpacing, shared with the Spire, stays 60.
 func TestForestLayout_SpawnPoints(t *testing.T) {
 	assert.Equal(t, 400.0, ForestEntranceExclusion)
-	assert.Equal(t, 18, ForestSpawnPointsMin)
-	assert.Equal(t, 24, ForestSpawnPointsMax)
+	assert.Equal(t, 12, ForestSpawnPointsMin)
+	assert.Equal(t, 16, ForestSpawnPointsMax)
+	assert.GreaterOrEqual(t, ForestSpawnSpacing, 120.0, "never below 2 x MonsterSpacing")
+	assert.LessOrEqual(t, ForestSpawnSpacing, 240.0, "starts at one trail width")
+	assert.Equal(t, 60.0, MonsterSpacing, "the Spire's spacing is unchanged")
 
 	for seed := uint64(1); seed <= 300; seed++ {
 		generated := forestLayoutFor(t, seed)
@@ -272,7 +276,7 @@ func TestForestLayout_SpawnPoints(t *testing.T) {
 			require.GreaterOrEqual(t, math.Hypot(p.X-place.Entrance.X, p.Y-place.Entrance.Y), ForestEntranceExclusion, "seed %d: %+v near the entrance", seed, p)
 			require.False(t, inAnyClearing(generated, p), "seed %d: %+v in a clearing", seed, p)
 			for _, q := range points[:i] {
-				require.GreaterOrEqual(t, math.Hypot(p.X-q.X, p.Y-q.Y), MonsterSpacing, "seed %d: %+v crowds %+v", seed, p, q)
+				require.GreaterOrEqual(t, math.Hypot(p.X-q.X, p.Y-q.Y), ForestSpawnSpacing, "seed %d: %+v crowds %+v", seed, p, q)
 			}
 		}
 
@@ -299,14 +303,14 @@ func TestForestLayout_SkipsWhatCannotBePlaced(t *testing.T) {
 			{X: 1960, Y: 680}, // too near the entrance
 			{X: 200, Y: 680},  // in the clearing
 			{X: 1000, Y: 680}, // fits
-			{X: 1080, Y: 680}, // fits
+			{X: 1240, Y: 680}, // fits, a trail width from the last
 		},
 		Seed: 3,
 	}
 
 	layout, err := ForlornForest(generated).Layout.Layout()
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []FieldPoint{{X: 1000, Y: 680}, {X: 1080, Y: 680}}, layout.SpawnPoints)
+	assert.ElementsMatch(t, []FieldPoint{{X: 1000, Y: 680}, {X: 1240, Y: 680}}, layout.SpawnPoints)
 	assert.Equal(t, []FieldPoint{{X: 200, Y: 680}}, layout.EliteSpawnPoints)
 }
 
