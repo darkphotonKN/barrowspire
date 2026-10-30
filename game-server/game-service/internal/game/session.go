@@ -456,10 +456,18 @@ func (s *Session) manageClientMessages() {
 
 				s.queueIntent(func() {
 					if err := s.handleInteract(playerID, entityIDUUID); err != nil {
-						slog.Error("handleInteract failed to process on entity.",
-							"player_id", playerID,
-							"entity_id", entityIDUUID,
-							"error", err)
+						// the client pre-checks the bag; a stale one is refused quietly (FS-HRH2J R37)
+						if errors.Is(err, ErrBagFull) {
+							slog.Debug("Pickup refused into a full bag.",
+								"player_id", playerID,
+								"entity_id", entityIDUUID,
+							)
+						} else {
+							slog.Error("handleInteract failed to process on entity.",
+								"player_id", playerID,
+								"entity_id", entityIDUUID,
+								"error", err)
+						}
 						if err := s.sender.SendMessageToPlayer(playerID, types.Message{}); err != nil {
 							slog.Debug("Could not answer a refused action", "player_id", playerID, "error", err)
 						}
@@ -597,6 +605,15 @@ func (s *Session) manageClientMessages() {
 					// the player has been told; refusing an over-level item is not a fault
 					if errors.Is(err, ErrBelowRequiredLevel) {
 						slog.Debug("Equip refused below the item's required level.",
+							"player_id", playerID,
+							"item_entity_id", itemEntityID,
+						)
+						return
+					}
+
+					// the client pre-checks the bag; a stale one is refused quietly (FS-HRH2J R37)
+					if errors.Is(err, ErrBagFull) {
+						slog.Debug("Unequip refused into a full bag.",
 							"player_id", playerID,
 							"item_entity_id", itemEntityID,
 						)
@@ -2065,6 +2082,16 @@ func (s *Session) pickUpItem(playerEntity *ecs.Entity, at *components.TransformC
 	return nil
 }
 
+// BagCapacity is the most items a body's bag holds in a run or a field world.
+// Only moves that would grow the bag past it are refused (ErrBagFull); a bag
+// already over it keeps every item. FS-HRH2J §Requirements 31, 36.
+const BagCapacity = 30
+
+// bagFull reports whether the bag has no room for one more item.
+func bagFull(bag *components.ItemIDListComponent) bool {
+	return len(bag.ItemIDs) >= BagCapacity
+}
+
 // moveItemToSatchel is pickUpItem's body. Callers hold the world's lock.
 func (s *Session) moveItemToSatchel(playerEntity *ecs.Entity, at *components.TransformComponent, itemID uuid.UUID) error {
 	satchelComp, ok := playerEntity.GetComponent(ecs.ComponentTypeItemIDList)
@@ -2097,6 +2124,11 @@ func (s *Session) moveItemToSatchel(playerEntity *ecs.Entity, at *components.Tra
 	where := transformComp.(*components.TransformComponent)
 	if !s.calcWithinDistance(at.X, at.Y, where.X, where.Y) {
 		return fmt.Errorf("pick up item %s: %w", itemID, ErrOutOfRange)
+	}
+
+	// checked before the container's list is touched, so a refusal moves nothing
+	if bagFull(satchel) {
+		return fmt.Errorf("pick up item %s: %w", itemID, ErrBagFull)
 	}
 
 	held.ItemIDs = slices.Delete(slices.Clone(held.ItemIDs), index, index+1)
@@ -2233,6 +2265,10 @@ func (s *Session) handleEquip(action constants.Action, playerEntityID uuid.UUID,
 	if action == constants.ActionUnequip {
 		if worn == nil {
 			return fmt.Errorf("unequip %s: %w", itemEntityID, ErrItemNotWorn)
+		}
+		// checked before the slot is cleared, so a refused item stays worn
+		if bagFull(itemIDList) {
+			return fmt.Errorf("unequip %s: %w", itemEntityID, ErrBagFull)
 		}
 		*worn.Holder(equipment) = nil
 		itemIDList.ItemIDs = append(itemIDList.ItemIDs, itemEntityID)
