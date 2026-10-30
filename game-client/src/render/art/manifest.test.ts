@@ -910,6 +910,105 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     });
   });
 
+  describe("the town interiors' props (FS-B0H2D §G R30)", () => {
+    type Sheet = {
+      atlas: string;
+      frameWidth: number;
+      frameHeight: number;
+      anchor: { x: number; y: number };
+      directions: number;
+      animations: Record<string, { frames: unknown[][] }>;
+      light?: {
+        offset: { x: number; y: number };
+        radius: number;
+        color: string;
+        flicker: number;
+      };
+      source: string;
+      licence: string;
+    };
+    const sheet = (name: string): Sheet => baked.sheets[name];
+
+    // sheet → its authoring function in tools/bake/page/models/interior.js, and its animations
+    // with their frame counts (the counter runs along either world axis; stools and shelves
+    // carry variants, picked by index)
+    const INTERIOR: [string, string, Record<string, number>][] = [
+      ["counter", "counter", { x: 1, y: 1 }],
+      ["stool", "stool", { variants: 2 }],
+      ["inn_hearth", "innHearth", { default: 1 }],
+      ["shelf", "shelf", { variants: 2 }],
+      ["forge", "forge", { default: 1 }],
+      ["anvil", "anvil", { default: 1 }],
+    ];
+    const LIT = ["inn_hearth", "forge"];
+
+    it.each(INTERIOR)(
+      "%s is baked, authored in models/interior.js#%s, with its frames",
+      (name, fn, frames) => {
+        const s = sheet(name);
+        expect(s, name).toBeDefined();
+        expect(Number.isInteger(s.frameWidth) && s.frameWidth > 0).toBe(true);
+        expect(Number.isInteger(s.frameHeight) && s.frameHeight > 0).toBe(true);
+        expect(s.anchor.x).toBeGreaterThan(0);
+        expect(s.anchor.x).toBeLessThan(1);
+        expect(s.anchor.y).toBeGreaterThan(0);
+        expect(s.anchor.y).toBeLessThanOrEqual(1);
+        expect(s.directions).toBe(1);
+        expect(
+          Object.fromEntries(
+            Object.entries(s.animations).map(([a, v]) => [a, v.frames[0].length]),
+          ),
+        ).toEqual(frames);
+        expect(s.source).toBe(`authored: tools/bake/page/models/interior.js#${fn}`);
+        expect(s.licence).toBe(baked.sheets.brazier.licence);
+        expect(s.atlas, name).toMatch(/^interior-\d+$/);
+      },
+    );
+
+    it("packs nothing else into the interior group, so no existing atlas reflows", () => {
+      for (const [name, s] of Object.entries(baked.sheets) as [string, Sheet][])
+        if (/^interior-/.test(s.atlas))
+          expect(INTERIOR.map(([n]) => n)).toContain(name);
+    });
+
+    it("declares a warm light on the Inn's hearth and the forge, and on nothing else", () => {
+      const warm = ["amber", "amberBright", "ember"];
+      for (const [name] of INTERIOR)
+        if (LIT.includes(name)) {
+          const light = sheet(name).light;
+          expect(light, name).toBeDefined();
+          expect(warm, name).toContain(light!.color);
+          expect(light!.radius, name).toBeGreaterThan(0);
+          // the fire sits above the floor: up the frame from the anchor, inside it
+          expect(light!.offset.y, name).toBeLessThan(0);
+          expect(sheet(name).anchor.y * sheet(name).frameHeight + light!.offset.y).toBeGreaterThan(0);
+        } else expect(sheet(name).light, name).toBeUndefined();
+    });
+
+    it("reuses the table, crate and barrel rather than baking new ones", () => {
+      expect(sheet("table").atlas).toMatch(/^props-\d+$/);
+      expect(sheet("barrel").atlas).toMatch(/^props-\d+$/);
+      expect(sheet("crate").atlas).toMatch(/^town-\d+$/);
+    });
+
+    it("stands the counter and the forge taller than a stool, and the anvil low", () => {
+      const standing = (name: string) => sheet(name).anchor.y * sheet(name).frameHeight;
+      expect(standing("counter")).toBeGreaterThan(standing("stool"));
+      expect(standing("forge")).toBeGreaterThan(standing("counter"));
+      expect(standing("anvil")).toBeLessThan(standing("counter"));
+    });
+
+    it("draws every interior colour from BARROW: no colour literal in models/interior.js", () => {
+      const model = readFileSync(
+        join(__dirname, "../../../tools/bake/page/models/interior.js"),
+        "utf8",
+      );
+      expect(model).not.toMatch(
+        /#[0-9a-fA-F]{3,8}\b|0x[0-9a-fA-F]{6}\b|rgba?\(/,
+      );
+    });
+  });
+
   describe("characters and creatures (FS-2325V §E)", () => {
     const CAST = [
       "char_knight_base",
