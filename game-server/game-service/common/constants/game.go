@@ -122,10 +122,10 @@ const GateRange float64 = 80
 const MeadowsMapWidth float64 = 2000
 const MeadowsMapHeight float64 = 1000
 
-// The Forlorn Forest is about twice a tower floor, larger than the hub: 26 x 17
-// cells of 80 px, the generator's Forest parameters. FS-3QHQZ §Requirements 11.
-const ForestMapWidth float64 = 2080
-const ForestMapHeight float64 = 1360
+// The Forlorn Forest is roomy enough that walking on reveals more of it: 39 x 25
+// cells of 80 px, the generator's Forest parameters. FS-KSD6K §Requirements 1.
+const ForestMapWidth float64 = 3120
+const ForestMapHeight float64 = 2000
 
 // How close a player must stand to a field's entrance gate to walk back to the
 // hub through it: the hub gates' own range. FS-X2F2H §Requirements 14.
