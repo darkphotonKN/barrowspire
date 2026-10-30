@@ -1,9 +1,9 @@
 ---
 id: I-KSD6K-4
-status: open
+status: done
 implements: FS-KSD6K
 blocked_by: [I-KSD6K-1, I-KSD6K-3]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-KSD6K slice 4: the client frames the roomier Forest at 3120 x 2000 (game-client)"
 ---
 Implements FS-KSD6K §C (Requirement 17)
@@ -27,11 +27,11 @@ The client's idea of the Forest matches the server's new size:
 
 ## Acceptance Criteria
 
-- [ ] `FIELD_SIZE.forlorn_forest` is 3120 x 2000, equal to the server's `constants.ForestMapWidth/Height`.
-- [ ] `forest.fixture.ts` matches the regenerated golden for seed 20261029.
-- [ ] Forest-sized client tests use the new size and pass.
-- [ ] The verge count is scaled and the forest dressing tests pass with it.
-- [ ] `npm test`, lint and `lint:fence`: no new failures versus the branch point.
+- [x] `FIELD_SIZE.forlorn_forest` is 3120 x 2000, equal to the server's `constants.ForestMapWidth/Height`.
+- [x] `forest.fixture.ts` matches the regenerated golden for seed 20261029.
+- [x] Forest-sized client tests use the new size and pass.
+- [x] The verge count is scaled and the forest dressing tests pass with it.
+- [x] `npm test`, lint and `lint:fence`: no new failures versus the branch point.
 
 ## Files expected to touch
 

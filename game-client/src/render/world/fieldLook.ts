@@ -107,7 +107,9 @@ export const FOREST_LOOK = {
     dead: ["tree_dead", "tree_dead_snag"],
   },
   verges: {
-    count: 56,
+    // the 3 120 x 2 000 Forest has twice the trail of the old 2 080 x 1 360 one, which strewed 37:
+    // today's density held (FS-KSD6K §Requirements 17)
+    count: 74,
     weights: [
       [38, "fern"],
       [58, "toadstools"],

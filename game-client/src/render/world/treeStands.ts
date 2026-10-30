@@ -146,8 +146,8 @@ function footOf(cell: Cell, h: number): Point {
 
 /**
  * Every wall rect's stand, from the broadcast's walls in order. Under the cap, a tree on every
- * edge cell and every other interior cell; past it, each stand keeps its share of the cap by area,
- * its edge before its interior.
+ * edge cell and every other interior cell; past it, each stand keeps one tree, so no wall stands
+ * unseen, and its share of the rest of the cap by area, its edge before its interior.
  */
 export function planTreeStands(
   walls: readonly Rect[],
@@ -157,12 +157,17 @@ export function planTreeStands(
 ): StandTree[] {
   const stands = walls.map((wall) => cellsOf(wall, walls, size));
   const total = stands.reduce((n, cells) => n + cells.length, 0);
+  // the server's wall budget keeps the rects well under the cap, so one tree each always fits
+  const rest = Math.max(0, TREE_CAP - stands.length);
   const trees: StandTree[] = [];
   stands.forEach((cells, wall) => {
     const share =
       total <= TREE_CAP
         ? cells.length
-        : Math.floor((TREE_CAP * cells.length) / total);
+        : 1 +
+          Math.floor(
+            (rest * (cells.length - 1)) / Math.max(1, total - stands.length),
+          );
     const edge = cells.filter((c) => c.open);
     const interior = cells.filter((c) => !c.open && c.even);
     const kept =

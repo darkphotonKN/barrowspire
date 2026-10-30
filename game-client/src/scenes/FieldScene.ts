@@ -79,8 +79,8 @@ import { gateAt, gateEdges } from "./hubGates";
 /** Each field's size in world px, as the server builds it (FS-X2F2H §Requirements 51). */
 const FIELD_SIZE: Record<FieldId, { width: number; height: number }> = {
   gentle_meadows: { width: 2000, height: 1000 },
-  // 26 x 17 cells of 80 px (FS-3QHQZ §Requirements 11)
-  forlorn_forest: { width: 2080, height: 1360 },
+  // 39 x 25 cells of 80 px, constants.ForestMapWidth/Height (FS-KSD6K §Requirements 1, 17)
+  forlorn_forest: { width: 3120, height: 2000 },
 };
 
 const CAMERA_MARGIN = 120;
