@@ -111,6 +111,12 @@
       "height": 72,
       "sha256": "7106798d13411e494e59a2e3fdf1c26d935b31b89a049815e8af552263ada772"
     },
+    "interior-0": {
+      "image": "interior-0.png",
+      "width": 1332,
+      "height": 228,
+      "sha256": "aeb62789297ccd2c399f62333377a5ade6508e006c983faa426712eacdad6f7c"
+    },
     "nature-0": {
       "image": "nature-0.png",
       "width": 1648,
@@ -155,6 +161,32 @@
     }
   },
   "sheets": {
+    "anvil": {
+      "atlas": "interior-0",
+      "frameWidth": 79,
+      "frameHeight": 70,
+      "anchor": {
+        "x": 0.379746835443038,
+        "y": 0.7571428571428571
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1129,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/interior.js#anvil",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "barrel": {
       "atlas": "props-0",
       "frameWidth": 81,
@@ -4482,6 +4514,44 @@
         }
       },
       "source": "authored: tools/bake/page/models/town.js#chimney",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "counter": {
+      "atlas": "interior-0",
+      "frameWidth": 200,
+      "frameHeight": 151,
+      "anchor": {
+        "x": 0.42,
+        "y": 0.7019867549668874
+      },
+      "directions": 1,
+      "animations": {
+        "x": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 725,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "y": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 927,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/interior.js#counter",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "crate": {
@@ -14789,6 +14859,41 @@
       "source": "authored: tools/bake/page/characters/folk.js#spirewarden",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "forge": {
+      "atlas": "interior-0",
+      "frameWidth": 198,
+      "frameHeight": 219,
+      "anchor": {
+        "x": 0.37373737373737376,
+        "y": 0.817351598173516
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": -10,
+          "y": -52
+        },
+        "radius": 260,
+        "color": "ember",
+        "flicker": 0.45
+      },
+      "source": "authored: tools/bake/page/models/interior.js#forge",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "fx_arrow": {
       "atlas": "fx-0",
       "frameWidth": 56,
@@ -16161,6 +16266,41 @@
       "source": "procedural: tools/bake/page/models/items.js#vial_tonic",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "inn_hearth": {
+      "atlas": "interior-0",
+      "frameWidth": 199,
+      "frameHeight": 206,
+      "anchor": {
+        "x": 0.3417085427135678,
+        "y": 0.8009708737864077
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 202,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": -2,
+          "y": -24
+        },
+        "radius": 280,
+        "color": "amber",
+        "flicker": 0.6
+      },
+      "source": "authored: tools/bake/page/models/interior.js#innHearth",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "lamp_post": {
       "atlas": "props-0",
       "frameWidth": 105,
@@ -16506,6 +16646,36 @@
       "source": "authored: tools/bake/page/models/town.js#sacks",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "shelf": {
+      "atlas": "interior-0",
+      "frameWidth": 159,
+      "frameHeight": 166,
+      "anchor": {
+        "x": 0.29559748427672955,
+        "y": 0.8373493975903614
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 403,
+                "y": 2
+              },
+              {
+                "x": 564,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/interior.js#shelf",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "signpost": {
       "atlas": "town-0",
       "frameWidth": 100,
@@ -16600,6 +16770,36 @@
         "flicker": 0.35
       },
       "source": "authored: tools/bake/page/models/tower.js#spiralStairs",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "stool": {
+      "atlas": "interior-0",
+      "frameWidth": 57,
+      "frameHeight": 55,
+      "anchor": {
+        "x": 0.3508771929824561,
+        "y": 0.7636363636363637
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1210,
+                "y": 2
+              },
+              {
+                "x": 1269,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/interior.js#stool",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "stump": {

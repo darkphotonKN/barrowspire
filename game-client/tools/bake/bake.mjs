@@ -60,13 +60,15 @@ async function launch() {
 
 /**
  * What the review contact sheets show: the cast, then the tower interior (FS-8RBQY §D.7), then the
- * Spire's facade (FS-0XMCP §R15), then the Forlorn Forest's trees and dressing (FS-3QHQZ §C R30).
+ * Spire's facade (FS-0XMCP §R15), then the Forlorn Forest's trees and dressing (FS-3QHQZ §C R30),
+ * then the town buildings' furniture and fittings (FS-B0H2D §G R30).
  */
 const reviewSheets = (sheets) => [
   ...sheets.filter((x) => x.directions === 8),
   ...sheets.filter((x) => x.group === "tower"),
   ...sheets.filter((x) => x.group === "spire"),
   ...sheets.filter((x) => x.group === "forest"),
+  ...sheets.filter((x) => x.group === "interior"),
 ];
 
 function readJson(file) {

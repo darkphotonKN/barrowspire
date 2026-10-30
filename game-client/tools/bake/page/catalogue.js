@@ -77,6 +77,7 @@ import {
   STAIRS_LIGHT,
 } from "./models/tower.js";
 import { spireFacade, DOOR_LIGHT } from "./models/spire.js";
+import { counter, stool, innHearth, shelf, forge, anvil, HEARTH_FLAME, FORGE_COALS } from "./models/interior.js";
 import { CAST } from "./characters/cast.js";
 import { FOLK } from "./characters/folk.js";
 
@@ -500,6 +501,37 @@ function forestSheets() {
   ];
 }
 
+/**
+ * The town buildings' furniture and fittings (FS-B0H2D §G R30), authored in code (ADR-0020,
+ * ADR-0021) and packed on their own atlas so every existing atlas keeps its bytes. The Inn's
+ * table, and the crates and barrels, reuse `table`, `crate` and `barrel`. The counter turns to
+ * run along either world axis; stools and shelves carry variants, picked by index. The hearth
+ * and the forge are the only lights, and the scene lights them only under a lifted roof (R22).
+ */
+function interiorSheets() {
+  const sheet = (name, fn, animations, opts = {}) => ({
+    name,
+    group: "interior",
+    kind: "prop",
+    animations,
+    source: `authored: tools/bake/page/models/interior.js#${fn}`,
+    ...opts,
+  });
+  const one = (build) => ({ default: still(build) });
+  return [
+    sheet("counter", "counter", { x: still(() => counter("x")), y: still(() => counter("y")) }),
+    sheet("stool", "stool", { variants: still(...[0, 1].map((v) => () => stool(v))) }),
+    sheet("inn_hearth", "innHearth", one(innHearth), {
+      light: { at: HEARTH_FLAME, radius: 280, color: "amber", flicker: 0.6 },
+    }),
+    sheet("shelf", "shelf", { variants: still(...[0, 1].map((v) => () => shelf(v))) }),
+    sheet("forge", "forge", one(forge), {
+      light: { at: FORGE_COALS, radius: 260, color: "ember", flicker: 0.45 },
+    }),
+    sheet("anvil", "anvil", one(anvil)),
+  ];
+}
+
 export const CATALOGUE = [
   ...groundSheets(),
   ...natureSheets(),
@@ -513,4 +545,5 @@ export const CATALOGUE = [
   ...towerSheets(),
   ...spireSheets(),
   ...forestSheets(),
+  ...interiorSheets(),
 ].map((s) => ({ licence: LICENCE, ...s }));

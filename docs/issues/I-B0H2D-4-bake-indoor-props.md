@@ -1,6 +1,6 @@
 ---
 id: I-B0H2D-4
-status: open
+status: done
 implements: FS-B0H2D
 blocked_by: []
 labels: [ready-for-agent]
@@ -31,10 +31,10 @@ this in parallel with any other bake on the same branch (check FS-KSD6K's issues
 
 ## Acceptance Criteria
 
-- [ ] Six sheets in the manifest with anchor, frame size and (forge, inn_hearth) a light source.
-- [ ] Built in code, no sourced models; fits the Ultima Online fidelity bar.
-- [ ] Contact sheet produced and approved before the commit lands (the gate for art).
-- [ ] Bake tool tests and client vitest green.
+- [x] Six sheets in the manifest with anchor, frame size and (forge, inn_hearth) a light source.
+- [x] Built in code, no sourced models; fits the Ultima Online fidelity bar.
+- [x] Contact sheet produced and approved before the commit lands (the gate for art).
+- [x] Bake tool tests and client vitest green.
 
 ## Blocked By
 
