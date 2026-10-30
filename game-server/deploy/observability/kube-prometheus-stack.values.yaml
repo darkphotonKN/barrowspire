@@ -1,0 +1,115 @@
+# kube-prometheus-stack on GKE Autopilot (barrowspire-dev), namespace "monitoring".
+#
+# Install:
+#   helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#     --kube-context gke_barrowspire-512613_asia-east1_barrowspire-dev -n monitoring \
+#     -f deploy/observability/kube-prometheus-stack.values.yaml
+#
+# The Grafana admin login lives in the Secret monitoring/grafana-admin
+# (keys admin-user, admin-password), created out of band. Never put it here.
+#
+# Autopilot notes:
+# - Every container gets a small explicit request; Autopilot bills requests and
+#   assigns large defaults to containers that omit them.
+# - kube-system is a managed namespace (no writes), so the kubelet Service lives
+#   in "monitoring" and the exporters that need a kube-system Service are off.
+# - Control-plane components are not scrapeable on Autopilot.
+
+# Not scrapeable / not allowed on Autopilot.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+coreDns:
+  enabled: false
+kubeDns:
+  enabled: false
+
+# hostPath/hostNetwork DaemonSet is rejected by Autopilot.
+nodeExporter:
+  enabled: false
+
+kubelet:
+  namespace: monitoring
+
+prometheusOperator:
+  kubeletService:
+    namespace: monitoring
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+  admissionWebhooks:
+    patch:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+  prometheusConfigReloader:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+prometheus:
+  prometheusSpec:
+    # Pick up ServiceMonitors/PodMonitors/rules from any namespace, not only
+    # ones labelled with this Helm release.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    retention: 7d
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+alertmanager:
+  alertmanagerSpec:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+grafana:
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  persistence:
+    enabled: true
+    size: 2Gi
+  # RWO volume: a rolling update would wait on the old pod to release the disk.
+  deploymentStrategy:
+    type: Recreate
+  # fsGroup on the pod already makes the volume writable; skip the root chown init container.
+  initChownData:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  sidecar:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi

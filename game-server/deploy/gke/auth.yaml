@@ -67,7 +67,9 @@ spec:
   # the only link; the Service and Deployment never reference each other.
   selector: { app: auth }
   # port: what callers dial. targetPort: the container port (by name).
-  ports: [{ port: 7116, targetPort: grpc }]
+  ports:
+    - { name: grpc, port: 7116, targetPort: grpc }
+    - { name: metrics, port: 8194, targetPort: 8194 }
 
 ---
 apiVersion: v1

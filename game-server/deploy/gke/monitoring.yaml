@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: barrowspire
+  labels: { release: kube-prometheus-stack }
+spec:
+  namespaceSelector: { matchNames: [barrowspire] }
+  selector:
+    matchExpressions:
+      - {
+          key: app,
+          operator: In,
+          values:
+            [
+              auth,
+              gateway,
+              game,
+              items,
+              wallet,
+              marketplace,
+              ledger,
+              stats,
+              notification,
+              payment,
+              character,
+            ],
+        }
+  endpoints:
+    - { port: metrics, interval: 15s }
