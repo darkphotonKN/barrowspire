@@ -77,16 +77,15 @@ describe("ParryFx stance tell (FS-MAMHR req 35)", () => {
     expect(f.live()).toHaveLength(1);
   });
 
-  it("should draw it in tokens only: a slate blade with a vellum glint", () => {
+  it("should draw only a vellum glint, in tokens: the blade is the merc's own, raised by his guard clip", () => {
     const f = fake();
     f.fx.raise(1000);
     const [tell] = f.live();
-    const colours = tell.calls
-      .filter((c) => c.method === "lineStyle" || c.method === "fillStyle")
-      .map((c) => (c.method === "lineStyle" ? c.args[1] : c.args[0]));
-    expect(colours).toContain(BARROW_HEX.slateLight);
-    expect(colours).toContain(BARROW_HEX.vellum);
-    for (const c of colours) expect(Object.values(BARROW_HEX)).toContain(c);
+    // no drawn blade or cross-guard: the baked sword is the guard now (FS-MAMHR amendment)
+    expect(tell.calls.filter((c) => c.method === "lineStyle" || c.method === "lineBetween")).toEqual([]);
+    const colours = tell.calls.filter((c) => c.method === "fillStyle").map((c) => c.args[0]);
+    expect(colours).toEqual([BARROW_HEX.vellum]);
+    expect(tell.calls.filter((c) => c.method === "fillPoints")).toHaveLength(1);
   });
 
   it("should hold for as long as the server reports the stance open, and clear when it closes", () => {

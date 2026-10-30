@@ -44,6 +44,24 @@ function manifest(): ArtManifest {
         source: "authored: tools/bake/page/characters/cast.js#knight",
         licence: "Barrowspire-original",
       },
+      // the Mercenary's carries the parry clip besides the four (FS-MAMHR §G.35)
+      char_mercenary_base: {
+        atlas: "characters-0",
+        frameWidth: 147,
+        frameHeight: 138,
+        anchor: { x: 0.45, y: 0.74 },
+        directions: 8,
+        animations: {
+          idle: clip(5, true, 6),
+          walk: clip(10, true, 8),
+          attack: clip(12, false, 6),
+          death: clip(9, false, 7),
+          parry: clip(24, false, 4),
+        },
+        crown: 80,
+        source: "authored: tools/bake/page/characters/cast.js#mercenary",
+        licence: "Barrowspire-original",
+      },
       // a hub resident's build: its first palette plain, a second as a variant
       folk_resident_trousers: {
         atlas: "characters-0",
@@ -201,6 +219,33 @@ describe("CharacterMotion", () => {
     expect(motion.step({ x: 70, y: 0 }, 320, FRAME, false)).toMatchObject({ animation: "idle", facing: "w" });
   });
 
+  it("should stand in the guard while the parry stance is up, and drop it when it closes (FS-MAMHR §G.35)", () => {
+    const motion = new CharacterMotion("sw");
+    expect(motion.guard(true, 0)).toBe(true);
+    expect(motion.step({ x: 0, y: 0 }, 0, FRAME, false)).toMatchObject({ animation: "parry", facing: "sw" });
+    expect(motion.guard(true, FRAME)).toBe(false);
+    expect(motion.step({ x: 0, y: 0 }, FRAME, FRAME, false).animation).toBe("parry");
+    motion.guard(false, 2 * FRAME);
+    expect(motion.step({ x: 0, y: 0 }, 2 * FRAME, FRAME, false).animation).toBe("idle");
+  });
+
+  it("should hold the guard while walking, turned the way the body goes (the stance never roots: §C.13)", () => {
+    const motion = new CharacterMotion("se");
+    walk(motion, { x: 0, y: -200 }, 300);
+    motion.guard(true, 300);
+    expect(motion.step({ x: 0, y: -64 }, 300 + FRAME, FRAME, false)).toMatchObject({ animation: "parry", facing: "n" });
+  });
+
+  it("should cut a running swing short when the guard is raised, and play a swing begun inside it", () => {
+    const motion = new CharacterMotion("se", 500);
+    motion.attack(0, { x: 40, y: 0 });
+    motion.guard(true, 100);
+    expect(motion.step({ x: 0, y: 0 }, 100, FRAME, false).animation).toBe("parry");
+    motion.attack(150, { x: 0, y: 40 });
+    expect(motion.step({ x: 0, y: 0 }, 150, FRAME, false).animation).toBe("attack");
+    expect(motion.step({ x: 0, y: 0 }, 650, FRAME, false).animation).toBe("parry");
+  });
+
   it("should die facing where it fell, whatever it was doing", () => {
     const motion = new CharacterMotion();
     walk(motion, { x: 200, y: 0 }, 300);
@@ -303,6 +348,43 @@ describe("CharacterAnimator", () => {
     anim.show(sprite, held);
     expect(sprite.plays).toHaveLength(1);
     expect(anim.step({ x: 0, y: 0 }, 700, FRAME, false).animation).toBe("idle");
+  });
+
+  it("should raise the merc's guard from its first frame and hold its last, not replaying it", () => {
+    const sprite = fakeSprite();
+    const anim = new CharacterAnimator(art(), "mercenary");
+    anim.show(sprite, anim.step({ x: 0, y: 0 }, 0, FRAME, false));
+    anim.guard(true, FRAME);
+    anim.show(sprite, anim.step({ x: 0, y: 0 }, FRAME, FRAME, false));
+    expect(sprite.plays[1]).toEqual({ key: "char_mercenary_base/parry/1", startFrame: 0 });
+    sprite.at(3);
+    anim.guard(true, 2 * FRAME);
+    anim.show(sprite, anim.step({ x: 0, y: 0 }, 2 * FRAME, FRAME, false));
+    expect(sprite.plays).toHaveLength(2);
+    anim.guard(false, 3 * FRAME);
+    anim.show(sprite, anim.step({ x: 0, y: 0 }, 3 * FRAME, FRAME, false));
+    expect(sprite.plays[2]).toMatchObject({ key: "char_mercenary_base/idle/1" });
+  });
+
+  it("should raise the guard afresh on the next stance, even facing the same way", () => {
+    const sprite = fakeSprite();
+    const anim = new CharacterAnimator(art(), "mercenary");
+    const guard = { animation: "parry", facing: "se", direction: 1, timeScale: 1 } as const;
+    anim.guard(true, 0);
+    anim.show(sprite, guard);
+    anim.guard(false, 300);
+    anim.guard(true, 600);
+    anim.show(sprite, guard);
+    expect(sprite.plays).toEqual([
+      { key: "char_mercenary_base/parry/1", startFrame: 0 },
+      { key: "char_mercenary_base/parry/1", startFrame: 0 },
+    ]);
+  });
+
+  it("should never guard on a sheet without the parry clip", () => {
+    const anim = new CharacterAnimator(art(), "warrior");
+    anim.guard(true, 0);
+    expect(anim.step({ x: 0, y: 0 }, 0, FRAME, false).animation).toBe("idle");
   });
 
   it("should time the attack window by the sheet's attack clip", () => {

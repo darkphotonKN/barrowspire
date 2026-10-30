@@ -67,6 +67,7 @@ export class CharacterMotion {
   private attackEnds = -Infinity;
   private aim?: Point;
   private holding?: Point;
+  private guarding = false;
 
   constructor(
     public facing: Facing8 = "se",
@@ -95,6 +96,18 @@ export class CharacterMotion {
     this.holding = aim ? { ...aim } : undefined;
   }
 
+  /**
+   * Whether the Mercenary's parry stance is up (FS-MAMHR §G.35), told every frame. Raising it is
+   * the newest thing he did: a swing still running is cut short so the guard shows at once, while
+   * a cut thrown inside the stance plays over it. Whether this raised the guard.
+   */
+  guard(up: boolean, now: number): boolean {
+    const raised = up && !this.guarding;
+    if (raised) this.attackEnds = Math.min(this.attackEnds, now);
+    this.guarding = up;
+    return raised;
+  }
+
   /** One frame: `pos` is the world position just drawn, `deltaMs` the frame's length. */
   step(pos: Point, now: number, deltaMs: number, dead: boolean): AnimationChoice {
     if (this.last && deltaMs > 0) {
@@ -116,6 +129,7 @@ export class CharacterMotion {
       dead,
       aim: attacking ? this.aim : undefined,
       holding: this.holding,
+      guarding: this.guarding,
     });
     this.facing = choice.facing;
     return choice;
@@ -130,6 +144,10 @@ export class CharacterAnimator {
   private readonly motion: CharacterMotion;
   /** Set by {@link attack}: the next attack frame replays from the start, even on the same key. */
   private swingPending = false;
+  /** Set as the guard is raised: the parry clip raises from its first frame. */
+  private guardPending = false;
+  /** Whether the sheet carries the parry clip: only the Mercenary's does (FS-MAMHR §G.35). */
+  private readonly guards: boolean;
 
   private readonly variant?: string;
 
@@ -144,6 +162,7 @@ export class CharacterAnimator {
     this.variant = look.variant;
     const attack = art.sheet(this.sheet)?.animations.attack;
     this.baked = art.animationKey(this.sheet, this.clip("idle")) !== undefined;
+    this.guards = art.animationKey(this.sheet, this.clip("parry")) !== undefined;
     this.motion = new CharacterMotion(
       facing,
       attack && attack.fps > 0
@@ -175,6 +194,15 @@ export class CharacterAnimator {
     this.motion.holdAim(aim);
   }
 
+  /**
+   * The parry stance is up or down (FS-MAMHR §G.35); as {@link CharacterMotion.guard}. A sheet
+   * without the parry clip keeps whatever it was playing.
+   */
+  guard(up: boolean, now: number): void {
+    if (this.motion.guard(up && this.guards, now)) this.guardPending = true;
+    else if (!up) this.guardPending = false;
+  }
+
   step(pos: Point, now: number, deltaMs: number, dead: boolean): AnimationChoice {
     return this.motion.step(pos, now, deltaMs, dead);
   }
@@ -194,8 +222,8 @@ export class CharacterAnimator {
   }
 
   /**
-   * Plays the chosen clip. The same clip carries on (a finished attack or death holds its last
-   * frame rather than replaying) unless a new attack was started; a looping clip turning to a new facing keeps its place in the
+   * Plays the chosen clip. The same clip carries on (a finished attack, guard or death holds its
+   * last frame rather than replaying) unless a new attack or guard was started; a looping clip turning to a new facing keeps its place in the
    * cycle, so a stride does not restart at every turn.
    */
   show(sprite: AnimatedSprite, choice: AnimationChoice): void {
@@ -206,6 +234,9 @@ export class CharacterAnimator {
     const current = anims.currentAnim;
     if (choice.animation === "attack" && this.swingPending) {
       this.swingPending = false;
+      sprite.play({ key, startFrame: 0 });
+    } else if (choice.animation === "parry" && this.guardPending) {
+      this.guardPending = false;
       sprite.play({ key, startFrame: 0 });
     } else if (current?.key !== key) {
       const startFrame =
