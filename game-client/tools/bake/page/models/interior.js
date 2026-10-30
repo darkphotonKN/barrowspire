@@ -6,12 +6,18 @@
 // One three.js unit is one tile edge (40 world px), so one metre here is 1.5 units, 60 world px.
 // +x is world +x, +z is world +y (screen: +x and +z fall toward the viewer). Each model's origin
 // is the centre of its footprint, the point the scene places it on. Footprints, in world px:
-//   counter     140 × 40 along its axis (x: runs world x; y: runs world y), 63 px tall
+//   counter     140 × 25 along its axis (x: runs world x; y: runs world y), 63 px tall: the
+//               server's counter rect (25 × 140, run along y), so the drawn counter covers its
+//               collision and no more
+//   inn_table   the server's table rects: `narrow` 30 × 40, `wide` 45 × 40 (the props.js `table`
+//               is 102 × 51 and would stand far past either), 44 px tall like it
 //   stool       about 24 across
 //   inn_hearth  96 wide × 36 deep, its back on the model's -z face (stands against a north wall,
 //               fire facing world +y, toward the door and the camera)
 //   shelf       72 wide × 24 deep, its back on -z (against a north wall)
-//   forge       84 × 60, its chimney at the back (-z)
+//   forge       70 × 35, its chimney at the back (-z): the server's forge rect. The bellows sit
+//               on the hearth's cap rather than on a trestle beside it, and there is no quench
+//               tub, so nothing stands past the rect a player collides with
 //   anvil       about 48 × 30 on its block
 //
 // Colour stays in the bake's channels (design guideline "Gameplay accent"): nothing here is
@@ -26,9 +32,9 @@ import { part, rod, scaled, V3 } from "./util.js";
 /** Metres to model units: the furniture scale of props.js. */
 const S = 1.5;
 
-/** Counter: length and depth in metres (140 × 40 world px), and the top's height. */
+/** Counter: length and depth in metres (140 × 25 world px, the server's rect), and the top's height. */
 const COUNTER_L = 140 / 60;
-const COUNTER_D = 40 / 60;
+const COUNTER_D = 25 / 60;
 const COUNTER_H = 1.05;
 
 /** Hearth: width and depth in metres (96 × 36 world px). */
@@ -36,14 +42,25 @@ const HEARTH_W = 96 / 60;
 const HEARTH_D = 36 / 60;
 const HEARTH_FIRE_Y = 0.22;
 
-/** Forge: width and depth in metres (84 × 60 world px), and the coal bed's height. */
-const FORGE_W = 84 / 60;
-const FORGE_D = 60 / 60;
+/** Forge: width and depth in metres (70 × 35 world px, the server's rect), and the coal bed's height. */
+const FORGE_W = 70 / 60;
+const FORGE_D = 35 / 60;
 const FORGE_BED_Y = 0.78;
+/** The forge's stone block, a hair inside the rect; its chimney stack's depth at the back. */
+const FORGE_BLOCK_W = FORGE_W - 0.04;
+const FORGE_BLOCK_D = FORGE_D - 0.04;
+const FORGE_STACK_D = 0.2;
+/** The coal bed: the block's west part (the bellows take the east end), in front of the stack. */
+const FORGE_BED_X0 = -FORGE_BLOCK_W / 2 + 0.08;
+const FORGE_BED_X1 = FORGE_BLOCK_W / 2 - 0.42;
+const FORGE_BED_Z0 = -FORGE_BLOCK_D / 2 + FORGE_STACK_D + 0.02;
+const FORGE_BED_Z1 = FORGE_BLOCK_D / 2 - 0.05;
+const FORGE_BED_X = (FORGE_BED_X0 + FORGE_BED_X1) / 2;
+const FORGE_BED_Z = (FORGE_BED_Z0 + FORGE_BED_Z1) / 2;
 
 /** Model-space light points (scaled), for the manifest's declared light sources. */
 export const HEARTH_FLAME = [0, (HEARTH_FIRE_Y + 0.2) * S, (-HEARTH_D / 2 + 0.34) * S];
-export const FORGE_COALS = [-0.08 * S, (FORGE_BED_Y + 0.12) * S, 0.12 * S];
+export const FORGE_COALS = [FORGE_BED_X * S, (FORGE_BED_Y + 0.12) * S, FORGE_BED_Z * S];
 
 const SOOT = mix("pitch", "charcoal", 0.5);
 const PEWTER = mix("slateLight", "slate", 0.35);
@@ -278,6 +295,38 @@ export function counter(axis) {
   return scaled(g, S);
 }
 
+/** The Inn's tables, in metres from their server rects (world px): narrow 30 × 40, wide 45 × 40. */
+export const INN_TABLES = { narrow: [30 / 60, 40 / 60], wide: [45 / 60, 40 / 60] };
+
+/**
+ * An Inn table on its server rect (`narrow` or `wide`, INN_TABLES): a scrubbed top on four legs
+ * and stretchers, a tankard, a crust and a stub of candle on it. Its top fills the rect and its
+ * legs stand inside it, so the table covers what a player collides with and no more.
+ */
+export function innTable(size) {
+  const M = materials();
+  const T = interiorMaterials();
+  const g = new THREE.Group();
+  const R = rng(size === "narrow" ? 541 : 542);
+  const [W, D] = INN_TABLES[size];
+  const top = 0.74;
+  g.add(box(W - 0.02, 0.06, D - 0.02, M.woodDark, { y: top - 0.03, ry: (R() - 0.5) * 0.02 }));
+  // the planks of the top, a hair proud of it
+  const planks = Math.max(2, Math.round(W / 0.16));
+  for (let i = 0; i < planks; i++)
+    g.add(box((W - 0.06) / planks - 0.01, 0.008, D - 0.05, M.wood, { x: -W / 2 + 0.03 + ((i + 0.5) * (W - 0.06)) / planks, y: top + 0.004 }));
+  for (const sx of [-1, 1])
+    for (const sz of [-1, 1]) g.add(box(0.06, top - 0.06, 0.06, M.woodDark, { x: sx * (W / 2 - 0.07), y: (top - 0.06) / 2, z: sz * (D / 2 - 0.07) }));
+  for (const sx of [-1, 1]) g.add(box(0.04, 0.04, D - 0.18, M.beam, { x: sx * (W / 2 - 0.07), y: 0.16 }));
+  g.add(box(W - 0.18, 0.04, 0.04, M.beam, { y: 0.16 }));
+  tankard(g, -W / 4, top + 0.008, -D / 6, R() * 3, T);
+  if (size === "wide") tankard(g, W / 5, top + 0.008, D / 5, R() * 3, T);
+  g.add(part(new THREE.SphereGeometry(0.06, 8, 6), T.bread, { x: W / 6, y: top + 0.03, z: -D / 5, sy: 0.6 }));
+  g.add(part(new THREE.CylinderGeometry(0.02, 0.02, 0.08, 8), M.vellum, { x: -W / 6, y: top + 0.048, z: D / 5 }));
+  g.add(part(new THREE.ConeGeometry(0.012, 0.035, 6), M.flame, { x: -W / 6, y: top + 0.105, z: D / 5 }));
+  return scaled(g, S);
+}
+
 /** A three-legged round stool (variant 0) or a square joint stool (variant 1). */
 export function stool(variant) {
   const M = materials();
@@ -469,10 +518,11 @@ function bellowsBoard() {
   return geo;
 }
 
-/** Great bellows lying on a trestle: two teardrop boards, pleated leather between, an iron nozzle to -x. */
-function bellows(g, x, y, z, M) {
+/** Great bellows lying flat: two teardrop boards, pleated leather between, an iron nozzle to -x. */
+function bellows(g, x, y, z, M, scale = 1) {
   const b = new THREE.Group();
   b.position.set(x, y, z);
+  b.scale.setScalar(scale);
   b.add(part(bellowsBoard(), M.woodDark, { y: 0 }));
   b.add(part(bellowsBoard(), M.woodDark, { y: 0.17, rz: 0.1 }));
   // the leather: three pleats, each a little narrower toward the point
@@ -488,75 +538,70 @@ function bellows(g, x, y, z, M) {
 }
 
 /**
- * The smithy's forge: a waist-high stone hearth with a dished coal bed and an iron rim, a hood
- * and chimney rising from its back, bellows at its side, a quench tub at its front corner. It is
- * a furnishing standing free of the walls (R12), so it is finished on every side.
+ * The smithy's forge: a waist-high stone hearth filling the server's 70 × 35 rect, a dished coal
+ * bed with an iron rim in its west part, a stone stack and hood rising from its back, the bellows
+ * lying on the cap at its east end with their nozzle in the fire. It is a furnishing standing
+ * free of the walls (R12), so it is finished on every side; nothing stands past its rect, so the
+ * prop never shows where a player can walk.
  */
 export function forge() {
   const M = materials();
   const T = interiorMaterials();
   const g = new THREE.Group();
   const R = rng(561);
-  const W = FORGE_W - 0.2;
-  const D = FORGE_D - 0.2;
+  const W = FORGE_BLOCK_W;
+  const D = FORGE_BLOCK_D;
   const bed = FORGE_BED_Y;
-  const ox = -0.08;
+  const bx = FORGE_BED_X;
+  const bz = FORGE_BED_Z;
+  const bw = FORGE_BED_X1 - FORGE_BED_X0;
+  const bd = FORGE_BED_Z1 - FORGE_BED_Z0;
   // the hearth block
-  masonry(g, { x: ox, z: 0, y0: 0, w: W, h: bed - 0.06, d: D }, T.rubble, R);
-  g.add(box(W + 0.04, 0.08, D + 0.04, M.cap, { x: ox, y: bed - 0.04 }));
-  // the bed: ash and dark coal around a hot heart, an iron rim, the tuyère from the side
-  g.add(box(W - 0.2, 0.03, D - 0.26, T.ash, { x: ox, y: bed + 0.01, z: 0.08 }));
+  masonry(g, { x: 0, z: 0, y0: 0, w: W, h: bed - 0.06, d: D }, T.rubble, R);
+  g.add(box(W + 0.02, 0.08, D + 0.02, M.cap, { y: bed - 0.04 }));
+  // the bed: ash and dark coal around a hot heart, an iron rim
+  g.add(box(bw - 0.04, 0.03, bd - 0.04, T.ash, { x: bx, y: bed + 0.01, z: bz }));
   for (const [x, z, w, d] of [
-    [ox, 0.08 - (D - 0.22) / 2, W - 0.16, 0.025],
-    [ox, 0.08 + (D - 0.22) / 2, W - 0.16, 0.025],
-    [ox - (W - 0.16) / 2, 0.08, 0.025, D - 0.22],
-    [ox + (W - 0.16) / 2, 0.08, 0.025, D - 0.22],
+    [bx, bz - bd / 2, bw, 0.025],
+    [bx, bz + bd / 2, bw, 0.025],
+    [bx - bw / 2, bz, 0.025, bd],
+    [bx + bw / 2, bz, 0.025, bd],
   ])
     g.add(box(w, 0.05, d, M.iron, { x, y: bed + 0.025, z }));
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 26; i++) {
     const a = R() * Math.PI * 2;
     const r = Math.sqrt(R());
     const hot = r < 0.55;
     g.add(
       part(new THREE.IcosahedronGeometry(0.03 + R() * 0.025, 0), hot ? (R() > 0.3 ? T.hot : M.coal) : R() > 0.75 ? M.coal : M.black, {
-        x: ox + Math.cos(a) * r * 0.3,
+        x: bx + Math.cos(a) * r * (bw / 2 - 0.06),
         y: bed + 0.035 + (hot ? 0.01 : 0),
-        z: 0.1 + Math.sin(a) * r * 0.18,
+        z: bz + Math.sin(a) * r * (bd / 2 - 0.05),
       }),
     );
   }
-  for (let i = 0; i < 2; i++) g.add(part(new THREE.ConeGeometry(0.04, 0.14, 6), M.flame, { x: ox - 0.04 + i * 0.09, y: bed + 0.11, z: 0.12 }));
-  // a bar in the fire, its end glowing
-  g.add(rod(V3(ox + 0.05, bed + 0.06, 0.12), V3(ox + 0.62, bed + 0.12, 0.3), 0.012, 0.012, M.iron, 6));
+  for (let i = 0; i < 2; i++) g.add(part(new THREE.ConeGeometry(0.04, 0.14, 6), M.flame, { x: bx - 0.04 + i * 0.09, y: bed + 0.11, z: bz }));
+  // a bar in the fire, its end glowing, its handle over the rim toward the bellows
+  g.add(rod(V3(bx - 0.05, bed + 0.06, bz), V3(bx + bw / 2 + 0.12, bed + 0.12, bz + 0.08), 0.012, 0.012, M.iron, 6));
   // the back: a stone chimney stack and a sloped hood over the bed
-  const stackD = 0.34;
-  const stackZ = -D / 2 + stackD / 2;
-  masonry(g, { x: ox, z: stackZ, y0: bed, w: W - 0.1, h: 0.55, d: stackD }, T.rubble, R);
+  const stackZ = -D / 2 + FORGE_STACK_D / 2;
+  masonry(g, { x: bx, z: stackZ, y0: bed, w: bw + 0.08, h: 0.55, d: FORGE_STACK_D }, T.rubble, R);
   const hoodY = bed + 0.55;
-  g.add(box(W - 0.04, 0.08, stackD + 0.12, M.cap, { x: ox, y: hoodY + 0.04, z: stackZ + 0.04 }));
-  const hood = new THREE.CylinderGeometry(0.22, 0.48, 0.42, 4, 1, true);
-  g.add(part(hood, T.sheetIron, { x: ox, y: hoodY + 0.29, z: stackZ + 0.1, ry: Math.PI / 4, sz: 0.7 }));
-  masonry(g, { x: ox, z: stackZ, y0: hoodY + 0.5, w: 0.42, h: 0.75, d: 0.3 }, T.rubble, R);
-  g.add(box(0.5, 0.06, 0.38, M.cap, { x: ox, y: hoodY + 1.28, z: stackZ }));
-  // bellows on a trestle at the +x side, its nozzle into the hearth
-  for (const z of [-0.1, 0.14]) g.add(box(0.05, 0.5, 0.05, M.beam, { x: ox + W / 2 + 0.3, y: 0.25, z }));
-  g.add(box(0.06, 0.05, 0.34, M.beam, { x: ox + W / 2 + 0.3, y: 0.5, z: 0.02 }));
-  bellows(g, ox + W / 2 + 0.36, 0.52, 0.02, M);
-  // tools hung on the rim, and a quench tub at the front corner
+  g.add(box(bw + 0.14, 0.08, FORGE_STACK_D + 0.08, M.cap, { x: bx, y: hoodY + 0.04, z: stackZ + 0.02 }));
+  const hood = new THREE.CylinderGeometry(0.2, 0.42, 0.42, 4, 1, true);
+  g.add(part(hood, T.sheetIron, { x: bx, y: hoodY + 0.29, z: stackZ + 0.06, ry: Math.PI / 4, sz: 0.6 }));
+  masonry(g, { x: bx, z: stackZ, y0: hoodY + 0.5, w: 0.4, h: 0.75, d: FORGE_STACK_D }, T.rubble, R);
+  g.add(box(0.48, 0.06, FORGE_STACK_D + 0.06, M.cap, { x: bx, y: hoodY + 1.28, z: stackZ }));
+  // the bellows on the cap at the east end, their nozzle into the bed
+  bellows(g, W / 2 - 0.24, bed, bz - 0.02, M, 0.6);
+  // tools hung on the front of the cap
   for (let i = 0; i < 3; i++) {
-    const x = ox - W / 2 + 0.12 + i * 0.1;
-    g.add(rod(V3(x, bed + 0.02, D / 2 + 0.03), V3(x + 0.02, bed - 0.5, D / 2 + 0.05), 0.009, 0.009, M.iron, 5));
+    const x = bx - bw / 2 + 0.1 + i * 0.1;
+    g.add(rod(V3(x, bed - 0.02, D / 2 + 0.02), V3(x + 0.02, bed - 0.5, D / 2 + 0.03), 0.009, 0.009, M.iron, 5));
   }
-  const tub = [
-    [0.15, 0],
-    [0.19, 0.3],
-  ].map(([r, y]) => new THREE.Vector2(r, y));
-  g.add(part(new THREE.LatheGeometry(tub, 16), M.staves, { x: ox - W / 2 - 0.08, z: D / 2 - 0.02 }));
-  g.add(part(new THREE.CircleGeometry(0.17, 16), T.water, { x: ox - W / 2 - 0.08, y: 0.25, z: D / 2 - 0.02, rx: -Math.PI / 2 }));
-  for (const y of [0.05, 0.25]) g.add(part(new THREE.TorusGeometry(0.155 + y * 0.13, 0.008, 5, 18), M.iron, { x: ox - W / 2 - 0.08, y, z: D / 2 - 0.02, rx: Math.PI / 2 }));
-  // spilled coal at its foot
+  // spilled coal at its foot, against the stone
   for (let i = 0; i < 9; i++)
-    g.add(part(new THREE.IcosahedronGeometry(0.03 + R() * 0.02, 0), M.black, { x: ox + (R() - 0.3) * 0.4, y: 0.02, z: D / 2 + 0.08 + R() * 0.08 }));
+    g.add(part(new THREE.IcosahedronGeometry(0.025 + R() * 0.015, 0), M.black, { x: (R() - 0.5) * W * 0.8, y: 0.02, z: D / 2 + 0.02 + R() * 0.03 }));
   return scaled(g, S);
 }
 

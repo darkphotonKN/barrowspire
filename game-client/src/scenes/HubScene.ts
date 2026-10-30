@@ -53,7 +53,7 @@ import { preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { folkLook } from "@/render/art/hubFolk";
-import { AMBIENT, LightMap } from "@/render/lighting";
+import { AMBIENT, LightMap, type LightSource } from "@/render/lighting";
 import { cursorCss, cursorSource } from "@/render/cursors";
 // the effects module has no barrel: its runtime and smoke are imported by path
 import { EffectsRuntime } from "@/render/effects/runtime";
@@ -96,6 +96,13 @@ import {
   fenceSegments,
   type PropSpot,
 } from "@/render/world/hubKeepOut";
+import {
+  HUB_INDOOR_DRESSING,
+  furnishingOf,
+  hiddenIndoors,
+  residentFacing,
+  splitFurnishings,
+} from "@/render/world/hubInteriors";
 import { planChimney } from "@/render/world/roofs";
 import { trimCrop } from "@/render/world/walls";
 
@@ -117,6 +124,8 @@ const CAMERA_MARGIN = HUB_CAMERA_MARGIN;
 const NAME_GAP = 4;
 /** Screen px between a function NPC's sigil and the top of its name (FS-MRZH7 req 4). */
 const SIGIL_GAP = 3;
+/** World px tall: a furnishing's placeholder block, low enough to read as furniture, not a wall. */
+const FURNISHING_PLACEHOLDER_HEIGHT = 8;
 /** How hard sprites chase the server's position each frame. Matches the run scene. */
 const POSITION_LERP = 0.3;
 /** Screen px from the top-left corner to the level and experience bar. */
@@ -415,6 +424,17 @@ interface NPCView {
 }
 
 /**
+ * What stands inside one house (FS-B0H2D R19–R22), shown only while its roof is lifted: its
+ * furnishings and indoor dressing, and its hearth's or forge's light with the light's own
+ * intensity, restored when the roof lifts.
+ */
+interface Interior {
+  house: House;
+  parts: { setVisible(visible: boolean): unknown }[];
+  lights: { source: LightSource; intensity: number }[];
+}
+
+/**
  * The hub: the shared world players occupy between runs.
  *
  * Server-authoritative like a run — this renders broadcast state and sends
@@ -528,6 +548,8 @@ export class HubScene extends Phaser.Scene {
     parts: { setVisible(visible: boolean): unknown }[];
   }[] = [];
   private insideRoof?: House;
+  /** Each house's room, shown only under a lifted roof (FS-B0H2D R20). */
+  private interiors: Interior[] = [];
   private unsubscribeQueue?: () => void;
 
   private unsubscribeState?: () => void;
@@ -732,6 +754,7 @@ export class HubScene extends Phaser.Scene {
     this.enteringField = false;
     this.roofs = [];
     this.insideRoof = undefined;
+    this.interiors = [];
     // the gauntlet is the hub's and the run's; the menus the hub hands over to keep the browser's
     this.input.setDefaultCursor("");
   }
@@ -744,6 +767,7 @@ export class HubScene extends Phaser.Scene {
     this.easeTowardServerPositions(time, delta);
     this.offerConversation();
     this.hideRoofOverhead();
+    this.hideWhoIsIndoors();
     this.carryTheTorch(time, delta);
   }
 
@@ -765,8 +789,8 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * The roof of the house the player stands in hides, and returns when they
-   * leave: the run's inside test, on world positions (FS-2325V §C.3). The hub's
-   * houses have no door today, so this waits for one that does.
+   * leave: the run's inside test, on world positions (FS-2325V §C.3). The room
+   * under it shows while it is off and hides when it is back (FS-B0H2D R20).
    */
   private hideRoofOverhead(): void {
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
@@ -774,6 +798,44 @@ export class HubScene extends Phaser.Scene {
     if (inside?.house === this.insideRoof) return;
     this.roofs.forEach((r) => r.parts.forEach((p) => p.setVisible(r !== inside)));
     this.insideRoof = inside?.house;
+    this.showInteriors();
+  }
+
+  /**
+   * Each house's furnishings and indoor dressing show only while its roof is lifted, and its
+   * hearth or forge lights only then (FS-B0H2D R20, R22): the pool goes dark under the roof, and
+   * the flame's halo is gated by the light-map's under-roof test besides.
+   */
+  private showInteriors(): void {
+    for (const { house, parts, lights } of this.interiors) {
+      const open = house === this.insideRoof;
+      parts.forEach((p) => p.setVisible(open));
+      lights.forEach((l) => (l.source.intensity = open ? l.intensity : 0));
+    }
+  }
+
+  /**
+   * Whoever stands in a house whose roof is on is hidden, body and name plate (FS-B0H2D R20):
+   * NPCs and other players alike, read each frame from their eased world position. A function
+   * NPC's marker, plate and sigil, stays in sight so the street can find his shop (R21); only
+   * his body goes. The player is never hidden: the house they stand in is the one whose roof is
+   * off.
+   */
+  private hideWhoIsIndoors(): void {
+    const houses = this.roofs.map((r) => r.house);
+    for (const npc of this.npcs.values()) {
+      const shown = !hiddenIndoors(npc.pos, houses, this.insideRoof);
+      const marked = shown || isFunctionNPC(npc.state);
+      npc.sprite.setVisible(shown);
+      npc.name.setVisible(marked);
+      npc.sigil?.setVisible(marked);
+    }
+    for (const view of this.views.values()) {
+      const shown = !hiddenIndoors(view.pos, houses, this.insideRoof);
+      view.sprite.setVisible(shown);
+      view.name.setVisible(shown);
+      view.legs.setVisible(shown);
+    }
   }
 
   /**
@@ -928,14 +990,21 @@ export class HubScene extends Phaser.Scene {
     // to draw anything standing in one.
     // Buildings are wider than their walls: the roof overhangs by ROOF_EAVE on
     // every side, and a prop clearing the wall by five pixels still ends up
-    // sliced by the eave. The guard clears what a building *looks* like.
+    // sliced by the eave. The guard clears what a building *looks* like: its
+    // whole footprint, not only its walls, since a room's floor is now open
+    // ground a prop could otherwise stand on (FS-B0H2D: indoor dressing is its
+    // own list, drawn with the interior).
+    const footprints = [
+      ...walls.map((w) => ({ x: w.position.x, y: w.position.y, width: w.width, height: w.height })),
+      ...housesFrom(walls),
+    ];
     const blocked = (x: number, y: number, radius: number) =>
-      walls.some(
-        (wall) =>
-          x + radius >= wall.position.x - ROOF_EAVE &&
-          x - radius <= wall.position.x + wall.width + ROOF_EAVE &&
-          y + radius >= wall.position.y - ROOF_EAVE &&
-          y - radius <= wall.position.y + wall.height + ROOF_EAVE,
+      footprints.some(
+        (f) =>
+          x + radius >= f.x - ROOF_EAVE &&
+          x - radius <= f.x + f.width + ROOF_EAVE &&
+          y + radius >= f.y - ROOF_EAVE &&
+          y - radius <= f.y + f.height + ROOF_EAVE,
       );
 
     // trodden paths lie on the ground, under everything else; baked ground lays
@@ -1619,14 +1688,16 @@ export class HubScene extends Phaser.Scene {
    *
    * They are server entities, so the collision a player feels and the shape they
    * see come from one source — an invisible wall is worse than no wall. Fixed,
-   * so this runs once rather than every tick.
+   * so this runs once rather than every tick. A furnishing is a wall too, but it
+   * is drawn as furniture, never as wall pieces (FS-B0H2D R19).
    */
-  private renderStructures(walls: WallState[]): void {
-    if (this.structuresDrawn || walls.length === 0) return;
+  private renderStructures(all: WallState[]): void {
+    if (this.structuresDrawn || all.length === 0) return;
 
     // Baked wall pieces and corner posts (FS-2325V §C.2); without a manifest,
     // placeholder upright blocks, one-tile pieces each sorted by footprint.
-    const houses = housesFrom(walls);
+    const houses = housesFrom(all);
+    const { building: walls, furnishings } = splitFurnishings(all);
     const baked = addWalls(this, this.art, walls, worldSeed("hub"));
     if (baked) {
       this.occluders.add(baked.tall);
@@ -1658,9 +1729,82 @@ export class HubScene extends Phaser.Scene {
       if (roof) this.occluders.add(roof);
       this.roofs.push({ house, baked: !!roof, parts: roof ?? [this.placeholderRoof(house)] });
     }
+    this.furnish(houses, furnishings);
 
     // One flag covers both: the walls and their roofs are drawn together.
     this.structuresDrawn = true;
+  }
+
+  /**
+   * The rooms under the roofs (FS-B0H2D R19–R22): each furnishing as its baked prop on its rect,
+   * or a low placeholder block on that rect when the mirror has no entry for it or its sheet is
+   * missing (never invisible), then the indoor dressing, skipped where its sheet is missing. Each
+   * piece joins its house's interior, which shows only while that roof is lifted; a hearth's or
+   * forge's light joins it too. Decoration only: collision is the server's.
+   */
+  private furnish(houses: House[], furnishings: WallState[]): void {
+    const interiors = new Map<House, Interior>(houses.map((house) => [house, { house, parts: [], lights: [] }]));
+    const prop = (
+      house: House,
+      spot: { sheet: string; at: Point; index?: number; animation?: string; tall?: boolean },
+    ) => {
+      const room = interiors.get(house)!;
+      const { sprite, light } = addProp(this, this.art, spot.sheet, spot.at, {
+        index: spot.index,
+        animation: spot.animation,
+      });
+      room.parts.push(sprite);
+      if (spot.tall) this.occluders.add([sprite]);
+      if (light) {
+        room.lights.push({ source: light, intensity: light.intensity });
+        // the flame's halo, like a back wall's flame, is in sight only under a lifted roof
+        this.lightMap?.add(light, () => this.insideRoof === house);
+      }
+    };
+
+    for (const wall of furnishings) {
+      const house = houses.find((h) => h.id === wall.house_id);
+      if (!house) continue;
+      const look = furnishingOf(wall);
+      if (look && this.art.has(look.sheet)) {
+        const { x, y, width, height } = look.rect;
+        prop(house, { ...look, at: { x: x + width / 2, y: y + height / 2 } });
+        continue;
+      }
+      const block = addUprightBlock(
+        this,
+        wall.position.x,
+        wall.position.y,
+        wall.width,
+        wall.height,
+        {
+          top: BARROW_HEX.barrowBrown,
+          south: shade(BARROW_HEX.barrowBrown, 0.3),
+          east: shade(BARROW_HEX.barrowBrown, 0.5),
+          edge: { width: 1, color: BARROW_HEX.barrowDeep, alpha: 0.8 },
+        },
+        FURNISHING_PLACEHOLDER_HEIGHT,
+      );
+      interiors.get(house)!.parts.push(...block);
+    }
+
+    const unbaked: string[] = [];
+    for (const spot of HUB_INDOOR_DRESSING) {
+      const house = houses.find((h) => insideHouse(spot.at, h));
+      if (!house) continue;
+      if (!this.art.has(spot.sheet)) {
+        if (!unbaked.includes(spot.sheet)) unbaked.push(spot.sheet);
+        continue;
+      }
+      prop(house, spot);
+    }
+    if (unbaked.length > 0 && this.art.available)
+      console.warn(
+        `hub: no art for ${unbaked.map((s) => `"${s}"`).join(", ")}; that indoor dressing is not drawn`,
+      );
+
+    this.interiors = [...interiors.values()];
+    this.showInteriors();
   }
 
   /** The pre-art roof: two shaded slopes on a plane lifted to the wall tops. */
@@ -1747,14 +1891,17 @@ export class HubScene extends Phaser.Scene {
       // Only with no sheet at all do the placeholders stand in: a villager texture, or the
       // player silhouette tinted brass.
       const isFunction = isFunctionNPC(npc);
-      const anim = new CharacterAnimator(this.art, folkLook(npc, this.art));
+      // a fixed resident never moves, so they face their work by name (FS-B0H2D R25); everyone
+      // else starts facing the viewer and turns as they walk
+      const facing = residentFacing(npc.name) ?? "se";
+      const anim = new CharacterAnimator(this.art, folkLook(npc, this.art), facing);
       const texture =
         anim.baked || isFunction
           ? undefined
           : ensureVillagerTexture(this, npc.appearance ?? "green_trousers");
 
       const body = texture
-        ? this.add.sprite(0, 0, `${texture}_down`)
+        ? this.add.sprite(0, 0, `${texture}_${nearestScreenFacing(facing)}`)
         : this.add.sprite(0, 0, placeholderTexture("warrior", "down"));
       if (anim.baked) anim.dress(body);
       // the placeholder's brass tint is the body, not a marker, so it stays (FS-MRZH7 req 6)
@@ -1785,8 +1932,7 @@ export class HubScene extends Phaser.Scene {
         sigil,
         target: { ...pos },
         pos,
-        // faces the viewer, which the "down" texture shows
-        facing: "se",
+        facing,
         anim,
         texture,
       });

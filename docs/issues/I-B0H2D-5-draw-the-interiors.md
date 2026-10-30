@@ -1,6 +1,6 @@
 ---
 id: I-B0H2D-5
-status: open
+status: done
 implements: FS-B0H2D
 blocked_by: [I-B0H2D-2, I-B0H2D-3]
 labels: [ready-for-agent]
@@ -43,15 +43,15 @@ Not touched: `hubKeepOut.ts` / its test (I-B0H2D-3's), the server, the bake.
 
 ## Acceptance Criteria
 
-- [ ] `isFurnishing` unit-tested: building walls (incl. both south segments) false, furnishings true.
-- [ ] Furnishings never drawn as wall pieces; placeholder block when art or mirror entry is missing.
-- [ ] Indoor dressing vitest (R15) green.
-- [ ] Roof on: interior hidden (furnishings, dressing, bodies and plates inside); Quartermaster's
+- [x] `isFurnishing` unit-tested: building walls (incl. both south segments) false, furnishings true.
+- [x] Furnishings never drawn as wall pieces; placeholder block when art or mirror entry is missing.
+- [x] Indoor dressing vitest (R15) green.
+- [x] Roof on: interior hidden (furnishings, dressing, bodies and plates inside); Quartermaster's
       marker visible. Roof lifted: all shown. Scene test covers both.
-- [ ] Hearth and forge lights only while their roof is lifted.
-- [ ] Fixed residents: ambient plate, no sigil, facing per R25.
-- [ ] vitest, lint, token fence green (canvas colours from `BARROW_HEX` only).
-- [ ] Client-only check in the Browser pane if a stack is running (no backend started by the
+- [x] Hearth and forge lights only while their roof is lifted.
+- [x] Fixed residents: ambient plate, no sigil, facing per R25.
+- [x] vitest, lint, token fence green (canvas colours from `BARROW_HEX` only).
+- [x] Client-only check in the Browser pane if a stack is running (no backend started by the
       agent); otherwise note it.
 
 ## Blocked By

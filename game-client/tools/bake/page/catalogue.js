@@ -77,7 +77,7 @@ import {
   STAIRS_LIGHT,
 } from "./models/tower.js";
 import { spireFacade, DOOR_LIGHT } from "./models/spire.js";
-import { counter, stool, innHearth, shelf, forge, anvil, HEARTH_FLAME, FORGE_COALS } from "./models/interior.js";
+import { counter, innTable, stool, innHearth, shelf, forge, anvil, HEARTH_FLAME, FORGE_COALS } from "./models/interior.js";
 import { CAST } from "./characters/cast.js";
 import { FOLK } from "./characters/folk.js";
 
@@ -503,8 +503,9 @@ function forestSheets() {
 
 /**
  * The town buildings' furniture and fittings (FS-B0H2D §G R30), authored in code (ADR-0020,
- * ADR-0021) and packed on their own atlas so every existing atlas keeps its bytes. The Inn's
- * table, and the crates and barrels, reuse `table`, `crate` and `barrel`. The counter turns to
+ * ADR-0021) and packed on their own atlas so every existing atlas keeps its bytes. The crates and
+ * barrels reuse `crate` and `barrel`; the Inn's tables are their own `inn_table`, sized to the
+ * server's table rects, which the reused `table` would stand far past. The counter turns to
  * run along either world axis; stools and shelves carry variants, picked by index. The hearth
  * and the forge are the only lights, and the scene lights them only under a lifted roof (R22).
  */
@@ -520,6 +521,7 @@ function interiorSheets() {
   const one = (build) => ({ default: still(build) });
   return [
     sheet("counter", "counter", { x: still(() => counter("x")), y: still(() => counter("y")) }),
+    sheet("inn_table", "innTable", { narrow: still(() => innTable("narrow")), wide: still(() => innTable("wide")) }),
     sheet("stool", "stool", { variants: still(...[0, 1].map((v) => () => stool(v))) }),
     sheet("inn_hearth", "innHearth", one(innHearth), {
       light: { at: HEARTH_FLAME, radius: 280, color: "amber", flicker: 0.6 },

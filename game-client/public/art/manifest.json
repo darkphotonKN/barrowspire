@@ -113,9 +113,9 @@
     },
     "interior-0": {
       "image": "interior-0.png",
-      "width": 1332,
-      "height": 228,
-      "sha256": "aeb62789297ccd2c399f62333377a5ade6508e006c983faa426712eacdad6f7c"
+      "width": 1480,
+      "height": 212,
+      "sha256": "45350f047c338479fa7240d35d6cc298f40a36af49244cee44971fe1ab2658d8"
     },
     "nature-0": {
       "image": "nature-0.png",
@@ -177,7 +177,7 @@
           "frames": [
             [
               {
-                "x": 1129,
+                "x": 1277,
                 "y": 2
               }
             ]
@@ -4518,11 +4518,11 @@
     },
     "counter": {
       "atlas": "interior-0",
-      "frameWidth": 200,
-      "frameHeight": 151,
+      "frameWidth": 188,
+      "frameHeight": 145,
       "anchor": {
-        "x": 0.42,
-        "y": 0.7019867549668874
+        "x": 0.4148936170212766,
+        "y": 0.7103448275862069
       },
       "directions": 1,
       "animations": {
@@ -4532,7 +4532,7 @@
           "frames": [
             [
               {
-                "x": 725,
+                "x": 687,
                 "y": 2
               }
             ]
@@ -4544,7 +4544,7 @@
           "frames": [
             [
               {
-                "x": 927,
+                "x": 877,
                 "y": 2
               }
             ]
@@ -14861,11 +14861,11 @@
     },
     "forge": {
       "atlas": "interior-0",
-      "frameWidth": 198,
-      "frameHeight": 219,
+      "frameWidth": 160,
+      "frameHeight": 204,
       "anchor": {
-        "x": 0.37373737373737376,
-        "y": 0.817351598173516
+        "x": 0.29375,
+        "y": 0.8725490196078431
       },
       "directions": 1,
       "animations": {
@@ -14875,7 +14875,7 @@
           "frames": [
             [
               {
-                "x": 2,
+                "x": 203,
                 "y": 2
               }
             ]
@@ -14884,8 +14884,8 @@
       },
       "light": {
         "offset": {
-          "x": -10,
-          "y": -52
+          "x": -12,
+          "y": -55
         },
         "radius": 260,
         "color": "ember",
@@ -16282,7 +16282,7 @@
           "frames": [
             [
               {
-                "x": 202,
+                "x": 2,
                 "y": 2
               }
             ]
@@ -16299,6 +16299,44 @@
         "flicker": 0.6
       },
       "source": "authored: tools/bake/page/models/interior.js#innHearth",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "inn_table": {
+      "atlas": "interior-0",
+      "frameWidth": 103,
+      "frameHeight": 88,
+      "anchor": {
+        "x": 0.3786407766990291,
+        "y": 0.75
+      },
+      "directions": 1,
+      "animations": {
+        "narrow": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1067,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "wide": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1172,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/interior.js#innTable",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "lamp_post": {
@@ -16662,11 +16700,11 @@
           "frames": [
             [
               {
-                "x": 403,
+                "x": 365,
                 "y": 2
               },
               {
-                "x": 564,
+                "x": 526,
                 "y": 2
               }
             ]
@@ -16788,11 +16826,11 @@
           "frames": [
             [
               {
-                "x": 1210,
+                "x": 1358,
                 "y": 2
               },
               {
-                "x": 1269,
+                "x": 1417,
                 "y": 2
               }
             ]
