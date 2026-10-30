@@ -49,6 +49,18 @@ translation belongs to the surface that renders words.
   gate** (north, the tower's entrance) opens the gather / go-alone panel; a **field gate** (west
   trail to the Forlorn Forest, east road to Gentle Meadows) takes the player into that field. Once
   FS-0XMCP ships, the Warden no longer opens the queue: he only tells the story.
+- **Town** — the hub, as the owner and the lore say it (the Warden: "the town woke to a tower").
+  The screen may say town; code keeps **hub** (`HubScene`, `HUB_KEEP_OUT`). One world, not a
+  district of it.
+- **Town building** — a building in town a player can walk into (FS-B0H2D): the Quartermaster's
+  store, the Inn, the smithy. Each has a gap in its south wall and no door. Drawn as a **house**
+  (rendering terms below); "town building" is the place, "house" the drawing.
+- **The Inn** — the town's tavern: one cozy room, the innkeeper behind a counter, patrons at three
+  tables, a hearth. Nothing to buy, no rooms to rent, no upstairs.
+- **Innkeeper**, **patron**, **smith** — the people in the town buildings: game-service's **fixed
+  residents** ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "NPCs"),
+  ambient NPCs that never move. Talkable, with lore lines written here, keyed by name; no sigil,
+  no function. A patron is drawn at a stool by a table and never walks.
 - **The Spire** — the place players descend into. The antagonist-realm and the source of relics.
   Note the article: *the* Spire, never bare "Spire".
 - **Barrowspire** — the product. The world entire, not a location within it. Never used as a
@@ -142,6 +154,19 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   Barrowspire. Stone flags and timber planks, partition walls, a perimeter wall with arrow slits,
   darkness beyond, no roofs, a darker ambient. The whole floor is indoors, so "indoor" carries no
   meaning in this theme.
+- **Interior**: the inside of a town building, drawn **in the same world and the same scene**
+  (FS-B0H2D): while the player stands in a house, its roof lifts (hides) so the furnished room
+  shows, the run's rule from FS-2325V §C.3. Not a separate scene, world, or load step; nothing is
+  sent to the server on entering. Leaving puts the roof back. "Inside" is the client's test on the
+  player's world position (`insideHouse`), never server state.
+- **Furnishing**: a server wall inside a house that the client draws as furniture (the Inn's
+  counter and tables, the smithy's forge) instead of as wall pieces. It has collision, so it is
+  **not dressing**, like a tree stand. Recognised by geometry: a wall of a house that touches none
+  of the house's four edges. Stools, shelves, crates, the anvil and the Inn's hearth are **indoor
+  dressing**: dressing placed inside a house, with no collision.
+- **Inn's hearth**: the fireplace inside the Inn, a light source shown only while the Inn's roof
+  is lifted. Always qualified: bare **hearth** in the hub means the outdoor brazier at the
+  gathering ground (`HUB_HEARTH`, keep-out K5), which is a different thing.
 - **Room**: in the tower theme, the space enclosed by one group of server walls sharing a
   `house_id`. The same server thing the exterior theme draws as a **house** (and game-service
   calls a building). One entity, three names by layer; the screen word follows the world theme.
@@ -195,6 +220,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 | a delve | — | `game`, `session_id`, `find_game`, `end_game` | "escape run" |
 | the Spire | — | the instance world | "escape run" (the instance) |
 | Gentle Meadows, the Forlorn Forest | — | `world_type` `field` | "field world" |
+| the town | — | `world_type` `hub` | "hub" |
+| the Inn, the store, the smithy | — | walls sharing a `house_id` | "enterable town building" |
 | relic, plunder | `/api/items/*` | `items[]` | "loadout", "items" |
 
 ## Voice rules that ride on the vocabulary
@@ -219,9 +246,9 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Class display names.** The class-select screen says WARRIOR / MAGE / ARCHER (`classLore.ts`),
   the art sheets say knight / wizard / archer, and the design talk says Knight / Wizard. Which
   name the screen uses is unsettled. The Mercenary (FS-MAMHR) is "Mercenary" in every layer.
-- The **HUB** world (refactor plan) has no lore name yet — "hub" is an engineering word. It needs
-  one before the HUB client ships, and the answer is not obvious: the settlement above the Spire,
-  the camp, the hall. Deliberately unresolved rather than guessed.
+- ~~The **HUB** world (refactor plan) has no lore name yet — "hub" is an engineering word.~~
+  Resolved 2026-10-30 (FS-B0H2D scoping): it is **the town**, the word the owner uses and the
+  Warden's tale already speaks. A proper name for the town (if it ever gets one) is still open.
 - **Escaping vs dying.** The end-of-run overlay distinguishes them (`current_player === null` ⇒
   escaped) but the vocabulary does not. The guideline offers *"Few return whole"* for death; the
   successful case has no term.

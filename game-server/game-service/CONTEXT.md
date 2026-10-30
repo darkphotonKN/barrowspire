@@ -33,6 +33,10 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Hub** — the shared, long-lived world players occupy between runs. One per deployment,
   server-authoritative, capped. Same thing the refactor plan calls the **HUB**; never call it a
   lobby, a town, or a village in code.
+  - **Town** — the owner's word for the hub, and the lore's (the Warden's tale: "the town woke
+    to a tower"). Same world, not a part of it. Fine in conversation, specs and player-facing
+    copy ("town buildings", "out of town to the Forest"); code keeps **hub** (`hubBuildings`,
+    `HubScene`). A spec that says "town" means the hub world, never a separate place.
 - **Run** — a short-lived world built for one match, resolved and torn down. The original
   escape-run game loop. Also called an **instance** where allocation is the subject (ADR-0004,
   the refactor plan); prefer **run** for the world and **instance** only for the allocation unit.
@@ -111,10 +115,57 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   - **Storekeeper NPC** — the Quartermaster. Has a line and opens nothing since FS-HRH2J: gear
     and the bag open from the gear overlay anywhere, not from an NPC. The function id
     (`NPCFunctionStorekeeper`, `storekeeper`) keeps its name; whether he becomes the stash keeper
-    is FS-VPD8Y's call.
-- **Ambient NPC** — a wandering resident with no function attached, there to make the place feel
+    is FS-VPD8Y's call. Stands inside **the Quartermaster's store** once FS-B0H2D ships; his
+    function does not change with his place.
+- **Ambient NPC** — a resident with no function attached, there to make the place feel
   inhabited. Server-authoritative and broadcast per tick, so every player sees one in the same
   position. Not decoration in the technical sense: it costs broadcast and server-side collision.
+  Two kinds, told apart by whether the NPC carries a wander region (`NPCComponent.Wander`):
+  - **Wandering resident** — keeps to a **quarter** (`WanderRegion`), walking between random
+    points in it. The Cottar, the Herbwife, the Woodcutter, the Bellringer. What "resident" meant
+    before FS-B0H2D, and what a bare "resident" still means.
+  - **Fixed resident** (FS-B0H2D) — an ambient NPC placed at one point and never moving: no
+    quarter, no velocity, function `""`. Map data like a function NPC's place, but opens nothing
+    and gets no FS-MRZH7 marker. The innkeeper, the patrons and the smith. Not a new NPC kind on
+    the wire: it is the ambient NPC with its wander region left off. Do not call one a "pinned
+    NPC" or a "static NPC" in code; **fixed resident** is the term.
+  - **Innkeeper** — the fixed resident behind the Inn's counter. Talkable, the longest talk in
+    town (client-side lines); sells, rents and pours nothing.
+  - **Patron** — a fixed resident at one of the Inn's tables, talkable with a short lore line.
+    Never wanders, never leaves. Two or three of them; not a crowd system.
+  - **Smith** — the fixed resident at the smithy's forge. A lore line; no repairs, no trading.
+
+### Town buildings (FS-B0H2D)
+
+- **Town building** — one of the hub's buildings (`hubBuildings`). Since FS-B0H2D every one is an
+  **enterable town building**: walls with a **door gap** in the south wall, and a room inside a
+  player can walk into. Before it they were closed scenery (four walls, FS-29KSH); a closed
+  building is no longer a thing the hub has. Server code says **building**; game-client says
+  **house** for the same footprint (its `House`, `housesFrom`).
+- **Door gap** — the opening cut in a town building's south wall. Just a gap: **no door entity**,
+  nothing to open, lock or sync. Unlike a run's house (`AddBuilding`), which hangs a door in its
+  gap. South, so the iso view shows it from the town side.
+- **Interior** — the inside of an enterable town building, **in the same world**: same session,
+  same tick, same broadcast, entered by walking through the door gap. Not a separate world, scene,
+  instance or load step, and no world switch. The server keeps no "inside" state; whether a player
+  is inside is a client presentation test (the roof lifts). Never call it an "interior world".
+- **Furnishing** — a keep-out inside a town building that the furniture stands on: the Inn's
+  counter and tables, the smithy's forge. A server wall carrying its building's `house_id`, so it
+  collides like any wall and stays inside its building's footprint. Told from the building's own
+  walls by geometry alone: a furnishing touches none of its building's four outer edges. Smaller
+  pieces (stools, shelves, crates, the anvil, the Inn's hearth) are client dressing, with no
+  collision, and are not furnishings.
+- **The Inn** — the largest town building: a tavern room with the innkeeper behind a counter,
+  three tables with patrons, and a hearth. One room, no upstairs, no rooms to rent, nothing to
+  buy. A place with people in it.
+- **The Quartermaster's store** — the town building the Quartermaster stands in. "Store" is its
+  name, not a function: nothing is bought or sold there.
+- **Smithy** — the town building with the forge, where the smith stands. Nothing is repaired,
+  made or sold.
+- **Lane** (FS-B0H2D) — a straight walkable corridor, at least 240 px wide, from the hub spawn to
+  a gate (the Spire's door, the Forest gate, the Meadows gate) that no wall crosses. Map data's
+  promise that nothing blocks the way out of town; tested, not eyeballed. A lane is not the
+  client's trodden path (`HUB_PATHS`), which is ground paint.
 
 ### Field places and visits (FS-X2F2H, FS-3QHQZ)
 
