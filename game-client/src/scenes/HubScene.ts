@@ -58,6 +58,7 @@ import { cursorCss, cursorSource } from "@/render/cursors";
 // the effects module has no barrel: its runtime and smoke are imported by path
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { ChimneySmoke } from "@/render/effects/smoke";
+import { townLines, type TownLines } from "./townLines";
 import {
   MARKER_DEPTH,
   NPC_NAME_PX,
@@ -308,6 +309,19 @@ const RESIDENT_LINES = [
 ];
 
 /**
+ * A wandering resident's line, stable per resident so they do not change their mind each time.
+ * A resident has nothing to offer, so they offer no choice: two options that both close the box
+ * is a decision the player does not have.
+ */
+function residentLine(npc: NPCState): Dialogue {
+  const sum = [...npc.entity_id].reduce((total, c) => total + c.charCodeAt(0), 0);
+  return {
+    line: RESIDENT_LINES[sum % RESIDENT_LINES.length],
+    choices: [{ id: "leave", label: "Leave", register: "actionable" }],
+  };
+}
+
+/**
  * How the Spire came, as the Warden tells it (FS-0XMCP §Requirements 24): the morning it stood
  * there, what it took, and where its door is, so a newcomer who asks him first still finds the
  * way in.
@@ -319,20 +333,22 @@ export const WARDEN_TALE = [
 ];
 
 /**
- * One passage of the Warden's tale: *Go on* turns to the next, *Farewell* ends it, and the last
- * offers only *Farewell*. No memory: every telling starts at the first passage. He offers no
- * queue, queued or not; the Spire's door does that.
+ * One passage of a telling, the Warden's way: *Go on* turns to the next, *Farewell* ends it, and
+ * the last offers only *Farewell*. No memory: every telling starts at the first passage. The
+ * Warden and the town folk (FS-B0H2D R27) tell theirs alike; none of them offers the queue, queued
+ * or not; the Spire's door does that.
  */
-function wardenTale(passage = 0): Dialogue {
+function telling(lines: TownLines, passage = 0): Dialogue {
+  const { role, passages } = lines;
   const farewell: DialogueChoice = { id: "farewell", label: "Farewell", register: "cancel" };
-  const last = passage >= WARDEN_TALE.length - 1;
+  const last = passage >= passages.length - 1;
   return {
-    role: "Keeper of the tale",
-    line: WARDEN_TALE[Math.min(passage, WARDEN_TALE.length - 1)],
+    role,
+    line: passages[Math.min(passage, passages.length - 1)],
     choices: last
       ? [farewell]
       : [
-          { id: "on", label: "Go on", register: "actionable", next: () => wardenTale(passage + 1) },
+          { id: "on", label: "Go on", register: "actionable", next: () => telling(lines, passage + 1) },
           farewell,
         ],
   };
@@ -346,7 +362,7 @@ function wardenTale(passage = 0): Dialogue {
  * it is an ambient resident, who has a line and nothing to offer.
  */
 const NPC_DIALOGUE: Record<string, (state: HubState) => Dialogue> = {
-  storyteller: () => wardenTale(),
+  storyteller: () => telling({ role: "Keeper of the tale", passages: WARDEN_TALE }),
   // He opens nothing now: the player's gear is theirs to open anywhere (FS-HRH2J R45).
   storekeeper: () => ({
     role: "Keeper of the stores",
@@ -883,15 +899,16 @@ export class HubScene extends Phaser.Scene {
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
     if (!self) return;
 
-    // World positions, never sprite positions: the sprites sit on the projection.
+    // The nearest in range answers, so in a crowded room it is the one the player stepped up to
+    // (FS-B0H2D R28). World positions, never sprite positions: the sprites sit on the projection.
+    let nearest: { state: NPCState; distance: number } | undefined;
     for (const { state, pos } of this.npcs.values()) {
       const distance = Phaser.Math.Distance.Between(self.pos.x, self.pos.y, pos.x, pos.y);
-
-      if (distance <= NPC_TALK_RANGE) {
-        this.openDialogue(state);
-        return;
+      if (distance <= NPC_TALK_RANGE && distance < (nearest?.distance ?? Infinity)) {
+        nearest = { state, distance };
       }
     }
+    if (nearest) this.openDialogue(nearest.state);
   }
 
   /**
@@ -1965,16 +1982,12 @@ export class HubScene extends Phaser.Scene {
    * dismisses; with nothing to confirm, every key dismisses.
    */
   private openDialogue(npc: NPCState): void {
-    const dialogue = NPC_DIALOGUE[npc.function]?.({ queued: this.queued }) ?? {
-      line: RESIDENT_LINES[
-        // stable per resident, so they do not change their mind each time
-        [...npc.entity_id].reduce((sum, c) => sum + c.charCodeAt(0), 0) %
-          RESIDENT_LINES.length
-      ],
-      // A resident has nothing to offer, so they offer no choice. Two options
-      // that both close the box is a decision the player does not have.
-      choices: [{ id: "leave", label: "Leave", register: "actionable" }],
-    };
+    // A function NPC is themselves whatever their name; the town folk tell their own (FS-B0H2D
+    // R27); anyone else has a resident's line.
+    const lines = townLines(npc.name);
+    const dialogue =
+      NPC_DIALOGUE[npc.function]?.({ queued: this.queued }) ??
+      (lines ? telling(lines) : residentLine(npc));
     this.showDialogue({ name: npc.name, entityId: npc.entity_id }, dialogue);
   }
 

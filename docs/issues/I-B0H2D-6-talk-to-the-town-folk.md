@@ -1,6 +1,6 @@
 ---
 id: I-B0H2D-6
-status: open
+status: done
 implements: FS-B0H2D
 blocked_by: [I-B0H2D-5]
 labels: [ready-for-agent]
@@ -33,13 +33,13 @@ Not touched: the server, `hubKeepOut.ts`, `hubInteriors.ts`.
 
 ## Acceptance Criteria
 
-- [ ] Each of the five names shows exactly its R27 passages in order; the last offers only
+- [x] Each of the five names shows exactly its R27 passages in order; the last offers only
       Farewell; every telling starts at passage 1.
-- [ ] Alewife's card shows role "Keeper of the Inn", Smith's "Keeper of the forge"; patrons none.
-- [ ] Unknown resident name falls back to `RESIDENT_LINES`; Warden and Quartermaster unchanged.
-- [ ] Two NPCs in range: the nearer one answers (scene test).
-- [ ] No socket message sent on talk (scene test).
-- [ ] vitest, lint, token fence green.
+- [x] Alewife's card shows role "Keeper of the Inn", Smith's "Keeper of the forge"; patrons none.
+- [x] Unknown resident name falls back to `RESIDENT_LINES`; Warden and Quartermaster unchanged.
+- [x] Two NPCs in range: the nearer one answers (scene test).
+- [x] No socket message sent on talk (scene test).
+- [x] vitest, lint, token fence green.
 
 ## Blocked By
 
