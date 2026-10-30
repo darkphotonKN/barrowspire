@@ -37,42 +37,55 @@ export type GateDestination = "spire" | "forest" | "meadows";
  * and on past it where the ground goes on beyond (the trail and the road); the ground plan lays
  * only what lies on an apron or inside the map. A tile is dirt when its centre lies in a rect.
  *
- * Nudged from the FS starting paths to clear the keep-out rule (recorded in I-0XMCP-2):
- * - north lane `[950, 100, 100, 400]` runs on to the edge, y 0, to meet the Spire's steps;
- * - west trail `[60, 390, 600, 50]` + `[620, 390, 60, 300]` would have crossed the cart, the
- *   washing line, the sacks and a market stall; it turns south down the west house's east side
- *   instead, `[470, 390, 40, 320]`, and joins the west arm along `[480, 680, 230, 30]`;
- * - east road `[1380, 340, 570, 50]` runs on to the edge and beyond; its drop
- *   `[1340, 390, 60, 300]` is unchanged.
+ * Laid round the town's three buildings (FS-B0H2D R24), none of them across a room's floor:
+ * - north lane `[950, 0, 100, 500]` runs between the Inn and the store to the Spire's steps;
+ * - west trail runs in under the smithy, then steps south of the Inn's eave and on along the
+ *   Inn's front to the spawn's lane: no house stands in its way now, so it no longer turns south
+ *   to the hearth's west arm;
+ * - east road runs in past the store's east side, steps along the store's front, and drops to
+ *   the hearth's east arm down `[1340, 390, 60, 300]`, as before.
  */
 export const HUB_APPROACHES: Record<GateDestination, PathRect[]> = {
   spire: [[950, 0, 100, 500]],
   forest: [
-    [-200, 390, 710, 50],
-    [470, 390, 40, 320],
-    [480, 680, 230, 30],
+    [-200, 390, 650, 60],
+    [430, 450, 520, 50],
   ],
   meadows: [
-    [1380, 340, 820, 50],
+    [1440, 340, 760, 50],
+    [1290, 390, 210, 50],
     [1340, 390, 60, 300],
   ],
 };
 
 /**
- * Trodden ground, joining the spawn to the people worth walking to, then the gates' approaches:
- * [x, y, w, h].
+ * A short trodden spur from each town building's door gap (FS-B0H2D R24) to the road in front:
+ * as wide as the gap, from its sill. Ground paint only, telling a player the house is meant to be
+ * entered. In hub_map.go's order: the Inn, the Quartermaster's store, the smithy.
+ */
+export const HUB_DOOR_SPURS: PathRect[] = [
+  [645, 410, 50, 40],
+  [1255, 390, 50, 30],
+  [235, 290, 50, 100],
+];
+
+/**
+ * Trodden ground, joining the spawn to the people worth walking to, then the gates' approaches
+ * and the town buildings' door spurs: [x, y, w, h].
  */
 export const HUB_PATHS: PathRect[] = [
   [940, 500, 130, 320],
   [700, 660, 360, 70],
   [1000, 660, 380, 70],
   ...Object.values(HUB_APPROACHES).flat(),
+  ...HUB_DOOR_SPURS,
 ];
 
 /**
  * K3–K6: read-only facts copied from the server. The spawn and the function NPCs' places come
  * from game-server/game-service/common/constants/game.go (HubSpawnX/Y, NPCInteractRange) and
- * game-server/game-service/internal/game/hub_map.go (hubNPCs at the spawn ± (140, -120)); the
+ * game-server/game-service/internal/game/hub_map.go (hubNPCs: the Spirewarden at the spawn +
+ * (140, -120), the Quartermaster inside his store, FS-B0H2D R8); the
  * residents' wander regions from hub_map.go (hubResidents), as top-left x, y and w × h, the way
  * WanderSystem.choose reads them. A server change to any of them needs this updated; the
  * keep-out vitest is where that drift is caught.
@@ -83,14 +96,14 @@ export const HUB_KEEP_OUT = {
   /** K4: where a player stands to talk to a function NPC (NPCInteractRange). */
   npcs: {
     at: [
-      { x: 860, y: 680 },
       { x: 1140, y: 680 },
+      { x: 1280, y: 270 },
     ],
     clearance: 80,
   },
   /** K5: the hearth's gathering ground. */
   hearth: { at: { x: HUB_HEARTH[0], y: HUB_HEARTH[1] }, clearance: 80 },
-  /** K6: the residents' quarters. */
+  /** K6: the residents' quarters, each wholly outside every town building (FS-B0H2D R7). */
   wander: [
     { name: "Cottar", x: 560, y: 560, width: 180, height: 200 },
     { name: "Herbwife", x: 1260, y: 540, width: 240, height: 220 },
@@ -132,35 +145,38 @@ export interface FenceRun {
   r: number;
 }
 
-/** The well (§A.4). Tall: its hoist and roof stand over a player behind it. */
-export const HUB_WELL: PropSpot = { sheet: "well", at: { x: 820, y: 460 }, r: 22, tall: true };
+/**
+ * The well (§A.4), on the open ground between the Inn's road and the hearth's west arm, its
+ * trough beside it. Tall: its hoist and roof stand over a player behind it.
+ */
+export const HUB_WELL: PropSpot = { sheet: "well", at: { x: 850, y: 580 }, r: 22, tall: true };
 
 /**
- * Market stalls (§A.4); the awning variant is the index: oxblood, arcaneDeep, barrowBrown. Two
- * moved out of the Herbwife's and the Bellringer's quarters; the third stands in the south-west
- * yard, where the fixed camera sees it (west of a house is behind its roof).
+ * Market stalls (§A.4); the awning variant is the index: oxblood, arcaneDeep, barrowBrown. The
+ * first stands by the store, off its threshold; the second south of the Forest trail, west of
+ * the Cottar's quarter; the third in the south-west yard.
  */
 export const HUB_STALLS: PropSpot[] = [
-  { sheet: "market_stall", at: { x: 1220, y: 460 }, r: 40, index: 0, tall: true },
-  { sheet: "market_stall", at: { x: 700, y: 500 }, r: 40, index: 1, tall: true },
+  { sheet: "market_stall", at: { x: 1190, y: 500 }, r: 40, index: 0, tall: true },
+  { sheet: "market_stall", at: { x: 470, y: 550 }, r: 40, index: 1, tall: true },
   { sheet: "market_stall", at: { x: 630, y: 950 }, r: 40, index: 2, tall: true },
 ];
 
 /**
- * Carts (§A.4): the second is the hay cart, moved out of the Bellringer's quarter into the fenced
- * south-west yard.
+ * Carts (§A.4): the first stands before the smithy, east of its door; the second is the hay cart
+ * in the fenced south-west yard.
  */
 export const HUB_CARTS: PropSpot[] = [
-  { sheet: "cart", at: { x: 540, y: 430 }, r: 26 },
+  { sheet: "cart", at: { x: 350, y: 330 }, r: 26 },
   { sheet: "hay_cart", at: { x: 400, y: 880 }, r: 26 },
 ];
 
 /**
- * Crates (§A.4): the third moved off the west fence run's end post, the last two out of the
- * Woodcutter's quarter, all where the fixed camera sees them.
+ * Crates (§A.4): the first two beside the east road's drop, east of the store's door, the
+ * third by the west yard, the last two south of the spawn, all where the fixed camera sees them.
  */
 export const HUB_CRATES: PropSpot[] = [
-  { sheet: "crate", at: { x: 1300, y: 470 }, r: 14 },
+  { sheet: "crate", at: { x: 1320, y: 470 }, r: 14 },
   { sheet: "crate", at: { x: 1320, y: 505 }, r: 14 },
   { sheet: "crate", at: { x: 530, y: 730 }, r: 14 },
   { sheet: "crate", at: { x: 1050, y: 910 }, r: 14 },
@@ -168,9 +184,8 @@ export const HUB_CRATES: PropSpot[] = [
 ];
 
 /**
- * Fence runs (§A.4): the second moved east, its west end having stood behind the east house, then
- * cut short of the Meadows gate's range (FS-0XMCP K8), so its end stands beside the east road; the
- * third moved out of the Woodcutter's quarter.
+ * Fence runs (§A.4): the second stands beside the east road, cut short of the Meadows gate's range
+ * (FS-0XMCP K8); the first and third fence the south-west yard.
  */
 export const HUB_FENCES: FenceRun[] = [
   { at: { x: 300, y: 760 }, length: 220, axis: "x", r: 20 },
@@ -185,42 +200,43 @@ const GOODS = 1;
 /**
  * New dressing (§A.5). Lit props (lamp posts, braziers) light the ground through their manifest
  * light. Wall-hugging rows (flower boxes) stand just outside eave clearance, laid along the wall they
- * stand against, and only on faces the camera sees (south and east). Nothing stands west or north
- * of a house, where its roof would hide it.
+ * stand against, and only on faces the camera sees (south and east): two on the Inn's front
+ * either side of its door, one on the store's front, one on the store's east side. Nothing stands
+ * west or north of a house, where its roof would hide it, nor on a door's threshold.
  */
 export const HUB_DRESSING: PropSpot[] = [
   { sheet: "lamp_post", at: { x: 925, y: 760 }, r: 12, tall: true },
   { sheet: "lamp_post", at: { x: 1085, y: 760 }, r: 12, tall: true },
   { sheet: "brazier", at: { x: 1080, y: 440 }, r: 16, tall: true },
   { sheet: "brazier", at: { x: 530, y: 600 }, r: 16, tall: true },
-  { sheet: "water_trough", at: { x: 750, y: 450 }, r: 20 },
+  { sheet: "water_trough", at: { x: 790, y: 580 }, r: 20 },
   { sheet: "water_trough", at: { x: 310, y: 840 }, r: 20 },
   { sheet: "woodpile", at: { x: 660, y: 880 }, r: 24 },
-  { sheet: "sacks", at: { x: 620, y: 490 }, r: 12, index: GRAIN },
-  { sheet: "sacks", at: { x: 1150, y: 460 }, r: 12, index: GRAIN },
+  { sheet: "sacks", at: { x: 535, y: 540 }, r: 12, index: GRAIN },
+  { sheet: "sacks", at: { x: 1125, y: 455 }, r: 12, index: GRAIN },
   { sheet: "sacks", at: { x: 600, y: 840 }, r: 12, index: GOODS },
   { sheet: "signpost", at: { x: 1085, y: 520 }, r: 10, tall: true },
   { sheet: "signpost", at: { x: 1050, y: 880 }, r: 10, tall: true },
-  { sheet: "flower_box", at: { x: 880, y: 402 }, r: 10, animation: "x" },
-  { sheet: "flower_box", at: { x: 1230, y: 402 }, r: 10, animation: "x" },
-  { sheet: "flower_box", at: { x: 1290, y: 402 }, r: 10, animation: "x" },
-  { sheet: "flower_box", at: { x: 1822, y: 460 }, r: 10, animation: "y" },
-  { sheet: "barrel", at: { x: 575, y: 475 }, r: 12 },
+  { sheet: "flower_box", at: { x: 560, y: 432 }, r: 10, animation: "x" },
+  { sheet: "flower_box", at: { x: 790, y: 432 }, r: 10, animation: "x" },
+  { sheet: "flower_box", at: { x: 1190, y: 412 }, r: 10, animation: "x" },
+  { sheet: "flower_box", at: { x: 1452, y: 270 }, r: 10, animation: "y" },
+  { sheet: "barrel", at: { x: 400, y: 345 }, r: 12 },
   { sheet: "barrel", at: { x: 610, y: 810 }, r: 12 },
   { sheet: "barrel", at: { x: 340, y: 800 }, r: 12 },
 ];
 
 /**
- * The washing line along the north-west house's south face: its footprint is its two posts, and
- * the line with its cloth sorts by the span's midpoint. The `washing_line` sheet spans exactly
- * the posts' 80 world px along x.
+ * The washing line in the open ground south of the Forest trail: its footprint is its two posts,
+ * and the line with its cloth sorts by the span's midpoint. The `washing_line` sheet spans
+ * exactly the posts' 80 world px along x.
  */
 export const HUB_WASHING_LINE: { posts: [PropSpot, PropSpot]; line: PropSpot } = {
   posts: [
-    { sheet: "washing_post", at: { x: 640, y: 405 }, r: 8, tall: true },
-    { sheet: "washing_post", at: { x: 720, y: 405 }, r: 8, tall: true },
+    { sheet: "washing_post", at: { x: 200, y: 600 }, r: 8, tall: true },
+    { sheet: "washing_post", at: { x: 280, y: 600 }, r: 8, tall: true },
   ],
-  line: { sheet: "washing_line", at: { x: 680, y: 405 }, r: 0, tall: true },
+  line: { sheet: "washing_line", at: { x: 240, y: 600 }, r: 0, tall: true },
 };
 
 /** A tree's trunk, for the keep-out rule: the crown overhangs, the trunk stands. */
@@ -241,7 +257,7 @@ const tree = (sheet: "tree_pine" | "tree_oak", x: number, y: number, index: numb
 export const HUB_GATE_DRESSING: PropSpot[] = [
   { sheet: "signpost", at: { x: 140, y: 470 }, r: 10, tall: true },
   { sheet: "signpost", at: { x: 1860, y: 420 }, r: 10, tall: true },
-  tree("tree_pine", 100, 300, 0),
+  tree("tree_pine", 60, 300, 0),
   tree("tree_pine", 70, 530, 1),
   tree("tree_oak", 90, 640, 1),
 ];

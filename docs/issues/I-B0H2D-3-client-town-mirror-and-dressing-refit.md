@@ -1,6 +1,6 @@
 ---
 id: I-B0H2D-3
-status: open
+status: done
 implements: FS-B0H2D
 blocked_by: [I-B0H2D-1]
 labels: [ready-for-agent]
@@ -40,12 +40,12 @@ I-B0H2D-5 rather than edit the scene here), the server.
 
 ## Acceptance Criteria
 
-- [ ] `hubKeepOut.test.ts` fixture equals the server's three buildings with door gaps.
-- [ ] K1–K8 pass for every outdoor spot, fence run and path.
-- [ ] K4 and K6 data equal I-B0H2D-1's Quartermaster point and quarters.
-- [ ] Each door gap has a trodden path spur reaching an existing path or approach.
-- [ ] vitest, lint and token fence green.
-- [ ] Screenshot of the hub from above (Browser pane, client-only; no backend started by the
+- [x] `hubKeepOut.test.ts` fixture equals the server's three buildings with door gaps.
+- [x] K1–K8 pass for every outdoor spot, fence run and path.
+- [x] K4 and K6 data equal I-B0H2D-1's Quartermaster point and quarters.
+- [x] Each door gap has a trodden path spur reaching an existing path or approach.
+- [x] vitest, lint and token fence green.
+- [x] Screenshot of the hub from above (Browser pane, client-only; no backend started by the
       agent) attached or described in the PR, if a running stack is available; otherwise note it.
 
 ## Blocked By

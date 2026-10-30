@@ -30,32 +30,41 @@ import {
 import { ROOF_EAVE } from "./roofs";
 
 /**
- * The hub's buildings, copied from game-server/game-service/internal/game/hub_map.go
- * (hubBuildings), walled in on all four sides 20 thick as addHubBuilding does. The scene takes
- * its walls from the server; this copy exists so the keep-out rule can be checked at review.
+ * The town's buildings, copied from game-server/game-service/internal/game/hub_map.go
+ * (hubBuildings): the Inn, the Quartermaster's store and the smithy (FS-B0H2D R1–R3), walled
+ * 20 thick as addHubBuilding does, the south wall cut in two around a centred door gap a run
+ * door wide (R9). Furnishings are not copied here: they stand indoors, and this checks the
+ * outdoor dressing. The scene takes its walls from the server; this copy exists so the keep-out
+ * rule can be checked at review.
  */
 const HUB_BUILDINGS: [number, number, number, number][] = [
-  [620, 180, 300, 200],
-  [1080, 180, 260, 200],
-  [240, 460, 220, 260],
-  [1560, 420, 240, 300],
-  [1500, 800, 300, 140],
+  [470, 110, 400, 300],
+  [1130, 150, 300, 240],
+  [110, 50, 300, 240],
 ];
 const THICK = 20;
-const HUB_WALLS: WallState[] = HUB_BUILDINGS.flatMap(([x, y, w, h], i) =>
-  [
+const DOOR = 50;
+/** Each building's door gap, as the span along its south wall's line: [x0, x1, y of the sill]. */
+const DOOR_GAPS = HUB_BUILDINGS.map(([x, y, w, h]) => {
+  const side = (w - DOOR) / 2;
+  return { x0: x + side, x1: x + side + DOOR, sill: y + h };
+});
+const HUB_WALLS: WallState[] = HUB_BUILDINGS.flatMap(([x, y, w, h], i) => {
+  const side = (w - DOOR) / 2;
+  return [
     [x, y, w, THICK],
-    [x, y + h - THICK, w, THICK],
     [x, y, THICK, h],
     [x + w - THICK, y, THICK, h],
+    [x, y + h - THICK, side, THICK],
+    [x + side + DOOR, y + h - THICK, side, THICK],
   ].map(([wx, wy, ww, wh], k) => ({
     entity_id: `b${i}w${k}`,
     house_id: `b${i}`,
     position: { x: wx, y: wy },
     width: ww,
     height: wh,
-  })),
-);
+  }));
+});
 /**
  * blocked() clears what a building looks like, eave included: HubScene's ROOF_EAVE, the same
  * overhang the roofs are laid with.
@@ -63,6 +72,32 @@ const HUB_WALLS: WallState[] = HUB_BUILDINGS.flatMap(([x, y, w, h], i) =>
 const EAVE = ROOF_EAVE;
 
 const breaches = (fp: Footprint) => keepOutBreaches(fp, HUB_WALLS, EAVE);
+
+/** A footprint's square, as [x, y, w, h]. */
+function squareOf(fp: Footprint): Rect4 {
+  const x = Math.min(fp.from.x, fp.to.x) - fp.r;
+  const y = Math.min(fp.from.y, fp.to.y) - fp.r;
+  return [x, y, Math.abs(fp.to.x - fp.from.x) + 2 * fp.r, Math.abs(fp.to.y - fp.from.y) + 2 * fp.r];
+}
+
+/** Rects that meet, edges included. */
+const touches = (a: Rect4, b: Rect4) =>
+  a[0] <= b[0] + b[2] && b[0] <= a[0] + a[2] && a[1] <= b[1] + b[3] && b[1] <= a[1] + a[3];
+
+/** Interiors overlap: rects that only share an edge do not. */
+const crosses = (a: Rect4, b: Rect4) =>
+  a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];
+
+/**
+ * Indoors, or under a roof's eave: K1 tests the walls, and a town building can now be walked
+ * into, so a spot clear of every wall can still stand on a room's floor (FS-B0H2D R24).
+ */
+const indoors = (fp: Footprint) =>
+  HUB_BUILDINGS.some(([x, y, w, h]) => crosses(squareOf(fp), [x - EAVE, y - EAVE, w + 2 * EAVE, h + 2 * EAVE]));
+
+/** The ground in front of a door gap a player walks out onto: the gap's width, 80 deep (R5). */
+const THRESHOLD = 80;
+const thresholds: Rect4[] = DOOR_GAPS.map((g) => [g.x0, g.sill, g.x1 - g.x0, THRESHOLD]);
 
 const label = (s: PropSpot) => `${s.sheet} at (${s.at.x}, ${s.at.y})`;
 
@@ -80,9 +115,10 @@ function beyondTheEdge(fp: Footprint): boolean {
 describe("the hub keep-out constants (FS-KYPQ9 §A.3)", () => {
   it("holds K3–K6 as the server places them", () => {
     expect(HUB_KEEP_OUT.spawn).toEqual({ at: { x: 1000, y: 800 }, clearance: 60 });
+    // the Spirewarden by the spawn, the Quartermaster in his store (FS-B0H2D R8)
     expect(HUB_KEEP_OUT.npcs.at).toEqual([
-      { x: 860, y: 680 },
       { x: 1140, y: 680 },
+      { x: 1280, y: 270 },
     ]);
     expect(HUB_KEEP_OUT.npcs.clearance).toBe(80);
     expect(HUB_KEEP_OUT.hearth).toEqual({ at: { x: 1000, y: 640 }, clearance: 80 });
@@ -142,19 +178,37 @@ describe("every hub prop clears K1–K8 (FS-KYPQ9 §A.4, §A.5; FS-0XMCP R20)", 
     },
   );
 
-  it("places the §A.4 props at the table's coordinates", () => {
-    expect(HUB_WELL).toMatchObject({ sheet: "well", at: { x: 820, y: 460 }, r: 22 });
+  const outdoor: [string, Footprint][] = [
+    ...spots.map((s) => [label(s), spotFootprint(s)] as [string, Footprint]),
+    ...HUB_FENCES.map((f) => [`fence run from (${f.at.x}, ${f.at.y})`, fenceFootprint(f)] as [string, Footprint]),
+  ];
+
+  it.each(outdoor)("%s stands outdoors, off every room's floor (FS-B0H2D R24)", (_, fp) => {
+    expect(indoors(fp)).toBe(false);
+  });
+
+  it.each(outdoor)("%s keeps every door gap's threshold clear (FS-B0H2D R5, R24)", (_, fp) => {
+    for (const t of thresholds) expect(crosses(squareOf(fp), t)).toBe(false);
+  });
+
+  it("places the §A.4 props at the table's coordinates, re-fitted round the town (FS-B0H2D R24)", () => {
+    // moved off the Inn's road, from (820, 460)
+    expect(HUB_WELL).toMatchObject({ sheet: "well", at: { x: 850, y: 580 }, r: 22 });
     expect(HUB_STALLS.map((s) => [s.at.x, s.at.y, s.r])).toEqual([
-      [1220, 460, 40],
-      [700, 500, 40],
+      // off the store's threshold, from (1220, 460)
+      [1190, 500, 40],
+      // off the Inn's road, from (700, 500)
+      [470, 550, 40],
       [630, 950, 40],
     ]);
     expect(HUB_CARTS.map((s) => [s.sheet, s.at.x, s.at.y, s.r])).toEqual([
-      ["cart", 540, 430, 26],
+      // out from under the Inn's eave to the smithy's front, from (540, 430)
+      ["cart", 350, 330, 26],
       ["hay_cart", 400, 880, 26],
     ]);
     expect(HUB_CRATES.map((s) => [s.sheet, s.at.x, s.at.y, s.r])).toEqual([
-      ["crate", 1300, 470, 14],
+      // off the store's threshold, from (1300, 470)
+      ["crate", 1320, 470, 14],
       // nudged off the east road's drop (FS-0XMCP R19, K8), from (1330, 500)
       ["crate", 1320, 505, 14],
       ["crate", 530, 730, 14],
@@ -179,19 +233,24 @@ describe("every hub prop clears K1–K8 (FS-KYPQ9 §A.4, §A.5; FS-0XMCP R20)", 
       // (1000, 430) and (515, 600)
       ["brazier", 1080, 440, 16, true],
       ["brazier", 530, 600, 16, true],
-      ["water_trough", 750, 450, 20, false],
+      // beside the well, off the Inn's road (FS-B0H2D R24), from (750, 450)
+      ["water_trough", 790, 580, 20, false],
       ["water_trough", 310, 840, 20, false],
       ["woodpile", 660, 880, 24, false],
-      ["sacks", 620, 490, 12, false],
-      ["sacks", 1150, 460, 12, false],
+      // off the Inn's road and out of the market stall's way, from (620, 490) and (1150, 460)
+      ["sacks", 535, 540, 12, false],
+      ["sacks", 1125, 455, 12, false],
       ["sacks", 600, 840, 12, false],
       ["signpost", 1085, 520, 10, true],
       ["signpost", 1050, 880, 10, true],
-      ["flower_box", 880, 402, 10, false],
-      ["flower_box", 1230, 402, 10, false],
-      ["flower_box", 1290, 402, 10, false],
-      ["flower_box", 1822, 460, 10, false],
-      ["barrel", 575, 475, 12, false],
+      // the old houses' faces are gone: the Inn's front either side of its door, the store's
+      // front west of its door, the store's east side
+      ["flower_box", 560, 432, 10, false],
+      ["flower_box", 790, 432, 10, false],
+      ["flower_box", 1190, 412, 10, false],
+      ["flower_box", 1452, 270, 10, false],
+      // by the cart before the smithy, from (575, 475) under the Inn's eave
+      ["barrel", 400, 345, 12, false],
       ["barrel", 610, 810, 12, false],
       ["barrel", 340, 800, 12, false],
     ]);
@@ -199,12 +258,13 @@ describe("every hub prop clears K1–K8 (FS-KYPQ9 §A.4, §A.5; FS-0XMCP R20)", 
     expect(HUB_DRESSING.filter((s) => s.sheet === "flower_box").map((s) => s.animation)).toEqual(["x", "x", "x", "y"]);
     // the sacks' variants: grain, grain, market goods
     expect(HUB_DRESSING.filter((s) => s.sheet === "sacks").map((s) => s.index)).toEqual([0, 0, 1]);
+    // the washing line's old house is gone; it hangs south of the Forest trail, from x 640–720
     expect(HUB_WASHING_LINE.posts.map((p) => [p.sheet, p.at.x, p.at.y, p.r, p.tall])).toEqual([
-      ["washing_post", 640, 405, 8, true],
-      ["washing_post", 720, 405, 8, true],
+      ["washing_post", 200, 600, 8, true],
+      ["washing_post", 280, 600, 8, true],
     ]);
     // the line and its cloth sort by the span's midpoint
-    expect(HUB_WASHING_LINE.line).toMatchObject({ sheet: "washing_line", at: { x: 680, y: 405 } });
+    expect(HUB_WASHING_LINE.line).toMatchObject({ sheet: "washing_line", at: { x: 240, y: 600 } });
   });
 });
 
@@ -225,7 +285,8 @@ describe("the keep-out check catches a bad placement", () => {
   it.each([
     ["K1 inside a building's eave", { x: 700, y: 395 }, 10, "K1"],
     ["K3 by the spawn", { x: 1000, y: 860 }, 10, "K3"],
-    ["K4 in an NPC's talk range", { x: 860, y: 760 }, 10, "K4"],
+    ["K4 in the Spirewarden's talk range", { x: 1140, y: 760 }, 10, "K4"],
+    ["K4 in the Quartermaster's talk range", { x: 1280, y: 340 }, 10, "K4"],
     ["K5 by the hearth", { x: 1080, y: 600 }, 10, "K5"],
     ["K6 in the Woodcutter's quarter", { x: 850, y: 900 }, 10, "K6"],
     ["K7 off the map", { x: 1990, y: 500 }, 20, "K7"],
@@ -246,8 +307,6 @@ describe("the keep-out check catches a bad placement", () => {
 });
 
 describe("the gates' approaches and dressing (FS-0XMCP R18–R20)", () => {
-  const touches = (a: Rect4, b: Rect4) =>
-    a[0] <= b[0] + b[2] && b[0] <= a[0] + a[2] && a[1] <= b[1] + b[3] && b[1] <= a[1] + a[3];
   const holds = (r: Rect4, p: { x: number; y: number }) =>
     p.x >= r[0] && p.x <= r[0] + r[2] && p.y >= r[1] && p.y <= r[1] + r[3];
   /** The hearth's paths from before the gates: the spawn's lane and its two arms. */
@@ -341,6 +400,34 @@ describe("the gates' approaches and dressing (FS-0XMCP R18–R20)", () => {
     expect(HUB_SPIRE_FACADE.sheet).toBe("spire_facade");
     expect(HUB_SPIRE_FACADE.at.x).toBe(spire.x);
     expect(HUB_SPIRE_FACADE.at.y).toBeLessThan(0);
+  });
+});
+
+describe("the town buildings' doors and the trodden ground (FS-B0H2D R24)", () => {
+  /** The rect of trodden ground that starts at a door gap and spans it. */
+  const spurOf = (g: (typeof DOOR_GAPS)[number]) =>
+    HUB_PATHS.find(([x, y, w]) => y === g.sill && x <= g.x0 && x + w >= g.x1);
+
+  it.each(DOOR_GAPS.map((g, i) => [`building ${i}'s door at x ${g.x0}–${g.x1}`, g] as const))(
+    "lays a short spur from %s to another path or approach",
+    (_, gap) => {
+      const spur = spurOf(gap);
+      expect(spur).toBeDefined();
+      expect(spur![3]).toBeLessThanOrEqual(120);
+      expect(HUB_PATHS.some((p) => p !== spur && touches(p, spur!))).toBe(true);
+    },
+  );
+
+  it.each(HUB_PATHS.map((p) => [`[${p.join(", ")}]`, p] as const))(
+    "lays the trodden ground %s outdoors, never across a room's floor",
+    (_, path) => {
+      for (const [x, y, w, h] of HUB_BUILDINGS) expect(crosses(path, [x, y, w, h])).toBe(false);
+    },
+  );
+
+  it("runs the Forest trail straight in to the spawn's lane, no longer south round a house", () => {
+    // never below the spawn's lane's top: the old trail dropped to y 710 round the west house
+    for (const [, y, , h] of HUB_APPROACHES.forest) expect(y + h).toBeLessThanOrEqual(500);
   });
 });
 
