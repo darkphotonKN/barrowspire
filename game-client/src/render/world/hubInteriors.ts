@@ -5,10 +5,12 @@
  *
  * The furnishings and the fixed residents are server facts, copied here from
  * game-server/game-service/internal/game/hub_map.go (hubBuildings' Furnishings,
- * hubFixedResidents) the way hubKeepOut.ts copies the town's footprints (R23). A server change to
- * either needs this updated; `hubInteriors.test.ts` is where the drift is caught. The scene
- * draws whatever walls arrive: a furnishing with no entry here still stands, as a placeholder
- * block (R19).
+ * hubFixedResidents) the way hubKeepOut.ts copies the town's footprints (R23). Both sides are
+ * held to one checked-in golden, `hubTown.golden.json` (see hubTownGolden.ts): hub_map.go by
+ * internal/game/hub_town_golden_test.go, these copies by `hubInteriors.test.ts`. A server change
+ * goes red in Go until the golden is rewritten (`-update`), then red here until this follows. The
+ * scene draws whatever walls arrive: a furnishing with no entry here still stands, as a
+ * placeholder block, and `placeholderWarning` says so in the console (R19).
  *
  * Pure data and maths, no Phaser.
  */
@@ -89,6 +91,27 @@ export function furnishingOf(wall: WallState): Furnishing | undefined {
       rect.width === wall.width &&
       rect.height === wall.height,
   );
+}
+
+/**
+ * A warning for each furnishing wall that falls back to the placeholder block because the mirror
+ * has no entry for its rect (R19): once per rect, however often its room is drawn. The returned
+ * function is what the scene calls on a miss; `warn` is console.warn unless a test passes its own.
+ */
+export function placeholderWarning(
+  warn: (message: string) => void = (message) => console.warn(message),
+): (wall: WallState) => void {
+  const told = new Set<string>();
+  return (wall) => {
+    const { x, y } = wall.position;
+    const rect = `(${x}, ${y}) ${wall.width} × ${wall.height}`;
+    if (told.has(rect)) return;
+    told.add(rect);
+    warn(
+      `Hub furnishing at ${rect} has no HUB_FURNISHINGS entry, so it is drawn as a placeholder block: ` +
+        "hubInteriors.ts is behind hub_map.go (check hubTown.golden.json).",
+    );
+  };
 }
 
 /** One piece of indoor dressing: a prop spot with its world footprint, `size` = [w, h] centred on `at`. */

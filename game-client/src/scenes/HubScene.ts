@@ -101,6 +101,7 @@ import {
   HUB_INDOOR_DRESSING,
   furnishingOf,
   hiddenIndoors,
+  placeholderWarning,
   residentFacing,
   splitFurnishings,
 } from "@/render/world/hubInteriors";
@@ -566,6 +567,8 @@ export class HubScene extends Phaser.Scene {
   private insideRoof?: House;
   /** Each house's room, shown only under a lifted roof (FS-B0H2D R20). */
   private interiors: Interior[] = [];
+  /** Says, once per rect, that a furnishing has no mirror entry and stands as a placeholder (R19). */
+  private warnUnmirrored = placeholderWarning();
   private unsubscribeQueue?: () => void;
 
   private unsubscribeState?: () => void;
@@ -1788,6 +1791,7 @@ export class HubScene extends Phaser.Scene {
         prop(house, { ...look, at: { x: x + width / 2, y: y + height / 2 } });
         continue;
       }
+      if (!look) this.warnUnmirrored(wall);
       const block = addUprightBlock(
         this,
         wall.position.x,

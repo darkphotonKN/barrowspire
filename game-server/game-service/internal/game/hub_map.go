@@ -65,13 +65,18 @@ var hubGates = []hubGate{
 // hubBuilding is one town building's footprint in the hub, and which one it is.
 //
 // Every town building can be walked into: a gap in its south wall and a room
-// inside, in this same world (FS-B0H2D §Requirements 1, 9). The name is how the
-// map data says which room is which, so what stands inside one is placed against
-// that building and not against a coordinate copied around.
+// inside, in this same world (FS-B0H2D §Requirements 1, 9). The name says which
+// room is which for a reader and for the tests; nothing at runtime reads it.
+//
+// What stands inside a building, its furnishings here and its fixed residents in
+// hubFixedResidents, is placed in absolute world coordinates, not relative to
+// the building: moving a building means moving each of them with it. The client
+// mirrors all three by hand, held to hubTown.golden.json by
+// hub_town_golden_test.go (rewrite it with -update).
 type hubBuilding struct {
 	Name       string
 	X, Y, W, H float64
-	// What stands inside, in world space.
+	// What stands inside, in absolute world coordinates.
 	Furnishings []hubFurnishing
 }
 
@@ -172,7 +177,8 @@ var hubFixedResidents = []hubFixedResident{
 	{Name: "Drover", Appearance: "rust_trousers", X: 590, Y: 220},
 	{Name: "Gravedigger", Appearance: "slate_trousers", X: 590, Y: 300},
 	{Name: "Pilgrim", Appearance: "green_skirt", X: 643, Y: 220},
-	// Smithy: before the forge, facing the door
+	// Smithy: between the door and the forge, facing north to the forge (the
+	// client keeps the facing, FS-B0H2D §Requirements 25)
 	{Name: "Smith", Appearance: "rust_trousers", X: 260, Y: 175},
 }
 
