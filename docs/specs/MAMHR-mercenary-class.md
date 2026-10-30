@@ -196,6 +196,27 @@ follow from existing code or another requirement, not from a new decision.
 42. Once approved, the merc draws from its baked sheet everywhere a class draws from one: the run,
     the hub, the roster, character creation and the loadout.
 
+#### Amendment 2026-10-31 (playtest tuning): the Mercenary's look
+
+At playtest, the shipped look (a riveted brigandine, mismatched pauldrons, a kettle hat, an
+arming sword) read too much like a lighter knight. The owner restated the brief: a lightly
+armoured but skilled swordsman, strength-based and using both STR and AGI, a fighter and never a
+rogue or assassin. He goes bareheaded so his face and hair identify him, and he carries a curved,
+Aldori-style dueling sword. Four looks were baked as review sheets, and the owner picked the one
+reviewed as "Swordlord". The class is still the Mercenary; "Swordlord" was only the variant's
+review label. R40 now reads this way, and R39, R41 and R42 are unchanged:
+
+- **Look:** a fitted, quilted arming coat in faded madder, high-collared and skirted to
+  mid-thigh, split at the front, with a madder sash. He wears one blackened steel spaulder on
+  the off-hand shoulder, a steel vambrace on the sword arm, a leather bracer on the other arm,
+  one knee cop and tall boots. He wears no helm; his hair is swept back and tied at the nape,
+  with a trimmed beard. His frame is broad in the shoulder and heavy in the arm.
+- **Sword:** a long, slender, gently curved, single-edged blade, used one-handed and with no
+  shield. It is longer than an arming sword but nowhere near a greatsword. It has a clipped
+  point, a short cross and a knuckle-bow.
+- The merc's movement style and clips (§G, FS-2325V) are untouched. Only the model, its gear and
+  its materials changed.
+
 ## User Stories
 
 1. As a player, I want to pick a Mercenary at character creation, so that I can play a fighter who
