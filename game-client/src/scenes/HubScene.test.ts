@@ -1995,3 +1995,128 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     }
   });
 });
+
+const { TOWN_LINES } = await import("./townLines");
+
+describe("HubScene the town folk talk (FS-B0H2D R27–R29)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const said = (stage: { made: Made[] }) =>
+    stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+  const ROLES = Object.values(TOWN_LINES).flatMap((l) => (l.role ? [l.role] : []));
+
+  /** An NPC as the server sends it: a fixed resident has no function. */
+  const npc = (id: string, name: string, fn: string, x: number, y = 0) => [
+    id,
+    { state: { entity_id: id, name, function: fn, position: { x, y } }, pos: { x, y } },
+  ] as const;
+
+  /** Stands the player at the origin among these NPCs, in this order, and presses to talk. */
+  function talkAmong(...npcs: ReturnType<typeof npc>[]) {
+    const scene = hubOnStage();
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    scene.hub.selfEntityID = "me";
+    scene.hub.views = new Map([["me", { pos: { x: 0, y: 0 } }]]);
+    scene.hub.npcs = new Map(npcs);
+    scene.answer(scene.keys.e);
+    return { ...scene, send };
+  }
+
+  it.each(Object.entries(TOWN_LINES))(
+    "should let the %s tell their passages in order, the last offering only Farewell",
+    (name, { role, passages }) => {
+      const { hub, stage, keys, answer, choice } = talkAmong(npc("folk", name, "", 10));
+
+      passages.forEach((passage, i) => {
+        expect(said(stage)).toContain(passage);
+        // only the passage now showing, never the one before or after
+        for (const other of passages) if (other !== passage) expect(said(stage)).not.toContain(other);
+        const last = i === passages.length - 1;
+        expect(choice("farewell")).toBeDefined();
+        expect(choice("on") !== undefined).toBe(!last);
+        if (!last) answer(keys.e);
+      });
+
+      for (const r of ROLES) expect(said(stage).includes(r)).toBe(r === role);
+      answer(keys.e);
+      expect(hub.dialogue).toBeUndefined();
+    },
+  );
+
+  it.each([
+    ["Alewife", "Keeper of the Inn"],
+    ["Smith", "Keeper of the forge"],
+  ])("should name the %s's work on the card: %s", (name, role) => {
+    const { stage } = talkAmong(npc("folk", name, "", 10));
+    expect(said(stage)).toContain(role);
+  });
+
+  it.each(["Drover", "Gravedigger", "Pilgrim"])("should give the patron %s no role", (name) => {
+    const { stage } = talkAmong(npc("folk", name, "", 10));
+    for (const role of [...ROLES, "Keeper of the tale", "Keeper of the stores"])
+      expect(said(stage)).not.toContain(role);
+  });
+
+  it("should start every telling at the first passage", () => {
+    const { hub, stage, keys, answer, choice } = talkAmong(npc("folk", "Alewife", "", 10));
+    const { passages } = TOWN_LINES.Alewife;
+    answer(keys.e);
+    expect(said(stage)).toContain(passages[1]);
+
+    choice("farewell")?.handlers.pointerup();
+    expect(hub.dialogue).toBeUndefined();
+
+    answer(keys.e);
+    expect(said(stage)).toContain(passages[0]);
+    expect(said(stage)).not.toContain(passages[1]);
+    expect(said(stage)).toContain("Go on  [E]");
+    expect(said(stage)).toContain("Farewell  [Esc]");
+  });
+
+  it("should give a name with no lines a resident's line and Leave, as before", () => {
+    const { stage, choice } = talkAmong(npc("folk", "Cottar", "", 10));
+
+    expect(choice("leave")).toBeDefined();
+    expect(choice("on")).toBeUndefined();
+    for (const { passages } of Object.values(TOWN_LINES))
+      for (const passage of passages) expect(said(stage)).not.toContain(passage);
+  });
+
+  it("should keep the Warden and the Quartermaster as they were, whatever their name", () => {
+    const warden = talkAmong(npc("w", "Alewife", "storyteller", 10));
+    expect(said(warden.stage)).toContain(WARDEN_TALE[0]);
+    expect(said(warden.stage)).toContain("Keeper of the tale");
+
+    const quartermaster = talkAmong(npc("q", "Smith", "storekeeper", 10));
+    expect(said(quartermaster.stage)).toContain("Keeper of the stores");
+    expect(quartermaster.choice("on")).toBeUndefined();
+  });
+
+  it("should let the nearest NPC in range answer, not the first found (R28)", () => {
+    const { stage } = talkAmong(
+      npc("far", "Drover", "", 70),
+      npc("out", "Pilgrim", "", 200),
+      npc("near", "Alewife", "", 0, -30),
+    );
+
+    expect(said(stage)).toContain("ALEWIFE");
+    expect(said(stage)).toContain(TOWN_LINES.Alewife.passages[0]);
+    expect(said(stage)).not.toContain(TOWN_LINES.Drover.passages[0]);
+  });
+
+  it("should open nothing when no one stands in range", () => {
+    const { hub } = talkAmong(npc("out", "Pilgrim", "", 81));
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should send nothing to the server to talk or to turn a page (R29)", () => {
+    const { keys, answer, choice, send } = talkAmong(npc("folk", "Alewife", "", 10));
+    answer(keys.e);
+    answer(keys.e);
+    choice("farewell")?.handlers.pointerup();
+
+    expect(send).not.toHaveBeenCalled();
+  });
+});
