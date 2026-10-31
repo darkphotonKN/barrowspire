@@ -138,17 +138,6 @@ func WithBootSeed(seed uint64) Option {
 	return func(o *bootOptions) { o.seed = seed }
 }
 
-// WithChatClock stamps chat lines from now instead of the wall clock, so a
-// test can check the stamp. FS-WJGFJ R3.
-func WithChatClock(now func() time.Time) Option {
-	return func(o *bootOptions) { o.chatNow = now }
-}
-
-// WithChatIDs mints chat line ids from newID instead of fresh uuids. FS-WJGFJ R3.
-func WithChatIDs(newID func() uuid.UUID) Option {
-	return func(o *bootOptions) { o.chatNewID = newID }
-}
-
 // laidOutField is a field place with the layout of the one channel this pod
 // builds of it.
 type laidOutField struct {

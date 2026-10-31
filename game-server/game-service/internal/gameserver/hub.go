@@ -34,7 +34,12 @@ type messageHub struct {
 
 	// chat lines are stamped and relayed here, on the loop, never by a world
 	// (FS-WJGFJ R11)
-	chat *chatRelay
+	chat chatRelayer
+}
+
+// chatRelayer is what the hub needs from chat: one line in, delivered or refused.
+type chatRelayer interface {
+	relay(sender *types.Player, conn *websocket.Conn, payload map[string]interface{})
 }
 
 // handoffAnnounceTimeout bounds each announce to another pod, so a slow redis
@@ -297,7 +302,7 @@ func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*game.Session, er
 	return session, nil
 }
 
-func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat *chatRelay) *messageHub {
+func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer) *messageHub {
 	return &messageHub{
 		sessionManager: sessionManager,
 		sessions:       make(map[string]*game.Session),

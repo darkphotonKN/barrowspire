@@ -70,12 +70,23 @@ func newChatRelay(audience chatAudience, sender chatSender, podID string, now fu
 	}
 }
 
+// WithChatClock stamps chat lines from now instead of the wall clock, so a
+// test can check the stamp. FS-WJGFJ R3.
+func WithChatClock(now func() time.Time) Option {
+	return func(o *bootOptions) { o.chatNow = now }
+}
+
+// WithChatIDs mints chat line ids from newID instead of fresh uuids. FS-WJGFJ R3.
+func WithChatIDs(newID func() uuid.UUID) Option {
+	return func(o *bootOptions) { o.chatNewID = newID }
+}
+
 // chatNoticeCopy is what each notice says, in the words the player sees. The
 // client keys on the code, so these are free to change. FS-WJGFJ R7.
 var chatNoticeCopy = map[constants.ChatNoticeCode]string{
 	constants.ChatNoticeNotInWorld:    "Enter the world before you speak.",
 	constants.ChatNoticeChannelClosed: "That channel is not open yet.",
-	constants.ChatNoticeTooLong:       "Too many words. Keep it under 200.",
+	constants.ChatNoticeTooLong:       "Too long. Two hundred characters at most.",
 	constants.ChatNoticeTooFast:       "Catch your breath before you speak again.",
 }
 
@@ -88,8 +99,8 @@ func (r *chatRelay) relay(sender *types.Player, conn *websocket.Conn, payload ma
 		return
 	}
 
-	channel, _ := payload["channel"].(string)
-	if constants.ChatChannel(channel) != constants.ChatChannelArea {
+	chatChannel, _ := payload["channel"].(string)
+	if constants.ChatChannel(chatChannel) != constants.ChatChannelArea {
 		r.notice(conn, constants.ChatNoticeChannelClosed)
 		return
 	}
@@ -120,7 +131,7 @@ func (r *chatRelay) relay(sender *types.Player, conn *websocket.Conn, payload ma
 	if err := r.sender.BroadcastToPlayerList(audience, line); err != nil {
 		// a full writer queue or a connection gone between resolving and
 		// delivering: that player misses the line, nobody else waits (R12)
-		slog.Debug("chat line not delivered to everyone", "channel", channel, "error", err)
+		slog.Debug("chat line not delivered to everyone", "chat_channel", chatChannel, "error", err)
 	}
 }
 
@@ -128,10 +139,8 @@ func (r *chatRelay) relay(sender *types.Player, conn *websocket.Conn, payload ma
 // sender from the connection's record, the character's name as the name plate
 // shows it, the clock. The client supplies the text and nothing else (R3).
 func (r *chatRelay) stamp(sender *types.Player, channel constants.ChatChannel, scope, text string, at time.Time) types.Message {
+	// the character's name, as the name plate shows it; never the account's (R3)
 	name := sender.Character.Name
-	if name == "" {
-		name = sender.Username
-	}
 
 	return types.Message{
 		Action: string(constants.ActionChat),
