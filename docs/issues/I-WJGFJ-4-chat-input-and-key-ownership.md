@@ -14,7 +14,7 @@ only a browser field takes an input method such as Chinese; it wears the game pa
 chrome; the rules live in `ui/chatInput.ts` and are unit-tested, the DOM adapter
 `ui/chatEntryField.ts` is thin and checked by eye. Enter during IME composition never sends. A
 click elsewhere closes the input and keeps the draft. The unused old-shape `createChatPayload`
-helper was removed with the `ChatPayload` type change. Not yet checked by eye in a running client.
+helper was removed with the `ChatPayload` type change. Checked locally by the user on 2026-10-31: two clients saw each other's lines. The look needs polish; deferred to the end of the feature by the user's call.
 
 ## What to Build
 
