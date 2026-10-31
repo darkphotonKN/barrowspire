@@ -8,6 +8,7 @@ import {
   CHAT_WINDOW_W,
   chatEntryColour,
   CHAT_FOLD_W,
+  CHAT_FRAME_PAD,
   CHAT_LINES_GAP,
   chatFoldButton,
   chatTabSegments,
@@ -47,15 +48,20 @@ describe("chatWindowFrame (C18, C19: where the window sits and its shape)", () =
     expect(frame.panel.y + frame.panel.height).toBe(500);
   });
 
-  it("should stack the filter row above the messages and the input below them, inside the panel", () => {
+  it("should stack the filter row above the messages and the input below them, inset inside the carved frame", () => {
     const frame = chatWindowFrame(0, 400);
+    const pad = CHAT_FRAME_PAD;
 
-    expect(frame.filterRow.y).toBe(frame.panel.y);
+    expect(frame.filterRow.y).toBe(frame.panel.y + pad);
     expect(frame.messages.y).toBe(frame.filterRow.y + frame.filterRow.height);
     expect(frame.input.y).toBe(frame.messages.y + frame.messages.height);
     expect(frame.input.y + frame.input.height).toBe(
-      frame.panel.y + frame.panel.height,
+      frame.panel.y + frame.panel.height - pad,
     );
+    for (const row of [frame.filterRow, frame.messages, frame.input]) {
+      expect(row.x).toBe(frame.panel.x + pad);
+      expect(row.width).toBe(frame.panel.width - pad * 2);
+    }
   });
 
   it("should give the messages area room for the visible lines plus a gap above the input", () => {
@@ -179,7 +185,13 @@ describe("chatWindowFrame folded (Amendment 2026-10-31: collapse)", () => {
     const folded = chatWindowFrame(10, 500, true);
 
     expect(folded.input).toEqual(open.input);
-    expect(folded.panel).toEqual(open.input);
+    const pad = CHAT_FRAME_PAD;
+    expect(folded.panel).toEqual({
+      x: open.input.x - pad,
+      y: open.input.y - pad,
+      width: open.input.width + pad * 2,
+      height: open.input.height + pad * 2,
+    });
     expect(folded.messages.height).toBe(0);
     expect(folded.filterRow.height).toBe(0);
   });
@@ -220,7 +232,9 @@ describe("chatFoldButton (asked 2026-10-31: the window's top-right corner)", () 
   it("should sit at the tab row's right end while unfolded", () => {
     const frame = chatWindowFrame(10, 500);
     const button = chatFoldButton(frame);
-    expect(button.x + button.width).toBe(frame.panel.x + frame.panel.width);
+    expect(button.x + button.width).toBe(
+      frame.filterRow.x + frame.filterRow.width,
+    );
     expect(button.y).toBe(frame.filterRow.y);
     expect(button.width).toBe(CHAT_FOLD_W);
   });
@@ -228,7 +242,7 @@ describe("chatFoldButton (asked 2026-10-31: the window's top-right corner)", () 
   it("should sit at the input row's right end while folded, still the window's top-right corner", () => {
     const frame = chatWindowFrame(10, 500, true);
     const button = chatFoldButton(frame);
-    expect(button.x + button.width).toBe(frame.panel.x + frame.panel.width);
+    expect(button.x + button.width).toBe(frame.input.x + frame.input.width);
     expect(button.y).toBe(frame.input.y);
   });
 });

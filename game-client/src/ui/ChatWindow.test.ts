@@ -61,8 +61,12 @@ function fakeScene() {
       fillStyle: () => self,
       lineStyle: () => self,
       fillRect: (...r: number[]) => (g.rects.push(r), self),
+      fillRoundedRect: (...r: number[]) => (g.rects.push(r.slice(0, 4)), self),
       strokeRect: () => self,
+      strokeRoundedRect: () => self,
       lineBetween: () => self,
+      fillTriangle: () => self,
+      fillCircle: () => self,
       createGeometryMask: () => ({ destroy: () => undefined }),
       destroy: () => void (g.destroyed = true),
     };
@@ -166,7 +170,8 @@ describe("ChatWindow (C17, C19: a camera-fixed panel at HUD depth)", () => {
     expect(panel.scroll).toBe(0);
     expect(panel.depth).toBe(1000);
     const frame = chatWindowFrame(X, BOTTOM);
-    expect(panel.rects[0]).toEqual([
+    // the carved panel's shadow comes first; its ground is the panel's own rect
+    expect(panel.rects).toContainEqual([
       frame.panel.x,
       frame.panel.y,
       frame.panel.width,
@@ -314,7 +319,8 @@ describe("ChatWindow (C18: moving with the ResourceHud)", () => {
 
     const frame = chatWindowFrame(X, 600);
     const live = panels.filter((p) => !p.destroyed).at(-1)!;
-    expect(live.rects[0]).toEqual([
+    // the carved panel's shadow comes first; its ground is the panel's own rect
+    expect(live.rects).toContainEqual([
       frame.panel.x,
       frame.panel.y,
       frame.panel.width,
