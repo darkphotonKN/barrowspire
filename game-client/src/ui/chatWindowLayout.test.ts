@@ -8,7 +8,10 @@ import {
   CHAT_WINDOW_W,
   chatEntryColour,
   CHAT_FOLD_W,
+  CHAT_LINES_GAP,
+  chatFoldButton,
   chatTabSegments,
+  wrapChatText,
   chatWindowFrame,
   formatChatEntry,
   scrolledOffset,
@@ -55,11 +58,14 @@ describe("chatWindowFrame (C18, C19: where the window sits and its shape)", () =
     );
   });
 
-  it("should give the messages area room for exactly the visible line count", () => {
+  it("should give the messages area room for the visible lines plus a gap above the input", () => {
     const frame = chatWindowFrame(0, 400);
 
-    expect(frame.messages.height).toBe(CHAT_VISIBLE_LINES * frame.lineHeight);
+    expect(frame.messages.height).toBe(
+      CHAT_VISIBLE_LINES * frame.lineHeight + CHAT_LINES_GAP,
+    );
     expect(CHAT_VISIBLE_LINES).toBe(8);
+    expect(CHAT_LINES_GAP).toBeGreaterThan(0);
   });
 });
 
@@ -207,5 +213,61 @@ describe("chatTabSegments (R24 as amended 2026-10-31: tab segments)", () => {
     expect(last.x + last.width).toBeLessThanOrEqual(
       row.x + row.width - CHAT_FOLD_W,
     );
+  });
+});
+
+describe("chatFoldButton (asked 2026-10-31: the window's top-right corner)", () => {
+  it("should sit at the tab row's right end while unfolded", () => {
+    const frame = chatWindowFrame(10, 500);
+    const button = chatFoldButton(frame);
+    expect(button.x + button.width).toBe(frame.panel.x + frame.panel.width);
+    expect(button.y).toBe(frame.filterRow.y);
+    expect(button.width).toBe(CHAT_FOLD_W);
+  });
+
+  it("should sit at the input row's right end while folded, still the window's top-right corner", () => {
+    const frame = chatWindowFrame(10, 500, true);
+    const button = chatFoldButton(frame);
+    expect(button.x + button.width).toBe(frame.panel.x + frame.panel.width);
+    expect(button.y).toBe(frame.input.y);
+  });
+});
+
+describe("wrapChatText (asked 2026-10-31: fill a line before breaking)", () => {
+  const measure = (s: string) => s.length * 10;
+
+  it("should keep a line that fits on one line", () => {
+    expect(wrapChatText("Wren: hi there", 200, measure)).toEqual([
+      "Wren: hi there",
+    ]);
+  });
+
+  it("should fill the first line with Chinese before breaking, not throw the sentence to the next line", () => {
+    const lines = wrapChatText(
+      "Wren: 這是一句很長很長而且沒有空白的中文訊息",
+      120,
+      measure,
+    );
+    // 12 characters at 10 each fill the 120 exactly; the sentence starts on the first line
+    expect(lines[0]).toBe("Wren: 這是一句很長");
+    expect(lines.every((l) => measure(l) <= 120)).toBe(true);
+    expect(lines.join("")).toBe("Wren: 這是一句很長很長而且沒有空白的中文訊息");
+  });
+
+  it("should break latin text at the last space that fits", () => {
+    expect(wrapChatText("Wren: one two three four", 120, measure)).toEqual([
+      "Wren: one",
+      "two three",
+      "four",
+    ]);
+  });
+
+  it("should break a single word too long for a line inside the word", () => {
+    const lines = wrapChatText("aaaaaaaaaaaaaaaaaaaaaaaaa", 100, measure);
+    expect(lines).toEqual(["aaaaaaaaaa", "aaaaaaaaaa", "aaaaa"]);
+  });
+
+  it("should return the empty line for empty text", () => {
+    expect(wrapChatText("", 100, measure)).toEqual([""]);
   });
 });

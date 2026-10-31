@@ -5,6 +5,7 @@ import { createChatStore, type ChatLinePayload } from "@/stores/chatStore";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { ChatWindow } from "./ChatWindow";
 import {
+  CHAT_FOLD_W,
   CHAT_FOLD_OPEN,
   CHAT_FOLD_SHUT,
   CHAT_INPUT_HINT,
@@ -486,8 +487,14 @@ describe("ChatWindow filter row (R24)", () => {
     const { shown } = rig();
     const row = chatWindowFrame(X, BOTTOM).filterRow;
 
+    // the fold button shares the row's right end (asked 2026-10-31); it is not a channel
     const toggles = shown().filter(
-      (t) => t.y >= row.y && t.y < row.y + row.height && t.onPress,
+      (t) =>
+        t.y >= row.y - 4 &&
+        t.y < row.y + row.height &&
+        t.onPress &&
+        t.content !== CHAT_FOLD_OPEN &&
+        t.content !== CHAT_FOLD_SHUT,
     );
 
     expect(toggles.map((t) => t.content)).toEqual([
@@ -678,5 +685,41 @@ describe("ChatWindow letting go of the input on a press in the world", () => {
 
     window.destroy();
     expect(input.listenerCount("pointerdown")).toBe(0);
+  });
+});
+
+describe("ChatWindow fold button in the top-right corner (asked 2026-10-31)", () => {
+  it("should sit in the tab row while unfolded and in the input row while folded", () => {
+    const s = rig();
+    const open = chatWindowFrame(X, BOTTOM);
+    const button = foldButtonOf(s);
+    expect(button.y).toBeGreaterThanOrEqual(open.filterRow.y - 4);
+    expect(button.y).toBeLessThan(open.filterRow.y + open.filterRow.height);
+    expect(button.x).toBeGreaterThan(open.panel.x + open.panel.width - 30);
+
+    button.onPress!();
+
+    const shut = chatWindowFrame(X, BOTTOM, true);
+    const folded = foldButtonOf(s);
+    expect(folded.y).toBeGreaterThanOrEqual(shut.input.y - 4);
+    expect(folded.y).toBeLessThan(shut.input.y + shut.input.height);
+  });
+
+  it("should give the text field the whole input row while unfolded, and leave the button room while folded", () => {
+    const { field, window } = inputRig();
+    const open = chatWindowFrame(X, BOTTOM);
+    expect(field().rect).toEqual(open.input);
+
+    (
+      window as unknown as { store: { getState(): { toggleFolded(): void } } }
+    ).store
+      .getState()
+      .toggleFolded();
+
+    const shut = chatWindowFrame(X, BOTTOM, true);
+    expect(field().rect).toEqual({
+      ...shut.input,
+      width: shut.input.width - CHAT_FOLD_W,
+    });
   });
 });
