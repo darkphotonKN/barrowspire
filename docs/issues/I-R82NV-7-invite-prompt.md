@@ -1,6 +1,6 @@
 ---
 id: I-R82NV-7
-status: open
+status: in-progress
 implements: FS-R82NV
 blocked_by: [I-R82NV-6]
 labels: [ready-for-agent]
@@ -40,3 +40,16 @@ FS-R82NV §Requirements R32, R33; §User Stories 3, 6.
 
 - RED: pure prompt-queue test — push two invites, apply a `party_update` naming the viewer a member, queue is empty.
 - GREEN: the queue module, then the scene draws it.
+
+## Implementation notes (code review 2026-11-01)
+
+- **The prompt is mounted in the hub only.** The server delivers invites to hub-seated players
+  only (R7, R12), and an invite can be accepted only from the hub (R16), so nothing is ever drawn
+  over the end-of-run overlay (R33). An invite that arrives elsewhere waits in the store, its
+  countdown running, and shows on return to the hub if still live.
+- **The countdown runs on the client's clock from arrival** (R14: "on its own clock"); the
+  server's `expires_at` is checked by the wire guard but not read. One clock: the prompt reads
+  the store's `secondsLeft`.
+- **At most four prompts show at once** (`INVITE_PROMPT_MAX`), so the stack stays clear of the
+  chat window; a fifth waits in the store with its countdown running. Not in the FS.
+- `covers()` exists for a world click handler; the hub has none yet, so nothing calls it.

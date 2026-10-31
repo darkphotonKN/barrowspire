@@ -10,6 +10,12 @@ import { GameStateLogger } from "@/utils/gameStateLogger";
 import { useGameStore } from "@/stores/gameStore";
 import { useAuthStore } from "@/stores/authStore";
 import { isChatLine, isChatNotice, useChatStore } from "@/stores/chatStore";
+import {
+  isPartyInvite,
+  isPartyNotice,
+  isPartyUpdate,
+  usePartyStore,
+} from "@/stores/partyStore";
 
 export type ConnectionStatus =
   | "disconnected"
@@ -254,6 +260,21 @@ export class SocketManager {
     } else if (data.action === "chat_notice") {
       if (!isChatNotice(data.payload)) return;
       useChatStore.getState().notice(data.payload);
+      this.listeners.get(data.action)?.(data.payload);
+    } else if (data.action === "party_update") {
+      // The party outlives any scene too: the store holds it for the panel. FS-R82NV R21.
+      if (!isPartyUpdate(data.payload)) return;
+      usePartyStore.getState().apply(data.payload);
+      this.listeners.get(data.action)?.(data.payload);
+    } else if (data.action === "party_invite") {
+      // An invite waits in the store for an answer, whatever scene is up. FS-R82NV R32.
+      if (!isPartyInvite(data.payload)) return;
+      usePartyStore.getState().receiveInvite(data.payload);
+      this.listeners.get(data.action)?.(data.payload);
+    } else if (data.action === "party_notice") {
+      // A code and maybe a name; the words are the client's, shown as a system line. FS-R82NV R31, R36.
+      if (!isPartyNotice(data.payload)) return;
+      usePartyStore.getState().receiveNotice(data.payload);
       this.listeners.get(data.action)?.(data.payload);
     } else if (data.action && this.listeners.has(data.action)) {
       // Handle action-based messages
