@@ -33,6 +33,11 @@ type ItemsClient interface {
 
 	GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWithItemsRequest) (*pb.GetLoadoutWithItemsResponse, error)
 
+	// CheckOutRunGear moves the member's worn and bag items to IN_RUN under the
+	// run's id and returns them: the seating of a run or field world
+	// (FS-18Z5F R13). Idempotent per run id.
+	CheckOutRunGear(ctx context.Context, req *pb.CheckOutRunGearRequest) (*pb.CheckOutRunGearResponse, error)
+
 	// ListItemInstances gets all item instances owned by a player
 	ListItemInstances(ctx context.Context, req *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error)
 }

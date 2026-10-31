@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
@@ -22,6 +23,28 @@ func extractedEquipmentOf(items map[uuid.UUID]*components.ItemComponent, equipme
 		*field = extractedSlot(items, *slot.Holder(equipment))
 	}
 	return extracted
+}
+
+// losesFinds reports whether a body leaves a run without its unsafe finds: it
+// was eliminated and did not escape. FS-18Z5F §E R23.
+func losesFinds(body *ecs.Entity, player *components.PlayerComponent) bool {
+	if player.Escape {
+		return false
+	}
+	hc, ok := body.GetComponent(ecs.ComponentTypeHealth)
+	return ok && hc.(*components.HealthComponent).IsEliminated
+}
+
+// safeItems is items without the unsafe finds: what a dead delver extracts. A
+// worn find missing from it extracts as an empty slot. FS-18Z5F §E R23.
+func safeItems(items map[uuid.UUID]*components.ItemComponent) map[uuid.UUID]*components.ItemComponent {
+	safe := make(map[uuid.UUID]*components.ItemComponent, len(items))
+	for id, item := range items {
+		if !item.Unsafe {
+			safe[id] = item
+		}
+	}
+	return safe
 }
 
 // extractedField is the extraction's field for the slot of that name, nil for a

@@ -51,6 +51,11 @@ type ItemComponent struct {
 	// A unique's effect code and its one-line text; empty for anything else.
 	UniqueEffectCode string
 	UniqueEffectText string
+
+	// Unsafe marks an unsafe find: any item not seated with its delver. It
+	// follows the item, not the slot, and nothing in a world clears it; a dead
+	// delver loses their unsafe finds at a run's end. FS-18Z5F §D R19–R20.
+	Unsafe bool
 }
 
 func (i *ItemComponent) Type() ecs.ComponentType {
