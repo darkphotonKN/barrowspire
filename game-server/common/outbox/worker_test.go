@@ -193,3 +193,52 @@ func TestPublishOutboxEvents_MarksPublishedBeforeCallerCancels(t *testing.T) {
 		})
 	}
 }
+
+// A wake drains the outbox at once, without waiting for the next tick: the
+// cycle here is an hour, so only the wake can have published the row.
+func TestRun_Wake_PublishesWithoutWaitingForTheTick(t *testing.T) {
+	row := newRow("items.extracted")
+	pub := &fakePublisher{failFor: map[string]bool{}}
+	ret := &fakeRetriever{rows: []*OutboxEvent{row}}
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	w := NewOutboxWorker(time.Hour, 20, ret, pub, wg)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go w.Run(ctx)
+	t.Cleanup(func() {
+		cancel()
+		wg.Wait()
+	})
+
+	w.Wake()
+
+	deadline := time.After(2 * time.Second)
+	for !ret.isMarked(row.ID) {
+		select {
+		case <-deadline:
+			t.Fatalf("row not published within 2s of a wake; attempts = %v", pub.messageIds())
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
+// Wake never blocks its caller, whether the worker is running or not: rings
+// past the first one waiting are folded into it.
+func TestWake_NeverBlocks(t *testing.T) {
+	w := NewOutboxWorker(time.Hour, 20, &fakeRetriever{}, &fakePublisher{}, &sync.WaitGroup{})
+
+	done := make(chan struct{})
+	go func() {
+		for range 100 {
+			w.Wake()
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Wake blocked with no worker running")
+	}
+}

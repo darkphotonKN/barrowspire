@@ -205,7 +205,7 @@ func TestPublishMatchComplete_OutboxRows_AllOrNothing(t *testing.T) {
 			tt.expect(mock)
 			errs := captureErrors(t)
 			outbox := &countingOutbox{next: commonoutbox.NewService(commonoutbox.NewRepo(db))}
-			svc := NewService(db, outbox)
+			svc := NewService(db, outbox, noWake{})
 			sessionID := uuid.New()
 
 			svc.PublishMatchComplete(context.Background(), &types.RawMatchState{
@@ -226,7 +226,7 @@ func TestPublishMatchComplete_OutboxRows_AllOrNothing(t *testing.T) {
 // field visit. FS-X2F2H §F R43, ADR-0031, I-X2F2H-2.
 func TestPublishMatchComplete_MatchEnded_SaysRun(t *testing.T) {
 	outbox := &capturingOutbox{}
-	svc := NewService(committingTxDB(t), outbox)
+	svc := NewService(committingTxDB(t), outbox, noWake{})
 
 	svc.PublishMatchComplete(context.Background(), &types.RawMatchState{
 		SessionID: uuid.New(),
