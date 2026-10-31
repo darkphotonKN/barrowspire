@@ -79,7 +79,9 @@ describe("ChatInput sending (C26, C28)", () => {
     return r;
   }
 
-  it("should send the draft on the area channel, clear it, close and give the keyboard back on Enter", () => {
+  // Revised by the user 2026-10-31: the input stays open after a line is sent, so the next one can
+  // follow straight away; Enter on nothing, Esc, or a press in the world closes it.
+  it("should send the draft on the area channel, clear it and stay open for the next line on Enter", () => {
     const { input, field, keyboard, send } = opened();
     field.value = "w";
 
@@ -87,8 +89,21 @@ describe("ChatInput sending (C26, C28)", () => {
 
     expect(send).toHaveBeenCalledWith({ channel: "area", text: "w" });
     expect(field.value).toBe("");
-    expect(field.focused).toBe(false);
+    expect(field.focused).toBe(true);
+    expect(input.isOpen()).toBe(true);
+    expect(keyboard.enabled).toBe(false);
+  });
+
+  it("should close on a second Enter once the line has gone", () => {
+    const { input, field, keyboard, send } = opened();
+    field.value = "one";
+    input.keyDown("Enter", false);
+
+    input.keyDown("Enter", false);
+
+    expect(send).toHaveBeenCalledTimes(1);
     expect(input.isOpen()).toBe(false);
+    expect(field.focused).toBe(false);
     expect(keyboard.enabled).toBe(true);
   });
 

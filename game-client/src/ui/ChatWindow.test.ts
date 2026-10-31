@@ -409,7 +409,7 @@ describe("ChatWindow input (C26: Enter opens, Enter sends)", () => {
     expect(field().rect).toEqual(frame.input);
   });
 
-  it("should open on Enter in the scene, send the typed line on Enter in the field, and close", () => {
+  it("should open on Enter in the scene, send on Enter in the field and stay open, close on Enter again", () => {
     const { press, field, sent, keys, window } = inputRig();
 
     press("ENTER");
@@ -421,6 +421,10 @@ describe("ChatWindow input (C26: Enter opens, Enter sends)", () => {
     field().events!.keyDown("Enter", false);
 
     expect(sent).toEqual([{ channel: "area", text: "hello" }]);
+    expect(field().focused).toBe(true);
+    expect(keys.enabled).toBe(false);
+
+    field().events!.keyDown("Enter", false);
     expect(field().focused).toBe(false);
     expect(keys.enabled).toBe(true);
   });
