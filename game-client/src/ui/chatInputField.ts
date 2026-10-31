@@ -218,8 +218,16 @@ export const domChatInputField: ChatInputFieldFactory = (
       dom.setPosition(r.x + 4, r.y);
       size(r);
     },
-    show: () => void dom.setVisible(true),
-    hide: () => void dom.setVisible(false),
+    // Phaser applies a DOM element's visibility on its next render, so the node's own display is
+    // set here as well: a focus() right after show() must find the field already shown
+    show: () => {
+      dom.setVisible(true);
+      shell.style.display = "block";
+    },
+    hide: () => {
+      dom.setVisible(false);
+      shell.style.display = "none";
+    },
     destroy: () => dom.destroy(),
   };
 };

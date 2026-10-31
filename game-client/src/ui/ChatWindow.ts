@@ -146,11 +146,16 @@ function drawFlourishRule(
 const within = (r: Rect, x: number, y: number) =>
   x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
 
+/** The window's chrome type: tabs, the idle input row, the fold button. Crisp, no shadow. */
 const textStyle = (colour: number) => ({
   fontFamily: CANVAS_FONT.body,
   fontSize: `${FONT_PX}px`,
   color: toCss(colour),
-  // a soft dark shadow keeps the words legible when the idle panel lets a bright field through
+});
+
+/** A chat line's type: a soft dark shadow keeps the words legible when the idle panel lets a bright field through. */
+const lineStyle = (colour: number) => ({
+  ...textStyle(colour),
   shadow: {
     offsetX: 1,
     offsetY: 1,
@@ -613,7 +618,7 @@ export class ChatWindow {
       const entry = entries[i];
       const t = this.scene.add
         .text(m.x + CHAT_PAD, 0, formatChatEntry(entry), {
-          ...textStyle(chatEntryColour(entry)),
+          ...lineStyle(chatEntryColour(entry)),
           // fill each line before breaking: Phaser's own wrap breaks only at spaces, so a Chinese
           // sentence after "Name: " would jump whole to the next line
           // clear of the scrollbar at the right edge
