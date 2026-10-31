@@ -126,6 +126,17 @@ export interface ItemState {
    */
   item_type?: string;
   durability?: number;
+  /**
+   * An owned instance's lifecycle status, from the hub's REST read (`AVAILABLE`, `LISTED`, ...):
+   * only an `AVAILABLE` one moves between bag and stash (FS-VPD8Y R39–40); an `IN_RUN` one is
+   * still in a delve and takes no change at all (FS-18Z5F R38). Absent in a run.
+   */
+  status?: string;
+  /**
+   * An unsafe find: picked up in this run or field world, not brought in, so lost if the player
+   * dies before escaping (FS-18Z5F R39). Only `true` is sent; absent means safe.
+   */
+  unsafe?: boolean;
   lootedAt?: number; // 本地取得時間戳，用於 pending 判斷
 }
 

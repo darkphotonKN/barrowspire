@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ItemState } from "@/types/gameState";
-import { itemDetail, itemView } from "./itemView";
+import {
+  IN_RUN_NOTE,
+  UNSAFE_FIND_NOTE,
+  inRun,
+  itemDetail,
+  itemView,
+} from "./itemView";
 
 const item = (fields: Partial<ItemState> & { name: string }): ItemState => ({
   item_id: `id-${fields.name}`,
@@ -153,6 +159,61 @@ describe("itemView", () => {
     expect(
       itemView(item({ name: "Odd Thing", rarity: "cursed" })).rarity,
     ).toEqual({ label: "cursed", token: "common" });
+  });
+});
+
+describe("itemView standing (FS-18Z5F §H)", () => {
+  const find = item({ name: "Bone Charm", unsafe: true });
+
+  it("should mark an unsafe find in a run, with its tip note (R36)", () => {
+    expect(itemView(find, undefined, "run").standing).toEqual({
+      kind: "unsafeFind",
+      note: "Found this run: lost if you die before you escape.",
+    });
+    expect(UNSAFE_FIND_NOTE).toBe(
+      "Found this run: lost if you die before you escape.",
+    );
+  });
+
+  it("should not mark a safe item in a run (R36)", () => {
+    expect(
+      itemView(item({ name: "Old Sword" }), undefined, "run").standing,
+    ).toBeUndefined();
+  });
+
+  it.each([["field" as const], ["hub" as const], [undefined]])(
+    "should not mark an unsafe find in world %s (R37, the container view passes none)",
+    (world) => {
+      expect(itemView(find, undefined, world).standing).toBeUndefined();
+    },
+  );
+
+  it("should mark an IN_RUN item as in a delve, with its tip note (R38)", () => {
+    expect(
+      itemView(item({ name: "Helm", status: "IN_RUN" }), undefined, "hub")
+        .standing,
+    ).toEqual({ kind: "inRun", note: "Still in a delve." });
+    expect(IN_RUN_NOTE).toBe("Still in a delve.");
+  });
+
+  it.each([["AVAILABLE"], ["LISTED"], [undefined]])(
+    "should not mark an item of status %s as in a delve",
+    (status) => {
+      expect(
+        itemView(item({ name: "Helm", status }), undefined, "hub").standing,
+      ).toBeUndefined();
+    },
+  );
+});
+
+describe("inRun (FS-18Z5F R38)", () => {
+  it.each([
+    ["IN_RUN", true],
+    ["AVAILABLE", false],
+    ["LISTED", false],
+    [undefined, false],
+  ])("should read status %s as in a run: %s", (status, want) => {
+    expect(inRun(item({ name: "x", status }))).toBe(want);
   });
 });
 

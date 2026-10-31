@@ -158,3 +158,38 @@ describe("apiClient.withdrawBid (FS-EYQ8K req 12)", () => {
     expect((err as InstanceType<typeof ApiError>).code).toBe("FAILED_PRECONDITION");
   });
 });
+
+describe("apiClient.moveItemInstance (FS-VPD8Y R22, R42)", () => {
+  it("should PUT the location to the instance's location route and return the echo", async () => {
+    answer = () =>
+      new Response(
+        JSON.stringify({
+          statusCode: 200,
+          message: "ok",
+          result: { id: "i1", location: "stash" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    const { apiClient } = await loadApi();
+    const res = await apiClient.moveItemInstance("i1", "stash");
+    expect(requests[0].method).toBe("PUT");
+    expect(new URL(requests[0].url).pathname).toBe(
+      "/api/items/instances/i1/location",
+    );
+    expect(await requests[0].json()).toEqual({ location: "stash" });
+    expect(res.result).toEqual({ id: "i1", location: "stash" });
+  });
+
+  it("should throw the refusal's code", async () => {
+    answer = () =>
+      new Response(
+        JSON.stringify({ status: 400, detail: "full", code: "STASH_FULL", errors: [] }),
+        { status: 400, headers: { "Content-Type": "application/problem+json" } },
+      );
+    const { apiClient } = await loadApi();
+    const { ApiError } = await import("./apiError");
+    const err = await apiClient.moveItemInstance("i1", "stash").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as InstanceType<typeof ApiError>).code).toBe("STASH_FULL");
+  });
+});

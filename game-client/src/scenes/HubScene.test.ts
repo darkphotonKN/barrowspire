@@ -73,6 +73,8 @@ const { ActionType } = await import("@/assets/types/client");
 const { palette, toCss } = await import("@/utils/canvasPalette");
 const { BARROW_HEX } = await import("@/utils/theme");
 const { MARKER_DEPTH } = await import("@/render/markers");
+const { HUB_STASH_CHEST, STASH_NAME } = await import("@/render/world/hubStash");
+const { HUB_TOWN_GOLDEN } = await import("@/render/world/hubTownGolden");
 
 interface QueuePanelScene {
   queuePanel?: { active: boolean; setText(text: string): unknown };
@@ -173,6 +175,8 @@ interface Made {
   depth?: number;
   /** The colour a text was last set to; its style's colour until then. */
   color?: string;
+  /** The tint a sprite was last given. */
+  tint?: number;
   x: number;
   y: number;
   width: number;
@@ -246,6 +250,11 @@ function recordingStage() {
             target.color = color;
             return proxy;
           };
+        if (prop === "setTint")
+          return (tint: number) => {
+            target.tint = tint;
+            return proxy;
+          };
         if (prop === "getByName")
           return (name: string) => target.children.find((c) => c.name === name) ?? null;
         if (prop === "on" || prop === "once")
@@ -271,7 +280,7 @@ const AT_LEAVE = { x: 200, y: 556 };
 
 /** The hub's gear overlay as the scene drives it (FS-HRH2J §E): open or not, and what it was handed. */
 function fakeGear() {
-  const state = { open: false };
+  const state = { open: false, stash: false };
   return {
     get open() {
       return state.open;
@@ -281,13 +290,23 @@ function fakeGear() {
     },
     toggle: vi.fn(() => {
       state.open = !state.open;
+      state.stash = false;
     }),
     hide: vi.fn(() => {
       const was = state.open;
       state.open = false;
+      state.stash = false;
       return was;
     }),
     isOpen: () => state.open,
+    /** Opened at the stash chest (FS-VPD8Y R34): only from closed. */
+    openStash: vi.fn(() => {
+      if (state.open) return false;
+      state.open = true;
+      state.stash = true;
+      return true;
+    }),
+    stashOpen: () => state.open && state.stash,
     /** While open, the panels are over the screen's left half, where the queue's Leave sits. */
     covers: vi.fn((x: number) => state.open && x < 400),
     equipKey: vi.fn(() => state.open),
@@ -1757,6 +1776,159 @@ describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)"
   });
 });
 
+describe("HubScene the stash chest's E (FS-VPD8Y R34, R43–44)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const CHEST_AT = HUB_STASH_CHEST.at;
+  const QM_AT = { x: 1280, y: 270 };
+  /** The Quartermaster's store as the scene's roofs hold it (hub_map.go's rect, walls included). */
+  const golden = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Quartermaster's store")!;
+  const STORE = { id: "store", x: golden.x, y: golden.y, width: golden.w, height: golden.h };
+  /** The town's houses known to the scene, as once its walls are drawn. */
+  const walled = (hub: Record<string, unknown>) => {
+    hub.roofs = [{ house: STORE, baked: false, parts: [] }];
+  };
+
+  /** The player at `me`, the Quartermaster at his spot (or `qm`), and E pressed. */
+  function pressAtTheChest(me: { x: number; y: number }, qm: { x: number; y: number } | null = QM_AT) {
+    const stage = hubOnStage();
+    const { hub, keys, answer } = stage;
+    walled(hub);
+    hub.selfEntityID = "me";
+    hub.views = new Map([["me", { pos: me }]]);
+    hub.npcs = new Map(
+      qm
+        ? [
+            [
+              "qm",
+              {
+                state: { entity_id: "qm", name: "Quartermaster", function: "storekeeper", position: qm },
+                pos: qm,
+              },
+            ],
+          ]
+        : [],
+    );
+    answer(keys.e);
+    return stage;
+  }
+
+  it("should open the overlay in stash mode on E within talk range of the chest", () => {
+    const { gear, hub } = pressAtTheChest({ x: CHEST_AT.x + 30, y: CHEST_AT.y }, null);
+    expect(gear.openStash).toHaveBeenCalledTimes(1);
+    expect(gear.stashOpen()).toBe(true);
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should open the stash on E just inside the store's west wall (FS-B0H2D R14)", () => {
+    const me = { x: STORE.x + 20 + 12, y: CHEST_AT.y };
+    const { gear } = pressAtTheChest(me, null);
+    expect(gear.openStash).toHaveBeenCalledTimes(1);
+  });
+
+  it("should offer nothing on E from the road west of the store, though the chest is in range (FS-B0H2D R14)", () => {
+    const me = { x: STORE.x - 15, y: CHEST_AT.y };
+    // within talk range of the chest, the store's west wall between
+    expect(Math.hypot(me.x - CHEST_AT.x, me.y - CHEST_AT.y)).toBeLessThanOrEqual(80);
+    const { gear, hub } = pressAtTheChest(me, null);
+    expect(gear.openStash).not.toHaveBeenCalled();
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should offer nothing on E before the town's walls are drawn", () => {
+    const stage = hubOnStage();
+    const { hub, keys, gear, answer } = stage;
+    hub.selfEntityID = "me";
+    hub.views = new Map([["me", { pos: { ...CHEST_AT } }]]);
+    hub.npcs = new Map();
+    answer(keys.e);
+    expect(gear.openStash).not.toHaveBeenCalled();
+  });
+
+  it("should open nothing on E out of the chest's range", () => {
+    const { gear, hub } = pressAtTheChest({ x: CHEST_AT.x + 81, y: CHEST_AT.y }, null);
+    expect(gear.openStash).not.toHaveBeenCalled();
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should give E to the Quartermaster when he is nearer than the chest", () => {
+    const me = { x: QM_AT.x - 30, y: QM_AT.y };
+    // in range of both, nearer him
+    expect(Math.hypot(me.x - CHEST_AT.x, me.y - CHEST_AT.y)).toBeLessThanOrEqual(80);
+    const { gear, hub } = pressAtTheChest(me);
+    expect(gear.openStash).not.toHaveBeenCalled();
+    expect(hub.dialogue).toBeDefined();
+  });
+
+  it("should give E to the chest when it is nearer than the Quartermaster", () => {
+    const me = { x: CHEST_AT.x + 40, y: CHEST_AT.y };
+    expect(Math.hypot(me.x - QM_AT.x, me.y - QM_AT.y)).toBeLessThanOrEqual(80);
+    const { gear, hub } = pressAtTheChest(me);
+    expect(gear.openStash).toHaveBeenCalledTimes(1);
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should leave E to the open overlay, opening no stash over it (FS-HRH2J R10)", () => {
+    const stage = hubOnStage();
+    const { hub, keys, gear, press, answer } = stage;
+    walled(hub);
+    press(keys.i);
+    hub.selfEntityID = "me";
+    hub.views = new Map([["me", { pos: { ...CHEST_AT } }]]);
+    hub.npcs = new Map();
+    answer(keys.e);
+    expect(gear.equipKey).toHaveBeenCalledTimes(1);
+    expect(gear.openStash).not.toHaveBeenCalled();
+  });
+
+  it("should not open the stash while the ESC menu or a dialogue is open (FS-HRH2J R6)", () => {
+    const stage = hubOnStage();
+    const { hub, keys, gear, press, answer, talkTo } = stage;
+    walled(hub);
+    const atTheChest = () => {
+      hub.selfEntityID = "me";
+      hub.views = new Map([["me", { pos: { ...CHEST_AT } }]]);
+      hub.npcs = new Map();
+    };
+    press(keys.esc);
+    atTheChest();
+    answer(keys.e);
+    expect(gear.openStash).not.toHaveBeenCalled();
+    // the views above are too bare to ease each frame
+    hub.views = new Map();
+    press(keys.esc);
+    expect(hub.menu).toBeUndefined();
+
+    talkTo("storekeeper");
+    expect(hub.dialogue).toBeDefined();
+    atTheChest();
+    answer(keys.e);
+    expect(gear.openStash).not.toHaveBeenCalled();
+  });
+
+  it("should end stash mode with the overlay's keys, the next I opening the plain overlay (R37)", () => {
+    const { hub, gear, keys, press } = pressAtTheChest({ ...CHEST_AT }, null);
+    // the views above are too bare to ease each frame
+    hub.views = new Map();
+    expect(gear.stashOpen()).toBe(true);
+    press(keys.esc);
+    expect(gear.open).toBe(false);
+    press(keys.i);
+    expect(gear.open).toBe(true);
+    expect(gear.stashOpen()).toBe(false);
+  });
+
+  it("should compose no stash mode outside the hub, and leave the Quartermaster as he was (R43–44)", () => {
+    for (const scene of ["BarrowspireScene", "FieldScene", "../ui/EquipmentHud"]) {
+      const source = readFileSync(new URL(`./${scene}.ts`, import.meta.url), "utf8");
+      expect(source, scene).not.toMatch(/openStash|updateStash|STASH/);
+    }
+    expect(WARDEN_TALE).toBeDefined();
+  });
+});
+
 const { readFileSync } = await import("node:fs");
 const { ArtLibrary } = await import("@/render/art/library");
 const world = await import("@/render/world");
@@ -1930,6 +2102,55 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     expect([drover.sprite.visible, drover.name.visible]).toEqual([false, false]);
     expect([rival.sprite.visible, rival.name.visible, rival.legs.visible]).toEqual([false, false, false]);
     expect(hub.npcs.get("cottar")!.sprite.visible).toBe(true);
+  });
+
+  describe("the stash chest (FS-VPD8Y R31–33)", () => {
+    const chestSprite = (stage: { made: Made[] }) =>
+      stage.made.filter((m) => m.kind === "sprite" && String(m.args[2]).startsWith("chest_"));
+    const stashName = (stage: { made: Made[] }) =>
+      stage.made.find((m) => m.kind === "text" && m.args[2] === STASH_NAME);
+
+    it.each([
+      ["with art", BAKED],
+      ["without art", BARE],
+    ] as const)("should stand one tinted run chest in the store, %s, hidden with its roof", (_how, art) => {
+      const { stage, room, standIn } = town(art);
+      const sprites = chestSprite(stage);
+      expect(sprites).toHaveLength(1);
+      const [chest] = sprites;
+      expect(chest.tint).toBe(palette.stashChestTint);
+      expect(room("store").parts).toContain(chest);
+      expect(chest.visible).toBe(false);
+      standIn(IN_STORE);
+      expect(chest.visible).toBe(true);
+      expect(room("store").parts.length).toBeGreaterThan(1);
+    });
+
+    it("should mark it with the amber Stash nameplate and sigil at marker depth, in sight over the roof (R33)", () => {
+      const { stage } = town(BAKED);
+      const name = stashName(stage)!;
+      expect(name).toBeDefined();
+      expect((name.args[3] as { color: string }).color).toBe(toCss(palette.markerFunction));
+      expect(name.depth).toBe(MARKER_DEPTH.name);
+      expect(name.visible).toBe(true);
+    });
+
+    it("should stand it open while this player's stash is open, and closed again after (R32)", () => {
+      const { hub } = town(BAKED);
+      const scene = hub as unknown as {
+        gear: ReturnType<typeof fakeGear>;
+        stashChest: { frame: string };
+        showStashChest(): void;
+      };
+      scene.showStashChest();
+      expect(scene.stashChest.frame).toBe("closed");
+      scene.gear.openStash();
+      scene.showStashChest();
+      expect(scene.stashChest.frame).toBe("open");
+      scene.gear.hide();
+      scene.showStashChest();
+      expect(scene.stashChest.frame).toBe("closed");
+    });
   });
 
   it("should keep the Quartermaster's plate and sigil in sight over his roof, his body hidden (R21)", () => {

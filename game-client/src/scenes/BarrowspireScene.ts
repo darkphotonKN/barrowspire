@@ -4,7 +4,7 @@
  */
 
 import * as Phaser from "phaser";
-import { ActionType } from "@/assets/types/client";
+import { ActionType, WorldType } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { drawPlayerLegs, drawMercenary } from "@/utils/characterTextures";
 import { createAtmosphere as buildAtmosphere } from "@/utils/atmosphere";
@@ -2645,10 +2645,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * The gear and bag overlay over the live run (FS-HRH2J), its equip / unequip sends applied at
-   * once, and its full-bag refusals in the run's refused notice (R22).
+   * once, and its full-bag refusals in the run's refused notice (R22). A run marks unsafe finds
+   * (FS-18Z5F R36).
    */
   private composeEquipment(): EquipmentHud {
-    return new EquipmentHud(new GearOverlay(this, this.art), {
+    return new EquipmentHud(new GearOverlay(this, this.art, WorldType.Run), {
       send: (action, payload) => socketManager.sendMessage(action, payload),
       notice: (text) => this.showNotification(text, toCss(NOTICE_BACKING.refused)),
     });

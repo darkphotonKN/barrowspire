@@ -7,8 +7,12 @@ import {
   overlayLayout,
   overPanel,
   rowWindow,
+  STASH_COLUMNS,
+  STASH_ROWS,
+  stashPanelLayout,
   statsPanelArea,
 } from "./gearOverlayLayout";
+import { STASH_CAPACITY } from "./stash";
 
 const SIZES: [number, number][] = [
   [1080, 720],
@@ -152,6 +156,79 @@ describe("statsPanelArea (FS-HRH2J §C: the stats panel's insides)", () => {
       expect(area.y + area.h).toBeLessThan(left.y + left.h);
     },
   );
+});
+
+describe("stashPanelLayout (FS-VPD8Y R35–36: the stash grid in the left panel)", () => {
+  const { left, right } = overlayLayout(1080, 720);
+  const inside = (r: { x: number; y: number; w: number; h: number }) =>
+    r.x >= left.x &&
+    r.y >= left.y &&
+    r.x + r.w <= left.x + left.w &&
+    r.y + r.h <= left.y + left.h;
+
+  it("should be 6 columns by 10 rows: 60 cells, the stash's capacity", () => {
+    expect(STASH_COLUMNS).toBe(6);
+    expect(STASH_ROWS).toBe(10);
+    expect(STASH_COLUMNS * STASH_ROWS).toBe(STASH_CAPACITY);
+  });
+
+  it.each(SIZES)(
+    "should lay 60 cells and the count line inside the left panel, level with the gear panel, at %ix%i",
+    (w, h) => {
+      const layout = overlayLayout(w, h);
+      const stash = stashPanelLayout(layout.left, 0);
+      const fits = (r: { x: number; y: number; w: number; h: number }) =>
+        r.x >= layout.left.x &&
+        r.y >= layout.left.y &&
+        r.x + r.w <= layout.left.x + layout.left.w &&
+        r.y + r.h <= layout.left.y + layout.left.h;
+      // a short window scrolls the rows it cannot show, but every row shown is inside
+      expect(stash.rows).toBe(10);
+      for (const c of stash.cells) expect(fits(c.rect)).toBe(true);
+      expect(stash.countY).toBe(gearPanelLayout(layout.right, 0).slots.head.y);
+      expect(Math.min(...stash.cells.map((c) => c.rect.y))).toBeGreaterThan(
+        stash.countY,
+      );
+    },
+  );
+
+  it("should show all 60 cells, none over, in stash order on a normal window", () => {
+    const stash = stashPanelLayout(left, 7);
+    expect(stash.cells).toHaveLength(60);
+    expect(stash.visibleRows).toBe(10);
+    expect(stash.cells.some((c) => c.over)).toBe(false);
+    for (const c of stash.cells) expect(inside(c.rect)).toBe(true);
+    expect(stash.cells.slice(0, 7).map((c) => c.index)).toEqual([
+      0, 1, 2, 3, 4, 5, 6,
+    ]);
+    expect(stash.cells[6].rect.y).toBeGreaterThan(stash.cells[0].rect.y);
+    expect(stash.cells[6].rect.x).toBe(stash.cells[0].rect.x);
+  });
+
+  it("should grow rows of 6 past 60, the extra cells marked over capacity, and never shrink the 60 (R36)", () => {
+    const base = stashPanelLayout(left, 60);
+    const over = stashPanelLayout(left, 64);
+    expect(over.rows).toBe(11);
+    expect(over.cell).toBe(base.cell);
+    const scrolled = stashPanelLayout(left, 64, over.rows);
+    expect(scrolled.cells.filter((c) => c.over).map((c) => c.index)).toEqual([
+      60, 61, 62, 63, 64, 65,
+    ]);
+    expect(base.cells.some((c) => c.over)).toBe(false);
+  });
+
+  it("should scroll the grid when its rows do not fit, keeping every cell reachable (R36)", () => {
+    const first = stashPanelLayout(left, 64);
+    expect(first.visibleRows).toBeLessThan(first.rows);
+    const last = stashPanelLayout(left, 64, first.rows);
+    expect(last.scroll).toBe(first.rows - first.visibleRows);
+    expect(last.cells.at(-1)?.index).toBe(first.rows * STASH_COLUMNS - 1);
+  });
+
+  it("should not reach into the right panel", () => {
+    const stash = stashPanelLayout(left, 64);
+    expect(stash.grid.x + stash.grid.w).toBeLessThan(right.x);
+  });
 });
 
 describe("rowWindow (FS-HRH2J edge state Small window: panel contents scroll)", () => {

@@ -6,12 +6,16 @@ import type {
 } from "@/types/gameState";
 import type { ItemInstance } from "@/items/loadoutItem";
 import { nothingWorn } from "./EquipmentHud";
+import { ApiError } from "@/utils/apiError";
+import { BAG_FULL_NOTICE } from "./bag";
+import { NOT_FREE_NOTICE, STASH_FULL_NOTICE, type ItemLocation } from "./stash";
 import {
   GEAR_BUSY,
   GEAR_CHANGE_FAILED,
   GEAR_LOADING,
   GEAR_LOAD_FAILED,
   HubGear,
+  IN_RUN_NOTICE,
   backendSlot,
   loadHubGear,
   type HubGearApi,
@@ -54,6 +58,14 @@ function fakeApi(
     updateLoadout: vi.fn(async (_slot: string, _id: string | null) => ({
       result: {},
     })),
+    moveItemInstance: vi.fn(
+      async (
+        id: string,
+        location: ItemLocation,
+      ): Promise<{ result: object }> => ({
+        result: { id, location },
+      }),
+    ),
   };
   return api as typeof api & HubGearApi;
 }
@@ -85,6 +97,40 @@ describe("loadHubGear (FS-HRH2J R41)", () => {
     expect(equipped.ring_2?.entity_id).toBe("ring");
     expect(equipped.ring_1).toBeNull();
     expect(ids(bag)).toEqual(["potion"]);
+  });
+
+  it("should put bag items not worn in the bag and stash items not worn in the stash, in REST order (FS-VPD8Y R27)", async () => {
+    const api = fakeApi(
+      [
+        instance("s1", { location: "stash" }),
+        instance("b1", { location: "bag" }),
+        instance("sword", { location: "stash" }),
+        instance("s2", { location: "stash" }),
+        instance("helm", { location: "bag" }),
+        instance("b2", { location: "bag" }),
+      ],
+      { weaponId: "sword", headId: "helm" },
+    );
+
+    const { equipped, bag, stash } = await loadHubGear(api);
+
+    expect(equipped.weapon?.entity_id).toBe("sword");
+    expect(equipped.head?.entity_id).toBe("helm");
+    expect(ids(bag)).toEqual(["b1", "b2"]);
+    expect(ids(stash)).toEqual(["s1", "s2"]);
+  });
+
+  it("should put an instance with no location in the bag, as an older gateway sends it (FS-VPD8Y R28)", async () => {
+    const api = fakeApi([
+      instance("old"),
+      instance("s1", { location: "stash" }),
+      instance("b1", { location: "bag" }),
+    ]);
+
+    const { bag, stash } = await loadHubGear(api);
+
+    expect(ids(bag)).toEqual(["old", "b1"]);
+    expect(ids(stash)).toEqual(["s1"]);
   });
 
   it("should map every backend slot name to its overlay slot", async () => {
@@ -180,18 +226,36 @@ describe("backendSlot (FS-HRH2J R42)", () => {
 function fakePanel() {
   const panel = {
     visible: false,
+    /** Open at the stash chest: the left panel is the stash (FS-VPD8Y R35). */
+    stashMode: false,
+    stash: [] as ItemState[],
     status: undefined as string | undefined,
     statuses: [] as (string | undefined)[],
     inventory: [] as ItemState[],
     equipped: nothingWorn() as EquippedItems,
     onEquip: undefined as HubGearPanel["onEquip"],
     onUnequip: undefined as HubGearPanel["onUnequip"],
-    mayUnequip: undefined as (() => boolean) | undefined,
+    mayEquip: undefined as HubGearPanel["mayEquip"],
+    mayUnequip: undefined as HubGearPanel["mayUnequip"],
+    onMove: undefined as HubGearPanel["onMove"],
+    mayMove: undefined as HubGearPanel["mayMove"],
     toggle: vi.fn(() => {
       panel.visible = !panel.visible;
+      panel.stashMode = false;
     }),
     hide: vi.fn(() => {
       panel.visible = false;
+      panel.stashMode = false;
+    }),
+    openStash: vi.fn(() => {
+      if (panel.visible) return;
+      panel.visible = true;
+      panel.stashMode = true;
+      panel.stash = [];
+    }),
+    isStashOpen: () => panel.visible && panel.stashMode,
+    updateStash: vi.fn((items: ItemState[]) => {
+      panel.stash = [...items];
     }),
     isVisible: () => panel.visible,
     /** The panels cover the left half of the screen, in this stand-in. */
@@ -211,6 +275,51 @@ function fakePanel() {
     }),
   };
   return panel;
+}
+
+/** `count` unworn bag items, b0, b1, ... */
+const bagOf = (count: number) =>
+  Array.from({ length: count }, (_, i) =>
+    instance(`b${i}`, { location: "bag" }),
+  );
+
+/**
+ * An unequip as the overlay makes it: asked first, then drawn and handed on; whether it went
+ * ahead. The fake panel does not draw, so it is only the hand-off here.
+ */
+function unequip(
+  panel: ReturnType<typeof fakePanel>,
+  slot: EquipmentSlot,
+): boolean {
+  const item = panel.equipped[slot] as ItemState;
+  if (panel.mayUnequip && !panel.mayUnequip(item)) return false;
+  panel.onUnequip?.(item, slot);
+  return true;
+}
+
+/** An equip as the overlay makes it: asked first, then drawn and handed on; whether it went ahead. */
+function equip(
+  panel: ReturnType<typeof fakePanel>,
+  item: ItemState,
+  slot: EquipmentSlot,
+): boolean {
+  if (panel.mayEquip && !panel.mayEquip(item, slot)) return false;
+  panel.onEquip?.(item, slot);
+  return true;
+}
+
+/**
+ * A move as the overlay makes it in stash mode: asked first, then drawn and handed on; whether
+ * it went ahead (FS-VPD8Y R38–39).
+ */
+function moveItem(
+  panel: ReturnType<typeof fakePanel>,
+  item: ItemState,
+  to: ItemLocation,
+): boolean {
+  if (panel.mayMove && !panel.mayMove(item, to)) return false;
+  panel.onMove?.(item, to);
+  return true;
 }
 
 /** Lets every settled promise's callbacks run. */
@@ -296,18 +405,90 @@ describe("HubGear (FS-HRH2J §E R40–44)", () => {
     expect(api.getItemInstances).toHaveBeenCalledTimes(1);
   });
 
-  it("should send an unequip as updateLoadout with no id, and never pre-check the bag (R42, R44)", async () => {
-    const owned = Array.from({ length: 31 }, (_, i) => instance(`i${i}`));
-    const { gear, panel, api } = hubGearOnStage([...owned, instance("helm")], {
-      headId: "helm",
-    });
+  it("should send an unequip as updateLoadout with no id while the bag has room (R42)", async () => {
+    const owned = bagOf(29);
+    const { gear, panel, api, notice } = hubGearOnStage(
+      [...owned, instance("helm", { location: "bag" })],
+      { headId: "helm" },
+    );
     gear.toggle();
     await settle();
 
-    expect(panel.mayUnequip).toBeUndefined();
-    panel.onUnequip?.(panel.equipped.head as ItemState, "head");
+    expect(unequip(panel, "head")).toBe(true);
 
     expect(api.updateLoadout).toHaveBeenCalledWith("head", null);
+    expect(notice).not.toHaveBeenCalled();
+  });
+
+  it.each([30, 31])(
+    "should send no unequip and say the bag is full with %i in the bag (FS-VPD8Y R29)",
+    async (count) => {
+      const { gear, panel, api, notice } = hubGearOnStage(
+        [...bagOf(count), instance("helm", { location: "bag" })],
+        { headId: "helm" },
+      );
+      gear.toggle();
+      await settle();
+
+      expect(unequip(panel, "head")).toBe(false);
+
+      expect(api.updateLoadout).not.toHaveBeenCalled();
+      expect(notice).toHaveBeenCalledWith(BAG_FULL_NOTICE);
+      expect(panel.status).toBeUndefined();
+    },
+  );
+
+  it("should not count stash items toward a full bag (FS-VPD8Y R29)", async () => {
+    const stashed = Array.from({ length: 40 }, (_, i) =>
+      instance(`s${i}`, { location: "stash" }),
+    );
+    const { gear, panel, api } = hubGearOnStage(
+      [...stashed, instance("helm", { location: "stash" })],
+      { headId: "helm" },
+    );
+    gear.toggle();
+    await settle();
+
+    expect(unequip(panel, "head")).toBe(true);
+    expect(api.updateLoadout).toHaveBeenCalledWith("head", null);
+  });
+
+  it("should always send a swap, even with a full bag (FS-VPD8Y R29)", async () => {
+    const { gear, panel, api, notice } = hubGearOnStage(
+      [...bagOf(30), instance("helm", { location: "bag" })],
+      { headId: "helm" },
+    );
+    gear.toggle();
+    await settle();
+
+    panel.onEquip?.(panel.inventory[0], "head");
+
+    expect(api.updateLoadout).toHaveBeenCalledWith("head", "b0");
+    expect(notice).not.toHaveBeenCalled();
+  });
+
+  it("should count the bag as the changes it sent leave it (FS-VPD8Y R29)", async () => {
+    const { gear, panel, api, notice } = hubGearOnStage(
+      [
+        ...bagOf(29),
+        instance("helm", { location: "bag" }),
+        instance("ring", { location: "bag" }),
+      ],
+      { headId: "helm", ring1Id: "ring" },
+    );
+    gear.toggle();
+    await settle();
+
+    expect(unequip(panel, "head")).toBe(true);
+    await settle();
+    expect(unequip(panel, "ring_1")).toBe(false);
+    expect(notice).toHaveBeenCalledWith(BAG_FULL_NOTICE);
+
+    // an equip into an empty slot takes one out of the bag, so there is room again
+    panel.onEquip?.(panel.inventory[0], "weapon");
+    await settle();
+    expect(unequip(panel, "ring_1")).toBe(true);
+    expect(api.updateLoadout).toHaveBeenCalledTimes(3);
   });
 
   it("should send one change at a time, ignoring a second while the first is in flight", async () => {
@@ -337,6 +518,74 @@ describe("HubGear (FS-HRH2J §E R40–44)", () => {
     expect(api.getItemInstances).toHaveBeenCalledTimes(2);
     expect(panel.equipped.weapon).toBeNull();
     expect(ids(panel.inventory)).toEqual(["sword"]);
+  });
+
+  it("should say the bag is full and reload when the server refuses with BAG_FULL (FS-VPD8Y R29)", async () => {
+    const { gear, panel, api, notice } = hubGearOnStage(
+      [instance("helm", { location: "bag" })],
+      { headId: "helm" },
+    );
+    gear.toggle();
+    await settle();
+    api.updateLoadout.mockRejectedValueOnce(
+      new ApiError({
+        code: "BAG_FULL",
+        status: 400,
+        detail: "bag full",
+        errors: [],
+      }),
+    );
+
+    expect(unequip(panel, "head")).toBe(true);
+    await settle();
+
+    expect(notice).toHaveBeenCalledWith(BAG_FULL_NOTICE);
+    expect(notice).not.toHaveBeenCalledWith(GEAR_CHANGE_FAILED);
+    expect(api.getItemInstances).toHaveBeenCalledTimes(2);
+    expect(panel.equipped.head?.entity_id).toBe("helm");
+  });
+
+  it("should say the item is not free and reload when the server refuses an equip with ITEM_NOT_AVAILABLE (FS-18Z5F story 14)", async () => {
+    const { gear, panel, api, notice } = hubGearOnStage([instance("sword")]);
+    gear.toggle();
+    await settle();
+    api.updateLoadout.mockRejectedValueOnce(
+      new ApiError({
+        code: "ITEM_NOT_AVAILABLE",
+        status: 409,
+        detail: "listed",
+        errors: [],
+      }),
+    );
+
+    panel.onEquip?.(panel.inventory[0], "weapon");
+    await settle();
+
+    expect(notice).toHaveBeenCalledWith(NOT_FREE_NOTICE);
+    expect(notice).not.toHaveBeenCalledWith(GEAR_CHANGE_FAILED);
+    expect(api.getItemInstances).toHaveBeenCalledTimes(2);
+    expect(panel.equipped.weapon).toBeNull();
+    expect(ids(panel.inventory)).toEqual(["sword"]);
+  });
+
+  it("should keep the generic words for any other coded refusal (FS-HRH2J R43)", async () => {
+    const { gear, panel, api, notice } = hubGearOnStage([instance("sword")]);
+    gear.toggle();
+    await settle();
+    api.updateLoadout.mockRejectedValueOnce(
+      new ApiError({
+        code: "SERVICE_UNAVAILABLE",
+        status: 503,
+        detail: "down",
+        errors: [],
+      }),
+    );
+
+    panel.onEquip?.(panel.inventory[0], "weapon");
+    await settle();
+
+    expect(notice).toHaveBeenCalledWith(GEAR_CHANGE_FAILED);
+    expect(api.getItemInstances).toHaveBeenCalledTimes(2);
   });
 
   it("should let a change finish after the overlay closes, and reload after it on the next open (edge state)", async () => {
@@ -409,4 +658,362 @@ describe("HubGear (FS-HRH2J §E R40–44)", () => {
     expect(gear.covers(10, 10)).toBe(true);
     expect(gear.covers(400, 10)).toBe(false);
   });
+});
+
+describe("HubGear at the stash chest (FS-VPD8Y §F R35–37)", () => {
+  const stocked = [
+    instance("sword", { location: "bag" }),
+    instance("s1", { location: "stash" }),
+    instance("b1", { location: "bag" }),
+    instance("s2", { location: "stash" }),
+  ];
+
+  it("should open the overlay in stash mode and fill the stash, the bag and the gear from REST", async () => {
+    const { gear, panel } = hubGearOnStage(stocked, { weaponId: "sword" });
+
+    expect(gear.openStash()).toBe(true);
+
+    expect(gear.isOpen()).toBe(true);
+    expect(gear.stashOpen()).toBe(true);
+    expect(panel.status).toBe(GEAR_LOADING);
+    await settle();
+    expect(panel.status).toBeUndefined();
+    expect(ids(panel.stash)).toEqual(["s1", "s2"]);
+    expect(ids(panel.inventory)).toEqual(["b1"]);
+    expect(panel.equipped.weapon?.entity_id).toBe("sword");
+  });
+
+  it("should leave an open overlay as it is, loading nothing (R34: E stays the overlay's)", async () => {
+    const { gear, api } = hubGearOnStage(stocked);
+    gear.toggle();
+    await settle();
+
+    expect(gear.openStash()).toBe(false);
+    await settle();
+    expect(gear.stashOpen()).toBe(false);
+    expect(api.getItemInstances).toHaveBeenCalledTimes(1);
+  });
+
+  it("should show the error line when the stash's load fails, and retry on reopening (edge state)", async () => {
+    const { gear, panel, api } = hubGearOnStage(stocked);
+    api.getItemInstances.mockRejectedValueOnce(new Error("down"));
+
+    gear.openStash();
+    await settle();
+    expect(panel.status).toBe(GEAR_LOAD_FAILED);
+
+    gear.hide();
+    gear.openStash();
+    await settle();
+    expect(panel.status).toBeUndefined();
+    expect(ids(panel.stash)).toEqual(["s1", "s2"]);
+  });
+
+  it("should end stash mode on closing, the next I or B a plain open (R37)", async () => {
+    const { gear } = hubGearOnStage(stocked);
+    gear.openStash();
+    await settle();
+    gear.toggle();
+    expect(gear.stashOpen()).toBe(false);
+    gear.toggle();
+    expect(gear.isOpen()).toBe(true);
+    expect(gear.stashOpen()).toBe(false);
+  });
+
+  it("should count the bag without the stash, so a full-bag pre-check reads the bag alone (FS-VPD8Y R29)", async () => {
+    const { gear, panel, api } = hubGearOnStage(
+      [
+        instance("helm", { location: "bag" }),
+        ...Array.from({ length: 40 }, (_, i) =>
+          instance(`s${i}`, { location: "stash" }),
+        ),
+      ],
+      { headId: "helm" },
+    );
+    gear.openStash();
+    await settle();
+    expect(unequip(panel, "head")).toBe(true);
+    expect(api.updateLoadout).toHaveBeenCalledWith("head", null);
+  });
+});
+
+describe("HubGear moving items between bag and stash (FS-VPD8Y §F R38–42)", () => {
+  const stashOf = (count: number) =>
+    Array.from({ length: count }, (_, i) =>
+      instance(`s${i}`, { location: "stash" }),
+    );
+
+  async function stashOpen(
+    instances: ItemInstance[],
+    loadout: Record<string, string> = {},
+  ) {
+    const stage = hubGearOnStage(instances, loadout);
+    stage.gear.openStash();
+    await settle();
+    return stage;
+  }
+
+  it("should send a bag item to the stash as one moveItemInstance, busy until it answers (R38, R41)", async () => {
+    const { panel, api, notice } = await stashOpen([
+      instance("b1", { location: "bag" }),
+    ]);
+    const pending = deferred<{ result: object }>();
+    api.moveItemInstance.mockReturnValueOnce(pending.promise);
+
+    expect(moveItem(panel, panel.inventory[0], "stash")).toBe(true);
+
+    expect(api.moveItemInstance).toHaveBeenCalledTimes(1);
+    expect(api.moveItemInstance).toHaveBeenCalledWith("b1", "stash");
+    expect(api.updateLoadout).not.toHaveBeenCalled();
+    expect(panel.status).toBe(GEAR_BUSY);
+    pending.resolve({ result: {} });
+    await settle();
+    expect(panel.status).toBeUndefined();
+    expect(notice).not.toHaveBeenCalled();
+  });
+
+  it("should send a stash item to the bag (R38)", async () => {
+    const { panel, api } = await stashOpen([
+      instance("s1", { location: "stash" }),
+    ]);
+
+    expect(moveItem(panel, panel.stash[0], "bag")).toBe(true);
+
+    expect(api.moveItemInstance).toHaveBeenCalledWith("s1", "bag");
+  });
+
+  it("should not send a move into a bag of 30, saying the bag is full (R39)", async () => {
+    const { panel, api, notice } = await stashOpen([
+      ...bagOf(30),
+      instance("s1", { location: "stash" }),
+    ]);
+
+    expect(moveItem(panel, panel.stash[0], "bag")).toBe(false);
+
+    expect(notice).toHaveBeenCalledWith(BAG_FULL_NOTICE);
+    expect(api.moveItemInstance).not.toHaveBeenCalled();
+  });
+
+  it("should not send a move into a stash of 60, saying the stash is full (R39)", async () => {
+    const { panel, api, notice } = await stashOpen([
+      ...stashOf(60),
+      instance("b1", { location: "bag" }),
+    ]);
+
+    expect(moveItem(panel, panel.inventory[0], "stash")).toBe(false);
+
+    expect(notice).toHaveBeenCalledWith(STASH_FULL_NOTICE);
+    expect(api.moveItemInstance).not.toHaveBeenCalled();
+  });
+
+  it("should let a move out of an over-full stash go (user story 21)", async () => {
+    const { panel, api } = await stashOpen(stashOf(64));
+
+    expect(moveItem(panel, panel.stash[0], "bag")).toBe(true);
+    expect(api.moveItemInstance).toHaveBeenCalledWith("s0", "bag");
+  });
+
+  it.each([
+    ["LISTED", "stash"],
+    ["PENDING_SETTLEMENT", "bag"],
+    ["IN_ESCROW", "stash"],
+  ] as const)(
+    "should not send a move of a %s item from the %s, saying it is not free to move (R39)",
+    async (status, from) => {
+      const { panel, api, notice } = await stashOpen([
+        instance("x", { location: from, status }),
+      ]);
+      const item = from === "bag" ? panel.inventory[0] : panel.stash[0];
+
+      expect(moveItem(panel, item, from === "bag" ? "stash" : "bag")).toBe(
+        false,
+      );
+
+      expect(notice).toHaveBeenCalledWith(NOT_FREE_NOTICE);
+      expect(api.moveItemInstance).not.toHaveBeenCalled();
+    },
+  );
+
+  it("should send one move at a time, ignoring a second while the first is in flight (R41)", async () => {
+    const { panel, api } = await stashOpen([
+      instance("b1", { location: "bag" }),
+      instance("b2", { location: "bag" }),
+    ]);
+    api.moveItemInstance.mockReturnValueOnce(
+      deferred<{ result: object }>().promise,
+    );
+
+    moveItem(panel, panel.inventory[0], "stash");
+    moveItem(panel, panel.inventory[1], "stash");
+    unequip(panel, "head");
+
+    expect(api.moveItemInstance).toHaveBeenCalledTimes(1);
+    expect(api.updateLoadout).not.toHaveBeenCalled();
+  });
+
+  it("should count the bag and the stash as the moves it sent leave them (R39)", async () => {
+    const { panel, api, notice } = await stashOpen(
+      [...bagOf(30), instance("helm", { location: "bag" }), ...stashOf(59)],
+      { headId: "helm" },
+    );
+    // the bag is full: nothing comes off
+    expect(unequip(panel, "head")).toBe(false);
+
+    // one bag item into the stash leaves room in the bag and fills the stash
+    expect(moveItem(panel, panel.inventory[0], "stash")).toBe(true);
+    await settle();
+    expect(moveItem(panel, panel.inventory[1], "stash")).toBe(false);
+    expect(notice).toHaveBeenLastCalledWith(STASH_FULL_NOTICE);
+    expect(unequip(panel, "head")).toBe(true);
+    await settle();
+
+    // the bag is full again, so nothing comes out of the stash
+    expect(moveItem(panel, panel.stash[0], "bag")).toBe(false);
+    expect(notice).toHaveBeenLastCalledWith(BAG_FULL_NOTICE);
+    expect(api.moveItemInstance).toHaveBeenCalledTimes(1);
+    expect(api.updateLoadout).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["BAG_FULL", BAG_FULL_NOTICE],
+    ["STASH_FULL", STASH_FULL_NOTICE],
+    ["ITEM_NOT_AVAILABLE", NOT_FREE_NOTICE],
+    ["ITEM_WORN", NOT_FREE_NOTICE],
+    ["NOT_FOUND", NOT_FREE_NOTICE],
+    ["SERVICE_UNAVAILABLE", GEAR_CHANGE_FAILED],
+    ["UNKNOWN_ERROR", GEAR_CHANGE_FAILED],
+  ])(
+    "should show the notice for a %s refusal and reload gear, bag and stash (R42)",
+    async (code, words) => {
+      const { panel, api, notice } = await stashOpen([
+        instance("b1", { location: "bag" }),
+        instance("s1", { location: "stash" }),
+      ]);
+      api.moveItemInstance.mockRejectedValueOnce(
+        new ApiError({ code, status: 400, detail: "refused", errors: [] }),
+      );
+
+      moveItem(panel, panel.inventory[0], "stash");
+      await settle();
+
+      expect(notice).toHaveBeenCalledTimes(1);
+      expect(notice).toHaveBeenCalledWith(words);
+      expect(api.getItemInstances).toHaveBeenCalledTimes(2);
+      expect(ids(panel.inventory)).toEqual(["b1"]);
+      expect(ids(panel.stash)).toEqual(["s1"]);
+      expect(gearStashStillOpen(panel)).toBe(true);
+    },
+  );
+
+  it("should show the generic notice for a refusal that is not an ApiError (R42)", async () => {
+    const { panel, api, notice } = await stashOpen([
+      instance("b1", { location: "bag" }),
+    ]);
+    api.moveItemInstance.mockRejectedValueOnce(new Error("offline"));
+
+    moveItem(panel, panel.inventory[0], "stash");
+    await settle();
+
+    expect(notice).toHaveBeenCalledWith(GEAR_CHANGE_FAILED);
+    expect(api.getItemInstances).toHaveBeenCalledTimes(2);
+  });
+
+  it("should let a move finish after the overlay closes, the next open reloading after it (edge state: in flight on close)", async () => {
+    const { gear, panel, api } = await stashOpen([
+      instance("b1", { location: "bag" }),
+    ]);
+    const pending = deferred<{ result: object }>();
+    api.moveItemInstance.mockReturnValueOnce(pending.promise);
+    moveItem(panel, panel.inventory[0], "stash");
+
+    gear.hide();
+    gear.openStash();
+    await settle();
+    expect(api.getItemInstances).toHaveBeenCalledTimes(1);
+    pending.resolve({ result: {} });
+    await settle();
+    expect(api.getItemInstances).toHaveBeenCalledTimes(2);
+  });
+});
+
+/** Whether the fake overlay is still open in stash mode. */
+function gearStashStillOpen(panel: ReturnType<typeof fakePanel>): boolean {
+  return panel.isStashOpen();
+}
+
+describe("HubGear with items still in a delve (FS-18Z5F R38)", () => {
+  const inDelve = (id: string, location: "bag" | "stash" = "bag") =>
+    instance(id, { location, status: "IN_RUN" });
+
+  it("should send no equip for an IN_RUN bag item, saying it is still in a delve", async () => {
+    const { gear, panel, api, notice } = hubGearOnStage([inDelve("cloak")]);
+    gear.toggle();
+    await settle();
+
+    expect(equip(panel, panel.inventory[0], "body")).toBe(false);
+
+    expect(api.updateLoadout).not.toHaveBeenCalled();
+    expect(notice).toHaveBeenCalledWith(IN_RUN_NOTICE);
+    expect(panel.status).toBeUndefined();
+  });
+
+  it("should send no unequip for a worn IN_RUN item", async () => {
+    const { gear, panel, api, notice } = hubGearOnStage([inDelve("helm")], {
+      headId: "helm",
+    });
+    gear.toggle();
+    await settle();
+
+    expect(unequip(panel, "head")).toBe(false);
+
+    expect(api.updateLoadout).not.toHaveBeenCalled();
+    expect(notice).toHaveBeenCalledWith(IN_RUN_NOTICE);
+  });
+
+  it("should send no equip that would take a worn IN_RUN item off", async () => {
+    const { gear, panel, api, notice } = hubGearOnStage(
+      [inDelve("helm"), instance("cap", { location: "bag" })],
+      { headId: "helm" },
+    );
+    gear.toggle();
+    await settle();
+
+    expect(equip(panel, panel.inventory[0], "head")).toBe(false);
+
+    expect(api.updateLoadout).not.toHaveBeenCalled();
+    expect(notice).toHaveBeenCalledWith(IN_RUN_NOTICE);
+  });
+
+  it("should still send an equip of a free item into an empty slot", async () => {
+    const { gear, panel, api } = hubGearOnStage(
+      [inDelve("helm"), instance("cloak", { location: "bag" })],
+      { headId: "helm" },
+    );
+    gear.toggle();
+    await settle();
+
+    expect(equip(panel, panel.inventory[0], "body")).toBe(true);
+
+    expect(api.updateLoadout).toHaveBeenCalledWith("chest", "cloak");
+  });
+
+  it.each([
+    ["bag", "stash"],
+    ["stash", "bag"],
+  ] as const)(
+    "should send no move of an IN_RUN %s item, saying it is still in a delve",
+    async (from, to) => {
+      const { gear, panel, api, notice } = hubGearOnStage([
+        inDelve("relic", from),
+      ]);
+      gear.openStash();
+      await settle();
+      const relic = from === "bag" ? panel.inventory[0] : panel.stash[0];
+
+      expect(moveItem(panel, relic, to)).toBe(false);
+
+      expect(api.moveItemInstance).not.toHaveBeenCalled();
+      expect(notice).toHaveBeenCalledWith(IN_RUN_NOTICE);
+    },
+  );
 });

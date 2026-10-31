@@ -1,5 +1,5 @@
 import * as Phaser from "phaser";
-import { ActionType, type FieldId } from "@/assets/types/client";
+import { ActionType, WorldType, type FieldId } from "@/assets/types/client";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
 import type { ClientGameState, GateState, ItemState, PlayerState, Position, WallState } from "@/types/gameState";
@@ -287,10 +287,10 @@ export class FieldScene extends Phaser.Scene {
 
   /**
    * The run's gear and bag overlay over the live field (FS-HRH2J), its sends the run's, its
-   * full-bag refusals in the field's notice (R22).
+   * full-bag refusals in the field's notice (R22). A field marks no unsafe finds (FS-18Z5F R37).
    */
   private composeEquipment(): EquipmentHud {
-    return new EquipmentHud(new GearOverlay(this, this.art), {
+    return new EquipmentHud(new GearOverlay(this, this.art, WorldType.Field), {
       send: (action, payload) => socketManager.sendMessage(action, payload),
       notice: (text) => this.notice(text),
     });

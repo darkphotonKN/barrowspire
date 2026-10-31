@@ -95,6 +95,14 @@ export const palette = {
   switchOn: BARROW_HEX.amber,
   escapeDoor: BARROW_HEX.brass,
   escapeGlow: BARROW_HEX.amberBright,
+  /**
+   * The hub's stash chest (FS-VPD8Y R32): the run's chest under a slight brass cast, stood on a
+   * dark plate with a brass trim, so it reads as the town's and not a run's coffer. Not amber:
+   * its "Stash" marker carries the interactable channel.
+   */
+  stashChestTint: tint(BARROW_HEX.brass, 0.6),
+  stashChestPlate: BARROW_HEX.umber,
+  stashChestTrim: BARROW_HEX.brassBright,
   /** Stairs up (FS-F6F88 req 30): cold stone treads, amber nosing so they read as climbable. */
   stairsTread: BARROW_HEX.slate,
   stairsRiser: shade(BARROW_HEX.slate),
@@ -117,6 +125,12 @@ export const palette = {
   // -- Damage / danger / hostile. Oxblood.
   damage: BARROW_HEX.oxblood,
   damageBright: tint(BARROW_HEX.oxblood, 0.35),
+  /**
+   * An unsafe find in a run (FS-18Z5F R36): the inner edge of its bag cell or worn slot and its
+   * tip note. The danger channel, lifted as the HP bar is, since raw oxblood vanishes on a dark
+   * well; an inner edge, so it never reads as the rarity edge down the left side.
+   */
+  unsafeFind: BARROW_HEX.oxbloodText,
   hostile: BARROW_HEX.necrotic,
   /**
    * A burning trail (FS-4R9M9 req 36, 61): fire that harms monsters, so the damage family: a

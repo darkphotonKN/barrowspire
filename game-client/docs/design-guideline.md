@@ -407,6 +407,14 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   linearly filtered world; no pixel-grid frames.
 - **World-object UI can be baked art.** The container view is a leather satchel whose flap lifts
   and whose item icons drop in (FS-2325V §D). Item icons are baked, with a generic fallback.
+- **Item marks in the gear and bag overlay.** A held item's rarity shows only as its **rarity
+  edge**, a thin bar down the left side of its bag cell or worn slot. Two more marks sit beside
+  it and never take a rarity colour. In a run, an **unsafe find** (picked up this run, lost if
+  the player dies before escaping) gets a lifted-oxblood **inner edge** inside its well, clear of
+  the rarity edge, and its tip adds "Found this run: lost if you die before you escape." in the
+  same tone (`palette.unsafeFind`, the danger channel). Field worlds and the hub show no unsafe
+  mark. In the hub, an item **still in a delve** is drawn faint, as a listed item is, and its tip
+  says "Still in a delve." *(Added by FS-18Z5F §H, 2026-10-31.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich

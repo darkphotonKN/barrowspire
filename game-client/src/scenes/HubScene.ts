@@ -1,6 +1,6 @@
 import * as Phaser from "phaser";
 import { createAtmosphere } from "@/utils/atmosphere";
-import { ActionType } from "@/assets/types/client";
+import { ActionType, WorldType } from "@/assets/types/client";
 import { useGameStore } from "@/stores/gameStore";
 import { CANVAS_FONT, palette, shade, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
@@ -72,6 +72,7 @@ import {
   addProp,
   addRoof,
   addWalls,
+  showState,
   housesFrom,
   insideHouse,
   tileHash,
@@ -106,6 +107,15 @@ import {
   splitFurnishings,
 } from "@/render/world/hubInteriors";
 import { planChimney } from "@/render/world/roofs";
+import { CHEST, chestFrame, paintChest, type ChestFrame } from "@/render/world/chest";
+import {
+  HUB_STASH_CHEST,
+  STASH_CHEST_TINT,
+  STASH_NAME,
+  paintStashPlate,
+  stashPlate,
+} from "@/render/world/hubStash";
+import { nearestInReach } from "./hubReach";
 import { trimCrop } from "@/render/world/walls";
 
 /** Moves a world position a step toward its target. */
@@ -126,6 +136,13 @@ const CAMERA_MARGIN = HUB_CAMERA_MARGIN;
 const NAME_GAP = 4;
 /** Screen px between a function NPC's sigil and the top of its name (FS-MRZH7 req 4). */
 const SIGIL_GAP = 3;
+/**
+ * Screen px from the stash chest's footprint to the middle of its nameplate: just over the baked
+ * chest's lid (FS-VPD8Y R33).
+ */
+const STASH_NAME_LIFT = 58;
+/** The stash chest's plate sits on the floor: over the ground and its trails, under the world band. */
+const STASH_PLATE_DEPTH = 1;
 /** World px tall: a furnishing's placeholder block, low enough to read as furniture, not a wall. */
 const FURNISHING_PLACEHOLDER_HEIGHT = 8;
 /** How hard sprites chase the server's position each frame. Matches the run scene. */
@@ -567,6 +584,11 @@ export class HubScene extends Phaser.Scene {
   private insideRoof?: House;
   /** Each house's room, shown only under a lifted roof (FS-B0H2D R20). */
   private interiors: Interior[] = [];
+  /**
+   * The stash chest (FS-VPD8Y R31–33): its sprite, the frame it shows (open while this player's
+   * stash is), and its marker. Drawn with the town, once per visit.
+   */
+  private stashChest?: { sprite: Phaser.GameObjects.Sprite; frame: ChestFrame };
   /** Says, once per rect, that a furnishing has no mirror entry and stands as a placeholder (R19). */
   private warnUnmirrored = placeholderWarning();
   private unsubscribeQueue?: () => void;
@@ -774,6 +796,7 @@ export class HubScene extends Phaser.Scene {
     this.roofs = [];
     this.insideRoof = undefined;
     this.interiors = [];
+    this.stashChest = undefined;
     // the gauntlet is the hub's and the run's; the menus the hub hands over to keep the browser's
     this.input.setDefaultCursor("");
   }
@@ -787,7 +810,18 @@ export class HubScene extends Phaser.Scene {
     this.offerConversation();
     this.hideRoofOverhead();
     this.hideWhoIsIndoors();
+    this.showStashChest();
     this.carryTheTorch(time, delta);
+  }
+
+  /** The stash chest stands open while this player's stash is (FS-VPD8Y R32, v1 pick). */
+  private showStashChest(): void {
+    const chest = this.stashChest;
+    if (!chest) return;
+    const frame = chestFrame(this.gear?.stashOpen() ?? false);
+    if (frame === chest.frame) return;
+    chest.frame = frame;
+    showState(chest.sprite, this.art, CHEST.sheet, frame, CHEST.placeholder[frame]);
   }
 
   /**
@@ -903,15 +937,24 @@ export class HubScene extends Phaser.Scene {
     if (!self) return;
 
     // The nearest in range answers, so in a crowded room it is the one the player stepped up to
-    // (FS-B0H2D R28). World positions, never sprite positions: the sprites sit on the projection.
-    let nearest: { state: NPCState; distance: number } | undefined;
-    for (const { state, pos } of this.npcs.values()) {
-      const distance = Phaser.Math.Distance.Between(self.pos.x, self.pos.y, pos.x, pos.y);
-      if (distance <= NPC_TALK_RANGE && distance < (nearest?.distance ?? Infinity)) {
-        nearest = { state, distance };
-      }
-    }
-    if (nearest) this.openDialogue(nearest.state);
+    // (FS-B0H2D R28); the stash chest is one of them, and a nearer NPC wins (FS-VPD8Y R34). The
+    // chest is offered only from inside its store, never through the wall (FS-B0H2D R14).
+    const reachable: { at: Point; who: NPCState | "stash" }[] = [
+      ...[...this.npcs.values()].map(({ state, pos }) => ({ at: pos, who: state })),
+      ...(this.inStashStore(self.pos) ? [{ at: HUB_STASH_CHEST.at, who: "stash" as const }] : []),
+    ];
+    const nearest = nearestInReach(self.pos, reachable, NPC_TALK_RANGE);
+    if (nearest === "stash") this.gear?.openStash();
+    else if (nearest) this.openDialogue(nearest);
+  }
+
+  /**
+   * Whether `pos` stands in the house that holds the stash chest: the scene's inside test on the
+   * town's drawn houses. False before the walls are drawn.
+   */
+  private inStashStore(pos: Point): boolean {
+    const store = this.roofs.find((r) => insideHouse(HUB_STASH_CHEST.at, r.house))?.house;
+    return !!store && insideHouse(pos, store);
   }
 
   /**
@@ -1824,8 +1867,60 @@ export class HubScene extends Phaser.Scene {
         `hub: no art for ${unbaked.map((s) => `"${s}"`).join(", ")}; that indoor dressing is not drawn`,
       );
 
+    const store = houses.find((h) => insideHouse(HUB_STASH_CHEST.at, h));
+    if (store) interiors.get(store)!.parts.push(...this.placeStashChest());
+
     this.interiors = [...interiors.values()];
     this.showInteriors();
+  }
+
+  /**
+   * The stash chest in the Quartermaster's store (FS-VPD8Y R31–33): the run chest's sheet (its
+   * placeholder without art) under a slight tint, on a trimmed plate, both shown only under the
+   * store's lifted roof; and an amber "Stash" function marker, which, like the Quartermaster's
+   * own (FS-B0H2D R21), stays in sight over the roof. Walk-through: nothing here collides.
+   * Returns the parts that hide with the room.
+   */
+  private placeStashChest(): { setVisible(visible: boolean): unknown }[] {
+    const { at } = HUB_STASH_CHEST;
+    if (!this.art.has(CHEST.sheet)) this.ensureChestPlaceholders();
+
+    const plane = addWorldPlane(this);
+    plane.root.setDepth(STASH_PLATE_DEPTH);
+    const plate = this.add.graphics();
+    plane.surface.add(plate);
+    paintStashPlate(plate, stashPlate(HUB_STASH_CHEST));
+
+    const frame = chestFrame(false);
+    const sprite = this.add.sprite(0, 0, CHEST.placeholder[frame]);
+    showState(sprite, this.art, CHEST.sheet, frame, CHEST.placeholder[frame]);
+    standAt(sprite, at);
+    sprite.setTint(STASH_CHEST_TINT);
+    this.stashChest = { sprite, frame };
+
+    const s = worldToScreen(at.x, at.y);
+    const name = this.add
+      .text(s.x, s.y - STASH_NAME_LIFT, STASH_NAME, {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: `${NPC_NAME_PX.function}px`,
+        color: toCss(palette.markerFunction),
+      })
+      .setOrigin(0.5)
+      .setDepth(MARKER_DEPTH.name);
+    this.drawSigil().setPosition(name.x, name.y - name.height / 2 - SIGIL_GAP);
+
+    return [plane.root, sprite];
+  }
+
+  /** The run's chest placeholders, should the baked chest sheet be missing, made once. */
+  private ensureChestPlaceholders(): void {
+    for (const frame of ["closed", "open"] as const) {
+      if (this.textures.exists(CHEST.placeholder[frame])) continue;
+      const g = this.make.graphics({});
+      paintChest(g, frame);
+      g.generateTexture(CHEST.placeholder[frame], CHEST.width, CHEST.height);
+      g.destroy();
+    }
   }
 
   /** The pre-art roof: two shaded slopes on a plane lifted to the wall tops. */
@@ -2109,7 +2204,8 @@ export class HubScene extends Phaser.Scene {
    * change in the hub's passing notice. A change answered after this visit ended says nothing.
    */
   private composeGear(): HubGear {
-    const gear: HubGear = new HubGear(new GearOverlay(this, this.art), apiClient, {
+    const overlay = new GearOverlay(this, this.art, WorldType.Hub);
+    const gear: HubGear = new HubGear(overlay, apiClient, {
       notice: (text) => {
         if (this.gear === gear) this.notice(text);
       },
