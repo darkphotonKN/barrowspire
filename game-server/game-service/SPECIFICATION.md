@@ -141,6 +141,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Party loot rule → FS-V780R
 - [ ] Enter an instance as a party from its gate → FS-BJNYC
 - [ ] Matched players form a party on entry → FS-BJNYC
+- [ ] Party members' resource in the broadcast → FS-CH21F
 
 ### Chat
 
