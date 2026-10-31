@@ -77,7 +77,7 @@ const { MARKER_DEPTH } = await import("@/render/markers");
 interface QueuePanelScene {
   queuePanel?: { active: boolean; setText(text: string): unknown };
   add: { text: (...args: unknown[]) => unknown };
-  cameras: { main: { height: number } };
+  cameras: { main: { height: number; width?: number } };
   showQueueProgress(current: number, total: number): void;
 }
 
@@ -93,6 +93,7 @@ interface FakeText {
   setPosition(): FakeText;
   setVisible(): FakeText;
   setColor(): FakeText;
+  setOrigin(x: number, y: number): FakeText;
   on(): FakeText;
 }
 
@@ -109,6 +110,7 @@ function fakeText(): FakeText {
     setPosition: () => text,
     setVisible: () => text,
     setColor: () => text,
+    setOrigin: vi.fn((_x: number, _y: number) => text),
     on: () => text,
   };
   return text;
@@ -149,6 +151,25 @@ describe("HubScene queue panel (FS-29KSH §Requirements 25, 27)", () => {
 
     expect(hub.queuePanel).toBe(live);
     expect(live.setText).toHaveBeenCalledWith("Gathering the delve  2/2");
+  });
+
+  // At the bottom left it sat under the chat window (FS-WJGFJ): it moved to the top centre, on no
+  // ground of its own, an outline keeping it legible over the town. Asked by the user 2026-10-31.
+  it("should sit at the top centre with no background", () => {
+    const hub = new HubScene() as unknown as QueuePanelScene;
+    const made = fakeText();
+    const add = vi.fn((..._args: unknown[]) => made);
+    hub.add = { text: add };
+    hub.cameras = { main: { height: 720, width: 1080 } };
+
+    hub.showQueueProgress(1, 4);
+
+    const [x, y, , style] = add.mock.calls[0] as [number, number, string, Record<string, unknown>];
+    expect(x).toBe(540);
+    expect(y).toBeLessThan(72);
+    expect(made.setOrigin).toHaveBeenCalledWith(0.5, 0);
+    expect(style.backgroundColor).toBeUndefined();
+    expect(style.stroke).toBeDefined();
   });
 });
 
@@ -376,7 +397,9 @@ describe("HubScene queue flag and Leave button (FS-G4VMQ §Requirements 11, 15, 
     expect(hub.queued).toBe(true);
   });
 
-  it("should raise an amber Leave button at the panel's right, in the HUD band, with the panel", () => {
+  // The panel is centred at the top with no ground of its own (asked 2026-10-31, it sat under the
+  // chat window): Leave follows it at its right edge, centred on it, the same size, still amber.
+  it("should raise an amber Leave button just past the centred panel's right edge, centred on it", () => {
     const { hub, reply, button } = queuedHubOnStage();
     expect(button()).toBeUndefined();
 
@@ -386,13 +409,12 @@ describe("HubScene queue flag and Leave button (FS-G4VMQ §Requirements 11, 15, 
     const leave = button() as Made;
     expect(leave).toBeDefined();
     expect(leave.depth).toBe(1000);
-    expect(leave.x).toBeGreaterThan(panel.x + panel.width);
-    expect(leave.y).toBe(panel.y);
-    const style = leave.args[3] as { color: string; fontSize: string; padding: unknown };
-    const panelStyle = panel.args[3] as { color: string; fontSize: string; padding: unknown };
+    expect(leave.x).toBeGreaterThan(panel.x + panel.width / 2);
+    expect(leave.y).toBe(panel.y + panel.height / 2);
+    const style = leave.args[3] as { color: string; fontSize: string };
+    const panelStyle = panel.args[3] as { color: string; fontSize: string };
     expect(style.color).toBe(toCss(BARROW_HEX.amber));
     expect(style.fontSize).toBe(panelStyle.fontSize);
-    expect(style.padding).toEqual(panelStyle.padding);
     expect(hub.leaveButton).toBe(leave);
   });
 
@@ -465,6 +487,8 @@ describe("HubScene leaveQueue (FS-G4VMQ §Requirements 12–14, 17, 19)", () => 
     reply("queue_status", { current: 1, total: 2 });
     const leave = button() as Made;
     gear.open = true;
+    // Leave moved to the top centre (2026-10-31); this overlay's panel is over it there
+    gear.covers.mockImplementation((x: number) => gear.isOpen() && x >= leave.x);
 
     leave.handlers.pointerup({ x: leave.x, y: leave.y });
 
