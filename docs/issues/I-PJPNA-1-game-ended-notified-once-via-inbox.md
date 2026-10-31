@@ -1,6 +1,6 @@
 ---
 id: I-PJPNA-1
-status: open
+status: done
 implements: FS-PJPNA
 blocked_by: []
 labels: [ready-for-agent]
@@ -31,24 +31,24 @@ through the existing inbox, end to end:
 
 ## Acceptance Criteria
 
-- [ ] New `MessageId`: one notification per valid player plus one `processed_events` row
+- [x] New `MessageId`: one notification per valid player plus one `processed_events` row
       (`event_id` = MessageId, `event_type` = `match.ended`) in one transaction; acked.
-- [ ] Same `MessageId` again: no notification written; acked and logged at info as a duplicate.
-- [ ] One player's write fails: no notification and no inbox row committed; error returned
+- [x] Same `MessageId` again: no notification written; acked and logged at info as a duplicate.
+- [x] One player's write fails: no notification and no inbox row committed; error returned
       (transient → delayed retry, otherwise → DLQ); a redelivery then writes every valid player
       exactly once.
-- [ ] Empty or non-UUID `MessageId`: nacked without requeue, error log, no transaction opened,
+- [x] Empty or non-UUID `MessageId`: nacked without requeue, error log, no transaction opened,
       nothing written.
-- [ ] The copy `requeueWithRetry` publishes carries the original `MessageId`.
-- [ ] Non-UUID `member_id`: that player skipped, the rest and the inbox row commit.
-- [ ] Field visit: no notification, no inbox row; acked.
-- [ ] Titles, messages, template data, `notification_type`, `event_type` column unchanged.
-- [ ] `member.signedup` and `item.created` tests pass unchanged; no `.proto`, migration,
+- [x] The copy `requeueWithRetry` publishes carries the original `MessageId`.
+- [x] Non-UUID `member_id`: that player skipped, the rest and the inbox row commit.
+- [x] Field visit: no notification, no inbox row; acked.
+- [x] Titles, messages, template data, `notification_type`, `event_type` column unchanged.
+- [x] `member.signedup` and `item.created` tests pass unchanged; no `.proto`, migration,
       game-service or `game-server/common/` change.
-- [ ] Table-driven tests (RED committed first): service — new / duplicate / one-player-fails /
+- [x] Table-driven tests (RED committed first): service — new / duplicate / one-player-fails /
       non-UUID member / field visit; consumer — missing / non-UUID / valid `MessageId`, retry
       copy keeps `MessageId`.
-- [ ] `GOWORK=off go build ./... && go vet ./... && go test ./...` green in notification-service;
+- [x] `GOWORK=off go build ./... && go vet ./... && go test ./...` green in notification-service;
       `make lint && make test` pass.
 
 ## Expected files
