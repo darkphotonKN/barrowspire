@@ -139,6 +139,77 @@ hand-coded unless the user says otherwise; agent help is tests. The client is th
     filter state as a record over them; the server defines the same five as constants. Adding a
     sixth channel later is a type change on both sides, never an envelope change.
 
+## Amendment 2026-10-31 (R20: a buffer per channel)
+
+Decided with the user while building I-WJGFJ-5, because a channel filter makes the shared cap
+visible: with 90 world lines in 100, a player who hides World is left with 10 area lines. **R20
+now reads: the window holds the newest 100 lines per channel, and system lines keep their own
+100.** A loud channel only ever pushes out its own old lines. The stream is still one, in
+arrival order; with every channel shown, scrolling far back reaches only the quieter channels'
+older lines. 100 per channel was chosen over 1000: the window shows 8 lines and the wheel moves
+one line per notch, so lines past a few hundred are unreachable in practice, and the cap is one
+constant to raise later. The acceptance criterion "101 messages leave 100 in the store" holds
+per channel.
+
+## Amendment 2026-10-31 (the window's look, a channel picker, collapsing)
+
+Decided with the user after seeing the window running locally. Each item replaces or extends
+the requirement named. Built as I-WJGFJ-6.
+
+- **R22 (line format):** no time. A line reads `Name: text`. `sent_at` stays on the wire.
+- **R25 (area label):** removed. The window no longer says where the player is.
+- **R24 (filter row):** behaviour unchanged (five independent toggles, any combination shown);
+  drawn as joined, separated tab segments, a hidden channel's segment dim.
+- **R19 (shape):** a divider line between the lines and the input row; the input row has a
+  near-black ground (the darkest ramp token, never `#000`); the panel gets a finer frame.
+- **R28 (channel of a sent message), replaced:** a channel picker sits at the input row's left
+  and lists all five channels; only the channels the server relays are selectable, the rest
+  are shown disabled (today only Area). Each channel has a prefix, PoE style: Area none, World
+  `#`, Trade `$`, Party `%`, Whisper `@` (followed by a name, FS-5SH4G). Picking a channel puts
+  its prefix at the start of the input; typing a prefix at the start picks its channel; removing
+  it goes back to Area. A prefix of a channel that is not open yet is plain text. A sent line
+  carries the picked channel and its text without the prefix.
+- **New (collapse):** a button folds the window down to its input row and unfolds it again. It
+  stays as the player leaves it, kept in this browser like the filter. Arriving lines do not
+  unfold it. *Revised the same day by the user:* opening the input in a folded window (Enter or
+  a click) unfolds it, so the player sees what they are answering.
+- **R26 (input), revised the same day by the user:** Enter on a typed line sends it and the input
+  **stays open** for the next line, its channel and prefix ready. Enter on nothing closes it (two
+  Enters after a line return to the game, as in PoE); Esc closes and drops the draft; a press in
+  the world closes it and keeps the draft.
+- **New (recall), asked by the user the same day:** in the open input, ArrowUp walks back through
+  the lines this player sent and ArrowDown forward, as a terminal's history; past the newest, the
+  half-typed draft comes back. The newest 50 sent lines are kept (Claude's call, the user left
+  the depth open: chat recall reaches a few lines back, rarely dozens), the same line twice in a
+  row once, prefix included so the channel follows. Held for the page's life only, like the
+  stream, and never written to browser storage. While an input method composes, the arrows are
+  its own.
+- **Also decided with the user the same day, from the running client** (recorded here after code
+  review found them only in commits):
+  - **R19 (size):** the window is 420 px wide (from 360), lines 20 px (from 18), type 14 px (from
+    13); the input row 30 px; still 8 lines. The "360 px" acceptance criterion is superseded.
+  - **R19 (ground):** the panel is solid while the player types and about half-transparent while
+    open and idle; the words carry a soft dark shadow so they read over a bright field. The
+    panel wears the NPC dialogue's carved frame (shared as `ui/carvedPanel.ts`).
+  - **R21 (scrolling):** a scrollbar down the right edge of the lines, drawn only when more is
+    held than fits; the thumb drags, a press on the track jumps. The wheel still works.
+  - **R26 (idle row), as finally built:** the input row is one browser element, the same idle
+    and typing (the user asked for "one look, no jump" after a Phaser-drawn idle row read blurred
+    and shifted on focus). The hint "Press Enter to speak" is the field's own placeholder; a
+    press anywhere on the bar opens the input. Because a browser element always draws above the
+    canvas, the row is **hidden while something else owns the keys** (a dialogue, the menu, the
+    gear overlay, an open chest, the end-of-run card), which is how R17's "below popups and
+    overlays" holds; losing the keys mid-line drops the draft (R27). A future popup that does
+    not claim the keys would draw under the row.
+  - **R5 (control characters):** a run of control characters becomes one space, not one each.
+  - **R3 (sender name):** the character's name only; there is no fall-back to the account name.
+  - **Outside this feature's surface, asked by the user:** the hub's "Gathering the delve" queue
+    panel moved from the bottom left (under this window) to the top centre, with no ground and a
+    dark outline; its Leave button keeps its look on the chat panel's see-through ground. The
+    acceptance criterion "in the hub and fields the window's bottom edge is the canvas bottom"
+    reads as R18 does: 16 px above it, or on the field's ResourceHud. Typing still needs the input focused
+  (R26), and an open window never holds the keys while the player plays.
+
 ## User Stories
 
 1. As a player in town, I want to type a line and have everyone in town on my server see it, so

@@ -46,7 +46,14 @@ const (
 	ActionEquip     Action = "equip"
 	ActionUnequip   Action = "unequip"
 	ActionCastSkill Action = "cast_skill"
-	ActionChat      Action = "chat"
+	// ActionChat is a chat line, inbound as { "channel", "text" } and outbound
+	// as the pod-stamped line. Handled on the message hub, never by a world.
+	// FS-WJGFJ §Requirements A2–A4, B11.
+	ActionChat Action = "chat"
+	// ActionChatNotice is a system line about chat to one player: a refusal or
+	// a status, as { "code", "text" }. Never an error reply, so the client's
+	// global error handler never sees it. FS-WJGFJ §Requirements A7.
+	ActionChatNotice Action = "chat_notice"
 
 	// system actions
 	ActionError          Action = "error"
@@ -63,6 +70,37 @@ const (
 	// ActionWorldHandoff tells a client its run is hosted on another pod, and
 	// where to reconnect to enter it. FS-K2HKP §Requirements 21.
 	ActionWorldHandoff Action = "world_handoff"
+)
+
+// ChatChannel is which kind of talk a chat line belongs to. The five are the
+// closed set; a later feature opens a channel, it never adds to the envelope.
+// FS-WJGFJ §Requirements A1, D32. Vocabulary: game-service/CONTEXT.md § Chat.
+type ChatChannel string
+
+const (
+	// ChatChannelArea is heard by every player seated on this pod (ADR-0032).
+	ChatChannelArea ChatChannel = "area"
+	// ChatChannelWorld, ChatChannelWhisper: cross-pod, FS-5SH4G. Closed until then.
+	ChatChannelWorld   ChatChannel = "world"
+	ChatChannelWhisper ChatChannel = "whisper"
+	// ChatChannelParty, ChatChannelTrade: reserved types with no behaviour yet.
+	ChatChannelParty ChatChannel = "party"
+	ChatChannelTrade ChatChannel = "trade"
+)
+
+// ChatNoticeCode is the stable reason on a chat_notice the client switches on.
+type ChatNoticeCode string
+
+const (
+	// ChatNoticeNotInWorld: the sender is seated in no world. FS-WJGFJ R10.
+	ChatNoticeNotInWorld ChatNoticeCode = "not_in_world"
+	// ChatNoticeChannelClosed: the channel is not relayed yet, or is not one
+	// of the five. FS-WJGFJ R8.
+	ChatNoticeChannelClosed ChatNoticeCode = "channel_closed"
+	// ChatNoticeTooLong: more than the line limit, in code points. FS-WJGFJ R5.
+	ChatNoticeTooLong ChatNoticeCode = "too_long"
+	// ChatNoticeTooFast: inside the speaker's flood window. FS-WJGFJ R6.
+	ChatNoticeTooFast ChatNoticeCode = "too_fast"
 )
 
 const (

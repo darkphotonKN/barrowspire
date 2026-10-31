@@ -123,6 +123,7 @@ server state and sends intents. ✅
 
 - [ ] In-game chat window → FS-WJGFJ
 - [ ] Channel filters on one chat stream → FS-WJGFJ
+- [ ] Send to the world channel from the chat window → FS-5SH4G
 - [ ] Mute a player → FS-4HEG7
 - [ ] Report a chat message → FS-4HEG7
 

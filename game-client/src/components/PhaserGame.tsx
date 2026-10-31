@@ -14,6 +14,7 @@ import { WORLD_SCENES, sceneFor } from "./worldRouting";
 import { WorldEnteredPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { bootInProgress } from "./bootGate";
+import { installCrispText } from "@/render/crispText";
 
 export default function PhaserGame() {
   const gameRef = useRef<Phaser.Game | null>(null);
@@ -27,6 +28,9 @@ export default function PhaserGame() {
       width: 1080,
       height: 720,
       parent: containerRef.current,
+      // a DOM layer over the canvas, for the chat input's real text field: the only way the
+      // player's input method (Chinese and the rest) reaches the game (FS-WJGFJ R26)
+      dom: { createContainer: true },
       // Soot, not umber: Boot and Preload are the gate into the menus, which wear the site's
       // Bone & Soot. The hub and the run set their own ground.
       backgroundColor: BARROW.menuSoot,
@@ -46,9 +50,19 @@ export default function PhaserGame() {
           debug: false,
         },
       },
-      scene: [BootScene, PreloadScene, MainMenuScene, CharacterCreationScene, HubScene, BarrowspireScene, FieldScene],
+      scene: [
+        BootScene,
+        PreloadScene,
+        MainMenuScene,
+        CharacterCreationScene,
+        HubScene,
+        BarrowspireScene,
+        FieldScene,
+      ],
     };
 
+    // every label rasterised at the device's pixel ratio, not scaled up from 1x
+    installCrispText();
     const game = new Phaser.Game(config);
     gameRef.current = game;
 
@@ -68,7 +82,10 @@ export default function PhaserGame() {
         if (key !== target && game.scene.isActive(key)) game.scene.stop(key);
       }
 
-      game.scene.start(target, { sessionID: payload.session_id, field: payload.field });
+      game.scene.start(target, {
+        sessionID: payload.session_id,
+        field: payload.field,
+      });
     };
 
     socketManager.on("world_entered", (payload: WorldEnteredPayload) => {
@@ -79,14 +96,18 @@ export default function PhaserGame() {
       // PreloadScene mid-flight, so hold the message until the menu stands up.
       if (bootInProgress(game.scene)) {
         const menu = game.scene.getScene("MainMenuScene");
-        menu?.events.once(Phaser.Scenes.Events.CREATE, () => enterWorld(payload));
+        menu?.events.once(Phaser.Scenes.Events.CREATE, () =>
+          enterWorld(payload),
+        );
         return;
       }
 
       // The run's end sends end_game and the hub in the same moment. While the
       // result card is up, the hub waits behind it until *Return to the hub*;
       // a run is never held. FS-QPDKN §Requirements 15–17.
-      const run = game.scene.getScene("BarrowspireScene") as BarrowspireScene | null;
+      const run = game.scene.getScene(
+        "BarrowspireScene",
+      ) as BarrowspireScene | null;
       if (run?.resultHold.hold(payload, enterWorld)) return;
 
       enterWorld(payload);

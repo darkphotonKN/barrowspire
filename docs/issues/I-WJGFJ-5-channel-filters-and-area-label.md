@@ -1,12 +1,20 @@
 ---
 id: I-WJGFJ-5
-status: open
+status: done
 implements: FS-WJGFJ
 blocked_by: [I-WJGFJ-3]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-WJGFJ slice 5: channel filter row, area label and the guideline's umbra line (game-client)"
 ---
 Implements FS-WJGFJ §Requirements C24–C25, C30
+
+**Done on branch `feat/in-game-chat`.** Also carries the user's R20 amendment of 2026-10-31 (see
+the FS): the store keeps the newest 100 lines per channel, and system lines their own 100, so a
+loud channel can no longer push a quiet one's lines out from under a filter. Pressing a toggle
+returns the view to the newest lines; a hidden channel's line never moves a scrolled-back view.
+The run and the field ask `ChatWindow.covers` before a press attacks, so a toggle press is never
+a swing in the world behind it. The area label was built here and removed again the same day by
+I-WJGFJ-6 (R25 withdrawn in the FS amendment).
 
 ## What to Build
 

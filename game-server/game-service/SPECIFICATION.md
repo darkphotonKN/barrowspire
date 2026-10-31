@@ -136,7 +136,7 @@ matchmaking); this service is the engine they feed. ✅
 
 - [ ] Area chat across the pod → FS-WJGFJ
 - [ ] World chat across pods → FS-5SH4G
-- [ ] Whisper a player on any pod → FS-5SH4G
+- [ ] Whisper a player on any pod → FS-KCQ06
 
 ### Transport
 

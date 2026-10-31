@@ -45,6 +45,11 @@ buffer and `message_id` they rely on are FS-WJGFJ requirements.
 - **Auth:** the reporter is the bearer of the JWT; the reported id comes from the message's
   `sender_id`, which the client has because the server stamped it.
 - Whether a report acknowledges to the player ("Report sent") in the window as a system line.
+- **Invisible format characters** (raised 2026-10-31 during I-WJGFJ-2, deliberately not filtered
+  there). The relay turns control characters (Unicode Cc) into spaces, but not format characters
+  (Cf): zero-width space/joiner, and the bidi overrides such as U+202E, which can flip a line to
+  read backwards and are a classic way to fake another player's words or name. Decide whether to
+  strip Cf (and which, since ZWJ is part of some emoji) in the relay's normaliser.
 
 ### Edge cases raised
 

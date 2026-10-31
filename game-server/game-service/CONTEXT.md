@@ -337,7 +337,7 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   against cooldown and cost. Aiming, holding and wind-up before it are client presentation and
   never reach game-service state (ADR-0030).
 
-### Chat (FS-WJGFJ; world chat and whisper FS-5SH4G; mute and report FS-4HEG7)
+### Chat (FS-WJGFJ; world chat FS-5SH4G; whisper FS-KCQ06; mute and report FS-4HEG7)
 
 Chat is a relay, not a world concern: a message never enters an ECS world, is never stored, and
 is addressed by scope, not by position. Three words here collide with the world vocabulary
@@ -361,6 +361,10 @@ above; the rule is to qualify, never to rename.
 - **Whisper** — a one-to-one message to one player by id, found on any pod over Redis; the pod
   holding the target delivers it. A target held by no pod is **offline**, and the sender gets
   one system notice. Nothing is queued for later.
+- **Chat bus** — the Redis side of chat (`internal/chatbus`): the pub/sub the cross-pod
+  channels ride, bytes in and bytes out, knowing nothing about lines. A pod subscribes to the
+  world channel at boot and publishes its own world lines to it (FS-5SH4G). Not a store: nothing
+  on it is kept (ADR-0033).
 - **Relay** — what a pod does with a chat message: receive, resolve the audience from the scope
   key, deliver, forget. The server keeps no history (ADR-0033); "chat history" is a client word.
 - **Report** — a player's complaint about one message, carrying its own evidence from the

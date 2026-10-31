@@ -157,6 +157,30 @@ export const palette = {
   hudParry: BARROW_HEX.brassBright,
   hudResourceOther: BARROW_HEX.vellumDark,
 
+  /**
+   * The chat window (FS-WJGFJ R30): one stream, told apart by colour. The user's hues mapped
+   * onto the ramp: area white = vellum, world light blue = necrotic, party green = arcane,
+   * whisper purple = umbra lifted, trade orange = ember (never amber: chat text is not an
+   * interactable), the system line in the label tone. Each is tinted only as far as it needs
+   * to clear 4.5:1 on the HUD panel; `chatWindowLayout.test.ts` holds that line.
+   */
+  chatPanel: BARROW_HEX.umber,
+  chatArea: BARROW_HEX.vellum,
+  chatWorld: tint(BARROW_HEX.necrotic, 0.2),
+  chatParty: tint(BARROW_HEX.arcane, 0.15),
+  chatWhisper: tint(BARROW_HEX.umbraLight, 0.3),
+  chatTrade: tint(BARROW_HEX.ember, 0.25),
+  chatSystem: BARROW_HEX.vellumDark,
+  /**
+   * The window's finer frame (FS-WJGFJ Amendment 2026-10-31): a shown channel's tab sits on a
+   * ground darker than the panel, underlined in its channel's colour, never a lighter fill, which
+   * would pull the channel colours under 4.5:1. The input row is the darkest ramp token, the
+   * near-black the user asked for (never #000). The divider and the hairlines are brass.
+   */
+  chatTabOn: BARROW_HEX.charcoal,
+  chatInputGround: BARROW_HEX.pitch,
+  chatRule: BARROW_HEX.brass,
+
   // -- Rarity (FS-4R9M9 R59): data, not emphasis. The DOM's --rarity-* ramp, matched by token
   //    name (src/marketplace/rarity.ts). Per the guideline's rarity ramp it colours only an item
   //    tip's rarity badge and its accent edge, never a name, heading or fill.

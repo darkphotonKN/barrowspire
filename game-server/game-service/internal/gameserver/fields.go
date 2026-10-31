@@ -106,12 +106,20 @@ type bootOptions struct {
 	seed         uint64
 	forestParams levelgen.Params
 	visitSettler VisitSettler
+	// what the chat relay stamps lines with (FS-WJGFJ R3); the wall clock and
+	// fresh uuids unless a test fixes them
+	chatNow   func() time.Time
+	chatNewID func() uuid.UUID
+	// the Redis side of chat; nil on a pod built without one, which then refuses world chat as
+	// closed (FS-5SH4G; code review 2026-10-31)
+	chatBus chatBus
 }
 
 // newBootOptions are the defaults with opts applied: a fresh seed, the
-// Forest's own parameters, and visits settled to the log alone.
+// Forest's own parameters, visits settled to the log alone, and chat stamped
+// by the wall clock.
 func newBootOptions(opts ...Option) bootOptions {
-	boot := bootOptions{seed: rand.Uint64(), forestParams: levelgen.ForestParams, visitSettler: logVisitSettler{}}
+	boot := bootOptions{seed: rand.Uint64(), forestParams: levelgen.ForestParams, visitSettler: logVisitSettler{}, chatNow: time.Now, chatNewID: uuid.New}
 	for _, opt := range opts {
 		opt(&boot)
 	}
