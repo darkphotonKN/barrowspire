@@ -943,8 +943,10 @@ describe("ChatWindow mask lifetime", () => {
 describe("ChatWindow DOM row visibility", () => {
   // the row is shown idle and typing alike (asked 2026-10-31: one look, no jump), and hidden only
   // while something else owns the keys, since the DOM layer always draws above the canvas
-  it("should show the row from the start and keep it through typing and closing", () => {
-    const { press, field, window } = inputRig();
+  it("should show the row from the first frame whatever the field started as, and keep it through typing and closing", () => {
+    const { press, field, window, frame } = inputRig();
+    field().visible = false;
+    frame();
     expect(field().visible).toBe(true);
 
     press("ENTER");

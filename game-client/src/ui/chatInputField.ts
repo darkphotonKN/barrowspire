@@ -215,9 +215,7 @@ export const domChatInputField: ChatInputFieldFactory = (
     .dom(rect.x + 4, rect.y, shell)
     .setOrigin(0, 0)
     .setScrollFactor(0)
-    .setDepth(HUD_DEPTH)
-    // hidden until the player types: the DOM layer always draws above the canvas and its overlays
-    .setVisible(false);
+    .setDepth(HUD_DEPTH);
 
   return {
     get value() {

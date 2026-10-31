@@ -375,7 +375,8 @@ export class ChatWindow {
       this.field.hide();
     }
   }
-  private rowShown = true;
+  /** Whether the row is shown as last applied; unknown at first, so the first frame always applies. */
+  private rowShown?: boolean;
   private mayOpen?: () => boolean;
 
   private onEnter(): void {
