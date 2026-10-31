@@ -44,3 +44,11 @@ FS-R82NV §Requirements R7, R9, R10, R12, R13, R15; §User Stories 1, 2, 23, 24;
 
 - RED: the `twoPods` harness from `chat_world_test.go`, A invites B's name, B's connection receives `party_invite`.
 - GREEN: presence writes on hub seating, the inbox subscription, and the publish.
+
+## Carried from code review (2026-11-01, I-R82NV-2)
+
+- The pointer writer drops a write when its 256-slot queue is full. A dropped `Point` comes back
+  at the next refresh, but a dropped `ForgetPlayers` / `ForgetParty` is never retried: the pointer
+  lingers up to 30 s. Harmless on one pod; once this slice reads pointers across pods, a stale
+  pointer can refuse `already_in_party` or skip `party_gone`. Decide here whether deletes must
+  never be dropped (e.g. retried, or a separate path).

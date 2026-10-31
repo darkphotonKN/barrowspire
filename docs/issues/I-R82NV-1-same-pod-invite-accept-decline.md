@@ -1,6 +1,6 @@
 ---
 id: I-R82NV-1
-status: in-progress
+status: done
 implements: FS-R82NV
 blocked_by: []
 labels: [ready-for-agent]
@@ -34,13 +34,13 @@ The party exists, end to end, between two players on the **same pod**:
 
 ## Acceptance Criteria
 
-- [ ] Two players on one pod: invite → prompt message delivered → accept → both receive `party_update` with two members, leader marked.
-- [ ] Decline notices `declined`; an unanswered invite notices `expired` at 60 s (clock injected).
-- [ ] Each refusal code fires in R12's order (table-driven).
-- [ ] An invite from a non-leader member is refused `not_leader`; from a queued player or to a queued accepter, `queued`.
-- [ ] Both Redis pointers appear on join with a TTL and vanish when the party ends (miniredis).
-- [ ] `PARTY_SIZE` feeds both caps; an invalid value fails startup with a clear error.
-- [ ] `go test ./... -race` on touched packages green.
+- [x] Two players on one pod: invite → prompt message delivered → accept → both receive `party_update` with two members, leader marked.
+- [x] Decline notices `declined`; an unanswered invite notices `expired` at 60 s (clock injected).
+- [x] Each refusal code fires in R12's order (table-driven).
+- [x] An invite from a non-leader member is refused `not_leader`; from a queued player or to a queued accepter, `queued`.
+- [x] Both Redis pointers appear on join with a TTL and vanish when the party ends (miniredis).
+- [x] `PARTY_SIZE` feeds both caps; an invalid value fails startup with a clear error.
+- [ ] `go test ./... -race` on touched packages green. — party packages green under `-race`; the whole `internal/gameserver` package fails under `-race` on clean HEAD too (pre-existing, see notes)
 
 ## Blocked By
 
