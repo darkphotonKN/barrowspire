@@ -1,6 +1,6 @@
 ---
 id: I-R82NV-6
-status: open
+status: in-progress
 implements: FS-R82NV
 blocked_by: [I-R82NV-1]
 labels: [ready-for-agent]
@@ -45,3 +45,17 @@ FS-R82NV §Requirements R28–R31, R36; §User Stories 9–12, 17–19.
 
 - RED: a pure test that a store holding a `party_update` where the viewer is leader yields Kick/Transfer enabled and, for a member viewer, disabled.
 - GREEN: the store and selectors, then the panel draws from them.
+
+## Implementation notes (code review 2026-11-01)
+
+- **Kick and transfer send `{target_id}`, not R19's `{player_id}`.** `SocketManager.sendMessage`
+  writes the sender's own `player_id` over every outgoing payload, so a `player_id` target would
+  arrive as the leader's own id. I-R82NV-2 is updated to read `target_id`.
+- **Party error replies are claimed once, at boot** (`routePartyErrors` in `BootScene`, beside
+  the global handler), and logged. Never per scene: a gap at a scene switch would let a refusal
+  reach the global handler, which logs the player out. Until slice 2 the server answers kick,
+  transfer and leave with "Unknown action", so those buttons give no feedback yet.
+- A `party_notice` becomes a chat system line `{code, text}` with no `channel: "party"`: party
+  chat (FS-XGW7H) is still a draft. The words come from the party store (`receiveNotice`), not
+  the socket.
+- A named code that arrives without a name reads "Someone ...".

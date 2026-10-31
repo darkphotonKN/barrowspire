@@ -25,6 +25,8 @@ import {
 import { BARROW_HEX } from "@/utils/theme";
 import { ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
+import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
+import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { HubGear } from "@/ui/HubGear";
 import { apiClient } from "@/utils/api";
@@ -565,6 +567,9 @@ export class HubScene extends Phaser.Scene {
   private progressHud?: ProgressHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
+  private partyPanel?: PartyPanel;
+  /** Invites waiting on an answer, top centre (FS-R82NV R32): only the hub receives them (R33). */
+  private invitePrompt?: PartyInvitePrompt;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
   private art!: ArtLibrary;
   /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
@@ -648,6 +653,10 @@ export class HubScene extends Phaser.Scene {
     this.listenForQueue();
     // a dialogue and the menu read Enter and Esc themselves; the gear overlay is open over the town
     this.chatWindow = mountChatWindow(this, () => !this.dialogue && !this.menu && !this.gear?.isOpen());
+    // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
+    this.partyPanel = mountPartyPanel(this, () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen());
+    // party invites, hidden while the menu or the gear overlay covers the town (FS-R82NV R32, R33)
+    this.invitePrompt = mountPartyInvitePrompt(this, () => !!this.menu || !!this.gear?.isOpen());
 
     // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
@@ -780,6 +789,10 @@ export class HubScene extends Phaser.Scene {
     this.progressHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
+    this.partyPanel?.destroy();
+    this.partyPanel = undefined;
+    this.invitePrompt?.destroy();
+    this.invitePrompt = undefined;
     this.queuePanel = undefined;
     this.leaveButton = undefined;
     this.queued = false;

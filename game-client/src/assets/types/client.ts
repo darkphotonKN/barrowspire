@@ -105,6 +105,22 @@ export interface ActionMap {
   enter_field: { field: FieldId };
   /** A field player walking into the entrance gate, home to the hub (FS-X2F2H req 14): no payload. */
   leave_field: Record<string, never>;
+  /** Inviting a player to this player's party, by character name or id (FS-R82NV R12). */
+  party_invite: { name: string };
+  /**
+   * The leader removing a member (FS-R82NV R19). The FS names the field `player_id`, but every
+   * outgoing payload has the sender's own `player_id` merged over it by `sendMessage`, so the
+   * target travels as `target_id` until the server's handler (slice 2) settles the name.
+   */
+  party_kick: { target_id: string };
+  /** The leader handing leadership to a member (FS-R82NV R19); `target_id` as for a kick. */
+  party_transfer: { target_id: string };
+  /** Leaving the party (FS-R82NV R20): no payload. */
+  party_leave: Record<string, never>;
+  /** Answering a `party_invite` yes (FS-R82NV R16), by the invite's id. */
+  party_accept: { invite_id: string };
+  /** Answering a `party_invite` no (FS-R82NV R15), by the invite's id. */
+  party_decline: { invite_id: string };
 }
 
 export const ActionType = {
@@ -126,6 +142,12 @@ export const ActionType = {
   ForfeitRun: "forfeit_run",
   EnterField: "enter_field",
   LeaveField: "leave_field",
+  PartyInvite: "party_invite",
+  PartyKick: "party_kick",
+  PartyTransfer: "party_transfer",
+  PartyLeave: "party_leave",
+  PartyAccept: "party_accept",
+  PartyDecline: "party_decline",
 } as const;
 
 export type ActionType = (typeof ActionType)[keyof typeof ActionType];

@@ -45,6 +45,7 @@ import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
 import { ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
+import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars } from "@/ui/resources";
@@ -162,6 +163,7 @@ export class FieldScene extends Phaser.Scene {
   private resourceHud?: ResourceHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
+  private partyPanel?: PartyPanel;
   private abilityHud?: AbilityHud;
   /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
   private lastState?: ClientGameState;
@@ -216,6 +218,8 @@ export class FieldScene extends Phaser.Scene {
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
     this.listen();
     this.chatWindow = mountChatWindow(this, () => !this.equipment?.isOpen());
+    // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
+    this.partyPanel = mountPartyPanel(this, () => !!this.equipment?.isOpen());
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.release, this);
@@ -337,6 +341,8 @@ export class FieldScene extends Phaser.Scene {
     if (this.equipment?.covers(x, y)) return true;
     // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
     if (this.chatWindow?.covers(x, y)) return true;
+    // and one on the open party panel is the panel's (FS-R82NV R28)
+    if (this.partyPanel?.covers(x, y)) return true;
     return this.satchel?.pointerDown(x, y, primary) ?? false;
   }
 
@@ -359,6 +365,8 @@ export class FieldScene extends Phaser.Scene {
     this.resourceHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
+    this.partyPanel?.destroy();
+    this.partyPanel = undefined;
     this.abilityHud = undefined;
     this.lastState = undefined;
     this.selfAt = undefined;
