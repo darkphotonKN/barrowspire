@@ -23,7 +23,7 @@ import {
   type FieldDestination,
 } from "./hubGates";
 import { BARROW_HEX } from "@/utils/theme";
-import { ProgressHud } from "@/ui/ProgressHud";
+import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
@@ -134,8 +134,6 @@ const SIGIL_GAP = 3;
 const FURNISHING_PLACEHOLDER_HEIGHT = 8;
 /** How hard sprites chase the server's position each frame. Matches the run scene. */
 const POSITION_LERP = 0.3;
-/** Screen px from the top-left corner to the level and experience bar. */
-const HUD_INSET = 16;
 /** Stride advance per server tick, matching the run scene. */
 const WALK_STEP = 0.3;
 /**
@@ -1526,7 +1524,11 @@ export class HubScene extends Phaser.Scene {
 
       const progress = progressOf(state.current_player);
       if (progress) {
-        this.progressHud ??= new ProgressHud(this, HUD_INSET, HUD_INSET);
+        this.progressHud ??= new ProgressHud(
+          this,
+          PROGRESS_HUD_AT.hub.x,
+          PROGRESS_HUD_AT.hub.y,
+        );
         this.progressHud.show(progress);
       }
 
@@ -1546,7 +1548,7 @@ export class HubScene extends Phaser.Scene {
       this.placePlayer(other, false);
       present.add(other.entity_id);
     }
-    this.partyFrames?.show(state.other_players);
+    this.partyFrames?.show(state);
 
     // anyone who left the hub since the last tick
     for (const [entityID, view] of this.views) {

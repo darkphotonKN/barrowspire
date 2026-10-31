@@ -500,7 +500,7 @@ export class FieldScene extends Phaser.Scene {
 
     this.lastState = state;
     this.showClassHud(state);
-    this.partyFrames?.show(state.other_players);
+    this.partyFrames?.show(state);
   }
 
   /**
