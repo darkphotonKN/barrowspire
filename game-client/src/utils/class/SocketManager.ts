@@ -9,6 +9,7 @@ import { ClientGameState, isGameState } from "@/types/gameState";
 import { GameStateLogger } from "@/utils/gameStateLogger";
 import { useGameStore } from "@/stores/gameStore";
 import { useAuthStore } from "@/stores/authStore";
+import { useChatStore, type ChatLinePayload, type ChatNoticePayload } from "@/stores/chatStore";
 
 export type ConnectionStatus =
   | "disconnected"
@@ -236,6 +237,14 @@ export class SocketManager {
       // The run is on another server: move there, then let the world_entered
       // the host sends do the scene switch as it always does
       this.handoff(data.payload as WorldHandoffPayload);
+      this.listeners.get(data.action)?.(data.payload);
+    } else if (data.action === "chat") {
+      // The chat stream outlives any scene, so a line goes to the store here
+      // rather than to whichever scene happens to listen. FS-WJGFJ §C20.
+      useChatStore.getState().receive(data.payload as ChatLinePayload);
+      this.listeners.get(data.action)?.(data.payload);
+    } else if (data.action === "chat_notice") {
+      useChatStore.getState().notice(data.payload as ChatNoticePayload);
       this.listeners.get(data.action)?.(data.payload);
     } else if (data.action && this.listeners.has(data.action)) {
       // Handle action-based messages

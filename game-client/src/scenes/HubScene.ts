@@ -24,6 +24,9 @@ import {
 } from "./hubGates";
 import { BARROW_HEX } from "@/utils/theme";
 import { ProgressHud } from "@/ui/ProgressHud";
+import { ChatWindow } from "@/ui/ChatWindow";
+import { CHAT_WINDOW_MARGIN, CHAT_WINDOW_X } from "@/ui/chatWindowLayout";
+import { useChatStore } from "@/stores/chatStore";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { HubGear } from "@/ui/HubGear";
 import { apiClient } from "@/utils/api";
@@ -546,6 +549,8 @@ export class HubScene extends Phaser.Scene {
    * at the bottom. Made with the first state that carries a level.
    */
   private progressHud?: ProgressHud;
+  /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
+  private chatWindow?: ChatWindow;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
   private art!: ArtLibrary;
   /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
@@ -627,6 +632,7 @@ export class HubScene extends Phaser.Scene {
     );
 
     this.listenForQueue();
+    this.chatWindow = new ChatWindow(this, useChatStore, CHAT_WINDOW_X, this.cameras.main.height - CHAT_WINDOW_MARGIN);
 
     // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
@@ -757,6 +763,8 @@ export class HubScene extends Phaser.Scene {
     this.lightMap = undefined;
     this.groundLayer = undefined;
     this.progressHud = undefined;
+    this.chatWindow?.destroy();
+    this.chatWindow = undefined;
     this.queuePanel = undefined;
     this.leaveButton = undefined;
     this.queued = false;

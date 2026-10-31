@@ -43,6 +43,8 @@ export class ResourceHud {
   private labels: Phaser.GameObjects.Text[] = [];
   /** What the panel last drew, so the states that change nothing redraw nothing. */
   private drawn?: string;
+  /** The panel's top edge as last drawn. */
+  private top = 0;
 
   /** `bottom` is the screen y of the panel's bottom edge. */
   constructor(
@@ -50,6 +52,14 @@ export class ResourceHud {
     private readonly x: number,
     private readonly bottom: number,
   ) {}
+
+  /**
+   * The screen y of the panel's top edge while it is up, or of its bottom edge while it is down:
+   * where whatever stacks above it (the chat window, FS-WJGFJ R18) sets its own bottom.
+   */
+  topEdge(): number {
+    return this.panel ? this.top : this.bottom;
+  }
 
   show(bars: HudBar[]): void {
     const key = JSON.stringify(bars);
@@ -61,6 +71,7 @@ export class ResourceHud {
     }
 
     const top = this.bottom - resourceHudHeight(bars.length);
+    this.top = top;
     const g = (this.panel ??= this.scene.add
       .graphics()
       .setScrollFactor(0)

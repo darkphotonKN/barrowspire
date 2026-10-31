@@ -45,6 +45,9 @@ import {
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
 import { ProgressHud } from "@/ui/ProgressHud";
 import { ResourceHud } from "@/ui/ResourceHud";
+import { ChatWindow } from "@/ui/ChatWindow";
+import { CHAT_WINDOW_MARGIN, CHAT_WINDOW_X } from "@/ui/chatWindowLayout";
+import { useChatStore } from "@/stores/chatStore";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
@@ -450,6 +453,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private progressHud?: ProgressHud;
   /** The Health and class resource bars, bottom-left (FS-8AY7S req 20). */
   private resourceHud?: ResourceHud;
+  /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
+  private chatWindow?: ChatWindow;
   /** The class ability card, bottom right (FS-8AY7S req 29–32). */
   private abilityHud?: AbilityHud;
   /**
@@ -767,6 +772,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.tabKey = undefined;
     this.progressHud = undefined;
     this.resourceHud = undefined;
+    this.chatWindow?.destroy();
+    this.chatWindow = undefined;
     this.abilityHud = undefined;
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
@@ -2561,6 +2568,8 @@ export class BarrowspireScene extends Phaser.Scene {
   create(): void {
     // Connect via SocketManager
     this.connectToServer();
+    // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
+    this.chatWindow = new ChatWindow(this, useChatStore, CHAT_WINDOW_X, this.cameras.main.height - CHAT_WINDOW_MARGIN);
 
     // The camera and the (vestigial, collision-free) physics world live in
     // projected space: the map is a diamond, clamped by its bounding box plus a
@@ -3765,6 +3774,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private showResourceBars(state: ClientGameState): void {
     this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_X, this.cameras.main.height - RESOURCE_HUD_MARGIN);
     this.resourceHud.show(hudBars(state));
+    this.chatWindow?.setBottom(this.resourceHud.topEdge());
   }
 
   /**

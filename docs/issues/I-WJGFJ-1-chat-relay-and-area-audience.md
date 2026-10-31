@@ -10,7 +10,7 @@ Implements FS-WJGFJ §Requirements A1–A4, A7–A8, B9–B16, D32
 
 **Author: agent, with the user's explicit authorisation on 2026-10-31 (an exception to the
 human lane for this slice; each design choice was discussed first). Branch
-`feat/game-service-chat-relay`.** Decisions taken during implementation: audience read from the
+`feat/in-game-chat`.** Decisions taken during implementation: audience read from the
 connection table rather than the sessions (one read lock, in-world connections only); the
 relay in its own `chat.go` behind two narrow interfaces (audience, sender); clock and id as
 `WithChatClock` / `WithChatIDs` server options; the hub's inbound log line logs no payload for

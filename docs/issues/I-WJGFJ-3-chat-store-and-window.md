@@ -1,12 +1,17 @@
 ---
 id: I-WJGFJ-3
-status: open
+status: done
 implements: FS-WJGFJ
 blocked_by: []
 labels: [ready-for-agent]
 title: "FS-WJGFJ slice 3: chat store and the chat window in every world scene (game-client)"
 ---
 Implements FS-WJGFJ §Requirements C17–C23, C29–C31, D32
+
+**Done on branch `feat/in-game-chat`.** Chat colours are tinted from existing tokens (world
+necrotic +0.2, party arcane +0.15, whisper umbraLight +0.3, trade ember +0.25) to clear 4.5:1 on
+the HUD panel; no new hex. The window's mask fill uses a palette token so the file stays inside
+the token fence. Not yet checked by eye in a running client.
 
 ## What to Build
 
