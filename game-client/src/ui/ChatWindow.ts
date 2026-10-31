@@ -16,6 +16,7 @@ import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
 import { visibleChatLines, type ChatState } from "@/stores/chatStore";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
+import { carvedPanel } from "./carvedPanel";
 import { ChatInput, type ChatSend } from "./chatInput";
 import type { ChatEntryFactory, ChatEntryHandle } from "./chatEntryField";
 import {
@@ -64,6 +65,37 @@ const FOLD_SHUT_FONT_PX = 18;
 const TAB_OFF_ALPHA = 0.4;
 /** A shown tab's underline, in its channel's colour. */
 const TAB_UNDERLINE_H = 2;
+
+/** How much of the carved panel's ground covers the world behind it. */
+const PANEL_OPACITY = 0.9;
+
+/**
+ * The divider above the input: a brass rule fading toward both ends with a small brass lozenge at
+ * its centre, the flourish game UIs set between a frame's parts (asked 2026-10-31).
+ */
+function drawFlourishRule(
+  g: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  width: number,
+): void {
+  const mid = x + width / 2;
+  const steps: [number, number][] = [
+    [0.04, 0.15],
+    [0.16, 0.35],
+    [0.3, 0.55],
+  ];
+  for (const [from, alpha] of steps) {
+    g.lineStyle(1, palette.chatRule, alpha);
+    g.lineBetween(x + width * from, y, mid - 7, y);
+    g.lineBetween(mid + 7, y, x + width * (1 - from), y);
+  }
+  g.fillStyle(palette.chatRule, 0.9);
+  g.fillTriangle(mid - 5, y, mid, y - 3.5, mid + 5, y);
+  g.fillTriangle(mid - 5, y, mid, y + 3.5, mid + 5, y);
+  g.fillStyle(palette.frameBright, 0.85);
+  g.fillCircle(mid, y, 1.2);
+}
 
 const within = (r: Rect, x: number, y: number) =>
   x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
@@ -285,8 +317,10 @@ export class ChatWindow {
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH));
     g.clear();
-    g.fillStyle(palette.chatPanel, 0.85);
-    g.fillRect(panel.x, panel.y, panel.width, panel.height);
+    // the in-world panel house style, as the NPC dialogue wears it, letting a little world through
+    carvedPanel(g, panel.x, panel.y, panel.width, panel.height, {
+      opacity: PANEL_OPACITY,
+    });
 
     if (filterRow.height > 0) {
       const shown = this.store.getState().shown;
@@ -322,13 +356,8 @@ export class ChatWindow {
     }
 
     g.fillStyle(palette.chatInputGround, 0.95);
-    g.fillRect(input.x, input.y, input.width, input.height);
-    if (messages.height > 0) {
-      g.lineStyle(1, palette.chatRule, 0.55);
-      g.lineBetween(input.x, input.y, input.x + input.width, input.y);
-    }
-    g.lineStyle(1, palette.chatRule, 0.5);
-    g.strokeRect(panel.x, panel.y, panel.width, panel.height);
+    g.fillRoundedRect(input.x, input.y + 1, input.width, input.height - 1, 3);
+    if (messages.height > 0) drawFlourishRule(g, input.x, input.y, input.width);
 
     // the message area clips: a wrapped line that overflows the top is cut, not drawn over the tabs
     this.maskShape?.destroy();

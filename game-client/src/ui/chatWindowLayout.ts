@@ -20,6 +20,11 @@ export const CHAT_WINDOW_W = 360;
 export const CHAT_VISIBLE_LINES = 8;
 /** One line's height at the window's 13px body serif. */
 export const CHAT_LINE_H = 18;
+/**
+ * The carved frame's margin: the rows sit this far inside the panel's edge, so the double brass
+ * rule and the corner studs have room and no tab or input lies across them (asked 2026-10-31).
+ */
+export const CHAT_FRAME_PAD = 5;
 /** Room between the newest line and the input row's divider (asked 2026-10-31). */
 export const CHAT_LINES_GAP = 6;
 /** Room kept above the lines for the channel filter row (I-WJGFJ-5) and below for the input (I-WJGFJ-4). */
@@ -59,41 +64,42 @@ export interface ChatWindowFrame {
 /**
  * Where everything sits for a window whose left edge is `x` and whose bottom edge is `bottom`:
  * directly above the ResourceHud when there is one, on the canvas bottom otherwise (R18). The
- * filter row, the message area and the input stack top to bottom inside the panel (R19). Folded,
- * the window is its input row alone, still standing on the same bottom edge.
+ * filter row, the message area and the input stack top to bottom inside the panel's carved frame
+ * (R19). Folded, the window is its input row alone in the frame, on the same bottom edge.
  */
 export function chatWindowFrame(
   x: number,
   bottom: number,
   folded = false,
 ): ChatWindowFrame {
+  const pad = CHAT_FRAME_PAD;
+  const inner = { x: x + pad, width: CHAT_WINDOW_W - pad * 2 };
   if (folded) {
-    const top = bottom - CHAT_INPUT_ROW_H;
-    const input = { x, y: top, width: CHAT_WINDOW_W, height: CHAT_INPUT_ROW_H };
+    const top = bottom - pad - CHAT_INPUT_ROW_H;
+    const input = { ...inner, y: top, height: CHAT_INPUT_ROW_H };
     return {
-      panel: { ...input },
-      filterRow: { x, y: top, width: CHAT_WINDOW_W, height: 0 },
-      messages: { x, y: top, width: CHAT_WINDOW_W, height: 0 },
+      panel: {
+        x,
+        y: top - pad,
+        width: CHAT_WINDOW_W,
+        height: CHAT_INPUT_ROW_H + pad * 2,
+      },
+      filterRow: { ...inner, y: top, height: 0 },
+      messages: { ...inner, y: top, height: 0 },
       input,
       lineHeight: CHAT_LINE_H,
     };
   }
   const messagesH = CHAT_VISIBLE_LINES * CHAT_LINE_H + CHAT_LINES_GAP;
-  const height = CHAT_FILTER_ROW_H + messagesH + CHAT_INPUT_ROW_H;
-  const top = bottom - height;
+  const rowsH = CHAT_FILTER_ROW_H + messagesH + CHAT_INPUT_ROW_H;
+  const top = bottom - pad - rowsH;
   return {
-    panel: { x, y: top, width: CHAT_WINDOW_W, height },
-    filterRow: { x, y: top, width: CHAT_WINDOW_W, height: CHAT_FILTER_ROW_H },
-    messages: {
-      x,
-      y: top + CHAT_FILTER_ROW_H,
-      width: CHAT_WINDOW_W,
-      height: messagesH,
-    },
+    panel: { x, y: top - pad, width: CHAT_WINDOW_W, height: rowsH + pad * 2 },
+    filterRow: { ...inner, y: top, height: CHAT_FILTER_ROW_H },
+    messages: { ...inner, y: top + CHAT_FILTER_ROW_H, height: messagesH },
     input: {
-      x,
+      ...inner,
       y: top + CHAT_FILTER_ROW_H + messagesH,
-      width: CHAT_WINDOW_W,
       height: CHAT_INPUT_ROW_H,
     },
     lineHeight: CHAT_LINE_H,
