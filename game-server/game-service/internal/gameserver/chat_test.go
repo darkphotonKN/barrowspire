@@ -243,10 +243,11 @@ func TestChat_InNoWorldNeitherSpeaksNorHears(t *testing.T) {
 	assertSilent(t, ashInbox, "Ash")
 }
 
-// Every channel but area is closed in this slice, as is any name outside the
-// five: refused with channel_closed, relayed to nobody. FS-WJGFJ R8.
+// Every channel the server does not relay yet is closed, as is any name outside
+// the five: refused with channel_closed, relayed to nobody. FS-WJGFJ R8. World
+// opened in FS-5SH4G (I-5SH4G-2) and left this list.
 func TestChat_ClosedChannelsAreRefused(t *testing.T) {
-	for _, channel := range []string{"world", "party", "whisper", "trade", "shout", ""} {
+	for _, channel := range []string{"party", "whisper", "trade", "shout", ""} {
 		t.Run("channel "+channel, func(t *testing.T) {
 			rig := newChatRig(t)
 			_, wrenConn, wrenInbox := rig.inHub(t, "Wren")

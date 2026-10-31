@@ -3,7 +3,10 @@ package gameserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,6 +15,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,16 +34,23 @@ type worldRig struct {
 
 func newWorldRig(t *testing.T) *worldRig {
 	t.Helper()
-
 	client, mini := testutil.NewRedis(t)
+	return newWorldPod(t, client, mini, testPodID, chatbus.NewRedis(client))
+}
+
+// newWorldPod is one pod on the given Redis, speaking through bus (the real one, or a double
+// around it). Two pods on one miniredis are two replicas of the game.
+func newWorldPod(t *testing.T, client redis.UniversalClient, mini *miniredis.Miniredis, podID string, bus chatBus) *worldRig {
+	t.Helper()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	characters := newFakeCharacters()
 	clock := newChatClock()
-	server := newTestServer(t, ctx, &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{},
+	server := newTestServer(t, ctx, &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters, podID, testPodAddr, noopAnnouncer{},
 		WithChatClock(clock.now),
-		WithChatIDs(func() uuid.UUID { return chatTestID }),
-		WithChatBus(chatbus.NewRedis(client)),
+		WithChatIDs(uuid.New),
+		WithChatBus(bus),
 	)
 	hub, ok := server.HubSession()
 	require.True(t, ok)
@@ -180,6 +191,232 @@ func TestWorldChat_LogsCarryNoText(t *testing.T) {
 
 	const secret = "the-watchword-is-ember"
 	rig.publishLine(t, stampedWorldLine(secret))
+	awaitChat(t, wrenInbox, "Wren")
+
+	assert.NotContains(t, sink.String(), secret)
+}
+
+// ── Sending: the world channel open, one path through Redis (I-5SH4G-2) ─────────────────────
+
+// twoPods is two replicas on one miniredis: A and B.
+func twoPods(t *testing.T) (a, b *worldRig) {
+	t.Helper()
+	client, mini := testutil.NewRedis(t)
+	a = newWorldPod(t, client, mini, "pod-a", chatbus.NewRedis(client))
+	b = newWorldPod(t, client, mini, "pod-b", chatbus.NewRedis(client))
+	// both subscribed before anyone speaks
+	a.publish(t, []byte("{}"))
+	return a, b
+}
+
+// A world line from a player on pod A reaches every seated player on A and on B, the sender
+// included, once each, stamped world/world, one message_id on both pods.
+// FS-5SH4G R1, R2, R5–R7.
+func TestWorldChat_ReachesBothPods(t *testing.T) {
+	a, b := twoPods(t)
+	wren, wrenConn, wrenInbox := a.inHub(t, "Wren")
+	_, _, kaelenInbox := a.inRun(t, "Kaelen")
+	_, _, marlInbox := b.inHub(t, "Marl")
+	_, _, idrisInbox := b.inMeadows(t, "Idris")
+
+	sendChat(a.server, wrenConn, "world", "hello, every village")
+
+	var ids []string
+	for who, inbox := range map[string]*startSoloInbox{"Wren (A, sender)": wrenInbox, "Kaelen (A, run)": kaelenInbox, "Marl (B)": marlInbox, "Idris (B, Meadows)": idrisInbox} {
+		got := awaitChat(t, inbox, who)
+		assert.Equal(t, "world", got.Payload["channel"], who)
+		assert.Equal(t, "world", got.Payload["scope"], who)
+		assert.Equal(t, wren.ID.String(), got.Payload["sender_id"], who)
+		assert.Equal(t, "Wren", got.Payload["sender_name"], who)
+		assert.Equal(t, "hello, every village", got.Payload["text"], who)
+		ids = append(ids, got.Payload["message_id"].(string))
+		assertSilent(t, inbox, who+" hears it once")
+	}
+	for _, id := range ids[1:] {
+		assert.Equal(t, ids[0], id, "one message_id on both pods")
+	}
+}
+
+// countingBus wraps a bus and counts publishes, so a test can say "nothing was published".
+type countingBus struct {
+	chatBus
+	mu        sync.Mutex
+	published int
+}
+
+func (b *countingBus) Publish(ctx context.Context, channel string, payload []byte) error {
+	b.mu.Lock()
+	b.published++
+	b.mu.Unlock()
+	return b.chatBus.Publish(ctx, channel, payload)
+}
+
+func (b *countingBus) count() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.published
+}
+
+// heldBus parks every publish until released, so a test can look at the world between a line
+// being accepted and Redis returning it.
+type heldBus struct {
+	chatBus
+	mu   sync.Mutex
+	held [][]byte
+}
+
+func (b *heldBus) Publish(_ context.Context, _ string, payload []byte) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.held = append(b.held, payload)
+	return nil
+}
+
+func (b *heldBus) release(ctx context.Context) {
+	b.mu.Lock()
+	held := b.held
+	b.held = nil
+	b.mu.Unlock()
+	for _, payload := range held {
+		_ = b.chatBus.Publish(ctx, chatbus.WorldChannel, payload)
+	}
+}
+
+// failOnceBus fails the first publish and passes the rest through.
+type failOnceBus struct {
+	chatBus
+	failed atomic.Bool
+}
+
+func (b *failOnceBus) Publish(ctx context.Context, channel string, payload []byte) error {
+	if b.failed.CompareAndSwap(false, true) {
+		return errors.New("redis: connection refused")
+	}
+	return b.chatBus.Publish(ctx, channel, payload)
+}
+
+// A world line from a player in no world is refused and never published. FS-5SH4G R3.
+func TestWorldChat_FromNoWorldIsRefusedAndNotPublished(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	bus := &countingBus{chatBus: chatbus.NewRedis(client)}
+	rig := newWorldPod(t, client, mini, "pod-a", bus)
+	_, ashConn, ashInbox := rig.connected(t, "Ash")
+
+	sendChat(rig.server, ashConn, "world", "anyone?")
+
+	notice := awaitNotice(t, ashInbox, "Ash")
+	assert.Equal(t, "not_in_world", notice.Payload["code"])
+	assert.Equal(t, 0, bus.count())
+}
+
+// An area line never touches the bus. FS-5SH4G R12.
+func TestWorldChat_AreaLinesAreNeverPublished(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	bus := &countingBus{chatBus: chatbus.NewRedis(client)}
+	rig := newWorldPod(t, client, mini, "pod-a", bus)
+	_, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+
+	sendChat(rig.server, wrenConn, "area", "just the town")
+	awaitChat(t, wrenInbox, "Wren")
+
+	assert.Equal(t, 0, bus.count())
+}
+
+// Ten world lines accepted in order on A arrive on B in that order. FS-5SH4G R8, R10.
+func TestWorldChat_KeepsOrderAcrossPods(t *testing.T) {
+	a, b := twoPods(t)
+	_, _, marlInbox := b.inHub(t, "Marl")
+	sent := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"}
+	speakers := make([]*websocket.Conn, len(sent))
+	for i := range sent {
+		_, speakers[i], _ = a.inHub(t, "Speaker"+sent[i])
+	}
+
+	for i, text := range sent {
+		sendChat(a.server, speakers[i], "world", text)
+	}
+
+	got := make([]string, 0, len(sent))
+	for range sent {
+		got = append(got, awaitChat(t, marlInbox, "Marl").Payload["text"].(string))
+	}
+	assert.Equal(t, sent, got)
+}
+
+// Until Redis returns the line, nobody on the sender's pod has it, the sender included: one
+// path, no local short-cut. FS-5SH4G R6.
+func TestWorldChat_SendersPodHearsOnlyWhatRedisReturns(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	bus := &heldBus{chatBus: chatbus.NewRedis(client)}
+	rig := newWorldPod(t, client, mini, "pod-a", bus)
+	_, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	_, _, kaelenInbox := rig.inHub(t, "Kaelen")
+	rig.publish(t, []byte("{}")) // subscribed
+
+	sendChat(rig.server, wrenConn, "world", "held at the gate")
+	assertSilent(t, wrenInbox, "Wren before Redis returns it")
+	assertSilent(t, kaelenInbox, "Kaelen before Redis returns it")
+
+	bus.release(context.Background())
+	assert.Equal(t, "held at the gate", awaitChat(t, wrenInbox, "Wren").Payload["text"])
+	assert.Equal(t, "held at the gate", awaitChat(t, kaelenInbox, "Kaelen").Payload["text"])
+}
+
+// A publish that fails drops the line with a Warn carrying no text; the next line goes through.
+// FS-5SH4G R8, R11, R14.
+func TestWorldChat_FailedPublishDropsTheLineAndCarriesOn(t *testing.T) {
+	sink := &lockedLog{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(sink, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	client, mini := testutil.NewRedis(t)
+	bus := &failOnceBus{chatBus: chatbus.NewRedis(client)}
+	rig := newWorldPod(t, client, mini, "pod-a", bus)
+	_, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	_, kaelenConn, _ := rig.inHub(t, "Kaelen")
+	rig.publish(t, []byte("{}")) // subscribed
+
+	// two speakers, so the flood window plays no part
+	const lost = "the-lost-line-9f3a"
+	sendChat(rig.server, wrenConn, "world", lost)
+	sendChat(rig.server, kaelenConn, "world", "and the next")
+
+	assert.Equal(t, "and the next", awaitChat(t, wrenInbox, "Wren").Payload["text"])
+	assertSilent(t, wrenInbox, "the lost line never arrives")
+	assert.Contains(t, sink.String(), "publish failed")
+	assert.NotContains(t, sink.String(), lost, "the dropped line's text reached the log")
+}
+
+// The 2 s flood window counts a world line and an area line from one player together.
+// FS-5SH4G R4.
+func TestWorldChat_SharesTheFloodWindowWithArea(t *testing.T) {
+	rig := newWorldRig(t)
+	_, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	rig.publish(t, []byte("{}")) // subscribed
+
+	sendChat(rig.server, wrenConn, "world", "to everyone")
+	awaitChat(t, wrenInbox, "Wren")
+	rig.clock.advance(time.Second)
+	sendChat(rig.server, wrenConn, "area", "to the town")
+
+	notice := awaitNotice(t, wrenInbox, "Wren")
+	assert.Equal(t, "too_fast", notice.Payload["code"])
+}
+
+// Logs on the world's sending path carry no text. FS-5SH4G R14.
+func TestWorldChat_SendingLogsCarryNoText(t *testing.T) {
+	sink := &lockedLog{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(sink, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	rig := newWorldRig(t)
+	_, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	rig.publish(t, []byte("{}"))
+
+	const secret = "meet-at-the-old-well-at-dusk"
+	sendChat(rig.server, wrenConn, "world", secret)
 	awaitChat(t, wrenInbox, "Wren")
 
 	assert.NotContains(t, sink.String(), secret)
