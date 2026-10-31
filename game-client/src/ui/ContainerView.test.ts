@@ -1,23 +1,50 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ItemState } from "@/types/gameState";
+import { placedKind, type ContainerKind, type ItemState } from "@/types/gameState";
 import { ActionType } from "@/assets/types/client";
 import { iconSheet, itemIcon } from "@/render/art/itemIcons";
 import type { ArtLibrary } from "@/render/art/library";
 import {
   ContainerContents,
   ContainerView,
+  FACES,
   SATCHEL_INTERIOR,
+  containerFace,
   itemAt,
   lootMessage,
   satchelLayout,
   satchelIcon,
 } from "./ContainerView";
+import { BONE_HEAP_KEY } from "./boneHeap";
+import { COFFER_KEY } from "./coffer";
+import { BODY_H, FLAP_H, FLAP_HINGE_Y, SATCHEL_BODY_KEY } from "./satchel";
 
 const item = (fields: Partial<ItemState> & { name: string }): ItemState => ({
   item_id: `id-${fields.name}`,
   entity_id: `e-${fields.name}`,
   quantity: 1,
   ...fields,
+});
+
+describe("containerFace (FS-1D6BX §Requirements 15, D2)", () => {
+  it.each([
+    ["chest", "coffer"],
+    ["sack", "satchel"],
+    ["drop_pile", "bone_heap"],
+  ] as const)("should open a %s into the %s", (kind, face) => {
+    expect(containerFace(kind)).toBe(face);
+  });
+
+  it("should open a kind this client does not know into the coffer, as a chest", () => {
+    expect(containerFace(placedKind({ kind: "reliquary" }))).toBe("coffer");
+  });
+
+  it("should give only the satchel an opening animation", () => {
+    expect(Object.fromEntries(Object.entries(FACES).map(([face, f]) => [face, f.animatesOpen]))).toEqual({
+      satchel: true,
+      coffer: false,
+      bone_heap: false,
+    });
+  });
 });
 
 describe("itemIcon", () => {
@@ -371,7 +398,7 @@ describe("ContainerView full bag (FS-HRH2J R21; edge state: Pending pickups)", (
     const onLoot = vi.fn();
     const mayTake = vi.fn(() => room);
     const view = new ContainerView(stub as Phaser.Scene, stub as ArtLibrary, { onLoot, mayTake, now: () => 0 });
-    view.open("coffer");
+    view.open("coffer", "chest");
     view.setItems([sword, potion]);
     return { view, onLoot, mayTake };
   }
@@ -406,5 +433,146 @@ describe("ContainerView full bag (FS-HRH2J R21; edge state: Pending pickups)", (
     view.setItems([]);
     view.lootFirst();
     expect(mayTake).not.toHaveBeenCalled();
+  });
+});
+
+describe("ContainerView faces (FS-1D6BX §Requirements 15, 16, D8, D9)", () => {
+  /**
+   * A Phaser stand-in that answers anything and records every call by the name it was reached
+   * through. Positions read 0 and scales 1. Alpha is honoured: `setAlpha` sets what the object's
+   * `alpha` reads (1 until then), and a `set…` call returns its object, as Phaser's chaining does.
+   * Tweens never run on their own; `finishTweens` lands every recorded tween's alpha.
+   */
+  function recordingScene() {
+    const calls: { name: string; args: unknown[] }[] = [];
+    const numbers: Record<string, number> = { x: 0, y: 0, scaleX: 1, scaleY: 1, alpha: 1, width: 64, height: 64, now: 0 };
+    interface Stand { proxy: unknown; alpha?: number }
+    const node = (name: string, owner?: Stand): unknown => {
+      const self: Stand = { proxy: undefined };
+      self.proxy = new Proxy(function () {}, {
+        get: (_t, key) => {
+          if (key === Symbol.toPrimitive) return () => 0;
+          if (typeof key !== "string") return undefined;
+          if (key === "alpha" && self.alpha !== undefined) return self.alpha;
+          return key in numbers ? numbers[key] : node(key, self);
+        },
+        apply: (_t, _this, args: unknown[]) => {
+          calls.push({ name, args });
+          if (owner && name.startsWith("set")) {
+            if (name === "setAlpha") owner.alpha = args[0] as number;
+            return owner.proxy;
+          }
+          return node(name);
+        },
+      });
+      return self.proxy;
+    };
+    const said = () => calls.filter((c) => c.name === "setText").map((c) => c.args[0]);
+    const tweens = () =>
+      calls
+        .filter((c) => c.name === "add" && typeof c.args[0] === "object" && c.args[0] !== null && "duration" in c.args[0])
+        .map((c) => c.args[0] as Record<string, unknown>);
+    const finishTweens = () => {
+      for (const t of tweens())
+        if (typeof t.alpha === "number")
+          for (const target of [t.targets].flat() as { setAlpha(a: number): unknown }[]) target.setAlpha(t.alpha);
+    };
+    return { scene: node("scene") as Phaser.Scene, art: node("art") as ArtLibrary, calls, said, tweens, finishTweens };
+  }
+
+  const sword = item({ name: "Iron Sword", weapon_type: "sword" });
+  const potion = item({ name: "Health Potion", healing_amount: 50 });
+  const kinds: ContainerKind[] = ["chest", "sack", "drop_pile"];
+
+  function opened(kind: ContainerKind) {
+    const rec = recordingScene();
+    const onLoot = vi.fn();
+    const view = new ContainerView(rec.scene, rec.art, { onLoot, now: () => 0 });
+    rec.calls.length = 0;
+    view.open("c1", kind);
+    return { ...rec, view, onLoot };
+  }
+
+  it.each(kinds)("should lift a flap only when a %s opens into the satchel", (kind) => {
+    const { tweens } = opened(kind);
+    const flapTweens = tweens().filter((t) => "scaleY" in t);
+    expect(flapTweens.length > 0).toBe(containerFace(kind) === "satchel");
+  });
+
+  it.each(kinds)("should pop a %s's face in, as every face does", (kind) => {
+    const { tweens } = opened(kind);
+    expect(tweens().some((t) => t.alpha === 1 && t.scale === 1)).toBe(true);
+  });
+
+  it.each(kinds)("should never lift a flap when a %s's view closes, unless it is the satchel", (kind) => {
+    const { view, tweens, calls } = opened(kind);
+    calls.length = 0;
+    view.close();
+    expect(tweens().some((t) => "scaleY" in t)).toBe(containerFace(kind) === "satchel");
+  });
+
+  it.each(kinds)("should say Rummaging... until a %s's contents arrive, then (Picked clean) when empty", (kind) => {
+    const { view, said } = opened(kind);
+    expect(said().at(-1)).toBe("Rummaging...");
+    view.setItems([]);
+    expect(said().at(-1)).toBe("(Picked clean)");
+  });
+
+  it.each(kinds)("should loot a %s's item from its satchel slot, once, under the pending guard", (kind) => {
+    const { view, onLoot, finishTweens } = opened(kind);
+    view.setItems([sword, potion]);
+    finishTweens(); // the satchel's icons have dropped in
+    const { slots } = satchelLayout([sword, potion]);
+
+    expect(view.pointerDown(slots[1].x, slots[1].y, true)).toBe(true);
+    expect(onLoot).toHaveBeenCalledWith(potion);
+    view.pointerDown(slots[1].x, slots[1].y, true);
+    view.setItems([sword, potion]); // the server has not confirmed yet
+    view.pointerDown(slots[1].x, slots[1].y, true);
+    expect(onLoot).toHaveBeenCalledTimes(1);
+
+    view.lootFirst();
+    expect(onLoot).toHaveBeenLastCalledWith(sword);
+  });
+
+  it.each(kinds)("should send exactly the run's loot message for a %s's item", (kind) => {
+    const { view, onLoot } = opened(kind);
+    view.setItems([sword]);
+    view.lootFirst(); // F takes the first item whether or not its icon has dropped in
+    expect(lootMessage(onLoot.mock.calls[0][0])).toStrictEqual(lootMessage(sword));
+  });
+
+  it.each(kinds)("should claim the satchel's whole click band for a %s, lifted flap and all (D8)", (kind) => {
+    const { view } = opened(kind);
+    const flapTop = FLAP_HINGE_Y + FLAP_H * -0.42;
+    expect(view.pointerDown(0, -BODY_H / 2 - 20, true)).toBe(true);
+    expect(view.pointerDown(0, flapTop + 1, true)).toBe(true);
+    expect(view.pointerDown(0, flapTop - 1, true)).toBe(false);
+    expect(view.pointerDown(0, 0, true)).toBe(true);
+  });
+
+  it.each(kinds)("should make a %s's icon takeable once it is shown: at once, or after the satchel's drop-in", (kind) => {
+    const { view, onLoot, finishTweens } = opened(kind);
+    view.setItems([sword]);
+    const [slot] = satchelLayout([sword]).slots;
+    const lifts = FACES[containerFace(kind)].animatesOpen;
+
+    view.pointerDown(slot.x, slot.y, true);
+    expect(onLoot).toHaveBeenCalledTimes(lifts ? 0 : 1);
+
+    finishTweens();
+    view.pointerDown(slot.x, slot.y, true);
+    expect(onLoot).toHaveBeenCalledTimes(1);
+    expect(onLoot).toHaveBeenCalledWith(sword);
+  });
+
+  it("should draw each face with its own body, never a previous open's", () => {
+    const rec = recordingScene();
+    const view = new ContainerView(rec.scene, rec.art, { onLoot: vi.fn(), now: () => 0 });
+    const bodies = () => rec.calls.filter((c) => c.name === "setTexture").map((c) => c.args[0]);
+    view.open("a", "chest");
+    view.open("b", "drop_pile");
+    view.open("c", "sack");
+    expect(bodies()).toEqual([COFFER_KEY, BONE_HEAP_KEY, SATCHEL_BODY_KEY]);
   });
 });

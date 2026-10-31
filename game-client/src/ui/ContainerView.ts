@@ -1,5 +1,8 @@
 /**
- * The container view (FS-2325V §D): the leather satchel a coffer opens into.
+ * The container view (FS-2325V §D, FS-1D6BX §Requirements 15–17): what an opened container's
+ * plunder is taken from. It wears one of three faces by the container's kind: a chest opens into
+ * the coffer, a sack into the leather satchel with its lifting flap, a drop pile into the bone
+ * heap. The faces are an art swap only; slots, hit-testing and every looting rule are shared.
  *
  * It replaces the presentation of the chest item rows and nothing else. It opens and closes on
  * the scene's old triggers, and taking an item sends exactly the message the item UI sent,
@@ -15,9 +18,15 @@ import { ActionType, type InteractPayload } from "@/assets/types/client";
 import { artSprite } from "@/render/art/phaser";
 import { iconSheet, itemIcon } from "@/render/art/itemIcons";
 import type { ArtLibrary } from "@/render/art/library";
-import { getItemType, type ItemState } from "@/types/gameState";
+import {
+  getItemType,
+  type ContainerKind,
+  type ItemState,
+} from "@/types/gameState";
 import { itemView } from "@/items/itemView";
 import { CANVAS_FONT, palette, rgba, toCss } from "@/utils/canvasPalette";
+import { BONE_HEAP_KEY, ensureBoneHeapTexture } from "./boneHeap";
+import { COFFER_KEY, ensureCofferTexture } from "./coffer";
 import { buildItemTip, type ItemTip } from "./itemTip";
 import {
   BODY_H,
@@ -42,6 +51,41 @@ import {
 export function satchelIcon(item: ItemState): string {
   return iconSheet(itemIcon({ ...item, item_type: getItemType(item) }));
 }
+
+// ── Faces ─────────────────────────────────────────────────────────────────
+
+/**
+ * What the container view looks like for one container kind (FS-1D6BX §Requirements 15): a
+ * chest opens into the coffer, a sack into the satchel, a drop pile into the bone heap. The faces
+ * are an art swap only (D8): every one shares the satchel's footprint, slots and looting rules.
+ */
+export type ContainerFace = "coffer" | "satchel" | "bone_heap";
+
+const FACE_OF: Record<ContainerKind, ContainerFace> = {
+  chest: "coffer",
+  sack: "satchel",
+  drop_pile: "bone_heap",
+};
+
+/** The face a container opens into. Read the kind through `placedKind`; anything else is a coffer (D2). */
+export function containerFace(kind: ContainerKind): ContainerFace {
+  return FACE_OF[kind] ?? "coffer";
+}
+
+/** What sets one face apart from another: its art, and whether any part of it opens. */
+export interface FaceLook {
+  /** The body texture the icons lie on. */
+  body: string;
+  /** Whether it opens (the satchel's flap lifts, its icons drop in), or simply appears. */
+  animatesOpen: boolean;
+}
+
+/** Every face, one row each: the satchel's leather, the coffer's oak, the heap's bones. */
+export const FACES: Readonly<Record<ContainerFace, FaceLook>> = {
+  satchel: { body: SATCHEL_BODY_KEY, animatesOpen: true },
+  coffer: { body: COFFER_KEY, animatesOpen: false },
+  bone_heap: { body: BONE_HEAP_KEY, animatesOpen: false },
+};
 
 // ── Looting ───────────────────────────────────────────────────────────────
 
@@ -270,13 +314,14 @@ interface Icon {
 }
 
 /**
- * The satchel panel. The scene says when a coffer opens and closes and hands it the coffer's
- * contents; the view owns everything drawn, the hover, and the click. Pointer input is
+ * The container view's panel, in whichever face the open container wears. The scene says when a
+ * container opens (and its kind) and closes, and hands it the contents; the view owns everything drawn, the hover, and the click. Pointer input is
  * hit-tested by hand in screen space, as the item rows were (Phaser's per-object input is
  * unreliable on scrollFactor-0 containers in this scene).
  */
 export class ContainerView {
   private readonly root: Phaser.GameObjects.Container;
+  private readonly body: Phaser.GameObjects.Image;
   private readonly flap: Phaser.GameObjects.Image;
   private readonly status: Phaser.GameObjects.Text;
   /** The hovered item's tip, built for that item and destroyed when the hover ends. */
@@ -284,6 +329,8 @@ export class ContainerView {
   private readonly now: () => number;
   private icons = new Map<string, Icon>();
   private openFor?: string;
+  /** The face of the open container, or of the last one opened while closing. */
+  private face: ContainerFace = "satchel";
   private iconsFrom = 0;
   private hovered?: string;
   private pointer = { x: -1, y: -1 };
@@ -296,8 +343,10 @@ export class ContainerView {
   ) {
     this.now = options.now ?? Date.now;
     ensureSatchelTextures(scene);
+    ensureCofferTexture(scene);
+    ensureBoneHeapTexture(scene);
 
-    const body = scene.add.image(0, 0, SATCHEL_BODY_KEY);
+    this.body = scene.add.image(0, 0, SATCHEL_BODY_KEY);
     this.flap = scene.add
       .image(0, FLAP_HINGE_Y, SATCHEL_FLAP_KEY)
       .setOrigin(0.5, 0);
@@ -318,7 +367,12 @@ export class ContainerView {
       .setOrigin(0.5, 0)
       .setShadow(0, 1, rgba(palette.inkDeep, 0.9), 2);
 
-    this.root = scene.add.container(0, 0, [body, this.flap, this.status, hint]);
+    this.root = scene.add.container(0, 0, [
+      this.body,
+      this.flap,
+      this.status,
+      hint,
+    ]);
     this.root
       .setDepth(CONTAINER_VIEW_DEPTH)
       .setScrollFactor(0)
@@ -329,20 +383,27 @@ export class ContainerView {
     return this.openFor !== undefined;
   }
 
-  /** The coffer the satchel is open for, if it is open. */
+  /** The container the view is open for, if it is open. */
   get entityId(): string | undefined {
     return this.openFor;
   }
 
-  /** Pops in, lifts the flap; icons drop in as the contents arrive (§D.1). */
-  open(entityId: string): void {
+  /**
+   * Pops in wearing the face for the container's kind (FS-1D6BX §Requirements 15). The satchel
+   * then lifts its flap and its icons drop in as the contents arrive (§D.1); the coffer and the
+   * bone heap open nothing, and their icons are simply there.
+   */
+  open(entityId: string, kind: ContainerKind): void {
     this.reset();
     this.openFor = entityId;
+    this.face = containerFace(kind);
+    const lifts = this.lifts;
     const cam = this.scene.cameras.main;
     this.root.setPosition(cam.width / 2, cam.height / 2 + CENTRE_DROP);
     this.root.setVisible(true).setAlpha(0).setScale(0.85);
-    this.flap.setScale(1).clearTint();
-    this.iconsFrom = this.scene.time.now + ICONS_AFTER_MS;
+    this.body.setTexture(FACES[this.face].body);
+    this.flap.setVisible(lifts).setScale(1).clearTint();
+    this.iconsFrom = this.scene.time.now + (lifts ? ICONS_AFTER_MS : 0);
     this.showStatus();
 
     this.scene.tweens.add({
@@ -352,6 +413,7 @@ export class ContainerView {
       duration: 200,
       ease: "Back.Out",
     });
+    if (!lifts) return;
     this.scene.tweens.add({
       targets: this.flap,
       scaleY: FLAP_OPEN,
@@ -362,25 +424,26 @@ export class ContainerView {
     });
   }
 
-  /** Reverses the open: the flap drops, the satchel fades (§D.1). */
+  /** Reverses the open: the satchel's flap drops, and the view fades (§D.1). */
   close(): void {
     if (!this.isOpen) return;
     this.openFor = undefined;
     this.contents.clear();
     this.unhover();
     this.scene.tweens.killTweensOf([this.root, this.flap]);
-    this.scene.tweens.add({
-      targets: this.flap,
-      scaleY: 1,
-      duration: 200,
-      ease: "Quad.In",
-      onUpdate: () => this.shadeFlap(),
-    });
+    if (this.lifts)
+      this.scene.tweens.add({
+        targets: this.flap,
+        scaleY: 1,
+        duration: 200,
+        ease: "Quad.In",
+        onUpdate: () => this.shadeFlap(),
+      });
     this.scene.tweens.add({
       targets: this.root,
       alpha: 0,
       scale: 0.9,
-      delay: 160,
+      delay: this.lifts ? 160 : 0,
       duration: 160,
       onComplete: () => this.reset(),
     });
@@ -405,18 +468,23 @@ export class ContainerView {
   }
 
   /**
-   * A click in screen space. True when it landed on the satchel, so the scene does not also
+   * A click in screen space. True when it landed on the view, so the scene does not also
    * treat it as an attack. Only a primary click on an icon loots.
    */
   pointerDown(x: number, y: number, primary: boolean): boolean {
     if (!this.isOpen) return false;
     const p = this.toLocal(x, y);
-    if (!onSatchel(p.x, p.y)) return false;
+    if (!onPanel(p.x, p.y)) return false;
     if (!primary) return true;
     const item = this.shownAt(p.x, p.y);
     if (item && this.mayTake())
       this.looted(this.contents.take(item.entity_id, this.now()));
     return true;
+  }
+
+  /** Whether the open face opens (its row in {@link FACES}): today only the satchel. */
+  private get lifts(): boolean {
+    return FACES[this.face].animatesOpen;
   }
 
   private mayTake(): boolean {
@@ -478,12 +546,11 @@ export class ContainerView {
       );
       sprite.setOrigin(0.5);
       const base = this.baseScale(sprite, layout.icon);
-      sprite
-        .setScale(base)
-        .setAlpha(0)
-        .setY(slot.y - 16);
+      sprite.setScale(base);
       this.root.addAt(sprite, 1); // above the body, under the flap
       this.icons.set(item.entity_id, { sprite, base });
+      if (!this.lifts) return; // nothing opened: the plunder is just there
+      sprite.setAlpha(0).setY(slot.y - 16);
       this.scene.tweens.add({
         targets: sprite,
         alpha: 1,
@@ -603,8 +670,11 @@ export class ContainerView {
   }
 }
 
-/** Whether a panel-local point is on the satchel: the body, the lifted flap, or the hint. */
-function onSatchel(x: number, y: number): boolean {
+/**
+ * Whether a panel-local point is on the view: the body, the hint, or the band the satchel's lifted
+ * flap covers. Every face claims the same band, so hit-testing is the satchel's untouched (D8).
+ */
+function onPanel(x: number, y: number): boolean {
   return (
     Math.abs(x) <= BODY_W / 2 &&
     y >= FLAP_HINGE_Y + FLAP_H * FLAP_OPEN &&

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ActionType } from "@/assets/types/client";
-import type { ContainerState, ItemState } from "@/types/gameState";
+import type { ContainerKind, ContainerState, ItemState } from "@/types/gameState";
 import { RESERVED_PILE_ALPHA } from "@/render/world/dropPile";
 import { CHEST_OPEN_WINDOW_MS, FieldPiles, PILE_REACH, type PileSatchel, type PileStage } from "./fieldPiles";
 import { lootRefusalCopy } from "./fieldRefusals";
@@ -28,6 +28,9 @@ function piles() {
     placeChest: () => {
       throw new Error("replaced below");
     },
+    placeSack: () => {
+      throw new Error("replaced below");
+    },
     place: (at: { x: number; y: number }) => {
       const sprite = { alpha: 1, destroyed: false, at };
       sprites.set(String(placed++), sprite);
@@ -47,13 +50,25 @@ function piles() {
       destroy: () => void (chest.destroyed = true),
     };
   };
+  const sacks = new Map<string, { frames: boolean[]; destroyed: boolean; at: { x: number; y: number } }>();
+  stage.placeSack = (at: { x: number; y: number }) => {
+    const sack = { frames: [] as boolean[], destroyed: false, at };
+    sacks.set(String(placed++), sack);
+    return {
+      show: (isOpen: boolean) => void sack.frames.push(isOpen),
+      destroy: () => void (sack.destroyed = true),
+    };
+  };
   let openFor: string | undefined;
-  const satchel: PileSatchel & { items: readonly ItemState[] } = {
+  const satchel: PileSatchel & { items: readonly ItemState[]; kind?: ContainerKind } = {
     items: [],
     get entityId() {
       return openFor;
     },
-    open: (id) => void (openFor = id),
+    open(id, kind) {
+      openFor = id;
+      this.kind = kind;
+    },
     close: () => void (openFor = undefined),
     setItems(items) {
       this.items = items;
@@ -65,8 +80,9 @@ function piles() {
   const fp = new FieldPiles(stage, satchel, { notice: (t) => notices.push(t), send }, () => now);
   const live = () => [...sprites.values()].filter((s) => !s.destroyed);
   const liveChests = () => [...chests.values()].filter((c) => !c.destroyed);
+  const liveSacks = () => [...sacks.values()].filter((c) => !c.destroyed);
   const wait = (ms: number) => void (now += ms);
-  return { fp, satchel, notices, send, live, liveChests, wait };
+  return { fp, satchel, notices, send, live, liveChests, liveSacks, wait };
 }
 
 describe("FieldPiles drawing (FS-X2F2H §Requirements 56, 59)", () => {
@@ -358,5 +374,129 @@ describe("FieldPiles chests (FS-3QHQZ §Requirements 19, 20)", () => {
 
     expect(liveChests()).toHaveLength(0);
     expect(fp.interact({ x: 0, y: 0 })).toBe(false);
+  });
+});
+
+/** A Forest clearing sack as the broadcast carries it: a chest in every respect but its look. */
+function sack(id: string, x: number, is_open = false, items: ItemState[] = []): ContainerState {
+  return { ...chest(id, x, is_open, items), kind: "sack" };
+}
+
+describe("FieldPiles sacks (FS-1D6BX §Requirements 12, 13, D3, D5)", () => {
+  it("should draw a sack as a sack, its frame from is_open on every state", () => {
+    const { fp, liveChests, liveSacks } = piles();
+    fp.sync([sack("s", 80)], ME);
+    fp.sync([sack("s", 80, true, [item("a")])], ME);
+
+    expect(liveChests()).toHaveLength(0);
+    expect(liveSacks()).toHaveLength(1);
+    expect(liveSacks()[0].at).toEqual({ x: 80, y: 0 });
+    expect(liveSacks()[0].frames).toEqual([false, true]);
+  });
+
+  it("should keep an emptied sack drawn open, where an emptied pile goes", () => {
+    const { fp, live, liveSacks } = piles();
+    fp.sync([sack("s", 80, true, []), pile("p", 200, undefined, [])], ME);
+
+    expect(live()).toHaveLength(0);
+    expect(liveSacks()).toHaveLength(1);
+    expect(liveSacks()[0].frames).toEqual([true]);
+  });
+
+  it("should open a sack in reach with the run's message, its satchel once the server has it open", () => {
+    const { fp, satchel, send } = piles();
+    fp.sync([sack("s", 10)], ME);
+
+    expect(fp.interact({ x: 0, y: 0 })).toBe(true);
+    expect(send).toHaveBeenCalledWith(ActionType.Interact, { entity_id: "s" });
+    expect(satchel.entityId).toBeUndefined();
+
+    fp.sync([sack("s", 10, true, [item("a")])], ME);
+    expect(satchel.entityId).toBe("s");
+    expect(satchel.items).toEqual([item("a")]);
+  });
+
+  it("should leave nothing open when the server refuses a sack's open within the window", () => {
+    const { fp, satchel, wait } = piles();
+    fp.sync([sack("s", 10)], ME);
+    fp.interact({ x: 0, y: 0 });
+
+    wait(CHEST_OPEN_WINDOW_MS + 1);
+    fp.sync([sack("s", 10, true, [item("a")])], ME);
+    expect(satchel.entityId).toBeUndefined();
+  });
+
+  it("should draw a restocked sack closed again and close its satchel", () => {
+    const { fp, satchel, liveSacks, wait } = piles();
+    fp.sync([sack("s", 10, true, [item("a")])], ME);
+    fp.interact({ x: 0, y: 0 });
+    fp.sync([sack("s", 10, true, [item("a")])], ME);
+    expect(satchel.entityId).toBe("s");
+
+    wait(CHEST_OPEN_WINDOW_MS + 1);
+    fp.sync([sack("s", 10, false, [])], ME);
+    expect(satchel.entityId).toBeUndefined();
+    expect(liveSacks()[0].frames).toEqual([true, true, false]);
+  });
+
+  it("should never hold a sack for someone else", () => {
+    const { fp, satchel, notices } = piles();
+    const theirs = { ...sack("s", 10, true, [item("a")]), reserved_for: "killer" };
+    fp.sync([theirs], ME);
+
+    fp.interact({ x: 0, y: 0 });
+    fp.sync([theirs], ME);
+    expect(notices).toEqual([]);
+    expect(satchel.entityId).toBe("s");
+    expect(fp.loot(item("a"))).toBe(true);
+  });
+
+  it("should let a sack go once the state drops it, and on release", () => {
+    const { fp, liveSacks } = piles();
+    fp.sync([sack("s", 10), sack("t", 300)], ME);
+    fp.sync([sack("t", 300)], ME);
+    expect(liveSacks()).toHaveLength(1);
+
+    fp.release();
+    expect(liveSacks()).toHaveLength(0);
+  });
+});
+
+describe("FieldPiles unknown kinds (FS-1D6BX D2)", () => {
+  it("should draw and open a kind it does not know as a chest", () => {
+    const { fp, satchel, send, liveChests, liveSacks } = piles();
+    const odd = (is_open: boolean, items: ItemState[] = []) =>
+      ({ ...chest("u", 10, is_open, items), kind: "reliquary" }) as unknown as ContainerState;
+    fp.sync([odd(false)], ME);
+    expect(liveChests()).toHaveLength(1);
+    expect(liveSacks()).toHaveLength(0);
+
+    fp.interact({ x: 0, y: 0 });
+    expect(send).toHaveBeenCalledWith(ActionType.Interact, { entity_id: "u" });
+    fp.sync([odd(true, [item("a")])], ME);
+    expect(satchel.entityId).toBe("u");
+    expect(satchel.kind).toBe("chest");
+    expect(liveChests()[0].frames).toEqual([false, true]);
+  });
+});
+
+describe("FieldPiles container faces (FS-1D6BX §Requirements 15)", () => {
+  it("should open a pile's view as a drop pile, for the bone heap", () => {
+    const { fp, satchel } = piles();
+    fp.sync([pile("p", 10)], ME);
+    fp.interact({ x: 0, y: 0 });
+    expect(satchel.kind).toBe("drop_pile");
+  });
+
+  it.each([
+    ["chest", chest],
+    ["sack", sack],
+  ] as const)("should open a %s's view as its own kind", (kind, make) => {
+    const { fp, satchel } = piles();
+    fp.sync([make("c", 10)], ME);
+    fp.interact({ x: 0, y: 0 });
+    fp.sync([make("c", 10, true, [item("a")])], ME);
+    expect(satchel.entityId).toBe("c");
+    expect(satchel.kind).toBe(kind);
   });
 });

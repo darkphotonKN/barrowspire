@@ -1,5 +1,5 @@
 import { ActionType, type InteractPayload } from "@/assets/types/client";
-import type { ContainerState, ItemState } from "@/types/gameState";
+import { placedKind, type ContainerKind, type ContainerState, type ItemState } from "@/types/gameState";
 import type { Point } from "@/render/iso";
 import { pileAlpha, reservedForOther } from "@/render/world/dropPile";
 import { lootMessage } from "@/ui/ContainerView";
@@ -14,8 +14,10 @@ import { lootRefusalCopy } from "./fieldRefusals";
  * frame follows `is_open` on every state, never a remembered open, so a chest that restocks draws
  * closed and opens again; it is never reserved. A chest's satchel opens on the state that has it
  * open after the player reached for it, never on the key press, so an open the server refuses
- * leaves nothing open and empty. Phaser-free: the scene hands it a stage to draw on, the satchel,
- * a port for words and sends, and a clock.
+ * leaves nothing open and empty. A sack (FS-1D6BX §Requirements 13, D5) is a chest in all of this
+ * but its look: drawn as a sack, and reached, opened, restocked and never reserved as a chest is.
+ * A kind this client does not know is a chest (D2). Phaser-free: the scene hands it a stage to
+ * draw on, the satchel, a port for words and sends, and a clock.
  */
 
 /** How near, in world px, the player stands to reach a pile or chest: the run's coffer reach. */
@@ -41,16 +43,19 @@ export interface ChestSprite {
   destroy(): void;
 }
 
-/** Where piles and chests are drawn: one heap, or one chest, at a world point. */
+/** Where piles, chests and sacks are drawn: one heap, chest or sack, at a world point. */
 export interface PileStage {
   place(at: Point): PileSprite;
   placeChest(at: Point): ChestSprite;
+  /** A sack, drawn and shown closed or open as a chest is. */
+  placeSack(at: Point): ChestSprite;
 }
 
 /** What the piles ask of the run's satchel. */
 export interface PileSatchel {
   readonly entityId: string | undefined;
-  open(entityId: string): void;
+  /** Opens for a container, wearing its kind's face (FS-1D6BX §Requirements 15). */
+  open(entityId: string, kind: ContainerKind): void;
   close(): void;
   setItems(items: readonly ItemState[]): void;
 }
@@ -61,9 +66,12 @@ export interface PilesPort {
   send(action: typeof ActionType.Interact, payload: InteractPayload): void;
 }
 
+/** A chest or a sack: drawn as itself, behaving as a chest. */
+type PlacedProp = "chest" | "sack";
+
 type Drawn =
   | { kind: "drop_pile"; sprite: PileSprite; pile: ContainerState }
-  | { kind: "chest"; sprite: ChestSprite; pile: ContainerState };
+  | { kind: PlacedProp; sprite: ChestSprite; pile: ContainerState };
 
 export class FieldPiles {
   private readonly drawn = new Map<string, Drawn>();
@@ -83,14 +91,12 @@ export class FieldPiles {
   /**
    * One state's containers are the whole truth: its drop piles holding anything (an emptied pile
    * has nothing to draw or take, as in a run), each as faint as its reservation says, and its
-   * chests, each in the frame its `is_open` says. `me` is this client's member id, what
-   * `reserved_for` names.
+   * chests and sacks, each in the frame its `is_open` says, emptied or not. `me` is this client's
+   * member id, what `reserved_for` names.
    */
   sync(containers: readonly ContainerState[], me: string | undefined): void {
     this.me = me;
-    const shown = containers.filter(
-      (c) => c.kind === "chest" || (c.kind === "drop_pile" && c.items.length > 0),
-    );
+    const shown = containers.filter((c) => !isPile(c) || c.items.length > 0);
     const present = new Set(shown.map((c) => c.entity_id));
 
     for (const [id, drawn] of this.drawn) {
@@ -121,14 +127,14 @@ export class FieldPiles {
       this.shut();
       return true;
     }
-    if (near.kind === "chest") {
+    if (!isPile(near)) {
       this.port.send(ActionType.Interact, { entity_id: near.entity_id });
       this.shut();
       this.reach = { id: near.entity_id, until: this.now() + CHEST_OPEN_WINDOW_MS };
       return true;
     }
     this.reach = undefined;
-    this.satchel.open(near.entity_id);
+    this.satchel.open(near.entity_id, placedKind(near));
     this.satchel.setItems(near.items);
     return true;
   }
@@ -173,19 +179,30 @@ export class FieldPiles {
     this.shut();
   }
 
-  /** One container as this state has it: a pile at its reservation's alpha, a chest in its frame. */
+  /**
+   * One container as this state has it: a pile at its reservation's alpha, a chest or sack in its
+   * frame. One drawn as another kind before is drawn afresh.
+   */
   private draw(container: ContainerState, me: string | undefined): void {
     const at = { x: container.position.x, y: container.position.y };
-    const drawn = this.drawn.get(container.entity_id);
-    if (container.kind === "chest") {
-      const sprite = drawn?.kind === "chest" ? drawn.sprite : this.stage.placeChest(at);
-      sprite.show(container.is_open);
-      this.drawn.set(container.entity_id, { kind: "chest", sprite, pile: container });
+    const kind = placedKind(container);
+    const before = this.drawn.get(container.entity_id);
+    const drawn = before?.kind === kind ? before : undefined;
+    if (before && !drawn) before.sprite.destroy();
+    if (kind === "drop_pile") {
+      const sprite = drawn?.kind === "drop_pile" ? drawn.sprite : this.stage.place(at);
+      sprite.setAlpha(pileAlpha(container, me));
+      this.drawn.set(container.entity_id, { kind, sprite, pile: container });
       return;
     }
-    const sprite = drawn?.kind === "drop_pile" ? drawn.sprite : this.stage.place(at);
-    sprite.setAlpha(pileAlpha(container, me));
-    this.drawn.set(container.entity_id, { kind: "drop_pile", sprite, pile: container });
+    const sprite =
+      drawn && drawn.kind !== "drop_pile"
+        ? drawn.sprite
+        : kind === "sack"
+          ? this.stage.placeSack(at)
+          : this.stage.placeChest(at);
+    sprite.show(container.is_open);
+    this.drawn.set(container.entity_id, { kind, sprite, pile: container });
   }
 
   /**
@@ -203,7 +220,7 @@ export class FieldPiles {
       this.shut();
       return;
     }
-    if (shown.kind !== "chest") {
+    if (isPile(shown)) {
       this.satchel.setItems(shown.items);
       return;
     }
@@ -225,7 +242,7 @@ export class FieldPiles {
       return;
     }
     if (chest.is_open && this.satchel.entityId !== reach.id) {
-      this.satchel.open(reach.id);
+      this.satchel.open(reach.id, placedKind(chest));
       this.chestSeenOpen = false;
     }
   }
@@ -250,15 +267,20 @@ export class FieldPiles {
     return best;
   }
 
-  /** A pile held for someone else's kill; a chest never is. */
+  /** A pile held for someone else's kill; a chest or sack never is. */
   private heldForOther(container: ContainerState): boolean {
-    return container.kind === "drop_pile" && reservedForOther(container, this.me);
+    return isPile(container) && reservedForOther(container, this.me);
   }
 
   private say(reason: string | undefined): void {
     const words = lootRefusalCopy(reason);
     if (words) this.port.notice(words);
   }
+}
+
+/** A drop pile, which vanishes once emptied; everything else is placed and behaves as a chest. */
+function isPile(container: ContainerState): boolean {
+  return placedKind(container) === "drop_pile";
 }
 
 function distance(a: Point, b: Point): number {

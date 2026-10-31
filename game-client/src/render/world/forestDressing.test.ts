@@ -65,6 +65,20 @@ describe("forestStatics (FS-3QHQZ §Requirements 28)", () => {
       FOREST_SIZE,
     );
   });
+
+  it("should keep out of a clearing's sack as of its chest (FS-1D6BX §Requirements 14)", () => {
+    const SACK: Point = { x: FOREST_CLEARINGS[2].x, y: FOREST_CLEARINGS[2].y };
+    const withSack = {
+      ...STATE,
+      containers: [
+        ...STATE.containers!,
+        { container_id: "s", entity_id: "s1", kind: "sack", position: SACK, is_open: true, items: [] },
+        { container_id: "p", entity_id: "p1", kind: "drop_pile", position: FOREST_GATE, is_open: true, items: [] },
+      ],
+    } as Pick<ClientGameState, "walls" | "gates" | "containers">;
+
+    expect(forestStatics(withSack, FOREST_SIZE.width, FOREST_SIZE.height).interactables).toEqual([CHEST, SACK]);
+  });
 });
 
 describe("planVerges (FS-3QHQZ §Requirements 28)", () => {

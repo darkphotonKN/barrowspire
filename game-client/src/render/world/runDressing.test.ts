@@ -42,6 +42,7 @@ const broadcast: Pick<ClientGameState, "walls" | "doors" | "containers" | "escap
   containers: [
     { container_id: "c", entity_id: "c1", kind: "chest", position: at(1080, 700), is_open: false, items: [] },
     { container_id: "p", entity_id: "p1", kind: "drop_pile", position: at(500, 600), is_open: true, items: [] },
+    { container_id: "k", entity_id: "k1", kind: "sack", position: at(700, 820), is_open: true, items: [] },
   ],
   escape_doors: [{ entity_id: "e1", position: at(1380, 120), is_open: false, is_locked: true }],
   switches: [{ entity_id: "s1", position: at(60, 900), switch_id: 1, is_activated: false }],
@@ -78,11 +79,11 @@ const reach = (p: Point, r: Rect) =>
 const rectOf = (e: { position: Point; width: number; height: number }): Rect => ({ ...e.position, width: e.width, height: e.height });
 
 describe("dressingStatics (FS-8RBQY §C.5, R3)", () => {
-  it("should keep out from the stairs, the chest, the escape door and the switch, but not a drop pile", () => {
+  it("should keep out from the stairs, the chest, the sack, the escape door and the switch, but not a drop pile", () => {
     expect(statics.interactables).toEqual(
-      expect.arrayContaining([at(300, 700), at(1080, 700), at(1380, 120), at(60, 900)]),
+      expect.arrayContaining([at(300, 700), at(1080, 700), at(700, 820), at(1380, 120), at(60, 900)]),
     );
-    expect(statics.interactables).toHaveLength(4);
+    expect(statics.interactables).toHaveLength(5);
   });
 
   it("should take every wall and door rect from the broadcast", () => {

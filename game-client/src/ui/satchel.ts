@@ -10,6 +10,7 @@
 
 import type Phaser from "phaser";
 import { palette, rgba, shade, tint } from "@/utils/canvasPalette";
+import { grain, paint, roundedPoly } from "./paintKit";
 
 export const SATCHEL_BODY_KEY = "ui:satchel-body";
 export const SATCHEL_FLAP_KEY = "ui:satchel-flap";
@@ -21,27 +22,12 @@ export const FLAP_H = 252;
 /** Where the flap hangs from, in panel-local px (origin at the body's centre). */
 export const FLAP_HINGE_Y = 52 - BODY_H / 2;
 
-type Pt = [number, number];
-
 /** Paints both textures unless a previous scene already did. */
 export function ensureSatchelTextures(scene: Phaser.Scene): void {
   if (!scene.textures.exists(SATCHEL_BODY_KEY))
     paint(scene, SATCHEL_BODY_KEY, BODY_W, BODY_H, paintBody);
   if (!scene.textures.exists(SATCHEL_FLAP_KEY))
     paint(scene, SATCHEL_FLAP_KEY, FLAP_W, FLAP_H, paintFlap);
-}
-
-function paint(
-  scene: Phaser.Scene,
-  key: string,
-  w: number,
-  h: number,
-  draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
-) {
-  const texture = scene.textures.createCanvas(key, w, h);
-  if (!texture) return;
-  draw(texture.getContext(), w, h);
-  texture.refresh();
 }
 
 function paintBody(b: CanvasRenderingContext2D, W: number, H: number) {
@@ -150,49 +136,6 @@ function paintFlap(b: CanvasRenderingContext2D, W: number, H: number) {
 
 // ── Leatherwork ──────────────────────────────────────────────────────────
 
-/** A closed polygon with rounded corners. */
-function roundedPoly(pts: Pt[], r: number): Path2D {
-  const p = new Path2D();
-  const n = pts.length;
-  for (let i = 0; i < n; i++) {
-    const a = pts[(i - 1 + n) % n];
-    const c = pts[i];
-    const d = pts[(i + 1) % n];
-    if (i === 0) p.moveTo((a[0] + c[0]) / 2, (a[1] + c[1]) / 2);
-    p.arcTo(c[0], c[1], (c[0] + d[0]) / 2, (c[1] + d[1]) / 2, r);
-  }
-  p.closePath();
-  return p;
-}
-
-/** Hide grain: mottling, pores and the odd crease, multiplied into what is already painted. */
-function grain(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  seed: number,
-  amount: number,
-) {
-  const img = ctx.getImageData(0, 0, w, h);
-  const d = img.data;
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 4;
-      if (!d[i + 3]) continue;
-      const crease = valueNoise(x / 2, y / 18, seed + 4) > 0.82 ? -0.12 : 0;
-      const f =
-        1 -
-        amount / 2 +
-        amount * fbm(x / 9, y / 9, seed) +
-        (hash(x, y, seed) - 0.5) * 0.12 +
-        crease;
-      d[i] *= f;
-      d[i + 1] *= f;
-      d[i + 2] *= f;
-    }
-  ctx.putImageData(img, 0, 0);
-}
-
 /** Darkened, scorched edges inside the shape. */
 function burnEdge(ctx: CanvasRenderingContext2D, path: Path2D, blur: number) {
   ctx.save();
@@ -233,44 +176,4 @@ function rivet(ctx: CanvasRenderingContext2D, x: number, y: number, r = 6) {
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
-}
-
-// ── Noise (deterministic, so every client paints the same hide) ─────────────
-
-function hash(x: number, y: number, s: number): number {
-  let h =
-    (Math.imul(x | 0, 374761393) +
-      Math.imul(y | 0, 668265263) +
-      Math.imul(s | 0, 1442695041)) |
-    0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  h ^= h >>> 16;
-  return (h >>> 0) / 4294967296;
-}
-
-function valueNoise(x: number, y: number, s: number): number {
-  const xi = Math.floor(x);
-  const yi = Math.floor(y);
-  const fx = x - xi;
-  const fy = y - yi;
-  const u = fx * fx * (3 - 2 * fx);
-  const v = fy * fy * (3 - 2 * fy);
-  const top = hash(xi, yi, s) + (hash(xi + 1, yi, s) - hash(xi, yi, s)) * u;
-  const bottom =
-    hash(xi, yi + 1, s) + (hash(xi + 1, yi + 1, s) - hash(xi, yi + 1, s)) * u;
-  return top + (bottom - top) * v;
-}
-
-function fbm(x: number, y: number, s: number, octaves = 3): number {
-  let f = 0;
-  let amp = 0.5;
-  let n = 0;
-  for (let i = 0; i < octaves; i++) {
-    f += amp * valueNoise(x, y, s + i * 17);
-    n += amp;
-    x *= 2.03;
-    y *= 2.03;
-    amp *= 0.5;
-  }
-  return f / n;
 }

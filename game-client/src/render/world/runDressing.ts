@@ -13,7 +13,7 @@
 
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
 import type { Point, Rect } from "@/render/iso/projection";
-import type { ClientGameState } from "@/types/gameState";
+import { placedKind, type ClientGameState } from "@/types/gameState";
 import { tileHash } from "./ground";
 import type { Footprint } from "./hubKeepOut";
 import { INTERACT_RANGE } from "./stairs";
@@ -58,7 +58,7 @@ const KEEP_OUT = {
   door: 40,
   /** …and by this more to the south, the lane a player walks up to it on. */
   lane: 60,
-  /** No dressing this near the stairs, chest, escape door or switch. */
+  /** No dressing this near the stairs, chest or sack, escape door or switch. */
   use: INTERACT_RANGE,
   /** No dressing this near the play area's edge. */
   edge: 30,
@@ -75,7 +75,7 @@ export interface DressingStatics {
   height: number;
   walls: readonly Rect[];
   doors: readonly Rect[];
-  /** Where the stairs, the chest, the escape door and the switch stand. */
+  /** Where the stairs, the chest or sack, the escape door and the switch stand. */
   interactables: readonly Point[];
 }
 
@@ -121,7 +121,7 @@ export function dressingStatics(
     doors: (state.doors ?? []).map(rectOf),
     interactables: [
       ...(state.stairs ?? []),
-      ...(state.containers ?? []).filter((c) => c.kind === "chest"),
+      ...(state.containers ?? []).filter((c) => placedKind(c) !== "drop_pile"),
       ...(state.escape_doors ?? []),
       ...(state.switches ?? []),
     ].map((e) => ({ x: e.position.x, y: e.position.y })),
