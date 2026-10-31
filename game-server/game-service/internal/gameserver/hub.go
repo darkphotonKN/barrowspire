@@ -35,6 +35,22 @@ type messageHub struct {
 	// chat lines are stamped and relayed here, on the loop, never by a world
 	// (FS-WJGFJ R11)
 	chat chatRelayer
+
+	// this pod's parties, formed and kept on the loop (FS-R82NV R2)
+	party partyKeeper
+}
+
+// partyKeeper is what the hub needs from the party registry: each party action in,
+// answered on the loop.
+type partyKeeper interface {
+	invite(ctx context.Context, inviter *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	accept(ctx context.Context, accepter *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	decline(decliner *types.Player, payload map[string]interface{})
+	// the registry's clock ticks, swept on this loop like everything else it holds
+	ticks() <-chan time.Time
+	tick()
+	// every party ends with the pod (R5)
+	dissolveAll(ctx context.Context)
 }
 
 // chatRelayer is what the hub needs from chat: a player's line in, delivered or refused; and
@@ -305,7 +321,7 @@ func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*game.Session, er
 	return session, nil
 }
 
-func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer) *messageHub {
+func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer, party partyKeeper) *messageHub {
 	return &messageHub{
 		sessionManager: sessionManager,
 		sessions:       make(map[string]*game.Session),
@@ -314,6 +330,7 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 		podAddr:        podAddr,
 		announcer:      announcer,
 		chat:           chat,
+		party:          party,
 	}
 }
 
@@ -323,6 +340,9 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 **/
 func (h *messageHub) Run(ctx context.Context) {
 	slog.Info("Initializing message hub.")
+
+	// the pod's shutdown signal, heard once: parties end on it, routing does not
+	shuttingDown := ctx.Done()
 
 	for {
 		select {
@@ -623,6 +643,35 @@ func (h *messageHub) Run(ctx context.Context) {
 				}
 				h.chat.relay(player, clientPackage.Conn, clientPackage.Message.Payload)
 
+			// A party invite by name: a player with no party becomes the leader of
+			// a new one. FS-R82NV §Requirements 4, 11–14.
+			case constants.ActionPartyInvite:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_invite from a connection with no player")
+					continue
+				}
+				h.party.invite(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
+
+			// The target accepting an invite: on the party pod itself, added at
+			// once. FS-R82NV §Requirements 16, 17.
+			case constants.ActionPartyAccept:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_accept from a connection with no player")
+					continue
+				}
+				h.party.accept(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
+
+			// The target declining an invite. FS-R82NV §Requirements 15.
+			case constants.ActionPartyDecline:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_decline from a connection with no player")
+					continue
+				}
+				h.party.decline(player, clientPackage.Message.Payload)
+
 			case constants.ActionLeaveQueue:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
 				if !exists {
@@ -716,6 +765,17 @@ func (h *messageHub) Run(ctx context.Context) {
 		// one goroutine as for area lines (FS-5SH4G R7, R9)
 		case line := <-h.chat.inbound():
 			h.chat.deliver(line)
+
+		// the party registry's clock: invites lapse here (FS-R82NV R14)
+		case <-h.party.ticks():
+			h.party.tick()
+
+		// the pod is shutting down: every party on it ends here, on the loop that
+		// owns them (FS-R82NV R5). The loop keeps routing through the drain, since
+		// the connections' readers still send to it and runs are still in play.
+		case <-shuttingDown:
+			h.party.dissolveAll(ctx)
+			shuttingDown = nil
 		}
 
 	}

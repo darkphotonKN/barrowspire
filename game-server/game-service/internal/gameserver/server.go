@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/common/progression"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
@@ -88,6 +90,9 @@ type Server struct {
 	itemsClient grpcitems.ItemsClient
 	// resolves the character a member enters with
 	characters CharacterReader
+
+	// this pod's parties; read here only to learn when shutdown dissolved them
+	parties *partyRegistry
 }
 
 // CharacterReader reads one of a member's characters from character-service,
@@ -173,9 +178,26 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 
 	// initialize message hub
 	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID, boot.chatBus)
-	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat)
+	partyTicks := boot.partyTicks
+	if partyTicks == nil {
+		ticker := time.NewTicker(partyTickInterval)
+		go func() { <-ctx.Done(); ticker.Stop() }()
+		partyTicks = ticker.C
+	}
+	party := newPartyRegistry(server, newSender, partyRegistryConfig{
+		podID:    podID,
+		podAddr:  podAddr,
+		size:     boot.partySize,
+		now:      boot.partyNow,
+		newID:    uuid.New,
+		ticks:    partyTicks,
+		pointers: boot.partyPointers,
+	})
+	server.parties = party
+	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat, party)
 	go messageHub.Run(ctx)
 	chat.start(ctx)
+	party.start(ctx)
 
 	server.createHubSession()
 	server.createFieldSessions(fields)
@@ -785,6 +807,48 @@ func (s *Server) SeatedPlayerIDs() []uuid.UUID {
 		seated = append(seated, player.ID)
 	}
 	return seated
+}
+
+/**
+* HubSeatedPlayer finds the player seated in this pod's hub under a character
+* name, read off the connection table as SeatedPlayerIDs is. A copy, taken
+* under the lock, so the caller reads it on its own goroutine safely.
+* FS-R82NV §Requirements 12 (same pod).
+**/
+func (s *Server) HubSeatedPlayer(nameOrID string) (types.Player, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, player := range s.connToPlayer {
+		if player.CurrentGameSessionId != s.hubSessionID {
+			continue
+		}
+		// character names are unique case-insensitively (character-service's lower(name) index)
+		if strings.EqualFold(player.Character.Name, nameOrID) || strings.EqualFold(player.ID.String(), nameOrID) {
+			return *player, true
+		}
+	}
+	return types.Player{}, false
+}
+
+// PartiesDissolved closes once every party on this pod is dissolved and its
+// pointers deleted, after ctx ends. Shutdown waits on it while Redis is still
+// open. FS-R82NV R5.
+func (s *Server) PartiesDissolved() <-chan struct{} {
+	return s.parties.stopped()
+}
+
+// InHub reports whether playerID is connected here and seated in the hub.
+func (s *Server) InHub(playerID uuid.UUID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, player := range s.connToPlayer {
+		if player.ID == playerID && player.CurrentGameSessionId == s.hubSessionID {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool) {

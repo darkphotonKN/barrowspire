@@ -1,6 +1,6 @@
 ---
 id: I-R82NV-1
-status: open
+status: in-progress
 implements: FS-R82NV
 blocked_by: []
 labels: [ready-for-agent]
@@ -54,3 +54,42 @@ FS-R82NV §Requirements R1–R6, R8, R11–R17 (same pod), R21, R25; §User Stor
 
 - RED: a hub test where player A sends `party_invite` naming B on the same pod and B receives a `party_invite` message with an invite id.
 - GREEN: the party state, the action case in the hub, and same-pod lookup.
+
+## Implementation notes (agreed with Nick, 2026-11-01)
+
+- **`already_in_party` reads the roster's memory**, not the Redis pointer: on one pod the two
+  agree, and the pointer write is queued, so it can lag a join. Slice 3 adds the Redis read for
+  cross-pod targets (and should check `pod:alive` beside it).
+- **`pod_full` never fires for a same-pod target**: they already hold a hub seat on the party
+  pod. The code exists; its table row lands in slice 3.
+- **Refusal order** for an invite: the sender's own standing first (`not_in_hub` → `not_leader`
+  → `queued`), then R12's list. Accept follows R16: `not_in_hub` → `already_in_party` → `queued`.
+- **A party ends in this slice only by graceful shutdown** (R5): every member gets a final
+  `party_update` `dissolved`, and the pointers are deleted on the hub loop as it exits, before
+  `Server.PartiesDissolved()` closes; `SetupRouter`'s shutdown waits on it. No test-only
+  `removeMember`; the last-member-leaves path arrives with `party_leave` in slice 2.
+- **On `ctx.Done()` the hub loop dissolves the parties once and keeps routing** through the
+  shutdown drain (readers still send to it, runs are still in play); party actions are ignored
+  from then on. The shutdown delete waits for the pointer writer to stop first.
+- **Voided invites notice their inviter** `already_in_party` (with the target's name) when the
+  target joins another party: not in the FS, chosen for user story 7.
+- **`PARTY_SIZE` accepts 2–4**; unset is 2; anything else stops startup.
+- **An invite is delivered first and kept after.** If the send fails (target gone, writer
+  queue full), the inviter gets `delivery_failed` (R10's code, used on this pod too), and no
+  party forms and no place is held.
+- **The party of one is announced**: the first delivered invite sends the new leader a
+  `party_update` (`joined`, subject = leader), per R21 "every change".
+- **`size` on `party_update` is the party's cap (`PARTY_SIZE`), not its count**, and
+  `party_invite` carries it too, so the client can render R32's "(<n>/<size>)". The count is
+  `len(members)` / `member_count`. This adds a field to R13's payload and fixes R21's ambiguity.
+- **Refusals about the target carry `name`** for R36's copy: `not_found` the name as typed
+  (trimmed), `already_in_party` / `pending` the target's character name.
+- A second accept of an invite voided by joining another party is ignored (the invite is gone,
+  R14/R17), not answered `already_in_party` as the Edge State reads; the client closes the
+  prompt on the `party_update` anyway.
+- Left as is: `defaultPartySize` lives in both `config` (env default) and `gameserver` (the
+  default for a pod built without the option); `HubSeatedPlayer` matches a name or an id, as R12
+  asks; no settings field on `party` until FS-V780R adds the loot rule.
+- Pre-existing: the `internal/gameserver` package fails under `-race` on clean HEAD too
+  (`serializer.SerializeBackendState` race; load-sensitive timeouts). Party tests pass under
+  `-race` in isolation.

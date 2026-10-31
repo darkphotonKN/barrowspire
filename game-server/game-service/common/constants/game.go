@@ -55,6 +55,22 @@ const (
 	// global error handler never sees it. FS-WJGFJ §Requirements A7.
 	ActionChatNotice Action = "chat_notice"
 
+	// ActionPartyInvite is a party invite: inbound from the inviter as
+	// { "name" }, outbound to the target as the prompt. FS-R82NV §Requirements 12, 13.
+	ActionPartyInvite Action = "party_invite"
+	// ActionPartyNotice answers one player about their party, by code: a refusal or a
+	// status, as { "code", "name"? }. The client owns the words. FS-R82NV §Requirements 12.
+	ActionPartyNotice Action = "party_notice"
+	// ActionPartyAccept is the target accepting an invite, as { "invite_id" }.
+	// FS-R82NV §Requirements 16.
+	ActionPartyAccept Action = "party_accept"
+	// ActionPartyUpdate is the party as it now stands, sent to every member on
+	// every change. FS-R82NV §Requirements 21.
+	ActionPartyUpdate Action = "party_update"
+	// ActionPartyDecline is the target declining an invite, as { "invite_id" }.
+	// FS-R82NV §Requirements 15.
+	ActionPartyDecline Action = "party_decline"
+
 	// system actions
 	ActionError          Action = "error"
 	ActionSuccess        Action = "success"
@@ -101,6 +117,42 @@ const (
 	ChatNoticeTooLong ChatNoticeCode = "too_long"
 	// ChatNoticeTooFast: inside the speaker's flood window. FS-WJGFJ R6.
 	ChatNoticeTooFast ChatNoticeCode = "too_fast"
+)
+
+// PartyNoticeCode is the stable reason on a party_notice the client switches on.
+type PartyNoticeCode string
+
+const (
+	// PartyNoticeSent: the invite reached the target's pod. FS-R82NV R13.
+	PartyNoticeSent PartyNoticeCode = "sent"
+	// PartyNoticeDeclined: the target declined the invite. FS-R82NV R15.
+	PartyNoticeDeclined PartyNoticeCode = "declined"
+	// PartyNoticeExpired: the invite went unanswered for its minute. FS-R82NV R14.
+	PartyNoticeExpired PartyNoticeCode = "expired"
+	// PartyNoticeDeliveryFailed: the invite could not reach the target. FS-R82NV R10.
+	PartyNoticeDeliveryFailed PartyNoticeCode = "delivery_failed"
+
+	// Refusals of an invite (FS-R82NV R11, R12, R16), checked in this order:
+	// the sender's own standing first, then R12's list.
+	PartyNoticeNotInHub       PartyNoticeCode = "not_in_hub"
+	PartyNoticeNotLeader      PartyNoticeCode = "not_leader"
+	PartyNoticeQueued         PartyNoticeCode = "queued"
+	PartyNoticePartyFull      PartyNoticeCode = "party_full"
+	PartyNoticeSelf           PartyNoticeCode = "self"
+	PartyNoticeNotFound       PartyNoticeCode = "not_found"
+	PartyNoticeAlreadyInParty PartyNoticeCode = "already_in_party"
+	PartyNoticePodFull        PartyNoticeCode = "pod_full"
+	PartyNoticePending        PartyNoticeCode = "pending"
+)
+
+// PartyUpdateReason is why a party_update was sent. FS-R82NV §Requirements 21.
+type PartyUpdateReason string
+
+const (
+	// PartyUpdateJoined: subject_id became a member.
+	PartyUpdateJoined PartyUpdateReason = "joined"
+	// PartyUpdateDissolved: the party ended with its pod's graceful shutdown. FS-R82NV R5.
+	PartyUpdateDissolved PartyUpdateReason = "dissolved"
 )
 
 const (

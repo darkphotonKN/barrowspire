@@ -117,13 +117,21 @@ type bootOptions struct {
 	// the Redis side of chat; nil on a pod built without one, which then refuses world chat as
 	// closed (FS-5SH4G; code review 2026-10-31)
 	chatBus chatBus
+	// the party registry's clock, and the ticks it sweeps on: the wall clock and a
+	// one-second ticker unless a test turns them by hand (FS-R82NV R14)
+	partyNow   func() time.Time
+	partyTicks <-chan time.Time
+	// the party cap, PARTY_SIZE in production (FS-R82NV R8)
+	partySize int
+	// where party pointers are written; nil leaves them unwritten (FS-R82NV R3)
+	partyPointers partyPointers
 }
 
 // newBootOptions are the defaults with opts applied: a fresh seed, the
 // Forest's own parameters, visits settled to the log alone, and chat stamped
 // by the wall clock.
 func newBootOptions(opts ...Option) bootOptions {
-	boot := bootOptions{seed: rand.Uint64(), forestParams: levelgen.ForestParams, visitSettler: logVisitSettler{}, chatNow: time.Now, chatNewID: uuid.New}
+	boot := bootOptions{seed: rand.Uint64(), forestParams: levelgen.ForestParams, visitSettler: logVisitSettler{}, chatNow: time.Now, chatNewID: uuid.New, partyNow: time.Now, partySize: defaultPartySize}
 	for _, opt := range opts {
 		opt(&boot)
 	}
