@@ -10,10 +10,11 @@ import {
   partyFrameRows,
   partyFramesFrame,
 } from "./partyFramesLayout";
-import { PROGRESS_HUD_H, PROGRESS_HUD_W } from "./ProgressHud";
+import { PROGRESS_HUD_AT, PROGRESS_HUD_H, PROGRESS_HUD_W } from "./ProgressHud";
 import { resourceHudHeight } from "./ResourceHud";
 
-// FS-R82NV §Requirements R34, R35. I-R82NV-9: the party frames' pure half.
+// FS-R82NV §Requirements R34, R35. I-R82NV-9: the party frames' pure half; I-R82NV-12: every
+// member, the player first with their own bars, as wide as the level/XP frame.
 
 const ME = "me";
 const member = (
@@ -41,12 +42,16 @@ const party = (
   subject_id: members[members.length - 1].player_id,
 });
 
+/** A player as the state broadcast carries them; only the fields the frames read matter. */
+const seen = (id: string, extra: Partial<PlayerState> = {}): PlayerState =>
+  ({ id, escape: false, ...extra }) as PlayerState;
+
 describe("partyFrameRows", () => {
   it("draws nothing with no party", () => {
     expect(partyFrameRows(null, ME, "hub")).toEqual([]);
   });
 
-  it("gives one row per other member, in join order, the leader's row flagged", () => {
+  it("gives one row per member, the player first, then the others in join order, the leader's row flagged", () => {
     const rows = partyFrameRows(
       party(
         [
@@ -60,33 +65,105 @@ describe("partyFrameRows", () => {
       "hub",
     );
     expect(rows.map((r) => [r.player_id, r.name, r.class, r.leader])).toEqual([
+      [ME, "Me", "warrior", false],
       ["lead", "Aldric", "warrior", true],
       ["wren", "Wren", "mage", false],
     ]);
   });
 
-  it("gives a two-member party one row: the other member", () => {
+  it("gives a two-member party two rows, the player's first, holding their own bars in the hub", () => {
     const rows = partyFrameRows(
-      party([member(ME, "Me"), member("wren", "Wren")]),
+      party([member("wren", "Wren"), member(ME, "Me")]),
       ME,
       "hub",
+      {
+        current_player: seen(ME, {
+          current_health: 90,
+          max_health: 120,
+          resource: {
+            kind: "stamina",
+            current: 25,
+            max: 100,
+            ability_cost: 10,
+          },
+        }),
+      },
     );
-    expect(rows.map((r) => r.player_id)).toEqual(["wren"]);
+    expect(rows.map((r) => r.player_id)).toEqual([ME, "wren"]);
+    expect(rows[0].slot).toEqual({
+      kind: "bars",
+      health: 0.75,
+      resource: { channel: "stamina", label: "Stamina:", fill: 0.25 },
+    });
   });
 });
 
-/** A teammate as the state broadcast carries them; only the fields the frames read matter. */
-const seen = (id: string, extra: Partial<PlayerState> = {}): PlayerState =>
-  ({ id, escape: false, ...extra }) as PlayerState;
+describe("partyFrameRows: the player's own row", () => {
+  const two = (where = "hub") =>
+    party([member(ME, "Me", { where }), member("wren", "Wren")]);
+  const mine = (
+    world: "hub" | "field" | "run",
+    current_player?: PlayerState | null,
+    p = two(),
+  ) => partyFrameRows(p, ME, world, { current_player })[0].slot;
 
-describe("partyFrameRows bar slot", () => {
+  it.each(["hub", "field", "run"] as const)(
+    "shows both bars from the player's own state in the %s",
+    (world) => {
+      const me = seen(ME, {
+        current_health: 30,
+        max_health: 120,
+        resource: { kind: "mana", current: 50, max: 200, ability_cost: 20 },
+      });
+      expect(mine(world, me)).toEqual({
+        kind: "bars",
+        health: 0.25,
+        resource: { channel: "mana", label: "Mana:", fill: 0.25 },
+      });
+    },
+  );
+
+  it("draws parry charges as pips", () => {
+    const me = seen(ME, {
+      current_health: 130,
+      max_health: 130,
+      resource: { kind: "parry_charges", current: 1, max: 3, ability_cost: 1 },
+    });
+    const slot = mine("run", me);
+    expect(slot.kind === "bars" && slot.resource?.pips).toEqual([
+      true,
+      false,
+      false,
+    ]);
+  });
+
+  it("keeps the bars, empty, before the player's first state", () => {
+    expect(mine("hub", null)).toEqual({ kind: "bars", health: 0 });
+    expect(mine("hub", undefined)).toEqual({ kind: "bars", health: 0 });
+  });
+
+  it("never shows the player a state word for themselves, whatever the party pod says", () => {
+    const me = seen(ME, { current_health: 60, max_health: 120 });
+    expect(mine("run", me, two("run"))).toEqual({ kind: "bars", health: 0.5 });
+  });
+
+  it("ignores a teammate's broadcast entry carrying the player's id", () => {
+    const rows = partyFrameRows(two(), ME, "run", {
+      current_player: seen(ME, { current_health: 120, max_health: 120 }),
+      other_players: [seen(ME, { current_health: 1, max_health: 120 })],
+    });
+    expect(rows[0].slot).toEqual({ kind: "bars", health: 1 });
+  });
+});
+
+describe("partyFrameRows: a teammate's bar slot", () => {
   const two = (extra: Partial<PartyMember> = {}) =>
     party([member(ME, "Me"), member("wren", "Wren", extra)]);
   const slotOf = (
     p: PartyUpdatePayload,
     world: "hub" | "field" | "run",
     others?: PlayerState[],
-  ) => partyFrameRows(p, ME, world, others)[0].slot;
+  ) => partyFrameRows(p, ME, world, { other_players: others })[1].slot;
 
   it.each([
     { name: "hub", where: "hub", world: "hub" as const, word: "village" },
@@ -249,19 +326,24 @@ describe("partyFramesFrame", () => {
     }
   });
 
-  // 1080x720, the fullest party (cap 4: three others), in each world that mounts the frames
+  // 1080x720, the fullest party (cap 4, the player's row among them), in each world that mounts
+  // the frames; the XP bars stand where the scenes place them (`PROGRESS_HUD_AT`)
   const W = 1080;
   const H = 720;
   const MARGIN = 16;
   it.each([
-    // the run: XP bar at (10, 44), resource bars bottom-left (two rows), chat above them
+    // the run: resource bars bottom-left (two rows), chat above them
     {
       world: "run" as const,
-      xpBar: { x: 10, y: 44 },
+      xpBar: PROGRESS_HUD_AT.run,
       chatBottom: H - MARGIN - resourceHudHeight(2),
     },
-    // the hub: XP bar at (16, 16), no resource bars, chat on the canvas bottom
-    { world: "hub" as const, xpBar: { x: 16, y: 16 }, chatBottom: H - MARGIN },
+    // the hub: no resource bars, chat on the canvas bottom
+    {
+      world: "hub" as const,
+      xpBar: PROGRESS_HUD_AT.hub,
+      chatBottom: H - MARGIN,
+    },
     // a field: no XP bar, resource bars and chat as the run's
     {
       world: "field" as const,
@@ -269,10 +351,12 @@ describe("partyFramesFrame", () => {
       chatBottom: H - MARGIN - resourceHudHeight(2),
     },
   ])(
-    "in the $world, three rows clear the XP bar, the chat window, the T panel and the prompts",
+    "in the $world, four rows clear the XP bar, the chat window, the T panel and the prompts",
     ({ world, xpBar, chatBottom }) => {
       const { x, top } = PARTY_FRAMES_PLACEMENT[world];
-      const frames = union(partyFramesFrame(3, x, top).map((f) => f.row));
+      const frames = union(partyFramesFrame(4, x, top).map((f) => f.row));
+      // one column with the level/XP frame: exactly its outer width (a field keeps the same)
+      expect(frames.width).toBe(PROGRESS_HUD_W);
       expect(frames.x).toBeGreaterThanOrEqual(0);
       if (xpBar) {
         const bar = { ...xpBar, width: PROGRESS_HUD_W, height: PROGRESS_HUD_H };

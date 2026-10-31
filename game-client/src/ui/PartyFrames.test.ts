@@ -12,7 +12,8 @@ import { PartyFrames, type PartyFramesDeps } from "./PartyFrames";
 import type { SeenPlayer } from "./partyFramesLayout";
 
 // FS-R82NV §Requirements R34, R35. I-R82NV-9: the party frames as a scene draws them, on a
-// recording stand-in for the Phaser scene.
+// recording stand-in for the Phaser scene. I-R82NV-12: every member, the player first, with
+// their own bars.
 
 interface FakeText {
   content: string;
@@ -118,7 +119,14 @@ function setup(world: WorldType = "hub") {
     }),
   };
   const frames = new PartyFrames(scene.scene, deps);
-  return { ...scene, store, frames, busts, resolved, state };
+  /**
+   * How many bar tracks are drawn: one per bar, health or resource, filled or empty. The
+   * medallion's backing is the same charcoal, one per frame, so those are taken off.
+   */
+  const tracks = () =>
+    scene.liveFills().filter((c) => c === palette.hudTrack).length -
+    frames.rowCount();
+  return { ...scene, store, frames, busts, resolved, state, tracks };
 }
 
 describe("PartyFrames", () => {
@@ -129,32 +137,63 @@ describe("PartyFrames", () => {
     expect(liveFills()).toEqual([]);
   });
 
-  it("draws one frame for a two-member party: the other member's", () => {
+  it("draws two frames for a two-member party: the player's first", () => {
     const { store, frames, live } = setup();
-    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren")]));
-    expect(frames.rowCount()).toBe(1);
-    expect(live()).toContain("Wren");
-    expect(live()).not.toContain("Me");
+    store.getState().apply(update([member("wren", "Wren"), member(ME, "Me")]));
+    expect(frames.rowCount()).toBe(2);
+    expect(live().filter((t) => t === "Me" || t === "Wren")).toEqual([
+      "Me",
+      "Wren",
+    ]);
   });
 
-  it("cuts the bust from the member's own class sheet", () => {
+  it("cuts each bust from the member's own class sheet, the player's first", () => {
     const { store, busts } = setup();
     store
       .getState()
       .apply(update([member(ME, "Me"), member("wren", "Wren", "mage")]));
     expect(busts).toEqual([
+      { texture: "art:char_knight_base", frame: "char_knight_base/idle/1/0" },
       { texture: "art:char_wizard_base", frame: "char_wizard_base/idle/1/0" },
     ]);
   });
 
-  it("shows the state word in the bar slot when no health is on the wire", () => {
-    const { store, live, liveFills } = setup();
-    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren")]));
-    expect(live()).toContain("village");
-    expect(liveFills()).not.toContain(palette.hudHealth);
+  it("draws the player's own health and resource in the hub, from their own state", () => {
+    const { store, frames, liveFills } = setup("hub");
+    store
+      .getState()
+      .apply(update([member(ME, "Me", "mage"), member("wren", "Wren")]));
+    frames.show({
+      current_player: {
+        id: ME,
+        current_health: 50,
+        max_health: 100,
+        resource: { kind: "mana", current: 40, max: 100, ability_cost: 20 },
+      },
+    });
+    expect(liveFills()).toContain(palette.hudHealth);
+    expect(liveFills()).toContain(palette.hudMana);
   });
 
-  it("draws the health and resource bars when the state carries them, and drops the word", () => {
+  it("draws both of the player's bars even before the state carries a resource", () => {
+    const { store, frames, tracks } = setup("hub");
+    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren")]));
+    frames.show({
+      current_player: { id: ME, current_health: 50, max_health: 100 },
+    });
+    // the player's health and an empty resource track; Wren shows a word in the hub
+    expect(tracks()).toBe(2);
+  });
+
+  it("shows a teammate's state word in the bar slot when no health is on the wire", () => {
+    const { store, live, tracks } = setup();
+    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren")]));
+    expect(live()).toContain("village");
+    // the player's own two bars only
+    expect(tracks()).toBe(2);
+  });
+
+  it("draws a teammate's health and resource bars when the state carries them, and drops the word", () => {
     const { store, frames, live, liveFills } = setup("run");
     store
       .getState()
@@ -165,21 +204,24 @@ describe("PartyFrames", () => {
       max_health: 120,
       resource: { kind: "mana", current: 10, max: 100, ability_cost: 20 },
     };
-    frames.show([seen]);
+    frames.show({ other_players: [seen] });
     expect(liveFills()).toContain(palette.hudHealth);
     expect(liveFills()).toContain(palette.hudMana);
     expect(live()).not.toContain("delving");
   });
 
-  it("goes back to the word when the member drops out of the state", () => {
-    const { store, frames, live, liveFills } = setup("run");
+  it("goes back to the word when the teammate drops out of the state", () => {
+    const { store, frames, live, tracks } = setup("run");
     store
       .getState()
       .apply(update([member(ME, "Me"), member("wren", "Wren", "mage", "run")]));
-    frames.show([{ id: "wren", current_health: 60, max_health: 120 }]);
-    frames.show([]);
+    frames.show({
+      other_players: [{ id: "wren", current_health: 60, max_health: 120 }],
+    });
+    expect(tracks()).toBe(4);
+    frames.show({ other_players: [] });
     expect(live()).toContain("delving");
-    expect(liveFills()).not.toContain(palette.hudHealth);
+    expect(tracks()).toBe(2);
   });
 
   it("redraws only the bars when a tick moves a bar: the words are not made again", () => {
@@ -193,12 +235,17 @@ describe("PartyFrames", () => {
           member("bram", "Bram", "warrior", "away"),
         ]),
       );
-    frames.show([{ id: "wren", current_health: 60, max_health: 120 }]);
+    const tick = (mine: number, wrens: number) =>
+      frames.show({
+        current_player: { id: ME, current_health: mine, max_health: 100 },
+        other_players: [{ id: "wren", current_health: wrens, max_health: 120 }],
+      });
+    tick(90, 60);
     expect(live()).toContain("away");
     const made = textsMade();
 
-    frames.show([{ id: "wren", current_health: 61, max_health: 120 }]);
-    frames.show([{ id: "wren", current_health: 62, max_health: 120 }]);
+    tick(89, 61);
+    tick(88, 62);
 
     expect(textsMade()).toBe(made);
     expect(live()).toContain("away");
@@ -225,11 +272,12 @@ describe("PartyFrames", () => {
       member("bram", "Bram"),
     ];
     store.getState().apply(update(members, "wren"));
-    expect(frames.leaderRow()).toBe(0);
-    store.getState().apply(update(members, "bram", "leader"));
     expect(frames.leaderRow()).toBe(1);
+    store.getState().apply(update(members, "bram", "leader"));
+    expect(frames.leaderRow()).toBe(2);
+    // the player's own row, first, takes the crown when they lead
     store.getState().apply(update(members, ME, "leader"));
-    expect(frames.leaderRow()).toBe(-1);
+    expect(frames.leaderRow()).toBe(0);
   });
 
   it("takes every frame down when the party is let go", () => {
