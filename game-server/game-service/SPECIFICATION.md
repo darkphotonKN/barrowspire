@@ -82,6 +82,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Random affixes on rolled loot → FS-4R9M9
 - [ ] Fabled uniques → FS-4R9M9
 - [x] A player may end their own run as a death → FS-9K8EZ
+- [ ] Drink an equipped health potion → FS-P9G8R
 
 ### Classes
 

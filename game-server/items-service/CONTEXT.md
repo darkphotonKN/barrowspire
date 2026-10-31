@@ -10,3 +10,4 @@ this member's `SPECIFICATION.md`.
 **Base item** — a rarity-neutral item template (seeded at `normal`) whose stats are the centre of every roll made from it. (FS-F8T3H)
 **Rolled rarity** — the tier picked for one dropped item at drop time, weighted by `drop_rate_multiplier`; stored on the item instance, not the template. (FS-F8T3H)
 **Rarity tier** — one of Normal, Uncommon, Rare, Runed, Fabled (ascending); scales an item's stats and decides its name affixes. (FS-F8T3H)
+**Consumed item** — an item instance used up during a run (a drunk health potion); its id rides the extraction event and its instance is deleted in the extraction transaction, never returning to the stash or marketplace. Not "consumable" (an item type, which may sit unused) and not an AMQP-consumed event. (FS-P9G8R)

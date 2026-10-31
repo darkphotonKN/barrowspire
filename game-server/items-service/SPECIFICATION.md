@@ -28,3 +28,4 @@
 ## Run extraction
 
 - [x] Deduplicated extracted-items consumption → FS-BVM9H
+- [ ] Consumed items removed at extraction → FS-P9G8R
