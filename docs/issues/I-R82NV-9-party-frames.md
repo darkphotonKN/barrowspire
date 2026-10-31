@@ -1,6 +1,6 @@
 ---
 id: I-R82NV-9
-status: in-progress
+status: done
 implements: FS-R82NV
 blocked_by: [I-R82NV-6]
 labels: [ready-for-agent]
@@ -25,12 +25,12 @@ Implements FS-R82NV §Requirements R34, R35
 
 ## Acceptance Criteria
 
-- [ ] No party → no frames; a two-member party → one row (the other member).
-- [ ] The bust matches the member's class (pure crop test + one scene check).
-- [ ] Bars render when health/resource are present; the state word renders when they are not.
-- [ ] Leader icon moves on a `leader` update.
-- [ ] Rows do not overlap the chat window or the XP bar at 1080×720.
-- [ ] `vitest` green; lint fence passes.
+- [x] No party → no frames; a two-member party → one row (the other member).
+- [x] The bust matches the member's class (pure crop test + one scene check).
+- [x] Bars render when health/resource are present; the state word renders when they are not.
+- [x] Leader icon moves on a `leader` update.
+- [x] Rows do not overlap the chat window or the XP bar at 1080×720.
+- [x] `vitest` green; lint fence passes.
 
 ## Blocked By
 
@@ -44,3 +44,9 @@ FS-R82NV §Requirements R34, R35; §User Stories 15–17.
 
 - RED: pure layout test — a store with three members and the viewer yields two rows in join order, the leader's row flagged.
 - GREEN: a `partyFrames` layout module, then the scene draws it.
+
+## Superseded in part (2026-11-01)
+
+Done to its spec. Nick then changed the frames (FS-R82NV R34 amended): every member is listed,
+the player first, as wide as the level/XP frame, with the player's own bars always. That change
+is a new issue, not a reopening of this one.

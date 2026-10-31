@@ -1,6 +1,6 @@
 ---
 id: I-R82NV-2
-status: in-progress
+status: done
 implements: FS-R82NV
 blocked_by: [I-R82NV-1]
 labels: [ready-for-agent]
@@ -26,12 +26,12 @@ Implements FS-R82NV §Requirements R5, R19, R20, R22
 
 ## Acceptance Criteria
 
-- [ ] Kick removes the member, every member gets `party_update` reason `kicked`.
-- [ ] Transfer makes the target leader; a non-leader's kick/transfer is refused `not_leader`; a non-member target `not_member`.
-- [ ] Leader leaving promotes the earliest-joined member.
-- [ ] Last leave ends the party; both pointers are gone.
-- [ ] Shutdown dissolves parties with reason `dissolved`.
-- [ ] Concurrent kick + leave of one member: first wins, second `not_member`.
+- [x] Kick removes the member, every member gets `party_update` reason `kicked`.
+- [x] Transfer makes the target leader; a non-leader's kick/transfer is refused `not_leader`; a non-member target `not_member`.
+- [x] Leader leaving promotes the earliest-joined member.
+- [x] Last leave ends the party; both pointers are gone.
+- [x] Shutdown dissolves parties with reason `dissolved`.
+- [x] Concurrent kick + leave of one member: first wins, second `not_member`.
 
 ## Blocked By
 

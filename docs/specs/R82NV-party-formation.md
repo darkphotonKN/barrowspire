@@ -1,14 +1,14 @@
 # FS-R82NV: Party formation
 
-> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Party" → "Form a party across pods", "Player presence index across pods", "Joining a party moves the player to the party's pod"; `game-client/SPECIFICATION.md` "### Party" → "Party panel", "Party invites", "Follow a handoff into the hub", "Party frames" → this FS · Related ADRs: [ADR-0034](../adr/0034-a-party-lives-on-one-pod-joining-is-a-hub-handoff.md) (a party lives on one pod; joining is a hub handoff), [ADR-0035](../adr/0035-a-party-is-the-universal-instance-roster-ephemeral-and-locked-inside.md) (ephemeral, locked inside an instance), [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (per-pod ceiling), [ADR-0033](../adr/0033-chat-is-never-stored-a-report-carries-its-own-evidence.md) (nothing stored) · Siblings (scoped 2026-11-01): [FS-BJNYC](BJNYC-party-instance-entry.md) (party entry, auto-formed party, instance lock), [FS-XGW7H](XGW7H-party-chat.md) (party chat, system lines), [FS-V780R](V780R-party-loot-rule.md) (loot rule, a party setting), [FS-CH21F](CH21F-party-member-overhead-bars.md) (health and resource for members) · Builds on: [FS-K2HKP](K2HKP-cross-replica-matchmaking-and-handoff.md) (the handoff mechanic, `world_handoff`, pod address, pod liveness), [FS-JEAVX](JEAVX-hub-shared-across-replicas.md) (hub occupancy cap per pod), [FS-5SH4G](5SH4G-world-chat.md) (Redis subscriber → hub-loop path, reused for the pod inbox), [FS-WJGFJ](WJGFJ-in-game-chat.md) (`chat_notice`, carved panel) · Shares with: [FS-KCQ06](KCQ06-whisper.md) (the presence index) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) § Party (party, leader, party pod, hub handoff, presence index, pod inbox, party invite)
+> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Party" → "Form a party across pods", "Player presence index across pods", "Joining a party moves the player to the party's pod"; `game-client/SPECIFICATION.md` "### Party" → "Party panel", "Party invites", "Follow a handoff into the hub", "Party frames" → this FS · Related ADRs: [ADR-0034](../adr/0034-a-party-lives-on-one-pod-joining-is-a-hub-handoff.md) (a party lives on one pod; joining is a hub handoff), [ADR-0035](../adr/0035-a-party-is-the-universal-instance-roster-ephemeral-and-locked-inside.md) (ephemeral, locked inside an instance), [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (per-pod ceiling), [ADR-0033](../adr/0033-chat-is-never-stored-a-report-carries-its-own-evidence.md) (nothing stored) · Siblings (scoped 2026-11-01): [FS-BJNYC](BJNYC-party-instance-entry.md) (party entry, auto-formed party, instance lock), [FS-XGW7H](XGW7H-party-chat.md) (party chat, system lines), [FS-V780R](V780R-party-loot-rule.md) (loot rule, a party setting), [FS-CH21F](CH21F-party-member-overhead-bars.md) (health and resource for members) · Builds on: [FS-K2HKP](K2HKP-cross-replica-matchmaking-and-handoff.md) (the handoff mechanic, `world_handoff`, pod address, pod liveness), [FS-JEAVX](JEAVX-hub-shared-across-replicas.md) (hub occupancy cap per pod), [FS-5SH4G](5SH4G-world-chat.md) (Redis subscriber → hub-loop path, reused for the pod inbox), [FS-WJGFJ](WJGFJ-in-game-chat.md) (`chat_notice`, carved panel) · Shares with: [FS-KCQ06](KCQ06-whisper.md) (the presence index) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) § Party (party, leader, party pod, hub handoff, presence index, pod inbox, party invite) · Amended 2026-11-01 before ship: an explicit create action (R4a), Create and Invite buttons in the panel (R29, R30), frames list every member with bars (R34); wire facts settled in I-R82NV-1/-6 folded in (R13 `size`, R19 `target_id`, R21 `size` is the cap)
 
 ## Summary
 
-A player forms a **party** by inviting others by character name, from any pod. Accepting an
+A player forms a **party** by creating one, or by inviting others by character name, from any pod. Accepting an
 invite moves the invitee to the leader's pod, so the party stands in one village, walks the
 same fields, and later enters instances together (FS-BJNYC). A **T** panel lists the party and
-holds its actions (invite, kick, transfer, leave); a persistent **party frame** on the left of
-the screen shows each teammate's name, health and resource. The party outlives any instance and
+holds its actions (create, invite, kick, transfer, leave); a persistent **party frame** on the left
+of the screen lists every member, the player first, with name, health and resource. The party outlives any instance and
 ends when its last member leaves; nothing about it is stored.
 
 **Lane:** the server side is **human lane** (Nick hand-codes, or authorises the agent per
@@ -29,9 +29,13 @@ slice as with chat); the client side is agent lane.
    - `party:<party_id>` → the party pod's id (TTL 30 s);
    - `player:<player_id>:party` → the party id (TTL 30 s), one per member.
    A pointer whose pod is not alive (`pod:alive:<podID>`, FS-K2HKP) means the party is gone.
-4. **A party is created** the first time a leader-less player sends a party invite (R12): the
-   inviter becomes leader of a new party of one on their own pod. There is no separate "create
-   party" action. (FS-BJNYC adds the auto-formed party on a random match.)
+4. **A party is created** either by `party_create` (R4a) or the first time a party-less player
+   sends a party invite that is delivered (R12): the player becomes leader of a new party of one
+   on their own pod. (FS-BJNYC adds the auto-formed party on a random match.)
+4a. **`party_create` action** (no payload): a player seated in the hub and in no party becomes
+   the leader of a new party of one, and gets a `party_update` (reason `joined`, subject = them).
+   Refused with `party_notice` `not_in_hub` (not seated in the hub), `already_in_party` (in a
+   party), or `queued` (in the Spire queue), checked in that order.
 5. **A party ends** when its last member leaves (R20), when its pod shuts down gracefully (all
    members told with `party_update` reason `dissolved`), or silently when its pod dies (pointers
    expire; members reconnect party-less).
@@ -78,7 +82,8 @@ slice as with chat); the client side is agent lane.
     exists), `pod_full` (the party pod's hub occupancy is at FS-JEAVX's cap, counting pending
     accepts), `pending` (an invite to that player from this party is still open).
 13. **Delivery:** the party pod publishes `party_invite` to the target's pod inbox with
-    `{invite_id, party_id, party_pod_addr, leader_name, member_count, expires_at}`. The target's
+    `{invite_id, party_id, party_pod_addr, leader_name, member_count, size, expires_at}`, where
+    `size` is the party's cap (R21). The target's
     pod delivers it to the player as a `party_invite` message. The inviter gets `party_notice`
     `sent` with the target's name.
 14. **Pending invites** live on the party pod: `{invite_id, target player id, target pod, sent
@@ -114,9 +119,9 @@ slice as with chat); the client side is agent lane.
 19. **Leader actions**, each a `party_notice` refusal when not the leader (`not_leader`), when
     the target is not a member (`not_member`), or while the party is inside an instance
     (`locked`, FS-BJNYC):
-    - `party_kick` `{player_id}`: the member is removed, told `party_update` reason `kicked`, and
+    - `party_kick` `{target_id}`: the member is removed, told `party_update` reason `kicked`, and
       stays on the pod where they stand.
-    - `party_transfer` `{player_id}`: the target becomes leader; everyone gets `party_update`.
+    - `party_transfer` `{target_id}`: the target becomes leader; everyone gets `party_update`.
 20. **`party_leave`** (any member, refused with `locked` inside an instance): the member is
     removed and stays where they stand; if they were leader, R22 applies; if they were the last
     member, the party ends (R5).
@@ -124,8 +129,10 @@ slice as with chat); the client side is agent lane.
     members: [{player_id, name, class, joined_at, where, online}], size, reason, subject_id}`
     where `where` is `hub` | `field:<place>` | `run` | `away` (disconnected within R24's grace)
     and `reason` ∈ `joined` | `left` | `kicked` | `leader` | `dissolved` | `away` | `back` |
-    `settings`. A player being removed receives the update that removes them (their final one)
-    with their own id as `subject_id`.
+    `settings`. `size` is the party's cap (`PARTY_SIZE`); the count is the length of `members`.
+    A player being removed receives the update that removes them (their final one) with their
+    own id as `subject_id`. (Kick and transfer name their target as `target_id`, never
+    `player_id`: the client's socket writes the sender's own `player_id` over every payload.)
 22. **Succession.** When the leader leaves, is dropped (R24), or disconnects inside an instance
     (FS-BJNYC), the **earliest-joined** remaining member becomes leader at once; `party_update`
     reason `leader`.
@@ -157,14 +164,16 @@ slice as with chat); the client side is agent lane.
     A carved panel (`carvedPanel.ts`), game palette, right of the party frames.
 29. Contents: the member list (name, class, leader icon on the leader, `where`, away/offline
     greyed), and the actions the viewer may use: **Invite** (a DOM `<input>` like chat's, name or
-    id, Enter sends `party_invite`; usable only in the hub, greyed elsewhere), **Kick** and
+    id, with an **Invite** button beside it; Enter or the button sends `party_invite`; usable only
+    in the hub, greyed elsewhere), **Create party** (R30), **Kick** and
     **Transfer** on each other member (leader only), **Leave** (any member), and the loot-rule
     selector (FS-V780R, leader only). Actions that the server would refuse as `locked` are
     greyed inside an instance.
-30. A player in no party sees only the Invite field and one line: "Invite someone by name to
-    form a party."
+30. A player in no party sees a **Create party** button (sends `party_create`, R4a; usable only
+    in the hub, greyed elsewhere), the Invite field with its button, and one line: "Create a
+    party, or invite someone by name."
 31. Every `party_notice` shows as a system line in the chat window (FS-XGW7H's system-line
-    shape, channel `party`), with the copy in the notice table (R34).
+    shape, channel `party`), with the copy in the notice table (R36).
 
 ### Invite prompt (game-client)
 
@@ -178,15 +187,18 @@ slice as with chat); the client side is agent lane.
 
 ### Party frames (game-client)
 
-34. **Party frames** sit on the left edge below the level/XP bar, shown whenever the player is in
-    a party, one row per **other** member in join order: a **class bust** on the left (a
-    medallion cut from that class's own baked standing frame with `ui/bust.ts`, the NPC dialogue
-    card's crop, so the class is read from the figure, not a label), then the name (leader icon
-    first on the leader), then a health bar and a resource bar in the HUD's own-bar style, half
-    scale. Bars fill from
-    the member's `current_health`/`max_health` and `resource` in the state broadcast when
-    present (FS-CH21F; runs and fields); when absent (hub, or member elsewhere) the bar slot
-    shows a short state word instead: "village", "afield", "delving", "away".
+34. **Party frames** sit on the left edge below the level/XP bar, exactly as wide as its outer
+    frame, shown whenever the player is in a party: one row per member, **the player first**,
+    then the others in join order. Each row: a **class bust** on the left (a medallion cut from
+    that class's own baked standing frame with `ui/bust.ts`, the NPC dialogue card's crop, so the
+    class is read from the figure, not a label), then the name (leader icon first on the leader),
+    then a health bar and a resource bar in the HUD's own-bar style, half scale.
+    - **The player's own row** always shows both bars, from their own state.
+    - **A teammate's row** fills from the member's `current_health`/`max_health` and `resource` in
+      the state broadcast when present (runs and fields carry health today; `resource` arrives
+      with FS-CH21F, and its bar stays empty until then). When absent (hub, or the member is in
+      another world) the bar slot shows a short state word instead: "village", "afield",
+      "delving", "away". Teammates' bars in the hub are FS-CH21F's.
 35. Frames and panel update from `party_update` and each state tick; nothing is requested.
 
 ### Notice copy (game-client)
@@ -241,6 +253,10 @@ slice as with chat); the client side is agent lane.
 23. As a developer, I want the hub arrival to be the ordinary connect + `enter_hub` path with one extra id, so that the handoff code stays one mechanism.
 24. As a developer, I want the pod inbox to ride the chat bus's subscriber path, so that cross-pod delivery has one implementation.
 25. As a developer, I want the presence index shaped so whisper can use it unchanged, so that FS-KCQ06 adds no second index.
+26. As a player, I want to create a party with a button, alone, so that I can stand as a party of one before inviting anyone.
+27. As a player, I want an Invite button beside the name field, so that sending an invite does not depend on knowing to press Enter.
+28. As a member, I want my own frame at the top of the party frames, with my health and resource, so that the whole party, me included, reads at a glance in one place.
+29. As a member, I want the party frames as wide as the level bar above them, so that the left edge of the HUD reads as one column.
 
 ## Acceptance Criteria
 
@@ -256,13 +272,16 @@ slice as with chat); the client side is agent lane.
 - [ ] Presence keys appear on hub seating, vanish on leaving the hub, and expire within 30 s of a pod dying.
 - [ ] Pod inbox messages for a player not on this pod are dropped and logged at Debug; a publish failure notices `delivery_failed`.
 - [ ] Client: T toggles the panel in hub, field and run; actions grey per role and lock; invite field only usable in the hub.
-- [ ] Client: party frames render one row per other member with bars when health/resource is present and a state word otherwise; none when not in a party.
+- [ ] `party_create` makes a party of one with the sender as leader and a `party_update`; refused `not_in_hub`, `already_in_party`, `queued` in that order.
+- [ ] Client: the panel's Create party button (no party, hub only) sends `party_create`; the Invite button sends `party_invite` like Enter.
+- [ ] Client: party frames render one row per member, the player first, as wide as the level/XP frame; the player's row always has both bars; a teammate's has bars when health/resource is present and a state word otherwise; none when not in a party.
 - [ ] Client: a refused or failed hub handoff keeps the old socket and shows the notice.
 - [ ] `go test ./... -race` on the touched packages and `vitest` green; no raw hex in client code (lint fence).
 
 ## Edge States
 
-- **Empty:** no party → no frames, panel shows the hint; `party_leave` with no party → `not_member`.
+- **Empty:** no party → no frames, panel shows the Create party button, the Invite field and the hint; `party_leave` with no party → `not_member`.
+- **Create while in a party, queued, or outside the hub:** `party_create` is refused `already_in_party`, `queued` or `not_in_hub` (R4a); a party of one made by create lasts until its leader leaves, like any other.
 - **Concurrent:** two invites to the same player from two parties — both delivered; the first accept wins, the second accept gets `already_in_party` (on arrival or at accept). Two accepts of the same invite — the second is ignored (invite consumed). Kick and leave of the same member at once — first wins, second `not_member`.
 - **Party pod full:** checked at invite and again at accept (`pod_full` at accept too, the inviter told); the pending-accept count reserves room between the two.
 - **Party pod dies:** pointers expire; the invitee's accept finds no alive pod → `party_gone`; members on the dead pod reconnect wherever, party-less; the recall (R24) does nothing because `party:<id>` is gone.
@@ -285,7 +304,8 @@ slice as with chat); the client side is agent lane.
   emits `party_notice` and `party_update`.
 - The loot rule's semantics (FS-V780R); this FS only reserves the setting on the party and the
   selector's place on the panel.
-- Health and resource in the broadcast for members (FS-CH21F); the frames draw what is there.
+- Health and resource in the broadcast for members (FS-CH21F), including teammates' bars in the
+  hub; the frames draw what is there, and the player's own bars from their own state.
 - Inviting by clicking a visible player, friends lists, offline invites, guilds.
 - Spawning the arrival beside the leader (normal spawn point for now).
 - Whisper (FS-KCQ06), which will reuse the presence index.
