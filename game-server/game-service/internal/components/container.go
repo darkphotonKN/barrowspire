@@ -5,12 +5,14 @@ import (
 	"github.com/google/uuid"
 )
 
-// ContainerKind is what a container is: a floor's chest, or a drop pile a
-// slain monster left. Both are taken from the same way. FS-4R9M9 §Requirements 46, 55.
+// ContainerKind is what a container is: a floor's chest, a sack placed where a
+// chest would be, or a drop pile a slain monster left. All are taken from the
+// same way. FS-4R9M9 §Requirements 46, 55; FS-1D6BX §Requirements 1.
 type ContainerKind string
 
 const (
 	ContainerKindChest    ContainerKind = "chest"
+	ContainerKindSack     ContainerKind = "sack"
 	ContainerKindDropPile ContainerKind = "drop_pile"
 )
 

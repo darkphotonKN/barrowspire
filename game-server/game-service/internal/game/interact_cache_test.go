@@ -29,7 +29,7 @@ func TestHandleInteract_RefusedForRange_DoesNotLockTheTarget(t *testing.T) {
 		"door":      func(s *Session) uuid.UUID { return s.AddDoor(490, 490, 20, 20) },
 		"container": func(s *Session) uuid.UUID {
 			// already looted once, so the open draws nothing from the item pool
-			chestID := s.AddContainer(500, 500)
+			chestID := s.AddContainer(500, 500, components.ContainerKindChest)
 			chest, _ := s.EntityManager.GetEntity(chestID)
 			oc, _ := chest.GetComponent(ecs.ComponentTypeOpenable)
 			oc.(*components.OpenableComponent).HasBeenOpened = true

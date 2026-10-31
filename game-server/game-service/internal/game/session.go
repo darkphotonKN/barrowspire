@@ -142,9 +142,14 @@ type Session struct {
 	// what each floor's monsters are rolled from (FS-77AB6 §Requirements 22)
 	spawnRand populationRand
 
-	// what a field chest's item level and keep rolls are drawn from
-	// (FS-3QHQZ §Requirements 19); a run's chest does not draw on it
+	// what a container's empty roll (FS-1D6BX §Requirements 4) and a field
+	// chest's item level and keep rolls (FS-3QHQZ §Requirements 19) are
+	// drawn from
 	chestRand lootRand
+
+	// what each chest spawn point's sack-share draw is drawn from (FS-1D6BX
+	// §Requirements 3)
+	containerKindRand lootRand
 
 	// FS-K2HKP R18: the first floor's formation spots kept for matched players
 	// still on other pods. Each arrival takes one when seated
@@ -283,8 +288,9 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		itemsClient:     itemsClient,
 
 		// the same goroutine-safe global source loot rolls with
-		spawnRand: sharedLootRand{},
-		chestRand: sharedLootRand{},
+		spawnRand:         sharedLootRand{},
+		chestRand:         sharedLootRand{},
+		containerKindRand: sharedLootRand{},
 
 		playersPendingConnection: make(map[uuid.UUID]*types.Player),
 		seatDeadline:             time.Now().Add(SeatReleaseAfter),
@@ -1218,13 +1224,14 @@ func (s *Session) AddDoor(x, y, width, height float64) uuid.UUID {
 	return entity.ID
 }
 
-func (s *Session) AddContainer(x, y float64) uuid.UUID {
+func (s *Session) AddContainer(x, y float64, kind components.ContainerKind) uuid.UUID {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	ContainerConfig := ContainerConfig{
-		X: x,
-		Y: y,
+		X:    x,
+		Y:    y,
+		Kind: kind,
 	}
 	itemIDList := make([]uuid.UUID, 0)
 
@@ -1803,9 +1810,11 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		if !containerOpenable.HasBeenOpened {
 			containerOpenable.HasBeenOpened = true
 
-			// creates RANDOM items on the spot: the Spire's chest roll, or a
-			// field's derived from it (FS-3QHQZ §Requirements 19)
-			itemIDs, err := s.rollChest()
+			// creates RANDOM items on the spot: the Spire's roll for the
+			// container's kind, or a field's derived from it (FS-3QHQZ
+			// §Requirements 19, FS-1D6BX §Requirements 4); an empty roll
+			// still leaves it opened
+			itemIDs, err := s.rollChest(containerKindOf(targetEntity))
 
 			if err != nil {
 				fmt.Printf("Error generating container items: %v\n", err)
@@ -2491,24 +2500,25 @@ const (
 
 /**
 * generateItems generates new random items from the session itemPool base,
-* creates item entities, and returns their IDs: the Spire's chest roll, at the
-* floor's area level.
+* creates item entities, and returns their IDs: the Spire's roll for a container
+* of the kind given, at the floor's area level (FS-1D6BX §Requirements 4).
 **/
-func (s *Session) generateItems() ([]uuid.UUID, error) {
-	return s.generateItemsAt(s.chestDrop())
+func (s *Session) generateItems(kind components.ContainerKind) ([]uuid.UUID, error) {
+	return s.rollContainer(s.chestRand, kind, s.chestDrop())
 }
 
 /**
-* generateItemsAt is the chest roll for the drop given: the item count and type
-* split, then each item rolled for that drop. A field chest hands it its own
-* item level (FS-3QHQZ §Requirements 19); a run's chest, the floor's.
+* generateItemsAt is the chest roll for the drop given: the item count, uniform
+* in [minItems, maxItems], and type split, then each item rolled for that drop.
+* A field chest hands it its own item level (FS-3QHQZ §Requirements 19); a
+* run's chest, the floor's. A sack hands it its own count (FS-1D6BX D1).
 **/
-func (s *Session) generateItemsAt(drop lootDrop) ([]uuid.UUID, error) {
+func (s *Session) generateItemsAt(drop lootDrop, minItems, maxItems int) ([]uuid.UUID, error) {
 	slog.Debug("generating items from itemPool when opening container",
 		"s.itemPool", s.itemPool)
 
 	// decide on RNG values
-	numberOfItems := utils.GenRandomBetween(2, 4)
+	numberOfItems := utils.GenRandomBetween(minItems, maxItems)
 
 	// distribution of items
 	var numberOfWeapons int
@@ -3263,7 +3273,8 @@ func (s *Session) CreateContainer() {
 			containerX := placeArea.X + 10 + constants.ContainerWidthRadius
 			containerY := placeArea.Y + 10 + constants.ContainerHeightRadius
 
-			s.AddContainer(containerX, containerY)
+			// a chest spawn point: a sack at SackShare (FS-1D6BX §Requirements 3)
+			s.AddContainer(containerX, containerY, spawnedContainerKind(s.containerKindRand))
 			s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas, placeArea)
 			break
 		}

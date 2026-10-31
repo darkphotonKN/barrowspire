@@ -82,12 +82,13 @@ func (c *countingItemsClient) ListItemInstances(_ context.Context, _ *pb.ListIte
 }
 
 // newRun builds a run the way the server does, without starting its loops, so
-// the test is the only thing touching the world.
+// the test is the only thing touching the world. Its chest point holds a chest.
 func newRun(t *testing.T, client *countingItemsClient) *Session {
 	t.Helper()
 
 	em := ecs.NewEntityManager()
 	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, client, RunBounds())
+	s.containerKindRand = chestsOnly
 	s.InitialMapObjects(nil)
 	s.InitialSystems()
 
@@ -174,7 +175,7 @@ func newParty(t *testing.T, client *countingItemsClient) *party {
 	containers := entityIDsWith(s, ecs.ComponentTypeContainer)
 	require.Len(t, containers, 1, "the chest is placed first on an empty map")
 	chest, _ := s.EntityManager.GetEntity(containers[0])
-	loot, err := s.generateItems()
+	loot, err := s.generateItems(components.ContainerKindChest)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(loot), 2)
 	p.pickedUpItemID, p.chestItemIDs = loot[0], loot[1:]

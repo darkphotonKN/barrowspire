@@ -18,7 +18,7 @@ var pickupBread = types.ItemConfig{TemplateID: uuid.New(), ItemType: types.ItemT
 // openChest is a chest at (x, y) already opened, holding the given items.
 func openChest(t *testing.T, s *Session, x, y float64, items ...uuid.UUID) uuid.UUID {
 	t.Helper()
-	chestID := s.AddContainer(x, y)
+	chestID := s.AddContainer(x, y, components.ContainerKindChest)
 	chest, ok := s.EntityManager.GetEntity(chestID)
 	require.True(t, ok)
 	oc, ok := chest.GetComponent(ecs.ComponentTypeOpenable)
@@ -53,7 +53,7 @@ func TestHandleInteract_ItemNotInAnOpenContainerInReach_IsRefusedAndNothingMoves
 			}
 		},
 		"closed chest in reach": func(t *testing.T, s *Session, itemID uuid.UUID) holder {
-			chestID := s.AddContainer(520, 500)
+			chestID := s.AddContainer(520, 500, components.ContainerKindChest)
 			itemList(t, s, chestID).ItemIDs = []uuid.UUID{itemID}
 			return holder{list: func() []uuid.UUID { return itemList(t, s, chestID).ItemIDs }}
 		},

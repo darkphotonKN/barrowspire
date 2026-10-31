@@ -62,7 +62,7 @@ func wornIDs(t *testing.T, s *Session, playerEntityID uuid.UUID) []uuid.UUID {
 func TestHandleEquip_ItemNotCarried_IsRefusedForEverySlot(t *testing.T) {
 	holders := map[string]func(t *testing.T, s *Session) uuid.UUID{
 		"drop pile": func(t *testing.T, s *Session) uuid.UUID {
-			return s.AddContainer(400, 400)
+			return s.AddContainer(400, 400, components.ContainerKindChest)
 		},
 		"another delver": func(t *testing.T, s *Session) uuid.UUID {
 			return s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Kaelen", Class: "mage", Level: 3}, "")
@@ -107,7 +107,7 @@ func TestHandleEquip_UnequipItemNotWorn_IsRefusedForEverySlot(t *testing.T) {
 		t.Run(slotName, func(t *testing.T) {
 			s, _ := equipRun(t, nil)
 			playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
-			pileID := s.AddContainer(400, 400)
+			pileID := s.AddContainer(400, 400, components.ContainerKindChest)
 			itemID := s.AddItem(config)
 			pile := itemList(t, s, pileID)
 			pile.ItemIDs = append(pile.ItemIDs, itemID)

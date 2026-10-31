@@ -125,14 +125,21 @@ func CreateDoorEntity(em *ecs.EntityManager, config DoorConfig) *ecs.Entity {
 	return entity
 }
 
+// ContainerConfig places a container: where, and its kind, a chest when it
+// names none (FS-1D6BX §Requirements 1).
 type ContainerConfig struct {
 	X, Y float64
+	Kind components.ContainerKind
 }
 
 func CreateContainerEntity(em *ecs.EntityManager, config ContainerConfig, itemIDList []uuid.UUID) *ecs.Entity {
 	entity := em.CreateEntity()
 	containerID := uuid.New()
-	entity.AddComponent(components.NewContainerComponent(containerID))
+	kind := config.Kind
+	if kind == "" {
+		kind = components.ContainerKindChest
+	}
+	entity.AddComponent(&components.ContainerComponent{ContainerID: containerID, Kind: kind})
 	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
 	entity.AddComponent(components.NewOpenableComponent(false)) // default false
 	entity.AddComponent(components.NewItemIDListComponent(itemIDList))

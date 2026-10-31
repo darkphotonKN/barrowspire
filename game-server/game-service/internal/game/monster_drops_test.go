@@ -17,6 +17,7 @@ import (
 func dropSession() *Session {
 	return &Session{
 		EntityManager: ecs.NewEntityManager(),
+		chestRand:     sharedLootRand{}, // a sack's empty roll draws on it
 		itemPool: lootPool{
 			Weapons:     []lootTemplate{longsword},
 			Armor:       []lootTemplate{plateHelm},
@@ -298,7 +299,7 @@ func TestRun_SlainDemon_DropsAPileADelverTakesFrom(t *testing.T) {
 	playerID, delver := placeDelver(t, s, "warrior", 500, 500)
 	demon := frailDemon(s, 545, 500, 7)
 	for range 3 {
-		s.AddContainer(900, 900) // chests about, so the pickup must find the pile
+		s.AddContainer(900, 900, components.ContainerKindChest) // chests about, so the pickup must find the pile
 	}
 
 	require.NoError(t, s.handleAttack(playerID, demon.ID))

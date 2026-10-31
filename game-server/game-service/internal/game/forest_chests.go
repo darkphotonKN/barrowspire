@@ -12,29 +12,33 @@ import (
 	item level drawn from its place's band and kept at its place's drop factor
 	(FS-X2F2H's container rule, R32). Anyone may take from it: a chest is never
 	reserved. Its place's ChestRestockDelay after that first open it restocks.
+	A clearing's sack is a field chest that rolls a sack's odds (FS-1D6BX
+	§Requirements 7, 10).
 */
 
 /**
-* rollChest is what a chest holds on its first open: a field's chest roll in a
-* field, the Spire's chest roll at the floor's area level anywhere else.
+* rollChest is what a placed container of the kind holds on its first open: a
+* field's chest roll in a field, the Spire's roll at the floor's area level
+* anywhere else, each at the kind's odds (FS-1D6BX §Requirements 4).
 **/
-func (s *Session) rollChest() ([]uuid.UUID, error) {
+func (s *Session) rollChest(kind components.ContainerKind) ([]uuid.UUID, error) {
 	place, ok := s.FieldPlace()
 	if !ok {
-		return s.generateItems()
+		return s.generateItems(kind)
 	}
-	return s.fieldChestRoll(s.chestRand, place)
+	return s.fieldChestRoll(s.chestRand, kind, place)
 }
 
 /**
 * fieldChestRoll is a field chest's roll (R19): the item level uniform in the
-* place's band, then the container rule at the place's drop factor.
+* place's band, then the container rule for the kind at the place's drop factor.
 *
-* Draws, in order: the level, then one keep roll per item rolled.
+* Draws, in order: the level, the kind's empty roll when it can roll empty,
+* then one keep roll per item rolled.
 **/
-func (s *Session) fieldChestRoll(r lootRand, place FieldPlace) ([]uuid.UUID, error) {
+func (s *Session) fieldChestRoll(r lootRand, kind components.ContainerKind, place FieldPlace) ([]uuid.UUID, error) {
 	itemLevel := place.MinLevel + r.IntN(max(place.MaxLevel-place.MinLevel+1, 1))
-	return s.fieldContainerRoll(r, itemLevel, place.DropFactor)
+	return s.fieldContainerRoll(r, kind, itemLevel, place.DropFactor)
 }
 
 /**
@@ -43,8 +47,9 @@ func (s *Session) fieldChestRoll(r lootRand, place FieldPlace) ([]uuid.UUID, err
 * open its place's ChestRestockDelay it restocks: whatever it still holds
 * leaves the world, it closes, and its next opening rolls afresh. What was
 * taken from it before then is the taker's. A run's chests, and a place that
-* names no delay, never restock. It runs on the tick, unlocked, as the piles do;
-* the delay is the one cached as the channel was built.
+* names no delay, never restock. A sack restocks as a chest does (FS-1D6BX
+* §Requirements 10). It runs on the tick, unlocked, as the piles do; the delay
+* is the one cached as the channel was built.
 **/
 func (s *Session) restockFieldChests(deltaTime float64, entities []*ecs.Entity) {
 	s.mu.RLock()
@@ -61,7 +66,7 @@ func (s *Session) restockFieldChests(deltaTime float64, entities []*ecs.Entity) 
 			continue
 		}
 		chest, ok := cc.(*components.ContainerComponent)
-		if !ok || chest.Kind != components.ContainerKindChest {
+		if !ok || !restocks(chest.Kind) {
 			continue
 		}
 		oc, ok := entity.GetComponent(ecs.ComponentTypeOpenable)
@@ -88,4 +93,10 @@ func (s *Session) restockFieldChests(deltaTime float64, entities []*ecs.Entity) 
 		openable.IsOpen, openable.HasBeenOpened = false, false
 		chest.OpenedFor = 0
 	}
+}
+
+// restocks is whether a field container of the kind restocks: a chest or a
+// sack, never a drop pile.
+func restocks(kind components.ContainerKind) bool {
+	return kind == components.ContainerKindChest || kind == components.ContainerKindSack
 }
