@@ -144,11 +144,20 @@ function drawFlourishRule(
 const within = (r: Rect, x: number, y: number) =>
   x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
 
-/** The window's chrome type: tabs, the idle input row, the fold button. Crisp, no shadow. */
+/**
+ * Phaser rasterises text at resolution 1 unless told otherwise, so on a high-density screen it is
+ * upscaled and reads soft beside the browser-drawn input row (asked 2026-10-31). The window's
+ * text is rasterised at the device's ratio instead.
+ */
+const textResolution = () =>
+  typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+
+/** The window's chrome type: tabs, the fold button. Crisp, no shadow. */
 const textStyle = (colour: number) => ({
   fontFamily: CANVAS_FONT.body,
   fontSize: `${FONT_PX}px`,
   color: toCss(colour),
+  resolution: textResolution(),
 });
 
 /** A chat line's type: a soft dark shadow keeps the words legible when the idle panel lets a bright field through. */
