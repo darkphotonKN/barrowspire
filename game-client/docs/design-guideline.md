@@ -165,9 +165,12 @@ the test above, because most of those things cannot be acted on.
   - Ground is diamond tiles that tile seamlessly, chosen deterministically per world tile so
     every client sees the same ground.
   - Clear floor/wall distinction.
-- **Props:** wall torches and braziers (flickering light), chests, broken pillars, hanging
+- **Props:** wall torches and braziers (flickering light), chests, sacks, broken pillars, hanging
   chains, lamp posts, furniture, trees. Interactables have one baked frame per state (door
-  locked/unlocked/open, switch inactive/active, chest closed/open).
+  locked/unlocked/open, switch inactive/active, chest closed/open, sack closed/open). A sack is
+  the chest's humbler cousin, smaller and plainer on the floor: closed, a slumped burlap sack
+  tied at the neck with a leather thong; open, the thong slipped and the neck fallen open, the
+  dark inside showing.
 - The world reads as a **torch-lit crypt:** pooled warm light, deep shadow, with shading
   baked into the art so it looks lit *before* any light-map is applied. This holds for the hub
   and for every run in the Spire.
@@ -405,8 +408,13 @@ Where the bound and the message conflict — an end-of-run heading long enough t
 - **Panels in the world (HUD, popups over the hub and the run):** dark vellum and carved-stone
   panels with 1px brass borders, in the palette above. Smooth fills and soft edges match the
   linearly filtered world; no pixel-grid frames.
-- **World-object UI can be baked art.** The container view is a leather satchel whose flap lifts
-  and whose item icons drop in (FS-2325V §D). Item icons are baked, with a generic fallback.
+- **World-object UI can be baked art.** The container view has one face per container kind
+  (FS-1D6BX): a chest opens into the **coffer**, a plain open box seen from the front and a little
+  above, with the items inside; a sack opens into the **satchel**, a leather satchel whose flap
+  lifts and whose item icons drop in (FS-2325V §D); a slain monster's drop pile opens into the
+  **bone heap**, the items lying on top. Only the satchel animates; the coffer and the bone heap
+  pop in. Every face keeps the satchel's footprint and item slots. Item icons are baked, with a
+  generic fallback.
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich
