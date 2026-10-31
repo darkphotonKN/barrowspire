@@ -44,7 +44,9 @@ import {
 } from "@/ui/party";
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
 import { ProgressHud } from "@/ui/ProgressHud";
-import { ResourceHud } from "@/ui/ResourceHud";
+import { RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
+import { PotionHud } from "@/ui/PotionHud";
+import { potionCell } from "@/ui/potions";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
@@ -182,6 +184,8 @@ const PROGRESS_HUD_Y = 44;
  */
 const RESOURCE_HUD_X = PROGRESS_HUD_X;
 const RESOURCE_HUD_MARGIN = 16;
+/** The potion cell (FS-P9G8R R24): just right of the resource bars, bottom-aligned with them. */
+const POTION_HUD_X = RESOURCE_HUD_X + RESOURCE_HUD_W + 6;
 /**
  * The ability card (FS-8AY7S req 29, 32): bottom-right, on the leave button's margins. The two
  * share the corner and are never up together: the card is down whenever the button is up.
@@ -450,6 +454,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private progressHud?: ProgressHud;
   /** The Health and class resource bars, bottom-left (FS-8AY7S req 20). */
   private resourceHud?: ResourceHud;
+  /** The health potions carried and the drink key, beside the bars (FS-P9G8R R24). */
+  private potionHud?: PotionHud;
   /** The class ability card, bottom right (FS-8AY7S req 29–32). */
   private abilityHud?: AbilityHud;
   /**
@@ -767,6 +773,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.tabKey = undefined;
     this.progressHud = undefined;
     this.resourceHud = undefined;
+    this.potionHud = undefined;
     this.abilityHud = undefined;
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
@@ -3759,12 +3766,16 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * This player's Health and class resource bars (FS-8AY7S req 20–25): up while they are in the
-   * delve, down once they are out of it, and never before their first state.
+   * This player's Health and class resource bars (FS-8AY7S req 20–25) and the potion cell beside
+   * them (FS-P9G8R R24): up while they are in the delve, down once they are out of it, and never
+   * before their first state.
    */
   private showResourceBars(state: ClientGameState): void {
     this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_X, this.cameras.main.height - RESOURCE_HUD_MARGIN);
     this.resourceHud.show(hudBars(state));
+    // the potion cell is up exactly when the bars are (FS-P9G8R R24)
+    this.potionHud ??= new PotionHud(this, this.art, POTION_HUD_X, this.cameras.main.height - RESOURCE_HUD_MARGIN);
+    this.potionHud.show(potionCell(state));
   }
 
   /**
