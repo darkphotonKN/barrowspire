@@ -1,6 +1,6 @@
 ---
 id: I-5SH4G-1
-status: open
+status: done
 implements: FS-5SH4G
 blocked_by: []
 labels: [ready-for-agent]
@@ -8,8 +8,14 @@ title: "FS-5SH4G slice 1: subscribe to chat:world and deliver each line to the p
 ---
 Implements FS-5SH4G §Requirements B7, B9, B11, B13
 
-**Author: human (hand-coded, human lane) unless the user authorises the agent, as for FS-WJGFJ.
-Agent: table-driven tests.**
+**Author: agent, the user having invoked `/develop` on this slice and approved the plan on
+2026-10-31 (the FS-WJGFJ exception again). Branch `feat/in-game-chat`.** Built: `internal/chatbus`
+(Redis pub/sub wrapper, `Listen` confirms the subscription before reporting), the relay's
+`chatBus` interface at its point of use, a subscriber goroutine that resubscribes a second after a
+drop, a 64-line inbound queue the hub loop drains (`case line := <-h.chat.inbound()`), delivery to
+`SeatedPlayerIDs`, the `WithChatBus` boot option, and the wiring in `config/routes.go` on the
+matchmaker's Redis client. Tests run on miniredis. The context-cancel test proves the subscriber
+is gone by seeing a publish find no listener.
 
 ## What to Build
 

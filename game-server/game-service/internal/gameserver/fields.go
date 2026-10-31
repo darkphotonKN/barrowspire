@@ -110,6 +110,8 @@ type bootOptions struct {
 	// fresh uuids unless a test fixes them
 	chatNow   func() time.Time
 	chatNewID func() uuid.UUID
+	// the Redis side of chat; nil on a pod with no bus, which then hears only itself (FS-5SH4G)
+	chatBus chatBus
 }
 
 // newBootOptions are the defaults with opts applied: a fresh seed, the

@@ -170,6 +170,9 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID)
 	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat)
 	go messageHub.Run(ctx)
+	if boot.chatBus != nil {
+		go chat.listen(ctx, boot.chatBus)
+	}
 
 	server.createHubSession()
 	server.createFieldSessions(fields)

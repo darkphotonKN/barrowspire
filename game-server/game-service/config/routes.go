@@ -13,6 +13,7 @@ import (
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
 	grpccharacter "github.com/darkphotonKN/barrowspire-server/game-service/grpc/character"
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/chatbus"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/gameserver"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/handoff"
@@ -90,7 +91,11 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 	// server publishes handoff steps to the other pods. FS-K2HKP §Requirements 20.
 	// the game service also settles every field visit through the same
 	// match-end outbox write. FS-X2F2H §F R39, ADR-0031.
-	server, err := gameserver.NewServer(ctx, authClient, matchmaker, gameService, itemsClient, characterClient, pod.ID, pod.Addr, matchAnnouncer, gameserver.WithVisitSettler(gameService))
+	server, err := gameserver.NewServer(ctx, authClient, matchmaker, gameService, itemsClient, characterClient, pod.ID, pod.Addr, matchAnnouncer,
+		gameserver.WithVisitSettler(gameService),
+		// the world channel rides the same Redis the matchmaker and handoff use (FS-5SH4G R13)
+		gameserver.WithChatBus(chatbus.NewRedis(redisClient)),
+	)
 	if err != nil {
 		return nil, nil, errors.Join(fmt.Errorf("game server: %w", err), closeAll())
 	}

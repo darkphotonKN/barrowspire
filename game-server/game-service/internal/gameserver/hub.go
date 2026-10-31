@@ -37,9 +37,12 @@ type messageHub struct {
 	chat chatRelayer
 }
 
-// chatRelayer is what the hub needs from chat: one line in, delivered or refused.
+// chatRelayer is what the hub needs from chat: a player's line in, delivered or refused; and
+// the lines that arrive off the bus, delivered on this loop (FS-5SH4G R9).
 type chatRelayer interface {
 	relay(sender *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	inbound() <-chan types.Message
+	deliver(line types.Message)
 }
 
 // handoffAnnounceTimeout bounds each announce to another pod, so a slow redis
@@ -708,6 +711,11 @@ func (h *messageHub) Run(ctx context.Context) {
 		case handoff := <-h.sessionManager.GetHandoffChan(ctx):
 			slog.Debug("handoff received", "handoff", handoff)
 			h.sendWorldHandoff(handoff)
+
+		// a chat line off the bus: delivered here, so the writer queues are touched from
+		// one goroutine as for area lines (FS-5SH4G R7, R9)
+		case line := <-h.chat.inbound():
+			h.chat.deliver(line)
 		}
 
 	}

@@ -1,6 +1,10 @@
 package gameserver
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -8,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/chatbus"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -43,6 +48,20 @@ const chatTextMax = 200
 // FS-WJGFJ R6.
 const chatFloodWindow = 2 * time.Second
 
+// chatBus is what the relay needs from the Redis side of chat (FS-5SH4G): a subscription that
+// hands over each message's bytes in order and reports when it drops.
+type chatBus interface {
+	Listen(ctx context.Context, channel string, onMessage func(payload []byte)) error
+}
+
+// chatInboundBuffer is how many lines off the bus may wait for the hub loop before one is
+// dropped: at-most-once, never a stalled subscriber (ADR-0033).
+const chatInboundBuffer = 64
+
+// chatResubscribeWait is how long the subscriber waits after its subscription drops before
+// subscribing again.
+const chatResubscribeWait = time.Second
+
 // chatRelay stamps and delivers chat lines for one pod.
 type chatRelay struct {
 	audience chatAudience
@@ -54,6 +73,8 @@ type chatRelay struct {
 	// when each player's last line was accepted, for the flood window. Only the hub's loop
 	// touches it, so it needs no lock; it holds only who spoke inside the window (R6).
 	lastAccepted map[uuid.UUID]time.Time
+	// lines arrived off the bus, waiting for the hub loop to deliver them (FS-5SH4G R9)
+	inboundLines chan types.Message
 }
 
 // newChatRelay builds the pod's relay. now and newID are what lines are
@@ -67,6 +88,74 @@ func newChatRelay(audience chatAudience, sender chatSender, podID string, now fu
 		newID:    newID,
 
 		lastAccepted: make(map[uuid.UUID]time.Time),
+		inboundLines: make(chan types.Message, chatInboundBuffer),
+	}
+}
+
+// inbound is where lines off the bus arrive for the hub loop to deliver.
+func (r *chatRelay) inbound() <-chan types.Message {
+	return r.inboundLines
+}
+
+// listen keeps a subscription to the world channel open for the life of ctx, subscribing again
+// a moment after it drops (FS-5SH4G R9, R11). Runs on its own goroutine.
+func (r *chatRelay) listen(ctx context.Context, bus chatBus) {
+	for {
+		err := bus.Listen(ctx, chatbus.WorldChannel, r.arrived)
+		if ctx.Err() != nil {
+			return
+		}
+		slog.Warn("chat bus subscription dropped; subscribing again", "channel", chatbus.WorldChannel, "error", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(chatResubscribeWait):
+		}
+	}
+}
+
+// arrived takes one message's bytes off the bus: a stamped line goes to the hub loop, anything
+// else is skipped. A full queue drops the line rather than stall the subscriber (at-most-once).
+func (r *chatRelay) arrived(raw []byte) {
+	line, err := decodeChatLine(raw)
+	if err != nil {
+		// never the bytes: a line's text may be in them (R14)
+		slog.Warn("chat bus message skipped", "channel", chatbus.WorldChannel, "error", err)
+		return
+	}
+	select {
+	case r.inboundLines <- line:
+	default:
+		slog.Debug("chat line off the bus dropped: hub loop behind", "channel", chatbus.WorldChannel)
+	}
+}
+
+var errNotAChatLine = errors.New("not a stamped chat line")
+
+// decodeChatLine reads a published line back as the message a client receives: the stamped
+// payload, unchanged, so a line reads the same whichever pod it came from.
+func decodeChatLine(raw []byte) (types.Message, error) {
+	var payload map[string]interface{}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return types.Message{}, fmt.Errorf("decode chat line: %w", err)
+	}
+	for _, key := range []string{"message_id", "channel", "sender_id", "sender_name", "text", "sent_at"} {
+		if _, ok := payload[key].(string); !ok {
+			return types.Message{}, fmt.Errorf("decode chat line: %w: missing %s", errNotAChatLine, key)
+		}
+	}
+	return types.Message{Action: string(constants.ActionChat), Payload: payload}, nil
+}
+
+// deliver hands a line off the bus to every player seated on this pod (FS-5SH4G R7). On the
+// hub loop, like an area line; a full writer queue or a gone player is skipped (R12).
+func (r *chatRelay) deliver(line types.Message) {
+	audience := r.audience.SeatedPlayerIDs()
+	if len(audience) == 0 {
+		return
+	}
+	if err := r.sender.BroadcastToPlayerList(audience, line); err != nil {
+		slog.Debug("chat line off the bus not delivered to everyone", "channel", chatbus.WorldChannel, "error", err)
 	}
 }
 
@@ -79,6 +168,12 @@ func WithChatClock(now func() time.Time) Option {
 // WithChatIDs mints chat line ids from newID instead of fresh uuids. FS-WJGFJ R3.
 func WithChatIDs(newID func() uuid.UUID) Option {
 	return func(o *bootOptions) { o.chatNewID = newID }
+}
+
+// WithChatBus gives the pod the Redis side of chat: it subscribes to the world channel at boot
+// and delivers what arrives to its seated players. FS-5SH4G R9, R13.
+func WithChatBus(bus chatBus) Option {
+	return func(o *bootOptions) { o.chatBus = bus }
 }
 
 // chatNoticeCopy is what each notice says, in the words the player sees. The
