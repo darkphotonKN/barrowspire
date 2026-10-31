@@ -428,3 +428,39 @@ describe("ChatInput history", () => {
     expect(r.field.channel).toBe("world");
   });
 });
+
+// ── Who owns the keys, re-read once a frame (code review 2026-10-31) ───────────────────────
+// The rule "an overlay took the keys: the draft goes" belongs to the input, not the window.
+
+describe("ChatInput sync", () => {
+  it("should report the first reading, then only changes", () => {
+    let allowed = true;
+    const { input } = rig(() => allowed);
+
+    expect(input.sync()).toBe(true);
+    expect(input.sync()).toBeUndefined();
+
+    allowed = false;
+    expect(input.sync()).toBe(false);
+    expect(input.sync()).toBeUndefined();
+
+    allowed = true;
+    expect(input.sync()).toBe(true);
+  });
+
+  it("should drop a half-typed line and close when the keys are taken mid-line", () => {
+    let allowed = true;
+    const { input, field, keyboard } = rig(() => allowed);
+    input.sync();
+    input.requestOpen();
+    input.focused();
+    field.value = "half";
+
+    allowed = false;
+    input.sync();
+
+    expect(input.isOpen()).toBe(false);
+    expect(field.value).toBe("");
+    expect(keyboard.enabled).toBe(true);
+  });
+});

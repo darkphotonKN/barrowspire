@@ -408,7 +408,8 @@ function inputRig(mayOpen = () => true) {
       makeField: (_scene, rect, events) => {
         const f: FakeField = {
           value: "",
-          visible: true,
+          // as a DOM element might start: the window must show it itself
+          visible: false,
           channel: "area",
           focused: false,
           rect,
@@ -943,10 +944,8 @@ describe("ChatWindow mask lifetime", () => {
 describe("ChatWindow DOM row visibility", () => {
   // the row is shown idle and typing alike (asked 2026-10-31: one look, no jump), and hidden only
   // while something else owns the keys, since the DOM layer always draws above the canvas
-  it("should show the row from the first frame whatever the field started as, and keep it through typing and closing", () => {
-    const { press, field, window, frame } = inputRig();
-    field().visible = false;
-    frame();
+  it("should show the row as soon as the window is built, whatever the field started as, and keep it through typing and closing", () => {
+    const { press, field, window } = inputRig();
     expect(field().visible).toBe(true);
 
     press("ENTER");
@@ -994,5 +993,12 @@ describe("ChatWindow scrolled-back offset at a full buffer (review 2026-10-31)",
 
     expect(s.contents()).toHaveLength(CHAT_VISIBLE_LINES);
     expect(s.contents()[0]).toBe("l11");
+  });
+});
+
+describe("ChatWindow built under an overlay (code review 2026-10-31)", () => {
+  it("should never show the row, not even for a frame, when built while something else owns the keys", () => {
+    const { field } = inputRig(() => false);
+    expect(field().visible).toBe(false);
   });
 });
