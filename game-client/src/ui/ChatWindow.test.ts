@@ -634,3 +634,49 @@ describe("ChatWindow picker wiring", () => {
     expect(field().value).toBe("hi");
   });
 });
+
+// ── Clicking back into the game (asked 2026-10-31) ──────────────────────────────────────────
+// Phaser prevents the default on a canvas mousedown, so the browser never moves focus off the
+// text field by itself: the window lets go of it on any press outside the panel.
+
+describe("ChatWindow letting go of the input on a press in the world", () => {
+  it("should close the input, keep the draft and give the keyboard back on a press outside the panel", () => {
+    const { press, field, keys, window, input } = inputRig();
+    press("ENTER");
+    field().value = "half a thought";
+
+    const panel = chatWindowFrame(X, BOTTOM).panel;
+    input.emit("pointerdown", {
+      x: panel.x + panel.width + 100,
+      y: panel.y - 50,
+    });
+
+    expect(field().focused).toBe(false);
+    expect(window.isTyping()).toBe(false);
+    expect(keys.enabled).toBe(true);
+    expect(field().value).toBe("half a thought");
+  });
+
+  it("should keep typing through a press on the panel itself, such as a tab", () => {
+    const { press, field, window, input } = inputRig();
+    press("ENTER");
+
+    const frame = chatWindowFrame(X, BOTTOM);
+    input.emit("pointerdown", {
+      x: frame.filterRow.x + 10,
+      y: frame.filterRow.y + 5,
+    });
+
+    expect(field().focused).toBe(true);
+    expect(window.isTyping()).toBe(true);
+  });
+
+  it("should do nothing on a press while not typing, and stop listening once destroyed", () => {
+    const { field, input, window } = inputRig();
+    input.emit("pointerdown", { x: 900, y: 50 });
+    expect(field().focused).toBe(false);
+
+    window.destroy();
+    expect(input.listenerCount("pointerdown")).toBe(0);
+  });
+});

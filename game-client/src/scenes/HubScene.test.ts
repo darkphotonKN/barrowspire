@@ -70,7 +70,7 @@ vi.mock("@/render/iso", async (importOriginal) => {
 const { HubScene, delveChoices, hubMenuChoices, WARDEN_TALE } = await import("./HubScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
-const { palette, toCss } = await import("@/utils/canvasPalette");
+const { palette, rgba, toCss } = await import("@/utils/canvasPalette");
 const { BARROW_HEX } = await import("@/utils/theme");
 const { MARKER_DEPTH } = await import("@/render/markers");
 
@@ -411,9 +411,11 @@ describe("HubScene queue flag and Leave button (FS-G4VMQ §Requirements 11, 15, 
     expect(leave.depth).toBe(1000);
     expect(leave.x).toBeGreaterThan(panel.x + panel.width / 2);
     expect(leave.y).toBe(panel.y + panel.height / 2);
-    const style = leave.args[3] as { color: string; fontSize: string };
+    const style = leave.args[3] as { color: string; fontSize: string; backgroundColor: string };
     const panelStyle = panel.args[3] as { color: string; fontSize: string };
     expect(style.color).toBe(toCss(BARROW_HEX.amber));
+    // see-through like the chat window's panel, not a solid block (asked 2026-10-31)
+    expect(style.backgroundColor).toBe(rgba(palette.chatPanel, 0.85));
     expect(style.fontSize).toBe(panelStyle.fontSize);
     expect(hub.leaveButton).toBe(leave);
   });
