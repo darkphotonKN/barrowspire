@@ -2,7 +2,8 @@ import { EventEmitter } from "eventemitter3";
 import { describe, expect, it } from "vitest";
 import type Phaser from "phaser";
 import { createChatStore, type ChatLinePayload } from "@/stores/chatStore";
-import { palette, toCss } from "@/utils/canvasPalette";
+import { palette, shade, toCss } from "@/utils/canvasPalette";
+import { BARROW_HEX } from "@/utils/theme";
 import { ChatWindow } from "./ChatWindow";
 import {
   CHAT_FOLD_W,
@@ -39,6 +40,7 @@ function fakeScene() {
     scroll?: number;
     destroyed: boolean;
     rects: number[][];
+    fills: [number, number][];
   }[] = [];
   const keys = Object.assign(new EventEmitter(), {
     enabled: true,
@@ -52,13 +54,17 @@ function fakeScene() {
       scroll: undefined as number | undefined,
       destroyed: false,
       rects: [] as number[][],
+      fills: [] as [number, number][],
     };
     if (!masks) panels.push(g);
     const self: Record<string, unknown> = {
       setScrollFactor: (s: number) => ((g.scroll = s), self),
       setDepth: (d: number) => ((g.depth = d), self),
-      clear: () => ((g.rects = []), self),
-      fillStyle: () => self,
+      clear: () => ((g.rects = []), (g.fills = []), self),
+      fillStyle: (colour: number, alpha = 1) => (
+        g.fills.push([colour, alpha]),
+        self
+      ),
       lineStyle: () => self,
       fillRect: (...r: number[]) => (g.rects.push(r), self),
       fillRoundedRect: (...r: number[]) => (g.rects.push(r.slice(0, 4)), self),
@@ -772,5 +778,42 @@ describe("ChatWindow fold button size (asked 2026-10-31)", () => {
     foldButtonOf(s).onPress!();
     // folded, the up glyph draws a size larger still: it reads small in the body face
     expect(parseInt(foldButtonOf(s).fontSize ?? "0", 10)).toBeGreaterThan(open);
+  });
+});
+
+// ── Opaque while typing, see-through while idle (asked 2026-10-31) ─────────────────────────
+
+describe("ChatWindow opacity", () => {
+  // the carved panel's main ground is drawn at 0.97 of the window's opacity
+  const groundAlpha = (s: ReturnType<typeof inputRig>) => {
+    const live = s.panels.filter((p) => !p.destroyed).at(-1)!;
+    return live.fills.find(
+      ([colour]) => colour === shade(BARROW_HEX.charcoal, 0.2),
+    )![1];
+  };
+
+  it("should be see-through while open and idle, solid while the player types, and see-through again after", () => {
+    const s = inputRig();
+    const idle = groundAlpha(s);
+    expect(idle).toBeLessThan(0.7);
+
+    s.press("ENTER");
+    expect(groundAlpha(s)).toBeCloseTo(0.97);
+
+    s.field().focused = false;
+    s.field().events!.blurred();
+    expect(groundAlpha(s)).toBeCloseTo(idle);
+  });
+
+  it("should not redraw the panel on every keystroke", () => {
+    const s = inputRig();
+    s.press("ENTER");
+    const live = s.panels.filter((p) => !p.destroyed).at(-1)!;
+    const before = live.fills.length;
+
+    s.field().value = "abc";
+    s.field().events!.typed(false);
+
+    expect(live.fills.length).toBe(before);
   });
 });

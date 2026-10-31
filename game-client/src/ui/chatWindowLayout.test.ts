@@ -39,12 +39,13 @@ const system = (text: string): ChatEntry => ({
 });
 
 describe("chatWindowFrame (C18, C19: where the window sits and its shape)", () => {
-  it("should put the panel's bottom edge where the caller says and keep it 360 wide", () => {
+  it("should put the panel's bottom edge where the caller says and keep it 420 wide", () => {
     const frame = chatWindowFrame(10, 500);
 
     expect(frame.panel.x).toBe(10);
     expect(frame.panel.width).toBe(CHAT_WINDOW_W);
-    expect(frame.panel.width).toBe(360);
+    // widened from 360 at the user's ask, 2026-10-31
+    expect(frame.panel.width).toBe(420);
     expect(frame.panel.y + frame.panel.height).toBe(500);
   });
 
