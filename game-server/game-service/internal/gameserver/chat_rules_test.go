@@ -266,3 +266,23 @@ func TestChatRelay_ForgetsSpeakersOnceTheirWindowHasPassed(t *testing.T) {
 	assert.NotContains(t, rig.relay.lastAccepted, wren.ID, "Wren's window has passed")
 	assert.Contains(t, rig.relay.lastAccepted, kaelen.ID)
 }
+
+// Someone else speaking inside a player's window neither clears nor shortens it: the sweep
+// drops only records whose window has already passed. FS-WJGFJ R6.
+func TestChatRelay_AnotherSpeakerDoesNotOpenYourWindow(t *testing.T) {
+	rig := newRulesRig()
+	wren := seatedSpeaker("Wren")
+	kaelen := seatedSpeaker("Kaelen")
+
+	rig.say(wren, "one")
+	rig.clock.advance(500 * time.Millisecond)
+	rig.say(kaelen, "hello")
+	rig.clock.advance(500 * time.Millisecond)
+	rig.say(wren, "too soon")
+
+	got, _ := rig.lastText()
+	assert.Equal(t, "hello", got, "Wren's second line, 1 s after the first, reached nobody")
+	require.Len(t, rig.spy.notices, 1)
+	assert.Equal(t, "too_fast", rig.spy.notices[0].Payload["code"])
+	assert.Contains(t, rig.relay.lastAccepted, wren.ID, "Kaelen's line did not sweep Wren away")
+}
