@@ -97,6 +97,10 @@ const (
 	// ChatNoticeChannelClosed: the channel is not relayed yet, or is not one
 	// of the five. FS-WJGFJ R8.
 	ChatNoticeChannelClosed ChatNoticeCode = "channel_closed"
+	// ChatNoticeTooLong: more than the line limit, in code points. FS-WJGFJ R5.
+	ChatNoticeTooLong ChatNoticeCode = "too_long"
+	// ChatNoticeTooFast: inside the speaker's flood window. FS-WJGFJ R6.
+	ChatNoticeTooFast ChatNoticeCode = "too_fast"
 )
 
 const (

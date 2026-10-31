@@ -2,7 +2,10 @@ package gameserver
 
 import (
 	"log/slog"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -33,6 +36,13 @@ type chatSender interface {
 	BroadcastToPlayerList(players []uuid.UUID, msg types.Message) error
 }
 
+// chatTextMax is the most code points a line may carry, after normalising. FS-WJGFJ R5.
+const chatTextMax = 200
+
+// chatFloodWindow is how long after an accepted line its speaker must wait to be heard again.
+// FS-WJGFJ R6.
+const chatFloodWindow = 2 * time.Second
+
 // chatRelay stamps and delivers chat lines for one pod.
 type chatRelay struct {
 	audience chatAudience
@@ -41,6 +51,9 @@ type chatRelay struct {
 	// the stamp's clock and id, seams a test fixes
 	now   func() time.Time
 	newID func() uuid.UUID
+	// when each player's last line was accepted, for the flood window. Only the hub's loop
+	// touches it, so it needs no lock; it holds only who spoke inside the window (R6).
+	lastAccepted map[uuid.UUID]time.Time
 }
 
 // newChatRelay builds the pod's relay. now and newID are what lines are
@@ -52,6 +65,8 @@ func newChatRelay(audience chatAudience, sender chatSender, podID string, now fu
 		podID:    podID,
 		now:      now,
 		newID:    newID,
+
+		lastAccepted: make(map[uuid.UUID]time.Time),
 	}
 }
 
@@ -60,6 +75,8 @@ func newChatRelay(audience chatAudience, sender chatSender, podID string, now fu
 var chatNoticeCopy = map[constants.ChatNoticeCode]string{
 	constants.ChatNoticeNotInWorld:    "Enter the world before you speak.",
 	constants.ChatNoticeChannelClosed: "That channel is not open yet.",
+	constants.ChatNoticeTooLong:       "Too many words. Keep it under 200.",
+	constants.ChatNoticeTooFast:       "Catch your breath before you speak again.",
 }
 
 // relay handles one inbound chat line from sender on conn. The sender was
@@ -77,8 +94,27 @@ func (r *chatRelay) relay(sender *types.Player, conn *websocket.Conn, payload ma
 		return
 	}
 
-	text, _ := payload["text"].(string)
-	line := r.stamp(sender, constants.ChatChannelArea, r.podID, text)
+	// a missing or non-string text is no text: dropped like an empty line (R5)
+	raw, _ := payload["text"].(string)
+	text := normaliseChatText(raw)
+	if text == "" {
+		return
+	}
+	if utf8.RuneCountInString(text) > chatTextMax {
+		r.notice(conn, constants.ChatNoticeTooLong)
+		return
+	}
+
+	// one clock read per line: the window and the stamp agree on when it was said
+	at := r.now()
+	r.forgetQuiet(at)
+	if last, spoke := r.lastAccepted[sender.ID]; spoke && at.Sub(last) < chatFloodWindow {
+		r.notice(conn, constants.ChatNoticeTooFast)
+		return
+	}
+	r.lastAccepted[sender.ID] = at
+
+	line := r.stamp(sender, constants.ChatChannelArea, r.podID, text, at)
 
 	audience := r.audience.SeatedPlayerIDs()
 	if err := r.sender.BroadcastToPlayerList(audience, line); err != nil {
@@ -91,7 +127,7 @@ func (r *chatRelay) relay(sender *types.Player, conn *websocket.Conn, payload ma
 // stamp builds the outbound line. Every field here is the pod's: the id, the
 // sender from the connection's record, the character's name as the name plate
 // shows it, the clock. The client supplies the text and nothing else (R3).
-func (r *chatRelay) stamp(sender *types.Player, channel constants.ChatChannel, scope, text string) types.Message {
+func (r *chatRelay) stamp(sender *types.Player, channel constants.ChatChannel, scope, text string, at time.Time) types.Message {
 	name := sender.Character.Name
 	if name == "" {
 		name = sender.Username
@@ -105,10 +141,40 @@ func (r *chatRelay) stamp(sender *types.Player, channel constants.ChatChannel, s
 			"sender_name": name,
 			"channel":     string(channel),
 			"scope":       scope,
-			"sent_at":     r.now().UTC().Format("2006-01-02T15:04:05.000Z07:00"),
+			"sent_at":     at.UTC().Format("2006-01-02T15:04:05.000Z07:00"),
 			"text":        text,
 		},
 	}
+}
+
+// forgetQuiet drops every speaker whose window has passed: their record can refuse nothing any
+// more, so a player who spoke and left is not remembered for the life of the pod.
+func (r *chatRelay) forgetQuiet(at time.Time) {
+	for id, last := range r.lastAccepted {
+		if at.Sub(last) >= chatFloodWindow {
+			delete(r.lastAccepted, id)
+		}
+	}
+}
+
+// normaliseChatText trims a line and turns each run of control characters (line breaks, tabs)
+// into one space, so a line is always one line. Spaces the player typed are kept. FS-WJGFJ R5.
+func normaliseChatText(text string) string {
+	var b strings.Builder
+	b.Grow(len(text))
+	inControl := false
+	for _, r := range text {
+		if unicode.IsControl(r) {
+			if !inControl {
+				b.WriteByte(' ')
+			}
+			inControl = true
+			continue
+		}
+		inControl = false
+		b.WriteRune(r)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // notice tells one connection something about its chat, by code. Not an error

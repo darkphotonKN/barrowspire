@@ -1,14 +1,21 @@
 ---
 id: I-WJGFJ-2
-status: open
+status: done
 implements: FS-WJGFJ
 blocked_by: [I-WJGFJ-1]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-WJGFJ slice 2: text rules and flood control on the chat relay (game-service)"
 ---
 Implements FS-WJGFJ §Requirements A5–A7
 
-**Author: human (hand-coded, human lane). Agent: table-driven tests only.**
+**Author: agent, with the user's explicit authorisation on 2026-10-31, each choice discussed
+first. Branch `feat/in-game-chat`.** Decisions with the user: the flood record is forgotten once
+a speaker's 2 s window has passed (swept on each relayed line), rather than on disconnect, so it
+holds only who spoke in the last 2 s and a quick reconnect cannot dodge the window; a run of
+control characters becomes one space; notice copy "Too many words. Keep it under 200." / "Catch
+your breath before you speak again."; invisible format characters (zero-width, bidi override)
+are not filtered here, noted in FS-4HEG7 instead. A missing or non-string `text` is dropped like
+an empty line (the gap code review noted on I-WJGFJ-1).
 
 ## What to Build
 
@@ -41,7 +48,8 @@ Between resolving the sender and stamping (slice 1), the relay normalises and li
       delivered.
 - [ ] A `too_fast` refusal does not extend the window: the next message 2.1 s after the last
       accepted one is delivered.
-- [ ] Flood state for a player is gone after their record is removed.
+- [ ] Flood state for a player is gone once their 2 s window has passed (amended with the user
+      2026-10-31: swept on the next relayed line, not on disconnect).
 - [ ] Tests pass.
 
 ## Blocked By
