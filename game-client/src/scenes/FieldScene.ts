@@ -46,7 +46,7 @@ import { EquipmentHud } from "@/ui/EquipmentHud";
 import { ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow } from "@/ui/ChatWindow";
 import { domChatEntry } from "@/ui/chatEntryField";
-import { CHAT_AREA_LABEL, CHAT_WINDOW_MARGIN, CHAT_WINDOW_X } from "@/ui/chatWindowLayout";
+import { CHAT_WINDOW_MARGIN, CHAT_WINDOW_X } from "@/ui/chatWindowLayout";
 import { useChatStore } from "@/stores/chatStore";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
@@ -219,7 +219,6 @@ export class FieldScene extends Phaser.Scene {
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
     this.listen();
     this.chatWindow = new ChatWindow(this, useChatStore, CHAT_WINDOW_X, this.cameras.main.height - CHAT_WINDOW_MARGIN, {
-      area: CHAT_AREA_LABEL[this.field],
       input: {
         mayOpen: () => !this.equipment?.isOpen(),
         send: (line) => socketManager.sendMessage(ActionType.Chat, line),

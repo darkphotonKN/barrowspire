@@ -8,6 +8,24 @@
  * off, so nothing else hears them.
  */
 
+import type { ChatChannel } from "@/stores/chatStore";
+
+/**
+ * Each channel's prefix, PoE style (FS-WJGFJ Amendment 2026-10-31): typed at the start of a line
+ * it picks the channel, and picking the channel writes it. Area has none.
+ */
+export const CHAT_PREFIX: Readonly<Record<ChatChannel, string>> = {
+  area: "",
+  world: "#",
+  trade: "$",
+  party: "%",
+  whisper: "@",
+};
+
+/** The channels the server relays today; the picker shows the rest disabled. */
+export const CHAT_OPEN_CHANNELS: ReadonlySet<ChatChannel> =
+  new Set<ChatChannel>(["area"]);
+
 /** The most code points a line may carry, as the server counts them (R5, R26). */
 export const CHAT_TEXT_MAX = 200;
 
@@ -19,9 +37,11 @@ export function clampChatText(text: string): string {
     : points.slice(0, CHAT_TEXT_MAX).join("");
 }
 
-/** The text field as the input drives it. */
+/** The text field and its channel picker, as the input drives them. */
 export interface ChatEntryField {
   value: string;
+  /** The channel the picker shows. */
+  channel: ChatChannel;
   focus(): void;
   blur(): void;
 }
@@ -32,9 +52,9 @@ export interface SceneKeyboard {
   resetKeys(): void;
 }
 
-/** What a sent line carries: in this slice always the area channel (R28). */
+/** What a sent line carries: the picked channel and the text without its prefix. */
 export interface ChatSend {
-  channel: "area";
+  channel: ChatChannel;
   text: string;
 }
 
@@ -46,6 +66,19 @@ export interface ChatInputDeps {
   send: (line: ChatSend) => void;
   /** Told whenever the open state or the draft changes, so the window can redraw its hint. */
   changed?: () => void;
+  /** The channels that may be picked; the server's open ones unless a test says otherwise. */
+  open?: ReadonlySet<ChatChannel>;
+}
+
+/** The open channel whose prefix starts `text`, if any; Area otherwise. */
+function channelOf(text: string, open: ReadonlySet<ChatChannel>): ChatChannel {
+  for (const [channel, prefix] of Object.entries(CHAT_PREFIX) as [
+    ChatChannel,
+    string,
+  ][]) {
+    if (prefix && open.has(channel) && text.startsWith(prefix)) return channel;
+  }
+  return "area";
 }
 
 export class ChatInput {
@@ -53,7 +86,26 @@ export class ChatInput {
   /** The keyboard's state when the input opened, put back as it was when it closes. */
   private keyboardWasEnabled = true;
 
-  constructor(private readonly deps: ChatInputDeps) {}
+  private readonly pickable: ReadonlySet<ChatChannel>;
+
+  constructor(private readonly deps: ChatInputDeps) {
+    this.pickable = deps.open ?? CHAT_OPEN_CHANNELS;
+  }
+
+  /** The picker chose a channel: its prefix replaces the draft's, if it is one the server relays. */
+  pick(channel: ChatChannel): void {
+    const field = this.deps.field;
+    if (!this.pickable.has(channel)) {
+      field.channel = channelOf(field.value, this.pickable);
+      return;
+    }
+    const body = field.value.slice(
+      CHAT_PREFIX[channelOf(field.value, this.pickable)].length,
+    );
+    field.value = CHAT_PREFIX[channel] + body;
+    field.channel = channel;
+    this.deps.changed?.();
+  }
 
   isOpen(): boolean {
     return this.open;
@@ -102,8 +154,12 @@ export class ChatInput {
   keyDown(key: string, composing: boolean): void {
     if (!this.open || composing) return;
     if (key === "Enter") {
-      const text = clampChatText(this.deps.field.value.trim());
-      if (text) this.deps.send({ channel: "area", text });
+      const field = this.deps.field;
+      const channel = channelOf(field.value, this.pickable);
+      const text = clampChatText(
+        field.value.slice(CHAT_PREFIX[channel].length).trim(),
+      );
+      if (text) this.deps.send({ channel, text });
       this.discardAndClose();
     } else if (key === "Escape") {
       this.discardAndClose();
@@ -113,19 +169,24 @@ export class ChatInput {
   /** The draft changed: cut it to the limit once the input method has committed, never mid-pick. */
   typed(composing: boolean): void {
     if (composing) return;
-    const clamped = clampChatText(this.deps.field.value);
-    if (clamped !== this.deps.field.value) this.deps.field.value = clamped;
+    const field = this.deps.field;
+    const clamped = clampChatText(field.value);
+    if (clamped !== field.value) field.value = clamped;
+    // a prefix typed or deleted at the start picks its channel, or goes back to Area
+    field.channel = channelOf(field.value, this.pickable);
     this.deps.changed?.();
   }
 
   /** The scene takes the keys back (the end-of-run overlay): close and drop the draft (R27). */
   cancel(): void {
     if (this.open) this.discardAndClose();
-    else this.deps.field.value = "";
+    else this.deps.field.value = CHAT_PREFIX[this.deps.field.channel];
   }
 
+  /** The draft goes; the picked channel stays, its prefix ready for the next line. */
   private discardAndClose(): void {
-    this.deps.field.value = "";
+    const field = this.deps.field;
+    field.value = CHAT_PREFIX[field.channel];
     this.deps.field.blur();
     this.blurred();
   }

@@ -1,27 +1,38 @@
 /**
- * The chat input's text field (FS-WJGFJ R26): a real `<input>` placed over the window's input row
- * as a Phaser DOM element, because only a browser field takes an input method (Chinese, Japanese,
- * Korean), paste and caret keys. Kept as thin as it can be: it reports focus, keys and typing to
- * `ChatInput`, which holds every rule, and is tested by eye rather than in a DOM test.
+ * The chat input row's DOM half (FS-WJGFJ R26; Amendment 2026-10-31): a channel picker (`<select>`)
+ * and a text field (`<input>`) side by side over the window's input row, as one Phaser DOM element.
+ * A browser field is the only way an input method (Chinese, Japanese, Korean) reaches the game;
+ * a native picker brings keyboard access for free. Kept as thin as it can be: it reports focus,
+ * keys, typing and picks to `ChatInput`, which holds every rule, and is checked by eye rather
+ * than in a DOM test.
  *
  * Canvas chrome on the DOM, by decision: it wears the game palette like the rest of the chat
- * window, transparent over the panel Phaser draws beneath it (FS-WJGFJ R30; I-WJGFJ-4).
+ * window, transparent over the near-black input row Phaser draws beneath it (I-WJGFJ-4, -6).
  */
 
 import type Phaser from "phaser";
+import { CHAT_CHANNELS, type ChatChannel } from "@/stores/chatStore";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
-import type { ChatEntryField } from "./chatInput";
-import { CHAT_INPUT_TEXT_X, type Rect } from "./chatWindowLayout";
+import { CHAT_OPEN_CHANNELS, type ChatEntryField } from "./chatInput";
+import {
+  CHAT_CHANNEL_COLOUR,
+  CHAT_FILTER_LABEL,
+  CHAT_FOLD_W,
+  CHAT_PICKER_W,
+  type Rect,
+} from "./chatWindowLayout";
 
-/** What the field tells the chat input. */
+/** What the row tells the chat input. */
 export interface ChatEntryEvents {
   focused(): void;
   blurred(): void;
   keyDown(key: string, composing: boolean): void;
   typed(composing: boolean): void;
+  /** The picker chose a channel. */
+  picked(channel: ChatChannel): void;
 }
 
-/** A field the window can place and take down, as well as the input drives it. */
+/** A row the window can place and take down, as well as the input drives it. */
 export interface ChatEntryHandle extends ChatEntryField {
   moveTo(rect: Rect): void;
   destroy(): void;
@@ -34,65 +45,120 @@ export type ChatEntryFactory = (
 ) => ChatEntryHandle;
 
 const HUD_DEPTH = 1000;
+const FONT = () => `13px ${CANVAS_FONT.body}`;
 
-/** The real field: an `<input>` in Phaser's DOM container, over the input row. */
+/** The real row: a picker and a field in Phaser's DOM container, over the input row, short of the fold button. */
 export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
-  const el = document.createElement("input");
-  el.type = "text";
-  el.autocomplete = "off";
-  el.spellcheck = false;
-  el.setAttribute("aria-label", "Chat");
-  Object.assign(el.style, {
+  const row = document.createElement("div");
+  Object.assign(row.style, {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+  });
+
+  const picker = document.createElement("select");
+  picker.setAttribute("aria-label", "Chat channel");
+  Object.assign(picker.style, {
+    width: `${CHAT_PICKER_W}px`,
+    background: "transparent",
+    border: "none",
+    borderRight: `1px solid ${toCss(palette.chatRule)}`,
+    outline: "none",
+    padding: "0 4px",
+    font: FONT(),
+    cursor: "pointer",
+  });
+  for (const channel of CHAT_CHANNELS) {
+    const option = document.createElement("option");
+    option.value = channel;
+    option.textContent = CHAT_FILTER_LABEL[channel];
+    // a channel the server does not relay yet is listed, and cannot be picked
+    option.disabled = !CHAT_OPEN_CHANNELS.has(channel);
+    Object.assign(option.style, {
+      background: toCss(palette.chatInputGround),
+      color: toCss(CHAT_CHANNEL_COLOUR[channel]),
+    });
+    picker.appendChild(option);
+  }
+  const showChannel = (channel: ChatChannel) => {
+    picker.value = channel;
+    picker.style.color = toCss(CHAT_CHANNEL_COLOUR[channel]);
+    field.style.color = toCss(CHAT_CHANNEL_COLOUR[channel]);
+    field.style.caretColor = toCss(CHAT_CHANNEL_COLOUR[channel]);
+  };
+
+  const field = document.createElement("input");
+  field.type = "text";
+  field.autocomplete = "off";
+  field.spellcheck = false;
+  field.setAttribute("aria-label", "Chat");
+  Object.assign(field.style, {
+    flex: "1",
+    minWidth: "0",
     background: "transparent",
     border: "none",
     outline: "none",
     padding: "0",
     margin: "0",
-    color: toCss(palette.chatArea),
-    caretColor: toCss(palette.chatArea),
-    font: `13px ${CANVAS_FONT.body}`,
+    font: FONT(),
   });
 
+  row.append(picker, field);
+  showChannel("area");
+
   const size = (r: Rect) => {
-    el.style.width = `${r.width - CHAT_INPUT_TEXT_X - 8}px`;
-    el.style.height = `${r.height}px`;
+    row.style.width = `${r.width - CHAT_FOLD_W - 4}px`;
+    row.style.height = `${r.height}px`;
   };
   size(rect);
 
   // every key stops here: none reaches Phaser's window listener, so typing W never walks and the
   // Enter that sends never reopens the input
-  el.addEventListener("keydown", (e) => {
+  field.addEventListener("keydown", (e) => {
     e.stopPropagation();
     const composing = e.isComposing || e.keyCode === 229;
     if (!composing && (e.key === "Enter" || e.key === "Escape"))
       e.preventDefault();
     events.keyDown(e.key, composing);
   });
-  el.addEventListener("keyup", (e) => e.stopPropagation());
-  el.addEventListener("input", (e) =>
+  field.addEventListener("keyup", (e) => e.stopPropagation());
+  field.addEventListener("input", (e) =>
     events.typed((e as InputEvent).isComposing === true),
   );
-  el.addEventListener("compositionend", () => events.typed(false));
-  el.addEventListener("focus", () => events.focused());
-  el.addEventListener("blur", () => events.blurred());
+  field.addEventListener("compositionend", () => events.typed(false));
+  field.addEventListener("focus", () => events.focused());
+  field.addEventListener("blur", () => events.blurred());
+  picker.addEventListener("keydown", (e) => e.stopPropagation());
+  picker.addEventListener("keyup", (e) => e.stopPropagation());
+  picker.addEventListener("change", () => {
+    events.picked(picker.value as ChatChannel);
+    // straight back to typing, on the channel just picked
+    field.focus();
+  });
 
   const dom = scene.add
-    .dom(rect.x + CHAT_INPUT_TEXT_X, rect.y, el)
+    .dom(rect.x + 4, rect.y, row)
     .setOrigin(0, 0)
     .setScrollFactor(0)
     .setDepth(HUD_DEPTH);
 
   return {
     get value() {
-      return el.value;
+      return field.value;
     },
     set value(v: string) {
-      el.value = v;
+      field.value = v;
     },
-    focus: () => el.focus(),
-    blur: () => el.blur(),
+    get channel() {
+      return picker.value as ChatChannel;
+    },
+    set channel(c: ChatChannel) {
+      showChannel(c);
+    },
+    focus: () => field.focus(),
+    blur: () => field.blur(),
     moveTo: (r) => {
-      dom.setPosition(r.x + CHAT_INPUT_TEXT_X, r.y);
+      dom.setPosition(r.x + 4, r.y);
       size(r);
     },
     destroy: () => dom.destroy(),

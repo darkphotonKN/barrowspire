@@ -1,34 +1,35 @@
 /**
  * The chat window at the bottom left of every world view (FS-WJGFJ §C): one stream of every
  * channel's lines, coloured by channel, newest at the bottom. It reads the chat store, so the
- * stream survives every scene change; the scene only places it and takes it down.
+ * stream, the filter and the fold survive every scene change; the scene only places it.
  *
- * Neutral HUD, as the ResourceHud: a dark panel with a brass hairline, the body serif. It sits at
- * the HUD's depth, under overlays and popups (R17). Top to bottom: the channel filter row and the
- * area label (R24, R25), the lines, the input (R26). Only its toggles take a click and only the
- * wheel over its lines is read; a scene asks `covers` so a click on the panel is never an attack
- * in the world behind it (R31).
+ * Neutral HUD on the game palette: a dark panel in a brass hairline. Top to bottom (FS-WJGFJ
+ * Amendment 2026-10-31): the channel tabs (any combination shown, R24), the lines (`Name: text`),
+ * a brass divider, and the input row on a near-black ground with the channel picker at its left
+ * and the fold button at its right. Folded, the window is that input row alone. It sits at the
+ * HUD's depth, under overlays and popups (R17). Only its tabs and the fold button take a click
+ * and only the wheel over its lines is read; a scene asks `covers` so a click on the panel is
+ * never an attack in the world behind it (R31).
  */
 
 import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
-import {
-  CHAT_CHANNELS,
-  visibleChatLines,
-  type ChatChannel,
-  type ChatState,
-} from "@/stores/chatStore";
+import { visibleChatLines, type ChatState } from "@/stores/chatStore";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { ChatInput, type ChatSend } from "./chatInput";
 import type { ChatEntryFactory, ChatEntryHandle } from "./chatEntryField";
 import {
-  CHAT_INPUT_HINT,
-  CHAT_INPUT_PROMPT,
-  CHAT_INPUT_TEXT_X,
-  CHAT_PAD,
   CHAT_CHANNEL_COLOUR,
   CHAT_FILTER_LABEL,
+  CHAT_FOLD_OPEN,
+  CHAT_FOLD_SHUT,
+  CHAT_FOLD_W,
+  CHAT_INPUT_HINT,
+  CHAT_INPUT_TEXT_X,
+  CHAT_PAD,
+  CHAT_TAB_PAD,
   chatEntryColour,
+  chatTabSegments,
   chatWindowFrame,
   formatChatEntry,
   scrolledOffset,
@@ -37,10 +38,8 @@ import {
   type Rect,
 } from "./chatWindowLayout";
 
-/** What a scene gives the window: where the player is, and what the input needs to let them type. */
+/** What a scene gives the window: what the input needs to let the player type. */
 export interface ChatWindowOptions {
-  /** The area label at the end of the filter row, in the client's words (R25). */
-  area?: string;
   input?: ChatWindowInput;
 }
 
@@ -49,34 +48,41 @@ export interface ChatWindowInput {
   /** Whether nothing else (a dialogue, a menu, an overlay) owns Enter and Esc now (R27). */
   mayOpen: () => boolean;
   send: (line: ChatSend) => void;
-  /** The text field; the real DOM one in a scene (`domChatEntry`), a stand-in in a test. */
+  /** The text field and picker; the real DOM ones in a scene (`domChatEntry`), a stand-in in a test. */
   makeField: ChatEntryFactory;
 }
 
 const HUD_DEPTH = 1000;
 const FONT_PX = 13;
-/** A hidden channel's toggle, drawn faint (R24). */
-const TOGGLE_OFF_ALPHA = 0.35;
-const TOGGLE_GAP = 10;
+/** A hidden channel's tab label, drawn faint (R24). */
+const TAB_OFF_ALPHA = 0.4;
+/** A shown tab's underline, in its channel's colour. */
+const TAB_UNDERLINE_H = 2;
 
 const within = (r: Rect, x: number, y: number) =>
   x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
 
+const textStyle = (colour: number) => ({
+  fontFamily: CANVAS_FONT.body,
+  fontSize: `${FONT_PX}px`,
+  color: toCss(colour),
+});
+
 export class ChatWindow {
+  private bottom: number;
   private frame: ChatWindowFrame;
   private panel?: Phaser.GameObjects.Graphics;
   private maskShape?: Phaser.GameObjects.Graphics;
   private mask?: Phaser.Display.Masks.GeometryMask;
-  private texts: Phaser.GameObjects.Text[] = [];
+  private lineTexts: Phaser.GameObjects.Text[] = [];
+  private tabTexts: Phaser.GameObjects.Text[] = [];
+  private foldText?: Phaser.GameObjects.Text;
+  private hintText?: Phaser.GameObjects.Text;
   /** Lines back from the newest; 0 is following (R21). */
   private offset = 0;
   private unsubscribe: () => void;
-  private filterTexts: Phaser.GameObjects.Text[] = [];
-  private areaText?: Phaser.GameObjects.Text;
   private field?: ChatEntryHandle;
   private input?: ChatInput;
-  private promptText?: Phaser.GameObjects.Text;
-  private hintText?: Phaser.GameObjects.Text;
 
   /** `x` is the panel's left edge; `bottom` the screen y of its bottom edge. */
   constructor(
@@ -84,17 +90,17 @@ export class ChatWindow {
     private readonly store: StoreApi<ChatState>,
     private readonly x: number,
     bottom: number,
-    private readonly options: ChatWindowOptions = {},
+    options: ChatWindowOptions = {},
   ) {
-    this.frame = chatWindowFrame(x, bottom);
-    this.drawPanel();
-    this.drawFilterRow();
-    this.drawLines();
+    this.bottom = bottom;
+    this.frame = this.frameNow();
+    this.drawAll();
     this.unsubscribe = store.subscribe((state, prev) =>
-      this.onStream(state, prev),
+      this.onStore(state, prev),
     );
     scene.input.on("wheel", this.onWheel, this);
     if (options.input) this.buildInput(options.input);
+    this.drawInputRow();
   }
 
   /** Whether a screen point lies on the window: a scene's click there is the window's, not the world's (R31). */
@@ -114,13 +120,9 @@ export class ChatWindow {
 
   /** Re-seat the window with its bottom edge at `bottom`: on the ResourceHud's top edge, or the canvas bottom (R18). */
   setBottom(bottom: number): void {
-    if (bottom === this.frame.panel.y + this.frame.panel.height) return;
-    this.frame = chatWindowFrame(this.x, bottom);
-    this.drawPanel();
-    this.drawFilterRow();
-    this.drawLines();
-    this.field?.moveTo(this.frame.input);
-    this.drawInputRow();
+    if (bottom === this.bottom) return;
+    this.bottom = bottom;
+    this.relayout();
   }
 
   destroy(): void {
@@ -129,40 +131,68 @@ export class ChatWindow {
     this.scene.input?.keyboard?.off("keydown-ENTER", this.onEnter, this);
     this.input?.cancel();
     this.field?.destroy();
-    this.promptText?.destroy();
-    this.hintText?.destroy();
-    this.field = this.input = this.promptText = this.hintText = undefined;
+    this.field = this.input = undefined;
     this.clearLines();
-    this.clearFilterRow();
+    this.clearTabs();
+    this.foldText?.destroy();
+    this.hintText?.destroy();
     this.panel?.destroy();
     this.maskShape?.destroy();
     this.mask?.destroy();
-    this.panel = this.maskShape = this.mask = undefined;
+    this.foldText =
+      this.hintText =
+      this.panel =
+      this.maskShape =
+      this.mask =
+        undefined;
+  }
+
+  private frameNow(): ChatWindowFrame {
+    return chatWindowFrame(this.x, this.bottom, this.store.getState().folded);
+  }
+
+  private relayout(): void {
+    this.frame = this.frameNow();
+    this.drawAll();
+    this.field?.moveTo(this.frame.input);
+    this.drawInputRow();
+  }
+
+  private drawAll(): void {
+    this.drawPanel();
+    this.drawTabs();
+    this.drawLines();
   }
 
   /**
-   * The store changed. A toggle redraws the row and goes back to the newest lines (R24). A new
-   * line the player can see leaves a scrolled-back view on the lines it showed; one in a hidden
-   * channel moves nothing (R21).
+   * The store changed. A fold re-lays the window; a toggle redraws the tabs and goes back to the
+   * newest lines (R24). A new line the player can see leaves a scrolled-back view on the lines it
+   * showed; one in a hidden channel, or any line while folded, moves nothing (R21).
    */
-  private onStream(state: ChatState, prev: ChatState): void {
+  private onStore(state: ChatState, prev: ChatState): void {
+    if (state.folded !== prev.folded) {
+      this.offset = 0;
+      this.relayout();
+      return;
+    }
     if (state.shown !== prev.shown) {
       this.offset = 0;
-      this.drawFilterRow();
+      this.drawPanel();
+      this.drawTabs();
       this.drawLines();
       return;
     }
     const newest = state.lines[state.lines.length - 1];
     const arrived =
       newest !== undefined && newest !== prev.lines[prev.lines.length - 1];
-    if (!arrived) return;
+    if (!arrived || state.folded) return;
     const seen = newest.kind === "system" || state.shown[newest.channel];
     if (!seen) return;
     if (this.offset > 0) this.offset += 1;
     this.drawLines();
   }
 
-  /** The input: a field over the input row, the rules in `ChatInput`, Enter in the scene to open it (R26). */
+  /** The input: a field and picker over the input row, the rules in `ChatInput`, Enter in the scene to open it (R26). */
   private buildInput(typing: ChatWindowInput): void {
     const keyboard = () => this.scene.input?.keyboard;
     let input: ChatInput | undefined;
@@ -171,6 +201,7 @@ export class ChatWindow {
       blurred: () => input?.blurred(),
       keyDown: (key, composing) => input?.keyDown(key, composing),
       typed: (composing) => input?.typed(composing),
+      picked: (channel) => input?.pick(channel),
     });
     input = new ChatInput({
       field: this.field,
@@ -181,36 +212,10 @@ export class ChatWindow {
     });
     this.input = input;
     keyboard()?.on("keydown-ENTER", this.onEnter, this);
-    this.drawInputRow();
   }
 
   private onEnter(): void {
     this.input?.requestOpen();
-  }
-
-  /** The `>` prompt, and the hint while the input is closed with nothing typed. */
-  private drawInputRow(): void {
-    if (!this.input || !this.field) return;
-    const r = this.frame.input;
-    const y = r.y + (r.height - 16) / 2;
-    const style = {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: `${FONT_PX}px`,
-      color: toCss(palette.chatSystem),
-    };
-    this.promptText?.destroy();
-    this.promptText = this.scene.add
-      .text(r.x + CHAT_PAD, y, CHAT_INPUT_PROMPT, style)
-      .setScrollFactor(0)
-      .setDepth(HUD_DEPTH);
-    this.hintText?.destroy();
-    this.hintText = undefined;
-    if (!this.input.isOpen() && this.field.value === "") {
-      this.hintText = this.scene.add
-        .text(r.x + CHAT_INPUT_TEXT_X, y, CHAT_INPUT_HINT, style)
-        .setScrollFactor(0)
-        .setDepth(HUD_DEPTH);
-    }
   }
 
   private onWheel(
@@ -219,7 +224,11 @@ export class ChatWindow {
     _dx: number,
     dy: number,
   ): void {
-    if (!within(this.frame.messages, pointer.x, pointer.y)) return;
+    if (
+      this.store.getState().folded ||
+      !within(this.frame.messages, pointer.x, pointer.y)
+    )
+      return;
     const next = scrolledOffset(
       this.offset,
       dy,
@@ -230,8 +239,12 @@ export class ChatWindow {
     this.drawLines();
   }
 
+  /**
+   * The panel, the shown tabs' grounds and underlines, the tab separators, the divider and the
+   * input row's near-black ground, all in one graphics layer under the words.
+   */
   private drawPanel(): void {
-    const { panel } = this.frame;
+    const { panel, filterRow, messages, input } = this.frame;
     const g = (this.panel ??= this.scene.add
       .graphics()
       .setScrollFactor(0)
@@ -239,36 +252,125 @@ export class ChatWindow {
     g.clear();
     g.fillStyle(palette.chatPanel, 0.85);
     g.fillRect(panel.x, panel.y, panel.width, panel.height);
-    g.lineStyle(1, palette.frame, 0.35);
+
+    if (filterRow.height > 0) {
+      const shown = this.store.getState().shown;
+      for (const segment of chatTabSegments(filterRow, (label) =>
+        this.labelWidth(label),
+      )) {
+        if (shown[segment.channel]) {
+          g.fillStyle(palette.chatTabOn, 0.9);
+          g.fillRect(segment.x, segment.y, segment.width, segment.height);
+          g.fillStyle(CHAT_CHANNEL_COLOUR[segment.channel], 0.9);
+          g.fillRect(
+            segment.x,
+            segment.y + segment.height - TAB_UNDERLINE_H,
+            segment.width,
+            TAB_UNDERLINE_H,
+          );
+        }
+        g.lineStyle(1, palette.chatRule, 0.3);
+        g.lineBetween(
+          segment.x + segment.width,
+          segment.y + 4,
+          segment.x + segment.width,
+          segment.y + segment.height - 4,
+        );
+      }
+      g.lineStyle(1, palette.chatRule, 0.35);
+      g.lineBetween(
+        filterRow.x,
+        filterRow.y + filterRow.height,
+        filterRow.x + filterRow.width,
+        filterRow.y + filterRow.height,
+      );
+    }
+
+    g.fillStyle(palette.chatInputGround, 0.95);
+    g.fillRect(input.x, input.y, input.width, input.height);
+    if (messages.height > 0) {
+      g.lineStyle(1, palette.chatRule, 0.55);
+      g.lineBetween(input.x, input.y, input.x + input.width, input.y);
+    }
+    g.lineStyle(1, palette.chatRule, 0.5);
     g.strokeRect(panel.x, panel.y, panel.width, panel.height);
 
-    // the message area clips: a wrapped line that overflows the top is cut, not drawn over the filter row
-    const m = this.frame.messages;
+    // the message area clips: a wrapped line that overflows the top is cut, not drawn over the tabs
     this.maskShape?.destroy();
     this.mask?.destroy();
     this.maskShape = this.scene.make.graphics({}, false).setScrollFactor(0);
     // a mask's colour is never drawn, only its shape; any token keeps the fence's literal ban
     this.maskShape.fillStyle(palette.chatPanel);
-    this.maskShape.fillRect(m.x, m.y, m.width, m.height);
+    this.maskShape.fillRect(
+      messages.x,
+      messages.y,
+      messages.width,
+      messages.height,
+    );
     this.mask = this.maskShape.createGeometryMask();
+  }
+
+  /** A tab label's width at the window's font, measured once per label. */
+  private labelWidth(label: string): number {
+    let width = this.measured.get(label);
+    if (width === undefined) {
+      const probe = this.scene.add.text(
+        0,
+        0,
+        label,
+        textStyle(palette.chatSystem),
+      );
+      width = probe.width;
+      probe.destroy();
+      this.measured.set(label, width);
+    }
+    return width;
+  }
+  private readonly measured = new Map<string, number>();
+
+  /** The tab labels, centred in their segments, faint while their channel is hidden (R24). */
+  private drawTabs(): void {
+    this.clearTabs();
+    const row = this.frame.filterRow;
+    if (row.height === 0) return;
+    const shown = this.store.getState().shown;
+    const y = row.y + (row.height - 16) / 2;
+    for (const segment of chatTabSegments(row, (label) =>
+      this.labelWidth(label),
+    )) {
+      const tab = this.scene.add
+        .text(segment.x + CHAT_TAB_PAD, y, CHAT_FILTER_LABEL[segment.channel], {
+          ...textStyle(CHAT_CHANNEL_COLOUR[segment.channel]),
+          padding: { x: CHAT_TAB_PAD, y: 3 },
+        })
+        .setScrollFactor(0)
+        .setDepth(HUD_DEPTH)
+        .setAlpha(shown[segment.channel] ? 1 : TAB_OFF_ALPHA)
+        .setInteractive({ useHandCursor: true })
+        .on("pointerdown", () =>
+          this.store.getState().toggleChannel(segment.channel),
+        );
+      // the padding widens the hit area to the whole segment; the label still sits where it did
+      tab.setPosition(segment.x, y - 3);
+      this.tabTexts.push(tab);
+    }
   }
 
   /** The lines in view, laid bottom-up from the message area's foot so a wrapped line pushes the older ones up. */
   private drawLines(): void {
     this.clearLines();
+    const m = this.frame.messages;
+    if (m.height === 0) return;
     const entries = visibleEntries(
       visibleChatLines(this.store.getState()),
       this.offset,
     );
-    const m = this.frame.messages;
     let y = m.y + m.height;
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i];
       const t = this.scene.add
         .text(m.x + CHAT_PAD, 0, formatChatEntry(entry), {
-          fontFamily: CANVAS_FONT.body,
-          fontSize: `${FONT_PX}px`,
-          color: toCss(chatEntryColour(entry)),
+          ...textStyle(chatEntryColour(entry)),
           wordWrap: { width: m.width - CHAT_PAD * 2 },
         })
         .setScrollFactor(0)
@@ -276,61 +378,60 @@ export class ChatWindow {
       y -= t.height;
       t.setPosition(m.x + CHAT_PAD, y);
       if (this.mask) t.setMask(this.mask);
-      this.texts.unshift(t);
+      this.lineTexts.unshift(t);
     }
   }
 
-  /**
-   * The five channel toggles left to right, each in its channel's colour and faint while hidden,
-   * and the area label at the row's right end (R24, R25). Drawn again on every toggle.
-   */
-  private drawFilterRow(): void {
-    this.clearFilterRow();
-    const row = this.frame.filterRow;
-    const y = row.y + (row.height - 16) / 2;
-    const shown = this.store.getState().shown;
-    let x = row.x + CHAT_PAD;
-    for (const channel of CHAT_CHANNELS) {
-      const toggle = this.scene.add
-        .text(x, y, CHAT_FILTER_LABEL[channel], {
-          fontFamily: CANVAS_FONT.body,
-          fontSize: `${FONT_PX}px`,
-          color: toCss(CHAT_CHANNEL_COLOUR[channel]),
-        })
+  /** The fold button at the input row's right, and the hint while the input is closed with nothing typed. */
+  private drawInputRow(): void {
+    const r = this.frame.input;
+    const y = r.y + (r.height - 16) / 2;
+    const folded = this.store.getState().folded;
+
+    this.foldText?.destroy();
+    this.foldText = this.scene.add
+      .text(
+        r.x + r.width - CHAT_FOLD_W,
+        y,
+        folded ? CHAT_FOLD_SHUT : CHAT_FOLD_OPEN,
+        {
+          ...textStyle(palette.chatSystem),
+          padding: { x: 7, y: 3 },
+        },
+      )
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH)
+      .setInteractive({ useHandCursor: true })
+      .on("pointerdown", () => this.store.getState().toggleFolded());
+
+    this.hintText?.destroy();
+    this.hintText = undefined;
+    if (
+      this.input &&
+      this.field &&
+      !this.input.isOpen() &&
+      this.field.value === ""
+    ) {
+      this.hintText = this.scene.add
+        .text(
+          r.x + CHAT_INPUT_TEXT_X,
+          y,
+          CHAT_INPUT_HINT,
+          textStyle(palette.chatSystem),
+        )
         .setScrollFactor(0)
         .setDepth(HUD_DEPTH)
-        .setAlpha(shown[channel] ? 1 : TOGGLE_OFF_ALPHA)
-        .setInteractive({ useHandCursor: true })
-        .on("pointerdown", () => this.toggle(channel));
-      this.filterTexts.push(toggle);
-      x += toggle.width + TOGGLE_GAP;
-    }
-    if (this.options.area) {
-      this.areaText = this.scene.add
-        .text(row.x + row.width - CHAT_PAD, y, this.options.area, {
-          fontFamily: CANVAS_FONT.body,
-          fontSize: `${FONT_PX}px`,
-          color: toCss(palette.chatSystem),
-        })
-        .setOrigin(1, 0)
-        .setScrollFactor(0)
-        .setDepth(HUD_DEPTH);
+        .setAlpha(0.7);
     }
   }
 
-  private toggle(channel: ChatChannel): void {
-    this.store.getState().toggleChannel(channel);
-  }
-
-  private clearFilterRow(): void {
-    this.filterTexts.forEach((t) => t.destroy());
-    this.filterTexts = [];
-    this.areaText?.destroy();
-    this.areaText = undefined;
+  private clearTabs(): void {
+    this.tabTexts.forEach((t) => t.destroy());
+    this.tabTexts = [];
   }
 
   private clearLines(): void {
-    this.texts.forEach((t) => t.destroy());
-    this.texts = [];
+    this.lineTexts.forEach((t) => t.destroy());
+    this.lineTexts = [];
   }
 }

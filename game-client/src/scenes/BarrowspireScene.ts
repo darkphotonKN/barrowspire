@@ -47,7 +47,7 @@ import { ProgressHud } from "@/ui/ProgressHud";
 import { ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow } from "@/ui/ChatWindow";
 import { domChatEntry } from "@/ui/chatEntryField";
-import { CHAT_AREA_LABEL, CHAT_WINDOW_MARGIN, CHAT_WINDOW_X } from "@/ui/chatWindowLayout";
+import { CHAT_WINDOW_MARGIN, CHAT_WINDOW_X } from "@/ui/chatWindowLayout";
 import { useChatStore } from "@/stores/chatStore";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
@@ -2574,7 +2574,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.connectToServer();
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
     this.chatWindow = new ChatWindow(this, useChatStore, CHAT_WINDOW_X, this.cameras.main.height - CHAT_WINDOW_MARGIN, {
-      area: CHAT_AREA_LABEL.run,
       input: {
         // the menu and the result card read Enter and Esc; the gear overlay and an open chest are up
         mayOpen: () => !this.menu && !this.gameEndOverlay && !this.equipment?.isOpen() && !this.containerView?.isOpen,

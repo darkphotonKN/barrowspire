@@ -4,7 +4,11 @@
  * follows is testable without one. Vocabulary: game-client/CONTEXT.md § Chat terms.
  */
 
-import type { ChatChannel, ChatEntry } from "@/stores/chatStore";
+import {
+  CHAT_CHANNELS,
+  type ChatChannel,
+  type ChatEntry,
+} from "@/stores/chatStore";
 import { palette } from "@/utils/canvasPalette";
 
 /** The window's left edge and its gap from the canvas bottom, as the ResourceHud's (R18). */
@@ -21,12 +25,19 @@ export const CHAT_FILTER_ROW_H = 22;
 export const CHAT_INPUT_ROW_H = 24;
 /** What the input row says while it is closed and empty (R26). */
 export const CHAT_INPUT_HINT = "Press Enter to speak";
-/** The input row's prompt, drawn by the window ahead of the field. */
-export const CHAT_INPUT_PROMPT = ">";
-/** Where the typed text (and the hint) starts in the input row, clear of the prompt. */
-export const CHAT_INPUT_TEXT_X = 18;
+/** The fold button's face: unfolded it offers to fold, folded to unfold (Amendment 2026-10-31). */
+export const CHAT_FOLD_OPEN = "▾";
+export const CHAT_FOLD_SHUT = "▴";
 /** Inset from the panel edge to the text. */
 export const CHAT_PAD = 8;
+/** The fold button's square at the right end of the input row (Amendment 2026-10-31). */
+export const CHAT_FOLD_W = 24;
+/** A tab segment's padding either side of its label. */
+export const CHAT_TAB_PAD = 9;
+/** The channel picker's width at the input row's left (Amendment 2026-10-31). */
+export const CHAT_PICKER_W = 74;
+/** Where the typed text (and the hint) starts in the input row, clear of the picker. */
+export const CHAT_INPUT_TEXT_X = CHAT_PICKER_W + 6;
 
 export interface Rect {
   x: number;
@@ -46,9 +57,25 @@ export interface ChatWindowFrame {
 /**
  * Where everything sits for a window whose left edge is `x` and whose bottom edge is `bottom`:
  * directly above the ResourceHud when there is one, on the canvas bottom otherwise (R18). The
- * filter row, the message area and the input stack top to bottom inside the panel (R19).
+ * filter row, the message area and the input stack top to bottom inside the panel (R19). Folded,
+ * the window is its input row alone, still standing on the same bottom edge.
  */
-export function chatWindowFrame(x: number, bottom: number): ChatWindowFrame {
+export function chatWindowFrame(
+  x: number,
+  bottom: number,
+  folded = false,
+): ChatWindowFrame {
+  if (folded) {
+    const top = bottom - CHAT_INPUT_ROW_H;
+    const input = { x, y: top, width: CHAT_WINDOW_W, height: CHAT_INPUT_ROW_H };
+    return {
+      panel: { ...input },
+      filterRow: { x, y: top, width: CHAT_WINDOW_W, height: 0 },
+      messages: { x, y: top, width: CHAT_WINDOW_W, height: 0 },
+      input,
+      lineHeight: CHAT_LINE_H,
+    };
+  }
   const messagesH = CHAT_VISIBLE_LINES * CHAT_LINE_H;
   const height = CHAT_FILTER_ROW_H + messagesH + CHAT_INPUT_ROW_H;
   const top = bottom - height;
@@ -71,13 +98,10 @@ export function chatWindowFrame(x: number, bottom: number): ChatWindowFrame {
   };
 }
 
-const two = (n: number) => String(n).padStart(2, "0");
-
-/** `HH:MM  Name: text` in the player's local zone (R22); a system line is `— text` (R29). */
+/** `Name: text` (R22 as amended 2026-10-31: no time); a system line is `— text` (R29). */
 export function formatChatEntry(entry: ChatEntry): string {
   if (entry.kind === "system") return `— ${entry.text}`;
-  const at = new Date(entry.sent_at);
-  return `${two(at.getHours())}:${two(at.getMinutes())}  ${entry.sender_name}: ${entry.text}`;
+  return `${entry.sender_name}: ${entry.text}`;
 }
 
 /**
@@ -117,13 +141,28 @@ export const CHAT_CHANNEL_COLOUR: Readonly<Record<ChatChannel, number>> = {
   trade: palette.chatTrade,
 };
 
-/** What the area label says for each place, in the client's lore words (R25). */
-export const CHAT_AREA_LABEL = {
-  hub: "Area: Town",
-  gentle_meadows: "Area: Gentle Meadows",
-  forlorn_forest: "Area: Forlorn Forest",
-  run: "Area: the Spire",
-} as const;
+export interface ChatTabSegment extends Rect {
+  channel: ChatChannel;
+}
+
+/**
+ * The filter row's five tab segments, joined edge to edge from the row's left, each as wide as its
+ * label (`measure`) plus padding (R24 as amended 2026-10-31).
+ */
+export function chatTabSegments(
+  row: Rect,
+  measure: (label: string) => number,
+): ChatTabSegment[] {
+  let x = row.x;
+  return CHAT_CHANNELS.map((channel) => {
+    const width = Math.round(
+      measure(CHAT_FILTER_LABEL[channel]) + CHAT_TAB_PAD * 2,
+    );
+    const segment = { channel, x, y: row.y, width, height: row.height };
+    x += width;
+    return segment;
+  });
+}
 
 /** What each channel's toggle reads in the filter row (R24). */
 export const CHAT_FILTER_LABEL: Readonly<Record<ChatChannel, string>> = {

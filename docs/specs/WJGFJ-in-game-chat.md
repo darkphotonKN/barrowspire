@@ -151,6 +151,29 @@ one line per notch, so lines past a few hundred are unreachable in practice, and
 constant to raise later. The acceptance criterion "101 messages leave 100 in the store" holds
 per channel.
 
+## Amendment 2026-10-31 (the window's look, a channel picker, collapsing)
+
+Decided with the user after seeing the window running locally. Each item replaces or extends
+the requirement named. Built as I-WJGFJ-6.
+
+- **R22 (line format):** no time. A line reads `Name: text`. `sent_at` stays on the wire.
+- **R25 (area label):** removed. The window no longer says where the player is.
+- **R24 (filter row):** behaviour unchanged (five independent toggles, any combination shown);
+  drawn as joined, separated tab segments, a hidden channel's segment dim.
+- **R19 (shape):** a divider line between the lines and the input row; the input row has a
+  near-black ground (the darkest ramp token, never `#000`); the panel gets a finer frame.
+- **R28 (channel of a sent message), replaced:** a channel picker sits at the input row's left
+  and lists all five channels; only the channels the server relays are selectable, the rest
+  are shown disabled (today only Area). Each channel has a prefix, PoE style: Area none, World
+  `#`, Trade `$`, Party `%`, Whisper `@` (followed by a name, FS-5SH4G). Picking a channel puts
+  its prefix at the start of the input; typing a prefix at the start picks its channel; removing
+  it goes back to Area. A prefix of a channel that is not open yet is plain text. A sent line
+  carries the picked channel and its text without the prefix.
+- **New (collapse):** a button folds the window down to its input row and unfolds it again. It
+  stays as the player leaves it, kept in this browser like the filter. A folded window still
+  takes Enter and sends; arriving lines do not unfold it. Typing still needs the input focused
+  (R26), and an open window never holds the keys while the player plays.
+
 ## User Stories
 
 1. As a player in town, I want to type a line and have everyone in town on my server see it, so

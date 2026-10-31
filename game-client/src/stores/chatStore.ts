@@ -63,6 +63,8 @@ export type ChatChannelsShown = Readonly<Record<ChatChannel, boolean>>;
 
 /** Where the channel filter is kept in this browser (R24). */
 export const CHAT_FILTER_KEY = "barrowspire.chat.shown";
+/** Where the window's folded state is kept in this browser (FS-WJGFJ Amendment 2026-10-31). */
+export const CHAT_FOLDED_KEY = "barrowspire.chat.folded";
 
 const ALL_SHOWN: ChatChannelsShown = {
   area: true,
@@ -77,6 +79,10 @@ export interface ChatState {
   shown: ChatChannelsShown;
   /** Shows a hidden channel or hides a shown one, and keeps the choice in this browser (R24). */
   toggleChannel: (channel: ChatChannel) => void;
+  /** Whether the window is folded down to its input row. */
+  folded: boolean;
+  /** Folds or unfolds the window, and keeps the choice in this browser. */
+  toggleFolded: () => void;
   /** A line from the server, kept in arrival order; a repeat of a held message_id is ignored (R23). */
   receive: (line: ChatLinePayload) => void;
   /** A notice from the server, kept as a system line in the stream (R29). */
@@ -111,6 +117,23 @@ function readShown(storage: () => KeyValueStore): ChatChannelsShown {
 }
 
 /** Keeps the hidden channels; a storage that refuses is ignored, and the choice lasts the session. */
+/** Whether this browser kept the window folded; unfolded when it kept nothing or cannot say. */
+function readFolded(storage: () => KeyValueStore): boolean {
+  try {
+    return storage().getItem(CHAT_FOLDED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeFolded(storage: () => KeyValueStore, folded: boolean): void {
+  try {
+    storage().setItem(CHAT_FOLDED_KEY, folded ? "1" : "0");
+  } catch {
+    // as the filter: the fold holds for the session
+  }
+}
+
 function writeShown(
   storage: () => KeyValueStore,
   shown: ChatChannelsShown,
@@ -156,6 +179,12 @@ export function createChatStore(
     return {
       lines: [],
       shown: readShown(storage),
+      folded: readFolded(storage),
+      toggleFolded: () =>
+        set((state) => {
+          writeFolded(storage, !state.folded);
+          return { folded: !state.folded };
+        }),
       toggleChannel: (channel) =>
         set((state) => {
           const shown = { ...state.shown, [channel]: !state.shown[channel] };
