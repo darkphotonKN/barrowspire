@@ -107,6 +107,7 @@ type Repository interface {
 	UpsertPlayerLoadoutTx(ctx context.Context, tx *sqlx.Tx, req *UpsertPlayerLoadoutRequest) error
 	UpsertItemInstanceTx(ctx context.Context, tx *sqlx.Tx, instance *ItemInstance) error
 	BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, instances []*ItemInstance) error
+	DeleteConsumedItemInstancesTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID, ids []uuid.UUID) (int64, error)
 
 	// marketplace
 	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error)
@@ -169,7 +170,8 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, 
 }
 
 // storeExtractedPlayerItems writes one player's extracted items and loadout,
-// or only the items when the run never knew their stored loadout.
+// or only the items when the run never knew their stored loadout, then
+// deletes the items they used up in the run (FS-P9G8R R17-R19).
 func (s *service) storeExtractedPlayerItems(ctx context.Context, tx *sqlx.Tx, playerItems *pb.PlayerItems) error {
 	slog.Debug("single player iterated from req.PlayerItems",
 		"member_id", playerItems.GetMemberId(),
@@ -180,6 +182,11 @@ func (s *service) storeExtractedPlayerItems(ctx context.Context, tx *sqlx.Tx, pl
 	memberId, err := uuid.Parse(playerItems.GetMemberId())
 	if err != nil {
 		return fmt.Errorf("member id %q: %w: %w", playerItems.GetMemberId(), commonconstants.ErrUUIDCouldNotBeParsed, err)
+	}
+
+	consumedIDs, err := parseConsumedItemIDs(memberId, playerItems.GetConsumedItemIds())
+	if err != nil {
+		return err
 	}
 
 	// convert inventory and equipment into item instances
@@ -206,13 +213,48 @@ func (s *service) storeExtractedPlayerItems(ctx context.Context, tx *sqlx.Tx, pl
 			"member_id", memberId,
 			"items_kept", len(allItemInstances),
 		)
-		return nil
+		return s.deleteConsumedItems(ctx, tx, memberId, consumedIDs)
 	}
 
 	// upsert player loadout with equipment ids
 	if err := s.repo.UpsertPlayerLoadoutTx(ctx, tx, upsertParams); err != nil {
 		return fmt.Errorf("upsert loadout of member %s: %w", memberId, err)
 	}
+	return s.deleteConsumedItems(ctx, tx, memberId, consumedIDs)
+}
+
+// parseConsumedItemIDs reads the event's consumed ids. One that is not a UUID
+// is a producer bug and fails the event as malformed (FS-P9G8R R21).
+func parseConsumedItemIDs(memberID uuid.UUID, rawIDs []string) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0, len(rawIDs))
+	for _, raw := range rawIDs {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return nil, fmt.Errorf("consumed item id %q of member %s: %w: %w", raw, memberID, commonconstants.ErrUUIDCouldNotBeParsed, err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// deleteConsumedItems removes the member's items used up in the run. It is the
+// member's last write, so a loadout slot still pointing at one is nulled by
+// its foreign key rather than tripping it (FS-P9G8R R18). Nothing consumed
+// makes no call, so an event from an older producer applies as before.
+func (s *service) deleteConsumedItems(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	deleted, err := s.repo.DeleteConsumedItemInstancesTx(ctx, tx, memberID, ids)
+	if err != nil {
+		return fmt.Errorf("delete consumed items of member %s: %w", memberID, err)
+	}
+	slog.Debug("deleted consumed items",
+		"member_id", memberID,
+		"consumed", len(ids),
+		"deleted", deleted,
+	)
 	return nil
 }
 

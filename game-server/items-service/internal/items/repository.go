@@ -919,6 +919,38 @@ func (r *repository) BatchUpsertItemInstances(ctx context.Context, tx *sqlx.Tx, 
 	return nil
 }
 
+// DeleteConsumedItemInstancesTx deletes the member's instances used up in a
+// run and returns how many rows went. Owner-scoped: an id that is already
+// gone or belongs to another member matches nothing and is not an error. An
+// empty list issues no query (FS-P9G8R R17, R20).
+func (r *repository) DeleteConsumedItemInstancesTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID, ids []uuid.UUID) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	idStrings := make([]string, 0, len(ids))
+	for _, id := range ids {
+		idStrings = append(idStrings, id.String())
+	}
+
+	query := `
+		DELETE FROM item_instances
+		WHERE id = ANY($1::uuid[])
+		AND owner_member_id = $2`
+
+	result, err := tx.ExecContext(ctx, query, pq.Array(idStrings), memberID)
+	if err != nil {
+		return 0, wrapDBErr("delete consumed item instances (tx)", err)
+	}
+
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, wrapDBErr("delete consumed item instances (tx): rows affected", err)
+	}
+
+	return deleted, nil
+}
+
 // batchUpsertQuery builds the multi-row upsert and its arguments, giving any
 // item without an id a new one. Placeholders are numbered from the column
 // list, so they cannot drift from the arguments.
