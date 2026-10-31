@@ -757,9 +757,10 @@ describe("ChatWindow fold button size (asked 2026-10-31)", () => {
       words,
     );
 
+    const open = parseInt(foldButtonOf(s).fontSize ?? "0", 10);
+
     foldButtonOf(s).onPress!();
-    expect(parseInt(foldButtonOf(s).fontSize ?? "0", 10)).toBeGreaterThan(
-      words,
-    );
+    // folded, the up glyph draws a size larger still: it reads small in the body face
+    expect(parseInt(foldButtonOf(s).fontSize ?? "0", 10)).toBeGreaterThan(open);
   });
 });
