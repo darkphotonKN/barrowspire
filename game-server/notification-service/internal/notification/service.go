@@ -173,12 +173,8 @@ func (s *service) ProcessGameEnded(ctx context.Context, eventID uuid.UUID, paylo
 	err := s.runInTx(ctx, eventID, commonconstants.GameMatchEnded, func(tx *sqlx.Tx) error {
 		for _, n := range notifications {
 			if _, err := s.repo.CreateTx(ctx, tx, n); err != nil {
-				slog.Warn("Error occurred when creating game ended notification",
-					"user_id", n.UserID,
-					"session_id", payload.SessionId,
-					"err", err,
-				)
-				return fmt.Errorf("create game ended notification for %s: %w", n.UserID, err)
+				// Logged once, by the consumer that settles the delivery.
+				return fmt.Errorf("create game ended notification (user_id=%s session_id=%s): %w", n.UserID, payload.SessionId, err)
 			}
 		}
 		return nil

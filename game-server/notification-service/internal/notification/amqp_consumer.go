@@ -81,6 +81,10 @@ type retryPublisher interface {
 	Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
 }
 
+// Consumer reads from channel and publishes retry copies through publisher.
+// publisher is a deliberate partial seam (the publish side only, so retry can
+// be tested without a broker); both point at the same channel, and NewConsumer
+// must set both, or the first transient retry panics on a nil publisher.
 type Consumer struct {
 	service   ConsumerService
 	channel   *amqp.Channel
