@@ -82,6 +82,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Random affixes on rolled loot → FS-4R9M9
 - [ ] Fabled uniques → FS-4R9M9
 - [x] A player may end their own run as a death → FS-9K8EZ
+- [ ] Pickup allocated by the party's loot rule → FS-V780R
 
 ### Classes
 
@@ -132,11 +133,21 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Forlorn Forest → FS-3QHQZ
 - [x] Roomier Forlorn Forest → FS-KSD6K
 
+### Party
+
+- [ ] Form a party across pods → FS-R82NV
+- [ ] Player presence index across pods → FS-R82NV
+- [ ] Joining a party moves the player to the party's pod → FS-R82NV
+- [ ] Party loot rule → FS-V780R
+- [ ] Enter an instance as a party from its gate → FS-BJNYC
+- [ ] Matched players form a party on entry → FS-BJNYC
+
 ### Chat
 
 - [ ] Area chat across the pod → FS-WJGFJ
 - [ ] World chat across pods → FS-5SH4G
 - [ ] Whisper a player on any pod → FS-KCQ06
+- [ ] Party chat within the party's pod → FS-XGW7H
 
 ### Transport
 

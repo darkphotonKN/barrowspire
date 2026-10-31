@@ -60,6 +60,7 @@ server state and sends intents. ✅
 - [x] Health and class resource bars on the HUD → FS-8AY7S
 - [x] Ability card on the HUD → FS-8AY7S
 - [x] Shadow Shot aimed by holding → FS-JTNPR
+- [ ] Allocated pickup notices → FS-V780R
 
 ### Character
 
@@ -119,11 +120,20 @@ server state and sends intents. ✅
 - [x] Forlorn Forest look and creatures → FS-3QHQZ
 - [x] Field edges without a horizon → FS-KSD6K
 
+### Party
+
+- [ ] Party panel → FS-R82NV
+- [ ] Party invites → FS-R82NV
+- [ ] Follow a handoff into the hub → FS-R82NV
+- [ ] Party loot rule setting → FS-V780R
+- [ ] Enter the Spire as a party → FS-BJNYC
+
 ### Chat
 
 - [ ] In-game chat window → FS-WJGFJ
 - [ ] Channel filters on one chat stream → FS-WJGFJ
 - [ ] Send to the world channel from the chat window → FS-5SH4G
+- [ ] Send to the party channel from the chat window → FS-XGW7H
 - [ ] Mute a player → FS-4HEG7
 - [ ] Report a chat message → FS-4HEG7
 
