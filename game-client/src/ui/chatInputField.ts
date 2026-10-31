@@ -13,7 +13,7 @@
 import type Phaser from "phaser";
 import { CHAT_CHANNELS, type ChatChannel } from "@/stores/chatStore";
 import { CANVAS_FONT, palette, rgba, toCss } from "@/utils/canvasPalette";
-import { CHAT_OPEN_CHANNELS, type ChatEntryField } from "./chatInput";
+import { CHAT_OPEN_CHANNELS, type ChatInputField } from "./chatInput";
 import {
   CHAT_CHANNEL_COLOUR,
   CHAT_FILTER_LABEL,
@@ -22,7 +22,7 @@ import {
 } from "./chatWindowLayout";
 
 /** What the row tells the chat input. */
-export interface ChatEntryEvents {
+export interface ChatInputFieldEvents {
   focused(): void;
   blurred(): void;
   keyDown(key: string, composing: boolean): void;
@@ -32,16 +32,16 @@ export interface ChatEntryEvents {
 }
 
 /** A row the window can place and take down, as well as the input drives it. */
-export interface ChatEntryHandle extends ChatEntryField {
+export interface ChatInputFieldHandle extends ChatInputField {
   moveTo(rect: Rect): void;
   destroy(): void;
 }
 
-export type ChatEntryFactory = (
+export type ChatInputFieldFactory = (
   scene: Phaser.Scene,
   rect: Rect,
-  events: ChatEntryEvents,
-) => ChatEntryHandle;
+  events: ChatInputFieldEvents,
+) => ChatInputFieldHandle;
 
 const HUD_DEPTH = 1000;
 /** The picker's arrow sits this far in from its divider, and the label stops short of the arrow. */
@@ -55,7 +55,11 @@ const FONT = () => `14px ${CANVAS_FONT.body}`;
 const FIELD_H = "22px";
 
 /** The real row: a picker and a field in Phaser's DOM container, over the input row, short of the fold button. */
-export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
+export const domChatInputField: ChatInputFieldFactory = (
+  scene,
+  rect,
+  events,
+) => {
   // Phaser owns the outer element's display (it sets block on every render), so the flex row that
   // stretches the field out to the fold button lives one level in, where Phaser never writes
   const shell = document.createElement("div");
@@ -191,7 +195,9 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
     .dom(rect.x + 4, rect.y, shell)
     .setOrigin(0, 0)
     .setScrollFactor(0)
-    .setDepth(HUD_DEPTH);
+    .setDepth(HUD_DEPTH)
+    // hidden until the player types: the DOM layer always draws above the canvas and its overlays
+    .setVisible(false);
 
   return {
     get value() {
@@ -212,6 +218,8 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
       dom.setPosition(r.x + 4, r.y);
       size(r);
     },
+    show: () => void dom.setVisible(true),
+    hide: () => void dom.setVisible(false),
     destroy: () => dom.destroy(),
   };
 };

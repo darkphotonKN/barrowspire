@@ -44,10 +44,7 @@ import { ContainerView } from "@/ui/ContainerView";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
 import { ResourceHud } from "@/ui/ResourceHud";
-import { ChatWindow } from "@/ui/ChatWindow";
-import { domChatEntry } from "@/ui/chatEntryField";
-import { CHAT_WINDOW_MARGIN, CHAT_WINDOW_X } from "@/ui/chatWindowLayout";
-import { useChatStore } from "@/stores/chatStore";
+import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars } from "@/ui/resources";
@@ -218,13 +215,7 @@ export class FieldScene extends Phaser.Scene {
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
     this.listen();
-    this.chatWindow = new ChatWindow(this, useChatStore, CHAT_WINDOW_X, this.cameras.main.height - CHAT_WINDOW_MARGIN, {
-      input: {
-        mayOpen: () => !this.equipment?.isOpen(),
-        send: (line) => socketManager.sendMessage(ActionType.Chat, line),
-        makeField: domChatEntry,
-      },
-    });
+    this.chatWindow = mountChatWindow(this, () => !this.equipment?.isOpen());
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.release, this);

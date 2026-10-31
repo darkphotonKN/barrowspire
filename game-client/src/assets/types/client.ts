@@ -1,3 +1,4 @@
+import type { ChatChannel } from "@/stores/chatStore";
 /**
  * The session identity every game action carries. GameSessionManager builds it
  * once and merges it into each outgoing payload, so action payload types below
@@ -28,7 +29,7 @@ export interface UsePayload {
 
 /** A chat line as the client sends it; the pod stamps everything else (FS-WJGFJ R2). */
 export interface ChatPayload {
-  channel: "area" | "world" | "party" | "whisper" | "trade";
+  channel: ChatChannel;
   text: string;
 }
 

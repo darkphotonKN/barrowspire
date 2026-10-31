@@ -24,10 +24,7 @@ import {
 } from "./hubGates";
 import { BARROW_HEX } from "@/utils/theme";
 import { ProgressHud } from "@/ui/ProgressHud";
-import { ChatWindow } from "@/ui/ChatWindow";
-import { domChatEntry } from "@/ui/chatEntryField";
-import { CHAT_WINDOW_MARGIN, CHAT_WINDOW_X } from "@/ui/chatWindowLayout";
-import { useChatStore } from "@/stores/chatStore";
+import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { HubGear } from "@/ui/HubGear";
 import { apiClient } from "@/utils/api";
@@ -649,14 +646,8 @@ export class HubScene extends Phaser.Scene {
     );
 
     this.listenForQueue();
-    this.chatWindow = new ChatWindow(this, useChatStore, CHAT_WINDOW_X, this.cameras.main.height - CHAT_WINDOW_MARGIN, {
-      input: {
-        // a dialogue and the menu read Enter and Esc themselves; the gear overlay is open over the town
-        mayOpen: () => !this.dialogue && !this.menu && !this.gear?.isOpen(),
-        send: (line) => socketManager.sendMessage(ActionType.Chat, line),
-        makeField: domChatEntry,
-      },
-    });
+    // a dialogue and the menu read Enter and Esc themselves; the gear overlay is open over the town
+    this.chatWindow = mountChatWindow(this, () => !this.dialogue && !this.menu && !this.gear?.isOpen());
 
     // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);

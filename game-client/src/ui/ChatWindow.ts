@@ -14,11 +14,21 @@
 
 import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
-import { visibleChatLines, type ChatState } from "@/stores/chatStore";
+import { ActionType } from "@/assets/types/client";
+import {
+  useChatStore,
+  visibleChatLines,
+  type ChatState,
+} from "@/stores/chatStore";
+import { socketManager } from "@/utils/class/SocketManager";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
 import { ChatInput, type ChatSend } from "./chatInput";
-import type { ChatEntryFactory, ChatEntryHandle } from "./chatEntryField";
+import {
+  domChatInputField,
+  type ChatInputFieldFactory,
+  type ChatInputFieldHandle,
+} from "./chatInputField";
 import {
   CHAT_CHANNEL_COLOUR,
   CHAT_FILTER_LABEL,
@@ -29,6 +39,9 @@ import {
   CHAT_INPUT_TEXT_X,
   CHAT_LINES_GAP,
   CHAT_PAD,
+  CHAT_VISIBLE_LINES,
+  CHAT_WINDOW_MARGIN,
+  CHAT_WINDOW_X,
   CHAT_SCROLL_GRAB,
   CHAT_SCROLL_W,
   CHAT_TAB_PAD,
@@ -57,8 +70,31 @@ export interface ChatWindowInput {
   /** Whether nothing else (a dialogue, a menu, an overlay) owns Enter and Esc now (R27). */
   mayOpen: () => boolean;
   send: (line: ChatSend) => void;
-  /** The text field and picker; the real DOM ones in a scene (`domChatEntry`), a stand-in in a test. */
-  makeField: ChatEntryFactory;
+  /** The text field and picker; the real DOM ones in a scene (`domChatInputField`), a stand-in in a test. */
+  makeField: ChatInputFieldFactory;
+}
+
+/**
+ * The window as a scene hangs it: the app's chat store, the bottom-left corner above the canvas
+ * bottom, the real DOM input row, and the scene's own rule for who owns Enter and Esc (R27).
+ */
+export function mountChatWindow(
+  scene: Phaser.Scene,
+  mayOpen: () => boolean,
+): ChatWindow {
+  return new ChatWindow(
+    scene,
+    useChatStore,
+    CHAT_WINDOW_X,
+    scene.cameras.main.height - CHAT_WINDOW_MARGIN,
+    {
+      input: {
+        mayOpen,
+        send: (line) => socketManager.sendMessage(ActionType.Chat, line),
+        makeField: domChatInputField,
+      },
+    },
+  );
 }
 
 const HUD_DEPTH = 1000;
@@ -137,10 +173,11 @@ export class ChatWindow {
   private tabTexts: Phaser.GameObjects.Text[] = [];
   private foldText?: Phaser.GameObjects.Text;
   private hintText?: Phaser.GameObjects.Text;
+  private idleChannelText?: Phaser.GameObjects.Text;
   /** Lines back from the newest; 0 is following (R21). */
   private offset = 0;
   private unsubscribe: () => void;
-  private field?: ChatEntryHandle;
+  private field?: ChatInputFieldHandle;
   private input?: ChatInput;
 
   /** `x` is the panel's left edge; `bottom` the screen y of its bottom edge. */
@@ -201,6 +238,8 @@ export class ChatWindow {
     this.clearTabs();
     this.foldText?.destroy();
     this.hintText?.destroy();
+    this.idleChannelText?.destroy();
+    this.idleChannelText = undefined;
     this.panel?.destroy();
     this.scrollbar?.destroy();
     this.scrollbar = undefined;
@@ -264,7 +303,13 @@ export class ChatWindow {
     if (!arrived || state.folded) return;
     const seen = newest.kind === "system" || state.shown[newest.channel];
     if (!seen) return;
-    if (this.offset > 0) this.offset += 1;
+    // a full buffer drops one line as it adds one, so the offset never passes the oldest line
+    if (this.offset > 0) {
+      this.offset = Math.min(
+        this.offset + 1,
+        Math.max(0, this.scrollable() - CHAT_VISIBLE_LINES),
+      );
+    }
     this.drawLines();
   }
 
@@ -273,24 +318,21 @@ export class ChatWindow {
     const keyboard = () => this.scene.input?.keyboard;
     let input: ChatInput | undefined;
     this.field = typing.makeField(this.scene, this.fieldRect(), {
-      focused: () => {
-        input?.focused();
-        // typing in a folded window unfolds it, so the player sees what they answer (asked 2026-10-31)
-        if (input?.isOpen() && this.store.getState().folded)
-          this.store.getState().toggleFolded();
-      },
+      focused: () => input?.focused(),
       blurred: () => input?.blurred(),
       keyDown: (key, composing) => input?.keyDown(key, composing),
       typed: (composing) => input?.typed(composing),
       picked: (channel) => input?.pick(channel),
     });
+    // hidden until the player types, whatever the field's own default (review 2026-10-31)
+    this.field.hide();
     input = new ChatInput({
       field: this.field,
       keyboard,
       mayOpen: typing.mayOpen,
       send: typing.send,
       changed: () => this.inputChanged(),
-      history: {
+      recall: {
         lines: () => this.store.getState().sent,
         remember: (line) => this.store.getState().rememberSent(line),
       },
@@ -309,12 +351,28 @@ export class ChatWindow {
     const typing = this.isTyping();
     if (typing !== this.drawnTyping) {
       this.drawnTyping = typing;
+      // typing in a folded window unfolds it, so the player sees what they answer (asked 2026-10-31)
+      if (typing && this.store.getState().folded) {
+        this.store.getState().toggleFolded();
+        return;
+      }
       // the graphics layer is reused in place, so the words drawn above it stay above it
       this.drawPanel();
     }
-    this.drawInputRow();
+    // the row's words change only as typing starts or stops, or as the draft empties or fills
+    const idle = this.idleRow();
+    if (idle !== this.drawnIdle) this.drawInputRow();
   }
   private drawnTyping = false;
+  private drawnIdle?: string;
+
+  /** What the idle row shows, as a key: the channel and whether the hint is up. */
+  private idleRow(): string {
+    if (!this.input || !this.field) return "";
+    return this.input.isOpen()
+      ? "typing"
+      : `${this.field.channel}:${this.field.value === "" ? "hint" : "draft"}`;
+  }
 
   private onEnter(): void {
     this.input?.requestOpen();
@@ -607,12 +665,24 @@ export class ChatWindow {
 
     this.hintText?.destroy();
     this.hintText = undefined;
-    if (
-      this.input &&
-      this.field &&
-      !this.input.isOpen() &&
-      this.field.value === ""
-    ) {
+    this.idleChannelText?.destroy();
+    this.idleChannelText = undefined;
+    this.drawnIdle = this.idleRow();
+    if (!this.input || !this.field || this.input.isOpen()) return;
+
+    // idle: the DOM row is hidden, so the window itself shows the channel, and the hint while the
+    // draft is empty; a press on either opens the input
+    const channel = this.field.channel;
+    this.idleChannelText = this.scene.add
+      .text(r.x + CHAT_PAD, y, CHAT_FILTER_LABEL[channel], {
+        ...textStyle(CHAT_CHANNEL_COLOUR[channel]),
+        padding: { x: 4, y: 2 },
+      })
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH)
+      .setInteractive({ useHandCursor: true })
+      .on("pointerdown", () => this.onEnter());
+    if (this.field.value === "") {
       this.hintText = this.scene.add
         .text(
           r.x + CHAT_INPUT_TEXT_X,
@@ -622,7 +692,9 @@ export class ChatWindow {
         )
         .setScrollFactor(0)
         .setDepth(HUD_DEPTH)
-        .setAlpha(0.7);
+        .setAlpha(0.7)
+        .setInteractive({ useHandCursor: true })
+        .on("pointerdown", () => this.onEnter());
     }
   }
 

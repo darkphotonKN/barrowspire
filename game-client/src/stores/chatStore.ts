@@ -48,6 +48,26 @@ export interface ChatSystemLine extends ChatNoticePayload {
 
 export type ChatEntry = ChatLine | ChatSystemLine;
 
+/** Whether a frame off the wire is a stamped line: the pod is trusted, a bad frame is not rendered. */
+export function isChatLine(payload: unknown): payload is ChatLinePayload {
+  if (typeof payload !== "object" || payload === null) return false;
+  const p = payload as Record<string, unknown>;
+  return (
+    typeof p.message_id === "string" &&
+    typeof p.sender_id === "string" &&
+    typeof p.sender_name === "string" &&
+    typeof p.text === "string" &&
+    typeof p.sent_at === "string" &&
+    (CHAT_CHANNELS as readonly string[]).includes(p.channel as string)
+  );
+}
+
+export function isChatNotice(payload: unknown): payload is ChatNoticePayload {
+  if (typeof payload !== "object" || payload === null) return false;
+  const p = payload as Record<string, unknown>;
+  return typeof p.code === "string" && typeof p.text === "string";
+}
+
 /**
  * The newest lines kept per channel, and for system lines on their own (R20, amended with the
  * user 2026-10-31): a loud channel only ever pushes out its own old lines, never a quiet one's.
@@ -78,7 +98,7 @@ const ALL_SHOWN: ChatChannelsShown = {
  * The most sent lines kept for recall with the arrow keys (asked 2026-10-31). Chat recall is
  * reached for a few lines back, rarely dozens; a terminal keeps more because commands repeat.
  */
-export const CHAT_HISTORY = 50;
+export const CHAT_RECALL_DEPTH = 50;
 
 export interface ChatState {
   lines: ChatEntry[];
@@ -129,7 +149,6 @@ function readShown(storage: () => KeyValueStore): ChatChannelsShown {
   }
 }
 
-/** Keeps the hidden channels; a storage that refuses is ignored, and the choice lasts the session. */
 /** Whether this browser kept the window folded; unfolded when it kept nothing or cannot say. */
 function readFolded(storage: () => KeyValueStore): boolean {
   try {
@@ -147,6 +166,7 @@ function writeFolded(storage: () => KeyValueStore, folded: boolean): void {
   }
 }
 
+/** Keeps the hidden channels; a storage that refuses is ignored, and the choice lasts the session. */
 function writeShown(
   storage: () => KeyValueStore,
   shown: ChatChannelsShown,
@@ -198,7 +218,7 @@ export function createChatStore(
         set((state) =>
           state.sent.at(-1) === line
             ? state
-            : { sent: [...state.sent, line].slice(-CHAT_HISTORY) },
+            : { sent: [...state.sent, line].slice(-CHAT_RECALL_DEPTH) },
         ),
       toggleFolded: () =>
         set((state) => {

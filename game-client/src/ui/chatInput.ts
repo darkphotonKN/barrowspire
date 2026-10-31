@@ -1,7 +1,7 @@
 /**
  * The chat input's rules (FS-WJGFJ R26–R28), apart from any scene or DOM: when it may open, what
  * opening does to the scene's keyboard, what Enter and Esc do, and how long a line may be. The
- * text field is a thin DOM adapter (`chatEntryField.ts`) that reports focus, keys and typing here.
+ * text field is a thin DOM adapter (`chatInputField.ts`) that reports focus, keys and typing here.
  *
  * Exactly one thing owns Enter and Esc at a time (R27): the scene says through `mayOpen` whether
  * a dialogue, a menu or an overlay holds them; while the input is open the scene's keyboard is
@@ -38,12 +38,18 @@ export function clampChatText(text: string): string {
 }
 
 /** The text field and its channel picker, as the input drives them. */
-export interface ChatEntryField {
+export interface ChatInputField {
   value: string;
   /** The channel the picker shows. */
   channel: ChatChannel;
   focus(): void;
   blur(): void;
+  /**
+   * Shown only while the player types: a browser field always draws above the canvas, so a field
+   * left visible would sit over the end-of-run card and the overlays (review 2026-10-31).
+   */
+  show(): void;
+  hide(): void;
 }
 
 /** The part of a scene's keyboard plugin the input switches off while the player types. */
@@ -59,7 +65,7 @@ export interface ChatSend {
 }
 
 export interface ChatInputDeps {
-  field: ChatEntryField;
+  field: ChatInputField;
   keyboard: () => SceneKeyboard | null | undefined;
   /** Whether nothing else owns Enter and Esc right now (R27). */
   mayOpen: () => boolean;
@@ -69,11 +75,11 @@ export interface ChatInputDeps {
   /** The channels that may be picked; the server's open ones unless a test says otherwise. */
   open?: ReadonlySet<ChatChannel>;
   /** The lines this player sent, oldest first, and where a newly sent one is kept. */
-  history?: ChatHistory;
+  recall?: ChatRecall;
 }
 
 /** The sent lines the arrow keys walk through, as a terminal's history (asked 2026-10-31). */
-export interface ChatHistory {
+export interface ChatRecall {
   lines(): readonly string[];
   remember(line: string): void;
 }
@@ -126,6 +132,7 @@ export class ChatInput {
   /** Enter in the scene, or a click on the field: focuses the field if nothing else owns the keys. */
   requestOpen(): boolean {
     if (this.open || !this.deps.mayOpen()) return false;
+    this.deps.field.show();
     this.deps.field.focus();
     return true;
   }
@@ -151,6 +158,7 @@ export class ChatInput {
 
   /** The field lost focus: the input closes, the draft stays for the next open. */
   blurred(): void {
+    this.deps.field.hide();
     if (!this.open) return;
     this.open = false;
     const keyboard = this.deps.keyboard();
@@ -177,7 +185,7 @@ export class ChatInput {
         return;
       }
       this.deps.send({ channel, text });
-      this.deps.history?.remember(field.value.trim());
+      this.deps.recall?.remember(field.value.trim());
       this.recalled = null;
       // the input stays open for the next line (revised by the user 2026-10-31); the channel and
       // its prefix stay ready
@@ -197,7 +205,7 @@ export class ChatInput {
    * newest, the player's own draft comes back. A recalled line's prefix picks its channel.
    */
   private recall(step: -1 | 1): void {
-    const lines = this.deps.history?.lines() ?? [];
+    const lines = this.deps.recall?.lines() ?? [];
     if (lines.length === 0) return;
     const field = this.deps.field;
     if (this.recalled === null) {

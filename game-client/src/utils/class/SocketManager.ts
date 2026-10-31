@@ -9,7 +9,7 @@ import { ClientGameState, isGameState } from "@/types/gameState";
 import { GameStateLogger } from "@/utils/gameStateLogger";
 import { useGameStore } from "@/stores/gameStore";
 import { useAuthStore } from "@/stores/authStore";
-import { useChatStore, type ChatLinePayload, type ChatNoticePayload } from "@/stores/chatStore";
+import { isChatLine, isChatNotice, useChatStore } from "@/stores/chatStore";
 
 export type ConnectionStatus =
   | "disconnected"
@@ -79,7 +79,8 @@ export class SocketManager {
   private handoffSessionId: string | null = null;
 
   constructor(
-    private createSocket: (url: string) => SocketLike = (url) => new WebSocket(url),
+    private createSocket: (url: string) => SocketLike = (url) =>
+      new WebSocket(url),
   ) {}
 
   getServerAddress(): string {
@@ -180,7 +181,12 @@ export class SocketManager {
     };
 
     socket.onclose = (event) => {
-      console.log("WebSocket disconnected, code:", event.code, "reason:", event.reason);
+      console.log(
+        "WebSocket disconnected, code:",
+        event.code,
+        "reason:",
+        event.reason,
+      );
       if (this.socket === socket) {
         this.socket = null;
       }
@@ -218,7 +224,8 @@ export class SocketManager {
         message: data.payload?.message,
       };
       // a stable reason the client writes its own copy for (FS-X2F2H §Requirements 60)
-      if (typeof data.payload?.reason === "string") info.reason = data.payload.reason;
+      if (typeof data.payload?.reason === "string")
+        info.reason = data.payload.reason;
       const scoped = this.errorListeners.get(info.action);
       if (scoped) scoped(info);
       else this.onMessageError?.(info);
@@ -241,10 +248,12 @@ export class SocketManager {
     } else if (data.action === "chat") {
       // The chat stream outlives any scene, so a line goes to the store here
       // rather than to whichever scene happens to listen. FS-WJGFJ §C20.
-      useChatStore.getState().receive(data.payload as ChatLinePayload);
+      if (!isChatLine(data.payload)) return;
+      useChatStore.getState().receive(data.payload);
       this.listeners.get(data.action)?.(data.payload);
     } else if (data.action === "chat_notice") {
-      useChatStore.getState().notice(data.payload as ChatNoticePayload);
+      if (!isChatNotice(data.payload)) return;
+      useChatStore.getState().notice(data.payload);
       this.listeners.get(data.action)?.(data.payload);
     } else if (data.action && this.listeners.has(data.action)) {
       // Handle action-based messages
@@ -274,7 +283,9 @@ export class SocketManager {
     this.dropPending();
     this.handoffSessionId = payload.session_id;
 
-    const next = this.createSocket(`${payload.addr}?token=${this.token}&session_id=${payload.session_id}`);
+    const next = this.createSocket(
+      `${payload.addr}?token=${this.token}&session_id=${payload.session_id}`,
+    );
     this.pending = next;
 
     // The host upgrades before it decides and refuses by closing with 4002, so
@@ -339,12 +350,19 @@ export class SocketManager {
     // Still on the old socket: stay in the hub. If it is gone too, go back to
     // the server we were on, which puts us in its hub.
     const old = this.socket;
-    if (!old || old.readyState === SOCKET_CLOSING || old.readyState === SOCKET_CLOSED) {
+    if (
+      !old ||
+      old.readyState === SOCKET_CLOSING ||
+      old.readyState === SOCKET_CLOSED
+    ) {
       this.socket = null;
       this.reconnect();
     }
 
-    this.listeners.get("world_handoff_failed")?.({ session_id: sessionId, code });
+    this.listeners.get("world_handoff_failed")?.({
+      session_id: sessionId,
+      code,
+    });
   }
 
   private dropPending() {
@@ -370,7 +388,9 @@ export class SocketManager {
       return;
     }
 
-    useGameStore.getState().setWorld(payload.session_id, payload.world_type, payload.field);
+    useGameStore
+      .getState()
+      .setWorld(payload.session_id, payload.world_type, payload.field);
     console.log(`Entered ${payload.world_type}:`, payload.session_id);
   }
 
@@ -405,14 +425,14 @@ export class SocketManager {
       if (GameStateLogger.getLevel() >= 2) {
         console.log(
           `%c[WebSocket Send] Action: ${action}`,
-          'color: #ff69b4; font-weight: bold',
+          "color: #ff69b4; font-weight: bold",
           payload,
         );
       }
 
       this.socket.send(JSON.stringify(message));
     } else {
-      console.warn('Cannot send message: WebSocket not connected');
+      console.warn("Cannot send message: WebSocket not connected");
     }
   }
 
