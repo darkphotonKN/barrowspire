@@ -172,7 +172,11 @@ the requirement named. Built as I-WJGFJ-6.
 - **New (collapse):** a button folds the window down to its input row and unfolds it again. It
   stays as the player leaves it, kept in this browser like the filter. Arriving lines do not
   unfold it. *Revised the same day by the user:* opening the input in a folded window (Enter or
-  a click) unfolds it, so the player sees what they are answering. Typing still needs the input focused
+  a click) unfolds it, so the player sees what they are answering.
+- **R26 (input), revised the same day by the user:** Enter on a typed line sends it and the input
+  **stays open** for the next line, its channel and prefix ready. Enter on nothing closes it (two
+  Enters after a line return to the game, as in PoE); Esc closes and drops the draft; a press in
+  the world closes it and keeps the draft. Typing still needs the input focused
   (R26), and an open window never holds the keys while the player plays.
 
 ## User Stories

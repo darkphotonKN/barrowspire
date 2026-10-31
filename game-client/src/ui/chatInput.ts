@@ -147,8 +147,8 @@ export class ChatInput {
   }
 
   /**
-   * A key in the open field. Enter sends what is typed and closes; Enter on nothing just closes;
-   * Esc closes and throws the draft away (R26). While an input method is composing, Enter is its
+   * A key in the open field. Enter sends what is typed and stays open for the next line; Enter on
+   * nothing closes; Esc closes and throws the draft away (R26 as revised 2026-10-31). While an input method is composing, Enter is its
    * own (picking a character) and never sends.
    */
   keyDown(key: string, composing: boolean): void {
@@ -159,8 +159,16 @@ export class ChatInput {
       const text = clampChatText(
         field.value.slice(CHAT_PREFIX[channel].length).trim(),
       );
-      if (text) this.deps.send({ channel, text });
-      this.discardAndClose();
+      if (!text) {
+        // Enter on nothing is the way back to the game, as the second Enter after a line
+        this.discardAndClose();
+        return;
+      }
+      this.deps.send({ channel, text });
+      // the input stays open for the next line (revised by the user 2026-10-31); the channel and
+      // its prefix stay ready
+      field.value = CHAT_PREFIX[field.channel];
+      this.deps.changed?.();
     } else if (key === "Escape") {
       this.discardAndClose();
     }
