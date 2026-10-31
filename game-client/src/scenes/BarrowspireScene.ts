@@ -47,7 +47,7 @@ import { ProgressHud } from "@/ui/ProgressHud";
 import { ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow } from "@/ui/ChatWindow";
 import { domChatEntry } from "@/ui/chatEntryField";
-import { CHAT_WINDOW_MARGIN, CHAT_WINDOW_X } from "@/ui/chatWindowLayout";
+import { CHAT_AREA_LABEL, CHAT_WINDOW_MARGIN, CHAT_WINDOW_X } from "@/ui/chatWindowLayout";
 import { useChatStore } from "@/stores/chatStore";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
@@ -2574,10 +2574,13 @@ export class BarrowspireScene extends Phaser.Scene {
     this.connectToServer();
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
     this.chatWindow = new ChatWindow(this, useChatStore, CHAT_WINDOW_X, this.cameras.main.height - CHAT_WINDOW_MARGIN, {
-      // the menu and the result card read Enter and Esc; the gear overlay and an open chest are up
-      mayOpen: () => !this.menu && !this.gameEndOverlay && !this.equipment?.isOpen() && !this.containerView?.isOpen,
-      send: (line) => socketManager.sendMessage(ActionType.Chat, line),
-      makeField: domChatEntry,
+      area: CHAT_AREA_LABEL.run,
+      input: {
+        // the menu and the result card read Enter and Esc; the gear overlay and an open chest are up
+        mayOpen: () => !this.menu && !this.gameEndOverlay && !this.equipment?.isOpen() && !this.containerView?.isOpen,
+        send: (line) => socketManager.sendMessage(ActionType.Chat, line),
+        makeField: domChatEntry,
+      },
     });
 
     // The camera and the (vestigial, collision-free) physics world live in
@@ -2764,6 +2767,8 @@ export class BarrowspireScene extends Phaser.Scene {
       // a press over the overlay's panels is the overlay's: no attack, no cast, no hold; one in the
       // clear middle band answers as with the overlay closed (FS-HRH2J R8)
       if (this.equipment?.covers(pointer.x, pointer.y)) return;
+      // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
+      if (this.chatWindow?.covers(pointer.x, pointer.y)) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
       if (this.containerView.pointerDown(pointer.x, pointer.y, pointer.button === 0)) return;
       if (!this.player || !this.playerPos) return;

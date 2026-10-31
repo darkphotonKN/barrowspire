@@ -4,14 +4,20 @@
  * stream survives every scene change; the scene only places it and takes it down.
  *
  * Neutral HUD, as the ResourceHud: a dark panel with a brass hairline, the body serif. It sits at
- * the HUD's depth, under overlays and popups (R17). It claims no pointer events: only the wheel
- * over its own message area is read, so the world beside it keeps every click (R31). The filter
- * row (I-WJGFJ-5) and the input (I-WJGFJ-4) have their space kept, top and bottom.
+ * the HUD's depth, under overlays and popups (R17). Top to bottom: the channel filter row and the
+ * area label (R24, R25), the lines, the input (R26). Only its toggles take a click and only the
+ * wheel over its lines is read; a scene asks `covers` so a click on the panel is never an attack
+ * in the world behind it (R31).
  */
 
 import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
-import type { ChatState } from "@/stores/chatStore";
+import {
+  CHAT_CHANNELS,
+  visibleChatLines,
+  type ChatChannel,
+  type ChatState,
+} from "@/stores/chatStore";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { ChatInput, type ChatSend } from "./chatInput";
 import type { ChatEntryFactory, ChatEntryHandle } from "./chatEntryField";
@@ -20,6 +26,8 @@ import {
   CHAT_INPUT_PROMPT,
   CHAT_INPUT_TEXT_X,
   CHAT_PAD,
+  CHAT_CHANNEL_COLOUR,
+  CHAT_FILTER_LABEL,
   chatEntryColour,
   chatWindowFrame,
   formatChatEntry,
@@ -28,6 +36,13 @@ import {
   type ChatWindowFrame,
   type Rect,
 } from "./chatWindowLayout";
+
+/** What a scene gives the window: where the player is, and what the input needs to let them type. */
+export interface ChatWindowOptions {
+  /** The area label at the end of the filter row, in the client's words (R25). */
+  area?: string;
+  input?: ChatWindowInput;
+}
 
 /** What a scene gives the window so the player can type: who owns the keys, and how a line leaves. */
 export interface ChatWindowInput {
@@ -40,6 +55,9 @@ export interface ChatWindowInput {
 
 const HUD_DEPTH = 1000;
 const FONT_PX = 13;
+/** A hidden channel's toggle, drawn faint (R24). */
+const TOGGLE_OFF_ALPHA = 0.35;
+const TOGGLE_GAP = 10;
 
 const within = (r: Rect, x: number, y: number) =>
   x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
@@ -52,9 +70,9 @@ export class ChatWindow {
   private texts: Phaser.GameObjects.Text[] = [];
   /** Lines back from the newest; 0 is following (R21). */
   private offset = 0;
-  /** How many lines the store held at the last draw, to hold a scrolled-back view still. */
-  private seen: number;
   private unsubscribe: () => void;
+  private filterTexts: Phaser.GameObjects.Text[] = [];
+  private areaText?: Phaser.GameObjects.Text;
   private field?: ChatEntryHandle;
   private input?: ChatInput;
   private promptText?: Phaser.GameObjects.Text;
@@ -66,15 +84,22 @@ export class ChatWindow {
     private readonly store: StoreApi<ChatState>,
     private readonly x: number,
     bottom: number,
-    typing?: ChatWindowInput,
+    private readonly options: ChatWindowOptions = {},
   ) {
     this.frame = chatWindowFrame(x, bottom);
-    this.seen = store.getState().lines.length;
     this.drawPanel();
+    this.drawFilterRow();
     this.drawLines();
-    this.unsubscribe = store.subscribe(() => this.onStream());
+    this.unsubscribe = store.subscribe((state, prev) =>
+      this.onStream(state, prev),
+    );
     scene.input.on("wheel", this.onWheel, this);
-    if (typing) this.buildInput(typing);
+    if (options.input) this.buildInput(options.input);
+  }
+
+  /** Whether a screen point lies on the window: a scene's click there is the window's, not the world's (R31). */
+  covers(x: number, y: number): boolean {
+    return within(this.frame.panel, x, y);
   }
 
   /** Whether the player is typing in the input right now. */
@@ -92,6 +117,7 @@ export class ChatWindow {
     if (bottom === this.frame.panel.y + this.frame.panel.height) return;
     this.frame = chatWindowFrame(this.x, bottom);
     this.drawPanel();
+    this.drawFilterRow();
     this.drawLines();
     this.field?.moveTo(this.frame.input);
     this.drawInputRow();
@@ -107,19 +133,32 @@ export class ChatWindow {
     this.hintText?.destroy();
     this.field = this.input = this.promptText = this.hintText = undefined;
     this.clearLines();
+    this.clearFilterRow();
     this.panel?.destroy();
     this.maskShape?.destroy();
     this.mask?.destroy();
     this.panel = this.maskShape = this.mask = undefined;
   }
 
-  /** A line arrived (or a notice): a scrolled-back view stays on the lines it showed (R21). */
-  private onStream(): void {
-    const total = this.store.getState().lines.length;
-    const added = total - this.seen;
-    this.seen = total;
-    // a full buffer drops one as it adds one, so its length does not move: still one new line
-    if (this.offset > 0) this.offset += added > 0 ? added : 1;
+  /**
+   * The store changed. A toggle redraws the row and goes back to the newest lines (R24). A new
+   * line the player can see leaves a scrolled-back view on the lines it showed; one in a hidden
+   * channel moves nothing (R21).
+   */
+  private onStream(state: ChatState, prev: ChatState): void {
+    if (state.shown !== prev.shown) {
+      this.offset = 0;
+      this.drawFilterRow();
+      this.drawLines();
+      return;
+    }
+    const newest = state.lines[state.lines.length - 1];
+    const arrived =
+      newest !== undefined && newest !== prev.lines[prev.lines.length - 1];
+    if (!arrived) return;
+    const seen = newest.kind === "system" || state.shown[newest.channel];
+    if (!seen) return;
+    if (this.offset > 0) this.offset += 1;
     this.drawLines();
   }
 
@@ -184,7 +223,7 @@ export class ChatWindow {
     const next = scrolledOffset(
       this.offset,
       dy,
-      this.store.getState().lines.length,
+      visibleChatLines(this.store.getState()).length,
     );
     if (next === this.offset) return;
     this.offset = next;
@@ -217,7 +256,10 @@ export class ChatWindow {
   /** The lines in view, laid bottom-up from the message area's foot so a wrapped line pushes the older ones up. */
   private drawLines(): void {
     this.clearLines();
-    const entries = visibleEntries(this.store.getState().lines, this.offset);
+    const entries = visibleEntries(
+      visibleChatLines(this.store.getState()),
+      this.offset,
+    );
     const m = this.frame.messages;
     let y = m.y + m.height;
     for (let i = entries.length - 1; i >= 0; i--) {
@@ -236,6 +278,55 @@ export class ChatWindow {
       if (this.mask) t.setMask(this.mask);
       this.texts.unshift(t);
     }
+  }
+
+  /**
+   * The five channel toggles left to right, each in its channel's colour and faint while hidden,
+   * and the area label at the row's right end (R24, R25). Drawn again on every toggle.
+   */
+  private drawFilterRow(): void {
+    this.clearFilterRow();
+    const row = this.frame.filterRow;
+    const y = row.y + (row.height - 16) / 2;
+    const shown = this.store.getState().shown;
+    let x = row.x + CHAT_PAD;
+    for (const channel of CHAT_CHANNELS) {
+      const toggle = this.scene.add
+        .text(x, y, CHAT_FILTER_LABEL[channel], {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: `${FONT_PX}px`,
+          color: toCss(CHAT_CHANNEL_COLOUR[channel]),
+        })
+        .setScrollFactor(0)
+        .setDepth(HUD_DEPTH)
+        .setAlpha(shown[channel] ? 1 : TOGGLE_OFF_ALPHA)
+        .setInteractive({ useHandCursor: true })
+        .on("pointerdown", () => this.toggle(channel));
+      this.filterTexts.push(toggle);
+      x += toggle.width + TOGGLE_GAP;
+    }
+    if (this.options.area) {
+      this.areaText = this.scene.add
+        .text(row.x + row.width - CHAT_PAD, y, this.options.area, {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: `${FONT_PX}px`,
+          color: toCss(palette.chatSystem),
+        })
+        .setOrigin(1, 0)
+        .setScrollFactor(0)
+        .setDepth(HUD_DEPTH);
+    }
+  }
+
+  private toggle(channel: ChatChannel): void {
+    this.store.getState().toggleChannel(channel);
+  }
+
+  private clearFilterRow(): void {
+    this.filterTexts.forEach((t) => t.destroy());
+    this.filterTexts = [];
+    this.areaText?.destroy();
+    this.areaText = undefined;
   }
 
   private clearLines(): void {

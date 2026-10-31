@@ -117,6 +117,23 @@ export const CHAT_CHANNEL_COLOUR: Readonly<Record<ChatChannel, number>> = {
   trade: palette.chatTrade,
 };
 
+/** What the area label says for each place, in the client's lore words (R25). */
+export const CHAT_AREA_LABEL = {
+  hub: "Area: Town",
+  gentle_meadows: "Area: Gentle Meadows",
+  forlorn_forest: "Area: Forlorn Forest",
+  run: "Area: the Spire",
+} as const;
+
+/** What each channel's toggle reads in the filter row (R24). */
+export const CHAT_FILTER_LABEL: Readonly<Record<ChatChannel, string>> = {
+  area: "Area",
+  world: "World",
+  party: "Party",
+  whisper: "Whisper",
+  trade: "Trade",
+};
+
 /** The colour an entry is drawn in. */
 export function chatEntryColour(entry: ChatEntry): number {
   return entry.kind === "system"

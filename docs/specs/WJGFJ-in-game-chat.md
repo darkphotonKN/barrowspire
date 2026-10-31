@@ -139,6 +139,18 @@ hand-coded unless the user says otherwise; agent help is tests. The client is th
     filter state as a record over them; the server defines the same five as constants. Adding a
     sixth channel later is a type change on both sides, never an envelope change.
 
+## Amendment 2026-10-31 (R20: a buffer per channel)
+
+Decided with the user while building I-WJGFJ-5, because a channel filter makes the shared cap
+visible: with 90 world lines in 100, a player who hides World is left with 10 area lines. **R20
+now reads: the window holds the newest 100 lines per channel, and system lines keep their own
+100.** A loud channel only ever pushes out its own old lines. The stream is still one, in
+arrival order; with every channel shown, scrolling far back reaches only the quieter channels'
+older lines. 100 per channel was chosen over 1000: the window shows 8 lines and the wheel moves
+one line per notch, so lines past a few hundred are unreachable in practice, and the cap is one
+constant to raise later. The acceptance criterion "101 messages leave 100 in the store" holds
+per channel.
+
 ## User Stories
 
 1. As a player in town, I want to type a line and have everyone in town on my server see it, so
