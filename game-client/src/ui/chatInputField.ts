@@ -169,7 +169,7 @@ export const domChatInputField: ChatInputFieldFactory = (
   shell.appendChild(placeholderStyle);
   row.append(pickerBox, field);
   // the whole bar is the input: a press on its empty stretch focuses the field too
-  shell.addEventListener("mousedown", (e) => {
+  shell.addEventListener("pointerdown", (e) => {
     if (e.target === shell || e.target === row) {
       e.preventDefault();
       field.focus();

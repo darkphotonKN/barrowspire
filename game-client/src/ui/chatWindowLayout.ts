@@ -43,8 +43,6 @@ export const CHAT_FOLD_W = 24;
 export const CHAT_TAB_PAD = 9;
 /** The channel picker's width at the input row's left (Amendment 2026-10-31). */
 export const CHAT_PICKER_W = 84;
-/** Where the typed text (and the hint) starts in the input row, clear of the picker. */
-export const CHAT_INPUT_TEXT_X = CHAT_PICKER_W + 6;
 
 export interface Rect {
   x: number;

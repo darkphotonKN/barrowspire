@@ -229,6 +229,20 @@ export class ChatInput {
     this.deps.changed?.();
   }
 
+  /**
+   * Re-reads who owns the keys (once a frame, from the window). Losing them mid-line drops the
+   * draft and closes the input (R27). Returns whether the player may type now, or undefined when
+   * nothing changed since the last reading.
+   */
+  sync(): boolean | undefined {
+    const allowed = this.deps.mayOpen();
+    if (allowed === this.lastAllowed) return undefined;
+    this.lastAllowed = allowed;
+    if (!allowed) this.cancel();
+    return allowed;
+  }
+  private lastAllowed?: boolean;
+
   /** The scene takes the keys back (the end-of-run overlay): close and drop the draft (R27). */
   cancel(): void {
     if (this.open) this.discardAndClose();

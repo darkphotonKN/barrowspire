@@ -313,7 +313,6 @@ export class ChatWindow {
   private buildInput(typing: ChatWindowInput): void {
     const keyboard = () => this.scene.input?.keyboard;
     let input: ChatInput | undefined;
-    this.mayOpen = typing.mayOpen;
     this.field = typing.makeField(this.scene, this.fieldRect(), {
       focused: () => input?.focused(),
       blurred: () => input?.blurred(),
@@ -334,6 +333,8 @@ export class ChatWindow {
     });
     this.input = input;
     keyboard()?.on("keydown-ENTER", this.onEnter, this);
+    // apply the key owner now, so a window built under an overlay never shows its row a frame
+    this.watchKeys();
   }
 
   /** How much of the world the panel hides now: all of it while typing. */
@@ -363,21 +364,13 @@ export class ChatWindow {
    * over the end-of-run card and the overlays (R17). The row looks the same idle and typing.
    */
   private watchKeys(): void {
-    if (!this.mayOpen || !this.field) return;
-    const allowed = this.mayOpen();
-    if (allowed === this.rowShown) return;
-    this.rowShown = allowed;
-    if (allowed) {
-      this.field.show();
-    } else {
-      // an overlay took the keys mid-line: the draft goes with the input (R27)
-      this.input?.cancel();
-      this.field.hide();
-    }
+    // the input decides (and drops a half-typed line when the keys are taken); the window only
+    // shows or hides its DOM row
+    const allowed = this.input?.sync();
+    if (allowed === undefined || !this.field) return;
+    if (allowed) this.field.show();
+    else this.field.hide();
   }
-  /** Whether the row is shown as last applied; unknown at first, so the first frame always applies. */
-  private rowShown?: boolean;
-  private mayOpen?: () => boolean;
 
   private onEnter(): void {
     this.input?.requestOpen();
@@ -641,7 +634,7 @@ export class ChatWindow {
     }
   }
 
-  /** The fold button at the input row's right, and the hint while the input is closed with nothing typed. */
+  /** The fold button in the window's top-right corner. The hint is the DOM field's placeholder. */
   private drawInputRow(): void {
     const folded = this.store.getState().folded;
 
