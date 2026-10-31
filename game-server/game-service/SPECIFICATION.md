@@ -75,6 +75,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Equip and unequip
 - [ ] Bag capacity limit → FS-HRH2J
 - [x] Container loot drops from the template pool → FS-none
+- [ ] Sacks as a floor container alongside chests → FS-1D6BX
 - [ ] Rarity-rolled loot with themed names and type-flavoured stats → FS-F8T3H
 - [ ] Co-op runs without player-versus-player damage → FS-77AB6
 - [ ] Equipped gear contributes to character stats → FS-4R9M9

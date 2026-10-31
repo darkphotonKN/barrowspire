@@ -14,7 +14,7 @@
 
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
 import type { Point, Rect } from "@/render/iso/projection";
-import type { ClientGameState } from "@/types/gameState";
+import { placedKind, type ClientGameState } from "@/types/gameState";
 import { tileHash } from "./ground";
 import { dressingBreaches, type DressingStatics } from "./runDressing";
 
@@ -85,7 +85,8 @@ const rectOf = (e: {
 
 /**
  * The keep-out the Forest's broadcast sets: its walls, its road home's reach (as a door, with
- * its approach), its chests, and the map edge. A drop pile is not in it: dressing never blocks.
+ * its approach), its chests and sacks (FS-1D6BX R14), and the map edge. A drop pile is not in
+ * it: dressing never blocks.
  */
 export function forestStatics(
   state: Pick<ClientGameState, "walls" | "gates" | "containers">,
@@ -103,7 +104,7 @@ export function forestStatics(
       height: 2 * g.range,
     })),
     interactables: (state.containers ?? [])
-      .filter((c) => c.kind === "chest")
+      .filter((c) => placedKind(c) !== "drop_pile")
       .map((c) => ({ x: c.position.x, y: c.position.y })),
   };
 }

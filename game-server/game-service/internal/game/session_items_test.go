@@ -103,7 +103,7 @@ func lootSession(t *testing.T, templates *pb.ListItemTemplatesResponse, rarities
 	t.Helper()
 	client := &mockItemsClient{rarities: rarities, raritiesErr: raritiesErr}
 	client.On("ListItemTemplates", mock.Anything).Return(templates, nil)
-	s := &Session{itemsClient: client, EntityManager: ecs.NewEntityManager()}
+	s := &Session{itemsClient: client, EntityManager: ecs.NewEntityManager(), chestRand: sharedLootRand{}}
 	s.loadRaritiesAtBuild()
 	require.NoError(t, s.InitializeItems(context.Background()))
 	return s
@@ -166,7 +166,7 @@ func TestGenerateItems_DropsTheDecidedTotal(t *testing.T) {
 	s := lootSession(t, lootTemplates(true), pbRarities(), nil)
 
 	for range 200 {
-		ids, err := s.generateItems()
+		ids, err := s.generateItems(components.ContainerKindChest)
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, len(ids), 2)
 		assert.LessOrEqual(t, len(ids), 4)
@@ -179,7 +179,7 @@ func TestGenerateItems_MissingType_StillDropsTheOthers(t *testing.T) {
 	dropped := 0
 	require.NotPanics(t, func() {
 		for range 200 {
-			ids, err := s.generateItems()
+			ids, err := s.generateItems(components.ContainerKindChest)
 			require.NoError(t, err)
 			for _, item := range itemsByID(s, ids) {
 				assert.NotEqual(t, types.ItemTypeConsumable, item.ItemType)
@@ -208,7 +208,7 @@ func TestGenerateItems_RaritiesUnavailable_DropsUnscaledBaseItems(t *testing.T) 
 			}
 
 			for range 50 {
-				ids, err := s.generateItems()
+				ids, err := s.generateItems(components.ContainerKindChest)
 				require.NoError(t, err)
 				for _, item := range itemsByID(s, ids) {
 					b, ok := base[item.Name]
@@ -239,7 +239,7 @@ func TestGenerateItems_RolledLoot_CarriesItsDerivedRequiredLevel(t *testing.T) {
 
 	seen := map[types.ItemType]bool{}
 	for range 100 {
-		ids, err := s.generateItems()
+		ids, err := s.generateItems(components.ContainerKindChest)
 		require.NoError(t, err)
 		for _, item := range itemsByID(s, ids) {
 			assert.Equal(t, want[item.ItemType], item.RequiredLevel, item.Name)

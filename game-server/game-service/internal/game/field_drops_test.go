@@ -246,7 +246,7 @@ func TestFieldContainerRoll_KeepsTheChestRollAtTheFactor(t *testing.T) {
 
 	t.Run("factor 1 keeps the whole chest roll", func(t *testing.T) {
 		field := lootedField(t)
-		ids, err := field.fieldContainerRoll(seeded(), 1, 1)
+		ids, err := field.fieldContainerRoll(seeded(), components.ContainerKindChest, 1, 1)
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, len(ids), 2)
 		assert.LessOrEqual(t, len(ids), 4)
@@ -254,7 +254,7 @@ func TestFieldContainerRoll_KeepsTheChestRollAtTheFactor(t *testing.T) {
 	})
 	t.Run("factor 0 keeps nothing and leaves nothing behind", func(t *testing.T) {
 		field := lootedField(t)
-		ids, err := field.fieldContainerRoll(seeded(), 1, 0)
+		ids, err := field.fieldContainerRoll(seeded(), components.ContainerKindChest, 1, 0)
 		require.NoError(t, err)
 		assert.Empty(t, ids)
 		assert.Zero(t, items(field))
@@ -264,7 +264,7 @@ func TestFieldContainerRoll_KeepsTheChestRollAtTheFactor(t *testing.T) {
 		r := seeded()
 		kept := 0
 		for range 2000 {
-			ids, err := field.fieldContainerRoll(r, 1, MeadowsDropFactor)
+			ids, err := field.fieldContainerRoll(r, components.ContainerKindChest, 1, MeadowsDropFactor)
 			require.NoError(t, err)
 			kept += len(ids)
 		}

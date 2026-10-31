@@ -13,8 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A container in world state says what it is: a chest or a drop pile. One
-// built without a kind is a chest. FS-4R9M9 §Requirements 55.
+// A container in world state says what it is: a chest, a sack or a drop pile.
+// One built without a kind is a chest. FS-4R9M9 §Requirements 55; FS-1D6BX
+// §Requirements 2.
 func TestSerializeBackendState_ContainersCarryTheirKind(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -22,6 +23,7 @@ func TestSerializeBackendState_ContainersCarryTheirKind(t *testing.T) {
 		want      string
 	}{
 		{"chest", components.NewContainerComponent(uuid.New()), "chest"},
+		{"sack", &components.ContainerComponent{ContainerID: uuid.New(), Kind: components.ContainerKindSack}, "sack"},
 		{"drop pile", &components.ContainerComponent{ContainerID: uuid.New(), Kind: components.ContainerKindDropPile}, "drop_pile"},
 		{"no kind", &components.ContainerComponent{ContainerID: uuid.New()}, "chest"},
 	}

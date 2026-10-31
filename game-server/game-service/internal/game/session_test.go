@@ -306,7 +306,7 @@ func TestHandleInteractContainer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s, playerID := containerSession(t, playerX, playerY)
 
-			chestID := s.AddContainer(playerX+tt.dx, playerY+tt.dy)
+			chestID := s.AddContainer(playerX+tt.dx, playerY+tt.dy, components.ContainerKindChest)
 			chest, ok := s.EntityManager.GetEntity(chestID)
 			require.True(t, ok)
 			openableComp, ok := chest.GetComponent(ecs.ComponentTypeOpenable)
@@ -816,7 +816,7 @@ func TestSession_GenerateItems_CreateItemEntities(t *testing.T) {
 			}
 
 			// -- test --
-			ids, err := session.generateItems()
+			ids, err := session.generateItems(components.ContainerKindChest)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -976,7 +976,7 @@ func TestSession_GenerateItems_CreateAndSerialize(t *testing.T) {
 	err := session.InitializeItems(context.Background())
 	require.NoError(t, err)
 
-	ids, err := session.generateItems()
+	ids, err := session.generateItems(components.ContainerKindChest)
 	require.NoError(t, err)
 	require.NotEmpty(t, ids)
 

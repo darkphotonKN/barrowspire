@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -75,7 +76,7 @@ func TestGenerateItems_RingInCatalogue_ChestsNeverDropRings(t *testing.T) {
 	s := lootSession(t, tieredCatalogue(), pbRarities(), nil)
 
 	for range 200 {
-		ids, err := s.generateItems()
+		ids, err := s.generateItems(components.ContainerKindChest)
 		require.NoError(t, err)
 		for _, item := range itemsByID(s, ids) {
 			assert.NotEqual(t, types.ItemTypeRing, item.ItemType)

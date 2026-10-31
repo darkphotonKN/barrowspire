@@ -185,9 +185,11 @@ func (s *Session) InitialFieldMapObjects(place FieldPlace, layout FieldLayout) {
 	}
 
 	// each chest closed and empty, rolled when first opened (FS-3QHQZ
-	// §Requirements 19)
+	// §Requirements 19); each chest point a sack at SackShare (FS-1D6BX
+	// §Requirements 3)
 	for _, at := range layout.Chests {
-		CreateContainerEntity(s.EntityManager, ContainerConfig(at), nil)
+		kind := spawnedContainerKind(s.containerKindRand)
+		CreateContainerEntity(s.EntityManager, ContainerConfig{X: at.X, Y: at.Y, Kind: kind}, nil)
 		s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas,
 			centredArea(at.X, at.Y, constants.ContainerWidthRadius, constants.ContainerHeightRadius))
 	}

@@ -40,6 +40,7 @@ import {
 import { addMist } from "@/render/effects/mist";
 import { DROP_PILE, paintDropPile } from "@/render/world/dropPile";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
+import { SACK, paintSack, sackFrame } from "@/render/world/sack";
 import { ContainerView } from "@/ui/ContainerView";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
@@ -233,8 +234,9 @@ export class FieldScene extends Phaser.Scene {
   /**
    * The field's drop piles (§Requirements 56, 59): the run's heap texture and the run's satchel,
    * composed, never copied. A Forest clearing chest is the run's chest, opened through the same
-   * satchel (FS-3QHQZ §Requirements 19). E reaches for the nearest pile or chest, F takes its
-   * first item, a click on the open satchel takes that one.
+   * satchel (FS-3QHQZ §Requirements 19), and so is a clearing sack, drawn as itself (FS-1D6BX
+   * §Requirements 13). E reaches for the nearest pile, chest or sack, F takes its first item, a
+   * click on the open satchel takes that one.
    */
   private createPiles(): void {
     if (!this.textures.exists(DROP_PILE.texture)) {
@@ -249,6 +251,14 @@ export class FieldScene extends Phaser.Scene {
       const g = this.make.graphics({});
       paintChest(g, frame);
       g.generateTexture(CHEST.placeholder[frame], CHEST.width, CHEST.height);
+      g.destroy();
+    }
+    // and the run's sack placeholders, until the baked sack sheet lands (FS-1D6BX §Requirements 17)
+    for (const frame of ["closed", "open"] as const) {
+      if (this.textures.exists(SACK.placeholder[frame])) continue;
+      const g = this.make.graphics({});
+      paintSack(g, frame);
+      g.generateTexture(SACK.placeholder[frame], SACK.width, SACK.height);
       g.destroy();
     }
     const satchel = new ContainerView(this, this.art, {
@@ -271,6 +281,18 @@ export class FieldScene extends Phaser.Scene {
             show: (isOpen) => {
               const frame = chestFrame(isOpen);
               showState(sprite, this.art, CHEST.sheet, frame, CHEST.placeholder[frame]);
+              standAt(sprite, at);
+            },
+            destroy: () => sprite.destroy(),
+          };
+        },
+        // a clearing sack, drawn as the run draws one: a chest in all but its look (FS-1D6BX R13)
+        placeSack: (at) => {
+          const sprite = this.add.sprite(0, 0, SACK.placeholder.closed);
+          return {
+            show: (isOpen) => {
+              const frame = sackFrame(isOpen);
+              showState(sprite, this.art, SACK.sheet, frame, SACK.placeholder[frame]);
               standAt(sprite, at);
             },
             destroy: () => sprite.destroy(),

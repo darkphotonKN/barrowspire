@@ -6,6 +6,7 @@ import {
   EquippedItems,
   getSlotDisplayName,
   isGameState,
+  placedKind,
   ClientGameState,
   ItemState,
   EquipmentSlot,
@@ -201,5 +202,19 @@ describe('isGameState (FS-F6F88 §State broadcast 26–27)', () => {
     expect(isGameState(hub)).toBe(true);
     expect(hub.floor).toBeUndefined();
     expect(hub.stairs).toBeUndefined();
+  });
+});
+
+describe('placedKind (FS-1D6BX R12, D2)', () => {
+  it.each([
+    ['chest', 'chest'],
+    ['sack', 'sack'],
+    ['drop_pile', 'drop_pile'],
+  ] as const)('should keep the known kind %s', (kind, want) => {
+    expect(placedKind({ kind })).toBe(want);
+  });
+
+  it.each(['coffin', '', 'Chest'])('should handle an unknown kind %j as a chest', (kind) => {
+    expect(placedKind({ kind })).toBe('chest');
   });
 });

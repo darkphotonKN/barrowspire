@@ -33,6 +33,13 @@ func forestLayoutFor(t *testing.T, seed uint64) levelgen.Layout {
 // the test is the only thing ticking it.
 func builtForest(t *testing.T, seed uint64) (*Session, FieldPlace, levelgen.Layout) {
 	t.Helper()
+	return builtForestWith(t, seed, chestsOnly)
+}
+
+// builtForestWith is builtForest with each chest point's sack-share draw taken
+// from kindRand.
+func builtForestWith(t *testing.T, seed uint64, kindRand lootRand) (*Session, FieldPlace, levelgen.Layout) {
+	t.Helper()
 
 	generated := forestLayoutFor(t, seed)
 	place := ForlornForest(generated)
@@ -40,6 +47,7 @@ func builtForest(t *testing.T, seed uint64) (*Session, FieldPlace, levelgen.Layo
 	require.NoError(t, err)
 
 	forest := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, nil, FieldBounds(place))
+	forest.containerKindRand = kindRand
 	forest.InitialFieldMapObjects(place, layout)
 	return forest, place, generated
 }

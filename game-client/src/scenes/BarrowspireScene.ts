@@ -13,6 +13,8 @@ import {
   ClientGameState,
   PlayerState,
   ContainerState,
+  type ContainerKind,
+  placedKind,
   ItemState,
   EscapeDoorState,
   SwitchState,
@@ -130,6 +132,7 @@ import {
   type WorldThemeLook,
 } from "@/render/world";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
+import { SACK, paintSack, sackFrame } from "@/render/world/sack";
 
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = 160;
@@ -1091,6 +1094,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.createMercenaryTextures("other_mercenary");
 
     this.createChestTextures();
+    this.createSackTextures();
     this.createEscapeDoorTextures();
     this.createSwitchTextures();
     this.createStairsTexture();
@@ -1735,6 +1739,19 @@ export class BarrowspireScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * The sack's placeholder frames (FS-1D6BX R17), shared with the field's sacks
+   * (render/world/sack), until its baked sheet lands.
+   */
+  private createSackTextures(): void {
+    for (const frame of ["closed", "open"] as const) {
+      const g = this.make.graphics({});
+      paintSack(g, frame);
+      g.generateTexture(SACK.placeholder[frame], SACK.width, SACK.height);
+      g.destroy();
+    }
+  }
+
   private createEscapeDoorTextures(): void {
     const size = 80;
     const centerX = size / 2;
@@ -2009,7 +2026,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private updateContainers(state: ContainerState[]): void {
     // an emptied drop pile stays in state, but there is nothing left to draw or take (FS-4R9M9 R46)
-    const containers = state.filter((c) => c.kind !== "drop_pile" || c.items.length > 0);
+    // a chest or sack stays drawn, open, once emptied (FS-1D6BX D3); an unknown kind is a chest (D2)
+    const containers = state.filter((c) => placedKind(c) !== "drop_pile" || c.items.length > 0);
     const activeEntityIds = new Set(containers.map((c) => c.entity_id));
 
     // 移除不存在的寶箱
@@ -2025,22 +2043,23 @@ export class BarrowspireScene extends Phaser.Scene {
       let chest = this.chests.get(container.entity_id);
 
       const pos = { x: container.position.x, y: container.position.y };
-      const isPile = container.kind === "drop_pile";
+      const kind = placedKind(container);
       if (!chest) {
-        // 新增寶箱 — or the heap a slain monster's loot lies in, always open (FS-4R9M9 R61)
-        const sprite = isPile
-          ? this.add
-              .sprite(0, 0, DROP_PILE.texture)
-              .setOrigin(DROP_PILE.origin.x, DROP_PILE.origin.y)
-          : this.add.sprite(0, 0, CHEST.placeholder.closed);
+        // 新增寶箱 or sack — or the heap a slain monster's loot lies in, always open (FS-4R9M9 R61)
+        const sprite =
+          kind === "drop_pile"
+            ? this.add
+                .sprite(0, 0, DROP_PILE.texture)
+                .setOrigin(DROP_PILE.origin.x, DROP_PILE.origin.y)
+            : this.add.sprite(0, 0, (kind === "sack" ? SACK : CHEST).placeholder.closed);
         chest = { sprite, entityId: container.entity_id, pos };
         this.chests.set(container.entity_id, chest);
-        if (!isPile) this.poolInteractable(pos);
+        if (kind !== "drop_pile") this.poolInteractable(pos);
       } else {
         chest.pos = pos;
       }
       // 更新寶箱狀態
-      if (!isPile) this.showContainerFrame(chest.sprite, container.is_open);
+      if (kind !== "drop_pile") this.showContainerFrame(chest.sprite, kind, container.is_open);
       standAt(chest.sprite, pos);
 
       // 如果是打開的寶箱，更新跳窗內容
@@ -2119,8 +2138,17 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
-  /** A coffer's baked frame for its server state, or the placeholder texture. */
-  private showContainerFrame(sprite: Phaser.GameObjects.Sprite, isOpen: boolean): void {
+  /** A chest's or sack's baked frame for its server state, or its placeholder texture. */
+  private showContainerFrame(
+    sprite: Phaser.GameObjects.Sprite,
+    kind: Exclude<ContainerKind, "drop_pile">,
+    isOpen: boolean,
+  ): void {
+    if (kind === "sack") {
+      const frame = sackFrame(isOpen);
+      showState(sprite, this.art, SACK.sheet, frame, SACK.placeholder[frame]);
+      return;
+    }
     const frame = chestFrame(isOpen);
     showState(sprite, this.art, CHEST.sheet, frame, CHEST.placeholder[frame]);
   }
@@ -2375,18 +2403,15 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.containerView.entityId === entityId) {
       this.containerView.close();
     } else {
-      // 開啟跳窗
-      this.containerView.open(entityId);
+      // 開啟跳窗, wearing the face for its kind (FS-1D6BX §Requirements 15)
+      const container = this.lastGameState?.containers?.find(
+        (c) => c.entity_id === entityId,
+      );
+      this.containerView.open(entityId, container ? placedKind(container) : "chest");
 
       // If container already has items from server state, populate immediately
-      const gameState = this.lastGameState;
-      if (gameState) {
-        const container = gameState.containers?.find(
-          (c) => c.entity_id === entityId,
-        );
-        if (container && container.is_open && container.items?.length > 0) {
-          this.containerView.setItems(container.items);
-        }
+      if (container && container.is_open && container.items?.length > 0) {
+        this.containerView.setItems(container.items);
       }
     }
   }
@@ -3497,7 +3522,7 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * A faint amber pool under a chest or switch, so it reads as itself under the tower's dark
+   * A faint amber pool under a chest, sack or switch, so it reads as itself under the tower's dark
    * ambient (FS-8RBQY §B.7), budgeted like any fixed light. Only for a theme that wants one, and
    * only over baked art: the placeholder textures carry their own amber.
    */

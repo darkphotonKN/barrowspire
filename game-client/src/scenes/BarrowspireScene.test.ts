@@ -359,6 +359,8 @@ interface Made {
   handlers: Record<string, () => void>;
   /** Every other method called on it, by name, in order. */
   calls: string[];
+  /** The texture last set on it, if any was. */
+  texture?: string;
 }
 
 /**
@@ -412,6 +414,13 @@ function recordingStage() {
         if (prop === "on" || prop === "once")
           return (event: string, fn: () => void) => {
             target.handlers[event] = fn;
+            return proxy;
+          };
+        // a sprite's frame is the texture it was last set to
+        if (prop === "setTexture")
+          return (key: string) => {
+            target.calls.push("setTexture");
+            target.texture = key;
             return proxy;
           };
         // no arcade body: the placeholder rig's collision circle is skipped
@@ -1572,7 +1581,7 @@ describe("BarrowspireScene drop piles (FS-4R9M9 req 46, 61)", () => {
     expect(near?.entityId).toBe("pile1");
     scene.toggleChest(near!.entityId);
 
-    expect(view.open).toHaveBeenCalledWith("pile1");
+    expect(view.open).toHaveBeenCalledWith("pile1", "drop_pile");
     expect(view.setItems).toHaveBeenCalledWith([blade]);
     vi.restoreAllMocks();
   });
@@ -1588,6 +1597,106 @@ describe("BarrowspireScene drop piles (FS-4R9M9 req 46, 61)", () => {
     scene.playerPos = at(410, 300);
     run.handleGameStateUpdate(withPile(pile([])));
     expect(scene.getNearbyChest()).toBeNull();
+  });
+});
+
+describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () => {
+  /** Floor 1 with its chest made a sack, or some kind this client does not know. */
+  const withKind = (kind: string, is_open = false, items: unknown[] = []): GameState => {
+    const state = floorState(1);
+    return { ...state, containers: [{ ...state.containers[0], kind, is_open, items }] } as GameState;
+  };
+  function onStage() {
+    const scene = sceneOnStage();
+    const drawn = (prefix: string) =>
+      scene.stage.made.filter((m) => m.kind === "sprite" && String(m.args[2]).startsWith(prefix));
+    return { ...scene, drawn };
+  }
+
+  it("should draw a sack as a sack, closed or open from is_open on every state", () => {
+    const { run, drawn } = onStage();
+    run.handleGameStateUpdate(withKind("sack"));
+    expect(drawn("chest_")).toHaveLength(0);
+    expect(drawn("sack_")).toHaveLength(1);
+    expect(drawn("sack_")[0].texture).toBe("sack_closed");
+
+    run.handleGameStateUpdate(withKind("sack", true, [{ entity_id: "i1" }]));
+    expect(drawn("sack_")[0].texture).toBe("sack_open");
+  });
+
+  it("should keep an emptied sack drawn open", () => {
+    const { run, drawn } = onStage();
+    run.handleGameStateUpdate(withKind("sack", true, [{ entity_id: "i1" }]));
+    run.handleGameStateUpdate(withKind("sack", true, []));
+    const live = drawn("sack_").filter((m) => !m.destroyed);
+    expect(live).toHaveLength(1);
+    expect(live[0].texture).toBe("sack_open");
+  });
+
+  it("should offer a sack to the interact key and open it in the container view, as a chest", () => {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const { run } = onStage();
+    const view = { entityId: null as string | null, open: vi.fn(), close: vi.fn(), setItems: vi.fn() };
+    const scene = run as unknown as {
+      containerView: typeof view;
+      player?: unknown;
+      playerPos?: { x: number; y: number };
+      getNearbyChest(): { entityId: string } | null;
+      toggleChest(id: string): void;
+    };
+    scene.containerView = view;
+    scene.player = {};
+    scene.playerPos = at(150, 150);
+    run.handleGameStateUpdate(withKind("sack"));
+
+    expect(scene.getNearbyChest()?.entityId).toBe("c1");
+    scene.toggleChest("c1");
+    expect(view.open).toHaveBeenCalledWith("c1", "sack");
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ["chest", "chest"],
+    ["reliquary", "chest"],
+  ])("should open a %s in the container view as a %s (FS-1D6BX §Requirements 15, D2)", (kind, opensAs) => {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const { run } = onStage();
+    const view = { entityId: null as string | null, open: vi.fn(), close: vi.fn(), setItems: vi.fn() };
+    const scene = run as unknown as { containerView: typeof view; toggleChest(id: string): void };
+    scene.containerView = view;
+    run.handleGameStateUpdate(withKind(kind));
+
+    scene.toggleChest("c1");
+    expect(view.open).toHaveBeenCalledWith("c1", opensAs);
+    vi.restoreAllMocks();
+  });
+
+  it("should draw a kind it does not know as a chest", () => {
+    const { run, drawn } = onStage();
+    run.handleGameStateUpdate(withKind("reliquary", true));
+    expect(drawn("sack_")).toHaveLength(0);
+    expect(drawn("chest_")).toHaveLength(1);
+    expect(drawn("chest_")[0].texture).toBe("chest_open");
+  });
+
+  it("should make the sack's placeholder frames with the chest's", () => {
+    const scene = new BarrowspireScene();
+    const made: string[] = [];
+    const graphics = () => {
+      const g: Record<string, unknown> = new Proxy(
+        {},
+        { get: (_, prop) => (prop === "generateTexture" ? (key: string) => made.push(key) : () => g) },
+      );
+      return g;
+    };
+    Object.assign(scene, {
+      make: { graphics },
+      textures: { exists: () => false },
+      cache: { json: { exists: () => false } },
+      load: { once: () => {}, json: () => {} },
+    });
+    (scene as unknown as { preload(): void }).preload();
+    expect(made).toEqual(expect.arrayContaining(["chest_closed", "chest_open", "sack_closed", "sack_open"]));
   });
 });
 
@@ -1982,6 +2091,19 @@ describe("BarrowspireScene floor bands, run dressing, light budget and stairs (F
     state.containers = [{ ...state.containers[0], kind: "drop_pile", items: [{} as never] }];
     pile.run.handleGameStateUpdate(state);
     expect(pools(pile.lights)).toHaveLength(1);
+  });
+
+  it("should stand a sack in a faint amber pool as it does a chest (FS-1D6BX §Requirements 14)", () => {
+    const { run, lights } = banded("tower");
+    const state = floorState(1);
+    state.containers = [{ ...state.containers[0], kind: "sack" }];
+    run.handleGameStateUpdate(state);
+    const sack = worldToScreen(150, 150);
+    expect(pools(lights).map((l) => [(l as { x: number }).x, (l as { y: number }).y])).toContainEqual([
+      sack.x,
+      sack.y - 12,
+    ]);
+    expect(pools(lights)).toHaveLength(2);
   });
 });
 

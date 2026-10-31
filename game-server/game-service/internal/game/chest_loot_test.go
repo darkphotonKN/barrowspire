@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -38,7 +39,7 @@ func TestGenerateItems_ChestOnFloorTwo_RollsAtTheAreaLevel(t *testing.T) {
 			currentFloor(t, s).Depth = tt.floor
 
 			for range 20 {
-				ids, err := s.generateItems()
+				ids, err := s.generateItems(components.ContainerKindChest)
 				require.NoError(t, err)
 				for _, item := range itemsByID(s, ids) {
 					assert.Equal(t, tt.want, item.ItemLevel, item.Name)
@@ -68,7 +69,7 @@ func TestGenerateItems_FabledRoll_DropsAUniqueFromTheSessionPool(t *testing.T) {
 
 	uniques := 0
 	for range 50 {
-		ids, err := s.generateItems()
+		ids, err := s.generateItems(components.ContainerKindChest)
 		require.NoError(t, err)
 		for _, item := range itemsByID(s, ids) {
 			if item.ItemType == types.ItemTypeConsumable {
@@ -115,7 +116,7 @@ func TestGenerateItems_FabledRoll_NeverDropsARingUnique(t *testing.T) {
 	require.Len(t, s.itemPool.Uniques, 1)
 
 	for range 50 {
-		ids, err := s.generateItems()
+		ids, err := s.generateItems(components.ContainerKindChest)
 		require.NoError(t, err)
 		for _, item := range itemsByID(s, ids) {
 			assert.NotEqual(t, types.ItemTypeRing, item.ItemType, item.Name)

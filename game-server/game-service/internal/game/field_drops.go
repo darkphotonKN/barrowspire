@@ -74,13 +74,13 @@ func fieldDropFor(record systems.KillRecord) (MonsterDrop, bool) {
 
 /**
 * fieldContainerRoll is a field container's roll (FS-X2F2H §Requirements 32):
-* the Spire's chest roll unchanged (generateItemsAt, its type split included)
-* at the item level given, then each rolled item kept with probability factor,
-* the place's drop factor. What is not kept leaves the world. It hands back the
-* kept items' ids.
+* the Spire's roll for the container's kind unchanged (rollContainer, its type
+* split included) at the item level given, then each rolled item kept with
+* probability factor, the place's drop factor (FS-1D6BX §Requirements 7). What
+* is not kept leaves the world. It hands back the kept items' ids.
 **/
-func (s *Session) fieldContainerRoll(r lootRand, itemLevel int, factor float64) ([]uuid.UUID, error) {
-	rolled, err := s.generateItemsAt(chestDropAt(itemLevel))
+func (s *Session) fieldContainerRoll(r lootRand, kind components.ContainerKind, itemLevel int, factor float64) ([]uuid.UUID, error) {
+	rolled, err := s.rollContainer(r, kind, chestDropAt(itemLevel))
 	if err != nil {
 		return nil, err
 	}

@@ -248,6 +248,19 @@ export const palette = {
   /** Multiplied over the flap once it lifts: the underside is the unlit side. */
   satchelUnderside: shade(BARROW_HEX.vellumDark, 0.35),
 
+  // -- The coffer (container view, FS-1D6BX R15): the baked chest's oak, iron bands and brass
+  //    lock plate (the bake's wood, woodDark, iron and brass tones), seen open from above its
+  //    front rim, down onto a soot-dark floor.
+  coffer: mix(BARROW_HEX.barrowBrown, BARROW_HEX.brass, 0.25),
+  cofferInside: mix(BARROW_HEX.barrowDeep, BARROW_HEX.barrowBrown, 0.25),
+  cofferFloor: shade(BARROW_HEX.barrowDeep, 0.45),
+  cofferIron: mix(BARROW_HEX.slate, BARROW_HEX.slateLight, 0.4),
+  cofferBrass: mix(BARROW_HEX.brass, BARROW_HEX.brassBright, 0.6),
+
+  // -- The bone heap (container view, FS-1D6BX R15) is painted in the drop pile's own bone, rag
+  //    and earth above; only the soot between the bones is its own.
+  boneHeapSoot: shade(BARROW_HEX.barrowDeep, 0.6),
+
   // -- Menu chrome: the canvas menus (loading screen, main menu, character creation) wear the web
   //    UI's Bone & Soot look (design-guideline "UI Chrome"). Bone is the torch, one per view:
   //    the primary CTA, the title, the active selection. Iron frames, soot grounds, grey stone

@@ -60,6 +60,7 @@ server state and sends intents. ✅
 - [x] Health and class resource bars on the HUD → FS-8AY7S
 - [x] Ability card on the HUD → FS-8AY7S
 - [x] Shadow Shot aimed by holding → FS-JTNPR
+- [ ] Potion count and drink key on the HUD → FS-P9G8R
 
 ### Character
 
@@ -84,6 +85,7 @@ server state and sends intents. ✅
 - [x] Pre-rendered character and creature art → FS-2325V
 - [x] Light-map lighting with placed light sources → FS-2325V
 - [x] Container-open presentation → FS-2325V
+- [ ] Distinct look per container kind → FS-1D6BX
 - [ ] Expanded baked enemy roster → FS-Q14EV
 - [x] Hub town props and dressing → FS-KYPQ9
 - [x] Skill and combat effects → FS-none

@@ -137,10 +137,23 @@ export interface AffixState {
 }
 
 /**
- * What a container is (FS-4R9M9 R55): a floor's chest, or the drop pile a slain monster left,
- * which is always open and stays in state, emptied, once its last item is taken.
+ * What a container is (FS-4R9M9 R55, FS-1D6BX R12): a floor's chest, or the sack that may stand
+ * where a chest would (a chest in every respect but its look and its roll), or the drop pile a
+ * slain monster left, which is always open and stays in state, emptied, once its last item is
+ * taken. The wire may carry a kind this client does not know: read it through {@link placedKind}.
  */
-export type ContainerKind = "chest" | "drop_pile";
+export type ContainerKind = "chest" | "sack" | "drop_pile";
+
+const CONTAINER_KINDS: readonly string[] = ["chest", "sack", "drop_pile"] satisfies ContainerKind[];
+
+/**
+ * The kind a container is drawn and opened as: its own, or a chest's when this client does not
+ * know it, so a newer server never breaks an older client's world (FS-1D6BX D2). Every switch on a
+ * container's kind goes through this.
+ */
+export function placedKind(container: { kind: string }): ContainerKind {
+  return CONTAINER_KINDS.includes(container.kind) ? (container.kind as ContainerKind) : "chest";
+}
 
 // Container/chest state
 export interface ContainerState {

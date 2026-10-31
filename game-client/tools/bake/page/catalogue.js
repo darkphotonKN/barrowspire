@@ -35,7 +35,7 @@ import {
   WINDOW_GLASS,
 } from "./models/architecture.js";
 import { brazier, lampPost, table, chair, barrel, BRAZIER_FLAME, LAMP_GLASS } from "./models/props.js";
-import { door, escapeDoor, lever, chest } from "./models/interactables.js";
+import { door, escapeDoor, lever, chest, sack } from "./models/interactables.js";
 import { ICONS } from "./models/items.js";
 import {
   AWNINGS,
@@ -270,6 +270,25 @@ function propSheets() {
     },
   );
   return sheets;
+}
+
+/**
+ * The sack (FS-1D6BX R17): the chest's humbler cousin, one frame per state like the chest. It packs
+ * on its own `containers` atlas rather than `props`, so every existing props frame keeps its place
+ * and every committed atlas its bytes (the props shelf packs tallest first, and the sack would
+ * land ahead of the switch). The client loads every atlas the manifest names.
+ */
+function containerSheets() {
+  const states = (fn, list) => Object.fromEntries(list.map((s) => [s, still(() => fn(s))]));
+  return [
+    {
+      name: "sack",
+      group: "containers",
+      kind: "prop",
+      animations: states(sack, ["closed", "open"]),
+      source: src("models/interactables.js", "sack"),
+    },
+  ];
 }
 
 /**
@@ -539,6 +558,7 @@ export const CATALOGUE = [
   ...natureSheets(),
   ...architectureSheets(),
   ...propSheets(),
+  ...containerSheets(),
   ...townSheets(),
   ...iconSheets(),
   ...characterSheets(),

@@ -166,6 +166,37 @@ var AffixTable = []AffixRule{
 	{Stat: types.AffixMagicResistance, Bands: attributeBands, On: onDefensive},
 }
 
+// ContainerRoll is what a placed container rolls on its first open: nothing at
+// EmptyChance, else a count uniform in [MinItems, MaxItems], split by item type
+// as the chest roll always has. FS-1D6BX §Requirements 4–6, D1.
+type ContainerRoll struct {
+	EmptyChance        float64
+	MinItems, MaxItems int
+}
+
+// Per-kind container rolls. The chest's are today's; a sack's expected count
+// must stay below a chest's (R6). FS-1D6BX §Requirements 5.
+const (
+	ChestEmptyChance = 0.0
+	ChestMinItems    = 2
+	ChestMaxItems    = 4
+
+	SackEmptyChance = 0.8
+	SackMinItems    = 1
+	SackMaxItems    = 1
+
+	// SackShare is the chance each chest spawn point holds a sack instead: the
+	// run floor's container and every Forest clearing chest. FS-1D6BX D6, D7.
+	SackShare = 0.33
+)
+
+// ContainerRolls is the roll by kind. A kind without a row rolls as a chest
+// (FS-1D6BX D2); a drop pile never rolls, it lands holding its kill drop.
+var ContainerRolls = map[components.ContainerKind]ContainerRoll{
+	components.ContainerKindChest: {EmptyChance: ChestEmptyChance, MinItems: ChestMinItems, MaxItems: ChestMaxItems},
+	components.ContainerKindSack:  {EmptyChance: SackEmptyChance, MinItems: SackMinItems, MaxItems: SackMaxItems},
+}
+
 // MonsterDrop is one row of the monster drop table: the chance a kill drops
 // at all, how many items it then drops (uniform in [MinItems, MaxItems]), the
 // rarity bias they roll with and the weighted item type of each.
