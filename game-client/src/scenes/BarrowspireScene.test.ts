@@ -61,6 +61,7 @@ const { ArtLibrary } = await import("@/render/art/library");
 const { MonsterRoster } = await import("@/render/creatures");
 const { CANVAS_FONT, palette, toCss } = await import("@/utils/canvasPalette");
 const { ActionType } = await import("@/assets/types/client");
+const { RUN_ACTIONS } = await import("./runActions");
 const { WORLD_THEMES, TOWER_BANDS } = await import("@/render/world/worldTheme");
 const { worldSeed } = await import("@/render/world/ground");
 const await_iso = await import("@/render/iso");
@@ -2403,6 +2404,130 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(run.menuChoices).toBeUndefined();
     expect(run.fallPending).toBe(false);
     expect(offError).toHaveBeenCalledWith("forfeit_run");
+  });
+});
+
+describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)", () => {
+  interface FakeKey {
+    justDown: boolean;
+    isDown: boolean;
+  }
+  const key = (): FakeKey => ({ justDown: false, isDown: false });
+
+  interface Drinking {
+    menu?: unknown;
+    dismissKey?: FakeKey;
+    confirmKey?: FakeKey;
+    choiceKeys: FakeKey[];
+    offerMenu(): void;
+    bindRunInput(): void;
+    toggleControlsPanel(): void;
+  }
+
+  const potion = { item_id: "p1", entity_id: "pe1", name: "Lesser Heal Potion", quantity: 1, item_type: "consumable", healing_amount: 25 };
+  const mana = { ...potion, item_id: "m1", name: "Mana Potion", healing_amount: 0, mana_amount: 30 };
+  const wearing = (slot: object, fields: { current_health?: number } = {}) => ({
+    ...player("me", "Aldric", 130, fields),
+    equipment: { consumable_1: null, consumable_2: null, consumable_3: null, ...slot },
+  });
+
+  /** A run in play, its keys bound, this player wearing `me`'s potions. */
+  function drinkOnStage(me = wearing({ consumable_1: potion })) {
+    const stage = onStage();
+    const run = stage.run as unknown as Drinking;
+    const keys = { esc: key(), enter: key(), one: key(), two: key() };
+    run.dismissKey = keys.esc;
+    run.confirmKey = keys.enter;
+    run.choiceKeys = [keys.one, keys.two];
+    const keyHandlers: Record<string, (event?: { repeat?: boolean }) => void> = {};
+    Object.assign(stage.run, {
+      input: {
+        setDefaultCursor: vi.fn(),
+        keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) },
+        on: vi.fn(),
+      },
+    });
+    stage.run.handleGameStateUpdate(partyState(me as ReturnType<typeof player>));
+    run.bindRunInput();
+    /** One press of 1 as Phaser delivers it: the keydown event, then the frame's menu poll. */
+    const pressOne = (event: { repeat?: boolean } = {}) => {
+      keys.one.justDown = true;
+      keyHandlers["keydown-ONE"]?.(event);
+      run.offerMenu();
+    };
+    const press = (k: FakeKey) => {
+      k.justDown = true;
+      run.offerMenu();
+    };
+    const drinks = () => stage.sent.mock.calls.filter(([a]) => a === ActionType.DrinkPotion);
+    const labels = () =>
+      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+    return { ...stage, run, keys, keyHandlers, pressOne, press, drinks, labels };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should bind the drink to the keydown event the mapping names", () => {
+    const { keyHandlers } = drinkOnStage();
+    expect(keyHandlers[`keydown-${RUN_ACTIONS.drinkPotion.key}`]).toBeTypeOf("function");
+  });
+
+  it("should send one drink_potion with an empty payload on a press of 1", () => {
+    const { pressOne, drinks } = drinkOnStage();
+    pressOne();
+    expect(drinks()).toEqual([[ActionType.DrinkPotion, {}]]);
+  });
+
+  it("should send one drink_potion for a held 1, whatever the key repeats", () => {
+    const { pressOne, drinks } = drinkOnStage();
+    pressOne();
+    pressOne({ repeat: true });
+    pressOne({ repeat: true });
+    expect(drinks()).toHaveLength(1);
+  });
+
+  it("should leave the menu shut when 1 drinks", () => {
+    const { run, pressOne } = drinkOnStage();
+    pressOne();
+    expect(run.menu).toBeUndefined();
+  });
+
+  it("should let 1 pick the menu's row, and send no drink_potion, while the menu is open", () => {
+    const { pressOne, press, keys, drinks, labels } = drinkOnStage();
+    press(keys.esc);
+    pressOne();
+    // 1 picked Fall where you stand: the confirm is up
+    expect(labels()).toContain("The barrow keeps its dead. Fall here?");
+    expect(drinks()).toHaveLength(0);
+  });
+
+  it("should send no drink_potion on 1 while the menu's confirm is open", () => {
+    const { pressOne, press, keys, drinks, sent } = drinkOnStage();
+    press(keys.esc);
+    pressOne();
+    pressOne();
+    expect(drinks()).toHaveLength(0);
+    // the confirm's 1 is Fall: that is the menu's send, not a drink
+    expect(sent.mock.calls.map(([a]) => a)).toEqual([ActionType.ForfeitRun]);
+  });
+
+  it.each([
+    ["no health potion is worn", wearing({ consumable_1: mana })],
+    ["no consumable is worn", wearing({})],
+    ["the player is dead", wearing({ consumable_1: potion }, { current_health: 0 })],
+  ])("should send nothing on 1 when %s", (_, me) => {
+    const { pressOne, drinks } = drinkOnStage(me);
+    pressOne();
+    expect(drinks()).toHaveLength(0);
+  });
+
+  it("should list the drink in the controls panel, its key read from the mapping", () => {
+    const { run, labels } = drinkOnStage();
+    run.toggleControlsPanel();
+    expect(labels()).toContain(RUN_ACTIONS.drinkPotion.label);
+    expect(labels()).toContain("Drink potion");
   });
 });
 
