@@ -27,6 +27,9 @@ export default function PhaserGame() {
       width: 1080,
       height: 720,
       parent: containerRef.current,
+      // a DOM layer over the canvas, for the chat input's real text field: the only way the
+      // player's input method (Chinese and the rest) reaches the game (FS-WJGFJ R26)
+      dom: { createContainer: true },
       // Soot, not umber: Boot and Preload are the gate into the menus, which wear the site's
       // Bone & Soot. The hub and the run set their own ground.
       backgroundColor: BARROW.menuSoot,

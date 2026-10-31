@@ -1,12 +1,20 @@
 ---
 id: I-WJGFJ-4
-status: open
+status: done
 implements: FS-WJGFJ
 blocked_by: [I-WJGFJ-3]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-WJGFJ slice 4: the chat input and who owns Enter and Esc (game-client)"
 ---
 Implements FS-WJGFJ §Requirements C26–C28
+
+**Done on branch `feat/in-game-chat`.** Decisions taken with the user: the field is a real
+`<input>` as a Phaser DOM element (`dom: { createContainer: true }` in the game config), because
+only a browser field takes an input method such as Chinese; it wears the game palette as canvas
+chrome; the rules live in `ui/chatInput.ts` and are unit-tested, the DOM adapter
+`ui/chatEntryField.ts` is thin and checked by eye. Enter during IME composition never sends. A
+click elsewhere closes the input and keeps the draft. The unused old-shape `createChatPayload`
+helper was removed with the `ChatPayload` type change. Not yet checked by eye in a running client.
 
 ## What to Build
 

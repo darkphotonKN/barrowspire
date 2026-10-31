@@ -26,8 +26,10 @@ export interface UsePayload {
   targetId?: string; // 可選：對誰使用
 }
 
+/** A chat line as the client sends it; the pod stamps everything else (FS-WJGFJ R2). */
 export interface ChatPayload {
-  message: string;
+  channel: "area" | "world" | "party" | "whisper" | "trade";
+  text: string;
 }
 
 export interface FindGamePayload {

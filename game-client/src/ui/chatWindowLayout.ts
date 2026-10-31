@@ -19,6 +19,12 @@ export const CHAT_LINE_H = 18;
 /** Room kept above the lines for the channel filter row (I-WJGFJ-5) and below for the input (I-WJGFJ-4). */
 export const CHAT_FILTER_ROW_H = 22;
 export const CHAT_INPUT_ROW_H = 24;
+/** What the input row says while it is closed and empty (R26). */
+export const CHAT_INPUT_HINT = "Press Enter to speak";
+/** The input row's prompt, drawn by the window ahead of the field. */
+export const CHAT_INPUT_PROMPT = ">";
+/** Where the typed text (and the hint) starts in the input row, clear of the prompt. */
+export const CHAT_INPUT_TEXT_X = 18;
 /** Inset from the panel edge to the text. */
 export const CHAT_PAD = 8;
 

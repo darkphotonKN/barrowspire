@@ -46,6 +46,7 @@ import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
 import { ProgressHud } from "@/ui/ProgressHud";
 import { ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow } from "@/ui/ChatWindow";
+import { domChatEntry } from "@/ui/chatEntryField";
 import { CHAT_WINDOW_MARGIN, CHAT_WINDOW_X } from "@/ui/chatWindowLayout";
 import { useChatStore } from "@/stores/chatStore";
 import { AbilityHud } from "@/ui/AbilityHud";
@@ -980,6 +981,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.gameEndOverlay.setScrollFactor(0);
     this.resultHold.raise();
 
+    // the result card takes the keys: a half-typed line goes, and the input hands the keyboard
+    // back before it is switched off here, so nothing turns it on again under the card (FS-WJGFJ R27)
+    this.chatWindow?.cancelInput();
     // disable game input — keyboard movement, hover, clicks
     if (this.input.keyboard) {
       this.input.keyboard.enabled = false;
@@ -2569,7 +2573,12 @@ export class BarrowspireScene extends Phaser.Scene {
     // Connect via SocketManager
     this.connectToServer();
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
-    this.chatWindow = new ChatWindow(this, useChatStore, CHAT_WINDOW_X, this.cameras.main.height - CHAT_WINDOW_MARGIN);
+    this.chatWindow = new ChatWindow(this, useChatStore, CHAT_WINDOW_X, this.cameras.main.height - CHAT_WINDOW_MARGIN, {
+      // the menu and the result card read Enter and Esc; the gear overlay and an open chest are up
+      mayOpen: () => !this.menu && !this.gameEndOverlay && !this.equipment?.isOpen() && !this.containerView?.isOpen,
+      send: (line) => socketManager.sendMessage(ActionType.Chat, line),
+      makeField: domChatEntry,
+    });
 
     // The camera and the (vestigial, collision-free) physics world live in
     // projected space: the map is a diamond, clamped by its bounding box plus a

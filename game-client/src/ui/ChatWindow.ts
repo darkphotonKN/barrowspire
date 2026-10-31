@@ -13,7 +13,12 @@ import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
 import type { ChatState } from "@/stores/chatStore";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
+import { ChatInput, type ChatSend } from "./chatInput";
+import type { ChatEntryFactory, ChatEntryHandle } from "./chatEntryField";
 import {
+  CHAT_INPUT_HINT,
+  CHAT_INPUT_PROMPT,
+  CHAT_INPUT_TEXT_X,
   CHAT_PAD,
   chatEntryColour,
   chatWindowFrame,
@@ -23,6 +28,15 @@ import {
   type ChatWindowFrame,
   type Rect,
 } from "./chatWindowLayout";
+
+/** What a scene gives the window so the player can type: who owns the keys, and how a line leaves. */
+export interface ChatWindowInput {
+  /** Whether nothing else (a dialogue, a menu, an overlay) owns Enter and Esc now (R27). */
+  mayOpen: () => boolean;
+  send: (line: ChatSend) => void;
+  /** The text field; the real DOM one in a scene (`domChatEntry`), a stand-in in a test. */
+  makeField: ChatEntryFactory;
+}
 
 const HUD_DEPTH = 1000;
 const FONT_PX = 13;
@@ -41,6 +55,10 @@ export class ChatWindow {
   /** How many lines the store held at the last draw, to hold a scrolled-back view still. */
   private seen: number;
   private unsubscribe: () => void;
+  private field?: ChatEntryHandle;
+  private input?: ChatInput;
+  private promptText?: Phaser.GameObjects.Text;
+  private hintText?: Phaser.GameObjects.Text;
 
   /** `x` is the panel's left edge; `bottom` the screen y of its bottom edge. */
   constructor(
@@ -48,6 +66,7 @@ export class ChatWindow {
     private readonly store: StoreApi<ChatState>,
     private readonly x: number,
     bottom: number,
+    typing?: ChatWindowInput,
   ) {
     this.frame = chatWindowFrame(x, bottom);
     this.seen = store.getState().lines.length;
@@ -55,6 +74,17 @@ export class ChatWindow {
     this.drawLines();
     this.unsubscribe = store.subscribe(() => this.onStream());
     scene.input.on("wheel", this.onWheel, this);
+    if (typing) this.buildInput(typing);
+  }
+
+  /** Whether the player is typing in the input right now. */
+  isTyping(): boolean {
+    return this.input?.isOpen() ?? false;
+  }
+
+  /** The scene takes the keys back (the end-of-run overlay): close the input and drop the draft (R27). */
+  cancelInput(): void {
+    this.input?.cancel();
   }
 
   /** Re-seat the window with its bottom edge at `bottom`: on the ResourceHud's top edge, or the canvas bottom (R18). */
@@ -63,11 +93,19 @@ export class ChatWindow {
     this.frame = chatWindowFrame(this.x, bottom);
     this.drawPanel();
     this.drawLines();
+    this.field?.moveTo(this.frame.input);
+    this.drawInputRow();
   }
 
   destroy(): void {
     this.unsubscribe();
     this.scene.input?.off("wheel", this.onWheel, this);
+    this.scene.input?.keyboard?.off("keydown-ENTER", this.onEnter, this);
+    this.input?.cancel();
+    this.field?.destroy();
+    this.promptText?.destroy();
+    this.hintText?.destroy();
+    this.field = this.input = this.promptText = this.hintText = undefined;
     this.clearLines();
     this.panel?.destroy();
     this.maskShape?.destroy();
@@ -83,6 +121,57 @@ export class ChatWindow {
     // a full buffer drops one as it adds one, so its length does not move: still one new line
     if (this.offset > 0) this.offset += added > 0 ? added : 1;
     this.drawLines();
+  }
+
+  /** The input: a field over the input row, the rules in `ChatInput`, Enter in the scene to open it (R26). */
+  private buildInput(typing: ChatWindowInput): void {
+    const keyboard = () => this.scene.input?.keyboard;
+    let input: ChatInput | undefined;
+    this.field = typing.makeField(this.scene, this.frame.input, {
+      focused: () => input?.focused(),
+      blurred: () => input?.blurred(),
+      keyDown: (key, composing) => input?.keyDown(key, composing),
+      typed: (composing) => input?.typed(composing),
+    });
+    input = new ChatInput({
+      field: this.field,
+      keyboard,
+      mayOpen: typing.mayOpen,
+      send: typing.send,
+      changed: () => this.drawInputRow(),
+    });
+    this.input = input;
+    keyboard()?.on("keydown-ENTER", this.onEnter, this);
+    this.drawInputRow();
+  }
+
+  private onEnter(): void {
+    this.input?.requestOpen();
+  }
+
+  /** The `>` prompt, and the hint while the input is closed with nothing typed. */
+  private drawInputRow(): void {
+    if (!this.input || !this.field) return;
+    const r = this.frame.input;
+    const y = r.y + (r.height - 16) / 2;
+    const style = {
+      fontFamily: CANVAS_FONT.body,
+      fontSize: `${FONT_PX}px`,
+      color: toCss(palette.chatSystem),
+    };
+    this.promptText?.destroy();
+    this.promptText = this.scene.add
+      .text(r.x + CHAT_PAD, y, CHAT_INPUT_PROMPT, style)
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH);
+    this.hintText?.destroy();
+    this.hintText = undefined;
+    if (!this.input.isOpen() && this.field.value === "") {
+      this.hintText = this.scene.add
+        .text(r.x + CHAT_INPUT_TEXT_X, y, CHAT_INPUT_HINT, style)
+        .setScrollFactor(0)
+        .setDepth(HUD_DEPTH);
+    }
   }
 
   private onWheel(
