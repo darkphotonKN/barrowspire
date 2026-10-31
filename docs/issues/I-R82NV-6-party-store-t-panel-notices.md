@@ -1,6 +1,6 @@
 ---
 id: I-R82NV-6
-status: in-progress
+status: done
 implements: FS-R82NV
 blocked_by: [I-R82NV-1]
 labels: [ready-for-agent]
@@ -26,12 +26,12 @@ Implements FS-R82NV §Requirements R28–R31, R36
 
 ## Acceptance Criteria
 
-- [ ] T opens and closes the panel in all three scenes; never while typing in chat.
-- [ ] Panel reflects `party_update` (members, leader icon, where).
-- [ ] Buttons grey correctly for leader / member / no party / locked (pure tests).
-- [ ] Invite field sends `party_invite {name}` on Enter and is disabled outside the hub.
-- [ ] Each notice code renders its copy as a system line in the chat window.
-- [ ] `vitest` green; lint fence passes (no raw hex). Scene files not reformatted by prettier.
+- [x] T opens and closes the panel in all three scenes; never while typing in chat.
+- [x] Panel reflects `party_update` (members, leader icon, where).
+- [x] Buttons grey correctly for leader / member / no party / locked (pure tests).
+- [x] Invite field sends `party_invite {name}` on Enter and is disabled outside the hub.
+- [x] Each notice code renders its copy as a system line in the chat window.
+- [x] `vitest` green; lint fence passes (no raw hex). Scene files not reformatted by prettier.
 
 ## Blocked By
 

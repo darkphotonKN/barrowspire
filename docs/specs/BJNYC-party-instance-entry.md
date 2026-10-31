@@ -86,3 +86,8 @@ Scoped 2026-11-01 with Nick.
 
 - Queue as a party and fill the rest from the queue.
 - Instances entered from a field gate (rule generalises: same world as the leader).
+
+- **A player in a party cannot join the random Spire queue** (Nick, 2026-11-01, during
+  I-R82NV-2): `find_game` from a party member is refused ("leave your party first" or similar);
+  a party enters together by party entry, and a random match forms its own party. Nothing
+  enforces this yet: today a party member can still queue.

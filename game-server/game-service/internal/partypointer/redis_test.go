@@ -65,3 +65,18 @@ func TestForgetParty_DeletesEveryPointer(t *testing.T) {
 	assert.False(t, mini.Exists("player:"+wren.String()+":party"))
 	assert.False(t, mini.Exists("player:"+kaelen.String()+":party"))
 }
+
+// Forgetting players deletes only their pointers: the party, and anyone still
+// in it, keep theirs.
+func TestForgetPlayers_DeletesOnlyTheirPointers(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	pointers := partypointer.NewRedis(client)
+	partyID, wren, kaelen := uuid.New(), uuid.New(), uuid.New()
+	require.NoError(t, pointers.Point(context.Background(), partyID, "pod-a", []uuid.UUID{wren, kaelen}))
+
+	require.NoError(t, pointers.ForgetPlayers(context.Background(), []uuid.UUID{kaelen}))
+
+	assert.False(t, mini.Exists("player:"+kaelen.String()+":party"))
+	assert.True(t, mini.Exists("player:"+wren.String()+":party"))
+	assert.True(t, mini.Exists("party:"+partyID.String()))
+}

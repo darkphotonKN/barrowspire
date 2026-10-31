@@ -38,6 +38,7 @@ type partyDirectory interface {
 type partyPointers interface {
 	Point(ctx context.Context, partyID uuid.UUID, podID string, members []uuid.UUID) error
 	ForgetParty(ctx context.Context, partyID uuid.UUID, members []uuid.UUID) error
+	ForgetPlayers(ctx context.Context, players []uuid.UUID) error
 }
 
 // partySender is how party messages reach players: a notice to the asking
@@ -68,7 +69,6 @@ type partyMember struct {
 type partyInvite struct {
 	id      uuid.UUID
 	partyID uuid.UUID
-	inviter uuid.UUID
 	target  uuid.UUID
 	// the target's character name, for the notices that answer the inviter
 	targetName string
@@ -126,6 +126,9 @@ type partyRegistry struct {
 	parties  map[uuid.UUID]*party
 	memberOf map[uuid.UUID]uuid.UUID // player id → party id
 	invites  map[uuid.UUID]*partyInvite
+	// invites whose party ended before they were answered, kept until their minute is up so an
+	// accept hears party_gone rather than nothing (I-R82NV-2 decision 3)
+	goneInvites map[uuid.UUID]*partyInvite
 
 	// when the pointers were last written in full
 	lastRefresh time.Time
@@ -151,6 +154,7 @@ func newPartyRegistry(directory partyDirectory, sender partySender, cfg partyReg
 		memberOf: make(map[uuid.UUID]uuid.UUID),
 		invites:  make(map[uuid.UUID]*partyInvite),
 
+		goneInvites: make(map[uuid.UUID]*partyInvite),
 		lastRefresh: cfg.now(),
 		writes:      make(chan func(ctx context.Context) error, partyPointerBuffer),
 		writerDone:  make(chan struct{}),
@@ -249,6 +253,7 @@ func (r *partyRegistry) dissolveAll(ctx context.Context) {
 	r.parties = make(map[uuid.UUID]*party)
 	r.memberOf = make(map[uuid.UUID]uuid.UUID)
 	r.invites = make(map[uuid.UUID]*partyInvite)
+	r.goneInvites = make(map[uuid.UUID]*partyInvite)
 }
 
 // stopped closes once dissolveAll has run.
@@ -274,7 +279,7 @@ func (r *partyRegistry) invite(ctx context.Context, inviter *types.Player, conn 
 
 	at := r.cfg.now()
 	p, formed := r.partyLedBy(inviter, at)
-	inv := &partyInvite{id: r.cfg.newID(), partyID: p.id, inviter: inviter.ID, target: target.ID, targetName: target.Character.Name, sentAt: at}
+	inv := &partyInvite{id: r.cfg.newID(), partyID: p.id, target: target.ID, targetName: target.Character.Name, sentAt: at}
 
 	// delivered first, kept after: an invite nobody saw forms no party and
 	// holds no place (code review 2026-11-01)
@@ -399,6 +404,10 @@ func (r *partyRegistry) accept(ctx context.Context, accepter *types.Player, conn
 	}
 	inv, open := r.openInviteFor(accepter.ID, payload)
 	if !open {
+		if r.goneInviteFor(accepter.ID, payload) {
+			slog.Debug("party accept refused", "player_id", accepter.ID, "code", constants.PartyNoticePartyGone)
+			r.notice(conn, constants.PartyNoticePartyGone, "")
+		}
 		return
 	}
 	if refusal := r.acceptRefusal(ctx, accepter); refusal != "" {
@@ -446,20 +455,178 @@ func (r *partyRegistry) voidInvitesTo(target uuid.UUID) {
 			continue
 		}
 		delete(r.invites, id)
-		r.noticePlayer(inv.inviter, constants.PartyNoticeAlreadyInParty, inv.targetName)
+		r.noticeLeader(inv, constants.PartyNoticeAlreadyInParty)
 	}
+}
+
+// leave handles party_leave: the member leaves and stays where they stand.
+// FS-R82NV §Requirements 20.
+func (r *partyRegistry) leave(ctx context.Context, leaver *types.Player, conn *websocket.Conn) {
+	if r.closed {
+		return
+	}
+	p, in := r.partyOf(leaver.ID)
+	if !in {
+		r.refuse(conn, leaver.ID, constants.PartyNoticeNotMember)
+		return
+	}
+	if r.locked(ctx, p) {
+		r.refuse(conn, leaver.ID, constants.PartyNoticeLocked)
+		return
+	}
+	r.remove(p, leaver.ID, constants.PartyUpdateLeft)
+}
+
+// kick handles party_kick: the leader removes a member, who stays where they
+// stand. FS-R82NV §Requirements 19.
+func (r *partyRegistry) kick(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{}) {
+	if r.closed {
+		return
+	}
+	p, target, ok := r.leaderTargetOrRefuse(ctx, leader, conn, payload)
+	if !ok {
+		return
+	}
+	r.remove(p, target, constants.PartyUpdateKicked)
+}
+
+// transfer handles party_transfer: the leader hands the lead to a member.
+// FS-R82NV §Requirements 19.
+func (r *partyRegistry) transfer(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{}) {
+	if r.closed {
+		return
+	}
+	p, target, ok := r.leaderTargetOrRefuse(ctx, leader, conn, payload)
+	if !ok {
+		return
+	}
+	p.leader = target
+	r.update(p, constants.PartyUpdateLeader, target)
+}
+
+// leaderTargetOrRefuse is the leader's party and the member payload's target_id
+// names; or, having told the sender why not (R19), false. A leader naming
+// themselves is ignored: the panel never offers it (I-R82NV-2 decision 4).
+func (r *partyRegistry) leaderTargetOrRefuse(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{}) (*party, uuid.UUID, bool) {
+	p, in := r.partyOf(leader.ID)
+	if !in || p.leader != leader.ID {
+		r.refuse(conn, leader.ID, constants.PartyNoticeNotLeader)
+		return nil, uuid.Nil, false
+	}
+	if r.locked(ctx, p) {
+		r.refuse(conn, leader.ID, constants.PartyNoticeLocked)
+		return nil, uuid.Nil, false
+	}
+	raw, _ := payload["target_id"].(string)
+	target, err := uuid.Parse(raw)
+	if err != nil || !p.has(target) {
+		r.refuse(conn, leader.ID, constants.PartyNoticeNotMember)
+		return nil, uuid.Nil, false
+	}
+	if target == leader.ID {
+		slog.Debug("party leader action naming the leader, ignored", "player_id", leader.ID)
+		return nil, uuid.Nil, false
+	}
+	return p, target, true
+}
+
+// locked reports whether p is inside an instance, where leave, kick and
+// transfer are refused. No party enters one yet: FS-BJNYC wires this, and may
+// need ctx to ask the run.
+func (r *partyRegistry) locked(_ context.Context, _ *party) bool {
+	return false
+}
+
+// refuse answers a party action with why not, logged at Debug (R25).
+func (r *partyRegistry) refuse(conn *websocket.Conn, playerID uuid.UUID, code constants.PartyNoticeCode) {
+	slog.Debug("party action refused", "player_id", playerID, "code", code)
+	r.notice(conn, code, "")
+}
+
+// has reports whether playerID is a member of p.
+func (p *party) has(playerID uuid.UUID) bool {
+	for _, m := range p.members {
+		if m.playerID == playerID {
+			return true
+		}
+	}
+	return false
+}
+
+// remove takes playerID out of p, for reason. A leader who goes is succeeded at
+// once by the earliest-joined member who remains (R22). The removed player gets
+// their last update, the party without them, about them (R21); the rest hear
+// why, then, if the lead passed, who leads.
+func (r *partyRegistry) remove(p *party, playerID uuid.UUID, reason constants.PartyUpdateReason) {
+	for i, m := range p.members {
+		if m.playerID == playerID {
+			p.members = append(p.members[:i], p.members[i+1:]...)
+			break
+		}
+	}
+	delete(r.memberOf, playerID)
+
+	succeeded := p.leader == playerID && len(p.members) > 0
+	if succeeded {
+		// members are in join order: the first who remains joined earliest
+		p.leader = p.members[0].playerID
+	}
+
+	final := partyUpdate(p.id, p.leader, p.members, r.cfg.size, reason, playerID)
+	if err := r.sender.SendMessageToPlayer(playerID, final); err != nil {
+		slog.Warn("final party update not delivered", "party_id", p.id, "player_id", playerID, "error", err)
+	}
+	if len(p.members) == 0 {
+		r.end(p, playerID)
+		return
+	}
+	r.forgetPlayer(playerID)
+	r.update(p, reason, playerID)
+	if succeeded {
+		r.update(p, constants.PartyUpdateLeader, p.leader)
+	}
+}
+
+// forgetPlayer queues deleting the pointer of a player who left a party that goes on.
+func (r *partyRegistry) forgetPlayer(playerID uuid.UUID) {
+	if r.cfg.pointers == nil {
+		return
+	}
+	r.queueWrite(func(ctx context.Context) error {
+		return r.cfg.pointers.ForgetPlayers(ctx, []uuid.UUID{playerID})
+	})
+}
+
+// end lets go of a party whose last member, lastID, has gone: its pointers are
+// deleted, and its open invites are kept as gone until their minute is up.
+// FS-R82NV R3, R5.
+func (r *partyRegistry) end(p *party, lastID uuid.UUID) {
+	delete(r.parties, p.id)
+	for id, inv := range r.invites {
+		if inv.partyID == p.id {
+			delete(r.invites, id)
+			r.goneInvites[id] = inv
+		}
+	}
+	if r.cfg.pointers == nil {
+		return
+	}
+	partyID, members := p.id, []uuid.UUID{lastID}
+	r.queueWrite(func(ctx context.Context) error {
+		return r.cfg.pointers.ForgetParty(ctx, partyID, members)
+	})
 }
 
 // decline handles party_decline from the invite's target: the invite is spent
 // and the inviter told, by name. An unknown or spent id is ignored. FS-R82NV R15.
-func (r *partyRegistry) decline(decliner *types.Player, payload map[string]interface{}) {
+func (r *partyRegistry) decline(ctx context.Context, decliner *types.Player, payload map[string]interface{}) {
 	inv, open := r.openInviteFor(decliner.ID, payload)
 	if !open {
 		return
 	}
 	delete(r.invites, inv.id)
 
-	r.noticePlayer(inv.inviter, constants.PartyNoticeDeclined, inv.targetName)
+	r.noticeLeader(inv, constants.PartyNoticeDeclined)
 }
 
 // ticks is when the hub's loop should call tick.
@@ -476,7 +643,14 @@ func (r *partyRegistry) tick() {
 			continue
 		}
 		delete(r.invites, id)
-		r.noticePlayer(inv.inviter, constants.PartyNoticeExpired, inv.targetName)
+		r.noticeLeader(inv, constants.PartyNoticeExpired)
+	}
+
+	// a gone invite is forgotten once its minute would have run out
+	for id, inv := range r.goneInvites {
+		if at.Sub(inv.sentAt) >= partyInviteTTL {
+			delete(r.goneInvites, id)
+		}
 	}
 
 	// the pointers are written again before they could lapse (R3)
@@ -488,13 +662,30 @@ func (r *partyRegistry) tick() {
 	}
 }
 
+// goneInviteFor reports whether payload names an invite to target whose party
+// has ended within the invite's minute.
+func (r *partyRegistry) goneInviteFor(target uuid.UUID, payload map[string]interface{}) bool {
+	id, ok := inviteIDOf(payload)
+	if !ok {
+		return false
+	}
+	inv, gone := r.goneInvites[id]
+	return gone && inv.target == target
+}
+
+// inviteIDOf is the invite id an answer names, if it names one.
+func inviteIDOf(payload map[string]interface{}) (uuid.UUID, bool) {
+	raw, _ := payload["invite_id"].(string)
+	id, err := uuid.Parse(raw)
+	return id, err == nil
+}
+
 // openInviteFor is the open invite payload names, if it is addressed to target.
 // Nothing trusts the id alone: an invite answers only to its own target
 // (FS-R82NV Edge States "Unauthorized").
 func (r *partyRegistry) openInviteFor(target uuid.UUID, payload map[string]interface{}) (*partyInvite, bool) {
-	raw, _ := payload["invite_id"].(string)
-	id, err := uuid.Parse(raw)
-	if err != nil {
+	id, ok := inviteIDOf(payload)
+	if !ok {
 		return nil, false
 	}
 	inv, open := r.invites[id]
@@ -574,6 +765,17 @@ func (r *partyRegistry) notice(conn *websocket.Conn, code constants.PartyNoticeC
 	if err := r.sender.SendMessageToConn(conn, partyNotice(code, name)); err != nil {
 		slog.Warn("party notice not delivered", "code", code, "error", err)
 	}
+}
+
+// noticeLeader tells the party that sent inv how it was answered, by the
+// target's name. An invite is the party's, not its sender's: whoever leads now
+// hears it (I-R82NV-2 decision 2).
+func (r *partyRegistry) noticeLeader(inv *partyInvite, code constants.PartyNoticeCode) {
+	p, live := r.parties[inv.partyID]
+	if !live {
+		return
+	}
+	r.noticePlayer(p.leader, code, inv.targetName)
 }
 
 // noticePlayer is notice for a player who is not the one asking, by id.

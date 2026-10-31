@@ -39,6 +39,9 @@ type partyRig struct {
 	queue      *mockQueueService
 	// shutdown stops the pod as SIGTERM does: its context ends
 	shutdown context.CancelFunc
+	// players seated with inHubTracked, for table rows that pick one up again
+	conns   map[uuid.UUID]*websocket.Conn
+	inboxes map[uuid.UUID]*startSoloInbox
 }
 
 // newPartyRig builds the pod; opts add to the party clock and ticks, a party
@@ -66,7 +69,18 @@ func newPartyRig(t *testing.T, opts ...Option) *partyRig {
 		ticks:      ticks,
 		queue:      queue,
 		shutdown:   shutdown,
+		conns:      make(map[uuid.UUID]*websocket.Conn),
+		inboxes:    make(map[uuid.UUID]*startSoloInbox),
 	}
+}
+
+// inHubTracked is inHub, remembering the player's connection and inbox.
+func (r *partyRig) inHubTracked(t *testing.T, name string) (*types.Player, *websocket.Conn, *startSoloInbox) {
+	t.Helper()
+	player, conn, inbox := r.inHub(t, name)
+	r.conns[player.ID] = conn
+	r.inboxes[player.ID] = inbox
+	return player, conn, inbox
 }
 
 // queued puts player in the Spire queue, alone, so no match pops.
@@ -721,4 +735,282 @@ func TestPartyShutdown_HubKeepsRoutingPartiesClosed(t *testing.T) {
 	sendParty(rig.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Kaelen"})
 	assertNoParty(t, kaelenInbox, partyInviteAction, "Kaelen, invited by a closing pod")
 	assertNoParty(t, wrenInbox, partyNoticeAction, "Wren, on a closing pod")
+}
+
+const (
+	partyLeaveAction    = "party_leave"
+	partyKickAction     = "party_kick"
+	partyTransferAction = "party_transfer"
+)
+
+// awaitUpdate waits for the party_update with reason about subject, dropping
+// any other update on the way.
+func awaitUpdate(t *testing.T, inbox *startSoloInbox, reason string, subject uuid.UUID, who string) types.Message {
+	t.Helper()
+	for {
+		update := awaitParty(t, inbox, partyUpdateAction, who)
+		if update.Payload["reason"] == reason && update.Payload["subject_id"] == subject.String() {
+			return update
+		}
+	}
+}
+
+// memberIDsOf are the player ids an update lists, in order.
+func memberIDsOf(t *testing.T, update types.Message) []string {
+	t.Helper()
+	members, ok := update.Payload["members"].([]map[string]interface{})
+	require.True(t, ok, "members is a list")
+	ids := make([]string, len(members))
+	for i, m := range members {
+		ids[i], _ = m["player_id"].(string)
+	}
+	return ids
+}
+
+// When the leader leaves, the earliest-joined member who remains leads at once.
+// The party hears two updates: who left, then who leads. The leaver's last
+// update is the party without them, about them. FS-R82NV R20, R21, R22.
+func TestPartyLeave_LeaderLeaves_EarliestJoinedLeads(t *testing.T) {
+	rig := newPartyRig(t, WithPartySize(3))
+	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
+	idris, idrisConn, idrisInbox := rig.inHub(t, "Idris")
+	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
+	rig.partied(t, wrenConn, wrenInbox, "Idris", idrisConn, idrisInbox)
+
+	sendParty(rig.server, wrenConn, partyLeaveAction, map[string]interface{}{})
+
+	final := awaitUpdate(t, wrenInbox, "left", wren.ID, "Wren")
+	assert.Equal(t, []string{kaelen.ID.String(), idris.ID.String()}, memberIDsOf(t, final), "Wren's last update: the party without her")
+
+	for who, inbox := range map[string]*startSoloInbox{"Kaelen": kaelenInbox, "Idris": idrisInbox} {
+		left := awaitUpdate(t, inbox, "left", wren.ID, who)
+		assert.Equal(t, []string{kaelen.ID.String(), idris.ID.String()}, memberIDsOf(t, left), "%s", who)
+		led := awaitUpdate(t, inbox, "leader", kaelen.ID, who)
+		assert.Equal(t, kaelen.ID.String(), led.Payload["leader_id"], "%s: Kaelen joined first, so Kaelen leads", who)
+	}
+	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren, gone from the party")
+}
+
+// The last member leaving ends the party: both pointers go, and an invite it
+// had out answers an accept with party_gone instead of silence. FS-R82NV R5,
+// R16, R20; I-R82NV-2 decision 3.
+func TestPartyLeave_LastMemberEndsTheParty(t *testing.T) {
+	rig, mini := newPointedPartyRig(t)
+	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	_, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
+	sendParty(rig.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Kaelen"})
+	invite := awaitParty(t, kaelenInbox, partyInviteAction, "Kaelen")
+	partyID, _ := invite.Payload["party_id"].(string)
+	inviteID, _ := invite.Payload["invite_id"].(string)
+	awaitPointer(t, mini, "party:"+partyID, testPodID)
+
+	sendParty(rig.server, wrenConn, partyLeaveAction, map[string]interface{}{})
+
+	final := awaitUpdate(t, wrenInbox, "left", wren.ID, "Wren")
+	assert.Empty(t, memberIDsOf(t, final), "nobody is left")
+	for _, key := range []string{"party:" + partyID, "player:" + wren.ID.String() + ":party"} {
+		require.Eventually(t, func() bool { return !mini.Exists(key) }, pointerWait, 10*time.Millisecond, "%s is deleted", key)
+	}
+
+	sendParty(rig.server, kaelenConn, partyAcceptAction, map[string]interface{}{"invite_id": inviteID})
+	gone := awaitParty(t, kaelenInbox, partyNoticeAction, "Kaelen")
+	assert.Equal(t, "party_gone", gone.Payload["code"])
+	assertNoParty(t, kaelenInbox, partyUpdateAction, "Kaelen: there is no party to join")
+}
+
+// A member who leaves a party that goes on loses only their own pointer; the
+// party's, and the rest's, stay. FS-R82NV R3, R20.
+func TestPartyLeave_MemberLeaves_OnlyTheirPointerGoes(t *testing.T) {
+	rig, mini := newPointedPartyRig(t)
+	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
+	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
+	kaelenKey := "player:" + kaelen.ID.String() + ":party"
+	require.Eventually(t, func() bool { return mini.Exists(kaelenKey) }, pointerWait, 10*time.Millisecond)
+	partyID, err := mini.Get(kaelenKey)
+	require.NoError(t, err)
+
+	sendParty(rig.server, kaelenConn, partyLeaveAction, map[string]interface{}{})
+
+	left := awaitUpdate(t, wrenInbox, "left", kaelen.ID, "Wren")
+	assert.Equal(t, []string{wren.ID.String()}, memberIDsOf(t, left))
+	assert.Equal(t, wren.ID.String(), left.Payload["leader_id"], "a member leaving passes no lead")
+	require.Eventually(t, func() bool { return !mini.Exists(kaelenKey) }, pointerWait, 10*time.Millisecond, "Kaelen's pointer goes")
+	assert.True(t, mini.Exists("party:"+partyID), "the party's stays")
+	assert.True(t, mini.Exists("player:"+wren.ID.String()+":party"), "Wren's stays")
+}
+
+// The leader kicks a member: they are out, told so in their last update, and
+// stay where they stand; everyone left hears who was kicked. FS-R82NV R19, R21.
+func TestPartyKick_LeaderKicksAMember(t *testing.T) {
+	rig := newPartyRig(t, WithPartySize(3))
+	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
+	idris, idrisConn, idrisInbox := rig.inHub(t, "Idris")
+	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
+	rig.partied(t, wrenConn, wrenInbox, "Idris", idrisConn, idrisInbox)
+
+	sendParty(rig.server, wrenConn, partyKickAction, map[string]interface{}{"target_id": kaelen.ID.String()})
+
+	final := awaitUpdate(t, kaelenInbox, "kicked", kaelen.ID, "Kaelen")
+	assert.Equal(t, []string{wren.ID.String(), idris.ID.String()}, memberIDsOf(t, final), "Kaelen's last update: the party without him")
+	for who, inbox := range map[string]*startSoloInbox{"Wren": wrenInbox, "Idris": idrisInbox} {
+		kicked := awaitUpdate(t, inbox, "kicked", kaelen.ID, who)
+		assert.Equal(t, []string{wren.ID.String(), idris.ID.String()}, memberIDsOf(t, kicked), "%s", who)
+		assert.Equal(t, wren.ID.String(), kicked.Payload["leader_id"], "%s", who)
+	}
+	hub, _ := rig.server.HubSession()
+	assert.True(t, hub.HasPlayer(kaelen.ID), "a kicked member stays where they stand")
+}
+
+// The leader hands the lead to a member; everyone hears who leads now.
+// FS-R82NV R19.
+func TestPartyTransfer_LeaderHandsTheLead(t *testing.T) {
+	rig := newPartyRig(t)
+	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
+	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
+
+	sendParty(rig.server, wrenConn, partyTransferAction, map[string]interface{}{"target_id": kaelen.ID.String()})
+
+	for who, inbox := range map[string]*startSoloInbox{"Wren": wrenInbox, "Kaelen": kaelenInbox} {
+		led := awaitUpdate(t, inbox, "leader", kaelen.ID, who)
+		assert.Equal(t, kaelen.ID.String(), led.Payload["leader_id"], "%s", who)
+		assert.Equal(t, []string{wren.ID.String(), kaelen.ID.String()}, memberIDsOf(t, led), "%s: nobody leaves", who)
+	}
+}
+
+// Every refusal of leave, kick and transfer, each a party_notice by code to the
+// sender; a leader naming themselves is ignored. FS-R82NV R19, R20; Edge States
+// "Empty", "Unauthorized"; I-R82NV-2 decision 4.
+func TestPartyMembership_Refusals(t *testing.T) {
+	tests := []struct {
+		name string
+		// arrange forms Wren (leader) + Kaelen and returns who sends what
+		arrange func(r *partyRig, wren, kaelen, idris *types.Player) (sender *websocket.Conn, inbox *startSoloInbox, action string, payload map[string]interface{})
+		// "" means nothing comes back at all
+		wantCode string
+	}{
+		{
+			name: "leave with no party",
+			arrange: func(r *partyRig, _, _, idris *types.Player) (*websocket.Conn, *startSoloInbox, string, map[string]interface{}) {
+				return r.conns[idris.ID], r.inboxes[idris.ID], partyLeaveAction, map[string]interface{}{}
+			},
+			wantCode: "not_member",
+		},
+		{
+			name: "kick by a member who does not lead",
+			arrange: func(r *partyRig, wren, kaelen, _ *types.Player) (*websocket.Conn, *startSoloInbox, string, map[string]interface{}) {
+				return r.conns[kaelen.ID], r.inboxes[kaelen.ID], partyKickAction, map[string]interface{}{"target_id": wren.ID.String()}
+			},
+			wantCode: "not_leader",
+		},
+		{
+			name: "transfer by a member who does not lead",
+			arrange: func(r *partyRig, wren, kaelen, _ *types.Player) (*websocket.Conn, *startSoloInbox, string, map[string]interface{}) {
+				return r.conns[kaelen.ID], r.inboxes[kaelen.ID], partyTransferAction, map[string]interface{}{"target_id": kaelen.ID.String()}
+			},
+			wantCode: "not_leader",
+		},
+		{
+			name: "kick by a player with no party",
+			arrange: func(r *partyRig, _, kaelen, idris *types.Player) (*websocket.Conn, *startSoloInbox, string, map[string]interface{}) {
+				return r.conns[idris.ID], r.inboxes[idris.ID], partyKickAction, map[string]interface{}{"target_id": kaelen.ID.String()}
+			},
+			wantCode: "not_leader",
+		},
+		{
+			name: "kick a player outside the party",
+			arrange: func(r *partyRig, wren, _, idris *types.Player) (*websocket.Conn, *startSoloInbox, string, map[string]interface{}) {
+				return r.conns[wren.ID], r.inboxes[wren.ID], partyKickAction, map[string]interface{}{"target_id": idris.ID.String()}
+			},
+			wantCode: "not_member",
+		},
+		{
+			name: "transfer to a player outside the party",
+			arrange: func(r *partyRig, wren, _, idris *types.Player) (*websocket.Conn, *startSoloInbox, string, map[string]interface{}) {
+				return r.conns[wren.ID], r.inboxes[wren.ID], partyTransferAction, map[string]interface{}{"target_id": idris.ID.String()}
+			},
+			wantCode: "not_member",
+		},
+		{
+			name: "kick a target that is no player id",
+			arrange: func(r *partyRig, wren, _, _ *types.Player) (*websocket.Conn, *startSoloInbox, string, map[string]interface{}) {
+				return r.conns[wren.ID], r.inboxes[wren.ID], partyKickAction, map[string]interface{}{"target_id": "nobody"}
+			},
+			wantCode: "not_member",
+		},
+		{
+			name: "the leader kicking themselves is ignored",
+			arrange: func(r *partyRig, wren, _, _ *types.Player) (*websocket.Conn, *startSoloInbox, string, map[string]interface{}) {
+				return r.conns[wren.ID], r.inboxes[wren.ID], partyKickAction, map[string]interface{}{"target_id": wren.ID.String()}
+			},
+		},
+		{
+			name: "the leader handing the lead to themselves is ignored",
+			arrange: func(r *partyRig, wren, _, _ *types.Player) (*websocket.Conn, *startSoloInbox, string, map[string]interface{}) {
+				return r.conns[wren.ID], r.inboxes[wren.ID], partyTransferAction, map[string]interface{}{"target_id": wren.ID.String()}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rig := newPartyRig(t)
+			wren, wrenConn, wrenInbox := rig.inHubTracked(t, "Wren")
+			kaelen, kaelenConn, kaelenInbox := rig.inHubTracked(t, "Kaelen")
+			idris, _, _ := rig.inHubTracked(t, "Idris")
+			rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
+
+			conn, inbox, action, payload := tt.arrange(rig, wren, kaelen, idris)
+			sendParty(rig.server, conn, action, payload)
+
+			if tt.wantCode == "" {
+				assertNoParty(t, inbox, partyNoticeAction, "the sender")
+				assertNoParty(t, inbox, partyUpdateAction, "the sender: nothing changed")
+				return
+			}
+			refused := awaitParty(t, inbox, partyNoticeAction, "the sender")
+			assert.Equal(t, tt.wantCode, refused.Payload["code"])
+			assertNoParty(t, wrenInbox, partyUpdateAction, "Wren: nothing changed")
+		})
+	}
+}
+
+// A kick and a leave of the same member arrive together: the first wins, the
+// second finds no such member. FS-R82NV Edge States "Concurrent".
+func TestPartyKickAndLeave_FirstWinsSecondNotMember(t *testing.T) {
+	rig := newPartyRig(t)
+	_, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
+	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
+
+	sendParty(rig.server, wrenConn, partyKickAction, map[string]interface{}{"target_id": kaelen.ID.String()})
+	sendParty(rig.server, kaelenConn, partyLeaveAction, map[string]interface{}{})
+
+	awaitUpdate(t, kaelenInbox, "kicked", kaelen.ID, "Kaelen")
+	late := awaitParty(t, kaelenInbox, partyNoticeAction, "Kaelen")
+	assert.Equal(t, "not_member", late.Payload["code"], "the leave came second: Kaelen is no longer a member")
+}
+
+// An invite is the party's, not the inviter's: after the lead passes it still
+// stands, and its answer goes to whoever leads now. I-R82NV-2 decision 2.
+func TestPartyInvite_AnswerGoesToTheCurrentLeader(t *testing.T) {
+	rig := newPartyRig(t, WithPartySize(3))
+	_, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
+	_, idrisConn, idrisInbox := rig.inHub(t, "Idris")
+	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
+	inviteID := rig.invited(t, wrenConn, "Idris", idrisInbox)
+	awaitParty(t, wrenInbox, partyNoticeAction, "Wren") // sent
+	sendParty(rig.server, wrenConn, partyTransferAction, map[string]interface{}{"target_id": kaelen.ID.String()})
+	awaitUpdate(t, kaelenInbox, "leader", kaelen.ID, "Kaelen")
+
+	sendParty(rig.server, idrisConn, partyDeclineAction, map[string]interface{}{"invite_id": inviteID})
+
+	declined := awaitParty(t, kaelenInbox, partyNoticeAction, "Kaelen, who leads now")
+	assert.Equal(t, "declined", declined.Payload["code"])
+	assert.Equal(t, "Idris", declined.Payload["name"])
+	assertNoParty(t, wrenInbox, partyNoticeAction, "Wren, who no longer leads")
 }

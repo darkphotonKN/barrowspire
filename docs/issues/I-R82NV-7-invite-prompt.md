@@ -1,6 +1,6 @@
 ---
 id: I-R82NV-7
-status: in-progress
+status: done
 implements: FS-R82NV
 blocked_by: [I-R82NV-6]
 labels: [ready-for-agent]
@@ -22,11 +22,11 @@ Implements FS-R82NV §Requirements R32, R33
 
 ## Acceptance Criteria
 
-- [ ] A `party_invite` message renders the prompt with the leader's name and count.
-- [ ] Accept / Decline send the right action with the invite id and close the prompt.
-- [ ] The countdown closes the prompt at 60 s (clock injected in the pure part).
-- [ ] Two invites stack; joining one party closes all prompts.
-- [ ] `vitest` green; lint fence passes.
+- [x] A `party_invite` message renders the prompt with the leader's name and count.
+- [x] Accept / Decline send the right action with the invite id and close the prompt.
+- [x] The countdown closes the prompt at 60 s (clock injected in the pure part).
+- [x] Two invites stack; joining one party closes all prompts.
+- [x] `vitest` green; lint fence passes.
 
 ## Blocked By
 
