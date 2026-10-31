@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ChatChannel } from "@/stores/chatStore";
 import {
   CHAT_TEXT_MAX,
   ChatInput,
@@ -13,6 +14,7 @@ import {
 function fakeField(): ChatEntryField & { focused: boolean } {
   return {
     value: "",
+    channel: "area",
     focused: false,
     focus() {
       this.focused = true;
@@ -23,7 +25,7 @@ function fakeField(): ChatEntryField & { focused: boolean } {
   };
 }
 
-function rig(mayOpen = () => true) {
+function rig(mayOpen = () => true, open: ChatChannel[] = ["area"]) {
   const field = fakeField();
   const keyboard: SceneKeyboard = { enabled: true, resetKeys: vi.fn() };
   const send = vi.fn();
@@ -34,6 +36,7 @@ function rig(mayOpen = () => true) {
     mayOpen,
     send,
     changed,
+    open: new Set(open),
   });
   return { field, keyboard, send, changed, input };
 }
@@ -200,5 +203,119 @@ describe("ChatInput typing (C26)", () => {
 
     input.typed(false);
     expect(field.value).toHaveLength(200);
+  });
+});
+
+// ── The channel picker and prefixes (I-WJGFJ-6; FS-WJGFJ Amendment 2026-10-31, R28 replaced) ──
+
+function openOn(...open: ChatChannel[]) {
+  const r = rig(() => true, ["area", ...open]);
+  r.input.requestOpen();
+  r.input.focused();
+  return r;
+}
+
+describe("ChatInput channel picker", () => {
+  it("should write an open channel's prefix at the start of the draft when it is picked", () => {
+    const { input, field } = openOn("world");
+    field.value = "hello";
+
+    input.pick("world");
+
+    expect(field.channel).toBe("world");
+    expect(field.value).toBe("#hello");
+  });
+
+  it("should swap one prefix for another, and drop it when Area is picked", () => {
+    const { input, field } = openOn("world", "trade");
+    field.value = "#hello";
+
+    input.pick("trade");
+    expect(field.value).toBe("$hello");
+
+    input.pick("area");
+    expect(field.value).toBe("hello");
+    expect(field.channel).toBe("area");
+  });
+
+  it("should not pick a channel the server does not relay yet", () => {
+    const { input, field } = openOn();
+    field.value = "hello";
+
+    input.pick("world");
+
+    expect(field.channel).toBe("area");
+    expect(field.value).toBe("hello");
+  });
+});
+
+describe("ChatInput prefixes typed", () => {
+  it("should pick an open channel when its prefix is typed at the start", () => {
+    const { input, field } = openOn("world");
+
+    field.value = "#hi";
+    input.typed(false);
+
+    expect(field.channel).toBe("world");
+  });
+
+  it("should go back to Area when the prefix is deleted", () => {
+    const { input, field } = openOn("world");
+    field.value = "#hi";
+    input.typed(false);
+
+    field.value = "hi";
+    input.typed(false);
+
+    expect(field.channel).toBe("area");
+  });
+
+  it("should leave a closed channel's prefix as plain text on Area", () => {
+    const { input, field, send } = openOn();
+
+    field.value = "#hi";
+    input.typed(false);
+    expect(field.channel).toBe("area");
+
+    input.keyDown("Enter", false);
+    expect(send).toHaveBeenCalledWith({ channel: "area", text: "#hi" });
+  });
+});
+
+describe("ChatInput sending on a picked channel", () => {
+  it("should send the picked channel and the text without its prefix", () => {
+    const { input, field, send } = openOn("world");
+    input.pick("world");
+    field.value = "# hello everyone";
+    input.typed(false);
+
+    input.keyDown("Enter", false);
+
+    expect(send).toHaveBeenCalledWith({
+      channel: "world",
+      text: "hello everyone",
+    });
+  });
+
+  it("should keep the picked channel and its prefix ready after sending", () => {
+    const { input, field } = openOn("world");
+    input.pick("world");
+    field.value = "#hi";
+
+    input.keyDown("Enter", false);
+
+    expect(field.channel).toBe("world");
+    expect(field.value).toBe("#");
+  });
+
+  it("should send nothing when only the prefix is there", () => {
+    const { input, field, send } = openOn("world");
+    input.pick("world");
+    expect(field.value).toBe("#");
+
+    input.keyDown("Enter", false);
+
+    expect(send).not.toHaveBeenCalled();
+    expect(input.isOpen()).toBe(false);
   });
 });

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // The chat input's text field is a real <input> in the browser; this suite runs without a DOM,
 // so the field is a silent stand-in. The input's rules are tested in ui/chatInput.test.ts.
 vi.mock("@/ui/chatEntryField", () => ({
-  domChatEntry: () => ({ value: "", focus: () => undefined, blur: () => undefined, moveTo: () => undefined, destroy: () => undefined }),
+  domChatEntry: () => ({ value: "", channel: "area", focus: () => undefined, blur: () => undefined, moveTo: () => undefined, destroy: () => undefined }),
 }));
 
 vi.mock("phaser", async () => {

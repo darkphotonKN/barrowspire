@@ -5,6 +5,8 @@ import { createChatStore, type ChatLinePayload } from "@/stores/chatStore";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { ChatWindow } from "./ChatWindow";
 import {
+  CHAT_FOLD_OPEN,
+  CHAT_FOLD_SHUT,
   CHAT_INPUT_HINT,
   CHAT_VISIBLE_LINES,
   chatWindowFrame,
@@ -58,6 +60,7 @@ function fakeScene() {
       lineStyle: () => self,
       fillRect: (...r: number[]) => (g.rects.push(r), self),
       strokeRect: () => self,
+      lineBetween: () => self,
       createGeometryMask: () => ({ destroy: () => undefined }),
       destroy: () => void (g.destroyed = true),
     };
@@ -148,7 +151,7 @@ function rig() {
   const say = (text: string, extra: Partial<ChatLinePayload> = {}) =>
     store.getState().receive(stamped(text, extra));
   const contents = () =>
-    s.messageTexts().map((t) => t.content.replace(/^\d\d:\d\d {2}Wren: /, ""));
+    s.messageTexts().map((t) => t.content.replace(/^Wren: /, ""));
   return { ...s, store, window, say, contents };
 }
 
@@ -193,7 +196,7 @@ describe("ChatWindow (C20, C22, C29: the stream drawn)", () => {
     say("hello");
 
     const [t] = messageTexts();
-    expect(t.content).toMatch(/^\d\d:\d\d {2}Wren: hello$/);
+    expect(t.content).toBe("Wren: hello");
     expect(t.color).toBe(toCss(palette.chatArea));
     expect(t.scroll).toBe(0);
     expect(t.depth).toBe(1000);
@@ -338,6 +341,7 @@ describe("ChatWindow (teardown)", () => {
 
 interface FakeField {
   value: string;
+  channel: import("@/stores/chatStore").ChatChannel;
   focused: boolean;
   rect: { x: number; y: number; width: number; height: number };
   destroyed: boolean;
@@ -356,6 +360,7 @@ function inputRig(mayOpen = () => true) {
       makeField: (_scene, rect, events) => {
         const f: FakeField = {
           value: "",
+          channel: "area",
           focused: false,
           rect,
           destroyed: false,
@@ -368,6 +373,12 @@ function inputRig(mayOpen = () => true) {
           },
           set value(v: string) {
             f.value = v;
+          },
+          get channel() {
+            return f.channel;
+          },
+          set channel(c) {
+            f.channel = c;
           },
           focus: () => {
             f.focused = true;
@@ -550,21 +561,6 @@ describe("ChatWindow filter row (R24)", () => {
   });
 });
 
-describe("ChatWindow area label (R25)", () => {
-  it("should end the filter row with the area it was given, right-aligned in the system colour", () => {
-    const store = createChatStore();
-    const s = fakeScene();
-    new ChatWindow(s.scene, store, X, BOTTOM, { area: "Area: Town" });
-
-    const label = toggleOf(s, "Area: Town");
-    const row = chatWindowFrame(X, BOTTOM).filterRow;
-    expect(label.originX).toBe(1);
-    expect(label.x).toBeLessThanOrEqual(row.x + row.width);
-    expect(label.color).toBe(toCss(palette.chatSystem));
-    expect(label.onPress).toBeUndefined();
-  });
-});
-
 describe("ChatWindow covers (R31)", () => {
   it("should say a point inside the panel is its own and one beside it is not", () => {
     const { window } = rig();
@@ -573,5 +569,68 @@ describe("ChatWindow covers (R31)", () => {
     expect(window.covers(panel.x + 5, panel.y + 5)).toBe(true);
     expect(window.covers(panel.x + panel.width + 5, panel.y + 5)).toBe(false);
     expect(window.covers(panel.x + 5, panel.y - 5)).toBe(false);
+  });
+});
+
+// ── The look, the picker and folding (I-WJGFJ-6, FS-WJGFJ Amendment 2026-10-31) ─────────────
+
+const foldButtonOf = (s: ReturnType<typeof fakeScene>) => {
+  const t = s
+    .shown()
+    .find((x) => x.content === CHAT_FOLD_OPEN || x.content === CHAT_FOLD_SHUT);
+  expect(t, "a fold button").toBeDefined();
+  return t!;
+};
+
+describe("ChatWindow folding", () => {
+  it("should fold down to the input row and stop drawing lines and tabs, then unfold", () => {
+    const s = rig();
+    s.say("hello");
+
+    foldButtonOf(s).onPress!();
+
+    expect(s.store.getState().folded).toBe(true);
+    expect(s.messageTexts()).toHaveLength(0);
+    expect(s.shown().some((t) => t.content === "Area")).toBe(false);
+    expect(
+      s.window.covers(X + 5, chatWindowFrame(X, BOTTOM).messages.y + 5),
+    ).toBe(false);
+    expect(
+      s.window.covers(X + 5, chatWindowFrame(X, BOTTOM, true).input.y + 5),
+    ).toBe(true);
+
+    foldButtonOf(s).onPress!();
+    expect(s.store.getState().folded).toBe(false);
+    expect(s.contents()).toEqual(["hello"]);
+  });
+
+  it("should stay folded when a line arrives", () => {
+    const s = rig();
+    foldButtonOf(s).onPress!();
+
+    s.say("while folded");
+
+    expect(s.store.getState().folded).toBe(true);
+    expect(s.messageTexts()).toHaveLength(0);
+  });
+
+  it("should open folded when the store says so", () => {
+    const store = createChatStore();
+    store.getState().toggleFolded();
+    const s = fakeScene();
+    new ChatWindow(s.scene, store, X, BOTTOM);
+
+    expect(foldButtonOf(s).content).toBe(CHAT_FOLD_SHUT);
+  });
+});
+
+describe("ChatWindow picker wiring", () => {
+  it("should hand a picked channel to the input", () => {
+    const { field } = inputRig();
+    field().value = "hi";
+    field().events!.picked("world");
+    // world is not open yet: the picker falls back to Area and the draft is untouched
+    expect(field().channel).toBe("area");
+    expect(field().value).toBe("hi");
   });
 });

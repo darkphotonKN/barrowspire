@@ -7,6 +7,8 @@ import {
   CHAT_VISIBLE_LINES,
   CHAT_WINDOW_W,
   chatEntryColour,
+  CHAT_FOLD_W,
+  chatTabSegments,
   chatWindowFrame,
   formatChatEntry,
   scrolledOffset,
@@ -61,15 +63,9 @@ describe("chatWindowFrame (C18, C19: where the window sits and its shape)", () =
   });
 });
 
-describe("formatChatEntry (C22, C29)", () => {
-  it("should read HH:MM  Name: text with the time in the local zone", () => {
-    const sentAt = new Date("2026-10-31T09:30:15.250Z");
-    const hh = String(sentAt.getHours()).padStart(2, "0");
-    const mm = String(sentAt.getMinutes()).padStart(2, "0");
-
-    expect(formatChatEntry(line("hello there"))).toBe(
-      `${hh}:${mm}  Wren: hello there`,
-    );
+describe("formatChatEntry (C22 as amended 2026-10-31, C29)", () => {
+  it("should read Name: text, with no time", () => {
+    expect(formatChatEntry(line("hello there"))).toBe("Wren: hello there");
   });
 
   it("should read a system line as a dash and the words, with no name and no time", () => {
@@ -151,10 +147,65 @@ describe("chat colours (C30: every channel reads on the panel)", () => {
     }
   });
 
+  it("should clear 4.5:1 on a shown tab's ground and on the input row's ground too", () => {
+    const colours = { ...CHAT_CHANNEL_COLOUR, system: palette.chatSystem };
+    for (const ground of [palette.chatTabOn, palette.chatInputGround]) {
+      for (const [name, colour] of Object.entries(colours)) {
+        expect(
+          contrastRatio(colour, ground),
+          `${name} on ${ground.toString(16)}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
   it("should draw a system line in the system colour and a player's line in its channel's", () => {
     expect(chatEntryColour(system("x"))).toBe(palette.chatSystem);
     expect(
       chatEntryColour({ ...line("x"), channel: "trade" } as ChatEntry),
     ).toBe(palette.chatTrade);
+  });
+});
+
+describe("chatWindowFrame folded (Amendment 2026-10-31: collapse)", () => {
+  it("should fold down to the input row alone, its bottom edge where it was", () => {
+    const open = chatWindowFrame(10, 500);
+    const folded = chatWindowFrame(10, 500, true);
+
+    expect(folded.input).toEqual(open.input);
+    expect(folded.panel).toEqual(open.input);
+    expect(folded.messages.height).toBe(0);
+    expect(folded.filterRow.height).toBe(0);
+  });
+});
+
+describe("chatTabSegments (R24 as amended 2026-10-31: tab segments)", () => {
+  it("should lay the five segments edge to edge from the row's left, each as wide as its label needs", () => {
+    const row = chatWindowFrame(10, 500).filterRow;
+    const segments = chatTabSegments(row, (label) => label.length * 7);
+
+    expect(segments.map((s) => s.channel)).toEqual([
+      "area",
+      "world",
+      "party",
+      "whisper",
+      "trade",
+    ]);
+    expect(segments[0].x).toBe(row.x);
+    for (let i = 1; i < segments.length; i++) {
+      expect(segments[i].x).toBe(segments[i - 1].x + segments[i - 1].width);
+    }
+    expect(
+      segments.every((s) => s.y === row.y && s.height === row.height),
+    ).toBe(true);
+    expect(segments[3].width).toBeGreaterThan(segments[0].width);
+  });
+
+  it("should stop short of the fold button at the row's right end", () => {
+    const row = chatWindowFrame(10, 500).filterRow;
+    const last = chatTabSegments(row, (label) => label.length * 7).at(-1)!;
+    expect(last.x + last.width).toBeLessThanOrEqual(
+      row.x + row.width - CHAT_FOLD_W,
+    );
   });
 });

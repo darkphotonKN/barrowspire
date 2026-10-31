@@ -228,3 +228,49 @@ function memoryStorage(seed: Record<string, string> = {}) {
   };
   return { storage, data };
 }
+
+describe("chatStore folding (FS-WJGFJ Amendment 2026-10-31: collapse)", () => {
+  it("should start unfolded, fold and unfold on toggle, and keep it in this browser", () => {
+    const { storage } = memoryStorage();
+    const store = createChatStore({ storage: () => storage });
+    expect(store.getState().folded).toBe(false);
+
+    store.getState().toggleFolded();
+    expect(store.getState().folded).toBe(true);
+    expect(createChatStore({ storage: () => storage }).getState().folded).toBe(
+      true,
+    );
+
+    store.getState().toggleFolded();
+    expect(createChatStore({ storage: () => storage }).getState().folded).toBe(
+      false,
+    );
+  });
+
+  it("should start unfolded and still fold for the session when storage throws", () => {
+    const throwing: KeyValueStore = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => undefined,
+    };
+    const store = createChatStore({ storage: () => throwing });
+    expect(store.getState().folded).toBe(false);
+    store.getState().toggleFolded();
+    expect(store.getState().folded).toBe(true);
+  });
+
+  it("should keep the filter and the fold apart", () => {
+    const { storage } = memoryStorage();
+    const store = createChatStore({ storage: () => storage });
+    store.getState().toggleChannel("world");
+    store.getState().toggleFolded();
+
+    const next = createChatStore({ storage: () => storage });
+    expect(next.getState().shown.world).toBe(false);
+    expect(next.getState().folded).toBe(true);
+  });
+});
