@@ -26,10 +26,10 @@ export const CHAT_LINE_H = 20;
  */
 export const CHAT_FRAME_PAD = 5;
 /** Room between the newest line and the input row's divider (asked 2026-10-31). */
-export const CHAT_LINES_GAP = 6;
+export const CHAT_LINES_GAP = 12;
 /** Room kept above the lines for the channel filter row (I-WJGFJ-5) and below for the input (I-WJGFJ-4). */
 export const CHAT_FILTER_ROW_H = 24;
-export const CHAT_INPUT_ROW_H = 28;
+export const CHAT_INPUT_ROW_H = 30;
 /** What the input row says while it is closed and empty (R26). */
 export const CHAT_INPUT_HINT = "Press Enter to speak";
 /** The fold button's face: unfolded it offers to fold, folded to unfold (Amendment 2026-10-31). */

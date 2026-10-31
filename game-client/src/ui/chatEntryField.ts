@@ -48,6 +48,11 @@ const HUD_DEPTH = 1000;
 const PICKER_ARROW_GAP = 8;
 const PICKER_ARROW_ROOM = 22;
 const FONT = () => `14px ${CANVAS_FONT.body}`;
+/**
+ * The field's and picker's own box: a 14px face needs about 22px for its descenders (g, y, p),
+ * and a box left to the inherited line-height cut them off (asked 2026-10-31).
+ */
+const FIELD_H = "22px";
 
 /** The real row: a picker and a field in Phaser's DOM container, over the input row, short of the fold button. */
 export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
@@ -89,6 +94,8 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
     boxShadow: "none",
     padding: `0 ${PICKER_ARROW_ROOM}px 0 4px`,
     font: FONT(),
+    height: FIELD_H,
+    lineHeight: FIELD_H,
     cursor: "pointer",
   });
   const arrow = document.createElement("span");
@@ -139,6 +146,8 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
     padding: "0",
     margin: "0",
     font: FONT(),
+    height: FIELD_H,
+    lineHeight: FIELD_H,
   });
 
   row.append(pickerBox, field);
