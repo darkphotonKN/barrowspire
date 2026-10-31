@@ -234,6 +234,7 @@ export class ChatWindow {
   }
 
   private drawAll(): void {
+    this.rebuildMask();
     this.drawPanel();
     this.drawTabs();
     this.drawLines();
@@ -467,8 +468,17 @@ export class ChatWindow {
     g.fillStyle(palette.chatInputGround, 0.95 * this.opacity());
     g.fillRoundedRect(input.x, input.y + 1, input.width, input.height - 1, 3);
     if (messages.height > 0) drawFlourishRule(g, input.x, input.y, input.width);
+  }
 
-    // the message area clips: a wrapped line that overflows the top is cut, not drawn over the tabs
+  /**
+   * The message area's clip: a wrapped line that overflows the top is cut, not drawn over the
+   * tabs. Built once per frame geometry, never on a mere redraw. A destroyed mask that a drawn
+   * line still wears throws inside Phaser's render and stops the whole game (the cmd-tab freeze,
+   * 2026-10-31), so the old one goes only once no line wears it: `drawLines` follows every rebuild.
+   */
+  private rebuildMask(): void {
+    const { messages } = this.frame;
+    this.clearLines();
     this.maskShape?.destroy();
     this.mask?.destroy();
     this.maskShape = this.scene.make.graphics({}, false).setScrollFactor(0);
