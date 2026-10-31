@@ -46,7 +46,8 @@ import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
 import { ProgressHud } from "@/ui/ProgressHud";
 import { RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
 import { PotionHud } from "@/ui/PotionHud";
-import { potionCell } from "@/ui/potions";
+import { healthPotionCount, potionCell } from "@/ui/potions";
+import { RUN_ACTIONS } from "./runActions";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
@@ -806,7 +807,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     const cam = this.cameras.main;
     const panelW = 260;
-    const panelH = 240;
+    const panelH = 260;
     const x = cam.width / 2;
     const y = cam.height / 2;
 
@@ -836,6 +837,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ["Q", "Close Panel"],
       ["LEFT CLICK", "Melee Attack"],
       ["RIGHT CLICK", "Fireball (Skill)"],
+      [RUN_ACTIONS.drinkPotion.label, "Drink potion"],
       ["H", "Toggle Controls"],
       ["ESC", "Menu"],
     ];
@@ -2737,6 +2739,13 @@ export class BarrowspireScene extends Phaser.Scene {
       this.toggleControlsPanel();
     });
 
+    // 1 drinks a health potion (FS-P9G8R R27, R28). An event, never a JustDown poll: the menu polls
+    // the same key each frame for its rows, and a second poll would steal its press.
+    this.input.keyboard?.on(`keydown-${RUN_ACTIONS.drinkPotion.key}`, (event?: KeyboardEvent) => {
+      if (this.menu || event?.repeat) return;
+      this.drinkPotion();
+    });
+
     // Scene-level pointer tracking for satchel hover (bypasses broken Phaser scrollFactor input)
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       this.containerView.pointerMove(pointer.x, pointer.y);
@@ -3971,6 +3980,17 @@ export class BarrowspireScene extends Phaser.Scene {
         hit.destroy();
       },
     };
+  }
+
+  /**
+   * One `drink_potion` (FS-P9G8R R27): the server picks the slot and heals, and the next state
+   * shows both. Nothing is sent when there is nothing to drink or the player is out of the delve,
+   * since the server would refuse it, and nothing is predicted here (R30).
+   */
+  private drinkPotion(): void {
+    const me = this.lastGameState?.current_player;
+    if (resolved(me) || healthPotionCount(me?.equipment) === 0) return;
+    socketManager.sendMessage(ActionType.DrinkPotion, {});
   }
 
   /**
