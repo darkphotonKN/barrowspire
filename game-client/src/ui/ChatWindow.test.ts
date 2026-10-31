@@ -26,6 +26,7 @@ interface FakeText {
   scroll?: number;
   alpha: number;
   originX: number;
+  fontSize?: string;
   destroyed: boolean;
   /** The handler a toggle registered for pointerdown, if it is interactive. */
   onPress?: () => void;
@@ -71,11 +72,12 @@ function fakeScene() {
     x: number,
     y: number,
     content: string,
-    style: { color?: string } = {},
+    style: { color?: string; fontSize?: string } = {},
   ) => {
     const t: FakeText = {
       content,
       color: style.color ?? "",
+      fontSize: style.fontSize,
       x,
       y,
       height: 18,
@@ -721,5 +723,43 @@ describe("ChatWindow fold button in the top-right corner (asked 2026-10-31)", ()
       ...shut.input,
       width: shut.input.width - CHAT_FOLD_W,
     });
+  });
+});
+
+describe("ChatWindow unfolding to type (asked 2026-10-31)", () => {
+  it("should unfold when the input opens while folded, and stay unfolded after sending", () => {
+    const { press, field, store } = inputRig();
+    store.getState().toggleFolded();
+
+    press("ENTER");
+
+    expect(store.getState().folded).toBe(false);
+    expect(field().focused).toBe(true);
+    expect(field().rect).toEqual(chatWindowFrame(X, BOTTOM).input);
+
+    field().value = "hi";
+    field().events!.keyDown("Enter", false);
+    expect(store.getState().folded).toBe(false);
+  });
+
+  it("should leave the fold alone when the input opens while unfolded", () => {
+    const { press, store } = inputRig();
+    press("ENTER");
+    expect(store.getState().folded).toBe(false);
+  });
+});
+
+describe("ChatWindow fold button size (asked 2026-10-31)", () => {
+  it("should draw the fold glyph a little larger than the words, folded and unfolded", () => {
+    const s = rig();
+    const words = 13;
+    expect(parseInt(foldButtonOf(s).fontSize ?? "0", 10)).toBeGreaterThan(
+      words,
+    );
+
+    foldButtonOf(s).onPress!();
+    expect(parseInt(foldButtonOf(s).fontSize ?? "0", 10)).toBeGreaterThan(
+      words,
+    );
   });
 });
