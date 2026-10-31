@@ -35,6 +35,7 @@ var (
 // its hub and its Meadows channel at hand.
 type chatRig struct {
 	server     *Server
+	clock      *chatClock
 	hub        *game.Session
 	meadows    *game.Session
 	characters *fakeCharacters
@@ -44,8 +45,9 @@ func newChatRig(t *testing.T) *chatRig {
 	t.Helper()
 
 	characters := newFakeCharacters()
+	clock := newChatClock()
 	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{},
-		WithChatClock(func() time.Time { return chatTestNow }),
+		WithChatClock(clock.now),
 		WithChatIDs(func() uuid.UUID { return chatTestID }),
 	)
 	hub, ok := server.HubSession()
@@ -53,7 +55,7 @@ func newChatRig(t *testing.T) *chatRig {
 	meadows, ok := server.FieldSession(game.FieldGentleMeadows)
 	require.True(t, ok, "the server builds the Meadows at startup")
 
-	return &chatRig{server: server, hub: hub, meadows: meadows, characters: characters}
+	return &chatRig{server: server, clock: clock, hub: hub, meadows: meadows, characters: characters}
 }
 
 // connected registers a fresh member on a connection, with a character in play
@@ -259,15 +261,19 @@ func TestChat_ClosedChannelsAreRefused(t *testing.T) {
 }
 
 // Lines leave the hub's loop in the order they arrived, and reach a recipient
-// in another world in that order. FS-WJGFJ R13.
+// in another world in that order. Ten speakers, one line each, so the flood
+// window (R6) holds nobody back. FS-WJGFJ R13.
 func TestChat_KeepsOrder(t *testing.T) {
 	rig := newChatRig(t)
-	_, wrenConn, _ := rig.inHub(t, "Wren")
 	_, _, idrisInbox := rig.inRun(t, "Idris")
 
 	sent := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"}
-	for _, text := range sent {
-		sendChat(rig.server, wrenConn, "area", text)
+	speakers := make([]*websocket.Conn, len(sent))
+	for i, text := range sent {
+		_, speakers[i], _ = rig.inHub(t, "Speaker"+text)
+	}
+	for i, text := range sent {
+		sendChat(rig.server, speakers[i], "area", text)
 	}
 
 	got := make([]string, 0, len(sent))
@@ -349,12 +355,14 @@ func TestChat_SurvivesAWorldSwitchOnThePod(t *testing.T) {
 
 	sendChat(rig.server, wrenConn, "area", "one")
 	assert.Equal(t, "one", awaitChat(t, kaelenInbox, "Kaelen in the hub").Payload["text"])
+	rig.clock.advance(chatFloodWindow)
 
 	rig.hub.RemovePlayer(kaelen.ID.String())
 	rig.meadows.AddPlayerAt(kaelen.ID, kaelen.Character, "", 200, 200)
 	rig.server.setCurrentWorld(kaelen, rig.meadows.ID)
 	sendChat(rig.server, wrenConn, "area", "two")
 	assert.Equal(t, "two", awaitChat(t, kaelenInbox, "Kaelen in the Meadows").Payload["text"])
+	rig.clock.advance(chatFloodWindow)
 
 	rig.meadows.RemovePlayer(kaelen.ID.String())
 	rig.hub.AddPlayerAt(kaelen.ID, kaelen.Character, "", 600, 600)
