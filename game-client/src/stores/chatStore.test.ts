@@ -4,6 +4,7 @@ import {
   CHAT_BUFFER,
   CHAT_CHANNELS,
   CHAT_FILTER_KEY,
+  CHAT_HISTORY,
   createChatStore,
   visibleChatLines,
   type ChatLinePayload,
@@ -272,5 +273,40 @@ describe("chatStore folding (FS-WJGFJ Amendment 2026-10-31: collapse)", () => {
     const next = createChatStore({ storage: () => storage });
     expect(next.getState().shown.world).toBe(false);
     expect(next.getState().folded).toBe(true);
+  });
+});
+
+describe("chatStore sent history (asked 2026-10-31: recall with the arrow keys)", () => {
+  it("should keep the newest sent lines, oldest first, up to the cap", () => {
+    const store = createChatStore();
+    for (let i = 1; i <= CHAT_HISTORY + 5; i++)
+      store.getState().rememberSent(`line ${i}`);
+
+    const sent = store.getState().sent;
+    expect(sent).toHaveLength(CHAT_HISTORY);
+    expect(sent[0]).toBe("line 6");
+    expect(sent.at(-1)).toBe(`line ${CHAT_HISTORY + 5}`);
+  });
+
+  it("should not keep the same line twice in a row", () => {
+    const store = createChatStore();
+    store.getState().rememberSent("hi");
+    store.getState().rememberSent("hi");
+    store.getState().rememberSent("bye");
+    store.getState().rememberSent("hi");
+    expect(store.getState().sent).toEqual(["hi", "bye", "hi"]);
+  });
+
+  it("should keep nothing in this browser's storage", () => {
+    const writes: string[] = [];
+    const storage: KeyValueStore = {
+      getItem: () => null,
+      setItem: (k) => void writes.push(k),
+      removeItem: () => undefined,
+    };
+    createChatStore({ storage: () => storage })
+      .getState()
+      .rememberSent("private");
+    expect(writes).toEqual([]);
   });
 });

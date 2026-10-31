@@ -30,6 +30,11 @@ function rig(mayOpen = () => true, open: ChatChannel[] = ["area"]) {
   const keyboard: SceneKeyboard = { enabled: true, resetKeys: vi.fn() };
   const send = vi.fn();
   const changed = vi.fn();
+  const sent: string[] = [];
+  const history = {
+    lines: () => sent,
+    remember: (line: string) => void sent.push(line),
+  };
   const input = new ChatInput({
     field,
     keyboard: () => keyboard,
@@ -37,8 +42,9 @@ function rig(mayOpen = () => true, open: ChatChannel[] = ["area"]) {
     send,
     changed,
     open: new Set(open),
+    history,
   });
-  return { field, keyboard, send, changed, input };
+  return { field, keyboard, send, changed, input, sent };
 }
 
 describe("ChatInput opening (C26, C27)", () => {
@@ -332,5 +338,93 @@ describe("ChatInput sending on a picked channel", () => {
 
     expect(send).not.toHaveBeenCalled();
     expect(input.isOpen()).toBe(false);
+  });
+});
+
+// ── Recalling sent lines with the arrow keys, as a terminal does (asked 2026-10-31) ──────────
+
+describe("ChatInput history", () => {
+  function speak(r: ReturnType<typeof openOn>, ...lines: string[]) {
+    for (const line of lines) {
+      r.field.value = line;
+      r.input.typed(false);
+      r.input.keyDown("Enter", false);
+    }
+  }
+
+  it("should remember each sent line as it was typed", () => {
+    const r = openOn();
+    speak(r, "one", "  two  ");
+    expect(r.sent).toEqual(["one", "two"]);
+  });
+
+  it("should walk back through sent lines with ArrowUp and forward with ArrowDown", () => {
+    const r = openOn();
+    speak(r, "one", "two", "three");
+
+    r.input.keyDown("ArrowUp", false);
+    expect(r.field.value).toBe("three");
+    r.input.keyDown("ArrowUp", false);
+    expect(r.field.value).toBe("two");
+    r.input.keyDown("ArrowDown", false);
+    expect(r.field.value).toBe("three");
+  });
+
+  it("should stay on the oldest line when ArrowUp has nowhere further to go", () => {
+    const r = openOn();
+    speak(r, "only");
+    r.input.keyDown("ArrowUp", false);
+    r.input.keyDown("ArrowUp", false);
+    expect(r.field.value).toBe("only");
+  });
+
+  it("should give back the half-typed draft when ArrowDown walks past the newest line", () => {
+    const r = openOn();
+    speak(r, "sent before");
+    r.field.value = "half typ";
+
+    r.input.keyDown("ArrowUp", false);
+    expect(r.field.value).toBe("sent before");
+    r.input.keyDown("ArrowDown", false);
+    expect(r.field.value).toBe("half typ");
+  });
+
+  it("should do nothing on the arrows with no history", () => {
+    const r = openOn();
+    r.field.value = "draft";
+    r.input.keyDown("ArrowUp", false);
+    r.input.keyDown("ArrowDown", false);
+    expect(r.field.value).toBe("draft");
+  });
+
+  it("should leave the arrows to the input method while it is composing", () => {
+    const r = openOn();
+    speak(r, "one");
+    r.field.value = "ni";
+    r.input.keyDown("ArrowUp", true);
+    expect(r.field.value).toBe("ni");
+  });
+
+  it("should send a recalled line again, and start over from the newest next time", () => {
+    const r = openOn();
+    speak(r, "one", "two");
+    r.input.keyDown("ArrowUp", false);
+    r.input.keyDown("ArrowUp", false);
+    r.input.keyDown("Enter", false);
+
+    expect(r.send).toHaveBeenLastCalledWith({ channel: "area", text: "one" });
+    r.input.keyDown("ArrowUp", false);
+    expect(r.field.value).toBe("one");
+  });
+
+  it("should pick the channel a recalled line's prefix names", () => {
+    const r = openOn("world");
+    speak(r, "#hello world");
+    r.input.pick("area");
+
+    r.input.keyDown("ArrowUp", false);
+
+    expect(r.field.value).toBe("#hello world");
+    expect(r.field.channel).toBe("world");
   });
 });
