@@ -1,12 +1,15 @@
 ---
 id: I-5SH4G-3
-status: open
+status: done
 implements: FS-5SH4G
 blocked_by: []
 labels: [ready-for-agent]
 title: "FS-5SH4G slice 3: World is selectable in the chat picker (game-client)"
 ---
 Implements FS-5SH4G §Requirements C14–C16
+
+**Done on branch `feat/in-game-chat`.** `CHAT_OPEN_CHANNELS` is `area` and `world`; the picker,
+the `#` prefix both ways, the stripped send, the colour and the tab needed no other change.
 
 ## What to Build
 

@@ -22,9 +22,12 @@ export const CHAT_PREFIX: Readonly<Record<ChatChannel, string>> = {
   whisper: "@",
 };
 
-/** The channels the server relays today; the picker shows the rest disabled. */
+/**
+ * The channels the server relays today; the picker shows the rest disabled. World opened with
+ * FS-5SH4G (I-5SH4G-3); whisper waits for FS-KCQ06, party and trade for their own scoping.
+ */
 export const CHAT_OPEN_CHANNELS: ReadonlySet<ChatChannel> =
-  new Set<ChatChannel>(["area"]);
+  new Set<ChatChannel>(["area", "world"]);
 
 /** The most code points a line may carry, as the server counts them (R5, R26). */
 export const CHAT_TEXT_MAX = 200;
