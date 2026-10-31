@@ -47,6 +47,7 @@ import { ProgressHud } from "@/ui/ProgressHud";
 import { ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
+import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
@@ -455,6 +456,8 @@ export class BarrowspireScene extends Phaser.Scene {
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
   private partyPanel?: PartyPanel;
+  /** The teammates' frames on the left edge, under the XP bar (FS-R82NV R34). */
+  private partyFrames?: PartyFrames;
   /** The class ability card, bottom right (FS-8AY7S req 29–32). */
   private abilityHud?: AbilityHud;
   /**
@@ -776,6 +779,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.chatWindow = undefined;
     this.partyPanel?.destroy();
     this.partyPanel = undefined;
+    this.partyFrames?.destroy();
+    this.partyFrames = undefined;
     this.abilityHud = undefined;
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
@@ -2593,6 +2598,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.setupCustomCursor();
     this.occluders = new Occluders();
     this.monsters = new MonsterRoster(phaserMonsterStage(this), this.art, this.monsterTargeting);
+    // the party frames cut their busts from the class sheets just registered (FS-R82NV R34)
+    this.partyFrames = mountPartyFrames(this, this.art);
     this.containerView = new ContainerView(
       this,
       this.art,
@@ -3081,6 +3088,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.syncResolvedView(state);
     this.showResourceBars(state);
     this.showAbilityCard();
+    this.partyFrames?.show(state.other_players);
 
     // Update escaped count HUD
     if (this.escapedCountText) {

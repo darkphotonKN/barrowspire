@@ -33,8 +33,8 @@ export const HUD_BAR_FILL: Readonly<Record<HudChannel, number>> = {
   unknown: palette.hudResourceOther,
 };
 
-/** The panel's height for `rows` bars. */
-function resourceHudHeight(rows: number): number {
+/** The panel's height for `rows` bars: what the chat window stacks on (FS-WJGFJ R18). */
+export function resourceHudHeight(rows: number): number {
   return rows * ROW_H + PAD_Y * 2;
 }
 
@@ -91,8 +91,17 @@ export class ResourceHud {
       const barX = this.x + PAD + LABEL_W;
       const barW = RESOURCE_HUD_W - PAD * 2 - LABEL_W;
       const barY = rowY + Math.round((ROW_H - BAR_H) / 2);
-      if (bar.pips) drawPips(g, barX, barY, barW, bar.pips);
-      else drawBar(g, barX, barY, barW, bar.fill, HUD_BAR_FILL[bar.channel]);
+      if (bar.pips) drawHudPips(g, barX, barY, barW, BAR_H, bar.pips);
+      else
+        drawHudBar(
+          g,
+          barX,
+          barY,
+          barW,
+          BAR_H,
+          bar.fill,
+          HUD_BAR_FILL[bar.channel],
+        );
     });
   }
 
@@ -122,44 +131,49 @@ export class ResourceHud {
   }
 }
 
-type BarGraphics = Pick<
+export type BarGraphics = Pick<
   Phaser.GameObjects.Graphics,
   "fillStyle" | "fillRect" | "lineStyle" | "strokeRect"
 >;
 
-/** A continuous bar, `fill` (0 to 1) full: a dark track in a brass rim. */
-function drawBar(
+/**
+ * A continuous bar, `fill` (0 to 1) full: a dark track in a brass rim. The HUD's own bar style,
+ * which the party frames draw at half its height (FS-R82NV R34).
+ */
+export function drawHudBar(
   g: BarGraphics,
   x: number,
   y: number,
   w: number,
+  h: number,
   fill: number,
   color: number,
 ): void {
   g.fillStyle(palette.hudTrack, 0.9);
-  g.fillRect(x, y, w, BAR_H);
+  g.fillRect(x, y, w, h);
   if (fill > 0) {
     g.fillStyle(color, 1);
-    g.fillRect(x, y, Math.round(w * fill), BAR_H);
+    g.fillRect(x, y, Math.round(w * fill), h);
   }
   g.lineStyle(1, palette.frame, 0.6);
-  g.strokeRect(x, y, w, BAR_H);
+  g.strokeRect(x, y, w, h);
 }
 
 /** Parry charges: one stud per pip across the bar's width, bright brass for each charge held. */
-function drawPips(
+export function drawHudPips(
   g: BarGraphics,
   x: number,
   y: number,
   w: number,
+  h: number,
   pips: boolean[],
 ): void {
   const pipW = Math.floor((w - PIP_GAP * (pips.length - 1)) / pips.length);
   pips.forEach((lit, i) => {
     const px = x + i * (pipW + PIP_GAP);
     g.fillStyle(lit ? palette.hudParry : palette.hudTrack, lit ? 1 : 0.9);
-    g.fillRect(px, y, pipW, BAR_H);
+    g.fillRect(px, y, pipW, h);
     g.lineStyle(1, palette.frame, 0.6);
-    g.strokeRect(px, y, pipW, BAR_H);
+    g.strokeRect(px, y, pipW, h);
   });
 }

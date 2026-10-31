@@ -26,6 +26,7 @@ import { BARROW_HEX } from "@/utils/theme";
 import { ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
+import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { HubGear } from "@/ui/HubGear";
@@ -568,6 +569,8 @@ export class HubScene extends Phaser.Scene {
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
   private partyPanel?: PartyPanel;
+  /** The teammates' frames on the left edge, under the XP bar (FS-R82NV R34). */
+  private partyFrames?: PartyFrames;
   /** Invites waiting on an answer, top centre (FS-R82NV R32): only the hub receives them (R33). */
   private invitePrompt?: PartyInvitePrompt;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
@@ -657,6 +660,8 @@ export class HubScene extends Phaser.Scene {
     this.partyPanel = mountPartyPanel(this, () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen());
     // party invites, hidden while the menu or the gear overlay covers the town (FS-R82NV R32, R33)
     this.invitePrompt = mountPartyInvitePrompt(this, () => !!this.menu || !!this.gear?.isOpen());
+    // the teammates' frames: in the village every frame says where its member stands (FS-R82NV R34)
+    this.partyFrames = mountPartyFrames(this, this.art);
 
     // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
@@ -793,6 +798,8 @@ export class HubScene extends Phaser.Scene {
     this.partyPanel = undefined;
     this.invitePrompt?.destroy();
     this.invitePrompt = undefined;
+    this.partyFrames?.destroy();
+    this.partyFrames = undefined;
     this.queuePanel = undefined;
     this.leaveButton = undefined;
     this.queued = false;
@@ -1539,6 +1546,7 @@ export class HubScene extends Phaser.Scene {
       this.placePlayer(other, false);
       present.add(other.entity_id);
     }
+    this.partyFrames?.show(state.other_players);
 
     // anyone who left the hub since the last tick
     for (const [entityID, view] of this.views) {

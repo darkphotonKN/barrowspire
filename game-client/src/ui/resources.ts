@@ -52,7 +52,7 @@ const KINDS: Record<string, { channel: HudChannel; label: string }> =
   );
 
 /** `current / max`, clamped to 0..1; a max of 0 or less is empty. */
-function fillOf(current: number, max: number): number {
+export function fillOf(current: number, max: number): number {
   if (!(max > 0)) return 0;
   return Math.max(0, Math.min(1, current / max));
 }
@@ -87,19 +87,24 @@ export function hudBars(
       fill: fillOf(me.current_health, me.max_health),
     });
 
-  const res = me.resource;
-  if (res) {
-    const known = KINDS[res.kind];
-    const bar: HudBar = {
-      channel: known?.channel ?? "unknown",
-      label: known?.label ?? null,
-      fill: fillOf(res.current, res.max),
-    };
-    if (bar.channel === "parry")
-      bar.pips = Array.from({ length: PARRY_PIPS }, (_, i) => i < res.current);
-    bars.push(bar);
-  }
+  if (me.resource) bars.push(resourceBar(me.resource));
   return bars;
+}
+
+/**
+ * A class resource as a bar (req 21, 22): its channel and label from `resource.kind`, never from
+ * a class table, and parry charges as pips. The HUD and the party frames (FS-R82NV R34) share it.
+ */
+export function resourceBar(res: ResourceState): HudBar {
+  const known = KINDS[res.kind];
+  const bar: HudBar = {
+    channel: known?.channel ?? "unknown",
+    label: known?.label ?? null,
+    fill: fillOf(res.current, res.max),
+  };
+  if (bar.channel === "parry")
+    bar.pips = Array.from({ length: PARRY_PIPS }, (_, i) => i < res.current);
+  return bar;
 }
 
 /**
