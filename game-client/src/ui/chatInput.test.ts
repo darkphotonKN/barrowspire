@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ChatChannel } from "@/stores/chatStore";
 import {
+  CHAT_OPEN_CHANNELS,
   CHAT_TEXT_MAX,
   ChatInput,
   clampChatText,
@@ -462,5 +463,67 @@ describe("ChatInput sync", () => {
     expect(input.isOpen()).toBe(false);
     expect(field.value).toBe("");
     expect(keyboard.enabled).toBe(true);
+  });
+});
+
+// ── World chat open on the client (FS-5SH4G C14, I-5SH4G-3) ─────────────────────────────────
+
+describe("ChatInput with the server's open channels", () => {
+  function realRig() {
+    const field = fakeField();
+    const send = vi.fn();
+    const input = new ChatInput({
+      field,
+      keyboard: () => ({ enabled: true, resetKeys: () => undefined }),
+      mayOpen: () => true,
+      send,
+    });
+    input.requestOpen();
+    input.focused();
+    return { field, send, input };
+  }
+
+  it("should list world among the open channels, and nothing else beyond area", () => {
+    expect([...CHAT_OPEN_CHANNELS].sort()).toEqual(["area", "world"]);
+  });
+
+  it("should write # when World is picked, and send the line on world without it", () => {
+    const { field, send, input } = realRig();
+    field.value = "hello everyone";
+
+    input.pick("world");
+    expect(field.channel).toBe("world");
+    expect(field.value).toBe("#hello everyone");
+
+    input.keyDown("Enter", false);
+    expect(send).toHaveBeenCalledWith({
+      channel: "world",
+      text: "hello everyone",
+    });
+  });
+
+  it("should pick World when # is typed first, and go back to Area when it is deleted", () => {
+    const { field, input } = realRig();
+
+    field.value = "#hi";
+    input.typed(false);
+    expect(field.channel).toBe("world");
+
+    field.value = "hi";
+    input.typed(false);
+    expect(field.channel).toBe("area");
+  });
+
+  it("should keep party, whisper and trade closed: not pickable, their prefixes plain text", () => {
+    const { field, send, input } = realRig();
+    for (const channel of ["party", "whisper", "trade"] as const) {
+      input.pick(channel);
+      expect(field.channel).toBe("area");
+    }
+    field.value = "@Kaelen hi";
+    input.typed(false);
+    expect(field.channel).toBe("area");
+    input.keyDown("Enter", false);
+    expect(send).toHaveBeenCalledWith({ channel: "area", text: "@Kaelen hi" });
   });
 });

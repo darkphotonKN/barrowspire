@@ -670,8 +670,8 @@ describe("ChatWindow picker wiring", () => {
   it("should hand a picked channel to the input", () => {
     const { field } = inputRig();
     field().value = "hi";
-    field().events!.picked("world");
-    // world is not open yet: the picker falls back to Area and the draft is untouched
+    field().events!.picked("whisper");
+    // whisper is not open yet (FS-KCQ06): the picker falls back to Area and the draft is untouched
     expect(field().channel).toBe("area");
     expect(field().value).toBe("hi");
   });
@@ -1000,5 +1000,19 @@ describe("ChatWindow built under an overlay (code review 2026-10-31)", () => {
   it("should never show the row, not even for a frame, when built while something else owns the keys", () => {
     const { field } = inputRig(() => false);
     expect(field().visible).toBe(false);
+  });
+});
+
+describe("ChatWindow world lines (FS-5SH4G C15, I-5SH4G-3)", () => {
+  it("should draw a world line in the world colour and hide it with the World tab", () => {
+    const s = rig();
+    s.say("hello every village", { channel: "world" });
+
+    const [line] = s.messageTexts();
+    expect(line.color).toBe(toCss(palette.chatWorld));
+
+    toggleOf(s, "World").onPress!();
+    expect(s.messageTexts()).toHaveLength(0);
+    expect(s.store.getState().lines).toHaveLength(1);
   });
 });
