@@ -13,8 +13,8 @@ the FS): the store keeps the newest 100 lines per channel, and system lines thei
 loud channel can no longer push a quiet one's lines out from under a filter. Pressing a toggle
 returns the view to the newest lines; a hidden channel's line never moves a scrolled-back view.
 The run and the field ask `ChatWindow.covers` before a press attacks, so a toggle press is never
-a swing in the world behind it. The area label is fixed when the window is built, since every
-world switch rebuilds its scene.
+a swing in the world behind it. The area label was built here and removed again the same day by
+I-WJGFJ-6 (R25 withdrawn in the FS amendment).
 
 ## What to Build
 

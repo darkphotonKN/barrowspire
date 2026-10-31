@@ -11,7 +11,7 @@ Implements FS-WJGFJ §Requirements C17–C23, C29–C31, D32
 **Done on branch `feat/in-game-chat`.** Chat colours are tinted from existing tokens (world
 necrotic +0.2, party arcane +0.15, whisper umbraLight +0.3, trade ember +0.25) to clear 4.5:1 on
 the HUD panel; no new hex. The window's mask fill uses a palette token so the file stays inside
-the token fence. Checked locally by the user on 2026-10-31: two clients saw each other's lines. The look needs polish; deferred to the end of the feature by the user's call.
+the token fence. Checked locally by the user on 2026-10-31: two clients saw each other's lines. The look was reworked the same day in I-WJGFJ-6.
 
 ## What to Build
 

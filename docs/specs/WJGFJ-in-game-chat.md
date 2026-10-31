@@ -183,7 +183,27 @@ the requirement named. Built as I-WJGFJ-6.
   the depth open: chat recall reaches a few lines back, rarely dozens), the same line twice in a
   row once, prefix included so the channel follows. Held for the page's life only, like the
   stream, and never written to browser storage. While an input method composes, the arrows are
-  its own. Typing still needs the input focused
+  its own.
+- **Also decided with the user the same day, from the running client** (recorded here after code
+  review found them only in commits):
+  - **R19 (size):** the window is 420 px wide (from 360), lines 20 px (from 18), type 14 px (from
+    13); the input row 30 px; still 8 lines. The "360 px" acceptance criterion is superseded.
+  - **R19 (ground):** the panel is solid while the player types and about half-transparent while
+    open and idle; the words carry a soft dark shadow so they read over a bright field. The
+    panel wears the NPC dialogue's carved frame (shared as `ui/carvedPanel.ts`).
+  - **R21 (scrolling):** a scrollbar down the right edge of the lines, drawn only when more is
+    held than fits; the thumb drags, a press on the track jumps. The wheel still works.
+  - **R26 (idle row):** while the input is closed the row shows the picked channel's name and
+    the hint "Press Enter to speak"; a press on either opens the input. The DOM field and picker
+    are shown only while typing, because a browser element always draws above the canvas and
+    would otherwise cover the end-of-run card and the overlays (R17).
+  - **R5 (control characters):** a run of control characters becomes one space, not one each.
+  - **R3 (sender name):** the character's name only; there is no fall-back to the account name.
+  - **Outside this feature's surface, asked by the user:** the hub's "Gathering the delve" queue
+    panel moved from the bottom left (under this window) to the top centre, with no ground and a
+    dark outline; its Leave button keeps its look on the chat panel's see-through ground. The
+    acceptance criterion "in the hub and fields the window's bottom edge is the canvas bottom"
+    reads as R18 does: 16 px above it, or on the field's ResourceHud. Typing still needs the input focused
   (R26), and an open window never holds the keys while the player plays.
 
 ## User Stories

@@ -11,7 +11,11 @@ Implements FS-WJGFJ §Amendment 2026-10-31 (the window's look, a channel picker,
 **Done on branch `feat/in-game-chat`.** Shown tabs sit on a ground darker than the panel with a
 channel-coloured underline (a lighter fill would pull channel colours under 4.5:1); the input row
 is the darkest ramp token. The picker is a native `<select>` beside the text field in the same DOM
-element. Not yet checked by eye in a running client.
+element. Checked by the user in a running client through the day; the fixes that followed
+(input stays open after sending, typing unfolds, fold button top right, filling wraps, arrow-key
+recall, a scrollbar, solid-while-typing, the queue panel moved, the cmd-tab mask freeze) are
+recorded in the FS amendment's "also decided" list and in this branch's commits. Code review
+2026-10-31: the DOM input row is now shown only while typing, so it never covers an overlay.
 
 ## What to Build
 
