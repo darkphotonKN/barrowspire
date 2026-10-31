@@ -9,7 +9,6 @@ import {
   CHAT_FOLD_W,
   CHAT_FOLD_OPEN,
   CHAT_FOLD_SHUT,
-  CHAT_INPUT_HINT,
   CHAT_VISIBLE_LINES,
   chatScrollThumb,
   chatScrollTrack,
@@ -136,7 +135,9 @@ function fakeScene() {
     return self;
   };
 
+  const events = new EventEmitter();
   const scene = {
+    events,
     add: { graphics: () => graphics(), text },
     make: { graphics: () => graphics(true) },
     input,
@@ -161,8 +162,11 @@ function fakeScene() {
     maskRecords,
     input,
     keys,
+    events,
     wheel,
     press,
+    /** One frame: the window re-reads who owns the keys. */
+    frame: () => events.emit("postupdate"),
   };
 }
 
@@ -442,8 +446,7 @@ function inputRig(mayOpen = () => true) {
     },
   });
   const field = () => fields[0];
-  const hint = () => s.shown().find((t) => t.content === CHAT_INPUT_HINT);
-  return { ...s, store, window, field, sent, hint };
+  return { ...s, store, window, field, sent };
 }
 
 describe("ChatWindow input (C26: Enter opens, Enter sends)", () => {
@@ -477,25 +480,6 @@ describe("ChatWindow input (C26: Enter opens, Enter sends)", () => {
     const { press, field } = inputRig(() => false);
     press("ENTER");
     expect(field().focused).toBe(false);
-  });
-
-  it("should show the hint only while closed with nothing typed", () => {
-    const { press, field, hint } = inputRig();
-    expect(hint()).toBeDefined();
-
-    press("ENTER");
-    expect(hint()).toBeUndefined();
-
-    field().value = "half";
-    field().events!.typed(false);
-    // a click elsewhere: the field loses focus, the draft stays
-    field().focused = false;
-    field().events!.blurred();
-    expect(hint()).toBeUndefined();
-
-    field().value = "";
-    field().events!.typed(false);
-    expect(hint()).toBeDefined();
   });
 
   it("should move the field with the window", () => {
@@ -957,43 +941,41 @@ describe("ChatWindow mask lifetime", () => {
 // the canvas, so a visible field would draw over the end-of-run card and the overlays) ───────
 
 describe("ChatWindow DOM row visibility", () => {
-  it("should keep the row hidden until the input opens, and hide it again when it closes", () => {
+  // the row is shown idle and typing alike (asked 2026-10-31: one look, no jump), and hidden only
+  // while something else owns the keys, since the DOM layer always draws above the canvas
+  it("should show the row from the start and keep it through typing and closing", () => {
     const { press, field, window } = inputRig();
-    expect(field().visible).toBe(false);
+    expect(field().visible).toBe(true);
 
     press("ENTER");
     expect(field().visible).toBe(true);
 
     field().events!.keyDown("Escape", false);
-    expect(field().visible).toBe(false);
+    expect(field().visible).toBe(true);
     expect(window.isTyping()).toBe(false);
   });
 
-  it("should hide the row when the scene cancels the input for an overlay", () => {
-    const { press, field, window } = inputRig();
-    press("ENTER");
-    window.cancelInput();
-    expect(field().visible).toBe(false);
-  });
+  it("should hide the row while an overlay owns the keys, dropping a half-typed line, and show it again after", () => {
+    let overlay = false;
+    const s = inputRig(() => !overlay);
+    s.press("ENTER");
+    s.field().value = "half";
 
-  it("should never show the row while something else owns the keys", () => {
-    const { press, field } = inputRig(() => false);
-    press("ENTER");
-    expect(field().visible).toBe(false);
-  });
+    overlay = true;
+    s.frame();
+    expect(s.field().visible).toBe(false);
+    expect(s.window.isTyping()).toBe(false);
+    expect(s.field().value).toBe("");
 
-  it("should draw the current channel beside the hint while idle, and open the input on a press there", () => {
-    const s = inputRig();
-    // the one in the input row, not the Area tab above
-    const row = chatWindowFrame(X, BOTTOM).input;
-    const label = s
-      .shown()
-      .find((t) => t.content === "Area" && t.y >= row.y - 4);
-    expect(label).toBeDefined();
-
-    label!.onPress!();
+    overlay = false;
+    s.frame();
     expect(s.field().visible).toBe(true);
-    expect(s.field().focused).toBe(true);
+  });
+
+  it("should stop watching the keys once destroyed", () => {
+    const s = inputRig();
+    s.window.destroy();
+    expect(s.events.listenerCount("postupdate")).toBe(0);
   });
 });
 

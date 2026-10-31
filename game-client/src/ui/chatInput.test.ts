@@ -22,8 +22,6 @@ function fakeField(): ChatInputField & { focused: boolean } {
     blur() {
       this.focused = false;
     },
-    show() {},
-    hide() {},
   };
 }
 
