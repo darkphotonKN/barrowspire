@@ -72,6 +72,9 @@ const (
 	ActionPartyDecline Action = "party_decline"
 	// ActionPartyLeave is a member leaving their party, with no payload. FS-R82NV §Requirements 20.
 	ActionPartyLeave Action = "party_leave"
+	// ActionPartyCreate is a party-less player creating a party of one they lead, with no
+	// payload. FS-R82NV §Requirements 4a.
+	ActionPartyCreate Action = "party_create"
 	// ActionPartyKick and ActionPartyTransfer are the leader's, as { "target_id" }: not R19's
 	// player_id, which the client's socket overwrites with the sender's (I-R82NV-6 notes).
 	// FS-R82NV §Requirements 19.
