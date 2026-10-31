@@ -58,3 +58,18 @@ func (r *Redis) ForgetParty(ctx context.Context, partyID uuid.UUID, members []uu
 	}
 	return nil
 }
+
+// ForgetPlayers deletes these players' pointers: they left a party that goes on.
+func (r *Redis) ForgetPlayers(ctx context.Context, players []uuid.UUID) error {
+	if len(players) == 0 {
+		return nil
+	}
+	keys := make([]string, len(players))
+	for i, player := range players {
+		keys[i] = memberKey(player)
+	}
+	if err := r.client.Del(ctx, keys...).Err(); err != nil {
+		return fmt.Errorf("forget party members: %w", err)
+	}
+	return nil
+}

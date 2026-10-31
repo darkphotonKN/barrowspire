@@ -70,6 +70,13 @@ const (
 	// ActionPartyDecline is the target declining an invite, as { "invite_id" }.
 	// FS-R82NV §Requirements 15.
 	ActionPartyDecline Action = "party_decline"
+	// ActionPartyLeave is a member leaving their party, with no payload. FS-R82NV §Requirements 20.
+	ActionPartyLeave Action = "party_leave"
+	// ActionPartyKick and ActionPartyTransfer are the leader's, as { "target_id" }: not R19's
+	// player_id, which the client's socket overwrites with the sender's (I-R82NV-6 notes).
+	// FS-R82NV §Requirements 19.
+	ActionPartyKick     Action = "party_kick"
+	ActionPartyTransfer Action = "party_transfer"
 
 	// system actions
 	ActionError          Action = "error"
@@ -131,6 +138,13 @@ const (
 	PartyNoticeExpired PartyNoticeCode = "expired"
 	// PartyNoticeDeliveryFailed: the invite could not reach the target. FS-R82NV R10.
 	PartyNoticeDeliveryFailed PartyNoticeCode = "delivery_failed"
+	// PartyNoticePartyGone: the invite's party has ended. FS-R82NV R16.
+	PartyNoticePartyGone PartyNoticeCode = "party_gone"
+	// PartyNoticeNotMember: the target (or the sender, for a leave) is not in the party.
+	// FS-R82NV R19, R20.
+	PartyNoticeNotMember PartyNoticeCode = "not_member"
+	// PartyNoticeLocked: the party is inside an instance. FS-R82NV R19, R20; wired by FS-BJNYC.
+	PartyNoticeLocked PartyNoticeCode = "locked"
 
 	// Refusals of an invite (FS-R82NV R11, R12, R16), checked in this order:
 	// the sender's own standing first, then R12's list.
@@ -153,6 +167,12 @@ const (
 	PartyUpdateJoined PartyUpdateReason = "joined"
 	// PartyUpdateDissolved: the party ended with its pod's graceful shutdown. FS-R82NV R5.
 	PartyUpdateDissolved PartyUpdateReason = "dissolved"
+	// PartyUpdateLeft: subject_id left the party. FS-R82NV R20.
+	PartyUpdateLeft PartyUpdateReason = "left"
+	// PartyUpdateLeader: subject_id now leads the party. FS-R82NV R22.
+	PartyUpdateLeader PartyUpdateReason = "leader"
+	// PartyUpdateKicked: the leader removed subject_id. FS-R82NV R19.
+	PartyUpdateKicked PartyUpdateReason = "kicked"
 )
 
 const (

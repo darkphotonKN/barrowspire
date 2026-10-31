@@ -339,10 +339,12 @@ for the group below. The two coincide inside an instance by rule, not by definit
   addressed to one of *its* players from another pod (an invite, a pull-back). Rides the same
   subscriber → hub-loop path as world chat. Distinct from the **match-start channel**, which
   carries run coordination, and from the chat bus, which carries chat lines.
-- **Party invite** — a request from a leader to a named player to join, found through the presence
-  index and delivered through the target's pod inbox. Pending until accepted, declined, or
-  expired (60 s). Accepting triggers the hub handoff; the player is a member only once they
-  arrive on the party pod.
+- **Party invite** — a request from a party to a named player to join, sent by its leader, found
+  through the presence index and delivered through the target's pod inbox. It is the party's,
+  not its sender's: it stands through a change of leader, and its answer goes to whoever leads
+  now. Pending until accepted, declined, expired (60 s), or **gone** (its party ended first; an
+  accept then hears `party_gone`). Accepting triggers the hub handoff; the player is a member
+  only once they arrive on the party pod.
 - **Party entry** — the leader, standing at an instance's gate, taking the whole party into that
   instance. Requires every member in the leader's world on the party pod (not at the gate); then
   a *ready check*; then the run is built from the party exactly as `start_solo` builds one for

@@ -45,7 +45,10 @@ type messageHub struct {
 type partyKeeper interface {
 	invite(ctx context.Context, inviter *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	accept(ctx context.Context, accepter *types.Player, conn *websocket.Conn, payload map[string]interface{})
-	decline(decliner *types.Player, payload map[string]interface{})
+	decline(ctx context.Context, decliner *types.Player, payload map[string]interface{})
+	leave(ctx context.Context, leaver *types.Player, conn *websocket.Conn)
+	kick(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	transfer(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	// the registry's clock ticks, swept on this loop like everything else it holds
 	ticks() <-chan time.Time
 	tick()
@@ -663,6 +666,35 @@ func (h *messageHub) Run(ctx context.Context) {
 				}
 				h.party.accept(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
 
+			// A member leaving their party; they stay where they stand.
+			// FS-R82NV §Requirements 20, 22.
+			case constants.ActionPartyLeave:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_leave from a connection with no player")
+					continue
+				}
+				h.party.leave(ctx, player, clientPackage.Conn)
+
+			// The leader removing a member, who stays where they stand.
+			// FS-R82NV §Requirements 19.
+			case constants.ActionPartyKick:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_kick from a connection with no player")
+					continue
+				}
+				h.party.kick(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
+
+			// The leader handing the lead to a member. FS-R82NV §Requirements 19.
+			case constants.ActionPartyTransfer:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_transfer from a connection with no player")
+					continue
+				}
+				h.party.transfer(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
+
 			// The target declining an invite. FS-R82NV §Requirements 15.
 			case constants.ActionPartyDecline:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
@@ -670,7 +702,7 @@ func (h *messageHub) Run(ctx context.Context) {
 					slog.Debug("party_decline from a connection with no player")
 					continue
 				}
-				h.party.decline(player, clientPackage.Message.Payload)
+				h.party.decline(ctx, player, clientPackage.Message.Payload)
 
 			case constants.ActionLeaveQueue:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
