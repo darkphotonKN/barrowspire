@@ -91,9 +91,15 @@ const style = (colour: number, px = FONT_PX) => ({
 const within = (r: Rect, x: number, y: number) =>
   x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
 
-/** A small brass crown before the leader's name: three points on a band. */
-function drawLeaderMark(
-  g: Phaser.GameObjects.Graphics,
+/**
+ * A small brass crown before the leader's name: three points on a band. The party frames mark
+ * their leader with it too (R34).
+ */
+export function drawLeaderMark(
+  g: Pick<
+    Phaser.GameObjects.Graphics,
+    "fillStyle" | "fillRect" | "fillTriangle"
+  >,
   x: number,
   y: number,
 ): void {

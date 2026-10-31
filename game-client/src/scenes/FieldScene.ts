@@ -47,6 +47,7 @@ import { EquipmentHud } from "@/ui/EquipmentHud";
 import { ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
+import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars } from "@/ui/resources";
@@ -165,6 +166,8 @@ export class FieldScene extends Phaser.Scene {
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
   private partyPanel?: PartyPanel;
+  /** The teammates' frames at the top-left corner (FS-R82NV R34). */
+  private partyFrames?: PartyFrames;
   private abilityHud?: AbilityHud;
   /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
   private lastState?: ClientGameState;
@@ -221,6 +224,8 @@ export class FieldScene extends Phaser.Scene {
     this.chatWindow = mountChatWindow(this, () => !this.equipment?.isOpen());
     // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
     this.partyPanel = mountPartyPanel(this, () => !!this.equipment?.isOpen());
+    // the teammates' frames: bars for those this field's state shows, a word for the rest (FS-R82NV R34)
+    this.partyFrames = mountPartyFrames(this, this.art);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.release, this);
@@ -389,6 +394,8 @@ export class FieldScene extends Phaser.Scene {
     this.chatWindow = undefined;
     this.partyPanel?.destroy();
     this.partyPanel = undefined;
+    this.partyFrames?.destroy();
+    this.partyFrames = undefined;
     this.abilityHud = undefined;
     this.lastState = undefined;
     this.selfAt = undefined;
@@ -515,6 +522,7 @@ export class FieldScene extends Phaser.Scene {
 
     this.lastState = state;
     this.showClassHud(state);
+    this.partyFrames?.show(state.other_players);
   }
 
   /**
