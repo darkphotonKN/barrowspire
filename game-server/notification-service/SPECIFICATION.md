@@ -7,3 +7,8 @@
      Deep feature specs live in the root docs/specs/ as FS-NNNN. -->
 
 ## notification-service
+
+## Notifications
+
+- [x] Match-result notifications → FS-none
+- [ ] Deduplicated match-result notifications → FS-PJPNA
