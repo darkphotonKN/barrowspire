@@ -26,14 +26,17 @@ import {
   CHAT_FOLD_W,
   CHAT_INPUT_HINT,
   CHAT_INPUT_TEXT_X,
+  CHAT_LINES_GAP,
   CHAT_PAD,
   CHAT_TAB_PAD,
   chatEntryColour,
+  chatFoldButton,
   chatTabSegments,
   chatWindowFrame,
   formatChatEntry,
   scrolledOffset,
   visibleEntries,
+  wrapChatText,
   type ChatWindowFrame,
   type Rect,
 } from "./chatWindowLayout";
@@ -149,6 +152,14 @@ export class ChatWindow {
         undefined;
   }
 
+  /** The text field's place: the whole input row, short of the fold button while folded. */
+  private fieldRect(): Rect {
+    const input = this.frame.input;
+    return this.store.getState().folded
+      ? { ...input, width: input.width - CHAT_FOLD_W }
+      : input;
+  }
+
   private frameNow(): ChatWindowFrame {
     return chatWindowFrame(this.x, this.bottom, this.store.getState().folded);
   }
@@ -156,7 +167,7 @@ export class ChatWindow {
   private relayout(): void {
     this.frame = this.frameNow();
     this.drawAll();
-    this.field?.moveTo(this.frame.input);
+    this.field?.moveTo(this.fieldRect());
     this.drawInputRow();
   }
 
@@ -198,7 +209,7 @@ export class ChatWindow {
   private buildInput(typing: ChatWindowInput): void {
     const keyboard = () => this.scene.input?.keyboard;
     let input: ChatInput | undefined;
-    this.field = typing.makeField(this.scene, this.frame.input, {
+    this.field = typing.makeField(this.scene, this.fieldRect(), {
       focused: () => input?.focused(),
       blurred: () => input?.blurred(),
       keyDown: (key, composing) => input?.keyDown(key, composing),
@@ -377,13 +388,24 @@ export class ChatWindow {
       visibleChatLines(this.store.getState()),
       this.offset,
     );
-    let y = m.y + m.height;
+    // the newest line stands a little above the input row's divider
+    let y = m.y + m.height - CHAT_LINES_GAP;
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i];
       const t = this.scene.add
         .text(m.x + CHAT_PAD, 0, formatChatEntry(entry), {
           ...textStyle(chatEntryColour(entry)),
-          wordWrap: { width: m.width - CHAT_PAD * 2 },
+          // fill each line before breaking: Phaser's own wrap breaks only at spaces, so a Chinese
+          // sentence after "Name: " would jump whole to the next line
+          wordWrap: {
+            width: m.width - CHAT_PAD * 2,
+            callback: (text: string, self: Phaser.GameObjects.Text) =>
+              wrapChatText(
+                text,
+                m.width - CHAT_PAD * 2,
+                (part) => self.context.measureText(part).width,
+              ),
+          },
         })
         .setScrollFactor(0)
         .setDepth(HUD_DEPTH);
@@ -400,11 +422,13 @@ export class ChatWindow {
     const y = r.y + (r.height - 16) / 2;
     const folded = this.store.getState().folded;
 
+    // the window's top-right corner: the tab row's end, or the input row's while folded
+    const corner = chatFoldButton(this.frame);
     this.foldText?.destroy();
     this.foldText = this.scene.add
       .text(
-        r.x + r.width - CHAT_FOLD_W,
-        y,
+        corner.x,
+        corner.y + (corner.height - 16) / 2 - 3,
         folded ? CHAT_FOLD_SHUT : CHAT_FOLD_OPEN,
         {
           ...textStyle(palette.chatSystem),

@@ -20,6 +20,8 @@ export const CHAT_WINDOW_W = 360;
 export const CHAT_VISIBLE_LINES = 8;
 /** One line's height at the window's 13px body serif. */
 export const CHAT_LINE_H = 18;
+/** Room between the newest line and the input row's divider (asked 2026-10-31). */
+export const CHAT_LINES_GAP = 6;
 /** Room kept above the lines for the channel filter row (I-WJGFJ-5) and below for the input (I-WJGFJ-4). */
 export const CHAT_FILTER_ROW_H = 22;
 export const CHAT_INPUT_ROW_H = 24;
@@ -76,7 +78,7 @@ export function chatWindowFrame(
       lineHeight: CHAT_LINE_H,
     };
   }
-  const messagesH = CHAT_VISIBLE_LINES * CHAT_LINE_H;
+  const messagesH = CHAT_VISIBLE_LINES * CHAT_LINE_H + CHAT_LINES_GAP;
   const height = CHAT_FILTER_ROW_H + messagesH + CHAT_INPUT_ROW_H;
   const top = bottom - height;
   return {
@@ -140,6 +142,61 @@ export const CHAT_CHANNEL_COLOUR: Readonly<Record<ChatChannel, number>> = {
   whisper: palette.chatWhisper,
   trade: palette.chatTrade,
 };
+
+/**
+ * The fold button: the window's top-right corner, so the tab row's right end while unfolded and
+ * the input row's right end while folded (asked 2026-10-31).
+ */
+export function chatFoldButton(frame: ChatWindowFrame): Rect {
+  const row = frame.filterRow.height > 0 ? frame.filterRow : frame.input;
+  return {
+    x: row.x + row.width - CHAT_FOLD_W,
+    y: row.y,
+    width: CHAT_FOLD_W,
+    height: row.height,
+  };
+}
+
+/** Characters a line may break after anywhere: Chinese and Japanese, which do not space words. */
+const BREAKS_ANYWHERE =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\u3000-\u303f\uff00-\uffef]/u;
+
+/**
+ * A chat line cut into lines no wider than `maxWidth`, each filled before the next begins (asked
+ * 2026-10-31: Phaser's own wrap breaks only at spaces, so `Name: ` followed by a Chinese sentence
+ * threw the whole sentence to the second line). Latin words break at the last space that fits; a
+ * Chinese or Japanese character, or a word too long for a line, breaks where the line is full.
+ */
+export function wrapChatText(
+  text: string,
+  maxWidth: number,
+  measure: (s: string) => number,
+): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const ch of Array.from(text)) {
+    const next = line + ch;
+    if (line === "" || measure(next) <= maxWidth) {
+      line = next;
+      continue;
+    }
+    if (ch === " ") {
+      lines.push(line);
+      line = "";
+      continue;
+    }
+    const space = line.lastIndexOf(" ");
+    if (!BREAKS_ANYWHERE.test(ch) && space > 0) {
+      lines.push(line.slice(0, space));
+      line = line.slice(space + 1) + ch;
+    } else {
+      lines.push(line);
+      line = ch;
+    }
+  }
+  lines.push(line);
+  return lines;
+}
 
 export interface ChatTabSegment extends Rect {
   channel: ChatChannel;

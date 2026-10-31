@@ -12,12 +12,11 @@
 
 import type Phaser from "phaser";
 import { CHAT_CHANNELS, type ChatChannel } from "@/stores/chatStore";
-import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
+import { CANVAS_FONT, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { CHAT_OPEN_CHANNELS, type ChatEntryField } from "./chatInput";
 import {
   CHAT_CHANNEL_COLOUR,
   CHAT_FILTER_LABEL,
-  CHAT_FOLD_W,
   CHAT_PICKER_W,
   type Rect,
 } from "./chatWindowLayout";
@@ -68,7 +67,8 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
     width: `${CHAT_PICKER_W}px`,
     background: "transparent",
     border: "none",
-    borderRight: `1px solid ${toCss(palette.chatRule)}`,
+    // as faint as the window's other rules (asked 2026-10-31: the full brass was too bright)
+    borderRight: `1px solid ${rgba(palette.chatRule, 0.35)}`,
     outline: "none",
     // the site's :focus-visible draws a ring as a box-shadow; the window shows focus by itself
     boxShadow: "none",
@@ -116,7 +116,7 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
   showChannel("area");
 
   const size = (r: Rect) => {
-    shell.style.width = `${r.width - CHAT_FOLD_W - 4}px`;
+    shell.style.width = `${r.width - 8}px`;
     shell.style.height = `${r.height}px`;
   };
   size(rect);
