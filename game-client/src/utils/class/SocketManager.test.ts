@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SERVER_ADDR, SocketManager, type SocketLike } from "./SocketManager";
 import { useGameStore } from "../../stores/gameStore";
 import { useChatStore } from "../../stores/chatStore";
+import { usePartyStore } from "../../stores/partyStore";
+import { useAuthStore } from "../../stores/authStore";
 
 /** A socket the test drives by hand: the server side of each event is a method. */
 class FakeSocket implements SocketLike {
@@ -330,5 +332,97 @@ describe("SocketManager chat (FS-WJGFJ §Requirements C20, C29: the socket feeds
       code: "channel_closed",
       text: "That channel is not open yet.",
     });
+  });
+});
+
+describe("SocketManager party (FS-R82NV §Requirements R21, R31: the socket feeds the party store and the chat window)", () => {
+  const ME = "11111111-1111-4111-8111-111111111111";
+  const update = {
+    party_id: "99999999-9999-4999-8999-999999999999",
+    leader_id: ME,
+    members: [
+      { player_id: ME, name: "Aldric", class: "warrior", joined_at: "2026-11-01T05:00:00Z", where: "hub", online: true },
+    ],
+    size: 2,
+    reason: "joined",
+    subject_id: ME,
+  };
+
+  beforeEach(() => {
+    useAuthStore.setState({ memberInfo: { id: ME } });
+  });
+  afterEach(() => {
+    usePartyStore.setState({ party: null, invites: [] });
+    useAuthStore.setState({ memberInfo: null });
+  });
+
+  it("puts a party_update in the party store, and still tells a listener", () => {
+    const { manager, old } = setup();
+    const heard = vi.fn();
+    manager.on("party_update", heard);
+
+    old.receive({ action: "party_update", payload: update });
+
+    expect(usePartyStore.getState().party).toEqual(update);
+    expect(heard).toHaveBeenCalledWith(update);
+  });
+
+  it("keeps a malformed party_update out of the store", () => {
+    const { old } = setup();
+
+    old.receive({ action: "party_update", payload: { ...update, members: null } });
+
+    expect(usePartyStore.getState().party).toBeNull();
+  });
+
+  it("puts a party_notice in the chat window as a system line in the client's own words (R36)", () => {
+    const { old } = setup();
+
+    old.receive({ action: "party_notice", payload: { code: "already_in_party", name: "Wren" } });
+
+    expect(useChatStore.getState().lines.at(-1)).toEqual({
+      kind: "system",
+      code: "already_in_party",
+      text: "Wren walks with another party.",
+    });
+  });
+
+  it("shows nothing for a party_notice code it has no words for", () => {
+    const { old } = setup();
+    const before = useChatStore.getState().lines.length;
+
+    old.receive({ action: "party_notice", payload: { code: "brand_new" } });
+    old.receive({ action: "party_notice", payload: { name: "no code" } });
+
+    expect(useChatStore.getState().lines.length).toBe(before);
+  });
+
+  const invite = {
+    invite_id: "inv-1",
+    party_id: "99999999-9999-4999-8999-999999999999",
+    party_pod_addr: "10.0.0.7:5660",
+    leader_name: "Wren",
+    member_count: 2,
+    size: 4,
+    expires_at: "2026-11-01T05:01:00Z",
+  };
+
+  it("raises a prompt for a party_invite, and still tells a listener (R32)", () => {
+    const { manager, old } = setup();
+    const heard = vi.fn();
+    manager.on("party_invite", heard);
+
+    old.receive({ action: "party_invite", payload: invite });
+
+    expect(usePartyStore.getState().invites).toMatchObject([invite]);
+    expect(heard).toHaveBeenCalledWith(invite);
+  });
+
+  it("raises no prompt for a malformed party_invite", () => {
+    const { old } = setup();
+
+    old.receive({ action: "party_invite", payload: { ...invite, invite_id: null } });
+
+    expect(usePartyStore.getState().invites).toEqual([]);
   });
 });

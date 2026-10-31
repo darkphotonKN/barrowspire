@@ -1,4 +1,5 @@
 import { socketManager } from "@/utils/class/SocketManager";
+import { routePartyErrors } from "@/ui/partyCommands";
 import * as Phaser from "phaser";
 
 export class BootScene extends Phaser.Scene {
@@ -55,6 +56,8 @@ export class BootScene extends Phaser.Scene {
       localStorage.removeItem("auth-storage");
       window.location.href = "/login";
     });
+    // party refusals are the party's own business, claimed once for the session (FS-R82NV)
+    routePartyErrors(socketManager);
 
     console.log("token: ", token);
     console.log("name: ", name);

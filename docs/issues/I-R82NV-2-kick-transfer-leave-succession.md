@@ -12,7 +12,9 @@ Implements FS-R82NV §Requirements R5, R19, R20, R22
 
 ## What to Build
 
-- `party_kick {player_id}` and `party_transfer {player_id}` for the leader; refusals
+- `party_kick {target_id}` and `party_transfer {target_id}` for the leader (not R19's
+  `player_id`: the client's SocketManager overwrites `player_id` with the sender's own id on
+  every message; see I-R82NV-6 notes); refusals
   `not_leader`, `not_member`. (`locked` is wired in FS-BJNYC; leave a seam for it.)
 - `party_leave` for any member. A kicked or leaving member stays where they stand.
 - Succession: when the leader leaves, the **earliest-joined** remaining member becomes leader at

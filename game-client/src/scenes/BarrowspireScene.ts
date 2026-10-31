@@ -51,6 +51,7 @@ import { RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
 import { PotionHud } from "@/ui/PotionHud";
 import { healthPotionCount, potionCell } from "@/ui/potions";
 import { RUN_ACTIONS } from "./runActions";
+import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
@@ -484,6 +485,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private chatWindow?: ChatWindow;
   /** The health potions carried and the drink key, beside the bars (FS-P9G8R R24). */
   private potionHud?: PotionHud;
+  private partyPanel?: PartyPanel;
   /** The class ability card, bottom right (FS-8AY7S req 29–32). */
   private abilityHud?: AbilityHud;
   /**
@@ -836,6 +838,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
     this.potionHud = undefined;
+    this.partyPanel?.destroy();
+    this.partyPanel = undefined;
     this.abilityHud = undefined;
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
@@ -2726,6 +2730,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
     // the menu and the result card read Enter and Esc; the gear overlay and an open chest are up
     this.chatWindow = mountChatWindow(this, () => !this.menu && !this.gameEndOverlay && !this.equipment?.isOpen() && !this.containerView?.isOpen);
+    // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
+    this.partyPanel = mountPartyPanel(this, () => !!this.menu || !!this.gameEndOverlay || !!this.equipment?.isOpen() || !!this.containerView?.isOpen);
 
     // The camera and the (vestigial, collision-free) physics world live in
     // projected space: the map is a diamond, clamped by its bounding box plus a
@@ -2916,6 +2922,8 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.equipment?.covers(pointer.x, pointer.y)) return;
       // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
       if (this.chatWindow?.covers(pointer.x, pointer.y)) return;
+      // and one on the open party panel is the panel's (FS-R82NV R28)
+      if (this.partyPanel?.covers(pointer.x, pointer.y)) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
       if (this.containerView.pointerDown(pointer.x, pointer.y, pointer.button === 0)) return;
       if (!this.player || !this.playerPos) return;

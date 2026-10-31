@@ -17,6 +17,19 @@ vi.mock("@/ui/chatInputField", () => ({
   }),
 }));
 
+// The party panel's invite field is the same kind of real <input>: a silent stand-in too.
+vi.mock("@/ui/partyInviteField", () => ({
+  domPartyInviteField: () => ({
+    value: "",
+    setEnabled: () => undefined,
+    blur: () => undefined,
+    show: () => undefined,
+    hide: () => undefined,
+    moveTo: () => undefined,
+    destroy: () => undefined,
+  }),
+}));
+
 vi.mock("phaser", async () => {
   const { EventEmitter } = await import("eventemitter3");
   class Scene {
