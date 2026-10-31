@@ -91,6 +91,7 @@ slice as with chat); the client side is agent lane.
 16. **`party_accept` action** `{invite_id}` from the target, who must be seated in the hub and in
     no party (else `party_notice` `not_in_hub` / `already_in_party`). The target's pod checks
     `party:<party_id>` still points at an alive pod (else `party_notice` `party_gone`), then:
+    A queued player (FS-K2HKP) is refused with `queued`, on accept and on invite alike.
     - **same pod:** seats nothing new; sends `party_reply` `{invite_id, accepted: true}` to the
       party (in-process) and the player is added at once (R17).
     - **other pod:** sends the player `world_handoff` `{addr: party_pod_addr, hub: true,
@@ -178,8 +179,11 @@ slice as with chat); the client side is agent lane.
 ### Party frames (game-client)
 
 34. **Party frames** sit on the left edge below the level/XP bar, shown whenever the player is in
-    a party, one row per **other** member in join order: name (leader icon first on the leader),
-    then a health bar and a resource bar in the HUD's own-bar style, half scale. Bars fill from
+    a party, one row per **other** member in join order: a **class bust** on the left (a
+    medallion cut from that class's own baked standing frame with `ui/bust.ts`, the NPC dialogue
+    card's crop, so the class is read from the figure, not a label), then the name (leader icon
+    first on the leader), then a health bar and a resource bar in the HUD's own-bar style, half
+    scale. Bars fill from
     the member's `current_health`/`max_health` and `resource` in the state broadcast when
     present (FS-CH21F; runs and fields); when absent (hub, or member elsewhere) the bar slot
     shows a short state word instead: "village", "afield", "delving", "away".
@@ -206,6 +210,7 @@ slice as with chat); the client side is agent lane.
 | `not_member` | "They are not in your party." |
 | `not_in_hub` | "Only from the village." |
 | `locked` | "Not while delving." |
+| `queued` | "Leave the queue first." |
 | `party_gone` | "That party is no more." |
 | `delivery_failed` | "Word could not be sent." |
 
@@ -226,15 +231,16 @@ slice as with chat); the client side is agent lane.
 13. As a member, I want leadership to pass automatically when the leader drops, so that the party keeps working without a vote.
 14. As a member, I want a short disconnect to keep my place in the party and bring me back to its village, so that a flaky connection does not cost the group.
 15. As a member, I want party frames on the left showing each teammate's name, health and resource, so that I can see at a glance that everyone is here and how they fare.
-16. As a member, I want the frames to say where a teammate is when I cannot see their bars, so that "away" and "afield" are not confused with "dead".
-17. As a player with no party, I want no frames and a one-line hint in the panel, so that the screen stays clean.
-18. As a player, I want party actions refused with a short line rather than silently, so that I know the rule I hit.
-19. As a member, I want party events (joined, left, kicked, new leader) in the chat window, so that the panel and the chat agree.
-20. As an operator, I want party size and match size to be one setting, so that a full party and a random roster are the same shape.
-21. As an operator, I want nothing party-related in a database, so that there is nothing to migrate or clean up.
-22. As a developer, I want the hub arrival to be the ordinary connect + `enter_hub` path with one extra id, so that the handoff code stays one mechanism.
-23. As a developer, I want the pod inbox to ride the chat bus's subscriber path, so that cross-pod delivery has one implementation.
-24. As a developer, I want the presence index shaped so whisper can use it unchanged, so that FS-KCQ06 adds no second index.
+16. As a member, I want each frame to show the teammate's class as a small bust, so that I know who is the mage without reading.
+17. As a member, I want the frames to say where a teammate is when I cannot see their bars, so that "away" and "afield" are not confused with "dead".
+18. As a player with no party, I want no frames and a one-line hint in the panel, so that the screen stays clean.
+19. As a player, I want party actions refused with a short line rather than silently, so that I know the rule I hit.
+20. As a member, I want party events (joined, left, kicked, new leader) in the chat window, so that the panel and the chat agree.
+21. As an operator, I want party size and match size to be one setting, so that a full party and a random roster are the same shape.
+22. As an operator, I want nothing party-related in a database, so that there is nothing to migrate or clean up.
+23. As a developer, I want the hub arrival to be the ordinary connect + `enter_hub` path with one extra id, so that the handoff code stays one mechanism.
+24. As a developer, I want the pod inbox to ride the chat bus's subscriber path, so that cross-pod delivery has one implementation.
+25. As a developer, I want the presence index shaped so whisper can use it unchanged, so that FS-KCQ06 adds no second index.
 
 ## Acceptance Criteria
 
@@ -262,7 +268,7 @@ slice as with chat); the client side is agent lane.
 - **Party pod dies:** pointers expire; the invitee's accept finds no alive pod → `party_gone`; members on the dead pod reconnect wherever, party-less; the recall (R24) does nothing because `party:<id>` is gone.
 - **Target pod dies after delivery:** the prompt vanishes with the connection; the invite expires at 60 s on the party pod.
 - **Invitee is in a field or run:** no presence key → `not_found` to the inviter ("not here right now").
-- **Invitee is queued for the Spire:** presence exists (they are in the hub); accept is refused with `not_in_hub`? No — queued players are in the hub. Decision: accept is **refused** for a queued player with a new code `queued` ("Leave the queue first."), since a handoff mid-queue would strand their queue entry; added to R36's table at write time.
+- **Invitee is queued for the Spire:** presence exists (they are in the hub), so the invite is delivered; their accept is **refused** with `queued`, since a handoff mid-queue would strand their queue entry. Inviting while queued is refused the same way.
 - **Inviter leaves the hub before the reply:** the party pod still processes the reply; the party exists independently of where the leader stands.
 - **Leader disconnects in the hub:** succession at once (R22) — the 5-minute grace keeps them a member, not leader; on return they are a member.
 - **All members away:** the party persists until the grace removes the last one.
