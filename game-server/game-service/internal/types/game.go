@@ -130,6 +130,10 @@ type ItemState struct {
 	Affixes         []Affix `json:"affixes,omitempty"`
 	MagicResistance int32   `json:"magic_resistance,omitempty"` // armor
 	UniqueEffect    string  `json:"unique_effect,omitempty"`
+
+	// Unsafe marks an unsafe find; absent means the delver brought it in.
+	// FS-18Z5F §D R21.
+	Unsafe bool `json:"unsafe,omitempty"`
 }
 
 type ContainerState struct {
@@ -353,6 +357,11 @@ type ItemConfig struct {
 	// anything else. FS-4R9M9 §Requirements 6, 31.
 	UniqueEffectCode string
 	UniqueEffectText string
+
+	// Safe is set only by seating: an item the delver brought in. Left unset,
+	// the item is an unsafe find, so a new item source is unsafe without being
+	// told. FS-18Z5F §D R19.
+	Safe bool
 }
 
 // Affix is one rolled stat bonus: a stat code from the affix table, the tier it

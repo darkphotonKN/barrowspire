@@ -142,6 +142,29 @@ type ItemTemplateAggregate struct {
 	UpdatedBy *uuid.UUID `db:"updated_by" json:"updated_by"`
 }
 
+// Item locations, as stored (FS-VPD8Y R1). The wire carries them lowercase
+// (R14).
+const (
+	LocationBag   = "BAG"
+	LocationStash = "STASH"
+)
+
+// itemStatusAvailable is the one status a member may act on: not listed, in
+// escrow or pending settlement.
+const itemStatusAvailable = "AVAILABLE"
+
+// itemStatusInRun is an instance checked out into a run or field world, tagged
+// with that world's id (FS-18Z5F R1, ADR-0032).
+const itemStatusInRun = "IN_RUN"
+
+// Per-account caps on unworn instances, counted at write time (FS-VPD8Y R4).
+// They refuse growth into a location and never remove what is already there
+// (R5).
+const (
+	BagCapacity   = 30
+	StashCapacity = 60
+)
+
 // ItemInstance mirrors the item_instances table — a concrete owned item
 // (rolled from a template) belonging to a member.
 type ItemInstance struct {
@@ -173,6 +196,11 @@ type ItemInstance struct {
 
 	Description *string `db:"description" json:"description"`
 	Status      string  `db:"status" json:"status"`
+
+	// Location is where the owner keeps the instance, LocationBag or
+	// LocationStash (FS-VPD8Y R1). Worn is the loadout, not a location: a worn
+	// instance keeps whatever this says (R2). Independent of Status.
+	Location string `db:"location" json:"location"`
 
 	// RequiredLevel is the level needed to equip (FS-BDA7X Req 30). Reads give
 	// the instance's own requirement, else its template's (FS-4R9M9 R48, R51);
@@ -451,6 +479,22 @@ type LoadoutWithItems struct {
 	Consumable3 *ItemInstance
 }
 
+// CheckOutRunGearRequest checks MemberID's worn and bag instances out into the
+// run or field world RunID (FS-18Z5F R5). RunID is the world's own id: a run's
+// session id or a field visit's id (R3).
+type CheckOutRunGearRequest struct {
+	MemberID uuid.UUID
+	RunID    uuid.UUID
+}
+
+// RunGear is what a checkout seats: the worn instances in their slots and the
+// bag, every one IN_RUN under the run's id (FS-18Z5F R11). A worn instance that
+// stayed home is an empty slot (R8); the bag is not capped.
+type RunGear struct {
+	Loadout *LoadoutWithItems
+	Bag     []*ItemInstance
+}
+
 type ListItemInstancesRequest struct {
 	MemberId uuid.UUID `json:"member_id" binding:"required"`
 }
@@ -459,6 +503,23 @@ type UpdateLoadoutRequest struct {
 	MemberId       uuid.UUID  `json:"member_id" binding:"required"`
 	Slot           string     `json:"slot" binding:"required"`
 	ItemInstanceId *uuid.UUID `json:"item_instance_id"`
+}
+
+// MoveItemInstanceRequest moves one of the caller's instances to Location,
+// LocationBag or LocationStash (FS-VPD8Y R10). The caller is never a field:
+// it comes from the authenticated context (R12).
+type MoveItemInstanceRequest struct {
+	ItemInstanceID uuid.UUID
+	Location       string
+}
+
+// ItemPlacement is what a move checks about one of its owner's instances:
+// whether it is worn (in the owner's loadout), its status and where it is kept
+// (FS-VPD8Y R10).
+type ItemPlacement struct {
+	Status   string `db:"status"`
+	Location string `db:"location"`
+	Worn     bool   `db:"worn"`
 }
 
 // ItemSummary is what anyone may see of an item instance (FS-8EGFA

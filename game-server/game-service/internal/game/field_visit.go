@@ -16,15 +16,16 @@ import (
 
 /**
 * SeatVisitor builds a fresh body for the member at the field's arrival point,
-* as their character in play wearing the loadout the caller read from
-* items-service before taking any lock (FS-X2F2H §Requirements 11, 12), and
-* opens their visit with a freshly minted id and the entry time (R13).
+* as their character in play wearing and carrying the gear the caller checked
+* out of items-service under visitID before taking any lock (FS-X2F2H
+* §Requirements 11, 12; FS-18Z5F §C R13), and opens their visit under that id
+* with the entry time (FS-18Z5F R14; FS-X2F2H R13).
 *
 * Refused in a world that is not a field, for a member who already has a body
 * here (a stale enter), and with no loadout: a bare body would clear the stored
 * loadout when its visit settles (D27).
 **/
-func (s *Session) SeatVisitor(memberID uuid.UUID, character types.CharacterInPlay, loadout *pbitems.GetLoadoutWithItemsResponse) (FieldVisit, error) {
+func (s *Session) SeatVisitor(memberID uuid.UUID, character types.CharacterInPlay, visitID uuid.UUID, gear *pbitems.CheckOutRunGearResponse) (FieldVisit, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -34,14 +35,14 @@ func (s *Session) SeatVisitor(memberID uuid.UUID, character types.CharacterInPla
 	if _, alreadyHere := s.playerIDToEntitiesID[memberID]; alreadyHere {
 		return FieldVisit{}, fmt.Errorf("seat visitor %s in %s: %w", memberID, s.ID, ErrAlreadyHere)
 	}
-	if loadout == nil {
+	if gear.GetLoadout() == nil {
 		return FieldVisit{}, fmt.Errorf("seat visitor %s in %s: %w", memberID, s.ID, ErrNoLoadout)
 	}
 
-	s.buildBodyLocked(memberID, character, s.place.Arrival.X, s.place.Arrival.Y, loadout)
+	s.buildBodyLocked(memberID, character, s.place.Arrival.X, s.place.Arrival.Y, gear.GetLoadout(), gear.GetBag())
 
 	visit := FieldVisit{
-		ID:          uuid.New(),
+		ID:          visitID,
 		Field:       s.place.ID,
 		MemberID:    memberID,
 		CharacterID: character.ID,

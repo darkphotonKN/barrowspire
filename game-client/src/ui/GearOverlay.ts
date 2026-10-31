@@ -3,15 +3,23 @@
  * edges, drawn over the live world with a clear band between them. The right panel holds the
  * ten gear slots above the 6 × 5 bag; the left is the stats panel (§C), drawn from the player's
  * own world state, the worn gear and the class card (`characterSheet`), live while open. Both
- * open and close together.
+ * open and close together. Opened at the hub's stash chest (`openStash`), the left panel shows
+ * the account's stash instead of the stats until the overlay closes (FS-VPD8Y §F R35–37), and
+ * the same gestures move a bag item to the stash and a stash item to the bag (R38).
  *
  * It is the {@link HudPanel} `EquipmentHud` drives in a run and a field world, and `HubGear`
  * drives from REST in the hub (§E), so the sends, the pending pickups and the full-bag
- * pre-check live there, not here. What it owns: where
+ * pre-check (and the stash's pre-checks and moves, `mayMove` / `onMove`) live there, not here.
+ * What it owns: where
  * everything is drawn (`gearOverlayLayout`), hover and the item tip, and equip / unequip by
  * hover + right-click or hover + E (R16–17), applied to its own copy at once. Left-click does
  * nothing and nothing drags (R18). Pointer input is hit-tested by hand in screen space, as the
  * equip panel and the satchel do.
+ *
+ * It is told the world it is drawn in, for the item's standing (FS-18Z5F §H): in a run an unsafe
+ * find wears an oxblood inner edge and its tip a warning; in the hub an item still in a delve is
+ * dimmed, its tip says so, and an equip or unequip of it is asked about (`mayEquip`,
+ * `mayUnequip`) before anything is drawn, as a move is.
  *
  * Game palette world panels (design-guideline "UI Chrome"): dark ink and carved stone, a 1px
  * brass border, vellum text; the rarity edge is the only rarity colour. Icons are the baked item
@@ -19,6 +27,7 @@
  */
 
 import type Phaser from "phaser";
+import type { WorldType } from "@/assets/types/client";
 import {
   equipSlotFor,
   getItemType,
@@ -42,17 +51,26 @@ import { drawXpBar } from "./ProgressHud";
 import { HUD_BAR_FILL } from "./ResourceHud";
 import { BAG_CAPACITY, bagCountLabel } from "./bag";
 import {
+  STASH_CAPACITY,
+  freeToMove,
+  stashCountLabel,
+  type ItemLocation,
+} from "./stash";
+import {
   GEAR_SLOTS,
   gearPanelLayout,
   inRect,
   overlayLayout,
   overPanel,
   rowWindow,
+  stashPanelLayout,
   statsPanelArea,
   type GearPanelLayout,
+  type ItemGrid,
   type OverlayLayout,
   type Rect,
   type RowWindow,
+  type StashPanelLayout,
 } from "./gearOverlayLayout";
 
 /** Above the HUD (1000) and the satchel (1000), below the item tip and passing notices (2000+). */
@@ -64,10 +82,18 @@ const PANEL_RADIUS = 6;
 const WELL_RADIUS = 4;
 /** The rarity accent edge down a worn slot's or a bag cell's left side. */
 const EDGE_W = 3;
+/** An unsafe find's inner edge (FS-18Z5F R36): its line width, and its inset inside the well. */
+const UNSAFE_EDGE_W = 2;
+const UNSAFE_INSET = 2;
 /** How much of a well an icon fills. */
 const ICON_FILL = 0.78;
 /** An item above the character's level is drawn this faint (FS-BDA7X R45). */
 const TOO_HIGH_ALPHA = 0.4;
+/**
+ * An item that is not `AVAILABLE` (listed, settling, or still in a delve) is drawn this faint
+ * (FS-VPD8Y R40, FS-18Z5F R38).
+ */
+export const UNAVAILABLE_ALPHA = 0.3;
 /** The stats panel's row pitch, and its bars' heights, in px. */
 const STAT_ROW_H = 17;
 const XP_BAR_H = 6;
@@ -75,6 +101,9 @@ const RESOURCE_BAR_H = 4;
 
 export const GEAR_HINT =
   "Right-click or E: wear or take off  //  I, B or Esc: close";
+/** In stash mode items move between bag and stash and nothing is worn; worn gear still comes off (FS-VPD8Y R38). */
+export const STASH_HINT =
+  "Right-click or E: move between bag and stash, or take off  //  I, B or Esc: close";
 
 /** One stats panel row: its height, and how it draws itself with its top at `y`. */
 interface StatsRow {
@@ -86,20 +115,25 @@ interface StatsRow {
   ) => void;
 }
 
-/** What the pointer is over: a gear slot, or a bag position. */
+/** What the pointer is over: a gear slot, a bag position, or a stash position. */
 type Hovered =
   | { kind: "slot"; slot: EquipmentSlot }
-  | { kind: "bag"; index: number };
+  | { kind: "bag" | "stash"; index: number };
 
 function hoverKey(at: Hovered | undefined): string {
   if (!at) return "";
-  return at.kind === "slot" ? `slot:${at.slot}` : `bag:${at.index}`;
+  return at.kind === "slot" ? `slot:${at.slot}` : `${at.kind}:${at.index}`;
 }
 
 export class GearOverlay implements HudPanel {
   onEquip?: (item: ItemState, slot: EquipmentSlot) => void;
   onUnequip?: (item: ItemState, slot: EquipmentSlot) => void;
-  mayUnequip?: () => boolean;
+  mayEquip?: (item: ItemState, slot: EquipmentSlot) => boolean;
+  mayUnequip?: (item: ItemState) => boolean;
+  /** Asked before a stash-mode move is drawn; false leaves the item where it is (FS-VPD8Y R39). */
+  mayMove?: (item: ItemState, to: ItemLocation) => boolean;
+  /** A stash-mode move, drawn at once to the end of `to` (R38, R41). */
+  onMove?: (item: ItemState, to: ItemLocation) => void;
 
   private visible = false;
   private equipped: EquippedItems = nothingWorn();
@@ -116,9 +150,17 @@ export class GearOverlay implements HudPanel {
   private statsView?: { area: Rect; win: RowWindow };
   /** A line over the bag (the hub's loading, busy or failed load, R42–43); set, no change is taken. */
   private status?: string;
+  /**
+   * The stash, while the overlay is open in stash mode (FS-VPD8Y R35); undefined otherwise, when
+   * the left panel is the stats. Closing ends the mode (R37).
+   */
+  private stash?: ItemState[];
+  /** The stash grid's first shown row, when its rows do not all fit (R36). */
+  private stashScroll = 0;
 
   private layout?: OverlayLayout;
   private gear?: GearPanelLayout;
+  private stashGrid?: StashPanelLayout;
   /** The panels' frames and fixed words, rebuilt only on open and resize. */
   private frame?: Phaser.GameObjects.Container;
   /** The slots, cells, icons and count, rebuilt as what is carried or worn changes. */
@@ -131,9 +173,11 @@ export class GearOverlay implements HudPanel {
   private tip?: ItemTip;
   private pointer = { x: -1, y: -1 };
 
+  /** `world` is the world the overlay is drawn in; only a run marks unsafe finds (FS-18Z5F R36–37). */
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly art: ArtLibrary,
+    private readonly world?: WorldType,
   ) {}
 
   // ── HudPanel ─────────────────────────────────────────────────────────────
@@ -155,9 +199,34 @@ export class GearOverlay implements HudPanel {
     this.scene.events?.once("shutdown", this.hide, this);
   }
 
+  /**
+   * Opens the overlay in stash mode, the left panel showing the stash (FS-VPD8Y R35), empty until
+   * {@link updateStash} fills it. Only from closed: an open overlay keeps its mode.
+   */
+  openStash(): void {
+    if (this.visible) return;
+    this.stash = [];
+    this.stashScroll = 0;
+    this.show();
+  }
+
+  /** Whether the overlay is open in stash mode. */
+  isStashOpen(): boolean {
+    return this.visible && this.stash !== undefined;
+  }
+
+  /** What the stash holds, in stash order; drawn only in stash mode. */
+  updateStash(items: ItemState[]): void {
+    if (!this.stash) return;
+    this.stash = [...items];
+    if (this.visible) this.redraw();
+  }
+
   hide(): void {
     if (!this.visible) return;
     this.visible = false;
+    // closing ends stash mode: the next open shows the stats (FS-VPD8Y R37)
+    this.stash = undefined;
     this.scene.input?.off("pointermove", this.onPointerMove, this);
     this.scene.input?.off("pointerdown", this.onPointerDown, this);
     this.scene.input?.off("wheel", this.onWheel, this);
@@ -208,8 +277,8 @@ export class GearOverlay implements HudPanel {
   }
 
   /**
-   * A line in the bag area, kept across closing; while one is set, equip and unequip input is
-   * ignored (the hub's REST source, FS-HRH2J R42–43). Hover and the tip still read.
+   * A line in the bag area, kept across closing; while one is set, equip, unequip and move input
+   * is ignored (the hub's REST source, FS-HRH2J R42–43, FS-VPD8Y R41). Hover and the tip still read.
    */
   setStatus(line: string | undefined): void {
     if (line === this.status) return;
@@ -231,7 +300,7 @@ export class GearOverlay implements HudPanel {
     this.frame = this.scene.add.container(0, 0, [
       this.panel(this.layout.left),
       this.panel(this.layout.right),
-      this.heading(this.layout.left, "CHARACTER"),
+      this.heading(this.layout.left, this.stash ? "STASH" : "CHARACTER"),
       this.heading(this.layout.right, "GEAR"),
     ]);
     this.frame.setDepth(GEAR_OVERLAY_DEPTH).setScrollFactor(0);
@@ -292,25 +361,12 @@ export class GearOverlay implements HudPanel {
     count.setOrigin(1, 0);
     children.push(count);
 
-    for (const cell of g.cells) {
-      const item = this.inventory[cell.index];
-      children.push(this.well(cell.rect, item, cell.over));
-      if (item) children.push(this.icon(cell.rect, item));
-    }
-    if (g.visibleRows < g.rows)
-      children.push(
-        this.scrollBar(g.grid.x + g.grid.w + 4, g.grid.y, g.grid.h, {
-          first: g.scroll,
-          count: g.visibleRows,
-          rows: g.rows,
-        }),
-      );
-    if (this.status) children.push(...this.statusLine(g.grid, this.status));
+    children.push(...this.itemGrid(g, this.inventory));
 
     const hint = this.scene.add.text(
       g.innerX + g.innerW / 2,
       g.hintY + 4,
-      GEAR_HINT,
+      this.stash ? STASH_HINT : GEAR_HINT,
       {
         fontFamily: CANVAS_FONT.body,
         fontSize: "10px",
@@ -321,6 +377,7 @@ export class GearOverlay implements HudPanel {
     );
     hint.setOrigin(0.5, 0);
     children.push(hint);
+    if (this.stash) children.push(...this.stashPanel(this.stash));
 
     this.content = this.scene.add.container(0, 0, children);
     this.content.setDepth(GEAR_OVERLAY_DEPTH + 1).setScrollFactor(0);
@@ -347,6 +404,7 @@ export class GearOverlay implements HudPanel {
     this.frame = undefined;
     this.layout = undefined;
     this.gear = undefined;
+    this.stashGrid = undefined;
   }
 
   /** A world panel: ink ground, a carved inner edge, a 1px brass border, a small radius. */
@@ -404,7 +462,10 @@ export class GearOverlay implements HudPanel {
     return text;
   }
 
-  /** A slot's or cell's well; a held item adds its rarity edge, a cell past 30 is tinted over (R23). */
+  /**
+   * A slot's or cell's well; a held item adds its rarity edge, and an unsafe find in a run an
+   * oxblood inner edge clear of it (FS-18Z5F R36); a cell past 30 is tinted over (R23).
+   */
   private well(
     r: Rect,
     item: ItemState | null | undefined,
@@ -419,7 +480,19 @@ export class GearOverlay implements HudPanel {
       over ? 0.4 : 0.22,
     );
     g.strokeRoundedRect(r.x, r.y, r.w, r.h, WELL_RADIUS);
-    const edge = item ? rarityEdge(this.view(item)) : undefined;
+    const view = item ? this.view(item) : undefined;
+    if (view?.standing?.kind === "unsafeFind") {
+      const left = r.x + EDGE_W + UNSAFE_INSET;
+      g.lineStyle(UNSAFE_EDGE_W, palette.unsafeFind, 0.9);
+      g.strokeRoundedRect(
+        left,
+        r.y + UNSAFE_INSET,
+        r.x + r.w - UNSAFE_INSET - left,
+        r.h - UNSAFE_INSET * 2,
+        WELL_RADIUS - 1,
+      );
+    }
+    const edge = view ? rarityEdge(view) : undefined;
     if (edge !== undefined) {
       g.fillStyle(edge, 0.9);
       g.fillRect(r.x + 1, r.y + 5, EDGE_W, r.h - 10);
@@ -427,7 +500,10 @@ export class GearOverlay implements HudPanel {
     return g;
   }
 
-  /** The item's baked icon, centred in its well, faint while above the character's level. */
+  /**
+   * The item's baked icon, centred in its well, faint while above the character's level or not
+   * free to move (FS-VPD8Y R40).
+   */
   private icon(r: Rect, item: ItemState): Phaser.GameObjects.Sprite {
     const sprite = artSprite(
       this.scene,
@@ -440,8 +516,12 @@ export class GearOverlay implements HudPanel {
     const size =
       Math.max(sprite.frame?.width ?? 0, sprite.frame?.height ?? 0) || 1;
     sprite.setScale((Math.min(r.w, r.h) * ICON_FILL) / size);
-    if (this.view(item).lines.requirement.tooHigh)
-      sprite.setAlpha(TOO_HIGH_ALPHA);
+    const tooHigh = this.view(item).lines.requirement.tooHigh;
+    const alpha = Math.min(
+      tooHigh ? TOO_HIGH_ALPHA : 1,
+      freeToMove(item) ? 1 : UNAVAILABLE_ALPHA,
+    );
+    if (alpha < 1) sprite.setAlpha(alpha);
     return sprite;
   }
 
@@ -501,11 +581,70 @@ export class GearOverlay implements HudPanel {
     return [band, text];
   }
 
+  // ── The stash panel ──────────────────────────────────────────────────────
+
+  /**
+   * The left panel in stash mode (FS-VPD8Y R35–36): the count, then the stash in cells drawn as
+   * the bag's are, rows past 60 tinted over and the count in the over tone, scrolled by the
+   * wheel. A status line shows over it as over the bag (edge state "REST load fails").
+   */
+  private stashPanel(stash: ItemState[]): Phaser.GameObjects.GameObject[] {
+    if (!this.layout) return [];
+    const s = stashPanelLayout(
+      this.layout.left,
+      stash.length,
+      this.stashScroll,
+    );
+    this.stashGrid = s;
+    this.stashScroll = s.scroll;
+    const out: Phaser.GameObjects.GameObject[] = [];
+    const over = stash.length > STASH_CAPACITY;
+    const count = this.label(
+      s.grid.x + s.grid.w,
+      s.countY,
+      stashCountLabel(stash.length),
+      over ? palette.damageBright : palette.hudText,
+      12,
+      1,
+    );
+    count.setOrigin(1, 0);
+    out.push(count);
+    out.push(...this.itemGrid(s, stash));
+    return out;
+  }
+
+  /**
+   * A bag's or the stash's cells with what they hold, the rows past capacity tinted over, a
+   * scroll bar when its rows do not all fit, and the status line over it while one is set.
+   */
+  private itemGrid(
+    g: ItemGrid,
+    items: readonly ItemState[],
+  ): Phaser.GameObjects.GameObject[] {
+    const out: Phaser.GameObjects.GameObject[] = [];
+    for (const cell of g.cells) {
+      const item = items[cell.index];
+      out.push(this.well(cell.rect, item, cell.over));
+      if (item) out.push(this.icon(cell.rect, item));
+    }
+    if (g.visibleRows < g.rows)
+      out.push(
+        this.scrollBar(g.grid.x + g.grid.w + 4, g.grid.y, g.grid.h, {
+          first: g.scroll,
+          count: g.visibleRows,
+          rows: g.rows,
+        }),
+      );
+    if (this.status) out.push(...this.statusLine(g.grid, this.status));
+    return out;
+  }
+
   // ── The stats panel ──────────────────────────────────────────────────────
 
   /** The left panel from the latest state and what is worn, only when what it shows changed. */
   private redrawStats(): void {
-    if (!this.layout || !this.character) return;
+    // in stash mode the left panel is the stash's (FS-VPD8Y R35)
+    if (!this.layout || !this.character || this.stash) return;
     const sheet = characterSheet(this.character, this.equipped);
     const shows = JSON.stringify(sheet);
     if (`${this.statsScroll}:${shows}` === this.shownSheet) return;
@@ -619,7 +758,10 @@ export class GearOverlay implements HudPanel {
     this.updateHover();
   }
 
-  /** A right-press over an item wears or takes it off (R16–17); a left-press does nothing (R18). */
+  /**
+   * A right-press over an item wears or takes it off (R16–17), or in stash mode moves it
+   * (FS-VPD8Y R38); a left-press does nothing (R18).
+   */
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
     this.pointer = { x: pointer.x, y: pointer.y };
     this.updateHover();
@@ -637,14 +779,24 @@ export class GearOverlay implements HudPanel {
     dy: number,
   ): void {
     const step = Math.sign(dy);
-    const g = this.gear;
-    if (g && g.visibleRows < g.rows && inRect(g.grid, pointer.x, pointer.y)) {
-      const next = Math.min(
-        Math.max(0, this.scroll + step),
-        g.rows - g.visibleRows,
-      );
+    const scrolls = (g: ItemGrid | undefined): g is ItemGrid =>
+      g !== undefined &&
+      g.visibleRows < g.rows &&
+      inRect(g.grid, pointer.x, pointer.y);
+    /** A grid's first row a step on, kept so its last row stays in view. */
+    const stepped = (g: ItemGrid, from: number) =>
+      Math.min(Math.max(0, from + step), g.rows - g.visibleRows);
+    if (scrolls(this.gear)) {
+      const next = stepped(this.gear, this.scroll);
       if (next === this.scroll) return;
       this.scroll = next;
+      this.redraw();
+      return;
+    }
+    if (scrolls(this.stashGrid)) {
+      const next = stepped(this.stashGrid, this.stashScroll);
+      if (next === this.stashScroll) return;
+      this.stashScroll = next;
       this.redraw();
       return;
     }
@@ -670,21 +822,24 @@ export class GearOverlay implements HudPanel {
     for (const { slot } of GEAR_SLOTS)
       if (inRect(g.slots[slot], x, y)) return { kind: "slot", slot };
     const cell = g.cells.find((c) => inRect(c.rect, x, y));
-    return cell ? { kind: "bag", index: cell.index } : undefined;
+    if (cell) return { kind: "bag", index: cell.index };
+    const stashed = this.stashGrid?.cells.find((c) => inRect(c.rect, x, y));
+    return stashed ? { kind: "stash", index: stashed.index } : undefined;
   }
 
   private itemOf(at: Hovered): ItemState | undefined {
-    return at.kind === "slot"
-      ? (this.equipped[at.slot] ?? undefined)
-      : this.inventory[at.index];
+    if (at.kind === "slot") return this.equipped[at.slot] ?? undefined;
+    return at.kind === "bag"
+      ? this.inventory[at.index]
+      : this.stash?.[at.index];
   }
 
   private rectOf(at: Hovered): Rect | undefined {
     const g = this.gear;
     if (!g) return undefined;
-    return at.kind === "slot"
-      ? g.slots[at.slot]
-      : g.cells.find((c) => c.index === at.index)?.rect;
+    if (at.kind === "slot") return g.slots[at.slot];
+    const cells = at.kind === "bag" ? g.cells : this.stashGrid?.cells;
+    return cells?.find((c) => c.index === at.index)?.rect;
   }
 
   private updateHover(): void {
@@ -721,7 +876,10 @@ export class GearOverlay implements HudPanel {
     if (item) this.showTip(item);
   }
 
-  /** Wear or take off what the pointer is over. */
+  /**
+   * Wear or take off what the pointer is over. In stash mode nothing is worn: a worn item still
+   * comes off to the bag, a bag item moves to the stash and a stash item to the bag (FS-VPD8Y R38).
+   */
   private act(): void {
     if (this.status) return;
     const at = this.hovered;
@@ -729,7 +887,24 @@ export class GearOverlay implements HudPanel {
     const item = this.itemOf(at);
     if (!item) return;
     if (at.kind === "slot") this.unequip(item, at.slot);
-    else this.equip(item);
+    else if (this.stash) this.move(item, at.kind === "bag" ? "stash" : "bag");
+    else if (at.kind === "bag") this.equip(item);
+  }
+
+  /** To the end of the other side (FS-VPD8Y R41), unless the move is not allowed (R39). */
+  private move(item: ItemState, to: ItemLocation): void {
+    if (!this.stash || (this.mayMove && !this.mayMove(item, to))) return;
+    const without = (items: ItemState[]) =>
+      items.filter((i) => i.entity_id !== item.entity_id);
+    if (to === "stash") {
+      this.inventory = without(this.inventory);
+      this.stash = [...without(this.stash), item];
+    } else {
+      this.stash = without(this.stash);
+      this.inventory = [...without(this.inventory), item];
+    }
+    this.redraw();
+    this.onMove?.(item, to);
   }
 
   /**
@@ -744,6 +919,7 @@ export class GearOverlay implements HudPanel {
         this.flash("All consumable slots are full");
       return;
     }
+    if (this.mayEquip && !this.mayEquip(item, slot)) return;
     const displaced = this.equipped[slot];
     this.inventory = this.inventory.filter(
       (i) => i.entity_id !== item.entity_id,
@@ -756,7 +932,7 @@ export class GearOverlay implements HudPanel {
 
   /** To the end of the bag (R17), unless the bag has no room for it (R20). */
   private unequip(item: ItemState, slot: EquipmentSlot): void {
-    if (this.mayUnequip && !this.mayUnequip()) return;
+    if (this.mayUnequip && !this.mayUnequip(item)) return;
     this.equipped[slot] = null;
     this.inventory.push(item);
     this.redraw();
@@ -766,7 +942,7 @@ export class GearOverlay implements HudPanel {
   // ── The tip and the flash ────────────────────────────────────────────────
 
   private view(item: ItemState): ItemView {
-    return itemView(item, this.characterLevel);
+    return itemView(item, this.characterLevel, this.world);
   }
 
   /** The item's tip (R15): every line the item views share, for this character. */

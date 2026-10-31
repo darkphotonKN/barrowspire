@@ -13,13 +13,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// failingLoadoutClient is an items service that refuses every loadout read, as
-// an expired token or an outage does.
+// failingLoadoutClient is an items service that refuses every loadout read and
+// checkout, as an expired token or an outage does.
 type failingLoadoutClient struct {
 	mockItemsClient
 }
 
 func (c *failingLoadoutClient) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWithItemsRequest) (*pb.GetLoadoutWithItemsResponse, error) {
+	return nil, errors.New("items service unavailable")
+}
+
+func (c *failingLoadoutClient) CheckOutRunGear(ctx context.Context, req *pb.CheckOutRunGearRequest) (*pb.CheckOutRunGearResponse, error) {
 	return nil, errors.New("items service unavailable")
 }
 
@@ -72,7 +76,7 @@ func TestEndSession_LoadoutNotReadAtSeating_ExtractionMarksLoadoutUnknown(t *tes
 			name: "handoff arrival seated with its loadout",
 			seat: func(t *testing.T, s *Session, memberID uuid.UUID) {
 				s.AddPlayersToPendingConnection([]*types.Player{{ID: memberID, Character: character}})
-				_, err := s.SeatArrival(&types.Player{ID: memberID}, &pb.GetLoadoutWithItemsResponse{})
+				_, err := s.SeatArrival(&types.Player{ID: memberID}, &pb.CheckOutRunGearResponse{Loadout: &pb.GetLoadoutWithItemsResponse{}})
 				require.NoError(t, err)
 			},
 			wantUnknown: false,

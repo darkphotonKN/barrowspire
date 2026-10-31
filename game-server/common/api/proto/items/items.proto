@@ -36,8 +36,17 @@ service ItemsService {
 
   rpc GetLoadout(GetLoadoutRequest) returns (GetLoadoutResponse);
   rpc GetLoadoutWithItems(GetLoadoutWithItemsRequest) returns (GetLoadoutWithItemsResponse);
+  // Checks the member's worn and bag items out into a run or field world at
+  // seating: AVAILABLE ones move to IN_RUN under run_id, and items still IN_RUN
+  // under another run id are re-tagged to it (FS-18Z5F R5-R11, ADR-0032).
+  // Returns what is now IN_RUN under run_id, worn in slots and the bag as a list.
+  rpc CheckOutRunGear(CheckOutRunGearRequest) returns (CheckOutRunGearResponse);
   rpc ListItemInstances(ListItemInstancesRequest) returns (ListItemInstancesResponse);
   rpc UpdateLoadout(UpdateLoadoutRequest) returns (UpdateLoadoutResponse);
+  // Moves one of the caller's unworn, AVAILABLE instances between bag and
+  // stash (FS-VPD8Y R10). Domain refusals answer FailedPrecondition with an
+  // ErrorInfo reason (R13).
+  rpc MoveItemInstance(MoveItemInstanceRequest) returns (MoveItemInstanceResponse);
 
   // marketplace service - item service - listing
   rpc ReserveItem(ReserveItemRequest) returns (ReserveItemResponse);
@@ -367,7 +376,8 @@ message ItemInstance {
   int32 buy_price = 17;
   int32 sell_price = 18;
   string description = 19;
-  // Lifecycle status: AVAILABLE, LISTED or IN_ESCROW (FS-8EGFA).
+  // Lifecycle status: AVAILABLE, LISTED, PENDING_SETTLEMENT (FS-8EGFA,
+  // FS-NXP1W) or IN_RUN (FS-18Z5F).
   string status = 20;
   // Minimum character level to equip (FS-BDA7X Req 30): derived requirement;
   // the template's for legacy rows (FS-4R9M9 R23-24, R48).
@@ -379,6 +389,9 @@ message ItemInstance {
   // For a unique, its effect code and effect text; empty otherwise (FS-4R9M9 R51).
   string unique_effect_code = 24;
   string unique_effect_text = 25;
+  // Where the owner keeps it: "bag" or "stash", lowercase, the HTTP vocabulary
+  // (FS-VPD8Y R14). Worn is the loadout, not a location value.
+  string location = 26;
 }
 
 // One rolled affix (FS-4R9M9 R16): a stat code from the affix table, the tier
@@ -410,6 +423,20 @@ message GetLoadoutWithItemsResponse {
   ItemInstance consumable_3 = 10;
 }
 
+// The caller must be member_id (FS-18Z5F R6). run_id is the world's own id:
+// a run's session id, or a field visit's id (R3).
+message CheckOutRunGearRequest {
+  string member_id = 1;
+  string run_id = 2;
+}
+
+// Every instance here has status IN_RUN. A worn item that stayed home (listed,
+// pending settlement) is an empty slot (R8). The bag is not capped (R11).
+message CheckOutRunGearResponse {
+  GetLoadoutWithItemsResponse loadout = 1;
+  repeated ItemInstance bag = 2;
+}
+
 message UpdateLoadoutRequest {
   string member_id = 1;
   string slot = 2;
@@ -418,6 +445,21 @@ message UpdateLoadoutRequest {
 
 message UpdateLoadoutResponse {
   bool success = 1;
+}
+
+// The caller comes from the authenticated context only, never a field here
+// (FS-VPD8Y R12).
+message MoveItemInstanceRequest {
+  string item_instance_id = 1;
+  // "bag" or "stash", lowercase, the HTTP vocabulary.
+  string location = 2;
+}
+
+// The instance's location after the call; unchanged on a no-op.
+message MoveItemInstanceResponse {
+  string id = 1;
+  // "bag" or "stash", lowercase.
+  string location = 2;
 }
 
 

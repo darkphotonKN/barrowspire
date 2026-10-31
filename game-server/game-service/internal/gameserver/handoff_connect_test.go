@@ -48,10 +48,15 @@ func closeCodeOf(t *testing.T, conn *websocket.Conn) int {
 	}
 }
 
-// failingLoadoutItems is items-service unable to answer for a loadout.
+// failingLoadoutItems is items-service unable to answer for a loadout, read or
+// checked out.
 type failingLoadoutItems struct{ MockItemsClient }
 
 func (failingLoadoutItems) GetLoadoutWithItems(context.Context, *itemspb.GetLoadoutWithItemsRequest) (*itemspb.GetLoadoutWithItemsResponse, error) {
+	return nil, errors.New("items-service down")
+}
+
+func (failingLoadoutItems) CheckOutRunGear(context.Context, *itemspb.CheckOutRunGearRequest) (*itemspb.CheckOutRunGearResponse, error) {
 	return nil, errors.New("items-service down")
 }
 
@@ -235,5 +240,7 @@ func TestHandleWebSocketConnection_HandoffArrival_IsSeatedAndServed(t *testing.T
 	assert.Equal(t, 1, writers, "and given a writer")
 	assert.Equal(t, run.ID, recordOf(t, server, authClient.memberID).CurrentGameSessionId, "the record points at the run")
 	assert.Equal(t, []string{"Bearer token"}, items.last(t), "the loadout is fetched with the member's token")
+	assert.Equal(t, []string{run.ID.String()}, items.checkoutRunIDs(), "checked out under the run's session id (FS-18Z5F R13)")
+	assert.Zero(t, items.readCount(), "an arrival no longer reads the loadout")
 	route.assertNoPanics(t)
 }

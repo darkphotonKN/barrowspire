@@ -3,6 +3,7 @@ package items
 import (
 	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -102,26 +103,52 @@ func TestMapProtoItemToItemInstances_RowsSatisfyConstraints(t *testing.T) {
 }
 
 // A brought-in item re-extracted keeps what the store already knows about it:
-// its owner, source, rarity, lifecycle status and roll (FS-4R9M9 R20, R53).
-// The conflict branch must not assign any of them.
-func TestBatchUpsertQuery_ConflictKeepsStoredOwnershipAndRoll(t *testing.T) {
-	query, _ := batchUpsertQuery([]*ItemInstance{{}})
-
-	_, conflict, ok := strings.Cut(query, "ON CONFLICT (id) DO UPDATE SET")
+// its owner, source, rarity and roll (FS-4R9M9 R20, R53). The fenced update
+// must not assign any of them, and it writes only an item the run still owns
+// (FS-18Z5F R27).
+func TestApplyRunItemQuery_KeepsStoredOwnershipAndRoll(t *testing.T) {
+	set, where, ok := strings.Cut(applyRunItemQuery, "WHERE")
 	if !ok {
-		t.Fatalf("no conflict branch:\n%s", query)
+		t.Fatalf("no fence:\n%s", applyRunItemQuery)
 	}
-	for _, kept := range []string{"owner_member_id", "source", "rarity_id", "status", "item_level", "affixes", "required_level"} {
-		if strings.Contains(conflict, kept+" ") {
-			t.Errorf("conflict branch overwrites stored %s:\n%s", kept, conflict)
+	for _, kept := range []string{"owner_member_id", "source", "rarity_id", "item_level", "affixes", "required_level"} {
+		if strings.Contains(set, kept+" ") {
+			t.Errorf("fenced update overwrites stored %s:\n%s", kept, set)
 		}
+	}
+	for _, fence := range []string{"id = $1", "owner_member_id = $2", "status = 'IN_RUN'", "run_id = $3"} {
+		if !strings.Contains(where, fence) {
+			t.Errorf("fenced update does not check %q:\n%s", fence, where)
+		}
+	}
+}
+
+// FS-VPD8Y R9, FS-18Z5F R27: a find lands in the bag whatever location it
+// carries, and the insert has no conflict path to write an existing row by.
+func TestInsertItemsQuery_FindsGoToTheBag(t *testing.T) {
+	items := []*ItemInstance{{Location: LocationStash}, {}}
+
+	query, args := insertItemsQuery(items)
+
+	col := slices.Index(insertItemColumns, "location")
+	if col < 0 {
+		t.Fatalf("location is not written: %v", insertItemColumns)
+	}
+	for i := range items {
+		if got := args[i*len(insertItemColumns)+col]; got != LocationBag {
+			t.Errorf("row %d location = %v, want %q", i, got, LocationBag)
+		}
+	}
+	if strings.Contains(query, "ON CONFLICT") {
+		t.Errorf("the insert writes existing rows:\n%s", query)
 	}
 }
 
 // Opt-in: runs only with ITEMS_TEST_DSN pointing at a migrated items DB; all in
 // one rolled-back transaction. An extraction batch mapped from the event
 // satisfies the template FK and the source, status and armor-slot CHECKs, and
-// a brought-in item keeps its stored owner, source and roll (I-4R9M9-15).
+// a brought-in item, IN_RUN under the run, keeps its stored source and roll
+// (I-4R9M9-15).
 func TestExtraction_MappedBatchStoresWithoutConstraintErrors(t *testing.T) {
 	dsn := os.Getenv("ITEMS_TEST_DSN")
 	if dsn == "" {
@@ -156,20 +183,23 @@ func TestExtraction_MappedBatchStoresWithoutConstraintErrors(t *testing.T) {
 		t.Fatalf("template: %v", err)
 	}
 
-	// a brought-in item already stored, owned and rolled before the run
-	original, broughtIn := uuid.New(), uuid.New()
+	// a brought-in item already stored, owned and rolled before the run, and
+	// checked out into it
+	member, broughtIn, runID := uuid.New(), uuid.New(), uuid.New()
 	rolled := Affixes{{Stat: "strength", Tier: 2, Value: 3}}
 	attack, crit, wtype := 6, 0.08, "sword"
 	repo := NewRepository(db)
-	if err := repo.BatchUpsertItemInstances(ctx, tx, []*ItemInstance{{
-		ID: broughtIn, TemplateID: templateID, OwnerMemberID: original, Source: "starting_gear", Status: "AVAILABLE",
+	if err := repo.InsertItemInstancesTx(ctx, tx, []*ItemInstance{{
+		ID: broughtIn, TemplateID: templateID, OwnerMemberID: member, Source: "starting_gear", Status: "AVAILABLE",
 		ItemType: "weapon", Name: "Test Blade", RarityID: &rarityID, AttackPower: &attack, CriticalRate: &crit, WeaponType: &wtype,
 		ItemLevel: 5, RequiredLevel: 3, Affixes: rolled,
 	}}); err != nil {
 		t.Fatalf("seed brought-in item: %v", err)
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE item_instances SET status = 'IN_RUN', run_id = $2 WHERE id = $1`, broughtIn, runID); err != nil {
+		t.Fatalf("check out: %v", err)
+	}
 
-	member := uuid.New()
 	svc := &service{}
 	equipped, _, err := svc.MapProtoEquipmentToItemInstances(member, &pb.Equipment{
 		// an older producer: the brought-in item comes back without its roll
@@ -186,8 +216,12 @@ func TestExtraction_MappedBatchStoresWithoutConstraintErrors(t *testing.T) {
 		t.Fatalf("map inventory: %v", err)
 	}
 
-	if err := repo.BatchUpsertItemInstances(ctx, tx, append(equipped, carried...)); err != nil {
-		t.Fatalf("extraction batch: %v", err)
+	finds, back := splitFinds(append(equipped, carried...), map[uuid.UUID]bool{broughtIn: true})
+	if err := repo.InsertItemInstancesTx(ctx, tx, finds); err != nil {
+		t.Fatalf("extraction finds: %v", err)
+	}
+	if applied, err := repo.ApplyRunItemsTx(ctx, tx, member, runID, back); err != nil || len(applied) != 1 {
+		t.Fatalf("extraction brought-in: %v, %v", applied, err)
 	}
 
 	var stored []struct {
@@ -211,7 +245,7 @@ func TestExtraction_MappedBatchStoresWithoutConstraintErrors(t *testing.T) {
 	}
 	for _, row := range stored {
 		if row.ID == broughtIn {
-			if row.Owner != original || row.Source != "starting_gear" || row.ItemLevel != 5 || len(row.Affixes) != 1 || row.Affixes[0] != rolled[0] {
+			if row.Owner != member || row.Source != "starting_gear" || row.Status != "AVAILABLE" || row.ItemLevel != 5 || len(row.Affixes) != 1 || row.Affixes[0] != rolled[0] {
 				t.Errorf("brought-in item lost what was stored: %+v", row)
 			}
 			continue

@@ -27,9 +27,10 @@ func pickUpInField(t *testing.T, field *Session, memberID uuid.UUID, name string
 // instance, and what it carries, picked-up items with none. R38, R41.
 func TestEndVisit_SnapshotsTheBodysGear(t *testing.T) {
 	field := builtField(t)
-	loadout := fieldLoadout()
+	gear := fieldGear()
+	loadout := gear.GetLoadout()
 	memberID := uuid.New()
-	_, err := field.SeatVisitor(memberID, fieldWren, loadout)
+	_, err := field.SeatVisitor(memberID, fieldWren, uuid.New(), gear)
 	require.NoError(t, err)
 	pickUpInField(t, field, memberID, "Boar Tusk")
 
@@ -58,7 +59,7 @@ func TestSeatVisitor_ASecondVisitStartsFromZero(t *testing.T) {
 	require.True(t, ended)
 	require.Positive(t, first.ExperienceGained)
 
-	_, err := field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+	_, err := field.SeatVisitor(memberID, fieldWren, uuid.New(), fieldGear())
 	require.NoError(t, err)
 	second, ended := field.EndVisit(memberID)
 	require.True(t, ended)
@@ -78,7 +79,7 @@ func TestEndVisit_ASettledPickupIsNeverSettledAgain(t *testing.T) {
 	require.Len(t, first.Satchel, 2)
 	require.Nil(t, first.Satchel[1].InstanceID, "the first visit settles the pickup as new")
 
-	_, err := field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+	_, err := field.SeatVisitor(memberID, fieldWren, uuid.New(), fieldGear())
 	require.NoError(t, err)
 	second, ended := field.EndVisit(memberID)
 	require.True(t, ended)

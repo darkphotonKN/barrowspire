@@ -22,8 +22,10 @@ export const PENDING_MS = 1000;
 export interface HudPanel {
   onEquip?: (item: ItemState, slot: EquipmentSlot) => void;
   onUnequip?: (item: ItemState, slot: EquipmentSlot) => void;
+  /** Asked before an equip is drawn: false leaves everything where it is and nothing is sent. */
+  mayEquip?: (item: ItemState, slot: EquipmentSlot) => boolean;
   /** Asked before an unequip: false leaves the item worn and nothing is sent. */
-  mayUnequip?: () => boolean;
+  mayUnequip?: (item: ItemState) => boolean;
   /** Whether a screen point lies over the open panel, where a press is the panel's (FS-HRH2J R8). */
   covers(x: number, y: number): boolean;
   toggle(): void;

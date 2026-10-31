@@ -23,4 +23,5 @@ type ItemClient interface {
 	GetLoadout(ctx context.Context, req *pb.GetLoadoutRequest) (*pb.GetLoadoutResponse, error)
 	ListItemInstances(ctx context.Context, req *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error)
 	UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutRequest) (*pb.UpdateLoadoutResponse, error)
+	MoveItemInstance(ctx context.Context, req *pb.MoveItemInstanceRequest) (*pb.MoveItemInstanceResponse, error)
 }

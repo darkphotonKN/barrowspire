@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -59,6 +60,45 @@ func TestWrite_GRPCStatus_MapsToStatusCodeAndMediaType(t *testing.T) {
 			body := testsupport.Decode(t, w)
 			assert.Equal(t, string(tt.wantCode), body["code"])
 			assert.Equal(t, float64(tt.wantStatus), body["status"], "status member mirrors the HTTP status")
+		})
+	}
+}
+
+// FS-VPD8Y R25: a FailedPrecondition carrying a registered ErrorInfo reason
+// answers 400 with that code; every other FailedPrecondition stays the generic
+// FAILED_PRECONDITION, so existing routes answer exactly as before.
+func TestWrite_FailedPrecondition_PassesRegisteredReasonsThrough(t *testing.T) {
+	withReason := func(reason string) error {
+		st, err := status.New(codes.FailedPrecondition, "refused").
+			WithDetails(&errdetails.ErrorInfo{Reason: reason, Domain: errcode.Domain})
+		require.NoError(t, err)
+		return st.Err()
+	}
+
+	tests := []struct {
+		name     string
+		err      error
+		wantCode errcode.Code
+	}{
+		{"bag full", errcode.Refuse(errcode.BagFull), errcode.BagFull},
+		{"stash full", errcode.Refuse(errcode.StashFull), errcode.StashFull},
+		{"item not available", errcode.Refuse(errcode.ItemNotAvailable), errcode.ItemNotAvailable},
+		{"item worn", withReason(string(errcode.ItemWorn)), errcode.ItemWorn},
+		{"no detail", status.Error(codes.FailedPrecondition, "listing expired"), errcode.FailedPrecondition},
+		{"unregistered reason", withReason("LISTING_EXPIRED"), errcode.FailedPrecondition},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, w := testsupport.NewCtx()
+
+			httperr.Write(c, "TestOperation", tt.err)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Equal(t, "application/problem+json", w.Header().Get("Content-Type"))
+			body := testsupport.Decode(t, w)
+			assert.Equal(t, string(tt.wantCode), body["code"])
+			assert.Equal(t, http.StatusText(http.StatusBadRequest), body["detail"], "the downstream message never reaches the client")
 		})
 	}
 }

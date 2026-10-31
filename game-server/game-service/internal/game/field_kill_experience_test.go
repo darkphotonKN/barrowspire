@@ -21,7 +21,7 @@ var fieldKael = types.CharacterInPlay{ID: uuid.New(), Name: "Kael", Class: "mage
 func visitor(t *testing.T, field *Session, character types.CharacterInPlay) uuid.UUID {
 	t.Helper()
 	memberID := uuid.New()
-	_, err := field.SeatVisitor(memberID, character, fieldLoadout())
+	_, err := field.SeatVisitor(memberID, character, uuid.New(), fieldGear())
 	require.NoError(t, err)
 	return memberID
 }
@@ -120,13 +120,13 @@ func TestFieldKillCredit_KillersWhereabouts(t *testing.T) {
 func TestFieldKillCredit_EveryVisitStartsAtZero(t *testing.T) {
 	field := builtField(t)
 	memberID := uuid.New()
-	_, err := field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+	_, err := field.SeatVisitor(memberID, fieldWren, uuid.New(), fieldGear())
 	require.NoError(t, err)
 	field.publishKills([]systems.KillRecord{boarKilledBy(memberID, 1, false)})
 	first, _ := field.EndVisit(memberID)
 	require.Positive(t, first.ExperienceGained)
 
-	_, err = field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+	_, err = field.SeatVisitor(memberID, fieldWren, uuid.New(), fieldGear())
 	require.NoError(t, err)
 	second, _ := field.EndVisit(memberID)
 

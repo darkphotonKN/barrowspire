@@ -71,4 +71,36 @@ const (
 	// Name them after the RULE that was broken, not the field that broke it, and
 	// record which FS or ADR introduced each one.
 	//
+	// Each one is a domain refusal: the owning service decides it and answers
+	// with Refuse (refusal.go); the gateway passes the code through as 400. A
+	// code added here must also be listed in domainCodes below, or Refuse
+	// answers Internal for it.
+
+	// BagFull: the write would grow the member's bag at or over its 30
+	// instances. Added for FS-VPD8Y (Town stash).
+	BagFull Code = "BAG_FULL"
+
+	// StashFull: the write would grow the member's stash at or over its 60
+	// instances. Added for FS-VPD8Y (Town stash).
+	StashFull Code = "STASH_FULL"
+
+	// ItemNotAvailable: the item's status is not AVAILABLE (listed, in escrow,
+	// pending settlement), so it cannot be moved. Added for FS-VPD8Y (Town
+	// stash).
+	ItemNotAvailable Code = "ITEM_NOT_AVAILABLE"
+
+	// ItemWorn: the item is in the member's loadout, so it is not in the bag
+	// or the stash to move. Added for FS-VPD8Y (Town stash).
+	ItemWorn Code = "ITEM_WORN"
 )
+
+// domainCodes is the registry of domain-specific codes: the only reasons a
+// refusal may carry through the gateway. Anything else stays the generic
+// FAILED_PRECONDITION, so an unregistered reason never becomes contract by
+// accident.
+var domainCodes = map[Code]struct{}{
+	BagFull:          {},
+	StashFull:        {},
+	ItemNotAvailable: {},
+	ItemWorn:         {},
+}

@@ -151,6 +151,12 @@ func mapError(err error) Problem {
 			// itself still never leaves the process.
 			return newProblem(http.StatusServiceUnavailable, errcode.ServiceUnavailable)
 		case codes.FailedPrecondition:
+			// A domain refusal names its rule in an ErrorInfo reason; a
+			// registered one passes through as the code (FS-VPD8Y R25). The
+			// gateway only carries the decision, never makes it (ADR-0001 §6).
+			if code, ok := errcode.RefusalReason(st); ok {
+				return newProblem(http.StatusBadRequest, code)
+			}
 			return newProblem(http.StatusBadRequest, errcode.FailedPrecondition)
 		case codes.Aborted:
 			return newProblem(http.StatusConflict, errcode.Conflict)

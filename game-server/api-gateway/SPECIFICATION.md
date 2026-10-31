@@ -61,6 +61,10 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [ ] Affixes and item level in item summaries → FS-4R9M9
 - [ ] Read my bids → FS-EYQ8K
 
+### Items
+
+- [ ] Move an item between bag and stash → FS-VPD8Y
+
 ### Characters
 
 - [ ] Character level and experience read → FS-BDA7X
