@@ -57,6 +57,12 @@
       "height": 2780,
       "sha256": "0db84f8406d3eee15b8ac57de3da177147f237e0b25dfeb588da99a6a8bb9fee"
     },
+    "containers-0": {
+      "image": "containers-0.png",
+      "width": 144,
+      "height": 76,
+      "sha256": "03702b95e1a634f3ee75b954a9de0507c94496d7f609a22ef70ef1551a116759"
+    },
     "creatures-0": {
       "image": "creatures-0.png",
       "width": 2404,
@@ -16802,6 +16808,44 @@
         }
       },
       "source": "authored: tools/bake/page/models/tower.js#rubble",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "sack": {
+      "atlas": "containers-0",
+      "frameWidth": 68,
+      "frameHeight": 69,
+      "anchor": {
+        "x": 0.4117647058823529,
+        "y": 0.6666666666666666
+      },
+      "directions": 1,
+      "animations": {
+        "closed": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "open": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 72,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/interactables.js#sack",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "sacks": {
