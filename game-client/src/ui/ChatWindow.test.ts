@@ -33,10 +33,18 @@ interface FakeText {
   destroyed: boolean;
   /** The handler a toggle registered for pointerdown, if it is interactive. */
   onPress?: () => void;
+  /** The geometry mask the text wears, as Phaser would render it with. */
+  mask?: FakeMask;
+}
+
+interface FakeMask {
+  destroyed: boolean;
+  destroy(): void;
 }
 
 function fakeScene() {
   const texts: FakeText[] = [];
+  const maskRecords: FakeMask[] = [];
   const panels: {
     depth?: number;
     scroll?: number;
@@ -75,7 +83,14 @@ function fakeScene() {
       lineBetween: () => self,
       fillTriangle: () => self,
       fillCircle: () => self,
-      createGeometryMask: () => ({ destroy: () => undefined }),
+      createGeometryMask: () => {
+        const mask: FakeMask = {
+          destroyed: false,
+          destroy: () => void (mask.destroyed = true),
+        };
+        maskRecords.push(mask);
+        return mask;
+      },
       destroy: () => void (g.destroyed = true),
     };
     return self;
@@ -111,7 +126,7 @@ function fakeScene() {
       get width() {
         return t.content.length * 7;
       },
-      setMask: () => self,
+      setMask: (mask: FakeMask) => ((t.mask = mask), self),
       setPosition: (nx: number, ny: number) => ((t.x = nx), (t.y = ny), self),
       destroy: () => void (t.destroyed = true),
       get height() {
@@ -138,7 +153,17 @@ function fakeScene() {
   const wheel = (x: number, y: number, dy: number) =>
     input.emit("wheel", { x, y }, [], 0, dy);
   const press = (key: string) => keys.emit(`keydown-${key}`);
-  return { scene, shown, messageTexts, panels, input, keys, wheel, press };
+  return {
+    scene,
+    shown,
+    messageTexts,
+    panels,
+    maskRecords,
+    input,
+    keys,
+    wheel,
+    press,
+  };
 }
 
 let minted = 0;
@@ -878,5 +903,47 @@ describe("ChatWindow scrollbar", () => {
     s.window.destroy();
     expect(s.input.listenerCount("pointermove")).toBe(0);
     expect(s.input.listenerCount("pointerup")).toBe(0);
+  });
+});
+
+// ── The mask a drawn line wears must be alive (the freeze on cmd-tab, 2026-10-31) ──────────
+// Phaser's GeometryMask.destroy nulls its graphics, and the next render of any text still
+// wearing it dereferences that null: the render loop throws and the whole game stops. The window
+// rebuilt its mask on every panel redraw, including the opacity flip when the input lost focus,
+// without re-dressing the lines already drawn.
+
+describe("ChatWindow mask lifetime", () => {
+  const liveMasks = (s: ReturnType<typeof inputRig>) =>
+    s.messageTexts().every((t) => t.mask !== undefined && !t.mask.destroyed);
+
+  it("should leave every drawn line wearing a live mask after the input gains and loses focus", () => {
+    const s = inputRig();
+    s.store.getState().receive(stamped("one"));
+    s.store.getState().receive(stamped("two"));
+    expect(liveMasks(s)).toBe(true);
+
+    s.press("ENTER");
+    expect(liveMasks(s)).toBe(true);
+
+    // cmd-tab away: the browser blurs the field without a press anywhere
+    s.field().focused = false;
+    s.field().events!.blurred();
+    expect(liveMasks(s)).toBe(true);
+  });
+
+  it("should leave every drawn line wearing a live mask after a toggle and a fold round trip", () => {
+    const s = rig();
+    for (let i = 1; i <= 12; i++) s.say(`l${i}`);
+
+    toggleOf(s, "World").onPress!();
+    expect(s.messageTexts().every((t) => t.mask && !t.mask.destroyed)).toBe(
+      true,
+    );
+
+    foldButtonOf(s).onPress!();
+    foldButtonOf(s).onPress!();
+    expect(s.messageTexts().every((t) => t.mask && !t.mask.destroyed)).toBe(
+      true,
+    );
   });
 });
