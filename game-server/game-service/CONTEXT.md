@@ -337,7 +337,7 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   against cooldown and cost. Aiming, holding and wind-up before it are client presentation and
   never reach game-service state (ADR-0030).
 
-### Chat (FS-WJGFJ; world chat and whisper FS-5SH4G; mute and report FS-4HEG7)
+### Chat (FS-WJGFJ; world chat FS-5SH4G; whisper FS-KCQ06; mute and report FS-4HEG7)
 
 Chat is a relay, not a world concern: a message never enters an ECS world, is never stored, and
 is addressed by scope, not by position. Three words here collide with the world vocabulary

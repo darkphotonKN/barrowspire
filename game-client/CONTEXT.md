@@ -74,7 +74,7 @@ translation belongs to the surface that renders words.
 - **Gold** — the in-game currency, in copy and in code alike (wallet-service and ledger-service
   both use it). One of the few words that needs no translation.
 
-## Chat terms (FS-WJGFJ; world chat and whisper FS-5SH4G; mute and report FS-4HEG7)
+## Chat terms (FS-WJGFJ; world chat FS-5SH4G; whisper FS-KCQ06; mute and report FS-4HEG7)
 
 What the chat window says. Each maps to a game-service chat channel type on the wire; the
 protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) § Chat.
