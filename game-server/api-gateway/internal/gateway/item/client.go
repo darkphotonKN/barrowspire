@@ -95,6 +95,10 @@ func (c *Client) UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutRequest
 	return client.UpdateLoadout(ctx, req)
 }
 
+func (c *Client) MoveItemInstance(ctx context.Context, req *pb.MoveItemInstanceRequest) (*pb.MoveItemInstanceResponse, error) {
+	return pb.NewItemsServiceClient(c.conn).MoveItemInstance(ctx, req)
+}
+
 func (c *Client) GetItemSummaries(ctx context.Context, req *pb.GetItemSummariesRequest) (*pb.GetItemSummariesResponse, error) {
 	return pb.NewItemsServiceClient(c.conn).GetItemSummaries(ctx, req)
 }

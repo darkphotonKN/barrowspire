@@ -121,10 +121,30 @@ export interface paths {
         };
         /**
          * List the signed-in member's item instances
-         * @description The member's stash: every item instance they own.
+         * @description Every item instance the member owns, worn or not, each with its location: the bag or the stash.
          */
         get: operations["list-item-instances"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/items/instances/{id}/location": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Move an item between the bag and the stash
+         * @description Moves one of the signed-in member's unworn, available items to the bag or the stash. Moving it where it already is succeeds and changes nothing. Refusals: ITEM_WORN (in the loadout), ITEM_NOT_AVAILABLE (listed or pending settlement), BAG_FULL (bag at or over 30), STASH_FULL (stash at or over 60). An item that is not the member's answers 404.
+         */
+        put: operations["move-item-instance"];
         post?: never;
         delete?: never;
         options?: never;
@@ -146,7 +166,7 @@ export interface paths {
         get: operations["get-loadout"];
         /**
          * Equip or unequip an item in a loadout slot
-         * @description Sets the item instance in a slot. An empty item_instance_id unequips the slot.
+         * @description Sets the item instance in a slot. An empty item_instance_id unequips the slot. The item the slot held, on an unequip or a swap, goes to the bag. Refusals: ITEM_NOT_AVAILABLE (equipping an item in a run, listed or pending settlement), BAG_FULL (an unequip, or a swap that would grow the bag, with the bag at or over 30).
          */
         put: operations["update-loadout"];
         post?: never;
@@ -1262,6 +1282,11 @@ export interface components {
             item_level: number;
             /** @description e.g. weapon, armor, ring, consumable */
             item_type?: string;
+            /**
+             * @description Where the member keeps the item: carried in the bag or stored in the town stash. A worn item is in the loadout whatever this says
+             * @enum {string}
+             */
+            location: "bag" | "stash";
             /** Format: int32 */
             magic_resistance?: number;
             /** Format: int32 */
@@ -1278,10 +1303,10 @@ export interface components {
             sell_price?: number;
             source?: string;
             /**
-             * @description Lifecycle status; only AVAILABLE relics can be listed
+             * @description Lifecycle status; only AVAILABLE relics can be listed or equipped. IN_RUN is checked out into a run or field world.
              * @enum {string}
              */
-            status?: "AVAILABLE" | "LISTED" | "IN_ESCROW" | "PENDING_SETTLEMENT";
+            status?: "AVAILABLE" | "LISTED" | "IN_ESCROW" | "PENDING_SETTLEMENT" | "IN_RUN";
             template_id?: string;
             /** @description The unique's effect text. Absent unless the item is a unique */
             unique_effect?: string;
@@ -1534,6 +1559,25 @@ export interface components {
              * @description Duplicates the HTTP status
              */
             statusCode: number;
+        };
+        MoveItemInstanceBody: {
+            /**
+             * @description Where to keep the item: carried in the bag or stored in the town stash
+             * @enum {string}
+             */
+            location: "bag" | "stash";
+        };
+        MoveItemInstanceResponse: {
+            /**
+             * Format: uuid
+             * @description The item instance
+             */
+            id: string;
+            /**
+             * @description Where the member keeps the item after the call
+             * @enum {string}
+             */
+            location: "bag" | "stash";
         };
         MyBid: {
             /**
@@ -1791,6 +1835,17 @@ export interface components {
             message: string;
             /** @description The payload */
             result: components["schemas"]["ItemType"][] | null;
+            /**
+             * Format: int64
+             * @description Duplicates the HTTP status
+             */
+            statusCode: number;
+        };
+        ResultEnvelopeMoveItemInstanceResponse: {
+            /** @description Human-readable summary */
+            message: string;
+            /** @description The payload */
+            result: components["schemas"]["MoveItemInstanceResponse"];
             /**
              * Format: int64
              * @description Duplicates the HTTP status
@@ -2539,6 +2594,87 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "move-item-instance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The item instance to move */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveItemInstanceBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultEnvelopeMoveItemInstanceResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

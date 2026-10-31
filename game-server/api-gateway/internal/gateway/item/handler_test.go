@@ -29,8 +29,10 @@ type stubItemClient struct {
 	weapons   *pb.ListWeaponsResponse
 	loadout   *pb.GetLoadoutResponse
 	instances *pb.ListItemInstancesResponse
+	moved     *pb.MoveItemInstanceResponse
 
 	gotAuth []string // outgoing authorization metadata of the last call
+	gotMove *pb.MoveItemInstanceRequest
 }
 
 func (s *stubItemClient) recordAuth(ctx context.Context) {
@@ -91,6 +93,12 @@ func (s *stubItemClient) ListItemInstances(ctx context.Context, _ *pb.ListItemIn
 func (s *stubItemClient) UpdateLoadout(ctx context.Context, _ *pb.UpdateLoadoutRequest) (*pb.UpdateLoadoutResponse, error) {
 	s.recordAuth(ctx)
 	return nil, s.err
+}
+
+func (s *stubItemClient) MoveItemInstance(ctx context.Context, req *pb.MoveItemInstanceRequest) (*pb.MoveItemInstanceResponse, error) {
+	s.recordAuth(ctx)
+	s.gotMove = req
+	return s.moved, s.err
 }
 
 // newRouter mounts the item gin routes that read no caller identity. The
