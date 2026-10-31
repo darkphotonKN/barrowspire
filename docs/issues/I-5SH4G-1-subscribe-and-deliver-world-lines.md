@@ -24,7 +24,7 @@ every line that arrives, delivers it to every player seated in any world on this
 
 - **Redis client**: the `redis.UniversalClient` `cmd/server/main.go` already holds
   (`config.GetClient()`), constructor-injected into the server the way the handoff announcer is
-  (R13). No new client, no wrapper. The relay gets a `chatBus` interface at its point of use with
+  (R13). No new client; the bus is a thin adapter of the same shape as `handoff.Redis`. The relay gets a `chatBus` interface at its point of use with
   what it needs (subscribe now; publish in slice 2).
 - **Subscriber** (R9): one goroutine, started with the pod, stopped with the server's context,
   shaped like `handoff.Listen`. It decodes each message as a stamped chat line and hands it to

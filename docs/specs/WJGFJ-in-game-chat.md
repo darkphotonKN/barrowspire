@@ -193,10 +193,14 @@ the requirement named. Built as I-WJGFJ-6.
     panel wears the NPC dialogue's carved frame (shared as `ui/carvedPanel.ts`).
   - **R21 (scrolling):** a scrollbar down the right edge of the lines, drawn only when more is
     held than fits; the thumb drags, a press on the track jumps. The wheel still works.
-  - **R26 (idle row):** while the input is closed the row shows the picked channel's name and
-    the hint "Press Enter to speak"; a press on either opens the input. The DOM field and picker
-    are shown only while typing, because a browser element always draws above the canvas and
-    would otherwise cover the end-of-run card and the overlays (R17).
+  - **R26 (idle row), as finally built:** the input row is one browser element, the same idle
+    and typing (the user asked for "one look, no jump" after a Phaser-drawn idle row read blurred
+    and shifted on focus). The hint "Press Enter to speak" is the field's own placeholder; a
+    press anywhere on the bar opens the input. Because a browser element always draws above the
+    canvas, the row is **hidden while something else owns the keys** (a dialogue, the menu, the
+    gear overlay, an open chest, the end-of-run card), which is how R17's "below popups and
+    overlays" holds; losing the keys mid-line drops the draft (R27). A future popup that does
+    not claim the keys would draw under the row.
   - **R5 (control characters):** a run of control characters becomes one space, not one each.
   - **R3 (sender name):** the character's name only; there is no fall-back to the account name.
   - **Outside this feature's surface, asked by the user:** the hub's "Gathering the delve" queue

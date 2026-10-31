@@ -14,8 +14,10 @@ is the darkest ramp token. The picker is a native `<select>` beside the text fie
 element. Checked by the user in a running client through the day; the fixes that followed
 (input stays open after sending, typing unfolds, fold button top right, filling wraps, arrow-key
 recall, a scrollbar, solid-while-typing, the queue panel moved, the cmd-tab mask freeze) are
-recorded in the FS amendment's "also decided" list and in this branch's commits. Code review
-2026-10-31: the DOM input row is now shown only while typing, so it never covers an overlay.
+recorded in the FS amendment's "also decided" list and in this branch's commits. After two
+reviews the input row is one DOM element, shown idle and typing alike and hidden only while
+something else owns the keys (`ChatInput.sync`, re-read once a frame and at build), so it never
+covers an overlay and never changes face on focus.
 
 ## What to Build
 
