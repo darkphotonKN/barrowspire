@@ -2,7 +2,7 @@ import * as Phaser from "phaser";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { ActionType } from "@/assets/types/client";
 import { useGameStore } from "@/stores/gameStore";
-import { CANVAS_FONT, palette, shade, toCss } from "@/utils/canvasPalette";
+import { CANVAS_FONT, palette, rgba, shade, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
 import {
   ClientGameState,
@@ -1668,8 +1668,9 @@ export class HubScene extends Phaser.Scene {
     }
 
     // amber: the one thing on the panel the player can act on
+    // see-through like the chat window's panel, not a solid block (asked 2026-10-31)
     const button = this.add
-      .text(x, y, "Leave", hudLine(BARROW_HEX.amber))
+      .text(x, y, "Leave", { ...hudLine(BARROW_HEX.amber), backgroundColor: rgba(palette.chatPanel, 0.85) })
       .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(1000)

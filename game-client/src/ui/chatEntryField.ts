@@ -49,12 +49,18 @@ const FONT = () => `13px ${CANVAS_FONT.body}`;
 
 /** The real row: a picker and a field in Phaser's DOM container, over the input row, short of the fold button. */
 export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
+  // Phaser owns the outer element's display (it sets block on every render), so the flex row that
+  // stretches the field out to the fold button lives one level in, where Phaser never writes
+  const shell = document.createElement("div");
   const row = document.createElement("div");
   Object.assign(row.style, {
     display: "flex",
     alignItems: "center",
     gap: "6px",
+    width: "100%",
+    height: "100%",
   });
+  shell.appendChild(row);
 
   const picker = document.createElement("select");
   picker.setAttribute("aria-label", "Chat channel");
@@ -64,6 +70,8 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
     border: "none",
     borderRight: `1px solid ${toCss(palette.chatRule)}`,
     outline: "none",
+    // the site's :focus-visible draws a ring as a box-shadow; the window shows focus by itself
+    boxShadow: "none",
     padding: "0 4px",
     font: FONT(),
     cursor: "pointer",
@@ -98,6 +106,7 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
     background: "transparent",
     border: "none",
     outline: "none",
+    boxShadow: "none",
     padding: "0",
     margin: "0",
     font: FONT(),
@@ -107,8 +116,8 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
   showChannel("area");
 
   const size = (r: Rect) => {
-    row.style.width = `${r.width - CHAT_FOLD_W - 4}px`;
-    row.style.height = `${r.height}px`;
+    shell.style.width = `${r.width - CHAT_FOLD_W - 4}px`;
+    shell.style.height = `${r.height}px`;
   };
   size(rect);
 
@@ -137,7 +146,7 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
   });
 
   const dom = scene.add
-    .dom(rect.x + 4, rect.y, row)
+    .dom(rect.x + 4, rect.y, shell)
     .setOrigin(0, 0)
     .setScrollFactor(0)
     .setDepth(HUD_DEPTH);

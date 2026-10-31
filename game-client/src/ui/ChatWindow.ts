@@ -99,6 +99,7 @@ export class ChatWindow {
       this.onStore(state, prev),
     );
     scene.input.on("wheel", this.onWheel, this);
+    scene.input.on("pointerdown", this.onPress, this);
     if (options.input) this.buildInput(options.input);
     this.drawInputRow();
   }
@@ -128,6 +129,7 @@ export class ChatWindow {
   destroy(): void {
     this.unsubscribe();
     this.scene.input?.off("wheel", this.onWheel, this);
+    this.scene.input?.off("pointerdown", this.onPress, this);
     this.scene.input?.keyboard?.off("keydown-ENTER", this.onEnter, this);
     this.input?.cancel();
     this.field?.destroy();
@@ -216,6 +218,16 @@ export class ChatWindow {
 
   private onEnter(): void {
     this.input?.requestOpen();
+  }
+
+  /**
+   * A press while typing: one in the world lets go of the input (draft kept, keyboard back) so the
+   * player plays on at once; one on the panel, a tab or the fold button, keeps them typing. The
+   * browser will not move focus itself, since Phaser prevents a canvas mousedown's default.
+   */
+  private onPress(pointer: { x: number; y: number }): void {
+    if (!this.input?.isOpen() || this.covers(pointer.x, pointer.y)) return;
+    this.field?.blur();
   }
 
   private onWheel(
