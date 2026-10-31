@@ -41,7 +41,7 @@ type Downstreams struct {
 * liveness key, then releases every downstream connection; call it on
 * shutdown, before redis is closed.
 **/
-func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod, outbox game.OutboxWriter) (*gin.Engine, func() error, error) {
+func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod, outbox game.OutboxWriter, outboxWaker game.OutboxWaker) (*gin.Engine, func() error, error) {
 	// gin.Default() with its access logger swapped: the default one writes the
 	// raw query, and the WebSocket connect carries the bearer token in it
 	router := gin.New()
@@ -85,8 +85,9 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 	matchAnnouncer := handoff.NewRedis(redisClient)
 	matchmaker := matchmaker.NewMatchmaker(2, pod.ID, matchQueueRedis, matchAnnouncer)
 
-	// outbox is built once in main and shared with the worker that drains it
-	gameService := game.NewService(db, outbox)
+	// outbox is built once in main and shared with the worker that drains it;
+	// the worker is woken once match-end rows commit
+	gameService := game.NewService(db, outbox, outboxWaker)
 	// the one announcer: the matchmaker publishes create steps with it, the
 	// server publishes handoff steps to the other pods. FS-K2HKP §Requirements 20.
 	// the game service also settles every field visit through the same
