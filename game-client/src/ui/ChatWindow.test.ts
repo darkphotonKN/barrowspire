@@ -4,7 +4,11 @@ import type Phaser from "phaser";
 import { createChatStore, type ChatLinePayload } from "@/stores/chatStore";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { ChatWindow } from "./ChatWindow";
-import { CHAT_VISIBLE_LINES, chatWindowFrame } from "./chatWindowLayout";
+import {
+  CHAT_INPUT_HINT,
+  CHAT_VISIBLE_LINES,
+  chatWindowFrame,
+} from "./chatWindowLayout";
 
 // FS-WJGFJ §Requirements C17–C23, C29, C31. I-WJGFJ-3: the window as a scene draws it, on a
 // recording stand-in for the Phaser scene.
@@ -28,7 +32,11 @@ function fakeScene() {
     destroyed: boolean;
     rects: number[][];
   }[] = [];
-  const input = new EventEmitter();
+  const keys = Object.assign(new EventEmitter(), {
+    enabled: true,
+    resetKeys: () => undefined,
+  });
+  const input = Object.assign(new EventEmitter(), { keyboard: keys });
 
   const graphics = (masks = false) => {
     const g = {
@@ -91,7 +99,8 @@ function fakeScene() {
     texts.filter((t) => !t.destroyed).sort((a, b) => a.y - b.y);
   const wheel = (x: number, y: number, dy: number) =>
     input.emit("wheel", { x, y }, [], 0, dy);
-  return { scene, shown, panels, input, wheel };
+  const press = (key: string) => keys.emit(`keydown-${key}`);
+  return { scene, shown, panels, input, keys, wheel, press };
 }
 
 let minted = 0;
@@ -173,12 +182,10 @@ describe("ChatWindow (C20, C22, C29: the stream drawn)", () => {
   it("should draw a notice as a dash and its words in the system colour", () => {
     const { store, shown } = rig();
 
-    store
-      .getState()
-      .notice({
-        code: "channel_closed",
-        text: "That channel is not open yet.",
-      });
+    store.getState().notice({
+      code: "channel_closed",
+      text: "That channel is not open yet.",
+    });
 
     const [t] = shown();
     expect(t.content).toBe("— That channel is not open yet.");
@@ -303,5 +310,131 @@ describe("ChatWindow (teardown)", () => {
     expect(shown()).toHaveLength(0);
     expect(panels.every((p) => p.destroyed)).toBe(true);
     expect(input.listenerCount("wheel")).toBe(0);
+  });
+});
+
+// ── The input row (I-WJGFJ-4, FS-WJGFJ R26–R28) ─────────────────────────────────────────────
+
+interface FakeField {
+  value: string;
+  focused: boolean;
+  rect: { x: number; y: number; width: number; height: number };
+  destroyed: boolean;
+  events?: import("./chatEntryField").ChatEntryEvents;
+}
+
+function inputRig(mayOpen = () => true) {
+  const store = createChatStore();
+  const s = fakeScene();
+  const fields: FakeField[] = [];
+  const sent: unknown[] = [];
+  const window = new ChatWindow(s.scene, store, X, BOTTOM, {
+    mayOpen,
+    send: (line) => sent.push(line),
+    makeField: (_scene, rect, events) => {
+      const f: FakeField = {
+        value: "",
+        focused: false,
+        rect,
+        destroyed: false,
+        events,
+      };
+      fields.push(f);
+      return {
+        get value() {
+          return f.value;
+        },
+        set value(v: string) {
+          f.value = v;
+        },
+        focus: () => {
+          f.focused = true;
+          events.focused();
+        },
+        blur: () => {
+          f.focused = false;
+          events.blurred();
+        },
+        moveTo: (r) => void (f.rect = r),
+        destroy: () => void (f.destroyed = true),
+      };
+    },
+  });
+  const field = () => fields[0];
+  const hint = () => s.shown().find((t) => t.content === CHAT_INPUT_HINT);
+  return { ...s, store, window, field, sent, hint };
+}
+
+describe("ChatWindow input (C26: Enter opens, Enter sends)", () => {
+  it("should place the field in the input row", () => {
+    const { field } = inputRig();
+    const frame = chatWindowFrame(X, BOTTOM);
+    expect(field().rect).toEqual(frame.input);
+  });
+
+  it("should open on Enter in the scene, send the typed line on Enter in the field, and close", () => {
+    const { press, field, sent, keys, window } = inputRig();
+
+    press("ENTER");
+    expect(field().focused).toBe(true);
+    expect(keys.enabled).toBe(false);
+    expect(window.isTyping()).toBe(true);
+
+    field().value = "hello";
+    field().events!.keyDown("Enter", false);
+
+    expect(sent).toEqual([{ channel: "area", text: "hello" }]);
+    expect(field().focused).toBe(false);
+    expect(keys.enabled).toBe(true);
+  });
+
+  it("should not open on Enter while something else owns the keys", () => {
+    const { press, field } = inputRig(() => false);
+    press("ENTER");
+    expect(field().focused).toBe(false);
+  });
+
+  it("should show the hint only while closed with nothing typed", () => {
+    const { press, field, hint } = inputRig();
+    expect(hint()).toBeDefined();
+
+    press("ENTER");
+    expect(hint()).toBeUndefined();
+
+    field().value = "half";
+    field().events!.typed(false);
+    // a click elsewhere: the field loses focus, the draft stays
+    field().focused = false;
+    field().events!.blurred();
+    expect(hint()).toBeUndefined();
+
+    field().value = "";
+    field().events!.typed(false);
+    expect(hint()).toBeDefined();
+  });
+
+  it("should move the field with the window", () => {
+    const { window, field } = inputRig();
+    window.setBottom(600);
+    expect(field().rect).toEqual(chatWindowFrame(X, 600).input);
+  });
+
+  it("should drop the draft and close when cancelled", () => {
+    const { press, field, window, keys } = inputRig();
+    press("ENTER");
+    field().value = "half";
+
+    window.cancelInput();
+
+    expect(field().value).toBe("");
+    expect(window.isTyping()).toBe(false);
+    expect(keys.enabled).toBe(true);
+  });
+
+  it("should take the field down and stop hearing Enter when destroyed", () => {
+    const { window, field, keys } = inputRig();
+    window.destroy();
+    expect(field().destroyed).toBe(true);
+    expect(keys.listenerCount("keydown-ENTER")).toBe(0);
   });
 });

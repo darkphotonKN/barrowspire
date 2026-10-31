@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Only the field's entrance trigger and its replies are under test: a Phaser stand-in with the
 // scene base class and the events the scene hangs its release on.
+// The chat input's text field is a real <input> in the browser; this suite runs without a DOM,
+// so the field is a silent stand-in. The input's rules are tested in ui/chatInput.test.ts.
+vi.mock("@/ui/chatEntryField", () => ({
+  domChatEntry: () => ({ value: "", focus: () => undefined, blur: () => undefined, moveTo: () => undefined, destroy: () => undefined }),
+}));
+
 vi.mock("phaser", async () => {
   const { EventEmitter } = await import("eventemitter3");
   class Scene {
