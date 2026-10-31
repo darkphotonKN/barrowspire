@@ -11,6 +11,8 @@ import {
   CHAT_FOLD_SHUT,
   CHAT_INPUT_HINT,
   CHAT_VISIBLE_LINES,
+  chatScrollThumb,
+  chatScrollTrack,
   chatWindowFrame,
 } from "./chatWindowLayout";
 
@@ -324,7 +326,7 @@ describe("ChatWindow (C18: moving with the ResourceHud)", () => {
     window.setBottom(600);
 
     const frame = chatWindowFrame(X, 600);
-    const live = panels.filter((p) => !p.destroyed).at(-1)!;
+    const live = panels.filter((p) => !p.destroyed)[0]!;
     // the carved panel's shadow comes first; its ground is the panel's own rect
     expect(live.rects).toContainEqual([
       frame.panel.x,
@@ -786,7 +788,7 @@ describe("ChatWindow fold button size (asked 2026-10-31)", () => {
 describe("ChatWindow opacity", () => {
   // the carved panel's main ground is drawn at 0.97 of the window's opacity
   const groundAlpha = (s: ReturnType<typeof inputRig>) => {
-    const live = s.panels.filter((p) => !p.destroyed).at(-1)!;
+    const live = s.panels.filter((p) => !p.destroyed)[0]!;
     return live.fills.find(
       ([colour]) => colour === shade(BARROW_HEX.charcoal, 0.2),
     )![1];
@@ -808,12 +810,73 @@ describe("ChatWindow opacity", () => {
   it("should not redraw the panel on every keystroke", () => {
     const s = inputRig();
     s.press("ENTER");
-    const live = s.panels.filter((p) => !p.destroyed).at(-1)!;
+    const live = s.panels.filter((p) => !p.destroyed)[0]!;
     const before = live.fills.length;
 
     s.field().value = "abc";
     s.field().events!.typed(false);
 
     expect(live.fills.length).toBe(before);
+  });
+});
+
+// ── The scrollbar (asked 2026-10-31) ────────────────────────────────────────────────────────
+
+describe("ChatWindow scrollbar", () => {
+  const frame = chatWindowFrame(X, BOTTOM);
+  const track = chatScrollTrack(frame);
+  const midX = track.x + track.width / 2;
+
+  function filled(n: number) {
+    const s = rig();
+    for (let i = 1; i <= n; i++) s.say(`l${i}`);
+    return s;
+  }
+
+  it("should jump to the oldest lines on a press at the track's head", () => {
+    const s = filled(20);
+    s.input.emit("pointerdown", { x: midX, y: track.y + 1 });
+    s.input.emit("pointerup", { x: midX, y: track.y + 1 });
+    expect(s.contents()).toEqual([
+      "l1",
+      "l2",
+      "l3",
+      "l4",
+      "l5",
+      "l6",
+      "l7",
+      "l8",
+    ]);
+  });
+
+  it("should follow a dragged thumb up and back down to the newest", () => {
+    const s = filled(20);
+    const thumb = chatScrollThumb(track, 20, 0)!;
+    const grabY = thumb.y + thumb.height / 2;
+
+    s.input.emit("pointerdown", { x: midX, y: grabY });
+    s.input.emit("pointermove", { x: midX + 40, y: track.y - 100 });
+    expect(s.contents()[0]).toBe("l1");
+
+    s.input.emit("pointermove", { x: midX, y: track.y + track.height + 100 });
+    expect(s.contents().at(-1)).toBe("l20");
+    s.input.emit("pointerup", { x: midX, y: 0 });
+
+    // released: moving the pointer scrolls nothing
+    s.input.emit("pointermove", { x: midX, y: track.y - 100 });
+    expect(s.contents().at(-1)).toBe("l20");
+  });
+
+  it("should leave the lines' wheel and the world's presses alone while nothing scrolls", () => {
+    const s = filled(3);
+    s.input.emit("pointerdown", { x: midX, y: track.y + 1 });
+    expect(s.contents()).toEqual(["l1", "l2", "l3"]);
+  });
+
+  it("should stop listening to the pointer once destroyed", () => {
+    const s = filled(20);
+    s.window.destroy();
+    expect(s.input.listenerCount("pointermove")).toBe(0);
+    expect(s.input.listenerCount("pointerup")).toBe(0);
   });
 });

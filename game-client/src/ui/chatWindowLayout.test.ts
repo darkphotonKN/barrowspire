@@ -10,7 +10,11 @@ import {
   CHAT_FOLD_W,
   CHAT_FRAME_PAD,
   CHAT_LINES_GAP,
+  CHAT_SCROLL_THUMB_MIN,
   chatFoldButton,
+  chatScrollOffsetAt,
+  chatScrollThumb,
+  chatScrollTrack,
   chatTabSegments,
   wrapChatText,
   chatWindowFrame,
@@ -284,5 +288,59 @@ describe("wrapChatText (asked 2026-10-31: fill a line before breaking)", () => {
 
   it("should return the empty line for empty text", () => {
     expect(wrapChatText("", 100, measure)).toEqual([""]);
+  });
+});
+
+describe("chat scrollbar (asked 2026-10-31: drag back through old lines)", () => {
+  const frame = chatWindowFrame(10, 600);
+  const track = chatScrollTrack(frame);
+
+  it("should run down the message area's right edge", () => {
+    const m = frame.messages;
+    expect(track.x + track.width).toBeLessThanOrEqual(m.x + m.width);
+    expect(track.x).toBeGreaterThan(m.x + m.width - 12);
+    expect(track.y).toBeGreaterThanOrEqual(m.y);
+    expect(track.y + track.height).toBeLessThanOrEqual(m.y + m.height);
+  });
+
+  it("should have no thumb while every line fits", () => {
+    expect(chatScrollThumb(track, 8, 0)).toBeNull();
+    expect(chatScrollThumb(track, 3, 0)).toBeNull();
+  });
+
+  it("should size the thumb by how much is in view and sit it at the bottom while following", () => {
+    const thumb = chatScrollThumb(track, 32, 0)!;
+    expect(thumb.height).toBeCloseTo(track.height / 4);
+    expect(thumb.y + thumb.height).toBeCloseTo(track.y + track.height);
+  });
+
+  it("should sit the thumb at the top when scrolled to the oldest line", () => {
+    const thumb = chatScrollThumb(track, 32, 32 - 8)!;
+    expect(thumb.y).toBeCloseTo(track.y);
+  });
+
+  it("should never make the thumb too small to grab", () => {
+    const thumb = chatScrollThumb(track, 1000, 0)!;
+    expect(thumb.height).toBeGreaterThanOrEqual(CHAT_SCROLL_THUMB_MIN);
+  });
+
+  it("should turn a dragged thumb's top back into an offset, oldest at the top, following at the bottom", () => {
+    const total = 32;
+    const thumb = chatScrollThumb(track, total, 0)!;
+    expect(chatScrollOffsetAt(track, total, track.y)).toBe(total - 8);
+    expect(
+      chatScrollOffsetAt(track, total, track.y + track.height - thumb.height),
+    ).toBe(0);
+    expect(chatScrollOffsetAt(track, total, track.y - 50)).toBe(total - 8);
+    expect(chatScrollOffsetAt(track, total, track.y + track.height + 50)).toBe(
+      0,
+    );
+    const mid = chatScrollOffsetAt(
+      track,
+      total,
+      track.y + (track.height - thumb.height) / 2,
+    );
+    expect(mid).toBeGreaterThan(8);
+    expect(mid).toBeLessThan(16);
   });
 });
