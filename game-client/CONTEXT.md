@@ -74,6 +74,33 @@ translation belongs to the surface that renders words.
 - **Gold** — the in-game currency, in copy and in code alike (wallet-service and ledger-service
   both use it). One of the few words that needs no translation.
 
+## Chat terms (FS-WJGFJ; world chat and whisper FS-5SH4G; mute and report FS-4HEG7)
+
+What the chat window says. Each maps to a game-service chat channel type on the wire; the
+protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) § Chat.
+
+- **Chat window** — the bottom-left panel: **one** stream of every channel's messages, newest at
+  the bottom, capped at 100 lines in total (not per channel). It is never cleared by a world
+  switch; the player walks from town into the Spire and the lines stay.
+- **Channel** (on screen) — the kind of talk a line belongs to, told apart by colour, not by tab:
+  **Area**, **World**, **Party**, **Whisper**, **Trade**. In client code this is the chat channel
+  type; the client has no field-channel concept, so the bare word is safe *here* and only here.
+  Party and Trade exist as filters and colours before they can carry a message.
+- **Area** — the people on the same server as you, wherever they stand: town, a field, or inside
+  the Spire. The label shows where *you* are ("Area: town", "Area: the Spire") from the state
+  broadcast's `world_type`; it does not narrow who hears you (ADR-0032).
+- **World** — everyone online, across every server.
+- **Whisper** — a private line to one named player, sent as `@name message`; clicking a sender's
+  name pre-fills `@name`. An offline target answers with one system line, and the whisper is gone.
+- **Channel filter** — the row of toggles above the stream. A toggled-off channel is **hidden**,
+  not muted: its lines keep arriving and reappear when toggled on.
+- **Mute** — hiding one player: their lines, on every channel, are received and not drawn. The
+  ignore list lives in this browser only (ADR-0033).
+- **Report** — sending one line, with the lines around it that the window still holds, to the
+  server as a complaint. The window is the evidence; the server stores no chat.
+- **System line** — a line the client or server emits that no player wrote ("that player is not
+  online"). Not a channel; never filtered out.
+
 ## Rendering terms (canvas presentation, [ADR-0020](../docs/adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) / FS-2325V)
 
 These are engineering words, not lore. They name how the canvas draws the world, and like the lore
