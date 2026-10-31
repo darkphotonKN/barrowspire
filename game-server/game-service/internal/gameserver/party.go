@@ -410,7 +410,7 @@ func (r *partyRegistry) accept(ctx context.Context, accepter *types.Player, conn
 		}
 		return
 	}
-	if refusal := r.acceptRefusal(ctx, accepter); refusal != "" {
+	if refusal := r.joinRefusal(ctx, accepter); refusal != "" {
 		// the invite stays open: they may accept once they can (R14)
 		slog.Debug("party accept refused", "player_id", accepter.ID, "code", refusal)
 		r.notice(conn, refusal, "")
@@ -432,15 +432,17 @@ func (r *partyRegistry) accept(ctx context.Context, accepter *types.Player, conn
 	r.update(p, constants.PartyUpdateJoined, accepter.ID)
 }
 
-// acceptRefusal is why accepter cannot join a party now, in R16's order, or "".
-func (r *partyRegistry) acceptRefusal(ctx context.Context, accepter *types.Player) constants.PartyNoticeCode {
-	if !r.directory.InHub(accepter.ID) {
+// joinRefusal is why player cannot come into a party now, by accepting one
+// (R16) or creating one (R4a), or "": not in the hub, already in a party,
+// queued for the Spire, in that order.
+func (r *partyRegistry) joinRefusal(ctx context.Context, player *types.Player) constants.PartyNoticeCode {
+	if !r.directory.InHub(player.ID) {
 		return constants.PartyNoticeNotInHub
 	}
-	if _, grouped := r.memberOf[accepter.ID]; grouped {
+	if _, grouped := r.memberOf[player.ID]; grouped {
 		return constants.PartyNoticeAlreadyInParty
 	}
-	if r.queued(ctx, accepter.ID) {
+	if r.queued(ctx, player.ID) {
 		return constants.PartyNoticeQueued
 	}
 	return ""
@@ -457,6 +459,20 @@ func (r *partyRegistry) voidInvitesTo(target uuid.UUID) {
 		delete(r.invites, id)
 		r.noticeLeader(inv, constants.PartyNoticeAlreadyInParty)
 	}
+}
+
+// create handles party_create: the player leads a new party of one, formed
+// as a first delivered invite forms one, and is told so. FS-R82NV R4a.
+func (r *partyRegistry) create(ctx context.Context, creator *types.Player, conn *websocket.Conn) {
+	if r.closed {
+		return
+	}
+	if refusal := r.joinRefusal(ctx, creator); refusal != "" {
+		r.refuse(conn, creator.ID, refusal)
+		return
+	}
+	p, _ := r.partyLedBy(creator, r.cfg.now())
+	r.form(p)
 }
 
 // leave handles party_leave: the member leaves and stays where they stand.

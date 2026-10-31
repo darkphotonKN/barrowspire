@@ -1014,3 +1014,96 @@ func TestPartyInvite_AnswerGoesToTheCurrentLeader(t *testing.T) {
 	assert.Equal(t, "Idris", declined.Payload["name"])
 	assertNoParty(t, wrenInbox, partyNoticeAction, "Wren, who no longer leads")
 }
+
+const partyCreateAction = "party_create"
+
+// A player in the hub with no party creates one with no invite: a party of one
+// they lead, told at once, with its pointers written like any other.
+// FS-R82NV R4, R4a; I-R82NV-10.
+func TestPartyCreate_FormsAPartyOfOne(t *testing.T) {
+	rig, mini := newPointedPartyRig(t)
+	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+
+	sendParty(rig.server, wrenConn, partyCreateAction, map[string]interface{}{})
+
+	formed := awaitUpdate(t, wrenInbox, "joined", wren.ID, "Wren")
+	assert.Equal(t, wren.ID.String(), formed.Payload["leader_id"])
+	assert.Equal(t, []string{wren.ID.String()}, memberIDsOf(t, formed))
+	partyID, _ := formed.Payload["party_id"].(string)
+	awaitPointer(t, mini, "party:"+partyID, testPodID)
+	awaitPointer(t, mini, "player:"+wren.ID.String()+":party", partyID)
+	assertNoParty(t, wrenInbox, partyNoticeAction, "Wren: a create succeeds without a notice")
+}
+
+// Create is refused, by code, in R4a's order: out of the hub, already in a
+// party, queued for the Spire. Rows meeting two refusals prove the earlier one
+// wins. Nothing is formed. FS-R82NV R4a; Edge States "Create while…".
+func TestPartyCreate_Refusals_InOrder(t *testing.T) {
+	tests := []struct {
+		name     string
+		arrange  func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox)
+		wantCode string
+	}{
+		{
+			name: "out of the hub, though queued too",
+			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox) {
+				wren, conn, inbox := r.inMeadows(t, "Wren")
+				r.queued(t, wren)
+				return conn, inbox
+			},
+			wantCode: "not_in_hub",
+		},
+		{
+			name: "already in a party, though queued too",
+			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox) {
+				wren, conn, inbox := r.inHub(t, "Wren")
+				sendParty(r.server, conn, partyCreateAction, map[string]interface{}{})
+				awaitUpdate(t, inbox, "joined", wren.ID, "Wren")
+				r.queued(t, wren)
+				return conn, inbox
+			},
+			wantCode: "already_in_party",
+		},
+		{
+			name: "queued for the Spire",
+			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox) {
+				wren, conn, inbox := r.inHub(t, "Wren")
+				r.queued(t, wren)
+				return conn, inbox
+			},
+			wantCode: "queued",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rig := newPartyRig(t)
+			conn, inbox := tt.arrange(t, rig)
+
+			sendParty(rig.server, conn, partyCreateAction, map[string]interface{}{})
+
+			refused := awaitParty(t, inbox, partyNoticeAction, "Wren")
+			assert.Equal(t, tt.wantCode, refused.Payload["code"])
+			assertNoParty(t, inbox, partyUpdateAction, "Wren: nothing formed")
+		})
+	}
+}
+
+// A party made by create is a party like any other: its leader invites, and
+// their leave ends it. FS-R82NV R4a; Edge States "Create while…".
+func TestPartyCreate_ThePartyInvitesAndEnds(t *testing.T) {
+	rig := newPartyRig(t)
+	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	_, _, kaelenInbox := rig.inHub(t, "Kaelen")
+	sendParty(rig.server, wrenConn, partyCreateAction, map[string]interface{}{})
+	formed := awaitUpdate(t, wrenInbox, "joined", wren.ID, "Wren")
+
+	sendParty(rig.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Kaelen"})
+	invite := awaitParty(t, kaelenInbox, partyInviteAction, "Kaelen")
+	assert.Equal(t, formed.Payload["party_id"], invite.Payload["party_id"], "the invite is the created party's")
+	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren: the party already stood, so no second joined")
+
+	sendParty(rig.server, wrenConn, partyLeaveAction, map[string]interface{}{})
+	final := awaitUpdate(t, wrenInbox, "left", wren.ID, "Wren")
+	assert.Empty(t, memberIDsOf(t, final), "the leader's leave ends a party of one")
+}
