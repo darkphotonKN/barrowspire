@@ -15,11 +15,11 @@ import { palette } from "@/utils/canvasPalette";
 export const CHAT_WINDOW_X = 10;
 export const CHAT_WINDOW_MARGIN = 16;
 /** The window's width (R19). */
-export const CHAT_WINDOW_W = 360;
+export const CHAT_WINDOW_W = 420;
 /** How many lines the message area shows at once (R19). */
 export const CHAT_VISIBLE_LINES = 8;
 /** One line's height at the window's 13px body serif. */
-export const CHAT_LINE_H = 18;
+export const CHAT_LINE_H = 20;
 /**
  * The carved frame's margin: the rows sit this far inside the panel's edge, so the double brass
  * rule and the corner studs have room and no tab or input lies across them (asked 2026-10-31).
@@ -28,8 +28,8 @@ export const CHAT_FRAME_PAD = 5;
 /** Room between the newest line and the input row's divider (asked 2026-10-31). */
 export const CHAT_LINES_GAP = 6;
 /** Room kept above the lines for the channel filter row (I-WJGFJ-5) and below for the input (I-WJGFJ-4). */
-export const CHAT_FILTER_ROW_H = 22;
-export const CHAT_INPUT_ROW_H = 24;
+export const CHAT_FILTER_ROW_H = 24;
+export const CHAT_INPUT_ROW_H = 28;
 /** What the input row says while it is closed and empty (R26). */
 export const CHAT_INPUT_HINT = "Press Enter to speak";
 /** The fold button's face: unfolded it offers to fold, folded to unfold (Amendment 2026-10-31). */
@@ -42,7 +42,7 @@ export const CHAT_FOLD_W = 24;
 /** A tab segment's padding either side of its label. */
 export const CHAT_TAB_PAD = 9;
 /** The channel picker's width at the input row's left (Amendment 2026-10-31). */
-export const CHAT_PICKER_W = 74;
+export const CHAT_PICKER_W = 84;
 /** Where the typed text (and the hint) starts in the input row, clear of the picker. */
 export const CHAT_INPUT_TEXT_X = CHAT_PICKER_W + 6;
 

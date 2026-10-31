@@ -47,7 +47,7 @@ const HUD_DEPTH = 1000;
 /** The picker's arrow sits this far in from its divider, and the label stops short of the arrow. */
 const PICKER_ARROW_GAP = 8;
 const PICKER_ARROW_ROOM = 22;
-const FONT = () => `13px ${CANVAS_FONT.body}`;
+const FONT = () => `14px ${CANVAS_FONT.body}`;
 
 /** The real row: a picker and a field in Phaser's DOM container, over the input row, short of the fold button. */
 export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {

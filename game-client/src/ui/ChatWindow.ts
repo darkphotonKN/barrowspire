@@ -57,17 +57,22 @@ export interface ChatWindowInput {
 }
 
 const HUD_DEPTH = 1000;
-const FONT_PX = 13;
-const FOLD_FONT_PX = 16;
+const FONT_PX = 14;
+const FOLD_FONT_PX = 17;
 /** Folded, the ▴ is a small triangle in the body face and reads smaller than ▾: drawn a size up. */
-const FOLD_SHUT_FONT_PX = 18;
+const FOLD_SHUT_FONT_PX = 19;
 /** A hidden channel's tab label, drawn faint (R24). */
 const TAB_OFF_ALPHA = 0.4;
 /** A shown tab's underline, in its channel's colour. */
 const TAB_UNDERLINE_H = 2;
 
 /** How much of the carved panel's ground covers the world behind it. */
-const PANEL_OPACITY = 0.9;
+/**
+ * Solid while the player types, so the line they write reads cleanly; see-through while the window
+ * is open but idle, so it hides less of the world (asked 2026-10-31).
+ */
+const OPACITY_TYPING = 1;
+const OPACITY_IDLE = 0.55;
 
 /**
  * The divider above the input: a brass rule fading toward both ends with a small brass lozenge at
@@ -104,6 +109,14 @@ const textStyle = (colour: number) => ({
   fontFamily: CANVAS_FONT.body,
   fontSize: `${FONT_PX}px`,
   color: toCss(colour),
+  // a soft dark shadow keeps the words legible when the idle panel lets a bright field through
+  shadow: {
+    offsetX: 1,
+    offsetY: 1,
+    color: toCss(palette.chatInputGround),
+    blur: 2,
+    fill: true,
+  },
 });
 
 export class ChatWindow {
@@ -261,7 +274,7 @@ export class ChatWindow {
       keyboard,
       mayOpen: typing.mayOpen,
       send: typing.send,
-      changed: () => this.drawInputRow(),
+      changed: () => this.inputChanged(),
       history: {
         lines: () => this.store.getState().sent,
         remember: (line) => this.store.getState().rememberSent(line),
@@ -270,6 +283,23 @@ export class ChatWindow {
     this.input = input;
     keyboard()?.on("keydown-ENTER", this.onEnter, this);
   }
+
+  /** How much of the world the panel hides now: all of it while typing. */
+  private opacity(): number {
+    return this.isTyping() ? OPACITY_TYPING : OPACITY_IDLE;
+  }
+
+  /** The input opened, closed or its draft changed: the panel redraws only when its opacity flips. */
+  private inputChanged(): void {
+    const typing = this.isTyping();
+    if (typing !== this.drawnTyping) {
+      this.drawnTyping = typing;
+      // the graphics layer is reused in place, so the words drawn above it stay above it
+      this.drawPanel();
+    }
+    this.drawInputRow();
+  }
+  private drawnTyping = false;
 
   private onEnter(): void {
     this.input?.requestOpen();
@@ -319,7 +349,7 @@ export class ChatWindow {
     g.clear();
     // the in-world panel house style, as the NPC dialogue wears it, letting a little world through
     carvedPanel(g, panel.x, panel.y, panel.width, panel.height, {
-      opacity: PANEL_OPACITY,
+      opacity: this.opacity(),
     });
 
     if (filterRow.height > 0) {
@@ -355,7 +385,7 @@ export class ChatWindow {
       );
     }
 
-    g.fillStyle(palette.chatInputGround, 0.95);
+    g.fillStyle(palette.chatInputGround, 0.95 * this.opacity());
     g.fillRoundedRect(input.x, input.y + 1, input.width, input.height - 1, 3);
     if (messages.height > 0) drawFlourishRule(g, input.x, input.y, input.width);
 
