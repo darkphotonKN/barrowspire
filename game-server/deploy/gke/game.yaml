@@ -19,7 +19,7 @@ spec:
       terminationGracePeriodSeconds: 330 # live games get up to 5m30s to finish after SIGTERM
       containers:
         - name: game
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/game:1a7a83a
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/game:a316ee6
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 5668, name: ws }
