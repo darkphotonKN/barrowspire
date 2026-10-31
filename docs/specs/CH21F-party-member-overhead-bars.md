@@ -49,3 +49,8 @@ Scoped 2026-11-01 with Nick, as a follow-up to the party session.
 ### Parking lot
 
 - None.
+
+- **Teammates' health and resource in the hub too** (Nick, 2026-11-01, during the FS-R82NV
+  frames amendment): the party frames now list every member with bars (FS-R82NV R34); a
+  teammate in the hub shows a state word until this FS sends their health and resource to party
+  members there as well.
