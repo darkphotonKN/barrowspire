@@ -58,6 +58,8 @@ export interface ChatWindowInput {
 const HUD_DEPTH = 1000;
 const FONT_PX = 13;
 const FOLD_FONT_PX = 16;
+/** Folded, the ▴ is a small triangle in the body face and reads smaller than ▾: drawn a size up. */
+const FOLD_SHUT_FONT_PX = 18;
 /** A hidden channel's tab label, drawn faint (R24). */
 const TAB_OFF_ALPHA = 0.4;
 /** A shown tab's underline, in its channel's colour. */
@@ -430,16 +432,17 @@ export class ChatWindow {
 
     // the window's top-right corner: the tab row's end, or the input row's while folded
     const corner = chatFoldButton(this.frame);
+    const foldPx = folded ? FOLD_SHUT_FONT_PX : FOLD_FONT_PX;
     this.foldText?.destroy();
     this.foldText = this.scene.add
       .text(
         corner.x,
-        corner.y + (corner.height - FOLD_FONT_PX - 4) / 2,
+        corner.y + (corner.height - foldPx - 4) / 2,
         folded ? CHAT_FOLD_SHUT : CHAT_FOLD_OPEN,
         {
           ...textStyle(palette.chatSystem),
           // a little larger than the words, so the corner button reads at a glance (asked 2026-10-31)
-          fontSize: `${FOLD_FONT_PX}px`,
+          fontSize: `${foldPx}px`,
           padding: { x: 6, y: 1 },
         },
       )
