@@ -67,6 +67,7 @@ const (
 	ComponentTypeBurningTrail ComponentType = "BurningTrail"
 	ComponentTypeDash         ComponentType = "Dash"
 	ComponentTypeParry        ComponentType = "Parry"
+	ComponentTypePotion       ComponentType = "Potion"
 
 	ComponentTypeRespawn ComponentType = "Respawn"
 )

@@ -46,6 +46,7 @@ type SessionManager interface {
 	IsQueued(ctx context.Context, playerID uuid.UUID) (bool, error)
 	LeaveRun(player *types.Player) (*game.Session, error)
 	ForfeitRun(player *types.Player) error
+	DrinkPotion(player *types.Player)
 	LeaveHub(ctx context.Context, player *types.Player) error
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
 	EnterHub(ctx context.Context, conn *websocket.Conn, characterID string) (*game.Session, error)
@@ -569,6 +570,19 @@ func (h *messageHub) Run(ctx context.Context) {
 				}
 
 				slog.Info("Delver fell where they stood", "player_id", player.ID)
+
+			// A delver drinking a health potion. Who drinks is the connection's
+			// player, never the payload's player_id; the run decides the rest
+			// on its tick, and nothing is sent either way: the next state shows
+			// it. FS-P9G8R §Requirements 2–4, 6.
+			case constants.ActionDrinkPotion:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("drink_potion from a connection with no player")
+					continue
+				}
+
+				h.sessionManager.DrinkPotion(player)
 
 			// A hub member leaving for the roster: body gone, record in no world,
 			// so a refresh lands on the roster. FS-G4VMQ §Requirements 23–24.

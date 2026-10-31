@@ -708,6 +708,10 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	// gear: what each delver wears counts from this tick, in every world
 	systems.NewGearSystem(s.EntityManager, GearCaps, UniqueEffects, Attributes).Update(deltaTime, entities)
 
+	// drink cooldowns count down, the tick's drinks just applied included
+	// (FS-P9G8R §Requirements 9)
+	systems.NewPotionSystem(s.EntityManager).Update(deltaTime, entities)
+
 	// class resources regenerate toward this tick's maxima, before any cast
 	// this tick is judged against them (FS-8AY7S §Requirements 5)
 	systems.NewResourceSystem().Update(deltaTime, entities)
