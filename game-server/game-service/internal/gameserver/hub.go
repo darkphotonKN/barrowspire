@@ -47,6 +47,7 @@ type partyKeeper interface {
 	accept(ctx context.Context, accepter *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	decline(ctx context.Context, decliner *types.Player, payload map[string]interface{})
 	leave(ctx context.Context, leaver *types.Player, conn *websocket.Conn)
+	create(ctx context.Context, creator *types.Player, conn *websocket.Conn)
 	kick(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	transfer(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	// the registry's clock ticks, swept on this loop like everything else it holds
@@ -665,6 +666,16 @@ func (h *messageHub) Run(ctx context.Context) {
 					continue
 				}
 				h.party.accept(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
+
+			// A party-less player in the hub creating a party of one, with no
+			// invite. FS-R82NV §Requirements 4a.
+			case constants.ActionPartyCreate:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_create from a connection with no player")
+					continue
+				}
+				h.party.create(ctx, player, clientPackage.Conn)
 
 			// A member leaving their party; they stay where they stand.
 			// FS-R82NV §Requirements 20, 22.
