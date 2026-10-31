@@ -86,17 +86,24 @@ type chatRelay struct {
 	inboundLines chan types.Message
 	// accepted world lines, waiting for the publisher in acceptance order (FS-5SH4G R8)
 	outboundLines chan types.Message
+	// the Redis side of chat; nil on a pod built without one, which then refuses world chat
+	bus chatBus
 }
 
-// newChatRelay builds the pod's relay. now and newID are what lines are
-// stamped with: the wall clock and fresh uuids in production, fixed in tests.
-func newChatRelay(audience chatAudience, sender chatSender, podID string, now func() time.Time, newID func() uuid.UUID) *chatRelay {
+// chatWorldScope is world chat's scope key: one fixed constant for every pod (FS-5SH4G R2).
+const chatWorldScope = "world"
+
+// newChatRelay builds the pod's relay. now and newID are what lines are stamped with: the wall
+// clock and fresh uuids in production, fixed in tests. bus carries world chat between pods; with
+// none, world chat is closed on this pod (code review 2026-10-31).
+func newChatRelay(audience chatAudience, sender chatSender, podID string, now func() time.Time, newID func() uuid.UUID, bus chatBus) *chatRelay {
 	return &chatRelay{
 		audience: audience,
 		sender:   sender,
 		podID:    podID,
 		now:      now,
 		newID:    newID,
+		bus:      bus,
 
 		lastAccepted:  make(map[uuid.UUID]time.Time),
 		inboundLines:  make(chan types.Message, chatInboundBuffer),
@@ -104,23 +111,37 @@ func newChatRelay(audience chatAudience, sender chatSender, podID string, now fu
 	}
 }
 
+// start runs the relay's two bus goroutines, the subscriber and the publisher, for the life of
+// ctx. A relay with no bus starts nothing.
+func (r *chatRelay) start(ctx context.Context) {
+	if r.bus == nil {
+		return
+	}
+	go r.listen(ctx)
+	go r.publishLoop(ctx)
+}
+
 // publishLoop is the pod's one publisher: it puts each accepted world line on the bus in the
 // order the loop accepted it, each within chatPublishTimeout; one that fails is dropped with a
 // Warn carrying no text, and the next is tried afresh (FS-5SH4G R8, R11). Runs on its own
 // goroutine for the life of ctx.
-func (r *chatRelay) publishLoop(ctx context.Context, bus chatBus) {
+func (r *chatRelay) publishLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case line := <-r.outboundLines:
+			// shutting down: what is left in the queue goes unsent (at-most-once), quietly
+			if ctx.Err() != nil {
+				return
+			}
 			raw, err := json.Marshal(line.Payload)
 			if err != nil {
 				slog.Warn("world line not encoded", "error", err)
 				continue
 			}
 			publishCtx, cancel := context.WithTimeout(ctx, chatPublishTimeout)
-			err = bus.Publish(publishCtx, chatbus.WorldChannel, raw)
+			err = r.bus.Publish(publishCtx, chatbus.WorldChannel, raw)
 			cancel()
 			if err != nil {
 				slog.Warn("world line dropped: publish failed", "error", err)
@@ -129,10 +150,10 @@ func (r *chatRelay) publishLoop(ctx context.Context, bus chatBus) {
 	}
 }
 
-// toWorld hands an accepted, stamped world line to the publisher. The sender's own pod hears it
-// only when the bus returns it (R6): one path, so no pod needs to recognise its own lines. A
-// full queue drops the line (at-most-once).
-func (r *chatRelay) toWorld(line types.Message) {
+// queueWorldChat hands an accepted, stamped world line to the publisher. The sender's own pod
+// hears it only when the bus returns it (R6): one path, so no pod needs to recognise its own
+// lines. A full queue drops the line (at-most-once).
+func (r *chatRelay) queueWorldChat(line types.Message) {
 	select {
 	case r.outboundLines <- line:
 	default:
@@ -147,13 +168,13 @@ func (r *chatRelay) inbound() <-chan types.Message {
 
 // listen keeps a subscription to the world channel open for the life of ctx, subscribing again
 // a moment after it drops (FS-5SH4G R9, R11). Runs on its own goroutine.
-func (r *chatRelay) listen(ctx context.Context, bus chatBus) {
+func (r *chatRelay) listen(ctx context.Context) {
 	for {
-		err := bus.Listen(ctx, chatbus.WorldChannel, r.arrived)
+		err := r.bus.Listen(ctx, chatbus.WorldChannel, r.arrived)
 		if ctx.Err() != nil {
 			return
 		}
-		slog.Warn("chat bus subscription dropped; subscribing again", "channel", chatbus.WorldChannel, "error", err)
+		slog.Warn("chat bus subscription dropped; subscribing again", "redis_channel", chatbus.WorldChannel, "error", err)
 		select {
 		case <-ctx.Done():
 			return
@@ -165,32 +186,40 @@ func (r *chatRelay) listen(ctx context.Context, bus chatBus) {
 // arrived takes one message's bytes off the bus: a stamped line goes to the hub loop, anything
 // else is skipped. A full queue drops the line rather than stall the subscriber (at-most-once).
 func (r *chatRelay) arrived(raw []byte) {
-	line, err := decodeChatLine(raw)
+	line, err := decodeWorldChatLine(raw)
 	if err != nil {
 		// never the bytes: a line's text may be in them (R14)
-		slog.Warn("chat bus message skipped", "channel", chatbus.WorldChannel, "error", err)
+		slog.Warn("chat bus message skipped", "redis_channel", chatbus.WorldChannel, "error", err)
 		return
 	}
 	select {
 	case r.inboundLines <- line:
 	default:
-		slog.Debug("chat line off the bus dropped: hub loop behind", "channel", chatbus.WorldChannel)
+		slog.Debug("chat line off the bus dropped: hub loop behind", "redis_channel", chatbus.WorldChannel)
 	}
 }
 
-var errNotAChatLine = errors.New("not a stamped chat line")
+var errNotAChatLine = errors.New("not a stamped world chat line")
 
-// decodeChatLine reads a published line back as the message a client receives: the stamped
-// payload, unchanged, so a line reads the same whichever pod it came from.
-func decodeChatLine(raw []byte) (types.Message, error) {
+// chatLineKeys are the stamp's fields (R3), every one a string; `stamp` writes them and a line
+// read off the bus must carry them all.
+var chatLineKeys = []string{"message_id", "sender_id", "sender_name", "channel", "scope", "sent_at", "text"}
+
+// decodeWorldChatLine reads a published line back as the message a client receives: the stamped
+// payload, unchanged, so a line reads the same whichever pod it came from. The world channel
+// carries world lines only, so any other chat channel or scope is refused.
+func decodeWorldChatLine(raw []byte) (types.Message, error) {
 	var payload map[string]interface{}
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return types.Message{}, fmt.Errorf("decode chat line: %w", err)
+		return types.Message{}, fmt.Errorf("decode world chat line: %w", err)
 	}
-	for _, key := range []string{"message_id", "channel", "sender_id", "sender_name", "text", "sent_at"} {
+	for _, key := range chatLineKeys {
 		if _, ok := payload[key].(string); !ok {
-			return types.Message{}, fmt.Errorf("decode chat line: %w: missing %s", errNotAChatLine, key)
+			return types.Message{}, fmt.Errorf("decode world chat line: %w: missing %s", errNotAChatLine, key)
 		}
+	}
+	if payload["channel"] != string(constants.ChatChannelWorld) || payload["scope"] != chatWorldScope {
+		return types.Message{}, fmt.Errorf("decode world chat line: %w: not world", errNotAChatLine)
 	}
 	return types.Message{Action: string(constants.ActionChat), Payload: payload}, nil
 }
@@ -203,7 +232,7 @@ func (r *chatRelay) deliver(line types.Message) {
 		return
 	}
 	if err := r.sender.BroadcastToPlayerList(audience, line); err != nil {
-		slog.Debug("chat line off the bus not delivered to everyone", "channel", chatbus.WorldChannel, "error", err)
+		slog.Debug("chat line off the bus not delivered to everyone", "redis_channel", chatbus.WorldChannel, "error", err)
 	}
 }
 
@@ -244,7 +273,8 @@ func (r *chatRelay) relay(sender *types.Player, conn *websocket.Conn, payload ma
 
 	channelName, _ := payload["channel"].(string)
 	chatChannel := constants.ChatChannel(channelName)
-	if chatChannel != constants.ChatChannelArea && chatChannel != constants.ChatChannelWorld {
+	worldOpen := chatChannel == constants.ChatChannelWorld && r.bus != nil
+	if chatChannel != constants.ChatChannelArea && !worldOpen {
 		r.notice(conn, constants.ChatNoticeChannelClosed)
 		return
 	}
@@ -271,7 +301,7 @@ func (r *chatRelay) relay(sender *types.Player, conn *websocket.Conn, payload ma
 
 	// the world's scope key is the fixed constant; area's is this pod (FS-WJGFJ R1, FS-5SH4G R2)
 	if chatChannel == constants.ChatChannelWorld {
-		r.toWorld(r.stamp(sender, chatChannel, "world", text, at))
+		r.queueWorldChat(r.stamp(sender, chatChannel, chatWorldScope, text, at))
 		return
 	}
 	line := r.stamp(sender, chatChannel, r.podID, text, at)

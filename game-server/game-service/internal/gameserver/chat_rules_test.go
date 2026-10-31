@@ -67,7 +67,7 @@ func newRulesRig() *rulesRig {
 	spy := &relaySpy{}
 	clock := newChatClock()
 	return &rulesRig{
-		relay: newChatRelay(everyoneHere{uuid.New()}, spy, testPodID, clock.now, uuid.New),
+		relay: newChatRelay(everyoneHere{uuid.New()}, spy, testPodID, clock.now, uuid.New, nil),
 		spy:   spy,
 		clock: clock,
 	}

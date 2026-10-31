@@ -110,7 +110,8 @@ type bootOptions struct {
 	// fresh uuids unless a test fixes them
 	chatNow   func() time.Time
 	chatNewID func() uuid.UUID
-	// the Redis side of chat; nil on a pod with no bus, which then hears only itself (FS-5SH4G)
+	// the Redis side of chat; nil on a pod built without one, which then refuses world chat as
+	// closed (FS-5SH4G; code review 2026-10-31)
 	chatBus chatBus
 }
 

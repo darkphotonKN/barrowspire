@@ -87,7 +87,7 @@ func matchPlayer(pod string) matchmaker.MatchStartPlayer {
 func TestResolveMatchedPlayers_ClassifiesByPod(t *testing.T) {
 	server := newHandoffServer(t, NewMockQueueService(), noopAnnouncer{})
 	sender := messaging.NewMessageSender(server)
-	hub := NewMessageHub(server, sender, testPodID, testPodAddr, noopAnnouncer{}, newChatRelay(server, sender, testPodID, time.Now, uuid.New))
+	hub := NewMessageHub(server, sender, testPodID, testPodAddr, noopAnnouncer{}, newChatRelay(server, sender, testPodID, time.Now, uuid.New, nil))
 
 	local := matchPlayer(testPodID)
 	registerTestConn(server, &websocket.Conn{}, &types.Player{ID: local.ID, Username: "Wren", Character: local.Character})

@@ -167,13 +167,10 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	server.queue.Start(ctx)
 
 	// initialize message hub
-	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID)
+	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID, boot.chatBus)
 	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat)
 	go messageHub.Run(ctx)
-	if boot.chatBus != nil {
-		go chat.listen(ctx, boot.chatBus)
-		go chat.publishLoop(ctx, boot.chatBus)
-	}
+	chat.start(ctx)
 
 	server.createHubSession()
 	server.createFieldSessions(fields)
