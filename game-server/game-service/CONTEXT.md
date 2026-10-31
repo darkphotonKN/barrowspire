@@ -227,8 +227,8 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Bag** — the ordered list of items a player's body carries but does not wear: the body's
   `ItemIDListComponent.ItemIDs`. Holds at most **bag capacity** items. New items always go on
   the end; nothing reorders it. In code it is still `satchel` / `itemIDList`; say **bag** in
-  prose, specs and new names. **Avoid "satchel"**: game-client uses it for the container view
-  (a chest's or pile's contents), which is not the bag. Avoid "inventory" too: that is the wire
+  prose, specs and new names. **Avoid "satchel"**: game-client uses it for a sack's container
+  view, which is not the bag. Avoid "inventory" too: that is the wire
   field (`inventory`) and items-service's word for everything an account owns.
 - **Bag capacity** — the most items a bag holds: 30 (`BagCapacity`). Enforced on every move that
   grows the bag inside a run or a field world: a pickup into a full bag, and an unequip into a
@@ -237,9 +237,23 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   items-service over REST rather than a body's bag.
 - **Worn gear** — what a body has in its equipment slots (`EquipmentComponent`). Never counts
   toward bag capacity.
-- **Not the bag:** a **container**'s item list (a chest or drop pile) is the same component on a
+- **Not the bag:** a **container**'s item list (a chest, sack or drop pile) is the same component on a
   different entity and has no cap here; the **stash** (FS-VPD8Y) is account storage outside any
   world.
+
+### Containers (FS-4R9M9, FS-1D6BX)
+
+- **Container**: a world entity holding items to be taken (`ContainerComponent`, WS
+  `containers[]`). Its **kind** says which: chest, sack or drop pile. All three are taken from
+  the same way.
+- **Chest**: a container placed at floor or field build time (`ContainerKindChest`). It rolls its
+  contents on its first open, and the roll may come up empty. The most generous kind.
+- **Sack**: a container placed where a chest would spawn, at the sack share
+  (`ContainerKindSack`, wire `"sack"`). It rolls like a chest at lower odds. **Not the bag**, which
+  is carried, never placed. Say "sack", never "bag" or "loot bag", for this one.
+- **Drop pile**: the container a slain monster leaves holding its kill drop
+  (`ContainerKindDropPile`). It is never placed at build time. Its odds are the lowest of the
+  three.
 
 ### The message hub (the other `hub`)
 

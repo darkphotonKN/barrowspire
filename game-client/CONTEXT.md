@@ -178,9 +178,16 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Floor band**: `lower` / `middle` / `upper`, a run floor's place in the climb, derived from
   `floor` and `floor_count` (FS-8RBQY §C.1). The only input that varies the tower look per floor.
   Not the same as **floor**, the wire number it is derived from.
-- **Container view**: the on-screen satchel/coffer panel showing a container's contents. Not the
+- **Container view**: the on-screen panel showing a container's contents. Not the
   same thing as a **container**, which is the WS entity in `containers[]`. Opening the view is
-  presentation; clicking an item in it sends exactly the message the item row always sent.
+  presentation; clicking an item in it sends exactly the message the item row always sent. It has
+  one face per container kind (FS-1D6BX), which differ only in art:
+  - **Coffer**: a chest's view, a square open box facing the player with the items inside. No
+    animation.
+  - **Satchel**: a sack's view, the leather satchel with its flap opening (FS-2325V §D).
+  - **Bone heap**: a drop pile's view, the heap with the items lying on top. No animation.
+- **Sack**: the container kind `"sack"` (FS-1D6BX), placed on the floor where a chest would be and
+  opening into the satchel. **Not the bag**: say "sack", never "bag" or "loot bag", for it.
 - **Bag**: the ordered list of items the player's character carries but does not wear, drawn as
   the 30-cell grid (6 × 5) in the gear overlay's right panel, under the gear slots (FS-HRH2J). It
   holds at most **bag capacity**, 30 items (`BAG_CAPACITY` in `src/ui/bag.ts`, game-service's
@@ -190,7 +197,7 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   wear, read over REST and not capped, so it can read over capacity (e.g. `34 / 30`). Same
   meaning as game-service's **bag**
   ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Carried items").
-  **Not the container view**: the satchel/coffer panel shows a container's contents, never the
+  **Not the container view**: the coffer/satchel/bone-heap panel shows a container's contents, never the
   bag, even though code still says `satchel` in places (`satchelIcon`, the container view's
   leather). Say **bag** in prose, specs and new names. Not "inventory" either: that is the wire
   field, and items-service's word for everything an account owns.
@@ -223,6 +230,7 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 | the town | — | `world_type` `hub` | "hub" |
 | the Inn, the store, the smithy | — | walls sharing a `house_id` | "enterable town building" |
 | relic, plunder | `/api/items/*` | `items[]` | "loadout", "items" |
+| chest, sack, bone heap | — | `containers[].kind` `chest` / `sack` / `drop_pile` | "container" |
 
 ## Voice rules that ride on the vocabulary
 

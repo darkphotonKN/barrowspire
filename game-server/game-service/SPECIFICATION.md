@@ -75,6 +75,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Equip and unequip
 - [ ] Bag capacity limit → FS-HRH2J
 - [x] Container loot drops from the template pool → FS-none
+- [ ] Sacks as a floor container alongside chests → FS-1D6BX
 - [ ] Rarity-rolled loot with themed names and type-flavoured stats → FS-F8T3H
 - [ ] Co-op runs without player-versus-player damage → FS-77AB6
 - [ ] Equipped gear contributes to character stats → FS-4R9M9
@@ -82,6 +83,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Random affixes on rolled loot → FS-4R9M9
 - [ ] Fabled uniques → FS-4R9M9
 - [x] A player may end their own run as a death → FS-9K8EZ
+- [ ] Drink an equipped health potion → FS-P9G8R
 
 ### Classes
 
