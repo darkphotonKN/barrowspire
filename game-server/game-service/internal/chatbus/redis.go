@@ -22,6 +22,16 @@ func NewRedis(client redis.UniversalClient) *Redis {
 	return &Redis{client: client}
 }
 
+// Publish puts payload on channel for every subscribed pod, this one included. How many heard it
+// is not an error: this pod always subscribes to what it publishes, so nobody listening would be
+// its own subscriber being down, which the subscriber side reports.
+func (r *Redis) Publish(ctx context.Context, channel string, payload []byte) error {
+	if err := r.client.Publish(ctx, channel, payload).Err(); err != nil {
+		return fmt.Errorf("chat bus publish %s: %w", channel, err)
+	}
+	return nil
+}
+
 // subscribeTimeout bounds the wait for Redis to confirm a subscription.
 const subscribeTimeout = 5 * time.Second
 

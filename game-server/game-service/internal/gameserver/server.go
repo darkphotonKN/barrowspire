@@ -172,6 +172,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	go messageHub.Run(ctx)
 	if boot.chatBus != nil {
 		go chat.listen(ctx, boot.chatBus)
+		go chat.publishLoop(ctx, boot.chatBus)
 	}
 
 	server.createHubSession()

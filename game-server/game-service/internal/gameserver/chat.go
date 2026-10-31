@@ -52,7 +52,16 @@ const chatFloodWindow = 2 * time.Second
 // hands over each message's bytes in order and reports when it drops.
 type chatBus interface {
 	Listen(ctx context.Context, channel string, onMessage func(payload []byte)) error
+	Publish(ctx context.Context, channel string, payload []byte) error
 }
+
+// chatOutboundBuffer is how many accepted world lines may wait for the publisher before one
+// is dropped (at-most-once, ADR-0033); chatPublishTimeout bounds each publish, so a slow Redis
+// holds up only the publisher goroutine.
+const (
+	chatOutboundBuffer = 64
+	chatPublishTimeout = 2 * time.Second
+)
 
 // chatInboundBuffer is how many lines off the bus may wait for the hub loop before one is
 // dropped: at-most-once, never a stalled subscriber (ADR-0033).
@@ -75,6 +84,8 @@ type chatRelay struct {
 	lastAccepted map[uuid.UUID]time.Time
 	// lines arrived off the bus, waiting for the hub loop to deliver them (FS-5SH4G R9)
 	inboundLines chan types.Message
+	// accepted world lines, waiting for the publisher in acceptance order (FS-5SH4G R8)
+	outboundLines chan types.Message
 }
 
 // newChatRelay builds the pod's relay. now and newID are what lines are
@@ -87,8 +98,45 @@ func newChatRelay(audience chatAudience, sender chatSender, podID string, now fu
 		now:      now,
 		newID:    newID,
 
-		lastAccepted: make(map[uuid.UUID]time.Time),
-		inboundLines: make(chan types.Message, chatInboundBuffer),
+		lastAccepted:  make(map[uuid.UUID]time.Time),
+		inboundLines:  make(chan types.Message, chatInboundBuffer),
+		outboundLines: make(chan types.Message, chatOutboundBuffer),
+	}
+}
+
+// publishLoop is the pod's one publisher: it puts each accepted world line on the bus in the
+// order the loop accepted it, each within chatPublishTimeout; one that fails is dropped with a
+// Warn carrying no text, and the next is tried afresh (FS-5SH4G R8, R11). Runs on its own
+// goroutine for the life of ctx.
+func (r *chatRelay) publishLoop(ctx context.Context, bus chatBus) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case line := <-r.outboundLines:
+			raw, err := json.Marshal(line.Payload)
+			if err != nil {
+				slog.Warn("world line not encoded", "error", err)
+				continue
+			}
+			publishCtx, cancel := context.WithTimeout(ctx, chatPublishTimeout)
+			err = bus.Publish(publishCtx, chatbus.WorldChannel, raw)
+			cancel()
+			if err != nil {
+				slog.Warn("world line dropped: publish failed", "error", err)
+			}
+		}
+	}
+}
+
+// toWorld hands an accepted, stamped world line to the publisher. The sender's own pod hears it
+// only when the bus returns it (R6): one path, so no pod needs to recognise its own lines. A
+// full queue drops the line (at-most-once).
+func (r *chatRelay) toWorld(line types.Message) {
+	select {
+	case r.outboundLines <- line:
+	default:
+		slog.Debug("world line dropped: publisher behind")
 	}
 }
 
@@ -194,8 +242,9 @@ func (r *chatRelay) relay(sender *types.Player, conn *websocket.Conn, payload ma
 		return
 	}
 
-	chatChannel, _ := payload["channel"].(string)
-	if constants.ChatChannel(chatChannel) != constants.ChatChannelArea {
+	channelName, _ := payload["channel"].(string)
+	chatChannel := constants.ChatChannel(channelName)
+	if chatChannel != constants.ChatChannelArea && chatChannel != constants.ChatChannelWorld {
 		r.notice(conn, constants.ChatNoticeChannelClosed)
 		return
 	}
@@ -220,13 +269,18 @@ func (r *chatRelay) relay(sender *types.Player, conn *websocket.Conn, payload ma
 	}
 	r.lastAccepted[sender.ID] = at
 
-	line := r.stamp(sender, constants.ChatChannelArea, r.podID, text, at)
+	// the world's scope key is the fixed constant; area's is this pod (FS-WJGFJ R1, FS-5SH4G R2)
+	if chatChannel == constants.ChatChannelWorld {
+		r.toWorld(r.stamp(sender, chatChannel, "world", text, at))
+		return
+	}
+	line := r.stamp(sender, chatChannel, r.podID, text, at)
 
 	audience := r.audience.SeatedPlayerIDs()
 	if err := r.sender.BroadcastToPlayerList(audience, line); err != nil {
 		// a full writer queue or a connection gone between resolving and
 		// delivering: that player misses the line, nobody else waits (R12)
-		slog.Debug("chat line not delivered to everyone", "chat_channel", chatChannel, "error", err)
+		slog.Debug("chat line not delivered to everyone", "chat_channel", channelName, "error", err)
 	}
 }
 

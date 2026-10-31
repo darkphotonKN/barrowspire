@@ -1,15 +1,20 @@
 ---
 id: I-5SH4G-2
-status: open
+status: done
 implements: FS-5SH4G
 blocked_by: [I-5SH4G-1]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-5SH4G slice 2: open the world channel, publish on one path, prove it across two pods (game-service)"
 ---
 Implements FS-5SH4G §Requirements A1–A4, B5–B6, B8, B10–B12
 
-**Author: human (hand-coded, human lane) unless the user authorises the agent. Agent:
-table-driven tests and the two-pod test.**
+**Author: agent, the user having invoked `/develop` and approved the plan on 2026-10-31. Branch
+`feat/in-game-chat`.** Built: `chatbus.Publish`; the relay's `chatBus` interface gains it; a
+world line passes every FS-WJGFJ check, is stamped `scope: "world"` and handed to a 64-line
+outbound queue; one publisher goroutine per pod drains it in order with a 2 s timeout, dropping
+a failed publish with a Warn that carries no text; the relay never delivers a world line locally.
+Proven on two servers sharing one miniredis, with bus doubles that count, hold and fail
+publishes.
 
 ## What to Build
 
