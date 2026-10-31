@@ -44,6 +44,9 @@ export type ChatEntryFactory = (
 ) => ChatEntryHandle;
 
 const HUD_DEPTH = 1000;
+/** The picker's arrow sits this far in from its divider, and the label stops short of the arrow. */
+const PICKER_ARROW_GAP = 8;
+const PICKER_ARROW_ROOM = 22;
 const FONT = () => `13px ${CANVAS_FONT.body}`;
 
 /** The real row: a picker and a field in Phaser's DOM container, over the input row, short of the fold button. */
@@ -61,21 +64,46 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
   });
   shell.appendChild(row);
 
+  // the picker draws its own arrow: a native one hugs the divider and no padding moves it in every
+  // browser, so the select loses its native look and a ▾ sits a fixed gap off the divider
+  const pickerBox = document.createElement("div");
+  Object.assign(pickerBox.style, {
+    position: "relative",
+    width: `${CHAT_PICKER_W}px`,
+    height: "100%",
+    display: "flex",
+    alignItems: "center",
+    // as faint as the window's other rules (asked 2026-10-31: the full brass was too bright)
+    borderRight: `1px solid ${rgba(palette.chatRule, 0.35)}`,
+    boxSizing: "border-box",
+  });
   const picker = document.createElement("select");
   picker.setAttribute("aria-label", "Chat channel");
   Object.assign(picker.style, {
-    width: `${CHAT_PICKER_W}px`,
+    width: "100%",
+    appearance: "none",
     background: "transparent",
     border: "none",
-    // as faint as the window's other rules (asked 2026-10-31: the full brass was too bright)
-    borderRight: `1px solid ${rgba(palette.chatRule, 0.35)}`,
     outline: "none",
     // the site's :focus-visible draws a ring as a box-shadow; the window shows focus by itself
     boxShadow: "none",
-    padding: "0 4px",
+    padding: `0 ${PICKER_ARROW_ROOM}px 0 4px`,
     font: FONT(),
     cursor: "pointer",
   });
+  const arrow = document.createElement("span");
+  arrow.textContent = "▾";
+  arrow.setAttribute("aria-hidden", "true");
+  Object.assign(arrow.style, {
+    position: "absolute",
+    right: `${PICKER_ARROW_GAP}px`,
+    top: "50%",
+    transform: "translateY(-50%)",
+    // clicks fall through to the select beneath, so the arrow opens it too
+    pointerEvents: "none",
+    font: FONT(),
+  });
+  pickerBox.append(picker, arrow);
   for (const channel of CHAT_CHANNELS) {
     const option = document.createElement("option");
     option.value = channel;
@@ -91,6 +119,7 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
   const showChannel = (channel: ChatChannel) => {
     picker.value = channel;
     picker.style.color = toCss(CHAT_CHANNEL_COLOUR[channel]);
+    arrow.style.color = toCss(CHAT_CHANNEL_COLOUR[channel]);
     field.style.color = toCss(CHAT_CHANNEL_COLOUR[channel]);
     field.style.caretColor = toCss(CHAT_CHANNEL_COLOUR[channel]);
   };
@@ -112,7 +141,7 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
     font: FONT(),
   });
 
-  row.append(picker, field);
+  row.append(pickerBox, field);
   showChannel("area");
 
   const size = (r: Rect) => {

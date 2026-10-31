@@ -170,8 +170,9 @@ the requirement named. Built as I-WJGFJ-6.
   it goes back to Area. A prefix of a channel that is not open yet is plain text. A sent line
   carries the picked channel and its text without the prefix.
 - **New (collapse):** a button folds the window down to its input row and unfolds it again. It
-  stays as the player leaves it, kept in this browser like the filter. A folded window still
-  takes Enter and sends; arriving lines do not unfold it. Typing still needs the input focused
+  stays as the player leaves it, kept in this browser like the filter. Arriving lines do not
+  unfold it. *Revised the same day by the user:* opening the input in a folded window (Enter or
+  a click) unfolds it, so the player sees what they are answering. Typing still needs the input focused
   (R26), and an open window never holds the keys while the player plays.
 
 ## User Stories

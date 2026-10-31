@@ -57,6 +57,7 @@ export interface ChatWindowInput {
 
 const HUD_DEPTH = 1000;
 const FONT_PX = 13;
+const FOLD_FONT_PX = 16;
 /** A hidden channel's tab label, drawn faint (R24). */
 const TAB_OFF_ALPHA = 0.4;
 /** A shown tab's underline, in its channel's colour. */
@@ -210,7 +211,12 @@ export class ChatWindow {
     const keyboard = () => this.scene.input?.keyboard;
     let input: ChatInput | undefined;
     this.field = typing.makeField(this.scene, this.fieldRect(), {
-      focused: () => input?.focused(),
+      focused: () => {
+        input?.focused();
+        // typing in a folded window unfolds it, so the player sees what they answer (asked 2026-10-31)
+        if (input?.isOpen() && this.store.getState().folded)
+          this.store.getState().toggleFolded();
+      },
       blurred: () => input?.blurred(),
       keyDown: (key, composing) => input?.keyDown(key, composing),
       typed: (composing) => input?.typed(composing),
@@ -428,11 +434,13 @@ export class ChatWindow {
     this.foldText = this.scene.add
       .text(
         corner.x,
-        corner.y + (corner.height - 16) / 2 - 3,
+        corner.y + (corner.height - FOLD_FONT_PX - 4) / 2,
         folded ? CHAT_FOLD_SHUT : CHAT_FOLD_OPEN,
         {
           ...textStyle(palette.chatSystem),
-          padding: { x: 7, y: 3 },
+          // a little larger than the words, so the corner button reads at a glance (asked 2026-10-31)
+          fontSize: `${FOLD_FONT_PX}px`,
+          padding: { x: 6, y: 1 },
         },
       )
       .setScrollFactor(0)
