@@ -107,14 +107,14 @@ func newSettlingRig(t *testing.T) (*fieldRig, *outboxRows) {
 
 	rig := newFieldRig(t, meadowsLoadout())
 	outbox := &outboxRows{}
-	rig.server.visitSettler = game.NewService(committingDB(t), outbox)
+	rig.server.visitSettler = game.NewService(committingDB(t), outbox, noWake{})
 	return rig, outbox
 }
 
 // A server is built settling visits through the publisher it is handed, and
 // through the log alone without one. R39.
 func TestNewServer_SettlesVisitsThroughTheGivenPublisher(t *testing.T) {
-	publisher := game.NewService(committingDB(t), &outboxRows{})
+	publisher := game.NewService(committingDB(t), &outboxRows{}, noWake{})
 
 	assert.Same(t, publisher, bootedServer(t, WithVisitSettler(publisher)).visitSettler)
 	assert.Equal(t, logVisitSettler{}, bootedServer(t).visitSettler)
@@ -364,3 +364,8 @@ func TestComingHome_ASettlementThatFailed_KeepsThePreVisitLevel(t *testing.T) {
 	sc, _ := body.GetComponent(ecs.ComponentTypeStats)
 	assert.Equal(t, 3, sc.(*components.StatsComponent).Level, "the hub body is at the pre-visit level")
 }
+
+// noWake is an outbox waker for tests that do not look at wakes.
+type noWake struct{}
+
+func (noWake) Wake() {}

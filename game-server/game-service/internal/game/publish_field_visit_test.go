@@ -45,7 +45,7 @@ func endedVisit() FieldVisit {
 // id: a returned result, never a win, in a field. R40, R41, R43.
 func TestPublishFieldVisit_WritesTheReturnedResult(t *testing.T) {
 	outbox := &capturingOutbox{}
-	svc := NewService(committingTxDB(t), outbox)
+	svc := NewService(committingTxDB(t), outbox, noWake{})
 	visit := endedVisit()
 
 	require.NoError(t, svc.PublishFieldVisit(context.Background(), visit))
@@ -84,7 +84,7 @@ func TestPublishFieldVisit_WritesTheReturnedResult(t *testing.T) {
 // and no pickups".
 func TestPublishFieldVisit_EmptyVisit_StillSettles(t *testing.T) {
 	outbox := &capturingOutbox{}
-	svc := NewService(committingTxDB(t), outbox)
+	svc := NewService(committingTxDB(t), outbox, noWake{})
 	visit := FieldVisit{ID: uuid.New(), MemberID: uuid.New(), CharacterID: uuid.New(), EnteredAt: time.Now(), LeftAt: time.Now()}
 
 	require.NoError(t, svc.PublishFieldVisit(context.Background(), visit))
@@ -106,7 +106,7 @@ func TestPublishFieldVisit_OneTransaction_AllOrNothing(t *testing.T) {
 			WithArgs(commonconstants.GameMatchEnded, commonconstants.GameEventsExchange, sqlmock.AnyArg()).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectCommit()
-		svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)))
+		svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)), noWake{})
 
 		require.NoError(t, svc.PublishFieldVisit(context.Background(), endedVisit()))
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -118,7 +118,7 @@ func TestPublishFieldVisit_OneTransaction_AllOrNothing(t *testing.T) {
 		mock.ExpectExec(insertOutboxStmt).WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectExec(insertOutboxStmt).WillReturnError(errors.New("db down"))
 		mock.ExpectRollback()
-		svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)))
+		svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)), noWake{})
 		visit := endedVisit()
 
 		err := svc.PublishFieldVisit(context.Background(), visit)

@@ -250,7 +250,8 @@ func (s *Server) ServeConnectedPlayer(conn *websocket.Conn) {
 		}
 
 		// --- Normal Message Processing ---
-		slog.Debug("Message received from connected user", "message", string(message))
+		// the frame itself is never logged: a chat line's text rides in it (FS-WJGFJ R14, ADR-0033)
+		slog.Debug("Message received from connected user", "bytes", len(message))
 
 		slog.Debug("before decoding received message")
 

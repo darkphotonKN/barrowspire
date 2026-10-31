@@ -120,6 +120,14 @@ server state and sends intents. ✅
 - [x] Forlorn Forest look and creatures → FS-3QHQZ
 - [x] Field edges without a horizon → FS-KSD6K
 
+### Chat
+
+- [ ] In-game chat window → FS-WJGFJ
+- [ ] Channel filters on one chat stream → FS-WJGFJ
+- [ ] Send to the world channel from the chat window → FS-5SH4G
+- [ ] Mute a player → FS-4HEG7
+- [ ] Report a chat message → FS-4HEG7
+
 ### Marketplace
 
 - [x] Browse marketplace listings → FS-8EGFA

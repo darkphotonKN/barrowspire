@@ -2,7 +2,7 @@ import * as Phaser from "phaser";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { ActionType, WorldType } from "@/assets/types/client";
 import { useGameStore } from "@/stores/gameStore";
-import { CANVAS_FONT, palette, shade, toCss } from "@/utils/canvasPalette";
+import { CANVAS_FONT, palette, rgba, shade, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
 import {
   ClientGameState,
@@ -24,6 +24,7 @@ import {
 } from "./hubGates";
 import { BARROW_HEX } from "@/utils/theme";
 import { ProgressHud } from "@/ui/ProgressHud";
+import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { HubGear } from "@/ui/HubGear";
 import { apiClient } from "@/utils/api";
@@ -213,6 +214,8 @@ const NPC_TALK_RANGE = 80;
 const LEAVE_GAP = 8;
 /** A passing notice: where it sits (screen px from the top, under the progress bar) and for how long. */
 const NOTICE_Y = 72;
+/** The queue panel's top edge: centred at the top, above the notice band (moved off the chat window). */
+const QUEUE_Y = 20;
 const NOTICE_MS = 3200;
 
 /**
@@ -227,6 +230,20 @@ function hudLine(colour: number): Phaser.Types.GameObjects.Text.TextStyle {
     color: toCss(colour),
     backgroundColor: toCss(BARROW_HEX.charcoal),
     padding: { x: 12, y: 8 },
+  };
+}
+
+/**
+ * The queue panel's words: the HUD's type with no ground of its own, an outline in the darkest
+ * ramp token keeping them legible over the town (moved to the top centre 2026-10-31).
+ */
+function queueLine(colour: number): Phaser.Types.GameObjects.Text.TextStyle {
+  return {
+    fontFamily: CANVAS_FONT.body,
+    fontSize: "14px",
+    color: toCss(colour),
+    stroke: toCss(BARROW_HEX.pitch),
+    strokeThickness: 3,
   };
 }
 
@@ -563,6 +580,8 @@ export class HubScene extends Phaser.Scene {
    * at the bottom. Made with the first state that carries a level.
    */
   private progressHud?: ProgressHud;
+  /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
+  private chatWindow?: ChatWindow;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
   private art!: ArtLibrary;
   /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
@@ -649,6 +668,8 @@ export class HubScene extends Phaser.Scene {
     );
 
     this.listenForQueue();
+    // a dialogue and the menu read Enter and Esc themselves; the gear overlay is open over the town
+    this.chatWindow = mountChatWindow(this, () => !this.dialogue && !this.menu && !this.gear?.isOpen());
 
     // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
@@ -779,6 +800,8 @@ export class HubScene extends Phaser.Scene {
     this.lightMap = undefined;
     this.groundLayer = undefined;
     this.progressHud = undefined;
+    this.chatWindow?.destroy();
+    this.chatWindow = undefined;
     this.queuePanel = undefined;
     this.leaveButton = undefined;
     this.queued = false;
@@ -1669,16 +1692,20 @@ export class HubScene extends Phaser.Scene {
   private showLeaveButton(): void {
     const panel = this.queuePanel;
     if (!panel) return;
-    const x = panel.x + panel.width + LEAVE_GAP;
+    // the panel is centred on x: its right edge is half its width past it
+    const x = panel.x + panel.width / 2 + LEAVE_GAP;
+    const y = panel.y + panel.height / 2;
 
     if (this.leaveButton?.active) {
-      this.leaveButton.setPosition(x, panel.y).setVisible(true);
+      this.leaveButton.setPosition(x, y).setVisible(true);
       return;
     }
 
     // amber: the one thing on the panel the player can act on
+    // see-through like the chat window's panel, not a solid block (asked 2026-10-31)
     const button = this.add
-      .text(x, panel.y, "Leave", hudLine(BARROW_HEX.amber))
+      .text(x, y, "Leave", { ...hudLine(BARROW_HEX.amber), backgroundColor: rgba(palette.chatPanel, 0.85) })
+      .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(1000)
       .setInteractive();
@@ -1739,9 +1766,11 @@ export class HubScene extends Phaser.Scene {
       return;
     }
 
-    // vellum, not amber: the player cannot act on it (FS-KYPQ9 §I)
+    // vellum, not amber: the player cannot act on it (FS-KYPQ9 §I). Top centre, clear of the chat
+    // window at the bottom left (FS-WJGFJ), and on no ground of its own.
     this.queuePanel = this.add
-      .text(24, this.cameras.main.height - 44, text, hudLine(BARROW_HEX.vellum))
+      .text(this.cameras.main.width / 2, QUEUE_Y, text, queueLine(BARROW_HEX.vellum))
+      .setOrigin(0.5, 0)
       .setScrollFactor(0)
       .setDepth(1000);
   }

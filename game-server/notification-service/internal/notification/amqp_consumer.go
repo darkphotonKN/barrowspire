@@ -8,6 +8,7 @@ import (
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"google.golang.org/protobuf/proto"
 )
@@ -71,18 +72,30 @@ var MaxRetries = len(RetryLevels)
 type ConsumerService interface {
 	ProcessMemberSignedUp(ctx context.Context, payload *commonconstants.MemberSignedUpEventPayload) error
 	ProcessItemCreated(ctx context.Context, payload *pb.ItemCreatedEvent) error
-	ProcessGameEnded(ctx context.Context, payload *pb.MatchEndedEvent) error
+	ProcessGameEnded(ctx context.Context, eventID uuid.UUID, payload *pb.MatchEndedEvent) error
 }
 
+// retryPublisher is what the consumer needs to park a failed message's copy
+// on the retry exchange.
+type retryPublisher interface {
+	Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
+}
+
+// Consumer reads from channel and publishes retry copies through publisher.
+// publisher is a deliberate partial seam (the publish side only, so retry can
+// be tested without a broker); both point at the same channel, and NewConsumer
+// must set both, or the first transient retry panics on a nil publisher.
 type Consumer struct {
-	service ConsumerService
-	channel *amqp.Channel
+	service   ConsumerService
+	channel   *amqp.Channel
+	publisher retryPublisher
 }
 
 func NewConsumer(service ConsumerService, channel *amqp.Channel) *Consumer {
 	return &Consumer{
-		service: service,
-		channel: channel,
+		service:   service,
+		channel:   channel,
+		publisher: channel,
 	}
 }
 
@@ -219,6 +232,22 @@ func (c *Consumer) consumeGameEnded() {
 func (c *Consumer) handleGameEnded(msg amqp.Delivery) {
 	retryCount := getRetryCount(msg)
 
+	// The dedup key is the producer's outbox row id, stamped as MessageId. A
+	// delivery without a usable one is a producer bug retry cannot fix, and
+	// processing it would bypass dedup: dead-letter it before any work,
+	// field visit or not (FS-PJPNA Req 1, 3).
+	eventID, err := uuid.Parse(msg.MessageId)
+	if err != nil {
+		slog.Error("game ended message id is missing or not a uuid, dead-lettering it",
+			"message_id", msg.MessageId,
+			"error", err,
+		)
+		if nackErr := msg.Nack(false, false); nackErr != nil {
+			slog.Error("Failed to dead-letter game ended message", "message_id", msg.MessageId, "error", nackErr)
+		}
+		return
+	}
+
 	var payload pb.MatchEndedEvent
 	if err := proto.Unmarshal(msg.Body, &payload); err != nil {
 		slog.Error("Failed to parse MatchEndedEvent", "error", err)
@@ -233,7 +262,7 @@ func (c *Consumer) handleGameEnded(msg amqp.Delivery) {
 	)
 
 	ctx := context.Background()
-	err := c.service.ProcessGameEnded(ctx, &payload)
+	err = c.service.ProcessGameEnded(ctx, eventID, &payload)
 
 	// Use session_id as identifier
 	c.handleResult(msg, err, retryCount, "game.ended", payload.SessionId)
@@ -349,7 +378,7 @@ func (c *Consumer) requeueWithRetry(msg amqp.Delivery, newRetryCount int) error 
 	)
 
 	// 發送到 retry exchange（不是原始 exchange）
-	return c.channel.Publish(
+	return c.publisher.Publish(
 		commonconstants.RetryExchange, // 關鍵：送到 retry exchange
 		retryRoutingKey,               // e.g. "retry-1.item.created"
 		false,                         // mandatory
@@ -359,6 +388,8 @@ func (c *Consumer) requeueWithRetry(msg amqp.Delivery, newRetryCount int) error 
 			Body:         msg.Body,
 			DeliveryMode: msg.DeliveryMode,
 			Headers:      headers,
+			// The dedup key must survive the delay queue (FS-PJPNA Req 4).
+			MessageId: msg.MessageId,
 		},
 	)
 }

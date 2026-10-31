@@ -70,6 +70,10 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 
 - [ ] Character level and experience read → FS-BDA7X
 
+### Chat
+
+- [ ] Report a chat message → FS-4HEG7
+
 ### Integration patterns
 
 - [x] gRPC fan-out to env-configured downstreams

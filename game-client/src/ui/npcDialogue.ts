@@ -10,9 +10,10 @@
  */
 
 import type Phaser from "phaser";
-import { CANVAS_FONT, shade, tint, toCss } from "@/utils/canvasPalette";
+import { CANVAS_FONT, toCss } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 import { bustCrop, bustSize, type Bounds } from "./bust";
+import { carvedPanel } from "./carvedPanel";
 import { MENU_DEPTH, menuOption, type MenuOption, type MenuTones } from "./menuPanel";
 
 /** One answer: its label already carries its key, e.g. "Descend alone  [1]". */
@@ -103,33 +104,6 @@ function figureOf(scene: Phaser.Scene, texture: string, frameName: string | numb
   }
   figureCache.set(cacheKey, figure);
   return figure;
-}
-
-/** Dark vellum on carved stone: a soft drop shadow, a lit top edge, a double brass rule, studs. */
-function carvedPanel(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number): void {
-  g.fillStyle(hex.pitch, 0.55);
-  g.fillRoundedRect(x - 2, y + 3, w + 4, h + 4, 7);
-  g.fillStyle(shade(hex.charcoal, 0.2), 0.97);
-  g.fillRoundedRect(x, y, w, h, 6);
-  g.fillStyle(hex.umber, 0.9);
-  g.fillRoundedRect(x + 1, y + 1, w - 2, h - 4, 5);
-  g.lineStyle(1, tint(hex.umber, 0.12), 0.7);
-  g.lineBetween(x + 6, y + 1.5, x + w - 6, y + 1.5);
-  g.lineStyle(1, hex.brass, 0.75);
-  g.strokeRoundedRect(x + 0.5, y + 0.5, w - 1, h - 1, 6);
-  g.lineStyle(1, hex.brass, 0.22);
-  g.strokeRoundedRect(x + 4.5, y + 4.5, w - 9, h - 9, 3);
-  for (const [cx, cy] of [
-    [x + 4.5, y + 4.5],
-    [x + w - 4.5, y + 4.5],
-    [x + 4.5, y + h - 4.5],
-    [x + w - 4.5, y + h - 4.5],
-  ]) {
-    g.fillStyle(hex.brass, 1);
-    g.fillCircle(cx, cy, 2);
-    g.fillStyle(hex.brassBright, 0.9);
-    g.fillCircle(cx - 0.5, cy - 0.5, 0.9);
-  }
 }
 
 /** A carved key cap: the key that answers, in small vellum on pitch. */

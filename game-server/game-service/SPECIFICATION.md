@@ -134,6 +134,12 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Forlorn Forest → FS-3QHQZ
 - [x] Roomier Forlorn Forest → FS-KSD6K
 
+### Chat
+
+- [ ] Area chat across the pod → FS-WJGFJ
+- [ ] World chat across pods → FS-5SH4G
+- [ ] Whisper a player on any pod → FS-KCQ06
+
 ### Transport
 
 - [x] WebSocket message hub

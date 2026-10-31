@@ -29,15 +29,24 @@ type OutboxWriter interface {
 	CreateOutboxTx(ctx context.Context, tx *sqlx.Tx, params commonoutbox.OutboxParams) error
 }
 
+// OutboxWaker asks the outbox worker to drain now rather than at its next
+// tick, so committed match-end rows reach their consumers at once. It never
+// blocks.
+type OutboxWaker interface {
+	Wake()
+}
+
 type service struct {
 	db     TxBeginner
 	outbox OutboxWriter
+	waker  OutboxWaker
 }
 
-func NewService(db TxBeginner, outbox OutboxWriter) *service {
+func NewService(db TxBeginner, outbox OutboxWriter, waker OutboxWaker) *service {
 	return &service{
 		db:     db,
 		outbox: outbox,
+		waker:  waker,
 	}
 }
 
@@ -143,6 +152,10 @@ func (s *service) writeMatchEndOutbox(ctx context.Context, data *types.Formatted
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit match end outbox tx: %w", err)
 	}
+
+	// the delver is already on the way home and will look for this loot: send
+	// it now, not at the next tick; a failed send is still retried by the tick
+	s.waker.Wake()
 
 	return nil
 }

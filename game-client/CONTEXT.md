@@ -74,6 +74,41 @@ translation belongs to the surface that renders words.
 - **Gold** — the in-game currency, in copy and in code alike (wallet-service and ledger-service
   both use it). One of the few words that needs no translation.
 
+## Chat terms (FS-WJGFJ; world chat FS-5SH4G; whisper FS-KCQ06; mute and report FS-4HEG7)
+
+What the chat window says. Each maps to a game-service chat channel type on the wire; the
+protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) § Chat.
+
+- **Chat window** — the bottom-left panel: **one** stream of every channel's messages, newest at
+  the bottom, `Name: text` with no time, keeping 100 lines per channel. It is never cleared by a
+  world switch; the player walks from town into the Spire and the lines stay.
+- **Fold** — the window folded down to its input row by its button, and unfolded again. It stays
+  as the player left it; a folded window still sends, and new lines do not unfold it.
+- **Channel picker** — the drop-down at the input row's left: which channel the next line goes
+  to. Every channel is listed; one the server does not relay yet is listed disabled.
+- **Prefix** — the mark at the start of a line that names its channel: `#` World, `$` Trade,
+  `%` Party, `@` Whisper (then a name), none for Area. Picking a channel writes its prefix, and
+  typing a prefix picks its channel. A closed channel's prefix is just text.
+- **Channel** (on screen) — the kind of talk a line belongs to, told apart by colour, not by tab:
+  **Area**, **World**, **Party**, **Whisper**, **Trade**. In client code this is the chat channel
+  type; the client has no field-channel concept, so the bare word is safe *here* and only here.
+  Party and Trade exist as filters and colours before they can carry a message.
+- **Area** — the people on the same server as you, wherever they stand: town, a field, or inside
+  the Spire (ADR-0032). The window does not say where you are (FS-WJGFJ Amendment 2026-10-31).
+- **World** — everyone online, across every server.
+- **Whisper** — a private line to one named player, sent as `@name message`; clicking a sender's
+  name pre-fills `@name`. An offline target answers with one system line, and the whisper is gone.
+- **Recall** — ArrowUp and ArrowDown in the open input walk back and forth through the player's
+  own last 50 sent lines, as a terminal's history; kept for the page's life only.
+- **Channel filter** — the row of tab-shaped toggles above the stream, any combination shown. A toggled-off channel is **hidden**,
+  not muted: its lines keep arriving and reappear when toggled on.
+- **Mute** — hiding one player: their lines, on every channel, are received and not drawn. The
+  ignore list lives in this browser only (ADR-0033).
+- **Report** — sending one line, with the lines around it that the window still holds, to the
+  server as a complaint. The window is the evidence; the server stores no chat.
+- **System line** — a line the client or server emits that no player wrote ("that player is not
+  online"). Not a channel; never filtered out.
+
 ## Rendering terms (canvas presentation, [ADR-0020](../docs/adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) / FS-2325V)
 
 These are engineering words, not lore. They name how the canvas draws the world, and like the lore

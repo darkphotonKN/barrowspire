@@ -13,6 +13,7 @@ import (
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
 	grpccharacter "github.com/darkphotonKN/barrowspire-server/game-service/grpc/character"
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/chatbus"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/gameserver"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/handoff"
@@ -40,7 +41,7 @@ type Downstreams struct {
 * liveness key, then releases every downstream connection; call it on
 * shutdown, before redis is closed.
 **/
-func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod, outbox game.OutboxWriter) (*gin.Engine, func() error, error) {
+func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod, outbox game.OutboxWriter, outboxWaker game.OutboxWaker) (*gin.Engine, func() error, error) {
 	// gin.Default() with its access logger swapped: the default one writes the
 	// raw query, and the WebSocket connect carries the bearer token in it
 	router := gin.New()
@@ -84,13 +85,18 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 	matchAnnouncer := handoff.NewRedis(redisClient)
 	matchmaker := matchmaker.NewMatchmaker(2, pod.ID, matchQueueRedis, matchAnnouncer)
 
-	// outbox is built once in main and shared with the worker that drains it
-	gameService := game.NewService(db, outbox)
+	// outbox is built once in main and shared with the worker that drains it;
+	// the worker is woken once match-end rows commit
+	gameService := game.NewService(db, outbox, outboxWaker)
 	// the one announcer: the matchmaker publishes create steps with it, the
 	// server publishes handoff steps to the other pods. FS-K2HKP §Requirements 20.
 	// the game service also settles every field visit through the same
 	// match-end outbox write. FS-X2F2H §F R39, ADR-0031.
-	server, err := gameserver.NewServer(ctx, authClient, matchmaker, gameService, itemsClient, characterClient, pod.ID, pod.Addr, matchAnnouncer, gameserver.WithVisitSettler(gameService))
+	server, err := gameserver.NewServer(ctx, authClient, matchmaker, gameService, itemsClient, characterClient, pod.ID, pod.Addr, matchAnnouncer,
+		gameserver.WithVisitSettler(gameService),
+		// the world channel rides the same Redis the matchmaker and handoff use (FS-5SH4G R13)
+		gameserver.WithChatBus(chatbus.NewRedis(redisClient)),
+	)
 	if err != nil {
 		return nil, nil, errors.Join(fmt.Errorf("game server: %w", err), closeAll())
 	}

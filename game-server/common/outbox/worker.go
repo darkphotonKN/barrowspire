@@ -23,6 +23,9 @@ type OutboxWorker struct {
 	outboxRetriever OutboxRetriever
 	publishCh       commonbroker.Publisher
 	wg              *sync.WaitGroup
+	// wake asks Run to drain now rather than at the next tick; one ring waits
+	// while a drain is under way, and any more are folded into it
+	wake chan struct{}
 }
 
 type OutboxRetriever interface {
@@ -37,6 +40,20 @@ func NewOutboxWorker(workCycle time.Duration, batchCount int, outboxRetriever Ou
 		outboxRetriever: outboxRetriever,
 		publishCh:       publishCh,
 		wg:              wg,
+		wake:            make(chan struct{}, 1),
+	}
+}
+
+/**
+* Wake asks the worker to drain the outbox now instead of at the next tick, for
+* a writer that just committed rows someone is waiting on. It never blocks: a
+* ring already waiting covers this one too, and the tick still retries whatever
+* the woken drain could not publish.
+**/
+func (w *OutboxWorker) Wake() {
+	select {
+	case w.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -56,18 +73,19 @@ func (w *OutboxWorker) Run(ctx context.Context) {
 	for {
 		select {
 		case <-timer.C:
-			// incase time.C and ctx.Done() runs at the same instant
-			if ctx.Err() != nil {
-				return
-			}
-			publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second*30)
-			_ = w.PublishOutboxEvents(publishCtx) // errors are logged inside; the next tick retries
-			cancel()
-
+		case <-w.wake:
 			// cancelled
 		case <-ctx.Done():
 			return
 		}
+
+		// incase a tick or a wake and ctx.Done() land at the same instant
+		if ctx.Err() != nil {
+			return
+		}
+		publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second*30)
+		_ = w.PublishOutboxEvents(publishCtx) // errors are logged inside; the next tick retries
+		cancel()
 	}
 }
 

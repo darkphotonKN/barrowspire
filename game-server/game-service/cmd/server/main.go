@@ -173,7 +173,7 @@ func main() {
 	log.Printf("grpc Game Server started on PORT: %s\n", grpcAddr)
 
 	// routes setup
-	routes, closeDownstreams, err := config.SetupRouter(ctx, db, downstreams, ch, redisClient, pod, outboxServ)
+	routes, closeDownstreams, err := config.SetupRouter(ctx, db, downstreams, ch, redisClient, pod, outboxServ, outboxWorker)
 	if err != nil {
 		log.Fatalf("Failed to set up router: %v", err)
 	}

@@ -116,6 +116,7 @@ and its aim arrow) and nothing else. A shadow has nothing to be darker than in a
 dark smoke vanishes over brown ground, so the shot reads by hue instead: a dim, desaturated
 violet that no other channel uses. It is not a readability channel (see below), and it is never
 saturated or bright: a violet that glows like neon fails the rule below.
+One exception, text only: a whisper's line in the chat window is drawn in umbra lifted toward vellum (`palette.chatWhisper`, FS-WJGFJ R30), so a private word reads apart from every public one.
 
 **Rules:**
 - Keep darks as bases, **never pure black** — preserve enough value range that pixel

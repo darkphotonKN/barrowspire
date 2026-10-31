@@ -68,8 +68,8 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Channel** — one pod's copy of a field world (ADR-0030). Every pod runs one channel of each
   field, created at boot; two players on different pods are in different channels of the same
   field. **Collides with the Redis pub/sub channel** (`matchstart:pod:<podID>`, the hub's state
-  channel): when either could be meant, write "field channel" or "Redis channel", never a bare
-  "channel".
+  channel), and since FS-WJGFJ with the **chat channel**: when any could be meant, write "field
+  channel", "Redis channel" or "chat channel", never a bare "channel".
 
 ### Moving between worlds
 
@@ -345,3 +345,40 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Resolved cast** — a cast the server acts on: skill id plus target point, judged on the tick
   against cooldown and cost. Aiming, holding and wind-up before it are client presentation and
   never reach game-service state (ADR-0030).
+
+### Chat (FS-WJGFJ; world chat FS-5SH4G; whisper FS-KCQ06; mute and report FS-4HEG7)
+
+Chat is a relay, not a world concern: a message never enters an ECS world, is never stored, and
+is addressed by scope, not by position. Three words here collide with the world vocabulary
+above; the rule is to qualify, never to rename.
+
+- **Chat channel** — one of the kinds of talk a message belongs to, carried as a type on the
+  message: `area`, `world`, `whisper`, `party`, `trade`. Always written "chat channel" (or the
+  qualified form, "area chat", "world chat") because **channel** alone means a field channel
+  (ADR-0030) and **Redis channel** means the pub/sub topic. Party and trade are reserved types
+  with no behaviour yet; a type exists so adding it later changes no envelope.
+- **Scope key** — the value that, with the chat channel, names a message's audience: the pod id
+  for area, a fixed constant for world, the target's player id for a whisper, the party id for
+  party. The pair `(chat channel, scope key)` is the whole address; routing reads nothing else.
+- **Area chat** — the chat channel whose audience is **every connection on this pod**, whatever
+  world each stands in (ADR-0032). Delivered in-process. "Area" is the player-facing word; it
+  does **not** mean a world, a session, or a field channel, and a tower run on the same pod is
+  inside the area. Qualify as "area chat" when "area" could read as a place.
+- **World chat** — the chat channel whose audience is every player on every pod. Published on a
+  Redis channel, delivered by each pod to its own connections. **Not the ECS "world"**: a world
+  is a simulation, world chat crosses all of them. Always "world chat", never a bare "world".
+- **Whisper** — a one-to-one message to one player by id, found on any pod over Redis; the pod
+  holding the target delivers it. A target held by no pod is **offline**, and the sender gets
+  one system notice. Nothing is queued for later.
+- **Chat bus** — the Redis side of chat (`internal/chatbus`): the pub/sub the cross-pod
+  channels ride, bytes in and bytes out, knowing nothing about lines. A pod subscribes to the
+  world channel at boot and publishes its own world lines to it (FS-5SH4G). Not a store: nothing
+  on it is kept (ADR-0033).
+- **Relay** — what a pod does with a chat message: receive, resolve the audience from the scope
+  key, deliver, forget. The server keeps no history (ADR-0033); "chat history" is a client word.
+- **Report** — a player's complaint about one message, carrying its own evidence from the
+  client (the message, its neighbours, reporter, reported player, chat channel, time). An HTTP
+  call through api-gateway, not a chat message, and not something game-service looks up.
+- **Mute** — client-side only. game-service has no notion of a muted player and keeps relaying
+  to them; the client hides what it chooses.
+

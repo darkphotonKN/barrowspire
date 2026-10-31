@@ -123,13 +123,6 @@ class GameSessionManager {
   createUsePayload(itemId: string, targetId?: string): ActionMap['use'] {
     return this.createGamePayload<'use'>({ itemId, targetId });
   }
-
-  /**
-   * Create a chat payload
-   */
-  createChatPayload(message: string): ActionMap['chat'] {
-    return this.createGamePayload<'chat'>({ message });
-  }
 }
 
 // Export singleton instance
