@@ -176,7 +176,14 @@ the requirement named. Built as I-WJGFJ-6.
 - **R26 (input), revised the same day by the user:** Enter on a typed line sends it and the input
   **stays open** for the next line, its channel and prefix ready. Enter on nothing closes it (two
   Enters after a line return to the game, as in PoE); Esc closes and drops the draft; a press in
-  the world closes it and keeps the draft. Typing still needs the input focused
+  the world closes it and keeps the draft.
+- **New (recall), asked by the user the same day:** in the open input, ArrowUp walks back through
+  the lines this player sent and ArrowDown forward, as a terminal's history; past the newest, the
+  half-typed draft comes back. The newest 50 sent lines are kept (Claude's call, the user left
+  the depth open: chat recall reaches a few lines back, rarely dozens), the same line twice in a
+  row once, prefix included so the channel follows. Held for the page's life only, like the
+  stream, and never written to browser storage. While an input method composes, the arrows are
+  its own. Typing still needs the input focused
   (R26), and an open window never holds the keys while the player plays.
 
 ## User Stories

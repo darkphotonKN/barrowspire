@@ -155,7 +155,11 @@ export const domChatEntry: ChatEntryFactory = (scene, rect, events) => {
   field.addEventListener("keydown", (e) => {
     e.stopPropagation();
     const composing = e.isComposing || e.keyCode === 229;
-    if (!composing && (e.key === "Enter" || e.key === "Escape"))
+    // Enter and Esc are the input's; the arrows walk the sent lines, so the caret must not jump
+    if (
+      !composing &&
+      ["Enter", "Escape", "ArrowUp", "ArrowDown"].includes(e.key)
+    )
       e.preventDefault();
     events.keyDown(e.key, composing);
   });

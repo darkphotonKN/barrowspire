@@ -98,6 +98,8 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
 - **World** — everyone online, across every server.
 - **Whisper** — a private line to one named player, sent as `@name message`; clicking a sender's
   name pre-fills `@name`. An offline target answers with one system line, and the whisper is gone.
+- **Recall** — ArrowUp and ArrowDown in the open input walk back and forth through the player's
+  own last 50 sent lines, as a terminal's history; kept for the page's life only.
 - **Channel filter** — the row of tab-shaped toggles above the stream, any combination shown. A toggled-off channel is **hidden**,
   not muted: its lines keep arriving and reappear when toggled on.
 - **Mute** — hiding one player: their lines, on every channel, are received and not drawn. The

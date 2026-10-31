@@ -68,6 +68,14 @@ export interface ChatInputDeps {
   changed?: () => void;
   /** The channels that may be picked; the server's open ones unless a test says otherwise. */
   open?: ReadonlySet<ChatChannel>;
+  /** The lines this player sent, oldest first, and where a newly sent one is kept. */
+  history?: ChatHistory;
+}
+
+/** The sent lines the arrow keys walk through, as a terminal's history (asked 2026-10-31). */
+export interface ChatHistory {
+  lines(): readonly string[];
+  remember(line: string): void;
 }
 
 /** The open channel whose prefix starts `text`, if any; Area otherwise. */
@@ -86,6 +94,10 @@ export class ChatInput {
   /** The keyboard's state when the input opened, put back as it was when it closes. */
   private keyboardWasEnabled = true;
 
+  /** Which sent line the arrows have recalled, or null while the player types their own. */
+  private recalled: number | null = null;
+  /** What the player had typed before the arrows took over, given back past the newest line. */
+  private draft = "";
   private readonly pickable: ReadonlySet<ChatChannel>;
 
   constructor(private readonly deps: ChatInputDeps) {
@@ -165,18 +177,50 @@ export class ChatInput {
         return;
       }
       this.deps.send({ channel, text });
+      this.deps.history?.remember(field.value.trim());
+      this.recalled = null;
       // the input stays open for the next line (revised by the user 2026-10-31); the channel and
       // its prefix stay ready
       field.value = CHAT_PREFIX[field.channel];
       this.deps.changed?.();
     } else if (key === "Escape") {
       this.discardAndClose();
+    } else if (key === "ArrowUp") {
+      this.recall(-1);
+    } else if (key === "ArrowDown") {
+      this.recall(1);
     }
+  }
+
+  /**
+   * ArrowUp (step -1) walks back through the sent lines, ArrowDown (step +1) forward; past the
+   * newest, the player's own draft comes back. A recalled line's prefix picks its channel.
+   */
+  private recall(step: -1 | 1): void {
+    const lines = this.deps.history?.lines() ?? [];
+    if (lines.length === 0) return;
+    const field = this.deps.field;
+    if (this.recalled === null) {
+      if (step === 1) return;
+      this.draft = field.value;
+      this.recalled = lines.length - 1;
+    } else if (step === -1) {
+      this.recalled = Math.max(0, this.recalled - 1);
+    } else if (this.recalled < lines.length - 1) {
+      this.recalled += 1;
+    } else {
+      this.recalled = null;
+    }
+    field.value = this.recalled === null ? this.draft : lines[this.recalled];
+    field.channel = channelOf(field.value, this.pickable);
+    this.deps.changed?.();
   }
 
   /** The draft changed: cut it to the limit once the input method has committed, never mid-pick. */
   typed(composing: boolean): void {
     if (composing) return;
+    // an edited line is the player's own again; the arrows start over from the newest
+    this.recalled = null;
     const field = this.deps.field;
     const clamped = clampChatText(field.value);
     if (clamped !== field.value) field.value = clamped;
@@ -193,6 +237,7 @@ export class ChatInput {
 
   /** The draft goes; the picked channel stays, its prefix ready for the next line. */
   private discardAndClose(): void {
+    this.recalled = null;
     const field = this.deps.field;
     field.value = CHAT_PREFIX[field.channel];
     this.deps.field.blur();

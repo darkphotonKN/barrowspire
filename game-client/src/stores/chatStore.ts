@@ -74,6 +74,12 @@ const ALL_SHOWN: ChatChannelsShown = {
   trade: true,
 };
 
+/**
+ * The most sent lines kept for recall with the arrow keys (asked 2026-10-31). Chat recall is
+ * reached for a few lines back, rarely dozens; a terminal keeps more because commands repeat.
+ */
+export const CHAT_HISTORY = 50;
+
 export interface ChatState {
   lines: ChatEntry[];
   shown: ChatChannelsShown;
@@ -83,6 +89,13 @@ export interface ChatState {
   folded: boolean;
   /** Folds or unfolds the window, and keeps the choice in this browser. */
   toggleFolded: () => void;
+  /**
+   * The lines this player sent, oldest first, for recall in the input. Held for the page's life
+   * only, like the stream: never written to this browser's storage.
+   */
+  sent: string[];
+  /** Keeps a sent line for recall; the same line twice in a row is kept once. */
+  rememberSent: (line: string) => void;
   /** A line from the server, kept in arrival order; a repeat of a held message_id is ignored (R23). */
   receive: (line: ChatLinePayload) => void;
   /** A notice from the server, kept as a system line in the stream (R29). */
@@ -180,6 +193,13 @@ export function createChatStore(
       lines: [],
       shown: readShown(storage),
       folded: readFolded(storage),
+      sent: [],
+      rememberSent: (line) =>
+        set((state) =>
+          state.sent.at(-1) === line
+            ? state
+            : { sent: [...state.sent, line].slice(-CHAT_HISTORY) },
+        ),
       toggleFolded: () =>
         set((state) => {
           writeFolded(storage, !state.folded);

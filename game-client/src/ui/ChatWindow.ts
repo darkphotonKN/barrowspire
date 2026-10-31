@@ -230,6 +230,10 @@ export class ChatWindow {
       mayOpen: typing.mayOpen,
       send: typing.send,
       changed: () => this.drawInputRow(),
+      history: {
+        lines: () => this.store.getState().sent,
+        remember: (line) => this.store.getState().rememberSent(line),
+      },
     });
     this.input = input;
     keyboard()?.on("keydown-ENTER", this.onEnter, this);
