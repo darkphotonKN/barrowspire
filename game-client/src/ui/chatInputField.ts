@@ -17,6 +17,7 @@ import { CHAT_OPEN_CHANNELS, type ChatInputField } from "./chatInput";
 import {
   CHAT_CHANNEL_COLOUR,
   CHAT_FILTER_LABEL,
+  CHAT_INPUT_HINT,
   CHAT_PICKER_W,
   type Rect,
 } from "./chatWindowLayout";
@@ -34,6 +35,12 @@ export interface ChatInputFieldEvents {
 /** A row the window can place and take down, as well as the input drives it. */
 export interface ChatInputFieldHandle extends ChatInputField {
   moveTo(rect: Rect): void;
+  /**
+   * A browser element always draws above the canvas, so the row is hidden while an overlay owns
+   * the keys (the end-of-run card, the gear overlay, a dialogue) and shown again after.
+   */
+  show(): void;
+  hide(): void;
   destroy(): void;
 }
 
@@ -140,6 +147,8 @@ export const domChatInputField: ChatInputFieldFactory = (
   field.autocomplete = "off";
   field.spellcheck = false;
   field.setAttribute("aria-label", "Chat");
+  field.placeholder = CHAT_INPUT_HINT;
+  field.classList.add("chat-input-field");
   Object.assign(field.style, {
     flex: "1",
     minWidth: "0",
@@ -154,7 +163,18 @@ export const domChatInputField: ChatInputFieldFactory = (
     lineHeight: FIELD_H,
   });
 
+  // the placeholder in the system tone: a style rule, since a pseudo-element takes no inline style
+  const placeholderStyle = document.createElement("style");
+  placeholderStyle.textContent = `.chat-input-field::placeholder { color: ${toCss(palette.chatSystem)}; opacity: 0.7; }`;
+  shell.appendChild(placeholderStyle);
   row.append(pickerBox, field);
+  // the whole bar is the input: a press on its empty stretch focuses the field too
+  shell.addEventListener("mousedown", (e) => {
+    if (e.target === shell || e.target === row) {
+      e.preventDefault();
+      field.focus();
+    }
+  });
   showChannel("area");
 
   const size = (r: Rect) => {

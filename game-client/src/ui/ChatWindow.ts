@@ -35,8 +35,6 @@ import {
   CHAT_FOLD_OPEN,
   CHAT_FOLD_SHUT,
   CHAT_FOLD_W,
-  CHAT_INPUT_HINT,
-  CHAT_INPUT_TEXT_X,
   CHAT_LINES_GAP,
   CHAT_PAD,
   CHAT_VISIBLE_LINES,
@@ -177,8 +175,7 @@ export class ChatWindow {
   private grabbed: number | null = null;
   private tabTexts: Phaser.GameObjects.Text[] = [];
   private foldText?: Phaser.GameObjects.Text;
-  private hintText?: Phaser.GameObjects.Text;
-  private idleChannelText?: Phaser.GameObjects.Text;
+
   /** Lines back from the newest; 0 is following (R21). */
   private offset = 0;
   private unsubscribe: () => void;
@@ -201,6 +198,7 @@ export class ChatWindow {
     );
     scene.input.on("wheel", this.onWheel, this);
     scene.input.on("pointerdown", this.onPress, this);
+    scene.events.on("postupdate", this.watchKeys, this);
     scene.input.on("pointermove", this.onDrag, this);
     scene.input.on("pointerup", this.onRelease, this);
     if (options.input) this.buildInput(options.input);
@@ -235,6 +233,7 @@ export class ChatWindow {
     this.scene.input?.off("pointerdown", this.onPress, this);
     this.scene.input?.off("pointermove", this.onDrag, this);
     this.scene.input?.off("pointerup", this.onRelease, this);
+    this.scene.events?.off("postupdate", this.watchKeys, this);
     this.scene.input?.keyboard?.off("keydown-ENTER", this.onEnter, this);
     this.input?.cancel();
     this.field?.destroy();
@@ -242,20 +241,12 @@ export class ChatWindow {
     this.clearLines();
     this.clearTabs();
     this.foldText?.destroy();
-    this.hintText?.destroy();
-    this.idleChannelText?.destroy();
-    this.idleChannelText = undefined;
     this.panel?.destroy();
     this.scrollbar?.destroy();
     this.scrollbar = undefined;
     this.maskShape?.destroy();
     this.mask?.destroy();
-    this.foldText =
-      this.hintText =
-      this.panel =
-      this.maskShape =
-      this.mask =
-        undefined;
+    this.foldText = this.panel = this.maskShape = this.mask = undefined;
   }
 
   /** The text field's place: the whole input row, short of the fold button while folded. */
@@ -322,6 +313,7 @@ export class ChatWindow {
   private buildInput(typing: ChatWindowInput): void {
     const keyboard = () => this.scene.input?.keyboard;
     let input: ChatInput | undefined;
+    this.mayOpen = typing.mayOpen;
     this.field = typing.makeField(this.scene, this.fieldRect(), {
       focused: () => input?.focused(),
       blurred: () => input?.blurred(),
@@ -329,8 +321,6 @@ export class ChatWindow {
       typed: (composing) => input?.typed(composing),
       picked: (channel) => input?.pick(channel),
     });
-    // hidden until the player types, whatever the field's own default (review 2026-10-31)
-    this.field.hide();
     input = new ChatInput({
       field: this.field,
       keyboard,
@@ -364,20 +354,29 @@ export class ChatWindow {
       // the graphics layer is reused in place, so the words drawn above it stay above it
       this.drawPanel();
     }
-    // the row's words change only as typing starts or stops, or as the draft empties or fills
-    const idle = this.idleRow();
-    if (idle !== this.drawnIdle) this.drawInputRow();
   }
   private drawnTyping = false;
-  private drawnIdle?: string;
 
-  /** What the idle row shows, as a key: the channel and whether the hint is up. */
-  private idleRow(): string {
-    if (!this.input || !this.field) return "";
-    return this.input.isOpen()
-      ? "typing"
-      : `${this.field.channel}:${this.field.value === "" ? "hint" : "draft"}`;
+  /**
+   * Once a frame: the DOM row is shown while the player may type and hidden while something else
+   * owns the keys, since a browser element always draws above the canvas and would otherwise sit
+   * over the end-of-run card and the overlays (R17). The row looks the same idle and typing.
+   */
+  private watchKeys(): void {
+    if (!this.mayOpen || !this.field) return;
+    const allowed = this.mayOpen();
+    if (allowed === this.rowShown) return;
+    this.rowShown = allowed;
+    if (allowed) {
+      this.field.show();
+    } else {
+      // an overlay took the keys mid-line: the draft goes with the input (R27)
+      this.input?.cancel();
+      this.field.hide();
+    }
   }
+  private rowShown = true;
+  private mayOpen?: () => boolean;
 
   private onEnter(): void {
     this.input?.requestOpen();
@@ -643,8 +642,6 @@ export class ChatWindow {
 
   /** The fold button at the input row's right, and the hint while the input is closed with nothing typed. */
   private drawInputRow(): void {
-    const r = this.frame.input;
-    const y = r.y + (r.height - 16) / 2;
     const folded = this.store.getState().folded;
 
     // the window's top-right corner: the tab row's end, or the input row's while folded
@@ -667,40 +664,6 @@ export class ChatWindow {
       .setDepth(HUD_DEPTH)
       .setInteractive({ useHandCursor: true })
       .on("pointerdown", () => this.store.getState().toggleFolded());
-
-    this.hintText?.destroy();
-    this.hintText = undefined;
-    this.idleChannelText?.destroy();
-    this.idleChannelText = undefined;
-    this.drawnIdle = this.idleRow();
-    if (!this.input || !this.field || this.input.isOpen()) return;
-
-    // idle: the DOM row is hidden, so the window itself shows the channel, and the hint while the
-    // draft is empty; a press on either opens the input
-    const channel = this.field.channel;
-    this.idleChannelText = this.scene.add
-      .text(r.x + CHAT_PAD, y, CHAT_FILTER_LABEL[channel], {
-        ...textStyle(CHAT_CHANNEL_COLOUR[channel]),
-        padding: { x: 4, y: 2 },
-      })
-      .setScrollFactor(0)
-      .setDepth(HUD_DEPTH)
-      .setInteractive({ useHandCursor: true })
-      .on("pointerdown", () => this.onEnter());
-    if (this.field.value === "") {
-      this.hintText = this.scene.add
-        .text(
-          r.x + CHAT_INPUT_TEXT_X,
-          y,
-          CHAT_INPUT_HINT,
-          textStyle(palette.chatSystem),
-        )
-        .setScrollFactor(0)
-        .setDepth(HUD_DEPTH)
-        .setAlpha(0.7)
-        .setInteractive({ useHandCursor: true })
-        .on("pointerdown", () => this.onEnter());
-    }
   }
 
   private clearTabs(): void {

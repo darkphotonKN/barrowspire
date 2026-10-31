@@ -44,12 +44,6 @@ export interface ChatInputField {
   channel: ChatChannel;
   focus(): void;
   blur(): void;
-  /**
-   * Shown only while the player types: a browser field always draws above the canvas, so a field
-   * left visible would sit over the end-of-run card and the overlays (review 2026-10-31).
-   */
-  show(): void;
-  hide(): void;
 }
 
 /** The part of a scene's keyboard plugin the input switches off while the player types. */
@@ -132,7 +126,6 @@ export class ChatInput {
   /** Enter in the scene, or a click on the field: focuses the field if nothing else owns the keys. */
   requestOpen(): boolean {
     if (this.open || !this.deps.mayOpen()) return false;
-    this.deps.field.show();
     this.deps.field.focus();
     return true;
   }
@@ -158,7 +151,6 @@ export class ChatInput {
 
   /** The field lost focus: the input closes, the draft stays for the next open. */
   blurred(): void {
-    this.deps.field.hide();
     if (!this.open) return;
     this.open = false;
     const keyboard = this.deps.keyboard();
