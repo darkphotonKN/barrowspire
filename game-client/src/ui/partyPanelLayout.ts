@@ -53,7 +53,7 @@ export function mayTogglePartyPanel(state: {
 }
 
 /** R30's one line for a player in no party. */
-export const PARTY_HINT = "Invite someone by name to form a party.";
+export const PARTY_HINT = "Create a party, or invite someone by name.";
 /** The invite field's placeholder: a name or an id both find the player (R12). */
 export const PARTY_INVITE_HINT = "Invite by name";
 export const PARTY_LABEL = {
@@ -61,6 +61,7 @@ export const PARTY_LABEL = {
   transfer: "Transfer",
   leave: "Leave party",
   invite: "Invite",
+  create: "Create party",
 } as const;
 
 /** Where a member stands, in the words the party frames use for it (R34). */
@@ -99,8 +100,10 @@ const TRANSFER_W = 60;
 const BUTTON_GAP = 6;
 const LOOT_H = 22;
 const HINT_H = 22;
+const CREATE_H = 24;
+const CREATE_W = 104;
 const INVITE_H = 26;
-const INVITE_LABEL_W = 52;
+const INVITE_BUTTON_W = 56;
 const LEAVE_H = 24;
 const LEAVE_W = 96;
 const GAP = 8;
@@ -119,9 +122,12 @@ export interface PartyPanelFrame {
   loot?: Rect;
   /** R30's line, with no party only. */
   hint?: Rect;
-  /** The invite row: its label at the left, the DOM field in `field`. */
+  /** The Create party button (R30), with no party only. */
+  create?: Rect;
+  /** The invite row: the DOM field at the left, its Invite button beside it (R29). */
   invite: Rect;
   inviteField: Rect;
+  inviteButton: Rect;
   leave?: Rect;
 }
 
@@ -157,20 +163,29 @@ export function partyPanelFrame(
 
   let loot: Rect | undefined;
   let hint: Rect | undefined;
+  let create: Rect | undefined;
   if (actions.inParty) {
     loot = { ...inner, y: at, height: LOOT_H };
     at += LOOT_H;
   } else {
     hint = { ...inner, y: at, height: HINT_H };
-    at += HINT_H;
+    at += HINT_H + GAP / 2;
+    create = { x: inner.x, y: at, width: CREATE_W, height: CREATE_H };
+    at += CREATE_H;
   }
 
   at += GAP / 2;
   const invite: Rect = { ...inner, y: at, height: INVITE_H };
+  const inviteButton: Rect = {
+    x: inner.x + inner.width - INVITE_BUTTON_W,
+    y: at + (INVITE_H - BUTTON_H) / 2,
+    width: INVITE_BUTTON_W,
+    height: BUTTON_H,
+  };
   const inviteField: Rect = {
-    x: inner.x + INVITE_LABEL_W,
+    x: inner.x,
     y: at,
-    width: inner.width - INVITE_LABEL_W,
+    width: inner.width - INVITE_BUTTON_W - BUTTON_GAP,
     height: INVITE_H,
   };
   at += INVITE_H;
@@ -188,5 +203,16 @@ export function partyPanelFrame(
   }
 
   const panel: Rect = { x, y, width: PARTY_PANEL_W, height: at + PAD - y };
-  return { panel, title, rows, loot, hint, invite, inviteField, leave };
+  return {
+    panel,
+    title,
+    rows,
+    loot,
+    hint,
+    create,
+    invite,
+    inviteField,
+    inviteButton,
+    leave,
+  };
 }

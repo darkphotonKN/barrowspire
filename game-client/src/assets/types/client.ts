@@ -105,6 +105,8 @@ export interface ActionMap {
   enter_field: { field: FieldId };
   /** A field player walking into the entrance gate, home to the hub (FS-X2F2H req 14): no payload. */
   leave_field: Record<string, never>;
+  /** A player in no party standing up a party of one, as its leader (FS-R82NV R4a): no payload. */
+  party_create: Record<string, never>;
   /** Inviting a player to this player's party, by character name or id (FS-R82NV R12). */
   party_invite: { name: string };
   /**
@@ -142,6 +144,7 @@ export const ActionType = {
   ForfeitRun: "forfeit_run",
   EnterField: "enter_field",
   LeaveField: "leave_field",
+  PartyCreate: "party_create",
   PartyInvite: "party_invite",
   PartyKick: "party_kick",
   PartyTransfer: "party_transfer",
