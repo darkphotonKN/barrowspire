@@ -309,6 +309,17 @@ describe("SocketManager chat (FS-WJGFJ §Requirements C20, C29: the socket feeds
     expect(heard).toHaveBeenCalledWith(stamped);
   });
 
+  it("keeps a malformed chat frame out of the store (review 2026-10-31)", () => {
+    const { old } = setup();
+    const before = useChatStore.getState().lines.length;
+
+    old.receive({ action: "chat", payload: { text: "no channel, no id" } });
+    old.receive({ action: "chat", payload: { ...stamped, channel: "shout" } });
+    old.receive({ action: "chat_notice", payload: { code: 7 } });
+
+    expect(useChatStore.getState().lines.length).toBe(before);
+  });
+
   it("puts a chat_notice in the chat store as a system line", () => {
     const { old } = setup();
 

@@ -4,14 +4,14 @@ import {
   CHAT_TEXT_MAX,
   ChatInput,
   clampChatText,
-  type ChatEntryField,
+  type ChatInputField,
   type SceneKeyboard,
 } from "./chatInput";
 
 // FS-WJGFJ §Requirements C26–C28. I-WJGFJ-4: the chat input's rules, on stand-ins for the
 // text field and the scene's keyboard. The DOM field itself is a thin adapter over these.
 
-function fakeField(): ChatEntryField & { focused: boolean } {
+function fakeField(): ChatInputField & { focused: boolean } {
   return {
     value: "",
     channel: "area",
@@ -22,6 +22,8 @@ function fakeField(): ChatEntryField & { focused: boolean } {
     blur() {
       this.focused = false;
     },
+    show() {},
+    hide() {},
   };
 }
 
@@ -31,7 +33,7 @@ function rig(mayOpen = () => true, open: ChatChannel[] = ["area"]) {
   const send = vi.fn();
   const changed = vi.fn();
   const sent: string[] = [];
-  const history = {
+  const recall = {
     lines: () => sent,
     remember: (line: string) => void sent.push(line),
   };
@@ -42,7 +44,7 @@ function rig(mayOpen = () => true, open: ChatChannel[] = ["area"]) {
     send,
     changed,
     open: new Set(open),
-    history,
+    recall,
   });
   return { field, keyboard, send, changed, input, sent };
 }

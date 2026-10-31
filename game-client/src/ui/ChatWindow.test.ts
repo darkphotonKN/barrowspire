@@ -383,11 +383,13 @@ describe("ChatWindow (teardown)", () => {
 
 interface FakeField {
   value: string;
+  /** Whether the DOM row is shown; it is hidden while the player is not typing. */
+  visible: boolean;
   channel: import("@/stores/chatStore").ChatChannel;
   focused: boolean;
   rect: { x: number; y: number; width: number; height: number };
   destroyed: boolean;
-  events?: import("./chatEntryField").ChatEntryEvents;
+  events?: import("./chatInputField").ChatInputFieldEvents;
 }
 
 function inputRig(mayOpen = () => true) {
@@ -402,6 +404,7 @@ function inputRig(mayOpen = () => true) {
       makeField: (_scene, rect, events) => {
         const f: FakeField = {
           value: "",
+          visible: true,
           channel: "area",
           focused: false,
           rect,
@@ -431,6 +434,8 @@ function inputRig(mayOpen = () => true) {
             events.blurred();
           },
           moveTo: (r) => void (f.rect = r),
+          show: () => void (f.visible = true),
+          hide: () => void (f.visible = false),
           destroy: () => void (f.destroyed = true),
         };
       },
@@ -945,5 +950,65 @@ describe("ChatWindow mask lifetime", () => {
     expect(s.messageTexts().every((t) => t.mask && !t.mask.destroyed)).toBe(
       true,
     );
+  });
+});
+
+// ── The DOM row shows only while typing (review 2026-10-31: Phaser's DOM layer always sits above
+// the canvas, so a visible field would draw over the end-of-run card and the overlays) ───────
+
+describe("ChatWindow DOM row visibility", () => {
+  it("should keep the row hidden until the input opens, and hide it again when it closes", () => {
+    const { press, field, window } = inputRig();
+    expect(field().visible).toBe(false);
+
+    press("ENTER");
+    expect(field().visible).toBe(true);
+
+    field().events!.keyDown("Escape", false);
+    expect(field().visible).toBe(false);
+    expect(window.isTyping()).toBe(false);
+  });
+
+  it("should hide the row when the scene cancels the input for an overlay", () => {
+    const { press, field, window } = inputRig();
+    press("ENTER");
+    window.cancelInput();
+    expect(field().visible).toBe(false);
+  });
+
+  it("should never show the row while something else owns the keys", () => {
+    const { press, field } = inputRig(() => false);
+    press("ENTER");
+    expect(field().visible).toBe(false);
+  });
+
+  it("should draw the current channel beside the hint while idle, and open the input on a press there", () => {
+    const s = inputRig();
+    // the one in the input row, not the Area tab above
+    const row = chatWindowFrame(X, BOTTOM).input;
+    const label = s
+      .shown()
+      .find((t) => t.content === "Area" && t.y >= row.y - 4);
+    expect(label).toBeDefined();
+
+    label!.onPress!();
+    expect(s.field().visible).toBe(true);
+    expect(s.field().focused).toBe(true);
+  });
+});
+
+describe("ChatWindow scrolled-back offset at a full buffer (review 2026-10-31)", () => {
+  it("should keep showing eight lines when lines arrive into a full channel while scrolled to the oldest", () => {
+    const s = rig();
+    for (let i = 1; i <= 100; i++) s.say(`l${i}`);
+    const frame = chatWindowFrame(X, BOTTOM);
+    for (let i = 0; i < 200; i++)
+      s.wheel(frame.messages.x + 20, frame.messages.y + 20, -100);
+    expect(s.contents()[0]).toBe("l1");
+
+    for (let i = 101; i <= 110; i++) s.say(`l${i}`);
+
+    expect(s.contents()).toHaveLength(CHAT_VISIBLE_LINES);
+    expect(s.contents()[0]).toBe("l11");
   });
 });

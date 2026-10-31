@@ -4,7 +4,7 @@ import {
   CHAT_BUFFER,
   CHAT_CHANNELS,
   CHAT_FILTER_KEY,
-  CHAT_HISTORY,
+  CHAT_RECALL_DEPTH,
   createChatStore,
   visibleChatLines,
   type ChatLinePayload,
@@ -279,13 +279,13 @@ describe("chatStore folding (FS-WJGFJ Amendment 2026-10-31: collapse)", () => {
 describe("chatStore sent history (asked 2026-10-31: recall with the arrow keys)", () => {
   it("should keep the newest sent lines, oldest first, up to the cap", () => {
     const store = createChatStore();
-    for (let i = 1; i <= CHAT_HISTORY + 5; i++)
+    for (let i = 1; i <= CHAT_RECALL_DEPTH + 5; i++)
       store.getState().rememberSent(`line ${i}`);
 
     const sent = store.getState().sent;
-    expect(sent).toHaveLength(CHAT_HISTORY);
+    expect(sent).toHaveLength(CHAT_RECALL_DEPTH);
     expect(sent[0]).toBe("line 6");
-    expect(sent.at(-1)).toBe(`line ${CHAT_HISTORY + 5}`);
+    expect(sent.at(-1)).toBe(`line ${CHAT_RECALL_DEPTH + 5}`);
   });
 
   it("should not keep the same line twice in a row", () => {
