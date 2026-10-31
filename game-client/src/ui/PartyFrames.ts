@@ -1,9 +1,11 @@
 /**
- * The party frames (FS-R82NV R34, R35): on the left edge under the level/XP bar, one frame per
- * other member in join order while the player is in a party. Each frame is a medallion bust cut
- * from the member's class sheet, their name (the leader's crown first), and a bar slot: health and
- * resource in the HUD's own bar style at half height when this world's state carries them, a
- * short state word ("village", "afield", "delving", "away") when it does not.
+ * The party frames (FS-R82NV R34, R35): on the left edge under the level/XP bar and as wide as it,
+ * one frame per member while the player is in a party, the player's own first, then the others in
+ * join order. Each frame is a medallion bust cut from the member's class sheet, their name (the
+ * leader's crown first), and a bar slot: health and resource in the HUD's own bar style at half
+ * height, always for the player (from their own state) and for a teammate when this world's state
+ * carries their health, a short state word ("village", "afield", "delving", "away") when it does
+ * not. A resource the state does not carry yet is an empty bar.
  *
  * It redraws from the party store on every `party_update` and from each state tick the scene
  * hands it (`show`); it asks the server for nothing. Neutral HUD on the game palette, at the HUD's
@@ -30,7 +32,7 @@ import {
   partyFramesFrame,
   type PartyFrameRect,
   type PartyFrameRow,
-  type SeenPlayer,
+  type SeenState,
 } from "./partyFramesLayout";
 import { HUD_BAR_FILL, drawHudBar, drawHudPips } from "./ResourceHud";
 
@@ -69,7 +71,7 @@ const WORD_PX = 12;
 
 export class PartyFrames {
   private rows: PartyFrameRow[] = [];
-  private others: readonly SeenPlayer[] = [];
+  private seen: SeenState = {};
   /** What the frames, the state words and the bars were last drawn from. */
   private drawnShape?: string;
   private drawnWords?: string;
@@ -93,9 +95,12 @@ export class PartyFrames {
     this.refresh();
   }
 
-  /** This state's other players: the bars fill from them where they carry health (R35). */
-  show(others: readonly SeenPlayer[] | undefined): void {
-    this.others = others ?? [];
+  /**
+   * This state's players (R35): the player's own row fills from `current_player`, a teammate's
+   * from `other_players` where it carries their health.
+   */
+  show(state: SeenState): void {
+    this.seen = state;
     this.refresh();
   }
 
@@ -103,7 +108,7 @@ export class PartyFrames {
     return this.rows.length;
   }
 
-  /** Which frame holds the leader, or -1 (the viewer leads, or no party): for tests. */
+  /** Which frame holds the leader (0 when the player leads), or -1 with no party: for tests. */
   leaderRow(): number {
     return this.rows.findIndex((r) => r.leader);
   }
@@ -116,7 +121,7 @@ export class PartyFrames {
   private refresh(): void {
     const world = this.deps.world();
     const { party } = this.deps.store.getState();
-    this.rows = partyFrameRows(party, this.deps.selfId(), world, this.others);
+    this.rows = partyFrameRows(party, this.deps.selfId(), world, this.seen);
 
     const { x, top } = PARTY_FRAMES_PLACEMENT[world ?? "hub"];
     const shape = JSON.stringify([
@@ -227,7 +232,7 @@ export class PartyFrames {
     });
   }
 
-  /** The health and resource bars in each frame whose slot holds them. */
+  /** The health and resource bars in each frame whose slot holds them; a missing resource is empty. */
   private drawBars(): void {
     if (this.rows.length === 0) {
       this.bars?.destroy();
@@ -253,8 +258,7 @@ export class PartyFrames {
         palette.hudHealth,
       );
       const res = slot.resource;
-      if (!res) return;
-      if (res.pips)
+      if (res?.pips)
         drawHudPips(
           g,
           resource.x,
@@ -270,8 +274,8 @@ export class PartyFrames {
           resource.y,
           resource.width,
           resource.height,
-          res.fill,
-          HUD_BAR_FILL[res.channel],
+          res?.fill ?? 0,
+          HUD_BAR_FILL[res?.channel ?? "unknown"],
         );
     });
   }

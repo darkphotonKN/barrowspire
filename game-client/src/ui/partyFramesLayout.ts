@@ -10,7 +10,7 @@ import { characterSheet } from "@/render/art/animationSelect";
 import type { FrameQuery } from "@/render/art/library";
 import { directionIndex } from "@/render/art/manifest";
 import { partyWhereLabel, type Rect } from "./partyPanelLayout";
-import { PROGRESS_HUD_H } from "./ProgressHud";
+import { PROGRESS_HUD_AT, PROGRESS_HUD_H, PROGRESS_HUD_W } from "./ProgressHud";
 import { fillOf, resourceBar, type HudBar } from "./resources";
 
 /**
@@ -21,7 +21,7 @@ export type PartyFrameSlot =
   | { kind: "bars"; health: number; resource?: HudBar }
   | { kind: "word"; word: string };
 
-/** One teammate's frame. */
+/** One member's frame. */
 export interface PartyFrameRow {
   player_id: string;
   name: string;
@@ -36,10 +36,29 @@ export type SeenPlayer = Pick<
   "id" | "current_health" | "max_health" | "resource"
 >;
 
+/** What this state shows of the players: the player's own, and the others' broadcast. */
+export interface SeenState {
+  current_player?: SeenPlayer | null;
+  other_players?: readonly SeenPlayer[];
+}
+
 /**
- * The bar slot (R34): a disconnected member is "away" whatever a stale state says; bars when this
- * world's broadcast lists the member with their health, never in the hub (no bars there, FS-CH21F,
- * FS-8AY7S R28); otherwise the word for where the party pod says they stand.
+ * The player's own bar slot (R34): always both bars, from their own state, in every world. The
+ * resource is left out only while the state does not carry it (the frames draw its bar empty),
+ * and the bars stand empty before the first state.
+ */
+function selfSlotOf(me: SeenPlayer | null | undefined): PartyFrameSlot {
+  const health =
+    me?.current_health !== undefined && me.max_health !== undefined
+      ? fillOf(me.current_health, me.max_health)
+      : 0;
+  return barsOf(health, me?.resource);
+}
+
+/**
+ * A teammate's bar slot (R34): a disconnected member is "away" whatever a stale state says; bars
+ * when this world's broadcast lists the member with their health, never in the hub (no bars
+ * there, FS-CH21F, FS-8AY7S R28); otherwise the word for where the party pod says they stand.
  */
 function slotOf(
   m: PartyMember,
@@ -52,36 +71,47 @@ function slotOf(
     seen?.current_health !== undefined &&
     seen.max_health !== undefined
   ) {
-    const health = fillOf(seen.current_health, seen.max_health);
-    return seen.resource
-      ? { kind: "bars", health, resource: resourceBar(seen.resource) }
-      : { kind: "bars", health };
+    return barsOf(fillOf(seen.current_health, seen.max_health), seen.resource);
   }
   return { kind: "word", word: partyWhereLabel(m.where) };
 }
 
+/** A bar slot: the health fill, and the resource when the state carries one. */
+function barsOf(
+  health: number,
+  resource: SeenPlayer["resource"],
+): PartyFrameSlot {
+  return resource
+    ? { kind: "bars", health, resource: resourceBar(resource) }
+    : { kind: "bars", health };
+}
+
 /**
- * One row per **other** member, in join order (the order the party pod lists them), the leader's
- * row flagged (R34). `others` is this world's broadcast of the other players, by member id. No
- * party, no rows.
+ * One row per member (R34): the player's own first, then the others in join order (the order the
+ * party pod lists them), the leader's row flagged. The player's row fills from `current_player`,
+ * a teammate's from `other_players` by member id. No party, no rows.
  */
 export function partyFrameRows(
   party: PartyUpdatePayload | null,
   selfId: string | undefined,
   world: WorldType | null,
-  others: readonly SeenPlayer[] = [],
+  seen: SeenState = {},
 ): PartyFrameRow[] {
   if (!party) return [];
-  const byId = new Map(others.map((p) => [p.id, p]));
-  return party.members
-    .filter((m) => m.player_id !== selfId)
-    .map((m) => ({
-      player_id: m.player_id,
-      name: m.name,
-      class: m.class,
-      leader: m.player_id === party.leader_id,
-      slot: slotOf(m, world, byId.get(m.player_id)),
-    }));
+  const byId = new Map((seen.other_players ?? []).map((p) => [p.id, p]));
+  const row = (m: PartyMember, slot: PartyFrameSlot): PartyFrameRow => ({
+    player_id: m.player_id,
+    name: m.name,
+    class: m.class,
+    leader: m.player_id === party.leader_id,
+    slot,
+  });
+  const self = party.members.filter((m) => m.player_id === selfId);
+  const others = party.members.filter((m) => m.player_id !== selfId);
+  return [
+    ...self.map((m) => row(m, selfSlotOf(seen.current_player))),
+    ...others.map((m) => row(m, slotOf(m, world, byId.get(m.player_id)))),
+  ];
 }
 
 /**
@@ -119,8 +149,12 @@ export interface PartyFrameRect {
   word: { x: number; y: number };
 }
 
-/** A frame's width: it ends left of the T panel (`PARTY_PANEL_X` 208, R28). */
-const FRAME_W = 184;
+/**
+ * A frame's width (R34): exactly the level/XP frame's outer width, so the left edge of the HUD
+ * reads as one column; a field, which has no XP bar, keeps the same. It ends left of the T panel
+ * (`PARTY_PANEL_X` 208, R28).
+ */
+const FRAME_W = PROGRESS_HUD_W;
 const ROW_H = 40;
 const ROW_GAP = 6;
 const PAD = 4;
@@ -169,15 +203,17 @@ const UNDER_XP_BAR = 6;
 
 /**
  * Where the frames stand in each world (R34): on the left edge, under the level/XP bar where
- * there is one (the hub's at (16, 16), the run's at (10, 44), both `PROGRESS_HUD_H` tall), at the
- * top-left corner of a field, which has none. All clear of the chat window bottom-left. The XP
- * bars' corners repeat the scenes' own (`HUD_INSET`, `PROGRESS_HUD_X/Y`); the layout test pins
- * the clearance.
+ * there is one (`PROGRESS_HUD_AT`, the scenes' own corners), at the top-left corner of a field,
+ * which has none. All clear of the chat window bottom-left; the layout test pins the clearance.
  */
 export const PARTY_FRAMES_PLACEMENT: Readonly<
   Record<WorldType, { x: number; top: number }>
 > = {
-  hub: { x: 16, top: 16 + PROGRESS_HUD_H + UNDER_XP_BAR },
-  run: { x: 10, top: 44 + PROGRESS_HUD_H + UNDER_XP_BAR },
+  hub: underXpBar(PROGRESS_HUD_AT.hub),
+  run: underXpBar(PROGRESS_HUD_AT.run),
   field: { x: 10, top: 16 },
 };
+
+function underXpBar(at: { x: number; y: number }): { x: number; top: number } {
+  return { x: at.x, top: at.y + PROGRESS_HUD_H + UNDER_XP_BAR };
+}

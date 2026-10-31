@@ -43,7 +43,7 @@ import {
   type RunMenuChoice,
 } from "@/ui/party";
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
-import { ProgressHud } from "@/ui/ProgressHud";
+import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
@@ -175,10 +175,11 @@ const BUTTON_H = 38;
 const BUTTON_GAP = 16;
 /**
  * Where the level and experience bar sit (FS-BDA7X req 42): top-left, under the position line,
- * and clear of the notice band (100–150) across the middle of the screen.
+ * and clear of the notice band (100–150) across the middle of the screen (`PROGRESS_HUD_AT`,
+ * which the party frames stand under).
  */
-const PROGRESS_HUD_X = 10;
-const PROGRESS_HUD_Y = 44;
+const PROGRESS_HUD_X = PROGRESS_HUD_AT.run.x;
+const PROGRESS_HUD_Y = PROGRESS_HUD_AT.run.y;
 /**
  * Where the Health and class resource bars sit (FS-8AY7S req 20): bottom-left, on the progress
  * bar's left edge and the leave button's bottom margin, so nothing else on the HUD shares the corner.
@@ -3089,7 +3090,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.syncResolvedView(state);
     this.showResourceBars(state);
     this.showAbilityCard();
-    this.partyFrames?.show(state.other_players);
+    this.partyFrames?.show(state);
 
     // Update escaped count HUD
     if (this.escapedCountText) {
