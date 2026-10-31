@@ -438,3 +438,15 @@ func TestChat_ReadLoopLogsCarryNoText(t *testing.T) {
 	})
 	assert.NotContains(t, sink.String(), secret, "the read loop logged the frame's text")
 }
+
+// A pod built without a chat bus cannot carry world chat, so it refuses it as closed rather than
+// accept lines it can never deliver (code review 2026-10-31). FS-5SH4G R1, FS-WJGFJ R8.
+func TestChat_WorldIsClosedOnAPodWithoutABus(t *testing.T) {
+	rig := newChatRig(t)
+	_, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+
+	sendChat(rig.server, wrenConn, "world", "hello?")
+
+	notice := awaitNotice(t, wrenInbox, "Wren")
+	assert.Equal(t, "channel_closed", notice.Payload["code"])
+}

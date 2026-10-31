@@ -82,10 +82,17 @@ func stampedWorldLine(text string) map[string]any {
 // subscribes asynchronously, and a publish before that lands on nobody.
 func (r *worldRig) publish(t *testing.T, raw []byte) {
 	t.Helper()
+	r.publishHeardBy(t, raw, 1)
+}
+
+// publishHeardBy retries until at least `subscribers` pods hear the publish, so a test with two
+// pods knows both are listening before anyone speaks.
+func (r *worldRig) publishHeardBy(t *testing.T, raw []byte, subscribers int64) {
+	t.Helper()
 	require.Eventually(t, func() bool {
 		n, err := r.redis.Publish(context.Background(), chatbus.WorldChannel, raw).Result()
-		return err == nil && n > 0
-	}, startSoloSettle, 10*time.Millisecond, "no subscriber on the world channel")
+		return err == nil && n >= subscribers
+	}, startSoloSettle, 10*time.Millisecond, "fewer than %d subscribers on the world channel", subscribers)
 }
 
 func (r *worldRig) publishLine(t *testing.T, line map[string]any) {
@@ -204,8 +211,8 @@ func twoPods(t *testing.T) (a, b *worldRig) {
 	client, mini := testutil.NewRedis(t)
 	a = newWorldPod(t, client, mini, "pod-a", chatbus.NewRedis(client))
 	b = newWorldPod(t, client, mini, "pod-b", chatbus.NewRedis(client))
-	// both subscribed before anyone speaks
-	a.publish(t, []byte("{}"))
+	// both subscribed before anyone speaks (review 2026-10-31: one heard is not two)
+	a.publishHeardBy(t, []byte("{}"), 2)
 	return a, b
 }
 
@@ -420,4 +427,48 @@ func TestWorldChat_SendingLogsCarryNoText(t *testing.T) {
 	awaitChat(t, wrenInbox, "Wren")
 
 	assert.NotContains(t, sink.String(), secret)
+}
+
+// ── Code review 2026-10-31 ──────────────────────────────────────────────────────────────────
+
+// dropOnceBus's first Listen fails at once, as a dropped subscription does; the rest go through.
+type dropOnceBus struct {
+	chatBus
+	dropped atomic.Bool
+}
+
+func (b *dropOnceBus) Listen(ctx context.Context, channel string, onMessage func([]byte)) error {
+	if b.dropped.CompareAndSwap(false, true) {
+		return errors.New("redis: subscription closed")
+	}
+	return b.chatBus.Listen(ctx, channel, onMessage)
+}
+
+// A dropped subscription is followed by a fresh one, and world chat carries on. FS-5SH4G R11.
+func TestWorldChat_SubscribesAgainAfterADrop(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	rig := newWorldPod(t, client, mini, "pod-a", &dropOnceBus{chatBus: chatbus.NewRedis(client)})
+	_, _, wrenInbox := rig.inHub(t, "Wren")
+
+	rig.publishLine(t, stampedWorldLine("after the drop"))
+
+	assert.Equal(t, "after the drop", awaitChat(t, wrenInbox, "Wren").Payload["text"])
+}
+
+// A line on the world channel that names another chat channel, or no scope, is not delivered:
+// the bus carries world lines only. FS-5SH4G §Edge States decoding.
+func TestWorldChat_SkipsLinesThatAreNotWorldLines(t *testing.T) {
+	rig := newWorldRig(t)
+	_, _, wrenInbox := rig.inHub(t, "Wren")
+
+	area := stampedWorldLine("pretending to be area")
+	area["channel"] = "area"
+	rig.publishLine(t, area)
+	noScope := stampedWorldLine("no scope")
+	delete(noScope, "scope")
+	rig.publishLine(t, noScope)
+	rig.publishLine(t, stampedWorldLine("a real one"))
+
+	assert.Equal(t, "a real one", awaitChat(t, wrenInbox, "Wren").Payload["text"])
+	assertSilent(t, wrenInbox, "Wren hears only the world line")
 }
