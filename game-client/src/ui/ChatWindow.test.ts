@@ -21,7 +21,11 @@ interface FakeText {
   height: number;
   depth?: number;
   scroll?: number;
+  alpha: number;
+  originX: number;
   destroyed: boolean;
+  /** The handler a toggle registered for pointerdown, if it is interactive. */
+  onPress?: () => void;
 }
 
 function fakeScene() {
@@ -71,13 +75,24 @@ function fakeScene() {
       x,
       y,
       height: 18,
+      alpha: 1,
+      originX: 0,
       destroyed: false,
     };
     texts.push(t);
     const self: Record<string, unknown> = {
       setScrollFactor: (s: number) => ((t.scroll = s), self),
       setDepth: (d: number) => ((t.depth = d), self),
-      setOrigin: () => self,
+      setOrigin: (ox: number) => ((t.originX = ox), self),
+      setAlpha: (a: number) => ((t.alpha = a), self),
+      setInteractive: () => self,
+      on: (event: string, cb: () => void) => {
+        if (event === "pointerdown") t.onPress = cb;
+        return self;
+      },
+      get width() {
+        return t.content.length * 7;
+      },
       setMask: () => self,
       setPosition: (nx: number, ny: number) => ((t.x = nx), (t.y = ny), self),
       destroy: () => void (t.destroyed = true),
@@ -97,10 +112,15 @@ function fakeScene() {
   // top to bottom, as the player reads them
   const shown = () =>
     texts.filter((t) => !t.destroyed).sort((a, b) => a.y - b.y);
+  // only the message area's lines, not the filter row's or the input row's words
+  const messageTexts = (bottom = BOTTOM) => {
+    const m = chatWindowFrame(X, bottom).messages;
+    return shown().filter((t) => t.y >= m.y && t.y < m.y + m.height);
+  };
   const wheel = (x: number, y: number, dy: number) =>
     input.emit("wheel", { x, y }, [], 0, dy);
   const press = (key: string) => keys.emit(`keydown-${key}`);
-  return { scene, shown, panels, input, keys, wheel, press };
+  return { scene, shown, messageTexts, panels, input, keys, wheel, press };
 }
 
 let minted = 0;
@@ -128,7 +148,7 @@ function rig() {
   const say = (text: string, extra: Partial<ChatLinePayload> = {}) =>
     store.getState().receive(stamped(text, extra));
   const contents = () =>
-    s.shown().map((t) => t.content.replace(/^\d\d:\d\d {2}Wren: /, ""));
+    s.messageTexts().map((t) => t.content.replace(/^\d\d:\d\d {2}Wren: /, ""));
   return { ...s, store, window, say, contents };
 }
 
@@ -157,7 +177,7 @@ describe("ChatWindow (C20, C22, C29: the stream drawn)", () => {
     const s = fakeScene();
     new ChatWindow(s.scene, store, X, BOTTOM);
 
-    const shown = s.shown();
+    const shown = s.messageTexts();
     expect(
       shown.map(
         (t) => t.content.endsWith("first") || t.content.endsWith("second"),
@@ -168,11 +188,11 @@ describe("ChatWindow (C20, C22, C29: the stream drawn)", () => {
   });
 
   it("should draw a line the moment the store gets it, in its channel's colour, camera-fixed at HUD depth", () => {
-    const { say, shown } = rig();
+    const { say, messageTexts } = rig();
 
     say("hello");
 
-    const [t] = shown();
+    const [t] = messageTexts();
     expect(t.content).toMatch(/^\d\d:\d\d {2}Wren: hello$/);
     expect(t.color).toBe(toCss(palette.chatArea));
     expect(t.scroll).toBe(0);
@@ -180,14 +200,14 @@ describe("ChatWindow (C20, C22, C29: the stream drawn)", () => {
   });
 
   it("should draw a notice as a dash and its words in the system colour", () => {
-    const { store, shown } = rig();
+    const { store, messageTexts } = rig();
 
     store.getState().notice({
       code: "channel_closed",
       text: "That channel is not open yet.",
     });
 
-    const [t] = shown();
+    const [t] = messageTexts();
     expect(t.content).toBe("— That channel is not open yet.");
     expect(t.color).toBe(toCss(palette.chatSystem));
   });
@@ -281,7 +301,7 @@ describe("ChatWindow (C21: scrolling)", () => {
 
 describe("ChatWindow (C18: moving with the ResourceHud)", () => {
   it("should move its bottom edge when told to sit somewhere else", () => {
-    const { window, panels, say, shown } = rig();
+    const { window, panels, say, messageTexts } = rig();
     say("hi");
 
     window.setBottom(600);
@@ -294,8 +314,9 @@ describe("ChatWindow (C18: moving with the ResourceHud)", () => {
       frame.panel.width,
       frame.panel.height,
     ]);
-    expect(shown()[0].y).toBeLessThan(600);
-    expect(shown()[0].y).toBeGreaterThanOrEqual(frame.messages.y);
+    const [line] = messageTexts(600);
+    expect(line.y).toBeLessThan(600);
+    expect(line.y).toBeGreaterThanOrEqual(frame.messages.y);
   });
 });
 
@@ -329,35 +350,37 @@ function inputRig(mayOpen = () => true) {
   const fields: FakeField[] = [];
   const sent: unknown[] = [];
   const window = new ChatWindow(s.scene, store, X, BOTTOM, {
-    mayOpen,
-    send: (line) => sent.push(line),
-    makeField: (_scene, rect, events) => {
-      const f: FakeField = {
-        value: "",
-        focused: false,
-        rect,
-        destroyed: false,
-        events,
-      };
-      fields.push(f);
-      return {
-        get value() {
-          return f.value;
-        },
-        set value(v: string) {
-          f.value = v;
-        },
-        focus: () => {
-          f.focused = true;
-          events.focused();
-        },
-        blur: () => {
-          f.focused = false;
-          events.blurred();
-        },
-        moveTo: (r) => void (f.rect = r),
-        destroy: () => void (f.destroyed = true),
-      };
+    input: {
+      mayOpen,
+      send: (line) => sent.push(line),
+      makeField: (_scene, rect, events) => {
+        const f: FakeField = {
+          value: "",
+          focused: false,
+          rect,
+          destroyed: false,
+          events,
+        };
+        fields.push(f);
+        return {
+          get value() {
+            return f.value;
+          },
+          set value(v: string) {
+            f.value = v;
+          },
+          focus: () => {
+            f.focused = true;
+            events.focused();
+          },
+          blur: () => {
+            f.focused = false;
+            events.blurred();
+          },
+          moveTo: (r) => void (f.rect = r),
+          destroy: () => void (f.destroyed = true),
+        };
+      },
     },
   });
   const field = () => fields[0];
@@ -436,5 +459,119 @@ describe("ChatWindow input (C26: Enter opens, Enter sends)", () => {
     window.destroy();
     expect(field().destroyed).toBe(true);
     expect(keys.listenerCount("keydown-ENTER")).toBe(0);
+  });
+});
+
+// ── The filter row (I-WJGFJ-5, FS-WJGFJ R24, R25) ──────────────────────────────────────────
+
+const toggleOf = (s: ReturnType<typeof fakeScene>, label: string) => {
+  const t = s.shown().find((x) => x.content === label);
+  expect(t, `a toggle reading ${label}`).toBeDefined();
+  return t!;
+};
+
+describe("ChatWindow filter row (R24)", () => {
+  it("should draw five toggles in order in the filter row, each in its channel's colour, all on", () => {
+    const { shown } = rig();
+    const row = chatWindowFrame(X, BOTTOM).filterRow;
+
+    const toggles = shown().filter(
+      (t) => t.y >= row.y && t.y < row.y + row.height && t.onPress,
+    );
+
+    expect(toggles.map((t) => t.content)).toEqual([
+      "Area",
+      "World",
+      "Party",
+      "Whisper",
+      "Trade",
+    ]);
+    expect(toggles.map((t) => t.color)).toEqual(
+      [
+        palette.chatArea,
+        palette.chatWorld,
+        palette.chatParty,
+        palette.chatWhisper,
+        palette.chatTrade,
+      ].map(toCss),
+    );
+    expect(toggles.every((t) => t.alpha === 1)).toBe(true);
+    const xs = toggles.map((t) => t.x);
+    expect([...xs].sort((a, b) => a - b)).toEqual(xs);
+  });
+
+  it("should hide a channel's lines when its toggle is pressed, dim the toggle, and bring them back on the next press", () => {
+    const s = rig();
+    s.say("in town");
+    s.say("far away", { channel: "world" });
+
+    toggleOf(s, "Area").onPress!();
+    expect(s.contents()).toEqual(["far away"]);
+    expect(toggleOf(s, "Area").alpha).toBeLessThan(1);
+    expect(s.store.getState().lines).toHaveLength(2);
+
+    toggleOf(s, "Area").onPress!();
+    expect(s.contents()).toEqual(["in town", "far away"]);
+    expect(toggleOf(s, "Area").alpha).toBe(1);
+  });
+
+  it("should draw the toggles as the store holds them when built", () => {
+    const store = createChatStore();
+    store.getState().toggleChannel("world");
+    const s = fakeScene();
+    new ChatWindow(s.scene, store, X, BOTTOM);
+
+    expect(toggleOf(s, "World").alpha).toBeLessThan(1);
+    expect(toggleOf(s, "Area").alpha).toBe(1);
+  });
+
+  it("should not move a scrolled-back view when a hidden channel's line arrives", () => {
+    const s = rig();
+    for (let i = 1; i <= 12; i++) s.say(`l${i}`);
+    toggleOf(s, "World").onPress!();
+    const frame = chatWindowFrame(X, BOTTOM);
+    s.wheel(frame.messages.x + 20, frame.messages.y + 20, -100);
+    const held = s.contents();
+
+    s.say("ignored", { channel: "world" });
+
+    expect(s.contents()).toEqual(held);
+  });
+
+  it("should go back to following the newest lines when a toggle is pressed", () => {
+    const s = rig();
+    for (let i = 1; i <= 12; i++) s.say(`l${i}`);
+    const frame = chatWindowFrame(X, BOTTOM);
+    s.wheel(frame.messages.x + 20, frame.messages.y + 20, -100);
+
+    toggleOf(s, "Trade").onPress!();
+
+    expect(s.contents().at(-1)).toBe("l12");
+  });
+});
+
+describe("ChatWindow area label (R25)", () => {
+  it("should end the filter row with the area it was given, right-aligned in the system colour", () => {
+    const store = createChatStore();
+    const s = fakeScene();
+    new ChatWindow(s.scene, store, X, BOTTOM, { area: "Area: Town" });
+
+    const label = toggleOf(s, "Area: Town");
+    const row = chatWindowFrame(X, BOTTOM).filterRow;
+    expect(label.originX).toBe(1);
+    expect(label.x).toBeLessThanOrEqual(row.x + row.width);
+    expect(label.color).toBe(toCss(palette.chatSystem));
+    expect(label.onPress).toBeUndefined();
+  });
+});
+
+describe("ChatWindow covers (R31)", () => {
+  it("should say a point inside the panel is its own and one beside it is not", () => {
+    const { window } = rig();
+    const panel = chatWindowFrame(X, BOTTOM).panel;
+
+    expect(window.covers(panel.x + 5, panel.y + 5)).toBe(true);
+    expect(window.covers(panel.x + panel.width + 5, panel.y + 5)).toBe(false);
+    expect(window.covers(panel.x + 5, panel.y - 5)).toBe(false);
   });
 });
