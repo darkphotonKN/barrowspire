@@ -45,7 +45,6 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] Route notification traffic to notification
 - [x] Route payment traffic to payments, plus the unauthenticated Stripe webhook
 - [x] Route item traffic to items
-- [x] Route example traffic to examples
 - [ ] Route ledger read traffic to ledger → FS-F9R7Q
 - [x] Route wallet traffic to wallet → FS-none
 - [x] Typed wallet balance read → FS-8EGFA
@@ -142,10 +141,6 @@ Applied in `SetupRouter`, in order: ✅ DONE
 
 All under `/api` unless noted. Each group forwards to the downstream service named in **bold**
 (the downstream service), via gRPC unless marked AMQP. ✅ DONE
-
-**example → `examples`**
-
-- `GET /api/example/:id`, `POST /api/example`
 
 **member → `auth`** (public + private)
 
