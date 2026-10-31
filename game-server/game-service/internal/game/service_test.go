@@ -121,7 +121,7 @@ func TestFormatMatchData(t *testing.T) {
 		},
 	}
 
-	svc := NewService(committingTxDB(t), &mockOutboxPublisher{})
+	svc := NewService(committingTxDB(t), &mockOutboxPublisher{}, noWake{})
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
