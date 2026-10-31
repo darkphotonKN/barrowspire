@@ -62,7 +62,6 @@ type SessionManager interface {
 	CheckLoadout(ctx context.Context, player *types.Player) error
 	EnterField(ctx context.Context, conn *websocket.Conn, fieldID string) (*game.Session, error)
 	LeaveField(ctx context.Context, player *types.Player) (*game.Session, error)
-	SeatedPlayerIDs() []uuid.UUID
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
@@ -298,7 +297,7 @@ func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*game.Session, er
 	return session, nil
 }
 
-func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer) *messageHub {
+func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat *chatRelay) *messageHub {
 	return &messageHub{
 		sessionManager: sessionManager,
 		sessions:       make(map[string]*game.Session),
@@ -306,7 +305,7 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 		podID:          podID,
 		podAddr:        podAddr,
 		announcer:      announcer,
-		chat:           newChatRelay(sessionManager, sender, podID),
+		chat:           chat,
 	}
 }
 

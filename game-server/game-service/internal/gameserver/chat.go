@@ -43,19 +43,16 @@ type chatRelay struct {
 	newID func() uuid.UUID
 }
 
-func newChatRelay(audience chatAudience, sender chatSender, podID string) *chatRelay {
+// newChatRelay builds the pod's relay. now and newID are what lines are
+// stamped with: the wall clock and fresh uuids in production, fixed in tests.
+func newChatRelay(audience chatAudience, sender chatSender, podID string, now func() time.Time, newID func() uuid.UUID) *chatRelay {
 	return &chatRelay{
 		audience: audience,
 		sender:   sender,
 		podID:    podID,
-		now:      time.Now,
-		newID:    uuid.New,
+		now:      now,
+		newID:    newID,
 	}
-}
-
-// stampWith replaces the clock and the id source the relay stamps lines with.
-func (r *chatRelay) stampWith(now func() time.Time, newID func() uuid.UUID) {
-	r.now, r.newID = now, newID
 }
 
 // chatNoticeCopy is what each notice says, in the words the player sees. The

@@ -86,7 +86,8 @@ func matchPlayer(pod string) matchmaker.MatchStartPlayer {
 // connected is dropped. FS-K2HKP §Requirements 19–20.
 func TestResolveMatchedPlayers_ClassifiesByPod(t *testing.T) {
 	server := newHandoffServer(t, NewMockQueueService(), noopAnnouncer{})
-	hub := NewMessageHub(server, messaging.NewMessageSender(server), testPodID, testPodAddr, noopAnnouncer{})
+	sender := messaging.NewMessageSender(server)
+	hub := NewMessageHub(server, sender, testPodID, testPodAddr, noopAnnouncer{}, newChatRelay(server, sender, testPodID, time.Now, uuid.New))
 
 	local := matchPlayer(testPodID)
 	registerTestConn(server, &websocket.Conn{}, &types.Player{ID: local.ID, Username: "Wren", Character: local.Character})

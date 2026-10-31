@@ -167,8 +167,8 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	server.queue.Start(ctx)
 
 	// initialize message hub
-	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer)
-	messageHub.chat.stampWith(boot.chatNow, boot.chatNewID)
+	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID)
+	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat)
 	go messageHub.Run(ctx)
 
 	server.createHubSession()
