@@ -168,6 +168,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 
 	// initialize message hub
 	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer)
+	messageHub.chat.stampWith(boot.chatNow, boot.chatNewID)
 	go messageHub.Run(ctx)
 
 	server.createHubSession()
@@ -754,6 +755,31 @@ func (s *Server) MapConnToPlayer(conn *websocket.Conn, playerID uuid.UUID, msgCh
 * grabs player information from connected client's websocket connection
 * information.
 **/
+
+/**
+* SeatedPlayerIDs is everyone connected to this pod and seated in a world: the
+* area chat audience (FS-WJGFJ R9, ADR-0032). Read off the connection table,
+* which is what routing trusts, so a member seated anywhere here hears the pod
+* and a connection in no world does not (R10).
+**/
+func (s *Server) SeatedPlayerIDs() []uuid.UUID {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	seated := make([]uuid.UUID, 0, len(s.connToPlayer))
+	seen := make(map[uuid.UUID]struct{}, len(s.connToPlayer))
+	for _, player := range s.connToPlayer {
+		if player.CurrentGameSessionId == uuid.Nil {
+			continue
+		}
+		if _, dup := seen[player.ID]; dup {
+			continue
+		}
+		seen[player.ID] = struct{}{}
+		seated = append(seated, player.ID)
+	}
+	return seated
+}
 
 func (s *Server) GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool) {
 	// Read lock: this only looks the connection up. It sits on the routing path

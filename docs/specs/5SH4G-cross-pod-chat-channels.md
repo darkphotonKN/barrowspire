@@ -71,3 +71,12 @@ Everything shared with area chat (envelope, stamping, 200 code points, 2 s flood
 - Party channel (needs a party feature; scope key = party id, same Redis path).
 - Trade channel (fixed scope like world; probably its own throttle).
 - Whisper history, "reply to last whisper" key.
+- **A separate chat service / chat socket** (raised by the user 2026-10-31 during I-WJGFJ-1, kept
+  on the shared game socket for now). Not a bandwidth concern: chat is ≤1 msg / 2 s / player
+  against a 60 Hz state broadcast. The real triggers would be history, moderation pipeline, or
+  chat surviving a pod handoff. Separating would supersede ADR-0015 (one connection per pod)
+  and break "area = pod" (ADR-0032) unless the chat socket is pinned to the game pod or area
+  moves to Redis. What would move: the relay (kept in `gameserver/chat.go` behind two small
+  interfaces, audience and sender) and the audience source (a `player → pod` presence record
+  instead of the pod's own connection table). What would not: the envelope, notices, channel
+  types, text rules, the client store and window.

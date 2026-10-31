@@ -31,6 +31,10 @@ type messageHub struct {
 	podID     string
 	podAddr   string
 	announcer HandoffAnnouncer
+
+	// chat lines are stamped and relayed here, on the loop, never by a world
+	// (FS-WJGFJ R11)
+	chat *chatRelay
 }
 
 // handoffAnnounceTimeout bounds each announce to another pod, so a slow redis
@@ -58,6 +62,7 @@ type SessionManager interface {
 	CheckLoadout(ctx context.Context, player *types.Player) error
 	EnterField(ctx context.Context, conn *websocket.Conn, fieldID string) (*game.Session, error)
 	LeaveField(ctx context.Context, player *types.Player) (*game.Session, error)
+	SeatedPlayerIDs() []uuid.UUID
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
@@ -301,6 +306,7 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 		podID:          podID,
 		podAddr:        podAddr,
 		announcer:      announcer,
+		chat:           newChatRelay(sessionManager, sender, podID),
 	}
 }
 
@@ -314,7 +320,12 @@ func (h *messageHub) Run(ctx context.Context) {
 	for {
 		select {
 		case clientPackage := <-h.sessionManager.GetServerChan():
-			slog.Info("incoming message.", "message", clientPackage.Message)
+			if constants.Action(clientPackage.Message.Action) == constants.ActionChat {
+				// a chat line's text is never logged (FS-WJGFJ R14, ADR-0033)
+				slog.Debug("incoming chat line")
+			} else {
+				slog.Info("incoming message.", "message", clientPackage.Message)
+			}
 
 			// handle message based on action
 			var gameActions map[constants.Action]bool = map[constants.Action]bool{
@@ -594,6 +605,16 @@ func (h *messageHub) Run(ctx context.Context) {
 				}); err != nil {
 					slog.Warn("Could not tell a member they left the hub", "player_id", player.ID, "error", err)
 				}
+
+			// A chat line: stamped and relayed on the loop to everyone seated on
+			// this pod; never forwarded to a world. FS-WJGFJ §Requirements B9–B11.
+			case constants.ActionChat:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("chat from a connection with no player")
+					continue
+				}
+				h.chat.relay(player, clientPackage.Conn, clientPackage.Message.Payload)
 
 			case constants.ActionLeaveQueue:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
