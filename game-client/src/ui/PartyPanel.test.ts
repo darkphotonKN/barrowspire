@@ -4,6 +4,7 @@ import type Phaser from "phaser";
 import type { WorldType } from "@/assets/types/client";
 import { createPartyStore, type PartyUpdatePayload } from "@/stores/partyStore";
 import { PartyPanel, type PartyPanelDeps } from "./PartyPanel";
+import { partyCommands } from "./partyCommands";
 import type { PartyInviteFieldHandle } from "./partyInviteField";
 import { PARTY_HINT, type FocusedElement } from "./partyPanelLayout";
 
@@ -126,6 +127,7 @@ function setup(
     world?: WorldType;
     active?: FocusedElement | null;
     blocked?: boolean;
+    commands?: PartyPanelDeps["commands"];
   } = {},
 ) {
   const scene = fakeScene();
@@ -136,7 +138,8 @@ function setup(
     active: opts.active ?? null,
     blocked: opts.blocked ?? false,
   };
-  const commands = {
+  const commands = opts.commands ?? {
+    create: vi.fn(),
     invite: vi.fn((name: string) => name.trim() !== ""),
     kick: vi.fn(),
     transfer: vi.fn(),
@@ -205,10 +208,11 @@ describe("PartyPanel (FS-R82NV R28: T toggles it)", () => {
 });
 
 describe("PartyPanel (FS-R82NV R29, R30: contents)", () => {
-  it("should show a player in no party only the hint and the invite field", () => {
+  it("should show a player in no party the hint, Create party and the invite field", () => {
     const env = setup();
     env.pressT();
     expect(env.find(PARTY_HINT)).toBeDefined();
+    expect(env.find("Create party")).toBeDefined();
     expect(env.find("Invite")).toBeDefined();
     expect(env.find("Leave party")).toBeUndefined();
     expect(env.find("Kick")).toBeUndefined();
@@ -267,6 +271,94 @@ describe("PartyPanel (FS-R82NV R29, R30: contents)", () => {
     env.frame();
     expect(env.field.enabled).toBe(false);
   });
+});
+
+describe("PartyPanel (FS-R82NV R30: Create party)", () => {
+  it("should send party_create from Create party in the hub, with no party", () => {
+    const env = setup();
+    env.pressT();
+    const create = env.find("Create party")!;
+    expect(create.interactive).toBe(true);
+    create.onPress?.();
+    expect(env.commands.create).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["field", "run"] as const)(
+    "should grey Create party in the %s and send nothing",
+    (world) => {
+      const env = setup({ world });
+      env.pressT();
+      const create = env.find("Create party")!;
+      expect(create.interactive).toBe(false);
+      expect(create.alpha).toBeLessThan(1);
+      create.onPress?.();
+      expect(env.commands.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it("should live-grey Create party when the player walks out of the hub", () => {
+    const env = setup();
+    env.pressT();
+    env.state.world = "field";
+    env.frame();
+    expect(env.find("Create party")!.interactive).toBe(false);
+  });
+
+  it("should not show Create party in a party", () => {
+    const env = setup();
+    env.store.getState().apply(update(ME));
+    env.pressT();
+    expect(env.find("Create party")).toBeUndefined();
+  });
+});
+
+describe("PartyPanel (FS-R82NV R29: the Invite button)", () => {
+  function withSocket(world: WorldType = "hub") {
+    const sent: [string, unknown][] = [];
+    const commands = partyCommands({
+      sendMessage: (action, payload) => void sent.push([action, payload]),
+    });
+    return { sent, env: setup({ world, commands }) };
+  }
+
+  it("should send exactly what Enter sends, and clear the field", () => {
+    const enter = withSocket();
+    enter.env.pressT();
+    enter.env.field.value = "  Wren ";
+    enter.env.field.submit(enter.env.field.value);
+
+    const button = withSocket();
+    button.env.pressT();
+    button.env.field.value = "  Wren ";
+    const invite = button.env.find("Invite")!;
+    expect(invite.interactive).toBe(true);
+    invite.onPress?.();
+
+    expect(button.sent).toEqual([["party_invite", { name: "Wren" }]]);
+    expect(button.sent).toEqual(enter.sent);
+    expect(button.env.field.value).toBe("");
+  });
+
+  it("should send nothing for a blank field", () => {
+    const { sent, env } = withSocket();
+    env.pressT();
+    env.field.value = "   ";
+    env.find("Invite")!.onPress?.();
+    expect(sent).toEqual([]);
+  });
+
+  it.each(["field", "run"] as const)(
+    "should grey the Invite button in the %s and send nothing",
+    (world) => {
+      const { sent, env } = withSocket(world);
+      env.pressT();
+      env.field.value = "Wren";
+      const invite = env.find("Invite")!;
+      expect(invite.interactive).toBe(false);
+      invite.onPress?.();
+      expect(sent).toEqual([]);
+    },
+  );
 });
 
 describe("PartyPanel (FS-R82NV R29: the invite field)", () => {

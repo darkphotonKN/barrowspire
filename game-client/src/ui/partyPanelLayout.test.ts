@@ -79,7 +79,7 @@ describe("panel words (FS-R82NV R29, R30, R34's state words)", () => {
   });
 
   it("should offer the hint line copy from R30", () => {
-    expect(PARTY_HINT).toBe("Invite someone by name to form a party.");
+    expect(PARTY_HINT).toBe("Create a party, or invite someone by name.");
   });
 });
 
@@ -93,13 +93,47 @@ describe("partyPanelFrame (FS-R82NV R28–R30)", () => {
     inner.x + inner.width <= outer.x + outer.width &&
     inner.y + inner.height <= outer.y + outer.height;
 
-  it("should show a player in no party only the hint and the invite row", () => {
+  const overlaps = (
+    a: { x: number; y: number; width: number; height: number },
+    b: { x: number; y: number; width: number; height: number },
+  ) =>
+    a.x < b.x + b.width &&
+    b.x < a.x + a.width &&
+    a.y < b.y + b.height &&
+    b.y < a.y + a.height;
+
+  it("should show a player in no party the hint, Create party and the invite row", () => {
     const frame = partyPanelFrame(partyActions(null, ME, "hub"));
     expect(frame.rows).toEqual([]);
     expect(frame.hint).toBeDefined();
     expect(frame.leave).toBeUndefined();
     expect(frame.loot).toBeUndefined();
+    expect(within(frame.create!, frame.panel)).toBe(true);
+    expect(overlaps(frame.create!, frame.hint!)).toBe(false);
+    expect(overlaps(frame.create!, frame.invite)).toBe(false);
     expect(within(frame.invite, frame.panel)).toBe(true);
+  });
+
+  it.each([
+    ["no party", null],
+    ["a party", party(2)],
+  ] as const)(
+    "should sit the Invite button beside the field, on its row, with %s (R29)",
+    (_case, p) => {
+      const frame = partyPanelFrame(partyActions(p, ME, "hub"));
+      const { invite, inviteField, inviteButton } = frame;
+      expect(within(inviteField, invite)).toBe(true);
+      expect(within(inviteButton, invite)).toBe(true);
+      expect(inviteButton.x).toBeGreaterThanOrEqual(
+        inviteField.x + inviteField.width,
+      );
+    },
+  );
+
+  it("should not lay out Create party in a party", () => {
+    expect(
+      partyPanelFrame(partyActions(party(2), ME, "hub")).create,
+    ).toBeUndefined();
   });
 
   it("should give each member a row, a reserved loot-rule slot and a Leave button, all inside the panel", () => {

@@ -161,6 +161,8 @@ export interface PartyMemberRow {
 export interface PartyActions {
   inParty: boolean;
   locked: boolean;
+  /** The Create party button (R30): only in the hub, by a player in no party. */
+  create: boolean;
   /** The invite field: only in the hub, by a leader or a player in no party, with room left. */
   invite: boolean;
   leave: boolean;
@@ -179,13 +181,21 @@ export function partyActions(
   const locked = partyLocked(world);
   const inHub = world === "hub";
   if (!party) {
-    return { inParty: false, locked, invite: inHub, leave: false, members: [] };
+    return {
+      inParty: false,
+      locked,
+      create: inHub,
+      invite: inHub,
+      leave: false,
+      members: [],
+    };
   }
   const leads = isLeader(party, selfId);
   const room = party.members.length < party.size;
   return {
     inParty: true,
     locked,
+    create: false,
     invite: inHub && leads && room,
     leave: !locked,
     members: party.members.map((m) => {

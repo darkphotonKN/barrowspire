@@ -6,7 +6,7 @@ import {
   type PartySocket,
 } from "./partyCommands";
 
-// FS-R82NV §Requirements R12, R19, R20, R29, R32: what the panel's and the invite prompt's actions send.
+// FS-R82NV §Requirements R4a, R12, R19, R20, R29, R30, R32: what the panel's and the invite prompt's actions send.
 
 function fakeSocket() {
   const sent: [string, unknown][] = [];
@@ -44,6 +44,12 @@ describe("partyCommands", () => {
     expect(sent).toEqual([]);
   });
 
+  it("should send party_create with no payload (R4a, R30)", () => {
+    const { socket, sent } = fakeSocket();
+    partyCommands(socket).create();
+    expect(sent).toEqual([["party_create", {}]]);
+  });
+
   it("should send kick, transfer and leave", () => {
     const { socket, sent } = fakeSocket();
     const party = partyCommands(socket);
@@ -75,6 +81,7 @@ describe("partyCommands", () => {
 
     expect([...refusals.keys()].sort()).toEqual([
       "party_accept",
+      "party_create",
       "party_decline",
       "party_invite",
       "party_kick",

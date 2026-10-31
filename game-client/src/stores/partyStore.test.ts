@@ -74,16 +74,31 @@ describe("partyActions (FS-R82NV R29: greyed by role and by lock)", () => {
     expect(actions.members.some((m) => m.kick || m.transfer)).toBe(false);
   });
 
-  it("should offer a player in no party only the invite, in the hub", () => {
+  it("should offer a player in no party Create party and the invite, in the hub (R30)", () => {
     expect(partyActions(null, ME, "hub")).toEqual({
       inParty: false,
       locked: false,
+      create: true,
       invite: true,
       leave: false,
       members: [],
     });
-    expect(partyActions(null, ME, "field").invite).toBe(false);
-    expect(partyActions(null, ME, null).invite).toBe(false);
+  });
+
+  it.each(["field", "run", null] as const)(
+    "should grey Create party and the invite for a player in no party in %s (R30)",
+    (world) => {
+      const actions = partyActions(null, ME, world);
+      expect({ create: actions.create, invite: actions.invite }).toEqual({
+        create: false,
+        invite: false,
+      });
+    },
+  );
+
+  it("should not offer Create party to anyone already in a party", () => {
+    expect(partyActions(update(), ME, "hub").create).toBe(false);
+    expect(partyActions(update(), ALLY, "hub").create).toBe(false);
   });
 
   it("should not let a full party's leader invite", () => {

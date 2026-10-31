@@ -1,9 +1,9 @@
 /**
  * The party panel (FS-R82NV R28–R30): T opens and closes it in the hub, fields and runs. It lists
  * the party from the party store (name, class, where, the leader marked, away members greyed)
- * and holds its actions: Invite (a DOM field, live only in the hub), Kick and Transfer on each
- * other member for the leader, Leave for any member, and a reserved slot for the loot rule
- * (FS-V780R). Actions the server would refuse are greyed by role and by lock (`partyActions`).
+ * and holds its actions: Create party for a player in no party, Invite (a DOM field with a button
+ * beside it, both live only in the hub), Kick and Transfer on each other member for the leader,
+ * Leave for any member, and a reserved slot for the loot rule (FS-V780R). Actions the server would refuse are greyed by role and by lock (`partyActions`).
  *
  * A carved panel on the game palette at the HUD's depth. The open state lives in the store, so
  * walking into a field with the panel open finds it open there; the scene only mounts it.
@@ -48,7 +48,10 @@ export interface PartyPanelDeps {
   world: () => WorldType | null;
   selfId: () => string | undefined;
   /** The panel's own actions: answering an invite is the invite prompt's. */
-  commands: Pick<PartyCommands, "invite" | "kick" | "transfer" | "leave">;
+  commands: Pick<
+    PartyCommands,
+    "create" | "invite" | "kick" | "transfer" | "leave"
+  >;
   makeField: PartyInviteFieldFactory;
   /** The element holding keyboard focus: T is a letter while it takes typing (R28). */
   activeElement: () => FocusedElement | null;
@@ -297,17 +300,18 @@ export class PartyPanel {
 
     if (frame.hint)
       this.text(frame.hint.x, frame.hint.y + 2, PARTY_HINT, palette.hudLabel);
+    if (frame.create)
+      this.button(g, frame.create, PARTY_LABEL.create, actions.create, () =>
+        this.deps.commands.create(),
+      );
 
-    const invite = frame.invite;
-    this.text(
-      invite.x,
-      invite.y + 4,
-      PARTY_LABEL.invite,
-      palette.hudLabel,
-    ).setAlpha(actions.invite ? 1 : GREYED_ALPHA);
     const f = frame.inviteField;
     g.lineStyle(1, palette.frame, actions.invite ? 0.6 : 0.2);
     g.lineBetween(f.x, f.y + f.height - 1, f.x + f.width, f.y + f.height - 1);
+    // the button sends exactly what Enter in the field sends (R29)
+    this.button(g, frame.inviteButton, PARTY_LABEL.invite, actions.invite, () =>
+      this.submit(this.field?.value ?? ""),
+    );
 
     if (frame.leave)
       this.button(g, frame.leave, PARTY_LABEL.leave, actions.leave, () =>

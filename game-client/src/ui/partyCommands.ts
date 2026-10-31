@@ -1,5 +1,5 @@
 /**
- * What the party panel's and the invite prompt's actions send (FS-R82NV R12, R15, R16, R19, R20),
+ * What the party panel's and the invite prompt's actions send (FS-R82NV R4a, R12, R15, R16, R19, R20),
  * and where the server's top-level error replies to them go. The server answers a party action
  * with a `party_update` or a `party_notice`; an error reply (an action the pod has no handler for
  * yet, as kick, transfer and leave until slice 2) must never reach the session's global handler,
@@ -23,6 +23,8 @@ export interface PartyErrorSocket {
 }
 
 export interface PartyCommands {
+  /** Stands this player up as a party of one (R4a); the server answers with a `party_update` or says why not. */
+  create(): void;
   /** Sends an invite for a name or id; false (nothing sent) when it is blank. */
   invite(name: string): boolean;
   kick(playerId: string): void;
@@ -34,6 +36,7 @@ export interface PartyCommands {
 }
 
 const PARTY_ACTIONS = [
+  "party_create",
   "party_invite",
   "party_kick",
   "party_transfer",
@@ -57,6 +60,7 @@ export function routePartyErrors(socket: PartyErrorSocket): void {
 
 export function partyCommands(socket: PartySocket): PartyCommands {
   return {
+    create: () => socket.sendMessage("party_create", {}),
     invite: (name) => {
       const trimmed = name.trim();
       if (!trimmed) return false;

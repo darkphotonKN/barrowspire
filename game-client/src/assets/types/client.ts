@@ -107,6 +107,8 @@ export interface ActionMap {
   leave_field: Record<string, never>;
   /** A player in the delve drinking a health potion (FS-P9G8R R27): no payload; the server picks the slot. */
   drink_potion: Record<string, never>;
+  /** A player in no party standing up a party of one, as its leader (FS-R82NV R4a): no payload. */
+  party_create: Record<string, never>;
   /** Inviting a player to this player's party, by character name or id (FS-R82NV R12). */
   party_invite: { name: string };
   /**
@@ -145,6 +147,7 @@ export const ActionType = {
   EnterField: "enter_field",
   LeaveField: "leave_field",
   DrinkPotion: "drink_potion",
+  PartyCreate: "party_create",
   PartyInvite: "party_invite",
   PartyKick: "party_kick",
   PartyTransfer: "party_transfer",
