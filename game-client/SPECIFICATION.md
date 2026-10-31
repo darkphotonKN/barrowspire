@@ -127,6 +127,7 @@ server state and sends intents. ✅
 - [ ] Follow a handoff into the hub → FS-R82NV
 - [ ] Party loot rule setting → FS-V780R
 - [ ] Enter the Spire as a party → FS-BJNYC
+- [ ] Overhead health bars over party members in a field → FS-CH21F
 
 ### Chat
 
