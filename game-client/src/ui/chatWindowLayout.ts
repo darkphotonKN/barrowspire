@@ -204,6 +204,61 @@ export function wrapChatText(
   return lines;
 }
 
+/** The scrollbar's drawn width, its grab margin either side, and its shortest thumb (asked 2026-10-31). */
+export const CHAT_SCROLL_W = 4;
+export const CHAT_SCROLL_GRAB = 5;
+export const CHAT_SCROLL_THUMB_MIN = 16;
+
+/** The scrollbar's track, down the message area's right edge, clear of its top and of the gap. */
+export function chatScrollTrack(frame: ChatWindowFrame): Rect {
+  const m = frame.messages;
+  return {
+    x: m.x + m.width - CHAT_SCROLL_W - 3,
+    y: m.y + 3,
+    width: CHAT_SCROLL_W,
+    height: m.height - CHAT_LINES_GAP - 3,
+  };
+}
+
+/**
+ * The thumb for `total` lines with the view `offset` lines back from the newest, or null while
+ * every line fits. Its length is the share in view; following, it sits at the track's foot.
+ */
+export function chatScrollThumb(
+  track: Rect,
+  total: number,
+  offset: number,
+  visible = CHAT_VISIBLE_LINES,
+): Rect | null {
+  if (total <= visible) return null;
+  const height = Math.max(
+    CHAT_SCROLL_THUMB_MIN,
+    (track.height * visible) / total,
+  );
+  const furthest = total - visible;
+  const back = Math.min(furthest, Math.max(0, offset)) / furthest;
+  return {
+    x: track.x,
+    y: track.y + (track.height - height) * (1 - back),
+    width: track.width,
+    height,
+  };
+}
+
+/** The offset that puts the thumb's top at `thumbTop`: the oldest lines at the track's head. */
+export function chatScrollOffsetAt(
+  track: Rect,
+  total: number,
+  thumbTop: number,
+  visible = CHAT_VISIBLE_LINES,
+): number {
+  const thumb = chatScrollThumb(track, total, 0, visible);
+  if (!thumb) return 0;
+  const travel = track.height - thumb.height;
+  const down = Math.min(1, Math.max(0, (thumbTop - track.y) / travel));
+  return Math.round((1 - down) * (total - visible));
+}
+
 export interface ChatTabSegment extends Rect {
   channel: ChatChannel;
 }

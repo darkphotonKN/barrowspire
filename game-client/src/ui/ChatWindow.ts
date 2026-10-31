@@ -29,9 +29,14 @@ import {
   CHAT_INPUT_TEXT_X,
   CHAT_LINES_GAP,
   CHAT_PAD,
+  CHAT_SCROLL_GRAB,
+  CHAT_SCROLL_W,
   CHAT_TAB_PAD,
   chatEntryColour,
   chatFoldButton,
+  chatScrollOffsetAt,
+  chatScrollThumb,
+  chatScrollTrack,
   chatTabSegments,
   chatWindowFrame,
   formatChatEntry,
@@ -126,6 +131,9 @@ export class ChatWindow {
   private maskShape?: Phaser.GameObjects.Graphics;
   private mask?: Phaser.Display.Masks.GeometryMask;
   private lineTexts: Phaser.GameObjects.Text[] = [];
+  private scrollbar?: Phaser.GameObjects.Graphics;
+  /** While the thumb is held: how far below its top it was grabbed. */
+  private grabbed: number | null = null;
   private tabTexts: Phaser.GameObjects.Text[] = [];
   private foldText?: Phaser.GameObjects.Text;
   private hintText?: Phaser.GameObjects.Text;
@@ -151,6 +159,8 @@ export class ChatWindow {
     );
     scene.input.on("wheel", this.onWheel, this);
     scene.input.on("pointerdown", this.onPress, this);
+    scene.input.on("pointermove", this.onDrag, this);
+    scene.input.on("pointerup", this.onRelease, this);
     if (options.input) this.buildInput(options.input);
     this.drawInputRow();
   }
@@ -181,6 +191,8 @@ export class ChatWindow {
     this.unsubscribe();
     this.scene.input?.off("wheel", this.onWheel, this);
     this.scene.input?.off("pointerdown", this.onPress, this);
+    this.scene.input?.off("pointermove", this.onDrag, this);
+    this.scene.input?.off("pointerup", this.onRelease, this);
     this.scene.input?.keyboard?.off("keydown-ENTER", this.onEnter, this);
     this.input?.cancel();
     this.field?.destroy();
@@ -190,6 +202,8 @@ export class ChatWindow {
     this.foldText?.destroy();
     this.hintText?.destroy();
     this.panel?.destroy();
+    this.scrollbar?.destroy();
+    this.scrollbar = undefined;
     this.maskShape?.destroy();
     this.mask?.destroy();
     this.foldText =
@@ -311,8 +325,73 @@ export class ChatWindow {
    * browser will not move focus itself, since Phaser prevents a canvas mousedown's default.
    */
   private onPress(pointer: { x: number; y: number }): void {
+    if (this.grabScrollbar(pointer)) return;
     if (!this.input?.isOpen() || this.covers(pointer.x, pointer.y)) return;
     this.field?.blur();
+  }
+
+  /** How many lines the player can scroll through now: the ones their filter shows. */
+  private scrollable(): number {
+    return visibleChatLines(this.store.getState()).length;
+  }
+
+  /**
+   * A press on the scrollbar (asked 2026-10-31): on the thumb it is held where it was caught; on the
+   * bare track the thumb jumps to centre on the press. Reports whether the press was the bar's.
+   */
+  private grabScrollbar(pointer: { x: number; y: number }): boolean {
+    if (this.store.getState().folded) return false;
+    const track = chatScrollTrack(this.frame);
+    const onBar =
+      pointer.x >= track.x - CHAT_SCROLL_GRAB &&
+      pointer.x <= track.x + track.width + CHAT_SCROLL_GRAB &&
+      pointer.y >= track.y &&
+      pointer.y <= track.y + track.height;
+    if (!onBar) return false;
+    const thumb = chatScrollThumb(track, this.scrollable(), this.offset);
+    if (!thumb) return false;
+    const onThumb = pointer.y >= thumb.y && pointer.y <= thumb.y + thumb.height;
+    this.grabbed = onThumb ? pointer.y - thumb.y : thumb.height / 2;
+    this.scrollTo(pointer.y);
+    return true;
+  }
+
+  /** While the thumb is held, the view follows the pointer up and down, wherever it wanders. */
+  private onDrag(pointer: { x: number; y: number }): void {
+    if (this.grabbed !== null) this.scrollTo(pointer.y);
+  }
+
+  private onRelease(): void {
+    this.grabbed = null;
+  }
+
+  private scrollTo(pointerY: number): void {
+    const track = chatScrollTrack(this.frame);
+    const next = chatScrollOffsetAt(
+      track,
+      this.scrollable(),
+      pointerY - (this.grabbed ?? 0),
+    );
+    if (next === this.offset) return;
+    this.offset = next;
+    this.drawLines();
+  }
+
+  /** The track and its thumb, drawn only while there is more than fits. */
+  private drawScrollbar(): void {
+    const g = (this.scrollbar ??= this.scene.add
+      .graphics()
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH));
+    g.clear();
+    if (this.store.getState().folded) return;
+    const track = chatScrollTrack(this.frame);
+    const thumb = chatScrollThumb(track, this.scrollable(), this.offset);
+    if (!thumb) return;
+    g.fillStyle(palette.chatRule, 0.18);
+    g.fillRoundedRect(track.x, track.y, track.width, track.height, 2);
+    g.fillStyle(palette.chatRule, 0.75);
+    g.fillRoundedRect(thumb.x, thumb.y, thumb.width, thumb.height, 2);
   }
 
   private onWheel(
@@ -453,6 +532,7 @@ export class ChatWindow {
   /** The lines in view, laid bottom-up from the message area's foot so a wrapped line pushes the older ones up. */
   private drawLines(): void {
     this.clearLines();
+    this.drawScrollbar();
     const m = this.frame.messages;
     if (m.height === 0) return;
     const entries = visibleEntries(
@@ -468,12 +548,13 @@ export class ChatWindow {
           ...textStyle(chatEntryColour(entry)),
           // fill each line before breaking: Phaser's own wrap breaks only at spaces, so a Chinese
           // sentence after "Name: " would jump whole to the next line
+          // clear of the scrollbar at the right edge
           wordWrap: {
-            width: m.width - CHAT_PAD * 2,
+            width: m.width - CHAT_PAD * 2 - CHAT_SCROLL_W,
             callback: (text: string, self: Phaser.GameObjects.Text) =>
               wrapChatText(
                 text,
-                m.width - CHAT_PAD * 2,
+                m.width - CHAT_PAD * 2 - CHAT_SCROLL_W,
                 (part) => self.context.measureText(part).width,
               ),
           },
