@@ -1,6 +1,6 @@
 # FS-PJPNA: Deduplicated match-result notifications
 
-> Status: work-order · SPECIFICATION.md: `game-server/notification-service/SPECIFICATION.md` "## Notifications" → "Deduplicated match-result notifications" → this FS (retrofit of the pre-existing "Match-result notifications → FS-none") · Related ADRs: none · Related FS: [FS-BVM9H](BVM9H-match-end-consumer-inboxes.md) (the same inbox pattern for items/stats), [FS-9TNJA](9TNJA-game-service-owns-its-outbox.md) (producer stamps `MessageId`)
+> Status: shipped · SPECIFICATION.md: `game-server/notification-service/SPECIFICATION.md` "## Notifications" → "Deduplicated match-result notifications" → this FS (retrofit of the pre-existing "Match-result notifications → FS-none") · Related ADRs: none · Related FS: [FS-BVM9H](BVM9H-match-end-consumer-inboxes.md) (the same inbox pattern for items/stats), [FS-9TNJA](9TNJA-game-service-owns-its-outbox.md) (producer stamps `MessageId`)
 
 ## Summary
 

@@ -11,4 +11,4 @@
 ## Notifications
 
 - [x] Match-result notifications → FS-none
-- [ ] Deduplicated match-result notifications → FS-PJPNA
+- [x] Deduplicated match-result notifications → FS-PJPNA
