@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -407,4 +408,32 @@ func TestChat_LogsCarryNoText(t *testing.T) {
 	awaitChat(t, kaelenInbox, "Kaelen")
 
 	assert.NotContains(t, sink.String(), secret, "a chat line's text reached the log")
+}
+
+// The read loop logs every inbound frame before the hub sees it. A chat line's text rides in that
+// frame, so the loop may log its size and never its bytes. Driven through a real connection, as
+// the earlier log test injects on the server channel and never passes the loop.
+// FS-WJGFJ R14; ADR-0033. Code review 2026-10-31.
+func TestChat_ReadLoopLogsCarryNoText(t *testing.T) {
+	sink := &lockedLog{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(sink, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	authClient := &oneMemberAuth{memberID: uuid.New()}
+	server := newTestServer(t, context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	route := newConnectRoute(t, server, authClient)
+	client := route.connect(t, "token")
+
+	const secret = "the-vault-combination-is-4815"
+	require.NoError(t, client.WriteJSON(map[string]any{
+		"action":  "chat",
+		"payload": map[string]any{"channel": "area", "text": secret},
+	}))
+
+	// the member is in no world, so the line is refused on the loop: by then the frame was read and logged
+	eventually(t, "the frame reached the hub loop", func() bool {
+		return strings.Contains(sink.String(), "incoming chat line")
+	})
+	assert.NotContains(t, sink.String(), secret, "the read loop logged the frame's text")
 }
