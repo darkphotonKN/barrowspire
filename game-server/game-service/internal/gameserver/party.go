@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -30,6 +31,8 @@ import (
 type partyDirectory interface {
 	HubSeatedPlayer(nameOrID string) (types.Player, bool)
 	InHub(playerID uuid.UUID) bool
+	// how many are seated in this pod's hub, the count its cap is held to (FS-JEAVX)
+	HubOccupancy() int
 	IsQueued(ctx context.Context, playerID uuid.UUID) (bool, error)
 }
 
@@ -39,6 +42,20 @@ type partyPointers interface {
 	Point(ctx context.Context, partyID uuid.UUID, podID string, members []uuid.UUID) error
 	ForgetParty(ctx context.Context, partyID uuid.UUID, members []uuid.UUID) error
 	ForgetPlayers(ctx context.Context, players []uuid.UUID) error
+	// whether a player is in a live party anywhere, and its pod (R3, R12)
+	PartyPodOf(ctx context.Context, playerID uuid.UUID) (string, bool, error)
+}
+
+// presenceLookup finds a player seated in any pod's hub: partypresence.Redis in production (R7).
+type presenceLookup interface {
+	Lookup(ctx context.Context, nameOrID string) (partypresence.Found, bool, error)
+}
+
+// letterBox is how letters reach other pods' inboxes (R9, R10).
+type letterBox interface {
+	open() bool
+	send(podID string, l letter, failed func())
+	letters() <-chan letter
 }
 
 // partySender is how party messages reach players: a notice to the asking
@@ -72,7 +89,17 @@ type partyInvite struct {
 	target  uuid.UUID
 	// the target's character name, for the notices that answer the inviter
 	targetName string
-	sentAt     time.Time
+	// the pod the target was found on; "" when seated in this hub
+	targetPod string
+	sentAt    time.Time
+}
+
+// remoteInvite is an invite this pod delivered to one of its players for a party on another
+// pod: remembered for its minute so a decline can be sent back there (I-R82NV-3 decision 5).
+type remoteInvite struct {
+	partyPod   string
+	target     uuid.UUID
+	receivedAt time.Time
 }
 
 // partyInviteTTL is how long an invite stays open. FS-R82NV R14.
@@ -88,14 +115,6 @@ const defaultPartySize = 2
 // partyRefreshInterval is how often the pod writes its parties' pointers again,
 // a third of their TTL. FS-R82NV R3.
 const partyRefreshInterval = 10 * time.Second
-
-// Pointer writes run on their own goroutine, in the order the loop queued them,
-// so a slow Redis holds up only that goroutine. A full queue drops a write: a
-// dropped point comes back at the next refresh, a dropped forget lapses by TTL.
-const (
-	partyPointerBuffer  = 256
-	partyPointerTimeout = 2 * time.Second
-)
 
 // partyDissolveTimeout bounds deleting every pointer at shutdown; whatever is
 // not deleted by then lapses by TTL.
@@ -115,6 +134,12 @@ type partyRegistryConfig struct {
 	ticks <-chan time.Time
 	// where the pointers are written; nil on a pod built without Redis
 	pointers partyPointers
+	// the pod's ordered Redis writer the pointer writes go through (redis_writer.go)
+	writer *orderedWriter
+	// the presence index invites look targets up in, and the inbox they reach other pods by;
+	// nil on a pod that reaches no other
+	presence presenceLookup
+	inbox    letterBox
 }
 
 // partyRegistry holds this pod's parties. Only the hub's loop touches its maps.
@@ -129,14 +154,13 @@ type partyRegistry struct {
 	// invites whose party ended before they were answered, kept until their minute is up so an
 	// accept hears party_gone rather than nothing (I-R82NV-2 decision 3)
 	goneInvites map[uuid.UUID]*partyInvite
+	// invites for parties on other pods, delivered here to their targets
+	remoteInvites map[uuid.UUID]remoteInvite
+	// work finished off the loop and handed back to it (a lookup's answer, a failed letter)
+	work chan func()
 
 	// when the pointers were last written in full
 	lastRefresh time.Time
-	// pointer writes waiting for the writer, in queue order
-	writes chan func(ctx context.Context) error
-	// closed once the writer has stopped, so the shutdown delete lands after
-	// any write it was in the middle of
-	writerDone chan struct{}
 	// set once every party is dissolved at shutdown: party actions are ignored
 	// from then on, since a party formed now would end with the pod
 	closed bool
@@ -145,6 +169,9 @@ type partyRegistry struct {
 }
 
 func newPartyRegistry(directory partyDirectory, sender partySender, cfg partyRegistryConfig) *partyRegistry {
+	if cfg.writer == nil {
+		cfg.writer = newOrderedWriter()
+	}
 	return &partyRegistry{
 		directory: directory,
 		sender:    sender,
@@ -154,39 +181,11 @@ func newPartyRegistry(directory partyDirectory, sender partySender, cfg partyReg
 		memberOf: make(map[uuid.UUID]uuid.UUID),
 		invites:  make(map[uuid.UUID]*partyInvite),
 
-		goneInvites: make(map[uuid.UUID]*partyInvite),
-		lastRefresh: cfg.now(),
-		writes:      make(chan func(ctx context.Context) error, partyPointerBuffer),
-		writerDone:  make(chan struct{}),
-		dissolved:   make(chan struct{}),
-	}
-}
-
-// start runs the pointer writer for the life of ctx. A registry with no Redis
-// starts nothing.
-func (r *partyRegistry) start(ctx context.Context) {
-	if r.cfg.pointers == nil {
-		return
-	}
-	go r.writeLoop(ctx)
-}
-
-// writeLoop is the pod's one pointer writer: each queued write in turn, each
-// within partyPointerTimeout; one that fails is a Warn, and the next is tried.
-func (r *partyRegistry) writeLoop(ctx context.Context) {
-	defer close(r.writerDone)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case write := <-r.writes:
-			writeCtx, cancel := context.WithTimeout(ctx, partyPointerTimeout)
-			err := write(writeCtx)
-			cancel()
-			if err != nil && ctx.Err() == nil {
-				slog.Warn("party pointer write failed", "error", err)
-			}
-		}
+		goneInvites:   make(map[uuid.UUID]*partyInvite),
+		remoteInvites: make(map[uuid.UUID]remoteInvite),
+		work:          make(chan func(), partyWorkBuffer),
+		lastRefresh:   cfg.now(),
+		dissolved:     make(chan struct{}),
 	}
 }
 
@@ -196,17 +195,9 @@ func (r *partyRegistry) point(p *party) {
 		return
 	}
 	partyID, members := p.id, p.memberIDs()
-	r.queueWrite(func(ctx context.Context) error {
+	r.cfg.writer.queue(func(ctx context.Context) error {
 		return r.cfg.pointers.Point(ctx, partyID, r.cfg.podID, members)
 	})
-}
-
-func (r *partyRegistry) queueWrite(write func(ctx context.Context) error) {
-	select {
-	case r.writes <- write:
-	default:
-		slog.Warn("party pointer write dropped: writer behind")
-	}
 }
 
 // memberIDs are the party's members' player ids, in join order.
@@ -240,9 +231,12 @@ func (r *partyRegistry) dissolveAll(ctx context.Context) {
 	if r.cfg.pointers != nil {
 		deleteCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), partyDissolveTimeout)
 		defer cancel()
-		select {
-		case <-r.writerDone:
-		case <-deleteCtx.Done():
+		if r.cfg.writer.running() {
+			// after any write the writer was in the middle of
+			select {
+			case <-r.cfg.writer.stopped():
+			case <-deleteCtx.Done():
+			}
 		}
 		for _, p := range r.parties {
 			if err := r.cfg.pointers.ForgetParty(deleteCtx, p.id, p.memberIDs()); err != nil {
@@ -254,6 +248,30 @@ func (r *partyRegistry) dissolveAll(ctx context.Context) {
 	r.memberOf = make(map[uuid.UUID]uuid.UUID)
 	r.invites = make(map[uuid.UUID]*partyInvite)
 	r.goneInvites = make(map[uuid.UUID]*partyInvite)
+	r.remoteInvites = make(map[uuid.UUID]remoteInvite)
+}
+
+// partyWorkBuffer is how much finished work may wait for the hub's loop.
+const partyWorkBuffer = 64
+
+// jobs is where work finished off the loop waits for it: the loop runs each.
+func (r *partyRegistry) jobs() <-chan func() { return r.work }
+
+// post hands work back to the loop, waiting for room unless the pod is going.
+func (r *partyRegistry) post(ctx context.Context, job func()) {
+	select {
+	case r.work <- job:
+	case <-ctx.Done():
+	}
+}
+
+// postOrDrop hands work back to the loop if there is room; a full queue drops it.
+func (r *partyRegistry) postOrDrop(job func()) {
+	select {
+	case r.work <- job:
+	default:
+		slog.Warn("party work dropped: hub loop behind")
+	}
 }
 
 // stopped closes once dissolveAll has run.
@@ -263,37 +281,55 @@ func (r *partyRegistry) stopped() <-chan struct{} {
 
 // invite handles party_invite from inviter on conn: refused with a notice, or
 // delivered to the target, the inviter's party created first if they have none.
-// FS-R82NV §Requirements 4, 11–14.
+// A target seated in this hub is answered at once; anyone else is looked up in
+// the presence index off the loop, and the answer finishes the invite back on
+// it (I-R82NV-3 decision 2). FS-R82NV §Requirements 4, 11–14.
 func (r *partyRegistry) invite(ctx context.Context, inviter *types.Player, conn *websocket.Conn, payload map[string]interface{}) {
 	if r.closed {
 		return
 	}
 	// trimmed here, case-folded wherever a name is compared (Edge States "Name with different case")
-	name, _ := payload["name"].(string)
-	target, refusal := r.inviteTarget(ctx, inviter, strings.TrimSpace(name))
+	raw, _ := payload["name"].(string)
+	name := strings.TrimSpace(raw)
+
+	refusal := r.leadRefusal(inviter)
+	if refusal == nil && r.queued(ctx, inviter.ID) {
+		refusal = &inviteRefusal{code: constants.PartyNoticeQueued}
+	}
+	if refusal == nil {
+		refusal = r.roomRefusal(inviter, name)
+	}
 	if refusal != nil {
-		slog.Debug("party invite refused", "player_id", inviter.ID, "code", refusal.code)
-		r.notice(conn, refusal.code, refusal.name)
+		r.refuseInvite(conn, inviter.ID, refusal)
 		return
 	}
 
+	if target, here := r.directory.HubSeatedPlayer(name); here {
+		if refusal := r.targetRefusal(inviter, target.ID, target.Character.Name); refusal != nil {
+			r.refuseInvite(conn, inviter.ID, refusal)
+			return
+		}
+		r.inviteHere(inviter, conn, target)
+		return
+	}
+	if r.cfg.presence == nil || r.cfg.inbox == nil || !r.cfg.inbox.open() {
+		r.refuseInvite(conn, inviter.ID, &inviteRefusal{code: constants.PartyNoticeNotFound, name: name})
+		return
+	}
+	go r.lookUp(ctx, inviter, conn, name)
+}
+
+// inviteHere delivers an invite to a target seated in this hub: delivered first,
+// kept after, so an invite nobody saw forms no party and holds no place (code
+// review 2026-11-01).
+func (r *partyRegistry) inviteHere(inviter *types.Player, conn *websocket.Conn, target types.Player) {
 	at := r.cfg.now()
 	p, formed := r.partyLedBy(inviter, at)
 	inv := &partyInvite{id: r.cfg.newID(), partyID: p.id, target: target.ID, targetName: target.Character.Name, sentAt: at}
 
-	// delivered first, kept after: an invite nobody saw forms no party and
-	// holds no place (code review 2026-11-01)
 	if err := r.sender.SendMessageToPlayer(target.ID, types.Message{
-		Action: string(constants.ActionPartyInvite),
-		Payload: map[string]interface{}{
-			"invite_id":      inv.id.String(),
-			"party_id":       p.id.String(),
-			"party_pod_addr": r.cfg.podAddr,
-			"leader_name":    inviter.Character.Name,
-			"member_count":   len(p.members),
-			"size":           r.cfg.size,
-			"expires_at":     at.Add(partyInviteTTL).UTC().Format(time.RFC3339),
-		},
+		Action:  string(constants.ActionPartyInvite),
+		Payload: r.invitePayload(inv, p, inviter),
 	}); err != nil {
 		slog.Warn("party invite not delivered", "party_id", p.id, "target_id", target.ID, "error", err)
 		r.notice(conn, constants.PartyNoticeDeliveryFailed, target.Character.Name)
@@ -307,6 +343,104 @@ func (r *partyRegistry) invite(ctx context.Context, inviter *types.Player, conn 
 	r.notice(conn, constants.PartyNoticeSent, target.Character.Name)
 }
 
+// invitePayload is what the target's client is shown (R13).
+func (r *partyRegistry) invitePayload(inv *partyInvite, p *party, inviter *types.Player) map[string]interface{} {
+	return map[string]interface{}{
+		"invite_id":      inv.id.String(),
+		"party_id":       p.id.String(),
+		"party_pod_addr": r.cfg.podAddr,
+		"leader_name":    inviter.Character.Name,
+		"member_count":   len(p.members),
+		"size":           r.cfg.size,
+		"expires_at":     inv.sentAt.Add(partyInviteTTL).UTC().Format(time.RFC3339),
+	}
+}
+
+// partyLookupTimeout bounds the presence and pointer reads behind one invite.
+const partyLookupTimeout = 2 * time.Second
+
+// lookedUp is what Redis said about an invite's target, read off the loop.
+type lookedUp struct {
+	found   partypresence.Found
+	present bool
+	grouped bool
+	err     error
+}
+
+// lookUp reads the target's presence and party pointer off the loop, then hands
+// the answer back to it. Runs on its own goroutine.
+func (r *partyRegistry) lookUp(ctx context.Context, inviter *types.Player, conn *websocket.Conn, name string) {
+	readCtx, cancel := context.WithTimeout(ctx, partyLookupTimeout)
+	defer cancel()
+
+	var res lookedUp
+	res.found, res.present, res.err = r.cfg.presence.Lookup(readCtx, name)
+	if res.err == nil && res.present && r.cfg.pointers != nil {
+		_, res.grouped, res.err = r.cfg.pointers.PartyPodOf(readCtx, res.found.PlayerID)
+	}
+	r.post(ctx, func() { r.inviteThere(inviter, conn, name, res) })
+}
+
+// inviteThere finishes an invite whose target was looked up: the inviter's
+// standing is checked again, since the loop went on while Redis answered, then
+// the rest of R12's list, then the invite goes to the target's pod inbox.
+// FS-R82NV §Requirements 12, 13.
+func (r *partyRegistry) inviteThere(inviter *types.Player, conn *websocket.Conn, name string, res lookedUp) {
+	if r.closed {
+		return
+	}
+	if res.err != nil {
+		slog.Warn("party invite lookup failed", "player_id", inviter.ID, "error", res.err)
+		r.refuseInvite(conn, inviter.ID, &inviteRefusal{code: constants.PartyNoticeDeliveryFailed, name: name})
+		return
+	}
+	refusal := r.leadRefusal(inviter)
+	if refusal == nil {
+		refusal = r.roomRefusal(inviter, name)
+	}
+	// seated nowhere, or on this pod but out of its hub since the index was written
+	if refusal == nil && (!res.present || res.found.PodID == r.cfg.podID) {
+		refusal = &inviteRefusal{code: constants.PartyNoticeNotFound, name: name}
+	}
+	if refusal == nil && res.grouped {
+		refusal = &inviteRefusal{code: constants.PartyNoticeAlreadyInParty, name: res.found.Name}
+	}
+	if refusal == nil {
+		refusal = r.targetRefusal(inviter, res.found.PlayerID, res.found.Name)
+	}
+	if refusal != nil {
+		r.refuseInvite(conn, inviter.ID, refusal)
+		return
+	}
+
+	at := r.cfg.now()
+	p, formed := r.partyLedBy(inviter, at)
+	if formed {
+		r.form(p)
+	}
+	inv := &partyInvite{id: r.cfg.newID(), partyID: p.id, target: res.found.PlayerID, targetName: res.found.Name, targetPod: res.found.PodID, sentAt: at}
+	r.invites[inv.id] = inv
+
+	payload := r.invitePayload(inv, p, inviter)
+	payload["party_pod_id"] = r.cfg.podID
+	inviteID := inv.id
+	r.cfg.inbox.send(res.found.PodID, letter{Kind: letterPartyInvite, ToPlayerID: res.found.PlayerID.String(), Payload: payload}, func() {
+		r.postOrDrop(func() { r.undelivered(inviteID) })
+	})
+	r.notice(conn, constants.PartyNoticeSent, res.found.Name)
+}
+
+// undelivered lets go of an invite whose letter was never published, telling
+// whoever leads now. FS-R82NV R10.
+func (r *partyRegistry) undelivered(inviteID uuid.UUID) {
+	inv, open := r.invites[inviteID]
+	if !open {
+		return
+	}
+	delete(r.invites, inviteID)
+	r.noticeLeader(inv, constants.PartyNoticeDeliveryFailed)
+}
+
 // inviteRefusal is why an invite was not sent, and the player it concerns for
 // the client's copy (R36): "" when it is about the inviter themselves.
 type inviteRefusal struct {
@@ -314,44 +448,65 @@ type inviteRefusal struct {
 	name string
 }
 
-// inviteTarget is whom inviter may invite under name, or the refusal. The
-// inviter's own standing is checked first, since naming someone cannot cure
-// it; then R12's list, in R12's order. FS-R82NV §Requirements 11, 12, 16.
-func (r *partyRegistry) inviteTarget(ctx context.Context, inviter *types.Player, name string) (types.Player, *inviteRefusal) {
-	refuse := func(code constants.PartyNoticeCode, about string) (types.Player, *inviteRefusal) {
-		return types.Player{}, &inviteRefusal{code: code, name: about}
-	}
+func (r *partyRegistry) refuseInvite(conn *websocket.Conn, inviterID uuid.UUID, refusal *inviteRefusal) {
+	slog.Debug("party invite refused", "player_id", inviterID, "code", refusal.code)
+	r.notice(conn, refusal.code, refusal.name)
+}
+
+// leadRefusal is the inviter's own standing (R11, R12): seated in the hub, and
+// leading their party if they have one. Checked first, since naming someone
+// cannot cure it.
+func (r *partyRegistry) leadRefusal(inviter *types.Player) *inviteRefusal {
 	if !r.directory.InHub(inviter.ID) {
-		return refuse(constants.PartyNoticeNotInHub, "")
+		return &inviteRefusal{code: constants.PartyNoticeNotInHub}
 	}
-	p, inParty := r.partyOf(inviter.ID)
-	if inParty && p.leader != inviter.ID {
-		return refuse(constants.PartyNoticeNotLeader, "")
+	if p, inParty := r.partyOf(inviter.ID); inParty && p.leader != inviter.ID {
+		return &inviteRefusal{code: constants.PartyNoticeNotLeader}
 	}
-	if r.queued(ctx, inviter.ID) {
-		return refuse(constants.PartyNoticeQueued, "")
-	}
+	return nil
+}
+
+// roomRefusal is the head of R12's list, which needs no target: a full party,
+// and naming yourself.
+func (r *partyRegistry) roomRefusal(inviter *types.Player, name string) *inviteRefusal {
 	// a player with no party would lead one of one, never full at size two or more
-	if inParty && len(p.members)+r.pendingFor(p.id) >= r.cfg.size {
-		return refuse(constants.PartyNoticePartyFull, "")
+	if p, inParty := r.partyOf(inviter.ID); inParty && len(p.members)+r.pendingFor(p.id) >= r.cfg.size {
+		return &inviteRefusal{code: constants.PartyNoticePartyFull}
 	}
 	if strings.EqualFold(name, inviter.Character.Name) || strings.EqualFold(name, inviter.ID.String()) {
-		return refuse(constants.PartyNoticeSelf, "")
+		return &inviteRefusal{code: constants.PartyNoticeSelf}
 	}
-	target, found := r.directory.HubSeatedPlayer(name)
-	if !found {
-		// nobody to take a proper name from: the name as the inviter typed it
-		return refuse(constants.PartyNoticeNotFound, name)
+	return nil
+}
+
+// targetRefusal is the tail of R12's list for a found target: in a party here,
+// no room on this pod for one more arrival, or already asked.
+func (r *partyRegistry) targetRefusal(inviter *types.Player, targetID uuid.UUID, targetName string) *inviteRefusal {
+	if _, grouped := r.memberOf[targetID]; grouped {
+		return &inviteRefusal{code: constants.PartyNoticeAlreadyInParty, name: targetName}
 	}
-	if _, grouped := r.memberOf[target.ID]; grouped {
-		return refuse(constants.PartyNoticeAlreadyInParty, target.Character.Name)
+	// a target seated in this hub already holds a seat here (I-R82NV-1 decision 2);
+	// one from another pod needs a seat, as does every arrival already invited
+	if _, here := r.directory.HubSeatedPlayer(targetID.String()); !here &&
+		r.directory.HubOccupancy()+r.pendingArrivals() >= constants.HubOccupancyCap {
+		return &inviteRefusal{code: constants.PartyNoticePodFull}
 	}
-	// pod_full never applies here: a target seated in this hub already holds
-	// a seat on the party pod (I-R82NV-1 decision 2; cross-pod targets, slice 3)
-	if inParty && r.inviteOpenTo(p.id, target.ID) {
-		return refuse(constants.PartyNoticePending, target.Character.Name)
+	if p, inParty := r.partyOf(inviter.ID); inParty && r.inviteOpenTo(p.id, targetID) {
+		return &inviteRefusal{code: constants.PartyNoticePending, name: targetName}
 	}
-	return target, nil
+	return nil
+}
+
+// pendingArrivals counts open invites to players on other pods: each would take
+// a hub seat here on arrival (R12 pod_full).
+func (r *partyRegistry) pendingArrivals() int {
+	n := 0
+	for _, inv := range r.invites {
+		if inv.targetPod != "" && inv.targetPod != r.cfg.podID {
+			n++
+		}
+	}
+	return n
 }
 
 // partyOf is the party player is a member of, if any.
@@ -608,7 +763,7 @@ func (r *partyRegistry) forgetPlayer(playerID uuid.UUID) {
 	if r.cfg.pointers == nil {
 		return
 	}
-	r.queueWrite(func(ctx context.Context) error {
+	r.cfg.writer.queueMust(func(ctx context.Context) error {
 		return r.cfg.pointers.ForgetPlayers(ctx, []uuid.UUID{playerID})
 	})
 }
@@ -628,7 +783,7 @@ func (r *partyRegistry) end(p *party, lastID uuid.UUID) {
 		return
 	}
 	partyID, members := p.id, []uuid.UUID{lastID}
-	r.queueWrite(func(ctx context.Context) error {
+	r.cfg.writer.queueMust(func(ctx context.Context) error {
 		return r.cfg.pointers.ForgetParty(ctx, partyID, members)
 	})
 }
@@ -638,6 +793,7 @@ func (r *partyRegistry) end(p *party, lastID uuid.UUID) {
 func (r *partyRegistry) decline(ctx context.Context, decliner *types.Player, payload map[string]interface{}) {
 	inv, open := r.openInviteFor(decliner.ID, payload)
 	if !open {
+		r.declineThere(decliner, payload)
 		return
 	}
 	delete(r.invites, inv.id)
@@ -654,12 +810,21 @@ func (r *partyRegistry) ticks() <-chan time.Time {
 // name. The target's client closes its prompt on its own clock. FS-R82NV R14.
 func (r *partyRegistry) tick() {
 	at := r.cfg.now()
+	// deletes a full queue deferred go first, ahead of this tick's writes
+	r.cfg.writer.flush()
 	for id, inv := range r.invites {
 		if at.Sub(inv.sentAt) < partyInviteTTL {
 			continue
 		}
 		delete(r.invites, id)
 		r.noticeLeader(inv, constants.PartyNoticeExpired)
+	}
+
+	// a delivered remote invite is forgotten once its minute is up
+	for id, remote := range r.remoteInvites {
+		if at.Sub(remote.receivedAt) >= partyInviteTTL {
+			delete(r.remoteInvites, id)
+		}
 	}
 
 	// a gone invite is forgotten once its minute would have run out
@@ -675,6 +840,84 @@ func (r *partyRegistry) tick() {
 		for _, p := range r.parties {
 			r.point(p)
 		}
+	}
+}
+
+// declineThere sends a decline back to the pod whose party sent the invite, if
+// this pod delivered it to decliner. FS-R82NV R15.
+func (r *partyRegistry) declineThere(decliner *types.Player, payload map[string]interface{}) {
+	id, ok := inviteIDOf(payload)
+	if !ok {
+		return
+	}
+	remote, held := r.remoteInvites[id]
+	if !held || remote.target != decliner.ID || r.cfg.inbox == nil {
+		return
+	}
+	delete(r.remoteInvites, id)
+	r.cfg.inbox.send(remote.partyPod, letter{Kind: letterPartyReply, Payload: map[string]interface{}{
+		"invite_id": id.String(),
+		"declined":  true,
+	}}, func() {
+		slog.Warn("party decline not sent back", "invite_id", id)
+	})
+}
+
+// letters is where letters from other pods wait for the hub's loop.
+func (r *partyRegistry) letters() <-chan letter {
+	if r.cfg.inbox == nil {
+		return nil
+	}
+	return r.cfg.inbox.letters()
+}
+
+// receive handles one letter from another pod (R9, R13, R15): an invite for a
+// player this pod holds is delivered to them, a reply to one of this pod's
+// invites is answered. A letter for a player not here is dropped.
+func (r *partyRegistry) receive(l letter) {
+	switch l.Kind {
+	case letterPartyInvite:
+		r.receiveInvite(l)
+	case letterPartyReply:
+		r.receiveReply(l)
+	default:
+		slog.Debug("pod inbox letter of an unknown kind dropped", "kind", l.Kind)
+	}
+}
+
+func (r *partyRegistry) receiveInvite(l letter) {
+	target, err := uuid.Parse(l.ToPlayerID)
+	id, idOK := inviteIDOf(l.Payload)
+	partyPod, _ := l.Payload["party_pod_id"].(string)
+	if err != nil || !idOK || partyPod == "" {
+		slog.Warn("pod inbox invite skipped: incomplete")
+		return
+	}
+	shown := make(map[string]interface{}, len(l.Payload))
+	for k, v := range l.Payload {
+		if k != "party_pod_id" {
+			shown[k] = v
+		}
+	}
+	if err := r.sender.SendMessageToPlayer(target, types.Message{Action: string(constants.ActionPartyInvite), Payload: shown}); err != nil {
+		slog.Debug("pod inbox invite dropped: player not here", "player_id", target, "error", err)
+		return
+	}
+	r.remoteInvites[id] = remoteInvite{partyPod: partyPod, target: target, receivedAt: r.cfg.now()}
+}
+
+func (r *partyRegistry) receiveReply(l letter) {
+	id, ok := inviteIDOf(l.Payload)
+	if !ok {
+		return
+	}
+	inv, open := r.invites[id]
+	if !open {
+		return
+	}
+	if declined, _ := l.Payload["declined"].(bool); declined {
+		delete(r.invites, id)
+		r.noticeLeader(inv, constants.PartyNoticeDeclined)
 	}
 }
 

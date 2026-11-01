@@ -6,6 +6,7 @@ package partypointer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -72,4 +73,32 @@ func (r *Redis) ForgetPlayers(ctx context.Context, players []uuid.UUID) error {
 		return fmt.Errorf("forget party members: %w", err)
 	}
 	return nil
+}
+
+// podAlivePrefix is the matchmaker's liveness key (`pod:alive:<podID>`, FS-K2HKP), read here
+// only: a pointer whose pod is not alive means the party is gone (FS-R82NV R3).
+const podAlivePrefix = "pod:alive:"
+
+// PartyPodOf reports whether playerID is in a live party, and its pod: their pointer names a
+// party, that party's pointer names a pod, and that pod is alive.
+func (r *Redis) PartyPodOf(ctx context.Context, playerID uuid.UUID) (string, bool, error) {
+	partyID, err := r.client.Get(ctx, memberKey(playerID)).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("read party of %s: %w", playerID, err)
+	}
+	podID, err := r.client.Get(ctx, "party:"+partyID).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("read pod of party %s: %w", partyID, err)
+	}
+	alive, err := r.client.Exists(ctx, podAlivePrefix+podID).Result()
+	if err != nil {
+		return "", false, fmt.Errorf("read liveness of %s: %w", podID, err)
+	}
+	return podID, alive == 1, nil
 }

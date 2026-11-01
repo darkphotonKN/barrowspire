@@ -184,6 +184,12 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		go func() { <-ctx.Done(); ticker.Stop() }()
 		partyTicks = ticker.C
 	}
+	// one ordered writer for every party Redis write: pointers now, presence next (FS-R82NV R3, R7)
+	redisWriter := newOrderedWriter()
+	if boot.partyPointers != nil || boot.presence != nil {
+		redisWriter.start(ctx)
+	}
+	inbox := newPodInbox(boot.inboxBus, podID)
 	party := newPartyRegistry(server, newSender, partyRegistryConfig{
 		podID:    podID,
 		podAddr:  podAddr,
@@ -192,12 +198,20 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		newID:    uuid.New,
 		ticks:    partyTicks,
 		pointers: boot.partyPointers,
+		writer:   redisWriter,
+		presence: boot.presence,
+		inbox:    inbox,
 	})
 	server.parties = party
-	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat, party)
+	var presenceWriter presenceIndex
+	if boot.presence != nil {
+		presenceWriter = boot.presence
+	}
+	presence := newPresenceKeeper(presenceWriter, server, podID, boot.partyNow, redisWriter)
+	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat, party, presence)
 	go messageHub.Run(ctx)
 	chat.start(ctx)
-	party.start(ctx)
+	inbox.start(ctx)
 
 	server.createHubSession()
 	server.createFieldSessions(fields)
@@ -836,6 +850,36 @@ func (s *Server) HubSeatedPlayer(nameOrID string) (types.Player, bool) {
 // open. FS-R82NV R5.
 func (s *Server) PartiesDissolved() <-chan struct{} {
 	return s.parties.stopped()
+}
+
+// HubSeatedPlayers is everyone seated in this pod's hub, copies taken under the lock: the
+// presence index's half from this pod (FS-R82NV R7).
+func (s *Server) HubSeatedPlayers() []types.Player {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	seen := make(map[uuid.UUID]struct{}, len(s.connToPlayer))
+	seated := make([]types.Player, 0, len(s.connToPlayer))
+	for _, player := range s.connToPlayer {
+		if player.CurrentGameSessionId != s.hubSessionID {
+			continue
+		}
+		if _, dup := seen[player.ID]; dup {
+			continue
+		}
+		seen[player.ID] = struct{}{}
+		seated = append(seated, *player)
+	}
+	return seated
+}
+
+// HubOccupancy is how many are seated in this pod's hub, the count its cap is held to.
+func (s *Server) HubOccupancy() int {
+	hub, ok := s.HubSession()
+	if !ok {
+		return 0
+	}
+	return hub.Occupancy()
 }
 
 // InHub reports whether playerID is connected here and seated in the hub.

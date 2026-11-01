@@ -125,6 +125,10 @@ type bootOptions struct {
 	partySize int
 	// where party pointers are written; nil leaves them unwritten (FS-R82NV R3)
 	partyPointers partyPointers
+	// where this pod's hub is written into the presence index; nil writes nothing (FS-R82NV R7)
+	presence presenceStore
+	// the Redis side of the pod inbox; nil, and this pod reaches no other (FS-R82NV R9)
+	inboxBus inboxBus
 }
 
 // newBootOptions are the defaults with opts applied: a fresh seed, the

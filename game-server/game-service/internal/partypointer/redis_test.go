@@ -80,3 +80,32 @@ func TestForgetPlayers_DeletesOnlyTheirPointers(t *testing.T) {
 	assert.True(t, mini.Exists("player:"+wren.String()+":party"))
 	assert.True(t, mini.Exists("party:"+partyID.String()))
 }
+
+// A player is in a live party when their pointer names a party whose pointer names a pod that
+// is alive; a party on a dead pod is gone, and so is a pointer to a party that has ended.
+// FS-R82NV R3, R12.
+func TestPartyPodOf_FollowsPointersToALivePod(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	pointers := partypointer.NewRedis(client)
+	partyID, wren := uuid.New(), uuid.New()
+	require.NoError(t, pointers.Point(context.Background(), partyID, "pod-a", []uuid.UUID{wren}))
+
+	_, in, err := pointers.PartyPodOf(context.Background(), wren)
+	require.NoError(t, err)
+	assert.False(t, in, "pod-a is not alive yet: its party is gone")
+
+	require.NoError(t, mini.Set("pod:alive:pod-a", "1"))
+	pod, in, err := pointers.PartyPodOf(context.Background(), wren)
+	require.NoError(t, err)
+	assert.True(t, in)
+	assert.Equal(t, "pod-a", pod)
+
+	_, in, err = pointers.PartyPodOf(context.Background(), uuid.New())
+	require.NoError(t, err)
+	assert.False(t, in, "no pointer, no party")
+
+	mini.Del("party:" + partyID.String())
+	_, in, err = pointers.PartyPodOf(context.Background(), wren)
+	require.NoError(t, err)
+	assert.False(t, in, "a member pointer to an ended party is no party")
+}
