@@ -190,7 +190,8 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		redisWriter.start(ctx)
 	}
 	inbox := newPodInbox(boot.inboxBus, podID)
-	party := newPartyRegistry(server, newSender, partyRegistryConfig{
+	jobs := newLoopJobs()
+	party := newPartyRegistry(server, newSender, jobs, partyRegistryConfig{
 		podID:    podID,
 		podAddr:  podAddr,
 		size:     boot.partySize,
@@ -208,7 +209,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		presenceWriter = boot.presence
 	}
 	presence := newPresenceKeeper(presenceWriter, server, podID, boot.partyNow, redisWriter)
-	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat, party, presence)
+	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat, party, presence, jobs)
 	go messageHub.Run(ctx)
 	chat.start(ctx)
 	inbox.start(ctx)

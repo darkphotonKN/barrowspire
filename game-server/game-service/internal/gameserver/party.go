@@ -2,7 +2,6 @@ package gameserver
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -70,33 +69,11 @@ type partySender interface {
 	SendMessageToPlayer(playerID uuid.UUID, msg types.Message) error
 }
 
-// remoteInvite is an invite this pod delivered to one of its players from another pod: remembered
-// for its minute so the decline's notice can be sent back to the pod the inviter sent it from
-// (I-R82NV-3 decision 5; the presence index takes over in FS-NCC9J slice 3).
-type remoteInvite struct {
-	// the pod the inviter was on when they sent it: not the leader's pod once the lead passes
-	inviterPod string
-	target     uuid.UUID
-	receivedAt time.Time
-}
-
 // partyTickInterval is how often the hub's loop ticks the registry.
 const partyTickInterval = time.Second
 
 // defaultPartySize is the party cap when the pod is given none. FS-R82NV R8.
 const defaultPartySize = 2
-
-// partyRefreshInterval is how often the cache re-reads every party it keeps (R4).
-const partyRefreshInterval = 10 * time.Second
-
-// partyCallTimeout bounds one script or read behind a party action.
-const partyCallTimeout = 2 * time.Second
-
-// partyWorkBuffer is how much finished work may wait for the hub's loop.
-const partyWorkBuffer = 64
-
-// partyRunBuffer is how many Redis calls may wait for the runner.
-const partyRunBuffer = 256
 
 // partyRegistryConfig is what a registry is built from.
 type partyRegistryConfig struct {
@@ -124,106 +101,31 @@ type partyRegistry struct {
 	sender    partySender
 	cfg       partyRegistryConfig
 
-	// the party cache (R4): each party one of this pod's players is in, as Redis last answered
-	parties  map[uuid.UUID]partystore.Party
-	memberOf map[uuid.UUID]uuid.UUID // player id → party id, for every cached party's members
-	// players seated here whose arrival read has succeeded (R6), and those whose read is under way;
-	// a player in neither is read on the next tick, so a failed read is tried again
-	arrived  map[uuid.UUID]struct{}
-	arriving map[uuid.UUID]struct{}
-	// invites delivered here from other pods
-	remoteInvites map[uuid.UUID]remoteInvite
-	// Redis calls waiting for the runner, in the order the loop asked for them
-	runs chan func(ctx context.Context)
-	// work finished off the loop and handed back to it
-	work chan func()
+	run     *partyRunner
+	cache   *partyCache
+	courier *partyCourier
 
-	lastRefresh time.Time
 	// set as the pod shuts down: party actions are ignored from then on
 	closed bool
 	done   chan struct{}
 }
 
-func newPartyRegistry(directory partyDirectory, sender partySender, cfg partyRegistryConfig) *partyRegistry {
-	return &partyRegistry{
+func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJobs, cfg partyRegistryConfig) *partyRegistry {
+	r := &partyRegistry{
 		directory: directory,
 		sender:    sender,
 		cfg:       cfg,
-
-		parties:       make(map[uuid.UUID]partystore.Party),
-		memberOf:      make(map[uuid.UUID]uuid.UUID),
-		arrived:       make(map[uuid.UUID]struct{}),
-		arriving:      make(map[uuid.UUID]struct{}),
-		remoteInvites: make(map[uuid.UUID]remoteInvite),
-		runs:          make(chan func(ctx context.Context), partyRunBuffer),
-		work:          make(chan func(), partyWorkBuffer),
-		lastRefresh:   cfg.now(),
-		done:          make(chan struct{}),
+		run:       newPartyRunner(jobs),
+		courier:   newPartyCourier(cfg.inbox, sender, cfg.podID, cfg.now, jobs),
+		done:      make(chan struct{}),
 	}
+	r.cache = newPartyCache(cfg.store, r.run, directory, cfg.now, r.arrived)
+	r.courier.onDeclined = r.declinedThere
+	return r
 }
 
-// errPartyRunnerBehind refuses a Redis call the runner has no room for.
-var errPartyRunnerBehind = errors.New("party runner behind")
-
-// start runs the registry's runner for the life of ctx: the one goroutine that makes this pod's
-// party calls to Redis, in the order the loop asked for them, so two actions sent one after the
-// other on this pod reach Redis in that order (I-NCC9J-1 D1, amended).
-func (r *partyRegistry) start(ctx context.Context) {
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case job := <-r.runs:
-				job(ctx)
-			}
-		}
-	}()
-}
-
-// offLoop queues call for the runner, bounded by partyCallTimeout, and hands its outcome to done
-// back on the hub's loop, unless the pod has closed its parties meanwhile. Called on the loop,
-// which never waits: a runner with no room answers done at once with errPartyRunnerBehind.
-func offLoop[T any](ctx context.Context, r *partyRegistry, call func(ctx context.Context) (T, error), done func(T, error)) {
-	job := func(runCtx context.Context) {
-		callCtx, cancel := context.WithTimeout(runCtx, partyCallTimeout)
-		res, err := call(callCtx)
-		cancel()
-		r.post(runCtx, func() {
-			if r.closed {
-				return
-			}
-			done(res, err)
-		})
-	}
-	select {
-	case r.runs <- job:
-	default:
-		slog.Warn("party redis call refused: runner behind")
-		var zero T
-		done(zero, errPartyRunnerBehind)
-	}
-}
-
-// jobs is where work finished off the loop waits for it: the loop runs each.
-func (r *partyRegistry) jobs() <-chan func() { return r.work }
-
-// post hands work back to the loop, waiting for room unless the pod is going.
-func (r *partyRegistry) post(ctx context.Context, job func()) {
-	select {
-	case r.work <- job:
-	case <-ctx.Done():
-	}
-}
-
-// postOrDrop hands work back to the loop if there is room; a full queue drops it.
-func (r *partyRegistry) postOrDrop(job func()) {
-	select {
-	case r.work <- job:
-	default:
-		slog.Warn("party work dropped: hub loop behind")
-	}
-}
+// start runs the registry's runner for the life of ctx.
+func (r *partyRegistry) start(ctx context.Context) { r.run.start(ctx) }
 
 // close stops the registry as the pod shuts down. Nothing is dissolved: a party outlives any pod
 // (ADR-0036); this pod's players simply stop being seated here, and their parties live on in Redis.
@@ -232,72 +134,12 @@ func (r *partyRegistry) close() {
 		return
 	}
 	r.closed = true
+	r.run.stop()
 	close(r.done)
 }
 
 // stopped closes once the registry has closed.
 func (r *partyRegistry) stopped() <-chan struct{} { return r.done }
-
-// cachePut keeps p in the cache as Redis last answered it.
-func (r *partyRegistry) cachePut(p partystore.Party) {
-	r.cacheDrop(p.ID)
-	r.parties[p.ID] = p
-	for _, m := range p.Members {
-		r.memberOf[m.PlayerID] = p.ID
-	}
-}
-
-// cacheDrop lets go of a party: it ended, or this pod holds none of its members.
-func (r *partyRegistry) cacheDrop(partyID uuid.UUID) {
-	old, cached := r.parties[partyID]
-	if !cached {
-		return
-	}
-	delete(r.parties, partyID)
-	for _, m := range old.Members {
-		if r.memberOf[m.PlayerID] == partyID {
-			delete(r.memberOf, m.PlayerID)
-		}
-	}
-}
-
-// forgetReservation drops one open invite from a cached party.
-func (r *partyRegistry) forgetReservation(partyID, inviteID uuid.UUID) {
-	p, cached := r.parties[partyID]
-	if !cached {
-		return
-	}
-	kept := make([]partystore.Reservation, 0, len(p.Reserved))
-	for _, res := range p.Reserved {
-		if res.InviteID != inviteID {
-			kept = append(kept, res)
-		}
-	}
-	p.Reserved = kept
-	r.parties[partyID] = p
-}
-
-// partyOf is the cached party a player is a member of, if any.
-func (r *partyRegistry) partyOf(playerID uuid.UUID) (partystore.Party, bool) {
-	id, in := r.memberOf[playerID]
-	if !in {
-		return partystore.Party{}, false
-	}
-	p, cached := r.parties[id]
-	return p, cached
-}
-
-// openReservations are a cached party's invites still within their minute.
-func (r *partyRegistry) openReservations(p partystore.Party) []partystore.Reservation {
-	at := r.cfg.now()
-	open := make([]partystore.Reservation, 0, len(p.Reserved))
-	for _, res := range p.Reserved {
-		if at.Before(res.ExpiresAt) {
-			open = append(open, res)
-		}
-	}
-	return open
-}
 
 func joinerOf(player *types.Player) partystore.Joiner {
 	return partystore.Joiner{PlayerID: player.ID, Name: player.Character.Name, Class: player.Character.Class}
@@ -339,7 +181,7 @@ func (r *partyRegistry) invite(ctx context.Context, inviter *types.Player, conn 
 		r.sendInvite(ctx, inviter, conn, target.ID, target.Character.Name, "")
 		return
 	}
-	if r.cfg.presence == nil || r.cfg.inbox == nil || !r.cfg.inbox.open() {
+	if r.cfg.presence == nil || !r.courier.open() {
 		r.refuseInvite(conn, inviter.ID, &inviteRefusal{code: constants.PartyNoticeNotFound, name: name})
 		return
 	}
@@ -354,7 +196,7 @@ func (r *partyRegistry) lookUp(ctx context.Context, inviter *types.Player, conn 
 	readCtx, cancel := context.WithTimeout(ctx, partyLookupTimeout)
 	found, present, err := r.cfg.presence.Lookup(readCtx, name)
 	cancel()
-	r.post(ctx, func() { r.inviteThere(ctx, inviter, conn, name, found, present, err) })
+	r.run.jobs.post(ctx, func() { r.inviteThere(ctx, inviter, conn, name, found, present, err) })
 }
 
 // inviteThere finishes an invite whose target was looked up: the inviter's standing is checked
@@ -397,7 +239,7 @@ func (r *partyRegistry) sendInvite(ctx context.Context, inviter *types.Player, c
 		Size:       r.cfg.size,
 		Now:        r.cfg.now(),
 	}
-	offLoop(ctx, r,
+	onRunner(ctx, r.run,
 		func(c context.Context) (partystore.InviteResult, error) { return r.cfg.store.Invite(c, args) },
 		func(res partystore.InviteResult, err error) { r.invited(ctx, inviter, conn, args, targetPod, res, err) },
 	)
@@ -417,7 +259,7 @@ func (r *partyRegistry) invited(ctx context.Context, inviter *types.Player, conn
 		r.refuseInvite(conn, inviter.ID, refusalFor(res.Refusal, args.TargetName))
 		return
 	}
-	r.cachePut(res.Party)
+	r.cache.put(res.Party)
 	prompt := types.Message{Action: string(constants.ActionPartyInvite), Payload: r.invitePayload(args, res.Party, inviter)}
 
 	if targetPod == "" {
@@ -439,11 +281,8 @@ func (r *partyRegistry) invited(ctx context.Context, inviter *types.Player, conn
 	if res.Formed {
 		r.update(res.Party, constants.PartyUpdateJoined, res.Party.Leader)
 	}
-	prompt.Payload["inviter_pod_id"] = r.cfg.podID
 	partyID, inviteID, targetName := res.Party.ID, args.InviteID, args.TargetName
-	r.cfg.inbox.send(targetPod, letter{Kind: letterPartyInvite, ToPlayerID: args.TargetID.String(), Payload: prompt.Payload}, func() {
-		r.postOrDrop(func() { r.undelivered(ctx, partyID, inviteID, targetName) })
-	})
+	r.courier.sendInvite(targetPod, args.TargetID, prompt.Payload, func() { r.undelivered(ctx, partyID, inviteID, targetName) })
 	r.notice(conn, constants.PartyNoticeSent, args.TargetName)
 }
 
@@ -454,7 +293,7 @@ func (r *partyRegistry) undelivered(ctx context.Context, partyID, inviteID uuid.
 		return
 	}
 	r.withdraw(ctx, partyID, inviteID, false, func() {
-		if p, cached := r.parties[partyID]; cached {
+		if p, cached := r.cache.parties[partyID]; cached {
 			r.noticePlayer(p.Leader, constants.PartyNoticeDeliveryFailed, targetName)
 		}
 	})
@@ -466,21 +305,21 @@ func (r *partyRegistry) undelivered(ctx context.Context, partyID, inviteID uuid.
 // a party it formed stands meanwhile, so its leader is told of it after all.
 func (r *partyRegistry) withdraw(ctx context.Context, partyID, inviteID uuid.UUID, formed bool, then func()) {
 	at := r.cfg.now()
-	offLoop(ctx, r,
+	onRunner(ctx, r.run,
 		func(c context.Context) (bool, error) { return r.cfg.store.Withdraw(c, inviteID, formed, at) },
 		func(ended bool, err error) {
 			switch {
 			case err != nil:
 				slog.Warn("party invite not withdrawn, left to lapse", "invite_id", inviteID, "error", err)
 				then()
-				if p, cached := r.parties[partyID]; cached && formed {
+				if p, cached := r.cache.parties[partyID]; cached && formed {
 					r.update(p, constants.PartyUpdateJoined, p.Leader)
 				}
 			case ended:
-				r.cacheDrop(partyID)
+				r.cache.drop(partyID)
 				then()
 			default:
-				r.forgetReservation(partyID, inviteID)
+				r.cache.forgetReservation(partyID, inviteID)
 				then()
 			}
 		},
@@ -515,7 +354,7 @@ func (r *partyRegistry) refuseInvite(conn *websocket.Conn, inviterID uuid.UUID, 
 
 // leadRefusal is the inviter's own standing: leading their party if they have one (R9).
 func (r *partyRegistry) leadRefusal(inviter *types.Player) *inviteRefusal {
-	if p, inParty := r.partyOf(inviter.ID); inParty && p.Leader != inviter.ID {
+	if p, inParty := r.cache.partyOf(inviter.ID); inParty && p.Leader != inviter.ID {
 		return &inviteRefusal{code: constants.PartyNoticeNotLeader}
 	}
 	return nil
@@ -525,7 +364,7 @@ func (r *partyRegistry) leadRefusal(inviter *types.Player) *inviteRefusal {
 // invites, and naming yourself.
 func (r *partyRegistry) roomRefusal(inviter *types.Player, name string) *inviteRefusal {
 	// a player with no party would lead one of one, never full at size two or more
-	if p, inParty := r.partyOf(inviter.ID); inParty && len(p.Members)+len(r.openReservations(p)) >= r.cfg.size {
+	if p, inParty := r.cache.partyOf(inviter.ID); inParty && len(p.Members)+len(r.cache.openReservations(p)) >= r.cfg.size {
 		return &inviteRefusal{code: constants.PartyNoticePartyFull}
 	}
 	if strings.EqualFold(name, inviter.Character.Name) || strings.EqualFold(name, inviter.ID.String()) {
@@ -537,11 +376,11 @@ func (r *partyRegistry) roomRefusal(inviter *types.Player, name string) *inviteR
 // targetRefusal is the tail of R10's list, as far as the cache knows: the target in a party, or
 // already asked. The script checks both again.
 func (r *partyRegistry) targetRefusal(inviter *types.Player, targetID uuid.UUID, targetName string) *inviteRefusal {
-	if _, grouped := r.memberOf[targetID]; grouped {
+	if r.cache.grouped(targetID) {
 		return &inviteRefusal{code: constants.PartyNoticeAlreadyInParty, name: targetName}
 	}
-	if p, inParty := r.partyOf(inviter.ID); inParty {
-		for _, res := range r.openReservations(p) {
+	if p, inParty := r.cache.partyOf(inviter.ID); inParty {
+		for _, res := range r.cache.openReservations(p) {
 			if res.TargetID == targetID {
 				return &inviteRefusal{code: constants.PartyNoticePending, name: targetName}
 			}
@@ -614,7 +453,7 @@ func (r *partyRegistry) accept(ctx context.Context, accepter *types.Player, conn
 		return
 	}
 	args := partystore.AcceptArgs{InviteID: inviteID, Accepter: joinerOf(accepter), Now: r.cfg.now()}
-	offLoop(ctx, r,
+	onRunner(ctx, r.run,
 		func(c context.Context) (partystore.AcceptResult, error) { return r.cfg.store.Accept(c, args) },
 		func(res partystore.AcceptResult, err error) { r.accepted(conn, accepter, res, err) },
 	)
@@ -623,7 +462,7 @@ func (r *partyRegistry) accept(ctx context.Context, accepter *types.Player, conn
 // acceptRefusal is why player cannot accept now, as far as the cache knows, or "": already in a
 // party, queued for the Spire, inside a run (R14).
 func (r *partyRegistry) acceptRefusal(ctx context.Context, player *types.Player) constants.PartyNoticeCode {
-	if _, grouped := r.memberOf[player.ID]; grouped {
+	if r.cache.grouped(player.ID) {
 		return constants.PartyNoticeAlreadyInParty
 	}
 	if r.queued(ctx, player.ID) {
@@ -654,9 +493,9 @@ func (r *partyRegistry) accepted(conn *websocket.Conn, accepter *types.Player, r
 		r.refuse(conn, accepter.ID, noticeFor(res.Refusal))
 		return
 	}
-	r.cachePut(res.Party)
+	r.cache.put(res.Party)
 	for _, v := range res.Voided {
-		r.forgetReservation(v.PartyID, v.InviteID)
+		r.cache.forgetReservation(v.PartyID, v.InviteID)
 		r.noticePlayer(v.LeaderID, constants.PartyNoticeAlreadyInParty, v.TargetName)
 	}
 	r.update(res.Party, constants.PartyUpdateJoined, accepter.ID)
@@ -667,7 +506,7 @@ func (r *partyRegistry) create(ctx context.Context, creator *types.Player, conn 
 	if r.closed {
 		return
 	}
-	if _, grouped := r.memberOf[creator.ID]; grouped {
+	if r.cache.grouped(creator.ID) {
 		r.refuse(conn, creator.ID, constants.PartyNoticeAlreadyInParty)
 		return
 	}
@@ -680,7 +519,7 @@ func (r *partyRegistry) create(ctx context.Context, creator *types.Player, conn 
 		return
 	}
 	partyID, joiner, at := r.cfg.newID(), joinerOf(creator), r.cfg.now()
-	offLoop(ctx, r,
+	onRunner(ctx, r.run,
 		func(c context.Context) (partystore.CreateResult, error) {
 			return r.cfg.store.Create(c, partyID, joiner, at)
 		},
@@ -688,7 +527,7 @@ func (r *partyRegistry) create(ctx context.Context, creator *types.Player, conn 
 			if r.failedOrRefused(conn, creator.ID, "party not created", res.Refusal, err) {
 				return
 			}
-			r.cachePut(res.Party)
+			r.cache.put(res.Party)
 			r.update(res.Party, constants.PartyUpdateJoined, creator.ID)
 		},
 	)
@@ -699,7 +538,7 @@ func (r *partyRegistry) leave(ctx context.Context, leaver *types.Player, conn *w
 	if r.closed {
 		return
 	}
-	p, in := r.partyOf(leaver.ID)
+	p, in := r.cache.partyOf(leaver.ID)
 	if !in {
 		r.refuse(conn, leaver.ID, constants.PartyNoticeNotMember)
 		return
@@ -737,7 +576,7 @@ func (r *partyRegistry) transfer(ctx context.Context, leader *types.Player, conn
 		return
 	}
 	partyID := p.ID
-	offLoop(ctx, r,
+	onRunner(ctx, r.run,
 		func(c context.Context) (partystore.TransferResult, error) {
 			return r.cfg.store.Transfer(c, partyID, leader.ID, target)
 		},
@@ -745,7 +584,7 @@ func (r *partyRegistry) transfer(ctx context.Context, leader *types.Player, conn
 			if r.failedOrRefused(conn, leader.ID, "party lead not transferred", res.Refusal, err) {
 				return
 			}
-			r.cachePut(res.Party)
+			r.cache.put(res.Party)
 			r.update(res.Party, constants.PartyUpdateLeader, target)
 		},
 	)
@@ -754,7 +593,7 @@ func (r *partyRegistry) transfer(ctx context.Context, leader *types.Player, conn
 // leaderTargetOrRefuse is the leader's party and the member payload's target_id names; or, having
 // told the sender why not, false. A leader naming themselves is ignored: the panel never offers it.
 func (r *partyRegistry) leaderTargetOrRefuse(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{}) (partystore.Party, uuid.UUID, bool) {
-	p, in := r.partyOf(leader.ID)
+	p, in := r.cache.partyOf(leader.ID)
 	if !in || p.Leader != leader.ID {
 		r.refuse(conn, leader.ID, constants.PartyNoticeNotLeader)
 		return partystore.Party{}, uuid.Nil, false
@@ -821,7 +660,7 @@ func (r *partyRegistry) removeMember(ctx context.Context, conn *websocket.Conn, 
 		r.refuse(conn, askerID, constants.PartyNoticeUnavailable)
 		return
 	}
-	offLoop(ctx, r,
+	onRunner(ctx, r.run,
 		func(c context.Context) (partystore.RemoveResult, error) { return r.cfg.store.Remove(c, args) },
 		func(res partystore.RemoveResult, err error) {
 			if r.failedOrRefused(conn, askerID, "party member not removed", res.Refusal, err) {
@@ -840,11 +679,11 @@ func (r *partyRegistry) removed(args partystore.RemoveArgs, res partystore.Remov
 		if err := r.sender.SendMessageToPlayer(removed, final); err != nil {
 			slog.Warn("final party update not delivered", "party_id", args.PartyID, "player_id", removed, "error", err)
 		}
-		r.cacheDrop(args.PartyID)
+		r.cache.drop(args.PartyID)
 		return
 	}
 
-	r.cachePut(res.Party)
+	r.cache.put(res.Party)
 	final := partyUpdate(res.Party.ID, res.Party.Leader, res.Party.Members, r.cfg.size, reason, removed)
 	if err := r.sender.SendMessageToPlayer(removed, final); err != nil {
 		slog.Warn("final party update not delivered", "party_id", res.Party.ID, "player_id", removed, "error", err)
@@ -872,10 +711,9 @@ func (r *partyRegistry) decline(ctx context.Context, decliner *types.Player, con
 	}
 	// a decline of an invite from another pod is told there (FS-NCC9J slice 3 looks the leader up);
 	// where it came from is kept until a decline lands, so one Redis refused can be tried again
-	remote, held := r.remoteInvites[inviteID]
-	fromThere := held && remote.target == decliner.ID
+	inviterPod, fromThere := r.courier.fromThere(inviteID, decliner.ID)
 	args := partystore.DeclineArgs{InviteID: inviteID, DeclinerID: decliner.ID, Now: r.cfg.now()}
-	offLoop(ctx, r,
+	onRunner(ctx, r.run,
 		func(c context.Context) (partystore.DeclineResult, error) { return r.cfg.store.Decline(c, args) },
 		func(res partystore.DeclineResult, err error) {
 			if err != nil {
@@ -888,11 +726,10 @@ func (r *partyRegistry) decline(ctx context.Context, decliner *types.Player, con
 				return
 			}
 			if fromThere {
-				delete(r.remoteInvites, inviteID)
-				r.declineThere(remote.inviterPod, inviteID, res)
+				r.courier.declineThere(inviterPod, inviteID, res)
 				return
 			}
-			r.forgetReservation(res.Party.ID, inviteID)
+			r.cache.forgetReservation(res.Party.ID, inviteID)
 			r.noticePlayer(res.Party.Leader, constants.PartyNoticeDeclined, res.TargetName)
 		},
 	)
@@ -919,207 +756,34 @@ func (r *partyRegistry) ticks() <-chan time.Time {
 	return r.cfg.ticks
 }
 
-// tick keeps the cache: open invites past their minute leave it, with no notice (R12; the leader's
-// client says so); a seated player not yet read is read on arrival (R6), again each tick until a
-// read succeeds; a party none of whose members is seated here is let go; and every party left is
-// re-read every ten seconds (R4).
+// tick keeps the party cache and forgets delivered invites past their minute.
 func (r *partyRegistry) tick(ctx context.Context) {
 	if r.closed {
 		return
 	}
-	at := r.cfg.now()
-	for id, p := range r.parties {
-		p.Reserved = r.openReservations(p)
-		r.parties[id] = p
-	}
-	for id, remote := range r.remoteInvites {
-		if at.Sub(remote.receivedAt) >= partystore.InviteTTL {
-			delete(r.remoteInvites, id)
-		}
-	}
+	r.courier.tick()
+	r.cache.tick(ctx)
+}
 
-	seated := make(map[uuid.UUID]struct{})
-	for _, id := range r.directory.SeatedPlayerIDs() {
-		seated[id] = struct{}{}
-	}
-	for id := range r.arrived {
-		if _, still := seated[id]; !still {
-			delete(r.arrived, id)
-		}
-	}
-	for id := range seated {
-		_, done := r.arrived[id]
-		_, underWay := r.arriving[id]
-		if !done && !underWay {
-			r.arrive(ctx, id)
-		}
-	}
-	for id, p := range r.parties {
-		if !anySeated(p, seated) {
-			r.cacheDrop(id)
-		}
-	}
-
-	if at.Sub(r.lastRefresh) >= partyRefreshInterval {
-		r.lastRefresh = at
-		r.refreshAll(ctx)
+// arrived sends a player newly seated here their party as Redis holds it (FS-NCC9J R6).
+func (r *partyRegistry) arrived(playerID uuid.UUID, p partystore.Party) {
+	onArrival := partyUpdate(p.ID, p.Leader, p.Members, r.cfg.size, constants.PartyUpdateSync, playerID)
+	if err := r.sender.SendMessageToPlayer(playerID, onArrival); err != nil {
+		slog.Warn("party update on arrival not delivered", "party_id", p.ID, "player_id", playerID, "error", err)
 	}
 }
 
-func anySeated(p partystore.Party, seated map[uuid.UUID]struct{}) bool {
-	for _, m := range p.Members {
-		if _, here := seated[m.PlayerID]; here {
-			return true
-		}
-	}
-	return false
-}
-
-// arrive reads the party of a player newly seated here and sends them all of it, so a letter
-// missed while they moved costs nothing (R6). Only a read that succeeds marks them arrived; one
-// that fails, or that the runner had no room for, leaves them to be read on the next tick.
-func (r *partyRegistry) arrive(ctx context.Context, playerID uuid.UUID) {
-	if r.cfg.store == nil {
-		return
-	}
-	r.arriving[playerID] = struct{}{}
-	at := r.cfg.now()
-	type read struct {
-		party partystore.Party
-		in    bool
-	}
-	offLoop(ctx, r,
-		func(c context.Context) (read, error) {
-			p, in, err := r.cfg.store.PartyOf(c, playerID, at)
-			return read{party: p, in: in}, err
-		},
-		func(res read, err error) {
-			delete(r.arriving, playerID)
-			if err != nil {
-				slog.Warn("party not read on arrival, tried again next tick", "player_id", playerID, "error", err)
-				return
-			}
-			r.arrived[playerID] = struct{}{}
-			if !res.in {
-				return
-			}
-			r.cachePut(res.party)
-			onArrival := partyUpdate(res.party.ID, res.party.Leader, res.party.Members, r.cfg.size, constants.PartyUpdateSync, playerID)
-			if err := r.sender.SendMessageToPlayer(playerID, onArrival); err != nil {
-				slog.Warn("party update on arrival not delivered", "party_id", res.party.ID, "player_id", playerID, "error", err)
-			}
-		},
-	)
-}
-
-// refreshAll re-reads every cached party from Redis in one trip, through the runner like any
-// other call: a party Redis no longer has has ended, and is let go (R4).
-func (r *partyRegistry) refreshAll(ctx context.Context) {
-	if r.cfg.store == nil || len(r.parties) == 0 {
-		return
-	}
-	ids := make([]uuid.UUID, 0, len(r.parties))
-	for id := range r.parties {
-		ids = append(ids, id)
-	}
-	at := r.cfg.now()
-	type refreshed struct {
-		parties []partystore.Party
-		gone    []uuid.UUID
-	}
-	offLoop(ctx, r,
-		func(c context.Context) (refreshed, error) {
-			parties, gone, err := r.cfg.store.RefreshAll(c, ids, at)
-			return refreshed{parties: parties, gone: gone}, err
-		},
-		func(res refreshed, err error) {
-			if err != nil {
-				slog.Warn("party cache not refreshed", "parties", len(ids), "error", err)
-				return
-			}
-			for _, id := range res.gone {
-				r.cacheDrop(id)
-			}
-			for _, p := range res.parties {
-				// a party let go while the read was under way stays let go
-				if _, still := r.parties[p.ID]; still {
-					r.cachePut(p)
-				}
-			}
-		},
-	)
+// declinedThere tells this pod's leader that a player on another pod declined their invite.
+func (r *partyRegistry) declinedThere(partyID, inviteID, leader uuid.UUID, targetName string) {
+	r.cache.forgetReservation(partyID, inviteID)
+	r.noticePlayer(leader, constants.PartyNoticeDeclined, targetName)
 }
 
 // letters is where letters from other pods wait for the hub's loop.
-func (r *partyRegistry) letters() <-chan letter {
-	if r.cfg.inbox == nil {
-		return nil
-	}
-	return r.cfg.inbox.letters()
-}
+func (r *partyRegistry) letters() <-chan letter { return r.courier.letters() }
 
-// receive handles one letter from another pod: an invite for a player this pod holds is delivered
-// to them, a decline of one of this pod's invites is told to its leader. A letter for a player
-// not here is dropped.
-func (r *partyRegistry) receive(l letter) {
-	switch l.Kind {
-	case letterPartyInvite:
-		r.receiveInvite(l)
-	case letterPartyReply:
-		r.receiveReply(l)
-	default:
-		slog.Debug("pod inbox letter of an unknown kind dropped", "kind", l.Kind)
-	}
-}
-
-func (r *partyRegistry) receiveInvite(l letter) {
-	target, err := uuid.Parse(l.ToPlayerID)
-	id, idOK := inviteIDOf(l.Payload)
-	inviterPod, _ := l.Payload["inviter_pod_id"].(string)
-	if err != nil || !idOK || inviterPod == "" {
-		slog.Warn("pod inbox invite skipped: incomplete")
-		return
-	}
-	shown := make(map[string]interface{}, len(l.Payload))
-	for k, v := range l.Payload {
-		if k != "inviter_pod_id" {
-			shown[k] = v
-		}
-	}
-	if err := r.sender.SendMessageToPlayer(target, types.Message{Action: string(constants.ActionPartyInvite), Payload: shown}); err != nil {
-		slog.Debug("pod inbox invite dropped: player not here", "player_id", target, "error", err)
-		return
-	}
-	r.remoteInvites[id] = remoteInvite{inviterPod: inviterPod, target: target, receivedAt: r.cfg.now()}
-}
-
-func (r *partyRegistry) receiveReply(l letter) {
-	if declined, _ := l.Payload["declined"].(bool); !declined {
-		return
-	}
-	inviteID, ok := inviteIDOf(l.Payload)
-	if !ok {
-		return
-	}
-	rawParty, _ := l.Payload["party_id"].(string)
-	rawLeader, _ := l.Payload["leader_id"].(string)
-	name, _ := l.Payload["name"].(string)
-	partyID, partyErr := uuid.Parse(rawParty)
-	leader, leaderErr := uuid.Parse(rawLeader)
-	if partyErr != nil || leaderErr != nil {
-		slog.Warn("pod inbox reply skipped: incomplete")
-		return
-	}
-	r.forgetReservation(partyID, inviteID)
-	r.noticePlayer(leader, constants.PartyNoticeDeclined, name)
-}
-
-// inviteIDOf is the invite id an answer names, if it names one.
-func inviteIDOf(payload map[string]interface{}) (uuid.UUID, bool) {
-	raw, _ := payload["invite_id"].(string)
-	id, err := uuid.Parse(raw)
-	return id, err == nil
-}
+// receive handles one letter from another pod.
+func (r *partyRegistry) receive(l letter) { r.courier.receive(l) }
 
 // update sends the party as it now stands to every member this pod holds: why, and whom it is
 // about. Members elsewhere hear by letter once FS-NCC9J slice 3 fans out. FS-R82NV R21.
