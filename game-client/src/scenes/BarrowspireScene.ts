@@ -37,11 +37,11 @@ import {
   FALL_CONFIRM,
   nextWatched,
   resolved,
-  resolvedCard,
+  resolvedView,
   runMenuChoices,
   watchable,
-  type ResolvedCard,
-  type ResolvedCardKind,
+  type ResolvedKind,
+  type ResolvedView,
   type RunMenuChoice,
 } from "@/ui/party";
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
@@ -184,6 +184,12 @@ const SPECTATE_HUD_Y = 10;
  */
 const LEAVE_BUTTON_DEPTH = 1000;
 const LEAVE_BUTTON_MARGIN = 16;
+/**
+ * The escaped player's Watch the delve button (FS-QPDKN req 3, amended 2026-11-02): bottom
+ * centre, in the same HUD band and on the same bottom margin as the dead spectator's corner button.
+ */
+const WATCH_BUTTON_DEPTH = LEAVE_BUTTON_DEPTH;
+const WATCH_BUTTON_MARGIN = LEAVE_BUTTON_MARGIN;
 /** A button over the world: what it says, the name its hit area answers to, what a press does. */
 interface ButtonSpec {
   name: string;
@@ -441,6 +447,8 @@ export class BarrowspireScene extends Phaser.Scene {
   readonly resultHold = new ResultHold();
   /** The resolved player's card (FS-QPDKN req 1): up until Watch is pressed or `end_game`. */
   private resolvedCard?: Phaser.GameObjects.Container;
+  /** The escaped player's one button (req 3, amended): up until it is pressed or `end_game`. */
+  private watchButton?: WorldButton;
   /** The teammate this resolved player watches through (req 7); set only while spectating. */
   private watchedPlayerId?: string;
   /** The sprite the camera was last latched onto while spectating, so it is latched once. */
@@ -454,7 +462,7 @@ export class BarrowspireScene extends Phaser.Scene {
   /** Whose eyes, and how to switch (req 9); up while spectating. */
   private spectateHud?: { watching: Phaser.GameObjects.Text; hint: Phaser.GameObjects.Text };
   /** How this player is out of the delve, while the card or the spectate view is up (req 2, 10). */
-  private resolvedKind?: ResolvedCardKind;
+  private resolvedKind?: ResolvedKind;
   /** The dead player's way out (req 2, 13): on the card, or in its corner while they spectate. */
   private leaveButton?: WorldButton;
   /** A `leave_run` is on its way and unanswered: further presses send nothing (req 13). */
@@ -825,6 +833,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // across restarts, so the next run would start unable to move
     if (this.input?.keyboard) this.input.keyboard.enabled = true;
     this.resolvedCard = undefined;
+    this.watchButton = undefined;
     this.watchedPlayerId = undefined;
     this.followedSprite = undefined;
     this.spectateHud = undefined;
@@ -3159,6 +3168,18 @@ export class BarrowspireScene extends Phaser.Scene {
     return this.sessionID === undefined || state.session_id === this.sessionID;
   }
 
+  /**
+   * The player is out of the barrow: their sprite, legs and name go, once, with the escape
+   * played where they stood when `withEscape` (a body that was seen in play).
+   */
+  private hideOwnBody(withEscape: boolean): void {
+    if (!this.player || !this.playerPos || !this.player.visible) return;
+    if (withEscape && this.fx) playEscape(this.fx, "self", { x: this.playerPos.x, y: this.playerPos.y });
+    this.player.setVisible(false);
+    this.playerLegs?.setVisible(false);
+    this.playerNameText?.setVisible(false);
+  }
+
   private handleGameStateUpdate(state: ClientGameState): void {
     if (!this.acceptsFrame(state)) return;
     this.lastGameState = state;
@@ -3176,9 +3197,13 @@ export class BarrowspireScene extends Phaser.Scene {
       const pos = state.current_player.position;
 
       // 第一次收到位置，建立玩家
-      if (!this.player) {
+      const firstSeen = !this.player;
+      if (firstSeen) {
         this.createPlayer(pos.x, pos.y, state.current_player.class, state.current_player.username);
       }
+      // escaped, and still sent their own state until the run ends (FS-QPDKN req 24): the body
+      // stays hidden; the escape plays only for a body seen in play, not on a reconnect's rebuild
+      if (state.current_player.escape === true) this.hideOwnBody(!firstSeen);
 
       // 設定目標位置，在 update() 中平滑移動
       this.targetPosition = { x: pos.x, y: pos.y };
@@ -3199,12 +3224,7 @@ export class BarrowspireScene extends Phaser.Scene {
       if (curHp !== undefined) this.prevLocalPlayerHp = curHp;
     } else {
       // current_player is null — player has escaped
-      if (this.player && this.playerPos && this.player.visible) {
-        if (this.fx) playEscape(this.fx, "self", { x: this.playerPos.x, y: this.playerPos.y });
-        this.player.setVisible(false);
-        this.playerLegs?.setVisible(false);
-        this.playerNameText?.setVisible(false);
-      }
+      this.hideOwnBody(true);
     }
 
     // the merc's own stance, parries and armed riposte: never a teammate's (FS-MAMHR §G.34–§G.38)
@@ -4108,18 +4128,35 @@ export class BarrowspireScene extends Phaser.Scene {
       this.followWatched(state);
       return;
     }
-    const card = resolvedCard(state);
+    const view = resolvedView(state);
     // in play again (a reconnect's first state), or nobody left to watch: the end is coming
-    if (!card) this.takeDownCard();
-    else if (!this.resolvedCard) this.showResolvedCard(card);
+    if (!view) this.takeDownCard();
+    else if (view.kind === "escaped") this.showWatchButton();
+    else if (!this.resolvedCard) this.showResolvedCard(view);
   }
 
+  /** The dead player's card, or the escaped player's lone Watch button: whichever is up goes down. */
   private takeDownCard(): void {
+    this.watchButton?.destroy();
+    this.watchButton = undefined;
     if (!this.resolvedCard) return;
     this.resolvedCard.destroy();
     this.resolvedCard = undefined;
     // the card's leave button went down with it
     this.leaveButton = undefined;
+  }
+
+  /**
+   * The escaped player's view while a teammate is still in play (req 3, amended 2026-11-02): no
+   * card, one Watch the delve button at the bottom centre of the screen, in the HUD band. The
+   * camera stays on their own (hidden) body until it is pressed (req 4).
+   */
+  private showWatchButton(): void {
+    if (this.watchButton) return;
+    const cam = this.cameras.main;
+    const at = { x: cam.centerX, y: cam.height - WATCH_BUTTON_MARGIN - BUTTON_H / 2 };
+    this.resolvedKind = "escaped";
+    this.watchButton = this.hudButton(this.watchSpec, at, WATCH_BUTTON_DEPTH);
   }
 
   /**
@@ -4141,7 +4178,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * run view, its copy by how they resolved, and the buttons under it. No backdrop: the delve
    * goes on behind it, visibly. The camera stays where it is until a button says otherwise.
    */
-  private showResolvedCard(card: ResolvedCard): void {
+  private showResolvedCard(card: Extract<ResolvedView, { kind: "dead" }>): void {
     const cam = this.cameras.main;
     const cardW = 420;
     const cardH = 200;
@@ -4169,9 +4206,8 @@ export class BarrowspireScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    // one row of buttons, centred: Watch for everyone, Leave for the dead (req 2, 3)
-    const buttons: ButtonSpec[] = [this.watchSpec];
-    if (card.kind === "dead") buttons.push(this.leaveSpec);
+    // one row of buttons, centred: Watch and Leave (req 2)
+    const buttons: ButtonSpec[] = [this.watchSpec, this.leaveSpec];
     const made = buttons.map((button, i) => this.cardButton(cam, button, i, buttons.length));
 
     this.resolvedKind = card.kind;
@@ -4453,11 +4489,17 @@ export class BarrowspireScene extends Phaser.Scene {
       x: cam.width - LEAVE_BUTTON_MARGIN - BUTTON_W / 2,
       y: cam.height - LEAVE_BUTTON_MARGIN - BUTTON_H / 2,
     };
-    this.leaveButton = this.worldButton(this.leaveSpec, at, { x: 0, y: 0 }, LEAVE_BUTTON_DEPTH + 1);
-    this.leaveButton.parts.forEach((part) => part.setScrollFactor(0).setDepth(LEAVE_BUTTON_DEPTH));
+    this.leaveButton = this.hudButton(this.leaveSpec, at, LEAVE_BUTTON_DEPTH);
     this.leaveButton.setEnabled(!this.leavePending);
     // the corner is the button's now (FS-8AY7S req 32)
     this.showAbilityCard();
+  }
+
+  /** A button fixed to the screen at `at`, in a HUD depth band: its hit area just over its face. */
+  private hudButton(button: ButtonSpec, at: { x: number; y: number }, depth: number): WorldButton {
+    const made = this.worldButton(button, at, { x: 0, y: 0 }, depth + 1);
+    made.parts.forEach((part) => part.setScrollFactor(0).setDepth(depth));
+    return made;
   }
 
   /**
