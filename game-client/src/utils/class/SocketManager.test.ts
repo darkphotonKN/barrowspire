@@ -426,3 +426,99 @@ describe("SocketManager party (FS-R82NV §Requirements R21, R31: the socket feed
     expect(usePartyStore.getState().invites).toEqual([]);
   });
 });
+
+// FS-NCC9J §Requirements R18, R20, R28; I-NCC9J-8. A travel's handoff is to a hub: no run, no
+// seat; the client connects to the leader's server and enters its hub as the character it plays.
+describe("SocketManager hub handoff (FS-NCC9J R20)", () => {
+  const LEADER_POD = "ws://pod-a.test/game/ws";
+  const hubHandoff = { action: "world_handoff", payload: { addr: LEADER_POD, hub: true } };
+  const hubEntered = { action: "world_entered", payload: { session_id: "hub-a", world_type: "hub" } };
+  const marl = {
+    id: "c-1",
+    name: "Marl",
+    className: "Warrior",
+    level: 3,
+    experience: 900,
+    levelFloor: 800,
+    createdAt: "2026-11-01T00:00:00Z",
+  };
+
+  beforeEach(() => {
+    useGameStore.setState({ characters: [marl] as never, activeCharacterId: "c-1" });
+    useChatStore.setState({ lines: [] } as never);
+  });
+
+  const sentOn = (socket: FakeSocket) => socket.sent.map((raw) => JSON.parse(raw));
+
+  it("connects to the leader's server, plain, and enters its hub as the active character once open", () => {
+    const { old, sockets } = setup();
+
+    old.receive(hubHandoff);
+    expect(sockets).toHaveLength(2);
+    const next = sockets[1];
+    expect(next.url).toBe(`${LEADER_POD}?token=jwt-1&name=Ash`);
+    expect(old.closedWith).toBeUndefined();
+
+    next.open();
+    const [enter] = sentOn(next);
+    expect(enter.action).toBe("enter_hub");
+    expect(enter.payload.characterId).toBe("c-1");
+    expect(sentOn(old).some((m) => m.action === "enter_hub")).toBe(false);
+  });
+
+  it("swaps sockets on the hub's world_entered, and reconnects there afterwards", () => {
+    const { manager, old, sockets } = setup();
+    const entered = vi.fn();
+    manager.on("world_entered", entered);
+
+    old.receive(hubHandoff);
+    sockets[1].open();
+    sockets[1].receive(hubEntered);
+
+    expect(old.closedWith).toEqual({ code: 1000, reason: "handoff" });
+    expect(entered).toHaveBeenCalledWith(hubEntered.payload);
+    expect(manager.getServerAddress()).toBe(LEADER_POD);
+  });
+
+  it("never tells the delve's world_handoff listener: a travel is not a match", () => {
+    const { manager, old } = setup();
+    const delve = vi.fn();
+    manager.on("world_handoff", delve);
+
+    old.receive(hubHandoff);
+
+    expect(delve).not.toHaveBeenCalled();
+  });
+
+  it("stays on the old socket and says why when the hub refuses the entry", () => {
+    const { manager, old, sockets } = setup();
+    old.receive(hubHandoff);
+    const next = sockets[1];
+    next.open();
+
+    next.receive({
+      action: "enter_hub",
+      payload: { message: "The hub is full. Try again shortly." },
+      error: "The hub is full. Try again shortly.",
+    });
+
+    expect(next.closedWith?.code).toBe(1000);
+    expect(old.closedWith).toBeUndefined();
+    expect(manager.isConnected()).toBe(true);
+    expect(useChatStore.getState().lines).toContainEqual(
+      expect.objectContaining({ kind: "system", text: "The hub is full. Try again shortly." }),
+    );
+  });
+
+  it("stays on the old socket when the leader's server cannot be reached", () => {
+    const { manager, old, sockets } = setup();
+    old.receive(hubHandoff);
+
+    sockets[1].serverClose(1006);
+
+    expect(old.closedWith).toBeUndefined();
+    expect(manager.isConnected()).toBe(true);
+    old.receive({ action: "party_update", payload: {} });
+    expect(sockets).toHaveLength(2);
+  });
+});

@@ -74,6 +74,12 @@ describe("partyCommands", () => {
     ]);
   });
 
+  it("should send party_travel with no payload (FS-NCC9J R28)", () => {
+    const { socket, sent } = fakeSocket();
+    partyCommands(socket).travel();
+    expect(sent).toEqual([["party_travel", {}]]);
+  });
+
   it("should claim every party action's error replies once routed, so no refusal reaches the session's handler", () => {
     const { socket, refusals } = fakeErrorSocket();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -87,6 +93,7 @@ describe("partyCommands", () => {
       "party_kick",
       "party_leave",
       "party_transfer",
+      "party_travel",
     ]);
     // a server without the handler yet answers "Unknown action": swallowed, logged
     expect(() =>

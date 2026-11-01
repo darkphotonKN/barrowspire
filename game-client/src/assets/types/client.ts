@@ -125,6 +125,8 @@ export interface ActionMap {
   party_accept: { invite_id: string };
   /** Answering a `party_invite` no (FS-R82NV R15), by the invite's id. */
   party_decline: { invite_id: string };
+  /** A member asking to be taken to the town of the leader's server (FS-NCC9J R18, R28): no payload. */
+  party_travel: Record<string, never>;
 }
 
 export const ActionType = {
@@ -154,6 +156,7 @@ export const ActionType = {
   PartyLeave: "party_leave",
   PartyAccept: "party_accept",
   PartyDecline: "party_decline",
+  PartyTravel: "party_travel",
 } as const;
 
 export type ActionType = (typeof ActionType)[keyof typeof ActionType];
@@ -207,11 +210,13 @@ export interface WorldEnteredPayload {
 }
 
 /**
- * The run this player was matched into is hosted on another server: connect to
- * `addr` for the run with `session_id`. The host's world_entered follows once they are seated.
- * FS-K2HKP §Requirements 21, 29.
+ * The player's next world is on another server: connect to `addr`. For a run, the run with
+ * `session_id` (FS-K2HKP §Requirements 21, 29); for a travel to the party leader's town, `hub`
+ * and no session: the client enters that server's hub as its character (FS-NCC9J R18, R20). The
+ * host's world_entered follows once they are seated.
  */
 export interface WorldHandoffPayload {
   addr: string;
-  session_id: string;
+  session_id?: string;
+  hub?: boolean;
 }

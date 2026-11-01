@@ -33,6 +33,8 @@ export interface PartyCommands {
   /** Answers an invite yes (R16): the server seats the player in that party, or says why not. */
   accept(inviteId: string): void;
   decline(inviteId: string): void;
+  /** Asks to be taken to the leader's town (FS-NCC9J R28): a `world_handoff` follows, or a notice says why not. */
+  travel(): void;
 }
 
 const PARTY_ACTIONS = [
@@ -43,6 +45,7 @@ const PARTY_ACTIONS = [
   "party_leave",
   "party_accept",
   "party_decline",
+  "party_travel",
 ] as const;
 
 /**
@@ -76,5 +79,6 @@ export function partyCommands(socket: PartySocket): PartyCommands {
       socket.sendMessage("party_accept", { invite_id: inviteId }),
     decline: (inviteId) =>
       socket.sendMessage("party_decline", { invite_id: inviteId }),
+    travel: () => socket.sendMessage("party_travel", {}),
   };
 }

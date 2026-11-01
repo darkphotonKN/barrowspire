@@ -19,6 +19,8 @@ interface FakeText {
   content: string;
   colour?: string;
   destroyed: boolean;
+  interactive: boolean;
+  press?: () => void;
 }
 
 function fakeScene() {
@@ -37,6 +39,7 @@ function fakeScene() {
       "fillTriangle",
       "fillCircle",
       "strokeCircle",
+      "strokeRoundedRect",
       "setAlpha",
     ])
       self[m] = () => self;
@@ -51,13 +54,22 @@ function fakeScene() {
     content: string,
     style: { color?: string } = {},
   ) => {
-    const t: FakeText = { content, colour: style.color, destroyed: false };
+    const t: FakeText = {
+      content,
+      colour: style.color,
+      destroyed: false,
+      interactive: false,
+    };
     texts.push(t);
     const self: Record<string, unknown> = {
       setScrollFactor: () => self,
       setDepth: () => self,
       setOrigin: () => self,
       setAlpha: () => self,
+      setInteractive: () => ((t.interactive = true), self),
+      on: (ev: string, fn: () => void) => (
+        ev === "pointerdown" && (t.press = fn), self
+      ),
       setText: (c: string) => ((t.content = c), self),
       destroy: () => void (t.destroyed = true),
     };
@@ -99,7 +111,10 @@ function fakeScene() {
     allGraphics.filter((g) => !g.destroyed).flatMap((g) => g.fills);
   /** How many texts were ever made: each one a fresh canvas texture on a real scene. */
   const textsMade = () => texts.length;
-  return { scene, live, colourOf, liveFills, textsMade, frame, liveTweens };
+  /** The live text reading content, if any. */
+  const liveText = (content: string) =>
+    texts.find((t) => !t.destroyed && t.content === content);
+  return { scene, live, colourOf, liveFills, textsMade, frame, liveTweens, liveText };
 }
 
 const ME = "me";
@@ -159,6 +174,7 @@ function setup(world: WorldType = "hub", clock = { now: 0 }) {
       busts.push(portrait);
       return undefined;
     }),
+    travel: vi.fn(),
   };
   const frames = new PartyFrames(scene.scene, deps);
   /**
@@ -168,7 +184,7 @@ function setup(world: WorldType = "hub", clock = { now: 0 }) {
   const tracks = () =>
     scene.liveFills().filter((c) => c === palette.hudTrack).length -
     frames.rowCount();
-  return { ...scene, store, frames, busts, resolved, state, tracks, said };
+  return { ...scene, store, frames, busts, resolved, state, tracks, said, deps };
 }
 
 describe("PartyFrames", () => {
@@ -485,5 +501,69 @@ describe("PartyFrames: skeleton rows (FS-NCC9J R26)", () => {
     store.getState().apply(withReserved([member(ME, "Me")], ["Kaelen"]));
     frame();
     expect(said).toEqual([]);
+  });
+});
+
+// FS-NCC9J §Requirements R28; I-NCC9J-8. The Travel button on the leader's frame.
+describe("PartyFrames' Travel button", () => {
+  const LEADER = "wren";
+  const atPods = (mine: string, leaders: string, leaderOnline = true) =>
+    update(
+      [
+        { ...member(LEADER, "Wren"), pod_id: leaders, online: leaderOnline },
+        { ...member(ME, "Marl"), pod_id: mine },
+      ],
+      LEADER,
+    );
+
+  it("shows Travel on the leader's frame to a member on another pod in town; pressing it travels", () => {
+    const { store, liveText, deps } = setup("hub");
+    store.getState().apply(atPods("pod-b", "pod-a"));
+
+    const travel = liveText("Travel");
+    expect(travel?.interactive).toBe(true);
+    travel?.press?.();
+    expect(deps.travel).toHaveBeenCalledTimes(1);
+  });
+
+  it("greys it in a field, inert", () => {
+    const { store, liveText, deps } = setup("field");
+    store.getState().apply(atPods("pod-b", "pod-a"));
+
+    const travel = liveText("Travel");
+    expect(travel).toBeDefined();
+    expect(travel?.interactive).toBe(false);
+    expect(travel?.colour).toBe(toCss(palette.hudFaint));
+    expect(deps.travel).not.toHaveBeenCalled();
+  });
+
+  it("shows none to a member on the leader's pod, nor to the leader", () => {
+    const here = setup("hub");
+    here.store.getState().apply(atPods("pod-a", "pod-a"));
+    expect(here.liveText("Travel")).toBeUndefined();
+
+    const leading = setup("hub");
+    leading.store.getState().apply(
+      update(
+        [
+          { ...member(ME, "Marl"), pod_id: "pod-b" },
+          { ...member(LEADER, "Wren"), pod_id: "pod-a" },
+        ],
+        ME,
+      ),
+    );
+    expect(leading.liveText("Travel")).toBeUndefined();
+  });
+
+  it("greys it once the leader goes away, and brings it back when they return", () => {
+    const { store, liveText } = setup("hub");
+    store.getState().apply(atPods("pod-b", "pod-a"));
+    expect(liveText("Travel")?.interactive).toBe(true);
+
+    store.getState().apply(atPods("pod-b", "pod-a", false));
+    expect(liveText("Travel")?.interactive).toBe(false);
+
+    store.getState().apply(atPods("pod-b", "pod-a", true));
+    expect(liveText("Travel")?.interactive).toBe(true);
   });
 });

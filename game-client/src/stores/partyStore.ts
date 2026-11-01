@@ -24,6 +24,11 @@ export interface PartyMember {
   where: PartyWhere | string;
   /** False while the member is away (FS-NCC9J R21); a server that leaves it out means online. */
   online?: boolean;
+  /**
+   * The pod holding the member, empty when none does (FS-NCC9J R21): who stands on the leader's
+   * pod, for the Travel button (R28). A server that leaves it out names no pod.
+   */
+  pod_id?: string;
 }
 
 /**
@@ -123,7 +128,8 @@ function isPartyMember(v: unknown): v is PartyMember {
     typeof v.name === "string" &&
     typeof v.class === "string" &&
     typeof v.where === "string" &&
-    (v.online === undefined || typeof v.online === "boolean")
+    (v.online === undefined || typeof v.online === "boolean") &&
+    (v.pod_id === undefined || typeof v.pod_id === "string")
   );
 }
 

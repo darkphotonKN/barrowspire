@@ -7,6 +7,7 @@ import {
 } from "@/assets/types/client";
 import { ClientGameState, isGameState } from "@/types/gameState";
 import { GameStateLogger } from "@/utils/gameStateLogger";
+import { enterHubPayload } from "@/characters/entry";
 import { useGameStore } from "@/stores/gameStore";
 import { useAuthStore } from "@/stores/authStore";
 import { isChatLine, isChatNotice, useChatStore } from "@/stores/chatStore";
@@ -246,6 +247,10 @@ export class SocketManager {
       // it from the shape of a state broadcast. FS-29KSH §Requirements 36.
       this.handleWorldEntered(data.payload as WorldEnteredPayload);
       this.listeners.get(data.action)?.(data.payload);
+    } else if (data.action === "world_handoff" && data.payload?.hub === true) {
+      // A travel to the party leader's town: no match, so the delve's listener
+      // hears nothing; the host's world_entered switches the scene. FS-NCC9J R20.
+      this.hubHandoff(data.payload as WorldHandoffPayload);
     } else if (data.action === "world_handoff") {
       // The run is on another server: move there, then let the world_entered
       // the host sends do the scene switch as it always does
@@ -293,25 +298,94 @@ export class SocketManager {
    * FS-K2HKP §Requirements 22–24, 29, 31.
    */
   private handoff(payload: WorldHandoffPayload) {
-    if (!payload?.addr || !payload?.session_id) {
+    const sessionId = payload?.session_id;
+    if (!payload?.addr || !sessionId) {
       console.error("world_handoff missing addr or session_id:", payload);
       return;
     }
 
     // already moving to (or moved to) this run
-    if (this.handoffSessionId === payload.session_id) return;
+    if (this.handoffSessionId === sessionId) return;
 
     this.dropPending();
-    this.handoffSessionId = payload.session_id;
+    this.handoffSessionId = sessionId;
 
     const next = this.createSocket(
-      `${payload.addr}?token=${this.token}&session_id=${payload.session_id}`,
+      `${payload.addr}?token=${this.token}&session_id=${sessionId}`,
     );
     this.pending = next;
 
     // The host upgrades before it decides and refuses by closing with 4002, so
     // the socket opening proves nothing. Its world_entered is the acceptance.
-    // Anything it sends before that is held and replayed after the swap.
+    this.holdUntilEntered(next, payload.addr);
+
+    next.onerror = (error) => {
+      // the close that follows decides what happens
+      console.warn("Handoff socket error:", error);
+    };
+
+    next.onclose = (event) => {
+      if (this.pending !== next) return;
+      this.handoffFailed(sessionId, event.code);
+    };
+  }
+
+  /**
+   * Follows a travel's handoff to the hub of the party leader's server (FS-NCC9J R18, R20),
+   * make-before-break as a run's is: a plain connection there, which enters the hub as the
+   * character this player plays once it opens; the hub's world_entered is the acceptance. A
+   * refused entry (the hub full) or a server that cannot be reached leaves the player where they
+   * stand, on the old socket, and a refusal's words are said as a system line. One move at a time.
+   */
+  private hubHandoff(payload: WorldHandoffPayload) {
+    if (!payload?.addr) {
+      console.error("hub world_handoff missing addr:", payload);
+      return;
+    }
+    if (this.pending) return;
+    const { characters, activeCharacterId } = useGameStore.getState();
+    const character = characters.find((c) => c.id === activeCharacterId);
+    if (!character) {
+      console.warn("hub world_handoff with no character to enter as");
+      return;
+    }
+
+    const next = this.createSocket(
+      `${payload.addr}?token=${this.token}&name=${this.name}`,
+    );
+    this.pending = next;
+    next.onopen = () =>
+      next.send(this.encode("enter_hub", enterHubPayload(character)));
+
+    this.holdUntilEntered(next, payload.addr, (data) => {
+      if (data.action !== "enter_hub" || !data.error) return false;
+      this.dropPending();
+      const text = String(data.payload?.message ?? data.error);
+      useChatStore.getState().notice({ code: "travel_refused", text });
+      return true;
+    });
+    next.onerror = (error) => {
+      // the close that follows decides what happens
+      console.warn("Hub handoff socket error:", error);
+    };
+    next.onclose = (event) => {
+      if (this.pending !== next) return;
+      console.warn("Hub handoff refused or failed, code:", event.code);
+      this.pending = null;
+      this.reconnectIfGone();
+    };
+  }
+
+  /**
+   * Listens on a pending socket: everything it says is held until the host's world_entered, which
+   * promotes it and is replayed with the rest after the swap. `refused`, when given, sees each
+   * message first and ends the move by returning true.
+   */
+  private holdUntilEntered(
+    next: SocketLike,
+    addr: string,
+    refused?: (data: any) => boolean,
+  ) {
     const held: any[] = [];
     next.onmessage = (event) => {
       let data: any;
@@ -321,26 +395,28 @@ export class SocketManager {
         console.error("Failed to parse handoff message:", e);
         return;
       }
-
+      if (refused?.(data)) return;
       if (data.action !== "world_entered") {
         held.push(data);
         return;
       }
-
-      this.promote(next, payload.addr);
+      this.promote(next, addr);
       this.dispatch(data);
       held.forEach((message) => this.dispatch(message));
     };
+  }
 
-    next.onerror = (error) => {
-      // the close that follows decides what happens
-      console.warn("Handoff socket error:", error);
-    };
-
-    next.onclose = (event) => {
-      if (this.pending !== next) return;
-      this.handoffFailed(payload.session_id, event.code);
-    };
+  /** Still on the old socket: stay. If it is gone too, go back to the server we were on. */
+  private reconnectIfGone() {
+    const old = this.socket;
+    if (
+      !old ||
+      old.readyState === SOCKET_CLOSING ||
+      old.readyState === SOCKET_CLOSED
+    ) {
+      this.socket = null;
+      this.reconnect();
+    }
   }
 
   /** The host seated us: the new socket becomes the game's, and the old one is let go quietly. */
@@ -370,15 +446,7 @@ export class SocketManager {
 
     // Still on the old socket: stay in the hub. If it is gone too, go back to
     // the server we were on, which puts us in its hub.
-    const old = this.socket;
-    if (
-      !old ||
-      old.readyState === SOCKET_CLOSING ||
-      old.readyState === SOCKET_CLOSED
-    ) {
-      this.socket = null;
-      this.reconnect();
-    }
+    this.reconnectIfGone();
 
     this.listeners.get("world_handoff_failed")?.({
       session_id: sessionId,
@@ -427,21 +495,6 @@ export class SocketManager {
     payload: ActionMap[T],
   ): void {
     if (this.socket && this.socket.readyState === SOCKET_OPEN) {
-      // Auto-inject player_id. The world a message belongs to is NOT sent —
-      // the server routes on its own record of the player (FS-29KSH §Requirements 16).
-      const playerId = useAuthStore.getState().memberInfo?.id;
-
-      const enrichedPayload = {
-        ...payload,
-        player_id: playerId,
-      };
-
-      const message: ClientMessage<T> = {
-        action,
-        payload: enrichedPayload,
-        seq: ++this.seq,
-      };
-
       // Debug logging for outgoing messages (level 2+ = info)
       if (GameStateLogger.getLevel() >= 2) {
         console.log(
@@ -451,10 +504,27 @@ export class SocketManager {
         );
       }
 
-      this.socket.send(JSON.stringify(message));
+      this.socket.send(this.encode(action, payload));
     } else {
       console.warn("Cannot send message: WebSocket not connected");
     }
+  }
+
+  /**
+   * One outgoing message as it goes on the wire, with player_id injected. The world a message
+   * belongs to is NOT sent: the server routes on its own record of the player (FS-29KSH
+   * §Requirements 16).
+   */
+  private encode<T extends keyof ActionMap>(
+    action: T,
+    payload: ActionMap[T],
+  ): string {
+    const message: ClientMessage<T> = {
+      action,
+      payload: { ...payload, player_id: useAuthStore.getState().memberInfo?.id },
+      seq: ++this.seq,
+    };
+    return JSON.stringify(message);
   }
 
   // 監聽特定 action

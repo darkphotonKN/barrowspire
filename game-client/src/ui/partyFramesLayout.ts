@@ -153,6 +153,29 @@ export function partyFrameRows(
 }
 
 /**
+ * The Travel button beside the leader's frame (FS-NCC9J R28): hidden with no party, for the
+ * leader, and for a member already on the leader's pod (the same `pod_id`); greyed outside the
+ * player's own town (a field, a run) and while the leader is away; live otherwise. Pure, so every
+ * rule is tested without a canvas.
+ */
+export type TravelButton = "hidden" | "greyed" | "live";
+
+export function travelButton(
+  party: PartyUpdatePayload | null,
+  selfId: string | undefined,
+  world: WorldType | null,
+): TravelButton {
+  if (!party || selfId === undefined || party.leader_id === selfId)
+    return "hidden";
+  const self = party.members.find((m) => m.player_id === selfId);
+  const leader = party.members.find((m) => m.player_id === party.leader_id);
+  if (!self || !leader) return "hidden";
+  if ((self.pod_id ?? "") === (leader.pod_id ?? "")) return "hidden";
+  if (world !== "hub" || memberAway(leader)) return "greyed";
+  return "live";
+}
+
+/**
  * The standing frame a member's class bust is cut from (R34): the class's own baked sheet (the one
  * that walks in the run, `characterSheet`), its idle pose facing the viewer, as the menus stand
  * it. The scene resolves it through the art library and crops it with `ui/bust.ts`.
@@ -230,6 +253,25 @@ export function partyFramesFrame(
       resource: { ...bar, y: y + HEALTH_Y + BAR_H + BAR_GAP },
     };
   });
+}
+
+const TRAVEL_W = 46;
+const TRAVEL_H = 16;
+/** Room kept between the Travel button and the frame's right edge. */
+const TRAVEL_RIGHT_PAD = 4;
+
+/**
+ * Where the Travel button sits (FS-NCC9J R28): inside the leader's frame, on the name line at its
+ * right end, above the bars. Inside, not past the frame's edge: the T panel opens 18 px to its
+ * right, and a button out there would sit under it.
+ */
+export function partyTravelButtonRect(frame: PartyFrameRect): Rect {
+  return {
+    x: frame.row.x + frame.row.width - TRAVEL_RIGHT_PAD - TRAVEL_W,
+    y: frame.row.y + NAME_Y,
+    width: TRAVEL_W,
+    height: TRAVEL_H,
+  };
 }
 
 /** The gap kept under the XP bar, as the T panel keeps under the hub's. */
