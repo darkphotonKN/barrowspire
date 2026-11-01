@@ -9,6 +9,8 @@ import {
   partyBustFrame,
   partyFrameRows,
   partyFramesFrame,
+  type PartyFrameRow,
+  type PartyMemberFrameRow,
 } from "./partyFramesLayout";
 import { PROGRESS_HUD_AT, PROGRESS_HUD_H, PROGRESS_HUD_W } from "./ProgressHud";
 import { resourceHudHeight } from "./ResourceHud";
@@ -46,23 +48,33 @@ const party = (
 const seen = (id: string, extra: Partial<PlayerState> = {}): PlayerState =>
   ({ id, escape: false, ...extra }) as PlayerState;
 
+/** The member frames among the rows, failing the test if a skeleton stands in their place. */
+const memberRows = (rows: PartyFrameRow[]): PartyMemberFrameRow[] =>
+  rows.map((r) => {
+    if (r.kind !== "member")
+      throw new Error(`expected a member row, got ${r.kind}`);
+    return r;
+  });
+
 describe("partyFrameRows", () => {
   it("draws nothing with no party", () => {
     expect(partyFrameRows(null, ME, "hub")).toEqual([]);
   });
 
   it("gives one row per member, the player first, then the others in join order, the leader's row flagged", () => {
-    const rows = partyFrameRows(
-      party(
-        [
-          member("lead", "Aldric"),
-          member(ME, "Me"),
-          member("wren", "Wren", { class: "mage" }),
-        ],
-        "lead",
+    const rows = memberRows(
+      partyFrameRows(
+        party(
+          [
+            member("lead", "Aldric"),
+            member(ME, "Me"),
+            member("wren", "Wren", { class: "mage" }),
+          ],
+          "lead",
+        ),
+        ME,
+        "hub",
       ),
-      ME,
-      "hub",
     );
     expect(rows.map((r) => [r.player_id, r.name, r.class, r.leader])).toEqual([
       [ME, "Me", "warrior", false],
@@ -72,22 +84,24 @@ describe("partyFrameRows", () => {
   });
 
   it("gives a two-member party two rows, the player's first, holding their own bars in the hub", () => {
-    const rows = partyFrameRows(
-      party([member("wren", "Wren"), member(ME, "Me")]),
-      ME,
-      "hub",
-      {
-        current_player: seen(ME, {
-          current_health: 90,
-          max_health: 120,
-          resource: {
-            kind: "stamina",
-            current: 25,
-            max: 100,
-            ability_cost: 10,
-          },
-        }),
-      },
+    const rows = memberRows(
+      partyFrameRows(
+        party([member("wren", "Wren"), member(ME, "Me")]),
+        ME,
+        "hub",
+        {
+          current_player: seen(ME, {
+            current_health: 90,
+            max_health: 120,
+            resource: {
+              kind: "stamina",
+              current: 25,
+              max: 100,
+              ability_cost: 10,
+            },
+          }),
+        },
+      ),
     );
     expect(rows.map((r) => r.player_id)).toEqual([ME, "wren"]);
     expect(rows[0].slot).toEqual({
@@ -105,7 +119,7 @@ describe("partyFrameRows: the player's own row", () => {
     world: "hub" | "field" | "run",
     current_player?: PlayerState | null,
     p = two(),
-  ) => partyFrameRows(p, ME, world, { current_player })[0].slot;
+  ) => memberRows(partyFrameRows(p, ME, world, { current_player }))[0].slot;
 
   it.each(["hub", "field", "run"] as const)(
     "shows both bars from the player's own state in the %s",
@@ -148,10 +162,12 @@ describe("partyFrameRows: the player's own row", () => {
   });
 
   it("ignores a teammate's broadcast entry carrying the player's id", () => {
-    const rows = partyFrameRows(two(), ME, "run", {
-      current_player: seen(ME, { current_health: 120, max_health: 120 }),
-      other_players: [seen(ME, { current_health: 1, max_health: 120 })],
-    });
+    const rows = memberRows(
+      partyFrameRows(two(), ME, "run", {
+        current_player: seen(ME, { current_health: 120, max_health: 120 }),
+        other_players: [seen(ME, { current_health: 1, max_health: 120 })],
+      }),
+    );
     expect(rows[0].slot).toEqual({ kind: "bars", health: 1 });
   });
 });
@@ -163,37 +179,32 @@ describe("partyFrameRows: a teammate's bar slot", () => {
     p: PartyUpdatePayload,
     world: "hub" | "field" | "run",
     others?: PlayerState[],
-  ) => partyFrameRows(p, ME, world, { other_players: others })[1].slot;
+  ) =>
+    memberRows(partyFrameRows(p, ME, world, { other_players: others }))[1].slot;
 
+  // FS-NCC9J R25: missing bars are the "not here" signal; no state word, whatever `where` says
   it.each([
-    { name: "hub", where: "hub", world: "hub" as const, word: "village" },
+    { name: "the hub", where: "hub", world: "hub" as const },
+    { name: "a field", where: "field:gentle_meadows", world: "hub" as const },
+    { name: "a run", where: "run", world: "hub" as const },
+    { name: "away", where: "away", world: "hub" as const },
     {
-      name: "a field",
-      where: "field:gentle_meadows",
-      world: "hub" as const,
-      word: "afield",
-    },
-    { name: "a run", where: "run", world: "hub" as const, word: "delving" },
-    { name: "away", where: "away", world: "hub" as const, word: "away" },
-    {
-      name: "elsewhere while I stand in a field",
+      name: "a run, while I stand in a field",
       where: "run",
       world: "field" as const,
-      word: "delving",
+    },
+    // the same field by name, on another pod: still not in this world's state
+    {
+      name: "my own field's name",
+      where: "field:gentle_meadows",
+      world: "field" as const,
     },
   ])(
-    "shows the state word for $name when no health is on the wire",
-    ({ where, world, word }) => {
-      expect(slotOf(two({ where }), world)).toEqual({ kind: "word", word });
+    "shows name and bust only for a teammate in $name whose health is not in this world's state",
+    ({ where, world }) => {
+      expect(slotOf(two({ where }), world)).toEqual({ kind: "none" });
     },
   );
-
-  it("reads an offline member as away, whatever their where says", () => {
-    expect(slotOf(two({ online: false }), "hub")).toEqual({
-      kind: "word",
-      word: "away",
-    });
-  });
 
   it("fills the health bar from the broadcast's current and max health", () => {
     const others = [seen("wren", { current_health: 30, max_health: 120 })];
@@ -239,32 +250,154 @@ describe("partyFrameRows: a teammate's bar slot", () => {
     ]);
   });
 
-  it("shows the word in the hub even if health were on the wire: the village carries no bars", () => {
+  it("shows no bars in the hub even if health were on the wire: the village carries none", () => {
     const others = [seen("wren", { current_health: 30, max_health: 120 })];
-    expect(slotOf(two(), "hub", others)).toEqual({
-      kind: "word",
-      word: "village",
-    });
+    expect(slotOf(two(), "hub", others)).toEqual({ kind: "none" });
   });
 
-  it("shows the word for a member the broadcast does not list", () => {
+  it("shows no bars for a member the broadcast does not list", () => {
     const others = [
       seen("someone-else", { current_health: 30, max_health: 120 }),
     ];
     expect(
       slotOf(two({ where: "field:forlorn_forest" }), "field", others),
-    ).toEqual({
-      kind: "word",
-      word: "afield",
-    });
+    ).toEqual({ kind: "none" });
   });
 
-  it("shows away for a disconnected member even if a stale state still lists them", () => {
-    const others = [seen("wren", { current_health: 30, max_health: 120 })];
-    expect(slotOf(two({ where: "away" }), "run", others)).toEqual({
-      kind: "word",
-      word: "away",
+  it("decides bars from this world's state, not from where: a member said to be elsewhere but in the state shows bars", () => {
+    const others = [seen("wren", { current_health: 60, max_health: 120 })];
+    expect(slotOf(two({ where: "hub" }), "run", others)).toEqual({
+      kind: "bars",
+      health: 0.5,
     });
+  });
+});
+
+describe("partyFrameRows: an away member is greyed (FS-NCC9J R25)", () => {
+  const rowOf = (extra: Partial<PartyMember>, others: PlayerState[] = []) =>
+    memberRows(
+      partyFrameRows(
+        party([member(ME, "Me"), member("wren", "Wren", extra)]),
+        ME,
+        "run",
+        { other_players: others },
+      ),
+    )[1];
+
+  it.each([
+    { name: "online", extra: {}, away: false },
+    {
+      name: "online left off the wire",
+      extra: { online: undefined },
+      away: false,
+    },
+    { name: "offline", extra: { online: false }, away: true },
+    { name: "where away", extra: { where: "away" }, away: true },
+  ])("marks a member $name as away: $away", ({ extra, away }) => {
+    expect(rowOf(extra).away).toBe(away);
+  });
+
+  it("keeps an away member's bars while this world's state still carries their health, greyed", () => {
+    const row = rowOf({ online: false }, [
+      seen("wren", { current_health: 30, max_health: 120 }),
+    ]);
+    expect(row.away).toBe(true);
+    expect(row.slot).toEqual({ kind: "bars", health: 0.25 });
+  });
+
+  it("never greys the player's own row", () => {
+    const rows = memberRows(
+      partyFrameRows(
+        party([member(ME, "Me", { online: false }), member("wren", "Wren")]),
+        ME,
+        "run",
+      ),
+    );
+    expect(rows[0].away).toBe(false);
+  });
+});
+
+describe("partyFrameRows: skeleton rows for open invites (FS-NCC9J R26)", () => {
+  const reserved = (...names: string[]) =>
+    names.map((name) => ({ name, expires_at: "2026-11-01T05:01:00Z" }));
+
+  it("gives a party of one member and one reserved slot a member frame, then a skeleton row with the invitee's name", () => {
+    const rows = partyFrameRows(
+      { ...party([member(ME, "Me")]), reserved: reserved("Kaelen") },
+      ME,
+      "hub",
+    );
+    expect(rows.map((r) => [r.kind, r.name])).toEqual([
+      ["member", "Me"],
+      ["skeleton", "Kaelen"],
+    ]);
+  });
+
+  it("draws the skeletons after every member, in the order the server lists them, for every member", () => {
+    const p = {
+      ...party([member("lead", "Aldric"), member(ME, "Me")], "lead"),
+      reserved: reserved("Kaelen", "Bram"),
+    };
+    for (const self of [ME, "lead"])
+      expect(partyFrameRows(p, self, "hub").map((r) => r.kind)).toEqual([
+        "member",
+        "member",
+        "skeleton",
+        "skeleton",
+      ]);
+    expect(
+      partyFrameRows(p, ME, "hub")
+        .slice(2)
+        .map((r) => r.name),
+    ).toEqual(["Kaelen", "Bram"]);
+  });
+
+  it("replaces the skeleton with a real frame when the invitee joins", () => {
+    const before = partyFrameRows(
+      { ...party([member(ME, "Me")]), reserved: reserved("Kaelen") },
+      ME,
+      "hub",
+    );
+    const after = partyFrameRows(
+      party([member(ME, "Me"), member("kae", "Kaelen")]),
+      ME,
+      "hub",
+    );
+    expect(before.map((r) => r.kind)).toEqual(["member", "skeleton"]);
+    expect(after.map((r) => [r.kind, r.name])).toEqual([
+      ["member", "Me"],
+      ["member", "Kaelen"],
+    ]);
+  });
+
+  it("draws no skeleton for a name already among the members", () => {
+    const rows = partyFrameRows(
+      {
+        ...party([member(ME, "Me"), member("kae", "Kaelen")]),
+        reserved: reserved("Kaelen"),
+      },
+      ME,
+      "hub",
+    );
+    expect(rows.map((r) => r.kind)).toEqual(["member", "member"]);
+  });
+
+  it("never draws more rows than the party's size", () => {
+    const rows = partyFrameRows(
+      {
+        ...party([member(ME, "Me"), member("wren", "Wren")]),
+        size: 3,
+        reserved: reserved("Kaelen", "Bram"),
+      },
+      ME,
+      "hub",
+    );
+    expect(rows.map((r) => r.name)).toEqual(["Me", "Wren", "Kaelen"]);
+  });
+
+  it("draws no skeleton when the update carries no reserved list", () => {
+    const rows = partyFrameRows(party([member(ME, "Me")]), ME, "hub");
+    expect(rows.map((r) => r.kind)).toEqual(["member"]);
   });
 });
 
@@ -312,7 +445,7 @@ describe("partyFramesFrame", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].row.y).toBe(86);
     expect(rows[1].row.y).toBeGreaterThan(rows[0].row.y + rows[0].row.height);
-    for (const { row, bust, health, resource, name, word } of rows) {
+    for (const { row, bust, health, resource, name } of rows) {
       expect(bust.x - bust.r).toBeGreaterThanOrEqual(row.x);
       expect(bust.y - bust.r).toBeGreaterThanOrEqual(row.y);
       expect(bust.y + bust.r).toBeLessThanOrEqual(row.y + row.height);
@@ -322,7 +455,7 @@ describe("partyFramesFrame", () => {
         );
       expect(health.y + health.height).toBeLessThanOrEqual(resource.y);
       expect(name.x).toBeGreaterThan(bust.x + bust.r);
-      expect(word.x).toBe(health.x);
+      expect(name.x).toBe(health.x);
     }
   });
 
@@ -354,7 +487,28 @@ describe("partyFramesFrame", () => {
     "in the $world, four rows clear the XP bar, the chat window, the T panel and the prompts",
     ({ world, xpBar, chatBottom }) => {
       const { x, top } = PARTY_FRAMES_PLACEMENT[world];
-      const frames = union(partyFramesFrame(4, x, top).map((f) => f.row));
+      // the fullest party at the largest cap (PARTY_SIZE max 4): two members, two open invites
+      const fullest = partyFrameRows(
+        {
+          ...party([member(ME, "Me"), member("wren", "Wren")]),
+          size: 4,
+          reserved: [
+            { name: "Kaelen", expires_at: "2026-11-01T05:01:00Z" },
+            { name: "Bram", expires_at: "2026-11-01T05:01:00Z" },
+          ],
+        },
+        ME,
+        world,
+      );
+      expect(fullest.map((r) => r.kind)).toEqual([
+        "member",
+        "member",
+        "skeleton",
+        "skeleton",
+      ]);
+      const frames = union(
+        partyFramesFrame(fullest.length, x, top).map((f) => f.row),
+      );
       // one column with the level/XP frame: exactly its outer width (a field keeps the same)
       expect(frames.width).toBe(PROGRESS_HUD_W);
       expect(frames.x).toBeGreaterThanOrEqual(0);

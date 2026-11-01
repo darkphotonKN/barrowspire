@@ -1,22 +1,26 @@
 /**
- * The party frames (FS-R82NV R34, R35): on the left edge under the level/XP bar and as wide as it,
- * one frame per member while the player is in a party, the player's own first, then the others in
- * join order. Each frame is a medallion bust cut from the member's class sheet, their name (the
- * leader's crown first), and a bar slot: health and resource in the HUD's own bar style at half
- * height, always for the player (from their own state) and for a teammate when this world's state
- * carries their health, a short state word ("village", "afield", "delving", "away") when it does
- * not. A resource the state does not carry yet is an empty bar.
+ * The party frames (FS-R82NV R34, R35; FS-NCC9J R25–R27): on the left edge under the level/XP bar
+ * and as wide as it, one frame per member while the player is in a party, the player's own first,
+ * then the others in join order, then one skeleton row per open invite. Each member frame is a
+ * medallion bust cut from the member's class sheet, their name (the leader's crown first), and a
+ * bar slot: health and resource in the HUD's own bar style at half height, always for the player
+ * (from their own state) and for a teammate when this world's state carries their health; any
+ * other teammate shows name and bust alone, no word. An away teammate's frame is greyed. A
+ * skeleton row is the invitee's name with a grey pulse where the bust and bars go, no countdown.
+ * A resource the state does not carry yet is an empty bar.
  *
  * It redraws from the party store on every `party_update` and from each state tick the scene
- * hands it (`show`); it asks the server for nothing. Neutral HUD on the game palette, at the HUD's
- * depth. The frames themselves rebuild only when the party's shape changes; a tick that moves a
- * bar redraws the bars alone.
+ * hands it (`show`); it asks the server for nothing. Once a frame it lets the store say the
+ * leader's "No answer from <name>." line for a lapsed invite (R27). Neutral HUD on the game
+ * palette, at the HUD's depth. The frames themselves rebuild only when the party's shape changes;
+ * a tick that moves a bar redraws the bars alone.
  */
 
 import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
 import type { WorldType } from "@/assets/types/client";
 import type { ArtLibrary } from "@/render/art/library";
+import { prefersReducedMotion } from "@/render/effects/mist";
 import { HUD_DEPTH } from "@/render/markers/markers";
 import { useAuthStore } from "@/stores/authStore";
 import { useGameStore } from "@/stores/gameStore";
@@ -67,21 +71,25 @@ export function mountPartyFrames(
 }
 
 const NAME_PX = 13;
-const WORD_PX = 12;
+/** An away member's frame: its bust and ring dimmed to this. */
+const AWAY_ALPHA = 0.4;
+/** The skeleton's pulse: between these alphas, once each way per period; still under reduced motion. */
+const PULSE_LOW = 0.25;
+const PULSE_HIGH = 0.6;
+const PULSE_MS = 900;
 
 export class PartyFrames {
   private rows: PartyFrameRow[] = [];
   private seen: SeenState = {};
-  /** What the frames, the state words and the bars were last drawn from. */
+  /** What the frames and the bars were last drawn from. */
   private drawnShape?: string;
-  private drawnWords?: string;
   private drawnSlots?: string;
   private rects: PartyFrameRect[] = [];
   private chrome?: Phaser.GameObjects.Graphics;
   private rings?: Phaser.GameObjects.Graphics;
+  private pulse?: Phaser.GameObjects.Graphics;
   private bars?: Phaser.GameObjects.Graphics;
   private names: Phaser.GameObjects.Text[] = [];
-  private words: Phaser.GameObjects.Text[] = [];
   private busts: MaskedBust[] = [];
   private readonly unsubscribe: () => void;
 
@@ -92,6 +100,7 @@ export class PartyFrames {
     this.unsubscribe = deps.store.subscribe((state, prev) => {
       if (state.party !== prev.party) this.refresh();
     });
+    this.scene.events?.on("postupdate", this.tick, this);
     this.refresh();
   }
 
@@ -110,12 +119,18 @@ export class PartyFrames {
 
   /** Which frame holds the leader (0 when the player leads), or -1 with no party: for tests. */
   leaderRow(): number {
-    return this.rows.findIndex((r) => r.leader);
+    return this.rows.findIndex((r) => r.kind === "member" && r.leader);
   }
 
   destroy(): void {
     this.unsubscribe();
+    this.scene.events?.off("postupdate", this.tick, this);
     this.takeDown();
+  }
+
+  /** Once a frame: a lapsed invite's line, on the leader's client (FS-NCC9J R27). */
+  private tick(): void {
+    this.deps.store.getState().expireReserved();
   }
 
   private refresh(): void {
@@ -127,27 +142,23 @@ export class PartyFrames {
     const shape = JSON.stringify([
       x,
       top,
-      this.rows.map((r) => [r.player_id, r.name, r.class, r.leader]),
+      this.rows.map((r) =>
+        r.kind === "member"
+          ? [r.kind, r.player_id, r.name, r.class, r.leader, r.away]
+          : [r.kind, r.name],
+      ),
     ]);
     if (shape !== this.drawnShape) {
       this.drawnShape = shape;
-      this.drawnWords = undefined;
       this.drawnSlots = undefined;
       this.takeDown();
       this.rects = partyFramesFrame(this.rows.length, x, top);
       this.drawFrames();
     }
 
-    // a word is a text, a canvas texture apiece: made again only when the words change,
-    // never because a bar moved on this tick
-    const words = JSON.stringify(
-      this.rows.map((r) => (r.slot.kind === "word" ? r.slot.word : null)),
+    const slots = JSON.stringify(
+      this.rows.map((r) => (r.kind === "member" ? r.slot : null)),
     );
-    if (words !== this.drawnWords) {
-      this.drawnWords = words;
-      this.drawWords();
-    }
-    const slots = JSON.stringify(this.rows.map((r) => r.slot));
     if (slots !== this.drawnSlots) {
       this.drawnSlots = slots;
       this.drawBars();
@@ -160,25 +171,28 @@ export class PartyFrames {
     content: string,
     colour: number,
     px: number,
-    italic = false,
   ): Phaser.GameObjects.Text {
     return this.scene.add
       .text(x, y, content, {
         fontFamily: CANVAS_FONT.body,
         fontSize: `${px}px`,
-        fontStyle: italic ? "italic" : "normal",
         color: toCss(colour),
       })
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH);
   }
 
-  /** The panels, the medallions with their busts, the names and the leader's crown. */
+  private hud(): Phaser.GameObjects.Graphics {
+    return this.scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH);
+  }
+
+  /**
+   * The panels, the medallions with their busts, the names and the leader's crown; for a
+   * skeleton row, its name and the pulse.
+   */
   private drawFrames(): void {
     if (this.rows.length === 0) return;
-    const hud = () =>
-      this.scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH);
-    const chrome = (this.chrome = hud());
+    const chrome = (this.chrome = this.hud());
     const drawBust = this.deps.drawBust ?? maskedBust;
 
     this.rows.forEach((row, i) => {
@@ -189,6 +203,7 @@ export class PartyFrames {
       chrome.strokeRect(r.x, r.y, r.width, r.height);
       chrome.fillStyle(palette.hudPanelDeep, 1);
       chrome.fillCircle(bust.x, bust.y, bust.r);
+      if (row.kind !== "member") return;
 
       const at = partyBustFrame(row.class);
       const frame = this.deps.art.resolve(at.sheet, at);
@@ -201,52 +216,74 @@ export class PartyFrames {
         bust.r,
       );
       if (!cut) return;
-      cut.image.setScrollFactor(0).setDepth(HUD_DEPTH);
+      cut.image
+        .setScrollFactor(0)
+        .setDepth(HUD_DEPTH)
+        .setAlpha(row.away ? AWAY_ALPHA : 1);
       this.busts.push(cut);
     });
 
-    // over the busts: the medallion rings and the leader's crown
-    const rings = (this.rings = hud());
+    // over the busts: the medallion rings, the leader's crown and the names
+    const rings = (this.rings = this.hud());
     this.rows.forEach((row, i) => {
       const { bust, name } = this.rects[i];
-      rings.lineStyle(2, palette.frame, 0.9);
+      if (row.kind !== "member") {
+        this.names.push(
+          this.text(name.x, name.y, row.name, palette.hudLabel, NAME_PX),
+        );
+        return;
+      }
+      rings.lineStyle(2, palette.frame, row.away ? AWAY_ALPHA : 0.9);
       rings.strokeCircle(bust.x, bust.y, bust.r);
       if (row.leader) drawLeaderMark(rings, name.x, name.y + 4);
       const nameX = name.x + (row.leader ? PARTY_LEADER_MARK_W : 0);
-      this.names.push(
-        this.text(nameX, name.y, row.name, palette.hudText, NAME_PX),
-      );
+      const colour = row.away ? palette.hudFaint : palette.hudText;
+      this.names.push(this.text(nameX, name.y, row.name, colour, NAME_PX));
+    });
+
+    this.drawPulse();
+  }
+
+  /** The skeleton rows' grey pulse, over the medallion and where the bars would be (R26). */
+  private drawPulse(): void {
+    const skeletons = this.rows.flatMap((row, i) =>
+      row.kind === "skeleton" ? [this.rects[i]] : [],
+    );
+    if (skeletons.length === 0) return;
+    const g = (this.pulse = this.hud());
+    g.fillStyle(palette.hudFaint, 1);
+    for (const { bust, health, resource } of skeletons) {
+      g.fillCircle(bust.x, bust.y, bust.r - 2);
+      g.fillRect(health.x, health.y, health.width, health.height);
+      g.fillRect(resource.x, resource.y, resource.width, resource.height);
+    }
+    if (prefersReducedMotion()) {
+      g.setAlpha(PULSE_HIGH);
+      return;
+    }
+    this.scene.tweens.add({
+      targets: g,
+      alpha: { from: PULSE_LOW, to: PULSE_HIGH },
+      duration: PULSE_MS,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
     });
   }
 
-  /** The state word in each frame whose slot holds one. */
-  private drawWords(): void {
-    this.words.forEach((w) => w.destroy());
-    this.words = [];
-    this.rows.forEach(({ slot }, i) => {
-      if (slot.kind !== "word") return;
-      const { word } = this.rects[i];
-      this.words.push(
-        this.text(word.x, word.y, slot.word, palette.hudLabel, WORD_PX, true),
-      );
-    });
-  }
-
-  /** The health and resource bars in each frame whose slot holds them; a missing resource is empty. */
+  /** The health and resource bars in each member frame whose slot holds them; a missing resource is empty. */
   private drawBars(): void {
     if (this.rows.length === 0) {
       this.bars?.destroy();
       this.bars = undefined;
       return;
     }
-    const g = (this.bars ??= this.scene.add
-      .graphics()
-      .setScrollFactor(0)
-      .setDepth(HUD_DEPTH));
+    const g = (this.bars ??= this.hud());
     g.clear();
 
-    this.rows.forEach(({ slot }, i) => {
-      if (slot.kind === "word") return;
+    this.rows.forEach((row, i) => {
+      if (row.kind !== "member" || row.slot.kind !== "bars") return;
+      const { slot } = row;
       const { health, resource } = this.rects[i];
       drawHudBar(
         g,
@@ -281,19 +318,16 @@ export class PartyFrames {
   }
 
   private takeDown(): void {
-    this.chrome?.destroy();
-    this.chrome = undefined;
-    this.rings?.destroy();
-    this.rings = undefined;
-    this.bars?.destroy();
-    this.bars = undefined;
+    if (this.pulse) this.scene.tweens.killTweensOf(this.pulse);
+    for (const g of [this.chrome, this.rings, this.pulse, this.bars])
+      g?.destroy();
+    this.chrome = this.rings = this.pulse = this.bars = undefined;
     this.busts.forEach(({ image, mask }) => {
       image.destroy();
       mask?.destroy();
     });
     this.busts = [];
-    [...this.names, ...this.words].forEach((t) => t.destroy());
+    this.names.forEach((t) => t.destroy());
     this.names = [];
-    this.words = [];
   }
 }

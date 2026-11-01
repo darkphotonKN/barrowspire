@@ -6,8 +6,10 @@ import {
   isPartyInvite,
   isPartyNotice,
   isPartyUpdate,
+  memberAway,
   partyActions,
   partyLocked,
+  reservedSlots,
   type PartyInvitePayload,
   type PartyUpdatePayload,
 } from "./partyStore";
@@ -338,5 +340,186 @@ describe("partyStore notices and the one clock (FS-R82NV R14, R31, R36)", () => 
     expect(store.getState().secondsLeft(pending)).toBe(1);
     clock.now = 60_000;
     expect(store.getState().secondsLeft(pending)).toBe(0);
+  });
+});
+
+// FS-NCC9J §Requirements R21, R25–R27. I-NCC9J-7: open invites as reserved slots, each member's
+// online, the `sync` update, and the leader's expiry line.
+
+describe("party_update across pods (FS-NCC9J R21)", () => {
+  const withoutOnline = () => {
+    const { online: _online, ...rest } = member(ALLY, "Wren");
+    return rest;
+  };
+
+  it("should accept an update with reserved slots, and one without (none reserved)", () => {
+    const reserved = [{ name: "Kaelen", expires_at: "2026-11-01T05:01:00Z" }];
+    expect(isPartyUpdate(update({ reserved }))).toBe(true);
+    expect(reservedSlots(update({ reserved }))).toEqual(reserved);
+    expect(isPartyUpdate(update())).toBe(true);
+    expect(reservedSlots(update())).toEqual([]);
+  });
+
+  it("should reject a malformed reserved list", () => {
+    expect(isPartyUpdate({ ...update(), reserved: "nope" })).toBe(false);
+    expect(isPartyUpdate({ ...update(), reserved: [{ name: "Kaelen" }] })).toBe(
+      false,
+    );
+    expect(
+      isPartyUpdate({ ...update(), reserved: [{ name: 3, expires_at: "x" }] }),
+    ).toBe(false);
+  });
+
+  it("should accept a member without online and read them as online", () => {
+    const u = { ...update(), members: [member(ME, "Aldric"), withoutOnline()] };
+    expect(isPartyUpdate(u)).toBe(true);
+    expect(memberAway(withoutOnline())).toBe(false);
+    expect(partyActions(u, ME, "hub").members[1].away).toBe(false);
+  });
+
+  it("should reject a member whose online is not a boolean", () => {
+    expect(
+      isPartyUpdate({
+        ...update(),
+        members: [{ ...member(ALLY, "Wren"), online: "yes" }],
+      }),
+    ).toBe(false);
+  });
+
+  it("should read a member as away when offline or where says away", () => {
+    expect(memberAway(member(ALLY, "Wren", { online: false }))).toBe(true);
+    expect(memberAway(member(ALLY, "Wren", { where: "away" }))).toBe(true);
+    expect(memberAway(member(ALLY, "Wren"))).toBe(false);
+  });
+
+  it("should say nothing about a sync update's open invites that are still live", () => {
+    const said: unknown[] = [];
+    const s = createPartyStore({
+      selfId: () => ME,
+      now: () => Date.parse("2026-11-01T05:00:30Z"),
+      say: (l) => said.push(l),
+    });
+    s.getState().apply(
+      update({
+        reason: "sync",
+        reserved: [{ name: "Kaelen", expires_at: "2026-11-01T05:01:00Z" }],
+      }),
+    );
+    s.getState().expireReserved();
+    expect(said).toEqual([]);
+  });
+
+  it("should hold a sync update like any other, and close the prompts", () => {
+    const s = createPartyStore({ selfId: () => ALLY });
+    s.getState().receiveInvite(invite("a"));
+    s.getState().apply(update({ reason: "sync", subject_id: ALLY }));
+    expect(s.getState().party?.reason).toBe("sync");
+    expect(s.getState().invites).toEqual([]);
+  });
+});
+
+describe("partyStore expiry line (FS-NCC9J R27: the leader's client says an invite lapsed)", () => {
+  const EXPIRES = "2026-11-01T05:01:00Z";
+  const AT = Date.parse(EXPIRES);
+  const kaelen = { name: "Kaelen", expires_at: EXPIRES };
+
+  function setup(self = ME) {
+    const clock = { now: AT - 10_000 };
+    const said: { code: string; text: string }[] = [];
+    const s = createPartyStore({
+      selfId: () => self,
+      now: () => clock.now,
+      say: (line) => said.push(line),
+    });
+    // the leader is ME; ALLY is a member
+    s.getState().apply(update({ reason: "sent", reserved: [kaelen] }));
+    return { s, clock, said };
+  }
+  const NO_ANSWER = { code: "no_answer", text: "No answer from Kaelen." };
+
+  it("should write the line on the leader's client once expires_at passes, and only once", () => {
+    const { s, clock, said } = setup();
+    s.getState().expireReserved();
+    expect(said).toEqual([]);
+
+    clock.now = AT;
+    s.getState().expireReserved();
+    s.getState().expireReserved();
+    expect(said).toEqual([NO_ANSWER]);
+  });
+
+  it("should write nothing on a member's client", () => {
+    const { s, clock, said } = setup(ALLY);
+    clock.now = AT + 1;
+    s.getState().expireReserved();
+    s.getState().apply(update({ reason: "expired", reserved: [] }));
+    expect(said).toEqual([]);
+  });
+
+  it("should write nothing when the invitee joins before expires_at", () => {
+    const { s, clock, said } = setup();
+    s.getState().apply(
+      update({
+        members: [
+          member(ME, "Aldric"),
+          member(ALLY, "Wren"),
+          member(THIRD, "Kaelen"),
+        ],
+        reserved: [],
+      }),
+    );
+    clock.now = AT + 1;
+    s.getState().expireReserved();
+    expect(said).toEqual([]);
+  });
+
+  it("should write nothing when the invite is declined before expires_at", () => {
+    const { s, clock, said } = setup();
+    s.getState().apply(update({ reason: "declined", reserved: [] }));
+    clock.now = AT + 1;
+    s.getState().expireReserved();
+    expect(said).toEqual([]);
+  });
+
+  it("should write the line when the server drops the slot after expires_at before the client's own tick saw it", () => {
+    const { s, clock, said } = setup();
+    clock.now = AT + 50;
+    s.getState().apply(update({ reason: "expired", reserved: [] }));
+    s.getState().expireReserved();
+    expect(said).toEqual([NO_ANSWER]);
+  });
+
+  it("should not write the line twice when the client's tick saw it before the server dropped the slot", () => {
+    const { s, clock, said } = setup();
+    clock.now = AT;
+    s.getState().expireReserved();
+    s.getState().apply(update({ reason: "expired", reserved: [] }));
+    expect(said).toEqual([NO_ANSWER]);
+  });
+
+  it("should write the line on the client of whoever leads when it lapses", () => {
+    const { s, clock, said } = setup(ALLY);
+    s.getState().apply(
+      update({ reason: "leader", leader_id: ALLY, reserved: [kaelen] }),
+    );
+    clock.now = AT;
+    s.getState().expireReserved();
+    expect(said).toEqual([NO_ANSWER]);
+  });
+
+  it("should write the line again for a fresh invite to the same name", () => {
+    const { s, clock, said } = setup();
+    clock.now = AT;
+    s.getState().expireReserved();
+    const later = "2026-11-01T05:03:00Z";
+    s.getState().apply(
+      update({
+        reason: "sent",
+        reserved: [{ name: "Kaelen", expires_at: later }],
+      }),
+    );
+    clock.now = Date.parse(later);
+    s.getState().expireReserved();
+    expect(said).toEqual([NO_ANSWER, NO_ANSWER]);
   });
 });

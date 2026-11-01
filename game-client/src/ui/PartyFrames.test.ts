@@ -7,7 +7,7 @@ import {
   type PartyUpdatePayload,
 } from "@/stores/partyStore";
 import type { FrameQuery } from "@/render/art/library";
-import { palette } from "@/utils/canvasPalette";
+import { palette, toCss } from "@/utils/canvasPalette";
 import { PartyFrames, type PartyFramesDeps } from "./PartyFrames";
 import type { SeenPlayer } from "./partyFramesLayout";
 
@@ -17,6 +17,7 @@ import type { SeenPlayer } from "./partyFramesLayout";
 
 interface FakeText {
   content: string;
+  colour?: string;
   destroyed: boolean;
 }
 
@@ -36,6 +37,7 @@ function fakeScene() {
       "fillTriangle",
       "fillCircle",
       "strokeCircle",
+      "setAlpha",
     ])
       self[m] = () => self;
     self.clear = () => ((g.fills = []), self);
@@ -43,8 +45,13 @@ function fakeScene() {
     self.destroy = () => void (g.destroyed = true);
     return self;
   };
-  const text = (_x: number, _y: number, content: string) => {
-    const t: FakeText = { content, destroyed: false };
+  const text = (
+    _x: number,
+    _y: number,
+    content: string,
+    style: { color?: string } = {},
+  ) => {
+    const t: FakeText = { content, colour: style.color, destroyed: false };
     texts.push(t);
     const self: Record<string, unknown> = {
       setScrollFactor: () => self,
@@ -56,13 +63,43 @@ function fakeScene() {
     };
     return self;
   };
-  const scene = { add: { graphics, text } } as unknown as Phaser.Scene;
+  // the scene's frame events: `postupdate` handlers, run by `frame()`
+  const handlers = new Map<string, { fn: () => void; ctx: unknown }[]>();
+  const events = {
+    on: (ev: string, fn: () => void, ctx?: unknown) =>
+      handlers.set(ev, [...(handlers.get(ev) ?? []), { fn, ctx }]),
+    off: (ev: string, fn: () => void) =>
+      handlers.set(
+        ev,
+        (handlers.get(ev) ?? []).filter((h) => h.fn !== fn),
+      ),
+  };
+  const frame = () =>
+    (handlers.get("postupdate") ?? []).forEach((h) => h.fn.call(h.ctx));
+  // the pulse tweens: live until killed
+  const tweens: { targets: unknown; repeat?: number; killed: boolean }[] = [];
+  const tweenManager = {
+    add: (cfg: { targets: unknown; repeat?: number }) =>
+      tweens.push({ ...cfg, killed: false }),
+    killTweensOf: (target: unknown) =>
+      tweens
+        .filter((t) => t.targets === target)
+        .forEach((t) => (t.killed = true)),
+  };
+  const liveTweens = () => tweens.filter((t) => !t.killed);
+  const scene = {
+    add: { graphics, text },
+    events,
+    tweens: tweenManager,
+  } as unknown as Phaser.Scene;
   const live = () => texts.filter((t) => !t.destroyed).map((t) => t.content);
+  const colourOf = (content: string) =>
+    texts.find((t) => !t.destroyed && t.content === content)?.colour;
   const liveFills = () =>
     allGraphics.filter((g) => !g.destroyed).flatMap((g) => g.fills);
   /** How many texts were ever made: each one a fresh canvas texture on a real scene. */
   const textsMade = () => texts.length;
-  return { scene, live, liveFills, textsMade };
+  return { scene, live, colourOf, liveFills, textsMade, frame, liveTweens };
 }
 
 const ME = "me";
@@ -92,9 +129,14 @@ const update = (
   subject_id: members[members.length - 1].player_id,
 });
 
-function setup(world: WorldType = "hub") {
+function setup(world: WorldType = "hub", clock = { now: 0 }) {
   const scene = fakeScene();
-  const store = createPartyStore({ selfId: () => ME });
+  const said: { code: string; text: string }[] = [];
+  const store = createPartyStore({
+    selfId: () => ME,
+    now: () => clock.now,
+    say: (line) => said.push(line),
+  });
   const resolved: (FrameQuery & { sheet: string })[] = [];
   const busts: { texture: string; frame: string | number }[] = [];
   const state = { world };
@@ -126,7 +168,7 @@ function setup(world: WorldType = "hub") {
   const tracks = () =>
     scene.liveFills().filter((c) => c === palette.hudTrack).length -
     frames.rowCount();
-  return { ...scene, store, frames, busts, resolved, state, tracks };
+  return { ...scene, store, frames, busts, resolved, state, tracks, said };
 }
 
 describe("PartyFrames", () => {
@@ -185,15 +227,23 @@ describe("PartyFrames", () => {
     expect(tracks()).toBe(2);
   });
 
-  it("shows a teammate's state word in the bar slot when no health is on the wire", () => {
-    const { store, live, tracks } = setup();
-    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren")]));
-    expect(live()).toContain("village");
-    // the player's own two bars only
-    expect(tracks()).toBe(2);
-  });
+  it.each(["hub", "field:gentle_meadows", "run", "away"])(
+    "draws a teammate absent from this world's state (where %s) as name and bust only, no word",
+    (where) => {
+      const { store, live, tracks, busts } = setup("field");
+      store
+        .getState()
+        .apply(
+          update([member(ME, "Me"), member("wren", "Wren", "mage", where)]),
+        );
+      expect(live()).toEqual(["Me", "Wren"]);
+      expect(busts).toHaveLength(2);
+      // the player's own two bars only
+      expect(tracks()).toBe(2);
+    },
+  );
 
-  it("draws a teammate's health and resource bars when the state carries them, and drops the word", () => {
+  it("draws a teammate's health and resource bars when the state carries them", () => {
     const { store, frames, live, liveFills } = setup("run");
     store
       .getState()
@@ -207,10 +257,10 @@ describe("PartyFrames", () => {
     frames.show({ other_players: [seen] });
     expect(liveFills()).toContain(palette.hudHealth);
     expect(liveFills()).toContain(palette.hudMana);
-    expect(live()).not.toContain("delving");
+    expect(live()).toEqual(["Me", "Wren"]);
   });
 
-  it("goes back to the word when the teammate drops out of the state", () => {
+  it("drops the teammate's bars when they drop out of the state, keeping name and bust", () => {
     const { store, frames, live, tracks } = setup("run");
     store
       .getState()
@@ -220,11 +270,11 @@ describe("PartyFrames", () => {
     });
     expect(tracks()).toBe(4);
     frames.show({ other_players: [] });
-    expect(live()).toContain("delving");
+    expect(live()).toEqual(["Me", "Wren"]);
     expect(tracks()).toBe(2);
   });
 
-  it("redraws only the bars when a tick moves a bar: the words are not made again", () => {
+  it("redraws only the bars when a tick moves a bar: no text is made again", () => {
     const { store, frames, live, textsMade } = setup("run");
     store
       .getState()
@@ -241,14 +291,34 @@ describe("PartyFrames", () => {
         other_players: [{ id: "wren", current_health: wrens, max_health: 120 }],
       });
     tick(90, 60);
-    expect(live()).toContain("away");
+    expect(live()).toEqual(["Me", "Wren", "Bram"]);
     const made = textsMade();
 
     tick(89, 61);
     tick(88, 62);
 
     expect(textsMade()).toBe(made);
-    expect(live()).toContain("away");
+    expect(live()).toEqual(["Me", "Wren", "Bram"]);
+  });
+
+  it("greys an away teammate's frame, and lifts it when they are back", () => {
+    const { store, colourOf } = setup();
+    const wren = member("wren", "Wren");
+    store
+      .getState()
+      .apply(update([member(ME, "Me"), { ...wren, online: false }]));
+    expect(colourOf("Wren")).toBe(toCss(palette.hudFaint));
+    expect(colourOf("Me")).toBe(toCss(palette.hudText));
+
+    store.getState().apply(update([member(ME, "Me"), wren]));
+    expect(colourOf("Wren")).toBe(toCss(palette.hudText));
+  });
+
+  it("reads a member without online on the wire as online, not greyed", () => {
+    const { store, colourOf } = setup();
+    const { online: _online, ...wren } = member("wren", "Wren");
+    store.getState().apply(update([member(ME, "Me"), wren]));
+    expect(colourOf("Wren")).toBe(toCss(palette.hudText));
   });
 
   it("takes every frame down when the viewer is kicked", () => {
@@ -297,5 +367,123 @@ describe("PartyFrames", () => {
     frames.destroy();
     store.getState().apply(update([member(ME, "Me"), member("wren", "Wren")]));
     expect(live()).toEqual([]);
+  });
+});
+
+// FS-NCC9J §Requirements R25–R27. I-NCC9J-7: skeleton rows for open invites, and the leader's
+// expiry line on the frames' own tick.
+
+describe("PartyFrames: skeleton rows (FS-NCC9J R26)", () => {
+  const EXPIRES = "2026-11-01T05:01:00Z";
+  const withReserved = (
+    members: PartyMember[],
+    names: string[],
+    leader = ME,
+    reason = "sent",
+  ): PartyUpdatePayload => ({
+    ...update(members, leader, reason),
+    reserved: names.map((name) => ({ name, expires_at: EXPIRES })),
+  });
+
+  it("draws a skeleton row after the members with the invitee's name, a grey pulse and no bust", () => {
+    const { store, frames, live, liveFills, busts, tracks } = setup();
+    store.getState().apply(withReserved([member(ME, "Me")], ["Kaelen"]));
+    expect(frames.rowCount()).toBe(2);
+    expect(live()).toEqual(["Me", "Kaelen"]);
+    // only the player's bust is cut; the skeleton's medallion is the pulse
+    expect(busts).toHaveLength(1);
+    expect(liveFills()).toContain(palette.hudFaint);
+    // no bars in a skeleton: the player's own two only
+    expect(tracks()).toBe(2);
+  });
+
+  it("draws it for a member who is not the leader, too", () => {
+    const { store, live } = setup();
+    store
+      .getState()
+      .apply(
+        withReserved(
+          [member("lead", "Aldric"), member(ME, "Me")],
+          ["Kaelen"],
+          "lead",
+        ),
+      );
+    expect(live()).toEqual(["Me", "Aldric", "Kaelen"]);
+  });
+
+  it("replaces the skeleton with a real frame when the invitee joins", () => {
+    const { store, frames, live, liveFills, busts } = setup();
+    store.getState().apply(withReserved([member(ME, "Me")], ["Kaelen"]));
+    store
+      .getState()
+      .apply(update([member(ME, "Me"), member("kae", "Kaelen", "mage")]));
+    expect(frames.rowCount()).toBe(2);
+    expect(live()).toEqual(["Me", "Kaelen"]);
+    expect(liveFills()).not.toContain(palette.hudFaint);
+    expect(busts.at(-1)).toEqual({
+      texture: "art:char_wizard_base",
+      frame: "char_wizard_base/idle/1/0",
+    });
+  });
+
+  it("takes the skeleton away when the invite is declined", () => {
+    const { store, frames, live, liveFills } = setup();
+    store.getState().apply(withReserved([member(ME, "Me")], ["Kaelen"]));
+    store
+      .getState()
+      .apply(withReserved([member(ME, "Me")], [], ME, "declined"));
+    expect(frames.rowCount()).toBe(1);
+    expect(live()).toEqual(["Me"]);
+    expect(liveFills()).not.toContain(palette.hudFaint);
+  });
+
+  it("pulses the skeleton for as long as it stands, and stops the pulse when it goes", () => {
+    const { store, liveTweens } = setup();
+    store.getState().apply(withReserved([member(ME, "Me")], ["Kaelen"]));
+    expect(liveTweens()).toHaveLength(1);
+    expect(liveTweens()[0].repeat).toBe(-1);
+    store
+      .getState()
+      .apply(withReserved([member(ME, "Me")], [], ME, "declined"));
+    expect(liveTweens()).toEqual([]);
+  });
+
+  it("writes the leader's expiry line on the frames' own tick once expires_at passes", () => {
+    const clock = { now: Date.parse(EXPIRES) - 1 };
+    const { store, frame, said } = setup("field", clock);
+    store.getState().apply(withReserved([member(ME, "Me")], ["Kaelen"]));
+    frame();
+    expect(said).toEqual([]);
+    clock.now = Date.parse(EXPIRES);
+    frame();
+    frame();
+    expect(said).toEqual([
+      { code: "no_answer", text: "No answer from Kaelen." },
+    ]);
+  });
+
+  it("writes nothing on a member's client when the slot lapses", () => {
+    const clock = { now: Date.parse(EXPIRES) + 1 };
+    const { store, frame, said } = setup("hub", clock);
+    store
+      .getState()
+      .apply(
+        withReserved(
+          [member("lead", "Aldric"), member(ME, "Me")],
+          ["Kaelen"],
+          "lead",
+        ),
+      );
+    frame();
+    expect(said).toEqual([]);
+  });
+
+  it("stops ticking once destroyed", () => {
+    const clock = { now: Date.parse(EXPIRES) + 1 };
+    const { store, frames, frame, said } = setup("hub", clock);
+    frames.destroy();
+    store.getState().apply(withReserved([member(ME, "Me")], ["Kaelen"]));
+    frame();
+    expect(said).toEqual([]);
   });
 });

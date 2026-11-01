@@ -22,20 +22,55 @@ export interface PartyMember {
   /** UTC, RFC 3339. */
   joined_at: string;
   where: PartyWhere | string;
-  online: boolean;
+  /** False while the member is away (FS-NCC9J R21); a server that leaves it out means online. */
+  online?: boolean;
+}
+
+/**
+ * An open invite holding a place in the party (FS-NCC9J R21): the client draws it as a skeleton
+ * row. `expires_at` is UTC, RFC 3339, on the server's clock.
+ */
+export interface ReservedSlot {
+  name: string;
+  expires_at: string;
 }
 
 /**
  * The party as it now stands (R21), sent to every member on every change. `size` is the
- * party's cap, not its count: the count is `members.length` (I-R82NV-1 notes).
+ * party's cap, not its count: the count is members plus open invites (FS-NCC9J R10). `reason`
+ * names the change; `sync` is the whole party sent to a player as they are seated on a pod, and
+ * reads like any other update.
  */
 export interface PartyUpdatePayload {
   party_id: string;
   leader_id: string;
   members: PartyMember[];
+  /** One per open invite (FS-NCC9J R21); a server that leaves it out means none. */
+  reserved?: ReservedSlot[];
   size: number;
   reason: string;
   subject_id: string;
+}
+
+/** The party's open invites, none when the update carries no list. */
+export function reservedSlots(party: PartyUpdatePayload): ReservedSlot[] {
+  return party.reserved ?? [];
+}
+
+/**
+ * The line the leader's client writes when an open invite lapses unanswered (FS-NCC9J R27). The
+ * server sends no notice for it (R12); the accepter's `expired` notice is a different line.
+ */
+function noAnswerLine(name: string): { code: string; text: string } {
+  return { code: "no_answer", text: `No answer from ${name}.` };
+}
+
+/** One open invite, told apart from a later invite to the same name by its expiry. */
+const slotKey = (slot: ReservedSlot) => `${slot.name}\u0000${slot.expires_at}`;
+
+/** Away or offline: drawn greyed in the panel and the frames (FS-NCC9J R25). */
+export function memberAway(m: PartyMember): boolean {
+  return m.where === "away" || m.online === false;
 }
 
 /** A refusal or status about this player's party, by code; the client owns the words (R36). */
@@ -88,7 +123,15 @@ function isPartyMember(v: unknown): v is PartyMember {
     typeof v.name === "string" &&
     typeof v.class === "string" &&
     typeof v.where === "string" &&
-    typeof v.online === "boolean"
+    (v.online === undefined || typeof v.online === "boolean")
+  );
+}
+
+function isReservedSlot(v: unknown): v is ReservedSlot {
+  return (
+    isObject(v) &&
+    typeof v.name === "string" &&
+    typeof v.expires_at === "string"
   );
 }
 
@@ -101,7 +144,10 @@ export function isPartyUpdate(payload: unknown): payload is PartyUpdatePayload {
     typeof payload.size === "number" &&
     typeof payload.reason === "string" &&
     Array.isArray(payload.members) &&
-    payload.members.every(isPartyMember)
+    payload.members.every(isPartyMember) &&
+    (payload.reserved === undefined ||
+      (Array.isArray(payload.reserved) &&
+        payload.reserved.every(isReservedSlot)))
   );
 }
 
@@ -208,7 +254,7 @@ export function partyActions(
         where: m.where,
         leader: m.player_id === party.leader_id,
         self,
-        away: m.where === "away" || !m.online,
+        away: memberAway(m),
         kick: onOther,
         transfer: onOther,
       };
@@ -231,6 +277,11 @@ export interface PartyState {
   /** Whole seconds left on an invite's countdown, by the store's own clock: the one clock (R14). */
   secondsLeft: (invite: PendingInvite) => number;
   /**
+   * On the leader's client, says "No answer from <name>." once for each open invite whose
+   * `expires_at` has passed on the store's clock (FS-NCC9J R27). Called every frame.
+   */
+  expireReserved: () => void;
+  /**
    * A `party_update` from the server. The update that removes this player (kicked, left, the
    * party dissolved) is their last one: it no longer lists them, and the party is let go (R21).
    */
@@ -243,7 +294,10 @@ export interface PartyState {
 export interface PartyStoreDeps {
   /** This player's id, as the server keys party members (the member id the socket carries). */
   selfId: () => string | undefined;
-  /** Epoch ms: the invite prompt's countdown runs on this clock (R14). */
+  /**
+   * Epoch ms: the invite prompt's countdown runs on this clock (R14), and the leader's expiry
+   * line reads a reserved slot's `expires_at` against it (FS-NCC9J R27).
+   */
   now?: () => number;
   /** Where a notice's words are said: the chat window's system lines. */
   say?: (line: { code: string; text: string }) => void;
@@ -254,7 +308,21 @@ export function createPartyStore({
   now = Date.now,
   say = (line) => useChatStore.getState().notice(line),
 }: PartyStoreDeps): StoreApi<PartyState> {
-  return createStore<PartyState>()((set) => ({
+  /** The open invites whose expiry line has been said, so each is said once. */
+  let announced = new Set<string>();
+  /** Says the line for each slot that has lapsed, when this player leads `party` (R27). */
+  const announce = (slots: ReservedSlot[], party: PartyUpdatePayload) => {
+    if (!isLeader(party, selfId())) return;
+    const at = now();
+    for (const slot of slots) {
+      const key = slotKey(slot);
+      if (announced.has(key) || !(Date.parse(slot.expires_at) <= at)) continue;
+      announced.add(key);
+      say(noAnswerLine(slot.name));
+    }
+  };
+
+  return createStore<PartyState>()((set, get) => ({
     party: null,
     panelOpen: false,
     invites: [],
@@ -263,9 +331,29 @@ export function createPartyStore({
       const stillIn =
         update.reason !== "dissolved" &&
         update.members.some((m) => m.player_id === me);
+      if (!stillIn) {
+        announced = new Set();
+        set({ party: null });
+        return;
+      }
+      // a slot the server dropped after its expiry, with no one of that name joining, lapsed:
+      // said here when the update outran this client's own tick (R27)
+      const kept = new Set(reservedSlots(update).map(slotKey));
+      const joined = new Set(update.members.map((m) => m.name));
+      const prev = get().party;
+      const dropped = prev
+        ? reservedSlots(prev).filter(
+            (s) => !kept.has(slotKey(s)) && !joined.has(s.name),
+          )
+        : [];
+      announce(dropped, update);
+      announced = new Set([...announced].filter((k) => kept.has(k)));
       // a member answers no more invites: joining one party closes every prompt (R32)
-      if (stillIn) set({ party: update, invites: [] });
-      else set({ party: null });
+      set({ party: update, invites: [] });
+    },
+    expireReserved: () => {
+      const { party } = get();
+      if (party) announce(reservedSlots(party), party);
     },
     receiveInvite: (invite) =>
       set((state) =>
