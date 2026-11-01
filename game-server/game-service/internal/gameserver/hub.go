@@ -40,6 +40,8 @@ type messageHub struct {
 	party partyKeeper
 	// this pod's hub in the presence index, sampled on the loop (FS-R82NV R7)
 	presence presenceTicker
+	// work finished off the loop and handed back to it: a party call's outcome, a lookup's answer
+	jobs loopJobs
 }
 
 // presenceTicker is what the hub needs from the presence keeper: a sample each tick, and
@@ -64,8 +66,7 @@ type partyKeeper interface {
 	tick(ctx context.Context)
 	// the registry stops taking actions as the pod goes; parties live on in Redis (ADR-0036)
 	close()
-	// work finished off the loop, and letters from other pods, both handled on it (R9)
-	jobs() <-chan func()
+	// letters from other pods, handled on the loop (R9)
 	letters() <-chan letter
 	receive(l letter)
 }
@@ -338,7 +339,7 @@ func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*game.Session, er
 	return session, nil
 }
 
-func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer, party partyKeeper, presence presenceTicker) *messageHub {
+func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer, party partyKeeper, presence presenceTicker, jobs loopJobs) *messageHub {
 	return &messageHub{
 		sessionManager: sessionManager,
 		sessions:       make(map[string]*game.Session),
@@ -349,6 +350,7 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 		chat:           chat,
 		party:          party,
 		presence:       presence,
+		jobs:           jobs,
 	}
 }
 
@@ -828,8 +830,9 @@ func (h *messageHub) Run(ctx context.Context) {
 			h.party.tick(ctx)
 			h.presence.tick()
 
-		// a party lookup answered, or a letter that could not be sent (FS-R82NV R10, R12)
-		case job := <-h.party.jobs():
+		// work finished off the loop: a party call's outcome, a lookup answered, a letter that
+		// could not be sent
+		case job := <-h.jobs:
 			job()
 
 		// a letter from another pod's party (FS-R82NV R9)
