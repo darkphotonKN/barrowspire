@@ -87,6 +87,16 @@ const (
 	// on, with no payload; answered by world_handoff { addr, hub: true } or a notice.
 	// FS-NCC9J §Requirements 18.
 	ActionPartyTravel Action = "party_travel"
+	// ActionPartyEnter is the leader at the Spire's door asking to take the whole party down, with
+	// no payload; answered by party_ready_check or a notice. FS-BJNYC §Requirements 3–6.
+	ActionPartyEnter Action = "party_enter"
+	// ActionPartyReady is a member answering an open ready check, as { "check_id", "accept" }.
+	// FS-BJNYC §Requirements 9.
+	ActionPartyReady Action = "party_ready"
+	// ActionPartyReadyCheck is a ready check as it now stands, to every member of it, as
+	// { "check_id", "leader_id", "expires_in_ms", "members": [{ "player_id", "name", "state" }],
+	// "outcome", "reason"?, "names"? }. FS-BJNYC §Requirements 8.
+	ActionPartyReadyCheck Action = "party_ready_check"
 
 	// system actions
 	ActionError          Action = "error"
@@ -167,13 +177,59 @@ const (
 	PartyNoticeAlreadyInParty PartyNoticeCode = "already_in_party"
 	PartyNoticePodFull        PartyNoticeCode = "pod_full"
 	PartyNoticePending        PartyNoticeCode = "pending"
-	// PartyNoticeDelving: the invite's target is in a run, so is never asked. FS-NCC9J R10.
-	PartyNoticeDelving PartyNoticeCode = "delving"
+	// PartyNoticeInRun: the invite's target is in a run, so is never asked. FS-NCC9J R10.
+	PartyNoticeInRun PartyNoticeCode = "in_run"
 
 	// PartyNoticeUnavailable: Redis cannot be reached, so the party cannot change. FS-NCC9J R8.
 	PartyNoticeUnavailable PartyNoticeCode = "unavailable"
 	// PartyNoticeLeaderAway: the leader is away, so there is nobody to travel to. FS-NCC9J R18.
 	PartyNoticeLeaderAway PartyNoticeCode = "leader_away"
+
+	// Refusals of party_enter (FS-BJNYC R5), after not_member, not_leader and locked.
+	// PartyNoticeChecking: the party already has a ready check open.
+	PartyNoticeChecking PartyNoticeCode = "checking"
+	// PartyNoticeNotAtGate: the leader is not standing at the Spire's door.
+	PartyNoticeNotAtGate PartyNoticeCode = "not_at_gate"
+	// PartyNoticeNotInTown: members not seated in the leader's pod's hub, as { "names" } in join
+	// order.
+	PartyNoticeNotInTown PartyNoticeCode = "not_in_town"
+)
+
+// ReadyCheckState is one member's answer on a party_ready_check. FS-BJNYC §Requirements 8.
+type ReadyCheckState string
+
+const (
+	ReadyCheckWaiting  ReadyCheckState = "waiting"
+	ReadyCheckAccepted ReadyCheckState = "accepted"
+	ReadyCheckDeclined ReadyCheckState = "declined"
+)
+
+// ReadyCheckOutcome is where a party_ready_check stands. FS-BJNYC §Requirements 8.
+type ReadyCheckOutcome string
+
+const (
+	ReadyCheckOpen      ReadyCheckOutcome = "open"
+	ReadyCheckStarted   ReadyCheckOutcome = "started"
+	ReadyCheckCancelled ReadyCheckOutcome = "cancelled"
+)
+
+// ReadyCheckReason is why a ready check was cancelled; the names it concerns go with it.
+// FS-BJNYC §Requirements 10, 11.
+type ReadyCheckReason string
+
+const (
+	// a member declined, named
+	ReadyCheckReasonDeclined ReadyCheckReason = "declined"
+	// 30 s passed; everyone still waiting is named
+	ReadyCheckReasonTimeout ReadyCheckReason = "timeout"
+	// a member left the town (a field, a run, travel, the roster), named
+	ReadyCheckReasonLeft ReadyCheckReason = "left"
+	// a member disconnected, named
+	ReadyCheckReasonDisconnected ReadyCheckReason = "disconnected"
+	// the party's membership or leader changed; no names
+	ReadyCheckReasonChanged ReadyCheckReason = "changed"
+	// gear unreadable (named), or Redis down or the run not built (no names)
+	ReadyCheckReasonFailed ReadyCheckReason = "failed"
 )
 
 // PartyUpdateReason is why a party_update was sent. FS-R82NV §Requirements 21.

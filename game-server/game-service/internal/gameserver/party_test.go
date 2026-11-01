@@ -320,7 +320,7 @@ func TestPartyInvite_Unanswered_ExpiresAtSixtySeconds(t *testing.T) {
 
 // Every refusal an invite can meet, each a party_notice by code, in order: the
 // sender's own standing first (not in a run, the leader, not queued), then the rest of
-// FS-NCC9J R10's list (delving after not_found). Rows that would meet two refusals prove the
+// FS-NCC9J R10's list (in_run after not_found). Rows that would meet two refusals prove the
 // earlier one wins. Nothing reaches the named target. FS-R82NV R11, R12, R16; Edge States
 // "Invitee is in a field or run", "Invitee is queued".
 func TestPartyInvite_Refusals_InOrder(t *testing.T) {
@@ -415,7 +415,7 @@ func TestPartyInvite_Refusals_InOrder(t *testing.T) {
 				r.intoRun(t, kaelen)
 				return conn, inbox, "kaelen"
 			},
-			wantCode: "delving",
+			wantCode: "in_run",
 			wantName: "Kaelen",
 		},
 		{
@@ -465,10 +465,10 @@ func TestPartyInvite_Refusals_InOrder(t *testing.T) {
 	}
 }
 
-// An invite to a player delving on this pod is refused delving before anything is written: the
+// An invite to a player delving on this pod is refused in_run before anything is written: the
 // target is never asked, no slot is reserved, and an inviter with no party is left in none
-// (FS-NCC9J R10 amended; AC "An invite to a player in a run is refused delving").
-func TestPartyInvite_TargetInARun_DelvingAndNothingFormed(t *testing.T) {
+// (FS-NCC9J R10 amended; AC "An invite to a player in a run is refused in_run").
+func TestPartyInvite_TargetInARun_InRunAndNothingFormed(t *testing.T) {
 	rig := newPartyRig(t)
 	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
 	_, _, kaelenInbox := rig.inRun(t, "Kaelen")
@@ -476,7 +476,7 @@ func TestPartyInvite_TargetInARun_DelvingAndNothingFormed(t *testing.T) {
 	sendParty(rig.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Kaelen"})
 
 	refused := awaitParty(t, wrenInbox, partyNoticeAction, "Wren")
-	assert.Equal(t, "delving", refused.Payload["code"])
+	assert.Equal(t, "in_run", refused.Payload["code"])
 	assert.Equal(t, "Kaelen", refused.Payload["name"])
 	assertNoParty(t, kaelenInbox, partyInviteAction, "Kaelen: never asked")
 	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren: no party formed, no slot reserved")

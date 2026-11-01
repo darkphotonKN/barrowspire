@@ -425,8 +425,8 @@ func twoPartyPodsSized(t *testing.T, size int) (a, b *partyPod, mini *miniredis.
 
 // An invite from pod A to a player on pod B meets FS-NCC9J R10's refusals in order: the
 // inviter's own standing first (locked, not_leader, queued, party_full, self), then the target's
-// (not_found, delving, already_in_party, pending). Five rows meet two refusals and prove the
-// earlier wins: locked before not_leader, delving before already_in_party, not_leader before
+// (not_found, in_run, already_in_party, pending). Five rows meet two refusals and prove the
+// earlier wins: locked before not_leader, in_run before already_in_party, not_leader before
 // already_in_party, party_full before self, already_in_party before pending (AC 3).
 func TestPartyInvite_CrossPod_Refusals_InOrder(t *testing.T) {
 	tests := []struct {
@@ -465,7 +465,7 @@ func TestPartyInvite_CrossPod_Refusals_InOrder(t *testing.T) {
 				delvingThere(t, b, mini, marl)
 				return conn, inbox, "marl"
 			},
-			wantCode: "delving",
+			wantCode: "in_run",
 			wantName: "Marl",
 		},
 		{
@@ -650,10 +650,10 @@ func TestPartyInvite_CrossPod_DelvingDuringLookup_Locked(t *testing.T) {
 	assert.False(t, mini.Exists(pointerKey(wren.ID)), "Wren leads no party")
 }
 
-// An invite from pod A to a player delving on pod B is refused delving, read from the presence
+// An invite from pod A to a player delving on pod B is refused in_run, read from the presence
 // entry the lookup made: Marl is never asked, no slot is reserved, and Wren is left in no party,
 // the invite script never run (FS-NCC9J R10 amended; AC "An invite to a player in a run…").
-func TestPartyInvite_CrossPod_TargetInARun_DelvingAndNothingFormed(t *testing.T) {
+func TestPartyInvite_CrossPod_TargetInARun_InRunAndNothingFormed(t *testing.T) {
 	a, b, mini := twoPartyPods(t)
 	wren, wrenConn, wrenInbox := seatedThere(t, a, mini, "Wren")
 	marl, _, marlInbox := seatedThere(t, b, mini, "Marl")
@@ -662,7 +662,7 @@ func TestPartyInvite_CrossPod_TargetInARun_DelvingAndNothingFormed(t *testing.T)
 	sendParty(a.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Marl"})
 
 	refused := awaitParty(t, wrenInbox, partyNoticeAction, "Wren")
-	assert.Equal(t, "delving", refused.Payload["code"])
+	assert.Equal(t, "in_run", refused.Payload["code"])
 	assert.Equal(t, "Marl", refused.Payload["name"])
 	assertNoParty(t, marlInbox, partyInviteAction, "Marl, delving on pod B: never asked")
 	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren: no party formed, no slot reserved")
@@ -671,7 +671,7 @@ func TestPartyInvite_CrossPod_TargetInARun_DelvingAndNothingFormed(t *testing.T)
 
 // A player invited on pod B in the village who goes down into a run within the invite's minute
 // still holds the prompt, but accepting there is refused locked until FS-BJNYC gives every run a
-// party: the safety net behind delving (FS-NCC9J R14 amended; AC 2; Edge States "Invited in the
+// party: the safety net behind in_run (FS-NCC9J R14 amended; AC 2; Edge States "Invited in the
 // village, then into a run within 60 s").
 func TestPartyAccept_CrossPod_EnteredARunAfterTheInvite_Locked(t *testing.T) {
 	a, b, mini := twoPartyPods(t)

@@ -62,6 +62,12 @@ type partyKeeper interface {
 	kick(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	transfer(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	travel(ctx context.Context, traveller *types.Player, conn *websocket.Conn)
+	// whether the party cache knows the player as a party member: read on the loop, no Redis call
+	// (FS-BJNYC R1)
+	inParty(playerID uuid.UUID) bool
+	// the leader taking the party down, and a member's answer to its ready check (FS-BJNYC R3–R13)
+	enter(ctx context.Context, leader *types.Player, conn *websocket.Conn)
+	ready(ctx context.Context, member *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	// the registry's clock ticks, swept on this loop like everything else it holds
 	ticks() <-chan time.Time
 	tick(ctx context.Context)
@@ -142,6 +148,11 @@ const (
 	startSoloNoCharacter = "Enter the hub with a character first."
 	startSoloQueued      = "Leave the queue first."
 )
+
+// partyEntersTogether refuses find_game and start_solo from a party member: a
+// party goes down the Spire together, never through the queue nor alone.
+// FS-BJNYC §Requirements 1, 2.
+const partyEntersTogether = "Your party enters together."
 
 // awayFromSpireGate refuses find_game and start_solo from anyone not standing
 // at the Spire's door: the Spire is entered there, not from across the hub.
@@ -455,6 +466,14 @@ func (h *messageHub) Run(ctx context.Context) {
 					continue
 				}
 
+				// a party enters together, never through the queue; the party
+				// cache answers, on this loop. FS-BJNYC §Requirements 1.
+				if h.party.inParty(player.ID) {
+					slog.Debug("Refusing find_game: in a party", "player_id", player.ID)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, partyEntersTogether)
+					continue
+				}
+
 				// the Spire is entered at its door; the queue below is untouched.
 				// FS-0XMCP §Requirements 12, 14.
 				if !h.sessionManager.AtSpireGate(player.ID) {
@@ -525,6 +544,14 @@ func (h *messageHub) Run(ctx context.Context) {
 
 				// already delving: the run they are in is the answer
 				if err := h.handlePlayerExistingGame(player, clientPackage); err == nil {
+					continue
+				}
+
+				// a party member, a party of one included, enters by party_enter;
+				// find_game's place, on the party cache. FS-BJNYC §Requirements 2.
+				if h.party.inParty(player.ID) {
+					slog.Debug("Refusing start_solo: in a party", "player_id", player.ID)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, partyEntersTogether)
 					continue
 				}
 
@@ -745,6 +772,34 @@ func (h *messageHub) Run(ctx context.Context) {
 					continue
 				}
 				h.party.travel(ctx, player, clientPackage.Conn)
+
+			// The leader at the Spire's door taking the whole party down. A leader
+			// with no character, or already in a run, is answered as start_solo
+			// answers them; the rest is the party's. FS-BJNYC §Requirements 3–6.
+			case constants.ActionPartyEnter:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_enter from a connection with no player")
+					continue
+				}
+				if player.Character.ID == uuid.Nil {
+					slog.Warn("Refusing party_enter: no character in play", "player_id", player.ID)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, startSoloNoCharacter)
+					continue
+				}
+				if err := h.handlePlayerExistingGame(player, clientPackage); err == nil {
+					continue
+				}
+				h.party.enter(ctx, player, clientPackage.Conn)
+
+			// A member answering their party's ready check. FS-BJNYC §Requirements 9.
+			case constants.ActionPartyReady:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_ready from a connection with no player")
+					continue
+				}
+				h.party.ready(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
 
 			// The target declining an invite. FS-R82NV §Requirements 15.
 			case constants.ActionPartyDecline:
