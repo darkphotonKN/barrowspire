@@ -3,9 +3,14 @@ id: I-R82NV-4
 status: open
 implements: FS-R82NV
 blocked_by: [I-R82NV-3]
-labels: [ready-for-agent]
+labels: []
 title: "FS-R82NV slice 4: accept across pods — hub handoff and arrival (game-service)"
 ---
+
+> **Superseded by [FS-NCC9J](../specs/NCC9J-party-membership-across-pods.md) (ADR-0036), 2026-11-01.**
+> Membership now spans pods and accepting moves nobody; this slice's hub handoff on accept,
+> expected arrival, recall and party-pod grace no longer apply. Not to be picked up: its work, where
+> it survives, is in FS-NCC9J's issues (and FS-MCYWK for reconnects).
 Implements FS-R82NV §Requirements R16 (other-pod branch), R17, R18
 
 **Lane: human (HITL).**
