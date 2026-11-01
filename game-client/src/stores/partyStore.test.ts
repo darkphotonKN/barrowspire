@@ -59,14 +59,15 @@ describe("partyActions (FS-R82NV R29: greyed by role and by lock)", () => {
     ]);
   });
 
-  // FS-NCC9J R23: the leader invites from any world; the lock still holds leave
+  // FS-NCC9J R23: the leader invites from the town and a field; in a run the lock holds the
+  // invite as well as leave, as the server refuses it there
   it.each([
     ["leader in the hub", ME, "hub", { invite: true, leave: true }],
     ["member in the hub", ALLY, "hub", { invite: false, leave: true }],
     ["leader afield", ME, "field", { invite: true, leave: true }],
     ["member afield", ALLY, "field", { invite: false, leave: true }],
-    ["leader delving (locked)", ME, "run", { invite: true, leave: false }],
-    ["member delving (locked)", ALLY, "run", { invite: false, leave: false }],
+    ["leader in a run (locked)", ME, "run", { invite: false, leave: false }],
+    ["member in a run (locked)", ALLY, "run", { invite: false, leave: false }],
   ] as const)("%s", (_case, self, world, want) => {
     const actions = partyActions(update(), self, world);
     expect({ invite: actions.invite, leave: actions.leave }).toEqual(want);
@@ -89,7 +90,7 @@ describe("partyActions (FS-R82NV R29: greyed by role and by lock)", () => {
     });
   });
 
-  it.each(["field", "run", null] as const)(
+  it.each(["field", null] as const)(
     "should offer a player in no party Create party and the invite in %s too (FS-NCC9J R23)",
     (world) => {
       const actions = partyActions(null, ME, world);
@@ -99,6 +100,15 @@ describe("partyActions (FS-R82NV R29: greyed by role and by lock)", () => {
       });
     },
   );
+
+  it("should grey Create party and the invite for a player in no party in a run (FS-NCC9J R23)", () => {
+    const actions = partyActions(null, ME, "run");
+    expect({
+      locked: actions.locked,
+      create: actions.create,
+      invite: actions.invite,
+    }).toEqual({ locked: true, create: false, invite: false });
+  });
 
   it("should not offer Create party to anyone already in a party", () => {
     expect(partyActions(update(), ME, "hub").create).toBe(false);

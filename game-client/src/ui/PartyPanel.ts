@@ -2,7 +2,7 @@
  * The party panel (FS-R82NV R28–R30): T opens and closes it in the hub, fields and runs. It lists
  * the party from the party store (name, class, where, the leader marked, away members greyed)
  * and holds its actions: Create party for a player in no party, Invite (a DOM field with a button
- * beside it, both live in every world, FS-NCC9J R23), Kick and Transfer on each other member for the leader,
+ * beside it, both live in the town and a field and greyed in a run, FS-NCC9J R23), Kick and Transfer on each other member for the leader,
  * Leave for any member, and a reserved slot for the loot rule (FS-V780R). Actions the server would refuse are greyed by role and by lock (`partyActions`).
  *
  * A carved panel on the game palette at the HUD's depth. The open state lives in the store, so
