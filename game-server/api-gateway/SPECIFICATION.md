@@ -57,9 +57,9 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] Public listing browse and read → FS-8EGFA
 - [ ] Accept the leading bid → FS-NXP1W
 - [ ] Buy out a listing → FS-NXP1W
-- [ ] Buyout price on listings → FS-9XKS6
+- [x] Buyout price on listings → FS-9XKS6
 - [ ] Affixes and item level in item summaries → FS-4R9M9
-- [ ] Read my bids → FS-EYQ8K
+- [x] Read my bids → FS-EYQ8K
 
 ### Items
 
@@ -67,7 +67,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 
 ### Characters
 
-- [ ] Character level and experience read → FS-BDA7X
+- [x] Character level and experience read → FS-BDA7X
 
 ### Chat
 

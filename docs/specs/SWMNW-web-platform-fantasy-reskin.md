@@ -1,6 +1,6 @@
 # FS-SWMNW: Fantasy-medieval presentation on the web platform
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "## Capabilities" → "### Presentation" → "Fantasy-medieval presentation on the web platform" → this FS · Art SSOT: [`game-client/docs/design-guideline.md`](../../game-client/docs/design-guideline.md) Part II · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) · Sibling: [FS-W6BP1](W6BP1-game-canvas-fantasy-reskin.md) (game canvas) · Related ADRs: [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (token-only styling, fence-enforced)
+> Status: shipped · SPECIFICATION.md: `game-client/SPECIFICATION.md` "## Capabilities" → "### Presentation" → "Fantasy-medieval presentation on the web platform" → this FS · Art SSOT: [`game-client/docs/design-guideline.md`](../../game-client/docs/design-guideline.md) Part II · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) · Sibling: [FS-W6BP1](W6BP1-game-canvas-fantasy-reskin.md) (game canvas) · Related ADRs: [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (token-only styling, fence-enforced)
 
 ## Summary
 

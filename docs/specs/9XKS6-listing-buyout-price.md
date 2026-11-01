@@ -1,6 +1,6 @@
 # FS-9XKS6: Listing buyout price
 
-> Status: work-order · SPECIFICATION.md: `game-server/marketplace-service/SPECIFICATION.md` "### Listings & bids" → "Listing buyout price"; `game-server/api-gateway/SPECIFICATION.md` "### Marketplace" → "Buyout price on listings" → this FS · Related: [FS-NXP1W](NXP1W-auction-settlement-saga.md) Req 4 (the Buyout trigger that consumes this price) · Related ADRs: none new
+> Status: shipped · SPECIFICATION.md: `game-server/marketplace-service/SPECIFICATION.md` "### Listings & bids" → "Listing buyout price"; `game-server/api-gateway/SPECIFICATION.md` "### Marketplace" → "Buyout price on listings" → this FS · Related: [FS-NXP1W](NXP1W-auction-settlement-saga.md) Req 4 (the Buyout trigger that consumes this price) · Related ADRs: none new
 
 > Terms follow `game-server/marketplace-service/CONTEXT.md`. Decisions were made by the agent
 > under the user's standing instruction to decide without asking; none were challenged

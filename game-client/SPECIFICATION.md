@@ -52,7 +52,7 @@ server state and sends intents. ✅
 - [x] Reconnect into an in-progress run
 - [ ] Monsters with level and elite nameplates → FS-77AB6
 - [ ] Affixes and item level in item views → FS-4R9M9
-- [ ] Floor transitions → FS-F6F88
+- [x] Floor transitions → FS-F6F88
 - [x] Spectate living teammates after resolving → FS-QPDKN
 - [x] Leave a run early after dying → FS-QPDKN
 - [x] Hold the run result until the player returns → FS-QPDKN
@@ -60,16 +60,16 @@ server state and sends intents. ✅
 - [x] Health and class resource bars on the HUD → FS-8AY7S
 - [x] Ability card on the HUD → FS-8AY7S
 - [x] Shadow Shot aimed by holding → FS-JTNPR
-- [ ] Potion count and drink key on the HUD → FS-P9G8R
+- [x] Potion count and drink key on the HUD → FS-P9G8R
 - [ ] Allocated pickup notices → FS-V780R
 - [x] Unsafe marking on run finds → FS-18Z5F
 
 ### Character
 
-- [ ] Character level and experience display → FS-BDA7X
+- [x] Character level and experience display → FS-BDA7X
 - [x] Mercenary class → FS-MAMHR
-- [ ] Gear and bag overlay → FS-HRH2J
-- [ ] Character stats overlay → FS-HRH2J
+- [x] Gear and bag overlay → FS-HRH2J
+- [x] Character stats overlay → FS-HRH2J
 
 ### Billing
 
@@ -78,7 +78,7 @@ server state and sends intents. ✅
 
 ### Presentation
 
-- [ ] Fantasy-medieval presentation on the web platform → FS-SWMNW
+- [x] Fantasy-medieval presentation on the web platform → FS-SWMNW
 - [x] Bone & Soot presentation on the web platform → FS-8TCN2
 - [x] Bone & Soot presentation on the canvas menus → FS-none
 - [ ] Fantasy-medieval presentation in the game canvas → FS-W6BP1
@@ -87,7 +87,7 @@ server state and sends intents. ✅
 - [x] Pre-rendered character and creature art → FS-2325V
 - [x] Light-map lighting with placed light sources → FS-2325V
 - [x] Container-open presentation → FS-2325V
-- [ ] Distinct look per container kind → FS-1D6BX
+- [x] Distinct look per container kind → FS-1D6BX
 - [ ] Expanded baked enemy roster → FS-Q14EV
 - [x] Hub town props and dressing → FS-KYPQ9
 - [x] Skill and combat effects → FS-none
@@ -101,9 +101,9 @@ server state and sends intents. ✅
 
 ### Hub
 
-- [ ] Hub scene → FS-29KSH
-- [ ] Move between hub and run → FS-29KSH
-- [ ] Delve entry from the hub → FS-29KSH
+- [x] Hub scene → FS-29KSH
+- [x] Move between hub and run → FS-29KSH
+- [x] Delve entry from the hub → FS-29KSH
 - [ ] ~Loadout access from the hub~ → superseded by FS-HRH2J
 - [x] Function NPC markers → FS-MRZH7
 - [ ] Follow a handoff to another server → FS-K2HKP
@@ -135,9 +135,9 @@ server state and sends intents. ✅
 
 ### Chat
 
-- [ ] In-game chat window → FS-WJGFJ
-- [ ] Channel filters on one chat stream → FS-WJGFJ
-- [ ] Send to the world channel from the chat window → FS-5SH4G
+- [x] In-game chat window → FS-WJGFJ
+- [x] Channel filters on one chat stream → FS-WJGFJ
+- [x] Send to the world channel from the chat window → FS-5SH4G
 - [ ] Send to the party channel from the chat window → FS-XGW7H
 - [ ] Mute a player → FS-4HEG7
 - [ ] Report a chat message → FS-4HEG7
@@ -151,10 +151,10 @@ server state and sends intents. ✅
 - [ ] Affixes and item level in listing detail → FS-4R9M9
 - [ ] Buy out a listing → FS-49Z37
 - [ ] Accept the leading bid on my listing → FS-49Z37
-- [ ] Set a buyout price when listing → FS-49Z37
-- [ ] Bids stay below a listing's buyout price → FS-49Z37
-- [ ] A refused bid retries under a fresh key → FS-49Z37
-- [ ] View and withdraw my bids → FS-EYQ8K
+- [x] Set a buyout price when listing → FS-49Z37
+- [x] Bids stay below a listing's buyout price → FS-49Z37
+- [x] A refused bid retries under a fresh key → FS-49Z37
+- [x] View and withdraw my bids → FS-EYQ8K
 
 ### Deployment
 

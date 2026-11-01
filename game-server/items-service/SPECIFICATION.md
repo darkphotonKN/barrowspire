@@ -10,7 +10,7 @@
 
 ## Catalogue
 
-- [ ] Fantasy base-item catalogue and rarity tiers → FS-F8T3H
+- [x] Fantasy base-item catalogue and rarity tiers → FS-F8T3H
 - [ ] Item levels and level-gated bases → FS-4R9M9
 - [ ] Fabled unique catalogue → FS-4R9M9
 - [ ] Ring item type → FS-4R9M9
@@ -31,4 +31,4 @@
 
 - [x] Deduplicated extracted-items consumption → FS-BVM9H
 - [x] Settle checked-out items at run end → FS-18Z5F
-- [ ] Consumed items removed at extraction → FS-P9G8R
+- [x] Consumed items removed at extraction → FS-P9G8R

@@ -1,6 +1,6 @@
 # FS-F8T3H: Fantasy loot and dev seed
 
-> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Gameplay actions" → "Rarity-rolled loot with themed names and type-flavoured stats"; `game-server/items-service/SPECIFICATION.md` "## Catalogue" → "Fantasy base-item catalogue and rarity tiers" → this FS · Related ADRs: [ADR-0014](../adr/0014-account-id-claim-is-eventually-consistent-and-fails-closed.md) (account-id claim is eventually consistent — affects the seed script) · Consumer: [FS-NXP1W](NXP1W-auction-settlement-saga.md) (settlement saga testing needs seeded players with owned instances and gold) · Vocabulary: [`items-service/CONTEXT.md`](../../game-server/items-service/CONTEXT.md)
+> Status: shipped · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Gameplay actions" → "Rarity-rolled loot with themed names and type-flavoured stats"; `game-server/items-service/SPECIFICATION.md` "## Catalogue" → "Fantasy base-item catalogue and rarity tiers" → this FS · Related ADRs: [ADR-0014](../adr/0014-account-id-claim-is-eventually-consistent-and-fails-closed.md) (account-id claim is eventually consistent — affects the seed script) · Consumer: [FS-NXP1W](NXP1W-auction-settlement-saga.md) (settlement saga testing needs seeded players with owned instances and gold) · Vocabulary: [`items-service/CONTEXT.md`](../../game-server/items-service/CONTEXT.md)
 
 ## Summary
 
