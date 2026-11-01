@@ -200,7 +200,8 @@ const ABILITY_CARD_MARGIN = LEAVE_BUTTON_MARGIN;
 const NAME_GAP = 5;
 /**
  * A teammate's overhead health bar (FS-8AY7S req 27): the monsters' bar, health only, sat
- * `gap` px over the marker base. Their name, shown on hover, lifts clear of it.
+ * `gap` px over the marker base. Their name lifts clear of it. Drawn only while the scene's
+ * `showTeammateBars` switch is on, which it is not for now (FS-CH21F R14).
  */
 const TEAMMATE_BAR = { width: 38, height: 4, gap: 2 } as const;
 const NAME_OVER_BAR_GAP = 2;
@@ -359,6 +360,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private playerLegs?: Phaser.GameObjects.Graphics;
   /** The health bar over each teammate's head, by player id (FS-8AY7S req 27). */
   private teammateHealthBars: Map<string, TeammateBar> = new Map();
+  /**
+   * Whether those bars are drawn at all. Off for now: teammates' health lives in the party
+   * frames, and FS-CH21F R14 supersedes FS-8AY7S req 27 with no overhead bars over players.
+   */
+  private showTeammateBars = false;
   /** The warm pool the player carries. Built once; only ever repositioned. */
   private otherPlayersLegs: Map<string, Phaser.GameObjects.Graphics> =
     new Map();
@@ -380,7 +386,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private playerNameText?: Phaser.GameObjects.Text;
   private otherPlayersNameTexts: Map<string, Phaser.GameObjects.Text> =
     new Map();
-  private hoveredPlayerId?: string; // survives game state rerenders
 
   // HP change tracking for damage flash
   private otherPlayersPrevHp: Map<string, number> = new Map();
@@ -715,7 +720,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.otherPlayersAnim.clear();
     this.otherPlayersNameTexts.clear();
     this.otherPlayersPrevHp.clear();
-    this.hoveredPlayerId = undefined;
 
     this.buildings = [];
     this.currentBuilding = null;
@@ -3374,9 +3378,6 @@ export class BarrowspireScene extends Phaser.Scene {
         // remove their health bar
         this.teammateHealthBars.get(playerId)?.graphics.destroy();
         this.teammateHealthBars.delete(playerId);
-        if (this.hoveredPlayerId === playerId) {
-          this.hoveredPlayerId = undefined;
-        }
       }
     });
 
@@ -3403,10 +3404,11 @@ export class BarrowspireScene extends Phaser.Scene {
         }
         this.settleDustOnDeath(sprite, playerData.id, () => this.otherPlayersPos.get(playerData.id));
 
-        // Hover shows their name, hit-tested on the ground they stand on, not their
-        // sprite's bounds (FS-2325V §C.6): the server's collision radius around their
-        // world position. Another player is an ally (FS-77AB6 req 40): no strike-mark,
-        // no click-to-attack.
+        // Their pointer target is the ground they stand on, not their sprite's bounds
+        // (FS-2325V §C.6): the server's collision radius around their world position.
+        // Another player is an ally (FS-77AB6 req 40): no strike-mark, no click-to-attack.
+        // Nothing listens to it now, but it stays: removing it would change which object a
+        // click over them lands on.
         sprite.setInteractive({
           hitArea: {},
           hitAreaCallback: footprintHitArea(
@@ -3425,7 +3427,7 @@ export class BarrowspireScene extends Phaser.Scene {
         this.otherPlayersWalkPhase.set(playerData.id, 0);
         if (!anim.baked) this.drawLegs(legs, sprite.x, sprite.y, "se", 0, false, palette.hudLabel);
 
-        // create name text (hidden until hover), in the ally channel (FS-77AB6 req 40)
+        // their name, always over their head in the ally channel (FS-77AB6 req 40, FS-CH21F R13)
         const nameText = this.add.text(
           sprite.x,
           (markerBase(sprite, anim.crown, false) ?? sprite.y) - NAME_GAP,
@@ -3441,19 +3443,7 @@ export class BarrowspireScene extends Phaser.Scene {
         );
         nameText.setOrigin(0.5, 1);
         nameText.setDepth(MARKER_DEPTH.name);
-        nameText.setVisible(false);
         this.otherPlayersNameTexts.set(playerData.id, nameText);
-
-        // hover to show their name; the cursor stays the hand
-        const pid = playerData.id;
-        sprite.on("pointerover", () => {
-          this.hoveredPlayerId = pid;
-        });
-        sprite.on("pointerout", () => {
-          if (this.hoveredPlayerId === pid) {
-            this.hoveredPlayerId = undefined;
-          }
-        });
       }
 
       // 設定目標位置，在 update() 中平滑移動
@@ -3473,15 +3463,18 @@ export class BarrowspireScene extends Phaser.Scene {
         this.otherPlayersPrevHp.set(playerData.id, curHp);
       }
 
-      // their overhead health bar: none over a corpse, an escaped teammate, or in the hub
-      let bar = this.teammateHealthBars.get(playerData.id);
-      if (!bar) {
-        const graphics = this.add.graphics();
-        graphics.setDepth(MARKER_DEPTH.bar);
-        bar = { graphics, fill: null };
-        this.teammateHealthBars.set(playerData.id, bar);
+      // their overhead health bar, while switched on: none over a corpse, an escaped
+      // teammate, or in the hub
+      if (this.showTeammateBars) {
+        let bar = this.teammateHealthBars.get(playerData.id);
+        if (!bar) {
+          const graphics = this.add.graphics();
+          graphics.setDepth(MARKER_DEPTH.bar);
+          bar = { graphics, fill: null };
+          this.teammateHealthBars.set(playerData.id, bar);
+        }
+        bar.fill = teammateHealthFill(worldType, playerData);
       }
-      bar.fill = teammateHealthFill(worldType, playerData);
       this.markTeammate(playerData.id);
     });
   }
@@ -4539,22 +4532,24 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * A teammate's markers where their figure now stands: the health bar over their head (FS-8AY7S
-   * req 27), and their name over it while hovered. Neither over a baked corpse.
+   * Another player's markers where their figure now stands: their name, always (FS-CH21F R13),
+   * at the marker base, or over their health bar (FS-8AY7S req 27) when that is switched on.
+   * Neither over a baked corpse.
    */
   private markTeammate(playerId: string): void {
     const sprite = this.otherPlayers.get(playerId);
     if (!sprite) return;
     const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
     const base = markerBase(sprite, this.otherPlayersAnim.get(playerId)?.crown, dead);
-    const bar = this.teammateHealthBars.get(playerId);
+    // the switch alone decides, not whether a bar happens to be in the map
+    const bar = this.showTeammateBars ? this.teammateHealthBars.get(playerId) : undefined;
     const barTop = bar ? this.drawTeammateBar(bar, sprite.x, base) : null;
 
     const nameText = this.otherPlayersNameTexts.get(playerId);
     if (nameText) {
       if (barTop !== null) nameText.setPosition(sprite.x, barTop - 1 - NAME_OVER_BAR_GAP);
       else if (base !== null) nameText.setPosition(sprite.x, base - NAME_GAP);
-      nameText.setVisible(this.hoveredPlayerId === playerId && base !== null);
+      nameText.setVisible(base !== null);
     }
   }
 

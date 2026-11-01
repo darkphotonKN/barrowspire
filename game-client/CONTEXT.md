@@ -263,8 +263,9 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Classes and abilities").
 - **Resource bars**: the player's own Health bar and, below it, their class resource bar at the
   bottom left of a run or a field world, each labelled with its own name ("Health:", "Mana:",
-  "Stamina:", "Parry:"). The mercenary's bar is drawn as 3 pips. Teammates show an overhead health bar only;
-  the player has no bar over their own head (FS-8AY7S).
+  "Stamina:", "Parry:"). The mercenary's bar is drawn as 3 pips. There are no overhead bars over
+  other players for now: teammates' health and resource live in the party frames (FS-CH21F R14).
+  The player has no bar over their own head (FS-8AY7S).
 
 - **Aim line**: the line an archer sees while holding to aim Shadow Shot, faint until a release
   would fire. Drawn for the aiming player only; the server never knows about it (ADR-0030).
