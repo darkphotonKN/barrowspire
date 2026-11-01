@@ -122,6 +122,17 @@ describe("LightMap short-lived sources (FS-KYPQ9 §C)", () => {
     expect(light.alive).toBe(true);
   });
 
+  it("should keep a hidden source but stamp nothing for it until it is shown (FS-9PN7X §C.2)", () => {
+    const light = map.addTransient({ x: 300, y: 200, ...pool });
+    light.hidden = true;
+    frame(0);
+    expect(fake.stamps).toEqual([]);
+    expect(light.alive).toBe(true);
+    light.hidden = false;
+    frame(16);
+    expect(fake.stamps).toEqual([expect.objectContaining({ x: 300, y: 200 })]);
+  });
+
   it("should stamp nothing for it once removed", () => {
     const light = map.addTransient({ x: 300, y: 200, ...pool });
     frame(0);
@@ -215,5 +226,22 @@ describe("LightMap short-lived sources (FS-KYPQ9 §C)", () => {
     frame(300);
     expect(stampedAt()).toEqual(["400,400"]);
     expect(c.alive).toBe(true);
+  });
+});
+
+describe("LightMap fixed sources removed one at a time (FS-9PN7X §D.6)", () => {
+  const pool = { radius: 100, color: BARROW_HEX.ember, intensity: 0.8, flicker: 0, seed: 1 };
+
+  it("should stamp a removed fixed source no more, and leave the rest and an unknown source be", () => {
+    const fake = fakeScene();
+    const map = new LightMap(fake.scene as unknown as Scene, BARROW_HEX.slate);
+    const kept = { x: 100, y: 100, ...pool };
+    const gone = { x: 200, y: 200, ...pool };
+    map.add(kept);
+    map.add(gone, () => true);
+    map.remove(gone);
+    map.remove({ x: 300, y: 300, ...pool });
+    map.update(0);
+    expect(fake.stamps.map((s) => `${s.x},${s.y}`)).toEqual(["100,100"]);
   });
 });

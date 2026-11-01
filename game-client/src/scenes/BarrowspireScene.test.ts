@@ -362,6 +362,10 @@ interface Made {
   calls: string[];
   /** The texture last set on it, if any was. */
   texture?: string;
+  /** What it was last `setVisible` to; undefined while it never was. */
+  shown?: boolean;
+  /** What it was last `setDepth` to. */
+  depth?: number;
 }
 
 /**
@@ -424,6 +428,19 @@ function recordingStage() {
             target.texture = key;
             return proxy;
           };
+        if (prop === "setVisible")
+          return (visible: boolean) => {
+            target.calls.push("setVisible");
+            target.shown = visible;
+            return proxy;
+          };
+        // the depth it sorts at, read back as Phaser's `depth` (what covers the player, FS-9PN7X §E.1)
+        if (prop === "setDepth")
+          return (depth: number) => {
+            target.calls.push("setDepth");
+            target.depth = depth;
+            return proxy;
+          };
         // no arcade body: the placeholder rig's collision circle is skipped
         if (prop === "body") return undefined;
         return () => {
@@ -459,6 +476,27 @@ interface FloorRun {
 }
 
 const at = (x: number, y: number) => ({ x, y });
+
+/**
+ * The player's body as drawn at `pos`: what the inside test and the silhouette read of it, sorted
+ * by its footprint, with the 10 px bounds every recorded object reports.
+ */
+const drawnPlayer = (pos: { x: number; y: number }) => ({
+  visible: true,
+  setVisible: () => {},
+  getBounds: () => ({ x: 0, y: 0, width: 10, height: 10 }),
+  depth: await_iso.worldDepth(pos.x, pos.y),
+  texture: { key: "art:warrior" },
+  frame: { name: "warrior/idle/0/0" },
+  x: pos.x,
+  y: pos.y,
+  originX: 0.5,
+  originY: 0.9,
+  scaleX: 1,
+  scaleY: 1,
+  flipX: false,
+  parentContainer: null,
+});
 
 /** A house of four walls with its top-left corner at (x, y). */
 const house = (id: string, x: number, y: number, wallIds: string[]) =>
@@ -527,6 +565,8 @@ function sceneOnStage() {
   const stage = recordingStage();
   const logger = { warn: () => {} };
   const lights: unknown[] = [];
+  /** Each fixed light's halo gate, as the scene handed it over. */
+  const gates = new Map<unknown, () => boolean>();
   const painted: { id: string }[][] = [];
   const grounds: unknown[] = [];
   run.add = stage.add;
@@ -556,7 +596,15 @@ function sceneOnStage() {
     run.monsterTargeting,
   );
   run.lightMap = {
-    add: (source: unknown) => lights.push(source),
+    add: (source: unknown, gate?: () => boolean) => {
+      lights.push(source);
+      if (gate) gates.set(source, gate);
+    },
+    remove: (source: unknown) => {
+      const at = lights.indexOf(source);
+      if (at >= 0) lights.splice(at, 1);
+      gates.delete(source);
+    },
     clear: () => lights.splice(0),
     clearTransient: () => {},
   };
@@ -572,7 +620,7 @@ function sceneOnStage() {
   });
   const texts = () =>
     stage.made.filter((m) => m.kind === "text").map((m) => ({ content: m.args[2], style: m.args[3] as { fontFamily?: string } }));
-  return { run, stage, lights, painted, grounds, texts, cursor };
+  return { run, stage, lights, gates, painted, grounds, texts, cursor };
 }
 
 describe("BarrowspireScene floor change (FS-F6F88 req 32, 33)", () => {
@@ -594,8 +642,12 @@ describe("BarrowspireScene floor change (FS-F6F88 req 32, 33)", () => {
 
     run.handleGameStateUpdate(floorState(2));
 
-    const survivors = floorOne.filter((m) => !m.destroyed);
+    // the run's blackout outlives its floors: cleared and hidden here, drawn afresh on the next
+    const blackout = (run as unknown as { view?: { blackout: { dark: Made } } }).view!.blackout.dark;
+    // (the scene holds the recorded object behind its proxy: the same record, one level down)
+    const survivors = floorOne.filter((m) => !m.destroyed && m.calls !== blackout.calls);
     expect(survivors.map((m) => m.kind)).toEqual([]);
+    expect(blackout.shown).toBe(false);
     expect(lights).toHaveLength(0);
     expect(projectiles.clear).toHaveBeenCalledTimes(1);
     // the ground is painted again with the new floor's houses only
@@ -1257,12 +1309,19 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
 
   it("should draw no bar over the player's own head, health or resource", () => {
     const { run, stage } = barsOnStage();
-    /** World-space graphics framing a bar (a filled, stroked rect), as the overhead bars draw. */
+    /**
+     * World-space graphics framing a bar (a filled, stroked rect), as the overhead bars draw. Not
+     * one laid on a world plane: a room's placeholder cap is a framed slab too (FS-9PN7X §B.7).
+     */
+    // (a container holds its children behind their proxies: the same records, by their calls)
+    const onPlanes = () =>
+      new Set(stage.made.flatMap((m) => (m.kind === "container" ? m.children.map((c) => c.calls) : [])));
     const overheadBars = () =>
       stage.made.filter(
         (m) =>
           m.kind === "graphics" &&
           !m.destroyed &&
+          !onPlanes().has(m.calls) &&
           !m.calls.includes("setScrollFactor") &&
           m.calls.includes("fillRect") &&
           m.calls.includes("strokeRect"),
@@ -1776,8 +1835,9 @@ describe("BarrowspireScene burning trails (FS-4R9M9 req 36, 56, 61)", () => {
     it("should glow once the player is inside that house, its roof off", () => {
       const { run, live } = outdoors();
       run.handleGameStateUpdate(withTrails([indoors("t1")]));
-      const scene = run as unknown as { buildings: unknown[]; currentBuilding: unknown };
-      scene.currentBuilding = scene.buildings[0];
+      // the player steps into the house: the frame's inside test makes it theirs, its roof off
+      Object.assign(run, { player: drawnPlayer(at(200, 150)), playerPos: { x: 200, y: 150 } });
+      (run as unknown as { checkBuildingStatus(): void }).checkBuildingStatus();
       run.handleGameStateUpdate(withTrails([indoors("t1")]));
       expect(glowing(live, "t1")).toBe(true);
     });
@@ -1882,22 +1942,30 @@ describe("BarrowspireScene world theme (FS-8RBQY §A, §B)", () => {
     expect(run.buildings[0].roof).toHaveLength(1);
   });
 
-  it("should never take a player in a tower room for indoors: no mask, no change", () => {
-    const { run } = themed("tower");
-    run.handleGameStateUpdate(floorState(1));
-    Object.assign(run, { player: {}, playerPos: { x: 200, y: 180 } });
-    run.checkBuildingStatus();
-    expect(run.currentBuilding).toBeNull();
-  });
+  it.each(["tower", "exterior"] as const)(
+    "should darken the world outside a %s room the player enters, with the shared blackout (FS-9PN7X §D.5)",
+    (theme) => {
+      const { run } = themed(theme);
+      run.handleGameStateUpdate(floorState(1));
+      Object.assign(run, { player: drawnPlayer(at(200, 180)), playerPos: { x: 200, y: 180 } });
+      run.checkBuildingStatus();
+      expect(run.currentBuilding).toBe(run.buildings[0]);
+      const view = (run as unknown as { view?: { building?: { id: string } } }).view;
+      expect(view?.building?.id).toBe((run.buildings[0] as unknown as { id: string }).id);
+      expect("indoorMask" in run).toBe(false);
+    },
+  );
 
-  it("should still mask the world outside an exterior house the player enters", () => {
+  it("should lift an exterior house's roof while the player is in it, and put it back as they leave", () => {
     const { run } = themed("exterior");
     run.handleGameStateUpdate(floorState(1));
-    const mask = { setVisible: vi.fn(), clear: vi.fn(), fillStyle: vi.fn(), fillPoints: vi.fn() };
-    Object.assign(run, { player: {}, playerPos: { x: 200, y: 180 }, indoorMask: mask });
+    const roof = run.buildings[0].roof[0] as Made;
+    Object.assign(run, { player: drawnPlayer(at(200, 180)), playerPos: { x: 200, y: 180 } });
     run.checkBuildingStatus();
-    expect(run.currentBuilding).toBe(run.buildings[0]);
-    expect(mask.setVisible).toHaveBeenCalledWith(true);
+    expect(roof.shown).toBe(false);
+    Object.assign(run, { player: drawnPlayer(at(200, 400)), playerPos: { x: 200, y: 400 } });
+    run.checkBuildingStatus();
+    expect(roof.shown).toBe(true);
   });
 
   it.each(["tower", "exterior"] as const)(
@@ -1920,6 +1988,539 @@ describe("BarrowspireScene world theme (FS-8RBQY §A, §B)", () => {
     Object.assign(run, { player: {}, playerPos: { x: 200, y: 180 } });
     run.events.emit("update");
     expect(texts().some((t) => t.content === line)).toBe(true);
+  });
+});
+
+describe("BarrowspireScene Spire rooms: the blackout, the hide rule and room lights (FS-9PN7X §C, §D)", () => {
+  const manifest = JSON.parse(
+    readFileSync(join(__dirname, "../../public/art/manifest.json"), "utf8"),
+  );
+  type Point = { x: number; y: number };
+  interface RoomRun extends FloorRun {
+    worldLook: unknown;
+    buildings: { id: string }[];
+    currentBuilding?: { id: string };
+    view?: { building?: { id: string } };
+    player?: unknown;
+    playerPos?: Point;
+    watchedPlayerId?: string;
+    fx?: unknown;
+    chests: Map<string, { sprite: Made }>;
+    switches: Map<string, { sprite: Made }>;
+    escapeDoors: Map<string, { sprite: Made }>;
+    stairs: { drawn: Map<string, { sprite: Made }> };
+    otherPlayers: Map<string, Made>;
+    otherPlayersLegs: Map<string, Made>;
+    otherPlayersNameTexts: Map<string, Made>;
+    teammateHealthBars: Map<string, { graphics: Made }>;
+    events: { emit(event: string): boolean };
+    checkBuildingStatus(): void;
+    createUI(): void;
+  }
+  // floor 1's room (house h1) spans x 100–310, y 100–270; floor 2's, x 600–810
+  const IN_ROOM = at(200, 180);
+  const IN_HALL = at(200, 400);
+
+  /** A tower run on stage, with the baked art or with none. */
+  function spire(theme: "tower" | "exterior" = "tower", baked = false) {
+    const stage = sceneOnStage();
+    const run = stage.run as unknown as RoomRun;
+    run.worldLook = WORLD_THEMES[theme];
+    if (baked) run.art = new ArtLibrary(manifest, { warn: () => {} });
+    return { ...stage, run };
+  }
+  /** The player stands at `pos`, drawn there, and the frame's inside test runs. */
+  const standAt = (run: RoomRun, pos: Point) => {
+    Object.assign(run, { player: drawnPlayer(pos), playerPos: { ...pos } });
+    run.checkBuildingStatus();
+  };
+  /** Floor 1, its ghouls and an ally where asked. */
+  const peopled = (monsters: Point[], ally?: Point): GameState => ({
+    ...floorState(1),
+    monsters: monsters.map((p, i) => ({ ...monster(`m${i}`, 0), position: p })),
+    other_players: ally ? [{ ...player("ally", "Wenna", 0), position: ally }] : [],
+  }) as GameState;
+
+  it("should hide a monster standing in a room from a player in the halls, plate and all, with no blackout", () => {
+    const { run, stage } = spire();
+    run.handleGameStateUpdate(peopled([IN_ROOM, IN_HALL]));
+    standAt(run, IN_HALL);
+
+    const [inRoom, inHall] = stage.made.filter((m) => m.kind === "sprite" && m.args.length === 0);
+    expect(inRoom.shown).toBe(false);
+    expect(inHall.shown).toBe(true);
+    const plates = stage.made.filter((m) => m.kind === "text" && String(m.args[2]).includes("Ghoul"));
+    expect(plates[0].shown).toBe(false);
+    expect(run.currentBuilding).toBeUndefined();
+    expect(run.view?.building).toBeUndefined();
+  });
+
+  it("should darken everything but the room the player stands in, and hide the monster in the halls", () => {
+    const { run, stage } = spire();
+    run.handleGameStateUpdate(peopled([IN_ROOM, IN_HALL]));
+    standAt(run, IN_ROOM);
+
+    const [inRoom, inHall] = stage.made.filter((m) => m.kind === "sprite" && m.args.length === 0);
+    expect(inRoom.shown).toBe(true);
+    expect(inHall.shown).toBe(false);
+    expect(run.currentBuilding).toBe(run.buildings[0]);
+    expect(run.view?.building?.id).toBe(run.buildings[0].id);
+  });
+
+  it("should hide a teammate by the same rule: body, legs, name and health bar (§C.4)", () => {
+    const { run } = spire();
+    run.handleGameStateUpdate(peopled([], IN_ROOM));
+    standAt(run, IN_HALL);
+    expect(run.otherPlayers.get("ally")!.shown).toBe(false);
+    expect(run.otherPlayersLegs.get("ally")!.shown).toBe(false);
+    expect(run.otherPlayersNameTexts.get("ally")!.shown).toBe(false);
+    expect(run.teammateHealthBars.get("ally")!.graphics.shown).toBe(false);
+
+    standAt(run, IN_ROOM);
+    expect(run.otherPlayers.get("ally")!.shown).toBe(true);
+    expect(run.otherPlayersLegs.get("ally")!.shown).toBe(true);
+    expect(run.teammateHealthBars.get("ally")!.graphics.shown).toBe(true);
+  });
+
+  it("should hide the chest in a room from the halls, and the switch, escape door and stairs in the halls from the room", () => {
+    const { run } = spire();
+    run.handleGameStateUpdate(floorState(1));
+    standAt(run, IN_HALL);
+    expect(run.chests.get("c1")!.sprite.shown).toBe(false);
+    expect(run.switches.get("s1")!.sprite.shown).toBe(true);
+    expect(run.escapeDoors.get("e1")!.sprite.shown).toBe(true);
+    expect(run.stairs.drawn.get("st1")!.sprite.shown).toBe(true);
+
+    standAt(run, IN_ROOM);
+    expect(run.chests.get("c1")!.sprite.shown).toBe(true);
+    expect(run.switches.get("s1")!.sprite.shown).toBe(false);
+    expect(run.escapeDoors.get("e1")!.sprite.shown).toBe(false);
+    expect(run.stairs.drawn.get("st1")!.sprite.shown).toBe(false);
+  });
+
+  it("should hide a projectile and a world effect in a room from the halls", () => {
+    const { run } = spire();
+    const fake = fakeScene();
+    const fx = new EffectsRuntime(fake.scene, fakeArt, fakeLights().lights, { warn: () => {} });
+    run.fx = fx;
+    run.projectiles = new ProjectileFlights(fake.scene, fakeArt, fx, projectileFlightOf);
+    const state = floorState(1);
+    state.projectiles = [{ entity_id: "p1", projectile_type: "fireball", position: IN_ROOM, velocity: { vx: 1, vy: 0 } }];
+    run.handleGameStateUpdate(state);
+    fx.play("p2", "escape", IN_HALL);
+
+    standAt(run, IN_HALL);
+    const veiled = fake.live().filter((m) => m.calls.setVisible?.[0] === false);
+    const inSight = fake.live().filter((m) => m.calls.setVisible?.[0] === true);
+    // the fireball's body and its trail, in the room; the escape column, in the halls
+    expect(veiled.length).toBeGreaterThan(0);
+    expect(veiled.some((m) => m.kind === "image")).toBe(true);
+    expect(inSight.length).toBeGreaterThan(0);
+
+    standAt(run, IN_ROOM);
+    expect(veiled.every((m) => m.calls.setVisible?.[0] === true)).toBe(true);
+    expect(inSight.every((m) => m.calls.setVisible?.[0] === false)).toBe(true);
+  });
+
+  it("should never hide the player, who is in the room they stand in", () => {
+    const { run } = spire();
+    run.handleGameStateUpdate(floorState(1));
+    const me = { ...drawnPlayer(IN_ROOM), setVisible: vi.fn() };
+    Object.assign(run, { player: me, playerPos: { ...IN_ROOM } });
+    run.checkBuildingStatus();
+    expect(me.setVisible).not.toHaveBeenCalled();
+  });
+
+  it("should take no room for the player's once they have escaped: no blackout", () => {
+    const { run } = spire();
+    run.handleGameStateUpdate(floorState(1));
+    Object.assign(run, { player: { visible: false }, playerPos: { ...IN_ROOM } });
+    run.checkBuildingStatus();
+    expect(run.currentBuilding).toBeUndefined();
+    expect(run.view?.building).toBeUndefined();
+  });
+
+  // edge state "player gone": a spectator has no building, so no blackout, and the indoors half
+  // of the hide rule alone: what stands in a room hides, the halls show. The watched teammate's
+  // room is not followed (review round 1, I-9PN7X-3)
+  it("should take no room while spectating: no blackout, the watched teammate in a room hidden, the halls shown", () => {
+    const { run, stage } = spire();
+    run.handleGameStateUpdate(peopled([IN_HALL], IN_ROOM));
+    Object.assign(run, { player: drawnPlayer(IN_ROOM), playerPos: { ...IN_ROOM }, watchedPlayerId: "ally" });
+    run.checkBuildingStatus();
+    expect(run.currentBuilding).toBeUndefined();
+    expect(run.view?.building).toBeUndefined();
+    expect(run.otherPlayers.get("ally")!.shown).toBe(false);
+    const [inHall] = stage.made.filter((m) => m.kind === "sprite" && m.args.length === 0);
+    expect(inHall.shown).toBe(true);
+  });
+
+  it("should clear the blackout on a climb and raise it around the new floor's room (§D.8)", () => {
+    const { run } = spire();
+    run.handleGameStateUpdate(floorState(1));
+    standAt(run, IN_ROOM);
+    expect(run.view?.building?.id).toBe("h1");
+
+    run.handleGameStateUpdate(floorState(2));
+    // the new floor starts with the player outside every room
+    expect(run.currentBuilding).toBeUndefined();
+    expect(run.view?.building).toBeUndefined();
+
+    standAt(run, at(700, 180));
+    expect(run.view?.building?.id).toBe("h2");
+    expect(run.currentBuilding).toBe(run.buildings[0]);
+  });
+
+  it("should let go of the blackout with the run, so the next start makes its own", () => {
+    const { run } = spire();
+    run.handleGameStateUpdate(floorState(1));
+    standAt(run, IN_ROOM);
+    (run as unknown as { resetRun(): void }).resetRun();
+    expect(run.view).toBeUndefined();
+    expect(run.currentBuilding).toBeUndefined();
+  });
+
+  /** Faint amber pools on the things a player uses, as `interactablePool` makes them. */
+  const pools = (lights: unknown[]) =>
+    (lights as { radius: number; x: number; y: number; intensity: number }[]).filter(
+      (l) => l.radius === INTERACTABLE_RADIUS,
+    );
+
+  // the owner's addition 1, carried to the Spire's halls in review round 1 (I-9PN7X-3/-6): inside a
+  // room every light outside it goes dark, as the hub's street lights do
+  it("should light the room's chest pool only while the player is in the room, and the hall's switch pool only from the halls (§D.6)", () => {
+    const { run, lights } = spire("tower", true);
+    run.handleGameStateUpdate(floorState(1));
+    const chest = await_iso.worldToScreen(150, 150);
+    const inRoom = pools(lights).find((l) => l.x === chest.x)!;
+    const inHall = pools(lights).find((l) => l.x !== chest.x)!;
+    const lit = inHall.intensity;
+    expect(lit).toBeGreaterThan(0);
+
+    standAt(run, IN_HALL);
+    expect(inRoom.intensity).toBe(0);
+    expect(inHall.intensity).toBe(lit);
+
+    standAt(run, IN_ROOM);
+    expect(inRoom.intensity).toBeGreaterThan(0);
+    expect(inHall.intensity).toBe(0);
+
+    standAt(run, IN_HALL);
+    expect(inHall.intensity).toBe(lit);
+  });
+
+  it("should light a room's back-wall sconces only while the player is in the room (§D.6)", () => {
+    const { run, lights } = spire("tower", true);
+    const sconces = { ...TOWER_BANDS.lower.walls, back: [[100, "sconce"]] };
+    run.worldLook = {
+      ...WORLD_THEMES.tower,
+      bands: { ...TOWER_BANDS, lower: { ...TOWER_BANDS.lower, walls: sconces } },
+    };
+    run.handleGameStateUpdate(floorState(1));
+    const all = lights as { intensity: number }[];
+    standAt(run, IN_HALL);
+    const dark = all.filter((l) => l.intensity === 0);
+    const lit = all.filter((l) => l.intensity > 0);
+    // the room's sconces and its chest pool
+    expect(dark.length).toBeGreaterThan(1);
+
+    standAt(run, IN_ROOM);
+    expect(dark.every((l) => l.intensity > 0)).toBe(true);
+    // and every light of the halls goes out (the owner's addition 1)
+    expect(lit.every((l) => l.intensity === 0)).toBe(true);
+  });
+
+  it.each([
+    ["tower", "X: 200 Y: 180"],
+    ["exterior", "X: 200 Y: 180 | Indoor"],
+  ] as const)("should keep the %s world theme's position line inside a room as %j (§D.7)", (theme, line) => {
+    const { run, texts } = spire(theme);
+    run.handleGameStateUpdate(floorState(1));
+    run.createUI();
+    standAt(run, IN_ROOM);
+    run.events.emit("update");
+    expect(texts().some((t) => t.content === line)).toBe(true);
+  });
+});
+
+describe("BarrowspireScene Spire closed rooms: exteriors, caps, dark openings and the silhouette (FS-9PN7X §B, §E)", () => {
+  const manifest = JSON.parse(
+    readFileSync(join(__dirname, "../../public/art/manifest.json"), "utf8"),
+  );
+  type Point = { x: number; y: number };
+  interface ClosedRun extends FloorRun {
+    worldLook: unknown;
+    buildings: { id: string }[];
+    currentBuilding?: { id: string };
+    perimeter?: Made[];
+    player?: unknown;
+    playerPos?: Point;
+    watchedPlayerId?: string;
+    lastGameState?: GameState;
+    occluders: { size: number; items: { sprite: Made }[] };
+    view: { drawn: { house: { id: string }; shared: Made[]; interior: Made[]; exterior: Made[] }[] };
+    walls: Map<string, { pieces: Made[] }>;
+    serverDoors: Map<string, { sprite?: Made }>;
+    checkBuildingStatus(): void;
+  }
+  // room r1 spans x 100–340, y 100–300 in 20 px walls, a 50 px door gap in its south wall, as the
+  // server builds a room (`AddBuilding`); room r2 stands beside it, and a wall of no room in the halls
+  const IN_ROOM = at(220, 200);
+  const IN_HALL = at(220, 420);
+  const BEHIND = at(220, 60);
+  // nearer the viewer than every room's footprint: nothing of them can cover the player
+  const IN_FRONT = at(400, 800);
+  const room = (id: string, x: number, prefix: string) => {
+    const side = (240 - 50) / 2;
+    return [
+      { entity_id: `${prefix}n`, house_id: id, position: at(x, 100), width: 240, height: 20 },
+      { entity_id: `${prefix}w`, house_id: id, position: at(x, 100), width: 20, height: 200 },
+      { entity_id: `${prefix}e`, house_id: id, position: at(x + 220, 100), width: 20, height: 200 },
+      { entity_id: `${prefix}sl`, house_id: id, position: at(x, 280), width: side, height: 20 },
+      { entity_id: `${prefix}sr`, house_id: id, position: at(x + side + 50, 280), width: side, height: 20 },
+    ];
+  };
+  const HALL_WALL = { entity_id: "hall", house_id: "", position: at(100, 500), width: 300, height: 20 };
+  /** A floor of two closed rooms, r1's door open or shut, r2's shut. */
+  const rooms = (open: boolean, floor = 1): GameState => {
+    const x = floor === 1 ? 100 : 600;
+    return {
+      ...floorState(floor),
+      walls: [...room(`r1_${floor}`, x, `a${floor}`), ...room(`r2_${floor}`, x + 400, `b${floor}`), HALL_WALL],
+      doors: [
+        { entity_id: `d1_${floor}`, position: at(x + 95, 280), width: 50, height: 20, is_open: open },
+        { entity_id: `d2_${floor}`, position: at(x + 495, 280), width: 50, height: 20, is_open: false },
+      ],
+    } as GameState;
+  };
+
+  function spire() {
+    const stage = sceneOnStage();
+    const run = stage.run as unknown as ClosedRun;
+    run.worldLook = WORLD_THEMES.tower;
+    run.art = new ArtLibrary(manifest, { warn: () => {} });
+    const sheetOf = (m: Made) => String(m.args[3] ?? "").split("/")[0];
+    /** Live sprites drawn from sheets the test matches. */
+    const drawn = (match: RegExp) =>
+      stage.stage.made.filter((m) => m.kind === "sprite" && !m.destroyed && match.test(sheetOf(m)));
+    return { ...stage, run, drawn, sheetOf };
+  }
+  /** The player drawn at `pos`, as a body the silhouette can copy, and the frame's inside test. */
+  const standAt = (run: ClosedRun, pos: Point) => {
+    Object.assign(run, { player: drawnPlayer(pos), playerPos: { ...pos } });
+    run.checkBuildingStatus();
+  };
+  const shown = (ms: Made[]) => ms.length > 0 && ms.every((m) => m.shown !== false);
+  const hiddenAll = (ms: Made[]) => ms.length > 0 && ms.every((m) => m.shown === false);
+
+  it("should close every room from the halls: full-height exterior fronts under a stone cap, nothing of the cut-away", () => {
+    const { run, drawn } = spire();
+    run.handleGameStateUpdate(rooms(false));
+    standAt(run, IN_HALL);
+    expect(shown(drawn(/^tower_wall_exterior_/))).toBe(true);
+    expect(shown(drawn(/^tower_cap$/))).toBe(true);
+    expect(hiddenAll(drawn(/^tower_wall_front_/))).toBe(true);
+    expect(hiddenAll(drawn(/^tower_post_front$/))).toBe(true);
+    // the back walls stand in both looks
+    expect(shown(drawn(/^tower_wall_back_/))).toBe(true);
+  });
+
+  it("should show a shut door as a door from the halls, and an open one as a dark opening", () => {
+    const { run, drawn } = spire();
+    run.handleGameStateUpdate(rooms(false));
+    standAt(run, IN_HALL);
+    expect(drawn(/^door_x$/).filter((m) => m.shown !== false)).toHaveLength(2);
+    expect(drawn(/^tower_door_dark_/).filter((m) => m.shown !== false)).toHaveLength(0);
+
+    // the door opens while the player is outside: the swap follows the state
+    run.handleGameStateUpdate(rooms(true));
+    run.checkBuildingStatus();
+    expect(drawn(/^door_x$/).filter((m) => m.shown !== false)).toHaveLength(1);
+    expect(drawn(/^tower_door_dark_x$/).filter((m) => m.shown !== false)).toHaveLength(1);
+
+    // and shuts again
+    run.handleGameStateUpdate(rooms(false));
+    run.checkBuildingStatus();
+    expect(drawn(/^door_x$/).filter((m) => m.shown !== false)).toHaveLength(2);
+    expect(drawn(/^tower_door_dark_/).filter((m) => m.shown !== false)).toHaveLength(0);
+  });
+
+  it("should snap the room to its cut-away look in the frame the player steps in, and back as they leave", () => {
+    const { run, drawn } = spire();
+    run.handleGameStateUpdate(rooms(true));
+    standAt(run, IN_HALL);
+    const exterior = drawn(/^tower_wall_exterior_/);
+    const caps = drawn(/^tower_cap$/);
+
+    standAt(run, IN_ROOM);
+    expect(run.currentBuilding?.id).toBe("r1_1");
+    // the room's own: cut-away fronts and their posts, no cap, the open door's own frame
+    const own = run.view.drawn.find((r) => r.house.id === "r1_1")!;
+    expect(shown(own.interior)).toBe(true);
+    expect(shown(own.shared)).toBe(true);
+    expect(run.serverDoors.get("d1_1")!.sprite!.shown).toBe(true);
+    expect(drawn(/^tower_door_dark_/).every((m) => m.shown === false)).toBe(true);
+    // everything outside the room hides: the other room's walls and cap too (owner's addition 1)
+    expect(hiddenAll(caps)).toBe(true);
+    expect(hiddenAll(exterior)).toBe(true);
+
+    standAt(run, IN_HALL);
+    expect(shown(exterior)).toBe(true);
+    expect(shown(caps)).toBe(true);
+    expect(hiddenAll(drawn(/^tower_wall_front_/))).toBe(true);
+  });
+
+  it("should hide all scenery outside the player's room by footprint: other rooms, their doors, hall walls, the perimeter", () => {
+    const { run, drawn } = spire();
+    run.handleGameStateUpdate(rooms(false));
+    standAt(run, IN_HALL);
+    const hall = run.walls.get("hall")!.pieces;
+    expect(shown(hall)).toBe(true);
+    expect(shown(run.perimeter!)).toBe(true);
+
+    standAt(run, IN_ROOM);
+    expect(hiddenAll(hall)).toBe(true);
+    expect(hiddenAll(run.perimeter!)).toBe(true);
+    // r2's shut door is outside the room; r1's is in its wall and shows
+    const doors = drawn(/^door_x$/);
+    expect(doors.filter((m) => m.shown !== false)).toHaveLength(1);
+  });
+
+  it("should put no room piece, cap, opening or room door among the occluders, and keep the hall wall's", () => {
+    const { run, drawn } = spire();
+    run.handleGameStateUpdate(rooms(true));
+    standAt(run, IN_HALL);
+    // (the scene holds each record behind its proxy: the same record, by its calls)
+    const fading = new Set(run.occluders.items.map((i) => i.sprite.calls));
+    const roomParts = [
+      ...run.view.drawn.flatMap((r) => [...r.shared, ...r.interior, ...r.exterior]),
+      ...drawn(/^tower_door_dark_|^door_x$/),
+    ];
+    expect(roomParts.some((m) => /^tower_cap/.test(String(m.args[3])))).toBe(true);
+    for (const part of roomParts) expect(fading.has(part.calls)).toBe(false);
+    const hall = run.walls.get("hall")!.pieces;
+    expect(hall.length).toBeGreaterThan(0);
+    for (const piece of hall) expect(fading.has(piece.calls)).toBe(true);
+  });
+
+  it("should silhouette the player behind a room, and never inside one or once dead", () => {
+    const { run, stage } = spire();
+    run.handleGameStateUpdate(rooms(false));
+    const silhouette = () => stage.made.filter((m) => m.kind === "image" && m.args[2] === "__DEFAULT");
+
+    standAt(run, BEHIND);
+    expect(silhouette()).toHaveLength(1);
+    expect(silhouette()[0].shown).toBe(true);
+
+    standAt(run, IN_FRONT);
+    expect(silhouette()[0].shown).toBe(false);
+
+    standAt(run, IN_ROOM);
+    expect(silhouette()[0].shown).toBe(false);
+
+    run.lastGameState = { ...rooms(false), current_player: { ...player("me", "Aldric", 0), current_health: 0 } } as GameState;
+    standAt(run, BEHIND);
+    expect(silhouette()[0].shown).toBe(false);
+  });
+
+  // I-9PN7X-5: half behind a room the head over the cap went brass too; the silhouette is masked
+  // to the room pieces covering the player, drawn into its mask texture each frame
+  it("should mask the silhouette to the room pieces covering the player", () => {
+    const { run, stage } = spire();
+    run.handleGameStateUpdate(rooms(false));
+    standAt(run, BEHIND);
+    const [image] = stage.made.filter((m) => m.kind === "image" && m.args[2] === "__DEFAULT");
+    const [mask] = stage.made.filter((m) => m.kind === "renderTexture");
+    expect(image.calls).toContain("setMask");
+    expect(mask.calls).toContain("clear");
+    expect(mask.calls.filter((c) => c === "draw").length).toBeGreaterThan(0);
+  });
+
+  it("should rebuild the rooms, caps and openings with the floor on a climb", () => {
+    const { run, drawn } = spire();
+    run.handleGameStateUpdate(rooms(true, 1));
+    standAt(run, IN_HALL);
+    const floorOne = [...drawn(/^tower_wall_exterior_|^tower_cap$|^tower_door_dark_/)];
+    expect(floorOne.length).toBeGreaterThan(0);
+
+    run.handleGameStateUpdate(rooms(true, 2));
+    standAt(run, at(720, 420));
+
+    expect(floorOne.every((m) => m.destroyed)).toBe(true);
+    expect(drawn(/^tower_cap$/).length).toBeGreaterThan(0);
+    expect(drawn(/^tower_door_dark_x$/).filter((m) => m.shown !== false)).toHaveLength(1);
+    expect(run.buildings.map((b) => b.id)).toEqual(["r1_2", "r2_2"]);
+  });
+
+  /** The closed-rooms floor in a band whose back walls all carry sconces. */
+  const lit = () => {
+    const t = spire();
+    const sconces = { ...TOWER_BANDS.lower.walls, back: [[100, "sconce"]] };
+    t.run.worldLook = {
+      ...WORLD_THEMES.tower,
+      bands: { ...TOWER_BANDS, lower: { ...TOWER_BANDS.lower, walls: sconces } },
+    };
+    return t;
+  };
+  type Light = { intensity: number };
+
+  // the owner's addition 1 (inside a building, everything outside goes dark), carried to the
+  // Spire's halls in review round 1 (I-9PN7X-3/-6), as the hub's street lights follow it
+  it("should put out every light outside the player's room, pool and halo: hall sconces, slits, stairs and pools", () => {
+    const { run, lights, gates } = lit();
+    run.handleGameStateUpdate(rooms(false));
+    standAt(run, IN_HALL);
+    const all = lights as Light[];
+    const hall = all.filter((l) => l.intensity > 0);
+    // the hall wall's sconces, the perimeter's slits, the stairs and the switch's pools at least
+    expect(hall.length).toBeGreaterThan(3);
+    expect(hall.every((l) => gates.get(l)?.() !== false)).toBe(true);
+
+    standAt(run, IN_ROOM);
+    expect(hall.every((l) => l.intensity === 0)).toBe(true);
+    expect(hall.every((l) => gates.get(l)?.() === false)).toBe(true);
+    // only the room's own lights are on: r1's sconces; r2's stay out
+    const on = all.filter((l) => l.intensity > 0);
+    expect(on.length).toBeGreaterThan(0);
+    expect(on.some((l) => hall.includes(l))).toBe(false);
+    expect(all.filter((l) => l.intensity === 0).length).toBeGreaterThan(hall.length);
+
+    standAt(run, IN_HALL);
+    expect(hall.every((l) => l.intensity > 0)).toBe(true);
+    expect(hall.every((l) => gates.get(l)?.() !== false)).toBe(true);
+  });
+
+  it("should take a redrawn room's old wall lights off the light-map, so the cap counts its sconces once", () => {
+    const { run, lights } = lit();
+    run.handleGameStateUpdate(rooms(false));
+    const before = [...lights];
+    const stamped = (run as unknown as { stampedLights: number }).stampedLights;
+    expect(stamped).toBe(before.length);
+
+    // one of r1's walls goes: the room is redrawn from the walls left, its sconces with it
+    const state = rooms(false);
+    state.walls = state.walls.filter((w) => w.entity_id !== "a1sl");
+    run.handleGameStateUpdate(state);
+    const run1 = run as unknown as { roomLights: { room: string; source: unknown; hung: boolean }[]; stampedLights: number };
+    expect(run1.stampedLights).toBe(lights.length);
+    // every r1 wall light is on the light-map once, and none of the old ones is left behind
+    const hung = run1.roomLights.filter((l) => l.room === "r1_1" && l.hung);
+    expect(hung.length).toBeGreaterThan(0);
+    expect(new Set(lights).size).toBe(lights.length);
+    for (const l of hung) expect(lights.filter((x) => x === l.source)).toHaveLength(1);
+    const oldR1 = before.filter((l) => !lights.includes(l));
+    expect(oldR1.length).toBeGreaterThan(0);
+    expect(run1.roomLights.some((l) => oldR1.includes(l.source))).toBe(false);
+  });
+
+  it("should close a room without its art: placeholder sides and slab, never the open room (§B.7)", () => {
+    const { run, stage } = spire();
+    run.art = ArtLibrary.empty({ warn: () => {} });
+    run.handleGameStateUpdate(rooms(true));
+    standAt(run, IN_HALL);
+    // a slab on a lifted plane per room, shown from the halls
+    const slabs = stage.made.filter((m) => m.kind === "container" && !m.destroyed && m.shown === true);
+    expect(slabs.length).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -2049,10 +2650,11 @@ describe("BarrowspireScene floor bands, run dressing, light budget and stairs (F
       bands: { ...TOWER_BANDS, lower: { ...TOWER_BANDS.lower, walls: sconces } },
     };
     const state = floorState(1);
-    // a long north wall of sconces: 30 pieces, more than the budget holds with the slits
+    // a long north wall of sconces: 30 pieces, more than the budget holds with the slits; the
+    // room it walls stands clear of the stairs, whose pool would otherwise be the room's (FS-9PN7X §D.6)
     state.walls = [
       ...state.walls,
-      { house_id: "big", entity_id: "bn", position: at(100, 400), width: 1200, height: 10 },
+      { house_id: "big", entity_id: "bn", position: at(100, 750), width: 1200, height: 10 },
       { house_id: "big", entity_id: "bs", position: at(100, 900), width: 1200, height: 10 },
     ];
     run.handleGameStateUpdate(state);

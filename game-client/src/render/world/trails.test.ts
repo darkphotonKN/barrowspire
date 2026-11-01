@@ -193,3 +193,15 @@ describe("TrailSet", () => {
     expect(beds).toHaveLength(3);
   });
 });
+
+describe("TrailSet placed (FS-9PN7X §C.2)", () => {
+  it("should hand back each trail's bed and glow with the trail as last synced", () => {
+    const { set, beds, glows } = onStage();
+    set.sync([trail("t1")]);
+    const moved = trail("t1", 2, { x: 300, y: 100 });
+    set.sync([moved]);
+    expect([...set.placed()]).toEqual([{ bed: beds[0], glow: glows[0], trail: moved }]);
+    set.sync([]);
+    expect([...set.placed()]).toEqual([]);
+  });
+});
