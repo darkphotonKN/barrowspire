@@ -189,6 +189,14 @@ describe("addBuildings (FS-9PN7X §B)", () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
+  it("should carry its walls' thickness, which the blackout's floor stops inside (§D)", () => {
+    const { scene } = stubScene();
+    const [b] = addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1);
+    expect(b.wall).toBe(20);
+    const thick = HOUSE.map((w) => ({ ...w, width: w.width === 20 ? 24 : w.width, height: w.height === 20 ? 24 : w.height }));
+    expect(addBuildings(scene, library(TIMBER_ART).art, thick, 1)[0].wall).toBe(24);
+  });
+
   it("should leave dark openings out where the gaps hold doors (a run's buildings)", () => {
     const { scene } = stubScene();
     const [b] = addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1);

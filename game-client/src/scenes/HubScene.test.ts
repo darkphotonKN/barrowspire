@@ -1965,6 +1965,8 @@ const { ArtLibrary } = await import("@/render/art/library");
 const world = await import("@/render/world");
 const { BLACKOUT } = world;
 const iso = await import("@/render/iso");
+const { BlackoutMask } = await import("@/render/world/blackoutMask");
+type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 
 describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () => {
   const { WALL_HEIGHT } = iso;
@@ -2029,13 +2031,19 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
   }
 
   /** The town drawn on the recording stage, with `art`, and the player standing at `at`. */
-  function town(art: InstanceType<typeof ArtLibrary>) {
+  function town(art: InstanceType<typeof ArtLibrary>, renderer?: { type: number }) {
     vi.mocked(world.addWalls).mockClear();
     vi.mocked(world.addBuildings).mockClear();
     vi.mocked(world.addProp).mockClear();
     vi.mocked(iso.addUprightBlock).mockClear();
     const { hub: raw, stage } = hubOnStage();
     const hub = raw as unknown as InteriorHub;
+    if (renderer) {
+      // a WebGL hub: the blackout masks with the house's own px (its drawing is stubbed by the test)
+      const scene = hub as unknown as Record<string, unknown>;
+      scene.renderer = renderer;
+      scene.make = stage.add;
+    }
     hub.art = art;
     hub.lightMap = { add: vi.fn() };
     // the placeholder villagers' textures, as though already made
@@ -2323,6 +2331,45 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       standIn(IN_STORE);
       expect(shows(qm)).toEqual([true, true, true]);
       expect([name.visible, sigil.visible]).toEqual([true, true]);
+    });
+
+    it("should mask the dark with the house's own px under WebGL: its walls, its room and who stands in it, never the street", () => {
+      const show = vi.spyOn(BlackoutMask.prototype, "show").mockImplementation(() => {});
+      const { hub, rival, mate, self, standIn, room } = town(BAKED, { type: 2 });
+      const view = (hub as unknown as { view: { drawn: { house: { id: string }; shared: Made[]; interior: Made[] }[] } }).view;
+      standIn(IN_INN);
+      const look = show.mock.calls.at(-1)?.[0] as MaskLook;
+      expect(look.house.id).toBe("inn");
+      expect(look.wall).toBe(20);
+      const stamps = new Set(look.stamps as unknown as Made[]);
+      const inn = view.drawn.find((b) => b.house.id === "inn")!;
+      const store = view.drawn.find((b) => b.house.id === "store")!;
+      for (const p of [...inn.shared, ...inn.interior]) expect(stamps.has(p)).toBe(true);
+      for (const p of [...store.shared, ...store.interior]) expect(stamps.has(p)).toBe(false);
+      for (const p of room("inn").parts) expect(stamps.has(p)).toBe(true);
+      for (const p of room("store").parts) expect(stamps.has(p)).toBe(false);
+      // who stands in the Inn, the player too, body and legs; their plates stand over the dark
+      for (const who of [self, rival]) {
+        expect(stamps.has(who.sprite)).toBe(true);
+        expect(stamps.has(who.legs)).toBe(true);
+        expect(stamps.has(who.name)).toBe(false);
+      }
+      expect(stamps.has(hub.npcs.get("drover")!.sprite)).toBe(true);
+      expect(stamps.has(mate.sprite)).toBe(false);
+      expect(stamps.has(hub.npcs.get("cottar")!.sprite)).toBe(false);
+      expect(stamps.has(hub.npcs.get("qm")!.sprite)).toBe(false);
+      standIn(OUTDOORS);
+      expect(show).toHaveBeenLastCalledWith(undefined);
+      show.mockRestore();
+    });
+
+    it("should keep the geometric dark, and no mask, under the canvas renderer", () => {
+      const show = vi.spyOn(BlackoutMask.prototype, "show");
+      const { stage, standIn } = town(BAKED, { type: 1 });
+      standIn(IN_INN);
+      expect(show).not.toHaveBeenCalled();
+      expect(blackoutOf(stage).visible).toBe(true);
+      show.mockRestore();
     });
 
     it("should let the blackout go with the visit", () => {

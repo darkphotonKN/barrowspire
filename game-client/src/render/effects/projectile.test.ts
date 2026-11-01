@@ -76,6 +76,20 @@ describe("projectile flights (FS-KYPQ9 §E.2, §E.3, §F.2–§F.4, §B.9)", () 
     });
   });
 
+  describe("what stands where, for the blackout's mask (FS-9PN7X §D)", () => {
+    it("should name each flight's body and where it flies, and nothing once it has landed", () => {
+      flights.sync([fireball("f1", 100, 200), arrow("a1", 300, 100)]);
+      const standing = flights.standing();
+      expect(standing.map((s) => s.at)).toEqual([
+        { x: 100, y: 200 },
+        { x: 300, y: 100 },
+      ]);
+      expect(standing.every((s) => s.parts.length === 1)).toBe(true);
+      flights.clear();
+      expect(flights.standing()).toEqual([]);
+    });
+  });
+
   describe("flight", () => {
     it("should draw the baked fire core at the casting hand's height above its footprint, sorted on it", () => {
       flights.sync([fireball("f1", 300, 200)]);
