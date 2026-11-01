@@ -153,10 +153,11 @@ export function partyFrameRows(
 }
 
 /**
- * The Travel button beside the leader's frame (FS-NCC9J R28): hidden with no party, for the
- * leader, and for a member already on the leader's pod (the same `pod_id`); greyed outside the
- * player's own town (a field, a run) and while the leader is away; live otherwise. Pure, so every
- * rule is tested without a canvas.
+ * The Travel button on the leader's frame (FS-NCC9J R28): hidden with no party, for the leader,
+ * for a member already on the leader's pod (the same `pod_id`), and whenever either pod is unknown
+ * (a missing or empty `pod_id`: the leader on no pod is offline, and nothing is offered that may
+ * go nowhere; I-NCC9J-8, Nick); greyed outside the player's own town (a field, a run) and while the
+ * leader is away; live otherwise. Pure, so every rule is tested without a canvas.
  */
 export type TravelButton = "hidden" | "greyed" | "live";
 
@@ -170,7 +171,8 @@ export function travelButton(
   const self = party.members.find((m) => m.player_id === selfId);
   const leader = party.members.find((m) => m.player_id === party.leader_id);
   if (!self || !leader) return "hidden";
-  if ((self.pod_id ?? "") === (leader.pod_id ?? "")) return "hidden";
+  if (!self.pod_id || !leader.pod_id || self.pod_id === leader.pod_id)
+    return "hidden";
   if (world !== "hub" || memberAway(leader)) return "greyed";
   return "live";
 }
@@ -272,6 +274,26 @@ export function partyTravelButtonRect(frame: PartyFrameRect): Rect {
     width: TRAVEL_W,
     height: TRAVEL_H,
   };
+}
+
+/** Room kept between a name's end and what follows it: the frame's edge or the Travel button. */
+const NAME_END_GAP = 6;
+
+/**
+ * How wide a frame's name may run (R34; FS-NCC9J R28): from where it starts, after the leader's
+ * crown, to the frame's edge, or to the Travel button when the leader's frame carries one. A name
+ * longer than this is shortened (character names run to 32 characters).
+ */
+export function partyNameRoom(
+  frame: PartyFrameRect,
+  leader: boolean,
+  travel: boolean,
+): number {
+  const start = frame.name.x + (leader ? PARTY_LEADER_MARK_W : 0);
+  const end = travel
+    ? partyTravelButtonRect(frame).x
+    : frame.row.x + frame.row.width - BAR_RIGHT_PAD;
+  return end - NAME_END_GAP - start;
 }
 
 /** The gap kept under the XP bar, as the T panel keeps under the hub's. */

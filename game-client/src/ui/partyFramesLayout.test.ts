@@ -9,6 +9,7 @@ import {
   partyBustFrame,
   partyFrameRows,
   partyFramesFrame,
+  partyNameRoom,
   partyTravelButtonRect,
   travelButton,
   type PartyFrameRow,
@@ -551,7 +552,9 @@ describe("travelButton", () => {
     { name: "in a field", p: party([wren(), me()]), world: "field", want: "greyed" },
     { name: "in a run", p: party([wren(), me()]), world: "run", want: "greyed" },
     { name: "the leader away", p: party([wren({ online: false }), me()]), world: "hub", want: "greyed" },
-    { name: "the leader on no pod", p: party([wren({ pod_id: "", online: false }), me()]), world: "hub", want: "greyed" },
+    { name: "the leader on no pod (offline)", p: party([wren({ pod_id: "", online: false }), me()]), world: "hub", want: "hidden" },
+    { name: "the leader online but on no pod", p: party([wren({ pod_id: "" }), me()]), world: "hub", want: "hidden" },
+    { name: "the player's own pod unknown", p: party([wren(), me({ pod_id: undefined })]), world: "hub", want: "hidden" },
     { name: "in town, the leader elsewhere", p: party([wren(), me()]), world: "hub", want: "live" },
   ] as const)("$name: $want", ({ p, world, want }) => {
     expect(travelButton(p, ME, world)).toBe(want);
@@ -571,5 +574,21 @@ describe("partyTravelButtonRect", () => {
     expect(button.y).toBeGreaterThanOrEqual(frame.row.y);
     expect(button.y + button.height).toBeLessThanOrEqual(frame.health.y - 1);
     expect(button.height).toBeGreaterThanOrEqual(14);
+  });
+});
+
+describe("partyNameRoom", () => {
+  it("is the width a name may take: to the frame's edge, after the crown, and short of the Travel button (R28)", () => {
+    const { x, top } = PARTY_FRAMES_PLACEMENT.hub;
+    const [frame] = partyFramesFrame(1, x, top);
+    const button = partyTravelButtonRect(frame);
+
+    const plain = partyNameRoom(frame, false, false);
+    const crowned = partyNameRoom(frame, true, false);
+    const withTravel = partyNameRoom(frame, true, true);
+
+    expect(plain).toBeLessThanOrEqual(frame.row.x + frame.row.width - frame.name.x);
+    expect(crowned).toBeLessThan(plain);
+    expect(frame.name.x + (plain - crowned) + withTravel).toBeLessThan(button.x);
   });
 });

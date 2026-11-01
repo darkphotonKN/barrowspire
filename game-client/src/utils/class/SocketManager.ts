@@ -2,12 +2,13 @@ import { palette, toCss } from "../canvasPalette";
 import {
   ActionMap,
   ClientMessage,
+  EnterHubPayload,
   WorldEnteredPayload,
   WorldHandoffPayload,
 } from "@/assets/types/client";
 import { ClientGameState, isGameState } from "@/types/gameState";
 import { GameStateLogger } from "@/utils/gameStateLogger";
-import { enterHubPayload } from "@/characters/entry";
+import { travelArrival } from "@/ui/travelArrival";
 import { useGameStore } from "@/stores/gameStore";
 import { useAuthStore } from "@/stores/authStore";
 import { isChatLine, isChatNotice, useChatStore } from "@/stores/chatStore";
@@ -44,6 +45,18 @@ export interface SocketLike {
   send(data: string): void;
   close(code?: number, reason?: string): void;
 }
+
+/**
+ * What a travel's hub handoff needs from the game (FS-NCC9J R20): what to enter the leader's hub
+ * with (null when there is nothing to enter as), and how to tell the player a move did not happen.
+ */
+export interface HubArrival {
+  enterHub(): EnterHubPayload | null;
+  refused(text: string): void;
+}
+
+/** Said when a travel's move cannot be made: the leader's server unreachable, or no character. */
+export const TRAVEL_UNREACHABLE = "Your party's village could not be reached.";
 
 /** A refused action: the action, the server's error, and its message for the player if any. */
 export interface MessageError {
@@ -88,6 +101,7 @@ export class SocketManager {
   constructor(
     private createSocket: (url: string) => SocketLike = (url) =>
       new WebSocket(url),
+    private arrival: HubArrival = travelArrival,
   ) {}
 
   getServerAddress(): string {
@@ -333,9 +347,10 @@ export class SocketManager {
   /**
    * Follows a travel's handoff to the hub of the party leader's server (FS-NCC9J R18, R20),
    * make-before-break as a run's is: a plain connection there, which enters the hub as the
-   * character this player plays once it opens; the hub's world_entered is the acceptance. A
-   * refused entry (the hub full) or a server that cannot be reached leaves the player where they
-   * stand, on the old socket, and a refusal's words are said as a system line. One move at a time.
+   * arrival says once it opens; the hub's world_entered is the acceptance. A refused entry (the
+   * hub full) or a server that cannot be reached leaves the player where they stand, on the old
+   * socket (or back on the server they were on, if it died meanwhile), and the arrival tells them
+   * why. One move at a time.
    */
   private hubHandoff(payload: WorldHandoffPayload) {
     if (!payload?.addr) {
@@ -343,10 +358,10 @@ export class SocketManager {
       return;
     }
     if (this.pending) return;
-    const { characters, activeCharacterId } = useGameStore.getState();
-    const character = characters.find((c) => c.id === activeCharacterId);
-    if (!character) {
+    const enter = this.arrival.enterHub();
+    if (!enter) {
       console.warn("hub world_handoff with no character to enter as");
+      this.arrival.refused(TRAVEL_UNREACHABLE);
       return;
     }
 
@@ -354,14 +369,13 @@ export class SocketManager {
       `${payload.addr}?token=${this.token}&name=${this.name}`,
     );
     this.pending = next;
-    next.onopen = () =>
-      next.send(this.encode("enter_hub", enterHubPayload(character)));
+    next.onopen = () => next.send(this.encode("enter_hub", enter));
 
     this.holdUntilEntered(next, payload.addr, (data) => {
       if (data.action !== "enter_hub" || !data.error) return false;
       this.dropPending();
-      const text = String(data.payload?.message ?? data.error);
-      useChatStore.getState().notice({ code: "travel_refused", text });
+      this.arrival.refused(String(data.payload?.message ?? data.error));
+      this.reconnectIfGone();
       return true;
     });
     next.onerror = (error) => {
@@ -372,6 +386,7 @@ export class SocketManager {
       if (this.pending !== next) return;
       console.warn("Hub handoff refused or failed, code:", event.code);
       this.pending = null;
+      this.arrival.refused(TRAVEL_UNREACHABLE);
       this.reconnectIfGone();
     };
   }

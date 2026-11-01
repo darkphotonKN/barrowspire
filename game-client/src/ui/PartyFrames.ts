@@ -31,13 +31,14 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { maskedBust, type MaskedBust, type Portrait } from "./bustPortrait";
 import { socketManager } from "@/utils/class/SocketManager";
 import { partyCommands } from "./partyCommands";
-import { drawLeaderMark } from "./PartyPanel";
+import { drawHudButton, drawLeaderMark } from "./PartyPanel";
 import {
   PARTY_FRAMES_PLACEMENT,
   PARTY_LEADER_MARK_W,
   partyBustFrame,
   partyFrameRows,
   partyFramesFrame,
+  partyNameRoom,
   partyTravelButtonRect,
   travelButton,
   type PartyFrameRect,
@@ -87,10 +88,24 @@ const AWAY_ALPHA = 0.4;
 const PULSE_LOW = 0.25;
 const PULSE_HIGH = 0.6;
 const PULSE_MS = 900;
-/** The Travel button's label, and its alpha while greyed (as the T panel greys an action). */
 const TRAVEL_LABEL = "Travel";
-const TRAVEL_PX = 12;
-const GREYED_ALPHA = 0.45;
+
+/**
+ * Shortens a name drawn wider than room with an ellipsis, one character at a time, as measured on
+ * the canvas: character names run to 32 characters, a frame holds about a dozen.
+ */
+function fitted(
+  t: Phaser.GameObjects.Text,
+  room: number,
+): Phaser.GameObjects.Text {
+  const full = t.text ?? "";
+  let kept = full.length;
+  while (t.width > room && kept > 1) {
+    kept -= 1;
+    t.setText(`${full.slice(0, kept)}…`);
+  }
+  return t;
+}
 
 export class PartyFrames {
   private rows: PartyFrameRow[] = [];
@@ -245,8 +260,9 @@ export class PartyFrames {
     this.rows.forEach((row, i) => {
       const { bust, name } = this.rects[i];
       if (row.kind !== "member") {
+        const room = partyNameRoom(this.rects[i], false, false);
         this.names.push(
-          this.text(name.x, name.y, row.name, palette.hudLabel, NAME_PX),
+          fitted(this.text(name.x, name.y, row.name, palette.hudLabel, NAME_PX), room),
         );
         return;
       }
@@ -255,7 +271,14 @@ export class PartyFrames {
       if (row.leader) drawLeaderMark(rings, name.x, name.y + 4);
       const nameX = name.x + (row.leader ? PARTY_LEADER_MARK_W : 0);
       const colour = row.away ? palette.hudFaint : palette.hudText;
-      this.names.push(this.text(nameX, name.y, row.name, colour, NAME_PX));
+      const room = partyNameRoom(
+        this.rects[i],
+        row.leader,
+        row.leader && this.travel !== "hidden",
+      );
+      this.names.push(
+        fitted(this.text(nameX, name.y, row.name, colour, NAME_PX), room),
+      );
     });
 
     this.drawTravel(rings);
@@ -269,24 +292,15 @@ export class PartyFrames {
   private drawTravel(g: Phaser.GameObjects.Graphics): void {
     const at = this.leaderRow();
     if (this.travel === "hidden" || at < 0) return;
-    const live = this.travel === "live";
-    const r = partyTravelButtonRect(this.rects[at]);
-    g.lineStyle(1, palette.frame, live ? 0.8 : 0.3);
-    g.strokeRoundedRect(r.x + 0.5, r.y + 0.5, r.width - 1, r.height - 1, 3);
-    const t = this.text(
-      r.x + r.width / 2,
-      r.y + r.height / 2,
-      TRAVEL_LABEL,
-      live ? palette.interactable : palette.hudFaint,
-      TRAVEL_PX,
-    ).setOrigin(0.5, 0.5);
-    this.names.push(t);
-    if (!live) {
-      t.setAlpha(GREYED_ALPHA);
-      return;
-    }
-    t.setInteractive({ useHandCursor: true }).on("pointerdown", () =>
-      this.deps.travel(),
+    this.names.push(
+      drawHudButton(
+        this.scene,
+        g,
+        partyTravelButtonRect(this.rects[at]),
+        TRAVEL_LABEL,
+        this.travel === "live",
+        () => this.deps.travel(),
+      ),
     );
   }
 

@@ -71,6 +71,13 @@ function fakeScene() {
         ev === "pointerdown" && (t.press = fn), self
       ),
       setText: (c: string) => ((t.content = c), self),
+      get text() {
+        return t.content;
+      },
+      // a measured width, 7 px a character, as a 13 px canvas font roughly runs
+      get width() {
+        return t.content.length * 7;
+      },
       destroy: () => void (t.destroyed = true),
     };
     return self;
@@ -527,14 +534,14 @@ describe("PartyFrames' Travel button", () => {
   });
 
   it("greys it in a field, inert", () => {
-    const { store, liveText, deps } = setup("field");
+    const { store, liveText } = setup("field");
     store.getState().apply(atPods("pod-b", "pod-a"));
 
     const travel = liveText("Travel");
     expect(travel).toBeDefined();
     expect(travel?.interactive).toBe(false);
+    expect(travel?.press).toBeUndefined();
     expect(travel?.colour).toBe(toCss(palette.hudFaint));
-    expect(deps.travel).not.toHaveBeenCalled();
   });
 
   it("shows none to a member on the leader's pod, nor to the leader", () => {
@@ -565,5 +572,27 @@ describe("PartyFrames' Travel button", () => {
 
     store.getState().apply(atPods("pod-b", "pod-a", true));
     expect(liveText("Travel")?.interactive).toBe(true);
+  });
+});
+
+describe("PartyFrames names", () => {
+  it("shortens a name too long for its frame with an ellipsis, short of the Travel button, and leaves a short one whole", () => {
+    const { store, live } = setup("hub");
+    store.getState().apply(
+      update(
+        [
+          { ...member("wren", "Bartholomew Thornwood the Third"), pod_id: "pod-a" },
+          { ...member(ME, "Marl"), pod_id: "pod-b" },
+        ],
+        "wren",
+      ),
+    );
+
+    const leaderName = live().find((c) => c.startsWith("Bartho"));
+    expect(leaderName).toBeDefined();
+    expect(leaderName?.endsWith("…")).toBe(true);
+    expect(leaderName!.length).toBeLessThan("Bartholomew Thornwood the Third".length);
+    expect(live()).toContain("Marl");
+    expect(live()).toContain("Travel");
   });
 });

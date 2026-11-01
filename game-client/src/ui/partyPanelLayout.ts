@@ -69,7 +69,7 @@ export function partyWhereLabel(where: string): string {
   if (where === "hub") return "village";
   if (where === "run") return "delving";
   if (where === "away") return "away";
-  if (where.startsWith("field:")) return "afield";
+  if (where === "field" || where.startsWith("field:")) return "afield";
   return where;
 }
 

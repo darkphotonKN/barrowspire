@@ -121,10 +121,11 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
   against the party's size): the invitee's name with a grey pulse where the bust and bars go, no
   countdown, seen by every member. It becomes a real frame on accept and goes on decline or
   expiry. Client word only; the server says *reserved slot*.
-- **Travel button** — the button beside the leader's frame that sends the player to the town of
-  the leader's server (game-service: *travel*, by a hub handoff). Pressable only in the player's
-  own town; greyed in a field, a delve, or while the leader is away; absent when already on the
-  leader's server. The label on screen is still to be written.
+- **Travel button** — the button on the leader's frame, labelled **Travel**, that sends the player
+  to the town of the leader's server (game-service: *travel*, by a hub handoff). Pressable only in
+  the player's own town; greyed in a field, a delve, or while the leader is away; absent when
+  already on the leader's server, or when either server is unknown (a leader on no server is
+  offline).
 - **Invite prompt** — the small carved prompt an incoming invite raises, with Accept, Decline and
   a countdown on the client's own clock. Not the skeleton row (that is the inviting side's view).
 
