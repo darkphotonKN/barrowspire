@@ -62,6 +62,7 @@ server state and sends intents. ✅
 - [x] Shadow Shot aimed by holding → FS-JTNPR
 - [ ] Allocated pickup notices → FS-V780R
 - [ ] Unsafe marking on run finds → FS-18Z5F
+- [ ] Other delvers' names over their heads → FS-CH21F
 
 ### Character
 
@@ -129,7 +130,7 @@ server state and sends intents. ✅
 - [ ] Party frames → FS-R82NV
 - [ ] Party loot rule setting → FS-V780R
 - [ ] Enter the Spire as a party → FS-BJNYC
-- [ ] Overhead health and resource bars over party members → FS-CH21F
+- [ ] Teammates' health, resource and level in the party frames → FS-CH21F
 
 ### Chat
 
