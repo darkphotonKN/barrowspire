@@ -130,6 +130,7 @@ server state and sends intents. ✅
 - [ ] Party frames → FS-R82NV
 - [ ] Party loot rule setting → FS-V780R
 - [ ] Enter the Spire as a party → FS-BJNYC
+- [ ] Party entry ready check → FS-BJNYC
 - [ ] Teammates' health, resource and level in the party frames → FS-CH21F
 
 ### Chat
