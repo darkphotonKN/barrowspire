@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -597,4 +598,33 @@ func (r *Redis) Transfer(ctx context.Context, partyID, leader, target uuid.UUID)
 		return TransferResult{}, fmt.Errorf("transfer party %s: %w", partyID, err)
 	}
 	return TransferResult{Party: p}, nil
+}
+
+// LeaderOf is who leads the party playerID is in, read without changing anything; in is false when
+// they are in none. A pod deciding whether an arriving player joins their leader reads it
+// (FS-NCC9J R20).
+func (r *Redis) LeaderOf(ctx context.Context, playerID uuid.UUID) (leader uuid.UUID, in bool, err error) {
+	pointer, err := r.client.Get(ctx, pointerKey(playerID)).Result()
+	if errors.Is(err, redis.Nil) {
+		return uuid.Nil, false, nil
+	}
+	if err != nil {
+		return uuid.Nil, false, fmt.Errorf("read party pointer of %s: %w", playerID, err)
+	}
+	partyID, err := uuid.Parse(pointer)
+	if err != nil {
+		return uuid.Nil, false, fmt.Errorf("parse party pointer of %s: %w", playerID, err)
+	}
+	raw, err := r.client.HGet(ctx, partyKey(partyID), "leader").Result()
+	if errors.Is(err, redis.Nil) {
+		return uuid.Nil, false, nil
+	}
+	if err != nil {
+		return uuid.Nil, false, fmt.Errorf("read leader of party %s: %w", partyID, err)
+	}
+	leader, err = uuid.Parse(raw)
+	if err != nil {
+		return uuid.Nil, false, fmt.Errorf("parse leader of party %s: %w", partyID, err)
+	}
+	return leader, true, nil
 }

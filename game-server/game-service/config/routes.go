@@ -17,6 +17,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/gameserver"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/handoff"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/hubocc"
 	matchqueue "github.com/darkphotonKN/barrowspire-server/game-service/internal/match_queue"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
@@ -105,6 +106,7 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 		// the presence index and the pod inbox ride it too: invites reach players on other pods
 		// (FS-R82NV R7, R9)
 		gameserver.WithPresence(partypresence.NewRedis(redisClient)),
+		gameserver.WithHubOccupancy(hubocc.NewRedis(redisClient)),
 		gameserver.WithPodInbox(chatbus.NewRedis(redisClient)),
 	)
 	if err != nil {

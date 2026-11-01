@@ -23,7 +23,7 @@ func TestSeat_WritesNameAndIDKeysWithTTL(t *testing.T) {
 	presence := partypresence.NewRedis(client)
 	wren := partypresence.Entry{PlayerID: uuid.New(), Name: "Wren", World: "field"}
 
-	require.NoError(t, presence.Seat(context.Background(), "pod-a", []partypresence.Entry{wren}))
+	require.NoError(t, presence.Seat(context.Background(), "pod-a", "ws://pod-a/ws", []partypresence.Entry{wren}))
 
 	for _, key := range []string{"presence:name:wren", "presence:id:" + wren.PlayerID.String()} {
 		assert.Equal(t, wren.PlayerID.String(), mini.HGet(key, "player_id"), key)
@@ -40,13 +40,13 @@ func TestLookup_ByNameAnyCaseOrByID(t *testing.T) {
 	client, _ := testutil.NewRedis(t)
 	presence := partypresence.NewRedis(client)
 	wren := partypresence.Entry{PlayerID: uuid.New(), Name: "Wren", World: "run"}
-	require.NoError(t, presence.Seat(context.Background(), "pod-b", []partypresence.Entry{wren}))
+	require.NoError(t, presence.Seat(context.Background(), "pod-b", "ws://pod-b/ws", []partypresence.Entry{wren}))
 
 	for _, query := range []string{"Wren", " wREN ", wren.PlayerID.String()} {
 		found, ok, err := presence.Lookup(context.Background(), query)
 		require.NoError(t, err, query)
 		require.True(t, ok, "%q is seated", query)
-		assert.Equal(t, partypresence.Found{PlayerID: wren.PlayerID, Name: "Wren", PodID: "pod-b", World: "run"}, found, query)
+		assert.Equal(t, partypresence.Found{PlayerID: wren.PlayerID, Name: "Wren", PodID: "pod-b", PodAddr: "ws://pod-b/ws", World: "run"}, found, query)
 	}
 	for _, query := range []string{"Nobody", uuid.NewString(), ""} {
 		_, ok, err := presence.Lookup(context.Background(), query)
@@ -62,9 +62,9 @@ func TestUnseat_DeletesOnlyThisPodsKeys(t *testing.T) {
 	presence := partypresence.NewRedis(client)
 	wren := partypresence.Entry{PlayerID: uuid.New(), Name: "Wren"}
 	kaelen := partypresence.Entry{PlayerID: uuid.New(), Name: "Kaelen"}
-	require.NoError(t, presence.Seat(context.Background(), "pod-a", []partypresence.Entry{wren, kaelen}))
+	require.NoError(t, presence.Seat(context.Background(), "pod-a", "ws://pod-a/ws", []partypresence.Entry{wren, kaelen}))
 	// Kaelen was handed to pod B, which seated him there
-	require.NoError(t, presence.Seat(context.Background(), "pod-b", []partypresence.Entry{kaelen}))
+	require.NoError(t, presence.Seat(context.Background(), "pod-b", "ws://pod-b/ws", []partypresence.Entry{kaelen}))
 
 	require.NoError(t, presence.Unseat(context.Background(), "pod-a", []partypresence.Entry{wren, kaelen}))
 
@@ -80,15 +80,38 @@ func TestLookupIDs_EachPresentOne(t *testing.T) {
 	presence := partypresence.NewRedis(client)
 	wren := partypresence.Entry{PlayerID: uuid.New(), Name: "Wren", World: "hub"}
 	marl := partypresence.Entry{PlayerID: uuid.New(), Name: "Marl", World: "field"}
-	require.NoError(t, presence.Seat(context.Background(), "pod-a", []partypresence.Entry{wren}))
-	require.NoError(t, presence.Seat(context.Background(), "pod-b", []partypresence.Entry{marl}))
+	require.NoError(t, presence.Seat(context.Background(), "pod-a", "ws://pod-a/ws", []partypresence.Entry{wren}))
+	require.NoError(t, presence.Seat(context.Background(), "pod-b", "ws://pod-b/ws", []partypresence.Entry{marl}))
 	absent := uuid.New()
 
 	found, err := presence.LookupIDs(context.Background(), []uuid.UUID{wren.PlayerID, absent, marl.PlayerID})
 	require.NoError(t, err)
 
 	assert.Equal(t, map[uuid.UUID]partypresence.Found{
-		wren.PlayerID: {PlayerID: wren.PlayerID, Name: "Wren", PodID: "pod-a", World: "hub"},
-		marl.PlayerID: {PlayerID: marl.PlayerID, Name: "Marl", PodID: "pod-b", World: "field"},
+		wren.PlayerID: {PlayerID: wren.PlayerID, Name: "Wren", PodID: "pod-a", PodAddr: "ws://pod-a/ws", World: "hub"},
+		marl.PlayerID: {PlayerID: marl.PlayerID, Name: "Marl", PodID: "pod-b", PodAddr: "ws://pod-b/ws", World: "field"},
 	}, found)
+}
+
+// Every seat carries the address of the pod holding the player, so whoever finds them can send a
+// player there: by name, by id, and in a batch (FS-NCC9J R18; I-NCC9J-5).
+func TestSeat_CarriesThePodAddress(t *testing.T) {
+	client, _ := testutil.NewRedis(t)
+	presence := partypresence.NewRedis(client)
+	wren := partypresence.Entry{PlayerID: uuid.New(), Name: "Wren", World: "hub"}
+	require.NoError(t, presence.Seat(context.Background(), "pod-a", "ws://pod-a/ws", []partypresence.Entry{wren}))
+
+	byName, found, err := presence.Lookup(context.Background(), "wren")
+	require.NoError(t, err)
+	require.True(t, found)
+	byID, found, err := presence.Lookup(context.Background(), wren.PlayerID.String())
+	require.NoError(t, err)
+	require.True(t, found)
+	batch, err := presence.LookupIDs(context.Background(), []uuid.UUID{wren.PlayerID})
+	require.NoError(t, err)
+
+	for how, f := range map[string]partypresence.Found{"name": byName, "id": byID, "batch": batch[wren.PlayerID]} {
+		assert.Equal(t, "pod-a", f.PodID, how)
+		assert.Equal(t, "ws://pod-a/ws", f.PodAddr, how)
+	}
 }

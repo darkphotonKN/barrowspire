@@ -72,6 +72,10 @@ type Server struct {
 	// the reconnect grace each dropped member is held under, by member, and
 	// the last hold handed out
 	graceHolds map[uuid.UUID]graceHold
+	// members this pod has let go to travel to another pod, by the connection
+	// the handoff went over: not present here, and not held for the grace when
+	// that connection drops (FS-NCC9J R19)
+	travelling map[uuid.UUID]*websocket.Conn
 	// resolved run members whose reconnect grace ran out: kept, body and
 	// record, until their run ends and settles them (FS-QPDKN R18, R19)
 	awaitingSettlement map[uuid.UUID]struct{}
@@ -90,6 +94,9 @@ type Server struct {
 	itemsClient grpcitems.ItemsClient
 	// resolves the character a member enters with
 	characters CharacterReader
+	// who leads an arriving member's party, so one joining their leader here
+	// is let in past the hub's cap; nil lets nobody past it (FS-NCC9J R20)
+	leaders partyLeaders
 
 	// this pod's parties; read here only to learn when shutdown dissolved them
 	parties *partyRegistry
@@ -161,6 +168,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		players:            make(map[uuid.UUID]*types.Player, 10),
 		connToPlayer:       make(map[*websocket.Conn]*types.Player, 10),
 		graceHolds:         make(map[uuid.UUID]graceHold),
+		travelling:         make(map[uuid.UUID]*websocket.Conn),
 		awaitingSettlement: make(map[uuid.UUID]struct{}),
 
 		queue:        queueService,
@@ -168,6 +176,9 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		eventEmitter: eventEmitter,
 		itemsClient:  itemsClient,
 		characters:   characters,
+	}
+	if leaders, reads := boot.partyStore.(partyLeaders); reads {
+		server.leaders = leaders
 	}
 
 	// initialize message sender
@@ -202,13 +213,20 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		presence: boot.presence,
 		inbox:    inbox,
 	})
+	if boot.hubOccupancy != nil {
+		party.cfg.occupancy = boot.hubOccupancy
+	}
 	server.parties = party
 	party.start(ctx)
 	var presenceWriter presenceIndex
 	if boot.presence != nil {
 		presenceWriter = boot.presence
 	}
-	presence := newPresenceKeeper(presenceWriter, server, podID, boot.partyNow, redisWriter)
+	var occupancy hubOccupancyPublisher
+	if boot.hubOccupancy != nil {
+		occupancy = boot.hubOccupancy
+	}
+	presence := newPresenceKeeper(presenceWriter, occupancy, server, podID, podAddr, boot.partyNow, redisWriter)
 	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat, party, presence, jobs)
 	go messageHub.Run(ctx)
 	chat.start(ctx)
@@ -294,7 +312,35 @@ func (s *Server) EnterHub(ctx context.Context, conn *websocket.Conn, characterID
 		return nil, fmt.Errorf("%w: %w", errCharactersUnavailable, err)
 	}
 
-	return s.JoinHub(conn, character)
+	return s.joinHub(conn, character, s.travelMargin(ctx, player.ID))
+}
+
+// partyLeaders is who leads a player's party, read without changing it: partystore.Redis in
+// production.
+type partyLeaders interface {
+	LeaderOf(ctx context.Context, playerID uuid.UUID) (uuid.UUID, bool, error)
+}
+
+// travelMargin is how far past the hub's cap a player entering it is let in: one full party for a
+// member whose party's leader stands in this hub, whether they came by party_travel or not, and
+// nothing for anyone else. An unreadable party lets nobody past (FS-NCC9J R18, R20, amended).
+func (s *Server) travelMargin(ctx context.Context, playerID uuid.UUID) int {
+	if s.leaders == nil {
+		return 0
+	}
+	leader, in, err := s.leaders.LeaderOf(ctx, playerID)
+	if err != nil {
+		slog.Warn("Could not read the party of a player entering the hub, held to the cap", "player_id", playerID, "error", err)
+		return 0
+	}
+	if !in || leader == playerID {
+		return 0
+	}
+	hub, exists := s.HubSession()
+	if !exists || !hub.HasPlayer(leader) {
+		return 0
+	}
+	return constants.HubTravelMargin
 }
 
 /**
@@ -306,6 +352,11 @@ func (s *Server) EnterHub(ctx context.Context, conn *websocket.Conn, characterID
 * both have to be told. CreateGameSession does the same thing for the same reason.
 **/
 func (s *Server) JoinHub(conn *websocket.Conn, character types.CharacterInPlay) (*game.Session, error) {
+	return s.joinHub(conn, character, 0)
+}
+
+// joinHub is JoinHub with the hub's cap raised by margin (travelMargin).
+func (s *Server) joinHub(conn *websocket.Conn, character types.CharacterInPlay, margin int) (*game.Session, error) {
 	hub, exists := s.HubSession()
 	if !exists {
 		return nil, errHubMissing
@@ -351,7 +402,7 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.CharacterInPlay) 
 	// out here would mean holding the server's lock over data the session owns,
 	// which serialises JoinHub against itself and nothing else, so the next path
 	// into the hub would sidestep the cap without noticing.
-	if err := hub.Admit(player.ID, character, s.tokenOf(player)); err != nil {
+	if err := hub.AdmitPast(player.ID, character, s.tokenOf(player), margin); err != nil {
 		return nil, err
 	}
 
@@ -714,6 +765,47 @@ func (s *Server) ApplyRunProgress(progress []types.RunProgress) {
 /**
 * The hub world, which every connected player returns to between runs.
 **/
+/**
+* LetGo lets a member go to travel to another pod over conn (FS-NCC9J R19):
+* they are not present here from now on, so the presence index drops them on
+* the next tick, and when conn drops they are not held for the reconnect
+* grace, so a reconnect never returns them here. TakeBack undoes it while
+* they are still on conn; a new connection here undoes it too.
+**/
+func (s *Server) LetGo(playerID uuid.UUID, conn *websocket.Conn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.travelling[playerID] = conn
+}
+
+// TakeBack keeps a member let go over conn after all: the travel never took
+// them, and they are still here on it.
+func (s *Server) TakeBack(playerID uuid.UUID, conn *websocket.Conn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.travelling[playerID] == conn {
+		delete(s.travelling, playerID)
+	}
+}
+
+// letGoOver reports whether conn carries a member let go to travel.
+func (s *Server) letGoOver(conn *websocket.Conn) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	player, mapped := s.connToPlayer[conn]
+	return mapped && s.travelling[player.ID] == conn
+}
+
+// HubOccupancy is how many players this pod's hub seats: the count its cap is held to. FS-JEAVX
+// R19.
+func (s *Server) HubOccupancy() int {
+	hub, exists := s.HubSession()
+	if !exists {
+		return 0
+	}
+	return hub.Occupancy()
+}
+
 func (s *Server) HubSession() (*game.Session, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -782,6 +874,8 @@ func (s *Server) MapConnToPlayer(conn *websocket.Conn, playerID uuid.UUID, msgCh
 	if !onRecord {
 		return nil, false
 	}
+	// back on a new connection: a travel they were let go for did not take them
+	delete(s.travelling, playerID)
 
 	var superseded []*websocket.Conn
 
@@ -908,6 +1002,9 @@ func (s *Server) PresentPlayers() []presentPlayer {
 			continue
 		}
 		if _, kept := s.awaitingSettlement[id]; kept {
+			continue
+		}
+		if _, gone := s.travelling[id]; gone {
 			continue
 		}
 		world, inWorld := s.sessions[record.CurrentGameSessionId]

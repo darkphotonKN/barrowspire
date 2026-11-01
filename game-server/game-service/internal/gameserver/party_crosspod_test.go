@@ -11,6 +11,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/chatbus"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/hubocc"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partystore"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/testutil"
@@ -26,11 +27,16 @@ import (
 // player seated on another pod through the presence index and that pod's inbox, and a decline
 // comes back the same way.
 
-// partyPod is one replica in a two-pod party test: its own clock and ticks, a shared miniredis.
+// partyPod is one replica in a two-pod party test: its own clock, ticks and address, a shared
+// miniredis.
 type partyPod struct {
 	*partyRig
-	podID string
+	podID   string
+	podAddr string
 }
+
+// podAddrOf is the address a test pod is reached at: each its own, so a handoff names one.
+func podAddrOf(podID string) string { return "ws://" + podID + ".test/ws" }
 
 func newPartyPod(t *testing.T, client redis.UniversalClient, podID string, inbox inboxBus, opts ...Option) *partyPod {
 	t.Helper()
@@ -39,15 +45,18 @@ func newPartyPod(t *testing.T, client redis.UniversalClient, podID string, inbox
 	partyClock := newChatClock()
 	ticks := make(chan time.Time)
 	queue := NewMockQueueService()
+	var server *Server
+	t.Cleanup(func() { stopWorlds(server) })
 	ctx, shutdown := context.WithCancel(context.Background())
 	t.Cleanup(shutdown)
-	server := newTestServer(t, ctx, &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, characters, podID, testPodAddr, noopAnnouncer{},
+	server = newTestServer(t, ctx, &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, characters, podID, podAddrOf(podID), noopAnnouncer{},
 		append([]Option{
 			WithPartyClock(partyClock.now),
 			withPartyTicks(ticks),
 			WithPartyStore(partystore.NewRedis(client)),
 			WithPresence(partypresence.NewRedis(client)),
 			WithPodInbox(inbox),
+			WithHubOccupancy(hubocc.NewRedis(client)),
 		}, opts...)...,
 	)
 	hub, ok := server.HubSession()
@@ -64,7 +73,8 @@ func newPartyPod(t *testing.T, client redis.UniversalClient, podID string, inbox
 			queue:      queue,
 			shutdown:   shutdown,
 		},
-		podID: podID,
+		podID:   podID,
+		podAddr: podAddrOf(podID),
 	}
 }
 
@@ -105,7 +115,7 @@ func TestPartyInvite_CrossPod_ReachesTheOtherPod(t *testing.T) {
 	assert.Equal(t, "Wren", invite.Payload["leader_name"])
 	assert.EqualValues(t, 1, invite.Payload["member_count"])
 	assert.EqualValues(t, defaultPartySize, invite.Payload["size"])
-	assert.Equal(t, testPodAddr, invite.Payload["party_pod_addr"])
+	assert.Equal(t, a.podAddr, invite.Payload["party_pod_addr"])
 	assert.NotEmpty(t, invite.Payload["invite_id"])
 	assert.NotContains(t, invite.Payload, "inviter_pod_id", "pod ids stay between pods")
 

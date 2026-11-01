@@ -1370,6 +1370,12 @@ var ErrWorldFull = errors.New("this world is full")
 * directly rather than asking.
 **/
 func (s *Session) Admit(playerID uuid.UUID, character types.CharacterInPlay, token types.BearerToken) error {
+	return s.AdmitPast(playerID, character, token, 0)
+}
+
+// AdmitPast is Admit with the hub's cap raised by margin: a member joining their party's leader
+// in this hub is let in up to one full party past it (FS-NCC9J R18, R20, amended).
+func (s *Session) AdmitPast(playerID uuid.UUID, character types.CharacterInPlay, token types.BearerToken, margin int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1383,7 +1389,7 @@ func (s *Session) Admit(playerID uuid.UUID, character types.CharacterInPlay, tok
 	}
 
 	if _, alreadyHere := s.playerIDToEntitiesID[playerID]; !alreadyHere {
-		if s.worldType == types.WorldTypeHub && len(s.playerIDToEntitiesID) >= constants.HubOccupancyCap {
+		if s.worldType == types.WorldTypeHub && len(s.playerIDToEntitiesID) >= constants.HubOccupancyCap+margin {
 			return fmt.Errorf("%w: %s", ErrWorldFull, s.ID)
 		}
 	}

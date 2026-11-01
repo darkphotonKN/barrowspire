@@ -36,6 +36,9 @@ type partyDirectory interface {
 	SeatedConns() map[uuid.UUID]*websocket.Conn
 	// whether a player is inside a run, where accepting is refused locked (R14)
 	InRun(playerID uuid.UUID) bool
+	// a traveller let go over conn, and kept after all when the travel did not take them (R19)
+	LetGo(playerID uuid.UUID, conn *websocket.Conn)
+	TakeBack(playerID uuid.UUID, conn *websocket.Conn)
 	IsQueued(ctx context.Context, playerID uuid.UUID) (bool, error)
 }
 
@@ -99,6 +102,8 @@ type partyRegistryConfig struct {
 	// on a pod that reaches no other
 	presence presenceLookup
 	inbox    letterBox
+	// how full each pod's hub is, read before a travel; nil checks no pod's room (FS-NCC9J R18)
+	occupancy hubOccupancyReader
 }
 
 type partyRegistry struct {
@@ -109,6 +114,10 @@ type partyRegistry struct {
 	run     *partyRunner
 	cache   *partyCache
 	courier *partyCourier
+
+	// travellers this pod has let go (R19), with the connection and until when: one still here on
+	// it once the window passes was not taken by the travel, and is taken back
+	letGo map[uuid.UUID]travelLetGo
 
 	// set as the pod shuts down: party actions are ignored from then on
 	closed bool
@@ -121,6 +130,7 @@ func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJob
 		sender:    sender,
 		cfg:       cfg,
 		run:       newPartyRunner(jobs),
+		letGo:     make(map[uuid.UUID]travelLetGo),
 		done:      make(chan struct{}),
 	}
 	r.courier = newPartyCourier(cfg.inbox, sender, jobs, cfg.podID, r.heardUpdate)
@@ -828,11 +838,12 @@ func (r *partyRegistry) ticks() <-chan time.Time {
 	return r.cfg.ticks
 }
 
-// tick keeps the party cache.
+// tick keeps the party cache, and takes back any traveller the travel did not take.
 func (r *partyRegistry) tick(ctx context.Context) {
 	if r.closed {
 		return
 	}
+	r.takeBackLapsed()
 	r.cache.tick(ctx)
 }
 
