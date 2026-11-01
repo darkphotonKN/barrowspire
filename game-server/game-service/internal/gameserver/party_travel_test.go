@@ -211,7 +211,8 @@ func TestPartyTravel_WindowPassesStillHere_TakenBack(t *testing.T) {
 
 	b.partyClock.advance(travelWindow)
 	b.tick()
-	b.tick() // the presence keeper samples who is present after the take-back
+	b.settle(t) // the presence index is asked where Marl is, and he is taken back
+	b.tick()    // the presence keeper samples him again
 
 	awaitPresence(t, mini, "Marl", "pod-b")
 	require.False(t, b.server.letGoOver(marlConn))
@@ -274,23 +275,42 @@ func awaitEnterHub(t *testing.T, inbox *startSoloInbox, who string) (admitted bo
 	return false, ""
 }
 
-// A hub at its cap still admits a member joining their leader there, up to one full party past
-// it; anyone else is refused as ever, and past the margin so is the member. FS-NCC9J R18, R20
-// (amended: travel's fixed margin, constants.HubTravelMargin).
+// A hub at its cap still admits a member joining their leader on that pod, wherever on it the
+// leader stands, up to one full party past it; anyone else, and a member whose leader is on
+// another pod, is refused as ever, and past the margin so is the member. FS-NCC9J R18, R20
+// (amended: travel's fixed margin, constants.HubTravelMargin, shared by the whole hub).
 func TestPartyTravel_Arrival_HubAtItsCap_MemberJoiningTheLeaderAdmitted(t *testing.T) {
+	const (
+		inHub     = "hub"
+		inField   = "field"
+		elsewhere = "elsewhere"
+	)
 	tests := []struct {
 		name      string
 		occupancy int
 		member    bool
+		leader    string
 		admitted  bool
 	}{
-		{"at the cap, a member joining the leader", constants.HubOccupancyCap, true, true},
-		{"at the cap, a stranger", constants.HubOccupancyCap, false, false},
-		{"past the margin, a member joining the leader", constants.HubOccupancyCap + constants.HubTravelMargin, true, false},
+		{"at the cap, a member, the leader in the hub", constants.HubOccupancyCap, true, inHub, true},
+		{"at the cap, a member, the leader in a field here", constants.HubOccupancyCap, true, inField, true},
+		{"at the cap, a member, the leader on another pod", constants.HubOccupancyCap, true, elsewhere, false},
+		{"at the cap, a stranger", constants.HubOccupancyCap, false, inHub, false},
+		{"past the margin, a member, the leader in the hub", constants.HubOccupancyCap + constants.HubTravelMargin, true, inHub, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			a, b, mini, _, marl, _, _, _, _ := crossPodParty(t)
+			a, b, mini, wren, marl, wrenConn, _, _, _ := crossPodParty(t)
+			switch tt.leader {
+			case inField:
+				a.hub.RemovePlayer(wren.ID.String())
+				a.meadows.AddPlayerAt(wren.ID, wren.Character, "", 200, 200)
+				a.server.setCurrentWorld(wren, a.meadows.ID)
+				require.False(t, a.hub.HasPlayer(wren.ID), "Wren has left the hub for the field")
+			case elsewhere:
+				a.server.holdForReconnect(wrenConn)
+				a.server.cleanUpPlayerCompletely(wren.ID, a.server.graceHolds[wren.ID])
+			}
 			fillHubTo(t, a, tt.occupancy)
 			arriver := marl
 			if !tt.member {
@@ -321,4 +341,116 @@ func TestPartyTravel_LeaderPodAddressUnknown_Unavailable(t *testing.T) {
 	notice := awaitParty(t, marlInbox, partyNoticeAction, "Marl")
 	require.Equal(t, string(constants.PartyNoticeUnavailable), notice.Payload["code"])
 	assertNoParty(t, marlInbox, worldHandoffAction, "Marl")
+}
+
+// A member this pod's cache does not yet know as one (their join's letter still on its way) is
+// handed off all the same: travel decides on the party as Redis holds it, so a stale cache never
+// changes the outcome (R4).
+func TestPartyTravel_JoinNotYetCached_HandedOff(t *testing.T) {
+	a, b, mini, wren, _, _, _, _, _ := crossPodParty(t)
+	ori, oriConn, oriInbox := seatedThere(t, b, mini, "Ori")
+	store := partystore.NewRedis(b.client)
+	inv := partystore.InviteArgs{Inviter: joinerOf(wren), InviteID: uuid.New(), TargetID: ori.ID, TargetName: "Ori", Size: 3, Now: b.partyClock.now()}
+	_, err := store.Invite(context.Background(), inv)
+	require.NoError(t, err)
+	_, err = store.Accept(context.Background(), partystore.AcceptArgs{InviteID: inv.InviteID, Accepter: joinerOf(ori), Now: b.partyClock.now()})
+	require.NoError(t, err)
+	drainInbox(oriInbox)
+
+	sendParty(b.server, oriConn, partyTravelAction, map[string]interface{}{})
+
+	handoff := awaitHandoff(t, oriInbox, "Ori")
+	require.Equal(t, a.podAddr, handoff.Payload["addr"])
+}
+
+// Pressing Travel twice before the first is answered sends one handoff. FS-NCC9J R18.
+func TestPartyTravel_PressedTwice_OneHandoff(t *testing.T) {
+	_, b, _, _, _, _, marlConn, _, marlInbox := crossPodParty(t)
+	drainInbox(marlInbox)
+
+	sendParty(b.server, marlConn, partyTravelAction, map[string]interface{}{})
+	sendParty(b.server, marlConn, partyTravelAction, map[string]interface{}{})
+
+	handoffs := 0
+	for _, msg := range collectInbox(marlInbox) {
+		require.NotEqual(t, partyNoticeAction, msg.Action, "the second press is answered with nothing: %v", msg.Payload)
+		if msg.Action == worldHandoffAction {
+			handoffs++
+		}
+	}
+	require.Equal(t, 1, handoffs)
+}
+
+// With Redis unreachable a travel is refused unavailable: it is never decided on the cache alone.
+// FS-NCC9J R8, R18; Edge States "Redis unreachable".
+func TestPartyTravel_RedisUnreachable_Unavailable(t *testing.T) {
+	_, b, mini, _, _, _, marlConn, _, marlInbox := crossPodParty(t)
+	drainInbox(marlInbox)
+	mini.SetError("connection refused")
+	t.Cleanup(func() { mini.SetError("") })
+
+	sendParty(b.server, marlConn, partyTravelAction, map[string]interface{}{})
+
+	notice := awaitParty(t, marlInbox, partyNoticeAction, "Marl")
+	require.Equal(t, string(constants.PartyNoticeUnavailable), notice.Payload["code"])
+}
+
+// A player in no party is told not_member before anything else, even standing in a field.
+// FS-NCC9J R18 (order).
+func TestPartyTravel_NoPartyInAField_NotMemberFirst(t *testing.T) {
+	_, b, mini := twoPartyPods(t)
+	_, oriConn, oriInbox := fieldOf(t, b, mini, "Ori")
+	drainInbox(oriInbox)
+
+	sendParty(b.server, oriConn, partyTravelAction, map[string]interface{}{})
+
+	notice := awaitParty(t, oriInbox, partyNoticeAction, "Ori")
+	require.Equal(t, string(constants.PartyNoticeNotMember), notice.Payload["code"])
+}
+
+// A traveller let go but still on their old socket (their arrival not yet made, or refused) is
+// still shown their party there: out of the presence index, so a letter from another pod passes
+// them by (they read as offline, R7), but pod B's next re-read reconciles them like anyone it
+// holds. FS-NCC9J R19, R20, R21a.
+func TestPartyTravel_LetGoButStillHere_StillShownTheParty(t *testing.T) {
+	a, b, mini, _, marl, wrenConn, marlConn, _, marlInbox := crossPodParty(t)
+	travelled(t, b, marlConn, marlInbox)
+	b.tick()
+	b.settle(t)
+	awaitPresence(t, mini, "Marl", "")
+	_, _, oriInbox := seatedThere(t, b, mini, "Ori")
+	a.invited(t, wrenConn, "Ori", oriInbox)
+	drainInbox(marlInbox)
+
+	b.runs(t, partyRefreshInterval)
+
+	update := awaitParty(t, marlInbox, partyUpdateAction, "Marl, still on pod B")
+	require.Contains(t, memberIDsOf(t, update), marl.ID.String())
+	require.Len(t, listOf(t, update, "reserved"), 1, "the slot held for Ori")
+}
+
+// A traveller who has arrived elsewhere is never taken back, even if their old socket here never
+// reports closing (a half-open connection): the window passing finds them present on another pod,
+// so this pod keeps them let go, never overwrites that pod's presence, and still drops them
+// without the reconnect grace when the socket finally fails. FS-NCC9J R19 (code review MED).
+func TestPartyTravel_ArrivedElsewhere_NeverTakenBack(t *testing.T) {
+	a, b, mini, _, marl, _, marlConn, _, marlInbox := crossPodParty(t)
+	travelled(t, b, marlConn, marlInbox)
+	b.tick()
+	b.settle(t)
+	awaitPresence(t, mini, "Marl", "")
+	_, arrivedInbox := arrivesAt(t, a, marl)
+	awaitParty(t, arrivedInbox, string(constants.ActionWorldEntered), "Marl, on pod A")
+	a.tick()
+	awaitPresence(t, mini, "Marl", "pod-a")
+
+	b.partyClock.advance(travelWindow)
+	b.tick()
+	b.settle(t)
+	b.tick()
+	b.settle(t)
+
+	require.True(t, b.server.letGoOver(marlConn), "pod B still lets Marl go")
+	require.Never(t, func() bool { return mini.HGet("presence:name:marl", "pod_id") != "pod-a" },
+		200*time.Millisecond, 10*time.Millisecond, "pod A's presence for Marl stands")
 }

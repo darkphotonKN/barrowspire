@@ -54,6 +54,9 @@ type partyStore interface {
 	Transfer(ctx context.Context, partyID, leader, target uuid.UUID) (partystore.TransferResult, error)
 	// what the party cache reads with: the registry hands the store to it
 	partyReader
+	// what the server reads as a player enters the hub, to let one joining their leader past the
+	// cap (FS-NCC9J R20)
+	partyLeaders
 }
 
 // presenceLookup finds players present on any pod: partypresence.Redis in production (R7).
@@ -118,6 +121,8 @@ type partyRegistry struct {
 	// travellers this pod has let go (R19), with the connection and until when: one still here on
 	// it once the window passes was not taken by the travel, and is taken back
 	letGo map[uuid.UUID]travelLetGo
+	// travellers whose press is being read off the loop: a second press meanwhile is ignored
+	travelReads map[uuid.UUID]struct{}
 
 	// set as the pod shuts down: party actions are ignored from then on
 	closed bool
@@ -126,12 +131,13 @@ type partyRegistry struct {
 
 func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJobs, cfg partyRegistryConfig) *partyRegistry {
 	r := &partyRegistry{
-		directory: directory,
-		sender:    sender,
-		cfg:       cfg,
-		run:       newPartyRunner(jobs),
-		letGo:     make(map[uuid.UUID]travelLetGo),
-		done:      make(chan struct{}),
+		directory:   directory,
+		sender:      sender,
+		cfg:         cfg,
+		run:         newPartyRunner(jobs),
+		letGo:       make(map[uuid.UUID]travelLetGo),
+		travelReads: make(map[uuid.UUID]struct{}),
+		done:        make(chan struct{}),
 	}
 	r.courier = newPartyCourier(cfg.inbox, sender, jobs, cfg.podID, r.heardUpdate)
 	var reader partyReader
@@ -843,7 +849,7 @@ func (r *partyRegistry) tick(ctx context.Context) {
 	if r.closed {
 		return
 	}
-	r.takeBackLapsed()
+	r.takeBackLapsed(ctx)
 	r.cache.tick(ctx)
 }
 
