@@ -1,6 +1,6 @@
 ---
 id: I-RG1B4-2
-status: open
+status: done
 implements: FS-RG1B4
 blocked_by: [I-RG1B4-1]
 labels: [ready-for-agent]

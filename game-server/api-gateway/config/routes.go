@@ -168,8 +168,7 @@ func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel) (*gi
 	conns = append(conns, paymentClient)
 	paymentHandler := payment.NewHandler(paymentClient)
 
-	// Payment routes are SERIALIZED (FS-NTPW2 slice 4) — EXCEPT the webhook below.
-
+	// No player-facing payment routes (FS-RG1B4): only the webhook Stripe calls.
 	// Stripe Webhook (no auth - Stripe sends POST directly)
 	router.POST("/webhook/stripe", paymentHandler.WebhookHandler)
 
@@ -240,7 +239,6 @@ func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel) (*gi
 		Items:          itemHandler,
 		Notification:   notificationHandler,
 		Stats:          statsHandler,
-		Payment:        paymentHandler,
 		Ledger:         ledgerHandler,
 		Listing:        listingHandler,
 		Wallet:         walletHandler,

@@ -30,32 +30,7 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-func (c *Client) CreateCustomer(ctx context.Context, req *pb.CreateCustomerRequest) (*pb.CreateCustomerResponse, error) {
-	client := pb.NewPaymentServiceClient(c.conn)
-	return client.CreateCustomer(ctx, req)
-}
-
-func (c *Client) SetupSubscription(ctx context.Context, req *pb.SetupSubscriptionRequest) (*pb.SetupSubscriptionResponse, error) {
-	client := pb.NewPaymentServiceClient(c.conn)
-	return client.SetupSubscription(ctx, req)
-}
-
-func (c *Client) Subscribe(ctx context.Context, req *pb.SubscribeRequest) (*pb.SubscribeResponse, error) {
-	client := pb.NewPaymentServiceClient(c.conn)
-	return client.Subscribe(ctx, req)
-}
-
-func (c *Client) GetUserSubscriptions(ctx context.Context, req *pb.GetUserSubscriptionsRequest) (*pb.GetUserSubscriptionsResponse, error) {
-	client := pb.NewPaymentServiceClient(c.conn)
-	return client.GetUserSubscriptions(ctx, req)
-}
-
 func (c *Client) ProcessWebhook(ctx context.Context, req *pb.ProcessWebhookRequest) (*pb.ProcessWebhookResponse, error) {
 	client := pb.NewPaymentServiceClient(c.conn)
 	return client.ProcessWebhook(ctx, req)
-}
-
-func (c *Client) CheckPermission(ctx context.Context, req *pb.CheckPermissionRequest) (*pb.CheckPermissionResponse, error) {
-	client := pb.NewPaymentServiceClient(c.conn)
-	return client.CheckPermission(ctx, req)
 }
