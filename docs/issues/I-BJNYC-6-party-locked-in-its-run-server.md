@@ -1,6 +1,6 @@
 ---
 id: I-BJNYC-6
-status: open
+status: done
 implements: FS-BJNYC
 blocked_by: [I-BJNYC-3]
 labels: [ready-for-agent]
@@ -50,3 +50,7 @@ FS-BJNYC §Requirements R19, R5.3; §User Stories 18, 19, 25; §Acceptance Crite
 
 - RED: a party in its run; each of leave/kick/transfer is refused `locked`.
 - GREEN: `locked` reads the run record; release on run end.
+
+## Charter run (2026-11-02)
+
+Built by a /develop child (TDD), two-axis review: ready to merge. Review fix: `locked` made read-only.

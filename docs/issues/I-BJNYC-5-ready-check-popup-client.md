@@ -1,10 +1,10 @@
 ---
 id: I-BJNYC-5
-status: open
+status: in-progress
 implements: FS-BJNYC
 blocked_by: [I-BJNYC-3]
 labels: [ready-for-agent]
-title: "FS-BJNYC slice 5: the ready-check popup: every member's state, a 15 s countdown, the leader's row already ticked (game-client)"
+title: "FS-BJNYC slice 5: the ready-check popup: every member's state, a 30 s countdown, the leader's row already ticked (game-client)"
 ---
 Implements FS-BJNYC §Requirements R23–R26, §Copy
 
@@ -62,3 +62,7 @@ FS-BJNYC §Requirements R23–R26; §Copy (popup, cancelled rows); §User Storie
 - RED: layout for a leader viewer: leader row accepted, no buttons; for a waiting member: Accept and Decline.
 - RED: countdown seconds from `expires_in_ms`; cancel copy per reason.
 - GREEN: store, layout, popup, scene mount.
+
+## Charter run (2026-11-02)
+
+Built by a /develop child (TDD), two-axis review: ready to merge. Browser check pending: the popup for every member, leader ticked, 30 s countdown. Open for Nick: the popup hides under the gear overlay and Esc menu while the countdown runs.

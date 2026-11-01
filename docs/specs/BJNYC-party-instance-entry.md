@@ -1,12 +1,12 @@
 # FS-BJNYC: Enter the Spire as a party
 
-> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Party" → "Enter an instance as a party from its gate", "Ready check before a party enters", "Party members enter only with their party", "A party is locked inside its instance"; `game-client/SPECIFICATION.md` "### Party" → "Enter the Spire as a party", "Party entry ready check" → this FS · Related ADRs: [ADR-0036](../adr/0036-party-state-lives-in-redis-membership-spans-pods.md) (party state in Redis, membership spans pods, no party pod; supersedes [ADR-0034](../adr/0034-a-party-lives-on-one-pod-joining-is-a-hub-handoff.md)), [ADR-0035](../adr/0035-a-party-is-the-universal-instance-roster-ephemeral-and-locked-inside.md) (an instance locks the party; its auto-formed-party and party-of-one halves are not built here, see Out of Scope), [ADR-0030](../adr/0030-field-worlds-are-per-replica-channels-entered-by-a-local-world-switch.md) (a field is never a handoff destination) · Depends on: [FS-R82NV](R82NV-party-formation.md) (the party, leader, succession to the earliest-joined), [FS-NCC9J](NCC9J-party-membership-across-pods.md) (party state in Redis, party cache, presence, travel to the leader; no invite or create in a run) · Builds on: [FS-NSV3D](NSV3D-solo-delve-entry.md) (`start_solo`: a run built for a given roster without the queue; party entry is its N-player form), [FS-0XMCP](0XMCP-hub-destination-gates.md) (the Spire gate, where entry actions live), [FS-K2HKP](K2HKP-cross-replica-matchmaking-and-handoff.md) (a run returns its players to its pod's hub) · Siblings: [FS-XGW7H](XGW7H-party-chat.md), [FS-V780R](V780R-party-loot-rule.md) · Related: [FS-BDA7X](BDA7X-character-leveling.md) (kill XP already goes to every living, un-escaped delver in full; no change) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) § Party (*party entry*, *ready check*, *instance lock*, *leader's pod*); [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) § Party terms
+> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Party" → "Enter an instance as a party from its gate", "Ready check before a party enters", "Party members enter only with their party", "A party is locked inside its instance"; `game-client/SPECIFICATION.md` "### Party" → "Enter the Spire as a party", "Party entry ready check" → this FS · Related ADRs: [ADR-0036](../adr/0036-party-state-lives-in-redis-membership-spans-pods.md) (party state in Redis, membership spans pods, no party pod; supersedes [ADR-0034](../adr/0034-a-party-lives-on-one-pod-joining-is-a-hub-handoff.md)), [ADR-0035](../adr/0035-a-party-is-the-universal-instance-roster-ephemeral-and-locked-inside.md) (an instance locks the party; its auto-formed-party and party-of-one halves are not built here, see Out of Scope), [ADR-0030](../adr/0030-field-worlds-are-per-replica-channels-entered-by-a-local-world-switch.md) (a field is never a handoff destination) · Depends on: [FS-R82NV](R82NV-party-formation.md) (the party, leader, succession to the earliest-joined), [FS-NCC9J](NCC9J-party-membership-across-pods.md) (party state in Redis, party cache, presence, travel to the leader; no invite or create in a run) · Builds on: [FS-NSV3D](NSV3D-solo-delve-entry.md) (`start_solo`: a run built for a given roster without the queue; party entry is its N-player form), [FS-0XMCP](0XMCP-hub-destination-gates.md) (the Spire gate, where entry actions live), [FS-K2HKP](K2HKP-cross-replica-matchmaking-and-handoff.md) (a run returns its players to its pod's hub) · Siblings: [FS-XGW7H](XGW7H-party-chat.md), [FS-V780R](V780R-party-loot-rule.md) · Related: [FS-BDA7X](BDA7X-character-leveling.md) (kill XP already goes to every living, un-escaped delver in full; no change) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) § Party (*party entry*, *ready check*, *instance lock*, *leader's pod*); [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) § Party terms · Amended 2026-11-02 after promotion: the ready check waits 30 s, was 15 s (Summary, R7, R10, Acceptance Criteria rows 7 and 9)
 
 ## Summary
 
 A party goes down the Spire together. The leader, standing at the Spire's door, chooses **Enter as
-a party**; every member gets the same popup listing each member's answer with a 15-second
-countdown, the leader already ticked; when every other member accepts, the whole party enters one
+a party**; every member gets the same popup listing each member's answer with a 30-second
+countdown *(Amended 2026-11-02, charter; Nick: ready check 30 s, was 15 s)*, the leader already ticked; when every other member accepts, the whole party enters one
 run at once, with no handoff, because everyone has already gathered in the leader's town. Inside,
 the party is locked: nobody leaves, is kicked or loses the lead by transfer. If the leader drops,
 the earliest-joined member leads at once. Afterwards the party is still a party, back in the same
@@ -16,7 +16,7 @@ together. That queue block ships first, on its own.
 Scoped 2026-11-01 with Nick; v1 cut and defaults set by the approved charter of 2026-11-02. Nick,
 verbatim: "組隊時不能按單人跟排隊 只能按隊伍進塔 目前沒檔"; chose "1加2" (build party entry, and
 block the queue now); "組隊進塔 隊長按了之後所有人都要在15秒內 按同意 跳窗會有所有人確認的狀況 還有秒數倒數";
-"隊長是按的人所以預設就打勾".
+"隊長是按的人所以預設就打勾"; then, 2026-11-02, "跑完後幫我改成30秒等待check".
 
 ## Requirements
 
@@ -65,7 +65,7 @@ block the queue now); "組隊進塔 隊長按了之後所有人都要在15秒內
 ### The ready check (game-service)
 
 7. **The leader's press is their acceptance.** When R5 passes, the pod opens a ready check for the
-   party: one id, the roster as read in R6, a 15-second deadline, the leader marked **accepted**
+   party: one id, the roster as read in R6, a 30-second deadline *(Amended 2026-11-02, charter; Nick: ready check 30 s, was 15 s)*, the leader marked **accepted**
    from the moment it opens and every other member **waiting**. *Charter default 5 (Nick approved
    2026-11-02, revised by Nick; "隊長是按的人所以預設就打勾"); reason: Nick's revision.*
 8. **Everyone sees the same state.** The new outbound message `party_ready_check` goes to every
@@ -81,7 +81,8 @@ block the queue now); "組隊進塔 隊長按了之後所有人都要在15秒內
    open, from someone not in it, or from someone who already answered is ignored (logged at debug).
 10. **Any no cancels.** The check is cancelled, and every member told who, when:
     - a member declines (`reason: declined`, their name);
-    - 15 s pass with members still waiting (`timeout`, the names of everyone still waiting);
+    - 30 s pass with members still waiting (`timeout`, the names of everyone still waiting)
+      *(Amended 2026-11-02, charter; Nick: ready check 30 s, was 15 s)*;
     - a member, the leader included, leaves the town (a field, travel, back to the roster)
       (`left`, their name);
     - a member, the leader included, disconnects (`disconnected`, their name);
@@ -235,9 +236,9 @@ village" reads "X is not in the town".
 - [ ] `party_enter` refusals fire in R5's order under a table-driven test: `not_member`, `not_leader`, `locked`, `checking`, `not_at_gate`, `not_in_town` (every absent member named, in join order), `unavailable`. (R5)
 - [ ] A member on another pod, in a field, in a run, away, or disconnected counts as not in the town; nobody is moved. (R4)
 - [ ] The roster is read from Redis off the hub loop and every decision is made on the loop. (R6)
-- [ ] On a passing `party_enter` every member, the leader included, receives `party_ready_check` `outcome: open` with the leader `accepted`, everyone else `waiting`, and `expires_in_ms` of about 15 000. (R7, R8)
+- [ ] On a passing `party_enter` every member, the leader included, receives `party_ready_check` `outcome: open` with the leader `accepted`, everyone else `waiting`, and `expires_in_ms` of about 30 000. (R7, R8) *(Amended 2026-11-02, charter; Nick: ready check 30 s, was 15 s)*
 - [ ] Each `party_ready` answer is recorded and every member receives the updated state; stale, foreign and repeated answers are ignored. (R8, R9)
-- [ ] A decline, a 15 s timeout, a member leaving the town, a member disconnecting, and a membership or leader change each cancel the check, and every member receives `outcome: cancelled` with the right `reason` and names. The leader leaving the gate zone within the town does not. (R10)
+- [ ] A decline, a 30 s timeout, a member leaving the town, a member disconnecting, and a membership or leader change each cancel the check, and every member receives `outcome: cancelled` with the right `reason` and names. The leader leaving the gate zone within the town does not. (R10) *(Amended 2026-11-02, charter; Nick: ready check 30 s, was 15 s)*
 - [ ] When the last member accepts, every member's gear is read off the loop; with the roster unchanged and everyone still in the town, one run is built with every member seated together and each receives `world_entered`; a member with unreadable gear cancels it `failed`, named. (R11, R13)
 - [ ] A party of just the leader enters at once on `party_enter`, no member popup. (R3)
 - [ ] A second `party_enter` during an open check is refused `checking`. (R12)
@@ -292,5 +293,5 @@ village" reads "X is not in the town".
 
 ### Draft decisions superseded by the charter
 
-- Ready check of **30 s** with only the other members prompted → **15 s**, everyone sees the same popup, the leader's press counts as acceptance (charter default 5, Nick).
+- Ready check of **30 s** with only the other members prompted → **15 s**, everyone sees the same popup, the leader's press counts as acceptance (charter default 5, Nick). The 15 s was itself amended to **30 s** after promotion (R7, Nick 2026-11-02).
 - "Party pod" → **the leader's pod** (ADR-0036).

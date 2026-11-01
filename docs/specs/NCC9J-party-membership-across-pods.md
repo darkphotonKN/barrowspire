@@ -82,23 +82,26 @@ as with FS-R82NV); the client side is agent lane.
     invite (R18). A player with no party who invites becomes the leader of a party of one only once
     the invite is delivered, as in FS-R82NV. *(Amended 2026-11-02, charter; Nick: two refusals join
     the list, which now reads `locked`, `not_leader`, `queued`, `party_full`, `self`, `not_found`,
-    `delving`, `already_in_party`, `pending`.
+    `in_run`, `already_in_party`, `pending`.
     **`locked`** (no name): the inviter is in a run (R9). It heads the list: it is the inviter's
     own world, read from this pod's directory with no Redis read, and the refusal the client
     already shows by greying Invite in a run for everyone. For a target on another pod it is
     checked again with the inviter's other standing when the lookup returns, since the inviter may
     have entered a run meanwhile.
-    **`delving`** with the target's name: the target is in a run, so they are never sent the
+    **`in_run`** with the target's name: the target is in a run, so they are never sent the
     invite, no slot is reserved, and an inviter with no party does not become a leader. It is read
     from what the invite has already: for a target this pod holds, the directory's `InRun`; for one
     on another pod, the `world: run` of the presence entry the lookup just read (R7). It sits after
     `not_found` because it needs the target found, and before `already_in_party` because for a
-    target on another pod that refusal is finally decided by the invite script: putting `delving`
+    target on another pod that refusal is finally decided by the invite script: putting `in_run`
     after it would need a further Redis read or a change to the script, while here it is decided in
     Go before the script runs and the script and the party's Redis structure stay as they are (Nick
     did not specify the place; this one is chosen as needing no extra Redis read). A presence entry
     lags a world change by up to one hub tick; an invite that slips through it meets R24.
     Charter default (Nick approved 2026-11-02); reason: no invite the target cannot accept.)*
+    *(Amended 2026-11-02, charter; Nick: the code is in_run, the copy unchanged; reason:
+    game-service CONTEXT.md keeps "run" in server code and "delve" in UI copy, as `not_in_hub`
+    already does.)*
 11. **Delivery anywhere.** The invite goes to the target's pod inbox and is delivered to the target
     in whatever world they stand (FS-R82NV R13's payload, `size` the cap). The inviter gets `sent`
     when the letter is queued, `delivery_failed` if it cannot be published. A letter for a player
@@ -116,7 +119,7 @@ as with FS-R82NV); the client side is agent lane.
     other open invites are voided (their leaders told `already_in_party`, FS-R82NV's voiding kept),
     and every member gets `party_update` reason `joined`. *(Amended 2026-11-02, charter; Nick:
     kept as the safety net. Since an invite to a player in a run is refused when sent (R10
-    `delving`), accepting inside a run is met only by a target who was invited outside one and
+    `in_run`), accepting inside a run is met only by a target who was invited outside one and
     entered a run within the invite's 60 s; they are still refused `locked`. Charter default (Nick
     approved 2026-11-02); reason: the one case left.)*
 15. **`party_create`** (FS-R82NV R4a) is allowed **anywhere**, like an invite. Refusals:
@@ -227,7 +230,7 @@ as with FS-R82NV); the client side is agent lane.
 24. **The invite prompt shows in every scene** (supersedes FS-R82NV R33), hidden only under the
     end-of-run overlay. In a run its Accept is greyed with "Not while delving." until FS-BJNYC.
     *(Amended 2026-11-02, charter; Nick: kept as the safety net. No invite reaches a player already
-    in a run (R10 `delving`); a target who received one in the village or a field and entered a run
+    in a run (R10 `in_run`); a target who received one in the village or a field and entered a run
     within its 60 s still sees the prompt, Accept greyed. Charter default (Nick approved
     2026-11-02); reason: the one case left.)*
 
@@ -263,12 +266,13 @@ as with FS-R82NV); the client side is agent lane.
 | `expired` | "That invitation has lapsed." (the accepter's view; the leader's line is R27's) |
 | `pod_full` | "No room where your party stands." (now at travel) |
 | `not_in_hub` | "Only from the village." (now: travel only) |
-| `delving` | "<name> is in a delve." (the invite's target is in a run, R10) |
+| `in_run` | "<name> is in a delve." (the invite's target is in a run, R10) |
 | `locked` | "Not while delving." (now also at invite and create from a run, R9, R15; the prompt's Accept keeps the same words, R24) |
 
-*(Amended 2026-11-02, charter; Nick: `delving` added and `locked` extended. Charter default (Nick
-approved 2026-11-02); reason: `locked` reuses the words the prompt already shows; `delving`
+*(Amended 2026-11-02, charter; Nick: `in_run` added and `locked` extended. Charter default (Nick
+approved 2026-11-02); reason: `locked` reuses the words the prompt already shows; `in_run`
 names the target so the inviter knows whom to ask later.)*
+*(Amended 2026-11-02, charter; Nick: the code is in_run, the copy unchanged)*
 
 ## User Stories
 
@@ -304,9 +308,9 @@ names the target so the inviter knows whom to ask later.)*
 - [ ] A player on pod A invites a player in a field on pod B; the prompt shows on B; accepting there makes them a member with no `world_handoff`, and both get `party_update` with two members.
 - [ ] An accept inside a run is refused `locked`; an invite to a player already in a party is refused `already_in_party`, from any pod. *(Amended 2026-11-02, charter: the accept case is now a target invited outside a run who entered one within the 60 s, R14.)*
 - [ ] `party_invite` and `party_create` from a player in a run are refused `locked`, first in their lists; a cross-pod invite whose inviter entered a run while the lookup was out is refused `locked` when it returns. *(Added 2026-11-02, charter; R9, R10, R15.)*
-- [ ] An invite to a player in a run is refused `delving` with their name, for a target on the same pod (directory `InRun`) and on another pod (presence `world: run`); the target gets no `party_invite`, no slot is reserved, an inviter with no party is left in none, and the invite script is not run. *(Added 2026-11-02, charter; R10.)*
+- [ ] An invite to a player in a run is refused `in_run` with their name, for a target on the same pod (directory `InRun`) and on another pod (presence `world: run`); the target gets no `party_invite`, no slot is reserved, an inviter with no party is left in none, and the invite script is not run. *(Added 2026-11-02, charter; R10.)* *(Amended 2026-11-02, charter; Nick: the code is in_run, the copy unchanged)*
 - [ ] Inviting and accepting in a field work as before. *(Added 2026-11-02, charter; R9.)*
-- [ ] Refusals of an invite fire in R10's order under a table-driven test, cross-pod rows included. *(Amended 2026-11-02, charter: R10's amended order, `locked` and `delving` rows included.)*
+- [ ] Refusals of an invite fire in R10's order under a table-driven test, cross-pod rows included. *(Amended 2026-11-02, charter: R10's amended order, `locked` and `in_run` rows included.)* *(Amended 2026-11-02, charter; Nick: the code is in_run, the copy unchanged)*
 - [ ] With size 2 and one open invite, a second invite is refused `party_full`; two accepts racing for one party on two pods never exceed the size (concurrent script test on miniredis).
 - [ ] Every member gets `reserved` entries for open invites; a decline or expiry removes the entry and frees the place.
 - [ ] Leave, kick, transfer and succession work across pods: a leader on pod B transfers to a member on pod A; the leader leaving promotes the earliest-joined wherever they are.
@@ -317,7 +321,7 @@ names the target so the inviter knows whom to ask later.)*
 - [ ] With Redis unreachable, a mutation is refused `unavailable`; the frames still render from the cache.
 - [ ] Presence holds players in fields and runs, with `world`; keys vanish on leaving and lapse within 30 s of a pod stopping.
 - [ ] No party read happens on the hub loop or in a world tick (reads come from the party cache).
-- [ ] Client: Invite and Create party work in every world; the prompt shows in every scene, Accept greyed in a run. *(Amended 2026-11-02, charter: Invite and Create party work in the town and a field and are greyed in a run (R23); the prompt keeps showing, Accept greyed, for an invite received before the run (R24); `delving` reads "<name> is in a delve." (R29).)*
+- [ ] Client: Invite and Create party work in every world; the prompt shows in every scene, Accept greyed in a run. *(Amended 2026-11-02, charter: Invite and Create party work in the town and a field and are greyed in a run (R23); the prompt keeps showing, Accept greyed, for an invite received before the run (R24); `in_run` reads "<name> is in a delve." (R29).)* *(Amended 2026-11-02, charter; Nick: the code is in_run, the copy unchanged)*
 - [ ] Client: frames show the player first, bars only for teammates in the player's world, name and bust otherwise, skeleton rows for `reserved`, and a Travel button beside the leader per R28.
 - [ ] Client: the leader's client writes "No answer from <name>." when a reserved slot expires.
 - [ ] `go test ./... -race` on the touched packages (Lua scripts tested on miniredis) and `vitest` green; lint fence passes.
