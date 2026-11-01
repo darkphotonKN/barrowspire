@@ -7,8 +7,8 @@ import (
 )
 
 /**
-* The pod's one ordered Redis writer for party state: party pointers (FS-R82NV R3) and the
-* presence index (R7). The hub's loop queues writes and never waits; one goroutine runs them in
+* The pod's one ordered Redis writer for the presence index (FS-R82NV R7; party changes go through
+* the party registry's runner, FS-NCC9J). The hub's loop queues writes and never waits; one goroutine runs them in
 * queue order, so a delete never overtakes the write it undoes, and a slow Redis holds up only
 * that goroutine.
 *

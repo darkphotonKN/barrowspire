@@ -4,16 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/chatbus"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypointer"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partystore"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/testutil"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
@@ -33,7 +32,7 @@ type partyPod struct {
 	podID string
 }
 
-func newPartyPod(t *testing.T, client redis.UniversalClient, podID string, inbox inboxBus) *partyPod {
+func newPartyPod(t *testing.T, client redis.UniversalClient, podID string, inbox inboxBus, opts ...Option) *partyPod {
 	t.Helper()
 
 	characters := newFakeCharacters()
@@ -43,11 +42,13 @@ func newPartyPod(t *testing.T, client redis.UniversalClient, podID string, inbox
 	ctx, shutdown := context.WithCancel(context.Background())
 	t.Cleanup(shutdown)
 	server := newTestServer(t, ctx, &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, characters, podID, testPodAddr, noopAnnouncer{},
-		WithPartyClock(partyClock.now),
-		withPartyTicks(ticks),
-		WithPartyPointers(partypointer.NewRedis(client)),
-		WithPresence(partypresence.NewRedis(client)),
-		WithPodInbox(inbox),
+		append([]Option{
+			WithPartyClock(partyClock.now),
+			withPartyTicks(ticks),
+			WithPartyStore(partystore.NewRedis(client)),
+			WithPresence(partypresence.NewRedis(client)),
+			WithPodInbox(inbox),
+		}, opts...)...,
 	)
 	hub, ok := server.HubSession()
 	require.True(t, ok)
@@ -57,6 +58,7 @@ func newPartyPod(t *testing.T, client redis.UniversalClient, podID string, inbox
 	return &partyPod{
 		partyRig: &partyRig{
 			chatRig:    &chatRig{server: server, clock: newChatClock(), hub: hub, meadows: meadows, characters: characters},
+			client:     client,
 			partyClock: partyClock,
 			ticks:      ticks,
 			queue:      queue,
@@ -73,11 +75,12 @@ func twoPartyPods(t *testing.T) (a, b *partyPod, mini *miniredis.Miniredis) {
 	return twoPartyPodsOn(t, client, mini, chatbus.NewRedis(client))
 }
 
-// twoPartyPodsOn is twoPartyPods with pod A writing to inboxes through aBus.
-func twoPartyPodsOn(t *testing.T, client redis.UniversalClient, mini *miniredis.Miniredis, aBus inboxBus) (a, b *partyPod, _ *miniredis.Miniredis) {
+// twoPartyPodsOn is twoPartyPods with pod A writing to inboxes through aBus, and pod B built
+// with bOpts as well.
+func twoPartyPodsOn(t *testing.T, client redis.UniversalClient, mini *miniredis.Miniredis, aBus inboxBus, bOpts ...Option) (a, b *partyPod, _ *miniredis.Miniredis) {
 	t.Helper()
 	a = newPartyPod(t, client, "pod-a", aBus)
-	b = newPartyPod(t, client, "pod-b", chatbus.NewRedis(client))
+	b = newPartyPod(t, client, "pod-b", chatbus.NewRedis(client), bOpts...)
 	for _, pod := range []string{"pod-a", "pod-b"} {
 		require.NoError(t, mini.Set("pod:alive:"+pod, "1"))
 		channel := "pod:" + pod + ":inbox"
@@ -104,7 +107,7 @@ func TestPartyInvite_CrossPod_ReachesTheOtherPod(t *testing.T) {
 	assert.EqualValues(t, defaultPartySize, invite.Payload["size"])
 	assert.Equal(t, testPodAddr, invite.Payload["party_pod_addr"])
 	assert.NotEmpty(t, invite.Payload["invite_id"])
-	assert.NotContains(t, invite.Payload, "party_pod_id", "pod ids stay between pods")
+	assert.NotContains(t, invite.Payload, "inviter_pod_id", "pod ids stay between pods")
 
 	sent := awaitParty(t, wrenInbox, partyNoticeAction, "Wren")
 	assert.Equal(t, "sent", sent.Payload["code"])
@@ -152,38 +155,21 @@ func TestPartyInvite_CrossPod_TargetInAFieldNotFound(t *testing.T) {
 	assert.Equal(t, "Marl", refused.Payload["name"])
 }
 
-// A target in a party on a live pod is already_in_party, from any pod. FS-R82NV R3, R12.
+// A target in a party is already_in_party, from any pod: the invite script finds their
+// pointer. FS-NCC9J R10.
 func TestPartyInvite_CrossPod_TargetInAPartyThere(t *testing.T) {
 	a, b, mini := twoPartyPods(t)
 	_, wrenConn, wrenInbox := a.inHub(t, "Wren")
 	marl, marlConn, marlInbox := seatedThere(t, b, mini, "Marl")
 	sendParty(b.server, marlConn, partyCreateAction, map[string]interface{}{})
 	awaitUpdate(t, marlInbox, "joined", marl.ID, "Marl")
-	require.Eventually(t, func() bool { return mini.Exists("player:" + marl.ID.String() + ":party") },
-		pointerWait, 10*time.Millisecond)
+	require.True(t, mini.Exists(pointerKey(marl.ID)))
 
 	sendParty(a.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Marl"})
 
 	refused := awaitParty(t, wrenInbox, partyNoticeAction, "Wren")
 	assert.Equal(t, "already_in_party", refused.Payload["code"])
 	assert.Equal(t, "Marl", refused.Payload["name"])
-}
-
-// An invite to another pod's player is pod_full when this pod's hub, with every arrival
-// already invited, is at its cap. FS-R82NV R12; Edge States "Party pod full".
-func TestPartyInvite_CrossPod_PodFull(t *testing.T) {
-	a, b, mini := twoPartyPods(t)
-	_, wrenConn, wrenInbox := a.inHub(t, "Wren")
-	for i := 1; i < constants.HubOccupancyCap; i++ {
-		filler := uuid.New()
-		a.hub.AddPlayerAt(filler, types.CharacterInPlay{ID: uuid.New(), Name: fmt.Sprintf("Filler%d", i), Class: "warrior", Level: 1}, "", 600, 600)
-	}
-	seatedThere(t, b, mini, "Marl")
-
-	sendParty(a.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Marl"})
-
-	refused := awaitParty(t, wrenInbox, partyNoticeAction, "Wren")
-	assert.Equal(t, "pod_full", refused.Payload["code"])
 }
 
 // failingPublish is the chat bus with every publish refused, as a Redis that has gone.
@@ -220,7 +206,7 @@ func TestPodInbox_LetterForAnAbsentPlayerDropped(t *testing.T) {
 	_, b, mini := twoPartyPods(t)
 	_, _, marlInbox := seatedThere(t, b, mini, "Marl")
 	raw, err := json.Marshal(letter{Kind: letterPartyInvite, ToPlayerID: uuid.NewString(), Payload: map[string]interface{}{
-		"invite_id": uuid.NewString(), "party_pod_id": "pod-a", "leader_name": "Wren",
+		"invite_id": uuid.NewString(), "inviter_pod_id": "pod-a", "leader_name": "Wren",
 	}})
 	require.NoError(t, err)
 
@@ -228,4 +214,41 @@ func TestPodInbox_LetterForAnAbsentPlayerDropped(t *testing.T) {
 
 	assertNoParty(t, marlInbox, partyInviteAction, "Marl: the letter was not his")
 	b.tick() // the loop still runs
+}
+
+// blippingDeclines is the party store with its first declines failing, as on a short Redis outage.
+type blippingDeclines struct {
+	*partystore.Redis
+	failures atomic.Int32
+}
+
+func (b *blippingDeclines) Decline(ctx context.Context, a partystore.DeclineArgs) (partystore.DeclineResult, error) {
+	if b.failures.Add(-1) >= 0 {
+		return partystore.DeclineResult{}, errors.New("redis blip")
+	}
+	return b.Redis.Decline(ctx, a)
+}
+
+// A decline on pod B that Redis could not take is refused unavailable, and a second try still
+// reaches pod A's inviter: the pod remembers where the invite came from until a decline lands
+// (FS-NCC9J R8, R13; code review 2026-11-01).
+func TestPartyDecline_CrossPod_RetriedAfterRedisBlip(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	declines := &blippingDeclines{Redis: partystore.NewRedis(client)}
+	declines.failures.Store(1)
+	a, b, _ := twoPartyPodsOn(t, client, mini, chatbus.NewRedis(client), WithPartyStore(declines))
+	_, wrenConn, wrenInbox := a.inHub(t, "Wren")
+	_, marlConn, marlInbox := seatedThere(t, b, mini, "Marl")
+	sendParty(a.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Marl"})
+	invite := awaitParty(t, marlInbox, partyInviteAction, "Marl")
+	awaitParty(t, wrenInbox, partyNoticeAction, "Wren") // sent
+
+	sendParty(b.server, marlConn, partyDeclineAction, map[string]interface{}{"invite_id": invite.Payload["invite_id"]})
+	refused := awaitParty(t, marlInbox, partyNoticeAction, "Marl")
+	assert.Equal(t, "unavailable", refused.Payload["code"])
+
+	sendParty(b.server, marlConn, partyDeclineAction, map[string]interface{}{"invite_id": invite.Payload["invite_id"]})
+	declined := awaitParty(t, wrenInbox, partyNoticeAction, "Wren")
+	assert.Equal(t, "declined", declined.Payload["code"])
+	assert.Equal(t, "Marl", declined.Payload["name"])
 }

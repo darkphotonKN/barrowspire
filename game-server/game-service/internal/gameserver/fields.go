@@ -123,8 +123,8 @@ type bootOptions struct {
 	partyTicks <-chan time.Time
 	// the party cap, PARTY_SIZE in production (FS-R82NV R8)
 	partySize int
-	// where party pointers are written; nil leaves them unwritten (FS-R82NV R3)
-	partyPointers partyPointers
+	// where parties live; nil refuses every party change unavailable (FS-NCC9J R1, R8)
+	partyStore partyStore
 	// where this pod's hub is written into the presence index; nil writes nothing (FS-R82NV R7)
 	presence presenceStore
 	// the Redis side of the pod inbox; nil, and this pod reaches no other (FS-R82NV R9)

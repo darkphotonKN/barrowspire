@@ -163,6 +163,9 @@ const (
 	PartyNoticeAlreadyInParty PartyNoticeCode = "already_in_party"
 	PartyNoticePodFull        PartyNoticeCode = "pod_full"
 	PartyNoticePending        PartyNoticeCode = "pending"
+
+	// PartyNoticeUnavailable: Redis cannot be reached, so the party cannot change. FS-NCC9J R8.
+	PartyNoticeUnavailable PartyNoticeCode = "unavailable"
 )
 
 // PartyUpdateReason is why a party_update was sent. FS-R82NV §Requirements 21.
@@ -179,6 +182,9 @@ const (
 	PartyUpdateLeader PartyUpdateReason = "leader"
 	// PartyUpdateKicked: the leader removed subject_id. FS-R82NV R19.
 	PartyUpdateKicked PartyUpdateReason = "kicked"
+	// PartyUpdateSync: the party as Redis holds it, sent to subject_id as they are seated on a
+	// pod. FS-NCC9J R6.
+	PartyUpdateSync PartyUpdateReason = "sync"
 )
 
 const (

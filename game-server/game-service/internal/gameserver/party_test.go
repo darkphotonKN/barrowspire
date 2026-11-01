@@ -8,12 +8,13 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypointer"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partystore"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/testutil"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,11 +32,15 @@ const (
 	partyNoticeAction = "party_notice"
 )
 
-// partyRig is a pod with its hub at hand, for players to form parties in. The
-// registry reads a clock the test turns and sweeps only when the test ticks, so
-// no test sleeps through an invite's minute.
+// partyRig is a pod with its hub at hand, for players to form parties in, its
+// parties on a miniredis of its own (FS-NCC9J R1; I-NCC9J-1 D8). The registry
+// reads a clock the test turns and ticks only when the test ticks, so no test
+// sleeps through an invite's minute.
 type partyRig struct {
 	*chatRig
+	// where the pod's parties live
+	mini       *miniredis.Miniredis
+	client     redis.UniversalClient
 	partyClock *chatClock
 	ticks      chan time.Time
 	queue      *mockQueueService
@@ -46,11 +51,19 @@ type partyRig struct {
 	inboxes map[uuid.UUID]*startSoloInbox
 }
 
-// newPartyRig builds the pod; opts add to the party clock and ticks, a party
-// size for instance.
+// newPartyRig builds the pod; opts add to the party clock, ticks and store, a
+// party size for instance.
 func newPartyRig(t *testing.T, opts ...Option) *partyRig {
 	t.Helper()
+	return newPartyRigOn(t, func(redis.UniversalClient) []Option { return opts })
+}
 
+// newPartyRigOn is newPartyRig with options that need the rig's Redis client.
+func newPartyRigOn(t *testing.T, extra func(client redis.UniversalClient) []Option) *partyRig {
+	t.Helper()
+
+	client, mini := testutil.NewRedis(t)
+	opts := append([]Option{WithPartyStore(partystore.NewRedis(client))}, extra(client)...)
 	characters := newFakeCharacters()
 	partyClock := newChatClock()
 	ticks := make(chan time.Time)
@@ -67,6 +80,8 @@ func newPartyRig(t *testing.T, opts ...Option) *partyRig {
 
 	return &partyRig{
 		chatRig:    &chatRig{server: server, clock: newChatClock(), hub: hub, meadows: meadows, characters: characters},
+		mini:       mini,
+		client:     client,
 		partyClock: partyClock,
 		ticks:      ticks,
 		queue:      queue,
@@ -162,7 +177,7 @@ func TestPartyInvite_SamePod_TargetPromptedInviterToldSent(t *testing.T) {
 	assert.NoError(t, err, "the first invite creates a party, minted here (R1, R4)")
 	assert.Equal(t, "Wren", invite.Payload["leader_name"], "the inviter leads the new party (R4)")
 	assert.EqualValues(t, 1, invite.Payload["member_count"], "a party of one: the leader alone")
-	assert.Equal(t, testPodAddr, invite.Payload["party_pod_addr"], "the party lives on the pod that created it (R2)")
+	assert.Equal(t, testPodAddr, invite.Payload["party_pod_addr"], "still sent for the client that reads it (I-NCC9J-1 D9)")
 
 	sent := awaitParty(t, wrenInbox, partyNoticeAction, "Wren")
 	assert.Equal(t, "sent", sent.Payload["code"])
@@ -263,13 +278,15 @@ func assertNoParty(t *testing.T, inbox *startSoloInbox, action, who string) {
 	}
 }
 
-// An invite nobody answers expires after a minute: the inviter is told, by
-// name, and the invite can no longer be accepted. The prompt says when.
-// FS-R82NV R13, R14.
+// An invite nobody answers expires a minute after it is sent, by its expiry,
+// with no notice from the server: the leader's client says so (FS-NCC9J R12,
+// R27). An accept after that is refused expired, and the place is free again.
+// The prompt says when. FS-NCC9J R12; FS-R82NV R13.
 func TestPartyInvite_Unanswered_ExpiresAtSixtySeconds(t *testing.T) {
 	rig := newPartyRig(t)
 	_, wrenConn, wrenInbox := rig.inHub(t, "Wren")
 	_, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
+	_, _, idrisInbox := rig.inHub(t, "Idris")
 
 	sendParty(rig.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Kaelen"})
 	invite := awaitParty(t, kaelenInbox, partyInviteAction, "Kaelen")
@@ -277,23 +294,22 @@ func TestPartyInvite_Unanswered_ExpiresAtSixtySeconds(t *testing.T) {
 	inviteID, _ := invite.Payload["invite_id"].(string)
 	awaitParty(t, wrenInbox, partyNoticeAction, "Wren") // sent
 
-	rig.partyClock.advance(59 * time.Second)
+	rig.partyClock.advance(time.Minute)
 	rig.tick()
-	assertNoParty(t, wrenInbox, partyNoticeAction, "Wren, a second early")
-
-	rig.partyClock.advance(time.Second)
-	rig.tick()
-	expired := awaitParty(t, wrenInbox, partyNoticeAction, "Wren")
-	assert.Equal(t, "expired", expired.Payload["code"])
-	assert.Equal(t, "Kaelen", expired.Payload["name"])
+	assertNoParty(t, wrenInbox, partyNoticeAction, "Wren: the server sends no expiry notice (R12)")
 
 	sendParty(rig.server, kaelenConn, partyAcceptAction, map[string]interface{}{"invite_id": inviteID})
+	expired := awaitParty(t, kaelenInbox, partyNoticeAction, "Kaelen")
+	assert.Equal(t, "expired", expired.Payload["code"])
 	assertNoParty(t, kaelenInbox, partyUpdateAction, "Kaelen, accepting an expired invite")
+
+	// at size 2 the lapsed invite would fill the party; its place is free
+	rig.invited(t, wrenConn, "Idris", idrisInbox)
 }
 
 // Every refusal an invite can meet, each a party_notice by code, in order: the
-// sender's own standing first (in the hub, the leader, not queued), then R12's
-// list. Rows that would meet two refusals prove the earlier one wins. Nothing
+// sender's own standing first (the leader, not queued), then the rest of
+// FS-NCC9J R10's list. Rows that would meet two refusals prove the earlier one wins. Nothing
 // reaches the named target. FS-R82NV R11, R12, R16; Edge States "Invitee is in
 // a field or run", "Invitee is queued".
 func TestPartyInvite_Refusals_InOrder(t *testing.T) {
@@ -307,15 +323,6 @@ func TestPartyInvite_Refusals_InOrder(t *testing.T) {
 		// the name the notice carries for the client's copy (R36); "" for none
 		wantName string
 	}{
-		{
-			name: "not in the hub: inviter in a field",
-			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox, string) {
-				_, conn, inbox := r.inMeadows(t, "Wren")
-				r.inHub(t, "Kaelen")
-				return conn, inbox, "Kaelen"
-			},
-			wantCode: "not_in_hub",
-		},
 		{
 			name: "not the leader, ahead of a full party",
 			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox, string) {
@@ -430,10 +437,9 @@ func TestPartyInvite_Refusals_InOrder(t *testing.T) {
 	}
 }
 
-// An accept is refused when the accepter could not join now: out of the hub,
-// queued for the Spire (a move would strand their queue entry), or already in
-// a party. The invite stays open for when they can. FS-R82NV R16; Edge States
-// "Invitee is queued for the Spire".
+// An accept is refused when the accepter could not join now: inside a run,
+// queued for the Spire, or already in a party. The invite stays open for when
+// they can. FS-NCC9J R14.
 func TestPartyAccept_Refusals(t *testing.T) {
 	tests := []struct {
 		name string
@@ -442,13 +448,13 @@ func TestPartyAccept_Refusals(t *testing.T) {
 		wantCode string
 	}{
 		{
-			name: "accepter walked into a field",
+			// until FS-BJNYC gives every run a party (FS-NCC9J R14, ADR-0035)
+			name: "accepter went down into a run",
 			arrange: func(t *testing.T, r *partyRig, kaelen *types.Player, _ *websocket.Conn, _ *startSoloInbox) {
 				r.hub.RemovePlayer(kaelen.ID.String())
-				r.meadows.AddPlayerAt(kaelen.ID, kaelen.Character, "", 200, 200)
-				r.server.setCurrentWorld(kaelen, r.meadows.ID)
+				r.server.setCurrentWorld(kaelen, uuid.New())
 			},
-			wantCode: "not_in_hub",
+			wantCode: "locked",
 		},
 		{
 			name: "accepter queued for the Spire",
@@ -530,106 +536,86 @@ func TestPartyInvite_NameIgnoresCaseAndSpaces(t *testing.T) {
 	awaitParty(t, kaelenInbox, partyInviteAction, "Kaelen")
 }
 
-// newPointedPartyRig is a party rig whose pointers land on a miniredis.
-func newPointedPartyRig(t *testing.T) (*partyRig, *miniredis.Miniredis) {
-	t.Helper()
-	client, mini := testutil.NewRedis(t)
-	return newPartyRig(t, WithPartyPointers(partypointer.NewRedis(client))), mini
-}
-
-// pointerWait bounds how long a test waits for the pointer writer, which runs
-// off the hub's loop.
+// pointerWait bounds how long a test waits for Redis to show what a script wrote.
 const pointerWait = 2 * time.Second
 
-// awaitPointer waits until key holds want with the full TTL.
+// awaitPointer waits until key holds want with the party's full TTL.
 func awaitPointer(t *testing.T, mini *miniredis.Miniredis, key, want string) {
 	t.Helper()
 	require.Eventually(t, func() bool {
 		got, err := mini.Get(key)
-		return err == nil && got == want && mini.TTL(key) == partypointer.TTL
+		return err == nil && got == want && mini.TTL(key) == partystore.TTL
 	}, pointerWait, 10*time.Millisecond, "%s should point at %s with the full TTL", key, want)
 }
 
-// A party's pointers appear as it forms: the party to this pod, each member to
-// the party, each for 30 s. FS-R82NV R3; I-R82NV-1 AC "Both Redis pointers
-// appear on join with a TTL".
-func TestPartyPointers_WrittenAsThePartyForms(t *testing.T) {
-	rig, mini := newPointedPartyRig(t)
+func partyKey(partyID string) string { return "{party}:p:" + partyID }
+
+func pointerKey(playerID uuid.UUID) string { return "{party}:pl:" + playerID.String() }
+
+// A party lives in Redis as it forms: the party itself, and each member's
+// pointer to it, on the party's TTL. No key names a pod. FS-NCC9J R1;
+// I-NCC9J-1 D3, D5.
+func TestPartyState_InRedisAsThePartyForms(t *testing.T) {
+	rig := newPartyRig(t)
 	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
 	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
 
 	inviteID := rig.invited(t, wrenConn, "Kaelen", kaelenInbox)
 	sendParty(rig.server, kaelenConn, partyAcceptAction, map[string]interface{}{"invite_id": inviteID})
-	update := awaitParty(t, wrenInbox, partyUpdateAction, "Wren")
+	update := awaitUpdateAbout(t, wrenInbox, kaelen.ID, "Wren")
 	partyID, _ := update.Payload["party_id"].(string)
 
-	awaitPointer(t, mini, "party:"+partyID, testPodID)
-	awaitPointer(t, mini, "player:"+wren.ID.String()+":party", partyID)
-	awaitPointer(t, mini, "player:"+kaelen.ID.String()+":party", partyID)
+	assert.Equal(t, wren.ID.String(), rig.mini.HGet(partyKey(partyID), "leader"))
+	assert.Equal(t, partystore.TTL, rig.mini.TTL(partyKey(partyID)))
+	awaitPointer(t, rig.mini, pointerKey(wren.ID), partyID)
+	awaitPointer(t, rig.mini, pointerKey(kaelen.ID), partyID)
 }
 
-// Every ten seconds the pod writes its parties' pointers again, so they never
-// lapse while it lives. FS-R82NV R3.
-func TestPartyPointers_RefreshedEveryTenSeconds(t *testing.T) {
-	rig, mini := newPointedPartyRig(t)
-	wren, wrenConn, _ := rig.inHub(t, "Wren")
-	_, _, kaelenInbox := rig.inHub(t, "Kaelen")
-	invite := func() string {
-		sendParty(rig.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Kaelen"})
-		msg := awaitParty(t, kaelenInbox, partyInviteAction, "Kaelen")
-		partyID, _ := msg.Payload["party_id"].(string)
-		return partyID
-	}
-	partyID := invite()
-	leaderKey := "player:" + wren.ID.String() + ":party"
-	awaitPointer(t, mini, leaderKey, partyID)
+// Every ten seconds the pod re-reads the parties it keeps, which puts them back
+// on their TTL: a party lives while some pod holds one of its members. FS-NCC9J
+// R4; I-NCC9J-1 D5.
+func TestPartyCache_RefreshedEveryTenSeconds(t *testing.T) {
+	rig := newPartyRig(t)
+	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	sendParty(rig.server, wrenConn, partyCreateAction, map[string]interface{}{})
+	formed := awaitUpdate(t, wrenInbox, "joined", wren.ID, "Wren")
+	partyID, _ := formed.Payload["party_id"].(string)
+	rig.tick() // Wren is held now: the arrival read
+	awaitUpdate(t, wrenInbox, "sync", wren.ID, "Wren")
 
-	mini.FastForward(20 * time.Second)
+	rig.mini.FastForward(4 * time.Minute)
 	rig.partyClock.advance(9 * time.Second)
 	rig.tick()
-	assert.Never(t, func() bool { return mini.TTL(leaderKey) == partypointer.TTL }, 200*time.Millisecond, 10*time.Millisecond,
-		"nine seconds on, nothing is refreshed yet")
+	assert.Never(t, func() bool { return rig.mini.TTL(pointerKey(wren.ID)) == partystore.TTL }, 200*time.Millisecond, 10*time.Millisecond,
+		"nine seconds on, nothing is re-read yet")
 
 	rig.partyClock.advance(time.Second)
 	rig.tick()
-	awaitPointer(t, mini, leaderKey, partyID)
-	awaitPointer(t, mini, "party:"+partyID, testPodID)
+	awaitPointer(t, rig.mini, pointerKey(wren.ID), partyID)
+	assert.Equal(t, partystore.TTL, rig.mini.TTL(partyKey(partyID)))
 }
 
-// A pod shutting down gracefully dissolves every party on it: each member gets
-// a final party_update with reason dissolved, open invites go with the party,
-// and every pointer is deleted before the pod reports it has stopped.
-// FS-R82NV R5; Edge States "Pod graceful shutdown"; I-R82NV-1 AC "vanish when
-// the party ends".
-func TestPartyShutdown_DissolvesEveryPartyAndForgetsItsPointers(t *testing.T) {
-	rig, mini := newPointedPartyRig(t)
+// A pod shutting down dissolves nothing: a party outlives any pod. Its members
+// get no final update from it, and the party stays in Redis. FS-NCC9J Summary;
+// ADR-0036; I-NCC9J-1 D5.
+func TestPartyShutdown_ThePartyLivesOn(t *testing.T) {
+	rig := newPartyRig(t)
 	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
-	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
+	_, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
 	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
-	keys := []string{"player:" + wren.ID.String() + ":party", "player:" + kaelen.ID.String() + ":party"}
-	for _, key := range keys {
-		require.Eventually(t, func() bool { return mini.Exists(key) }, pointerWait, 10*time.Millisecond)
-	}
-	partyID, err := mini.Get(keys[0])
+	partyID, err := rig.mini.Get(pointerKey(wren.ID))
 	require.NoError(t, err)
-	keys = append(keys, "party:"+partyID)
 
 	rig.shutdown()
-
-	for who, inbox := range map[string]*startSoloInbox{"Wren": wrenInbox, "Kaelen": kaelenInbox} {
-		final := awaitParty(t, inbox, partyUpdateAction, who)
-		assert.Equal(t, "dissolved", final.Payload["reason"], "%s", who)
-		assert.Equal(t, partyID, final.Payload["party_id"], "%s", who)
-		assert.Empty(t, final.Payload["members"], "%s: nobody is left in it", who)
-	}
 	select {
-	case <-rig.server.PartiesDissolved():
+	case <-rig.server.PartiesClosed():
 	case <-time.After(pointerWait):
-		t.Fatal("the pod never reported its parties dissolved")
+		t.Fatal("the pod never closed its party registry")
 	}
-	for _, key := range keys {
-		assert.False(t, mini.Exists(key), "%s is deleted before the pod reports it stopped", key)
-	}
+
+	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren: nothing is dissolved")
+	assert.True(t, rig.mini.Exists(partyKey(partyID)), "the party stays in Redis")
+	assert.True(t, rig.mini.Exists(pointerKey(wren.ID)))
 }
 
 // An invite answers only to its own target: anyone else sending its id, to
@@ -715,10 +701,10 @@ func TestPartyInvite_UndeliveredIsNotKept(t *testing.T) {
 	rig.invited(t, wrenConn, "Idris", idrisInbox)
 }
 
-// Dissolving the parties at shutdown does not stop the hub: it keeps routing
-// for the rest of the drain, so runs still in play keep moving and readers
-// never block on it. Party actions from then on are ignored: the pod is going,
-// and a party formed now would end with it. FS-R82NV R5; code review 2026-11-01.
+// Closing the party registry at shutdown does not stop the hub: it keeps
+// routing for the rest of the drain, so runs still in play keep moving and
+// readers never block on it. Party actions from then on are ignored: the pod is
+// going. Code review 2026-11-01.
 func TestPartyShutdown_HubKeepsRoutingPartiesClosed(t *testing.T) {
 	rig := newPartyRig(t)
 	_, wrenConn, wrenInbox := rig.inHub(t, "Wren")
@@ -726,9 +712,9 @@ func TestPartyShutdown_HubKeepsRoutingPartiesClosed(t *testing.T) {
 
 	rig.shutdown()
 	select {
-	case <-rig.server.PartiesDissolved():
+	case <-rig.server.PartiesClosed():
 	case <-time.After(pointerWait):
-		t.Fatal("the pod never reported its parties dissolved")
+		t.Fatal("the pod never closed its party registry")
 	}
 
 	sendChat(rig.server, wrenConn, "area", "still here")
@@ -794,26 +780,25 @@ func TestPartyLeave_LeaderLeaves_EarliestJoinedLeads(t *testing.T) {
 	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren, gone from the party")
 }
 
-// The last member leaving ends the party: both pointers go, and an invite it
+// The last member leaving ends the party: its keys go, and an invite it
 // had out answers an accept with party_gone instead of silence. FS-R82NV R5,
 // R16, R20; I-R82NV-2 decision 3.
 func TestPartyLeave_LastMemberEndsTheParty(t *testing.T) {
-	rig, mini := newPointedPartyRig(t)
+	rig := newPartyRig(t)
 	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
 	_, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
 	sendParty(rig.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Kaelen"})
 	invite := awaitParty(t, kaelenInbox, partyInviteAction, "Kaelen")
 	partyID, _ := invite.Payload["party_id"].(string)
 	inviteID, _ := invite.Payload["invite_id"].(string)
-	awaitPointer(t, mini, "party:"+partyID, testPodID)
+	awaitPointer(t, rig.mini, pointerKey(wren.ID), partyID)
 
 	sendParty(rig.server, wrenConn, partyLeaveAction, map[string]interface{}{})
 
 	final := awaitUpdate(t, wrenInbox, "left", wren.ID, "Wren")
 	assert.Empty(t, memberIDsOf(t, final), "nobody is left")
-	for _, key := range []string{"party:" + partyID, "player:" + wren.ID.String() + ":party"} {
-		require.Eventually(t, func() bool { return !mini.Exists(key) }, pointerWait, 10*time.Millisecond, "%s is deleted", key)
-	}
+	assert.False(t, rig.mini.Exists(partyKey(partyID)), "the party is gone")
+	assert.False(t, rig.mini.Exists(pointerKey(wren.ID)), "so is Wren's pointer")
 
 	sendParty(rig.server, kaelenConn, partyAcceptAction, map[string]interface{}{"invite_id": inviteID})
 	gone := awaitParty(t, kaelenInbox, partyNoticeAction, "Kaelen")
@@ -822,15 +807,13 @@ func TestPartyLeave_LastMemberEndsTheParty(t *testing.T) {
 }
 
 // A member who leaves a party that goes on loses only their own pointer; the
-// party's, and the rest's, stay. FS-R82NV R3, R20.
+// party, and the rest's pointers, stay. FS-NCC9J R1, R16; FS-R82NV R20.
 func TestPartyLeave_MemberLeaves_OnlyTheirPointerGoes(t *testing.T) {
-	rig, mini := newPointedPartyRig(t)
+	rig := newPartyRig(t)
 	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
 	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
 	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
-	kaelenKey := "player:" + kaelen.ID.String() + ":party"
-	require.Eventually(t, func() bool { return mini.Exists(kaelenKey) }, pointerWait, 10*time.Millisecond)
-	partyID, err := mini.Get(kaelenKey)
+	partyID, err := rig.mini.Get(pointerKey(kaelen.ID))
 	require.NoError(t, err)
 
 	sendParty(rig.server, kaelenConn, partyLeaveAction, map[string]interface{}{})
@@ -838,9 +821,9 @@ func TestPartyLeave_MemberLeaves_OnlyTheirPointerGoes(t *testing.T) {
 	left := awaitUpdate(t, wrenInbox, "left", kaelen.ID, "Wren")
 	assert.Equal(t, []string{wren.ID.String()}, memberIDsOf(t, left))
 	assert.Equal(t, wren.ID.String(), left.Payload["leader_id"], "a member leaving passes no lead")
-	require.Eventually(t, func() bool { return !mini.Exists(kaelenKey) }, pointerWait, 10*time.Millisecond, "Kaelen's pointer goes")
-	assert.True(t, mini.Exists("party:"+partyID), "the party's stays")
-	assert.True(t, mini.Exists("player:"+wren.ID.String()+":party"), "Wren's stays")
+	assert.False(t, rig.mini.Exists(pointerKey(kaelen.ID)), "Kaelen's pointer goes")
+	assert.True(t, rig.mini.Exists(partyKey(partyID)), "the party stays")
+	assert.True(t, rig.mini.Exists(pointerKey(wren.ID)), "Wren's stays")
 }
 
 // The leader kicks a member: they are out, told so in their last update, and
@@ -1019,11 +1002,10 @@ func TestPartyInvite_AnswerGoesToTheCurrentLeader(t *testing.T) {
 
 const partyCreateAction = "party_create"
 
-// A player in the hub with no party creates one with no invite: a party of one
-// they lead, told at once, with its pointers written like any other.
-// FS-R82NV R4, R4a; I-R82NV-10.
+// A player with no party creates one with no invite: a party of one they lead,
+// told at once, kept in Redis like any other. FS-NCC9J R15; FS-R82NV R4a.
 func TestPartyCreate_FormsAPartyOfOne(t *testing.T) {
-	rig, mini := newPointedPartyRig(t)
+	rig := newPartyRig(t)
 	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
 
 	sendParty(rig.server, wrenConn, partyCreateAction, map[string]interface{}{})
@@ -1032,29 +1014,20 @@ func TestPartyCreate_FormsAPartyOfOne(t *testing.T) {
 	assert.Equal(t, wren.ID.String(), formed.Payload["leader_id"])
 	assert.Equal(t, []string{wren.ID.String()}, memberIDsOf(t, formed))
 	partyID, _ := formed.Payload["party_id"].(string)
-	awaitPointer(t, mini, "party:"+partyID, testPodID)
-	awaitPointer(t, mini, "player:"+wren.ID.String()+":party", partyID)
+	assert.Equal(t, wren.ID.String(), rig.mini.HGet(partyKey(partyID), "leader"))
+	awaitPointer(t, rig.mini, pointerKey(wren.ID), partyID)
 	assertNoParty(t, wrenInbox, partyNoticeAction, "Wren: a create succeeds without a notice")
 }
 
-// Create is refused, by code, in R4a's order: out of the hub, already in a
-// party, queued for the Spire. Rows meeting two refusals prove the earlier one
-// wins. Nothing is formed. FS-R82NV R4a; Edge States "Create while…".
+// Create is refused, by code, in FS-NCC9J R15's order: already in a party,
+// queued for the Spire. A row meeting both proves the earlier one wins.
+// Nothing is formed. FS-NCC9J R15.
 func TestPartyCreate_Refusals_InOrder(t *testing.T) {
 	tests := []struct {
 		name     string
 		arrange  func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox)
 		wantCode string
 	}{
-		{
-			name: "out of the hub, though queued too",
-			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox) {
-				wren, conn, inbox := r.inMeadows(t, "Wren")
-				r.queued(t, wren)
-				return conn, inbox
-			},
-			wantCode: "not_in_hub",
-		},
 		{
 			name: "already in a party, though queued too",
 			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox) {
@@ -1110,14 +1083,13 @@ func TestPartyCreate_ThePartyInvitesAndEnds(t *testing.T) {
 	assert.Empty(t, memberIDsOf(t, final), "the leader's leave ends a party of one")
 }
 
-// newPresentPartyRig is a party rig whose pointers and presence land on a miniredis.
+// newPresentPartyRig is a party rig whose presence lands on its miniredis too.
 func newPresentPartyRig(t *testing.T) (*partyRig, *miniredis.Miniredis) {
 	t.Helper()
-	client, mini := testutil.NewRedis(t)
-	return newPartyRig(t,
-		WithPartyPointers(partypointer.NewRedis(client)),
-		WithPresence(partypresence.NewRedis(client)),
-	), mini
+	rig := newPartyRigOn(t, func(client redis.UniversalClient) []Option {
+		return []Option{WithPresence(partypresence.NewRedis(client))}
+	})
+	return rig, rig.mini
 }
 
 // awaitPresence waits until name's presence key names pod (or, with pod "", is gone).

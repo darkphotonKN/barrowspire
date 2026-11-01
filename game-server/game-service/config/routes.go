@@ -19,8 +19,8 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/handoff"
 	matchqueue "github.com/darkphotonKN/barrowspire-server/game-service/internal/match_queue"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypointer"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partystore"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -99,9 +99,9 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 		gameserver.WithVisitSettler(gameService),
 		// the world channel rides the same Redis the matchmaker and handoff use (FS-5SH4G R13)
 		gameserver.WithChatBus(chatbus.NewRedis(redisClient)),
-		// the party cap is the match size; a party's pointers ride the same Redis (FS-R82NV R3, R8)
+		// the party cap is the match size; parties live in the same Redis (FS-R82NV R8, FS-NCC9J R1)
 		gameserver.WithPartySize(partySize),
-		gameserver.WithPartyPointers(partypointer.NewRedis(redisClient)),
+		gameserver.WithPartyStore(partystore.NewRedis(redisClient)),
 		// the presence index and the pod inbox ride it too: invites reach players on other pods
 		// (FS-R82NV R7, R9)
 		gameserver.WithPresence(partypresence.NewRedis(redisClient)),
@@ -135,11 +135,12 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 	// redis is still open (FS-K2HKP §Requirements 3), bounded so a stuck redis
 	// cannot hold up exit, then releases the downstream connections
 	shutdown := func() error {
-		// parties first: their pointers are deleted on the hub's loop as it exits (FS-R82NV R5)
+		// parties first: the hub's loop closes the registry, then unseats the presence index,
+		// while redis is still open (FS-NCC9J; parties themselves live on, ADR-0036)
 		select {
-		case <-server.PartiesDissolved():
-		case <-time.After(partiesDissolveWait):
-			slog.Warn("parties not dissolved in time, their pointers left to expire")
+		case <-server.PartiesClosed():
+		case <-time.After(partiesCloseWait):
+			slog.Warn("party registry not closed in time")
 		}
 		select {
 		case <-matchmaker.Stopped():
@@ -155,5 +156,5 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 // a little over the matchmaker's own delete timeout
 const matchmakerStopTimeout = 3 * time.Second
 
-// a little over the party roster's own delete timeout
-const partiesDissolveWait = 3 * time.Second
+// how long shutdown waits for the hub's loop to close the party registry
+const partiesCloseWait = 3 * time.Second

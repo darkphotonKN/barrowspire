@@ -54,16 +54,16 @@ type presenceTicker interface {
 type partyKeeper interface {
 	invite(ctx context.Context, inviter *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	accept(ctx context.Context, accepter *types.Player, conn *websocket.Conn, payload map[string]interface{})
-	decline(ctx context.Context, decliner *types.Player, payload map[string]interface{})
+	decline(ctx context.Context, decliner *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	leave(ctx context.Context, leaver *types.Player, conn *websocket.Conn)
 	create(ctx context.Context, creator *types.Player, conn *websocket.Conn)
 	kick(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	transfer(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	// the registry's clock ticks, swept on this loop like everything else it holds
 	ticks() <-chan time.Time
-	tick()
-	// every party ends with the pod (R5)
-	dissolveAll(ctx context.Context)
+	tick(ctx context.Context)
+	// the registry stops taking actions as the pod goes; parties live on in Redis (ADR-0036)
+	close()
 	// work finished off the loop, and letters from other pods, both handled on it (R9)
 	jobs() <-chan func()
 	letters() <-chan letter
@@ -741,7 +741,7 @@ func (h *messageHub) Run(ctx context.Context) {
 					slog.Debug("party_decline from a connection with no player")
 					continue
 				}
-				h.party.decline(ctx, player, clientPackage.Message.Payload)
+				h.party.decline(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
 
 			case constants.ActionLeaveQueue:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
@@ -837,9 +837,9 @@ func (h *messageHub) Run(ctx context.Context) {
 		case line := <-h.chat.inbound():
 			h.chat.deliver(line)
 
-		// the party registry's clock: invites lapse here (FS-R82NV R14)
+		// the party registry's clock: the party cache is kept here (FS-NCC9J R4, R6)
 		case <-h.party.ticks():
-			h.party.tick()
+			h.party.tick(ctx)
 			h.presence.tick()
 
 		// a party lookup answered, or a letter that could not be sent (FS-R82NV R10, R12)
@@ -850,11 +850,11 @@ func (h *messageHub) Run(ctx context.Context) {
 		case l := <-h.party.letters():
 			h.party.receive(l)
 
-		// the pod is shutting down: every party on it ends here, on the loop that
-		// owns them (FS-R82NV R5). The loop keeps routing through the drain, since
-		// the connections' readers still send to it and runs are still in play.
+		// the pod is shutting down: the registry stops taking party actions, and the
+		// parties live on in Redis (ADR-0036). The loop keeps routing through the drain,
+		// since the connections' readers still send to it and runs are still in play.
 		case <-shuttingDown:
-			h.party.dissolveAll(ctx)
+			h.party.close()
 			h.presence.leaveAll(ctx)
 			shuttingDown = nil
 		}
