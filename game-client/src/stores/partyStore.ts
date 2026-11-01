@@ -2,7 +2,7 @@ import { createStore, type StoreApi } from "zustand";
 import type { WorldType } from "@/assets/types/client";
 import { useAuthStore } from "@/stores/authStore";
 import { useChatStore } from "@/stores/chatStore";
-import { partyNoticeText } from "@/ui/partyNotice";
+import { partyNoticeText, readyCheckCancelText } from "@/ui/partyNotice";
 
 /**
  * The party this player stands in, as the last `party_update` left it (FS-R82NV R21), and
@@ -83,6 +83,8 @@ export interface PartyNoticePayload {
   code: string;
   /** The player it concerns, when there is one. */
   name?: string;
+  /** The players it concerns, when there are several to name (FS-BJNYC `not_in_town`), in join order. */
+  names?: string[];
 }
 
 /**
@@ -118,8 +120,96 @@ export function inviteSecondsLeft(invite: PendingInvite, now: number): number {
   );
 }
 
+/** One member's answer on a ready check (FS-BJNYC R8). */
+export type ReadyCheckState = "waiting" | "accepted" | "declined";
+
+/** Where a ready check stands (FS-BJNYC R8). */
+export type ReadyCheckOutcome = "open" | "started" | "cancelled";
+
+/** One member's row on a `party_ready_check`, in join order (FS-BJNYC R8). */
+export interface ReadyCheckMember {
+  player_id: string;
+  name: string;
+  state: ReadyCheckState;
+}
+
+/**
+ * A ready check as it now stands, sent to every member of it, the leader included (FS-BJNYC R8):
+ * when it opens, after every answer, and once when it starts or is cancelled. `expires_in_ms` is
+ * the time left on the server's clock, so the countdown does not depend on clock skew. A
+ * cancelled check carries its `reason` and the `names` it concerns. Answered with `party_ready`.
+ */
+export interface PartyReadyCheckPayload {
+  check_id: string;
+  leader_id: string;
+  expires_in_ms: number;
+  members: ReadyCheckMember[];
+  outcome: ReadyCheckOutcome;
+  reason?: string;
+  names?: string[];
+}
+
+/** The open check as the popup holds it: stamped on this client's clock, with this player's answer. */
+export interface OpenReadyCheck extends PartyReadyCheckPayload {
+  /** Epoch ms on this client's clock, when the newest message for this check came. */
+  received_at: number;
+  /** The answer this player sent, null before: the buttons give way before the server's next message. */
+  answer: Exclude<ReadyCheckState, "waiting"> | null;
+}
+
+/** Whole seconds the popup still shows, from the newest `expires_in_ms`; 0 once it has run out. */
+export function readyCheckSecondsLeft(
+  check: OpenReadyCheck,
+  now: number,
+): number {
+  return Math.max(
+    0,
+    Math.ceil((check.received_at + check.expires_in_ms - now) / 1000),
+  );
+}
+
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null;
+
+const READY_STATES: ReadonlySet<unknown> = new Set([
+  "waiting",
+  "accepted",
+  "declined",
+]);
+const READY_OUTCOMES: ReadonlySet<unknown> = new Set([
+  "open",
+  "started",
+  "cancelled",
+]);
+
+const isStringList = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((n) => typeof n === "string");
+
+function isReadyCheckMember(v: unknown): v is ReadyCheckMember {
+  return (
+    isObject(v) &&
+    typeof v.player_id === "string" &&
+    typeof v.name === "string" &&
+    READY_STATES.has(v.state)
+  );
+}
+
+/** Whether a frame off the wire is a whole `party_ready_check`: a bad frame raises no popup. */
+export function isPartyReadyCheck(
+  payload: unknown,
+): payload is PartyReadyCheckPayload {
+  return (
+    isObject(payload) &&
+    typeof payload.check_id === "string" &&
+    typeof payload.leader_id === "string" &&
+    typeof payload.expires_in_ms === "number" &&
+    READY_OUTCOMES.has(payload.outcome) &&
+    Array.isArray(payload.members) &&
+    payload.members.every(isReadyCheckMember) &&
+    (payload.reason === undefined || typeof payload.reason === "string") &&
+    (payload.names === undefined || isStringList(payload.names))
+  );
+}
 
 function isPartyMember(v: unknown): v is PartyMember {
   return (
@@ -175,7 +265,8 @@ export function isPartyNotice(payload: unknown): payload is PartyNoticePayload {
   return (
     isObject(payload) &&
     typeof payload.code === "string" &&
-    (payload.name === undefined || typeof payload.name === "string")
+    (payload.name === undefined || typeof payload.name === "string") &&
+    (payload.names === undefined || isStringList(payload.names))
   );
 }
 
@@ -296,6 +387,19 @@ export interface PartyState {
   apply: (update: PartyUpdatePayload) => void;
   /** A `party_notice`: its words (R36) said as a system line in the chat window (R31). */
   receiveNotice: (notice: PartyNoticePayload) => void;
+  /** The ready check the popup shows, or null (FS-BJNYC R23): only ever the newest one. */
+  readyCheck: OpenReadyCheck | null;
+  /**
+   * A `party_ready_check` (FS-BJNYC R23, R25, R26). `open` holds it, replacing whatever was held:
+   * the same check redrawn, its countdown from the newest `expires_in_ms`, or another check in
+   * its place. `started` lets it go; `cancelled` lets it go and says why, as a party notice is
+   * said.
+   */
+  receiveReadyCheck: (check: PartyReadyCheckPayload) => void;
+  /** This player answered the held check: its buttons give way (FS-BJNYC R24). */
+  answerReadyCheck: (checkId: string, accept: boolean) => void;
+  /** Whole seconds left on the held check's countdown, by the store's own clock. */
+  readySecondsLeft: (check: OpenReadyCheck) => number;
   togglePanel: () => void;
 }
 
@@ -385,6 +489,32 @@ export function createPartyStore({
       const text = partyNoticeText(notice);
       if (text !== null) say({ code: notice.code, text });
     },
+    readyCheck: null,
+    receiveReadyCheck: (check) => {
+      if (check.outcome === "open") {
+        const held = get().readyCheck;
+        const answer = held?.check_id === check.check_id ? held.answer : null;
+        set({ readyCheck: { ...check, received_at: now(), answer } });
+        return;
+      }
+      // a party holds one check at a time (R12): any close is the end of the one held
+      set({ readyCheck: null });
+      if (check.outcome !== "cancelled") return;
+      const text = readyCheckCancelText(check.reason, check.names ?? []);
+      if (text !== null) say({ code: `ready_${check.reason}`, text });
+    },
+    answerReadyCheck: (checkId, accept) =>
+      set((state) =>
+        state.readyCheck?.check_id === checkId
+          ? {
+              readyCheck: {
+                ...state.readyCheck,
+                answer: accept ? "accepted" : "declined",
+              },
+            }
+          : state,
+      ),
+    readySecondsLeft: (check) => readyCheckSecondsLeft(check, now()),
     togglePanel: () => set((state) => ({ panelOpen: !state.panelOpen })),
   }));
 }

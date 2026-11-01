@@ -2,6 +2,8 @@ import * as Phaser from "phaser";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { ActionType, WorldType } from "@/assets/types/client";
 import { useGameStore } from "@/stores/gameStore";
+import { isLeader, usePartyStore, type PartyUpdatePayload } from "@/stores/partyStore";
+import { useAuthStore } from "@/stores/authStore";
 import { CANVAS_FONT, palette, rgba, shade, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
 import {
@@ -28,6 +30,8 @@ import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
+import { PartyReadyCheck, mountPartyReadyCheck } from "@/ui/PartyReadyCheck";
+import { PARTY_ENTER_REFUSALS } from "@/ui/partyNotice";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { HubGear } from "@/ui/HubGear";
 import { apiClient } from "@/utils/api";
@@ -290,6 +294,25 @@ export function hubMenuChoices(state: { queued: boolean }): HubMenuChoice[] {
 /** What the hub knows that a dialogue reads: at opening, and live while it is up. */
 interface HubState {
   queued: boolean;
+  /** Where the player stands in a party (FS-BJNYC R20, R21); a party of just its leader is led. */
+  party: PartyStanding;
+}
+
+/** In no party, a member who does not lead it, or its leader. */
+type PartyStanding = "none" | "member" | "leader";
+
+/** Where this player stands in `party`, as the server keys its members (the socket's member id). */
+function partyStanding(party: PartyUpdatePayload | null): PartyStanding {
+  if (party === null) return "none";
+  return isLeader(party, useAuthStore.getState().memberInfo?.id) ? "leader" : "member";
+}
+
+/** The replies a dialogue's choices wait on, read live each time a choice is drawn or pressed. */
+interface Pending {
+  /** A start_solo is awaiting its answer (FS-NSV3D §Requirements 2). */
+  soloPending: boolean;
+  /** A party_enter is awaiting its answer (FS-BJNYC R21). */
+  enterPending: boolean;
 }
 
 /** One choice in an NPC's dialogue (FS-NSV3D §Requirements 3). */
@@ -303,7 +326,7 @@ export interface DialogueChoice {
   /** The dialogue stays up after the pick: a reply is being waited for. */
   stays?: boolean;
   /** Whether it can be picked now, read live each time it is drawn or pressed; omitted means always. */
-  enabled?: (state: { soloPending: boolean }) => boolean;
+  enabled?: (pending: Pending) => boolean;
   /** Picking it turns the page: the same speaker goes on with this, instead of the box closing. */
   next?: () => Dialogue;
 }
@@ -324,7 +347,10 @@ const SPIRE_DOOR = "The Spire's door";
  * 1, 2, 4; FS-0XMCP §Requirements 8, 9): alone, with company, or not yet. While the player is
  * already queued there is nothing to offer but the fact, so the panel says so and closes; the
  * corner panel carries the count. The one warning is the door's line: descending alone takes no
- * second asking. The door is a place, not a keeper, so its card carries no role.
+ * second asking. The door is a place, not a keeper, so its card carries no role. A party enters
+ * together (FS-BJNYC R20, R21): a party member finds both ways down greyed and the door saying
+ * why, and only the leader, a party of just the leader included, has Enter as a party, first so E
+ * and Enter mean it.
  */
 export function delveChoices(state: HubState): Dialogue {
   if (state.queued) {
@@ -333,20 +359,41 @@ export function delveChoices(state: HubState): Dialogue {
       choices: [{ id: "dismiss", label: "I'll wait", register: "cancel" }],
     };
   }
+  const inParty = state.party !== "none";
+  // the queue and descending alone are not for a party member
+  const closedToParty = inParty ? () => false : undefined;
+  const choices: DialogueChoice[] = [
+    {
+      id: "solo",
+      label: "Descend alone",
+      register: "actionable",
+      act: (scene) => scene.startSolo(),
+      stays: true,
+      enabled: closedToParty ?? (({ soloPending }) => !soloPending),
+    },
+    {
+      id: "queue",
+      label: "Wait for company",
+      register: "actionable",
+      act: (scene) => scene.joinQueue(),
+      enabled: closedToParty,
+    },
+    { id: "dismiss", label: "Not yet", register: "cancel" },
+  ];
+  if (state.party === "leader")
+    choices.unshift({
+      id: "enter",
+      label: "Enter as a party",
+      register: "actionable",
+      act: (scene) => scene.enterAsParty(),
+      stays: true,
+      enabled: ({ enterPending }) => !enterPending,
+    });
   return {
-    line: "The Spire's door stands open. Few return whole,\nand fewer return twice.",
-    choices: [
-      {
-        id: "solo",
-        label: "Descend alone",
-        register: "actionable",
-        act: (scene) => scene.startSolo(),
-        stays: true,
-        enabled: ({ soloPending }) => !soloPending,
-      },
-      { id: "queue", label: "Wait for company", register: "actionable", act: (scene) => scene.joinQueue() },
-      { id: "dismiss", label: "Not yet", register: "cancel" },
-    ],
+    line: inParty
+      ? "Your party enters together."
+      : "The Spire's door stands open. Few return whole,\nand fewer return twice.",
+    choices,
   };
 }
 
@@ -591,6 +638,11 @@ export class HubScene extends Phaser.Scene {
   private leavePending = false;
   /** A start_solo has been sent and its reply has not come (FS-NSV3D §Requirements 2). */
   private soloPending = false;
+  /**
+   * A party_enter has been sent and nothing has answered it yet: no ready check, no run, no
+   * refusal (FS-BJNYC R21).
+   */
+  private enterPending = false;
   /** A leave_hub has been sent and its reply has not come (FS-G4VMQ §Requirements 25). */
   private leavingHub = false;
   /**
@@ -605,6 +657,8 @@ export class HubScene extends Phaser.Scene {
   private partyFrames?: PartyFrames;
   /** Invites waiting on an answer, top centre (FS-R82NV R32): only the hub receives them (R33). */
   private invitePrompt?: PartyInvitePrompt;
+  /** The party's ready check, top centre (FS-BJNYC R23): it only happens in the town. */
+  private readyCheck?: PartyReadyCheck;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
   private art!: ArtLibrary;
   /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
@@ -720,6 +774,8 @@ export class HubScene extends Phaser.Scene {
     this.partyPanel = mountPartyPanel(this, () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen());
     // party invites, hidden while the menu or the gear overlay covers the town (FS-R82NV R32, R33)
     this.invitePrompt = mountPartyInvitePrompt(this, () => !!this.menu || !!this.gear?.isOpen());
+    // the ready check, under the same covers; it closes no dialogue or shop (FS-BJNYC R23)
+    this.readyCheck = mountPartyReadyCheck(this, () => !!this.menu || !!this.gear?.isOpen());
     // the teammates' frames: in the village every frame says where its member stands (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
 
@@ -810,7 +866,26 @@ export class HubScene extends Phaser.Scene {
       this.enteringField = false;
       this.notice(fieldRefusalCopy(ActionType.EnterField, info.reason));
     });
+    // A party_enter is answered by the ready check opening (I-BJNYC-5 draws it), by the run's
+    // world_entered switching the scene, or by a refusal: the choice comes back on any of them,
+    // the door stays where it was, and the refusal's words pass by in the chat window as every
+    // party notice does (FS-BJNYC R21, R22). The party store says the words; this only listens.
+    socketManager.on("party_ready_check", () => this.enterAnswered());
+    socketManager.on("party_notice", (notice: { code?: string }) => {
+      if (notice?.code !== undefined && PARTY_ENTER_REFUSALS.has(notice.code)) this.enterAnswered();
+    });
+    // The door is drawn for the player's place in the party; a place changed while it stands open
+    // (handed the lead, the lead handed on, out of the party) draws it again (FS-BJNYC R21).
+    const unsubscribeParty = usePartyStore.subscribe((state, prev) => {
+      if (this.doorOpen && partyStanding(state.party) !== partyStanding(prev.party)) {
+        this.closeDialogue();
+        this.openDoor();
+      }
+    });
     this.unsubscribeQueue = () => {
+      unsubscribeParty();
+      socketManager.off("party_ready_check");
+      socketManager.off("party_notice");
       socketManager.off("queue_status");
       socketManager.off(ActionType.Find_Game);
       socketManager.offError(ActionType.Find_Game);
@@ -858,6 +933,8 @@ export class HubScene extends Phaser.Scene {
     this.partyPanel = undefined;
     this.invitePrompt?.destroy();
     this.invitePrompt = undefined;
+    this.readyCheck?.destroy();
+    this.readyCheck = undefined;
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
     this.queuePanel = undefined;
@@ -872,6 +949,7 @@ export class HubScene extends Phaser.Scene {
     this.dropFieldSign();
     this.leavePending = false;
     this.soloPending = false;
+    this.enterPending = false;
     this.leavingHub = false;
     this.enteringField = false;
     this.roofs = [];
@@ -1775,8 +1853,13 @@ export class HubScene extends Phaser.Scene {
 
   /** The Spire door's panel: today's delve choices, the door speaking (FS-0XMCP §Requirements 8, 9). */
   private openDoor(): void {
-    this.showDialogue({ name: SPIRE_DOOR }, delveChoices({ queued: this.queued }));
+    this.showDialogue({ name: SPIRE_DOOR }, delveChoices(this.hubState()));
     this.doorOpen = true;
+  }
+
+  /** What a dialogue reads, as it stands now: the party is read afresh at each opening (FS-BJNYC R20). */
+  private hubState(): HubState {
+    return { queued: this.queued, party: partyStanding(usePartyStore.getState().party) };
   }
 
   /**
@@ -2284,7 +2367,7 @@ export class HubScene extends Phaser.Scene {
     // R27); anyone else has a resident's line.
     const lines = townLines(npc.name);
     const dialogue =
-      NPC_DIALOGUE[npc.function]?.({ queued: this.queued }) ??
+      NPC_DIALOGUE[npc.function]?.(this.hubState()) ??
       (lines ? telling(lines) : residentLine(npc));
     this.showDialogue({ name: npc.name, entityId: npc.entity_id }, dialogue);
   }
@@ -2299,7 +2382,7 @@ export class HubScene extends Phaser.Scene {
     { role, line, choices }: Dialogue,
   ): void {
     const enabled = (choice: DialogueChoice) =>
-      choice.enabled?.({ soloPending: this.soloPending }) ?? true;
+      choice.enabled?.({ soloPending: this.soloPending, enterPending: this.enterPending }) ?? true;
     const pick = (choice: DialogueChoice) => {
       if (!enabled(choice)) return;
       if (choice.next) {
@@ -2475,6 +2558,23 @@ export class HubScene extends Phaser.Scene {
     if (this.soloPending) return;
     this.soloPending = true;
     socketManager.sendMessage(ActionType.StartSolo, {});
+  }
+
+  /**
+   * The leader taking the whole party down (FS-BJNYC R21): one party_enter, and nothing more until
+   * something answers it, by a ready check, the run, or a refusal.
+   */
+  enterAsParty(): void {
+    if (this.enterPending) return;
+    this.enterPending = true;
+    socketManager.sendMessage(ActionType.PartyEnter, {});
+  }
+
+  /** Something answered the party_enter: the choice comes back (FS-BJNYC R21). */
+  private enterAnswered(): void {
+    if (!this.enterPending) return;
+    this.enterPending = false;
+    this.dialogueChoices?.retone();
   }
 
   /** Joining is the player's decision; the queue itself is unchanged. */

@@ -35,6 +35,8 @@ export interface PartyCommands {
   decline(inviteId: string): void;
   /** Asks to be taken to the leader's town (FS-NCC9J R28): a `world_handoff` follows, or a notice says why not. */
   travel(): void;
+  /** Answers the open ready check (FS-BJNYC R9, R24): the server records it, or ignores a stale one. */
+  ready(checkId: string, accept: boolean): void;
 }
 
 const PARTY_ACTIONS = [
@@ -46,6 +48,12 @@ const PARTY_ACTIONS = [
   "party_accept",
   "party_decline",
   "party_travel",
+  // sent by the Spire's door, not the panel (FS-BJNYC R21); its refusals are notices, but a leader
+  // with no character in play is refused as start_solo refuses them, by an error reply
+  "party_enter",
+  // the ready-check popup's answer (FS-BJNYC R9): a stale one is ignored, never refused, but a
+  // server without the handler would answer "Unknown action"
+  "party_ready",
 ] as const;
 
 /**
@@ -80,5 +88,7 @@ export function partyCommands(socket: PartySocket): PartyCommands {
     decline: (inviteId) =>
       socket.sendMessage("party_decline", { invite_id: inviteId }),
     travel: () => socket.sendMessage("party_travel", {}),
+    ready: (checkId, accept) =>
+      socket.sendMessage("party_ready", { check_id: checkId, accept }),
   };
 }

@@ -80,6 +80,17 @@ describe("partyCommands", () => {
     expect(sent).toEqual([["party_travel", {}]]);
   });
 
+  it("should answer a ready check by its id, yes or no (FS-BJNYC R9, R24)", () => {
+    const { socket, sent } = fakeSocket();
+    const party = partyCommands(socket);
+    party.ready("chk-1", true);
+    party.ready("chk-1", false);
+    expect(sent).toEqual([
+      ["party_ready", { check_id: "chk-1", accept: true }],
+      ["party_ready", { check_id: "chk-1", accept: false }],
+    ]);
+  });
+
   it("should claim every party action's error replies once routed, so no refusal reaches the session's handler", () => {
     const { socket, refusals } = fakeErrorSocket();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -89,9 +100,13 @@ describe("partyCommands", () => {
       "party_accept",
       "party_create",
       "party_decline",
+      // the door's Enter as a party (FS-BJNYC R21): a no-character refusal is an error reply
+      "party_enter",
       "party_invite",
       "party_kick",
       "party_leave",
+      // the ready-check popup's answer (FS-BJNYC R9)
+      "party_ready",
       "party_transfer",
       "party_travel",
     ]);
