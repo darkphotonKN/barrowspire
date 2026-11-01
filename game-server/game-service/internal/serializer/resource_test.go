@@ -33,7 +33,7 @@ func seatWithResource(em *ecs.EntityManager, memberID uuid.UUID, class string, p
 func wireFor(t *testing.T, em *ecs.EntityManager, worldType types.WorldType, recipient uuid.UUID) (raw string, frame map[string]any) {
 	t.Helper()
 
-	s := NewStateSerializer(em)
+	s := NewStateSerializer(em, nil)
 	backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), worldType, em.GetAllEntities())
 	require.NoError(t, err)
 

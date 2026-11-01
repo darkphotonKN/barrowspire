@@ -21,7 +21,7 @@ func TestFormatStateToClientState_CarriesBurningTrails(t *testing.T) {
 	trail.AddComponent(&components.BurningTrailComponent{
 		FromX: 100, FromY: 120, ToX: 280, ToY: 120, HalfWidth: 30, Remaining: 2.5,
 	})
-	s := NewStateSerializer(em)
+	s := NewStateSerializer(em, nil)
 
 	backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
 	require.NoError(t, err)
@@ -42,7 +42,7 @@ func TestFormatStateToClientState_CarriesBurningTrails(t *testing.T) {
 // With no trail burning, the key is absent, as it always is in the hub.
 func TestFormatStateToClientState_NoTrailsOmitsTheKey(t *testing.T) {
 	em := ecs.NewEntityManager()
-	s := NewStateSerializer(em)
+	s := NewStateSerializer(em, nil)
 
 	backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeHub, em.GetAllEntities())
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestSerializeBackendState_TrailsDoNotOutliveTheirTick(t *testing.T) {
 	em := ecs.NewEntityManager()
 	trail := em.CreateEntity()
 	trail.AddComponent(&components.BurningTrailComponent{ToX: 180, HalfWidth: 30, Remaining: 1})
-	s := NewStateSerializer(em)
+	s := NewStateSerializer(em, nil)
 
 	first, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
 	require.NoError(t, err)

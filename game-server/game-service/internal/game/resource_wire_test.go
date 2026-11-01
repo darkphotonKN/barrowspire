@@ -17,7 +17,7 @@ import (
 func ownResourceOnTheWire(t *testing.T, s *Session, recipient uuid.UUID) map[string]any {
 	t.Helper()
 
-	stateSerializer := serializer.NewStateSerializer(s.EntityManager)
+	stateSerializer := serializer.NewStateSerializer(s.EntityManager, nil)
 	backendState, err := stateSerializer.SerializeBackendState(context.Background(), s.ID, s.worldType, s.EntityManager.GetAllEntities())
 	require.NoError(t, err)
 

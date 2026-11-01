@@ -136,9 +136,21 @@ func startSoloServer(t *testing.T, queue *startSoloQueue, emitter game.EventEmit
 // startSoloInbox reads everything the server writes to one connection, as its
 // writer goroutine would, so the ten-slot writer channel never fills and drops
 // a reply behind the sixty state frames a second a live world sends. Replies
-// are kept; state frames are let go.
+// are queued; of the state frames, only each world's latest is kept, the one
+// before it overwritten.
 type startSoloInbox struct {
 	messages chan types.Message
+
+	// the latest state frame from each world, for a test that reads one
+	mu     sync.Mutex
+	frames map[uuid.UUID]*types.ClientGameState
+}
+
+// latestFrame is the last state frame the world sent here, nil before any.
+func (in *startSoloInbox) latestFrame(worldID uuid.UUID) *types.ClientGameState {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return in.frames[worldID]
 }
 
 // startSoloListen starts reading the connection's writer channel.
@@ -150,7 +162,7 @@ func startSoloListen(t *testing.T, server *Server, conn *websocket.Conn) *startS
 	server.mu.RUnlock()
 	require.True(t, ok, "the connection has a writer channel")
 
-	inbox := &startSoloInbox{messages: make(chan types.Message, 256)}
+	inbox := &startSoloInbox{messages: make(chan types.Message, 256), frames: map[uuid.UUID]*types.ClientGameState{}}
 	stop := make(chan struct{})
 	t.Cleanup(func() { close(stop) })
 
@@ -163,11 +175,16 @@ func startSoloListen(t *testing.T, server *Server, conn *websocket.Conn) *startS
 				if !open {
 					return
 				}
-				if msg, isReply := raw.(types.Message); isReply {
+				switch msg := raw.(type) {
+				case types.Message:
 					select {
 					case inbox.messages <- msg:
 					default:
 					}
+				case *types.ClientGameState:
+					inbox.mu.Lock()
+					inbox.frames[msg.SessionID] = msg
+					inbox.mu.Unlock()
 				}
 			}
 		}

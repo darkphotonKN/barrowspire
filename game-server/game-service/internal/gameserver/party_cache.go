@@ -64,6 +64,9 @@ type partyCache struct {
 
 	parties  map[uuid.UUID]partystore.Party
 	memberOf map[uuid.UUID]uuid.UUID // player id → party id, for every cached party's members
+	// where memberOf is published after every change, for the worlds' serializers (FS-CH21F R5);
+	// nil publishes nowhere
+	membership *partyMembership
 	// players seated here whose arrival read has succeeded, with the connection it was made for,
 	// and those whose read is under way; a player in neither, or now on another connection, is
 	// read on the next tick, so a failed read is tried again and a reconnect is read afresh
@@ -85,12 +88,13 @@ type partyView struct {
 	inParty  bool
 }
 
-func newPartyCache(store partyReader, run *partyRunner, seating partySeating, now func() time.Time, onShow func(context.Context, []partyView), onSwept func(context.Context, partystore.Party, partystore.Swept)) *partyCache {
+func newPartyCache(store partyReader, run *partyRunner, seating partySeating, now func() time.Time, membership *partyMembership, onShow func(context.Context, []partyView), onSwept func(context.Context, partystore.Party, partystore.Swept)) *partyCache {
 	return &partyCache{
 		store:       store,
 		run:         run,
 		seating:     seating,
 		now:         now,
+		membership:  membership,
 		onShow:      onShow,
 		onSwept:     onSwept,
 		parties:     make(map[uuid.UUID]partystore.Party),
@@ -105,16 +109,18 @@ func newPartyCache(store partyReader, run *partyRunner, seating partySeating, no
 }
 
 // put keeps p as Redis last answered it, unless the cache already holds a newer version of the
-// party, as when letters arrive out of order; it reports whether it took p.
+// party, as when letters arrive out of order; it reports whether it took p. Every party taken
+// (written, lettered, re-read or read on arrival) passes here, and the membership is published.
 func (c *partyCache) put(p partystore.Party) bool {
 	if held, cached := c.parties[p.ID]; cached && held.Version > p.Version {
 		return false
 	}
-	c.drop(p.ID)
+	c.forget(p.ID)
 	c.parties[p.ID] = p
 	for _, m := range p.Members {
 		c.memberOf[m.PlayerID] = p.ID
 	}
+	c.membership.publish(c.memberOf)
 	return true
 }
 
@@ -124,11 +130,20 @@ func (c *partyCache) newer(p partystore.Party) bool {
 	return cached && held.Version > p.Version
 }
 
-// drop lets go of a party: it ended, or this pod holds none of its members.
+// drop lets go of a party: it ended, or this pod holds none of its members. The membership is
+// published.
 func (c *partyCache) drop(partyID uuid.UUID) {
+	if c.forget(partyID) {
+		c.membership.publish(c.memberOf)
+	}
+}
+
+// forget takes a party and its members out of the cache, publishing nothing; it reports whether
+// the party was cached.
+func (c *partyCache) forget(partyID uuid.UUID) bool {
 	old, cached := c.parties[partyID]
 	if !cached {
-		return
+		return false
 	}
 	delete(c.parties, partyID)
 	delete(c.sweeping, partyID)
@@ -137,6 +152,7 @@ func (c *partyCache) drop(partyID uuid.UUID) {
 			delete(c.memberOf, m.PlayerID)
 		}
 	}
+	return true
 }
 
 // party is a cached party by id.

@@ -282,7 +282,7 @@ func setupTestEntities(b *testing.B, playerCount, itemsPerPlayer, containerCount
 
 func BenchmarkSerializeBackendState_NoPool(b *testing.B) {
 	em, entities := setupTestEntities(b, 10, 5, 5, 3)
-	serializer := NewStateSerializer(em)
+	serializer := NewStateSerializer(em, nil)
 	ctx := context.Background()
 	sessionID := uuid.New()
 	b.ResetTimer()
@@ -297,7 +297,7 @@ func BenchmarkSerializeBackendState_NoPool(b *testing.B) {
 
 func BenchmarkSerializeBackendState_WithPool(b *testing.B) {
 	em, entities := setupTestEntities(b, 7, 6, 5, 6)
-	serializer := NewStateSerializer(em)
+	serializer := NewStateSerializer(em, nil)
 	ctx := context.Background()
 	sessionID := uuid.New()
 

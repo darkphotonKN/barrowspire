@@ -52,7 +52,7 @@ func TestSerializeBackendState_ItemsCarryTheirRoll(t *testing.T) {
 			chest.AddComponent(components.NewTransformComponent(20, 20))
 			chest.AddComponent(components.NewItemIDListComponent([]uuid.UUID{inChest}))
 
-			state, err := NewStateSerializer(em).SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
+			state, err := NewStateSerializer(em, nil).SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
 			require.NoError(t, err)
 
 			me := state.Players[memberID]

@@ -107,6 +107,9 @@ type partyRegistryConfig struct {
 	inbox    letterBox
 	// how full each pod's hub is, read before a travel; nil checks no pod's room (FS-NCC9J R18)
 	occupancy hubOccupancyReader
+	// where the cache publishes who is in which party, for every world's serializer; nil
+	// publishes nowhere (FS-CH21F R5, R6)
+	membership *partyMembership
 }
 
 type partyRegistry struct {
@@ -144,7 +147,7 @@ func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJob
 	if cfg.store != nil {
 		reader = cfg.store
 	}
-	r.cache = newPartyCache(reader, r.run, directory, cfg.now, r.show, r.swept)
+	r.cache = newPartyCache(reader, r.run, directory, cfg.now, cfg.membership, r.show, r.swept)
 	return r
 }
 

@@ -37,7 +37,7 @@ func TestFormatStateToClientState_CarriesStairsOnlyInARun(t *testing.T) {
 				stairs.AddComponent(components.NewTransformComponent(300, 400))
 				stairsID = stairs.ID
 			}
-			s := NewStateSerializer(em)
+			s := NewStateSerializer(em, nil)
 
 			backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), tt.world, em.GetAllEntities())
 			require.NoError(t, err)

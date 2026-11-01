@@ -356,7 +356,7 @@ func TestRegenerateFloor_ResetsPerFloorBookkeeping(t *testing.T) {
 func TestRegenerateFloor_MovesTheLivingAndLeavesTheDeadBehind(t *testing.T) {
 	p := newParty(t, &countingItemsClient{})
 	s := p.s
-	s.stateSerializer = serializer.NewStateSerializer(s.EntityManager)
+	s.stateSerializer = serializer.NewStateSerializer(s.EntityManager, nil)
 
 	escaped := uuid.New()
 	s.AddPlayer(escaped, types.CharacterInPlay{Name: "Isolde", Class: "archer"}, "")
@@ -541,7 +541,7 @@ func TestRegenerateFloor_NextBroadcastHoldsOnlyTheNewFloor(t *testing.T) {
 
 	require.NoError(t, s.regenerateFloor())
 
-	state, err := serializer.NewStateSerializer(s.EntityManager).SerializeBackendState(
+	state, err := serializer.NewStateSerializer(s.EntityManager, nil).SerializeBackendState(
 		context.Background(), s.ID, s.worldType, s.EntityManager.GetAllEntities())
 	require.NoError(t, err)
 
