@@ -31,3 +31,4 @@
 
 - [x] Deduplicated extracted-items consumption → FS-BVM9H
 - [x] Settle checked-out items at run end → FS-18Z5F
+- [ ] Consumed items removed at extraction → FS-P9G8R

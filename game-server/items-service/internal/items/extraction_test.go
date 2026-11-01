@@ -306,3 +306,77 @@ func TestConvertSingleProtoItemtoItemInstance_StoresOnlyItsTypesStats(t *testing
 		})
 	}
 }
+
+// Opt-in: runs only with ITEMS_TEST_DSN pointing at a migrated items DB; all in
+// one rolled-back transaction. A member whose loadout was unknown in the run
+// still loses the potion they drank: its row is deleted, the stored loadout
+// slot that held it reads empty through the foreign key, and the rest of the
+// stored loadout is left as it was, the potion they kept released home
+// (FS-P9G8R R18, R19; FS-18Z5F R29).
+func TestProcessItemsExtracted_LoadoutUnknown_ConsumedSlotReadsEmpty(t *testing.T) {
+	dsn := os.Getenv("ITEMS_TEST_DSN")
+	if dsn == "" {
+		t.Skip("ITEMS_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	db, err := sqlx.Connect("postgres", dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	tx, err := db.BeginTxx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	member, runID := uuid.New(), uuid.New()
+	potions := seedTxPotions(t, ctx, tx, runID, member, member)
+	drunk, kept := potions[0], potions[1]
+	repo := NewRepository(db)
+	if err := repo.UpsertPlayerLoadoutTx(ctx, tx, &UpsertPlayerLoadoutRequest{
+		MemberID: member, Consumable1ID: &drunk, Consumable2ID: &kept,
+	}); err != nil {
+		t.Fatalf("seed loadout: %v", err)
+	}
+
+	svc := &service{repo: repo, inbox: &fakeInbox{}, withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
+		return fn(tx)
+	}}
+	event := &pb.ItemsExtractedEvent{SessionId: runID.String(), PlayerItems: []*pb.PlayerItems{{
+		MemberId:        member.String(),
+		Equipment:       &pb.Equipment{},
+		LoadoutUnknown:  true,
+		ConsumedItemIds: []string{drunk.String()},
+	}}}
+	if err := svc.ProcessItemsExtracted(ctx, uuid.New(), "items.extracted", event); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+
+	exists := existingItemIDs(t, ctx, tx, drunk, kept)
+	if exists[drunk] || !exists[kept] {
+		t.Fatalf("stored after extraction: %v, want only the kept potion", exists)
+	}
+	var slots struct {
+		Consumable1 *uuid.UUID `db:"consumable_1_id"`
+		Consumable2 *uuid.UUID `db:"consumable_2_id"`
+	}
+	if err := tx.GetContext(ctx, &slots,
+		`SELECT consumable_1_id, consumable_2_id FROM player_loadouts WHERE member_id = $1`, member); err != nil {
+		t.Fatalf("read loadout: %v", err)
+	}
+	if slots.Consumable1 != nil {
+		t.Errorf("consumable_1_id = %v, want empty after the drunk potion is deleted", slots.Consumable1)
+	}
+	if slots.Consumable2 == nil || *slots.Consumable2 != kept {
+		t.Errorf("consumable_2_id = %v, want the kept potion %v untouched", slots.Consumable2, kept)
+	}
+	var keptStatus string
+	if err := tx.GetContext(ctx, &keptStatus, `SELECT status FROM item_instances WHERE id = $1`, kept); err != nil {
+		t.Fatalf("read kept potion: %v", err)
+	}
+	if keptStatus != itemStatusAvailable {
+		t.Errorf("kept potion status = %s, want released AVAILABLE", keptStatus)
+	}
+}

@@ -714,6 +714,10 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	// gear: what each delver wears counts from this tick, in every world
 	systems.NewGearSystem(s.EntityManager, GearCaps, UniqueEffects, Attributes).Update(deltaTime, entities)
 
+	// drink cooldowns count down, the tick's drinks just applied included
+	// (FS-P9G8R §Requirements 9)
+	systems.NewPotionSystem(s.EntityManager).Update(deltaTime, entities)
+
 	// class resources regenerate toward this tick's maxima, before any cast
 	// this tick is judged against them (FS-8AY7S §Requirements 5)
 	systems.NewResourceSystem().Update(deltaTime, entities)
@@ -2954,14 +2958,15 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 			}
 
 			rawPlayers = append(rawPlayers, types.RawPlayerState{
-				MemberID:       playerState.MemberID.String(),
-				Username:       playerState.Username,
-				Kills:          int32(stats.Kills),
-				Deaths:         int32(stats.Deaths),
-				Escape:         playerState.Escape,
-				Equipment:      extractedEquipment,
-				Inventory:      inventory,
-				LoadoutUnknown: playerState.LoadoutUnknown,
+				MemberID:        playerState.MemberID.String(),
+				Username:        playerState.Username,
+				Kills:           int32(stats.Kills),
+				Deaths:          int32(stats.Deaths),
+				Escape:          playerState.Escape,
+				Equipment:       extractedEquipment,
+				Inventory:       inventory,
+				LoadoutUnknown:  playerState.LoadoutUnknown,
+				ConsumedItemIDs: consumedItemIDsOf(entity),
 			})
 		}
 	}
@@ -2974,6 +2979,25 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 		Players:          rawPlayers,
 		EliminationOrder: s.eliminations,
 	}
+}
+
+// consumedItemIDsOf is a copy of the stored-loadout items the delver drank this
+// run, nil when they never drank (FS-P9G8R §Requirements 14). Reading the record
+// off the tick is safe because endSession snapshots only after a tick in which
+// no delver is in play: the end-signal send and receive order that tick's
+// writes before this read, and an out-of-play delver's drink is refused, so
+// nothing appends to the record or adds the component afterwards. The clone
+// only makes the published snapshot own its slice.
+func consumedItemIDsOf(delver *ecs.Entity) []uuid.UUID {
+	pc, drank := delver.GetComponent(ecs.ComponentTypePotion)
+	if !drank {
+		return nil
+	}
+	potion, ok := pc.(*components.PotionComponent)
+	if !ok || len(potion.ConsumedItemIDs) == 0 {
+		return nil
+	}
+	return slices.Clone(potion.ConsumedItemIDs)
 }
 
 func (s *Session) InitialSystems() {

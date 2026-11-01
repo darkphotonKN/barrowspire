@@ -13,7 +13,7 @@ import type Phaser from "phaser";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import type { HudBar, HudChannel } from "./resources";
 
-const RESOURCE_HUD_W = 220;
+export const RESOURCE_HUD_W = 220;
 const HUD_DEPTH = 1000;
 const PAD = 10;
 /** Panel padding above the first row and below the last. */
@@ -34,7 +34,7 @@ export const HUD_BAR_FILL: Readonly<Record<HudChannel, number>> = {
 };
 
 /** The panel's height for `rows` bars. */
-function resourceHudHeight(rows: number): number {
+export function resourceHudHeight(rows: number): number {
   return rows * ROW_H + PAD_Y * 2;
 }
 

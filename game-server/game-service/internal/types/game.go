@@ -173,6 +173,9 @@ type RawPlayerState struct {
 	// LoadoutUnknown: the stored loadout was never read, so Equipment says
 	// nothing about it
 	LoadoutUnknown bool
+	// ConsumedItemIDs: the stored-loadout items the delver used up this run,
+	// which leave the stash at extraction (FS-P9G8R §Requirements 14)
+	ConsumedItemIDs []uuid.UUID
 }
 
 type RankedPlayerState struct {
@@ -186,6 +189,8 @@ type RankedPlayerState struct {
 	Equipment      ExtractedEquipment
 	Inventory      []*ExtractedItem
 	LoadoutUnknown bool
+	// ConsumedItemIDs: carried from RawPlayerState; a field visit has none
+	ConsumedItemIDs []uuid.UUID
 }
 
 type ExtractedItem struct {

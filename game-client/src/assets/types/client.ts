@@ -105,6 +105,8 @@ export interface ActionMap {
   enter_field: { field: FieldId };
   /** A field player walking into the entrance gate, home to the hub (FS-X2F2H req 14): no payload. */
   leave_field: Record<string, never>;
+  /** A player in the delve drinking a health potion (FS-P9G8R R27): no payload; the server picks the slot. */
+  drink_potion: Record<string, never>;
 }
 
 export const ActionType = {
@@ -126,6 +128,7 @@ export const ActionType = {
   ForfeitRun: "forfeit_run",
   EnterField: "enter_field",
   LeaveField: "leave_field",
+  DrinkPotion: "drink_potion",
 } as const;
 
 export type ActionType = (typeof ActionType)[keyof typeof ActionType];

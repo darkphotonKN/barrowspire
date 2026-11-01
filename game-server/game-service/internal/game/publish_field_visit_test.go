@@ -77,6 +77,7 @@ func TestPublishFieldVisit_WritesTheReturnedResult(t *testing.T) {
 	require.Len(t, items.GetInventory(), 1)
 	assert.Equal(t, "Boar Tusk", items.GetInventory()[0].GetName())
 	assert.Empty(t, items.GetInventory()[0].GetInstanceId(), "a pickup is minted by items-service")
+	assert.Empty(t, items.GetConsumedItemIds(), "nothing is drunk in a field (FS-P9G8R §Requirements 16)")
 }
 
 // A visit with nothing worn, carried or earned still settles a full pair:

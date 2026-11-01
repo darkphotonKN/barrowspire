@@ -86,6 +86,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Pickup allocated by the party's loot rule → FS-V780R
 - [x] Bag carried into runs and field worlds → FS-18Z5F
 - [x] Unsafe run finds lost on death → FS-18Z5F
+- [ ] Drink an equipped health potion → FS-P9G8R
 
 ### Classes
 

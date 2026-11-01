@@ -111,6 +111,7 @@ type Repository interface {
 	UpsertPlayerLoadoutTx(ctx context.Context, tx *sqlx.Tx, req *UpsertPlayerLoadoutRequest) error
 	UpsertItemInstanceTx(ctx context.Context, tx *sqlx.Tx, instance *ItemInstance) error
 	InsertItemInstancesTx(ctx context.Context, tx *sqlx.Tx, instances []*ItemInstance) error
+	DeleteConsumedItemInstancesTx(ctx context.Context, tx *sqlx.Tx, memberID, runID uuid.UUID, ids []uuid.UUID) (int64, error)
 
 	// bag and stash (FS-VPD8Y)
 	LockAccountTx(ctx context.Context, tx *sqlx.Tx, member uuid.UUID) error
@@ -160,8 +161,9 @@ func (s *service) CreatePlayerLoadout(createPlayerLoadoutReq *PlayerLoadout) err
 // Every account the settlement may write is locked first, in member-id order,
 // so it serializes with checkouts and loadout writes, which take the same lock
 // before their rows. Each member's items and loadout are stored through the
-// run fence, then every instance still IN_RUN under the run is released
-// (R27-R29). Nothing is deleted (R30).
+// run fence, then each member's consumed items are deleted (FS-P9G8R R17-R19),
+// then every instance still IN_RUN under the run is released (R27-R29).
+// Nothing else is deleted (R30).
 //
 // An item that cannot be stored on its own (no template, bad affix) is skipped
 // with a warning; any other failure is returned, transient or not, for the
@@ -172,6 +174,10 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, 
 		return fmt.Errorf("store items extracted %s: run id %q: %w: %w", eventID, req.GetSessionId(), commonconstants.ErrUUIDCouldNotBeParsed, err)
 	}
 	members, err := extractedMembers(req)
+	if err != nil {
+		return fmt.Errorf("store items extracted %s: %w", eventID, err)
+	}
+	consumed, err := extractedConsumed(req, members)
 	if err != nil {
 		return fmt.Errorf("store items extracted %s: %w", eventID, err)
 	}
@@ -187,7 +193,7 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, 
 			writeErr = commonconstants.ErrAlreadyProcessed
 			return writeErr
 		}
-		writeErr = s.settleRun(ctx, tx, runID, members, req.GetPlayerItems())
+		writeErr = s.settleRun(ctx, tx, runID, members, consumed, req.GetPlayerItems())
 		return writeErr
 	})
 	switch {
@@ -215,9 +221,29 @@ func extractedMembers(req *pb.ItemsExtractedEvent) ([]uuid.UUID, error) {
 	return members, nil
 }
 
-// settleRun locks, stores every member and releases the run runID. members[i]
-// is players[i]'s member id.
-func (s *service) settleRun(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, members []uuid.UUID, players []*pb.PlayerItems) error {
+// extractedConsumed parses each player's consumed item ids, in event order. One
+// that is not a UUID is a producer bug and fails the event as malformed before
+// any write (FS-P9G8R R21).
+func extractedConsumed(req *pb.ItemsExtractedEvent, members []uuid.UUID) ([][]uuid.UUID, error) {
+	consumed := make([][]uuid.UUID, 0, len(req.GetPlayerItems()))
+	for i, playerItems := range req.GetPlayerItems() {
+		ids := make([]uuid.UUID, 0, len(playerItems.GetConsumedItemIds()))
+		for _, raw := range playerItems.GetConsumedItemIds() {
+			id, err := uuid.Parse(raw)
+			if err != nil {
+				return nil, fmt.Errorf("consumed item id %q of member %s: %w: %w", raw, members[i], commonconstants.ErrUUIDCouldNotBeParsed, err)
+			}
+			ids = append(ids, id)
+		}
+		consumed = append(consumed, ids)
+	}
+	return consumed, nil
+}
+
+// settleRun locks, stores every member, deletes what they used up and
+// releases the run runID. members[i] and consumed[i] are players[i]'s member
+// id and consumed item ids.
+func (s *service) settleRun(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, members []uuid.UUID, consumed [][]uuid.UUID, players []*pb.PlayerItems) error {
 	if err := s.lockSettlementAccounts(ctx, tx, runID, members); err != nil {
 		return err
 	}
@@ -227,15 +253,42 @@ func (s *service) settleRun(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, m
 		}
 	}
 
-	// FS-P9G8R seam: consumed items are deleted here, after every member is
-	// stored and before the release, so a consumed IN_RUN item is deleted, not
-	// released first (FS-18Z5F §Merge overlap).
+	// consumed items are deleted after every member is stored, so a loadout
+	// slot still pointing at one is nulled by its foreign key, and before the
+	// release, so a consumed IN_RUN item is deleted, not released first
+	// (FS-P9G8R R18; FS-18Z5F §Merge overlap)
+	for i, ids := range consumed {
+		if err := s.deleteConsumedItems(ctx, tx, runID, members[i], ids); err != nil {
+			return err
+		}
+	}
 
 	released, err := s.repo.ReleaseRunTx(ctx, tx, runID)
 	if err != nil {
 		return fmt.Errorf("release run %s: %w", runID, err)
 	}
 	slog.Info("run settled", "run_id", runID, "members", len(members), "released", released)
+	return nil
+}
+
+// deleteConsumedItems removes the member's items used up in the run runID.
+// Nothing consumed makes no call, so an event from an older producer applies
+// as before (FS-P9G8R R20).
+func (s *service) deleteConsumedItems(ctx context.Context, tx *sqlx.Tx, runID, memberID uuid.UUID, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	deleted, err := s.repo.DeleteConsumedItemInstancesTx(ctx, tx, memberID, runID, ids)
+	if err != nil {
+		return fmt.Errorf("delete consumed items of member %s: %w", memberID, err)
+	}
+	slog.Debug("deleted consumed items",
+		"member_id", memberID,
+		"run_id", runID,
+		"consumed", len(ids),
+		"deleted", deleted,
+	)
 	return nil
 }
 

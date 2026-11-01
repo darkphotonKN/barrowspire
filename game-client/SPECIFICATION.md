@@ -60,6 +60,7 @@ server state and sends intents. ✅
 - [x] Health and class resource bars on the HUD → FS-8AY7S
 - [x] Ability card on the HUD → FS-8AY7S
 - [x] Shadow Shot aimed by holding → FS-JTNPR
+- [ ] Potion count and drink key on the HUD → FS-P9G8R
 - [ ] Allocated pickup notices → FS-V780R
 - [x] Unsafe marking on run finds → FS-18Z5F
 

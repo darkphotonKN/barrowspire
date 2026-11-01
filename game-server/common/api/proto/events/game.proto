@@ -48,6 +48,10 @@ message PlayerItems {
   // about the stored loadout: the consumer stores the items but leaves the
   // stored loadout as it is.
   bool loadout_unknown = 4;
+  // Instance ids (canonical UUID strings) of the member's stored items used
+  // up during the run, e.g. a drunk health potion. The consumer deletes them
+  // in the extraction transaction. Empty means nothing consumed (FS-P9G8R).
+  repeated string consumed_item_ids = 5;
 }
 
 // All equipment slots — mirrors EquipmentComponent in game-service.

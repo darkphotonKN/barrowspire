@@ -223,7 +223,8 @@ func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, ende
 			},
 			Inventory: extractedInventoryToPb(player.Inventory),
 			// an unread loadout must never be settled as an empty one
-			LoadoutUnknown: player.LoadoutUnknown,
+			LoadoutUnknown:  player.LoadoutUnknown,
+			ConsumedItemIds: uuidStrings(player.ConsumedItemIDs),
 		}
 	}
 
@@ -308,9 +309,10 @@ func (s *service) rankPlayers(players []types.RawPlayerState, eliminationOrder m
 			Deaths:   player.Deaths,
 			Escape:   player.Escape,
 			// what the delver brings out; dropping it here lost every extraction
-			Equipment:      player.Equipment,
-			Inventory:      player.Inventory,
-			LoadoutUnknown: player.LoadoutUnknown,
+			Equipment:       player.Equipment,
+			Inventory:       player.Inventory,
+			LoadoutUnknown:  player.LoadoutUnknown,
+			ConsumedItemIDs: player.ConsumedItemIDs,
 		}
 
 		// determining final positions
@@ -328,6 +330,18 @@ func (s *service) rankPlayers(players []types.RawPlayerState, eliminationOrder m
 	}
 
 	return rankedPlayers
+}
+
+// uuidStrings is each id in its canonical string form, nil for none.
+func uuidStrings(ids []uuid.UUID) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	strs := make([]string, len(ids))
+	for i, id := range ids {
+		strs[i] = id.String()
+	}
+	return strs
 }
 
 func extractedItemToPb(item *types.ExtractedItem) *pb.Item {

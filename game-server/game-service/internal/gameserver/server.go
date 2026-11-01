@@ -621,6 +621,22 @@ func (s *Server) ForfeitRun(player *types.Player) error {
 }
 
 /**
+* A delver drinking a health potion (FS-P9G8R §Requirements 2–4): the run their
+* record names queues the drink for its tick, which makes every check. A member
+* whose record names the hub, a field or no world is ignored, silently.
+**/
+func (s *Server) DrinkPotion(player *types.Player) {
+	world, _ := s.currentWorldOf(player.ID)
+	run, exists := s.GetGameSession(world)
+	if !exists || run.WorldType() != types.WorldTypeRun {
+		slog.Debug("Ignoring drink_potion outside a run", "player_id", player.ID, "world_id", world)
+		return
+	}
+
+	run.Drink(player.ID)
+}
+
+/**
 * Keeps what a finished run did to each member's character in play.
 *
 * Called as the run resolves, before its players are sent home, so the HUB

@@ -1495,3 +1495,126 @@ func TestMarketplaceWrites_LeaveAnInRunItemAlone(t *testing.T) {
 		})
 	}
 }
+
+// Nothing consumed issues no query: the nil transaction is never touched
+// (FS-P9G8R R20).
+func TestDeleteConsumedItemInstancesTx_EmptyList_NoQuery(t *testing.T) {
+	deleted, err := NewRepository(nil).DeleteConsumedItemInstancesTx(context.Background(), nil, uuid.New(), uuid.New(), nil)
+
+	if err != nil || deleted != 0 {
+		t.Fatalf("got (%d, %v), want (0, nil)", deleted, err)
+	}
+}
+
+// seedTxPotions stores one potion instance per owner inside tx, on a template
+// seeded in tx, checked out IN_RUN under runID, and returns their ids in the
+// owners' order.
+func seedTxPotions(t *testing.T, ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, owners ...uuid.UUID) []uuid.UUID {
+	t.Helper()
+	var rarityID uuid.UUID
+	if err := tx.GetContext(ctx, &rarityID, `SELECT id FROM item_rarities ORDER BY sort_order LIMIT 1`); err != nil {
+		t.Fatalf("rarity: %v", err)
+	}
+	consumableID, templateID := uuid.New(), uuid.New()
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO consumables (id, rarity_id, healing_amount) VALUES ($1, $2, 10)`,
+		consumableID, rarityID); err != nil {
+		t.Fatalf("consumable: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO item_templates (id, item_name, rarity_id, item_type, item_id, required_level) VALUES ($1, 'Lesser Heal Potion', $2, 'consumable', $3, 1)`,
+		templateID, rarityID, consumableID); err != nil {
+		t.Fatalf("template: %v", err)
+	}
+
+	healing := 10
+	instances := make([]*ItemInstance, 0, len(owners))
+	ids := make([]uuid.UUID, 0, len(owners))
+	for _, owner := range owners {
+		id := uuid.New()
+		ids = append(ids, id)
+		instances = append(instances, &ItemInstance{
+			ID: id, TemplateID: templateID, OwnerMemberID: owner, Source: "extracted", Status: "AVAILABLE", Location: LocationBag,
+			ItemType: "consumable", Name: "Lesser Heal Potion", RarityID: &rarityID, HealingAmount: &healing,
+		})
+	}
+	if err := NewRepository(nil).InsertItemInstancesTx(ctx, tx, instances); err != nil {
+		t.Fatalf("seed potions: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE item_instances SET status = 'IN_RUN', run_id = $2 WHERE id = ANY($1)`,
+		pq.Array(ids), runID); err != nil {
+		t.Fatalf("check out potions: %v", err)
+	}
+	return ids
+}
+
+// existingItemIDs reads which of ids still have a row, as seen by tx.
+func existingItemIDs(t *testing.T, ctx context.Context, tx *sqlx.Tx, ids ...uuid.UUID) map[uuid.UUID]bool {
+	t.Helper()
+	var found []uuid.UUID
+	if err := tx.SelectContext(ctx, &found, `SELECT id FROM item_instances WHERE id = ANY($1)`, pq.Array(ids)); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	exists := make(map[uuid.UUID]bool, len(found))
+	for _, id := range found {
+		exists[id] = true
+	}
+	return exists
+}
+
+// Opt-in: runs only with ITEMS_TEST_DSN pointing at a migrated items DB; all in
+// one rolled-back transaction. The delete is owner-scoped, run-fenced and
+// idempotent: it removes the member's listed instances in this run only; an
+// id already gone, owned by another member, or reclaimed by a later run
+// matches nothing; and it rolls back with its transaction (FS-P9G8R R17, R20;
+// FS-18Z5F *Merge overlap*).
+func TestDeleteConsumedItemInstancesTx_OwnerScopedRunFencedAndIdempotent(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	tx, err := db.BeginTxx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	member, other, runA, runB := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	potions := seedTxPotions(t, ctx, tx, runA, member, member, member, other)
+	drunk1, drunk2, kept, foreign := potions[0], potions[1], potions[2], potions[3]
+	reclaimed := seedTxPotions(t, ctx, tx, runB, member)[0]
+	gone := uuid.New()
+	repo := NewRepository(db)
+
+	// a failed transaction takes the delete back with it
+	if _, err := tx.ExecContext(ctx, `SAVEPOINT before_delete`); err != nil {
+		t.Fatalf("savepoint: %v", err)
+	}
+	if _, err := repo.DeleteConsumedItemInstancesTx(ctx, tx, member, runA, []uuid.UUID{drunk1}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT before_delete`); err != nil {
+		t.Fatalf("rollback to savepoint: %v", err)
+	}
+	if !existingItemIDs(t, ctx, tx, drunk1)[drunk1] {
+		t.Fatalf("a rolled-back delete removed %s", drunk1)
+	}
+
+	deleted, err := repo.DeleteConsumedItemInstancesTx(ctx, tx, member, runA, []uuid.UUID{drunk1, drunk2, foreign, reclaimed, gone})
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if deleted != 2 {
+		t.Fatalf("deleted %d rows, want the member's 2 in run A", deleted)
+	}
+	exists := existingItemIDs(t, ctx, tx, drunk1, drunk2, kept, foreign, reclaimed)
+	if exists[drunk1] || exists[drunk2] {
+		t.Errorf("consumed instances still stored: %v", exists)
+	}
+	if !exists[kept] || !exists[foreign] || !exists[reclaimed] {
+		t.Errorf("deleted an instance not consumed by the member in run A: %v", exists)
+	}
+
+	again, err := repo.DeleteConsumedItemInstancesTx(ctx, tx, member, runA, []uuid.UUID{drunk1, drunk2})
+	if err != nil || again != 0 {
+		t.Fatalf("second delete got (%d, %v), want (0, nil)", again, err)
+	}
+}

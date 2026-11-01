@@ -46,8 +46,11 @@ import {
 } from "@/ui/party";
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
 import { ProgressHud } from "@/ui/ProgressHud";
-import { ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
+import { RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
+import { PotionHud } from "@/ui/PotionHud";
+import { healthPotionCount, potionCell } from "@/ui/potions";
+import { RUN_ACTIONS } from "./runActions";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
@@ -186,6 +189,8 @@ const PROGRESS_HUD_Y = 44;
  */
 const RESOURCE_HUD_X = PROGRESS_HUD_X;
 const RESOURCE_HUD_MARGIN = 16;
+/** The potion cell (FS-P9G8R R24): just right of the resource bars, bottom-aligned with them. */
+const POTION_HUD_X = RESOURCE_HUD_X + RESOURCE_HUD_W + 6;
 /**
  * The ability card (FS-8AY7S req 29, 32): bottom-right, on the leave button's margins. The two
  * share the corner and are never up together: the card is down whenever the button is up.
@@ -456,6 +461,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private resourceHud?: ResourceHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
+  /** The health potions carried and the drink key, beside the bars (FS-P9G8R R24). */
+  private potionHud?: PotionHud;
   /** The class ability card, bottom right (FS-8AY7S req 29–32). */
   private abilityHud?: AbilityHud;
   /**
@@ -775,6 +782,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.resourceHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
+    this.potionHud = undefined;
     this.abilityHud = undefined;
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
@@ -807,7 +815,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     const cam = this.cameras.main;
     const panelW = 260;
-    const panelH = 240;
+    const panelH = 260;
     const x = cam.width / 2;
     const y = cam.height / 2;
 
@@ -837,6 +845,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ["Q", "Close Panel"],
       ["LEFT CLICK", "Melee Attack"],
       ["RIGHT CLICK", "Fireball (Skill)"],
+      [RUN_ACTIONS.drinkPotion.label, "Drink potion"],
       ["H", "Toggle Controls"],
       ["ESC", "Menu"],
     ];
@@ -2767,6 +2776,13 @@ export class BarrowspireScene extends Phaser.Scene {
       this.toggleControlsPanel();
     });
 
+    // 1 drinks a health potion (FS-P9G8R R27, R28). An event, never a JustDown poll: the menu polls
+    // the same key each frame for its rows, and a second poll would steal its press.
+    this.input.keyboard?.on(`keydown-${RUN_ACTIONS.drinkPotion.key}`, (event?: KeyboardEvent) => {
+      if (this.menu || event?.repeat) return;
+      this.drinkPotion();
+    });
+
     // Scene-level pointer tracking for satchel hover (bypasses broken Phaser scrollFactor input)
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       this.containerView.pointerMove(pointer.x, pointer.y);
@@ -3798,13 +3814,17 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * This player's Health and class resource bars (FS-8AY7S req 20–25): up while they are in the
-   * delve, down once they are out of it, and never before their first state.
+   * This player's Health and class resource bars (FS-8AY7S req 20–25) and the potion cell beside
+   * them (FS-P9G8R R24): up while they are in the delve, down once they are out of it, and never
+   * before their first state.
    */
   private showResourceBars(state: ClientGameState): void {
     this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_X, this.cameras.main.height - RESOURCE_HUD_MARGIN);
     this.resourceHud.show(hudBars(state));
     this.chatWindow?.setBottom(this.resourceHud.topEdge());
+    // the potion cell is up exactly when the bars are (FS-P9G8R R24)
+    this.potionHud ??= new PotionHud(this, this.art, POTION_HUD_X, this.cameras.main.height - RESOURCE_HUD_MARGIN);
+    this.potionHud.show(potionCell(state));
   }
 
   /**
@@ -4000,6 +4020,17 @@ export class BarrowspireScene extends Phaser.Scene {
         hit.destroy();
       },
     };
+  }
+
+  /**
+   * One `drink_potion` (FS-P9G8R R27): the server picks the slot and heals, and the next state
+   * shows both. Nothing is sent when there is nothing to drink or the player is out of the delve,
+   * since the server would refuse it, and nothing is predicted here (R30).
+   */
+  private drinkPotion(): void {
+    const me = this.lastGameState?.current_player;
+    if (resolved(me) || healthPotionCount(me?.equipment) === 0) return;
+    socketManager.sendMessage(ActionType.DrinkPotion, {});
   }
 
   /**

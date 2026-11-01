@@ -270,3 +270,30 @@ func TestExtractedItemToPb_CarriesRarityID(t *testing.T) {
 		})
 	}
 }
+
+// Each delver's consumed items ride the run's end into items.extracted as
+// canonical UUID strings: the delver who drank lists theirs, the one who drank
+// nothing lists none, and rankPlayers does not drop them on the way.
+// FS-P9G8R §Requirements 14. I-P9G8R-3.
+func TestPublishMatchComplete_CarriesEachDelversConsumedItems(t *testing.T) {
+	outbox := &capturingOutbox{}
+	svc := NewService(committingTxDB(t), outbox, noWake{})
+	drinker, abstainer := uuid.New(), uuid.New()
+	drunk := []uuid.UUID{uuid.New(), uuid.New()}
+
+	svc.PublishMatchComplete(context.Background(), &types.RawMatchState{
+		SessionID: uuid.New(),
+		Players: []types.RawPlayerState{
+			{MemberID: drinker.String(), Escape: true, ConsumedItemIDs: drunk},
+			{MemberID: abstainer.String(), Escape: true},
+		},
+		EliminationOrder: map[uuid.UUID]int{},
+	})
+
+	byMember := map[string]*pb.PlayerItems{}
+	for _, items := range outbox.itemsExtracted(t).GetPlayerItems() {
+		byMember[items.GetMemberId()] = items
+	}
+	assert.ElementsMatch(t, []string{drunk[0].String(), drunk[1].String()}, byMember[drinker.String()].GetConsumedItemIds())
+	assert.Empty(t, byMember[abstainer.String()].GetConsumedItemIds())
+}

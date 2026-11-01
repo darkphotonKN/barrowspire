@@ -18,6 +18,9 @@ const (
 	// ActionForfeitRun is a delver in play choosing to die where they stand.
 	// FS-9K8EZ §Requirements 9.
 	ActionForfeitRun Action = "forfeit_run"
+	// ActionDrinkPotion is a delver in a run drinking a health potion from
+	// their consumable slots; no payload of its own. FS-P9G8R §Requirements 2.
+	ActionDrinkPotion Action = "drink_potion"
 	// ActionLeaveHub is a hub member leaving for the roster: their body goes,
 	// their record stays in no world. FS-G4VMQ §Requirements 23.
 	ActionLeaveHub Action = "leave_hub"

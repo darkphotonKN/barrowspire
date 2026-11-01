@@ -698,3 +698,177 @@ func TestProcessItemsExtracted_AgainstTheSchema(t *testing.T) {
 		}
 	})
 }
+
+// consumingRepo records the consumed-item deletes a settlement makes, in the
+// call order extractionRepo keeps, so the delete's place can be shown.
+type consumingRepo struct {
+	*extractionRepo
+	deleteErr error
+	deleted   []consumedDelete
+}
+
+type consumedDelete struct {
+	memberID, runID uuid.UUID
+	ids             []uuid.UUID
+	tx              *sqlx.Tx
+}
+
+func (r *consumingRepo) DeleteConsumedItemInstancesTx(_ context.Context, tx *sqlx.Tx, memberID, runID uuid.UUID, ids []uuid.UUID) (int64, error) {
+	r.calls = append(r.calls, "consumed")
+	r.deleted = append(r.deleted, consumedDelete{memberID, runID, ids, tx})
+	return int64(len(ids)), r.deleteErr
+}
+
+// A drunk potion is reported as a consumed item; settlement deletes exactly
+// those instances, fenced by the run, in the event's transaction: after every
+// member is stored and before the run is released, loadout known or not
+// (FS-P9G8R R17-R19; FS-18Z5F *Merge overlap*).
+func TestProcessItemsExtracted_ConsumedItems_DeletedBeforeRelease(t *testing.T) {
+	tests := []struct {
+		name           string
+		loadoutUnknown bool
+		secondMember   bool
+		wantCalls      string
+	}{
+		{name: "loadout known", wantCalls: "owners,lock,insert,apply,loadout,consumed,release"},
+		{name: "loadout unknown", loadoutUnknown: true, wantCalls: "owners,lock,insert,apply,consumed,release"},
+		{name: "after every member is stored", secondMember: true, wantCalls: "owners,lock,lock,insert,apply,loadout,insert,apply,loadout,consumed,release"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tx := &sqlx.Tx{}
+			repo := &consumingRepo{extractionRepo: &extractionRepo{}}
+			svc := &service{repo: repo, inbox: &fakeInbox{}, withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
+				return fn(tx)
+			}}
+			drunk1, drunk2 := uuid.New(), uuid.New()
+			event := extractedEvent(potion())
+			event.PlayerItems[0].LoadoutUnknown = tt.loadoutUnknown
+			event.PlayerItems[0].ConsumedItemIds = []string{drunk1.String(), drunk2.String()}
+			if tt.secondMember {
+				event.PlayerItems = append(event.PlayerItems, &pb.PlayerItems{
+					MemberId: uuid.NewString(), Equipment: &pb.Equipment{}, Inventory: []*pb.Item{potion()},
+				})
+			}
+			member := uuid.MustParse(event.PlayerItems[0].MemberId)
+			runID := uuid.MustParse(event.SessionId)
+
+			if err := svc.ProcessItemsExtracted(context.Background(), uuid.New(), commonconstants.ItemsExtracted, event); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(repo.deleted) != 1 {
+				t.Fatalf("deleted %d times, want once", len(repo.deleted))
+			}
+			got := repo.deleted[0]
+			if got.memberID != member || got.runID != runID || got.tx != tx {
+				t.Fatalf("deleted for %s under run %s in tx %p, want %s under %s in the event's tx", got.memberID, got.runID, got.tx, member, runID)
+			}
+			if len(got.ids) != 2 || got.ids[0] != drunk1 || got.ids[1] != drunk2 {
+				t.Fatalf("deleted %v, want [%s %s]", got.ids, drunk1, drunk2)
+			}
+			if calls := strings.Join(repo.calls, ","); calls != tt.wantCalls {
+				t.Fatalf("calls %q, want %q", calls, tt.wantCalls)
+			}
+		})
+	}
+}
+
+// An event with nothing consumed, including one from a producer that predates
+// the field, settles exactly as before: no delete is made (FS-P9G8R R20).
+func TestProcessItemsExtracted_NothingConsumed_NoDelete(t *testing.T) {
+	tests := []struct {
+		name     string
+		consumed []string
+	}{
+		{name: "field absent", consumed: nil},
+		{name: "empty list", consumed: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &consumingRepo{extractionRepo: &extractionRepo{}}
+			svc := &service{repo: repo, withTx: runInline, inbox: &fakeInbox{}}
+			event := extractedEvent(potion())
+			event.PlayerItems[0].ConsumedItemIds = tt.consumed
+
+			if err := svc.ProcessItemsExtracted(context.Background(), uuid.New(), commonconstants.ItemsExtracted, event); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(repo.deleted) != 0 {
+				t.Fatalf("deleted %d times, want no delete", len(repo.deleted))
+			}
+		})
+	}
+}
+
+// The delete shares the event's fate: a malformed consumed id fails the event
+// before anything is written, a failed delete fails it before the release, a
+// release failing after the delete fails the transaction holding it, and a
+// redelivered event deletes nothing more (FS-P9G8R R17, R20, R21; FS-BVM9H).
+func TestProcessItemsExtracted_ConsumedItems_Failures(t *testing.T) {
+	drunk := uuid.NewString()
+	withConsumed := func(ids ...string) *pb.ItemsExtractedEvent {
+		event := extractedEvent(potion())
+		event.PlayerItems[0].ConsumedItemIds = ids
+		return event
+	}
+
+	tests := []struct {
+		name        string
+		repo        *consumingRepo
+		inbox       *fakeInbox
+		event       *pb.ItemsExtractedEvent
+		wantErr     error
+		wantDeletes int
+		wantCalls   string
+	}{
+		{
+			name:    "a consumed id that is not a UUID fails the event before any write",
+			repo:    &consumingRepo{extractionRepo: &extractionRepo{}},
+			inbox:   &fakeInbox{},
+			event:   withConsumed(drunk, "not-a-uuid"),
+			wantErr: commonconstants.ErrUUIDCouldNotBeParsed,
+		},
+		{
+			name:        "a failed delete fails the event before the release",
+			repo:        &consumingRepo{extractionRepo: &extractionRepo{}, deleteErr: commonconstants.ErrTransient},
+			inbox:       &fakeInbox{},
+			event:       withConsumed(drunk),
+			wantErr:     commonconstants.ErrTransient,
+			wantDeletes: 1,
+			wantCalls:   "owners,lock,insert,apply,loadout,consumed",
+		},
+		{
+			name:        "a failed release fails the transaction holding the delete",
+			repo:        &consumingRepo{extractionRepo: &extractionRepo{releaseErr: commonconstants.ErrLockUnavailable}},
+			inbox:       &fakeInbox{},
+			event:       withConsumed(drunk),
+			wantErr:     commonconstants.ErrLockUnavailable,
+			wantDeletes: 1,
+			wantCalls:   "owners,lock,insert,apply,loadout,consumed,release",
+		},
+		{
+			name:    "a redelivered event deletes nothing",
+			repo:    &consumingRepo{extractionRepo: &extractionRepo{}},
+			inbox:   &fakeInbox{duplicate: true},
+			event:   withConsumed(drunk),
+			wantErr: commonconstants.ErrAlreadyProcessed,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &service{repo: tt.repo, withTx: runInline, inbox: tt.inbox}
+
+			err := svc.ProcessItemsExtracted(context.Background(), uuid.New(), commonconstants.ItemsExtracted, tt.event)
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if len(tt.repo.deleted) != tt.wantDeletes {
+				t.Fatalf("deleted %d times, want %d", len(tt.repo.deleted), tt.wantDeletes)
+			}
+			if calls := strings.Join(tt.repo.calls, ","); calls != tt.wantCalls {
+				t.Fatalf("calls %q, want %q", calls, tt.wantCalls)
+			}
+		})
+	}
+}

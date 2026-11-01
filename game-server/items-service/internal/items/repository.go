@@ -916,6 +916,40 @@ func (r *repository) InsertItemInstancesTx(ctx context.Context, tx *sqlx.Tx, ite
 	return nil
 }
 
+// DeleteConsumedItemInstancesTx deletes the member's instances used up in the
+// run runID and returns how many rows went. Owner-scoped and run-fenced: an id
+// already gone, owned by another member, or no longer IN_RUN under runID (a
+// later checkout reclaimed it) matches nothing and is not an error. An empty
+// list issues no query (FS-P9G8R R17, R20; FS-18Z5F *Merge overlap*).
+func (r *repository) DeleteConsumedItemInstancesTx(ctx context.Context, tx *sqlx.Tx, memberID, runID uuid.UUID, ids []uuid.UUID) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	idStrings := make([]string, 0, len(ids))
+	for _, id := range ids {
+		idStrings = append(idStrings, id.String())
+	}
+
+	query := `
+		DELETE FROM item_instances
+		WHERE id = ANY($1::uuid[])
+		AND owner_member_id = $2
+		AND run_id = $3`
+
+	result, err := tx.ExecContext(ctx, query, pq.Array(idStrings), memberID, runID)
+	if err != nil {
+		return 0, wrapDBErr("delete consumed item instances (tx)", err)
+	}
+
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, wrapDBErr("delete consumed item instances (tx): rows affected", err)
+	}
+
+	return deleted, nil
+}
+
 // insertItemsQuery builds the multi-row insert and its arguments, giving any
 // item without an id a new one. Placeholders are numbered from the column
 // list, so they cannot drift from the arguments.
