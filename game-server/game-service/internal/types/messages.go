@@ -132,6 +132,9 @@ type BackendGameState struct {
 	// LeftBehind holds dead delvers whose body stayed on a floor the party has
 	// left: each still sees their own state, nobody else sees the body
 	LeftBehind map[uuid.UUID]*PlayerState
+	// Escaped holds delvers who escaped the run: each still sees their own
+	// state until the run ends, nobody else sees them
+	Escaped map[uuid.UUID]*PlayerState
 	// Resources is each delver's class resource, kept beside their state and
 	// attached only to the frame their own client is sent
 	Resources map[uuid.UUID]*ResourceState

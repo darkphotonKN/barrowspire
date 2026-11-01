@@ -38,6 +38,7 @@ func NewStateSerializer(em *ecs.EntityManager, parties PartyMembership) *StateSe
 			return &types.BackendGameState{
 				Players:    make(map[uuid.UUID]*types.PlayerState),
 				LeftBehind: make(map[uuid.UUID]*types.PlayerState),
+				Escaped:    make(map[uuid.UUID]*types.PlayerState),
 				Resources:  make(map[uuid.UUID]*types.ResourceState),
 				Parries:    make(map[uuid.UUID]*types.ParryState),
 				Items:      make([]uuid.UUID, 0),
@@ -77,10 +78,6 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 		if isPlayer {
 			// -- get all player components --
 			player := pc.(*components.PlayerComponent)
-			if player.Escape {
-				backendState.EscapedCount++
-				continue
-			}
 			tc, _ := entity.GetComponent(ecs.ComponentTypeTransform)
 			transform := tc.(*components.TransformComponent)
 			vc, _ := entity.GetComponent(ecs.ComponentTypeVelocity)
@@ -202,11 +199,17 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				playerState.NextLevelAt = &next
 			}
 
+			switch {
+			// an escaped delver has left the barrow, so only they see
+			// themselves until the run ends (FS-QPDKN §Requirements 24)
+			case player.Escape:
+				backendState.EscapedCount++
+				backendState.Escaped[player.MemberID] = playerState
 			// a dead delver left on an earlier floor is not on this one, so only
 			// they see themselves (FS-F6F88 §Requirements 15)
-			if player.LeftBehind {
+			case player.LeftBehind:
 				backendState.LeftBehind[player.MemberID] = playerState
-			} else {
+			default:
 				backendState.Players[player.MemberID] = playerState
 			}
 		}
@@ -502,7 +505,10 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 
 	ownState, present := backendState.Players[playerID]
 	if !present {
-		ownState = backendState.LeftBehind[playerID]
+		ownState, present = backendState.LeftBehind[playerID]
+	}
+	if !present {
+		ownState = backendState.Escaped[playerID]
 	}
 	// the shared PlayerState is wrapped, never written: the resource is the
 	// recipient's alone. FS-8AY7S §Requirements 17–18
@@ -556,6 +562,9 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	}
 	for k := range state.LeftBehind {
 		delete(state.LeftBehind, k)
+	}
+	for k := range state.Escaped {
+		delete(state.Escaped, k)
 	}
 	for k := range state.Resources {
 		delete(state.Resources, k)
