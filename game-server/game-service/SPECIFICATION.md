@@ -145,7 +145,9 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Travel to the party leader's village → FS-NCC9J
 - [ ] Party loot rule → FS-V780R
 - [ ] Enter an instance as a party from its gate → FS-BJNYC
-- [ ] Matched players form a party on entry → FS-BJNYC
+- [ ] Ready check before a party enters → FS-BJNYC
+- [ ] Party members enter only with their party → FS-BJNYC
+- [ ] A party is locked inside its instance → FS-BJNYC
 - [ ] Party members' class resource in the broadcast → FS-CH21F
 
 ### Chat
