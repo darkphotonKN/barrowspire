@@ -1,6 +1,6 @@
 # FS-QPDKN: Resolved delver spectate and leave
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Escape run" (spectate living teammates after resolving · leave a run early after dying · hold the run result until the delver returns); `game-server/game-service/SPECIFICATION.md` "### Session & matchmaking lifecycle" (leave a run early after dying · resolved delvers settle with the run despite leaving or disconnecting) → this FS · Related ADRs: [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (one connection across worlds), [ADR-0004](../adr/0004-game-traffic-bypasses-the-application-gateway.md) (game-service owns the WebSocket contract) · Builds on: [FS-77AB6](77AB6-monsters-and-combat.md) §Requirements 17 (resolved delvers stay out of play; this FS adds the early leave R17 listed as out of scope), [FS-29KSH](29KSH-hub-world-and-delve-entry.md) (return to the hub, `world_entered`), [FS-BDA7X](BDA7X-character-leveling.md) §Requirements 22–24 (run progress), [FS-4R9M9](4R9M9-item-levels-affixes-and-uniques.md) ("death loses everything") · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md), [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) (*spectate*, *watched delver*, *leave early* pending via domain-model)
+> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Escape run" (spectate living teammates after resolving · leave a run early after dying · hold the run result until the delver returns); `game-server/game-service/SPECIFICATION.md` "### Session & matchmaking lifecycle" (leave a run early after dying · resolved delvers settle with the run despite leaving or disconnecting) → this FS · Related ADRs: [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (one connection across worlds), [ADR-0004](../adr/0004-game-traffic-bypasses-the-application-gateway.md) (game-service owns the WebSocket contract) · Builds on: [FS-77AB6](77AB6-monsters-and-combat.md) §Requirements 17 (resolved delvers stay out of play; this FS adds the early leave R17 listed as out of scope), [FS-29KSH](29KSH-hub-world-and-delve-entry.md) (return to the hub, `world_entered`), [FS-BDA7X](BDA7X-character-leveling.md) §Requirements 22–24 (run progress), [FS-4R9M9](4R9M9-item-levels-affixes-and-uniques.md) ("death loses everything") · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md), [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) (*spectate*, *watched delver*, *leave early* pending via domain-model) · Amended 2026-11-02 (charter, after ship): an escaped delver gets a bottom-centre *Watch the delve* button instead of a card (R1, R3, R12, Edge States), and game-service keeps sending an escaped delver their own state until the run ends (R24)
 
 ## Summary
 
@@ -24,6 +24,8 @@ hand-coded, with an agent for tests only.
    resolved while at least one teammate is still in play (today's condition for the "delve
    goes on" notice, `delveNotice`), the client shows a card instead of that notice. The card
    is the same component in both cases below, differing only in copy and buttons.
+   *(Amended 2026-11-02, charter; Nick: only the dead delver gets a card. An escaped delver gets
+   the button of R3 instead (charter default (Nick approved 2026-11-02); reason: "單純出現觀看按鈕").)*
 2. **The dead delver's card** carries grim copy (the existing "The barrow keeps you" line is
    acceptable) and **two buttons**: *Watch the delve* and *Leave the barrow* (final copy per
    `game-client/CONTEXT.md` lore voice; "leave" here is the delver's own word for returning
@@ -31,6 +33,20 @@ hand-coded, with an agent for tests only.
 3. **The escaped delver's card** carries congratulatory copy ("You are out of the barrow"
    register; grim and terse, not triumphant) and **one button**: *Watch the delve*. There is
    no leave button for an escaped delver (see *Out of Scope*).
+   *(Amended 2026-11-02, charter; Nick: in a multiplayer run an escaped delver saw no card and
+   no button, only the "escaped successfully" line, because the state broadcast dropped their
+   `current_player` (R24). Superseded as follows, each a charter default (Nick approved
+   2026-11-02):
+   (a) an escaped delver with a teammate still in play gets **no card**, only a *Watch the delve*
+   button at the bottom centre of the screen; pressing it enters the existing spectate (R7–R9:
+   the "Watching <name>" HUD at the top, Tab to cycle). Reason: Nick, "單純出現觀看按鈕".
+   (b) The "escaped successfully" notification line stays; it is how the escaped delver is told
+   they made it. Reason: it already says so, and no card replaces it.
+   (c) The client reads the escape from `current_player.escape === true`. Reason: the wire shape
+   R24 restores, so the client slice does not wait on the server's.
+   (d) Still no leave button for an escaped delver, and with no teammate in play no Watch button
+   shows (the run ends). Reason: as this FS already says (R10, *Out of Scope*, Edge States).
+   (e) The dead delver's card (Watch + Leave, R2, R10) is unchanged. Reason: already working.)*
 4. **The card does nothing until pressed.** The camera stays on the delver's own body until
    *Watch the delve* is pressed. Resolving never moves the camera by itself.
 5. **The card is modal to the run view but not to the socket.** State keeps arriving and
@@ -59,7 +75,9 @@ hand-coded, with an agent for tests only.
 12. **Spectate mode ends** with `end_game` (R15), with the leave button (R13), or with a
     reconnect. A reconnect mid-run returns the delver to the card (R1), not to spectating: the
     scene is rebuilt from scratch on `world_entered`, and the card is the state the rebuild
-    reaches.
+    reaches. *(Amended 2026-11-02, charter; Nick: for an escaped delver the rebuild reaches the
+    bottom-centre Watch button of R3, not a card. Charter default (Nick approved 2026-11-02);
+    reason: follows R3.)*
 
 ### Leaving early (game-client + game-service)
 
@@ -111,6 +129,21 @@ hand-coded, with an agent for tests only.
     `eliminated`; since they no longer receive it (R21), the record of it is the `match.ended`
     event only.
 
+### An escaped delver still sees themselves (game-service)
+
+*(Added 2026-11-02, charter; Nick: "死亡有可以看 但成功逃離卻沒有可以觀戰的按鈕". The state
+serializer skipped an escaped player entirely, so their own frame carried `current_player: null`
+and the client could not tell it had resolved, so R3 never showed.)*
+
+24. **An escaped delver keeps receiving their own state until the run ends.** Each tick, an
+    escaped delver's frame carries their own `current_player` with `escape: true`, sent to them
+    alone, the way a left-behind dead delver sees only themselves (FS-F6F88 §Requirements 15).
+    Charter default (Nick approved 2026-11-02); reason: the client needs it to know it escaped.
+    Other delvers still do not see an escaped delver: they are absent from `other_players`, no
+    body is drawn for them, and `escaped_count` is unchanged. Charter default (Nick approved
+    2026-11-02); reason: they have left the barrow. No new action, and no change to when the run
+    ends.
+
 ## User Stories
 
 1. As a dead delver, I want to see what my choices are the moment I die, so that I am not
@@ -122,7 +155,8 @@ hand-coded, with an agent for tests only.
 4. As a dead delver who is watching, I want the leave button still within reach, so that I can
    stop watching whenever I decide to.
 5. As an escaped delver, I want to be told I made it, so that the escape feels like the
-   completion it is.
+   completion it is. *(Amended 2026-11-02, charter: told by the "escaped successfully" line, not
+   a card; R3.)*
 6. As an escaped delver, I want to watch my teammate, so that I can follow the rest of the
    delve I was part of.
 7. As an escaped delver, I want my plunder settled even if my connection drops while I wait,
@@ -169,8 +203,14 @@ hand-coded, with an agent for tests only.
 
 - [ ] A dead delver with a teammate still in play sees a card with *Watch the delve* and
       *Leave the barrow*; the "delve goes on" notice is not shown.
-- [ ] An escaped delver with a teammate still in play sees a card with congratulatory copy and
-      *Watch the delve* only.
+- [ ] ~~An escaped delver with a teammate still in play sees a card with congratulatory copy and
+      *Watch the delve* only.~~ *(Superseded 2026-11-02, charter; Nick: R3.)*
+- [ ] An escaped delver with a teammate still in play sees no card and no leave button, only a
+      *Watch the delve* button at the bottom centre; pressing it shows "Watching <name>" at the
+      top and Tab cycles. The "escaped successfully" line still shows once. *(Added 2026-11-02,
+      charter, R3.)*
+- [ ] An escaped delver with no teammate in play sees no Watch button; the result card follows
+      as today. *(Added 2026-11-02, charter, R3.)*
 - [ ] Until *Watch the delve* is pressed, the camera follows the delver's own body.
 - [ ] Pressing *Watch the delve* makes the camera follow a teammate still in play; the HUD
       shows "Watching <name>" and the Tab hint.
@@ -181,7 +221,8 @@ hand-coded, with an agent for tests only.
       while an escaped delver spectates, no leave button is shown.
 - [ ] On `end_game`, the card (or spectate HUD) is replaced by the result card.
 - [ ] A scene restart (reconnect mid-run) brings a resolved delver back to the card, not to
-      spectate mode, with no leftover camera follow or listeners.
+      spectate mode, with no leftover camera follow or listeners. *(Amended 2026-11-02,
+      charter: an escaped delver comes back to the bottom-centre Watch button, R3, R12.)*
 
 **Leaving early**
 
@@ -221,6 +262,13 @@ hand-coded, with an agent for tests only.
       teammate resolves, the run ends once (FS-QG1HR D5 latch holds).
 - [ ] `go test -race ./internal/...` stays green across the new paths.
 
+**An escaped delver still sees themselves (game-service)** *(Added 2026-11-02, charter, R24)*
+
+- [ ] In a two-delver run where one escapes while the other plays on, each tick the escaped
+      delver's frame carries their own `current_player` with `escape: true`.
+- [ ] In the same run, the delver still in play does not find the escaped one in
+      `other_players`, and `escaped_count` counts them once.
+
 ## Edge States
 
 **Resolving**
@@ -237,6 +285,7 @@ hand-coded, with an agent for tests only.
   it. Past grace their body is removed; the camera moves on, or the run ends.
 - The watched delver escapes: resolved, the camera moves on (R11).
 - A spectating delver presses Tab while the card is still up (never pressed *Watch*): nothing.
+  *(Amended 2026-11-02, charter: for an escaped delver, while the Watch button is still up.)*
 - The spectator's own `move`/`attack`/`interact` keys: refused by the server as today; the
   client should not send `move` while spectating (the camera target is not the delver).
 
@@ -294,6 +343,7 @@ inbound action.
 | `world_entered` | unchanged shape; now also the answer to an accepted `leave_run` |
 | `leave_run` (error reply) | `{message}` with `error` set, same shape as every refused action |
 | state broadcast, `end_game` | unchanged shape; no longer sent to a member who left the run (R21) |
+| state broadcast | unchanged shape; an escaped delver's own frame now carries their `current_player` (`escape: true`) until the run ends (R24, amended 2026-11-02) |
 
 ## Out of Scope
 
