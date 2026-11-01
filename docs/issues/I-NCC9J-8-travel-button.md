@@ -38,3 +38,12 @@ FS-NCC9J §Requirements R28; §User Stories 8–11.
 
 - RED: a pure test that the travel button's state is hidden / greyed / live across leader-here, field, run, leader offline and town.
 - GREEN: the selector, then the button, then the handoff with `hub: true`.
+
+## Decided after slicing (2026-11-01)
+
+- **"Not on the leader's pod" is the player's own member `pod_id` differing from the leader's**
+  (FS-NCC9J R21/R28, amended; the server sends it from I-NCC9J-3). Treat a missing or empty
+  `pod_id` as unknown: hide the button rather than offer a move that may go nowhere. Build on
+  I-NCC9J-7's `PartyFrameRow` union.
+- **`where` is now `hub` | `field` | `run`** (I-NCC9J-3 E6): `partyWhereLabel` must map `"field"`
+  to "afield" (today it only knows `field:<id>`). One line; part of this slice.

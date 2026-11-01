@@ -40,3 +40,9 @@ FS-NCC9J §Requirements R25–R27; §User Stories 6, 7, 18.
 
 - RED: a layout test that a party with one member and one `reserved` entry yields a member frame and a skeleton row carrying the invitee's name.
 - GREEN: the skeleton slot kind, then the drawing, then the expiry line.
+
+## Browser check (2026-11-01)
+
+- Skeleton rows did not show: expected, the server does not send `reserved` or an update on invite
+  changes until I-NCC9J-3. Re-check skeletons and the expiry line once it lands; the rest of the
+  slice can be checked now.

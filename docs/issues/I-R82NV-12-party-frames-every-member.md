@@ -1,6 +1,6 @@
 ---
 id: I-R82NV-12
-status: in-progress
+status: done
 implements: FS-R82NV
 blocked_by: []
 labels: [ready-for-agent]

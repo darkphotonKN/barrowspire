@@ -119,8 +119,19 @@ as with FS-R82NV); the client side is agent lane.
 ### What members are told (game-service)
 
 21. **`party_update`** keeps FS-R82NV R21's shape and adds `reserved: [{name, expires_at}]`, one per
-    open invite, and each member's `online` (false while `away`). `size` is the cap. It is sent to
-    every member on every change, open invites included (sent, declined, expired, accepted).
+    open invite, and for each member `online` (false while `away`), `pod_id` (the pod holding
+    them: the sending pod's own id for a member it holds, otherwise the presence index's; empty
+    with no presence entry) and `where` (`hub`, `field` or `run`, from the same source; empty
+    likewise). `size` is the cap. It is sent to every member present on some pod on every change,
+    open invites included; a member present nowhere is offline and reads the party on return (R6).
+    Reasons: `joined` when someone comes in (an accept, a `party_create`, and an invite that creates
+    the party, which tells its new leader `joined` as FS-R82NV does, the slot already among
+    `reserved`); `invited` when a slot is reserved in a party that stood already; `invite_ended`
+    when one frees (declined, voided by an accept elsewhere, withdrawn). An invite's expiry sends
+    nothing: the next update leaves the slot out, and the client drops its row at `expires_at`
+    (R26, R27). *(Amended 2026-11-01: `pod_id` added so the client can tell who stands on the
+    leader's pod, R28; `where` values, the invite reasons and the silent expiry, I-NCC9J-3 E5,
+    E6; Nick.)*
 22. **Logs** never carry invite text beyond names; refusals at Debug, delivery and Redis failures at
     Warn (FS-R82NV R25).
 
@@ -142,7 +153,7 @@ as with FS-R82NV); the client side is agent lane.
 27. **Expiry line.** When a reserved slot's `expires_at` passes without a join, the **leader's**
     client writes "No answer from <name>." as a system line; other members see the row go.
 28. **Travel button.** Beside the leader's frame, labelled **Travel**: shown to every member who is
-    not on the leader's pod; pressable only in the player's own town; greyed in a field, in a run,
+    not on the leader's pod (their own `pod_id` differs from the leader's, R21); pressable only in the player's own town; greyed in a field, in a run,
     and while the leader is away. Pressing sends `party_travel`; the client follows the
     `world_handoff` as it follows any (FS-K2HKP), keeping its old socket if the move is refused.
 
