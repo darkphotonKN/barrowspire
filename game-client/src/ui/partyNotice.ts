@@ -8,7 +8,8 @@ import type { PartyNoticePayload } from "@/stores/partyStore";
 
 /**
  * R36's table with FS-NCC9J R29's codes; `{name}` is the player the notice concerns. `pod_full`
- * and `not_in_hub` keep their words but now answer a travel (FS-NCC9J R18).
+ * and `not_in_hub` keep their words but now answer a travel (FS-NCC9J R18); `locked` keeps its
+ * words and now also answers an invite or a create from a run (FS-NCC9J R9, R15).
  */
 export const PARTY_NOTICE_COPY: Readonly<Record<string, string>> = {
   sent: "Word sent to {name}.",
@@ -32,6 +33,8 @@ export const PARTY_NOTICE_COPY: Readonly<Record<string, string>> = {
   delivery_failed: "Word could not be sent.",
   leader_away: "Your leader cannot be reached.",
   unavailable: "The party cannot be changed right now.",
+  // the invite's target is in a run: named, so the inviter knows whom to ask later (FS-NCC9J R10)
+  delving: "{name} is in a delve.",
 };
 
 /** Stands in for a name the server left off: the line still reads. */

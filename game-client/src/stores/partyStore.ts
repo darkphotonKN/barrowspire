@@ -189,7 +189,8 @@ export function isLeader(
 
 /**
  * Whether party actions are locked: inside an instance the roster is fixed (ADR-0035), so the
- * server refuses kick, transfer and leave as `locked` there (R19, R20).
+ * server refuses kick, transfer and leave as `locked` there (R19, R20), and invite and create as
+ * well (FS-NCC9J R9, R15).
  */
 export function partyLocked(world: WorldType | null): boolean {
   return world === "run";
@@ -213,9 +214,9 @@ export interface PartyMemberRow {
 export interface PartyActions {
   inParty: boolean;
   locked: boolean;
-  /** The Create party button (R30): in any world, by a player in no party (FS-NCC9J R23). */
+  /** The Create party button (R30): in the town or a field, by a player in no party; greyed in a run (FS-NCC9J R23). */
   create: boolean;
-  /** The invite field: in any world, by a leader or a player in no party, with room left (FS-NCC9J R23). */
+  /** The invite field: in the town or a field, by a leader or a player in no party, with room left; greyed in a run (FS-NCC9J R23). */
   invite: boolean;
   leave: boolean;
   members: PartyMemberRow[];
@@ -231,13 +232,14 @@ export function partyActions(
   world: WorldType | null,
 ): PartyActions {
   const locked = partyLocked(world);
-  // Invite and Create work in every world (FS-NCC9J R23); the lock holds only the roster
+  // Invite and Create work in the town and a field; in a run the lock holds them with the roster,
+  // as the server refuses them there (FS-NCC9J R23)
   if (!party) {
     return {
       inParty: false,
       locked,
-      create: true,
-      invite: true,
+      create: !locked,
+      invite: !locked,
       leave: false,
       members: [],
     };
@@ -248,7 +250,7 @@ export function partyActions(
     inParty: true,
     locked,
     create: false,
-    invite: leads && room,
+    invite: leads && room && !locked,
     leave: !locked,
     members: party.members.map((m) => {
       const self = m.player_id === selfId;

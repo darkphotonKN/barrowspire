@@ -27,12 +27,15 @@ describe("partyNoticeText (FS-R82NV R36, FS-NCC9J R29)", () => {
     ["delivery_failed", "Wren", "Word could not be sent."],
     ["leader_away", undefined, "Your leader cannot be reached."],
     ["unavailable", undefined, "The party cannot be changed right now."],
+    // the invite's target is in a run (FS-NCC9J R10, R29)
+    ["delving", "Mira", "Mira is in a delve."],
+    ["delving", undefined, "Someone is in a delve."],
   ])("%s → %s", (code, name, want) => {
     expect(partyNoticeText({ code, name })).toBe(want);
   });
 
   it("should cover every code in R36's table and R29's", () => {
-    expect(Object.keys(PARTY_NOTICE_COPY)).toHaveLength(20);
+    expect(Object.keys(PARTY_NOTICE_COPY)).toHaveLength(21);
   });
 
   it("should fall back to a bare subject when a named code arrives without its name", () => {

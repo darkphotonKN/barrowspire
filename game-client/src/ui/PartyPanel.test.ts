@@ -262,15 +262,16 @@ describe("PartyPanel (FS-R82NV R29, R30: contents)", () => {
     expect(env.commands.leave).toHaveBeenCalled();
   });
 
-  it("should grey every roster action inside an instance, but leave the invite live (FS-NCC9J R23)", () => {
+  it("should grey every roster action and the invite inside an instance (FS-NCC9J R23)", () => {
     const env = setup({ world: "run" });
     env.store.getState().apply(update(ME));
     env.pressT();
-    for (const label of ["Kick", "Transfer", "Leave party"])
+    for (const label of ["Kick", "Transfer", "Leave party", "Invite"]) {
       expect(env.find(label)!.interactive).toBe(false);
-    expect(env.find("Invite")!.interactive).toBe(true);
+      expect(env.find(label)!.alpha).toBeLessThan(1);
+    }
     env.frame();
-    expect(env.field.enabled).toBe(true);
+    expect(env.field.enabled).toBe(false);
   });
 });
 
@@ -284,17 +285,32 @@ describe("PartyPanel (FS-R82NV R30: Create party)", () => {
     expect(env.commands.create).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["field", "run"] as const)(
-    "should send party_create from Create party in the %s too (FS-NCC9J R23)",
-    (world) => {
-      const env = setup({ world });
-      env.pressT();
-      const create = env.find("Create party")!;
-      expect(create.interactive).toBe(true);
-      create.onPress?.();
-      expect(env.commands.create).toHaveBeenCalledTimes(1);
-    },
-  );
+  it("should send party_create from Create party in a field too (FS-NCC9J R23)", () => {
+    const env = setup({ world: "field" });
+    env.pressT();
+    const create = env.find("Create party")!;
+    expect(create.interactive).toBe(true);
+    create.onPress?.();
+    expect(env.commands.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("should grey Create party in a run, and send nothing on a press (FS-NCC9J R23)", () => {
+    const env = setup({ world: "run" });
+    env.pressT();
+    const create = env.find("Create party")!;
+    expect(create.interactive).toBe(false);
+    expect(create.alpha).toBeLessThan(1);
+    create.onPress?.();
+    expect(env.commands.create).not.toHaveBeenCalled();
+  });
+
+  it("should grey Create party when the player walks into a run (FS-NCC9J R23)", () => {
+    const env = setup();
+    env.pressT();
+    env.state.world = "run";
+    env.frame();
+    expect(env.find("Create party")!.interactive).toBe(false);
+  });
 
   it("should keep Create party live when the player walks out of the hub (FS-NCC9J R23)", () => {
     const env = setup();
@@ -347,18 +363,25 @@ describe("PartyPanel (FS-R82NV R29: the Invite button)", () => {
     expect(sent).toEqual([]);
   });
 
-  it.each(["field", "run"] as const)(
-    "should send party_invite from the Invite button in the %s too (FS-NCC9J R23)",
-    (world) => {
-      const { sent, env } = withSocket(world);
-      env.pressT();
-      env.field.value = "Wren";
-      const invite = env.find("Invite")!;
-      expect(invite.interactive).toBe(true);
-      invite.onPress?.();
-      expect(sent).toEqual([["party_invite", { name: "Wren" }]]);
-    },
-  );
+  it("should send party_invite from the Invite button in a field too (FS-NCC9J R23)", () => {
+    const { sent, env } = withSocket("field");
+    env.pressT();
+    env.field.value = "Wren";
+    const invite = env.find("Invite")!;
+    expect(invite.interactive).toBe(true);
+    invite.onPress?.();
+    expect(sent).toEqual([["party_invite", { name: "Wren" }]]);
+  });
+
+  it("should grey the Invite button in a run, and send nothing on a press (FS-NCC9J R23)", () => {
+    const { sent, env } = withSocket("run");
+    env.pressT();
+    env.field.value = "Wren";
+    const invite = env.find("Invite")!;
+    expect(invite.interactive).toBe(false);
+    invite.onPress?.();
+    expect(sent).toEqual([]);
+  });
 });
 
 describe("PartyPanel (FS-R82NV R29: the invite field)", () => {
@@ -371,17 +394,23 @@ describe("PartyPanel (FS-R82NV R29: the invite field)", () => {
     expect(env.field.value).toBe("");
   });
 
-  it.each(["field", "run"] as const)(
-    "should send party_invite on Enter in the %s too (FS-NCC9J R23)",
-    (world) => {
-      const env = setup({ world });
-      env.pressT();
-      env.frame();
-      expect(env.field.enabled).toBe(true);
-      env.field.submit("Wren");
-      expect(env.commands.invite).toHaveBeenCalledWith("Wren");
-    },
-  );
+  it("should send party_invite on Enter in a field too (FS-NCC9J R23)", () => {
+    const env = setup({ world: "field" });
+    env.pressT();
+    env.frame();
+    expect(env.field.enabled).toBe(true);
+    env.field.submit("Wren");
+    expect(env.commands.invite).toHaveBeenCalledWith("Wren");
+  });
+
+  it("should disable the field in a run, for a player in no party, and send nothing (FS-NCC9J R23)", () => {
+    const env = setup({ world: "run" });
+    env.pressT();
+    env.frame();
+    expect(env.field.enabled).toBe(false);
+    env.field.submit("Wren");
+    expect(env.commands.invite).not.toHaveBeenCalled();
+  });
 
   it("should disable the field for a member who does not lead, and send nothing", () => {
     const env = setup({ world: "field" });
