@@ -142,9 +142,9 @@ type blippingArrivals struct {
 	failures atomic.Int32
 }
 
-func (b *blippingArrivals) PartyOf(ctx context.Context, playerID uuid.UUID, now time.Time) (partystore.Party, bool, error) {
+func (b *blippingArrivals) PartyOf(ctx context.Context, playerID uuid.UUID, now time.Time) (partystore.Arrival, error) {
 	if b.failures.Add(-1) >= 0 {
-		return partystore.Party{}, false, errors.New("redis blip")
+		return partystore.Arrival{}, errors.New("redis blip")
 	}
 	return b.Redis.PartyOf(ctx, playerID, now)
 }

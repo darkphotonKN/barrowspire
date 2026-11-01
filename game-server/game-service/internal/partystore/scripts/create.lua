@@ -10,6 +10,7 @@ if party_of(creator) then return refuse('already_in_party') end
 local leader = {player_id = creator, name = name, class = class, joined_at = now}
 redis.call('HSET', party_key(pid), 'leader', creator, 'created_at', now, 'members', cjson.encode({leader}), 'version', 1)
 redis.call('SET', pointer_key(creator), pid)
+seen(pid, creator, now)
 keep_alive(pid, party_ttl)
 
 return reply({code = 'ok', party = snapshot(pid)})

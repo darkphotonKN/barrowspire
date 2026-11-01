@@ -21,7 +21,8 @@ if end_if_alone then
 	local members = members_of(pid)
 	prune(pid, now)
 	if #members == 1 and redis.call('ZCARD', invites_key(pid)) == 0 then
-		redis.call('DEL', party_key(pid), invites_key(pid), pointer_key(members[1].player_id))
+		end_party(pid)
+		redis.call('DEL', pointer_key(members[1].player_id))
 		return reply({code = 'ok', ended = true, target_name = inv[3]})
 	end
 end

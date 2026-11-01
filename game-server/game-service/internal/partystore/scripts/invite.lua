@@ -31,6 +31,7 @@ if not pid then
 	local leader = {player_id = inviter, name = inviter_name, class = inviter_class, joined_at = now}
 	redis.call('HSET', party_key(pid), 'leader', inviter, 'created_at', now, 'members', cjson.encode({leader}), 'version', 1)
 	redis.call('SET', pointer_key(inviter), pid)
+	seen(pid, inviter, now)
 else
 	bump(pid)
 end

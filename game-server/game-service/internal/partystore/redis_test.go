@@ -66,7 +66,7 @@ func TestInvite_FirstInviteCreatesTheParty(t *testing.T) {
 	assert.Equal(t, args.NewPartyID, res.Party.ID)
 	assert.Equal(t, wren.PlayerID, res.Party.Leader)
 	assert.Equal(t, sentAt, res.Party.CreatedAt)
-	assert.Equal(t, []partystore.Member{{PlayerID: wren.PlayerID, Name: "Wren", Class: "warrior", JoinedAt: sentAt}}, res.Party.Members)
+	assert.Equal(t, []partystore.Member{{PlayerID: wren.PlayerID, Name: "Wren", Class: "warrior", JoinedAt: sentAt, SeenAt: sentAt}}, res.Party.Members)
 	assert.Equal(t, []partystore.Reservation{{InviteID: args.InviteID, TargetID: kaelen.PlayerID, TargetName: "Kaelen", ExpiresAt: sentAt.Add(time.Minute)}}, res.Party.Reserved)
 
 	pointer := "{party}:pl:" + wren.PlayerID.String()
@@ -218,7 +218,7 @@ func TestAccept_ReservationBecomesMembership(t *testing.T) {
 	require.Empty(t, res.Refusal)
 	assert.Equal(t, wren.PlayerID, res.Party.Leader)
 	require.Len(t, res.Party.Members, 2)
-	assert.Equal(t, partystore.Member{PlayerID: kaelen.PlayerID, Name: "Kaelen", Class: "warrior", JoinedAt: sentAt.Add(10 * time.Second)}, res.Party.Members[1])
+	assert.Equal(t, partystore.Member{PlayerID: kaelen.PlayerID, Name: "Kaelen", Class: "warrior", JoinedAt: sentAt.Add(10 * time.Second), SeenAt: sentAt.Add(10 * time.Second)}, res.Party.Members[1])
 	assert.Empty(t, res.Party.Reserved)
 	pointer := "{party}:pl:" + kaelen.PlayerID.String()
 	assert.Equal(t, inv.NewPartyID.String(), mustGet(t, mini, pointer))
@@ -420,7 +420,7 @@ func TestCreate_PartyOfOne(t *testing.T) {
 	require.Empty(t, res.Refusal)
 	assert.Equal(t, partystore.Party{
 		ID: partyID, Leader: wren.PlayerID, CreatedAt: sentAt, Version: 1,
-		Members: []partystore.Member{{PlayerID: wren.PlayerID, Name: "Wren", Class: "warrior", JoinedAt: sentAt}},
+		Members: []partystore.Member{{PlayerID: wren.PlayerID, Name: "Wren", Class: "warrior", JoinedAt: sentAt, SeenAt: sentAt}},
 	}, res.Party)
 	assert.Equal(t, 5*time.Minute, mini.TTL("{party}:pl:"+wren.PlayerID.String()))
 
@@ -441,19 +441,20 @@ func TestPartyOf_ReadsAndKeepsAlive(t *testing.T) {
 	invite(t, store, wren, idris, 3, sentAt)
 	mini.FastForward(4 * time.Minute)
 
-	p, in, err := store.PartyOf(context.Background(), kaelen.PlayerID, sentAt.Add(time.Minute))
+	read, err := store.PartyOf(context.Background(), kaelen.PlayerID, sentAt.Add(time.Minute))
 	require.NoError(t, err)
+	p := read.Party
 
-	require.True(t, in)
+	require.True(t, read.In)
 	assert.Equal(t, inv.NewPartyID, p.ID)
 	assert.Len(t, p.Members, 2)
 	assert.Empty(t, p.Reserved, "Idris's invite lapsed at the minute")
 	assert.Equal(t, 5*time.Minute, mini.TTL("{party}:p:"+inv.NewPartyID.String()))
 	assert.Equal(t, 5*time.Minute, mini.TTL("{party}:pl:"+wren.PlayerID.String()))
 
-	_, in, err = store.PartyOf(context.Background(), idris.PlayerID, sentAt)
+	none, err := store.PartyOf(context.Background(), idris.PlayerID, sentAt)
 	require.NoError(t, err)
-	assert.False(t, in, "Idris is in no party")
+	assert.False(t, none.In, "Idris is in no party")
 }
 
 // Refreshing reads every party asked for in one trip and keeps each alive; a party that has
@@ -466,8 +467,9 @@ func TestRefreshAll_ReadsEachAndReportsTheGone(t *testing.T) {
 	ended := uuid.New()
 	mini.FastForward(90 * time.Second)
 
-	parties, gone, err := store.RefreshAll(context.Background(), []uuid.UUID{first.NewPartyID, ended, second.NewPartyID}, sentAt)
+	refreshed, err := store.RefreshAll(context.Background(), []uuid.UUID{first.NewPartyID, ended, second.NewPartyID}, nil, sentAt)
 	require.NoError(t, err)
+	parties, gone := refreshed.Parties, refreshed.Gone
 
 	require.Len(t, parties, 2)
 	assert.Equal(t, first.NewPartyID, parties[0].ID)
@@ -498,8 +500,9 @@ func TestRefreshAll_LapsedInviteRecord_NotReserved(t *testing.T) {
 	inv := invite(t, store, wren, joiner("Kaelen"), 2, sentAt)
 	mini.FastForward(3 * time.Minute)
 
-	parties, _, err := store.RefreshAll(context.Background(), []uuid.UUID{inv.NewPartyID}, sentAt)
+	refreshed, err := store.RefreshAll(context.Background(), []uuid.UUID{inv.NewPartyID}, nil, sentAt)
 	require.NoError(t, err)
+	parties := refreshed.Parties
 
 	require.Len(t, parties, 1)
 	assert.Empty(t, parties[0].Reserved)
@@ -654,9 +657,9 @@ func TestVersion_EveryChangeMovesItOn(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, 7, removed.Party.Version, "remove")
 
-	read, _, err := store.PartyOf(ctx, kaelen.PlayerID, sentAt)
+	read, err := store.PartyOf(ctx, kaelen.PlayerID, sentAt)
 	require.NoError(t, err)
-	assert.EqualValues(t, 7, read.Version, "a read does not move it")
+	assert.EqualValues(t, 7, read.Party.Version, "a read that changes no record does not move it")
 }
 
 // An accept moves on the version of each party whose invite it voided, so that party's members
@@ -673,4 +676,134 @@ func TestVersion_VoidedPartyMovesOn(t *testing.T) {
 
 	require.Len(t, res.Voided, 1)
 	assert.Greater(t, res.Voided[0].Party.Version, fromIdris.Party.Version)
+}
+
+// A member's record never moves backwards: a refresh from a pod whose call landed late (they have
+// moved on to another pod since) leaves the newer time standing (FS-NCC9J R17).
+func TestRefreshAll_LateRefresh_RecordKeepsTheNewerTime(t *testing.T) {
+	client, _ := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	wren, kaelen := joiner("Wren"), joiner("Kaelen")
+	inv := invite(t, store, wren, kaelen, 2, sentAt)
+	accept(t, store, inv, kaelen, sentAt)
+	seated := []uuid.UUID{wren.PlayerID, kaelen.PlayerID}
+	_, err := store.RefreshAll(context.Background(), []uuid.UUID{inv.NewPartyID}, seated, sentAt.Add(time.Minute))
+	require.NoError(t, err)
+
+	late, err := store.RefreshAll(context.Background(), []uuid.UUID{inv.NewPartyID}, seated, sentAt.Add(20*time.Second))
+	require.NoError(t, err)
+
+	require.Len(t, late.Parties, 1)
+	for _, m := range late.Parties[0].Members {
+		assert.Equal(t, sentAt.Add(time.Minute), m.SeenAt, m.Name)
+	}
+}
+
+// A member seated again only after their record expired is out: the read that seats them removes
+// them, says they are in no party, and reports the removal so the rest can be told (FS-NCC9J R17).
+func TestPartyOf_SeatedAfterTheRecordExpired_RemovedAndNotIn(t *testing.T) {
+	client, _ := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	wren, kaelen := joiner("Wren"), joiner("Kaelen")
+	inv := invite(t, store, wren, kaelen, 2, sentAt)
+	accept(t, store, inv, kaelen, sentAt)
+	later := sentAt.Add(partystore.RecordTTL)
+	_, err := store.RefreshAll(context.Background(), []uuid.UUID{inv.NewPartyID}, []uuid.UUID{wren.PlayerID}, later.Add(-time.Second))
+	require.NoError(t, err)
+
+	read, err := store.PartyOf(context.Background(), kaelen.PlayerID, later)
+	require.NoError(t, err)
+
+	assert.False(t, read.In, "Kaelen went five minutes unseen")
+	assert.Equal(t, []uuid.UUID{kaelen.PlayerID}, read.Swept.Removed)
+	require.Len(t, read.Party.Members, 1)
+	assert.Equal(t, wren.PlayerID, read.Party.Members[0].PlayerID, "the party stands for Wren")
+}
+
+// A member's record, kept by refreshes from the pod seating the others (FS-NCC9J R17): Wren leads
+// Kaelen then Idris, joined at sentAt+0..3 s; only Idris's pod keeps refreshing, and Wren and
+// Kaelen are read at each age.
+func TestRefreshAll_MemberRecords(t *testing.T) {
+	tests := []struct {
+		name string
+		// how long after sentAt the refresh runs; Idris alone is seated
+		after       time.Duration
+		wantAway    []string
+		wantRemoved []string
+		wantLeader  string
+	}{
+		{"short of AwayAfter: nobody away", partystore.AwayAfter - time.Second, nil, nil, "Wren"},
+		{"AwayAfter unrefreshed: away", partystore.AwayAfter + time.Second, []string{"Wren", "Kaelen"}, nil, "Wren"},
+		{"five minutes for Wren, not yet for Kaelen: Wren removed, Kaelen leads", partystore.RecordTTL, []string{"Kaelen"}, []string{"Wren"}, "Kaelen"},
+		{"five minutes: removed, the earliest-joined left leads", partystore.RecordTTL + time.Second, nil, []string{"Wren", "Kaelen"}, "Idris"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, _ := testutil.NewRedis(t)
+			store := partystore.NewRedis(client)
+			partyID, wren, kaelen, idris := partyOf3(t, store)
+			names := map[uuid.UUID]string{wren.PlayerID: "Wren", kaelen.PlayerID: "Kaelen", idris.PlayerID: "Idris"}
+
+			res, err := store.RefreshAll(context.Background(), []uuid.UUID{partyID}, []uuid.UUID{idris.PlayerID}, sentAt.Add(tt.after))
+			require.NoError(t, err)
+
+			require.Len(t, res.Parties, 1)
+			p := res.Parties[0]
+			var away []string
+			for _, m := range p.Members {
+				if m.Away {
+					away = append(away, m.Name)
+				}
+			}
+			var removed []string
+			for _, id := range res.Swept[partyID].Removed {
+				removed = append(removed, names[id])
+			}
+			assert.Equal(t, tt.wantAway, away, "away")
+			assert.Equal(t, tt.wantRemoved, removed, "removed")
+			assert.Equal(t, tt.wantLeader, names[p.Leader], "leader")
+			assert.Equal(t, tt.wantLeader != "Wren", res.Swept[partyID].Succeeded, "succeeded")
+		})
+	}
+}
+
+// A member refreshed again after showing away is back, and the party moves on a version for it
+// (FS-NCC9J R17, R21).
+func TestRefreshAll_AwayMemberRefreshed_Back(t *testing.T) {
+	client, _ := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	partyID, wren, kaelen, idris := partyOf3(t, store)
+	everyone := []uuid.UUID{wren.PlayerID, kaelen.PlayerID, idris.PlayerID}
+	away, err := store.RefreshAll(context.Background(), []uuid.UUID{partyID}, []uuid.UUID{wren.PlayerID, idris.PlayerID}, sentAt.Add(time.Minute))
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{kaelen.PlayerID}, away.Swept[partyID].Flipped)
+
+	back, err := store.RefreshAll(context.Background(), []uuid.UUID{partyID}, everyone, sentAt.Add(2*time.Minute))
+	require.NoError(t, err)
+
+	assert.Equal(t, []uuid.UUID{kaelen.PlayerID}, back.Swept[partyID].Flipped)
+	assert.False(t, back.Parties[0].Members[1].Away)
+	assert.Equal(t, away.Parties[0].Version+1, back.Parties[0].Version)
+}
+
+// Every member away: the party stands until the last record expires, then ends and its keys go
+// (FS-NCC9J Edge States "Every member away").
+func TestRefreshAll_EveryRecordExpired_PartyEndsAndItsKeysGo(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	partyID, wren, kaelen, idris := partyOf3(t, store)
+
+	still, err := store.RefreshAll(context.Background(), []uuid.UUID{partyID}, nil, sentAt.Add(partystore.RecordTTL+2*time.Second))
+	require.NoError(t, err)
+	require.Len(t, still.Parties, 1, "Idris, the last to join, is not yet five minutes unseen")
+
+	gone, err := store.RefreshAll(context.Background(), []uuid.UUID{partyID}, nil, sentAt.Add(partystore.RecordTTL+3*time.Second))
+	require.NoError(t, err)
+
+	assert.Equal(t, []uuid.UUID{partyID}, gone.Gone)
+	assert.Empty(t, gone.Parties)
+	for _, key := range []string{"{party}:p:" + partyID.String(), "{party}:p:" + partyID.String() + ":seen",
+		"{party}:pl:" + wren.PlayerID.String(), "{party}:pl:" + kaelen.PlayerID.String(), "{party}:pl:" + idris.PlayerID.String()} {
+		assert.False(t, mini.Exists(key), key)
+	}
 }

@@ -21,7 +21,7 @@ if not found then return refuse('not_member') end
 
 redis.call('DEL', pointer_key(removed))
 if #kept == 0 then
-	redis.call('DEL', party_key(pid), invites_key(pid))
+	end_party(pid)
 	return reply({code = 'ok', ended = true})
 end
 
@@ -31,6 +31,7 @@ if succeeded then
 	redis.call('HSET', party_key(pid), 'leader', kept[1].player_id)
 end
 redis.call('HSET', party_key(pid), 'members', cjson.encode(kept))
+redis.call('HDEL', seen_key(pid), removed)
 bump(pid)
 keep_alive(pid, party_ttl)
 

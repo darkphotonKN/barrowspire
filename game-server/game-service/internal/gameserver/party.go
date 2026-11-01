@@ -49,8 +49,8 @@ type partyStore interface {
 	Decline(ctx context.Context, a partystore.DeclineArgs) (partystore.DeclineResult, error)
 	Remove(ctx context.Context, a partystore.RemoveArgs) (partystore.RemoveResult, error)
 	Transfer(ctx context.Context, partyID, leader, target uuid.UUID) (partystore.TransferResult, error)
-	PartyOf(ctx context.Context, playerID uuid.UUID, now time.Time) (partystore.Party, bool, error)
-	RefreshAll(ctx context.Context, ids []uuid.UUID, now time.Time) ([]partystore.Party, []uuid.UUID, error)
+	// what the party cache reads with: the registry hands the store to it
+	partyReader
 }
 
 // presenceLookup finds players present on any pod: partypresence.Redis in production (R7).
@@ -128,7 +128,7 @@ func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJob
 	if cfg.store != nil {
 		reader = cfg.store
 	}
-	r.cache = newPartyCache(reader, r.run, directory, cfg.now, r.show)
+	r.cache = newPartyCache(reader, r.run, directory, cfg.now, r.show, r.swept)
 	return r
 }
 
@@ -751,14 +751,39 @@ func (r *partyRegistry) removed(ctx context.Context, args partystore.RemoveArgs,
 	}
 
 	r.cache.put(res.Party)
-	items := []partyUpdate{
-		{party: res.Party, reason: reason, subject: removed, to: removed, final: true},
-		updateOf(res.Party, reason, removed),
-	}
+	items := removalUpdates(res.Party, removed, reason)
 	if res.Succeeded {
 		items = append(items, updateOf(res.Party, constants.PartyUpdateLeader, res.Party.Leader))
 	}
 	r.announce(ctx, items...)
+}
+
+// removalUpdates are what a removal tells: the removed player their last update, the party without
+// them, about them (R21); the rest why.
+func removalUpdates(p partystore.Party, removed uuid.UUID, reason constants.PartyUpdateReason) []partyUpdate {
+	return []partyUpdate{
+		{party: p, reason: reason, subject: removed, to: removed, final: true},
+		updateOf(p, reason, removed),
+	}
+}
+
+// swept tells what keeping p's member records changed (FS-NCC9J R17): each member removed as their
+// record expired left, then, if the lead passed, who leads; a member who only went away or came
+// back is told as the party resent as it stands, a sync about them.
+func (r *partyRegistry) swept(ctx context.Context, p partystore.Party, s partystore.Swept) {
+	var items []partyUpdate
+	for _, id := range s.Removed {
+		items = append(items, removalUpdates(p, id, constants.PartyUpdateLeft)...)
+	}
+	if s.Succeeded {
+		items = append(items, updateOf(p, constants.PartyUpdateLeader, p.Leader))
+	}
+	if len(items) == 0 && len(s.Flipped) > 0 {
+		items = append(items, updateOf(p, constants.PartyUpdateSync, s.Flipped[0]))
+	}
+	if len(items) > 0 {
+		r.announce(ctx, items...)
+	}
 }
 
 // decline handles party_decline from the invite's target: the invite is spent, its slot frees,

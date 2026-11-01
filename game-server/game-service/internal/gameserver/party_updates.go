@@ -190,8 +190,8 @@ func (r *partyRegistry) updateMessage(n partyUpdate, here map[uuid.UUID]types.Wo
 				"joined_at": m.JoinedAt.UTC().Format(time.RFC3339),
 				"where":     world,
 				"pod_id":    podID,
-				// away arrives with FS-NCC9J R17 (slice 4)
-				"online": true,
+				// false once their record has gone about 30 s unrefreshed (R17)
+				"online": !m.Away,
 			})
 		}
 		for _, res := range r.cache.openReservations(n.party) {
