@@ -73,8 +73,8 @@ server state and sends intents. ✅
 
 ### Billing
 
-- [x] Subscribe
-- [x] Check subscription permission
+- [ ] ~Subscribe~ → removed FS-RG1B4
+- [ ] ~Check subscription permission~ → removed FS-RG1B4
 
 ### Presentation
 
