@@ -6,17 +6,16 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 )
 
 /**
-* The presence keeper writes this pod's half of the presence index (FS-R82NV R7): every player
-* seated in this pod's hub, by name and by id. It runs on the message hub's loop and samples the
-* hub on each tick rather than hooking every way into and out of it (enter, a field, a run,
-* leave_hub, a drop, a handoff): who sat down since the last tick is seated, who is gone is
-* unseated, and the rest are refreshed every ten seconds (I-R82NV-3 decision 1). A seat is at
-* most one tick late.
+* The presence keeper writes this pod's half of the presence index (FS-NCC9J R7): every player
+* this pod holds with a character, in any world and within the reconnect grace, by name and by
+* id, with the world they stand in. It runs on the message hub's loop and samples the pod on each
+* tick rather than hooking every way in and out (enter, a field, a run, a drop, a handoff): who is
+* new or changed world since the last tick is seated, who is gone is unseated, and the rest are
+* refreshed every ten seconds (I-R82NV-3 decision 1). A seat is at most one tick late.
 **/
 
 // presenceIndex is the Redis side of presence: partypresence.Redis in production.
@@ -25,9 +24,9 @@ type presenceIndex interface {
 	Unseat(ctx context.Context, podID string, entries []partypresence.Entry) error
 }
 
-// hubSeating answers who is seated in this pod's hub right now.
-type hubSeating interface {
-	HubSeatedPlayers() []types.Player
+// playerPresence answers who this pod holds right now, and where.
+type playerPresence interface {
+	PresentPlayers() []presentPlayer
 }
 
 // presenceLeaveTimeout bounds unseating everyone at shutdown; what is left lapses by TTL.
@@ -35,7 +34,7 @@ const presenceLeaveTimeout = 2 * time.Second
 
 type presenceKeeper struct {
 	index   presenceIndex // nil on a pod built without Redis: nothing is written
-	seating hubSeating
+	seating playerPresence
 	podID   string
 	now     func() time.Time
 	writer  *orderedWriter
@@ -45,7 +44,7 @@ type presenceKeeper struct {
 	lastRefresh time.Time
 }
 
-func newPresenceKeeper(index presenceIndex, seating hubSeating, podID string, now func() time.Time, writer *orderedWriter) *presenceKeeper {
+func newPresenceKeeper(index presenceIndex, seating playerPresence, podID string, now func() time.Time, writer *orderedWriter) *presenceKeeper {
 	return &presenceKeeper{
 		index:       index,
 		seating:     seating,
@@ -57,8 +56,8 @@ func newPresenceKeeper(index presenceIndex, seating hubSeating, podID string, no
 	}
 }
 
-// tick samples the hub: seats who sat down, unseats who left (a delete, never dropped), and
-// refreshes everyone once a refresh interval has passed.
+// tick samples the pod: seats who is new or changed world, unseats who left (a delete, never
+// dropped), and refreshes everyone once a refresh interval has passed.
 func (k *presenceKeeper) tick() {
 	if k.index == nil {
 		return
@@ -66,11 +65,8 @@ func (k *presenceKeeper) tick() {
 	k.writer.flush()
 
 	current := make(map[uuid.UUID]partypresence.Entry)
-	for _, p := range k.seating.HubSeatedPlayers() {
-		if p.Character.Name == "" {
-			continue
-		}
-		current[p.ID] = partypresence.Entry{PlayerID: p.ID, Name: p.Character.Name}
+	for _, p := range k.seating.PresentPlayers() {
+		current[p.ID] = partypresence.Entry{PlayerID: p.ID, Name: p.Name, World: string(p.World)}
 	}
 
 	var sat, left []partypresence.Entry
@@ -80,7 +76,7 @@ func (k *presenceKeeper) tick() {
 		}
 	}
 	for id, entry := range current {
-		if before, was := k.seated[id]; !was || before.Name != entry.Name {
+		if before, was := k.seated[id]; !was || before != entry {
 			sat = append(sat, entry)
 		}
 	}
@@ -104,16 +100,24 @@ func (k *presenceKeeper) tick() {
 // leaveAll unseats everyone this pod holds as it shuts down, once the writer has stopped, so
 // nobody stays findable on a pod that is going. ctx's values are kept, its cancellation is not.
 func (k *presenceKeeper) leaveAll(ctx context.Context) {
-	if k.index == nil || len(k.seated) == 0 {
+	if k.index == nil {
 		return
+	}
+	if k.writer.running() {
+		// the writer's own drain is bounded; this budget is the wait for it, not the unseat's
+		waitCtx, stopWaiting := context.WithTimeout(context.WithoutCancel(ctx), presenceLeaveTimeout)
+		select {
+		case <-k.writer.stopped():
+		case <-waitCtx.Done():
+		}
+		stopWaiting()
 	}
 	leaveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), presenceLeaveTimeout)
 	defer cancel()
-	if k.writer.running() {
-		select {
-		case <-k.writer.stopped():
-		case <-leaveCtx.Done():
-		}
+	// the deletes a full queue left for a tick that will not come
+	k.writer.runBacklog(leaveCtx)
+	if len(k.seated) == 0 {
+		return
 	}
 	entries := make([]partypresence.Entry, 0, len(k.seated))
 	for _, entry := range k.seated {
@@ -125,7 +129,8 @@ func (k *presenceKeeper) leaveAll(ctx context.Context) {
 	k.seated = make(map[uuid.UUID]partypresence.Entry)
 }
 
-// presenceStore is the presence index both ways: this pod writes its hub, invites read anyone's.
+// presenceStore is the presence index both ways: this pod writes its players, invites and party
+// updates read anyone's.
 type presenceStore interface {
 	presenceIndex
 	presenceLookup

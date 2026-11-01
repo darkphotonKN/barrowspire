@@ -381,16 +381,6 @@ func TestPartyInvite_Refusals_InOrder(t *testing.T) {
 			wantName: "Nobody",
 		},
 		{
-			name: "target busy in a field",
-			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox, string) {
-				_, conn, inbox := r.inHub(t, "Wren")
-				r.inMeadows(t, "Kaelen")
-				return conn, inbox, "Kaelen"
-			},
-			wantCode: "not_found",
-			wantName: "Kaelen",
-		},
-		{
 			name: "target already in a party",
 			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox, string) {
 				_, conn, inbox := r.inHub(t, "Wren")
@@ -514,6 +504,8 @@ func TestPartyAccept_VoidsTheAcceptersOtherInvites(t *testing.T) {
 	assert.Equal(t, "already_in_party", voided.Payload["code"], "Idris learns why the invite is gone (user story 7)")
 	assert.Equal(t, "Kaelen", voided.Payload["name"])
 
+	ended := awaitParty(t, idrisInbox, partyUpdateAction, "Idris")
+	assert.Equal(t, "invite_ended", ended.Payload["reason"], "Idris's party hears the slot is free (FS-NCC9J R21)")
 	sendParty(rig.server, kaelenConn, partyAcceptAction, map[string]interface{}{"invite_id": fromIdris})
 	assertNoParty(t, idrisInbox, partyUpdateAction, "Idris: Kaelen joined Wren instead")
 
@@ -746,13 +738,32 @@ func awaitUpdate(t *testing.T, inbox *startSoloInbox, reason string, subject uui
 // memberIDsOf are the player ids an update lists, in order.
 func memberIDsOf(t *testing.T, update types.Message) []string {
 	t.Helper()
-	members, ok := update.Payload["members"].([]map[string]interface{})
-	require.True(t, ok, "members is a list")
-	ids := make([]string, len(members))
-	for i, m := range members {
-		ids[i], _ = m["player_id"].(string)
+	var ids []string
+	for _, m := range listOf(t, update, "members") {
+		id, _ := m["player_id"].(string)
+		ids = append(ids, id)
 	}
 	return ids
+}
+
+// listOf is a list field of an update as maps, whether built on this pod or decoded from a
+// letter another pod sent (FS-NCC9J R5).
+func listOf(t *testing.T, update types.Message, field string) []map[string]interface{} {
+	t.Helper()
+	switch list := update.Payload[field].(type) {
+	case []map[string]interface{}:
+		return list
+	case []interface{}:
+		out := make([]map[string]interface{}, len(list))
+		for i, item := range list {
+			m, ok := item.(map[string]interface{})
+			require.True(t, ok, "%s holds objects", field)
+			out[i] = m
+		}
+		return out
+	}
+	t.Fatalf("%s is not a list: %T", field, update.Payload[field])
+	return nil
 }
 
 // When the leader leaves, the earliest-joined member who remains leads at once.
@@ -1069,14 +1080,15 @@ func TestPartyCreate_Refusals_InOrder(t *testing.T) {
 func TestPartyCreate_ThePartyInvitesAndEnds(t *testing.T) {
 	rig := newPartyRig(t)
 	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
-	_, _, kaelenInbox := rig.inHub(t, "Kaelen")
+	kaelen, _, kaelenInbox := rig.inHub(t, "Kaelen")
 	sendParty(rig.server, wrenConn, partyCreateAction, map[string]interface{}{})
 	formed := awaitUpdate(t, wrenInbox, "joined", wren.ID, "Wren")
 
 	sendParty(rig.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Kaelen"})
 	invite := awaitParty(t, kaelenInbox, partyInviteAction, "Kaelen")
 	assert.Equal(t, formed.Payload["party_id"], invite.Payload["party_id"], "the invite is the created party's")
-	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren: the party already stood, so no second joined")
+	invited := awaitUpdate(t, wrenInbox, "invited", kaelen.ID, "Wren")
+	assert.Len(t, listOf(t, invited, "reserved"), 1, "the party already stood: no second joined, only Kaelen's reserved slot (FS-NCC9J R21)")
 
 	sendParty(rig.server, wrenConn, partyLeaveAction, map[string]interface{}{})
 	final := awaitUpdate(t, wrenInbox, "left", wren.ID, "Wren")
@@ -1104,16 +1116,18 @@ func awaitPresence(t *testing.T, mini *miniredis.Miniredis, name, pod string) {
 	}, pointerWait, 10*time.Millisecond, "presence of %s should be %q", name, pod)
 }
 
-// A player is present while seated in this pod's hub: the key appears within a tick of
-// sitting down, goes within a tick of leaving the hub for a field, and is refreshed every
-// ten seconds while they stay. FS-R82NV R7; I-R82NV-3 decision 1.
-func TestPresence_FollowsTheHub(t *testing.T) {
+// A player is present in any world this pod holds them in: the key appears within a tick of being
+// seated, follows them into a field with their world, is refreshed every ten seconds while they
+// stay, stays while they are within the reconnect grace, and goes within a tick of the pod letting
+// them go. FS-NCC9J R7; I-R82NV-3 decision 1.
+func TestPresence_FollowsThePlayerAcrossWorlds(t *testing.T) {
 	rig, mini := newPresentPartyRig(t)
-	wren, _, _ := rig.inHub(t, "Wren")
+	wren, wrenConn, _ := rig.inHub(t, "Wren")
 
 	rig.tick()
 	awaitPresence(t, mini, "Wren", testPodID)
 	assert.Equal(t, wren.ID.String(), mini.HGet("presence:name:wren", "player_id"))
+	assert.Equal(t, "hub", mini.HGet("presence:id:"+wren.ID.String(), "world"))
 
 	mini.FastForward(20 * time.Second)
 	rig.partyClock.advance(10 * time.Second)
@@ -1124,12 +1138,37 @@ func TestPresence_FollowsTheHub(t *testing.T) {
 	rig.meadows.AddPlayerAt(wren.ID, wren.Character, "", 200, 200)
 	rig.server.setCurrentWorld(wren, rig.meadows.ID)
 	rig.tick()
+	require.Eventually(t, func() bool { return mini.HGet("presence:name:wren", "world") == "field" },
+		pointerWait, 10*time.Millisecond, "Wren's presence follows into the field")
+
+	_, _, held := rig.server.holdForReconnect(wrenConn)
+	require.True(t, held)
+	rig.tick()
+	assert.Never(t, func() bool { return !mini.Exists("presence:name:wren") }, 200*time.Millisecond, 10*time.Millisecond,
+		"within the reconnect grace Wren stays present")
+
+	rig.server.mu.Lock()
+	delete(rig.server.players, wren.ID)
+	rig.server.mu.Unlock()
+	rig.tick()
 	awaitPresence(t, mini, "Wren", "")
 	assert.False(t, mini.Exists("presence:id:"+wren.ID.String()))
 }
 
+// A player in a run is present too, with world run, so a teammate's invite or party update can
+// find them there (FS-NCC9J R7; AC "Presence holds players in fields and runs").
+func TestPresence_HoldsPlayersInARun(t *testing.T) {
+	rig, mini := newPresentPartyRig(t)
+	wren, _, _ := rig.inRun(t, "Wren")
+
+	rig.tick()
+
+	awaitPresence(t, mini, "Wren", testPodID)
+	assert.Equal(t, "run", mini.HGet("presence:id:"+wren.ID.String(), "world"))
+}
+
 // A pod that stops refreshing leaves no one findable for long: its seats lapse within 30 s.
-// One shutting down gracefully unseats everyone at once. FS-R82NV R7.
+// One shutting down gracefully unseats everyone at once. FS-NCC9J R7.
 func TestPresence_LapsesWithoutRefreshAndGoesAtShutdown(t *testing.T) {
 	rig, mini := newPresentPartyRig(t)
 	rig.inHub(t, "Wren")

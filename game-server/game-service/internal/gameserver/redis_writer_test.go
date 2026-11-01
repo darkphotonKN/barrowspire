@@ -2,6 +2,7 @@ package gameserver
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -55,4 +56,64 @@ func TestOrderedWriter_DeleteQueuesBehindTheBacklog(t *testing.T) {
 	w.queueMust(func(context.Context) error { return nil })
 
 	assert.Len(t, w.backlog, 2, "the second delete waits behind the first")
+}
+
+// A refresh queued while deletes still wait goes behind them, even if the queue has room by then:
+// a seat must never land before the unseat queued ahead of it (I-R82NV-3 review, carried into
+// I-NCC9J-3).
+func TestOrderedWriter_RefreshQueuesBehindTheBacklog(t *testing.T) {
+	w := newOrderedWriter()
+	var ran []string
+	for len(w.writes) < cap(w.writes) {
+		w.queue(func(context.Context) error { return nil })
+	}
+	w.queueMust(func(context.Context) error { ran = append(ran, "unseat"); return nil })
+	<-w.writes // room again
+
+	w.queue(func(context.Context) error { ran = append(ran, "seat"); return nil })
+
+	for len(w.writes) > 0 {
+		require.NoError(t, (<-w.writes)(context.Background()))
+	}
+	w.flush()
+	for len(w.writes) > 0 {
+		require.NoError(t, (<-w.writes)(context.Background()))
+	}
+	assert.Equal(t, []string{"unseat", "seat"}, ran)
+}
+
+// A writer whose pod is stopping runs the writes still queued before it reports stopped, so a
+// delete queued just before shutdown still lands while Redis is open (I-R82NV-3 review, carried
+// into I-NCC9J-3).
+func TestOrderedWriter_DrainsTheQueueAsItStops(t *testing.T) {
+	w := newOrderedWriter()
+	var mu sync.Mutex
+	ran := 0
+	for i := 0; i < 10; i++ {
+		w.queueMust(func(context.Context) error { mu.Lock(); ran++; mu.Unlock(); return nil })
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	w.start(ctx)
+	<-w.stopped()
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 10, ran, "every queued write ran before the writer stopped")
+}
+
+// A backlog that has grown as long as the queue drops further refreshes rather than growing
+// without bound; the next refresh repeats them (code review 2026-11-01, I-NCC9J-3 LOW).
+func TestOrderedWriter_BacklogDoesNotGrowWithoutBound(t *testing.T) {
+	w := newOrderedWriter()
+	for len(w.writes) < cap(w.writes) {
+		w.queue(func(context.Context) error { return nil })
+	}
+	w.queueMust(func(context.Context) error { return nil })
+	for i := 0; i < 2*redisWriteBuffer; i++ {
+		w.queue(func(context.Context) error { return nil })
+	}
+
+	assert.Len(t, w.backlog, redisWriteBuffer)
 }

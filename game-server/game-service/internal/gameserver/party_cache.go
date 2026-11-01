@@ -25,14 +25,23 @@ type partySeating interface {
 	SeatedPlayerIDs() []uuid.UUID
 }
 
+// partyReader is the part of the party store the cache reads with.
+type partyReader interface {
+	PartyOf(ctx context.Context, playerID uuid.UUID, now time.Time) (partystore.Party, bool, error)
+	RefreshAll(ctx context.Context, ids []uuid.UUID, now time.Time) ([]partystore.Party, []uuid.UUID, error)
+}
+
 type partyCache struct {
 	// nil on a pod built without Redis: nothing is read
-	store   partyStore
+	store   partyReader
 	run     *partyRunner
 	seating partySeating
 	now     func() time.Time
 	// told of the party read for a player newly seated here
-	onArrival func(playerID uuid.UUID, p partystore.Party)
+	onArrival func(ctx context.Context, playerID uuid.UUID, p partystore.Party)
+	// told of a re-read party newer than its members here were last told: a letter was lost, or a
+	// change was never told here (I-NCC9J-3 review)
+	onNewer func(ctx context.Context, p partystore.Party)
 
 	parties  map[uuid.UUID]partystore.Party
 	memberOf map[uuid.UUID]uuid.UUID // player id → party id, for every cached party's members
@@ -40,31 +49,59 @@ type partyCache struct {
 	// player in neither is read on the next tick, so a failed read is tried again
 	arrived  map[uuid.UUID]struct{}
 	arriving map[uuid.UUID]struct{}
+	// the newest version of each party its members here have been told in full
+	told map[uuid.UUID]int64
 
 	lastRefresh time.Time
 }
 
-func newPartyCache(store partyStore, run *partyRunner, seating partySeating, now func() time.Time, onArrival func(uuid.UUID, partystore.Party)) *partyCache {
+func newPartyCache(store partyReader, run *partyRunner, seating partySeating, now func() time.Time, onArrival func(context.Context, uuid.UUID, partystore.Party), onNewer func(context.Context, partystore.Party)) *partyCache {
 	return &partyCache{
 		store:       store,
 		run:         run,
 		seating:     seating,
 		now:         now,
 		onArrival:   onArrival,
+		onNewer:     onNewer,
 		parties:     make(map[uuid.UUID]partystore.Party),
 		memberOf:    make(map[uuid.UUID]uuid.UUID),
 		arrived:     make(map[uuid.UUID]struct{}),
 		arriving:    make(map[uuid.UUID]struct{}),
+		told:        make(map[uuid.UUID]int64),
 		lastRefresh: now(),
 	}
 }
 
-// put keeps p as Redis last answered it.
-func (c *partyCache) put(p partystore.Party) {
+// put keeps p as Redis last answered it, unless the cache already holds a newer version of the
+// party, as when letters arrive out of order; it reports whether it took p.
+func (c *partyCache) put(p partystore.Party) bool {
+	if held, cached := c.parties[p.ID]; cached && held.Version > p.Version {
+		return false
+	}
+	told := c.told[p.ID]
 	c.drop(p.ID)
+	c.told[p.ID] = told
 	c.parties[p.ID] = p
 	for _, m := range p.Members {
 		c.memberOf[m.PlayerID] = p.ID
+	}
+	return true
+}
+
+// newer reports whether the cache holds a newer version of p's party than p.
+func (c *partyCache) newer(p partystore.Party) bool {
+	held, cached := c.parties[p.ID]
+	return cached && held.Version > p.Version
+}
+
+// markTold records that every member here has been told the party at version. Only a party the
+// cache keeps is recorded, so the record goes when the party does.
+func (c *partyCache) markTold(partyID uuid.UUID, version int64) {
+	if _, cached := c.parties[partyID]; !cached {
+		return
+	}
+	if version > c.told[partyID] {
+		c.told[partyID] = version
 	}
 }
 
@@ -75,27 +112,12 @@ func (c *partyCache) drop(partyID uuid.UUID) {
 		return
 	}
 	delete(c.parties, partyID)
+	delete(c.told, partyID)
 	for _, m := range old.Members {
 		if c.memberOf[m.PlayerID] == partyID {
 			delete(c.memberOf, m.PlayerID)
 		}
 	}
-}
-
-// forgetReservation drops one open invite from a cached party.
-func (c *partyCache) forgetReservation(partyID, inviteID uuid.UUID) {
-	p, cached := c.parties[partyID]
-	if !cached {
-		return
-	}
-	kept := make([]partystore.Reservation, 0, len(p.Reserved))
-	for _, res := range p.Reserved {
-		if res.InviteID != inviteID {
-			kept = append(kept, res)
-		}
-	}
-	p.Reserved = kept
-	c.parties[partyID] = p
 }
 
 // party is a cached party by id.
@@ -208,13 +230,15 @@ func (c *partyCache) arrive(ctx context.Context, playerID uuid.UUID) {
 				return
 			}
 			c.put(res.party)
-			c.onArrival(playerID, res.party)
+			// the newest the cache knows, which a letter may have brought past this read
+			c.onArrival(ctx, playerID, c.parties[res.party.ID])
 		},
 	)
 }
 
 // refreshAll re-reads every cached party from Redis in one trip, through the runner like any
-// other call: a party Redis no longer has has ended, and is let go (R4).
+// other call: a party Redis no longer has has ended, and is let go (R4); one newer than its
+// members here were last told is handed to onNewer, so a lost letter costs at most ten seconds.
 func (c *partyCache) refreshAll(ctx context.Context) {
 	if c.store == nil || len(c.parties) == 0 {
 		return
@@ -243,8 +267,13 @@ func (c *partyCache) refreshAll(ctx context.Context) {
 			}
 			for _, p := range res.parties {
 				// a party let go while the read was under way stays let go
-				if _, still := c.parties[p.ID]; still {
-					c.put(p)
+				if _, still := c.parties[p.ID]; !still {
+					continue
+				}
+				c.put(p)
+				// the newest the cache knows, which a letter may have brought past this read
+				if newest := c.parties[p.ID]; newest.Version > c.told[p.ID] {
+					c.onNewer(ctx, newest)
 				}
 			}
 		},

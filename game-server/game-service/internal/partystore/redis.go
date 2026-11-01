@@ -48,32 +48,36 @@ type Joiner struct {
 	Class    string
 }
 
-// Member is a party member as the party shows them.
+// Member is a party member as the party shows them. The JSON names are the party's form between
+// pods (a party_update letter carries it), fixed so a renamed field cannot quietly change it.
 type Member struct {
-	PlayerID uuid.UUID
-	Name     string
-	Class    string
-	JoinedAt time.Time
+	PlayerID uuid.UUID `json:"player_id"`
+	Name     string    `json:"name"`
+	Class    string    `json:"class"`
+	JoinedAt time.Time `json:"joined_at"`
 }
 
 // Reservation is an open invite: a slot held for its target until it is answered or expires
 // (FS-NCC9J R3).
 type Reservation struct {
-	InviteID   uuid.UUID
-	TargetID   uuid.UUID
-	TargetName string
-	ExpiresAt  time.Time
+	InviteID   uuid.UUID `json:"invite_id"`
+	TargetID   uuid.UUID `json:"target_id"`
+	TargetName string    `json:"target_name"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 // Party is a party as it stands in Redis.
 type Party struct {
-	ID        uuid.UUID
-	Leader    uuid.UUID
-	CreatedAt time.Time
+	ID        uuid.UUID `json:"id"`
+	Leader    uuid.UUID `json:"leader"`
+	CreatedAt time.Time `json:"created_at"`
+	// moves on by one with every change written, so an older copy of the party can be told from a
+	// newer one; 0 for a party that has ended
+	Version int64 `json:"version"`
 	// in join order
-	Members []Member
+	Members []Member `json:"members"`
 	// oldest first
-	Reserved []Reservation
+	Reserved []Reservation `json:"reserved"`
 }
 
 type Redis struct {

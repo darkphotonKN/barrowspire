@@ -15,6 +15,7 @@ end
 if not found then return refuse('not_member') end
 
 redis.call('HSET', party_key(pid), 'leader', target)
+bump(pid)
 keep_alive(pid, party_ttl)
 
 return reply({code = 'ok', party = snapshot(pid)})

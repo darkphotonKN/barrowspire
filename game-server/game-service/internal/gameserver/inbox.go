@@ -25,10 +25,11 @@ type inboxBus interface {
 	Publish(ctx context.Context, channel string, payload []byte) error
 }
 
-// Letter kinds (R9). A letter for a player this pod does not hold is dropped.
+// Letter kinds (FS-R82NV R9; FS-NCC9J R5). A letter for a player this pod does not hold is dropped.
 const (
 	letterPartyInvite = "party_invite"
-	letterPartyReply  = "party_reply"
+	letterPartyUpdate = "party_update"
+	letterPartyNotice = "party_notice"
 )
 
 // letter is one inbox message: {kind, to_player_id, payload}.

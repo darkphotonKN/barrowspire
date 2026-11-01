@@ -1,9 +1,6 @@
 package gameserver
 
-import (
-	"context"
-	"log/slog"
-)
+import "context"
 
 // loopJobs is work finished off the message hub's loop and handed back to it: the loop runs each
 // job in turn, so what a job touches needs no lock. The hub owns the queue and selects on it;
@@ -21,14 +18,5 @@ func (q loopJobs) post(ctx context.Context, job func()) {
 	select {
 	case q <- job:
 	case <-ctx.Done():
-	}
-}
-
-// postOrDrop hands job to the loop if there is room; a full queue drops it.
-func (q loopJobs) postOrDrop(job func()) {
-	select {
-	case q <- job:
-	default:
-		slog.Warn("loop job dropped: hub loop behind")
 	}
 }

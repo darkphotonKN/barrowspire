@@ -182,6 +182,12 @@ const (
 	// PartyUpdateSync: the party as Redis holds it, sent to subject_id as they are seated on a
 	// pod. FS-NCC9J R6.
 	PartyUpdateSync PartyUpdateReason = "sync"
+	// PartyUpdateInvited: a slot is now reserved for subject_id, invited. FS-NCC9J R21.
+	PartyUpdateInvited PartyUpdateReason = "invited"
+	// PartyUpdateInviteEnded: subject_id's reserved slot is free again: they declined, joined
+	// another party, or the invite was withdrawn. An expiry sends nothing (the client goes by
+	// expires_at). FS-NCC9J R12, R21.
+	PartyUpdateInviteEnded PartyUpdateReason = "invite_ended"
 )
 
 const (
