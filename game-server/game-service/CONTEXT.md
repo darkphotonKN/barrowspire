@@ -99,9 +99,9 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 ### Hub population
 
 - **Occupancy cap** — the maximum number of players the hub admits at once. Refusal at the
-  door, not a queue. A member joining their party's **leader** in that hub is admitted up to the
-  **travel margin** past it (one full party, `HubTravelMargin`); coming home from a field passes
-  it entirely.
+  door, not a queue. A member whose party's **leader** stands on that pod is admitted up to the
+  **travel margin** past it (one full party, `HubTravelMargin`, shared by the whole hub, first
+  come); coming home from a field passes it entirely.
 - **Concurrency ceiling** — the whole-deployment player limit (50) that ADR-0015's single-process
   decision depends on. Distinct from the occupancy cap even when the numbers coincide: raising
   the ceiling reopens an ADR, raising the cap does not.
@@ -349,6 +349,11 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   a hub handoff they trigger from the button beside the leader in the party frames, only while
   standing in their own village. The only way party members gather on one pod. Not a world
   switch: a field is still entered by walking in from the same pod's village (ADR-0030).
+- **Let go** — what the pod a member travels from does as it sends the handoff: it takes them out
+  of the **presence index** and will not hold their old socket for the reconnect grace, so nothing
+  routes them back. They stay **present** on that pod, and told their party, until the socket
+  closes. **Taken back**: still there on that socket once the handoff's 15 s pass, and found on no
+  other pod, so the travel did not take them; they are in the index again.
 - **Hub handoff** — a handoff (same mechanic: new socket to the pod address, old one dropped)
   whose destination is a pod's hub world instead of a run. Used for a member's **travel**, and
   for returning a reconnecting player to the pod still holding them (FS-MCYWK). No longer used on
