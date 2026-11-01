@@ -166,8 +166,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   mirroring `world_type` on the wire). Server-decided. Not the same as a world theme. Gains
   `"field"` with FS-X2F2H.
 - **World theme**: how the client draws a run: `"exterior" | "tower"` (FS-8RBQY §A). It picks the
-  ground plan, wall-piece sheets, roofs and indoor mask on or off, ambient, perimeter wall and run
-  dressing. A client constant, never on the wire, never a game rule. Always say *world* theme:
+  ground plan, wall-piece sheets, roofs and the HUD's Indoor/Outdoor label on or off, ambient,
+  perimeter wall and run dressing. The indoor blackout is no world theme's choice: every run takes it. A client constant, never on the wire, never a game rule. Always say *world* theme:
   bare "theme" in this client means the design-token theme (`src/utils/theme.ts`, `BARROW`,
   `docs/theming_plan.md`), which every world theme draws its colours from.
 - **Field look**: how the client draws a field world, keyed by field id (`FieldLook`,
@@ -183,7 +183,7 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   the server collides against. Trees on its north- and west-facing edge are always bare, so no
   crown hides the trail.
 - **Exterior theme**: the run look as it shipped before FS-8RBQY: barrow-dirt ground with tufts
-  and pebbles, flagstone house floors, timber-frame walls, roofs, the enter-a-house indoor mask.
+  and pebbles, flagstone house floors, timber-frame walls, roofs, the HUD's Indoor/Outdoor label.
   Kept for a future outdoor place. Not "grass": grass is the hub's ground.
 - **Tower interior theme** (short: **tower theme**): the default run look: the inside of the
   Barrowspire. Stone flags and timber planks, partition walls, a perimeter wall with arrow slits,
@@ -213,6 +213,31 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Floor band**: `lower` / `middle` / `upper`, a run floor's place in the climb, derived from
   `floor` and `floor_count` (FS-8RBQY §C.1). The only input that varies the tower look per floor.
   Not the same as **floor**, the wire number it is derived from.
+- **Building**: in this client, the drawn thing a group of server walls sharing a `house_id` makes,
+  whatever the world calls it (a town building in the hub, a **room** in the Spire, a **house** in
+  the exterior theme). Used where a rule holds for all of them (ADR-0036, FS-9PN7X).
+- **Building type**: a building's wall-piece material, which decides both of its looks. Today two:
+  **timber** (`TIMBER_WALLS`: town buildings, and the exterior theme's houses) and **masonry**
+  (`MASONRY_WALLS`: Spire rooms). Not a world theme: a world theme picks which building type its
+  walls use.
+- **Building exterior**: how a building is drawn while the player is outside it: a closed block,
+  all four walls full height in its building type's outward surface, under a roof (timber) or a
+  **stone cap** (masonry) that never fades. One per building type (ADR-0036, FS-9PN7X). Always
+  say *building* exterior: bare "exterior" collides with the **exterior theme**, which is a run
+  look, not a building's outside.
+- **Interior look**: how a building is drawn while the player stands inside it: the cut-away
+  (back walls full, south and east fronts low), furnished and lit. Not the same as **interior**,
+  which names the place (a town building's inside, FS-B0H2D), not the way it is drawn.
+- **Indoor blackout**: while the player stands inside a building, everything outside it (the
+  street, corridors, open floor, every other building, and everyone in them, party included) is
+  drawn in the canvas's darkest ink (`palette.inkDeep`). Snaps on and off at the doorway. In the
+  Spire this gives a room an inside, so "indoor" means *inside a room* there once FS-9PN7X ships,
+  while the tower theme's "the whole floor is indoors" still describes the floor as a whole. A
+  view rule, never a visibility rule: the server sends what it always did.
+- **Silhouette**: the player's outline drawn through a building exterior that stands between them
+  and the camera. It replaces the occluder fade for buildings; trees and tall props still fade.
+- **Dark opening**: an entrance seen from outside: a town building's door gap or an open Spire
+  door, drawn as its frame with flat darkness inside. A closed or locked door draws as a door.
 - **Container view**: the on-screen panel showing a container's contents. Not the
   same thing as a **container**, which is the WS entity in `containers[]`. Opening the view is
   presentation; clicking an item in it sends exactly the message the item row always sent. It has

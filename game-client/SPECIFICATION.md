@@ -96,6 +96,8 @@ server state and sends intents. ✅
 - [x] Cursors and world indicators in the world's art direction → FS-KYPQ9
 - [x] Exterior run look → FS-2325V
 - [x] Tower interior run look → FS-8RBQY
+- [ ] Closed building exteriors → FS-9PN7X
+- [ ] Indoor blackout → FS-9PN7X
 - [x] Per-floor variation of the run look → FS-8RBQY
 - [x] Pre-rendered stairs → FS-8RBQY
 
