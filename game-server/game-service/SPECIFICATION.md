@@ -83,8 +83,8 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Fabled uniques → FS-4R9M9
 - [x] A player may end their own run as a death → FS-9K8EZ
 - [ ] Pickup allocated by the party's loot rule → FS-V780R
-- [ ] Bag carried into runs and field worlds → FS-18Z5F
-- [ ] Unsafe run finds lost on death → FS-18Z5F
+- [x] Bag carried into runs and field worlds → FS-18Z5F
+- [x] Unsafe run finds lost on death → FS-18Z5F
 
 ### Classes
 
@@ -172,7 +172,7 @@ matchmaking); this service is the engine they feed. ✅
 ### Cross-context flows
 
 - [ ] Player-to-player trade saga
-- [ ] Gear escrow across the run lifecycle → FS-18Z5F
+- [x] Gear escrow across the run lifecycle → FS-18Z5F
 - [ ] Start-a-delve distributed coordination → FS-K2HKP
 
 ---

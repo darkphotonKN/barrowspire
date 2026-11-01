@@ -63,7 +63,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 
 ### Items
 
-- [ ] Move an item between bag and stash → FS-VPD8Y
+- [x] Move an item between bag and stash → FS-VPD8Y
 
 ### Characters
 
