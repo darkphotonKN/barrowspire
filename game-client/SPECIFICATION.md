@@ -61,7 +61,7 @@ server state and sends intents. ✅
 - [x] Ability card on the HUD → FS-8AY7S
 - [x] Shadow Shot aimed by holding → FS-JTNPR
 - [ ] Allocated pickup notices → FS-V780R
-- [ ] Unsafe marking on run finds → FS-18Z5F
+- [x] Unsafe marking on run finds → FS-18Z5F
 
 ### Character
 
@@ -107,7 +107,7 @@ server state and sends intents. ✅
 - [ ] Follow a handoff to another server → FS-K2HKP
 - [x] Switch character from the hub → FS-G4VMQ
 - [x] Leave the queue from the hub → FS-G4VMQ
-- [ ] Town stash → FS-VPD8Y
+- [x] Town stash → FS-VPD8Y
 - [x] Solo delve entry from the hub → FS-NSV3D
 - [x] Walk to a destination gate in the hub → FS-0XMCP
 - [x] The Spire's entrance at the back of the hub → FS-0XMCP
