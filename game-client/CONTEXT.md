@@ -109,6 +109,25 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
 - **System line** — a line the client or server emits that no player wrote ("that player is not
   online"). Not a channel; never filtered out.
 
+## Party terms (FS-R82NV; across pods FS-NCC9J, ADR-0036)
+
+- **Party panel** — the carved panel **T** toggles: the members, the leader's crown, and the
+  actions the player may use (create, invite, kick, transfer, leave). Not the frames.
+- **Party frames** — the column on the left edge under the level bar, one frame per member, the
+  player first. A frame shows bars only for a teammate in the player's own world; any other
+  teammate shows name and class bust alone, so missing bars *are* the "not here" signal. An away
+  member is greyed. Not the panel.
+- **Skeleton row** — the frame drawn for a **reserved slot** (game-service: an open invite counted
+  against the party's size): the invitee's name with a grey pulse where the bust and bars go, no
+  countdown, seen by every member. It becomes a real frame on accept and goes on decline or
+  expiry. Client word only; the server says *reserved slot*.
+- **Travel button** — the button beside the leader's frame that sends the player to the town of
+  the leader's server (game-service: *travel*, by a hub handoff). Pressable only in the player's
+  own town; greyed in a field, a delve, or while the leader is away; absent when already on the
+  leader's server. The label on screen is still to be written.
+- **Invite prompt** — the small carved prompt an incoming invite raises, with Accept, Decline and
+  a countdown on the client's own clock. Not the skeleton row (that is the inviting side's view).
+
 ## Rendering terms (canvas presentation, [ADR-0020](../docs/adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) / FS-2325V)
 
 These are engineering words, not lore. They name how the canvas draws the world, and like the lore
@@ -265,6 +284,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 | the town | — | `world_type` `hub` | "hub" |
 | the Inn, the store, the smithy | — | walls sharing a `house_id` | "enterable town building" |
 | relic, plunder | `/api/items/*` | `items[]` | "loadout", "items" |
+| the party | — | `party_update`, `party_id` | "party" |
+| travel to the leader | — | `world_handoff` (to a hub) | "Travel to the party leader's village" |
 
 ## Voice rules that ride on the vocabulary
 

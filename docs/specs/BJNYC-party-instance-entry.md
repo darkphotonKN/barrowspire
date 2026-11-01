@@ -91,3 +91,11 @@ Scoped 2026-11-01 with Nick.
   I-R82NV-2): `find_game` from a party member is refused ("leave your party first" or similar);
   a party enters together by party entry, and a random match forms its own party. Nothing
   enforces this yet: today a party member can still queue.
+
+- **A solo run is a party of one** (Nick, 2026-11-01, FS-NCC9J session): every player in a run is
+  in a party (random match: auto-formed; party entry: that party; `start_solo`: a party of one), so
+  an invite to someone in a run answers `already_in_party`. Until this spec lands, an accept inside
+  a run is refused `locked`.
+- **Gathering for a party entry happens by the travel button** (FS-NCC9J): members on other pods
+  press "travel to the leader" from their village first; the entry still requires everyone in the
+  leader's world on the leader's pod.
