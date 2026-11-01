@@ -242,9 +242,6 @@ export default function Home() {
               Rankings
             </Link>
             */}
-            <Link href="/subscription" className="text-[11px] text-vellum-muted hover:text-brass-bright tracking-[0.15em] uppercase transition-colors">
-              Premium
-            </Link>
             <Link href="/profile" className="text-[11px] text-vellum-muted hover:text-brass-bright tracking-[0.15em] uppercase transition-colors">
               Profile
             </Link>

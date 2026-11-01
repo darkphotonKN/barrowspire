@@ -52,12 +52,6 @@ export default function Header() {
               Leaderboard
             </Link>
             */}
-            <Link
-              href="/subscription"
-              className={`nav-link ${pathname === '/subscription' ? 'active' : ''}`}
-            >
-              Subscribe
-            </Link>
           </nav>
         </div>
 
