@@ -48,3 +48,10 @@ Scoped 2026-11-01 with Nick.
 
 - Round-robin and other rules.
 - Trading / dropping items inside a run (would reopen the design).
+
+- **Allocation only within the pickup's world** (Nick, 2026-11-01, FS-NCC9J session): members
+  may now stand in different worlds and on different pods, so the candidates for a pickup are the
+  members in the same world as it: the same run (living, not escaped), or the same field channel
+  on the same pod. A member in the village or elsewhere is never allocated an item. Read from the
+  pod's party cache (FS-NCC9J), never from Redis inside the world tick; a run snapshots the rule
+  at entry.

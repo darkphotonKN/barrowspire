@@ -124,7 +124,7 @@ server state and sends intents. ✅
 
 - [ ] Party panel → FS-R82NV
 - [ ] Party invites → FS-R82NV
-- [ ] Follow a handoff into the hub → FS-R82NV
+- [ ] Travel to the leader's village from the party frames → FS-NCC9J
 - [ ] Party frames → FS-R82NV
 - [ ] Party loot rule setting → FS-V780R
 - [ ] Enter the Spire as a party → FS-BJNYC
