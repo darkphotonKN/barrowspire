@@ -251,3 +251,135 @@ Still open from round 4: a removed player whose final letter is lost is never re
 LOWs (sync repeated during the reconnect grace, a duplicate first sync, empty `where`/`pod_id` on
 resync and degraded paths); Spec MEDs (R21 lacks `sync`; the empty `pod_id`/`where`). Per-player
 reconciliation is the candidate fix for the lost-letter MED; not decided.
+
+## Decided after round 4 (with Nick, 2026-11-01): each pod reconciles what its players see
+
+The lost-letter MED: a removed player whose final letter is lost keeps the party on screen for as
+long as they stay connected, because the re-read resyncs only the party's members and they are no
+longer one. pub/sub is at most once and an acknowledged transport would not close it either (a
+letter to the wrong pod, a publisher that dies between the script and the publish, a send to the
+socket that fails), so the repair is by state, not by redelivery, as ADR-0036 already says ("a
+periodic re-read corrects any missed letter"). The pod holding a player is the only one that can
+repair their screen: it holds their socket and re-reads their party anyway.
+
+- **What each player was shown.** The pod records, per player it holds, the last `party_update`
+  written to their socket: a party and its version, or no party (an update that does not list
+  them). Recorded once the update is queued for them, keyed by the connection: a new connection is a
+  player whose screen is unknown. Dropped on the tick that finds the connection gone, however the
+  player left.
+- **Arrival always sends.** A player newly seated is read from Redis and sent their party, or a
+  `party_update` with no members when they have none: a reconnect that keeps the page (and its
+  party store) is corrected too. Only a read that succeeds sends.
+- **Reconcile after every re-read.** Once the 10 s re-read has brought the cache level with Redis,
+  every player seated here is checked: what the cache says they are in against what they were
+  shown. A different party, a newer version, or a party they are no longer in is sent; the same is
+  not. In memory, no extra Redis call.
+- **Out of this step:** `told`, `final` and the delivery rules stay as they are; the record is a
+  safety net under them. Replacing them with a check against the record before each send is a
+  later step, to weigh when FS-MCYWK or I-NCC9J-4 touch delivery.
+
+Rejected: an acknowledged transport (Redis Streams, RabbitMQ), for the cases above; diffing the
+cache's old and new versions, which misses a removal the cache learnt from another letter; client
+polling, which works but adds a protocol action for what the pod can see itself. B ("repair only
+when the player acts") was weighed and superseded by this.
+
+### Built (2026-11-01)
+
+- `Server.SeatedConns()` (player → connection) replaces `SeatedPlayerIDs` in `partyDirectory`; the
+  cache's `arrived` records the connection, so a new connection is read afresh.
+- `partyCache.shown` (`shownParty`: connection, party, version), written by `saw` after every
+  party_update queued for a player here (deliver, a letter); forgotten on the tick that finds the
+  player's connection gone or changed.
+- One way to resend: the cache hands `partyView`s (a player and their party, or none) to
+  `partyRegistry.show`, which builds `sync` items, or `noPartyUpdate` for a player in no party
+  (lists nobody; `party_id`/`leader_id` empty via `idOrEmpty`), and sends them through
+  `announce` like any update, so members elsewhere get their pod and world.
+- Arrival always shows the player their party, or none. `reconcile` runs after every re-read, and
+  at once when nothing is cached, and resends whoever's record (`showing`) differs from the cache.
+- Every sync is checked again in `deliver` as it goes out (`partyRegistry.current`): it is sent
+  only if the cache still holds its party at the version it was built from and the player's
+  record does not already show it; a sync overtaken by a change is dropped, the change telling the
+  player itself (or the next reconcile). The update listing nobody goes only to a player held
+  here, never as a letter. With the runner behind, only removed players' final updates go out at
+  once; syncs and whole updates wait for the next reconcile.
+- Removed (from the committed code): `told`, `markTold`, `everyMemberHereTold`,
+  `resync`/`onNewer`, and the letter's `Whole` flag. The reconcile is the only resend.
+- Tests (`party_reconcile_test.go`): arrival with no party; a removed member whose letter was lost;
+  a party gone from Redis with no letter; a quiet re-read sends nothing (the re-read checked to
+  have run); a reconnect between ticks is read again; a reconcile sync names a remote member's pod
+  and world; a re-read landing while a kick is still being told leaves it to the kick; a sync whose
+  party ended while it waited is sent as no party. Each was seen failing: RED before the code, or
+  with the piece it covers taken out (the reconcile send, the presence lookup, the check against
+  the record as a sync goes out, the ended-party check). `TestPartyLetter_MissingAMemberHere_NotMarkedTold` became
+  `..._ShownAtTheNextReRead` (behaviour, not `told`).
+- FS-NCC9J: R6 (the empty update, a new connection read again), R21 (`sync`, the empty update),
+  R21a (reconcile), the lost-letter edge state. CONTEXT.md: shown party, a new connection read
+  afresh.
+
+Closes round 4's lost-letter MED, its Spec MED "R21 lacks `sync`", and both duplicate-send LOWs
+(the per-party `told` is gone). Empty `where`/`pod_id` remains only on the degraded paths (presence
+unreadable, runner behind), as for every update. `TestHandleWebSocketConnection_HandoffRefusals/run_has_ended`
+flakes about 1–3 runs in 20 under load, on the previous commit too, with no party store in that
+test: not this change.
+
+## Code review round 5 (2026-11-01): fixed
+
+Both axes on the reconcile above. Spec: ready (the empty update matches R21/R6; the client takes it
+and lets the party go). Standards: needs changes, all fixed:
+
+- **MED (Standards and Spec): the reconcile sync left remote members' `pod_id`/`where` empty** (no
+  presence lookup) and recorded that as shown, so nothing corrected it. `show` now goes through
+  `announce`.
+- **MED (Standards): a re-read landing between a change and its update** synced the same party
+  first, a duplicate. The reconcile now waits behind one empty runner job.
+- **MED (Standards): two records of staleness** (`told` per party, `shown` per player). `told` and
+  `resync` removed; the reconcile is the only resend.
+- **LOW:** the `in bool` hooks and `ended bool` on `saw` folded into `partyView` and one `onShow`;
+  the hand-built empty payload replaced by `noPartyUpdate` through `updateMessage`; the `Seats`
+  comment no longer claims two connections per player; R21a says "queued for", lists "no record",
+  and names the reconcile as the only resend; the tests check the empty update's fields and that
+  the quiet re-read ran.
+- **Not changed (LOW, DIP):** `Seats()` returns `*websocket.Conn` to the cache, which only compares
+  it; the cache is package-internal and the hub owns connections.
+
+## Code review round 6 (2026-11-01): fixed
+
+Both axes again. Spec: ready. Standards: needs changes, fixed:
+
+- **MED: a sync for a party that ended while it waited went out** (the version gate read "not
+  cached" as "not newer"). `current` sends the update listing nobody instead.
+- **MED: the empty runner job did not stop every duplicate** (a write already on the runner had its
+  update queued behind it). Replaced: every sync is checked against the player's record as it goes
+  out, which happens after everything queued before it; the empty job is gone.
+- **MED (ubiquitous language): "seat" already means a place in a run** (FS-K2HKP). Renamed
+  `Seats()` → `SeatedConns()`, the cache field `seats` → `conns`; CONTEXT.md no longer defines seat
+  as a connection.
+- **LOW:** the update listing nobody is never sent as a letter (a zero-id letter was rejected and
+  logged); `reconcile` uses `showing` instead of a switch with an empty case; R21 says "a `sync`
+  listing no members" (the ended party's final update lists none but carries its id); the issue's
+  removed list names only committed code; test and decision wording says "queued".
+- **Not changed (LOW):** `*websocket.Conn` in the cache (DIP, as in round 5); the shown record as
+  its own type (SRP), for when FS-MCYWK or I-NCC9J-4 next touch it; a seated player missing from
+  `PresentPlayers` (awaiting settlement) is resent to on each re-read until present, one presence
+  lookup each time.
+
+## Code review round 7 (2026-11-02): fixed
+
+Spec: ready. Standards: one MED, fixed with the Spec LOWs; the rest left, as LOW, for when
+FS-MCYWK or I-NCC9J-4 next touch delivery.
+
+- **MED (Standards): a sync moved up to the newest version could overtake that version's own
+  update.** With write, re-read, write queued in that order, the reconcile's sync went out as the
+  second write's version, then that write's update told it again. `current` now drops a sync whose
+  party has moved on instead of moving it up; the round 6 "party ended → no party" branch goes with
+  it. `TestPartyRefresh_BetweenTwoChanges_SyncsOvertakenNotSent` (fails when the sync is moved up
+  instead); `TestPartySync_OlderThanTheCache_...` and `TestPartySync_PartyEndedWhileItWaited_...`
+  now expect the sync not to be sent.
+- **LOW (Standards):** the sync check is keyed on a one-player, non-final update, not on the reason.
+- **LOW (Spec): with the runner behind, a sync went out with no presence data and was recorded.**
+  That path now sends only final updates; the next reconcile tells everyone else.
+- **LOW (Spec):** "seat" for a connection left in a test comment and here; reworded.
+- **Left (LOW):** `ended` doubling as "no party for this player"; `*websocket.Conn` in the cache;
+  the shown record and its rule as their own type; reconcile skipped on a failed re-read while it
+  runs with nothing cached; `saw`/`conns` naming; a seated player not yet present resent each
+  re-read; no test of a letter recorded so the next reconcile stays quiet.

@@ -26,13 +26,15 @@ type partyUpdate struct {
 	party   partystore.Party
 	reason  constants.PartyUpdateReason
 	subject uuid.UUID
-	// set for a removed player's final update or an arrival read: it goes to this player alone
+	// set for a removed player's final update or a sync (an arrival read, a reconcile, the update
+	// listing nobody): it goes to this player alone
 	to uuid.UUID
 	// a removed player's final update: told as built whatever its age, as they are in no newer
 	// party. Marked, never inferred from who it is for: a player kicked while their arrival read
 	// was in flight is in no newer party either (code review round 4, HIGH)
 	final bool
-	// the change ended the party: the pods that hear it let it go
+	// the change ended the party, or no party stands for the player (noPartyUpdate): the pods that
+	// hear it let it go, and it lists nobody
 	ended bool
 }
 
@@ -70,11 +72,11 @@ func (r *partyRegistry) announce(ctx context.Context, items ...partyUpdate) {
 		},
 		func(where map[uuid.UUID]partypresence.Found, err error) {
 			if errors.Is(err, errPartyRunnerBehind) {
-				// telling the members now would overtake the changes still queued, so the re-read
-				// tells them; a player told alone (removed, arriving) is told here, as nothing
-				// later would reach them
-				slog.Warn("party update left to the next re-read: runner behind")
-				r.deliver(alone(items), nil)
+				// telling the members now would overtake the changes still queued, and with no
+				// presence lookup a sync would name nobody's pod; the next reconcile tells them all.
+				// A removed player's final update is told here: its reason would be lost
+				slog.Warn("party update left to the next reconcile: runner behind")
+				r.deliver(finals(items), nil)
 				return
 			}
 			if err != nil {
@@ -95,58 +97,76 @@ func memberIDs(p partystore.Party) []uuid.UUID {
 
 // deliver tells each item's recipients this pod holds, and sends the rest's pods a letter each.
 func (r *partyRegistry) deliver(items []partyUpdate, where map[uuid.UUID]partypresence.Found) {
-	here := make(map[uuid.UUID]types.WorldType)
-	for _, p := range r.directory.PresentPlayers() {
-		here[p.ID] = p.World
-	}
+	here := r.presentHere()
 	for _, n := range items {
 		whole := n.to == uuid.Nil
-		if !n.ended && !n.final && r.cache.newer(n.party) {
-			// the rule: a player is never shown a party older than the newest this pod knows. A
-			// whole update older than the cache is not told (the newer one is, or will be); one to
-			// a single player (an arrival sync) is sent as the newest party instead, which drops
-			// the party on their screen if a change since removed them. Only a removed player's
-			// final update goes out as built.
-			if whole {
-				slog.Debug("party update older than the cache, not told", "party_id", n.party.ID)
-				continue
-			}
-			n.party, _ = r.cache.party(n.party.ID)
+		// the rule: a player is never shown a party older than the newest this pod knows. A whole
+		// update older than the cache is not told (the newer one is, or will be); a sync to one
+		// player goes out only as it was built (current). Only a removed player's final update
+		// goes out whatever its age.
+		if whole && !n.ended && r.cache.newer(n.party) {
+			slog.Debug("party update older than the cache, not told", "party_id", n.party.ID)
+			continue
+		}
+		if !whole && !n.final && !r.current(n) {
+			continue
 		}
 		msg := r.updateMessage(n, here, where)
-		told := r.courier.tell(n.recipients(), here, where, partyUpdateLetter{Party: n.party, Ended: n.ended, Whole: whole, Final: n.final, Message: msg.Payload})
-		if whole && !n.ended && everyMemberHereTold(n.party, here, told) {
-			r.cache.markTold(n.party.ID, n.party.Version)
+		letterTo := where
+		if n.party.ID == uuid.Nil {
+			// the update listing nobody is for a player held here; one gone since needs none
+			letterTo = nil
+		}
+		for id := range r.courier.tell(n.recipients(), here, letterTo, partyUpdateLetter{Party: n.party, Ended: n.ended, Final: n.final, Message: msg.Payload}) {
+			r.cache.saw(id, n.party)
 		}
 	}
 }
 
-// resync tells every member present here the newest party this pod knows, reason sync: a letter
-// about it was lost, or a change was never told here (I-NCC9J-3 review). The party is marked told
-// only if every one of them was.
-func (r *partyRegistry) resync(_ context.Context, p partystore.Party) {
-	newest, cached := r.cache.party(p.ID)
-	if !cached {
-		return
+// current reports whether a sync made a moment ago still holds as it is about to go out: the
+// cache still has its party at the version it was built from, and the player's record does not
+// already show it. A sync overtaken by a change is not sent: whatever changed the party tells the
+// player (a write's own update, a letter, the reconcile after a re-read), and the next reconcile
+// tells anyone it missed. So a change is told once, and never after a sync of itself (code review
+// rounds 6 and 7).
+func (r *partyRegistry) current(n partyUpdate) bool {
+	if !n.ended {
+		held, cached := r.cache.party(n.party.ID)
+		if !cached || held.Version != n.party.Version || !hasMember(held, n.to) {
+			return false
+		}
 	}
-	here := make(map[uuid.UUID]types.WorldType)
-	for _, present := range r.directory.PresentPlayers() {
-		here[present.ID] = present.World
-	}
-	told := make(map[uuid.UUID]struct{})
-	for _, m := range newest.Members {
-		if _, present := here[m.PlayerID]; !present {
+	return !r.cache.showing(n.to, n.party)
+}
+
+// show tells players held here the party they are to be shown, reason sync: a player newly
+// seated (R6), or one whose screen differs from the cache after a re-read (R21a). Through announce
+// like any update, so each member's pod and world come from the presence index (R21).
+func (r *partyRegistry) show(ctx context.Context, views []partyView) {
+	items := make([]partyUpdate, 0, len(views))
+	for _, v := range views {
+		if !v.inParty {
+			items = append(items, noPartyUpdate(v.playerID))
 			continue
 		}
-		item := partyUpdate{party: newest, reason: constants.PartyUpdateSync, subject: m.PlayerID, to: m.PlayerID}
-		msg := r.updateMessage(item, here, nil)
-		for id := range r.courier.tell([]uuid.UUID{m.PlayerID}, here, nil, partyUpdateLetter{Party: newest, Message: msg.Payload}) {
-			told[id] = struct{}{}
-		}
+		items = append(items, partyUpdate{party: v.party, reason: constants.PartyUpdateSync, subject: v.playerID, to: v.playerID})
 	}
-	if everyMemberHereTold(newest, here, told) {
-		r.cache.markTold(newest.ID, newest.Version)
+	r.announce(ctx, items...)
+}
+
+// noPartyUpdate tells a player they are in no party: an update listing nobody, with an empty party
+// and leader id (R21). Ended, since no party stands for them: it is told whatever the cache holds.
+func noPartyUpdate(playerID uuid.UUID) partyUpdate {
+	return partyUpdate{reason: constants.PartyUpdateSync, subject: playerID, to: playerID, ended: true}
+}
+
+// presentHere is every player this pod holds, with the world each stands in.
+func (r *partyRegistry) presentHere() map[uuid.UUID]types.WorldType {
+	here := make(map[uuid.UUID]types.WorldType)
+	for _, p := range r.directory.PresentPlayers() {
+		here[p.ID] = p.World
 	}
+	return here
 }
 
 // updateMessage is n as a party_update: the party as it stands, each member with the pod holding
@@ -184,8 +204,8 @@ func (r *partyRegistry) updateMessage(n partyUpdate, here map[uuid.UUID]types.Wo
 	return types.Message{
 		Action: string(constants.ActionPartyUpdate),
 		Payload: map[string]interface{}{
-			"party_id":   n.party.ID.String(),
-			"leader_id":  n.party.Leader.String(),
+			"party_id":   idOrEmpty(n.party.ID),
+			"leader_id":  idOrEmpty(n.party.Leader),
 			"members":    members,
 			"reserved":   reserved,
 			"size":       r.cfg.size,
@@ -207,44 +227,29 @@ func (r *partyRegistry) heardUpdate(l partyUpdateLetter) {
 		return
 	}
 	msg := types.Message{Action: string(constants.ActionPartyUpdate), Payload: l.Message}
-	told := make(map[uuid.UUID]struct{}, len(l.To))
 	for _, id := range l.To {
 		if err := r.sender.SendMessageToPlayer(id, msg); err != nil {
 			slog.Debug("party update letter for a player not here dropped", "player_id", id, "error", err)
 			continue
 		}
-		told[id] = struct{}{}
-	}
-	if l.Whole && !l.Ended {
-		here := make(map[uuid.UUID]types.WorldType)
-		for _, p := range r.directory.PresentPlayers() {
-			here[p.ID] = p.World
-		}
-		if everyMemberHereTold(l.Party, here, told) {
-			r.cache.markTold(l.Party.ID, l.Party.Version)
-		}
+		r.cache.saw(id, l.Party)
 	}
 }
 
-// everyMemberHereTold reports whether every member of p present on this pod is among told: only
-// then is the party told here, and the re-read need not sync it (code review round 2).
-func everyMemberHereTold(p partystore.Party, here map[uuid.UUID]types.WorldType, told map[uuid.UUID]struct{}) bool {
-	for _, m := range p.Members {
-		if _, present := here[m.PlayerID]; !present {
-			continue
-		}
-		if _, ok := told[m.PlayerID]; !ok {
-			return false
-		}
+// idOrEmpty is id as a string, or empty for no id: the update listing nobody names no party and
+// no leader (R21).
+func idOrEmpty(id uuid.UUID) string {
+	if id == uuid.Nil {
+		return ""
 	}
-	return true
+	return id.String()
 }
 
-// alone are the items addressed to one player each.
-func alone(items []partyUpdate) []partyUpdate {
+// finals are the removed players' final updates among items.
+func finals(items []partyUpdate) []partyUpdate {
 	var out []partyUpdate
 	for _, n := range items {
-		if n.to != uuid.Nil {
+		if n.final {
 			out = append(out, n)
 		}
 	}

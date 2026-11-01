@@ -7,6 +7,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partystore"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 )
 
 /**
@@ -15,14 +16,27 @@ import (
 * party registry's writes, by an arrival read for each player newly seated here (R6), and by a
 * re-read of every cached party every ten seconds; a party none of whose members is seated here
 * is let go. Only the hub's loop touches it.
+*
+* It also records what each player seated here was last shown, and after every re-read sends
+* whoever was shown something other than what it now holds (I-NCC9J-3, decided after round 4): a
+* letter lost on pub/sub then costs at most one re-read, for a removed player too, who is no
+* longer any party's member and so is reached by no update to the party.
 **/
 
 // partyRefreshInterval is how often the cache re-reads every party it keeps (R4).
 const partyRefreshInterval = 10 * time.Second
 
-// partySeating answers who this pod holds, seated in any world.
+// partySeating answers who this pod holds, seated in any world, and on which connection.
 type partySeating interface {
-	SeatedPlayerIDs() []uuid.UUID
+	SeatedConns() map[uuid.UUID]*websocket.Conn
+}
+
+// shownParty is what a player's screen was last sent: a party at a version, or no party (a zero
+// party id), on the connection it was sent over.
+type shownParty struct {
+	conn    *websocket.Conn
+	party   uuid.UUID
+	version int64
 }
 
 // partyReader is the part of the party store the cache reads with.
@@ -37,37 +51,44 @@ type partyCache struct {
 	run     *partyRunner
 	seating partySeating
 	now     func() time.Time
-	// told of the party read for a player newly seated here
-	onArrival func(ctx context.Context, playerID uuid.UUID, p partystore.Party)
-	// told of a re-read party newer than its members here were last told: a letter was lost, or a
-	// change was never told here (I-NCC9J-3 review)
-	onNewer func(ctx context.Context, p partystore.Party)
+	// told of players to be shown their party: newly seated here, or shown something other than
+	// what the cache holds after a re-read
+	onShow func(ctx context.Context, views []partyView)
 
 	parties  map[uuid.UUID]partystore.Party
 	memberOf map[uuid.UUID]uuid.UUID // player id → party id, for every cached party's members
-	// players seated here whose arrival read has succeeded, and those whose read is under way; a
-	// player in neither is read on the next tick, so a failed read is tried again
-	arrived  map[uuid.UUID]struct{}
+	// players seated here whose arrival read has succeeded, with the connection it was made for,
+	// and those whose read is under way; a player in neither, or now on another connection, is
+	// read on the next tick, so a failed read is tried again and a reconnect is read afresh
+	arrived  map[uuid.UUID]*websocket.Conn
 	arriving map[uuid.UUID]struct{}
-	// the newest version of each party its members here have been told in full
-	told map[uuid.UUID]int64
+	// who is seated here, as of the last tick, and what each was last shown
+	conns map[uuid.UUID]*websocket.Conn
+	shown map[uuid.UUID]shownParty
 
 	lastRefresh time.Time
 }
 
-func newPartyCache(store partyReader, run *partyRunner, seating partySeating, now func() time.Time, onArrival func(context.Context, uuid.UUID, partystore.Party), onNewer func(context.Context, partystore.Party)) *partyCache {
+// partyView is the party a player is to be shown: party, or no party when inParty is false.
+type partyView struct {
+	playerID uuid.UUID
+	party    partystore.Party
+	inParty  bool
+}
+
+func newPartyCache(store partyReader, run *partyRunner, seating partySeating, now func() time.Time, onShow func(context.Context, []partyView)) *partyCache {
 	return &partyCache{
 		store:       store,
 		run:         run,
 		seating:     seating,
 		now:         now,
-		onArrival:   onArrival,
-		onNewer:     onNewer,
+		onShow:      onShow,
 		parties:     make(map[uuid.UUID]partystore.Party),
 		memberOf:    make(map[uuid.UUID]uuid.UUID),
-		arrived:     make(map[uuid.UUID]struct{}),
+		arrived:     make(map[uuid.UUID]*websocket.Conn),
 		arriving:    make(map[uuid.UUID]struct{}),
-		told:        make(map[uuid.UUID]int64),
+		conns:       make(map[uuid.UUID]*websocket.Conn),
+		shown:       make(map[uuid.UUID]shownParty),
 		lastRefresh: now(),
 	}
 }
@@ -78,9 +99,7 @@ func (c *partyCache) put(p partystore.Party) bool {
 	if held, cached := c.parties[p.ID]; cached && held.Version > p.Version {
 		return false
 	}
-	told := c.told[p.ID]
 	c.drop(p.ID)
-	c.told[p.ID] = told
 	c.parties[p.ID] = p
 	for _, m := range p.Members {
 		c.memberOf[m.PlayerID] = p.ID
@@ -94,17 +113,6 @@ func (c *partyCache) newer(p partystore.Party) bool {
 	return cached && held.Version > p.Version
 }
 
-// markTold records that every member here has been told the party at version. Only a party the
-// cache keeps is recorded, so the record goes when the party does.
-func (c *partyCache) markTold(partyID uuid.UUID, version int64) {
-	if _, cached := c.parties[partyID]; !cached {
-		return
-	}
-	if version > c.told[partyID] {
-		c.told[partyID] = version
-	}
-}
-
 // drop lets go of a party: it ended, or this pod holds none of its members.
 func (c *partyCache) drop(partyID uuid.UUID) {
 	old, cached := c.parties[partyID]
@@ -112,7 +120,6 @@ func (c *partyCache) drop(partyID uuid.UUID) {
 		return
 	}
 	delete(c.parties, partyID)
-	delete(c.told, partyID)
 	for _, m := range old.Members {
 		if c.memberOf[m.PlayerID] == partyID {
 			delete(c.memberOf, m.PlayerID)
@@ -154,9 +161,10 @@ func (c *partyCache) openReservations(p partystore.Party) []partystore.Reservati
 }
 
 // tick keeps the cache: open invites past their minute leave it, with no notice (R12; the leader's
-// client says so); a seated player not yet read is read on arrival (R6), again each tick until a
-// read succeeds; a party none of whose members is seated here is let go; and every party left is
-// re-read every ten seconds (R4).
+// client says so); a seated player not yet read, or seated on a new connection, is read on
+// arrival (R6), again each tick until a read succeeds; what a player gone from here, or now on
+// another connection, was shown is forgotten; a party none of whose members is seated here is let
+// go; and every party left is re-read every ten seconds (R4), then every player reconciled.
 func (c *partyCache) tick(ctx context.Context) {
 	at := c.now()
 	for id, p := range c.parties {
@@ -164,16 +172,18 @@ func (c *partyCache) tick(ctx context.Context) {
 		c.parties[id] = p
 	}
 
-	seated := make(map[uuid.UUID]struct{})
-	for _, id := range c.seating.SeatedPlayerIDs() {
-		seated[id] = struct{}{}
-	}
-	for id := range c.arrived {
-		if _, still := seated[id]; !still {
+	c.conns = c.seating.SeatedConns()
+	for id, conn := range c.arrived {
+		if c.conns[id] != conn {
 			delete(c.arrived, id)
 		}
 	}
-	for id := range seated {
+	for id, shown := range c.shown {
+		if conn, seated := c.conns[id]; !seated || conn != shown.conn {
+			delete(c.shown, id)
+		}
+	}
+	for id := range c.conns {
 		_, done := c.arrived[id]
 		_, underWay := c.arriving[id]
 		if !done && !underWay {
@@ -181,7 +191,7 @@ func (c *partyCache) tick(ctx context.Context) {
 		}
 	}
 	for id, p := range c.parties {
-		if !anySeated(p, seated) {
+		if !anySeated(p, c.conns) {
 			c.drop(id)
 		}
 	}
@@ -192,7 +202,7 @@ func (c *partyCache) tick(ctx context.Context) {
 	}
 }
 
-func anySeated(p partystore.Party, seated map[uuid.UUID]struct{}) bool {
+func anySeated(p partystore.Party, seated map[uuid.UUID]*websocket.Conn) bool {
 	for _, m := range p.Members {
 		if _, here := seated[m.PlayerID]; here {
 			return true
@@ -201,7 +211,7 @@ func anySeated(p partystore.Party, seated map[uuid.UUID]struct{}) bool {
 	return false
 }
 
-// arrive reads the party of a player newly seated here and hands it to onArrival, so a letter
+// arrive reads the party of a player newly seated here and hands it to onShow, so a letter
 // missed while they moved costs nothing (R6). Only a read that succeeds marks them arrived; one
 // that fails, or that the runner had no room for, leaves them to be read on the next tick.
 func (c *partyCache) arrive(ctx context.Context, playerID uuid.UUID) {
@@ -209,6 +219,7 @@ func (c *partyCache) arrive(ctx context.Context, playerID uuid.UUID) {
 		return
 	}
 	c.arriving[playerID] = struct{}{}
+	conn := c.conns[playerID]
 	at := c.now()
 	type read struct {
 		party partystore.Party
@@ -225,22 +236,28 @@ func (c *partyCache) arrive(ctx context.Context, playerID uuid.UUID) {
 				slog.Warn("party not read on arrival, tried again next tick", "player_id", playerID, "error", err)
 				return
 			}
-			c.arrived[playerID] = struct{}{}
-			if !res.in {
-				return
+			c.arrived[playerID] = conn
+			view := partyView{playerID: playerID}
+			if res.in {
+				c.put(res.party)
+				// the newest the cache knows, which a letter may have brought past this read
+				view.party, view.inParty = c.parties[res.party.ID], true
 			}
-			c.put(res.party)
-			// the newest the cache knows, which a letter may have brought past this read
-			c.onArrival(ctx, playerID, c.parties[res.party.ID])
+			c.onShow(ctx, []partyView{view})
 		},
 	)
 }
 
 // refreshAll re-reads every cached party from Redis in one trip, through the runner like any
-// other call: a party Redis no longer has has ended, and is let go (R4); one newer than its
-// members here were last told is handed to onNewer, so a lost letter costs at most ten seconds.
+// other call: a party Redis no longer has has ended, and is let go (R4). Every player seated here
+// is then reconciled against what the cache holds (R21a), so a lost letter costs at most ten
+// seconds; with no party cached there is nothing to read, and they are reconciled straight away.
 func (c *partyCache) refreshAll(ctx context.Context) {
-	if c.store == nil || len(c.parties) == 0 {
+	if c.store == nil {
+		return
+	}
+	if len(c.parties) == 0 {
+		c.reconcile(ctx)
 		return
 	}
 	ids := make([]uuid.UUID, 0, len(c.parties))
@@ -271,11 +288,55 @@ func (c *partyCache) refreshAll(ctx context.Context) {
 					continue
 				}
 				c.put(p)
-				// the newest the cache knows, which a letter may have brought past this read
-				if newest := c.parties[p.ID]; newest.Version > c.told[p.ID] {
-					c.onNewer(ctx, newest)
-				}
 			}
+			c.reconcile(ctx)
 		},
 	)
+}
+
+// reconcile shows every player seated here whose screen differs from what the cache holds: one
+// with no record of what they were shown, a party they were not shown, a newer version of the one
+// they were, or no party where they were shown one (R21a). A player whose arrival read has not
+// yet succeeded is left to it. In memory: the re-read just before brought the cache level with
+// Redis. Each sync is checked again as it goes out (partyRegistry.current), so a change told
+// meanwhile is not told twice.
+func (c *partyCache) reconcile(ctx context.Context) {
+	var stale []partyView
+	for id, conn := range c.conns {
+		if c.arrived[id] != conn {
+			continue
+		}
+		p, in := c.partyOf(id)
+		if c.showing(id, p) {
+			continue
+		}
+		stale = append(stale, partyView{playerID: id, party: p, inParty: in})
+	}
+	if len(stale) > 0 {
+		c.onShow(ctx, stale)
+	}
+}
+
+// showing reports whether a player's record already shows what p would show them: that party at
+// its version or newer, or no party when p does not list them. A player with no record is shown
+// nothing yet.
+func (c *partyCache) showing(playerID uuid.UUID, p partystore.Party) bool {
+	shown, known := c.shown[playerID]
+	if !known {
+		return false
+	}
+	if !hasMember(p, playerID) {
+		return shown.party == uuid.Nil
+	}
+	return shown.party == p.ID && shown.version >= p.Version
+}
+
+// saw records that a player was sent p: that party at its version, or no party if p does not
+// list them (a removed player's final update, an ended party, the update listing nobody).
+func (c *partyCache) saw(playerID uuid.UUID, p partystore.Party) {
+	shown := shownParty{conn: c.conns[playerID]}
+	if hasMember(p, playerID) {
+		shown.party, shown.version = p.ID, p.Version
+	}
+	c.shown[playerID] = shown
 }
