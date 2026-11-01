@@ -100,6 +100,9 @@ type Server struct {
 
 	// this pod's parties; read here only to learn when shutdown dissolved them
 	parties *partyRegistry
+	// who is in which party, as the party cache last published it: handed to every world's
+	// serializer, so a recipient's teammates carry their resource (FS-CH21F R5, R6)
+	partyMembership *partyMembership
 }
 
 // CharacterReader reads one of a member's characters from character-service,
@@ -171,11 +174,12 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		travelling:         make(map[uuid.UUID]*websocket.Conn),
 		awaitingSettlement: make(map[uuid.UUID]struct{}),
 
-		queue:        queueService,
-		authClient:   authClient,
-		eventEmitter: eventEmitter,
-		itemsClient:  itemsClient,
-		characters:   characters,
+		queue:           queueService,
+		authClient:      authClient,
+		eventEmitter:    eventEmitter,
+		itemsClient:     itemsClient,
+		characters:      characters,
+		partyMembership: newPartyMembership(),
 	}
 	if boot.partyStore != nil {
 		server.leaders = boot.partyStore
@@ -203,16 +207,17 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	inbox := newPodInbox(boot.inboxBus, podID)
 	jobs := newLoopJobs()
 	party := newPartyRegistry(server, newSender, jobs, partyRegistryConfig{
-		podID:     podID,
-		podAddr:   podAddr,
-		size:      boot.partySize,
-		now:       boot.partyNow,
-		newID:     uuid.New,
-		ticks:     partyTicks,
-		store:     boot.partyStore,
-		presence:  boot.presence,
-		inbox:     inbox,
-		occupancy: boot.hubOccupancy,
+		podID:      podID,
+		podAddr:    podAddr,
+		size:       boot.partySize,
+		now:        boot.partyNow,
+		newID:      uuid.New,
+		ticks:      partyTicks,
+		store:      boot.partyStore,
+		presence:   boot.presence,
+		inbox:      inbox,
+		occupancy:  boot.hubOccupancy,
+		membership: server.partyMembership,
 	})
 	server.parties = party
 	party.start(ctx)
@@ -232,6 +237,12 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	return server, nil
 }
 
+// newStateSerializer is a world's serializer, handed the pod's party membership so that every world,
+// hub, field and run alike, tells a recipient their teammates' resource. FS-CH21F R6.
+func (s *Server) newStateSerializer(em *ecs.EntityManager) *serializer.StateSerializer {
+	return serializer.NewStateSerializer(em, s.partyMembership)
+}
+
 /**
 * Builds the one hub world. It is created before anyone connects and lives for
 * the whole process, unlike a run, which is built per match and torn down
@@ -245,7 +256,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 func (s *Server) createHubSession() *game.Session {
 	fmt.Printf("\n\nWorld Hub SESSION INITIALIZED\n\n\n")
 	entityManager := ecs.NewEntityManager()
-	stateSerializer := serializer.NewStateSerializer(entityManager)
+	stateSerializer := s.newStateSerializer(entityManager)
 
 	hub := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient, game.HubBounds())
 
@@ -1073,7 +1084,7 @@ func (s *Server) GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool) {
 func (s *Server) CreateGameSession(players *types.ResolvedMatchedPlayers) *game.Session {
 	// create entity manager first so it can be shared
 	entityManager := ecs.NewEntityManager()
-	stateSerializer := serializer.NewStateSerializer(entityManager)
+	stateSerializer := s.newStateSerializer(entityManager)
 
 	// create session with message sender
 	newGameSession := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient, game.RunBounds())

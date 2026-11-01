@@ -14,7 +14,6 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/serializer"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -209,7 +208,7 @@ func (s *Server) createFieldSessions(fields []laidOutField) {
 		place := laidOut.place
 
 		entityManager := ecs.NewEntityManager()
-		field := game.NewSession(s, messaging.NewMessageSender(s), serializer.NewStateSerializer(entityManager), entityManager, s.eventEmitter, s.itemsClient, game.FieldBounds(place))
+		field := game.NewSession(s, messaging.NewMessageSender(s), s.newStateSerializer(entityManager), entityManager, s.eventEmitter, s.itemsClient, game.FieldBounds(place))
 		field.InitialFieldMapObjects(place, laidOut.layout)
 
 		s.mu.Lock()

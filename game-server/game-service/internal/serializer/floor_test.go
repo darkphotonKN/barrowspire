@@ -34,7 +34,7 @@ func TestFormatStateToClientState_CarriesFloorOnlyInARun(t *testing.T) {
 				runLevel := em.CreateEntity()
 				runLevel.AddComponent(components.NewFloorComponent(1, 3))
 			}
-			s := NewStateSerializer(em)
+			s := NewStateSerializer(em, nil)
 
 			backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), tt.world, em.GetAllEntities())
 			require.NoError(t, err)
@@ -75,7 +75,7 @@ func TestSerializeBackendState_LeavesOutDelversLeftBehind(t *testing.T) {
 		e.AddComponent(components.NewItemIDListComponent(nil))
 	}
 
-	s := NewStateSerializer(em)
+	s := NewStateSerializer(em, nil)
 	backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
 	require.NoError(t, err)
 
@@ -110,7 +110,7 @@ func TestFormatStateToClientState_DelverLeftBehindStillSeesThemselves(t *testing
 		e.AddComponent(health)
 	}
 
-	s := NewStateSerializer(em)
+	s := NewStateSerializer(em, nil)
 	backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
 	require.NoError(t, err)
 

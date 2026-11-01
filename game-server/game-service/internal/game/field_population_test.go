@@ -308,7 +308,7 @@ func TestFieldBroadcast_CarriesItsMonsters(t *testing.T) {
 	field := builtField(t)
 	memberID := visitor(t, field, fieldWren)
 
-	stateSerializer := serializer.NewStateSerializer(field.EntityManager)
+	stateSerializer := serializer.NewStateSerializer(field.EntityManager, nil)
 	backendState, err := stateSerializer.SerializeBackendState(context.Background(), field.ID, field.worldType, field.EntityManager.GetAllEntities())
 	require.NoError(t, err)
 	state := stateSerializer.FormatStateToClientState(backendState, memberID)

@@ -113,7 +113,7 @@ func TestRun_CorpseIsBroadcastDeadThenRemoved(t *testing.T) {
 	s, _ := watchedRun(t)
 	delver, _ := placeDelver(t, s, "warrior", 500, 500)
 	g := frailGhoul(s, 545, 500)
-	stateSerializer := serializer.NewStateSerializer(s.EntityManager)
+	stateSerializer := serializer.NewStateSerializer(s.EntityManager, nil)
 
 	broadcastAction := func() (string, bool) {
 		backendState, err := stateSerializer.SerializeBackendState(context.Background(), s.ID, s.worldType, s.EntityManager.GetAllEntities())

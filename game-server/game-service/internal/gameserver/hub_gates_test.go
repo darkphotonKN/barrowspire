@@ -84,7 +84,7 @@ func TestHub_StateCarriesItsGates(t *testing.T) {
 	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
 
-	stateSerializer := serializer.NewStateSerializer(hub.EntityManager)
+	stateSerializer := serializer.NewStateSerializer(hub.EntityManager, nil)
 	backendState, err := stateSerializer.SerializeBackendState(context.Background(), hub.ID, hub.WorldType(), hub.EntityManager.GetAllEntities())
 	require.NoError(t, err)
 	clientState := stateSerializer.FormatStateToClientState(backendState, uuid.New())

@@ -37,7 +37,7 @@ func TestFormatStateToClientState_CarriesGatesOnlyInTheHub(t *testing.T) {
 				gate.AddComponent(components.NewInteractableComponent(80))
 				gateID = gate.ID
 			}
-			s := NewStateSerializer(em)
+			s := NewStateSerializer(em, nil)
 
 			backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), tt.world, em.GetAllEntities())
 			require.NoError(t, err)

@@ -421,7 +421,7 @@ func TestRunBroadcast_CarriesTheFloorsMonsters(t *testing.T) {
 	s.InitialMapObjects(nil)
 	require.NotEmpty(t, monstersIn(s))
 
-	stateSerializer := serializer.NewStateSerializer(s.EntityManager)
+	stateSerializer := serializer.NewStateSerializer(s.EntityManager, nil)
 	backendState, err := stateSerializer.SerializeBackendState(context.Background(), s.ID, s.worldType, s.EntityManager.GetAllEntities())
 	require.NoError(t, err)
 	state := stateSerializer.FormatStateToClientState(backendState, s.GetPlayerIDs()[0])
@@ -613,7 +613,7 @@ func TestRunBroadcast_CarriesEliteBossAndName(t *testing.T) {
 		Archetype: components.MonsterArchetypeTroll, Level: 2, Elite: true, Name: "Hollow Troll", X: 900, Y: 700,
 	})
 
-	stateSerializer := serializer.NewStateSerializer(s.EntityManager)
+	stateSerializer := serializer.NewStateSerializer(s.EntityManager, nil)
 	backendState, err := stateSerializer.SerializeBackendState(context.Background(), s.ID, s.worldType, s.EntityManager.GetAllEntities())
 	require.NoError(t, err)
 	state := stateSerializer.FormatStateToClientState(backendState, s.GetPlayerIDs()[0])

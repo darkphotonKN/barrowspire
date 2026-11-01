@@ -26,7 +26,7 @@ func TestFormatStateToClientState_CarriesTheWorldType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			em := ecs.NewEntityManager()
-			s := NewStateSerializer(em)
+			s := NewStateSerializer(em, nil)
 			sessionID := uuid.New()
 
 			backendState, err := s.SerializeBackendState(context.Background(), sessionID, tt.world, em.GetAllEntities())
@@ -52,7 +52,7 @@ func TestSerializeBackendState_CarriesNPCs(t *testing.T) {
 	npc.AddComponent(components.NewNPCComponent("Spirewarden", components.NPCFunctionStoryteller))
 	npc.AddComponent(components.NewTransformComponent(300, 400))
 
-	s := NewStateSerializer(em)
+	s := NewStateSerializer(em, nil)
 
 	backendState, err := s.SerializeBackendState(
 		context.Background(), uuid.New(), types.WorldTypeHub, em.GetAllEntities(),

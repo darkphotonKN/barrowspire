@@ -35,7 +35,7 @@ func TestSerializeBackendState_ContainersCarryTheirKind(t *testing.T) {
 			e.AddComponent(components.NewTransformComponent(20, 20))
 			e.AddComponent(components.NewItemIDListComponent(nil))
 
-			state, err := NewStateSerializer(em).SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
+			state, err := NewStateSerializer(em, nil).SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
 			require.NoError(t, err)
 
 			require.Len(t, state.Containers, 1)

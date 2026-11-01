@@ -81,7 +81,7 @@ func TestSession_GameLoopAppliesMovement_Integration(t *testing.T) {
 	recorder := &positionRecorder{playerID: player1ID}
 	sender := messaging.NewMessageSender(recorder)
 	em := ecs.NewEntityManager()
-	stateSerializer := serializer.NewStateSerializer(em)
+	stateSerializer := serializer.NewStateSerializer(em, nil)
 	mockEmitter := &mockEventEmitter{}
 	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, nil, RunBounds())
 	defer session.Shutdown()

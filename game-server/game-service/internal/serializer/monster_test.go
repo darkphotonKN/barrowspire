@@ -46,7 +46,7 @@ func TestFormatStateToClientState_CarriesEveryMonsterInARun(t *testing.T) {
 	em := ecs.NewEntityManager()
 	troll := addMonster(em, "Troll", 300, 200, 150, 207)
 	addMonster(em, "Troll", 600, 400, 207, 207)
-	s := NewStateSerializer(em)
+	s := NewStateSerializer(em, nil)
 
 	backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
 	require.NoError(t, err)
@@ -85,7 +85,7 @@ func TestFormatStateToClientState_CarriesEveryMonsterInARun(t *testing.T) {
 func TestSerializeBackendState_MonsterAtNoHealthIsDead(t *testing.T) {
 	em := ecs.NewEntityManager()
 	addMonster(em, "Ghoul", 300, 200, 0, 40)
-	s := NewStateSerializer(em)
+	s := NewStateSerializer(em, nil)
 
 	backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
 	require.NoError(t, err)
@@ -98,7 +98,7 @@ func TestSerializeBackendState_MonsterAtNoHealthIsDead(t *testing.T) {
 // FS-77AB6 §Requirements 32.
 func TestFormatStateToClientState_HubCarriesNoMonsters(t *testing.T) {
 	em := ecs.NewEntityManager()
-	s := NewStateSerializer(em)
+	s := NewStateSerializer(em, nil)
 
 	backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeHub, em.GetAllEntities())
 	require.NoError(t, err)
@@ -113,7 +113,7 @@ func TestFormatStateToClientState_HubCarriesNoMonsters(t *testing.T) {
 func TestRestBackendStatePool_ClearsMonsters(t *testing.T) {
 	em := ecs.NewEntityManager()
 	addMonster(em, "Ghoul", 300, 200, 40, 40)
-	s := NewStateSerializer(em)
+	s := NewStateSerializer(em, nil)
 
 	backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
 	require.NoError(t, err)
