@@ -44,7 +44,9 @@ as with FS-R82NV); the client side is agent lane.
    no presence entry (offline) gets nothing; they read the party on return (R6).
 6. **Arrival read.** When a player is seated on a pod (connect, travel, reconnect), the pod reads
    their party from Redis, caches it, and sends them a full `party_update`, so a letter missed while
-   they were moving costs nothing.
+   they were moving costs nothing. A player in no party is sent a `party_update` listing no members,
+   so a client that kept its party across a reconnect lets it go. A player seen on a new connection
+   is read again. *(Amended 2026-11-01, I-NCC9J-3 round 4; Nick.)*
 7. **Presence covers every connected player with a character** (redefines FS-R82NV R7): keys
    `presence:name:<lower(name)>` and `presence:id:<player_id>`, Redis hashes `{player_id, name,
    pod_id, world}` where `world` is `hub` | `field` | `run`. Written by the pod that holds the
@@ -129,9 +131,20 @@ as with FS-R82NV); the client side is agent lane.
     `reserved`); `invited` when a slot is reserved in a party that stood already; `invite_ended`
     when one frees (declined, voided by an accept elsewhere, withdrawn). An invite's expiry sends
     nothing: the next update leaves the slot out, and the client drops its row at `expires_at`
-    (R26, R27). *(Amended 2026-11-01: `pod_id` added so the client can tell who stands on the
-    leader's pod, R28; `where` values, the invite reasons and the silent expiry, I-NCC9J-3 E5,
-    E6; Nick.)*
+    (R26, R27). `sync` when the pod resends the party as it stands, to a player newly seated (R6)
+    or whose screen differs from it (R21a). A `sync` listing no members, with `party_id` and
+    `leader_id` empty, tells a player they are in no party. *(Amended 2026-11-01: `pod_id` added so
+    the client can tell who stands on the leader's pod, R28; `where` values, the invite reasons and
+    the silent expiry, I-NCC9J-3 E5, E6; `sync` and the empty update, I-NCC9J-3 round 4; Nick.)*
+21a. **Each pod reconciles what its players see.** It records the last `party_update` queued for
+    each player it holds, against the connection they are seated on (a party at a version, or
+    none), and, after every re-read (R4), sends `sync` to each whose record differs from its
+    cache: no record, a newer version, another party, or no party where they were shown one. The
+    sync goes out like any update, with each member's pod and world (R21), and is checked again as
+    it leaves: one whose party has changed or ended since it was built is not sent (the change
+    tells the player, or the next reconcile does), nor one the player's record already shows. This is the only resend: a letter lost
+    on its way costs at most one re-read, for a removed player too, who is no longer a member. *(Added 2026-11-01,
+    I-NCC9J-3 round 4; Nick.)*
 22. **Logs** never carry invite text beyond names; refusals at Debug, delivery and Redis failures at
     Warn (FS-R82NV R25).
 
@@ -227,7 +240,7 @@ as with FS-R82NV); the client side is agent lane.
 - **Travel and reconnect:** the old pod has let go (R19), so FS-MCYWK does not bounce the traveller back.
 - **Redis restart without persistence:** every party is gone; caches empty on the next re-read; members see their party leave the panel. Accepted (ADR-0035).
 - **Redis unreachable:** mutations refused `unavailable`; caches keep serving reads; runs unaffected.
-- **A letter dropped:** the 10 s re-read or the next arrival corrects the cache.
+- **A letter dropped:** the 10 s re-read or the next arrival corrects the cache, and the reconcile after the re-read (R21a) corrects every screen here, a removed player's included.
 - **Unauthorized:** every action is keyed by the connection's player; a decline or accept of an invite addressed to someone else is ignored; nothing trusts a client-supplied party id.
 - **Empty:** a player in no party sees no frames; Travel is never shown; `party_travel` → `not_member`.
 

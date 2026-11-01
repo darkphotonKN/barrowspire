@@ -366,7 +366,13 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   of its worlds: whom it answers by name directly, and whose parties its party cache keeps. A
   player is **present** on a pod while seated there *or* within its reconnect grace: who the pod
   writes into the presence index, and who hears a party update there. "Held" is not a separate
-  term: say seated.
+  term: say seated. A player seated on a new connection is read afresh: the pod does not know
+  their screen. (Not a **seat**, which is a place in a run.)
+- **Shown party** — what a pod last queued for a seated player's connection as a party update: a
+  party at a version, or no party. The pod's own record, not something the client reports. After each
+  re-read the pod **reconciles**: every player whose shown party differs from what its party cache
+  now holds is sent the cache's (reason `sync`). How a removed player whose letter was lost learns
+  it (FS-NCC9J R21a).
 - **Party invite** — a request from a party to a named player to join, sent by its leader, found
   through the presence index and delivered through the target's pod inbox, wherever they stand.
   It is the party's, not its sender's: it stands through a change of leader, and its answer goes
