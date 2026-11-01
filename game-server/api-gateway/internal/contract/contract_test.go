@@ -145,9 +145,21 @@ func TestTags_EveryRouteGroupIsDeclaredGlobally(t *testing.T) {
 		declared[tag.Name] = tag.Description
 	}
 
-	for _, name := range []string{"member", "items", "notification", "stats", "payment", "ledger", "characters"} {
+	for _, name := range []string{"member", "items", "notification", "stats", "ledger", "characters"} {
 		desc, ok := declared[name]
 		assert.True(t, ok, "tag %q is not declared globally — Spectral will reject any operation carrying it", name)
 		assert.NotEmpty(t, desc, "tag %q is declared with no description", name)
+	}
+}
+
+// FS-RG1B4 §Requirements 5: the gateway sells nothing. No player-facing payment
+// operation is registered; the Stripe webhook is a legacy gin route and is not
+// part of the contract at all.
+func TestRegisterOperations_ExposeNoPaymentPath(t *testing.T) {
+	api := contract.New(gin.New())
+	contract.RegisterOperations(api, contract.Deps{})
+
+	for path := range api.OpenAPI().Paths {
+		assert.NotContains(t, path, "/api/payment/", "payment operation %s is still exposed", path)
 	}
 }
