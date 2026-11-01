@@ -3335,3 +3335,10 @@ func (s *Session) CreateBuilding(buildConfig Building) {
 		}
 	}
 }
+
+// Occupancy is how many players this world seats: for the hub, the count its cap is held to.
+func (s *Session) Occupancy() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.playerIDToEntitiesID)
+}

@@ -38,6 +38,15 @@ type messageHub struct {
 
 	// this pod's parties, formed and kept on the loop (FS-R82NV R2)
 	party partyKeeper
+	// this pod's hub in the presence index, sampled on the loop (FS-R82NV R7)
+	presence presenceTicker
+}
+
+// presenceTicker is what the hub needs from the presence keeper: a sample each tick, and
+// everyone unseated as the pod goes.
+type presenceTicker interface {
+	tick()
+	leaveAll(ctx context.Context)
 }
 
 // partyKeeper is what the hub needs from the party registry: each party action in,
@@ -55,6 +64,10 @@ type partyKeeper interface {
 	tick()
 	// every party ends with the pod (R5)
 	dissolveAll(ctx context.Context)
+	// work finished off the loop, and letters from other pods, both handled on it (R9)
+	jobs() <-chan func()
+	letters() <-chan letter
+	receive(l letter)
 }
 
 // chatRelayer is what the hub needs from chat: a player's line in, delivered or refused; and
@@ -325,7 +338,7 @@ func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*game.Session, er
 	return session, nil
 }
 
-func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer, party partyKeeper) *messageHub {
+func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer, party partyKeeper, presence presenceTicker) *messageHub {
 	return &messageHub{
 		sessionManager: sessionManager,
 		sessions:       make(map[string]*game.Session),
@@ -335,6 +348,7 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 		announcer:      announcer,
 		chat:           chat,
 		party:          party,
+		presence:       presence,
 	}
 }
 
@@ -812,12 +826,22 @@ func (h *messageHub) Run(ctx context.Context) {
 		// the party registry's clock: invites lapse here (FS-R82NV R14)
 		case <-h.party.ticks():
 			h.party.tick()
+			h.presence.tick()
+
+		// a party lookup answered, or a letter that could not be sent (FS-R82NV R10, R12)
+		case job := <-h.party.jobs():
+			job()
+
+		// a letter from another pod's party (FS-R82NV R9)
+		case l := <-h.party.letters():
+			h.party.receive(l)
 
 		// the pod is shutting down: every party on it ends here, on the loop that
 		// owns them (FS-R82NV R5). The loop keeps routing through the drain, since
 		// the connections' readers still send to it and runs are still in play.
 		case <-shuttingDown:
 			h.party.dissolveAll(ctx)
+			h.presence.leaveAll(ctx)
 			shuttingDown = nil
 		}
 

@@ -20,6 +20,7 @@ import (
 	matchqueue "github.com/darkphotonKN/barrowspire-server/game-service/internal/match_queue"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypointer"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -101,6 +102,10 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 		// the party cap is the match size; a party's pointers ride the same Redis (FS-R82NV R3, R8)
 		gameserver.WithPartySize(partySize),
 		gameserver.WithPartyPointers(partypointer.NewRedis(redisClient)),
+		// the presence index and the pod inbox ride it too: invites reach players on other pods
+		// (FS-R82NV R7, R9)
+		gameserver.WithPresence(partypresence.NewRedis(redisClient)),
+		gameserver.WithPodInbox(chatbus.NewRedis(redisClient)),
 	)
 	if err != nil {
 		return nil, nil, errors.Join(fmt.Errorf("game server: %w", err), closeAll())
