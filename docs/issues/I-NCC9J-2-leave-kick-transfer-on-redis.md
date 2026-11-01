@@ -1,6 +1,6 @@
 ---
 id: I-NCC9J-2
-status: open
+status: done
 implements: FS-NCC9J
 blocked_by: [I-NCC9J-1]
 labels: [ready-for-agent]
@@ -37,3 +37,22 @@ FS-NCC9J §Requirements R16; §User Stories 13, 14; §Edge States (concurrent ki
 
 - RED: a miniredis test that the leave script, run for the leader of a three-member party, makes the earliest-joined remaining member leader.
 - GREEN: the leave script, then kick and transfer.
+
+## Done in I-NCC9J-1 (cabb498, 2026-11-01)
+
+Pulled forward with Nick's agreement (I-NCC9J-1 note 10) so the same-pod tests kept passing on the
+Redis party: `partystore/scripts/remove.lua` (leave, kick, succession, party end) and
+`transfer.lua`. Closed with no further code.
+
+- Existing kick/transfer/leave/succession tests pass on Redis: MET (`TestPartyLeave_*`,
+  `TestPartyKick_*`, `TestPartyTransfer_*`, `TestPartyMembership_Refusals`).
+- Concurrent kick and leave, the second `not_member`: MET (`TestRemove_Refusals`;
+  `TestPartyKickAndLeave_FirstWinsSecondNotMember`, ordered by the pod's FIFO runner).
+- The last leave deletes the party; an accept of its open invite → `party_gone`: MET
+  (`TestRemove_LastMember_EndsTheParty`, `TestPartyLeave_LastMemberEndsTheParty`). The invite's
+  own record is kept until its TTL on purpose, so that accept can tell `party_gone` from nothing.
+- `-race` on touched party tests: MET (I-NCC9J-1 pre-flight).
+- The TDD Approach's RED test is `TestRemove_LeaderLeaves_EarliestJoinedLeads`.
+
+Not in this slice: the change reaching members on other pods (FS-level AC "a leader on pod B
+transfers to a member on pod A"), which needs I-NCC9J-3's fan-out.
