@@ -56,6 +56,11 @@ export class StairsSet<S extends { destroy(): void }> {
     return null;
   }
 
+  /** Each stairs drawn, with where it stands: what the hide rule reads (FS-9PN7X §C.2). */
+  placed(): Iterable<{ readonly sprite: S; readonly pos: Point }> {
+    return this.drawn.values();
+  }
+
   /** Destroy every stairs and forget it. */
   clear(): void {
     for (const { sprite } of this.drawn.values()) sprite.destroy();

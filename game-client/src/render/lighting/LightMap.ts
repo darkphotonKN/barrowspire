@@ -47,6 +47,11 @@ export type TransientSpec = Omit<LightSource, "flicker" | "seed"> &
 export interface TransientLight extends LightSource {
   /** False once removed, expired, dropped past the cap, or cleared. */
   readonly alive: boolean;
+  /**
+   * Kept but not stamped while true: its effect stands where the hide rule hides it
+   * (FS-9PN7X §C.2). Its lifetime still counts.
+   */
+  hidden?: boolean;
   remove(): void;
 }
 
@@ -145,6 +150,17 @@ export class LightMap {
   }
 
   /**
+   * Forgets one fixed source and its halo gate: the wall that held it was redrawn (a Spire room's
+   * walls, FS-9PN7X §D.6), so the floor's light budget counts its replacement once. A source it
+   * does not hold is left be.
+   */
+  remove(source: LightSource): void {
+    const at = this.sources.indexOf(source);
+    if (at >= 0) this.sources.splice(at, 1);
+    this.haloWhen.delete(source);
+  }
+
+  /**
    * A short-lived pool (FS-KYPQ9 §C): a fireball's light, an impact's decay, an escape column.
    * Stamped like a fixed source but never given a flame halo, so under a roof it lights the floor
    * and shows nothing through it. Past {@link TRANSIENT_CAP} the oldest is dropped.
@@ -218,7 +234,7 @@ export class LightMap {
     for (const s of lit) this.stamp(s, view, timeMs, 1);
     this.expire(timeMs);
     for (const s of cullInto(this.transients, view, this.visibleTransients))
-      this.stamp(s, view, timeMs, 1);
+      if (!(s as Transient).hidden) this.stamp(s, view, timeMs, 1);
     if (this.carriedAlpha > 0.01)
       this.stamp(this.carried, view, timeMs, this.carriedAlpha);
     this.forceNormalBlend();

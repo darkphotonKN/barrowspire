@@ -28,6 +28,22 @@ export function occludes(occluder: Sorted, subject: Sorted): boolean {
   );
 }
 
+/**
+ * Whether any of `pieces` stands over `subject` by the occluder test above: a building exterior
+ * covering the player, who then shows as a silhouette (FS-9PN7X §E.1).
+ */
+export function coveredBy(subject: Sorted, pieces: readonly Sorted[]): boolean {
+  return pieces.some((piece) => occludes(piece, subject));
+}
+
+/**
+ * The pieces standing over `subject` by the occluder test, in their order: what the silhouette
+ * shows through (FS-9PN7X §E.3), masked to those pieces' own pixels.
+ */
+export function covering<T extends Sorted>(subject: Sorted, pieces: readonly T[]): T[] {
+  return pieces.filter((piece) => occludes(piece, subject));
+}
+
 /** Time for a fade to close most of the way, in ms. */
 const FADE_MS = 120;
 /** Close enough to snap: no endless sub-pixel tweening. */

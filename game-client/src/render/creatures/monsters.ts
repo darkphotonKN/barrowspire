@@ -253,6 +253,7 @@ export interface MonsterSprite extends AnimatedSprite {
   setScale(scale: number): unknown;
   setTint(tint: number): unknown;
   clearTint(): unknown;
+  setVisible(visible: boolean): unknown;
   setInteractive(config: {
     hitArea: object;
     hitAreaCallback: ReturnType<typeof footprintHitArea>;
@@ -429,6 +430,22 @@ export class MonsterRoster {
       }
 
       this.mark(view);
+    }
+  }
+
+  /**
+   * The hide rule (FS-9PN7X §C.2): a monster whose drawn position `hidden` names goes, body, plate
+   * and bar; the rest show their bodies, and keep the plate and bar this frame's {@link update}
+   * seated. Call it after `update`, once the frame knows which building is the player's.
+   */
+  hideWhere(hidden: (at: Point) => boolean): void {
+    for (const view of this.views.values()) {
+      const shown = !hidden(view.pos);
+      view.sprite.setVisible(shown);
+      if (shown) continue;
+      view.name.setVisible(false);
+      view.prefix?.setVisible(false);
+      view.bar.setVisible(false);
     }
   }
 

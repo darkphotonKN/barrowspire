@@ -68,17 +68,27 @@ import {
   sigilPoints,
 } from "@/render/markers";
 import {
+  BAKE,
+  BuildingView,
   GroundLayer,
   Occluders,
+  addBuildings,
+  addGables,
   addProp,
   addRoof,
   addWalls,
+  coverOf,
+  doorGaps,
   showState,
   housesFrom,
   insideHouse,
+  slabCover,
   tileHash,
   worldSeed,
+  type Cover,
+  type Figure,
   type House,
+  type Scenery,
 } from "@/render/world";
 import {
   HUB_APRONS,
@@ -102,7 +112,6 @@ import {
 import {
   HUB_INDOOR_DRESSING,
   furnishingOf,
-  hiddenIndoors,
   placeholderWarning,
   residentFacing,
   splitFurnishings,
@@ -161,6 +170,13 @@ const HEARTH = HUB_HEARTH;
 const ROOF_EAVE = 10;
 /** A chimney over the roof piece it stands on (layer 2), on the same footprint. */
 const CHIMNEY_LAYER = 3;
+/** A town wall's placeholder block without art: dark timber, as the pre-art town was drawn. */
+const TIMBER_PLACEHOLDER = {
+  top: BARROW_HEX.barrowDeep,
+  south: shade(BARROW_HEX.barrowDeep, 0.3),
+  east: shade(BARROW_HEX.barrowDeep, 0.5),
+  edge: { width: 2, color: BARROW_HEX.barrowBrown, alpha: 0.8 },
+};
 /*
  * The well, market stalls, carts, crates, fences and the new dressing stand at the fixed spots in
  * render/world/hubKeepOut.ts, every one clear of the walking ground (FS-KYPQ9 §A.3–§A.5).
@@ -600,7 +616,30 @@ export class HubScene extends Phaser.Scene {
     baked: boolean;
     parts: { setVisible(visible: boolean): unknown }[];
   }[] = [];
-  private insideRoof?: House;
+  /**
+   * The town's buildings as the player sees them from where they stand (ADR-0036, FS-9PN7X): each
+   * in both its looks, what covers the player, their silhouette and the indoor blackout. Made with
+   * the houses, once per visit.
+   */
+  private view?: BuildingView;
+  /** A building's own wall flames, lit only while the player is inside it (§D.6). */
+  private buildingLights: { house: House; source: LightSource; intensity: number }[] = [];
+  /** Walls of no building: drawn and faded as they always were (§E.4), hidden by footprint. */
+  private looseWalls: Scenery[] = [];
+  /**
+   * Roof, gable and chimney pieces, and a placeholder roof, as cover: the buildings' tops, which
+   * cover the player from outside like their walls (§E.1).
+   */
+  private roofCover: Cover[] = [];
+  /**
+   * The street: every scenery object with the footprint it stands on, hidden while the player is
+   * in a building it is not in (§C.1, the owner's addition: by footprint, not by screen overlap).
+   */
+  private outdoors: Scenery[] = [];
+  /** The street's lights (lamps, the brazier, the Spire's door, daylight east), dark from indoors. */
+  private outdoorLights: { source: LightSource; intensity: number; at: Point }[] = [];
+  /** The stash chest's plate and sigil: a function marker, shown by `markerShown` (FS-9PN7X §C.5). */
+  private stashMarks: { setVisible(visible: boolean): unknown }[] = [];
   /** Each house's room, shown only under a lifted roof (FS-B0H2D R20). */
   private interiors: Interior[] = [];
   /**
@@ -817,7 +856,15 @@ export class HubScene extends Phaser.Scene {
     this.leavingHub = false;
     this.enteringField = false;
     this.roofs = [];
-    this.insideRoof = undefined;
+    // the display list destroyed its buildings and Graphics; the next visit makes its own
+    this.view?.destroy();
+    this.view = undefined;
+    this.buildingLights = [];
+    this.looseWalls = [];
+    this.roofCover = [];
+    this.outdoors = [];
+    this.outdoorLights = [];
+    this.stashMarks = [];
     this.interiors = [];
     this.stashChest = undefined;
     // the gauntlet is the hub's and the run's; the menus the hub hands over to keep the browser's
@@ -831,8 +878,8 @@ export class HubScene extends Phaser.Scene {
     this.sendMovementIntent();
     this.easeTowardServerPositions(time, delta);
     this.offerConversation();
-    this.hideRoofOverhead();
-    this.hideWhoIsIndoors();
+    this.updateBuildings();
+    this.hideWhoIsElsewhere();
     this.showStashChest();
     this.carryTheTorch(time, delta);
   }
@@ -864,17 +911,42 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * The roof of the house the player stands in hides, and returns when they
-   * leave: the run's inside test, on world positions (FS-2325V §C.3). The room
-   * under it shows while it is off and hides when it is back (FS-B0H2D R20).
+   * The town's buildings for where the player stands, each frame (FS-9PN7X §A–§E): the run's
+   * inside test, on world positions (FS-2325V §C.3). Stepping in snaps that house to its interior
+   * look, roof lifted (§B.6), its room shown and lit (FS-B0H2D R20, R22), and everything outside
+   * it goes: hidden by footprint (§C.1) and dark (§D). Out on the street every house is closed
+   * again, and a house that covers the player shows them through it as a silhouette (§E).
    */
-  private hideRoofOverhead(): void {
+  private updateBuildings(): void {
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
-    const inside = self ? this.roofs.find((r) => insideHouse(self.pos, r.house)) : undefined;
-    if (inside?.house === this.insideRoof) return;
-    this.roofs.forEach((r) => r.parts.forEach((p) => p.setVisible(r !== inside)));
-    this.insideRoof = inside?.house;
-    this.showInteriors();
+    const body = self?.sprite.getByName("body") as Phaser.GameObjects.Sprite | null | undefined;
+    const figure: Figure | undefined =
+      self && body ? { body, bounds: body.getBounds(), depth: self.sprite.depth } : undefined;
+    this.view?.update(self?.pos, figure);
+  }
+
+  /** The house the player stands in, if any. */
+  private get playerBuilding(): House | undefined {
+    return this.view?.building;
+  }
+
+  /**
+   * What hides by footprint with the player's house (§C.1): the roofs, only ever seen from the
+   * street (their own house's is lifted, every other is outside it); walls of no house; and the
+   * street's scenery, so nothing tall just outside (a lamp, a barrel, a tree) stands in front of
+   * the room or above it.
+   */
+  private sceneryByFootprint(): Scenery[] {
+    return [...this.roofs.map(({ parts }) => ({ parts })), ...this.looseWalls, ...this.outdoors];
+  }
+
+  /**
+   * The street's lights while the player is indoors (§C.1, the owner's addition): a lamp whose
+   * footprint is outside their house goes dark, pool and halo. Back on the street, all are lit.
+   */
+  private showOutdoorLights(): void {
+    for (const light of this.outdoorLights)
+      light.source.intensity = this.view?.hidden(light.at) ? 0 : light.intensity;
   }
 
   /**
@@ -884,34 +956,43 @@ export class HubScene extends Phaser.Scene {
    */
   private showInteriors(): void {
     for (const { house, parts, lights } of this.interiors) {
-      const open = house === this.insideRoof;
+      const open = house.id === this.playerBuilding?.id;
       parts.forEach((p) => p.setVisible(open));
       lights.forEach((l) => (l.source.intensity = open ? l.intensity : 0));
     }
+    // the house's own wall flames too (FS-9PN7X §D.6): from outside the room is closed
+    for (const l of this.buildingLights)
+      l.source.intensity = l.house.id === this.playerBuilding?.id ? l.intensity : 0;
   }
 
   /**
-   * Whoever stands in a house whose roof is on is hidden, body and name plate (FS-B0H2D R20):
-   * NPCs and other players alike, read each frame from their eased world position. A function
-   * NPC's marker, plate and sigil, stays in sight so the street can find his shop (R21); only
-   * his body goes. The player is never hidden: the house they stand in is the one whose roof is
-   * off.
+   * The one hide rule (FS-9PN7X §C.1): whoever stands in a house the player is not in, or out of
+   * the house the player is in, is hidden, body, legs and name plate, read each frame from their
+   * eased world position. NPCs and other players alike, the party too (§C.4). The plates stand
+   * over the blackout, so they are hidden here, never left to it (§C.2). A function NPC's plate
+   * and sigil, and the stash chest's, stay over a closed house so the street can find the shop,
+   * but go with everything else while the player is in another house (§C.5). The player is never
+   * hidden (§C.3).
    */
-  private hideWhoIsIndoors(): void {
-    const houses = this.roofs.map((r) => r.house);
+  private hideWhoIsElsewhere(): void {
+    const hidden = (at: Point) => this.view?.hidden(at) ?? false;
+    const markerShown = (at: Point) => this.view?.markerShown(at) ?? true;
     for (const npc of this.npcs.values()) {
-      const shown = !hiddenIndoors(npc.pos, houses, this.insideRoof);
-      const marked = shown || isFunctionNPC(npc.state);
+      const shown = !hidden(npc.pos);
+      const marked = shown || (isFunctionNPC(npc.state) && markerShown(npc.pos));
       npc.sprite.setVisible(shown);
       npc.name.setVisible(marked);
       npc.sigil?.setVisible(marked);
     }
+    // the player's own house is picked by the same rule, so the rule never hides the player
     for (const view of this.views.values()) {
-      const shown = !hiddenIndoors(view.pos, houses, this.insideRoof);
+      const shown = !hidden(view.pos);
       view.sprite.setVisible(shown);
       view.name.setVisible(shown);
       view.legs.setVisible(shown);
     }
+    const stash = markerShown(HUB_STASH_CHEST.at);
+    this.stashMarks.forEach((m) => m.setVisible(stash));
   }
 
   /**
@@ -1115,7 +1196,8 @@ export class HubScene extends Phaser.Scene {
     ) => {
       const { sprite, light } = addProp(this, this.art, sheet, at, { index, ...query });
       if (tall) this.occluders.add([sprite]);
-      if (light) this.lightMap?.add(light);
+      this.outdoors.push({ parts: [sprite], at });
+      if (light) this.addOutdoorLight(light, at);
       return sprite;
     };
     const placeSpot = (s: PropSpot) =>
@@ -1237,9 +1319,9 @@ export class HubScene extends Phaser.Scene {
       const end = horizontal ? worldToScreen(x + length, y) : worldToScreen(x, y + length);
       const start = worldToScreen(x, y);
       const fence = this.add.graphics();
-      fence.setDepth(
-        worldDepth(horizontal ? x + length / 2 : x, horizontal ? y : y + length / 2),
-      );
+      const mid = { x: horizontal ? x + length / 2 : x, y: horizontal ? y : y + length / 2 };
+      fence.setDepth(worldDepth(mid.x, mid.y));
+      this.outdoors.push({ parts: [fence], at: mid });
       fence.fillStyle(BARROW_HEX.barrowDeep, 1);
 
       const postCount = Math.floor(length / 36);
@@ -1367,6 +1449,8 @@ export class HubScene extends Phaser.Scene {
     // the fire ring with a flickering ember flame.
     if (baked) {
       place("brazier", { x: HEARTH[0], y: HEARTH[1] }, 0, true);
+      // scenery drawn while the player is indoors takes the rule on the next frame
+      this.view?.invalidate();
       return;
     }
 
@@ -1383,6 +1467,7 @@ export class HubScene extends Phaser.Scene {
     // the flame stands in the ring, drawn just above it
     this.hearth = this.propAt(HEARTH[0], HEARTH[1], 1);
     this.time.addEvent({ delay: 90, loop: true, callback: () => this.flicker() });
+    this.view?.invalidate();
   }
 
   /**
@@ -1407,33 +1492,38 @@ export class HubScene extends Phaser.Scene {
       const past = Math.max(-spot.at.x, spot.at.x - HUB_WIDTH, -spot.at.y, spot.at.y - HUB_HEIGHT, 0);
       sprite.setTint(shade(BARROW_HEX.vellum, Math.min(EDGE_DUSK.most, past / EDGE_DUSK.over)));
       if (spot.tall) this.occluders.add([sprite]);
+      this.outdoors.push({ parts: [sprite], at: spot.at });
     }
 
     const facade = HUB_SPIRE_FACADE;
     if (this.art.has(facade.sheet)) {
       const { sprite, light } = addProp(this, this.art, facade.sheet, facade.at);
       sprite.setDepth(worldDepth(-HUB_WIDTH, 0));
-      if (light) this.lightMap?.add(light);
+      this.outdoors.push({ parts: [sprite], at: facade.at });
+      if (light) this.addOutdoorLight(light, facade.at);
     } else skip(facade.sheet);
 
     const day = worldToScreen(MEADOWS_DAYLIGHT.at.x, MEADOWS_DAYLIGHT.at.y);
-    this.lightMap?.add({
-      x: day.x,
-      y: day.y,
-      radius: MEADOWS_DAYLIGHT.radius,
-      color: BARROW_HEX.vellum,
-      intensity: MEADOWS_DAYLIGHT.intensity,
-      flicker: 0,
-      seed: 0,
-    });
+    this.addOutdoorLight(
+      {
+        x: day.x,
+        y: day.y,
+        radius: MEADOWS_DAYLIGHT.radius,
+        color: BARROW_HEX.vellum,
+        intensity: MEADOWS_DAYLIGHT.intensity,
+        flicker: 0,
+        seed: 0,
+      },
+      MEADOWS_DAYLIGHT.at,
+    );
   }
 
   /**
    * One chimney on each house's roof, with its smoke (FS-KYPQ9 §A.6). A chimney is part of the
    * drawn roof, not a ground prop, so it is the one placement that skips `blocked()` and the
    * keep-out rule: it stands on the roof at the house's `planChimney` spot, sorts with that
-   * roof's pieces, fades with them over the player and joins the roof's parts, so it hides
-   * whenever the roof does, its smoke with it. Without the `chimney` sheet there is neither
+   * roof's pieces, never fades and covers the player like them (FS-9PN7X §E.4), and joins the
+   * roof's parts, so it hides whenever the roof does, its smoke with it. Without the `chimney` sheet there is neither
    * chimney nor smoke; without `fx_smoke` the chimney stands and the runtime draws no smoke. A
    * house under the placeholder roof (no roof art) gets neither.
    */
@@ -1448,14 +1538,24 @@ export class HubScene extends Phaser.Scene {
       const spot = planChimney(roof.house, SCENERY_SEED);
       const { sprite } = addProp(this, this.art, "chimney", spot.at, { layer: CHIMNEY_LAYER });
       sprite.y -= spot.lift;
-      this.occluders.add([sprite]);
+      // part of the roof: it never fades, it covers the player (FS-9PN7X §E.4)
+      this.roofCover.push(coverOf(sprite));
       const parts: { setVisible(visible: boolean): unknown }[] = [sprite];
       if (this.fx)
         parts.push(new ChimneySmoke(this.fx, `chimney:${roof.house.id}`, spot.at, spot.top));
-      // a roof already hidden over the player keeps its new parts hidden too
-      if (roof.house === this.insideRoof) parts.forEach((p) => p.setVisible(false));
       roof.parts.push(...parts);
+      // the roof's new parts and cover take the player's house on the next frame
+      this.view?.invalidate();
     }
+  }
+
+  /**
+   * A street light at a footprint: its pool and halo go dark while the player is in a house it
+   * is not in (§C.1, the owner's addition), and come back on the street.
+   */
+  private addOutdoorLight(source: LightSource, at: Point): void {
+    this.outdoorLights.push({ source, intensity: source.intensity, at });
+    this.lightMap?.add(source, () => !this.view?.hidden(at));
   }
 
   /**
@@ -1469,6 +1569,7 @@ export class HubScene extends Phaser.Scene {
     const g = this.add.graphics();
     g.setPosition(s.x - x, s.y - footY);
     g.setDepth(worldDepth(x, footY, layer));
+    this.outdoors.push({ parts: [g], at: { x, y: footY } });
     return g;
   }
 
@@ -1782,49 +1883,93 @@ export class HubScene extends Phaser.Scene {
    * see come from one source — an invisible wall is worse than no wall. Fixed,
    * so this runs once rather than every tick. A furnishing is a wall too, but it
    * is drawn as furniture, never as wall pieces (FS-B0H2D R19).
+   *
+   * Each house is drawn in both its looks and shows its exterior (ADR-0036, FS-9PN7X §B): four
+   * full-height timber walls, a dark opening in its door gap (the hub has no doors to draw, §B.5),
+   * a roof and gables that never fade (§E.4); placeholder blocks without art (§B.7). A wall of no
+   * house is drawn and faded as it always was.
    */
   private renderStructures(all: WallState[]): void {
     if (this.structuresDrawn || all.length === 0) return;
 
-    // Baked wall pieces and corner posts (FS-2325V §C.2); without a manifest,
-    // placeholder upright blocks, one-tile pieces each sorted by footprint.
     const houses = housesFrom(all);
     const { building: walls, furnishings } = splitFurnishings(all);
-    const baked = addWalls(this, this.art, walls, worldSeed("hub"));
-    if (baked) {
-      this.occluders.add(baked.tall);
-      // a back wall's flame is in sight only while its house's roof is off
-      const houseOf = new Map(walls.map((w) => [w.entity_id, houses.find((h) => h.id === w.house_id)]));
-      baked.lights.forEach(({ source, wallId, underRoof }) => {
-        const house = houseOf.get(wallId);
-        this.lightMap?.add(source, underRoof && house ? () => this.insideRoof === house : undefined);
-      });
-    } else {
-      for (const wall of walls) {
-        addUprightBlock(this, wall.position.x, wall.position.y, wall.width, wall.height, {
-          top: BARROW_HEX.barrowDeep,
-          south: shade(BARROW_HEX.barrowDeep, 0.3),
-          east: shade(BARROW_HEX.barrowDeep, 0.5),
-          edge: { width: 2, color: BARROW_HEX.barrowBrown, alpha: 0.8 },
-        });
+    const seed = worldSeed("hub");
+    this.drawLooseWalls(walls.filter((w) => !w.house_id), seed);
+
+    const buildings = addBuildings(this, this.art, walls, seed, {
+      openings: doorGaps,
+      style: TIMBER_PLACEHOLDER,
+    });
+    for (const { house, lights } of buildings)
+      for (const { source } of lights) {
+        // a house's wall flames are its own: lit, halo and all, only from inside (§D.6)
+        this.buildingLights.push({ house, source, intensity: source.intensity });
+        this.lightMap?.add(source, () => this.playerBuilding?.id === house.id);
       }
-    }
 
     // Walls carry the building they belong to, so the footprints can be
     // reassembled here rather than being a second list to keep in step with the
     // server's. Flagstone goes under each, and a roof on top: baked slope and
-    // ridge pieces sorted by their own footprints (FS-2325V §C.3), or without art
-    // a placeholder roof on a plane lifted to the wall tops.
+    // ridge pieces sorted by their own footprints (FS-2325V §C.3) closed at both
+    // ends by gables (ADR-0036), or without art a placeholder roof on a plane
+    // lifted to the wall tops. Either covers the player from outside (§E.1).
     this.groundLayer?.paint(houses);
     for (const house of houses) {
       const roof = addRoof(this, this.art, house);
-      if (roof) this.occluders.add(roof);
-      this.roofs.push({ house, baked: !!roof, parts: roof ?? [this.placeholderRoof(house)] });
+      const own = walls.find((w) => w.house_id === house.id);
+      const gables = own ? addGables(this, this.art, house, Math.min(own.width, own.height)) : [];
+      const top = [...(roof ?? []), ...gables];
+      this.roofCover.push(...top.map(coverOf));
+      if (roof) {
+        this.roofs.push({ house, baked: true, parts: top });
+        continue;
+      }
+      const slab = this.placeholderRoof(house);
+      const eave = { x: house.x - ROOF_EAVE, y: house.y - ROOF_EAVE, width: house.width + ROOF_EAVE * 2, height: house.height + ROOF_EAVE * 2 };
+      this.roofCover.push(slabCover(slab, eave, WALL_HEIGHT));
+      this.roofs.push({ house, baked: false, parts: [slab, ...gables] });
     }
     this.furnish(houses, furnishings);
+    // the dark outside whichever house the player stands in, as tall as the walls drawn (FS-9PN7X §D.2)
+    const baked = this.art.available && this.art.has("wall_back_plain_x");
+    const wallTop = baked ? BAKE.WALL_BACK * BAKE.VPX : WALL_HEIGHT;
+    this.view = new BuildingView(this, {
+      blackout: { wallTop: () => wallTop, reach: (HUB_WIDTH + HUB_HEIGHT) * 2 },
+      cover: () => this.roofCover,
+      scenery: () => this.sceneryByFootprint(),
+      // the rooms under the roofs, their lights and the street's lamps follow the player's house
+      onShow: () => {
+        this.showInteriors();
+        this.showOutdoorLights();
+      },
+    });
+    for (const building of buildings) this.view.set(building);
+    // what the player's house changes, should they stand in one already
+    this.updateBuildings();
 
     // One flag covers both: the walls and their roofs are drawn together.
     this.structuresDrawn = true;
+  }
+
+  /**
+   * Walls belonging to no house, as baked pieces or placeholder blocks: they keep the occluder
+   * fade (FS-9PN7X §E.4) and hide by footprint while the player is indoors (§C.1).
+   */
+  private drawLooseWalls(walls: WallState[], seed: number): void {
+    if (walls.length === 0) return;
+    const at = (w: WallState) => ({ x: w.position.x + w.width / 2, y: w.position.y + w.height / 2 });
+    const baked = addWalls(this, this.art, walls, seed);
+    if (baked) {
+      this.occluders.add(baked.tall);
+      baked.lights.forEach(({ source }) => this.lightMap?.add(source));
+      for (const w of walls) this.looseWalls.push({ parts: baked.byWall.get(w.entity_id) ?? [], at: at(w) });
+      return;
+    }
+    for (const w of walls) {
+      const parts = addUprightBlock(this, w.position.x, w.position.y, w.width, w.height, TIMBER_PLACEHOLDER);
+      this.looseWalls.push({ parts, at: at(w) });
+    }
   }
 
   /**
@@ -1850,7 +1995,7 @@ export class HubScene extends Phaser.Scene {
       if (light) {
         room.lights.push({ source: light, intensity: light.intensity });
         // the flame's halo, like a back wall's flame, is in sight only under a lifted roof
-        this.lightMap?.add(light, () => this.insideRoof === house);
+        this.lightMap?.add(light, () => this.playerBuilding?.id === house.id);
       }
     };
 
@@ -1936,7 +2081,8 @@ export class HubScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(MARKER_DEPTH.name);
-    this.drawSigil().setPosition(name.x, name.y - name.height / 2 - SIGIL_GAP);
+    const sigil = this.drawSigil().setPosition(name.x, name.y - name.height / 2 - SIGIL_GAP);
+    this.stashMarks = [name, sigil];
 
     return [plane.root, sprite];
   }

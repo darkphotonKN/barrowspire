@@ -9,15 +9,25 @@
 
 import type Phaser from "phaser";
 import { artSprite, showArt } from "@/render/art/phaser";
-import type { ArtLibrary } from "@/render/art/library";
+import type { ArtLibrary, ArtLogger } from "@/render/art/library";
 import {
+  WALL_HEIGHT,
+  WORLD_PX_PER_TILE,
+  addUprightBlock,
+  addWorldPlane,
+  boxFaces,
+  projectRect,
   projectedBounds,
+  raise,
+  splitAlongLength,
   worldDepth,
   worldToScreen,
+  type BlockStyle,
   type Point,
   type Rect,
 } from "@/render/iso";
 import type { WallState } from "@/types/gameState";
+import { palette, shade } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 import {
   sourceFromManifest,
@@ -33,12 +43,27 @@ import {
   type GroundPiece,
   type WorldKind,
 } from "./ground";
+import { BAKE } from "./bake";
+import {
+  darkOpening,
+  planBuildings,
+  planCap,
+  type DarkOpening,
+  type DoorGap,
+  type WallLook,
+} from "./buildingLooks";
 import type { House } from "./houses";
-import { FADED_ALPHA, occludes, stepAlpha } from "./occlusion";
+import { FADED_ALPHA, occludes, stepAlpha, type Sorted } from "./occlusion";
 import { planPerimeter } from "./perimeter";
-import { planRoof } from "./roofs";
+import { planGables, planRoof } from "./roofs";
 import type { DressingPiece } from "./runDressing";
-import { TIMBER_WALLS, planWalls, trimCrop, type WallSheets } from "./walls";
+import {
+  TIMBER_WALLS,
+  planWalls,
+  trimCrop,
+  type WallPiece,
+  type WallSheets,
+} from "./walls";
 
 /** Below every world object: the ground is flat and everything stands on it. */
 export const GROUND_DEPTH = -1;
@@ -310,19 +335,7 @@ export function addWalls(
 
   for (const p of pieces) {
     const s = worldToScreen(p.at.x, p.at.y);
-    const sprite = artSprite(scene, art, s.x, s.y, p.sheet, {
-      animation: "variants",
-      index: p.index,
-    });
-    sprite.setDepth(worldDepth(p.depthAt.x, p.depthAt.y));
-    const sheet = art.sheet(p.sheet);
-    if (p.keep < 1 && sheet) {
-      const crop = trimCrop(p.axis, p.keep, {
-        width: sheet.frameWidth,
-        anchorX: sheet.anchor.x,
-      });
-      sprite.setCrop(crop.x, 0, crop.width, sheet.frameHeight);
-    }
+    const sprite = pieceSprite(scene, art, p);
     keep(p.wallId, sprite);
     if (p.height === "back") built.tall.push(sprite);
     const light = lightOf(
@@ -406,6 +419,363 @@ export function addRoof(
     });
     return sprite.setDepth(worldDepth(p.at.x, p.at.y, 2));
   });
+}
+
+/**
+ * The timber gables closing a roof's two ends (FS-9PN7X §B.3, ADR-0036), each piece on its foot
+ * lifted to the roof's line and sorted behind the end wall it rises from, which hides its foot.
+ * They are the roof's: shown and hidden with it, and never faded (§E.4). None without a manifest
+ * or the gable sheets: the roof then stands open at its ends, as it did before them.
+ */
+export function addGables(
+  scene: Phaser.Scene,
+  art: ArtLibrary,
+  house: House,
+  wallThickness: number,
+): Phaser.GameObjects.Sprite[] {
+  const pieces = planGables(house, wallThickness);
+  if (pieces.length === 0 || !art.has(pieces[0].sheet)) return [];
+  return pieces.map((p) => {
+    const s = worldToScreen(p.at.x, p.at.y);
+    const sprite = artSprite(scene, art, s.x, s.y - p.lift, p.sheet, { animation: p.animation });
+    return sprite.setDepth(worldDepth(p.depthAt.x, p.depthAt.y));
+  });
+}
+
+/** One drawn piece of a building: a baked sprite, or a placeholder block or slab. */
+export type BuildingPart =
+  | Phaser.GameObjects.Sprite
+  | Phaser.GameObjects.Graphics
+  | Phaser.GameObjects.Container;
+
+/**
+ * A drawn part as cover (FS-9PN7X §E.1): the screen bounds and depth it covers a player by, and
+ * the part itself, whose pixels the silhouette shows through (§E.3).
+ */
+export interface Cover extends Sorted {
+  part: BuildingPart;
+}
+
+/** Parts as drawn, with what each covers a player by. */
+export interface BuiltParts {
+  parts: BuildingPart[];
+  cover: Cover[];
+}
+
+/** One building drawn in both its looks (ADR-0036, FS-9PN7X §B): a scene shows one at a time. */
+export interface BuiltBuilding {
+  house: House;
+  /** Standing in both looks: the north and west walls and the posts already full height. */
+  shared: BuildingPart[];
+  /** The interior look only: the cut-away fronts and their low posts. */
+  interior: BuildingPart[];
+  /**
+   * The building exterior only: the full-height fronts and their posts, the stone cap of a type
+   * that has one, and the dark openings in its door gaps when asked for. The roof is the
+   * scene's, as it always was (`addRoof`).
+   */
+  exterior: BuildingPart[];
+  /** Every part drawn from outside (shared and exterior), as what covers the player (§E.1). */
+  cover: Cover[];
+  /** Lights the interior look's walls declare, as `addWalls` hands them back. */
+  lights: { source: LightSource; wallId: string; underRoof: boolean }[];
+}
+
+export interface BuildingOptions {
+  /** The building type's sheets (FS-9PN7X §B.1); timber unless named. */
+  sheets?: WallSheets;
+  /**
+   * Where the walls leave an entrance that shows a dark opening from outside (§B.5): the hub's
+   * town doors are gaps, so it passes `doorGaps`. None by default: where every gap holds a door (a
+   * run's rooms), an open door's opening is `addDarkOpening`'s and a shut one is a door.
+   */
+  openings?: (walls: readonly WallState[]) => readonly DoorGap[];
+  /** Placeholder block colours; stone by default. */
+  style?: BlockStyle;
+  /** Where a missing sheet is reported, once per sheet per art library. */
+  logger?: ArtLogger;
+}
+
+/** The placeholder block a wall falls back to: stone, as the run scene's pre-art walls. */
+export const PLACEHOLDER_STONE: BlockStyle = {
+  top: palette.wall,
+  south: palette.wallShade,
+  east: shade(palette.wall, 0.5),
+  edge: { width: 1, color: palette.wallLight, alpha: 0.6 },
+};
+
+/** The dark opening's placeholder: flat darkness, every face one ink (§B.7). */
+const PLACEHOLDER_DARK: BlockStyle = {
+  top: palette.inkDeep,
+  south: palette.inkDeep,
+  east: palette.inkDeep,
+};
+
+/** Sheets already reported missing, per art library: one warning per sheet (FS-9PN7X §B.7). */
+const reported = new WeakMap<ArtLibrary, Set<string>>();
+
+function reportMissing(art: ArtLibrary, sheet: string, logger: ArtLogger): void {
+  // no manifest at all is reported once by the loader
+  if (!art.available) return;
+  const seen = reported.get(art) ?? new Set<string>();
+  reported.set(art, seen);
+  if (seen.has(sheet)) return;
+  seen.add(sheet);
+  logger.warn(`art: no "${sheet}"; that building part is drawn as a placeholder`, { sheet });
+}
+
+/** The screen rect a set of screen points spans. */
+function spanOf(points: readonly Point[]): Rect {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+}
+
+/** How tall a placeholder side stands: as the baked pieces beside it, or the pre-art wall. */
+function placeholderHeight(art: ArtLibrary, sheets: WallSheets, full: boolean): number {
+  const baked = art.has(`${sheets.prefix}wall_${full ? "back" : "front"}_plain_x`);
+  if (!baked) return WALL_HEIGHT;
+  return (full ? BAKE.WALL_BACK : BAKE.WALL_FRONT) * BAKE.VPX;
+}
+
+/** An upright placeholder block on a world rect, with what each of its pieces covers. */
+function placeholderBlock(
+  scene: Phaser.Scene,
+  rect: Rect,
+  style: BlockStyle,
+  height: number,
+): BuiltParts {
+  const { x, y, width, height: depth } = rect;
+  const parts = addUprightBlock(scene, x, y, width, depth, style, height);
+  // addUprightBlock cuts the rect exactly so, one graphics object per piece
+  const pieces = splitAlongLength(x, y, width, depth, WORLD_PX_PER_TILE);
+  const cover = parts.map((g, i) => {
+    const p = pieces[i];
+    const { top, south, east } = boxFaces(p.x, p.y, p.width, p.height, height);
+    return { bounds: spanOf([...top, ...south, ...east]), depth: g.depth, part: g };
+  });
+  return { parts, cover };
+}
+
+/**
+ * A flat slab on a plane lifted `lift` screen px over the ground, as cover (FS-9PN7X §E.1): the
+ * screen span of its world `rect` raised so, and the depth `part` sorts at. A placeholder roof
+ * or cap covers the player as the baked pieces do.
+ */
+export function slabCover(part: BuildingPart, rect: Rect, lift: number): Cover {
+  const { x, y, width, height } = rect;
+  return { bounds: spanOf(raise(projectRect(x, y, width, height), lift)), depth: part.depth, part };
+}
+
+/** A sprite as cover: its drawn bounds, taken once (building parts never move), and its depth. */
+export const coverOf = (sprite: Phaser.GameObjects.Sprite): Cover => {
+  const b = sprite.getBounds();
+  return {
+    bounds: { x: b.x, y: b.y, width: b.width, height: b.height },
+    depth: sprite.depth,
+    part: sprite,
+  };
+};
+
+/** A wall piece as its baked sprite, trimmed and sorted as `addWalls` draws it. */
+function pieceSprite(
+  scene: Phaser.Scene,
+  art: ArtLibrary,
+  p: WallPiece,
+): Phaser.GameObjects.Sprite {
+  const s = worldToScreen(p.at.x, p.at.y);
+  const sprite = artSprite(scene, art, s.x, s.y, p.sheet, {
+    animation: "variants",
+    index: p.index,
+  });
+  sprite.setDepth(worldDepth(p.depthAt.x, p.depthAt.y));
+  const sheet = art.sheet(p.sheet);
+  if (p.keep < 1 && sheet) {
+    const crop = trimCrop(p.axis, p.keep, {
+      width: sheet.frameWidth,
+      anchorX: sheet.anchor.x,
+    });
+    sprite.setCrop(crop.x, 0, crop.width, sheet.frameHeight);
+  }
+  return sprite;
+}
+
+/**
+ * Every building the walls describe, drawn in both looks (FS-9PN7X §B), showing its exterior: the
+ * player starts outside every building. Walls with no house are not drawn here (`addWalls`).
+ *
+ * Never null: without a manifest or a sheet, a wall falls back to a placeholder block as tall as
+ * the pieces it stands beside, the cap to a flat slab at the wall top, the dark opening to a flat
+ * `inkDeep` quad, so a building always closes (§B.7). No part joins `Occluders` (§E.4): buildings
+ * take the silhouette, not the fade.
+ */
+export function addBuildings(
+  scene: Phaser.Scene,
+  art: ArtLibrary,
+  walls: readonly WallState[],
+  seed: number,
+  options: BuildingOptions = {},
+): BuiltBuilding[] {
+  const sheets = options.sheets ?? TIMBER_WALLS;
+  const style = options.style ?? PLACEHOLDER_STONE;
+  const logger = options.logger ?? console;
+  const byId = new Map(walls.map((w) => [w.entity_id, w]));
+  const gaps = options.openings?.(walls) ?? [];
+
+  return planBuildings(walls, seed, sheets).map((plan) => {
+    const built: BuiltBuilding = {
+      house: plan.house,
+      shared: [],
+      interior: [],
+      exterior: [],
+      cover: [],
+      lights: [],
+    };
+    const draw = (look: WallLook, full: boolean, lit: boolean): BuiltParts => {
+      const out: BuiltParts = { parts: [], cover: [] };
+      const byWall = new Map<string, WallPiece[]>();
+      for (const p of look.pieces) byWall.set(p.wallId, [...(byWall.get(p.wallId) ?? []), p]);
+      for (const [wallId, pieces] of byWall) {
+        const missing = pieces.filter((p) => !art.has(p.sheet)).map((p) => p.sheet);
+        if (missing.length > 0) {
+          // one block for the whole wall: a side is never half baked, half placeholder
+          for (const sheet of new Set(missing)) reportMissing(art, sheet, logger);
+          const w = byId.get(wallId)!;
+          const block = placeholderBlock(
+            scene,
+            { x: w.position.x, y: w.position.y, width: w.width, height: w.height },
+            style,
+            placeholderHeight(art, sheets, full),
+          );
+          out.parts.push(...block.parts);
+          out.cover.push(...block.cover);
+          continue;
+        }
+        for (const p of pieces) {
+          const sprite = pieceSprite(scene, art, p);
+          out.parts.push(sprite);
+          out.cover.push(coverOf(sprite));
+          const anchor = worldToScreen(p.at.x, p.at.y);
+          const light =
+            lit && lightOf(art, p.sheet, anchor, tileHash(Math.round(p.at.x), Math.round(p.at.y), seed));
+          if (light)
+            built.lights.push({ source: light, wallId, underRoof: p.height === "back" });
+        }
+      }
+      // a missing post is left out: the placeholder blocks overlap at the corners anyway
+      for (const post of look.posts) {
+        if (!art.has(post.sheet)) {
+          reportMissing(art, post.sheet, logger);
+          continue;
+        }
+        const s = worldToScreen(post.at.x, post.at.y);
+        const sprite = artSprite(scene, art, s.x, s.y, post.sheet);
+        sprite.setDepth(worldDepth(post.at.x, post.at.y, 1));
+        out.parts.push(sprite);
+        out.cover.push(coverOf(sprite));
+      }
+      return out;
+    };
+
+    const shared = draw(plan.shared, true, true);
+    const interior = draw(plan.interior, false, true);
+    const exterior = draw(plan.exterior, true, false);
+    if (sheets.cap) {
+      const cap = addCap(scene, art, plan.house, sheets, seed, logger);
+      exterior.parts.push(...cap.parts);
+      exterior.cover.push(...cap.cover);
+    }
+    for (const gap of gaps.filter((g) => g.houseId === plan.house.id)) {
+      const opening = addDarkOpening(scene, art, darkOpening(gap, sheets), sheets, logger);
+      exterior.parts.push(...opening.parts);
+      exterior.cover.push(...opening.cover);
+    }
+
+    built.shared = shared.parts;
+    built.interior = interior.parts;
+    built.exterior = exterior.parts;
+    built.cover = [...shared.cover, ...exterior.cover];
+    showLook(built, "exterior");
+    return built;
+  });
+}
+
+/** Shows one of a building's looks and hides the other; the shared walls stand in both. */
+export function showLook(building: BuiltBuilding, look: "exterior" | "interior"): void {
+  for (const part of building.shared) part.setVisible(true);
+  for (const part of building.exterior) part.setVisible(look === "exterior");
+  for (const part of building.interior) part.setVisible(look === "interior");
+}
+
+/**
+ * A masonry building's stone cap (FS-9PN7X §B.3): baked slabs sorted by their footprints like
+ * roof pieces, or one flat placeholder slab at the wall top over the room (like the scenes'
+ * `placeholderRoof`).
+ */
+function addCap(
+  scene: Phaser.Scene,
+  art: ArtLibrary,
+  house: House,
+  sheets: WallSheets,
+  seed: number,
+  logger: ArtLogger,
+): BuiltParts {
+  const pieces = planCap(house, sheets, seed);
+  const out: BuiltParts = { parts: [], cover: [] };
+  if (pieces.length === 0) return out;
+  if (art.has(pieces[0].sheet)) {
+    for (const p of pieces) {
+      const s = worldToScreen(p.at.x, p.at.y);
+      const sprite = artSprite(scene, art, s.x, s.y - p.lift, p.sheet, {
+        animation: "variants",
+        index: p.index,
+      });
+      sprite.setDepth(worldDepth(p.at.x, p.at.y, 2));
+      out.parts.push(sprite);
+      out.cover.push(coverOf(sprite));
+    }
+    return out;
+  }
+  reportMissing(art, pieces[0].sheet, logger);
+  const lift = placeholderHeight(art, sheets, true);
+  const plane = addWorldPlane(scene, lift);
+  const { x, y, width, height } = house;
+  plane.root.setDepth(worldDepth(x + width / 2, y + height / 2, 2));
+  const slab = scene.add.graphics();
+  slab.fillStyle(palette.wallShade, 1);
+  slab.fillRect(x, y, width, height);
+  slab.lineStyle(2, palette.wall, 1);
+  slab.strokeRect(x, y, width, height);
+  plane.surface.add(slab);
+  out.parts.push(plane.root);
+  out.cover.push(slabCover(plane.root, house, lift));
+  return out;
+}
+
+/**
+ * An entrance seen from outside (FS-9PN7X §B.5): the type's dark opening, sorted like the door it
+ * stands for, or without its sheet a flat `inkDeep` quad over the opening, as tall as the type's
+ * walls stand (§B.7). A scene shows it in a town door gap (through `addBuildings`) or in place of
+ * an open run door's frame.
+ */
+export function addDarkOpening(
+  scene: Phaser.Scene,
+  art: ArtLibrary,
+  opening: DarkOpening,
+  sheets: WallSheets,
+  logger: ArtLogger = console,
+): BuiltParts {
+  if (art.has(opening.sheet)) {
+    const s = worldToScreen(opening.at.x, opening.at.y);
+    const sprite = artSprite(scene, art, s.x, s.y, opening.sheet);
+    sprite.setDepth(worldDepth(opening.depthAt.x, opening.depthAt.y, 1));
+    return { parts: [sprite], cover: [coverOf(sprite)] };
+  }
+  reportMissing(art, opening.sheet, logger);
+  const full = placeholderHeight(art, sheets, true);
+  return placeholderBlock(scene, opening.rect, PLACEHOLDER_DARK, full);
 }
 
 /**

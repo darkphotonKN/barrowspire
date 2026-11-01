@@ -24,7 +24,10 @@ export type HouseSide = "north" | "south" | "east" | "west";
 export interface WallPiece {
   /** The server wall this piece is part of. */
   wallId: string;
-  /** Manifest sheet: `{prefix}wall_{back|front}_{kind}_{x|y}`, e.g. `wall_back_torch_x`. */
+  /**
+   * Manifest sheet: `{prefix}wall_{back|front|exterior}_{kind}_{x|y}`, e.g. `wall_back_torch_x`.
+   * An exterior piece (FS-9PN7X §B.2) is full height, so its `height` is `back`.
+   */
   sheet: string;
   height: WallHeight;
   /** Variant frame; the art library wraps it. */
@@ -51,7 +54,8 @@ const T = WORLD_PX_PER_TILE;
 /** A wall shorter than this remainder of a tile is treated as ending on a tile. */
 const EPSILON = 1e-6;
 
-const axisOf = (w: WallState): WallAxis => (w.width >= w.height ? "x" : "y");
+/** A wall runs along its longer side. */
+export const axisOf = (w: { width: number; height: number }): WallAxis => (w.width >= w.height ? "x" : "y");
 
 /** Which side of its house a wall stands on; undefined for a wall with no house. */
 export function sideOf(
@@ -84,6 +88,15 @@ export interface WallSheets {
   back: VariantTable;
   /** Kinds a cut-away piece may be. */
   front: VariantTable;
+  /**
+   * Kinds a building exterior's south or east piece may be (FS-9PN7X §B.2, §F.2): the outward
+   * face, full height, so no interior dressing and no light.
+   */
+  outward: VariantTable;
+  /** The dark opening's sheet stem (FS-9PN7X §F.4): `{opening}_{x|y}`. */
+  opening: string;
+  /** The stone cap laid over the building (FS-9PN7X §F.3); absent, the building has a roof. */
+  cap?: string;
 }
 
 const KINDS: VariantTable = [
@@ -98,6 +111,13 @@ export const TIMBER_WALLS: WallSheets = {
   prefix: "",
   back: KINDS,
   front: KINDS,
+  // the outward face: a shuttered or dark window, never a torch (FS-9PN7X §F.2)
+  outward: [
+    [62, "plain"],
+    [86, "brace"],
+    [100, "window"],
+  ],
+  opening: "door_dark",
 };
 
 /**
@@ -117,6 +137,12 @@ export const MASONRY_WALLS: WallSheets = {
     [70, "plain"],
     [100, "pillar"],
   ],
+  outward: [
+    [70, "plain"],
+    [100, "pillar"],
+  ],
+  opening: "tower_door_dark",
+  cap: "tower_cap",
 };
 
 /** Cuts one wall rect into pieces along its centreline, trimmed at the far end if it must be. */
@@ -126,7 +152,29 @@ export function cutWall(
   seed: number,
   sheets: WallSheets = TIMBER_WALLS,
 ): WallPiece[] {
-  const kinds = sheets[height];
+  return cut(w, height, `${sheets.prefix}wall_${height}`, sheets[height], seed);
+}
+
+/**
+ * A building exterior's south or east wall (FS-9PN7X §B.2): the same pieces `cutWall` gives its
+ * cut-away, on exactly the same footprint (centreline, span, trim, sort corner), but full height
+ * in the type's outward face.
+ */
+export function cutExterior(
+  w: WallState,
+  seed: number,
+  sheets: WallSheets = TIMBER_WALLS,
+): WallPiece[] {
+  return cut(w, "back", `${sheets.prefix}wall_exterior`, sheets.outward, seed);
+}
+
+function cut(
+  w: WallState,
+  height: WallHeight,
+  stem: string,
+  kinds: VariantTable,
+  seed: number,
+): WallPiece[] {
   const axis = axisOf(w);
   const { x, y } = w.position;
   const length = axis === "x" ? w.width : w.height;
@@ -148,7 +196,7 @@ export function cutWall(
       keep < 1 ? kinds[0][1] : kinds.find(([cut]) => h % 100 < cut)![1];
     pieces.push({
       wallId: w.entity_id,
-      sheet: `${sheets.prefix}wall_${height}_${kind}_${axis}`,
+      sheet: `${stem}_${kind}_${axis}`,
       height,
       index: h >>> 8,
       axis,

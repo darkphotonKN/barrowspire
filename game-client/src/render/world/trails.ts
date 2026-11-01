@@ -97,7 +97,10 @@ function paintGlow(g: TrailBrush, trail: TrailState, fade: number): void {
 }
 
 export class TrailSet<B extends TrailBrush & { destroy(): void }> {
-  private readonly drawn = new Map<string, { bed: B; glow: B }>();
+  private readonly drawn = new Map<
+    string,
+    { bed: B; glow: B; trail: TrailState }
+  >();
 
   constructor(private readonly stage: TrailStage<B>) {}
 
@@ -117,14 +120,25 @@ export class TrailSet<B extends TrailBrush & { destroy(): void }> {
         marks = {
           bed: this.stage.bed(trail.entity_id),
           glow: this.stage.glow(trail.entity_id),
+          trail,
         };
         this.drawn.set(trail.entity_id, marks);
       }
+      marks.trail = trail;
       const fade = trailFade(trail.remaining);
       paintBed(marks.bed, trail, fade);
       if (this.stage.glowShown?.(trail) === false) marks.glow.clear();
       else paintGlow(marks.glow, trail, fade);
     }
+  }
+
+  /** Each trail's bed and glow, with the trail as last synced: what the hide rule reads (FS-9PN7X §C.2). */
+  placed(): Iterable<{
+    readonly bed: B;
+    readonly glow: B;
+    readonly trail: TrailState;
+  }> {
+    return this.drawn.values();
   }
 
   /** Destroy every trail and forget it: the floor it burnt on is gone. */

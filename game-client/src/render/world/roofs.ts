@@ -77,6 +77,89 @@ export function planRoof(house: House): RoofPiece[] {
 }
 
 /**
+ * How far above a gable piece's origin (its foot) its top edge starts, in screen px: one back
+ * wall's height (`tools/bake/page/models/building.js#timberGable`). Lifted to meet the roof, the
+ * piece's foot hangs that far below the roof's line, in the end wall's plane, hidden by the wall
+ * in front of it, so a piece closes the gable from the walls' tops up to the roof whichever row it
+ * stands under. Its foot reaches the walls' tops while a roof has at most six rows (a house's
+ * shorter side up to 460 world px; the run's large building, 400, is the deepest today).
+ */
+export const GABLE_FOOT = BAKE.WALL_BACK * BAKE.VPX;
+
+export interface GablePiece {
+  /** `roof_gable_{x|y}`, named for the ridge it closes the ends of, as `roof_ridge`'s animations. */
+  sheet: "roof_gable_x" | "roof_gable_y";
+  /** The roof half it closes, by that half's downhill side: n/s on an x ridge, e/w on a y ridge. */
+  animation: string;
+  /** World position of its footprint centre, on the end wall's centreline. */
+  at: Point;
+  /**
+   * Screen px above the ground the piece is drawn (its origin, at its foot). Its top edge's low
+   * (eave-side) end stands GABLE_FOOT higher, on the roof's line under the slope over it.
+   */
+  lift: number;
+  /**
+   * What it sorts by: a hair behind every end wall piece it rises from (which hides its foot) and
+   * every roof piece over it (which hides its top edge). Nothing behind it shows above the walls.
+   */
+  depthAt: Point;
+}
+
+/**
+ * The timber gables that close a roof's two ends (FS-9PN7X, ADR-0036): the triangle between an end
+ * wall's top and the roof's slopes, so a closed block never shows its inside under the roof.
+ *
+ * Each half of each end is a run of one-tile pieces on the end wall's centreline, laid outward
+ * from the ridge in step with `planRoof`'s rows, so a piece's top edge climbs one rise across its
+ * tile under that row's slope piece, from that row's lift. The last piece is pulled in to end
+ * on the side wall's centreline, where the corner post stands, so none pokes out under the eave.
+ * `wallThickness` is the server's (20 world px for the hub and runs alike).
+ */
+export function planGables(house: House, wallThickness: number): GablePiece[] {
+  const alongX = house.width >= house.height;
+  const across = alongX ? house.height : house.width;
+  // planRoof's rows: the roof line falls one rise a tile from the ridge to the eave
+  const rows = Math.ceil((across / 2 + ROOF_EAVE) / T - 1e-6);
+  const base = BAKE.WALL_BACK * BAKE.VPX;
+  const rise = BAKE.ROOF_RISE * BAKE.VPX;
+  const midAcross = alongX
+    ? house.y + house.height / 2
+    : house.x + house.width / 2;
+  const half = wallThickness / 2;
+  // from the ridge to the side walls' centreline
+  const reach = across / 2 - half;
+  const count = Math.max(1, Math.ceil(reach / T - 1e-6));
+  const ends = alongX
+    ? [house.x + half, house.x + house.width - half]
+    : [house.y + half, house.y + house.height - half];
+  const [downhillFar, downhillNear] = alongX ? ["s", "n"] : ["e", "w"];
+  const point = (along: number, acrossAt: number): Point =>
+    alongX ? { x: along, y: acrossAt } : { x: acrossAt, y: along };
+
+  const pieces: GablePiece[] = [];
+  for (const end of ends)
+    for (const [animation, sign] of [
+      [downhillFar, 1],
+      [downhillNear, -1],
+    ] as const)
+      for (let k = 0; k < count; k++) {
+        // the tile's edge nearer the ridge; the last tile ends on the side wall's centreline
+        const inner = Math.min(k * T, Math.max(0, reach - T));
+        const centre = midAcross + sign * (inner + T / 2);
+        pieces.push({
+          sheet: alongX ? "roof_gable_x" : "roof_gable_y",
+          animation,
+          at: point(end, centre),
+          lift: base + (rows - (inner + T) / T) * rise - GABLE_FOOT,
+          // the end wall's back face, a tile before the piece's low corner: behind the wall
+          // pieces under it and the roof pieces over it, which all sort from there on
+          depthAt: point(end - half, centre - T / 2 - T),
+        });
+      }
+  return pieces;
+}
+
+/**
  * The chimney's pot rim above the roof it stands on, in tile edges: `tools/bake/page/models/
  * town.js#chimney` (stack, cap and a clay pot to 1.70). Where its smoke leaves.
  */
