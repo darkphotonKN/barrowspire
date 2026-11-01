@@ -15,6 +15,7 @@ import { isChatLine, isChatNotice, useChatStore } from "@/stores/chatStore";
 import {
   isPartyInvite,
   isPartyNotice,
+  isPartyReadyCheck,
   isPartyUpdate,
   usePartyStore,
 } from "@/stores/partyStore";
@@ -294,6 +295,12 @@ export class SocketManager {
       // A code and maybe a name; the words are the client's, shown as a system line. FS-R82NV R31, R36.
       if (!isPartyNotice(data.payload)) return;
       usePartyStore.getState().receiveNotice(data.payload);
+      this.listeners.get(data.action)?.(data.payload);
+    } else if (data.action === "party_ready_check") {
+      // The ready-check popup reads the store; the hub's one listener still hears it, to give the
+      // door's Enter as a party back. FS-BJNYC R21, R23.
+      if (!isPartyReadyCheck(data.payload)) return;
+      usePartyStore.getState().receiveReadyCheck(data.payload);
       this.listeners.get(data.action)?.(data.payload);
     } else if (data.action && this.listeners.has(data.action)) {
       // Handle action-based messages

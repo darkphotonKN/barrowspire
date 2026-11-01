@@ -352,7 +352,7 @@ describe("SocketManager party (FS-R82NV §Requirements R21, R31: the socket feed
     useAuthStore.setState({ memberInfo: { id: ME } });
   });
   afterEach(() => {
-    usePartyStore.setState({ party: null, invites: [] });
+    usePartyStore.setState({ party: null, invites: [], readyCheck: null });
     useAuthStore.setState({ memberInfo: null });
   });
 
@@ -385,6 +385,68 @@ describe("SocketManager party (FS-R82NV §Requirements R21, R31: the socket feed
       code: "already_in_party",
       text: "Wren walks with another party.",
     });
+  });
+
+  it("puts a party_ready_check in the party store, and still tells the scene's one listener (FS-BJNYC R23)", () => {
+    const { manager, old } = setup();
+    const heard = vi.fn();
+    manager.on("party_ready_check", heard);
+    const check = {
+      check_id: "chk-1",
+      leader_id: ME,
+      expires_in_ms: 30_000,
+      members: [{ player_id: ME, name: "Aldric", state: "accepted" }],
+      outcome: "open",
+    };
+
+    old.receive({ action: "party_ready_check", payload: check });
+
+    expect(usePartyStore.getState().readyCheck).toMatchObject({ check_id: "chk-1", answer: null });
+    expect(heard).toHaveBeenCalledWith(check);
+
+    old.receive({
+      action: "party_ready_check",
+      payload: { ...check, outcome: "cancelled", reason: "declined", names: ["Wren"] },
+    });
+
+    expect(usePartyStore.getState().readyCheck).toBeNull();
+    expect(useChatStore.getState().lines.at(-1)).toMatchObject({
+      kind: "system",
+      text: "Wren declined. The party stays.",
+    });
+  });
+
+  it("keeps a malformed party_ready_check out of the store and from the scene", () => {
+    const { manager, old } = setup();
+    const heard = vi.fn();
+    manager.on("party_ready_check", heard);
+
+    old.receive({ action: "party_ready_check", payload: { check_id: "chk-1", outcome: "open" } });
+
+    expect(usePartyStore.getState().readyCheck).toBeNull();
+    expect(heard).not.toHaveBeenCalled();
+  });
+
+  it("says a party_enter's not_in_town with every name it carries, as the server sends it (FS-BJNYC R22)", () => {
+    const { old } = setup();
+
+    old.receive({ action: "party_notice", payload: { code: "not_in_town", names: ["Wren", "Mira"] } });
+
+    expect(useChatStore.getState().lines.at(-1)).toEqual({
+      kind: "system",
+      code: "not_in_town",
+      text: "Wren and Mira are not in the town.",
+    });
+  });
+
+  it("shows nothing for a party_notice whose names are not a list of names", () => {
+    const { old } = setup();
+    const before = useChatStore.getState().lines.length;
+
+    old.receive({ action: "party_notice", payload: { code: "not_in_town", names: "Wren" } });
+    old.receive({ action: "party_notice", payload: { code: "not_in_town", names: ["Wren", 7] } });
+
+    expect(useChatStore.getState().lines.length).toBe(before);
   });
 
   it("shows nothing for a party_notice code it has no words for", () => {

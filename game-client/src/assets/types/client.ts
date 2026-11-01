@@ -125,6 +125,16 @@ export interface ActionMap {
   party_decline: { invite_id: string };
   /** A member asking to be taken to the town of the leader's server (FS-NCC9J R18, R28): no payload. */
   party_travel: Record<string, never>;
+  /**
+   * The leader at the Spire's door taking the whole party down (FS-BJNYC R3, R21): no payload.
+   * Answered by a `party_ready_check`, the run itself, or a `party_notice` saying why not.
+   */
+  party_enter: Record<string, never>;
+  /**
+   * A member answering the open ready check (FS-BJNYC R9, R24). The server records it if they are
+   * waiting on that check, and ignores it otherwise; the leader sends none.
+   */
+  party_ready: { check_id: string; accept: boolean };
 }
 
 export const ActionType = {
@@ -154,6 +164,8 @@ export const ActionType = {
   PartyAccept: "party_accept",
   PartyDecline: "party_decline",
   PartyTravel: "party_travel",
+  PartyEnter: "party_enter",
+  PartyReady: "party_ready",
 } as const;
 
 export type ActionType = (typeof ActionType)[keyof typeof ActionType];

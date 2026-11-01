@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /** Phaser's scene events are an eventemitter3 emitter: `once(event, fn, context)`. */
 interface Emitter {
@@ -72,6 +72,8 @@ const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
 const { palette, rgba, toCss } = await import("@/utils/canvasPalette");
 const { BARROW_HEX } = await import("@/utils/theme");
+const { usePartyStore } = await import("@/stores/partyStore");
+const { useAuthStore } = await import("@/stores/authStore");
 const { MARKER_DEPTH } = await import("@/render/markers");
 const { HUB_STASH_CHEST, STASH_NAME } = await import("@/render/world/hubStash");
 const { HUB_TOWN_GOLDEN } = await import("@/render/world/hubTownGolden");
@@ -355,6 +357,7 @@ interface MenuHub {
   queued: boolean;
   leavePending: boolean;
   soloPending: boolean;
+  enterPending: boolean;
   leavingHub: boolean;
   scene: { start: ReturnType<typeof vi.fn> };
   time: { delayedCall: ReturnType<typeof vi.fn> };
@@ -709,7 +712,7 @@ describe("delveChoices (FS-NSV3D §Requirements 1, 4; FS-0XMCP §Requirements 9)
       line: "The delve is gathering. Wait, or leave the queue.",
     },
   ])("should offer $ids when queued is $queued", ({ queued, ids, registers, line }) => {
-    const dialogue = delveChoices({ queued });
+    const dialogue = delveChoices({ queued, party: "none" });
 
     expect(dialogue.line).toBe(line);
     expect(dialogue.choices.map((c) => c.id)).toEqual(ids);
@@ -717,7 +720,7 @@ describe("delveChoices (FS-NSV3D §Requirements 1, 4; FS-0XMCP §Requirements 9)
   });
 
   it("should label the three Descend alone, Wait for company, Not yet", () => {
-    expect(delveChoices({ queued: false }).choices.map((c) => c.label)).toEqual([
+    expect(delveChoices({ queued: false, party: "none" }).choices.map((c) => c.label)).toEqual([
       "Descend alone",
       "Wait for company",
       "Not yet",
@@ -725,12 +728,279 @@ describe("delveChoices (FS-NSV3D §Requirements 1, 4; FS-0XMCP §Requirements 9)
   });
 
   it("should hold the solo choice back while a start_solo is pending, and the others not", () => {
-    const [solo, queue, dismiss] = delveChoices({ queued: false }).choices;
+    const [solo, queue, dismiss] = delveChoices({ queued: false, party: "none" }).choices;
 
-    expect(solo.enabled?.({ soloPending: true })).toBe(false);
-    expect(solo.enabled?.({ soloPending: false })).toBe(true);
+    expect(solo.enabled?.({ soloPending: true, enterPending: false })).toBe(false);
+    expect(solo.enabled?.({ soloPending: false, enterPending: false })).toBe(true);
     expect(queue.enabled).toBeUndefined();
     expect(dismiss.enabled).toBeUndefined();
+  });
+});
+
+describe("delveChoices for a party member (FS-BJNYC §Requirements R20, R21, §Copy)", () => {
+  const OPEN_LINE = "The Spire's door stands open. Few return whole,\nand fewer return twice.";
+  /** Every pending state a choice can be drawn in. */
+  const PENDINGS = [
+    { soloPending: false, enterPending: false },
+    { soloPending: true, enterPending: false },
+    { soloPending: false, enterPending: true },
+  ];
+
+  it("should offer the leader Enter as a party first, live, with Descend alone and Wait for company greyed", () => {
+    const dialogue = delveChoices({ queued: false, party: "leader" });
+    const [enter, solo, queue, dismiss] = dialogue.choices;
+
+    expect(dialogue.line).toBe("Your party enters together.");
+    expect(dialogue.choices.map((c) => c.id)).toEqual(["enter", "solo", "queue", "dismiss"]);
+    expect(dialogue.choices.map((c) => c.label)).toEqual([
+      "Enter as a party",
+      "Descend alone",
+      "Wait for company",
+      "Not yet",
+    ]);
+    expect(dialogue.choices.map((c) => c.register)).toEqual(["actionable", "actionable", "actionable", "cancel"]);
+    expect(enter.enabled?.({ soloPending: false, enterPending: false })).toBe(true);
+    // the reply is awaited with the door still up (no double send)
+    expect(enter.stays).toBe(true);
+    expect(enter.enabled?.({ soloPending: false, enterPending: true })).toBe(false);
+    for (const pending of PENDINGS) {
+      expect(solo.enabled?.(pending)).toBe(false);
+      expect(queue.enabled?.(pending)).toBe(false);
+    }
+    expect(dismiss.enabled).toBeUndefined();
+  });
+
+  it("should give a member who is not the leader no entry choice, both greyed, and Not yet", () => {
+    const dialogue = delveChoices({ queued: false, party: "member" });
+    const [solo, queue, dismiss] = dialogue.choices;
+
+    expect(dialogue.line).toBe("Your party enters together.");
+    expect(dialogue.choices.map((c) => c.id)).toEqual(["solo", "queue", "dismiss"]);
+    expect(dialogue.choices.map((c) => c.label)).toEqual(["Descend alone", "Wait for company", "Not yet"]);
+    for (const pending of PENDINGS) {
+      expect(solo.enabled?.(pending)).toBe(false);
+      expect(queue.enabled?.(pending)).toBe(false);
+    }
+    expect(dismiss.enabled).toBeUndefined();
+  });
+
+  it("should leave the door exactly as today for a player in no party", () => {
+    const alone = delveChoices({ queued: false, party: "none" });
+
+    expect(alone.line).toBe(OPEN_LINE);
+    expect(alone.choices.map((c) => c.id)).toEqual(["solo", "queue", "dismiss"]);
+    expect(alone.choices[1].enabled).toBeUndefined();
+  });
+});
+
+describe("HubScene the Spire's door panel for a party member (FS-BJNYC §Requirements R20, R21)", () => {
+  const AMBER = toCss(BARROW_HEX.amber);
+  const member = (player_id: string, name: string, joined_at: string) => ({
+    player_id,
+    name,
+    class: "warrior",
+    joined_at,
+    where: "hub",
+  });
+  /** A party of just its leader, this player: still a party. */
+  const PARTY_OF_ONE = {
+    party_id: "p1",
+    leader_id: "self",
+    members: [member("self", "Aldric", "2026-11-02T00:00:00Z")],
+    size: 4,
+    reason: "created",
+    subject_id: "self",
+  };
+  /** Wren leads; this player is a member. */
+  const LED_BY_WREN = {
+    ...PARTY_OF_ONE,
+    leader_id: "wren",
+    members: [member("wren", "Wren", "2026-11-02T00:00:00Z"), member("self", "Aldric", "2026-11-02T00:01:00Z")],
+    reason: "joined",
+  };
+  /** The same two, this player leading now. */
+  const LED_BY_SELF = { ...LED_BY_WREN, leader_id: "self", reason: "transferred" };
+  const doorLine = (stage: { made: Made[] }) =>
+    stage.made.some((m) => m.kind === "text" && !m.destroyed && m.args[2] === "Your party enters together.");
+  /** A choice's colour as it now shows: retoned since drawn, or as drawn. */
+  const toneOf = (label: (id: string) => Made, id: string) => {
+    const text = label(id);
+    // an unset prop on the stage's proxy answers as a method: no colour set since drawn
+    return typeof text.color === "string" ? text.color : (text.args[3] as { color: string }).color;
+  };
+
+  beforeEach(() => {
+    useAuthStore.setState({ memberInfo: { id: "self" } as never });
+  });
+  afterEach(() => {
+    usePartyStore.setState({ party: null });
+    useAuthStore.setState({ memberInfo: null });
+    vi.restoreAllMocks();
+  });
+
+  it("should offer a party of just the leader Enter as a party, amber, with Descend alone and Wait for company faint and inert", () => {
+    usePartyStore.setState({ party: PARTY_OF_ONE });
+    const { hub, stage, choice, label, atTheDoor, send } = queuedHubOnStage();
+
+    atTheDoor();
+
+    expect(doorLine(stage)).toBe(true);
+    expect(toneOf(label, "enter")).toBe(AMBER);
+    expect(toneOf(label, "solo")).not.toBe(AMBER);
+    expect(toneOf(label, "queue")).not.toBe(AMBER);
+    // top to bottom: the entry first, Not yet last
+    expect((choice("enter") as Made).y).toBeLessThan((choice("solo") as Made).y);
+    choice("solo")?.handlers.pointerup();
+    choice("queue")?.handlers.pointerup();
+    expect(send).not.toHaveBeenCalled();
+    expect(hub.dialogue).toBeDefined();
+  });
+
+  it("should give a member who does not lead no entry choice, both ways down faint, and nothing on any key but Esc", () => {
+    usePartyStore.setState({ party: LED_BY_WREN });
+    const { hub, stage, choice, label, atTheDoor, send, keys, answer } = queuedHubOnStage();
+
+    atTheDoor();
+
+    expect(doorLine(stage)).toBe(true);
+    expect(choice("enter")).toBeUndefined();
+    expect(toneOf(label, "solo")).not.toBe(AMBER);
+    expect(toneOf(label, "queue")).not.toBe(AMBER);
+    choice("solo")?.handlers.pointerup();
+    choice("queue")?.handlers.pointerup();
+    answer(keys.enter);
+    answer(keys.e);
+    expect(send).not.toHaveBeenCalled();
+    expect(hub.dialogue).toBeDefined();
+    answer(keys.esc);
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should send one party_enter on Enter as a party, keep the door up and grey the choice until an answer", () => {
+    usePartyStore.setState({ party: LED_BY_SELF });
+    const { hub, choice, label, atTheDoor, send, keys, answer } = queuedHubOnStage();
+    atTheDoor();
+
+    choice("enter")?.handlers.pointerup();
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(ActionType.PartyEnter, {});
+    expect(hub.enterPending).toBe(true);
+    expect(hub.dialogue).toBeDefined();
+    expect(toneOf(label, "enter")).not.toBe(AMBER);
+
+    choice("enter")?.handlers.pointerup();
+    answer(keys.enter);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("should confirm Enter as a party on Enter, and once only", () => {
+    usePartyStore.setState({ party: PARTY_OF_ONE });
+    const { atTheDoor, send, keys, answer } = queuedHubOnStage();
+    atTheDoor();
+
+    answer(keys.enter);
+    answer(keys.enter);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(ActionType.PartyEnter, {});
+  });
+
+  it.each(["not_member", "not_leader", "locked", "checking", "not_at_gate", "not_in_town", "unavailable"])(
+    "should give the choice back on a %s refusal, the door still up, so the leader can ask again",
+    (code) => {
+      usePartyStore.setState({ party: PARTY_OF_ONE });
+      const { hub, choice, label, atTheDoor, send, reply } = queuedHubOnStage();
+      atTheDoor();
+      choice("enter")?.handlers.pointerup();
+
+      reply("party_notice", code === "not_in_town" ? { code, names: ["Wren"] } : { code });
+
+      expect(hub.enterPending).toBe(false);
+      expect(hub.dialogue).toBeDefined();
+      expect(toneOf(label, "enter")).toBe(AMBER);
+      choice("enter")?.handlers.pointerup();
+      expect(send).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("should keep waiting through a notice that is no answer to the press", () => {
+    usePartyStore.setState({ party: LED_BY_SELF });
+    const { hub, choice, atTheDoor, reply } = queuedHubOnStage();
+    atTheDoor();
+    choice("enter")?.handlers.pointerup();
+
+    reply("party_notice", { code: "accepted", name: "Mira" });
+
+    expect(hub.enterPending).toBe(true);
+  });
+
+  it("should stop waiting once the ready check opens", () => {
+    usePartyStore.setState({ party: LED_BY_SELF });
+    const { hub, choice, atTheDoor, reply } = queuedHubOnStage();
+    atTheDoor();
+    choice("enter")?.handlers.pointerup();
+
+    reply("party_ready_check", { check_id: "c1", outcome: "open", expires_in_ms: 30000, members: [] });
+
+    expect(hub.enterPending).toBe(false);
+  });
+
+  it("should forget a pending party_enter with the visit, and hand the replies back", () => {
+    usePartyStore.setState({ party: PARTY_OF_ONE });
+    const { hub, choice, atTheDoor, off } = queuedHubOnStage();
+    atTheDoor();
+    choice("enter")?.handlers.pointerup();
+
+    hub.release();
+
+    expect(hub.enterPending).toBe(false);
+    expect(off).toHaveBeenCalledWith("party_notice");
+    expect(off).toHaveBeenCalledWith("party_ready_check");
+  });
+
+  it("should redraw the open door when the player's place in the party changes: led, led no more, out", () => {
+    usePartyStore.setState({ party: LED_BY_WREN });
+    const { stage, choice, label, atTheDoor } = queuedHubOnStage();
+    atTheDoor();
+    expect(choice("enter")).toBeUndefined();
+
+    // the lead handed to this player while they stand at the door
+    usePartyStore.setState({ party: LED_BY_SELF });
+    expect(toneOf(label, "enter")).toBe(AMBER);
+
+    // a change that leaves them leading draws nothing new
+    const drawn = stage.made.length;
+    usePartyStore.setState({ party: { ...LED_BY_SELF, reason: "presence" } });
+    expect(stage.made.length).toBe(drawn);
+
+    usePartyStore.setState({ party: LED_BY_WREN });
+    expect(choice("enter")).toBeUndefined();
+
+    usePartyStore.setState({ party: null });
+    expect(doorLine(stage)).toBe(false);
+    expect(toneOf(label, "solo")).toBe(AMBER);
+    expect(toneOf(label, "queue")).toBe(AMBER);
+  });
+
+  it("should read the party afresh each time the door opens: joining or leaving between panels changes the next", () => {
+    const { stage, label, atTheDoor, keys, answer } = queuedHubOnStage();
+
+    atTheDoor();
+    expect(doorLine(stage)).toBe(false);
+    expect((label("queue").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
+    answer(keys.esc);
+
+    usePartyStore.setState({ party: PARTY_OF_ONE });
+    atTheDoor();
+    expect(doorLine(stage)).toBe(true);
+    expect((label("queue").args[3] as { color: string }).color).not.toBe(toCss(BARROW_HEX.amber));
+    answer(keys.esc);
+
+    usePartyStore.setState({ party: null });
+    atTheDoor();
+    expect(doorLine(stage)).toBe(false);
+    expect((label("queue").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
   });
 });
 

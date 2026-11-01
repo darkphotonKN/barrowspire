@@ -5,12 +5,15 @@ import {
   isLeader,
   isPartyInvite,
   isPartyNotice,
+  isPartyReadyCheck,
   isPartyUpdate,
+  readyCheckSecondsLeft,
   memberAway,
   partyActions,
   partyLocked,
   reservedSlots,
   type PartyInvitePayload,
+  type PartyReadyCheckPayload,
   type PartyUpdatePayload,
 } from "./partyStore";
 
@@ -543,5 +546,149 @@ describe("partyStore expiry line (FS-NCC9J R27: the leader's client says an invi
     clock.now = Date.parse(later);
     s.getState().expireReserved();
     expect(said).toEqual([NO_ANSWER, NO_ANSWER]);
+  });
+});
+
+// FS-BJNYC §Requirements R23–R26. I-BJNYC-5: the ready check the popup draws from.
+
+const CHECK = "44444444-4444-4444-8444-444444444444";
+const OTHER_CHECK = "55555555-5555-4555-8555-555555555555";
+
+const readyCheck = (
+  extra: Partial<PartyReadyCheckPayload> = {},
+): PartyReadyCheckPayload => ({
+  check_id: CHECK,
+  leader_id: ME,
+  expires_in_ms: 30_000,
+  members: [
+    { player_id: ME, name: "Aldric", state: "accepted" },
+    { player_id: ALLY, name: "Wren", state: "waiting" },
+  ],
+  outcome: "open",
+  ...extra,
+});
+
+describe("isPartyReadyCheck (FS-BJNYC R8: a bad frame raises no popup)", () => {
+  it("should take a whole party_ready_check, open or closed", () => {
+    expect(isPartyReadyCheck(readyCheck())).toBe(true);
+    expect(
+      isPartyReadyCheck(
+        readyCheck({ outcome: "cancelled", reason: "timeout", names: ["Wren"] }),
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["no check id", { check_id: undefined }],
+    ["a countdown that is not a number", { expires_in_ms: "30000" }],
+    ["an outcome it does not know", { outcome: "maybe" }],
+    ["a member state it does not know", { members: [{ player_id: ME, name: "Aldric", state: "ready" }] }],
+    ["members that are not a list", { members: {} }],
+    ["names that are not names", { outcome: "cancelled", reason: "left", names: [7] }],
+    ["a reason that is not a word", { outcome: "cancelled", reason: 3 }],
+  ])("should refuse a frame with %s", (_, extra) => {
+    expect(isPartyReadyCheck({ ...readyCheck(), ...extra })).toBe(false);
+  });
+});
+
+describe("the party store's ready check (FS-BJNYC R23, R25, R26)", () => {
+  const setup = () => {
+    const clock = { now: 1_000 };
+    const said: { code: string; text: string }[] = [];
+    const s = createPartyStore({
+      selfId: () => ALLY,
+      now: () => clock.now,
+      say: (line) => said.push(line),
+    });
+    return { s, clock, said };
+  };
+
+  it("should hold an open check, stamped with when this client heard it", () => {
+    const { s } = setup();
+    s.getState().receiveReadyCheck(readyCheck());
+    expect(s.getState().readyCheck).toMatchObject({
+      check_id: CHECK,
+      received_at: 1_000,
+      answer: null,
+    });
+  });
+
+  it("should keep only the newest message for the same check, its countdown from the newest expires_in_ms", () => {
+    const { s, clock } = setup();
+    s.getState().receiveReadyCheck(readyCheck());
+    clock.now = 6_000;
+    s.getState().receiveReadyCheck(
+      readyCheck({
+        expires_in_ms: 24_000,
+        members: [
+          { player_id: ME, name: "Aldric", state: "accepted" },
+          { player_id: ALLY, name: "Wren", state: "accepted" },
+        ],
+      }),
+    );
+    const held = s.getState().readyCheck!;
+    expect(held.members[1].state).toBe("accepted");
+    expect(s.getState().readySecondsLeft(held)).toBe(24);
+  });
+
+  it("should replace the popup's check with one for another check id", () => {
+    const { s } = setup();
+    s.getState().receiveReadyCheck(readyCheck());
+    s.getState().answerReadyCheck(CHECK, true);
+    s.getState().receiveReadyCheck(readyCheck({ check_id: OTHER_CHECK }));
+    expect(s.getState().readyCheck).toMatchObject({
+      check_id: OTHER_CHECK,
+      answer: null,
+    });
+  });
+
+  it("should remember this player's answer to the check, until a newer check comes", () => {
+    const { s } = setup();
+    s.getState().receiveReadyCheck(readyCheck());
+    s.getState().answerReadyCheck(CHECK, true);
+    expect(s.getState().readyCheck?.answer).toBe("accepted");
+    s.getState().receiveReadyCheck(readyCheck({ expires_in_ms: 20_000 }));
+    expect(s.getState().readyCheck?.answer).toBe("accepted");
+    s.getState().answerReadyCheck(OTHER_CHECK, false);
+    expect(s.getState().readyCheck?.check_id).toBe(CHECK);
+  });
+
+  it("should let go of the check when it starts, saying nothing", () => {
+    const { s, said } = setup();
+    s.getState().receiveReadyCheck(readyCheck());
+    s.getState().receiveReadyCheck(readyCheck({ outcome: "started" }));
+    expect(s.getState().readyCheck).toBeNull();
+    expect(said).toEqual([]);
+  });
+
+  it("should let go of the check when it is cancelled, and say why with the names", () => {
+    const { s, said } = setup();
+    s.getState().receiveReadyCheck(readyCheck());
+    s.getState().receiveReadyCheck(
+      readyCheck({ outcome: "cancelled", reason: "timeout", names: ["Wren", "Mira"] }),
+    );
+    expect(s.getState().readyCheck).toBeNull();
+    expect(said).toEqual([
+      { code: "ready_timeout", text: "Wren and Mira did not answer. The party stays." },
+    ]);
+  });
+
+  it("should say a cancellation it never saw open (a party of one whose run failed)", () => {
+    const { s, said } = setup();
+    s.getState().receiveReadyCheck(
+      readyCheck({ outcome: "cancelled", reason: "failed", names: [] }),
+    );
+    expect(s.getState().readyCheck).toBeNull();
+    expect(said.map((l) => l.text)).toEqual(["The way is shut for now. Ask again."]);
+  });
+
+  it("should count whole seconds down from expires_in_ms, 0 once it has run out", () => {
+    const check = { ...readyCheck(), received_at: 1_000, answer: null };
+    expect(readyCheckSecondsLeft(check, 1_000)).toBe(30);
+    expect(readyCheckSecondsLeft(check, 1_001)).toBe(30);
+    expect(readyCheckSecondsLeft(check, 2_000)).toBe(29);
+    expect(readyCheckSecondsLeft(check, 30_999)).toBe(1);
+    expect(readyCheckSecondsLeft(check, 31_000)).toBe(0);
+    expect(readyCheckSecondsLeft(check, 90_000)).toBe(0);
   });
 });
