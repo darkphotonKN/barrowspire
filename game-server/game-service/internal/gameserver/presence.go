@@ -16,26 +16,40 @@ import (
 * tick rather than hooking every way in and out (enter, a field, a run, a drop, a handoff): who is
 * new or changed world since the last tick is seated, who is gone is unseated, and the rest are
 * refreshed every ten seconds (I-R82NV-3 decision 1). A seat is at most one tick late.
+*
+* On the same tick it publishes how many players this pod's hub seats (FS-JEAVX R19), which a
+* travel to this pod reads (FS-NCC9J R18).
 **/
 
 // presenceIndex is the Redis side of presence: partypresence.Redis in production.
 type presenceIndex interface {
-	Seat(ctx context.Context, podID string, entries []partypresence.Entry) error
+	Seat(ctx context.Context, podID, podAddr string, entries []partypresence.Entry) error
 	Unseat(ctx context.Context, podID string, entries []partypresence.Entry) error
 }
 
-// playerPresence answers who this pod holds right now, and where.
+// playerPresence answers who this pod holds right now, and where, and how many its hub seats.
 type playerPresence interface {
 	PresentPlayers() []presentPlayer
+	HubOccupancy() int
+}
+
+// hubOccupancyPublisher is where this pod's hub occupancy is published: hubocc.Redis in
+// production (FS-JEAVX R19).
+type hubOccupancyPublisher interface {
+	Publish(ctx context.Context, podID string, count int) error
 }
 
 // presenceLeaveTimeout bounds unseating everyone at shutdown; what is left lapses by TTL.
 const presenceLeaveTimeout = 2 * time.Second
 
 type presenceKeeper struct {
-	index   presenceIndex // nil on a pod built without Redis: nothing is written
-	seating playerPresence
-	podID   string
+	index presenceIndex // nil on a pod built without Redis: nothing is written
+	// nil on a pod that publishes no hub occupancy
+	occupancy hubOccupancyPublisher
+	seating   playerPresence
+	podID     string
+	// where this pod is reached, written with every seat (FS-NCC9J R18)
+	podAddr string
 	now     func() time.Time
 	writer  *orderedWriter
 
@@ -44,11 +58,13 @@ type presenceKeeper struct {
 	lastRefresh time.Time
 }
 
-func newPresenceKeeper(index presenceIndex, seating playerPresence, podID string, now func() time.Time, writer *orderedWriter) *presenceKeeper {
+func newPresenceKeeper(index presenceIndex, occupancy hubOccupancyPublisher, seating playerPresence, podID, podAddr string, now func() time.Time, writer *orderedWriter) *presenceKeeper {
 	return &presenceKeeper{
 		index:       index,
+		occupancy:   occupancy,
 		seating:     seating,
 		podID:       podID,
+		podAddr:     podAddr,
 		now:         now,
 		writer:      writer,
 		seated:      make(map[uuid.UUID]partypresence.Entry),
@@ -59,6 +75,10 @@ func newPresenceKeeper(index presenceIndex, seating playerPresence, podID string
 // tick samples the pod: seats who is new or changed world, unseats who left (a delete, never
 // dropped), and refreshes everyone once a refresh interval has passed.
 func (k *presenceKeeper) tick() {
+	if k.occupancy != nil {
+		count := k.seating.HubOccupancy()
+		k.writer.queue(func(ctx context.Context) error { return k.occupancy.Publish(ctx, k.podID, count) })
+	}
 	if k.index == nil {
 		return
 	}
@@ -93,7 +113,7 @@ func (k *presenceKeeper) tick() {
 		}
 	}
 	if len(sat) > 0 {
-		k.writer.queue(func(ctx context.Context) error { return k.index.Seat(ctx, k.podID, sat) })
+		k.writer.queue(func(ctx context.Context) error { return k.index.Seat(ctx, k.podID, k.podAddr, sat) })
 	}
 }
 

@@ -807,3 +807,32 @@ func TestRefreshAll_EveryRecordExpired_PartyEndsAndItsKeysGo(t *testing.T) {
 		assert.False(t, mini.Exists(key), key)
 	}
 }
+
+// LeaderOf reads who leads a player's party without changing it: the leader for a member and for
+// the leader, nothing for a player in no party or in a party that has ended (FS-NCC9J R20).
+func TestLeaderOf_ReadsTheLeader(t *testing.T) {
+	client, _ := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	partyID, wren, kaelen, _ := partyOf3(t, store)
+	ctx := context.Background()
+
+	for _, who := range []partystore.Joiner{wren, kaelen} {
+		leader, in, err := store.LeaderOf(ctx, who.PlayerID)
+		require.NoError(t, err)
+		assert.True(t, in, who.Name)
+		assert.Equal(t, wren.PlayerID, leader, who.Name)
+	}
+	_, in, err := store.LeaderOf(ctx, uuid.New())
+	require.NoError(t, err)
+	assert.False(t, in, "a player in no party")
+
+	before, err := store.PartyOf(ctx, kaelen.PlayerID, sentAt)
+	require.NoError(t, err)
+	for _, m := range before.Party.Members {
+		_, err := store.Remove(ctx, partystore.RemoveArgs{PartyID: partyID, PlayerID: m.PlayerID})
+		require.NoError(t, err)
+	}
+	_, in, err = store.LeaderOf(ctx, kaelen.PlayerID)
+	require.NoError(t, err)
+	assert.False(t, in, "the party ended")
+}

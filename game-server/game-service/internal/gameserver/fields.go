@@ -127,6 +127,9 @@ type bootOptions struct {
 	partyStore partyStore
 	// where this pod's hub is written into the presence index; nil writes nothing (FS-R82NV R7)
 	presence presenceStore
+	// where each pod's hub occupancy is published and read; nil publishes nothing, and travel
+	// checks no pod's room (FS-JEAVX R19, FS-NCC9J R18)
+	hubOccupancy hubOccupancyStore
 	// the Redis side of the pod inbox; nil, and this pod reaches no other (FS-R82NV R9)
 	inboxBus inboxBus
 }

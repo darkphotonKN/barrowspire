@@ -525,3 +525,46 @@ func TestMapConnToPlayer_PublishesTheMemberConnected(t *testing.T) {
 	_, stillMapped := server.GetPlayerFromConn(newConn)
 	assert.True(t, stillMapped)
 }
+
+// serverConnOf is the server's end of the member's one live connection.
+func serverConnOf(t *testing.T, server *Server, memberID uuid.UUID) *websocket.Conn {
+	t.Helper()
+	server.mu.RLock()
+	defer server.mu.RUnlock()
+	for conn, player := range server.connToPlayer {
+		if player.ID == memberID {
+			return conn
+		}
+	}
+	t.Fatal("the member has no live connection")
+	return nil
+}
+
+// A member let go to travel to another pod is not held for the reconnect grace when the
+// connection the handoff went over drops, even by a reset: they are gone from here, so a
+// reconnect never returns them to this pod. FS-NCC9J R19.
+func TestDisconnect_LetGoTraveller_NotHeld(t *testing.T) {
+	authClient := &oneMemberAuth{memberID: uuid.New()}
+	server := newTestServer(t, context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	route := newConnectRoute(t, server, authClient)
+	hub, _ := server.HubSession()
+	client := route.connect(t, "token")
+	record, ok := server.PlayerByID(authClient.memberID)
+	require.True(t, ok)
+	server.setCurrentWorld(record, hub.ID)
+	server.LetGo(authClient.memberID, serverConnOf(t, server, authClient.memberID))
+
+	tcp, ok := client.NetConn().(*net.TCPConn)
+	require.True(t, ok)
+	require.NoError(t, tcp.SetLinger(0))
+	require.NoError(t, tcp.Close())
+
+	eventually(t, "the traveller is gone from this pod", func() bool {
+		_, onRecord := server.PlayerByID(authClient.memberID)
+		return !onRecord
+	})
+	server.mu.RLock()
+	_, held := server.graceHolds[authClient.memberID]
+	server.mu.RUnlock()
+	assert.False(t, held, "not held for the reconnect grace")
+}

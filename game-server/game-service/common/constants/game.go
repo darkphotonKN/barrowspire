@@ -80,6 +80,10 @@ const (
 	// FS-R82NV §Requirements 19.
 	ActionPartyKick     Action = "party_kick"
 	ActionPartyTransfer Action = "party_transfer"
+	// ActionPartyTravel is a member asking to be taken to the hub of the pod their leader stands
+	// on, with no payload; answered by world_handoff { addr, hub: true } or a notice.
+	// FS-NCC9J §Requirements 18.
+	ActionPartyTravel Action = "party_travel"
 
 	// system actions
 	ActionError          Action = "error"
@@ -163,6 +167,8 @@ const (
 
 	// PartyNoticeUnavailable: Redis cannot be reached, so the party cannot change. FS-NCC9J R8.
 	PartyNoticeUnavailable PartyNoticeCode = "unavailable"
+	// PartyNoticeLeaderAway: the leader is away, so there is nobody to travel to. FS-NCC9J R18.
+	PartyNoticeLeaderAway PartyNoticeCode = "leader_away"
 )
 
 // PartyUpdateReason is why a party_update was sent. FS-R82NV §Requirements 21.
@@ -226,6 +232,11 @@ const HubSpawnY float64 = 800
 // ADR-0015 rests on: raising that reopens an ADR, raising this does not
 // (game-service/CONTEXT.md).
 const HubOccupancyCap int = 40
+
+// HubTravelMargin is how far past HubOccupancyCap a hub admits a member joining their party's
+// leader there, by party_travel or any entry while the leader stands in that hub: one full party.
+// FS-NCC9J §Requirements 18, 20 (amended).
+const HubTravelMargin int = 4
 
 // How fast a resident ambles, and how long they stand once they arrive.
 const NPCWanderSpeed float64 = 60

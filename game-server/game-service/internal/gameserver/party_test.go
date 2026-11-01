@@ -68,9 +68,11 @@ func newPartyRigOn(t *testing.T, extra func(client redis.UniversalClient) []Opti
 	partyClock := newChatClock()
 	ticks := make(chan time.Time)
 	queue := NewMockQueueService()
+	var server *Server
+	t.Cleanup(func() { stopWorlds(server) })
 	ctx, shutdown := context.WithCancel(context.Background())
 	t.Cleanup(shutdown)
-	server := newTestServer(t, ctx, &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{},
+	server = newTestServer(t, ctx, &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{},
 		append([]Option{WithPartyClock(partyClock.now), withPartyTicks(ticks)}, opts...)...,
 	)
 	hub, ok := server.HubSession()
@@ -1186,4 +1188,22 @@ func TestPresence_LapsesWithoutRefreshAndGoesAtShutdown(t *testing.T) {
 	rig.shutdown()
 	awaitPresence(t, mini, "Kaelen", "")
 	awaitPresence(t, mini, "Wren", "")
+}
+
+// stopWorlds shuts down every world server runs, once its context is cancelled (cleanups run last
+// registered first): a cancelled server leaves its hub's and fields' game loops ticking, and a
+// package of party tests otherwise piles them up until later tests time out.
+func stopWorlds(server *Server) {
+	if server == nil {
+		return
+	}
+	server.mu.RLock()
+	worlds := make([]*game.Session, 0, len(server.sessions))
+	for _, world := range server.sessions {
+		worlds = append(worlds, world)
+	}
+	server.mu.RUnlock()
+	for _, world := range worlds {
+		world.Shutdown()
+	}
 }

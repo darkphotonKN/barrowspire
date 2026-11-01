@@ -249,14 +249,8 @@ func (c *partyCache) arrive(ctx context.Context, playerID uuid.UUID) {
 			c.arrived[playerID] = conn
 			view := partyView{playerID: playerID}
 			// taken and told first: an arriver still a member hears it with the rest, and their own
-			// sync then finds them shown it; one the read removed is told their last update by it,
-			// and a party cached here for the others lets them go at once
-			if res.Swept.Changed() {
-				if _, cached := c.parties[res.Party.ID]; cached {
-					c.put(res.Party)
-				}
-				c.onSwept(ctx, res.Party, res.Swept)
-			}
+			// sync then finds them shown it; one the read removed is told their last update by it
+			c.sweptBy(ctx, res)
 			if res.In {
 				c.put(res.Party)
 				// the newest the cache knows, which a letter may have brought past this read
@@ -265,6 +259,19 @@ func (c *partyCache) arrive(ctx context.Context, playerID uuid.UUID) {
 			c.onShow(ctx, []partyView{view})
 		},
 	)
+}
+
+// sweptBy takes and tells what a read of one player's party changed in its member records (R17):
+// a party cached here takes the new version at once, so it lets a removed member go, and the
+// change is told.
+func (c *partyCache) sweptBy(ctx context.Context, read partystore.Arrival) {
+	if !read.Swept.Changed() {
+		return
+	}
+	if _, cached := c.parties[read.Party.ID]; cached {
+		c.put(read.Party)
+	}
+	c.onSwept(ctx, read.Party, read.Swept)
 }
 
 // refreshAll re-reads every cached party from Redis in one trip, through the runner like any

@@ -28,13 +28,23 @@ type Entry struct {
 	World    string
 }
 
-// Found is a present player as a lookup returns them: who, under which name, on which pod, in
-// which world.
+// Found is a present player as a lookup returns them: who, under which name, on which pod and
+// where that pod is reached, in which world.
 type Found struct {
 	PlayerID uuid.UUID
 	Name     string
 	PodID    string
-	World    string
+	// where a player sent to this pod connects (FS-NCC9J R18)
+	PodAddr string
+	World   string
+}
+
+// found is a presence hash as a Found; false when it names no pod.
+func found(id uuid.UUID, name string, fields map[string]string) (Found, bool) {
+	if fields["pod_id"] == "" {
+		return Found{}, false
+	}
+	return Found{PlayerID: id, Name: name, PodID: fields["pod_id"], PodAddr: fields["pod_addr"], World: fields["world"]}, true
 }
 
 type Redis struct {
@@ -53,16 +63,17 @@ func nameKey(name string) string {
 
 func idKey(playerID uuid.UUID) string { return "presence:id:" + playerID.String() }
 
-// Seat writes each player's two keys, naming podID, for TTL. It is both the write when a player
-// is seated or changes world and the refresh: a key that lapsed while Redis was away comes back.
-func (r *Redis) Seat(ctx context.Context, podID string, entries []Entry) error {
+// Seat writes each player's two keys, naming podID and the address podAddr it is reached at, for
+// TTL. It is both the write when a player is seated or changes world and the refresh: a key that
+// lapsed while Redis was away comes back.
+func (r *Redis) Seat(ctx context.Context, podID, podAddr string, entries []Entry) error {
 	if len(entries) == 0 {
 		return nil
 	}
 	_, err := r.client.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 		for _, e := range entries {
 			for _, key := range []string{nameKey(e.Name), idKey(e.PlayerID)} {
-				pipe.HSet(ctx, key, "player_id", e.PlayerID.String(), "name", e.Name, "pod_id", podID, "world", e.World)
+				pipe.HSet(ctx, key, "player_id", e.PlayerID.String(), "name", e.Name, "pod_id", podID, "pod_addr", podAddr, "world", e.World)
 				pipe.Expire(ctx, key, TTL)
 			}
 		}
@@ -112,10 +123,8 @@ func (r *Redis) Lookup(ctx context.Context, nameOrID string) (Found, bool, error
 		if err != nil {
 			return Found{}, false, fmt.Errorf("look up player %s: %w", id, err)
 		}
-		if fields["pod_id"] == "" {
-			return Found{}, false, nil
-		}
-		return Found{PlayerID: id, Name: fields["name"], PodID: fields["pod_id"], World: fields["world"]}, true, nil
+		f, present := found(id, fields["name"], fields)
+		return f, present, nil
 	}
 
 	fields, err := r.client.HGetAll(ctx, nameKey(query)).Result()
@@ -123,14 +132,15 @@ func (r *Redis) Lookup(ctx context.Context, nameOrID string) (Found, bool, error
 		return Found{}, false, fmt.Errorf("look up a name: %w", err)
 	}
 	id, err := uuid.Parse(fields["player_id"])
-	if err != nil || fields["pod_id"] == "" {
+	if err != nil {
 		return Found{}, false, nil
 	}
 	name := fields["name"]
 	if name == "" {
 		name = query
 	}
-	return Found{PlayerID: id, Name: name, PodID: fields["pod_id"], World: fields["world"]}, true, nil
+	f, present := found(id, name, fields)
+	return f, present, nil
 }
 
 // LookupIDs finds each of these players by id in one trip: where each present one stands. An
@@ -149,13 +159,12 @@ func (r *Redis) LookupIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]F
 	if err != nil {
 		return nil, fmt.Errorf("look up %d players: %w", len(ids), err)
 	}
-	found := make(map[uuid.UUID]Found, len(ids))
+	out := make(map[uuid.UUID]Found, len(ids))
 	for i, id := range ids {
 		fields := cmds[i].Val()
-		if fields["pod_id"] == "" {
-			continue
+		if f, present := found(id, fields["name"], fields); present {
+			out[id] = f
 		}
-		found[id] = Found{PlayerID: id, Name: fields["name"], PodID: fields["pod_id"], World: fields["world"]}
 	}
-	return found, nil
+	return out, nil
 }

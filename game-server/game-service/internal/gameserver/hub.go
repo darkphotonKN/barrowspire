@@ -61,6 +61,7 @@ type partyKeeper interface {
 	create(ctx context.Context, creator *types.Player, conn *websocket.Conn)
 	kick(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	transfer(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	travel(ctx context.Context, traveller *types.Player, conn *websocket.Conn)
 	// the registry's clock ticks, swept on this loop like everything else it holds
 	ticks() <-chan time.Time
 	tick(ctx context.Context)
@@ -721,6 +722,15 @@ func (h *messageHub) Run(ctx context.Context) {
 					continue
 				}
 				h.party.transfer(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
+
+			// A member asking to be taken to their leader's village. FS-NCC9J §Requirements 18.
+			case constants.ActionPartyTravel:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_travel from a connection with no player")
+					continue
+				}
+				h.party.travel(ctx, player, clientPackage.Conn)
 
 			// The target declining an invite. FS-R82NV §Requirements 15.
 			case constants.ActionPartyDecline:

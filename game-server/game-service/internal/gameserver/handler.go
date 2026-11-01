@@ -308,6 +308,14 @@ func (s *Server) handleReadError(conn *websocket.Conn, err error) {
 		return
 	}
 
+	// a member let go to travel is gone from here: nothing to hold them for
+	// (FS-NCC9J R19)
+	if s.letGoOver(conn) {
+		slog.Info("Travelled player's old connection closed", "error", err)
+		s.cleanUpClient(conn)
+		return
+	}
+
 	grace := reconnectGrace
 	if websocket.IsCloseError(err, websocket.CloseGoingAway) {
 		grace = goingAwayGrace
@@ -527,6 +535,7 @@ func (s *Server) cleanUpClient(conn *websocket.Conn) {
 		player = *mapped
 		delete(s.players, player.ID)
 		delete(s.graceHolds, player.ID)
+		delete(s.travelling, player.ID)
 	}
 
 	s.mu.Unlock()
