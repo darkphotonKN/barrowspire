@@ -317,9 +317,9 @@ Before these specs, "party" was loose prose for "the players in a run". It is no
 an id. Use **roster** or **the run's players** for the people a run seats; use **party** only
 for the group below. The two coincide inside an instance by rule, not by definition.
 
-ADR-0036 (superseding ADR-0034) moved the party off any one pod. **Transition:** the same-pod
-build (FS-R82NV) still keeps a party in the memory of the pod that created it until FS-NCC9J
-rebuilds it on Redis; code written from now on uses the terms below.
+ADR-0036 (superseding ADR-0034) moved the party off any one pod. Since I-NCC9J-1 a party's
+state is in Redis (`internal/partystore`) and each pod keeps a **party cache**; the remaining
+FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 
 - **Party** — a named group of players, one **leader** and up to the configured size (2 now, at
   most 4), that enters instances together and talks on its own chat channel. Its state lives in

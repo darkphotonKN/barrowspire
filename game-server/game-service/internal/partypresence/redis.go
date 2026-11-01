@@ -1,7 +1,7 @@
 // Package partypresence is the presence index (FS-R82NV §Requirements 7): who is seated in a
 // hub, and on which pod, found by character name or by player id. Each pod writes its own hub's
 // players and keeps them alive by TTL; a name with no entry is offline or busy. It wraps the one
-// go-redis client the pod already holds, as partypointer and chatbus do. Whisper (FS-KCQ06)
+// go-redis client the pod already holds, as partystore and chatbus do. Whisper (FS-KCQ06)
 // reads the same keys.
 package partypresence
 

@@ -184,9 +184,9 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		go func() { <-ctx.Done(); ticker.Stop() }()
 		partyTicks = ticker.C
 	}
-	// one ordered writer for every party Redis write: pointers now, presence next (FS-R82NV R3, R7)
+	// one ordered writer for the presence index's writes (FS-R82NV R7)
 	redisWriter := newOrderedWriter()
-	if boot.partyPointers != nil || boot.presence != nil {
+	if boot.presence != nil {
 		redisWriter.start(ctx)
 	}
 	inbox := newPodInbox(boot.inboxBus, podID)
@@ -197,12 +197,12 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		now:      boot.partyNow,
 		newID:    uuid.New,
 		ticks:    partyTicks,
-		pointers: boot.partyPointers,
-		writer:   redisWriter,
+		store:    boot.partyStore,
 		presence: boot.presence,
 		inbox:    inbox,
 	})
 	server.parties = party
+	party.start(ctx)
 	var presenceWriter presenceIndex
 	if boot.presence != nil {
 		presenceWriter = boot.presence
@@ -845,10 +845,9 @@ func (s *Server) HubSeatedPlayer(nameOrID string) (types.Player, bool) {
 	return types.Player{}, false
 }
 
-// PartiesDissolved closes once every party on this pod is dissolved and its
-// pointers deleted, after ctx ends. Shutdown waits on it while Redis is still
-// open. FS-R82NV R5.
-func (s *Server) PartiesDissolved() <-chan struct{} {
+// PartiesClosed closes once the party registry has stopped taking actions, after ctx ends.
+// Nothing is dissolved: a party outlives any pod (FS-NCC9J, ADR-0036).
+func (s *Server) PartiesClosed() <-chan struct{} {
 	return s.parties.stopped()
 }
 
@@ -873,24 +872,26 @@ func (s *Server) HubSeatedPlayers() []types.Player {
 	return seated
 }
 
-// HubOccupancy is how many are seated in this pod's hub, the count its cap is held to.
-func (s *Server) HubOccupancy() int {
-	hub, ok := s.HubSession()
-	if !ok {
-		return 0
-	}
-	return hub.Occupancy()
-}
-
-// InHub reports whether playerID is connected here and seated in the hub.
-func (s *Server) InHub(playerID uuid.UUID) bool {
+// InRun reports whether playerID is connected here and seated in a run: neither the hub nor a
+// field. FS-NCC9J R14.
+func (s *Server) InRun(playerID uuid.UUID) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	for _, player := range s.connToPlayer {
-		if player.ID == playerID && player.CurrentGameSessionId == s.hubSessionID {
-			return true
+		if player.ID != playerID {
+			continue
 		}
+		world := player.CurrentGameSessionId
+		if world == uuid.Nil || world == s.hubSessionID {
+			return false
+		}
+		for _, field := range s.fields {
+			if field == world {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }
