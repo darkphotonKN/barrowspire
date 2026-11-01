@@ -70,10 +70,7 @@ import {
   addWorldPlane,
   facingFrom,
   nearestScreenFacing,
-  outsideConvex,
-  projectRect,
   projectedBounds,
-  raise,
   screenToWorld,
   standAt,
   WORLD_PX_PER_TILE,
@@ -106,18 +103,25 @@ import { PlayerCombat } from "@/render/combat/playerCombat";
 import { ClassKitFx } from "@/render/combat/classKitFx";
 import {
   BAKE,
+  BuildingView,
   DROP_PILE,
   FIXED_LIGHT_CAP,
   GroundLayer,
   Occluders,
+  PLACEHOLDER_STONE,
   RUN_WORLD_THEME,
   WORLD_THEMES,
+  addBuildings,
+  addDarkOpening,
   addDressing,
   addPerimeter,
   addProp,
   addRoof,
   addWalls,
   budgetLights,
+  buildingAt,
+  coverOf,
+  darkOpening,
   dressingStatics,
   floorLook,
   interactablePool,
@@ -125,11 +129,18 @@ import {
   tileHash,
   footprintHitArea,
   housesFrom,
+  insideHouse,
   paintDropPile,
   showState,
+  slabCover,
   StairsSet,
   TRAIL_BED_DEPTH,
   TrailSet,
+  type BuildingPart,
+  type BuiltParts,
+  type Cover,
+  type Figure,
+  type Scenery,
   type FixedLight,
   type FixedLightKind,
   type FloorLook,
@@ -138,6 +149,15 @@ import {
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
 
+/** World px the placeholder roof overhangs its house's walls by. */
+const ROOF_EAVE = 5;
+/** A world rect grown by `by` on every side. */
+const grown = (r: { x: number; y: number; width: number; height: number }, by: number) => ({
+  x: r.x - by,
+  y: r.y - by,
+  width: r.width + by * 2,
+  height: r.height + by * 2,
+});
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = 160;
 /**
@@ -264,6 +284,7 @@ const FLOOR_CARD_HOLD_MS = 1400;
 const isDead = (player?: { current_health?: number } | null) =>
   player?.current_health !== undefined && player.current_health <= 0;
 
+/** A room or house, drawn: the `housesFrom` rect, its id the walls' `house_id`, and its parts. */
 interface Building {
   id: string;
   x: number;
@@ -282,14 +303,14 @@ interface Building {
   isOpen: boolean;
 }
 
-/** The same inside test as ever, on the world position (FS-2325V edge states). */
-function inBuilding(building: Building, at: Point): boolean {
-  return (
-    at.x >= building.x &&
-    at.x <= building.x + building.width &&
-    at.y >= building.y &&
-    at.y <= building.y + building.height
-  );
+/**
+ * Where a fixed light stands, for its building's gate (FS-9PN7X §D.6): the building whose wall it
+ * hangs on, or the world point it stands on. With neither (a perimeter slit), it stands outside
+ * every room.
+ */
+interface LightRoom {
+  room?: string;
+  at?: Point;
 }
 
 /** Limited barrow palette for the wizard-player sprite (0x ints). */
@@ -484,9 +505,27 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // 建築
   private buildings: Building[] = [];
-  private currentBuilding: Building | null = null;
   private outsideObjects: Phaser.GameObjects.GameObject[] = [];
-  private indoorMask!: Phaser.GameObjects.Graphics;
+  /**
+   * The rooms as the player sees them from where they stand (ADR-0036, FS-9PN7X): each drawn in
+   * both its looks, what covers the player, their silhouette and the indoor blackout. Made with
+   * the first floor's walls, cleared at each floor's teardown, gone with the run.
+   */
+  private view?: BuildingView;
+  /**
+   * The fixed lights standing in a building, with their own intensity: lit only while the player
+   * is in it (FS-9PN7X §D.6). `hung` marks a light on the room's own walls, which goes when the
+   * room is redrawn. Stamped with the floor, forgotten with it.
+   */
+  private roomLights: { room: string; source: LightSource; intensity: number; hung: boolean }[] = [];
+  /**
+   * Every other fixed light (hall sconces, braziers, the stairs and interactable pools in the
+   * halls, the perimeter's slits), with its own intensity and where it stands: out, pool and halo,
+   * while the player is in a room it is not in (the owner's addition 1). Forgotten with the floor.
+   */
+  private hallLights: { source: LightSource; intensity: number; at?: Point }[] = [];
+  /** An exterior house's roof as cover, baked pieces or the placeholder slab (§E.1). */
+  private roofCover: Cover[] = [];
 
   // 寶箱 (從後端同步) — `pos` is the world position; the sprite is drawn at its projection.
   // Drop piles with loot left in them are held here too: they open and loot like a chest
@@ -531,10 +570,13 @@ export class BarrowspireScene extends Phaser.Scene {
   });
 
   // 牆壁 (從後端同步) — baked wall pieces and posts (FS-2325V §C.2), or the
-  // placeholder blocks without a manifest; either way, one-tile pieces sorted by footprint
+  // placeholder blocks without a manifest; either way, one-tile pieces sorted by footprint.
+  // A room's walls are drawn with their room (`rooms`), so they hold no pieces here: only the
+  // room they belong to. A wall of no room keeps its pieces and its footprint's centre, which the
+  // hide rule reads (FS-9PN7X §C.1)
   private walls: Map<
     string,
-    { pieces: Phaser.GameObjects.GameObject[]; entityId: string }
+    { pieces: BuildingPart[]; entityId: string; houseId?: string; pos?: Point }
   > = new Map();
 
   // 門 (從後端同步) — the baked door showing its state's frame (FS-2325V §C.4); without a
@@ -545,6 +587,8 @@ export class BarrowspireScene extends Phaser.Scene {
     {
       sprite?: Phaser.GameObjects.Sprite;
       slab?: { rect: Phaser.GameObjects.Rectangle; plane: WorldPlane };
+      /** A room door's dark opening, shown in place of its open frame from outside (§B.5). */
+      opening?: BuiltParts;
       entityId: string;
       isOpen: boolean;
       pos: Point;
@@ -612,8 +656,10 @@ export class BarrowspireScene extends Phaser.Scene {
   private floorLook?: FloorLook;
   /** This floor's run dressing (FS-8RBQY §C.4); built once its static entities are known. */
   private dressing?: Phaser.GameObjects.Sprite[];
+  /** The same dressing, each piece with where it stands, for the hide rule (FS-9PN7X §C.2). */
+  private dressingAt: { sprite: Phaser.GameObjects.Sprite; pos: Point }[] = [];
   /** Fixed lights built this broadcast, waiting on the floor's light budget (FS-8RBQY §C.6). */
-  private pendingLights: FixedLight<{ source: LightSource; haloWhen?: () => boolean }>[] = [];
+  private pendingLights: FixedLight<{ source: LightSource } & LightRoom>[] = [];
   /** How many fixed lights this floor has stamped so far. */
   private stampedLights = 0;
   /** FS-2325V §C.7: replaces the overlay torch pool. */
@@ -635,7 +681,7 @@ export class BarrowspireScene extends Phaser.Scene {
       this.input.setDefaultCursor(monster ? this.crosshairCursorCSS : this.defaultCursorCSS),
   };
   private occluders = new Occluders();
-  /** How far above the floor a house's walls reach on screen, for the indoor mask's hole. */
+  /** How far above the floor a house's walls reach on screen, for the blackout's hole. */
   private wallTop = WALL_HEIGHT;
   private readonly PENDING_DURATION = 1000; // 1 秒內不比對剛拿的物品
   private lastGameState?: ClientGameState;
@@ -719,7 +765,13 @@ export class BarrowspireScene extends Phaser.Scene {
     this.hoveredPlayerId = undefined;
 
     this.buildings = [];
-    this.currentBuilding = null;
+    // Phaser has destroyed the rooms and the blackout's Graphics already, which destroying again
+    // leaves be; the next run makes its own with its first floor's walls
+    this.view?.destroy();
+    this.view = undefined;
+    this.roomLights = [];
+    this.hallLights = [];
+    this.roofCover = [];
     this.outsideObjects = [];
     this.chests.clear();
     this.escapeDoors.clear();
@@ -745,6 +797,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.perimeter = undefined;
     this.floorLook = undefined;
     this.dressing = undefined;
+    this.dressingAt = [];
     this.pendingLights = [];
     this.stampedLights = 0;
     this.lightMap = undefined;
@@ -2172,11 +2225,15 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private updateWalls(walls: WallState[]): void {
     const activeEntityIds = new Set(walls.map((w) => w.entity_id));
+    // rooms whose walls came or went: each is redrawn whole
+    const changed = new Set<string>();
 
     // 移除不存在的牆壁
     this.walls.forEach((wall, entityId) => {
       if (!activeEntityIds.has(entityId)) {
         wall.pieces.forEach((piece) => piece.destroy());
+        if (wall.houseId) changed.add(wall.houseId);
+        else this.view?.invalidate();
         this.walls.delete(entityId);
       }
     });
@@ -2184,32 +2241,30 @@ export class BarrowspireScene extends Phaser.Scene {
     // 新增或更新牆壁 — baked pieces when the art is there (FS-2325V §C.2)
     const fresh = walls.filter((w) => !this.walls.has(w.entity_id));
     const look = this.currentFloorLook();
+    if (this.art.has(`${look.walls.prefix}wall_back_plain_x`)) this.wallTop = BAKE.WALL_BACK * BAKE.VPX;
+    fresh.forEach((w) => {
+      if (!w.house_id) return;
+      changed.add(w.house_id);
+      this.walls.set(w.entity_id, { pieces: [], entityId: w.entity_id, houseId: w.house_id });
+    });
+    // a wall of no room is no building: it keeps the cut-away rules, its fade and its light
+    const loose = fresh.filter((w) => !w.house_id);
     const baked =
-      fresh.length > 0
-        ? addWalls(this, this.art, fresh, look.seed, look.walls)
+      loose.length > 0
+        ? addWalls(this, this.art, loose, look.seed, look.walls)
         : null;
+    // where a wall stands, for the hide rule (FS-9PN7X §C.1) and its sconces' (owner's addition 1)
+    const centreOf = (w: WallState) => ({ x: w.position.x + w.width / 2, y: w.position.y + w.height / 2 });
     if (baked) {
-      this.wallTop = BAKE.WALL_BACK * BAKE.VPX;
       this.occluders.add(baked.tall);
-      // a back wall's sconce or window lights the ground either way, but its flame
-      // is only in sight while its house's roof is off (the player is inside); with no
-      // roofs (a tower floor) every flame is always in sight
-      const roofed = this.worldLook.roofs;
-      const houseOf = new Map(housesFrom(walls).map((h) => [h.id, h]));
-      const wallHouse = new Map(walls.map((w) => [w.entity_id, w.house_id]));
-      baked.lights.forEach(({ source, wallId, underRoof }) => {
-        const house = houseOf.get(wallHouse.get(wallId) ?? "");
-        this.queueLight(
-          "sconce",
-          source,
-          roofed && underRoof && house
-            ? () => this.currentBuilding?.x === house.x && this.currentBuilding?.y === house.y
-            : undefined,
-        );
+      const byId = new Map(loose.map((w) => [w.entity_id, w]));
+      baked.lights.forEach(({ source, wallId }) => {
+        const wall = byId.get(wallId);
+        this.queueLight("sconce", source, wall ? { at: centreOf(wall) } : {});
       });
     }
-    fresh.forEach((wallState) => {
-      const pieces: Phaser.GameObjects.GameObject[] =
+    loose.forEach((wallState) => {
+      const pieces: BuildingPart[] =
         baked?.byWall.get(wallState.entity_id) ??
         (baked
           ? []
@@ -2219,15 +2274,13 @@ export class BarrowspireScene extends Phaser.Scene {
               wallState.position.y,
               wallState.width,
               wallState.height,
-              {
-                top: palette.wall,
-                south: palette.wallShade,
-                east: shade(palette.wall, 0.5),
-                edge: { width: 1, color: palette.wallLight, alpha: 0.6 },
-              },
+              PLACEHOLDER_STONE,
             ));
-      this.walls.set(wallState.entity_id, { pieces, entityId: wallState.entity_id });
+      this.walls.set(wallState.entity_id, { pieces, entityId: wallState.entity_id, pos: centreOf(wallState) });
     });
+    // a hall wall drawn while the player is in a room takes the hide rule on the next frame
+    if (loose.length > 0) this.view?.invalidate();
+    this.drawRooms(walls, changed);
 
     // 從牆壁反推建築範圍，按 house_id 分組建立屋頂 + 地板（只做一次）
     if (!this.serverBuildingsCreated && walls.length > 0) {
@@ -2261,12 +2314,11 @@ export class BarrowspireScene extends Phaser.Scene {
         // 屋頂 — baked slope and ridge pieces, each sorted by its own footprint
         // (FS-2325V §C.3); without art, the placeholder roof on a lifted plane. A world
         // theme without roofs (the tower's rooms) draws neither (FS-8RBQY §B.3, R1)
-        const roof = this.worldLook.roofs
-          ? (addRoof(this, this.art, house) ?? [this.placeholderRoof(house)])
-          : [];
-        this.occluders.add(
-          roof.filter((r): r is Phaser.GameObjects.Sprite => r instanceof Phaser.GameObjects.Sprite),
-        );
+        // A roof never fades: the player behind it shows as a silhouette (FS-9PN7X §E.4)
+        const baked = this.worldLook.roofs ? addRoof(this, this.art, house) : null;
+        const roof = baked ?? (this.worldLook.roofs ? [this.placeholderRoof(house)] : []);
+        if (baked) this.roofCover.push(...baked.map(coverOf));
+        else if (roof.length > 0) this.roofCover.push(slabCover(roof[0] as BuildingPart, grown(house, ROOF_EAVE), WALL_HEIGHT));
 
         // 入口標示（門在下方）— a soft amber glow on the ground at the threshold (FS-KYPQ9 §H.1)
         const doorMarker =
@@ -2283,7 +2335,7 @@ export class BarrowspireScene extends Phaser.Scene {
         doorCollider.setVisible(false);
 
         const building: Building = {
-          id: `server_building_${buildingIndex}`,
+          id: house.id,
           x: minX,
           y: minY,
           width: bw,
@@ -2298,7 +2350,63 @@ export class BarrowspireScene extends Phaser.Scene {
         };
         this.buildings.push(building);
       });
+      // the roofs hide and cover with the rooms (FS-9PN7X §C.1, §E.1)
+      this.buildingView().invalidate();
     }
+  }
+
+  /**
+   * The rooms' view, made with the first floor's walls and kept for the run (FS-9PN7X): the
+   * blackout as tall as the walls drawn (§D.2), read on each change, so walls baked after it still
+   * count; the doors and roofs as cover beside the rooms' own; the halls' scenery hidden by
+   * footprint; and the lights following the player's room.
+   */
+  private buildingView(): BuildingView {
+    this.view ??= new BuildingView(this, {
+      blackout: { wallTop: () => this.wallTop, reach: (this.mapWidth + this.mapHeight) * 2 },
+      cover: () => this.coverBesideRooms(),
+      scenery: () => this.sceneryByFootprint(),
+      onShow: () => this.showLights(),
+    });
+    return this.view;
+  }
+
+  /**
+   * Draws each room whose walls came or went in both its looks (ADR-0036, FS-9PN7X §B.2–§B.3), in
+   * the floor's wall sheets: masonry exterior fronts and back posts, the stone cap of a type that
+   * has one (a roofed theme keeps its roof instead), placeholders without art (§B.7). A room's
+   * parts are torn down whole and redrawn from its walls as they stand now; none of them fades
+   * (§E.4). Its walls' lights are the room's own, lit only from inside (§D.6). An open door's dark
+   * opening is its door's (`updateDoors`), so a room's gap draws none of its own.
+   */
+  private drawRooms(walls: readonly WallState[], changed: ReadonlySet<string>): void {
+    if (changed.size === 0) return;
+    const look = this.currentFloorLook();
+    const view = this.buildingView();
+    for (const id of changed) {
+      this.forgetRoomLights(id);
+      const own = walls.filter((w) => w.house_id === id);
+      if (own.length === 0) {
+        view.remove(id);
+        continue;
+      }
+      const [built] = addBuildings(this, this.art, own, look.seed, { sheets: look.walls });
+      built.lights.forEach(({ source }) => this.queueLight("sconce", source, { room: id }));
+      view.set(built);
+    }
+  }
+
+  /**
+   * A redrawn room's wall lights go with its old walls (FS-9PN7X §D.6): off the light-map, out of
+   * the room's lights and the floor's stamped count, and out of the queue, so the new walls' lights
+   * are counted once against `FIXED_LIGHT_CAP`. Lights merely standing in the room stay.
+   */
+  private forgetRoomLights(room: string): void {
+    const gone = this.roomLights.filter((l) => l.room === room && l.hung);
+    for (const { source } of gone) this.lightMap?.remove(source);
+    this.roomLights = this.roomLights.filter((l) => !gone.includes(l));
+    this.stampedLights -= gone.length;
+    this.pendingLights = this.pendingLights.filter((l) => l.light.room !== room);
   }
 
   /** The pre-art roof: a flat slab on a plane lifted to the wall tops. */
@@ -2314,9 +2422,10 @@ export class BarrowspireScene extends Phaser.Scene {
     roofPlane.root.setDepth(worldDepth(x + width / 2, y + height / 2));
     const roof = this.add.graphics();
     roof.fillStyle(palette.wallShade, 0.97);
-    roof.fillRect(x - 5, y - 5, width + 10, height + 10);
+    const eave = grown(house, ROOF_EAVE);
+    roof.fillRect(eave.x, eave.y, eave.width, eave.height);
     roof.lineStyle(2, palette.wall, 1);
-    roof.strokeRect(x - 5, y - 5, width + 10, height + 10);
+    roof.strokeRect(eave.x, eave.y, eave.width, eave.height);
     roofPlane.surface.add(roof);
     return roofPlane.root;
   }
@@ -2329,7 +2438,9 @@ export class BarrowspireScene extends Phaser.Scene {
       if (!activeEntityIds.has(entityId)) {
         door.sprite?.destroy();
         door.slab?.plane.root.destroy();
+        door.opening?.parts.forEach((part) => part.destroy());
         this.serverDoors.delete(entityId);
+        this.view?.invalidate();
       }
     });
 
@@ -2347,14 +2458,23 @@ export class BarrowspireScene extends Phaser.Scene {
           y: doorState.position.y + doorState.height / 2,
         };
         door = { entityId: doorState.entity_id, isOpen: doorState.is_open, pos };
+        // a door in a room's wall is part of the room: it takes the silhouette, not the fade,
+        // and from outside an open one is the room's dark opening (FS-9PN7X §B.5, §E.4)
+        const inRoom = this.buildings.some((b) => insideHouse(pos, b));
         if (this.art.available) {
           const at = worldToScreen(pos.x, pos.y);
           door.sprite = artSprite(this, this.art, at.x, at.y, sheet, { animation: frame });
           // sorted like the wall it stands in: by the back corner of its footprint
           door.sprite.setDepth(worldDepth(doorState.position.x, doorState.position.y, 1));
-          this.occluders.add([door.sprite]);
+          if (!inRoom) this.occluders.add([door.sprite]);
         } else {
           door.slab = this.placeholderDoor(doorState, pos);
+        }
+        if (inRoom) {
+          const sheets = this.currentFloorLook().walls;
+          door.opening = addDarkOpening(this, this.art, darkOpening(doorState, sheets), sheets);
+          door.opening.parts.forEach((part) => part.setVisible(false));
+          this.view?.invalidate();
         }
         this.serverDoors.set(doorState.entity_id, door);
       } else if (door.isOpen !== doorState.is_open) {
@@ -2675,11 +2795,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.bindRunInput();
 
     this.equipment = this.composeEquipment();
-
-    // 創建室內遮罩（用於遮住建築外面）
-    this.indoorMask = this.add.graphics();
-    this.indoorMask.setDepth(500);
-    this.indoorMask.setVisible(false);
 
     // 顯示座標 UI
     this.createUI();
@@ -3140,12 +3255,17 @@ export class BarrowspireScene extends Phaser.Scene {
     this.cancelAim();
     this.walls.forEach((wall) => wall.pieces.forEach((piece) => piece.destroy()));
     this.walls.clear();
+    // each room in both its looks, cap and all (FS-9PN7X §B), and the blackout: the new floor
+    // starts with the player outside every room until the inside test says otherwise, the dark
+    // drawn afresh around the new floor's room (§D.8); the silhouette waits for its rooms
+    this.view?.clear();
     // the outer wall goes with its floor; its slit lights go with the light-map's fixed sources
     this.perimeter?.forEach((piece) => piece.destroy());
     this.perimeter = undefined;
     // the band's dressing goes too; the next floor resolves its own band, seed and light budget
     this.dressing?.forEach((piece) => piece.destroy());
     this.dressing = undefined;
+    this.dressingAt = [];
     this.floorLook = undefined;
     this.pendingLights = [];
     this.stampedLights = 0;
@@ -3159,8 +3279,9 @@ export class BarrowspireScene extends Phaser.Scene {
       building.wallGroup.destroy(true);
     });
     this.buildings = [];
-    this.currentBuilding = null;
-    this.indoorMask?.setVisible(false);
+    this.roomLights = [];
+    this.hallLights = [];
+    this.roofCover = [];
     this.houseFloors.forEach((floor) => floor.destroy());
     this.houseFloors = [];
     this.groundLayer?.paint([]);
@@ -3169,6 +3290,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.serverDoors.forEach((door) => {
       door.sprite?.destroy();
       door.slab?.plane.root.destroy();
+      door.opening?.parts.forEach((part) => part.destroy());
     });
     this.serverDoors.clear();
     for (const drawn of [this.chests, this.escapeDoors, this.switches]) {
@@ -3511,6 +3633,8 @@ export class BarrowspireScene extends Phaser.Scene {
     const built = addPerimeter(this, this.art, this.mapWidth, this.mapHeight);
     this.perimeter = built?.sprites ?? [];
     built?.lights.forEach((light) => this.queueLight("slit", light));
+    // it stands outside every room: hidden from inside one (FS-9PN7X §C.1)
+    this.view?.invalidate();
   }
   /** This floor's look, or floor 1 of 1's before any broadcast has named the floor. */
   private currentFloorLook(): FloorLook {
@@ -3530,7 +3654,7 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     const { sprite, light } = addProp(this, this.art, "stairs_spiral", at);
     this.occluders.add([sprite]);
-    if (light) this.queueLight("stairs", { ...light, intensity: STAIRS_POOL_INTENSITY });
+    if (light) this.queueLight("stairs", { ...light, intensity: STAIRS_POOL_INTENSITY }, { at });
     return sprite;
   }
 
@@ -3545,10 +3669,15 @@ export class BarrowspireScene extends Phaser.Scene {
     const plan = look.dressing
       ? planDressing(look.dressing, look.seed, dressingStatics(state, this.mapWidth, this.mapHeight))
       : [];
-    const built = addDressing(this, this.art, plan);
-    this.dressing = built.sprites;
-    this.occluders.add(built.tall);
-    built.lights.forEach((light) => this.queueLight("brazier", light));
+    // piece by piece, so each sprite and flame keeps where it stands (FS-9PN7X §C.2, §D.6)
+    this.dressing = [];
+    for (const piece of plan) {
+      const built = addDressing(this, this.art, [piece]);
+      this.dressing.push(...built.sprites);
+      this.dressingAt.push(...built.sprites.map((sprite) => ({ sprite, pos: piece.at })));
+      this.occluders.add(built.tall);
+      built.lights.forEach((light) => this.queueLight("brazier", light, { at: piece.at }));
+    }
   }
 
   /**
@@ -3560,12 +3689,15 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!this.worldLook.interactablePools || !this.art?.available) return;
     const s = worldToScreen(at.x, at.y);
     const seed = tileHash(Math.round(at.x), Math.round(at.y), 23);
-    this.queueLight("interactable", interactablePool({ x: s.x, y: s.y - 12 }, seed));
+    this.queueLight("interactable", interactablePool({ x: s.x, y: s.y - 12 }, seed), { at });
   }
 
-  /** Holds a fixed light for the floor's budget; nothing reaches the light-map until `stampLights`. */
-  private queueLight(kind: FixedLightKind, source: LightSource, haloWhen?: () => boolean): void {
-    this.pendingLights.push({ kind, at: { x: source.x, y: source.y }, light: { source, haloWhen } });
+  /**
+   * Holds a fixed light for the floor's budget; nothing reaches the light-map until `stampLights`.
+   * `where` names the building it belongs to, or the world point it stands on (FS-9PN7X §D.6).
+   */
+  private queueLight(kind: FixedLightKind, source: LightSource, where: LightRoom = {}): void {
+    this.pendingLights.push({ kind, at: { x: source.x, y: source.y }, light: { source, ...where } });
   }
 
   /**
@@ -3576,11 +3708,47 @@ export class BarrowspireScene extends Phaser.Scene {
   private stampLights(): void {
     if (this.pendingLights.length === 0) return;
     const kept = budgetLights(this.pendingLights, FIXED_LIGHT_CAP - this.stampedLights);
-    kept.forEach(({ light }) => this.lightMap?.add(light.source, light.haloWhen));
+    for (const { light: { source, room, at } } of kept) {
+      // a light standing in a building is that building's, by the same inside test (§A.2)
+      const own = room ?? (at && buildingAt(at, this.buildings)?.id);
+      if (!own) {
+        this.addHallLight(source, at);
+        continue;
+      }
+      this.roomLights.push({ room: own, source, intensity: source.intensity, hung: room !== undefined });
+      // its flame's halo, like its pool, is in sight only from inside
+      this.lightMap?.add(source, () => this.view?.building?.id === own);
+    }
     this.stampedLights += kept.length;
     this.pendingLights = [];
+    this.showLights();
   }
 
+  /**
+   * A light of the halls, at a footprint or (a perimeter slit) at none: its pool and halo go dark
+   * while the player is in a room it is not in, and come back in the halls, as the hub's street
+   * lights do (the owner's addition 1: inside a building, everything outside goes dark).
+   */
+  private addHallLight(source: LightSource, at?: Point): void {
+    this.hallLights.push({ source, intensity: source.intensity, at });
+    this.lightMap?.add(source, () => this.inSight(at));
+  }
+
+  /** Whether what stands at `at` (or, at none, outside every room) is in the player's sight. */
+  private inSight(at?: Point): boolean {
+    return at ? !this.view?.hidden(at) : !this.view?.building;
+  }
+
+  /**
+   * The fixed lights for the player's room (FS-9PN7X §D.6): each building's own lights are lit only
+   * while the player is inside it, as the hub's interiors are, and every light outside the player's
+   * room goes dark (the owner's addition 1). The pool goes dark and the halo's gate closes.
+   */
+  private showLights(): void {
+    const inside = this.view?.building?.id;
+    for (const l of this.roomLights) l.source.intensity = l.room === inside ? l.intensity : 0;
+    for (const l of this.hallLights) l.source.intensity = this.inSight(l.at) ? l.intensity : 0;
+  }
 
   /**
    * The map floor. The map is a diamond on the projection: its floor keeps its
@@ -3604,93 +3772,141 @@ export class BarrowspireScene extends Phaser.Scene {
     this.outsideObjects.push(stone);
   }
 
-  private isPlayerInsideBuilding(building: Building): boolean {
-    const me = this.playerPos;
-    if (!this.player || !me) return false;
-    return inBuilding(building, me);
+  /**
+   * Whether the player stands in the world: drawn, alive, and not watching a teammate. While they
+   * do not (dead, escaped, spectating) no building is theirs (edge state: player gone).
+   */
+  private present(): boolean {
+    return !!this.player?.visible && !this.watchedPlayerId && !isDead(this.lastGameState?.current_player);
+  }
+
+  /**
+   * Where the inside test is taken (FS-9PN7X §A.2): the player's drawn position, or none before the
+   * player is drawn, once they have escaped, while they lie dead, or while they watch a teammate
+   * (edge state: player gone). With none, no building is the player's: the blackout is off and
+   * only the hide rule's indoors half applies. The watched teammate is not followed indoors.
+   */
+  private eye(): Point | undefined {
+    return this.present() ? this.playerPos : undefined;
+  }
+
+  /** The player to silhouette behind a room (§E.2: the player only), while they stand in the world. */
+  private figure(): Figure | undefined {
+    const self = this.player;
+    if (!self || !this.present()) return undefined;
+    return { body: self, bounds: self.getBounds(), depth: self.depth };
+  }
+
+  /** The building the player stands in, by the one inside test (FS-9PN7X §A.2); none outside. */
+  private get currentBuilding(): Building | undefined {
+    const id = this.view?.building?.id;
+    return id === undefined ? undefined : this.buildings.find((b) => b.id === id);
   }
 
   /** Whether a roof still on (a house the player is not inside) stands over this world point. */
   private underRoof(at: Point): boolean {
     if (!this.worldLook.roofs) return false;
-    return this.buildings.some((b) => b !== this.currentBuilding && inBuilding(b, at));
+    const mine = this.currentBuilding;
+    return this.buildings.some((b) => b !== mine && insideHouse(at, b));
   }
 
+  /**
+   * Which building the player stands in, and what that changes, all in the frame the inside test
+   * does (FS-9PN7X §A.4): the building swaps to its interior look, the lights follow it, and
+   * everything outside it goes dark (§D), in every world theme; the silhouette while a room covers
+   * the player (§E). Then the doors and the one hide rule for the frame (§C).
+   */
   private checkBuildingStatus(): void {
-    // a tower floor is all indoors: entering a room changes nothing (FS-8RBQY §B.3)
-    if (!this.worldLook.indoorMask) return;
-    let insideBuilding: Building | null = null;
-
-    for (const building of this.buildings) {
-      if (this.isPlayerInsideBuilding(building)) {
-        insideBuilding = building;
-        break;
-      }
-    }
-
-    // 狀態改變時更新視覺
-    if (insideBuilding !== this.currentBuilding) {
-      if (insideBuilding) {
-        // 進入建築：隱藏室外物件，顯示當前建築內部
-        this.enterBuilding(insideBuilding);
-      } else {
-        // 離開建築：顯示室外物件
-        this.exitBuilding();
-      }
-      this.currentBuilding = insideBuilding;
-    }
+    this.view?.update(this.eye(), this.figure());
+    this.showDoors();
+    this.hideWhatIsElsewhere();
   }
 
-  private enterBuilding(building: Building): void {
-    // 隱藏當前建築屋頂和入口標示
-    building.roof.forEach((part) => part.setVisible(false));
-    building.doorMarker?.setVisible(false);
-
-    // 隱藏所有入口標示
-    this.buildings.forEach((b) => {
-      b.doorMarker?.setVisible(false);
+  /**
+   * What hides by footprint with the player's room (FS-9PN7X §C.1): the halls' walls, an exterior
+   * house's roof (lifted over its own house, outside every other), and the outer wall, which stands
+   * outside every room. Hidden, not left to the blackout, since tall pieces just outside the room
+   * reach up into its hole.
+   */
+  private sceneryByFootprint(): Scenery[] {
+    const scenery: Scenery[] = this.buildings.map(({ roof }) => ({ parts: roof }));
+    this.walls.forEach(({ pieces, pos }) => {
+      if (pos) scenery.push({ parts: pieces, at: pos });
     });
-
-    // 顯示室內遮罩，遮住建築外面的一切
-    this.indoorMask.setVisible(true);
-    this.updateIndoorMask(building);
+    if (this.perimeter) scenery.push({ parts: this.perimeter });
+    return scenery;
   }
 
-  private exitBuilding(): void {
-    // 顯示所有屋頂和入口標示
-    this.buildings.forEach((b) => {
-      b.roof.forEach((part) => part.setVisible(true));
-      b.doorMarker?.setVisible(true);
+  /**
+   * What covers the player from outside beside the rooms' own pieces (FS-9PN7X §E.1): each room
+   * door and its dark opening, and an exterior house's roof.
+   */
+  private coverBesideRooms(): Cover[] {
+    const cover = [...this.roofCover];
+    this.serverDoors.forEach(({ sprite, opening }) => {
+      if (!opening) return;
+      cover.push(...opening.cover);
+      if (sprite) cover.push(coverOf(sprite));
     });
-
-    // 隱藏室內遮罩
-    this.indoorMask.setVisible(false);
+    return cover;
   }
 
-  private updateIndoorMask(building: Building): void {
-    this.indoorMask.clear();
+  /**
+   * The doors for where the player is, each frame, since a door opens and shuts on its own
+   * (FS-9PN7X §B.5, §C.1): from the halls a shut door is a door and an open room door its dark
+   * opening; inside a room, its own doors show their frames (a door in a wall two rooms share is in
+   * both) and every other door hides.
+   */
+  private showDoors(): void {
+    const mine = this.view?.building;
+    this.serverDoors.forEach((door) => {
+      const shown = mine ? insideHouse(door.pos, mine) : true;
+      const dark = !mine && door.isOpen && !!door.opening;
+      door.sprite?.setVisible(shown && !dark);
+      door.slab?.plane.root.setVisible(shown && !dark);
+      door.opening?.parts.forEach((part) => part.setVisible(dark));
+    });
+  }
 
-    // 用黑色填充整個地圖，但挖空建築內部區域 — on the projection the house is its
-    // floor diamond plus its walls standing `wallTop` above it, so the hole is
-    // that hexagon and everything outside it is filled.
-    const padding = 5;
-    const floor = projectRect(
-      building.x - padding,
-      building.y - padding,
-      building.width + padding * 2,
-      building.height + padding * 2,
-    );
-    const [, right, bottom, left] = floor;
-    const [topUp, rightUp, , leftUp] = raise(floor, this.wallTop);
-    const house = [topUp, rightUp, right, bottom, left, leftUp];
+  /**
+   * The one hide rule (FS-9PN7X §C.1): whatever stands in a building the player is not in, or out
+   * of the building the player is in, is hidden, read each frame from where it is drawn. Monsters,
+   * teammates (the party too, §C.4), containers and drop piles, the escape door and switch,
+   * stairs, run dressing, projectiles, burning trails and world effects. The plates and bars over
+   * monsters and teammates stand over the blackout, so they are hidden here, never left to it
+   * (§C.2). The player is never hidden: their building is picked by the same rule (§C.3).
+   */
+  private hideWhatIsElsewhere(): void {
+    const hiddenAt = (at: Point) => this.view?.hidden(at) ?? false;
 
-    // far enough to cover the whole camera range around any house on the map
-    const reach = (this.mapWidth + this.mapHeight) * 2;
+    this.otherPlayers.forEach((sprite, playerId) => {
+      const pos = this.otherPlayersPos.get(playerId);
+      if (!pos) return;
+      const shown = !hiddenAt(pos);
+      sprite.setVisible(shown);
+      this.otherPlayersLegs.get(playerId)?.setVisible(shown);
+      this.teammateHealthBars.get(playerId)?.graphics.setVisible(shown);
+      // shown, the name keeps what the hover said this frame
+      if (!shown) this.otherPlayersNameTexts.get(playerId)?.setVisible(false);
+    });
+    this.monsters?.hideWhere(hiddenAt);
 
-    this.indoorMask.fillStyle(palette.inkDeep, 1);
-    for (const quad of outsideConvex(house, reach)) {
-      this.indoorMask.fillPoints(quad, true);
+    const placed = [
+      ...this.chests.values(),
+      ...this.escapeDoors.values(),
+      ...this.switches.values(),
+      ...this.stairs.placed(),
+      ...this.dressingAt,
+    ];
+    for (const { sprite, pos } of placed) sprite.setVisible(!hiddenAt(pos));
+    for (const { bed, glow, trail } of this.trails.placed()) {
+      // a trail is a line on the floor: hidden once neither end is in sight
+      const shown = !hiddenAt(trail.from) || !hiddenAt(trail.to);
+      bed.setVisible(shown);
+      glow.setVisible(shown);
     }
+    this.projectiles?.hideWhere(hiddenAt);
+    this.fx?.hideWhere(hiddenAt);
   }
 
   private createUI(): void {
@@ -3748,7 +3964,7 @@ export class BarrowspireScene extends Phaser.Scene {
       const pos = this.playerPos ?? { x: 0, y: 0 };
       const at = `X: ${Math.round(pos.x)} Y: ${Math.round(pos.y)}`;
       // a tower floor is all indoors, so it says neither (FS-8RBQY §B.3)
-      if (!this.worldLook.indoorMask) posText.setText(at);
+      if (!this.worldLook.indoorLabel) posText.setText(at);
       else posText.setText(`${at} | ${this.currentBuilding ? "Indoor" : "Outdoor"}`);
     };
     this.events.on("update", showPosition);
@@ -4395,8 +4611,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // skip all input/movement if player has escaped
     if (this.player && !this.player.visible) {
-      // still update other players smoothly
+      // still update other players smoothly, and keep hiding what stands in the rooms
       this.updateOtherPlayersSmooth(time, delta);
+      this.checkBuildingStatus();
       return;
     }
 

@@ -4,6 +4,7 @@
 //
 //   npm run bake              bake and write public/art/, plus the review contact sheets of
 //                             the cast and the tower interior in tools/bake/review/ (gitignored; lib/contact.mjs)
+//                             and the building exteriors laid as a mock building (lib/building.mjs)
 //   npm run bake -- --check   bake, write nothing, exit 1 if the output would change
 //
 // Characters and creatures (FS-2325V §E, ADR-0021) are authored in page/characters/: one
@@ -35,6 +36,7 @@ import { packAtlases } from "./lib/pack.mjs";
 import { startServer } from "./lib/server.mjs";
 import { CLIENT_ROOT, loadManifestValidator, loadTheme } from "./lib/source.mjs";
 import { labelTexts, writeReview } from "./lib/contact.mjs";
+import { buildingReviewTexts, writeBuildingReview } from "./lib/building.mjs";
 
 const OUT_DIR = join(CLIENT_ROOT, "public", "art");
 const MANIFEST = join(OUT_DIR, "manifest.json");
@@ -61,7 +63,8 @@ async function launch() {
 /**
  * What the review contact sheets show: the cast, then the tower interior (FS-8RBQY §D.7), then the
  * Spire's facade (FS-0XMCP §R15), then the Forlorn Forest's trees and dressing (FS-3QHQZ §C R30),
- * then the town buildings' furniture and fittings (FS-B0H2D §G R30).
+ * then the town buildings' furniture and fittings (FS-B0H2D §G R30), then the building exteriors
+ * (FS-9PN7X §F.1).
  */
 const reviewSheets = (sheets) => [
   ...sheets.filter((x) => x.directions === 8),
@@ -69,6 +72,7 @@ const reviewSheets = (sheets) => [
   ...sheets.filter((x) => x.group === "spire"),
   ...sheets.filter((x) => x.group === "forest"),
   ...sheets.filter((x) => x.group === "interior"),
+  ...sheets.filter((x) => x.group === "building"),
 ];
 
 function readJson(file) {
@@ -109,7 +113,7 @@ async function bakeAll() {
     const review = reviewSheets(sheets);
     const labels = new Map();
     if (!CHECK && review.length)
-      for (const l of await page.evaluate((t) => window.bakeLabels(t), labelTexts(review, init.facings)))
+      for (const l of await page.evaluate((t) => window.bakeLabels(t), [...labelTexts(review, init.facings), ...buildingReviewTexts()]))
         labels.set(l.text, { w: l.w, h: l.h, px: Buffer.from(l.rgba, "base64") });
     return { tile: init.tile, facings: init.facings, sheets, labels };
   } finally {
@@ -264,7 +268,10 @@ async function main() {
   if (!CHECK) {
     const review = reviewSheets(baked.sheets);
     if (review.length) {
-      const files = writeReview({ sheets: review, facings: manifest.facings, labels: baked.labels, manifest, theme: (await loadTheme()).BARROW });
+      const theme = (await loadTheme()).BARROW;
+      const files = writeReview({ sheets: review, facings: manifest.facings, labels: baked.labels, manifest, theme });
+      // the building exteriors laid as a mock building beside today's pieces (FS-9PN7X §F.1)
+      if (review.some((s) => s.group === "building")) files.push(...writeBuildingReview({ sheets: baked.sheets, labels: baked.labels, theme }));
       console.log(`bake: review contact sheets (not committed):\n  ${files.join("\n  ")}`);
     }
   }

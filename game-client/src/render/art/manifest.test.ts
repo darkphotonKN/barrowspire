@@ -1343,4 +1343,138 @@ describe("the baked manifest (public/art/manifest.json)", () => {
           expect(BOARS.map(([n]) => n)).toContain(name);
     });
   });
+
+  describe("the building exterior pieces (FS-9PN7X §F)", () => {
+    type Sheet = {
+      atlas: string;
+      frameWidth: number;
+      frameHeight: number;
+      anchor: { x: number; y: number };
+      directions: number;
+      animations: Record<string, { frames: unknown[][] }>;
+      light?: unknown;
+      source: string;
+      licence: string;
+    };
+    const sheet = (name: string): Sheet => baked.sheets[name];
+    const AXES = ["x", "y"];
+    const TIMBER = ["plain", "brace", "window"].flatMap((v) =>
+      AXES.map((a) => `wall_exterior_${v}_${a}`),
+    );
+    const MASONRY = ["plain", "pillar"].flatMap((v) =>
+      AXES.map((a) => `tower_wall_exterior_${v}_${a}`),
+    );
+    const OPENINGS = [
+      ...AXES.map((a) => `door_dark_${a}`),
+      ...AXES.map((a) => `tower_door_dark_${a}`),
+    ];
+    /** Named for the ridge whose ends they close, as roof_ridge's animations. */
+    const GABLES = AXES.map((a) => `roof_gable_${a}`);
+    const BUILDING = [
+      ...TIMBER,
+      ...MASONRY,
+      "tower_cap",
+      ...OPENINGS,
+      ...GABLES,
+    ];
+    /** Screen px a sheet stands above its anchor. */
+    const above = (s: Sheet) => s.anchor.y * s.frameHeight;
+
+    it.each(BUILDING)(
+      "%s is baked into the building group, authored in models/building.js",
+      (name) => {
+        const s = sheet(name);
+        expect(s, name).toBeDefined();
+        expect(s.atlas, name).toMatch(/^building-\d+$/);
+        expect(s.directions).toBe(1);
+        expect(s.source).toMatch(
+          /^authored: tools\/bake\/page\/models\/building\.js#[a-zA-Z]+$/,
+        );
+        expect(s.licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it("packs nothing else into the building group", () => {
+      for (const [name, s] of Object.entries(baked.sheets) as [string, Sheet][])
+        if (/^building-/.test(s.atlas)) expect(BUILDING, name).toContain(name);
+    });
+
+    it("declares no light on any exterior piece, cap or dark opening: from outside, lights are off", () => {
+      for (const name of BUILDING)
+        expect(sheet(name).light, name).toBeUndefined();
+    });
+
+    it.each([
+      ...TIMBER.map((n) => [n, `wall_back_plain_${n.slice(-1)}`]),
+      ...MASONRY.map((n) => [n, `tower_wall_back_plain_${n.slice(-1)}`]),
+    ])(
+      "%s shares the frame and anchor of %s, so cutWall and trimCrop are unchanged",
+      (name, back) => {
+        const s = sheet(name);
+        const b = sheet(back);
+        expect([s.frameWidth, s.frameHeight, s.anchor]).toEqual([
+          b.frameWidth,
+          b.frameHeight,
+          b.anchor,
+        ]);
+      },
+    );
+
+    it("carries the variant kinds each type's exterior table names, two variants a kind", () => {
+      for (const name of [...TIMBER, ...MASONRY])
+        expect(Object.keys(sheet(name).animations), name).toEqual(["variants"]);
+      for (const name of [...TIMBER, ...MASONRY])
+        expect(sheet(name).animations.variants.frames[0], name).toHaveLength(2);
+    });
+
+    it("bakes one stone cap with variants, like a ground tile", () => {
+      const s = sheet("tower_cap");
+      expect(Object.keys(s.animations)).toEqual(["variants"]);
+      expect(s.animations.variants.frames[0]).toHaveLength(4);
+    });
+
+    it.each([
+      ["roof_gable_x", ["s", "n"]],
+      ["roof_gable_y", ["e", "w"]],
+    ] as const)(
+      "%s closes each roof half by its downhill side, as roof_slope's facings, framed alike",
+      (name, halves) => {
+        const s = sheet(name);
+        expect(Object.keys(s.animations)).toEqual([...halves]);
+        for (const half of halves)
+          expect(s.animations[half].frames[0]).toHaveLength(1);
+        // laid against the roof, like the slopes: no ground shadow of its own
+        expect(s.frameWidth).toBeLessThan(
+          sheet("wall_back_plain_x").frameWidth,
+        );
+      },
+    );
+
+    it.each(GABLES)(
+      "%s stands on its foot and climbs from a back wall's height one roof rise (roofs.ts GABLE_FOOT)",
+      (name) => {
+        const s = sheet(name);
+        const back = sheet(
+          `wall_back_plain_${name.slice(-1) === "x" ? "y" : "x"}`,
+        );
+        const VPX = (32 / Math.SQRT1_2) * Math.cos(Math.PI / 6);
+        // its origin is its foot on the ground, like a wall piece's; its top edge starts at the
+        // back wall's height (3.6) and climbs one rise (0.7) across its tile to the ridge side
+        expect(above(s)).toBeGreaterThan(above(back) + 0.5 * 0.7 * VPX);
+        expect(above(s)).toBeLessThan(above(back) + (0.7 + 0.1) * VPX + 16);
+      },
+    );
+
+    it.each(OPENINGS)(
+      "%s stands full height, as tall as a back wall, and wider than one tile of wall",
+      (name) => {
+        const s = sheet(name);
+        const axis = name.slice(-1);
+        const back = sheet(`wall_back_plain_${axis}`);
+        expect(Object.keys(s.animations)).toEqual(["default"]);
+        expect(Math.abs(above(s) - above(back))).toBeLessThanOrEqual(3);
+        expect(s.frameWidth).toBeGreaterThan(back.frameWidth);
+      },
+    );
+  });
 });

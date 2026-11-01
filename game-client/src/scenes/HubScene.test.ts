@@ -60,7 +60,12 @@ vi.mock("phaser", async () => {
 // go to the wall pieces, which props stand where, and which footprints get a placeholder block.
 vi.mock("@/render/world", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/render/world")>();
-  return { ...real, addWalls: vi.fn(real.addWalls), addProp: vi.fn(real.addProp) };
+  return {
+    ...real,
+    addWalls: vi.fn(real.addWalls),
+    addBuildings: vi.fn(real.addBuildings),
+    addProp: vi.fn(real.addProp),
+  };
 });
 vi.mock("@/render/iso", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/render/iso")>();
@@ -1958,6 +1963,7 @@ describe("HubScene the stash chest's E (FS-VPD8Y R34, R43–44)", () => {
 const { readFileSync } = await import("node:fs");
 const { ArtLibrary } = await import("@/render/art/library");
 const world = await import("@/render/world");
+const { BLACKOUT } = world;
 const iso = await import("@/render/iso");
 
 describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () => {
@@ -2007,6 +2013,7 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
   const IN_STORE = { x: 1280, y: 330 };
   const IN_SMITHY = { x: 260, y: 230 };
   const OUTDOORS = { x: 1000, y: 800 };
+  const ON_THE_STREET = { x: 900, y: 600 };
 
   interface InteriorHub {
     art: unknown;
@@ -2017,13 +2024,14 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     interiors: { house: { id: string }; parts: Made[]; lights: { source: { intensity: number } }[] }[];
     renderStructures(walls: unknown[]): void;
     renderNPCs(npcs: unknown[]): void;
-    hideRoofOverhead(): void;
-    hideWhoIsIndoors(): void;
+    updateBuildings(): void;
+    hideWhoIsElsewhere(): void;
   }
 
   /** The town drawn on the recording stage, with `art`, and the player standing at `at`. */
   function town(art: InstanceType<typeof ArtLibrary>) {
     vi.mocked(world.addWalls).mockClear();
+    vi.mocked(world.addBuildings).mockClear();
     vi.mocked(world.addProp).mockClear();
     vi.mocked(iso.addUprightBlock).mockClear();
     const { hub: raw, stage } = hubOnStage();
@@ -2055,30 +2063,36 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     });
     const self = player({ ...OUTDOORS });
     const rival = player({ ...IN_INN });
+    // a teammate out on the street: the hide rule knows no party (FS-9PN7X §C.4)
+    const mate = player({ ...ON_THE_STREET });
     hub.selfEntityID = "me";
     hub.views = new Map<string, unknown>([
       ["me", self],
       ["rival", rival],
+      ["mate", mate],
     ]);
     /** Puts the player at `at` and runs the frame's roof and indoor tests. */
     const standIn = (at: { x: number; y: number }) => {
       self.pos.x = at.x;
       self.pos.y = at.y;
-      hub.hideRoofOverhead();
-      hub.hideWhoIsIndoors();
+      hub.updateBuildings();
+      hub.hideWhoIsElsewhere();
     };
     const room = (id: string) => hub.interiors.find((r) => r.house.id === id)!;
     standIn(OUTDOORS);
-    return { hub, stage, self, rival, standIn, room };
+    return { hub, stage, self, rival, mate, standIn, room };
   }
 
   const sameRect = (args: unknown[], [, x, y, w, h]: [string, number, number, number, number]) =>
     args[1] === x && args[2] === y && args[3] === w && args[4] === h;
 
-  it("should hand the wall pieces the building walls only, never a furnishing", () => {
+  it("should hand the buildings the building walls only, never a furnishing, with the gaps' dark openings", () => {
     town(BAKED);
-    const drawn = vi.mocked(world.addWalls).mock.calls[0][2] as readonly { entity_id: string }[];
+    const [call] = vi.mocked(world.addBuildings).mock.calls;
+    const drawn = call[2] as readonly { entity_id: string }[];
     expect(drawn.map((w) => w.entity_id)).toEqual(BUILDING_WALLS.map((w) => w.entity_id));
+    // the hub has no DoorState: a town door gap shows its dark opening from outside (§B.5)
+    expect(call[4]).toMatchObject({ openings: world.doorGaps });
   });
 
   it("should stand each furnishing's prop on the centre of its rect", () => {
@@ -2114,8 +2128,9 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       expect(mine, `${f}`).toHaveLength(1);
       expect(mine[0][6]).toBeLessThan(WALL_HEIGHT);
     }
+    // a building still closes: each wall a full-height placeholder block (FS-9PN7X §B.7)
     for (const w of BUILDING_WALLS)
-      expect(calls.some((c) => sameRect(c, ["", w.position.x, w.position.y, w.width, w.height]) && c[6] === undefined)).toBe(true);
+      expect(calls.some((c) => sameRect(c, ["", w.position.x, w.position.y, w.width, w.height]) && c[6] === WALL_HEIGHT)).toBe(true);
   });
 
   it("should hide every room, and whoever is in one, while its roof is on", () => {
@@ -2225,6 +2240,298 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     standIn(OUTDOORS);
     expect(forge[0].source.intensity).toBe(0);
     expect(gate()).toBe(false);
+  });
+
+  describe("the indoor blackout and the one hide rule (FS-9PN7X §A.4, §C, §D)", () => {
+    /** The blackout's Graphics: the one thing the hub draws at its depth. */
+    const blackoutOf = (stage: { made: Made[] }) => {
+      const dark = stage.made.filter((m) => m.kind === "graphics" && m.depth === BLACKOUT.depth);
+      expect(dark).toHaveLength(1);
+      return dark[0];
+    };
+    const stashMarks = (stage: { made: Made[] }) => {
+      const at = stage.made.findIndex((m) => m.kind === "text" && m.args[2] === STASH_NAME);
+      const sigil = stage.made.slice(at + 1).find((m) => m.kind === "graphics" && m.depth === MARKER_DEPTH.name)!;
+      return [stage.made[at], sigil];
+    };
+    const shows = (who: { sprite: Made; name: Made; legs?: Made; sigil?: Made }) =>
+      [who.sprite, who.name, who.legs, who.sigil].filter((m) => m !== undefined).map((m) => m!.visible);
+
+    it("should stand over the light-map and halos, under the vignette and markers", () => {
+      expect(BLACKOUT.depth).toBeGreaterThan(136);
+      expect(BLACKOUT.depth).toBeLessThan(902);
+      expect(BLACKOUT.depth).toBeLessThan(MARKER_DEPTH.name);
+    });
+
+    it("should snap on around the building the frame the player steps in, and off the frame they leave", () => {
+      const { hub, stage, standIn } = town(BAKED);
+      const dark = blackoutOf(stage);
+      const view = (hub as unknown as { view: { building?: { id: string } } }).view;
+      expect(dark.visible).toBe(false);
+      standIn(IN_INN);
+      expect(dark.visible).toBe(true);
+      expect(view.building?.id).toBe("inn");
+      standIn(IN_STORE);
+      expect(view.building?.id).toBe("store");
+      standIn(OUTDOORS);
+      expect(dark.visible).toBe(false);
+      expect(view.building).toBeUndefined();
+    });
+
+    it("should snap on at the door gap, the threshold being inside", () => {
+      const { stage, standIn } = town(BARE);
+      standIn({ x: 670, y: 410 });
+      expect(blackoutOf(stage).visible).toBe(true);
+    });
+
+    it("should hide everyone outside the player's building, the teammate too, body, legs and plate", () => {
+      const { hub, self, rival, mate, standIn } = town(BAKED);
+      standIn(IN_INN);
+      expect(shows(mate)).toEqual([false, false, false]);
+      expect(shows(hub.npcs.get("cottar")!)).toEqual([false, false]);
+      expect(shows(hub.npcs.get("smith")!)).toEqual([false, false]);
+      // whoever shares the building stays, and the player always
+      expect(shows(rival)).toEqual([true, true, true]);
+      expect(shows(hub.npcs.get("drover")!)).toEqual([true, true]);
+      expect(shows(self)).toEqual([true, true, true]);
+    });
+
+    it("should show the street again, the teammate too, once the player walks out", () => {
+      const { hub, self, mate, standIn } = town(BAKED);
+      standIn(IN_INN);
+      standIn(OUTDOORS);
+      expect(shows(mate)).toEqual([true, true, true]);
+      expect(shows(hub.npcs.get("cottar")!)).toEqual([true, true]);
+      expect(shows(self)).toEqual([true, true, true]);
+    });
+
+    it("should hide the Quartermaster's and the Stash markers while the player is in another building", () => {
+      const { hub, stage, standIn } = town(BAKED);
+      const qm = hub.npcs.get("qm")!;
+      const [name, sigil] = stashMarks(stage);
+      standIn(IN_INN);
+      expect(shows(qm)).toEqual([false, false, false]);
+      expect([name.visible, sigil.visible]).toEqual([false, false]);
+    });
+
+    it("should keep the Quartermaster's and the Stash markers over the store from the street and inside it", () => {
+      const { hub, stage, standIn } = town(BAKED);
+      const qm = hub.npcs.get("qm")!;
+      const [name, sigil] = stashMarks(stage);
+      expect(shows(qm)).toEqual([false, true, true]);
+      expect([name.visible, sigil.visible]).toEqual([true, true]);
+      standIn(IN_STORE);
+      expect(shows(qm)).toEqual([true, true, true]);
+      expect([name.visible, sigil.visible]).toEqual([true, true]);
+    });
+
+    it("should let the blackout go with the visit", () => {
+      const { hub } = town(BAKED);
+      (hub as unknown as { release(): void }).release();
+      expect((hub as unknown as { view?: unknown }).view).toBeUndefined();
+    });
+  });
+
+  describe("closed buildings from outside, and the silhouette (FS-9PN7X §B, §E, I-9PN7X-5)", () => {
+    interface ClosedHub {
+      view: { drawn: { house: { id: string }; shared: Made[]; interior: Made[]; exterior: Made[] }[] };
+      roofs: { house: { id: string }; parts: Made[] }[];
+      occluders: { items: { sprite: Made }[] };
+      drawScenery(walls: unknown[]): void;
+    }
+    const sheetOf = (m: Made) => String(m.args[3] ?? "").split("/")[0];
+    const drawn = (stage: { made: Made[] }, match: RegExp) =>
+      stage.made.filter((m) => m.kind === "sprite" && !m.destroyed && match.test(sheetOf(m)));
+    const shown = (ms: Made[]) => ms.length > 0 && ms.every((m) => m.visible);
+    const hiddenAll = (ms: Made[]) => ms.length > 0 && ms.every((m) => !m.visible);
+    const closed = (hub: unknown) => hub as ClosedHub;
+    const building = (hub: unknown, id: string) => closed(hub).view.drawn.find((b) => b.house.id === id)!;
+    const roof = (hub: unknown, id: string) => closed(hub).roofs.find((r) => r.house.id === id)!.parts;
+
+    it("should close every building from the street: full-height exterior fronts, roof and gables, a dark opening in each door gap", () => {
+      const { stage } = town(BAKED);
+      expect(shown(drawn(stage, /^wall_exterior_/))).toBe(true);
+      expect(shown(drawn(stage, /^roof_(slope|ridge)$/))).toBe(true);
+      expect(shown(drawn(stage, /^roof_gable_[xy]$/))).toBe(true);
+      expect(drawn(stage, /^door_dark_x$/).filter((m) => m.visible)).toHaveLength(BUILDINGS.length);
+      // nothing of the cut-away: its fronts and their low posts are hidden
+      expect(hiddenAll(drawn(stage, /^wall_front_/))).toBe(true);
+      expect(hiddenAll(drawn(stage, /^post_front$/))).toBe(true);
+      // the back walls stand in both looks
+      expect(shown(drawn(stage, /^wall_back_/))).toBe(true);
+    });
+
+    it("should snap the player's building to its interior look in the frame they step in, and hide every other building whole", () => {
+      const { hub, standIn } = town(BAKED);
+      standIn(IN_INN);
+      const inn = building(hub, "inn");
+      expect(shown(inn.interior)).toBe(true);
+      expect(shown(inn.shared)).toBe(true);
+      expect(hiddenAll(inn.exterior)).toBe(true);
+      expect(hiddenAll(roof(hub, "inn"))).toBe(true);
+      // the store, its roof and its gables are outside the Inn: hidden by footprint (owner's addition 1)
+      const store = building(hub, "store");
+      expect(hiddenAll([...store.shared, ...store.interior, ...store.exterior])).toBe(true);
+      expect(hiddenAll(roof(hub, "store"))).toBe(true);
+
+      standIn(OUTDOORS);
+      expect(shown(inn.exterior)).toBe(true);
+      expect(hiddenAll(inn.interior)).toBe(true);
+      expect(shown(store.exterior)).toBe(true);
+      expect(shown(roof(hub, "inn"))).toBe(true);
+      expect(shown(roof(hub, "store"))).toBe(true);
+    });
+
+    it("should draw a building with no door gap closed, with no dark opening (§B.5)", () => {
+      const { hub: raw, stage } = hubOnStage();
+      const hub = raw as unknown as InteriorHub;
+      hub.art = BAKED;
+      hub.lightMap = { add: vi.fn() };
+      hub.renderStructures([
+        wall("n", "shed", 300, 500, 200, 20),
+        wall("w", "shed", 300, 500, 20, 160),
+        wall("e", "shed", 480, 500, 20, 160),
+        wall("s", "shed", 300, 640, 200, 20),
+      ]);
+      expect(drawn(stage, /^door_dark_/)).toHaveLength(0);
+      expect(shown(drawn(stage, /^wall_exterior_/))).toBe(true);
+      expect(shown(drawn(stage, /^roof_gable_/))).toBe(true);
+    });
+
+    it("should put no building piece, roof, gable or chimney among the occluders; trees and tall props keep the fade", () => {
+      const { hub } = town(BAKED);
+      closed(hub).drawScenery(TOWN);
+      const fading = new Set(closed(hub).occluders.items.map((i) => i.sprite));
+      const parts = [
+        ...closed(hub).view.drawn.flatMap((b) => [...b.shared, ...b.interior, ...b.exterior]),
+        ...closed(hub).roofs.flatMap((r) => r.parts),
+      ];
+      expect(parts.some((m) => sheetOf(m) === "chimney")).toBe(true);
+      for (const part of parts) expect(fading.has(part), sheetOf(part)).toBe(false);
+      const trees = [...fading].filter((m) => /^tree_/.test(sheetOf(m)));
+      expect(trees.length).toBeGreaterThan(0);
+    });
+
+    describe("the silhouette, the player only (§E.1–§E.3, §E.5)", () => {
+      /** The player's body, its drawn bounds spanning the town so only depth decides what covers. */
+      function withBody(t: ReturnType<typeof town>, at: { x: number; y: number }) {
+        const add = t.stage.add as Record<string, (...args: unknown[]) => Made>;
+        const body = add.sprite(0, 0, "art:characters-2", "knight/idle/0/0");
+        (body as unknown as Record<string, unknown>).getBounds = () => ({ x: -1e5, y: -1e5, width: 2e5, height: 2e5 });
+        (body as unknown as { name: string }).name = "body";
+        t.self.sprite.children.push(body);
+        const place = (pos: { x: number; y: number }) => {
+          t.self.sprite.depth = iso.worldDepth(pos.x, pos.y);
+          t.standIn(pos);
+        };
+        place(at);
+        const [image] = t.stage.made.filter((m) => m.kind === "image" && m.args[2] === "__DEFAULT");
+        const [mask] = t.stage.made.filter((m) => m.kind === "renderTexture");
+        return { place, image, mask };
+      }
+      const BEHIND_INN = { x: 670, y: 60 };
+      // nearer the viewer than every building's footprint
+      const FAR_FRONT = { x: 1950, y: 980 };
+
+      it("should show behind a building, masked to the pieces covering the player, and hide in front and inside", () => {
+        const t = town(BAKED);
+        const { place, image, mask } = withBody(t, FAR_FRONT);
+        expect(image).toBeDefined();
+        expect(image.visible).toBe(false);
+
+        const draw = vi.fn(() => mask);
+        (mask as unknown as Record<string, unknown>).draw = draw;
+        place(BEHIND_INN);
+        expect(image.visible).toBe(true);
+        const masked = draw.mock.calls.map((c) => (c as unknown[])[0] as Made);
+        expect(masked.length).toBeGreaterThan(0);
+        // only what stands from outside: exterior and back walls, roofs and gables, never the cut-away
+        const inside = new Set(closed(t.hub).view.drawn.flatMap((b) => b.interior));
+        expect(masked.some((m) => inside.has(m))).toBe(false);
+        expect(masked.some((m) => /^roof_/.test(sheetOf(m)))).toBe(true);
+
+        place(FAR_FRONT);
+        expect(image.visible).toBe(false);
+        place(IN_INN);
+        expect(image.visible).toBe(false);
+      });
+
+      // review round 1 (I-9PN7X-5): a placeholder roof covers the player as the baked pieces do
+      it("should show through a placeholder roof without art, as through a baked one", () => {
+        const t = town(BARE);
+        const { place, image, mask } = withBody(t, FAR_FRONT);
+        const draw = vi.fn(() => mask);
+        (mask as unknown as Record<string, unknown>).draw = draw;
+        place(BEHIND_INN);
+        expect(image.visible).toBe(true);
+        const masked = draw.mock.calls.map((c) => (c as unknown[])[0] as Made);
+        const [slab] = roof(t.hub, "inn");
+        expect(slab.kind).toBe("container");
+        expect(masked).toContain(slab);
+      });
+
+      it("should make one silhouette, for the player, never for an NPC or another player", () => {
+        const t = town(BAKED);
+        const { place } = withBody(t, BEHIND_INN);
+        place({ x: 1000, y: 60 });
+        expect(t.stage.made.filter((m) => m.kind === "image" && m.args[2] === "__DEFAULT")).toHaveLength(1);
+      });
+    });
+
+    describe("the street hides while the player is indoors (owner's addition 1)", () => {
+      /** Props placed from these sheets, out of every building (indoor dressing shares sheets). */
+      const placed = (sheets: RegExp) =>
+        vi
+          .mocked(world.addProp)
+          .mock.calls.map((call, i) => ({ sheet: call[2] as string, at: call[3] as { x: number; y: number }, i }))
+          .filter((c) => sheets.test(c.sheet))
+          .filter((c) => !BUILDINGS.some(([, x, y, w, h]) => c.at.x >= x && c.at.x <= x + w && c.at.y >= y && c.at.y <= y + h))
+          .map((c) => vi.mocked(world.addProp).mock.results[c.i].value as { sprite: Made; light?: { intensity: number } });
+
+      it("should hide every outdoor object by its footprint, lamps and their glow too, and keep the room's own", () => {
+        const t = town(BAKED);
+        closed(t.hub).drawScenery(TOWN);
+        const outdoor = placed(/^(lamp_post|tree_|bush|brazier|barrel|cart|stall|crate|well|fence)/);
+        const lamps = placed(/^lamp_post$/);
+        expect(outdoor.length).toBeGreaterThan(5);
+        expect(lamps.length).toBeGreaterThan(0);
+        const glow = lamps[0].light!;
+        const lit = glow.intensity;
+        expect(lit).toBeGreaterThan(0);
+        const halo = t.hub.lightMap!.add.mock.calls.find(([source]) => source === glow)?.[1] as () => boolean;
+        expect(halo()).toBe(true);
+
+        t.standIn(IN_INN);
+        expect(outdoor.every((o) => !o.sprite.visible)).toBe(true);
+        expect(glow.intensity).toBe(0);
+        expect(halo()).toBe(false);
+        // the Inn's own furnishings and indoor dressing stay
+        expect(t.room("inn").parts.every((p) => p.visible)).toBe(true);
+
+        t.standIn(OUTDOORS);
+        expect(outdoor.every((o) => o.sprite.visible)).toBe(true);
+        expect(glow.intensity).toBe(lit);
+        expect(halo()).toBe(true);
+      });
+
+      it("should light a building's wall flames only while the player is inside it (§D.6)", () => {
+        const t = town(BAKED);
+        const flames = t.hub.lightMap!.add.mock.calls.filter(([, when]) => typeof when === "function");
+        const walls = closed(t.hub).view.drawn.flatMap((b) => [...b.shared, ...b.interior]);
+        expect(walls.length).toBeGreaterThan(0);
+        const inn = (t.hub as unknown as { buildingLights: { house: { id: string }; source: { intensity: number } }[] })
+          .buildingLights.filter((l) => l.house.id === "inn");
+        expect(inn.length).toBeGreaterThan(0);
+        expect(inn.every((l) => l.source.intensity === 0)).toBe(true);
+        t.standIn(IN_INN);
+        expect(inn.every((l) => l.source.intensity > 0)).toBe(true);
+        const gate = flames.find(([source]) => source === inn[0].source)?.[1] as () => boolean;
+        expect(gate()).toBe(true);
+        t.standIn(IN_STORE);
+        expect(inn.every((l) => l.source.intensity === 0)).toBe(true);
+        expect(gate()).toBe(false);
+      });
+    });
   });
 
   it("should face the fixed residents their work, and everyone else the viewer (R25)", () => {

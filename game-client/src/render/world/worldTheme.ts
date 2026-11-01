@@ -1,7 +1,8 @@
 /**
  * The world theme (FS-8RBQY §A, CONTEXT.md "World theme"): how the client draws a run. One entry
- * per theme decides the ground plan, the wall sheets, whether roofs and the indoor mask exist, the
- * ambient, the perimeter wall and run dressing, so a third theme is one more entry here.
+ * per theme decides the ground plan, the wall sheets, whether roofs exist, whether the HUD says
+ * Indoor/Outdoor, the ambient, the perimeter wall and run dressing, so a third theme is one more
+ * entry here. The indoor blackout is no theme's choice: every run's buildings take it (FS-9PN7X §D).
  *
  * A theme may vary per floor by **floor band** (§C): {@link TOWER_BANDS} is the one table where
  * the band shares live, and {@link floorLook} resolves what a given floor is drawn with.
@@ -41,10 +42,10 @@ export interface WorldThemeLook {
   /** Whether each house wears a roof (and a roof occluder). */
   roofs: boolean;
   /**
-   * Whether entering a house darkens everything outside it, and the HUD says Indoor/Outdoor. A
-   * tower floor is all indoors, so there "indoor" means nothing.
+   * Whether the HUD's position line says Indoor/Outdoor. A tower floor is all indoors as a whole
+   * (FS-8RBQY §B.3), so it says neither, though its rooms still take the blackout (FS-9PN7X §D.7).
    */
-  indoorMask: boolean;
+  indoorLabel: boolean;
   ambient: number;
   /** Whether the tower's outer wall rings the play area. */
   perimeter: boolean;
@@ -132,7 +133,7 @@ export const WORLD_THEMES: Record<WorldTheme, WorldThemeLook> = {
     ground: OUTDOOR_GROUND,
     walls: TIMBER_WALLS,
     roofs: true,
-    indoorMask: true,
+    indoorLabel: true,
     ambient: AMBIENT.run,
     perimeter: false,
     dressing: false,
@@ -143,7 +144,7 @@ export const WORLD_THEMES: Record<WorldTheme, WorldThemeLook> = {
     ground: TOWER_GROUND,
     walls: MASONRY_WALLS,
     roofs: false,
-    indoorMask: false,
+    indoorLabel: false,
     ambient: TOWER_AMBIENT,
     perimeter: true,
     dressing: true,

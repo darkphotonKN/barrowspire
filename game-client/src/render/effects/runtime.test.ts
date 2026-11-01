@@ -89,6 +89,7 @@ function fakeScene() {
       "add",
       "emitParticle",
       "startFollow",
+      "setVisible",
     ])
       o[m] = (...a: unknown[]) => {
         record.calls[m] = a;
@@ -470,5 +471,58 @@ describe("EffectsRuntime (FS-KYPQ9 §B.8–§B.10)", () => {
     expect(fx.play("self", "hit", at)).toBeNull();
     expect(fake.made).toEqual([]);
     expect(fx.playing()).toBe(0);
+  });
+});
+
+describe("EffectsRuntime hideWhere (FS-9PN7X §C.2)", () => {
+  // a room the player is not in: everything west of x 100
+  const inRoom = (p: { x: number; y: number }) => p.x < 100;
+
+  function stage() {
+    const fake = fakeScene();
+    const lights = fakeLights();
+    const fx = new EffectsRuntime(fake.scene, fakeArt(), lights.lights, { warn: vi.fn() });
+    return { fake, lights, fx };
+  }
+  const shown = (m: Made) => m.calls.setVisible?.[0];
+
+  it("should hide an effect standing where the rule says, its sprites, particles and light", () => {
+    const { fake, lights, fx } = stage();
+    fx.play("p1", "escape", { x: 50, y: 50 });
+    fx.play("p2", "escape", { x: 300, y: 50 });
+
+    fx.hideWhere(inRoom);
+
+    const objects = fake.live();
+    const half = objects.length / 2;
+    expect(objects.slice(0, half).every((m) => shown(m) === false)).toBe(true);
+    expect(objects.slice(half).every((m) => shown(m) === true)).toBe(true);
+    const [first, second] = lights.added.map((a) => a.light as { hidden?: boolean });
+    expect(first.hidden).toBe(true);
+    expect(second.hidden).toBe(false);
+  });
+
+  it("should follow an effect that moves: shown again once it has left", () => {
+    const { fake, fx } = stage();
+    const trail = fx.play("p1", "arrowTrail", { x: 50, y: 50 })!;
+    fx.hideWhere(inRoom);
+    expect(fake.live().every((m) => shown(m) === false)).toBe(true);
+
+    trail.moveTo({ x: 200, y: 50 });
+    fx.hideWhere(inRoom);
+    expect(fake.live().every((m) => shown(m) === true)).toBe(true);
+  });
+
+  it("should hide a released trail still burning out where it was left", () => {
+    const { fake, fx } = stage();
+    const fading = (Object.keys(EFFECTS) as (keyof typeof EFFECTS)[]).find((name) => {
+      const t = EFFECTS[name].timing;
+      return t.kind === "stream" && t.onRelease === "fade";
+    })!;
+    fx.play("p1", fading, { x: 50, y: 50 });
+    fx.release("p1");
+    expect(fake.live().length).toBeGreaterThan(0);
+    fx.hideWhere(inRoom);
+    expect(fake.live().every((m) => shown(m) === false)).toBe(true);
   });
 });

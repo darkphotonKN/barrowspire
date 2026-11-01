@@ -24,7 +24,7 @@ describe("the world theme (FS-8RBQY §A)", () => {
       ground: OUTDOOR_GROUND,
       walls: TIMBER_WALLS,
       roofs: true,
-      indoorMask: true,
+      indoorLabel: true,
       ambient: AMBIENT.run,
       perimeter: false,
       dressing: false,
@@ -37,13 +37,21 @@ describe("the world theme (FS-8RBQY §A)", () => {
       ground: TOWER_GROUND,
       walls: MASONRY_WALLS,
       roofs: false,
-      indoorMask: false,
+      indoorLabel: false,
       ambient: TOWER_AMBIENT,
       perimeter: true,
       dressing: true,
       interactablePools: true,
       bands: TOWER_BANDS,
     });
+  });
+});
+
+describe("the indoor blackout in every world theme (FS-9PN7X §D.5, §D.7)", () => {
+  it("should leave the blackout to no theme flag: only the HUD's Indoor/Outdoor label is the theme's", () => {
+    for (const look of Object.values(WORLD_THEMES)) expect("indoorMask" in look).toBe(false);
+    expect(WORLD_THEMES.exterior.indoorLabel).toBe(true);
+    expect(WORLD_THEMES.tower.indoorLabel).toBe(false);
   });
 });
 

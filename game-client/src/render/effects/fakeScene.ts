@@ -42,6 +42,7 @@ const CHAINED = [
   "add",
   "emitParticle",
   "startFollow",
+  "setVisible",
 ];
 
 export function fakeScene() {

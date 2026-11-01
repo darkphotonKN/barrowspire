@@ -8,7 +8,6 @@ import {
   HUB_FURNISHINGS,
   HUB_INDOOR_DRESSING,
   furnishingOf,
-  hiddenIndoors,
   isFurnishing,
   placeholderWarning,
   residentFacing,
@@ -248,25 +247,5 @@ describe("fixed residents' facing (FS-B0H2D R25)", () => {
 
   it("should know no facing for a name it has none for, so the default stands", () => {
     expect(residentFacing("Cottar")).toBeUndefined();
-  });
-});
-
-describe("hiddenIndoors (FS-B0H2D R20)", () => {
-  const [inn, store] = HOUSES;
-  const inInn = { x: 600, y: 250 };
-  const outside = { x: 1000, y: 800 };
-
-  it("should hide whoever stands in a house whose roof is on", () => {
-    expect(hiddenIndoors(inInn, HOUSES, undefined)).toBe(true);
-    expect(hiddenIndoors(inInn, HOUSES, store)).toBe(true);
-  });
-
-  it("should show whoever stands in the house whose roof is lifted", () => {
-    expect(hiddenIndoors(inInn, HOUSES, inn)).toBe(false);
-  });
-
-  it("should never hide anyone outdoors", () => {
-    expect(hiddenIndoors(outside, HOUSES, undefined)).toBe(false);
-    expect(hiddenIndoors(outside, HOUSES, inn)).toBe(false);
   });
 });

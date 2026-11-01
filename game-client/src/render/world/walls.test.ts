@@ -5,6 +5,7 @@ import { housesFrom } from "./houses";
 import {
   MASONRY_WALLS,
   TIMBER_WALLS,
+  cutExterior,
   cutWall,
   heightOf,
   planWalls,
@@ -233,6 +234,52 @@ describe("planWalls with masonry sheets (FS-8RBQY §B.2)", () => {
       expect(p.sheet).toMatch(
         /^wall_(back|front)_(plain|brace|window|torch)_[xy]$/,
       );
+  });
+});
+
+describe("cutExterior (FS-9PN7X §B.2, §F.2)", () => {
+  const walls = [wall(0, 0, 5.5 * T, 20, "h"), wall(0, 0, 20, 3 * T, "h")];
+
+  it("should stand every exterior piece on its cut-away piece's footprint, full height", () => {
+    for (const sheets of [TIMBER_WALLS, MASONRY_WALLS])
+      for (const w of walls) {
+        const front = cutWall(w, "front", 7, sheets);
+        const outside = cutExterior(w, 7, sheets);
+        const shape = (p: (typeof front)[number]) => [p.wallId, p.axis, p.at, p.depthAt, p.keep];
+        expect(outside.map(shape)).toEqual(front.map(shape));
+        expect(outside.every((p) => p.height === "back")).toBe(true);
+      }
+  });
+
+  it("should name timber exterior pieces plain, brace or window, never a torch", () => {
+    const pieces = Array.from({ length: 30 }, (_, seed) => cutExterior(walls[0], seed)).flat();
+    for (const p of pieces) expect(p.sheet).toMatch(/^wall_exterior_(plain|brace|window)_x$/);
+    expect(new Set(pieces.map((p) => p.sheet))).toEqual(
+      new Set(["wall_exterior_plain_x", "wall_exterior_brace_x", "wall_exterior_window_x"]),
+    );
+  });
+
+  it("should name masonry exterior pieces plain or pillar", () => {
+    const pieces = Array.from({ length: 30 }, (_, seed) =>
+      cutExterior(walls[1], seed, MASONRY_WALLS),
+    ).flat();
+    for (const p of pieces) expect(p.sheet).toMatch(/^tower_wall_exterior_(plain|pillar)_y$/);
+    expect(new Set(pieces.map((p) => p.sheet.split("_")[3]))).toEqual(new Set(["plain", "pillar"]));
+  });
+
+  it("should keep a trimmed exterior piece plain", () => {
+    for (let seed = 0; seed < 40; seed++)
+      expect(cutExterior(walls[0], seed).at(-1)!.sheet).toBe("wall_exterior_plain_x");
+  });
+});
+
+describe("a building type's other sheets (FS-9PN7X §F.3, §F.4)", () => {
+  it("should name each type's dark opening, and a stone cap for masonry only", () => {
+    expect(TIMBER_WALLS.opening).toBe("door_dark");
+    expect(MASONRY_WALLS.opening).toBe("tower_door_dark");
+    expect(MASONRY_WALLS.cap).toBe("tower_cap");
+    // timber buildings keep their roof
+    expect(TIMBER_WALLS.cap).toBeUndefined();
   });
 });
 

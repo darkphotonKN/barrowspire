@@ -1,7 +1,7 @@
 /**
  * The town buildings' interiors (FS-B0H2D §C R15, §E R19–R26): which broadcast walls are
- * furnishings and what prop each one is, the indoor dressing, the fixed residents' facing, and
- * who the roof hides.
+ * furnishings and what prop each one is, the indoor dressing and the fixed residents' facing. Who
+ * the roof hides is the one hide rule in `indoors.ts` (FS-9PN7X §C.1).
  *
  * The furnishings and the fixed residents are server facts, copied here from
  * game-server/game-service/internal/game/hub_map.go (hubBuildings' Furnishings,
@@ -19,7 +19,7 @@
 import type { Facing8 } from "@/render/iso/facing";
 import type { Point, Rect } from "@/render/iso/projection";
 import type { WallState } from "@/types/gameState";
-import { housesFrom, insideHouse, type House } from "./houses";
+import { housesFrom, type House } from "./houses";
 import type { PropSpot } from "./hubKeepOut";
 
 /**
@@ -186,13 +186,4 @@ export const HUB_FIXED_RESIDENTS: { name: string; at: Point; facing: Facing8; fa
 /** A fixed resident's facing by name; undefined for anyone else, who keeps the default. */
 export function residentFacing(name: string): Facing8 | undefined {
   return HUB_FIXED_RESIDENTS.find((r) => r.name === name)?.facing;
-}
-
-/**
- * Whether a world position is hidden from the viewer (R20): it stands in a house whose roof is
- * on, which is every house but the one the viewer stands in (`lifted`). `insideHouse`, the test
- * the roof itself uses.
- */
-export function hiddenIndoors(p: Point, houses: readonly House[], lifted: House | undefined): boolean {
-  return houses.some((h) => h !== lifted && insideHouse(p, h));
 }

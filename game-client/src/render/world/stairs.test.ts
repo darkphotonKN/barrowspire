@@ -115,4 +115,16 @@ describe("StairsSet (FS-F6F88 req 30)", () => {
     set.sync([stairs("s1", 100, 200)]);
     expect(made).toHaveLength(2);
   });
+
+  it("should hand back each stairs drawn with where it stands, for the hide rule (FS-9PN7X §C.2)", () => {
+    const { stage, live } = fakeStage();
+    const set = new StairsSet(stage);
+    set.sync([stairs("s1", 100, 200), stairs("s2", 400, 50)]);
+    expect([...set.placed()]).toEqual([
+      { sprite: live()[0], pos: { x: 100, y: 200 } },
+      { sprite: live()[1], pos: { x: 400, y: 50 } },
+    ]);
+    set.clear();
+    expect([...set.placed()]).toEqual([]);
+  });
 });

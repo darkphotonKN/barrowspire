@@ -127,6 +127,7 @@ function fakeSprite() {
     tint: null as number | null,
     frame: undefined as string | number | undefined,
     destroyed: false,
+    visible: true,
     plays: [] as { key: string; startFrame?: number }[],
     anims: {
       currentAnim: null as { key: string; frames: unknown[] } | null,
@@ -183,6 +184,10 @@ function fakeSprite() {
     setScale(s: number) {
       sprite.scaleX = s;
       sprite.scaleY = s;
+      return sprite;
+    },
+    setVisible(v: boolean) {
+      sprite.visible = v;
       return sprite;
     },
     destroy() {
@@ -992,5 +997,58 @@ describe("the damage flash (req 39)", () => {
     roster.sync([monster({ current_health: 50 })]);
     roster.sync([monster({ current_health: 60 })]);
     expect(sprites[0].tint).toBeNull();
+  });
+});
+
+describe("the hide rule (FS-9PN7X §C.2)", () => {
+  // a room the player is not in: x 0–100, y 0–100
+  const inRoom = (at: { x: number; y: number }) => at.x <= 100 && at.y <= 100;
+
+  it("should hide a monster where the rule says, its body, plate and bar, from its eased position", () => {
+    const { stage, sprites, texts, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([
+      monster({ entity_id: "in", position: { x: 50, y: 50 } }),
+      monster({ entity_id: "out", position: { x: 300, y: 300 } }),
+    ]);
+    roster.update(FRAME);
+    roster.hideWhere(inRoom);
+    expect(sprites.map((s) => s.visible)).toEqual([false, true]);
+    expect(texts.map((t) => t.visible)).toEqual([false, true]);
+    expect(bars.map((b) => b.visible)).toEqual([false, true]);
+  });
+
+  it("should hide an elite's prefix with its plate", () => {
+    const { stage, texts } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ elite: true, name: "Brutal Troll", position: { x: 50, y: 50 } })]);
+    roster.update(FRAME);
+    roster.hideWhere(inRoom);
+    expect(texts).toHaveLength(2);
+    expect(texts.every((t) => !t.visible)).toBe(true);
+  });
+
+  it("should show a monster again the frame it walks out, plate and bar seated by the frame", () => {
+    const { stage, sprites, texts, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ position: { x: 50, y: 50 } })]);
+    roster.update(FRAME);
+    roster.hideWhere(inRoom);
+    roster.hideWhere(() => false);
+    roster.update(FRAME);
+    expect(sprites[0].visible).toBe(true);
+    expect(texts[0].visible).toBe(true);
+    expect(bars[0].visible).toBe(true);
+  });
+
+  it("should read the eased position, not the broadcast's", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ position: { x: 50, y: 50 } })]);
+    // the broadcast has it out of the room; it is still drawn inside, one frame on
+    roster.sync([monster({ position: { x: 120, y: 50 } })]);
+    roster.update(FRAME);
+    roster.hideWhere(inRoom);
+    expect(sprites[0].visible).toBe(false);
   });
 });

@@ -58,6 +58,24 @@ describe("projectile flights (FS-KYPQ9 §E.2, §E.3, §F.2–§F.4, §B.9)", () 
     flights = new ProjectileFlights(fake.scene, fakeArt, fx, kindOf, logger);
   });
 
+  describe("the hide rule (FS-9PN7X §C.2)", () => {
+    // a room the player is not in: everything west of x 200
+    const inRoom = (p: { x: number; y: number }) => p.x < 200;
+
+    it("should hide a body standing where the rule says, and show it again once it has flown out", () => {
+      flights.sync([fireball("f1", 100, 200), arrow("a1", 300, 100)]);
+      flights.hideWhere(inRoom);
+      const [core] = images("fx_fire_core/idle/0/0");
+      const [shaft] = images(`${ARROW_FLIGHT.body}/idle/0/0`);
+      expect(core.calls.setVisible).toEqual([false]);
+      expect(shaft.calls.setVisible).toEqual([true]);
+
+      flights.sync([fireball("f1", 240, 200), arrow("a1", 300, 100)]);
+      flights.hideWhere(inRoom);
+      expect(core.calls.setVisible).toEqual([true]);
+    });
+  });
+
   describe("flight", () => {
     it("should draw the baked fire core at the casting hand's height above its footprint, sorted on it", () => {
       flights.sync([fireball("f1", 300, 200)]);

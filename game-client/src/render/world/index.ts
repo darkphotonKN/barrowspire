@@ -1,6 +1,44 @@
 /** The dressed world: ground, walls, roofs, interactables, occlusion (FS-2325V §C.1–§C.6). */
 export { BAKE } from "./bake";
 export { housesFrom, insideHouse, type House } from "./houses";
+export { buildingAt, hidden, markerShown } from "./indoors";
+export { coveredBy, covering } from "./occlusion";
+export {
+  BLACKOUT,
+  Blackout,
+  blackoutHole,
+  blackoutQuads,
+  type BlackoutGeometry,
+  type BlackoutStage,
+} from "./blackout";
+export {
+  BuildingView,
+  type BuildingViewOptions,
+  type BuildingViewStage,
+  type Figure,
+  type Scenery,
+  type Visible,
+} from "./buildingView";
+export {
+  darkOpening,
+  doorGaps,
+  planBuildings,
+  planCap,
+  type BuildingWalls,
+  type CapPiece,
+  type DarkOpening,
+  type DoorGap,
+  type WallLook,
+} from "./buildingLooks";
+export {
+  SILHOUETTE_ALPHA,
+  SILHOUETTE_DEPTH,
+  SILHOUETTE_MASK,
+  SILHOUETTE_TINT,
+  Silhouette,
+  type SilhouetteBody,
+  type SilhouetteCover,
+} from "./silhouette";
 export { tileHash, worldSeed, type WorldKind } from "./ground";
 export {
   RUN_WORLD_THEME,
@@ -58,12 +96,24 @@ export {
 export {
   GroundLayer,
   Occluders,
+  PLACEHOLDER_STONE,
+  addBuildings,
+  addDarkOpening,
   addDressing,
+  addGables,
   addPerimeter,
   addProp,
   addRoof,
   addWalls,
+  coverOf,
+  showLook,
   showState,
+  slabCover,
+  type BuildingOptions,
+  type BuildingPart,
+  type BuiltBuilding,
+  type Cover,
+  type BuiltParts,
   type BuiltDressing,
   type BuiltPerimeter,
   type BuiltWalls,

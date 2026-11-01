@@ -119,6 +119,15 @@ export class ProjectileFlights {
       this.end(id, flight, { now: true });
   }
 
+  /**
+   * The hide rule (FS-9PN7X §C.2): a body whose world position `hidden` names is hidden, and shown
+   * again once it is not. Its trail and riding light are the runtime's to hide.
+   */
+  hideWhere(hidden: (at: Point) => boolean): void {
+    for (const flight of this.flights.values())
+      flight.body?.setVisible(!hidden(flight.pos));
+  }
+
   /** How many projectiles are in flight. */
   tracked(): number {
     return this.flights.size;

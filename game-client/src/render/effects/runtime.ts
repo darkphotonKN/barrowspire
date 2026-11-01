@@ -50,8 +50,10 @@ import {
 /** Who an effect belongs to: a projectile `entity_id`, a rival id, `"self"`, `"hub"`. */
 export type OwnerKey = string;
 
+/** What a group made: destroyed with it, and hidden while the hide rule says (FS-9PN7X §C.2). */
 interface Destroyable {
   destroy(): void;
+  setVisible(visible: boolean): unknown;
 }
 
 /**
@@ -114,6 +116,10 @@ interface Group {
   /** A stream that burns out on release: its emitters, and how long its particles live. */
   fade?: { ms: number; emitters: { emitting: boolean }[] };
   done: boolean;
+  /** The world position it was played at, or last moved to. */
+  at: Point;
+  /** Whether {@link EffectsRuntime.hideWhere} has it hidden; unset until the first call. */
+  hidden?: boolean;
 }
 
 const tokens = (keys: readonly Token[]) => keys.map((k) => BARROW_HEX[k]);
@@ -147,7 +153,13 @@ export class EffectsRuntime {
     if (!entry.sprite && !entry.particles && !entry.light) return null;
     if (!this.sheetsPresent(entry)) return null;
 
-    const group: Group = { owner, objects: [], tweens: [], done: false };
+    const group: Group = {
+      owner,
+      objects: [],
+      tweens: [],
+      done: false,
+      at: { x: at.x, y: at.y },
+    };
     const movers: ((at: Point) => void)[] = [];
     if (entry.sprite)
       movers.push(this.sprite(group, entry, entry.sprite, at, opts));
@@ -166,7 +178,9 @@ export class EffectsRuntime {
 
     return {
       moveTo: (to) => {
-        if (!group.done) for (const move of movers) move(to);
+        if (group.done) return;
+        group.at = { x: to.x, y: to.y };
+        for (const move of movers) move(to);
       },
       stop: () => this.finish(group, false),
     };
@@ -191,6 +205,18 @@ export class EffectsRuntime {
     for (const owner of [...this.owners.keys()])
       this.release(owner, { now: true });
     for (const group of [...this.fading]) this.cut(group);
+  }
+
+  /**
+   * The hide rule (FS-9PN7X §C.2): every effect whose world position `hidden` names is hidden,
+   * sprites, particles and light, a released stream's last particles too, and shown again once it
+   * is not. The light is kept, only not stamped. Once a frame, after the frame knows which
+   * building is the player's.
+   */
+  hideWhere(hidden: (at: Point) => boolean): void {
+    for (const set of this.owners.values())
+      for (const group of set) this.hide(group, hidden(group.at));
+    for (const group of this.fading) this.hide(group, hidden(group.at));
   }
 
   /** How many effects are playing, for one owner or in all. A burning-out stream is not. */
@@ -455,6 +481,13 @@ export class EffectsRuntime {
     group.timer = this.scene.time.delayedCall(group.fade.ms, () =>
       this.cut(group),
     );
+  }
+
+  private hide(group: Group, hidden: boolean): void {
+    if (group.hidden === hidden) return;
+    group.hidden = hidden;
+    for (const o of group.objects) o.setVisible(!hidden);
+    if (group.light) group.light.hidden = hidden;
   }
 
   /** Destroys what a group made. Harmless to repeat. */
