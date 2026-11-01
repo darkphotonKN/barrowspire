@@ -420,6 +420,15 @@ function recordingStage() {
           };
         // no arcade body: the placeholder rig's collision circle is skipped
         if (prop === "body") return undefined;
+        // shown until hidden, as Phaser's are: `visible` reads what setVisible last set
+        if (prop === "visible") return true;
+        if (prop === "setVisible")
+          return (on: boolean) => {
+            target.calls.push("setVisible");
+            target.last.setVisible = [on];
+            (target as { visible?: boolean }).visible = on;
+            return proxy;
+          };
         return (...args: unknown[]) => {
           target.calls.push(String(prop));
           target.last[String(prop)] = args;
@@ -971,16 +980,101 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     vi.restoreAllMocks();
   });
 
-  it.each([
-    ["dead", dead, /barrow keeps you/i],
-    ["escaped", escaped, /out of the barrow/i],
-  ])("should show a %s player the card with Watch the delve while the ally is still in it", (_, me, copy) => {
-    const { run, state, watchButtons, cardTitles } = resolvedOnStage(player("me", "Aldric", 130, me));
+  it("should show a dead player the card with Watch the delve while the ally is still in it", () => {
+    const { run, state, watchButtons, cardTitles } = resolvedOnStage(player("me", "Aldric", 130, dead));
     // the card survives the next broadcast unchanged: one card, not one per tick
     (run as unknown as FloorRun).handleGameStateUpdate(state(player("ally", "Wenna", 160)));
     expect(cardTitles()).toHaveLength(1);
-    expect(String(cardTitles()[0].args[2])).toMatch(copy);
+    expect(String(cardTitles()[0].args[2])).toMatch(/barrow keeps you/i);
     expect(watchButtons()).toHaveLength(1);
+  });
+
+  // FS-QPDKN req 3, amended 2026-11-02 (charter): the escaped player gets no card, only the button
+  describe("an escaped player with a teammate still in play (req 3, 12, amended)", () => {
+    const watchHit = (stage: ReturnType<typeof resolvedOnStage>["stage"]) =>
+      stage.made.find((m) => (m as { name?: string }).name === "watch-the-delve" && !m.destroyed);
+
+    it("should show no card, only one Watch the delve button at the bottom centre", () => {
+      const { run, state, stage, watchButtons, cardTitles } = resolvedOnStage(
+        player("me", "Aldric", 130, escaped),
+      );
+      (run as unknown as FloorRun).handleGameStateUpdate(state(player("ally", "Wenna", 160)));
+      expect(cardTitles()).toHaveLength(0);
+      expect(watchButtons()).toHaveLength(1);
+      const [x, y, w, h] = watchHit(stage)!.args as number[];
+      // the recording camera is 800 x 600: centred across, on the bottom edge's margin
+      expect(x).toBe(400);
+      expect(y + h / 2).toBeLessThanOrEqual(600);
+      expect(y - h / 2).toBeGreaterThan(600 - 100);
+      expect(w).toBeGreaterThan(0);
+    });
+
+    it("should draw the button in the HUD band, amber while it can be pressed", () => {
+      const { stage } = resolvedOnStage(player("me", "Aldric", 130, escaped));
+      const hit = watchHit(stage)!;
+      expect(hit.last.setDepth?.[0]).toBeGreaterThanOrEqual(1000);
+      expect(hit.last.setDepth?.[0]).toBeLessThan(1500);
+      const face = stage.made.find(
+        (m) => m.kind === "graphics" && !m.destroyed && m.last.fillStyle?.[0] === palette.interactable,
+      );
+      expect(face?.last.setScrollFactor).toEqual([0]);
+    });
+
+    it("should follow a teammate in play once pressed, name them at the top, and take the button down", () => {
+      const { run, pressWatch, followed, watching, hints, watchButtons, stage } = resolvedOnStage(
+        player("me", "Aldric", 130, escaped),
+        [player("ally", "Wenna", 160), player("brom", "Brom", 200)],
+      );
+      pressWatch();
+      expect(run.watchedPlayerId).toBe("ally");
+      expect(followed()).toBe(run.otherPlayers.get("ally"));
+      expect(watching()).toEqual(["Watching Wenna"]);
+      expect(hints()).toHaveLength(1);
+      expect(watchButtons()).toHaveLength(0);
+      expect(watchHit(stage)).toBeUndefined();
+      run.cycleWatched();
+      expect(watching()).toEqual(["Watching Brom"]);
+    });
+
+    it("should do nothing on Tab while the button is still up", () => {
+      const { run, followed, own, watchButtons } = resolvedOnStage(player("me", "Aldric", 130, escaped));
+      run.cycleWatched();
+      expect(run.watchedPlayerId).toBeUndefined();
+      expect(followed()).toBe(own());
+      expect(watchButtons()).toHaveLength(1);
+    });
+
+    it("should show no button once nobody is left in play", () => {
+      const { watchButtons } = resolvedOnStage(player("me", "Aldric", 130, escaped), [
+        player("ally", "Wenna", 160, dead),
+      ]);
+      expect(watchButtons()).toHaveLength(0);
+    });
+
+    it("should say the player escaped successfully once", () => {
+      const { run, state, stage } = resolvedOnStage(player("me", "Aldric", 130, escaped));
+      (run as unknown as FloorRun).handleGameStateUpdate(state(player("ally", "Wenna", 160)));
+      const lines = stage.made.filter((m) => m.kind === "text" && /Aldric escaped successfully/.test(String(m.args[2])));
+      expect(lines).toHaveLength(1);
+    });
+
+    it("should forget the button on a restart, and the rebuilt run raises it again, not spectating", () => {
+      const { run, stage, state } = resolvedOnStage(player("me", "Aldric", 130, escaped));
+      const before = watchHit(stage)!;
+      (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey: vi.fn() } };
+
+      run.resetRun();
+      expect((run as unknown as { watchButton?: unknown }).watchButton).toBeUndefined();
+      expect(run.watchedPlayerId).toBeUndefined();
+      expect(run.spectateHud).toBeUndefined();
+
+      // Phaser destroyed the old button with the scene; the next state draws a fresh one
+      before.destroyed = true;
+      (run as unknown as FloorRun).handleGameStateUpdate(state(player("ally", "Wenna", 160)));
+      expect(watchHit(stage)).toBeDefined();
+      expect(watchHit(stage)).not.toBe(before);
+      expect(run.watchedPlayerId).toBeUndefined();
+    });
   });
 
   it("should show no card while this player is still in the delve", () => {
@@ -1153,6 +1247,49 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     expect(run.watchedPlayerId).toBeUndefined();
     expect(run.resolvedCard).toBeUndefined();
     expect(run.spectateHud).toBeUndefined();
+  });
+});
+
+// FS-QPDKN req 24 keeps an escaped player's own state coming, with `escape: true`, where it used to
+// stop (`current_player: null`): their body stays hidden either way (I-QPDKN-7)
+describe("BarrowspireScene the escaped player's own body (FS-QPDKN req 3, 24)", () => {
+  /** A run with effects to record, and the player's own sprite, legs and name as drawn. */
+  function ownBodyOnStage() {
+    const stage = onStage();
+    const play = vi.fn();
+    Object.assign(stage.run, { fx: { play, release: vi.fn() } });
+    const own = () => stage.players()[0];
+    const legs = () => (stage.run as unknown as { playerLegs: Made }).playerLegs;
+    const name = () => stage.stage.made.find((m) => m.kind === "text" && m.args[2] === "Aldric")!;
+    const hidden = () => [own(), legs(), name()].map((m) => m.last.setVisible?.[0]);
+    const escapes = () => play.mock.calls.filter(([owner, kind]) => owner === "self" && kind === "escape");
+    return { ...stage, own, hidden, escapes };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ["sent with escape: true", player("me", "Aldric", 130, { escape: true })],
+    ["no longer sent", null],
+  ])("should hide the player's sprite, legs and name once their own state is %s", (_, after) => {
+    const { run, hidden, escapes } = ownBodyOnStage();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130)));
+    expect(hidden()).toEqual([undefined, undefined, undefined]);
+
+    run.handleGameStateUpdate(partyState(after));
+    run.handleGameStateUpdate(partyState(after));
+
+    expect(hidden()).toEqual([false, false, false]);
+    expect(escapes()).toHaveLength(1);
+  });
+
+  it("should draw an escaped player who reconnects hidden, with no escape played again", () => {
+    const { run, hidden, escapes } = ownBodyOnStage();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, { escape: true })));
+    expect(hidden()).toEqual([false, false, false]);
+    expect(escapes()).toHaveLength(0);
   });
 });
 
