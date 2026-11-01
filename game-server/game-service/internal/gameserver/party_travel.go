@@ -17,10 +17,10 @@ import (
 * Travel (FS-NCC9J R18–R20): a member in their own village asks to be taken to the hub of the pod
 * their leader stands on, and is handed off there. Nobody's party changes; the member moves.
 *
-* The refusals are checked on the loop against the cache first, in R18's order, so a refusal the
-* cache can already see costs no Redis call; then the party, the leader's place and their pod's
-* room are read off the loop, and checked again in the same order, so a stale cache never sends
-* anyone anywhere (R4).
+* Every press is decided on what is read off the loop: the party as Redis holds it, whether the
+* traveller is queued, where the leader stands and how full their pod's hub is. Only then are the
+* refusals checked, on the loop, in R18's order, so a stale cache never changes the outcome (R4).
+* A travel is rare; the one Redis trip is its whole cost.
 **/
 
 // hubOccupancyReader is how full another pod's hub is: hubocc.Redis in production (FS-JEAVX R19).
@@ -35,13 +35,16 @@ type hubOccupancyStore interface {
 	Publish(ctx context.Context, podID string, count int) error
 }
 
-// travelRoom is the most a hub admits by travel: its cap and one full party (FS-NCC9J R18, R20).
+// travelRoom is the most a hub admits by travel: its cap and one full party, shared by the whole
+// hub (FS-NCC9J R18, R20). The leader stands on that pod by definition, so the arriving pod lets
+// a member in on the same terms (Server.travelMargin).
 const travelRoom = constants.HubOccupancyCap + constants.HubTravelMargin
 
-// travelRead is what a travel reads off the loop: the traveller's party as Redis holds it, where
-// its leader stands, and how full the leader's pod's hub is.
+// travelRead is what a travel reads off the loop: the traveller's party as Redis holds it, whether
+// they are queued, where its leader stands, and how full the leader's pod's hub is.
 type travelRead struct {
-	party partystore.Arrival
+	party  partystore.Arrival
+	queued bool
 	// the leader's presence entry; present is false when they stand on no pod
 	leader  partypresence.Found
 	present bool
@@ -50,9 +53,9 @@ type travelRead struct {
 	known     bool
 }
 
-// travel handles party_travel: the member is sent world_handoff to the hub of their leader's pod,
-// or told why not. The leader, and a member already on the leader's pod, are answered with
-// nothing: the client never offers them Travel. FS-NCC9J R18.
+// travel handles party_travel: the press is read off the loop, then answered by travelled. A press
+// from a traveller already let go, or while their last press is still being read, is ignored.
+// FS-NCC9J R18.
 func (r *partyRegistry) travel(ctx context.Context, traveller *types.Player, conn *websocket.Conn) {
 	if r.closed {
 		return
@@ -61,46 +64,38 @@ func (r *partyRegistry) travel(ctx context.Context, traveller *types.Player, con
 		slog.Debug("party travel by a traveller already let go, ignored", "player_id", traveller.ID)
 		return
 	}
-	p, in := r.cache.partyOf(traveller.ID)
-	if !in {
-		r.refuse(conn, traveller.ID, constants.PartyNoticeNotMember)
-		return
-	}
-	if r.notInHub(traveller.ID) {
-		r.refuse(conn, traveller.ID, constants.PartyNoticeNotInHub)
-		return
-	}
-	if r.queued(ctx, traveller.ID) {
-		r.refuse(conn, traveller.ID, constants.PartyNoticeQueued)
-		return
-	}
-	if p.Leader == traveller.ID {
-		slog.Debug("party travel by the leader, ignored", "player_id", traveller.ID)
-		return
-	}
-	if leaderAway(p) {
-		r.refuse(conn, traveller.ID, constants.PartyNoticeLeaderAway)
+	if _, reading := r.travelReads[traveller.ID]; reading {
+		slog.Debug("party travel pressed again while being read, ignored", "player_id", traveller.ID)
 		return
 	}
 	if r.cfg.store == nil || r.cfg.presence == nil {
 		r.refuse(conn, traveller.ID, constants.PartyNoticeUnavailable)
 		return
 	}
+	r.travelReads[traveller.ID] = struct{}{}
 	at := r.cfg.now()
 	onRunner(ctx, r.run,
 		func(c context.Context) (travelRead, error) { return r.readTravel(c, traveller.ID, at) },
-		func(res travelRead, err error) { r.travelled(ctx, traveller, conn, res, err) },
+		func(res travelRead, err error) {
+			delete(r.travelReads, traveller.ID)
+			r.travelled(ctx, traveller, conn, res, err)
+		},
 	)
 }
 
-// readTravel reads, off the loop, the traveller's party, its leader's presence and, if they stand
-// on a pod, that pod's hub count.
+// readTravel reads, off the loop, the traveller's party and, if they are in one, whether they are
+// queued, its leader's presence and, if the leader stands on a pod, that pod's hub count.
 func (r *partyRegistry) readTravel(ctx context.Context, travellerID uuid.UUID, at time.Time) (travelRead, error) {
 	var res travelRead
 	var err error
 	if res.party, err = r.cfg.store.PartyOf(ctx, travellerID, at); err != nil || !res.party.In {
 		return res, err
 	}
+	queued, err := r.directory.IsQueued(ctx, travellerID)
+	if err != nil {
+		slog.Warn("Could not read queue entry for a party travel, treating as not queued", "player_id", travellerID, "error", err)
+	}
+	res.queued = queued
 	res.leader, res.present, err = r.cfg.presence.Lookup(ctx, res.party.Party.Leader.String())
 	if err != nil || !res.present || r.cfg.occupancy == nil {
 		return res, err
@@ -109,7 +104,9 @@ func (r *partyRegistry) readTravel(ctx context.Context, travellerID uuid.UUID, a
 	return res, err
 }
 
-// travelled checks what readTravel found, in R18's order, and hands the traveller off.
+// travelled answers a press with what readTravel found: its refusals in R18's order, nothing for
+// the leader or a member already on the leader's pod (the client never offers them Travel), or the
+// handoff.
 func (r *partyRegistry) travelled(ctx context.Context, traveller *types.Player, conn *websocket.Conn, res travelRead, err error) {
 	if err != nil {
 		slog.Warn("party travel not read", "player_id", traveller.ID, "error", err)
@@ -120,10 +117,12 @@ func (r *partyRegistry) travelled(ctx context.Context, traveller *types.Player, 
 	switch {
 	case !res.party.In:
 		r.refuse(conn, traveller.ID, constants.PartyNoticeNotMember)
-	case r.notInHub(traveller.ID):
-		r.refuse(conn, traveller.ID, constants.PartyNoticeNotInHub)
 	case res.party.Party.Leader == traveller.ID:
 		slog.Debug("party travel by the leader, ignored", "player_id", traveller.ID)
+	case r.notInHub(traveller.ID):
+		r.refuse(conn, traveller.ID, constants.PartyNoticeNotInHub)
+	case res.queued:
+		r.refuse(conn, traveller.ID, constants.PartyNoticeQueued)
 	case leaderAway(res.party.Party) || !res.present:
 		r.refuse(conn, traveller.ID, constants.PartyNoticeLeaderAway)
 	case res.leader.PodID == r.cfg.podID:
@@ -158,10 +157,12 @@ func leaderAway(p partystore.Party) bool {
 // the same connection, they are taken back: the handoff's own seat lapse (FS-K2HKP).
 const travelWindow = 15 * time.Second
 
-// travelLetGo is a traveller this pod let go: over which connection, and until when.
+// travelLetGo is a traveller this pod let go: over which connection, and until when; checking
+// while the presence index is being asked whether they arrived elsewhere.
 type travelLetGo struct {
-	conn  *websocket.Conn
-	until time.Time
+	conn     *websocket.Conn
+	until    time.Time
+	checking bool
 }
 
 // handOff sends the traveller world_handoff to the hub of the pod at addr, and lets them go
@@ -178,17 +179,52 @@ func (r *partyRegistry) handOff(conn *websocket.Conn, traveller *types.Player, a
 	r.letGo[traveller.ID] = travelLetGo{conn: conn, until: r.cfg.now().Add(travelWindow)}
 }
 
-// takeBackLapsed takes back each traveller whose window has passed while they are still here on
-// the connection they were let go over: the travel did not take them (its arrival refused, R20),
-// so they are present here again (R19).
-func (r *partyRegistry) takeBackLapsed() {
+// takeBackLapsed settles each traveller whose window has passed. One the presence index finds on
+// another pod arrived there: they stay let go here, however long their old socket takes to close,
+// so this pod never overwrites that pod's entry nor holds them for the grace (R19). Anyone else,
+// still here on the connection they were let go over, was not taken by the travel (its arrival
+// refused, R20) and is taken back, present here again. A lookup that fails is tried next tick.
+func (r *partyRegistry) takeBackLapsed(ctx context.Context) {
 	at := r.cfg.now()
 	for id, let := range r.letGo {
-		if at.Before(let.until) {
+		if at.Before(let.until) || let.checking {
 			continue
 		}
-		delete(r.letGo, id)
-		r.directory.TakeBack(id, let.conn)
+		if r.cfg.presence == nil {
+			delete(r.letGo, id)
+			r.directory.TakeBack(id, let.conn)
+			continue
+		}
+		let.checking = true
+		r.letGo[id] = let
+		playerID := id
+		onRunner(ctx, r.run,
+			func(c context.Context) (partypresence.Found, error) {
+				found, present, err := r.cfg.presence.Lookup(c, playerID.String())
+				if !present {
+					found = partypresence.Found{}
+				}
+				return found, err
+			},
+			func(found partypresence.Found, err error) {
+				let, still := r.letGo[playerID]
+				if !still {
+					return
+				}
+				if err != nil {
+					slog.Warn("party travel: presence not read at the window's end, tried again", "player_id", playerID, "error", err)
+					let.checking = false
+					r.letGo[playerID] = let
+					return
+				}
+				delete(r.letGo, playerID)
+				if found.PodID != "" && found.PodID != r.cfg.podID {
+					slog.Debug("party traveller arrived elsewhere, kept let go", "player_id", playerID, "pod_id", found.PodID)
+					return
+				}
+				r.directory.TakeBack(playerID, let.conn)
+			},
+		)
 	}
 }
 

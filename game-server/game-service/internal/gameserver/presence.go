@@ -27,9 +27,11 @@ type presenceIndex interface {
 	Unseat(ctx context.Context, podID string, entries []partypresence.Entry) error
 }
 
-// playerPresence answers who this pod holds right now, and where, and how many its hub seats.
+// playerPresence answers who this pod holds right now, and where, which of them it has let go to
+// travel (left out of the index, FS-NCC9J R19), and how many its hub seats.
 type playerPresence interface {
 	PresentPlayers() []presentPlayer
+	Travellers() map[uuid.UUID]struct{}
 	HubOccupancy() int
 }
 
@@ -56,7 +58,15 @@ type presenceKeeper struct {
 	// who this pod last wrote as seated; only the hub's loop touches it
 	seated      map[uuid.UUID]partypresence.Entry
 	lastRefresh time.Time
+	// the hub count last published, and when; published false until the first
+	published    bool
+	occupied     int
+	lastOccupied time.Time
 }
+
+// occupancyRefresh is how old a published hub count may grow before it is written again
+// unchanged: inside hubocc's 3 s TTL, so a count that stands never lapses.
+const occupancyRefresh = 2 * time.Second
 
 func newPresenceKeeper(index presenceIndex, occupancy hubOccupancyPublisher, seating playerPresence, podID, podAddr string, now func() time.Time, writer *orderedWriter) *presenceKeeper {
 	return &presenceKeeper{
@@ -75,17 +85,18 @@ func newPresenceKeeper(index presenceIndex, occupancy hubOccupancyPublisher, sea
 // tick samples the pod: seats who is new or changed world, unseats who left (a delete, never
 // dropped), and refreshes everyone once a refresh interval has passed.
 func (k *presenceKeeper) tick() {
-	if k.occupancy != nil {
-		count := k.seating.HubOccupancy()
-		k.writer.queue(func(ctx context.Context) error { return k.occupancy.Publish(ctx, k.podID, count) })
-	}
+	k.publishOccupancy()
 	if k.index == nil {
 		return
 	}
 	k.writer.flush()
 
+	gone := k.seating.Travellers()
 	current := make(map[uuid.UUID]partypresence.Entry)
 	for _, p := range k.seating.PresentPlayers() {
+		if _, travelling := gone[p.ID]; travelling {
+			continue
+		}
 		current[p.ID] = partypresence.Entry{PlayerID: p.ID, Name: p.Name, World: string(p.World)}
 	}
 
@@ -115,6 +126,21 @@ func (k *presenceKeeper) tick() {
 	if len(sat) > 0 {
 		k.writer.queue(func(ctx context.Context) error { return k.index.Seat(ctx, k.podID, k.podAddr, sat) })
 	}
+}
+
+// publishOccupancy writes the hub's count when it has changed, or when the last write is
+// occupancyRefresh old: not every tick, so a slow Redis is not handed a write a second on the
+// writer the presence index shares (FS-JEAVX R19).
+func (k *presenceKeeper) publishOccupancy() {
+	if k.occupancy == nil {
+		return
+	}
+	count, at := k.seating.HubOccupancy(), k.now()
+	if k.published && count == k.occupied && at.Sub(k.lastOccupied) < occupancyRefresh {
+		return
+	}
+	k.published, k.occupied, k.lastOccupied = true, count, at
+	k.writer.queue(func(ctx context.Context) error { return k.occupancy.Publish(ctx, k.podID, count) })
 }
 
 // leaveAll unseats everyone this pod holds as it shuts down, once the writer has stopped, so

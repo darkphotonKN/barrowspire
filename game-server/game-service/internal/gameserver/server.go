@@ -177,8 +177,8 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		itemsClient:  itemsClient,
 		characters:   characters,
 	}
-	if leaders, reads := boot.partyStore.(partyLeaders); reads {
-		server.leaders = leaders
+	if boot.partyStore != nil {
+		server.leaders = boot.partyStore
 	}
 
 	// initialize message sender
@@ -203,30 +203,24 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	inbox := newPodInbox(boot.inboxBus, podID)
 	jobs := newLoopJobs()
 	party := newPartyRegistry(server, newSender, jobs, partyRegistryConfig{
-		podID:    podID,
-		podAddr:  podAddr,
-		size:     boot.partySize,
-		now:      boot.partyNow,
-		newID:    uuid.New,
-		ticks:    partyTicks,
-		store:    boot.partyStore,
-		presence: boot.presence,
-		inbox:    inbox,
+		podID:     podID,
+		podAddr:   podAddr,
+		size:      boot.partySize,
+		now:       boot.partyNow,
+		newID:     uuid.New,
+		ticks:     partyTicks,
+		store:     boot.partyStore,
+		presence:  boot.presence,
+		inbox:     inbox,
+		occupancy: boot.hubOccupancy,
 	})
-	if boot.hubOccupancy != nil {
-		party.cfg.occupancy = boot.hubOccupancy
-	}
 	server.parties = party
 	party.start(ctx)
 	var presenceWriter presenceIndex
 	if boot.presence != nil {
 		presenceWriter = boot.presence
 	}
-	var occupancy hubOccupancyPublisher
-	if boot.hubOccupancy != nil {
-		occupancy = boot.hubOccupancy
-	}
-	presence := newPresenceKeeper(presenceWriter, occupancy, server, podID, podAddr, boot.partyNow, redisWriter)
+	presence := newPresenceKeeper(presenceWriter, boot.hubOccupancy, server, podID, podAddr, boot.partyNow, redisWriter)
 	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat, party, presence, jobs)
 	go messageHub.Run(ctx)
 	chat.start(ctx)
@@ -321,9 +315,10 @@ type partyLeaders interface {
 	LeaderOf(ctx context.Context, playerID uuid.UUID) (uuid.UUID, bool, error)
 }
 
-// travelMargin is how far past the hub's cap a player entering it is let in: one full party for a
-// member whose party's leader stands in this hub, whether they came by party_travel or not, and
-// nothing for anyone else. An unreadable party lets nobody past (FS-NCC9J R18, R20, amended).
+// travelMargin is how far past the hub's cap a player entering it is let in: up to one full party
+// (shared by the whole hub, first come) for a member whose party's leader stands on this pod, in
+// its hub, a field or a run, whether they came by party_travel or not, and nothing for anyone
+// else. An unreadable party lets nobody past (FS-NCC9J R18, R20, amended).
 func (s *Server) travelMargin(ctx context.Context, playerID uuid.UUID) int {
 	if s.leaders == nil {
 		return 0
@@ -336,11 +331,22 @@ func (s *Server) travelMargin(ctx context.Context, playerID uuid.UUID) int {
 	if !in || leader == playerID {
 		return 0
 	}
-	hub, exists := s.HubSession()
-	if !exists || !hub.HasPlayer(leader) {
+	if !s.holdsInAWorld(leader) {
 		return 0
 	}
 	return constants.HubTravelMargin
+}
+
+// holdsInAWorld reports whether this pod holds playerID seated in one of its worlds.
+func (s *Server) holdsInAWorld(playerID uuid.UUID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	record, onRecord := s.players[playerID]
+	if !onRecord {
+		return false
+	}
+	_, inWorld := s.sessions[record.CurrentGameSessionId]
+	return inWorld
 }
 
 /**
@@ -751,9 +757,9 @@ func (s *Server) ApplyRunProgress(progress []types.RunProgress) {
 **/
 /**
 * LetGo lets a member go to travel to another pod over conn (FS-NCC9J R19):
-* they are not present here from now on, so the presence index drops them on
-* the next tick, and when conn drops they are not held for the reconnect
-* grace, so a reconnect never returns them here. TakeBack undoes it while
+* the presence index drops them on the next tick, and when conn drops they are
+* not held for the reconnect grace, so a reconnect never returns them here.
+* Until then they are still present here, and still told their party. TakeBack undoes it while
 * they are still on conn; a new connection here undoes it too.
 **/
 func (s *Server) LetGo(playerID uuid.UUID, conn *websocket.Conn) {
@@ -770,6 +776,18 @@ func (s *Server) TakeBack(playerID uuid.UUID, conn *websocket.Conn) {
 	if s.travelling[playerID] == conn {
 		delete(s.travelling, playerID)
 	}
+}
+
+// Travellers are the members this pod has let go to travel: still present here
+// while on their old connection, but not in the presence index (FS-NCC9J R19).
+func (s *Server) Travellers() map[uuid.UUID]struct{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[uuid.UUID]struct{}, len(s.travelling))
+	for id := range s.travelling {
+		out[id] = struct{}{}
+	}
+	return out
 }
 
 // letGoOver reports whether conn carries a member let go to travel.
@@ -986,9 +1004,6 @@ func (s *Server) PresentPlayers() []presentPlayer {
 			continue
 		}
 		if _, kept := s.awaitingSettlement[id]; kept {
-			continue
-		}
-		if _, gone := s.travelling[id]; gone {
 			continue
 		}
 		world, inWorld := s.sessions[record.CurrentGameSessionId]
