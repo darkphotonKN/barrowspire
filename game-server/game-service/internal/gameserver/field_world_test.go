@@ -323,25 +323,39 @@ func TestEnterField_Refusals(t *testing.T) {
 	})
 }
 
-// stallingItems holds every loadout read until released (or its context ends),
-// saying when one has started.
+// stallingItems holds every loadout read and checkout until released (or its
+// context ends), saying when one has started.
 type stallingItems struct {
 	MockItemsClient
 	started chan struct{}
 	release chan struct{}
 }
 
-func (s *stallingItems) GetLoadoutWithItems(ctx context.Context, _ *itemspb.GetLoadoutWithItemsRequest) (*itemspb.GetLoadoutWithItemsResponse, error) {
+func (s *stallingItems) stall(ctx context.Context) error {
 	select {
 	case s.started <- struct{}{}:
 	default:
 	}
 	select {
 	case <-s.release:
-		return &itemspb.GetLoadoutWithItemsResponse{}, nil
+		return nil
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return ctx.Err()
 	}
+}
+
+func (s *stallingItems) GetLoadoutWithItems(ctx context.Context, _ *itemspb.GetLoadoutWithItemsRequest) (*itemspb.GetLoadoutWithItemsResponse, error) {
+	if err := s.stall(ctx); err != nil {
+		return nil, err
+	}
+	return &itemspb.GetLoadoutWithItemsResponse{}, nil
+}
+
+func (s *stallingItems) CheckOutRunGear(ctx context.Context, _ *itemspb.CheckOutRunGearRequest) (*itemspb.CheckOutRunGearResponse, error) {
+	if err := s.stall(ctx); err != nil {
+		return nil, err
+	}
+	return &itemspb.CheckOutRunGearResponse{Loadout: &itemspb.GetLoadoutWithItemsResponse{}}, nil
 }
 
 // A slow items-service delays only the one entry: the loadout is read before
@@ -361,7 +375,7 @@ func TestEnterField_AStalledLoadoutReadDoesNotHoldTheField(t *testing.T) {
 	}
 
 	within(t, 200*time.Millisecond, "the field's lock while a loadout read stalls", func() {
-		_, err := rig.meadows.SeatVisitor(uuid.New(), types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Kaelen"}, &itemspb.GetLoadoutWithItemsResponse{})
+		_, err := rig.meadows.SeatVisitor(uuid.New(), types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Kaelen"}, uuid.New(), &itemspb.CheckOutRunGearResponse{Loadout: &itemspb.GetLoadoutWithItemsResponse{}})
 		require.NoError(t, err)
 		_ = rig.meadows.GetPlayerIDs()
 	})
@@ -387,6 +401,13 @@ func (s *armedStallingItems) GetLoadoutWithItems(ctx context.Context, req *items
 		return &itemspb.GetLoadoutWithItemsResponse{}, nil
 	}
 	return s.stallingItems.GetLoadoutWithItems(ctx, req)
+}
+
+func (s *armedStallingItems) CheckOutRunGear(ctx context.Context, req *itemspb.CheckOutRunGearRequest) (*itemspb.CheckOutRunGearResponse, error) {
+	if !s.armed.Load() {
+		return &itemspb.CheckOutRunGearResponse{Loadout: &itemspb.GetLoadoutWithItemsResponse{}}, nil
+	}
+	return s.stallingItems.CheckOutRunGear(ctx, req)
 }
 
 // A connection that drops while its entry is still under way never lands in
@@ -423,22 +444,31 @@ func TestEnterField_ADropMidEntry_IsNeverResumedInTheField(t *testing.T) {
 	assert.Len(t, rig.settle.settled(), 1, "the visit it seated settles once")
 }
 
-// loadoutItems answers every loadout read with one loadout.
+// loadoutItems answers every loadout read with one loadout, and every checkout
+// with it and one bag.
 type loadoutItems struct {
 	MockItemsClient
 	loadout *itemspb.GetLoadoutWithItemsResponse
+	bag     []*itemspb.ItemInstance
 }
 
 func (l *loadoutItems) GetLoadoutWithItems(context.Context, *itemspb.GetLoadoutWithItemsRequest) (*itemspb.GetLoadoutWithItemsResponse, error) {
 	return l.loadout, nil
 }
 
+func (l *loadoutItems) CheckOutRunGear(context.Context, *itemspb.CheckOutRunGearRequest) (*itemspb.CheckOutRunGearResponse, error) {
+	return &itemspb.CheckOutRunGearResponse{Loadout: l.loadout, Bag: l.bag}, nil
+}
+
 // The field body wears the equipped loadout, an item above the character's
-// level carried, as a run's does. R11 (D5); AC 5.
+// level carried, as a run's does, and carries its checked-out bag after it.
+// R11 (D5); AC 5; FS-18Z5F §C R13, R17.
 func TestEnterField_TheBodyWearsTheLoadout(t *testing.T) {
 	rig := newFieldRig(t, &loadoutItems{loadout: &itemspb.GetLoadoutWithItemsResponse{
 		Weapon: &itemspb.ItemInstance{Id: uuid.NewString(), TemplateId: uuid.NewString(), ItemType: "weapon", Name: "Seax", RequiredLevel: 3},
 		Head:   &itemspb.ItemInstance{Id: uuid.NewString(), TemplateId: uuid.NewString(), ItemType: "armor", ArmorSlot: "head", Name: "Barrow Helm", RequiredLevel: 5},
+	}, bag: []*itemspb.ItemInstance{
+		{Id: uuid.NewString(), TemplateId: uuid.NewString(), ItemType: "consumable", Name: "Rope"},
 	}})
 	wren, conn, inbox := rig.atMeadowsGate(t, "Wren")
 
@@ -451,7 +481,7 @@ func TestEnterField_TheBodyWearsTheLoadout(t *testing.T) {
 	assert.NotNil(t, equipment.WeaponSlot, "the level-3 sword is worn")
 	assert.Nil(t, equipment.HeadSlot, "the level-5 helm is not worn")
 	lc, _ := body.GetComponent(ecs.ComponentTypeItemIDList)
-	assert.Len(t, lc.(*components.ItemIDListComponent).ItemIDs, 1, "the helm is carried")
+	assert.Len(t, lc.(*components.ItemIDListComponent).ItemIDs, 2, "the helm is carried, then the bag")
 }
 
 // leave_field at the entrance settles the visit and seats the player at the

@@ -74,6 +74,41 @@ translation belongs to the surface that renders words.
 - **Gold** — the in-game currency, in copy and in code alike (wallet-service and ledger-service
   both use it). One of the few words that needs no translation.
 
+## Chat terms (FS-WJGFJ; world chat FS-5SH4G; whisper FS-KCQ06; mute and report FS-4HEG7)
+
+What the chat window says. Each maps to a game-service chat channel type on the wire; the
+protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) § Chat.
+
+- **Chat window** — the bottom-left panel: **one** stream of every channel's messages, newest at
+  the bottom, `Name: text` with no time, keeping 100 lines per channel. It is never cleared by a
+  world switch; the player walks from town into the Spire and the lines stay.
+- **Fold** — the window folded down to its input row by its button, and unfolded again. It stays
+  as the player left it; a folded window still sends, and new lines do not unfold it.
+- **Channel picker** — the drop-down at the input row's left: which channel the next line goes
+  to. Every channel is listed; one the server does not relay yet is listed disabled.
+- **Prefix** — the mark at the start of a line that names its channel: `#` World, `$` Trade,
+  `%` Party, `@` Whisper (then a name), none for Area. Picking a channel writes its prefix, and
+  typing a prefix picks its channel. A closed channel's prefix is just text.
+- **Channel** (on screen) — the kind of talk a line belongs to, told apart by colour, not by tab:
+  **Area**, **World**, **Party**, **Whisper**, **Trade**. In client code this is the chat channel
+  type; the client has no field-channel concept, so the bare word is safe *here* and only here.
+  Party and Trade exist as filters and colours before they can carry a message.
+- **Area** — the people on the same server as you, wherever they stand: town, a field, or inside
+  the Spire (ADR-0032). The window does not say where you are (FS-WJGFJ Amendment 2026-10-31).
+- **World** — everyone online, across every server.
+- **Whisper** — a private line to one named player, sent as `@name message`; clicking a sender's
+  name pre-fills `@name`. An offline target answers with one system line, and the whisper is gone.
+- **Recall** — ArrowUp and ArrowDown in the open input walk back and forth through the player's
+  own last 50 sent lines, as a terminal's history; kept for the page's life only.
+- **Channel filter** — the row of tab-shaped toggles above the stream, any combination shown. A toggled-off channel is **hidden**,
+  not muted: its lines keep arriving and reappear when toggled on.
+- **Mute** — hiding one player: their lines, on every channel, are received and not drawn. The
+  ignore list lives in this browser only (ADR-0033).
+- **Report** — sending one line, with the lines around it that the window still holds, to the
+  server as a complaint. The window is the evidence; the server stores no chat.
+- **System line** — a line the client or server emits that no player wrote ("that player is not
+  online"). Not a channel; never filtered out.
+
 ## Rendering terms (canvas presentation, [ADR-0020](../docs/adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) / FS-2325V)
 
 These are engineering words, not lore. They name how the canvas draws the world, and like the lore
@@ -193,14 +228,21 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   holds at most **bag capacity**, 30 items (`BAG_CAPACITY` in `src/ui/bag.ts`, game-service's
   `BagCapacity`). New items go on the end, and nothing reorders it. In a run or a field world it
   is the WS `inventory` (plus items taken and still pending), and a pickup or unequip into a full
-  bag is not sent ("Your bag is full."). In the hub it is every owned item the loadout does not
-  wear, read over REST and not capped, so it can read over capacity (e.g. `34 / 30`). Same
+  bag is not sent ("Your bag is full."). In the hub it is the account's bag-location items, read
+  over REST and not capped, so it can read over capacity (e.g. `34 / 30`); before FS-VPD8Y it
+  was every owned item the loadout did not wear. Same
   meaning as game-service's **bag**
   ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Carried items").
   **Not the container view**: the coffer/satchel/bone-heap panel shows a container's contents, never the
   bag, even though code still says `satchel` in places (`satchelIcon`, the container view's
   leather). Say **bag** in prose, specs and new names. Not "inventory" either: that is the wire
   field, and items-service's word for everything an account owns.
+- **Stash**: the account's town storage (60), opened at the hub's stash chest and shown as its
+  own grid beside the bag; items move bag ↔ stash with right-click or `E` (FS-VPD8Y). Never in
+  a run or field world. Not the container view: a run chest is a world container, the stash
+  chest only opens the account's stash.
+- **Unsafe find** (marking): the border and tip note on an item picked up in this run, which
+  is lost if the player dies before escaping. Game-service's term (FS-18Z5F).
 
 - **Ability card**: the HUD panel at the bottom right of a run or a field world showing the
   player's class ability: its name, the right-mouse glyph and a line on how it works (FS-8AY7S).

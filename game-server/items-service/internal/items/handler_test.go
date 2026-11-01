@@ -2,12 +2,17 @@ package items
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -31,6 +36,7 @@ func TestHandler_ListItemInstances_CarriesStatus(t *testing.T) {
 		{"untouched relic is available", "AVAILABLE"},
 		{"relic reserved by create-listing is listed", "LISTED"},
 		{"relic held for settlement is in escrow", "IN_ESCROW"},
+		{"relic checked out into a run is in run (FS-18Z5F R4)", "IN_RUN"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -132,6 +138,28 @@ func TestItemInstanceToProto_CarriesLevelAndAffixes(t *testing.T) {
 	}
 }
 
+// FS-VPD8Y R14: the stored location goes on the wire in the HTTP vocabulary,
+// lowercase.
+func TestItemInstanceToProto_CarriesLocationLowercase(t *testing.T) {
+	tests := []struct {
+		name     string
+		location string
+		want     string
+	}{
+		{name: "bag", location: LocationBag, want: "bag"},
+		{name: "stash", location: LocationStash, want: "stash"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := itemInstanceToProto(&ItemInstance{ID: uuid.New(), Location: tt.location})
+
+			if got.Location != tt.want {
+				t.Errorf("Location = %q, want %q", got.Location, tt.want)
+			}
+		})
+	}
+}
+
 // loadoutRepo serves one member's loadout and its worn weapon, and counts reads
 // so a refused caller can be shown to reach no data at all.
 type loadoutRepo struct {
@@ -210,9 +238,41 @@ func (r *stashRepo) ListItemInstances(context.Context, *ListItemInstancesRequest
 	return []*ItemInstance{{ID: uuid.New(), TemplateID: uuid.New(), OwnerMemberID: r.owner, ItemType: "weapon", Name: "Blade"}}, nil
 }
 
-func (r *stashRepo) UpsertLoadoutSlot(context.Context, *UpdateLoadoutRequest) error {
+func (r *stashRepo) LockAccountTx(context.Context, *sqlx.Tx, uuid.UUID) error {
 	r.writes++
 	return nil
+}
+
+func (r *stashRepo) LoadoutSlotTx(context.Context, *sqlx.Tx, uuid.UUID, string) (*uuid.UUID, error) {
+	r.reads++
+	return nil, nil
+}
+
+func (r *stashRepo) LockItemPlacementTx(context.Context, *sqlx.Tx, uuid.UUID, uuid.UUID) (*ItemPlacement, error) {
+	r.reads++
+	return &ItemPlacement{Status: itemStatusAvailable, Location: LocationBag}, nil
+}
+
+func (r *stashRepo) UpsertLoadoutSlotTx(context.Context, *sqlx.Tx, *UpdateLoadoutRequest) error {
+	r.writes++
+	return nil
+}
+
+func (r *stashRepo) LoadoutTx(context.Context, *sqlx.Tx, uuid.UUID) (*Loadout, error) {
+	r.reads++
+	return &Loadout{MemberId: &r.owner}, nil
+}
+
+func (r *stashRepo) CheckOutRunGearTx(context.Context, *sqlx.Tx, uuid.UUID, uuid.UUID) ([]*ItemInstance, error) {
+	r.writes++
+	return nil, nil
+}
+
+// stashService serves repo with its transactions run inline, no database.
+func stashService(repo *stashRepo) *service {
+	svc := NewService(repo, nil, nil, nil, nil)
+	svc.withTx = runInline
+	return svc
 }
 
 // ownedRPCs calls each stash/loadout RPC for the given member.
@@ -236,6 +296,10 @@ var ownedRPCs = []struct {
 		_, err := h.UpdateLoadout(ctx, &pb.UpdateLoadoutRequest{MemberId: member, Slot: "weapon", ItemInstanceId: uuid.NewString()})
 		return err
 	}},
+	{"CheckOutRunGear", func(h *Handler, ctx context.Context, member string) error {
+		_, err := h.CheckOutRunGear(ctx, &pb.CheckOutRunGearRequest{MemberId: member, RunId: uuid.NewString()})
+		return err
+	}},
 }
 
 // FS-4R9M9 R53: a member reads and changes only their own stash and loadout.
@@ -257,7 +321,7 @@ func TestHandler_StashAndLoadout_OnlyTheOwnerReachesThem(t *testing.T) {
 		for _, tt := range cases {
 			t.Run(rpc.name+"/"+tt.name, func(t *testing.T) {
 				repo := &stashRepo{owner: owner}
-				h := NewHandler(NewService(repo, nil, nil, nil, nil), nil)
+				h := NewHandler(stashService(repo), nil)
 
 				err := rpc.call(h, tt.ctx, owner.String())
 
@@ -297,7 +361,7 @@ func TestHandler_StashAndLoadout_RefusalIsLoggedOnce(t *testing.T) {
 			t.Cleanup(func() { slog.SetDefault(prev) })
 
 			owner := uuid.New()
-			h := NewHandler(NewService(&stashRepo{owner: owner}, nil, nil, nil, nil), nil)
+			h := NewHandler(stashService(&stashRepo{owner: owner}), nil)
 			intruder := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: uuid.New()})
 
 			_ = rpc.call(h, intruder, owner.String())
@@ -314,6 +378,150 @@ func TestHandler_StashAndLoadout_RefusalIsLoggedOnce(t *testing.T) {
 			})
 			if method != rpc.name {
 				t.Errorf("warning method = %q, want %q", method, rpc.name)
+			}
+		})
+	}
+}
+
+// fakeMoveService answers MoveItemInstance with location or err and records
+// what the handler handed it.
+type fakeMoveService struct {
+	Service
+	location string
+	err      error
+
+	called    bool
+	gotCaller uuid.UUID
+	gotReq    *MoveItemInstanceRequest
+}
+
+func (f *fakeMoveService) MoveItemInstance(_ context.Context, caller uuid.UUID, req *MoveItemInstanceRequest) (string, error) {
+	f.called, f.gotCaller, f.gotReq = true, caller, req
+	return f.location, f.err
+}
+
+// FS-VPD8Y R12-R13: the caller is the token's member; the wire speaks bag |
+// stash; not found → NotFound; a domain refusal → FailedPrecondition with the
+// code as its ErrorInfo reason; malformed input → InvalidArgument; anything
+// else → Internal.
+func TestHandler_MoveItemInstance_Outcomes(t *testing.T) {
+	itemID := uuid.New()
+	dbDown := errors.New("connection refused")
+
+	tests := []struct {
+		name         string
+		id           string
+		location     string
+		svc          *fakeMoveService
+		wantCode     codes.Code
+		wantReason   errcode.Code
+		wantStored   string
+		wantLocation string
+	}{
+		{name: "moved to the stash", id: itemID.String(), location: "stash",
+			svc: &fakeMoveService{location: LocationStash}, wantCode: codes.OK, wantStored: LocationStash, wantLocation: "stash"},
+		{name: "moved to the bag", id: itemID.String(), location: "bag",
+			svc: &fakeMoveService{location: LocationBag}, wantCode: codes.OK, wantStored: LocationBag, wantLocation: "bag"},
+		{name: "not the caller's", id: itemID.String(), location: "bag",
+			svc: &fakeMoveService{err: fmt.Errorf("move: %w", commonconstants.ErrNotFound)}, wantCode: codes.NotFound, wantStored: LocationBag},
+		{name: "worn", id: itemID.String(), location: "stash",
+			svc: &fakeMoveService{err: errcode.Refuse(errcode.ItemWorn)}, wantCode: codes.FailedPrecondition, wantReason: errcode.ItemWorn, wantStored: LocationStash},
+		{name: "bag full", id: itemID.String(), location: "bag",
+			svc: &fakeMoveService{err: errcode.Refuse(errcode.BagFull)}, wantCode: codes.FailedPrecondition, wantReason: errcode.BagFull, wantStored: LocationBag},
+		{name: "infrastructure failure", id: itemID.String(), location: "bag",
+			svc: &fakeMoveService{err: dbDown}, wantCode: codes.Internal, wantStored: LocationBag},
+		{name: "malformed id", id: "not-a-uuid", location: "bag",
+			svc: &fakeMoveService{}, wantCode: codes.InvalidArgument},
+		{name: "unknown location", id: itemID.String(), location: "worn",
+			svc: &fakeMoveService{}, wantCode: codes.InvalidArgument},
+		{name: "stored spelling is not the wire's", id: itemID.String(), location: "BAG",
+			svc: &fakeMoveService{}, wantCode: codes.InvalidArgument},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			caller := uuid.New()
+			ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: caller})
+
+			res, err := NewHandler(tt.svc, nil).MoveItemInstance(ctx, &pb.MoveItemInstanceRequest{ItemInstanceId: tt.id, Location: tt.location})
+
+			st := status.Convert(err)
+			if st.Code() != tt.wantCode {
+				t.Fatalf("code = %v (%v), want %v", st.Code(), err, tt.wantCode)
+			}
+			if reason, ok := errcode.RefusalReason(st); tt.wantReason != "" && (!ok || reason != tt.wantReason) {
+				t.Errorf("reason = %q, %v; want %q", reason, ok, tt.wantReason)
+			}
+			if tt.wantStored == "" {
+				if tt.svc.called {
+					t.Errorf("service called for malformed input")
+				}
+				return
+			}
+			if tt.svc.gotCaller != caller || tt.svc.gotReq.ItemInstanceID != itemID || tt.svc.gotReq.Location != tt.wantStored {
+				t.Errorf("service got (%v, %+v), want (%v, {%v %s})", tt.svc.gotCaller, tt.svc.gotReq, caller, itemID, tt.wantStored)
+			}
+			if tt.wantCode == codes.OK && (res.GetId() != itemID.String() || res.GetLocation() != tt.wantLocation) {
+				t.Errorf("response = %+v, want {%v %s}", res, itemID, tt.wantLocation)
+			}
+		})
+	}
+}
+
+func TestHandler_MoveItemInstance_NeedsAnIdentity(t *testing.T) {
+	svc := &fakeMoveService{}
+	_, err := NewHandler(svc, nil).MoveItemInstance(context.Background(), &pb.MoveItemInstanceRequest{ItemInstanceId: uuid.NewString(), Location: "bag"})
+
+	if status.Code(err) != codes.Unauthenticated || svc.called {
+		t.Errorf("code = %v, called = %v; want Unauthenticated and no call", status.Code(err), svc.called)
+	}
+}
+
+// fakeLoadoutWriteService answers UpdateLoadout with err.
+type fakeLoadoutWriteService struct {
+	Service
+	err error
+}
+
+func (f *fakeLoadoutWriteService) UpdateLoadout(context.Context, uuid.UUID, *UpdateLoadoutRequest) error {
+	return f.err
+}
+
+// FS-VPD8Y R13, R18: a loadout write's domain refusal reaches the gateway as
+// FailedPrecondition carrying its code as the ErrorInfo reason; anything else
+// it did not map before stays Internal.
+func TestHandler_UpdateLoadout_Outcomes(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantCode   codes.Code
+		wantReason errcode.Code
+	}{
+		{"written", nil, codes.OK, ""},
+		{"bag full", errcode.Refuse(errcode.BagFull), codes.FailedPrecondition, errcode.BagFull},
+		{"wrapped bag full", fmt.Errorf("update loadout: %w", errcode.Refuse(errcode.BagFull)), codes.FailedPrecondition, errcode.BagFull},
+		// FS-18Z5F R32, R33: equipping an item not AVAILABLE
+		{"item not available", errcode.Refuse(errcode.ItemNotAvailable), codes.FailedPrecondition, errcode.ItemNotAvailable},
+		{"infrastructure failure", errors.New("connection refused"), codes.Internal, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			caller := uuid.New()
+			ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: caller})
+
+			_, err := NewHandler(&fakeLoadoutWriteService{err: tt.err}, nil).UpdateLoadout(ctx,
+				&pb.UpdateLoadoutRequest{MemberId: caller.String(), Slot: "weapon"})
+
+			st := status.Convert(err)
+			if st.Code() != tt.wantCode {
+				t.Fatalf("code = %v (%v), want %v", st.Code(), err, tt.wantCode)
+			}
+			reason, ok := errcode.RefusalReason(st)
+			if tt.wantReason != "" && (!ok || reason != tt.wantReason) {
+				t.Errorf("reason = %q, %v; want %q", reason, ok, tt.wantReason)
+			}
+			if tt.wantReason == "" && ok {
+				t.Errorf("reason = %q, want none", reason)
 			}
 		})
 	}

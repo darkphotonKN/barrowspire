@@ -27,6 +27,10 @@ func (c *affixedLoadoutClient) GetLoadoutWithItems(_ context.Context, _ *pb.GetL
 	return c.loadout, nil
 }
 
+func (c *affixedLoadoutClient) CheckOutRunGear(_ context.Context, _ *pb.CheckOutRunGearRequest) (*pb.CheckOutRunGearResponse, error) {
+	return &pb.CheckOutRunGearResponse{Loadout: c.loadout}, nil
+}
+
 var (
 	storedWeaponAffixes = []types.Affix{
 		{Stat: types.AffixStrength, Tier: 2, Value: 5},
@@ -113,7 +117,7 @@ func TestLoadoutItem_WithAffixes_RoundTripsSeatStateAndExtraction(t *testing.T) 
 	// extracted
 	outbox := &capturingOutbox{}
 	s.sessionCloser = &homeReturner{run: s}
-	s.eventEmitter = NewService(committingTxDB(t), outbox)
+	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{})
 	s.sender = &recordingSender{}
 	s.endSessionCh = make(chan bool, 64)
 	markEscaped(t, delverEntity(t, s, memberID))
@@ -138,7 +142,7 @@ func TestExtraction_ChestItem_CarriesItsRoll(t *testing.T) {
 	s := p.s
 	outbox := &capturingOutbox{}
 	s.sessionCloser = &homeReturner{run: s}
-	s.eventEmitter = NewService(committingTxDB(t), outbox)
+	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{})
 	s.sender = &recordingSender{}
 	s.endSessionCh = make(chan bool, 64)
 

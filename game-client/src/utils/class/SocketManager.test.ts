@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SERVER_ADDR, SocketManager, type SocketLike } from "./SocketManager";
 import { useGameStore } from "../../stores/gameStore";
+import { useChatStore } from "../../stores/chatStore";
 
 /** A socket the test drives by hand: the server side of each event is a method. */
 class FakeSocket implements SocketLike {
@@ -283,5 +284,51 @@ describe("SocketManager refused actions (FS-QPDKN req 13, 14)", () => {
     old.receive(refusal);
 
     expect(ordinary).not.toHaveBeenCalled();
+  });
+});
+
+describe("SocketManager chat (FS-WJGFJ §Requirements C20, C29: the socket feeds the chat store)", () => {
+  const stamped = {
+    message_id: "22222222-2222-4222-8222-222222222222",
+    sender_id: "11111111-1111-4111-8111-111111111111",
+    sender_name: "Wren",
+    channel: "area",
+    scope: "pod-host",
+    sent_at: "2026-10-31T09:30:15.250Z",
+    text: "hi",
+  };
+
+  it("puts a chat line in the chat store whether or not a scene listens, and still tells a listener", () => {
+    const { manager, old } = setup();
+    const heard = vi.fn();
+    manager.on("chat", heard);
+
+    old.receive({ action: "chat", payload: stamped });
+
+    expect(useChatStore.getState().lines).toContainEqual({ kind: "line", ...stamped });
+    expect(heard).toHaveBeenCalledWith(stamped);
+  });
+
+  it("keeps a malformed chat frame out of the store (review 2026-10-31)", () => {
+    const { old } = setup();
+    const before = useChatStore.getState().lines.length;
+
+    old.receive({ action: "chat", payload: { text: "no channel, no id" } });
+    old.receive({ action: "chat", payload: { ...stamped, channel: "shout" } });
+    old.receive({ action: "chat_notice", payload: { code: 7 } });
+
+    expect(useChatStore.getState().lines.length).toBe(before);
+  });
+
+  it("puts a chat_notice in the chat store as a system line", () => {
+    const { old } = setup();
+
+    old.receive({ action: "chat_notice", payload: { code: "channel_closed", text: "That channel is not open yet." } });
+
+    expect(useChatStore.getState().lines).toContainEqual({
+      kind: "system",
+      code: "channel_closed",
+      text: "That channel is not open yet.",
+    });
   });
 });

@@ -28,16 +28,20 @@ type InboxRepository interface {
 }
 
 type service struct {
-	db        *sqlx.DB
 	repo      Repository
 	inboxRepo InboxRepository
+	// withTx runs fn in one transaction, committing when fn succeeds and
+	// rolling back otherwise. Tests run fn without a database.
+	withTx func(ctx context.Context, fn func(tx *sqlx.Tx) error) error
 }
 
 func NewService(db *sqlx.DB, repo Repository, inboxRepo InboxRepository) *service {
 	return &service{
-		db:        db,
 		repo:      repo,
 		inboxRepo: inboxRepo,
+		withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
+			return commonutils.ExecTx(ctx, db, nil, fn)
+		},
 	}
 }
 
@@ -94,7 +98,7 @@ func (s *service) ProcessMemberSignedUp(ctx context.Context, payload *commoncons
 // runInTx opens a tx, records the event in the inbox, runs fn, and commits.
 // If the event was already processed, it returns ErrAlreadyProcessed without running fn.
 func (s *service) runInTx(ctx context.Context, eventID uuid.UUID, eventType string, fn func(tx *sqlx.Tx) error) (err error) {
-	return commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
+	return s.withTx(ctx, func(tx *sqlx.Tx) error {
 		inserted, err := s.inboxRepo.MarkEventProcessed(ctx, tx, eventID, eventType)
 		if err != nil {
 			return fmt.Errorf("mark event processed: %w", err)
@@ -141,15 +145,19 @@ func (s *service) ProcessItemCreated(ctx context.Context, payload *pb.ItemCreate
 	return err
 }
 
-func (s *service) ProcessGameEnded(ctx context.Context, payload *pb.MatchEndedEvent) error {
+// ProcessGameEnded notifies every player of a run's result once per eventID
+// (the delivery's MessageId): the inbox mark and all players' notifications
+// commit together or not at all. FS-PJPNA.
+func (s *service) ProcessGameEnded(ctx context.Context, eventID uuid.UUID, payload *pb.MatchEndedEvent) error {
 	// A field visit is not a match: no game result to announce (FS-X2F2H R45,
-	// ADR-0031). An empty world type is a run.
+	// ADR-0031). An empty world type is a run. It writes nothing, so there is
+	// nothing to dedup.
 	if payload.GetWorldType() == commonconstants.WorldTypeField {
 		slog.Info("Skipping field visit: not a match", "session_id", payload.SessionId)
 		return nil
 	}
 
-	// Notify all players about the game result
+	notifications := make([]*CreateNotification, 0, len(payload.Players))
 	for _, player := range payload.Players {
 		playerID, err := uuid.Parse(player.MemberId)
 		if err != nil {
@@ -159,58 +167,65 @@ func (s *service) ProcessGameEnded(ctx context.Context, payload *pb.MatchEndedEv
 			)
 			continue // Skip this player but continue with others
 		}
+		notifications = append(notifications, gameEndedNotification(playerID, payload.SessionId, player))
+	}
 
-		// Prepare template data
-		templateData := map[string]any{
-			"SessionId":     payload.SessionId,
-			"Username":      player.Username,
-			"Win":           player.Win,
-			"FinalPosition": player.FinalPosition,
-			"Kills":         player.Kills,
-			"Deaths":        player.Deaths,
+	err := s.runInTx(ctx, eventID, commonconstants.GameMatchEnded, func(tx *sqlx.Tx) error {
+		for _, n := range notifications {
+			if _, err := s.repo.CreateTx(ctx, tx, n); err != nil {
+				// Logged once, by the consumer that settles the delivery.
+				return fmt.Errorf("create game ended notification (user_id=%s session_id=%s): %w", n.UserID, payload.SessionId, err)
+			}
 		}
-
-		// Build notification message
-		var title, message string
-		if player.Escape {
-			title = "Escaped!"
-			message = fmt.Sprintf("Congratulations %s! You escaped successfully! Position: #%d, Kills: %d, Deaths: %d",
-				player.Username, player.FinalPosition, player.Kills, player.Deaths)
-		} else if player.Win {
-			title = "Victory!"
-			message = fmt.Sprintf("Congratulations %s! Last one standing! Position: #%d, Kills: %d, Deaths: %d",
-				player.Username, player.FinalPosition, player.Kills, player.Deaths)
-		} else {
-			title = "Game Over"
-			message = fmt.Sprintf("%s, match ended. Position: #%d, Kills: %d, Deaths: %d",
-				player.Username, player.FinalPosition, player.Kills, player.Deaths)
-		}
-
-		createNotification := &CreateNotification{
-			UserID:           playerID,
-			NotificationType: "in_app",
-			EventType:        "game.ended",
-			Title:            title,
-			Message:          message,
-			Data:             templateData,
-		}
-
-		_, err = s.repo.Create(ctx, createNotification)
-		if err != nil {
-			slog.Warn("Error occurred when creating game ended notification",
-				"user_id", player.MemberId,
-				"session_id", payload.SessionId,
-				"err", err,
-			)
-			// Continue with other players even if one fails
-		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	slog.Info("Game ended notifications sent",
+		"event_id", eventID,
 		"session_id", payload.SessionId,
 		"players_count", len(payload.Players),
+		"notified_count", len(notifications),
 	)
 	return nil
+}
+
+// gameEndedNotification is what one player reads about their match result.
+func gameEndedNotification(playerID uuid.UUID, sessionID string, player *pb.PlayerMatchResult) *CreateNotification {
+	templateData := map[string]any{
+		"SessionId":     sessionID,
+		"Username":      player.Username,
+		"Win":           player.Win,
+		"FinalPosition": player.FinalPosition,
+		"Kills":         player.Kills,
+		"Deaths":        player.Deaths,
+	}
+
+	var title, message string
+	if player.Escape {
+		title = "Escaped!"
+		message = fmt.Sprintf("Congratulations %s! You escaped successfully! Position: #%d, Kills: %d, Deaths: %d",
+			player.Username, player.FinalPosition, player.Kills, player.Deaths)
+	} else if player.Win {
+		title = "Victory!"
+		message = fmt.Sprintf("Congratulations %s! Last one standing! Position: #%d, Kills: %d, Deaths: %d",
+			player.Username, player.FinalPosition, player.Kills, player.Deaths)
+	} else {
+		title = "Game Over"
+		message = fmt.Sprintf("%s, match ended. Position: #%d, Kills: %d, Deaths: %d",
+			player.Username, player.FinalPosition, player.Kills, player.Deaths)
+	}
+
+	return &CreateNotification{
+		UserID:           playerID,
+		NotificationType: "in_app",
+		EventType:        "game.ended",
+		Title:            title,
+		Message:          message,
+		Data:             templateData,
+	}
 }
 
 func (s *service) GetNotification(ctx context.Context, payload QueryNotifications) (*NotificationListResponse, error) {

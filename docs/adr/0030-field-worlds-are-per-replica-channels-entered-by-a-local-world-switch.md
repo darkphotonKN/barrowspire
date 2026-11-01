@@ -8,6 +8,10 @@ Gentle Meadows), [FS-3QHQZ](../specs/3QHQZ-forlorn-forest-and-branching-trails.m
 Forest); entered from [FS-0XMCP](../specs/0XMCP-hub-destination-gates.md)'s hub gates
 Builds on: [ADR-0015](0015-hub-and-runs-share-one-process-and-one-connection.md) (one process and
 one client connection per pod, a per-pod player ceiling)
+Amended by: [ADR-0034](0034-a-party-lives-on-one-pod-joining-is-a-hub-handoff.md) — the "friends
+on different pods see different fields" consequence and the parked "join a friend's channel":
+party members now share a pod, so they share fields. Fields stay per-replica channels entered by
+a local world switch.
 
 ## Context
 

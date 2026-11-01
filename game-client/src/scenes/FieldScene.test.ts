@@ -2,6 +2,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Only the field's entrance trigger and its replies are under test: a Phaser stand-in with the
 // scene base class and the events the scene hangs its release on.
+// The chat input's text field is a real <input> in the browser; this suite runs without a DOM,
+// so the field is a silent stand-in. The input's rules are tested in ui/chatInput.test.ts.
+vi.mock("@/ui/chatInputField", () => ({
+  domChatInputField: () => ({
+    value: "",
+    channel: "area",
+    focus: () => undefined,
+    blur: () => undefined,
+    show: () => undefined,
+    hide: () => undefined,
+    moveTo: () => undefined,
+    destroy: () => undefined,
+  }),
+}));
+
 vi.mock("phaser", async () => {
   const { EventEmitter } = await import("eventemitter3");
   class Scene {
@@ -14,7 +29,11 @@ vi.mock("phaser", async () => {
     Scale: { Events: { RESIZE: "resize" } },
     BlendModes: { NORMAL: 0, ADD: 1, MULTIPLY: 2 },
     Input: { Keyboard: { KeyCodes: {} } },
-    Math: { Linear: (a: number, b: number, t: number) => a + (b - a) * t, Between: () => 0, FloatBetween: () => 0 },
+    Math: {
+      Linear: (a: number, b: number, t: number) => a + (b - a) * t,
+      Between: () => 0,
+      FloatBetween: () => 0,
+    },
   };
   return { ...phaser, default: phaser };
 });
@@ -29,7 +48,12 @@ const { projectedBounds } = await import("@/render/iso/projection");
 const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
 
 /** The road home as the Meadows' state carries it. */
-const ROAD_HOME = { entity_id: "road-home", destination: "hub", position: { x: 40, y: 500 }, range: 80 };
+const ROAD_HOME = {
+  entity_id: "road-home",
+  destination: "hub",
+  position: { x: 40, y: 500 },
+  range: 80,
+};
 /** Where a player arrives: just inside the road, beyond its reach. */
 const ARRIVAL = { x: 180, y: 500 };
 
@@ -53,7 +77,10 @@ interface FieldUnderTest {
 function fieldOnStage() {
   const field = new FieldScene() as unknown as FieldUnderTest;
   const texts: string[] = [];
-  const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+  const any: unknown = new Proxy(() => any, {
+    get: () => any,
+    apply: () => any,
+  });
   field.add = {
     text: (_x: number, _y: number, content: string) => {
       texts.push(content);
@@ -80,13 +107,22 @@ function fieldOnStage() {
     replies.set(action, cb);
   });
   vi.spyOn(socketManager, "off").mockImplementation(() => {});
-  const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+  const send = vi
+    .spyOn(socketManager, "sendMessage")
+    .mockImplementation(() => {});
   field.listen();
-  const reply = (action: string, payload: unknown) => replies.get(action)?.(payload);
+  const reply = (action: string, payload: unknown) =>
+    replies.get(action)?.(payload);
 
-  const standAt = (pos: { x: number; y: number }) => field.followEntrance(pos, [ROAD_HOME]);
+  const standAt = (pos: { x: number; y: number }) =>
+    field.followEntrance(pos, [ROAD_HOME]);
   const refuse = (reason: string) =>
-    errors.get(ActionType.LeaveField)?.({ action: ActionType.LeaveField, error: "x", message: "x", reason });
+    errors.get(ActionType.LeaveField)?.({
+      action: ActionType.LeaveField,
+      error: "x",
+      message: "x",
+      reason,
+    });
   return { field, texts, send, standAt, refuse, reply };
 }
 
@@ -95,7 +131,9 @@ function fieldOnStage() {
  * the socket subscriptions are stubbed.
  */
 function fieldToCreate<T>() {
-  const field = new FieldScene() as unknown as T & { create(data?: { field?: string }): void };
+  const field = new FieldScene() as unknown as T & {
+    create(data?: { field?: string }): void;
+  };
   const stub: unknown = new Proxy(function () {}, {
     get: (_target, key) => (key === Symbol.toPrimitive ? () => 0 : stub),
     apply: () => stub,
@@ -233,7 +271,14 @@ describe("FieldScene monsters and the fight (FS-X2F2H §Requirements 56)", () =>
     other_players: [],
     walls: [],
     gates: [ROAD_HOME],
-    monsters: [{ entity_id: "b1", archetype: "boar", position: { x: 600, y: 420 }, action: "idle" }],
+    monsters: [
+      {
+        entity_id: "b1",
+        archetype: "boar",
+        position: { x: 600, y: 420 },
+        action: "idle",
+      },
+    ],
     projectiles: [],
   });
 
@@ -252,13 +297,25 @@ describe("FieldScene monsters and the fight (FS-X2F2H §Requirements 56)", () =>
 
   it("should draw no run-only surface: no result card, escape, floor, die-by-choice or leave-run", () => {
     const { field, texts, send } = fieldOnStage();
-    Object.assign(field, { fight: { sync: vi.fn(), update: vi.fn(), release: vi.fn() } });
+    Object.assign(field, {
+      fight: { sync: vi.fn(), update: vi.fn(), release: vi.fn() },
+    });
 
     field.renderState(boarState("field"));
 
-    expect(texts.filter((t) => /escape|floor|victory|fallen|leave the barrow|yield/i.test(t))).toEqual([]);
-    expect(send).not.toHaveBeenCalledWith(ActionType.LeaveRun, expect.anything());
-    expect(send).not.toHaveBeenCalledWith(ActionType.ForfeitRun, expect.anything());
+    expect(
+      texts.filter((t) =>
+        /escape|floor|victory|fallen|leave the barrow|yield/i.test(t),
+      ),
+    ).toEqual([]);
+    expect(send).not.toHaveBeenCalledWith(
+      ActionType.LeaveRun,
+      expect.anything(),
+    );
+    expect(send).not.toHaveBeenCalledWith(
+      ActionType.ForfeitRun,
+      expect.anything(),
+    );
   });
 
   it("should let the fight go on release, so the next visit starts empty", () => {
@@ -280,7 +337,13 @@ describe("FieldScene drop piles (FS-X2F2H §Requirements 33, 56, 59, 60)", () =>
 
   const pileState = (world_type: string) => ({
     world_type,
-    current_player: { id: "member-me", entity_id: "me", position: ARRIVAL, current_health: 100, level: 3 },
+    current_player: {
+      id: "member-me",
+      entity_id: "me",
+      position: ARRIVAL,
+      current_health: 100,
+      level: 3,
+    },
     other_players: [],
     walls: [],
     gates: [ROAD_HOME],
@@ -297,7 +360,12 @@ describe("FieldScene drop piles (FS-X2F2H §Requirements 33, 56, 59, 60)", () =>
     ],
   });
 
-  const fakePiles = () => ({ sync: vi.fn(), follow: vi.fn(), refused: vi.fn(), release: vi.fn() });
+  const fakePiles = () => ({
+    sync: vi.fn(),
+    follow: vi.fn(),
+    refused: vi.fn(),
+    release: vi.fn(),
+  });
 
   it("should hand a field's piles to the shared pile drawing with my member id, and no other world's", () => {
     const { field } = fieldOnStage();
@@ -318,7 +386,11 @@ describe("FieldScene drop piles (FS-X2F2H §Requirements 33, 56, 59, 60)", () =>
     const piles = fakePiles();
     Object.assign(field, { piles });
 
-    reply(ActionType.Interact, { success: false, message: "x", reason: "loot_reserved" });
+    reply(ActionType.Interact, {
+      success: false,
+      message: "x",
+      reason: "loot_reserved",
+    });
     reply(ActionType.Interact, { success: true });
 
     expect(piles.refused).toHaveBeenCalledTimes(1);
@@ -363,7 +435,9 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
     const stage = fieldOnStage();
     const field = stage.field as unknown as Fallen;
     field.time = { delayedCall: vi.fn(), now: 0 };
-    Object.assign(field, { fight: { sync: vi.fn(), update: vi.fn(), release: vi.fn() } });
+    Object.assign(field, {
+      fight: { sync: vi.fn(), update: vi.fn(), release: vi.fn() },
+    });
     const idle = { isDown: false };
     const right = { isDown: false };
     field.cursors = { left: idle, right, up: idle, down: idle };
@@ -384,7 +458,9 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
 
     expect(texts).toContain("You have fallen. You rise at the road home in 3.");
     expect(field.fallenLine).toBeDefined();
-    expect(texts.filter((t) => /lost|defeat|victory|escape|result/i.test(t))).toEqual([]);
+    expect(
+      texts.filter((t) => /lost|defeat|victory|escape|result/i.test(t)),
+    ).toEqual([]);
   });
 
   it("should take the fallen state down once the player stands at the entrance again", () => {
@@ -443,7 +519,14 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
   };
   const carrying = {
     world_type: "field",
-    current_player: { id: "member-me", entity_id: "me", position: ARRIVAL, level: 4, inventory: [sword], equipment: worn },
+    current_player: {
+      id: "member-me",
+      entity_id: "me",
+      position: ARRIVAL,
+      level: 4,
+      inventory: [sword],
+      equipment: worn,
+    },
     other_players: [],
     walls: [],
     gates: [ROAD_HOME],
@@ -468,7 +551,9 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     let hovered: "inventory" | "head" = "inventory";
     const panel = {
       onEquip: undefined as undefined | ((item: unknown, slot: string) => void),
-      onUnequip: undefined as undefined | ((item: unknown, slot: string) => void),
+      onUnequip: undefined as
+        | undefined
+        | ((item: unknown, slot: string) => void),
       mayUnequip: undefined as undefined | (() => boolean),
       // the panels stand right of x 500; the clear band is left of it
       covers: (x: number) => x > 500,
@@ -477,7 +562,9 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       isVisible: () => visible,
       // the pointer over the first inventory row, or over the worn helm
       handleEquipKey: vi.fn((): void =>
-        hovered === "inventory" ? panel.onEquip?.(sword, "weapon") : panel.onUnequip?.(helm, "head"),
+        hovered === "inventory"
+          ? panel.onEquip?.(sword, "weapon")
+          : panel.onUnequip?.(helm, "head"),
       ),
       updateInventory: vi.fn(),
       updateEquipment: vi.fn(),
@@ -499,7 +586,10 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     };
     field.piles = piles;
     const keys = new Map<string, () => void>();
-    field.input = { keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) }, on: vi.fn() };
+    field.input = {
+      keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
+      on: vi.fn(),
+    };
     field.bindHudKeys();
     const press = (key: string) => keys.get(`keydown-${key}`)?.();
     const hover = (over: "inventory" | "head") => (hovered = over);
@@ -514,7 +604,9 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
 
     expect(panel.toggle).toHaveBeenCalledTimes(1);
     expect(panel.updateInventory).toHaveBeenLastCalledWith([sword]);
-    expect(panel.updateEquipment).toHaveBeenLastCalledWith(expect.objectContaining({ head: helm }));
+    expect(panel.updateEquipment).toHaveBeenLastCalledWith(
+      expect.objectContaining({ head: helm }),
+    );
     expect(panel.setCharacterLevel).toHaveBeenLastCalledWith(4);
   });
 
@@ -522,7 +614,9 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     const { field, panel } = hudOnStage();
     field.renderState(carrying);
 
-    expect(panel.updateCharacter).toHaveBeenLastCalledWith(carrying.current_player);
+    expect(panel.updateCharacter).toHaveBeenLastCalledWith(
+      carrying.current_player,
+    );
   });
 
   it("should send the run's equip and unequip on E over the open panel, and reach for no pile", () => {
@@ -584,8 +678,14 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
 
   it("should refuse a pile take and an unequip into a full bag with the field's notice (FS-HRH2J R20–22)", () => {
     const { field, panel, send, notices } = hudOnStage();
-    const full = Array.from({ length: 30 }, (_, i) => ({ entity_id: `i${i}`, name: `i${i}` }));
-    field.renderState({ ...carrying, current_player: { ...carrying.current_player, inventory: full } });
+    const full = Array.from({ length: 30 }, (_, i) => ({
+      entity_id: `i${i}`,
+      name: `i${i}`,
+    }));
+    field.renderState({
+      ...carrying,
+      current_player: { ...carrying.current_player, inventory: full },
+    });
 
     expect(field.bagHasRoom()).toBe(false);
     expect(panel.mayUnequip?.()).toBe(false);
@@ -595,8 +695,14 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
 
   it("should count a pending take, so two quick takes at 29 allow one (FS-HRH2J edge state: Pending pickups)", () => {
     const { field } = hudOnStage();
-    const almost = Array.from({ length: 29 }, (_, i) => ({ entity_id: `i${i}`, name: `i${i}` }));
-    field.renderState({ ...carrying, current_player: { ...carrying.current_player, inventory: almost } });
+    const almost = Array.from({ length: 29 }, (_, i) => ({
+      entity_id: `i${i}`,
+      name: `i${i}`,
+    }));
+    field.renderState({
+      ...carrying,
+      current_player: { ...carrying.current_player, inventory: almost },
+    });
 
     expect(field.bagHasRoom()).toBe(true);
     field.lootFromSatchel({ entity_id: "coin" });
@@ -605,12 +711,17 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
 
   it("should hold an item taken from a pile in the inventory while its loot is pending, as the run does", () => {
     const { field, piles } = hudOnStage();
-    field.renderState({ ...carrying, current_player: { ...carrying.current_player, inventory: [] } });
+    field.renderState({
+      ...carrying,
+      current_player: { ...carrying.current_player, inventory: [] },
+    });
 
     field.lootFromSatchel({ entity_id: "coin" });
 
     expect(piles.loot).toHaveBeenCalledWith({ entity_id: "coin" });
-    expect(field.equipment?.inventory.map((i) => i.entity_id)).toEqual(["coin"]);
+    expect(field.equipment?.inventory.map((i) => i.entity_id)).toEqual([
+      "coin",
+    ]);
   });
 
   it("should hold nothing when the pile is someone else's and the loot is not sent", () => {
@@ -633,15 +744,27 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
   it("should compose the run's equip HUD and bind its keys when the field is created", () => {
     // the keys the keyboard is asked to answer; the rest of the input answers anything
     const keys = new Map<string, () => void>();
-    const keyboard = { on: (event: string, cb: () => void) => keys.set(event, cb) };
+    const keyboard = {
+      on: (event: string, cb: () => void) => keys.set(event, cb),
+    };
     const { field, stub } = fieldToCreate<Hud>();
-    field.input = new Proxy({}, { get: (_target, key) => (key === "keyboard" ? keyboard : stub) });
+    field.input = new Proxy(
+      {},
+      { get: (_target, key) => (key === "keyboard" ? keyboard : stub) },
+    );
 
     field.create({ field: "gentle_meadows" });
 
     expect(field.equipment).toBeInstanceOf(EquipmentHud);
     expect([...keys.keys()]).toEqual(
-      expect.arrayContaining(["keydown-I", "keydown-B", "keydown-E", "keydown-Q", "keydown-ESC", "keydown-F"]),
+      expect.arrayContaining([
+        "keydown-I",
+        "keydown-B",
+        "keydown-E",
+        "keydown-Q",
+        "keydown-ESC",
+        "keydown-F",
+      ]),
     );
   });
 });
@@ -654,7 +777,12 @@ describe("FieldScene the Forest's bounds (FS-KSD6K §Requirements 17)", () => {
   it("should frame the whole 3120 x 2000 Forest the server builds, so no player walks out of view", () => {
     const setBounds = vi.fn();
     const { field, stub } = fieldToCreate<{ cameras: unknown }>();
-    field.cameras = { main: new Proxy({}, { get: (_target, key) => (key === "setBounds" ? setBounds : stub) }) };
+    field.cameras = {
+      main: new Proxy(
+        {},
+        { get: (_target, key) => (key === "setBounds" ? setBounds : stub) },
+      ),
+    };
 
     field.create({ field: "forlorn_forest" });
 
@@ -663,7 +791,9 @@ describe("FieldScene the Forest's bounds (FS-KSD6K §Requirements 17)", () => {
     const [x, y, width, height] = setBounds.mock.calls[0];
     const bare = projectedBounds(FOREST_SIZE.width, FOREST_SIZE.height);
     const margin = bare.x - x;
-    expect({ x, y, width, height }).toEqual(projectedBounds(FOREST_SIZE.width, FOREST_SIZE.height, margin));
+    expect({ x, y, width, height }).toEqual(
+      projectedBounds(FOREST_SIZE.width, FOREST_SIZE.height, margin),
+    );
   });
 });
 
@@ -674,7 +804,13 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
 
   type Kitted = Omit<FieldUnderTest, "time" | "cameras"> & {
     time: { delayedCall: ReturnType<typeof vi.fn>; now: number };
-    cameras: { main: { width: number; height: number; startFollow: ReturnType<typeof vi.fn> } };
+    cameras: {
+      main: {
+        width: number;
+        height: number;
+        startFollow: ReturnType<typeof vi.fn>;
+      };
+    };
     cursors?: unknown;
     wasd?: unknown;
     update(time: number, delta: number): void;
@@ -701,7 +837,13 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     field.time = { delayedCall: vi.fn(), now: 0 };
     field.cameras = { main: { width: 800, height: 600, startFollow: vi.fn() } };
     // the same fight object, so a test can change what it says between frames
-    Object.assign(field, { fight: Object.assign(fight, { sync: vi.fn(), update: vi.fn(), release: vi.fn() }) });
+    Object.assign(field, {
+      fight: Object.assign(fight, {
+        sync: vi.fn(),
+        update: vi.fn(),
+        release: vi.fn(),
+      }),
+    });
     const idle = { isDown: false };
     const right = { isDown: true };
     field.cursors = { left: idle, right, up: idle, down: idle };
@@ -710,19 +852,31 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
   }
 
   it("should draw the run's Health and stamina bars and the archer's ability card in a field", () => {
-    const bars = vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
-    const card = vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
+    const bars = vi
+      .spyOn(ResourceHud.prototype, "show")
+      .mockImplementation(() => {});
+    const card = vi
+      .spyOn(AbilityHud.prototype, "show")
+      .mockImplementation(() => {});
     const { field } = kitOnStage({ lockedOut: false });
 
     field.renderState(archerState);
 
-    expect(bars.mock.calls.at(-1)?.[0].map((bar) => bar.label)).toEqual(["Health:", "Stamina:"]);
-    expect(card.mock.calls.at(-1)?.[0]).toMatchObject({ name: "Shadow Shot", greyed: false });
+    expect(bars.mock.calls.at(-1)?.[0].map((bar) => bar.label)).toEqual([
+      "Health:",
+      "Stamina:",
+    ]);
+    expect(card.mock.calls.at(-1)?.[0]).toMatchObject({
+      name: "Shadow Shot",
+      greyed: false,
+    });
   });
 
   it("should grey the card while the ability lockout runs", () => {
     vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
-    const card = vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
+    const card = vi
+      .spyOn(AbilityHud.prototype, "show")
+      .mockImplementation(() => {});
     const { field } = kitOnStage({ lockedOut: true });
 
     field.renderState(archerState);
@@ -732,7 +886,9 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
 
   it("should keep walking with the gear overlay open (FS-HRH2J R7)", () => {
     const { field, send } = kitOnStage({ aiming: false });
-    Object.assign(field, { equipment: { isOpen: () => true, covers: () => true } });
+    Object.assign(field, {
+      equipment: { isOpen: () => true, covers: () => true },
+    });
 
     field.update(16, 16);
     expect(send).toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });

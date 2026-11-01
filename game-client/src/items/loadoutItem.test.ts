@@ -4,6 +4,7 @@ import { instanceItem, rarityNames, type ItemInstance } from "./loadoutItem";
 const instance = (fields: Partial<ItemInstance>): ItemInstance => ({
   item_level: 1,
   affixes: [],
+  location: "stash",
   ...fields,
 });
 
@@ -88,6 +89,8 @@ describe("instanceItem", () => {
       {
         item_level: 0,
         affixes: null as unknown as [],
+        // a gateway older than FS-VPD8Y sends no location
+        location: undefined as unknown as ItemInstance["location"],
         id: "old",
         name: "Rusty Blade",
       },
@@ -99,6 +102,16 @@ describe("instanceItem", () => {
       name: "Rusty Blade",
       quantity: 1,
     });
+  });
+
+  it("should carry the instance's status, so the hub can dim and hold back what is not free (FS-VPD8Y R39–40)", () => {
+    expect(
+      instanceItem(instance({ id: "x", status: "LISTED" }), new Map()).status,
+    ).toBe("LISTED");
+    expect(
+      instanceItem(instance({ id: "y", status: "AVAILABLE" }), new Map())
+        .status,
+    ).toBe("AVAILABLE");
   });
 
   it("should name no rarity when its id is not among the known rarities", () => {

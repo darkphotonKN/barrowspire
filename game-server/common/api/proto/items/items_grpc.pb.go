@@ -34,8 +34,10 @@ const (
 	ItemsService_CreateCompleteConsumable_FullMethodName    = "/items.ItemsService/CreateCompleteConsumable"
 	ItemsService_GetLoadout_FullMethodName                  = "/items.ItemsService/GetLoadout"
 	ItemsService_GetLoadoutWithItems_FullMethodName         = "/items.ItemsService/GetLoadoutWithItems"
+	ItemsService_CheckOutRunGear_FullMethodName             = "/items.ItemsService/CheckOutRunGear"
 	ItemsService_ListItemInstances_FullMethodName           = "/items.ItemsService/ListItemInstances"
 	ItemsService_UpdateLoadout_FullMethodName               = "/items.ItemsService/UpdateLoadout"
+	ItemsService_MoveItemInstance_FullMethodName            = "/items.ItemsService/MoveItemInstance"
 	ItemsService_ReserveItem_FullMethodName                 = "/items.ItemsService/ReserveItem"
 	ItemsService_ListStaleReserved_FullMethodName           = "/items.ItemsService/ListStaleReserved"
 	ItemsService_CancelReservation_FullMethodName           = "/items.ItemsService/CancelReservation"
@@ -70,8 +72,17 @@ type ItemsServiceClient interface {
 	CreateCompleteConsumable(ctx context.Context, in *CreateCompleteConsumableRequest, opts ...grpc.CallOption) (*ConsumableDetail, error)
 	GetLoadout(ctx context.Context, in *GetLoadoutRequest, opts ...grpc.CallOption) (*GetLoadoutResponse, error)
 	GetLoadoutWithItems(ctx context.Context, in *GetLoadoutWithItemsRequest, opts ...grpc.CallOption) (*GetLoadoutWithItemsResponse, error)
+	// Checks the member's worn and bag items out into a run or field world at
+	// seating: AVAILABLE ones move to IN_RUN under run_id, and items still IN_RUN
+	// under another run id are re-tagged to it (FS-18Z5F R5-R11, ADR-0032).
+	// Returns what is now IN_RUN under run_id, worn in slots and the bag as a list.
+	CheckOutRunGear(ctx context.Context, in *CheckOutRunGearRequest, opts ...grpc.CallOption) (*CheckOutRunGearResponse, error)
 	ListItemInstances(ctx context.Context, in *ListItemInstancesRequest, opts ...grpc.CallOption) (*ListItemInstancesResponse, error)
 	UpdateLoadout(ctx context.Context, in *UpdateLoadoutRequest, opts ...grpc.CallOption) (*UpdateLoadoutResponse, error)
+	// Moves one of the caller's unworn, AVAILABLE instances between bag and
+	// stash (FS-VPD8Y R10). Domain refusals answer FailedPrecondition with an
+	// ErrorInfo reason (R13).
+	MoveItemInstance(ctx context.Context, in *MoveItemInstanceRequest, opts ...grpc.CallOption) (*MoveItemInstanceResponse, error)
 	// marketplace service - item service - listing
 	ReserveItem(ctx context.Context, in *ReserveItemRequest, opts ...grpc.CallOption) (*ReserveItemResponse, error)
 	ListStaleReserved(ctx context.Context, in *ListStaleReservedRequest, opts ...grpc.CallOption) (*ListStaleReservedResponse, error)
@@ -228,6 +239,16 @@ func (c *itemsServiceClient) GetLoadoutWithItems(ctx context.Context, in *GetLoa
 	return out, nil
 }
 
+func (c *itemsServiceClient) CheckOutRunGear(ctx context.Context, in *CheckOutRunGearRequest, opts ...grpc.CallOption) (*CheckOutRunGearResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckOutRunGearResponse)
+	err := c.cc.Invoke(ctx, ItemsService_CheckOutRunGear_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *itemsServiceClient) ListItemInstances(ctx context.Context, in *ListItemInstancesRequest, opts ...grpc.CallOption) (*ListItemInstancesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListItemInstancesResponse)
@@ -242,6 +263,16 @@ func (c *itemsServiceClient) UpdateLoadout(ctx context.Context, in *UpdateLoadou
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdateLoadoutResponse)
 	err := c.cc.Invoke(ctx, ItemsService_UpdateLoadout_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *itemsServiceClient) MoveItemInstance(ctx context.Context, in *MoveItemInstanceRequest, opts ...grpc.CallOption) (*MoveItemInstanceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MoveItemInstanceResponse)
+	err := c.cc.Invoke(ctx, ItemsService_MoveItemInstance_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -316,8 +347,17 @@ type ItemsServiceServer interface {
 	CreateCompleteConsumable(context.Context, *CreateCompleteConsumableRequest) (*ConsumableDetail, error)
 	GetLoadout(context.Context, *GetLoadoutRequest) (*GetLoadoutResponse, error)
 	GetLoadoutWithItems(context.Context, *GetLoadoutWithItemsRequest) (*GetLoadoutWithItemsResponse, error)
+	// Checks the member's worn and bag items out into a run or field world at
+	// seating: AVAILABLE ones move to IN_RUN under run_id, and items still IN_RUN
+	// under another run id are re-tagged to it (FS-18Z5F R5-R11, ADR-0032).
+	// Returns what is now IN_RUN under run_id, worn in slots and the bag as a list.
+	CheckOutRunGear(context.Context, *CheckOutRunGearRequest) (*CheckOutRunGearResponse, error)
 	ListItemInstances(context.Context, *ListItemInstancesRequest) (*ListItemInstancesResponse, error)
 	UpdateLoadout(context.Context, *UpdateLoadoutRequest) (*UpdateLoadoutResponse, error)
+	// Moves one of the caller's unworn, AVAILABLE instances between bag and
+	// stash (FS-VPD8Y R10). Domain refusals answer FailedPrecondition with an
+	// ErrorInfo reason (R13).
+	MoveItemInstance(context.Context, *MoveItemInstanceRequest) (*MoveItemInstanceResponse, error)
 	// marketplace service - item service - listing
 	ReserveItem(context.Context, *ReserveItemRequest) (*ReserveItemResponse, error)
 	ListStaleReserved(context.Context, *ListStaleReservedRequest) (*ListStaleReservedResponse, error)
@@ -376,11 +416,17 @@ func (UnimplementedItemsServiceServer) GetLoadout(context.Context, *GetLoadoutRe
 func (UnimplementedItemsServiceServer) GetLoadoutWithItems(context.Context, *GetLoadoutWithItemsRequest) (*GetLoadoutWithItemsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetLoadoutWithItems not implemented")
 }
+func (UnimplementedItemsServiceServer) CheckOutRunGear(context.Context, *CheckOutRunGearRequest) (*CheckOutRunGearResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckOutRunGear not implemented")
+}
 func (UnimplementedItemsServiceServer) ListItemInstances(context.Context, *ListItemInstancesRequest) (*ListItemInstancesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListItemInstances not implemented")
 }
 func (UnimplementedItemsServiceServer) UpdateLoadout(context.Context, *UpdateLoadoutRequest) (*UpdateLoadoutResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateLoadout not implemented")
+}
+func (UnimplementedItemsServiceServer) MoveItemInstance(context.Context, *MoveItemInstanceRequest) (*MoveItemInstanceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MoveItemInstance not implemented")
 }
 func (UnimplementedItemsServiceServer) ReserveItem(context.Context, *ReserveItemRequest) (*ReserveItemResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReserveItem not implemented")
@@ -667,6 +713,24 @@ func _ItemsService_GetLoadoutWithItems_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ItemsService_CheckOutRunGear_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckOutRunGearRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ItemsServiceServer).CheckOutRunGear(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ItemsService_CheckOutRunGear_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ItemsServiceServer).CheckOutRunGear(ctx, req.(*CheckOutRunGearRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ItemsService_ListItemInstances_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListItemInstancesRequest)
 	if err := dec(in); err != nil {
@@ -699,6 +763,24 @@ func _ItemsService_UpdateLoadout_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ItemsServiceServer).UpdateLoadout(ctx, req.(*UpdateLoadoutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ItemsService_MoveItemInstance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MoveItemInstanceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ItemsServiceServer).MoveItemInstance(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ItemsService_MoveItemInstance_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ItemsServiceServer).MoveItemInstance(ctx, req.(*MoveItemInstanceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -839,12 +921,20 @@ var ItemsService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ItemsService_GetLoadoutWithItems_Handler,
 		},
 		{
+			MethodName: "CheckOutRunGear",
+			Handler:    _ItemsService_CheckOutRunGear_Handler,
+		},
+		{
 			MethodName: "ListItemInstances",
 			Handler:    _ItemsService_ListItemInstances_Handler,
 		},
 		{
 			MethodName: "UpdateLoadout",
 			Handler:    _ItemsService_UpdateLoadout_Handler,
+		},
+		{
+			MethodName: "MoveItemInstance",
+			Handler:    _ItemsService_MoveItemInstance_Handler,
 		},
 		{
 			MethodName: "ReserveItem",

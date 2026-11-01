@@ -938,7 +938,8 @@ func (s *Session) AddPlayerAt(playerID uuid.UUID, character types.CharacterInPla
 		return existing
 	}
 
-	return s.buildBodyLocked(playerID, character, x, y, s.fetchLoadoutLocked(playerID, token))
+	loadout, bag := s.seatGearLocked(playerID, token)
+	return s.buildBodyLocked(playerID, character, x, y, loadout, bag)
 }
 
 // addPlayerLocked is AddPlayer's body. Callers hold the world's lock, so that
@@ -957,34 +958,58 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 
 	spawnX, spawnY := s.spawnPoint()
 
-	return s.buildBodyLocked(playerID, character, spawnX, spawnY, s.fetchLoadoutLocked(playerID, token))
+	loadout, bag := s.seatGearLocked(playerID, token)
+	return s.buildBodyLocked(playerID, character, spawnX, spawnY, loadout, bag)
 }
 
-// fetchLoadoutLocked reads the member's equipped loadout from items-service, or
-// nil when there is no client or the read fails or times out: the delver is
-// then seated without equipment.
-func (s *Session) fetchLoadoutLocked(playerID uuid.UUID, token types.BearerToken) *pbitems.GetLoadoutWithItemsResponse {
-	if s.itemsClient != nil {
-		grpcLoadoutRequest := &pbitems.GetLoadoutWithItemsRequest{
-			MemberId: playerID.String(),
-		}
-		// the fetch runs under the world's lock: a hanging items service must
-		// never hold it, so past the deadline the delver is seated without a loadout
-		ctx, cancel := context.WithTimeout(context.Background(), loadoutLoadTimeout)
-		loadoutResult, err := s.itemsClient.GetLoadoutWithItems(asMember(ctx, token), grpcLoadoutRequest)
-		cancel()
-
-		if errors.Is(err, context.DeadlineExceeded) {
-			slog.Warn("Loadout fetch timed out, player spawns with no equipment.",
-				"member_id", playerID, "timeout", loadoutLoadTimeout, "error", err)
-		} else if err != nil || loadoutResult == nil {
-			slog.Error("Failed to get loadout, player spawns with no equipment.", "error", err)
-		} else {
-			return loadoutResult
-		}
+/**
+* seatGearLocked loads what the member brings into this world. A run checks
+* their worn and bag items out of items-service under its own session id, so
+* nothing else can touch them while they are in play; any other world reads
+* the worn loadout and seats no bag (FS-18Z5F §C R13). A nil loadout means it
+* was not loaded: there is no client, or the call failed or timed out, and the
+* delver is seated without equipment (R15).
+**/
+func (s *Session) seatGearLocked(playerID uuid.UUID, token types.BearerToken) (*pbitems.GetLoadoutWithItemsResponse, []*pbitems.ItemInstance) {
+	if s.itemsClient == nil {
+		return nil, nil
 	}
 
-	return nil
+	// the call runs under the world's lock: a hanging items service must
+	// never hold it, so past the deadline the delver is seated without a loadout
+	ctx, cancel := context.WithTimeout(context.Background(), loadoutLoadTimeout)
+	defer cancel()
+	ctx = asMember(ctx, token)
+
+	var (
+		loadout *pbitems.GetLoadoutWithItemsResponse
+		bag     []*pbitems.ItemInstance
+		err     error
+	)
+	if s.worldType == types.WorldTypeRun {
+		var gear *pbitems.CheckOutRunGearResponse
+		gear, err = s.itemsClient.CheckOutRunGear(ctx, &pbitems.CheckOutRunGearRequest{
+			MemberId: playerID.String(),
+			RunId:    s.ID.String(),
+		})
+		loadout, bag = gear.GetLoadout(), gear.GetBag()
+	} else {
+		loadout, err = s.itemsClient.GetLoadoutWithItems(ctx, &pbitems.GetLoadoutWithItemsRequest{
+			MemberId: playerID.String(),
+		})
+	}
+
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		slog.Warn("Loadout fetch timed out, player spawns with no equipment.",
+			"member_id", playerID, "world_type", s.worldType, "timeout", loadoutLoadTimeout, "error", err)
+		return nil, nil
+	case err != nil || loadout == nil:
+		slog.Error("Failed to get loadout, player spawns with no equipment.",
+			"member_id", playerID, "world_type", s.worldType, "error", err)
+		return nil, nil
+	}
+	return loadout, bag
 }
 
 /**
@@ -992,11 +1017,12 @@ func (s *Session) fetchLoadoutLocked(playerID uuid.UUID, token types.BearerToken
 * play, wearing items: the one place a body is built, whichever way it was
 * seated. An unknown class is seated as a mage. Seating is the loadout's level
 * gate: an item above the character's level is brought in and carried, not
-* worn (FS-BDA7X §Requirements 31). Nil items seats the body with no
-* equipment. Callers hold the world's lock and have checked the member has no
-* body here.
+* worn (FS-BDA7X §Requirements 31). The bag follows those carried items, in
+* the order given, uncapped (FS-18Z5F §C R17; FS-HRH2J R36). Nil items seats
+* the body with no equipment. Callers hold the world's lock and have checked
+* the member has no body here.
 **/
-func (s *Session) buildBodyLocked(playerID uuid.UUID, character types.CharacterInPlay, x, y float64, items *pbitems.GetLoadoutWithItemsResponse) uuid.UUID {
+func (s *Session) buildBodyLocked(playerID uuid.UUID, character types.CharacterInPlay, x, y float64, items *pbitems.GetLoadoutWithItemsResponse, bag []*pbitems.ItemInstance) uuid.UUID {
 	className := character.Class
 	classCfg, ok := Classes[className]
 	if !ok {
@@ -1037,6 +1063,11 @@ func (s *Session) buildBodyLocked(playerID uuid.UUID, character types.CharacterI
 			Consumable3: addSlotItem(items.Consumable_3),
 		}
 	}
+	for _, item := range bag {
+		if item != nil {
+			carried = append(carried, s.AddItemWithUnLocked(loadoutItemConfig(item, rarities)))
+		}
+	}
 
 	entity := CreatePlayerEntity(s.EntityManager, PlayerConfig{
 		MemberID:     playerID,
@@ -1074,17 +1105,49 @@ func (s *Session) AddPlayersToPendingConnection(players []*types.Player) {
 	}
 }
 
-// add a player connecting in from a handoff, "seat them"
+// HandoffSeat is where a handoff connection for a member stands in a run.
+type HandoffSeat int
+
+const (
+	// HandoffSeatNone: the run neither expects the member nor seats them
+	HandoffSeatNone HandoffSeat = iota
+	// HandoffSeatExpected: the member's seat waits for them
+	HandoffSeatExpected
+	// HandoffSeatTaken: the member already has a body here
+	HandoffSeatTaken
+)
+
+/**
+* HandoffSeatOf reads, under the lock, whether the member is expected here or
+* already seated, so a handoff connection is decided before its gear is checked
+* out: a stale or expired handoff must not re-tag live gear into a run that then
+* refuses it (FS-18Z5F §C R13). SeatArrival checks again under its own lock.
+**/
+func (s *Session) HandoffSeatOf(memberID uuid.UUID) HandoffSeat {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, seated := s.playerIDToEntitiesID[memberID]; seated {
+		return HandoffSeatTaken
+	}
+	if _, expected := s.playersPendingConnection[memberID]; expected {
+		return HandoffSeatExpected
+	}
+	return HandoffSeatNone
+}
+
+// add a player connecting in from a handoff, "seat them", wearing and carrying
+// the gear checked out for this run (FS-18Z5F §C R13)
 // the method that holds the loc
-func (s *Session) SeatArrival(player *types.Player, loadout *pbitems.GetLoadoutWithItemsResponse) (types.CharacterInPlay, error) {
+func (s *Session) SeatArrival(player *types.Player, gear *pbitems.CheckOutRunGearResponse) (types.CharacterInPlay, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.seatPlayerLocked(player, loadout)
+	return s.seatPlayerLocked(player, gear)
 }
 
 // private NON locked seating of a player thats connecting in from a handoff (another pod)
-func (s *Session) seatPlayerLocked(player *types.Player, items *pbitems.GetLoadoutWithItemsResponse) (types.CharacterInPlay, error) {
+func (s *Session) seatPlayerLocked(player *types.Player, gear *pbitems.CheckOutRunGearResponse) (types.CharacterInPlay, error) {
 	// check if part of the pending handoff players
 	pending, ok := s.playersPendingConnection[player.ID]
 	if !ok {
@@ -1117,10 +1180,10 @@ func (s *Session) seatPlayerLocked(player *types.Player, items *pbitems.GetLoado
 
 	// No loadout seats the player with no equipment, as a failed fetch does in
 	// addPlayerLocked
-	if items == nil {
+	if gear.GetLoadout() == nil {
 		slog.Warn("No loadout for handoff arrival, player spawns with no equipment.", "player_id", player.ID)
 	}
-	s.buildBodyLocked(player.ID, character, spawnX, spawnY, items)
+	s.buildBodyLocked(player.ID, character, spawnX, spawnY, gear.GetLoadout(), gear.GetBag())
 
 	// remove them from the pending list
 	delete(s.playersPendingConnection, player.ID)
@@ -2859,12 +2922,19 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 				stats = &components.StatsComponent{}
 			}
 
+			// what the body extracts: a dead delver in a run loses their unsafe
+			// finds, worn and carried (FS-18Z5F §E R23); a field loses nothing (R25)
+			held := itemsMap
+			if s.worldType == types.WorldTypeRun && losesFinds(entity, playerState) {
+				held = safeItems(itemsMap)
+			}
+
 			// -- equipment --
 			equipment, equipmentOk := equipmentComp.(*components.EquipmentComponent)
 			extractedEquipment := types.ExtractedEquipment{}
 
 			if equipmentOk {
-				extractedEquipment = extractedEquipmentOf(itemsMap, equipment)
+				extractedEquipment = extractedEquipmentOf(held, equipment)
 			}
 
 			// -- inventory items --
@@ -2873,7 +2943,7 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 			if itemIDList, itemIDListOk := itemIDListComp.(*components.ItemIDListComponent); itemIDListOk {
 
 				for _, itemID := range itemIDList.ItemIDs {
-					item, ok := itemsMap[itemID]
+					item, ok := held[itemID]
 					if !ok {
 						continue
 					}

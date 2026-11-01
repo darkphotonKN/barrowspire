@@ -15,19 +15,49 @@ import (
 )
 
 // loadoutAuthRecorder is the items service, recording the authorization each
-// loadout fetch arrives with.
+// loadout read or checkout arrives with, and the run id of each checkout.
 type loadoutAuthRecorder struct {
 	MockItemsClient
-	mu   sync.Mutex
-	auth [][]string
+	mu        sync.Mutex
+	auth      [][]string
+	reads     int
+	checkouts []*itemspb.CheckOutRunGearRequest
 }
 
 func (r *loadoutAuthRecorder) GetLoadoutWithItems(ctx context.Context, req *itemspb.GetLoadoutWithItemsRequest) (*itemspb.GetLoadoutWithItemsResponse, error) {
 	md, _ := metadata.FromOutgoingContext(ctx)
 	r.mu.Lock()
 	r.auth = append(r.auth, md.Get("authorization"))
+	r.reads++
 	r.mu.Unlock()
 	return r.MockItemsClient.GetLoadoutWithItems(ctx, req)
+}
+
+func (r *loadoutAuthRecorder) CheckOutRunGear(ctx context.Context, req *itemspb.CheckOutRunGearRequest) (*itemspb.CheckOutRunGearResponse, error) {
+	md, _ := metadata.FromOutgoingContext(ctx)
+	r.mu.Lock()
+	r.auth = append(r.auth, md.Get("authorization"))
+	r.checkouts = append(r.checkouts, req)
+	r.mu.Unlock()
+	return r.MockItemsClient.CheckOutRunGear(ctx, req)
+}
+
+// checkoutRunIDs is the run id of every checkout, in order.
+func (r *loadoutAuthRecorder) checkoutRunIDs() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ids := make([]string, 0, len(r.checkouts))
+	for _, req := range r.checkouts {
+		ids = append(ids, req.GetRunId())
+	}
+	return ids
+}
+
+// readCount is how many loadout reads were made.
+func (r *loadoutAuthRecorder) readCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.reads
 }
 
 func (r *loadoutAuthRecorder) last(t *testing.T) []string {
@@ -89,6 +119,7 @@ func TestSeating_LoadsTheLoadoutWithTheHeldToken(t *testing.T) {
 
 	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{player}})
 	assert.Equal(t, []string{"Bearer hub-token"}, items.last(t), "the run seat")
+	assert.Equal(t, []string{run.ID.String()}, items.checkoutRunIDs(), "the run seat checks out under its session id (FS-18Z5F R13)")
 
 	server.connectPlayer(memberID, "Wren", "fresh-token")
 	server.ReturnPlayersToHub(run.ID)

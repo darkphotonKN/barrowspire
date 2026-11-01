@@ -3,6 +3,7 @@ package game
 import (
 	"context"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -865,6 +866,12 @@ type mockItemsClient struct {
 	rarities    *pb.ListItemRaritiesResponse
 	raritiesErr error
 	loadout     *pb.GetLoadoutWithItemsResponse
+	bag         []*pb.ItemInstance
+
+	// what each call asked for, in order
+	callsMu      sync.Mutex
+	loadoutReads []*pb.GetLoadoutWithItemsRequest
+	checkouts    []*pb.CheckOutRunGearRequest
 }
 
 func (c *mockItemsClient) ListItemRarities(ctx context.Context) (*pb.ListItemRaritiesResponse, error) {
@@ -903,7 +910,21 @@ func (c *mockItemsClient) GetLoadout(ctx context.Context, req *pb.GetLoadoutRequ
 }
 
 func (c *mockItemsClient) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWithItemsRequest) (*pb.GetLoadoutWithItemsResponse, error) {
+	c.callsMu.Lock()
+	c.loadoutReads = append(c.loadoutReads, req)
+	c.callsMu.Unlock()
 	return c.loadout, nil
+}
+
+// CheckOutRunGear checks out the mock's loadout and bag; no loadout is no answer.
+func (c *mockItemsClient) CheckOutRunGear(ctx context.Context, req *pb.CheckOutRunGearRequest) (*pb.CheckOutRunGearResponse, error) {
+	c.callsMu.Lock()
+	c.checkouts = append(c.checkouts, req)
+	c.callsMu.Unlock()
+	if c.loadout == nil {
+		return nil, nil
+	}
+	return &pb.CheckOutRunGearResponse{Loadout: c.loadout, Bag: c.bag}, nil
 }
 
 func (c *mockItemsClient) ListItemInstances(ctx context.Context, req *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error) {

@@ -1,5 +1,5 @@
 import * as Phaser from "phaser";
-import { ActionType, type FieldId } from "@/assets/types/client";
+import { ActionType, WorldType, type FieldId } from "@/assets/types/client";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
 import type { ClientGameState, GateState, ItemState, PlayerState, Position, WallState } from "@/types/gameState";
@@ -45,6 +45,7 @@ import { ContainerView } from "@/ui/ContainerView";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
 import { ResourceHud } from "@/ui/ResourceHud";
+import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars } from "@/ui/resources";
@@ -160,6 +161,8 @@ export class FieldScene extends Phaser.Scene {
   private equipment?: EquipmentHud;
   /** The Health and class resource bars, and the ability card: the run's own (FS-8AY7S req 20, 29). */
   private resourceHud?: ResourceHud;
+  /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
+  private chatWindow?: ChatWindow;
   private abilityHud?: AbilityHud;
   /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
   private lastState?: ClientGameState;
@@ -213,6 +216,7 @@ export class FieldScene extends Phaser.Scene {
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
     this.listen();
+    this.chatWindow = mountChatWindow(this, () => !this.equipment?.isOpen());
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.release, this);
@@ -309,10 +313,10 @@ export class FieldScene extends Phaser.Scene {
 
   /**
    * The run's gear and bag overlay over the live field (FS-HRH2J), its sends the run's, its
-   * full-bag refusals in the field's notice (R22).
+   * full-bag refusals in the field's notice (R22). A field marks no unsafe finds (FS-18Z5F R37).
    */
   private composeEquipment(): EquipmentHud {
-    return new EquipmentHud(new GearOverlay(this, this.art), {
+    return new EquipmentHud(new GearOverlay(this, this.art, WorldType.Field), {
       send: (action, payload) => socketManager.sendMessage(action, payload),
       notice: (text) => this.notice(text),
     });
@@ -353,6 +357,8 @@ export class FieldScene extends Phaser.Scene {
    */
   private takesPointer(x: number, y: number, primary: boolean): boolean {
     if (this.equipment?.covers(x, y)) return true;
+    // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
+    if (this.chatWindow?.covers(x, y)) return true;
     return this.satchel?.pointerDown(x, y, primary) ?? false;
   }
 
@@ -373,6 +379,8 @@ export class FieldScene extends Phaser.Scene {
     this.satchel = undefined;
     this.equipment = undefined;
     this.resourceHud = undefined;
+    this.chatWindow?.destroy();
+    this.chatWindow = undefined;
     this.abilityHud = undefined;
     this.lastState = undefined;
     this.selfAt = undefined;
@@ -510,6 +518,7 @@ export class FieldScene extends Phaser.Scene {
     const { height } = this.cameras.main;
     this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_X, height - HUD_MARGIN);
     this.resourceHud.show(hudBars(state));
+    this.chatWindow?.setBottom(this.resourceHud.topEdge());
     this.showAbilityCard();
   }
 

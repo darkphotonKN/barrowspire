@@ -68,8 +68,8 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Channel** — one pod's copy of a field world (ADR-0030). Every pod runs one channel of each
   field, created at boot; two players on different pods are in different channels of the same
   field. **Collides with the Redis pub/sub channel** (`matchstart:pod:<podID>`, the hub's state
-  channel): when either could be meant, write "field channel" or "Redis channel", never a bare
-  "channel".
+  channel), and since FS-WJGFJ with the **chat channel**: when any could be meant, write "field
+  channel", "Redis channel" or "chat channel", never a bare "channel".
 
 ### Moving between worlds
 
@@ -81,7 +81,8 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Handoff** — moving a matched player from their pod to the **host pod** by reconnecting: the
   client opens a new socket to the host's pod address, then closes the old one (FS-K2HKP). Only
   across pods; a player already on the host pod gets a world switch instead. The two are never
-  interchangeable: a world switch keeps the connection, a handoff replaces it.
+  interchangeable: a world switch keeps the connection, a handoff replaces it. The destination
+  may also be a hub world (*hub handoff*, under *Party* below).
   - **Handoff player** — a matched player on another pod, who will arrive by handoff
     (`ResolvedMatchedPlayers.HandoffPlayers`). Opposite of a **local player**.
   - **Local player** — a matched player already connected to the host pod, seated in the run at
@@ -239,7 +240,16 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   toward bag capacity.
 - **Not the bag:** a **container**'s item list (a chest, sack or drop pile) is the same component on a
   different entity and has no cap here; the **stash** (FS-VPD8Y) is account storage outside any
-  world.
+  world, never seated.
+- **Seating checkout** — seating a body checks out its worn and bag items in items-service
+  (IN_RUN, ADR-0032) before building it. The bag a body is seated with is the account's
+  bag-location items, not every owned item (FS-18Z5F).
+- **Safe item** — an item the delver brought into this run or field world (seated with). A dead
+  delver's safe items come home.
+- **Unsafe find** — an item picked up inside this run, held on the body (bag or worn) until the
+  delver escapes. Unsafe follows the item, not the slot: equipping it keeps it unsafe. A dead
+  delver's unsafe finds are lost, whether they leave early or wait for the run's end. Field
+  death costs nothing, so field finds are never lost (FS-18Z5F).
 
 ### Containers (FS-4R9M9, FS-1D6BX)
 
@@ -278,7 +288,9 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   TTL, and deletes on graceful shutdown. A pod without one is treated as dead: its queued players
   are dropped at pop. Liveness, not a cleanup sweep, because a crashed pod never cleans up.
 - **Host pod** — the pod a match's run lives on. Currently the pod of the first popped player.
-  Every matched player ends the match connected to it, and returns to *its* HUB world.
+  Every matched player ends the match connected to it, and returns to *its* HUB world. For a
+  random match it becomes the auto-formed party's *party pod*; for a party entry the host pod
+  is simply the party pod, since the whole party already stands there.
 
 ### Matchmaking (FS-K2HKP)
 
@@ -308,9 +320,61 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Seat release** — dropping every unclaimed seat once `SeatReleaseAfter` (15s) has passed since
   the run was created; a later arrival for one is refused. If nobody is in the run at that point,
   the run is shut down. Checked in the tick; nothing waits on it.
-- **Arrival slot** — a reserved spawn position in the party formation, kept for a handoff player
-  so they stand with the party. A *position*, unrelated to whether they hold a seat; a run with
-  none left spawns the arrival elsewhere.
+- **Arrival slot** — a reserved spawn position in the spawn formation, kept for a handoff player
+  so they stand with the others. A *position*, unrelated to whether they hold a seat; a run with
+  none left spawns the arrival elsewhere. ("Formation" here is spatial; it has nothing to do with
+  *party formation* below, which is players grouping up.)
+
+### Party (FS-R82NV, FS-BJNYC, FS-XGW7H, FS-V780R)
+
+Before these specs, "party" was loose prose for "the players in a run". It is now a thing with
+an id. Use **roster** or **the run's players** for the people a run seats; use **party** only
+for the group below. The two coincide inside an instance by rule, not by definition.
+
+- **Party** — a named group of players, one **leader** and up to the configured size (2 now, at
+  most 4), that enters instances together and talks on its own chat channel. Lives on one pod
+  (its *party pod*), persists across instances until it empties, and is never stored: Redis holds
+  only the pointers other pods need, a database holds nothing. A player is in at most one party.
+- **Leader** — the member who may invite, kick, transfer leadership, set the *loot rule*, and
+  start a *party entry*. The creator at first; a random matched player for an auto-formed party.
+  When the leader leaves or disconnects, the **earliest-joined** remaining member succeeds, at
+  once, even inside an instance. Succession is the one party change an instance never locks.
+- **Party pod** — the pod every member of a party is connected to: the leader's pod at creation,
+  the host pod for a party formed from a match. Joining a party means arriving on it (a *hub
+  handoff*). It never moves while the party lives.
+- **Hub handoff** — a handoff (same mechanic: new socket to the pod address, old one dropped)
+  whose destination is the party pod's hub world instead of a run. Used on invite acceptance and
+  to pull back a member who reconnected elsewhere. Still never used for fields (ADR-0030).
+- **Presence index** — the Redis lookup from a character name to `{player id, pod id}`, written
+  by the pod that holds the player, kept alive by TTL, deleted on leave. Answers "is this name
+  online, and where": invites use it; whisper (FS-KCQ06) will too. A name with no entry is
+  **offline**. Not a friends list and not a history.
+- **Pod inbox** — the Redis channel `pod:<podID>:inbox` each pod subscribes to for messages
+  addressed to one of *its* players from another pod (an invite, a pull-back). Rides the same
+  subscriber → hub-loop path as world chat. Distinct from the **match-start channel**, which
+  carries run coordination, and from the chat bus, which carries chat lines.
+- **Party invite** — a request from a leader to a named player to join, found through the presence
+  index and delivered through the target's pod inbox. Pending until accepted, declined, or
+  expired (60 s). Accepting triggers the hub handoff; the player is a member only once they
+  arrive on the party pod.
+- **Party entry** — the leader, standing at an instance's gate, taking the whole party into that
+  instance. Requires every member in the leader's world on the party pod (not at the gate); then
+  a *ready check*; then the run is built from the party exactly as `start_solo` builds one for
+  one player, and members are world-switched in. No handoff at entry, because nobody is elsewhere.
+- **Ready check** — the pending request a party entry sends every other member: accept within
+  30 s or the entry is cancelled and the party told who declined or timed out. Same shape as an
+  invite (sent, awaited, expired), different question.
+- **Auto-formed party** — the party the host pod creates at run creation from a random match's
+  roster, so matched strangers are a party too: party pod = host pod, leader at random, no
+  invites. A no-show (seat released) is not a member.
+- **Instance lock** — while a party is inside an instance, leave, kick, transfer and loot-rule
+  changes are refused. Disconnecting keeps the run's existing reconnect grace; only when it runs
+  out does the player count as dead for that run. They remain a member regardless.
+- **Loot rule** — the party setting that says whose bag a pickup lands in: **random allocation**
+  (default; a random living, un-escaped member, redrawn if their bag is full) or **picker keeps**.
+  A closed set that later rules extend. Chosen by the leader, locked inside an instance. It
+  changes who *receives* a pickup, never what drops or who may click it; drops and coffers stay
+  single-copy. Distinct from the field's *killer-first window*, which reserves at drop time.
 
 ### Classes and abilities (FS-8AY7S, FS-MAMHR, FS-JTNPR, ADR-0030)
 
@@ -350,3 +414,47 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Resolved cast** — a cast the server acts on: skill id plus target point, judged on the tick
   against cooldown and cost. Aiming, holding and wind-up before it are client presentation and
   never reach game-service state (ADR-0030).
+
+### Chat (FS-WJGFJ; world chat FS-5SH4G; party chat FS-XGW7H; whisper FS-KCQ06; mute and report FS-4HEG7)
+
+Chat is a relay, not a world concern: a message never enters an ECS world, is never stored, and
+is addressed by scope, not by position. Three words here collide with the world vocabulary
+above; the rule is to qualify, never to rename.
+
+- **Chat channel** — one of the kinds of talk a message belongs to, carried as a type on the
+  message: `area`, `world`, `whisper`, `party`, `trade`. Always written "chat channel" (or the
+  qualified form, "area chat", "world chat") because **channel** alone means a field channel
+  (ADR-0030) and **Redis channel** means the pub/sub topic. Trade is a reserved type with no
+  behaviour yet; a type exists so adding it later changes no envelope.
+- **Scope key** — the value that, with the chat channel, names a message's audience: the pod id
+  for area, a fixed constant for world, the target's player id for a whisper, the party id for
+  party. The pair `(chat channel, scope key)` is the whole address; routing reads nothing else.
+- **Area chat** — the chat channel whose audience is **every connection on this pod**, whatever
+  world each stands in (ADR-0032). Delivered in-process. "Area" is the player-facing word; it
+  does **not** mean a world, a session, or a field channel, and a tower run on the same pod is
+  inside the area. Qualify as "area chat" when "area" could read as a place.
+- **World chat** — the chat channel whose audience is every player on every pod. Published on a
+  Redis channel, delivered by each pod to its own connections. **Not the ECS "world"**: a world
+  is a simulation, world chat crosses all of them. Always "world chat", never a bare "world".
+- **Party chat** — the chat channel whose audience is the members of one party (scope key = the
+  party id). Delivered in-process like area chat, because every member is on the party pod; it
+  never touches the chat bus. Closed for a player with no party. Inside an instance it is that
+  instance's chat, since members and occupants are the same people.
+- **System line** — a chat line with no sender, carried on a chat channel so it filters with it:
+  party events and loot allocation notices ride the party channel this way. Rendered as system,
+  never as a member speaking. Distinct from a **chat notice**, which answers one sender alone.
+- **Whisper** — a one-to-one message to one player by id, found on any pod over Redis; the pod
+  holding the target delivers it. A target held by no pod is **offline**, and the sender gets
+  one system notice. Nothing is queued for later.
+- **Chat bus** — the Redis side of chat (`internal/chatbus`): the pub/sub the cross-pod
+  channels ride, bytes in and bytes out, knowing nothing about lines. A pod subscribes to the
+  world channel at boot and publishes its own world lines to it (FS-5SH4G). Not a store: nothing
+  on it is kept (ADR-0033).
+- **Relay** — what a pod does with a chat message: receive, resolve the audience from the scope
+  key, deliver, forget. The server keeps no history (ADR-0033); "chat history" is a client word.
+- **Report** — a player's complaint about one message, carrying its own evidence from the
+  client (the message, its neighbours, reporter, reported player, chat channel, time). An HTTP
+  call through api-gateway, not a chat message, and not something game-service looks up.
+- **Mute** — client-side only. game-service has no notion of a muted player and keeps relaying
+  to them; the client hides what it chooses.
+

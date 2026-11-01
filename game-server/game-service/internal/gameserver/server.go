@@ -50,6 +50,10 @@ type Server struct {
 	fields map[game.FieldID]uuid.UUID
 	// where every ended field visit goes, exactly once (FS-X2F2H §F)
 	visitSettler VisitSettler
+	// members with a field entry in flight, under mu: one entry at a time per
+	// member, so a second never checks out over the first's live gear
+	// (FS-18Z5F §C R13, R14)
+	fieldEntries map[uuid.UUID]struct{}
 
 	// for messages the server itself originates, such as telling a returning
 	// player which world they are now in
@@ -148,6 +152,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		sessions:           make(map[uuid.UUID]*game.Session, 10),
 		fields:             make(map[game.FieldID]uuid.UUID),
 		visitSettler:       boot.visitSettler,
+		fieldEntries:       make(map[uuid.UUID]struct{}),
 		players:            make(map[uuid.UUID]*types.Player, 10),
 		connToPlayer:       make(map[*websocket.Conn]*types.Player, 10),
 		graceHolds:         make(map[uuid.UUID]graceHold),
@@ -167,8 +172,10 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	server.queue.Start(ctx)
 
 	// initialize message hub
-	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer)
+	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID, boot.chatBus)
+	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat)
 	go messageHub.Run(ctx)
+	chat.start(ctx)
 
 	server.createHubSession()
 	server.createFieldSessions(fields)
@@ -683,7 +690,7 @@ func (s *Server) AtSpireGate(playerID uuid.UUID) bool {
 * read, so callers run it off the message hub's loop and bound ctx.
 **/
 func (s *Server) CheckLoadout(ctx context.Context, player *types.Player) error {
-	if _, err := s.setupHandoffConnectingPlayer(ctx, player.ID, s.tokenOf(player)); err != nil {
+	if _, err := s.readLoadout(ctx, player.ID, s.tokenOf(player)); err != nil {
 		return fmt.Errorf("check loadout of %s: %w: %w", player.ID, errNoLoadout, err)
 	}
 	return nil
@@ -754,6 +761,31 @@ func (s *Server) MapConnToPlayer(conn *websocket.Conn, playerID uuid.UUID, msgCh
 * grabs player information from connected client's websocket connection
 * information.
 **/
+
+/**
+* SeatedPlayerIDs is everyone connected to this pod and seated in a world: the
+* area chat audience (FS-WJGFJ R9, ADR-0032). Read off the connection table,
+* which is what routing trusts, so a member seated anywhere here hears the pod
+* and a connection in no world does not (R10).
+**/
+func (s *Server) SeatedPlayerIDs() []uuid.UUID {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	seated := make([]uuid.UUID, 0, len(s.connToPlayer))
+	seen := make(map[uuid.UUID]struct{}, len(s.connToPlayer))
+	for _, player := range s.connToPlayer {
+		if player.CurrentGameSessionId == uuid.Nil {
+			continue
+		}
+		if _, dup := seen[player.ID]; dup {
+			continue
+		}
+		seen[player.ID] = struct{}{}
+		seated = append(seated, player.ID)
+	}
+	return seated
+}
 
 func (s *Server) GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool) {
 	// Read lock: this only looks the connection up. It sits on the routing path

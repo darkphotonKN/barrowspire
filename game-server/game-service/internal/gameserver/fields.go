@@ -67,6 +67,10 @@ var (
 	// the Spire's find_game and start_solo. Fail closed.
 	errNoLoadout = errors.New("loadout_unavailable")
 
+	// a second enter_field while the member's first is still in flight; it
+	// answers as the stale enter it is, not_in_hub
+	errFieldEntryInFlight = errors.New("field entry already in flight")
+
 	errLeaveFieldNotInField = errors.New("not_in_field")
 	errLeaveFieldNotAtGate  = errors.New("not_at_gate")
 	errLeaveFieldFallen     = errors.New("fallen")
@@ -106,12 +110,20 @@ type bootOptions struct {
 	seed         uint64
 	forestParams levelgen.Params
 	visitSettler VisitSettler
+	// what the chat relay stamps lines with (FS-WJGFJ R3); the wall clock and
+	// fresh uuids unless a test fixes them
+	chatNow   func() time.Time
+	chatNewID func() uuid.UUID
+	// the Redis side of chat; nil on a pod built without one, which then refuses world chat as
+	// closed (FS-5SH4G; code review 2026-10-31)
+	chatBus chatBus
 }
 
 // newBootOptions are the defaults with opts applied: a fresh seed, the
-// Forest's own parameters, and visits settled to the log alone.
+// Forest's own parameters, visits settled to the log alone, and chat stamped
+// by the wall clock.
 func newBootOptions(opts ...Option) bootOptions {
-	boot := bootOptions{seed: rand.Uint64(), forestParams: levelgen.ForestParams, visitSettler: logVisitSettler{}}
+	boot := bootOptions{seed: rand.Uint64(), forestParams: levelgen.ForestParams, visitSettler: logVisitSettler{}, chatNow: time.Now, chatNewID: uuid.New}
 	for _, opt := range opts {
 		opt(&boot)
 	}
@@ -210,8 +222,8 @@ func (s *Server) FieldSession(id game.FieldID) (*game.Session, bool) {
 /**
 * EnterField walks the member on conn from the hub into this pod's channel of
 * the field, validated in the order FS-X2F2H §Requirements 10 states. The queue
-* and the loadout are read here, before the field's lock is taken (R12), so the
-* caller runs it off the message hub's loop. Accepted: a fresh body at the
+* is read and the gear checked out here, before the field's lock is taken
+* (R12), so the caller runs it off the message hub's loop. Accepted: a fresh body at the
 * place's arrival point, the hub body gone, the record naming the field (R11).
 **/
 func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID string) (*game.Session, error) {
@@ -219,6 +231,16 @@ func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID s
 	if !exists {
 		return nil, fmt.Errorf("enter field: %w: %w", errEnterFieldNotInHub, errPlayerNotFound)
 	}
+
+	// one entry at a time per member, taken before the hub check: a second
+	// enter while one is in flight is a stale enter, and once the first is
+	// done the record no longer names the hub. Either way it is refused before
+	// its checkout, which would reclaim the first visit's live gear under a
+	// visit that never opens (FS-18Z5F §C R13, R14).
+	if !s.beginFieldEntry(player.ID) {
+		return nil, fmt.Errorf("enter field: %w: %w", errEnterFieldNotInHub, errFieldEntryInFlight)
+	}
+	defer s.endFieldEntry(player.ID)
 
 	hub, exists := s.HubSession()
 	if !exists {
@@ -252,13 +274,16 @@ func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID s
 		return nil, fmt.Errorf("enter field %s: %w", place.ID, errEnterFieldQueued)
 	}
 
-	// read before the field's lock: a slow items-service delays only this entry
-	loadout, err := s.setupHandoffConnectingPlayer(ctx, player.ID, s.tokenOf(player))
+	// the visit id is minted first: the gear is checked out under it, after
+	// the pre-checks above and before the field's lock, so a slow items-service
+	// delays only this entry (FS-18Z5F §C R13, R14, R16)
+	visitID := uuid.New()
+	gear, err := s.setupHandoffConnectingPlayer(ctx, player.ID, visitID, s.tokenOf(player))
 	if err != nil {
 		return nil, fmt.Errorf("enter field %s: %w: %w", place.ID, errNoLoadout, err)
 	}
 
-	visit, err := field.SeatVisitor(player.ID, character, loadout)
+	visit, err := field.SeatVisitor(player.ID, character, visitID, gear)
 	if errors.Is(err, game.ErrAlreadyHere) {
 		return nil, fmt.Errorf("enter field %s: %w: %w", place.ID, errEnterFieldNotInHub, err)
 	}
@@ -284,6 +309,27 @@ func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID s
 	slog.Info("Walked into a field", "player_id", player.ID, "field", place.ID, "visit_id", visit.ID)
 
 	return field, nil
+}
+
+// beginFieldEntry marks the member's field entry in flight. Reports false,
+// marking nothing, when one already is.
+func (s *Server) beginFieldEntry(playerID uuid.UUID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, inFlight := s.fieldEntries[playerID]; inFlight {
+		return false
+	}
+	s.fieldEntries[playerID] = struct{}{}
+	return true
+}
+
+// endFieldEntry clears the member's field entry once it has decided.
+func (s *Server) endFieldEntry(playerID uuid.UUID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.fieldEntries, playerID)
 }
 
 /**

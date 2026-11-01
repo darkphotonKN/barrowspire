@@ -184,7 +184,7 @@ describe("EquipmentHud full bag (FS-HRH2J R20–22; edge states: Bag exactly ful
     const { p, send, notice, equipment } = hud();
     equipment.sync({ inventory: bag(BAG_CAPACITY), equipment: { ...NOTHING_WORN, head: item("helm") } });
 
-    expect(p.mayUnequip?.()).toBe(false);
+    expect(p.mayUnequip?.(item("helm"))).toBe(false);
     expect(notice).toHaveBeenCalledWith(BAG_FULL_NOTICE);
     expect(send).not.toHaveBeenCalled();
   });
@@ -193,7 +193,7 @@ describe("EquipmentHud full bag (FS-HRH2J R20–22; edge states: Bag exactly ful
     const { p, notice, equipment } = hud();
     equipment.sync({ inventory: bag(BAG_CAPACITY - 1), equipment: NOTHING_WORN });
 
-    expect(p.mayUnequip?.()).toBe(true);
+    expect(p.mayUnequip?.(item("helm"))).toBe(true);
     expect(notice).not.toHaveBeenCalled();
   });
 

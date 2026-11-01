@@ -94,6 +94,10 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 	// concurrent reconnect has already closed.
 	msgChan := make(chan interface{}, clientWriterBuffer)
 
+	// a member on record here in a world is reconnecting to it: they keep the
+	// body they have, and nothing is checked out (FS-18Z5F §C R18)
+	reconnecting := isReconnection && player.CurrentGameSessionId != uuid.Nil
+
 	// setup connecting player from handoff with his gear and character before attempting to connect to the match
 	// decided only after the upgrade, since the client reads a refusal's close
 	// code from an open socket, and before the connection is mapped, so a refused
@@ -114,27 +118,52 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 			return
 		}
 
-		// fetched before the run's lock is taken a slow items-service delays
-		// only this arrival (FS-K2HKP R22)
-		handoffConnectCtx, handoffConnectCancel := context.WithTimeout(ctx, time.Second*3) // wait max 3 seconds for item
-		defer handoffConnectCancel()
-		loadoutRes, err := s.setupHandoffConnectingPlayer(handoffConnectCtx, memberId, player.Token)
-		if err != nil {
-			slog.Warn("Refusing a handoff connection, loadout unavailable", "session_id", sessionIDUUID, "member_id", memberId, "error", err)
-			s.refuseHandoff(conn, player.ID, isReconnection, "loadout unavailable")
+		// decided before the checkout, so a stale or expired handoff never
+		// re-tags the member's live gear into a run that then refuses it. A
+		// member already seated, whose record here names the run, is
+		// reconnecting; any other with no seat waiting is refused (FS-18Z5F
+		// §C R13, R18; FS-K2HKP R24).
+		switch run.HandoffSeatOf(memberId) {
+		case game.HandoffSeatTaken:
+			if !reconnecting || player.CurrentGameSessionId != run.ID {
+				slog.Warn("Refusing a handoff connection, seated here but not on record in the run", "session_id", sessionIDUUID, "member_id", memberId)
+				s.refuseHandoff(conn, player.ID, isReconnection, seatRefusalReason(game.ErrNoSeat))
+				return
+			}
+			slog.Debug("Handoff connection from a member already seated, reconnecting", "session_id", sessionIDUUID, "member_id", memberId)
+
+		case game.HandoffSeatExpected:
+			// checked out under the run's session id, after the run's own checks
+			// and before its lock is taken: a slow items-service delays only this
+			// arrival (FS-K2HKP R22; FS-18Z5F §C R13, R16)
+			handoffConnectCtx, handoffConnectCancel := context.WithTimeout(ctx, time.Second*3) // wait max 3 seconds for item
+			defer handoffConnectCancel()
+			gear, err := s.setupHandoffConnectingPlayer(handoffConnectCtx, memberId, run.ID, player.Token)
+			if err != nil {
+				slog.Warn("Refusing a handoff connection, loadout unavailable", "session_id", sessionIDUUID, "member_id", memberId, "error", err)
+				s.refuseHandoff(conn, player.ID, isReconnection, "loadout unavailable")
+				return
+			}
+
+			character, err := run.SeatArrival(&player, gear)
+			if err != nil {
+				slog.Warn("Refusing a handoff connection, seating failed", "session_id", sessionIDUUID, "member_id", memberId, "error", err)
+				s.refuseHandoff(conn, player.ID, isReconnection, seatRefusalReason(err))
+				return
+			}
+
+			player.Character = character
+			s.enterHandedOffRun(&player, run, msgChan)
+			reconnecting = false
+
+		default:
+			slog.Warn("Refusing a handoff connection, not expected", "session_id", sessionIDUUID, "member_id", memberId)
+			s.refuseHandoff(conn, player.ID, isReconnection, seatRefusalReason(game.ErrNoSeat))
 			return
 		}
+	}
 
-		character, err := run.SeatArrival(&player, loadoutRes)
-		if err != nil {
-			slog.Warn("Refusing a handoff connection, seating failed", "session_id", sessionIDUUID, "member_id", memberId, "error", err)
-			s.refuseHandoff(conn, player.ID, isReconnection, seatRefusalReason(err))
-			return
-		}
-
-		player.Character = character
-		s.enterHandedOffRun(&player, run, msgChan)
-	} else if isReconnection && player.CurrentGameSessionId != uuid.Nil {
+	if reconnecting {
 		slog.Debug("Sending reconnection success message.",
 			"player_username", player.Username,
 			"player_current_game_session_id", player.CurrentGameSessionId,
@@ -221,7 +250,8 @@ func (s *Server) ServeConnectedPlayer(conn *websocket.Conn) {
 		}
 
 		// --- Normal Message Processing ---
-		slog.Debug("Message received from connected user", "message", string(message))
+		// the frame itself is never logged: a chat line's text rides in it (FS-WJGFJ R14, ADR-0033)
+		slog.Debug("Message received from connected user", "bytes", len(message))
 
 		slog.Debug("before decoding received message")
 
@@ -670,20 +700,41 @@ func seatRefusalReason(err error) string {
 	}
 }
 
-func (s *Server) setupHandoffConnectingPlayer(ctx context.Context, memberID uuid.UUID, token types.BearerToken) (*items.GetLoadoutWithItemsResponse, error) {
-	// the loadout is the member's own: the call carries their bearer token, as
-	// game's asMember does, so items-service checks they own it
-	if token != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+string(token))
+/**
+* setupHandoffConnectingPlayer checks the member's worn and bag items out of
+* items-service into the world runID names, a run's session id or a field
+* visit's id, and returns them to seat from (FS-18Z5F §C R13). A handoff
+* arrival and a field entry seat this way.
+**/
+func (s *Server) setupHandoffConnectingPlayer(ctx context.Context, memberID, runID uuid.UUID, token types.BearerToken) (*items.CheckOutRunGearResponse, error) {
+	gear, err := s.itemsClient.CheckOutRunGear(asMember(ctx, token), &items.CheckOutRunGearRequest{
+		MemberId: memberID.String(),
+		RunId:    runID.String(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("check out run gear of %s into %s: %w", memberID, runID, err)
 	}
+	return gear, nil
+}
 
-	res, err := s.itemsClient.GetLoadoutWithItems(ctx, &items.GetLoadoutWithItemsRequest{
+// readLoadout reads the member's worn loadout without checking anything out:
+// a pre-check, not a seating (FS-18Z5F §C R13).
+func (s *Server) readLoadout(ctx context.Context, memberID uuid.UUID, token types.BearerToken) (*items.GetLoadoutWithItemsResponse, error) {
+	res, err := s.itemsClient.GetLoadoutWithItems(asMember(ctx, token), &items.GetLoadoutWithItemsRequest{
 		MemberId: memberID.String(),
 	})
-
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read loadout of %s: %w", memberID, err)
 	}
-
 	return res, nil
+}
+
+// asMember makes the call as the member: their gear is their own, so the call
+// carries their bearer token, as game's asMember does, and items-service checks
+// they own it.
+func asMember(ctx context.Context, token types.BearerToken) context.Context {
+	if token == "" {
+		return ctx
+	}
+	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+string(token))
 }

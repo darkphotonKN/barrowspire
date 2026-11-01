@@ -20,7 +20,8 @@ func newRoutingTestHub(t *testing.T) (*messageHub, *Server) {
 	t.Helper()
 
 	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
-	hub := NewMessageHub(server, messaging.NewMessageSender(server), testPodID, testPodAddr, noopAnnouncer{})
+	sender := messaging.NewMessageSender(server)
+	hub := NewMessageHub(server, sender, testPodID, testPodAddr, noopAnnouncer{}, newChatRelay(server, sender, testPodID, time.Now, uuid.New, nil))
 
 	return hub, server
 }

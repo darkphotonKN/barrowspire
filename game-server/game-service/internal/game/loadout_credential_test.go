@@ -54,16 +54,21 @@ func (c *credentialRecordingClient) GetLoadoutWithItems(ctx context.Context, req
 	return c.countingItemsClient.GetLoadoutWithItems(ctx, req)
 }
 
-// Worn gear belongs to the member, so the world loads it as them: the loadout
-// call carries the member's own bearer token, and items-service still checks
-// the caller owns the loadout.
+func (c *credentialRecordingClient) CheckOutRunGear(ctx context.Context, req *pb.CheckOutRunGearRequest) (*pb.CheckOutRunGearResponse, error) {
+	c.record(ctx, "CheckOutRunGear")
+	return c.countingItemsClient.CheckOutRunGear(ctx, req)
+}
+
+// Worn gear belongs to the member, so the world loads it as them: the run's
+// checkout carries the member's own bearer token, and items-service still
+// checks the caller owns the gear.
 func TestSeat_LoadsTheLoadoutAsThePlayer(t *testing.T) {
 	client := &credentialRecordingClient{}
 	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, client, RunBounds())
 
 	entityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "member-token")
 
-	require.Equal(t, [][]string{{"Bearer member-token"}}, client.calls("GetLoadoutWithItems"))
+	require.Equal(t, [][]string{{"Bearer member-token"}}, client.calls("CheckOutRunGear"))
 	assert.Len(t, wornIDs(t, s, entityID), 1, "the loadout loaded, so the delver wears its weapon")
 }
 
@@ -85,7 +90,7 @@ func TestCatalogueReads_CarryNoPlayerToken(t *testing.T) {
 	}
 }
 
-// A member with no token on record is still seated; the loadout call goes out
+// A member with no token on record is still seated; the checkout goes out
 // with no authorization at all rather than an empty bearer, items-service
 // refuses it, and the delver arrives without gear.
 func TestSeat_WithoutAToken_SendsNoAuthorization(t *testing.T) {
@@ -94,6 +99,6 @@ func TestSeat_WithoutAToken_SendsNoAuthorization(t *testing.T) {
 
 	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
 
-	require.Len(t, client.calls("GetLoadoutWithItems"), 1)
-	assert.Empty(t, client.calls("GetLoadoutWithItems")[0])
+	require.Len(t, client.calls("CheckOutRunGear"), 1)
+	assert.Empty(t, client.calls("CheckOutRunGear")[0])
 }

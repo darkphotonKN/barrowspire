@@ -49,6 +49,7 @@ export function instanceItem(
     healing_amount: instance.healing_amount,
     mana_amount: instance.mana_amount,
     description: instance.description,
+    status: instance.status,
   };
   for (const [key, value] of Object.entries(optional))
     if (value) Object.assign(item, { [key]: value });

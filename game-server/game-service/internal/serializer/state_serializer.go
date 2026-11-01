@@ -644,5 +644,6 @@ func (s *StateSerializer) getItemState(itemID uuid.UUID, entityID uuid.UUID, ite
 		ItemLevel:       item.ItemLevel,
 		Affixes:         item.Affixes,
 		UniqueEffect:    item.UniqueEffectText,
+		Unsafe:          item.Unsafe,
 	}
 }

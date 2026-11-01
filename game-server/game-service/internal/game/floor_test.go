@@ -65,6 +65,16 @@ func (c *countingItemsClient) GetLoadout(_ context.Context, _ *pb.GetLoadoutRequ
 
 func (c *countingItemsClient) GetLoadoutWithItems(_ context.Context, _ *pb.GetLoadoutWithItemsRequest) (*pb.GetLoadoutWithItemsResponse, error) {
 	c.calls.Add(1)
+	return seaxLoadout(), nil
+}
+
+func (c *countingItemsClient) CheckOutRunGear(_ context.Context, _ *pb.CheckOutRunGearRequest) (*pb.CheckOutRunGearResponse, error) {
+	c.calls.Add(1)
+	return &pb.CheckOutRunGearResponse{Loadout: seaxLoadout()}, nil
+}
+
+// seaxLoadout is a loadout of one weapon.
+func seaxLoadout() *pb.GetLoadoutWithItemsResponse {
 	return &pb.GetLoadoutWithItemsResponse{
 		Weapon: &pb.ItemInstance{
 			Id:          uuid.NewString(),
@@ -73,7 +83,7 @@ func (c *countingItemsClient) GetLoadoutWithItems(_ context.Context, _ *pb.GetLo
 			Name:        "Barrow Seax",
 			AttackPower: 7,
 		},
-	}, nil
+	}
 }
 
 func (c *countingItemsClient) ListItemInstances(_ context.Context, _ *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error) {

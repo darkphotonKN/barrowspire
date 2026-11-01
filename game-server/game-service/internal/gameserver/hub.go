@@ -31,6 +31,18 @@ type messageHub struct {
 	podID     string
 	podAddr   string
 	announcer HandoffAnnouncer
+
+	// chat lines are stamped and relayed here, on the loop, never by a world
+	// (FS-WJGFJ R11)
+	chat chatRelayer
+}
+
+// chatRelayer is what the hub needs from chat: a player's line in, delivered or refused; and
+// the lines that arrive off the bus, delivered on this loop (FS-5SH4G R9).
+type chatRelayer interface {
+	relay(sender *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	inbound() <-chan types.Message
+	deliver(line types.Message)
 }
 
 // handoffAnnounceTimeout bounds each announce to another pod, so a slow redis
@@ -293,7 +305,7 @@ func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*game.Session, er
 	return session, nil
 }
 
-func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer) *messageHub {
+func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer) *messageHub {
 	return &messageHub{
 		sessionManager: sessionManager,
 		sessions:       make(map[string]*game.Session),
@@ -301,6 +313,7 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 		podID:          podID,
 		podAddr:        podAddr,
 		announcer:      announcer,
+		chat:           chat,
 	}
 }
 
@@ -314,7 +327,12 @@ func (h *messageHub) Run(ctx context.Context) {
 	for {
 		select {
 		case clientPackage := <-h.sessionManager.GetServerChan():
-			slog.Info("incoming message.", "message", clientPackage.Message)
+			if constants.Action(clientPackage.Message.Action) == constants.ActionChat {
+				// a chat line's text is never logged (FS-WJGFJ R14, ADR-0033)
+				slog.Debug("incoming chat line")
+			} else {
+				slog.Info("incoming message.", "message", clientPackage.Message)
+			}
 
 			// handle message based on action
 			var gameActions map[constants.Action]bool = map[constants.Action]bool{
@@ -595,6 +613,16 @@ func (h *messageHub) Run(ctx context.Context) {
 					slog.Warn("Could not tell a member they left the hub", "player_id", player.ID, "error", err)
 				}
 
+			// A chat line: stamped and relayed on the loop to everyone seated on
+			// this pod; never forwarded to a world. FS-WJGFJ §Requirements B9–B11.
+			case constants.ActionChat:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("chat from a connection with no player")
+					continue
+				}
+				h.chat.relay(player, clientPackage.Conn, clientPackage.Message.Payload)
+
 			case constants.ActionLeaveQueue:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
 				if !exists {
@@ -683,6 +711,11 @@ func (h *messageHub) Run(ctx context.Context) {
 		case handoff := <-h.sessionManager.GetHandoffChan(ctx):
 			slog.Debug("handoff received", "handoff", handoff)
 			h.sendWorldHandoff(handoff)
+
+		// a chat line off the bus: delivered here, so the writer queues are touched from
+		// one goroutine as for area lines (FS-5SH4G R7, R9)
+		case line := <-h.chat.inbound():
+			h.chat.deliver(line)
 		}
 
 	}

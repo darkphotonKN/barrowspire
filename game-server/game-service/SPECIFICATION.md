@@ -83,6 +83,9 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Random affixes on rolled loot → FS-4R9M9
 - [ ] Fabled uniques → FS-4R9M9
 - [x] A player may end their own run as a death → FS-9K8EZ
+- [ ] Pickup allocated by the party's loot rule → FS-V780R
+- [ ] Bag carried into runs and field worlds → FS-18Z5F
+- [ ] Unsafe run finds lost on death → FS-18Z5F
 
 ### Classes
 
@@ -133,6 +136,23 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Forlorn Forest → FS-3QHQZ
 - [x] Roomier Forlorn Forest → FS-KSD6K
 
+### Party
+
+- [ ] Form a party across pods → FS-R82NV
+- [ ] Player presence index across pods → FS-R82NV
+- [ ] Joining a party moves the player to the party's pod → FS-R82NV
+- [ ] Party loot rule → FS-V780R
+- [ ] Enter an instance as a party from its gate → FS-BJNYC
+- [ ] Matched players form a party on entry → FS-BJNYC
+- [ ] Health and resource in the broadcast for party members only → FS-CH21F
+
+### Chat
+
+- [ ] Area chat across the pod → FS-WJGFJ
+- [ ] World chat across pods → FS-5SH4G
+- [ ] Whisper a player on any pod → FS-KCQ06
+- [ ] Party chat within the party's pod → FS-XGW7H
+
 ### Transport
 
 - [x] WebSocket message hub
@@ -153,7 +173,7 @@ matchmaking); this service is the engine they feed. ✅
 ### Cross-context flows
 
 - [ ] Player-to-player trade saga
-- [ ] Gear escrow across the run lifecycle
+- [ ] Gear escrow across the run lifecycle → FS-18Z5F
 - [ ] Start-a-delve distributed coordination → FS-K2HKP
 
 ---

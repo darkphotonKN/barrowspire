@@ -90,3 +90,15 @@ in api post /api/member/signup removed the success response with the status `202
 #
 # Line copied verbatim from `make openapi-breaking` output, lowercased.
 in api get /api/member/check-email api path removed without deprecation
+
+# ---------------------------------------------------------------------------
+# FS-18Z5F R4 (I-18Z5F-5): item status gains IN_RUN.
+#
+# WHY: an item checked out into a run or field world is IN_RUN until the run
+# settles, and the instance list returns those rows as they are, so the hub can
+# dim them. oasdiff warns on any enum value added to a response. The only
+# consumer is this repo's generated client, regenerated in the same change, and
+# FS-18Z5F §H teaches the client to render the new value.
+#
+# Line copied verbatim from `make openapi-breaking` output, lowercased.
+in api get /api/items/instances added the new `in_run` enum value to the `result/items/items/status` response property for the response status `200`

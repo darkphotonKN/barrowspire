@@ -116,6 +116,7 @@ and its aim arrow) and nothing else. A shadow has nothing to be darker than in a
 dark smoke vanishes over brown ground, so the shot reads by hue instead: a dim, desaturated
 violet that no other channel uses. It is not a readability channel (see below), and it is never
 saturated or bright: a violet that glows like neon fails the rule below.
+One exception, text only: a whisper's line in the chat window is drawn in umbra lifted toward vellum (`palette.chatWhisper`, FS-WJGFJ R30), so a private word reads apart from every public one.
 
 **Rules:**
 - Keep darks as bases, **never pure black** — preserve enough value range that pixel
@@ -415,6 +416,14 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   **bone heap**, the items lying on top. Only the satchel animates; the coffer and the bone heap
   pop in. Every face keeps the satchel's footprint and item slots. Item icons are baked, with a
   generic fallback.
+- **Item marks in the gear and bag overlay.** A held item's rarity shows only as its **rarity
+  edge**, a thin bar down the left side of its bag cell or worn slot. Two more marks sit beside
+  it and never take a rarity colour. In a run, an **unsafe find** (picked up this run, lost if
+  the player dies before escaping) gets a lifted-oxblood **inner edge** inside its well, clear of
+  the rarity edge, and its tip adds "Found this run: lost if you die before you escape." in the
+  same tone (`palette.unsafeFind`, the danger channel). Field worlds and the hub show no unsafe
+  mark. In the hub, an item **still in a delve** is drawn faint, as a listed item is, and its tip
+  says "Still in a delve." *(Added by FS-18Z5F §H, 2026-10-31.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich
