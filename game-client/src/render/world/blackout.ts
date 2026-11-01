@@ -1,10 +1,14 @@
 /**
  * The indoor blackout (FS-9PN7X §D): while the player stands in a building, everything outside it
  * is filled with the canvas's darkest ink. One module for every scene (§D.5): the scene says which
- * building, if any, and how tall its walls stand; the module owns the one Graphics and its depth.
+ * building, if any, how tall its walls stand and what is its own; the module owns the dark and
+ * its depth.
  *
- * The geometry is the throwaway spike's (`spike/opaque-interiors`, 6aa8f625, `spikeDrawMask`),
- * which is also the run scene's dormant `updateIndoorMask`; re-implemented here, not merged.
+ * Under WebGL the dark is masked by the building's own px (`BlackoutMask`, the owner's model):
+ * nothing outside what the building draws is seen, to the px. Under the canvas renderer, which
+ * has no bitmap masks (Phaser.AUTO can fall back to it), the dark is the geometric hole below:
+ * the throwaway spike's (`spike/opaque-interiors`, 6aa8f625, `spikeDrawMask`), re-implemented
+ * here, not merged. It is approximate by design: the ground just outside the walls shows in it.
  */
 
 import type Phaser from "phaser";
@@ -12,6 +16,7 @@ import type Phaser from "phaser";
 import { outsideConvex, projectRect, raise } from "@/render/iso/shapes";
 import type { Point } from "@/render/iso/projection";
 import { palette } from "@/utils/canvasPalette";
+import { BlackoutMask, type BlackoutMaskStage, type Stamp } from "./blackoutMask";
 import type { House } from "./houses";
 
 export const BLACKOUT = {
@@ -53,9 +58,32 @@ export function blackoutQuads(house: House, wallTop: number, reach: number): Poi
   return outsideConvex(blackoutHole(house, wallTop), reach);
 }
 
-/** What the blackout needs of a scene: somewhere to make its Graphics. */
+/** `Phaser.WEBGL`, by value: this module stays free of Phaser's runtime. */
+const WEBGL = 2;
+
+/**
+ * What the blackout needs of a scene: somewhere to make its geometric Graphics, and under WebGL
+ * (its renderer says so) what the mask draws with. A Phaser scene is both.
+ */
 export interface BlackoutStage {
-  add: { graphics(): Phaser.GameObjects.Graphics };
+  add: { graphics(): Phaser.GameObjects.Graphics } & Partial<BlackoutMaskStage["add"]>;
+  make?: BlackoutMaskStage["make"];
+  cameras?: BlackoutMaskStage["cameras"];
+  renderer?: { type: number };
+}
+
+/** The stage the mask draws on, when the renderer is WebGL's and the stage has what it needs. */
+function maskStage(stage: BlackoutStage): BlackoutMaskStage | undefined {
+  const { add, make, cameras, renderer } = stage;
+  if (renderer?.type !== WEBGL || !make || !cameras || !add.renderTexture || !add.rectangle) return undefined;
+  // the factory itself, not its methods lifted off it: Phaser's factory methods read `this`
+  return { add: add as BlackoutMaskStage["add"], make, cameras };
+}
+
+/** What the player's building draws as its own, for the mask: its walls' thickness and its stamps. */
+export interface BlackoutOwn {
+  wall: number;
+  stamps: readonly Stamp[];
 }
 
 export interface BlackoutGeometry {
@@ -70,12 +98,17 @@ export interface BlackoutGeometry {
 }
 
 /**
- * The blackout itself: one Graphics at `BLACKOUT.depth` in `palette.inkDeep`, drawn around the
- * player's building and hidden while they are in none (§D.4). Drawn only when the building (or the
- * wall top) changes, so a scene can hand it the player's building every frame.
+ * The blackout itself, at `BLACKOUT.depth` in `palette.inkDeep`, hidden while the player is in no
+ * building (§D.4). Under WebGL, a mask of the building's own px (`BlackoutMask`), redrawn when
+ * they change; under canvas, one Graphics drawn around the building's geometric hole, drawn only
+ * when the building (or the wall top) changes. Either way a scene hands it the player's building
+ * every frame.
  */
 export class Blackout {
-  private readonly dark: Phaser.GameObjects.Graphics;
+  /** The geometric dark: the canvas renderer's. */
+  private readonly dark?: Phaser.GameObjects.Graphics;
+  /** The building's own px: WebGL's. */
+  private readonly mask?: BlackoutMask;
   private around?: House;
   private drawnTop?: number;
 
@@ -83,7 +116,9 @@ export class Blackout {
     stage: BlackoutStage,
     private readonly geometry: BlackoutGeometry,
   ) {
-    this.dark = stage.add.graphics().setDepth(BLACKOUT.depth).setVisible(false);
+    const masked = maskStage(stage);
+    if (masked) this.mask = new BlackoutMask(masked, BLACKOUT.depth);
+    else this.dark = stage.add.graphics().setDepth(BLACKOUT.depth).setVisible(false);
   }
 
   /** The building the dark is around, if any. */
@@ -91,17 +126,17 @@ export class Blackout {
     return this.around;
   }
 
-  /** Darkens everything but `house`, or nothing while it is undefined. The same frame (§A.4). */
-  show(house: House | undefined): void {
-    const wallTop = house ? this.geometry.wallTop() : undefined;
-    if (house === this.around && wallTop === this.drawnTop) return;
-    this.around = house;
-    this.drawnTop = wallTop;
-    this.dark.clear();
-    this.dark.setVisible(!!house);
-    if (!house || wallTop === undefined) return;
-    this.dark.fillStyle(palette.inkDeep, 1);
-    for (const quad of blackoutQuads(house, wallTop, this.geometry.reach)) this.dark.fillPoints(quad, true);
+  /**
+   * Darkens everything but `house`, or nothing while it is undefined. The same frame (§A.4).
+   * `own` says what the building draws as its own; only the mask asks, and only while inside.
+   */
+  show(house: House | undefined, own: () => BlackoutOwn = () => ({ wall: 0, stamps: [] })): void {
+    if (this.mask) {
+      this.around = house;
+      this.mask.show(house ? { house, wallTop: this.geometry.wallTop(), ...own() } : undefined);
+      return;
+    }
+    this.showGeometric(house);
   }
 
   /** Off and forgotten, for a floor's teardown: the next `show` draws afresh. */
@@ -113,6 +148,21 @@ export class Blackout {
   destroy(): void {
     this.around = undefined;
     this.drawnTop = undefined;
-    this.dark.destroy();
+    this.dark?.destroy();
+    this.mask?.destroy();
+  }
+
+  /** The canvas renderer's dark: everything outside the building's padded, raised hole. */
+  private showGeometric(house: House | undefined): void {
+    if (!this.dark) return;
+    const wallTop = house ? this.geometry.wallTop() : undefined;
+    if (house === this.around && wallTop === this.drawnTop) return;
+    this.around = house;
+    this.drawnTop = wallTop;
+    this.dark.clear();
+    this.dark.setVisible(!!house);
+    if (!house || wallTop === undefined) return;
+    this.dark.fillStyle(palette.inkDeep, 1);
+    for (const quad of blackoutQuads(house, wallTop, this.geometry.reach)) this.dark.fillPoints(quad, true);
   }
 }

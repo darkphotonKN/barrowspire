@@ -87,6 +87,9 @@ import {
   worldSeed,
   type Cover,
   type Figure,
+  type Occupant,
+  type Stamp,
+  type Visible,
   type House,
   type Scenery,
 } from "@/render/world";
@@ -497,7 +500,7 @@ interface NPCView {
  */
 interface Interior {
   house: House;
-  parts: { setVisible(visible: boolean): unknown }[];
+  parts: (Stamp & Visible)[];
   lights: { source: LightSource; intensity: number }[];
 }
 
@@ -938,6 +941,18 @@ export class HubScene extends Phaser.Scene {
    */
   private sceneryByFootprint(): Scenery[] {
     return [...this.roofs.map(({ parts }) => ({ parts })), ...this.looseWalls, ...this.outdoors];
+  }
+
+  /**
+   * Whatever stands in the town besides the walls, for the blackout's mask (FS-9PN7X §D): every
+   * player and NPC, body and legs, from their eased position (their plates stand over the dark),
+   * and each house's furnishings, dressing and stash chest, standing in that house.
+   */
+  private *occupants(): Iterable<Occupant> {
+    for (const view of this.views.values()) yield { parts: [view.sprite, view.legs], at: view.pos };
+    for (const npc of this.npcs.values()) yield { parts: [npc.sprite], at: npc.pos };
+    for (const { house, parts } of this.interiors)
+      yield { parts, at: { x: house.x + house.width / 2, y: house.y + house.height / 2 } };
   }
 
   /**
@@ -1938,6 +1953,7 @@ export class HubScene extends Phaser.Scene {
       blackout: { wallTop: () => wallTop, reach: (HUB_WIDTH + HUB_HEIGHT) * 2 },
       cover: () => this.roofCover,
       scenery: () => this.sceneryByFootprint(),
+      occupants: () => this.occupants(),
       // the rooms under the roofs, their lights and the street's lamps follow the player's house
       onShow: () => {
         this.showInteriors();
@@ -2055,7 +2071,7 @@ export class HubScene extends Phaser.Scene {
    * own (FS-B0H2D R21), stays in sight over the roof. Walk-through: nothing here collides.
    * Returns the parts that hide with the room.
    */
-  private placeStashChest(): { setVisible(visible: boolean): unknown }[] {
+  private placeStashChest(): (Stamp & Visible)[] {
     const { at } = HUB_STASH_CHEST;
     if (!this.art.has(CHEST.sheet)) this.ensureChestPlaceholders();
 

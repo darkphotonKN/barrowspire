@@ -128,6 +128,14 @@ export class ProjectileFlights {
       flight.body?.setVisible(!hidden(flight.pos));
   }
 
+  /**
+   * Each flight's body and where it flies, for the blackout's mask (FS-9PN7X §D). Its trail and
+   * riding light are the runtime's.
+   */
+  standing(): { parts: Phaser.GameObjects.Image[]; at: Point }[] {
+    return [...this.flights.values()].map((f) => ({ parts: f.body ? [f.body] : [], at: f.pos }));
+  }
+
   /** How many projectiles are in flight. */
   tracked(): number {
     return this.flights.size;

@@ -449,6 +449,14 @@ export class MonsterRoster {
     }
   }
 
+  /**
+   * Each monster's body and where it is drawn, for the blackout's mask (FS-9PN7X §D). Its plate
+   * and bar stand over the dark, so they are not among its parts.
+   */
+  standing(): { parts: MonsterSprite[]; at: Point }[] {
+    return [...this.views.values()].map((view) => ({ parts: [view.sprite], at: view.pos }));
+  }
+
   private create(state: MonsterState): MonsterView {
     const look = monsterLook(state.archetype);
     const sheet = monsterSheet(look, state);

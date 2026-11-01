@@ -140,7 +140,9 @@ import {
   type BuiltParts,
   type Cover,
   type Figure,
+  type Occupant,
   type Scenery,
+  type Stamp,
   type FixedLight,
   type FixedLightKind,
   type FloorLook,
@@ -2366,6 +2368,7 @@ export class BarrowspireScene extends Phaser.Scene {
       blackout: { wallTop: () => this.wallTop, reach: (this.mapWidth + this.mapHeight) * 2 },
       cover: () => this.coverBesideRooms(),
       scenery: () => this.sceneryByFootprint(),
+      occupants: () => this.occupants(),
       onShow: () => this.showLights(),
     });
     return this.view;
@@ -3835,6 +3838,40 @@ export class BarrowspireScene extends Phaser.Scene {
     });
     if (this.perimeter) scenery.push({ parts: this.perimeter });
     return scenery;
+  }
+
+  /**
+   * Whatever stands on the floor besides the rooms' walls, for the blackout's mask (FS-9PN7X §D):
+   * the player and teammates, body and legs; monsters; containers and drop piles, the escape door,
+   * switches, stairs and run dressing; the doors in the rooms' walls; projectiles and world
+   * effects. Plates and bars stand over the dark, so none are here. A trail is a line on the
+   * floor, already inside the floor's px, so it is not either.
+   */
+  private *occupants(): Iterable<Occupant> {
+    if (this.player && this.playerPos) {
+      const parts: Stamp[] = [this.player];
+      if (this.playerLegs) parts.push(this.playerLegs);
+      yield { parts, at: this.playerPos };
+    }
+    for (const [id, sprite] of this.otherPlayers) {
+      const at = this.otherPlayersPos.get(id);
+      const legs = this.otherPlayersLegs.get(id);
+      if (at) yield { parts: legs ? [sprite, legs] : [sprite], at };
+    }
+    // the roster's and the runtime's objects are this scene's Phaser objects: its stage made them
+    for (const m of this.monsters?.standing() ?? []) yield m as unknown as Occupant;
+    for (const { sprite, pos } of [
+      ...this.chests.values(),
+      ...this.escapeDoors.values(),
+      ...this.switches.values(),
+      ...this.stairs.placed(),
+      ...this.dressingAt,
+    ])
+      yield { parts: [sprite], at: pos };
+    for (const { sprite, slab, pos } of this.serverDoors.values())
+      yield { parts: [...(sprite ? [sprite] : []), ...(slab ? [slab.plane.root] : [])], at: pos };
+    yield* this.projectiles?.standing() ?? [];
+    for (const fx of this.fx?.standing() ?? []) yield fx as unknown as Occupant;
   }
 
   /**
