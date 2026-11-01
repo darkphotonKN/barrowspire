@@ -19,16 +19,23 @@ export interface ItemTip {
   height: number;
 }
 
-const PAD = 10;
+const PAD = 14;
 /** The rarity accent edge down the tip's left side. */
 const EDGE = 3;
-const SECTION_GAP = 5;
+const SECTION_GAP = 8;
+const LINE_GAP = 2;
+
+/**
+ * Sizes on the guideline's type scale: the name as a lead, values and affixes as body, the
+ * smaller lines one step down, badges and stat labels as captions.
+ */
+const SIZE = { name: 18, body: 15, small: 13, caption: 12 } as const;
 
 /** A tip for one item, drawn with its top-left at (0, 0); the caller places and layers it. */
 export function buildItemTip(
   scene: Phaser.Scene,
   view: ItemView,
-  width = 220,
+  width = 280,
 ): ItemTip {
   const left = PAD + EDGE;
   const inner = width - left - PAD;
@@ -47,25 +54,26 @@ export function buildItemTip(
     color: number,
     fontStyle?: string,
   ) => {
-    const text = scene.add.text(left, y, words, {
+    // whole-pixel rows: a text drawn between pixels is smeared across two
+    const text = scene.add.text(left, Math.round(y), words, {
       ...style(size, color),
       ...(fontStyle ? { fontStyle } : {}),
     });
     children.push(text);
-    y += text.height + 1;
+    y += text.height + LINE_GAP;
   };
 
-  line(view.name, 14, palette.hudText, "bold");
+  line(view.name, SIZE.name, palette.hudText, "bold");
 
   // The badge: the rarity's label in its colour, then the kind of item.
   let badgeX = left;
   const badge = (words: string, color: number) => {
-    const text = scene.add.text(badgeX, y, words.toUpperCase(), {
-      ...style(10, color),
+    const text = scene.add.text(badgeX, Math.round(y), words.toUpperCase(), {
+      ...style(SIZE.caption, color),
       letterSpacing: 2,
     });
     children.push(text);
-    badgeX += text.width + 8;
+    badgeX = Math.round(badgeX + text.width + 10);
     return text.height;
   };
   const badgeH = Math.max(
@@ -81,7 +89,7 @@ export function buildItemTip(
   if (view.standing) {
     line(
       view.standing.note,
-      11,
+      SIZE.small,
       view.standing.kind === "unsafeFind"
         ? palette.unsafeFind
         : palette.hudLabel,
@@ -90,41 +98,42 @@ export function buildItemTip(
   }
 
   for (const stat of view.stats) {
-    const label = scene.add.text(left, y, stat.label.toUpperCase(), {
-      ...style(10, palette.frameBright),
+    const row = Math.round(y);
+    const label = scene.add.text(left, row, stat.label.toUpperCase(), {
+      ...style(SIZE.caption, palette.frameBright),
       letterSpacing: 1,
     });
     const value = scene.add
-      .text(width - PAD, y, stat.value, style(12, palette.hudText))
+      .text(width - PAD, row, stat.value, style(SIZE.body, palette.hudText))
       .setOrigin(1, 0);
     children.push(label, value);
-    y += Math.max(label.height, value.height) + 1;
+    y += Math.max(label.height, value.height) + LINE_GAP;
   }
   if (view.stats.length) y += SECTION_GAP;
 
   const { itemLevel, requirement, affixes, uniqueEffect } = view.lines;
-  line(itemLevel, 11, palette.hudLabel);
+  line(itemLevel, SIZE.small, palette.hudLabel);
   line(
     requirement.text,
-    11,
+    SIZE.small,
     requirement.tooHigh ? palette.damageBright : palette.hudLabel,
   );
 
   if (affixes.length) y += SECTION_GAP;
-  for (const affix of affixes) line(affix, 12, palette.hudText);
+  for (const affix of affixes) line(affix, SIZE.body, palette.hudText);
 
   if (uniqueEffect) {
     y += SECTION_GAP;
-    line(uniqueEffect, 12, palette.frameBright);
+    line(uniqueEffect, SIZE.body, palette.frameBright);
   }
   if (view.lore) {
     y += SECTION_GAP;
-    line(view.lore, 11, palette.hudLabel, "italic");
+    line(view.lore, SIZE.small, palette.hudLabel, "italic");
   }
 
-  const height = y + PAD - 1;
+  const height = Math.round(y + PAD - LINE_GAP);
   const bg = scene.add.graphics();
-  bg.fillStyle(palette.mapEdge, 0.95);
+  bg.fillStyle(palette.mapEdge, 0.97);
   bg.fillRoundedRect(0, 0, width, height, 6);
   bg.lineStyle(1, palette.frame, 0.5);
   bg.strokeRoundedRect(0, 0, width, height, 6);

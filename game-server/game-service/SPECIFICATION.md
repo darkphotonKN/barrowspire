@@ -51,7 +51,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Tear down a session
 - [ ] Generic instance-allocation contract (warm pool or spawn)
 - [ ] Seed run modifiers onto a roster
-- [ ] Switch a player between hub and run → FS-29KSH
+- [x] Switch a player between hub and run → FS-29KSH
 - [x] Leave a run early after dying → FS-QPDKN
 - [x] Start a solo run without the queue → FS-NSV3D
 - [x] Resolved players settle with the run despite leaving or disconnecting → FS-QPDKN
@@ -63,30 +63,30 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Interaction system for proximate openables
 - [x] Elimination system
 - [x] Rules system governing session end
-- [ ] Combat system → FS-77AB6
+- [x] Combat system → FS-77AB6
 - [ ] Skill system
 
 ### Gameplay actions
 
 - [x] Server-authoritative player entities
 - [x] Continuous-velocity movement
-- [ ] Apply attack damage in a combat system rather than inline → FS-77AB6
-- [ ] Item pickup
-- [ ] Equip and unequip
-- [ ] Bag capacity limit → FS-HRH2J
+- [x] Apply attack damage in a combat system rather than inline → FS-77AB6
+- [x] Item pickup
+- [x] Equip and unequip
+- [x] Bag capacity limit → FS-HRH2J
 - [x] Container loot drops from the template pool → FS-none
-- [ ] Sacks as a floor container alongside chests → FS-1D6BX
-- [ ] Rarity-rolled loot with themed names and type-flavoured stats → FS-F8T3H
-- [ ] Co-op runs without player-versus-player damage → FS-77AB6
-- [ ] Equipped gear contributes to character stats → FS-4R9M9
-- [ ] Item levels on dropped loot → FS-4R9M9
-- [ ] Random affixes on rolled loot → FS-4R9M9
-- [ ] Fabled uniques → FS-4R9M9
+- [x] Sacks as a floor container alongside chests → FS-1D6BX
+- [x] Rarity-rolled loot with themed names and type-flavoured stats → FS-F8T3H
+- [x] Co-op runs without player-versus-player damage → FS-77AB6
+- [x] Equipped gear contributes to character stats → FS-4R9M9
+- [x] Item levels on dropped loot → FS-4R9M9
+- [x] Random affixes on rolled loot → FS-4R9M9
+- [x] Fabled uniques → FS-4R9M9
 - [x] A player may end their own run as a death → FS-9K8EZ
 - [ ] Pickup allocated by the party's loot rule → FS-V780R
 - [x] Bag carried into runs and field worlds → FS-18Z5F
 - [x] Unsafe run finds lost on death → FS-18Z5F
-- [ ] Drink an equipped health potion → FS-P9G8R
+- [x] Drink an equipped health potion → FS-P9G8R
 
 ### Classes
 
@@ -96,29 +96,29 @@ matchmaking); this service is the engine they feed. ✅
 
 ### Enemies
 
-- [ ] Monsters that wander, chase and attack → FS-77AB6
-- [ ] Monster levels scaled to the party → FS-77AB6
-- [ ] Elite monsters → FS-77AB6
-- [ ] Demon boss → FS-77AB6
-- [ ] Loot drops from slain monsters → FS-4R9M9
+- [x] Monsters that wander, chase and attack → FS-77AB6
+- [x] Monster levels scaled to the party → FS-77AB6
+- [x] Elite monsters → FS-77AB6
+- [x] Demon boss → FS-77AB6
+- [x] Loot drops from slain monsters → FS-4R9M9
 
 ### Progression
 
-- [ ] Experience from kills → FS-BDA7X
-- [ ] Character levels with class stat growth → FS-BDA7X
-- [ ] Level requirements on equipment → FS-BDA7X
+- [x] Experience from kills → FS-BDA7X
+- [x] Character levels with class stat growth → FS-BDA7X
+- [x] Level requirements on equipment → FS-BDA7X
 
 ### Delve layout
 
-- [ ] Multi-floor delves → FS-F6F88
+- [x] Multi-floor delves → FS-F6F88
 
 ### Hub world
 
-- [ ] Shared hub world → FS-29KSH
-- [ ] Hub is a safe zone → FS-29KSH
+- [x] Shared hub world → FS-29KSH
+- [x] Hub is a safe zone → FS-29KSH
 - [ ] Wandering NPCs with dialogue → FS-29KSH
 - [x] Function NPCs kept clear of ambient NPCs → FS-MRZH7
-- [ ] Hub occupancy cap → FS-29KSH
+- [x] Hub occupancy cap → FS-29KSH
 - [ ] Hub shared across replicas → FS-JEAVX
 - [ ] Hub occupancy cap across replicas → FS-JEAVX
 - [x] Destination gates in the hub → FS-0XMCP
@@ -149,16 +149,16 @@ matchmaking); this service is the engine they feed. ✅
 
 ### Chat
 
-- [ ] Area chat across the pod → FS-WJGFJ
-- [ ] World chat across pods → FS-5SH4G
+- [x] Area chat across the pod → FS-WJGFJ
+- [x] World chat across pods → FS-5SH4G
 - [ ] Whisper a player on any pod → FS-KCQ06
 - [ ] Party chat within the party's pod → FS-XGW7H
 
 ### Transport
 
 - [x] WebSocket message hub
-- [ ] World identity in the state protocol → FS-29KSH
-- [ ] Route client messages from server-held session state → FS-29KSH
+- [x] World identity in the state protocol → FS-29KSH
+- [x] Route client messages from server-held session state → FS-29KSH
 
 ### Results
 
@@ -167,9 +167,9 @@ matchmaking); this service is the engine they feed. ✅
 
 ### Persistent world (MMO-RPG refactor)
 
-- [ ] Durable accounts and profile
-- [ ] Persistent inventory across runs
-- [ ] Progression persistence → FS-BDA7X
+- [x] Durable accounts and profile
+- [x] Persistent inventory across runs
+- [x] Progression persistence → FS-BDA7X
 
 ### Cross-context flows
 

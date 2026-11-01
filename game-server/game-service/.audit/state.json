@@ -1,6 +1,5 @@
 {
-  "spec-audit": {
-    "baseline": "7e1ed1c09a6b143534e3cad29713ad00bf796aa7",
-    "audited_at": "2026-07-25T00:00:00Z"
+  "modules": {
+    "game-service": { "baseline": "eaa0d13f45c7b1d87221f2bf396d509b784dfed3", "last_run": "2026-10-31T00:00:00Z" }
   }
 }

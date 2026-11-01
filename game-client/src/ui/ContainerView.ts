@@ -630,8 +630,10 @@ export class ContainerView {
     // Above the icon, unless a long tip (a unique's effect and lore) would leave the screen.
     const screenTop = this.root.y + (above - tip.height) * this.root.scaleY;
     tip.container.setPosition(
-      Math.min(Math.max(x - tip.width / 2, -half), half - tip.width),
-      screenTop >= 4 ? above - tip.height : below,
+      Math.round(
+        Math.min(Math.max(x - tip.width / 2, -half), half - tip.width),
+      ),
+      Math.round(screenTop >= 4 ? above - tip.height : below),
     );
     this.root.add(tip.container);
     this.tip = tip;

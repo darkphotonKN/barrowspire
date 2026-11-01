@@ -962,7 +962,7 @@ export class GearOverlay implements HudPanel {
     let y = py - 10;
     if (x + width > cam.width) x = px - width - 8;
     if (y + height > cam.height) y = Math.max(4, py - height - 8);
-    container.setPosition(x, y);
+    container.setPosition(Math.round(x), Math.round(y));
   }
 
   private hideTip(): void {
