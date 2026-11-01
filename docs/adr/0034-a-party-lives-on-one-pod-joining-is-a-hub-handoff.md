@@ -1,6 +1,6 @@
 # ADR-0034 — A party lives on one pod; joining it is a handoff into that pod's hub
 
-Status: accepted
+Status: superseded by [ADR-0036](0036-party-state-lives-in-redis-membership-spans-pods.md)
 Date: 2026-11-01
 Scope: `game-server/game-service`, `game-client`
 Realized by: [FS-R82NV](../specs/R82NV-party-formation.md) (party formation, hub handoff, presence

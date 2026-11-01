@@ -29,3 +29,8 @@ Scoped 2026-11-01 with Nick, as part of the party session.
 
 - Whether party events should also echo as `chat_notice` toasts, or only as party-channel lines.
 - Whether a system line's `scope` is the party id or omitted.
+
+- **Party chat must cross pods** (implied by FS-NCC9J, 2026-11-01; NOT discussed with Nick):
+  members may be on different pods, so "delivered in-process because every member is on the party
+  pod" no longer holds. Likely the same pod-inbox fan-out FS-NCC9J uses for `party_update`, with
+  the audience read from the pod's party cache. Confirm when this spec is written.

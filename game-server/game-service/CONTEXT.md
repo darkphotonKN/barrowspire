@@ -266,8 +266,8 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   are dropped at pop. Liveness, not a cleanup sweep, because a crashed pod never cleans up.
 - **Host pod** — the pod a match's run lives on. Currently the pod of the first popped player.
   Every matched player ends the match connected to it, and returns to *its* HUB world. For a
-  random match it becomes the auto-formed party's *party pod*; for a party entry the host pod
-  is simply the party pod, since the whole party already stands there.
+  party entry the host pod is simply the **leader's pod**, since the whole party has travelled
+  there. (A party has no pod of its own: ADR-0036.)
 
 ### Matchmaking (FS-K2HKP)
 
@@ -302,50 +302,80 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   none left spawns the arrival elsewhere. ("Formation" here is spatial; it has nothing to do with
   *party formation* below, which is players grouping up.)
 
-### Party (FS-R82NV, FS-BJNYC, FS-XGW7H, FS-V780R)
+### Party (FS-R82NV, FS-NCC9J, FS-BJNYC, FS-XGW7H, FS-V780R; ADR-0036)
 
 Before these specs, "party" was loose prose for "the players in a run". It is now a thing with
 an id. Use **roster** or **the run's players** for the people a run seats; use **party** only
 for the group below. The two coincide inside an instance by rule, not by definition.
 
+ADR-0036 (superseding ADR-0034) moved the party off any one pod. **Transition:** the same-pod
+build (FS-R82NV) still keeps a party in the memory of the pod that created it until FS-NCC9J
+rebuilds it on Redis; code written from now on uses the terms below.
+
 - **Party** — a named group of players, one **leader** and up to the configured size (2 now, at
-  most 4), that enters instances together and talks on its own chat channel. Lives on one pod
-  (its *party pod*), persists across instances until it empties, and is never stored: Redis holds
-  only the pointers other pods need, a database holds nothing. A player is in at most one party.
+  most 4), that enters instances together and talks on its own chat channel. Its state lives in
+  **Redis**, not on any pod; its members may stand on **different pods**, and it outlives any one
+  pod. It persists until it empties and is never stored in a database. A player is in at most
+  one party. A pod *holds players*, never a party.
 - **Leader** — the member who may invite, kick, transfer leadership, set the *loot rule*, and
-  start a *party entry*. The creator at first; a random matched player for an auto-formed party.
-  When the leader leaves or disconnects, the **earliest-joined** remaining member succeeds, at
-  once, even inside an instance. Succession is the one party change an instance never locks.
-- **Party pod** — the pod every member of a party is connected to: the leader's pod at creation,
-  the host pod for a party formed from a match. Joining a party means arriving on it (a *hub
-  handoff*). It never moves while the party lives.
+  start a *party entry*. May be on any pod. The creator at first; a random matched player for an
+  auto-formed party. When the leader leaves or is removed, the **earliest-joined** remaining
+  member succeeds, at once, even inside an instance. Succession is the one party change an
+  instance never locks.
+- **Leader's pod** — the pod the leader is connected to *at the moment it is asked*: where a
+  member's **travel** goes. It moves when the leader does. Not a home: the party's state is in
+  Redis whoever leads and wherever.
+- **Party pod** — *retired by ADR-0036.* It meant the one pod a party lived on and every member
+  had to be connected to. There is no such pod now; say **leader's pod** for where travel goes,
+  and **party cache** for a pod's copy of a party. (Still the right word when reading FS-R82NV's
+  same-pod build.)
+- **Party cache** — a pod's in-memory copy of the parties of the players it holds. Reads
+  (frames, panel, party chat audience, field loot allocation) come from it, so the hub loop and a
+  world's tick never wait on Redis; writes always go to Redis. Kept current by party letters and
+  re-read from Redis on each refresh. Never the source of truth: a stale cache can change what is
+  shown, never an outcome.
+- **Travel** — a member moving themselves to the village (hub world) of the **leader's pod**, by
+  a hub handoff they trigger from the button beside the leader in the party frames, only while
+  standing in their own village. The only way party members gather on one pod. Not a world
+  switch: a field is still entered by walking in from the same pod's village (ADR-0030).
 - **Hub handoff** — a handoff (same mechanic: new socket to the pod address, old one dropped)
-  whose destination is the party pod's hub world instead of a run. Used on invite acceptance and
-  to pull back a member who reconnected elsewhere. Still never used for fields (ADR-0030).
-- **Presence index** — the Redis lookup from a character name to `{player id, pod id}`, written
-  by the pod that holds the player, kept alive by TTL, deleted on leave. Answers "is this name
-  online, and where": invites use it; whisper (FS-KCQ06) will too. A name with no entry is
-  **offline**. Not a friends list and not a history.
-- **Pod inbox** — the Redis channel `pod:<podID>:inbox` each pod subscribes to for messages
-  addressed to one of *its* players from another pod (an invite, a pull-back). Rides the same
-  subscriber → hub-loop path as world chat. Distinct from the **match-start channel**, which
-  carries run coordination, and from the chat bus, which carries chat lines.
+  whose destination is a pod's hub world instead of a run. Used for a member's **travel**, and
+  for returning a reconnecting player to the pod still holding them (FS-MCYWK). No longer used on
+  invite acceptance. Never used for fields (ADR-0030).
+- **Presence index** — the Redis lookup from a character name, or a player id, to
+  `{player id, pod id, world}`, for **every connected player with a character**, in any world.
+  Written by the pod that holds the player, kept alive by TTL, deleted when they leave. Answers
+  "is this player online, and where": invites, party fan-out, reconnects and whisper (FS-KCQ06)
+  use it. A name with no entry is **offline**. Not a friends list and not a history.
+- **Pod inbox** — the Redis channel `pod:<podID>:inbox` each pod subscribes to for **letters**
+  addressed to one of *its* players from another pod (an invite, a reply, a party update). Rides
+  the same Redis client and subscriber → hub-loop shape as world chat. Distinct from the
+  **match-start channel**, which carries run coordination, and from the chat bus, which carries
+  chat lines.
 - **Party invite** — a request from a party to a named player to join, sent by its leader, found
-  through the presence index and delivered through the target's pod inbox. It is the party's,
-  not its sender's: it stands through a change of leader, and its answer goes to whoever leads
-  now. Pending until accepted, declined, expired (60 s), or **gone** (its party ended first; an
-  accept then hears `party_gone`). Accepting triggers the hub handoff; the player is a member
-  only once they arrive on the party pod.
+  through the presence index and delivered through the target's pod inbox, wherever they stand.
+  It is the party's, not its sender's: it stands through a change of leader, and its answer goes
+  to whoever leads now. While open it is a **reserved slot**. Pending until accepted, declined,
+  expired (60 s), or **gone** (its party ended first; an accept then hears `party_gone`).
+  **Accepting makes the player a member where they stand**, on any pod; nobody moves.
+- **Reserved slot** — an open invite counted against the party's size with its members, so the
+  party refuses invites beyond its free places and an accept always fits. Freed when the invite
+  is declined, expires or is gone. (The client draws it as a skeleton row in the party frames.)
+- **Away** — a member whose pod has not refreshed their party record for about 30 seconds (any
+  drop, by design not at once). Still a member; removed, with succession if they led, once the
+  record expires after **5 minutes**. Distinct from **offline** (no presence entry at all).
 - **Party entry** — the leader, standing at an instance's gate, taking the whole party into that
-  instance. Requires every member in the leader's world on the party pod (not at the gate); then
-  a *ready check*; then the run is built from the party exactly as `start_solo` builds one for
-  one player, and members are world-switched in. No handoff at entry, because nobody is elsewhere.
+  instance. Requires every member in the leader's world on the **leader's pod** (gathered there by
+  travel, not at the gate); then a *ready check*; then the run is built from the party exactly as
+  `start_solo` builds one for one player, and members are world-switched in. No handoff at entry,
+  because everyone has already travelled.
 - **Ready check** — the pending request a party entry sends every other member: accept within
   30 s or the entry is cancelled and the party told who declined or timed out. Same shape as an
   invite (sent, awaited, expired), different question.
 - **Auto-formed party** — the party the host pod creates at run creation from a random match's
-  roster, so matched strangers are a party too: party pod = host pod, leader at random, no
-  invites. A no-show (seat released) is not a member.
+  roster, so matched strangers are a party too: leader at random, no invites. A no-show (seat
+  released) is not a member. A solo run is a party of one (FS-BJNYC), so everyone in a run is in
+  a party.
 - **Instance lock** — while a party is inside an instance, leave, kick, transfer and loot-rule
   changes are refused. Disconnecting keeps the run's existing reconnect grace; only when it runs
   out does the player count as dead for that run. They remain a member regardless.
@@ -416,8 +446,9 @@ above; the rule is to qualify, never to rename.
   Redis channel, delivered by each pod to its own connections. **Not the ECS "world"**: a world
   is a simulation, world chat crosses all of them. Always "world chat", never a bare "world".
 - **Party chat** — the chat channel whose audience is the members of one party (scope key = the
-  party id). Delivered in-process like area chat, because every member is on the party pod; it
-  never touches the chat bus. Closed for a player with no party. Inside an instance it is that
+  party id). Members may be on different pods (ADR-0036), so a line reaches the others by party
+  letters through their pods' inboxes, its audience read from the party cache; it never touches
+  the chat bus. (To be confirmed in FS-XGW7H: ADR-0034's in-process delivery no longer holds.) Closed for a player with no party. Inside an instance it is that
   instance's chat, since members and occupants are the same people.
 - **System line** — a chat line with no sender, carried on a chat channel so it filters with it:
   party events and loot allocation notices ride the party channel this way. Rendered as system,
