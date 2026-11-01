@@ -1,13 +1,14 @@
 /**
- * The party frames (FS-R82NV R34, R35; FS-NCC9J R25–R27): on the left edge under the level/XP bar
- * and as wide as it, one frame per member while the player is in a party, the player's own first,
- * then the others in join order, then one skeleton row per open invite. Each member frame is a
- * medallion bust cut from the member's class sheet, their name (the leader's crown first), and a
- * bar slot: health and resource in the HUD's own bar style at half height, always for the player
- * (from their own state) and for a teammate when this world's state carries their health; any
- * other teammate shows name and bust alone, no word. An away teammate's frame is greyed. A
- * skeleton row is the invitee's name with a grey pulse where the bust and bars go, no countdown.
- * A resource the state does not carry yet is an empty bar.
+ * The party frames (FS-R82NV R34, R35; FS-NCC9J R25–R27; FS-CH21F R8–R12): on the left edge under
+ * the level/XP bar and as wide as it, one frame per member while the player is in a party, the
+ * player's own first, then the others in join order, then one skeleton row per open invite. Each
+ * member frame is a medallion bust cut from the member's class sheet, their name (the leader's
+ * crown first), and a bar slot: health and resource in the HUD's own bar style at half height,
+ * always for the player (from their own state) and, in every world the hub included, for a
+ * teammate when this world's state carries their health, with "Lv N" after that teammate's name;
+ * any other teammate shows name and bust alone, no word, no level. An away teammate's frame is
+ * greyed. A skeleton row is the invitee's name with a grey pulse where the bust and bars go, no
+ * countdown. A resource the state does not carry yet is an empty bar.
  *
  * It redraws from the party store on every `party_update` and from each state tick the scene
  * hands it (`show`); it asks the server for nothing. Once a frame it lets the store say the
@@ -35,6 +36,7 @@ import { drawHudButton, drawLeaderMark } from "./PartyPanel";
 import {
   PARTY_FRAMES_PLACEMENT,
   PARTY_LEADER_MARK_W,
+  PARTY_LEVEL_GAP,
   partyBustFrame,
   partyFrameRows,
   partyFramesFrame,
@@ -51,7 +53,7 @@ import { HUD_BAR_FILL, drawHudBar, drawHudPips } from "./ResourceHud";
 export interface PartyFramesDeps {
   store: StoreApi<PartyState>;
   selfId: () => string | undefined;
-  /** The world this player stands in: where the frames stand, and whether bars may show. */
+  /** The world this player stands in: where the frames stand, and whether Travel is live. */
   world: () => WorldType | null;
   /** Where each class's standing frame is found. */
   art: Pick<ArtLibrary, "resolve">;
@@ -82,6 +84,8 @@ export function mountPartyFrames(
 }
 
 const NAME_PX = 13;
+/** A teammate's "Lv N", a step under the name so the leader's row keeps room for the name. */
+const LEVEL_PX = 11;
 /** An away member's frame: its bust and ring dimmed to this. */
 const AWAY_ALPHA = 0.4;
 /** The skeleton's pulse: between these alphas, once each way per period; still under reduced motion. */
@@ -166,7 +170,7 @@ export class PartyFrames {
   private refresh(): void {
     const world = this.deps.world();
     const { party } = this.deps.store.getState();
-    this.rows = partyFrameRows(party, this.deps.selfId(), world, this.seen);
+    this.rows = partyFrameRows(party, this.deps.selfId(), this.seen);
     this.travel = travelButton(party, this.deps.selfId(), world);
 
     const { x, top } = PARTY_FRAMES_PLACEMENT[world ?? "hub"];
@@ -175,7 +179,7 @@ export class PartyFrames {
       top,
       this.rows.map((r) =>
         r.kind === "member"
-          ? [r.kind, r.player_id, r.name, r.class, r.leader, r.away]
+          ? [r.kind, r.player_id, r.name, r.class, r.leader, r.away, r.level]
           : [r.kind, r.name],
       ),
       this.travel,
@@ -262,7 +266,10 @@ export class PartyFrames {
       if (row.kind !== "member") {
         const room = partyNameRoom(this.rects[i], false, false);
         this.names.push(
-          fitted(this.text(name.x, name.y, row.name, palette.hudLabel, NAME_PX), room),
+          fitted(
+            this.text(name.x, name.y, row.name, palette.hudLabel, NAME_PX),
+            room,
+          ),
         );
         return;
       }
@@ -276,9 +283,23 @@ export class PartyFrames {
         row.leader,
         row.leader && this.travel !== "hidden",
       );
-      this.names.push(
-        fitted(this.text(nameX, name.y, row.name, colour, NAME_PX), room),
+      const label = this.text(nameX, name.y, row.name, colour, NAME_PX);
+      this.names.push(label);
+      if (row.level === undefined) {
+        fitted(label, room);
+        return;
+      }
+      // "Lv N" right after the name (FS-CH21F R10); the name gives up the room it takes
+      const level = this.text(
+        nameX,
+        name.y + NAME_PX - LEVEL_PX,
+        `Lv ${row.level}`,
+        row.away ? palette.hudFaint : palette.hudLabel,
+        LEVEL_PX,
       );
+      this.names.push(level);
+      fitted(label, room - level.width - PARTY_LEVEL_GAP);
+      level.setX(nameX + label.width + PARTY_LEVEL_GAP);
     });
 
     this.drawTravel(rings);

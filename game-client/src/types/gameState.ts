@@ -29,7 +29,11 @@ export interface PlayerState {
   escape: boolean;
   current_health?: number;
   max_health?: number;
-  /** The player's class resource (FS-8AY7S req 17): sent on `current_player` only. */
+  /**
+   * The player's class resource (FS-8AY7S req 17): sent on `current_player`, and on an
+   * `other_players` entry only for the recipient's party members (FS-CH21F R1, R2), in every
+   * world. Absent from everyone else, and from any server before FS-CH21F.
+   */
   resource?: ResourceState;
   /** The character's level (FS-BDA7X req 42); sent with every player, run and hub. */
   level?: number;
@@ -40,9 +44,9 @@ export interface PlayerState {
   /** Total experience that reaches the next level; absent at the cap (level 20). */
   next_level_at?: number;
   /**
-   * The Mercenary's parry stance (FS-MAMHR req 28): sent on a mercenary's own `current_player`
-   * only, absent for every other class and from `other_players`. Whether the stance is open
-   * this tick.
+   * The Mercenary's parry stance (FS-MAMHR req 28): sent on a mercenary's own `current_player`,
+   * and on their `other_players` entry to their party members (FS-CH21F R1); absent for every
+   * other class and to anyone outside the party. Whether the stance is open this tick.
    */
   parry_open?: boolean;
   /** Seconds left on the whiff lockout, 0 when none (FS-MAMHR req 28). A raw float. */

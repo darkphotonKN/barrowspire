@@ -38,6 +38,12 @@ export interface PartyMemberFrameRow {
   /** Away or offline: the frame is drawn greyed (FS-NCC9J R25). Never the player's own. */
   away: boolean;
   slot: PartyFrameSlot;
+  /**
+   * "Lv N" after the name (FS-CH21F R10): a teammate's broadcast level, only while their slot
+   * holds bars (this world's state lists them). Never on the player's own row, whose XP bar shows
+   * it, nor on a teammate elsewhere (R11).
+   */
+  level?: number;
 }
 
 /**
@@ -54,7 +60,7 @@ export type PartyFrameRow = PartyMemberFrameRow | PartySkeletonRow;
 /** The slice of a broadcast player the frames read. */
 export type SeenPlayer = Pick<
   PlayerState,
-  "id" | "current_health" | "max_health" | "resource"
+  "id" | "current_health" | "max_health" | "resource" | "level"
 >;
 
 /** What this state shows of the players: the player's own, and the others' broadcast. */
@@ -77,20 +83,13 @@ function selfSlotOf(me: SeenPlayer | null | undefined): PartyFrameSlot {
 }
 
 /**
- * A teammate's bar slot (FS-NCC9J R25): bars when this world's state lists the member with their
- * health, never in the hub (no bars there, FS-CH21F, FS-8AY7S R28); otherwise nothing. Decided
- * from the state alone, never from the party's `where`: a field of the same name on another pod
- * is not this world.
+ * A teammate's bar slot (FS-NCC9J R25; FS-CH21F R8, R12): bars when this world's state lists the
+ * member with their health, in every world, the hub included; otherwise nothing. Decided from the
+ * state alone, never from the party's `where` or `pod_id`: a field of the same name on another
+ * pod is not this world.
  */
-function slotOf(
-  world: WorldType | null,
-  seen: SeenPlayer | undefined,
-): PartyFrameSlot {
-  if (
-    world !== "hub" &&
-    seen?.current_health !== undefined &&
-    seen.max_health !== undefined
-  ) {
+function slotOf(seen: SeenPlayer | undefined): PartyFrameSlot {
+  if (seen?.current_health !== undefined && seen.max_health !== undefined) {
     return barsOf(fillOf(seen.current_health, seen.max_health), seen.resource);
   }
   return { kind: "none" };
@@ -109,14 +108,14 @@ function barsOf(
 /**
  * One row per member (R34): the player's own first, then the others in join order (the order the
  * party lists them), the leader's row flagged, an away teammate's marked. The player's row fills
- * from `current_player`, a teammate's from `other_players` by member id. Then one skeleton row per
+ * from `current_player`, a teammate's from `other_players` by member id, the same in every world
+ * (FS-CH21F R8, R12): the state alone decides, so the world is not asked. Then one skeleton row per
  * open invite (FS-NCC9J R26), skipping a name already among the members; never more rows than
  * the party's size. No party, no rows.
  */
 export function partyFrameRows(
   party: PartyUpdatePayload | null,
   selfId: string | undefined,
-  world: WorldType | null,
   seen: SeenState = {},
 ): PartyFrameRow[] {
   if (!party) return [];
@@ -125,6 +124,7 @@ export function partyFrameRows(
     m: PartyMember,
     away: boolean,
     slot: PartyFrameSlot,
+    level?: number,
   ): PartyMemberFrameRow => ({
     kind: "member",
     player_id: m.player_id,
@@ -133,7 +133,18 @@ export function partyFrameRows(
     leader: m.player_id === party.leader_id,
     away,
     slot,
+    ...(level !== undefined && { level }),
   });
+  const teammate = (m: PartyMember): PartyMemberFrameRow => {
+    const mate = byId.get(m.player_id);
+    const slot = slotOf(mate);
+    return row(
+      m,
+      memberAway(m),
+      slot,
+      slot.kind === "bars" ? mate?.level : undefined,
+    );
+  };
   const self = party.members.filter((m) => m.player_id === selfId);
   const others = party.members.filter((m) => m.player_id !== selfId);
   const names = new Set(party.members.map((m) => m.name));
@@ -142,9 +153,7 @@ export function partyFrameRows(
     .map((r): PartySkeletonRow => ({ kind: "skeleton", name: r.name }));
   const members = [
     ...self.map((m) => row(m, false, selfSlotOf(seen.current_player))),
-    ...others.map((m) =>
-      row(m, memberAway(m), slotOf(world, byId.get(m.player_id))),
-    ),
+    ...others.map(teammate),
   ];
   return [
     ...members,
@@ -278,6 +287,11 @@ export function partyTravelButtonRect(frame: PartyFrameRect): Rect {
 
 /** Room kept between a name's end and what follows it: the frame's edge or the Travel button. */
 const NAME_END_GAP = 6;
+/**
+ * Room kept between a teammate's name and the "Lv N" after it (FS-CH21F R10). The level is
+ * measured on the canvas, so the name's room less the level and this gap is what the name keeps.
+ */
+export const PARTY_LEVEL_GAP = 5;
 
 /**
  * How wide a frame's name may run (R34; FS-NCC9J R28): from where it starts, after the leader's

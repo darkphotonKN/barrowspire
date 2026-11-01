@@ -110,7 +110,7 @@ export function resourceBar(res: ResourceState): HudBar {
 /**
  * How full a teammate's overhead health bar is (req 27, 28), or null when none is drawn: none in
  * the hub, none over a teammate out of the delve (a corpse, or one who has escaped), and none
- * before the server has sent their health. Health only: a teammate's resource is not on the wire.
+ * before the server has sent their health. Health only: the overhead bar draws no resource.
  */
 export function teammateHealthFill(
   worldType: ClientGameState["world_type"],
