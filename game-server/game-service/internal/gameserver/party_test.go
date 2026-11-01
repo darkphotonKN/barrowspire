@@ -102,6 +102,15 @@ func (r *partyRig) inHubTracked(t *testing.T, name string) (*types.Player, *webs
 	return player, conn, inbox
 }
 
+// intoRun takes players, already seated here, down into a run of their own on this pod.
+func (r *partyRig) intoRun(t *testing.T, players ...*types.Player) {
+	t.Helper()
+	run := r.server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: players})
+	for _, p := range players {
+		require.Equal(t, run.ID, p.CurrentGameSessionId, "the run seats %s", p.Character.Name)
+	}
+}
+
 // queued puts player in the Spire queue, alone, so no match pops.
 func (r *partyRig) queued(t *testing.T, player *types.Player) {
 	t.Helper()
@@ -310,10 +319,10 @@ func TestPartyInvite_Unanswered_ExpiresAtSixtySeconds(t *testing.T) {
 }
 
 // Every refusal an invite can meet, each a party_notice by code, in order: the
-// sender's own standing first (the leader, not queued), then the rest of
-// FS-NCC9J R10's list. Rows that would meet two refusals prove the earlier one wins. Nothing
-// reaches the named target. FS-R82NV R11, R12, R16; Edge States "Invitee is in
-// a field or run", "Invitee is queued".
+// sender's own standing first (not in a run, the leader, not queued), then the rest of
+// FS-NCC9J R10's list (delving after not_found). Rows that would meet two refusals prove the
+// earlier one wins. Nothing reaches the named target. FS-R82NV R11, R12, R16; Edge States
+// "Invitee is in a field or run", "Invitee is queued".
 func TestPartyInvite_Refusals_InOrder(t *testing.T) {
 	tests := []struct {
 		name string
@@ -325,6 +334,19 @@ func TestPartyInvite_Refusals_InOrder(t *testing.T) {
 		// the name the notice carries for the client's copy (R36); "" for none
 		wantName string
 	}{
+		{
+			// nobody forms a party inside the tower (FS-NCC9J R9, R10 amended)
+			name: "inviter in a run, ahead of not the leader",
+			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox, string) {
+				_, wrenConn, wrenInbox := r.inHub(t, "Wren")
+				kaelen, kaelenConn, kaelenInbox := r.inHub(t, "Kaelen")
+				r.inHub(t, "Idris")
+				r.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
+				r.intoRun(t, kaelen)
+				return kaelenConn, kaelenInbox, "Idris"
+			},
+			wantCode: "locked",
+		},
 		{
 			name: "not the leader, ahead of a full party",
 			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox, string) {
@@ -383,6 +405,20 @@ func TestPartyInvite_Refusals_InOrder(t *testing.T) {
 			wantName: "Nobody",
 		},
 		{
+			// a target in a run could never accept, so is never asked (FS-NCC9J R10 amended)
+			name: "target in a run, ahead of already in a party",
+			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox, string) {
+				_, conn, inbox := r.inHub(t, "Wren")
+				_, idrisConn, idrisInbox := r.inHub(t, "Idris")
+				kaelen, kaelenConn, kaelenInbox := r.inHub(t, "Kaelen")
+				r.partied(t, idrisConn, idrisInbox, "Kaelen", kaelenConn, kaelenInbox)
+				r.intoRun(t, kaelen)
+				return conn, inbox, "kaelen"
+			},
+			wantCode: "delving",
+			wantName: "Kaelen",
+		},
+		{
 			name: "target already in a party",
 			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox, string) {
 				_, conn, inbox := r.inHub(t, "Wren")
@@ -427,6 +463,24 @@ func TestPartyInvite_Refusals_InOrder(t *testing.T) {
 			}
 		})
 	}
+}
+
+// An invite to a player delving on this pod is refused delving before anything is written: the
+// target is never asked, no slot is reserved, and an inviter with no party is left in none
+// (FS-NCC9J R10 amended; AC "An invite to a player in a run is refused delving").
+func TestPartyInvite_TargetInARun_DelvingAndNothingFormed(t *testing.T) {
+	rig := newPartyRig(t)
+	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	_, _, kaelenInbox := rig.inRun(t, "Kaelen")
+
+	sendParty(rig.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Kaelen"})
+
+	refused := awaitParty(t, wrenInbox, partyNoticeAction, "Wren")
+	assert.Equal(t, "delving", refused.Payload["code"])
+	assert.Equal(t, "Kaelen", refused.Payload["name"])
+	assertNoParty(t, kaelenInbox, partyInviteAction, "Kaelen: never asked")
+	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren: no party formed, no slot reserved")
+	assert.False(t, rig.mini.Exists(pointerKey(wren.ID)), "the invite script never ran: Wren leads no party")
 }
 
 // An accept is refused when the accepter could not join now: inside a run,
@@ -1032,15 +1086,36 @@ func TestPartyCreate_FormsAPartyOfOne(t *testing.T) {
 	assertNoParty(t, wrenInbox, partyNoticeAction, "Wren: a create succeeds without a notice")
 }
 
-// Create is refused, by code, in FS-NCC9J R15's order: already in a party,
-// queued for the Spire. A row meeting both proves the earlier one wins.
-// Nothing is formed. FS-NCC9J R15.
+// Create is refused, by code, in FS-NCC9J R15's order: in a run, already in a
+// party, queued for the Spire. Rows meeting more than one prove the earliest
+// wins. Nothing is formed. FS-NCC9J R15.
 func TestPartyCreate_Refusals_InOrder(t *testing.T) {
 	tests := []struct {
 		name     string
 		arrange  func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox)
 		wantCode string
 	}{
+		{
+			// nobody forms a party inside the tower (FS-NCC9J R15 amended)
+			name: "in a run, though in a party and queued too",
+			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox) {
+				wren, conn, inbox := r.inHub(t, "Wren")
+				sendParty(r.server, conn, partyCreateAction, map[string]interface{}{})
+				awaitUpdate(t, inbox, "joined", wren.ID, "Wren")
+				r.queued(t, wren)
+				r.intoRun(t, wren)
+				return conn, inbox
+			},
+			wantCode: "locked",
+		},
+		{
+			name: "in a run",
+			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox) {
+				_, conn, inbox := r.inRun(t, "Wren")
+				return conn, inbox
+			},
+			wantCode: "locked",
+		},
 		{
 			name: "already in a party, though queued too",
 			arrange: func(t *testing.T, r *partyRig) (*websocket.Conn, *startSoloInbox) {

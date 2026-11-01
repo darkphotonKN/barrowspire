@@ -167,6 +167,8 @@ const (
 	PartyNoticeAlreadyInParty PartyNoticeCode = "already_in_party"
 	PartyNoticePodFull        PartyNoticeCode = "pod_full"
 	PartyNoticePending        PartyNoticeCode = "pending"
+	// PartyNoticeDelving: the invite's target is in a run, so is never asked. FS-NCC9J R10.
+	PartyNoticeDelving PartyNoticeCode = "delving"
 
 	// PartyNoticeUnavailable: Redis cannot be reached, so the party cannot change. FS-NCC9J R8.
 	PartyNoticeUnavailable PartyNoticeCode = "unavailable"
