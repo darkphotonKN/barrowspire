@@ -1,6 +1,6 @@
 ---
 id: I-NCC9J-8
-status: open
+status: in-progress
 implements: FS-NCC9J
 blocked_by: []
 labels: [ready-for-agent]
@@ -21,10 +21,10 @@ Implements FS-NCC9J §Requirements R28
 
 ## Acceptance Criteria
 
-- [ ] The button shows beside the leader for a member on another pod and not for one on the leader's pod or for the leader.
-- [ ] Greyed in a field, in a run, and while the leader is offline; pressing it then sends nothing.
-- [ ] In town it sends `party_travel`; a `world_handoff {hub: true}` moves the socket; a refused move keeps the old one.
-- [ ] `vitest` green; lint fence passes.
+- [x] The button shows beside the leader for a member on another pod and not for one on the leader's pod or for the leader.
+- [x] Greyed in a field, in a run, and while the leader is offline; pressing it then sends nothing.
+- [x] In town it sends `party_travel`; a `world_handoff {hub: true}` moves the socket; a refused move keeps the old one.
+- [x] `vitest` green; lint fence passes.
 
 ## Blocked By
 
@@ -47,3 +47,23 @@ FS-NCC9J §Requirements R28; §User Stories 8–11.
   I-NCC9J-7's `PartyFrameRow` union.
 - **`where` is now `hub` | `field` | `run`** (I-NCC9J-3 E6): `partyWhereLabel` must map `"field"`
   to "afield" (today it only knows `field:<id>`). One line; part of this slice.
+
+## Implementation notes (2026-11-02)
+
+- `travelButton(party, selfId, world)` (`partyFramesLayout.ts`): hidden with no party, for the
+  leader, and when the player's `pod_id` matches the leader's (a server that sends no `pod_id`
+  hides it); greyed outside the town and while the leader is away (`online: false`); live
+  otherwise.
+- The button sits **inside** the leader's frame, on the name line at its right end: the T panel
+  opens 18 px right of the frames, so a button past the frame's edge would sit under it.
+- `SocketManager` follows `world_handoff {hub: true}` apart from a run's: a plain connection to
+  `addr` that sends `enter_hub` as the active character once open; the hub's `world_entered`
+  promotes it. A refused entry (its message said as a system line) or an unreachable server keeps
+  the old socket. The delve's `world_handoff` listener never hears a travel.
+
+## Browser check (pending)
+
+Two pods: a member in their town on pod B presses Travel beside a leader on pod A, lands in
+pod A's hub with the party shown; greyed in a field and while the leader is away; a full hub keeps
+them on pod B with "The hub is full. Try again shortly."
+
