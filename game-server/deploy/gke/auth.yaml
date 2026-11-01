@@ -34,7 +34,7 @@ spec:
           resources:
             # Reserved by the scheduler. On GKE Autopilot this is what you are billed for.
             # 100m = 0.1 CPU.
-            requests: { cpu: 100m, memory: 128Mi }
+            requests: { cpu: 50m, memory: 128Mi }
             # CPU over the limit: throttled (shows up as latency in traces).
             # Memory over the limit: killed instantly, no Go log. Look for
             # `OOMKilled` / exit code 137 in `kubectl describe pod`, and read
@@ -61,7 +61,7 @@ apiVersion: v1
 kind: Service
 # This name IS the DNS name: other services use AUTH_ADDR=auth:7116.
 # Renaming it breaks every caller.
-metadata: { name: auth }
+metadata: { name: auth, labels: { app: auth } }
 spec:
   # Which pods get traffic: same label as the Deployment's pods. The label is
   # the only link; the Service and Deployment never reference each other.

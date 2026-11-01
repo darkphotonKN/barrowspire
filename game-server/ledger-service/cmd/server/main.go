@@ -61,6 +61,7 @@ func main() {
 	// -- server --
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
+			commoninterceptor.Metrics(),
 			commoninterceptor.Recovery(slog.Default()),
 			commonauth.Auth(validate),
 		),

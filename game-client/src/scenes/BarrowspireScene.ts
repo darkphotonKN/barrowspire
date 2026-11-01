@@ -55,6 +55,7 @@ import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
+import { showsPositionReadout } from "@/ui/positionReadout";
 import { ResultHold } from "@/components/resultHold";
 import { GameStateLogger } from "@/utils/gameStateLogger";
 import {
@@ -3910,15 +3911,8 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   private createUI(): void {
-    const posText = this.add.text(10, 10, "", {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "14px",
-      color: toCss(palette.hudText),
-      backgroundColor: toCss(palette.hudPanel),
-      padding: { x: 10, y: 5 },
-    });
-    posText.setScrollFactor(0);
-    posText.setDepth(1000);
+    // a developer aid, left out of production builds
+    if (showsPositionReadout()) this.createPositionReadout();
 
     // Escaped players count (top-right)
     this.escapedCountText = this.add.text(
@@ -3954,6 +3948,19 @@ export class BarrowspireScene extends Phaser.Scene {
     this.floorText.setScrollFactor(0);
     this.floorText.setDepth(1000);
     this.floorText.setVisible(false);
+  }
+
+  /** The debug position line (top-left): the player's x/y, refreshed every frame. */
+  private createPositionReadout(): void {
+    const posText = this.add.text(10, 10, "", {
+      fontFamily: CANVAS_FONT.body,
+      fontSize: "14px",
+      color: toCss(palette.hudText),
+      backgroundColor: toCss(palette.hudPanel),
+      padding: { x: 10, y: 5 },
+    });
+    posText.setScrollFactor(0);
+    posText.setDepth(1000);
 
     // 每幀更新座標 — scene events outlive a shutdown, so the listener goes with it
     const showPosition = () => {

@@ -17,8 +17,8 @@ spec:
             - configMapRef: { name: payment }
             - secretRef: { name: payment }
           resources:
-            requests: { cpu: 250m, memory: 256Mi }
-            limits: { cpu: 500m, memory: 256Mi }
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 128Mi }
           # No probes yet: payment does not register a gRPC health service.
 ---
 apiVersion: v1

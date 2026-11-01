@@ -58,6 +58,10 @@ func (r *fakeRetriever) GetPendingOutboxItems(_ context.Context, _ *int) ([]*Out
 	return r.rows, nil
 }
 
+func (r *fakeRetriever) GetBacklog(_ context.Context) (Backlog, error) {
+	return Backlog{Rows: len(r.rows)}, nil
+}
+
 func (r *fakeRetriever) UpdateOutboxToPublished(ctx context.Context, id uuid.UUID) error {
 	if err := ctx.Err(); err != nil {
 		return err

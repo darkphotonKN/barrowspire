@@ -17,6 +17,8 @@ require (
 	google.golang.org/protobuf v1.36.11
 )
 
+require github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.1 // indirect
+
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

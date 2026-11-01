@@ -23,6 +23,7 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	"google.golang.org/grpc"
 )
 
@@ -120,7 +121,7 @@ func main() {
 	redisClient := config.GetClient()
 
 	// --- grpc ---
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
 
 	// create a network listener to this service
 	listener, err := net.Listen("tcp", ":"+grpcAddr)

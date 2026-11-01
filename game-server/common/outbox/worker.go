@@ -31,6 +31,7 @@ type OutboxWorker struct {
 type OutboxRetriever interface {
 	GetPendingOutboxItems(ctx context.Context, limit *int) ([]*OutboxEvent, error)
 	UpdateOutboxToPublished(ctx context.Context, id uuid.UUID) error
+	GetBacklog(ctx context.Context) (Backlog, error)
 }
 
 func NewOutboxWorker(workCycle time.Duration, batchCount int, outboxRetriever OutboxRetriever, publishCh commonbroker.Publisher, wg *sync.WaitGroup) *OutboxWorker {
@@ -85,6 +86,7 @@ func (w *OutboxWorker) Run(ctx context.Context) {
 		}
 		publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second*30)
 		_ = w.PublishOutboxEvents(publishCtx) // errors are logged inside; the next tick retries
+		w.recordBacklog(publishCtx)
 		cancel()
 	}
 }
@@ -138,6 +140,22 @@ func (w *OutboxWorker) PublishOutboxEvents(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+/**
+* Sets the backlog gauges after a cycle. On a failed read they keep the last
+* value rather than drop to 0, which would look like a healthy empty outbox.
+**/
+func (w *OutboxWorker) recordBacklog(ctx context.Context) {
+	backlog, err := w.outboxRetriever.GetBacklog(ctx)
+	if err != nil {
+		slog.Error("Error when attempting to read the outbox backlog.",
+			"err", err)
+		return
+	}
+
+	unpublishedRows.Set(float64(backlog.Rows))
+	oldestUnpublishedAge.Set(backlog.OldestAgeSeconds)
 }
 
 /**

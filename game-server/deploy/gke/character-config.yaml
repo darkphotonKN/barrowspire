@@ -11,4 +11,4 @@ data:
   RABBITMQ_HOST: "rabbitmq"
   RABBITMQ_PORT: "5672"
   OTEL_ENABLED: "false"
-  GOMEMLIMIT: "230MiB"
+  GOMEMLIMIT: "115MiB"

@@ -72,7 +72,7 @@ prometheus:
     retention: 7d
     resources:
       requests:
-        cpu: 500m
+        cpu: 200m
         memory: 1Gi
     storageSpec:
       volumeClaimTemplate:
@@ -107,7 +107,7 @@ grafana:
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 512Mi
   sidecar:
     resources:
       requests:

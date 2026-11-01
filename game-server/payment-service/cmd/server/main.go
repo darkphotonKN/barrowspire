@@ -16,6 +16,7 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"github.com/stripe/stripe-go/v82"
+	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	"google.golang.org/grpc"
 )
 
@@ -51,7 +52,7 @@ func main() {
 	defer db.Close()
 
 	// --- grpc ---
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
 
 	listener, err := net.Listen("tcp", ":"+grpcAddr)
 	if err != nil {

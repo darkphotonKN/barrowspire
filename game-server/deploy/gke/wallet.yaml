@@ -6,7 +6,7 @@ spec:
   # Migrate-on-boot serialises on a postgres advisory lock. Known, deferred:
   # each replica's outbox worker can publish the same row (no SKIP LOCKED in
   # common/outbox).
-  replicas: 3
+  replicas: 1
   selector: { matchLabels: { app: wallet } }
   template:
     metadata: { labels: { app: wallet } }
@@ -20,8 +20,8 @@ spec:
             - configMapRef: { name: wallet }
             - secretRef: { name: wallet }
           resources:
-            requests: { cpu: 250m, memory: 256Mi }
-            limits: { cpu: 500m, memory: 256Mi }
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 128Mi }
           # No probes yet: wallet does not register a gRPC health service.
 ---
 apiVersion: v1

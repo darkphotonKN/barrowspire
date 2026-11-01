@@ -90,6 +90,7 @@ func main() {
 	// input) into gRPC codes in one place.
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
+			commoninterceptor.Metrics(),
 			commoninterceptor.Recovery(slog.Default()),
 			commoninterceptor.Status(slog.Default()),
 		),
