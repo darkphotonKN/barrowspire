@@ -1,34 +1,55 @@
 /**
- * The party frames' pure half (FS-R82NV R34, R35): which rows the left edge shows, what fills each
- * row's bar slot, and where every part sits. The scene-side `PartyFrames` draws what these return.
+ * The party frames' pure half (FS-R82NV R34, R35; FS-NCC9J R25, R26): which rows the left edge
+ * shows, what fills each member's bar slot, and where every part sits. The scene-side
+ * `PartyFrames` draws what these return.
  */
 
 import type { WorldType } from "@/assets/types/client";
-import type { PartyMember, PartyUpdatePayload } from "@/stores/partyStore";
+import {
+  memberAway,
+  reservedSlots,
+  type PartyMember,
+  type PartyUpdatePayload,
+} from "@/stores/partyStore";
 import type { PlayerState } from "@/types/gameState";
 import { characterSheet } from "@/render/art/animationSelect";
 import type { FrameQuery } from "@/render/art/library";
 import { directionIndex } from "@/render/art/manifest";
-import { partyWhereLabel, type Rect } from "./partyPanelLayout";
+import type { Rect } from "./partyPanelLayout";
 import { PROGRESS_HUD_AT, PROGRESS_HUD_H, PROGRESS_HUD_W } from "./ProgressHud";
 import { fillOf, resourceBar, type HudBar } from "./resources";
 
 /**
- * What a frame's bar slot holds: the member's health (and resource, when it is on the wire) as
- * the state broadcast carries them (FS-CH21F), or a short state word where it does not (R34).
+ * What a member frame's bar slot holds: the member's health (and resource, when it is on the
+ * wire) as this world's state carries them (FS-CH21F), or nothing where it does not: the missing
+ * bars are the "not here" signal (FS-NCC9J R25).
  */
 export type PartyFrameSlot =
   | { kind: "bars"; health: number; resource?: HudBar }
-  | { kind: "word"; word: string };
+  | { kind: "none" };
 
 /** One member's frame. */
-export interface PartyFrameRow {
+export interface PartyMemberFrameRow {
+  kind: "member";
   player_id: string;
   name: string;
   class: string;
   leader: boolean;
+  /** Away or offline: the frame is drawn greyed (FS-NCC9J R25). Never the player's own. */
+  away: boolean;
   slot: PartyFrameSlot;
 }
+
+/**
+ * An open invite's row (FS-NCC9J R26): the invitee's name, a grey pulse where the bust and bars
+ * go, no countdown.
+ */
+export interface PartySkeletonRow {
+  kind: "skeleton";
+  name: string;
+}
+
+export type PartyFrameRow = PartyMemberFrameRow | PartySkeletonRow;
 
 /** The slice of a broadcast player the frames read. */
 export type SeenPlayer = Pick<
@@ -56,16 +77,15 @@ function selfSlotOf(me: SeenPlayer | null | undefined): PartyFrameSlot {
 }
 
 /**
- * A teammate's bar slot (R34): a disconnected member is "away" whatever a stale state says; bars
- * when this world's broadcast lists the member with their health, never in the hub (no bars
- * there, FS-CH21F, FS-8AY7S R28); otherwise the word for where the party pod says they stand.
+ * A teammate's bar slot (FS-NCC9J R25): bars when this world's state lists the member with their
+ * health, never in the hub (no bars there, FS-CH21F, FS-8AY7S R28); otherwise nothing. Decided
+ * from the state alone, never from the party's `where`: a field of the same name on another pod
+ * is not this world.
  */
 function slotOf(
-  m: PartyMember,
   world: WorldType | null,
   seen: SeenPlayer | undefined,
 ): PartyFrameSlot {
-  if (m.where === "away" || !m.online) return { kind: "word", word: "away" };
   if (
     world !== "hub" &&
     seen?.current_health !== undefined &&
@@ -73,7 +93,7 @@ function slotOf(
   ) {
     return barsOf(fillOf(seen.current_health, seen.max_health), seen.resource);
   }
-  return { kind: "word", word: partyWhereLabel(m.where) };
+  return { kind: "none" };
 }
 
 /** A bar slot: the health fill, and the resource when the state carries one. */
@@ -88,8 +108,10 @@ function barsOf(
 
 /**
  * One row per member (R34): the player's own first, then the others in join order (the order the
- * party pod lists them), the leader's row flagged. The player's row fills from `current_player`,
- * a teammate's from `other_players` by member id. No party, no rows.
+ * party lists them), the leader's row flagged, an away teammate's marked. The player's row fills
+ * from `current_player`, a teammate's from `other_players` by member id. Then one skeleton row per
+ * open invite (FS-NCC9J R26), skipping a name already among the members; never more rows than
+ * the party's size. No party, no rows.
  */
 export function partyFrameRows(
   party: PartyUpdatePayload | null,
@@ -99,18 +121,34 @@ export function partyFrameRows(
 ): PartyFrameRow[] {
   if (!party) return [];
   const byId = new Map((seen.other_players ?? []).map((p) => [p.id, p]));
-  const row = (m: PartyMember, slot: PartyFrameSlot): PartyFrameRow => ({
+  const row = (
+    m: PartyMember,
+    away: boolean,
+    slot: PartyFrameSlot,
+  ): PartyMemberFrameRow => ({
+    kind: "member",
     player_id: m.player_id,
     name: m.name,
     class: m.class,
     leader: m.player_id === party.leader_id,
+    away,
     slot,
   });
   const self = party.members.filter((m) => m.player_id === selfId);
   const others = party.members.filter((m) => m.player_id !== selfId);
+  const names = new Set(party.members.map((m) => m.name));
+  const skeletons = reservedSlots(party)
+    .filter((r) => !names.has(r.name))
+    .map((r): PartySkeletonRow => ({ kind: "skeleton", name: r.name }));
+  const members = [
+    ...self.map((m) => row(m, false, selfSlotOf(seen.current_player))),
+    ...others.map((m) =>
+      row(m, memberAway(m), slotOf(world, byId.get(m.player_id))),
+    ),
+  ];
   return [
-    ...self.map((m) => row(m, selfSlotOf(seen.current_player))),
-    ...others.map((m) => row(m, slotOf(m, world, byId.get(m.player_id)))),
+    ...members,
+    ...skeletons.slice(0, Math.max(0, party.size - members.length)),
   ];
 }
 
@@ -145,8 +183,6 @@ export interface PartyFrameRect {
   name: { x: number; y: number };
   health: Rect;
   resource: Rect;
-  /** The state word's top-left, in the bar slot. */
-  word: { x: number; y: number };
 }
 
 /**
@@ -165,10 +201,9 @@ const TEXT_GAP = 8;
 /** Half the HUD's own 8 px bar (`ResourceHud`), as R34 asks. */
 const BAR_H = 4;
 const BAR_GAP = 3;
-/** Where the name, the bars and the state word sit below a frame's top edge. */
+/** Where the name and the bars sit below a frame's top edge. */
 const NAME_Y = 3;
 const HEALTH_Y = 22;
-const WORD_Y = 19;
 /** Room the leader's crown takes before the name. */
 export const PARTY_LEADER_MARK_W = 14;
 
@@ -193,7 +228,6 @@ export function partyFramesFrame(
       name: { x: textX, y: y + NAME_Y },
       health: { ...bar, y: y + HEALTH_Y },
       resource: { ...bar, y: y + HEALTH_Y + BAR_H + BAR_GAP },
-      word: { x: textX, y: y + WORD_Y },
     };
   });
 }

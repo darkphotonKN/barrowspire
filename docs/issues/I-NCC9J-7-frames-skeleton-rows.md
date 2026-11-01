@@ -1,6 +1,6 @@
 ---
 id: I-NCC9J-7
-status: open
+status: in-progress
 implements: FS-NCC9J
 blocked_by: []
 labels: [ready-for-agent]
