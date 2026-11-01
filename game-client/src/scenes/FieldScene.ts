@@ -48,6 +48,7 @@ import { ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
+import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars } from "@/ui/resources";
@@ -168,6 +169,8 @@ export class FieldScene extends Phaser.Scene {
   private partyPanel?: PartyPanel;
   /** The teammates' frames at the top-left corner (FS-R82NV R34). */
   private partyFrames?: PartyFrames;
+  /** Invites waiting on an answer, top centre: an invite reaches a field too (FS-NCC9J R24). */
+  private invitePrompt?: PartyInvitePrompt;
   private abilityHud?: AbilityHud;
   /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
   private lastState?: ClientGameState;
@@ -224,6 +227,8 @@ export class FieldScene extends Phaser.Scene {
     this.chatWindow = mountChatWindow(this, () => !this.equipment?.isOpen());
     // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
     this.partyPanel = mountPartyPanel(this, () => !!this.equipment?.isOpen());
+    // party invites, never hidden in a field, stacked clear of the chat window (FS-NCC9J R24)
+    this.invitePrompt = mountPartyInvitePrompt(this, () => false, () => this.chatWindow?.topEdge());
     // the teammates' frames: bars for those this field's state shows, a word for the rest (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
 
@@ -370,6 +375,8 @@ export class FieldScene extends Phaser.Scene {
     if (this.chatWindow?.covers(x, y)) return true;
     // and one on the open party panel is the panel's (FS-R82NV R28)
     if (this.partyPanel?.covers(x, y)) return true;
+    // and one on an invite prompt is the prompt's (FS-NCC9J R24)
+    if (this.invitePrompt?.covers(x, y)) return true;
     return this.satchel?.pointerDown(x, y, primary) ?? false;
   }
 
@@ -394,6 +401,8 @@ export class FieldScene extends Phaser.Scene {
     this.chatWindow = undefined;
     this.partyPanel?.destroy();
     this.partyPanel = undefined;
+    this.invitePrompt?.destroy();
+    this.invitePrompt = undefined;
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
     this.abilityHud = undefined;

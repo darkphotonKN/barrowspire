@@ -227,6 +227,11 @@ export class ChatWindow {
     this.relayout();
   }
 
+  /** The screen y of the panel's top edge as it now sits: what the invite prompts stack down to (FS-NCC9J R24). */
+  topEdge(): number {
+    return this.frameNow().panel.y;
+  }
+
   destroy(): void {
     this.unsubscribe();
     this.scene.input?.off("wheel", this.onWheel, this);

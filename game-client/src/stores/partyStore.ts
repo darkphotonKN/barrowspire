@@ -207,9 +207,9 @@ export interface PartyMemberRow {
 export interface PartyActions {
   inParty: boolean;
   locked: boolean;
-  /** The Create party button (R30): only in the hub, by a player in no party. */
+  /** The Create party button (R30): in any world, by a player in no party (FS-NCC9J R23). */
   create: boolean;
-  /** The invite field: only in the hub, by a leader or a player in no party, with room left. */
+  /** The invite field: in any world, by a leader or a player in no party, with room left (FS-NCC9J R23). */
   invite: boolean;
   leave: boolean;
   members: PartyMemberRow[];
@@ -225,13 +225,13 @@ export function partyActions(
   world: WorldType | null,
 ): PartyActions {
   const locked = partyLocked(world);
-  const inHub = world === "hub";
+  // Invite and Create work in every world (FS-NCC9J R23); the lock holds only the roster
   if (!party) {
     return {
       inParty: false,
       locked,
-      create: inHub,
-      invite: inHub,
+      create: true,
+      invite: true,
       leave: false,
       members: [],
     };
@@ -242,7 +242,7 @@ export function partyActions(
     inParty: true,
     locked,
     create: false,
-    invite: inHub && leads && room,
+    invite: leads && room,
     leave: !locked,
     members: party.members.map((m) => {
       const self = m.player_id === selfId;

@@ -59,11 +59,13 @@ describe("partyActions (FS-R82NV R29: greyed by role and by lock)", () => {
     ]);
   });
 
+  // FS-NCC9J R23: the leader invites from any world; the lock still holds leave
   it.each([
     ["leader in the hub", ME, "hub", { invite: true, leave: true }],
     ["member in the hub", ALLY, "hub", { invite: false, leave: true }],
-    ["leader afield", ME, "field", { invite: false, leave: true }],
-    ["leader delving (locked)", ME, "run", { invite: false, leave: false }],
+    ["leader afield", ME, "field", { invite: true, leave: true }],
+    ["member afield", ALLY, "field", { invite: false, leave: true }],
+    ["leader delving (locked)", ME, "run", { invite: true, leave: false }],
     ["member delving (locked)", ALLY, "run", { invite: false, leave: false }],
   ] as const)("%s", (_case, self, world, want) => {
     const actions = partyActions(update(), self, world);
@@ -88,12 +90,12 @@ describe("partyActions (FS-R82NV R29: greyed by role and by lock)", () => {
   });
 
   it.each(["field", "run", null] as const)(
-    "should grey Create party and the invite for a player in no party in %s (R30)",
+    "should offer a player in no party Create party and the invite in %s too (FS-NCC9J R23)",
     (world) => {
       const actions = partyActions(null, ME, world);
       expect({ create: actions.create, invite: actions.invite }).toEqual({
-        create: false,
-        invite: false,
+        create: true,
+        invite: true,
       });
     },
   );

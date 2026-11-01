@@ -53,6 +53,7 @@ import { healthPotionCount, potionCell } from "@/ui/potions";
 import { RUN_ACTIONS } from "./runActions";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
+import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
@@ -490,6 +491,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private partyPanel?: PartyPanel;
   /** The teammates' frames on the left edge, under the XP bar (FS-R82NV R34). */
   private partyFrames?: PartyFrames;
+  /** Invites waiting on an answer, top centre, Accept greyed while delving (FS-NCC9J R24). */
+  private invitePrompt?: PartyInvitePrompt;
   /** The class ability card, bottom right (FS-8AY7S req 29–32). */
   private abilityHud?: AbilityHud;
   /**
@@ -844,6 +847,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.potionHud = undefined;
     this.partyPanel?.destroy();
     this.partyPanel = undefined;
+    this.invitePrompt?.destroy();
+    this.invitePrompt = undefined;
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
     this.abilityHud = undefined;
@@ -2738,6 +2743,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.chatWindow = mountChatWindow(this, () => !this.menu && !this.gameEndOverlay && !this.equipment?.isOpen() && !this.containerView?.isOpen);
     // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
     this.partyPanel = mountPartyPanel(this, () => !!this.menu || !!this.gameEndOverlay || !!this.equipment?.isOpen() || !!this.containerView?.isOpen);
+    // party invites, hidden only under the end-of-run overlay, stacked clear of the chat window (FS-NCC9J R24)
+    this.invitePrompt = mountPartyInvitePrompt(this, () => !!this.gameEndOverlay, () => this.chatWindow?.topEdge());
 
     // The camera and the (vestigial, collision-free) physics world live in
     // projected space: the map is a diamond, clamped by its bounding box plus a
@@ -2932,6 +2939,8 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.chatWindow?.covers(pointer.x, pointer.y)) return;
       // and one on the open party panel is the panel's (FS-R82NV R28)
       if (this.partyPanel?.covers(pointer.x, pointer.y)) return;
+      // and one on an invite prompt is the prompt's (FS-NCC9J R24)
+      if (this.invitePrompt?.covers(pointer.x, pointer.y)) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
       if (this.containerView.pointerDown(pointer.x, pointer.y, pointer.button === 0)) return;
       if (!this.player || !this.playerPos) return;

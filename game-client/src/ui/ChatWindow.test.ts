@@ -367,6 +367,15 @@ describe("ChatWindow (C18: moving with the ResourceHud)", () => {
     expect(line.y).toBeLessThan(600);
     expect(line.y).toBeGreaterThanOrEqual(frame.messages.y);
   });
+
+  it("should say where its top edge now is, for what stacks down to it (FS-NCC9J R24)", () => {
+    const { window, store } = rig();
+    expect(window.topEdge()).toBe(chatWindowFrame(X, BOTTOM).panel.y);
+    window.setBottom(600);
+    expect(window.topEdge()).toBe(chatWindowFrame(X, 600).panel.y);
+    store.getState().toggleFolded();
+    expect(window.topEdge()).toBe(chatWindowFrame(X, 600, true).panel.y);
+  });
 });
 
 describe("ChatWindow (teardown)", () => {
