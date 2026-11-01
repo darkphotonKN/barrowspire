@@ -825,6 +825,26 @@ func (s *Server) SeatedPlayerIDs() []uuid.UUID {
 }
 
 /**
+* SeatedConns is SeatedPlayerIDs with the connection each player is seated on:
+* a player seen on a different connection than before is read afresh, their
+* screen unknown (I-NCC9J-3, decided after round 4). One connection per player:
+* MapConnToPlayer drops a superseded one under the same lock.
+**/
+func (s *Server) SeatedConns() map[uuid.UUID]*websocket.Conn {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	conns := make(map[uuid.UUID]*websocket.Conn, len(s.connToPlayer))
+	for conn, player := range s.connToPlayer {
+		if player.CurrentGameSessionId == uuid.Nil {
+			continue
+		}
+		conns[player.ID] = conn
+	}
+	return conns
+}
+
+/**
 * SeatedPlayer finds the player connected to this pod and seated in any world
 * under a character name or player id, read off the connection table as
 * SeatedPlayerIDs is. A copy, taken under the lock, so the caller reads it on

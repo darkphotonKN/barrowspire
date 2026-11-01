@@ -31,8 +31,9 @@ type partyDirectory interface {
 	SeatedPlayer(nameOrID string) (types.Player, bool)
 	// every player this pod holds, and the world each stands in: who hears an update here (R5)
 	PresentPlayers() []presentPlayer
-	// everyone this pod holds, seated in any world: whose parties the cache keeps (R4, R6)
-	SeatedPlayerIDs() []uuid.UUID
+	// everyone this pod holds, seated in any world, and the connection each is seated on: whose
+	// parties the cache keeps and whose screens it reconciles (R4, R6)
+	SeatedConns() map[uuid.UUID]*websocket.Conn
 	// whether a player is inside a run, where accepting is refused locked (R14)
 	InRun(playerID uuid.UUID) bool
 	IsQueued(ctx context.Context, playerID uuid.UUID) (bool, error)
@@ -127,7 +128,7 @@ func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJob
 	if cfg.store != nil {
 		reader = cfg.store
 	}
-	r.cache = newPartyCache(reader, r.run, directory, cfg.now, r.arrived, r.resync)
+	r.cache = newPartyCache(reader, r.run, directory, cfg.now, r.show)
 	return r
 }
 
@@ -808,11 +809,6 @@ func (r *partyRegistry) tick(ctx context.Context) {
 		return
 	}
 	r.cache.tick(ctx)
-}
-
-// arrived sends a player newly seated here their party as Redis holds it (FS-NCC9J R6).
-func (r *partyRegistry) arrived(ctx context.Context, playerID uuid.UUID, p partystore.Party) {
-	r.announce(ctx, partyUpdate{party: p, reason: constants.PartyUpdateSync, subject: playerID, to: playerID})
 }
 
 // letters is where letters from other pods wait for the hub's loop.

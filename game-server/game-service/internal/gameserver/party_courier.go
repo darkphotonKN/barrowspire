@@ -29,9 +29,6 @@ type partyUpdateLetter struct {
 	Party partystore.Party `json:"party"`
 	// the change ended the party: the receiving pod lets it go
 	Ended bool `json:"ended"`
-	// the update is for every member, not one player (as a removed player's final update or an
-	// arrival sync is): only a whole update can mark the party told
-	Whole bool `json:"whole"`
 	// a removed player's final update: told whatever its age
 	Final   bool                   `json:"final"`
 	To      []uuid.UUID            `json:"to"`

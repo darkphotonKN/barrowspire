@@ -263,7 +263,7 @@ func TestPartyLetter_OlderThanTheCache_Dropped(t *testing.T) {
 	stale.Version--
 	stale.Leader = uuid.New()
 	rig.onLoop(t, func(reg *partyRegistry) {
-		reg.heardUpdate(partyUpdateLetter{Party: stale, Whole: true, To: []uuid.UUID{wren.ID}, Message: map[string]interface{}{"party_id": stale.ID.String()}})
+		reg.heardUpdate(partyUpdateLetter{Party: stale, To: []uuid.UUID{wren.ID}, Message: map[string]interface{}{"party_id": stale.ID.String()}})
 	})
 
 	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren: the letter is older than what the pod holds")
@@ -350,30 +350,31 @@ func TestPartyUpdate_ToOnePlayer_NotDroppedAsOlder(t *testing.T) {
 	assert.Equal(t, "kicked", final.Payload["reason"])
 }
 
-// A whole party_update letter marks the party told only if every member this pod holds was told:
-// a member the sending pod's presence lookup did not place here is left to the re-read (code
-// review round 2, MED).
-func TestPartyLetter_MissingAMemberHere_NotMarkedTold(t *testing.T) {
+// A party_update letter that reaches only some of the members this pod holds (the sending pod's
+// presence lookup did not place the others here) leaves the rest to the next re-read, which shows
+// them the party the letter brought (code review round 2, MED; reconciled since round 4).
+func TestPartyLetter_MissingAMemberHere_ShownAtTheNextReRead(t *testing.T) {
 	rig := newPartyRig(t, WithPartySize(3))
 	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
-	_, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
+	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
 	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
+	rig.tick()
+	awaitUpdate(t, wrenInbox, "sync", wren.ID, "Wren")
+	awaitUpdate(t, kaelenInbox, "sync", kaelen.ID, "Kaelen")
 	var held partystore.Party
-	var toldBefore int64
-	rig.onLoop(t, func(reg *partyRegistry) {
-		held, _ = reg.cache.partyOf(wren.ID)
-		toldBefore = reg.cache.told[held.ID]
-	})
+	rig.onLoop(t, func(reg *partyRegistry) { held, _ = reg.cache.partyOf(wren.ID) })
 
 	newer := held
 	newer.Version++
+	newer.Leader = kaelen.ID
 	rig.onLoop(t, func(reg *partyRegistry) {
-		reg.heardUpdate(partyUpdateLetter{Party: newer, Whole: true, To: []uuid.UUID{wren.ID}, Message: map[string]interface{}{"party_id": newer.ID.String()}})
+		reg.heardUpdate(partyUpdateLetter{Party: newer, To: []uuid.UUID{wren.ID}, Message: map[string]interface{}{"party_id": newer.ID.String()}})
 	})
+	rig.partyClock.advance(partyRefreshInterval)
+	rig.tick()
 
-	rig.onLoop(t, func(reg *partyRegistry) {
-		assert.Equal(t, toldBefore, reg.cache.told[held.ID], "Kaelen, here, was not told: the re-read must still sync")
-	})
+	sync := awaitUpdate(t, kaelenInbox, "sync", kaelen.ID, "Kaelen")
+	assert.Equal(t, kaelen.ID.String(), sync.Payload["leader_id"], "Kaelen is shown the party the letter brought")
 }
 
 // After a decline the cache holds the party as the decline left it, at its new version, so a late
@@ -397,19 +398,21 @@ func TestPartyDecline_CacheTakesTheNewVersion(t *testing.T) {
 		now, _ := reg.cache.partyOf(wren.ID)
 		assert.Greater(t, now.Version, invited.Version, "the cache moved on with the decline")
 		assert.Empty(t, now.Reserved)
-		reg.heardUpdate(partyUpdateLetter{Party: invited, Whole: true, To: []uuid.UUID{wren.ID}, Message: map[string]interface{}{"party_id": invited.ID.String()}})
+		reg.heardUpdate(partyUpdateLetter{Party: invited, To: []uuid.UUID{wren.ID}, Message: map[string]interface{}{"party_id": invited.ID.String()}})
 	})
 	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren: the late letter would bring Idris's slot back")
 }
 
-// A member is never shown a party older than the newest this pod knows: an arrival sync or resync
-// built from an older read is sent as the cached party instead. Only a removed player's final
-// update goes out as it was built (code review round 3, HIGH).
-func TestPartySync_OlderThanTheCache_SendsTheNewest(t *testing.T) {
+// A member is never shown a party older than the newest this pod knows: an arrival sync built
+// from a read the cache has moved past is not sent, and the next reconcile shows them the newest
+// (code review round 3, HIGH; rounds 6 and 7).
+func TestPartySync_OlderThanTheCache_NotSent_NewestAtTheNextReRead(t *testing.T) {
 	rig := newPartyRig(t, WithPartySize(3))
 	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
 	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
 	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
+	rig.tick()
+	awaitUpdate(t, wrenInbox, "sync", wren.ID, "Wren")
 	var held partystore.Party
 	rig.onLoop(t, func(reg *partyRegistry) { held, _ = reg.cache.partyOf(wren.ID) })
 
@@ -418,9 +421,13 @@ func TestPartySync_OlderThanTheCache_SendsTheNewest(t *testing.T) {
 	older.Version--
 	older.Leader = kaelen.ID
 	rig.onLoop(t, func(reg *partyRegistry) {
+		delete(reg.cache.shown, wren.ID) // newly seated: their screen is unknown
 		reg.deliver([]partyUpdate{{party: older, reason: constants.PartyUpdateSync, subject: wren.ID, to: wren.ID}}, nil)
 	})
+	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren: the read is older than the cache")
 
+	rig.partyClock.advance(partyRefreshInterval)
+	rig.tick()
 	sync := awaitUpdate(t, wrenInbox, "sync", wren.ID, "Wren")
 	assert.Equal(t, held.Leader.String(), sync.Payload["leader_id"], "Wren is shown the newest party, not the older read")
 }
