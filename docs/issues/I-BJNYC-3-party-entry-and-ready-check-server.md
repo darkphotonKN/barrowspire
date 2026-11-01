@@ -1,10 +1,10 @@
 ---
 id: I-BJNYC-3
-status: open
+status: done
 implements: FS-BJNYC
 blocked_by: [I-BJNYC-1]
 labels: [ready-for-agent]
-title: "FS-BJNYC slice 3: party_enter, the 15 s ready check and one run for the whole party; start_solo refused for party members (game-service)"
+title: "FS-BJNYC slice 3: party_enter, the 30 s ready check and one run for the whole party; start_solo refused for party members (game-service)"
 ---
 Implements FS-BJNYC §Requirements R2–R15, R18
 
@@ -27,11 +27,11 @@ without party entry a party could not delve at all.
   (seam; really answered by I-BJNYC-6), `checking`, `not_at_gate` (`AtSpireGate`), `not_in_town`
   naming every member not seated in this pod's hub world, in join order; `unavailable` for Redis.
   No-character / already-delving leader answered as `start_solo` answers them.
-- **Ready check (R7–R12).** One open check per party, in pod memory: id, roster, 15 s deadline, the
+- **Ready check (R7–R12).** One open check per party, in pod memory: id, roster, 30 s deadline, the
   leader `accepted` at open, others `waiting`. `party_ready_check` to every member of the check at
   open, after every answer, and at start/cancel. `party_ready` from a waiting member records the
   answer; stale / foreign / repeated answers ignored. Cancelled (every member told) on: decline;
-  15 s timeout (the registry's tick); a member, leader included, leaving the town or disconnecting;
+  30 s timeout (the registry's tick); a member, leader included, leaving the town or disconnecting;
   any membership or leader change while open. Leaving the gate zone within the town does not cancel.
 - **Start (R11, R13, R14).** All accepted → every member's gear read off the loop (`checkGear`'s
   read) with a fresh Redis read of the party; on the loop, build only if the roster is unchanged and
@@ -49,7 +49,7 @@ without party entry a party could not delve at all.
 - [ ] `start_solo` from a party member is refused "Your party enters together.", same guard position as `find_game`; a player in no party descends alone as before.
 - [ ] `party_enter` refusals fire in R5's order under a table-driven test (`not_member`, `not_leader`, `checking`, `not_at_gate`, `not_in_town` with every absent member named in join order, `unavailable`); a member on another pod, in a field, in a run, away or disconnected counts as not in the town.
 - [ ] The party is read off the loop; decisions are on the loop; no Redis call on the loop.
-- [ ] A passing `party_enter` sends every member, leader included, `party_ready_check` `outcome: open`, leader `accepted`, others `waiting`, `expires_in_ms` ≈ 15 000.
+- [ ] A passing `party_enter` sends every member, leader included, `party_ready_check` `outcome: open`, leader `accepted`, others `waiting`, `expires_in_ms` ≈ 30 000. *(Amended 2026-11-02, charter; Nick: ready check 30 s, was 15 s)*
 - [ ] Each answer is pushed to every member; stale, foreign and repeated answers are ignored.
 - [ ] Decline, timeout, leaving the town, disconnecting and a membership/leader change each cancel with the right `reason` and names; the leader stepping off the gate zone within the town does not.
 - [ ] All accepted: one run built with every member seated together, each sent `world_entered`; unreadable gear cancels `failed` naming the member; Redis down at the re-read cancels `failed`, no names; nobody leaves the town on any cancel.
@@ -84,3 +84,7 @@ FS-BJNYC §Requirements R2–R15, R18; §User Stories 1–2, 4–12, 14–17, 22
 - RED: a two-member party: `party_enter` → both get `open` with the leader accepted; member accepts → one run with both seated, both get `world_entered`.
 - RED: each cancel cause (decline, timeout via a fake clock, leave town, drop, membership change).
 - GREEN: `party_entry.go` and the hub/registry wiring.
+
+## Charter run (2026-11-02)
+
+Built by a /develop child (TDD), two-axis review: ready to merge. Ready check amended to 30 s (Nick). Review fix: a cancel is sent once (cancelCheck idempotent).

@@ -1,6 +1,6 @@
 ---
 id: I-BJNYC-2
-status: open
+status: in-progress
 implements: FS-BJNYC
 blocked_by: []
 labels: [ready-for-agent]
@@ -44,3 +44,7 @@ FS-BJNYC §Requirements R20; §Copy (door row); §User Stories 13, 24; §Accepta
 
 - RED: `delveChoices` with a party in state returns "Wait for company" disabled and the party line.
 - GREEN: thread in-party into `HubState` and grey the choice.
+
+## Charter run (2026-11-02)
+
+Built by a /develop child (TDD), two-axis review: ready to merge. Browser check pending: at the Spire door a party member's Wait for company is greyed.

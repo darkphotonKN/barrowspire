@@ -1,6 +1,6 @@
 ---
 id: I-BJNYC-1
-status: open
+status: done
 implements: FS-BJNYC
 blocked_by: []
 labels: [ready-for-agent]
@@ -53,3 +53,7 @@ FS-BJNYC §Requirements R1; §User Stories 13, 24; §Acceptance Criteria row 1; 
 
 - RED: a party member at the Spire gate sends `find_game`; expect the refusal and no queue entry.
 - GREEN: the membership query on the hub's interface and the guard in the `find_game` case.
+
+## Charter run (2026-11-02)
+
+Built by a /develop child (TDD), two-axis review: ready to merge. find_game refused for party members ("Your party enters together.").

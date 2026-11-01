@@ -1,6 +1,6 @@
 ---
 id: I-BJNYC-4
-status: open
+status: in-progress
 implements: FS-BJNYC
 blocked_by: [I-BJNYC-2, I-BJNYC-3]
 labels: [ready-for-agent]
@@ -54,3 +54,7 @@ FS-BJNYC §Requirements R21, R22; §Copy (door, `party_enter` refused); §User S
 - RED: `delveChoices` for a leader includes Enter as a party and greys the other two; for a member greys both with no entry.
 - RED: notice copy table for the new codes.
 - GREEN: choices, the send, the copy.
+
+## Charter run (2026-11-02)
+
+Built by a /develop child (TDD), two-axis review: ready to merge. Browser check pending: the leader sees Enter as a party, members see solo and queue greyed, refusals in words.

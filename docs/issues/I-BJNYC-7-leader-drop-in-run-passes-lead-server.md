@@ -1,6 +1,6 @@
 ---
 id: I-BJNYC-7
-status: open
+status: done
 implements: FS-BJNYC
 blocked_by: [I-BJNYC-3]
 labels: [ready-for-agent]
@@ -50,3 +50,7 @@ FS-BJNYC §Requirements R16, R17; §User Stories 20, 21; §Acceptance Criteria r
 
 - RED: two-member party in its run; the leader's connection drops; expect the other member leader before the grace ends.
 - GREEN: drop hook → registry transfer to the earliest-joined member.
+
+## Charter run (2026-11-02)
+
+Built by a /develop child (TDD), two-axis review: ready to merge. Open for Nick: a leader who left the run early and drops in the town keeps the lead; a normal close (1000) in the run is a leave, not a drop.
