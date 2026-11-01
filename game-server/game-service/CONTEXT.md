@@ -382,9 +382,10 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 - **Reserved slot** — an open invite counted against the party's size with its members, so the
   party refuses invites beyond its free places and an accept always fits. Freed when the invite
   is declined, expires or is gone. (The client draws it as a skeleton row in the party frames.)
-- **Away** — a member whose pod has not refreshed their party record for about 30 seconds (any
-  drop, by design not at once). Still a member; removed, with succession if they led, once the
-  record expires after **5 minutes**. Distinct from **offline** (no presence entry at all).
+- **Away** — a member whose party record has gone 40 seconds without a refresh, about 30 seconds
+  after they dropped (any drop, by design not at once; a drop under 30 seconds never shows it).
+  Still a member; removed, with succession if they led, once the record expires after **5
+  minutes**. Distinct from **offline** (no presence entry at all).
 - **Party entry** — the leader, standing at an instance's gate, taking the whole party into that
   instance. Requires every member in the leader's world on the **leader's pod** (gathered there by
   travel, not at the gate); then a *ready check*; then the run is built from the party exactly as

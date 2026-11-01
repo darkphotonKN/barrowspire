@@ -28,7 +28,9 @@ as with FS-R82NV); the client side is agent lane.
    order and the notice copy are checked in Go before the script runs; the script re-checks what
    could have changed (a slot, a membership, the leader) and returns a refusal code instead of
    writing when it no longer holds. A pod never mutates a party by read-modify-write outside a
-   script.
+   script. *(Amended 2026-11-02, I-NCC9J-4; Nick: the arrival read (R6) and the re-read (R4) are
+   scripts that write too: they keep each member's record (R17), and may mark a member away or
+   back or remove an expired one, moving the party's version on.)*
 3. **Open invites reserve slots.** They live with the party (a sorted set scored by expiry); every
    script prunes expired entries before it counts. Members plus open invites never exceed the party
    size (`PARTY_SIZE`, FS-R82NV R8). An accept therefore never meets a full party.
@@ -100,7 +102,15 @@ as with FS-R82NV); the client side is agent lane.
     the next pod to touch the party removes them by script, with succession if they led, and every
     member gets `party_update` reason `left`. Each pod also checks, every tick, the parties in its
     cache for expired members. A member seated again anywhere within 5 minutes is refreshed by that
-    pod and stays.
+    pod and stays. *(Amended 2026-11-02, I-NCC9J-4; Nick: the record is a field per member in a
+    hash kept with the party, stamped by the refreshing pod's clock, never moved backwards; its 5
+    minutes are enforced by the scripts that keep it, not by a key TTL. Away counts from the last
+    refresh, so it is **40 s** (30 s and one refresh interval): a drop under 30 s never shows away
+    wherever it falls between refreshes, and a member really gone shows away 30 to 40 s after the
+    drop. "The next pod to touch the party" is the next re-read (R4) or arrival read (R6) on any pod
+    holding a member, and a tick re-reads any party whose cached copy shows a member due to go away
+    or expire; invite, accept and the other changes do not sweep. A member seated again only after
+    their record expired is removed by that read.)*
 
 ### Travel (game-service)
 
@@ -129,13 +139,16 @@ as with FS-R82NV); the client side is agent lane.
     Reasons: `joined` when someone comes in (an accept, a `party_create`, and an invite that creates
     the party, which tells its new leader `joined` as FS-R82NV does, the slot already among
     `reserved`); `invited` when a slot is reserved in a party that stood already; `invite_ended`
-    when one frees (declined, voided by an accept elsewhere, withdrawn). An invite's expiry sends
+    when one frees (declined, voided by an accept elsewhere, withdrawn); `left` (then `leader` if
+    the lead passed) when a member's record expires (R17). An invite's expiry sends
     nothing: the next update leaves the slot out, and the client drops its row at `expires_at`
     (R26, R27). `sync` when the pod resends the party as it stands, to a player newly seated (R6)
     or whose screen differs from it (R21a). A `sync` listing no members, with `party_id` and
     `leader_id` empty, tells a player they are in no party. *(Amended 2026-11-01: `pod_id` added so
     the client can tell who stands on the leader's pod, R28; `where` values, the invite reasons and
     the silent expiry, I-NCC9J-3 E5, E6; `sync` and the empty update, I-NCC9J-3 round 4; Nick.)*
+    *(Amended 2026-11-02, I-NCC9J-4; Nick: a member going away or coming back (R17) is told to every
+    member as `sync` about them, the party as it stands; `online` is false while they are away.)*
 21a. **Each pod reconciles what its players see.** It records the last `party_update` queued for
     each player it holds, against the connection they are seated on (a party at a version, or
     none), and, after every re-read (R4), sends `sync` to each whose record differs from its
