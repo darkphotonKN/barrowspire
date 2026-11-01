@@ -51,19 +51,40 @@ FS-NCC9J §Requirements R28; §User Stories 8–11.
 ## Implementation notes (2026-11-02)
 
 - `travelButton(party, selfId, world)` (`partyFramesLayout.ts`): hidden with no party, for the
-  leader, and when the player's `pod_id` matches the leader's (a server that sends no `pod_id`
-  hides it); greyed outside the town and while the leader is away (`online: false`); live
-  otherwise.
+  leader, when the player's `pod_id` matches the leader's, and when either is missing or empty
+  (the issue's rule, kept after code review: the away update brings `online: false` and an empty
+  `pod_id` together, so the button simply goes when the leader does; Nick); greyed outside the
+  town and while the leader is away with a pod still named; live otherwise.
 - The button sits **inside** the leader's frame, on the name line at its right end: the T panel
   opens 18 px right of the frames, so a button past the frame's edge would sit under it.
 - `SocketManager` follows `world_handoff {hub: true}` apart from a run's: a plain connection to
-  `addr` that sends `enter_hub` as the active character once open; the hub's `world_entered`
-  promotes it. A refused entry (its message said as a system line) or an unreachable server keeps
-  the old socket. The delve's `world_handoff` listener never hears a travel.
+  `addr` that sends `enter_hub` as the arrival says once open; the hub's `world_entered` promotes
+  it. What it enters with and how a refusal is told come in as a `HubArrival` (`travelArrival`:
+  the active character, a chat system line), so the socket only moves. A refused entry or an
+  unreachable server keeps the old socket (or reconnects where it was, if that died meanwhile) and
+  says why. The delve's `world_handoff` listener never hears a travel.
+- `partyWhereLabel` maps `field` to "afield" (decided after slicing).
 
 ## Browser check (pending)
 
 Two pods: a member in their town on pod B presses Travel beside a leader on pod A, lands in
 pod A's hub with the party shown; greyed in a field and while the leader is away; a full hub keeps
 them on pod B with "The hub is full. Try again shortly."
+
+## Code review (2026-11-02, two axes) — fixed
+
+- A refused hub entry did not reconnect when the old socket had died meanwhile (MED).
+- `SocketManager` picked the character, built `enter_hub` and wrote chat notices itself: now a
+  `HubArrival` is injected, and a move with no character, or to an unreachable server, is told
+  (MED, and the unreachable LOW).
+- Long names ran under the Travel button: every frame's name is shortened to its room (MED).
+- `field` → "afield" was missed (MED); the missing-`pod_id` rule now hides on either side (LOW).
+- The button drawing is shared with the T panel (`drawHudButton`); vacuous test lines fixed and
+  missing cases covered (refusal with the old socket dead, replay, a run handoff mid-travel, a
+  second travel, no character).
+
+## Code review follow-ups not taken (LOW)
+
+- Only the button's label takes the press, not its whole outline (the T panel's buttons alike).
+- A greyed button gives no reason on hover (R28 asks none).
 

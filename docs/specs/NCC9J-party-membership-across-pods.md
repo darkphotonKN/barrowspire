@@ -203,6 +203,12 @@ as with FS-R82NV); the client side is agent lane.
     not on the leader's pod (their own `pod_id` differs from the leader's, R21); pressable only in the player's own town; greyed in a field, in a run,
     and while the leader is away. Pressing sends `party_travel`; the client follows the
     `world_handoff` as it follows any (FS-K2HKP), keeping its old socket if the move is refused.
+    *(Amended 2026-11-02, I-NCC9J-8; Nick: the button sits on the leader's frame, at the right end
+    of the name line (past the frame's edge the T panel would cover it), and a long name is
+    shortened short of it. A missing or empty `pod_id`, the player's or the leader's (a leader on
+    no pod is offline), hides it. The hub handoff connects to `addr` and enters its hub as the
+    player's character; a refused entry or an unreachable server keeps the old socket and says why
+    as a system line.)*
 
 ### Notice copy (game-client)
 
