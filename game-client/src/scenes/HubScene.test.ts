@@ -1042,7 +1042,7 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
     expect(stage.made.some((m) => m.kind === "text" && m.args[2] === "KEEPER")).toBe(true);
   });
 
-  it("should ask to leave the hub on Change who you are, and start the main menu once it is left", () => {
+  it("should ask to leave the hub on Change character, and start the main menu once it is left", () => {
     const { hub, keys, press, option, reply, send } = queuedHubOnStage();
 
     press(keys.esc);
@@ -1076,7 +1076,7 @@ describe("HubScene changeCharacter leaves the hub (FS-G4VMQ §Requirements 25, 2
     vi.restoreAllMocks();
   });
 
-  /** The Change who you are row's label, whose colour says whether it can be pressed. */
+  /** The Change character row's label, whose colour says whether it can be pressed. */
   const changeLabel = (stage: { made: Made[] }) =>
     stage.made.find((m) => m.name === "menu-change-label" && !m.destroyed)?.children[0] as Made;
 
@@ -1612,13 +1612,13 @@ describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => 
 describe("ESC menu by keyboard (reported 2026-10-29)", () => {
   // The menu's choices had no keys at all: ESC opened and closed it, and only a click could
   // pick Change who you are. With the mouse broken too, nothing led to the roster.
-  it("should answer Change who you are on 1, with the number on its label", () => {
+  it("should answer Change character on 1, with the number on its label", () => {
     const { hub, keys, press, stage, send, reply } = queuedHubOnStage();
     press(keys.esc);
     const labels = stage.made
       .filter((m) => m.kind === "text" && !m.destroyed)
       .map((m) => String(m.args[2]));
-    expect(labels).toContain("Change who you are  [1]");
+    expect(labels).toContain("Change character  [1]");
 
     press(keys.one);
 
