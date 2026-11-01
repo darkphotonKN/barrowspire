@@ -84,8 +84,14 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
   bounds. Clicks hit-test the footprint too.
 - **Eight facings.** Characters face one of eight world directions, taken from the velocity the
   client already renders.
-- **Occlusion is cut-away, then fade.** House fronts (south and east sides) are low cut-away
-  walls. A tree or tall prop in front of the player fades to about 40% while it overlaps them.
+- **Occlusion: buildings stay closed, the cut-away is for the room you are in, trees fade.** From
+  outside, a building is a closed block and never fades; a player it covers shows through it as a
+  silhouette. The cut-away (low south and east fronts) is how a room the player stands in is
+  seen. A tree or tall prop in front of the player fades to about 40% while it overlaps them. See
+  "Building exteriors" below
+  ([ADR-0036](../../docs/adr/0036-buildings-have-an-exterior-and-an-interior.md),
+  [FS-9PN7X](../../docs/specs/9PN7X-building-exteriors-and-indoor-blackout.md)). *(Replaces
+  "Occlusion is cut-away, then fade" with FS-9PN7X, 2026-11-01.)*
 - **Outside the map is dark.** The corners of the screen beyond the projected diamond are a dark
   fill, never a void or a stray background. In a field world it is that field's edge tint, which
   the ground fades into (see "Field worlds may be daylit instead"; FS-KSD6K, 2026-10-30).
@@ -189,6 +195,33 @@ the test above, because most of those things cannot be acted on.
   2026-10-30.)* Grass is ground material, not a marker: a green field never carries the
   *safe* channel's meaning, and pickups, allies and hostiles still read against it.
   *(Amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
+
+### Building exteriors
+
+*(Added with FS-9PN7X, 2026-11-01.)*
+Every building has two looks
+([ADR-0036](../../docs/adr/0036-buildings-have-an-exterior-and-an-interior.md),
+[FS-9PN7X](../../docs/specs/9PN7X-building-exteriors-and-indoor-blackout.md)): the **building
+exterior** while the player is outside it, and the **interior look** (the cut-away, furnished and
+lit) while the player stands inside.
+
+- **One exterior per building type.** A building type is its wall material: timber (town
+  buildings) and masonry (Spire rooms) today. A new building type is not finished until it has
+  both looks, and its exterior reads as the same building as its interior: same material, palette
+  ramp, key light and contact shadow.
+- **Four full-height walls in the type's outward surface.** From outside, the south and east sides
+  stand full height like the north and west, faced with the building's outward surface (weathered
+  timber framing on a stone plinth, or coursed masonry), never interior dressing (no sconce,
+  banner, cobweb or torch) and never lit. Corners are the type's full-height posts.
+- **A roof or stone cap that never fades.** Timber buildings keep their roof, its gable ends
+  closed under it in the building's timber; masonry rooms are closed by a flat stone cap at the
+  back walls' top, the same on every floor. Neither takes the occluder fade, so nothing of the
+  inside shows over or through the top.
+- **A dark opening at entrances.** A doorway seen from outside is a full-height frame in the
+  building's material with flat darkness inside (`palette.inkDeep`): you see the way in, not the
+  room. A closed or locked door draws as a door.
+- **The indoor blackout.** While the player stands inside a building, everything outside it goes
+  to `palette.inkDeep`, the canvas's darkest ink, so being inside feels enclosed.
 
 ---
 

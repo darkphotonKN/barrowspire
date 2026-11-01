@@ -78,6 +78,7 @@ import {
 } from "./models/tower.js";
 import { spireFacade, DOOR_LIGHT } from "./models/spire.js";
 import { counter, innTable, stool, innHearth, shelf, forge, anvil, HEARTH_FLAME, FORGE_COALS } from "./models/interior.js";
+import { timberExterior, masonryExterior, towerCap, darkOpening, timberGable } from "./models/building.js";
 import { CAST } from "./characters/cast.js";
 import { FOLK } from "./characters/folk.js";
 
@@ -553,6 +554,55 @@ function interiorSheets() {
   ];
 }
 
+/**
+ * Building exteriors (FS-9PN7X §F, ADR-0036), authored in code (ADR-0020, ADR-0021) and packed on
+ * their own atlas, `building` (never "exterior", which names the run theme), so every existing
+ * atlas keeps its bytes. One exterior per building type, named by its WallSheets prefix: timber
+ * (`""`) and masonry (`tower_`). Exterior pieces stand on the back pieces' footprint and frame;
+ * the cap closes a masonry room at the back walls' top; a dark opening is a doorway seen from
+ * outside. Nothing here is lit: from outside, a building's lights are off.
+ */
+function buildingSheets() {
+  const sheet = (name, fn, animations, opts = {}) => ({
+    name,
+    group: "building",
+    kind: "prop",
+    animations,
+    source: `authored: tools/bake/page/models/building.js#${fn}`,
+    ...opts,
+  });
+  const sheets = [];
+  for (const axis of ["x", "y"]) {
+    for (const variant of ["plain", "brace", "window"])
+      sheets.push(
+        sheet(`wall_exterior_${variant}_${axis}`, "timberExterior", {
+          variants: still(...[2, 7].map((seed) => () => timberExterior(variant, axis, seed))),
+        }),
+      );
+    for (const variant of ["plain", "pillar"])
+      sheets.push(
+        sheet(`tower_wall_exterior_${variant}_${axis}`, "masonryExterior", {
+          variants: still(...[2, 7].map((seed) => () => masonryExterior(variant, axis, seed))),
+        }),
+      );
+    sheets.push(sheet(`door_dark_${axis}`, "darkOpening", { default: still(() => darkOpening("timber", axis)) }));
+    sheets.push(sheet(`tower_door_dark_${axis}`, "darkOpening", { default: still(() => darkOpening("masonry", axis)) }));
+  }
+  // laid on the walls' copings, which carry their own shading: no ground shadow, like the roof
+  sheets.push(sheet("tower_cap", "towerCap", { variants: still(...[0, 1, 2, 3].map((v) => () => towerCap(v))) }, { shadow: false }));
+  // the timber gables closing a roof's ends, named for the ridge as roof_ridge's animations, one
+  // animation per roof half by its downhill side as roof_slope's; laid against the roof, which
+  // carries their shading, so no ground shadow
+  for (const [axis, halves] of [
+    ["x", ["s", "n"]],
+    ["y", ["e", "w"]],
+  ])
+    sheets.push(
+      sheet(`roof_gable_${axis}`, "timberGable", Object.fromEntries(halves.map((h) => [h, still(() => timberGable(axis, h))])), { shadow: false }),
+    );
+  return sheets;
+}
+
 export const CATALOGUE = [
   ...groundSheets(),
   ...natureSheets(),
@@ -568,4 +618,5 @@ export const CATALOGUE = [
   ...spireSheets(),
   ...forestSheets(),
   ...interiorSheets(),
+  ...buildingSheets(),
 ].map((s) => ({ licence: LICENCE, ...s }));
