@@ -61,6 +61,7 @@ describe("panel words (FS-R82NV R29, R30, R34's state words)", () => {
   it.each([
     ["hub", "village"],
     ["field:gentle_meadows", "afield"],
+    ["field", "afield"], // FS-NCC9J R21: the server now says just `field` (I-NCC9J-3 E6)
     ["run", "delving"],
     ["away", "away"],
     ["somewhere_new", "somewhere_new"],

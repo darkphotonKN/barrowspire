@@ -95,6 +95,35 @@ const within = (r: Rect, x: number, y: number) =>
   x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
 
 /**
+ * A brass-outlined HUD button, outlined on g: amber words when the viewer may press it, faint and
+ * inert when not (amber means interactable, never otherwise). The party frames' Travel button is
+ * drawn by it too (FS-NCC9J R28). Returns the label, for the caller to take down.
+ */
+export function drawHudButton(
+  scene: Phaser.Scene,
+  g: Phaser.GameObjects.Graphics,
+  r: Rect,
+  label: string,
+  enabled: boolean,
+  press: () => void,
+): Phaser.GameObjects.Text {
+  g.lineStyle(1, palette.frame, enabled ? 0.8 : 0.3);
+  g.strokeRoundedRect(r.x + 0.5, r.y + 0.5, r.width - 1, r.height - 1, 3);
+  const t = scene.add
+    .text(
+      r.x + r.width / 2,
+      r.y + r.height / 2,
+      label,
+      style(enabled ? palette.interactable : palette.hudFaint, SMALL_PX),
+    )
+    .setScrollFactor(0)
+    .setDepth(HUD_DEPTH)
+    .setOrigin(0.5, 0.5);
+  if (!enabled) return t.setAlpha(GREYED_ALPHA);
+  return t.setInteractive({ useHandCursor: true }).on("pointerdown", press);
+}
+
+/**
  * A small brass crown before the leader's name: three points on a band. The party frames mark
  * their leader with it too (R34).
  */
@@ -220,7 +249,7 @@ export class PartyPanel {
     return t;
   }
 
-  /** A brass-outlined button: amber words when the viewer may press it, faint and inert when not. */
+  /** A brass-outlined button (drawHudButton), its label kept with the panel's texts. */
   private button(
     g: Phaser.GameObjects.Graphics,
     r: Rect,
@@ -228,20 +257,7 @@ export class PartyPanel {
     enabled: boolean,
     press: () => void,
   ): void {
-    g.lineStyle(1, palette.frame, enabled ? 0.8 : 0.3);
-    g.strokeRoundedRect(r.x + 0.5, r.y + 0.5, r.width - 1, r.height - 1, 3);
-    const t = this.text(
-      r.x + r.width / 2,
-      r.y + r.height / 2,
-      label,
-      enabled ? palette.interactable : palette.hudFaint,
-      SMALL_PX,
-    ).setOrigin(0.5, 0.5);
-    if (!enabled) {
-      t.setAlpha(GREYED_ALPHA);
-      return;
-    }
-    t.setInteractive({ useHandCursor: true }).on("pointerdown", press);
+    this.texts.push(drawHudButton(this.scene, g, r, label, enabled, press));
   }
 
   private draw(): void {
