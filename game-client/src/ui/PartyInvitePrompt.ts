@@ -5,13 +5,17 @@
  * downward, oldest at the top. A prompt closes on its own button, when its countdown ends, or
  * when a `party_update` makes the player a member (the store empties every invite then).
  *
- * The invites live in the party store, so they outlive the scene; only the hub mounts the prompt,
- * since the server never delivers an invite into a run or a field (R7, R33). An overlay that owns
- * the screen hides it, as the chat input hides; the countdown runs on underneath.
+ * The invites live in the party store, so they outlive the scene. Every scene mounts the prompt,
+ * since an invite reaches a player wherever they stand (FS-NCC9J R11, R24): the town, a field and
+ * a run. In a run its Accept is greyed with "Not while delving." (the server would refuse it
+ * `locked`); Decline still answers. An overlay that owns the screen hides it, as the chat input
+ * hides; the countdown runs on underneath.
  */
 
 import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
+import type { WorldType } from "@/assets/types/client";
+import { useGameStore } from "@/stores/gameStore";
 import {
   usePartyStore,
   type PartyState,
@@ -23,6 +27,7 @@ import { carvedPanel } from "./carvedPanel";
 import { partyCommands, type PartyCommands } from "./partyCommands";
 import {
   INVITE_LABEL,
+  inviteAcceptState,
   inviteCountdownText,
   invitePromptFrames,
   invitePromptText,
@@ -35,17 +40,27 @@ export interface PartyInvitePromptDeps {
   commands: Pick<PartyCommands, "accept" | "decline">;
   /** Whether an overlay owns the screen now: the prompts hide under it (R33). */
   hidden: () => boolean;
+  /** The world this player stands in now: Accept is greyed in a run (FS-NCC9J R24). */
+  world: () => WorldType | null;
+  /** The screen y the stack stays above (the chat window's top edge), when the scene has one. */
+  floor: () => number | undefined;
 }
 
-/** The prompt as the hub hangs it: the app's party store and the real socket. */
+/**
+ * The prompt as a scene hangs it: the app's party store, the real socket, the world from the game
+ * store, and the scene's own rule for when an overlay covers it and where its chat window starts.
+ */
 export function mountPartyInvitePrompt(
   scene: Phaser.Scene,
   hidden: () => boolean,
+  floor: () => number | undefined = () => undefined,
 ): PartyInvitePrompt {
   return new PartyInvitePrompt(scene, {
     store: usePartyStore,
     commands: partyCommands(socketManager),
     hidden,
+    world: () => useGameStore.getState().worldType,
+    floor,
   });
 }
 
@@ -53,6 +68,8 @@ export function mountPartyInvitePrompt(
 const PROMPT_DEPTH = 1000;
 const FONT_PX = 14;
 const SMALL_PX = 12;
+/** A greyed button's words, as the party panel greys one. */
+const GREYED_ALPHA = 0.45;
 
 const style = (colour: number, px = FONT_PX) => ({
   fontFamily: CANVAS_FONT.body,
@@ -138,20 +155,32 @@ export class PartyInvitePrompt {
     return t;
   }
 
-  /** A brass-outlined button, its words in the colour of what it does. */
+  /**
+   * A brass-outlined button, its words in the colour of what it does; faint and inert when the
+   * player may not press it (no amber on a thing they cannot act on, Gameplay accent).
+   */
   private button(
     g: Phaser.GameObjects.Graphics,
     r: Rect,
     label: string,
     colour: number,
     press: () => void,
+    live = true,
   ): void {
-    g.lineStyle(1, palette.frame, 0.8);
+    g.lineStyle(1, palette.frame, live ? 0.8 : 0.3);
     g.strokeRoundedRect(r.x + 0.5, r.y + 0.5, r.width - 1, r.height - 1, 3);
-    this.text(r.x + r.width / 2, r.y + r.height / 2, label, colour, SMALL_PX)
-      .setOrigin(0.5, 0.5)
-      .setInteractive({ useHandCursor: true })
-      .on("pointerdown", press);
+    const t = this.text(
+      r.x + r.width / 2,
+      r.y + r.height / 2,
+      label,
+      live ? colour : palette.hudFaint,
+      SMALL_PX,
+    ).setOrigin(0.5, 0.5);
+    if (!live) {
+      t.setAlpha(GREYED_ALPHA);
+      return;
+    }
+    t.setInteractive({ useHandCursor: true }).on("pointerdown", press);
   }
 
   /**
@@ -161,17 +190,22 @@ export class PartyInvitePrompt {
   private draw(force: boolean): void {
     const { invites, panelOpen, secondsLeft } = this.deps.store.getState();
     const hidden = this.deps.hidden();
+    const accept = inviteAcceptState(this.deps.world());
     const frames = hidden
       ? []
       : invitePromptFrames(invites.length, {
           canvasWidth: this.scene.cameras.main.width,
           panelOpen,
+          note: accept.note !== undefined,
+          floor: this.deps.floor(),
         });
     const seen = frames.map((_, i) => ({
       invite: invites[i],
       seconds: secondsLeft(invites[i]),
     }));
-    const key = seen.map((s) => `${s.invite.invite_id}:${s.seconds}`).join(",");
+    const key =
+      `${accept.live}|` +
+      seen.map((s) => `${s.invite.invite_id}:${s.seconds}`).join(",");
     if (!force && key === this.drawn) return;
     this.drawn = key;
 
@@ -206,9 +240,22 @@ export class PartyInvitePrompt {
       this.button(g, f.decline, INVITE_LABEL.decline, palette.safe, () =>
         this.answer(invite, false),
       );
-      this.button(g, f.accept, INVITE_LABEL.accept, palette.interactable, () =>
-        this.answer(invite, true),
+      this.button(
+        g,
+        f.accept,
+        INVITE_LABEL.accept,
+        palette.interactable,
+        () => this.answer(invite, true),
+        accept.live,
       );
+      if (f.note && accept.note)
+        this.text(
+          f.note.x,
+          f.note.y + 1,
+          accept.note,
+          palette.hudLabel,
+          SMALL_PX,
+        );
     });
   }
 }

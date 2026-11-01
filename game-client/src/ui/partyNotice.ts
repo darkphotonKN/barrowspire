@@ -1,18 +1,22 @@
 /**
- * The words for every `party_notice` (FS-R82NV R36). The server sends a code and, when the
+ * The words for every `party_notice` (FS-R82NV R36, FS-NCC9J R29). The server sends a code and, when the
  * notice is about another player, their name; the client owns the copy, in the lore voice.
  * Each notice lands in the chat window as a system line (R31).
  */
 
 import type { PartyNoticePayload } from "@/stores/partyStore";
 
-/** R36's table; `{name}` is the player the notice concerns. */
+/**
+ * R36's table with FS-NCC9J R29's codes; `{name}` is the player the notice concerns. `pod_full`
+ * and `not_in_hub` keep their words but now answer a travel (FS-NCC9J R18).
+ */
 export const PARTY_NOTICE_COPY: Readonly<Record<string, string>> = {
   sent: "Word sent to {name}.",
   accepted: "{name} answers the call.",
   no_show: "{name} did not arrive.",
   declined: "{name} declines.",
-  expired: "No answer from {name}.",
+  // the accepter's view: the leader's "No answer from <name>." is written by the client (FS-NCC9J R27)
+  expired: "That invitation has lapsed.",
   not_found: "{name} is not here right now.",
   already_in_party: "{name} walks with another party.",
   party_full: "Your party is full.",
@@ -26,6 +30,8 @@ export const PARTY_NOTICE_COPY: Readonly<Record<string, string>> = {
   queued: "Leave the queue first.",
   party_gone: "That party is no more.",
   delivery_failed: "Word could not be sent.",
+  leader_away: "Your leader cannot be reached.",
+  unavailable: "The party cannot be changed right now.",
 };
 
 /** Stands in for a name the server left off: the line still reads. */
