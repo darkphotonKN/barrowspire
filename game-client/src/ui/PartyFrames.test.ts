@@ -9,7 +9,12 @@ import {
 import type { FrameQuery } from "@/render/art/library";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { PartyFrames, type PartyFramesDeps } from "./PartyFrames";
-import type { SeenPlayer } from "./partyFramesLayout";
+import {
+  PARTY_FRAMES_PLACEMENT,
+  partyFramesFrame,
+  partyTravelButtonRect,
+  type SeenPlayer,
+} from "./partyFramesLayout";
 
 // FS-R82NV §Requirements R34, R35. I-R82NV-9: the party frames as a scene draws them, on a
 // recording stand-in for the Phaser scene. I-R82NV-12: every member, the player first, with
@@ -17,6 +22,8 @@ import type { SeenPlayer } from "./partyFramesLayout";
 
 interface FakeText {
   content: string;
+  /** Its left edge (origin 0) as drawn, moved by `setX`. */
+  x: number;
   colour?: string;
   destroyed: boolean;
   interactive: boolean;
@@ -49,13 +56,14 @@ function fakeScene() {
     return self;
   };
   const text = (
-    _x: number,
+    x: number,
     _y: number,
     content: string,
     style: { color?: string } = {},
   ) => {
     const t: FakeText = {
       content,
+      x,
       colour: style.color,
       destroyed: false,
       interactive: false,
@@ -66,9 +74,11 @@ function fakeScene() {
       setDepth: () => self,
       setOrigin: () => self,
       setAlpha: () => self,
+      setX: (nx: number) => ((t.x = nx), self),
       setInteractive: () => ((t.interactive = true), self),
       on: (ev: string, fn: () => void) => (
-        ev === "pointerdown" && (t.press = fn), self
+        ev === "pointerdown" && (t.press = fn),
+        self
       ),
       setText: (c: string) => ((t.content = c), self),
       get text() {
@@ -121,7 +131,16 @@ function fakeScene() {
   /** The live text reading content, if any. */
   const liveText = (content: string) =>
     texts.find((t) => !t.destroyed && t.content === content);
-  return { scene, live, colourOf, liveFills, textsMade, frame, liveTweens, liveText };
+  return {
+    scene,
+    live,
+    colourOf,
+    liveFills,
+    textsMade,
+    frame,
+    liveTweens,
+    liveText,
+  };
 }
 
 const ME = "me";
@@ -191,7 +210,17 @@ function setup(world: WorldType = "hub", clock = { now: 0 }) {
   const tracks = () =>
     scene.liveFills().filter((c) => c === palette.hudTrack).length -
     frames.rowCount();
-  return { ...scene, store, frames, busts, resolved, state, tracks, said, deps };
+  return {
+    ...scene,
+    store,
+    frames,
+    busts,
+    resolved,
+    state,
+    tracks,
+    said,
+    deps,
+  };
 }
 
 describe("PartyFrames", () => {
@@ -246,7 +275,7 @@ describe("PartyFrames", () => {
     frames.show({
       current_player: { id: ME, current_health: 50, max_health: 100 },
     });
-    // the player's health and an empty resource track; Wren shows a word in the hub
+    // the player's health and an empty resource track; Wren, not in this state, name and bust
     expect(tracks()).toBe(2);
   });
 
@@ -581,7 +610,10 @@ describe("PartyFrames names", () => {
     store.getState().apply(
       update(
         [
-          { ...member("wren", "Bartholomew Thornwood the Third"), pod_id: "pod-a" },
+          {
+            ...member("wren", "Bartholomew Thornwood the Third"),
+            pod_id: "pod-a",
+          },
           { ...member(ME, "Marl"), pod_id: "pod-b" },
         ],
         "wren",
@@ -591,8 +623,131 @@ describe("PartyFrames names", () => {
     const leaderName = live().find((c) => c.startsWith("Bartho"));
     expect(leaderName).toBeDefined();
     expect(leaderName?.endsWith("…")).toBe(true);
-    expect(leaderName!.length).toBeLessThan("Bartholomew Thornwood the Third".length);
+    expect(leaderName!.length).toBeLessThan(
+      "Bartholomew Thornwood the Third".length,
+    );
     expect(live()).toContain("Marl");
     expect(live()).toContain("Travel");
+  });
+});
+
+// FS-CH21F §Requirements R8–R11; I-CH21F-2. Same-world teammates' bars in every world, the
+// hub included, and "Lv N" after their names.
+describe("PartyFrames: same-world teammates' vitals and level (FS-CH21F)", () => {
+  const wrenSeen = (extra: Partial<SeenPlayer> = {}): SeenPlayer => ({
+    id: "wren",
+    current_health: 60,
+    max_health: 120,
+    level: 12,
+    ...extra,
+  });
+  /** A text's measured width, as the fake scene measures it: 7 px a character. */
+  const width = (t: { content: string }) => t.content.length * 7;
+
+  it.each(["hub", "field", "run"] as const)(
+    "draws a listed teammate's health and resource bars and their level in the %s",
+    (world) => {
+      const { store, frames, live, liveFills, tracks } = setup(world);
+      store
+        .getState()
+        .apply(
+          update([member(ME, "Me"), member("wren", "Wren", "mage", world)]),
+        );
+      frames.show({
+        other_players: [
+          wrenSeen({
+            resource: { kind: "mana", current: 10, max: 100, ability_cost: 20 },
+          }),
+        ],
+      });
+      expect(tracks()).toBe(4);
+      expect(liveFills()).toContain(palette.hudMana);
+      expect(live()).toEqual(["Me", "Wren", "Lv 12"]);
+    },
+  );
+
+  it("draws a listed teammate's resource bar empty when the state carries no resource", () => {
+    const { store, frames, liveFills, tracks } = setup("hub");
+    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren")]));
+    frames.show({ other_players: [wrenSeen()] });
+    expect(tracks()).toBe(4);
+    expect(liveFills()).not.toContain(palette.hudMana);
+  });
+
+  it("draws a teammate absent from this world's state with no level", () => {
+    const { store, frames, live } = setup("hub");
+    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren")]));
+    frames.show({ other_players: [wrenSeen({ id: "someone-else" })] });
+    expect(live()).toEqual(["Me", "Wren"]);
+  });
+
+  it("never draws the player's own level", () => {
+    const { store, frames, live } = setup("hub");
+    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren")]));
+    frames.show({
+      current_player: { id: ME, current_health: 50, max_health: 100, level: 7 },
+    });
+    expect(live()).not.toContain("Lv 7");
+  });
+
+  it("greys an away teammate's level with their name", () => {
+    const { store, frames, colourOf } = setup("run");
+    store
+      .getState()
+      .apply(
+        update([
+          member(ME, "Me"),
+          { ...member("wren", "Wren"), online: false },
+        ]),
+      );
+    frames.show({ other_players: [wrenSeen()] });
+    expect(colourOf("Lv 12")).toBe(toCss(palette.hudFaint));
+  });
+
+  it("redraws the level when it changes, and drops it when the teammate leaves this world", () => {
+    const { store, frames, live } = setup("hub");
+    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren")]));
+    frames.show({ other_players: [wrenSeen()] });
+    frames.show({ other_players: [wrenSeen({ level: 13 })] });
+    expect(live()).toEqual(["Me", "Wren", "Lv 13"]);
+    frames.show({ other_players: [] });
+    expect(live()).toEqual(["Me", "Wren"]);
+  });
+
+  it("shortens the leader's long name short of the level, and the level short of the Travel button", () => {
+    const { store, frames, liveText, live } = setup("hub");
+    store.getState().apply(
+      update(
+        [
+          {
+            ...member("wren", "Bartholomew Thornwood the Third"),
+            pod_id: "pod-a",
+          },
+          { ...member(ME, "Marl"), pod_id: "pod-b" },
+        ],
+        "wren",
+      ),
+    );
+    frames.show({ other_players: [wrenSeen({ level: 20 })] });
+
+    const name = liveText(live().find((c) => c.startsWith("Ba")) ?? "");
+    const level = liveText("Lv 20");
+    expect(name?.content.endsWith("…")).toBe(true);
+    expect(level).toBeDefined();
+    // the leader's frame is the second, under the player's own
+    const { x, top } = PARTY_FRAMES_PLACEMENT.hub;
+    const travel = partyTravelButtonRect(partyFramesFrame(2, x, top)[1]);
+    expect(name!.x + width(name!)).toBeLessThan(level!.x);
+    expect(level!.x + width(level!)).toBeLessThan(travel.x);
+  });
+
+  it("leaves a short name whole, the level right after it", () => {
+    const { store, frames, liveText } = setup("hub");
+    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren")]));
+    frames.show({ other_players: [wrenSeen()] });
+    const name = liveText("Wren")!;
+    const level = liveText("Lv 12")!;
+    expect(level.x).toBeGreaterThan(name.x + width(name));
+    expect(level.x).toBeLessThan(name.x + width(name) + 12);
   });
 });
