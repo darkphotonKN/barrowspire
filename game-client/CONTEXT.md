@@ -230,7 +230,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   which names the place (a town building's inside, FS-B0H2D), not the way it is drawn.
 - **Indoor blackout**: while the player stands inside a building, everything outside it (the
   street, corridors, open floor, every other building, and everyone in them, party included) is
-  drawn in the canvas's darkest ink (`palette.inkDeep`). Snaps on and off at the doorway. In the
+  drawn in the canvas's darkest ink (`palette.inkDeep`), to the px: only what the building itself
+  draws (its floor, its walls, what stands in it) shows. Snaps on and off at the doorway. In the
   Spire this gives a room an inside, so "indoor" means *inside a room* there once FS-9PN7X ships,
   while the tower theme's "the whole floor is indoors" still describes the floor as a whole. A
   view rule, never a visibility rule: the server sends what it always did.
