@@ -13,7 +13,7 @@ sections of `CLAUDE.md`) disagree on a visual decision, **this file wins.**
 
 > **Two mediums, two parts.** Everything in this document down to the Part II divider is
 > **Part I — Game Canvas & In-Game HUD (pre-rendered isometric art)**. For the **web / platform
-> DOM UI** (marketplace, profile, auth, leaderboard, subscription — React/Next/Tailwind)
+> DOM UI** (marketplace, profile, auth, leaderboard — React/Next/Tailwind)
 > jump to **[Part II — Web / Platform UI Design System](#part-ii--web--platform-ui-dom-design-system)**
 > at the end. The "drop Cinzel" rule applies to **both** — see Part II Typography.
 > Each part has **its own palette**: the barrow ramp below is the game palette, and the web UI
@@ -443,7 +443,7 @@ Where the bound and the message conflict — an end-of-run heading long enough t
 # Part II — Web / Platform UI (DOM) Design System
 
 **Scope.** Governs the **web platform UI** rendered in React/Next/Tailwind DOM — the marketplace,
-profile, leaderboard, auth (login/register), subscription, portal, header/menus, and any future
+profile, leaderboard, auth (login/register), portal, header/menus, and any future
 web surface. This is **not pixel art**: unlike the in-game HUD (Part I), the platform UI uses
 modern web layout, smooth CSS, rounded corners, and blur. The medieval feel is carried by
 **type, colour, iron detailing, and micro-ornament, not textures or 9-slice pixel frames.**
@@ -486,8 +486,8 @@ only. **DOM code never reads `BARROW`, and Phaser code never reads the UI table.
 *intent*; `:root` and the UI table are the *runtime*. Keep them in sync: add a token here, then
 add it to `:root` and to the UI table.
 
-**Which side each seam is on** (FS-8TCN2 slice 3). The Stripe card field and Payment Element on
-`/subscription` read the UI table. The `/portal` particle title (`ParticleText`) is a 2D canvas
+**Which side each seam is on** (FS-8TCN2 slice 3). A Stripe card field or Payment Element, the
+day a paid page has one, reads the UI table. The `/portal` particle title (`ParticleText`) is a 2D canvas
 inside the web UI, so it reads the UI table too: bone motes and a bone, bone-bright and iron-bright
 title. The `/game` page's DOM chrome around the canvas is styled by `globals.css` and is UI. The
 Phaser game config's canvas clear colour (`PhaserGame`, `BARROW.umber`) is the first pixel of the
@@ -978,8 +978,8 @@ consistent grid & weight. Prefer small carved/wax-seal badges over emoji. **No e
 
 - Reuse the player/Spire lore (Part I copy voice). Marketplace naming may lean lore — "The
   Trove" / "Bazaar of the Deep"; items are "relics/plunder"; currency is "gold".
-- **Money-clarity exception:** for real-money / subscription flows, use unambiguous verbs
-  ("Subscribe", "Pay", the price) over lore — never hide a paid action behind flavor. Reserve
+- **Money-clarity exception:** for real-money flows, use unambiguous verbs
+  ("Buy", "Pay", the price) over lore — never hide a paid action behind flavor. Reserve
   "Acquire/Claim" for in-game-currency purchases.
 
 ---

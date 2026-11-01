@@ -102,20 +102,6 @@ class ApiClient {
     );
   }
 
-  // Subscribe to a product (backend auto-creates Stripe customer)
-  async subscribe(productId: string, email: string) {
-    return unwrap(
-      await client.POST("/api/payment/subscribe", {
-        body: { product_id: productId, email },
-      }),
-    );
-  }
-
-  // Check subscription permission (polling endpoint)
-  async checkSubscriptionPermission() {
-    return unwrap(await client.GET("/api/payment/subscription/permission", {}));
-  }
-
   // Upload file directly to S3.
   //
   // NOT a gateway call: the presigned URL points at S3, which has no OpenAPI
