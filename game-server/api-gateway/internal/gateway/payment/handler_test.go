@@ -21,54 +21,20 @@ func TestMain(m *testing.M) {
 }
 
 type stubPaymentClient struct {
-	err error
-
-	customer      *pb.CreateCustomerResponse
-	setup         *pb.SetupSubscriptionResponse
-	subscribe     *pb.SubscribeResponse
-	subscriptions *pb.GetUserSubscriptionsResponse
-	webhook       *pb.ProcessWebhookResponse
-	permission    *pb.CheckPermissionResponse
-}
-
-func (s *stubPaymentClient) CreateCustomer(context.Context, *pb.CreateCustomerRequest) (*pb.CreateCustomerResponse, error) {
-	return s.customer, s.err
-}
-
-func (s *stubPaymentClient) SetupSubscription(context.Context, *pb.SetupSubscriptionRequest) (*pb.SetupSubscriptionResponse, error) {
-	return s.setup, s.err
-}
-
-func (s *stubPaymentClient) Subscribe(context.Context, *pb.SubscribeRequest) (*pb.SubscribeResponse, error) {
-	return s.subscribe, s.err
-}
-
-func (s *stubPaymentClient) GetUserSubscriptions(context.Context, *pb.GetUserSubscriptionsRequest) (*pb.GetUserSubscriptionsResponse, error) {
-	return s.subscriptions, s.err
+	err     error
+	webhook *pb.ProcessWebhookResponse
 }
 
 func (s *stubPaymentClient) ProcessWebhook(context.Context, *pb.ProcessWebhookRequest) (*pb.ProcessWebhookResponse, error) {
 	return s.webhook, s.err
 }
 
-func (s *stubPaymentClient) CheckPermission(context.Context, *pb.CheckPermissionRequest) (*pb.CheckPermissionResponse, error) {
-	return s.permission, s.err
-}
-
-// newRouter mounts the payment gin routes that read no caller identity. The
-// member-scoped ones are typed operations now and read the caller from
-// commonauth; see typed.go.
+// newRouter mounts the webhook exactly as routes.go does: at the root, outside
+// any auth group. It is the only payment route the gateway serves (FS-RG1B4).
 func newRouter(client payment.PaymentClient) *gin.Engine {
 	r := gin.New()
 	h := payment.NewHandler(client)
-
-	g := r.Group("/payment")
-	g.POST("/subscription/setup", h.SetupSubscriptionHandler)
-	g.GET("/subscriptions/:customerId", h.GetUserSubscriptionsHandler)
-
-	// Mounted at the root, outside the auth group, exactly as routes.go does.
 	r.POST("/webhook/stripe", h.WebhookHandler)
-
 	return r
 }
 
@@ -158,57 +124,16 @@ func TestWebhook_WithSignature_ReachesDownstream(t *testing.T) {
 	assert.Equal(t, float64(http.StatusOK), testsupport.Decode(t, w)["statusCode"])
 }
 
-// FS-22WKC §Requirements 4, 5, 7 for the authenticated surface.
-func TestPaymentHandler_DownstreamFailures_ResolveThroughTheSeam(t *testing.T) {
-	tests := []struct {
-		name       string
-		method     string
-		path       string
-		body       string
-		clientErr  error
-		wantStatus int
-		wantCode   errcode.Code
-	}{
-		{
-			name: "subscriptions not found", method: http.MethodGet, path: "/payment/subscriptions/cus_1",
-			clientErr:  status.Error(codes.NotFound, "no subscriptions"),
-			wantStatus: http.StatusNotFound, wantCode: errcode.NotFound,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := newRouter(&stubPaymentClient{err: tt.clientErr})
-
-			w := testsupport.Do(r, tt.method, tt.path, tt.body)
-
-			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
-		})
-	}
-}
-
-// FS-22WKC §Requirements 9 — payment messages are the most sensitive in the
-// gateway: a downstream failure here can name a Stripe customer or a price id.
-func TestPaymentHandler_DownstreamMessages_NeverReachTheClient(t *testing.T) {
+// FS-22WKC §Requirements 9: payment messages are the most sensitive in the
+// gateway, since a downstream failure here can name a Stripe customer or a price id.
+func TestWebhook_DownstreamMessages_NeverReachTheClient(t *testing.T) {
 	const leak = "stripe: No such customer: 'cus_QXaBcDeFgHiJkL'"
 
 	r := newRouter(&stubPaymentClient{err: status.Error(codes.NotFound, leak)})
 
-	w := testsupport.Do(r, http.MethodGet, "/payment/subscriptions/cus_1", "")
+	w := testsupport.DoWithHeaders(r, http.MethodPost, "/webhook/stripe", `{"id":"evt_1"}`,
+		map[string]string{"Stripe-Signature": "t=1,v1=abc"})
 
 	assert.NotContains(t, w.Body.String(), "cus_QXaBcDeFgHiJkL")
 	assert.NotContains(t, w.Body.String(), "stripe:")
-}
-
-// The gateway owns this rule, so its wording survives.
-func TestPaymentHandler_MissingCustomerID_KeepsItsWording(t *testing.T) {
-	r := newRouter(&stubPaymentClient{})
-
-	// An empty path segment does not match the route, so the guard is reached
-	// via a blank param rather than a missing one.
-	w := testsupport.Do(r, http.MethodGet, "/payment/subscriptions/%20", "")
-
-	if w.Code == http.StatusBadRequest {
-		assert.Equal(t, string(errcode.ValidationFailed), testsupport.Decode(t, w)["code"])
-	}
 }

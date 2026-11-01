@@ -43,7 +43,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] Route member traffic to auth
 - [x] Route stats traffic to stats
 - [x] Route notification traffic to notification
-- [x] Route payment traffic to payments, plus the unauthenticated Stripe webhook
+- [x] Route the unauthenticated Stripe webhook to payments → FS-RG1B4
 - [x] Route item traffic to items
 - [ ] Route ledger read traffic to ledger → FS-F9R7Q
 - [x] Route wallet traffic to wallet → FS-none
@@ -163,11 +163,8 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
 
 - `GET /api/notification/`, `PATCH /api/notification/:id/read`, `PATCH /api/notification/read-all`
 
-**payment → `payments`** (JWT, except webhook)
+**payment → `payments`** (webhook only, FS-RG1B4)
 
-- `POST /api/payment/customer`, `POST /api/payment/subscription/setup`,
-  `POST /api/payment/subscribe`, `GET /api/payment/subscriptions/:customerId`,
-  `GET /api/payment/subscription/permission`
 - `POST /webhook/stripe` — **no auth**, no `/api` prefix (Stripe posts directly).
 
 **items → `items`** (JWT)

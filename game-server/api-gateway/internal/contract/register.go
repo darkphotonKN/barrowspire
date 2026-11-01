@@ -8,7 +8,6 @@ import (
 	ledgergw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/ledger"
 	listinggw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/listing"
 	notifgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
-	paygw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
 	statsgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
 	walletgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/wallet"
 	"github.com/gin-gonic/gin"
@@ -24,7 +23,6 @@ type Deps struct {
 	Items        *itemgw.Handler
 	Notification *notifgw.Handler
 	Stats        *statsgw.Handler
-	Payment      *paygw.Handler
 	Ledger       *ledgergw.Handler
 	Listing      *listinggw.Handler
 	Wallet       *walletgw.Handler
@@ -58,7 +56,6 @@ func RegisterOperations(api huma.API, deps Deps) {
 	itemgw.RegisterOperations(api, deps.Items, protect, SeamError, Secured)
 	notifgw.RegisterOperations(api, deps.Notification, protect, SeamError, Secured)
 	statsgw.RegisterOperations(api, deps.Stats, SeamError)
-	paygw.RegisterOperations(api, deps.Payment, protect, SeamError, Secured)
 	ledgergw.RegisterOperations(api, deps.Ledger, protect, SeamError, Secured)
 	listinggw.RegisterOperations(api, deps.Listing, protect, SeamError, Secured)
 	walletgw.RegisterOperations(api, deps.Wallet, protect, SeamError, Secured)

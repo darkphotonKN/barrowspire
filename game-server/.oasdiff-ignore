@@ -102,3 +102,24 @@ in api get /api/member/check-email api path removed without deprecation
 #
 # Line copied verbatim from `make openapi-breaking` output, lowercased.
 in api get /api/items/instances added the new `in_run` enum value to the `result/items/items/status` response property for the response status `200`
+
+# ---------------------------------------------------------------------------
+# FS-RG1B4 (I-RG1B4-2) — subscriptions removed; no player-facing payment API.
+#
+# WHY: the game stopped selling subscriptions. The five /api/payment operations
+# were the subscription checkout's backend (customer, product setup, subscribe,
+# list, entitlement poll), and their only consumer, this repo's /subscription
+# page, was deleted in I-RG1B4-1. Leaving them up would keep an authenticated
+# route that drives Stripe calls for a product nobody can see.
+#
+# Removed WITHOUT a deprecation window deliberately: the only consumer is this
+# repo's own generated client, regenerated in the same change. payment-service,
+# its gRPC surface and POST /webhook/stripe stay, so a later founders package
+# builds on them. Only the HTTP exposure goes.
+#
+# Lines copied verbatim from `make openapi-breaking` output, lowercased.
+in api post /api/payment/customer api path removed without deprecation
+in api post /api/payment/subscribe api path removed without deprecation
+in api get /api/payment/subscription/permission api path removed without deprecation
+in api post /api/payment/subscription/setup api path removed without deprecation
+in api get /api/payment/subscriptions/{customerid} api path removed without deprecation

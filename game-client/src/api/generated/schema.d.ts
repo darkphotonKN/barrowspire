@@ -680,106 +680,6 @@ export interface paths {
         patch: operations["mark-notification-read"];
         trace?: never;
     };
-    "/api/payment/customer": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create a Stripe customer for the signed-in member
-         * @description Creates a Stripe customer bound to the caller's member id.
-         */
-        post: operations["create-payment-customer"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payment/subscribe": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Subscribe the signed-in member to a product
-         * @description Creates (or reuses) the Stripe customer, then subscribes them to the product.
-         */
-        post: operations["subscribe"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payment/subscription/permission": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check the member's subscription entitlement
-         * @description Polling endpoint: reports whether the signed-in member currently holds an active subscription.
-         */
-        get: operations["check-subscription-permission"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payment/subscription/setup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create a subscription product and price
-         * @description Sets up the Stripe product and price a subscription is sold against.
-         */
-        post: operations["setup-subscription-product"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payment/subscriptions/{customerId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List a customer's subscriptions
-         * @description Returns every subscription held by the given Stripe customer.
-         */
-        get: operations["get-user-subscriptions"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/stats/leaderboard": {
         parameters: {
             query?: never;
@@ -1144,10 +1044,6 @@ export interface components {
             /** @description Weapon type */
             weapon_type?: string;
         };
-        CreateCustomerBody: {
-            /** @description Email to attach to the Stripe customer */
-            email: string;
-        };
         CreateItemTemplateBody: {
             /**
              * Format: int32
@@ -1218,10 +1114,6 @@ export interface components {
             rarity_id?: string;
             /** @description Weapon type */
             weapon_type?: string;
-        };
-        CustomerResult: {
-            /** @description Stripe customer id */
-            customer_id?: string;
         };
         Entry: {
             account_id: string;
@@ -1644,17 +1536,6 @@ export interface components {
             /** @description Recipient member id */
             user_id?: string;
         };
-        PermissionEnvelope: {
-            /** @description Whether the member holds an active subscription */
-            has_permission: boolean;
-            /** @description Human-readable summary */
-            message: string;
-            /**
-             * Format: int64
-             * @description Duplicates the HTTP status
-             */
-            statusCode: number;
-        };
         PlaceBidBody: {
             /**
              * Format: int64
@@ -1775,17 +1656,6 @@ export interface components {
              */
             statusCode: number;
         };
-        ResultEnvelopeCustomerResult: {
-            /** @description Human-readable summary */
-            message: string;
-            /** @description The payload */
-            result: components["schemas"]["CustomerResult"];
-            /**
-             * Format: int64
-             * @description Duplicates the HTTP status
-             */
-            statusCode: number;
-        };
         ResultEnvelopeGetLoadoutResponse: {
             /** @description Human-readable summary */
             message: string;
@@ -1852,39 +1722,6 @@ export interface components {
              */
             statusCode: number;
         };
-        ResultEnvelopeSubscribeResult: {
-            /** @description Human-readable summary */
-            message: string;
-            /** @description The payload */
-            result: components["schemas"]["SubscribeResult"];
-            /**
-             * Format: int64
-             * @description Duplicates the HTTP status
-             */
-            statusCode: number;
-        };
-        ResultEnvelopeSubscriptionProductResult: {
-            /** @description Human-readable summary */
-            message: string;
-            /** @description The payload */
-            result: components["schemas"]["SubscriptionProductResult"];
-            /**
-             * Format: int64
-             * @description Duplicates the HTTP status
-             */
-            statusCode: number;
-        };
-        ResultEnvelopeSubscriptionsResult: {
-            /** @description Human-readable summary */
-            message: string;
-            /** @description The payload */
-            result: components["schemas"]["SubscriptionsResult"];
-            /**
-             * Format: int64
-             * @description Duplicates the HTTP status
-             */
-            statusCode: number;
-        };
         ResultEnvelopeUpdateLoadoutResponse: {
             /** @description Human-readable summary */
             message: string;
@@ -1927,17 +1764,6 @@ export interface components {
             title: string;
             type: string;
         };
-        SetupSubscriptionBody: {
-            /** @description Product description */
-            description?: string;
-            /** @description Product name */
-            name?: string;
-            /**
-             * Format: int64
-             * @description Price in cents
-             */
-            price?: number;
-        };
         SigninBody: {
             /** @description Email address */
             email?: string;
@@ -1951,30 +1777,6 @@ export interface components {
             name?: string;
             /** @description Plaintext password */
             password?: string;
-        };
-        SubscribeBody: {
-            /** @description Email for the Stripe customer */
-            email: string;
-            /** @description Product to subscribe to */
-            product_id: string;
-        };
-        SubscribeResult: {
-            /** @description Secret for confirming payment client-side */
-            client_secret?: string;
-            /** @description Subscription status */
-            status?: string;
-            /** @description Stripe subscription id */
-            subscription_id?: string;
-        };
-        SubscriptionProductResult: {
-            /** @description Stripe price id */
-            price_id?: string;
-            /** @description Stripe product id */
-            product_id?: string;
-        };
-        SubscriptionsResult: {
-            /** @description The member's subscriptions */
-            subscriptions?: components["schemas"]["UserSubscriptionInfo"][] | null;
         };
         SuccessEnvelope: {
             /** @description Message chosen by auth-service */
@@ -2030,21 +1832,6 @@ export interface components {
             new_password?: string;
             /** @description New password, repeated */
             repeat_new_password?: string;
-        };
-        UserSubscriptionInfo: {
-            /**
-             * Format: int64
-             * @description Period end, Unix seconds
-             */
-            current_period_end?: number;
-            /** @description Stripe price id */
-            price_id?: string;
-            /** @description Stripe product id */
-            product_id?: string;
-            /** @description Subscription status */
-            status?: string;
-            /** @description Stripe subscription id */
-            subscription_id?: string;
         };
         WalletAccount: {
             /**
@@ -4407,301 +4194,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadEnvelope"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-        };
-    };
-    "create-payment-customer": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateCustomerBody"];
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResultEnvelopeCustomerResult"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-        };
-    };
-    subscribe: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SubscribeBody"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResultEnvelopeSubscribeResult"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-        };
-    };
-    "check-subscription-permission": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PermissionEnvelope"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-        };
-    };
-    "setup-subscription-product": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetupSubscriptionBody"];
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResultEnvelopeSubscriptionProductResult"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-        };
-    };
-    "get-user-subscriptions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Stripe customer id */
-                customerId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResultEnvelopeSubscriptionsResult"];
                 };
             };
             /** @description Bad Request */
