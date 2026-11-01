@@ -12,6 +12,7 @@ import (
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commontypes "github.com/darkphotonKN/barrowspire-server/common/constants/types"
+	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/items-service/grpc/auth"
 	"github.com/google/uuid"
@@ -85,8 +86,10 @@ type Service interface {
 
 	GetLoadout(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*Loadout, error)
 	GetLoadoutWithItems(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*LoadoutWithItems, error)
+	CheckOutRunGear(ctx context.Context, caller uuid.UUID, req *CheckOutRunGearRequest) (*RunGear, error)
 	ListItemInstances(ctx context.Context, caller uuid.UUID, req *ListItemInstancesRequest) ([]*ItemInstance, error)
 	UpdateLoadout(ctx context.Context, caller uuid.UUID, req *UpdateLoadoutRequest) error
+	MoveItemInstance(ctx context.Context, caller uuid.UUID, req *MoveItemInstanceRequest) (string, error)
 
 	// marketplace
 	ReserveItem(ctx context.Context, seller, itemID uuid.UUID, startPrice int64, buyoutPrice *int64, endsAt time.Time) (*ItemInstance, error)
@@ -920,6 +923,12 @@ func (h *Handler) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWit
 		return nil, status.Errorf(codes.Internal, "failed to get loadout with items: %v", err)
 	}
 
+	return loadoutWithItemsToProto(loadout), nil
+}
+
+// loadoutWithItemsToProto maps worn instances onto their slots; an empty slot
+// is absent.
+func loadoutWithItemsToProto(loadout *LoadoutWithItems) *pb.GetLoadoutWithItemsResponse {
 	return &pb.GetLoadoutWithItemsResponse{
 		Weapon:       itemInstanceToProto(loadout.Weapon),
 		Head:         itemInstanceToProto(loadout.Head),
@@ -931,6 +940,49 @@ func (h *Handler) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWit
 		Consumable_1: itemInstanceToProto(loadout.Consumable1),
 		Consumable_2: itemInstanceToProto(loadout.Consumable2),
 		Consumable_3: itemInstanceToProto(loadout.Consumable3),
+	}
+}
+
+// CheckOutRunGear checks the caller's worn and bag items out into a run or
+// field world at seating (FS-18Z5F R5-R11). Outcomes per §API surface: a
+// malformed or missing id → InvalidArgument; another member's gear →
+// PermissionDenied, nothing written (R6); the store down → Unavailable;
+// anything else → Internal.
+func (h *Handler) CheckOutRunGear(ctx context.Context, req *pb.CheckOutRunGearRequest) (*pb.CheckOutRunGearResponse, error) {
+	caller, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	memberID, err := uuid.Parse(req.GetMemberId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid member_id")
+	}
+	runID, err := uuid.Parse(req.GetRunId())
+	if err != nil || runID == uuid.Nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid run_id")
+	}
+
+	gear, err := h.service.CheckOutRunGear(ctx, caller, &CheckOutRunGearRequest{MemberID: memberID, RunID: runID})
+	if denied := refuseForeignMember(err, "CheckOutRunGear", caller, req.GetMemberId()); denied != nil {
+		return nil, denied
+	}
+	switch {
+	case errors.Is(err, commonconstants.ErrTransient):
+		slog.Error("check out run gear: store unavailable", "member_id", memberID, "run_id", runID, "error", err)
+		return nil, status.Error(codes.Unavailable, "items store unavailable")
+	case err != nil:
+		slog.Error("check out run gear failed", "member_id", memberID, "run_id", runID, "error", err)
+		return nil, status.Error(codes.Internal, "failed to check out run gear")
+	}
+
+	bag := make([]*pb.ItemInstance, 0, len(gear.Bag))
+	for _, item := range gear.Bag {
+		bag = append(bag, itemInstanceToProto(item))
+	}
+	return &pb.CheckOutRunGearResponse{
+		Loadout: loadoutWithItemsToProto(gear.Loadout),
+		Bag:     bag,
 	}, nil
 }
 
@@ -968,7 +1020,8 @@ func (h *Handler) ListItemInstances(ctx context.Context, req *pb.ListItemInstanc
 }
 
 // itemInstanceToProto maps an owned item onto the wire; nil stays nil so an
-// empty loadout slot is absent rather than a zero item.
+// empty loadout slot is absent rather than a zero item. The stored location
+// (BAG, STASH) goes out in the HTTP vocabulary, lowercase (FS-VPD8Y R14).
 func itemInstanceToProto(item *ItemInstance) *pb.ItemInstance {
 	if item == nil {
 		return nil
@@ -982,6 +1035,7 @@ func itemInstanceToProto(item *ItemInstance) *pb.ItemInstance {
 		Name:          item.Name,
 		RarityId:      commonhelpers.UuidPtrToString(item.RarityID),
 		Status:        item.Status,
+		Location:      strings.ToLower(item.Location),
 		RequiredLevel: int32(item.RequiredLevel),
 		ItemLevel:     int32(item.ItemLevel),
 		Affixes:       affixesToProto(item.Affixes),
@@ -1055,13 +1109,63 @@ func (h *Handler) UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutReques
 	if denied := refuseForeignMember(err, "UpdateLoadout", caller, req.MemberId); denied != nil {
 		return nil, denied
 	}
-	if err != nil {
+	// A domain refusal (BAG_FULL, FS-VPD8Y R18) carries its code as the
+	// ErrorInfo reason (R13); any code the service refuses with passes through.
+	var refusal *errcode.Refusal
+	switch {
+	case errors.As(err, &refusal):
+		return nil, refusal.GRPCStatus().Err()
+	case err != nil:
 		return nil, status.Errorf(codes.Internal, "failed to update loadout: %v", err)
 	}
 
 	return &pb.UpdateLoadoutResponse{
 		Success: true,
 	}, nil
+}
+
+// wireLocations maps the HTTP vocabulary to the stored location (FS-VPD8Y
+// R14); anything else is not a location.
+var wireLocations = map[string]string{
+	"bag":   LocationBag,
+	"stash": LocationStash,
+}
+
+// MoveItemInstance moves one of the caller's instances between bag and stash
+// (FS-VPD8Y R10). The caller is the token's member only (R12). Outcomes per
+// R13: not found → NotFound; a domain refusal → FailedPrecondition carrying
+// its code as an ErrorInfo reason; a malformed id or unknown location →
+// InvalidArgument; anything else → Internal.
+func (h *Handler) MoveItemInstance(ctx context.Context, req *pb.MoveItemInstanceRequest) (*pb.MoveItemInstanceResponse, error) {
+	caller, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	itemID, err := uuid.Parse(req.GetItemInstanceId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid item_instance_id")
+	}
+	location, ok := wireLocations[req.GetLocation()]
+	if !ok {
+		return nil, status.Error(codes.InvalidArgument, "location must be bag or stash")
+	}
+
+	got, err := h.service.MoveItemInstance(ctx, caller, &MoveItemInstanceRequest{ItemInstanceID: itemID, Location: location})
+	var refusal *errcode.Refusal
+	switch {
+	case errors.As(err, &refusal):
+		return nil, refusal.GRPCStatus().Err()
+	case errors.Is(err, commonconstants.ErrNotFound):
+		return nil, status.Error(codes.NotFound, "item instance not found")
+	case errors.Is(err, commonconstants.ErrInvalidInput):
+		return nil, status.Error(codes.InvalidArgument, "invalid move")
+	case err != nil:
+		slog.Error("move item instance failed", "caller", caller, "item_instance_id", itemID, "error", err)
+		return nil, status.Error(codes.Internal, "failed to move item instance")
+	}
+
+	return &pb.MoveItemInstanceResponse{Id: itemID.String(), Location: strings.ToLower(got)}, nil
 }
 
 func int32Ptr(v *int) *int32 {

@@ -27,6 +27,10 @@ func (c *affixedLoadoutClient) GetLoadoutWithItems(_ context.Context, _ *pb.GetL
 	return c.loadout, nil
 }
 
+func (c *affixedLoadoutClient) CheckOutRunGear(_ context.Context, _ *pb.CheckOutRunGearRequest) (*pb.CheckOutRunGearResponse, error) {
+	return &pb.CheckOutRunGearResponse{Loadout: c.loadout}, nil
+}
+
 var (
 	storedWeaponAffixes = []types.Affix{
 		{Stat: types.AffixStrength, Tier: 2, Value: 5},

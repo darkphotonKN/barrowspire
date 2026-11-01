@@ -89,6 +89,12 @@ func (c *Client) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWith
 	return client.GetLoadoutWithItems(ctx, req)
 }
 
+// CheckOutRunGear checks the member's worn and bag items out into the run or
+// field world run_id names (FS-18Z5F R13).
+func (c *Client) CheckOutRunGear(ctx context.Context, req *pb.CheckOutRunGearRequest) (*pb.CheckOutRunGearResponse, error) {
+	return pb.NewItemsServiceClient(c.conn).CheckOutRunGear(ctx, req)
+}
+
 func (c *Client) ListItemInstances(ctx context.Context, req *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error) {
 	client := pb.NewItemsServiceClient(c.conn)
 	return client.ListItemInstances(ctx, req)

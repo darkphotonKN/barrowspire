@@ -1,13 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "eventemitter3";
 import type { EquippedItems, ItemState } from "@/types/gameState";
+import type { WorldType } from "@/assets/types/client";
+import { IN_RUN_NOTE, UNSAFE_FIND_NOTE } from "@/items/itemView";
 import type { ArtLibrary } from "@/render/art/library";
 import { palette } from "@/utils/canvasPalette";
-import { GEAR_OVERLAY_DEPTH, GearOverlay } from "./GearOverlay";
+import {
+  GEAR_OVERLAY_DEPTH,
+  GearOverlay,
+  STASH_HINT,
+  UNAVAILABLE_ALPHA,
+} from "./GearOverlay";
 import { BAG_CAPACITY } from "./bag";
+import { STASH_CAPACITY } from "./stash";
 import {
   gearPanelLayout,
   overlayLayout,
+  stashPanelLayout,
   statsPanelArea,
 } from "./gearOverlayLayout";
 
@@ -46,6 +55,10 @@ function recordingScene(width = 1080, height = 720) {
     size: number;
   }[] = [];
   const fills = new Set<number>();
+  /** Every line colour drawn (borders, edges). */
+  const strokes = new Set<number>();
+  /** Every icon sprite drawn, with the alpha it was given (1 unless dimmed). */
+  const sprites: { x: number; y: number; alpha: number }[] = [];
   const depths = new Set<number>();
   const input = new EventEmitter();
   const scale = new EventEmitter();
@@ -68,6 +81,7 @@ function recordingScene(width = 1080, height = 720) {
   const graphics = () => {
     const g: Record<string, unknown> = chain({
       fillStyle: (c: number) => (fills.add(c), g),
+      lineStyle: (_w: number, c: number) => (strokes.add(c), g),
     });
     return g;
   };
@@ -104,7 +118,19 @@ function recordingScene(width = 1080, height = 720) {
   };
 
   const scene = {
-    add: { graphics, text, container, sprite: () => chain() },
+    add: {
+      graphics,
+      text,
+      container,
+      sprite: (x: number, y: number) => {
+        const s = { x, y, alpha: 1 };
+        sprites.push(s);
+        const self: Record<string, unknown> = chain({
+          setAlpha: (a: number) => ((s.alpha = a), self),
+        });
+        return self;
+      },
+    },
     cameras: { main: camera },
     input,
     scale,
@@ -137,6 +163,8 @@ function recordingScene(width = 1080, height = 720) {
     texts,
     shown,
     fills,
+    strokes,
+    sprites,
     depths,
     move,
     press,
@@ -144,9 +172,13 @@ function recordingScene(width = 1080, height = 720) {
   };
 }
 
-function overlayOnStage(bag: ItemState[] = [], gear: EquippedItems = worn()) {
+function overlayOnStage(
+  bag: ItemState[] = [],
+  gear: EquippedItems = worn(),
+  world?: WorldType,
+) {
   const s = recordingScene();
-  const overlay = new GearOverlay(s.scene, s.art);
+  const overlay = new GearOverlay(s.scene, s.art, world);
   const onEquip = vi.fn();
   const onUnequip = vi.fn();
   overlay.onEquip = onEquip;
@@ -468,5 +500,348 @@ describe("GearOverlay stats panel (FS-HRH2J §C R24–30)", () => {
 
     for (let i = 0; i < 40; i++) s.wheel(...overStats, -1);
     expect(s.shown()).toContain("MAGE");
+  });
+});
+
+describe("GearOverlay stash mode (FS-VPD8Y §F R35–37)", () => {
+  const ignis = { username: "Ignis", class: "mage", level: 3 };
+
+  /** The overlay opened at the stash chest, the bag, gear and stash then loaded into it. */
+  function stashOnStage(
+    stash: ItemState[] = [],
+    bag: ItemState[] = [],
+    gear: EquippedItems = worn(),
+  ) {
+    const s = recordingScene();
+    const overlay = new GearOverlay(s.scene, s.art);
+    const onEquip = vi.fn();
+    const onUnequip = vi.fn();
+    const onMove = vi.fn();
+    overlay.onEquip = onEquip;
+    overlay.onUnequip = onUnequip;
+    overlay.onMove = onMove;
+    overlay.updateCharacter(ignis);
+    overlay.openStash();
+    overlay.updateInventory(bag);
+    overlay.updateEquipment(gear);
+    overlay.updateStash(stash);
+    const { left, right } = overlayLayout(s.camera.width, s.camera.height);
+    const centre = (r: { x: number; y: number; w: number; h: number }) =>
+      [r.x + r.w / 2, r.y + r.h / 2] as const;
+    const stashCell = (index: number, scroll = 0) =>
+      centre(
+        stashPanelLayout(left, stash.length, scroll).cells.find(
+          (c) => c.index === index,
+        )!.rect,
+      );
+    const bagCell = (index: number, count = bag.length) =>
+      centre(gearPanelLayout(right, count).cells[index].rect);
+    const slot = (name: keyof EquippedItems) =>
+      centre(gearPanelLayout(right, bag.length).slots[name]);
+    return {
+      ...s,
+      overlay,
+      onEquip,
+      onUnequip,
+      onMove,
+      left,
+      stashCell,
+      bagCell,
+      slot,
+    };
+  }
+
+  it("should open with the stash grid in the left panel instead of the stats, the gear and bag unchanged (R35)", () => {
+    const { overlay, shown } = stashOnStage([axe], [sword]);
+    expect(overlay.isVisible()).toBe(true);
+    expect(overlay.isStashOpen()).toBe(true);
+    expect(shown()).toEqual(
+      expect.arrayContaining(["STASH", "1 / 60", "GEAR", "BAG", "1 / 30"]),
+    );
+    expect(shown()).not.toContain("CHARACTER");
+    expect(shown()).not.toContain("Ignis");
+  });
+
+  it("should count an empty stash 0 / 60 (edge state: Empty stash)", () => {
+    const { shown } = stashOnStage();
+    expect(shown()).toContain("0 / 60");
+  });
+
+  it("should keep the stats panel away while the player's state updates in stash mode", () => {
+    const { overlay, shown } = stashOnStage();
+    overlay.updateCharacter({ ...ignis, level: 4 });
+    expect(shown()).not.toContain("Ignis");
+    expect(shown()).toContain("STASH");
+  });
+
+  it("should show a hovered stash item's tip (R35)", () => {
+    const { move, stashCell, shown } = stashOnStage([axe]);
+    move(...stashCell(0));
+    expect(shown()).toContain("axe");
+  });
+
+  it("should read a stash over 60 as over, its extra rows tinted and every item reachable by the wheel (R36)", () => {
+    const stash = Array.from({ length: STASH_CAPACITY + 4 }, (_, i) =>
+      item(`s${i}`),
+    );
+    const { shown, fills, wheel, move, stashCell, left } = stashOnStage(stash);
+    expect(shown()).toContain("64 / 60");
+    const first = stashPanelLayout(left, stash.length);
+    expect(first.visibleRows).toBeLessThan(first.rows);
+
+    for (let i = 0; i < 5; i++) wheel(...stashCell(0), 1);
+    expect(fills).toContain(palette.damage);
+    move(...stashCell(63, first.rows));
+    expect(shown()).toContain("s63");
+  });
+
+  it("should move a hovered bag item to the end of the stash on right-click or E (R38, R41)", () => {
+    const { overlay, move, press, bagCell, stashCell, onMove, onEquip, shown } =
+      stashOnStage([helm], [sword, axe]);
+    move(...bagCell(0));
+    press(...bagCell(0), 2);
+    expect(onMove).toHaveBeenCalledWith(sword, "stash");
+    expect(shown()).toEqual(expect.arrayContaining(["1 / 30", "2 / 60"]));
+    // the stash is now [helm, sword]
+    move(...stashCell(1));
+    expect(shown()).toContain("sword");
+
+    move(...bagCell(0, 1));
+    overlay.handleEquipKey();
+    expect(onMove).toHaveBeenLastCalledWith(axe, "stash");
+    expect(shown()).toEqual(expect.arrayContaining(["0 / 30", "3 / 60"]));
+    expect(onEquip).not.toHaveBeenCalled();
+  });
+
+  it("should move a hovered stash item to the end of the bag on right-click or E (R38, R41)", () => {
+    const { overlay, move, press, stashCell, bagCell, onMove, shown } =
+      stashOnStage([axe, helm], [sword]);
+    move(...stashCell(0));
+    press(...stashCell(0), 2);
+    expect(onMove).toHaveBeenCalledWith(axe, "bag");
+    expect(shown()).toEqual(expect.arrayContaining(["2 / 30", "1 / 60"]));
+    move(...bagCell(1, 2));
+    expect(shown()).toContain("axe");
+
+    move(...stashCell(0));
+    overlay.handleEquipKey();
+    expect(onMove).toHaveBeenLastCalledWith(helm, "bag");
+    expect(shown()).toEqual(expect.arrayContaining(["3 / 30", "0 / 60"]));
+  });
+
+  it("should leave an item where it is when the move is not allowed (R39)", () => {
+    const { overlay, move, bagCell, onMove, shown } = stashOnStage([], [sword]);
+    const mayMove = vi.fn(() => false);
+    overlay.mayMove = mayMove;
+    move(...bagCell(0));
+    overlay.handleEquipKey();
+    expect(mayMove).toHaveBeenCalledWith(sword, "stash");
+    expect(onMove).not.toHaveBeenCalled();
+    expect(shown()).toEqual(expect.arrayContaining(["1 / 30", "0 / 60"]));
+  });
+
+  it("should take no move while a status is set (R41: one request at a time)", () => {
+    const { overlay, move, press, bagCell, onMove } = stashOnStage([], [sword]);
+    overlay.setStatus("Changing your gear...");
+    move(...bagCell(0));
+    press(...bagCell(0), 2);
+    overlay.handleEquipKey();
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it("should do nothing on a left-click in stash mode (R38)", () => {
+    const { move, press, bagCell, stashCell, onMove } = stashOnStage(
+      [axe],
+      [sword],
+    );
+    move(...bagCell(0));
+    press(...bagCell(0), 0);
+    move(...stashCell(0));
+    press(...stashCell(0), 0);
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it("should dim an item that is not AVAILABLE in the bag and the stash (R40)", () => {
+    const listed = item("listed", { status: "LISTED" });
+    const settling = item("settling", { status: "PENDING_SETTLEMENT" });
+    const free = item("free", { status: "AVAILABLE" });
+    const { sprites, stashCell, bagCell } = stashOnStage(
+      [listed, free],
+      [settling],
+    );
+    const alphaAt = ([x, y]: readonly [number, number]) =>
+      sprites.filter((s) => s.x === x && s.y === y).at(-1)?.alpha;
+    expect(alphaAt(stashCell(0))).toBe(UNAVAILABLE_ALPHA);
+    expect(alphaAt(stashCell(1))).toBe(1);
+    expect(alphaAt(bagCell(0))).toBe(UNAVAILABLE_ALPHA);
+    expect(UNAVAILABLE_ALPHA).toBeLessThan(1);
+  });
+
+  it("should hint at moving between bag and stash (R38)", () => {
+    const { shown } = stashOnStage();
+    expect(shown()).toContain(STASH_HINT);
+    expect(STASH_HINT).toMatch(/stash/i);
+  });
+
+  it("should never wear a bag or stash item in stash mode (R37/R38: equip is not offered)", () => {
+    const { overlay, move, press, stashCell, bagCell, onEquip } = stashOnStage(
+      [axe],
+      [sword],
+    );
+    move(...bagCell(0));
+    press(...bagCell(0), 2);
+    overlay.handleEquipKey();
+    move(...stashCell(0));
+    press(...stashCell(0), 2);
+    overlay.handleEquipKey();
+    expect(onEquip).not.toHaveBeenCalled();
+  });
+
+  it("should still take off a worn item to the bag in stash mode (R38)", () => {
+    const { overlay, move, slot, onUnequip, shown } = stashOnStage(
+      [],
+      [],
+      worn({ head: helm }),
+    );
+    move(...slot("head"));
+    overlay.handleEquipKey();
+    expect(onUnequip).toHaveBeenCalledWith(helm, "head");
+    expect(shown()).toContain("1 / 30");
+  });
+
+  it("should show a status line over the stash as well as the bag (edge state: REST load fails in stash mode)", () => {
+    const { overlay, shown } = stashOnStage();
+    overlay.setStatus("Could not fetch your gear.");
+    expect(
+      shown().filter((t) => t === "Could not fetch your gear."),
+    ).toHaveLength(2);
+  });
+
+  it("should end stash mode on closing, the next open showing the stats (R37)", () => {
+    const { overlay, shown } = stashOnStage([axe]);
+    overlay.hide();
+    expect(overlay.isStashOpen()).toBe(false);
+    overlay.show();
+    expect(shown()).toContain("CHARACTER");
+    expect(shown()).toContain("Ignis");
+    expect(shown()).not.toContain("STASH");
+    expect(shown()).not.toContain("1 / 60");
+  });
+
+  it("should end stash mode when its scene shuts down (edge state: World switch while the stash is open)", () => {
+    const { overlay, events } = stashOnStage();
+    events.emit("shutdown");
+    expect(overlay.isStashOpen()).toBe(false);
+  });
+
+  it("should not turn an open overlay into stash mode", () => {
+    const s = recordingScene();
+    const overlay = new GearOverlay(s.scene, s.art);
+    overlay.show();
+    overlay.openStash();
+    expect(overlay.isStashOpen()).toBe(false);
+    expect(s.shown()).toContain("CHARACTER");
+  });
+});
+
+describe("GearOverlay item standing (FS-18Z5F §H)", () => {
+  const charm = item("charm", { rarity: "rare", unsafe: true });
+  const ringFind = item("band", { rarity: "rare", unsafe: true });
+  const oldRing = item("old-band", { rarity: "rare" });
+
+  it("should edge an unsafe find in oxblood in a bag cell and a worn slot in a run, the rarity edge kept (R36)", () => {
+    const inBag = overlayOnStage([charm], worn(), "run");
+    expect(inBag.strokes).toContain(palette.unsafeFind);
+    expect(inBag.fills).toContain(palette.rarity.rare);
+
+    const wornFind = overlayOnStage([], worn({ ring_1: ringFind }), "run");
+    expect(wornFind.strokes).toContain(palette.unsafeFind);
+    expect(wornFind.fills).toContain(palette.rarity.rare);
+  });
+
+  it("should not edge a safe item in a run (R36)", () => {
+    const { strokes, fills } = overlayOnStage(
+      [oldRing],
+      worn({ ring_1: oldRing }),
+      "run",
+    );
+    expect(strokes).not.toContain(palette.unsafeFind);
+    expect(fills).toContain(palette.rarity.rare);
+  });
+
+  it("should add the unsafe note to an unsafe find's tip in a run (R36)", () => {
+    const { move, cell, slot, shown } = overlayOnStage(
+      [charm],
+      worn({ ring_1: ringFind }),
+      "run",
+    );
+    move(...cell(0));
+    expect(shown()).toContain(UNSAFE_FIND_NOTE);
+    move(...slot("ring_1"));
+    expect(shown()).toContain(UNSAFE_FIND_NOTE);
+  });
+
+  it.each([["field" as const], ["hub" as const]])(
+    "should mark nothing on an unsafe find in a %s world (R37)",
+    (world) => {
+      const { strokes, move, cell, shown } = overlayOnStage(
+        [charm],
+        worn({ ring_1: ringFind }),
+        world,
+      );
+      expect(strokes).not.toContain(palette.unsafeFind);
+      move(...cell(0));
+      expect(shown()).not.toContain(UNSAFE_FIND_NOTE);
+    },
+  );
+
+  it("should dim an IN_RUN item worn or in the bag in the hub, its tip saying it is still in a delve (R38)", () => {
+    const helmInRun = item("helm-in-run", {
+      armor_slot: "head",
+      status: "IN_RUN",
+    });
+    const bagInRun = item("bag-in-run", { status: "IN_RUN" });
+    const { sprites, move, cell, slot, shown } = overlayOnStage(
+      [bagInRun],
+      worn({ head: helmInRun }),
+      "hub",
+    );
+    const alphaAt = ([x, y]: readonly [number, number]) =>
+      sprites.filter((sp) => sp.x === x && sp.y === y).at(-1)?.alpha;
+    expect(alphaAt(cell(0))).toBe(UNAVAILABLE_ALPHA);
+    expect(alphaAt(slot("head"))).toBe(UNAVAILABLE_ALPHA);
+    move(...cell(0));
+    expect(shown()).toContain(IN_RUN_NOTE);
+    move(...slot("head"));
+    expect(shown()).toContain(IN_RUN_NOTE);
+  });
+
+  it("should ask before an equip is drawn, leaving everything where it was when refused", () => {
+    const { overlay, move, press, cell, onEquip, shown } = overlayOnStage(
+      [axe],
+      worn({ weapon: sword }),
+      "hub",
+    );
+    const mayEquip = vi.fn(() => false);
+    overlay.mayEquip = mayEquip;
+    move(...cell(0));
+    press(...cell(0), 2);
+    expect(mayEquip).toHaveBeenCalledWith(axe, "weapon");
+    expect(onEquip).not.toHaveBeenCalled();
+    expect(shown()).toContain("1 / 30");
+  });
+
+  it("should ask about the very item before an unequip", () => {
+    const { overlay, move, slot, onUnequip } = overlayOnStage(
+      [],
+      worn({ head: helm }),
+      "hub",
+    );
+    const mayUnequip = vi.fn(() => false);
+    overlay.mayUnequip = mayUnequip;
+    move(...slot("head"));
+    overlay.handleEquipKey();
+    expect(mayUnequip).toHaveBeenCalledWith(helm);
+    expect(onUnequip).not.toHaveBeenCalled();
   });
 });

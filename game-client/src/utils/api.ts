@@ -218,6 +218,17 @@ class ApiClient {
     );
   }
 
+  // Move an owned, unworn item between the bag and the stash (FS-VPD8Y R22); refusals carry
+  // BAG_FULL, STASH_FULL, ITEM_NOT_AVAILABLE, ITEM_WORN or NOT_FOUND as their code
+  async moveItemInstance(id: string, location: "bag" | "stash") {
+    return unwrap(
+      await client.PUT("/api/items/instances/{id}/location", {
+        params: { path: { id } },
+        body: { location },
+      }),
+    );
+  }
+
   // The signed-in player's gold (FS-8EGFA req 26). 404 until the account exists, just after
   // signup (ADR-0014).
   async getWalletAccount() {

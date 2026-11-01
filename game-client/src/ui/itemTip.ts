@@ -4,7 +4,8 @@
  * and decides nothing: the words and the "too high" mark come from the presenter.
  *
  * Rarity colour follows the guideline's rarity ramp: only on the badge and the tip's accent
- * edge, never on the name. The requirement takes the damage channel only while it is above the
+ * edge, never on the name. Where the view marks the item's standing (FS-18Z5F §H), its note
+ * follows the badge. The requirement takes the damage channel only while it is above the
  * character's level (FS-BDA7X R45).
  */
 
@@ -74,6 +75,19 @@ export function buildItemTip(
     badge(view.kind === "unknown" ? "item" : view.kind, palette.hudLabel),
   );
   y += badgeH + SECTION_GAP;
+
+  // where the item stands (FS-18Z5F §H): an unsafe find's warning in the danger channel, an
+  // in-run item's note in the label tone
+  if (view.standing) {
+    line(
+      view.standing.note,
+      11,
+      view.standing.kind === "unsafeFind"
+        ? palette.unsafeFind
+        : palette.hudLabel,
+    );
+    y += SECTION_GAP;
+  }
 
   for (const stat of view.stats) {
     const label = scene.add.text(left, y, stat.label.toUpperCase(), {

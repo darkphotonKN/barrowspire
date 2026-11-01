@@ -240,7 +240,16 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   toward bag capacity.
 - **Not the bag:** a **container**'s item list (a chest or drop pile) is the same component on a
   different entity and has no cap here; the **stash** (FS-VPD8Y) is account storage outside any
-  world.
+  world, never seated.
+- **Seating checkout** — seating a body checks out its worn and bag items in items-service
+  (IN_RUN, ADR-0032) before building it. The bag a body is seated with is the account's
+  bag-location items, not every owned item (FS-18Z5F).
+- **Safe item** — an item the delver brought into this run or field world (seated with). A dead
+  delver's safe items come home.
+- **Unsafe find** — an item picked up inside this run, held on the body (bag or worn) until the
+  delver escapes. Unsafe follows the item, not the slot: equipping it keeps it unsafe. A dead
+  delver's unsafe finds are lost, whether they leave early or wait for the run's end. Field
+  death costs nothing, so field finds are never lost (FS-18Z5F).
 
 ### The message hub (the other `hub`)
 

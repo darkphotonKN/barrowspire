@@ -46,6 +46,11 @@ func fieldLoadout() *pb.GetLoadoutWithItemsResponse {
 	}
 }
 
+// fieldGear is fieldLoadout checked out, with an empty bag.
+func fieldGear() *pb.CheckOutRunGearResponse {
+	return &pb.CheckOutRunGearResponse{Loadout: fieldLoadout()}
+}
+
 var fieldWren = types.CharacterInPlay{ID: uuid.New(), Name: "Wren", Class: "warrior", Level: 3, Experience: 900}
 
 // The Meadows and the Forest are registered, the Forest built from the layout
@@ -97,10 +102,11 @@ func TestSeatVisitor_SeatsAtTheArrivalWearingTheLoadout(t *testing.T) {
 	place := GentleMeadows()
 	memberID := uuid.New()
 
-	visit, err := field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+	visitID := uuid.New()
+	visit, err := field.SeatVisitor(memberID, fieldWren, visitID, fieldGear())
 	require.NoError(t, err)
 
-	assert.NotEqual(t, uuid.Nil, visit.ID, "a visit id is minted")
+	assert.Equal(t, visitID, visit.ID, "the visit opens under the id its gear was checked out with (FS-18Z5F R14)")
 	assert.NotEqual(t, field.ID, visit.ID, "never the channel's own id")
 	assert.Equal(t, memberID, visit.MemberID)
 	assert.Equal(t, fieldWren.ID, visit.CharacterID)
@@ -126,12 +132,12 @@ func TestSeatVisitor_EveryVisitHasItsOwnID(t *testing.T) {
 	field := builtField(t)
 	memberID := uuid.New()
 
-	first, err := field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+	first, err := field.SeatVisitor(memberID, fieldWren, uuid.New(), fieldGear())
 	require.NoError(t, err)
 	_, ended := field.EndVisit(memberID)
 	require.True(t, ended)
 
-	second, err := field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+	second, err := field.SeatVisitor(memberID, fieldWren, uuid.New(), fieldGear())
 	require.NoError(t, err)
 
 	assert.NotEqual(t, first.ID, second.ID)
@@ -143,10 +149,10 @@ func TestSeatVisitor_Refusals(t *testing.T) {
 	t.Run("already here", func(t *testing.T) {
 		field := builtField(t)
 		memberID := uuid.New()
-		_, err := field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+		_, err := field.SeatVisitor(memberID, fieldWren, uuid.New(), fieldGear())
 		require.NoError(t, err)
 
-		_, err = field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+		_, err = field.SeatVisitor(memberID, fieldWren, uuid.New(), fieldGear())
 		assert.ErrorIs(t, err, ErrAlreadyHere)
 		assert.Len(t, field.GetPlayerIDs(), 1, "no second body")
 	})
@@ -155,7 +161,7 @@ func TestSeatVisitor_Refusals(t *testing.T) {
 		field := builtField(t)
 		memberID := uuid.New()
 
-		_, err := field.SeatVisitor(memberID, fieldWren, nil)
+		_, err := field.SeatVisitor(memberID, fieldWren, uuid.New(), nil)
 		assert.ErrorIs(t, err, ErrNoLoadout)
 		assert.False(t, field.HasPlayer(memberID))
 	})
@@ -163,7 +169,7 @@ func TestSeatVisitor_Refusals(t *testing.T) {
 	t.Run("not a field", func(t *testing.T) {
 		hub := builtHub()
 
-		_, err := hub.SeatVisitor(uuid.New(), fieldWren, fieldLoadout())
+		_, err := hub.SeatVisitor(uuid.New(), fieldWren, uuid.New(), fieldGear())
 		assert.ErrorIs(t, err, ErrNotAField)
 	})
 }
@@ -173,7 +179,7 @@ func TestSeatVisitor_Refusals(t *testing.T) {
 func TestEndVisit_RemovesTheBodyAndItsItems(t *testing.T) {
 	field := builtField(t)
 	memberID := uuid.New()
-	entered, err := field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+	entered, err := field.SeatVisitor(memberID, fieldWren, uuid.New(), fieldGear())
 	require.NoError(t, err)
 
 	body := delverEntity(t, field, memberID)
@@ -202,7 +208,7 @@ func TestEndVisit_RemovesTheBodyAndItsItems(t *testing.T) {
 func TestEndVisit_ExactlyOnceUnderRace(t *testing.T) {
 	field := builtField(t)
 	memberID := uuid.New()
-	_, err := field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+	_, err := field.SeatVisitor(memberID, fieldWren, uuid.New(), fieldGear())
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
@@ -245,7 +251,7 @@ func TestLeaveThroughEntrance(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			field := builtField(t)
 			memberID := uuid.New()
-			_, err := field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+			_, err := field.SeatVisitor(memberID, fieldWren, uuid.New(), fieldGear())
 			require.NoError(t, err)
 
 			body := delverEntity(t, field, memberID)
@@ -282,7 +288,7 @@ func TestLeaveThroughEntrance(t *testing.T) {
 func TestFieldWorld_TicksEmptyAndNeverEnds(t *testing.T) {
 	field := builtField(t)
 	memberID := uuid.New()
-	_, err := field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+	_, err := field.SeatVisitor(memberID, fieldWren, uuid.New(), fieldGear())
 	require.NoError(t, err)
 	_, _ = field.EndVisit(memberID)
 

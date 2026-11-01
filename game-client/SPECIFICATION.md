@@ -61,6 +61,7 @@ server state and sends intents. ✅
 - [x] Ability card on the HUD → FS-8AY7S
 - [x] Shadow Shot aimed by holding → FS-JTNPR
 - [ ] Allocated pickup notices → FS-V780R
+- [ ] Unsafe marking on run finds → FS-18Z5F
 
 ### Character
 

@@ -125,6 +125,12 @@ type CreateCompleteConsumableBody struct {
 	Description   string  `json:"description,omitempty" doc:"Description"`
 }
 
+// MoveItemInstanceBody names the destination only: the caller comes from the
+// token (FS-VPD8Y R12), and the domain rules are items-service's (ADR-0001 §6).
+type MoveItemInstanceBody struct {
+	Location string `json:"location" enum:"bag,stash" doc:"Where to keep the item: carried in the bag or stored in the town stash"`
+}
+
 type UpdateLoadoutBody struct {
 	Slot           string `json:"slot" required:"true" doc:"Loadout slot to change"`
 	ItemInstanceID string `json:"item_instance_id,omitempty" doc:"Item instance to equip; empty unequips"`
@@ -135,6 +141,10 @@ type UpdateLoadoutBody struct {
 var (
 	errsAuthed       = []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusInternalServerError}
 	errsAuthedDomain = []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError}
+	// errsMoveItemInstance adds 404 (the addressed item is not the caller's)
+	// and 503 (items-service down, FS-VPD8Y §API surface). The move's own
+	// list, so documenting its 503 widens no other operation.
+	errsMoveItemInstance = []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusInternalServerError, http.StatusServiceUnavailable}
 )
 
 // items-service authenticates every RPC from the caller's token (common/auth
@@ -172,6 +182,7 @@ func RegisterOperations(api huma.API, h *Handler,
 	registerGetLoadout(api, h, mw)
 	registerListItemInstances(api, h, mw)
 	registerUpdateLoadout(api, h, mw)
+	registerMoveItemInstance(api, h, mw)
 }
 
 func registerCreateWeapon(api huma.API, h *Handler, mw huma.Middlewares) {
@@ -570,7 +581,7 @@ func registerListItemInstances(api huma.API, h *Handler, mw huma.Middlewares) {
 		Method:      http.MethodGet,
 		Path:        "/api/items/instances",
 		Summary:     "List the signed-in member's item instances",
-		Description: "The member's stash: every item instance they own.",
+		Description: "Every item instance the member owns, worn or not, each with its location: the bag or the stash.",
 		Tags:        []string{"items"},
 		Middlewares: mw,
 		Security:    securedOp,
@@ -609,7 +620,10 @@ func registerUpdateLoadout(api huma.API, h *Handler, mw huma.Middlewares) {
 		Method:      http.MethodPut,
 		Path:        "/api/items/loadout",
 		Summary:     "Equip or unequip an item in a loadout slot",
-		Description: "Sets the item instance in a slot. An empty item_instance_id unequips the slot.",
+		Description: "Sets the item instance in a slot. An empty item_instance_id unequips the slot. " +
+			"The item the slot held, on an unequip or a swap, goes to the bag. " +
+			"Refusals: ITEM_NOT_AVAILABLE (equipping an item in a run, listed or pending settlement), " +
+			"BAG_FULL (an unequip, or a swap that would grow the bag, with the bag at or over 30).",
 		Tags:        []string{"items"},
 		Middlewares: mw,
 		Security:    securedOp,
@@ -632,6 +646,47 @@ func registerUpdateLoadout(api huma.API, h *Handler, mw huma.Middlewares) {
 		}
 		return &output{Body: resultEnvelope[*UpdateLoadoutResponse]{
 			StatusCode: http.StatusOK, Message: "Loadout updated successfully", Result: wire,
+		}}, nil
+	}))
+}
+
+func registerMoveItemInstance(api huma.API, h *Handler, mw huma.Middlewares) {
+	type input struct {
+		Authorization string `header:"Authorization" hidden:"true"`
+		ID            string `path:"id" format:"uuid" doc:"The item instance to move"`
+		Body          MoveItemInstanceBody
+	}
+	type output struct {
+		Body resultEnvelope[*MoveItemInstanceResponse]
+	}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "move-item-instance",
+		Method:      http.MethodPut,
+		Path:        "/api/items/instances/{id}/location",
+		Summary:     "Move an item between the bag and the stash",
+		Description: "Moves one of the signed-in member's unworn, available items to the bag or the stash. " +
+			"Moving it where it already is succeeds and changes nothing. " +
+			"Refusals: ITEM_WORN (in the loadout), ITEM_NOT_AVAILABLE (listed or pending settlement), " +
+			"BAG_FULL (bag at or over 30), STASH_FULL (stash at or over 60). " +
+			"An item that is not the member's answers 404.",
+		Tags:        []string{"items"},
+		Middlewares: mw,
+		Security:    securedOp,
+		Errors:      errsMoveItemInstance,
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		res, err := h.client.MoveItemInstance(withBearer(ctx, in.Authorization), &pb.MoveItemInstanceRequest{
+			ItemInstanceId: in.ID, Location: in.Body.Location,
+		})
+		if err != nil {
+			return nil, err
+		}
+		wire, err := wire.As[MoveItemInstanceResponse](res)
+		if err != nil {
+			return nil, err
+		}
+		return &output{Body: resultEnvelope[*MoveItemInstanceResponse]{
+			StatusCode: http.StatusOK, Message: "Item moved successfully", Result: wire,
 		}}, nil
 	}))
 }

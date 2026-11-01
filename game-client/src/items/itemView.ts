@@ -6,10 +6,15 @@
  * Phaser-free, so the words are tested without a canvas; the satchel (container view) and the
  * gear and bag overlay draw what this returns. It reads the run's snake_case `ItemState`; the
  * hub maps its REST item instances into the same shape first.
+ *
+ * Given the world it is drawn in, it also says where the item stands (FS-18Z5F §H): an unsafe
+ * find in a run, or an item still in a delve in the hub. A view given no world (the container
+ * view: what it holds is not the player's yet) marks nothing.
  */
 
 import { itemStats, type StatLine } from "@/marketplace/detail";
 import { rarityOf, type RarityToken } from "@/marketplace/rarity";
+import type { WorldType } from "@/assets/types/client";
 import { getItemType, type ItemState, type ItemType } from "@/types/gameState";
 import { itemLines, type ItemLines } from "./itemLines";
 
@@ -25,10 +30,54 @@ export interface ItemView {
   lines: ItemLines;
   /** The item's description: a unique's lore. */
   lore: string | undefined;
+  /** Where the item stands, when the view marks it (FS-18Z5F §H); absent otherwise. */
+  standing: ItemStanding | undefined;
 }
 
-/** An item as every item view reads it. Pass the character's level, where known, for R45. */
-export function itemView(item: ItemState, characterLevel?: number): ItemView {
+/** The tip note on an unsafe find in a run (FS-18Z5F R36). */
+export const UNSAFE_FIND_NOTE =
+  "Found this run: lost if you die before you escape.";
+/** The tip note on an item still in a delve, in the hub (FS-18Z5F R38). */
+export const IN_RUN_NOTE = "Still in a delve.";
+
+/**
+ * Where an item stands, when a view marks it (FS-18Z5F §H): an unsafe find, edged and noted in a
+ * run (R36), or an in-run item, dimmed, noted and locked in the hub (R38).
+ */
+export interface ItemStanding {
+  kind: "unsafeFind" | "inRun";
+  /** The line the item tip adds. */
+  note: string;
+}
+
+/**
+ * Whether an owned item is checked out into a live run or field world (`IN_RUN`): in the hub it
+ * cannot be equipped, unequipped or moved (FS-18Z5F R38). The server stays the authority.
+ */
+export function inRun(item: ItemState): boolean {
+  return item.status === "IN_RUN";
+}
+
+/** An item's standing in `world`: only a run marks unsafe finds (R36–37). */
+function standingOf(
+  item: ItemState,
+  world: WorldType | undefined,
+): ItemStanding | undefined {
+  if (inRun(item)) return { kind: "inRun", note: IN_RUN_NOTE };
+  if (world === "run" && item.unsafe)
+    return { kind: "unsafeFind", note: UNSAFE_FIND_NOTE };
+  return undefined;
+}
+
+/**
+ * An item as every item view reads it. Pass the character's level, where known, for R45, and
+ * the world the view is drawn in, for the item's standing (FS-18Z5F §H).
+ */
+export function itemView(
+  item: ItemState,
+  characterLevel?: number,
+  world?: WorldType,
+): ItemView {
   const rarity = item.rarity?.trim() ? rarityOf(item.rarity) : null;
   return {
     name: item.name,
@@ -55,6 +104,7 @@ export function itemView(item: ItemState, characterLevel?: number): ItemView {
       characterLevel,
     ),
     lore: item.description?.trim() || undefined,
+    standing: standingOf(item, world),
   };
 }
 

@@ -10,6 +10,8 @@ import (
 // stats, its identity, and the roll it keeps for life (item level, affixes,
 // required level, unique effect). Its rarity code is looked up among the
 // session's rarities; unknown, it is left empty. FS-4R9M9 §Requirements 53.
+// It is the one item source that opts in to safe: the delver brought it in.
+// FS-18Z5F §D R19.
 func loadoutItemConfig(item *pbitems.ItemInstance, rarities []lootRarity) types.ItemConfig {
 	templateID, _ := uuid.Parse(item.GetTemplateId())
 	var instanceID *uuid.UUID
@@ -41,6 +43,7 @@ func loadoutItemConfig(item *pbitems.ItemInstance, rarities []lootRarity) types.
 		Affixes:          affixesFromPb(item.GetAffixes()),
 		UniqueEffectCode: item.GetUniqueEffectCode(),
 		UniqueEffectText: item.GetUniqueEffectText(),
+		Safe:             true,
 	}
 	for _, r := range rarities {
 		if r.ID == config.RarityID {

@@ -220,6 +220,7 @@ func CreateItemEntity(em *ecs.EntityManager, itemconfig types.ItemConfig) *ecs.E
 	itemComp.Affixes = itemconfig.Affixes
 	itemComp.UniqueEffectCode = itemconfig.UniqueEffectCode
 	itemComp.UniqueEffectText = itemconfig.UniqueEffectText
+	itemComp.Unsafe = !itemconfig.Safe
 
 	entity.AddComponent(itemComp)
 

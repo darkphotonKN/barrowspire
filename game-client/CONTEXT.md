@@ -221,14 +221,21 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   holds at most **bag capacity**, 30 items (`BAG_CAPACITY` in `src/ui/bag.ts`, game-service's
   `BagCapacity`). New items go on the end, and nothing reorders it. In a run or a field world it
   is the WS `inventory` (plus items taken and still pending), and a pickup or unequip into a full
-  bag is not sent ("Your bag is full."). In the hub it is every owned item the loadout does not
-  wear, read over REST and not capped, so it can read over capacity (e.g. `34 / 30`). Same
+  bag is not sent ("Your bag is full."). In the hub it is the account's bag-location items, read
+  over REST and not capped, so it can read over capacity (e.g. `34 / 30`); before FS-VPD8Y it
+  was every owned item the loadout did not wear. Same
   meaning as game-service's **bag**
   ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Carried items").
   **Not the container view**: the satchel/coffer panel shows a container's contents, never the
   bag, even though code still says `satchel` in places (`satchelIcon`, the container view's
   leather). Say **bag** in prose, specs and new names. Not "inventory" either: that is the wire
   field, and items-service's word for everything an account owns.
+- **Stash**: the account's town storage (60), opened at the hub's stash chest and shown as its
+  own grid beside the bag; items move bag ↔ stash with right-click or `E` (FS-VPD8Y). Never in
+  a run or field world. Not the container view: a run chest is a world container, the stash
+  chest only opens the account's stash.
+- **Unsafe find** (marking): the border and tip note on an item picked up in this run, which
+  is lost if the player dies before escaping. Game-service's term (FS-18Z5F).
 
 - **Ability card**: the HUD panel at the bottom right of a run or a field world showing the
   player's class ability: its name, the right-mouse glyph and a line on how it works (FS-8AY7S).

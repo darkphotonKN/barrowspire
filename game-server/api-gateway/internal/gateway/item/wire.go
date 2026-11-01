@@ -143,7 +143,7 @@ type ItemInstance struct {
 	BuyPrice        int32   `json:"buy_price,omitempty"`
 	SellPrice       int32   `json:"sell_price,omitempty"`
 	Description     string  `json:"description,omitempty"`
-	Status          string  `json:"status,omitempty" enum:"AVAILABLE,LISTED,IN_ESCROW,PENDING_SETTLEMENT" doc:"Lifecycle status; only AVAILABLE relics can be listed"`
+	Status          string  `json:"status,omitempty" enum:"AVAILABLE,LISTED,IN_ESCROW,PENDING_SETTLEMENT,IN_RUN" doc:"Lifecycle status; only AVAILABLE relics can be listed or equipped. IN_RUN is checked out into a run or field world."`
 	RequiredLevel   int32   `json:"required_level,omitempty" minimum:"1" doc:"Derived requirement: max of base and affix tiers; the template's for items from before item levels"`
 
 	// FS-4R9M9. affixes round-trips like every other field; unique_effect is
@@ -152,6 +152,11 @@ type ItemInstance struct {
 	ItemLevel    int32        `json:"item_level" minimum:"1" doc:"The level the item rolled at"`
 	Affixes      []wire.Affix `json:"affixes" nullable:"false" doc:"Every rolled affix; empty for an item without any"`
 	UniqueEffect string       `json:"unique_effect,omitempty" doc:"The unique's effect text. Absent unless the item is a unique"`
+
+	// FS-VPD8Y R21. No omitempty, on purpose: every owned item has a location,
+	// so the schema declares it required and the client never has to guess one
+	// (contract-patterns §5).
+	Location string `json:"location" enum:"bag,stash" doc:"Where the member keeps the item: carried in the bag or stored in the town stash. A worn item is in the loadout whatever this says"`
 }
 
 type GetLoadoutResponse struct {
@@ -181,7 +186,14 @@ type UpdateLoadoutResponse struct {
 	Success bool `json:"success,omitempty"`
 }
 
-// listItemInstancesFromProto maps the stash to the wire: the JSON round-trip
+// MoveItemInstanceResponse is where the instance is kept after a move, the
+// same on a no-op (FS-VPD8Y §API surface). Both members always present.
+type MoveItemInstanceResponse struct {
+	Id       string `json:"id" format:"uuid" doc:"The item instance"`
+	Location string `json:"location" enum:"bag,stash" doc:"Where the member keeps the item after the call"`
+}
+
+// listItemInstancesFromProto maps the owned items to the wire: the JSON round-trip
 // for every field whose tag agrees with the proto, then the two that cannot
 // round-trip — the effect text, published under its own name, and affixes as
 // [] rather than null for an item without any.

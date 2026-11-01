@@ -111,6 +111,10 @@ func (m *MockItemsClient) GetLoadoutWithItems(ctx context.Context, req *itemspb.
 	return &itemspb.GetLoadoutWithItemsResponse{}, nil
 }
 
+func (m *MockItemsClient) CheckOutRunGear(ctx context.Context, req *itemspb.CheckOutRunGearRequest) (*itemspb.CheckOutRunGearResponse, error) {
+	return &itemspb.CheckOutRunGearResponse{Loadout: &itemspb.GetLoadoutWithItemsResponse{}}, nil
+}
+
 func (m *MockItemsClient) ListItemRarities(ctx context.Context) (*itemspb.ListItemRaritiesResponse, error) {
 	return nil, nil
 }

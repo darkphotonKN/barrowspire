@@ -369,7 +369,7 @@ func TestFieldRespawn_WaitsWhileAPlayerStandsNear(t *testing.T) {
 	field := builtField(t)
 	at := field.fieldLayout.SpawnPoints[0]
 	memberID := uuid.New()
-	_, err := field.SeatVisitor(memberID, fieldWren, fieldLoadout())
+	_, err := field.SeatVisitor(memberID, fieldWren, uuid.New(), fieldGear())
 	require.NoError(t, err)
 
 	slay(t, field, spawnedAt(t, field, 0))

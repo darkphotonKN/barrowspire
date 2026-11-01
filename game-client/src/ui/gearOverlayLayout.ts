@@ -1,5 +1,6 @@
 /**
- * The gear and stats overlay's geometry (FS-HRH2J §A R2, R8; §B R13–14, R23). Phaser-free, so
+ * The gear and stats overlay's geometry (FS-HRH2J §A R2, R8; §B R13–14, R23), and the stash grid
+ * that stands in for the stats at the hub's stash chest (FS-VPD8Y R35–36). Phaser-free, so
  * where the panels sit and what a press hits are tested without a canvas; `GearOverlay` draws
  * what this says. The bag's rules (capacity, full, the count) are `./bag`.
  *
@@ -9,6 +10,7 @@
 
 import type { EquipmentSlot } from "@/types/gameState";
 import { BAG_CAPACITY } from "./bag";
+import { STASH_CAPACITY } from "./stash";
 
 export interface Rect {
   x: number;
@@ -22,6 +24,10 @@ export interface Rect {
 /** The bag grid: 6 columns by 5 rows. Its cell count is the bag's capacity (R14, `./bag`). */
 export const BAG_COLUMNS = 6;
 export const BAG_ROWS = BAG_CAPACITY / BAG_COLUMNS;
+
+/** The stash grid: 6 columns by 10 rows, its cell count the stash's capacity (FS-VPD8Y R35). */
+export const STASH_COLUMNS = 6;
+export const STASH_ROWS = STASH_CAPACITY / STASH_COLUMNS;
 
 // ── The two panels ────────────────────────────────────────────────────────
 
@@ -147,14 +153,14 @@ const DOLL_COLS = 3;
 const DOLL_ROWS = 4;
 
 export interface BagCell {
-  /** The bag position this cell shows: items fill cells in bag order. */
+  /** The bag (or stash) position this cell shows: items fill cells in their order. */
   index: number;
-  /** Past the 30 base cells (R23). */
+  /** Past the base cells, the grid's capacity (R23). */
   over: boolean;
   rect: Rect;
 }
 
-export interface GearPanelLayout {
+export interface GearPanelLayout extends ItemGrid {
   /** A bag cell's side and a gear slot's side, in px. */
   cell: number;
   slot: number;
@@ -167,14 +173,6 @@ export interface GearPanelLayout {
   innerX: number;
   innerW: number;
   slots: Record<EquipmentSlot, Rect>;
-  /** The visible part of the grid: a wheel over it scrolls. */
-  grid: Rect;
-  /** The cells drawn, in bag order, the visible rows only. */
-  cells: BagCell[];
-  /** Every row the bag has (at least 5), how many show, and the first that shows. */
-  rows: number;
-  visibleRows: number;
-  scroll: number;
 }
 
 /**
@@ -222,35 +220,18 @@ export function gearPanelLayout(
   const bagHeaderY = dollBottom + SECTION_GAP;
   const gridTop = bagHeaderY + BAG_HEAD_H;
   const hintY = panel.y + panel.h - PANEL_PAD - HINT_H;
-  const pitch = cell + gap;
-  const rows = Math.max(BAG_ROWS, Math.ceil(count / BAG_COLUMNS));
-  const win = rowWindow(
-    Array.from({ length: rows }, () => pitch),
-    hintY - gridTop + gap,
+  const grid = itemGrid({
+    innerX,
+    innerW,
+    top: gridTop,
+    bottom: hintY,
+    cell,
+    gap,
+    columns: BAG_COLUMNS,
+    capacity: BAG_CAPACITY,
+    count,
     scroll,
-  );
-  // a window too short for one row still shows one: the grid is never empty
-  const visibleRows = Math.max(1, win.count);
-  const first = win.first;
-  const gridW = BAG_COLUMNS * cell + (BAG_COLUMNS - 1) * gap;
-  const gridLeft = innerX + Math.round((innerW - gridW) / 2);
-
-  const cells: BagCell[] = [];
-  for (let r = 0; r < visibleRows; r++) {
-    for (let c = 0; c < BAG_COLUMNS; c++) {
-      const index = (first + r) * BAG_COLUMNS + c;
-      cells.push({
-        index,
-        over: index >= BAG_CAPACITY,
-        rect: {
-          x: gridLeft + c * pitch,
-          y: gridTop + r * pitch,
-          w: cell,
-          h: cell,
-        },
-      });
-    }
-  }
+  });
 
   return {
     cell,
@@ -261,7 +242,69 @@ export function gearPanelLayout(
     innerX,
     innerW,
     slots,
-    grid: { x: gridLeft, y: gridTop, w: gridW, h: visibleRows * pitch - gap },
+    ...grid,
+  };
+}
+
+/** A grid of item cells, as the bag and the stash both lay theirs out. */
+export interface ItemGrid {
+  /** The visible part of the grid: a wheel over it scrolls. */
+  grid: Rect;
+  /** The cells drawn, in item order, the visible rows only. */
+  cells: BagCell[];
+  /** Every row the grid has (at least its capacity's), how many show, and the first that shows. */
+  rows: number;
+  visibleRows: number;
+  scroll: number;
+}
+
+/**
+ * `count` items in rows of `columns` square cells, centred across `innerW` from `top`, the rows
+ * past `capacity` marked over (FS-HRH2J R23). Rows that do not fit above `bottom` scroll, a whole
+ * row a step; a space too short for one row still shows one, so the grid is never empty.
+ */
+function itemGrid(g: {
+  innerX: number;
+  innerW: number;
+  top: number;
+  bottom: number;
+  cell: number;
+  gap: number;
+  columns: number;
+  capacity: number;
+  count: number;
+  scroll: number;
+}): ItemGrid {
+  const pitch = g.cell + g.gap;
+  const rows = Math.max(g.capacity / g.columns, Math.ceil(g.count / g.columns));
+  const win = rowWindow(
+    Array.from({ length: rows }, () => pitch),
+    g.bottom - g.top + g.gap,
+    g.scroll,
+  );
+  const visibleRows = Math.max(1, win.count);
+  const first = win.first;
+  const gridW = g.columns * g.cell + (g.columns - 1) * g.gap;
+  const gridLeft = g.innerX + Math.round((g.innerW - gridW) / 2);
+
+  const cells: BagCell[] = [];
+  for (let r = 0; r < visibleRows; r++) {
+    for (let c = 0; c < g.columns; c++) {
+      const index = (first + r) * g.columns + c;
+      cells.push({
+        index,
+        over: index >= g.capacity,
+        rect: {
+          x: gridLeft + c * pitch,
+          y: g.top + r * pitch,
+          w: g.cell,
+          h: g.cell,
+        },
+      });
+    }
+  }
+  return {
+    grid: { x: gridLeft, y: g.top, w: gridW, h: visibleRows * pitch - g.gap },
     cells,
     rows,
     visibleRows,
@@ -282,5 +325,53 @@ export function statsPanelArea(panel: Rect): Rect {
     y: top,
     w: panel.w - 2 * PANEL_PAD,
     h: panel.y + panel.h - PANEL_PAD - top,
+  };
+}
+
+// ── The stash, in the left panel ──────────────────────────────────────────
+
+export interface StashPanelLayout extends ItemGrid {
+  /** A stash cell's side, in px. */
+  cell: number;
+  /** Where the count line sits (its top), level with the gear panel's first slot. */
+  countY: number;
+}
+
+/**
+ * The left panel in stash mode (FS-VPD8Y R35–36): the count line, then a 6 × 10 grid of cells
+ * as large as the panel allows, for a stash of `count` items scrolled `scroll` rows down
+ * (clamped). The 60 base cells never shrink for an over-capacity stash; its extra rows scroll.
+ */
+export function stashPanelLayout(
+  panel: Rect,
+  count: number,
+  scroll = 0,
+): StashPanelLayout {
+  const area = statsPanelArea(panel);
+  const top = area.y + BAG_HEAD_H;
+  const bottom = area.y + area.h;
+  const byHeight =
+    (bottom - top) / (STASH_ROWS + (STASH_ROWS - 1) * CELL_GAP_SCALE);
+  const byWidth =
+    area.w / (STASH_COLUMNS + (STASH_COLUMNS - 1) * CELL_GAP_SCALE);
+  const cell = Math.floor(
+    Math.min(MAX_CELL, Math.max(MIN_CELL, Math.min(byHeight, byWidth))),
+  );
+  const gap = Math.max(3, Math.round(cell * CELL_GAP_SCALE));
+  return {
+    cell,
+    countY: area.y,
+    ...itemGrid({
+      innerX: area.x,
+      innerW: area.w,
+      top,
+      bottom,
+      cell,
+      gap,
+      columns: STASH_COLUMNS,
+      capacity: STASH_CAPACITY,
+      count,
+      scroll,
+    }),
   };
 }

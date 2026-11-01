@@ -20,6 +20,8 @@
 - [x] Listing status on owned instances → FS-8EGFA
 - [x] Item summaries by id → FS-8EGFA
 - [ ] Affixes and item level on owned instances → FS-4R9M9
+- [ ] Bag and stash locations on owned instances → FS-VPD8Y
+- [ ] In-run status on owned instances → FS-18Z5F
 
 ## Marketplace settlement
 
@@ -28,3 +30,4 @@
 ## Run extraction
 
 - [x] Deduplicated extracted-items consumption → FS-BVM9H
+- [ ] Settle checked-out items at run end → FS-18Z5F
