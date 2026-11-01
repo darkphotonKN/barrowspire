@@ -55,7 +55,9 @@ as with FS-R82NV); the client side is agent lane.
    player, sampled on the hub loop's tick (seat the new, unseat the gone, refresh all every 10 s,
    TTL 30 s); unseating deletes only keys that still name this pod (compare-and-delete). The pod
    keeps a player's entry while it holds them within the reconnect grace (FS-MCYWK). A name with no
-   entry is **offline**.
+   entry is **offline**. *(Amended 2026-11-02, I-NCC9J-5; Nick: each hash also carries `pod_addr`,
+   the holding pod's address, written with every seat, so a travel finds where to send a member
+   (R18).)*
 8. **Redis HA.** Party mutations depend on Redis (ADR-0036). While Redis is unreachable every
    mutation is refused with `party_notice` `unavailable`; reads keep working from the cache, and
    runs are unaffected.
@@ -120,13 +122,27 @@ as with FS-R82NV); the client side is agent lane.
     `queued`, `leader_away` (the leader's record is away, R17, the same signal the frames grey on),
     `pod_full` (the leader's pod's hub is at its occupancy cap, FS-JEAVX). A member already on the
     leader's pod is answered with nothing (the client never offers it). The leader cannot travel
-    (there is no one to travel to).
+    (there is no one to travel to). *(Amended 2026-11-02, I-NCC9J-5; Nick: the leader's pod and its
+    address come from the leader's presence entry (R7); a leader present on no pod is `leader_away`.
+    Each pod publishes its hub's count to `hub:occ:{podID}` every tick on a 3 s TTL (FS-JEAVX R19's
+    key; JEAVX's summed cap is not built here), and `pod_full` means the leader's pod's hub is at
+    its cap **plus one full party** (`HubTravelMargin`, 4); an unpublished count is not refused, and
+    arrival checks again (R20). The refusals are checked on the cache first, then again on the
+    party, presence and count read from Redis, so a stale cache never moves anyone (R4). A leader
+    whose entry names no address yet (a pod from before addresses were kept) is `unavailable`.)*
 19. **The old pod lets go at once.** When it sends the travel handoff, the traveller's pod unseats
     their presence and, when their old socket closes, does not hold them for the reconnect grace, so
-    FS-MCYWK never returns them to the pod they left.
+    FS-MCYWK never returns them to the pod they left. *(Amended 2026-11-02, I-NCC9J-5; Nick: the
+    let-go holds for the handoff's own 15 s; a traveller still there on the same socket after it
+    was not taken (their arrival refused, R20) and is present there again. A new connection to
+    that pod ends the let-go too.)*
 20. **Arrival** is an ordinary hub entry on the leader's pod (`enter_hub`, normal spawn point). Its
     cap is checked again there; a refused arrival leaves the client on its old socket with the
-    notice (FS-K2HKP's make-before-break).
+    notice (FS-K2HKP's make-before-break). *(Amended 2026-11-02, I-NCC9J-5; Nick: a player entering
+    a hub where their party's leader stands is admitted up to one full party past the cap
+    (`HubTravelMargin`), whether they came by travel or not; the server reads who leads their party
+    itself, never trusting the client. Anyone else is held to the cap, and the refusal is
+    enter_hub's own "The hub is full".)*
 
 ### What members are told (game-service)
 

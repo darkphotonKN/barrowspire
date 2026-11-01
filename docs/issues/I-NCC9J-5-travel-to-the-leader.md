@@ -1,6 +1,6 @@
 ---
 id: I-NCC9J-5
-status: open
+status: in-progress
 implements: FS-NCC9J
 blocked_by: [I-NCC9J-3, I-NCC9J-4]
 labels: [ready-for-agent]
@@ -22,11 +22,11 @@ Implements FS-NCC9J §Requirements R18–R20
 
 ## Acceptance Criteria
 
-- [ ] A member in their village on pod B gets `world_handoff {hub: true}` with pod A's address when the leader is on A.
-- [ ] Refusals fire in R18's order (table-driven): `not_member`, `not_in_hub` (field, run), `queued`, `leader_away`, `pod_full`.
-- [ ] After the handoff, pod B holds the player neither in presence nor in the reconnect grace.
-- [ ] Arrival on A seats them in A's hub and sends them a full `party_update`.
-- [ ] `go test ./... -race` on touched party tests green.
+- [x] A member in their village on pod B gets `world_handoff {hub: true}` with pod A's address when the leader is on A.
+- [x] Refusals fire in R18's order (table-driven): `not_member`, `not_in_hub` (field, run), `queued`, `leader_away`, `pod_full`.
+- [x] After the handoff, pod B holds the player neither in presence nor in the reconnect grace.
+- [x] Arrival on A seats them in A's hub and sends them a full `party_update`.
+- [x] `go test ./... -race` on touched party tests green.
 
 ## Blocked By
 
@@ -40,3 +40,28 @@ FS-NCC9J §Requirements R18–R20; §User Stories 8–12; §Edge States (travel 
 
 - RED: a two-pod test where a member in pod B's hub sends `party_travel` and receives `world_handoff` naming pod A.
 - GREEN: the action, the leader's pod from presence, then the refusals and the let-go.
+
+## Decisions (2026-11-02, Nick)
+
+- **Pod address** rides the presence entry: every seat writes `pod_addr` (FS-NCC9J R7 amended).
+- **Room at the leader's pod**: travel and arrival get a **fixed margin** past the hub cap, one full
+  party (`constants.HubTravelMargin` = 4). Each pod publishes its hub count to `hub:occ:{podID}`
+  every tick on a 3 s TTL (FS-JEAVX R19's key only; JEAVX's summed cap is still unbuilt). Travel
+  refuses `pod_full` at cap + margin; an unpublished count is not refused. Arrival admits a player
+  past the cap when their party's leader stands in that hub, read by the server (`LeaderOf`).
+- **Let-go window** is 15 s (the handoff's seat lapse): a traveller still on the same socket after
+  it is taken back and present again; a new connection ends it too.
+- A leader whose presence names no address (an older pod, mid-deploy) is `unavailable`.
+
+FS-NCC9J R7, R18, R19, R20 and `game-service/CONTEXT.md` (Occupancy cap, Presence index) amended.
+
+## Test harness
+
+Party rigs now shut every world down on cleanup (`stopWorlds`): a cancelled test server left its
+hub and field loops running (3 → 62 goroutines for three pod pairs, 3 → 8 after), and the pile-up
+made later party tests time out under `-race`.
+
+## Out of slice
+
+- Following `world_handoff {hub: true}` on the client: I-NCC9J-8.
+

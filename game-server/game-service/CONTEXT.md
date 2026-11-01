@@ -99,7 +99,9 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 ### Hub population
 
 - **Occupancy cap** — the maximum number of players the hub admits at once. Refusal at the
-  door, not a queue.
+  door, not a queue. A member joining their party's **leader** in that hub is admitted up to the
+  **travel margin** past it (one full party, `HubTravelMargin`); coming home from a field passes
+  it entirely.
 - **Concurrency ceiling** — the whole-deployment player limit (50) that ADR-0015's single-process
   decision depends on. Distinct from the occupancy cap even when the numbers coincide: raising
   the ceiling reopens an ADR, raising the cap does not.
@@ -366,7 +368,7 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   for returning a reconnecting player to the pod still holding them (FS-MCYWK). No longer used on
   invite acceptance. Never used for fields (ADR-0030).
 - **Presence index** — the Redis lookup from a character name, or a player id, to
-  `{player id, pod id, world}`, for **every connected player with a character**, in any world.
+  `{player id, pod id, pod address, world}`, for **every connected player with a character**, in any world.
   Written by the pod that holds the player, kept alive by TTL, deleted when they leave. Answers
   "is this player online, and where": invites, party fan-out, reconnects and whisper (FS-KCQ06)
   use it. A name with no entry is **offline**. Not a friends list and not a history.
