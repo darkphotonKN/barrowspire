@@ -7,6 +7,7 @@ import type { BuildingPart, BuiltBuilding, Cover } from "./scene";
 
 /** A drawn part: whether it shows, and whether it is gone. */
 interface FakePart {
+  parentContainer: null;
   visible: boolean;
   destroyed: boolean;
   x: number;
@@ -18,6 +19,7 @@ interface FakePart {
 const part = (): FakePart => {
   const p: FakePart = {
     visible: true,
+    parentContainer: null,
     destroyed: false,
     x: 0,
     y: 0,
@@ -297,7 +299,9 @@ describe("BuildingView: the silhouette (FS-9PN7X §E)", () => {
 });
 
 describe("BuildingView: the blackout's mask under WebGL (FS-9PN7X §D, the owner's pixel model)", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   /** The view on a WebGL scene, the mask's drawing stubbed: what it is handed is what is watched. */
   function webgl(options: Partial<ConstructorParameters<typeof BuildingView>[1]> = {}) {

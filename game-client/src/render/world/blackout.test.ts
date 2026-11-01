@@ -233,7 +233,9 @@ describe("Blackout (FS-9PN7X §D.3–§D.5)", () => {
 });
 
 describe("Blackout under WebGL: dark outside the building's own px (FS-9PN7X §D, the owner's pixel model)", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   /** Answers any call with itself: the mask's texture, dark rect and floor shape, unwatched here. */
   const chain = (): unknown => {

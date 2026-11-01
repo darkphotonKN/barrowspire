@@ -2140,8 +2140,10 @@ describe("BarrowspireScene Spire rooms: the blackout, the hide rule and room lig
     const room = view.drawn.find((b) => b.house.id === look.house.id)!;
     for (const p of [...room.shared, ...room.interior]) expect(stamps.has(p)).toBe(true);
     const [inRoom, inHall] = stage.made.filter((m) => m.kind === "sprite" && m.args.length === 0);
-    expect(stamps.has(inRoom)).toBe(true);
-    expect(stamps.has(inHall)).toBe(false);
+    // the stage records the objects behind the proxies the scene holds: matched by their call log
+    const drawsOf = (m: Made) => [...stamps].some((s) => (s as Made).calls === m.calls);
+    expect(drawsOf(inRoom)).toBe(true);
+    expect(drawsOf(inHall)).toBe(false);
     expect(stamps.has(run.player)).toBe(true);
     expect(stamps.has(run.otherPlayers.get("ally"))).toBe(true);
     expect(stamps.has(run.otherPlayersLegs.get("ally"))).toBe(true);
