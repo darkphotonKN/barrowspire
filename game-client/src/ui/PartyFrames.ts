@@ -11,7 +11,9 @@
  *
  * It redraws from the party store on every `party_update` and from each state tick the scene
  * hands it (`show`); it asks the server for nothing. Once a frame it lets the store say the
- * leader's "No answer from <name>." line for a lapsed invite (R27). Neutral HUD on the game
+ * leader's "No answer from <name>." line for a lapsed invite (R27). The leader's frame carries the
+ * Travel button for a member on another pod (R28): amber and live in the player's own town,
+ * faint and inert in a field, a run, or while the leader is away. Neutral HUD on the game
  * palette, at the HUD's depth. The frames themselves rebuild only when the party's shape changes;
  * a tick that moves a bar redraws the bars alone.
  */
@@ -27,6 +29,8 @@ import { useGameStore } from "@/stores/gameStore";
 import { usePartyStore, type PartyState } from "@/stores/partyStore";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { maskedBust, type MaskedBust, type Portrait } from "./bustPortrait";
+import { socketManager } from "@/utils/class/SocketManager";
+import { partyCommands } from "./partyCommands";
 import { drawLeaderMark } from "./PartyPanel";
 import {
   PARTY_FRAMES_PLACEMENT,
@@ -34,9 +38,12 @@ import {
   partyBustFrame,
   partyFrameRows,
   partyFramesFrame,
+  partyTravelButtonRect,
+  travelButton,
   type PartyFrameRect,
   type PartyFrameRow,
   type SeenState,
+  type TravelButton,
 } from "./partyFramesLayout";
 import { HUD_BAR_FILL, drawHudBar, drawHudPips } from "./ResourceHud";
 
@@ -55,6 +62,8 @@ export interface PartyFramesDeps {
     my: number,
     r: number,
   ) => MaskedBust | undefined;
+  /** Sends `party_travel` (R28): pressed on the leader's frame. */
+  travel: () => void;
 }
 
 /** The frames as a scene hangs them: the app's party, this player, the scene's art. */
@@ -67,6 +76,7 @@ export function mountPartyFrames(
     selfId: () => useAuthStore.getState().memberInfo?.id,
     world: () => useGameStore.getState().worldType,
     art,
+    travel: partyCommands(socketManager).travel,
   });
 }
 
@@ -77,9 +87,14 @@ const AWAY_ALPHA = 0.4;
 const PULSE_LOW = 0.25;
 const PULSE_HIGH = 0.6;
 const PULSE_MS = 900;
+/** The Travel button's label, and its alpha while greyed (as the T panel greys an action). */
+const TRAVEL_LABEL = "Travel";
+const TRAVEL_PX = 12;
+const GREYED_ALPHA = 0.45;
 
 export class PartyFrames {
   private rows: PartyFrameRow[] = [];
+  private travel: TravelButton = "hidden";
   private seen: SeenState = {};
   /** What the frames and the bars were last drawn from. */
   private drawnShape?: string;
@@ -137,6 +152,7 @@ export class PartyFrames {
     const world = this.deps.world();
     const { party } = this.deps.store.getState();
     this.rows = partyFrameRows(party, this.deps.selfId(), world, this.seen);
+    this.travel = travelButton(party, this.deps.selfId(), world);
 
     const { x, top } = PARTY_FRAMES_PLACEMENT[world ?? "hub"];
     const shape = JSON.stringify([
@@ -147,6 +163,7 @@ export class PartyFrames {
           ? [r.kind, r.player_id, r.name, r.class, r.leader, r.away]
           : [r.kind, r.name],
       ),
+      this.travel,
     ]);
     if (shape !== this.drawnShape) {
       this.drawnShape = shape;
@@ -241,7 +258,36 @@ export class PartyFrames {
       this.names.push(this.text(nameX, name.y, row.name, colour, NAME_PX));
     });
 
+    this.drawTravel(rings);
     this.drawPulse();
+  }
+
+  /**
+   * The Travel button on the leader's frame (R28): brass-outlined, its word amber and pressable in
+   * the player's own town, faint and inert where travel is refused. Hidden, nothing is drawn.
+   */
+  private drawTravel(g: Phaser.GameObjects.Graphics): void {
+    const at = this.leaderRow();
+    if (this.travel === "hidden" || at < 0) return;
+    const live = this.travel === "live";
+    const r = partyTravelButtonRect(this.rects[at]);
+    g.lineStyle(1, palette.frame, live ? 0.8 : 0.3);
+    g.strokeRoundedRect(r.x + 0.5, r.y + 0.5, r.width - 1, r.height - 1, 3);
+    const t = this.text(
+      r.x + r.width / 2,
+      r.y + r.height / 2,
+      TRAVEL_LABEL,
+      live ? palette.interactable : palette.hudFaint,
+      TRAVEL_PX,
+    ).setOrigin(0.5, 0.5);
+    this.names.push(t);
+    if (!live) {
+      t.setAlpha(GREYED_ALPHA);
+      return;
+    }
+    t.setInteractive({ useHandCursor: true }).on("pointerdown", () =>
+      this.deps.travel(),
+    );
   }
 
   /** The skeleton rows' grey pulse, over the medallion and where the bars would be (R26). */

@@ -206,6 +206,16 @@ describe("wire guards", () => {
     expect(isPartyUpdate(null)).toBe(false);
   });
 
+  it("should take a member's pod_id, and reject one that is not a string (FS-NCC9J R21)", () => {
+    const at = (pod_id: unknown) => ({
+      ...update(),
+      members: [{ ...member(ME, "Aldric"), pod_id }],
+    });
+    expect(isPartyUpdate(at("pod-a"))).toBe(true);
+    expect(isPartyUpdate(at(""))).toBe(true);
+    expect(isPartyUpdate(at(7))).toBe(false);
+  });
+
   it("should accept a party_invite and reject a malformed one", () => {
     expect(isPartyInvite(invite("a"))).toBe(true);
     expect(isPartyInvite({ ...invite("a"), invite_id: 1 })).toBe(false);

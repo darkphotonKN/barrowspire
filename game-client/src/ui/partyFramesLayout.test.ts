@@ -9,6 +9,8 @@ import {
   partyBustFrame,
   partyFrameRows,
   partyFramesFrame,
+  partyTravelButtonRect,
+  travelButton,
   type PartyFrameRow,
   type PartyMemberFrameRow,
 } from "./partyFramesLayout";
@@ -533,4 +535,41 @@ describe("partyFramesFrame", () => {
       expect(frames.y + frames.height).toBeLessThan(H);
     },
   );
+});
+
+// FS-NCC9J §Requirements R28; I-NCC9J-8. The Travel button beside the leader's frame.
+describe("travelButton", () => {
+  const wren = (extra: Partial<PartyMember> = {}) =>
+    member("wren", "Wren", { pod_id: "pod-a", ...extra });
+  const me = (extra: Partial<PartyMember> = {}) =>
+    member(ME, "Marl", { pod_id: "pod-b", ...extra });
+
+  it.each([
+    { name: "no party", p: null, world: "hub", want: "hidden" },
+    { name: "on the leader's pod", p: party([wren(), me({ pod_id: "pod-a" })]), world: "hub", want: "hidden" },
+    { name: "the leader themselves", p: party([me(), wren()]), world: "hub", want: "hidden" },
+    { name: "in a field", p: party([wren(), me()]), world: "field", want: "greyed" },
+    { name: "in a run", p: party([wren(), me()]), world: "run", want: "greyed" },
+    { name: "the leader away", p: party([wren({ online: false }), me()]), world: "hub", want: "greyed" },
+    { name: "the leader on no pod", p: party([wren({ pod_id: "", online: false }), me()]), world: "hub", want: "greyed" },
+    { name: "in town, the leader elsewhere", p: party([wren(), me()]), world: "hub", want: "live" },
+  ] as const)("$name: $want", ({ p, world, want }) => {
+    expect(travelButton(p, ME, world)).toBe(want);
+  });
+});
+
+describe("partyTravelButtonRect", () => {
+  it("sits inside the leader's frame, on the name line at its right end, clear of the bars and the T panel (R28)", () => {
+    const { x, top } = PARTY_FRAMES_PLACEMENT.hub;
+    const [frame] = partyFramesFrame(1, x, top);
+
+    const button = partyTravelButtonRect(frame);
+
+    expect(button.x).toBeGreaterThan(frame.name.x + 60); // room for a name before it
+    expect(button.x + button.width).toBeLessThanOrEqual(frame.row.x + frame.row.width - 2);
+    expect(button.x + button.width).toBeLessThan(PARTY_PANEL_X);
+    expect(button.y).toBeGreaterThanOrEqual(frame.row.y);
+    expect(button.y + button.height).toBeLessThanOrEqual(frame.health.y - 1);
+    expect(button.height).toBeGreaterThanOrEqual(14);
+  });
 });
