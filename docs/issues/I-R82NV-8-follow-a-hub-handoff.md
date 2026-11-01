@@ -3,9 +3,14 @@ id: I-R82NV-8
 status: open
 implements: FS-R82NV
 blocked_by: [I-R82NV-4, I-R82NV-6]
-labels: [ready-for-agent]
+labels: []
 title: "FS-R82NV slice 8: follow a handoff into another pod's hub (game-client)"
 ---
+
+> **Superseded by [FS-NCC9J](../specs/NCC9J-party-membership-across-pods.md) (ADR-0036), 2026-11-01.**
+> Membership now spans pods and accepting moves nobody; this slice's hub handoff on accept,
+> expected arrival, recall and party-pod grace no longer apply. Not to be picked up: its work, where
+> it survives, is in FS-NCC9J's issues (and FS-MCYWK for reconnects).
 Implements FS-R82NV §Requirements R26, R27
 
 **Lane: agent (AFK).**
