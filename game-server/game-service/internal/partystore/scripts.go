@@ -68,6 +68,15 @@ type reply struct {
 	// a refresh: the parties that stand, and the ids of those that have ended
 	Parties []wireParty `json:"parties"`
 	Gone    []string    `json:"gone"`
+	// a refresh or a read: the parties whose members' records changed, and how
+	Swept []wireSwept `json:"swept"`
+}
+
+type wireSwept struct {
+	PartyID   string   `json:"party_id"`
+	Removed   []string `json:"removed"`
+	Succeeded bool     `json:"succeeded"`
+	Flipped   []string `json:"flipped"`
 }
 
 type wireVoid struct {
@@ -92,6 +101,8 @@ type wireMember struct {
 	Name     string `json:"name"`
 	Class    string `json:"class"`
 	JoinedAt string `json:"joined_at"`
+	Away     bool   `json:"away"`
+	SeenAt   string `json:"seen_at"`
 }
 
 type wireReservation struct {
@@ -162,7 +173,11 @@ func (w *wireParty) party() (Party, error) {
 		if err != nil {
 			return Party{}, fmt.Errorf("member of %s: %w", id, err)
 		}
-		p.Members = append(p.Members, Member{PlayerID: playerID, Name: m.Name, Class: m.Class, JoinedAt: joined})
+		seen, err := fromMillis(m.SeenAt)
+		if err != nil {
+			return Party{}, fmt.Errorf("member of %s: %w", id, err)
+		}
+		p.Members = append(p.Members, Member{PlayerID: playerID, Name: m.Name, Class: m.Class, JoinedAt: joined, Away: m.Away, SeenAt: seen})
 	}
 	for _, r := range w.Reserved {
 		inviteID, err := uuid.Parse(r.InviteID)
@@ -389,64 +404,132 @@ func (r *Redis) Create(ctx context.Context, partyID uuid.UUID, creator Joiner, n
 	return CreateResult{Party: p}, nil
 }
 
+// Arrival is the party a player seated on a pod is in: In is false when they are in none. Swept
+// is what the read changed in its members' records, if anything; Party is the party it changed
+// even when the read removed the player from it.
+type Arrival struct {
+	Party Party
+	In    bool
+	Swept Swept
+}
+
 // PartyOf reads the party playerID is in, if any, and keeps it alive: the read a pod makes when a
-// member is seated on it (FS-NCC9J R6).
-func (r *Redis) PartyOf(ctx context.Context, playerID uuid.UUID, now time.Time) (Party, bool, error) {
-	p, found, err := r.read(ctx, pointerKey(playerID), "", playerID.String(), now)
+// member is seated on it (FS-NCC9J R6). It refreshes their record, and keeps the others' (R17).
+func (r *Redis) PartyOf(ctx context.Context, playerID uuid.UUID, now time.Time) (Arrival, error) {
+	res, err := run(ctx, readScript, r.client, []string{pointerKey(playerID)},
+		playerID.String(), millis(now), ttlMillis(TTL), ttlMillis(AwayAfter), ttlMillis(RecordTTL),
+	)
 	if err != nil {
-		return Party{}, false, fmt.Errorf("read party of %s: %w", playerID, err)
+		return Arrival{}, fmt.Errorf("read party of %s: %w", playerID, err)
 	}
-	return p, found, nil
+	if res.refusal() != "" {
+		return Arrival{}, nil
+	}
+	p, err := res.Party.party()
+	if err != nil {
+		return Arrival{}, fmt.Errorf("read party of %s: %w", playerID, err)
+	}
+	swept, err := res.swept()
+	if err != nil {
+		return Arrival{}, fmt.Errorf("read party of %s: %w", playerID, err)
+	}
+	return Arrival{Party: p, In: p.has(playerID), Swept: swept[p.ID]}, nil
+}
+
+func (p Party) has(playerID uuid.UUID) bool {
+	for _, m := range p.Members {
+		if m.PlayerID == playerID {
+			return true
+		}
+	}
+	return false
+}
+
+// Refreshed is a re-read: the parties that stand, the ids of those that have ended, and what
+// keeping their members' records changed, by party id, for each party it changed.
+type Refreshed struct {
+	Parties []Party
+	Gone    []uuid.UUID
+	Swept   map[uuid.UUID]Swept
 }
 
 // RefreshAll reads every party in ids in one trip and keeps each alive: the re-read a pod makes
-// every ten seconds of the parties in its cache (FS-NCC9J R4). gone are the ids of parties that
-// have ended.
-func (r *Redis) RefreshAll(ctx context.Context, ids []uuid.UUID, now time.Time) (parties []Party, gone []uuid.UUID, err error) {
+// every ten seconds of the parties in its cache (FS-NCC9J R4). seated are the players seated on
+// that pod: their records are refreshed, and every other member's kept by its age (R17).
+func (r *Redis) RefreshAll(ctx context.Context, ids, seated []uuid.UUID, now time.Time) (Refreshed, error) {
 	if len(ids) == 0 {
-		return nil, nil, nil
+		return Refreshed{}, nil
 	}
 	keys := make([]string, len(ids))
-	args := make([]any, 0, len(ids)+2)
-	args = append(args, millis(now), ttlMillis(TTL))
+	args := make([]any, 0, len(ids)+len(seated)+5)
+	args = append(args, millis(now), ttlMillis(TTL), ttlMillis(AwayAfter), ttlMillis(RecordTTL), len(ids))
 	for i, id := range ids {
 		keys[i] = partyKey(id)
 		args = append(args, id.String())
 	}
+	for _, id := range seated {
+		args = append(args, id.String())
+	}
 	res, err := run(ctx, refreshScript, r.client, keys, args...)
 	if err != nil {
-		return nil, nil, fmt.Errorf("refresh %d parties: %w", len(ids), err)
+		return Refreshed{}, fmt.Errorf("refresh %d parties: %w", len(ids), err)
 	}
+	swept, err := res.swept()
+	if err != nil {
+		return Refreshed{}, fmt.Errorf("refresh %d parties: %w", len(ids), err)
+	}
+	out := Refreshed{Swept: swept}
 	for _, w := range res.Parties {
 		p, err := w.party()
 		if err != nil {
-			return nil, nil, fmt.Errorf("refresh %d parties: %w", len(ids), err)
+			return Refreshed{}, fmt.Errorf("refresh %d parties: %w", len(ids), err)
 		}
-		parties = append(parties, p)
+		out.Parties = append(out.Parties, p)
 	}
 	for _, raw := range res.Gone {
 		id, err := uuid.Parse(raw)
 		if err != nil {
-			return nil, nil, fmt.Errorf("refresh: parse ended party id: %w", err)
+			return Refreshed{}, fmt.Errorf("refresh: parse ended party id: %w", err)
 		}
-		gone = append(gone, id)
+		out.Gone = append(out.Gone, id)
 	}
-	return parties, gone, nil
+	return out, nil
 }
 
-func (r *Redis) read(ctx context.Context, key, partyID, member string, now time.Time) (Party, bool, error) {
-	res, err := run(ctx, readScript, r.client, []string{key}, partyID, member, millis(now), ttlMillis(TTL))
-	if err != nil {
-		return Party{}, false, err
+// swept is what the reply says keeping each party's member records changed, by party id; a party
+// whose records changed nothing is absent. The scripts report only parties that changed.
+func (r reply) swept() (map[uuid.UUID]Swept, error) {
+	if len(r.Swept) == 0 {
+		return nil, nil
 	}
-	if res.refusal() != "" {
-		return Party{}, false, nil
+	out := make(map[uuid.UUID]Swept, len(r.Swept))
+	for _, w := range r.Swept {
+		partyID, err := uuid.Parse(w.PartyID)
+		if err != nil {
+			return nil, fmt.Errorf("parse swept party id: %w", err)
+		}
+		s := Swept{Succeeded: w.Succeeded}
+		if s.Removed, err = parseIDs(w.Removed); err != nil {
+			return nil, fmt.Errorf("parse members removed from %s: %w", partyID, err)
+		}
+		if s.Flipped, err = parseIDs(w.Flipped); err != nil {
+			return nil, fmt.Errorf("parse members away or back in %s: %w", partyID, err)
+		}
+		out[partyID] = s
 	}
-	p, err := res.Party.party()
-	if err != nil {
-		return Party{}, false, err
+	return out, nil
+}
+
+func parseIDs(raw []string) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+	for _, s := range raw {
+		id, err := uuid.Parse(s)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
 	}
-	return p, true, nil
+	return ids, nil
 }
 
 // RemoveArgs is one removal: PlayerID leaving PartyID, or kicked by Kicker when Kicker is set.

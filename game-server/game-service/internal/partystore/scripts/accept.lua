@@ -40,6 +40,7 @@ local members = members_of(pid)
 members[#members + 1] = {player_id = accepter, name = name, class = class, joined_at = now}
 redis.call('HSET', party_key(pid), 'members', cjson.encode(members))
 redis.call('SET', pointer_key(accepter), pid)
+seen(pid, accepter, now)
 bump(pid)
 keep_alive(pid, party_ttl)
 

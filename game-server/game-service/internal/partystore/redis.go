@@ -14,9 +14,18 @@ import (
 )
 
 // TTL is how long a party outlives the last pod to hold one of its members: every pod holding a
-// member puts it back on this each time it re-reads the party (I-NCC9J-1 D5, until FS-NCC9J R17's
-// per-member records arrive).
+// member puts it back on this each time it re-reads the party (I-NCC9J-1 D5).
 const TTL = 5 * time.Minute
+
+// RecordTTL is how long a member's record lasts without a refresh before they are removed
+// (FS-NCC9J R17).
+const RecordTTL = 5 * time.Minute
+
+// AwayAfter is how long a member's record goes without a refresh before they show away
+// (FS-NCC9J R17, amended): 30 s and one ten-second refresh interval more, since it counts from
+// the last refresh, not from the drop. A drop under 30 s never shows away, wherever it falls
+// between refreshes; a member really gone shows away 30 to 40 s after they dropped.
+const AwayAfter = 40 * time.Second
 
 // InviteTTL is how long an invite stays open (FS-NCC9J R12).
 const InviteTTL = 60 * time.Second
@@ -55,7 +64,23 @@ type Member struct {
 	Name     string    `json:"name"`
 	Class    string    `json:"class"`
 	JoinedAt time.Time `json:"joined_at"`
+	// their record has gone AwayAfter without a refresh (R17)
+	Away bool `json:"away"`
+	// when the pod holding them last refreshed their record
+	SeenAt time.Time `json:"seen_at"`
 }
+
+// Swept is what keeping a party's member records changed (FS-NCC9J R17): the members removed as
+// their records expired, in join order, whether the lead passed with them, and the members who
+// went away or came back.
+type Swept struct {
+	Removed   []uuid.UUID
+	Succeeded bool
+	Flipped   []uuid.UUID
+}
+
+// Changed reports whether keeping the records changed anything.
+func (s Swept) Changed() bool { return len(s.Removed) > 0 || len(s.Flipped) > 0 }
 
 // Reservation is an open invite: a slot held for its target until it is answered or expires
 // (FS-NCC9J R3).
