@@ -264,6 +264,17 @@ func TestPartyDecline_CrossPod_RetriedAfterRedisBlip(t *testing.T) {
 	assert.Equal(t, "Marl", declined.Payload["name"])
 }
 
+// delvingThere takes player, seated on pod, down into a run there and waits until the presence
+// index says world run.
+func delvingThere(t *testing.T, pod *partyPod, mini *miniredis.Miniredis, player *types.Player) {
+	t.Helper()
+	pod.intoRun(t, player)
+	pod.tick()
+	key := "presence:id:" + player.ID.String()
+	require.Eventually(t, func() bool { return mini.HGet(key, "world") == "run" },
+		pointerWait, 10*time.Millisecond, "%s is present in a run", player.Character.Name)
+}
+
 // fieldOf seats name in pod's Meadows and waits until the presence index says so.
 func fieldOf(t *testing.T, pod *partyPod, mini *miniredis.Miniredis, name string) (*types.Player, *websocket.Conn, *startSoloInbox) {
 	t.Helper()
@@ -413,10 +424,10 @@ func twoPartyPodsSized(t *testing.T, size int) (a, b *partyPod, mini *miniredis.
 }
 
 // An invite from pod A to a player on pod B meets FS-NCC9J R10's refusals in order: the
-// inviter's own standing first (not_leader, queued, party_full, self), then the target's
-// (not_found, already_in_party, pending). Three rows meet two refusals and prove the earlier wins:
-// not_leader before already_in_party, party_full before self, already_in_party before pending
-// (AC 3).
+// inviter's own standing first (locked, not_leader, queued, party_full, self), then the target's
+// (not_found, delving, already_in_party, pending). Five rows meet two refusals and prove the
+// earlier wins: locked before not_leader, delving before already_in_party, not_leader before
+// already_in_party, party_full before self, already_in_party before pending (AC 3).
 func TestPartyInvite_CrossPod_Refusals_InOrder(t *testing.T) {
 	tests := []struct {
 		name string
@@ -428,6 +439,35 @@ func TestPartyInvite_CrossPod_Refusals_InOrder(t *testing.T) {
 		wantCode string
 		wantName string
 	}{
+		{
+			// nobody forms a party inside the tower, read from pod A's directory before any lookup
+			name: "inviter in a run on pod A, ahead of not the leader",
+			size: 3,
+			arrange: func(t *testing.T, a, b *partyPod, mini *miniredis.Miniredis) (*websocket.Conn, *startSoloInbox, string) {
+				_, idrisConn, idrisInbox := seatedThere(t, a, mini, "Idris")
+				kaelen, kaelenConn, kaelenInbox := seatedThere(t, a, mini, "Kaelen")
+				a.partied(t, idrisConn, idrisInbox, "Kaelen", kaelenConn, kaelenInbox)
+				a.intoRun(t, kaelen)
+				seatedThere(t, b, mini, "Marl")
+				return kaelenConn, kaelenInbox, "Marl"
+			},
+			wantCode: "locked",
+		},
+		{
+			// read from the presence entry the lookup already made, before the invite script
+			name: "target in a run on pod B, ahead of already in a party",
+			size: 2,
+			arrange: func(t *testing.T, a, b *partyPod, mini *miniredis.Miniredis) (*websocket.Conn, *startSoloInbox, string) {
+				_, conn, inbox := seatedThere(t, a, mini, "Wren")
+				marl, marlConn, marlInbox := seatedThere(t, b, mini, "Marl")
+				sendParty(b.server, marlConn, partyCreateAction, map[string]interface{}{})
+				awaitUpdate(t, marlInbox, "joined", marl.ID, "Marl")
+				delvingThere(t, b, mini, marl)
+				return conn, inbox, "marl"
+			},
+			wantCode: "delving",
+			wantName: "Marl",
+		},
 		{
 			name: "not the leader, ahead of a target in a party",
 			size: 3,
@@ -582,17 +622,65 @@ func TestPartyInvite_CrossPod_QueuedDuringLookup_Refused(t *testing.T) {
 	assertNoParty(t, marlInbox, partyInviteAction, "Marl: the invite was never sent")
 }
 
-// A player delving on pod B is reached by pod A's invite, but accepting there is refused locked
-// until FS-BJNYC gives every run a party (FS-NCC9J R11, R14; AC 2).
-func TestPartyAccept_CrossPod_InARun_Locked(t *testing.T) {
+// An inviter who went down into a run while their target was being looked up is refused locked
+// when the answer comes back: their standing is read again after the lookup (FS-NCC9J R10 amended;
+// Edge States "Inviter enters a run while a cross-pod lookup is out").
+func TestPartyInvite_CrossPod_DelvingDuringLookup_Locked(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	entered, gate := make(chan struct{}, 1), make(chan struct{})
+	a := newPartyPod(t, client, "pod-a", chatbus.NewRedis(client), WithPresence(gatedLookup{Redis: partypresence.NewRedis(client), entered: entered, gate: gate}))
+	b := newPartyPod(t, client, "pod-b", chatbus.NewRedis(client))
+	for _, pod := range []string{"pod-a", "pod-b"} {
+		channel := "pod:" + pod + ":inbox"
+		require.Eventually(t, func() bool { return mini.PubSubNumSub(channel)[channel] == 1 },
+			pointerWait, 10*time.Millisecond, "%s listens on its inbox", pod)
+	}
+	wren, wrenConn, wrenInbox := a.inHub(t, "Wren")
+	_, _, marlInbox := seatedThere(t, b, mini, "Marl")
+
+	sendParty(a.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Marl"})
+	<-entered // the lookup is under way
+	a.intoRun(t, wren)
+	close(gate)
+
+	refused := awaitParty(t, wrenInbox, partyNoticeAction, "Wren")
+	assert.Equal(t, "locked", refused.Payload["code"])
+	assert.NotContains(t, refused.Payload, "name", "a refusal about the inviter names nobody")
+	assertNoParty(t, marlInbox, partyInviteAction, "Marl: the invite was never sent")
+	assert.False(t, mini.Exists(pointerKey(wren.ID)), "Wren leads no party")
+}
+
+// An invite from pod A to a player delving on pod B is refused delving, read from the presence
+// entry the lookup made: Marl is never asked, no slot is reserved, and Wren is left in no party,
+// the invite script never run (FS-NCC9J R10 amended; AC "An invite to a player in a run…").
+func TestPartyInvite_CrossPod_TargetInARun_DelvingAndNothingFormed(t *testing.T) {
 	a, b, mini := twoPartyPods(t)
 	wren, wrenConn, wrenInbox := seatedThere(t, a, mini, "Wren")
-	_, marlConn, marlInbox := b.inRun(t, "Marl")
-	b.tick()
-	awaitPresence(t, mini, "Marl", "pod-b")
+	marl, _, marlInbox := seatedThere(t, b, mini, "Marl")
+	delvingThere(t, b, mini, marl)
+
 	sendParty(a.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Marl"})
-	invite := awaitParty(t, marlInbox, partyInviteAction, "Marl, delving on pod B")
+
+	refused := awaitParty(t, wrenInbox, partyNoticeAction, "Wren")
+	assert.Equal(t, "delving", refused.Payload["code"])
+	assert.Equal(t, "Marl", refused.Payload["name"])
+	assertNoParty(t, marlInbox, partyInviteAction, "Marl, delving on pod B: never asked")
+	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren: no party formed, no slot reserved")
+	assert.False(t, mini.Exists(pointerKey(wren.ID)), "the invite script never ran: Wren leads no party")
+}
+
+// A player invited on pod B in the village who goes down into a run within the invite's minute
+// still holds the prompt, but accepting there is refused locked until FS-BJNYC gives every run a
+// party: the safety net behind delving (FS-NCC9J R14 amended; AC 2; Edge States "Invited in the
+// village, then into a run within 60 s").
+func TestPartyAccept_CrossPod_EnteredARunAfterTheInvite_Locked(t *testing.T) {
+	a, b, mini := twoPartyPods(t)
+	wren, wrenConn, wrenInbox := seatedThere(t, a, mini, "Wren")
+	marl, marlConn, marlInbox := seatedThere(t, b, mini, "Marl")
+	sendParty(a.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Marl"})
+	invite := awaitParty(t, marlInbox, partyInviteAction, "Marl, in pod B's hub")
 	awaitUpdate(t, wrenInbox, "joined", wren.ID, "Wren") // her party of one, Marl's slot reserved
+	delvingThere(t, b, mini, marl)
 
 	sendParty(b.server, marlConn, partyAcceptAction, map[string]interface{}{"invite_id": invite.Payload["invite_id"]})
 

@@ -34,7 +34,8 @@ type partyDirectory interface {
 	// everyone this pod holds, seated in any world, and the connection each is seated on: whose
 	// parties the cache keeps and whose screens it reconciles (R4, R6)
 	SeatedConns() map[uuid.UUID]*websocket.Conn
-	// whether a player is inside a run, where accepting is refused locked (R14)
+	// whether a player is inside a run: inviting and creating there are refused locked, an
+	// invite to them delving, accepting there locked (R10, R14, R15)
 	InRun(playerID uuid.UUID) bool
 	// a traveller let go over conn, and kept after all when the travel did not take them (R19)
 	LetGo(playerID uuid.UUID, conn *websocket.Conn)
@@ -271,6 +272,10 @@ func (r *partyRegistry) inviteThere(ctx context.Context, inviter *types.Player, 
 	if refusal == nil && (!present || found.PodID == r.cfg.podID) {
 		refusal = &inviteRefusal{code: constants.PartyNoticeNotFound, name: name}
 	}
+	// in a run, as the entry just read says: decided before the script, so nothing is written
+	if refusal == nil && found.World == string(types.WorldTypeRun) {
+		refusal = &inviteRefusal{code: constants.PartyNoticeDelving, name: found.Name}
+	}
 	// a target on another pod: this pod's cache never holds their party, so pending is left to
 	// the script, which checks already_in_party first, as R10 orders them (I-NCC9J-3 review)
 	if refusal == nil {
@@ -423,8 +428,12 @@ func (r *partyRegistry) refuseInvite(conn *websocket.Conn, inviterID uuid.UUID, 
 	r.notice(conn, refusal.code, refusal.name)
 }
 
-// leadRefusal is the inviter's own standing: leading their party if they have one (R9).
+// leadRefusal is the inviter's own standing: not in a run, by this pod's directory, then leading
+// their party if they have one (R9, R10).
 func (r *partyRegistry) leadRefusal(inviter *types.Player) *inviteRefusal {
+	if r.directory.InRun(inviter.ID) {
+		return &inviteRefusal{code: constants.PartyNoticeLocked}
+	}
 	if p, inParty := r.cache.partyOf(inviter.ID); inParty && p.Leader != inviter.ID {
 		return &inviteRefusal{code: constants.PartyNoticeNotLeader}
 	}
@@ -444,9 +453,13 @@ func (r *partyRegistry) roomRefusal(inviter *types.Player, name string) *inviteR
 	return nil
 }
 
-// targetRefusal is the tail of R10's list for a target this pod holds, as far as the cache knows:
-// the target in a party, then already asked. The script checks both again.
+// targetRefusal is the tail of R10's list for a target this pod holds: in a run, by the
+// directory; then, as far as the cache knows, in a party and already asked, which the script
+// checks again.
 func (r *partyRegistry) targetRefusal(inviter *types.Player, targetID uuid.UUID, targetName string) *inviteRefusal {
+	if r.directory.InRun(targetID) {
+		return &inviteRefusal{code: constants.PartyNoticeDelving, name: targetName}
+	}
 	if refusal := r.groupedRefusal(targetID, targetName); refusal != nil {
 		return refusal
 	}
@@ -589,9 +602,14 @@ func (r *partyRegistry) accepted(ctx context.Context, conn *websocket.Conn, acce
 	}
 }
 
-// create handles party_create: the player leads a new party of one, from any world. FS-NCC9J R15.
+// create handles party_create: the player leads a new party of one, from the hub or a field.
+// FS-NCC9J R15.
 func (r *partyRegistry) create(ctx context.Context, creator *types.Player, conn *websocket.Conn) {
 	if r.closed {
+		return
+	}
+	if r.directory.InRun(creator.ID) {
+		r.refuse(conn, creator.ID, constants.PartyNoticeLocked)
 		return
 	}
 	if r.cache.grouped(creator.ID) {
