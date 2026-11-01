@@ -2,12 +2,14 @@ package gameserver
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypointer"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/testutil"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
@@ -1106,4 +1108,71 @@ func TestPartyCreate_ThePartyInvitesAndEnds(t *testing.T) {
 	sendParty(rig.server, wrenConn, partyLeaveAction, map[string]interface{}{})
 	final := awaitUpdate(t, wrenInbox, "left", wren.ID, "Wren")
 	assert.Empty(t, memberIDsOf(t, final), "the leader's leave ends a party of one")
+}
+
+// newPresentPartyRig is a party rig whose pointers and presence land on a miniredis.
+func newPresentPartyRig(t *testing.T) (*partyRig, *miniredis.Miniredis) {
+	t.Helper()
+	client, mini := testutil.NewRedis(t)
+	return newPartyRig(t,
+		WithPartyPointers(partypointer.NewRedis(client)),
+		WithPresence(partypresence.NewRedis(client)),
+	), mini
+}
+
+// awaitPresence waits until name's presence key names pod (or, with pod "", is gone).
+func awaitPresence(t *testing.T, mini *miniredis.Miniredis, name, pod string) {
+	t.Helper()
+	key := "presence:name:" + strings.ToLower(name)
+	require.Eventually(t, func() bool {
+		if pod == "" {
+			return !mini.Exists(key)
+		}
+		return mini.HGet(key, "pod_id") == pod && mini.TTL(key) == partypresence.TTL
+	}, pointerWait, 10*time.Millisecond, "presence of %s should be %q", name, pod)
+}
+
+// A player is present while seated in this pod's hub: the key appears within a tick of
+// sitting down, goes within a tick of leaving the hub for a field, and is refreshed every
+// ten seconds while they stay. FS-R82NV R7; I-R82NV-3 decision 1.
+func TestPresence_FollowsTheHub(t *testing.T) {
+	rig, mini := newPresentPartyRig(t)
+	wren, _, _ := rig.inHub(t, "Wren")
+
+	rig.tick()
+	awaitPresence(t, mini, "Wren", testPodID)
+	assert.Equal(t, wren.ID.String(), mini.HGet("presence:name:wren", "player_id"))
+
+	mini.FastForward(20 * time.Second)
+	rig.partyClock.advance(10 * time.Second)
+	rig.tick()
+	awaitPresence(t, mini, "Wren", testPodID) // full TTL again
+
+	rig.hub.RemovePlayer(wren.ID.String())
+	rig.meadows.AddPlayerAt(wren.ID, wren.Character, "", 200, 200)
+	rig.server.setCurrentWorld(wren, rig.meadows.ID)
+	rig.tick()
+	awaitPresence(t, mini, "Wren", "")
+	assert.False(t, mini.Exists("presence:id:"+wren.ID.String()))
+}
+
+// A pod that stops refreshing leaves no one findable for long: its seats lapse within 30 s.
+// One shutting down gracefully unseats everyone at once. FS-R82NV R7.
+func TestPresence_LapsesWithoutRefreshAndGoesAtShutdown(t *testing.T) {
+	rig, mini := newPresentPartyRig(t)
+	rig.inHub(t, "Wren")
+	rig.inHub(t, "Kaelen")
+	rig.tick()
+	awaitPresence(t, mini, "Wren", testPodID)
+
+	mini.FastForward(partypresence.TTL + time.Second)
+	assert.False(t, mini.Exists("presence:name:wren"), "no refresh, no seat")
+
+	rig.partyClock.advance(partyRefreshInterval)
+	rig.tick()
+	awaitPresence(t, mini, "Kaelen", testPodID)
+
+	rig.shutdown()
+	awaitPresence(t, mini, "Kaelen", "")
+	awaitPresence(t, mini, "Wren", "")
 }
