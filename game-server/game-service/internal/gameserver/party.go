@@ -35,7 +35,7 @@ type partyDirectory interface {
 	// parties the cache keeps and whose screens it reconciles (R4, R6)
 	SeatedConns() map[uuid.UUID]*websocket.Conn
 	// whether a player is inside a run: inviting and creating there are refused locked, an
-	// invite to them delving, accepting there locked (R10, R14, R15)
+	// invite to them in_run, accepting there locked (R10, R14, R15)
 	InRun(playerID uuid.UUID) bool
 	// a traveller let go over conn, and kept after all when the travel did not take them (R19)
 	LetGo(playerID uuid.UUID, conn *websocket.Conn)
@@ -111,6 +111,9 @@ type partyRegistryConfig struct {
 	// where the cache publishes who is in which party, for every world's serializer; nil
 	// publishes nowhere (FS-CH21F R5, R6)
 	membership *partyMembership
+	// where the leader and the members stand, their gear and the run built for them; nil refuses
+	// party_enter unavailable (FS-BJNYC)
+	worlds partyEntryWorlds
 }
 
 type partyRegistry struct {
@@ -128,6 +131,15 @@ type partyRegistry struct {
 	// travellers whose press is being read off the loop: a second press meanwhile is ignored
 	travelReads map[uuid.UUID]struct{}
 
+	// party entry (FS-BJNYC), in this pod's memory only: each party's open ready check, by party id
+	// (R12); leaders whose press is being read; and the party each run built here went down with,
+	// by run id (R14)
+	checks     map[uuid.UUID]*readyCheck
+	entryReads map[uuid.UUID]struct{}
+	partyRuns  map[uuid.UUID]partyRun
+	// where gear read off the loop for a party entry comes back to it
+	jobs loopJobs
+
 	// set as the pod shuts down: party actions are ignored from then on
 	closed bool
 	done   chan struct{}
@@ -141,6 +153,10 @@ func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJob
 		run:         newPartyRunner(jobs),
 		letGo:       make(map[uuid.UUID]travelLetGo),
 		travelReads: make(map[uuid.UUID]struct{}),
+		checks:      make(map[uuid.UUID]*readyCheck),
+		entryReads:  make(map[uuid.UUID]struct{}),
+		partyRuns:   make(map[uuid.UUID]partyRun),
+		jobs:        jobs,
 		done:        make(chan struct{}),
 	}
 	r.courier = newPartyCourier(cfg.inbox, sender, jobs, cfg.podID, r.heardUpdate)
@@ -149,6 +165,7 @@ func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJob
 		reader = cfg.store
 	}
 	r.cache = newPartyCache(reader, r.run, directory, cfg.now, cfg.membership, r.show, r.swept)
+	r.cache.onChanged = r.partyChanged
 	return r
 }
 
@@ -163,6 +180,8 @@ func (r *partyRegistry) close() {
 	}
 	r.closed = true
 	r.run.stop()
+	// open ready checks go with the pod: nobody enters (FS-BJNYC R12)
+	clear(r.checks)
 	close(r.done)
 }
 
@@ -274,7 +293,7 @@ func (r *partyRegistry) inviteThere(ctx context.Context, inviter *types.Player, 
 	}
 	// in a run, as the entry just read says: decided before the script, so nothing is written
 	if refusal == nil && found.World == string(types.WorldTypeRun) {
-		refusal = &inviteRefusal{code: constants.PartyNoticeDelving, name: found.Name}
+		refusal = &inviteRefusal{code: constants.PartyNoticeInRun, name: found.Name}
 	}
 	// a target on another pod: this pod's cache never holds their party, so pending is left to
 	// the script, which checks already_in_party first, as R10 orders them (I-NCC9J-3 review)
@@ -458,7 +477,7 @@ func (r *partyRegistry) roomRefusal(inviter *types.Player, name string) *inviteR
 // checks again.
 func (r *partyRegistry) targetRefusal(inviter *types.Player, targetID uuid.UUID, targetName string) *inviteRefusal {
 	if r.directory.InRun(targetID) {
-		return &inviteRefusal{code: constants.PartyNoticeDelving, name: targetName}
+		return &inviteRefusal{code: constants.PartyNoticeInRun, name: targetName}
 	}
 	if refusal := r.groupedRefusal(targetID, targetName); refusal != nil {
 		return refusal
@@ -721,9 +740,20 @@ func (r *partyRegistry) leaderTargetOrRefuse(ctx context.Context, leader *types.
 	return p, target, true
 }
 
-// locked reports whether p is inside an instance, where leave, kick and transfer are refused. No
-// party enters one yet: FS-BJNYC wires this, and may need ctx to ask the run.
-func (r *partyRegistry) locked(_ context.Context, _ partystore.Party) bool {
+// locked reports whether p is in its run, where leave, kick and transfer are refused, and so is a
+// second party_enter: from the moment its party-entry run started here until that run ends
+// (FS-BJNYC R19, R5.3). It reads this pod's record of the run alone (R14), never Redis; a party
+// whose run lives on another pod is not locked here. A run already gone no longer locks, though its
+// record waits for the next tick to be forgotten; locked only reads. Succession never asks it (R17).
+func (r *partyRegistry) locked(_ context.Context, p partystore.Party) bool {
+	for runID, run := range r.partyRuns {
+		if run.partyID != p.ID {
+			continue
+		}
+		if _, exists := r.cfg.worlds.GetGameSession(runID); exists {
+			return true
+		}
+	}
 	return false
 }
 
@@ -865,13 +895,15 @@ func (r *partyRegistry) ticks() <-chan time.Time {
 	return r.cfg.ticks
 }
 
-// tick keeps the party cache, and takes back any traveller the travel did not take.
+// tick keeps the party cache, takes back any traveller the travel did not take, and keeps the open
+// ready checks (FS-BJNYC R10).
 func (r *partyRegistry) tick(ctx context.Context) {
 	if r.closed {
 		return
 	}
 	r.takeBackLapsed(ctx)
 	r.cache.tick(ctx)
+	r.tickChecks()
 }
 
 // letters is where letters from other pods wait for the hub's loop.

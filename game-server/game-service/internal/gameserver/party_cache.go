@@ -61,6 +61,9 @@ type partyCache struct {
 	onShow func(ctx context.Context, views []partyView)
 	// told what a read changed in a party's member records (R17), before anyone is shown it
 	onSwept func(ctx context.Context, p partystore.Party, s partystore.Swept)
+	// told every party taken, and every party let go (ended true), on the loop as it happens: an
+	// open ready check is cancelled by a change of membership or leader (FS-BJNYC R10); nil, nobody
+	onChanged func(partyID uuid.UUID, p partystore.Party, ended bool)
 
 	parties  map[uuid.UUID]partystore.Party
 	memberOf map[uuid.UUID]uuid.UUID // player id → party id, for every cached party's members
@@ -121,6 +124,9 @@ func (c *partyCache) put(p partystore.Party) bool {
 		c.memberOf[m.PlayerID] = p.ID
 	}
 	c.membership.publish(c.memberOf)
+	if c.onChanged != nil {
+		c.onChanged(p.ID, p, false)
+	}
 	return true
 }
 
@@ -135,6 +141,9 @@ func (c *partyCache) newer(p partystore.Party) bool {
 func (c *partyCache) drop(partyID uuid.UUID) {
 	if c.forget(partyID) {
 		c.membership.publish(c.memberOf)
+		if c.onChanged != nil {
+			c.onChanged(partyID, partystore.Party{}, true)
+		}
 	}
 }
 

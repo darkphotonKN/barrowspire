@@ -218,6 +218,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		inbox:      inbox,
 		occupancy:  boot.hubOccupancy,
 		membership: server.partyMembership,
+		worlds:     server,
 	})
 	server.parties = party
 	party.start(ctx)
@@ -963,6 +964,27 @@ func (s *Server) SeatedConns() map[uuid.UUID]*websocket.Conn {
 			continue
 		}
 		conns[player.ID] = conn
+	}
+	return conns
+}
+
+/**
+* TownConns is SeatedConns narrowed to the hub, the town: everyone connected here
+* and seated in it, with their connection. A member in a field, a run, no world,
+* or within their reconnect grace is not in it. FS-BJNYC §Requirements 4.
+**/
+func (s *Server) TownConns() map[uuid.UUID]*websocket.Conn {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	conns := make(map[uuid.UUID]*websocket.Conn)
+	if s.hubSessionID == uuid.Nil {
+		return conns
+	}
+	for conn, player := range s.connToPlayer {
+		if player.CurrentGameSessionId == s.hubSessionID {
+			conns[player.ID] = conn
+		}
 	}
 	return conns
 }

@@ -335,6 +335,12 @@ func (s *Server) handleReadError(conn *websocket.Conn, err error) {
 		"error", err,
 	)
 
+	// a leader dropped inside their party's run hands on the lead at once,
+	// decided on the hub's loop (FS-BJNYC §Requirements 17)
+	if world, onRecord := s.currentWorldOf(player.ID); onRecord && s.parties != nil {
+		s.parties.dropped(s.ctx, player.ID, world)
+	}
+
 	// a member dropped in a field waits out the grace at home in the hub
 	// (FS-X2F2H §Requirements 17)
 	s.homeFromField(s.ctx, player.ID)
