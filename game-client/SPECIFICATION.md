@@ -24,7 +24,7 @@ Legend: ✅ DONE (built & code-verified) · ⚠️ PARTIAL · ⏳ PLANNED / NOT 
 
 ## Purpose
 
-The player-facing client: account/auth, profile & avatar, subscription (Stripe), leaderboard,
+The player-facing client: account/auth, profile & avatar, leaderboard,
 and the **Phaser escape-run** (queue → play → resolve). Server-authoritative; the client renders
 server state and sends intents. ✅
 
@@ -70,11 +70,6 @@ server state and sends intents. ✅
 - [x] Mercenary class → FS-MAMHR
 - [x] Gear and bag overlay → FS-HRH2J
 - [x] Character stats overlay → FS-HRH2J
-
-### Billing
-
-- [ ] ~Subscribe~ → removed FS-RG1B4
-- [ ] ~Check subscription permission~ → removed FS-RG1B4
 
 ### Presentation
 
@@ -175,7 +170,6 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 | `/game` | Auth-gated in-component; dynamically imports `PhaserGame` (`ssr:false`) | client-gated |
 | `/profile` | Show member; 3-step avatar upload | client-gated |
 | `/leaderboard` | Paginated (`getLeaderboard`, page 20) | public |
-| `/subscription` | Stripe Elements checkout; hardcoded plan `prod_TxVD6tpLpq1NFf` ($10/mo) | client-gated |
 
 > REVIEW: `middleware.ts` is a **no-op** (`NextResponse.next()`; comment says auth is
 > localStorage-only so it can't gate server-side). ALL gating is client-side (`AuthGuard` is only
@@ -196,7 +190,6 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 - **Loadout (pre-game):** LoadoutScene, REST only (`getItemInstances`, `getLoadout`,
   `PUT /api/items/loadout`).
 - **Profile/avatar:** request presigned URL → `PUT` to S3 → confirm.
-- **Subscription:** `subscribe` → Stripe `confirmCardPayment` → poll `subscription/permission` (5s ×12).
 
 ## Reference — Phaser integration
 
@@ -221,7 +214,6 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
   `Authorization: Bearer <accessToken>` from localStorage; `401` → logout + `/login`.
 - Endpoints called: `POST /api/member/{signin,signup}`, `GET /api/member`,
   `POST /api/member/avatar/{upload-request,confirm}`,
-  `POST /api/payment/subscribe`, `GET /api/payment/subscription/permission`,
   `GET /api/stats/leaderboard`, `GET /api/notification/` + `PATCH /:id/read` + `/read-all`,
   `GET /api/items/{loadout,instances}` + `PUT /api/items/loadout`.
 > REVIEW: item JSON casing is split — `/api/items/instances` returns **snake_case** (proto),

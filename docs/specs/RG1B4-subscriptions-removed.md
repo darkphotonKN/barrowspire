@@ -1,6 +1,6 @@
 # FS-RG1B4: Subscriptions removed
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Billing" → "Subscribe", "Check subscription permission" (struck, removed by this FS); `game-server/api-gateway/SPECIFICATION.md` "### Downstream routing" → "Route payment traffic to payments, plus the unauthenticated Stripe webhook" (struck) and "Route the unauthenticated Stripe webhook to payments" → this FS · Related ADRs: [ADR-0001](../adr/0001-contract-layer.md) (the generated contract; removing operations is a deliberate break, allowlisted) · Vocabulary: [`game-server/payment-service/CONTEXT.md`](../../game-server/payment-service/CONTEXT.md)
+> Status: shipped · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Billing" → "Subscribe", "Check subscription permission" (struck, removed by this FS); `game-server/api-gateway/SPECIFICATION.md` "### Downstream routing" → "Route payment traffic to payments, plus the unauthenticated Stripe webhook" (struck) and "Route the unauthenticated Stripe webhook to payments" → this FS · Related ADRs: [ADR-0001](../adr/0001-contract-layer.md) (the generated contract; removing operations is a deliberate break, allowlisted) · Vocabulary: [`game-server/payment-service/CONTEXT.md`](../../game-server/payment-service/CONTEXT.md)
 
 ## Summary
 
