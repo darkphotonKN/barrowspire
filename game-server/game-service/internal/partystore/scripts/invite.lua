@@ -29,8 +29,10 @@ local formed = false
 if not pid then
 	pid, formed = new_pid, true
 	local leader = {player_id = inviter, name = inviter_name, class = inviter_class, joined_at = now}
-	redis.call('HSET', party_key(pid), 'leader', inviter, 'created_at', now, 'members', cjson.encode({leader}))
+	redis.call('HSET', party_key(pid), 'leader', inviter, 'created_at', now, 'members', cjson.encode({leader}), 'version', 1)
 	redis.call('SET', pointer_key(inviter), pid)
+else
+	bump(pid)
 end
 
 redis.call('HSET', invite_key(iid), 'party_id', pid, 'target_id', target, 'target_name', target_name, 'expires_at', expires_at)

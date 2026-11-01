@@ -71,13 +71,15 @@ type reply struct {
 }
 
 type wireVoid struct {
-	InviteID   string `json:"invite_id"`
-	PartyID    string `json:"party_id"`
-	LeaderID   string `json:"leader_id"`
-	TargetName string `json:"target_name"`
+	InviteID   string    `json:"invite_id"`
+	PartyID    string    `json:"party_id"`
+	LeaderID   string    `json:"leader_id"`
+	TargetName string    `json:"target_name"`
+	Party      wireParty `json:"party"`
 }
 
 type wireParty struct {
+	Version   string            `json:"version"`
 	ID        string            `json:"id"`
 	Leader    string            `json:"leader"`
 	CreatedAt string            `json:"created_at"`
@@ -146,7 +148,11 @@ func (w *wireParty) party() (Party, error) {
 	if err != nil {
 		return Party{}, fmt.Errorf("party %s: %w", id, err)
 	}
-	p := Party{ID: id, Leader: leader, CreatedAt: created}
+	version, err := strconv.ParseInt(w.Version, 10, 64)
+	if err != nil {
+		return Party{}, fmt.Errorf("parse version of %s: %w", id, err)
+	}
+	p := Party{ID: id, Leader: leader, CreatedAt: created, Version: version}
 	for _, m := range w.Members {
 		playerID, err := uuid.Parse(m.PlayerID)
 		if err != nil {
@@ -226,12 +232,15 @@ type AcceptArgs struct {
 	Now      time.Time
 }
 
-// Voided is another party's invite an accept spent: whose it was, so its leader can be told.
+// Voided is another party's invite an accept spent: whose it was, so its leader can be told, and
+// that party as it now stands, so its members can be (FS-NCC9J R21).
 type Voided struct {
 	InviteID   uuid.UUID
 	PartyID    uuid.UUID
 	LeaderID   uuid.UUID
+	TargetID   uuid.UUID
 	TargetName string
+	Party      Party
 }
 
 // AcceptResult is an accept's outcome: refused, or the party the accepter joined and the other
@@ -263,7 +272,7 @@ func (r *Redis) Accept(ctx context.Context, a AcceptArgs) (AcceptResult, error) 
 	}
 	out := AcceptResult{Party: p}
 	for _, v := range res.Voided {
-		voided, err := v.voided()
+		voided, err := v.voided(a.Accepter.PlayerID)
 		if err != nil {
 			return AcceptResult{}, fmt.Errorf("accept invite %s: %w", a.InviteID, err)
 		}
@@ -272,7 +281,7 @@ func (r *Redis) Accept(ctx context.Context, a AcceptArgs) (AcceptResult, error) 
 	return out, nil
 }
 
-func (w wireVoid) voided() (Voided, error) {
+func (w wireVoid) voided(target uuid.UUID) (Voided, error) {
 	inviteID, err := uuid.Parse(w.InviteID)
 	if err != nil {
 		return Voided{}, fmt.Errorf("parse voided invite: %w", err)
@@ -285,7 +294,11 @@ func (w wireVoid) voided() (Voided, error) {
 	if err != nil {
 		return Voided{}, fmt.Errorf("parse voided invite's leader: %w", err)
 	}
-	return Voided{InviteID: inviteID, PartyID: partyID, LeaderID: leader, TargetName: w.TargetName}, nil
+	p, err := w.Party.party()
+	if err != nil {
+		return Voided{}, fmt.Errorf("voided invite's party: %w", err)
+	}
+	return Voided{InviteID: inviteID, PartyID: partyID, LeaderID: leader, TargetID: target, TargetName: w.TargetName, Party: p}, nil
 }
 
 // DeclineArgs is one decline: DeclinerID refusing InviteID at Now.
@@ -322,19 +335,34 @@ func (r *Redis) Decline(ctx context.Context, a DeclineArgs) (DeclineResult, erro
 	return DeclineResult{Party: p, TargetName: res.TargetName}, nil
 }
 
+// WithdrawResult is a withdrawal's outcome: the party ended with the invite, or the party as it
+// now stands without it. Neither, when there was nothing left to withdraw.
+type WithdrawResult struct {
+	Ended bool
+	// zero when the party ended or nothing was withdrawn
+	Party Party
+}
+
 // Withdraw spends an invite that never reached its target (I-NCC9J-1 D6). With endIfAlone, the
 // invite created its party, and the party ends with it if nothing else has joined or been invited
-// since; ended says so.
-func (r *Redis) Withdraw(ctx context.Context, inviteID uuid.UUID, endIfAlone bool, now time.Time) (ended bool, err error) {
+// since.
+func (r *Redis) Withdraw(ctx context.Context, inviteID uuid.UUID, endIfAlone bool, now time.Time) (WithdrawResult, error) {
 	flag := "0"
 	if endIfAlone {
 		flag = "1"
 	}
 	res, err := run(ctx, declineScript, r.client, []string{inviteKey(inviteID)}, inviteID.String(), "", millis(now), flag)
 	if err != nil {
-		return false, fmt.Errorf("withdraw invite %s: %w", inviteID, err)
+		return WithdrawResult{}, fmt.Errorf("withdraw invite %s: %w", inviteID, err)
 	}
-	return res.Ended, nil
+	if res.Ended || res.Party == nil {
+		return WithdrawResult{Ended: res.Ended}, nil
+	}
+	p, err := res.Party.party()
+	if err != nil {
+		return WithdrawResult{}, fmt.Errorf("withdraw invite %s: %w", inviteID, err)
+	}
+	return WithdrawResult{Party: p}, nil
 }
 
 // CreateResult is a create's outcome: refused already_in_party, or the new party.

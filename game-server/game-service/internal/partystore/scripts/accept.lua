@@ -27,10 +27,12 @@ local voided = {}
 for _, other in ipairs(redis.call('ZRANGE', player_invites_key(accepter), 0, -1)) do
 	local o = redis.call('HMGET', invite_key(other), 'party_id', 'target_name', 'expires_at')
 	local leader = o[1] and redis.call('HGET', party_key(o[1]), 'leader')
-	if leader and tonumber(now) < tonumber(o[3]) then
-		voided[#voided + 1] = {invite_id = other, party_id = o[1], leader_id = leader, target_name = o[2]}
-	end
+	local live = leader and tonumber(now) < tonumber(o[3])
 	spend_invite(other)
+	if live then
+		bump(o[1])
+		voided[#voided + 1] = {invite_id = other, party_id = o[1], leader_id = leader, target_name = o[2], party = snapshot(o[1])}
+	end
 end
 redis.call('DEL', player_invites_key(accepter))
 
@@ -38,6 +40,7 @@ local members = members_of(pid)
 members[#members + 1] = {player_id = accepter, name = name, class = class, joined_at = now}
 redis.call('HSET', party_key(pid), 'members', cjson.encode(members))
 redis.call('SET', pointer_key(accepter), pid)
+bump(pid)
 keep_alive(pid, party_ttl)
 
 local out = {code = 'ok', party = snapshot(pid)}

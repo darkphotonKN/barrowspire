@@ -841,17 +841,17 @@ func (s *Server) SeatedPlayerIDs() []uuid.UUID {
 }
 
 /**
-* HubSeatedPlayer finds the player seated in this pod's hub under a character
-* name, read off the connection table as SeatedPlayerIDs is. A copy, taken
-* under the lock, so the caller reads it on its own goroutine safely.
-* FS-R82NV §Requirements 12 (same pod).
+* SeatedPlayer finds the player connected to this pod and seated in any world
+* under a character name or player id, read off the connection table as
+* SeatedPlayerIDs is. A copy, taken under the lock, so the caller reads it on
+* its own goroutine safely. FS-NCC9J §Requirements 11 (same pod).
 **/
-func (s *Server) HubSeatedPlayer(nameOrID string) (types.Player, bool) {
+func (s *Server) SeatedPlayer(nameOrID string) (types.Player, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	for _, player := range s.connToPlayer {
-		if player.CurrentGameSessionId != s.hubSessionID {
+		if player.CurrentGameSessionId == uuid.Nil {
 			continue
 		}
 		// character names are unique case-insensitively (character-service's lower(name) index)
@@ -868,25 +868,35 @@ func (s *Server) PartiesClosed() <-chan struct{} {
 	return s.parties.stopped()
 }
 
-// HubSeatedPlayers is everyone seated in this pod's hub, copies taken under the lock: the
-// presence index's half from this pod (FS-R82NV R7).
-func (s *Server) HubSeatedPlayers() []types.Player {
+// presentPlayer is one player this pod holds, as the presence index writes them.
+type presentPlayer struct {
+	ID    uuid.UUID
+	Name  string
+	World types.WorldType
+}
+
+// PresentPlayers is every player this pod holds with a character, in any world, connected or
+// within the reconnect grace: the presence index's half from this pod (FS-NCC9J R7). A delver kept
+// only for their run's settlement after their grace ran out is gone, not present.
+func (s *Server) PresentPlayers() []presentPlayer {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	seen := make(map[uuid.UUID]struct{}, len(s.connToPlayer))
-	seated := make([]types.Player, 0, len(s.connToPlayer))
-	for _, player := range s.connToPlayer {
-		if player.CurrentGameSessionId != s.hubSessionID {
+	present := make([]presentPlayer, 0, len(s.players))
+	for id, record := range s.players {
+		if record.Character.Name == "" {
 			continue
 		}
-		if _, dup := seen[player.ID]; dup {
+		if _, kept := s.awaitingSettlement[id]; kept {
 			continue
 		}
-		seen[player.ID] = struct{}{}
-		seated = append(seated, *player)
+		world, inWorld := s.sessions[record.CurrentGameSessionId]
+		if !inWorld {
+			continue
+		}
+		present = append(present, presentPlayer{ID: id, Name: record.Character.Name, World: world.WorldType()})
 	}
-	return seated
+	return present
 }
 
 // InRun reports whether playerID is connected here and seated in a run: neither the hub nor a

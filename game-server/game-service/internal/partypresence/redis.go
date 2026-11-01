@@ -1,6 +1,7 @@
-// Package partypresence is the presence index (FS-R82NV §Requirements 7): who is seated in a
-// hub, and on which pod, found by character name or by player id. Each pod writes its own hub's
-// players and keeps them alive by TTL; a name with no entry is offline or busy. It wraps the one
+// Package partypresence is the presence index (FS-NCC9J §Requirements 7, redefining FS-R82NV R7):
+// every connected player with a character, in which world, and on which pod, found by character
+// name or by player id. Each pod writes its own players and keeps them alive by TTL; a name with
+// no entry is offline. It wraps the one
 // go-redis client the pod already holds, as partystore and chatbus do. Whisper (FS-KCQ06)
 // reads the same keys.
 package partypresence
@@ -19,17 +20,21 @@ import (
 // TTL is how long a seat outlives its pod's last refresh: three missed ten-second beats.
 const TTL = 30 * time.Second
 
-// Entry is one hub-seated player as their pod writes them.
+// Entry is one player as their pod writes them: who, under which name, in which world (hub,
+// field or run).
 type Entry struct {
 	PlayerID uuid.UUID
 	Name     string
+	World    string
 }
 
-// Found is a seated player as a lookup returns them: who, under which name, on which pod.
+// Found is a present player as a lookup returns them: who, under which name, on which pod, in
+// which world.
 type Found struct {
 	PlayerID uuid.UUID
 	Name     string
 	PodID    string
+	World    string
 }
 
 type Redis struct {
@@ -49,17 +54,17 @@ func nameKey(name string) string {
 func idKey(playerID uuid.UUID) string { return "presence:id:" + playerID.String() }
 
 // Seat writes each player's two keys, naming podID, for TTL. It is both the write when a player
-// sits down in the hub and the refresh: a key that lapsed while Redis was away comes back.
+// is seated or changes world and the refresh: a key that lapsed while Redis was away comes back.
 func (r *Redis) Seat(ctx context.Context, podID string, entries []Entry) error {
 	if len(entries) == 0 {
 		return nil
 	}
 	_, err := r.client.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 		for _, e := range entries {
-			pipe.HSet(ctx, nameKey(e.Name), "player_id", e.PlayerID.String(), "pod_id", podID)
-			pipe.Expire(ctx, nameKey(e.Name), TTL)
-			pipe.HSet(ctx, idKey(e.PlayerID), "name", e.Name, "pod_id", podID)
-			pipe.Expire(ctx, idKey(e.PlayerID), TTL)
+			for _, key := range []string{nameKey(e.Name), idKey(e.PlayerID)} {
+				pipe.HSet(ctx, key, "player_id", e.PlayerID.String(), "name", e.Name, "pod_id", podID, "world", e.World)
+				pipe.Expire(ctx, key, TTL)
+			}
 		}
 		return nil
 	})
@@ -110,7 +115,7 @@ func (r *Redis) Lookup(ctx context.Context, nameOrID string) (Found, bool, error
 		if fields["pod_id"] == "" {
 			return Found{}, false, nil
 		}
-		return Found{PlayerID: id, Name: fields["name"], PodID: fields["pod_id"]}, true, nil
+		return Found{PlayerID: id, Name: fields["name"], PodID: fields["pod_id"], World: fields["world"]}, true, nil
 	}
 
 	fields, err := r.client.HGetAll(ctx, nameKey(query)).Result()
@@ -121,12 +126,36 @@ func (r *Redis) Lookup(ctx context.Context, nameOrID string) (Found, bool, error
 	if err != nil || fields["pod_id"] == "" {
 		return Found{}, false, nil
 	}
-	name, err := r.client.HGet(ctx, idKey(id), "name").Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return Found{}, false, fmt.Errorf("look up player %s: %w", id, err)
-	}
+	name := fields["name"]
 	if name == "" {
 		name = query
 	}
-	return Found{PlayerID: id, Name: name, PodID: fields["pod_id"]}, true, nil
+	return Found{PlayerID: id, Name: name, PodID: fields["pod_id"], World: fields["world"]}, true, nil
+}
+
+// LookupIDs finds each of these players by id in one trip: where each present one stands. An
+// absent player is left out of the answer. FS-NCC9J R5 (fan-out to every member's pod).
+func (r *Redis) LookupIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]Found, error) {
+	if len(ids) == 0 {
+		return map[uuid.UUID]Found{}, nil
+	}
+	cmds := make([]*redis.MapStringStringCmd, len(ids))
+	_, err := r.client.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		for i, id := range ids {
+			cmds[i] = pipe.HGetAll(ctx, idKey(id))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("look up %d players: %w", len(ids), err)
+	}
+	found := make(map[uuid.UUID]Found, len(ids))
+	for i, id := range ids {
+		fields := cmds[i].Val()
+		if fields["pod_id"] == "" {
+			continue
+		}
+		found[id] = Found{PlayerID: id, Name: fields["name"], PodID: fields["pod_id"], World: fields["world"]}
+	}
+	return found, nil
 }

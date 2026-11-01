@@ -371,10 +371,16 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   "is this player online, and where": invites, party fan-out, reconnects and whisper (FS-KCQ06)
   use it. A name with no entry is **offline**. Not a friends list and not a history.
 - **Pod inbox** — the Redis channel `pod:<podID>:inbox` each pod subscribes to for **letters**
-  addressed to one of *its* players from another pod (an invite, a reply, a party update). Rides
-  the same Redis client and subscriber → hub-loop shape as world chat. Distinct from the
-  **match-start channel**, which carries run coordination, and from the chat bus, which carries
-  chat lines.
+  addressed to one of *its* players from another pod: an invite, a **party update** (which also
+  carries the party, versioned, for that pod's party cache), or a party notice. Rides the same
+  Redis client and subscriber → hub-loop shape as world chat. Distinct from the **match-start
+  channel**, which carries run coordination, and from the chat bus, which carries chat lines. (In
+  code, the *courier* is the part of the party registry that sends and reads these letters.)
+- **Seated / present** — a player is **seated** on a pod while connected to it and standing in one
+  of its worlds: whom it answers by name directly, and whose parties its party cache keeps. A
+  player is **present** on a pod while seated there *or* within its reconnect grace: who the pod
+  writes into the presence index, and who hears a party update there. "Held" is not a separate
+  term: say seated.
 - **Party invite** — a request from a party to a named player to join, sent by its leader, found
   through the presence index and delivered through the target's pod inbox, wherever they stand.
   It is the party's, not its sender's: it stands through a change of leader, and its answer goes

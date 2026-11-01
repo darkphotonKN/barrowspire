@@ -55,6 +55,12 @@ local function spend_invite(iid)
 	redis.call('DEL', invite_key(iid))
 end
 
+-- moves the party's version on: every change a script writes calls it once, so a pod can tell an
+-- older party from a newer one whatever order its letters arrive in (I-NCC9J-3 review)
+local function bump(pid)
+	redis.call('HINCRBY', party_key(pid), 'version', 1)
+end
+
 -- puts every key of the party back on its TTL
 local function keep_alive(pid, ttl)
 	redis.call('PEXPIRE', party_key(pid), ttl)
@@ -68,8 +74,8 @@ end
 -- left out, since an empty Lua table cannot say whether it was a list. An invite whose record has
 -- lapsed (the caller's clock behind Redis's) is no longer reserved, and leaves the party's count.
 local function snapshot(pid)
-	local fields = redis.call('HMGET', party_key(pid), 'leader', 'created_at', 'members')
-	local party = {id = pid, leader = fields[1], created_at = fields[2], members = cjson.decode(fields[3])}
+	local fields = redis.call('HMGET', party_key(pid), 'leader', 'created_at', 'members', 'version')
+	local party = {id = pid, leader = fields[1], created_at = fields[2], members = cjson.decode(fields[3]), version = fields[4] or '0'}
 	local reserved = {}
 	for _, iid in ipairs(open_invites(pid)) do
 		local inv = redis.call('HMGET', invite_key(iid), 'target_id', 'target_name', 'expires_at')

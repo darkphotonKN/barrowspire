@@ -307,7 +307,15 @@ func TestAccept_VoidsTheAcceptersOtherInvites(t *testing.T) {
 	res := accept(t, store, fromWren, kaelen, sentAt.Add(time.Second))
 
 	require.Empty(t, res.Refusal)
-	assert.Equal(t, []partystore.Voided{{InviteID: fromIdris.InviteID, PartyID: fromIdris.NewPartyID, LeaderID: idris.PlayerID, TargetName: "Kaelen"}}, res.Voided)
+	require.Len(t, res.Voided, 1)
+	voided := res.Voided[0]
+	assert.Equal(t, fromIdris.InviteID, voided.InviteID)
+	assert.Equal(t, fromIdris.NewPartyID, voided.PartyID)
+	assert.Equal(t, idris.PlayerID, voided.LeaderID)
+	assert.Equal(t, "Kaelen", voided.TargetName)
+	assert.Equal(t, kaelen.PlayerID, voided.TargetID)
+	assert.Equal(t, fromIdris.NewPartyID, voided.Party.ID, "the voided invite's party as it now stands, for its members' update (R21)")
+	assert.Empty(t, voided.Party.Reserved)
 	assert.Equal(t, partystore.RefusalNoInvite, accept(t, store, fromIdris, kaelen, sentAt.Add(2*time.Second)).Refusal)
 	invite(t, store, idris, joiner("Ori"), 2, sentAt.Add(2*time.Second)) // Idris's slot is free
 }
@@ -372,10 +380,10 @@ func TestWithdraw_PartyTheInviteCreated_Ends(t *testing.T) {
 	wren, kaelen := joiner("Wren"), joiner("Kaelen")
 	inv := invite(t, store, wren, kaelen, 2, sentAt)
 
-	ended, err := store.Withdraw(context.Background(), inv.InviteID, true, sentAt)
+	res, err := store.Withdraw(context.Background(), inv.InviteID, true, sentAt)
 	require.NoError(t, err)
 
-	assert.True(t, ended)
+	assert.True(t, res.Ended)
 	assert.False(t, mini.Exists("{party}:p:"+inv.NewPartyID.String()))
 	assert.False(t, mini.Exists("{party}:pl:"+wren.PlayerID.String()))
 }
@@ -388,10 +396,12 @@ func TestWithdraw_PartyWithMore_OnlyFreesTheSlot(t *testing.T) {
 	first := invite(t, store, wren, kaelen, 3, sentAt)
 	second := invite(t, store, wren, idris, 3, sentAt)
 
-	ended, err := store.Withdraw(context.Background(), second.InviteID, true, sentAt)
+	res, err := store.Withdraw(context.Background(), second.InviteID, true, sentAt)
 	require.NoError(t, err)
 
-	assert.False(t, ended)
+	assert.False(t, res.Ended)
+	assert.Equal(t, first.NewPartyID, res.Party.ID, "the party as it now stands")
+	require.Len(t, res.Party.Reserved, 1, "only Kaelen's slot is left")
 	assert.True(t, mini.Exists("{party}:p:"+first.NewPartyID.String()))
 	accept(t, store, first, kaelen, sentAt.Add(time.Second))
 }
@@ -409,7 +419,7 @@ func TestCreate_PartyOfOne(t *testing.T) {
 
 	require.Empty(t, res.Refusal)
 	assert.Equal(t, partystore.Party{
-		ID: partyID, Leader: wren.PlayerID, CreatedAt: sentAt,
+		ID: partyID, Leader: wren.PlayerID, CreatedAt: sentAt, Version: 1,
 		Members: []partystore.Member{{PlayerID: wren.PlayerID, Name: "Wren", Class: "warrior", JoinedAt: sentAt}},
 	}, res.Party)
 	assert.Equal(t, 5*time.Minute, mini.TTL("{party}:pl:"+wren.PlayerID.String()))
@@ -608,4 +618,59 @@ func TestInvite_Racing_NeverOverfills(t *testing.T) {
 	}
 
 	assert.Equal(t, 3, n, "size 4: the leader and three reserved places")
+}
+
+// Every change a script writes moves the party's version on by one, and every read carries it, so
+// a pod can tell an older party from a newer one whatever order letters arrive in (code review
+// 2026-11-01, I-NCC9J-3 HIGH).
+func TestVersion_EveryChangeMovesItOn(t *testing.T) {
+	client, _ := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	wren, kaelen, idris := joiner("Wren"), joiner("Kaelen"), joiner("Idris")
+	ctx := context.Background()
+
+	created, err := store.Create(ctx, uuid.New(), wren, sentAt)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, created.Party.Version, "create")
+	partyID := created.Party.ID
+
+	toKaelen := inviteArgs(wren, kaelen, 3, sentAt)
+	invited, err := store.Invite(ctx, toKaelen)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, invited.Party.Version, "invite")
+
+	accepted := accept(t, store, toKaelen, kaelen, sentAt)
+	assert.EqualValues(t, 3, accepted.Party.Version, "accept")
+
+	toIdris := invite(t, store, wren, idris, 3, sentAt)
+	declined := decline(t, store, toIdris, idris.PlayerID, sentAt)
+	assert.EqualValues(t, 5, declined.Party.Version, "invite, then decline")
+
+	transferred, err := store.Transfer(ctx, partyID, wren.PlayerID, kaelen.PlayerID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 6, transferred.Party.Version, "transfer")
+
+	removed, err := store.Remove(ctx, partystore.RemoveArgs{PartyID: partyID, PlayerID: wren.PlayerID})
+	require.NoError(t, err)
+	assert.EqualValues(t, 7, removed.Party.Version, "remove")
+
+	read, _, err := store.PartyOf(ctx, kaelen.PlayerID, sentAt)
+	require.NoError(t, err)
+	assert.EqualValues(t, 7, read.Version, "a read does not move it")
+}
+
+// An accept moves on the version of each party whose invite it voided, so that party's members
+// take the update without its slot (I-NCC9J-3 HIGH).
+func TestVersion_VoidedPartyMovesOn(t *testing.T) {
+	client, _ := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	wren, idris, kaelen := joiner("Wren"), joiner("Idris"), joiner("Kaelen")
+	fromWren := invite(t, store, wren, kaelen, 2, sentAt)
+	fromIdris, err := store.Invite(context.Background(), inviteArgs(idris, kaelen, 2, sentAt))
+	require.NoError(t, err)
+
+	res := accept(t, store, fromWren, kaelen, sentAt)
+
+	require.Len(t, res.Voided, 1)
+	assert.Greater(t, res.Voided[0].Party.Version, fromIdris.Party.Version)
 }

@@ -26,4 +26,5 @@ if end_if_alone then
 	end
 end
 
+bump(pid)
 return reply({code = 'ok', party = snapshot(pid), target_name = inv[3]})

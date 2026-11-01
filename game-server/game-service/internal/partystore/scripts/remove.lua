@@ -31,6 +31,7 @@ if succeeded then
 	redis.call('HSET', party_key(pid), 'leader', kept[1].player_id)
 end
 redis.call('HSET', party_key(pid), 'members', cjson.encode(kept))
+bump(pid)
 keep_alive(pid, party_ttl)
 
 return reply({code = 'ok', succeeded = succeeded, party = snapshot(pid)})
