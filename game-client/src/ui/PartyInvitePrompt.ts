@@ -1,7 +1,8 @@
 /**
  * The invite prompt (FS-R82NV R32, R33): each `party_invite` waiting on this player's answer is
  * a small carved prompt at the top centre, under the queue panel's line: "<leader> invites you to
- * their party (<n>/<size>)", a countdown from 60 s, **Decline** and **Accept**. Several stack
+ * their party (<n>/<size>)", the shared countdown from 60 s (FS-B3NDZ: the whole seconds above a
+ * bar along the prompt's foot, draining every frame), **Decline** and **Accept**. Several stack
  * downward, oldest at the top. A prompt closes on its own button, when its countdown ends, or
  * when a `party_update` makes the player a member (the store empties every invite then).
  *
@@ -24,11 +25,15 @@ import {
 import { socketManager } from "@/utils/class/SocketManager";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
+import {
+  COUNTDOWN_SECONDS_PX,
+  countdownSecondsText,
+  drawCountdownBar,
+} from "./countdownBar";
 import { partyCommands, type PartyCommands } from "./partyCommands";
 import {
   INVITE_LABEL,
   inviteAcceptState,
-  inviteCountdownText,
   invitePromptFrames,
   invitePromptText,
   type InvitePromptFrame,
@@ -82,6 +87,9 @@ const within = (r: Rect, x: number, y: number) =>
 
 export class PartyInvitePrompt {
   private graphics?: Phaser.GameObjects.Graphics;
+  /** The countdown bars' own layer, redrawn every frame (FS-B3NDZ R4): one per shown prompt. */
+  private barLayer?: Phaser.GameObjects.Graphics;
+  private bars: { invite: PendingInvite; rect: Rect }[] = [];
   private texts: Phaser.GameObjects.Text[] = [];
   private frames: InvitePromptFrame[] = [];
   /** What the last draw showed: hidden or not, and each shown prompt's id and seconds. */
@@ -94,10 +102,10 @@ export class PartyInvitePrompt {
   ) {
     this.unsubscribe = deps.store.subscribe((state, prev) => {
       if (state.invites !== prev.invites || state.panelOpen !== prev.panelOpen)
-        this.draw(true);
+        this.render(true);
     });
     scene.events.on("postupdate", this.tick, this);
-    this.draw(true);
+    this.render(true);
   }
 
   /** How many prompts are on screen now. */
@@ -117,10 +125,27 @@ export class PartyInvitePrompt {
     this.frames = [];
   }
 
-  /** Once a frame: run-out invites go, and the prompts redraw when a second ticks or an overlay comes or goes. */
+  /**
+   * Once a frame: run-out invites go, the bars drain, and the prompts redraw when a second ticks or
+   * an overlay comes or goes.
+   */
   private tick(): void {
     this.deps.store.getState().expireInvites();
-    this.draw(false);
+    this.render(false);
+  }
+
+  private render(force: boolean): void {
+    this.draw(force);
+    this.drainBars();
+  }
+
+  /** Each shown prompt's bar at what is left of its own invite's window, now (FS-B3NDZ R3, R6). */
+  private drainBars(): void {
+    if (!this.barLayer) return;
+    const { inviteFraction } = this.deps.store.getState();
+    this.barLayer.clear();
+    for (const { invite, rect } of this.bars)
+      drawCountdownBar(this.barLayer, rect, inviteFraction(invite));
   }
 
   private answer(invite: PendingInvite, accept: boolean): void {
@@ -134,6 +159,9 @@ export class PartyInvitePrompt {
     this.texts = [];
     this.graphics?.destroy();
     this.graphics = undefined;
+    this.barLayer?.destroy();
+    this.barLayer = undefined;
+    this.bars = [];
   }
 
   private text(
@@ -218,6 +246,12 @@ export class PartyInvitePrompt {
       .setScrollFactor(0)
       .setDepth(PROMPT_DEPTH);
     this.graphics = g;
+    // over the panels, which the graphics above draws all of first
+    this.barLayer = this.scene.add
+      .graphics()
+      .setScrollFactor(0)
+      .setDepth(PROMPT_DEPTH);
+    this.bars = frames.map((f, i) => ({ invite: seen[i].invite, rect: f.bar }));
     frames.forEach((f, i) => {
       const { invite, seconds } = seen[i];
       carvedPanel(g, f.panel.x, f.panel.y, f.panel.width, f.panel.height);
@@ -229,13 +263,14 @@ export class PartyInvitePrompt {
         FONT_PX,
         f.text.width,
       );
+      // the shared countdown's seconds, beside the buttons, above the bar (FS-B3NDZ R8, R9)
       this.text(
         f.countdown.x,
-        f.countdown.y + 3,
-        inviteCountdownText(seconds),
-        palette.hudLabel,
-        SMALL_PX,
-      );
+        f.countdown.y + f.countdown.height / 2,
+        countdownSecondsText(seconds),
+        palette.hudText,
+        COUNTDOWN_SECONDS_PX,
+      ).setOrigin(0, 0.5);
       // arcane for the way out, amber for the thing to do (design guideline, Gameplay accent)
       this.button(g, f.decline, INVITE_LABEL.decline, palette.safe, () =>
         this.answer(invite, false),

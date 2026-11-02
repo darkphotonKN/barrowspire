@@ -57,6 +57,8 @@ const { ActionType } = await import("@/assets/types/client");
 const { EquipmentHud } = await import("@/ui/EquipmentHud");
 const { ResourceHud } = await import("@/ui/ResourceHud");
 const { AbilityHud } = await import("@/ui/AbilityHud");
+const { palette } = await import("@/utils/canvasPalette");
+const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
 const { projectedBounds } = await import("@/render/iso/projection");
 const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
 
@@ -435,19 +437,95 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
     gates: [ROAD_HOME],
   });
 
-  type Fallen = Omit<FieldUnderTest, "time"> & {
+  type Fallen = Omit<FieldUnderTest, "time" | "cameras"> & {
     time: { delayedCall: ReturnType<typeof vi.fn>; now: number };
-    fallenLine?: unknown;
+    cameras: { main: { width: number; height: number } };
+    fallenView?: unknown;
     cursors?: unknown;
     wasd?: unknown;
     update(time: number, delta: number): void;
   };
 
-  /** The field with a clock the test sets, and keys the test holds down. */
+  /** A plain rectangle a stand-in graphics filled, in the colour it was filled with. */
+  interface Fill {
+    colour: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }
+
+  /**
+   * The field with a clock the test sets, keys the test holds down, and a canvas whose texts keep
+   * what they say and whose graphics keep what they fill (FS-B3NDZ R12).
+   */
   function fallenOnStage() {
     const stage = fieldOnStage();
     const field = stage.field as unknown as Fallen;
     field.time = { delayedCall: vi.fn(), now: 0 };
+    field.cameras = { main: { width: 1080, height: 720 } };
+    const shown: { content: string; fontSize?: string; destroyed: boolean }[] =
+      [];
+    const drawn: { fills: Fill[]; destroyed: boolean }[] = [];
+    const any: unknown = new Proxy(() => any, {
+      get: () => any,
+      apply: () => any,
+    });
+    field.add = {
+      text: (
+        _x: number,
+        _y: number,
+        content: string,
+        style?: { fontSize?: string },
+      ) => {
+        stage.texts.push(content);
+        const t = { content, fontSize: style?.fontSize, destroyed: false };
+        shown.push(t);
+        const self: Record<string, unknown> = new Proxy(
+          {
+            setText: (c: string) => ((t.content = c), self),
+            destroy: () => void (t.destroyed = true),
+          },
+          {
+            get: (target, key) =>
+              key in target
+                ? (target as Record<string | symbol, unknown>)[key]
+                : () => self,
+          },
+        );
+        return self;
+      },
+      graphics: () => {
+        const rec = { fills: [] as Fill[], destroyed: false };
+        drawn.push(rec);
+        let colour = 0;
+        const self: Record<string, unknown> = new Proxy(
+          {
+            fillStyle: (c: number) => ((colour = c), self),
+            fillRect: (x: number, y: number, width: number, height: number) => (
+              rec.fills.push({ colour, x, y, width, height }), self
+            ),
+            clear: () => ((rec.fills = []), self),
+            destroy: () => void (rec.destroyed = true),
+          },
+          {
+            get: (target, key) =>
+              key in target
+                ? (target as Record<string | symbol, unknown>)[key]
+                : () => self,
+          },
+        );
+        return self;
+      },
+      existing: any,
+    };
+    const liveText = (content: string) =>
+      shown.find((t) => !t.destroyed && t.content === content);
+    const barFills = () =>
+      drawn
+        .filter((g) => !g.destroyed)
+        .flatMap((g) => g.fills)
+        .filter((f) => f.colour === palette.xpFill);
     Object.assign(field, {
       fight: { sync: vi.fn(), update: vi.fn(), release: vi.fn() },
     });
@@ -460,20 +538,60 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
       field.time.now = now;
       field.update(now, 16);
     };
-    return { ...stage, field, holdRight, frame };
+    return { ...stage, field, holdRight, frame, liveText, barFills };
   }
 
   it("should show the fallen state counting 3-2-1, with no result card or loss copy", () => {
-    const { field, texts } = fallenOnStage();
+    const { field, texts, liveText } = fallenOnStage();
 
     field.time.now = 1000;
     field.renderState(stateAt(0, { x: 900, y: 420 }));
 
-    expect(texts).toContain("You have fallen. You rise at the road home in 3.");
-    expect(field.fallenLine).toBeDefined();
+    expect(texts).toContain(FALLEN_LINE);
+    expect(liveText("3s")).toBeDefined();
+    expect(field.fallenView).toBeDefined();
     expect(
       texts.filter((t) => /lost|defeat|victory|escape|result/i.test(t)),
     ).toEqual([]);
+  });
+
+  // FS-B3NDZ §Requirements 8, 9, 12. I-B3NDZ-2: the fallen wait as the shared countdown.
+  it("should show the seconds at 18 px and a full bar along the panel's foot on the fall", () => {
+    const { field, liveText, barFills } = fallenOnStage();
+
+    field.time.now = 1000;
+    field.renderState(stateAt(0, { x: 900, y: 420 }));
+
+    expect(liveText("3s")?.fontSize).toBe("18px");
+    const { bar } = fallenFrame(1080, 720);
+    expect(barFills()).toEqual([{ colour: palette.xpFill, ...bar }]);
+  });
+
+  it("should count the number down and drain the bar from the right each frame", () => {
+    const { field, frame, liveText, barFills } = fallenOnStage();
+    field.time.now = 1000;
+    field.renderState(stateAt(0, { x: 900, y: 420 }));
+    const { bar } = fallenFrame(1080, 720);
+
+    frame(2500);
+
+    expect(liveText("2s")).toBeDefined();
+    const [fill] = barFills();
+    expect(fill.x).toBe(bar.x);
+    expect(fill.width).toBeCloseTo(bar.width / 2);
+  });
+
+  it("should take the panel, the number and the bar down on rising", () => {
+    const { field, liveText, barFills } = fallenOnStage();
+    field.time.now = 1000;
+    field.renderState(stateAt(0, { x: 900, y: 420 }));
+
+    field.time.now = 4000;
+    field.renderState(stateAt(150));
+
+    expect(liveText(FALLEN_LINE)).toBeUndefined();
+    expect(liveText("3s")).toBeUndefined();
+    expect(barFills()).toEqual([]);
   });
 
   it("should take the fallen state down once the player stands at the entrance again", () => {
@@ -484,7 +602,7 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
     field.time.now = 4000;
     field.renderState(stateAt(150));
 
-    expect(field.fallenLine).toBeUndefined();
+    expect(field.fallenView).toBeUndefined();
   });
 
   it("should send no move while fallen, and move again on rising with the key still held", () => {
@@ -507,7 +625,7 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
 
     field.release();
 
-    expect(field.fallenLine).toBeUndefined();
+    expect(field.fallenView).toBeUndefined();
   });
 });
 

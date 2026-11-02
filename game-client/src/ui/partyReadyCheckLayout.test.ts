@@ -6,8 +6,9 @@ import {
   READY_CHECK_Y,
   readyCheckFrame,
   readyCheckView,
-  readyCountdownText,
 } from "./partyReadyCheckLayout";
+import { countdownBarRect } from "./countdownBar";
+import type { Rect } from "./partyPanelLayout";
 
 // FS-BJNYC §Requirements R23, R24, §Copy (popup). I-BJNYC-5: the ready-check popup's pure half.
 
@@ -26,6 +27,7 @@ const check = (extra: Partial<OpenReadyCheck> = {}): OpenReadyCheck => ({
   ],
   outcome: "open",
   received_at: 0,
+  total_ms: 30_000,
   answer: null,
   ...extra,
 });
@@ -116,13 +118,6 @@ describe("readyCheckView (FS-BJNYC R23, R24: what each member sees)", () => {
   });
 });
 
-describe("readyCountdownText (FS-BJNYC R23: whole seconds)", () => {
-  it("should read the seconds left", () => {
-    expect(readyCountdownText(30)).toBe("30s");
-    expect(readyCountdownText(0)).toBe("0s");
-  });
-});
-
 describe("readyCheckFrame (FS-BJNYC R23: where the popup sits)", () => {
   it("should sit top centre, one row per member, buttons on its last line", () => {
     const f = readyCheckFrame(3, { canvasWidth: 1080, panelOpen: false });
@@ -154,5 +149,39 @@ describe("readyCheckFrame (FS-BJNYC R23: where the popup sits)", () => {
   it("should step right of the open party panel", () => {
     const f = readyCheckFrame(2, { canvasWidth: 1080, panelOpen: true });
     expect(f.panel.x).toBeGreaterThan(PARTY_PANEL_X + PARTY_PANEL_W);
+  });
+});
+
+// FS-B3NDZ §Requirements 1, 2, 9, 10. I-B3NDZ-1: the countdown bar along the popup's foot.
+describe("readyCheckFrame (FS-B3NDZ R1, R9: the countdown bar along its foot)", () => {
+  const overlaps = (a: Rect, b: Rect) =>
+    a.x < b.x + b.width &&
+    b.x < a.x + a.width &&
+    a.y < b.y + b.height &&
+    b.y < a.y + a.height;
+
+  it.each([1, 2, 4])(
+    "should carry the bar along the panel's foot, edge to edge, clear of every part (%s rows)",
+    (rows) => {
+      const f = readyCheckFrame(rows, { canvasWidth: 1080, panelOpen: false });
+      expect(f.bar).toEqual(countdownBarRect(f.panel));
+      for (const part of [
+        f.question,
+        ...f.rows,
+        f.countdown,
+        f.accept,
+        f.decline,
+        f.status,
+      ])
+        expect(overlaps(part, f.bar)).toBe(false);
+    },
+  );
+
+  it("should keep the seconds in the row just above the bar", () => {
+    const f = readyCheckFrame(3, { canvasWidth: 1080, panelOpen: false });
+    expect(f.countdown.y + f.countdown.height).toBeLessThanOrEqual(f.bar.y);
+    expect(f.bar.y - (f.countdown.y + f.countdown.height)).toBeLessThanOrEqual(
+      12,
+    );
   });
 });

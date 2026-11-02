@@ -1,10 +1,11 @@
 /**
  * The ready-check popup's pure half (FS-BJNYC R23, R24, §Copy): its question, each member's row,
- * whether this player may answer, and where it sits. The scene-side `PartyReadyCheck` draws what
- * these return.
+ * whether this player may answer, and where it sits, its countdown bar along its foot (FS-B3NDZ).
+ * The scene-side `PartyReadyCheck` draws what these return.
  */
 
 import type { OpenReadyCheck, ReadyCheckState } from "@/stores/partyStore";
+import { COUNTDOWN_BAR_H, countdownBarRect } from "./countdownBar";
 import { NO_NAME } from "./partyNotice";
 import { PARTY_PANEL_W, PARTY_PANEL_X, type Rect } from "./partyPanelLayout";
 import { INVITE_PROMPT_Y } from "./partyInvitePromptLayout";
@@ -71,11 +72,6 @@ export function readyCheckView(
   return { question, rows, buttons: false, status: STATUS[self.state] };
 }
 
-/** The countdown as the popup shows it. */
-export function readyCountdownText(seconds: number): string {
-  return `${seconds}s`;
-}
-
 /**
  * The popup's top edge: where the invite prompt sits, under the queue panel's line and clear of
  * the hub's passing-notice band. A party member has no invites waiting (joining closes them all),
@@ -91,7 +87,8 @@ const GAP = 4;
 const BUTTON_H = 20;
 const BUTTON_W = 64;
 const BUTTON_GAP = 6;
-const COUNTDOWN_W = 40;
+/** Wide enough for "30s" in the countdown's 18 px (FS-B3NDZ R8). */
+const COUNTDOWN_W = 44;
 /** Between the open party panel's right edge and the popup stepped aside for it. */
 const PANEL_GAP = 12;
 
@@ -100,11 +97,14 @@ export interface ReadyCheckFrame {
   question: Rect;
   /** One per member, in join order. */
   rows: Rect[];
+  /** The whole seconds left, at the bottom left, in the row just above the bar. */
   countdown: Rect;
   accept: Rect;
   decline: Rect;
   /** Where the status words stand when there are no buttons: right of the countdown. */
   status: Rect;
+  /** The countdown bar along the panel's foot, edge to edge (FS-B3NDZ R1). */
+  bar: Rect;
 }
 
 export interface ReadyCheckPlacement {
@@ -113,7 +113,10 @@ export interface ReadyCheckPlacement {
   panelOpen: boolean;
 }
 
-/** The popup's place: top centre, the question, a row per member, then countdown and buttons. */
+/**
+ * The popup's place: top centre, the question, a row per member, then countdown and buttons, and
+ * the countdown bar along its foot under them.
+ */
 export function readyCheckFrame(
   rowCount: number,
   { canvasWidth, panelOpen }: ReadyCheckPlacement,
@@ -142,13 +145,14 @@ export function readyCheckFrame(
     width: BUTTON_W,
     height: BUTTON_H,
   };
+  const panel: Rect = {
+    x,
+    y,
+    width: READY_CHECK_W,
+    height: by + BUTTON_H + PAD + COUNTDOWN_BAR_H - y,
+  };
   return {
-    panel: {
-      x,
-      y,
-      width: READY_CHECK_W,
-      height: by + BUTTON_H + PAD - y,
-    },
+    panel,
     question: { ...inner, y: y + PAD, height: QUESTION_H },
     rows,
     countdown: { x: inner.x, y: by, width: COUNTDOWN_W, height: BUTTON_H },
@@ -160,5 +164,6 @@ export function readyCheckFrame(
       width: inner.width - COUNTDOWN_W,
       height: BUTTON_H,
     },
+    bar: countdownBarRect(panel),
   };
 }

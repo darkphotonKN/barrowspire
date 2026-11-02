@@ -355,6 +355,20 @@ describe("partyStore notices and the one clock (FS-R82NV R14, R31, R36)", () => 
     expect(said).toEqual([{ code: "declined", text: "Kaelen declines." }]);
   });
 
+  // FS-B3NDZ §Requirements 6. I-B3NDZ-1: the invite's bar drains over its own window.
+  it("should give an invite's fraction over its own window, by the store's own clock", () => {
+    const clock = { now: 1_000 };
+    const store = createPartyStore({ selfId: () => ME, now: () => clock.now });
+    store.getState().receiveInvite(invite("a"));
+    const [pending] = store.getState().invites;
+
+    expect(store.getState().inviteFraction(pending)).toBe(1);
+    clock.now = 31_000;
+    expect(store.getState().inviteFraction(pending)).toBe(0.5);
+    clock.now = 61_000;
+    expect(store.getState().inviteFraction(pending)).toBe(0);
+  });
+
   it("should count an invite down by the store's own clock", () => {
     const clock = { now: 0 };
     const store = createPartyStore({ selfId: () => ME, now: () => clock.now });
@@ -682,8 +696,48 @@ describe("the party store's ready check (FS-BJNYC R23, R25, R26)", () => {
     expect(said.map((l) => l.text)).toEqual(["The way is shut for now. Ask again."]);
   });
 
+  // FS-B3NDZ §Requirements 6. I-B3NDZ-1: the bar's fraction, over the window the check began with.
+  it("should keep the check's first window as its total across later messages for it", () => {
+    const { s, clock } = setup();
+    s.getState().receiveReadyCheck(readyCheck({ expires_in_ms: 30_000 }));
+    expect(s.getState().readyCheck?.total_ms).toBe(30_000);
+    expect(s.getState().readyFraction(s.getState().readyCheck!)).toBe(1);
+
+    clock.now = 7_000;
+    s.getState().receiveReadyCheck(readyCheck({ expires_in_ms: 24_000 }));
+    expect(s.getState().readyCheck?.total_ms).toBe(30_000);
+    expect(s.getState().readyFraction(s.getState().readyCheck!)).toBe(0.8);
+
+    clock.now = 19_000;
+    expect(s.getState().readyFraction(s.getState().readyCheck!)).toBe(0.4);
+    clock.now = 40_000;
+    expect(s.getState().readyFraction(s.getState().readyCheck!)).toBe(0);
+  });
+
+  it("should take a new check's own first window as its total", () => {
+    const { s } = setup();
+    s.getState().receiveReadyCheck(readyCheck({ expires_in_ms: 30_000 }));
+    s.getState().receiveReadyCheck(
+      readyCheck({ check_id: OTHER_CHECK, expires_in_ms: 20_000 }),
+    );
+    expect(s.getState().readyCheck?.total_ms).toBe(20_000);
+    expect(s.getState().readyFraction(s.getState().readyCheck!)).toBe(1);
+  });
+
+  it("should never read a later, larger window as more than full", () => {
+    const { s } = setup();
+    s.getState().receiveReadyCheck(readyCheck({ expires_in_ms: 10_000 }));
+    s.getState().receiveReadyCheck(readyCheck({ expires_in_ms: 12_000 }));
+    expect(s.getState().readyFraction(s.getState().readyCheck!)).toBe(1);
+  });
+
   it("should count whole seconds down from expires_in_ms, 0 once it has run out", () => {
-    const check = { ...readyCheck(), received_at: 1_000, answer: null };
+    const check = {
+      ...readyCheck(),
+      received_at: 1_000,
+      total_ms: 30_000,
+      answer: null,
+    };
     expect(readyCheckSecondsLeft(check, 1_000)).toBe(30);
     expect(readyCheckSecondsLeft(check, 1_001)).toBe(30);
     expect(readyCheckSecondsLeft(check, 2_000)).toBe(29);

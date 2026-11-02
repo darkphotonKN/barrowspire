@@ -54,7 +54,13 @@ import { hudBars } from "@/ui/resources";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
 import { FieldPiles } from "./fieldPiles";
-import { FallenCountdown, fallenCopy, isFallen } from "./fieldFallen";
+import {
+  COUNTDOWN_SECONDS_PX,
+  countdownSecondsText,
+  drawCountdownBar,
+} from "@/ui/countdownBar";
+import type { Rect } from "@/ui/partyPanelLayout";
+import { FALLEN_LINE, FallenCountdown, fallenFrame, isFallen } from "./fieldFallen";
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
 
@@ -77,7 +83,8 @@ import { gateAt, gateEdges } from "./hubGates";
  * as the hub does for its own sends (§Requirements 57).
  *
  * A fallen player lies in the run scene's death pose under a short fallen state counting 3-2-1,
- * then stands at the entrance: no result card, no loss copy (§Requirements 58).
+ * then stands at the entrance: no result card, no loss copy (§Requirements 58). The wait wears the
+ * shared countdown, its bar draining along the panel's foot (FS-B3NDZ R12).
  */
 
 /** Each field's size in world px, as the server builds it (FS-X2F2H §Requirements 51). */
@@ -92,6 +99,10 @@ const POSITION_LERP = 0.3;
 const NAME_GAP = 4;
 const NOTICE_Y = 72;
 const NOTICE_MS = 3200;
+/** The fallen state's depth, as it has always stood: the HUD's. */
+const FALLEN_DEPTH = 1000;
+/** The fallen line's size, as it has always been. */
+const FALLEN_LINE_PX = 18;
 /** The run's HUD corners: the resource bars bottom-left, the ability card bottom-right (FS-8AY7S req 20, 29). */
 const RESOURCE_HUD_X = 10;
 const HUD_MARGIN = 16;
@@ -155,7 +166,14 @@ export class FieldScene extends Phaser.Scene {
   private fight?: FieldCombat;
   /** The player's own fall and its 3-2-1 (§Requirements 58). */
   private fallen = new FallenCountdown();
-  private fallenLine?: Phaser.GameObjects.Text;
+  /** The fallen state on screen: its panel, line, number and countdown bar (FS-B3NDZ R12). */
+  private fallenView?: {
+    panel: Phaser.GameObjects.Graphics;
+    bar: Phaser.GameObjects.Graphics;
+    barRect: Rect;
+    line: Phaser.GameObjects.Text;
+    seconds: Phaser.GameObjects.Text;
+  };
   /** The field's drop piles and the run's satchel they are taken through (§Requirements 56, 59). */
   private piles?: FieldPiles;
   private satchel?: ContainerView;
@@ -397,8 +415,7 @@ export class FieldScene extends Phaser.Scene {
     this.atEntrance = undefined;
     this.leavingField = false;
     this.fallen.reset();
-    this.fallenLine?.destroy();
-    this.fallenLine = undefined;
+    this.hideFallen();
     this.fight?.release();
     this.fight = undefined;
     this.lightMap = undefined;
@@ -408,8 +425,7 @@ export class FieldScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     this.sendMovementIntent();
     this.fight?.update(delta);
-    const count = this.fallen.count(this.time.now);
-    if (count !== undefined) this.fallenLine?.setText(fallenCopy(count));
+    this.drainFallen(this.time.now);
     for (const view of this.views.values()) {
       view.pos.x = Phaser.Math.Linear(view.pos.x, view.target.x, POSITION_LERP);
       view.pos.y = Phaser.Math.Linear(view.pos.y, view.target.y, POSITION_LERP);
@@ -558,24 +574,64 @@ export class FieldScene extends Phaser.Scene {
   private followFall(me: PlayerState): void {
     const change = this.fallen.observe(isFallen(me), this.time.now);
     if (change === "fell") {
-      const { width, height } = this.cameras.main;
-      this.fallenLine = this.add
-        .text(width / 2, height / 2, fallenCopy(this.fallen.count(this.time.now) ?? 3), {
-          fontFamily: CANVAS_FONT.body,
-          fontSize: "18px",
-          color: toCss(BARROW_HEX.vellum),
-          backgroundColor: toCss(BARROW_HEX.charcoal),
-          padding: { x: 16, y: 10 },
-        })
-        .setOrigin(0.5)
-        .setScrollFactor(0)
-        .setDepth(1000);
+      this.showFallen();
+      this.drainFallen(this.time.now);
     } else if (change === "rose") {
-      this.fallenLine?.destroy();
-      this.fallenLine = undefined;
+      this.hideFallen();
       // the server stopped them as they fell: a key still held is sent again
       this.lastSent = { vx: 0, vy: 0 };
     }
+  }
+
+  /**
+   * The fallen state as the shared countdown (FS-B3NDZ R12): a charcoal panel centred on the
+   * canvas, the line, the whole seconds under it, and the bar along its foot.
+   */
+  private showFallen(): void {
+    this.hideFallen();
+    const { width, height } = this.cameras.main;
+    const f = fallenFrame(width, height);
+    const panel = this.add.graphics().setScrollFactor(0).setDepth(FALLEN_DEPTH);
+    panel.fillStyle(BARROW_HEX.charcoal, 1);
+    panel.fillRect(f.panel.x, f.panel.y, f.panel.width, f.panel.height);
+    const text = (r: Rect, content: string, px: number, colour: number) =>
+      this.add
+        .text(r.x + r.width / 2, r.y + r.height / 2, content, {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: `${px}px`,
+          color: toCss(colour),
+        })
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(FALLEN_DEPTH);
+    this.fallenView = {
+      panel,
+      bar: this.add.graphics().setScrollFactor(0).setDepth(FALLEN_DEPTH),
+      barRect: f.bar,
+      line: text(f.line, FALLEN_LINE, FALLEN_LINE_PX, BARROW_HEX.vellum),
+      seconds: text(f.seconds, "", COUNTDOWN_SECONDS_PX, palette.hudText),
+    };
+  }
+
+  /** Once a frame while down: the number counts 3-2-1 and the bar drains from the right. */
+  private drainFallen(now: number): void {
+    const view = this.fallenView;
+    const count = this.fallen.count(now);
+    const fraction = this.fallen.fraction(now);
+    if (!view || count === undefined || fraction === undefined) return;
+    view.seconds.setText(countdownSecondsText(count));
+    view.bar.clear();
+    drawCountdownBar(view.bar, view.barRect, fraction);
+  }
+
+  private hideFallen(): void {
+    const view = this.fallenView;
+    if (!view) return;
+    view.panel.destroy();
+    view.bar.destroy();
+    view.line.destroy();
+    view.seconds.destroy();
+    this.fallenView = undefined;
   }
 
   /** Home through the road: one leave_field, and nothing more until it is answered. */

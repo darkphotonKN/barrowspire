@@ -1,11 +1,12 @@
 /**
  * The invite prompt's pure half (FS-R82NV R32, FS-NCC9J R24): its words, whether Accept is live
- * in this world, and where each prompt sits. The scene-side `PartyInvitePrompt` draws what these
- * return.
+ * in this world, and where each prompt sits, its countdown bar along its foot (FS-B3NDZ). The
+ * scene-side `PartyInvitePrompt` draws what these return.
  */
 
 import type { WorldType } from "@/assets/types/client";
 import { partyLocked, type PartyInvitePayload } from "@/stores/partyStore";
+import { COUNTDOWN_BAR_H, countdownBarRect } from "./countdownBar";
 import { NO_NAME, PARTY_NOTICE_COPY } from "./partyNotice";
 import { PARTY_PANEL_W, PARTY_PANEL_X, type Rect } from "./partyPanelLayout";
 
@@ -36,11 +37,6 @@ export function inviteAcceptState(world: WorldType | null): InviteAcceptState {
     : { live: true };
 }
 
-/** The countdown as the prompt shows it. */
-export function inviteCountdownText(seconds: number): string {
-  return `${seconds}s`;
-}
-
 /**
  * The first prompt's top edge. Under the queue panel's line (y 20) and clear of the hub's
  * passing-notice band (centred on y 72), so a notice never lands on a prompt.
@@ -53,8 +49,11 @@ const TEXT_H = 36;
 const BUTTON_H = 20;
 const BUTTON_W = 64;
 const BUTTON_GAP = 6;
-const COUNTDOWN_W = 40;
-export const INVITE_PROMPT_H = PAD + TEXT_H + 4 + BUTTON_H + PAD;
+/** Wide enough for "60s" in the countdown's 18 px (FS-B3NDZ R8). */
+const COUNTDOWN_W = 44;
+/** A prompt's height without a note: its words, its buttons, and the countdown bar along its foot. */
+export const INVITE_PROMPT_H =
+  PAD + TEXT_H + 4 + BUTTON_H + PAD + COUNTDOWN_BAR_H;
 /** The note's row under the buttons, when Accept is greyed (FS-NCC9J R24). */
 const NOTE_H = 16;
 /**
@@ -71,11 +70,14 @@ const PANEL_GAP = 12;
 export interface InvitePromptFrame {
   panel: Rect;
   text: Rect;
+  /** The whole seconds left, at the bottom left, beside the buttons. */
   countdown: Rect;
   accept: Rect;
   decline: Rect;
   /** Why Accept is greyed, under the buttons; only when the placement asks for a note. */
   note?: Rect;
+  /** The countdown bar along the prompt's foot, edge to edge (FS-B3NDZ R1). */
+  bar: Rect;
 }
 
 export interface InvitePromptPlacement {
@@ -135,8 +137,9 @@ export function invitePromptFrames(
         width: BUTTON_W,
         height: BUTTON_H,
       };
+      const panel: Rect = { x, y, width: INVITE_PROMPT_W, height };
       return {
-        panel: { x, y, width: INVITE_PROMPT_W, height },
+        panel,
         text: { ...inner, y: y + PAD, height: TEXT_H },
         countdown: { x: inner.x, y: by, width: COUNTDOWN_W, height: BUTTON_H },
         accept,
@@ -144,6 +147,7 @@ export function invitePromptFrames(
         ...(note
           ? { note: { ...inner, y: by + BUTTON_H, height: NOTE_H } }
           : {}),
+        bar: countdownBarRect(panel),
       };
     },
   );

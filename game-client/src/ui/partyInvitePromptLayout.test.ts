@@ -13,6 +13,7 @@ import {
   invitePromptFrames,
   invitePromptText,
 } from "./partyInvitePromptLayout";
+import { countdownBarRect } from "./countdownBar";
 
 // FS-R82NV §Requirements R32. I-R82NV-7: the invite prompt's words and where each one sits.
 // FS-NCC9J §Requirements R24. I-NCC9J-6: Accept greyed in a run, with its note.
@@ -223,4 +224,24 @@ describe("invitePromptFrames (FS-R82NV R32: top centre, stacked)", () => {
     expect(overlaps(f.countdown, f.decline)).toBe(false);
     expect(overlaps(f.text, f.accept)).toBe(false);
   });
+});
+
+// FS-B3NDZ §Requirements 1, 2, 9, 11. I-B3NDZ-1: each prompt's own countdown bar along its foot.
+describe("invitePromptFrames (FS-B3NDZ R1, R11: the countdown bar along each prompt's foot)", () => {
+  it.each([false, true])(
+    "should carry each prompt's bar along its foot, edge to edge, clear of every part (note: %s)",
+    (note) => {
+      const frames = invitePromptFrames(3, {
+        canvasWidth: CANVAS.width,
+        panelOpen: false,
+        note,
+      });
+      for (const f of frames) {
+        expect(f.bar).toEqual(countdownBarRect(f.panel));
+        for (const part of [f.text, f.countdown, f.accept, f.decline])
+          expect(overlaps(part, f.bar)).toBe(false);
+        if (f.note) expect(overlaps(f.note, f.bar)).toBe(false);
+      }
+    },
+  );
 });
