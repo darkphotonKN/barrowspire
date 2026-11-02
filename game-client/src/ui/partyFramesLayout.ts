@@ -39,9 +39,10 @@ export interface PartyMemberFrameRow {
   away: boolean;
   slot: PartyFrameSlot;
   /**
-   * "Lv N" after the name (FS-CH21F R10): a teammate's broadcast level, only while their slot
-   * holds bars (this world's state lists them). Never on the player's own row, whose XP bar shows
-   * it, nor on a teammate elsewhere (R11).
+   * "Lv N" after the name (FS-CH21F R10, amended 2026-11-02): on the player's own row, their own
+   * state's level (`current_player.level`) whenever the state carries it, in every world; on a
+   * teammate's, their broadcast level only while their slot holds bars (this world's state lists
+   * them). Never on a teammate elsewhere (R11).
    */
   level?: number;
 }
@@ -108,10 +109,10 @@ function barsOf(
 /**
  * One row per member (R34): the player's own first, then the others in join order (the order the
  * party lists them), the leader's row flagged, an away teammate's marked. The player's row fills
- * from `current_player`, a teammate's from `other_players` by member id, the same in every world
- * (FS-CH21F R8, R12): the state alone decides, so the world is not asked. Then one skeleton row per
- * open invite (FS-NCC9J R26), skipping a name already among the members; never more rows than
- * the party's size. No party, no rows.
+ * from `current_player` (bars and level), a teammate's from `other_players` by member id, the
+ * same in every world (FS-CH21F R8, R10, R12): the state alone decides, so the world is not asked.
+ * Then one skeleton row per open invite (FS-NCC9J R26), skipping a name already among the
+ * members; never more rows than the party's size. No party, no rows.
  */
 export function partyFrameRows(
   party: PartyUpdatePayload | null,
@@ -152,7 +153,14 @@ export function partyFrameRows(
     .filter((r) => !names.has(r.name))
     .map((r): PartySkeletonRow => ({ kind: "skeleton", name: r.name }));
   const members = [
-    ...self.map((m) => row(m, false, selfSlotOf(seen.current_player))),
+    ...self.map((m) =>
+      row(
+        m,
+        false,
+        selfSlotOf(seen.current_player),
+        seen.current_player?.level,
+      ),
+    ),
     ...others.map(teammate),
   ];
   return [

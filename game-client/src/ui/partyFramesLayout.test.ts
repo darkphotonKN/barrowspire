@@ -292,8 +292,25 @@ describe("partyFrameRows: a row's level", () => {
     expect(rows[1].level).toBe(12);
   });
 
-  it("gives the player's own row no level: the XP bar above shows it", () => {
-    expect(rowsOf()[0].level).toBeUndefined();
+  // FS-CH21F R10 (amended 2026-11-02, Nick: own level shown in the party frames); I-CH21F-4
+  it("carries the player's own level from their own state", () => {
+    expect(rowsOf()[0].level).toBe(7);
+  });
+
+  it.each([
+    ["before the first state", undefined],
+    [
+      "while the state carries no level",
+      seen(ME, { current_health: 9, max_health: 9 }),
+    ],
+  ])("gives the player's own row no level %s", (_, current_player) => {
+    const rows = memberRows(
+      partyFrameRows(party([member(ME, "Me"), member("wren", "Wren")]), ME, {
+        current_player,
+      }),
+    );
+    expect(rows[0].level).toBeUndefined();
+    expect(rows[0]).not.toHaveProperty("level");
   });
 
   it("gives a teammate absent from this world's state no level", () => {
