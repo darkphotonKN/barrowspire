@@ -1,6 +1,6 @@
 # FS-9PN7X: Building exteriors and indoor blackout
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Presentation" → "Closed building exteriors", "Indoor blackout" → this FS (brownfield: "Town building interiors → FS-B0H2D" and "Tower interior run look → FS-8RBQY" stay the shipped half) · Related ADRs: [ADR-0036](../adr/0036-buildings-have-an-exterior-and-an-interior.md) (buildings have an exterior and an interior; **governs this FS**), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art, footprint draw order), [ADR-0021](../adr/0021-characters-are-authored-in-code-not-sourced.md) (built in code), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (canvas tokens only) · Builds on: [FS-2325V](2325V-pre-rendered-isometric-art.md) §B (bake pipeline), §C.2–§C.5 (cut-away walls, roof lift, occluder fade), [FS-B0H2D](B0H2D-enterable-town-buildings-and-the-inn.md) §E (town interiors, R20–R22), [FS-8RBQY](8RBQY-tower-interior-run-look.md) §A–§D (world theme, rooms, masonry sheets, floor bands), [FS-MRZH7](MRZH7-function-npc-markers.md) (function NPC markers) · Art SSOT: [`game-client/docs/design-guideline.md`](../../game-client/docs/design-guideline.md) · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) "Rendering terms" (*building*, *building type*, *building exterior*, *interior look*, *indoor blackout*, *silhouette*, *dark opening*)
+> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Presentation" → "Closed building exteriors", "Indoor blackout" → this FS (brownfield: "Town building interiors → FS-B0H2D" and "Tower interior run look → FS-8RBQY" stay the shipped half) · Related ADRs: [ADR-0036](../adr/0036-buildings-have-an-exterior-and-an-interior.md) (buildings have an exterior and an interior; **governs this FS**), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art, footprint draw order), [ADR-0021](../adr/0021-characters-are-authored-in-code-not-sourced.md) (built in code), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (canvas tokens only) · Builds on: [FS-2325V](2325V-pre-rendered-isometric-art.md) §B (bake pipeline), §C.2–§C.5 (cut-away walls, roof lift, occluder fade), [FS-B0H2D](B0H2D-enterable-town-buildings-and-the-inn.md) §E (town interiors, R20–R22), [FS-8RBQY](8RBQY-tower-interior-run-look.md) §A–§D (world theme, rooms, masonry sheets, floor bands), [FS-MRZH7](MRZH7-function-npc-markers.md) (function NPC markers) · Art SSOT: [`game-client/docs/design-guideline.md`](../../game-client/docs/design-guideline.md) · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) "Rendering terms" (*building*, *building type*, *building exterior*, *interior look*, *indoor blackout*, *silhouette*, *dark opening*) · Amended 2026-11-03 (owner): entrances show a door, not a dark opening (§B.5, §B.7, §F.4); where other sections and stories say "dark opening", read the §B.5 amendment
 
 > Promoted `--from-thread` on 2026-11-01 from the draft's scoping notes (Kranti, `/scope-it`,
 > 2026-11-01) and the coordinator's charter, which the owner approved wholesale. No interview was
@@ -101,6 +101,19 @@ today.
    - a **closed or locked Spire door** draws as a door, exactly as today (`door_x`/`door_y`,
      frame `unlocked`).
    Either way you see the way in, not the room.
+
+   > **Amended 2026-11-03 (owner): entrances show a door, not a dark opening** ("ok i wanna add
+   > doors back. black just aint good"). The dark opening above is superseded:
+   > - a **town door gap** holds a drawn plank door, the run door's own sheet (`door_x`/`door_y`)
+   >   on the gap's axis: frame `unlocked` (shut) while the player is outside that building,
+   >   `open` while they are inside it (the inside test counts the gap as inside, so it opens as
+   >   they step into the doorway; instant snap, no tween). Purely drawn: no collision, no
+   >   interaction, no server change, and another player walking in does not open it for the
+   >   viewer. The shut door is part of the building exterior (hidden whole from inside another
+   >   building, covers the player for the silhouette); the open one is part of the interior look;
+   > - a **Spire room door** seen from the halls draws its own server state again, open or shut,
+   >   as before this FS; nothing is drawn in place of an open door.
+   > The hide rule, room-only lights, the cap and the blackout are unchanged.
 6. **The interior look while inside.** While the player is inside B, B draws as it ships today:
    the cut-away south and east fronts and front posts, its roof lifted (hub) or its cap hidden
    (Spire), the open door's own frame, the room furnished (FS-B0H2D R19–R22) and lit (§D.6).
@@ -109,6 +122,10 @@ today.
    building still closes: the exterior side falls back to a full-height placeholder block, the
    cap to a flat placeholder slab at the wall top (like `placeholderRoof`), the dark opening to
    a flat `palette.inkDeep` quad over the gap. Never invisible, never the open room.
+   *(Amended 2026-11-03 (owner): entrances show a door, not a dark opening; the `inkDeep` quad is
+   superseded. Without the door sheet a town gap's door falls back to the run scene's placeholder
+   door, a door-coloured leaf on a plane at the wall top, shut outside and swung open inside;
+   never an `inkDeep` quad.)*
 8. **Nothing inside shows over the top.** From outside, no part of a building's interior (back
    wall dressing, sconce flames and halos, tall furnishings, the spiral stair) shows above or
    through its roof or cap. Lights inside are off (§D.6); objects inside are hidden (§C).
@@ -213,6 +230,10 @@ today.
    full-height frame (lintel and reveals) sized to the run door width (50 world px) with flat
    darkness inside, read from a `BARROW` token at its darkest. The `_y` axis matches the door
    sheets' convention.
+   *(Amended 2026-11-03 (owner): entrances show a door, not a dark opening; superseded and
+   retired. The four `*door_dark_*` sheets and their model are removed from the bake and from
+   `public/art`; an entrance draws the existing run door sheets `door_{x,y}` (§B.5 amendment).
+   No new art.)*
 5. **Atlas and fidelity.** The new sheets go in one new atlas group, `building` (not
    "exterior", which names the run theme), additive only: every
    pre-existing atlas `sha256` and sheet entry unchanged. Same palette ramp, light direction and

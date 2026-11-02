@@ -260,8 +260,11 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   view rule, never a visibility rule: the server sends what it always did.
 - **Silhouette**: the player's outline drawn through a building exterior that stands between them
   and the camera. It replaces the occluder fade for buildings; trees and tall props still fade.
-- **Dark opening**: an entrance seen from outside: a town building's door gap or an open Spire
-  door, drawn as its frame with flat darkness inside. A closed or locked door draws as a door.
+- ~~**Dark opening**: an entrance seen from outside: a town building's door gap or an open Spire
+  door, drawn as its frame with flat darkness inside. A closed or locked door draws as a door.~~
+  Retired 2026-11-03 (owner, FS-9PN7X §B.5 amendment): entrances show doors. A town door gap
+  holds a drawn door, shut from outside and open from inside; a Spire room door shows its own
+  state. Don't use the term.
 - **Container view**: the on-screen panel showing a container's contents. Not the
   same thing as a **container**, which is the WS entity in `containers[]`. Opening the view is
   presentation; clicking an item in it sends exactly the message the item row always sent. It has
