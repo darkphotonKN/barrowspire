@@ -433,11 +433,13 @@ function recordingStage() {
             target.last["setTexture"] = [key];
             return proxy;
           };
+        // shown until hidden, as Phaser's are: `visible` and `shown` read what setVisible last set
         if (prop === "setVisible")
           return (visible: boolean) => {
             target.calls.push("setVisible");
             target.shown = visible;
             target.last["setVisible"] = [visible];
+            (target as { visible?: boolean }).visible = visible;
             return proxy;
           };
         // the depth it sorts at, read back as Phaser's `depth` (what covers the player, FS-9PN7X §E.1)
@@ -450,15 +452,7 @@ function recordingStage() {
           };
         // no arcade body: the placeholder rig's collision circle is skipped
         if (prop === "body") return undefined;
-        // shown until hidden, as Phaser's are: `visible` reads what setVisible last set
         if (prop === "visible") return true;
-        if (prop === "setVisible")
-          return (on: boolean) => {
-            target.calls.push("setVisible");
-            target.last.setVisible = [on];
-            (target as { visible?: boolean }).visible = on;
-            return proxy;
-          };
         return (...args: unknown[]) => {
           target.calls.push(String(prop));
           target.last[String(prop)] = args;
