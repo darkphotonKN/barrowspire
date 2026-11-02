@@ -696,105 +696,66 @@ const HUB_GATES = [SPIRE_GATE, FOREST_GATE, MEADOWS_GATE];
 /** The middle of the hub: at no gate. */
 const AWAY = { x: 1000, y: 500 };
 
-describe("delveChoices (FS-NSV3D §Requirements 1, 4; FS-0XMCP §Requirements 9)", () => {
-  it.each([
-    {
-      queued: false,
-      ids: ["solo", "queue", "dismiss"],
-      registers: ["actionable", "actionable", "cancel"],
-      // a door, not a keeper, and the warning kept
-      line: "The Spire's door stands open. Few return whole,\nand fewer return twice.",
-    },
-    {
-      queued: true,
-      ids: ["dismiss"],
-      registers: ["cancel"],
-      line: "The delve is gathering. Wait, or leave the queue.",
-    },
-  ])("should offer $ids when queued is $queued", ({ queued, ids, registers, line }) => {
-    const dialogue = delveChoices({ queued, party: "none" });
-
-    expect(dialogue.line).toBe(line);
-    expect(dialogue.choices.map((c) => c.id)).toEqual(ids);
-    expect(dialogue.choices.map((c) => c.register)).toEqual(registers);
-  });
-
-  it("should label the three Descend alone, Wait for company, Not yet", () => {
-    expect(delveChoices({ queued: false, party: "none" }).choices.map((c) => c.label)).toEqual([
-      "Descend alone",
-      "Wait for company",
-      "Not yet",
-    ]);
-  });
-
-  it("should hold the solo choice back while a start_solo is pending, and the others not", () => {
-    const [solo, queue, dismiss] = delveChoices({ queued: false, party: "none" }).choices;
-
-    expect(solo.enabled?.({ soloPending: true, enterPending: false })).toBe(false);
-    expect(solo.enabled?.({ soloPending: false, enterPending: false })).toBe(true);
-    expect(queue.enabled).toBeUndefined();
-    expect(dismiss.enabled).toBeUndefined();
-  });
-});
-
-describe("delveChoices for a party member (FS-BJNYC §Requirements R20, R21, §Copy)", () => {
+describe("delveChoices (FS-NSV3D §Requirements 1, 4; FS-0XMCP §Requirements 9; FS-BJNYC R20, R21)", () => {
   const OPEN_LINE = "The Spire's door stands open. Few return whole,\nand fewer return twice.";
-  /** Every pending state a choice can be drawn in. */
-  const PENDINGS = [
-    { soloPending: false, enterPending: false },
-    { soloPending: true, enterPending: false },
-    { soloPending: false, enterPending: true },
-  ];
+  /** Nothing in flight. */
+  const IDLE = { soloPending: false, enterPending: false, queuePending: false };
 
-  it("should offer the leader Enter as a party first, live, with Descend alone and Wait for company greyed", () => {
-    const dialogue = delveChoices({ queued: false, party: "leader" });
-    const [enter, solo, queue, dismiss] = dialogue.choices;
+  it("should show only the fact and a dismiss while queued", () => {
+    const dialogue = delveChoices({ queued: true, party: "none" });
 
-    expect(dialogue.line).toBe("Your party enters together.");
-    expect(dialogue.choices.map((c) => c.id)).toEqual(["enter", "solo", "queue", "dismiss"]);
-    expect(dialogue.choices.map((c) => c.label)).toEqual([
-      "Enter as a party",
-      "Descend alone",
-      "Wait for company",
-      "Not yet",
-    ]);
+    expect(dialogue.line).toBe("The delve is gathering. Wait, or leave the queue.");
+    expect(dialogue.choices.map((c) => c.id)).toEqual(["dismiss"]);
+    expect(dialogue.choices.map((c) => c.register)).toEqual(["cancel"]);
+  });
+
+  it.each([
+    // the leader: the choice most likely to work first, so E and Enter mean it
+    { party: "leader" as const, ids: ["enter", "solo", "queue", "dismiss"] },
+    // everyone else: Enter as a party listed and pressable, after the ways that are theirs
+    { party: "member" as const, ids: ["solo", "queue", "enter", "dismiss"] },
+    { party: "none" as const, ids: ["solo", "queue", "enter", "dismiss"] },
+  ])("should offer $party every choice, in the order $ids, with the one opening line", ({ party, ids }) => {
+    const dialogue = delveChoices({ queued: false, party });
+    const label = { enter: "Enter as a party", solo: "Descend alone", queue: "Wait for company", dismiss: "Not yet" };
+
+    expect(dialogue.line).toBe(OPEN_LINE);
+    expect(dialogue.choices.map((c) => c.id)).toEqual(ids);
+    expect(dialogue.choices.map((c) => c.label)).toEqual(ids.map((id) => label[id as keyof typeof label]));
     expect(dialogue.choices.map((c) => c.register)).toEqual(["actionable", "actionable", "actionable", "cancel"]);
-    expect(enter.enabled?.({ soloPending: false, enterPending: false })).toBe(true);
-    // the reply is awaited with the door still up (no double send)
-    expect(enter.stays).toBe(true);
-    expect(enter.enabled?.({ soloPending: false, enterPending: true })).toBe(false);
-    for (const pending of PENDINGS) {
-      expect(solo.enabled?.(pending)).toBe(false);
-      expect(queue.enabled?.(pending)).toBe(false);
-    }
-    expect(dismiss.enabled).toBeUndefined();
+    // none greyed for the player's party standing: with nothing in flight, every choice can be pressed
+    for (const choice of dialogue.choices) expect(choice.enabled?.(IDLE) ?? true).toBe(true);
   });
 
-  it("should give a member who is not the leader no entry choice, both greyed, and Not yet", () => {
-    const dialogue = delveChoices({ queued: false, party: "member" });
-    const [solo, queue, dismiss] = dialogue.choices;
+  it.each(["none", "member", "leader"] as const)(
+    "should keep the door up after each of the three for %s, and hold each back only while its own send is unanswered",
+    (party) => {
+      const byId = Object.fromEntries(delveChoices({ queued: false, party }).choices.map((c) => [c.id, c]));
 
-    expect(dialogue.line).toBe("Your party enters together.");
-    expect(dialogue.choices.map((c) => c.id)).toEqual(["solo", "queue", "dismiss"]);
-    expect(dialogue.choices.map((c) => c.label)).toEqual(["Descend alone", "Wait for company", "Not yet"]);
-    for (const pending of PENDINGS) {
-      expect(solo.enabled?.(pending)).toBe(false);
-      expect(queue.enabled?.(pending)).toBe(false);
-    }
-    expect(dismiss.enabled).toBeUndefined();
-  });
+      for (const id of ["enter", "solo", "queue"]) expect(byId[id].stays).toBe(true);
+      expect(byId.solo.enabled?.({ ...IDLE, soloPending: true })).toBe(false);
+      expect(byId.enter.enabled?.({ ...IDLE, enterPending: true })).toBe(false);
+      expect(byId.queue.enabled?.({ ...IDLE, queuePending: true })).toBe(false);
+      // one send in flight holds back only its own choice
+      expect(byId.solo.enabled?.({ ...IDLE, enterPending: true, queuePending: true })).toBe(true);
+      expect(byId.enter.enabled?.({ ...IDLE, soloPending: true, queuePending: true })).toBe(true);
+      expect(byId.queue.enabled?.({ ...IDLE, soloPending: true, enterPending: true })).toBe(true);
+      expect(byId.dismiss.enabled).toBeUndefined();
+      expect(byId.dismiss.stays).toBeUndefined();
+    },
+  );
 
-  it("should leave the door exactly as today for a player in no party", () => {
-    const alone = delveChoices({ queued: false, party: "none" });
+  it("should speak a refusal in place of the opening line, every choice still offered", () => {
+    const dialogue = delveChoices({ queued: false, party: "none" }, "Form a party first.");
 
-    expect(alone.line).toBe(OPEN_LINE);
-    expect(alone.choices.map((c) => c.id)).toEqual(["solo", "queue", "dismiss"]);
-    expect(alone.choices[1].enabled).toBeUndefined();
+    expect(dialogue.line).toBe("Form a party first.");
+    expect(dialogue.choices.map((c) => c.id)).toEqual(["solo", "queue", "enter", "dismiss"]);
   });
 });
 
-describe("HubScene the Spire's door panel for a party member (FS-BJNYC §Requirements R20, R21)", () => {
+describe("HubScene the Spire's door for every party standing (FS-BJNYC §Requirements R20–R22)", () => {
   const AMBER = toCss(BARROW_HEX.amber);
+  const OPEN_LINE = "The Spire's door stands open. Few return whole,\nand fewer return twice.";
   const member = (player_id: string, name: string, joined_at: string) => ({
     player_id,
     name,
@@ -820,14 +781,30 @@ describe("HubScene the Spire's door panel for a party member (FS-BJNYC §Require
   };
   /** The same two, this player leading now. */
   const LED_BY_SELF = { ...LED_BY_WREN, leader_id: "self", reason: "transferred" };
-  const doorLine = (stage: { made: Made[] }) =>
-    stage.made.some((m) => m.kind === "text" && !m.destroyed && m.args[2] === "Your party enters together.");
+  const STANDINGS = [
+    { standing: "no party", party: null, order: ["solo", "queue", "enter", "dismiss"] },
+    { standing: "a member", party: LED_BY_WREN, order: ["solo", "queue", "enter", "dismiss"] },
+    { standing: "the leader", party: LED_BY_SELF, order: ["enter", "solo", "queue", "dismiss"] },
+    { standing: "a party of one", party: PARTY_OF_ONE, order: ["enter", "solo", "queue", "dismiss"] },
+  ];
+  /** Whether the door's card says `text` now (a redrawn card's old words are destroyed with it). */
+  const says = (stage: { made: Made[] }, text: string) =>
+    stage.made.some((m) => m.kind === "text" && !m.destroyed && m.args[2] === text);
+  /** Whether `text` passed by as a notice in the hub, off the door's card. */
+  const passing = (stage: { made: Made[] }, text: string) =>
+    stage.made.some((m) => m.kind === "text" && m.args[2] === text && m.depth === 1000);
   /** A choice's colour as it now shows: retoned since drawn, or as drawn. */
   const toneOf = (label: (id: string) => Made, id: string) => {
     const text = label(id);
     // an unset prop on the stage's proxy answers as a method: no colour set since drawn
     return typeof text.color === "string" ? text.color : (text.args[3] as { color: string }).color;
   };
+  /** The drawn choices, top to bottom. */
+  const drawnOrder = (choice: (id: string) => Made | undefined) =>
+    ["enter", "solo", "queue", "dismiss"]
+      .map((id) => ({ id, y: (choice(id) as Made).y }))
+      .sort((p, q) => p.y - q.y)
+      .map((p) => p.id);
 
   beforeEach(() => {
     useAuthStore.setState({ memberInfo: { id: "self" } as never });
@@ -838,63 +815,32 @@ describe("HubScene the Spire's door panel for a party member (FS-BJNYC §Require
     vi.restoreAllMocks();
   });
 
-  it("should offer a party of just the leader Enter as a party, amber, with Descend alone and Wait for company faint and inert", () => {
-    usePartyStore.setState({ party: PARTY_OF_ONE });
-    const { hub, stage, choice, label, atTheDoor, send } = queuedHubOnStage();
+  it.each(STANDINGS)("should show $standing all four choices, the three amber, in order, with the one opening line", ({ party, order }) => {
+    usePartyStore.setState({ party });
+    const { stage, choice, label, atTheDoor } = queuedHubOnStage();
 
     atTheDoor();
 
-    expect(doorLine(stage)).toBe(true);
-    expect(toneOf(label, "enter")).toBe(AMBER);
-    expect(toneOf(label, "solo")).not.toBe(AMBER);
-    expect(toneOf(label, "queue")).not.toBe(AMBER);
-    // top to bottom: the entry first, Not yet last
-    expect((choice("enter") as Made).y).toBeLessThan((choice("solo") as Made).y);
-    choice("solo")?.handlers.pointerup();
-    choice("queue")?.handlers.pointerup();
-    expect(send).not.toHaveBeenCalled();
-    expect(hub.dialogue).toBeDefined();
+    expect(says(stage, OPEN_LINE)).toBe(true);
+    expect(drawnOrder(choice)).toEqual(order);
+    for (const id of ["enter", "solo", "queue"]) expect(toneOf(label, id)).toBe(AMBER);
   });
 
-  it("should give a member who does not lead no entry choice, both ways down faint, and nothing on any key but Esc", () => {
-    usePartyStore.setState({ party: LED_BY_WREN });
-    const { hub, stage, choice, label, atTheDoor, send, keys, answer } = queuedHubOnStage();
-
+  it.each(STANDINGS)("should send each of the three for $standing, once while unanswered, the door staying up", ({ party }) => {
+    usePartyStore.setState({ party });
+    const { hub, choice, atTheDoor, send } = queuedHubOnStage();
     atTheDoor();
 
-    expect(doorLine(stage)).toBe(true);
-    expect(choice("enter")).toBeUndefined();
-    expect(toneOf(label, "solo")).not.toBe(AMBER);
-    expect(toneOf(label, "queue")).not.toBe(AMBER);
-    choice("solo")?.handlers.pointerup();
-    choice("queue")?.handlers.pointerup();
-    answer(keys.enter);
-    answer(keys.e);
-    expect(send).not.toHaveBeenCalled();
+    for (const id of ["enter", "solo", "queue"]) {
+      choice(id)?.handlers.pointerup();
+      choice(id)?.handlers.pointerup();
+    }
+
+    expect(send.mock.calls.map((c) => c[0])).toEqual([ActionType.PartyEnter, ActionType.StartSolo, ActionType.Find_Game]);
     expect(hub.dialogue).toBeDefined();
-    answer(keys.esc);
-    expect(hub.dialogue).toBeUndefined();
   });
 
-  it("should send one party_enter on Enter as a party, keep the door up and grey the choice until an answer", () => {
-    usePartyStore.setState({ party: LED_BY_SELF });
-    const { hub, choice, label, atTheDoor, send, keys, answer } = queuedHubOnStage();
-    atTheDoor();
-
-    choice("enter")?.handlers.pointerup();
-
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith(ActionType.PartyEnter, {});
-    expect(hub.enterPending).toBe(true);
-    expect(hub.dialogue).toBeDefined();
-    expect(toneOf(label, "enter")).not.toBe(AMBER);
-
-    choice("enter")?.handlers.pointerup();
-    answer(keys.enter);
-    expect(send).toHaveBeenCalledTimes(1);
-  });
-
-  it("should confirm Enter as a party on Enter, and once only", () => {
+  it("should confirm the leader's Enter as a party on Enter, and once only", () => {
     usePartyStore.setState({ party: PARTY_OF_ONE });
     const { atTheDoor, send, keys, answer } = queuedHubOnStage();
     atTheDoor();
@@ -906,33 +852,98 @@ describe("HubScene the Spire's door panel for a party member (FS-BJNYC §Require
     expect(send).toHaveBeenCalledWith(ActionType.PartyEnter, {});
   });
 
-  it.each(["not_member", "not_leader", "locked", "checking", "not_at_gate", "not_in_town", "unavailable"])(
-    "should give the choice back on a %s refusal, the door still up, so the leader can ask again",
-    (code) => {
-      usePartyStore.setState({ party: PARTY_OF_ONE });
-      const { hub, choice, label, atTheDoor, send, reply } = queuedHubOnStage();
-      atTheDoor();
-      choice("enter")?.handlers.pointerup();
+  it.each([
+    { standing: "no party", party: null, notice: { code: "not_member" }, words: "Form a party first." },
+    { standing: "a member", party: LED_BY_WREN, notice: { code: "not_leader" }, words: "Only your leader can lead the party in." },
+    { standing: "a party of one", party: PARTY_OF_ONE, notice: { code: "too_few" }, words: "Your party needs at least two players." },
+    { standing: "the leader", party: LED_BY_SELF, notice: { code: "locked" }, words: "Not while delving." },
+    { standing: "the leader", party: LED_BY_SELF, notice: { code: "checking" }, words: "Your party is already being asked." },
+    { standing: "the leader", party: LED_BY_SELF, notice: { code: "not_at_gate" }, words: "Walk to the Spire's door first." },
+    { standing: "the leader", party: LED_BY_SELF, notice: { code: "not_in_town", names: ["Wren"] }, words: "Wren is not in the town." },
+    { standing: "the leader", party: LED_BY_SELF, notice: { code: "unavailable" }, words: "The party cannot be changed right now." },
+  ])("should say $words in the door's panel when Enter as a party is refused $notice.code for $standing", ({ party, notice, words }) => {
+    usePartyStore.setState({ party });
+    const { hub, stage, choice, label, atTheDoor, send, reply } = queuedHubOnStage();
+    atTheDoor();
+    choice("enter")?.handlers.pointerup();
 
-      reply("party_notice", code === "not_in_town" ? { code, names: ["Wren"] } : { code });
+    reply("party_notice", notice);
 
-      expect(hub.enterPending).toBe(false);
-      expect(hub.dialogue).toBeDefined();
-      expect(toneOf(label, "enter")).toBe(AMBER);
-      choice("enter")?.handlers.pointerup();
-      expect(send).toHaveBeenCalledTimes(2);
-    },
-  );
+    expect(hub.enterPending).toBe(false);
+    expect(hub.dialogue).toBeDefined();
+    expect(says(stage, words)).toBe(true);
+    expect(says(stage, OPEN_LINE)).toBe(false);
+    // the door stays, every choice offered and pressable, so the player can pick another
+    for (const id of ["enter", "solo", "queue"]) expect(toneOf(label, id)).toBe(AMBER);
+    expect(choice("dismiss")).toBeDefined();
+    choice("enter")?.handlers.pointerup();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { id: "solo", action: "start_solo" },
+    { id: "queue", action: "find_game" },
+  ])("should say the server's words in the door's panel when a member's $action is refused", ({ id, action }) => {
+    usePartyStore.setState({ party: LED_BY_WREN });
+    const { hub, stage, choice, label, atTheDoor, send, refuse } = queuedHubOnStage();
+    atTheDoor();
+    choice(id)?.handlers.pointerup();
+
+    refuse(action, "Your party enters together.");
+
+    expect(hub.dialogue).toBeDefined();
+    expect(says(stage, "Your party enters together.")).toBe(true);
+    expect(passing(stage, "Your party enters together.")).toBe(false);
+    expect(hub.soloPending).toBe(false);
+    expect(hub.queuePending).toBe(false);
+    expect(hub.queued).toBe(false);
+    for (const each of ["enter", "solo", "queue"]) expect(toneOf(label, each)).toBe(AMBER);
+    choice(id)?.handlers.pointerup();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("should say an unreadable gear refusal at the door in the client's words", () => {
+    const { stage, choice, atTheDoor, refuse } = queuedHubOnStage();
+    atTheDoor();
+    choice("solo")?.handlers.pointerup();
+
+    refuse("start_solo", "Your gear could not be fetched. Try again shortly.", "loadout_unavailable");
+
+    expect(says(stage, "Your gear cannot be fetched. Try again shortly.")).toBe(true);
+  });
+
+  it("should hand the door over to the queue's panel once the queue takes the player", () => {
+    const { hub, choice, atTheDoor, reply } = queuedHubOnStage();
+    atTheDoor();
+    choice("queue")?.handlers.pointerup();
+
+    reply("find_game", { message: "Successfully joined matchmaking queue" });
+
+    expect(hub.queued).toBe(true);
+    expect(hub.queuePending).toBe(false);
+    expect(hub.dialogue).toBeUndefined();
+  });
 
   it("should keep waiting through a notice that is no answer to the press", () => {
     usePartyStore.setState({ party: LED_BY_SELF });
-    const { hub, choice, atTheDoor, reply } = queuedHubOnStage();
+    const { hub, stage, choice, atTheDoor, reply } = queuedHubOnStage();
     atTheDoor();
     choice("enter")?.handlers.pointerup();
 
     reply("party_notice", { code: "accepted", name: "Mira" });
 
     expect(hub.enterPending).toBe(true);
+    expect(says(stage, OPEN_LINE)).toBe(true);
+  });
+
+  it("should leave the door's line alone for a refusal code when no party_enter is unanswered", () => {
+    const { stage, atTheDoor, reply } = queuedHubOnStage();
+    atTheDoor();
+
+    reply("party_notice", { code: "not_member" });
+
+    expect(says(stage, OPEN_LINE)).toBe(true);
+    expect(says(stage, "Form a party first.")).toBe(false);
   });
 
   it("should stop waiting once the ready check opens", () => {
@@ -946,61 +957,103 @@ describe("HubScene the Spire's door panel for a party member (FS-BJNYC §Require
     expect(hub.enterPending).toBe(false);
   });
 
-  it("should forget a pending party_enter with the visit, and hand the replies back", () => {
+  it("should leave a party_enter refusal to the chat once the door has closed, drawing nothing at the gate", () => {
+    const { hub, stage, choice, atTheDoor, keys, answer, reply } = queuedHubOnStage();
+    atTheDoor();
+    choice("enter")?.handlers.pointerup();
+    answer(keys.esc);
+    const drawn = stage.made.length;
+
+    reply("party_notice", { code: "not_member" });
+
+    expect(hub.enterPending).toBe(false);
+    expect(hub.dialogue).toBeUndefined();
+    expect(stage.made.length).toBe(drawn);
+  });
+
+  it.each([
+    { id: "solo", action: "start_solo" },
+    { id: "queue", action: "find_game" },
+  ])("should show a $action refusal in passing once the door has closed", ({ id, action }) => {
+    usePartyStore.setState({ party: LED_BY_WREN });
+    const { hub, stage, choice, atTheDoor, keys, answer, refuse } = queuedHubOnStage();
+    atTheDoor();
+    choice(id)?.handlers.pointerup();
+    answer(keys.esc);
+
+    refuse(action, "Your party enters together.");
+
+    expect(hub.dialogue).toBeUndefined();
+    expect(passing(stage, "Your party enters together.")).toBe(true);
+  });
+
+  it("should forget the pending sends with the visit, and hand the replies back", () => {
     usePartyStore.setState({ party: PARTY_OF_ONE });
     const { hub, choice, atTheDoor, off } = queuedHubOnStage();
     atTheDoor();
     choice("enter")?.handlers.pointerup();
+    choice("queue")?.handlers.pointerup();
 
     hub.release();
 
     expect(hub.enterPending).toBe(false);
+    expect(hub.queuePending).toBe(false);
     expect(off).toHaveBeenCalledWith("party_notice");
     expect(off).toHaveBeenCalledWith("party_ready_check");
   });
 
-  it("should redraw the open door when the player's place in the party changes: led, led no more, out", () => {
+  it("should redraw the open door in the new order when the player's place in the party changes, the opening line back", () => {
     usePartyStore.setState({ party: LED_BY_WREN });
-    const { stage, choice, label, atTheDoor } = queuedHubOnStage();
+    const { stage, choice, atTheDoor, reply } = queuedHubOnStage();
     atTheDoor();
-    expect(choice("enter")).toBeUndefined();
+    choice("enter")?.handlers.pointerup();
+    reply("party_notice", { code: "not_leader" });
+    expect(drawnOrder(choice)).toEqual(["solo", "queue", "enter", "dismiss"]);
 
-    // the lead handed to this player while they stand at the door
+    // the lead handed to this player while they stand at the door: the refusal no longer holds
     usePartyStore.setState({ party: LED_BY_SELF });
-    expect(toneOf(label, "enter")).toBe(AMBER);
+    expect(drawnOrder(choice)).toEqual(["enter", "solo", "queue", "dismiss"]);
+    expect(says(stage, OPEN_LINE)).toBe(true);
+    expect(says(stage, "Only your leader can lead the party in.")).toBe(false);
 
     // a change that leaves them leading draws nothing new
     const drawn = stage.made.length;
     usePartyStore.setState({ party: { ...LED_BY_SELF, reason: "presence" } });
     expect(stage.made.length).toBe(drawn);
 
-    usePartyStore.setState({ party: LED_BY_WREN });
-    expect(choice("enter")).toBeUndefined();
-
     usePartyStore.setState({ party: null });
-    expect(doorLine(stage)).toBe(false);
-    expect(toneOf(label, "solo")).toBe(AMBER);
-    expect(toneOf(label, "queue")).toBe(AMBER);
+    expect(drawnOrder(choice)).toEqual(["solo", "queue", "enter", "dismiss"]);
+    expect(says(stage, OPEN_LINE)).toBe(true);
   });
 
-  it("should read the party afresh each time the door opens: joining or leaving between panels changes the next", () => {
-    const { stage, label, atTheDoor, keys, answer } = queuedHubOnStage();
+  it("should read the party afresh each time the door opens", () => {
+    const { choice, atTheDoor, keys, answer } = queuedHubOnStage();
 
     atTheDoor();
-    expect(doorLine(stage)).toBe(false);
-    expect((label("queue").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
+    expect(drawnOrder(choice)[0]).toBe("solo");
     answer(keys.esc);
 
     usePartyStore.setState({ party: PARTY_OF_ONE });
     atTheDoor();
-    expect(doorLine(stage)).toBe(true);
-    expect((label("queue").args[3] as { color: string }).color).not.toBe(toCss(BARROW_HEX.amber));
+    expect(drawnOrder(choice)[0]).toBe("enter");
     answer(keys.esc);
 
     usePartyStore.setState({ party: null });
     atTheDoor();
-    expect(doorLine(stage)).toBe(false);
-    expect((label("queue").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
+    expect(drawnOrder(choice)[0]).toBe("solo");
+  });
+
+  it("should open on the opening line again after a refusal and walking away", () => {
+    const { stage, choice, atTheDoor, keys, answer, reply } = queuedHubOnStage();
+    atTheDoor();
+    choice("enter")?.handlers.pointerup();
+    reply("party_notice", { code: "not_member" });
+    answer(keys.esc);
+
+    atTheDoor();
+
+    expect(says(stage, OPEN_LINE)).toBe(true);
+    expect(says(stage, "Form a party first.")).toBe(false);
   });
 });
 
@@ -1009,7 +1062,7 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     vi.restoreAllMocks();
   });
 
-  it("should show Descend alone, Wait for company and Not yet, amber and the cancel register", () => {
+  it("should show Descend alone, Wait for company, Enter as a party and Not yet, amber and the cancel register", () => {
     const { hub, stage, choice, label, atTheDoor } = queuedHubOnStage();
 
     atTheDoor();
@@ -1026,10 +1079,12 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     expect(dismiss).toBeDefined();
     expect((label("solo").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
     expect((label("queue").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
+    expect((label("enter").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
     expect((label("dismiss").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.arcane));
     // top to bottom down the card, in the spec's order
     expect(solo.y).toBeLessThan(queue.y);
-    expect(queue.y).toBeLessThan(dismiss.y);
+    expect(queue.y).toBeLessThan((choice("enter") as Made).y);
+    expect((choice("enter") as Made).y).toBeLessThan(dismiss.y);
   });
 
   it("should give the storekeeper one dismiss choice and no Open pack (FS-HRH2J R45)", () => {
@@ -1050,15 +1105,18 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     expect(hub.scene.start).not.toHaveBeenCalled();
   });
 
-  it("should send find_game on Wait for company, as Descend did, and close", () => {
-    const { hub, choice, atTheDoor, send } = queuedHubOnStage();
+  it("should send one find_game on Wait for company and keep the door up until it is answered", () => {
+    const { hub, choice, label, atTheDoor, send } = queuedHubOnStage();
     atTheDoor();
 
+    choice("queue")?.handlers.pointerup();
     choice("queue")?.handlers.pointerup();
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0][0]).toBe(ActionType.Find_Game);
-    expect(hub.dialogue).toBeUndefined();
+    expect(hub.queuePending).toBe(true);
+    expect(hub.dialogue).toBeDefined();
+    expect(label("queue").color).not.toBe(toCss(BARROW_HEX.amber));
   });
 
   it("should send one start_solo on Descend alone, keep the dialogue open and grey the choice until the reply", () => {
@@ -1124,7 +1182,7 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("should re-enable the choice and pass on the message as a passing notice when start_solo is refused", () => {
+  it("should re-enable the choice and say the message in the door's panel when start_solo is refused", () => {
     const { hub, stage, choice, label, atTheDoor, send, refuse } = queuedHubOnStage();
     atTheDoor();
     const solo = choice("solo") as Made;
@@ -1134,15 +1192,12 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
 
     expect(hub.soloPending).toBe(false);
     expect(hub.dialogue).toBeDefined();
-    expect(label("solo").color).toBe(toCss(BARROW_HEX.amber));
-    const notice = stage.made.find(
-      (m) => m.kind === "text" && m.args[2] === "Leave the queue first." && m.depth === 1000,
-    ) as Made;
-    expect(notice).toBeDefined();
-    expect((notice.args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.vellum));
-    expect(hub.time.delayedCall).toHaveBeenCalledTimes(1);
+    expect((label("solo").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
+    expect(stage.made.some((m) => m.kind === "text" && !m.destroyed && m.args[2] === "Leave the queue first.")).toBe(true);
+    // said by the door, not in passing
+    expect(hub.time.delayedCall).not.toHaveBeenCalled();
 
-    solo.handlers.pointerup();
+    choice("solo")?.handlers.pointerup();
     expect(send).toHaveBeenCalledTimes(2);
   });
 
@@ -1156,21 +1211,7 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     expect(stage.made.length).toBe(drawn);
   });
 
-  it("should say in the client's words that the gear cannot be fetched when start_solo is refused for it", () => {
-    const { hub, stage, choice, atTheDoor, refuse } = queuedHubOnStage();
-    atTheDoor();
-    choice("solo")?.handlers.pointerup();
-
-    refuse("start_solo", "Your gear could not be fetched. Try again shortly.", "loadout_unavailable");
-
-    expect(hub.soloPending).toBe(false);
-    const notice = stage.made.find(
-      (m) => m.kind === "text" && m.args[2] === "Your gear cannot be fetched. Try again shortly." && m.depth === 1000,
-    );
-    expect(notice).toBeDefined();
-  });
-
-  it("should pass on a refused find_game as a passing notice, gear in the client's words, and not queue", () => {
+  it("should say a refused find_game in the door's panel, gear in the client's words, and not queue", () => {
     const { hub, stage, choice, atTheDoor, refuse } = queuedHubOnStage();
     atTheDoor();
     choice("queue")?.handlers.pointerup();
@@ -1178,10 +1219,12 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     refuse("find_game", "Your gear could not be fetched. Try again shortly.", "loadout_unavailable");
 
     expect(hub.queued).toBe(false);
-    const notice = stage.made.find(
-      (m) => m.kind === "text" && m.args[2] === "Your gear cannot be fetched. Try again shortly." && m.depth === 1000,
-    );
-    expect(notice).toBeDefined();
+    expect(hub.dialogue).toBeDefined();
+    expect(
+      stage.made.some(
+        (m) => m.kind === "text" && !m.destroyed && m.args[2] === "Your gear cannot be fetched. Try again shortly.",
+      ),
+    ).toBe(true);
   });
 
   it("should pass on any other refused find_game in the server's words", () => {
@@ -1826,6 +1869,9 @@ describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => 
 
     queue.handlers.pointerup();
     expect(send).toHaveBeenCalledWith("find_game", expect.anything());
+    // the door waits for the answer (FS-BJNYC R21); its hit areas go down with it when it closes
+    expect(queue.destroyed).toBe(false);
+    (choice("dismiss") as Made).handlers.pointerup();
     expect(queue.destroyed).toBe(true);
     send.mockRestore();
   });
