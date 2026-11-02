@@ -37,6 +37,29 @@ func intoItsRun(t *testing.T, rig *partyEntryRig, p *threeParty) *game.Session {
 	return run
 }
 
+// pairIntoItsRun takes partyOfTwo down the Spire as a party: Wren presses Enter, Kaelen accepts,
+// and both are seated in one run on this pod, which is returned.
+func pairIntoItsRun(t *testing.T, rig *partyEntryRig, wrenConn, kaelenConn *websocket.Conn, wrenInbox, kaelenInbox *startSoloInbox) *game.Session {
+	t.Helper()
+	sendEnter(rig.server, wrenConn)
+	open := awaitReadyOutcome(t, kaelenInbox, "Kaelen", "open")
+	sendReady(rig.server, kaelenConn, open.checkID, true)
+	run := awaitRunEntered(t, rig.server, wrenInbox, "Wren")
+	awaitRunEntered(t, rig.server, kaelenInbox, "Kaelen")
+	return run
+}
+
+// shrunkToOne removes member from their party as FS-NCC9J's expiry does while the run goes on:
+// their record backdated, then the party read, which sweeps them. The party in Redis is left with
+// just leader, which is returned.
+func shrunkToOne(t *testing.T, rig *partyEntryRig, leader, member uuid.UUID) partystore.Party {
+	t.Helper()
+	expireRecord(t, rig, member)
+	p := partyInRedis(t, rig, leader)
+	require.Equal(t, []uuid.UUID{leader}, memberIDs(p), "the party is just its leader now")
+	return p
+}
+
 // backInTownEarly has player fall where they stand (forfeit_run) and, once the run's tick has
 // eliminated them, leave it (leave_run): they stand in the town while their party is still in the
 // run.

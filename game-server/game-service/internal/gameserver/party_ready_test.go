@@ -316,8 +316,9 @@ func assertNoticeCode(t *testing.T, inbox *startSoloInbox, who, code string) typ
 }
 
 // party_enter's refusals come in R5's order. Each row also meets the guards
-// after the one it expects, so only the earliest can answer. FS-BJNYC R5;
-// AC row 4.
+// after the one it expects, so only the earliest can answer: a party in its
+// run shrunk to one is locked, not too_few; a party of one off the gate is
+// too_few, not not_at_gate. FS-BJNYC R5; AC rows 4, 22.
 func TestPartyEnter_Refusals_InOrder(t *testing.T) {
 	tests := []struct {
 		name string
@@ -346,15 +347,23 @@ func TestPartyEnter_Refusals_InOrder(t *testing.T) {
 			want: "not_leader",
 		},
 		{
-			name: "the party in its run, the leader back in the town off the gate, the others still in it: locked",
+			name: "the party in its run and shrunk to one, the leader back in the town off the gate: locked",
 			setup: func(t *testing.T, rig *partyEntryRig) (*websocket.Conn, *startSoloInbox) {
-				p := newThreeParty(t, rig)
-				intoItsRun(t, rig, p)
-				backInTownEarly(t, rig, p.wren)
-				rig.offTheGate(t, p.wren)
-				return p.wrenConn, p.wrenInbox
+				wren, kaelen, wrenConn, kaelenConn, wrenInbox, kaelenInbox := partyOfTwo(t, rig)
+				pairIntoItsRun(t, rig, wrenConn, kaelenConn, wrenInbox, kaelenInbox)
+				backInTownEarly(t, rig, wren)
+				rig.offTheGate(t, wren)
+				shrunkToOne(t, rig, wren.ID, kaelen.ID)
+				return wrenConn, wrenInbox
 			},
 			want: "locked",
+		},
+		{
+			name: "a party of just the leader, off the gate: too_few",
+			setup: func(t *testing.T, rig *partyEntryRig) (*websocket.Conn, *startSoloInbox) {
+				return partyOfOne(t, rig, false)
+			},
+			want: "too_few",
 		},
 		{
 			name: "a check already open, the leader since off the gate and the member in a field: checking",
@@ -476,20 +485,56 @@ func TestPartyEnter_LeaderAlreadyInARun_Resumed(t *testing.T) {
 	assert.Equal(t, wren.CurrentGameSessionId.String(), reply.Payload["session_id"], "the run they are in")
 }
 
-// A party of just the leader goes down at once: no popup, no wait; started,
-// then world_entered into a run of one. FS-BJNYC R3; AC row 11; User Story 16.
-func TestPartyEnter_PartyOfOne_EntersAtOnce(t *testing.T) {
-	rig := newPartyEntryRig(t, &MockItemsClient{})
-	wren, conn, inbox := rig.standing(t, "Wren", true)
+// partyOfOne has Wren form a party of just herself, standing in the town at
+// the Spire's door or away from it.
+func partyOfOne(t *testing.T, rig *partyEntryRig, atGate bool) (*websocket.Conn, *startSoloInbox) {
+	t.Helper()
+	wren, conn, inbox := rig.standing(t, "Wren", atGate)
 	sendParty(rig.server, conn, partyCreateAction, map[string]interface{}{})
 	awaitUpdate(t, inbox, "joined", wren.ID, "Wren")
+	return conn, inbox
+}
+
+// A party of just the leader, at the door in the town, is refused too_few,
+// carrying no name: no ready check is shown and no run is built.
+// FS-BJNYC R3, R5; AC row 11; User Story 16; Edge States "Party of one".
+func TestPartyEnter_PartyOfOne_RefusedTooFew(t *testing.T) {
+	rig := newPartyEntryRig(t, &MockItemsClient{})
+	conn, inbox := partyOfOne(t, rig, true)
+	before := startSoloSessionCount(rig.server)
 
 	sendEnter(rig.server, conn)
 
-	first := awaitReadyCheck(t, inbox, "Wren")
-	assert.Equal(t, "started", first.outcome, "no open check is shown to a party of one")
-	run := awaitRunEntered(t, rig.server, inbox, "Wren")
-	assert.Equal(t, []uuid.UUID{wren.ID}, run.GetPlayerIDs())
+	notice := assertNoticeCode(t, inbox, "Wren", "too_few")
+	assert.NotContains(t, notice.Payload, "name", "too_few names nobody")
+	assert.NotContains(t, notice.Payload, "names", "too_few names nobody")
+	for _, msg := range collectInbox(inbox) {
+		assert.NotEqual(t, partyReadyCheckAction, msg.Action, "no ready check is shown")
+		assert.NotEqual(t, string(constants.ActionWorldEntered), msg.Action, "nobody enters")
+	}
+	assert.Equal(t, before, startSoloSessionCount(rig.server), "no run was built")
+}
+
+// A party of two that drops to just the leader while the check is open is
+// cancelled changed, and nobody enters; the leader's next press is refused
+// too_few. FS-BJNYC R5, R10; AC row 21; Edge States "Party of two drops to one
+// during the check".
+func TestPartyEnter_DropsToOneDuringTheCheck_ChangedThenTooFew(t *testing.T) {
+	rig := newPartyEntryRig(t, &MockItemsClient{})
+	_, _, wrenConn, kaelenConn, wrenInbox, kaelenInbox := partyOfTwo(t, rig)
+	before := startSoloSessionCount(rig.server)
+	sendEnter(rig.server, wrenConn)
+	awaitReadyOutcome(t, kaelenInbox, "Kaelen", "open")
+
+	sendParty(rig.server, kaelenConn, partyLeaveAction, map[string]interface{}{})
+
+	cancelled := awaitReadyOutcome(t, wrenInbox, "Wren", "cancelled")
+	assert.Equal(t, "changed", cancelled.reason)
+
+	sendEnter(rig.server, wrenConn)
+
+	assertNoticeCode(t, wrenInbox, "Wren", "too_few")
+	assert.Equal(t, before, startSoloSessionCount(rig.server), "no run was built")
 }
 
 // Answers that are not a waiting member's to the open check are ignored: a
@@ -836,20 +881,6 @@ func TestPartyReady_StartFails_Cancelled(t *testing.T) {
 		assert.Equal(t, "left", cancelled.reason)
 		assert.Equal(t, []string{"Kaelen"}, cancelled.names)
 		assert.Equal(t, before, startSoloSessionCount(rig.server), "no run was built")
-	})
-
-	t.Run("a party of one with unreadable gear: failed, named", func(t *testing.T) {
-		rig := newPartyEntryRig(t, &failingLoadoutItems{})
-		wren, conn, inbox := rig.standing(t, "Wren", true)
-		sendParty(rig.server, conn, partyCreateAction, map[string]interface{}{})
-		awaitUpdate(t, inbox, "joined", wren.ID, "Wren")
-
-		sendEnter(rig.server, conn)
-
-		cancelled := awaitReadyOutcome(t, inbox, "Wren", "cancelled")
-		assert.Equal(t, "failed", cancelled.reason)
-		assert.Equal(t, []string{"Wren"}, cancelled.names)
-		assert.True(t, rig.hub.HasPlayer(wren.ID), "still in the town")
 	})
 }
 
