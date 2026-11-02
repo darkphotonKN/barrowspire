@@ -81,7 +81,7 @@ type partyKeeper interface {
 // chatRelayer is what the hub needs from chat: a player's line in, delivered or refused; and
 // the lines that arrive off the bus, delivered on this loop (FS-5SH4G R9).
 type chatRelayer interface {
-	relay(sender *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	relay(ctx context.Context, sender *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	inbound() <-chan types.Message
 	deliver(line types.Message)
 }
@@ -704,7 +704,7 @@ func (h *messageHub) Run(ctx context.Context) {
 					slog.Debug("chat from a connection with no player")
 					continue
 				}
-				h.chat.relay(player, clientPackage.Conn, clientPackage.Message.Payload)
+				h.chat.relay(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
 
 			// A party invite by name: a player with no party becomes the leader of
 			// a new one. FS-R82NV §Requirements 4, 11–14.

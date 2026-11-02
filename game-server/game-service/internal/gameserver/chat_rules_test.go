@@ -1,6 +1,7 @@
 package gameserver
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -67,7 +68,7 @@ func newRulesRig() *rulesRig {
 	spy := &relaySpy{}
 	clock := newChatClock()
 	return &rulesRig{
-		relay: newChatRelay(everyoneHere{uuid.New()}, spy, testPodID, clock.now, uuid.New, nil),
+		relay: newChatRelay(everyoneHere{uuid.New()}, spy, testPodID, clock.now, uuid.New, nil, nil),
 		spy:   spy,
 		clock: clock,
 	}
@@ -79,7 +80,7 @@ func seatedSpeaker(name string) *types.Player {
 }
 
 func (r *rulesRig) say(p *types.Player, text any) {
-	r.relay.relay(p, &websocket.Conn{}, map[string]interface{}{"channel": "area", "text": text})
+	r.relay.relay(context.Background(), p, &websocket.Conn{}, map[string]interface{}{"channel": "area", "text": text})
 }
 
 // lastText is the text of the last line relayed, or "" with ok false when none was.
