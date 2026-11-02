@@ -190,6 +190,8 @@ const LEAVE_BUTTON_MARGIN = 16;
  */
 const WATCH_BUTTON_DEPTH = LEAVE_BUTTON_DEPTH;
 const WATCH_BUTTON_MARGIN = LEAVE_BUTTON_MARGIN;
+/** How far the Watch button stands above that bottom margin (asked 2026-11-02, Nick: about 200 px). */
+const WATCH_BUTTON_LIFT = 200;
 /** A button over the world: what it says, the name its hit area answers to, what a press does. */
 interface ButtonSpec {
   name: string;
@@ -4154,7 +4156,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private showWatchButton(): void {
     if (this.watchButton) return;
     const cam = this.cameras.main;
-    const at = { x: cam.centerX, y: cam.height - WATCH_BUTTON_MARGIN - BUTTON_H / 2 };
+    const at = { x: cam.centerX, y: cam.height - WATCH_BUTTON_MARGIN - WATCH_BUTTON_LIFT - BUTTON_H / 2 };
     this.resolvedKind = "escaped";
     this.watchButton = this.hudButton(this.watchSpec, at, WATCH_BUTTON_DEPTH);
   }

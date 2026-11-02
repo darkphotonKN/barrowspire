@@ -40,6 +40,8 @@ hand-coded, with an agent for tests only.
    (a) an escaped delver with a teammate still in play gets **no card**, only a *Watch the delve*
    button at the bottom centre of the screen; pressing it enters the existing spectate (R7–R9:
    the "Watching <name>" HUD at the top, Tab to cycle). Reason: Nick, "單純出現觀看按鈕".
+   *(Amended again 2026-11-02, Nick: "觀看按鈕往上移動一些 大概200px" — the button stands 200 px
+   above the bottom margin, still centred across.)*
    (b) The "escaped successfully" notification line stays; it is how the escaped delver is told
    they made it. Reason: it already says so, and no card replaces it.
    (c) The client reads the escape from `current_player.escape === true`. Reason: the wire shape

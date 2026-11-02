@@ -1069,10 +1069,10 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       expect(cardTitles()).toHaveLength(0);
       expect(watchButtons()).toHaveLength(1);
       const [x, y, w, h] = watchHit(stage)!.args as number[];
-      // the recording camera is 800 x 600: centred across, on the bottom edge's margin
+      // the recording camera is 800 x 600: centred across, lifted 200 px off the bottom edge's
+      // margin (asked 2026-11-02, Nick)
       expect(x).toBe(400);
-      expect(y + h / 2).toBeLessThanOrEqual(600);
-      expect(y - h / 2).toBeGreaterThan(600 - 100);
+      expect(y + h / 2).toBe(600 - 16 - 200);
       expect(w).toBeGreaterThan(0);
     });
 
