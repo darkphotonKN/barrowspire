@@ -192,7 +192,6 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	server.queue.Start(ctx)
 
 	// initialize message hub
-	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID, boot.chatBus)
 	partyTicks := boot.partyTicks
 	if partyTicks == nil {
 		ticker := time.NewTicker(partyTickInterval)
@@ -222,6 +221,9 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	})
 	server.parties = party
 	party.start(ctx)
+	// party lines read the registry's cache and reach other pods through its runner and courier
+	// (FS-XGW7H)
+	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID, boot.chatBus, party)
 	var presenceWriter presenceIndex
 	if boot.presence != nil {
 		presenceWriter = boot.presence

@@ -159,7 +159,7 @@ func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJob
 		jobs:        jobs,
 		done:        make(chan struct{}),
 	}
-	r.courier = newPartyCourier(cfg.inbox, sender, jobs, cfg.podID, r.heardUpdate)
+	r.courier = newPartyCourier(cfg.inbox, sender, jobs, cfg.podID, r.heardUpdate, r.heardPartyChat)
 	var reader partyReader
 	if cfg.store != nil {
 		reader = cfg.store

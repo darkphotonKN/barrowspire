@@ -123,8 +123,9 @@ const (
 	// ChatChannelWorld, ChatChannelWhisper: cross-pod, FS-5SH4G. Closed until then.
 	ChatChannelWorld   ChatChannel = "world"
 	ChatChannelWhisper ChatChannel = "whisper"
-	// ChatChannelParty, ChatChannelTrade: reserved types with no behaviour yet.
+	// ChatChannelParty is heard by every member of the sender's party, on any pod. FS-XGW7H.
 	ChatChannelParty ChatChannel = "party"
+	// ChatChannelTrade: a reserved type with no behaviour yet.
 	ChatChannelTrade ChatChannel = "trade"
 )
 
@@ -141,6 +142,8 @@ const (
 	ChatNoticeTooLong ChatNoticeCode = "too_long"
 	// ChatNoticeTooFast: inside the speaker's flood window. FS-WJGFJ R6.
 	ChatNoticeTooFast ChatNoticeCode = "too_fast"
+	// ChatNoticeNoParty: a party line from a player their pod knows in no party. FS-XGW7H R3.
+	ChatNoticeNoParty ChatNoticeCode = "no_party"
 )
 
 // PartyNoticeCode is the stable reason on a party_notice the client switches on.

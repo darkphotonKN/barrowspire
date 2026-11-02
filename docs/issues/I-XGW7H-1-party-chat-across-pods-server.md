@@ -1,6 +1,6 @@
 ---
 id: I-XGW7H-1
-status: open
+status: done
 implements: FS-XGW7H
 blocked_by: []
 labels: [ready-for-agent]
@@ -96,3 +96,7 @@ FS-XGW7H §Requirements A1–A6, B7–B17; §D Wire contract; §User Stories 1�
 - RED: fake presence placing members on B and C → exactly one `party_chat` letter each, correct `to`; failing presence → local only, one Warn.
 - RED: courier receives `party_chat` → `chat` to addressed seated players, cache not read.
 - GREEN: constant, relay branch, letter kind, courier send and receive, wiring.
+
+## Charter run (2026-11-02)
+
+Built by a /develop child (TDD), two-axis review: ready to merge. Review fix: onChat injected through newPartyCourier like onUpdate. Accepted as is (review LOW): a full runner logs two Warns, onRunner's generic one and the party_id one.

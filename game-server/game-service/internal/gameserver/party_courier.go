@@ -18,9 +18,9 @@ import (
 * registry decides what to say and to whom, the courier gets it there. Only the hub's loop touches
 * it.
 *
-* Three letters: an invite for a player on that pod; a party_update for the members it holds,
-* carrying the party as Redis answered so that pod's cache takes it too; and a party_notice for
-* one player there.
+* Four letters: an invite for a player on that pod; a party_update for the members it holds,
+* carrying the party as Redis answered so that pod's cache takes it too; a party_notice for one
+* player there; and a party_chat line for the members it holds (FS-XGW7H R10, in chat_party.go).
 **/
 
 // partyUpdateLetter is a party_update as it travels between pods: the party as Redis answered it,
@@ -49,10 +49,12 @@ type partyCourier struct {
 	podID string
 	// told of each party_update letter that arrives
 	onUpdate func(l partyUpdateLetter)
+	// told of each party_chat letter that arrives, its addressees and its line (FS-XGW7H R13)
+	onChat func(to []uuid.UUID, message map[string]interface{})
 }
 
-func newPartyCourier(inbox letterBox, sender playerSender, jobs loopJobs, podID string, onUpdate func(partyUpdateLetter)) *partyCourier {
-	return &partyCourier{inbox: inbox, sender: sender, jobs: jobs, podID: podID, onUpdate: onUpdate}
+func newPartyCourier(inbox letterBox, sender playerSender, jobs loopJobs, podID string, onUpdate func(partyUpdateLetter), onChat func(to []uuid.UUID, message map[string]interface{})) *partyCourier {
+	return &partyCourier{inbox: inbox, sender: sender, jobs: jobs, podID: podID, onUpdate: onUpdate, onChat: onChat}
 }
 
 // tell gets an update to each recipient: those present here directly, and each other pod that
@@ -148,6 +150,8 @@ func (c *partyCourier) receive(l letter) {
 		c.receiveUpdate(l)
 	case letterPartyNotice:
 		c.receiveNotice(l)
+	case letterPartyChat:
+		c.receivePartyChat(l)
 	default:
 		slog.Debug("pod inbox letter of an unknown kind dropped", "kind", l.Kind)
 	}
