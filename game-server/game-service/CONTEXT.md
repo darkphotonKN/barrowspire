@@ -365,7 +365,9 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   use it. A name with no entry is **offline**. Not a friends list and not a history.
 - **Pod inbox** — the Redis channel `pod:<podID>:inbox` each pod subscribes to for **letters**
   addressed to one of *its* players from another pod: an invite, a **party update** (which also
-  carries the party, versioned, for that pod's party cache), or a party notice. Rides the same
+  carries the party, versioned, for that pod's party cache), a party notice, or a **party chat
+  letter** (`party_chat`: one stamped party chat line and the players there it is for, FS-XGW7H).
+  Every letter is at most once. Rides the same
   Redis client and subscriber → hub-loop shape as world chat. Distinct from the **match-start
   channel**, which carries run coordination, and from the chat bus, which carries chat lines. (In
   code, the *courier* is the part of the party registry that sends and reads these letters.)
@@ -475,13 +477,17 @@ above; the rule is to qualify, never to rename.
   Redis channel, delivered by each pod to its own connections. **Not the ECS "world"**: a world
   is a simulation, world chat crosses all of them. Always "world chat", never a bare "world".
 - **Party chat** — the chat channel whose audience is the members of one party (scope key = the
-  party id). Members may be on different pods (ADR-0036), so a line reaches the others by party
-  letters through their pods' inboxes, its audience read from the party cache; it never touches
-  the chat bus. (To be confirmed in FS-XGW7H: ADR-0034's in-process delivery no longer holds.) Closed for a player with no party. Inside an instance it is that
-  instance's chat, since members and occupants are the same people.
-- **System line** — a chat line with no sender, carried on a chat channel so it filters with it:
-  party events and loot allocation notices ride the party channel this way. Rendered as system,
-  never as a member speaking. Distinct from a **chat notice**, which answers one sender alone.
+  party id), on any pod and in any world, the sender included. Members may be on different pods
+  (ADR-0036): the sender's pod reads the audience from its **party cache**, tells the members it
+  seats directly, finds the rest with one presence read, and sends each other pod holding any of
+  them one **party chat letter** through its pod inbox; that pod hands the line to the players the
+  letter names without consulting its own cache. It never touches the chat bus (FS-XGW7H). Always
+  open: a sender the cache holds in no party is refused (`no_party`), the channel is never closed
+  for them. Replaces ADR-0034's in-process delivery.
+- **System line** — a chat line with no sender, carried on a chat channel so it filters with it.
+  Rendered as system, never as a member speaking. Distinct from a **chat notice**, which answers
+  one sender alone. None is sent yet: party events and loot allocation notices in the party chat
+  channel were left out of FS-XGW7H for a later FS.
 - **Whisper** — a one-to-one message to one player by id, found on any pod over Redis; the pod
   holding the target delivers it. A target held by no pod is **offline**, and the sender gets
   one system notice. Nothing is queued for later.
