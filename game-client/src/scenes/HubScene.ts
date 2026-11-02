@@ -355,9 +355,9 @@ const DOOR_LINE = "The Spire's door stands open. Few return whole,\nand fewer re
  * its card carries no role.
  *
  * Every player sees every choice, whatever their party: the server decides, and a choice that does
- * not apply is refused in words (`refusal`, said in place of the opening line). The choice most
- * likely to work comes first, so E and Enter mean it: Enter as a party for the leader, a party of
- * just the leader included; Descend alone for everyone else. Each of the three keeps the door up
+ * not apply is refused in words (`refusal`, said in place of the opening line). One order for
+ * everyone, Enter as a party third (key 3), whatever the party (FS-BJNYC R21, amended 2026-11-02,
+ * Nick); E and Enter press the first. Each of the three keeps the door up
  * until it is answered and is held back only while its own send is unanswered.
  */
 export function delveChoices(state: HubState, refusal?: string): Dialogue {
@@ -396,7 +396,8 @@ export function delveChoices(state: HubState, refusal?: string): Dialogue {
   const dismiss: DialogueChoice = { id: "dismiss", label: "Not yet", register: "cancel" };
   return {
     line: refusal ?? DOOR_LINE,
-    choices: state.party === "leader" ? [enter, ...ways, dismiss] : [...ways, enter, dismiss],
+    // one order for everyone, Enter as a party third (FS-BJNYC R21, amended 2026-11-02, Nick)
+    choices: [...ways, enter, dismiss],
   };
 }
 

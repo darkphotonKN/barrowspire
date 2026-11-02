@@ -715,9 +715,8 @@ describe("delveChoices (FS-NSV3D §Requirements 1, 4; FS-0XMCP §Requirements 9;
   });
 
   it.each([
-    // the leader: the choice most likely to work first, so E and Enter mean it
-    { party: "leader" as const, ids: ["enter", "solo", "queue", "dismiss"] },
-    // everyone else: Enter as a party listed and pressable, after the ways that are theirs
+    // one fixed order for everyone: Enter as a party third (FS-BJNYC R21, amended 2026-11-02, Nick)
+    { party: "leader" as const, ids: ["solo", "queue", "enter", "dismiss"] },
     { party: "member" as const, ids: ["solo", "queue", "enter", "dismiss"] },
     { party: "none" as const, ids: ["solo", "queue", "enter", "dismiss"] },
   ])("should offer $party every choice, in the order $ids, with the one opening line", ({ party, ids }) => {
@@ -789,8 +788,8 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
   const STANDINGS = [
     { standing: "no party", party: null, order: ["solo", "queue", "enter", "dismiss"] },
     { standing: "a member", party: LED_BY_WREN, order: ["solo", "queue", "enter", "dismiss"] },
-    { standing: "the leader", party: LED_BY_SELF, order: ["enter", "solo", "queue", "dismiss"] },
-    { standing: "a party of one", party: PARTY_OF_ONE, order: ["enter", "solo", "queue", "dismiss"] },
+    { standing: "the leader", party: LED_BY_SELF, order: ["solo", "queue", "enter", "dismiss"] },
+    { standing: "a party of one", party: PARTY_OF_ONE, order: ["solo", "queue", "enter", "dismiss"] },
   ];
   /** Whether the door's card says `text` now (a redrawn card's old words are destroyed with it). */
   const says = (stage: { made: Made[] }, text: string) =>
@@ -845,13 +844,13 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
     expect(hub.dialogue).toBeDefined();
   });
 
-  it("should confirm the leader's Enter as a party on Enter, and once only", () => {
+  it("should send the leader's Enter as a party on key 3, its place for everyone, and once only", () => {
     usePartyStore.setState({ party: PARTY_OF_ONE });
     const { atTheDoor, send, keys, answer } = queuedHubOnStage();
     atTheDoor();
 
-    answer(keys.enter);
-    answer(keys.enter);
+    answer(keys.three);
+    answer(keys.three);
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith(ActionType.PartyEnter, {});
@@ -1007,7 +1006,7 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
     expect(off).toHaveBeenCalledWith("party_ready_check");
   });
 
-  it("should redraw the open door in the new order when the player's place in the party changes, the opening line back", () => {
+  it("should redraw the open door when the player's place in the party changes, the opening line back, the order unchanged", () => {
     usePartyStore.setState({ party: LED_BY_WREN });
     const { stage, choice, atTheDoor, reply } = queuedHubOnStage();
     atTheDoor();
@@ -1017,7 +1016,7 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
 
     // the lead handed to this player while they stand at the door: the refusal no longer holds
     usePartyStore.setState({ party: LED_BY_SELF });
-    expect(drawnOrder(choice)).toEqual(["enter", "solo", "queue", "dismiss"]);
+    expect(drawnOrder(choice)).toEqual(["solo", "queue", "enter", "dismiss"]);
     expect(says(stage, OPEN_LINE)).toBe(true);
     expect(says(stage, "Only your leader can lead the party in.")).toBe(false);
 
@@ -1031,21 +1030,15 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
     expect(says(stage, OPEN_LINE)).toBe(true);
   });
 
-  it("should read the party afresh each time the door opens", () => {
+  it("should keep Enter as a party third each time the door opens, whatever the party", () => {
     const { choice, atTheDoor, keys, answer } = queuedHubOnStage();
 
-    atTheDoor();
-    expect(drawnOrder(choice)[0]).toBe("solo");
-    answer(keys.esc);
-
-    usePartyStore.setState({ party: PARTY_OF_ONE });
-    atTheDoor();
-    expect(drawnOrder(choice)[0]).toBe("enter");
-    answer(keys.esc);
-
-    usePartyStore.setState({ party: null });
-    atTheDoor();
-    expect(drawnOrder(choice)[0]).toBe("solo");
+    for (const party of [null, PARTY_OF_ONE, LED_BY_WREN, null]) {
+      usePartyStore.setState({ party });
+      atTheDoor();
+      expect(drawnOrder(choice)).toEqual(["solo", "queue", "enter", "dismiss"]);
+      answer(keys.esc);
+    }
   });
 
   it("should open on the opening line again after a refusal and walking away", () => {

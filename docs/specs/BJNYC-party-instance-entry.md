@@ -175,14 +175,13 @@ says to form a party first; a party of only one says it needs more than one).
 20. **Every choice, for everyone.** At the Spire's door every player (in no party, a member, the
     leader, a party of just the leader) sees all four choices: **Enter as a party** (sends
     `party_enter`), **Descend alone** (`start_solo`), **Wait for company** (`find_game`) and **Not
-    yet**. None is greyed or hidden for the player's party standing. The choice most likely to work
-    comes first, so E and Enter mean it: for the party's **leader**, Enter as a party, Descend
-    alone, Wait for company, Not yet; for **everyone else** (no party, or a member who is not the
-    leader), Descend alone, Wait for company, Enter as a party, Not yet. "Not yet" is always last.
+    yet**. None is greyed or hidden for the player's party standing. The order is the same for
+    everyone, whatever their party: Descend alone, Wait for company, Enter as a party, Not yet, so
+    Enter as a party is always the third choice (key 3); E and Enter press the first. *(Amended again 2026-11-02, Nick: "組隊進塔的選項排到位置3" — one fixed order for everyone, Enter as a party third)*
     The door's opening line is the same for everyone and no longer changes with party standing:
     "The Spire's door stands open. Few return whole, and fewer return twice." (the line a player
-    in no party already sees). The order is redrawn if the player's party standing changes while
-    the door is open, as today. *(Amended 2026-11-02, Nick: every door choice pressable, refused in
+    in no party already sees). The door is redrawn, on its opening line, if the player's party
+    standing changes while it is open. *(Amended 2026-11-02, Nick: every door choice pressable, refused in
     words; a party of one may not enter. Was: "Wait for company" greyed for a party member and the
     door saying "Your party enters together.")*
 21. **Pressing sends; the server decides.** Pressing any of the first three sends its action
@@ -292,7 +291,7 @@ village" reads "X is not in the town".
 30. As a player in no party, I want pressing "Enter as a party" answered with "Form a party first.", so that I know what to do before I can use it. *(Amended 2026-11-02, Nick: every door choice pressable, refused in words; a party of one may not enter)*
 31. As any player at the Spire's door, I want every choice listed and pressable whatever my party standing, so that nothing is hidden and the door never looks broken. *(Amended 2026-11-02, Nick: every door choice pressable, refused in words; a party of one may not enter)*
 32. As any player, I want a refused choice answered in the door's own panel while it stays open, so that I read why and pick another choice without walking away and back. *(Amended 2026-11-02, Nick: every door choice pressable, refused in words; a party of one may not enter)*
-33. As a party leader, I want "Enter as a party" first at the door, and as anyone else "Descend alone" first, so that E and Enter press the choice most likely to work. *(Amended 2026-11-02, Nick: every door choice pressable, refused in words; a party of one may not enter)*
+33. As any player, I want "Enter as a party" always in the same place, third, so that I find it without reading. *(Amended again 2026-11-02, Nick: "組隊進塔的選項排到位置3" — one fixed order for everyone, Enter as a party third)* ~~As a party leader, I want "Enter as a party" first at the door, and as anyone else "Descend alone" first, so that E and Enter press the choice most likely to work.~~ *(Amended 2026-11-02, Nick: every door choice pressable, refused in words; a party of one may not enter)*
 34. As a party leader, I want an entry refused while my party is still in its run to say so ("Not while delving.") even if only I am left in it, so that I am told the real reason. *(Amended 2026-11-02, Nick: every door choice pressable, refused in words; a party of one may not enter)*
 
 ## Acceptance Criteria
@@ -313,7 +312,7 @@ village" reads "X is not in the town".
 - [ ] The leader's connection dropping in the party's run makes the earliest-joined other member leader at once; the old leader reconnecting within the grace is seated back as a member. (R17)
 - [ ] When the run ends the party is unchanged and every member is in the town of the pod the run lived on. (R18)
 - [ ] The party's Redis keys and scripts are unchanged. (R14)
-- [ ] Client: the leader's choices read Enter as a party, Descend alone, Wait for company, Not yet; everyone else's read Descend alone, Wait for company, Enter as a party, Not yet; pressing any of the first three sends its action whatever the party standing, once while unanswered, and the door's panel stays open until it is answered. (R20, R21) *(Amended 2026-11-02, Nick: every door choice pressable, refused in words; a party of one may not enter)*
+- [ ] Client: every player's choices read Descend alone, Wait for company, Enter as a party, Not yet, whatever their party *(Amended again 2026-11-02, Nick: "組隊進塔的選項排到位置3" — one fixed order for everyone, Enter as a party third)*; pressing any of the first three sends its action whatever the party standing, once while unanswered, and the door's panel stays open until it is answered. (R20, R21) *(Amended 2026-11-02, Nick: every door choice pressable, refused in words; a party of one may not enter)*
 - [ ] Client: every member sees one popup with each member's state and a whole-second countdown; **the leader's row is ticked (accepted) from the moment the popup opens**; waiting members see Accept and Decline; the leader sees status only (no Accept, Decline or Cancel). (R23, R24)
 - [ ] Client: the popup redraws on each `party_ready_check`, closes on `started` (the scene follows `world_entered`) and on `cancelled` (reason shown in passing, copy table). (R25, R26)
 - [ ] Client: each `party_enter` refusal and each cancellation reads per the copy table. (R22) *(Amended 2026-11-02, Nick: every door choice pressable, refused in words; a party of one may not enter)*: a `party_enter` refusal reads in the door's panel by the door table and in the chat by the chat table.
