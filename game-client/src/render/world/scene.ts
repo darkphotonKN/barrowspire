@@ -45,10 +45,13 @@ import {
 } from "./ground";
 import { BAKE } from "./bake";
 import {
+  doorGaps,
+  doorHead,
   gapDoor,
   planBuildings,
   planCap,
   type DoorGap,
+  type DoorHead,
   type GapDoor,
   type WallLook,
 } from "./buildingLooks";
@@ -474,8 +477,8 @@ export interface BuiltBuilding {
   interior: BuildingPart[];
   /**
    * The building exterior only: the full-height fronts and their posts, the stone cap of a type
-   * that has one, and a shut door in each of its door gaps when asked for. The roof is the
-   * scene's, as it always was (`addRoof`).
+   * that has one, a door head over each of its door gaps, and a shut door in each gap when asked
+   * for. The roof is the scene's, as it always was (`addRoof`).
    */
   exterior: BuildingPart[];
   /** Every part drawn from outside (shared and exterior), as what covers the player (§E.1). */
@@ -606,8 +609,9 @@ function pieceSprite(
  * player starts outside every building. Walls with no house are not drawn here (`addWalls`).
  *
  * Never null: without a manifest or a sheet, a wall falls back to a placeholder block as tall as
- * the pieces it stands beside, the cap to a flat slab at the wall top, a gap's door to the run's
- * placeholder door (a leaf on a plane at the wall top), so a building always closes (§B.7). No part joins `Occluders` (§E.4): buildings
+ * the pieces it stands beside, the cap and a door head to flat slabs at the wall top, a gap's door
+ * to the run's placeholder door (a leaf on a plane at the wall top), so a building always closes
+ * (§B.7). No part joins `Occluders` (§E.4): buildings
  * take the silhouette, not the fade.
  */
 export function addBuildings(
@@ -622,6 +626,8 @@ export function addBuildings(
   const logger = options.logger ?? console;
   const byId = new Map(walls.map((w) => [w.entity_id, w]));
   const gaps = options.doors?.(walls) ?? [];
+  // every gap is closed over its door from outside, whoever's door stands in it (§B.5 amended)
+  const heads = doorGaps(walls);
 
   return planBuildings(walls, seed, sheets).map((plan) => {
     const own = walls.filter((w) => w.house_id === plan.house.id);
@@ -694,6 +700,11 @@ export function addBuildings(
       exterior.parts.push(...shut.parts);
       exterior.cover.push(...shut.cover);
       interior.parts.push(...addGapDoor(scene, art, gapDoor(gap, true), sheets, logger).parts);
+    }
+    for (const gap of heads.filter((g) => g.houseId === plan.house.id)) {
+      const head = addDoorHead(scene, art, doorHead(gap, sheets), sheets, style, logger);
+      exterior.parts.push(...head.parts);
+      exterior.cover.push(...head.cover);
     }
 
     built.shared = shared.parts;
@@ -795,6 +806,37 @@ function addGapDoor(
   g.strokeRect(leaf.x, leaf.y, leaf.width, leaf.height);
   plane.surface.add(g);
   return { parts: [plane.root], cover: [slabCover(plane.root, leaf, lift)] };
+}
+
+/**
+ * The wall over a door gap's lintel (FS-9PN7X §B.5, §F.4, amended 2026-11-03): the type's baked
+ * head, sorted like the door under it, or without its sheet a flat slab over the gap at the wall
+ * top in the walls' placeholder colour (§B.7).
+ */
+function addDoorHead(
+  scene: Phaser.Scene,
+  art: ArtLibrary,
+  head: DoorHead,
+  sheets: WallSheets,
+  style: BlockStyle,
+  logger: ArtLogger,
+): BuiltParts {
+  if (art.has(head.sheet)) {
+    const s = worldToScreen(head.at.x, head.at.y);
+    const sprite = artSprite(scene, art, s.x, s.y, head.sheet);
+    sprite.setDepth(worldDepth(head.depthAt.x, head.depthAt.y, 1));
+    return { parts: [sprite], cover: [coverOf(sprite)] };
+  }
+  reportMissing(art, head.sheet, logger);
+  const lift = placeholderHeight(art, sheets, true);
+  const plane = addWorldPlane(scene, lift);
+  plane.root.setDepth(worldDepth(head.depthAt.x, head.depthAt.y, 1));
+  const { x, y, width, height } = head.rect;
+  const slab = scene.add.graphics();
+  slab.fillStyle(style.top, 1);
+  slab.fillRect(x, y, width, height);
+  plane.surface.add(slab);
+  return { parts: [plane.root], cover: [slabCover(plane.root, head.rect, lift)] };
 }
 
 /**

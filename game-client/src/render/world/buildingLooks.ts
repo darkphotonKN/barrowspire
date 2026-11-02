@@ -5,8 +5,9 @@
  * The **interior look** is the cut-away that ships (`planWalls`): back walls full height, south
  * and east fronts low. The **building exterior** is the full-height version of every side: the
  * same fronts cut on exactly the same footprint, in the type's outward face, their posts columns,
- * a stone cap over a masonry room, a shut door in each town door gap (amended 2026-11-03: an
- * entrance shows a door, not a dark opening). A scene draws both and shows one per building.
+ * a stone cap over a masonry room, a door head closing each door gap over the lintel, and a shut
+ * door in each town door gap (amended 2026-11-03: an entrance shows a door, not a dark opening).
+ * A scene draws both and shows one per building.
  */
 
 import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso";
@@ -186,8 +187,11 @@ export function doorGaps(walls: readonly WallState[]): DoorGap[] {
 export interface GapDoor {
   /** The run door's sheet on the gap's axis: `door_x` or `door_y`. */
   sheet: string;
-  /** Shut (`unlocked`, as a shut run door shows) from outside; `open` from inside. */
-  frame: "unlocked" | "open";
+  /**
+   * `shut` from outside: the door with no lock on it, since nothing amber may sit on what can't
+   * be acted on; `open` from inside.
+   */
+  frame: "shut" | "open";
   axis: WallAxis;
   /** World position of the gap's centre, where the door stands. */
   at: Point;
@@ -206,7 +210,38 @@ export function gapDoor(gap: DoorGap, inside: boolean): GapDoor {
   const axis = axisOf(gap);
   return {
     sheet: `door_${axis}`,
-    frame: inside ? "open" : "unlocked",
+    frame: inside ? "open" : "shut",
+    axis,
+    at: { x: position.x + width / 2, y: position.y + height / 2 },
+    depthAt: { x: position.x, y: position.y },
+    rect: { x: position.x, y: position.y, width, height },
+  };
+}
+
+/**
+ * The wall over a door gap's lintel, up to the wall top, in the building type's outward surface
+ * (FS-9PN7X §B.5, §F.4, amended 2026-11-03). The run door stands lower than the walls, so without
+ * it the room shows above a door from outside. Part of the building exterior, over every gap,
+ * whether the door in it is drawn (a town gap) or the server's (a Spire room).
+ */
+export interface DoorHead {
+  /** `{prefix}door_head_{x|y}`: `door_head_x`, `tower_door_head_y`. */
+  sheet: string;
+  axis: WallAxis;
+  /** World position of the gap's centre, where the head stands. */
+  at: Point;
+  /** The back corner of the gap's footprint: it sorts like the door under it. */
+  depthAt: Point;
+  /** The gap's world rect, for a placeholder. */
+  rect: Rect;
+}
+
+/** The head over a door gap, in the building type's sheets, on the gap's axis. */
+export function doorHead(gap: DoorGap, sheets: WallSheets): DoorHead {
+  const { position, width, height } = gap;
+  const axis = axisOf(gap);
+  return {
+    sheet: `${sheets.prefix}door_head_${axis}`,
     axis,
     at: { x: position.x + width / 2, y: position.y + height / 2 },
     depthAt: { x: position.x, y: position.y },

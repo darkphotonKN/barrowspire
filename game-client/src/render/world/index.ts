@@ -31,12 +31,14 @@ export {
 } from "./buildingView";
 export {
   doorGaps,
+  doorHead,
   gapDoor,
   planBuildings,
   planCap,
   type BuildingWalls,
   type CapPiece,
   type DoorGap,
+  type DoorHead,
   type GapDoor,
   type WallLook,
 } from "./buildingLooks";

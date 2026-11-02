@@ -2408,7 +2408,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * has one (a roofed theme keeps its roof instead), placeholders without art (§B.7). A room's
    * parts are torn down whole and redrawn from its walls as they stand now; none of them fades
    * (§E.4). Its walls' lights are the room's own, lit only from inside (§D.6). A room's gap holds
-   * its server door (`updateDoors`), so it draws no door of its own.
+   * its server door (`updateDoors`), so it draws no door of its own, only the head over it.
    */
   private drawRooms(walls: readonly WallState[], changed: ReadonlySet<string>): void {
     if (changed.size === 0) return;
