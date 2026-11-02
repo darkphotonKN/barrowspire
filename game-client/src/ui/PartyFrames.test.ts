@@ -681,13 +681,50 @@ describe("PartyFrames: same-world teammates' vitals and level (FS-CH21F)", () =>
     expect(live()).toEqual(["Me", "Wren"]);
   });
 
-  it("never draws the player's own level", () => {
+  // FS-CH21F R10 (amended 2026-11-02, Nick: own level shown in the party frames); I-CH21F-4
+  it.each(["hub", "field", "run"] as const)(
+    "draws the player's own level after their name, as a teammate's, in the %s",
+    (world) => {
+      const { store, frames, live, liveText, colourOf } = setup(world);
+      store
+        .getState()
+        .apply(update([member(ME, "Me"), member("wren", "Wren")]));
+      frames.show({
+        current_player: {
+          id: ME,
+          current_health: 50,
+          max_health: 100,
+          level: 7,
+        },
+      });
+      expect(live()).toEqual(["Me", "Lv 7", "Wren"]);
+      const name = liveText("Me")!;
+      const level = liveText("Lv 7")!;
+      expect(level.x).toBeGreaterThan(name.x + width(name));
+      expect(level.x).toBeLessThan(name.x + width(name) + 12);
+      expect(colourOf("Lv 7")).toBe(toCss(palette.hudLabel));
+    },
+  );
+
+  it("redraws the player's own level when it rises", () => {
     const { store, frames, live } = setup("hub");
     store.getState().apply(update([member(ME, "Me"), member("wren", "Wren")]));
     frames.show({
       current_player: { id: ME, current_health: 50, max_health: 100, level: 7 },
     });
-    expect(live()).not.toContain("Lv 7");
+    frames.show({
+      current_player: { id: ME, current_health: 50, max_health: 100, level: 8 },
+    });
+    expect(live()).toEqual(["Me", "Lv 8", "Wren"]);
+  });
+
+  it("draws no own level while the state carries none", () => {
+    const { store, frames, live } = setup("hub");
+    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren")]));
+    frames.show({
+      current_player: { id: ME, current_health: 50, max_health: 100 },
+    });
+    expect(live()).toEqual(["Me", "Wren"]);
   });
 
   it("greys an away teammate's level with their name", () => {

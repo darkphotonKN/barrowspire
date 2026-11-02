@@ -5,10 +5,11 @@
  * member frame is a medallion bust cut from the member's class sheet, their name (the leader's
  * crown first), and a bar slot: health and resource in the HUD's own bar style at half height,
  * always for the player (from their own state) and, in every world the hub included, for a
- * teammate when this world's state carries their health, with "Lv N" after that teammate's name;
- * any other teammate shows name and bust alone, no word, no level. An away teammate's frame is
- * greyed. A skeleton row is the invitee's name with a grey pulse where the bust and bars go, no
- * countdown. A resource the state does not carry yet is an empty bar.
+ * teammate when this world's state carries their health. "Lv N" follows the player's own name
+ * (from their own state) and such a teammate's; any other teammate shows name and bust alone, no
+ * word, no level. An away teammate's frame is greyed. A skeleton row is the invitee's name with a
+ * grey pulse where the bust and bars go, no countdown. A resource the state does not carry yet is
+ * an empty bar.
  *
  * It redraws from the party store on every `party_update` and from each state tick the scene
  * hands it (`show`); it asks the server for nothing. Once a frame it lets the store say the
@@ -84,7 +85,7 @@ export function mountPartyFrames(
 }
 
 const NAME_PX = 13;
-/** A teammate's "Lv N", a step under the name so the leader's row keeps room for the name. */
+/** A member's "Lv N", a step under the name so the leader's row keeps room for the name. */
 const LEVEL_PX = 11;
 /** An away member's frame: its bust and ring dimmed to this. */
 const AWAY_ALPHA = 0.4;
