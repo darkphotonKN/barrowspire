@@ -1,12 +1,13 @@
 # FS-CH21F: Party members' health, resource and level in the party frames; names in the tower
 
-> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Party" → "Party members' class resource in the broadcast"; `game-client/SPECIFICATION.md` "### Party" → "Teammates' health, resource and level in the party frames", "### Escape run" → "Other delvers' names over their heads" → this FS · Related ADRs: [ADR-0036](../adr/0036-party-state-lives-in-redis-membership-spans-pods.md) (each pod's party cache serves reads; ticks never wait on Redis), [ADR-0035](../adr/0035-a-party-is-the-universal-instance-roster-ephemeral-and-locked-inside.md) (in an instance, occupants are the party) · Supersedes: [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) R27 (teammates' overhead health bar in a run: hidden), and R18 with its R111 charter default ("teammates send health only") **for party members only**; the hover-only name over other delvers in a run (code behaviour cited to [FS-77AB6](77AB6-monsters-and-combat.md) req 40, `BarrowspireScene.ts`; R40's ally channel itself stands) · Fulfils: [FS-R82NV](R82NV-party-formation.md) R34's "teammates' bars in the hub are FS-CH21F's" and "`resource` arrives with FS-CH21F" · Builds on: [FS-NCC9J](NCC9J-party-membership-across-pods.md) R4 (party cache), R25 (bars only for teammates in the player's world; name and bust otherwise), [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) R17, R21–R22 (resource shape, kind labels, parry pips), [FS-MAMHR](MAMHR-mercenary-class.md) R28 (parry fields), [FS-BDA7X](BDA7X-character-leveling.md) R42 (level on every player) · Vocabulary: no new terms
+> Status: work-order (amended 2026-11-02: R10, the player's own level in the frames; slice I-CH21F-4) · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Party" → "Party members' class resource in the broadcast"; `game-client/SPECIFICATION.md` "### Party" → "Teammates' health, resource and level in the party frames", "### Escape run" → "Other delvers' names over their heads" → this FS · Related ADRs: [ADR-0036](../adr/0036-party-state-lives-in-redis-membership-spans-pods.md) (each pod's party cache serves reads; ticks never wait on Redis), [ADR-0035](../adr/0035-a-party-is-the-universal-instance-roster-ephemeral-and-locked-inside.md) (in an instance, occupants are the party) · Supersedes: [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) R27 (teammates' overhead health bar in a run: hidden), and R18 with its R111 charter default ("teammates send health only") **for party members only**; the hover-only name over other delvers in a run (code behaviour cited to [FS-77AB6](77AB6-monsters-and-combat.md) req 40, `BarrowspireScene.ts`; R40's ally channel itself stands) · Fulfils: [FS-R82NV](R82NV-party-formation.md) R34's "teammates' bars in the hub are FS-CH21F's" and "`resource` arrives with FS-CH21F" · Builds on: [FS-NCC9J](NCC9J-party-membership-across-pods.md) R4 (party cache), R25 (bars only for teammates in the player's world; name and bust otherwise), [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) R17, R21–R22 (resource shape, kind labels, parry pips), [FS-MAMHR](MAMHR-mercenary-class.md) R28 (parry fields), [FS-BDA7X](BDA7X-character-leveling.md) R42 (level on every player) · Vocabulary: no new terms
 
 ## Summary
 
 A party member sees, in the party frames on the left edge, each teammate who stands in the same
 world (the same village, field or delve on the same pod): their health bar, their class resource
-bar coloured by kind, and their level after the name. That holds in the village too. Teammates
+bar coloured by kind, and their level after the name. The player's own frame shows their own
+level the same way *(Amended 2026-11-02, Nick: own level shown in the party frames)*. That holds in the village too. Teammates
 elsewhere show name and portrait only. In the tower, every other delver's name now hangs over
 their head all the time instead of only on hover, and the overhead health bars over other delvers
 are turned off for now. To feed the resource bar, the server adds `resource` to the broadcast for
@@ -76,11 +77,16 @@ the recipient's party members, and only for them.
    helper. Before the server sends it (or when absent) the resource bar stands empty, as today.
    *Charter default 3 (Nick approved 2026-11-02) — reason: decided earlier in the draft.*
 10. **Level after the name.** A same-world teammate's row shows "Lv N" after the name, from the
-    `level` the broadcast already carries. The player's own row and teammates elsewhere show no
-    level (the level/XP bar above already shows the player's own). A long name is shortened
-    short of the level and of the Travel button (FS-NCC9J R28). *Charter default 2 (Nick
-    approved 2026-11-02) — reason: Nick, "等級資訊只顯示在組側邊ui"; the state already carries
-    level.*
+    `level` the broadcast already carries. The player's own row shows "Lv N" too, from their own
+    state (`current_player.level`), drawn the same way as a teammate's, in every world where the
+    frames show; before the first state carries a level, the own row shows none. Teammates
+    elsewhere show no level (R11). A long name is shortened short of the level and of the Travel
+    button (FS-NCC9J R28). *Charter default 2 (Nick approved 2026-11-02) — reason: Nick,
+    "等級資訊只顯示在組側邊ui"; the state already carries level.* *(Amended 2026-11-02, Nick: own level shown in the party frames)* Supersedes this
+    requirement's earlier "the player's own row shows no level (the level/XP bar above already
+    shows the player's own)" — reason: Nick, "左側組隊ui沒顯示自己的等級". Teammates' rules are
+    unchanged: level only while their slot holds bars, none for a teammate elsewhere or on
+    another pod.
 11. **Teammates elsewhere: name and class bust only**, no numbers, no level, no state word
     (FS-NCC9J R25 unchanged): another world, another pod, or not listed in this world's state.
     Away teammates stay greyed. *Charter default 1 (Nick approved 2026-11-02).*
@@ -117,6 +123,7 @@ the recipient's party members, and only for them.
 6. As a party member, I want each teammate's resource bar coloured by its kind, so that I tell mana from stamina at a glance.
 7. As a party member, I want each nearby teammate's level after their name, so that I know how strong my group is.
 8. As a party member, I want level shown only in the frames, never over heads, so that the screen stays clean.
+8a. As a party member, I want my own level after my name on my own frame, so that the frames read the same for me as for my teammates, also in a field where no XP bar shows it. *(Amended 2026-11-02, Nick: own level shown in the party frames)*
 9. As a party member, I want teammates on another server or in another world to show only name and portrait, so that the frames never show numbers that are not live.
 10. As a delver, I want every other delver's name always over their head, so that I know who is who without hovering.
 11. As a delver, I want no health bars over the other delvers, so that the tower stays uncluttered while teammates' health is in the frames.
@@ -143,7 +150,7 @@ the recipient's party members, and only for them.
 - [ ] Client frames: a same-world teammate in the **hub** shows health and resource bars and "Lv N"; the same in a field and a run.
 - [ ] Client frames: a teammate not in this world's `other_players` shows name and bust only, no level, no bars.
 - [ ] Client frames: the resource bar uses the HUD's kind colours, and parry charges show as pips; with no `resource` on the wire it stands empty.
-- [ ] Client frames: the player's own row shows no level; a long name is shortened short of the level and the Travel button.
+- [ ] Client frames: the player's own row shows "Lv N" from `current_player.level`, drawn as a teammate's is, in the hub, a field and a run; with no level in the state yet it shows none. A long name is shortened short of the level and the Travel button. *(Amended 2026-11-02, Nick: own level shown in the party frames)*
 - [ ] Client run: every other living delver's name is visible over their head without hover; none over a baked corpse; the player's own name unchanged.
 - [ ] Client run: no overhead health bar is drawn over any other delver; monsters' bars unchanged.
 - [ ] Client hub and field: overhead names unchanged; no level drawn over anyone in any world.

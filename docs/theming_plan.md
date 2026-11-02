@@ -68,6 +68,11 @@ plan/status; the design guideline is the spec.
   subtitle lost the banned "deploy". Baked figures and the reused HUD pieces (XP bar, stat
   colours, item tip) stay on the game palette.
 
+### 🔨 In progress — [FS-B3NDZ](specs/B3NDZ-unified-countdown-bar.md) (one countdown style across the canvas)
+- One look for every canvas countdown (ready check, party invite, field fallen): a full-width
+  bright-brass bar draining right to left along the panel's foot, larger seconds above it. Rule
+  in the guideline's "UI Chrome" → Countdowns.
+
 ### ⏳ Planned / Not Started
 - **Fully medieval typography** wired into the canvas (Pirata One display + EB Garamond body).
 
