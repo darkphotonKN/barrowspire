@@ -116,7 +116,6 @@ import {
   RUN_WORLD_THEME,
   WORLD_THEMES,
   addBuildings,
-  addDarkOpening,
   addDressing,
   addPerimeter,
   addProp,
@@ -125,7 +124,6 @@ import {
   budgetLights,
   buildingAt,
   coverOf,
-  darkOpening,
   dressingStatics,
   floorLook,
   interactablePool,
@@ -141,7 +139,6 @@ import {
   TRAIL_BED_DEPTH,
   TrailSet,
   type BuildingPart,
-  type BuiltParts,
   type Cover,
   type Figure,
   type Occupant,
@@ -614,8 +611,8 @@ export class BarrowspireScene extends Phaser.Scene {
     {
       sprite?: Phaser.GameObjects.Sprite;
       slab?: { rect: Phaser.GameObjects.Rectangle; plane: WorldPlane };
-      /** A room door's dark opening, shown in place of its open frame from outside (§B.5). */
-      opening?: BuiltParts;
+      /** In a room's wall: part of the room, so it covers the player from outside (§E.1). */
+      inRoom: boolean;
       entityId: string;
       isOpen: boolean;
       pos: Point;
@@ -2410,8 +2407,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * the floor's wall sheets: masonry exterior fronts and back posts, the stone cap of a type that
    * has one (a roofed theme keeps its roof instead), placeholders without art (§B.7). A room's
    * parts are torn down whole and redrawn from its walls as they stand now; none of them fades
-   * (§E.4). Its walls' lights are the room's own, lit only from inside (§D.6). An open door's dark
-   * opening is its door's (`updateDoors`), so a room's gap draws none of its own.
+   * (§E.4). Its walls' lights are the room's own, lit only from inside (§D.6). A room's gap holds
+   * its server door (`updateDoors`), so it draws no door of its own.
    */
   private drawRooms(walls: readonly WallState[], changed: ReadonlySet<string>): void {
     if (changed.size === 0) return;
@@ -2472,7 +2469,6 @@ export class BarrowspireScene extends Phaser.Scene {
       if (!activeEntityIds.has(entityId)) {
         door.sprite?.destroy();
         door.slab?.plane.root.destroy();
-        door.opening?.parts.forEach((part) => part.destroy());
         this.serverDoors.delete(entityId);
         this.view?.invalidate();
       }
@@ -2491,10 +2487,10 @@ export class BarrowspireScene extends Phaser.Scene {
           x: doorState.position.x + doorState.width / 2,
           y: doorState.position.y + doorState.height / 2,
         };
-        door = { entityId: doorState.entity_id, isOpen: doorState.is_open, pos };
-        // a door in a room's wall is part of the room: it takes the silhouette, not the fade,
-        // and from outside an open one is the room's dark opening (FS-9PN7X §B.5, §E.4)
+        // a door in a room's wall is part of the room: it takes the silhouette, not the fade, and
+        // from outside it shows its own state, open or shut (FS-9PN7X §B.5 amended 2026-11-03, §E.4)
         const inRoom = this.buildings.some((b) => insideHouse(pos, b));
+        door = { entityId: doorState.entity_id, isOpen: doorState.is_open, pos, inRoom };
         if (this.art.available) {
           const at = worldToScreen(pos.x, pos.y);
           door.sprite = artSprite(this, this.art, at.x, at.y, sheet, { animation: frame });
@@ -2504,12 +2500,7 @@ export class BarrowspireScene extends Phaser.Scene {
         } else {
           door.slab = this.placeholderDoor(doorState, pos);
         }
-        if (inRoom) {
-          const sheets = this.currentFloorLook().walls;
-          door.opening = addDarkOpening(this, this.art, darkOpening(doorState, sheets), sheets);
-          door.opening.parts.forEach((part) => part.setVisible(false));
-          this.view?.invalidate();
-        }
+        if (inRoom) this.view?.invalidate();
         this.serverDoors.set(doorState.entity_id, door);
       } else if (door.isOpen !== doorState.is_open) {
         door.isOpen = doorState.is_open;
@@ -3346,7 +3337,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.serverDoors.forEach((door) => {
       door.sprite?.destroy();
       door.slab?.plane.root.destroy();
-      door.opening?.parts.forEach((part) => part.destroy());
     });
     this.serverDoors.clear();
     for (const drawn of [this.chests, this.escapeDoors, this.switches]) {
@@ -3918,32 +3908,28 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * What covers the player from outside beside the rooms' own pieces (FS-9PN7X §E.1): each room
-   * door and its dark opening, and an exterior house's roof.
+   * door, open or shut, and an exterior house's roof.
    */
   private coverBesideRooms(): Cover[] {
     const cover = [...this.roofCover];
-    this.serverDoors.forEach(({ sprite, opening }) => {
-      if (!opening) return;
-      cover.push(...opening.cover);
-      if (sprite) cover.push(coverOf(sprite));
+    this.serverDoors.forEach(({ sprite, inRoom }) => {
+      if (inRoom && sprite) cover.push(coverOf(sprite));
     });
     return cover;
   }
 
   /**
    * The doors for where the player is, each frame, since a door opens and shuts on its own
-   * (FS-9PN7X §B.5, §C.1): from the halls a shut door is a door and an open room door its dark
-   * opening; inside a room, its own doors show their frames (a door in a wall two rooms share is in
+   * (FS-9PN7X §B.5 amended 2026-11-03, §C.1): from the halls every door shows its own state, open
+   * or shut; inside a room, its own doors show their frames (a door in a wall two rooms share is in
    * both) and every other door hides.
    */
   private showDoors(): void {
     const mine = this.view?.building;
     this.serverDoors.forEach((door) => {
       const shown = mine ? insideHouse(door.pos, mine) : true;
-      const dark = !mine && door.isOpen && !!door.opening;
-      door.sprite?.setVisible(shown && !dark);
-      door.slab?.plane.root.setVisible(shown && !dark);
-      door.opening?.parts.forEach((part) => part.setVisible(dark));
+      door.sprite?.setVisible(shown);
+      door.slab?.plane.root.setVisible(shown);
     });
   }
 

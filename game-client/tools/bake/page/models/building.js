@@ -1,5 +1,6 @@
-// Building exteriors (FS-9PN7X §F, ADR-0036): the outward face of each building type, the stone
-// cap a masonry room is closed with, and the dark opening a doorway shows from outside. Authored
+// Building exteriors (FS-9PN7X §F, ADR-0036): the outward face of each building type and the stone
+// cap a masonry room is closed with. A doorway seen from outside shows a door, the run door's own
+// sheet (interactables.js `door`), never a dark opening (FS-9PN7X §F.4, amended 2026-11-03). Authored
 // in code (ADR-0021) on the same camera, key light and scale as the shipped world sheets: one
 // three.js unit is one tile edge, +x is world +x, +z is world +y, +y is up, and each model's
 // origin is the centre of its footprint.
@@ -17,7 +18,7 @@
 
 import * as THREE from "three";
 import { fbm, rng, smoothstep, vnoise } from "../noise.js";
-import { color, cssRgb, grey, mix, shade } from "../palette.js";
+import { cssRgb, grey, mix, shade } from "../palette.js";
 import { canvasTexture, materials, mkCanvas, pixelTexture, TONE } from "../materials.js";
 import { part } from "./util.js";
 import { ROOF_RISE, wallPiece, WALL_BACK } from "./architecture.js";
@@ -31,10 +32,7 @@ const P_THICK = 0.24;
 /** How far exterior relief may stand proud of the centreline: inside the guide's cap (0.26). */
 const PROUD = 0.13;
 
-/** The dark opening: the run door's width (50 world px of a 40 px tile) and the door's height. */
-export const OPEN_W = 50 / 40;
-const JAMB = 0.12;
-const CLEAR_W = OPEN_W - 2 * JAMB;
+/** A doorway's head height: a masonry exterior's string course runs level with it. */
 const OPEN_H = 2.4;
 
 // ── Palette (BARROW blends only). The timber tones are architecture.js's, the stone tower.js's,
@@ -52,20 +50,13 @@ const STONE_LO = mix("slate", "barrowDeep", 0.4);
 const STONE_MID = mix("slate", "barrowBrown", 0.32);
 const STONE_HI = mix("slateLight", "vellumFaint", 0.32);
 const CAP_JOINT = mix("charcoal", "barrowDeep", 0.45);
-/** The way in, seen from outside: the canvas's darkest ink (palette.inkDeep). */
+/** The dark reveal round a shuttered window: the canvas's darkest ink (palette.inkDeep). */
 const DARK = "pitch";
 
 /** Hides a frame guide: still counted by the bake's framing, never drawn and never shadowing. */
 function guide(obj) {
   obj.visible = false;
   return obj;
-}
-
-/** The flat darkness of a doorway: unlit, untoned, exactly the token. */
-let VOID = null;
-function voidMaterial() {
-  VOID ??= new THREE.MeshBasicMaterial({ color: color(DARK), toneMapped: false });
-  return VOID;
 }
 
 // ── Timber: the outside of a half-timbered house ────────────────────────────────────────
@@ -431,68 +422,5 @@ export function towerCap(variant) {
   const slab = new THREE.MeshStandardMaterial({ map: top, bumpMap: top, bumpScale: 0.9, roughness: 0.95 });
   const g = new THREE.Group();
   g.add(part(new THREE.BoxGeometry(LENGTH, CAP_THICK, LENGTH), [T.block, T.block, slab, T.block, T.block, T.block], { y: CAP_THICK / 2 }));
-  return g;
-}
-
-// ── The dark opening ──────────────────────────────────────────────────────────────────────
-
-/**
- * Plaster and oak over a timber doorway, `W` px wide: the wall plate, a king stud and the
- * weathered plaster either side, so the head reads as the wall it stands in.
- */
-function timberHead(clearW, h, seed) {
-  const W = Math.round(128 * clearW);
-  const Hp = Math.round(128 * h);
-  return timberFace(W, Hp, seed, {
-    plinth: 0,
-    frame: [
-      [0, 0, W, 12],
-      [W / 2 - 5, 12, 10, Hp - 12],
-    ],
-  });
-}
-
-/**
- * The way into a building seen from outside (FS-9PN7X §B.5, §F.4): a full-height frame, as wide
- * as the run's door (50 world px), its lintel and reveals in the building's own material, the
- * wall carried on over the lintel to the coping, and flat darkness inside. `type` is timber |
- * masonry; `axis` x runs along world x, y along world y, as the door sheets do.
- */
-export function darkOpening(type, axis) {
-  const M = materials();
-  const H = WALL_BACK;
-  const g = new THREE.Group();
-  const head = H - OPEN_H;
-  if (type === "timber") {
-    for (const sx of [-1, 1])
-      g.add(part(new THREE.BoxGeometry(JAMB, H, 0.22), M.beam, { x: sx * (OPEN_W / 2 - JAMB / 2), y: H / 2 }));
-    const map = timberHead(CLEAR_W, head - 0.16, 61);
-    const face = new THREE.MeshStandardMaterial({ map, bumpMap: map, bumpScale: 0.6, roughness: 0.92 });
-    g.add(part(new THREE.BoxGeometry(CLEAR_W, head - 0.16, THICK), [M.cap, M.cap, M.cap, M.cap, face, face], { y: OPEN_H + 0.16 + (head - 0.16) / 2 }));
-    g.add(part(new THREE.BoxGeometry(CLEAR_W + 0.04, 0.16, 0.22), M.beam, { y: OPEN_H + 0.08 }));
-    g.add(part(new THREE.BoxGeometry(OPEN_W, 0.1, 0.26), M.cap, { y: H + 0.05 }));
-    g.add(part(new THREE.BoxGeometry(CLEAR_W, 0.05, 0.28), M.stone, { y: 0.025 }));
-  } else {
-    const T = towerMaterials();
-    const R = rng(axis === "x" ? 71 : 73);
-    // quoined reveals: dressed blocks with a clean inner arris, long and short in turn on the
-    // outer side, bonding into the walls either side
-    let y = 0;
-    for (let k = 0; y < OPEN_H - 0.01; k++) {
-      const bh = Math.min(0.3 + R() * 0.06, OPEN_H - y);
-      const bw = k % 2 ? JAMB + 0.1 : JAMB;
-      for (const sx of [-1, 1])
-        g.add(part(roughBox(bw, bh - 0.01, PROUD * 2, Math.floor(R() * 1000), 0.04), T.blockLight, { x: sx * (CLEAR_W / 2 + bw / 2), y: y + bh / 2 }));
-      y += bh;
-    }
-    const tex = masonry(Math.round(PX * OPEN_W), Math.round(PX * head), { key: 5600, seed: 3, grime: 0, damp: 0.6, flaws: 1 });
-    g.add(body(OPEN_W, head, P_THICK, stoneMat(tex), T.block, T.cap).translateY(OPEN_H));
-    g.add(part(roughBox(CLEAR_W + 0.3, 0.28, PROUD * 2, 79, 0.03), T.blockLight, { y: OPEN_H + 0.14 }));
-    g.add(part(new THREE.BoxGeometry(OPEN_W, 0.1, 0.26), T.cap, { y: H + 0.05 }));
-    g.add(part(roughBox(CLEAR_W, 0.06, 0.3, 83, 0.03), T.cap, { y: 0.03 }));
-  }
-  // the darkness: the doorway's void, set back so the reveals show their depth
-  g.add(part(new THREE.BoxGeometry(CLEAR_W, OPEN_H, 0.12), voidMaterial(), { y: OPEN_H / 2, z: -0.02 }));
-  if (axis === "y") g.rotation.y = Math.PI / 2;
   return g;
 }

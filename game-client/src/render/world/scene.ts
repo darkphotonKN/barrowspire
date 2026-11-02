@@ -45,11 +45,11 @@ import {
 } from "./ground";
 import { BAKE } from "./bake";
 import {
-  darkOpening,
+  gapDoor,
   planBuildings,
   planCap,
-  type DarkOpening,
   type DoorGap,
+  type GapDoor,
   type WallLook,
 } from "./buildingLooks";
 import type { House } from "./houses";
@@ -467,11 +467,14 @@ export interface BuiltBuilding {
   house: House;
   /** Standing in both looks: the north and west walls and the posts already full height. */
   shared: BuildingPart[];
-  /** The interior look only: the cut-away fronts and their low posts. */
+  /**
+   * The interior look only: the cut-away fronts and their low posts, and an open door in each of
+   * its door gaps when asked for.
+   */
   interior: BuildingPart[];
   /**
    * The building exterior only: the full-height fronts and their posts, the stone cap of a type
-   * that has one, and the dark openings in its door gaps when asked for. The roof is the
+   * that has one, and a shut door in each of its door gaps when asked for. The roof is the
    * scene's, as it always was (`addRoof`).
    */
   exterior: BuildingPart[];
@@ -487,11 +490,12 @@ export interface BuildingOptions {
   /** The building type's sheets (FS-9PN7X §B.1); timber unless named. */
   sheets?: WallSheets;
   /**
-   * Where the walls leave an entrance that shows a dark opening from outside (§B.5): the hub's
-   * town doors are gaps, so it passes `doorGaps`. None by default: where every gap holds a door (a
-   * run's rooms), an open door's opening is `addDarkOpening`'s and a shut one is a door.
+   * Where the walls leave a gap to hang a drawn door in (§B.5, amended 2026-11-03: an entrance
+   * shows a door, not a dark opening): the hub's town doors are gaps with no `DoorState`, so it
+   * passes `doorGaps`, and each gap gets a door shut in the exterior look and open in the
+   * interior look. None by default: a run's room gaps hold the server's own doors.
    */
-  openings?: (walls: readonly WallState[]) => readonly DoorGap[];
+  doors?: (walls: readonly WallState[]) => readonly DoorGap[];
   /** Placeholder block colours; stone by default. */
   style?: BlockStyle;
   /** Where a missing sheet is reported, once per sheet per art library. */
@@ -504,13 +508,6 @@ export const PLACEHOLDER_STONE: BlockStyle = {
   south: palette.wallShade,
   east: shade(palette.wall, 0.5),
   edge: { width: 1, color: palette.wallLight, alpha: 0.6 },
-};
-
-/** The dark opening's placeholder: flat darkness, every face one ink (§B.7). */
-const PLACEHOLDER_DARK: BlockStyle = {
-  top: palette.inkDeep,
-  south: palette.inkDeep,
-  east: palette.inkDeep,
 };
 
 /** Sheets already reported missing, per art library: one warning per sheet (FS-9PN7X §B.7). */
@@ -609,8 +606,8 @@ function pieceSprite(
  * player starts outside every building. Walls with no house are not drawn here (`addWalls`).
  *
  * Never null: without a manifest or a sheet, a wall falls back to a placeholder block as tall as
- * the pieces it stands beside, the cap to a flat slab at the wall top, the dark opening to a flat
- * `inkDeep` quad, so a building always closes (§B.7). No part joins `Occluders` (§E.4): buildings
+ * the pieces it stands beside, the cap to a flat slab at the wall top, a gap's door to the run's
+ * placeholder door (a leaf on a plane at the wall top), so a building always closes (§B.7). No part joins `Occluders` (§E.4): buildings
  * take the silhouette, not the fade.
  */
 export function addBuildings(
@@ -624,7 +621,7 @@ export function addBuildings(
   const style = options.style ?? PLACEHOLDER_STONE;
   const logger = options.logger ?? console;
   const byId = new Map(walls.map((w) => [w.entity_id, w]));
-  const gaps = options.openings?.(walls) ?? [];
+  const gaps = options.doors?.(walls) ?? [];
 
   return planBuildings(walls, seed, sheets).map((plan) => {
     const own = walls.filter((w) => w.house_id === plan.house.id);
@@ -692,9 +689,11 @@ export function addBuildings(
       exterior.cover.push(...cap.cover);
     }
     for (const gap of gaps.filter((g) => g.houseId === plan.house.id)) {
-      const opening = addDarkOpening(scene, art, darkOpening(gap, sheets), sheets, logger);
-      exterior.parts.push(...opening.parts);
-      exterior.cover.push(...opening.cover);
+      // shut from outside, open from inside: the looks swap them (§B.5, amended 2026-11-03)
+      const shut = addGapDoor(scene, art, gapDoor(gap, false), sheets, logger);
+      exterior.parts.push(...shut.parts);
+      exterior.cover.push(...shut.cover);
+      interior.parts.push(...addGapDoor(scene, art, gapDoor(gap, true), sheets, logger).parts);
     }
 
     built.shared = shared.parts;
@@ -759,27 +758,43 @@ function addCap(
 }
 
 /**
- * An entrance seen from outside (FS-9PN7X §B.5): the type's dark opening, sorted like the door it
- * stands for, or without its sheet a flat `inkDeep` quad over the opening, as tall as the type's
- * walls stand (§B.7). A scene shows it in a town door gap (through `addBuildings`) or in place of
- * an open run door's frame.
+ * A town door gap's drawn door (FS-9PN7X §B.5, amended 2026-11-03): the run door's baked frame for
+ * its state, sorted like a door by the back corner of its footprint, or without its sheet the run
+ * scene's placeholder door: a door-coloured leaf on a plane lifted to the wall tops, swung a
+ * quarter turn on its hinge when open (§B.7). Purely drawn: no collision, no interaction.
  */
-export function addDarkOpening(
+function addGapDoor(
   scene: Phaser.Scene,
   art: ArtLibrary,
-  opening: DarkOpening,
+  door: GapDoor,
   sheets: WallSheets,
-  logger: ArtLogger = console,
+  logger: ArtLogger,
 ): BuiltParts {
-  if (art.has(opening.sheet)) {
-    const s = worldToScreen(opening.at.x, opening.at.y);
-    const sprite = artSprite(scene, art, s.x, s.y, opening.sheet);
-    sprite.setDepth(worldDepth(opening.depthAt.x, opening.depthAt.y, 1));
+  if (art.has(door.sheet)) {
+    const s = worldToScreen(door.at.x, door.at.y);
+    const sprite = artSprite(scene, art, s.x, s.y, door.sheet, { animation: door.frame });
+    sprite.setDepth(worldDepth(door.depthAt.x, door.depthAt.y, 1));
     return { parts: [sprite], cover: [coverOf(sprite)] };
   }
-  reportMissing(art, opening.sheet, logger);
-  const full = placeholderHeight(art, sheets, true);
-  return placeholderBlock(scene, opening.rect, PLACEHOLDER_DARK, full);
+  reportMissing(art, door.sheet, logger);
+  const lift = placeholderHeight(art, sheets, true);
+  const plane = addWorldPlane(scene, lift);
+  plane.root.setDepth(worldDepth(door.depthAt.x, door.depthAt.y, 1));
+  const { x, y, width, height } = door.rect;
+  // the leaf hangs from the gap's near end; open, it swings a quarter turn into the building
+  const leaf =
+    door.frame === "open"
+      ? door.axis === "x"
+        ? { x, y: y + height - width, width: height, height: width }
+        : { x: x + width - height, y, width: height, height: width }
+      : door.rect;
+  const g = scene.add.graphics();
+  g.fillStyle(palette.wallLight, 1);
+  g.fillRect(leaf.x, leaf.y, leaf.width, leaf.height);
+  g.lineStyle(2, palette.wallLight, 1);
+  g.strokeRect(leaf.x, leaf.y, leaf.width, leaf.height);
+  plane.surface.add(g);
+  return { parts: [plane.root], cover: [slabCover(plane.root, leaf, lift)] };
 }
 
 /**

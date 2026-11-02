@@ -93,8 +93,6 @@ export interface WallSheets {
    * face, full height, so no interior dressing and no light.
    */
   outward: VariantTable;
-  /** The dark opening's sheet stem (FS-9PN7X §F.4): `{opening}_{x|y}`. */
-  opening: string;
   /** The stone cap laid over the building (FS-9PN7X §F.3); absent, the building has a roof. */
   cap?: string;
 }
@@ -117,7 +115,6 @@ export const TIMBER_WALLS: WallSheets = {
     [86, "brace"],
     [100, "window"],
   ],
-  opening: "door_dark",
 };
 
 /**
@@ -141,7 +138,6 @@ export const MASONRY_WALLS: WallSheets = {
     [70, "plain"],
     [100, "pillar"],
   ],
-  opening: "tower_door_dark",
   cap: "tower_cap",
 };
 

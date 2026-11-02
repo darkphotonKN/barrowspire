@@ -78,7 +78,7 @@ import {
 } from "./models/tower.js";
 import { spireFacade, DOOR_LIGHT } from "./models/spire.js";
 import { counter, innTable, stool, innHearth, shelf, forge, anvil, HEARTH_FLAME, FORGE_COALS } from "./models/interior.js";
-import { timberExterior, masonryExterior, towerCap, darkOpening, timberGable } from "./models/building.js";
+import { timberExterior, masonryExterior, towerCap, timberGable } from "./models/building.js";
 import { CAST } from "./characters/cast.js";
 import { FOLK } from "./characters/folk.js";
 
@@ -559,8 +559,9 @@ function interiorSheets() {
  * their own atlas, `building` (never "exterior", which names the run theme), so every existing
  * atlas keeps its bytes. One exterior per building type, named by its WallSheets prefix: timber
  * (`""`) and masonry (`tower_`). Exterior pieces stand on the back pieces' footprint and frame;
- * the cap closes a masonry room at the back walls' top; a dark opening is a doorway seen from
- * outside. Nothing here is lit: from outside, a building's lights are off.
+ * the cap closes a masonry room at the back walls' top. A doorway seen from outside shows the run
+ * door's own sheet (`door_{x,y}`), never a dark opening (FS-9PN7X §F.4, amended 2026-11-03).
+ * Nothing here is lit: from outside, a building's lights are off.
  */
 function buildingSheets() {
   const sheet = (name, fn, animations, opts = {}) => ({
@@ -585,8 +586,6 @@ function buildingSheets() {
           variants: still(...[2, 7].map((seed) => () => masonryExterior(variant, axis, seed))),
         }),
       );
-    sheets.push(sheet(`door_dark_${axis}`, "darkOpening", { default: still(() => darkOpening("timber", axis)) }));
-    sheets.push(sheet(`tower_door_dark_${axis}`, "darkOpening", { default: still(() => darkOpening("masonry", axis)) }));
   }
   // laid on the walls' copings, which carry their own shading: no ground shadow, like the roof
   sheets.push(sheet("tower_cap", "towerCap", { variants: still(...[0, 1, 2, 3].map((v) => () => towerCap(v))) }, { shadow: false }));

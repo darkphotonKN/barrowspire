@@ -44,8 +44,8 @@ const TYPES = [
     top: "cap",
   },
 ];
-const CLOSED = "closed: player outside (exterior pieces, back posts at every corner, roof and gables or cap, dark opening)";
-const OPEN = "interior look: player inside (today's cut-away fronts, roof lifted or cap hidden)";
+const CLOSED = "closed: player outside (exterior pieces, back posts at every corner, roof and gables or cap, door shut)";
+const OPEN = "interior look: player inside (today's cut-away fronts, roof lifted or cap hidden, door open)";
 
 /** The label texts this review stamps, rendered by the bake page with the contact sheet's. */
 export const buildingReviewTexts = () => [...TYPES.map((t) => t.title), CLOSED, OPEN];
@@ -125,8 +125,8 @@ function plan(type, closed) {
   const side = closed ? (k) => `${p}wall_exterior_${pick(type.exterior, k)}` : (k) => `${p}wall_front_${pick(type.front, k)}`;
   for (let i = 0; i < W; i++) if (i !== DOOR) at(`${side(i)}_x`, "variants", i, i + 0.5, D, i + D);
   for (let j = 0; j < D; j++) at(`${side(j + 1)}_y`, "variants", j, W, j + 0.5, W + j);
-  if (closed) at(`${p}door_dark_x`, "default", 0, DOOR + 0.5, D, DOOR + D + 0.5);
-  else if (p === "tower_") at("door_x", "open", 0, DOOR + 0.5, D, DOOR + D + 0.5);
+  // the doorway shows a door: shut from outside, open from inside (FS-9PN7X §B.5, amended 2026-11-03)
+  at("door_x", closed ? "unlocked" : "open", 0, DOOR + 0.5, D, DOOR + D + 0.5);
   // posts at every corner and door jamb: back posts all round outside; inside, as tall as the
   // tallest wall they join
   const posts = [
@@ -187,7 +187,6 @@ export function writeBuildingReview({ sheets, labels, theme }) {
   const rows = TYPES.map((type) => {
     const pieces = [
       ...type.exterior.map((k) => `${type.prefix}wall_exterior_${k}_x`),
-      `${type.prefix}door_dark_x`,
       ...type.back.map((k) => `${type.prefix}wall_back_${k}_x`),
       `${type.prefix}post_back`,
       ...type.front.map((k) => `${type.prefix}wall_front_${k}_x`),

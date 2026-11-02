@@ -35,9 +35,9 @@
     },
     "building-0": {
       "image": "building-0.png",
-      "width": 1980,
+      "width": 1868,
       "height": 388,
-      "sha256": "0d5df08711a2260e79511fd276444d9e7158194c4aefa66e2718fd593dd76869"
+      "sha256": "df9d4a0db5cc6b297e48aeb7fbca572a1ce5451824f0a8063cc49f08f0934977"
     },
     "characters-0": {
       "image": "characters-0.png",
@@ -12013,58 +12013,6 @@
       "source": "procedural: tools/bake/page/models/nature.js#pebbles",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "door_dark_x": {
-      "atlas": "building-0",
-      "frameWidth": 144,
-      "frameHeight": 181,
-      "anchor": {
-        "x": 0.20833333333333334,
-        "y": 0.9005524861878453
-      },
-      "directions": 1,
-      "animations": {
-        "default": {
-          "fps": 0,
-          "loop": false,
-          "frames": [
-            [
-              {
-                "x": 509,
-                "y": 2
-              }
-            ]
-          ]
-        }
-      },
-      "source": "authored: tools/bake/page/models/building.js#darkOpening",
-      "licence": "Barrowspire original work (procedural, no third-party assets)"
-    },
-    "door_dark_y": {
-      "atlas": "building-0",
-      "frameWidth": 144,
-      "frameHeight": 181,
-      "anchor": {
-        "x": 0.20833333333333334,
-        "y": 0.9005524861878453
-      },
-      "directions": 1,
-      "animations": {
-        "default": {
-          "fps": 0,
-          "loop": false,
-          "frames": [
-            [
-              {
-                "x": 655,
-                "y": 2
-              }
-            ]
-          ]
-        }
-      },
-      "source": "authored: tools/bake/page/models/building.js#darkOpening",
-      "licence": "Barrowspire original work (procedural, no third-party assets)"
-    },
     "door_x": {
       "atlas": "props-0",
       "frameWidth": 131,
@@ -17312,19 +17260,19 @@
           "frames": [
             [
               {
-                "x": 1658,
+                "x": 1106,
                 "y": 206
               },
               {
-                "x": 1738,
+                "x": 1186,
                 "y": 206
               },
               {
-                "x": 1818,
+                "x": 1266,
                 "y": 206
               },
               {
-                "x": 1898,
+                "x": 1346,
                 "y": 206
               }
             ]
@@ -17332,58 +17280,6 @@
         }
       },
       "source": "authored: tools/bake/page/models/building.js#towerCap",
-      "licence": "Barrowspire original work (procedural, no third-party assets)"
-    },
-    "tower_door_dark_x": {
-      "atlas": "building-0",
-      "frameWidth": 147,
-      "frameHeight": 183,
-      "anchor": {
-        "x": 0.22448979591836735,
-        "y": 0.8907103825136612
-      },
-      "directions": 1,
-      "animations": {
-        "default": {
-          "fps": 0,
-          "loop": false,
-          "frames": [
-            [
-              {
-                "x": 210,
-                "y": 2
-              }
-            ]
-          ]
-        }
-      },
-      "source": "authored: tools/bake/page/models/building.js#darkOpening",
-      "licence": "Barrowspire original work (procedural, no third-party assets)"
-    },
-    "tower_door_dark_y": {
-      "atlas": "building-0",
-      "frameWidth": 148,
-      "frameHeight": 183,
-      "anchor": {
-        "x": 0.22972972972972974,
-        "y": 0.8907103825136612
-      },
-      "directions": 1,
-      "animations": {
-        "default": {
-          "fps": 0,
-          "loop": false,
-          "frames": [
-            [
-              {
-                "x": 359,
-                "y": 2
-              }
-            ]
-          ]
-        }
-      },
-      "source": "authored: tools/bake/page/models/building.js#darkOpening",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "tower_perimeter_back_plain_x": {
@@ -18022,11 +17918,11 @@
           "frames": [
             [
               {
-                "x": 801,
+                "x": 210,
                 "y": 2
               },
               {
-                "x": 939,
+                "x": 348,
                 "y": 2
               }
             ]
@@ -18052,11 +17948,11 @@
           "frames": [
             [
               {
-                "x": 1077,
+                "x": 486,
                 "y": 2
               },
               {
-                "x": 1215,
+                "x": 624,
                 "y": 2
               }
             ]
@@ -18082,11 +17978,11 @@
           "frames": [
             [
               {
-                "x": 1353,
+                "x": 762,
                 "y": 2
               },
               {
-                "x": 1491,
+                "x": 900,
                 "y": 2
               }
             ]
@@ -18112,11 +18008,11 @@
           "frames": [
             [
               {
-                "x": 1629,
+                "x": 1038,
                 "y": 2
               },
               {
-                "x": 1767,
+                "x": 1176,
                 "y": 2
               }
             ]
@@ -18744,6 +18640,66 @@
           "frames": [
             [
               {
+                "x": 1314,
+                "y": 2
+              },
+              {
+                "x": 1452,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/building.js#timberExterior",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_exterior_brace_y": {
+      "atlas": "building-0",
+      "frameWidth": 136,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.19117647058823528,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1590,
+                "y": 2
+              },
+              {
+                "x": 1728,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/building.js#timberExterior",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wall_exterior_plain_x": {
+      "atlas": "building-0",
+      "frameWidth": 136,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.19117647058823528,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
                 "x": 2,
                 "y": 206
               },
@@ -18758,7 +18714,7 @@
       "source": "authored: tools/bake/page/models/building.js#timberExterior",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "wall_exterior_brace_y": {
+    "wall_exterior_plain_y": {
       "atlas": "building-0",
       "frameWidth": 136,
       "frameHeight": 177,
@@ -18788,7 +18744,7 @@
       "source": "authored: tools/bake/page/models/building.js#timberExterior",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "wall_exterior_plain_x": {
+    "wall_exterior_window_x": {
       "atlas": "building-0",
       "frameWidth": 136,
       "frameHeight": 177,
@@ -18818,7 +18774,7 @@
       "source": "authored: tools/bake/page/models/building.js#timberExterior",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "wall_exterior_plain_y": {
+    "wall_exterior_window_y": {
       "atlas": "building-0",
       "frameWidth": 136,
       "frameHeight": 177,
@@ -18839,66 +18795,6 @@
               },
               {
                 "x": 968,
-                "y": 206
-              }
-            ]
-          ]
-        }
-      },
-      "source": "authored: tools/bake/page/models/building.js#timberExterior",
-      "licence": "Barrowspire original work (procedural, no third-party assets)"
-    },
-    "wall_exterior_window_x": {
-      "atlas": "building-0",
-      "frameWidth": 136,
-      "frameHeight": 177,
-      "anchor": {
-        "x": 0.19117647058823528,
-        "y": 0.9096045197740112
-      },
-      "directions": 1,
-      "animations": {
-        "variants": {
-          "fps": 0,
-          "loop": false,
-          "frames": [
-            [
-              {
-                "x": 1106,
-                "y": 206
-              },
-              {
-                "x": 1244,
-                "y": 206
-              }
-            ]
-          ]
-        }
-      },
-      "source": "authored: tools/bake/page/models/building.js#timberExterior",
-      "licence": "Barrowspire original work (procedural, no third-party assets)"
-    },
-    "wall_exterior_window_y": {
-      "atlas": "building-0",
-      "frameWidth": 136,
-      "frameHeight": 177,
-      "anchor": {
-        "x": 0.19117647058823528,
-        "y": 0.9096045197740112
-      },
-      "directions": 1,
-      "animations": {
-        "variants": {
-          "fps": 0,
-          "loop": false,
-          "frames": [
-            [
-              {
-                "x": 1382,
-                "y": 206
-              },
-              {
-                "x": 1520,
                 "y": 206
               }
             ]

@@ -5,8 +5,8 @@
  * The **interior look** is the cut-away that ships (`planWalls`): back walls full height, south
  * and east fronts low. The **building exterior** is the full-height version of every side: the
  * same fronts cut on exactly the same footprint, in the type's outward face, their posts columns,
- * a stone cap over a masonry room, a dark opening in each entrance. A scene draws both and shows
- * one per building.
+ * a stone cap over a masonry room, a shut door in each town door gap (amended 2026-11-03: an
+ * entrance shows a door, not a dark opening). A scene draws both and shows one per building.
  */
 
 import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso";
@@ -178,31 +178,35 @@ export function doorGaps(walls: readonly WallState[]): DoorGap[] {
   return gaps;
 }
 
-/** An entrance seen from outside (FS-9PN7X §B.5): the type's dark frame, darkness inside. */
-export interface DarkOpening {
-  /** `{opening}_{x|y}`: `door_dark_x`, `tower_door_dark_y`. */
+/**
+ * The door drawn in a town door gap (FS-9PN7X §B.5, amended 2026-11-03: an entrance shows a door,
+ * not a dark opening). The hub sends no `DoorState`, so this door is only drawn: no collision, no
+ * interaction, and it opens for no one but the viewer.
+ */
+export interface GapDoor {
+  /** The run door's sheet on the gap's axis: `door_x` or `door_y`. */
   sheet: string;
+  /** Shut (`unlocked`, as a shut run door shows) from outside; `open` from inside. */
+  frame: "unlocked" | "open";
   axis: WallAxis;
-  /** World position of the opening's centre, where the frame stands. */
+  /** World position of the gap's centre, where the door stands. */
   at: Point;
-  /** The back corner of its footprint: what it sorts by, like the door it stands for. */
+  /** The back corner of its footprint: what it sorts by, like any door. */
   depthAt: Point;
-  /** The opening's world rect, for a placeholder. */
+  /** The gap's world rect, for a placeholder. */
   rect: Rect;
 }
 
 /**
- * The dark opening for a town door gap, or for an open Spire door's rect (a `DoorState`), on the
- * opening's axis as the door sheets name it.
+ * A town door gap's door, shut while the player is outside its building and open while they are
+ * `inside` it (the inside test counts the gap itself as inside, so it opens as they step in).
  */
-export function darkOpening(
-  spot: { position: Point; width: number; height: number },
-  sheets: WallSheets,
-): DarkOpening {
-  const { position, width, height } = spot;
-  const axis = axisOf(spot);
+export function gapDoor(gap: DoorGap, inside: boolean): GapDoor {
+  const { position, width, height } = gap;
+  const axis = axisOf(gap);
   return {
-    sheet: `${sheets.opening}_${axis}`,
+    sheet: `door_${axis}`,
+    frame: inside ? "open" : "unlocked",
     axis,
     at: { x: position.x + width / 2, y: position.y + height / 2 },
     depthAt: { x: position.x, y: position.y },
