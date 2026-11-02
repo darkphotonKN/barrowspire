@@ -96,6 +96,7 @@ server state and sends intents. ✅
 - [ ] Indoor blackout → FS-9PN7X
 - [x] Per-floor variation of the run look → FS-8RBQY
 - [x] Pre-rendered stairs → FS-8RBQY
+- [ ] One countdown style across the canvas → FS-B3NDZ
 
 ### Hub
 

@@ -58,3 +58,5 @@ unrelated lines.
 
 In the village with a teammate on the same pod: their frame shows health, resource (coloured by
 kind) and "Lv N"; a teammate on another pod shows name and bust only; a long name is shortened.
+
+Note (2026-11-02): the AC "own row shows no level" is superseded by FS-CH21F R10 as amended (I-CH21F-4): the own row shows Lv N.
